@@ -1,0 +1,120 @@
+<view class="page">
+  <view class="page-head">
+    <text class="page-title">学习统计</text>
+  </view>
+
+  <view class="loading-wrap" wx:if="{{loading}}">
+    <view class="loading-spinner"></view>
+    <text class="loading-text">加载中...</text>
+  </view>
+
+  <block wx:else>
+    <!-- 总览卡片 -->
+    <view class="overview-grid">
+      <view class="ov-card">
+        <text class="ov-num">{{overview.total_questions || 0}}</text>
+        <text class="ov-label">累计刷题</text>
+      </view>
+      <view class="ov-card">
+        <text class="ov-num green">{{overview._accuracyText || '0%'}}</text>
+        <text class="ov-label">总正确率</text>
+      </view>
+      <view class="ov-card">
+        <text class="ov-num">{{overview._totalDuration || '0'}}</text>
+        <text class="ov-label">学习时长</text>
+      </view>
+      <view class="ov-card">
+        <text class="ov-num">{{overview.consecutive_days || 0}}</text>
+        <text class="ov-label">连续天数</text>
+      </view>
+    </view>
+
+    <!-- 今日数据 -->
+    <view class="section-title">今日</view>
+    <view class="today-row">
+      <view class="today-item">
+        <text class="today-num">{{overview.today_questions || 0}}</text>
+        <text class="today-label">刷题</text>
+      </view>
+      <view class="today-item">
+        <text class="today-num green">{{overview.today_correct || 0}}</text>
+        <text class="today-label">正确</text>
+      </view>
+      <view class="today-item">
+        <text class="today-num">{{overview._todayDuration || '0'}}</text>
+        <text class="today-label">用时</text>
+      </view>
+      <view class="today-item">
+        <text class="today-num">{{overview.due_review_count || 0}}</text>
+        <text class="today-label">待复习</text>
+      </view>
+    </view>
+
+    <!-- 学科统计 -->
+    <view class="section-title">学科统计</view>
+    <view class="subjects-list">
+      <view class="subj-card" wx:for="{{subjects}}" wx:key="subject">
+        <view class="subj-top">
+          <text class="subj-name">{{subjectLabel(item.subject)}}</text>
+          <text class="subj-acc {{item._accClass}}">{{item._accPct}}%</text>
+        </view>
+        <view class="subj-bar">
+          <view class="subj-bar-fill" style="width:{{item._accPct}}%"></view>
+        </view>
+        <view class="subj-meta">
+          <text>{{item.correct_count}}/{{item.total_questions}} 正确</text>
+          <text>{{item._durationText}}</text>
+        </view>
+      </view>
+      <view class="empty-hint" wx:if="{{subjects.length === 0}}">暂无数据，去刷几道题吧</view>
+    </view>
+
+    <!-- 近 7 天趋势 -->
+    <view class="section-title">近 7 天趋势</view>
+    <view class="trend-list" wx:if="{{trends.length > 0}}">
+      <view class="trend-item" wx:for="{{trends}}" wx:key="date">
+        <text class="trend-date">{{item._shortDate}}</text>
+        <view class="trend-bar-wrap">
+          <view class="trend-bar" style="height:{{item._barH}}rpx"></view>
+        </view>
+        <text class="trend-num">{{item.questions}}题</text>
+        <text class="trend-acc {{item._accClass}}">{{item._accPct}}%</text>
+      </view>
+    </view>
+    <view class="empty-hint" wx:if="{{trends.length === 0}}">暂无数据</view>
+
+    <!-- 学习行为 -->
+    <view class="section-title">学习行为</view>
+    <view class="behav-card" wx:if="{{behavior}}">
+      <view class="behav-row">
+        <text class="behav-key">平均答题用时</text>
+        <text class="behav-val">{{behavior.avg_time_sec || 0}}秒</text>
+      </view>
+      <view class="behav-row">
+        <text class="behav-key">查看答案率</text>
+        <text class="behav-val">{{behavior._viewRate || '0%'}}</text>
+      </view>
+      <view class="behav-row">
+        <text class="behav-key">放弃率</text>
+        <text class="behav-val">{{behavior._abandonRate || '0%'}}</text>
+      </view>
+    </view>
+
+    <!-- 复习状况 -->
+    <view class="section-title">复习状况</view>
+    <view class="forget-grid" wx:if="{{forgetting}}">
+      <view class="forget-card">
+        <text class="forget-num red">{{forgetting.high_forget_count || 0}}</text>
+        <text class="forget-label">高频遗忘</text>
+      </view>
+      <view class="forget-card">
+        <text class="forget-num orange">{{forgetting.stuck_questions || 0}}</text>
+        <text class="forget-label">长期未掌握</text>
+      </view>
+      <view class="forget-card">
+        <text class="forget-num">{{forgetting.pseudo_mastered.length || 0}}</text>
+        <text class="forget-label">假掌握</text>
+      </view>
+    </view>
+  </block>
+</view>

@@ -1,0 +1,176 @@
+{
+  "backend": {
+    "api_auth": {
+      "keywords": ["登录", "login", "auth", "用户", "user", "注册", "token", "jwt", "wechat", "微信", "openid"],
+      "files": ["app/api/v1/auth.py", "app/services/user_service.py", "app/schemas/user.py"],
+      "description": "用户认证：微信 code → openid → JWT"
+    },
+    "api_questions": {
+      "keywords": ["题目", "question", "题库", "bank", "随机", "random", "选题", "抽题"],
+      "files": ["app/api/v1/questions.py", "app/services/question_service.py", "app/schemas/question.py"],
+      "description": "题库管理：题目CRUD、随机抽题、筛选"
+    },
+    "api_practice": {
+      "keywords": ["练习", "practice", "刷题", "答题", "answer", "提交", "submit", "判题", "对错", "正确率"],
+      "files": ["app/api/v1/practice.py", "app/services/practice_service.py", "app/schemas/practice.py"],
+      "description": "刷题提交：提交答案、判对错、练习记录"
+    },
+    "api_wrong": {
+      "keywords": ["错题", "wrong", "mistake", "错误", "error", "错题本", "复习", "review", "掌握", "mastered"],
+      "files": ["app/api/v1/wrong_questions.py", "app/services/wrong_question_service.py", "app/schemas/wrong_question.py"],
+      "description": "错题本管理：自动记录、统计、标记已掌握"
+    },
+    "api_ai": {
+      "keywords": ["ai", "人工智能", "deepseek", "分析", "analysis", "建议", "advice", "总结", "summary", "学习建议"],
+      "files": ["app/api/v1/ai.py", "app/services/ai_service.py", "app/schemas/ai.py"],
+      "description": "AI 分析：错题解析、学习建议、知识点总结"
+    },
+    "api_import": {
+      "keywords": ["导入", "import", "上传", "upload", "excel", "批量", "batch", "审核", "review"],
+      "files": ["app/api/v1/imports.py", "app/services/import_service.py", "app/schemas/import.py", "app/models/question_import.py"],
+      "description": "题库导入：Excel/Word/PDF 批量导入与审核"
+    },
+    "core_security": {
+      "keywords": ["security", "jwt", "token", "认证", "鉴权", "中间件", "middleware", "bearer"],
+      "files": ["app/core/security.py"],
+      "description": "JWT 认证中间件：token 生成、验证、用户鉴权"
+    },
+    "core_database": {
+      "keywords": ["database", "数据库", "db", "session", "engine", "sqlalchemy", "orm", "postgres", "sqlite"],
+      "files": ["app/core/database.py"],
+      "description": "数据库引擎：异步 session、表创建、连接管理"
+    },
+    "core_config": {
+      "keywords": ["config", "配置", "settings", "环境变量", "env", "deepseek", "wechat"],
+      "files": ["app/core/config.py"],
+      "description": "全局配置：环境变量、DeepSeek、微信、数据库"
+    },
+    "core_sm2": {
+      "keywords": ["sm2", "复习", "review", "间隔重复", "spaced", "repetition", "记忆", "memory", "ef", "ease", "interval", "调度"],
+      "files": ["app/services/sm2_service.py"],
+      "description": "SM-2 间隔重复算法：EF 因子、复习间隔、调度计算"
+    },
+    "models_user": {
+      "keywords": ["user", "用户", "orm", "model"],
+      "files": ["app/models/user.py"],
+      "description": "用户 ORM 模型：openid、session_key"
+    },
+    "models_question": {
+      "keywords": ["question", "题目", "orm"],
+      "files": ["app/models/question.py"],
+      "description": "题目 ORM 模型：字段定义、JSON 存储"
+    },
+    "models_practice": {
+      "keywords": ["practice", "练习记录", "record"],
+      "files": ["app/models/practice_record.py"],
+      "description": "练习记录 ORM 模型"
+    },
+    "models_wrong": {
+      "keywords": ["wrong", "错题", "orm"],
+      "files": ["app/models/wrong_question.py"],
+      "description": "错题 ORM 模型：SM-2 扩展字段"
+    },
+    "models_import": {
+      "keywords": ["import", "导入", "暂存区", "staging"],
+      "files": ["app/models/question_import.py"],
+      "description": "导入暂存区 ORM 模型"
+    },
+    "models_ai_chat": {
+      "keywords": ["ai", "chat", "记录", "日志", "token"],
+      "files": ["app/models/ai_chat.py"],
+      "description": "AI 对话日志 ORM 模型"
+    },
+    "ai_client": {
+      "keywords": ["deepseek", "llm", "大模型", "api", "httpx", "chat", "token"],
+      "files": ["app/ai/client.py"],
+      "description": "DeepSeek HTTP 客户端封装"
+    },
+    "ai_prompts": {
+      "keywords": ["prompt", "提示词", "template", "模板", "system"],
+      "files": ["app/ai/prompts.py"],
+      "description": "AI Prompt 模板管理"
+    },
+    "ai_fallback": {
+      "keywords": ["fallback", "降级", "备用", "error", "容错"],
+      "files": ["app/ai/fallback.py"],
+      "description": "AI 降级方案：API 不可用时的预设回复"
+    },
+    "scripts_seed": {
+      "keywords": ["seed", "种子", "测试数据", "sample", "示例"],
+      "files": ["scripts/seed_questions.py"],
+      "description": "测试数据种子脚本"
+    },
+    "scripts_import_excel": {
+      "keywords": ["excel", "导入", "批量", "导题"],
+      "files": ["scripts/import_from_excel.py"],
+      "description": "Excel 批量导题脚本"
+    }
+  },
+  "frontend": {
+    "page_login": {
+      "keywords": ["登录", "login", "signin", "微信", "wechat", "auth", "认证"],
+      "files": ["pages/login/login.js", "pages/login/login.wxml", "pages/login/login.wxss", "pages/login/login.json"],
+      "description": "登录页：微信一键登录、开发模式入口"
+    },
+    "page_home": {
+      "keywords": ["首页", "home", "dashboard", "概览", "统计", "stats", "快捷", "entry"],
+      "files": ["pages/home/home.js", "pages/home/home.wxml", "pages/home/home.wxss"],
+      "description": "首页：学习统计、快捷操作导航、错题分布"
+    },
+    "page_practice": {
+      "keywords": ["刷题", "practice", "练习", "答题", "quiz", "随机", "random", "作答", "选择"],
+      "files": ["pages/practice/practice.js", "pages/practice/practice.wxml", "pages/practice/practice.wxss"],
+      "description": "刷题页：选题设置、逐题作答、提交判对错"
+    },
+    "page_practice_result": {
+      "keywords": ["结果", "result", "成绩", "正确率", "score", "统计", "完成"],
+      "files": ["pages/practice-result/practice-result.js", "pages/practice-result/practice-result.wxml", "pages/practice-result/practice-result.wxss"],
+      "description": "练习结果页：正确率、统计、操作引导"
+    },
+    "page_wrong_book": {
+      "keywords": ["错题", "wrong", "mistake", "错题本", "错误", "error", "筛选", "filter", "统计"],
+      "files": ["pages/wrong-book/wrong-book.js", "pages/wrong-book/wrong-book.wxml", "pages/wrong-book/wrong-book.wxss"],
+      "description": "错题本：列表展示、筛选、统计、标记掌握"
+    },
+    "page_wrong_detail": {
+      "keywords": ["错题详情", "wrong detail", "分析", "analysis", "ai", "解析", "掌握", "mastered"],
+      "files": ["pages/wrong-detail/wrong-detail.js", "pages/wrong-detail/wrong-detail.wxml", "pages/wrong-detail/wrong-detail.wxss"],
+      "description": "错题详情：题目信息、AI 分析展示、标记掌握"
+    },
+    "page_plan": {
+      "keywords": ["复习", "review", "计划", "plan", "schedule", "待复习", "今日"],
+      "files": ["pages/plan/plan.js", "pages/plan/plan.wxml", "pages/plan/plan.wxss"],
+      "description": "复习计划：今日待复习错题列表"
+    },
+    "page_mine": {
+      "keywords": ["我的", "mine", "profile", "用户", "user", "设置", "设置", "退出", "logout"],
+      "files": ["pages/mine/mine.js", "pages/mine/mine.wxml", "pages/mine/mine.wxss"],
+      "description": "个人中心：信息、AI 学习建议、退出登录"
+    },
+    "utils_api": {
+      "keywords": ["api", "请求", "request", "http", "网络", "network", "token"],
+      "files": ["utils/api.js"],
+      "description": "API 请求封装：token 注入、401 处理、统一错误"
+    },
+    "utils_auth": {
+      "keywords": ["auth", "登录", "login", "token", "wechat", "微信", "logout"],
+      "files": ["utils/auth.js"],
+      "description": "微信登录状态管理：wx.login、token 存取"
+    },
+    "utils_storage": {
+      "keywords": ["storage", "缓存", "本地", "local", "wx", "setStorage"],
+      "files": ["utils/storage.js"],
+      "description": "本地存储封装：get/set/remove"
+    },
+    "app_entry": {
+      "keywords": ["app", "入口", "entry", "启动", "launch", "global", "全局"],
+      "files": ["app.js", "app.json", "app.wxss", "config.js"],
+      "description": "小程序入口：全局配置、样式、API base URL"
+    },
+    "components": {
+      "keywords": ["组件", "component", "ui", "question-card", "复用", "reuse"],
+      "files": ["components/"],
+      "description": "UI 组件库：可复用组件"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+@import 'styles/tokens.wxss';
+@import 'styles/components.wxss';
+
+/* 全局基础 */
+page {
+  background-color: #F7F5F0;
+  color: #2D3E50;
+  font-size: 28rpx;
+  box-sizing: border-box;
+}

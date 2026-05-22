@@ -1,0 +1,320 @@
+@import '../../styles/tokens.wxss';
+
+.page {
+  min-height: 100vh;
+  padding-bottom: 32rpx;
+}
+
+/* ── 页面标题 ── */
+.page-head {
+  padding: 28rpx 24rpx 16rpx;
+}
+
+.page-title {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #2D3E50;
+}
+
+/* ── 上传区域 ── */
+.upload-zone {
+  margin: 8rpx 24rpx;
+  padding: 48rpx 32rpx;
+  background: #fff;
+  border-radius: 20rpx;
+  border: 2rpx dashed #D0CEC8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+  transition: all 0.2s;
+}
+
+.upload-zone:active {
+  border-color: #5B7B9A;
+  background: #FAFBFC;
+  transform: scale(0.99);
+}
+
+.upload-icon-wrap {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  background: #EDF1F5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8rpx;
+}
+
+.upload-icon {
+  font-size: 40rpx;
+}
+
+.upload-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #2D3E50;
+}
+
+.upload-desc {
+  font-size: 24rpx;
+  color: #9AABBA;
+}
+
+.upload-hint {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  margin-top: 12rpx;
+  padding: 8rpx 16rpx;
+  background: #F7F6F2;
+  border-radius: 8rpx;
+}
+
+.hint-dot {
+  font-size: 16rpx;
+  color: #BCC8D4;
+}
+
+.hint-text {
+  font-size: 22rpx;
+  color: #9AABBA;
+}
+
+/* ── 模板下载条 ── */
+.template-bar {
+  margin: 16rpx 24rpx;
+  padding: 24rpx 28rpx;
+  background: #fff;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  box-shadow: 0 2rpx 8rpx rgba(43, 60, 80, 0.04);
+}
+
+.template-bar:active {
+  background: #FAFBFC;
+}
+
+.template-icon {
+  font-size: 36rpx;
+  flex-shrink: 0;
+}
+
+.template-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.template-label {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: #2D3E50;
+  display: block;
+}
+
+.template-desc {
+  font-size: 22rpx;
+  color: #9AABBA;
+  display: block;
+  margin-top: 2rpx;
+}
+
+.template-arrow {
+  font-size: 32rpx;
+  color: #BCC8D4;
+  flex-shrink: 0;
+}
+
+/* ── 分隔 ── */
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin: 32rpx 24rpx 24rpx;
+}
+
+.divider-line {
+  flex: 1;
+  height: 2rpx;
+  background: #EDEBE6;
+}
+
+.divider-text {
+  font-size: 24rpx;
+  color: #BCC8D4;
+  flex-shrink: 0;
+}
+
+/* ── 加载态 ── */
+.loading-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 100rpx 0;
+}
+
+.loading-spinner {
+  width: 48rpx;
+  height: 48rpx;
+  border: 4rpx solid #EDF1F5;
+  border-top-color: #5B7B9A;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: 26rpx;
+  color: #9AABBA;
+  margin-top: 16rpx;
+}
+
+/* ── 空态 ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80rpx 40rpx;
+}
+
+.empty-icon {
+  font-size: 64rpx;
+  margin-bottom: 16rpx;
+}
+
+.empty-title {
+  font-size: 28rpx;
+  color: #6B7B8D;
+  margin-bottom: 8rpx;
+}
+
+.empty-desc {
+  font-size: 24rpx;
+  color: #BCC8D4;
+}
+
+/* ── 批次卡片列表 ── */
+.batch-list {
+  padding: 0 24rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.batch-card {
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 28rpx;
+  box-shadow: 0 2rpx 8rpx rgba(43, 60, 80, 0.04);
+}
+
+.batch-card:active {
+  background: #FAFBFC;
+}
+
+.batch-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.batch-left {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  flex: 1;
+  min-width: 0;
+}
+
+.batch-icon {
+  font-size: 36rpx;
+  flex-shrink: 0;
+}
+
+.batch-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.batch-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #2D3E50;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-meta {
+  font-size: 22rpx;
+  color: #9AABBA;
+  display: block;
+  margin-top: 4rpx;
+}
+
+.batch-arrow {
+  font-size: 32rpx;
+  color: #BCC8D4;
+  flex-shrink: 0;
+  margin-left: 12rpx;
+}
+
+.batch-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 2rpx solid #F3F2EF;
+}
+
+.stat-chip {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 22rpx;
+  padding: 6rpx 14rpx;
+  border-radius: 8rpx;
+  font-weight: 500;
+}
+
+.stat-dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+}
+
+.stat-pending {
+  background: #F5F1EB;
+  color: #C49A6B;
+}
+
+.stat-pending .stat-dot {
+  background: #C49A6B;
+}
+
+.stat-approved {
+  background: #EFF5EF;
+  color: #6B9B6B;
+}
+
+.stat-approved .stat-dot {
+  background: #6B9B6B;
+}
+
+.stat-rejected {
+  background: #F5EFEF;
+  color: #C47A7A;
+}
+
+.stat-rejected .stat-dot {
+  background: #C47A7A;
+}
