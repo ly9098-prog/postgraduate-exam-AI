@@ -1,0 +1,43 @@
+<view class="page">
+  <!-- 结果头部 -->
+  <view class="result-hero {{passRate >= 60 ? 'pass' : 'fail'}}">
+    <text class="hero-icon">{{passRate >= 60 ? '🎉' : '💪'}}</text>
+    <text class="hero-title">{{passRate >= 60 ? '做得不错' : '继续加油'}}</text>
+    <view class="hero-score">
+      <text class="score-num">{{passRate || 0}}</text>
+      <text class="score-percent">%</text>
+    </view>
+    <text class="score-label">正确率</text>
+  </view>
+
+  <!-- 统计数据 -->
+  <view class="stats-card">
+    <view class="stat-row">
+      <text class="stat-key">科目</text>
+      <text class="stat-val">{{subjectLabel(subject) || '-'}}</text>
+    </view>
+    <view class="stat-row">
+      <text class="stat-key">总题数</text>
+      <text class="stat-val">{{total || 0}}</text>
+    </view>
+    <view class="stat-row">
+      <text class="stat-key">正确</text>
+      <text class="stat-val green">{{correct || 0}}</text>
+    </view>
+    <view class="stat-row">
+      <text class="stat-key">错误</text>
+      <text class="stat-val red">{{wrong || 0}}</text>
+    </view>
+    <view class="stat-row">
+      <text class="stat-key">用时</text>
+      <text class="stat-val">{{durationText}}</text>
+    </view>
+  </view>
+
+  <!-- 操作 -->
+  <view class="actions">
+    <button class="btn-primary" bindtap="goWrongBook">查看错题</button>
+    <button class="btn-secondary" bindtap="practiceAgain">再来一组</button>
+    <button class="btn-text" bindtap="goHome">返回首页</button>
+  </view>
+</view>

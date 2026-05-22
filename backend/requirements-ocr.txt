@@ -1,0 +1,16 @@
+# 阶段八 OCR 可选依赖（扫描版 PDF 识别用）
+#
+# 这些包体积大（~500MB），且只有 OCR_ENABLED=true 时才需要。
+# 主 requirements.txt 不包含它们，启动后端不依赖。
+#
+# 安装：
+#   pip install -r requirements-ocr.txt
+#
+# 注意：
+#   - paddlepaddle 在 Python 3.12 上需 >= 2.6.2
+#   - 推荐在 Docker 容器或专用环境内安装
+#   - 不装这些包时，扫描版 PDF 走 OCR 通道会跳过，文本型 PDF 不受影响
+paddleocr==2.7.3
+paddlepaddle>=2.6.2
+Pillow==10.3.0
+numpy>=1.26
