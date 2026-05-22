@@ -1,0 +1,52 @@
+<view class="login-page">
+  <!-- 背景装饰 -->
+  <view class="bg-glow bg-glow-1"></view>
+  <view class="bg-glow bg-glow-2"></view>
+  <view class="bg-glow bg-glow-3"></view>
+
+  <!-- 品牌区域 -->
+  <view class="brand-area">
+    <view class="brand-icon-wrap">
+      <text class="brand-icon">📖</text>
+    </view>
+    <text class="brand-name">MemoGrad</text>
+    <text class="brand-slogan">每天一点进步，稳步上岸</text>
+  </view>
+
+  <!-- 抽象学习视觉 -->
+  <view class="hero-visual">
+    <view class="book-shape">
+      <view class="book-spine"></view>
+      <view class="book-page book-page-1"></view>
+      <view class="book-page book-page-2"></view>
+    </view>
+    <view class="float-dot dot-1"></view>
+    <view class="float-dot dot-2"></view>
+    <view class="float-dot dot-3"></view>
+    <view class="float-line line-1"></view>
+    <view class="float-line line-2"></view>
+  </view>
+
+  <!-- 登录卡片 -->
+  <view class="login-card">
+    <text class="login-title">开始学习</text>
+    <text class="login-desc">使用微信身份，无需注册</text>
+
+    <button class="btn-wechat" bindtap="onWechatLogin" loading="{{loading}}" disabled="{{loading}}">
+      <text class="btn-wechat-text">微信一键登录</text>
+    </button>
+
+    <view wx:if="{{showDevLogin}}" class="dev-entry" bindtap="onDevLogin">
+      <text>开发者模式</text>
+      <text class="dev-arrow">→</text>
+    </view>
+
+    <view wx:if="{{error}}" class="error-msg">{{error}}</view>
+  </view>
+
+  <!-- 底部信任信息 -->
+  <view class="footer">
+    <text class="footer-text">登录即表示同意 用户协议 和 隐私政策</text>
+    <text class="footer-text">学习数据仅保存在本地</text>
+  </view>
+</view>

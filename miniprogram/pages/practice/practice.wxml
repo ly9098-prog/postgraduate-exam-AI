@@ -1,0 +1,161 @@
+<view class="page">
+  <!-- ==================== 设置页 ==================== -->
+  <view class="setup" wx:if="{{!started}}">
+    <view class="page-head">
+      <text class="page-title">随机练习</text>
+      <text class="page-desc">选择科目和题数开始刷题</text>
+    </view>
+
+    <view class="card">
+      <text class="section-label">选择科目</text>
+      <view class="subject-grid">
+        <view
+          class="subject-item {{selectedSubject==='math2' ? 'active' : ''}}"
+          bindtap="chooseSubject" data-subject="math2"
+        >
+          <text class="subject-icon">📐</text>
+          <text class="subject-name">数学二</text>
+        </view>
+        <view
+          class="subject-item {{selectedSubject==='exam408' ? 'active' : ''}}"
+          bindtap="chooseSubject" data-subject="exam408"
+        >
+          <text class="subject-icon">💻</text>
+          <text class="subject-name">408</text>
+        </view>
+        <view
+          class="subject-item {{selectedSubject==='english' ? 'active' : ''}}"
+          bindtap="chooseSubject" data-subject="english"
+        >
+          <text class="subject-icon">📖</text>
+          <text class="subject-name">英语</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{selectedSubject}}">
+      <text class="section-label">题数</text>
+      <view class="count-row">
+        <view class="count-btn {{count===5 ? 'active' : ''}}" bindtap="setCount" data-count="5">5 题</view>
+        <view class="count-btn {{count===10 ? 'active' : ''}}" bindtap="setCount" data-count="10">10 题</view>
+        <view class="count-btn {{count===20 ? 'active' : ''}}" bindtap="setCount" data-count="20">20 题</view>
+      </view>
+    </view>
+
+    <button
+      class="btn-start"
+      disabled="{{!selectedSubject}}"
+      bindtap="startPractice"
+    >
+      开始练习
+    </button>
+  </view>
+
+  <!-- ==================== 答题页 ==================== -->
+  <view class="practice" wx:if="{{started && !loading}}">
+    <!-- 顶部状态栏 -->
+    <view class="top-bar">
+      <view class="bar-left">
+        <text class="bar-subject">{{subjectLabel(selectedSubject)}}</text>
+        <text class="bar-counter">{{currentIndex + 1}} / {{totalQuestions || 0}}</text>
+      </view>
+      <view class="bar-right">
+        <text class="bar-timer">{{elapsedText}}</text>
+        <view class="bar-sheet-btn" bindtap="toggleSheet">
+          <text class="sheet-icon">☰</text>
+          <text class="sheet-badge" wx:if="{{answeredCount > 0}}">{{answeredCount}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 进度条 -->
+    <view class="progress-track">
+      <view class="progress-fill" style="width:{{totalQuestions > 0 ? (currentIndex + 1) / totalQuestions * 100 : 0}}%"></view>
+    </view>
+
+    <!-- 滑动容器 -->
+    <view
+      class="question-area"
+      bindtouchstart="onTouchStart"
+      bindtouchend="onTouchEnd"
+    >
+      <!-- 题目卡片 -->
+      <view class="q-wrap {{animClass}}" wx:if="{{currentQuestion}}">
+        <view class="q-badge">{{currentQuestion.question_type === 'multiple_choice' ? '多选题' : '单选题'}}</view>
+        <view class="q-content">{{currentQuestion.content.text}}</view>
+
+        <!-- 选项 -->
+        <view class="options" wx:if="{{optionKeys.length > 0}}">
+          <view
+            wx:for="{{optionKeys}}"
+            wx:key="*this"
+            class="option-item {{selectedFlags[item] ? 'selected' : ''}}"
+            bindtap="selectOption"
+            data-option="{{item}}"
+          >
+            <view class="option-indicator {{selectedFlags[item] ? 'checked' : ''}}">
+              <text wx:if="{{selectedFlags[item]}}" class="check-mark">{{selectedFlags[item] && currentQuestion.question_type === 'multiple_choice' ? '✓' : '●'}}</text>
+            </view>
+            <view class="option-body">
+              <text class="option-key">{{item}}.</text>
+              <text class="option-text">{{currentQuestion.options[item]}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 底部操作栏 -->
+    <view class="bottom-bar">
+      <view class="bottom-inner">
+        <view class="nav-btn prev {{currentIndex <= 0 ? 'disabled' : ''}}" bindtap="goPrev">
+          <text class="nav-arrow">‹</text>
+          <text class="nav-label">上一题</text>
+        </view>
+
+        <view class="nav-center">
+          <view class="dot {{i === currentIndex ? 'active' : ''}}" wx:for="{{questions}}" wx:key="index" data-index="{{i}}" bindtap="goQuestion"></view>
+        </view>
+
+        <view class="nav-btn next {{currentIndex >= totalQuestions - 1 ? 'disabled' : ''}}" bindtap="goNext">
+          <text class="nav-label">下一题</text>
+          <text class="nav-arrow">›</text>
+        </view>
+      </view>
+      <button class="btn-submit" bindtap="doSubmit" loading="{{submitting}}">
+        交卷（{{answeredCount || 0}}/{{totalQuestions || 0}}）
+      </button>
+    </view>
+  </view>
+
+  <!-- 加载 -->
+  <view class="loading-wrap" wx:if="{{started && loading}}">
+    <view class="loading-spinner"></view>
+    <text class="loading-text">加载题目中...</text>
+  </view>
+
+  <!-- ==================== 答题卡弹窗 ==================== -->
+  <view class="sheet-overlay" wx:if="{{showSheet}}" bindtap="closeSheet">
+    <view class="sheet-modal" catchtap="noop">
+      <view class="sheet-head">
+        <text class="sheet-title">答题卡</text>
+        <text class="sheet-close" bindtap="closeSheet">✕</text>
+      </view>
+      <view class="sheet-stats">
+        <text class="sheet-stat">已完成 {{answeredCount || 0}} / {{totalQuestions || 0}} 题</text>
+      </view>
+      <view class="sheet-grid">
+        <view
+          wx:for="{{questions}}"
+          wx:key="id"
+          class="sheet-cell {{answerMap[String(item.id)] ? 'done' : ''}} {{currentIndex === index ? 'current' : ''}}"
+          data-index="{{index}}"
+          bindtap="goQuestion"
+        >
+          {{index + 1}}
+        </view>
+      </view>
+      <button class="btn-submit sheet-submit" bindtap="doSubmit">交卷</button>
+    </view>
+  </view>
+</view>

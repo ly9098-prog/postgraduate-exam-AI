@@ -1,0 +1,47 @@
+<view class="page-title">错题本</view>
+
+<!-- 统计 -->
+<view class="card stats-mini">
+  <view class="mini-stat" bindtap="switchFilter" data-filter="all">
+    <text class="mini-num">{{stats.total || 0}}</text>
+    <text class="mini-label">全部</text>
+  </view>
+  <view class="mini-stat" bindtap="switchFilter" data-filter="unmastered">
+    <text class="mini-num orange">{{stats.unmastered || 0}}</text>
+    <text class="mini-label">待复习</text>
+  </view>
+  <view class="mini-stat" bindtap="switchFilter" data-filter="mastered">
+    <text class="mini-num green">{{stats.mastered || 0}}</text>
+    <text class="mini-label">已掌握</text>
+  </view>
+</view>
+
+<!-- 筛选 -->
+<view class="filter-bar">
+  <view class="chip {{filter==='all' ? 'chip-active' : ''}}" bindtap="switchFilter" data-filter="all">全部</view>
+  <view class="chip {{filter==='unmastered' ? 'chip-active' : ''}}" bindtap="switchFilter" data-filter="unmastered">待复习</view>
+  <view class="chip {{filter==='mastered' ? 'chip-active' : ''}}" bindtap="switchFilter" data-filter="mastered">已掌握</view>
+</view>
+
+<!-- 列表 -->
+<view wx:if="{{loading}}" class="loading">加载中...</view>
+
+<view wx:if="{{!loading && list.length === 0}}" class="empty-state">
+  <text style="font-size:60rpx;margin-bottom:20rpx">🎉</text>
+  <text>没有错题，继续保持！</text>
+</view>
+
+<view wx:for="{{list}}" wx:key="id" class="wrong-card" bindtap="goDetail" data-id="{{item.id}}">
+  <view class="wrong-header">
+    <text class="subject-tag">{{subjectLabel(item.subject)}}</text>
+    <text class="error-tag tag {{item.error_type}}">{{errorTypeLabel(item.error_type)}}</text>
+    <text wx:if="{{item.mastered}}" class="tag tag-success">已掌握</text>
+  </view>
+  <view class="wrong-question">{{item.content.text}}</view>
+  <view class="wrong-meta">
+    <text>复习 {{item.review_count}} 次</text>
+    <text wx:if="!item.mastered">待复习 🤔</text>
+  </view>
+</view>
+
+<view class="load-more" wx:if="{{hasMore}}" bindtap="loadMore">加载更多</view>

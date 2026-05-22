@@ -1,0 +1,87 @@
+<view class="page">
+  <!-- 页面标题 -->
+  <view class="page-head">
+    <text class="page-title">题库导入</text>
+  </view>
+
+  <!-- 上传区域 -->
+  <view class="upload-zone" bindtap="chooseFile">
+    <view class="upload-icon-wrap">
+      <text class="upload-icon">📤</text>
+    </view>
+    <text class="upload-title">上传题目文件</text>
+    <text class="upload-desc">支持 .xlsx / .xls / .pdf 格式</text>
+    <view class="upload-hint">
+      <text class="hint-dot">●</text>
+      <text class="hint-text">文件将进入暂存区，审核后入库</text>
+    </view>
+  </view>
+
+  <!-- 模板下载 -->
+  <view class="template-bar" bindtap="downloadTemplate">
+    <text class="template-icon">📋</text>
+    <view class="template-info">
+      <text class="template-label">下载导入模板</text>
+      <text class="template-desc">按模板格式填写，导入更稳定</text>
+    </view>
+    <text class="template-arrow">›</text>
+  </view>
+
+  <!-- 分隔 -->
+  <view class="section-divider">
+    <view class="divider-line"></view>
+    <text class="divider-text">导入记录</text>
+    <view class="divider-line"></view>
+  </view>
+
+  <!-- 加载态 -->
+  <view class="loading-wrap" wx:if="{{loading}}">
+    <view class="loading-spinner"></view>
+    <text class="loading-text">加载中...</text>
+  </view>
+
+  <!-- 空态 -->
+  <view class="empty-state" wx:elif="{{batches.length === 0}}">
+    <text class="empty-icon">📂</text>
+    <text class="empty-title">暂无导入记录</text>
+    <text class="empty-desc">点击上方区域上传题目文件</text>
+  </view>
+
+  <!-- 导入批次列表 -->
+  <view class="batch-list" wx:else>
+    <view
+      class="batch-card"
+      wx:for="{{batches}}"
+      wx:key="batch_id"
+      data-batch-id="{{item.batch_id}}"
+      bindtap="goBatch"
+    >
+      <view class="batch-top">
+        <view class="batch-left">
+          <text class="batch-icon {{item.source_type}}">
+            {{item.source_type === 'excel' ? '📊' : '📄'}}
+          </text>
+          <view class="batch-info">
+            <text class="batch-name">{{item.source_file || item.batch_id}}</text>
+            <text class="batch-meta">{{item.total}} 道题 · {{item._date}}</text>
+          </view>
+        </view>
+        <text class="batch-arrow">›</text>
+      </view>
+      <view class="batch-stats">
+        <view class="stat-chip stat-pending" wx:if="{{item.pending > 0}}">
+          <text class="stat-dot"></text>
+          {{item.pending}} 待审核
+        </view>
+        <view class="stat-chip stat-approved" wx:if="{{item.approved > 0}}">
+          <text class="stat-dot"></text>
+          {{item.approved}} 已通过
+        </view>
+        <view class="stat-chip stat-rejected" wx:if="{{item.rejected > 0}}">
+          <text class="stat-dot"></text>
+          {{item.rejected}} 已拒绝
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

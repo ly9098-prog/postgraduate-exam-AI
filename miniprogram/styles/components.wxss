@@ -1,0 +1,346 @@
+/* ============================================
+   2240AI — Component Classes
+   Style: card-based, soft shadows, muted feedback
+   ============================================ */
+
+/* ── Card ── */
+.card {
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 30rpx;
+  margin: 16rpx 24rpx;
+  box-shadow: 0 4rpx 24rpx rgba(43, 60, 80, 0.05);
+}
+
+.card-flat {
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 30rpx;
+  margin: 12rpx 24rpx;
+}
+
+.card-nopad {
+  background: #fff;
+  border-radius: 20rpx;
+  margin: 12rpx 24rpx;
+  overflow: hidden;
+}
+
+.card-compact {
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 24rpx;
+  margin: 12rpx 24rpx;
+  box-shadow: 0 4rpx 24rpx rgba(43, 60, 80, 0.05);
+}
+
+/* ── Buttons ── */
+.btn {
+  border-radius: 14rpx;
+  padding: 26rpx 0;
+  font-size: 30rpx;
+  font-weight: 500;
+  text-align: center;
+  width: 100%;
+  border: none;
+}
+
+.btn:active { opacity: 0.88; }
+
+.btn-primary {
+  background: #5B7B9A;
+  color: #fff;
+}
+
+.btn-secondary {
+  background: #EDF1F5;
+  color: #5B7B9A;
+}
+
+.btn-danger {
+  background: #C47A7A;
+  color: #fff;
+}
+
+.btn-wechat {
+  background: #07C160;
+  color: #fff;
+}
+
+.btn-text {
+  background: none;
+  color: #9AABBA;
+  font-size: 28rpx;
+  padding: 24rpx 0;
+}
+
+.btn-link {
+  background: none;
+  color: #5B7B9A;
+  font-size: 28rpx;
+  padding: 16rpx 0;
+  width: auto;
+  display: inline-block;
+}
+
+.btn-small {
+  background: #EDF1F5;
+  color: #5B7B9A;
+  font-size: 26rpx;
+  padding: 12rpx 32rpx;
+  border-radius: 10rpx;
+  display: inline-block;
+  border: none;
+}
+
+.btn-small:active { opacity: 0.85; }
+
+.btn-small-primary {
+  background: #5B7B9A;
+  color: #fff;
+  font-size: 26rpx;
+  padding: 12rpx 32rpx;
+  border-radius: 10rpx;
+  display: inline-block;
+  border: none;
+}
+
+/* ── Tags ── */
+.tag {
+  display: inline-block;
+  padding: 6rpx 16rpx;
+  border-radius: 8rpx;
+  font-size: 22rpx;
+  line-height: 1.4;
+}
+
+.tag-primary {
+  background: #EDF1F5;
+  color: #5B7B9A;
+}
+
+.tag-success {
+  background: #EFF5EF;
+  color: #6B9B6B;
+}
+
+.tag-warning {
+  background: #F5F1EB;
+  color: #C49A6B;
+}
+
+.tag-danger {
+  background: #F5EFEF;
+  color: #C47A7A;
+}
+
+/* ── List Item ── */
+.list-item {
+  display: flex;
+  align-items: center;
+  padding: 28rpx 30rpx;
+  border-bottom: 1rpx solid #EDEBE6;
+}
+
+.list-item:last-child { border-bottom: none; }
+
+.list-item-icon { font-size: 36rpx; margin-right: 20rpx; }
+
+.list-item-text {
+  flex: 1;
+  font-size: 30rpx;
+  color: #2D3E50;
+}
+
+.list-item-arrow {
+  font-size: 36rpx;
+  color: #D0CEC8;
+}
+
+/* ── Stat Number ── */
+.stat-num {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #5B7B9A;
+}
+
+.stat-label {
+  font-size: 24rpx;
+  color: #9AABBA;
+  margin-top: 8rpx;
+}
+
+/* ── Progress Bar ── */
+.progress-bg {
+  height: 8rpx;
+  background: #EDF1F5;
+  border-radius: 4rpx;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: #5B7B9A;
+  border-radius: 4rpx;
+  transition: width 0.3s;
+}
+
+/* ── Subject Selector ── */
+.subject-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 30rpx 0;
+  background: #F3F2EF;
+  border-radius: 20rpx;
+  font-size: 28rpx;
+  color: #6B7B8D;
+  border: 2rpx solid transparent;
+}
+
+.subject-active {
+  background: #EDF1F5;
+  border-color: #5B7B9A;
+  color: #5B7B9A;
+  font-weight: 600;
+}
+
+.subject-icon { font-size: 48rpx; margin-bottom: 12rpx; }
+
+/* ── Filter Chips ── */
+.chip {
+  padding: 10rpx 28rpx;
+  font-size: 26rpx;
+  color: #6B7B8D;
+  background: #F3F2EF;
+  border-radius: 24rpx;
+  display: inline-block;
+}
+
+.chip-active {
+  background: #5B7B9A;
+  color: #fff;
+}
+
+/* ── Empty State ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 120rpx 40rpx;
+  color: #9AABBA;
+  font-size: 30rpx;
+}
+
+/* ── Loading ── */
+.loading {
+  text-align: center;
+  padding: 60rpx 0;
+  color: #9AABBA;
+}
+
+/* ── Page Title ── */
+.page-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #2D3E50;
+  padding: 28rpx 24rpx 16rpx;
+}
+
+/* ── Answer Options ── */
+.option-btn {
+  background: #F3F2EF;
+  border-radius: 16rpx;
+  padding: 26rpx 28rpx;
+  margin: 10rpx 0;
+  font-size: 30rpx;
+  border: 2rpx solid transparent;
+  display: flex;
+  align-items: center;
+}
+
+.option-btn:active { opacity: 0.8; }
+
+.option-selected {
+  border-color: #5B7B9A;
+  background: #EDF1F5;
+}
+
+.option-correct {
+  border-color: #6B9B6B;
+  background: #EFF5EF;
+}
+
+.option-wrong {
+  border-color: #C47A7A;
+  background: #F5EFEF;
+}
+
+.option-key {
+  font-weight: 600;
+  width: 48rpx;
+  color: #6B7B8D;
+}
+
+.option-text { flex: 1; color: #2D3E50; }
+
+/* ── Result Badge ── */
+.result-badge {
+  text-align: center;
+  font-size: 30rpx;
+  font-weight: 600;
+  padding: 20rpx;
+  border-radius: 14rpx;
+}
+
+.badge-correct {
+  background: #EFF5EF;
+  color: #6B9B6B;
+}
+
+.badge-wrong {
+  background: #F5EFEF;
+  color: #C47A7A;
+}
+
+/* ── Section Title ── */
+.section-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #2D3E50;
+  margin-bottom: 20rpx;
+}
+
+/* ── Subject Tag ── */
+.subject-tag {
+  font-size: 22rpx;
+  color: #5B7B9A;
+  background: #EDF1F5;
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+}
+
+/* ── Question Text ── */
+.q-text {
+  font-size: 32rpx;
+  line-height: 1.7;
+  color: #2D3E50;
+  margin-bottom: 24rpx;
+}
+
+/* ── Input ── */
+.input-field {
+  background: #F3F2EF;
+  border-radius: 14rpx;
+  padding: 24rpx 28rpx;
+  font-size: 30rpx;
+  width: 100%;
+  box-sizing: border-box;
+  color: #2D3E50;
+}
+
+.input-field::placeholder {
+  color: #BCC8D4;
+}

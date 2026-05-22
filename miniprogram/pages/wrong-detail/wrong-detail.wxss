@@ -1,0 +1,162 @@
+/* wrong-detail — 错题详情专属样式 */
+@import '../../styles/tokens.wxss';
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-bottom: 20rpx;
+  flex-wrap: wrap;
+}
+
+.options-list { margin-bottom: 16rpx; }
+
+.option-line {
+  display: flex;
+  padding: 12rpx 0;
+  font-size: 28rpx;
+}
+
+.option-value { flex: 1; color: #2D3E50; }
+
+.option-value.right {
+  color: #6B9B6B;
+  font-weight: 600;
+}
+
+.option-value.wrong {
+  color: #C47A7A;
+  text-decoration: line-through;
+}
+
+.answer-row {
+  display: flex;
+  padding: 8rpx 0;
+  font-size: 28rpx;
+}
+
+.answer-label { color: #6B7B8D; width: 140rpx; }
+
+.answer-value { font-weight: 600; color: #6B9B6B; }
+
+.answer-value.wrong { color: #C47A7A; }
+
+.wrong-answer {
+  background: #F5F1EB;
+  padding: 12rpx 16rpx;
+  border-radius: 12rpx;
+  margin-top: 8rpx;
+}
+
+/* AI 分析 */
+.ai-section {
+  margin: 20rpx 0;
+  padding: 20rpx;
+  background: #F7F6F2;
+  border-radius: 16rpx;
+}
+
+.ai-label {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #5B7B9A;
+  display: block;
+  margin-bottom: 8rpx;
+}
+
+.ai-text {
+  font-size: 28rpx;
+  color: #555;
+  line-height: 1.7;
+}
+
+.ai-hint {
+  display: block;
+  text-align: center;
+  font-size: 22rpx;
+  color: #BCC8D4;
+  margin-top: 16rpx;
+}
+
+.ai-loading {
+  text-align: center;
+  padding: 40rpx;
+  color: #6B7B8D;
+}
+
+.dot-animation {
+  animation: blink 1.5s infinite;
+}
+
+@keyframes blink { 0%,100%{opacity:.3} 50%{opacity:1} }
+
+.ai-fallback {
+  text-align: center;
+  padding: 40rpx;
+  color: #9AABBA;
+}
+
+/* SM-2 质量评分 */
+.rating-card { margin-top: 0; }
+
+.rating-options {
+  display: flex;
+  justify-content: space-between;
+  gap: 10rpx;
+  margin: 20rpx 0;
+}
+
+.rating-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16rpx 6rpx;
+  border: 2rpx solid #E0E0E0;
+  border-radius: 16rpx;
+  background: #FAFAFA;
+  transition: all 0.15s;
+}
+
+.rating-btn.rating-active {
+  border-color: #4A90D9;
+  background: #EBF3FC;
+  transform: scale(1.05);
+}
+
+.rating-num {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #2D3E50;
+}
+
+.rating-label {
+  font-size: 22rpx;
+  color: #6B7B8D;
+  margin-top: 4rpx;
+  text-align: center;
+}
+
+.rating-desc {
+  text-align: center;
+  font-size: 26rpx;
+  font-weight: 500;
+  margin: 8rpx 0;
+}
+
+.rating-result {
+  text-align: center;
+  padding: 24rpx;
+  font-size: 30rpx;
+  color: #27ae60;
+}
+
+.sm2-info {
+  margin-top: 16rpx;
+  padding: 12rpx 16rpx;
+  background: #F5F5F5;
+  border-radius: 12rpx;
+  font-size: 24rpx;
+  color: #9AABBA;
+  text-align: center;
+}
