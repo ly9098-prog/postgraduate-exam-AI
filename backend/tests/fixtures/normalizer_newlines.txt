@@ -1,0 +1,37 @@
+1. 设函数 f(x) 在区间
+[0, 1] 上连续，在
+(0, 1) 内可导，且
+f(0) = 0，f(1) = 1。
+证明：存在 ξ ∈ (0, 1)，使
+得 f'(ξ) = 2ξ。
+
+
+2. 下列关于线性
+方程组的解的说法，正
+确的是（　）
+
+A. 齐次线性方程
+组一定有解
+
+B. 非齐次线性方程组
+可能无解
+
+C. 若系数矩阵的秩为
+r，则解空间的维数为
+n - r
+
+D. 以上说法均正确
+
+
+3. This is a complete sentence.
+The next line starts a new idea that continues
+on this second line without a period at the end
+
+
+4. 正常段落，句号结尾。
+
+
+5. 另一个正常段落。
+
+
+6. 第三个段落。

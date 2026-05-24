@@ -1,0 +1,157 @@
+@import '../../styles/tokens.wxss';
+
+.page {
+  min-height: 100vh;
+  background: #F7F5F0;
+  padding-bottom: 48rpx;
+}
+
+/* 结果头部 */
+.result-hero {
+  text-align: center;
+  padding: 64rpx 40rpx 40rpx;
+  margin: 24rpx 24rpx 0;
+  border-radius: 24rpx;
+}
+
+.result-hero.pass {
+  background: #F0F5F0;
+}
+
+.result-hero.fail {
+  background: #F5F1EF;
+}
+
+.hero-icon {
+  font-size: 72rpx;
+  display: block;
+}
+
+.hero-title {
+  display: block;
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #222;
+  margin-top: 16rpx;
+}
+
+.hero-score {
+  margin-top: 24rpx;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+}
+
+.score-num {
+  font-size: 80rpx;
+  font-weight: 800;
+  color: #5B7B9A;
+  line-height: 1;
+}
+
+.score-percent {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #5B7B9A;
+  margin-left: 4rpx;
+}
+
+.score-label {
+  display: block;
+  font-size: 24rpx;
+  color: #9AABBA;
+  margin-top: 8rpx;
+}
+
+/* 统计卡片 */
+.stats-card {
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 24rpx;
+  margin: 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0,0,0,0.04);
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 0;
+}
+
+.stat-row + .stat-row {
+  border-top: 2rpx solid #F3F2EF;
+}
+
+.stat-key {
+  font-size: 28rpx;
+  color: #6B7B8D;
+}
+
+.stat-val {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #222;
+}
+
+.stat-val.green {
+  color: #6B9B6B;
+}
+
+.stat-val.red {
+  color: #C47A7A;
+}
+
+/* 操作按钮 */
+.actions {
+  padding: 8rpx 24rpx 48rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.btn-primary {
+  width: 100%;
+  background: #5B7B9A;
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 600;
+  padding: 26rpx 0;
+  border-radius: 16rpx;
+  border: none;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.btn-primary::after { border: none; }
+.btn-primary:active { opacity: 0.88; }
+
+.btn-secondary {
+  width: 100%;
+  background: #EDF1F5;
+  color: #5B7B9A;
+  font-size: 30rpx;
+  font-weight: 500;
+  padding: 26rpx 0;
+  border-radius: 16rpx;
+  border: none;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.btn-secondary::after { border: none; }
+.btn-secondary:active { opacity: 0.85; }
+
+.btn-text {
+  width: 100%;
+  background: none;
+  color: #9AABBA;
+  font-size: 28rpx;
+  padding: 20rpx 0;
+  border: none;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.btn-text::after { border: none; }
+.btn-text:active { opacity: 0.7; }

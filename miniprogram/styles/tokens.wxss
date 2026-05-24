@@ -1,0 +1,108 @@
+/* ============================================
+   2240AI Design System — Design Tokens
+   Palette: muted slate-blue + warm ivory + sage
+   Mood: calm, focused, scholarly
+   ============================================ */
+
+/* ── Color: Backgrounds ── */
+.bg-page { background: #F7F5F0; }
+.bg-card { background: #fff; }
+.bg-input { background: #F3F2EF; }
+.bg-wechat { background: #07C160; }
+
+/* ── Color: Primary (muted slate-blue) ── */
+.color-primary { color: #5B7B9A; }
+.bg-primary { background: #5B7B9A; }
+.bg-primary-light { background: #EDF1F5; }
+
+/* ── Color: Success (sage green) ── */
+.color-success { color: #6B9B6B; }
+.bg-success { background: #6B9B6B; }
+.bg-success-light { background: #EFF5EF; }
+
+/* ── Color: Warning (muted amber) ── */
+.color-warning { color: #C49A6B; }
+.bg-warning { background: #C49A6B; }
+.bg-warning-light { background: #F5F1EB; }
+
+/* ── Color: Danger (muted rose) ── */
+.color-danger { color: #C47A7A; }
+.bg-danger { background: #C47A7A; }
+.bg-danger-light { background: #F5EFEF; }
+
+/* ── Color: Text ── */
+.color-text-primary { color: #2D3E50; }
+.color-text-secondary { color: #6B7B8D; }
+.color-text-hint { color: #9AABBA; }
+.color-text-placeholder { color: #BCC8D4; }
+.color-border { color: #E8E5E0; }
+
+/* ── Spacing (8rpx = 4px @2x) ── */
+.p-xs { padding: 8rpx; }
+.p-sm { padding: 12rpx; }
+.p-md { padding: 16rpx; }
+.p-lg { padding: 20rpx; }
+.p-xl { padding: 24rpx; }
+.p-2xl { padding: 30rpx; }
+.p-3xl { padding: 40rpx; }
+
+.px-2xl { padding-left: 30rpx; padding-right: 30rpx; }
+
+.mt-xs { margin-top: 8rpx; }
+.mt-sm { margin-top: 12rpx; }
+.mt-md { margin-top: 16rpx; }
+.mt-lg { margin-top: 20rpx; }
+.mt-xl { margin-top: 24rpx; }
+.mt-2xl { margin-top: 30rpx; }
+.mt-3xl { margin-top: 40rpx; }
+
+.mb-sm { margin-bottom: 12rpx; }
+.mb-md { margin-bottom: 16rpx; }
+.mb-lg { margin-bottom: 20rpx; }
+.mb-xl { margin-bottom: 24rpx; }
+.mb-2xl { margin-bottom: 30rpx; }
+
+.ml-xs { margin-left: 8rpx; }
+.ml-sm { margin-left: 12rpx; }
+.ml-md { margin-left: 16rpx; }
+.ml-lg { margin-left: 20rpx; }
+
+.mr-xs { margin-right: 8rpx; }
+.mr-sm { margin-right: 12rpx; }
+.mr-md { margin-right: 16rpx; }
+.mr-lg { margin-right: 20rpx; }
+
+.gap-sm { gap: 12rpx; }
+.gap-md { gap: 16rpx; }
+.gap-lg { gap: 20rpx; }
+
+/* ── Typography ── */
+.text-h1 { font-size: 36rpx; font-weight: 700; color: #2D3E50; }
+.text-h2 { font-size: 32rpx; font-weight: 600; color: #2D3E50; }
+.text-body { font-size: 28rpx; color: #2D3E50; }
+.text-caption { font-size: 24rpx; color: #6B7B8D; }
+.text-small { font-size: 22rpx; color: #9AABBA; }
+.text-stat { font-size: 48rpx; font-weight: 700; color: #5B7B9A; }
+.text-stat-sm { font-size: 40rpx; font-weight: 700; color: #5B7B9A; }
+
+.text-center { text-align: center; }
+.text-bold { font-weight: 600; }
+.text-light { color: #6B7B8D; }
+
+/* ── Layout ── */
+.flex-row { display: flex; flex-direction: row; }
+.flex-col { display: flex; flex-direction: column; }
+.flex-center { justify-content: center; align-items: center; }
+.flex-between { display: flex; justify-content: space-between; align-items: center; }
+.flex-1 { flex: 1; }
+.flex-wrap { flex-wrap: wrap; }
+
+.full-width { width: 100%; }
+.block { display: block; }
+
+/* ── Border Radius ── */
+.radius-sm { border-radius: 8rpx; }
+.radius-md { border-radius: 12rpx; }
+.radius-lg { border-radius: 20rpx; }
+.radius-xl { border-radius: 28rpx; }
+.radius-full { border-radius: 50%; }

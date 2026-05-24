@@ -1,0 +1,37 @@
+from datetime import datetime
+
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, JSON, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.core.database import Base
+
+
+class QuestionImport(Base):
+    __tablename__ = "question_imports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    batch_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    source_file: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    subject: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    question_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    raw_data: Mapped[dict] = mapped_column(JSON, nullable=False)
+    parsed_content: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    parsed_options: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    parsed_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parsed_analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    question_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    # AI 辅助导题字段（阶段七）
+    ai_generated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ai_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    ai_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ai_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    ai_raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ai_answer_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

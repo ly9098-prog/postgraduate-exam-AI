@@ -1,0 +1,126 @@
+<view wx:if="{{loading}}" class="loading-wrap">
+  <view class="loading-spinner"></view>
+  <text class="loading-text">加载中...</text>
+</view>
+
+<view wx:if="{{!loading && wq}}">
+  <!-- 题目信息 -->
+  <view class="card">
+    <view class="detail-header">
+      <text class="subject-tag">{{subjectLabel(wq.subject)}}</text>
+      <text class="error-type-tag">{{errorTypeLabel(wq.error_type)}}</text>
+      <text wx:if="{{wq.mastered}}" class="tag tag-success">已掌握</text>
+    </view>
+
+    <mp-html class="q-text" content="{{stemHtml}}" lazy-load></mp-html>
+
+    <view wx:if="{{wq.options}}" class="options-list">
+      <view wx:for="{{optionKeys}}" wx:key="*this" class="option-line">
+        <text class="option-key">{{item}}.</text>
+        <mp-html
+          content="{{optHtml[item]}}"
+          class="option-value {{item === wq.answer ? 'right' : ''}} {{item === wq.wrong_answer ? 'wrong' : ''}}"
+          style="display:inline-block"
+        ></mp-html>
+      </view>
+    </view>
+
+    <view class="answer-row">
+      <text class="answer-label">正确答案：</text>
+      <text class="answer-value">{{wq.answer}}</text>
+    </view>
+    <view class="answer-row wrong-answer" wx:if="{{wq.wrong_answer}}">
+      <text class="answer-label">我的答案：</text>
+      <text class="answer-value wrong">{{wq.wrong_answer}}</text>
+    </view>
+
+    <view class="sm2-info" wx:if="{{wq.review_count > 0}}">
+      <text class="sm2-label">复习 {{wq.review_count}} 次 | EF {{wq.efactor}} | 间隔 {{wq.interval || 0}} 天</text>
+    </view>
+
+    <button class="btn-primary" style="margin-top:24rpx" bindtap="markMastered" wx:if="{{!wq.mastered && !rated}}">
+      标记已掌握
+    </button>
+  </view>
+
+  <!-- SM-2 质量评分 -->
+  <view class="card rating-card" wx:if="{{showRating && !rated}}">
+    <view class="section-title">📊 自我评分：记得怎么样？</view>
+
+    <view class="rating-options">
+      <view
+        wx:for="{{[0,1,2,3,4,5]}}"
+        wx:key="*this"
+        class="rating-btn {{rating === item ? 'rating-active' : ''}}"
+        bindtap="selectRating"
+        data-value="{{item}}"
+      >
+        <text class="rating-num">{{item}}</text>
+        <text class="rating-label">{{ratingLabel(item)}}</text>
+      </view>
+    </view>
+
+    <view class="rating-desc" wx:if="{{rating >= 0}}">
+      <text wx:if="{{rating < 3}}" style="color:#e74c3c">未通过 — 需要重新复习</text>
+      <text wx:if="{{rating >= 3}}" style="color:#27ae60">通过 — 下次间隔会更长</text>
+    </view>
+
+    <button
+      class="btn-primary"
+      style="margin-top:20rpx"
+      bindtap="submitRating"
+      disabled="{{rating < 0}}"
+      loading="{{submittingRating}}"
+    >
+      提交评分
+    </button>
+  </view>
+
+  <!-- 评分完成 -->
+  <view class="card" wx:if="{{rated}}">
+    <view class="section-title">✅ 评分完成</view>
+    <view class="rating-result">
+      <text wx:if="{{wq.mastered}}">🎉 已标记为掌握</text>
+      <text wx:else>下次复习日期：{{nextReviewDate || wq.next_review_date || '已安排'}}</text>
+    </view>
+  </view>
+
+  <!-- AI 分析 -->
+  <view class="card" wx:if="{{!aiLoading && aiResult}}">
+    <view class="section-title">🤖 AI 错题分析</view>
+
+    <view class="ai-section">
+      <text class="ai-label">📌 错误原因</text>
+      <text class="ai-text">{{aiResult.error_analysis}}</text>
+    </view>
+
+    <view class="ai-section">
+      <text class="ai-label">📖 薄弱知识点</text>
+      <text class="ai-text">{{aiResult.knowledge_weakness}}</text>
+    </view>
+
+    <view class="ai-section">
+      <text class="ai-label">💡 学习建议</text>
+      <text class="ai-text">{{aiResult.suggestion}}</text>
+    </view>
+
+    <text class="ai-hint">AI 分析由 DeepSeek 生成，仅供参考</text>
+  </view>
+
+  <!-- AI 加载 -->
+  <view class="card" wx:if="{{aiLoading}}">
+    <view class="section-title">🤖 AI 分析中...</view>
+    <view class="ai-loading">
+      <text>正在分析你的错题原因</text>
+      <text class="dot-animation">...</text>
+    </view>
+  </view>
+
+  <!-- AI 降级 -->
+  <view class="card" wx:if="{{!aiLoading && aiFallback}}">
+    <view class="ai-fallback">
+      <text>AI 分析暂时不可用</text>
+      <text style="font-size:26rpx;color:#999;margin-top:12rpx">建议先查看题目解析和知识点</text>
+    </view>
+  </view>
+</view>
