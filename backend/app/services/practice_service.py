@@ -7,6 +7,7 @@ from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
 from app.services.behavior_service import record_answer_behavior
+from app.services.review_scheduler import auto_schedule_wrong_question
 from app.services.wrong_question_service import record_wrong
 
 
@@ -80,6 +81,7 @@ async def submit_answer(
     is_wrong_added = False
     if not is_correct:
         await record_wrong(db, user_id, question_id, user_answer.strip())
+        await auto_schedule_wrong_question(db, user_id, question_id)
         is_wrong_added = True
 
     await record_answer_behavior(

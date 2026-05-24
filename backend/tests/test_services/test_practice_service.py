@@ -135,10 +135,12 @@ class TestSubmitAnswer:
 
         db = _make_mock_db()
         q = _make_question(1, answer="A")
-        # First execute: get question, second: record_wrong query, third: behavior query
+        # submit: get question → record_wrong query → auto_schedule query → auto_schedule get question → behavior query
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
             _make_execute_result(scalar_one_or_none=None),  # no existing wrong question
+            _make_execute_result(scalar_one_or_none=None),  # no existing review schedule
+            _make_execute_result(scalar_one_or_none=q),     # get question for subject
             _make_execute_result(scalar_one_or_none=None),  # no existing behavior
         ]
 
@@ -238,9 +240,12 @@ class TestBatchSubmit:
             _make_execute_result(scalars=[q1, q2]),
             # submit_answer q1 (correct → 1 execute: get question)
             _make_execute_result(scalar_one_or_none=q1),
-            # submit_answer q2 (wrong → 2 executes: get question + record_wrong)
+            # submit_answer q2 (wrong → 5 executes: get question + record_wrong + auto_schedule×2 + behavior)
             _make_execute_result(scalar_one_or_none=q2),
-            _make_execute_result(scalar_one_or_none=None),
+            _make_execute_result(scalar_one_or_none=None),  # no existing wrong question
+            _make_execute_result(scalar_one_or_none=None),  # no existing review schedule
+            _make_execute_result(scalar_one_or_none=q2),    # get question for subject
+            _make_execute_result(scalar_one_or_none=None),  # no existing behavior
         ]
 
         result = _run(batch_submit_answers(db, user_id=1, answers=[
@@ -438,6 +443,9 @@ class TestReviewWrongQuestion:
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),     # submit: get question
             _make_execute_result(scalar_one_or_none=None),  # submit: record_wrong lookup
+            _make_execute_result(scalar_one_or_none=None),  # submit: auto_schedule check schedule
+            _make_execute_result(scalar_one_or_none=q),     # submit: auto_schedule get question
+            _make_execute_result(scalar_one_or_none=None),  # submit: behavior lookup
             _make_execute_result(scalar_one_or_none=wq),    # review: get wrong_question
         ]
 
