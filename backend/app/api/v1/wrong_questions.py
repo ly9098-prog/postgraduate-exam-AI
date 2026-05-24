@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.question import Question
 from app.models.user import User
+from app.schemas.common import paginated_response
 from app.schemas.wrong_question import (
     WrongQuestionQualityUpdate,
     WrongQuestionResponse,
@@ -64,13 +65,12 @@ async def list_wrong(
     else:
         questions = {}
 
-    return {
-        "items": [enrich_wq(w, questions.get(w.question_id)) for w in items],
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": (total + page_size - 1) // page_size,
-    }
+    return paginated_response(
+        items=[enrich_wq(w, questions.get(w.question_id)) for w in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/stats", response_model=WrongQuestionStats)
