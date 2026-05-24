@@ -34,6 +34,14 @@
     </view>
 
     <view class="card" wx:if="{{selectedSubject}}">
+      <text class="section-label">刷题模式</text>
+      <view class="count-row">
+        <view class="count-btn {{selectedMode==='random' ? 'active' : ''}}" bindtap="chooseMode" data-mode="random">随机</view>
+        <view class="count-btn {{selectedMode==='sequential' ? 'active' : ''}}" bindtap="chooseMode" data-mode="sequential">顺序</view>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{selectedSubject}}">
       <text class="section-label">题数</text>
       <view class="count-row">
         <view class="count-btn {{count===5 ? 'active' : ''}}" bindtap="setCount" data-count="5">5 题</view>

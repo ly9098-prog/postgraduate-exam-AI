@@ -68,6 +68,44 @@ async def random_question(
     return q
 
 
+@router.get("/{question_id}/detail")
+async def get_question_detail(
+    question_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from sqlalchemy import func, select
+
+    from app.models.practice_record import PracticeRecord
+
+    result = await db.execute(
+        select(func.count(PracticeRecord.id)).where(
+            PracticeRecord.user_id == current_user.id,
+            PracticeRecord.question_id == question_id,
+        )
+    )
+    if result.scalar() == 0:
+        raise HTTPException(
+            status_code=403,
+            detail="请先完成答题后再查看答案",
+        )
+
+    q = await svc.get_by_id(db, question_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="题目不存在")
+
+    return {
+        "id": q.id,
+        "subject": q.subject,
+        "question_type": q.question_type,
+        "content": q.content,
+        "options": q.options,
+        "answer": q.answer,
+        "analysis": q.analysis,
+        "knowledge_points": q.knowledge_points,
+    }
+
+
 @router.get("/{question_id}", response_model=QuestionResponse)
 async def get_question(
     question_id: int,

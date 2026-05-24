@@ -12,7 +12,7 @@
 | questions | 正式题目库 | subject, content(JSON), options(JSON) |
 | question_imports | 导入暂存区 | batch_id, status(pending/approved/rejected) |
 | wrong_questions | 错题记录 + SM-2 调度字段 | efactor, interval, repetitions, next_review_date |
-| practice_records | 练习记录 | question_ids(JSON), answers(JSON) |
+| practice_records | 练习记录（每题一条） | user_answer, is_correct, used_time |
 | answer_behaviors | 答题行为明细 | time_spent, switch_count, is_correct |
 | review_plans | 复习计划（预留） | (表结构待创建) |
 | ai_chats | AI 对话记录 | session_type, tokens_used, duration_ms |
@@ -207,15 +207,13 @@ class PracticeRecord(Base):
 
     id: int                 # PK
     user_id: int            # FK → users.id（索引）
+    question_id: int        # FK → questions.id（索引）
     subject: str            # math2 / exam408 / english
-    mode: str               # random / review / exam
-    question_ids: list      # JSON: [1, 2, 3]
-    answers: dict           # JSON: {"1": "A", "2": "B"}
-    correct_count: int      # 正确数
-    wrong_count: int        # 错误数
-    duration_sec: int       # 总耗时（秒）
-    started_at: datetime    # 开始时间
-    finished_at: datetime?  # 结束时间
+    question_type: str      # choice / fill / subjective
+    user_answer: str        # 用户提交的答案（Text）
+    is_correct: bool        # 是否正确
+    used_time: int?         # 耗时（秒），可为空
+    answered_at: datetime   # 答题时间
     created_at: datetime
 ```
 
@@ -223,16 +221,25 @@ class PracticeRecord(Base):
 |------|------|------|
 | id | Integer | PK, autoincrement |
 | user_id | Integer | FK(users.id), NOT NULL, INDEX |
+| question_id | Integer | FK(questions.id), NOT NULL, INDEX |
 | subject | String(16) | NOT NULL |
-| mode | String(16) | default="random" |
-| question_ids | JSON | NOT NULL |
-| answers | JSON | NOT NULL |
-| correct_count | SmallInteger | default=0 |
-| wrong_count | SmallInteger | default=0 |
-| duration_sec | Integer | default=0 |
-| started_at | DateTime | server_default=now() |
-| finished_at | DateTime | NULLABLE |
+| question_type | String(32) | NOT NULL, default="choice" |
+| user_answer | Text | NOT NULL |
+| is_correct | Boolean | NOT NULL |
+| used_time | Integer | NULLABLE |
+| answered_at | DateTime | server_default=now() |
 | created_at | DateTime | server_default=now() |
+
+### 索引
+
+- `(user_id, answered_at)` — 用户刷题历史查询（`user_id` 单独索引 + `answered_at` 排序）
+- `(user_id, is_correct)` — 正确率统计（`is_correct` 参与 `CASE WHEN` 聚合）
+- `(question_id, user_id)` — 查询用户是否做过某题
+
+### 设计说明
+
+每条记录对应一道题的**一次作答**。用户对同一道题多次作答会产生多条记录（如错题重做），
+通过 `question_id + user_id` 可查询用户对该题的全部作答历史。
 
 ---
 
@@ -353,5 +360,5 @@ class Tag(Base):
 - `source_type` + `source_file` + `import_batch_id` 三位一体追溯来源
 - `raw_content` 保留导入原始文本
 - SM-2 字段直接挂在 `WrongQuestion` 表上，不拆独立调度表
-- 每次练习一条记录（`practice_records`），不拆到每题一条
+- 每次答题一条记录（`practice_records`），每题一条，支持多次作答
 - `session_type` 区分 AI 对话场景

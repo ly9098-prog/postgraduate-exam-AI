@@ -34,6 +34,21 @@
     </view>
   </view>
 
+  <!-- 逐题结果 -->
+  <view class="card" wx:if="{{results.length > 0}}">
+    <view class="detail-toggle" bindtap="toggleDetail">
+      <text class="section-label">答题详情</text>
+      <text class="toggle-arrow">{{showDetail ? '▲' : '▼'}}</text>
+    </view>
+    <view class="detail-list" wx:if="{{showDetail}}">
+      <view class="detail-item {{item._cls}}" wx:for="{{results}}" wx:key="question_id">
+        <text class="detail-num">#{{index + 1}}</text>
+        <text class="detail-mark">{{item._label}}</text>
+        <text class="detail-answer">答案: {{item.correct_answer}}</text>
+      </view>
+    </view>
+  </view>
+
   <!-- 操作 -->
   <view class="actions">
     <button class="btn-primary" bindtap="goWrongBook">查看错题</button>
