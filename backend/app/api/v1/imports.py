@@ -16,7 +16,15 @@ from app.schemas.question_import import (
     ImportUploadResponse,
     QuestionImportResponse,
 )
+from app.schemas.question_publish import (
+    ApproveAndPublishRequest,
+    ApproveAndPublishResponse,
+    PublishHistoryResponse,
+    PublishRequest,
+    PublishResponse,
+)
 from app.features import question_pipeline as svc
+from app.features import question_publish_service as publish_svc
 from app.features import review_service as review_svc
 from app.features.pipeline_orchestrator import (
     get_pipeline_status,
@@ -135,11 +143,11 @@ async def review_question(
         return {"status": "rejected"}
 
     try:
-        q = await svc.approve_question(db, question_id, data.model_dump(exclude_none=True))
+        qi = await svc.approve_question(db, question_id, data.model_dump(exclude_none=True))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return {"status": "approved", "question_id": q.id}
+    return {"status": "approved", "id": qi.id}
 
 
 @router.post("/batches/{batch_id}/approve", response_model=dict)
@@ -285,3 +293,50 @@ async def pipeline_status(
     if status is None:
         raise HTTPException(status_code=404, detail="流水线不存在")
     return PipelineStatusResponse(**status)
+
+
+# ---------------------------------------------------------------------------
+# Stage 10: Publish endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/review/publish", response_model=PublishResponse)
+async def publish_questions(
+    data: PublishRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """发布审核通过的题目到正式题库。question_ids 和 batch_id 二选一。"""
+    try:
+        return await publish_svc.publish_questions(
+            db, question_ids=data.question_ids, batch_id=data.batch_id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/review/publish-history", response_model=PublishHistoryResponse)
+async def publish_history(
+    page: int = 1,
+    page_size: int = 20,
+    status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """查询发布历史（按 batch_id 聚合）。"""
+    return await publish_svc.get_publish_history(
+        db, page=page, page_size=page_size, status=status
+    )
+
+
+@router.post("/review/approve-and-publish", response_model=ApproveAndPublishResponse)
+async def approve_and_publish(
+    data: ApproveAndPublishRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """快捷操作：审核通过并发布，一步完成。"""
+    try:
+        return await publish_svc.approve_and_publish(db, question_ids=data.question_ids)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
