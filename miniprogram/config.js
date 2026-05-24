@@ -1,6 +1,6 @@
 // API 基础配置
 // 本地调试用 true，上传正式版前改为 false
-const DEV = true
+const DEV = false
 
 const CONFIG = {
   development: {
