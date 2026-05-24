@@ -17,6 +17,7 @@ from app.models.answer_behavior import AnswerBehavior
 from app.models.ai_chat import AiChat
 from app.models.tag import Tag
 from app.models.ai_generation_log import AiGenerationLog
+from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 
 config = context.config
 if config.config_file_name is not None:
