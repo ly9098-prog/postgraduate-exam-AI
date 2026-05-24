@@ -40,6 +40,13 @@
     <text class="loading-text">加载中...</text>
   </view>
 
+  <!-- 错误态 -->
+  <view class="empty-state" wx:elif="{{error}}">
+    <text class="empty-icon">⚠</text>
+    <text class="empty-title">{{error}}</text>
+    <text class="empty-desc">下拉刷新重试</text>
+  </view>
+
   <!-- 空态 -->
   <view class="empty-state" wx:elif="{{batches.length === 0}}">
     <text class="empty-icon">📂</text>

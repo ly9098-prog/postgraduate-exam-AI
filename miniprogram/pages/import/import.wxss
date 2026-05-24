@@ -1,8 +1,13 @@
 @import '../../styles/tokens.wxss';
 
+page {
+  background: #F7F5F0;
+}
+
 .page {
   min-height: 100vh;
   padding-bottom: 32rpx;
+  background: #F7F5F0;
 }
 
 /* ── 页面标题 ── */
