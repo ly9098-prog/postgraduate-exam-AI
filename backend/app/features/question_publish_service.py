@@ -113,6 +113,7 @@ async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
         import_batch_id=qi.batch_id,
         raw_content=str(qi.raw_data),
         review_status="approved",
+        is_active=True,
     )
     db.add(q)
     await db.flush()

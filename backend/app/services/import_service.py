@@ -385,6 +385,7 @@ async def approve_question(db: AsyncSession, import_id: int, data: dict) -> Ques
         import_batch_id=qi.batch_id,
         raw_content=str(qi.raw_data),
         review_status="approved",
+        is_active=True,
     )
     if knowledge_points:
         q.knowledge_points = knowledge_points
@@ -421,7 +422,7 @@ async def reject_question(db: AsyncSession, import_id: int, note: str | None = N
     await db.commit()
 
 
-async def batch_approve(db: AsyncSession, batch_id: str) -> int:
+async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, int]:
     """批量通过一个批次的所有待审核记录"""
     result = await db.execute(
         select(QuestionImport).where(
@@ -458,6 +459,7 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> int:
             import_batch_id=qi.batch_id,
             raw_content=str(qi.raw_data),
             review_status="approved",
+            is_active=True,
         )
         ai_meta = qi.ai_metadata or {}
         if isinstance(ai_meta, dict):
@@ -486,6 +488,27 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> int:
             f"批量审批未通过任何题目（{len(skipped)} 道缺少必填字段）。"
             f"详情：{details}"
         )
+    return count, len(skipped)
+
+
+async def batch_reject(db: AsyncSession, batch_id: str) -> int:
+    """批量拒绝一个批次的所有待审核记录"""
+    result = await db.execute(
+        select(QuestionImport).where(
+            QuestionImport.batch_id == batch_id,
+            QuestionImport.status == "pending",
+        )
+    )
+    records = list(result.scalars().all())
+    if not records:
+        raise ValueError("该批次没有待审核的题目")
+
+    count = 0
+    for qi in records:
+        qi.status = "rejected"
+        count += 1
+
+    await db.commit()
     return count
 
 

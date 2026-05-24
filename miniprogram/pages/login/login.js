@@ -14,9 +14,9 @@ Page({
       wx.redirectTo({ url: '/pages/home/home' })
       return
     }
-    // 开发环境显示"跳过微信登录"入口
+    // 仅开发环境显示开发者模式入口
     const config = require('../../config')
-    this.setData({ showDevLogin: !config.BASE_URL.includes('your-domain') })
+    this.setData({ showDevLogin: config.DEV === true })
   },
 
   async onWechatLogin() {
