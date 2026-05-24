@@ -1,0 +1,56 @@
+/* wrong-book — 错题本专属样式 */
+@import '../../styles/tokens.wxss';
+
+.stats-mini {
+  display: flex;
+  justify-content: space-around;
+  padding: 20rpx 0;
+}
+
+.mini-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.wrong-card {
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 24rpx 28rpx;
+  margin: 10rpx 24rpx;
+  box-shadow: 0 4rpx 24rpx rgba(43, 60, 80, 0.04);
+}
+
+.wrong-header {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-bottom: 12rpx;
+  flex-wrap: wrap;
+}
+
+.wrong-question {
+  font-size: 28rpx;
+  color: #2D3E50;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.wrong-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 14rpx;
+  font-size: 24rpx;
+  color: #9AABBA;
+}
+
+.load-more {
+  text-align: center;
+  padding: 30rpx;
+  color: #5B7B9A;
+  font-size: 28rpx;
+}

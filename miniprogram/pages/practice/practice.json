@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "刷题",
+  "usingComponents": {
+    "mp-html": "/components/mp-html/index"
+  }
+}

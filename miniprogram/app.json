@@ -1,0 +1,23 @@
+{
+  "pages": [
+    "pages/login/login",
+    "pages/home/home",
+    "pages/practice/practice",
+    "pages/practice-result/practice-result",
+    "pages/wrong-book/wrong-book",
+    "pages/wrong-detail/wrong-detail",
+    "pages/plan/plan",
+    "pages/import/import",
+    "pages/import-batch/import-batch",
+    "pages/dashboard/dashboard"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#4A90D9",
+    "navigationBarTitleText": "MemoGrad",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#F7F8FA"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

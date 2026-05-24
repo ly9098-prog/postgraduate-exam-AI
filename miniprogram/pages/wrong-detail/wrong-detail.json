@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "错题详情",
+  "usingComponents": {
+    "mp-html": "/components/mp-html/index"
+  }
+}

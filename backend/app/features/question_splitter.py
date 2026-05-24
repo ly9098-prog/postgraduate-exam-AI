@@ -1,0 +1,218 @@
+"""题目切分器 — 纯规则实现。
+
+从文档块中精准切分出单道题目，识别题号和选项标记。
+不做答案匹配、不做题型判断、不做内容清洗、不调用 AI。
+"""
+
+import re
+
+
+# 中文数字 → 阿拉伯数字
+_CN_NUM = {
+    "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+}
+
+# OCR 数字混淆 → 纠正
+_OCR_DIGIT_MAP = {"O": "0", "o": "0", "l": "1", "I": "1", "S": "5"}
+
+# 题号模式：(正则, 数字提取组, 说明)
+_QUESTION_PATTERNS: list[tuple[re.Pattern, int]] = [
+    (re.compile(r"^(\d+)\s*[.、)）]"), 1),       # "1." "1、" "1)" "1）"
+    (re.compile(r"^\((\d+)\)"), 1),                # "(1)"
+    (re.compile(r"^【(\d+)】"), 1),                # "【1】"
+    (re.compile(r"^第\s*(\d+)\s*题"), 1),         # "第1题"
+    (re.compile(
+        r"^第\s*([" + "".join(_CN_NUM.keys()) + r"]+)\s*题"
+    ), 1),                                          # "第一题"
+]
+
+# OCR 容错题号：l/I → 1
+_OCR_Q_PATTERN = re.compile(r"^([lI])\s*[.、)）]")
+
+# 选项模式
+_OPTION_PATTERNS: list[re.Pattern] = [
+    re.compile(r"^([A-Da-d])\s*[.、:：)）]\s*(.+)"),
+    re.compile(r"^([A-Da-d])\s+(.+)"),
+]
+
+# OCR 容错选项
+_OCR_OPTION_MAP = {"8": "B", "6": "B", "0": "D", "Ｏ": "D"}
+
+_OCR_OPTION_PATTERN = re.compile(
+    r"^([" + "".join(_OCR_OPTION_MAP.keys()) + r"])\s*[.、:：)）]\s*(.+)"
+)
+
+
+def _detect_question_number(line: str) -> tuple[int, int] | None:
+    """检测行首的题号，返回 (题号, 匹配结束位置) 或 None。"""
+    # 精确匹配
+    for pat, group_idx in _QUESTION_PATTERNS:
+        m = pat.match(line)
+        if m:
+            digits = m.group(group_idx)
+            if group_idx == 1 and pat is _QUESTION_PATTERNS[-1][0]:
+                num = 0
+                for ch in digits:
+                    num = num * 10 + _CN_NUM.get(ch, 0)
+                return (num, m.end())
+            num = int(digits)
+            # 过滤明显是选项 OCR 错误的假题号
+            if _is_false_question_number(num, line):
+                return None
+            return (num, m.end())
+
+    # OCR 容错：l/I → 1
+    m = _OCR_Q_PATTERN.match(line)
+    if m:
+        return (1, m.end())
+
+    return None
+
+
+def _is_false_question_number(num: int, line: str) -> bool:
+    """判断检测到的题号是否为选项 OCR 错误导致的假题号。"""
+    # 0 永远不是有效题号
+    if num == 0:
+        return True
+    # 6/8 可能是 B 的 OCR 错误，且该行也匹配选项模式
+    if num in (6, 8):
+        if _detect_option_line(line):
+            return True
+    return False
+
+
+def _detect_option_line(line: str) -> tuple[str, str] | None:
+    """检测选项行，返回 (key, text) 或 None。"""
+    # 精确匹配
+    for pat in _OPTION_PATTERNS:
+        m = pat.match(line)
+        if m:
+            key = m.group(1).upper()
+            text = m.group(2).strip()
+            if len(text) >= 1:
+                return (key, text)
+
+    # OCR 容错选项
+    m = _OCR_OPTION_PATTERN.match(line)
+    if m:
+        key = _OCR_OPTION_MAP.get(m.group(1), m.group(1).upper())
+        text = m.group(2).strip()
+        if len(text) >= 1:
+            return (key, text)
+
+    return None
+
+
+def _find_question_boundaries(text: str) -> list[tuple[int, int]]:
+    """扫描全文，找到所有题号位置。返回 [(题号, 字符位置), ...]"""
+    boundaries: list[tuple[int, int]] = []
+    lines = text.split("\n")
+
+    char_pos = 0
+    for line in lines:
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+
+        result = _detect_question_number(stripped)
+        if result is not None:
+            num, match_end = result
+            line_start = char_pos + indent
+            boundaries.append((num, line_start))
+
+        char_pos += len(line) + 1  # +1 for \n
+
+    return boundaries
+
+
+def _extract_options(text: str) -> dict[str, str]:
+    """从题目文本中提取选项行。"""
+    options: dict[str, str] = {}
+    for line in text.split("\n"):
+        result = _detect_option_line(line.strip())
+        if result:
+            key, value = result
+            if key not in options:  # 保留第一个匹配
+                options[key] = value
+    return options
+
+
+def _pos_to_page(
+    pos: int, page_map: list[tuple[int, int, int]]
+) -> int:
+    """将字符位置映射到页码。"""
+    last_page = 1
+    for offset, page, _ in page_map:
+        if pos < offset:
+            break
+        last_page = page
+    return last_page
+
+
+def split_questions(
+    normalized_blocks: list[dict],
+    structure: dict | None = None,
+) -> list[dict]:
+    """从文档块中切分出单道题目。
+
+    Args:
+        normalized_blocks: stage1 输出的标准化块列表
+        structure: stage2 的结构分析结果（可选）
+
+    Returns:
+        raw_questions 列表
+    """
+    if not normalized_blocks:
+        return []
+
+    # 构建全文和页码映射
+    parts: list[str] = []
+    page_map: list[tuple[int, int, int]] = []  # (char_pos, page, block_index)
+    pos = 0
+
+    for block in normalized_blocks:
+        text = block.get("normalized_text", "")
+        page = block.get("page", 1)
+        block_idx = block.get("block_index", 0)
+
+        page_map.append((pos, page, block_idx))
+        parts.append(text)
+        pos += len(text) + 1  # +1 for the joining newline
+
+    full_text = "\n".join(parts)
+    boundaries = _find_question_boundaries(full_text)
+
+    if not boundaries:
+        return []
+
+    questions: list[dict] = []
+
+    for i, (num, start_pos) in enumerate(boundaries):
+        end_pos = boundaries[i + 1][1] if i + 1 < len(boundaries) else len(full_text)
+        raw_text = full_text[start_pos:end_pos].strip()
+
+        page_start = _pos_to_page(start_pos, page_map)
+        page_end = _pos_to_page(max(start_pos, end_pos - 1), page_map)
+
+        options = _extract_options(raw_text)
+
+        # 置信度：基于题号格式清晰度 + 选项完整度
+        conf = 0.9
+        if raw_text.count("\n") <= 1:
+            conf -= 0.1  # 极短文本
+        if options and len(options) >= 3:
+            conf = min(1.0, conf + 0.05)
+        if num <= 0:
+            conf -= 0.3
+
+        questions.append({
+            "number": num,
+            "raw_question_text": raw_text,
+            "page_start": page_start,
+            "page_end": page_end,
+            "has_options": len(options) > 0,
+            "option_lines": options,
+            "confidence": round(max(0.0, min(1.0, conf)), 2),
+        })
+
+    return questions

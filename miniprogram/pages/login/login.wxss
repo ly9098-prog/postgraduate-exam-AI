@@ -1,0 +1,332 @@
+/* ============================================
+   Login — 考研学习助手登录页
+   Palette: warm ivory + muted slate + sage
+   Mood: calm, focused, scholarly
+   ============================================ */
+
+page {
+  background: #F5F3EE;
+}
+
+.login-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  padding: 120rpx 48rpx 40rpx;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* ── 背景光晕 ── */
+.bg-glow {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bg-glow-1 {
+  width: 600rpx;
+  height: 600rpx;
+  top: -180rpx;
+  right: -200rpx;
+  background: radial-gradient(circle, rgba(91,123,154,0.08) 0%, transparent 70%);
+}
+
+.bg-glow-2 {
+  width: 500rpx;
+  height: 500rpx;
+  bottom: 300rpx;
+  left: -150rpx;
+  background: radial-gradient(circle, rgba(107,155,107,0.07) 0%, transparent 70%);
+}
+
+.bg-glow-3 {
+  width: 400rpx;
+  height: 400rpx;
+  bottom: 100rpx;
+  right: -100rpx;
+  background: radial-gradient(circle, rgba(196,154,107,0.06) 0%, transparent 70%);
+}
+
+/* ── 品牌区域 ── */
+.brand-area {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 40rpx;
+}
+
+.brand-icon-wrap {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 32rpx;
+  background: linear-gradient(135deg, #5B7B9A 0%, #7A9BB8 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 28rpx;
+  box-shadow: 0 8rpx 24rpx rgba(91,123,154,0.25);
+}
+
+.brand-icon {
+  font-size: 56rpx;
+  line-height: 1;
+}
+
+.brand-name {
+  font-size: 52rpx;
+  font-weight: 700;
+  color: #2D3E50;
+  letter-spacing: 6rpx;
+  margin-bottom: 16rpx;
+}
+
+.brand-slogan {
+  font-size: 28rpx;
+  color: #6B7B8D;
+  letter-spacing: 2rpx;
+  font-weight: 400;
+}
+
+/* ── 抽象学习视觉 ── */
+.hero-visual {
+  position: relative;
+  z-index: 1;
+  width: 320rpx;
+  height: 260rpx;
+  margin: 40rpx auto 48rpx;
+}
+
+/* 书本形状 */
+.book-shape {
+  position: absolute;
+  bottom: 20rpx;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: flex-end;
+}
+
+.book-spine {
+  width: 18rpx;
+  height: 140rpx;
+  background: linear-gradient(180deg, #5B7B9A, #4A6A86);
+  border-radius: 4rpx 0 0 4rpx;
+  box-shadow: 2rpx 0 8rpx rgba(0,0,0,0.06);
+  z-index: 3;
+}
+
+.book-page {
+  width: 120rpx;
+  height: 130rpx;
+  border-radius: 0 8rpx 8rpx 0;
+  position: relative;
+}
+
+.book-page-1 {
+  background: #EDF1F5;
+  margin-left: -4rpx;
+  z-index: 2;
+  box-shadow: 4rpx 0 12rpx rgba(0,0,0,0.04);
+}
+
+.book-page-2 {
+  background: #E2E8ED;
+  margin-left: -8rpx;
+  z-index: 1;
+  box-shadow: 4rpx 0 12rpx rgba(0,0,0,0.04);
+}
+
+/* 书本内页线条（模拟文字） */
+.book-page-1::after,
+.book-page-2::after {
+  content: '';
+  position: absolute;
+  top: 24rpx;
+  left: 16rpx;
+  right: 16rpx;
+  bottom: 16rpx;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(107,123,141,0.25) 0rpx,
+    rgba(107,123,141,0.25) 3rpx,
+    transparent 3rpx,
+    transparent 20rpx
+  );
+  border-radius: 2rpx;
+}
+
+/* 浮动圆点 */
+.float-dot {
+  position: absolute;
+  border-radius: 50%;
+}
+
+.dot-1 {
+  width: 20rpx;
+  height: 20rpx;
+  background: rgba(91,123,154,0.2);
+  top: 10rpx;
+  left: 30rpx;
+}
+
+.dot-2 {
+  width: 14rpx;
+  height: 14rpx;
+  background: rgba(107,155,107,0.25);
+  top: 60rpx;
+  right: 20rpx;
+}
+
+.dot-3 {
+  width: 10rpx;
+  height: 10rpx;
+  background: rgba(196,154,107,0.3);
+  bottom: 60rpx;
+  right: 40rpx;
+}
+
+/* 浮动线条 */
+.float-line {
+  position: absolute;
+  border-radius: 2rpx;
+}
+
+.line-1 {
+  width: 60rpx;
+  height: 4rpx;
+  background: rgba(91,123,154,0.12);
+  top: 30rpx;
+  right: 50rpx;
+  transform: rotate(-15deg);
+}
+
+.line-2 {
+  width: 40rpx;
+  height: 4rpx;
+  background: rgba(107,155,107,0.12);
+  top: 80rpx;
+  left: 10rpx;
+  transform: rotate(10deg);
+}
+
+/* ── 登录卡片 ── */
+.login-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  background: #fff;
+  border-radius: 28rpx;
+  padding: 48rpx 40rpx 40rpx;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow:
+    0 2rpx 8rpx rgba(45,62,80,0.04),
+    0 16rpx 40rpx rgba(45,62,80,0.06);
+}
+
+.login-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #2D3E50;
+  margin-bottom: 10rpx;
+}
+
+.login-desc {
+  font-size: 26rpx;
+  color: #9AABBA;
+  margin-bottom: 40rpx;
+}
+
+/* ── 微信登录按钮 ── */
+.btn-wechat {
+  width: 100%;
+  height: 96rpx;
+  line-height: 96rpx;
+  background: #07C160;
+  border-radius: 16rpx;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  box-shadow: 0 4rpx 16rpx rgba(7,193,96,0.25);
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.btn-wechat::after {
+  border: none;
+}
+
+.btn-wechat:active {
+  transform: scale(0.97);
+  box-shadow: 0 2rpx 8rpx rgba(7,193,96,0.2);
+}
+
+.btn-wechat[disabled] {
+  opacity: 0.7;
+  transform: none;
+}
+
+.btn-wechat-text {
+  font-size: 30rpx;
+  color: #fff;
+  font-weight: 500;
+}
+
+/* ── 开发模式 ── */
+.dev-entry {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 32rpx;
+  font-size: 24rpx;
+  color: #BCC8D4;
+  padding: 8rpx 16rpx;
+}
+
+.dev-entry:active {
+  color: #9AABBA;
+}
+
+.dev-arrow {
+  font-size: 28rpx;
+}
+
+/* ── 错误消息 ── */
+.error-msg {
+  color: #C47A7A;
+  font-size: 24rpx;
+  text-align: center;
+  margin-top: 20rpx;
+  padding: 12rpx 24rpx;
+  background: #F5EFEF;
+  border-radius: 12rpx;
+}
+
+/* ── 底部信任信息 ── */
+.footer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+  margin-top: auto;
+  padding-top: 40rpx;
+}
+
+.footer-text {
+  font-size: 22rpx;
+  color: #D0CEC8;
+  text-align: center;
+  line-height: 1.6;
+}
