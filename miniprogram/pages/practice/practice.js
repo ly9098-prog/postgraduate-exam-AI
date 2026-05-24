@@ -1,13 +1,10 @@
 const api = require('../../utils/api')
 
-// 将纯文本（可能含 $...$ LaTeX）转为 mp-html 可接受的 HTML 字符串。
-// $...$ 内部保持原样，外部普通文本做 HTML 转义，换行转 <br>。
 function _textToHtml(text) {
   if (!text) return ''
-  // 按 $$ 和 $ 分段，奇数索引段为公式，偶数索引段为普通文本
   const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/)
   const out = parts.map((part, i) => {
-    if (i % 2 === 1) return part  // 公式段：原样保留
+    if (i % 2 === 1) return part
     return part
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -21,6 +18,7 @@ Page({
   data: {
     // 设置
     selectedSubject: '',
+    selectedMode: 'random',
     count: 5,
     started: false,
     loading: false,
@@ -40,7 +38,7 @@ Page({
 
     // 提交后
     submitted: false,
-    results: {},
+    results: [],
     correctCount: 0,
     wrongCount: 0,
 
@@ -63,6 +61,10 @@ Page({
     this.setData({ selectedSubject: e.currentTarget.dataset.subject })
   },
 
+  chooseMode(e) {
+    this.setData({ selectedMode: e.currentTarget.dataset.mode })
+  },
+
   setCount(e) {
     this.setData({ count: e.currentTarget.dataset.count })
   },
@@ -73,7 +75,7 @@ Page({
       currentIndex: 0,
       answerMap: {},
       answeredCount: 0,
-      results: {},
+      results: [],
       submitted: false,
       correctCount: 0,
       wrongCount: 0,
@@ -109,10 +111,10 @@ Page({
   async _loadQuestions() {
     this.setData({ loading: true })
     try {
-      const res = await api.post('/practice/batch-questions', {
+      const res = await api.get('/practice/questions', {
         subject: this.data.selectedSubject,
         count: this.data.count || 5,
-        exclude_ids: [],
+        mode: this.data.selectedMode || 'random',
       })
       const questions = res.questions || []
       this.setData({ questions, totalQuestions: questions.length, loading: false })
@@ -138,8 +140,8 @@ Page({
     for (const key of optionKeys) {
       selectedFlags[key] = isMulti ? answer.split(',').indexOf(key) >= 0 : answer === key
     }
-    // 预处理 LaTeX → mp-html 可接受的 HTML 字符串
-    const stemText = (q.content && q.content.text) || ''
+    // 预处理 LaTeX
+    const stemText = (q.content && (q.content.text || q.content.stem)) || ''
     q._stemHtml = _textToHtml(stemText)
     const optHtml = {}
     for (const key of optionKeys) {
@@ -190,7 +192,6 @@ Page({
     const dy = t.clientY - this._touchY
     const dt = Date.now() - this._touchTime
 
-    // 垂直滚动 > 水平移动 → 不触发
     if (Math.abs(dy) > Math.abs(dx) * 1.5) {
       this._touchX = undefined
       return
@@ -210,7 +211,6 @@ Page({
       : this.data.currentIndex > 0
 
     if (!canGo) {
-      // 边界弹性阻尼
       this._animating = true
       this.setData({ animClass: isLeft ? 'edge-left' : 'edge-right' })
       setTimeout(() => {
@@ -220,7 +220,6 @@ Page({
       return
     }
 
-    // 动画时长：短滑快切
     const animMs = dt < 200 ? 120 : 160
     this._animating = true
     this.setData({ animClass: isLeft ? 'slide-out-left' : 'slide-out-right' })
@@ -264,7 +263,6 @@ Page({
       newAnswer = prev === opt ? '' : opt
     }
 
-    // 空答案从 answerMap 移除，保证统计准确
     const answerMap = { ...this.data.answerMap }
     if (newAnswer) {
       answerMap[key] = newAnswer
@@ -339,25 +337,35 @@ Page({
     try {
       const answers = questions.map(q => ({
         question_id: q.id,
-        answer: answerMap[String(q.id)] || '',
+        user_answer: answerMap[String(q.id)] || '',
+        used_time: Math.floor((Date.now() - startTime) / 1000),
       }))
 
-      const result = await api.post('/practice/submit', {
-        subject: selectedSubject,
+      const result = await api.post('/practice/batch-submit', {
         answers,
-        duration_sec: Math.floor((Date.now() - startTime) / 1000),
       })
 
+      const duration = Math.floor((Date.now() - startTime) / 1000)
       wx.hideLoading()
+
+      // 存储详细结果供 result 页使用
+      wx.setStorageSync('lastPracticeResult', {
+        correct: result.total_correct || 0,
+        wrong: result.total_wrong || 0,
+        total,
+        subject: selectedSubject,
+        duration,
+        results: result.results || [],
+      })
+
       wx.redirectTo({
         url: [
           `/pages/practice-result/practice-result`,
-          `?correct=${result.correct_count || 0}`,
-          `&wrong=${result.wrong_count || 0}`,
+          `?correct=${result.total_correct || 0}`,
+          `&wrong=${result.total_wrong || 0}`,
           `&total=${total}`,
-          `&record_id=${result.record_id || 0}`,
           `&subject=${selectedSubject}`,
-          `&duration=${Math.floor((Date.now() - startTime) / 1000) || 0}`,
+          `&duration=${duration}`,
         ].join(''),
       })
     } catch (e) {
@@ -381,14 +389,14 @@ Page({
 
   /* ==================== 工具 ==================== */
 
-  _syncAnsweredCount(answerMap) {
-    const count = Object.keys(answerMap).filter(k => answerMap[k]).length
-    this.setData({ answeredCount: count })
-  },
-
   subjectLabel(s) {
     const map = { math2: '数学二', exam408: '408', english: '英语' }
     return map[s] || s || ''
+  },
+
+  modeLabel(m) {
+    const map = { random: '随机', sequential: '顺序' }
+    return map[m] || m || ''
   },
 
   noop() {},
