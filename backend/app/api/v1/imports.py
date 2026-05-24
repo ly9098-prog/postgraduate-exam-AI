@@ -158,10 +158,24 @@ async def approve_batch(
 ):
     """批量通过一个批次"""
     try:
-        count = await svc.batch_approve(db, batch_id)
+        count, skipped = await svc.batch_approve(db, batch_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"approved_count": count}
+    return {"approved_count": count, "skipped_count": skipped}
+
+
+@router.post("/batches/{batch_id}/reject", response_model=dict)
+async def reject_batch(
+    batch_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """批量拒绝一个批次的所有待审核题目"""
+    try:
+        count = await svc.batch_reject(db, batch_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"rejected_count": count}
 
 
 @router.post("/submit-review", response_model=SubmitReviewResponse)

@@ -11,8 +11,11 @@ Page({
       { value: 'math2', label: '数学二' },
       { value: 'english', label: '英语' },
     ],
-    // 编辑态：{ [questionId]: { subject, parsedAnswer } }
     editing: {},
+    // 批量选择
+    selectMode: false,
+    selectedIds: {},
+    selectedCount: 0,
   },
 
   onLoad(options) {
@@ -50,6 +53,9 @@ Page({
         questions,
         hasPending: questions.some(q => q.status === 'pending'),
         editing,
+        selectMode: false,
+        selectedIds: {},
+        selectedCount: 0,
       })
     } catch (e) {
       console.error('操作失败', e)
@@ -59,13 +65,131 @@ Page({
     }
   },
 
+  // ── 批量选择 ──
+
+  toggleSelectMode() {
+    const next = !this.data.selectMode
+    this.setData({
+      selectMode: next,
+      selectedIds: {},
+      selectedCount: 0,
+      expanding: null,
+    })
+  },
+
+  onCardTap(e) {
+    const id = e.currentTarget.dataset.id
+    if (this.data.selectMode) {
+      this.toggleSelect(id)
+    } else {
+      this.toggleExpand(e)
+    }
+  },
+
+  toggleSelect(e) {
+    // 兼容两种调用方式：事件对象（来自 WXML catchtap）和直接传 id（来自 onCardTap）
+    const id = typeof e === 'object' ? e.currentTarget.dataset.id : e
+    if (!id) return
+
+    const selectedIds = { ...this.data.selectedIds }
+    if (selectedIds[id]) {
+      delete selectedIds[id]
+    } else {
+      const q = this.data.questions.find(item => item.id === id)
+      if (q && q.status === 'pending') {
+        selectedIds[id] = true
+      } else {
+        wx.showToast({ title: '仅可选择待审核题目', icon: 'none' })
+        return
+      }
+    }
+    const selectedCount = Object.keys(selectedIds).length
+    this.setData({ selectedIds, selectedCount })
+  },
+
+  selectAllPending() {
+    const selectedIds = {}
+    const pending = this.data.questions.filter(q => q.status === 'pending')
+    for (const q of pending) {
+      selectedIds[q.id] = true
+    }
+    this.setData({ selectedIds, selectedCount: Object.keys(selectedIds).length })
+  },
+
+  // ── 批量拒绝 ──
+
+  async batchReject() {
+    const ids = Object.keys(this.data.selectedIds)
+    if (ids.length === 0) {
+      wx.showToast({ title: '请先选择题目', icon: 'none' })
+      return
+    }
+
+    const { confirm } = await wx.showModal({
+      title: '批量拒绝',
+      content: `确定拒绝选中的 ${ids.length} 道题目吗？`,
+      confirmText: '拒绝',
+      confirmColor: '#C47A7A',
+    })
+    if (!confirm) return
+
+    wx.showLoading({ title: '批量拒绝中...' })
+    try {
+      const res = await api.post(`/import/batches/${this.batchId}/reject`)
+      wx.hideLoading()
+      wx.showToast({ title: `已拒绝 ${res.rejected_count} 道`, icon: 'success' })
+      this.setData({ selectMode: false, selectedIds: {}, selectedCount: 0 })
+      this.loadBatch()
+    } catch (e) {
+      console.error('批量拒绝失败', e)
+      wx.hideLoading()
+      wx.showToast({ title: e.message || '操作失败', icon: 'none' })
+    }
+  },
+
+  // ── 批量通过（选中） ──
+
+  async batchApproveSelected() {
+    const selectedIds = Object.keys(this.data.selectedIds)
+    if (selectedIds.length === 0) {
+      wx.showToast({ title: '请先选择题目', icon: 'none' })
+      return
+    }
+
+    // 逐个通过选中的题目
+    wx.showLoading({ title: '批量通过中...' })
+    let success = 0
+    let fail = 0
+    for (const id of selectedIds) {
+      const idNum = parseInt(id, 10)
+      const edit = this.data.editing[idNum] || {}
+      const q = this.data.questions.find(item => item.id === idNum)
+      if (!q || q.status !== 'pending') { fail++; continue }
+      if (!q.subject && !edit.subject) { fail++; continue }
+      if (!q.parsed_answer && !edit.parsedAnswer) { fail++; continue }
+
+      try {
+        const body = { status: 'approved' }
+        if (!q.subject && edit.subject) body.subject = edit.subject
+        if (!q.parsed_answer && edit.parsedAnswer) body.parsed_answer = edit.parsedAnswer
+        await api.put(`/import/questions/${idNum}`, body)
+        success++
+      } catch (err) {
+        fail++
+      }
+    }
+    wx.hideLoading()
+    wx.showToast({ title: `通过 ${success} 道${fail > 0 ? '，失败 ' + fail + ' 道' : ''}`, icon: 'none' })
+    this.setData({ selectMode: false, selectedIds: {}, selectedCount: 0 })
+    this.loadBatch()
+  },
+
   toggleExpand(e) {
     const id = e.currentTarget.dataset.id
     const expanding = this.data.expanding === id ? null : id
     this.setData({ expanding, _activeId: expanding ? id : null })
   },
 
-  // 科目选择
   onSubjectChange(e) {
     const id = this.data._activeId
     if (!id) return
@@ -86,7 +210,6 @@ Page({
     })
   },
 
-  // 答案快捷选择
   onAnswerSelect(e) {
     const id = e.currentTarget.dataset.id
     const value = e.currentTarget.dataset.value
@@ -95,7 +218,6 @@ Page({
     })
   },
 
-  // 答案输入
   onAnswerInput(e) {
     const id = e.currentTarget.dataset.id
     const value = e.detail.value
@@ -109,12 +231,10 @@ Page({
     const edit = this.data.editing[id] || {}
     const q = this.data.questions.find(item => item.id === id)
 
-    // 缺少科目时检查
     if (!q.subject && !edit.subject) {
       wx.showToast({ title: '请先选择科目', icon: 'none' })
       return
     }
-    // 缺少答案时检查
     if (!q.parsed_answer && !edit.parsedAnswer) {
       wx.showToast({ title: '请先填写答案', icon: 'none' })
       return
@@ -161,7 +281,6 @@ Page({
       return
     }
 
-    // 检查哪些题目缺少字段
     const willFail = pending.filter(q => !q.subject || !q.parsed_answer)
     if (willFail.length > 0) {
       const hints = willFail.map(q => {
@@ -189,7 +308,9 @@ Page({
     try {
       const res = await api.post(`/import/batches/${this.batchId}/approve`)
       wx.hideLoading()
-      wx.showToast({ title: `已通过 ${res.approved_count} 道`, icon: 'success' })
+      let msg = `已通过 ${res.approved_count} 道`
+      if (res.skipped_count > 0) msg += `，${res.skipped_count} 道缺字段跳过`
+      wx.showToast({ title: msg, icon: 'none' })
       this.loadBatch()
     } catch (e) {
       console.error('操作失败', e)
@@ -202,7 +323,6 @@ Page({
     wx.navigateBack()
   },
 
-  // ── 阶段七：AI 辅助导题 ──
   async aiEnrichOne(e) {
     const id = e.currentTarget.dataset.id
     wx.showLoading({ title: 'AI 补全中...' })

@@ -1,16 +1,28 @@
 <view class="page">
-  <!-- 页面标题 -->
-  <view class="page-head">
-    <view class="head-left">
-      <text class="page-back" bindtap="goBack">‹ 返回</text>
-      <text class="page-title">批次审核</text>
+  <!-- 顶部导航 -->
+  <view class="nav-bar">
+    <view class="nav-left" bindtap="goBack">
+      <text class="nav-back">‹ 返回</text>
     </view>
-    <view class="head-actions" wx:if="{{hasPending}}">
-      <button class="btn-ai-batch" bindtap="aiEnrichBatch">AI 补全</button>
-      <button class="btn-batch-approve" bindtap="batchApprove">全部通过</button>
+    <text class="nav-title">批次审核</text>
+    <view class="nav-right">
+      <text class="nav-action" wx:if="{{hasPending && !selectMode}}" bindtap="toggleSelectMode">多选</text>
+      <text class="nav-action cancel" wx:if="{{selectMode}}" bindtap="toggleSelectMode">取消</text>
     </view>
   </view>
   <text class="page-subtitle" wx:if="{{batch}}">{{batch.source_file || batch.batch_id}}</text>
+
+  <!-- 选择模式提示条 -->
+  <view class="select-bar" wx:if="{{selectMode}}">
+    <text class="select-bar-text">已选 {{selectedCount}} 道</text>
+    <text class="select-bar-link" bindtap="selectAllPending">全选待审核</text>
+  </view>
+
+  <!-- 顶部操作按钮（非选择模式） -->
+  <view class="top-actions" wx:if="{{hasPending && !selectMode}}">
+    <button class="btn-ai-batch" bindtap="aiEnrichBatch">AI 补全</button>
+    <button class="btn-batch-approve" bindtap="batchApprove">全部通过</button>
+  </view>
 
   <!-- 加载态 -->
   <view class="loading-wrap" wx:if="{{loading}}">
@@ -27,12 +39,21 @@
   <!-- 题目列表 -->
   <view class="q-list" wx:else>
     <view
-      class="q-card"
+      class="q-card {{selectedIds[item.id] ? 'selected' : ''}}"
       wx:for="{{questions}}"
       wx:key="id"
       data-id="{{item.id}}"
-      bindtap="toggleExpand"
+      bindtap="onCardTap"
     >
+      <!-- 选择模式复选框 -->
+      <view class="q-check" wx:if="{{selectMode}}" catchtap="toggleSelect" data-id="{{item.id}}">
+        <view class="check-box {{selectedIds[item.id] ? 'checked' : ''}}">
+          <text class="check-mark" wx:if="{{selectedIds[item.id]}}">✓</text>
+        </view>
+      </view>
+
+      <!-- 卡片主体 -->
+      <view class="q-card-body">
       <!-- 概览行 -->
       <view class="q-overview">
         <view class="q-meta">
@@ -44,13 +65,13 @@
       </view>
       <text class="q-preview">{{item._preview}}</text>
 
-      <!-- 展开箭头 -->
-      <view class="q-expand-hint">
+      <!-- 展开箭头（非选择模式） -->
+      <view class="q-expand-hint" wx:if="{{!selectMode}}">
         <text class="expand-arrow {{expanding === item.id ? 'expanded' : ''}}">▼</text>
       </view>
 
-      <!-- 展开详情 -->
-      <view class="q-detail {{expanding === item.id ? 'show' : ''}}" catchtap>
+      <!-- 展开详情（非选择模式） -->
+      <view class="q-detail {{expanding === item.id ? 'show' : ''}}" wx:if="{{!selectMode}}" catchtap>
         <view class="detail-body" wx:if="{{item.parsed_content}}">
           <text class="detail-label">题目</text>
           <text class="detail-text">{{item.parsed_content.text}}</text>
@@ -86,7 +107,7 @@
           <text class="detail-answer">{{item.parsed_answer}}</text>
         </view>
 
-        <!-- 科目选择（可编辑） -->
+        <!-- 科目选择 -->
         <view class="detail-body" wx:if="{{item.status === 'pending' && !item.subject}}">
           <text class="detail-label">科目 <text class="req">*</text></text>
           <picker class="detail-picker" mode="selector" range="{{subjectOpts}}" range-key="label" bindchange="onSubjectChange">
@@ -100,7 +121,7 @@
           <text class="detail-text">{{item.parsed_analysis}}</text>
         </view>
 
-        <!-- AI 元数据展示 -->
+        <!-- AI 元数据 -->
         <view class="detail-body ai-block" wx:if="{{item.ai_generated && (item._aiKps.length || item._aiSuggestion || item.ai_metadata.chapter)}}">
           <view class="ai-head">
             <text class="detail-label">AI 建议</text>
@@ -125,12 +146,19 @@
           <button class="ai-btn" data-id="{{item.id}}" bindtap="aiCompleteOne" catchtap>AI 补缺字段</button>
         </view>
 
-        <!-- 操作按钮 -->
+        <!-- 单个操作按钮 -->
         <view class="q-actions" wx:if="{{item.status === 'pending'}}">
           <button class="action-btn action-reject" data-id="{{item.id}}" bindtap="reject" catchtap>拒绝</button>
           <button class="action-btn action-approve" data-id="{{item.id}}" bindtap="approve" catchtap>通过</button>
         </view>
       </view>
+      </view><!-- /q-card-body -->
     </view>
+  </view>
+
+  <!-- 底部批量操作栏（选择模式） -->
+  <view class="bottom-bar safe-bottom" wx:if="{{selectMode && selectedCount > 0}}">
+    <button class="bar-btn bar-reject" bindtap="batchReject">批量拒绝 ({{selectedCount}})</button>
+    <button class="bar-btn bar-approve" bindtap="batchApproveSelected">批量通过 ({{selectedCount}})</button>
   </view>
 </view>

@@ -5,45 +5,72 @@ Page({
   data: {
     batches: [],
     loading: false,
+    error: '',
+  },
+
+  onLoad() {
+    // 页面初始化
   },
 
   onShow() {
-    this.loadBatches()
+    try {
+      this.loadBatches()
+    } catch (e) {
+      console.error('import page onShow error:', e)
+    }
   },
 
   async loadBatches() {
-    this.setData({ loading: true })
+    this.setData({ loading: true, error: '' })
     try {
       const res = await api.get('/import/batches')
+      const items = (res && res.items) ? res.items : []
       this.setData({
-        batches: (res.items || []).map(b => ({
+        batches: items.map(b => ({
           ...b,
           _date: b.created_at ? b.created_at.slice(0, 16) : '',
         })),
       })
     } catch (e) {
       console.error('加载批次列表失败', e)
-      wx.showToast({ title: '加载失败', icon: 'none' })
+      this.setData({ error: '加载失败，下拉重试' })
     } finally {
       this.setData({ loading: false })
     }
   },
 
-  async chooseFile() {
+  onPullDownRefresh() {
+    this.loadBatches().then(() => wx.stopPullDownRefresh())
+  },
+
+  chooseFile() {
+    // 检查 API 可用性
+    if (!wx.chooseMessageFile) {
+      wx.showModal({
+        title: '提示',
+        content: '当前微信版本不支持文件选择，请升级微信或使用其他方式导入',
+        showCancel: false,
+      })
+      return
+    }
     wx.chooseMessageFile({
       count: 1,
       type: 'file',
       extension: ['xlsx', 'xls', 'pdf'],
       success: (res) => {
         const file = res.tempFiles[0]
-        const name = file.name.toLowerCase()
+        if (!file) return
+        const name = (file.name || '').toLowerCase()
         if (!name.endsWith('.xlsx') && !name.endsWith('.xls') && !name.endsWith('.pdf')) {
           wx.showToast({ title: '仅支持 .xlsx / .pdf 文件', icon: 'none' })
           return
         }
-        this.uploadFile(file.path, file.name)
+        this.uploadFile(file.path, name)
       },
-      fail: () => {},
+      fail: (err) => {
+        if (err && err.errMsg && err.errMsg.includes('cancel')) return
+        wx.showToast({ title: '选择文件失败', icon: 'none' })
+      },
     })
   },
 
@@ -53,7 +80,7 @@ Page({
       const token = wx.getStorageSync('token')
       const res = await new Promise((resolve, reject) => {
         wx.uploadFile({
-          url: `${require('../../config').BASE_URL}/import/upload`,
+          url: `${config.BASE_URL}/import/upload`,
           filePath: path,
           name: 'file',
           header: { Authorization: `Bearer ${token}` },
@@ -62,9 +89,9 @@ Page({
             try {
               body = JSON.parse(r.data)
             } catch (e) {
-              console.error('解析上传响应失败', e, 'status=', r.statusCode, 'raw=', r.data)
-              const preview = (r.data || '').toString().slice(0, 120)
-              return reject(new Error(`服务器返回非 JSON (HTTP ${r.statusCode})：${preview}`))
+              console.error('解析上传响应失败', e, 'status=', r.statusCode)
+              const preview = String(r.data || '').slice(0, 120)
+              return reject(new Error(`服务器返回异常 (HTTP ${r.statusCode})：${preview}`))
             }
             if (r.statusCode >= 400) {
               return reject(new Error(body.detail || body.message || `HTTP ${r.statusCode}`))
@@ -75,7 +102,7 @@ Page({
         })
       })
       wx.hideLoading()
-      wx.showToast({ title: `导入 ${res.total} 道题成功`, icon: 'none' })
+      wx.showToast({ title: `导入 ${res.total || 0} 道题成功`, icon: 'none' })
       this.loadBatches()
     } catch (err) {
       wx.hideLoading()
@@ -89,6 +116,7 @@ Page({
 
   goBatch(e) {
     const batchId = e.currentTarget.dataset.batchId
+    if (!batchId) return
     wx.navigateTo({ url: `/pages/import-batch/import-batch?batchId=${batchId}` })
   },
 
