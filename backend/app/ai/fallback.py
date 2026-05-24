@@ -49,6 +49,36 @@ def get_fallback_generation(count: int = 0) -> dict:
     return {"questions": [], "note": f"AI 服务不可用，未生成题目（请求 {count} 道）"}
 
 
+def get_fallback_explain() -> dict:
+    return {
+        "explanation": "AI 服务暂时不可用。建议查看题目自带解析，或稍后重试。",
+        "solution_steps": [],
+        "key_knowledge_points": [],
+        "common_mistakes": [],
+    }
+
+
+def get_fallback_report() -> dict:
+    return {
+        "weak_points": [],
+        "strong_points": [],
+        "learning_suggestions": [
+            "AI 服务暂时不可用，建议根据各知识点正确率自行分析薄弱环节。",
+            "重点复习正确率低于 60% 的知识点。",
+            "每天保持一定量的练习，巩固已掌握的知识点。",
+        ],
+    }
+
+
+def get_fallback_mistake_analysis() -> dict:
+    return {
+        "error_type": "unknown",
+        "error_type_label": "无法分析（AI 不可用）",
+        "analysis": "AI 服务暂时不可用，无法分析错误原因。建议查看题目解析。",
+        "suggestion": "回顾相关知识点，做同类型题目巩固。",
+    }
+
+
 def get_fallback_complete(missing_fields: list[str]) -> dict:
     return {
         "subject": None,
