@@ -134,47 +134,40 @@ Authorization: Bearer <jwt_token>
 | question_type | string? | 题型筛选 |
 | exclude_ids | string? | 排除的题目 ID，逗号分隔 |
 
-### GET `/questions/{id}`
+### GET `/questions/{id}/detail`
 
-题目详情。
+题目详情（含答案和解析）。仅已答过该题的用户可访问，未答过返回 403。
+
+```json
+{
+  "id": 1,
+  "subject": "math2",
+  "question_type": "choice",
+  "content": {"text": "题干"},
+  "options": {"A": "...", "B": "...", "C": "...", "D": "..."},
+  "answer": "A",
+  "analysis": "解析内容",
+  "knowledge_points": ["导数"]
+}
+```
 
 ---
 
 ## 练习
 
-### POST `/practice/check`
+### GET `/practice/questions`
 
-单题判题。
+获取刷题列表（不含答案）。
 
-```json
-// Request
-{
-  "question_id": 1,
-  "answer": "A"
-}
-
-// Response
-{
-  "question_id": 1,
-  "user_answer": "A",
-  "correct_answer": "A",
-  "is_correct": true,
-  "analysis": "解析内容"
-}
-```
-
-### POST `/practice/batch-questions`
-
-批量预加载题目（不含答案，避免泄露）。
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| subject | string | **必填** | 科目筛选 |
+| count | int | 20 | 题目数量，1-50 |
+| mode | string | random | random / sequential |
+| knowledge_point | string? | - | 知识点筛选，逗号分隔 |
+| exclude_answered | bool | false | 是否排除已做题 |
 
 ```json
-// Request
-{
-  "subject": "math2",
-  "count": 10,
-  "exclude_ids": [1, 2, 3]
-}
-
 // Response
 {
   "questions": [
@@ -184,53 +177,88 @@ Authorization: Bearer <jwt_token>
       "question_type": "choice",
       "content": {"text": "题干"},
       "options": {"A": "...", "B": "...", "C": "...", "D": "..."},
+      "knowledge_points": ["导数"],
       "difficulty": 3
     }
   ],
-  "total": 10
+  "total": 10,
+  "mode": "random"
 }
 ```
 
 ### POST `/practice/submit`
 
-提交练习答案。
+单题提交答案。
 
 ```json
 // Request
 {
-  "subject": "math2",
-  "mode": "random",
-  "duration_sec": 120,
+  "question_id": 1,
+  "user_answer": "A",
+  "used_time": 30
+}
+
+// Response
+{
+  "question_id": 1,
+  "is_correct": true,
+  "correct_answer": "A",
+  "analysis": "解析内容",
+  "knowledge_points": ["导数"],
+  "is_wrong_added": false
+}
+```
+
+### POST `/practice/batch-submit`
+
+批量提交答案。
+
+```json
+// Request
+{
   "answers": [
-    {"question_id": 1, "answer": "A"},
-    {"question_id": 2, "answer": "C"}
+    {"question_id": 1, "user_answer": "A", "used_time": 30},
+    {"question_id": 2, "user_answer": "C", "used_time": 45}
   ]
 }
 
 // Response
 {
-  "record_id": 1,
-  "subject": "math2",
-  "mode": "random",
-  "correct_count": 1,
-  "wrong_count": 1,
-  "total": 2,
-  "duration_sec": 120,
   "results": [
-    {
-      "question_id": 1,
-      "user_answer": "A",
-      "correct_answer": "A",
-      "is_correct": true,
-      "analysis": "解析"
-    }
-  ]
+    {"question_id": 1, "is_correct": true, "correct_answer": "A", "analysis": "..."},
+    {"question_id": 2, "is_correct": false, "correct_answer": "C", "analysis": "..."}
+  ],
+  "total_correct": 1,
+  "total_wrong": 1
+}
+```
+
+### GET `/practice/stats`
+
+刷题统计。
+
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| days | int | 7 | 统计天数，1-365 |
+
+```json
+{
+  "total_answered": 150,
+  "total_correct": 120,
+  "accuracy": 0.8,
+  "by_subject": {
+    "math2": {"answered": 100, "correct": 85, "accuracy": 0.85}
+  },
+  "daily_stats": [
+    {"date": "2026-05-24", "answered": 20, "correct": 16}
+  ],
+  "current_streak": 3
 }
 ```
 
 ### GET `/practice/records`
 
-练习记录列表（分页）。
+练习记录列表（分页，每道题一条记录）。
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
@@ -238,9 +266,26 @@ Authorization: Bearer <jwt_token>
 | page | int | 默认 1 |
 | page_size | int | 默认 20 |
 
-### GET `/practice/records/{id}`
-
-练习详情（含逐题结果）。
+```json
+// Response
+{
+  "items": [
+    {
+      "id": 1,
+      "question_id": 5,
+      "subject": "math2",
+      "question_type": "choice",
+      "user_answer": "A",
+      "is_correct": true,
+      "used_time": 25,
+      "answered_at": "2026-05-24T12:00:00"
+    }
+  ],
+  "total": 150,
+  "page": 1,
+  "page_size": 20
+}
+```
 
 ---
 

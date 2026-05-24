@@ -17,7 +17,7 @@ async def record_wrong(
             WrongQuestion.question_id == question_id,
         )
     )
-    wq = result.scalar_one_or_none()
+    wq = result.scalars().first()
 
     today = date.today()
 
