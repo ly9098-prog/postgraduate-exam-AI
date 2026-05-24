@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     AI_TIMEOUT: int = 60
     AI_DAILY_TOKEN_LIMIT: int = 50000
+    AI_MONTHLY_TOKEN_LIMIT: int = 500000
+    AI_SINGLE_MAX_TOKENS: int = 2000
 
     # WeChat (jscode2session)
     WECHAT_APP_ID: str = ""
