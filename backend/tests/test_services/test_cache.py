@@ -141,6 +141,8 @@ def test_make_cache_key_different():
 @pytest.mark.asyncio
 async def test_cached_decorator():
     """缓存装饰器生效。"""
+    from app.core.cache import cache as _global_cache
+
     mock_redis = AsyncMock()
     mock_redis.get.return_value = None
     mock_redis.ping = AsyncMock()
@@ -156,6 +158,10 @@ async def test_cached_decorator():
     with patch("redis.asyncio.from_url", return_value=mock_redis):
         with patch("app.core.cache.settings") as mock_settings:
             mock_settings.REDIS_URL = "redis://localhost:6379"
+            # Reset global cache state to pick up patched redis
+            _global_cache._client = None
+            _global_cache._enabled = True
+
             # First call — should execute
             result = await my_func(5)
             assert result == {"value": 10}

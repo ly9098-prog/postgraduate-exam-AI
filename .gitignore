@@ -17,8 +17,15 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# 部署日志
+# 部署敏感文件
+deploy/nginx/ssl/*.pem
+deploy/nginx/ssl/*.key
+deploy/nginx/ssl/*.crt
 deploy/logs/
+*.pem
+*.key
+!loginkey.pem
 
 # Docker
 pgdata/
+redisdata/
