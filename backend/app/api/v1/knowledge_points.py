@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import cache
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
@@ -17,6 +18,10 @@ async def list_knowledge_points(
     _: User = Depends(get_current_user),
 ):
     """按科目分组返回知识点列表"""
+    cache_key = f"kp:list:{subject or 'all'}"
+    cached_data = await cache.get(cache_key)
+    if cached_data is not None:
+        return cached_data
     tags = await svc.list_tags(db, subject)
     groups: dict[str, list[TagResponse]] = {}
     for t in tags:
@@ -24,7 +29,9 @@ async def list_knowledge_points(
             id=t.id, name=t.name, subject=t.subject,
             parent_id=t.parent_id, sort_order=t.sort_order,
         ))
-    return [TagSubjectGroup(subject=s, tags=ts) for s, ts in groups.items()]
+    result = [TagSubjectGroup(subject=s, tags=ts) for s, ts in groups.items()]
+    await cache.set(cache_key, [g.model_dump() for g in result], ttl=3600)
+    return result
 
 
 @router.get("/tree")
@@ -34,8 +41,14 @@ async def get_knowledge_tree(
     _: User = Depends(get_current_user),
 ):
     """按科目返回知识点树形结构"""
+    cache_key = f"kp:tree:{subject or 'all'}"
+    cached_data = await cache.get(cache_key)
+    if cached_data is not None:
+        return cached_data
     tags = await svc.list_tags(db, subject)
-    return svc.build_tree(tags)
+    result = svc.build_tree(tags)
+    await cache.set(cache_key, result, ttl=3600)
+    return result
 
 
 @router.post("", response_model=TagResponse, status_code=201)

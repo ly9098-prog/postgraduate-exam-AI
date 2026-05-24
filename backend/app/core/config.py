@@ -31,6 +31,18 @@ class Settings(BaseSettings):
     OCR_LANGUAGE: str = "ch"
     OCR_USE_GPU: bool = False
 
+    # Redis
+    REDIS_URL: str = ""
+
+    # Database connection pool
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_RECYCLE: int = 3600
+
+    # Gunicorn
+    GUNICORN_WORKERS: int = 4
+    GUNICORN_WORKER_CLASS: str = "uvicorn.workers.UvicornWorker"
+
     class Config:
         env_file = ".env"
 

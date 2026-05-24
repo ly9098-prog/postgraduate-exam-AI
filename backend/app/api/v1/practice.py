@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import cache
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.question import Question
 from app.models.user import User
+from app.schemas.common import paginated_response
 from app.schemas.practice import (
     AnswerResult,
     AnswerSubmit,
@@ -79,6 +81,10 @@ async def submit_answer(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # 失效用户相关缓存
+    await cache.delete(f"practice:stats:{current_user.id}:*")
+    await cache.delete(f"stats:*:{current_user.id}*")
+
     return AnswerResult(**result)
 
 
@@ -97,6 +103,11 @@ async def batch_submit(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # 失效用户相关缓存
+    await cache.delete(f"practice:stats:{current_user.id}:*")
+    await cache.delete(f"stats:*:{current_user.id}*")
+    await cache.delete(f"review:*:{current_user.id}*")
+
     return BatchSubmitResponse(
         results=[AnswerResult(**r) for r in result["results"]],
         total_correct=result["total_correct"],
@@ -110,8 +121,14 @@ async def get_practice_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    cache_key = f"practice:stats:{current_user.id}:{days}"
+    cached_data = await cache.get(cache_key)
+    if cached_data is not None:
+        return cached_data
     data = await svc.get_practice_stats(db, current_user.id, days=days)
-    return PracticeStatsResponse(**data)
+    result = PracticeStatsResponse(**data)
+    await cache.set(cache_key, result.model_dump(), ttl=300)
+    return result
 
 
 @router.get("/records")
@@ -142,10 +159,9 @@ async def list_records(
     )
     items = rows.scalars().all()
 
-    return {
-        "items": [PracticeRecordItem.model_validate(r) for r in items],
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": max((total + page_size - 1) // page_size, 1),
-    }
+    return paginated_response(
+        items=[PracticeRecordItem.model_validate(r) for r in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
