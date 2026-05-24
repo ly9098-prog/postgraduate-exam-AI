@@ -728,7 +728,7 @@ async def import_pdf(
 
 async def approve_question(
     db: AsyncSession, import_id: int, data: dict
-) -> Question:
+) -> QuestionImport:
     qi = await _get_qi(db, import_id)
     if qi.status != "pending":
         raise ValueError("该记录已审核")
@@ -761,38 +761,13 @@ async def approve_question(
     if not result["is_valid"]:
         raise ValueError(f"题目标准化失败：{', '.join(result['errors'])}")
 
-    duplicate = await find_duplicate_question(
-        db, result["normalized"]["subject"], result["normalized"]["stem"]
-    )
-    if duplicate:
-        logger.info(
-            "Duplicate question skipped: source=%s stem_hash=%s existing_id=%s",
-            qi.source_file,
-            result["stem_hash"],
-            duplicate.id,
-        )
-        raise ValueError("题目已存在，已跳过重复入库")
-
-    q = Question(
-        **result["question_fields"],
-        source=qi.source_file,
-        source_type=qi.source_type,
-        source_file=qi.source_file,
-        import_batch_id=qi.batch_id,
-        raw_content=str(qi.raw_data),
-        review_status="approved",
-    )
-    db.add(q)
-    await db.flush()
-    await db.refresh(q)
-
     qi.status = "approved"
-    qi.question_id = q.id
+    qi.question_id = None
     qi.review_note = data.get("review_note")
     if qi.ai_generated:
         qi.ai_reviewed_at = datetime.utcnow()
     await db.commit()
-    return q
+    return qi
 
 
 async def reject_question(
@@ -837,32 +812,8 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> int:
         if not result["is_valid"]:
             skipped[qi.id] = result["errors"]
             continue
-        duplicate = await find_duplicate_question(
-            db, result["normalized"]["subject"], result["normalized"]["stem"]
-        )
-        if duplicate:
-            skipped[qi.id] = ["重复题目"]
-            logger.info(
-                "Duplicate question skipped: source=%s stem_hash=%s existing_id=%s",
-                qi.source_file,
-                result["stem_hash"],
-                duplicate.id,
-            )
-            continue
-        q = Question(
-            **result["question_fields"],
-            source=qi.source_file,
-            source_type=qi.source_type,
-            source_file=qi.source_file,
-            import_batch_id=qi.batch_id,
-            raw_content=str(qi.raw_data),
-            review_status="approved",
-        )
-        db.add(q)
-        await db.flush()
-        await db.refresh(q)
         qi.status = "approved"
-        qi.question_id = q.id
+        qi.question_id = None
         if qi.ai_generated:
             qi.ai_reviewed_at = datetime.utcnow()
         count += 1
