@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import cache
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
+from app.schemas.common import paginated_response
 from app.schemas.review import (
     ReviewDueItem,
     ReviewStatsResponse,
@@ -36,13 +38,12 @@ async def list_due_reviews(
     items, total = await svc.get_due_reviews(
         db, current_user.id, subject, page, page_size
     )
-    return {
-        "items": [ReviewDueItem(**item) for item in items],
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": (total + page_size - 1) // page_size,
-    }
+    return paginated_response(
+        items=[ReviewDueItem(**item) for item in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("/submit", response_model=ReviewSubmitResponse)
@@ -58,6 +59,9 @@ async def submit_review(
     if processed == 0:
         raise HTTPException(status_code=404, detail="没有找到有效的错题记录")
 
+    await cache.delete(f"review:*:{current_user.id}*")
+    await cache.delete(f"stats:*:{current_user.id}*")
+
     return ReviewSubmitResponse(
         results=[ReviewSubmitResult(**r) for r in results],
         processed=processed,
@@ -69,8 +73,14 @@ async def get_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    cache_key = f"review:stats:{current_user.id}"
+    cached_data = await cache.get(cache_key)
+    if cached_data is not None:
+        return cached_data
     stats = await svc.get_review_stats(db, current_user.id)
-    return ReviewStatsResponse(**stats)
+    result = ReviewStatsResponse(**stats)
+    await cache.set(cache_key, result.model_dump(), ttl=300)
+    return result
 
 
 # ── Stage 12: SM-2 复习调度端点 ──
@@ -84,9 +94,15 @@ async def get_today_review(
     current_user: User = Depends(get_current_user),
 ):
     """获取今日待复习题目（不含答案）。"""
-    return await review_scheduler.get_today_review(
+    cache_key = f"review:today:{current_user.id}:{subject or 'all'}:{limit}"
+    cached_data = await cache.get(cache_key)
+    if cached_data is not None:
+        return cached_data
+    result = await review_scheduler.get_today_review(
         db, current_user.id, subject=subject, limit=limit
     )
+    await cache.set(cache_key, result.model_dump(), ttl=60)
+    return result
 
 
 @router.post("/schedule-submit", response_model=ScheduleSubmitResponse)
@@ -97,13 +113,16 @@ async def submit_schedule_review(
 ):
     """提交单题复习结果。"""
     try:
-        return await review_scheduler.submit_review(
+        result = await review_scheduler.submit_review(
             db,
             current_user.id,
             schedule_id=data.schedule_id,
             question_id=data.question_id,
             rating=data.rating,
         )
+        await cache.delete(f"review:*:{current_user.id}*")
+        await cache.delete(f"stats:*:{current_user.id}*")
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -119,9 +138,12 @@ async def batch_submit_review(
         raise HTTPException(status_code=400, detail="复习列表不能为空")
     try:
         reviews = [r.model_dump() for r in data.reviews]
-        return await review_scheduler.batch_submit_review(
+        result = await review_scheduler.batch_submit_review(
             db, current_user.id, reviews
         )
+        await cache.delete(f"review:*:{current_user.id}*")
+        await cache.delete(f"stats:*:{current_user.id}*")
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -133,7 +155,13 @@ async def get_schedule_stats(
     current_user: User = Depends(get_current_user),
 ):
     """获取复习调度统计。"""
-    return await review_scheduler.get_review_stats(db, current_user.id, days=days)
+    cache_key = f"review:schedule_stats:{current_user.id}:{days}"
+    cached_data = await cache.get(cache_key)
+    if cached_data is not None:
+        return cached_data
+    result = await review_scheduler.get_review_stats(db, current_user.id, days=days)
+    await cache.set(cache_key, result.model_dump(), ttl=300)
+    return result
 
 
 @router.get("/history", response_model=ReviewHistoryResponse)

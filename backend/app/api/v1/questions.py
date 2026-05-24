@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
+from app.schemas.common import paginated_response
 from app.schemas.question import QuestionCreate, QuestionResponse
 from app.services import question_service as svc
 
@@ -42,13 +43,12 @@ async def list_questions(
     _: User = Depends(get_current_user),
 ):
     items, total = await svc.list_questions(db, subject, question_type, page, page_size)
-    return {
-        "items": [QuestionResponse.model_validate(q) for q in items],
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": (total + page_size - 1) // page_size,
-    }
+    return paginated_response(
+        items=[QuestionResponse.model_validate(q) for q in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/random", response_model=QuestionResponse | None)

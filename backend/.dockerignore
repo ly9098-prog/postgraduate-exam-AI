@@ -1,0 +1,14 @@
+__pycache__
+*.pyc
+*.pyo
+.env
+*.db
+.git
+.gitignore
+*.md
+alembic/versions/__pycache__
+tests/
+scripts/
+docker/
+.vscode/
+.idea/
