@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     GUNICORN_WORKERS: int = 4
     GUNICORN_WORKER_CLASS: str = "uvicorn.workers.UvicornWorker"
 
+    # Sentry
+    SENTRY_DSN: str = ""
+
+    # 部署
+    WORKERS: int = 4
+    MAX_CONNECTIONS: int = 100
+
     class Config:
         env_file = ".env"
 
