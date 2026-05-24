@@ -19,8 +19,14 @@ from app.api.v1.stats import router as stats_router
 from app.api.v1.knowledge_points import router as knowledge_points_router
 from app.api.v1.ai_import import router as ai_import_router
 from app.api.v1.cache import router as cache_router
+from app.api.v1.health import router as health_router
 from app.core.config import settings
 from app.core.database import init_db
+from app.core.logging_config import setup_logging
+from app.core.sentry import init_sentry
+
+setup_logging()
+init_sentry()
 
 logger = logging.getLogger("2240ai")
 
@@ -96,3 +102,4 @@ app.include_router(stats_router)
 app.include_router(knowledge_points_router)
 app.include_router(ai_import_router)
 app.include_router(cache_router)
+app.include_router(health_router)
