@@ -30,6 +30,12 @@
     <text class="loading-text">加载中...</text>
   </view>
 
+  <!-- 加载失败 fallback -->
+  <view class="empty-state" wx:elif="{{loadError}}">
+    <text class="empty-icon">⚠️</text>
+    <text class="empty-title">加载失败，请返回重试</text>
+  </view>
+
   <!-- 空态 -->
   <view class="empty-state" wx:elif="{{questions.length === 0}}">
     <text class="empty-icon">📭</text>
@@ -60,6 +66,7 @@
           <text class="q-subject-tag">{{item._subjectLabel}}</text>
           <text class="q-type-label">{{item.question_type === 'choice' ? '选择题' : item.question_type === 'fill' ? '填空题' : item.question_type || '-'}}</text>
           <text class="q-ai-flag" wx:if="{{item.ai_generated}}">AI</text>
+          <text class="q-math-flag" wx:if="{{item._hasMath}}" bindtap="showMathPreview" catchtap data-id="{{item.id}}">含公式</text>
         </view>
         <view class="q-status-badge {{item.status}}">{{item._statusLabel}}</view>
       </view>
@@ -127,7 +134,7 @@
             <text class="detail-label">AI 建议</text>
             <text class="ai-confidence" wx:if="{{item._aiConfidencePct !== null}}">置信度 {{item._aiConfidencePct}}%</text>
           </view>
-          <text class="ai-chapter" wx:if="{{item.ai_metadata.chapter}}">章节：{{item.ai_metadata.chapter}}</text>
+          <text class="ai-chapter" wx:if="{{item.ai_metadata && item.ai_metadata.chapter}}">章节：{{item.ai_metadata.chapter}}</text>
           <view class="ai-tags" wx:if="{{item._aiKps.length}}">
             <text class="ai-tag" wx:for="{{item._aiKps}}" wx:for-item="kp" wx:key="*this">{{kp}}</text>
           </view>

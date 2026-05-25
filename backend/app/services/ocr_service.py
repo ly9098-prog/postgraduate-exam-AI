@@ -9,12 +9,20 @@
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 _ocr_instance = None
+
+
+@dataclass
+class OcrPageResult:
+    page_index: int
+    text: str
+    boxes: list[dict] | None = field(default=None)
 
 
 def _get_ocr():
@@ -52,6 +60,39 @@ def _ocr_one_page(page_png: bytes, page_index: int) -> tuple[int, str]:
         return page_index, ""
 
 
+def _ocr_one_page_with_boxes(page_png: bytes, page_index: int) -> tuple[int, str, list[dict]]:
+    """对单页图片执行 OCR，返回 (page_index, text, boxes)。失败返回空。"""
+    try:
+        import numpy as np
+        from PIL import Image
+        import io
+
+        img = Image.open(io.BytesIO(page_png)).convert("RGB")
+        img_array = np.array(img)
+        ocr = _get_ocr()
+        result = ocr.ocr(img_array, cls=True)
+        if not result or result[0] is None:
+            return page_index, "", []
+        lines = []
+        boxes = []
+        for line in result[0]:
+            if not line or not line[1]:
+                continue
+            lines.append(line[1][0])
+            # line[0] 是四边形顶点列表 [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
+            pts = line[0]
+            x0 = min(p[0] for p in pts)
+            y0 = min(p[1] for p in pts)
+            x1 = max(p[0] for p in pts)
+            y1 = max(p[1] for p in pts)
+            conf = float(line[1][1]) if len(line[1]) > 1 else 1.0
+            boxes.append({"bbox": [x0, y0, x1, y1], "conf": conf})
+        return page_index, "\n".join(lines), boxes
+    except Exception as e:
+        logger.warning("OCR（含框）第 %d 页失败：%s", page_index, e)
+        return page_index, "", []
+
+
 def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
     """
     并发 OCR 多页。
@@ -72,6 +113,33 @@ def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
         for future in as_completed(futures):
             idx, text = future.result()
             results[idx] = text
+
+    return results
+
+
+def ocr_pages_with_boxes(
+    page_images: list[tuple[int, bytes]],
+) -> dict[int, OcrPageResult]:
+    """并发 OCR 多页，返回含检测框坐标的结果。
+
+    旧接口 ocr_pages() 签名完全保留，本函数为新增独立方法。
+    page_images: [(page_index, png_bytes), ...]
+    返回 {page_index: OcrPageResult}
+    """
+    if not page_images:
+        return {}
+
+    results: dict[int, OcrPageResult] = {}
+    max_workers = settings.OCR_MAX_WORKERS
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_ocr_one_page_with_boxes, png, idx): idx
+            for idx, png in page_images
+        }
+        for future in as_completed(futures):
+            idx, text, boxes = future.result()
+            results[idx] = OcrPageResult(page_index=idx, text=text, boxes=boxes)
 
     return results
 

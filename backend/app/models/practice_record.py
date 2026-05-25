@@ -18,7 +18,7 @@ class PracticeRecord(Base):
     question_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("questions.id"), nullable=False, index=True
     )
-    subject: Mapped[str] = mapped_column(String(16), nullable=False)
+    subject: Mapped[str] = mapped_column(String(32), nullable=False)
     question_type: Mapped[str] = mapped_column(
         String(32), nullable=False, default="choice"
     )

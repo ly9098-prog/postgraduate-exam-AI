@@ -10,7 +10,7 @@ class Question(Base):
     __tablename__ = "questions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    subject: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    subject: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     question_type: Mapped[str] = mapped_column(
         String(32), nullable=False, default="choice"
     )

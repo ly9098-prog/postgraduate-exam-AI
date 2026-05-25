@@ -12,4 +12,4 @@ const CONFIG = {
 }
 
 const env = DEV ? 'development' : 'production'
-module.exports = { ...CONFIG[env], DEV }
+module.exports = { ...CONFIG[env], DEV, enableMathImage: false }

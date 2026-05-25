@@ -117,6 +117,35 @@
   font-weight: 600;
 }
 
+/* 子科目 Tab */
+.sub-tab-row {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 16rpx;
+  flex-wrap: wrap;
+}
+
+.sub-tab {
+  padding: 12rpx 24rpx;
+  background: #F7F6F2;
+  border-radius: 32rpx;
+  font-size: 26rpx;
+  color: #6B7B8D;
+  font-weight: 500;
+  border: 2rpx solid transparent;
+}
+
+.sub-tab:active {
+  background: #F0EFEC;
+}
+
+.sub-tab.active {
+  background: #EDF1F5;
+  color: #5B7B9A;
+  border-color: #5B7B9A;
+  font-weight: 600;
+}
+
 .btn-start {
   display: block;
   margin: 32rpx 24rpx 0;

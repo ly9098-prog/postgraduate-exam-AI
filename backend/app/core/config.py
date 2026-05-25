@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     # Sentry
     SENTRY_DSN: str = ""
 
+    # 数学公式图片化
+    MATH_IMAGE_RENDER_ENABLED: bool = False
+    PUBLIC_BASE_URL: str = "http://localhost:8000"
+    STORAGE_BACKEND: str = "local"  # "local" 或 "cos"
+
     # 部署
     WORKERS: int = 4
     MAX_CONNECTIONS: int = 100

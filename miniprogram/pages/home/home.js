@@ -57,7 +57,12 @@ Page({
   },
 
   subjectLabel(s) {
-    const map = { math2: '数学二', exam408: '408', english: '英语' }
+    var map = {
+      math2: '数学二', 'math2-calculus': '数学二·高数', 'math2-linalg': '数学二·线代',
+      exam408: '408', 'exam408-ds': '408·DS', 'exam408-os': '408·OS',
+      'exam408-co': '408·CO', 'exam408-cn': '408·CN',
+      english: '英语',
+    }
     return map[s] || s
   },
 
