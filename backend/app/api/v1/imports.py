@@ -60,6 +60,7 @@ async def download_template(
 @router.post("/upload", response_model=ImportUploadResponse)
 async def upload_file(
     file: UploadFile,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -76,7 +77,7 @@ async def upload_file(
     content = await file.read()
     try:
         if is_pdf:
-            batch_id, total = await svc.import_pdf(db, content, file.filename)
+            batch_id, total = await svc.import_pdf(db, content, file.filename, background_tasks)
             source_type = "pdf"
         else:
             batch_id, total = await svc.import_excel(db, content, file.filename)
@@ -354,3 +355,37 @@ async def approve_and_publish(
         return await publish_svc.approve_and_publish(db, question_ids=data.question_ids)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Stage 3: Math preview
+# ---------------------------------------------------------------------------
+
+@router.get("/math-preview/{import_id}")
+async def math_preview(
+    import_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """返回单题 segments 预览，供审核查看公式截图。"""
+    from sqlalchemy import select as sa_select
+    from app.models.question_import import QuestionImport
+
+    result = await db.execute(
+        sa_select(QuestionImport).where(QuestionImport.id == import_id)
+    )
+    qi = result.scalar_one_or_none()
+    if qi is None:
+        raise HTTPException(status_code=404, detail="导入记录不存在")
+
+    content = qi.parsed_content or {}
+    segments = content.get("segments", [])
+    formula_count = sum(1 for s in segments if s.get("type") == "math_image")
+
+    return {
+        "import_id": import_id,
+        "has_math": formula_count > 0,
+        "formula_count": formula_count,
+        "segments": segments,
+        "original_text": content.get("text", ""),
+    }

@@ -1,0 +1,33 @@
+<view class="math-question-wrap">
+  <block wx:for="{{localSegments}}" wx:key="index">
+
+    <text wx:if="{{item.type === 'text'}}" class="seg-text">{{item.text}}</text>
+
+    <view wx:elif="{{item.type === 'math_image' && item.display}}" class="seg-math-display-wrap">
+      <image
+        wx:if="{{!item._error}}"
+        src="{{item.url}}"
+        mode="widthFix"
+        class="seg-math-display"
+        binderror="onImgError"
+        data-index="{{index}}"
+      />
+      <text wx:else class="seg-math-fallback">{{item.alt}}</text>
+    </view>
+
+    <view wx:elif="{{item.type === 'math_image' && !item.display}}" class="seg-math-inline-wrap">
+      <image
+        wx:if="{{!item._error}}"
+        src="{{item.url}}"
+        mode="heightFix"
+        class="seg-math-inline"
+        binderror="onImgError"
+        data-index="{{index}}"
+      />
+      <text wx:else class="seg-math-fallback seg-math-fallback-inline">{{item.alt}}</text>
+    </view>
+
+    <view wx:elif="{{item.type === 'newline'}}" class="seg-newline" />
+
+  </block>
+</view>

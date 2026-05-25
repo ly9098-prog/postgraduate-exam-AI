@@ -1,10 +1,12 @@
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.auth import router as auth_router
 from app.api.v1.questions import router as questions_router
@@ -34,6 +36,7 @@ logger = logging.getLogger("2240ai")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting 2240AI — env=%s", settings.APP_ENV)
+    os.makedirs("static/formulas", exist_ok=True)
     await init_db()
     yield
     logger.info("Shutting down 2240AI")
@@ -103,3 +106,6 @@ app.include_router(knowledge_points_router)
 app.include_router(ai_import_router)
 app.include_router(cache_router)
 app.include_router(health_router)
+
+# 静态文件服务（开发用公式图片）
+app.mount("/static/formulas", StaticFiles(directory="static/formulas", html=False), name="static_formulas")

@@ -1,6 +1,9 @@
 import io
 import logging
+import os
+import tempfile
 import uuid
+from dataclasses import asdict
 from datetime import datetime
 
 import re
@@ -54,7 +57,13 @@ def _raw_to_parsed(raw: dict) -> dict:
     """将原始行数据转为结构化字段，尽量智能映射"""
     SUBJECT_MAP = {
         "数学二": "math2", "数学": "math2", "math2": "math2",
+        "高等数学": "math2-calculus", "高数": "math2-calculus",
+        "线性代数": "math2-linalg", "线代": "math2-linalg",
         "408": "exam408", "计算机": "exam408", "exam408": "exam408",
+        "数据结构": "exam408-ds", "DS": "exam408-ds", "exam408-ds": "exam408-ds",
+        "操作系统": "exam408-os", "OS": "exam408-os", "exam408-os": "exam408-os",
+        "计算机组成": "exam408-co", "组成原理": "exam408-co", "CO": "exam408-co", "exam408-co": "exam408-co",
+        "计算机网络": "exam408-cn", "网络": "exam408-cn", "CN": "exam408-cn", "exam408-cn": "exam408-cn",
         "英语": "english", "英语二": "english", "english": "english",
     }
     TYPE_MAP = {
@@ -108,7 +117,11 @@ def _raw_to_parsed(raw: dict) -> dict:
     difficulty = max(1, min(5, difficulty))
 
     return {
-        "subject": subject if subject in ("math2", "exam408", "english") else None,
+        "subject": subject if subject in (
+            "math2", "math2-calculus", "math2-linalg",
+            "exam408", "exam408-ds", "exam408-os", "exam408-co", "exam408-cn",
+            "english",
+        ) else None,
         "question_type": qtype,
         "parsed_content": content,
         "parsed_options": options,
@@ -120,42 +133,73 @@ def _raw_to_parsed(raw: dict) -> dict:
 
 
 def _guess_subject(text: str) -> str | None:
-    """根据 PDF 文本内容关键词猜测科目"""
+    """根据 PDF 文本内容关键词猜测科目（含子科目）"""
     text_lower = text.lower()
-    scores = {"exam408": 0, "math2": 0, "english": 0}
+    scores: dict[str, int] = {
+        "exam408-ds": 0, "exam408-os": 0, "exam408-co": 0, "exam408-cn": 0,
+        "math2-calculus": 0, "math2-linalg": 0,
+        "english": 0,
+    }
     keywords = {
-        "exam408": [
-            "算法", "数据结构", "计算机", "操作系统", "网络层", "cpu", "存储器",
-            "指令", "进程", "线程", "内存", "tcp", "ip地址", "路由",
-            "二叉树", "栈", "队列", "排序", "查找", "链表", "图论",
-            "中断", "dma", "cache", "虚拟内存", "文件系统", "i/o",
-            "码分", "频分", "csma", "局域网", "以太网",
+        "exam408-ds": [
+            "数据结构", "链表", "栈", "队列", "二叉树", "红黑树", "b树", "avl",
+            "排序", "查找", "图论", "dfs", "bfs", "最短路", "最小生成树",
+            "哈希表", "散列", "堆", "优先队列",
         ],
-        "math2": [
-            "极限", "导数", "积分", "矩阵", "向量", "微分方程",
-            "函数", "线性代数", "行列式", "特征值", "二次型",
-            "连续", "可导", "定积分", "不定积分", "偏导",
-            "极大值", "极小值", "拐点", "渐近线", "曲率",
-            "相似矩阵", "正交", "秩",
+        "exam408-os": [
+            "操作系统", "进程", "线程", "死锁", "调度", "内存管理", "虚拟内存",
+            "分页", "分段", "文件系统", "i/o", "中断", "信号量", "互斥",
+            "页面置换", "缺页",
+        ],
+        "exam408-co": [
+            "计算机组成", "指令系统", "cpu", "alu", "cache", "存储器", "dma",
+            "总线", "寻址", "流水线", "ieee 754", "浮点", "定点", "补码",
+        ],
+        "exam408-cn": [
+            "计算机网络", "tcp", "ip", "http", "udp", "路由", "交换",
+            "dns", "nat", "arp", "以太网", "局域网", "csma", "帧",
+            "网络层", "传输层", "应用层", "拥塞控制",
+        ],
+        "math2-calculus": [
+            "极限", "导数", "积分", "微分方程", "级数", "泰勒", "麦克劳林",
+            "偏导", "多元函数", "曲线积分", "曲面积分", "不定积分", "定积分",
+            "连续", "可导", "极值", "拐点", "渐近线",
+        ],
+        "math2-linalg": [
+            "矩阵", "行列式", "向量", "线性方程组", "特征值", "特征向量",
+            "二次型", "正定", "正交", "秩", "线性相关", "线性无关", "基",
+            "子空间", "相似矩阵",
         ],
         "english": [
             "reading comprehension", "passage", "paragraph", "translate",
-            "词汇", "完形填空", "阅读理解", "写作",
-            "according to the passage", "which of the following",
+            "完形填空", "阅读理解", "写作", "according to the passage",
         ],
     }
     for subj, words in keywords.items():
         for w in words:
             if w in text_lower:
                 scores[subj] += 1
-    best = max(scores, key=scores.get)
-    return best if scores[best] >= 2 else None
+
+    best = max(scores, key=lambda k: scores[k])
+    if scores[best] < 2:
+        return None
+
+    # 子科目得分不足时，退化到父科目
+    parent_map = {
+        "exam408-ds": "exam408", "exam408-os": "exam408",
+        "exam408-co": "exam408", "exam408-cn": "exam408",
+        "math2-calculus": "math2", "math2-linalg": "math2",
+    }
+    return best if scores[best] >= 3 else parent_map.get(best, best)
 
 
-def _extract_pdf_text(content: bytes) -> str:
+def _extract_pdf_text(pdf_path: str) -> str:
     """双通道提取 PDF 全文：文本型直接提取，图片型页面走 OCR。"""
     from app.services.pdf_classifier import classify_pages, get_pixmap
     from app.services.ocr_service import ocr_pages, clean_ocr_text
+
+    with open(pdf_path, "rb") as f:
+        content = f.read()
 
     classified = classify_pages(content)
     page_texts: dict[int, str] = {}
@@ -184,9 +228,9 @@ def _extract_pdf_text(content: bytes) -> str:
     return full_text
 
 
-def _parse_pdf(content: bytes, filename: str) -> list[dict]:
+def _parse_pdf(pdf_path: str, filename: str) -> list[dict]:
     """解析 PDF（文本型 + 扫描版 OCR），按题号切分，返回 raw_data 列表"""
-    text = _extract_pdf_text(content)
+    text = _extract_pdf_text(pdf_path)
 
     if not text.strip():
         raise ValueError("PDF 中未提取到文本内容（文本型和 OCR 均无结果）")
@@ -314,9 +358,24 @@ async def import_pdf(
     db: AsyncSession,
     content: bytes,
     filename: str,
+    background_tasks=None,
 ) -> tuple[str, int]:
-    """上传并解析 PDF，写入 question_imports 暂存区"""
-    raw_rows = _parse_pdf(content, filename)
+    """上传并解析 PDF，写入 question_imports 暂存区。
+
+    若 settings.MATH_IMAGE_RENDER_ENABLED 且 background_tasks 传入，
+    则注册后台数学管线任务；否则立即清理临时文件。
+    """
+    # 写入临时文件（BackgroundTask 需持有路径）
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        raw_rows = _parse_pdf(tmp_path, filename)
+    except Exception:
+        os.unlink(tmp_path)
+        raise
+
     batch_id = f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
     for row in raw_rows:
@@ -335,7 +394,71 @@ async def import_pdf(
         db.add(qi)
 
     await db.commit()
+
+    if settings.MATH_IMAGE_RENDER_ENABLED and background_tasks is not None:
+        background_tasks.add_task(_run_math_pipeline, batch_id, tmp_path, db)
+    else:
+        os.unlink(tmp_path)
+
     return batch_id, len(raw_rows)
+
+
+async def _run_math_pipeline(batch_id: str, tmp_pdf_path: str, db: AsyncSession) -> None:
+    """后台任务：对批次中每道题运行数学区域检测 + 截图上传 + 混合内容构建。"""
+    import fitz
+    from sqlalchemy import select as sa_select
+    from app.services.math_region_detector import detect_page
+    from app.services.formula_image_cropper import crop_and_upload
+    from app.services.hybrid_content_builder import build as build_content
+    from app.services.storage_backend import get_storage
+
+    doc = None
+    try:
+        doc = fitz.open(tmp_pdf_path)
+        result = await db.execute(
+            sa_select(QuestionImport).where(QuestionImport.batch_id == batch_id)
+        )
+        imports = list(result.scalars().all())
+        storage = get_storage()
+
+        for qi in imports:
+            page_num = (qi.raw_data or {}).get("page_num")
+            if page_num is None or page_num < 0 or page_num >= len(doc):
+                continue
+
+            try:
+                page = doc[page_num]
+                regions = detect_page(page)
+                if not regions:
+                    continue
+
+                regions = await crop_and_upload(doc, regions, storage, import_id=qi.id)
+                content = build_content(
+                    text=(qi.parsed_content or {}).get("text", ""),
+                    regions=regions,
+                )
+                await db.execute(
+                    sa_select(QuestionImport).where(QuestionImport.id == qi.id)
+                )
+                qi.math_regions = [asdict(r) for r in regions]
+                qi.parsed_content = content
+            except Exception as e:
+                logger.warning("math pipeline 单题失败 import_id=%s: %s", qi.id, e)
+
+        await db.commit()
+    except Exception as e:
+        logger.warning("math pipeline 失败 batch=%s: %s", batch_id, e)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+    finally:
+        if doc is not None:
+            doc.close()
+        try:
+            os.unlink(tmp_pdf_path)
+        except OSError:
+            pass
 
 
 async def approve_question(db: AsyncSession, import_id: int, data: dict) -> Question:

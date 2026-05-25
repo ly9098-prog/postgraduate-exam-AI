@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.practice_record import PracticeRecord
@@ -20,7 +20,12 @@ async def get_practice_questions(
     knowledge_points: list[str] | None = None,
     exclude_answered: bool = False,
 ) -> list[Question]:
-    conditions = [Question.is_active == True, Question.subject == subject]
+    # 精确匹配子科目，或前缀匹配父科目（exam408 → exam408、exam408-ds、exam408-os …）
+    subject_cond = or_(
+        Question.subject == subject,
+        Question.subject.like(f"{subject}-%"),
+    )
+    conditions = [Question.is_active == True, subject_cond]
 
     if knowledge_points:
         for kp in knowledge_points:

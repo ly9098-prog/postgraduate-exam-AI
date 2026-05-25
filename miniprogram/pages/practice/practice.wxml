@@ -31,6 +31,22 @@
           <text class="subject-name">英语</text>
         </view>
       </view>
+
+      <!-- 408 子科目 -->
+      <view wx:if="{{selectedSubject==='exam408' || selectedSubject==='exam408-ds' || selectedSubject==='exam408-os' || selectedSubject==='exam408-co' || selectedSubject==='exam408-cn'}}" class="sub-tab-row">
+        <view class="sub-tab {{selectedSubject==='exam408' ? 'active' : ''}}" bindtap="chooseSubject" data-subject="exam408">全部</view>
+        <view class="sub-tab {{selectedSubject==='exam408-ds' ? 'active' : ''}}" bindtap="chooseSubject" data-subject="exam408-ds">DS</view>
+        <view class="sub-tab {{selectedSubject==='exam408-os' ? 'active' : ''}}" bindtap="chooseSubject" data-subject="exam408-os">OS</view>
+        <view class="sub-tab {{selectedSubject==='exam408-co' ? 'active' : ''}}" bindtap="chooseSubject" data-subject="exam408-co">CO</view>
+        <view class="sub-tab {{selectedSubject==='exam408-cn' ? 'active' : ''}}" bindtap="chooseSubject" data-subject="exam408-cn">CN</view>
+      </view>
+
+      <!-- 数学二子科目 -->
+      <view wx:if="{{selectedSubject==='math2' || selectedSubject==='math2-calculus' || selectedSubject==='math2-linalg'}}" class="sub-tab-row">
+        <view class="sub-tab {{selectedSubject==='math2' ? 'active' : ''}}" bindtap="chooseSubject" data-subject="math2">全部</view>
+        <view class="sub-tab {{selectedSubject==='math2-calculus' ? 'active' : ''}}" bindtap="chooseSubject" data-subject="math2-calculus">高数</view>
+        <view class="sub-tab {{selectedSubject==='math2-linalg' ? 'active' : ''}}" bindtap="chooseSubject" data-subject="math2-linalg">线代</view>
+      </view>
     </view>
 
     <view class="card" wx:if="{{selectedSubject}}">
@@ -90,7 +106,12 @@
       <!-- 题目卡片 -->
       <view class="q-wrap {{animClass}}" wx:if="{{currentQuestion}}">
         <view class="q-badge">{{currentQuestion.question_type === 'multiple_choice' ? '多选题' : '单选题'}}</view>
-        <mp-html class="q-content" content="{{currentQuestion._stemHtml}}" lazy-load></mp-html>
+        <block wx:if="{{enableMathImage && currentQuestion.content.render_mode === 'segments'}}">
+          <math-question segments="{{currentQuestion.content.segments}}" />
+        </block>
+        <block wx:else>
+          <mp-html class="q-content" content="{{currentQuestion._stemHtml}}" lazy-load></mp-html>
+        </block>
 
         <!-- 选项 -->
         <view class="options" wx:if="{{optionKeys.length > 0}}">

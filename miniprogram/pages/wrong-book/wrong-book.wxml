@@ -37,7 +37,12 @@
     <text class="error-tag tag {{item.error_type}}">{{errorTypeLabel(item.error_type)}}</text>
     <text wx:if="{{item.mastered}}" class="tag tag-success">已掌握</text>
   </view>
-  <view class="wrong-question">{{item.content.text}}</view>
+  <block wx:if="{{enableMathImage && item.content && item.content.render_mode === 'segments'}}">
+    <math-question segments="{{item.content.segments}}" />
+  </block>
+  <block wx:else>
+    <view class="wrong-question">{{item.content && item.content.text}}</view>
+  </block>
   <view class="wrong-meta">
     <text>复习 {{item.review_count}} 次</text>
     <text wx:if="!item.mastered">待复习 🤔</text>
