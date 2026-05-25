@@ -108,4 +108,5 @@ app.include_router(cache_router)
 app.include_router(health_router)
 
 # 静态文件服务（开发用公式图片）
+os.makedirs("static/formulas", exist_ok=True)
 app.mount("/static/formulas", StaticFiles(directory="static/formulas", html=False), name="static_formulas")
