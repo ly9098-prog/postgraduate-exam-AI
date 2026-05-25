@@ -5,10 +5,17 @@ Page({
     batch: null,
     questions: [],
     loading: false,
+    loadError: false,
     expanding: null,
     subjectOpts: [
       { value: 'exam408', label: '408' },
+      { value: 'exam408-ds', label: 'DS（数据结构）' },
+      { value: 'exam408-os', label: 'OS（操作系统）' },
+      { value: 'exam408-co', label: 'CO（计算机组成）' },
+      { value: 'exam408-cn', label: 'CN（计算机网络）' },
       { value: 'math2', label: '数学二' },
+      { value: 'math2-calculus', label: '高等数学' },
+      { value: 'math2-linalg', label: '线性代数' },
       { value: 'english', label: '英语' },
     ],
     editing: {},
@@ -24,42 +31,51 @@ Page({
   },
 
   async loadBatch() {
-    this.setData({ loading: true })
+    this.setData({ loading: true, loadError: false })
     try {
-      const res = await api.get(`/import/batches/${this.batchId}`)
-      const subjectMap = { math2: '数学二', exam408: '408', english: '英语' }
-      const statusMap = { pending: '待审核', approved: '已通过', rejected: '已拒绝' }
-      const questions = (res.questions || []).map(q => {
-        const meta = q.ai_metadata || {}
-        const aiKps = Array.isArray(meta.knowledge_points) ? meta.knowledge_points : []
-        const aiSuggestion = meta.complete_suggestion || null
-        return {
-          ...q,
-          _preview: (q.parsed_content?.text || '').slice(0, 80) || '无内容',
+      const res = await api.get('/import/batches/' + this.batchId)
+      var subjectMap = { math2: '数学二', exam408: '408', english: '英语',
+        'math2-calculus': '高数', 'math2-linalg': '线代',
+        'exam408-ds': 'DS', 'exam408-os': 'OS', 'exam408-co': 'CO', 'exam408-cn': 'CN' }
+      var statusMap = { pending: '待审核', approved: '已通过', rejected: '已拒绝' }
+      var questions = (res.questions || []).map(function(q) {
+        var meta = (q.ai_metadata && typeof q.ai_metadata === 'object') ? q.ai_metadata : {}
+        var aiKps = Array.isArray(meta.knowledge_points) ? meta.knowledge_points : []
+        var aiSuggestion = meta.complete_suggestion || null
+        var pc = (q.parsed_content && typeof q.parsed_content === 'object') ? q.parsed_content : {}
+        var segments = Array.isArray(pc.segments) ? pc.segments : []
+        return Object.assign({}, q, {
+          _preview: (pc.text || '').slice(0, 80) || '无内容',
           _subjectLabel: subjectMap[q.subject] || q.subject || '-',
           _statusLabel: statusMap[q.status] || q.status,
           _optionKeys: q.parsed_options ? Object.keys(q.parsed_options).sort() : [],
           _aiKps: aiKps,
           _aiSuggestion: aiSuggestion,
           _aiConfidencePct: q.ai_confidence != null ? Math.round(q.ai_confidence * 100) : null,
-        }
+          _hasMath: segments.some(function(s) { return s.type === 'math_image' }),
+          // 规范化 ai_metadata 供 WXML 安全访问（避免 null.chapter 崩溃）
+          ai_metadata: meta,
+          // 规范化 parsed_content 避免 WXML 访问 null
+          parsed_content: pc,
+        })
       })
-      const editing = {}
-      for (const q of questions) {
+      var editing = {}
+      for (var i = 0; i < questions.length; i++) {
+        var q = questions[i]
         editing[q.id] = { subject: q.subject || '', parsedAnswer: q.parsed_answer || '' }
       }
       this.setData({
         batch: { batch_id: res.batch_id, source_file: res.source_file, source_type: res.source_type },
-        questions,
-        hasPending: questions.some(q => q.status === 'pending'),
-        editing,
+        questions: questions,
+        hasPending: questions.some(function(q) { return q.status === 'pending' }),
+        editing: editing,
         selectMode: false,
         selectedIds: {},
         selectedCount: 0,
       })
     } catch (e) {
-      console.error('操作失败', e)
-      wx.showToast({ title: '加载失败', icon: 'none' })
+      console.error('loadBatch 失败', e)
+      this.setData({ loadError: true })
     } finally {
       this.setData({ loading: false })
     }
@@ -194,7 +210,8 @@ Page({
     const id = this.data._activeId
     if (!id) return
     const idx = e.detail.value
-    const value = this.data.subjectOpts[idx]?.value || ''
+    const opt = this.data.subjectOpts[idx]
+    const value = (opt && opt.value) || ''
     if (!value) return
 
     const questions = [...this.data.questions]
@@ -321,6 +338,35 @@ Page({
 
   goBack() {
     wx.navigateBack()
+  },
+
+  async showMathPreview(e) {
+    const id = e.currentTarget.dataset.id
+    wx.showLoading({ title: '加载公式...' })
+    try {
+      const res = await api.get(`/import/math-preview/${id}`)
+      wx.hideLoading()
+      if (!res.has_math || res.formula_count === 0) {
+        wx.showToast({ title: '暂无公式截图', icon: 'none' })
+        return
+      }
+      // 找出所有 math_image segment 的 URL
+      const mathSegs = (res.segments || []).filter(s => s.type === 'math_image')
+      const urls = mathSegs.map(s => s.url).filter(Boolean)
+      if (urls.length === 0) {
+        wx.showToast({ title: '暂无可预览的公式', icon: 'none' })
+        return
+      }
+      // 用微信图片预览 API 展示
+      wx.previewImage({
+        current: urls[0],
+        urls,
+      })
+    } catch (err) {
+      console.error('公式预览失败', err)
+      wx.hideLoading()
+      wx.showToast({ title: '预览失败', icon: 'none' })
+    }
   },
 
   async aiEnrichOne(e) {

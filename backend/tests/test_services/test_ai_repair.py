@@ -462,7 +462,9 @@ class TestRepairQuestions:
             "stem": "long enough stem", "answer": "text",
             "options": [{"key": "A", "text": "2x"}], "question_type": "subjective",
         })
-        result = repair_questions([q], config={"confidence_threshold": 0.4})
+        mocks = self._patch_deepseek()
+        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]):
+            result = repair_questions([q], config={"confidence_threshold": 0.4})
         assert result["stats"]["skipped"] == 1
 
     def test_source_info_preserved(self):

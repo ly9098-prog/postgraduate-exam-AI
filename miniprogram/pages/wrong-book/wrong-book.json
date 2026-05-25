@@ -1,1 +1,7 @@
-{ "navigationBarTitleText": "错题本" }
+{
+  "navigationBarTitleText": "错题本",
+  "usingComponents": {
+    "mp-html": "/components/mp-html/index",
+    "math-question": "/components/math-question/math-question"
+  }
+}

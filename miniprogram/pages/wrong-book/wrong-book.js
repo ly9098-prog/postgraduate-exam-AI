@@ -1,4 +1,5 @@
 const api = require('../../utils/api')
+const config = require('../../config')
 
 Page({
   data: {
@@ -8,6 +9,11 @@ Page({
     page: 1,
     hasMore: false,
     loading: false,
+    enableMathImage: false,
+  },
+
+  onLoad() {
+    this.setData({ enableMathImage: config.enableMathImage || false })
   },
 
   onShow() {
@@ -48,8 +54,9 @@ Page({
   },
 
   switchFilter(e) {
-    const filter = e.currentTarget?.dataset?.filter || e
-    this.setData({ filter, list: [], page: 1 })
+    var ds = e.currentTarget && e.currentTarget.dataset
+    var filter = (ds && ds.filter) || e
+    this.setData({ filter: filter, list: [], page: 1 })
     this.loadList(true)
   },
 
@@ -64,7 +71,12 @@ Page({
   },
 
   subjectLabel(s) {
-    const map = { math2: '数学二', exam408: '408', english: '英语' }
+    var map = {
+      math2: '数学二', 'math2-calculus': '数学二·高数', 'math2-linalg': '数学二·线代',
+      exam408: '408', 'exam408-ds': '408·DS', 'exam408-os': '408·OS',
+      'exam408-co': '408·CO', 'exam408-cn': '408·CN',
+      english: '英语',
+    }
     return map[s] || s
   },
 

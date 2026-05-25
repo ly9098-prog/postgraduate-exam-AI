@@ -13,7 +13,7 @@ class QuestionImport(Base):
     batch_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     source_type: Mapped[str] = mapped_column(String(16), nullable=False)
     source_file: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    subject: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    subject: Mapped[str | None] = mapped_column(String(32), nullable=True)
     question_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     raw_data: Mapped[dict] = mapped_column(JSON, nullable=False)
     parsed_content: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -32,6 +32,9 @@ class QuestionImport(Base):
     ai_raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     ai_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ai_answer_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # 数学公式图片化（Stage 3）
+    math_regions: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
