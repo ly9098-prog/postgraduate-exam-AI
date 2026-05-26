@@ -19,6 +19,15 @@ from app.schemas.practice import (
 )
 from app.services import practice_service as svc
 
+_TRUE_FALSE_OPTIONS = {"A": "正确", "B": "错误"}
+
+
+def _ensure_true_false_options(question_type: str, options: dict | None) -> dict | None:
+    if question_type in ("true_false", "judgement") and not options:
+        return _TRUE_FALSE_OPTIONS
+    return options
+
+
 router = APIRouter(prefix="/api/v1/practice")
 
 
@@ -53,7 +62,7 @@ async def get_practice_questions(
                 subject=q.subject,
                 question_type=q.question_type,
                 content=q.content,
-                options=q.options,
+                options=_ensure_true_false_options(q.question_type, q.options),
                 knowledge_points=q.knowledge_points,
                 difficulty=q.difficulty,
             )

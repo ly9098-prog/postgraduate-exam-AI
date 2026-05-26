@@ -263,9 +263,13 @@ Page({
       if (!q.subject && edit.subject) body.subject = edit.subject
       if (!q.parsed_answer && edit.parsedAnswer) body.parsed_answer = edit.parsedAnswer
 
-      await api.put(`/import/questions/${id}`, body)
+      const res = await api.put(`/import/questions/${id}`, body)
       wx.hideLoading()
-      wx.showToast({ title: '已通过', icon: 'success' })
+      if (res && res.is_duplicate) {
+        wx.showToast({ title: '已通过（与题库现有题重复）', icon: 'none' })
+      } else {
+        wx.showToast({ title: '已通过', icon: 'success' })
+      }
       this.loadBatch()
     } catch (e) {
       console.error('操作失败', e)
@@ -325,14 +329,23 @@ Page({
     try {
       const res = await api.post(`/import/batches/${this.batchId}/approve`)
       wx.hideLoading()
-      let msg = `已通过 ${res.approved_count} 道`
-      if (res.skipped_count > 0) msg += `，${res.skipped_count} 道缺字段跳过`
-      wx.showToast({ title: msg, icon: 'none' })
+      const skipped = res.skipped || []
+      if (skipped.length > 0) {
+        const lines = skipped.slice(0, 5).map(s => `#${s.id} 缺 ${(s.missing || []).join('、')}`)
+        const more = skipped.length > 5 ? `\n…还有 ${skipped.length - 5} 道` : ''
+        wx.showModal({
+          title: `通过 ${res.approved_count} 道，${skipped.length} 道未通过`,
+          content: `下列题目缺少必填字段，请逐题审核补充后再通过：\n${lines.join('\n')}${more}`,
+          showCancel: false,
+        })
+      } else {
+        wx.showToast({ title: `已通过 ${res.approved_count} 道`, icon: 'success' })
+      }
       this.loadBatch()
     } catch (e) {
       console.error('操作失败', e)
       wx.hideLoading()
-      wx.showToast({ title: e.errMsg || '批量操作失败', icon: 'none' })
+      wx.showToast({ title: e.message || e.errMsg || '批量操作失败', icon: 'none' })
     }
   },
 

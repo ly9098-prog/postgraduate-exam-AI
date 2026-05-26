@@ -105,7 +105,7 @@
     >
       <!-- 题目卡片 -->
       <view class="q-wrap {{animClass}}" wx:if="{{currentQuestion}}">
-        <view class="q-badge">{{currentQuestion.question_type === 'multiple_choice' ? '多选题' : '单选题'}}</view>
+        <view class="q-badge">{{currentQuestion.question_type === 'multiple_choice' ? '多选题' : currentQuestion.question_type === 'true_false' || currentQuestion.question_type === 'judgement' ? '判断题' : '单选题'}}</view>
         <block wx:if="{{enableMathImage && currentQuestion.content.render_mode === 'segments'}}">
           <math-question segments="{{currentQuestion.content.segments}}" />
         </block>
