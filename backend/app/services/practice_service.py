@@ -13,6 +13,18 @@ from app.services.wrong_question_service import record_wrong
 
 logger = logging.getLogger(__name__)
 
+_TRUE_FALSE_TRUE = {"a", "true", "对", "是", "正确", "t", "yes", "1"}
+_TRUE_FALSE_FALSE = {"b", "false", "错", "否", "错误", "f", "no", "0"}
+
+
+def _normalize_true_false_answer(value: str) -> str:
+    v = str(value or "").strip().lower()
+    if v in _TRUE_FALSE_TRUE:
+        return "A"
+    if v in _TRUE_FALSE_FALSE:
+        return "B"
+    return v.upper()
+
 
 async def get_practice_questions(
     db: AsyncSession,
@@ -77,6 +89,8 @@ async def submit_answer(
         raise ValueError(f"题目不存在: {question_id}")
 
     is_correct = user_answer.strip().lower() == question.answer.strip().lower()
+    if question.question_type == "true_false":
+        is_correct = _normalize_true_false_answer(user_answer) == _normalize_true_false_answer(question.answer)
 
     record = PracticeRecord(
         user_id=user_id,
