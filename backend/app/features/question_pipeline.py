@@ -80,6 +80,13 @@ class QuestionNormalizer:
         "多项选择题": "multiple_choice",
         "true_false": "true_false",
         "truefalse": "true_false",
+        "judgement": "true_false",
+        "judgment": "true_false",
+        "t/f": "true_false",
+        "tf": "true_false",
+        "true/false": "true_false",
+        "对错": "true_false",
+        "对错题": "true_false",
         "判断": "true_false",
         "判断题": "true_false",
         "是非题": "true_false",
@@ -673,7 +680,9 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
             "options": options_str,
             "answer": answer,
             "explanation": analysis,
-            "question_type": "choice" if options else "fill",
+            "question_type": "choice" if options else (
+                "true_false" if re.search(r"[（(]\s*判断题?\s*[）)]|^\s*判断题?[：:]", stem) else "fill"
+            ),
         })
 
     if not results:
@@ -725,7 +734,7 @@ async def import_excel(
 
 
 async def import_pdf(
-    db: AsyncSession, content: bytes, filename: str
+    db: AsyncSession, content: bytes, filename: str, background_tasks=None
 ) -> tuple[str, int]:
     raw_rows = _parse_pdf(content, filename)
     batch_id = f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
