@@ -37,7 +37,7 @@ Page({
       var subjectMap = { math2: '数学二', exam408: '408', english: '英语',
         'math2-calculus': '高数', 'math2-linalg': '线代',
         'exam408-ds': 'DS', 'exam408-os': 'OS', 'exam408-co': 'CO', 'exam408-cn': 'CN' }
-      var statusMap = { pending: '待审核', approved: '已通过', rejected: '已拒绝' }
+      var statusMap = { pending: '待审核', approved: '已通过', published: '已发布', rejected: '已拒绝' }
       var questions = (res.questions || []).map(function(q) {
         var meta = (q.ai_metadata && typeof q.ai_metadata === 'object') ? q.ai_metadata : {}
         var aiKps = Array.isArray(meta.knowledge_points) ? meta.knowledge_points : []
@@ -475,7 +475,7 @@ Page({
   },
 
   statusLabel(s) {
-    const map = { pending: '待审核', approved: '已通过', rejected: '已拒绝' }
+    const map = { pending: '待审核', approved: '已通过', published: '已发布', rejected: '已拒绝' }
     return map[s] || s
   },
 })

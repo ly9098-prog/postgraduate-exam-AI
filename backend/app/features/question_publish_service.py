@@ -29,7 +29,8 @@ MAX_BATCH_SIZE = 100
 
 
 async def _migrate_old_approved(db: AsyncSession) -> int:
-    """将旧版 approve 流程中已创建 Question 的记录补齐为 published 状态。"""
+    """将旧版 approve 流程中仅改状态但未写入 questions 表的记录补发布。"""
+    # 1. 已有 question_id 的，只更新状态标记
     result = await db.execute(
         select(QuestionImport).where(
             QuestionImport.status == "approved",
@@ -39,9 +40,31 @@ async def _migrate_old_approved(db: AsyncSession) -> int:
     records = list(result.scalars().all())
     for r in records:
         r.status = "published"
-    if records:
-        logger.info("Migrated %d old approved records to published", len(records))
-    return len(records)
+    migrated_status = len(records)
+
+    # 2. question_id 为空的旧 approved 记录，补写入 questions 表
+    result2 = await db.execute(
+        select(QuestionImport).where(
+            QuestionImport.status == "approved",
+            QuestionImport.question_id.is_(None),
+        )
+    )
+    orphans = list(result2.scalars().all())
+    published_orphans = 0
+    for qi in orphans:
+        item = await publish_single_question(db, qi)
+        if item["status"] == "published":
+            published_orphans += 1
+        elif item["status"] == "duplicate":
+            qi.status = "published"
+            qi.question_id = item["question_id"]
+
+    if migrated_status or published_orphans:
+        logger.info(
+            "Migrated old approved records: status_only=%d, orphans_published=%d",
+            migrated_status, published_orphans,
+        )
+    return migrated_status + published_orphans
 
 
 async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
