@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta
 
+import logging
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +10,8 @@ from app.models.wrong_question import WrongQuestion
 from app.services.behavior_service import record_answer_behavior
 from app.services.review_scheduler import auto_schedule_wrong_question
 from app.services.wrong_question_service import record_wrong
+
+logger = logging.getLogger(__name__)
 
 
 async def get_practice_questions(
@@ -48,7 +51,13 @@ async def get_practice_questions(
 
     q = q.limit(count)
     result = await db.execute(q)
-    return list(result.scalars().all())
+    questions = list(result.scalars().all())
+
+    logger.info(
+        "[Practice Query] subject=%s mode=%s count=%d resultCount=%d",
+        subject, mode, count, len(questions),
+    )
+    return questions
 
 
 async def submit_answer(

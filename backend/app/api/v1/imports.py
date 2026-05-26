@@ -159,10 +159,10 @@ async def approve_batch(
 ):
     """批量通过一个批次"""
     try:
-        count, skipped = await svc.batch_approve(db, batch_id)
+        approved, skipped = await svc.batch_approve(db, batch_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"approved_count": count, "skipped_count": skipped}
+    return {"approved_count": approved, "skipped_count": skipped}
 
 
 @router.post("/batches/{batch_id}/reject", response_model=dict)
