@@ -247,6 +247,10 @@ def _parse_pdf(pdf_path: str, filename: str) -> list[dict]:
     _ANSWER_RE = re.compile(r'^(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:](.*)$')
     _ANALYSIS_RE = re.compile(r'^(?:【)?(?:解析|解答)(?:】)?\s*[：:](.*)')
 
+    def _stem_key(line: str) -> str:
+        k = re.sub(r'^\d+\s*[.、)）]\s*', '', line).strip()
+        return re.sub(r'\s+', ' ', k)
+
     results = []
     for block in blocks:
         lines = block.split("\n")
@@ -257,6 +261,7 @@ def _parse_pdf(pdf_path: str, filename: str) -> list[dict]:
         # 状态机：stem → options → answer → analysis
         # 进入 analysis 后禁止再次切换到 answer
         section = "stem"
+        stem_seen: set[str] = set()
 
         for line in lines:
             line = line.strip()
@@ -266,7 +271,9 @@ def _parse_pdf(pdf_path: str, filename: str) -> list[dict]:
             # 识别选项行：A. xxx / A: xxx（容忍空格）
             opt_match = re.match(r'^([A-D])\s*[.、:]\s*(.*)', line)
             if opt_match and section in ("stem", "options"):
-                options[opt_match.group(1)] = opt_match.group(2)
+                key = opt_match.group(1)
+                if key not in options:
+                    options[key] = opt_match.group(2)
                 section = "options"
                 continue
 
@@ -292,7 +299,10 @@ def _parse_pdf(pdf_path: str, filename: str) -> list[dict]:
                 else:
                     analysis = line
             elif section == "stem":
-                stem_lines.append(line)
+                key = _stem_key(line)
+                if key not in stem_seen:
+                    stem_seen.add(key)
+                    stem_lines.append(line)
 
         stem = "\n".join(stem_lines)
 

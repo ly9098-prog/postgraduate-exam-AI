@@ -1,168 +1,302 @@
-- 修复 PDF 导入时报错：
+- 1. 继续深度修复“导入题目后刷题页面内容重复拼接”的问题。之前修复不完整，目前仍存在严重的数据重复问题，而且这次已经可以明确看出不是简单的 UI 渲染问题，而是“文本内容被重复拼接后入库或返回”。
 
-  文件解析失败：
-  TypeError:
-  import_pdf() takes 3 positional arguments but 4 were given
+     当前错误示例：
 
-  要求先阅读 CLAUDE.md、prompt.md、docs 中关于导题、文件解析、FastAPI 路由、service 层、异步任务相关文档，再分析当前调用链，定位为什么 import_pdf() 参数数量不匹配。
+     单选题
+     某文件系统采用索引分配方式，每个文件索引块可存放128个盘块地址。若文件大小为256KB，盘块大小为1KB，且采用直接索引与一级间接索引结合的方式（前10个为直接索引，第11个为一级间接索引），则访问文件最后1KB数据需要读取的索引块个数为（ ）
 
-  ========================
-  【问题分析要求】
-  ========================
+     某文件系统采用索引分配方式，每个文件索引块可存放128个盘块地址。若文件大小为256KB，盘块大小为1KB，且采用直接索引与一级间接索引结合的方式（前10个为直接索引，第11个为一级间接索引），则访问文件最后1KB数据需要读取的索引块个数为（ ）
 
-  当前错误说明：
+     A. 1
+     1
 
-  函数定义与实际调用参数数量不一致。
+     B. 2
+     2
 
-  很可能存在以下情况之一：
+     C. 3
+     3
 
-  1. import_pdf() 函数签名已修改
-     但调用方仍使用旧参数
+     D. 4
+     4
 
-  2. class method 缺少 self
-     或被错误当作实例方法调用
+     可以明显看出：
 
-  3. FastAPI dependency injection
-     自动传入额外参数
+     1. 整个题干被完整重复一次
+     2. 每个选项内容也被重复一次
+     3. 重复模式是：
+        “原文本 + 换行 + 原文本”
+     4. 说明不是随机乱码，而是：
+        - parser append 两次
+        - normalize 执行两次
+        - merge 时重复拼接
+        - markdown/text 提取重复
+        - OCR + 原文本双重合并
+        - 或 response formatter 重复处理
 
-  4. celery/background task
-     包装时参数变化
+     ========================
+     【必须重点排查】
+     ========================
 
-  5. route → service → parser
-     多层透传时参数错位
+     不要只修 UI，必须完整追踪数据流：
 
-  6. async/sync 改造后签名不一致
-
-  7. parser registry / strategy pattern
-     调用接口未统一
-
-  ========================
-  【必须排查】
-  ========================
-
-  检查以下内容：
-
-  1. import_pdf 定义位置
-     - parser/pdf.py
-     - services/import_service.py
-     - utils/pdf_importer.py
-     - 或其他相关模块
-
-  2. 所有 import_pdf 调用位置
-     全局搜索：
-     - import_pdf(
-     - await import_pdf(
-     - parser.import_pdf(
-     - self.import_pdf(
-
-  3. 检查函数签名：
-
-  例如：
-
-  错误情况：
-  def import_pdf(file, subject):
-
-  实际调用：
-  import_pdf(file, subject, user_id)
-
-  或者：
-
-  def import_pdf(self, file, subject):
-
-  但被当作普通函数调用。
-
-  4. 检查：
-     - staticmethod
-     - classmethod
-     - dependency injection
-     - background task wrapper
-     - partial()
-     - callback
-
-  ========================
-  【修复要求】
-  ========================
-
-  1. 统一 import_pdf 调用接口
-     所有调用方参数一致
-
-  2. 明确函数职责：
-     - 文件读取
-     - PDF OCR
-     - 题目解析
-     - 标准化
-     - 入库
-
-  避免一个函数承担全部逻辑。
-
-  3. 如果需要新增参数：
-     - 使用 keyword arguments
-     - 避免位置参数错位
-
-  推荐：
-
-  def import_pdf(
-      file_path: str,
-      subject: str,
-      *,
-      user_id: int | None = None,
-      options: dict | None = None,
-  ):
-
-  避免：
-
-  import_pdf(a, b, c, d)
-
-  4. 增加参数校验
-     在入口层明确报错：
-     - 缺少参数
-     - 参数类型错误
-     - 空文件
-     - 非 PDF 文件
-
-  5. 修复所有调用链：
-     route
-     → service
+     PDF/TXT/Word
      → parser
-     → task
-     → repository
+     → normalize
+     → import service
+     → database
+     → publish
+     → practice API
+     → frontend formatter
+     → page render
 
-  确保参数数量一致。
+     每一层都打印并验证数据。
 
-  ========================
-  【测试要求】
-  ========================
+     必须确认：
 
-  新增测试：
+     - 哪一层第一次出现重复
+     - 哪一层把文本拼接成：
+       text + '\n' + text
+     - 是否数据库里已经是重复数据
+     - 是否 API 返回已经重复
+     - 是否前端 formatQuestion() 再次 append
 
-  1. PDF 导入单元测试
-  2. service 调用测试
-  3. API 上传测试
-  4. async/background task 测试
-  5. 空 PDF 测试
-  6. 非 PDF 文件测试
+     ========================
+     【重点检查这些高危逻辑】
+     ========================
 
-  验证：
+     1. normalizeQuestion()
 
-  - 微信小程序上传正常
-  - 后端 API 正常
-  - 不再出现：
-    TypeError: import_pdf() takes 3 positional arguments but 4 were given
-  - 导入后题目成功进入审核区
-  - 批量导入正常
-  - 不影响 Word/TXT/PDF 其他解析器
+     检查是否：
 
-  ========================
-  【最终输出】
-  ========================
+     question.content += normalized_content
 
-  完成后输出：
+     而不是：
 
-  1. 根因分析
-  2. import_pdf 原签名
-  3. 修复后签名
-  4. 所有修改的调用点
-  5. 修改文件列表
-  6. 测试结果
-  7. 是否影响旧接口
-  8. 是否需要迁移
+     question.content = normalized_content
+
+     2. option merge
+
+     错误示例：
+
+     option.text += extracted_text
+
+     导致：
+
+     1
+     1
+
+     3. parser line join
+
+     错误示例：
+
+     content = '\n'.join(lines)
+     content += '\n' + '\n'.join(lines)
+
+     4. OCR + 原文本 merge
+
+     可能：
+
+     final_text = raw_text + '\n' + ocr_text
+
+     但两个内容实际上完全一样。
+
+     5. markdown/html 转换
+
+     检查：
+     - html2text
+     - markdown parser
+     - rich text parser
+     - latex parser
+
+     是否重复输出。
+
+     6. import retry
+
+     检查：
+     - 导入失败后是否重新 append
+     - transaction rollback 是否重复提交
+     - publish 时是否再次 normalize
+
+     7. frontend formatter
+
+     重点检查：
+
+     practice.js
+     question-card
+     option formatter
+     rich-text parser
+
+     是否：
+
+     displayText = text + '\n' + text
+
+     ========================
+     【增加调试日志】
+     ========================
+
+     必须打印：
+
+     1. parser 输出
+     2. normalize 前
+     3. normalize 后
+     4. 入库前
+     5. 数据库实际值
+     6. API response
+     7. 小程序 setData 前
+     8. 页面 render 前
+
+     输出长度与 hash：
+
+     len(content)
+     md5(content)
+
+     快速定位是哪一步开始重复。
+
+     ========================
+     【必须新增“重复折叠算法”】
+     ========================
+
+     新增安全文本去重函数：
+
+     deduplicate_repeated_text()
+
+     要求：
+
+     仅处理：
+     “完全重复的上下拼接”
+
+     例如：
+
+     abc
+     abc
+
+     → abc
+
+     1
+     1
+
+     → 1
+
+     但：
+
+     abc
+     def
+
+     不能误删。
+
+     支持：
+
+     - 多行重复
+     - 选项重复
+     - 题干重复
+     - 解析重复
+     - OCR 重复
+
+     推荐思路：
+
+     1. trim
+     2. split lines
+     3. 判断前半部分是否等于后半部分
+     4. 判断 normalized hash 是否一致
+     5. 再安全折叠
+
+     禁止：
+     - 模糊删除
+     - 正则暴力替换
+     - 误伤正常内容
+
+     ========================
+     【数据库修复】
+     ========================
+
+     必须编写数据修复脚本：
+
+     修复已经导入的重复题目。
+
+     处理字段：
+
+     - content
+     - options
+     - answer
+     - explanation
+
+     要求：
+
+     - 幂等
+     - 可重复执行
+     - 输出修复数量
+     - 不误伤正常题目
+
+     ========================
+     【前端修复】
+     ========================
+
+     重点检查：
+
+     1. setData merge
+     2. computedQuestion
+     3. rich-text parser
+     4. markdown render
+     5. option component
+     6. practice page 生命周期
+
+     避免：
+
+     旧 state + 新 state 拼接。
+
+     ========================
+     【测试要求】
+     ========================
+
+     新增：
+
+     1. parser 测试
+     2. normalize 测试
+     3. deduplicate 测试
+     4. API 测试
+     5. 小程序 formatter 测试
+     6. 回归测试
+
+     测试样例：
+
+     输入：
+
+     abc
+     abc
+
+     输出：
+
+     abc
+
+     输入：
+
+     1
+     1
+
+     输出：
+
+     1
+
+     输入：
+
+     abc
+     def
+
+     输出保持不变。
+
+     ========================
+     【最终输出】
+     ========================
+
+     完成后输出：
+
+     1. 根因定位
+     2. 首次出现重复的位置
+     3. 为什么之前修复失败
+     4. 修复方案
+     5. 去重算法说明
+     6. 数据修复脚本说明
+     7. 修改文件列表
+     8. 测试结果
+     9. 真机验证结果
+     10. 是否影响旧数据
