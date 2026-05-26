@@ -17,6 +17,17 @@ _STRUCTURE_LINE_RE = re.compile(
     r")"
 )
 
+# 上一行是结构行（选项/答案/解析/题号）时，下一行不允许向上合并
+_PREV_STRUCTURE_LINE_RE = re.compile(
+    r"^("
+    r"\d+\s*[.、)）]"
+    r"|[A-D]\s*[.、:：\s].+"      # 选项行（A. xxx 格式，后面必须有内容）
+    r"|[（(]\s*[A-D]\s*[）)].+"
+    r"|(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:].+"
+    r"|(?:【)?(?:解析|解答)(?:】)?\s*[：:].+"
+    r")"
+)
+
 # 独立数学表达式行：以运算符/函数/极限符号打头，不向上合并（避免粘连加剧）
 _MATH_LINE_RE = re.compile(
     r"^("
@@ -28,9 +39,6 @@ _MATH_LINE_RE = re.compile(
 
 # 上一行末尾出现这些字符说明句子已完结，不应合并
 _SENTENCE_END = frozenset("。！？；…")  # 。！？；…
-
-# 未使用，保留语义说明
-# _CONTINUATION = frozenset("，、（【：:,(")  # ，、（【：:,(
 
 
 def _should_merge(prev: str, curr: str) -> bool:
@@ -46,6 +54,10 @@ def _should_merge(prev: str, curr: str) -> bool:
         return False
     # 独立数学行不向上合并，保持可读性
     if _MATH_LINE_RE.match(curr):
+        return False
+    # 上一行是完整的选项/答案/解析行时，不允许后续行合并进来
+    # 这防止双层PDF的重复行（如"A. 1\n1"中的"1"）被错误拼接为"A. 11"
+    if _PREV_STRUCTURE_LINE_RE.match(prev):
         return False
     return True
 
@@ -81,10 +93,60 @@ def normalize_spaces(text: str) -> str:
     return "\n".join(lines)
 
 
+def deduplicate_repeated_text(text: str) -> str:
+    """折叠"完全重复的上下拼接"文本，不误伤正常内容。
+
+    处理模式：
+    - "abc\\nabc"        → "abc"
+    - "1\\n1"            → "1"
+    - "abc\\ndef\\nabc\\ndef" → "abc\\ndef"
+    - "abc\\ndef"        → 不变（不同内容不折叠）
+
+    算法：
+    1. 整体折叠：检查文本前半是否等于后半（strip 后比较）
+    2. 逐行折叠：去除相邻完全相同的行
+    """
+    if not text or not text.strip():
+        return text
+
+    stripped = text.strip()
+
+    # 整体折叠：前半 == 后半
+    half = len(stripped) // 2
+    if half > 0:
+        # 精确折叠（含分隔换行）
+        if stripped[:half] == stripped[half:]:
+            return stripped[:half].rstrip("\n")
+        # 允许中间有换行分隔
+        candidate = stripped[:half].strip()
+        if candidate and stripped[half:].strip() == candidate:
+            return candidate
+
+    # 逐行折叠：去除相邻完全相同的行（保留顺序）
+    lines = stripped.split("\n")
+    deduped: list[str] = []
+    for line in lines:
+        if not deduped or line.strip() != deduped[-1].strip():
+            deduped.append(line)
+    result = "\n".join(deduped)
+
+    # 再次整体折叠（逐行去重后可能使前后相等）
+    half2 = len(result) // 2
+    if half2 > 0:
+        if result[:half2] == result[half2:]:
+            return result[:half2].rstrip("\n")
+        candidate2 = result[:half2].strip()
+        if candidate2 and result[half2:].strip() == candidate2:
+            return candidate2
+
+    return result
+
+
 def normalize_pdf_text(text: str) -> str:
-    """主入口：空白归一化 → 视觉换行合并。"""
+    """主入口：空白归一化 → 视觉换行合并 → 重复折叠。"""
     if not text:
         return text
     text = normalize_spaces(text)
     text = merge_broken_lines(text)
+    text = deduplicate_repeated_text(text)
     return text
