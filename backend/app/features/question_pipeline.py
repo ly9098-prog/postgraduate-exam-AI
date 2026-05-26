@@ -263,6 +263,7 @@ class QuestionNormalizer:
         return sorted(normalized, key=lambda item: item["key"])
 
     def clean_text(self, text: Any) -> str:
+        from app.services.pdf_text_normalizer import deduplicate_repeated_text
         text = str(text or "")
         text = text.replace("\xa0", " ").replace("　", " ")
         text = re.sub(r"[​﻿]", "", text)
@@ -277,6 +278,7 @@ class QuestionNormalizer:
             lines.append(line)
         text = "\n".join(lines)
         text = re.sub(r"^\d+\s*[.、)）]\s*", "", text)
+        text = deduplicate_repeated_text(text)
         return self._merge_broken_lines(text).strip()
 
     def clean_analysis(self, text: Any) -> str:
@@ -624,9 +626,15 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
     blocks = re.split(r"\n\s*(?=\d+\s*[.、)）])", text)
     blocks = [b.strip() for b in blocks if len(b.strip()) > 20]
 
+    def _stem_key(line: str) -> str:
+        """规范化行内容用于去重：去题号前缀、折叠空白。"""
+        k = re.sub(r"^\d+\s*[.、)）]\s*", "", line).strip()
+        return re.sub(r"\s+", " ", k)
+
     results: list[dict] = []
     for block in blocks:
         stem_lines: list[str] = []
+        stem_seen: set[str] = set()
         options: dict = {}
         answer = ""
         analysis = ""
@@ -639,7 +647,9 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
             if section in ("stem", "options"):
                 parsed_opts = _parse_option_line(line)
                 if parsed_opts:
-                    options.update(parsed_opts)
+                    for k, v in parsed_opts.items():
+                        if k not in options:
+                            options[k] = v
                     section = "options"
                     continue
             ana_match = _ANALYSIS_RE.match(line)
@@ -656,7 +666,10 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
             if section == "analysis":
                 analysis = analysis + "\n" + line if analysis else line
             elif section == "stem":
-                stem_lines.append(line)
+                key = _stem_key(line)
+                if key not in stem_seen:
+                    stem_seen.add(key)
+                    stem_lines.append(line)
 
         stem = "\n".join(stem_lines)
         stem = re.sub(r"^\d+\s*[.、)）]\s*", "", stem)
