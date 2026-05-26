@@ -112,7 +112,11 @@ class TestMigrateOldApproved:
     def test_migrates_records_with_question_id(self):
         db = _make_mock_db()
         qis = [_make_qi_mock(qi_id=1, status="approved", question_id=100)]
-        db.execute.return_value = _make_execute_result(scalars=qis)
+        # First query: approved with question_id; second query: approved without question_id (orphans)
+        db.execute.side_effect = [
+            _make_execute_result(scalars=qis),  # has question_id
+            _make_execute_result(scalars=[]),   # orphans (none)
+        ]
 
         count = asyncio.run(_migrate_old_approved(db))
 
@@ -121,7 +125,10 @@ class TestMigrateOldApproved:
 
     def test_no_old_records(self):
         db = _make_mock_db()
-        db.execute.return_value = _make_execute_result(scalars=[])
+        db.execute.side_effect = [
+            _make_execute_result(scalars=[]),  # has question_id
+            _make_execute_result(scalars=[]),  # orphans
+        ]
 
         count = asyncio.run(_migrate_old_approved(db))
 
@@ -214,7 +221,8 @@ class TestPublishQuestions:
             _make_qi_mock(qi_id=2),
         ]
         db.execute.side_effect = [
-            _make_execute_result(scalars=[]),  # _migrate_old_approved
+            _make_execute_result(scalars=[]),  # _migrate: has question_id
+            _make_execute_result(scalars=[]),  # _migrate: orphans
             _make_execute_result(scalars=qis),   # select approved records
         ]
 
@@ -237,7 +245,8 @@ class TestPublishQuestions:
         db = _make_mock_db()
         qis = [_make_qi_mock(qi_id=1, batch_id="BATCH_X")]
         db.execute.side_effect = [
-            _make_execute_result(scalars=[]),  # _migrate
+            _make_execute_result(scalars=[]),  # _migrate: has question_id
+            _make_execute_result(scalars=[]),  # _migrate: orphans
             _make_execute_result(scalars=qis),
         ]
 
@@ -263,7 +272,8 @@ class TestPublishQuestions:
         dup_q.id = 99
 
         db.execute.side_effect = [
-            _make_execute_result(scalars=[]),  # _migrate
+            _make_execute_result(scalars=[]),  # _migrate: has question_id
+            _make_execute_result(scalars=[]),  # _migrate: orphans
             _make_execute_result(scalars=qis),
         ]
 
@@ -293,7 +303,8 @@ class TestPublishQuestions:
     def test_empty_id_list(self):
         db = _make_mock_db()
         db.execute.side_effect = [
-            _make_execute_result(scalars=[]),  # _migrate
+            _make_execute_result(scalars=[]),  # _migrate: has question_id
+            _make_execute_result(scalars=[]),  # _migrate: orphans
             _make_execute_result(scalars=[]),  # select
         ]
 
@@ -307,7 +318,8 @@ class TestPublishQuestions:
         # Only approved records are selected; pending/rejected are filtered by query
 
         db.execute.side_effect = [
-            _make_execute_result(scalars=[]),  # _migrate
+            _make_execute_result(scalars=[]),  # _migrate: has question_id
+            _make_execute_result(scalars=[]),  # _migrate: orphans
             _make_execute_result(scalars=qis),
         ]
 
@@ -332,7 +344,8 @@ class TestApproveAndPublish:
         db = _make_mock_db()
         qi = _make_qi_mock(qi_id=1, status="pending")
         db.execute.side_effect = [
-            _make_execute_result(scalars=[]),   # _migrate
+            _make_execute_result(scalars=[]),   # _migrate: has question_id
+            _make_execute_result(scalars=[]),   # _migrate: orphans
             _make_execute_result(scalars=[qi]),  # select records
         ]
 
@@ -354,7 +367,8 @@ class TestApproveAndPublish:
         db = _make_mock_db()
         qi = _make_qi_mock(qi_id=1, status="approved")
         db.execute.side_effect = [
-            _make_execute_result(scalars=[]),   # _migrate
+            _make_execute_result(scalars=[]),   # _migrate: has question_id
+            _make_execute_result(scalars=[]),   # _migrate: orphans
             _make_execute_result(scalars=[qi]),
         ]
 
@@ -374,7 +388,8 @@ class TestApproveAndPublish:
         db = _make_mock_db()
         qi = _make_qi_mock(qi_id=1, status="rejected")
         db.execute.side_effect = [
-            _make_execute_result(scalars=[]),   # _migrate
+            _make_execute_result(scalars=[]),   # _migrate: has question_id
+            _make_execute_result(scalars=[]),   # _migrate: orphans
             _make_execute_result(scalars=[qi]),
         ]
 
@@ -387,7 +402,8 @@ class TestApproveAndPublish:
         db = _make_mock_db()
         qi = _make_qi_mock(qi_id=1, status="published", question_id=100)
         db.execute.side_effect = [
-            _make_execute_result(scalars=[]),   # _migrate
+            _make_execute_result(scalars=[]),   # _migrate: has question_id
+            _make_execute_result(scalars=[]),   # _migrate: orphans
             _make_execute_result(scalars=[qi]),
         ]
 
@@ -400,7 +416,8 @@ class TestApproveAndPublish:
         db = _make_mock_db()
         qi = _make_qi_mock(qi_id=1, status="pending")
         db.execute.side_effect = [
-            _make_execute_result(scalars=[]),   # _migrate
+            _make_execute_result(scalars=[]),   # _migrate: has question_id
+            _make_execute_result(scalars=[]),   # _migrate: orphans
             _make_execute_result(scalars=[qi]),
         ]
 
@@ -416,7 +433,8 @@ class TestApproveAndPublish:
     def test_approve_and_publish_empty_ids(self):
         db = _make_mock_db()
         db.execute.side_effect = [
-            _make_execute_result(scalars=[]),  # _migrate
+            _make_execute_result(scalars=[]),  # _migrate: has question_id
+            _make_execute_result(scalars=[]),  # _migrate: orphans
         ]
 
         result = asyncio.run(approve_and_publish(db, question_ids=[]))
@@ -431,7 +449,8 @@ class TestApproveAndPublish:
             _make_qi_mock(qi_id=3, status="rejected"),
         ]
         db.execute.side_effect = [
-            _make_execute_result(scalars=[]),    # _migrate
+            _make_execute_result(scalars=[]),    # _migrate: has question_id
+            _make_execute_result(scalars=[]),    # _migrate: orphans
             _make_execute_result(scalars=qis),
         ]
 

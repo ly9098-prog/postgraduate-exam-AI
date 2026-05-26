@@ -48,7 +48,11 @@ logger = logging.getLogger(__name__)
 class QuestionNormalizer:
     """把任意来源的题目统一为标准 Question Schema 并校验。"""
 
-    VALID_SUBJECTS = {"math2", "exam408", "english"}
+    VALID_SUBJECTS = {
+        "math2", "math2-calculus", "math2-linalg",
+        "exam408", "exam408-ds", "exam408-os", "exam408-co", "exam408-cn",
+        "english",
+    }
     CANONICAL_TYPES = {
         "single_choice",
         "multiple_choice",
@@ -97,9 +101,28 @@ class QuestionNormalizer:
         "数学二": "math2",
         "数学": "math2",
         "math2": "math2",
+        "高数": "math2-calculus",
+        "高等数学": "math2-calculus",
+        "math2-calculus": "math2-calculus",
+        "线代": "math2-linalg",
+        "线性代数": "math2-linalg",
+        "math2-linalg": "math2-linalg",
         "408": "exam408",
         "计算机": "exam408",
         "exam408": "exam408",
+        "数据结构": "exam408-ds",
+        "ds": "exam408-ds",
+        "exam408-ds": "exam408-ds",
+        "操作系统": "exam408-os",
+        "os": "exam408-os",
+        "exam408-os": "exam408-os",
+        "计算机组成": "exam408-co",
+        "计算机组成原理": "exam408-co",
+        "co": "exam408-co",
+        "exam408-co": "exam408-co",
+        "计算机网络": "exam408-cn",
+        "cn": "exam408-cn",
+        "exam408-cn": "exam408-cn",
         "英语": "english",
         "英语二": "english",
         "english": "english",
@@ -761,8 +784,44 @@ async def approve_question(
     if not result["is_valid"]:
         raise ValueError(f"题目标准化失败：{', '.join(result['errors'])}")
 
-    qi.status = "approved"
-    qi.question_id = None
+    # 更新 qi 中可能被修改的字段（审核时用户可能修改了 subject/answer）
+    if data.get("subject"):
+        qi.subject = data["subject"]
+    if data.get("parsed_answer"):
+        qi.parsed_answer = data["parsed_answer"]
+
+    # 直接写入 questions 正式题库（审核通过即发布）
+    duplicate = await find_duplicate_question(
+        db, result["normalized"]["subject"], result["normalized"]["stem"]
+    )
+    if duplicate:
+        logger.info(
+            "[Review Pass] import_id=%s duplicate of question_id=%s subject=%s",
+            qi.id, duplicate.id, result["normalized"]["subject"],
+        )
+        qi.status = "published"
+        qi.question_id = duplicate.id
+    else:
+        q = Question(
+            **result["question_fields"],
+            source=qi.source_file,
+            source_type=qi.source_type,
+            source_file=qi.source_file,
+            import_batch_id=qi.batch_id,
+            raw_content=str(qi.raw_data),
+            review_status="approved",
+            is_active=True,
+        )
+        db.add(q)
+        await db.flush()
+        await db.refresh(q)
+        qi.status = "published"
+        qi.question_id = q.id
+        logger.info(
+            "[Review Pass] import_id=%s → question_id=%s subject=%s",
+            qi.id, q.id, q.subject,
+        )
+
     qi.review_note = data.get("review_note")
     if qi.ai_generated:
         qi.ai_reviewed_at = datetime.utcnow()
@@ -781,7 +840,7 @@ async def reject_question(
     await db.commit()
 
 
-async def batch_approve(db: AsyncSession, batch_id: str) -> int:
+async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, int]:
     res = await db.execute(
         select(QuestionImport).where(
             QuestionImport.batch_id == batch_id,
@@ -812,13 +871,47 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> int:
         if not result["is_valid"]:
             skipped[qi.id] = result["errors"]
             continue
-        qi.status = "approved"
-        qi.question_id = None
+
+        # 写入 questions 正式题库
+        duplicate = await find_duplicate_question(
+            db, result["normalized"]["subject"], result["normalized"]["stem"]
+        )
+        if duplicate:
+            qi.status = "published"
+            qi.question_id = duplicate.id
+            logger.info(
+                "[Batch Approve] import_id=%s duplicate of question_id=%s subject=%s",
+                qi.id, duplicate.id, result["normalized"]["subject"],
+            )
+        else:
+            q = Question(
+                **result["question_fields"],
+                source=qi.source_file,
+                source_type=qi.source_type,
+                source_file=qi.source_file,
+                import_batch_id=qi.batch_id,
+                raw_content=str(qi.raw_data),
+                review_status="approved",
+                is_active=True,
+            )
+            db.add(q)
+            await db.flush()
+            await db.refresh(q)
+            qi.status = "published"
+            qi.question_id = q.id
+            logger.info(
+                "[Batch Approve] import_id=%s → question_id=%s subject=%s",
+                qi.id, q.id, q.subject,
+            )
         if qi.ai_generated:
             qi.ai_reviewed_at = datetime.utcnow()
         count += 1
 
     await db.commit()
+    logger.info(
+        "[Batch Approve] batch_id=%s total=%d approved=%d skipped=%d",
+        batch_id, len(records), count, len(skipped),
+    )
     if count == 0 and records:
         details = "; ".join(
             f"#{qid} 缺{'、'.join(fields)}" for qid, fields in skipped.items()
@@ -826,7 +919,7 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> int:
         raise ValueError(
             f"批量审批未通过任何题目（{len(skipped)} 道缺少必填字段）。详情：{details}"
         )
-    return count
+    return count, len(skipped)
 
 
 async def list_batches(db: AsyncSession) -> list[dict]:
@@ -837,7 +930,7 @@ async def list_batches(db: AsyncSession) -> list[dict]:
             QuestionImport.source_file,
             func.count(QuestionImport.id).label("total"),
             func.sum(case((QuestionImport.status == "pending", 1), else_=0)).label("pending"),
-            func.sum(case((QuestionImport.status == "approved", 1), else_=0)).label("approved"),
+            func.sum(case((QuestionImport.status.in_(["approved", "published"]), 1), else_=0)).label("approved"),
             func.sum(case((QuestionImport.status == "rejected", 1), else_=0)).label("rejected"),
             func.max(QuestionImport.created_at).label("created_at"),
         )

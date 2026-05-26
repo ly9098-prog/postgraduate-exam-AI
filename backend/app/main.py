@@ -38,6 +38,17 @@ async def lifespan(app: FastAPI):
     logger.info("Starting 2240AI — env=%s", settings.APP_ENV)
     os.makedirs("static/formulas", exist_ok=True)
     await init_db()
+    # 将历史遗留的 approved 但未写入 questions 表的导入记录补发布
+    try:
+        from app.core.database import async_session
+        from app.features.question_publish_service import _migrate_old_approved
+        async with async_session() as db:
+            migrated = await _migrate_old_approved(db)
+            await db.commit()
+            if migrated:
+                logger.info("Startup migration: published %d orphan approved records", migrated)
+    except Exception as e:
+        logger.warning("Startup migration failed (non-fatal): %s", e)
     yield
     logger.info("Shutting down 2240AI")
 
