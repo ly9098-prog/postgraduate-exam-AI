@@ -529,19 +529,42 @@ def _parse_excel(content: bytes, filename: str) -> list[dict]:
 
 
 _PDF_SUBJECT_KEYWORDS = {
-    "exam408": [
-        "算法", "数据结构", "计算机", "操作系统", "网络层", "cpu", "存储器",
-        "指令", "进程", "线程", "内存", "tcp", "ip地址", "路由",
-        "二叉树", "栈", "队列", "排序", "查找", "链表", "图论",
-        "中断", "dma", "cache", "虚拟内存", "文件系统", "i/o",
-        "码分", "频分", "csma", "局域网", "以太网",
+    "exam408-ds": [
+        "数据结构", "二叉树", "栈", "队列", "排序", "查找", "链表", "图论",
+        "哈夫曼", "邻接矩阵", "邻接表", "散列", "hash", "深度优先", "广度优先",
+        "二分查找", "插入排序", "归并排序", "快速排序", "堆排序",
     ],
-    "math2": [
-        "极限", "导数", "积分", "矩阵", "向量", "微分方程",
-        "函数", "线性代数", "行列式", "特征值", "二次型",
+    "exam408-os": [
+        "操作系统", "进程", "线程", "信号量", "死锁", "调度算法",
+        "页表", "虚拟内存", "缺页", "tlb", "文件系统", "i/o",
+        "互斥", "同步", "管程", "临界区", "时间片", "fcfs", "rr",
+    ],
+    "exam408-co": [
+        "cpu", "存储器", "指令", "中断", "dma", "cache", "流水线",
+        "微指令", "寻址", "补码", "原码", "浮点", "运算器", "控制器",
+        "总线", "字长", "定长指令", "条件转移",
+    ],
+    "exam408-cn": [
+        "网络层", "tcp", "ip地址", "路由", "码分", "频分", "csma",
+        "局域网", "以太网", "传输层", "应用层", "数据链路",
+        "拥塞", "三次握手", "udp", "http", "dns", "子网掩码",
+    ],
+    "exam408": [
+        "算法", "计算机", "时间复杂度", "空间复杂度",
+    ],
+    "math2-calculus": [
+        "极限", "导数", "积分", "微分方程", "lim",
         "连续", "可导", "定积分", "不定积分", "偏导",
         "极大值", "极小值", "拐点", "渐近线", "曲率",
-        "相似矩阵", "正交", "秩",
+        "泰勒", "罗尔", "拉格朗日", "中值定理",
+    ],
+    "math2-linalg": [
+        "矩阵", "向量", "行列式", "特征值", "二次型",
+        "线性代数", "相似矩阵", "正交", "秩", "线性方程组",
+        "线性相关", "线性无关", "特征向量",
+    ],
+    "math2": [
+        "函数", "微积分",
     ],
     "english": [
         "reading comprehension", "passage", "paragraph", "translate",
@@ -551,15 +574,29 @@ _PDF_SUBJECT_KEYWORDS = {
 }
 
 
-def _guess_subject(text: str) -> str | None:
+def _guess_subject(text: str, *, min_score: int = 2) -> str | None:
+    """根据关键词出现频次猜测科目。子科目得分会同时累加到父科目。"""
+    if not text:
+        return None
     text_lower = text.lower()
-    scores = {k: 0 for k in _PDF_SUBJECT_KEYWORDS}
+    scores: dict[str, int] = {}
     for subj, words in _PDF_SUBJECT_KEYWORDS.items():
         for w in words:
             if w in text_lower:
-                scores[subj] += 1
+                scores[subj] = scores.get(subj, 0) + 1
+
+    if not scores:
+        return None
     best = max(scores, key=scores.get)
-    return best if scores[best] >= 2 else None
+    if scores[best] < min_score:
+        # 单关键词命中，先回退父科目；都没有就放弃
+        if scores[best] >= 1:
+            if best.startswith("exam408-"):
+                return "exam408"
+            if best.startswith("math2-"):
+                return "math2"
+        return None
+    return best
 
 
 def _extract_pdf_text(content: bytes) -> str:
@@ -621,7 +658,7 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
         raise ValueError("PDF 中未提取到文本内容（文本型和 OCR 均无结果）")
     text = normalize_pdf_text(text)
     text = fix_ocr_formula(text)
-    guessed_subject = _guess_subject(text)
+    default_subject = _guess_subject(text, min_score=2)
 
     blocks = re.split(r"\n\s*(?=\d+\s*[.、)）])", text)
     blocks = [b.strip() for b in blocks if len(b.strip()) > 20]
@@ -687,8 +724,11 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
             if options
             else ""
         )
+        per_question_subject = (
+            _guess_subject(stem + " " + analysis, min_score=1) or default_subject
+        )
         results.append({
-            "subject": guessed_subject,
+            "subject": per_question_subject,
             "stem": stem,
             "options": options_str,
             "answer": answer,
@@ -773,7 +813,8 @@ async def import_pdf(
 
 async def approve_question(
     db: AsyncSession, import_id: int, data: dict
-) -> QuestionImport:
+) -> dict:
+    """审核通过单题并写入正式题库。返回 {qi, is_duplicate, question_id}。"""
     qi = await _get_qi(db, import_id)
     if qi.status != "pending":
         raise ValueError("该记录已审核")
@@ -816,6 +857,7 @@ async def approve_question(
     duplicate = await find_duplicate_question(
         db, result["normalized"]["subject"], result["normalized"]["stem"]
     )
+    is_duplicate = False
     if duplicate:
         logger.info(
             "[Review Pass] import_id=%s duplicate of question_id=%s subject=%s",
@@ -823,6 +865,7 @@ async def approve_question(
         )
         qi.status = "published"
         qi.question_id = duplicate.id
+        is_duplicate = True
     else:
         q = Question(
             **result["question_fields"],
@@ -848,7 +891,7 @@ async def approve_question(
     if qi.ai_generated:
         qi.ai_reviewed_at = datetime.utcnow()
     await db.commit()
-    return qi
+    return {"qi": qi, "is_duplicate": is_duplicate, "question_id": qi.question_id}
 
 
 async def reject_question(
@@ -862,7 +905,7 @@ async def reject_question(
     await db.commit()
 
 
-async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, int]:
+async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int, list[str]]]:
     res = await db.execute(
         select(QuestionImport).where(
             QuestionImport.batch_id == batch_id,
@@ -934,14 +977,12 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, int]:
         "[Batch Approve] batch_id=%s total=%d approved=%d skipped=%d",
         batch_id, len(records), count, len(skipped),
     )
-    if count == 0 and records:
+    if skipped:
         details = "; ".join(
             f"#{qid} 缺{'、'.join(fields)}" for qid, fields in skipped.items()
         )
-        raise ValueError(
-            f"批量审批未通过任何题目（{len(skipped)} 道缺少必填字段）。详情：{details}"
-        )
-    return count, len(skipped)
+        logger.warning("[Batch Approve] skipped detail: %s", details)
+    return count, skipped
 
 
 async def list_batches(db: AsyncSession) -> list[dict]:

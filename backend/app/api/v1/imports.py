@@ -144,11 +144,17 @@ async def review_question(
         return {"status": "rejected"}
 
     try:
-        qi = await svc.approve_question(db, question_id, data.model_dump(exclude_none=True))
+        result = await svc.approve_question(db, question_id, data.model_dump(exclude_none=True))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return {"status": "approved", "id": qi.id}
+    qi = result["qi"]
+    return {
+        "status": "duplicate" if result["is_duplicate"] else "approved",
+        "id": qi.id,
+        "question_id": result["question_id"],
+        "is_duplicate": result["is_duplicate"],
+    }
 
 
 @router.post("/batches/{batch_id}/approve", response_model=dict)
@@ -157,12 +163,19 @@ async def approve_batch(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    """批量通过一个批次"""
+    """批量通过一个批次。skipped 题目会列出缺失字段，前端可据此提示用户去逐题审核。"""
     try:
         approved, skipped = await svc.batch_approve(db, batch_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"approved_count": approved, "skipped_count": skipped}
+    skipped_details = [
+        {"id": qid, "missing": fields} for qid, fields in skipped.items()
+    ]
+    return {
+        "approved_count": approved,
+        "skipped_count": len(skipped),
+        "skipped": skipped_details,
+    }
 
 
 @router.post("/batches/{batch_id}/reject", response_model=dict)

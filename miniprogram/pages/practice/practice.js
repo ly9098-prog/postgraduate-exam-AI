@@ -15,6 +15,18 @@ function _textToHtml(text) {
   return '<p>' + out.join('') + '</p>'
 }
 
+function _deduplicateLines(text) {
+  if (!text) return text
+  const lines = text.split('\n')
+  const out = []
+  for (let i = 0; i < lines.length; i++) {
+    if (i === 0 || lines[i].trim() !== lines[i - 1].trim()) {
+      out.push(lines[i])
+    }
+  }
+  return out.join('\n')
+}
+
 Page({
   data: {
     // 设置
@@ -129,7 +141,17 @@ Page({
       if (questions.length > 0) {
         this._showQuestion(0)
       } else {
-        wx.showToast({ title: '该科目暂无题目', icon: 'none' })
+        const label = this.subjectLabel(this.data.selectedSubject) || this.data.selectedSubject
+        wx.showModal({
+          title: '该科目暂无题目',
+          content: `「${label}」目前没有已发布的题目。\n请确认：\n1. 导入批次已审核通过\n2. 题目科目分类是否正确（导入时混合 PDF 可能被错分）\n3. 试试其他科目分类`,
+          showCancel: true,
+          confirmText: '返回',
+          cancelText: '继续等待',
+          success: (r) => {
+            if (r.confirm) this.setData({ started: false })
+          },
+        })
       }
     } catch (e) {
       console.error('加载题目失败', e)
@@ -141,19 +163,26 @@ Page({
   _showQuestion(index) {
     const q = this.data.questions[index]
     if (!q) return
-    const optionKeys = q.options ? Object.keys(q.options) : []
+    // 判断题兜底：若无选项则注入标准 A/B 选项
+    const isTrueFalse = q.question_type === 'true_false' || q.question_type === 'judgement'
+    const opts = (q.options && Object.keys(q.options).length > 0)
+      ? q.options
+      : (isTrueFalse ? { A: '正确', B: '错误' } : null)
+    const optionKeys = opts ? Object.keys(opts) : []
     const answer = this.data.answerMap[String(q.id)] || ''
     const isMulti = q.question_type === 'multiple_choice'
     const selectedFlags = {}
     for (const key of optionKeys) {
       selectedFlags[key] = isMulti ? answer.split(',').indexOf(key) >= 0 : answer === key
     }
-    // 预处理 LaTeX
+    // 预处理 LaTeX，去重相邻重复段落
     const stemText = (q.content && (q.content.text || q.content.stem)) || ''
-    q._stemHtml = _textToHtml(stemText)
+    const dedupedStem = _deduplicateLines(stemText)
+    q._stemHtml = _textToHtml(dedupedStem)
+    q._opts = opts
     const optHtml = {}
     for (const key of optionKeys) {
-      optHtml[key] = _textToHtml(q.options[key] || '')
+      optHtml[key] = _textToHtml((opts && opts[key]) || '')
     }
     q._optHtml = optHtml
     this.setData({
