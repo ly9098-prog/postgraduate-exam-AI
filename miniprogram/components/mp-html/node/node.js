@@ -78,7 +78,9 @@ Component({
     })
     // #endif
     // #ifdef MP-ALIPAY
-    this.props.onAdd(this)
+    if (this.props && typeof this.props.onAdd === 'function') {
+      this.props.onAdd(this)
+    }
     // #endif
   },
   // #endif
