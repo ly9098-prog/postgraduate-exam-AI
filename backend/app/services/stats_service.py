@@ -80,8 +80,9 @@ async def _calc_consecutive_days(db: AsyncSession, user_id: int) -> int:
     today = date.today()
 
     result = await db.execute(
-        select(func.date(PracticeRecord.answered_at).distinct())
+        select(func.date(PracticeRecord.answered_at))
         .where(PracticeRecord.user_id == user_id)
+        .distinct()
         .order_by(func.date(PracticeRecord.answered_at).desc())
     )
     dates = {row[0] for row in result.all()}
