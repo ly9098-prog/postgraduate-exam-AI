@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     # 日志级别
     LOG_LEVEL: str = "INFO"
 
+    # Debug
+    DEBUG_MODE: bool = False
+    DEBUG_QUESTION_ID: int | None = None
+
     # DeepSeek
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"

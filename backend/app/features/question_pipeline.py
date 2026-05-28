@@ -36,6 +36,7 @@ from app.core.config import settings
 from app.models.ai_generation_log import AiGenerationLog
 from app.models.question import Question
 from app.models.question_import import QuestionImport
+from app.utils.trace.debug import debug_log, save_debug_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +154,7 @@ class QuestionNormalizer:
             or (raw.get("parsed_content") or {}).get("text")
             or ""
         ))
+        stem = self._remove_embedded_options(stem, options)
         answer = self.normalize_answer(
             raw.get("answer") or raw.get("答案") or raw.get("parsed_answer") or "",
             question_type,
@@ -223,6 +225,18 @@ class QuestionNormalizer:
         if question_type == "multiple_choice":
             return values
         return values[0] if values else ""
+
+    def _remove_embedded_options(self, stem: str, options: list[dict]) -> str:
+        if not stem or not options:
+            return stem
+        text = stem
+        for item in options:
+            key = re.escape(str(item.get("key") or "").strip())
+            value = re.escape(str(item.get("text") or "").strip())
+            if not key or not value:
+                continue
+            text = re.sub(rf"\s*{key}\s*[.、:：）)]\s*{value}", "", text)
+        return text.strip()
 
     def normalize_options(self, options: Any) -> list[dict]:
         if not options:
@@ -435,6 +449,7 @@ def process_question_pipeline(
     raw_input: dict,
     source_type: str,
     source: dict | None = None,
+    trace_id: str | None = None,
 ) -> dict:
     """所有题目入口的唯一管线。
 
@@ -448,6 +463,16 @@ def process_question_pipeline(
           "stem_hash": str,
         }
     """
+    debug_log(
+        trace_id,
+        "BEFORE_NORMALIZE",
+        {"source_type": source_type, "source": source, "raw_keys": list(raw_input.keys())},
+    )
+    save_debug_snapshot(
+        trace_id,
+        "before_normalize",
+        {"source_type": source_type, "source": source, "raw_input": raw_input},
+    )
     normalized = normalizer.normalize(raw_input, source)
     result = {
         "source_type": source_type,
@@ -461,6 +486,28 @@ def process_question_pipeline(
             normalizer.to_question_fields(normalized) if normalized["is_valid"] else None
         ),
     }
+    debug_log(
+        trace_id,
+        "AFTER_NORMALIZE",
+        {
+            "source_type": source_type,
+            "is_valid": normalized["is_valid"],
+            "errors": normalized["errors"],
+            "warnings": normalized["warnings"],
+            "stem_hash": normalized["stem_hash"],
+        },
+    )
+    save_debug_snapshot(
+        trace_id,
+        "after_normalize",
+        {
+            "source_type": source_type,
+            "normalized": normalized,
+            "is_valid": normalized["is_valid"],
+            "errors": normalized["errors"],
+            "warnings": normalized["warnings"],
+        },
+    )
     if not normalized["is_valid"]:
         logger.warning(
             "Invalid question skipped: source_type=%s file=%s errors=%s stem_hash=%s",
@@ -486,11 +533,36 @@ async def find_duplicate_question(
     target_hash = normalizer.stem_hash(stem)
     for question in result.scalars().all():
         existing_stem = (question.content or {}).get("text", "")
+        cleaned_existing_stem = normalizer.clean_text(existing_stem)
         if normalizer.stem_hash(existing_stem) == target_hash:
+            return question
+        if normalizer.stem_hash(cleaned_existing_stem) == target_hash:
             return question
         if normalizer.is_similar_stem(existing_stem, stem):
             return question
+        if normalizer.is_similar_stem(cleaned_existing_stem, stem):
+            return question
     return None
+
+
+def _refresh_duplicate_question_display_fields(
+    duplicate: Question, question_fields: dict | None
+) -> bool:
+    if not duplicate or not question_fields:
+        return False
+
+    changed = False
+    clean_content = question_fields.get("content")
+    clean_options = question_fields.get("options")
+
+    if clean_content and duplicate.content != clean_content:
+        duplicate.content = clean_content
+        changed = True
+    if clean_options and duplicate.options != clean_options:
+        duplicate.options = clean_options
+        changed = True
+
+    return changed
 
 
 # ============================================================
@@ -863,6 +935,7 @@ async def approve_question(
             "[Review Pass] import_id=%s duplicate of question_id=%s subject=%s",
             qi.id, duplicate.id, result["normalized"]["subject"],
         )
+        _refresh_duplicate_question_display_fields(duplicate, result["question_fields"])
         qi.status = "published"
         qi.question_id = duplicate.id
         is_duplicate = True
@@ -942,6 +1015,7 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int,
             db, result["normalized"]["subject"], result["normalized"]["stem"]
         )
         if duplicate:
+            _refresh_duplicate_question_display_fields(duplicate, result["question_fields"])
             qi.status = "published"
             qi.question_id = duplicate.id
             logger.info(

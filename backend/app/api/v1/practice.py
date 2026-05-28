@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
@@ -18,6 +18,8 @@ from app.schemas.practice import (
     PracticeStatsResponse,
 )
 from app.services import practice_service as svc
+from app.services.pdf_text_normalizer import deduplicate_repeated_text
+from app.utils.trace.debug import create_trace_id, debug_log, save_debug_snapshot
 
 _TRUE_FALSE_OPTIONS = {"A": "正确", "B": "错误"}
 
@@ -26,6 +28,33 @@ def _ensure_true_false_options(question_type: str, options: dict | None) -> dict
     if question_type in ("true_false", "judgement") and not options:
         return _TRUE_FALSE_OPTIONS
     return options
+
+
+def _sanitize_text_field(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return value
+    return deduplicate_repeated_text(value)
+
+
+def _sanitize_question_content(content: dict | None) -> dict | None:
+    if not isinstance(content, dict):
+        return content
+
+    sanitized = dict(content)
+    for field in ("text", "stem"):
+        if field in sanitized:
+            sanitized[field] = _sanitize_text_field(sanitized[field])
+    return sanitized
+
+
+def _sanitize_question_options(options: dict | None) -> dict | None:
+    if not isinstance(options, dict):
+        return options
+
+    sanitized = dict(options)
+    for key, value in sanitized.items():
+        sanitized[key] = _sanitize_text_field(value)
+    return sanitized
 
 
 router = APIRouter(prefix="/api/v1/practice")
@@ -38,9 +67,11 @@ async def get_practice_questions(
     mode: str = Query("random"),
     knowledge_point: str | None = Query(None),
     exclude_answered: bool = Query(False),
+    x_trace_id: str | None = Header(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    trace_id = x_trace_id or create_trace_id()
     kps = (
         [kp.strip() for kp in knowledge_point.split(",") if kp.strip()]
         if knowledge_point
@@ -55,22 +86,42 @@ async def get_practice_questions(
         knowledge_points=kps,
         exclude_answered=exclude_answered,
     )
-    return PracticeQuestionsResponse(
+    response = PracticeQuestionsResponse(
         questions=[
             PracticeQuestion(
                 id=q.id,
                 subject=q.subject,
                 question_type=q.question_type,
-                content=q.content,
-                options=_ensure_true_false_options(q.question_type, q.options),
+                content=_sanitize_question_content(q.content),
+                options=_sanitize_question_options(
+                    _ensure_true_false_options(q.question_type, q.options)
+                ),
                 knowledge_points=q.knowledge_points,
                 difficulty=q.difficulty,
+                trace_id=trace_id,
             )
             for q in questions
         ],
         total=len(questions),
         mode=mode,
+        trace_id=trace_id,
     )
+    debug_log(
+        trace_id,
+        "API_RESPONSE",
+        {"endpoint": "practice/questions", "subject": subject, "count": len(questions)},
+    )
+    save_debug_snapshot(
+        trace_id,
+        "api_response",
+        {
+            "endpoint": "practice/questions",
+            "subject": subject,
+            "question_ids": [q.id for q in questions],
+            "total": len(questions),
+        },
+    )
+    return response
 
 
 @router.post("/submit", response_model=AnswerResult)
@@ -100,9 +151,21 @@ async def submit_answer(
 @router.post("/batch-submit", response_model=BatchSubmitResponse)
 async def batch_submit(
     data: BatchSubmitRequest,
+    x_trace_id: str | None = Header(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    trace_id = x_trace_id or create_trace_id()
+    debug_log(
+        trace_id,
+        "SUBMIT",
+        {"endpoint": "practice/batch-submit", "answer_count": len(data.answers)},
+    )
+    save_debug_snapshot(
+        trace_id,
+        "submit_before",
+        {"question_ids": [answer.question_id for answer in data.answers]},
+    )
     try:
         result = await svc.batch_submit_answers(
             db=db,
@@ -117,10 +180,20 @@ async def batch_submit(
     await cache.delete(f"stats:*:{current_user.id}*")
     await cache.delete(f"review:*:{current_user.id}*")
 
+    save_debug_snapshot(
+        trace_id,
+        "submit_after",
+        {
+            "total_correct": result["total_correct"],
+            "total_wrong": result["total_wrong"],
+            "result_count": len(result["results"]),
+        },
+    )
     return BatchSubmitResponse(
         results=[AnswerResult(**r) for r in result["results"]],
         total_correct=result["total_correct"],
         total_wrong=result["total_wrong"],
+        trace_id=trace_id,
     )
 
 

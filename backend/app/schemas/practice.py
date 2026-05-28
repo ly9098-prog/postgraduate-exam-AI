@@ -14,12 +14,14 @@ class PracticeQuestion(BaseModel):
     options: dict | None = None
     knowledge_points: list | None = None
     difficulty: int = 3
+    trace_id: str | None = None
 
 
 class PracticeQuestionsResponse(BaseModel):
     questions: list[PracticeQuestion]
     total: int
     mode: str
+    trace_id: str | None = None
 
 
 # --- POST /practice/submit ---
@@ -49,6 +51,7 @@ class BatchSubmitResponse(BaseModel):
     results: list[AnswerResult]
     total_correct: int
     total_wrong: int
+    trace_id: str | None = None
 
 
 # --- GET /practice/stats ---
