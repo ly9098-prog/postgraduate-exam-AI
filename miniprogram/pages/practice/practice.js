@@ -28,6 +28,11 @@ function _deduplicateLines(text) {
   return out.join('\n')
 }
 
+function _needsRichRender(text) {
+  if (!text) return false
+  return /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/.test(text) || /<\/?[a-z][\s\S]*>/i.test(text)
+}
+
 function _escapeRegExp(text) {
   return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -67,24 +72,65 @@ function _stripEmbeddedOptionBlock(stemText, options) {
 
 function _stripTrailingOptionBlockByLabels(stemText, optionKeys) {
   if (!stemText || !optionKeys || optionKeys.length < 2) return stemText
-  const labels = optionKeys.map(_escapeRegExp).join('|')
-  const labelRegex = new RegExp(`(?:^|[\\s\\n\\r])(?:${labels})[\\s\\u00A0]*[.．、:：）)]`, 'g')
-  const matches = []
-  let match
-  while ((match = labelRegex.exec(stemText)) !== null) {
-    const index = match.index + (match[0].match(/^\s/) ? 1 : 0)
-    matches.push(index)
-  }
+  const matches = _findOptionLabelMatches(stemText, optionKeys)
 
   if (matches.length < 2) return stemText
 
   for (const index of matches) {
     const suffix = stemText.slice(index)
-    const found = suffix.match(new RegExp(`(?:^|[\\s\\n\\r])(?:${labels})[\\s\\u00A0]*[.．、:：）)]`, 'g')) || []
-    if (found.length >= 2) return stemText.slice(0, index).trim()
+    if (_hasTrailingOptionBlock(suffix, optionKeys)) return stemText.slice(0, index).trim()
   }
 
   return stemText
+}
+
+function _findOptionLabelMatches(text, optionKeys) {
+  if (!text || !optionKeys || optionKeys.length < 2) return []
+  const labels = optionKeys.map(_escapeRegExp).join('|')
+  const labelMarker = `(?:^|[\\s\\n\\r])(?:${labels})[\\s\\u00A0]*[.．、:：）)]`
+  const labelRegex = new RegExp(labelMarker, 'g')
+  const matches = []
+  let match
+  while ((match = labelRegex.exec(text)) !== null) {
+    const index = match.index + (match[0].match(/^[\s\n\r]/) ? 1 : 0)
+    matches.push(index)
+  }
+  return matches
+}
+
+function _containsTrailingOptionBlock(text, optionKeys) {
+  const matches = _findOptionLabelMatches(text, optionKeys)
+  if (matches.length < 2) return false
+  return matches.some(index => _hasTrailingOptionBlock(String(text || '').slice(index), optionKeys))
+}
+
+function _hasTrailingOptionBlock(text, optionKeys) {
+  if (!text || !optionKeys || optionKeys.length < 2) return false
+  const keys = optionKeys.map(key => String(key || '').trim()).filter(Boolean)
+  if (keys.length < 2) return false
+
+  const spaces = '[\\s\\u00A0]*'
+  const separator = '[.．、:：）)]'
+  const marker = (key, prefix) => `${prefix}${_escapeRegExp(key)}${spaces}${separator}`
+  const first = marker(keys[0], '^' + spaces)
+  const second = marker(keys[1], '[\\s\\n\\r]+')
+  const required = new RegExp(first + '[\\s\\S]+?' + second, 'i')
+  if (!required.test(text)) return false
+
+  const labels = keys.map(_escapeRegExp).join('|')
+  const labelRegex = new RegExp(`(?:^|[\\s\\n\\r])(?:${labels})${spaces}${separator}`, 'g')
+  const found = []
+  let match
+  while ((match = labelRegex.exec(text)) !== null) {
+    found.push(String(match[0]).replace(/^[\s\n\r]+/, '').charAt(0).toUpperCase())
+  }
+  if (found.length < 2) return false
+  return found[0] === keys[0].toUpperCase() && found[1] === keys[1].toUpperCase()
+}
+
+function _shortText(text) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim()
+  return normalized.length > 80 ? normalized.slice(0, 80) + '...' : normalized
 }
 
 function _segmentsToText(segments) {
@@ -297,14 +343,23 @@ Page({
     const stemText = (q.content && (q.content.text || q.content.stem)) || ''
     const sourceStemText = stemText || (q.content && _segmentsToText(q.content.segments)) || ''
     const cleanedStem = _cleanStemText(sourceStemText, opts, optionKeys)
-    q._stemHtml = _textToHtml(cleanedStem)
+    q._stemText = cleanedStem
+    q._stemNeedsRich = _needsRichRender(cleanedStem)
+    q._stemHtml = q._stemNeedsRich ? _textToHtml(cleanedStem) : ''
     q._segments = (q.content && q.content.render_mode === 'segments') ? _textToSegments(cleanedStem) : []
     q._opts = opts
     const optHtml = {}
+    const optText = {}
+    const optNeedsRich = {}
     for (const key of optionKeys) {
-      optHtml[key] = _optionTextToHtml(key, (opts && opts[key]) || '')
+      const optionText = (opts && opts[key]) || ''
+      optText[key] = optionText
+      optNeedsRich[key] = _needsRichRender(optionText)
+      optHtml[key] = optNeedsRich[key] ? _optionTextToHtml(key, optionText) : ''
     }
     q._optHtml = optHtml
+    q._optText = optText
+    q._optNeedsRich = optNeedsRich
     const renderCount = (this.data.renderCount || 0) + 1
     if (shouldDebugQuestion(q.id)) {
       debugLog(this.data.traceId || q.trace_id, 'BEFORE_RENDER', {
@@ -312,6 +367,12 @@ Page({
         index,
         renderCount,
         optionKeys,
+        sourceLen: sourceStemText.length,
+        cleanedLen: cleanedStem.length,
+        hasEmbeddedOptions: _containsTrailingOptionBlock(sourceStemText, optionKeys),
+        hasCleanedOptions: _containsTrailingOptionBlock(cleanedStem, optionKeys),
+        sourceTail: _shortText(sourceStemText.slice(-120)),
+        cleanedTail: _shortText(cleanedStem.slice(-120)),
       })
       saveDebugSnapshot(this.data.traceId || q.trace_id, 'render', {
         questionId: q.id,
