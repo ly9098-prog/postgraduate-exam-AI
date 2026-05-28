@@ -107,10 +107,11 @@
       <view class="q-wrap {{animClass}}" wx:if="{{currentQuestion}}">
         <view class="q-badge">{{currentQuestion.question_type === 'multiple_choice' ? '多选题' : currentQuestion.question_type === 'true_false' || currentQuestion.question_type === 'judgement' ? '判断题' : '单选题'}}</view>
         <block wx:if="{{enableMathImage && currentQuestion.content.render_mode === 'segments'}}">
-          <math-question segments="{{currentQuestion.content.segments}}" />
+          <math-question segments="{{currentQuestion._segments}}" />
         </block>
         <block wx:else>
-          <mp-html class="q-content" content="{{currentQuestion._stemHtml}}" lazy-load></mp-html>
+          <mp-html wx:if="{{currentQuestion._stemNeedsRich}}" class="q-content" content="{{currentQuestion._stemHtml}}" lazy-load></mp-html>
+          <text wx:else class="q-content q-text">{{currentQuestion._stemText}}</text>
         </block>
 
         <!-- 选项 -->
@@ -127,7 +128,8 @@
             </view>
             <view class="option-body">
               <text class="option-key">{{item}}.</text>
-              <mp-html content="{{currentQuestion._optHtml[item]}}" style="display:inline-block"></mp-html>
+              <mp-html wx:if="{{currentQuestion._optNeedsRich[item]}}" content="{{currentQuestion._optHtml[item]}}" style="display:inline-block"></mp-html>
+              <text wx:else class="option-text">{{currentQuestion._optText[item]}}</text>
             </view>
           </view>
         </view>
