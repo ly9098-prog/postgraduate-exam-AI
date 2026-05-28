@@ -347,6 +347,11 @@
   margin-bottom: 32rpx;
 }
 
+.q-text {
+  display: block;
+  white-space: pre-wrap;
+}
+
 /* 选项 */
 .options {
   display: flex;
@@ -427,6 +432,7 @@
   color: #333;
   line-height: 1.6;
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .option-item.selected .option-key {
