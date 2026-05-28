@@ -1,5 +1,6 @@
 const api = require('../../utils/api')
 const config = require('../../config')
+const { createTraceId, debugLog, saveDebugSnapshot, shouldDebugQuestion } = require('../../utils/debug')
 
 function _textToHtml(text) {
   if (!text) return ''
@@ -25,6 +26,107 @@ function _deduplicateLines(text) {
     }
   }
   return out.join('\n')
+}
+
+function _escapeRegExp(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function _normalizeOptionText(text) {
+  return String(text || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function _buildOptionPattern(key, value) {
+  const label = _escapeRegExp(String(key || '').trim())
+  const normalizedValue = _normalizeOptionText(value)
+  if (!label || !normalizedValue) return ''
+
+  const spaces = '[\\s\\u00A0]*'
+  const separator = '[.．、:：）)]'
+  const valuePattern = _escapeRegExp(normalizedValue).replace(/\s+/g, '[\\s\\u00A0]+')
+  return `${label}${spaces}${separator}${spaces}${valuePattern}`
+}
+
+function _stripEmbeddedOptionBlock(stemText, options) {
+  if (!stemText || !options) return stemText
+  const patterns = Object.keys(options)
+    .sort()
+    .map((key) => _buildOptionPattern(key, options[key]))
+    .filter(Boolean)
+
+  if (patterns.length < 2) return stemText
+
+  const gap = '(?:\\s|<br>|\\n|\\r|&nbsp;)*'
+  const blockRegex = new RegExp(`${gap}${patterns.join(gap)}\\s*$`, 'i')
+  return blockRegex.test(stemText) ? stemText.replace(blockRegex, '').trim() : stemText
+}
+
+function _stripTrailingOptionBlockByLabels(stemText, optionKeys) {
+  if (!stemText || !optionKeys || optionKeys.length < 2) return stemText
+  const labels = optionKeys.map(_escapeRegExp).join('|')
+  const labelRegex = new RegExp(`(?:^|[\\s\\n\\r])(?:${labels})[\\s\\u00A0]*[.．、:：）)]`, 'g')
+  const matches = []
+  let match
+  while ((match = labelRegex.exec(stemText)) !== null) {
+    const index = match.index + (match[0].match(/^\s/) ? 1 : 0)
+    matches.push(index)
+  }
+
+  if (matches.length < 2) return stemText
+
+  for (const index of matches) {
+    const suffix = stemText.slice(index)
+    const found = suffix.match(new RegExp(`(?:^|[\\s\\n\\r])(?:${labels})[\\s\\u00A0]*[.．、:：）)]`, 'g')) || []
+    if (found.length >= 2) return stemText.slice(0, index).trim()
+  }
+
+  return stemText
+}
+
+function _segmentsToText(segments) {
+  if (!Array.isArray(segments)) return ''
+  return segments.map((seg) => {
+    if (!seg) return ''
+    if (seg.type === 'text' || seg.type === 'newline') return seg.text || ''
+    return seg.alt ? `$${seg.alt}$` : ''
+  }).join('')
+}
+
+function _textToSegments(text) {
+  if (!text) return []
+  const lines = String(text).split('\n')
+  const segments = []
+  lines.forEach((line, index) => {
+    if (line) segments.push({ type: 'text', text: line })
+    if (index < lines.length - 1) segments.push({ type: 'newline' })
+  })
+  return segments
+}
+
+function _cleanStemText(stemText, options, optionKeys) {
+  const dedupedStem = _deduplicateLines(stemText)
+  const withoutExactOptions = _stripEmbeddedOptionBlock(dedupedStem, options)
+  const withoutLabelOptions = _stripTrailingOptionBlockByLabels(withoutExactOptions, optionKeys)
+  return _removeTrailingOptionKeys(withoutLabelOptions, optionKeys)
+}
+
+function _removeTrailingOptionKeys(text, optionKeys) {
+  if (!text || !optionKeys || optionKeys.length === 0) return text
+  const keys = optionKeys.map(_escapeRegExp).join('')
+  const pattern = new RegExp('\\s+[' + keys + ']\\s*$', 'g')
+  return text.replace(pattern, '')
+}
+
+function _optionTextToHtml(key, value) {
+  const text = String(value || '').trim()
+  if (!key) return _textToHtml(text)
+  const keyPattern = new RegExp(`^${_escapeRegExp(String(key))}[\\s\\u00A0]*[.．、:：）)]?\\s*`, 'i')
+  const normalized = keyPattern.test(text) ? text : `${key}. ${text}`
+  return _textToHtml(normalized)
 }
 
 Page({
@@ -69,6 +171,10 @@ Page({
 
     // 公式图片化
     enableMathImage: false,
+
+    // Debug
+    traceId: '',
+    renderCount: 0,
   },
 
   onLoad() {
@@ -86,11 +192,14 @@ Page({
   },
 
   setCount(e) {
-    this.setData({ count: e.currentTarget.dataset.count })
+    this.setData({ count: Number(e.currentTarget.dataset.count) })
   },
 
   async startPractice() {
+    const traceId = createTraceId()
     this.setData({
+      traceId,
+      renderCount: 0,
       started: true,
       currentIndex: 0,
       answerMap: {},
@@ -135,8 +244,17 @@ Page({
         subject: this.data.selectedSubject,
         count: this.data.count || 5,
         mode: this.data.selectedMode || 'random',
+        _traceId: this.data.traceId,
       })
       const questions = res.questions || []
+      debugLog(this.data.traceId, 'STATE_AFTER_API', {
+        total: questions.length,
+        responseTraceId: res.trace_id,
+      })
+      saveDebugSnapshot(this.data.traceId, 'state_after_api', {
+        total: questions.length,
+        questionIds: questions.map(q => q.id),
+      })
       this.setData({ questions, totalQuestions: questions.length, loading: false })
       if (questions.length > 0) {
         this._showQuestion(0)
@@ -177,19 +295,38 @@ Page({
     }
     // 预处理 LaTeX，去重相邻重复段落
     const stemText = (q.content && (q.content.text || q.content.stem)) || ''
-    const dedupedStem = _deduplicateLines(stemText)
-    q._stemHtml = _textToHtml(dedupedStem)
+    const sourceStemText = stemText || (q.content && _segmentsToText(q.content.segments)) || ''
+    const cleanedStem = _cleanStemText(sourceStemText, opts, optionKeys)
+    q._stemHtml = _textToHtml(cleanedStem)
+    q._segments = (q.content && q.content.render_mode === 'segments') ? _textToSegments(cleanedStem) : []
     q._opts = opts
     const optHtml = {}
     for (const key of optionKeys) {
-      optHtml[key] = _textToHtml((opts && opts[key]) || '')
+      optHtml[key] = _optionTextToHtml(key, (opts && opts[key]) || '')
     }
     q._optHtml = optHtml
+    const renderCount = (this.data.renderCount || 0) + 1
+    if (shouldDebugQuestion(q.id)) {
+      debugLog(this.data.traceId || q.trace_id, 'BEFORE_RENDER', {
+        questionId: q.id,
+        index,
+        renderCount,
+        optionKeys,
+      })
+      saveDebugSnapshot(this.data.traceId || q.trace_id, 'render', {
+        questionId: q.id,
+        index,
+        renderCount,
+        optionKeys,
+        stem: cleanedStem,
+      })
+    }
     this.setData({
       currentIndex: index,
       currentQuestion: q,
       optionKeys,
       selectedFlags,
+      renderCount,
     })
   },
 
@@ -307,6 +444,20 @@ Page({
       delete answerMap[key]
     }
     const answeredCount = Object.keys(answerMap).length
+    if (shouldDebugQuestion(q.id)) {
+      debugLog(this.data.traceId || q.trace_id, 'STATE_CHANGE', {
+        questionId: q.id,
+        previousAnswer: prev,
+        nextAnswer: newAnswer,
+        answeredCount,
+      })
+      saveDebugSnapshot(this.data.traceId || q.trace_id, 'state_change', {
+        questionId: q.id,
+        previousAnswer: prev,
+        nextAnswer: newAnswer,
+        answeredCount,
+      })
+    }
     const optionKeys = this.data.optionKeys
     const selectedFlags = {}
     for (const k of optionKeys) {
@@ -378,8 +529,16 @@ Page({
         used_time: Math.floor((Date.now() - startTime) / 1000),
       }))
 
+      debugLog(this.data.traceId, 'SUBMIT', {
+        total: answers.length,
+        answeredCount,
+      })
+      saveDebugSnapshot(this.data.traceId, 'submit_before', {
+        answers: answers.map(item => ({ question_id: item.question_id, has_answer: !!item.user_answer })),
+      })
       const result = await api.post('/practice/batch-submit', {
         answers,
+        _traceId: this.data.traceId,
       })
 
       const duration = Math.floor((Date.now() - startTime) / 1000)
@@ -392,6 +551,7 @@ Page({
         total,
         subject: selectedSubject,
         duration,
+        traceId: result.trace_id || this.data.traceId,
         results: result.results || [],
       })
 
