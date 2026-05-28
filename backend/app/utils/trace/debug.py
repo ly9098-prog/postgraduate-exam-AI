@@ -65,6 +65,10 @@ def _safe_debug_payload(payload: dict) -> str:
     return text
 
 
+def create_trace_id() -> str:
+    return f"TRACE_{datetime.now():%Y%m%d}_{secrets.token_hex(3)}"
+
+
 def debug_enabled() -> bool:
     return settings.DEBUG_MODE is True
 
