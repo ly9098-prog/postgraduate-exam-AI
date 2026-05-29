@@ -1,0 +1,75 @@
+# Version control and local agent state
+.git/
+.claude/
+
+# Local environments and dependencies
+.venv/
+venv/
+backend/.venv/
+node_modules/
+miniprogram/miniprogram_npm/
+
+# Python cache/test artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local databases and backups
+*.db
+*.sqlite
+*.sqlite3
+*.db.backup-*
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+backend/*.db.backup-*
+
+# Secrets and local env files
+.env
+.env.*
+*.pem
+*.key
+*.crt
+loginkey.pem
+
+# Runtime/generated files
+logs/
+*.log
+tmp/
+cache/
+uploads/
+static/uploads/
+backend/logs/
+backend/tmp/
+backend/cache/
+backend/uploads/
+backend/static/uploads/
+backend/static/
+backend/debug_snapshots/
+
+# Build outputs
+dist/
+build/
+
+# IDE/OS noise
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Test files and fixtures
+backend/test_*.py
+backend/tests/
+miniprogram/__mocks__/
+
+# Docs and local-only project notes
+README.md
+docs/
+prompts/

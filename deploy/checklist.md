@@ -37,13 +37,16 @@
 
 - [ ] 云服务器已购买（建议 2C4G 以上）
 - [ ] 域名已购买并 DNS 解析到服务器 IP
-- [ ] HTTPS 证书已配置（Let's Encrypt / certbot）
+- [ ] HTTPS 证书已配置（服务器 `/cert/www.xzshub.top.pem` 与 `/cert/www.xzshub.top.key`）
 - [ ] Docker + Docker Compose 已安装
-- [ ] 生产环境 `.env` 文件已配置
-- [ ] `docker compose -f docker-compose.prod.yml up -d` 启动正常
-- [ ] `alembic upgrade head` 迁移成功
+- [ ] 生产环境 `backend/.env` 文件已在服务器侧配置，且不会由本地同步覆盖
+- [ ] 使用 `.deployignore` 同步代码，不上传本地 `.env`、密钥、数据库、`.claude/`、虚拟环境和缓存
+- [ ] 日常后端更新使用 `bash deploy/scripts/deploy.sh update`
+- [ ] `bash deploy/scripts/deploy.sh status` 状态和健康检查正常
+- [ ] 仅在 schema 变更确认后执行 `bash deploy/scripts/deploy.sh migrate`
 - [ ] `/health` 端点返回 `{"status":"ok","env":"production"}`
 - [ ] Nginx 反向代理正常工作
+- [ ] 日常部署未使用 `docker compose down`、`--no-cache`、默认 `--pull`、`docker system prune -a` 或删除 volume
 
 ## 小程序端检查
 
