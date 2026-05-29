@@ -13,6 +13,11 @@ from app.services.pdf_text_normalizer import (
     _should_merge,
 )
 from app.features.question_pipeline import _parse_pdf, process_question_pipeline
+from app.api.v1.practice import (
+    _sanitize_question_content,
+    _sanitize_question_options,
+    _ensure_true_false_options,
+)
 
 
 # ─── deduplicate_repeated_text ────────────────────────────────────────────────
@@ -166,3 +171,39 @@ class TestParsePdfDuplication:
         analysis = out["normalized"]["analysis"]
         if analysis:
             assert analysis.count("256KB共256个盘块") == 1, f"解析仍重复: {repr(analysis)}"
+
+
+# ─── practice response sanitizer ───────────────────────────────────────────────
+
+class TestPracticeResponseSanitizer:
+
+    def test_practice_content_text_and_stem_deduplicated_without_mutating_source(self):
+        content = {
+            "text": "题干内容\n题干内容",
+            "stem": "另一段题干\n另一段题干",
+            "analysis": "解析\n解析",
+        }
+
+        result = _sanitize_question_content(content)
+
+        assert result["text"] == "题干内容"
+        assert result["stem"] == "另一段题干"
+        assert result["analysis"] == "解析\n解析"
+        assert content["text"] == "题干内容\n题干内容"
+        assert result is not content
+
+    def test_practice_options_adjacent_duplicate_values_cleaned(self):
+        options = {"A": "1\n1", "B": "2\n2", "C": "正常选项"}
+
+        result = _sanitize_question_options(options)
+
+        assert result == {"A": "1", "B": "2", "C": "正常选项"}
+        assert options["A"] == "1\n1"
+        assert result is not options
+
+    def test_practice_true_false_fallback_options_preserved(self):
+        options = _ensure_true_false_options("true_false", None)
+
+        result = _sanitize_question_options(options)
+
+        assert result == {"A": "正确", "B": "错误"}

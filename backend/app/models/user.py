@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -14,5 +14,9 @@ class User(Base):
     session_key: Mapped[str | None] = mapped_column(String(256), nullable=True)
     nickname: Mapped[str | None] = mapped_column(String(64), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    is_banned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    banned_reason: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    banned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    banned_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

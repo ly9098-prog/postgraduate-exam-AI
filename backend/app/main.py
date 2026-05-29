@@ -22,6 +22,11 @@ from app.api.v1.knowledge_points import router as knowledge_points_router
 from app.api.v1.ai_import import router as ai_import_router
 from app.api.v1.cache import router as cache_router
 from app.api.v1.health import router as health_router
+from app.api.v1.admin_auth import router as admin_auth_router
+from app.api.v1.admin_app_users import router as admin_app_users_router
+from app.api.v1.admin_health import router as admin_health_router
+from app.api.v1.admin_rbac import router as admin_rbac_router
+from app.api.v1.admin_users import router as admin_users_router
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.logging_config import setup_logging
@@ -117,6 +122,11 @@ app.include_router(knowledge_points_router)
 app.include_router(ai_import_router)
 app.include_router(cache_router)
 app.include_router(health_router)
+app.include_router(admin_auth_router)
+app.include_router(admin_app_users_router)
+app.include_router(admin_health_router)
+app.include_router(admin_rbac_router)
+app.include_router(admin_users_router)
 
 # 静态文件服务（开发用公式图片）
 os.makedirs("static/formulas", exist_ok=True)
