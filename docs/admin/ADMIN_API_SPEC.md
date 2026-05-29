@@ -1,7 +1,9 @@
 # Admin API 规范
 
-> 版本：v2.0（审计修订版） | 状态：可启动开发 | 更新：2026-05-26
+> 版本：v2.1（FastAPI 方案确认版） | 状态：可启动开发 | 更新：2026-05-29
 > 修订自审计报告 I8（统一 Stripe 风格）、I10（liveness/readiness）、C1（拆分 app-users 与 admin-users）
+>
+> - **变更原因**：2026-05-29 同步 Admin Backend Phase 4 已完成的科目树与导入管理接口实现，补充实际查询参数、响应字段、Redis 任务指针与人工确认约束。
 
 ---
 
@@ -9,8 +11,8 @@
 
 ### Base URL
 ```
-开发：http://localhost:4000/api/admin/v1
-生产：https://api.2240ai.com/admin/v1
+开发：http://localhost:8000/api/admin/v1
+生产：https://api.2240ai.com/api/admin/v1
 ```
 
 ### 认证
@@ -29,7 +31,7 @@ URL 携带 `/v1/`，后期升级为 `/v2/` 时保持向后兼容；不在 Header
 ```
 Idempotency-Key: <UUID>
 ```
-服务端在 Redis 缓存请求结果 10 分钟，同一 key 重复请求返回相同结果。
+服务端在 Redis 使用 `admin:idempotency:{userId}:{key}` 缓存请求结果 10 分钟，同一 key 重复请求返回相同结果。Redis 不可用时，关键批量写/关键幂等接口应拒绝 503；如某接口选择降级执行，必须在接口文档中明确“不提供幂等保证”，不得静默假装幂等。
 
 ### 二次验证（预留位）
 敏感操作支持：
@@ -37,6 +39,14 @@ Idempotency-Key: <UUID>
 X-Confirm-Password: <bcrypt 验证用>
 ```
 当前 Phase 不强制要求，未来引入时不破坏 API 兼容性。
+
+### Request ID / Trace ID（全链路调试）
+
+- Admin 对外统一使用 `requestId` 命名；`requestId` 即本系统的全链路 traceId，不额外暴露 `traceId` 字段。
+- FastAPI middleware 负责生成或透传请求 ID，并在响应头写入 `X-Request-Id: <requestId>`。
+- 业务 API 的成功/错误响应必须在 `meta.requestId` 返回同一值；前端错误提示与问题反馈只展示该 `requestId`。
+- 健康检查可保持轻量：必须返回 `X-Request-Id`，响应体可不包 `meta.requestId`，且不写 audit_log。
+- 日志与审计日志复用同一 `requestId`；审计日志暂写入 `audit_logs.detail.extra.requestId`，Phase 0/1 不新增 `audit_logs.trace_id` 列。
 
 ---
 
@@ -90,7 +100,9 @@ POST   /v1/auth/refresh
 
 // /health/ready
 { "status": "ok", "db": "ok", "redis": "ok" }
-// 或 503
+// Redis 不可用但 DB 可用时仍返回 200
+{ "status": "ok", "db": "ok", "redis": "degraded" }
+// DB 失败或关键 migration 未完成时返回 503
 { "status": "fail", "db": "fail", "redis": "ok" }
 ```
 
@@ -100,7 +112,7 @@ POST   /v1/auth/refresh
 |------|------|------|------|
 | GET | `/app-users` | 列表 | app_user:read |
 | GET | `/app-users/{id}` | 详情（含练题数 / 错题数 / 最近活跃） | app_user:read |
-| PATCH | `/app-users/{id}` | 编辑（nickname 等） | app_user:write |
+| PATCH | `/app-users/{id}` | 编辑运营备注/状态类字段（白名单待确认；默认不改微信来源资料） | app_user:write |
 | POST | `/app-users/{id}/ban` | 封禁（Body: `{ reason }`） | app_user:ban |
 | POST | `/app-users/{id}/unban` | 解封 | app_user:ban |
 
@@ -157,8 +169,29 @@ POST   /v1/auth/refresh
 |------|------|------|------|
 | GET | `/imports` | 导入批次列表 | import:read |
 | GET | `/imports/{batchId}` | 批次详情（含题目分页） | import:read |
-| POST | `/imports/{batchId}/enrich` | 触发 AI 解析（产出 task） | import:write |
-| GET | `/imports/{batchId}/status` | AI 任务进度（Redis） | import:read |
+| POST | `/imports/{batchId}/enrich` | 创建 AI 辅助处理任务（当前仅创建 pending 任务状态与审计日志） | import:write |
+| GET | `/imports/{batchId}/status` | 读取该批次最新 AI 任务进度（Redis/cache） | import:read |
+
+**查询参数（Phase 4 实现，2026-05-29）**：
+- `GET /imports`：`page`（默认 1，≥1）、`page_size`（默认 20，1-100）、`status`、`source_type`、`keyword`。
+- `GET /imports/{batchId}`：`page`（默认 1，≥1）、`page_size`（默认 20，1-100）、`status`。
+
+**响应字段（摘要）**：
+- 批次列表 item：`batch_id`、`source_type`、`source_file`、`total_count`、`pending_count`、`approved_count`、`rejected_count`、`published_count`、`ai_count`、`created_at`、`updated_at`。
+- 批次详情 item：包含 `raw_data`、`parsed_content`、`parsed_options`、`parsed_answer`、`parsed_analysis`、`status`、`review_note`、`question_id`、`reject_reason`、`reviewed_by`、`reviewed_at`、`ai_generated`、`ai_source`、`ai_confidence`、`ai_metadata`、`ai_reviewed_at`、`ai_answer_flag` 等导入与 AI 辅助字段。
+- enrich 响应：`{ task_id, batch_id, status, created_at }`，其中 `status` 初始为 `pending`。
+- status 响应：`{ task_id, batch_id, status, created_at, updated_at, total_count, processed_count, error_message }`。
+
+**状态码与副作用**：
+- `404`：批次不存在，或该批次没有可查询的 AI 任务状态。
+- `422`：请求参数或业务规则不满足。
+- `POST /imports/{batchId}/enrich` 写入 `admin:ai:task:{taskId}` 与 `admin:ai:batch:{batchId}:task`，TTL 当前为 86400 秒，并写入 `import.enrich` 审计日志。
+
+**`/imports/{batchId}/enrich` 约束**：
+- 当前实现仅创建 pending 任务状态与审计日志；实际 AI worker / OCR 处理链路仍需后续确认。
+- 不得直接调用小程序端 API；如需复用 AI/OCR 逻辑，必须先确认 service/worker 边界。
+- AI/OCR 结果只能作为辅助任务状态或待确认字段，AI 失败只更新任务为 `failed`，不得影响 `question_imports` 人工确认流程。
+- 不得绕过 `question_imports + 人工确认` 直接写入 `questions`。
 
 ### 3.9 科目管理 `/subjects`
 
@@ -168,7 +201,20 @@ POST   /v1/auth/refresh
 | GET | `/subjects/{id}` | 科目详情 | subject:read |
 | POST | `/subjects` | 创建科目 | subject:write |
 | PATCH | `/subjects/{id}` | 编辑科目 | subject:write |
-| DELETE | `/subjects/{id}` | 删除（有题目时返回 422） | subject:delete |
+| DELETE | `/subjects/{id}` | 删除（有子科目或有题目引用时返回 422） | subject:delete |
+
+**查询参数与请求体（Phase 4 实现，2026-05-29）**：
+- `GET /subjects`：`include_inactive`（默认 `false`），返回树形 `items`。
+- `POST /subjects` Body：`{ code, name, parent_id?, sort_order=0, is_active=true }`。
+- `PATCH /subjects/{id}` Body：`{ code?, name?, parent_id?, sort_order?, is_active? }`，至少提供一个字段。
+
+**响应字段**：`id`、`parent_id`、`code`、`name`、`level`、`path`、`sort_order`、`is_active`、`created_at`、`updated_at`；树节点额外包含 `children`。
+
+**状态码与副作用**：
+- `404`：科目不存在。
+- `409`：`code` 冲突。
+- `422`：层级超过 3、移动到自身/子孙节点、删除存在子科目或已有题目引用的科目等业务规则失败。
+- 创建/更新/删除会写入 `subject.create` / `subject.update` / `subject.delete` 审计日志；`path` 当前按科目 `code` 拼接并在移动/改 code 时同步子树。
 
 ### 3.10 审计日志 `/audit-logs`（原 `/logs`）
 
@@ -344,7 +390,8 @@ Body: { "ids": [1, 2, 3, ...] }  // 上限 50
 - 每条独立事务处理（默认）
 - 单条失败不影响其他
 - 整体写一条 audit_log（severity: critical）
-- 支持 `Idempotency-Key` Header
+- 支持 `Idempotency-Key` Header；Redis key 为 `admin:idempotency:{userId}:{key}`，TTL 10min
+- Redis 不可用时，关键批量写接口返回 503，避免重复提交导致不一致
 
 ---
 
@@ -378,8 +425,8 @@ Content-Security-Policy: default-src 'self'
 
 ## 十、不变式（Invariants）
 
-1. 所有响应通过 ResponseInterceptor 统一包装，**禁止**裸 JSON
-2. 所有异常通过 GlobalExceptionFilter 统一处理，**禁止**手动 `return { error: ... }`
+1. 所有业务响应通过 FastAPI response helper 统一包装，**禁止**裸 JSON（health 探针例外）
+2. 所有异常通过 FastAPI exception handler 统一处理，**禁止**手动 `return { error: ... }`
 3. pageSize > 100 → 422
 4. 批量操作 ids.length > 50 → 422
 5. 任何 GET 接口不修改服务端状态

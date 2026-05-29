@@ -25,8 +25,10 @@ from app.api.v1.health import router as health_router
 from app.api.v1.admin_auth import router as admin_auth_router
 from app.api.v1.admin_app_users import router as admin_app_users_router
 from app.api.v1.admin_health import router as admin_health_router
+from app.api.v1.admin_imports import router as admin_imports_router
 from app.api.v1.admin_questions import router as admin_questions_router
 from app.api.v1.admin_rbac import router as admin_rbac_router
+from app.api.v1.admin_subjects import router as admin_subjects_router
 from app.api.v1.admin_users import router as admin_users_router
 from app.core.config import settings
 from app.core.database import init_db
@@ -126,8 +128,10 @@ app.include_router(health_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_app_users_router)
 app.include_router(admin_health_router)
+app.include_router(admin_imports_router)
 app.include_router(admin_questions_router)
 app.include_router(admin_rbac_router)
+app.include_router(admin_subjects_router)
 app.include_router(admin_users_router)
 
 # 静态文件服务（开发用公式图片）

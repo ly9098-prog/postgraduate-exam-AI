@@ -1,7 +1,11 @@
 # 后台管理系统 — 总体架构设计
 
-> 版本：v2.0（审计修订版） | 状态：可启动开发 | 更新：2026-05-26
-> 修订自审计报告 C1/C2、模块拆分调整、引入 BullMQ
+> 版本：v2.1（FastAPI 方案确认版） | 状态：可启动开发 | 更新：2026-05-29
+> 修订自审计报告 C1/C2、模块拆分调整；2026-05-29 根据维护者确认收敛为现有 FastAPI 后端内实现。
+>
+> - **变更原因**：Admin Backend 已确认遵循 `docs/PROJECT_RULES.md`，并入现有 FastAPI + SQLAlchemy + Alembic 技术栈；不再采用独立 `NestJS + Prisma + BullMQ` 后端方案。
+> - **Phase 4 同步原因**：2026-05-29 根据已完成的科目树与导入管理实现，补充实际 router 注册、Subject/Import service 行为与 Redis 任务指针。
+> - **技术结论**：Admin API 统一挂载在 `/api/admin/v1`；ORM 使用 SQLAlchemy；数据库迁移使用 Alembic；Redis 可选且必须可降级；Phase 1 审计日志同步写入，队列能力延后。
 
 ---
 
@@ -34,7 +38,7 @@
 │ 表：users                     │  │ 表：admin_users               │
 │ 标识：openid                  │  │ 标识：username + password     │
 │ JWT type：app                 │  │ JWT type：admin               │
-│ JWT 签发：FastAPI             │  │ JWT 签发：NestJS              │
+│ JWT 签发：FastAPI             │  │ JWT 签发：FastAPI             │
 │ 模块：app-users（只读）        │  │ 模块：admin-users（CRUD）      │
 │ 角色：无（不参与 RBAC）         │  │ 角色：super_admin / admin     │
 └──────────────────────────────┘  └──────────────────────────────┘
@@ -45,7 +49,8 @@
 
 **严格约束**：
 - AppUser 不进 roles 表，不持有 permissions
-- NestJS 收到 `type: "app"` 的 JWT 直接拒绝；FastAPI 收到 `type: "admin"` 直接拒绝
+- AdminUser 使用 username + password + RBAC 是后台管理系统的显式例外；该例外仅限 `/api/admin/v1`，不改变 AppUser 仍以微信 openid 作为唯一身份的项目规则
+- `/api/admin/v1` 收到 `type: "app"` 的 JWT 直接拒绝；小程序端接口收到 `type: "admin"` 直接拒绝
 - "用户管理"模块在文档与代码中拆分为：
   - `app-users` — 管理小程序用户（is_banned 等）
   - `admin-users` — 管理后台账号（角色、密码等）
@@ -56,78 +61,78 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                Admin Frontend (Next.js 15)               │
-│         React 19 + TypeScript + shadcn/ui                │
-│         TanStack Table + React Query + Zustand           │
-│                  Port: 3001 (dev)                        │
+│                Admin Frontend（待确认 Web UI）            │
+│      如后续实现，应仅消费 /api/admin/v1，不新增后端栈       │
 └─────────────────┬───────────────────────────────────────┘
                   │ HTTPS + Bearer JWT (type: admin)
 ┌─────────────────▼───────────────────────────────────────┐
-│  Admin Backend (NestJS)                                  │
+│  Existing FastAPI Backend                               │
 │  ┌────────────┐  ┌────────────┐  ┌──────────────────┐   │
-│  │ Auth/RBAC  │  │ Resources  │  │ Audit/Observe   │   │
-│  │ Module     │  │ Modules    │  │ Module          │   │
+│  │ Admin Auth │  │ Admin APIs │  │ Audit/Observe    │   │
+│  │ + RBAC     │  │ /admin/v1  │  │ Sync Phase 1     │   │
 │  └─────┬──────┘  └─────┬──────┘  └────────┬─────────┘   │
 │        │               │                   │             │
 │  ┌─────▼───────────────▼───────────────────▼─────────┐  │
-│  │  Common Layer (Prisma/Redis/BullMQ/Logger)        │  │
-│  └─────┬─────────────────┬─────────────┬─────────────┘  │
-│                  Port: 4000 (dev)                        │
-└────────┼─────────────────┼─────────────┼────────────────┘
-         │                 │             │
-   ┌─────▼──────┐   ┌──────▼──────┐  ┌──▼─────────────┐
-   │ PostgreSQL │   │    Redis    │  │ BullMQ Workers │
-   │ (共享)      │   │(命名空间隔离)│  │ (audit/stats)  │
-   └────────────┘   └─────────────┘  └────────────────┘
+│  │ FastAPI dependencies + SQLAlchemy + Alembic + log  │  │
+│  └─────┬─────────────────┬───────────────────────────┘  │
+│         Base path: /api/admin/v1                         │
+└────────┼─────────────────┼───────────────────────────────┘
+         │                 │
+   ┌─────▼──────┐   ┌──────▼──────┐
+   │ PostgreSQL │   │ Redis 可选   │
+   │ / SQLite   │   │(degraded)    │
+   └────────────┘   └─────────────┘
 ```
 
 **重要约束**：
-- Admin Backend 与 小程序 FastAPI Backend **共享同一 PostgreSQL 数据库**
-- Admin Backend **不调用** FastAPI Backend 的 API，只通过 Prisma 直接读写 DB
-- Redis 实例共享，key 命名空间用前缀严格隔离（`admin:` / `app:`），互不读写
-- 部署时 Admin Backend 与 FastAPI Backend 并行运行，不互相依赖
-- BullMQ 用于 Normal 级别审计日志的异步写入（Critical/Important 同步写）
+- Admin Backend **并入现有 FastAPI Backend**，统一使用 `/api/admin/v1` 路由前缀，不创建新的 NestJS/Prisma/BullMQ 独立服务
+- ORM 使用 SQLAlchemy；migration 使用 Alembic，与现有后端迁移体系保持一致
+- Admin 模块不通过 HTTP 调用小程序端 API；如需复用 AI/OCR/题库逻辑，优先在同一 FastAPI 代码库内通过 service 层边界复用，并保持 `question_imports + 人工确认` 不变
+- Redis 实例可共享，key 命名空间用前缀严格隔离（`admin:` / `app:`），互不读写；Redis 不可用时非关键能力必须降级
+- Phase 1 不引入 BullMQ 或新队列依赖；审计日志先同步写入，队列/异步化留待后续 Phase 评估
 
 ---
 
 ## 四、模块拆分
 
-### Admin Backend (NestJS)
+### Admin Backend (FastAPI)
 
 ```
-src/
-├── main.ts
-├── app.module.ts
-├── modules/
-│   ├── auth/                  # 登录 / 登出 / refresh / me
-│   ├── rbac/                  # 角色 / 权限 / 角色权限绑定（合并的 RBAC 域）
-│   ├── admin-users/           # 后台管理员管理（CRUD）
-│   ├── app-users/             # 小程序用户管理（查看 / 封禁）
-│   ├── questions/             # 题目 CRUD
-│   ├── question-versions/     # 题目历史版本（编辑快照）
-│   ├── question-imports/      # 导入批次查看
-│   ├── review/                # 审核工作流（独立模块，不混在 questions）
-│   ├── subjects/              # 科目树管理
-│   ├── audit-log/             # 审计日志（替代 operation-logs，命名更准确）
-│   ├── dashboard/             # 统计概览
-│   └── health/                # liveness / readiness
-├── common/
-│   ├── guards/                # JwtAuthGuard / RolesGuard / PermissionsGuard
-│   ├── decorators/            # @Roles / @Permissions / @Public / @CurrentUser / @AuditLog
-│   ├── interceptors/          # ResponseInterceptor / AuditLogInterceptor
-│   ├── filters/               # GlobalExceptionFilter
-│   ├── dto/                   # PaginationDto / IdParamDto 等
-│   └── utils/
-├── infrastructure/
-│   ├── prisma/                # PrismaService 封装
-│   ├── redis/                 # RedisService 封装（含 namespace 工具）
-│   └── queue/                 # BullMQ 封装（audit-log queue / stats queue）
-└── scripts/
-    ├── init-super-admin.ts    # 超管初始化（仅 docker exec / SSH 执行）
-    ├── seed-permissions.ts    # 权限表种子
-    ├── seed-roles.ts          # 角色 + role_permissions 种子（super_admin 全权限）
-    └── hash-password.ts       # bcrypt 密码生成工具
+backend/app/
+├── api/
+│   ├── v1/                    # 小程序端既有 API
+│   └── admin/v1/              # Admin API：/api/admin/v1
+│       ├── auth.py            # 登录 / 登出 / refresh / me
+│       ├── rbac.py            # 角色 / 权限 / 角色权限绑定
+│       ├── admin_users.py     # 后台管理员管理（CRUD）
+│       ├── app_users.py       # 小程序用户管理（查看 / 封禁）
+│       ├── questions.py       # 题目 CRUD / 审核
+│       ├── question_versions.py
+│       ├── imports.py         # 导入批次查看 / AI 任务状态
+│       ├── subjects.py        # 科目树管理
+│       ├── audit_logs.py      # 审计日志
+│       ├── dashboard.py       # 统计概览
+│       └── health.py          # liveness / readiness
+├── core/                      # 配置 / 数据库 / 安全 / JWT
+├── models/                    # SQLAlchemy 模型（admin_users / roles / permissions ...）
+├── schemas/                   # Pydantic 请求/响应模型
+├── services/                  # Admin 业务逻辑与事务边界
+└── utils/
+backend/alembic/               # Alembic migrations
 ```
+
+**实现映射**：
+- NestJS Guard / Decorator 概念统一替换为 FastAPI dependencies（如 `get_current_admin`、`require_permission`、`require_role`）
+- PrismaService 替换为现有 SQLAlchemy session / service 层事务控制
+- ResponseInterceptor / GlobalExceptionFilter 替换为 FastAPI middleware / exception handler / response helper
+- BullMQ queue 不在 Phase 1 实现；审计日志由 service 层同步写入
+
+**Phase 4 实现同步（2026-05-29）**：
+- 科目树接口由 `backend/app/api/v1/admin_subjects.py` 提供，导入管理接口由 `backend/app/api/v1/admin_imports.py` 提供；二者在 `backend/app/main.py` 中直接 `include_router` 注册到 `/api/admin/v1`。
+- `backend/app/api/v1/admin.py` 仅作为早期聚合导出文件存在，当前路由生效以 `main.py` 的直接注册为准。
+- 科目树 service 使用 SQLAlchemy 维护 `subjects`，`path` 按 `code` 拼接（如 `math/math_advanced`），最大层级为 3；删除科目时会拒绝存在子科目或已有 `questions.subject = subjects.code` 引用的记录。
+- 导入管理读取既有 `question_imports` 批次与题目明细；`/imports/{batchId}/enrich` 当前创建 AI 辅助任务状态和 `import.enrich` 审计日志，不直接写入 `questions`，也不绕过人工确认流程。
+- 导入 AI 任务状态使用 `admin:ai:task:{taskId}` 保存 payload，并使用 `admin:ai:batch:{batchId}:task` 指向该批次最新任务；当前 TTL 为 86400 秒。
 
 ### Admin Frontend (Next.js)
 
@@ -176,35 +181,32 @@ src/
 Next.js Page (React Query 发起请求，携带 access JWT)
   │
   ▼
-NestJS Middleware → CORS / RateLimit
-  │
+FastAPI middleware / dependencies → CORS / RateLimit / RequestId
+  │ 生成或透传 requestId；requestId 即全链路 traceId
   ▼
-JwtAuthGuard
+get_current_admin
   │ 1. 验证签名
   │ 2. 校验 type === "admin"
-  │ 3. 检查 admin:jwt:blacklist:{jti}
-  │ 4. 检查 admin:user:nbf:{userId} > token.iat
+  │ 3. 检查 admin:jwt:blacklist:{jti}（Redis 可用时）
+  │ 4. 检查 admin:user:nbf:{userId} > token.iat（Redis 可用时）
   ▼
-RolesGuard / PermissionsGuard
-  │ 从 admin:perm:user:{userId} 读取权限（含 role-version 比对）
-  │ Miss → 查 DB → 回写 Redis
+require_role / require_permission dependencies
+  │ 从 admin:perm:user:{userId} 读取权限（含 role-version 比对，Redis 可用时）
+  │ Miss / Redis 降级 → 查 DB
   ▼
-Controller → Service Layer
+FastAPI route → Service Layer
   │
-  ├──► Prisma → PostgreSQL（事务边界由 Service 显式控制）
+  ├──► SQLAlchemy → PostgreSQL/SQLite（事务边界由 Service 显式控制）
   │
-  ├──► RedisService（缓存 / 限流 / 任务状态）
+  ├──► Redis（缓存 / 限流 / 任务状态，可降级）
   │
-  └──► AuditLog（Critical 同步事务内 / Normal 入 BullMQ 队列）
-  │
-  ▼
-ResponseInterceptor → 统一响应格式
+  └──► AuditLog（Phase 1 同步写入；detail.extra.requestId 关联应用日志，队列延后）
   │
   ▼
-GlobalExceptionFilter（异常时介入，返回 Stripe 风格错误响应）
+统一响应 helper / exception handler（X-Request-Id + meta.requestId）
   │
   ▼
-前端
+前端错误提示 / 反馈展示同一 requestId
 ```
 
 ---
@@ -224,24 +226,24 @@ JWT Payload（最小集，不包含 permissions）
 请求进入
   │
   ▼
-JwtAuthGuard
+get_current_admin
   ├ 验证签名 + type === "admin"
-  ├ 检查 admin:jwt:blacklist:{jti}
-  └ 检查 admin:user:nbf:{userId}（强制全员失效用）
+  ├ 检查 admin:jwt:blacklist:{jti}（Redis 可用时）
+  └ 检查 admin:user:nbf:{userId}（强制全员失效用，Redis 可用时）
   │
   ▼
-RolesGuard
-  └ 检查 user.roleId 对应的 role.name 是否满足 @Roles()
+require_role
+  └ 检查 user.roleId 对应的 role.name 是否满足要求
   │
   ▼
-PermissionsGuard
-  ├ 读取 admin:perm:user:{userId} = { version, permissions }
+require_permission
+  ├ 读取 admin:perm:user:{userId} = { version, permissions }（Redis 可用时）
   ├ 对比 admin:role:version:{roleId}，不匹配则视为失效
-  ├ Miss/失效 → 查 DB 重新加载 → 回写 Redis（TTL 15min ± 抖动）
-  └ 检查 permissions 是否包含 @Permissions() 要求
+  ├ Miss/失效/Redis 降级 → 查 DB 重新加载 → 可用时回写 Redis（TTL 15min ± 抖动）
+  └ 检查 permissions 是否包含要求权限
   │
   ▼
-Controller 执行（Service 层可再次 assertPermission()）
+Route 执行（Service 层可再次 assert_permission()）
 ```
 
 **权限命名规范**：`resource:action`（小写 + 冒号）
@@ -250,7 +252,7 @@ Controller 执行（Service 层可再次 assertPermission()）
 - `question:read` / `question:write` / `question:delete` / `question:review`
 - `question:batch_review`
 - `subject:read` / `subject:write` / `subject:delete`
-- `role:read` / `role:write`
+- `role:read` / `role:write` / `role:delete`
 - `permission:read`
 - `audit:read`
 - `dashboard:read`
@@ -288,7 +290,8 @@ Controller 执行（Service 层可再次 assertPermission()）
 | 登录失败计数（账号） | `admin:login:fail:user:{username}` | 30min |
 | 管理员在线状态 | `admin:online:{userId}` | 5min |
 | OCR 任务状态 | `admin:ocr:task:{taskId}` | 1h |
-| AI 任务状态 | `admin:ai:task:{taskId}` | 1h |
+| AI 任务状态 | `admin:ai:task:{taskId}` | 86400s（Phase 4 enrich） |
+| AI 批次最新任务指针 | `admin:ai:batch:{batchId}:task` | 86400s |
 | Dashboard 统计 | `admin:stats:overview:{date}` | 5min ± 抖动 |
 | 防穿透锁 | `admin:stats:lock:{key}` | 10s |
 | 接口限流 | `admin:ratelimit:{userId}:{endpoint}` | 60s |
@@ -304,9 +307,9 @@ Controller 执行（Service 层可再次 assertPermission()）
 | Severity | 操作类型 | 写入策略 | 失败处理 |
 |----------|---------|---------|---------|
 | critical | 删除/批量/角色变更/super_admin相关 | **同步事务内** | 失败 → 业务回滚 |
-| important | 编辑/封禁/审核 | 同步（事务外） | 重试 3 次失败 → 业务回滚 |
-| normal | 创建/更新简单字段 | BullMQ 队列异步 | DLQ 兜底 |
-| low | 登录/登出/敏感查询 | fire-and-forget | 仅 error log |
+| important | 编辑/封禁/审核 | 优先与业务更新同一 DB 事务；确需事务外时同步重试 | 事务内失败回滚；事务外补偿必须带版本/updated_at 条件，失败需告警并记录失败审计 |
+| normal | 创建/更新简单字段 | Phase 1 同步写入；后续可评估异步队列 | 失败需记录错误日志，关键链路不得静默丢失 |
+| low | 登录/登出/敏感查询 | Phase 1 同步或轻量 fire-and-forget（按接口确认） | 仅 error log |
 
 ---
 
@@ -314,7 +317,7 @@ Controller 执行（Service 层可再次 assertPermission()）
 
 1. **新角色扩展**（reviewer / content_editor）：roles 表 + role_permissions 绑定，无需改代码
 2. **新权限扩展**：permissions 表新增条目 + 同步加入 super_admin 的 role_permissions（CI 自动校验）
-3. **新模块扩展**：NestJS 按 Module 隔离，新增模块不影响已有模块
+3. **新模块扩展**：FastAPI router + service + schema 隔离，新增模块不影响已有模块
 4. **多租户扩展**：admin_users 加 tenant_id 字段（保留预留位）
 5. **MFA / 二次验证**：admin_users 加 mfa_enabled / mfa_secret（保留预留位）
 6. **审计增强**：audit_log 已有 severity + 分区策略，无需改表结构
