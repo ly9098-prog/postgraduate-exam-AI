@@ -1,0 +1,11 @@
+<view class="agreement-page">
+  <view class="agreement-card">
+    <text class="agreement-title">AI免责声明</text>
+    <view class="agreement-body">
+      <text class="agreement-paragraph">1. AI 解析结果仅供学习参考，不构成标准答案或唯一解法。</text>
+      <text class="agreement-paragraph">2. OCR 识别可能存在文字、公式、选项或图片内容误差。</text>
+      <text class="agreement-paragraph">3. AI 生成内容不保证 100% 准确、完整或适用于所有考试场景。</text>
+      <text class="agreement-paragraph">4. 用户应结合教材、课程、官方答案和个人判断核对内容正确性。</text>
+    </view>
+  </view>
+</view>
