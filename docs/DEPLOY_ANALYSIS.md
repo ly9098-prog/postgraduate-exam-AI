@@ -666,4 +666,19 @@ bash deploy/scripts/deploy.sh status
 5. 服务器 `backend/.env`、证书、密钥和数据卷独立维护，不由本地工作区覆盖；`/loginkey.pem` 是服务器侧根目录密钥位置，不代表仓库内 `loginkey.pem` 应提交或同步上传。
 6. 部署后已有 app 容器内健康检查、nginx HTTPS 健康检查和失败日志输出；数据库迁移保留为显式命令。
 
-后续如果要继续优化，应优先做小范围事项：归档/删除历史入口、为证书续签建立自动化、或在 staging 中验证是否切换到 `deploy/Dockerfile.prod`。这些都不应混入普通 app 日常部署流程。
+### 第五阶段和第六阶段最终完成结果（2026-05-29）
+
+第五阶段和第六阶段已全部收敛完成，当前文档中记录的推荐生产路径、健康检查、显式迁移和历史入口标注均已与服务器验证结果一致。
+
+**最终确认**：
+
+- 日常生产更新仅使用 `bash deploy/scripts/deploy.sh update`，仅替换 `app`，不默认重启 `postgres`、`redis`、`nginx`。
+- 显式迁移仅在 schema 变更时使用 `bash deploy/scripts/deploy.sh migrate`。
+- 状态和健康检查使用 `bash deploy/scripts/deploy.sh status`，包含 app 容器内健康检查和 nginx HTTPS 健康检查。
+- `deploy/deploy.sh`、`deploy/backup.sh`、`deploy/scripts/init-db.sh`、`deploy/docker-compose.yml`、`deploy/docker-compose.dev.yml` 已按历史/兼容入口收敛，不再作为日常生产推荐入口。
+- GitHub Actions 部署步骤已收敛为手动触发、测试后调用 `bash deploy/scripts/deploy.sh update`，避免默认全服务重启、默认迁移和服务器侧 `git pull`。
+- `docs/DEPLOY_ANALYSIS.md` 已同步记录 `.deployignore` 同步边界、app-only 更新、显式迁移、健康检查、历史入口归档和禁止项。
+
+**最终状态**：
+
+当前生产部署的推荐入口已稳定为 `deploy/docker-compose.prod.yml` + `deploy/scripts/deploy.sh`；后续如要切换构建入口或进一步删除历史文件，应作为独立的低风险变更单独处理，不应混入日常部署流程。
