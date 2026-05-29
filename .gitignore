@@ -1,31 +1,69 @@
-# 环境变量
+# Local environment
 .env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
-*.db
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# IDE
+# Local databases and backups
+*.db
+*.sqlite
+*.sqlite3
+*.db.backup-*
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+backend/*.db.backup-*
+
+# Generated runtime data
+logs/
+*.log
+tmp/
+cache/
+uploads/
+static/uploads/
+backend/logs/
+backend/tmp/
+backend/cache/
+backend/uploads/
+backend/static/uploads/
+backend/static/
+
+# Frontend dependencies/build output
+node_modules/
+dist/
+build/
+miniprogram/miniprogram_npm/
+
+# IDE and local tools
 .idea/
 .vscode/
 *.swp
+.claude/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# 部署敏感文件
+# Deployment secrets
+*.pem
+*.key
+*.crt
 deploy/nginx/ssl/*.pem
 deploy/nginx/ssl/*.key
 deploy/nginx/ssl/*.crt
 deploy/logs/
-*.pem
-*.key
-!loginkey.pem
 
-# Docker
+# Docker volumes
 pgdata/
 redisdata/

@@ -1,3 +1,7 @@
+# Legacy production-like compose file.
+# Current production entry: deploy/docker-compose.prod.yml.
+# Do not use this file for daily production deployment.
+
 version: "3.8"
 
 services:

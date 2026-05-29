@@ -1,6 +1,6 @@
 #!/bin/bash
-# === 2240AI 数据库初始化 ===
-# 在 postgres 容器内运行：创建数据库和扩展
+# Legacy database initialization script.
+# Current production migration entry: bash deploy/scripts/deploy.sh migrate
 set -euo pipefail
 
 echo "=== 2240AI 数据库初始化 ==="

@@ -1,52 +1,33 @@
-.PHONY: up down restart logs status build backup deploy health-check
+.PHONY: up down restart logs status build backup deploy update migrate health-check
 
-# === 生产 ===
+COMPOSE = docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml
 
 up:
-	docker compose -f deploy/docker-compose.yml up -d
+	$(COMPOSE) up -d
 
 down:
-	docker compose -f deploy/docker-compose.yml down
+	$(COMPOSE) down
 
 restart:
-	docker compose -f deploy/docker-compose.yml restart
+	$(COMPOSE) restart
 
 logs:
-	docker compose -f deploy/docker-compose.yml logs -f --tail=100
+	$(COMPOSE) logs -f --tail=100
 
 status:
-	docker compose -f deploy/docker-compose.yml ps
+	$(COMPOSE) ps
 
 build:
-	docker compose -f deploy/docker-compose.yml build
-
-# === 开发 ===
-
-dev-up:
-	docker compose -f deploy/docker-compose.dev.yml up -d
-
-dev-down:
-	docker compose -f deploy/docker-compose.dev.yml down
-
-dev-logs:
-	docker compose -f deploy/docker-compose.dev.yml logs -f --tail=100
-
-# === 运维 ===
+	$(COMPOSE) build app
 
 backup:
 	bash deploy/scripts/backup.sh
 
-deploy:
-	bash deploy/scripts/deploy.sh
+deploy update:
+	bash deploy/scripts/deploy.sh update
+
+migrate:
+	bash deploy/scripts/deploy.sh migrate
 
 health-check:
 	bash deploy/scripts/health-check.sh
-
-init-db:
-	bash deploy/scripts/init-db.sh
-
-# === SSL 证书 ===
-
-cert-renew:
-	docker compose -f deploy/docker-compose.yml run --rm certbot renew
-	docker compose -f deploy/docker-compose.yml exec nginx nginx -s reload
