@@ -2,7 +2,42 @@
   "permissions": {
     "allow": [
       "Bash(git ls-tree *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git worktree *)",
+      "Bash(git restore *)",
+      "Bash(python3 *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git *)",
+      "Bash(node *)",
+      "Bash(python *)",
+      "Bash(ssh *)",
+      "Bash(rsync --version)",
+      "Bash(rsync -azn --itemize-changes --stats --exclude-from=\".deployignore\" -e \"ssh -i loginkey.pem -o BatchMode=yes\" ./ root@8.163.56.109:/opt/2240ai-v2-sync-dryrun/)",
+      "Bash(tee /tmp/2240ai-rsync-dryrun.txt)",
+      "Bash(grep -E \"\\(^|/\\)\\(loginkey\\\\.pem|backend/postgraduate\\\\.db|postgraduate\\\\.db|backend/static|\\\\.claude|backend/\\\\.venv|\\\\.pytest_cache|backend/\\\\.env|/cert/|cert/|\\\\.git\\)\\(/|$\\)\" /tmp/2240ai-rsync-dryrun.txt)",
+      "Bash(tee /tmp/2240ai-rsync-dryrun-2.txt)",
+      "Bash(grep -E \"\\(^|/\\)\\(loginkey\\\\.pem|backend/postgraduate\\\\.db|postgraduate\\\\.db|backend/static|\\\\.claude|backend/\\\\.venv|\\\\.pytest_cache|backend/\\\\.env|/cert/|cert/|\\\\.git\\)\\(/|$\\)\" /tmp/2240ai-rsync-dryrun-2.txt)",
+      "Bash(rsync -azn --itemize-changes --stats --exclude-from=\".deployignore\" -e \"ssh -i loginkey.pem -o BatchMode=yes\" ./ root@8.163.56.109:/opt/2240ai-v2/)",
+      "Bash(tee /tmp/2240ai-rsync-prod-dryrun.txt)",
+      "Bash(grep -E '\\(^|/\\)\\(loginkey\\\\.pem|\\\\.env|[^/]*\\\\.pem|[^/]*\\\\.key|[^/]*\\\\.crt|postgraduate\\\\.db|.*\\\\.sqlite|.*\\\\.sqlite3|\\\\.claude|\\\\.git|backend/\\\\.venv|\\\\.pytest_cache|backend/static|backend/tests|miniprogram/__mocks__\\)\\($|/\\)' /tmp/2240ai-rsync-prod-dryrun.txt)",
+      "Bash(rsync -az --itemize-changes --stats --exclude-from=\".deployignore\" -e \"ssh -i loginkey.pem -o BatchMode=yes\" ./ root@8.163.56.109:/opt/2240ai-v2/)",
+      "Bash(tee /tmp/2240ai-rsync-prod-actual.txt)",
+      "Bash(tee /tmp/2240ai-rsync-prod-actual-fix.txt)",
+      "Bash(bash *)",
+      "Bash(tee /tmp/2240ai-rsync-stage4-scripts.txt)",
+      "Bash(tee /tmp/2240ai-rsync-stage4-health-retry.txt)",
+      "Bash(scp -i \"loginkey.pem\" -o BatchMode=yes /tmp/2240ai-deploy-Makefile root@8.163.56.109:/opt/2240ai-v2/deploy/Makefile)",
+      "Bash(rsync *)",
+      "Bash(make -n -f deploy/Makefile status)",
+      "Bash(docker compose *)",
+      "Bash(pytest *)",
+      "Bash(PYTHONPATH=. pytest tests/test_api/test_admin_app_users.py tests/test_api/test_admin_users.py tests/test_services/test_admin_app_user_service.py tests/test_services/test_admin_user_service.py)",
+      "Bash(PYTHONPATH=. pytest *)",
+      "Bash(PYTHONPATH=backend pytest *)",
+      "Bash(PYTHONPATH=/home/lmh/projects/postgraduate-ai/backend pytest *)",
+      "Bash(PYTHONPATH=/home/lmh/projects/postgraduate-ai/backend python3 *)",
+      "Bash(PYTHONPATH=/home/lmh/projects/postgraduate-ai/backend alembic *)",
+      "Bash(../backend/.venv/bin/pytest tests/test_services/test_cache.py tests/test_services/test_admin_phase5_services.py tests/test_api/test_admin_health.py)"
     ]
   }
 }

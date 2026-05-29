@@ -60,21 +60,33 @@
 | 状态 | 存储位置 | 描述 |
 |------|---------|------|
 | `pending` | `question_imports.review_status` | 等待人工首次审核 |
-| `approved` | `question_imports.review_status` + `questions.review_status` + `is_active=true` | 审核通过，已发布 |
-| `rejected` | `question_imports.review_status` | 审核拒绝，不进题库 |
+| `approved` | 首次审核：`question_imports.review_status`；已入库重审：`questions.review_status` + `is_active=true` | 审核通过，已发布 |
+| `rejected` | 首次审核：`question_imports.review_status`；已入库重审：`questions.review_status` | 审核拒绝；未入库 import 不进题库，已入库题目下架 |
 | `re_pending` | `questions.review_status` | 已发布题目被编辑后，等待重新审核 |
 | `archived` | `questions.is_active=false` | 已下架（保留数据，不出题） |
 
 **重要**：
-- 现有 questions.review_status 默认值改为 "approved"（保持 FastAPI 端兼容）
-- 新增 `re_pending` 仅在 Admin 编辑场景中产生，FastAPI 端忽略此状态
-- `is_active=false` 时，**无论 review_status 是什么**，题目不会出现在小程序刷题池
+- 首次审核操作 `question_imports`，建议接口为 `/imports/{importId}/approve` / `/imports/{importId}/reject`；未人工确认的 import 不得进入正式刷题池。
+- 已入库题目重审操作 `questions`，接口为 `/questions/{questionId}/approve` / `/questions/{questionId}/reject`。
+- 现有 questions.review_status 默认值需实施前确认是否为 "approved"（保持 FastAPI 端兼容）；字段不存在时必须列 migration。
+- 新增 `re_pending` 仅在 Admin 编辑场景中产生，FastAPI 端必须过滤非 approved 题目。
+- `is_active=false` 时，**无论 review_status 是什么**，题目不会出现在小程序刷题池。
 
 ---
 
 ## 三、审核操作 API
 
-### 3.1 单条审核通过
+### 3.1 首次审核导入题目（question_imports）
+
+```
+POST /api/admin/v1/imports/:importId/approve
+POST /api/admin/v1/imports/:importId/reject
+权限：question:review
+```
+
+首次审核只操作 `question_imports` 及其确认入库流程；approve 后才允许按既有人工确认链路写入正式 `questions`。reject 不写入 `questions`。具体路径建议同步到 ADMIN_API_SPEC 后再开发。
+
+### 3.2 已入库题目审核通过
 
 ```
 POST /api/admin/v1/questions/:id/approve
@@ -85,9 +97,6 @@ Body: { "comment": "可选审核备注" }
 { "data": { "id": 123, "reviewStatus": "approved", "isActive": true } }
 
 副作用（事务内）：
-- question_imports.review_status → "approved"（首次）
-- question_imports.reviewed_by → operator.id
-- question_imports.reviewed_at → now()
 - questions.review_status → "approved"
 - questions.is_active → true
 - audit_logs.create:
@@ -97,7 +106,7 @@ Body: { "comment": "可选审核备注" }
               after:  { reviewStatus: "approved" } } }
 ```
 
-### 3.2 单条审核拒绝
+### 3.3 已入库题目审核拒绝
 
 ```
 POST /api/admin/v1/questions/:id/reject
@@ -105,15 +114,12 @@ POST /api/admin/v1/questions/:id/reject
 Body: { "reason": "题目选项缺失" }
 
 副作用（事务内）：
-- question_imports.review_status → "rejected"
-- question_imports.reject_reason → reason
-- question_imports.reviewed_by / reviewed_at
-- questions.review_status → "rejected"（若已写入）
+- questions.review_status → "rejected"
 - questions.is_active → false
 - audit_logs.create: { ... severity: "important" ... }
 ```
 
-### 3.3 批量审核
+### 3.4 批量审核
 
 ```
 POST /api/admin/v1/questions/batch-approve

@@ -237,14 +237,14 @@ TTL:    86400
 - `/api/admin/v1/imports/{batchId}/status` 先读取批次指针，再读取任务 payload；任一 key 不存在时返回任务不存在。
 - 当前 enrich 只创建 `pending` 状态与审计日志，不代表 AI worker 已实际处理完成；不得据此绕过 `question_imports + 人工确认`。
 
-### 3.8 Dashboard 统计缓存（I4 修订：抖动 + 防穿透）
+### 3.8 Dashboard 统计缓存（Phase 5 实现，2026-05-29）
 
 ```
-Key:    admin:stats:overview:{date}
+Key:    admin:dashboard:overview
 Value:  JSON
 TTL:    300 ± 30 抖动
 
-Key:    admin:stats:lock:{key}
+Key:    admin:dashboard:overview:lock
 Value:  uuid
 TTL:    10
 ```
@@ -252,40 +252,38 @@ TTL:    10
 **实现 stale-while-revalidate**：
 ```typescript
 async getOverview() {
-  const key = `admin:stats:overview:${todayKey()}`;
-  const cached = await redis.get(key);
+  const key = "admin:dashboard:overview";
+  const cached = await cache.get(key);
 
-  if (cached) return JSON.parse(cached);
+  if (cached) return cached;
 
-  // Cache miss → 单飞抢锁
-  const lockKey = `admin:stats:lock:overview`;
-  const lockId = uuidv4();
-  const acquired = await redis.set(lockKey, lockId, 'NX', 'EX', 10);
-
-  if (!acquired) {
-    // 其他请求正在加载，等 100ms 重试一次缓存
+  const lockKey = `${key}:lock`;
+  const lockValue = uuid4().hex;
+  const locked = await cache.acquire_lock(lockKey, lockValue, ttl=10);
+  if (!locked) {
     await sleep(100);
-    const retry = await redis.get(key);
-    if (retry) return JSON.parse(retry);
-    // 仍 miss → 直接查 DB（降级）
-    return this.computeOverview();
+    const retry = await cache.get(key);
+    if (retry) return retry;
+    return await compute_dashboard_overview(db);
   }
 
   try {
-    const data = await this.computeOverview();
-    const ttl = 300 + Math.floor(Math.random() * 30);
-    await redis.set(key, JSON.stringify(data), 'EX', ttl);
+    const data = await compute_dashboard_overview(db);
+    await cache.set(key, data, ttl=cache.jitter_ttl(300, 0.1));
     return data;
   } finally {
-    // 释放锁（用 Lua 保证原子性）
-    await this.releaseLock(lockKey, lockId);
+    await cache.release_lock(lockKey, lockValue);
   }
 }
 ```
 
-**主动刷新**（推荐）：
-- BullMQ 定时 cron 每 5min 刷新 stats:overview，消除 lazy 过期
-- 应用启动时立即触发一次刷新
+**实现说明**：
+- **更新时间**：2026-05-29
+- **变更原因**：同步 Phase 5 FastAPI Dashboard 实现与实际 Redis/cache key。
+- 当前 FastAPI 实现为请求触发缓存 + 防穿透锁，不依赖 BullMQ 主动刷新。
+- Redis 不可用时 `cache` 静默降级，接口直接查 DB，不影响核心功能。
+- `cache.get_stats()` 提供 `hits` / `misses` / `hit_rate` / `enabled`，由 Dashboard overview 返回。
+- `release_lock` 当前通过读取锁值后删除实现，未使用 Lua 原子释放；生产如需严格锁释放语义需后续单独实现。
 
 ### 3.9 接口限流
 
