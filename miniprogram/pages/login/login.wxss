@@ -242,7 +242,43 @@ page {
 .login-desc {
   font-size: 26rpx;
   color: #9AABBA;
-  margin-bottom: 40rpx;
+  margin-bottom: 28rpx;
+}
+
+.agreement-area {
+  width: 100%;
+  margin-bottom: 28rpx;
+}
+
+.agreement-check {
+  display: flex;
+  align-items: center;
+  min-height: 56rpx;
+}
+
+.agreement-check checkbox {
+  transform: scale(0.78);
+  margin-right: 4rpx;
+}
+
+.agreement-text {
+  font-size: 24rpx;
+  color: #6B7B8D;
+}
+
+.agreement-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx 18rpx;
+  padding-left: 58rpx;
+  margin-top: 8rpx;
+}
+
+.agreement-link {
+  font-size: 24rpx;
+  color: #5B7B9A;
+  line-height: 1.8;
+  padding: 6rpx 0;
 }
 
 /* ── 微信登录按钮 ── */

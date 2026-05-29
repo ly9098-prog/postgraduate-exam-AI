@@ -1,0 +1,36 @@
+page {
+  background: #F5F3EE;
+}
+
+.agreement-page {
+  min-height: 100vh;
+  padding: 32rpx 32rpx calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.agreement-card {
+  background: #fff;
+  border-radius: 24rpx;
+  padding: 40rpx 34rpx;
+  box-shadow: 0 8rpx 28rpx rgba(45,62,80,0.06);
+}
+
+.agreement-title {
+  display: block;
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #2D3E50;
+  margin-bottom: 28rpx;
+}
+
+.agreement-body {
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
+.agreement-paragraph {
+  font-size: 28rpx;
+  line-height: 1.8;
+  color: #536577;
+}
