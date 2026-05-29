@@ -173,3 +173,33 @@ async def test_cached_decorator():
             result = await my_func(5)
             assert result == {"value": 10}
             assert call_count == 1  # Not incremented
+
+
+def test_jitter_ttl_in_expected_range():
+    client = CacheClient()
+    values = [client.jitter_ttl(300, 0.1) for _ in range(20)]
+    assert all(270 <= value <= 330 for value in values)
+
+
+@pytest.mark.asyncio
+async def test_cache_lock_helpers_degrade_without_redis():
+    client = CacheClient()
+    assert await client.acquire_lock("lock", "value") is False
+    await client.release_lock("lock", "value")
+
+
+@pytest.mark.asyncio
+async def test_cache_lock_helpers_use_set_nx_and_delete_matching_value():
+    mock_redis = AsyncMock()
+    mock_redis.ping = AsyncMock()
+    mock_redis.set.return_value = True
+    mock_redis.get.return_value = b"value"
+
+    with patch("redis.asyncio.from_url", return_value=mock_redis):
+        with patch("app.core.cache.settings") as mock_settings:
+            mock_settings.REDIS_URL = "redis://localhost:6379"
+            client = CacheClient()
+            assert await client.acquire_lock("lock", "value", ttl=10) is True
+            mock_redis.set.assert_called_with("lock", "value", nx=True, ex=10)
+            await client.release_lock("lock", "value")
+            mock_redis.delete.assert_called_once_with("lock")

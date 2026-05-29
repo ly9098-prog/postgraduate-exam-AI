@@ -19,12 +19,18 @@
 
 ## 二、数据库约束
 
+### 2.0 技术栈确认前置
+
+- 当前主项目技术栈是 FastAPI + SQLAlchemy + PostgreSQL/SQLite。
+- 本文件中的 NestJS + Prisma 仅是独立 Admin 方案设想，维护者未确认独立技术栈、migration 归属、部署边界前，不得按此文档直接开工或引入新依赖。
+- 如需落地，必须先确认是否独立后台、是否共享数据库迁移、以及与 FastAPI 既有表的兼容策略。
+
 ### 2.1 禁止擅自修改 schema
 
 - ❌ 修改已有 migration 文件
 - ❌ 直接 `ALTER TABLE` 绕过 Prisma migration
 - ❌ 删除任何 admin 系列表
-- ❌ 修改 super_admin 角色的 id（必须永远 = 1）或 isSystem 字段
+- ❌ 修改 super_admin 角色的 id（业务代码不得依赖 id=1）或 isSystem 字段
 - ✅ 每次变更创建新 migration（格式 `NNNN_describe`）
 
 ### 2.2 禁止擅自新增字段
@@ -64,8 +70,11 @@
 
 - ✅ 成功响应：`{ data, meta: { requestId, timestamp } }`
 - ✅ 错误响应：`{ error: { type, message, hint?, field? }, meta }`
-- ❌ 裸 JSON 返回（绕过 ResponseInterceptor）
-- ❌ 在 Controller 手动 `return { error: ... }`（必须 throw Exception）
+- ✅ `requestId` 统一作为全链路 traceId；业务响应的 `X-Request-Id` 与 `meta.requestId` 必须一致
+- ✅ health 探针可只返回 `X-Request-Id` 响应头，不强制包装 `meta.requestId`，且不写 audit_log
+- ❌ 对外新增并行的 `traceId` 字段或 Phase 0/1 新增 `audit_logs.trace_id` 列
+- ❌ 裸 JSON 返回（绕过 FastAPI response helper；health 探针例外）
+- ❌ 在 router 中手动 `return { error: ... }`（必须抛出统一异常）
 - ❌ 业务 code 与 HTTP code 混用（v2 已统一为 Stripe 风格）
 
 ### 3.3 HTTP 状态码
@@ -88,6 +97,7 @@
 - ❌ 任何 API 不得删除/封禁/修改 super_admin
 - ❌ super_admin 之间互删（除自删）
 - ✅ super_admin 的权限**通过 role_permissions 表绑定**，不允许 `if (isSuperAdmin) return true` 硬编码
+- ✅ super_admin 判断必须查询 `roles.name = 'super_admin'`，业务代码不得假设 `super_admin.id = 1`
 
 ### 4.3 JWT Payload
 
@@ -169,7 +179,7 @@
 
 ### 7.4 敏感信息
 
-- ❌ JWT / 密码 / session_key 入 audit_log / console
+- ❌ Authorization / Cookie / JWT / refresh token / password / passwordHash / session_key / DeepSeek API key / 完整请求体 / 生产 stack trace 入 audit_log / console / 前端反馈
 - ❌ 错误 stack trace 暴露给生产环境响应
 
 ---

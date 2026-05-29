@@ -1,9 +1,9 @@
 # Admin API 规范
 
-> 版本：v2.1（FastAPI 方案确认版） | 状态：可启动开发 | 更新：2026-05-29
+> 版本：v2.2（Phase 5 后端完成同步版） | 状态：Phase 5 后端已完成 | 更新：2026-05-29
 > 修订自审计报告 I8（统一 Stripe 风格）、I10（liveness/readiness）、C1（拆分 app-users 与 admin-users）
 >
-> - **变更原因**：2026-05-29 同步 Admin Backend Phase 4 已完成的科目树与导入管理接口实现，补充实际查询参数、响应字段、Redis 任务指针与人工确认约束。
+> - **变更原因**：2026-05-29 同步 Admin Backend Phase 5 已完成的审计日志查询与 Dashboard 统计接口实现，补充实际查询参数、响应字段、缓存 key、TTL 抖动、防穿透锁和未实现的主动刷新 cron。
 
 ---
 
@@ -216,20 +216,72 @@ POST   /v1/auth/refresh
 - `422`：层级超过 3、移动到自身/子孙节点、删除存在子科目或已有题目引用的科目等业务规则失败。
 - 创建/更新/删除会写入 `subject.create` / `subject.update` / `subject.delete` 审计日志；`path` 当前按科目 `code` 拼接并在移动/改 code 时同步子树。
 
-### 3.10 审计日志 `/audit-logs`（原 `/logs`）
+### 3.10 审计日志 `/audit-logs`（Phase 5 实现，2026-05-29）
 
 | 方法 | 路径 | 描述 | 权限 |
 |------|------|------|------|
 | GET | `/audit-logs` | 列表（多维过滤） | audit:read |
 | GET | `/audit-logs/{id}` | 详情（含 detail JSON） | audit:read |
 
-### 3.11 统计 `/dashboard`
+**查询参数**：
+- `page`（默认 1，≥1）
+- `pageSize`（默认 20，1-100，查询别名 `pageSize`）
+- `operatorId`
+- `action`（支持 `*` 通配，内部转 `LIKE`）
+- `resourceType`
+- `resourceId`
+- `severity`：`critical|important|normal|low`
+- `status`：`success|failed`
+- `from` / `to`（ISO datetime）
+
+**响应字段**：
+- 列表 item：`id`、`operator_id`、`operator_name`、`action`、`resource_type`、`resource_id`、`severity`、`status`、`ip`、`created_at`
+- 详情 item：在列表字段基础上增加 `detail`、`user_agent`、`error_message`
+
+**约束**：
+- 默认仅查询近 183 天；未传 `from` 时从 `to`（默认当前时间）向前回溯 183 天
+- 查询跨度超过 1 年返回 422
+- `from > to` 返回 422
+
+### 3.11 统计 `/dashboard`（Phase 5 实现，2026-05-29）
 
 | 方法 | 路径 | 描述 | 权限 |
 |------|------|------|------|
 | GET | `/dashboard/overview` | 总览统计 | dashboard:read |
 | GET | `/dashboard/daily` | 每日图表数据 | dashboard:read |
 | GET | `/dashboard/questions-stats` | 题库分布 | dashboard:read |
+
+**`/dashboard/overview` 响应字段**：
+- `users_total`
+- `users_new_today`
+- `questions_total`
+- `questions_pending_review`
+- `questions_approved`
+- `imports_total`
+- `imports_pending`
+- `audit_critical_today`
+- `cache`（当前缓存运行指标，来自 `app.core.cache.get_stats()`）
+
+**`/dashboard/daily` 查询参数**：
+- `from` / `to`（date）
+- 默认近 7 天；跨度超过 1 年返回 422；`from > to` 返回 422
+
+**`/dashboard/daily` 响应字段**：
+- `date`
+- `users_new`
+- `questions_new`
+- `imports_new`
+- `audits_total`
+
+**`/dashboard/questions-stats` 响应字段**：
+- `by_subject`
+- `by_review_status`
+- `by_difficulty`
+- 每个分组项结构为 `{ "name": string, "count": number }`
+
+**实现备注**：
+- `overview` 使用 `admin:dashboard:overview` 缓存键、`admin:dashboard:overview:lock` 防穿透锁，Redis 不可用时直接查 DB
+- 当前实现为请求触发缓存 + 锁，不依赖 BullMQ 主动刷新
 
 ---
 

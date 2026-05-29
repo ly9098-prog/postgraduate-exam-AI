@@ -1,7 +1,10 @@
 # 分阶段开发计划
 
-> 版本：v2.0（审计修订版） | 状态：可启动开发 | 更新：2026-05-26
-> 修订自审计报告 I1（subjects）、I2（明确不实现 question_banks）、C6（question_versions）、C5（audit_log 分级）
+> 版本：v2.2（Phase 5 后端完成同步版） | 状态：Phase 5 后端已完成 | 更新：2026-05-29
+> 修订自审计报告 I1（subjects）、I2（明确不实现 question_banks）、C6（question_versions）、C5（audit_log 分级）；2026-05-29 根据维护者确认收敛为现有 FastAPI 后端内实现。
+>
+> - **变更原因**：同步 Admin Phase 5 后端实际实现：审计日志查询、Dashboard 统计、Redis/cache TTL 抖动与防穿透锁已接入现有 FastAPI；移除 Phase 5 主动刷新 BullMQ cron 的完成态表述。
+> - **技术结论**：Admin Backend 位于现有 FastAPI 后端 `/api/admin/v1`；ORM 使用 SQLAlchemy；迁移使用 Alembic；Redis 可选降级；不创建 NestJS/Prisma/BullMQ 独立后端；Phase 1 审计日志同步写入，队列延后。
 
 ---
 
@@ -9,80 +12,61 @@
 
 | 阶段 | 名称 | 周期估算 | 核心产出 |
 |------|------|---------|---------|
-| Phase 0 | 基础设施 + 全表初始化 | 2-3天 | 项目骨架、全部新表（含 subjects/audit_logs/question_versions）、Redis/BullMQ 连接 |
-| Phase 1 | RBAC 权限体系 | 3-4天 | JWT/Guards/Decorators/Seed/超管脚本 |
-| Phase 2 | 用户管理系统 | 2天 | app-users + admin-users 两个独立模块 |
+| Phase 0 | 基础设施 + 全表初始化 | 2-3天 | FastAPI Admin 路由骨架、全部新表（含 subjects/audit_logs/question_versions）、Alembic migration、Redis 可选连接 |
+| Phase 1 | RBAC 权限体系 | 3-4天 | JWT/FastAPI dependencies/Seed/超管脚本/同步审计日志 |
+| Phase 2 | 用户管理系统 | 2天 | app-users + admin-users 两个独立 Admin router/service |
 | Phase 3 | 题库管理系统 | 3-4天 | 题目审核、编辑（+ 版本快照）、批量操作、re_pending 状态机 |
 | Phase 4 | 科目与导入管理 | 2天 | 科目树 CRUD、导入批次查看、AI 任务监控 |
-| Phase 5 | 审计日志与统计 | 2天 | audit-logs 查询、Dashboard 统计（含缓存防穿透） |
-| Phase 6 | 前端 Admin Dashboard | 4-6天 | Next.js 完整 UI |
+| Phase 5 | 审计日志与统计 | 已完成 | audit-logs 查询、Dashboard 统计（Redis 可用时缓存防穿透） |
+| Phase 6 | 前端 Admin Dashboard | 4-6天 | 前端 Admin UI（技术栈另行确认，仅消费 /api/admin/v1） |
 
 ---
 
 ## Phase 0：基础设施 + 全表初始化
 
 ### 目标
-搭建 NestJS 骨架，**一次性完成所有新表的 migration**（避免后期跨 Phase 加表），建立基础设施（DB / Redis / BullMQ / 全局拦截器 / 健康检查）。
+搭建 FastAPI Admin 路由骨架，**一次性完成所有新表的 migration**（避免后期跨 Phase 加表），建立基础设施（DB / Redis / 统一错误处理 / 健康检查）。
 
 ### DeepSeek 应完成
 
-1. **创建 NestJS 项目**
-   ```bash
-   nest new admin-backend
-   cd admin-backend
-   npm install @nestjs/config @nestjs/jwt @nestjs/passport @nestjs/bullmq
-   npm install prisma @prisma/client ioredis bullmq bcryptjs uuid
-   npm install class-validator class-transformer
-   npm install --save-dev @types/bcryptjs @types/uuid
-   ```
+1. **创建 Admin Backend 项目（并入现有 FastAPI）**
+   - Admin 代码位于现有 `backend/app/api/admin/v1`、`backend/app/services/admin`、`backend/app/schemas/admin`、`backend/app/models` 等目录，不创建独立 NestJS 项目。
+   - 不安装新框架依赖，不创建 Prisma schema。
+   - 如需继续拆分模块，必须保持在现有 FastAPI 代码库内完成。
 
-2. **Prisma 初始化与 schema**
-   - 配置 `prisma/schema.prisma`（连接现有 PostgreSQL）
-   - 创建所有新表 model：
-     - admin_users / roles / permissions / role_permissions / audit_logs
-     - subjects / question_versions
-   - 映射已有表（users / questions / question_imports）只读
-   - 执行 `prisma migrate dev --name 0001_init_admin_tables`
-   - 执行 `prisma migrate dev --name 0002_init_subjects`
-   - 执行 `prisma migrate dev --name 0003_init_question_versions`
-   - 执行 `prisma migrate dev --name 0004_audit_log_partition`（启用 pg_partman 分区）
+2. **SQLAlchemy / Alembic 初始化与 schema**
+   - 以现有 FastAPI backend 的 SQLAlchemy 模型与 Alembic migration 体系为准，创建 Admin 所需模型与迁移。
+   - 新表包括：admin_users / roles / permissions / role_permissions / audit_logs
+   - 复用已有表（users / questions / question_imports）时，必须先确认兼容性后再写 Alembic migration。
+   - `audit_logs` 分区不作为 Phase 0 必落 migration：开发/SQLite 环境不启用分区；生产 PostgreSQL 分区如需启用，属于部署脚本范畴，需单独确认后执行。
 
 3. **目录结构**
    ```
-   src/
-   ├── main.ts
-   ├── app.module.ts
-   ├── modules/
-   │   └── health/
-   ├── common/
-   │   ├── guards/
-   │   ├── decorators/
-   │   ├── interceptors/  # ResponseInterceptor / AuditLogInterceptor
-   │   ├── filters/       # GlobalExceptionFilter
-   │   ├── dto/
-   │   └── utils/
-   ├── infrastructure/
-   │   ├── prisma/
-   │   ├── redis/         # RedisService + jitter / tryLock / releaseLock
-   │   └── queue/         # BullMQ Module（audit-log queue）
-   └── scripts/
+   backend/app/
+   ├── api/admin/v1/          # Admin routes，统一 /api/admin/v1
+   ├── schemas/admin/         # Pydantic 请求/响应模型
+   ├── services/admin/        # 业务逻辑与事务边界
+   ├── models/                # SQLAlchemy Admin 模型
+   ├── core/                  # JWT / 安全 / DB / Redis 可选封装
+   └── main.py                # 挂载 admin router
+   backend/alembic/           # Alembic migrations
    ```
 
-4. **PrismaService**（NestJS 可注入）
+4. **SQLAlchemy Session / Service 层事务控制**
 
 5. **RedisService**（见 REDIS_PLAN.md，含 jitter / 防穿透锁 / role version 工具）
    - 连接失败时静默降级，不阻塞启动
 
-6. **BullMQ 配置**
-   - 注册 `audit-log` queue
-   - DLQ（dead-letter queue）配置
-   - 启动 worker（同进程或独立 worker 均可）
+6. **审计日志队列**
+   - Phase 0/1 不引入 BullMQ/DLQ；audit_log 先由 FastAPI service 层同步写入
+   - 后续如需队列化，必须在不新增独立后端的前提下单独确认
 
-7. **全局拦截器与过滤器**
-   - `ResponseInterceptor`：统一包装为 Stripe 风格（`{ data, meta }`）
-   - `GlobalExceptionFilter`：统一错误响应（`{ error: { type, message, hint, field } }`）
-   - `ValidationPipe`：全局参数校验，pageSize 上限 100
-   - `RequestIdInterceptor`：注入 `meta.requestId`
+7. **FastAPI middleware / exception handler / response helper**
+   - 统一包装业务响应为 Stripe 风格（`{ data, meta }`）
+   - 统一错误响应（`{ error: { type, message, hint, field }, meta }`）
+   - 全局参数校验，pageSize 上限 100
+   - RequestId middleware：生成或透传 `requestId`，写入 `X-Request-Id`；业务 API 注入 `meta.requestId`，该 `requestId` 即全链路 traceId
+   - Health 探针保持轻量：可只返回 `X-Request-Id` 响应头，不写 audit_log
 
 8. **环境变量**
    ```env
@@ -104,15 +88,17 @@
    - `GET /health`
 
 10. **Seed 入口**
-    - `prisma/seed.ts` 调用 `src/scripts/seed-permissions.ts` + `src/scripts/seed-roles.ts` + `src/scripts/seed-subjects.ts`
+    - 使用 `backend/scripts/seed_admin_permissions.py`、`backend/scripts/seed_admin_roles.py`、`backend/scripts/seed_admin_subjects.py` 等 Python 脚本，复用现有 FastAPI 配置与 SQLAlchemy session
 
 ### 验收标准
-- `prisma migrate deploy` 在干净 DB 上一次性成功
-- `GET /health/ready` 返回 `{ status: "ok", db: "ok", redis: "ok" }`
+- `prisma migrate deploy` 在干净 DB 上一次性成功（仅在 Prisma 技术栈确认后适用）
+- `GET /health/ready`：DB OK 时返回 200；Redis OK 返回 `{ status: "ok", db: "ok", redis: "ok" }`；Redis 不可用但 DB OK 时仍返回 200 且 `redis: "degraded"`
+- DB 失败或关键 migration 未完成时，`GET /health/ready` 返回 503
 - `GET /health/live` 在 DB/Redis 挂掉时仍返回 200
-- BullMQ queue 启动成功，可见 worker 日志
+- 审计日志同步写入能力可用（Phase 0/1 不要求 BullMQ queue/worker）
 - 错误响应格式符合 `{ error: { type, message } }`
 - 项目可启动，无报错
+- 业务 API 响应头 `X-Request-Id` 与响应体 `meta.requestId` 一致；health 探针至少返回 `X-Request-Id`
 
 ### 禁止修改
 - 现有 FastAPI 后端任何文件
@@ -163,13 +149,13 @@
    - `GET /permissions` / `GET /permissions/by-category`
 
 7. **Seed 脚本**
-   - `seed-permissions.ts`：写入完整权限清单（见 RBAC_RULES.md §二）
-   - `seed-roles.ts`：创建 super_admin（绑定全部 permissions） + admin（绑定运营权限）
-   - `init-super-admin.ts`：从 stdin 读密码 → bcrypt(12) → 创建 → 写 audit critical
-   - `hash-password.ts`：CLI 工具，stdin 输入密码 → 输出 bcrypt hash
+   - `seed_admin_permissions.py`：写入完整权限清单（见 RBAC_RULES.md §二）
+   - `seed_admin_roles.py`：创建 super_admin（绑定全部 permissions） + admin（绑定运营权限）
+   - `init_super_admin.py`：从 stdin 读密码 → bcrypt(12) → 创建 → 写 audit critical
+   - `hash_admin_password.py`：CLI 工具，stdin 输入密码 → 输出 bcrypt hash
 
 8. **CI 校验**
-   - `npm run check:super-admin-coverage`：校验 super_admin 拥有全部权限
+   - `python backend/scripts/check_super_admin_coverage.py`：校验 super_admin 拥有全部权限
 
 9. **AuditLogService**（同步事务内 + 同步重试 + 异步队列 + fire-forget）
 
@@ -182,11 +168,11 @@
 - 任何 API 创建 role.name=super_admin → 403
 - 修改 admin 用户的 role 为 super_admin → 403
 - 修改角色权限后，相关用户的下次请求获得新权限（无需登出）
-- `init-super-admin.ts` 重复执行不会创建第二个 super_admin（幂等）
+- `init_super_admin.py` 重复执行不会创建第二个 super_admin（幂等）
 - 修改密码后，旧 token 立即失效
 
 ### 禁止修改
-- Phase 0 建立的 PrismaService / RedisService / 全局拦截器
+- Phase 0 建立的 SQLAlchemy session / RedisService / FastAPI middleware 与 exception handler
 - audit_logs 表结构
 
 ### 本阶段完成后更新文档
@@ -205,7 +191,7 @@
 1. **AppUsersModule**（小程序用户，C1）
    - `GET /app-users`：分页 + 过滤（keyword/isBanned/created时间范围）
    - `GET /app-users/:id`：详情（练题数 / 错题数 / 最近活跃）
-   - `PATCH /app-users/:id`：编辑 nickname（important 审计）
+   - `PATCH /app-users/:id`：仅允许运营备注/状态类字段；nickname/avatar_url 等微信来源资料默认不可改，若维护者确认允许修改 nickname，必须列字段白名单并写 important audit
    - `POST /app-users/:id/ban`：封禁（important 审计 + 同步重试）
    - `POST /app-users/:id/unban`：解封
 
@@ -266,9 +252,11 @@
    - `GET /questions/:id/versions`：版本列表
    - `GET /questions/:id/versions/:version`：单版本详情
 
-3. **DB Migration**
+3. **DB / 既有字段确认**
    - `0006_question_imports_review`：reject_reason / reviewed_by / reviewed_at
    - `0007_questions_add_index`：复合索引（按需）
+   - 实施前必须确认 `questions.review_status` 字段是否真实存在、默认值是否为 `approved`、FastAPI 刷题池是否过滤 `review_status='approved' AND is_active=true`
+   - 若 `questions.review_status` 不存在，必须单独列 migration 与兼容策略，不能只靠文档约定
 
 4. **核心实现要点**
    - 编辑时区分操作者权限：
@@ -314,9 +302,10 @@
 2. **ImportsModule**
    - `GET /imports`：批次列表
    - `GET /imports/:batchId`：详情（题目分页）
-   - `POST /imports/:batchId/enrich`：触发 AI 任务
+   - `POST /imports/:batchId/enrich`：仅创建/更新 AI 任务记录与状态展示
      - 写 Redis `admin:ai:task:{taskId}`
-     - 触发实际 AI 服务（调用 FastAPI 的 enrich API 或内置 worker）
+     - **不得直接调用 FastAPI API**；如需复用 FastAPI 侧 AI/OCR 逻辑，必须先确认模块边界、调用方式与失败降级
+     - 当前 Phase 不实现实际 enrich worker；worker 归属待确认
    - `GET /imports/:batchId/status`：读 Redis 任务状态
 
 ### 验收标准
@@ -334,38 +323,44 @@
 
 ---
 
-## Phase 5：审计日志与统计
+## Phase 5：审计日志与统计（已完成，2026-05-29）
 
 ### 目标
 audit-logs 查询接口 + Dashboard 统计（含缓存防穿透）。
 
-### DeepSeek 应完成
+### 实际完成（2026-05-29）
 
 1. **AuditLogModule**
-   - `GET /audit-logs`：多维过滤（含 severity 过滤）
-   - `GET /audit-logs/:id`：详情
+   - `GET /api/admin/v1/audit-logs`：支持 `page`、`pageSize`、`operatorId`、`action`（`*` 转 LIKE）、`resourceType`、`resourceId`、`severity`、`status`、`from`、`to` 过滤。
+   - `GET /api/admin/v1/audit-logs/{audit_log_id}`：返回单条审计日志详情，包含 `detail`、`user_agent`、`error_message`。
+   - 权限依赖：`audit:read`。
 
 2. **DashboardModule**
-   - `GET /dashboard/overview`：缓存 5min ± 抖动 + 防穿透锁
-   - `GET /dashboard/daily?from=&to=`
-   - `GET /dashboard/questions-stats`
-   - 主动刷新：BullMQ cron 每 5min 触发刷新（Phase 5 实现）
+   - `GET /api/admin/v1/dashboard/overview`：统计用户、题目、导入、当日 critical audit 数量，并返回 cache 运行指标。
+   - `GET /api/admin/v1/dashboard/daily?from=&to=`：默认近 7 天；支持用户新增、题目新增、导入新增、审计日志数量按日聚合；跨度超过 1 年返回 422。
+   - `GET /api/admin/v1/dashboard/questions-stats`：按 `subject`、`review_status`、`difficulty` 聚合题目分布。
+   - `overview` 使用现有 `app.core.cache`，Redis 可用时 key 为 `admin:dashboard:overview`，TTL `300 ± 10%`，锁 key 为 `admin:dashboard:overview:lock`，锁 TTL 10 秒；Redis 不可用或未抢到锁且重试 miss 时降级为直接查 DB。
 
 3. **审计查询保护**
-   - 查询跨度 > 1 年 → 422
-   - 默认仅返回近 6 个月（明确指定 from 才查更早）
+   - 未指定 `from` 时默认查询近 183 天。
+   - 查询跨度超过 365 天返回 422。
+   - `from > to` 返回 422。
+
+### 未实现 / 延后
+- 未引入 BullMQ，也未实现每 5 分钟主动刷新 cron；当前为请求触发的缓存 + 防穿透锁，符合“不新增独立后端/不主动加新依赖”约束。
+- `release_lock` 当前通过读取锁值后删除实现，未使用 Lua 原子释放；若生产强依赖严格分布式锁语义，需后续单独确认。
 
 ### 验收标准
-- Overview 缓存命中下响应 < 200ms
-- 并发 100 请求 cache miss 时，DB 仅被查询一次（防穿透锁验证）
-- 查询 1 个月前的日志正常
-- Redis 不可用时降级为直接查 DB（无 500）
+- `GET /dashboard/overview` Redis 命中时走缓存，Redis 不可用时直接查 DB。
+- `GET /dashboard/daily` 日期范围校验生效，跨度 > 1 年返回 422。
+- `GET /audit-logs` 可查询 1 个月前日志；未指定时间默认近 183 天。
+- Phase 5 service tests 覆盖审计查询、统计聚合、cache jitter/lock helper。
 
 ### 禁止修改
-- Phase 0/1/2/3/4 已完成模块
+- Phase 0/1/2/3/4 已完成模块。
 
 ### 本阶段完成后更新文档
-- `docs/admin/AUDIT_LOG.md`（补充分区维护脚本）
+- `docs/admin/AUDIT_LOG.md`、`docs/admin/ADMIN_API_SPEC.md`、`docs/admin/REDIS_PLAN.md`、`docs/admin/README.md` 已于 2026-05-29 同步 Phase 5 实现。
 
 ---
 
@@ -386,7 +381,7 @@ Next.js 完整后台 UI。
 
 2. **登录页 `/login`**
    - 用户名+密码表单
-   - 显示锁定状态（仅在响应中明确返回时）
+   - 登录失败统一显示“用户名或密码错误”，不展示具体锁定状态或锁定维度
    - access in memory，refresh in HttpOnly cookie
 
 3. **Layout**（权限菜单）
@@ -443,7 +438,7 @@ Next.js 完整后台 UI。
 
 | 已完成阶段 | 禁止修改 |
 |-----------|---------|
-| Phase 0 之后 | PrismaService / RedisService / 全局拦截器 / DB schema 主体 |
+| Phase 0 之后 | SQLAlchemy session / RedisService / FastAPI middleware / exception handler / DB schema 主体 |
 | Phase 1 之后 | JWT 签发逻辑 / Guard 实现 / permission 命名 / auth API 路径 |
 | Phase 2 之后 | AdminUser 表结构 / users 封禁字段 / app-users 与 admin-users API 路径 |
 | Phase 3 之后 | 题目审核 API 路径 / question_versions 表结构 / audit_log 写入分级 |
