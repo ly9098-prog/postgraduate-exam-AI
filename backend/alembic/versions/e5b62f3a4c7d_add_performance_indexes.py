@@ -8,6 +8,7 @@ Create Date: 2026-05-24 22:00:00.000000
 from typing import Sequence, Union
 
 from alembic import op
+import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "e5b62f3a4c7d"
@@ -16,63 +17,41 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+_INDEXES = [
+    ("idx_practice_records_user_date", "practice_records", ["user_id", "answered_at"]),
+    ("idx_practice_records_user_subject", "practice_records", ["user_id", "subject"]),
+    ("idx_wrong_questions_user_mastered_date", "wrong_questions", ["user_id", "mastered", "next_review_date"]),
+    ("idx_wrong_questions_user_question", "wrong_questions", ["user_id", "question_id"]),
+    ("idx_review_schedules_user_next", "review_schedules", ["user_id", "next_review_at"]),
+    ("idx_review_records_user_date", "review_records", ["user_id", "reviewed_at"]),
+    ("idx_questions_subject_active", "questions", ["subject", "is_active"]),
+    ("idx_answer_behavior_user_date", "answer_behaviors", ["user_id", "created_at"]),
+]
+
+
 def upgrade() -> None:
-    # 刷题记录：用户+时间复合索引
-    op.create_index(
-        "idx_practice_records_user_date",
-        "practice_records",
-        ["user_id", "answered_at"],
-    )
-    # 刷题记录：用户+科目
-    op.create_index(
-        "idx_practice_records_user_subject",
-        "practice_records",
-        ["user_id", "subject"],
-    )
-    # 错题：用户+掌握状态+复习日期
-    op.create_index(
-        "idx_wrong_questions_user_mastered_date",
-        "wrong_questions",
-        ["user_id", "mastered", "next_review_date"],
-    )
-    # 错题：用户+科目（join 查询优化）
-    op.create_index(
-        "idx_wrong_questions_user_question",
-        "wrong_questions",
-        ["user_id", "question_id"],
-    )
-    # 复习调度：用户+下次复习时间
-    op.create_index(
-        "idx_review_schedules_user_next",
-        "review_schedules",
-        ["user_id", "next_review_at"],
-    )
-    # 复习记录：用户+复习时间
-    op.create_index(
-        "idx_review_records_user_date",
-        "review_records",
-        ["user_id", "reviewed_at"],
-    )
-    # 题目：科目+活跃状态
-    op.create_index(
-        "idx_questions_subject_active",
-        "questions",
-        ["subject", "is_active"],
-    )
-    # 答题行为：用户+创建时间
-    op.create_index(
-        "idx_answer_behavior_user_date",
-        "answer_behavior",
-        ["user_id", "created_at"],
-    )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    practice_columns = {column["name"] for column in inspector.get_columns("practice_records")}
+    if "answered_at" not in practice_columns:
+        with op.batch_alter_table("practice_records") as batch:
+            batch.add_column(sa.Column("answered_at", sa.DateTime(), nullable=True))
+
+    for index_name, table_name, columns in _INDEXES:
+        existing_indexes = {index["name"] for index in inspector.get_indexes(table_name)}
+        if index_name not in existing_indexes:
+            op.create_index(index_name, table_name, columns)
 
 
 def downgrade() -> None:
-    op.drop_index("idx_answer_behavior_user_date", table_name="answer_behavior")
-    op.drop_index("idx_questions_subject_active", table_name="questions")
-    op.drop_index("idx_review_records_user_date", table_name="review_records")
-    op.drop_index("idx_review_schedules_user_next", table_name="review_schedules")
-    op.drop_index("idx_wrong_questions_user_question", table_name="wrong_questions")
-    op.drop_index("idx_wrong_questions_user_mastered_date", table_name="wrong_questions")
-    op.drop_index("idx_practice_records_user_subject", table_name="practice_records")
-    op.drop_index("idx_practice_records_user_date", table_name="practice_records")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    for index_name, table_name, _columns in reversed(_INDEXES):
+        existing_indexes = {index["name"] for index in inspector.get_indexes(table_name)}
+        if index_name in existing_indexes:
+            op.drop_index(index_name, table_name=table_name)
+
+    practice_columns = {column["name"] for column in inspector.get_columns("practice_records")}
+    if "answered_at" in practice_columns:
+        with op.batch_alter_table("practice_records") as batch:
+            batch.drop_column("answered_at")

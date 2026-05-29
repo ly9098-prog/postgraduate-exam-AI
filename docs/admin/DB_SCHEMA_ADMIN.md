@@ -1,8 +1,10 @@
 # 数据库设计规划
 
-> 版本：v2.0（审计修订版） | 状态：可启动开发 | 更新：2026-05-26
-> ORM：Prisma | DB：PostgreSQL（共享实例）
+> 版本：v2.1（FastAPI 方案确认版） | 状态：可启动开发 | 更新：2026-05-29
+> ORM：SQLAlchemy | DB：PostgreSQL（生产共享实例）/ SQLite（开发兼容）
 > 修订自审计报告 I1（新增 subjects）、C6（新增 question_versions）、C5（operation_logs → audit_log + severity）、O1（IP 字段）、C1（双身份系统说明）
+>
+> - **变更原因**：2026-05-29 同步 Admin Backend 已并入 FastAPI + SQLAlchemy + Alembic 的实际实现，并补充 Phase 4 科目树/导入管理对应的 Alembic migration 归属说明。
 
 ---
 
@@ -28,7 +30,7 @@ model AdminUser {
   username      String    @unique @db.VarChar(64)
   passwordHash  String    @map("password_hash") @db.VarChar(256)
   displayName   String?   @map("display_name") @db.VarChar(64)
-  email         String?   @unique @db.VarChar(128)        // O2: 加 unique，预留 email 登录
+  email         String?   @unique @db.VarChar(128)        // 仅展示/预留，不用于登录；可为空，唯一约束仅约束非空值
   isActive      Boolean   @default(true) @map("is_active")
   roleId        Int       @map("role_id")
   lastLoginAt   DateTime? @map("last_login_at")
@@ -75,11 +77,11 @@ model Role {
 
 **初始数据种子**（C1 修订：移除 normal_user）：
 ```
-id=1, name=super_admin, displayName="超级管理员", isSystem=true
-id=2, name=admin,       displayName="普通管理员", isSystem=true
+name=super_admin, displayName="超级管理员", isSystem=true
+name=admin,       displayName="普通管理员", isSystem=true
 ```
 
-**注意**：super_admin 必须通过 `role_permissions` 表绑定**全部** permissions（C3 修订），CI 检查强制保证。
+**注意**：seed 阶段可尽力保证本地初始化顺序稳定，但业务代码不得依赖 `super_admin.id = 1`；所有判断必须按 `roles.name = 'super_admin'` 查询。super_admin 必须通过 `role_permissions` 表绑定**全部** permissions（C3 修订），CI 检查强制保证。
 
 ---
 
@@ -164,13 +166,16 @@ model AuditLog {
 - 新增 `severity` 枚举字段（critical / important / normal / low）
 - 新增 `errorMessage` 字段（status=failed 时记录）
 - 新增 `operatorName` 冗余字段（operator 被删除后仍能查阅）
+- 请求追踪使用 `audit_logs.detail.extra.requestId`；`requestId` 即全链路 traceId，Phase 0/1 不新增 `trace_id` 列
 
-**分区策略**（I7 修订）：
-- 启用 `pg_partman` 按月分区：`audit_logs_2026_05`, `audit_logs_2026_06`, ...
-- 6 个月前的日志自动归档至 `audit_logs_archive` 表（可后期迁 S3 / Parquet）
-- 查询接口自动跨分区聚合（pg_partman 原生支持）
+**分区策略**（I7 修订，生产 PostgreSQL 专属）：
+- 开发环境（尤其 SQLite）不启用分区，使用普通 `audit_logs` 表。
+- 分区属于生产 PostgreSQL 部署脚本，不由 Prisma schema 直接表达；Prisma model 仅表达逻辑字段，避免与 PostgreSQL 分区主键形成两套真相。
+- 如启用分区，生产 DDL 必须统一主键口径：分区父表主键需包含分区键 `created_at`（如 `PRIMARY KEY (id, created_at)`），应用层仍以 `id` 作为展示与查询标识。
+- `pg_partman` 是否启用、归档策略与维护任务需单独确认，不要求 Phase 0 直接落地。
+- 6 个月前的日志自动归档至 `audit_logs_archive` 表（可后期迁 S3 / Parquet），仅在生产分区方案确认后启用。
 
-**Migration 中需声明分区**：
+**生产分区脚本示例（待确认，非 Prisma migration 必选项）**：
 ```sql
 CREATE TABLE audit_logs (
   ...
@@ -190,6 +195,8 @@ SELECT partman.create_parent(
 ### 2.6 subjects（科目树，I1 新增）
 
 > 任务明确要求但 v1 漏掉的核心表。
+> 
+> **Phase 4 实现同步（2026-05-29）**：当前 FastAPI/SQLAlchemy 实现已由 Alembic revision `f6a7b8c9d0e1_add_admin_core_tables.py` 创建 `subjects` 表；`path` 按 `code` 拼接（如 `math/math_advanced`），不是 ID 形式 `/1/3/15`。
 
 ```prisma
 model Subject {
@@ -197,8 +204,8 @@ model Subject {
   parentId  Int?      @map("parent_id")
   code      String    @unique @db.VarChar(32)   // 408_ds, math_advanced, english
   name      String    @db.VarChar(64)
-  level     Int       @default(1)               // 1=主科目, 2=子科目
-  path      String    @db.VarChar(128)          // O3: 物化路径 /1/3/15
+  level     Int       @default(1)               // 1=主科目, 2=子科目, 当前实现最大 3 级
+  path      String    @db.VarChar(128)          // O3: code 物化路径，如 math/math_advanced
   sortOrder Int       @default(0) @map("sort_order")
   isActive  Boolean   @default(true) @map("is_active")
   createdAt DateTime  @default(now()) @map("created_at")
@@ -214,17 +221,17 @@ model Subject {
 }
 ```
 
-**初始 Seed**：
+**初始 Seed（示意，path 使用 code 拼接）**：
 ```
-math (level=1, path=/1)
-  ├── math_advanced (level=2, path=/1/11)
-  └── math_linear   (level=2, path=/1/12)
-408 (level=1, path=/2)
-  ├── 408_ds (path=/2/21)
-  ├── 408_os (path=/2/22)
-  ├── 408_co (path=/2/23)
-  └── 408_cn (path=/2/24)
-english (level=1, path=/3)
+math (level=1, path=math)
+  ├── math_advanced (level=2, path=math/math_advanced)
+  └── math_linear   (level=2, path=math/math_linear)
+408 (level=1, path=408)
+  ├── 408_ds (path=408/408_ds)
+  ├── 408_os (path=408/408_os)
+  ├── 408_co (path=408/408_co)
+  └── 408_cn (path=408/408_cn)
+english (level=1, path=english)
 ```
 
 **与 questions.subject 字段的关系**：
@@ -312,7 +319,12 @@ model User {
 
 ### 3.2 questions（题目表）— 新增字段
 
-**当前阶段不修改 questions 表本体**（避免影响 FastAPI），但需要 review_status 增加新枚举值：
+**实施前确认项**：
+- 必须先确认生产/开发库中 `questions.review_status` 字段是否真实存在、默认值是否为 `approved`。
+- 必须确认 FastAPI 刷题池查询是否过滤 `review_status = 'approved' AND is_active = true`；若未过滤，Admin 审核流不得上线。
+- 若字段不存在，必须单独列 migration 与 FastAPI 兼容策略，不能只靠文档约定。
+
+**当前阶段不修改 questions 表本体**（避免影响 FastAPI），但在字段已存在时需要 review_status 增加新枚举值：
 
 ```
 review_status 枚举扩展：
@@ -323,7 +335,7 @@ review_status 枚举扩展：
   archived    # 归档（替代 is_active=false 的语义，可选）
 ```
 
-由于 `review_status` 是 String 字段，**无需 migration**，仅需在文档与代码层约定取值。
+由于 `review_status` 预期为 String 字段，字段已存在时无需 migration，仅需在文档与代码层约定取值；若字段不存在或类型不兼容，必须补 migration 方案并先确认 FastAPI 兼容。
 
 **编辑流程**（C6）：
 - 持有 `question:write` + `question:review` 的 admin 编辑：保持 `approved` 状态，但写 question_versions
@@ -414,7 +426,7 @@ admin-backend/
 ### 6.1 单条操作
 
 ```typescript
-// 写日志为 critical 时必须在同一事务内
+// 会修改核心数据的 important 操作优先与 audit_log 放在同一 DB 事务内
 await prisma.$transaction(async (tx) => {
   const updated = await tx.question.update({ where: { id }, data: { ... } });
   await tx.questionVersion.create({ data: snapshot });
@@ -422,6 +434,8 @@ await prisma.$transaction(async (tx) => {
   return updated;
 });
 ```
+
+若因兼容原因必须采用“业务更新后事务外写 important audit_log”，补偿回滚不得无条件覆盖当前行，必须带 `updated_at` / version 条件；补偿失败必须告警并追加一条 failed audit，避免并发编辑被旧快照覆盖。
 
 ### 6.2 批量操作（默认：单条独立事务）
 
@@ -465,10 +479,8 @@ await redis.set(`admin:role:version:${roleId}`, uuid());
 
 | Migration | Phase | 内容 |
 |-----------|-------|------|
-| 0001_init_admin_tables | Phase 0 | admin_users / roles / permissions / role_permissions / audit_logs |
-| 0002_init_subjects | Phase 0 | subjects 表 + 初始数据 |
-| 0003_init_question_versions | Phase 0 | question_versions 表 |
-| 0004_audit_log_partition | Phase 0 | audit_logs 按月分区（pg_partman） |
+| f6a7b8c9d0e1_add_admin_core_tables.py | Phase 0-4 已实现 | Alembic revision `f6a7b8c9d0e1`，一次性创建 roles / permissions / subjects / admin_users / role_permissions / audit_logs / question_versions |
+| 0004_audit_log_partition | 生产部署（待确认） | PostgreSQL audit_logs 按月分区；开发/SQLite 不启用，当前 Alembic core migration 未启用 pg_partman |
 | 0005_users_add_banned | Phase 2 | users 表新增 is_banned / banned_reason / banned_at / banned_by |
 | 0006_question_imports_review | Phase 3 | question_imports 表新增 reject_reason / reviewed_by / reviewed_at |
 | 0007_questions_add_index | Phase 3 | questions 表新增复合索引（按需）|

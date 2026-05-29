@@ -1,7 +1,9 @@
 # Redis 使用规划
 
-> 版本：v2.0（审计修订版） | 状态：可启动开发 | 更新：2026-05-26
+> 版本：v2.1（FastAPI 方案确认版） | 状态：可启动开发 | 更新：2026-05-29
 > 修订自审计报告 I4（TTL 抖动 + 防穿透锁）、I5（双维度限流）、I6（role-version）、I9（用户级 nbf）
+>
+> - **变更原因**：2026-05-29 同步 Admin Backend Phase 4 导入管理实现，补充 `admin:ai:batch:{batchId}:task` 最新任务指针，并将 AI enrich 任务 TTL 校正为当前代码使用的 86400 秒。
 
 ---
 
@@ -32,10 +34,12 @@ Admin 端：admin:jwt:*       /  admin:perm:*  /  admin:role:*  /  admin:stats:*
 | 登录失败（账号）| `admin:login:fail:user:{username}` | counter | 30min |
 | 在线状态 | `admin:online:{userId}` | `{ lastActiveAt, ip, userAgent }` | 5min |
 | OCR 任务 | `admin:ocr:task:{taskId}` | `{ status, progress, result, error }` | 1h |
-| AI 任务 | `admin:ai:task:{taskId}` | `{ status, batchId, processed, failed }` | 1h |
+| AI 任务 | `admin:ai:task:{taskId}` | `{ task_id, batch_id, status, created_at, updated_at, total_count, processed_count, error_message }` | 86400s |
+| AI 批次最新任务指针 | `admin:ai:batch:{batchId}:task` | taskId | 86400s |
 | Dashboard 统计 | `admin:stats:overview:{date}` | JSON | 5min ± 抖动 |
 | 防穿透锁 | `admin:stats:lock:{key}` | uuid | 10s |
 | 接口限流 | `admin:ratelimit:{userId}:{endpoint}` | counter | 60s |
+| 幂等请求 | `admin:idempotency:{userId}:{key}` | response/result | 10min |
 | 全局豁免标识 | `admin:bypass:{token}` | meta | 按需 |
 
 ---
@@ -218,11 +222,20 @@ Value:  { status: pending|processing|done|failed, progress, result, error }
 TTL:    3600
 
 Key:    admin:ai:task:{taskId}
-Value:  { status, batchId, total, processed, failed }
-TTL:    3600
+Value:  { task_id, batch_id, status, created_at, updated_at, total_count, processed_count, error_message }
+TTL:    86400
+
+Key:    admin:ai:batch:{batchId}:task
+Value:  taskId（该导入批次最新 AI enrich 任务）
+TTL:    86400
 ```
 
 **用途**：前端轮询任务进度。
+
+**Phase 4 实现说明（2026-05-29）**：
+- `/api/admin/v1/imports/{batchId}/enrich` 当前写入 `admin:ai:task:{taskId}`，并用 `admin:ai:batch:{batchId}:task` 保存批次到最新任务的指针。
+- `/api/admin/v1/imports/{batchId}/status` 先读取批次指针，再读取任务 payload；任一 key 不存在时返回任务不存在。
+- 当前 enrich 只创建 `pending` 状态与审计日志，不代表 AI worker 已实际处理完成；不得据此绕过 `question_imports + 人工确认`。
 
 ### 3.8 Dashboard 统计缓存（I4 修订：抖动 + 防穿透）
 
@@ -288,7 +301,20 @@ TTL:    60s（滑动窗口）
 - 统计接口：30 req/min
 - super_admin：放宽 2x
 
-### 3.10 全局豁免名单（O9）
+### 3.10 幂等请求缓存（O4）
+
+```
+Key:    admin:idempotency:{userId}:{key}
+Value:  已完成请求的 response/result
+TTL:    600s
+```
+
+**规则**：
+- 仅用于关键写操作（如 batch-approve / batch-reject）。
+- 同一 userId + Idempotency-Key 重复请求返回相同结果。
+- Redis 不可用时，关键批量写 / 关键幂等写接口返回 503；如个别接口选择降级执行，必须在接口文档明确“不提供幂等保证”。
+
+### 3.11 全局豁免名单（O9）
 
 ```
 Key:    admin:bypass:{tokenHash}
@@ -297,6 +323,11 @@ TTL:    自定义
 ```
 
 **用途**：内部监控系统、健康检查等不计入限流。
+
+**强制约束**：
+- bypass token 只能豁免接口限流，不能跳过 JWT 认证、RBAC 权限或 audit_log 写入。
+- 仅允许 health/monitoring allowlist 使用，不得开放给普通后台接口。
+- 创建 / 删除 bypass token 属于 critical 操作，必须写 audit_log。
 
 ---
 
@@ -353,8 +384,10 @@ export class RedisService {
 ```
 
 **降级策略**：
-- Redis 连接失败 → 静默降级（权限缓存改为每次查 DB；限流跳过）
-- **不影响**核心业务功能
+- Redis 连接失败 → 权限缓存改为每次查 DB；普通限流可跳过
+- 关键批量写 / 关键幂等写依赖 `admin:idempotency:{userId}:{key}`，Redis 不可用时返回 503，避免重复提交造成不一致
+- bypass token 不参与 JWT/RBAC 降级，Redis 不可用时视为无豁免
+- **不影响**核心只读与非幂等依赖业务功能
 - 连续 30s 失败 → 触发告警（log + Sentry）
 
 ---
@@ -395,3 +428,5 @@ Admin 端与之**完全独立**：
 4. JWT Payload 中绝不包含 permissions 数组
 5. 登录响应不暴露锁定状态（防用户名枚举）
 6. 防穿透锁释放必须用 Lua 校验 lockId 原子性（防止误释放他人锁）
+7. bypass token 只豁免限流，绝不豁免 JWT/RBAC/audit_log
+8. 关键批量写 / 关键幂等写在 Redis 不可用时必须 503 或明确声明无幂等保证

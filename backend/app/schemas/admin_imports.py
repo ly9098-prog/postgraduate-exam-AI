@@ -1,0 +1,72 @@
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
+
+
+class AdminImportBatchListItem(BaseModel):
+    batch_id: str
+    source_type: str
+    source_file: str | None = None
+    total_count: int
+    pending_count: int
+    approved_count: int
+    rejected_count: int
+    published_count: int
+    ai_count: int
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AdminImportQuestionItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    batch_id: str
+    source_type: str
+    source_file: str | None = None
+    subject: str | None = None
+    question_type: str | None = None
+    raw_data: dict
+    parsed_content: dict | None = None
+    parsed_options: dict | None = None
+    parsed_answer: str | None = None
+    parsed_analysis: str | None = None
+    status: str
+    review_note: str | None = None
+    question_id: int | None = None
+    reject_reason: str | None = None
+    reviewed_by: int | None = None
+    reviewed_at: datetime | None = None
+    ai_generated: bool
+    ai_source: str | None = None
+    ai_confidence: float | None = None
+    ai_metadata: dict | None = None
+    ai_reviewed_at: datetime | None = None
+    ai_answer_flag: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminImportBatchDetail(AdminImportBatchListItem):
+    items: list[AdminImportQuestionItem]
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class AdminImportEnrichResponse(BaseModel):
+    task_id: str
+    batch_id: str
+    status: str
+    created_at: datetime
+
+
+class AdminImportTaskStatusResponse(BaseModel):
+    task_id: str
+    batch_id: str
+    status: str
+    created_at: str | datetime
+    updated_at: str | datetime | None = None
+    total_count: int | None = None
+    processed_count: int | None = None
+    error_message: str | None = None
