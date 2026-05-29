@@ -66,6 +66,29 @@ def create_admin_token(admin_user: AdminUser) -> str:
     return jwt.encode(payload, settings.APP_SECRET, algorithm="HS256")
 
 
+def create_admin_refresh_token(admin_user: AdminUser) -> str:
+    now = datetime.utcnow()
+    payload = {
+        "sub": str(admin_user.id),
+        "type": "admin_refresh",
+        "roleId": admin_user.role_id,
+        "jti": uuid4().hex,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(days=7)).timestamp()),
+    }
+    return jwt.encode(payload, settings.APP_SECRET, algorithm="HS256")
+
+
+def decode_admin_refresh_token(token: str) -> dict[str, Any]:
+    try:
+        payload = jwt.decode(token, settings.APP_SECRET, algorithms=["HS256"])
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+    if payload.get("type") != "admin_refresh":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+    return payload
+
+
 def decode_admin_token(token: str) -> dict[str, Any]:
     try:
         payload = jwt.decode(token, settings.APP_SECRET, algorithms=["HS256"])

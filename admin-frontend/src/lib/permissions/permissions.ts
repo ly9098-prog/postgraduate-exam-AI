@@ -1,0 +1,25 @@
+export type PermissionKey =
+  | "dashboard:read"
+  | "app-user:read"
+  | "app-user:write"
+  | "app-user:ban"
+  | "admin-user:read"
+  | "admin-user:create"
+  | "admin-user:update"
+  | "admin-user:delete"
+  | "admin-user:force-logout"
+  | "admin-user:reset-password"
+  | "question:read"
+  | "question:write"
+  | "question:review"
+  | "question:batch_review"
+  | "question:delete"
+  | "role:read"
+  | "role:write"
+  | "permission:read"
+  | "audit:read";
+
+export function hasPermission(permissions: string[], permission?: PermissionKey) {
+  if (!permission) return true;
+  return permissions.includes("*") || permissions.includes(permission);
+}

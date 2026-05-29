@@ -1,10 +1,11 @@
 # 后台管理系统 — 总体架构设计
 
-> 版本：v2.1（FastAPI 方案确认版） | 状态：可启动开发 | 更新：2026-05-29
+> 版本：v2.2（Phase 6 前端实现同步版） | 状态：Phase 6 主要前端已完成 | 更新：2026-05-30
 > 修订自审计报告 C1/C2、模块拆分调整；2026-05-29 根据维护者确认收敛为现有 FastAPI 后端内实现。
 >
 > - **变更原因**：Admin Backend 已确认遵循 `docs/PROJECT_RULES.md`，并入现有 FastAPI + SQLAlchemy + Alembic 技术栈；不再采用独立 `NestJS + Prisma + BullMQ` 后端方案。
 > - **Phase 4 同步原因**：2026-05-29 根据已完成的科目树与导入管理实现，补充实际 router 注册、Subject/Import service 行为与 Redis 任务指针。
+> - **Phase 6 同步原因**：2026-05-30 根据 `admin-frontend` 主要前端实现，补充 Next.js 16、React 19、React Query、Zustand 页面与 API client 约束；前端仅消费 `/api/admin/v1`，不修改后端。
 > - **技术结论**：Admin API 统一挂载在 `/api/admin/v1`；ORM 使用 SQLAlchemy；数据库迁移使用 Alembic；Redis 可选且必须可降级；Phase 1 审计日志同步写入，队列能力延后。
 
 ---
@@ -61,8 +62,9 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                Admin Frontend（待确认 Web UI）            │
-│      如后续实现，应仅消费 /api/admin/v1，不新增后端栈       │
+│        Admin Frontend (Next.js 16 / React 19)            │
+│   TypeScript + Tailwind + React Query + Zustand          │
+│   Pages: dashboard/login/app-users/admin-users/...       │
 └─────────────────┬───────────────────────────────────────┘
                   │ HTTPS + Bearer JWT (type: admin)
 ┌─────────────────▼───────────────────────────────────────┐
@@ -136,38 +138,37 @@ backend/alembic/               # Alembic migrations
 
 ### Admin Frontend (Next.js)
 
+**Phase 6 实现同步（2026-05-30）**：
+- `admin-frontend` 使用 Next.js 16.2、React 19.2、TypeScript、Tailwind、React Query、Zustand、TanStack Table、Recharts。
+- API client 默认 base URL 为 `http://localhost:8000/api/admin/v1`，可通过 `NEXT_PUBLIC_ADMIN_API_BASE_URL` 覆盖；请求统一携带内存态 access token 与 `credentials: include`。
+- Phase 6 主要页面已覆盖：`/dashboard`、`/login`、`/app-users`、`/admin-users`、`/questions`、`/review`、`/roles`、`/audit-logs`。
+- 前端阶段只消费 `/api/admin/v1`，不修改后端 API、DB schema 或权限语义；audit-log 查询参数已按后端别名使用 `pageSize`、`resourceType`、`from`、`to`。
+- 已通过 `npm --prefix admin-frontend run lint` 与 `npm --prefix admin-frontend run build`。
+
 ```
 src/
 ├── app/
-│   ├── (auth)/login/
-│   ├── (admin)/
-│   │   ├── layout.tsx          # 带权限检查的 Layout
-│   │   ├── dashboard/
-│   │   ├── app-users/          # 小程序用户
-│   │   ├── admin-users/        # 后台账号
-│   │   ├── questions/
-│   │   ├── review/             # 审核工作台
-│   │   ├── subjects/
-│   │   ├── roles/
-│   │   ├── imports/
-│   │   └── audit-logs/
-│   └── (errors)/403, 404
+│   ├── login/                   # 后台账号登录
+│   └── (admin)/
+│       ├── layout.tsx           # Admin Shell / 会话门禁 / 导航
+│       ├── page.tsx             # dashboard
+│       ├── app-users/           # 小程序用户
+│       ├── admin-users/         # 后台账号
+│       ├── questions/
+│       ├── review/              # 审核工作台
+│       ├── roles/
+│       └── audit-logs/
 ├── components/
-│   ├── ui/                     # shadcn/ui
-│   ├── data-table/             # TanStack Table 封装
-│   ├── permission-guard/       # 按钮级权限组件
-│   └── layout/
+│   ├── layout/                  # AdminLayout / navigation
+│   └── ui/                      # 本地 UI 基础组件
 ├── lib/
-│   ├── api/                    # axios + React Query 封装
-│   ├── auth/                   # JWT 存储与刷新（access in memory，refresh in HttpOnly Cookie）
-│   └── permissions/            # 前端权限判断（从 /auth/me 缓存 permissions[]）
-├── hooks/
-│   ├── usePermission.ts
-│   └── useCurrentUser.ts
+│   ├── api/                     # fetch client + React Query API 封装
+│   ├── auth/                    # 会话 bootstrap / 权限判断
+│   └── utils/
 ├── store/
-│   └── auth.store.ts           # Zustand
+│   └── auth-store.ts            # Zustand 内存态 access token / user / permissions
 └── types/
-    └── index.ts                # 与 Backend DTO 同步
+    └── admin.ts                 # Admin DTO / view model 类型
 ```
 
 ---

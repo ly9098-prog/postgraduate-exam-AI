@@ -41,3 +41,10 @@ class AdminTokenResponse(BaseModel):
     token_type: str = "bearer"
     user: AdminUserResponse
     role: AdminRoleResponse
+    permissions: list[str] = []
+
+
+class AdminMeResponse(BaseModel):
+    user: AdminUserResponse
+    role: AdminRoleResponse
+    permissions: list[str]

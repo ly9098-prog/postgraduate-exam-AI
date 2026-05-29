@@ -1,12 +1,18 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
-from app.models.admin import Permission, Role
+from app.models.admin import Permission, Role, RolePermission
+from app.services.admin_auth_service import update_role_permissions
 
 router = APIRouter(prefix="/api/admin/v1", tags=["admin-rbac"])
+
+
+class RolePermissionsUpdateRequest(BaseModel):
+    permission_ids: list[int] = Field(min_length=0)
 
 
 @router.get("/roles")
@@ -16,7 +22,23 @@ async def list_roles(
 ):
     result = await db.execute(select(Role).order_by(Role.id.asc()))
     roles = result.scalars().all()
-    return {"items": [{"id": role.id, "name": role.name, "display_name": role.display_name, "description": role.description, "is_system": role.is_system} for role in roles]}
+    permission_result = await db.execute(select(RolePermission.role_id, RolePermission.permission_id))
+    permission_map: dict[int, list[int]] = {}
+    for role_id, permission_id in permission_result.all():
+        permission_map.setdefault(role_id, []).append(permission_id)
+    return {
+        "items": [
+            {
+                "id": role.id,
+                "name": role.name,
+                "display_name": role.display_name,
+                "description": role.description,
+                "is_system": role.is_system,
+                "permission_ids": permission_map.get(role.id, []),
+            }
+            for role in roles
+        ]
+    }
 
 
 @router.get("/permissions")
@@ -29,13 +51,21 @@ async def list_permissions(
     return {"items": [{"id": permission.id, "name": permission.name, "resource": permission.resource, "action": permission.action, "category": permission.category, "description": permission.description} for permission in permissions]}
 
 
-@router.get("/permissions/by-category")
-async def list_permissions_by_category(
-    _=Depends(require_permissions("permission:read")),
+@router.put("/roles/{role_id}/permissions")
+async def replace_role_permissions(
+    role_id: int,
+    data: RolePermissionsUpdateRequest,
+    current_admin=Depends(require_permissions("role:write")),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Permission).order_by(Permission.category.asc(), Permission.name.asc()))
-    grouped: dict[str, list[dict]] = {}
-    for permission in result.scalars().all():
-        grouped.setdefault(permission.category, []).append({"id": permission.id, "name": permission.name, "resource": permission.resource, "action": permission.action, "description": permission.description})
-    return {"items": grouped}
+    try:
+        role = await update_role_permissions(db, role_id, data.permission_ids, current_admin.id)
+        await db.commit()
+        await db.refresh(role)
+        return {"status": "ok"}
+    except PermissionError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))

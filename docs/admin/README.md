@@ -1,11 +1,11 @@
 # Admin 文档体系索引
 
 > 本目录包含 2240AI 后台管理系统（Admin Dashboard）的所有设计文档。
-> 当前文档版本：**v2.1（FastAPI 方案确认版，2026-05-29）**
-> **当前状态：Admin Backend 已确认并入现有 FastAPI 后端，在 `/api/admin/v1` 命名空间实现；ORM 使用 SQLAlchemy，迁移使用 Alembic，不再采用独立 NestJS + Prisma + BullMQ 后端方案。**
+> 当前文档版本：**v2.2（Phase 6 前端实现同步版，2026-05-30）**
+> **当前状态：Admin Backend 已确认并入现有 FastAPI 后端，在 `/api/admin/v1` 命名空间实现；ORM 使用 SQLAlchemy，迁移使用 Alembic，不再采用独立 NestJS + Prisma + BullMQ 后端方案。Phase 6 `admin-frontend` 已完成 Next.js Admin Dashboard 主要前端实现，并仅消费 `/api/admin/v1`。**
 >
-> - **更新时间**：2026-05-29
-> - **变更原因**：同步维护者确认的 Admin 实施方向，并与 `docs/PROJECT_RULES.md` 的 FastAPI + SQLAlchemy + Alembic、无微服务/不新增独立后端原则保持一致。
+> - **更新时间**：2026-05-30
+> - **变更原因**：同步 Phase 6 Next.js Admin Dashboard 前端实现状态、页面范围、构建验证结果与 audit-log 查询参数别名修复。
 
 ---
 
@@ -20,6 +20,7 @@
 | [DB_SCHEMA_ADMIN.md](./DB_SCHEMA_ADMIN.md) | 数据库设计：admin/subjects/question_versions/audit_logs 等 | Phase 0 |
 | [REDIS_PLAN.md](./REDIS_PLAN.md) | Redis 设计：JWT黑名单 / 权限缓存 / 双维度限流 / 防穿透 | Phase 0 |
 | [ADMIN_API_SPEC.md](./ADMIN_API_SPEC.md) | API 规范：Stripe 风格响应 / 完整接口 / 错误处理 / 分页 | Phase 1+ |
+| [../frontend/ADMIN_UI_RULES.md](../frontend/ADMIN_UI_RULES.md) | Admin Dashboard UI 规则：登录、壳子、权限门禁、页面状态、危险操作确认 | Phase 6 |
 | [REVIEW_FLOW.md](./REVIEW_FLOW.md) | 题目审核：状态机（含 re_pending）/ 版本快照 / 权限矩阵 | Phase 3 |
 | [AUDIT_LOG.md](./AUDIT_LOG.md) | 审计日志：分级写入策略 / 分区归档 / Action 命名 | Phase 1+ |
 | [DEEPSEEK_DEV_RULES.md](./DEEPSEEK_DEV_RULES.md) | DeepSeek 强制约束：A-I 八类禁止项 / 必须人工 Review 模块 | 全阶段强制 |
@@ -36,7 +37,7 @@
 | Phase 3 | REVIEW_FLOW, AUDIT_LOG, ADMIN_API_SPEC | ADMIN_API_SPEC, REVIEW_FLOW |
 | Phase 4 | ADMIN_API_SPEC, ADMIN_ARCHITECTURE | ADMIN_ARCHITECTURE |
 | Phase 5 | AUDIT_LOG, REDIS_PLAN | AUDIT_LOG, ADMIN_API_SPEC, REDIS_PLAN, README |
-| Phase 6 | 全部文档 | ADMIN_ARCHITECTURE，新建 docs/frontend/ADMIN_UI_RULES.md |
+| Phase 6 | 全部文档，ADMIN_UI_RULES | ADMIN_ARCHITECTURE，docs/frontend/ADMIN_UI_RULES.md |
 
 ---
 
@@ -45,12 +46,13 @@
 | 文档 | 版本 | 状态 |
 |------|------|------|
 | AUDIT_REPORT.md | v1.0 | 审计输出，永久参考 |
-| ADMIN_ARCHITECTURE.md | v2.1 | FastAPI 方案确认，可启动 |
-| PHASE_PLAN.md | v2.1 | FastAPI 方案确认，可启动 |
+| ADMIN_ARCHITECTURE.md | v2.2 | Phase 6 前端实现同步 |
+| PHASE_PLAN.md | v2.3 | Phase 6 前端完成同步 |
 | RBAC_RULES.md | v2.1 | FastAPI 方案确认，可启动 |
 | DB_SCHEMA_ADMIN.md | v2.1 | FastAPI 方案确认，可启动 |
 | REDIS_PLAN.md | v2.1 | FastAPI 方案确认，可启动 |
 | ADMIN_API_SPEC.md | v2.1 | FastAPI 方案确认，可启动 |
+| ADMIN_UI_RULES.md | v1.1 | Phase 6 前端实现同步 |
 | REVIEW_FLOW.md | v2.0 | 已修订，可启动 |
 | AUDIT_LOG.md | v2.0 | 新建，取代旧 OPERATION_LOG.md |
 | DEEPSEEK_DEV_RULES.md | v2.1 | FastAPI 方案确认，可启动 |
@@ -86,4 +88,5 @@
 | 用户级 nbf 强制失效 | 审计 I9 | REDIS_PLAN, RBAC_RULES |
 | liveness / readiness 分级健康检查 | 审计 I10 | ADMIN_API_SPEC, PHASE_PLAN |
 | requestId 作为全链路 traceId | 2026-05-29 trace 调试方案审计修订 | ADMIN_API_SPEC, AUDIT_LOG, PHASE_PLAN, DB_SCHEMA_ADMIN, DEEPSEEK_DEV_RULES, ADMIN_ARCHITECTURE |
-| 必须人工 Review 模块清单 | 审计 I11 | DEEPSEEK_DEV_RULES |
+| Admin Dashboard UI 规则补齐 | 2026-05-29 auditor 审计缺口 | ADMIN_UI_RULES, README |
+| Phase 6 Next.js Admin Dashboard 主要前端实现完成 | 2026-05-30 Phase 6 实现同步 | ADMIN_ARCHITECTURE, PHASE_PLAN, ADMIN_UI_RULES, CHANGELOG |
