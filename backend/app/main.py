@@ -25,6 +25,7 @@ from app.api.v1.health import router as health_router
 from app.api.v1.admin_auth import router as admin_auth_router
 from app.api.v1.admin_app_users import router as admin_app_users_router
 from app.api.v1.admin_health import router as admin_health_router
+from app.api.v1.admin_questions import router as admin_questions_router
 from app.api.v1.admin_rbac import router as admin_rbac_router
 from app.api.v1.admin_users import router as admin_users_router
 from app.core.config import settings
@@ -125,6 +126,7 @@ app.include_router(health_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_app_users_router)
 app.include_router(admin_health_router)
+app.include_router(admin_questions_router)
 app.include_router(admin_rbac_router)
 app.include_router(admin_users_router)
 
