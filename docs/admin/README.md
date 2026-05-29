@@ -1,7 +1,11 @@
 # Admin 文档体系索引
 
 > 本目录包含 2240AI 后台管理系统（Admin Dashboard）的所有设计文档。
-> 当前文档版本：**v2.0（审计修订版，2026-05-26）**
+> 当前文档版本：**v2.1（FastAPI 方案确认版，2026-05-29）**
+> **当前状态：Admin Backend 已确认并入现有 FastAPI 后端，在 `/api/admin/v1` 命名空间实现；ORM 使用 SQLAlchemy，迁移使用 Alembic，不再采用独立 NestJS + Prisma + BullMQ 后端方案。**
+>
+> - **更新时间**：2026-05-29
+> - **变更原因**：同步维护者确认的 Admin 实施方向，并与 `docs/PROJECT_RULES.md` 的 FastAPI + SQLAlchemy + Alembic、无微服务/不新增独立后端原则保持一致。
 
 ---
 
@@ -31,7 +35,7 @@
 | Phase 2 | RBAC_RULES, ADMIN_API_SPEC, DB_SCHEMA_ADMIN | DB_SCHEMA_ADMIN, RBAC_RULES |
 | Phase 3 | REVIEW_FLOW, AUDIT_LOG, ADMIN_API_SPEC | ADMIN_API_SPEC, REVIEW_FLOW |
 | Phase 4 | ADMIN_API_SPEC, ADMIN_ARCHITECTURE | ADMIN_ARCHITECTURE |
-| Phase 5 | AUDIT_LOG, REDIS_PLAN | AUDIT_LOG |
+| Phase 5 | AUDIT_LOG, REDIS_PLAN | AUDIT_LOG, ADMIN_API_SPEC, REDIS_PLAN, README |
 | Phase 6 | 全部文档 | ADMIN_ARCHITECTURE，新建 docs/frontend/ADMIN_UI_RULES.md |
 
 ---
@@ -41,15 +45,15 @@
 | 文档 | 版本 | 状态 |
 |------|------|------|
 | AUDIT_REPORT.md | v1.0 | 审计输出，永久参考 |
-| ADMIN_ARCHITECTURE.md | v2.0 | 已修订，可启动 |
-| PHASE_PLAN.md | v2.0 | 已修订，可启动 |
-| RBAC_RULES.md | v2.0 | 已修订，可启动 |
-| DB_SCHEMA_ADMIN.md | v2.0 | 已修订，可启动 |
-| REDIS_PLAN.md | v2.0 | 已修订，可启动 |
-| ADMIN_API_SPEC.md | v2.0 | 已修订，可启动 |
+| ADMIN_ARCHITECTURE.md | v2.1 | FastAPI 方案确认，可启动 |
+| PHASE_PLAN.md | v2.1 | FastAPI 方案确认，可启动 |
+| RBAC_RULES.md | v2.1 | FastAPI 方案确认，可启动 |
+| DB_SCHEMA_ADMIN.md | v2.1 | FastAPI 方案确认，可启动 |
+| REDIS_PLAN.md | v2.1 | FastAPI 方案确认，可启动 |
+| ADMIN_API_SPEC.md | v2.1 | FastAPI 方案确认，可启动 |
 | REVIEW_FLOW.md | v2.0 | 已修订，可启动 |
 | AUDIT_LOG.md | v2.0 | 新建，取代旧 OPERATION_LOG.md |
-| DEEPSEEK_DEV_RULES.md | v2.0 | 已修订，可启动 |
+| DEEPSEEK_DEV_RULES.md | v2.1 | FastAPI 方案确认，可启动 |
 
 ---
 
@@ -57,6 +61,13 @@
 
 | 修订点 | 来源 | 影响文档 |
 |--------|------|---------|
+| Admin Backend 并入现有 FastAPI | 2026-05-29 维护者确认 / PROJECT_RULES | ADMIN_ARCHITECTURE, PHASE_PLAN, ADMIN_API_SPEC, DEEPSEEK_DEV_RULES |
+| ORM 从 Prisma 收敛为 SQLAlchemy | 2026-05-29 维护者确认 / PROJECT_RULES | DB_SCHEMA_ADMIN, RBAC_RULES, REDIS_PLAN |
+| 迁移从 Prisma migration 收敛为 Alembic | 2026-05-29 维护者确认 / PROJECT_RULES | DB_SCHEMA_ADMIN, PHASE_PLAN, DEEPSEEK_DEV_RULES |
+| 不创建 NestJS/Prisma/BullMQ 独立后端或新微服务 | 2026-05-29 维护者确认 / PROJECT_RULES | ADMIN_ARCHITECTURE, PHASE_PLAN, REDIS_PLAN, DEEPSEEK_DEV_RULES |
+| FastAPI dependencies 替代 NestJS Guards/Decorators | 2026-05-29 维护者确认 | RBAC_RULES, ADMIN_ARCHITECTURE, DEEPSEEK_DEV_RULES |
+| Phase 1 审计日志同步写入，队列延后 | 2026-05-29 维护者确认 | AUDIT_LOG, ADMIN_ARCHITECTURE, PHASE_PLAN, REDIS_PLAN |
+| AdminUser 用户名/密码/RBAC 是后台专用例外，AppUser 仍仅微信 openid | 2026-05-29 维护者确认 / PROJECT_RULES | ADMIN_ARCHITECTURE, DB_SCHEMA_ADMIN, RBAC_RULES, ADMIN_API_SPEC |
 | 删除 normal_user 角色 | 审计 C1 | RBAC_RULES, DB_SCHEMA_ADMIN, ADMIN_ARCHITECTURE |
 | AppUser / AdminUser 双身份隔离 | 审计 C1 | ADMIN_ARCHITECTURE, ADMIN_API_SPEC |
 | JWT Payload 移除 permissions[] | 审计 C2 | ADMIN_ARCHITECTURE, RBAC_RULES |
@@ -74,4 +85,5 @@
 | Stripe 风格响应 | 审计 I8 | ADMIN_API_SPEC |
 | 用户级 nbf 强制失效 | 审计 I9 | REDIS_PLAN, RBAC_RULES |
 | liveness / readiness 分级健康检查 | 审计 I10 | ADMIN_API_SPEC, PHASE_PLAN |
+| requestId 作为全链路 traceId | 2026-05-29 trace 调试方案审计修订 | ADMIN_API_SPEC, AUDIT_LOG, PHASE_PLAN, DB_SCHEMA_ADMIN, DEEPSEEK_DEV_RULES, ADMIN_ARCHITECTURE |
 | 必须人工 Review 模块清单 | 审计 I11 | DEEPSEEK_DEV_RULES |

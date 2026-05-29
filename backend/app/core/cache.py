@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import random
 from functools import wraps
 from typing import Any, Callable
 
@@ -66,6 +67,39 @@ class CacheClient:
             if client is None:
                 return
             await client.set(key, json.dumps(value, default=str), ex=ttl)
+        except Exception:
+            pass
+
+    @staticmethod
+    def jitter_ttl(base: int = 300, percent: float = 0.1) -> int:
+        variance = int(base * percent)
+        if variance <= 0:
+            return base
+        return base + random.randint(-variance, variance)
+
+    async def acquire_lock(self, key: str, value: str, ttl: int = 10) -> bool:
+        if not self._enabled:
+            return False
+        try:
+            client = await self._ensure_client()
+            if client is None:
+                return False
+            return bool(await client.set(key, value, nx=True, ex=ttl))
+        except Exception:
+            return False
+
+    async def release_lock(self, key: str, value: str) -> None:
+        if not self._enabled:
+            return
+        try:
+            client = await self._ensure_client()
+            if client is None:
+                return
+            current = await client.get(key)
+            if isinstance(current, bytes):
+                current = current.decode()
+            if current == value:
+                await client.delete(key)
         except Exception:
             pass
 
