@@ -1,7 +1,9 @@
 # RBAC 权限系统设计规范
 
-> 版本：v2.0（审计修订版） | 状态：可启动开发 | 更新：2026-05-26
+> 版本：v2.1（FastAPI 方案确认版） | 状态：可启动开发 | 更新：2026-05-29
 > 修订自审计报告 C1（移除 normal_user）、C3（super_admin 走 role_permissions）、C4（删除方案 B）、I5（双维度限流）、I6（role-version）、I9（用户级 nbf）
+>
+> - **变更原因**：2026-05-29 同步 Admin Backend 已并入 FastAPI 的实际权限依赖方式；Phase 4 科目树与导入管理继续使用 `subject:*`、`import:*` 权限。
 
 ---
 
@@ -22,6 +24,8 @@
 - `content_editor`：内容编辑，只能编辑题目不能审核
 - `readonly_admin`：只读管理员，用于数据分析
 
+若需要“编辑后必须复审”的职责分离，应启用 `content_editor` + `reviewer` 组合；默认 `admin` 是写入、审核、批量审核一体的运营角色，编辑题目时不会进入 `re_pending`。
+
 扩展方式：仅需在 roles 表新增记录并绑定 permissions，**无需改动任何代码**。
 
 ---
@@ -32,7 +36,7 @@
 | 权限标识 | 说明 |
 |---------|------|
 | `app_user:read` | 查看小程序用户列表和详情 |
-| `app_user:write` | 编辑小程序用户信息（nickname 等） |
+| `app_user:write` | 编辑运营备注/状态类字段（白名单待确认；默认不改 nickname/avatar_url 等微信来源资料） |
 | `app_user:ban` | 封禁/解封小程序用户 |
 
 ### 后台管理员管理（AdminUser）
@@ -86,30 +90,18 @@
 
 ### Seed 脚本逻辑
 
-```typescript
-// seed-roles.ts
-async function seedRoles() {
-  const allPermissions = await prisma.permission.findMany();
+```python
+# backend/app/services/admin_auth_service.py / Alembic seed 逻辑（示意）
+def seed_roles_and_permissions(session):
+    permissions = load_all_permission_names()
+    super_admin = upsert_role(name="super_admin", is_system=True)
+    bind_all_permissions(super_admin, permissions)
 
-  // 1. 创建 super_admin 并绑定所有权限
-  const superAdmin = await prisma.role.upsert({
-    where: { name: 'super_admin' },
-    create: { name: 'super_admin', displayName: '超级管理员', isSystem: true },
-    update: {},
-  });
-  await prisma.rolePermission.createMany({
-    data: allPermissions.map(p => ({ roleId: superAdmin.id, permissionId: p.id })),
-    skipDuplicates: true,
-  });
-
-  // 2. 创建 admin 并绑定运营权限
-  const admin = await prisma.role.upsert({ ... });
-  await prisma.rolePermission.createMany({
-    data: ADMIN_PERMISSIONS.map(name => ({ roleId: admin.id, permissionId: permIdByName[name] })),
-    skipDuplicates: true,
-  });
-}
+    admin = upsert_role(name="admin", is_system=True)
+    bind_permissions(admin, ADMIN_PERMISSIONS)
 ```
+
+实现可随 FastAPI 初始化脚本调整，但不变式是：`super_admin` 必须通过 `role_permissions` 表绑定全部权限，不能靠代码硬编码放行。
 
 ### CI 强制校验
 
@@ -138,18 +130,25 @@ admin = [
 
 ## 四、三层权限控制实现
 
-### 4.1 接口级（NestJS Guard）
+### 4.1 接口级（FastAPI dependencies）
 
-```typescript
-@Get('app-users')
-@Roles('admin', 'super_admin')          // 角色检查（粗粒度，可选）
-@Permissions('app_user:read')           // 权限检查（细粒度，主体）
-async getAppUsers() {}
+```python
+@router.get("/subjects")
+async def list_subjects(_=Depends(require_permissions("subject:read"))): ...
+
+@router.post("/imports/{batch_id}/enrich")
+async def create_import_enrich_task(
+    current_admin=Depends(require_permissions("import:write")),
+): ...
 ```
 
-执行顺序：`JwtAuthGuard → RolesGuard → PermissionsGuard → 业务逻辑`
+执行顺序：`get_current_admin → require_role（如需要）→ require_permissions → 业务逻辑`
 
-**关键**：PermissionsGuard 内部**统一**走 `userPermissions.includes(required)`，不再有 `if (isSuperAdmin)` 分支。super_admin 之所以拥有全部权限，是因为 seed 阶段在 role_permissions 表中显式绑定了全部权限。
+**关键**：权限依赖内部统一检查用户通过 `role_permissions` 获得的权限集合，不应有 `if (isSuperAdmin) return true` 分支。super_admin 之所以拥有全部权限，是因为 seed 阶段在 role_permissions 表中显式绑定了全部权限。
+
+**Phase 4 权限同步（2026-05-29）**：
+- 科目树模块：`GET /subjects`、`GET /subjects/{id}` 使用 `subject:read`；`POST/PATCH /subjects` 使用 `subject:write`；`DELETE /subjects/{id}` 使用 `subject:delete`。
+- 导入管理模块：`GET /imports`、`GET /imports/{batchId}`、`GET /imports/{batchId}/status` 使用 `import:read`；`POST /imports/{batchId}/enrich` 使用 `import:write`。
 
 ### 4.2 页面级（Next.js Middleware + Layout）
 
