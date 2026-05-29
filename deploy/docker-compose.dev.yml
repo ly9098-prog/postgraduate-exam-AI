@@ -1,3 +1,6 @@
+# Development-only compose file.
+# Current production entry: deploy/docker-compose.prod.yml.
+
 version: "3.8"
 
 services:

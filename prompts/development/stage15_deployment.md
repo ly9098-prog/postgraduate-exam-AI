@@ -1,5 +1,7 @@
 # Stage 15: 上线部署
 
+> 说明：本文件保留为历史阶段设计稿，不作为当前生产部署的唯一依据；当前推荐入口以 `deploy/docker-compose.prod.yml` + `deploy/scripts/deploy.sh` 为准。
+
 ## 1. 阶段目标
 
 完成从开发到正式上线的最后一公里，包括 HTTPS 证书、域名、Docker Compose 部署、CI/CD 流水线、自动备份、异常监控和日志系统，确保服务可以稳定运行。
@@ -39,7 +41,7 @@
 
 | 文件 | 作用 |
 |------|------|
-| `deploy/docker-compose.yml` | 生产 Docker Compose 配置 |
+| `deploy/docker-compose.yml` | 历史生产 Compose 设计稿（当前生产使用 `deploy/docker-compose.prod.yml`） |
 | `deploy/docker-compose.dev.yml` | 开发 Docker Compose 覆盖 |
 | `deploy/nginx/nginx.conf` | Nginx 配置 |
 | `deploy/nginx/ssl/` | SSL 证书目录（占位） |
@@ -199,11 +201,8 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
-            cd /app/2240ai
-            git pull origin main
-            docker compose -f deploy/docker-compose.yml down
-            docker compose -f deploy/docker-compose.yml build
-            docker compose -f deploy/docker-compose.yml up -d
+            cd /opt/2240ai-v2
+            bash deploy/scripts/deploy.sh update
 ```
 
 ## 8. 运维配置
@@ -215,8 +214,8 @@ server {
     listen 443 ssl http2;
     server_name api.2240ai.com;
 
-    ssl_certificate     /etc/nginx/ssl/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+    ssl_certificate     /etc/nginx/ssl/www.xzshub.top.pem;
+    ssl_certificate_key /etc/nginx/ssl/www.xzshub.top.key;
 
     # 安全头
     add_header Strict-Transport-Security "max-age=63072000" always;
