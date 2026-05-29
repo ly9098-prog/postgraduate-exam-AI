@@ -18,6 +18,7 @@ from app.models.ai_chat import AiChat
 from app.models.tag import Tag
 from app.models.ai_generation_log import AiGenerationLog
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
+from app.models.admin import AdminUser, AuditLog, Permission, QuestionVersion, Role, RolePermission, Subject
 
 config = context.config
 if config.config_file_name is not None:
