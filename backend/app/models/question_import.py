@@ -23,6 +23,9 @@ class QuestionImport(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
     review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     question_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # AI 辅助导题字段（阶段七）
     ai_generated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
