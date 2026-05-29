@@ -1,10 +1,10 @@
 # 分阶段开发计划
 
-> 版本：v2.2（Phase 5 后端完成同步版） | 状态：Phase 5 后端已完成 | 更新：2026-05-29
+> 版本：v2.3（Phase 6 前端完成同步版） | 状态：Phase 6 前端主要实现已完成 | 更新：2026-05-30
 > 修订自审计报告 I1（subjects）、I2（明确不实现 question_banks）、C6（question_versions）、C5（audit_log 分级）；2026-05-29 根据维护者确认收敛为现有 FastAPI 后端内实现。
 >
-> - **变更原因**：同步 Admin Phase 5 后端实际实现：审计日志查询、Dashboard 统计、Redis/cache TTL 抖动与防穿透锁已接入现有 FastAPI；移除 Phase 5 主动刷新 BullMQ cron 的完成态表述。
-> - **技术结论**：Admin Backend 位于现有 FastAPI 后端 `/api/admin/v1`；ORM 使用 SQLAlchemy；迁移使用 Alembic；Redis 可选降级；不创建 NestJS/Prisma/BullMQ 独立后端；Phase 1 审计日志同步写入，队列延后。
+> - **变更原因**：同步 Admin Phase 6 Next.js Admin Dashboard 实际完成状态、页面范围、前端技术栈、仅消费 `/api/admin/v1` 的边界，以及 lint/build 验证结果。
+> - **技术结论**：Admin Backend 位于现有 FastAPI 后端 `/api/admin/v1`；ORM 使用 SQLAlchemy；迁移使用 Alembic；Redis 可选降级；不创建 NestJS/Prisma/BullMQ 独立后端；Phase 1 审计日志同步写入，队列延后；Phase 6 前端位于 `admin-frontend`。
 
 ---
 
@@ -18,7 +18,7 @@
 | Phase 3 | 题库管理系统 | 3-4天 | 题目审核、编辑（+ 版本快照）、批量操作、re_pending 状态机 |
 | Phase 4 | 科目与导入管理 | 2天 | 科目树 CRUD、导入批次查看、AI 任务监控 |
 | Phase 5 | 审计日志与统计 | 已完成 | audit-logs 查询、Dashboard 统计（Redis 可用时缓存防穿透） |
-| Phase 6 | 前端 Admin Dashboard | 4-6天 | 前端 Admin UI（技术栈另行确认，仅消费 /api/admin/v1） |
+| Phase 6 | 前端 Admin Dashboard | 已完成 | Next.js 16 + React 19 Admin UI，仅消费 `/api/admin/v1` |
 
 ---
 
@@ -364,73 +364,53 @@ audit-logs 查询接口 + Dashboard 统计（含缓存防穿透）。
 
 ---
 
-## Phase 6：前端 Admin Dashboard
+## Phase 6：前端 Admin Dashboard（主要实现已完成，2026-05-30）
 
 ### 目标
-Next.js 完整后台 UI。
+Next.js 完整后台 UI，仅消费现有 FastAPI Admin API `/api/admin/v1`，不修改后端。
 
-### DeepSeek 应完成
+### 实际完成（2026-05-30）
 
-1. **项目初始化**
-   ```bash
-   npx create-next-app@latest admin-frontend --typescript --tailwind --app
-   cd admin-frontend
-   npx shadcn-ui@latest init
-   npm install @tanstack/react-table @tanstack/react-query zustand axios
-   ```
+1. **项目与技术栈**
+   - 前端位于 `admin-frontend`，使用 Next.js 16.2.6、React 19.2.4、TypeScript、Tailwind CSS 4。
+   - 数据请求使用原生 `fetch` 封装 + React Query；列表能力使用 TanStack Table；会话状态使用 Zustand；图表使用 Recharts。
+   - API base 默认 `http://localhost:8000/api/admin/v1`，可通过 `NEXT_PUBLIC_ADMIN_API_BASE_URL` 覆盖。
 
-2. **登录页 `/login`**
-   - 用户名+密码表单
-   - 登录失败统一显示“用户名或密码错误”，不展示具体锁定状态或锁定维度
-   - access in memory，refresh in HttpOnly cookie
+2. **认证与壳子**
+   - `/login` 使用后台用户名/密码登录，不接入微信登录。
+   - access token 保存在内存态并注入 `Authorization: Bearer <token>`；refresh 依赖 HttpOnly cookie 与 `credentials: include`。
+   - Admin Shell 启动时通过 `/auth/me` 或 `/auth/refresh` bootstrap，会话失效跳转 `/login?next=<currentPath>`。
+   - 侧边栏按权限展示 Dashboard、app-users、admin-users、questions、review、roles、audit-logs。
 
-3. **Layout**（权限菜单）
-   - 侧边栏按 permissions 动态显示
-   - 顶部栏：用户信息 / 登出 / 切换密码
+3. **页面范围**
+   - `/dashboard`：统计卡片、趋势图、题目分布。
+   - `/app-users`：小程序用户列表与封禁/解封操作。
+   - `/admin-users`：后台管理员列表、创建/编辑/删除、强制登出、重置密码。
+   - `/questions`：题库过滤、批量审核、详情/版本信息入口。
+   - `/review`：审核工作台，含待审核与 `re_pending` 入口。
+   - `/roles`：角色与权限矩阵管理。
+   - `/audit-logs`：多维过滤、severity 标识、JSON 详情抽屉。
 
-4. **app-users 页面**
-   - TanStack Table
-   - 封禁/解封按钮（PermissionGuard）
+4. **接口边界与参数修复**
+   - Phase 6 不修改后端，仅消费 `/api/admin/v1`。
+   - audit-log 查询参数已按后端别名发送：`pageSize`、`resourceType`、`from`、`to`。
 
-5. **admin-users 页面**
-   - 列表 + 创建 / 编辑 / 删除
-   - 不可操作 super_admin 行（前端禁用 + 后端保护）
+5. **验证结果**
+   - 已通过 `npm --prefix admin-frontend run lint`。
+   - 已通过 `npm --prefix admin-frontend run build`。
 
-6. **questions 页面**
-   - 多过滤栏
-   - 批量选择 + 批量审核（带确认弹窗）
-   - 详情抽屉（侧滑）
-   - 版本历史 Tab
-
-7. **审核工作台 `/review`**
-   - 快速审核模式
-   - re_pending 单独 Tab（diff 高亮对比）
-
-8. **Dashboard**
-   - 统计卡片 + 折线图（recharts）
-
-9. **角色权限管理 `/roles`**
-   - 权限矩阵编辑（按 category 分组展示）
-   - 修改后弹窗确认（critical 操作）
-
-10. **审计日志 `/audit-logs`**
-    - 多维过滤 + JSON 详情展示
-    - severity 颜色标识
-
-### 验收标准
-- 权限菜单 / 按钮按 RBAC 隐藏
-- 批量审核有 loading + 结果反馈（成功 / 失败明细）
-- 版本对比 diff 正确高亮
-- 移动端不要求适配
-- 任何写操作有二次确认（重要操作）
+### 验收状态
+- 权限菜单按 RBAC 权限集合隐藏；后端 RBAC 仍为最终授权来源。
+- 重要写操作已按 UI 规则要求提供确认/反馈入口。
+- 批量审核与列表操作使用 React Query 刷新相关数据。
+- 移动端不作为 Phase 6 适配目标。
 
 ### 禁止修改
-- 所有 Phase 0-5 已完成模块
-- 任何后端 API（仅消费）
+- 所有 Phase 0-5 已完成后端模块。
+- 任何后端 API（Phase 6 仅消费）。
 
 ### 本阶段完成后更新文档
-- `docs/admin/ADMIN_ARCHITECTURE.md`（补充前端模块结构）
-- 新建 `docs/frontend/ADMIN_UI_RULES.md`
+- `docs/admin/PHASE_PLAN.md`、`docs/admin/README.md`、`docs/frontend/ADMIN_UI_RULES.md`、`docs/project/CHANGELOG.md` 已于 2026-05-30 同步 Phase 6 前端主要实现。
 
 ---
 

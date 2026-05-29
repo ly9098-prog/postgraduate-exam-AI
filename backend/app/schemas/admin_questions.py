@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 
 class AdminQuestionImportSummary(BaseModel):
@@ -107,6 +107,18 @@ class AdminQuestionBatchFailure(BaseModel):
 class AdminQuestionBatchResult(BaseModel):
     success_ids: list[int]
     failed_items: list[AdminQuestionBatchFailure]
+
+    @computed_field
+    @property
+    def successIds(self) -> list[int]:
+        return self.success_ids
+
+    @computed_field
+    @property
+    def failedItems(self) -> list[AdminQuestionBatchFailure]:
+        return self.failed_items
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class AdminQuestionVersionListItem(BaseModel):
