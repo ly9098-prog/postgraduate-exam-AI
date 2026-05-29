@@ -6,6 +6,7 @@ Page({
     loading: false,
     error: '',
     showDevLogin: false,
+    agreed: false,
   },
 
   onLoad() {
@@ -19,7 +20,28 @@ Page({
     this.setData({ showDevLogin: config.DEV === true })
   },
 
+  onAgreementChange(e) {
+    this.setData({ agreed: e.detail.value.includes('agreed') })
+  },
+
+  openAgreement(e) {
+    const { type } = e.currentTarget.dataset
+    const pathMap = {
+      user: '/pages/agreement/user',
+      privacy: '/pages/agreement/privacy',
+      ai: '/pages/agreement/ai',
+    }
+    wx.navigateTo({ url: pathMap[type] })
+  },
+
+  ensureAgreementAccepted() {
+    if (this.data.agreed) return true
+    wx.showToast({ title: '请先阅读并同意相关协议', icon: 'none' })
+    return false
+  },
+
   async onWechatLogin() {
+    if (!this.ensureAgreementAccepted()) return
     this.setData({ loading: true, error: '' })
     try {
       await auth.wechatLogin()
@@ -33,6 +55,7 @@ Page({
   },
 
   async onDevLogin() {
+    if (!this.ensureAgreementAccepted()) return
     // 开发模式：绕过微信登录，使用固定 dev code
     this.setData({ loading: true, error: '' })
     try {

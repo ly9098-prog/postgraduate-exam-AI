@@ -32,6 +32,20 @@
     <text class="login-title">开始学习</text>
     <text class="login-desc">使用微信身份，无需注册</text>
 
+    <view class="agreement-area">
+      <checkbox-group bindchange="onAgreementChange">
+        <label class="agreement-check">
+          <checkbox value="agreed" checked="{{agreed}}" color="#5B7B9A" />
+          <text class="agreement-text">我已阅读并同意</text>
+        </label>
+      </checkbox-group>
+      <view class="agreement-links">
+        <text class="agreement-link" data-type="user" bindtap="openAgreement">《用户协议》</text>
+        <text class="agreement-link" data-type="privacy" bindtap="openAgreement">《隐私政策》</text>
+        <text class="agreement-link" data-type="ai" bindtap="openAgreement">《AI免责声明》</text>
+      </view>
+    </view>
+
     <button class="btn-wechat" bindtap="onWechatLogin" loading="{{loading}}" disabled="{{loading}}">
       <text class="btn-wechat-text">微信一键登录</text>
     </button>
@@ -44,9 +58,9 @@
     <view wx:if="{{error}}" class="error-msg">{{error}}</view>
   </view>
 
-  <!-- 底部信任信息 -->
+  <!-- 底部合规信息 -->
   <view class="footer">
-    <text class="footer-text">登录即表示同意 用户协议 和 隐私政策</text>
-    <text class="footer-text">学习数据仅保存在本地</text>
+    <text class="footer-text">ICP备案号：桂ICP备2026003057号</text>
+    <text class="footer-text">学习数据用于错题记录与智能刷题服务</text>
   </view>
 </view>

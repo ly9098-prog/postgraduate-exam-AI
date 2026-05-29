@@ -1,6 +1,9 @@
 {
   "pages": [
     "pages/login/login",
+    "pages/agreement/user",
+    "pages/agreement/privacy",
+    "pages/agreement/ai",
     "pages/home/home",
     "pages/practice/practice",
     "pages/practice-result/practice-result",
