@@ -81,6 +81,8 @@ class _Db:
             return _Result(name)
         if "question_imports" in text:
             return _Result(values=self.imports)
+        if "questions" in text and "question_hash" in text:
+            return _Result(values=[])
         if "question_versions" in text:
             return _Result()
         return _Result(self.question)

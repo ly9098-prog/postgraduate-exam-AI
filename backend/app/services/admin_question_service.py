@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -9,6 +10,7 @@ from app.core.admin_security import AdminPrincipal
 from app.models.admin import Permission, QuestionVersion, RolePermission
 from app.models.question import Question
 from app.models.question_import import QuestionImport
+from app.features.question_pipeline import normalizer
 from app.schemas.admin_questions import (
     AdminQuestionBatchRejectRequest,
     AdminQuestionBatchRequest,
@@ -18,6 +20,9 @@ from app.schemas.admin_questions import (
     AdminQuestionToggleActiveRequest,
 )
 from app.services.admin_audit_service import write_admin_audit
+
+
+logger = logging.getLogger(__name__)
 
 
 _EDIT_FIELDS = (
@@ -94,6 +99,13 @@ async def get_admin_question_detail(db: AsyncSession, question_id: int) -> dict[
     question = await get_admin_question(db, question_id)
     result = await db.execute(select(QuestionImport).where(QuestionImport.question_id == question.id).order_by(QuestionImport.id.desc()))
     import_record = result.scalars().first()
+    if import_record:
+        import_record = {
+            field: getattr(import_record, field)
+            for field in import_record.__mapper__.columns.keys()
+        }
+        if not import_record.get("duplicate_status"):
+            import_record["duplicate_status"] = "normal"
     data = {field: getattr(question, field) for field in question.__mapper__.columns.keys()}
     data["import_record"] = import_record
     return data
@@ -214,6 +226,43 @@ async def _sync_import_review(
         item.reviewed_at = now
 
 
+async def _find_duplicate_question_by_hash(db: AsyncSession, question: Question) -> Question | None:
+    question_hash = question.question_hash or normalizer.build_question_hash(
+        (question.content or {}).get("text", ""),
+        question.options,
+        question.answer,
+    )
+    if not question_hash:
+        return None
+    if question.question_hash != question_hash:
+        question.question_hash = question_hash
+    result = await db.execute(
+        select(Question).where(
+            Question.subject == question.subject,
+            Question.question_hash == question_hash,
+            Question.id != question.id,
+            Question.is_active == True,
+            Question.review_status == "approved",
+        )
+    )
+    duplicate = result.scalars().first()
+    logger.info(
+        "[DuplicateCheck] questionId=%s importId=%s hash=%s result=%s matchedId=%s",
+        question.id,
+        None,
+        question_hash,
+        "matched_question" if duplicate else "normal",
+        duplicate.id if duplicate else None,
+    )
+    return duplicate
+
+
+async def _ensure_no_admin_duplicate(db: AsyncSession, question: Question) -> None:
+    duplicate = await _find_duplicate_question_by_hash(db, question)
+    if duplicate:
+        raise ValueError(f"发现重复题目，重复题ID：{duplicate.id}")
+
+
 async def approve_admin_question(
     db: AsyncSession,
     question_id: int,
@@ -221,6 +270,7 @@ async def approve_admin_question(
     request: Request | None = None,
 ) -> Question:
     question = await get_admin_question(db, question_id)
+    await _ensure_no_admin_duplicate(db, question)
     before = {"review_status": question.review_status, "is_active": question.is_active}
     question.review_status = "approved"
     question.is_active = True

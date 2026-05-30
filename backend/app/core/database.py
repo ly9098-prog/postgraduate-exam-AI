@@ -1,4 +1,4 @@
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -87,7 +87,43 @@ async def _repair_sqlite_admin_bigint_pk(conn):
     await conn.run_sync(repair)
 
 
+async def _ensure_duplicate_check_columns(conn):
+    def repair(sync_conn):
+        inspector = inspect(sync_conn)
+        existing_tables = set(inspector.get_table_names())
+        table_columns = {
+            "questions": {
+                "question_hash": "VARCHAR(32)",
+            },
+            "question_imports": {
+                "question_hash": "VARCHAR(32)",
+                "duplicate_status": "VARCHAR(32) NOT NULL DEFAULT 'normal'",
+                "duplicate_of_question_id": "BIGINT",
+                "duplicate_of_import_id": "BIGINT",
+            },
+        }
+        table_indexes = {
+            "questions": ["question_hash"],
+            "question_imports": ["question_hash", "duplicate_status"],
+        }
+        for table_name, columns in table_columns.items():
+            if table_name not in existing_tables:
+                continue
+            existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
+            for column_name, column_type in columns.items():
+                if column_name not in existing_columns:
+                    sync_conn.execute(text(f'ALTER TABLE "{table_name}" ADD COLUMN "{column_name}" {column_type}'))
+            existing_indexes = {index["name"] for index in inspector.get_indexes(table_name)}
+            for column_name in table_indexes.get(table_name, []):
+                index_name = f"ix_{table_name}_{column_name}"
+                if index_name not in existing_indexes:
+                    sync_conn.execute(text(f'CREATE INDEX IF NOT EXISTS "{index_name}" ON "{table_name}" ("{column_name}")'))
+
+    await conn.run_sync(repair)
+
+
 async def init_db():
     async with engine.begin() as conn:
         await _repair_sqlite_admin_bigint_pk(conn)
         await conn.run_sync(Base.metadata.create_all)
+        await _ensure_duplicate_check_columns(conn)

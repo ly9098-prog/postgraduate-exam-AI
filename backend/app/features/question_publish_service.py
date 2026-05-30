@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
 from app.features.question_pipeline import (
+    _find_duplicate_by_hash,
     _get_qi,
-    find_duplicate_question,
     process_question_pipeline,
 )
 from app.models.question import Question
@@ -133,21 +133,22 @@ async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
             "reason": f"数据不完整：{'; '.join(result['errors'])}",
         }
 
-    duplicate = await find_duplicate_question(
-        db, result["normalized"]["subject"], result["normalized"]["stem"]
+    duplicate = await _find_duplicate_by_hash(
+        db, result["normalized"]["subject"], result["normalized"]["question_hash"]
     )
     if duplicate:
         logger.info(
-            "Publish duplicate: import_id=%s stem_hash=%s existing_question_id=%s",
+            "[DuplicateCheck] questionId=%s importId=%s hash=%s result=matched_question matchedId=%s",
+            duplicate.id,
             qi.id,
-            result["stem_hash"],
+            result["normalized"]["question_hash"],
             duplicate.id,
         )
         return {
             "id": qi.id,
             "status": "duplicate",
             "question_id": duplicate.id,
-            "reason": "stem_hash collision",
+            "reason": "question_hash collision",
         }
 
     q = Question(

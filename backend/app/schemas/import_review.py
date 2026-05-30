@@ -43,6 +43,10 @@ class SubmitReviewItem(BaseModel):
     confidence_score: float
     stem_preview: str
     has_issues: bool
+    question_hash: str | None = None
+    duplicate_status: str = "normal"
+    duplicate_of_question_id: int | None = None
+    duplicate_of_import_id: int | None = None
 
 
 class SubmitReviewResponse(BaseModel):
@@ -67,6 +71,10 @@ class ReviewQueueItem(BaseModel):
     parsed_options: dict | None = None
     parsed_answer: str | None = None
     parsed_analysis: str | None = None
+    question_hash: str | None = None
+    duplicate_status: str = "normal"
+    duplicate_of_question_id: int | None = None
+    duplicate_of_import_id: int | None = None
     status: str
     ai_confidence: float | None = None
     review_note: str | None = None
