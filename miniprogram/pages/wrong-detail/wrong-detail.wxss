@@ -96,61 +96,6 @@
   color: #9AABBA;
 }
 
-/* SM-2 质量评分 */
-.rating-card { margin-top: 0; }
-
-.rating-options {
-  display: flex;
-  justify-content: space-between;
-  gap: 10rpx;
-  margin: 20rpx 0;
-}
-
-.rating-btn {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 16rpx 6rpx;
-  border: 2rpx solid #E0E0E0;
-  border-radius: 16rpx;
-  background: #FAFAFA;
-  transition: all 0.15s;
-}
-
-.rating-btn.rating-active {
-  border-color: #4A90D9;
-  background: #EBF3FC;
-  transform: scale(1.05);
-}
-
-.rating-num {
-  font-size: 36rpx;
-  font-weight: 700;
-  color: #2D3E50;
-}
-
-.rating-label {
-  font-size: 22rpx;
-  color: #6B7B8D;
-  margin-top: 4rpx;
-  text-align: center;
-}
-
-.rating-desc {
-  text-align: center;
-  font-size: 26rpx;
-  font-weight: 500;
-  margin: 8rpx 0;
-}
-
-.rating-result {
-  text-align: center;
-  padding: 24rpx;
-  font-size: 30rpx;
-  color: #27ae60;
-}
-
 .sm2-info {
   margin-top: 16rpx;
   padding: 12rpx 16rpx;

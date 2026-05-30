@@ -9,7 +9,7 @@ from app.core.database import Base
 from app.models.admin import AdminUser, AuditLog, Permission, Role, RolePermission
 from app.schemas.admin_auth import AdminChangePasswordRequest, AdminLoginRequest
 from app.services.admin_auth_service import authenticate_admin, build_admin_login_response, change_admin_password
-from app.services.admin_bootstrap_service import ADMIN_PERMISSION_DEFINITIONS, ensure_dev_super_admin
+from app.services.admin_bootstrap_service import ADMIN_PERMISSION_DEFINITIONS, ADMIN_ROLE_PERMISSION_NAMES, ensure_dev_super_admin
 
 
 class _Result:
@@ -107,18 +107,24 @@ async def test_ensure_dev_super_admin_initializes_defaults_and_is_idempotent(tmp
 
     async with sessionmaker() as db:
         role = (await db.execute(select(Role).where(Role.name == "super_admin"))).scalar_one()
+        admin_role = (await db.execute(select(Role).where(Role.name == "admin"))).scalar_one()
         admin_user = (await db.execute(select(AdminUser).where(AdminUser.username == "admin"))).scalar_one()
         permissions = (await db.execute(select(Permission).order_by(Permission.name.asc()))).scalars().all()
         role_permission_ids = set((await db.execute(select(RolePermission.permission_id).where(RolePermission.role_id == role.id))).scalars().all())
+        admin_role_permission_ids = set((await db.execute(select(RolePermission.permission_id).where(RolePermission.role_id == admin_role.id))).scalars().all())
         audits = (await db.execute(select(AuditLog).where(AuditLog.action == "system.init_super_admin"))).scalars().all()
 
+    permission_ids_by_name = {permission.name: permission.id for permission in permissions}
     assert admin_user.role_id == role.id
     assert role.is_system is True
+    assert admin_role.is_system is True
+    assert admin_role.display_name == "普通管理员"
     assert admin_user.username == "admin"
     assert verify_admin_password("Admin@123456", admin_user.password_hash)
     assert len(permissions) == len(ADMIN_PERMISSION_DEFINITIONS)
     assert {permission.name for permission in permissions} == {item["name"] for item in ADMIN_PERMISSION_DEFINITIONS}
     assert role_permission_ids == {permission.id for permission in permissions}
+    assert admin_role_permission_ids == {permission_ids_by_name[name] for name in ADMIN_ROLE_PERMISSION_NAMES}
     assert len(audits) == 1
     assert audits[0].severity == "critical"
 

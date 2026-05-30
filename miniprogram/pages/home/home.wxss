@@ -109,38 +109,95 @@
 }
 
 /* 错题分布 */
-.subject-row {
+.pie-wrap {
   display: flex;
   align-items: center;
-  margin: 14rpx 0;
+  padding-top: 12rpx;
 }
 
-.subject-name {
-  width: 90rpx;
-  font-size: 26rpx;
-  color: #6B7B8D;
+.pie-box {
+  position: relative;
+  width: 240rpx;
+  height: 240rpx;
+  flex-shrink: 0;
 }
 
-.sbar-bg {
+.pie-canvas {
+  width: 240rpx;
+  height: 240rpx;
+}
+
+.pie-center {
+  position: absolute;
+  left: 68rpx;
+  top: 68rpx;
+  width: 104rpx;
+  height: 104rpx;
+  border-radius: 52rpx;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4rpx 18rpx rgba(43, 60, 80, 0.08);
+}
+
+.pie-total {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #2D3E50;
+}
+
+.pie-total-label {
+  font-size: 20rpx;
+  color: #9AABBA;
+  margin-top: 2rpx;
+}
+
+.pie-legend {
   flex: 1;
-  height: 16rpx;
-  background: #EDF1F5;
-  border-radius: 8rpx;
-  margin: 0 16rpx;
-  overflow: hidden;
+  margin-left: 28rpx;
 }
 
-.sbar-fill {
-  height: 100%;
-  background: #5B7B9A;
-  border-radius: 8rpx;
-  transition: width 0.3s;
+.legend-row {
+  display: flex;
+  align-items: center;
+  margin: 12rpx 0;
 }
 
-.subject-val {
+.legend-dot {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 9rpx;
+  margin-right: 12rpx;
+  flex-shrink: 0;
+}
+
+.legend-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.legend-name {
+  display: block;
   font-size: 26rpx;
+  color: #2D3E50;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legend-percent {
+  display: block;
+  font-size: 22rpx;
+  color: #9AABBA;
+  margin-top: 2rpx;
+}
+
+.legend-count {
+  font-size: 24rpx;
   color: #5B7B9A;
   font-weight: 600;
-  width: 40rpx;
-  text-align: right;
+  margin-left: 12rpx;
+  flex-shrink: 0;
 }

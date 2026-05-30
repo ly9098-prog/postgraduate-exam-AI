@@ -6,7 +6,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 DEV_ADMIN_USERNAME = "admin"
 DEV_ADMIN_PASSWORD = "Admin@123456"
 SUPER_ADMIN_ROLE_NAME = "super_admin"
+ADMIN_ROLE_NAME = "admin"
 LOCAL_APP_ENVS = {"development", "local", "test"}
+
+ADMIN_ROLE_PERMISSION_NAMES = {
+    "dashboard:read",
+    "app-user:read",
+    "app-user:write",
+    "app-user:ban",
+    "admin-user:read",
+    "admin-user:create",
+    "admin-user:update",
+    "admin-user:delete",
+    "admin-user:force-logout",
+    "admin-user:reset-password",
+    "question:read",
+    "question:write",
+    "question:review",
+    "question:batch_review",
+    "subject:read",
+    "subject:write",
+    "role:read",
+    "import:read",
+    "import:write",
+    "ai_setting:read",
+    "audit:read",
+}
 
 ADMIN_PERMISSION_DEFINITIONS: tuple[dict[str, str], ...] = (
     {"name": "dashboard:read", "resource": "dashboard", "action": "read", "category": "dashboard", "description": "查看统计概览"},
@@ -44,8 +69,11 @@ async def ensure_dev_super_admin(db: AsyncSession, app_env: str) -> bool:
         return False
 
     role = await _ensure_super_admin_role(db)
+    admin_role = await _ensure_admin_role(db)
     permissions = await _ensure_permissions(db)
+    permission_map = {permission.name: permission.id for permission in permissions}
     await _ensure_role_permissions(db, role.id, [permission.id for permission in permissions])
+    await _ensure_role_permissions(db, admin_role.id, [permission_map[name] for name in ADMIN_ROLE_PERMISSION_NAMES])
     created_admin = await _ensure_admin_user(db, role.id)
 
     if created_admin:
@@ -81,6 +109,22 @@ async def _ensure_super_admin_role(db: AsyncSession) -> Role:
         name=SUPER_ADMIN_ROLE_NAME,
         display_name="超级管理员",
         description="系统超级管理员",
+        is_system=True,
+    )
+    db.add(role)
+    await db.flush()
+    return role
+
+
+async def _ensure_admin_role(db: AsyncSession) -> Role:
+    result = await db.execute(select(Role).where(Role.name == ADMIN_ROLE_NAME))
+    role = result.scalar_one_or_none()
+    if role:
+        return role
+    role = Role(
+        name=ADMIN_ROLE_NAME,
+        display_name="普通管理员",
+        description="默认运营管理员",
         is_system=True,
     )
     db.add(role)

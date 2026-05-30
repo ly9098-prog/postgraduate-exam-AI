@@ -145,7 +145,7 @@
         </view>
 
         <view class="nav-center">
-          <view class="dot {{i === currentIndex ? 'active' : ''}}" wx:for="{{questions}}" wx:key="index" data-index="{{i}}" bindtap="goQuestion"></view>
+          <view class="dot {{index === currentIndex ? 'active' : ''}}" wx:for="{{questions}}" wx:key="index" data-index="{{index}}" bindtap="goQuestion"></view>
         </view>
 
         <view class="nav-btn next {{currentIndex >= totalQuestions - 1 ? 'disabled' : ''}}" bindtap="goNext">

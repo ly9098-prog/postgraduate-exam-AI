@@ -66,7 +66,7 @@
     </view>
     <text class="action-arrow">→</text>
   </view>
-  <view class="action-card" bindtap="goImport">
+  <view class="action-card" wx:if="{{isAdmin}}" bindtap="goImport">
     <text class="action-emoji">📥</text>
     <view class="action-info">
       <text class="action-title">题库导入</text>
@@ -77,11 +77,25 @@
 </view>
 
 <!-- 错题分布 -->
-<view class="card" wx:if="{{wrongStats.by_subject && wrongStats.by_subject.length > 0}}">
+<view class="card" wx:if="{{subjectPieData.length > 0}}">
   <text class="section-title">错题分布</text>
-  <view class="subject-row" wx:for="{{wrongStats.by_subject}}" wx:key="subject">
-    <text class="subject-name">{{subjectLabel(item.subject)}}</text>
-    <view class="sbar-bg"><view class="sbar-fill" style="width:{{maxCount > 0 ? item.count / maxCount * 100 : 0}}%"></view></view>
-    <text class="subject-val">{{item.count}}</text>
+  <view class="pie-wrap">
+    <view class="pie-box">
+      <canvas class="pie-canvas" canvas-id="subject-pie-canvas" id="subject-pie-canvas"></canvas>
+      <view class="pie-center">
+        <text class="pie-total">{{pieTotal}}</text>
+        <text class="pie-total-label">错题</text>
+      </view>
+    </view>
+    <view class="pie-legend">
+      <view class="legend-row" wx:for="{{subjectPieData}}" wx:key="subject">
+        <view class="legend-dot" style="background:{{item._color}}"></view>
+        <view class="legend-main">
+          <text class="legend-name">{{item._label}}</text>
+          <text class="legend-percent">{{item._percentText}}%</text>
+        </view>
+        <text class="legend-count">{{item.count}}题</text>
+      </view>
+    </view>
   </view>
 </view>
