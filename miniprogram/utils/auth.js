@@ -1,5 +1,6 @@
 const api = require('./api')
 const storage = require('./storage')
+const config = require('../config')
 const { KEYS } = storage
 
 async function wechatLogin() {
@@ -32,6 +33,7 @@ function getUser() {
 }
 
 function isAdmin() {
+  if (config.DEV === true) return true
   const user = getUser() || {}
   return user.is_admin === true || user.role === 'admin' || user.role_name === 'admin'
 }
