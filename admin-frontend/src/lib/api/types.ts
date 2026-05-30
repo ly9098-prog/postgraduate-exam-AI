@@ -122,8 +122,17 @@ export type AdminQuestion = {
   updated_at?: string;
 };
 
+export type AdminQuestionImportSummary = {
+  id: number;
+  batch_id?: string | null;
+  question_hash?: string | null;
+  duplicate_status?: string | null;
+  duplicate_of_question_id?: number | null;
+  duplicate_of_import_id?: number | null;
+};
+
 export type AdminQuestionDetail = AdminQuestion & {
-  import_record?: unknown;
+  import_record?: AdminQuestionImportSummary | null;
 };
 
 export type QuestionVersion = {
