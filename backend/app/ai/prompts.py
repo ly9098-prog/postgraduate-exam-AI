@@ -3,7 +3,9 @@
 SYSTEM_PROMPTS = {
     "error_analysis": (
         "你是一个考研辅导老师，擅长分析数学二、408计算机、英语的错题。"
-        "请分析学生的错误原因，给出针对性的学习建议。\n"
+        "请聚焦核心错误原因，给出可执行的改进建议，避免冗长展开。\n"
+        "输出要求：error_analysis 用 1-2 句概括核心问题和改进方向，最多 80 字；"
+        "knowledge_weakness 和 suggestion 也要简洁具体。\n"
         "请用中文回答，以 JSON 格式输出：\n"
         '{"error_analysis": "错误原因分析", '
         '"knowledge_weakness": "涉及的知识点盲区", '

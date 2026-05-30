@@ -26,12 +26,6 @@ Page({
     aiLoading: false,
     aiFallback: false,
     loading: true,
-    // SM-2 评分
-    showRating: false,
-    rating: -1,
-    submittingRating: false,
-    rated: false,
-    nextReviewDate: '',
   },
 
   onLoad(options) {
@@ -50,7 +44,7 @@ Page({
       for (const k of optionKeys) {
         optHtml[k] = _textToHtml(wq.options[k] || '')
       }
-      this.setData({ wq, optionKeys, stemHtml, optHtml, loading: false, showRating: !wq.mastered })
+      this.setData({ wq, optionKeys, stemHtml, optHtml, loading: false })
       this.loadAiAnalysis(wqId)
     } catch (e) {
       console.error('加载错题详情失败', e)
@@ -78,52 +72,11 @@ Page({
     try {
       await api.put(`/wrong-questions/${this.data.wq.id}`, { mastered: true })
       wx.showToast({ title: '已标记掌握', icon: 'success' })
-      this.setData({ 'wq.mastered': true, showRating: false, rated: true })
+      this.setData({ 'wq.mastered': true })
     } catch (e) {
       console.error('标记掌握失败', e)
       wx.showToast({ title: '操作失败', icon: 'none' })
     }
-  },
-
-  // --- SM-2 质量评分 ---
-  selectRating(e) {
-    if (this.data.submittingRating || this.data.rated) return
-    this.setData({ rating: e.currentTarget.dataset.value })
-  },
-
-  async submitRating() {
-    if (this.data.rating < 0) return
-    this.setData({ submittingRating: true })
-    try {
-      const res = await api.put(`/wrong-questions/${this.data.wq.id}/quality`, {
-        quality: this.data.rating,
-      })
-      const next = res.next_review_date || ''
-      const dateStr = next ? next.slice(0, 10) : ''
-      wx.showToast({ title: `评分完成，下次复习: ${dateStr || '已掌握'}`, icon: 'none' })
-      this.setData({
-        rated: true,
-        submittingRating: false,
-        nextReviewDate: dateStr,
-        'wq.efactor': res.efactor,
-        'wq.interval': res.interval,
-        'wq.repetitions': res.repetitions,
-        'wq.next_review_date': res.next_review_date,
-        'wq.mastered': res.mastered,
-      })
-      if (res.mastered) {
-        this.setData({ showRating: false })
-      }
-    } catch (e) {
-      console.error('评分提交失败', e)
-      wx.showToast({ title: '评分失败', icon: 'none' })
-      this.setData({ submittingRating: false })
-    }
-  },
-
-  ratingLabel(v) {
-    const labels = ['完全忘记', '很困难', '有印象', '较困难答对', '稍有犹豫', '完全正确']
-    return labels[v] || ''
   },
 
   subjectLabel(s) {

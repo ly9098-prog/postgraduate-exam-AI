@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { hasPermission, type PermissionKey } from "@/lib/permissions/permissions";
 import { apiRequest, toQuery } from "@/lib/api/client";
+import { useAuthStore } from "@/lib/auth/auth-store";
 import type { AdminUserCreateRequest, AdminUserPatchRequest, AdminUserSummary, PaginatedResponse, Role } from "@/lib/api/types";
 
 type TableColumn<TData> = {
@@ -74,6 +76,8 @@ const columnsDef = (
 
 export default function AdminUsersPage() {
   const queryClient = useQueryClient();
+  const permissions = useAuthStore((state) => state.permissions);
+  const role = useAuthStore((state) => state.role);
   const [keyword, setKeyword] = useState("");
   const [page, setPage] = useState(1);
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
@@ -129,6 +133,9 @@ export default function AdminUsersPage() {
   const startEdit = (user: AdminUserSummary) => setForm({ id: user.id, username: user.username, password: "", display_name: user.display_name ?? "", email: user.email ?? "", role_id: String(user.role_id), is_active: user.is_active });
   const columns = useMemo(() => columnsDef((state) => setConfirmState(state), startEdit, isSuperAdmin), [isSuperAdmin]);
 
+  const canSubmitForm: PermissionKey = form.id ? "admin-user:update" : "admin-user:create";
+  const canUseForm = role?.name === "super_admin" || hasPermission(permissions, canSubmitForm);
+
   const confirmDescription = confirmState
     ? {
         "force-logout": `确认强制登出 ${confirmState.userName}？当前会话将立即失效。`,
@@ -164,6 +171,7 @@ export default function AdminUsersPage() {
           </CardHeader>
           <CardContent>
             {message ? <p className="mb-4 rounded-2xl border border-[var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[var(--color-text-secondary)]">{message}</p> : null}
+            {users.isError ? <p className="mb-4 rounded-2xl border border-[var(--color-danger)] bg-white/70 px-4 py-3 text-sm text-[var(--color-danger)]">{users.error instanceof Error ? users.error.message : "管理员列表接口暂不可用"}</p> : null}
             <DataTable data={users.data?.items ?? []} columns={columns} emptyText={users.isError ? "接口暂不可用" : "暂无管理员"} />
             <div className="mt-4 flex items-center justify-between text-sm text-[var(--color-text-secondary)]">
               <span>共 {users.data?.total ?? 0} 条</span>
@@ -177,26 +185,33 @@ export default function AdminUsersPage() {
 
         <Card className="blueprint-panel">
           <CardContent className="relative z-10 space-y-4">
-            <h3 className="font-display text-2xl font-bold text-[var(--ink)]">{form.id ? "编辑管理员" : "创建管理员"}</h3>
-            <div className="grid gap-3">
-              <Input placeholder="用户名" value={form.username} disabled={Boolean(form.id)} onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))} />
-              {!form.id ? <Input placeholder="初始密码" type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} /> : null}
-              <Input placeholder="显示名" value={form.display_name} onChange={(event) => setForm((current) => ({ ...current, display_name: event.target.value }))} />
-              <Input placeholder="邮箱" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
-              <select className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm" value={form.role_id} onChange={(event) => setForm((current) => ({ ...current, role_id: event.target.value }))}>
-                <option value="">请选择角色</option>
-                {editableRoles.map((role) => <option key={role.id} value={role.id}>{role.display_name}</option>)}
-              </select>
-              <label className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-                <input type="checkbox" checked={form.is_active} onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))} />
-                启用账号
-              </label>
-              <div className="flex gap-2">
-                <Button disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>{form.id ? "保存修改" : "创建"}</Button>
-                <Button variant="secondary" onClick={() => setForm(emptyForm)}>清空</Button>
-              </div>
-            </div>
-            <p className="text-sm leading-7 text-[var(--color-text-secondary)]">super_admin 受保护，前端不提供修改入口，后端仍保留强制校验。</p>
+            {message ? <p className="rounded-2xl border border-[var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[var(--color-text-secondary)]">{message}</p> : null}
+            {canUseForm ? (
+              <>
+                <h3 className="font-display text-2xl font-bold text-[var(--ink)]">{form.id ? "编辑管理员" : "创建管理员"}</h3>
+                <div className="grid gap-3">
+                  <Input placeholder="用户名" value={form.username} disabled={Boolean(form.id)} onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))} />
+                  {!form.id ? <Input placeholder="初始密码" type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} /> : null}
+                  <Input placeholder="显示名" value={form.display_name} onChange={(event) => setForm((current) => ({ ...current, display_name: event.target.value }))} />
+                  <Input placeholder="邮箱" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
+                  <select className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm" value={form.role_id} onChange={(event) => setForm((current) => ({ ...current, role_id: event.target.value }))}>
+                    <option value="">请选择角色</option>
+                    {editableRoles.map((role) => <option key={role.id} value={role.id}>{role.display_name}</option>)}
+                  </select>
+                  <label className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+                    <input type="checkbox" checked={form.is_active} onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))} />
+                    启用账号
+                  </label>
+                  <div className="flex gap-2">
+                    <Button disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>{form.id ? "保存修改" : "创建"}</Button>
+                    <Button variant="secondary" onClick={() => setForm(emptyForm)}>清空</Button>
+                  </div>
+                </div>
+                <p className="text-sm leading-7 text-[var(--color-text-secondary)]">super_admin 受保护，前端不提供修改入口，后端仍保留强制校验。</p>
+              </>
+            ) : (
+              <p className="rounded-2xl border border-[var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[var(--color-text-secondary)]">当前账号没有{form.id ? "编辑管理员" : "创建管理员"}权限。</p>
+            )}
           </CardContent>
         </Card>
       </div>
