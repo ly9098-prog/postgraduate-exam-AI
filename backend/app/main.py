@@ -22,11 +22,13 @@ from app.api.v1.knowledge_points import router as knowledge_points_router
 from app.api.v1.ai_import import router as ai_import_router
 from app.api.v1.cache import router as cache_router
 from app.api.v1.health import router as health_router
+from app.api.v1.admin_ai_settings import router as admin_ai_settings_router
 from app.api.v1.admin_audit_logs import router as admin_audit_logs_router
 from app.api.v1.admin_auth import router as admin_auth_router
 from app.api.v1.admin_app_users import router as admin_app_users_router
 from app.api.v1.admin_dashboard import router as admin_dashboard_router
 from app.api.v1.admin_health import router as admin_health_router
+from app.api.v1.admin_imports import router as admin_imports_router
 from app.api.v1.admin_questions import router as admin_questions_router
 from app.api.v1.admin_rbac import router as admin_rbac_router
 from app.api.v1.admin_users import router as admin_users_router
@@ -136,10 +138,12 @@ app.include_router(ai_import_router)
 app.include_router(cache_router)
 app.include_router(health_router)
 app.include_router(admin_auth_router)
+app.include_router(admin_ai_settings_router)
 app.include_router(admin_app_users_router)
 app.include_router(admin_audit_logs_router)
 app.include_router(admin_dashboard_router)
 app.include_router(admin_health_router)
+app.include_router(admin_imports_router)
 app.include_router(admin_questions_router)
 app.include_router(admin_rbac_router)
 app.include_router(admin_users_router)

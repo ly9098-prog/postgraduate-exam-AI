@@ -1,10 +1,10 @@
 # 分阶段开发计划
 
-> 版本：v2.3（Phase 6 前端完成同步版） | 状态：Phase 6 前端主要实现已完成 | 更新：2026-05-30
+> 版本：v2.4（Phase 7 AI 设置与月度额度同步版） | 状态：Phase 7 后端与前端主要实现已完成 | 更新：2026-05-30
 > 修订自审计报告 I1（subjects）、I2（明确不实现 question_banks）、C6（question_versions）、C5（audit_log 分级）；2026-05-29 根据维护者确认收敛为现有 FastAPI 后端内实现。
 >
-> - **变更原因**：同步 Admin Phase 6 Next.js Admin Dashboard 实际完成状态、页面范围、前端技术栈、仅消费 `/api/admin/v1` 的边界，以及 lint/build 验证结果。
-> - **技术结论**：Admin Backend 位于现有 FastAPI 后端 `/api/admin/v1`；ORM 使用 SQLAlchemy；迁移使用 Alembic；Redis 可选降级；不创建 NestJS/Prisma/BullMQ 独立后端；Phase 1 审计日志同步写入，队列延后；Phase 6 前端位于 `admin-frontend`。
+> - **变更原因**：同步 Phase 7 后台 AI 解析设置、全局月度额度、权限拦截、前端入口与验证结果。
+> - **技术结论**：Admin Backend 位于现有 FastAPI 后端 `/api/admin/v1`；ORM 使用 SQLAlchemy；迁移使用 Alembic；Redis 可选降级；不创建 NestJS/Prisma/BullMQ 独立后端；Phase 1 审计日志同步写入，队列延后；Phase 6 前端位于 `admin-frontend`；Phase 7 AI 设置由后端与 Admin UI 共同实现。
 
 ---
 
@@ -19,6 +19,7 @@
 | Phase 4 | 科目与导入管理 | 2天 | 科目树 CRUD、导入批次查看、AI 任务监控 |
 | Phase 5 | 审计日志与统计 | 已完成 | audit-logs 查询、Dashboard 统计（Redis 可用时缓存防穿透） |
 | Phase 6 | 前端 Admin Dashboard | 已完成 | Next.js 16 + React 19 Admin UI，仅消费 `/api/admin/v1` |
+| Phase 7 | 后台 AI 解析设置与全局月度额度 | 已完成 | AI 解析开关、月度全局 API 调用额度、用量查询、前端设置页 |
 
 ---
 
@@ -414,7 +415,57 @@ Next.js 完整后台 UI，仅消费现有 FastAPI Admin API `/api/admin/v1`，�
 
 ---
 
-## 阶段间不可修改约定
+## Phase 7：后台 AI 解析设置与全局月度额度（已完成，2026-05-30）
+
+### 目标
+提供后台全局 AI 解析开关、月度全局 API 调用额度配置与用量查询，并在导入 AI 解析任务创建前强制拦截超额或全局关闭场景。
+
+### 实际完成（2026-05-30）
+
+1. **后端模型与迁移**
+   - 新增 `admin_ai_settings`：保存全局 AI 解析开关、月度调用额度、更新时间与更新管理员。
+   - 新增 `admin_ai_usage_monthly`：按月份聚合 AI 解析调用次数与额度快照。
+   - Alembic migration：`i0e1f2a3b4c5_add_admin_ai_settings.py`。
+
+2. **Admin API**
+   - `GET /api/admin/v1/ai-settings`：读取当前 AI 解析设置。
+   - `PATCH /api/admin/v1/ai-settings`：更新全局开关或月度调用额度。
+   - `GET /api/admin/v1/ai-settings/usage`：查询当前或指定月份用量。
+
+3. **RBAC 与 seed**
+   - 新增权限：`ai_setting:read`、`ai_setting:write`。
+   - 权限已在 bootstrap / migration seed 中写入；`super_admin` 通过 `role_permissions` 绑定权限，非硬编码。
+
+4. **AI 解析拦截**
+   - `create_import_enrich_task` 创建任务前调用 `ensure_ai_parse_allowed`。
+   - 全局关闭时所有管理员均不可触发 AI 解析；`super_admin` 不绕过全局关闭。
+   - 月度额度超限时拦截普通管理员；`super_admin` 仅绕过额度限制，不绕过全局关闭。
+
+5. **前端 Admin UI**
+   - 新增独立 `/ai-settings` 页面。
+   - 侧边栏新增 AI 设置入口，并按 `ai_setting:read` 权限展示。
+   - 页面支持查看/更新全局开关、额度与月度用量。
+
+6. **验证结果**
+   - 已通过 `python3 -m compileall backend/app`。
+   - 已通过 `npm --prefix admin-frontend run lint`。
+   - `npm --prefix admin-frontend run build` 因 Google Fonts 网络获取失败未完成，需联网或字体本地化后复验。
+
+### 验收状态
+- AI 解析全局关闭优先级高于额度绕过。
+- 月度额度对普通管理员生效，`super_admin` 只绕过额度。
+- 新增 API 受 `ai_setting:read` / `ai_setting:write` 保护。
+- 前端有独立页面与侧边栏入口。
+
+### 禁止修改
+- 不改变 `question_imports + 人工确认` 导入边界。
+- 不实现纯 AI 自动入库。
+- 不绕过后端 RBAC 与 AI 设置服务直接触发解析。
+
+### 本阶段完成后更新文档
+- `docs/admin/README.md`、`docs/admin/PHASE_PLAN.md`、`docs/admin/ADMIN_API_SPEC.md`、`docs/admin/RBAC_RULES.md`、`docs/admin/DB_SCHEMA_ADMIN.md`、`docs/admin/AUDIT_LOG.md`、`docs/frontend/ADMIN_UI_RULES.md`、`docs/project/CHANGELOG.md` 已于 2026-05-30 同步 Phase 7 实现。
+
+
 
 | 已完成阶段 | 禁止修改 |
 |-----------|---------|
@@ -424,6 +475,7 @@ Next.js 完整后台 UI，仅消费现有 FastAPI Admin API `/api/admin/v1`，�
 | Phase 3 之后 | 题目审核 API 路径 / question_versions 表结构 / audit_log 写入分级 |
 | Phase 4 之后 | Subject 表结构 / Imports API 路径 |
 | Phase 5 之后 | Dashboard 接口路径 / audit-logs 查询参数 |
+| Phase 7 之后 | AI 设置接口路径 / `ai_setting:*` 权限名 / 全局关闭优先于额度绕过语义 |
 
 **修改已完成阶段必须**：
 1. 提出变更原因（写入 commit message）

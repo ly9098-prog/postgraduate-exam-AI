@@ -17,6 +17,8 @@ export type PermissionKey =
   | "role:read"
   | "role:write"
   | "permission:read"
+  | "ai_setting:read"
+  | "ai_setting:write"
   | "audit:read";
 
 export function hasPermission(permissions: string[], permission?: PermissionKey) {

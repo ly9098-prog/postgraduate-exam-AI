@@ -10,6 +10,7 @@ from app.core.admin_security import AdminPrincipal
 from app.core.cache import cache
 from app.models.question_import import QuestionImport
 from app.schemas.admin_imports import AdminImportBatchDetail, AdminImportEnrichResponse, AdminImportQuestionItem
+from app.services.admin_ai_settings_service import ensure_ai_parse_allowed
 from app.services.admin_audit_service import write_admin_audit
 
 _TASK_TTL_SECONDS = 86400
@@ -81,6 +82,7 @@ async def create_enrich_task(
     summary_row = summary_result.first()
     if not summary_row:
         raise ValueError("导入批次不存在")
+    await ensure_ai_parse_allowed(db, operator, request)
 
     task_id = f"admin-ai-{uuid4().hex}"
     now = datetime.utcnow()
