@@ -1,9 +1,10 @@
 # Admin API 规范
 
-> 版本：v2.3（Phase 7 AI 设置接口同步版） | 状态：Phase 7 后端已完成 | 更新：2026-05-30
+> 版本：v2.4（题库 Level 1 去重字段同步版） | 状态：Phase 7 后端已完成 | 更新：2026-05-30
 > 修订自审计报告 I8（统一 Stripe 风格）、I10（liveness/readiness）、C1（拆分 app-users 与 admin-users）
 >
 > - **变更原因**：2026-05-30 同步 Phase 7 新增 AI 解析设置与月度用量接口、权限要求和导入 enrich 前置拦截语义。
+> - **变更原因**：2026-05-30 同步题库 Level 1 完全重复检测在导入批次详情 / 审核队列返回的重复字段，以及发布阶段拦截语义。
 
 ---
 
@@ -178,7 +179,7 @@ POST   /v1/auth/refresh
 
 **响应字段（摘要）**：
 - 批次列表 item：`batch_id`、`source_type`、`source_file`、`total_count`、`pending_count`、`approved_count`、`rejected_count`、`published_count`、`ai_count`、`created_at`、`updated_at`。
-- 批次详情 item：包含 `raw_data`、`parsed_content`、`parsed_options`、`parsed_answer`、`parsed_analysis`、`status`、`review_note`、`question_id`、`reject_reason`、`reviewed_by`、`reviewed_at`、`ai_generated`、`ai_source`、`ai_confidence`、`ai_metadata`、`ai_reviewed_at`、`ai_answer_flag` 等导入与 AI 辅助字段。
+- 批次详情 item：包含 `raw_data`、`parsed_content`、`parsed_options`、`parsed_answer`、`parsed_analysis`、`status`、`review_note`、`question_id`、`reject_reason`、`reviewed_by`、`reviewed_at`、`question_hash`、`duplicate_status`、`duplicate_of_question_id`、`duplicate_of_import_id`、`ai_generated`、`ai_source`、`ai_confidence`、`ai_metadata`、`ai_reviewed_at`、`ai_answer_flag` 等导入、重复检测与 AI 辅助字段。
 - enrich 响应：`{ task_id, batch_id, status, created_at }`，其中 `status` 初始为 `pending`。
 - status 响应：`{ task_id, batch_id, status, created_at, updated_at, total_count, processed_count, error_message }`。
 
@@ -186,6 +187,7 @@ POST   /v1/auth/refresh
 - `404`：批次不存在，或该批次没有可查询的 AI 任务状态。
 - `422`：请求参数或业务规则不满足。
 - `POST /imports/{batchId}/enrich` 写入 `admin:ai:task:{taskId}` 与 `admin:ai:batch:{batchId}:task`，TTL 当前为 86400 秒，并写入 `import.enrich` 审计日志；创建前受 AI 设置服务的全局开关与月度额度拦截。
+- `POST /imports/{batchId}/approve` / 批次内导入题审核通过时会先走 Level 1 完全重复检测；若 `subject + question_hash` 命中正式题库重复题，则返回重复信息并阻止发布。
 
 **`/imports/{batchId}/enrich` 约束**：
 - 当前实现仍通过后台任务状态承载 AI 辅助处理；不得直接调用小程序端 API。

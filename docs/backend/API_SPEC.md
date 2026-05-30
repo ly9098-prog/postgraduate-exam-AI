@@ -632,6 +632,15 @@ AI 学习建议。
 
 批次详情（该批次所有待审核题目）。
 
+导入题目 item 会返回 Level 1 重复检测字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| question_hash | string? | 标准化题干/选项/答案生成的 32 位 MD5 hash |
+| duplicate_status | string | `normal` / `possible_duplicate` |
+| duplicate_of_question_id | int? | 命中的正式题目 ID |
+| duplicate_of_import_id | int? | 命中的暂存导入题 ID |
+
 ### PUT `/import/questions/{id}`
 
 审核单题。
@@ -651,7 +660,7 @@ AI 学习建议。
 
 ### POST `/import/batches/{batch_id}/approve`
 
-批量通过一个批次的所有待审核记录。缺少必填字段的题目自动跳过。
+批量通过一个批次的所有待审核记录。缺少必填字段的题目自动跳过；发布写入 `questions` 前会按 `subject + question_hash` 做完全重复拦截，命中正式题库重复题时该题不会发布。
 
 ```json
 // Response

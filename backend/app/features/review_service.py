@@ -10,6 +10,10 @@ from datetime import datetime
 from sqlalchemy import asc, func, select, nulls_last
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.features.question_pipeline import (
+    _build_import_duplicate_fields,
+    normalizer,
+)
 from app.models.question_import import QuestionImport
 
 
@@ -62,19 +66,30 @@ async def submit_to_review(
 
         options = q.get("options") or []
         question_type = q.get("question_type", "")
+        parsed_options = _options_to_dict(options)
+        parsed_answer = (q.get("answer") or "").strip() or None
+        qi_subject = subject or q.get("subject") or None
+        question_hash = normalizer.build_question_hash(stem, parsed_options, parsed_answer)
+        duplicate_fields = await _build_import_duplicate_fields(
+            db,
+            import_id=None,
+            subject=qi_subject,
+            question_hash=question_hash,
+        )
 
         qi = QuestionImport(
             batch_id=batch_id,
             source_type=source_type,
             source_file=source_file or None,
-            subject=subject or q.get("subject") or None,
+            subject=qi_subject,
             question_type=question_type or None,
             raw_data=q,
             parsed_content={"text": stem},
-            parsed_options=_options_to_dict(options),
-            parsed_answer=(q.get("answer") or "").strip() or None,
+            parsed_options=parsed_options,
+            parsed_answer=parsed_answer,
             parsed_analysis=(q.get("analysis") or "").strip() or None,
             status="pending",
+            **duplicate_fields,
             ai_confidence=q.get("confidence_score"),
             ai_metadata={
                 "is_valid": q.get("is_valid", True),
@@ -95,6 +110,10 @@ async def submit_to_review(
             "confidence_score": q.get("confidence_score", 0),
             "stem_preview": stem_preview,
             "has_issues": not q.get("is_valid", True) or bool(q.get("errors")),
+            "question_hash": qi.question_hash,
+            "duplicate_status": qi.duplicate_status,
+            "duplicate_of_question_id": qi.duplicate_of_question_id,
+            "duplicate_of_import_id": qi.duplicate_of_import_id,
         })
         written += 1
 
@@ -162,6 +181,10 @@ async def get_review_queue(
             "parsed_options": qi.parsed_options,
             "parsed_answer": qi.parsed_answer,
             "parsed_analysis": qi.parsed_analysis,
+            "question_hash": qi.question_hash,
+            "duplicate_status": qi.duplicate_status,
+            "duplicate_of_question_id": qi.duplicate_of_question_id,
+            "duplicate_of_import_id": qi.duplicate_of_import_id,
             "status": qi.status,
             "ai_confidence": qi.ai_confidence,
             "review_note": qi.review_note,

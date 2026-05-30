@@ -1,7 +1,8 @@
 # 题目审核流程设计
 
-> 版本：v2.0（审计修订版） | 状态：可启动开发 | 更新：2026-05-26
+> 版本：v2.1（Level 1 去重同步版） | 状态：可启动开发 | 更新：2026-05-30
 > 修订自审计报告 C6：完善 editing/re_pending 状态机；引入 question_versions 快照；权限分级
+> 2026-05-30 变更原因：同步题库 Level 1 完全重复检测；导入阶段标记疑似重复，审核发布阶段按 `subject + question_hash` 拦截。
 
 ---
 
@@ -11,6 +12,13 @@
                     ┌──────────────────┐
                     │  题目上传/导入     │
                     └────────┬─────────┘
+                             │
+                             ▼
+              ┌──────────────────────────────┐
+              │ Level 1 重复检测              │
+              │ question_hash + duplicate_*  │
+              │ 只标记，不拒绝/删除             │
+              └────────┬─────────────────────┘
                              │
                              ▼
               ┌──────────────────────────────┐
@@ -67,6 +75,8 @@
 
 **重要**：
 - 首次审核操作 `question_imports`，建议接口为 `/imports/{importId}/approve` / `/imports/{importId}/reject`；未人工确认的 import 不得进入正式刷题池。
+- 导入阶段 Level 1 重复检测只写 `question_hash`、`duplicate_status`、`duplicate_of_question_id`、`duplicate_of_import_id`；不删除、不自动拒绝导入题。
+- 审核通过 / 发布写入 `questions` 前必须按 `subject + question_hash` 查询正式题库；命中完全重复时阻止发布并返回重复题 ID。
 - 已入库题目重审操作 `questions`，接口为 `/questions/{questionId}/approve` / `/questions/{questionId}/reject`。
 - 现有 questions.review_status 默认值需实施前确认是否为 "approved"（保持 FastAPI 端兼容）；字段不存在时必须列 migration。
 - 新增 `re_pending` 仅在 Admin 编辑场景中产生，FastAPI 端必须过滤非 approved 题目。
@@ -229,6 +239,7 @@ Body: { "isActive": true | false, "reason": "可选下架原因" }
 
 ### 过滤条件
 - 审核状态：`pending` / `re_pending` / `rejected` / `approved`
+- 重复状态：`normal` / `possible_duplicate`
 - 科目：subjects 树形选择
 - 来源：手动上传 / AI 导入 / PDF 导入
 - 时间范围
@@ -236,6 +247,7 @@ Body: { "isActive": true | false, "reason": "可选下架原因" }
 
 ### 快速审核模式
 - 列表展示题目摘要（题干前 100 字 + 选项 ABCD）
+- `duplicate_status=possible_duplicate` 时展示疑似重复标识，并可查看命中的正式题目 ID / 暂存导入题 ID 与 hash
 - 单行操作：[通过] [拒绝]
 - 拒绝时弹出 reason 输入框（必填）
 - 批量选中（上限 50） + 批量通过/拒绝

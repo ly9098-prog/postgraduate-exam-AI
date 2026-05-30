@@ -1,33 +1,18 @@
-当前任务（2026-05-30）：仅维护 Admin Phase 7 文档同步，不修改业务代码。
+当前任务（2026-05-30）：Level 1 题目完全重复检测已完成，收尾评估已完成。
 
-背景：后台管理系统 Phase 7（后台 AI 解析设置与全局月度额度）已完成主要实现，并已通过：
+已完成：
 
-- `python3 -m compileall backend/app`
-- `npm --prefix admin-frontend run lint`
+- 标准化题干、选项、答案后生成 `question_hash`（MD5，32 位）。
+- `questions` 新增 `question_hash`；`question_imports` 新增 `question_hash`、`duplicate_status`、`duplicate_of_question_id`、`duplicate_of_import_id`。
+- 导入阶段只标记重复，不删除、不拒绝导入。
+- 发布 / 审核通过阶段按 `subject + question_hash` 做最终重复拦截，命中时阻止重复题写入正式题库。
+- 审核队列、导入批次详情和 admin import schema 已返回重复检测字段。
+- 启动 schema repair 与 Alembic migration 已补齐。
+- 后端回归通过：`PYTHONPATH=/home/lmh/projects/postgraduate-ai/backend pytest /home/lmh/projects/postgraduate-ai/backend/tests -q --tb=short -x`，699 passed。
+- 历史题目 `question_hash` 回填方案已评估：不放入启动 repair，不放入复杂 Alembic 数据迁移；建议后续用幂等的 admin/maintenance 脚本或服务手动执行，只填充空 `question_hash`，不覆盖、不删除、不合并历史题。
+- 前端展示缺口已评估：管理端审核页 / 题库页当前未消费重复检测字段；如要增强展示，应对接 `duplicate_status`、`duplicate_of_question_id`、`duplicate_of_import_id`、`question_hash`。
 
-`npm --prefix admin-frontend run build` 因 Google Fonts 网络获取失败未完成，需后续复验。
+# 后续可选增强
 
-同步范围：
-
-- `docs/admin/README.md`
-- `docs/admin/PHASE_PLAN.md`
-- `docs/admin/ADMIN_API_SPEC.md`
-- `docs/admin/RBAC_RULES.md`
-- `docs/admin/DB_SCHEMA_ADMIN.md`
-- `docs/admin/AUDIT_LOG.md`
-- `docs/frontend/ADMIN_UI_RULES.md`
-- `docs/project/CHANGELOG.md`
-- `prompts/tasks/current-task.md`
-
-已同步要点：
-
-- 后端新增 `admin_ai_settings` / `admin_ai_usage_monthly` 模型与 Alembic migration `i0e1f2a3b4c5_add_admin_ai_settings.py`。
-- 新增 `/api/admin/v1/ai-settings` GET/PATCH 与 `/api/admin/v1/ai-settings/usage` GET。
-- 新增 `ai_setting:read` / `ai_setting:write` 权限，并在 bootstrap / migration 中 seed。
-- `create_import_enrich_task` 前通过 `ensure_ai_parse_allowed` 执行全局关闭与月度额度拦截。
-- `super_admin` 只绕过额度，不绕过全局关闭。
-- 前端新增独立 `/ai-settings` 页面和侧边栏入口。
-
-# 待同步内容
-
-- 需在可联网环境或完成字体本地化后复验 `npm --prefix admin-frontend run build`。
+- 实现一个可 dry-run、分批 commit、可重复运行的历史 `question_hash` 回填维护命令。
+- 在 admin-frontend 审核工作台和题库详情中展示疑似重复 badge、重复来源和 hash 摘要。

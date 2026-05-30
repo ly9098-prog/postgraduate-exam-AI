@@ -30,6 +30,9 @@ class _Result:
     def first(self):
         return self.rows[0] if self.rows else None
 
+    def scalar_one_or_none(self):
+        return self.values[0] if self.values else None
+
     def scalars(self):
         return _Scalars(self.values)
 
@@ -37,6 +40,9 @@ class _Result:
 class _Db:
     def __init__(self, imports=None):
         self.imports = imports or []
+
+    async def get(self, _model, _key):
+        return None
 
     async def scalar(self, statement):
         text = str(statement)
@@ -48,6 +54,8 @@ class _Db:
 
     async def execute(self, statement):
         text = str(statement)
+        if "admin_ai_settings" in text:
+            return _Result()
         if "GROUP BY" in text:
             rows = []
             for batch_id in sorted({item.batch_id for item in self.imports}):

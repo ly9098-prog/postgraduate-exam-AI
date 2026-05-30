@@ -48,7 +48,7 @@ def _make_mock_db():
     db.add = MagicMock()
     db.flush = AsyncMock()
     db.commit = AsyncMock()
-    db.execute = AsyncMock()
+    db.execute = AsyncMock(return_value=_make_execute_result(scalar_one_or_none=None))
     return db
 
 

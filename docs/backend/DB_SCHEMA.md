@@ -9,8 +9,8 @@
 | 表名 | 用途 | 核心字段 |
 |------|------|----------|
 | users | 用户信息 | openid (唯一) |
-| questions | 正式题目库 | subject, content(JSON), options(JSON) |
-| question_imports | 导入暂存区 | batch_id, status(pending/approved/rejected) |
+| questions | 正式题目库 | subject, content(JSON), options(JSON), question_hash |
+| question_imports | 导入暂存区 | batch_id, status(pending/approved/rejected), question_hash, duplicate_status |
 | wrong_questions | 错题记录 + SM-2 调度字段 | efactor, interval, repetitions, next_review_date |
 | practice_records | 练习记录（每题一条） | user_answer, is_correct, used_time |
 | answer_behaviors | 答题行为明细 | time_spent, switch_count, is_correct |
@@ -59,6 +59,7 @@ class Question(Base):
     content: dict              # JSON: {"text":"...", "images":["url"], "latex":"..."}
     options: dict?             # JSON: {"A":"...", "B":"..."}
     answer: str                # 标准答案（Text 类型，支持长答案）
+    question_hash: str?        # Level 1 完全重复检测 hash（MD5，32 位）
     analysis: str?             # 解析
     knowledge_points: list?    # JSON 数组: ["导数", "求导公式"]
     difficulty: int            # 1-5，默认 3
@@ -83,6 +84,7 @@ class Question(Base):
 | content | JSON | NOT NULL |
 | options | JSON | NULLABLE |
 | answer | Text | NOT NULL |
+| question_hash | String(32) | NULLABLE, INDEX；subject + question_hash 用于发布/审核通过阶段完全重复拦截 |
 | analysis | Text | NULLABLE |
 | knowledge_points | JSON | NULLABLE |
 | difficulty | SmallInteger | default=3 |
@@ -117,6 +119,10 @@ class QuestionImport(Base):
     parsed_options: dict?    # JSON: 结构化选项
     parsed_answer: str?      # 解析后答案
     parsed_analysis: str?    # 解析后解析
+    question_hash: str?      # Level 1 去重 hash（MD5，32 位）
+    duplicate_status: str    # normal / possible_duplicate
+    duplicate_of_question_id: int?  # 命中的正式题目 ID
+    duplicate_of_import_id: int?    # 命中的同批/暂存导入题 ID
     status: str          # pending / approved / rejected（索引）
     review_note: str?    # 审批备注
     question_id: int?    # 审批后关联的 question id
@@ -137,6 +143,10 @@ class QuestionImport(Base):
 | parsed_options | JSON | NULLABLE |
 | parsed_answer | Text | NULLABLE |
 | parsed_analysis | Text | NULLABLE |
+| question_hash | String(32) | NULLABLE, INDEX |
+| duplicate_status | String(32) | NOT NULL, default="normal", INDEX；`normal` / `possible_duplicate` |
+| duplicate_of_question_id | BigInteger | NULLABLE；命中的正式题目 ID |
+| duplicate_of_import_id | BigInteger | NULLABLE；命中的暂存导入题 ID |
 | status | String(16) | NOT NULL, default="pending", INDEX |
 | review_note | Text | NULLABLE |
 | question_id | BigInteger | NULLABLE |
@@ -358,6 +368,7 @@ class Tag(Base):
 - `knowledge_points` 用 JSON 数组（PG 中可建 GIN 索引）
 - 不拆选择题/填空题子表，用 `question_type` 区分
 - `source_type` + `source_file` + `import_batch_id` 三位一体追溯来源
+- Level 1 题库去重使用 `question_hash`：导入阶段只标记 `question_imports.duplicate_status`，发布/审核通过阶段按 `subject + question_hash` 完全匹配拦截，不自动删除历史题目
 - `raw_content` 保留导入原始文本
 - SM-2 字段直接挂在 `WrongQuestion` 表上，不拆独立调度表
 - 每次答题一条记录（`practice_records`），每题一条，支持多次作答

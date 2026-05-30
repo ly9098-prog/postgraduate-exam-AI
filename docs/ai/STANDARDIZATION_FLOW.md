@@ -19,8 +19,10 @@ questions 正式题库
 原则：
 
 - 单文件聚合，不再拆 service / helper / utils。
-- 不改数据库结构，不引入新 migration。
 - AI 生成的题目必须经过 question_imports，绝不直接进 questions。
+- Level 1 去重已落库：标准化后生成 `question_hash`，导入阶段只标记疑似重复，发布/审核通过阶段再做最终完全重复拦截。
+
+> 2026-05-30 更新原因：同步题库 Level 1 完全重复检测已实现字段与流程。
 
 ## 标准 Question Schema
 
@@ -112,24 +114,30 @@ Invalid question skipped: source_type=excel file=xxx.xlsx errors=['answer_empty'
 
 ## 去重策略
 
-去重在 service 层完成，不改数据库：
+Level 1 去重为“标准化内容 + Hash 完全匹配”，不做语义相似度判断：
 
-1. 清洗后的 stem 去空白计算 SHA256 短 hash。
-2. 审批入库前查询同 subject 现有题目。
-3. 比较 stem hash；hash 不同时再用 `difflib.SequenceMatcher` 检测相似题。
-4. 重复跳过并写日志：
+1. 对题干、选项、答案做规则标准化后生成 `question_hash`（MD5，32 位）。
+2. 导入写入 `question_imports` 时记录：
+   - `question_hash`
+   - `duplicate_status`：`normal` / `possible_duplicate`
+   - `duplicate_of_question_id`：命中的正式题目 ID
+   - `duplicate_of_import_id`：命中的暂存导入题 ID
+3. 导入阶段只标记不删除、不拒绝，避免 OCR / AI 解析误差导致误杀。
+4. 审核通过 / 发布写入 `questions` 前按 `subject + question_hash` 查询正式题库；命中完全相同 hash 时阻止发布，并返回重复题 ID。
+5. 正式题库 `questions.question_hash` 保存最终 hash，供后续导入和发布阶段复用。
 
-```text
-Duplicate question skipped: source=xxx.xlsx stem_hash=xxxx existing_id=12
-```
+日志格式统一使用 `[DuplicateCheck]`，记录题目/导入 ID、hash、检测结果和命中 ID。
+
+暂不实现：Embedding、AI 语义相似度、SimHash、Elasticsearch、向量数据库。
 
 ## 数据库兼容
 
-DB 字段保持不变：
+DB 兼容字段：
 
 - `Question.content = {"text": stem}`
 - `Question.options = {"A": "..."}`
 - `Question.answer = "A"` 或 `"A,C"`
+- `Question.question_hash = "<md5>"`（用于完全重复检测）
 - `Question.question_type` 为 canonical 值
 
 `question_imports` 仍使用 `parsed_content` / `parsed_options` / `parsed_answer`
