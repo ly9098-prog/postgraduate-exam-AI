@@ -17,6 +17,7 @@ import {
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { StatusBadge } from "@/components/status-badge";
 import { apiRequest } from "@/lib/api/client";
+import { useAuthStore } from "@/lib/auth/auth-store";
 import type { DashboardDailyPoint, DashboardOverview, DashboardQuestionStats } from "@/lib/api/types";
 
 const COLORS = ["#5b7b9a", "#6b9b6b", "#c49a6b", "#c47a7a", "#9aabba"];
@@ -32,9 +33,25 @@ function toPieData(input?: DashboardQuestionStats["by_review_status"]) {
 }
 
 export default function DashboardPage() {
-  const overview = useQuery({ queryKey: ["dashboard", "overview"], queryFn: () => apiRequest<DashboardOverview>("/dashboard/overview") });
-  const daily = useQuery({ queryKey: ["dashboard", "daily"], queryFn: () => apiRequest<DashboardDailyPoint[]>("/dashboard/daily") });
-  const stats = useQuery({ queryKey: ["dashboard", "questions-stats"], queryFn: () => apiRequest<DashboardQuestionStats>("/dashboard/questions-stats") });
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isBootstrapping = useAuthStore((state) => state.isBootstrapping);
+  const canRequestDashboard = isAuthenticated && !isBootstrapping;
+
+  const overview = useQuery({
+    queryKey: ["dashboard", "overview"],
+    queryFn: () => apiRequest<DashboardOverview>("/dashboard/overview"),
+    enabled: canRequestDashboard,
+  });
+  const daily = useQuery({
+    queryKey: ["dashboard", "daily"],
+    queryFn: () => apiRequest<DashboardDailyPoint[]>("/dashboard/daily"),
+    enabled: canRequestDashboard,
+  });
+  const stats = useQuery({
+    queryKey: ["dashboard", "questions-stats"],
+    queryFn: () => apiRequest<DashboardQuestionStats>("/dashboard/questions-stats"),
+    enabled: canRequestDashboard,
+  });
   const pieData = toPieData(stats.data?.by_review_status);
 
   const cards = [
