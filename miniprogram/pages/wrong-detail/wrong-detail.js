@@ -1,4 +1,5 @@
 const api = require('../../utils/api')
+const config = require('../../config')
 
 // 将纯文本（可能含 $...$ LaTeX）转为 mp-html 可接受的 HTML 字符串。
 // $...$ 内部保持原样，外部普通文本做 HTML 转义，换行转 <br>。
@@ -16,12 +17,158 @@ function _textToHtml(text) {
   return '<p>' + out.join('') + '</p>'
 }
 
+function _needsRichRender(text) {
+  if (!text) return false
+  return /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/.test(text) || /<\/?[a-z][\s\S]*>/i.test(text)
+}
+
+function _deduplicateLines(text) {
+  if (!text) return text
+  const lines = text.split('\n')
+  const out = []
+  for (let i = 0; i < lines.length; i++) {
+    if (i === 0 || lines[i].trim() !== lines[i - 1].trim()) out.push(lines[i])
+  }
+  return out.join('\n')
+}
+
+function _escapeRegExp(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function _normalizeOptionText(text) {
+  return String(text || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function _buildOptionPattern(key, value) {
+  const label = _escapeRegExp(String(key || '').trim())
+  const normalizedValue = _normalizeOptionText(value)
+  if (!label || !normalizedValue) return ''
+
+  const spaces = '[\\s\\u00A0]*'
+  const separator = '[.．、:：）)]'
+  const valuePattern = _escapeRegExp(normalizedValue).replace(/\s+/g, '[\\s\\u00A0]+')
+  return `${label}${spaces}${separator}${spaces}${valuePattern}`
+}
+
+function _stripEmbeddedOptionBlock(stemText, options) {
+  if (!stemText || !options) return stemText
+  const patterns = Object.keys(options)
+    .sort()
+    .map((key) => _buildOptionPattern(key, options[key]))
+    .filter(Boolean)
+
+  if (patterns.length < 2) return stemText
+
+  const gap = '(?:\\s|<br>|\\n|\\r|&nbsp;)*'
+  const blockRegex = new RegExp(`${gap}${patterns.join(gap)}\\s*$`, 'i')
+  return blockRegex.test(stemText) ? stemText.replace(blockRegex, '').trim() : stemText
+}
+
+function _findOptionLabelMatches(text, optionKeys) {
+  if (!text || !optionKeys || optionKeys.length < 2) return []
+  const labels = optionKeys.map(_escapeRegExp).join('|')
+  const labelMarker = `(?:^|[\\s\\n\\r])(?:${labels})[\\s\\u00A0]*[.．、:：）)]`
+  const labelRegex = new RegExp(labelMarker, 'g')
+  const matches = []
+  let match
+  while ((match = labelRegex.exec(text)) !== null) {
+    const index = match.index + (match[0].match(/^[\s\n\r]/) ? 1 : 0)
+    matches.push(index)
+  }
+  return matches
+}
+
+function _hasTrailingOptionBlock(text, optionKeys) {
+  if (!text || !optionKeys || optionKeys.length < 2) return false
+  const keys = optionKeys.map(key => String(key || '').trim()).filter(Boolean)
+  if (keys.length < 2) return false
+
+  const spaces = '[\\s\\u00A0]*'
+  const separator = '[.．、:：）)]'
+  const marker = (key, prefix) => `${prefix}${_escapeRegExp(key)}${spaces}${separator}`
+  const first = marker(keys[0], '^' + spaces)
+  const second = marker(keys[1], '[\\s\\n\\r]+')
+  const required = new RegExp(first + '[\\s\\S]+?' + second, 'i')
+  if (!required.test(text)) return false
+
+  const labels = keys.map(_escapeRegExp).join('|')
+  const labelRegex = new RegExp(`(?:^|[\\s\\n\\r])(?:${labels})${spaces}${separator}`, 'g')
+  const found = []
+  let match
+  while ((match = labelRegex.exec(text)) !== null) {
+    found.push(String(match[0]).replace(/^[\\s\\n\\r]+/, '').charAt(0).toUpperCase())
+  }
+  if (found.length < 2) return false
+  return found[0] === keys[0].toUpperCase() && found[1] === keys[1].toUpperCase()
+}
+
+function _stripTrailingOptionBlockByLabels(stemText, optionKeys) {
+  if (!stemText || !optionKeys || optionKeys.length < 2) return stemText
+  const matches = _findOptionLabelMatches(stemText, optionKeys)
+
+  if (matches.length < 2) return stemText
+
+  for (const index of matches) {
+    const suffix = stemText.slice(index)
+    if (_hasTrailingOptionBlock(suffix, optionKeys)) return stemText.slice(0, index).trim()
+  }
+
+  return stemText
+}
+
+function _removeTrailingOptionKeys(text, optionKeys) {
+  if (!text || !optionKeys || optionKeys.length === 0) return text
+  const keys = optionKeys.map(_escapeRegExp).join('')
+  const pattern = new RegExp('\\s+[' + keys + ']\\s*$', 'g')
+  return text.replace(pattern, '')
+}
+
+function _segmentsToText(segments) {
+  if (!Array.isArray(segments)) return ''
+  return segments.map((seg) => {
+    if (!seg) return ''
+    if (seg.type === 'text' || seg.type === 'newline') return seg.text || ''
+    return seg.alt ? `$${seg.alt}$` : ''
+  }).join('')
+}
+
+function _textToSegments(text) {
+  if (!text) return []
+  const lines = String(text).split('\n')
+  const segments = []
+  lines.forEach((line, index) => {
+    if (line) segments.push({ type: 'text', text: line })
+    if (index < lines.length - 1) segments.push({ type: 'newline' })
+  })
+  return segments
+}
+
+function _cleanStemText(stemText, options, optionKeys) {
+  const dedupedStem = _deduplicateLines(stemText)
+  const withoutExactOptions = _stripEmbeddedOptionBlock(dedupedStem, options)
+  const withoutLabelOptions = _stripTrailingOptionBlockByLabels(withoutExactOptions, optionKeys)
+  return _removeTrailingOptionKeys(withoutLabelOptions, optionKeys)
+}
+
+function _optionTextToHtml(value) {
+  return _textToHtml(String(value || '').trim())
+}
+
 Page({
   data: {
     wq: null,
     optionKeys: [],
     stemHtml: '',
-    optHtml: {},
+    optionItems: [],
+    stemText: '',
+    stemNeedsRich: false,
+    stemSegments: [],
+    enableMathImage: false,
     aiResult: null,
     aiLoading: false,
     aiFallback: false,
@@ -29,6 +176,7 @@ Page({
   },
 
   onLoad(options) {
+    this.setData({ enableMathImage: config.enableMathImage || false })
     this.loadData(options.id)
   },
 
@@ -38,13 +186,28 @@ Page({
       const wq = await api.get(`/wrong-questions/${wqId}`)
       if (!wq) throw new Error('not found')
 
-      const optionKeys = wq.options ? Object.keys(wq.options) : []
-      const stemHtml = _textToHtml((wq.content && wq.content.text) || '')
-      const optHtml = {}
-      for (const k of optionKeys) {
-        optHtml[k] = _textToHtml(wq.options[k] || '')
-      }
-      this.setData({ wq, optionKeys, stemHtml, optHtml, loading: false })
+      const opts = wq.options || null
+      const optionKeys = opts ? Object.keys(opts) : []
+      const sourceStemText = (wq.content && (wq.content.text || wq.content.stem)) || (wq.content && _segmentsToText(wq.content.segments)) || ''
+      const stemText = _cleanStemText(sourceStemText, opts, optionKeys)
+      const stemNeedsRich = _needsRichRender(stemText)
+      const stemHtml = stemNeedsRich ? _textToHtml(stemText) : ''
+      const stemSegments = (wq.content && wq.content.render_mode === 'segments') ? _textToSegments(stemText) : []
+      const optionItems = optionKeys.map((key) => {
+        const text = (opts && opts[key]) || ''
+        const needsRich = _needsRichRender(text)
+        const className = `option-value ${key === wq.answer ? 'right' : ''} ${key === wq.wrong_answer ? 'wrong' : ''}`
+        return {
+          key,
+          text,
+          html: needsRich ? _optionTextToHtml(text) : '',
+          needsRich,
+          className,
+        }
+      })
+      const subjectLabelText = this.subjectLabel(wq.subject)
+      const errorTypeLabelText = this.errorTypeLabel(wq.error_type)
+      this.setData({ wq, subjectLabelText, errorTypeLabelText, optionKeys, optionItems, stemText, stemNeedsRich, stemHtml, stemSegments, loading: false })
       this.loadAiAnalysis(wqId)
     } catch (e) {
       console.error('加载错题详情失败', e)
