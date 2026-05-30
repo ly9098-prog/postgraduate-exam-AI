@@ -1,4 +1,5 @@
 const api = require('../../utils/api')
+const auth = require('../../utils/auth')
 
 Page({
   data: {
@@ -26,6 +27,10 @@ Page({
   },
 
   onLoad(options) {
+    if (!auth.requireAdminAccess()) {
+      wx.redirectTo({ url: '/pages/home/home' })
+      return
+    }
     this.batchId = options.batchId
     this.loadBatch()
   },

@@ -38,51 +38,9 @@
       <text class="sm2-label">复习 {{wq.review_count}} 次 | EF {{wq.efactor}} | 间隔 {{wq.interval || 0}} 天</text>
     </view>
 
-    <button class="btn-primary" style="margin-top:24rpx" bindtap="markMastered" wx:if="{{!wq.mastered && !rated}}">
+    <button class="btn-primary" style="margin-top:24rpx" bindtap="markMastered" wx:if="{{!wq.mastered}}">
       标记已掌握
     </button>
-  </view>
-
-  <!-- SM-2 质量评分 -->
-  <view class="card rating-card" wx:if="{{showRating && !rated}}">
-    <view class="section-title">📊 自我评分：记得怎么样？</view>
-
-    <view class="rating-options">
-      <view
-        wx:for="{{[0,1,2,3,4,5]}}"
-        wx:key="*this"
-        class="rating-btn {{rating === item ? 'rating-active' : ''}}"
-        bindtap="selectRating"
-        data-value="{{item}}"
-      >
-        <text class="rating-num">{{item}}</text>
-        <text class="rating-label">{{ratingLabel(item)}}</text>
-      </view>
-    </view>
-
-    <view class="rating-desc" wx:if="{{rating >= 0}}">
-      <text wx:if="{{rating < 3}}" style="color:#e74c3c">未通过 — 需要重新复习</text>
-      <text wx:if="{{rating >= 3}}" style="color:#27ae60">通过 — 下次间隔会更长</text>
-    </view>
-
-    <button
-      class="btn-primary"
-      style="margin-top:20rpx"
-      bindtap="submitRating"
-      disabled="{{rating < 0}}"
-      loading="{{submittingRating}}"
-    >
-      提交评分
-    </button>
-  </view>
-
-  <!-- 评分完成 -->
-  <view class="card" wx:if="{{rated}}">
-    <view class="section-title">✅ 评分完成</view>
-    <view class="rating-result">
-      <text wx:if="{{wq.mastered}}">🎉 已标记为掌握</text>
-      <text wx:else>下次复习日期：{{nextReviewDate || wq.next_review_date || '已安排'}}</text>
-    </view>
   </view>
 
   <!-- AI 分析 -->

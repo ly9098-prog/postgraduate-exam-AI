@@ -17,10 +17,10 @@ export function Sidebar() {
     <aside className="hidden min-h-screen w-72 shrink-0 border-r border-[var(--color-border)] bg-[rgba(255,253,248,0.82)] px-5 py-6 backdrop-blur-xl lg:block">
       <Link href="/dashboard" className="mb-8 flex items-center gap-3">
         <div className="grid h-12 w-12 place-items-center rounded-2xl border border-[var(--color-primary)] bg-[var(--color-primary)] font-display text-xl font-black text-white shadow-[var(--shadow-crisp)]">
-          24
+          MG
         </div>
         <div>
-          <div className="font-display text-xl font-bold tracking-tight text-[var(--ink)]">2240AI</div>
+          <div className="font-display text-xl font-bold tracking-tight text-[var(--ink)]">MemoGrad</div>
           <div className="font-mono text-xs uppercase tracking-[0.28em] text-[var(--color-text-hint)]">Admin Lab</div>
         </div>
       </Link>

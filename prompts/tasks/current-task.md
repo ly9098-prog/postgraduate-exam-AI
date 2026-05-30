@@ -1,18 +1,41 @@
-当前任务（2026-05-30）：Level 1 题目完全重复检测已完成，收尾评估已完成。
+# UI与功能优化需求
 
-已完成：
+## 小程序前端
 
-- 标准化题干、选项、答案后生成 `question_hash`（MD5，32 位）。
-- `questions` 新增 `question_hash`；`question_imports` 新增 `question_hash`、`duplicate_status`、`duplicate_of_question_id`、`duplicate_of_import_id`。
-- 导入阶段只标记重复，不删除、不拒绝导入。
-- 发布 / 审核通过阶段按 `subject + question_hash` 做最终重复拦截，命中时阻止重复题写入正式题库。
-- 审核队列、导入批次详情和 admin import schema 已返回重复检测字段。
-- 启动 schema repair 与 Alembic migration 已补齐。
-- 后端回归通过：`PYTHONPATH=/home/lmh/projects/postgraduate-ai/backend pytest /home/lmh/projects/postgraduate-ai/backend/tests -q --tb=short -x`，699 passed。
-- 历史题目 `question_hash` 回填方案已评估：不放入启动 repair，不放入复杂 Alembic 数据迁移；建议后续用幂等的 admin/maintenance 脚本或服务手动执行，只填充空 `question_hash`，不覆盖、不删除、不合并历史题。
-- 前端展示缺口已评估：管理端审核页 / 题库页当前未消费重复检测字段；如要增强展示，应对接 `duplicate_status`、`duplicate_of_question_id`、`duplicate_of_import_id`、`question_hash`。
+### 1. 错题分析优化
 
-# 后续可选增强
+- 移除“自我评分”选项，仅基于用户实际答题数据进行错题分析。
+- AI分析结果中过长的“错误原因”内容需进行精简和提炼，突出核心问题与改进建议，避免冗长输出。
 
-- 实现一个可 dry-run、分批 commit、可重复运行的历史 `question_hash` 回填维护命令。
-- 在 admin-frontend 审核工作台和题库详情中展示疑似重复 badge、重复来源和 hash 摘要。
+### 2. 刷题页面优化
+
+- 修复题目切换时底部导航圆点状态未同步更新的问题，确保当前题目索引能够正确反映在导航指示器中。
+
+### 3. 权限控制优化
+
+- “导入题目”页面仅对管理员角色开放。
+- 普通用户登录后应隐藏相关入口，禁止访问题目导入功能。
+
+### 4. 数据可视化优化
+
+- 首页“错题分布”模块由当前展示方式调整为饼图（扇形图）展示。
+- 图表需清晰标注各学科对应占比，并提供图例说明。
+
+------
+
+## 后台管理系统前端
+
+### 1. 品牌信息修正
+
+- 登录后的后台页面左上角 Logo 名称统一修改为 **MemoGrad**。
+- 移除当前显示的“2240AI”相关文案。
+
+### 2. 管理员创建功能排查
+
+- 检查“创建管理员”功能无响应的问题。
+- 验证前后端接口是否已实现、是否正确对接，以及接口权限配置是否正常。
+
+### 3. 角色选择功能修复
+
+- 修复创建管理员表单中“角色”下拉框无可选项的问题。
+- 检查角色列表接口、数据加载逻辑及权限配置，确保可正常获取并展示角色选项。

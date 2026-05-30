@@ -1,4 +1,5 @@
 const api = require('../../utils/api')
+const auth = require('../../utils/auth')
 const config = require('../../config')
 
 Page({
@@ -9,11 +10,14 @@ Page({
   },
 
   onLoad() {
-    // 页面初始化
+    if (!auth.requireAdminAccess()) {
+      wx.redirectTo({ url: '/pages/home/home' })
+    }
   },
 
   onShow() {
     try {
+      if (!auth.isAdmin()) return
       this.loadBatches()
     } catch (e) {
       console.error('import page onShow error:', e)
