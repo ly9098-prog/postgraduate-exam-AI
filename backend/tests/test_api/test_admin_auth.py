@@ -39,10 +39,12 @@ def _admin_user(password="old-password"):
 def test_admin_login_success(monkeypatch):
     user = _admin_user()
     role = _role()
+    permissions = ["dashboard:read"]
     token = create_admin_token(user)
+    refresh_token = "refresh-token"
 
     monkeypatch.setattr(admin_auth, "authenticate_admin", AsyncMock(return_value=user))
-    monkeypatch.setattr(admin_auth, "build_admin_login_response", AsyncMock(return_value=(token, user, role)))
+    monkeypatch.setattr(admin_auth, "build_admin_login_response", AsyncMock(return_value=(token, refresh_token, user, role, permissions)))
     app.dependency_overrides[get_db] = _override_db
     try:
         resp = client.post("/api/admin/v1/auth/login", json={"username": "admin", "password": "old-password"})
@@ -55,6 +57,8 @@ def test_admin_login_success(monkeypatch):
     assert data["token_type"] == "bearer"
     assert data["user"]["username"] == "admin"
     assert data["role"]["name"] == "super_admin"
+    assert data["permissions"] == permissions
+    assert resp.cookies.get("admin_refresh_token") == refresh_token
     assert user.last_login_at is not None
     assert user.last_login_ip == "testclient"
 
@@ -81,20 +85,27 @@ def test_admin_me_rejects_app_token():
     assert resp.status_code == 401
 
 
-def test_admin_me_returns_current_admin():
+def test_admin_me_returns_current_admin(monkeypatch):
     user = _admin_user()
+    role = _role()
+    permissions = ["dashboard:read"]
 
     async def override_current_admin():
         return AdminPrincipal(user, {"jti": "token-id", "exp": 4102444800})
 
+    monkeypatch.setattr(admin_auth, "get_admin_me_response", AsyncMock(return_value={"user": user, "role": role, "permissions": permissions}))
     app.dependency_overrides[admin_auth.get_current_admin] = override_current_admin
+    app.dependency_overrides[get_db] = _override_db
     try:
         resp = client.get("/api/admin/v1/auth/me")
     finally:
         app.dependency_overrides.pop(admin_auth.get_current_admin, None)
+        app.dependency_overrides.pop(get_db, None)
 
     assert resp.status_code == 200
-    assert resp.json() == {"id": 1, "username": "admin", "roleId": 1, "isActive": True}
+    assert resp.json()["user"]["username"] == "admin"
+    assert resp.json()["role"]["name"] == "super_admin"
+    assert resp.json()["permissions"] == permissions
 
 
 def test_admin_logout_blacklists_token(monkeypatch):
