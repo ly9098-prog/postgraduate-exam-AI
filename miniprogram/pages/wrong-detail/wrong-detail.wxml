@@ -7,21 +7,29 @@
   <!-- 题目信息 -->
   <view class="card">
     <view class="detail-header">
-      <text class="subject-tag">{{subjectLabel(wq.subject)}}</text>
-      <text class="error-type-tag">{{errorTypeLabel(wq.error_type)}}</text>
+      <text class="subject-tag">{{subjectLabelText}}</text>
+      <text class="error-type-tag">{{errorTypeLabelText}}</text>
       <text wx:if="{{wq.mastered}}" class="tag tag-success">已掌握</text>
     </view>
 
-    <mp-html class="q-text" content="{{stemHtml}}" lazy-load></mp-html>
+    <block wx:if="{{enableMathImage && stemSegments.length > 0}}">
+      <math-question segments="{{stemSegments}}" />
+    </block>
+    <block wx:elif="{{stemNeedsRich}}">
+      <mp-html class="q-text" content="{{stemHtml}}" lazy-load></mp-html>
+    </block>
+    <text wx:else class="q-text">{{stemText}}</text>
 
-    <view wx:if="{{wq.options}}" class="options-list">
-      <view wx:for="{{optionKeys}}" wx:key="*this" class="option-line">
-        <text class="option-key">{{item}}.</text>
+    <view wx:if="{{optionItems.length > 0}}" class="options-list">
+      <view wx:for="{{optionItems}}" wx:key="key" class="option-line">
+        <text class="option-key">{{item.key}}.</text>
         <mp-html
-          content="{{optHtml[item]}}"
-          class="option-value {{item === wq.answer ? 'right' : ''}} {{item === wq.wrong_answer ? 'wrong' : ''}}"
+          wx:if="{{item.needsRich}}"
+          content="{{item.html}}"
+          class="{{item.className}}"
           style="display:inline-block"
         ></mp-html>
+        <text wx:else class="{{item.className}}">{{item.text}}</text>
       </view>
     </view>
 
