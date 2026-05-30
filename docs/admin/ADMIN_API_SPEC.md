@@ -1,9 +1,9 @@
 # Admin API 规范
 
-> 版本：v2.2（Phase 5 后端完成同步版） | 状态：Phase 5 后端已完成 | 更新：2026-05-29
+> 版本：v2.3（Phase 7 AI 设置接口同步版） | 状态：Phase 7 后端已完成 | 更新：2026-05-30
 > 修订自审计报告 I8（统一 Stripe 风格）、I10（liveness/readiness）、C1（拆分 app-users 与 admin-users）
 >
-> - **变更原因**：2026-05-29 同步 Admin Backend Phase 5 已完成的审计日志查询与 Dashboard 统计接口实现，补充实际查询参数、响应字段、缓存 key、TTL 抖动、防穿透锁和未实现的主动刷新 cron。
+> - **变更原因**：2026-05-30 同步 Phase 7 新增 AI 解析设置与月度用量接口、权限要求和导入 enrich 前置拦截语义。
 
 ---
 
@@ -169,7 +169,7 @@ POST   /v1/auth/refresh
 |------|------|------|------|
 | GET | `/imports` | 导入批次列表 | import:read |
 | GET | `/imports/{batchId}` | 批次详情（含题目分页） | import:read |
-| POST | `/imports/{batchId}/enrich` | 创建 AI 辅助处理任务（当前仅创建 pending 任务状态与审计日志） | import:write |
+| POST | `/imports/{batchId}/enrich` | 创建 AI 辅助处理任务（创建前检查全局 AI 开关与月度额度） | import:write |
 | GET | `/imports/{batchId}/status` | 读取该批次最新 AI 任务进度（Redis/cache） | import:read |
 
 **查询参数（Phase 4 实现，2026-05-29）**：
@@ -185,10 +185,10 @@ POST   /v1/auth/refresh
 **状态码与副作用**：
 - `404`：批次不存在，或该批次没有可查询的 AI 任务状态。
 - `422`：请求参数或业务规则不满足。
-- `POST /imports/{batchId}/enrich` 写入 `admin:ai:task:{taskId}` 与 `admin:ai:batch:{batchId}:task`，TTL 当前为 86400 秒，并写入 `import.enrich` 审计日志。
+- `POST /imports/{batchId}/enrich` 写入 `admin:ai:task:{taskId}` 与 `admin:ai:batch:{batchId}:task`，TTL 当前为 86400 秒，并写入 `import.enrich` 审计日志；创建前受 AI 设置服务的全局开关与月度额度拦截。
 
 **`/imports/{batchId}/enrich` 约束**：
-- 当前实现仅创建 pending 任务状态与审计日志；实际 AI worker / OCR 处理链路仍需后续确认。
+- 当前实现仍通过后台任务状态承载 AI 辅助处理；不得直接调用小程序端 API。
 - 不得直接调用小程序端 API；如需复用 AI/OCR 逻辑，必须先确认 service/worker 边界。
 - AI/OCR 结果只能作为辅助任务状态或待确认字段，AI 失败只更新任务为 `failed`，不得影响 `question_imports` 人工确认流程。
 - 不得绕过 `question_imports + 人工确认` 直接写入 `questions`。
@@ -282,6 +282,32 @@ POST   /v1/auth/refresh
 **实现备注**：
 - `overview` 使用 `admin:dashboard:overview` 缓存键、`admin:dashboard:overview:lock` 防穿透锁，Redis 不可用时直接查 DB
 - 当前实现为请求触发缓存 + 锁，不依赖 BullMQ 主动刷新
+
+### 3.12 AI 解析设置 `/ai-settings`（Phase 7 实现，2026-05-30）
+
+| 方法 | 路径 | 描述 | 权限 |
+|------|------|------|------|
+| GET | `/ai-settings` | 查看全局 AI 解析设置 | ai_setting:read |
+| PATCH | `/ai-settings` | 更新 AI 解析开关或月度调用额度 | ai_setting:write |
+| GET | `/ai-settings/usage` | 查看当前或指定月份 AI 用量 | ai_setting:read |
+
+**查询参数**：
+- `GET /ai-settings/usage`：`yearMonth`（可选，格式 `YYYY-MM`；不传时返回当前月）。
+
+**设置字段（摘要）**：
+- `ai_parse_enabled`：全局 AI 解析开关。
+- `monthly_call_limit`：月度全局 API 调用额度；`0` 表示不限。
+- `current_usage`：当前月用量快照。
+- `remaining_calls`：剩余调用次数；不限额度时为 `null`。
+- `updated_at`、`updated_by`：最近更新时间与操作者。
+
+**用量字段（摘要）**：
+- `year_month`、`call_count`、`limit_snapshot`、`created_at`、`updated_at`。
+
+**与导入 enrich 的关系**：
+- `POST /imports/{batchId}/enrich` 创建任务前会执行 `ensure_ai_parse_allowed`。
+- 全局关闭时所有管理员均被拦截；`super_admin` 不绕过全局关闭。
+- 月度额度超限时普通管理员被拦截；`super_admin` 仅绕过额度限制。
 
 ---
 

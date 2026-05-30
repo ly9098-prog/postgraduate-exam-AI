@@ -130,6 +130,26 @@ class Subject(Base):
     children: Mapped[list["Subject"]] = relationship(back_populates="parent")
 
 
+class AdminAISettings(Base):
+    __tablename__ = "admin_ai_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ai_parse_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    monthly_call_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class AdminAIUsageMonthly(Base):
+    __tablename__ = "admin_ai_usage_monthly"
+
+    year_month: Mapped[str] = mapped_column(String(7), primary_key=True)
+    call_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    limit_snapshot: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class QuestionVersion(Base):
     __tablename__ = "question_versions"
     __table_args__ = (UniqueConstraint("question_id", "version", name="uq_question_versions_question_version"),)

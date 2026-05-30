@@ -1,6 +1,6 @@
 # 审计日志规范（Audit Log）
 
-> 版本：v2.0（审计修订版） | 状态：可启动开发 | 更新：2026-05-26
+> 版本：v2.1（审计修订版） | 状态：Phase 7 AI 设置审计同步 | 更新：2026-05-30
 > 修订自审计报告 C5（分级写入策略）、I7（分区与归档）
 > **取代旧文档 OPERATION_LOG.md**
 
@@ -177,6 +177,12 @@ subject.delete            # critical
 
 # 导入
 import.enrich             # normal（触发 AI 解析任务）
+
+# AI 设置
+ai_setting.update         # important（更新全局开关或月度调用额度）
+ai_setting.disable        # important（关闭全局 AI 解析业务熔断）
+ai_quota.exhausted        # normal（月度额度拦截 AI 解析任务）
+ai_parse.blocked          # normal（全局关闭拦截 AI 解析任务）
 
 # 系统（操作者为 null）
 system.init_super_admin             # critical

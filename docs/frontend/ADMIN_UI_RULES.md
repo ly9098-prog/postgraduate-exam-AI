@@ -1,7 +1,7 @@
 # Admin UI Rules
 
-> 版本：v1.1（Phase 6 前端完成同步版） | 状态：Phase 6 主要前端已完成 | 更新：2026-05-30
-> 变更原因：同步 `admin-frontend` Next.js Admin Dashboard 主要实现、页面范围、仅消费 `/api/admin/v1` 的边界、audit-log 参数别名修复，以及 lint/build 验证结果。
+> 版本：v1.2（Phase 7 AI 设置页面同步版） | 状态：Phase 7 前端入口已完成 | 更新：2026-05-30
+> 变更原因：同步 `admin-frontend` 新增 `/ai-settings` 独立页面、侧边栏入口、权限门禁、AI 解析开关/月度额度/月度用量展示，以及 build 网络阻塞验证结果。
 
 ---
 
@@ -39,7 +39,7 @@
 
 - Admin Shell 负责会话 bootstrap；未完成 bootstrap 时展示轻量加载态，未认证时不渲染业务页面。
 - 侧边栏必须基于当前 `permissions` 动态显示菜单；隐藏仅用于体验，不能替代后端 RBAC。
-- 菜单最少覆盖：Dashboard、小程序用户、管理员、题库、审核工作台、角色权限、审计日志。
+- 菜单最少覆盖：Dashboard、小程序用户、管理员、题库、审核工作台、角色权限、审计日志、AI 设置。
 - 顶部栏展示当前 admin 用户、角色、登出入口；如实现改密入口，必须走 `/auth/change-password` 并触发旧 token 失效语义。
 - 桌面端优先；Phase 6 不要求移动端适配，但窄屏下不得阻断核心登录与登出。
 
@@ -115,7 +115,18 @@
 
 ---
 
-## 11. 危险操作二次确认
+## 11. AI 设置
+
+- AI 设置页路径为 `/ai-settings`，侧边栏入口按 `ai_setting:read` 权限展示。
+- 页面消费 `/api/admin/v1/ai-settings` 与 `/api/admin/v1/ai-settings/usage`。
+- 页面展示全局 AI 解析开关、月度全局 API 调用额度、当月已用调用量、剩余额度与 `year_month` 月度维度。
+- 更新设置必须要求 `ai_setting:write`，提交前应提示全局关闭会阻止所有管理员触发 AI 解析。
+- 月度额度说明必须明确：`super_admin` 只绕过额度，不绕过全局关闭。
+- 前端不得绕过设置页直接触发 `/imports/{batchId}/enrich`；后端 `ensure_ai_parse_allowed` 是最终拦截来源。
+
+---
+
+## 12. 危险操作二次确认
 
 以下操作必须二次确认：
 
@@ -129,7 +140,7 @@
 
 ---
 
-## 12. 加载、错误与空状态
+## 13. 加载、错误与空状态
 
 - 列表页首次加载展示 skeleton 或轻量 loading；分页/筛选加载不得清空已有上下文导致闪烁。
 - 空列表使用明确文案，例如“暂无题目”“暂无审计日志”。
@@ -139,13 +150,24 @@
 
 ---
 
-## 13. Phase 6 实现同步（2026-05-30）
+## 14. Phase 6 实现同步（2026-05-30）
 
 - `admin-frontend` 已完成主要页面：`/dashboard`、`/login`、`/app-users`、`/admin-users`、`/questions`、`/review`、`/roles`、`/audit-logs`。
 - 前端仅消费 `/api/admin/v1`，Phase 6 未修改后端 API、DB schema 或权限语义。
 - audit-log 查询参数已同步为后端当前别名：`pageSize`、`resourceType`、`from`、`to`。
 - 已通过 `npm --prefix admin-frontend run lint` 与 `npm --prefix admin-frontend run build`。
 
+---
+
+## 15. Phase 7 实现同步（2026-05-30）
+
+- `admin-frontend` 已新增 `/ai-settings` 页面和侧边栏入口。
+- AI 设置页已对接全局开关、月度全局 API 调用额度与当前月用量展示。
+- 权限入口按 `ai_setting:read` / `ai_setting:write` 控制；后端 RBAC 仍为最终授权来源。
+- 已通过 `npm --prefix admin-frontend run lint`。
+- `npm --prefix admin-frontend run build` 因 Google Fonts 网络获取失败未完成，需后续在可联网环境或字体本地化后复验。
+
 # 待同步内容
 
 - 需联调确认题目版本 diff 高亮是否已达到最终验收预期；若后端版本对比字段不足，应记录为后续 API/UI 联调项，而不是在前端伪造数据。
+- 需在可联网环境或完成字体本地化后复验 `npm --prefix admin-frontend run build`。
