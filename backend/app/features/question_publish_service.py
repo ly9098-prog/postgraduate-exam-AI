@@ -7,6 +7,7 @@ from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from app.features.question_pipeline import (
     _get_qi,
@@ -30,9 +31,28 @@ MAX_BATCH_SIZE = 100
 
 async def _migrate_old_approved(db: AsyncSession) -> int:
     """将旧版 approve 流程中仅改状态但未写入 questions 表的记录补发布。"""
+    migrate_columns = [
+        QuestionImport.id,
+        QuestionImport.status,
+        QuestionImport.question_id,
+        QuestionImport.batch_id,
+        QuestionImport.source_type,
+        QuestionImport.source_file,
+        QuestionImport.subject,
+        QuestionImport.question_type,
+        QuestionImport.raw_data,
+        QuestionImport.parsed_content,
+        QuestionImport.parsed_options,
+        QuestionImport.parsed_answer,
+        QuestionImport.parsed_analysis,
+        QuestionImport.ai_metadata,
+    ]
+
     # 1. 已有 question_id 的，只更新状态标记
     result = await db.execute(
-        select(QuestionImport).where(
+        select(QuestionImport)
+        .options(load_only(*migrate_columns))
+        .where(
             QuestionImport.status == "approved",
             QuestionImport.question_id.isnot(None),
         )
@@ -44,7 +64,9 @@ async def _migrate_old_approved(db: AsyncSession) -> int:
 
     # 2. question_id 为空的旧 approved 记录，补写入 questions 表
     result2 = await db.execute(
-        select(QuestionImport).where(
+        select(QuestionImport)
+        .options(load_only(*migrate_columns))
+        .where(
             QuestionImport.status == "approved",
             QuestionImport.question_id.is_(None),
         )

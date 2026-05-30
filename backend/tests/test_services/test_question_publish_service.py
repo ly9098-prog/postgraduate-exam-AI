@@ -133,6 +133,21 @@ class TestMigrateOldApproved:
         count = asyncio.run(_migrate_old_approved(db))
 
         assert count == 0
+    def test_migration_queries_only_required_columns(self):
+        db = _make_mock_db()
+        db.execute.side_effect = [
+            _make_execute_result(scalars=[]),  # has question_id
+            _make_execute_result(scalars=[]),  # orphans
+        ]
+
+        count = asyncio.run(_migrate_old_approved(db))
+
+        assert count == 0
+        for call in db.execute.call_args_list:
+            query_text = str(call.args[0])
+            assert "reject_reason" not in query_text
+            assert "reviewed_by" not in query_text
+            assert "reviewed_at" not in query_text
 
 
 # --- publish_single_question ---

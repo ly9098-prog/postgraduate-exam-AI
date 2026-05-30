@@ -33,6 +33,7 @@ from app.core.config import settings
 from app.core.database import init_db
 from app.core.logging_config import setup_logging
 from app.core.sentry import init_sentry
+from app.services.admin_bootstrap_service import ensure_dev_super_admin
 
 setup_logging()
 init_sentry()
@@ -45,6 +46,15 @@ async def lifespan(app: FastAPI):
     logger.info("Starting 2240AI — env=%s", settings.APP_ENV)
     os.makedirs("static/formulas", exist_ok=True)
     await init_db()
+    try:
+        from app.core.database import async_session
+        async with async_session() as db:
+            created_admin = await ensure_dev_super_admin(db, settings.APP_ENV)
+            await db.commit()
+            if created_admin:
+                logger.info("Development super admin initialized")
+    except Exception as e:
+        logger.warning("Development super admin init failed (non-fatal): %s", e)
     # 将历史遗留的 approved 但未写入 questions 表的导入记录补发布
     try:
         from app.core.database import async_session
