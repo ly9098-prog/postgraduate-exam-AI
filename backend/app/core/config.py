@@ -7,8 +7,11 @@ class Settings(BaseSettings):
     JWT_EXPIRE_DAYS: int = 7
     DATABASE_URL: str = "sqlite+aiosqlite:///./postgraduate.db"
 
-    # CORS — 生产环境限制为具体域名
-    CORS_ORIGINS: list[str] = ["*"]
+    # CORS — 使用凭证请求时必须是显式 origin，不能使用 "*"
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
     # 日志级别
     LOG_LEVEL: str = "INFO"
