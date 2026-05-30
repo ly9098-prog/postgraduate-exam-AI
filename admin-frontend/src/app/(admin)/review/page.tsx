@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { apiRequest, toQuery } from "@/lib/api/client";
-import type { AdminQuestion, AdminQuestionDetail, PaginatedResponse, QuestionVersionDetail } from "@/lib/api/types";
+import type { AdminQuestion, AdminQuestionDetail, AdminQuestionImportSummary, PaginatedResponse, QuestionVersionDetail } from "@/lib/api/types";
 
 type ConfirmState =
   | { action: "approve"; id: number }
@@ -35,6 +35,51 @@ function statusTone(status: string) {
   if (status === "rejected") return "danger";
   if (status === "re_pending") return "warning";
   return "primary";
+}
+
+function duplicateStatusTone(status: string | null | undefined) {
+  if (status === "possible_duplicate") return "warning";
+  if (status === "normal") return "success";
+  return "neutral";
+}
+
+function renderDuplicateInfo(importRecord: AdminQuestionImportSummary | null | undefined) {
+  if (!importRecord) return null;
+  const status = importRecord.duplicate_status || "normal";
+  const isSuspicious = status === "possible_duplicate";
+  return (
+    <section className="blueprint-panel relative overflow-hidden rounded-3xl border border-[rgba(196,154,107,0.42)] bg-[var(--color-warning-light)] shadow-[var(--shadow-crisp)]">
+      <span className="absolute left-0 top-0 h-full w-1 bg-[var(--color-warning)]" aria-hidden="true" />
+      <div className="relative z-10">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(196,154,107,0.28)] bg-white/55 px-4 py-3 backdrop-blur-sm">
+          <div className="min-w-0">
+            <p className="font-mono text-[10px] uppercase tracking-[0.32em] text-[var(--color-text-hint)]">Duplicate scan</p>
+            <p className="mt-1 font-display text-lg font-bold text-[var(--ink)]">重复检测</p>
+          </div>
+          <StatusBadge tone={duplicateStatusTone(status)}>{status}</StatusBadge>
+        </div>
+        <div className="space-y-3 px-4 py-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-[rgba(91,123,154,0.18)] bg-[rgba(255,253,248,0.72)] p-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--color-text-hint)]">题目 hash</p>
+              <p className="mt-1 break-all font-mono text-xs text-[var(--ink)]">{importRecord.question_hash || "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-[rgba(91,123,154,0.18)] bg-[rgba(255,253,248,0.72)] p-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--color-text-hint)]">重复正式题</p>
+              <p className="mt-1 font-mono text-xs text-[var(--ink)]">{importRecord.duplicate_of_question_id ? `#${importRecord.duplicate_of_question_id}` : "—"}</p>
+            </div>
+            <div className="rounded-2xl border border-[rgba(91,123,154,0.18)] bg-[rgba(255,253,248,0.72)] p-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--color-text-hint)]">重复导入项</p>
+              <p className="mt-1 font-mono text-xs text-[var(--ink)]">{importRecord.duplicate_of_import_id ? `#${importRecord.duplicate_of_import_id}` : "—"}</p>
+            </div>
+          </div>
+          <p className="rounded-2xl border border-[rgba(91,123,154,0.14)] bg-white/55 px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+            {isSuspicious ? "需要人工核对来源关系" : "未发现重复关联"}
+          </p>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function renderDiff(label: string, current: unknown, previous: unknown) {
@@ -226,6 +271,7 @@ export default function ReviewPage() {
               </div>
             </div>
             <div className="mt-6 space-y-4 text-sm">
+              {renderDuplicateInfo(pendingQuestion.import_record)}
               {tab === "re_pending" ? (
                 <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
                   <p className="font-semibold text-[var(--ink)]">
