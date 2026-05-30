@@ -71,13 +71,16 @@ async def get_dashboard_daily(db: AsyncSession, created_from: date | None, creat
     start_dt = datetime.combine(start, time.min)
     end_dt = datetime.combine(end + timedelta(days=1), time.min)
 
+    bind = await db.connection()
+
     async def grouped(model):
+        bucket = func.date(model.created_at) if bind.sync_connection.dialect.name == "sqlite" else cast(model.created_at, Date)
         result = await db.execute(
-            select(cast(model.created_at, Date), func.count())
+            select(bucket, func.count())
             .where(model.created_at >= start_dt, model.created_at < end_dt)
-            .group_by(cast(model.created_at, Date))
+            .group_by(bucket)
         )
-        return {row[0]: int(row[1]) for row in result.all()}
+        return {date.fromisoformat(row[0]) if isinstance(row[0], str) else row[0]: int(row[1]) for row in result.all()}
 
     users = await grouped(User)
     questions = await grouped(Question)
