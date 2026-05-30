@@ -1,7 +1,8 @@
 "use client";
 
 import { create } from "zustand";
-import { apiRequest, setApiAccessToken } from "@/lib/api/client";
+import { apiRequest, setApiAccessToken, setApiAccessTokenProvider } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/errors";
 import type { AuthUser, LoginResponse, MeResponse, Role } from "@/lib/api/types";
 
 type AuthState = {
@@ -30,7 +31,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       method: "POST",
       body: JSON.stringify({ username, password }),
     });
-    setApiAccessToken(data.access_token);
     set({
       accessToken: data.access_token,
       user: data.user,
@@ -39,15 +39,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       isAuthenticated: true,
       isBootstrapping: false,
     });
+    setApiAccessToken(data.access_token);
   },
   async logout() {
     try {
       if (get().accessToken) await apiRequest<{ status: string }>("/auth/logout", { method: "POST" });
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 401)) throw error;
     } finally {
       get().clear();
     }
   },
   async bootstrap() {
+    if (get().isAuthenticated) {
+      set({ isBootstrapping: false });
+      return;
+    }
+
     const token = get().accessToken;
     if (token) {
       setApiAccessToken(token);
@@ -69,7 +77,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     try {
       const refresh = await apiRequest<LoginResponse>("/auth/refresh", { method: "POST" });
-      setApiAccessToken(refresh.access_token);
       set({
         accessToken: refresh.access_token,
         user: refresh.user,
@@ -78,6 +85,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isAuthenticated: true,
         isBootstrapping: false,
       });
+      setApiAccessToken(refresh.access_token);
     } catch {
       get().clear();
     }
@@ -97,3 +105,5 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
 }));
+
+setApiAccessTokenProvider(() => useAuthStore.getState().accessToken);

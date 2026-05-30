@@ -3,13 +3,18 @@ import { ApiError } from "./errors";
 const DEFAULT_BASE_URL = "http://localhost:8000/api/admin/v1";
 
 let accessToken: string | null = null;
+let accessTokenProvider: (() => string | null) | null = null;
 
 export function setApiAccessToken(token: string | null) {
   accessToken = token;
 }
 
+export function setApiAccessTokenProvider(provider: (() => string | null) | null) {
+  accessTokenProvider = provider;
+}
+
 export function getApiAccessToken() {
-  return accessToken;
+  return accessTokenProvider?.() ?? accessToken ?? null;
 }
 
 function getBaseUrl() {
@@ -45,7 +50,8 @@ function readMessage(payload: unknown) {
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
-  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  const token = getApiAccessToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const response = await fetch(`${getBaseUrl()}${normalizePath(path)}`, {
     ...init,

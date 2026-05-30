@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -54,7 +54,7 @@ async def set_admin_user_nbf(user_id: int, timestamp: int | None = None) -> None
 
 
 def create_admin_token(admin_user: AdminUser) -> str:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     payload = {
         "sub": str(admin_user.id),
         "type": "admin",
@@ -67,7 +67,7 @@ def create_admin_token(admin_user: AdminUser) -> str:
 
 
 def create_admin_refresh_token(admin_user: AdminUser) -> str:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     payload = {
         "sub": str(admin_user.id),
         "type": "admin_refresh",
