@@ -3,7 +3,7 @@ import asyncio
 import io
 import sys
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -32,9 +32,23 @@ PDF_WITH_QUESTION = _make_pdf(
 PDF_EMPTY_TEXT = b"%PDF-1.4\n%%EOF\n"
 
 
+class _Scalars:
+    def first(self):
+        return None
+
+
+def _make_result():
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
+    result.scalars.return_value = _Scalars()
+    return result
+
+
 def _make_db():
     db = MagicMock()
     db.add = MagicMock()
+    db.execute = AsyncMock(return_value=_make_result())
+    db.flush = AsyncMock()
     db.commit = AsyncMock()
     return db
 

@@ -1,10 +1,11 @@
 # 数据库设计规划
 
-> 版本：v2.2（Phase 7 AI 设置与月度用量表同步版） | 状态：Phase 7 已完成 | 更新：2026-05-30
+> 版本：v2.3（题库 Level 1 去重字段同步版） | 状态：Phase 7 已完成 | 更新：2026-05-30
 > ORM：SQLAlchemy | DB：PostgreSQL（生产共享实例）/ SQLite（开发兼容）
 > 修订自审计报告 I1（新增 subjects）、C6（新增 question_versions）、C5（operation_logs → audit_log + severity）、O1（IP 字段）、C1（双身份系统说明）
 >
 > - **变更原因**：2026-05-30 同步 Phase 7 新增 `admin_ai_settings`、`admin_ai_usage_monthly` 与 Alembic migration `i0e1f2a3b4c5_add_admin_ai_settings.py`。
+> - **变更原因**：2026-05-30 同步题库 Level 1 去重在既有 `questions` / `question_imports` 上新增的 hash 与重复标记字段。
 
 ---
 
@@ -350,6 +351,18 @@ model User {
 
 ### 3.2 questions（题目表）— 新增字段
 
+**Level 1 去重字段（2026-05-30 已实现）**：
+
+由 Alembic revision `j1f2a3b4c5d6_add_duplicate_question_hash_fields.py` 添加：
+
+```sql
+ALTER TABLE questions
+  ADD COLUMN question_hash VARCHAR(32);
+CREATE INDEX ix_questions_question_hash ON questions (question_hash);
+```
+
+用途：发布 / 审核通过阶段按 `subject + question_hash` 查询正式题库，命中完全相同 hash 时阻止重复发布。`question_hash` 可为空以兼容历史数据，不执行历史题自动删除。
+
 **实施前确认项**：
 - 必须先确认生产/开发库中 `questions.review_status` 字段是否真实存在、默认值是否为 `approved`。
 - 必须确认 FastAPI 刷题池查询是否过滤 `review_status = 'approved' AND is_active = true`；若未过滤，Admin 审核流不得上线。
@@ -375,6 +388,22 @@ review_status 枚举扩展：
 ---
 
 ### 3.3 question_imports（导入批次）— 新增字段
+
+**Level 1 去重字段（2026-05-30 已实现）**：
+
+由 Alembic revision `j1f2a3b4c5d6_add_duplicate_question_hash_fields.py` 添加：
+
+```sql
+ALTER TABLE question_imports
+  ADD COLUMN question_hash VARCHAR(32),
+  ADD COLUMN duplicate_status VARCHAR(32) NOT NULL DEFAULT 'normal',
+  ADD COLUMN duplicate_of_question_id BIGINT,
+  ADD COLUMN duplicate_of_import_id BIGINT;
+CREATE INDEX ix_question_imports_question_hash ON question_imports (question_hash);
+CREATE INDEX ix_question_imports_duplicate_status ON question_imports (duplicate_status);
+```
+
+用途：导入阶段只标记 `normal` / `possible_duplicate`，并记录命中的正式题目或暂存导入题；不删除、不拒绝导入，仍需人工审核。
 
 **Phase 3 新增**（审核操作记录）：
 ```sql
@@ -408,9 +437,9 @@ model QuestionImport {
 | audit_logs | `operator_id`, `action`, `(resource_type, resource_id)`, `severity`, `created_at` | 多维查询 + 分区裁剪 |
 | subjects | `parent_id`, `code` (unique), `path` | 树形查询、物化路径 |
 | question_versions | `(question_id, version)` (unique), `question_id`, `edited_by` | 版本查询、按编辑者过滤 |
-| questions | 既有索引 + `(subject, review_status, is_active, created_at)` 复合索引 | 审核列表高频查询 |
+| questions | 既有索引 + `question_hash` + `(subject, review_status, is_active, created_at)` 复合索引 | 去重查询、审核列表高频查询 |
 | users | 既有 `openid` + `is_banned`（部分索引）| 过滤封禁用户 |
-| question_imports | 既有 + `reviewed_by` | 反查审核人 |
+| question_imports | 既有 + `question_hash` + `duplicate_status` + `reviewed_by` | 导入去重标记、反查审核人 |
 | admin_ai_settings | `updated_by` | 设置页读取与审计追溯 |
 | admin_ai_usage_monthly | `month` (unique) | 按月查询与额度校验 |
 
@@ -514,6 +543,7 @@ await redis.set(`admin:role:version:${roleId}`, uuid());
 |-----------|-------|------|
 | f6a7b8c9d0e1_add_admin_core_tables.py | Phase 0-4 已实现 | Alembic revision `f6a7b8c9d0e1`，一次性创建 roles / permissions / subjects / admin_users / role_permissions / audit_logs / question_versions |
 | i0e1f2a3b4c5_add_admin_ai_settings.py | Phase 7 已实现 | 创建 admin_ai_settings / admin_ai_usage_monthly，并 seed `ai_setting:read`、`ai_setting:write` 权限 |
+| j1f2a3b4c5d6_add_duplicate_question_hash_fields.py | 题库去重已实现 | 为 questions 添加 `question_hash`；为 question_imports 添加 `question_hash`、`duplicate_status`、`duplicate_of_question_id`、`duplicate_of_import_id` 及索引 |
 | 0004_audit_log_partition | 生产部署（待确认） | PostgreSQL audit_logs 按月分区；开发/SQLite 不启用，当前 Alembic core migration 未启用 pg_partman |
 | 0005_users_add_banned | Phase 2 | users 表新增 is_banned / banned_reason / banned_at / banned_by |
 | 0006_question_imports_review | Phase 3 | question_imports 表新增 reject_reason / reviewed_by / reviewed_at |

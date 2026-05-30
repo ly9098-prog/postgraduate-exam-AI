@@ -181,6 +181,7 @@ class QuestionNormalizer:
             "difficulty": difficulty,
             "source": self.normalize_source(source or raw.get("source")),
             "stem_hash": self.stem_hash(stem),
+            "question_hash": self.build_question_hash(stem, options, answer),
             "is_valid": True,
             "errors": [],
             "warnings": [],
@@ -322,6 +323,66 @@ class QuestionNormalizer:
             hashlib.sha256(compact.encode("utf-8")).hexdigest()[:16] if compact else ""
         )
 
+    def normalize_hash_text(self, value: Any) -> str:
+        text = str(value or "")
+        text = text.replace("\xa0", " ").replace("　", " ")
+        text = re.sub(r"[​‌‍⁠﻿‎‏]", "", text)
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        text = text.replace("\n", " ")
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    def normalize_hash_options(self, options: Any) -> str:
+        if not options:
+            return ""
+        items: list[tuple[str, str]] = []
+        if isinstance(options, dict):
+            items = [(str(k).strip().upper(), str(v)) for k, v in options.items()]
+        elif isinstance(options, list):
+            for item in options:
+                if isinstance(item, dict):
+                    key = item.get("key") or item.get("label") or item.get("option")
+                    text = item.get("text") or item.get("value") or item.get("content") or ""
+                    if key:
+                        items.append((str(key).strip().upper(), str(text)))
+                else:
+                    items.append(("", str(item)))
+        else:
+            text = str(options)
+            for part in re.split(r"\n+", text):
+                if not part.strip():
+                    continue
+                m = re.match(r"^\s*([A-H])\s*[.、:：）)]\s*(.*)$", part.strip())
+                if m:
+                    items.append((m.group(1).strip().upper(), m.group(2)))
+                else:
+                    items.append(("", part))
+        parts = []
+        for key, text in sorted(items, key=lambda item: item[0]):
+            normalized_text = self.normalize_hash_text(text)
+            if not normalized_text:
+                continue
+            parts.append(f"{key}={normalized_text}" if key else normalized_text)
+        return "|".join(parts)
+
+    def normalize_hash_answer(self, answer: Any) -> str:
+        if isinstance(answer, list):
+            values = [self.normalize_hash_text(item).upper() for item in answer]
+            values = sorted({value for value in values if value})
+            return "|".join(values)
+        text = self.normalize_hash_text(answer)
+        return text.upper() if text else ""
+
+    def build_question_hash(self, stem: Any, options: Any, answer: Any) -> str:
+        payload = "||".join(
+            [
+                self.normalize_hash_text(stem),
+                self.normalize_hash_options(options),
+                self.normalize_hash_answer(answer),
+            ]
+        )
+        return hashlib.md5(payload.encode("utf-8")).hexdigest() if payload else ""
+
     def is_similar_stem(self, left: str, right: str, threshold: float = 0.92) -> bool:
         a = re.sub(r"\s+", "", left or "")
         b = re.sub(r"\s+", "", right or "")
@@ -350,6 +411,7 @@ class QuestionNormalizer:
             "options": fields["parsed_options"],
             "answer": fields["parsed_answer"] or "",
             "analysis": fields["parsed_analysis"],
+            "question_hash": question.get("question_hash") or None,
             "knowledge_points": fields["knowledge_points"],
             "difficulty": fields["difficulty"],
         }
@@ -494,6 +556,7 @@ def process_question_pipeline(
             "is_valid": normalized["is_valid"],
             "errors": normalized["errors"],
             "warnings": normalized["warnings"],
+            "question_hash": normalized["question_hash"],
             "stem_hash": normalized["stem_hash"],
         },
     )
@@ -519,10 +582,44 @@ def process_question_pipeline(
     return result
 
 
+async def _find_duplicate_by_hash(
+    db: AsyncSession,
+    subject: str | None,
+    question_hash: str | None,
+) -> Question | None:
+    if not subject or not question_hash:
+        return None
+    result = await db.execute(
+        select(Question).where(
+            Question.subject == subject,
+            Question.question_hash == question_hash,
+            Question.is_active == True,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _find_import_duplicate_by_hash(
+    db: AsyncSession,
+    subject: str | None,
+    question_hash: str | None,
+) -> QuestionImport | None:
+    if not subject or not question_hash:
+        return None
+    result = await db.execute(
+        select(QuestionImport).where(
+            QuestionImport.subject == subject,
+            QuestionImport.question_hash == question_hash,
+            QuestionImport.status != "rejected",
+        )
+    )
+    return result.scalars().first()
+
+
 async def find_duplicate_question(
     db: AsyncSession, subject: str | None, stem: str
 ) -> Question | None:
-    """同 subject 下用 stem hash + 相似度判定重复题。"""
+    """兼容旧调用：同 subject 下用 stem hash + 相似度查疑似重复题。"""
     if not subject or not stem:
         return None
     result = await db.execute(
@@ -830,6 +927,100 @@ _QI_PARSED_FIELDS = (
 )
 
 
+async def _build_import_duplicate_fields(
+    db: AsyncSession,
+    *,
+    import_id: int | None,
+    subject: str | None,
+    question_hash: str | None,
+) -> dict:
+    duplicate_fields = {
+        "question_hash": question_hash or None,
+        "duplicate_status": "normal",
+        "duplicate_of_question_id": None,
+        "duplicate_of_import_id": None,
+    }
+    result_label = "normal"
+    matched_id = None
+
+    duplicate_question = await _find_duplicate_by_hash(db, subject, question_hash)
+    if duplicate_question and not hasattr(duplicate_question, "id"):
+        duplicate_question = None
+    if duplicate_question:
+        duplicate_fields["duplicate_status"] = "possible_duplicate"
+        duplicate_fields["duplicate_of_question_id"] = duplicate_question.id
+        result_label = "matched_question"
+        matched_id = duplicate_question.id
+    else:
+        duplicate_import = await _find_import_duplicate_by_hash(db, subject, question_hash)
+        if duplicate_import and not hasattr(duplicate_import, "id"):
+            duplicate_import = None
+        if duplicate_import and duplicate_import.id != import_id:
+            duplicate_fields["duplicate_status"] = "possible_duplicate"
+            duplicate_fields["duplicate_of_import_id"] = duplicate_import.id
+            result_label = "matched_import"
+            matched_id = duplicate_import.id
+
+    logger.info(
+        "[DuplicateCheck] questionId=%s importId=%s hash=%s result=%s matchedId=%s",
+        None,
+        import_id,
+        question_hash or "",
+        result_label,
+        matched_id,
+    )
+    return duplicate_fields
+
+
+def _apply_duplicate_fields(qi: QuestionImport, duplicate_fields: dict) -> None:
+    qi.question_hash = duplicate_fields["question_hash"]
+    qi.duplicate_status = duplicate_fields["duplicate_status"]
+    qi.duplicate_of_question_id = duplicate_fields["duplicate_of_question_id"]
+    qi.duplicate_of_import_id = duplicate_fields["duplicate_of_import_id"]
+
+
+async def _refresh_import_duplicate_status(
+    db: AsyncSession,
+    qi: QuestionImport,
+    question_hash: str | None,
+) -> None:
+    duplicate_fields = await _build_import_duplicate_fields(
+        db,
+        import_id=qi.id,
+        subject=qi.subject,
+        question_hash=question_hash,
+    )
+    _apply_duplicate_fields(qi, duplicate_fields)
+
+
+async def _create_question_import(
+    db: AsyncSession,
+    *,
+    batch_id: str,
+    source_type: str,
+    source_file: str | None,
+    raw_data: dict,
+    result: dict,
+    extra_fields: dict | None = None,
+) -> QuestionImport:
+    qi = QuestionImport(
+        batch_id=batch_id,
+        source_type=source_type,
+        source_file=source_file,
+        raw_data=raw_data,
+        status="pending",
+        question_hash=result["normalized"].get("question_hash") or None,
+        **{k: v for k, v in result["import_fields"].items() if k in _QI_PARSED_FIELDS},
+        **(extra_fields or {}),
+    )
+    db.add(qi)
+    await db.flush()
+    await _refresh_import_duplicate_status(
+        db, qi, result["normalized"].get("question_hash")
+    )
+    return qi
+
+
 async def import_excel(
     db: AsyncSession, content: bytes, filename: str
 ) -> tuple[str, int]:
@@ -845,14 +1036,14 @@ async def import_excel(
         )
         if not result["is_valid"]:
             continue
-        db.add(QuestionImport(
+        await _create_question_import(
+            db,
             batch_id=batch_id,
             source_type="excel",
             source_file=filename,
             raw_data=row,
-            status="pending",
-            **{k: v for k, v in result["import_fields"].items() if k in _QI_PARSED_FIELDS},
-        ))
+            result=result,
+        )
         imported += 1
     await db.commit()
     return batch_id, imported
@@ -870,14 +1061,14 @@ async def import_pdf(
         )
         if not result["is_valid"]:
             continue
-        db.add(QuestionImport(
+        await _create_question_import(
+            db,
             batch_id=batch_id,
             source_type="pdf",
             source_file=filename,
             raw_data=row,
-            status="pending",
-            **{k: v for k, v in result["import_fields"].items() if k in _QI_PARSED_FIELDS},
-        ))
+            result=result,
+        )
         imported += 1
     await db.commit()
     return batch_id, imported
@@ -926,16 +1117,21 @@ async def approve_question(
         qi.parsed_answer = data["parsed_answer"]
 
     # 直接写入 questions 正式题库（审核通过即发布）
-    duplicate = await find_duplicate_question(
-        db, result["normalized"]["subject"], result["normalized"]["stem"]
+    await _refresh_import_duplicate_status(
+        db, qi, result["normalized"].get("question_hash")
+    )
+    duplicate = await _find_duplicate_by_hash(
+        db, result["normalized"]["subject"], result["normalized"]["question_hash"]
     )
     is_duplicate = False
     if duplicate:
         logger.info(
-            "[Review Pass] import_id=%s duplicate of question_id=%s subject=%s",
-            qi.id, duplicate.id, result["normalized"]["subject"],
+            "[DuplicateCheck] questionId=%s importId=%s hash=%s result=matched_question matchedId=%s",
+            duplicate.id,
+            qi.id,
+            result["normalized"]["question_hash"],
+            duplicate.id,
         )
-        _refresh_duplicate_question_display_fields(duplicate, result["question_fields"])
         qi.status = "published"
         qi.question_id = duplicate.id
         is_duplicate = True
@@ -1011,16 +1207,21 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int,
             continue
 
         # 写入 questions 正式题库
-        duplicate = await find_duplicate_question(
-            db, result["normalized"]["subject"], result["normalized"]["stem"]
+        await _refresh_import_duplicate_status(
+            db, qi, result["normalized"].get("question_hash")
+        )
+        duplicate = await _find_duplicate_by_hash(
+            db, result["normalized"]["subject"], result["normalized"]["question_hash"]
         )
         if duplicate:
-            _refresh_duplicate_question_display_fields(duplicate, result["question_fields"])
             qi.status = "published"
             qi.question_id = duplicate.id
             logger.info(
-                "[Batch Approve] import_id=%s duplicate of question_id=%s subject=%s",
-                qi.id, duplicate.id, result["normalized"]["subject"],
+                "[DuplicateCheck] questionId=%s importId=%s hash=%s result=matched_question matchedId=%s",
+                duplicate.id,
+                qi.id,
+                result["normalized"]["question_hash"],
+                duplicate.id,
             )
         else:
             q = Question(

@@ -88,6 +88,7 @@ def _make_pipeline_result(is_valid=True, subject="math2", stem="设函数 f(x)=x
             "answer": "A",
             "options": [{"key": "A", "text": "2x"}],
             "analysis": "analysis",
+            "question_hash": "hash123",
         },
         "is_valid": is_valid,
         "errors": errors or [],
@@ -102,6 +103,7 @@ def _make_pipeline_result(is_valid=True, subject="math2", stem="设函数 f(x)=x
             "analysis": "analysis",
             "knowledge_points": ["导数"],
             "difficulty": 3,
+            "question_hash": "hash123",
         },
     }
 
@@ -161,7 +163,7 @@ class TestPublishSingleQuestion:
             "app.features.question_publish_service.process_question_pipeline",
             return_value=_make_pipeline_result(),
         ), patch(
-            "app.features.question_publish_service.find_duplicate_question",
+            "app.features.question_publish_service._find_duplicate_by_hash",
             return_value=None,
         ):
             result = asyncio.run(publish_single_question(db, qi))
@@ -183,14 +185,14 @@ class TestPublishSingleQuestion:
             "app.features.question_publish_service.process_question_pipeline",
             return_value=_make_pipeline_result(),
         ), patch(
-            "app.features.question_publish_service.find_duplicate_question",
+            "app.features.question_publish_service._find_duplicate_by_hash",
             return_value=dup_q,
         ):
             result = asyncio.run(publish_single_question(db, qi))
 
         assert result["status"] == "duplicate"
         assert result["question_id"] == 99
-        assert result["reason"] == "stem_hash collision"
+        assert result["reason"] == "question_hash collision"
         db.add.assert_not_called()
 
     def test_invalid_data(self):
@@ -245,7 +247,7 @@ class TestPublishQuestions:
             "app.features.question_publish_service.process_question_pipeline",
             return_value=_make_pipeline_result(),
         ), patch(
-            "app.features.question_publish_service.find_duplicate_question",
+            "app.features.question_publish_service._find_duplicate_by_hash",
             return_value=None,
         ):
             result = asyncio.run(publish_questions(db, question_ids=[1, 2]))
@@ -269,7 +271,7 @@ class TestPublishQuestions:
             "app.features.question_publish_service.process_question_pipeline",
             return_value=_make_pipeline_result(),
         ), patch(
-            "app.features.question_publish_service.find_duplicate_question",
+            "app.features.question_publish_service._find_duplicate_by_hash",
             return_value=None,
         ):
             result = asyncio.run(publish_questions(db, batch_id="BATCH_X"))
@@ -305,7 +307,7 @@ class TestPublishQuestions:
             "app.features.question_publish_service.process_question_pipeline",
             side_effect=mock_pipeline,
         ), patch(
-            "app.features.question_publish_service.find_duplicate_question",
+            "app.features.question_publish_service._find_duplicate_by_hash",
             side_effect=mock_find_dup,
         ):
             result = asyncio.run(publish_questions(db, question_ids=[1, 2]))
@@ -342,7 +344,7 @@ class TestPublishQuestions:
             "app.features.question_publish_service.process_question_pipeline",
             return_value=_make_pipeline_result(),
         ), patch(
-            "app.features.question_publish_service.find_duplicate_question",
+            "app.features.question_publish_service._find_duplicate_by_hash",
             return_value=None,
         ):
             result = asyncio.run(publish_questions(db, question_ids=[1, 2, 3]))
@@ -368,7 +370,7 @@ class TestApproveAndPublish:
             "app.features.question_publish_service.process_question_pipeline",
             return_value=_make_pipeline_result(),
         ), patch(
-            "app.features.question_publish_service.find_duplicate_question",
+            "app.features.question_publish_service._find_duplicate_by_hash",
             return_value=None,
         ):
             result = asyncio.run(approve_and_publish(db, question_ids=[1]))
@@ -391,7 +393,7 @@ class TestApproveAndPublish:
             "app.features.question_publish_service.process_question_pipeline",
             return_value=_make_pipeline_result(),
         ), patch(
-            "app.features.question_publish_service.find_duplicate_question",
+            "app.features.question_publish_service._find_duplicate_by_hash",
             return_value=None,
         ):
             result = asyncio.run(approve_and_publish(db, question_ids=[1]))
@@ -492,7 +494,7 @@ class TestApproveAndPublish:
             "app.features.question_publish_service.process_question_pipeline",
             side_effect=mock_pipeline,
         ), patch(
-            "app.features.question_publish_service.find_duplicate_question",
+            "app.features.question_publish_service._find_duplicate_by_hash",
             side_effect=mock_find_dup,
         ):
             result = asyncio.run(approve_and_publish(db, question_ids=[1, 2, 3]))
