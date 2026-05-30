@@ -1,11 +1,11 @@
 # Admin 文档体系索引
 
 > 本目录包含 2240AI 后台管理系统（Admin Dashboard）的所有设计文档。
-> 当前文档版本：**v2.2（Phase 6 前端实现同步版，2026-05-30）**
-> **当前状态：Admin Backend 已确认并入现有 FastAPI 后端，在 `/api/admin/v1` 命名空间实现；ORM 使用 SQLAlchemy，迁移使用 Alembic，不再采用独立 NestJS + Prisma + BullMQ 后端方案。Phase 6 `admin-frontend` 已完成 Next.js Admin Dashboard 主要前端实现，并仅消费 `/api/admin/v1`。**
+> 当前文档版本：**v2.3（本地开发超管初始化同步版，2026-05-30）**
+> **当前状态：Admin Backend 已确认并入现有 FastAPI 后端，在 `/api/admin/v1` 命名空间实现；ORM 使用 SQLAlchemy，迁移使用 Alembic，不再采用独立 NestJS + Prisma + BullMQ 后端方案。Phase 6 `admin-frontend` 已完成 Next.js Admin Dashboard 主要前端实现，并仅消费 `/api/admin/v1`。本地调试环境启动后端时会幂等初始化开发超管。**
 >
 > - **更新时间**：2026-05-30
-> - **变更原因**：同步 Phase 6 Next.js Admin Dashboard 前端实现状态、页面范围、构建验证结果与 audit-log 查询参数别名修复。
+> - **变更原因**：同步本地调试环境开发超管自动初始化账号、权限绑定与审计日志行为。
 
 ---
 
@@ -38,6 +38,17 @@
 | Phase 4 | ADMIN_API_SPEC, ADMIN_ARCHITECTURE | ADMIN_ARCHITECTURE |
 | Phase 5 | AUDIT_LOG, REDIS_PLAN | AUDIT_LOG, ADMIN_API_SPEC, REDIS_PLAN, README |
 | Phase 6 | 全部文档，ADMIN_UI_RULES | ADMIN_ARCHITECTURE，docs/frontend/ADMIN_UI_RULES.md |
+
+---
+
+## 本地开发超管账号
+
+- 生效环境：仅 `APP_ENV=development` / `local` / `test` 时，后端启动 lifespan 会执行幂等初始化；`production` / `prod` 不会自动创建。
+- 默认账号：`admin`；默认密码：`Admin@123456`。
+- 默认角色：`super_admin`，通过 `role_permissions` 显式绑定当前 25 项后台权限，不依赖代码绕过。
+- 幂等规则：已存在角色、权限或绑定时不重复创建；已存在 `admin` 账号时不覆盖密码。
+- 审计记录：仅首次创建 `admin` 账号时写入 `audit_logs`，action 为 `system.init_super_admin`，severity 为 `critical`。
+- 生产环境仍应使用受控初始化方式，不应依赖开发默认密码。
 
 ---
 
