@@ -182,6 +182,29 @@ export type DashboardQuestionStats = {
   by_difficulty: Array<{ name: string; count: number }>;
 };
 
+export type AIUsageMonthly = {
+  year_month: string;
+  call_count: number;
+  limit_snapshot?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type AISettings = {
+  id: number;
+  ai_parse_enabled: boolean;
+  monthly_call_limit: number;
+  current_usage: AIUsageMonthly;
+  remaining_calls?: number | null;
+  updated_by?: number | null;
+  updated_at?: string | null;
+};
+
+export type AISettingsPatchRequest = {
+  ai_parse_enabled?: boolean;
+  monthly_call_limit?: number;
+};
+
 export type AuditLog = {
   id: number;
   operator_id?: number | null;

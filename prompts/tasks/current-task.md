@@ -1,26 +1,33 @@
-当前任务（2026-05-30）：仅维护 Admin Phase 6 文档同步，不修改业务代码。
+当前任务（2026-05-30）：仅维护 Admin Phase 7 文档同步，不修改业务代码。
 
-背景：后台管理系统 Phase 6（Next.js admin-frontend）已完成主要前端实现，并已通过：
+背景：后台管理系统 Phase 7（后台 AI 解析设置与全局月度额度）已完成主要实现，并已通过：
 
+- `python3 -m compileall backend/app`
 - `npm --prefix admin-frontend run lint`
-- `npm --prefix admin-frontend run build`
+
+`npm --prefix admin-frontend run build` 因 Google Fonts 网络获取失败未完成，需后续复验。
 
 同步范围：
 
 - `docs/admin/README.md`
 - `docs/admin/PHASE_PLAN.md`
+- `docs/admin/ADMIN_API_SPEC.md`
+- `docs/admin/RBAC_RULES.md`
+- `docs/admin/DB_SCHEMA_ADMIN.md`
+- `docs/admin/AUDIT_LOG.md`
 - `docs/frontend/ADMIN_UI_RULES.md`
 - `docs/project/CHANGELOG.md`
 - `prompts/tasks/current-task.md`
 
 已同步要点：
 
-- Phase 6 前端位于 `admin-frontend`。
-- 技术栈：Next.js 16、React 19、React Query、TanStack Table、Zustand、Recharts、Tailwind CSS 4。
-- 页面范围：dashboard、login、app-users、admin-users、questions、review、roles、audit-logs。
-- Phase 6 前端只消费 `/api/admin/v1`，不修改后端 API、DB schema 或权限语义。
-- audit-log 查询参数别名已按后端同步：`pageSize`、`resourceType`、`from`、`to`。
+- 后端新增 `admin_ai_settings` / `admin_ai_usage_monthly` 模型与 Alembic migration `i0e1f2a3b4c5_add_admin_ai_settings.py`。
+- 新增 `/api/admin/v1/ai-settings` GET/PATCH 与 `/api/admin/v1/ai-settings/usage` GET。
+- 新增 `ai_setting:read` / `ai_setting:write` 权限，并在 bootstrap / migration 中 seed。
+- `create_import_enrich_task` 前通过 `ensure_ai_parse_allowed` 执行全局关闭与月度额度拦截。
+- `super_admin` 只绕过额度，不绕过全局关闭。
+- 前端新增独立 `/ai-settings` 页面和侧边栏入口。
 
 # 待同步内容
 
-- 需后续联调确认题目版本 diff 高亮是否达到最终验收预期；若后端版本对比字段不足，应作为后续 API/UI 联调项记录。
+- 需在可联网环境或完成字体本地化后复验 `npm --prefix admin-frontend run build`。

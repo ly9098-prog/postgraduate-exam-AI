@@ -1,10 +1,10 @@
 # 数据库设计规划
 
-> 版本：v2.1（FastAPI 方案确认版） | 状态：可启动开发 | 更新：2026-05-29
+> 版本：v2.2（Phase 7 AI 设置与月度用量表同步版） | 状态：Phase 7 已完成 | 更新：2026-05-30
 > ORM：SQLAlchemy | DB：PostgreSQL（生产共享实例）/ SQLite（开发兼容）
 > 修订自审计报告 I1（新增 subjects）、C6（新增 question_versions）、C5（operation_logs → audit_log + severity）、O1（IP 字段）、C1（双身份系统说明）
 >
-> - **变更原因**：2026-05-29 同步 Admin Backend 已并入 FastAPI + SQLAlchemy + Alembic 的实际实现，并补充 Phase 4 科目树/导入管理对应的 Alembic migration 归属说明。
+> - **变更原因**：2026-05-30 同步 Phase 7 新增 `admin_ai_settings`、`admin_ai_usage_monthly` 与 Alembic migration `i0e1f2a3b4c5_add_admin_ai_settings.py`。
 
 ---
 
@@ -274,6 +274,37 @@ model QuestionVersion {
 - 每次编辑 `questions` 表前，先把当前 questions 的字段快照写入 `question_versions`
 - 版本号从 1 开始递增（同一 questionId 自增）
 
+### 2.8 admin_ai_settings（后台 AI 解析设置，Phase 7 新增）
+
+> **Phase 7 实现同步（2026-05-30）**：由 Alembic revision `i0e1f2a3b4c5_add_admin_ai_settings.py` 创建，用于保存全局 AI 解析开关与月度调用额度。
+
+核心字段：
+- `id`
+- `ai_parse_enabled`：全局 AI 解析开关。
+- `monthly_call_limit`：月度全局 API 调用额度；`0` 表示不限。
+- `updated_by`：最近更新管理员。
+- `updated_at`
+
+业务约束：
+- 全局关闭优先级最高，`super_admin` 也不能绕过。
+- 月度额度只限制普通管理员；`super_admin` 可绕过额度但仍受全局关闭限制。
+
+---
+
+### 2.9 admin_ai_usage_monthly（后台 AI 月度用量，Phase 7 新增）
+
+> **Phase 7 实现同步（2026-05-30）**：由 Alembic revision `i0e1f2a3b4c5_add_admin_ai_settings.py` 创建，用于按月聚合 AI 解析调用次数。
+
+核心字段：
+- `year_month`：统计月份，主键，格式如 `2026-05`。
+- `call_count`：已创建 AI 解析调用次数。
+- `limit_snapshot`：创建该月用量记录时的额度快照。
+- `created_at` / `updated_at`
+
+用法：
+- `GET /api/admin/v1/ai-settings/usage` 读取当前或指定月份用量。
+- `ensure_ai_parse_allowed` 在导入 enrich 前读取设置与用量，执行全局关闭和额度拦截。
+
 ---
 
 ## 三、复用已有表（需变更字段）
@@ -380,6 +411,8 @@ model QuestionImport {
 | questions | 既有索引 + `(subject, review_status, is_active, created_at)` 复合索引 | 审核列表高频查询 |
 | users | 既有 `openid` + `is_banned`（部分索引）| 过滤封禁用户 |
 | question_imports | 既有 + `reviewed_by` | 反查审核人 |
+| admin_ai_settings | `updated_by` | 设置页读取与审计追溯 |
+| admin_ai_usage_monthly | `month` (unique) | 按月查询与额度校验 |
 
 **部分索引示例**（PostgreSQL 特性）：
 ```sql
@@ -480,6 +513,7 @@ await redis.set(`admin:role:version:${roleId}`, uuid());
 | Migration | Phase | 内容 |
 |-----------|-------|------|
 | f6a7b8c9d0e1_add_admin_core_tables.py | Phase 0-4 已实现 | Alembic revision `f6a7b8c9d0e1`，一次性创建 roles / permissions / subjects / admin_users / role_permissions / audit_logs / question_versions |
+| i0e1f2a3b4c5_add_admin_ai_settings.py | Phase 7 已实现 | 创建 admin_ai_settings / admin_ai_usage_monthly，并 seed `ai_setting:read`、`ai_setting:write` 权限 |
 | 0004_audit_log_partition | 生产部署（待确认） | PostgreSQL audit_logs 按月分区；开发/SQLite 不启用，当前 Alembic core migration 未启用 pg_partman |
 | 0005_users_add_banned | Phase 2 | users 表新增 is_banned / banned_reason / banned_at / banned_by |
 | 0006_question_imports_review | Phase 3 | question_imports 表新增 reject_reason / reviewed_by / reviewed_at |

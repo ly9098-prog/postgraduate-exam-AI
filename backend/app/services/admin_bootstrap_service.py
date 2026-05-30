@@ -33,6 +33,8 @@ ADMIN_PERMISSION_DEFINITIONS: tuple[dict[str, str], ...] = (
     {"name": "permission:read", "resource": "permission", "action": "read", "category": "rbac", "description": "查看权限"},
     {"name": "import:read", "resource": "import", "action": "read", "category": "import", "description": "查看导入任务"},
     {"name": "import:write", "resource": "import", "action": "write", "category": "import", "description": "管理导入任务"},
+    {"name": "ai_setting:read", "resource": "ai_setting", "action": "read", "category": "ai_setting", "description": "查看 AI 解析设置"},
+    {"name": "ai_setting:write", "resource": "ai_setting", "action": "write", "category": "ai_setting", "description": "修改 AI 解析设置"},
     {"name": "audit:read", "resource": "audit", "action": "read", "category": "audit", "description": "查看审计日志"},
 )
 

@@ -59,6 +59,8 @@ async def create_import_enrich_task(
     except ValueError as exc:
         await db.rollback()
         _raise_import_error(exc)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
 
 @router.get("/{batch_id}/status", response_model=AdminImportTaskStatusResponse)

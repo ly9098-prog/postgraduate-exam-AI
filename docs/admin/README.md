@@ -1,11 +1,11 @@
 # Admin 文档体系索引
 
 > 本目录包含 2240AI 后台管理系统（Admin Dashboard）的所有设计文档。
-> 当前文档版本：**v2.3（本地开发超管初始化同步版，2026-05-30）**
-> **当前状态：Admin Backend 已确认并入现有 FastAPI 后端，在 `/api/admin/v1` 命名空间实现；ORM 使用 SQLAlchemy，迁移使用 Alembic，不再采用独立 NestJS + Prisma + BullMQ 后端方案。Phase 6 `admin-frontend` 已完成 Next.js Admin Dashboard 主要前端实现，并仅消费 `/api/admin/v1`。本地调试环境启动后端时会幂等初始化开发超管。**
+> 当前文档版本：**v2.3（Phase 7 AI 设置与月度额度同步版，2026-05-30）**
+> **当前状态：Admin Backend 已确认并入现有 FastAPI 后端，在 `/api/admin/v1` 命名空间实现；ORM 使用 SQLAlchemy，迁移使用 Alembic，不再采用独立 NestJS + Prisma + BullMQ 后端方案。Phase 6 `admin-frontend` 已完成 Next.js Admin Dashboard 主要前端实现；Phase 7 已实现后台 AI 解析设置与全局月度额度控制。**
 >
 > - **更新时间**：2026-05-30
-> - **变更原因**：同步本地调试环境开发超管自动初始化账号、权限绑定与审计日志行为。
+> - **变更原因**：同步 Phase 7 后台 AI 解析设置、全局月度额度、RBAC 权限、Admin API、DB schema 与前端入口实现。
 
 ---
 
@@ -15,7 +15,7 @@
 |------|------|---------|
 | [AUDIT_REPORT.md](./AUDIT_REPORT.md) | **必读**：架构审计报告（v1 风险分析与 v2 修订依据） | 全阶段参考 |
 | [ADMIN_ARCHITECTURE.md](./ADMIN_ARCHITECTURE.md) | 系统总体架构、双身份系统、模块拆分、数据流、权限流 | 全阶段参考 |
-| [PHASE_PLAN.md](./PHASE_PLAN.md) | 分阶段开发计划（Phase 0-6），含验收标准与不可修改约定 | 全阶段参考 |
+| [PHASE_PLAN.md](./PHASE_PLAN.md) | 分阶段开发计划（Phase 0-7），含验收标准与不可修改约定 | 全阶段参考 |
 | [RBAC_RULES.md](./RBAC_RULES.md) | RBAC 设计：角色 / 权限 / 三层控制 / Super Admin 初始化 / role-version | Phase 1 |
 | [DB_SCHEMA_ADMIN.md](./DB_SCHEMA_ADMIN.md) | 数据库设计：admin/subjects/question_versions/audit_logs 等 | Phase 0 |
 | [REDIS_PLAN.md](./REDIS_PLAN.md) | Redis 设计：JWT黑名单 / 权限缓存 / 双维度限流 / 防穿透 | Phase 0 |
@@ -41,31 +41,20 @@
 
 ---
 
-## 本地开发超管账号
-
-- 生效环境：仅 `APP_ENV=development` / `local` / `test` 时，后端启动 lifespan 会执行幂等初始化；`production` / `prod` 不会自动创建。
-- 默认账号：`admin`；默认密码：`Admin@123456`。
-- 默认角色：`super_admin`，通过 `role_permissions` 显式绑定当前 25 项后台权限，不依赖代码绕过。
-- 幂等规则：已存在角色、权限或绑定时不重复创建；已存在 `admin` 账号时不覆盖密码。
-- 审计记录：仅首次创建 `admin` 账号时写入 `audit_logs`，action 为 `system.init_super_admin`，severity 为 `critical`。
-- 生产环境仍应使用受控初始化方式，不应依赖开发默认密码。
-
----
-
 ## 文档状态
 
 | 文档 | 版本 | 状态 |
 |------|------|------|
 | AUDIT_REPORT.md | v1.0 | 审计输出，永久参考 |
 | ADMIN_ARCHITECTURE.md | v2.2 | Phase 6 前端实现同步 |
-| PHASE_PLAN.md | v2.3 | Phase 6 前端完成同步 |
-| RBAC_RULES.md | v2.1 | FastAPI 方案确认，可启动 |
-| DB_SCHEMA_ADMIN.md | v2.1 | FastAPI 方案确认，可启动 |
+| PHASE_PLAN.md | v2.4 | Phase 7 AI 设置与月度额度同步 |
+| RBAC_RULES.md | v2.2 | Phase 7 AI 设置权限同步 |
+| DB_SCHEMA_ADMIN.md | v2.2 | Phase 7 AI 设置与月度用量表同步 |
 | REDIS_PLAN.md | v2.1 | FastAPI 方案确认，可启动 |
-| ADMIN_API_SPEC.md | v2.1 | FastAPI 方案确认，可启动 |
-| ADMIN_UI_RULES.md | v1.1 | Phase 6 前端实现同步 |
+| ADMIN_API_SPEC.md | v2.3 | Phase 7 AI 设置接口同步 |
+| ADMIN_UI_RULES.md | v1.2 | Phase 7 AI 设置页面同步 |
 | REVIEW_FLOW.md | v2.0 | 已修订，可启动 |
-| AUDIT_LOG.md | v2.0 | 新建，取代旧 OPERATION_LOG.md |
+| AUDIT_LOG.md | v2.1 | Phase 7 AI 设置审计 Action 同步 |
 | DEEPSEEK_DEV_RULES.md | v2.1 | FastAPI 方案确认，可启动 |
 
 ---
@@ -101,3 +90,4 @@
 | requestId 作为全链路 traceId | 2026-05-29 trace 调试方案审计修订 | ADMIN_API_SPEC, AUDIT_LOG, PHASE_PLAN, DB_SCHEMA_ADMIN, DEEPSEEK_DEV_RULES, ADMIN_ARCHITECTURE |
 | Admin Dashboard UI 规则补齐 | 2026-05-29 auditor 审计缺口 | ADMIN_UI_RULES, README |
 | Phase 6 Next.js Admin Dashboard 主要前端实现完成 | 2026-05-30 Phase 6 实现同步 | ADMIN_ARCHITECTURE, PHASE_PLAN, ADMIN_UI_RULES, CHANGELOG |
+| Phase 7 后台 AI 解析设置与全局月度额度完成 | 2026-05-30 Phase 7 实现同步 | README, PHASE_PLAN, ADMIN_API_SPEC, RBAC_RULES, DB_SCHEMA_ADMIN, AUDIT_LOG, ADMIN_UI_RULES, CHANGELOG |

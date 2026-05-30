@@ -1,9 +1,9 @@
 # RBAC 权限系统设计规范
 
-> 版本：v2.1（FastAPI 方案确认版） | 状态：可启动开发 | 更新：2026-05-29
+> 版本：v2.2（Phase 7 AI 设置权限同步版） | 状态：Phase 7 已完成 | 更新：2026-05-30
 > 修订自审计报告 C1（移除 normal_user）、C3（super_admin 走 role_permissions）、C4（删除方案 B）、I5（双维度限流）、I6（role-version）、I9（用户级 nbf）
 >
-> - **变更原因**：2026-05-29 同步 Admin Backend 已并入 FastAPI 的实际权限依赖方式；Phase 4 科目树与导入管理继续使用 `subject:*`、`import:*` 权限。
+> - **变更原因**：2026-05-30 同步 Phase 7 新增 `ai_setting:read` / `ai_setting:write` 权限、seed 覆盖与 AI 解析额度绕过语义。
 
 ---
 
@@ -82,6 +82,12 @@
 | `audit:read` | 查看审计日志 |
 | `dashboard:read` | 查看统计概览 |
 
+### AI 设置
+| 权限标识 | 说明 |
+|---------|------|
+| `ai_setting:read` | 查看后台 AI 解析设置与月度用量 |
+| `ai_setting:write` | 更新全局 AI 解析开关或月度调用额度 |
+
 ---
 
 ## 三、角色 - 权限初始映射（C3 修订）
@@ -121,6 +127,7 @@ admin = [
   question:read, question:write, question:review, question:batch_review,
   subject:read, subject:write,
   import:read, import:write,
+  ai_setting:read,
   audit:read,
   dashboard:read,
 ]
@@ -149,6 +156,10 @@ async def create_import_enrich_task(
 **Phase 4 权限同步（2026-05-29）**：
 - 科目树模块：`GET /subjects`、`GET /subjects/{id}` 使用 `subject:read`；`POST/PATCH /subjects` 使用 `subject:write`；`DELETE /subjects/{id}` 使用 `subject:delete`。
 - 导入管理模块：`GET /imports`、`GET /imports/{batchId}`、`GET /imports/{batchId}/status` 使用 `import:read`；`POST /imports/{batchId}/enrich` 使用 `import:write`。
+
+**Phase 7 权限同步（2026-05-30）**：
+- AI 设置模块：`GET /ai-settings`、`GET /ai-settings/usage` 使用 `ai_setting:read`；`PATCH /ai-settings` 使用 `ai_setting:write`。
+- `super_admin` 通过 seed 获得全部 `ai_setting:*` 权限；业务侧只允许其绕过月度额度，不允许绕过全局 AI 解析关闭。
 
 ### 4.2 页面级（Next.js Middleware + Layout）
 
