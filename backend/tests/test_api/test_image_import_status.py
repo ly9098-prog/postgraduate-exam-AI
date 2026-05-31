@@ -7,6 +7,7 @@ from app.api.v1 import imports
 class FakeCache:
     def __init__(self):
         self.values = {}
+        self.ttls = {}
         self.fail_set = False
         self.fail_get = False
 
@@ -19,6 +20,7 @@ class FakeCache:
         if self.fail_set:
             raise RuntimeError("cache unavailable")
         self.values[key] = value
+        self.ttls[key] = ttl
 
 
 @pytest.fixture(autouse=True)
@@ -41,6 +43,7 @@ async def test_set_image_pipeline_status_writes_cache_and_memory(fake_cache):
 
     assert imports._image_pipeline_store["img_1"] == status
     assert fake_cache.values[imports._image_pipeline_key("img_1")] == status
+    assert fake_cache.ttls[imports._image_pipeline_key("img_1")] == 86400
 
 
 @pytest.mark.asyncio
