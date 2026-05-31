@@ -65,6 +65,21 @@ services:
       retries: 3
       start_period: 15s
 
+  admin:
+    build:
+      context: ../admin-frontend
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_ADMIN_API_BASE_URL: ${NEXT_PUBLIC_ADMIN_API_BASE_URL:-/api/admin/v1}
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - app
+
   nginx:
     image: nginx:1.25-alpine
     restart: always
