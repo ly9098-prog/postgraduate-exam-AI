@@ -51,11 +51,18 @@ async def get_current_user(
     return user
 
 
+def _is_local_dev_user(user) -> bool:
+    return settings.APP_ENV.lower() in {"development", "local", "test"} and str(getattr(user, "openid", "")).startswith("dev_")
+
+
 def require_app_permission(permission_name: str):
     async def dependency(
         current_user=Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ):
+        if _is_local_dev_user(current_user):
+            return current_user
+
         result = await db.execute(
             select(Permission.name)
             .join(RolePermission, RolePermission.permission_id == Permission.id)
