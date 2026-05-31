@@ -10,7 +10,7 @@
 |------|------|----------|
 | users | 用户信息 | openid (唯一) |
 | questions | 正式题目库 | subject, content(JSON), options(JSON), question_hash |
-| question_imports | 导入暂存区 | batch_id, status(pending/approved/rejected), question_hash, duplicate_status |
+| question_imports | 导入暂存区 | batch_id, status(pending/approved/rejected), question_hash, duplicate_status, AI 辅助导题字段 |
 | wrong_questions | 错题记录 + SM-2 调度字段 | efactor, interval, repetitions, next_review_date |
 | practice_records | 练习记录（每题一条） | user_answer, is_correct, used_time |
 | answer_behaviors | 答题行为明细 | time_spent, switch_count, is_correct |
@@ -110,7 +110,7 @@ class QuestionImport(Base):
 
     id: int              # PK
     batch_id: str        # 批次 ID（索引）
-    source_type: str     # excel / pdf
+    source_type: str     # excel / pdf / image / ai 等来源
     source_file: str?    # 源文件名
     subject: str?        # 解析结果
     question_type: str?
@@ -126,6 +126,19 @@ class QuestionImport(Base):
     status: str          # pending / approved / rejected（索引）
     review_note: str?    # 审批备注
     question_id: int?    # 审批后关联的 question id
+    reject_reason: str?
+    reviewed_by: int?
+    reviewed_at: datetime?
+    # AI 辅助导题字段（仍需人工审核后才能入库）
+    ai_generated: bool
+    ai_source: str?
+    ai_confidence: float?
+    ai_metadata: dict?
+    ai_raw_response: str?
+    ai_reviewed_at: datetime?
+    ai_answer_flag: bool
+    # 数学公式图片化
+    math_regions: dict?
     created_at: datetime
     updated_at: datetime
 ```
@@ -134,7 +147,7 @@ class QuestionImport(Base):
 |------|------|------|
 | id | Integer | PK, autoincrement |
 | batch_id | String(64) | NOT NULL, INDEX |
-| source_type | String(16) | NOT NULL |
+| source_type | String(16) | NOT NULL；excel / pdf / image / ai 等来源 |
 | source_file | String(256) | NULLABLE |
 | subject | String(16) | NULLABLE |
 | question_type | String(32) | NULLABLE |
@@ -150,6 +163,17 @@ class QuestionImport(Base):
 | status | String(16) | NOT NULL, default="pending", INDEX |
 | review_note | Text | NULLABLE |
 | question_id | BigInteger | NULLABLE |
+| reject_reason | Text | NULLABLE |
+| reviewed_by | Integer | NULLABLE |
+| reviewed_at | DateTime | NULLABLE |
+| ai_generated | Boolean | NOT NULL, default=False；AI 辅助生成/补全标记，仍需人工审核 |
+| ai_source | String(32) | NULLABLE |
+| ai_confidence | Float | NULLABLE |
+| ai_metadata | JSON | NULLABLE |
+| ai_raw_response | Text | NULLABLE |
+| ai_reviewed_at | DateTime | NULLABLE |
+| ai_answer_flag | Boolean | NOT NULL, default=False |
+| math_regions | JSON | NULLABLE；数学公式图片化区域信息 |
 | created_at | DateTime | server_default=now() |
 | updated_at | DateTime | server_default=now(), onupdate |
 
@@ -369,7 +393,10 @@ class Tag(Base):
 - 不拆选择题/填空题子表，用 `question_type` 区分
 - `source_type` + `source_file` + `import_batch_id` 三位一体追溯来源
 - Level 1 题库去重使用 `question_hash`：导入阶段只标记 `question_imports.duplicate_status`，发布/审核通过阶段按 `subject + question_hash` 完全匹配拦截，不自动删除历史题目
+- AI 辅助导题/补全只写入 `question_imports` 的 AI 元数据字段，仍必须经过人工审核，不直接进入 `questions`
 - `raw_content` 保留导入原始文本
 - SM-2 字段直接挂在 `WrongQuestion` 表上，不拆独立调度表
 - 每次答题一条记录（`practice_records`），每题一条，支持多次作答
 - `session_type` 区分 AI 对话场景
+
+> 2026-05-31 更新原因：对齐当前 `QuestionImport` 模型，补充审核元数据、AI 辅助导题字段与 `math_regions`，明确 AI 结果仍只进入暂存区。

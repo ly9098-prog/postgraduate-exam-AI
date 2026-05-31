@@ -35,7 +35,9 @@
 | `docs/admin/` | 后台管理系统设计与实施文档 | Admin 后台 API、RBAC、审计日志、审核流变化 |
 | `docs/debug/` | 调试体系与排查规则 | 形成稳定调试方法或复盘结论 |
 | `docs/achieve/` | 已完成阶段归档 | 阶段完成后归档 |
-| 根目录旧文档 | 历史兼容入口 | 仅在仍被引用或用户要求时同步 |
+| 根目录兼容入口 | 历史兼容入口，仅保留短入口，不重复维护正文 | 仅在仍被引用或用户要求时同步 |
+
+> 2026-05-31 更新原因：一级目录旧版副本文档已精简为兼容入口；权威正文以各子目录文档为准。
 
 ---
 
@@ -89,6 +91,20 @@
 | `docs/admin/AUDIT_LOG.md` | Admin 审计日志 |
 | `docs/admin/REVIEW_FLOW.md` | 题目审核流程 |
 | `docs/admin/DEEPSEEK_DEV_RULES.md` | DeepSeek 开发强制约束 |
+
+### 一级目录兼容入口
+
+| 文档 | 权威正文 |
+|------|----------|
+| `docs/API_SPEC.md` | `docs/backend/API_SPEC.md` |
+| `docs/DB_SCHEMA.md` | `docs/backend/DB_SCHEMA.md` |
+| `docs/OCR_FLOW.md` | `docs/architecture/OCR_FLOW.md` |
+| `docs/AI_PIPELINE.md` | `docs/ai/AI_PIPELINE.md` |
+| `docs/PROJECT_RULES.md` | `docs/project/PROJECT_RULES.md` |
+| `docs/UI_RULES.md` | `docs/frontend/UI_RULES.md` |
+| `docs/CHANGELOG.md` | 调试变更日志；项目级变更以 `docs/project/CHANGELOG.md` 为准 |
+
+以上一级目录文档仅作兼容入口或特定用途记录；除 `docs/INDEX.md` 自身外，不应在一级目录重复维护权威正文。
 
 ---
 

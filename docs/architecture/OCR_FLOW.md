@@ -49,11 +49,13 @@ Excel/PDF 上传 → 解析模块 → 文本标准化层 → Level 1 重复检�
 POST /api/v1/import/upload
   → import_service.import_excel() / import_pdf()
     → 解析生成 batch_id
+    → 文本标准化 / Question 标准化
+    → 生成 question_hash 并标记 duplicate_status
     → 写入 QuestionImport 表（status=pending）
     → 返回 {batch_id, count}
 
-PUT /api/v1/import/questions/{id}          ← 单题审批/拒绝
-POST /api/v1/import/batches/{id}/approve  ← 批量审批
+PUT /api/v1/import/questions/{id}          ← 单题审批/拒绝，发布前按 subject + question_hash 拦截完全重复
+POST /api/v1/import/batches/{id}/approve  ← 批量审批，缺字段跳过，发布前按 subject + question_hash 拦截完全重复
 ```
 
 ### 数据流（规划中 — 导入管线）
@@ -92,12 +94,13 @@ POST /api/v1/import/batches/{id}/approve  ← 批量审批
 
 ### QuestionImport 暂存区
 
-关键字段：`batch_id` / `source_type` / `source_file` / `raw_data`(JSON) / `parsed_content`(JSON) / `parsed_options`(JSON) / `status`(pending/approved/rejected) / `question_id`(审批后关联)
+关键字段：`batch_id` / `source_type` / `source_file` / `raw_data`(JSON) / `parsed_content`(JSON) / `parsed_options`(JSON) / `parsed_answer` / `parsed_analysis` / `question_hash` / `duplicate_status` / `duplicate_of_question_id` / `duplicate_of_import_id` / `status`(pending/approved/rejected) / `question_id`(审批后关联)
 
 ### 批量审批 (`batch_approve`)
 
 - 检查 subject / question_type / parsed_content / parsed_answer 必填
 - 缺少必填字段的跳过，记录跳过的题目 ID 和原因
+- 发布写入 `questions` 前按 `subject + question_hash` 做 Level 1 完全重复拦截，命中正式题库重复题时跳过发布
 - 如果全部跳过则抛错
 
 ### API 总结
@@ -121,7 +124,7 @@ POST /api/v1/import/batches/{id}/approve  ← 批量审批
 4. **同步解析** — 大文件（几百道题）在 HTTP 请求中同步解析，用户体验差（无进度反馈）
 5. **Excel 列名容错有限** — 目前写死的列名映射表，用户用了中文缩写（如"题号""题型""答案"的不同变体）可能匹配不上
 6. **无图片嵌入** — `Question.content.images` 字段存在但导入模块不会填充，所有导入题无图
-7. **导入重复检测** — 同一文件重复上传会新建 batch_id，没有基于内容哈希的去重
+7. **文件级重复检测未实现** — Level 1 题目内容 hash 已用于导入标记和发布拦截，但同一文件重复上传仍会新建 batch_id，没有基于文件内容 SHA256 的上传级去重
 
 ---
 
@@ -132,7 +135,7 @@ POST /api/v1/import/batches/{id}/approve  ← 批量审批
 - **Excel 列名智能匹配**：不再用死映射表，改为遍历 Excel 列名，用模糊匹配（包含关系 / 拼音首字母 / 常见别称）找到最可能的字段
 - **大文件异步提示**：上传接口先返回 `{batch_id, status: "parsing"}`，后台用 `BackgroundTasks` 解析，前端轮询 `GET /batches/{id}` 获取进度
 
-### Phase 2 — 去重（0.5 天）
+### Phase 2 — 文件级去重（0.5 天）
 
 - 新增 `import_service.check_duplicate(content_hash)`：
   - 上传前计算文件内容的 SHA256

@@ -6,6 +6,14 @@
 
 ## 2026-05-31
 
+- **文档整理与关键文档同步**
+  - 对齐 `CLAUDE.md` 与当前 docs 索引，明确 App 仍坚持微信 openid + JWT、无传统账号系统；Admin RBAC 属于后台管理域，不改变 App 登录模型。
+  - 同步 `question_imports` 当前字段：审核元数据、AI 辅助导题字段与数学公式图片化 `math_regions`，并强调 AI 结果必须进入暂存区人工审核。
+  - 同步 AI 学习引擎端点：`/ai/explain`、`/ai/recommend`、`/ai/report`、`/ai/analyze-mistake`，记录 token 限额与基础 AI 服务剩余缺口。
+  - 更新 OCR/导入文档中 Level 1 题目去重与文件级去重边界，避免把已实现题目 hash 去重误写成未实现。
+  - 未删除文档：本次未发现可在当前证据下安全删除且不影响索引的明确冗余文档；保留不确定文档并通过索引限定用途。
+  - 变更原因：执行 docs 目录整理任务，优先编辑现有关键文档，不修改业务/配置/测试代码。
+
 - **Redis-backed 图片导入状态完成**
   - `GET /api/v1/import/pipelines/{pipeline_id}` 按 legacy `get_pipeline_status` → Redis `import:image:pipeline:{pipeline_id}` → 同进程 `_image_pipeline_store` 查询，只有 legacy 与 image 状态都缺失时返回 404。
   - 图片状态写入先更新内存，再 best-effort 写入 Redis，TTL 86400 秒；Redis 支持跨 worker 短期状态共享与 TTL 内重启恢复。

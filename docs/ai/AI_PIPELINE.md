@@ -17,11 +17,14 @@
 | 文件 | 职责 |
 |---|---|
 | `app/ai/client.py` | httpx 异步客户端，单例，封装 `/v1/chat/completions` |
-| `app/ai/prompts.py` | 三个 Prompt 模板（error_analysis / study_advice / summary） |
+| `app/ai/prompts.py` | 基础错题分析 / 学习建议 / summary / 导入辅助 Prompt 模板 |
+| `app/ai/prompts_learning.py` | AI 学习引擎 Prompt（讲解、错因分析、学习报告） |
 | `app/ai/context.py` | 上下文构建（仅传必要信息） |
 | `app/ai/fallback.py` | API 不可用时的降级静态响应 |
-| `app/services/ai_service.py` | 编排层：analyze_error / generate_advice |
-| `app/api/v1/ai.py` | 两个路由：POST error-analysis / POST study-advice |
+| `app/services/ai_service.py` | 基础编排层：analyze_error / generate_advice |
+| `app/services/ai_learning_service.py` | AI 学习引擎：讲解、规则推荐、学习报告、错因分析、token 限额检查 |
+| `app/features/question_pipeline.py` | 题目标准化与 AI 辅助导题入口，AI 结果只进 `question_imports` |
+| `app/api/v1/ai.py` | 路由：基础 AI 端点 + Stage 13 AI 学习引擎端点 |
 
 ### 关键细节
 
@@ -30,34 +33,48 @@
 - 超时 60 秒（`AI_TIMEOUT`）
 - `is_available()` 检查 API key 是否为非空且非占位符
 
+**基础 AI 服务** (`ai_service.py`)
+- `POST /api/v1/ai/error-analysis`：错题分析，结果缓存到 `WrongQuestion.ai_analysis`
+- `POST /api/v1/ai/study-advice`：基于最近错题统计生成学习建议
+- 基础服务仍是一次请求一次 DeepSeek 调用；DeepSeek 不可用时返回 fallback
+
+**AI 学习引擎** (`ai_learning_service.py`)
+- `POST /api/v1/ai/explain`：题目讲解
+- `POST /api/v1/ai/recommend`：相似题推荐，当前为规则推荐，`tokens_used=0`
+- `POST /api/v1/ai/report`：学习报告
+- `POST /api/v1/ai/analyze-mistake`：错因分析
+- 引擎内置日/月 token 限额检查（`AI_DAILY_TOKEN_LIMIT` / `AI_MONTHLY_TOKEN_LIMIT`）与 markdown code fence JSON 解析兜底
+
 **降级策略** (`fallback.py`)
-- 三个静态字典：FALLBACK_ANALYSIS / FALLBACK_ADVICE / FALLBACK_SUMMARY
-- 触发条件：API key 未配置 / 请求抛 RuntimeError（网络超时、HTTP 错误）
+- 静态 fallback 覆盖错题分析、学习建议、讲解、学习报告等场景
+- 触发条件：API key 未配置 / 请求抛 RuntimeError / token 限额用尽
 - 返回结果前端可正常渲染，用户无感知
 
 **错题分析缓存**
-- 结果存入 `WrongQuestion.ai_analysis`（JSON 列）
+- 基础 `error-analysis` 结果存入 `WrongQuestion.ai_analysis`（JSON 列）
 - 同一错题二次请求直接返回 `from_cache=True`，不调 API
 - 缓存无过期机制
 
 **调用记录**
-- 每次 AI 调用写入 `ai_chats` 表（session_type / messages / response / tokens / duration_ms / context_snapshot）
+- AI 调用写入 `ai_chats` 表（session_type / messages / response / tokens / duration_ms / context_snapshot）
 - 用于成本核算和调用审计
 
-### 数据库中已存在但未使用的
+> 2026-05-31 更新原因：同步当前 Stage 13 AI 学习引擎端点、token 限额检查与 JSON 解析兜底实现。
 
-- **`AI_DAILY_TOKEN_LIMIT`**：`config.py` 中定义值为 50000，`ai_service.py` 从未检查
-- **`token_counter.py`**：文件不存在，无 token 估算逻辑
-- **`summary` prompt**：`prompts.py` 中存在 `build_summary` 函数，无 service 调用
+### 已实现但边界需注意
+
+- **token 限额只覆盖 AI 学习引擎**：`ai_learning_service.py` 已检查日/月额度；基础 `ai_service.py` 的 `error-analysis` / `study-advice` 仍未做额度检查。
+- **summary Prompt 仍未接入基础路由**：`prompts.py` 中存在 `build_summary`，当前无 `/ai/summary` 路由。
+- **基础 AI JSON 解析仍较弱**：`ai_service.py` 直接 `json.loads`，失败后包裹原始文本；AI 学习引擎已有 code fence / JSON 对象提取兜底。
 
 ---
 
 ## 存在问题
 
-1. **零 token 控制** — 无请求前估算，无日/月限额检查，API 费用不可控
+1. **基础 AI 服务 token 控制缺口** — `error-analysis` / `study-advice` 未接入 `_check_token_limit`
 2. **summary 未接入** — Prompt 已定义但无路由和 service 使用
 3. **study_advice 无记忆** — 每次调用都是独立请求，不传递历史对话，无法追问
-4. **JSON 解析脆弱** — 如果 DeepSeek 返回非标准 JSON，`json.loads` 失败后原始文本直接当 key 包裹，前端可能渲染异常
+4. **基础 AI JSON 解析脆弱** — DeepSeek 返回非标准 JSON 时仅包裹原始文本，前端可能渲染异常
 5. **无重试机制** — 一次失败直接降级，没有临时故障时的重试（如 5xx 可重试 1-2 次）
 6. **并发无控制** — 同一用户同时请求 AI 不做排队，可能短时间打满限额
 7. **超时后无用户反馈** — 60 秒超时期间前端无进度提示，体验差
@@ -66,22 +83,13 @@
 
 ## 下一阶段扩展方案
 
-### Phase 1 — 基础设施补齐（1-2 天）
+### Phase 1 — 基础 AI 服务补齐（1-2 天）
 
-```
-├── app/ai/
-│   ├── token_counter.py     ← 新增
-│   ├── rate_limiter.py      ← 新增（可选）
-```
-
-- **token_counter.py**
-  - 基于字符粗略估算（中文 ~1.5 token/字，英文 ~0.3 token/字符）
-  - `check_token_limit(user_id, estimated)` 查询当日 `ai_chats` 累计用量
+- **复用 AI 学习引擎限额检查**
+  - 将 `ai_service.py` 的 `error-analysis` / `study-advice` 接入日/月 token 限额
   - 超限返回降级而非报错
-- **service 层集成 token 检查**
-  - `ai_service.py` 中每个接口入口调用 `check_token_limit`
 - **JSON 解析增强**
-  - 尝试从 markdown 代码块提取 JSON（````json ... ````）
+  - 复用 `_parse_json_response` 思路，从 markdown 代码块提取 JSON
   - 兜底用正则提取 `{...}` 结构
 
 ### Phase 2 — 功能完善（1-2 天）

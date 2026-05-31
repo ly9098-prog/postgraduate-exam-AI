@@ -510,6 +510,114 @@ AI 学习建议。
 }
 ```
 
+### POST `/ai/explain`
+
+AI 题目讲解。
+
+```json
+// Request
+{
+  "question_id": 1,
+  "user_answer": "A",
+  "is_correct": false,
+  "focus": "solution"
+}
+
+// Response
+{
+  "question_id": 1,
+  "explanation": "讲解内容...",
+  "solution_steps": ["步骤1", "步骤2"],
+  "key_knowledge_points": ["导数"],
+  "common_mistakes": ["易错点"],
+  "tokens_used": 300,
+  "from_fallback": false
+}
+```
+
+### POST `/ai/recommend`
+
+相似题推荐。当前为规则推荐，不消耗 AI token。
+
+```json
+// Request
+{
+  "question_id": 1,
+  "count": 5
+}
+
+// Response
+{
+  "source_question_id": 1,
+  "recommendations": [
+    {
+      "question_id": 2,
+      "subject": "math2",
+      "question_type": "single_choice",
+      "stem": "题干...",
+      "knowledge_points": ["导数"],
+      "match_reason": "知识点相同"
+    }
+  ],
+  "strategy": "rule_based",
+  "tokens_used": 0
+}
+```
+
+### POST `/ai/report`
+
+AI 学习报告。
+
+```json
+// Request
+{
+  "subject": "math2",
+  "days": 7
+}
+
+// Response
+{
+  "subject": "math2",
+  "period_days": 7,
+  "total_answered": 30,
+  "accuracy": 0.73,
+  "weak_points": [
+    {"knowledge_point": "积分", "accuracy": 0.4, "suggestion": "加强基础题训练"}
+  ],
+  "strong_points": [
+    {"knowledge_point": "极限", "accuracy": 0.9, "suggestion": "保持练习"}
+  ],
+  "learning_suggestions": ["优先复习积分"],
+  "tokens_used": 500,
+  "from_fallback": false
+}
+```
+
+### POST `/ai/analyze-mistake`
+
+AI 错因分析。
+
+```json
+// Request
+{
+  "question_id": 1,
+  "user_answer": "B",
+  "correct_answer": "A"
+}
+
+// Response
+{
+  "error_type": "concept",
+  "error_type_label": "概念错误",
+  "analysis": "错因分析...",
+  "suggestion": "复习建议...",
+  "tokens_used": 300,
+  "from_fallback": false
+}
+```
+
+> 2026-05-31 更新原因：同步当前 AI 学习引擎端点；`/ai/recommend` 为规则推荐，`tokens_used=0`。
+
 ---
 
 ## 统计看板
