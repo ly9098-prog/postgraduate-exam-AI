@@ -8,8 +8,11 @@ class FakeCache:
     def __init__(self):
         self.values = {}
         self.fail_set = False
+        self.fail_get = False
 
     async def get(self, key):
+        if self.fail_get:
+            raise RuntimeError("cache unavailable")
         return self.values.get(key)
 
     async def set(self, key, value, ttl=300):
@@ -71,14 +74,41 @@ async def test_cache_set_exception_keeps_memory_status(fake_cache):
 
 
 @pytest.mark.asyncio
+async def test_set_image_pipeline_status_ignores_pipeline_id_update(fake_cache):
+    status = await imports._set_image_pipeline_status(
+        "img_1",
+        pipeline_id="other",
+        status="completed",
+    )
+
+    assert status["pipeline_id"] == "img_1"
+    assert status["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_get_image_pipeline_status_falls_back_to_memory_on_cache_error(fake_cache):
+    fake_cache.fail_get = True
+    imports._image_pipeline_store["img_1"] = {"pipeline_id": "img_1", "status": "parsing"}
+
+    status = await imports._get_image_pipeline_status("img_1")
+
+    assert status == {"pipeline_id": "img_1", "status": "parsing"}
+
+@pytest.mark.asyncio
 async def test_fail_image_pipeline_appends_error_and_finishes(fake_cache):
-    await imports._set_image_pipeline_status("img_1", errors=["first"])
+    await imports._set_image_pipeline_status(
+        "img_1",
+        errors=["first"],
+        stages={"upload": {"status": "completed"}, "ocr": {"status": "running"}},
+    )
 
     await imports._fail_image_pipeline("img_1", "second")
 
     status = imports._image_pipeline_store["img_1"]
     assert status["status"] == "failed"
     assert status["errors"] == ["first", "second"]
+    assert status["stages"]["upload"] == {"status": "completed"}
+    assert status["stages"]["ocr"] == {"status": "failed", "error": "second"}
     assert status["finished_at"]
 
 
