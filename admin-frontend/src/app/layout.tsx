@@ -3,8 +3,8 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "2240AI Admin",
-  description: "2240AI 后台管理系统",
+  title: "MemoGrad Admin",
+  description: "MemoGrad 后台管理系统",
 };
 
 export default function RootLayout({

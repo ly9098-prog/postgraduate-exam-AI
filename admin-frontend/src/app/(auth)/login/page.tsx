@@ -34,7 +34,7 @@ function LoginForm() {
     <main className="grid min-h-screen lg:grid-cols-[1.1fr_0.9fr]">
       <section className="blueprint-panel hidden min-h-screen items-end p-12 lg:flex">
         <div className="relative z-10 max-w-2xl animate-rise-in">
-          <p className="mb-5 font-mono text-xs uppercase tracking-[0.34em] text-[var(--color-primary-dark)]">2240AI Control Plane</p>
+          <p className="mb-5 font-mono text-xs uppercase tracking-[0.34em] text-[var(--color-primary-dark)]">MemoGrad Control Plane</p>
           <h1 className="text-balance font-display text-6xl font-black leading-[0.96] text-[var(--ink)]">
             把题库、审核与用户运营收束到一张蓝图里。
           </h1>
@@ -74,6 +74,8 @@ function LoginForm() {
               <ArrowRight className="h-4 w-4" />
             </Button>
           </form>
+
+          <p className="mt-8 text-center text-xs font-medium text-[var(--color-text-hint)]">桂ICP备2026003057号</p>
         </div>
       </section>
     </main>
