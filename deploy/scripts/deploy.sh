@@ -53,6 +53,12 @@ do_build() {
   info "构建完成"
 }
 
+do_build_admin() {
+  info "构建 admin 前端镜像（保留 Docker layer cache）..."
+  compose build admin
+  info "admin 构建完成"
+}
+
 do_up() {
   info "启动服务..."
   compose up -d
@@ -63,6 +69,29 @@ do_update_app() {
   info "替换 app 服务（不重启 postgres/redis/nginx）..."
   compose up -d --no-deps app
   info "app 服务已替换"
+}
+
+do_update_admin() {
+  info "替换 admin 前端服务..."
+  compose up -d --no-deps admin
+  info "admin 服务已替换"
+}
+
+do_admin_health_check() {
+  info "检查 admin 前端健康状态..."
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if compose exec -T admin sh -c "wget -qO- http://127.0.0.1:3000/ >/dev/null 2>&1"; then
+      info "admin 前端健康检查通过"
+      return 0
+    fi
+    if [ "$attempt" -eq 5 ]; then
+      warn "admin 前端健康检查未通过"
+      compose logs --tail=30 admin || true
+      return 1
+    fi
+    sleep 3
+  done
 }
 
 do_migrate() {
@@ -128,19 +157,36 @@ do_update() {
   info "=== 更新完成（未执行 git pull，未执行数据库迁移） ==="
 }
 
+do_update_all() {
+  check_prereqs
+  do_build
+  do_build_admin
+  do_update_app
+  do_update_admin
+  do_health_check || error "更新后 app 健康检查失败"
+  do_admin_health_check || warn "admin 前端健康检查未通过，请检查日志"
+  info "=== 全量更新完成（app + admin，未执行 git pull，未执行数据库迁移） ==="
+}
+
 case "${1:-help}" in
-  init)    do_init ;;
-  update)  do_update ;;
-  build)   check_prereqs; do_build ;;
-  status)  do_status ;;
-  migrate) do_migrate ;;
+  init)         do_init ;;
+  update)       do_update ;;
+  update-admin) check_prereqs; do_build_admin; do_update_admin; do_admin_health_check || warn "admin 前端健康检查未通过" ;;
+  update-all)   do_update_all ;;
+  build)        check_prereqs; do_build ;;
+  build-admin)  check_prereqs; do_build_admin ;;
+  status)       do_status ;;
+  migrate)      do_migrate ;;
   *)
-    echo "使用方法: $0 {init|update|build|status|migrate}"
+    echo "使用方法: $0 {init|update|update-admin|update-all|build|build-admin|status|migrate}"
     echo ""
-    echo "  init     首次部署（构建 + 启动 + 显式初始化迁移）"
-    echo "  update   日常更新（缓存构建 + 仅替换 app，不 git pull，不默认迁移）"
-    echo "  build    仅重新构建 app 镜像"
-    echo "  status   查看服务状态和健康检查"
-    echo "  migrate  显式运行数据库迁移"
+    echo "  init          首次部署（构建 + 启动 + 显式初始化迁移）"
+    echo "  update        日常更新（缓存构建 + 仅替换 app，不 git pull，不默认迁移）"
+    echo "  update-admin  仅更新 admin 前端（构建 + 替换 admin 服务）"
+    echo "  update-all    全量更新（app + admin，不 git pull，不默认迁移）"
+    echo "  build         仅重新构建 app 镜像"
+    echo "  build-admin   仅重新构建 admin 前端镜像"
+    echo "  status        查看服务状态和健康检查"
+    echo "  migrate       显式运行数据库迁移"
     ;;
 esac
