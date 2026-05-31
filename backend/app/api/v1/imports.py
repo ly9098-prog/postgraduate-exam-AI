@@ -390,7 +390,12 @@ async def image_upload(
         raise HTTPException(status_code=400, detail="图片 Content-Type 不支持")
 
     if not settings.OCR_ENABLED:
-        logger.info("image upload validation failed: OCR disabled %s", filename)
+        logger.info(
+            "image upload validation failed: OCR disabled filename=%s app_env=%s ocr_enabled=%s",
+            filename,
+            settings.APP_ENV,
+            settings.OCR_ENABLED,
+        )
         raise HTTPException(status_code=400, detail="图片 OCR 功能未启用")
 
     content = await file.read()
