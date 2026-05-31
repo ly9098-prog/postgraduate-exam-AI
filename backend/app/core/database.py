@@ -135,6 +135,30 @@ async def _ensure_app_user_admin_bindings_table(conn):
     await conn.run_sync(repair)
 
 
+async def _ensure_user_ban_columns(conn):
+    def repair(sync_conn):
+        inspector = inspect(sync_conn)
+        if "users" not in set(inspector.get_table_names()):
+            return
+
+        existing_columns = {column["name"] for column in inspector.get_columns("users")}
+        column_specs = {
+            "is_banned": "BOOLEAN NOT NULL DEFAULT FALSE",
+            "banned_reason": "VARCHAR(256)",
+            "banned_at": "TIMESTAMP",
+            "banned_by": "INTEGER",
+        }
+        for column_name, column_type in column_specs.items():
+            if column_name not in existing_columns:
+                sync_conn.execute(text(f'ALTER TABLE "users" ADD COLUMN "{column_name}" {column_type}'))
+
+        existing_indexes = {index["name"] for index in inspector.get_indexes("users")}
+        if "ix_users_is_banned" not in existing_indexes:
+            sync_conn.execute(text('CREATE INDEX IF NOT EXISTS "ix_users_is_banned" ON "users" ("is_banned")'))
+
+    await conn.run_sync(repair)
+
+
 async def init_db():
     if settings.APP_ENV == "production":
         return
@@ -142,5 +166,6 @@ async def init_db():
     async with engine.begin() as conn:
         await _repair_sqlite_admin_bigint_pk(conn)
         await conn.run_sync(Base.metadata.create_all)
+        await _ensure_user_ban_columns(conn)
         await _ensure_app_user_admin_bindings_table(conn)
         await _ensure_duplicate_check_columns(conn)
