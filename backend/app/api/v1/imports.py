@@ -71,11 +71,12 @@ def _prune_image_pipeline_store() -> None:
         _image_pipeline_store.pop(pipeline_id, None)
 
 
-async def _set_image_pipeline_status(pipeline_id: str, **updates) -> dict:
+async def _set_image_pipeline_status(image_pipeline_id: str, **updates) -> dict:
+    updates.pop("pipeline_id", None)
     status = _image_pipeline_store.setdefault(
-        pipeline_id,
+        image_pipeline_id,
         {
-            "pipeline_id": pipeline_id,
+            "pipeline_id": image_pipeline_id,
             "status": "queued",
             "stages": {},
             "stats": {},
@@ -90,17 +91,21 @@ async def _set_image_pipeline_status(pipeline_id: str, **updates) -> dict:
     _prune_image_pipeline_store()
     try:
         await cache.set(
-            _image_pipeline_key(pipeline_id),
+            _image_pipeline_key(image_pipeline_id),
             status,
             ttl=_IMAGE_PIPELINE_STATUS_TTL_SECONDS,
         )
     except Exception:
-        logger.warning("image pipeline status cache write failed: pipeline_id=%s", pipeline_id)
+        logger.warning("image pipeline status cache write failed: pipeline_id=%s", image_pipeline_id)
     return status
 
 
 async def _get_image_pipeline_status(pipeline_id: str) -> dict | None:
-    cached = await cache.get(_image_pipeline_key(pipeline_id))
+    try:
+        cached = await cache.get(_image_pipeline_key(pipeline_id))
+    except Exception:
+        logger.warning("image pipeline status cache read failed: pipeline_id=%s", pipeline_id)
+        cached = None
     if cached is not None:
         _image_pipeline_store[pipeline_id] = cached
         _prune_image_pipeline_store()
@@ -135,10 +140,23 @@ async def _fail_image_pipeline(pipeline_id: str, error: str) -> None:
     current = await _get_image_pipeline_status(pipeline_id) or {}
     errors = list(current.get("errors", []))
     errors.append(error)
+    stages = dict(current.get("stages", {}))
+    if stages:
+        active_stage = next(
+            (
+                name
+                for name, stage in reversed(list(stages.items()))
+                if stage.get("status") in {"running", "pending"}
+            ),
+            None,
+        )
+        if active_stage:
+            stages[active_stage] = {**stages[active_stage], "status": "failed", "error": error}
     await _set_image_pipeline_status(
         pipeline_id,
         status="failed",
         errors=errors,
+        stages=stages,
         finished_at=datetime.now().isoformat(),
     )
 
