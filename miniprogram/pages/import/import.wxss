@@ -22,8 +22,14 @@ page {
 }
 
 /* ── 上传区域 ── */
-.upload-zone {
+.upload-grid {
   margin: 8rpx 24rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.upload-zone {
   padding: 48rpx 32rpx;
   background: #fff;
   border-radius: 20rpx;
@@ -85,6 +91,75 @@ page {
 .hint-text {
   font-size: 22rpx;
   color: #9AABBA;
+}
+
+.image-zone {
+  border-color: #BFD4C8;
+}
+
+.image-icon-wrap {
+  background: #EEF7F1;
+}
+
+.image-task-card {
+  margin: 16rpx 24rpx;
+  padding: 24rpx 28rpx;
+  background: #fff;
+  border-radius: 16rpx;
+  box-shadow: 0 2rpx 8rpx rgba(43, 60, 80, 0.04);
+}
+
+.image-task-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.image-task-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #2D3E50;
+}
+
+.image-task-status {
+  font-size: 22rpx;
+  color: #5B7B9A;
+  background: #EDF1F5;
+  border-radius: 999rpx;
+  padding: 6rpx 14rpx;
+}
+
+.image-task-status.failed {
+  color: #B85C5C;
+  background: #FCEEEE;
+}
+
+.image-task-status.completed {
+  color: #4F8A65;
+  background: #EEF7F1;
+}
+
+.image-task-desc {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: #6B7B8D;
+}
+
+.image-task-desc.error {
+  color: #B85C5C;
+}
+
+.image-preview {
+  display: block;
+  margin-top: 14rpx;
+  padding: 16rpx;
+  border-radius: 12rpx;
+  background: #F7F6F2;
+  color: #6B7B8D;
+  font-size: 22rpx;
+  line-height: 1.6;
 }
 
 /* ── 模板下载条 ── */

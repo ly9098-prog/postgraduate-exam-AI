@@ -93,6 +93,19 @@ def _ocr_one_page_with_boxes(page_png: bytes, page_index: int) -> tuple[int, str
         return page_index, "", []
 
 
+def ocr_image(image_bytes: bytes) -> str:
+    """对单张图片执行 OCR，返回识别文本。"""
+    if not settings.OCR_ENABLED:
+        raise RuntimeError("OCR 功能未启用（OCR_ENABLED=false）")
+    if not image_bytes:
+        raise ValueError("图片内容为空")
+
+    _, text = _ocr_one_page(image_bytes, 1)
+    if not text.strip():
+        raise RuntimeError("图片 OCR 未识别到文本")
+    return text
+
+
 def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
     """
     并发 OCR 多页。
