@@ -121,5 +121,7 @@ class PipelineStatusResponse(BaseModel):
     stats: dict[str, Any] = {}
     errors: list[str] = []
     batch_id: str = ""
+    raw_text_preview: str = ""
+    question_count: int = 0
     started_at: str = ""
     finished_at: str = ""

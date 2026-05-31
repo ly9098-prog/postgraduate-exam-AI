@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import uuid
 from datetime import datetime
@@ -6,6 +7,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFi
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import cache
+from app.core.config import settings
 from app.core.database import get_db, async_session
 from app.core.security import require_app_permission
 from app.models.user import User
@@ -28,6 +31,7 @@ from app.features import question_publish_service as publish_svc
 from app.features import review_service as review_svc
 from app.features.pipeline_orchestrator import (
     get_pipeline_status,
+    run_import_pipeline,
     run_pipeline_background,
 )
 from app.schemas.import_review import (
@@ -42,6 +46,101 @@ from app.schemas.import_review import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/import")
+
+_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_MAX_IMAGE_PIPELINE_STORE_SIZE = 200
+_IMAGE_PIPELINE_STATUS_TTL_SECONDS = 86400
+_IMAGE_PIPELINE_REDIS_PREFIX = "import:image:pipeline"
+_image_pipeline_store: dict[str, dict] = {}
+
+
+def _image_pipeline_key(pipeline_id: str) -> str:
+    return f"{_IMAGE_PIPELINE_REDIS_PREFIX}:{pipeline_id}"
+
+
+def _prune_image_pipeline_store() -> None:
+    if len(_image_pipeline_store) <= _MAX_IMAGE_PIPELINE_STORE_SIZE:
+        return
+    over_limit = len(_image_pipeline_store) - _MAX_IMAGE_PIPELINE_STORE_SIZE
+    oldest_ids = sorted(
+        _image_pipeline_store,
+        key=lambda pid: _image_pipeline_store[pid].get("started_at", ""),
+    )[:over_limit]
+    for pipeline_id in oldest_ids:
+        _image_pipeline_store.pop(pipeline_id, None)
+
+
+async def _set_image_pipeline_status(pipeline_id: str, **updates) -> dict:
+    status = _image_pipeline_store.setdefault(
+        pipeline_id,
+        {
+            "pipeline_id": pipeline_id,
+            "status": "queued",
+            "stages": {},
+            "stats": {},
+            "errors": [],
+            "batch_id": "",
+            "started_at": datetime.now().isoformat(),
+        },
+    )
+    if "started_at" in updates and status.get("started_at"):
+        updates = {key: value for key, value in updates.items() if key != "started_at"}
+    status.update(updates)
+    _prune_image_pipeline_store()
+    try:
+        await cache.set(
+            _image_pipeline_key(pipeline_id),
+            status,
+            ttl=_IMAGE_PIPELINE_STATUS_TTL_SECONDS,
+        )
+    except Exception:
+        logger.warning("image pipeline status cache write failed: pipeline_id=%s", pipeline_id)
+    return status
+
+
+async def _get_image_pipeline_status(pipeline_id: str) -> dict | None:
+    cached = await cache.get(_image_pipeline_key(pipeline_id))
+    if cached is not None:
+        _image_pipeline_store[pipeline_id] = cached
+        _prune_image_pipeline_store()
+        return cached
+    return _image_pipeline_store.get(pipeline_id)
+
+
+def _validate_image_content(content: bytes) -> tuple[int, int, str]:
+    try:
+        from PIL import Image, UnidentifiedImageError
+        import io
+    except ImportError as exc:
+        raise HTTPException(status_code=400, detail="图片解析依赖不可用") from exc
+
+    try:
+        with Image.open(io.BytesIO(content)) as img:
+            img.verify()
+        with Image.open(io.BytesIO(content)) as img:
+            width, height = img.size
+            image_format = (img.format or "").lower()
+    except UnidentifiedImageError as exc:
+        raise HTTPException(status_code=400, detail="图片内容无法解析") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="图片内容校验失败") from exc
+
+    if width <= 0 or height <= 0:
+        raise HTTPException(status_code=400, detail="图片尺寸无效")
+    return width, height, image_format
+
+
+async def _fail_image_pipeline(pipeline_id: str, error: str) -> None:
+    current = await _get_image_pipeline_status(pipeline_id) or {}
+    errors = list(current.get("errors", []))
+    errors.append(error)
+    await _set_image_pipeline_status(
+        pipeline_id,
+        status="failed",
+        errors=errors,
+        finished_at=datetime.now().isoformat(),
+    )
 
 
 @router.get("/template")
@@ -244,6 +343,159 @@ async def fix_question(
 # ---------------------------------------------------------------------------
 
 
+@router.post("/image/upload", response_model=PipelineUploadResponse)
+async def image_upload(
+    file: UploadFile,
+    background_tasks: BackgroundTasks,
+    subject: str | None = None,
+    enable_ai_repair: bool = True,
+    confidence_threshold: float = 0.6,
+    _: User = Depends(require_app_permission("import:write")),
+):
+    """图片导入：单图 OCR 后以 TXT 流水线进入现有审核队列。"""
+    if not file.filename:
+        logger.info("image upload validation failed: empty filename")
+        raise HTTPException(status_code=400, detail="文件名不能为空")
+
+    filename = file.filename
+    lower_name = filename.lower()
+    if not lower_name.endswith(_IMAGE_EXTENSIONS):
+        logger.info("image upload validation failed: unsupported extension %s", filename)
+        raise HTTPException(status_code=400, detail="仅支持 .jpg / .jpeg / .png / .webp 图片")
+
+    if file.content_type and file.content_type not in _IMAGE_CONTENT_TYPES:
+        logger.info(
+            "image upload validation failed: unsupported content-type %s for %s",
+            file.content_type,
+            filename,
+        )
+        raise HTTPException(status_code=400, detail="图片 Content-Type 不支持")
+
+    if not settings.OCR_ENABLED:
+        logger.info("image upload validation failed: OCR disabled %s", filename)
+        raise HTTPException(status_code=400, detail="图片 OCR 功能未启用")
+
+    content = await file.read()
+    if not content:
+        logger.info("image upload validation failed: empty content %s", filename)
+        raise HTTPException(status_code=400, detail="图片内容为空")
+    if len(content) > settings.IMAGE_IMPORT_MAX_BYTES:
+        logger.info(
+            "image upload validation failed: file too large %s bytes=%d",
+            filename,
+            len(content),
+        )
+        raise HTTPException(status_code=400, detail="图片过大，请压缩后重试")
+
+    image_width, image_height, image_format = _validate_image_content(content)
+    image_hash = hashlib.sha256(content).hexdigest()
+    pipeline_id = f"img_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{image_hash[:8]}"
+    options = {
+        "enable_ai_repair": enable_ai_repair,
+        "confidence_threshold": confidence_threshold,
+        "image_hash": image_hash,
+    }
+
+    await _set_image_pipeline_status(
+        pipeline_id,
+        status="queued",
+        stats={
+            "image_bytes": len(content),
+            "image_width": image_width,
+            "image_height": image_height,
+            "image_format": image_format,
+        },
+        stages={"upload": {"status": "completed"}, "ocr": {"status": "pending"}},
+    )
+    logger.info(
+        "image upload received: pipeline_id=%s file=%s content_type=%s bytes=%d",
+        pipeline_id,
+        filename,
+        file.content_type,
+        len(content),
+    )
+
+    background_tasks.add_task(
+        _run_image_pipeline_with_db,
+        pipeline_id=pipeline_id,
+        image_content=content,
+        source_file=filename,
+        subject=subject,
+        options=options,
+    )
+
+    return PipelineUploadResponse(pipeline_id=pipeline_id, status="queued")
+
+
+async def _run_image_pipeline_with_db(
+    pipeline_id: str,
+    image_content: bytes,
+    source_file: str,
+    subject: str | None,
+    options: dict,
+) -> None:
+    """图片后台任务：OCR → TXT bytes → 现有导入流水线。"""
+    try:
+        from app.services.ocr_service import clean_ocr_text, ocr_image
+
+        logger.info("image OCR started: pipeline_id=%s file=%s", pipeline_id, source_file)
+        await _set_image_pipeline_status(
+            pipeline_id,
+            status="ocr_running",
+            stages={"upload": {"status": "completed"}, "ocr": {"status": "running"}},
+        )
+        raw_text = clean_ocr_text(ocr_image(image_content))
+        if not raw_text:
+            raise ValueError("图片 OCR 未识别到可导入文本")
+        logger.info(
+            "image OCR completed: pipeline_id=%s chars=%d",
+            pipeline_id,
+            len(raw_text),
+        )
+        await _set_image_pipeline_status(
+            pipeline_id,
+            status="parsing",
+            raw_text_preview=raw_text[:500],
+            stages={"upload": {"status": "completed"}, "ocr": {"status": "completed"}},
+        )
+
+        logger.info("image pipeline started: pipeline_id=%s", pipeline_id)
+        async with async_session() as db:
+            result = await run_import_pipeline(
+                file_content=raw_text.encode("utf-8"),
+                source_type="txt",
+                source_file=source_file,
+                subject=subject,
+                options=options,
+                db=db,
+            )
+
+        status = "completed" if result.get("status") == "completed" else "failed"
+        if status == "completed" and not result.get("batch_id"):
+            status = "failed"
+            result.setdefault("errors", []).append("OCR 文本未生成待审核批次")
+        if result.get("batch_id"):
+            logger.info(
+                "image review created: pipeline_id=%s batch_id=%s count=%s",
+                pipeline_id,
+                result.get("batch_id"),
+                result.get("stats", {}).get("to_review", 0),
+            )
+        logger.info("image pipeline completed: pipeline_id=%s status=%s", pipeline_id, status)
+        result["pipeline_id"] = pipeline_id
+        result["status"] = status
+        result["raw_text_preview"] = raw_text[:500]
+        result["finished_at"] = datetime.now().isoformat()
+        if status == "completed" and result.get("batch_id"):
+            result["question_count"] = result.get("stats", {}).get("to_review", 0)
+        current = await _get_image_pipeline_status(pipeline_id) or {}
+        result.setdefault("started_at", current.get("started_at", datetime.now().isoformat()))
+        await _set_image_pipeline_status(pipeline_id, **result)
+    except Exception as exc:
+        logger.exception("image pipeline failed: pipeline_id=%s file=%s", pipeline_id, source_file)
+        await _fail_image_pipeline(pipeline_id, str(exc))
+
+
 @router.post("/pipeline/upload", response_model=PipelineUploadResponse)
 async def pipeline_upload(
     file: UploadFile,
@@ -318,6 +570,8 @@ async def pipeline_status(
 ):
     """查询流水线执行状态和各阶段详情。"""
     status = get_pipeline_status(pipeline_id)
+    if status is None:
+        status = await _get_image_pipeline_status(pipeline_id)
     if status is None:
         raise HTTPException(status_code=404, detail="流水线不存在")
     return PipelineStatusResponse(**status)

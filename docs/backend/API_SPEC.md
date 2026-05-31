@@ -624,6 +624,18 @@ AI 学习建议。
 }
 ```
 
+### GET `/import/pipelines/{pipeline_id}`
+
+查询导入管线状态。状态读取顺序：先查 legacy `get_pipeline_status`，再查 Redis `import:image:pipeline:{pipeline_id}`，最后回退到同进程内存 `_image_pipeline_store`；只有 legacy 与 image 状态都缺失时返回 404。
+
+图片导入状态写入时先更新内存，再 best-effort 写入 Redis，TTL 为 86400 秒。配置 `REDIS_URL` 后可跨 worker 短期共享状态，并在 TTL 内支持重启恢复；未配置或 Redis 不可用时仅保证同进程内存回退，不保证跨 worker / 重启恢复。
+
+| 字段 | 说明 |
+|------|------|
+| status | 图片导入终态为 `completed` / `failed`；非终态包括 `queued` / `ocr_running` / `parsing` |
+
+前端轮询应仅在 `completed` 或 `failed` 时停止。
+
 ### GET `/import/batches`
 
 导入批次列表。
