@@ -7,7 +7,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, async_session
-from app.core.security import get_current_user
+from app.core.security import require_app_permission
 from app.models.user import User
 from app.schemas.question_import import (
     ImportBatchDetailResponse,
@@ -46,7 +46,7 @@ router = APIRouter(prefix="/api/v1/import")
 
 @router.get("/template")
 async def download_template(
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:read")),
 ):
     """下载 Excel 导入模板"""
     content = svc.generate_template()
@@ -62,7 +62,7 @@ async def upload_file(
     file: UploadFile,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:write")),
 ):
     """上传文件（Excel / PDF），解析后进入暂存区"""
     if not file.filename:
@@ -104,7 +104,7 @@ async def upload_file(
 @router.get("/batches")
 async def list_batches(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:read")),
 ):
     """导入批次列表"""
     batches = await svc.list_batches(db)
@@ -115,7 +115,7 @@ async def list_batches(
 async def batch_detail(
     batch_id: str,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:read")),
 ):
     """批次详情：该批次所有题目"""
     questions = await svc.get_batch_detail(db, batch_id)
@@ -136,7 +136,7 @@ async def review_question(
     question_id: int,
     data: ImportQuestionUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:write")),
 ):
     """审核单题：通过或拒绝"""
     if data.status == "rejected":
@@ -161,7 +161,7 @@ async def review_question(
 async def approve_batch(
     batch_id: str,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:write")),
 ):
     """批量通过一个批次。skipped 题目会列出缺失字段，前端可据此提示用户去逐题审核。"""
     try:
@@ -182,7 +182,7 @@ async def approve_batch(
 async def reject_batch(
     batch_id: str,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:write")),
 ):
     """批量拒绝一个批次的所有待审核题目"""
     try:
@@ -196,7 +196,7 @@ async def reject_batch(
 async def submit_review(
     data: SubmitReviewRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:write")),
 ):
     """提交 Stage 5/6 标准化题目到审核队列"""
     questions = [q.model_dump() for q in data.questions]
@@ -212,7 +212,7 @@ async def review_queue(
     page: int = 1,
     page_size: int = 20,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:read")),
 ):
     """获取审核队列（低置信度优先）"""
     result = await review_svc.get_review_queue(
@@ -227,7 +227,7 @@ async def fix_question(
     question_id: int,
     data: FixQuestionRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:write")),
 ):
     """人工修复题目字段（仅 pending 状态）"""
     try:
@@ -251,7 +251,7 @@ async def pipeline_upload(
     subject: str | None = None,
     enable_ai_repair: bool = True,
     confidence_threshold: float = 0.6,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:write")),
 ):
     """异步导入流水线：上传文件即返回 pipeline_id，后台串联 Stage 1-7。
 
@@ -314,7 +314,7 @@ async def _run_pipeline_with_db(
 @router.get("/pipelines/{pipeline_id}", response_model=PipelineStatusResponse)
 async def pipeline_status(
     pipeline_id: str,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:read")),
 ):
     """查询流水线执行状态和各阶段详情。"""
     status = get_pipeline_status(pipeline_id)
@@ -332,7 +332,7 @@ async def pipeline_status(
 async def publish_questions(
     data: PublishRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:write")),
 ):
     """发布审核通过的题目到正式题库。question_ids 和 batch_id 二选一。"""
     try:
@@ -349,7 +349,7 @@ async def publish_history(
     page_size: int = 20,
     status: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:read")),
 ):
     """查询发布历史（按 batch_id 聚合）。"""
     return await publish_svc.get_publish_history(
@@ -361,7 +361,7 @@ async def publish_history(
 async def approve_and_publish(
     data: ApproveAndPublishRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:write")),
 ):
     """快捷操作：审核通过并发布，一步完成。"""
     try:
@@ -378,7 +378,7 @@ async def approve_and_publish(
 async def math_preview(
     import_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:read")),
 ):
     """返回单题 segments 预览，供审核查看公式截图。"""
     from sqlalchemy import select as sa_select
