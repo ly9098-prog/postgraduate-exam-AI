@@ -122,8 +122,25 @@ async def _ensure_duplicate_check_columns(conn):
     await conn.run_sync(repair)
 
 
+async def _ensure_app_user_admin_bindings_table(conn):
+    def repair(sync_conn):
+        inspector = inspect(sync_conn)
+        existing_tables = set(inspector.get_table_names())
+        if "app_user_admin_bindings" in existing_tables:
+            return
+        from app.models.app_user_admin_binding import AppUserAdminBinding
+
+        AppUserAdminBinding.__table__.create(sync_conn, checkfirst=True)
+
+    await conn.run_sync(repair)
+
+
 async def init_db():
+    if settings.APP_ENV == "production":
+        return
+
     async with engine.begin() as conn:
         await _repair_sqlite_admin_bigint_pk(conn)
         await conn.run_sync(Base.metadata.create_all)
+        await _ensure_app_user_admin_bindings_table(conn)
         await _ensure_duplicate_check_columns(conn)
