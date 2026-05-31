@@ -52,6 +52,7 @@ services:
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       AI_TIMEOUT: ${AI_TIMEOUT:-60}
       AI_DAILY_TOKEN_LIMIT: ${AI_DAILY_TOKEN_LIMIT:-50000}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       WECHAT_APP_ID: ${WECHAT_APP_ID:?必须设置 WECHAT_APP_ID}
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:?必须设置 WECHAT_APP_SECRET}
       CORS_ORIGINS: ${CORS_ORIGINS:-["https://your-domain.com"]}

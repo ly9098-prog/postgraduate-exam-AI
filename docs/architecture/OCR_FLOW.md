@@ -16,6 +16,22 @@ Excel/PDF 上传 → 解析模块 → 文本标准化层 → Level 1 重复检�
 
 > 2026-05-30 更新原因：同步题库 Level 1 完全重复检测；导入阶段标记疑似重复，审核发布阶段最终拦截。
 
+### 图片导入状态链路
+
+- `GET /api/v1/import/pipelines/{pipeline_id}` 先读 legacy `get_pipeline_status`
+- 再读 Redis key `import:image:pipeline:{pipeline_id}`
+- 最后回退到同进程 `_image_pipeline_store`
+- 只有 legacy 与 image 状态都不存在时返回 404
+
+图片导入状态写入顺序为“先内存、后 Redis best-effort”，Redis TTL 为 86400 秒。
+
+### 状态语义
+
+- 终态：`completed`、`failed`
+- 非终态：`queued`、`ocr_running`、`parsing`
+
+前端轮询仅在 `completed` / `failed` 后停止。
+
 ### 文本标准化层（新增）
 
 `ImportTextNormalizer`（`backend/app/features/text_normalizer.py`）位于解析模块与暂存区之间：

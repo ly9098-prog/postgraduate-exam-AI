@@ -33,10 +33,11 @@ class Settings(BaseSettings):
     WECHAT_APP_SECRET: str = ""
 
     # OCR
-    OCR_ENABLED: bool = True
+    OCR_ENABLED: bool = False
     OCR_MAX_WORKERS: int = 4
     OCR_LANGUAGE: str = "ch"
     OCR_USE_GPU: bool = False
+    IMAGE_IMPORT_MAX_BYTES: int = 10 * 1024 * 1024
 
     # Redis
     REDIS_URL: str = ""
