@@ -5,11 +5,23 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
+from app.models.admin import AdminUser, Role
+from app.models.app_user_admin_binding import AppUserAdminBinding
 from app.models.practice_record import PracticeRecord
 from app.models.user import User
 from app.models.wrong_question import WrongQuestion
 from app.schemas.admin_app_users import AdminAppUserBanRequest, AdminAppUserUpdateRequest
 from app.services.admin_audit_service import write_admin_audit
+
+
+async def _ensure_super_admin(db: AsyncSession, operator: AdminPrincipal) -> None:
+    role_name = await db.scalar(
+        select(Role.name)
+        .join(AdminUser, AdminUser.role_id == Role.id)
+        .where(AdminUser.id == operator.id)
+    )
+    if role_name != "super_admin":
+        raise PermissionError("仅 super_admin 可管理小程序管理员绑定")
 
 
 async def list_app_users(
@@ -181,3 +193,75 @@ async def unban_app_user(
         request=request,
     )
     return user
+
+
+async def bind_app_user_admin(
+    db: AsyncSession,
+    user_id: int,
+    admin_user_id: int,
+    operator: AdminPrincipal,
+    request: Request | None = None,
+):
+    await _ensure_super_admin(db, operator)
+
+    user = await db.get(User, user_id)
+    if not user:
+        raise ValueError("用户不存在")
+    admin_user = await db.get(AdminUser, admin_user_id)
+    if not admin_user or not admin_user.is_active:
+        raise ValueError("管理员不存在或已停用")
+
+    existing_user_binding = await db.scalar(
+        select(AppUserAdminBinding).where(AppUserAdminBinding.user_id == user_id)
+    )
+    if existing_user_binding:
+        raise ValueError("该小程序用户已绑定管理员账号")
+    existing_admin_binding = await db.scalar(
+        select(AppUserAdminBinding).where(AppUserAdminBinding.admin_user_id == admin_user_id)
+    )
+    if existing_admin_binding:
+        raise ValueError("该管理员账号已绑定小程序用户")
+
+    binding = AppUserAdminBinding(user_id=user_id, admin_user_id=admin_user_id, created_by=operator.id)
+    db.add(binding)
+    await write_admin_audit(
+        db,
+        operator,
+        "app_user.bind_admin",
+        "app_user",
+        user.id,
+        severity="critical",
+        detail={"admin_user_id": admin_user_id, "admin_username": admin_user.username},
+        request=request,
+    )
+    return binding
+
+
+async def unbind_app_user_admin(
+    db: AsyncSession,
+    user_id: int,
+    operator: AdminPrincipal,
+    request: Request | None = None,
+) -> None:
+    await _ensure_super_admin(db, operator)
+
+    user = await db.get(User, user_id)
+    if not user:
+        raise ValueError("用户不存在")
+    binding = await db.scalar(
+        select(AppUserAdminBinding).where(AppUserAdminBinding.user_id == user_id)
+    )
+    if not binding:
+        raise ValueError("该小程序用户未绑定管理员账号")
+    detail = {"admin_user_id": binding.admin_user_id}
+    await db.delete(binding)
+    await write_admin_audit(
+        db,
+        operator,
+        "app_user.unbind_admin",
+        "app_user",
+        user.id,
+        severity="critical",
+        detail=detail,
+        request=request,
+    )

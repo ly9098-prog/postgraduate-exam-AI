@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class WechatLogin(BaseModel):
@@ -9,6 +9,10 @@ class UserResponse(BaseModel):
     id: int
     nickname: str | None = None
     avatar_url: str | None = None
+    is_admin: bool = False
+    role: str = "user"
+    role_name: str = "user"
+    permissions: list[str] = Field(default_factory=list)
 
 
 class TokenResponse(BaseModel):

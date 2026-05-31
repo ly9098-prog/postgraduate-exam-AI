@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.models.admin import AdminUser, Permission, RolePermission
+from app.models.app_user_admin_binding import AppUserAdminBinding
 
 security = HTTPBearer()
 
@@ -47,3 +49,27 @@ async def get_current_user(
             detail="User not found",
         )
     return user
+
+
+def require_app_permission(permission_name: str):
+    async def dependency(
+        current_user=Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ):
+        result = await db.execute(
+            select(Permission.name)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(AdminUser, AdminUser.role_id == RolePermission.role_id)
+            .join(AppUserAdminBinding, AppUserAdminBinding.admin_user_id == AdminUser.id)
+            .where(AppUserAdminBinding.user_id == current_user.id)
+            .where(AdminUser.is_active.is_(True))
+            .where(Permission.name == permission_name)
+        )
+        if result.scalar_one_or_none() != permission_name:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permission denied",
+            )
+        return current_user
+
+    return dependency

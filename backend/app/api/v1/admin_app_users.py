@@ -3,11 +3,11 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.admin_security import require_permissions
+from app.core.admin_security import require_permissions, require_roles
 from app.core.database import get_db
-from app.schemas.admin_app_users import AdminAppUserBanRequest, AdminAppUserDetail, AdminAppUserListItem, AdminAppUserUpdateRequest
+from app.schemas.admin_app_users import AdminAppUserBanRequest, AdminAppUserBindAdminRequest, AdminAppUserBindAdminResponse, AdminAppUserDetail, AdminAppUserListItem, AdminAppUserUpdateRequest
 from app.schemas.common import paginated_response
-from app.services.admin_app_user_service import ban_app_user, get_app_user_detail, list_app_users, unban_app_user, update_app_user
+from app.services.admin_app_user_service import ban_app_user, bind_app_user_admin, get_app_user_detail, list_app_users, unban_app_user, unbind_app_user_admin, update_app_user
 
 router = APIRouter(prefix="/api/admin/v1/app-users", tags=["admin-app-users"])
 
@@ -55,6 +55,46 @@ async def patch_user(
     except ValueError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+
+@router.post("/{user_id}/admin-binding", response_model=AdminAppUserBindAdminResponse)
+async def bind_admin(
+    user_id: int,
+    data: AdminAppUserBindAdminRequest,
+    request: Request,
+    current_admin=Depends(require_roles("super_admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        binding = await bind_app_user_admin(db, user_id, data.admin_user_id, current_admin, request)
+        await db.commit()
+        await db.refresh(binding)
+        return binding
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except PermissionError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+
+
+@router.delete("/{user_id}/admin-binding")
+async def unbind_admin(
+    user_id: int,
+    request: Request,
+    current_admin=Depends(require_roles("super_admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await unbind_app_user_admin(db, user_id, current_admin, request)
+        await db.commit()
+        return {"status": "ok"}
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except PermissionError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
 
 @router.post("/{user_id}/ban", response_model=AdminAppUserListItem)

@@ -15,11 +15,16 @@ Page({
     isAdmin: false,
   },
 
-  onShow() {
-    const user = auth.getUser() || {}
+  async onShow() {
     const authed = auth.isLoggedIn()
-    this.setData({ user, authed, isAdmin: auth.isAdmin(), greeting: this.getGreeting(), dateStr: this.getDateStr() })
+    this.setData({ user: auth.getUser() || {}, authed, isAdmin: auth.isAdmin(), greeting: this.getGreeting(), dateStr: this.getDateStr() })
     if (!authed) return
+    try {
+      const syncedUser = await auth.syncCurrentUser()
+      this.setData({ user: syncedUser || {}, isAdmin: auth.isAdmin() })
+    } catch (e) {
+      console.error('同步用户权限失败', e)
+    }
     this.loadStats()
     this.loadPracticeCount()
   },

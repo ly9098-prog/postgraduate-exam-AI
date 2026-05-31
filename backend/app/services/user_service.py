@@ -6,7 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import create_token
+from app.models.admin import AdminUser, Permission, Role, RolePermission
+from app.models.app_user_admin_binding import AppUserAdminBinding
 from app.models.user import User
+from app.schemas.user import UserResponse
 
 WX_URL = "https://api.weixin.qq.com/sns/jscode2session"
 
@@ -54,6 +57,47 @@ async def wechat_login(db: AsyncSession, code: str) -> tuple[str, User]:
 
     token = create_token(user.id)
     return token, user
+
+
+async def get_user_response(db: AsyncSession, user: User) -> UserResponse:
+    """Build app user payload with miniprogram permission metadata.
+
+    AppUser identity remains WeChat-openid based.  A miniprogram user receives
+    admin-like metadata only through an explicit app_user_admin_bindings row.
+    """
+    role_name = "user"
+    permissions: list[str] = []
+
+    admin_result = await db.execute(
+        select(AdminUser, Role)
+        .join(AppUserAdminBinding, AppUserAdminBinding.admin_user_id == AdminUser.id)
+        .join(Role, Role.id == AdminUser.role_id)
+        .where(AppUserAdminBinding.user_id == user.id)
+        .where(AdminUser.is_active.is_(True))
+        .order_by(AppUserAdminBinding.id.desc())
+    )
+    admin_row = admin_result.first()
+    if admin_row:
+        _, role = admin_row
+        role_name = role.name
+        permission_result = await db.execute(
+            select(Permission.name)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .where(RolePermission.role_id == role.id)
+            .order_by(Permission.name.asc())
+        )
+        permissions = list(permission_result.scalars().all())
+
+    is_admin = role_name in {"admin", "super_admin"} or "import:write" in permissions
+    return UserResponse(
+        id=user.id,
+        nickname=user.nickname,
+        avatar_url=user.avatar_url,
+        is_admin=is_admin,
+        role=role_name,
+        role_name=role_name,
+        permissions=permissions,
+    )
 
 
 async def update_user(

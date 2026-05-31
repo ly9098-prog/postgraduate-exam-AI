@@ -19,17 +19,16 @@ async def login(data: WechatLogin, db: AsyncSession = Depends(get_db)):
 
     return TokenResponse(
         access_token=token,
-        user=UserResponse(id=user.id, nickname=user.nickname, avatar_url=user.avatar_url),
+        user=await user_service.get_user_response(db, user),
     )
 
 
 @router.get("/users/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
-    return UserResponse(
-        id=current_user.id,
-        nickname=current_user.nickname,
-        avatar_url=current_user.avatar_url,
-    )
+async def get_me(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await user_service.get_user_response(db, current_user)
 
 
 @router.put("/users/me", response_model=UserResponse)
@@ -43,8 +42,4 @@ async def update_me(
     )
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    return UserResponse(
-        id=user.id,
-        nickname=user.nickname,
-        avatar_url=user.avatar_url,
-    )
+    return await user_service.get_user_response(db, user)
