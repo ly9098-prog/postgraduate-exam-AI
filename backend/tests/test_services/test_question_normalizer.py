@@ -111,6 +111,21 @@ class TestExtractStem:
         assert "求 f'(x)" in stem
         assert "A." not in stem
 
+    def test_circled_option_like_lines_stay_in_stem(self):
+        stem = _extract_stem(
+            "1. 若系统有 n 个进程，则就绪队列中进程的个数最多有（①）个；阻塞队列中进程的个数最多有（②）个。\n"
+            "① A. n + 1\n"
+            "② A. n + 1\n"
+            "③ B. n\n"
+            "④ C. n - 1\n"
+            "⑤ C. n - 1\n"
+            "⑥ D. 1",
+            {},
+        )
+        assert "阻塞队列" in stem
+        assert "① A. n + 1" in stem
+        assert "⑥ D. 1" in stem
+
 
 # ---------------------------------------------------------------
 # 3. 选项标准化

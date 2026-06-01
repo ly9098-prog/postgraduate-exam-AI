@@ -251,6 +251,19 @@ class TestOcrTolerance:
         result = split_questions(blocks)
         assert len(result) == 1
 
+    def test_sub_questions_after_semicolon_are_not_split(self):
+        blocks = _make_blocks(
+            "1. 有一个计数信号量 S，若干进程对 S 执行 P、V 操作；\n"
+            "1）假如若干进程对 S 进行 28 次 P 操作和 18 次 V 操作后，信号量 S 的值为 0。\n"
+            "2）假如若干进程对信号量 S 进行了 15 次 P 操作和 2 次 V 操作。请问此时有多少个进程等待？\n"
+            "A. 2\nB. 3\nC. 5\nD. 7"
+        )
+        result = split_questions(blocks)
+        assert len(result) == 1
+        assert "1）假如" in result[0]["raw_question_text"]
+        assert "2）假如" in result[0]["raw_question_text"]
+        assert result[0]["has_options"] is True
+
     def test_option_continuation_line_appended(self):
         blocks = _make_blocks(
             "1. 下列说法正确的是（ ）。\n"
