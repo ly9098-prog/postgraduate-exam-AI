@@ -19,6 +19,7 @@ _ocr_instance = None
 
 
 _OCR_MAX_SIDE = 3000
+_OCR_DEPENDENCY_ERROR = "OCR 依赖未安装：paddleocr，请先安装 requirements-ocr.txt"
 
 
 @dataclass
@@ -32,7 +33,10 @@ def _get_ocr():
     """懒加载 PaddleOCR 单例，避免重复初始化的高成本。"""
     global _ocr_instance
     if _ocr_instance is None:
-        from paddleocr import PaddleOCR  # 延迟导入，不影响未开启 OCR 的启动速度
+        try:
+            from paddleocr import PaddleOCR  # 延迟导入，不影响未开启 OCR 的启动速度
+        except ImportError as exc:
+            raise RuntimeError(_OCR_DEPENDENCY_ERROR) from exc
 
         _ocr_instance = PaddleOCR(
             use_angle_cls=True,
@@ -75,6 +79,8 @@ def _ocr_one_page(page_png: bytes, page_index: int) -> tuple[int, str]:
         lines = [line[1][0] for line in result[0] if line and line[1]]
         logger.info("OCR 第 %d 页识别到 %d 行文本", page_index, len(lines))
         return page_index, "\n".join(lines)
+    except RuntimeError:
+        raise
     except Exception as e:
         logger.warning("OCR 第 %d 页失败：%s", page_index, e)
         return page_index, ""
@@ -102,6 +108,8 @@ def _ocr_one_page_with_boxes(page_png: bytes, page_index: int) -> tuple[int, str
             conf = float(line[1][1]) if len(line[1]) > 1 else 1.0
             boxes.append({"bbox": [x0, y0, x1, y1], "conf": conf})
         return page_index, "\n".join(lines), boxes
+    except RuntimeError:
+        raise
     except Exception as e:
         logger.warning("OCR（含框）第 %d 页失败：%s", page_index, e)
         return page_index, "", []
