@@ -254,7 +254,25 @@ class ImportPipeline:
 
         warnings: list[str] = []
         if not raw_questions:
-            warnings.append("no questions found in document")
+            text_blocks = [
+                b for b in normalized_blocks
+                if str(b.get("normalized_text") or "").strip()
+            ]
+            if text_blocks:
+                raw_questions = [{
+                    "number": 1,
+                    "raw_question_text": "\n".join(
+                        str(b.get("normalized_text") or "").strip() for b in text_blocks
+                    ),
+                    "page_start": text_blocks[0].get("page", 1),
+                    "page_end": text_blocks[-1].get("page", text_blocks[0].get("page", 1)),
+                    "has_options": False,
+                    "option_lines": {},
+                    "confidence": 0.2,
+                }]
+                warnings.append("no questions found in document; created low-confidence review item")
+            else:
+                warnings.append("no questions found in document")
         elif len(raw_questions) < len(normalized_blocks):
             warnings.append(f"{len(normalized_blocks) - len(raw_questions)} blocks produced no questions")
 
