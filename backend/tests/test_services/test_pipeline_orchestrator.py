@@ -174,6 +174,46 @@ class TestExtractPdfBlocks:
 
 
 # ---------------------------------------------------------------------------
+# ImportPipeline — split stage
+# ---------------------------------------------------------------------------
+
+
+class TestImportPipelineSplit:
+    def test_fallback_question_created_for_unsplit_text(self):
+        pipeline = ImportPipeline()
+        normalized_blocks = [
+            {"page": 2, "block_index": 0, "normalized_text": "这是一段没有题号的 OCR 文本。"},
+            {"page": 3, "block_index": 1, "normalized_text": "仍然需要进入人工审核。"},
+        ]
+
+        result = pipeline._run_split(normalized_blocks)
+
+        assert result["split_count"] == 1
+        assert result["warnings"] == ["no questions found in document; created low-confidence review item"]
+        assert result["raw_questions"] == [{
+            "number": 1,
+            "raw_question_text": "这是一段没有题号的 OCR 文本。\n仍然需要进入人工审核。",
+            "page_start": 2,
+            "page_end": 3,
+            "has_options": False,
+            "option_lines": {},
+            "confidence": 0.2,
+        }]
+
+    def test_numbered_questions_do_not_use_fallback(self):
+        pipeline = ImportPipeline()
+        normalized_blocks = [
+            {"page": 1, "block_index": 0, "normalized_text": "1. 已编号题目\nA. 选项A\nB. 选项B"},
+        ]
+
+        result = pipeline._run_split(normalized_blocks)
+
+        assert result["split_count"] == 1
+        assert result["warnings"] == []
+        assert result["raw_questions"][0]["confidence"] != 0.2
+
+
+# ---------------------------------------------------------------------------
 # PipelineStage
 # ---------------------------------------------------------------------------
 
