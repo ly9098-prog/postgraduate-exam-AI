@@ -13,4 +13,4 @@
 paddleocr==2.7.3
 paddlepaddle>=2.6.2
 Pillow==10.3.0
-numpy>=1.26
+numpy>=1.26,<2.0
