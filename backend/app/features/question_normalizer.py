@@ -72,7 +72,7 @@ def _extract_stem(raw_text: str, option_lines: dict[str, str]) -> str:
                 return _clean_stem("\n".join(stem_lines))
 
         # 选项行
-        if option_lines and re.match(r"^[A-Ha-h][.、:：]\s*", stripped):
+        if option_lines and re.match(r"^(?:[?？]|[①②③④⑤⑥⑦⑧])?\s*[A-Ha-h][.、:：)）\s]", stripped):
             in_options = True
             continue
 

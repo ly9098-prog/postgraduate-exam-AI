@@ -18,7 +18,8 @@ _OCR_DIGIT_MAP = {"O": "0", "o": "0", "l": "1", "I": "1", "S": "5"}
 
 # 题号模式：(正则, 数字提取组, 说明)
 _QUESTION_PATTERNS: list[tuple[re.Pattern, int]] = [
-    (re.compile(r"^(\d+)\s*[.、)）]"), 1),       # "1." "1、" "1)" "1）"
+    (re.compile(r"^(\d+)\s*[.、]"), 1),          # "1." "1、"
+    (re.compile(r"^(\d+)\s*[)）]"), 1),          # "1)" "1）"
     (re.compile(r"^\((\d+)\)"), 1),                # "(1)"
     (re.compile(r"^【(\d+)】"), 1),                # "【1】"
     (re.compile(r"^第\s*(\d+)\s*题"), 1),         # "第1题"
@@ -27,13 +28,17 @@ _QUESTION_PATTERNS: list[tuple[re.Pattern, int]] = [
     ), 1),                                          # "第一题"
 ]
 
+_PAREN_QUESTION_PATTERN = _QUESTION_PATTERNS[1][0]
+
 # OCR 容错题号：l/I → 1
 _OCR_Q_PATTERN = re.compile(r"^([lI])\s*[.、)）]")
 
 # 选项模式
+_OPTION_NOISE_PREFIX = r"(?:[?？]|[①②③④⑤⑥⑦⑧])?\s*"
+
 _OPTION_PATTERNS: list[re.Pattern] = [
-    re.compile(r"^([A-Da-d])\s*[.、:：)）]\s*(.+)"),
-    re.compile(r"^([A-Da-d])\s+(.+)"),
+    re.compile(r"^" + _OPTION_NOISE_PREFIX + r"([A-Da-d])\s*[.、:：)）]\s*(.+)"),
+    re.compile(r"^" + _OPTION_NOISE_PREFIX + r"([A-Da-d])\s+(.+)"),
 ]
 
 # OCR 容错选项
@@ -41,7 +46,8 @@ _OCR_OPTION_MAP = {"8": "B", "6": "B", "0": "D", "Ｏ": "D"}
 
 _INLINE_QUESTION_PATTERN = re.compile(r"(?<!\d)(\d{1,3})\s*[.、)）]\s*\S")
 _INLINE_OPTION_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9])([A-Da-d])\s*[.、:：)）]\s*(.+?)(?=\s+[A-Da-d]\s*[.、:：)）]\s*|$)"
+    r"(?<![A-Za-z0-9])" + _OPTION_NOISE_PREFIX +
+    r"([A-Da-d])\s*[.、:：)）]\s*(.+?)(?=\s+" + _OPTION_NOISE_PREFIX + r"[A-Da-d]\s*[.、:：)）]\s*|$)"
 )
 _ANSWER_EXPLANATION_MARKER = re.compile(
     r"(?:答案|正确答案|参考答案|解析|解答|讲解|分析)\s*[：:]"
@@ -51,7 +57,7 @@ _ANSWER_EXPLANATION_LINE = re.compile(
 )
 
 _OCR_OPTION_PATTERN = re.compile(
-    r"^([" + "".join(_OCR_OPTION_MAP.keys()) + r"])\s*[.、:：)）]\s*(.+)"
+    r"^" + _OPTION_NOISE_PREFIX + r"([" + "".join(_OCR_OPTION_MAP.keys()) + r"])\s*[.、:：)）]\s*(.+)"
 )
 
 
@@ -70,6 +76,8 @@ def _detect_question_number(line: str) -> tuple[int, int] | None:
             num = int(digits)
             # 过滤明显是选项 OCR 错误的假题号
             if _is_false_question_number(num, line):
+                return None
+            if pat is _PAREN_QUESTION_PATTERN and not _looks_like_paren_question(line, m.end()):
                 return None
             return (num, m.end())
 
@@ -91,6 +99,14 @@ def _is_false_question_number(num: int, line: str) -> bool:
         if _detect_option_line(line):
             return True
     return False
+
+
+def _looks_like_paren_question(line: str, match_end: int) -> bool:
+    rest = line[match_end:].lstrip()
+    num_text = line[:match_end].rstrip(" )）")
+    if len(num_text) >= 2 and rest:
+        return True
+    return bool(re.match(r"(?:第\s*)?\S+题", rest))
 
 
 def _looks_like_inline_question(line: str, match: re.Match, previous_num: int | None) -> bool:
