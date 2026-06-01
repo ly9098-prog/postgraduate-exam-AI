@@ -260,6 +260,8 @@ class ImportPipeline:
             "normalized_block_count": len(normalized_blocks),
             "text_block_count": len(text_blocks),
             "raw_question_count": len(raw_questions),
+            "raw_questions_preview": raw_questions[:20],
+            "failure_reason": None,
         }
 
         warnings: list[str] = []
@@ -278,14 +280,18 @@ class ImportPipeline:
                 }]
                 warnings.append("no questions found in document; created low-confidence review item")
                 split_diagnostics["fallback_created"] = True
+                split_diagnostics["failure_reason"] = "text_present_but_no_question_boundary"
             else:
                 warnings.append("no questions found in document")
                 split_diagnostics["fallback_created"] = False
+                split_diagnostics["failure_reason"] = "no_text_blocks"
         elif len(raw_questions) < len(normalized_blocks):
             warnings.append(f"{len(normalized_blocks) - len(raw_questions)} blocks produced no questions")
             split_diagnostics["fallback_created"] = False
+            split_diagnostics["failure_reason"] = None
         else:
             split_diagnostics["fallback_created"] = False
+            split_diagnostics["failure_reason"] = None
 
         return {
             "raw_questions": raw_questions,
@@ -510,12 +516,18 @@ class ImportPipeline:
             "split": data.get("split_count", 0),
             "matched": data.get("matched_count", 0),
             "schema_normalized": data.get("normalized_count", 0),
+            "missing_options": sum(
+                1
+                for q in data.get("questions", [])
+                if "missing_options" in q.get("errors", [])
+            ),
             "repaired": data.get("repaired_count", 0),
             "to_review": data.get("written", 0),
             "failed": sum(1 for s in self.stages.values() if s.status == "failed"),
         }
         diagnostics = {
             "split": data.get("split_diagnostics", {}),
+            "schema_errors": data.get("errors", []),
         }
 
         finished_at = datetime.now().isoformat()
