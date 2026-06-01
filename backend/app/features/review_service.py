@@ -61,8 +61,18 @@ async def submit_to_review(
 
         stem = (q.get("stem") or "").strip()
         if not stem:
-            skipped += 1
-            continue
+            raw_text = (q.get("raw_text") or q.get("raw_question_text") or "").strip()
+            if not raw_text:
+                skipped += 1
+                continue
+            stem = raw_text
+            q = {
+                **q,
+                "confidence_score": 0,
+                "is_valid": False,
+                "errors": [*q.get("errors", []), "empty_stem_raw_text_fallback"],
+                "warnings": [*q.get("warnings", []), "题干为空，已用 OCR 原文进入待审核区"],
+            }
 
         options = q.get("options") or []
         question_type = q.get("question_type", "")

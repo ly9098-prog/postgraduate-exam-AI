@@ -6,6 +6,7 @@ from app.features.question_splitter import (
     _detect_question_number,
     _detect_option_line,
 )
+from app.features.question_normalizer import normalize_question
 
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "..", "fixtures")
@@ -218,6 +219,22 @@ class TestOcrTolerance:
             assert q["has_options"]
             assert len(q["option_lines"]) >= 2
 
+    def test_ocr_question_prefix_options_detected(self):
+        blocks = _make_blocks("1. 题目\n? A. 选项一\n？B. 选项二\n① C. 选项三\n② D. 选项四")
+        result = split_questions(blocks)
+        assert result[0]["option_lines"] == {
+            "A": "选项一",
+            "B": "选项二",
+            "C": "选项三",
+            "D": "选项四",
+        }
+
+    def test_ocr_question_prefix_options_removed_from_stem(self):
+        blocks = _make_blocks("1. 题目\n? A. 选项一\n？B. 选项二\n① C）选项三\n② D 选项四")
+        raw_question = split_questions(blocks)[0]
+        normalized = normalize_question(raw_question)
+        assert normalized["stem"] == "题目"
+
 
     def test_inline_next_question_after_option(self):
         blocks = _make_blocks(
@@ -238,6 +255,11 @@ class TestOcrTolerance:
 
     def test_inline_options_are_extracted(self):
         blocks = _make_blocks("1. 题干\nA. 1 B. 2 C. 3 D. 4")
+        result = split_questions(blocks)
+        assert result[0]["option_lines"] == {"A": "1", "B": "2", "C": "3", "D": "4"}
+
+    def test_inline_ocr_prefix_options_are_extracted(self):
+        blocks = _make_blocks("1. 题干\n? A. 1 ？B. 2 ① C. 3 ② D. 4")
         result = split_questions(blocks)
         assert result[0]["option_lines"] == {"A": "1", "B": "2", "C": "3", "D": "4"}
 
@@ -263,6 +285,38 @@ class TestOcrTolerance:
         assert "1）假如" in result[0]["raw_question_text"]
         assert "2）假如" in result[0]["raw_question_text"]
         assert result[0]["has_options"] is True
+
+    def test_question_stem_ending_with_paren_is_not_truncated(self):
+        blocks = _make_blocks(
+            "1. 若系统有 n 个进程，则就绪队列中进程的个数最多有（?）个；阻塞队列中进程的个数最多有（?）个。\n"
+            "? A. n + 1\n"
+            "? B. n\n"
+            "? C. n - 1\n"
+            "? D. 1"
+        )
+        result = split_questions(blocks)
+        assert len(result) == 1
+        assert "就绪队列" in result[0]["raw_question_text"]
+        assert "阻塞队列" in result[0]["raw_question_text"]
+        assert "? A. n + 1" in result[0]["raw_question_text"]
+
+    def test_paren_question_number_requires_question_text_marker(self):
+        assert _detect_question_number("1)假如若干进程对 S 进行 P 操作") is None
+        assert _detect_question_number("2）假如若干进程对 S 进行 V 操作") is None
+        assert _detect_question_number("32) 第32题内容") == (32, 3)
+        assert _detect_question_number("32）下列说法正确的是") == (32, 3)
+
+    def test_multi_digit_paren_question_number_splits(self):
+        blocks = _make_blocks(
+            "31. 上一道题\n"
+            "A. 选项A\n"
+            "32）下列说法正确的是（ ）。\n"
+            "A. 选项一\nB. 选项二"
+        )
+        result = split_questions(blocks)
+        assert len(result) == 2
+        assert [q["number"] for q in result] == [31, 32]
+        assert "32）" not in result[0]["raw_question_text"]
 
     def test_option_continuation_line_appended(self):
         blocks = _make_blocks(

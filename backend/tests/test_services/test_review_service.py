@@ -174,6 +174,41 @@ class TestSubmitToReview:
         assert result["skipped"] == 2
         assert len(added) == 1
 
+    def test_empty_stem_with_raw_text_enters_review(self):
+        db, added = self._setup()
+        raw_text = "OCR 原文仍有内容，应进入人工审核。"
+        q = _make_question({"stem": "", "raw_text": raw_text})
+
+        result = asyncio.run(submit_to_review(db, [q]))
+
+        assert result["total"] == 1
+        assert result["written"] == 1
+        assert result["skipped"] == 0
+        assert result["items"][0]["status"] == "pending"
+        assert result["items"][0]["stem_preview"] == raw_text
+        assert result["items"][0]["confidence_score"] == 0
+        assert result["items"][0]["has_issues"] is True
+
+        assert len(added) == 1
+        qi = added[0]
+        assert qi.status == "pending"
+        assert qi.parsed_content == {"text": raw_text}
+        assert qi.ai_confidence == 0
+        assert qi.ai_metadata["is_valid"] is False
+        assert "empty_stem_raw_text_fallback" in qi.ai_metadata["errors"]
+        assert "题干为空，已用 OCR 原文进入待审核区" in qi.ai_metadata["warnings"]
+
+    def test_empty_stem_with_raw_question_text_enters_review(self):
+        db, added = self._setup()
+        raw_text = "raw_question_text 原文"
+        q = _make_question({"stem": "   ", "raw_question_text": raw_text})
+
+        result = asyncio.run(submit_to_review(db, [q]))
+
+        assert result["written"] == 1
+        assert result["skipped"] == 0
+        assert added[0].parsed_content == {"text": raw_text}
+
     def test_skips_non_dict(self):
         db, added = self._setup()
 
