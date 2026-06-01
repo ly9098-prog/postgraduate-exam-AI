@@ -130,6 +130,14 @@ class TestOptionLineDetection:
         r = _detect_option_line("d. 选项内容")
         assert r == ("D", "选项内容")
 
+    def test_ocr_circled_prefix_option(self):
+        r = _detect_option_line("① A. n + 1")
+        assert r == ("A", "n + 1")
+
+    def test_ocr_circled_prefix_option_without_space(self):
+        r = _detect_option_line("②B. 2n")
+        assert r == ("B", "2n")
+
     def test_ocr_8_to_B(self):
         r = _detect_option_line("8. 选项内容")
         assert r == ("B", "选项内容")
@@ -262,6 +270,36 @@ class TestOcrTolerance:
         blocks = _make_blocks("1. 题干\n? A. 1 ？B. 2 ① C. 3 ② D. 4")
         result = split_questions(blocks)
         assert result[0]["option_lines"] == {"A": "1", "B": "2", "C": "3", "D": "4"}
+
+    def test_inline_circled_options_are_extracted(self):
+        blocks = _make_blocks("31. 已知数列满足条件，求最大值 ① A. n + 1 ② B. 2n ③ C. n - 1 ④ D. 2n - 1")
+        result = split_questions(blocks)
+        assert result[0]["option_lines"] == {
+            "A": "n + 1",
+            "B": "2n",
+            "C": "n - 1",
+            "D": "2n - 1",
+        }
+
+    def test_collapsed_ocr_sample_splits_questions_and_options(self):
+        blocks = _make_blocks(
+            "31. 已知数列满足条件，求最大值 ① A. n + 1 ② B. 2n ③ C. n - 1 ④ D. 2n - 1 "
+            "32. 若信号量初值为 10，问等待进程数（ ）。 A. 2 B. 3 C. 5 D. 7"
+        )
+        result = split_questions(blocks)
+        assert [q["number"] for q in result] == [31, 32]
+        assert result[0]["option_lines"] == {
+            "A": "n + 1",
+            "B": "2n",
+            "C": "n - 1",
+            "D": "2n - 1",
+        }
+        assert result[1]["option_lines"] == {"A": "2", "B": "3", "C": "5", "D": "7"}
+
+    def test_inline_option_sequence_does_not_split_plain_variables(self):
+        blocks = _make_blocks("1. 设集合 A 与集合 B 满足 A∩B=C，求 D 的取值。")
+        result = split_questions(blocks)
+        assert result[0]["option_lines"] == {}
 
     def test_sub_questions_are_not_split_as_questions(self):
         blocks = _make_blocks(

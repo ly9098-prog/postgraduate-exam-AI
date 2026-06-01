@@ -65,6 +65,29 @@ class TestNewlineCleaning:
         normalized = result[0]["normalized_text"]
         assert "\nA." in normalized
 
+    def test_circled_option_line_not_merged(self, normalizer):
+        text = "题干文本\n① A. n + 1\n②B. 2n"
+        result = normalizer.normalize(_make_blocks(text))
+        normalized = result[0]["normalized_text"]
+        assert "\n① A." in normalized
+        assert "\n②B." in normalized
+
+    def test_inline_circled_options_are_split_for_parser(self, normalizer):
+        text = "题干文本 ① A. n + 1 ② B. 2n ③ C. n - 1 ④ D. 2n - 1"
+        result = normalizer.normalize(_make_blocks(text))
+        normalized = result[0]["normalized_text"]
+        assert "\n① A." in normalized
+        assert "\n② B." in normalized
+        assert "\n③ C." in normalized
+        assert "\n④ D." in normalized
+
+    def test_inline_plain_variables_not_split(self, normalizer):
+        text = "设集合 A 与集合 B 满足 A∩B=C，求 D 的取值。"
+        result = normalizer.normalize(_make_blocks(text))
+        normalized = result[0]["normalized_text"]
+        assert "\nA" not in normalized
+        assert "\nB" not in normalized
+
     def test_option_continuation_not_merged_into_previous_option(self, normalizer):
         text = "D. 管程是被进程调用的，管程是语法范围，无法创建和撤销\n对信号量 S 执行 P 操作后，使该进程进入资源等待队列的条件是（ ）。"
         result = normalizer.normalize(_make_blocks(text))

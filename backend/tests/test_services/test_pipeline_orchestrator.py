@@ -189,6 +189,12 @@ class TestImportPipelineSplit:
         result = pipeline._run_split(normalized_blocks)
 
         assert result["split_count"] == 1
+        assert result["split_diagnostics"] == {
+            "normalized_block_count": 2,
+            "text_block_count": 2,
+            "raw_question_count": 0,
+            "fallback_created": True,
+        }
         assert result["warnings"] == ["no questions found in document; created low-confidence review item"]
         assert result["raw_questions"] == [{
             "number": 1,
@@ -209,6 +215,12 @@ class TestImportPipelineSplit:
         result = pipeline._run_split(normalized_blocks)
 
         assert result["split_count"] == 1
+        assert result["split_diagnostics"] == {
+            "normalized_block_count": 1,
+            "text_block_count": 1,
+            "raw_question_count": 1,
+            "fallback_created": False,
+        }
         assert result["warnings"] == []
         assert result["raw_questions"][0]["confidence"] != 0.2
 
