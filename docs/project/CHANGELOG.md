@@ -6,6 +6,13 @@
 
 ## 2026-06-01
 
+- **OCR 图片导入诊断与失败分类完成**
+  - 图片上传入队前校验 `OCR_ENABLED` 与 PaddleOCR 依赖可用性，避免后台任务延迟失败。
+  - 图片导入状态保留 OCR 运行时诊断、原始/清洗文本预览、长度/行数差值、OCR stats 与切题诊断。
+  - 切题诊断新增 `normalized_block_count`、`text_block_count`、`raw_question_count`、`raw_questions_preview`、`failure_reason`，fallback 区分 `text_present_but_no_question_boundary` / `no_text_blocks` 并标记 `fallback_created`。
+  - 图片管线失败分类为 `ocr_empty_text`、`text_present_but_split_failed`、`missing_options`、`pipeline_failed`，审核边界不变：仍全部进入 `question_imports` 后人工确认。
+  - 变更原因：同步已完成的 OCR image import diagnostics classification；本次仅更新文档，不改业务代码。
+
 - **OCR 图片导入可靠性 P0/P1 完成**
   - 图片导入状态响应现在会返回 OCR 诊断与切题诊断：原始/清洗后文本长度、行数、预览、长度差值；清洗后为空时会标记 `ocr_empty_after_cleaning`。
   - 管线在“有规范化文本但找不到题号边界”时会生成低置信度 fallback 审核项，避免整批静默丢失。

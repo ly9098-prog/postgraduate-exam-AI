@@ -22,7 +22,11 @@ Excel/PDF 上传 → 解析模块 → 文本标准化层 → Level 1 重复检�
 - 再读 Redis key `import:image:pipeline:{pipeline_id}`
 - 最后回退到同进程 `_image_pipeline_store`
 - 只有 legacy 与 image 状态都不存在时返回 404
-- `PipelineStatusResponse` 会带回 OCR 诊断与切题诊断信息：原始/清洗后文本长度、行数、预览、长度差值；清洗后为空时标记 `ocr_empty_after_cleaning`；切题阶段会暴露是否触发低置信度 fallback 审核项
+- 图片上传会在入队前校验 `OCR_ENABLED` 与 PaddleOCR 依赖可用性，避免后台任务启动后才失败。
+- `PipelineStatusResponse` 会带回 OCR 运行时、文本与切题诊断信息：`ocr_enabled`、`paddleocr_available`、原始/清洗后文本长度、行数、预览、长度/行数差值、OCR stats，以及切题阶段的 `normalized_block_count`、`text_block_count`、`raw_question_count`、`raw_questions_preview`、`fallback_created`、`failure_reason`。
+- 图片导入失败会按可排查原因分类：`ocr_empty_text`、`text_present_but_split_failed`、`missing_options`、`pipeline_failed`；切题 fallback 会进一步标记 `text_present_but_no_question_boundary` 或 `no_text_blocks`。
+
+> 2026-06-01 更新原因：同步图片 OCR 导入诊断与失败分类已实现状态，便于前端/排查端区分 OCR 空文本、切题失败与选项缺失。
 
 图片导入状态写入顺序为“先内存、后 Redis best-effort”，Redis TTL 为 86400 秒。
 

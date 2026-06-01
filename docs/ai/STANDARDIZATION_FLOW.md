@@ -147,7 +147,9 @@ DB 兼容字段：
 
 ## 与 OCR / AI 的关系
 
-- OCR 与 PDF 解析（`pdf_classifier` + `ocr_service` + `pdf_text_normalizer`）只
-  负责文本提取、分页、初步切题。
+- OCR 与 PDF 解析（`pdf_classifier` + `ocr_service` + `pdf_text_normalizer`）只负责文本提取、分页、初步切题。
 - AI Parser（DeepSeek）输出题型、知识点、难度、答案建议，结果同样进入 pipeline。
+- 图片 OCR 导入也必须先经过 `question_imports` 暂存与人工审核，不会因为诊断信息更完整而变成自动入库。
 - AI 不可用时 pipeline 仍可正常工作，导入和刷题不依赖 AI。
+
+> 2026-06-01 更新原因：同步图片 OCR 导入诊断增强后，仍强调人工审核边界不变。
