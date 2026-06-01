@@ -22,12 +22,13 @@ Excel/PDF 上传 → 解析模块 → 文本标准化层 → Level 1 重复检�
 - 再读 Redis key `import:image:pipeline:{pipeline_id}`
 - 最后回退到同进程 `_image_pipeline_store`
 - 只有 legacy 与 image 状态都不存在时返回 404
+- `PipelineStatusResponse` 会带回 OCR 诊断与切题诊断信息：原始/清洗后文本长度、行数、预览、长度差值；清洗后为空时标记 `ocr_empty_after_cleaning`；切题阶段会暴露是否触发低置信度 fallback 审核项
 
 图片导入状态写入顺序为“先内存、后 Redis best-effort”，Redis TTL 为 86400 秒。
 
 ### 图片 OCR 预处理
 
-- 图片 / 扫描页 OCR 统一先走 `_prepare_ocr_image()`：宽度小于 1000 像素时按比例放大到 1000，再转灰度并做 autocontrast，最后交给 PaddleOCR。
+- 图片 / 扫描页 OCR 统一先走 `_prepare_ocr_image()`：宽度小于 1000 像素时按比例放大到 1000，再转灰度并做 autocontrast，随后先执行 `ImageOps.exif_transpose()` 再交给 PaddleOCR。
 - `ocr_pages_with_boxes()` 复用同一预处理链路，避免带框 OCR 走未处理原图。
 - `clean_ocr_text()` 会在“参考答案 / 正确答案 / 答案:”前补换行，避免 D 选项与答案标记粘连。
 - 裸上标修正规则只允许空格 / Tab 作为连接，不跨换行，避免题号与公式切分被误伤。
@@ -125,7 +126,7 @@ POST /api/v1/import/batches/{id}/approve  ← 批量审批，缺字段跳过，�
 
 ## 存在问题
 
-1. **图片 OCR 导入仍属于可选扩展** — 当前已支持图片 OCR 文本提取，但扫描版 PDF 仍不会直接走 OCR 解析，除非先转成图片导入或后续显式扩展该路径
+1. **图片 OCR 导入已进入主链路，但仍保留人工审核** — 当前已支持图片/截图 OCR 文本提取并进入 question_imports；扫描版 PDF 仍不会直接走 OCR 解析，除非先转成图片导入或后续显式扩展该路径
 2. **PDF 科目猜测不稳定** — 简单关键词打分，混合科目文档（如数学卷子带英文题）可能猜错
 3. **PDF 切题准确率不高** — 依赖题号正则，遇到"1."和"1、"混用、分页断行等情况容易漏切或错切
 4. **同步解析** — 大文件（几百道题）在 HTTP 请求中同步解析，用户体验差（无进度反馈）

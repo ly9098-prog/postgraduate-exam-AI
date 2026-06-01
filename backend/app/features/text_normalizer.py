@@ -12,6 +12,11 @@ _RE_GARBLED = re.compile(
     r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|�|□+"
 )
 
+_CIRCLED_OPTION_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+_OPTION_NOISE_PREFIX = r"(?:[?？]|[" + _CIRCLED_OPTION_CHARS + r"])?\s*"
+_OPTION_MARKER = _OPTION_NOISE_PREFIX + r"([A-Da-d])\s*[.、:：)）]"
+_INLINE_OPTION_MARKER = re.compile(r"(?<![A-Za-z0-9])" + _OPTION_MARKER)
+
 # 题号行：用于 OCR 字符纠正的上下文判断
 _RE_QUESTION_NUMBER = re.compile(
     r"^\s*\d+\s*[.、)）]"
@@ -26,7 +31,7 @@ _RE_OPTION_LINE = re.compile(
 _RE_STRUCTURE_LINE = re.compile(
     r"^("
     r"\d+\s*[.、)）]"
-    r"|[A-Ha-h]\s*[.、:：）]"
+    r"|" + _OPTION_MARKER +
     r"|[（(]\s*[A-D]\s*[）)]"
     r"|(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:]"
     r"|(?:【)?(?:解析|解答|讲解|分析)(?:】)?\s*[：:]"
@@ -35,8 +40,8 @@ _RE_STRUCTURE_LINE = re.compile(
 
 # 上一行是完整结构行时，下一行默认不继续并入上一行
 _RE_PREV_STRUCTURE_LINE = re.compile(
-    r"^("
-    r"[A-Da-d]\s*[.、:：)）]\s*.{1,}"
+    r"^"
+    r"(" + _OPTION_MARKER + r"\s*.{1,}"
     r"|[（(]\s*[A-Da-d]\s*[）)]\s*.{1,}"
     r"|(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:]\s*.{1,}"
     r"|(?:【)?(?:解析|解答|讲解|分析)(?:】)?\s*[：:]\s*.{1,}"
@@ -78,6 +83,7 @@ class ImportTextNormalizer:
 
         # 先压缩 3+ 连续换行 → 2 换行
         text = re.sub(r"\n{3,}", "\n\n", text)
+        text = self._split_inline_option_sequence(text)
 
         lines = text.split("\n")
         result: list[str] = []
@@ -101,6 +107,21 @@ class ImportTextNormalizer:
         # 再次压缩因合并产生的多余空行
         merged = re.sub(r"\n{3,}", "\n\n", merged)
         return merged.strip()
+
+    def _split_inline_option_sequence(self, text: str) -> str:
+        def split_line(line: str) -> str:
+            matches = list(_INLINE_OPTION_MARKER.finditer(line))
+            if len(matches) < 2:
+                return line
+            keys = [m.group(1).upper() for m in matches]
+            if not any(ord(keys[i + 1]) == ord(keys[i]) + 1 for i in range(len(keys) - 1)):
+                return line
+            for match in reversed(matches):
+                if match.start() > 0 and line[match.start() - 1] != "\n":
+                    line = line[:match.start()] + "\n" + line[match.start():]
+            return line
+
+        return "\n".join(split_line(line) for line in text.split("\n"))
 
     def _merge_separator(self, prev: str, curr: str) -> str:
         """返回两行合并时使用的分隔符：CJK 末尾不插空格，否则插空格。"""

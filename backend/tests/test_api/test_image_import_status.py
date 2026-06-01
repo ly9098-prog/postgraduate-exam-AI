@@ -97,6 +97,24 @@ async def test_get_image_pipeline_status_falls_back_to_memory_on_cache_error(fak
 
     assert status == {"pipeline_id": "img_1", "status": "parsing"}
 
+
+def test_build_ocr_text_diagnostics_tracks_raw_and_cleaned_text():
+    diagnostics = imports._build_ocr_text_diagnostics(
+        "31. 原始题干\n\nA. 选项A\nB. 选项B\n",
+        "31. 原始题干\nA. 选项A B. 选项B",
+    )
+
+    assert diagnostics == {
+        "raw_text_length": 24,
+        "cleaned_text_length": 22,
+        "raw_line_count": 3,
+        "cleaned_line_count": 2,
+        "raw_text_preview": "31. 原始题干\n\nA. 选项A\nB. 选项B\n",
+        "cleaned_text_preview": "31. 原始题干\nA. 选项A B. 选项B",
+        "text_length_delta": 2,
+        "line_count_delta": 1,
+    }
+
 @pytest.mark.asyncio
 async def test_fail_image_pipeline_appends_error_and_finishes(fake_cache):
     await imports._set_image_pipeline_status(

@@ -119,6 +119,7 @@ class PipelineStatusResponse(BaseModel):
     status: str
     stages: dict[str, Any] = {}
     stats: dict[str, Any] = {}
+    diagnostics: dict[str, Any] = {}
     errors: list[str] = []
     batch_id: str = ""
     raw_text_preview: str = ""

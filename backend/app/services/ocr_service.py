@@ -52,7 +52,7 @@ def _prepare_ocr_image(image_bytes: bytes):
 
     from PIL import Image, ImageOps
 
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes))).convert("RGB")
     width, height = img.size
     if width < 1000:
         scale = min(1000 / width, _OCR_MAX_SIDE / height)
