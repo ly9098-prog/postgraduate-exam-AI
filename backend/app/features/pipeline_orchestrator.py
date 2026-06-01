@@ -23,6 +23,7 @@ from app.features.ai_repair import repair_questions
 from app.features.answer_matcher import match_answers
 from app.features.question_normalizer import normalize_questions
 from app.features.question_splitter import split_questions
+from app.features.structure_analyzer import analyze_structure
 from app.features.text_normalizer import ImportTextNormalizer
 
 logger = logging.getLogger(__name__)
@@ -185,6 +186,7 @@ class ImportPipeline:
         stage_specs: list[tuple[str, callable]] = [
             ("extract", self._run_extract),
             ("normalize_text", self._run_normalize_text),
+            ("analyze_structure", self._run_analyze_structure),
             ("split", self._run_split),
             ("match", self._run_match),
             ("normalize_schema", self._run_normalize_schema),
@@ -248,9 +250,14 @@ class ImportPipeline:
 
         return {"normalized_blocks": normalized_blocks, "warnings": warnings}
 
-    def _run_split(self, normalized_blocks: list[dict], **_kw) -> dict:
+    def _run_analyze_structure(self, normalized_blocks: list[dict], **_kw) -> dict:
+        """Stage 2: detect question/answer document layout."""
+        structure = analyze_structure(normalized_blocks)
+        return {"structure": structure, "warnings": []}
+
+    def _run_split(self, normalized_blocks: list[dict], structure: dict | None = None, **_kw) -> dict:
         """Stage 3: split text blocks into individual questions."""
-        raw_questions = split_questions(normalized_blocks, structure=None)
+        raw_questions = split_questions(normalized_blocks, structure=structure)
 
         text_blocks = [
             b for b in normalized_blocks
@@ -300,9 +307,15 @@ class ImportPipeline:
             "warnings": warnings,
         }
 
-    def _run_match(self, raw_questions: list[dict], normalized_blocks: list[dict], **_kw) -> dict:
+    def _run_match(
+        self,
+        raw_questions: list[dict],
+        normalized_blocks: list[dict],
+        structure: dict | None = None,
+        **_kw,
+    ) -> dict:
         """Stage 4: match answers and explanations to questions."""
-        result = match_answers(raw_questions, normalized_blocks, structure=None)
+        result = match_answers(raw_questions, normalized_blocks, structure=structure)
 
         matched = result.get("matched", [])
         unmatched = result.get("unmatched", [])
@@ -526,6 +539,7 @@ class ImportPipeline:
             "failed": sum(1 for s in self.stages.values() if s.status == "failed"),
         }
         diagnostics = {
+            "structure": data.get("structure", {}),
             "split": data.get("split_diagnostics", {}),
             "schema_errors": data.get("errors", []),
         }

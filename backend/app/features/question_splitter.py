@@ -300,10 +300,18 @@ def split_questions(
     page_map: list[tuple[int, int, int]] = []  # (char_pos, page, block_index)
     pos = 0
 
+    excluded_answer_pages: set[int] = set()
+    if structure and structure.get("mode") == "SEPARATED":
+        answer_pages = set(structure.get("answer_pages", []))
+        question_pages = set(structure.get("question_pages", []))
+        excluded_answer_pages = answer_pages - question_pages
+
     for block in normalized_blocks:
         text = block.get("normalized_text", "")
         page = block.get("page", 1)
         block_idx = block.get("block_index", 0)
+        if page in excluded_answer_pages:
+            continue
 
         page_map.append((pos, page, block_idx))
         parts.append(text)

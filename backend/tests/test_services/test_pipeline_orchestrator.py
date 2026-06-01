@@ -238,6 +238,25 @@ class TestImportPipelineSplit:
         assert result["warnings"] == []
         assert result["raw_questions"][0]["confidence"] != 0.2
 
+    def test_match_uses_separated_structure(self):
+        pipeline = ImportPipeline()
+        normalized_blocks = [
+            {
+                "page": 1,
+                "block_index": 0,
+                "normalized_text": "1. 题目A\nA. 选项A\nB. 选项B\n2. 题目B\nA. 选项A\nB. 选项B",
+            },
+            {"page": 2, "block_index": 1, "normalized_text": "参考答案：\n1. B\n2. A"},
+        ]
+        structure = pipeline._run_analyze_structure(normalized_blocks)["structure"]
+        split = pipeline._run_split(normalized_blocks, structure=structure)
+        result = pipeline._run_match(split["raw_questions"], normalized_blocks, structure=structure)
+
+        assert structure["mode"] == "SEPARATED"
+        assert structure["answer_pages"] == [2]
+        assert [q["answer"] for q in result["matched"]] == ["B", "A"]
+        assert all(q["answer_source"] == "separated" for q in result["matched"])
+
 
 # ---------------------------------------------------------------------------
 # PipelineStage
@@ -395,7 +414,7 @@ class TestImportPipelineRun:
 
         # Verify stage ordering
         stage_names = list(result["stages"].keys())
-        assert stage_names == ["extract", "normalize_text", "split", "match", "normalize_schema", "repair", "review"]
+        assert stage_names == ["extract", "normalize_text", "analyze_structure", "split", "match", "normalize_schema", "repair", "review"]
         for s in result["stages"].values():
             assert s["status"] == "completed"
 
