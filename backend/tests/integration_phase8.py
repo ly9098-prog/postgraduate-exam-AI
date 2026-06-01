@@ -137,16 +137,18 @@ def _build_scanned_pdf() -> bytes:
 
 class _FakeOCR:
     """伪造 PaddleOCR：根据 page_index 返回不同的题干文本。"""
-    def __init__(self):
+    def __init__(self, page_texts: list[str] | None = None):
         self.calls = 0
-        self._page_texts = [
-            "1. 扫描题 第一题。下列哪项正确?\nA. 选项一\nB. 选项二\nC. 选项三\nD. 选项四\n答案: A",
-            "2. 扫描题 第二题。导数公式中, 正确的是?\nA. 错误\nB. 正确\nC. 不确定\nD. 都不对\n答案: B",
-            "3. 扫描题 第三题。计算下列极限 lim x->0 sin(x)/x 等于?\nA. 0\nB. 1\nC. 无穷\nD. 不存在\n答案: B",
+        self.last_shape = None
+        self._page_texts = page_texts or [
+            "1. 扫描题 第一题。下列哪项正确?\nA. 选项一\nB. 选项二\nC. 选项三\nD. 选项四\n参考答案: A",
+            "2. 扫描题 第二题。导数公式中, 正确的是?\nA. 错误\nB. 正确\nC. 不确定\nD. 都不对\n参考答案: B",
+            "3. 扫描题 第三题。计算下列极限 lim x->0 sin(x)/x 等于?\nA. 0\nB. 1\nC. 无穷\nD. 不存在\n参考答案: B",
         ]
 
     def ocr(self, img_array, cls=True):
         self.calls += 1
+        self.last_shape = img_array.shape
         # 用 calls 计数轮流给不同文本（模拟并发各页不同结果）
         idx = (self.calls - 1) % len(self._page_texts)
         txt = self._page_texts[idx]
@@ -191,7 +193,40 @@ async def login(client: httpx.AsyncClient) -> str:
     return res.json()["access_token"]
 
 
-# ───────────────────────────── 测试用例 ─────────────────────────────
+def case_ocr_image_preprocesses_small_image() -> None:
+    print("\n[4] ocr_image 小图预处理")
+    import base64
+
+    valid_png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    )
+    fake = _FakeOCR(["1. 题干\nA. 选项"])
+    original = _install_fake_ocr(fake)
+    try:
+        text = ocr_service.ocr_image(valid_png)
+        check("小图 OCR 返回文本", "题干" in text, repr(text))
+        check("小图被放大到可识别宽度", fake.last_shape[1] >= 1000, f"shape={fake.last_shape}")
+    finally:
+        _restore_ocr(original)
+
+
+def case_ocr_pages_with_boxes_preprocesses_small_image() -> None:
+    print("\n[5] ocr_pages_with_boxes 小图预处理")
+    import base64
+
+    valid_png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    )
+    fake = _FakeOCR(["1. 题干\nA. 选项"])
+    original = _install_fake_ocr(fake)
+    try:
+        results = ocr_service.ocr_pages_with_boxes([(0, valid_png)])
+        check("含框 OCR 返回结果", 0 in results and results[0].text, str(results))
+        check("含框 OCR 也会放大小图", fake.last_shape[1] >= 1000, f"shape={fake.last_shape}")
+    finally:
+        _restore_ocr(original)
+
+
 
 
 def case_clean_ocr_text() -> None:
@@ -202,7 +237,7 @@ def case_clean_ocr_text() -> None:
     check("连续空格压缩为一个", f("a    b") == "a b", repr(f("a    b")))
     # 1.2 多空行
     check("3 个以上换行压缩为 2 个",
-          f("a\n\n\n\n\nb") == "a\n\nb", repr(f("a\n\n\n\n\nb")))
+          f("a\n\n\n\nb") == "a\n\nb", repr(f("a\n\n\n\nb")))
     # 1.3 中文断行合并
     check("断行中文合并", f("第\n一章") == "第一章", repr(f("第\n一章")))
     # 1.4 行首行尾空格去除
@@ -213,6 +248,9 @@ def case_clean_ocr_text() -> None:
     # 1.6 含乱码（非中/英/标点字符）
     out = f("正常\x01\x02\x03文本")
     check("剥离不可打印乱码", "正常" in out and "文本" in out and "\x01" not in out, repr(out))
+    # 1.7 题目选项与答案之间保留换行
+    out = f("D. 选项四参考答案: A")
+    check("答案标记独立成行", "\n参考答案: A" in out, repr(out))
 
 
 def case_classify_pages_text_pdf(text_pdf: bytes) -> None:
@@ -494,6 +532,8 @@ async def main() -> int:
     case_clean_ocr_text()
     case_classify_pages_text_pdf(text_pdf)
     case_classify_pages_scanned_pdf(scan_pdf)
+    case_ocr_image_preprocesses_small_image()
+    case_ocr_pages_with_boxes_preprocesses_small_image()
     case_ocr_pages_concurrent()
     case_extract_text_only(text_pdf)
     case_extract_text_scanned(scan_pdf)

@@ -88,7 +88,7 @@ def _replace_symbols(text: str) -> str:
 # 每条规则：(pattern, replacement)，按顺序应用
 _OCR_FIXES: list[tuple[re.Pattern, str]] = [
     # "x2" / "x3" 裸上标（字母后直接接数字，且不在已有 ^ 之后）
-    (re.compile(r"(?<![_^{])\b([a-zA-Z])\s*([0-9]+)\b(?!\s*[_^}])"), r"\1^{\2}"),
+    (re.compile(r"(?<![_^{])\b([a-zA-Z])[ \t]*([0-9]+)\b(?!\s*[_^}])"), r"\1^{\2}"),
     # "1 /2"、"1/2" 孤立分数 → \frac{1}{2}
     (re.compile(r"\b(\d+)\s*/\s*(\d+)\b"), r"\\frac{\1}{\2}"),
     # √x / √(expr) → \sqrt{x} / \sqrt{expr}

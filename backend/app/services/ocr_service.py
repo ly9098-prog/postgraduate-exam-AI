@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 _ocr_instance = None
 
 
+_OCR_MAX_SIDE = 3000
+
+
 @dataclass
 class OcrPageResult:
     page_index: int
@@ -40,20 +43,37 @@ def _get_ocr():
     return _ocr_instance
 
 
+def _prepare_ocr_image(image_bytes: bytes):
+    import io
+
+    from PIL import Image, ImageOps
+
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    width, height = img.size
+    if width < 1000:
+        scale = min(1000 / width, _OCR_MAX_SIDE / height)
+        if scale > 1:
+            img = img.resize((int(width * scale), int(height * scale)), Image.Resampling.LANCZOS)
+    img = ImageOps.autocontrast(img.convert("L"), cutoff=1).convert("RGB")
+    return img
+
+
+def _image_to_ocr_array(image_bytes: bytes):
+    import numpy as np
+
+    return np.array(_prepare_ocr_image(image_bytes))
+
+
 def _ocr_one_page(page_png: bytes, page_index: int) -> tuple[int, str]:
     """对单页图片执行 OCR，返回 (page_index, text)。失败返回空字符串。"""
     try:
-        import numpy as np
-        from PIL import Image
-        import io
-
-        img = Image.open(io.BytesIO(page_png)).convert("RGB")
-        img_array = np.array(img)
         ocr = _get_ocr()
-        result = ocr.ocr(img_array, cls=True)
+        result = ocr.ocr(_image_to_ocr_array(page_png), cls=True)
         if not result or result[0] is None:
+            logger.info("OCR 第 %d 页未检测到文本行", page_index)
             return page_index, ""
         lines = [line[1][0] for line in result[0] if line and line[1]]
+        logger.info("OCR 第 %d 页识别到 %d 行文本", page_index, len(lines))
         return page_index, "\n".join(lines)
     except Exception as e:
         logger.warning("OCR 第 %d 页失败：%s", page_index, e)
@@ -63,14 +83,8 @@ def _ocr_one_page(page_png: bytes, page_index: int) -> tuple[int, str]:
 def _ocr_one_page_with_boxes(page_png: bytes, page_index: int) -> tuple[int, str, list[dict]]:
     """对单页图片执行 OCR，返回 (page_index, text, boxes)。失败返回空。"""
     try:
-        import numpy as np
-        from PIL import Image
-        import io
-
-        img = Image.open(io.BytesIO(page_png)).convert("RGB")
-        img_array = np.array(img)
         ocr = _get_ocr()
-        result = ocr.ocr(img_array, cls=True)
+        result = ocr.ocr(_image_to_ocr_array(page_png), cls=True)
         if not result or result[0] is None:
             return page_index, "", []
         lines = []
@@ -169,7 +183,18 @@ def clean_ocr_text(text: str) -> str:
 
     # 修复被错误断行的中文句子（如 "第\n一章" → "第一章"）
     # 行末是汉字且下行首也是汉字，则合并
-    text = re.sub(r"([一-鿿，。；：！？])\n([一-鿿])", r"\1\2", text)
+    text = re.sub(
+        r"([一-鿿，。；：！？])\n(?!((?:参考|正确)?\s*答案|解析|解答)\b)([一-鿿])",
+        r"\1\3",
+        text,
+    )
+
+    text = re.sub(
+        r"(?<!\n)(?=(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:])",
+        "\n",
+        text,
+    )
+    text = re.sub(r"\n((?:参考|正确)?)\n(答案\s*[：:])", r"\n\1\2", text)
 
     # 去除连续空格
     text = re.sub(r" {2,}", " ", text)
