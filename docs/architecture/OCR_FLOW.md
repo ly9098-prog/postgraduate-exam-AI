@@ -25,6 +25,13 @@ Excel/PDF 上传 → 解析模块 → 文本标准化层 → Level 1 重复检�
 
 图片导入状态写入顺序为“先内存、后 Redis best-effort”，Redis TTL 为 86400 秒。
 
+### 图片 OCR 预处理
+
+- 图片 / 扫描页 OCR 统一先走 `_prepare_ocr_image()`：宽度小于 1000 像素时按比例放大到 1000，再转灰度并做 autocontrast，最后交给 PaddleOCR。
+- `ocr_pages_with_boxes()` 复用同一预处理链路，避免带框 OCR 走未处理原图。
+- `clean_ocr_text()` 会在“参考答案 / 正确答案 / 答案:”前补换行，避免 D 选项与答案标记粘连。
+- 裸上标修正规则只允许空格 / Tab 作为连接，不跨换行，避免题号与公式切分被误伤。
+
 ### 状态语义
 
 - 终态：`completed`、`failed`
