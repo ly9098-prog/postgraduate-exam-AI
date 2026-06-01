@@ -33,15 +33,21 @@ echo -e "${GREEN}✅ Python: $($PYTHON --version)${NC}"
 
 # ---- 2. 虚拟环境 ----
 USE_SYSTEM=false
-if [ ! -d ".venv" ]; then
+RUNTIME_PYTHON="$PYTHON"
+if [ -x ".venv/bin/python" ]; then
+    RUNTIME_PYTHON=".venv/bin/python"
+    echo -e "${GREEN}✅ 虚拟环境已存在${NC}"
+elif [ ! -d ".venv" ]; then
     echo -e "${YELLOW}📦 创建虚拟环境...${NC}"
     if $PYTHON -m venv .venv 2>/dev/null; then
+        RUNTIME_PYTHON=".venv/bin/python"
         echo -e "${GREEN}✅ 虚拟环境已创建${NC}"
     else
         echo -e "${YELLOW}⚠️  创建失败，尝试安装 python3-venv...${NC}"
         if command -v apt-get &>/dev/null; then
             sudo apt-get install -y python3-venv python3-full 2>/dev/null
             if $PYTHON -m venv .venv 2>/dev/null; then
+                RUNTIME_PYTHON=".venv/bin/python"
                 echo -e "${GREEN}✅ 虚拟环境已创建${NC}"
             else
                 echo -e "${YELLOW}⚠️  跳过 venv，使用系统 Python${NC}"
@@ -53,34 +59,35 @@ if [ ! -d ".venv" ]; then
         fi
     fi
 else
-    echo -e "${GREEN}✅ 虚拟环境已存在${NC}"
+    echo -e "${YELLOW}⚠️  .venv 缺少 Python，使用系统 Python${NC}"
+    USE_SYSTEM=true
 fi
 
 # ---- 3. 安装依赖 ----
 PIP_BREAK_SYSTEM=""
 
-if [ "$USE_SYSTEM" = false ] && [ -f ".venv/bin/activate" ]; then
-    source .venv/bin/activate
-    echo -e "${YELLOW}📦 安装依赖到虚拟环境...${NC}"
-else
+if [ "$USE_SYSTEM" = true ]; then
     echo -e "${YELLOW}📦 安装依赖到系统环境...${NC}"
     PIP_BREAK_SYSTEM="--break-system-packages"
+else
+    echo -e "${YELLOW}📦 安装依赖到统一 Python 环境...${NC}"
 fi
 
-pip install --quiet --upgrade pip 2>/dev/null || true
-pip install --quiet -r requirements.txt $PIP_BREAK_SYSTEM 2>/dev/null || {
-    # 如果 venv 安装失败，降级到 system
+"$RUNTIME_PYTHON" -m pip install --quiet --upgrade pip 2>/dev/null || true
+"$RUNTIME_PYTHON" -m pip install --quiet -r requirements.txt $PIP_BREAK_SYSTEM 2>/dev/null || {
     echo -e "${YELLOW}⚠️  venv 安装失败，降级到系统环境${NC}"
-    pip install --quiet --break-system-packages -r requirements.txt
+    RUNTIME_PYTHON="$PYTHON"
+    PIP_BREAK_SYSTEM="--break-system-packages"
+    "$RUNTIME_PYTHON" -m pip install --quiet --break-system-packages -r requirements.txt
 }
 
 if [ -f "requirements-ocr.txt" ]; then
-    if python -c "import paddleocr" 2>/dev/null; then
+    if "$RUNTIME_PYTHON" -c "import paddleocr" 2>/dev/null; then
         echo -e "${GREEN}✅ OCR 依赖已存在${NC}"
     else
         echo -e "${YELLOW}📦 安装 OCR 依赖（PaddleOCR，首次安装可能较慢）...${NC}"
-        pip install --quiet -r requirements-ocr.txt $PIP_BREAK_SYSTEM || {
-            echo -e "${YELLOW}⚠️  OCR 依赖安装失败，图片 OCR 将不可用；可稍后手动执行：pip install -r requirements-ocr.txt${NC}"
+        "$RUNTIME_PYTHON" -m pip install --quiet -r requirements-ocr.txt $PIP_BREAK_SYSTEM || {
+            echo -e "${YELLOW}⚠️  OCR 依赖安装失败，图片 OCR 将不可用；可稍后手动执行：$RUNTIME_PYTHON -m pip install -r requirements-ocr.txt${NC}"
         }
     fi
 fi
@@ -96,4 +103,4 @@ echo -e "${CYAN}   停止服务: Ctrl+C${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
 
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+"$RUNTIME_PYTHON" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
