@@ -245,6 +245,28 @@ class TestOcrNoise:
         result = analyze_structure(blocks)
         assert result["mode"] == "INLINE"
 
+    def test_diagnostic_fields_present(self):
+        blocks = _make_blocks([
+            "1. 题目A\n答案：A\n解析：略",
+            "2. 题目B\n答案：B",
+        ])
+        result = analyze_structure(blocks)
+        assert result["details"]["diagnostic_reason"] == "question_and_answer_overlap"
+        assert result["details"]["question_density"] > 0
+        assert result["details"]["answer_density"] > 0
+        assert result["details"]["analysis_density"] > 0
+        assert result["details"]["ocr_noise_signals"] == 0
+        assert result["details"]["has_question_blocks"] is True
+        assert result["details"]["has_answer_blocks"] is True
+        assert result["details"]["has_explanation_blocks"] is True
+
+    def test_ocr_noise_signal_counted(self):
+        blocks = _make_blocks([
+            "1. 含乱码的题目\x00文本\n答案：A",
+        ])
+        result = analyze_structure(blocks)
+        assert result["details"]["ocr_noise_signals"] > 0
+
 
 # ---------------------------------------------------------------
 # 9. 置信度

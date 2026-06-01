@@ -77,6 +77,30 @@ def _block_type(text: str) -> str:
     return "none"
 
 
+def _diagnostic_reason(
+    mode: str,
+    total_q_matches: int,
+    total_a_matches: int,
+    pure_question_blocks: list[int],
+    a_pages: list[int],
+) -> str:
+    if mode == "SEPARATED":
+        return "question_blocks_before_answer_blocks"
+    if mode == "INLINE":
+        return "question_and_answer_overlap"
+    if total_q_matches and not total_a_matches:
+        return "questions_without_answer_keywords"
+    if total_a_matches and not total_q_matches:
+        return "answers_without_question_headers"
+    if total_q_matches and total_a_matches and pure_question_blocks and a_pages:
+        return "ambiguous_question_answer_layout"
+    return "no_question_or_answer_signals"
+
+
+def _count_ocr_noise_signals(text: str) -> int:
+    return len(re.findall(r"[\x00-\x08\x0b\x0c\x0e-\x1f�]", text))
+
+
 def analyze_structure(
     normalized_blocks: list[dict],
     file_metadata: dict | None = None,
@@ -101,18 +125,20 @@ def analyze_structure(
             },
         }
 
-    raw_types: list[tuple[int, str, bool, bool, bool]] = []
+    noise_signals = 0
     total_q_matches = 0
     total_a_matches = 0
     total_e_matches = 0
-
+    raw_types: list[tuple[int, int, str, bool, bool, bool]] = []
     for block in normalized_blocks:
         text = block.get("normalized_text", "")
         block_idx = block.get("block_index", 0)
+        page = block.get("page", block_idx)
 
         q_count = _count_patterns(text, QUESTION_PATTERNS)
         a_count = _count_keywords(text, ANSWER_KEYWORDS)
         e_count = _count_keywords(text, ANALYSIS_KEYWORDS)
+        noise_signals += _count_ocr_noise_signals(text)
 
         total_q_matches += q_count
         total_a_matches += a_count
@@ -120,39 +146,52 @@ def analyze_structure(
 
         bt = _block_type(text)
         raw_types.append((
-            block_idx, bt, q_count > 0, a_count > 0, e_count > 0,
+            page, block_idx, bt, q_count > 0, a_count > 0, e_count > 0,
         ))
 
     # 上下文感知：答案/解析区域之后的"题号"更可能是答案列表编号
     first_answer_like = None
-    for idx, bt, _, _, _ in raw_types:
+    for page, idx, bt, _, _, _ in raw_types:
         if bt in ("answer", "mixed"):
             first_answer_like = idx
             break
 
     block_types: list[tuple[int, str]] = []
-    for idx, bt, has_q, has_a, has_e in raw_types:
+    page_types: list[tuple[int, str]] = []
+    for page, idx, bt, has_q, has_a, has_e in raw_types:
         if first_answer_like is not None and idx > first_answer_like and bt == "question":
             # 答案区域之后的题号 → 降级为混合块
             bt = "mixed"
         block_types.append((idx, bt))
+        page_types.append((page, bt))
 
-    # 收集各类型 block 索引
+    # 收集各类型页码
     question_blocks = [idx for idx, bt in block_types if bt in ("question", "mixed")]
-    pure_question_blocks = [idx for idx, bt in block_types if bt == "question"]
+    a_blocks = [idx for idx, bt in block_types if bt in ("answer", "mixed")]
     a_pages = sorted(set(
-        idx for idx, bt in block_types if bt in ("answer", "mixed")
+        page for page, bt in page_types if bt in ("answer", "mixed")
     ))
+    pure_question_blocks = [idx for idx, bt in block_types if bt == "question"]
     e_pages = sorted(set(
-        idx for idx, bt, _, _, has_e in raw_types if has_e
+        page for page, _, _, _, _, has_e in raw_types if has_e
     ))
-
-    q_pages = sorted(set(question_blocks))
 
     mode, confidence = _detect_mode(
-        block_types, pure_question_blocks, a_pages,
+        block_types, pure_question_blocks, a_blocks,
         total_q_matches, total_a_matches, total_blocks,
     )
+    reason = _diagnostic_reason(mode, total_q_matches, total_a_matches, pure_question_blocks, a_pages)
+
+    question_pages = [
+        page
+        for page, bt in page_types
+        if bt == "question" or (bt == "mixed" and (mode != "SEPARATED" or page not in a_pages))
+    ]
+    q_pages = sorted(set(question_pages))
+
+    q_density = round(total_q_matches / max(total_blocks, 1), 3)
+    a_density = round(total_a_matches / max(total_blocks, 1), 3)
+    e_density = round(total_e_matches / max(total_blocks, 1), 3)
 
     return {
         "mode": mode,
@@ -167,6 +206,14 @@ def analyze_structure(
                 "answer_keyword": total_a_matches,
                 "analysis_keyword": total_e_matches,
             },
+            "diagnostic_reason": reason,
+            "question_density": q_density,
+            "answer_density": a_density,
+            "analysis_density": e_density,
+            "ocr_noise_signals": noise_signals,
+            "has_question_blocks": bool(question_blocks),
+            "has_answer_blocks": bool(a_pages),
+            "has_explanation_blocks": bool(e_pages),
         },
     }
 
