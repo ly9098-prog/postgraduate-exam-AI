@@ -122,6 +122,14 @@ def analyze_structure(
                     "answer_keyword": 0,
                     "analysis_keyword": 0,
                 },
+                "diagnostic_reason": "empty_input",
+                "question_density": 0.0,
+                "answer_density": 0.0,
+                "analysis_density": 0.0,
+                "ocr_noise_signals": 0,
+                "has_question_blocks": False,
+                "has_answer_blocks": False,
+                "has_explanation_blocks": False,
             },
         }
 

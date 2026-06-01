@@ -85,6 +85,26 @@ class TestSeparatedMode:
         # 纯题目区在答案区之前（mixed 块可重叠）
         assert q[0] <= a[0]
 
+    def test_answer_pages_use_page_not_block_index(self):
+        """多页输入中 answer_pages 应返回真实页码，而不是 block_index。"""
+        blocks = [
+            {
+                "page": 1,
+                "block_index": 10,
+                "raw_text": "1. 题目A\n2. 题目B",
+                "normalized_text": "1. 题目A\n2. 题目B",
+            },
+            {
+                "page": 3,
+                "block_index": 11,
+                "raw_text": "参考答案：\n1.A\n2.B",
+                "normalized_text": "参考答案：\n1.A\n2.B",
+            },
+        ]
+        result = analyze_structure(blocks)
+        assert result["mode"] == "SEPARATED"
+        assert result["answer_pages"] == [3]
+
 
 # ---------------------------------------------------------------
 # 3. 无答案文档
