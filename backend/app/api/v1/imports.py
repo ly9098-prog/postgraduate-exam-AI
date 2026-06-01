@@ -1,4 +1,5 @@
 import hashlib
+import importlib.util
 import logging
 import uuid
 from datetime import datetime
@@ -149,6 +150,27 @@ def _build_ocr_text_diagnostics(raw_ocr_text: str, cleaned_text: str) -> dict:
         "text_length_delta": len(raw_ocr_text) - len(cleaned_text),
         "line_count_delta": len(raw_lines) - len(cleaned_lines),
     }
+
+
+def _build_ocr_runtime_diagnostics() -> dict:
+    return {
+        "ocr_enabled": settings.OCR_ENABLED,
+        "paddleocr_available": importlib.util.find_spec("paddleocr") is not None,
+    }
+
+
+def _classify_image_pipeline_result(result: dict, cleaned_text: str) -> str | None:
+    if not cleaned_text.strip():
+        return "ocr_empty_text"
+    split = result.get("diagnostics", {}).get("split", {})
+    if split.get("failure_reason") == "text_present_but_no_question_boundary":
+        return "text_present_but_split_failed"
+    schema_errors = result.get("diagnostics", {}).get("schema_errors", [])
+    if any("missing_options" in item.get("errors", []) for item in schema_errors if isinstance(item, dict)):
+        return "missing_options"
+    if result.get("status") != "completed":
+        return "pipeline_failed"
+    return None
 
 
 async def _fail_image_pipeline(pipeline_id: str, error: str) -> None:
@@ -413,6 +435,10 @@ async def image_upload(
         )
         raise HTTPException(status_code=400, detail="图片 OCR 功能未启用")
 
+    if importlib.util.find_spec("paddleocr") is None:
+        logger.info("image upload validation failed: PaddleOCR dependency unavailable filename=%s", filename)
+        raise HTTPException(status_code=400, detail="OCR 依赖未安装：paddleocr")
+
     content = await file.read()
     if not content:
         logger.info("image upload validation failed: empty content %s", filename)
@@ -477,9 +503,11 @@ async def _run_image_pipeline_with_db(
         from app.services.ocr_service import clean_ocr_text, ocr_image
 
         logger.info("image OCR started: pipeline_id=%s file=%s", pipeline_id, source_file)
+        runtime_diagnostics = _build_ocr_runtime_diagnostics()
         await _set_image_pipeline_status(
             pipeline_id,
             status="ocr_running",
+            diagnostics={"ocr_runtime": runtime_diagnostics},
             stages={"upload": {"status": "completed"}, "ocr": {"status": "running"}},
         )
         raw_ocr_text = ocr_image(image_content)
@@ -490,10 +518,14 @@ async def _run_image_pipeline_with_db(
                 pipeline_id,
                 status="failed",
                 stats={"ocr": ocr_diagnostics},
-                errors=["ocr_empty_after_cleaning"],
+                diagnostics={
+                    "ocr_runtime": runtime_diagnostics,
+                    "failure_reason": "ocr_empty_text",
+                },
+                errors=["ocr_empty_text"],
                 stages={
                     "upload": {"status": "completed"},
-                    "ocr": {"status": "failed", "error": "ocr_empty_after_cleaning"},
+                    "ocr": {"status": "failed", "error": "ocr_empty_text"},
                 },
             )
             raise ValueError("图片 OCR 未识别到可导入文本")
@@ -510,6 +542,12 @@ async def _run_image_pipeline_with_db(
             status="parsing",
             raw_text_preview=raw_text[:500],
             stats={"ocr": ocr_diagnostics},
+            diagnostics={
+                "ocr_runtime": runtime_diagnostics,
+                "ocr_raw_text": raw_ocr_text[:1000],
+                "ocr_cleaned_text": raw_text[:1000],
+                "failure_reason": None,
+            },
             stages={"upload": {"status": "completed"}, "ocr": {"status": "completed"}},
         )
 
@@ -525,8 +563,10 @@ async def _run_image_pipeline_with_db(
             )
 
         status = "completed" if result.get("status") == "completed" else "failed"
+        failure_reason = _classify_image_pipeline_result(result, raw_text)
         if status == "completed" and not result.get("batch_id"):
             status = "failed"
+            failure_reason = failure_reason or "no_review_batch_created"
             result.setdefault("errors", []).append("OCR 文本未生成待审核批次")
         if result.get("batch_id"):
             logger.info(
@@ -542,6 +582,13 @@ async def _run_image_pipeline_with_db(
         result["finished_at"] = datetime.now().isoformat()
         result_stats = result.setdefault("stats", {})
         result_stats["ocr"] = ocr_diagnostics
+        result["diagnostics"] = {
+            **result.get("diagnostics", {}),
+            "ocr_runtime": runtime_diagnostics,
+            "ocr_raw_text": raw_ocr_text[:1000],
+            "ocr_cleaned_text": raw_text[:1000],
+            "failure_reason": failure_reason,
+        }
         if status == "completed" and result.get("batch_id"):
             result["question_count"] = result.get("stats", {}).get("to_review", 0)
         current = await _get_image_pipeline_status(pipeline_id) or {}

@@ -193,6 +193,8 @@ class TestImportPipelineSplit:
             "normalized_block_count": 2,
             "text_block_count": 2,
             "raw_question_count": 0,
+            "raw_questions_preview": [],
+            "failure_reason": "text_present_but_no_question_boundary",
             "fallback_created": True,
         }
         assert result["warnings"] == ["no questions found in document; created low-confidence review item"]
@@ -219,6 +221,18 @@ class TestImportPipelineSplit:
             "normalized_block_count": 1,
             "text_block_count": 1,
             "raw_question_count": 1,
+            "raw_questions_preview": [
+                {
+                    "number": 1,
+                    "raw_question_text": "1. 已编号题目\nA. 选项A\nB. 选项B",
+                    "page_start": 1,
+                    "page_end": 1,
+                    "has_options": True,
+                    "option_lines": {"A": "选项A", "B": "选项B"},
+                    "confidence": 0.9,
+                }
+            ],
+            "failure_reason": None,
             "fallback_created": False,
         }
         assert result["warnings"] == []
