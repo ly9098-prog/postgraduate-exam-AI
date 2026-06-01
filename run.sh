@@ -86,9 +86,19 @@ if [ -f "requirements-ocr.txt" ]; then
         echo -e "${GREEN}✅ OCR 依赖已存在${NC}"
     else
         echo -e "${YELLOW}📦 安装 OCR 依赖（PaddleOCR，首次安装可能较慢）...${NC}"
-        "$RUNTIME_PYTHON" -m pip install --quiet -r requirements-ocr.txt $PIP_BREAK_SYSTEM || {
+        if "$RUNTIME_PYTHON" -m pip install --quiet -r requirements-ocr.txt $PIP_BREAK_SYSTEM; then
+            if ! OCR_IMPORT_ERROR=$("$RUNTIME_PYTHON" -c "import paddleocr" 2>&1 >/dev/null); then
+                if [[ "$OCR_IMPORT_ERROR" == *"libgomp.so.1"* ]] && command -v apt-get &>/dev/null; then
+                    echo -e "${YELLOW}⚠️  OCR 原生运行库缺失，尝试安装 libgomp1...${NC}"
+                    sudo apt-get install -y libgomp1
+                    "$RUNTIME_PYTHON" -c "import paddleocr" 2>/dev/null || echo -e "${YELLOW}⚠️  OCR 运行时检查仍失败，图片 OCR 将不可用${NC}"
+                else
+                    echo -e "${YELLOW}⚠️  OCR 运行时检查失败，图片 OCR 将不可用${NC}"
+                fi
+            fi
+        else
             echo -e "${YELLOW}⚠️  OCR 依赖安装失败，图片 OCR 将不可用；可稍后手动执行：$RUNTIME_PYTHON -m pip install -r requirements-ocr.txt${NC}"
-        }
+        fi
     fi
 fi
 
