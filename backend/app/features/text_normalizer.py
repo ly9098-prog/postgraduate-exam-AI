@@ -33,6 +33,16 @@ _RE_STRUCTURE_LINE = re.compile(
     r")"
 )
 
+# 上一行是完整结构行时，下一行默认不继续并入上一行
+_RE_PREV_STRUCTURE_LINE = re.compile(
+    r"^("
+    r"[A-Da-d]\s*[.、:：)）]\s*.{1,}"
+    r"|[（(]\s*[A-Da-d]\s*[）)]\s*.{1,}"
+    r"|(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:]\s*.{1,}"
+    r"|(?:【)?(?:解析|解答|讲解|分析)(?:】)?\s*[：:]\s*.{1,}"
+    r")"
+)
+
 _SENTENCE_END = frozenset("。！？；…")
 
 
@@ -109,6 +119,8 @@ class ImportTextNormalizer:
         if not prev or not curr:
             return False
         if _RE_STRUCTURE_LINE.match(curr):
+            return False
+        if _RE_PREV_STRUCTURE_LINE.match(prev):
             return False
         if prev[-1] in _SENTENCE_END:
             return False
