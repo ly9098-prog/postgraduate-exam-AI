@@ -738,7 +738,9 @@ AI 错因分析。
 
 图片导入状态写入时先更新内存，再 best-effort 写入 Redis，TTL 为 86400 秒。配置 `REDIS_URL` 后可跨 worker 短期共享状态，并在 TTL 内支持重启恢复；未配置或 Redis 不可用时仅保证同进程内存回退，不保证跨 worker / 重启恢复。
 
-`PipelineStatusResponse` 会附带 OCR 诊断与切题诊断字段：原始/清洗后文本长度、行数、预览、长度差值；若清洗后文本为空会返回 `ocr_empty_after_cleaning` 相关错误；若切分阶段找不到题号边界但存在规范化文本，会返回低置信度 fallback 审核项信息。
+`PipelineStatusResponse` 会附带 OCR 运行时、文本与切题诊断字段：`ocr_enabled`、`paddleocr_available`、原始/清洗后文本长度、行数、预览、长度/行数差值、OCR stats、`normalized_block_count`、`text_block_count`、`raw_question_count`、`raw_questions_preview`、`fallback_created`、`failure_reason`。
+
+图片导入会在入队前校验 `OCR_ENABLED` 与 PaddleOCR 可用性。失败分类当前包括：`ocr_empty_text`（OCR 未识别到文本）、`text_present_but_split_failed`（有文本但切题失败）、`missing_options`（选择题选项缺失）、`pipeline_failed`（管线失败）；切题 fallback 原因包括 `text_present_but_no_question_boundary`、`no_text_blocks`。
 
 | 字段 | 说明 |
 |------|------|

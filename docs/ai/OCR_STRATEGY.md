@@ -14,9 +14,14 @@ OCR 是**可选增强模块**，不是核心功能。通过 `OCR_ENABLED` 配置
 
 - `GET /api/v1/import/pipelines/{pipeline_id}` 状态读取顺序：legacy `get_pipeline_status` → Redis `import:image:pipeline:{pipeline_id}` → 同进程 `_image_pipeline_store`。
 - 只有 legacy 与 image 状态都缺失时返回 404。
+- 图片上传会在入队前校验 `OCR_ENABLED` 与 PaddleOCR 是否可用，缺失时直接返回可读错误。
 - 图片状态写入先更新内存，再 best-effort 写入 Redis，TTL 86400 秒。
 - Redis 用于跨 worker 短期状态共享与 TTL 内重启恢复；`REDIS_URL` 未配置或不可用时仅保留同进程内存回退，不保证跨 worker / 重启恢复。
 - 终态：`completed`、`failed`；非终态：`queued`、`ocr_running`、`parsing`。前端只应在终态停止轮询。
+- 状态响应会保留 OCR 运行时诊断、原始/清洗后文本预览、文本长度/行数差值、OCR stats 与切题诊断。
+- 图片导入 `failure_reason` 当前分类：`ocr_empty_text`、`text_present_but_split_failed`、`missing_options`、`pipeline_failed`；切题 fallback 内部原因包括 `text_present_but_no_question_boundary`、`no_text_blocks`，并标记 `fallback_created`。
+
+> 2026-06-01 更新原因：同步图片 OCR 导入诊断字段与失败分类，便于定位 OCR 环境、空文本、切题失败和选项缺失。
 
 生产 Docker Compose 默认注入 `REDIS_URL=redis://redis:6379/0`。
 
