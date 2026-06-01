@@ -252,12 +252,18 @@ class ImportPipeline:
         """Stage 3: split text blocks into individual questions."""
         raw_questions = split_questions(normalized_blocks, structure=None)
 
+        text_blocks = [
+            b for b in normalized_blocks
+            if str(b.get("normalized_text") or "").strip()
+        ]
+        split_diagnostics = {
+            "normalized_block_count": len(normalized_blocks),
+            "text_block_count": len(text_blocks),
+            "raw_question_count": len(raw_questions),
+        }
+
         warnings: list[str] = []
         if not raw_questions:
-            text_blocks = [
-                b for b in normalized_blocks
-                if str(b.get("normalized_text") or "").strip()
-            ]
             if text_blocks:
                 raw_questions = [{
                     "number": 1,
@@ -271,12 +277,22 @@ class ImportPipeline:
                     "confidence": 0.2,
                 }]
                 warnings.append("no questions found in document; created low-confidence review item")
+                split_diagnostics["fallback_created"] = True
             else:
                 warnings.append("no questions found in document")
+                split_diagnostics["fallback_created"] = False
         elif len(raw_questions) < len(normalized_blocks):
             warnings.append(f"{len(normalized_blocks) - len(raw_questions)} blocks produced no questions")
+            split_diagnostics["fallback_created"] = False
+        else:
+            split_diagnostics["fallback_created"] = False
 
-        return {"raw_questions": raw_questions, "split_count": len(raw_questions), "warnings": warnings}
+        return {
+            "raw_questions": raw_questions,
+            "split_count": len(raw_questions),
+            "split_diagnostics": split_diagnostics,
+            "warnings": warnings,
+        }
 
     def _run_match(self, raw_questions: list[dict], normalized_blocks: list[dict], **_kw) -> dict:
         """Stage 4: match answers and explanations to questions."""
@@ -498,6 +514,9 @@ class ImportPipeline:
             "to_review": data.get("written", 0),
             "failed": sum(1 for s in self.stages.values() if s.status == "failed"),
         }
+        diagnostics = {
+            "split": data.get("split_diagnostics", {}),
+        }
 
         finished_at = datetime.now().isoformat()
 
@@ -506,6 +525,7 @@ class ImportPipeline:
             "status": overall_status,
             "batch_id": data.get("batch_id", ""),
             "stats": stats,
+            "diagnostics": diagnostics,
             "stages": {name: s.to_dict() for name, s in self.stages.items()},
             "errors": pipeline_errors,
             "started_at": started_at,

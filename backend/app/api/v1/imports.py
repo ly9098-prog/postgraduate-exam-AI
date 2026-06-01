@@ -136,6 +136,21 @@ def _validate_image_content(content: bytes) -> tuple[int, int, str]:
     return width, height, image_format
 
 
+def _build_ocr_text_diagnostics(raw_ocr_text: str, cleaned_text: str) -> dict:
+    raw_lines = [line for line in raw_ocr_text.splitlines() if line.strip()]
+    cleaned_lines = [line for line in cleaned_text.splitlines() if line.strip()]
+    return {
+        "raw_text_length": len(raw_ocr_text),
+        "cleaned_text_length": len(cleaned_text),
+        "raw_line_count": len(raw_lines),
+        "cleaned_line_count": len(cleaned_lines),
+        "raw_text_preview": raw_ocr_text[:1000],
+        "cleaned_text_preview": cleaned_text[:1000],
+        "text_length_delta": len(raw_ocr_text) - len(cleaned_text),
+        "line_count_delta": len(raw_lines) - len(cleaned_lines),
+    }
+
+
 async def _fail_image_pipeline(pipeline_id: str, error: str) -> None:
     current = await _get_image_pipeline_status(pipeline_id) or {}
     errors = list(current.get("errors", []))
@@ -467,18 +482,34 @@ async def _run_image_pipeline_with_db(
             status="ocr_running",
             stages={"upload": {"status": "completed"}, "ocr": {"status": "running"}},
         )
-        raw_text = clean_ocr_text(ocr_image(image_content))
+        raw_ocr_text = ocr_image(image_content)
+        raw_text = clean_ocr_text(raw_ocr_text)
+        ocr_diagnostics = _build_ocr_text_diagnostics(raw_ocr_text, raw_text)
         if not raw_text:
+            await _set_image_pipeline_status(
+                pipeline_id,
+                status="failed",
+                stats={"ocr": ocr_diagnostics},
+                errors=["ocr_empty_after_cleaning"],
+                stages={
+                    "upload": {"status": "completed"},
+                    "ocr": {"status": "failed", "error": "ocr_empty_after_cleaning"},
+                },
+            )
             raise ValueError("图片 OCR 未识别到可导入文本")
         logger.info(
-            "image OCR completed: pipeline_id=%s chars=%d",
+            "image OCR completed: pipeline_id=%s raw_chars=%d cleaned_chars=%d raw_lines=%d cleaned_lines=%d",
             pipeline_id,
-            len(raw_text),
+            ocr_diagnostics["raw_text_length"],
+            ocr_diagnostics["cleaned_text_length"],
+            ocr_diagnostics["raw_line_count"],
+            ocr_diagnostics["cleaned_line_count"],
         )
         await _set_image_pipeline_status(
             pipeline_id,
             status="parsing",
             raw_text_preview=raw_text[:500],
+            stats={"ocr": ocr_diagnostics},
             stages={"upload": {"status": "completed"}, "ocr": {"status": "completed"}},
         )
 
@@ -509,6 +540,8 @@ async def _run_image_pipeline_with_db(
         result["status"] = status
         result["raw_text_preview"] = raw_text[:500]
         result["finished_at"] = datetime.now().isoformat()
+        result_stats = result.setdefault("stats", {})
+        result_stats["ocr"] = ocr_diagnostics
         if status == "completed" and result.get("batch_id"):
             result["question_count"] = result.get("stats", {}).get("to_review", 0)
         current = await _get_image_pipeline_status(pipeline_id) or {}

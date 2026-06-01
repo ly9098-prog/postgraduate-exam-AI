@@ -34,7 +34,9 @@ _PAREN_QUESTION_PATTERN = _QUESTION_PATTERNS[1][0]
 _OCR_Q_PATTERN = re.compile(r"^([lI])\s*[.、)）]")
 
 # 选项模式
-_OPTION_NOISE_PREFIX = r"(?:[?？]|[①②③④⑤⑥⑦⑧])?\s*"
+_CIRCLED_OPTION_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+_OPTION_NOISE_PREFIX = r"(?:[?？]|[" + _CIRCLED_OPTION_CHARS + r"])?\s*"
+_OPTION_MARKER = _OPTION_NOISE_PREFIX + r"([A-Da-d])\s*[.、:：)）]"
 
 _OPTION_PATTERNS: list[re.Pattern] = [
     re.compile(r"^" + _OPTION_NOISE_PREFIX + r"([A-Da-d])\s*[.、:：)）]\s*(.+)"),
@@ -46,8 +48,8 @@ _OCR_OPTION_MAP = {"8": "B", "6": "B", "0": "D", "Ｏ": "D"}
 
 _INLINE_QUESTION_PATTERN = re.compile(r"(?<!\d)(\d{1,3})\s*[.、)）]\s*\S")
 _INLINE_OPTION_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9])" + _OPTION_NOISE_PREFIX +
-    r"([A-Da-d])\s*[.、:：)）]\s*(.+?)(?=\s+" + _OPTION_NOISE_PREFIX + r"[A-Da-d]\s*[.、:：)）]\s*|$)"
+    r"(?<![A-Za-z0-9])" + _OPTION_MARKER +
+    r"\s*(.+?)(?=\s+" + _OPTION_MARKER + r"\s*|$)"
 )
 _ANSWER_EXPLANATION_MARKER = re.compile(
     r"(?:答案|正确答案|参考答案|解析|解答|讲解|分析)\s*[：:]"
@@ -109,6 +111,22 @@ def _looks_like_paren_question(line: str, match_end: int) -> bool:
     return bool(re.match(r"(?:第\s*)?\S+题", rest))
 
 
+def _has_option_marker_before_question(text: str) -> bool:
+    markers = list(re.finditer(_OPTION_MARKER, text))
+    if not markers:
+        return False
+    keys = [m.group(1).upper() for m in markers]
+    if len(keys) >= 2:
+        return True
+    marker = markers[-1]
+    tail = text[marker.end():].strip()
+    return bool(tail)
+
+
+def _is_probable_inline_question_text(text: str) -> bool:
+    return bool(re.search(r"[（(][^）)]{0,8}[）)]|下列|以下|正确|错误|问|求|计算|证明|已知|若", text))
+
+
 def _looks_like_inline_question(line: str, match: re.Match, previous_num: int | None) -> bool:
     num = int(match.group(1))
     if _is_false_question_number(num, line[match.start():]):
@@ -118,7 +136,9 @@ def _looks_like_inline_question(line: str, match: re.Match, previous_num: int | 
     before = line[:match.start()].rstrip()
     if not before:
         return False
-    if re.search(r"[A-Da-d]\s*[.、:：)）]", before):
+    if _has_option_marker_before_question(before):
+        return True
+    if _is_probable_inline_question_text(line[match.end():]):
         return True
     return before[-1] in _SENTENCE_END
 
@@ -186,8 +206,15 @@ def _find_question_boundaries(text: str) -> list[tuple[int, int]]:
                 boundaries.append((num, line_start))
                 previous_num = num
                 in_subquestion = False
+                for inline_num, inline_start in _find_inline_question_boundaries(stripped, previous_num):
+                    if inline_start == 0:
+                        continue
+                    boundaries.append((inline_num, char_pos + indent + inline_start))
+                    previous_num = inline_num
         elif previous_num is not None:
             for num, inline_start in _find_inline_question_boundaries(stripped, previous_num):
+                if inline_start == 0:
+                    continue
                 boundaries.append((num, char_pos + indent + inline_start))
                 previous_num = num
 

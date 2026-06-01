@@ -738,6 +738,8 @@ AI 错因分析。
 
 图片导入状态写入时先更新内存，再 best-effort 写入 Redis，TTL 为 86400 秒。配置 `REDIS_URL` 后可跨 worker 短期共享状态，并在 TTL 内支持重启恢复；未配置或 Redis 不可用时仅保证同进程内存回退，不保证跨 worker / 重启恢复。
 
+`PipelineStatusResponse` 会附带 OCR 诊断与切题诊断字段：原始/清洗后文本长度、行数、预览、长度差值；若清洗后文本为空会返回 `ocr_empty_after_cleaning` 相关错误；若切分阶段找不到题号边界但存在规范化文本，会返回低置信度 fallback 审核项信息。
+
 | 字段 | 说明 |
 |------|------|
 | status | 图片导入终态为 `completed` / `failed`；非终态包括 `queued` / `ocr_running` / `parsing` |

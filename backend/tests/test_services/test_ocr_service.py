@@ -1,5 +1,6 @@
 """Stage 9 OCR 增强服务 — 单元测试。AI 调用和 PyMuPDF 全部 mock。"""
 import sys
+from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -34,6 +35,42 @@ class TestServiceOcrImageDependencyHandling:
         ), patch.dict(sys.modules, {"paddleocr": None}):
             with pytest.raises(RuntimeError, match="OCR 依赖未安装：paddleocr"):
                 ocr_service.ocr_pages_with_boxes([(1, b"fake image")])
+
+
+# ============================================================
+# _prepare_ocr_image
+# ============================================================
+
+
+class TestPrepareOcrImage:
+    def test_prepare_ocr_image_applies_exif_transpose_and_returns_rgb(self):
+        from PIL import Image
+        from app.services.ocr_service import _prepare_ocr_image
+
+        image = Image.new("RGB", (1200, 800), "white")
+        exif = Image.Exif()
+        exif[274] = 6
+        buf = BytesIO()
+        image.save(buf, format="JPEG", exif=exif)
+
+        prepared = _prepare_ocr_image(buf.getvalue())
+
+        assert prepared.mode == "RGB"
+        assert prepared.size == (1000, 1500)
+
+    def test_prepare_ocr_image_upscales_small_image_within_max_side(self):
+        from PIL import Image
+        from app.services.ocr_service import _OCR_MAX_SIDE, _prepare_ocr_image
+
+        image = Image.new("RGB", (500, 800), "white")
+        buf = BytesIO()
+        image.save(buf, format="PNG")
+
+        prepared = _prepare_ocr_image(buf.getvalue())
+
+        assert prepared.mode == "RGB"
+        assert prepared.size[0] == 1000
+        assert max(prepared.size) <= _OCR_MAX_SIDE
 
 
 # ============================================================
