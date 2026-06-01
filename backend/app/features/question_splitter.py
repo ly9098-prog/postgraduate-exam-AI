@@ -39,6 +39,17 @@ _OPTION_PATTERNS: list[re.Pattern] = [
 # OCR 容错选项
 _OCR_OPTION_MAP = {"8": "B", "6": "B", "0": "D", "Ｏ": "D"}
 
+_INLINE_QUESTION_PATTERN = re.compile(r"(?<!\d)(\d{1,3})\s*[.、)）]\s*\S")
+_INLINE_OPTION_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9])([A-Da-d])\s*[.、:：)）]\s*(.+?)(?=\s+[A-Da-d]\s*[.、:：)）]\s*|$)"
+)
+_ANSWER_EXPLANATION_MARKER = re.compile(
+    r"(?:答案|正确答案|参考答案|解析|解答|讲解|分析)\s*[：:]"
+)
+_ANSWER_EXPLANATION_LINE = re.compile(
+    r"^(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:]|^(?:【)?(?:解析|解答|讲解|分析)(?:】)?\s*[：:]"
+)
+
 _OCR_OPTION_PATTERN = re.compile(
     r"^([" + "".join(_OCR_OPTION_MAP.keys()) + r"])\s*[.、:：)）]\s*(.+)"
 )
@@ -82,6 +93,39 @@ def _is_false_question_number(num: int, line: str) -> bool:
     return False
 
 
+def _looks_like_inline_question(line: str, match: re.Match, previous_num: int | None) -> bool:
+    num = int(match.group(1))
+    if _is_false_question_number(num, line[match.start():]):
+        return False
+    if previous_num is not None and num != previous_num + 1:
+        return False
+    before = line[:match.start()].rstrip()
+    if not before:
+        return False
+    if re.search(r"[A-Da-d]\s*[.、:：)）]", before):
+        return True
+    return before[-1] in _SENTENCE_END
+
+
+def _find_inline_question_boundaries(line: str, previous_num: int | None) -> list[tuple[int, int]]:
+    boundaries: list[tuple[int, int]] = []
+    expected = previous_num
+    for match in _INLINE_QUESTION_PATTERN.finditer(line):
+        if _looks_like_inline_question(line, match, expected):
+            num = int(match.group(1))
+            boundaries.append((num, match.start()))
+            expected = num
+    return boundaries
+
+
+def _is_sub_question_line(line: str, num: int, previous_num: int | None, in_subquestion: bool) -> bool:
+    if not re.match(r"^\d+\s*[)）]", line):
+        return False
+    if previous_num is None:
+        return False
+    return num == 1 or in_subquestion
+
+
 def _detect_option_line(line: str) -> tuple[str, str] | None:
     """检测选项行，返回 (key, text) 或 None。"""
     # 精确匹配
@@ -110,6 +154,8 @@ def _find_question_boundaries(text: str) -> list[tuple[int, int]]:
     lines = text.split("\n")
 
     char_pos = 0
+    previous_num: int | None = None
+    in_subquestion = False
     for line in lines:
         stripped = line.lstrip()
         indent = len(line) - len(stripped)
@@ -117,23 +163,64 @@ def _find_question_boundaries(text: str) -> list[tuple[int, int]]:
         result = _detect_question_number(stripped)
         if result is not None:
             num, match_end = result
-            line_start = char_pos + indent
-            boundaries.append((num, line_start))
+            if _is_sub_question_line(stripped, num, previous_num, in_subquestion):
+                in_subquestion = True
+            else:
+                line_start = char_pos + indent
+                boundaries.append((num, line_start))
+                previous_num = num
+                in_subquestion = False
+        elif previous_num is not None:
+            for num, inline_start in _find_inline_question_boundaries(stripped, previous_num):
+                boundaries.append((num, char_pos + indent + inline_start))
+                previous_num = num
 
         char_pos += len(line) + 1  # +1 for \n
 
     return boundaries
 
 
+def _truncate_answer_explanation_tail(text: str) -> str:
+    match = _ANSWER_EXPLANATION_MARKER.search(text)
+    if match:
+        return text[:match.start()].strip()
+    return text.strip()
+
+
 def _extract_options(text: str) -> dict[str, str]:
     """从题目文本中提取选项行。"""
     options: dict[str, str] = {}
+    last_key: str | None = None
     for line in text.split("\n"):
-        result = _detect_option_line(line.strip())
+        stripped = line.strip()
+        inline_matches = list(_INLINE_OPTION_PATTERN.finditer(stripped))
+        if len(inline_matches) > 1:
+            for match in inline_matches:
+                key = match.group(1).upper()
+                value = _truncate_answer_explanation_tail(match.group(2))
+                if key not in options and value:
+                    options[key] = value
+            last_key = inline_matches[-1].group(1).upper()
+            continue
+
+        result = _detect_option_line(stripped)
         if result:
             key, value = result
-            if key not in options:  # 保留第一个匹配
+            value = _truncate_answer_explanation_tail(value)
+            if key not in options and value:  # 保留第一个匹配
                 options[key] = value
+            last_key = key
+            continue
+
+        if (
+            last_key
+            and stripped
+            and not _detect_question_number(stripped)
+            and not _detect_option_line(stripped)
+            and not _ANSWER_EXPLANATION_LINE.match(stripped)
+            and last_key in options
+        ):
+            options[last_key] = f"{options[last_key]} {stripped}"
     return options
 
 

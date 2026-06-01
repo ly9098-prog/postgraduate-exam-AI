@@ -219,6 +219,61 @@ class TestOcrTolerance:
             assert len(q["option_lines"]) >= 2
 
 
+    def test_inline_next_question_after_option(self):
+        blocks = _make_blocks(
+            "29. 以下关于管程的叙述中，错误的是（ ）。\n"
+            "A. 同步工具\n"
+            "B. 每次只允许一个进程进入\n"
+            "C. signal 操作作用相同\n"
+            "D. 无法创建和撤销 30. 对信号量 S 执行 P 操作后，使该进程进入资源等待队列的条件是（ ）。\n"
+            "A. S.value < 0\n"
+            "B. S.value <= 0\n"
+            "C. S.value > 0\n"
+            "D. S.value >= 0"
+        )
+        result = split_questions(blocks)
+        assert len(result) == 2
+        assert [q["number"] for q in result] == [29, 30]
+        assert "30." not in result[0]["option_lines"]["D"]
+
+    def test_inline_options_are_extracted(self):
+        blocks = _make_blocks("1. 题干\nA. 1 B. 2 C. 3 D. 4")
+        result = split_questions(blocks)
+        assert result[0]["option_lines"] == {"A": "1", "B": "2", "C": "3", "D": "4"}
+
+    def test_sub_questions_are_not_split_as_questions(self):
+        blocks = _make_blocks(
+            "1. 有一个计数信号量 S：\n"
+            "1）假如若干进程对 S 进行 28 次 P 操作和 18 次 V 操作后，信号量 S 的值为 0。\n"
+            "2）假如若干进程对信号量 S 进行了 15 次 P 操作和 2 次 V 操作。请问此时有多少个进程等待？\n"
+            "A. 2\nB. 3\nC. 5\nD. 7"
+        )
+        result = split_questions(blocks)
+        assert len(result) == 1
+
+    def test_option_continuation_line_appended(self):
+        blocks = _make_blocks(
+            "1. 下列说法正确的是（ ）。\n"
+            "A. 第一项很长\n"
+            "需要换行继续说明\n"
+            "B. 第二项\n"
+            "C. 第三项\n"
+            "D. 第四项"
+        )
+        result = split_questions(blocks)
+        assert result[0]["option_lines"]["A"] == "第一项很长 需要换行继续说明"
+
+    def test_inline_option_truncates_answer_and_explanation_tail(self):
+        blocks = _make_blocks("1. 题干\nA. 1 B. 2 C. 3 D. 4 答案：A 解析：因为如此")
+        result = split_questions(blocks)
+        assert result[0]["option_lines"]["D"] == "4"
+
+    def test_single_option_truncates_answer_tail(self):
+        blocks = _make_blocks("1. 题干\nD. 4 正确答案：A")
+        result = split_questions(blocks)
+        assert result[0]["option_lines"]["D"] == "4"
+
+
 # ---------------------------------------------------------------
 # 8. 空输入 / 边界情况
 # ---------------------------------------------------------------
