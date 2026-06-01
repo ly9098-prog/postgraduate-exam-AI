@@ -6,14 +6,47 @@ import pytest
 
 
 # ============================================================
+# ocr_image / dependency handling
+# ============================================================
+
+
+class TestServiceOcrImageDependencyHandling:
+    def test_missing_paddleocr_raises_clear_error(self):
+        """缺少 paddleocr 时应暴露明确依赖错误，而不是误报未识别到文本。"""
+        from app.services import ocr_service
+
+        with patch.object(ocr_service.settings, "OCR_ENABLED", True), patch.object(
+            ocr_service,
+            "_ocr_instance",
+            None,
+        ), patch.dict(sys.modules, {"paddleocr": None}):
+            with pytest.raises(RuntimeError, match="OCR 依赖未安装：paddleocr"):
+                ocr_service.ocr_image(b"fake image")
+
+    def test_ocr_pages_with_boxes_propagates_dependency_error(self):
+        """缺少 paddleocr 时，带框接口也应直接抛出依赖错误。"""
+        from app.services import ocr_service
+
+        with patch.object(ocr_service.settings, "OCR_ENABLED", True), patch.object(
+            ocr_service,
+            "_ocr_instance",
+            None,
+        ), patch.dict(sys.modules, {"paddleocr": None}):
+            with pytest.raises(RuntimeError, match="OCR 依赖未安装：paddleocr"):
+                ocr_service.ocr_pages_with_boxes([(1, b"fake image")])
+
+
+# ============================================================
 # is_ocr_enabled
 # ============================================================
 
 
 class TestIsOcrEnabled:
-    def test_enabled_by_default(self):
-        from app.features.ocr_service import is_ocr_enabled
-        assert is_ocr_enabled() is True
+    def test_enabled_via_settings(self):
+        with patch("app.features.ocr_service.settings") as mock_settings:
+            mock_settings.OCR_ENABLED = True
+            from app.features.ocr_service import is_ocr_enabled
+            assert is_ocr_enabled() is True
 
     def test_disabled_via_settings(self):
         with patch("app.features.ocr_service.settings") as mock_settings:
@@ -392,6 +425,7 @@ class TestOcrFallback:
 
         return mock_fitz, mock_deepseek
 
+
     def test_successful_ocr_two_pages(self):
         """两页 PDF OCR 成功。"""
         mock_fitz, mock_deepseek = self._setup_mocks(
@@ -403,7 +437,9 @@ class TestOcrFallback:
         )
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.ai.client.deepseek", mock_deepseek):
+             patch("app.ai.client.deepseek", mock_deepseek), \
+             patch("app.features.ocr_service.settings") as mock_settings:
+            mock_settings.OCR_ENABLED = True
             from app.features.ocr_service import ocr_fallback
             blocks = ocr_fallback(b"fake pdf")
 
@@ -417,7 +453,9 @@ class TestOcrFallback:
         )
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.ai.client.deepseek", mock_deepseek):
+             patch("app.ai.client.deepseek", mock_deepseek), \
+             patch("app.features.ocr_service.settings") as mock_settings:
+            mock_settings.OCR_ENABLED = True
             from app.features.ocr_service import ocr_fallback
             blocks = ocr_fallback(b"fake")
 
@@ -451,7 +489,9 @@ class TestOcrFallback:
         )
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.ai.client.deepseek", mock_deepseek):
+             patch("app.ai.client.deepseek", mock_deepseek), \
+             patch("app.features.ocr_service.settings") as mock_settings:
+            mock_settings.OCR_ENABLED = True
             from app.features.ocr_service import ocr_fallback
             blocks = ocr_fallback(b"fake")
 
@@ -487,7 +527,9 @@ class TestOcrFallback:
         mock_deepseek.base_url = "https://api.deepseek.com"
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.ai.client.deepseek", mock_deepseek):
+             patch("app.ai.client.deepseek", mock_deepseek), \
+             patch("app.features.ocr_service.settings") as mock_settings:
+            mock_settings.OCR_ENABLED = True
             from app.features.ocr_service import ocr_fallback
             with pytest.raises(RuntimeError, match="均失败"):
                 ocr_fallback(b"fake")
@@ -536,7 +578,9 @@ class TestOcrFallback:
         mock_deepseek.base_url = "https://api.deepseek.com"
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.ai.client.deepseek", mock_deepseek):
+             patch("app.ai.client.deepseek", mock_deepseek), \
+             patch("app.features.ocr_service.settings") as mock_settings:
+            mock_settings.OCR_ENABLED = True
             from app.features.ocr_service import ocr_fallback
             blocks = ocr_fallback(b"fake")
 
@@ -573,7 +617,9 @@ class TestOcrFallback:
         mock_deepseek.base_url = "https://api.deepseek.com"
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.ai.client.deepseek", mock_deepseek):
+             patch("app.ai.client.deepseek", mock_deepseek), \
+             patch("app.features.ocr_service.settings") as mock_settings:
+            mock_settings.OCR_ENABLED = True
             from app.features.ocr_service import ocr_fallback
             with pytest.raises(RuntimeError, match="均失败"):
                 ocr_fallback(b"fake")

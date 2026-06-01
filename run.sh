@@ -57,22 +57,34 @@ else
 fi
 
 # ---- 3. 安装依赖 ----
-PIP_INSTALL="pip install --quiet -r requirements.txt"
+PIP_BREAK_SYSTEM=""
 
 if [ "$USE_SYSTEM" = false ] && [ -f ".venv/bin/activate" ]; then
     source .venv/bin/activate
     echo -e "${YELLOW}📦 安装依赖到虚拟环境...${NC}"
 else
     echo -e "${YELLOW}📦 安装依赖到系统环境...${NC}"
-    PIP_INSTALL="$PIP_INSTALL --break-system-packages"
+    PIP_BREAK_SYSTEM="--break-system-packages"
 fi
 
 pip install --quiet --upgrade pip 2>/dev/null || true
-$PIP_INSTALL 2>/dev/null || {
+pip install --quiet -r requirements.txt $PIP_BREAK_SYSTEM 2>/dev/null || {
     # 如果 venv 安装失败，降级到 system
     echo -e "${YELLOW}⚠️  venv 安装失败，降级到系统环境${NC}"
     pip install --quiet --break-system-packages -r requirements.txt
 }
+
+if [ -f "requirements-ocr.txt" ]; then
+    if python -c "import paddleocr" 2>/dev/null; then
+        echo -e "${GREEN}✅ OCR 依赖已存在${NC}"
+    else
+        echo -e "${YELLOW}📦 安装 OCR 依赖（PaddleOCR，首次安装可能较慢）...${NC}"
+        pip install --quiet -r requirements-ocr.txt $PIP_BREAK_SYSTEM || {
+            echo -e "${YELLOW}⚠️  OCR 依赖安装失败，图片 OCR 将不可用；可稍后手动执行：pip install -r requirements-ocr.txt${NC}"
+        }
+    fi
+fi
+
 echo -e "${GREEN}✅ 依赖安装完成${NC}"
 
 # ---- 4. 启动 FastAPI ----
