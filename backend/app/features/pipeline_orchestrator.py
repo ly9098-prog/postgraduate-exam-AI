@@ -20,6 +20,7 @@ from datetime import datetime
 from typing import Any
 
 from app.features.ai_repair import repair_questions
+from app.features.ai_validation import validate_ai_results
 from app.features.answer_matcher import match_answers
 from app.features.ocr_correction import correct_ocr_blocks
 from app.features.question_normalizer import normalize_questions
@@ -199,6 +200,7 @@ class ImportPipeline:
         ])
         if self.options.get("enable_ai_repair", True):
             stage_specs.append(("repair", self._run_repair))
+            stage_specs.append(("ai_validation", self._run_ai_validation))
         if self.options.get("enable_similarity_match", True):
             stage_specs.append(("similarity_match", self._run_similarity_match))
         stage_specs.append(("review", self._run_review))
@@ -453,6 +455,23 @@ class ImportPipeline:
             "warnings": warnings,
         }
 
+    def _run_ai_validation(self, questions: list[dict], **_kw) -> dict:
+        """Stage 6.2: validate AI repair results for anomalies."""
+        result = validate_ai_results(questions)
+
+        stats = result["stats"]
+        warnings: list[str] = []
+        if stats["errors"] > 0:
+            warnings.append(f"{stats['errors']} questions have AI validation errors")
+        if stats["warnings"] > 0:
+            warnings.append(f"{stats['warnings']} questions have AI validation warnings")
+
+        return {
+            "questions": result["questions"],
+            "ai_validation_diagnostics": stats,
+            "warnings": warnings,
+        }
+
     async def _run_similarity_match(
         self,
         questions: list[dict],
@@ -619,6 +638,7 @@ class ImportPipeline:
             "ocr_correction": data.get("ocr_correction_diagnostics", {}),
             "split": data.get("split_diagnostics", {}),
             "schema_errors": data.get("errors", []),
+            "ai_validation": data.get("ai_validation_diagnostics", {}),
             "similarity_match": data.get("similarity_match_diagnostics", {}),
         }
 
