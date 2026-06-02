@@ -1,50 +1,61 @@
 <view class="page">
   <!-- 结果头部 -->
   <view class="result-hero {{passRate >= 60 ? 'pass' : 'fail'}}">
-    <text class="hero-icon">{{passRate >= 60 ? '🎉' : '💪'}}</text>
-    <text class="hero-title">{{passRate >= 60 ? '做得不错' : '继续加油'}}</text>
-    <view class="hero-score">
+    <view class="hero-copy">
+      <text class="eyebrow">练习结果</text>
+      <text class="hero-title">{{passRate >= 60 ? '做得不错' : '继续加油'}}</text>
+      <text class="hero-desc">{{passRate >= 60 ? '保持节奏，继续巩固薄弱题型' : '先复盘错题，再开启下一组练习'}}</text>
+    </view>
+    <view class="score-ring">
       <text class="score-num">{{passRate || 0}}</text>
       <text class="score-percent">%</text>
+      <text class="score-label">正确率</text>
     </view>
-    <text class="score-label">正确率</text>
   </view>
 
   <!-- 统计数据 -->
   <view class="stats-card">
-    <view class="stat-row">
-      <text class="stat-key">科目</text>
-      <text class="stat-val">{{subjectLabel(subject) || '-'}}</text>
+    <view class="section-head">
+      <view>
+        <text class="section-title">本次概览</text>
+        <text class="section-subtitle">先看整体结果，再决定是否复盘错题</text>
+      </view>
+      <text class="section-chip">{{subjectLabel(subject) || '练习'}}</text>
     </view>
-    <view class="stat-row">
-      <text class="stat-key">总题数</text>
-      <text class="stat-val">{{total || 0}}</text>
+    <view class="stats-grid">
+      <view class="stat-item primary">
+        <text class="stat-num">{{total || 0}}</text>
+        <text class="stat-label">总题数</text>
+      </view>
+      <view class="stat-item success">
+        <text class="stat-num">{{correct || 0}}</text>
+        <text class="stat-label">正确</text>
+      </view>
+      <view class="stat-item danger">
+        <text class="stat-num">{{wrong || 0}}</text>
+        <text class="stat-label">错误</text>
+      </view>
     </view>
-    <view class="stat-row">
-      <text class="stat-key">正确</text>
-      <text class="stat-val green">{{correct || 0}}</text>
-    </view>
-    <view class="stat-row">
-      <text class="stat-key">错误</text>
-      <text class="stat-val red">{{wrong || 0}}</text>
-    </view>
-    <view class="stat-row">
-      <text class="stat-key">用时</text>
-      <text class="stat-val">{{durationText}}</text>
+    <view class="duration-row">
+      <text class="duration-label">本次用时</text>
+      <text class="duration-value">{{durationText}}</text>
     </view>
   </view>
 
   <!-- 逐题结果 -->
-  <view class="card" wx:if="{{results.length > 0}}">
+  <view class="detail-card" wx:if="{{results.length > 0}}">
     <view class="detail-toggle" bindtap="toggleDetail">
-      <text class="section-label">答题详情</text>
-      <text class="toggle-arrow">{{showDetail ? '▲' : '▼'}}</text>
+      <view>
+        <text class="section-title">答题详情</text>
+        <text class="section-subtitle">查看每道题的判定结果和正确答案</text>
+      </view>
+      <text class="toggle-arrow">{{showDetail ? '收起' : '展开'}}</text>
     </view>
     <view class="detail-list" wx:if="{{showDetail}}">
       <view class="detail-item {{item._cls}}" wx:for="{{results}}" wx:key="question_id">
         <text class="detail-num">#{{index + 1}}</text>
         <text class="detail-mark">{{item._label}}</text>
-        <text class="detail-answer">答案: {{item.correct_answer}}</text>
+        <text class="detail-answer">答案：{{item.correct_answer}}</text>
       </view>
     </view>
   </view>
