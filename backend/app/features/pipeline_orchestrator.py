@@ -752,6 +752,7 @@ async def run_pipeline_background(
     _pipeline_store[pipeline_id] = {
         "pipeline_id": pipeline_id,
         "status": "parsing",
+        "source_type": source_type,
         "stages": {},
         "stats": {},
         "errors": [],
@@ -775,6 +776,7 @@ async def run_pipeline_background(
         _pipeline_store[pipeline_id] = {
             "pipeline_id": pipeline_id,
             "status": "failed",
+            "source_type": source_type,
             "errors": [str(exc)],
             "started_at": _pipeline_store.get(pipeline_id, {}).get("started_at", ""),
             "finished_at": datetime.now().isoformat(),
@@ -793,6 +795,7 @@ async def run_excel_pipeline_background(
     _pipeline_store[pipeline_id] = {
         "pipeline_id": pipeline_id,
         "status": "parsing",
+        "source_type": "excel",
         "stages": {"extract": {"status": "running"}},
         "stats": {},
         "errors": [],
@@ -806,6 +809,7 @@ async def run_excel_pipeline_background(
         _pipeline_store[pipeline_id] = {
             "pipeline_id": pipeline_id,
             "status": "completed",
+            "source_type": "excel",
             "batch_id": batch_id,
             "stats": {"total": total, "to_review": total},
             "stages": {"extract": {"status": "completed"}},
@@ -818,6 +822,7 @@ async def run_excel_pipeline_background(
         _pipeline_store[pipeline_id] = {
             "pipeline_id": pipeline_id,
             "status": "failed",
+            "source_type": "excel",
             "errors": [str(exc)],
             "started_at": _pipeline_store.get(pipeline_id, {}).get("started_at", ""),
             "finished_at": datetime.now().isoformat(),

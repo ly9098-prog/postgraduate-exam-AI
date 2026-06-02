@@ -80,6 +80,7 @@ async def _set_image_pipeline_status(image_pipeline_id: str, **updates) -> dict:
         {
             "pipeline_id": image_pipeline_id,
             "status": "queued",
+            "source_type": "image",
             "stages": {},
             "stats": {},
             "errors": [],
@@ -212,7 +213,7 @@ async def download_template(
     )
 
 
-@router.post("/upload", response_model=ImportUploadResponse)
+@router.post("/upload", response_model=ImportUploadResponse, deprecated=True)
 async def upload_file(
     file: UploadFile,
     background_tasks: BackgroundTasks,
@@ -399,7 +400,7 @@ async def fix_question(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/image/upload", response_model=PipelineUploadResponse)
+@router.post("/image/upload", response_model=PipelineUploadResponse, deprecated=True)
 async def image_upload(
     file: UploadFile,
     background_tasks: BackgroundTasks,
