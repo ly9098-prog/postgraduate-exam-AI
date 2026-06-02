@@ -5,6 +5,7 @@
 不修改题目内容，仅附加 similarity_suggestion 字段供人工审核参考。
 """
 
+import asyncio
 import difflib
 import re
 
@@ -48,11 +49,27 @@ def _find_best_match(
     bank: list[dict],
     threshold: float,
 ) -> dict | None:
+    a = _strip_whitespace(stem)
+    if not a:
+        return None
+
+    a_len = len(a)
     best_ratio = 0.0
     best_match = None
 
     for item in bank:
-        ratio = _compute_similarity(stem, item["stem"])
+        b = _strip_whitespace(item["stem"])
+        if not b:
+            continue
+
+        b_len = len(b)
+        # Pre-filter: length difference > 50% can't reach 0.85 similarity
+        # (relaxed for short stems < 20 chars)
+        if a_len >= 20 and b_len >= 20:
+            if abs(a_len - b_len) / max(a_len, b_len) > 0.5:
+                continue
+
+        ratio = difflib.SequenceMatcher(None, a, b).ratio()
         if ratio > best_ratio:
             best_ratio = ratio
             best_match = item
@@ -127,6 +144,7 @@ async def match_similar_questions(
     matched_count = 0
 
     result_questions = []
+    loop = asyncio.get_running_loop()
 
     for i, question in enumerate(questions):
         subject = question.get("subject", "")
@@ -144,7 +162,9 @@ async def match_similar_questions(
             result_questions.append(question)
             continue
 
-        suggestion = _find_best_match(stem, bank, threshold)
+        suggestion = await loop.run_in_executor(
+            None, _find_best_match, stem, bank, threshold
+        )
 
         new_question = dict(question)
         if suggestion:

@@ -6,8 +6,11 @@
 
 import asyncio
 import json
+import logging
 import re
 import time
+
+logger = logging.getLogger(__name__)
 
 _VALID_QUESTION_TYPES = (
     "single_choice", "multiple_choice", "true_false", "fill_blank", "subjective",
@@ -184,11 +187,11 @@ async def _call_ai_for_repair(
     }
 
 
-def repair_questions(
+async def repair_questions(
     questions: list[dict],
     config: dict | None = None,
 ) -> dict:
-    """对低置信度题目进行 AI 修复。
+    """对低置信度题目进行 AI 修复（并发，最多 3 路）。
 
     Args:
         questions: stage5 输出的标准化题目列表
@@ -213,7 +216,6 @@ def repair_questions(
     skipped: list[dict] = []
     total_tokens = 0
 
-    # 全局开关关闭 → 全部 skip
     if not enabled:
         for i, q in enumerate(questions):
             skipped.append({
@@ -230,7 +232,6 @@ def repair_questions(
             },
         }
 
-    # AI 不可用 → 全部 unrepaired（静默降级，不抛异常）
     from app.ai.client import deepseek
 
     if not deepseek.is_available():
@@ -248,23 +249,36 @@ def repair_questions(
             },
         }
 
+    candidates: list[tuple[int, dict, str]] = []
     for i, q in enumerate(questions):
         do_repair, reason = _should_repair(q, threshold)
-
         if not do_repair:
             skipped.append({
                 "question_index": i,
                 "reason": reason,
                 "confidence": q.get("confidence_score", 0),
             })
-            continue
+        else:
+            raw_text = q.get("raw_text", "") or q.get("raw_question_text", "")
+            candidates.append((i, q, raw_text))
 
-        raw_text = q.get("raw_text", "") or q.get("raw_question_text", "")
+    sem = asyncio.Semaphore(3)
 
-        try:
-            ai_result = asyncio.run(_call_ai_for_repair(raw_text, q, config))
-        except Exception:
+    async def _repair_one(idx: int, q: dict, raw_text: str):
+        async with sem:
+            return idx, await _call_ai_for_repair(raw_text, q, config)
+
+    results = await asyncio.gather(
+        *[_repair_one(i, q, rt) for i, q, rt in candidates],
+        return_exceptions=True,
+    )
+
+    for (i, q, raw_text), result in zip(candidates, results):
+        if isinstance(result, BaseException):
+            logger.debug("ai_repair question %d failed: %s", i, result)
             ai_result = None
+        else:
+            _, ai_result = result
 
         if ai_result is None:
             unrepaired.append({
@@ -273,7 +287,6 @@ def repair_questions(
             })
             continue
 
-        # AI 返回但校验失败 → 视为不可修复
         if not ai_result["ai_valid"]:
             unrepaired.append({
                 "question_index": i,

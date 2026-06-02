@@ -187,7 +187,8 @@ class TestOcrScannedPdf:
         mock_pix = MagicMock()
         mock_pix.tobytes.return_value = b"fake_png"
         mock_page.get_pixmap.return_value = mock_pix
-        mock_doc.__iter__.return_value = [mock_page]
+        mock_doc.__len__ = MagicMock(return_value=1)
+        mock_doc.__getitem__ = MagicMock(return_value=mock_page)
         mock_fitz.open.return_value = mock_doc
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}):
@@ -217,7 +218,8 @@ class TestOcrScannedPdf:
             pix.tobytes.return_value = b"png"
             p.get_pixmap.return_value = pix
             pages.append(p)
-        mock_doc.__iter__.return_value = pages
+        mock_doc.__len__ = MagicMock(return_value=2)
+        mock_doc.__getitem__ = MagicMock(side_effect=lambda i: pages[i])
         mock_fitz.open.return_value = mock_doc
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}):
@@ -237,7 +239,7 @@ class TestOcrScannedPdf:
     def test_empty_pdf_returns_empty(self):
         mock_fitz = MagicMock()
         mock_doc = MagicMock()
-        mock_doc.__iter__.return_value = []
+        mock_doc.__len__ = MagicMock(return_value=0)
         mock_fitz.open.return_value = mock_doc
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}):
@@ -850,13 +852,13 @@ class TestRepairStage:
         unrepaired = [{"question_index": 1, "reason": "ai_failed"}]
         skipped = [{"question_index": 2, "reason": "above_threshold", "confidence": 0.9}]
 
-        with patch("app.features.pipeline_orchestrator.repair_questions", return_value={
+        with patch("app.features.pipeline_orchestrator.repair_questions", new_callable=AsyncMock, return_value={
             "repaired": repaired,
             "unrepaired": unrepaired,
             "skipped": skipped,
             "stats": {"total_candidates": 3, "repaired": 1, "unrepaired": 1, "skipped": 1, "total_tokens": 100},
         }):
-            result = pipeline._run_repair(questions=questions, options={})
+            result = asyncio.run(pipeline._run_repair(questions=questions, options={}))
 
         assert result["repaired_count"] == 1
         assert result["unrepaired_count"] == 1
@@ -872,13 +874,13 @@ class TestRepairStage:
         questions[0]["confidence_score"] = 0.3
 
         pipeline = ImportPipeline()
-        with patch("app.features.pipeline_orchestrator.repair_questions", return_value={
+        with patch("app.features.pipeline_orchestrator.repair_questions", new_callable=AsyncMock, return_value={
             "repaired": [],
             "unrepaired": [{"question_index": 0, "reason": "ai_unavailable"}],
             "skipped": [],
             "stats": {"total_candidates": 1, "repaired": 0, "unrepaired": 1, "skipped": 0, "total_tokens": 0},
         }):
-            result = pipeline._run_repair(questions=questions, options={})
+            result = asyncio.run(pipeline._run_repair(questions=questions, options={}))
 
         assert "unrepaired" in result["warnings"][0]
         assert len(result["questions"]) == 1
@@ -896,7 +898,7 @@ class TestPipelineOptions:
 
         pipeline = ImportPipeline(options={"enable_ai_repair": True, "confidence_threshold": 0.8})
 
-        with patch("app.features.pipeline_orchestrator.repair_questions") as mock_repair:
+        with patch("app.features.pipeline_orchestrator.repair_questions", new_callable=AsyncMock) as mock_repair:
             mock_repair.return_value = {
                 "repaired": [],
                 "unrepaired": [],
@@ -904,7 +906,7 @@ class TestPipelineOptions:
                            {"question_index": 1, "reason": "above_threshold", "confidence": 0.9}],
                 "stats": {"total_candidates": 2, "repaired": 0, "unrepaired": 0, "skipped": 2, "total_tokens": 0},
             }
-            result = pipeline._run_repair(questions=questions, options={"confidence_threshold": 0.8})
+            result = asyncio.run(pipeline._run_repair(questions=questions, options={"confidence_threshold": 0.8}))
 
             # Check repair_questions was called with threshold in config
             call_config = mock_repair.call_args[0][1]
