@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-06-02
+
+- **AI OCR Correction Layer 接入导入管线**
+  - 新增 `backend/app/features/ocr_correction.py`，位于 `normalize_text` 与 `analyze_structure` 之间。
+  - 自动检测 OCR 噪声信号（乱码字符、短行、缺失题号、选项碎片化），噪声超阈值时调用 DeepSeek AI 修复。
+  - 使用独立 token budget，auto 模式下仅在检测到噪声时触发，AI 不可用时静默降级。
+  - `pipeline_orchestrator` 已插入 `ocr_correction` 阶段并输出诊断信息。
+  - 新增 `ocr_correction` system prompt（`backend/app/ai/prompts.py`）。
+  - 20 项回归测试通过。
+  - 提交：`e88a33b feat: add AI OCR Correction Layer to import pipeline`。
+  - 变更原因：提升 OCR 导入成功率，修复换行错乱、选项错位、题号缺失等噪声问题。
+
+- **OCR 结构分析接入导入主链路完成**
+  - `DocumentStructureAnalyzer` 已接入图片导入管线，结构结果会传给 `split_questions(..., structure=structure)` 与 `match_answers(..., structure=structure)`。
+  - `SEPARATED` 场景下，切题阶段会跳过纯答案页，避免答案页被重新切成假题目。
+  - `answer_pages` 统一返回真实页码 `page`，不再使用 `block_index`，以便答案匹配与页码语义一致。
+  - 结构分析补齐空输入诊断字段：`diagnostic_reason`、密度统计、OCR 噪声计数与布尔型存在标记。
+  - 相关回归测试已补充并通过。
+  - 变更原因：同步已完成的 OCR 结构分析与导入链路增强；本次仅更新文档，不改业务代码。
+
 ## 2026-06-01
 
 - **OCR 图片导入诊断与失败分类完成**
