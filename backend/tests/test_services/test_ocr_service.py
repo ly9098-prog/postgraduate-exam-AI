@@ -781,7 +781,7 @@ class TestReservedInterfaces:
 
 class TestPipelineOcrIntegration:
     def test_extract_triggers_ocr_for_scanned_pdf(self):
-        """PDF 文本 < 100 字符且 OCR 开启 → 触发 OCR fallback。"""
+        """PDF 文本 < 100 字符且 OCR 开启 → 触发 PaddleOCR fallback。"""
         from app.features.pipeline_orchestrator import ImportPipeline
 
         # 模拟极短文本的 PDF blocks
@@ -796,12 +796,9 @@ class TestPipelineOcrIntegration:
                  "app.features.pipeline_orchestrator._extract_pdf_blocks",
                  return_value=short_blocks,
              ), \
+             patch("app.core.config.settings.OCR_ENABLED", True), \
              patch(
-                 "app.features.ocr_service.is_ocr_enabled",
-                 return_value=True,
-             ), \
-             patch(
-                 "app.features.ocr_service.ocr_fallback",
+                 "app.features.pipeline_orchestrator._ocr_scanned_pdf",
                  return_value=[
                      {"page": 1, "block_index": 0, "text": "OCR 识别的题目 1"},
                      {"page": 1, "block_index": 1, "text": "OCR 识别的题目 2"},

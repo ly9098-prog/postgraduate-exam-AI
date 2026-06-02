@@ -87,6 +87,41 @@ def _extract_pdf_blocks(content: bytes) -> list[dict]:
     return blocks
 
 
+def _ocr_scanned_pdf(content: bytes) -> list[dict]:
+    """用 PaddleOCR 识别扫描版 PDF 各页。
+
+    同步调用，内部通过 ThreadPoolExecutor 并发处理多页。
+    输出格式与 _extract_pdf_blocks() 一致：[{page, block_index, text}]
+    """
+    import fitz
+
+    from app.services.ocr_service import clean_ocr_text, ocr_pages
+
+    doc = fitz.open(stream=content, filetype="pdf")
+    page_images: list[tuple[int, bytes]] = []
+    try:
+        for i, page in enumerate(doc):
+            pix = page.get_pixmap(dpi=200)
+            page_images.append((i + 1, pix.tobytes("png")))
+    finally:
+        doc.close()
+
+    if not page_images:
+        return []
+
+    ocr_results = ocr_pages(page_images)
+    blocks: list[dict] = []
+    for page_idx in sorted(ocr_results.keys()):
+        text = clean_ocr_text(ocr_results[page_idx])
+        if text.strip():
+            blocks.append({
+                "page": page_idx,
+                "block_index": len(blocks),
+                "text": text,
+            })
+    return blocks
+
+
 def _extract_text_blocks(content: bytes) -> list[dict]:
     """Extract text blocks from plain text content."""
     text = content.decode("utf-8", errors="replace").strip()
@@ -226,19 +261,21 @@ class ImportPipeline:
             # the PDF likely contains only images → trigger OCR fallback.
             total_text = sum(len(b.get("text", "")) for b in raw_blocks)
             if total_text < 100:
-                from app.features.ocr_service import is_ocr_enabled, ocr_fallback
+                from app.core.config import settings
 
-                if is_ocr_enabled():
+                if settings.OCR_ENABLED:
                     logger.info(
-                        "PDF text only %d chars, attempting OCR fallback", total_text,
+                        "PDF text only %d chars, attempting PaddleOCR fallback", total_text,
                     )
                     try:
-                        ocr_blocks = ocr_fallback(file_content)
+                        ocr_blocks = _ocr_scanned_pdf(file_content)
                         if ocr_blocks:
                             raw_blocks = ocr_blocks
                             logger.info(
                                 "OCR fallback succeeded: %d blocks", len(ocr_blocks),
                             )
+                    except RuntimeError as exc:
+                        logger.warning("OCR fallback unavailable: %s", exc)
                     except Exception as exc:
                         logger.warning(
                             "OCR fallback failed, using original extraction: %s", exc,
