@@ -32,6 +32,7 @@ from app.features import question_publish_service as publish_svc
 from app.features import review_service as review_svc
 from app.features.pipeline_orchestrator import (
     get_pipeline_status,
+    run_excel_pipeline_background,
     run_import_pipeline,
     run_pipeline_background,
 )
@@ -218,7 +219,7 @@ async def upload_file(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_app_permission("import:write")),
 ):
-    """上传文件（Excel / PDF），解析后进入暂存区"""
+    """上传文件（Excel / PDF），解析后进入暂存区。(deprecated: 请使用 /pipeline/upload)"""
     if not file.filename:
         raise HTTPException(status_code=400, detail="文件名不能为空")
 
@@ -407,7 +408,7 @@ async def image_upload(
     confidence_threshold: float = 0.6,
     _: User = Depends(require_app_permission("import:write")),
 ):
-    """图片导入：单图 OCR 后以 TXT 流水线进入现有审核队列。"""
+    """图片导入：单图 OCR 后以 TXT 流水线进入现有审核队列。(deprecated: 请使用 /pipeline/upload)"""
     if not file.filename:
         logger.info("image upload validation failed: empty filename")
         raise HTTPException(status_code=400, detail="文件名不能为空")
@@ -608,22 +609,90 @@ async def pipeline_upload(
     confidence_threshold: float = 0.6,
     _: User = Depends(require_app_permission("import:write")),
 ):
-    """异步导入流水线：上传文件即返回 pipeline_id，后台串联 Stage 1-7。
+    """统一导入入口：支持 Excel / PDF / TXT / 图片，异步返回 pipeline_id。
 
     通过 GET /api/v1/import/pipelines/{pipeline_id} 查询进度。
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="文件名不能为空")
 
-    is_pdf = file.filename.endswith(".pdf")
-    is_txt = file.filename.endswith(".txt")
+    filename = file.filename
+    lower_name = filename.lower()
 
-    if not is_pdf and not is_txt:
-        raise HTTPException(status_code=400, detail="仅支持 .pdf / .txt 文件")
+    is_pdf = lower_name.endswith(".pdf")
+    is_txt = lower_name.endswith(".txt")
+    is_excel = lower_name.endswith((".xlsx", ".xls"))
+    is_image = lower_name.endswith(_IMAGE_EXTENSIONS)
 
-    source_type = "pdf" if is_pdf else "txt"
+    if not is_pdf and not is_txt and not is_excel and not is_image:
+        raise HTTPException(
+            status_code=400,
+            detail="仅支持 .xlsx / .xls / .pdf / .txt / .jpg / .jpeg / .png / .webp 文件",
+        )
+
     content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="文件内容为空")
 
+    # --- Image branch ---
+    if is_image:
+        if file.content_type and file.content_type not in _IMAGE_CONTENT_TYPES:
+            raise HTTPException(status_code=400, detail="图片 Content-Type 不支持")
+        if not settings.OCR_ENABLED:
+            raise HTTPException(status_code=400, detail="图片 OCR 功能未启用")
+        if importlib.util.find_spec("paddleocr") is None:
+            raise HTTPException(status_code=400, detail="OCR 依赖未安装：paddleocr")
+        if len(content) > settings.IMAGE_IMPORT_MAX_BYTES:
+            raise HTTPException(status_code=400, detail="图片过大，请压缩后重试")
+
+        image_width, image_height, image_format = _validate_image_content(content)
+        image_hash = hashlib.sha256(content).hexdigest()
+        pipeline_id = f"img_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{image_hash[:8]}"
+        options = {
+            "enable_ai_repair": enable_ai_repair,
+            "confidence_threshold": confidence_threshold,
+            "image_hash": image_hash,
+        }
+
+        await _set_image_pipeline_status(
+            pipeline_id,
+            status="queued",
+            stats={
+                "image_bytes": len(content),
+                "image_width": image_width,
+                "image_height": image_height,
+                "image_format": image_format,
+            },
+            stages={"upload": {"status": "completed"}, "ocr": {"status": "pending"}},
+        )
+
+        background_tasks.add_task(
+            _run_image_pipeline_with_db,
+            pipeline_id=pipeline_id,
+            image_content=content,
+            source_file=filename,
+            subject=subject,
+            options=options,
+        )
+
+        return PipelineUploadResponse(pipeline_id=pipeline_id, status="queued", source_type="image")
+
+    # --- Excel branch ---
+    if is_excel:
+        pipeline_id = f"xl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+
+        background_tasks.add_task(
+            run_excel_pipeline_background,
+            pipeline_id=pipeline_id,
+            file_content=content,
+            source_file=filename,
+            import_excel_fn=svc.import_excel,
+        )
+
+        return PipelineUploadResponse(pipeline_id=pipeline_id, status="parsing", source_type="excel")
+
+    # --- PDF / TXT branch ---
+    source_type = "pdf" if is_pdf else "txt"
     pipeline_id = f"pl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
     options = {
@@ -631,18 +700,17 @@ async def pipeline_upload(
         "confidence_threshold": confidence_threshold,
     }
 
-    # Create a DB session for the background task
     background_tasks.add_task(
         _run_pipeline_with_db,
         pipeline_id=pipeline_id,
         file_content=content,
         source_type=source_type,
-        source_file=file.filename,
+        source_file=filename,
         subject=subject,
         options=options,
     )
 
-    return PipelineUploadResponse(pipeline_id=pipeline_id, status="parsing")
+    return PipelineUploadResponse(pipeline_id=pipeline_id, status="parsing", source_type=source_type)
 
 
 async def _run_pipeline_with_db(

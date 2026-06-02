@@ -112,6 +112,7 @@ class FixQuestionResponse(BaseModel):
 class PipelineUploadResponse(BaseModel):
     pipeline_id: str
     status: str
+    source_type: str | None = None
 
 
 class PipelineStatusResponse(BaseModel):
