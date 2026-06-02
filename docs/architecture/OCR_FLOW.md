@@ -81,7 +81,8 @@ POST /api/v1/import/batches/{id}/approve  ← 批量审批，缺字段跳过，�
           → AnswerMatcher（答案匹配）
           → QuestionNormalizer（Schema 标准化）
             → AIRepairService（AI 修复，可选）
-              → 审核队列 → question_imports
+              → SimilarityMatcher（题库相似匹配建议，阈值 0.85）
+                → 审核队列 → question_imports
 ```
 
 ### Excel 解析 (`_parse_excel` + `_raw_to_parsed`)
