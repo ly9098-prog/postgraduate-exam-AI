@@ -6,6 +6,15 @@
 
 ## 2026-06-02
 
+- **真实题库相似匹配纠错层接入导入管线**
+  - 新增 `backend/app/features/similarity_matcher.py`，位于 repair 与 review 之间。
+  - 加载同科目已有正式题目，使用 difflib 计算相似度比率，阈值 >= 0.85 时附加 `similarity_suggestion` 字段。
+  - 仅作为建议，不自动覆盖或纠正，结果供人工审核参考。
+  - `pipeline_orchestrator` 已插入 `similarity_match` 阶段并输出诊断信息。
+  - 19 项回归测试通过。
+  - 提交：`affa30e feat: add similarity matching correction layer to import pipeline`。
+  - 变更原因：为 OCR 导入提供基于已有题库的相似题建议，提升人工审核效率。
+
 - **AI OCR Correction Layer 接入导入管线**
   - 新增 `backend/app/features/ocr_correction.py`，位于 `normalize_text` 与 `analyze_structure` 之间。
   - 自动检测 OCR 噪声信号（乱码字符、短行、缺失题号、选项碎片化），噪声超阈值时调用 DeepSeek AI 修复。
