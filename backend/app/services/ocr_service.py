@@ -20,7 +20,7 @@ _ocr_instance = None
 
 
 _OCR_MAX_SIDE = 3000
-_OCR_MIN_WIDTH = 1000
+_OCR_MIN_WIDTH = settings.OCR_MIN_IMAGE_WIDTH
 _OCR_DEPENDENCY_ERROR = "OCR 依赖未安装：paddleocr，请先安装 requirements-ocr.txt"
 
 
@@ -51,6 +51,10 @@ def _get_ocr():
             lang=settings.OCR_LANGUAGE,
             use_gpu=settings.OCR_USE_GPU,
             show_log=False,
+            det_db_thresh=settings.OCR_DET_DB_THRESH,
+            det_db_box_thresh=settings.OCR_DET_DB_BOX_THRESH,
+            det_db_unclip_ratio=settings.OCR_DET_DB_UNCLIP_RATIO,
+            drop_score=settings.OCR_DROP_SCORE,
         )
     return _ocr_instance
 
@@ -67,10 +71,19 @@ def _resize_for_ocr(img):
     from PIL import Image
 
     width, height = img.size
+    # Upscale small images to minimum width for better text detection
     if width < _OCR_MIN_WIDTH:
-        scale = min(_OCR_MIN_WIDTH / width, _OCR_MAX_SIDE / height)
+        scale = _OCR_MIN_WIDTH / width
+        # Also respect max side constraint
+        max_scale = _OCR_MAX_SIDE / max(width, height)
+        scale = min(scale, max_scale)
         if scale > 1:
             img = img.resize((int(width * scale), int(height * scale)), Image.Resampling.LANCZOS)
+    # Downscale if either dimension exceeds max
+    width, height = img.size
+    if max(width, height) > _OCR_MAX_SIDE:
+        scale = _OCR_MAX_SIDE / max(width, height)
+        img = img.resize((int(width * scale), int(height * scale)), Image.Resampling.LANCZOS)
     return img
 
 
