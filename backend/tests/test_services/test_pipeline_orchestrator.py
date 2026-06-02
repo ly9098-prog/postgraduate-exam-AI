@@ -386,6 +386,10 @@ class TestImportPipelineRun:
             "skipped_count": 2,
             "total_tokens": 500,
         })
+        pipeline._run_similarity_match = AsyncMock(return_value={
+            "questions": _make_questions(3),
+            "similarity_match_diagnostics": {"stats": {}, "matches": [], "skipped_reason": None},
+        })
         pipeline._run_review = AsyncMock(return_value={
             "batch_id": "REVIEW_test",
             "written": 3,
@@ -418,7 +422,7 @@ class TestImportPipelineRun:
 
         # Verify stage ordering
         stage_names = list(result["stages"].keys())
-        assert stage_names == ["extract", "normalize_text", "ocr_correction", "analyze_structure", "split", "match", "normalize_schema", "repair", "review"]
+        assert stage_names == ["extract", "normalize_text", "ocr_correction", "analyze_structure", "split", "match", "normalize_schema", "repair", "similarity_match", "review"]
         for s in result["stages"].values():
             assert s["status"] == "completed"
 
