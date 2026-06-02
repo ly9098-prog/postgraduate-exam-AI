@@ -5,19 +5,17 @@
 
   <view class="login-layout">
     <view class="hero-band">
-      <view class="brand-block">
-        <view class="brand-icon-wrap">
-          <text class="brand-icon">M</text>
-        </view>
-        <view class="brand-copy">
-          <text class="brand-kicker">考研学习助手</text>
-          <text class="brand-name">MemoGrad</text>
-        </view>
+      <view class="brand-mark">
+        <text class="brand-mark-text">M</text>
       </view>
-
+      <view class="brand-text">
+        <text class="brand-name">MemoGrad</text>
+        <text class="brand-kicker">考研学习助手</text>
+      </view>
       <view class="hero-copy">
-        <text class="hero-title">错题复盘，稳步上岸</text>
-        <text class="hero-desc">登录后同步练习进度和复习节奏。</text>
+        <text class="hero-title">错题复盘</text>
+        <text class="hero-title">稳步上岸</text>
+        <text class="hero-desc">登录同步学习进度与复习节奏</text>
       </view>
     </view>
 
