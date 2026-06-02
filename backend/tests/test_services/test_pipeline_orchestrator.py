@@ -10,6 +10,7 @@ from app.features.pipeline_orchestrator import (
     PipelineStage,
     _extract_pdf_blocks,
     _extract_text_blocks,
+    _ocr_scanned_pdf,
     _pipeline_store,
     get_pipeline_status,
     run_import_pipeline,
@@ -171,6 +172,143 @@ class TestExtractPdfBlocks:
         with patch.dict(sys.modules, {"fitz": None}):
             with pytest.raises(RuntimeError, match="PyMuPDF"):
                 _extract_pdf_blocks(b"any content")
+
+
+# ---------------------------------------------------------------------------
+# _ocr_scanned_pdf
+# ---------------------------------------------------------------------------
+
+
+class TestOcrScannedPdf:
+    def test_renders_pages_and_calls_ocr(self):
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        mock_page = MagicMock()
+        mock_pix = MagicMock()
+        mock_pix.tobytes.return_value = b"fake_png"
+        mock_page.get_pixmap.return_value = mock_pix
+        mock_doc.__iter__.return_value = [mock_page]
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            with patch(
+                "app.services.ocr_service.ocr_pages",
+                return_value={1: "OCR识别结果"},
+            ) as mock_ocr:
+                with patch(
+                    "app.services.ocr_service.clean_ocr_text",
+                    side_effect=lambda t: t,
+                ):
+                    blocks = _ocr_scanned_pdf(b"pdf bytes")
+
+        assert len(blocks) == 1
+        assert blocks[0]["page"] == 1
+        assert blocks[0]["text"] == "OCR识别结果"
+        mock_ocr.assert_called_once_with([(1, b"fake_png")])
+        mock_doc.close.assert_called_once()
+
+    def test_skips_empty_ocr_pages(self):
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        pages = []
+        for _ in range(2):
+            p = MagicMock()
+            pix = MagicMock()
+            pix.tobytes.return_value = b"png"
+            p.get_pixmap.return_value = pix
+            pages.append(p)
+        mock_doc.__iter__.return_value = pages
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            with patch(
+                "app.services.ocr_service.ocr_pages",
+                return_value={1: "", 2: "第二页内容"},
+            ):
+                with patch(
+                    "app.services.ocr_service.clean_ocr_text",
+                    side_effect=lambda t: t,
+                ):
+                    blocks = _ocr_scanned_pdf(b"pdf")
+
+        assert len(blocks) == 1
+        assert blocks[0]["page"] == 2
+
+    def test_empty_pdf_returns_empty(self):
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        mock_doc.__iter__.return_value = []
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            blocks = _ocr_scanned_pdf(b"empty pdf")
+
+        assert blocks == []
+
+
+class TestRunExtractOcrFallback:
+    def test_scanned_pdf_triggers_paddleocr(self):
+        pipeline = ImportPipeline()
+        sparse_blocks = [{"page": 1, "block_index": 0, "text": "ab"}]
+        ocr_blocks = [{"page": 1, "block_index": 0, "text": "OCR 识别到的完整内容"}]
+
+        with patch(
+            "app.features.pipeline_orchestrator._extract_pdf_blocks",
+            return_value=sparse_blocks,
+        ):
+            with patch(
+                "app.features.pipeline_orchestrator._ocr_scanned_pdf",
+                return_value=ocr_blocks,
+            ) as mock_ocr:
+                with patch("app.core.config.settings.OCR_ENABLED", True):
+                    result = pipeline._run_extract(b"pdf content", "pdf")
+
+        mock_ocr.assert_called_once_with(b"pdf content")
+        assert result["raw_blocks"] == ocr_blocks
+        assert result["extracted"] == 1
+
+    def test_scanned_pdf_ocr_disabled_uses_sparse(self):
+        pipeline = ImportPipeline()
+        sparse_blocks = [{"page": 1, "block_index": 0, "text": "ab"}]
+
+        with patch(
+            "app.features.pipeline_orchestrator._extract_pdf_blocks",
+            return_value=sparse_blocks,
+        ):
+            with patch("app.core.config.settings.OCR_ENABLED", False):
+                result = pipeline._run_extract(b"pdf content", "pdf")
+
+        assert result["raw_blocks"] == sparse_blocks
+
+    def test_scanned_pdf_ocr_failure_falls_back(self):
+        pipeline = ImportPipeline()
+        sparse_blocks = [{"page": 1, "block_index": 0, "text": "x"}]
+
+        with patch(
+            "app.features.pipeline_orchestrator._extract_pdf_blocks",
+            return_value=sparse_blocks,
+        ):
+            with patch(
+                "app.features.pipeline_orchestrator._ocr_scanned_pdf",
+                side_effect=RuntimeError("paddleocr 未安装"),
+            ):
+                with patch("app.core.config.settings.OCR_ENABLED", True):
+                    result = pipeline._run_extract(b"pdf content", "pdf")
+
+        assert result["raw_blocks"] == sparse_blocks
+
+    def test_normal_pdf_no_ocr_triggered(self):
+        pipeline = ImportPipeline()
+        blocks = [{"page": 1, "block_index": 0, "text": "A" * 200}]
+
+        with patch(
+            "app.features.pipeline_orchestrator._extract_pdf_blocks",
+            return_value=blocks,
+        ):
+            result = pipeline._run_extract(b"pdf content", "pdf")
+
+        assert result["raw_blocks"] == blocks
+        assert result["extracted"] == 1
 
 
 # ---------------------------------------------------------------------------
