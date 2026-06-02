@@ -4,42 +4,41 @@
     <text class="page-title">题库导入</text>
   </view>
 
-  <!-- 上传区域 -->
-  <view class="upload-grid">
+  <!-- 统一上传区域 -->
+  <view class="upload-section">
     <view class="upload-zone" bindtap="chooseFile">
       <view class="upload-icon-wrap">
-        <text class="upload-icon">📤</text>
+        <text class="upload-icon">📥</text>
       </view>
-      <text class="upload-title">上传题目文件</text>
-      <text class="upload-desc">支持 .xlsx / .xls / .pdf 格式</text>
+      <text class="upload-title">上传题目</text>
+      <text class="upload-desc">支持 Excel / PDF / TXT / 图片</text>
       <view class="upload-hint">
         <text class="hint-dot">●</text>
-        <text class="hint-text">文件将进入暂存区，审核后入库</text>
+        <text class="hint-text">所有文件将异步解析，审核后入库</text>
       </view>
-    </view>
-
-    <view class="upload-zone image-zone" bindtap="chooseImage">
-      <view class="upload-icon-wrap image-icon-wrap">
-        <text class="upload-icon">🖼</text>
-      </view>
-      <text class="upload-title">上传题目图片</text>
-      <text class="upload-desc">支持 jpg / png / webp，OCR 后进入审核</text>
-      <view class="upload-hint">
-        <text class="hint-dot">●</text>
-        <text class="hint-text">公式/表格识别不保证，识别失败不会入队</text>
+      <view class="upload-formats">
+        <text class="format-tag">.xlsx</text>
+        <text class="format-tag">.pdf</text>
+        <text class="format-tag">.txt</text>
+        <text class="format-tag">.jpg</text>
+        <text class="format-tag">.png</text>
       </view>
     </view>
   </view>
 
-  <view class="image-task-card" wx:if="{{imageTask}}">
-    <view class="image-task-row">
-      <text class="image-task-title">图片导入状态</text>
-      <text class="image-task-status {{imageTask.status}}">{{imageTask.status}}</text>
+  <!-- 导入进度卡片 -->
+  <view class="pipeline-task-card" wx:if="{{pipelineTask}}">
+    <view class="pipeline-task-row">
+      <view class="pipeline-task-left">
+        <text class="pipeline-task-title">{{pipelineTask.source_file || '导入任务'}}</text>
+        <text class="pipeline-task-type" wx:if="{{pipelineTask.source_type}}">{{pipelineTask.source_type}}</text>
+      </view>
+      <text class="pipeline-task-status {{pipelineTask.status}}">{{pipelineTask.status}}</text>
     </view>
-    <text class="image-task-desc" wx:if="{{imagePolling}}">正在 OCR / 解析，请稍候...</text>
-    <text class="image-task-desc" wx:if="{{imageTask.batch_id}}">已生成审核批次：{{imageTask.batch_id}}</text>
-    <text class="image-task-desc error" wx:if="{{imageTask.status === 'failed' && imageTask.error_message}}">{{imageTask.error_message}}</text>
-    <text class="image-preview" wx:if="{{imageTask.raw_text_preview}}">{{imageTask.raw_text_preview}}</text>
+    <text class="pipeline-task-desc" wx:if="{{pipelinePolling}}">正在解析，请稍候...</text>
+    <text class="pipeline-task-desc" wx:if="{{pipelineTask.batch_id}}">已生成审核批次：{{pipelineTask.batch_id}}</text>
+    <text class="pipeline-task-desc error" wx:if="{{pipelineTask.status === 'failed' && pipelineTask.error_message}}">{{pipelineTask.error_message}}</text>
+    <text class="pipeline-preview" wx:if="{{pipelineTask.raw_text_preview}}">{{pipelineTask.raw_text_preview}}</text>
   </view>
 
   <!-- 模板下载 -->
@@ -91,7 +90,7 @@
       <view class="batch-top">
         <view class="batch-left">
           <text class="batch-icon {{item.source_type}}">
-            {{item.source_type === 'excel' ? '📊' : '📄'}}
+            {{item.source_type === 'excel' ? '📊' : item.source_type === 'image' ? '🖼' : '📄'}}
           </text>
           <view class="batch-info">
             <text class="batch-name">{{item.source_file || item.batch_id}}</text>
