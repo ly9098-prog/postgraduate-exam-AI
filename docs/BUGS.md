@@ -22,49 +22,63 @@
 - 在本地后端实际使用的 `.env` 中设置 `OCR_ENABLED=true`，使图片上传接口不再被功能开关提前拦截。
 - 在 OCR 关闭分支日志中输出 `APP_ENV` 和 `OCR_ENABLED`，后续可直接从后端日志确认运行时配置是否符合预期。
 
-报错日志：
-api.js:47 GET http://localhost:8000/api/v1/import/batches 403 (Forbidden)(env: Windows,mp,2.01.2510290; lib: 3.6.6)
-(anonymous) @ api.js:47
-request @ api.js:41
-get @ api.js:90
-_callee$ @ import.js? [sm]:40
-s @ regeneratorRuntime.js?forceSync=true:1
-(anonymous) @ regeneratorRuntime.js?forceSync=true:1
-(anonymous) @ regeneratorRuntime.js?forceSync=true:1
-asyncGeneratorStep @ asyncToGenerator.js?forceSync=true:1
-c @ asyncToGenerator.js?forceSync=true:1
-(anonymous) @ asyncToGenerator.js?forceSync=true:1
-(anonymous) @ asyncToGenerator.js?forceSync=true:1
-loadBatches @ import.js? [sm]:52
-onShow @ import.js? [sm]:23
-debug.js:75 [TRACE:NO_TRACE][API_RESPONSE] {method: "GET", url: "/import/batches", statusCode: 403}
-import.js? [sm]:49 加载批次列表失败 {code: 403, message: "Permission denied"}(env: Windows,mp,2.01.2510290; lib: 3.6.6)
-_callee$ @ import.js? [sm]:49
-s @ regeneratorRuntime.js?forceSync=true:1
-(anonymous) @ regeneratorRuntime.js?forceSync=true:1
-(anonymous) @ regeneratorRuntime.js?forceSync=true:1
-asyncGeneratorStep @ asyncToGenerator.js?forceSync=true:1
-i @ asyncToGenerator.js?forceSync=true:1
-Promise.then (async)
-asyncGeneratorStep @ asyncToGenerator.js?forceSync=true:1
-c @ asyncToGenerator.js?forceSync=true:1
-(anonymous) @ asyncToGenerator.js?forceSync=true:1
-(anonymous) @ asyncToGenerator.js?forceSync=true:1
-loadBatches @ import.js? [sm]:52
-onShow @ import.js? [sm]:23
-api.js:47 GET http://localhost:8000/api/v1/import/batches 403 (Forbidden)(env: Windows,mp,2.01.2510290; lib: 3.6.6)
-(anonymous) @ api.js:47
-request @ api.js:41
-get @ api.js:90
-_callee$ @ import.js? [sm]:40
-s @ regeneratorRuntime.js?forceSync=true:1
-(anonymous) @ regeneratorRuntime.js?forceSync=true:1
-(anonymous) @ regeneratorRuntime.js?forceSync=true:1
-asyncGeneratorStep @ asyncToGenerator.js?forceSync=true:1
-c @ asyncToGenerator.js?forceSync=true:1
-(anonymous) @ asyncToGenerator.js?forceSync=true:1
-(anonymous) @ asyncToGenerator.js?forceSync=true:1
-loadBatches @ import.js? [sm]:52
-onShow @ import.js? [sm]:23
-debug.js:75 [TRACE:NO_TRACE][API_RESPONSE] {method: "GET", url: "/import/batches", statusCode: 403}
-import.js? [sm]:49 加载批次列表失败 {code: 403, message: "Permission denied"}(env: Windows,mp,2.01.2510290; lib: 3.6.6)
+#### P4本地调试后端启动失败
+
+日志信息：
+
+ lmh@LAPTOP-I02S97BS:~/projects/postgraduate-ai$ ./run.sh
+
+  2240AI 考研助手 — 启动中...
+
+✅ Python: Python 3.12.3
+✅ 虚拟环境已存在
+📦 安装依赖到统一 Python 环境...
+✅ OCR 依赖已存在
+✅ 依赖安装完成
+
+🚀 启动服务...
+   访问地址: http://127.0.0.1:8000
+   API 文档: http://127.0.0.1:8000/docs
+
+   停止服务: Ctrl+C
+
+INFO:     Will watch for changes in these directories: ['/home/lmh/projects/postgraduate-ai/backend']
+ERROR:    [Errno 98] Address already in use
+
+
+
+## P5OCR识别失败案例
+
+图片原文：
+
+32.有一个计数信号量S:
+
+1)假如若干进程对S进行28次P操作和18次V操作后，信号量S的值为0。
+
+2)假如若干进程对信号量S进行了15次P操作和2次V操作。请问此时有多少个进程等待在信号量S的队列中？（)
+
+A.2
+
+B.3
+
+C.5
+
+D.7
+
+
+
+图片OCR识别内容：
+
+32.有一个计数信号量S:
+
+1)假如若干进程对S进行28次P操作和18次V操作后，信号量S的值为0。
+
+S的队列中？（)
+
+A.2
+
+B.3
+
+C.5
+
+D.7

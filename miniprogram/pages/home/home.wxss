@@ -3,44 +3,74 @@
 
 /* 进度卡片 */
 .progress-card {
-  padding: 28rpx 24rpx;
+  padding: 30rpx 28rpx;
+  border: 1rpx solid rgba(91, 123, 154, 0.08);
 }
 
 .progress-top {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24rpx;
+  align-items: flex-start;
+  gap: 20rpx;
+  margin-bottom: 28rpx;
+}
+
+.greeting-block {
+  flex: 1;
+  min-width: 0;
 }
 
 .greeting {
-  font-size: 30rpx;
-  font-weight: 600;
+  display: block;
+  font-size: 32rpx;
+  font-weight: 700;
+  line-height: 1.35;
   color: #2D3E50;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.greeting-subtitle {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  line-height: 1.45;
+  color: #6B7B8D;
 }
 
 .date-text {
+  flex-shrink: 0;
   font-size: 24rpx;
+  line-height: 1.4;
   color: #9AABBA;
+  padding-top: 4rpx;
 }
 
 .progress-stats {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-around;
+  padding: 22rpx 8rpx;
+  background: #F7F6F2;
+  border-radius: 18rpx;
 }
 
 .pstat-item {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   flex: 1;
+  min-width: 0;
 }
 
 .pstat-num {
-  font-size: 44rpx;
+  font-size: 46rpx;
   font-weight: 700;
+  line-height: 1.15;
   color: #5B7B9A;
+  font-variant-numeric: tabular-nums;
 }
 
 .pstat-num.accent {
@@ -49,14 +79,15 @@
 
 .pstat-label {
   font-size: 24rpx;
-  color: #9AABBA;
-  margin-top: 6rpx;
+  color: #6B7B8D;
+  margin-top: 8rpx;
 }
 
 .pstat-divider {
   width: 1rpx;
-  height: 48rpx;
-  background: #EDEBE6;
+  min-height: 56rpx;
+  margin: 6rpx 4rpx;
+  background: #E8E5E0;
 }
 
 /* 快捷入口 */
@@ -65,54 +96,68 @@
 }
 
 .action-card {
+  min-height: 104rpx;
   background: #fff;
   border-radius: 20rpx;
   padding: 24rpx 28rpx;
-  margin-bottom: 12rpx;
+  margin-bottom: 14rpx;
   display: flex;
   align-items: center;
   box-shadow: 0 4rpx 24rpx rgba(43, 60, 80, 0.04);
+  border: 1rpx solid rgba(232, 229, 224, 0.7);
 }
 
 .action-card:active {
-  opacity: 0.85;
-}
-
-.action-emoji {
-  font-size: 36rpx;
-  margin-right: 20rpx;
-  width: 44rpx;
-  text-align: center;
+  opacity: 0.88;
+  background: #FAF9F6;
 }
 
 .action-info {
   flex: 1;
+  min-width: 0;
 }
 
 .action-title {
-  font-size: 28rpx;
+  font-size: 29rpx;
   font-weight: 600;
+  line-height: 1.4;
   color: #2D3E50;
   display: block;
 }
 
 .action-desc {
   font-size: 24rpx;
-  color: #9AABBA;
+  color: #6B7B8D;
+  line-height: 1.45;
   margin-top: 4rpx;
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .action-arrow {
-  font-size: 32rpx;
-  color: #D0CEC8;
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 22rpx;
+  background: #F3F2EF;
+  font-size: 34rpx;
+  line-height: 40rpx;
+  text-align: center;
+  color: #9AABBA;
+  margin-left: 16rpx;
+  flex-shrink: 0;
 }
 
 /* 错题分布 */
+.pie-card {
+  padding-bottom: 32rpx;
+}
+
 .pie-wrap {
   display: flex;
   align-items: center;
-  padding-top: 12rpx;
+  padding-top: 8rpx;
 }
 
 .pie-box {
@@ -145,7 +190,9 @@
 .pie-total {
   font-size: 32rpx;
   font-weight: 700;
+  line-height: 1.15;
   color: #2D3E50;
+  font-variant-numeric: tabular-nums;
 }
 
 .pie-total-label {
@@ -156,13 +203,15 @@
 
 .pie-legend {
   flex: 1;
+  min-width: 0;
   margin-left: 28rpx;
 }
 
 .legend-row {
   display: flex;
   align-items: center;
-  margin: 12rpx 0;
+  min-height: 52rpx;
+  margin: 10rpx 0;
 }
 
 .legend-dot {
@@ -181,6 +230,7 @@
 .legend-name {
   display: block;
   font-size: 26rpx;
+  line-height: 1.35;
   color: #2D3E50;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -190,6 +240,7 @@
 .legend-percent {
   display: block;
   font-size: 22rpx;
+  line-height: 1.35;
   color: #9AABBA;
   margin-top: 2rpx;
 }
