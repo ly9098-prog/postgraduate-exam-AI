@@ -1,0 +1,9 @@
+{
+  "id": "001",
+  "description": "计数信号量题目中间行被 OCR 丢失",
+  "subject": "exam408",
+  "failure_type": "text_drop",
+  "expected_questions": 1,
+  "date_added": "2026-06-02",
+  "notes": "PaddleOCR 漏识别第2行整行，导致题干不完整"
+}

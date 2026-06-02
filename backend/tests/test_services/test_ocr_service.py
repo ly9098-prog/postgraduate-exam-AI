@@ -56,7 +56,7 @@ class TestPrepareOcrImage:
         prepared = _prepare_ocr_image(buf.getvalue())
 
         assert prepared.mode == "RGB"
-        assert prepared.size == (1000, 1500)
+        assert prepared.size == (1500, 2250)
 
     def test_prepare_ocr_image_upscales_small_image_within_max_side(self):
         from PIL import Image
@@ -69,7 +69,7 @@ class TestPrepareOcrImage:
         prepared = _prepare_ocr_image(buf.getvalue())
 
         assert prepared.mode == "RGB"
-        assert prepared.size[0] == 1000
+        assert prepared.size[0] == 1500
         assert max(prepared.size) <= _OCR_MAX_SIDE
 
     def test_crop_blank_margins_keeps_blank_image_safe(self):
