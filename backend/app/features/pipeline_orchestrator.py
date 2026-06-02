@@ -24,6 +24,7 @@ from app.features.answer_matcher import match_answers
 from app.features.ocr_correction import correct_ocr_blocks
 from app.features.question_normalizer import normalize_questions
 from app.features.question_splitter import split_questions
+from app.features.similarity_matcher import match_similar_questions
 from app.features.structure_analyzer import analyze_structure
 from app.features.text_normalizer import ImportTextNormalizer
 
@@ -198,6 +199,8 @@ class ImportPipeline:
         ])
         if self.options.get("enable_ai_repair", True):
             stage_specs.append(("repair", self._run_repair))
+        if self.options.get("enable_similarity_match", True):
+            stage_specs.append(("similarity_match", self._run_similarity_match))
         stage_specs.append(("review", self._run_review))
 
         self.stages.clear()
@@ -450,6 +453,42 @@ class ImportPipeline:
             "warnings": warnings,
         }
 
+    async def _run_similarity_match(
+        self,
+        questions: list[dict],
+        db=None,
+        options: dict | None = None,
+        **_kw,
+    ) -> dict:
+        """Stage 6.5: suggest corrections from existing question bank."""
+        opts = options or {}
+        match_config = {
+            "enabled": opts.get("enable_similarity_match", True),
+            "similarity_threshold": opts.get("similarity_threshold", 0.85),
+        }
+
+        result = await match_similar_questions(questions, db=db, config=match_config)
+
+        warnings: list[str] = []
+        stats = result.get("stats", {})
+        if stats.get("matched_count", 0) > 0:
+            warnings.append(
+                f"Found {stats['matched_count']} similar questions in bank "
+                f"(avg ratio {stats['avg_similarity']:.2f})"
+            )
+        if result.get("skipped_reason"):
+            warnings.append(f"Similarity match skipped: {result['skipped_reason']}")
+
+        return {
+            "questions": result["questions"],
+            "similarity_match_diagnostics": {
+                "stats": stats,
+                "matches": result.get("matches", []),
+                "skipped_reason": result.get("skipped_reason"),
+            },
+            "warnings": warnings,
+        }
+
     async def _run_review(
         self,
         questions: list[dict],
@@ -580,6 +619,7 @@ class ImportPipeline:
             "ocr_correction": data.get("ocr_correction_diagnostics", {}),
             "split": data.get("split_diagnostics", {}),
             "schema_errors": data.get("errors", []),
+            "similarity_match": data.get("similarity_match_diagnostics", {}),
         }
 
         finished_at = datetime.now().isoformat()
