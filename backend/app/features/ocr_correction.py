@@ -5,8 +5,12 @@
 AI 不可用或 token 超限时静默降级。
 """
 
+import asyncio
+import logging
 import re
 import time
+
+logger = logging.getLogger(__name__)
 
 _VALID_OPTION_MARKERS = re.compile(r"^[A-D][.、．）)\s]", re.MULTILINE)
 _QUESTION_NUM_PATTERN = re.compile(
@@ -195,22 +199,24 @@ async def correct_ocr_blocks(
         }
 
     corrections: list[dict] = []
-    corrected_blocks = []
+    corrected_blocks: list[dict] = [None] * len(normalized_blocks)  # type: ignore
     noisy_count = 0
     corrected_count = 0
     total_tokens_before = int(_token_usage.get("daily", 0))
 
-    for block in normalized_blocks:
+    to_correct: list[tuple[int, str, float]] = []
+
+    for idx, block in enumerate(normalized_blocks):
         text = str(block.get("normalized_text") or "")
         if not text.strip():
-            corrected_blocks.append(block)
+            corrected_blocks[idx] = block
             continue
 
         noise_score = _detect_noise(block)
         should = _should_correct(noise_score, config)
 
         if not should:
-            corrected_blocks.append(block)
+            corrected_blocks[idx] = block
             corrections.append({
                 "block_index": block.get("block_index", 0),
                 "page": block.get("page", 1),
@@ -220,10 +226,30 @@ async def correct_ocr_blocks(
             continue
 
         noisy_count += 1
-        corrected_text = await _call_ai_correction(text, config)
+        to_correct.append((idx, text, noise_score))
+
+    sem = asyncio.Semaphore(3)
+
+    async def _correct_one(idx: int, text: str):
+        async with sem:
+            return idx, await _call_ai_correction(text, config)
+
+    results = await asyncio.gather(
+        *[_correct_one(idx, text) for idx, text, _ in to_correct],
+        return_exceptions=True,
+    )
+
+    for (idx, text, noise_score), result in zip(to_correct, results):
+        block = normalized_blocks[idx]
+
+        if isinstance(result, BaseException):
+            logger.debug("ocr_correction block %d failed: %s", idx, result)
+            corrected_text = None
+        else:
+            _, corrected_text = result
 
         if corrected_text is None:
-            corrected_blocks.append(block)
+            corrected_blocks[idx] = block
             corrections.append({
                 "block_index": block.get("block_index", 0),
                 "page": block.get("page", 1),
@@ -236,7 +262,7 @@ async def correct_ocr_blocks(
         new_block = dict(block)
         new_block["normalized_text"] = corrected_text
         new_block["ocr_correction_applied"] = True
-        corrected_blocks.append(new_block)
+        corrected_blocks[idx] = new_block
         corrected_count += 1
 
         corrections.append({
@@ -246,11 +272,13 @@ async def correct_ocr_blocks(
             "corrected": True,
         })
 
+    final_blocks = [b for b in corrected_blocks if b is not None]
+
     _reset_counters_if_needed()
     total_tokens_used = int(_token_usage.get("daily", 0)) - total_tokens_before
 
     return {
-        "corrected_blocks": corrected_blocks,
+        "corrected_blocks": final_blocks,
         "corrections": corrections,
         "stats": {
             "total_blocks": len(normalized_blocks),

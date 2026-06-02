@@ -91,34 +91,49 @@ def _ocr_scanned_pdf(content: bytes) -> list[dict]:
     """用 PaddleOCR 识别扫描版 PDF 各页。
 
     同步调用，内部通过 ThreadPoolExecutor 并发处理多页。
+    分批渲染以控制峰值内存，超过 MAX_OCR_PAGES 截断。
     输出格式与 _extract_pdf_blocks() 一致：[{page, block_index, text}]
     """
+    import os
+
     import fitz
 
     from app.services.ocr_service import clean_ocr_text, ocr_pages
 
+    max_pages = int(os.environ.get("MAX_OCR_PAGES", "30"))
+    batch_size = 5
+
     doc = fitz.open(stream=content, filetype="pdf")
-    page_images: list[tuple[int, bytes]] = []
+    total_pages = len(doc)
+    pages_to_process = min(total_pages, max_pages)
+
+    blocks: list[dict] = []
     try:
-        for i, page in enumerate(doc):
-            pix = page.get_pixmap(dpi=200)
-            page_images.append((i + 1, pix.tobytes("png")))
+        for batch_start in range(0, pages_to_process, batch_size):
+            batch_end = min(batch_start + batch_size, pages_to_process)
+            page_images: list[tuple[int, bytes]] = []
+            for i in range(batch_start, batch_end):
+                pix = doc[i].get_pixmap(dpi=150)
+                page_images.append((i + 1, pix.tobytes("png")))
+
+            ocr_results = ocr_pages(page_images)
+            for page_idx in sorted(ocr_results.keys()):
+                text = clean_ocr_text(ocr_results[page_idx])
+                if text.strip():
+                    blocks.append({
+                        "page": page_idx,
+                        "block_index": len(blocks),
+                        "text": text,
+                    })
     finally:
         doc.close()
 
-    if not page_images:
-        return []
+    if total_pages > max_pages and blocks:
+        blocks[0].setdefault("_warnings", [])
+        blocks[0]["_warnings"].append(
+            f"ocr_pages_truncated: processed {pages_to_process}/{total_pages} pages"
+        )
 
-    ocr_results = ocr_pages(page_images)
-    blocks: list[dict] = []
-    for page_idx in sorted(ocr_results.keys()):
-        text = clean_ocr_text(ocr_results[page_idx])
-        if text.strip():
-            blocks.append({
-                "page": page_idx,
-                "block_index": len(blocks),
-                "text": text,
-            })
     return blocks
 
 
@@ -443,7 +458,7 @@ class ImportPipeline:
             "warnings": stage_warnings,
         }
 
-    def _run_repair(self, questions: list[dict], options: dict, **_kw) -> dict:
+    async def _run_repair(self, questions: list[dict], options: dict, **_kw) -> dict:
         """Stage 6: AI repair for low-confidence questions."""
         repair_config = {
             "confidence_threshold": options.get("confidence_threshold", 0.6),
@@ -451,7 +466,7 @@ class ImportPipeline:
             "monthly_token_limit": options.get("monthly_token_limit", 2000000),
             "enabled": options.get("enable_ai_repair", True),
         }
-        result = repair_questions(questions, repair_config)
+        result = await repair_questions(questions, repair_config)
 
         repaired = result.get("repaired", [])
         unrepaired = result.get("unrepaired", [])

@@ -10,10 +10,8 @@ from datetime import datetime
 from sqlalchemy import asc, func, select, nulls_last
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.features.question_pipeline import (
-    _build_import_duplicate_fields,
-    normalizer,
-)
+from app.features.question_pipeline import normalizer
+from app.models.question import Question
 from app.models.question_import import QuestionImport
 
 
@@ -26,6 +24,54 @@ def _options_to_dict(options: list[dict]) -> dict | None:
         if key and text:
             result[str(key).upper()] = str(text)
     return result or None
+
+
+async def _batch_find_duplicate_questions(
+    db: AsyncSession,
+    subject_hash_pairs: list[tuple[str | None, str | None]],
+) -> dict[str, int]:
+    """Batch lookup: hash → question.id for active questions."""
+    valid = [(s, h) for s, h in subject_hash_pairs if s and h]
+    if not valid:
+        return {}
+    hashes = list({h for _, h in valid})
+
+    # Split into chunks of 500 for SQLite compatibility
+    result_map: dict[str, int] = {}
+    for i in range(0, len(hashes), 500):
+        chunk = hashes[i:i + 500]
+        stmt = select(Question.question_hash, Question.id).where(
+            Question.question_hash.in_(chunk),
+            Question.is_active == True,  # noqa: E712
+        )
+        rows = (await db.execute(stmt)).all()
+        for row in rows:
+            result_map[row.question_hash] = row.id
+    return result_map
+
+
+async def _batch_find_duplicate_imports(
+    db: AsyncSession,
+    subject_hash_pairs: list[tuple[str | None, str | None]],
+) -> dict[str, int]:
+    """Batch lookup: hash → import.id for non-rejected imports."""
+    valid = [(s, h) for s, h in subject_hash_pairs if s and h]
+    if not valid:
+        return {}
+    hashes = list({h for _, h in valid})
+
+    result_map: dict[str, int] = {}
+    for i in range(0, len(hashes), 500):
+        chunk = hashes[i:i + 500]
+        stmt = select(QuestionImport.question_hash, QuestionImport.id).where(
+            QuestionImport.question_hash.in_(chunk),
+            QuestionImport.status != "rejected",
+        )
+        rows = (await db.execute(stmt)).all()
+        for row in rows:
+            if row.question_hash not in result_map:
+                result_map[row.question_hash] = row.id
+    return result_map
 
 
 async def submit_to_review(
@@ -54,9 +100,14 @@ async def submit_to_review(
     written = 0
     skipped = 0
 
+    # Pre-compute hashes and batch duplicate lookups (2 queries instead of 2N)
+    prepared: list[tuple[dict, str, dict | None, str | None, str | None]] = []
+    subject_hash_pairs: list[tuple[str | None, str | None]] = []
+
     for q in questions:
         if not isinstance(q, dict):
             skipped += 1
+            prepared.append((q, "", None, None, None))  # type: ignore
             continue
 
         stem = (q.get("stem") or "").strip()
@@ -64,6 +115,7 @@ async def submit_to_review(
             raw_text = (q.get("raw_text") or q.get("raw_question_text") or "").strip()
             if not raw_text:
                 skipped += 1
+                prepared.append((q, "", None, None, None))
                 continue
             stem = raw_text
             q = {
@@ -80,12 +132,40 @@ async def submit_to_review(
         parsed_answer = (q.get("answer") or "").strip() or None
         qi_subject = subject or q.get("subject") or None
         question_hash = normalizer.build_question_hash(stem, parsed_options, parsed_answer)
-        duplicate_fields = await _build_import_duplicate_fields(
-            db,
-            import_id=None,
-            subject=qi_subject,
-            question_hash=question_hash,
-        )
+
+        prepared.append((q, stem, parsed_options, qi_subject, question_hash))
+        subject_hash_pairs.append((qi_subject, question_hash))
+
+    # Batch duplicate detection: 2 queries total
+    dup_questions = await _batch_find_duplicate_questions(db, subject_hash_pairs)
+    dup_imports = await _batch_find_duplicate_imports(db, subject_hash_pairs)
+
+    # Track same-batch duplicates
+    seen_hashes: dict[str, int] = {}
+
+    for q, stem, parsed_options, qi_subject, question_hash in prepared:
+        if not stem:
+            continue
+
+        # Build duplicate fields from pre-fetched maps
+        duplicate_fields = {
+            "question_hash": question_hash or None,
+            "duplicate_status": "normal",
+            "duplicate_of_question_id": None,
+            "duplicate_of_import_id": None,
+        }
+        if question_hash and question_hash in dup_questions:
+            duplicate_fields["duplicate_status"] = "possible_duplicate"
+            duplicate_fields["duplicate_of_question_id"] = dup_questions[question_hash]
+        elif question_hash and question_hash in dup_imports:
+            duplicate_fields["duplicate_status"] = "possible_duplicate"
+            duplicate_fields["duplicate_of_import_id"] = dup_imports[question_hash]
+        elif question_hash and question_hash in seen_hashes:
+            duplicate_fields["duplicate_status"] = "possible_duplicate"
+            duplicate_fields["duplicate_of_import_id"] = seen_hashes[question_hash]
+
+        question_type = q.get("question_type", "")
+        parsed_answer = (q.get("answer") or "").strip() or None
 
         qi = QuestionImport(
             batch_id=batch_id,
@@ -112,6 +192,9 @@ async def submit_to_review(
         )
         db.add(qi)
         await db.flush()
+
+        if question_hash:
+            seen_hashes.setdefault(question_hash, qi.id)
 
         stem_preview = stem[:50] + "..." if len(stem) > 50 else stem
         items.append({

@@ -1,4 +1,5 @@
 """AI 修复服务单元测试。AI 调用全部 mock，不真调 DeepSeek API。"""
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -283,7 +284,7 @@ class TestRepairQuestions:
         mocks = self._patch_deepseek()
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
              patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = repair_questions([q])
+            result = asyncio.run(repair_questions([q]))
 
         assert result["stats"]["repaired"] == 1
         assert result["stats"]["unrepaired"] == 0
@@ -302,7 +303,7 @@ class TestRepairQuestions:
         q = _make_question({"confidence_score": 0.9, "is_valid": True, "stem": "long enough stem", "answer": "A", "options": [{"key": "A", "text": "2x"}], "errors": []})
         mocks = self._patch_deepseek()
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]):
-            result = repair_questions([q])
+            result = asyncio.run(repair_questions([q]))
 
         assert result["stats"]["repaired"] == 0
         assert result["stats"]["skipped"] == 1
@@ -319,7 +320,7 @@ class TestRepairQuestions:
         })
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
              patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = repair_questions([q])
+            result = asyncio.run(repair_questions([q]))
 
         assert result["stats"]["repaired"] == 0
         assert result["stats"]["unrepaired"] == 1
@@ -330,7 +331,7 @@ class TestRepairQuestions:
         q = _make_question()
         mocks = self._patch_deepseek(available=False)
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]):
-            result = repair_questions([q])
+            result = asyncio.run(repair_questions([q]))
 
         assert result["stats"]["repaired"] == 0
         assert result["stats"]["unrepaired"] == 1
@@ -343,7 +344,7 @@ class TestRepairQuestions:
         mocks["chat"] = AsyncMock(side_effect=RuntimeError("network error"))
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
              patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = repair_questions([q])
+            result = asyncio.run(repair_questions([q]))
 
         assert result["stats"]["repaired"] == 0
         assert result["stats"]["unrepaired"] == 1
@@ -351,13 +352,13 @@ class TestRepairQuestions:
 
     def test_global_disabled_all_skipped(self):
         q = _make_question()
-        result = repair_questions([q], config={"enabled": False})
+        result = asyncio.run(repair_questions([q], config={"enabled": False}))
         assert result["stats"]["repaired"] == 0
         assert result["stats"]["skipped"] == 1
         assert result["skipped"][0]["reason"] == "ai_disabled"
 
     def test_empty_input(self):
-        result = repair_questions([])
+        result = asyncio.run(repair_questions([]))
         assert result["stats"]["total_candidates"] == 0
         assert result["repaired"] == []
         assert result["unrepaired"] == []
@@ -378,7 +379,7 @@ class TestRepairQuestions:
 
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
              patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = repair_questions([q_low, q_high, q_bad])
+            result = asyncio.run(repair_questions([q_low, q_high, q_bad]))
 
         assert result["stats"]["repaired"] == 1
         assert result["stats"]["skipped"] == 1
@@ -389,7 +390,7 @@ class TestRepairQuestions:
         mocks = self._patch_deepseek(chat_return=_mock_chat_response(MULTI_CHOICE_RESPONSE))
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
              patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = repair_questions([q])
+            result = asyncio.run(repair_questions([q]))
 
         assert result["stats"]["repaired"] == 1
         after = result["repaired"][0]["after"]
@@ -401,7 +402,7 @@ class TestRepairQuestions:
         mocks = self._patch_deepseek(chat_return=_mock_chat_response(TF_RESPONSE))
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
              patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = repair_questions([q])
+            result = asyncio.run(repair_questions([q]))
 
         assert result["stats"]["repaired"] == 1
         after = result["repaired"][0]["after"]
@@ -413,7 +414,7 @@ class TestRepairQuestions:
         mocks = self._patch_deepseek(chat_return=_mock_chat_response(FILL_RESPONSE))
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
              patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = repair_questions([q])
+            result = asyncio.run(repair_questions([q]))
 
         assert result["stats"]["repaired"] == 1
         after = result["repaired"][0]["after"]
@@ -424,7 +425,7 @@ class TestRepairQuestions:
         mocks = self._patch_deepseek(chat_return=_mock_chat_response(SUBJECTIVE_RESPONSE))
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
              patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = repair_questions([q])
+            result = asyncio.run(repair_questions([q]))
 
         assert result["stats"]["repaired"] == 1
         after = result["repaired"][0]["after"]
@@ -436,7 +437,7 @@ class TestRepairQuestions:
         mocks = self._patch_deepseek(chat_return=_mock_chat_response(VALID_AI_RESPONSE))
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
              patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = repair_questions([q1, q2])
+            result = asyncio.run(repair_questions([q1, q2]))
 
         assert result["stats"]["total_tokens"] == 700  # 350 * 2
 
@@ -445,7 +446,7 @@ class TestRepairQuestions:
         mocks = self._patch_deepseek()
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
              patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = repair_questions([q])
+            result = asyncio.run(repair_questions([q]))
 
         repaired = result["repaired"][0]
         assert repaired["before"]["is_valid"] is False
@@ -464,7 +465,7 @@ class TestRepairQuestions:
         })
         mocks = self._patch_deepseek()
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]):
-            result = repair_questions([q], config={"confidence_threshold": 0.4})
+            result = asyncio.run(repair_questions([q], config={"confidence_threshold": 0.4}))
         assert result["stats"]["skipped"] == 1
 
     def test_source_info_preserved(self):
@@ -472,7 +473,7 @@ class TestRepairQuestions:
         mocks = self._patch_deepseek()
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
              patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = repair_questions([q])
+            result = asyncio.run(repair_questions([q]))
 
         after = result["repaired"][0]["after"]
         assert after["source"] == {"file": "test.pdf", "page": 1, "type": "pdf"}
@@ -483,7 +484,7 @@ class TestRepairQuestions:
         mocks = self._patch_deepseek()
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
              patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = repair_questions([q])
+            result = asyncio.run(repair_questions([q]))
 
         actions = result["repaired"][0]["repair_actions"]
         assert isinstance(actions, list)
@@ -533,6 +534,6 @@ class TestTokenLimit:
         }
         with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
              patch("app.ai.client.deepseek.chat", mocks["chat"]):
-            result = repair_questions([q], config={"daily_token_limit": 100000, "monthly_token_limit": 2000000})
+            result = asyncio.run(repair_questions([q], config={"daily_token_limit": 100000, "monthly_token_limit": 2000000}))
 
         assert result["stats"]["unrepaired"] >= 1
