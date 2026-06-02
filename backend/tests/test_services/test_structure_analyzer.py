@@ -349,3 +349,80 @@ class TestFileMetadata:
         result_with = analyze_structure(blocks, {"filename": "test.pdf"})
         result_without = analyze_structure(blocks)
         assert result_with["mode"] == result_without["mode"]
+
+
+# ---------------------------------------------------------------
+# 11. Answer continuation pages
+# ---------------------------------------------------------------
+
+
+def _make_multipage_blocks(page_texts: dict[int, str]) -> list[dict]:
+    """Helper: create blocks with specific page numbers."""
+    blocks = []
+    for page, text in sorted(page_texts.items()):
+        blocks.append({
+            "page": page,
+            "block_index": page - 1,
+            "raw_text": text,
+            "normalized_text": text,
+        })
+    return blocks
+
+
+class TestAnswerContinuationPages:
+    def test_continuation_page_detected(self):
+        """Pages after answer page with numbered answers are included."""
+        blocks = _make_multipage_blocks({
+            1: "1. 题目一\n2. 题目二\n3. 题目三",
+            2: "4. 题目四\n5. 题目五",
+            3: "参考答案\n1.A\n2.B\n3.C",
+            4: "4.D\n5.A\n6.B",
+        })
+        result = analyze_structure(blocks)
+        assert result["mode"] == "SEPARATED"
+        assert 4 in result["answer_pages"]
+
+    def test_continuation_stops_at_non_answer_page(self):
+        """Expansion stops when a page doesn't have enough answer patterns."""
+        blocks = _make_multipage_blocks({
+            1: "1. 题目一\n2. 题目二",
+            2: "参考答案\n1.A\n2.B\n3.C",
+            3: "4.D\n5.A\n6.B",
+            4: "本章小结：数据结构是计算机科学的基础课程",
+        })
+        result = analyze_structure(blocks)
+        assert 3 in result["answer_pages"]
+        assert 4 not in result["answer_pages"]
+
+    def test_no_expansion_without_initial_answer_pages(self):
+        """No expansion when there are no initial answer pages."""
+        blocks = _make_multipage_blocks({
+            1: "1. 题目一\n2. 题目二",
+            2: "3. 题目三\n4. 题目四",
+        })
+        result = analyze_structure(blocks)
+        assert result["answer_pages"] == [] or result["mode"] != "SEPARATED"
+
+    def test_single_answer_page_no_continuation(self):
+        """Single answer page with no following pages stays unchanged."""
+        blocks = _make_multipage_blocks({
+            1: "1. 题目一\n2. 题目二",
+            2: "参考答案\n1.A\n2.B\n3.C",
+        })
+        result = analyze_structure(blocks)
+        assert result["mode"] == "SEPARATED"
+        assert 2 in result["answer_pages"]
+
+    def test_multiple_continuation_pages(self):
+        """Multiple consecutive answer continuation pages are all detected."""
+        blocks = _make_multipage_blocks({
+            1: "1. 题目一\n2. 题目二\n3. 题目三\n4. 题目四\n5. 题目五",
+            2: "参考答案\n1.A\n2.B\n3.C",
+            3: "4.D\n5.A\n6.B",
+            4: "7.C\n8.A\n9.D",
+        })
+        result = analyze_structure(blocks)
+        assert result["mode"] == "SEPARATED"
+        assert 2 in result["answer_pages"]
+        assert 3 in result["answer_pages"]
+        assert 4 in result["answer_pages"]
