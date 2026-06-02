@@ -18,9 +18,24 @@ Page({
         api.get('/review/due', { page: 1, page_size: 50 }),
         api.get('/review/stats'),
       ])
+      const dueList = (dueRes.items || []).map(item => ({
+        ...item,
+        _subjectLabel: this.subjectLabel(item.subject),
+        _intervalLabel: this.intervalLabel(item.interval),
+      }))
+      const reviewedToday = statsRes.reviewed_today || 0
+      const dueToday = statsRes.due_today || 0
+      const mastered = statsRes.mastered || 0
+      const totalWrong = statsRes.total_wrong || 0
+      const todayTotal = reviewedToday + dueToday
+      const stats = {
+        ...statsRes,
+        _reviewProgressPct: todayTotal ? Math.max(6, Math.min(100, reviewedToday / todayTotal * 100)).toFixed(0) : 0,
+        _masteredPct: totalWrong ? Math.max(6, Math.min(100, mastered / totalWrong * 100)).toFixed(0) : 0,
+      }
       this.setData({
-        dueList: dueRes.items || [],
-        stats: statsRes,
+        dueList,
+        stats,
         loading: false,
       })
     } catch (e) {
