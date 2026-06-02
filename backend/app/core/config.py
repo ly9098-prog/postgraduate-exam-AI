@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     OCR_MAX_WORKERS: int = 4
     OCR_LANGUAGE: str = "ch"
     OCR_USE_GPU: bool = False
+    OCR_DET_DB_THRESH: float = 0.2
+    OCR_DET_DB_BOX_THRESH: float = 0.4
+    OCR_DET_DB_UNCLIP_RATIO: float = 1.8
+    OCR_DROP_SCORE: float = 0.3
+    OCR_MIN_IMAGE_WIDTH: int = 1500
     IMAGE_IMPORT_MAX_BYTES: int = 10 * 1024 * 1024
 
     # Redis
