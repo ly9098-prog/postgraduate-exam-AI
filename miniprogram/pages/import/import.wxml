@@ -1,27 +1,41 @@
 <view class="page">
-  <!-- 页面标题 -->
-  <view class="page-head">
-    <text class="page-title">题库导入</text>
+  <view class="import-hero">
+    <view class="hero-copy">
+      <text class="eyebrow">题库管理</text>
+      <text class="hero-title">题库导入</text>
+      <text class="hero-desc">上传文件后先解析成待审核题目，确认无误再入库</text>
+    </view>
+    <view class="hero-badge">
+      <text class="hero-badge-main">审</text>
+      <text class="hero-badge-label">人工确认</text>
+    </view>
   </view>
 
   <!-- 统一上传区域 -->
   <view class="upload-section">
+    <view class="section-head">
+      <view>
+        <text class="section-title">统一导入入口</text>
+        <text class="section-subtitle">支持文件、图片与扫描材料，系统异步解析后进入审核</text>
+      </view>
+      <text class="section-chip">Upload</text>
+    </view>
     <view class="upload-zone" bindtap="chooseFile">
       <view class="upload-icon-wrap">
-        <text class="upload-icon">📥</text>
+        <text class="upload-icon">传</text>
       </view>
-      <text class="upload-title">上传题目</text>
-      <text class="upload-desc">支持 Excel / PDF / TXT / 图片</text>
+      <text class="upload-title">上传题目文件</text>
+      <text class="upload-desc">Excel / PDF / TXT / 图片均可从这里导入</text>
       <view class="upload-hint">
-        <text class="hint-dot">●</text>
-        <text class="hint-text">所有文件将异步解析，审核后入库</text>
+        <text class="hint-dot"></text>
+        <text class="hint-text">所有导入结果都需要人工审核后才会进入题库</text>
       </view>
       <view class="upload-formats">
-        <text class="format-tag">.xlsx</text>
-        <text class="format-tag">.pdf</text>
-        <text class="format-tag">.txt</text>
-        <text class="format-tag">.jpg</text>
-        <text class="format-tag">.png</text>
+        <text class="format-tag">XLSX</text>
+        <text class="format-tag">PDF</text>
+        <text class="format-tag">TXT</text>
+        <text class="format-tag">JPG</text>
+        <text class="format-tag">PNG</text>
       </view>
     </view>
   </view>
@@ -30,87 +44,94 @@
   <view class="pipeline-task-card" wx:if="{{pipelineTask}}">
     <view class="pipeline-task-row">
       <view class="pipeline-task-left">
-        <text class="pipeline-task-title">{{pipelineTask.source_file || '导入任务'}}</text>
-        <text class="pipeline-task-type" wx:if="{{pipelineTask.source_type}}">{{pipelineTask.source_type}}</text>
+        <view class="pipeline-icon {{pipelineTask.status}}">{{pipelineTask.source_type || '导'}}</view>
+        <view class="pipeline-task-info">
+          <text class="pipeline-task-title">{{pipelineTask.source_file || '导入任务'}}</text>
+          <text class="pipeline-task-type" wx:if="{{pipelineTask.source_type}}">{{pipelineTask.source_type}}</text>
+        </view>
       </view>
       <text class="pipeline-task-status {{pipelineTask.status}}">{{pipelineTask.status}}</text>
     </view>
-    <text class="pipeline-task-desc" wx:if="{{pipelinePolling}}">正在解析，请稍候...</text>
-    <text class="pipeline-task-desc" wx:if="{{pipelineTask.batch_id}}">已生成审核批次：{{pipelineTask.batch_id}}</text>
+    <text class="pipeline-task-desc" wx:if="{{pipelinePolling}}">正在解析文件内容，请稍候...</text>
+    <text class="pipeline-task-desc completed" wx:if="{{pipelineTask.batch_id}}">已生成审核批次：{{pipelineTask.batch_id}}</text>
     <text class="pipeline-task-desc error" wx:if="{{pipelineTask.status === 'failed' && pipelineTask.error_message}}">{{pipelineTask.error_message}}</text>
     <text class="pipeline-preview" wx:if="{{pipelineTask.raw_text_preview}}">{{pipelineTask.raw_text_preview}}</text>
   </view>
 
   <!-- 模板下载 -->
   <view class="template-bar" bindtap="downloadTemplate">
-    <text class="template-icon">📋</text>
+    <view class="template-icon">模</view>
     <view class="template-info">
       <text class="template-label">下载导入模板</text>
-      <text class="template-desc">按模板格式填写，导入更稳定</text>
+      <text class="template-desc">适合批量整理 Excel 题库，按字段填写更稳定</text>
     </view>
     <text class="template-arrow">›</text>
   </view>
 
-  <!-- 分隔 -->
-  <view class="section-divider">
-    <view class="divider-line"></view>
-    <text class="divider-text">导入记录</text>
-    <view class="divider-line"></view>
-  </view>
-
-  <!-- 加载态 -->
-  <view class="loading-wrap" wx:if="{{loading}}">
-    <view class="loading-spinner"></view>
-    <text class="loading-text">加载中...</text>
-  </view>
-
-  <!-- 错误态 -->
-  <view class="empty-state" wx:elif="{{error}}">
-    <text class="empty-icon">⚠</text>
-    <text class="empty-title">{{error}}</text>
-    <text class="empty-desc">下拉刷新重试</text>
-  </view>
-
-  <!-- 空态 -->
-  <view class="empty-state" wx:elif="{{batches.length === 0}}">
-    <text class="empty-icon">📂</text>
-    <text class="empty-title">暂无导入记录</text>
-    <text class="empty-desc">点击上方区域上传题目文件</text>
-  </view>
-
-  <!-- 导入批次列表 -->
-  <view class="batch-list" wx:else>
-    <view
-      class="batch-card"
-      wx:for="{{batches}}"
-      wx:key="batch_id"
-      data-batch-id="{{item.batch_id}}"
-      bindtap="goBatch"
-    >
-      <view class="batch-top">
-        <view class="batch-left">
-          <text class="batch-icon {{item.source_type}}">
-            {{item.source_type === 'excel' ? '📊' : item.source_type === 'image' ? '🖼' : '📄'}}
-          </text>
-          <view class="batch-info">
-            <text class="batch-name">{{item.source_file || item.batch_id}}</text>
-            <text class="batch-meta">{{item.total}} 道题 · {{item._date}}</text>
-          </view>
-        </view>
-        <text class="batch-arrow">›</text>
+  <!-- 导入记录 -->
+  <view class="records-panel">
+    <view class="section-head records-head">
+      <view>
+        <text class="section-title">导入记录</text>
+        <text class="section-subtitle">查看解析批次与待审核题目状态</text>
       </view>
-      <view class="batch-stats">
-        <view class="stat-chip stat-pending" wx:if="{{item.pending > 0}}">
-          <text class="stat-dot"></text>
-          {{item.pending}} 待审核
+      <text class="section-chip">记录</text>
+    </view>
+
+    <!-- 加载态 -->
+    <view class="loading-wrap" wx:if="{{loading}}">
+      <view class="loading-spinner"></view>
+      <text class="loading-text">正在加载导入记录...</text>
+    </view>
+
+    <!-- 错误态 -->
+    <view class="empty-state" wx:elif="{{error}}">
+      <view class="empty-icon danger">!</view>
+      <text class="empty-title">{{error}}</text>
+      <text class="empty-desc">下拉刷新重试</text>
+    </view>
+
+    <!-- 空态 -->
+    <view class="empty-state" wx:elif="{{batches.length === 0}}">
+      <view class="empty-icon">空</view>
+      <text class="empty-title">暂无导入记录</text>
+      <text class="empty-desc">点击上方上传区域，解析完成后会在这里生成审核批次</text>
+    </view>
+
+    <!-- 导入批次列表 -->
+    <view class="batch-list" wx:else>
+      <view
+        class="batch-card"
+        wx:for="{{batches}}"
+        wx:key="batch_id"
+        data-batch-id="{{item.batch_id}}"
+        bindtap="goBatch"
+      >
+        <view class="batch-top">
+          <view class="batch-left">
+            <view class="batch-icon {{item.source_type}}">
+              {{item.source_type === 'excel' ? '表' : item.source_type === 'image' ? '图' : '文'}}
+            </view>
+            <view class="batch-info">
+              <text class="batch-name">{{item.source_file || item.batch_id}}</text>
+              <text class="batch-meta">{{item.total}} 道题 · {{item._date}}</text>
+            </view>
+          </view>
+          <text class="batch-arrow">›</text>
         </view>
-        <view class="stat-chip stat-approved" wx:if="{{item.approved > 0}}">
-          <text class="stat-dot"></text>
-          {{item.approved}} 已通过
-        </view>
-        <view class="stat-chip stat-rejected" wx:if="{{item.rejected > 0}}">
-          <text class="stat-dot"></text>
-          {{item.rejected}} 已拒绝
+        <view class="batch-stats">
+          <view class="stat-chip stat-pending" wx:if="{{item.pending > 0}}">
+            <text class="stat-dot"></text>
+            {{item.pending}} 待审核
+          </view>
+          <view class="stat-chip stat-approved" wx:if="{{item.approved > 0}}">
+            <text class="stat-dot"></text>
+            {{item.approved}} 已通过
+          </view>
+          <view class="stat-chip stat-rejected" wx:if="{{item.rejected > 0}}">
+            <text class="stat-dot"></text>
+            {{item.rejected}} 已拒绝
+          </view>
         </view>
       </view>
     </view>
