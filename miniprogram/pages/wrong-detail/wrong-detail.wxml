@@ -1,24 +1,38 @@
 <view wx:if="{{loading}}" class="loading-wrap">
   <view class="loading-spinner"></view>
-  <text class="loading-text">加载中...</text>
+  <text class="loading-text">正在加载错题详情...</text>
 </view>
 
-<view wx:if="{{!loading && wq}}">
+<view class="page" wx:if="{{!loading && wq}}">
+  <view class="detail-hero">
+    <view class="hero-copy">
+      <text class="eyebrow">错题复盘</text>
+      <text class="hero-title">错题详情</text>
+      <text class="hero-desc">先核对答案和错因，再决定是否标记掌握</text>
+    </view>
+    <view class="hero-badge {{wq.mastered ? 'mastered' : ''}}">
+      <text class="hero-badge-main">{{wq.mastered ? '✓' : '复'}}</text>
+      <text class="hero-badge-label">{{wq.mastered ? '已掌握' : '待复盘'}}</text>
+    </view>
+  </view>
+
   <!-- 题目信息 -->
-  <view class="card">
+  <view class="detail-card">
     <view class="detail-header">
       <text class="subject-tag">{{subjectLabelText}}</text>
       <text class="error-type-tag">{{errorTypeLabelText}}</text>
       <text wx:if="{{wq.mastered}}" class="tag tag-success">已掌握</text>
     </view>
 
-    <block wx:if="{{enableMathImage && stemSegments.length > 0}}">
-      <math-question segments="{{stemSegments}}" />
-    </block>
-    <block wx:elif="{{stemNeedsRich}}">
-      <mp-html class="q-text" content="{{stemHtml}}" lazy-load></mp-html>
-    </block>
-    <text wx:else class="q-text">{{stemText}}</text>
+    <view class="question-block">
+      <block wx:if="{{enableMathImage && stemSegments.length > 0}}">
+        <math-question segments="{{stemSegments}}" />
+      </block>
+      <block wx:elif="{{stemNeedsRich}}">
+        <mp-html class="q-text" content="{{stemHtml}}" lazy-load></mp-html>
+      </block>
+      <text wx:else class="q-text">{{stemText}}</text>
+    </view>
 
     <view wx:if="{{optionItems.length > 0}}" class="options-list">
       <view wx:for="{{optionItems}}" wx:key="key" class="option-line">
@@ -33,40 +47,48 @@
       </view>
     </view>
 
-    <view class="answer-row">
-      <text class="answer-label">正确答案：</text>
-      <text class="answer-value">{{wq.answer}}</text>
-    </view>
-    <view class="answer-row wrong-answer" wx:if="{{wq.wrong_answer}}">
-      <text class="answer-label">我的答案：</text>
-      <text class="answer-value wrong">{{wq.wrong_answer}}</text>
+    <view class="answer-panel">
+      <view class="answer-row">
+        <text class="answer-label">正确答案</text>
+        <text class="answer-value">{{wq.answer}}</text>
+      </view>
+      <view class="answer-row wrong-answer" wx:if="{{wq.wrong_answer}}">
+        <text class="answer-label">我的答案</text>
+        <text class="answer-value wrong">{{wq.wrong_answer}}</text>
+      </view>
     </view>
 
     <view class="sm2-info" wx:if="{{wq.review_count > 0}}">
-      <text class="sm2-label">复习 {{wq.review_count}} 次 | EF {{wq.efactor}} | 间隔 {{wq.interval || 0}} 天</text>
+      <text class="sm2-label">复习 {{wq.review_count}} 次 · EF {{wq.efactor}} · 间隔 {{wq.interval || 0}} 天</text>
     </view>
 
-    <button class="btn-primary" style="margin-top:24rpx" bindtap="markMastered" wx:if="{{!wq.mastered}}">
+    <button class="master-btn" bindtap="markMastered" wx:if="{{!wq.mastered}}">
       标记已掌握
     </button>
   </view>
 
   <!-- AI 分析 -->
-  <view class="card" wx:if="{{!aiLoading && aiResult}}">
-    <view class="section-title">🤖 AI 错题分析</view>
+  <view class="ai-card" wx:if="{{!aiLoading && aiResult}}">
+    <view class="section-head">
+      <view>
+        <text class="section-title">AI 错题分析</text>
+        <text class="section-subtitle">从错因、知识点和复习建议三个角度辅助判断</text>
+      </view>
+      <text class="section-chip">AI</text>
+    </view>
 
     <view class="ai-section">
-      <text class="ai-label">📌 错误原因</text>
+      <text class="ai-label">错误原因</text>
       <text class="ai-text">{{aiResult.error_analysis}}</text>
     </view>
 
     <view class="ai-section">
-      <text class="ai-label">📖 薄弱知识点</text>
+      <text class="ai-label">薄弱知识点</text>
       <text class="ai-text">{{aiResult.knowledge_weakness}}</text>
     </view>
 
     <view class="ai-section">
-      <text class="ai-label">💡 学习建议</text>
+      <text class="ai-label">学习建议</text>
       <text class="ai-text">{{aiResult.suggestion}}</text>
     </view>
 
@@ -74,19 +96,26 @@
   </view>
 
   <!-- AI 加载 -->
-  <view class="card" wx:if="{{aiLoading}}">
-    <view class="section-title">🤖 AI 分析中...</view>
+  <view class="ai-card" wx:if="{{aiLoading}}">
+    <view class="section-head compact">
+      <view>
+        <text class="section-title">AI 分析中</text>
+        <text class="section-subtitle">正在整理错因和复习建议</text>
+      </view>
+      <text class="section-chip">处理中</text>
+    </view>
     <view class="ai-loading">
+      <view class="loading-spinner small"></view>
       <text>正在分析你的错题原因</text>
-      <text class="dot-animation">...</text>
     </view>
   </view>
 
   <!-- AI 降级 -->
-  <view class="card" wx:if="{{!aiLoading && aiFallback}}">
+  <view class="ai-card" wx:if="{{!aiLoading && aiFallback}}">
     <view class="ai-fallback">
-      <text>AI 分析暂时不可用</text>
-      <text style="font-size:26rpx;color:#999;margin-top:12rpx">建议先查看题目解析和知识点</text>
+      <view class="fallback-mark">!</view>
+      <text class="fallback-title">AI 分析暂时不可用</text>
+      <text class="fallback-desc">建议先查看题目解析和知识点，稍后再试</text>
     </view>
   </view>
 </view>
