@@ -781,6 +781,49 @@ async def run_pipeline_background(
         }
 
 
+async def run_excel_pipeline_background(
+    pipeline_id: str,
+    file_content: bytes,
+    source_file: str,
+    import_excel_fn,
+) -> None:
+    """后台运行 Excel 导入，结果写入 _pipeline_store 以支持状态查询。"""
+    from app.core.database import async_session
+
+    _pipeline_store[pipeline_id] = {
+        "pipeline_id": pipeline_id,
+        "status": "parsing",
+        "stages": {"extract": {"status": "running"}},
+        "stats": {},
+        "errors": [],
+        "started_at": datetime.now().isoformat(),
+    }
+    _prune_store()
+
+    try:
+        async with async_session() as db:
+            batch_id, total = await import_excel_fn(db, file_content, source_file)
+        _pipeline_store[pipeline_id] = {
+            "pipeline_id": pipeline_id,
+            "status": "completed",
+            "batch_id": batch_id,
+            "stats": {"total": total, "to_review": total},
+            "stages": {"extract": {"status": "completed"}},
+            "errors": [],
+            "started_at": _pipeline_store[pipeline_id]["started_at"],
+            "finished_at": datetime.now().isoformat(),
+        }
+    except Exception as exc:
+        logger.exception("Excel pipeline %s failed", pipeline_id)
+        _pipeline_store[pipeline_id] = {
+            "pipeline_id": pipeline_id,
+            "status": "failed",
+            "errors": [str(exc)],
+            "started_at": _pipeline_store.get(pipeline_id, {}).get("started_at", ""),
+            "finished_at": datetime.now().isoformat(),
+        }
+
+
 def get_pipeline_status(pipeline_id: str) -> dict | None:
     """查询流水线状态。"""
     return _pipeline_store.get(pipeline_id)
