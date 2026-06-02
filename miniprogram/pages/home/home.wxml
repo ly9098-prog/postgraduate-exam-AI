@@ -3,7 +3,10 @@
 <!-- 学习进度卡片 -->
 <view class="card progress-card">
   <view class="progress-top">
-    <text class="greeting">{{greeting}}，{{user.nickname || '考研人'}}</text>
+    <view class="greeting-block">
+      <text class="greeting">{{greeting}}，{{user.nickname || '考研人'}}</text>
+      <text class="greeting-subtitle">保持节奏，今天也稳步前进</text>
+    </view>
     <text class="date-text">{{dateStr}}</text>
   </view>
   <view class="progress-stats">
@@ -27,57 +30,57 @@
 <!-- 快捷入口 -->
 <view class="action-grid">
   <view class="action-card" bindtap="startRandom">
-    <text class="action-emoji">✍️</text>
+    <view class="icon-badge icon-primary">练</view>
     <view class="action-info">
       <text class="action-title">随机刷题</text>
       <text class="action-desc">开始一组练习</text>
     </view>
-    <text class="action-arrow">→</text>
+    <text class="action-arrow">›</text>
   </view>
   <view class="action-card" bindtap="goWrongBook">
-    <text class="action-emoji">📖</text>
+    <view class="icon-badge icon-warning">错</view>
     <view class="action-info">
       <text class="action-title">错题本</text>
-      <text class="action-desc">{{wrongStats.total || 0}} 道待 revisit</text>
+      <text class="action-desc">{{wrongStats.total || 0}} 道待复盘</text>
     </view>
-    <text class="action-arrow">→</text>
+    <text class="action-arrow">›</text>
   </view>
   <view class="action-card" bindtap="goReview">
-    <text class="action-emoji">🔄</text>
+    <view class="icon-badge icon-success">复</view>
     <view class="action-info">
       <text class="action-title">今日复习</text>
       <text class="action-desc">{{wrongStats.unmastered || 0}} 道待复习</text>
     </view>
-    <text class="action-arrow">→</text>
+    <text class="action-arrow">›</text>
   </view>
   <view class="action-card" bindtap="goAnalysis">
-    <text class="action-emoji">🤖</text>
+    <view class="icon-badge icon-primary">AI</view>
     <view class="action-info">
       <text class="action-title">AI 分析</text>
       <text class="action-desc">错因与建议</text>
     </view>
-    <text class="action-arrow">→</text>
+    <text class="action-arrow">›</text>
   </view>
   <view class="action-card" bindtap="goDashboard">
-    <text class="action-emoji">📊</text>
+    <view class="icon-badge icon-muted">数</view>
     <view class="action-info">
       <text class="action-title">学习统计</text>
       <text class="action-desc">数据看板与分析</text>
     </view>
-    <text class="action-arrow">→</text>
+    <text class="action-arrow">›</text>
   </view>
   <view class="action-card" wx:if="{{isAdmin}}" bindtap="goImport">
-    <text class="action-emoji">📥</text>
+    <view class="icon-badge icon-success">导</view>
     <view class="action-info">
       <text class="action-title">题库导入</text>
       <text class="action-desc">Excel 批量导题</text>
     </view>
-    <text class="action-arrow">→</text>
+    <text class="action-arrow">›</text>
   </view>
 </view>
 
 <!-- 错题分布 -->
-<view class="card" wx:if="{{subjectPieData.length > 0}}">
+<view class="card pie-card" wx:if="{{subjectPieData.length > 0}}">
   <text class="section-title">错题分布</text>
   <view class="pie-wrap">
     <view class="pie-box">

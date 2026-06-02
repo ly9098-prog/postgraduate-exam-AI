@@ -15,10 +15,10 @@
     "pages/dashboard/dashboard"
   ],
   "window": {
-    "navigationBarBackgroundColor": "#4A90D9",
+    "navigationBarBackgroundColor": "#5B7B9A",
     "navigationBarTitleText": "MemoGrad",
     "navigationBarTextStyle": "white",
-    "backgroundColor": "#F7F8FA"
+    "backgroundColor": "#F7F5F0"
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",
