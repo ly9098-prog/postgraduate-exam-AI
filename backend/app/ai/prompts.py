@@ -97,6 +97,22 @@ SYSTEM_PROMPTS = {
         "repair_actions 可选值：stem_cleaned / options_structured / answer_normalized / "
         "type_detected / analysis_extracted / answer_filled"
     ),
+    "ocr_correction": (
+        "你是 OCR 文本纠错助手。输入是 OCR 识别的考研题目文本片段。\n"
+        "你的任务是修复 OCR 识别错误，保持原文含义不变。\n\n"
+        "修复规则：\n"
+        "1. 修复换行错乱：被错误断开的句子重新拼接为完整句\n"
+        "2. 修复选项错位：确保 A/B/C/D 选项各占独立行\n"
+        "3. 修复题号缺失：如果上下文明确有题号但缺失，补上（如 1. 2. 等）\n"
+        "4. 修复 OCR 错字：选项标号中 8→B、6→G、0→D、l→1、O→0 等\n"
+        "5. 修复标点错乱：中英文标点混用、缺失等\n\n"
+        "禁止规则：\n"
+        "- 禁止添加原文中不存在的内容（不要补充答案、解析等）\n"
+        "- 禁止修改题目实质含义\n"
+        "- 禁止重新排版或添加格式标记\n"
+        "- 如果文本质量已经很好，原样返回即可\n\n"
+        "输出格式：直接返回纠错后的纯文本，不要包含任何 JSON、代码块或其他标记。"
+    ),
     "complete_question": (
         "你是考研题目补全助手。根据已有的题干和上下文，补全缺失字段。"
         "你的输出仅是辅助提示，必须经过人工审核后才能采用。"
@@ -253,6 +269,20 @@ def build_complete_question(qi: dict, missing_fields: list[str]) -> list:
                 f"【缺失字段】{missing_fields}\n"
                 "请仅补全缺失字段，已有字段保持不变。若答案不确定，"
                 "请将 answer_uncertain 设为 true。"
+            ),
+        },
+    ]
+
+
+def build_ocr_correction(block_text: str) -> list:
+    """构建 OCR 文本纠错 prompt。"""
+    return [
+        {"role": "system", "content": SYSTEM_PROMPTS["ocr_correction"]},
+        {
+            "role": "user",
+            "content": (
+                "请纠错以下 OCR 识别文本：\n\n"
+                f"{block_text}"
             ),
         },
     ]

@@ -362,6 +362,10 @@ class TestImportPipelineRun:
         pipeline._run_normalize_text = MagicMock(return_value={
             "normalized_blocks": _make_normalized_blocks(3),
         })
+        pipeline._run_ocr_correction = AsyncMock(return_value={
+            "normalized_blocks": _make_normalized_blocks(3),
+            "ocr_correction_diagnostics": {"stats": {}, "corrections": [], "skipped_reason": None},
+        })
         pipeline._run_split = MagicMock(return_value={
             "raw_questions": _make_raw_questions(3),
             "split_count": 3,
@@ -414,7 +418,7 @@ class TestImportPipelineRun:
 
         # Verify stage ordering
         stage_names = list(result["stages"].keys())
-        assert stage_names == ["extract", "normalize_text", "analyze_structure", "split", "match", "normalize_schema", "repair", "review"]
+        assert stage_names == ["extract", "normalize_text", "ocr_correction", "analyze_structure", "split", "match", "normalize_schema", "repair", "review"]
         for s in result["stages"].values():
             assert s["status"] == "completed"
 

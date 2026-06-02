@@ -21,6 +21,7 @@ from typing import Any
 
 from app.features.ai_repair import repair_questions
 from app.features.answer_matcher import match_answers
+from app.features.ocr_correction import correct_ocr_blocks
 from app.features.question_normalizer import normalize_questions
 from app.features.question_splitter import split_questions
 from app.features.structure_analyzer import analyze_structure
@@ -186,11 +187,15 @@ class ImportPipeline:
         stage_specs: list[tuple[str, callable]] = [
             ("extract", self._run_extract),
             ("normalize_text", self._run_normalize_text),
+        ]
+        if self.options.get("enable_ocr_correction", True):
+            stage_specs.append(("ocr_correction", self._run_ocr_correction))
+        stage_specs.extend([
             ("analyze_structure", self._run_analyze_structure),
             ("split", self._run_split),
             ("match", self._run_match),
             ("normalize_schema", self._run_normalize_schema),
-        ]
+        ])
         if self.options.get("enable_ai_repair", True):
             stage_specs.append(("repair", self._run_repair))
         stage_specs.append(("review", self._run_review))
@@ -249,6 +254,38 @@ class ImportPipeline:
             warnings.append(f"{empty_count} blocks empty after normalization")
 
         return {"normalized_blocks": normalized_blocks, "warnings": warnings}
+
+    async def _run_ocr_correction(self, normalized_blocks: list[dict], options: dict | None = None, **_kw) -> dict:
+        """Stage 1.5: AI OCR text correction for noisy blocks."""
+        opts = options or {}
+        correction_config = {
+            "enabled": opts.get("enable_ocr_correction", True),
+            "mode": opts.get("ocr_correction_mode", "auto"),
+            "noise_threshold": opts.get("ocr_noise_threshold", 0.3),
+            "daily_token_limit": opts.get("ocr_correction_daily_token_limit", 50000),
+            "monthly_token_limit": opts.get("ocr_correction_monthly_token_limit", 1000000),
+        }
+
+        result = await correct_ocr_blocks(normalized_blocks, correction_config)
+
+        warnings: list[str] = []
+        stats = result.get("stats", {})
+        if stats.get("corrected_blocks", 0) > 0:
+            warnings.append(
+                f"AI corrected {stats['corrected_blocks']}/{stats['total_blocks']} blocks"
+            )
+        if result.get("skipped_reason"):
+            warnings.append(f"OCR correction skipped: {result['skipped_reason']}")
+
+        return {
+            "normalized_blocks": result["corrected_blocks"],
+            "ocr_correction_diagnostics": {
+                "stats": stats,
+                "corrections": result.get("corrections", []),
+                "skipped_reason": result.get("skipped_reason"),
+            },
+            "warnings": warnings,
+        }
 
     def _run_analyze_structure(self, normalized_blocks: list[dict], **_kw) -> dict:
         """Stage 2: detect question/answer document layout."""
@@ -540,6 +577,7 @@ class ImportPipeline:
         }
         diagnostics = {
             "structure": data.get("structure", {}),
+            "ocr_correction": data.get("ocr_correction_diagnostics", {}),
             "split": data.get("split_diagnostics", {}),
             "schema_errors": data.get("errors", []),
         }
