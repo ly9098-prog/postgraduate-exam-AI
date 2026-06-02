@@ -22,15 +22,12 @@ page {
 }
 
 /* ── 上传区域 ── */
-.upload-grid {
+.upload-section {
   margin: 8rpx 24rpx;
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
 }
 
 .upload-zone {
-  padding: 48rpx 32rpx;
+  padding: 56rpx 32rpx 40rpx;
   background: #fff;
   border-radius: 20rpx;
   border: 2rpx dashed #D0CEC8;
@@ -48,28 +45,28 @@ page {
 }
 
 .upload-icon-wrap {
-  width: 80rpx;
-  height: 80rpx;
+  width: 88rpx;
+  height: 88rpx;
   border-radius: 50%;
   background: #EDF1F5;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 8rpx;
+  margin-bottom: 12rpx;
 }
 
 .upload-icon {
-  font-size: 40rpx;
+  font-size: 44rpx;
 }
 
 .upload-title {
-  font-size: 30rpx;
+  font-size: 32rpx;
   font-weight: 600;
   color: #2D3E50;
 }
 
 .upload-desc {
-  font-size: 24rpx;
+  font-size: 26rpx;
   color: #9AABBA;
 }
 
@@ -77,7 +74,7 @@ page {
   display: flex;
   align-items: center;
   gap: 6rpx;
-  margin-top: 12rpx;
+  margin-top: 16rpx;
   padding: 8rpx 16rpx;
   background: #F7F6F2;
   border-radius: 8rpx;
@@ -93,15 +90,24 @@ page {
   color: #9AABBA;
 }
 
-.image-zone {
-  border-color: #BFD4C8;
+.upload-formats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8rpx;
+  margin-top: 16rpx;
 }
 
-.image-icon-wrap {
-  background: #EEF7F1;
+.format-tag {
+  font-size: 20rpx;
+  color: #6B7B8D;
+  background: #EDF1F5;
+  padding: 4rpx 12rpx;
+  border-radius: 6rpx;
 }
 
-.image-task-card {
+/* ── 导入进度卡片 ── */
+.pipeline-task-card {
   margin: 16rpx 24rpx;
   padding: 24rpx 28rpx;
   background: #fff;
@@ -109,49 +115,70 @@ page {
   box-shadow: 0 2rpx 8rpx rgba(43, 60, 80, 0.04);
 }
 
-.image-task-row {
+.pipeline-task-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16rpx;
 }
 
-.image-task-title {
+.pipeline-task-left {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex: 1;
+  min-width: 0;
+}
+
+.pipeline-task-title {
   font-size: 28rpx;
   font-weight: 600;
   color: #2D3E50;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.image-task-status {
+.pipeline-task-type {
+  font-size: 20rpx;
+  color: #5B7B9A;
+  background: #EDF1F5;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  flex-shrink: 0;
+}
+
+.pipeline-task-status {
   font-size: 22rpx;
   color: #5B7B9A;
   background: #EDF1F5;
   border-radius: 999rpx;
   padding: 6rpx 14rpx;
+  flex-shrink: 0;
 }
 
-.image-task-status.failed {
+.pipeline-task-status.failed {
   color: #B85C5C;
   background: #FCEEEE;
 }
 
-.image-task-status.completed {
+.pipeline-task-status.completed {
   color: #4F8A65;
   background: #EEF7F1;
 }
 
-.image-task-desc {
+.pipeline-task-desc {
   display: block;
   margin-top: 12rpx;
   font-size: 24rpx;
   color: #6B7B8D;
 }
 
-.image-task-desc.error {
+.pipeline-task-desc.error {
   color: #B85C5C;
 }
 
-.image-preview {
+.pipeline-preview {
   display: block;
   margin-top: 14rpx;
   padding: 16rpx;
