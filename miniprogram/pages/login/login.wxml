@@ -1,66 +1,104 @@
 <view class="login-page">
-  <!-- 背景装饰 -->
   <view class="bg-glow bg-glow-1"></view>
   <view class="bg-glow bg-glow-2"></view>
   <view class="bg-glow bg-glow-3"></view>
 
-  <!-- 品牌区域 -->
-  <view class="brand-area">
-    <view class="brand-icon-wrap">
-      <text class="brand-icon">📖</text>
-    </view>
-    <text class="brand-name">MemoGrad</text>
-    <text class="brand-slogan">每天一点进步，稳步上岸</text>
-  </view>
+  <view class="login-layout">
+    <view class="hero-band">
+      <view class="brand-block">
+        <view class="brand-icon-wrap">
+          <text class="brand-icon">M</text>
+        </view>
+        <view class="brand-copy">
+          <text class="brand-kicker">考研学习助手</text>
+          <text class="brand-name">MemoGrad</text>
+        </view>
+      </view>
 
-  <!-- 抽象学习视觉 -->
-  <view class="hero-visual">
-    <view class="book-shape">
-      <view class="book-spine"></view>
-      <view class="book-page book-page-1"></view>
-      <view class="book-page book-page-2"></view>
-    </view>
-    <view class="float-dot dot-1"></view>
-    <view class="float-dot dot-2"></view>
-    <view class="float-dot dot-3"></view>
-    <view class="float-line line-1"></view>
-    <view class="float-line line-2"></view>
-  </view>
-
-  <!-- 登录卡片 -->
-  <view class="login-card">
-    <text class="login-title">开始学习</text>
-    <text class="login-desc">使用微信身份，无需注册</text>
-
-    <view class="agreement-area">
-      <checkbox-group bindchange="onAgreementChange">
-        <label class="agreement-check">
-          <checkbox value="agreed" checked="{{agreed}}" color="#5B7B9A" />
-          <text class="agreement-text">我已阅读并同意</text>
-        </label>
-      </checkbox-group>
-      <view class="agreement-links">
-        <text class="agreement-link" data-type="user" bindtap="openAgreement">《用户协议》</text>
-        <text class="agreement-link" data-type="privacy" bindtap="openAgreement">《隐私政策》</text>
-        <text class="agreement-link" data-type="ai" bindtap="openAgreement">《AI免责声明》</text>
+      <view class="hero-copy">
+        <text class="hero-title">错题复盘，稳步上岸</text>
+        <text class="hero-desc">登录后同步练习进度和复习节奏。</text>
       </view>
     </view>
 
-    <button class="btn-wechat" bindtap="onWechatLogin" loading="{{loading}}" disabled="{{loading}}">
-      <text class="btn-wechat-text">微信一键登录</text>
-    </button>
-
-    <view wx:if="{{showDevLogin}}" class="dev-entry" bindtap="onDevLogin">
-      <text>开发者模式</text>
-      <text class="dev-arrow">→</text>
+    <view class="feature-row">
+      <view class="feature-card feature-primary">
+        <view class="feature-topline"></view>
+        <view class="feature-head">
+          <text class="feature-mark primary">错</text>
+          <text class="feature-index">01</text>
+        </view>
+        <text class="feature-title">错题沉淀</text>
+        <text class="feature-desc">按掌握状态持续复盘</text>
+      </view>
+      <view class="feature-card feature-success">
+        <view class="feature-topline"></view>
+        <view class="feature-head">
+          <text class="feature-mark success">复</text>
+          <text class="feature-index">02</text>
+        </view>
+        <text class="feature-title">间隔复习</text>
+        <text class="feature-desc">到期题目及时提醒</text>
+      </view>
+      <view class="feature-card feature-warning">
+        <view class="feature-topline"></view>
+        <view class="feature-head">
+          <text class="feature-mark warning">导</text>
+          <text class="feature-index">03</text>
+        </view>
+        <text class="feature-title">题库导入</text>
+        <text class="feature-desc">解析后人工确认入库</text>
+      </view>
     </view>
 
-    <view wx:if="{{error}}" class="error-msg">{{error}}</view>
-  </view>
+    <view class="study-bridge" aria-label="学习路径提示">
+      <view class="bridge-badge">今日路径</view>
+      <view class="bridge-content">
+        <text class="bridge-title">记录错题 → 到期复习 → 稳定提分</text>
+        <text class="bridge-desc">登录后同步你的刷题进度、复习提醒和学习数据</text>
+      </view>
+      <view class="bridge-steps">
+        <view class="bridge-step active"></view>
+        <view class="bridge-step"></view>
+        <view class="bridge-step"></view>
+      </view>
+    </view>
 
-  <!-- 底部合规信息 -->
-  <view class="footer">
-    <text class="footer-text">ICP备案号：桂ICP备2026003057号</text>
-    <text class="footer-text">学习数据用于错题记录与智能刷题服务</text>
+    <view class="login-card">
+      <view class="card-head">
+        <text class="login-title">开始学习</text>
+        <text class="login-desc">使用微信身份登录，无需额外注册账号</text>
+      </view>
+
+      <button class="btn-wechat" bindtap="onWechatLogin" loading="{{loading}}" disabled="{{loading}}">
+        <text class="btn-wechat-text">微信一键登录</text>
+      </button>
+
+      <view class="agreement-area">
+        <checkbox-group bindchange="onAgreementChange">
+          <label class="agreement-check">
+            <checkbox value="agreed" checked="{{agreed}}" color="#5B7B9A" />
+            <text class="agreement-text">我已阅读并同意以下协议</text>
+          </label>
+        </checkbox-group>
+        <view class="agreement-links">
+          <text class="agreement-link" data-type="user" bindtap="openAgreement">《用户协议》</text>
+          <text class="agreement-link" data-type="privacy" bindtap="openAgreement">《隐私政策》</text>
+          <text class="agreement-link" data-type="ai" bindtap="openAgreement">《AI免责声明》</text>
+        </view>
+      </view>
+
+      <view wx:if="{{showDevLogin}}" class="dev-entry" bindtap="onDevLogin">
+        <text>开发者模式</text>
+        <text class="dev-arrow">›</text>
+      </view>
+
+      <view wx:if="{{error}}" class="error-msg">{{error}}</view>
+    </view>
+
+    <view class="footer">
+      <text class="footer-text">学习数据用于错题记录与智能刷题服务</text>
+      <text class="footer-text">ICP备案号：桂ICP备2026003057号</text>
+    </view>
   </view>
 </view>
