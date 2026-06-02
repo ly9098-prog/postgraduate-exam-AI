@@ -37,6 +37,41 @@ function _escapeRegExp(text) {
   return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+function _replaceSimpleLatexCommands(text) {
+  return String(text || '')
+    .replace(/\\leq/g, '≤')
+    .replace(/\\geq/g, '≥')
+    .replace(/\\neq/g, '≠')
+    .replace(/\\times/g, '×')
+    .replace(/\\cdot/g, '·')
+    .replace(/\\lt/g, '<')
+    .replace(/\\gt/g, '>')
+}
+
+function _toPlainInlineMathText(text) {
+  if (!text) return ''
+  const source = String(text)
+  if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
+  let plain = source.replace(/\$([^$\n]+?)\$/g, function(_, expr) {
+    return _replaceSimpleLatexCommands(expr).trim()
+  })
+  if (/\\[a-zA-Z]+/.test(plain)) return null
+  plain = plain.replace(/[ \t]+/g, ' ').replace(/\s+([，。！？；：,.!?;:])/g, '$1').trim()
+  return plain
+}
+
+function _stripLeadingOptionLabel(key, value) {
+  const text = String(value || '').trim()
+  if (!key || !text) return text
+  const label = _escapeRegExp(String(key).trim())
+  const labelPattern = new RegExp(`^${label}[\\s\\u00A0]*[.．、:：）)]\\s*`, 'i')
+  if (/^\s*\$/.test(text)) {
+    const inner = text.replace(/^\s*\$\s*/, '')
+    return '$' + inner.replace(labelPattern, '')
+  }
+  return text.replace(labelPattern, '')
+}
+
 function _normalizeOptionText(text) {
   return String(text || '')
     .replace(/<[^>]+>/g, ' ')
@@ -343,18 +378,20 @@ Page({
     const stemText = (q.content && (q.content.text || q.content.stem)) || ''
     const sourceStemText = stemText || (q.content && _segmentsToText(q.content.segments)) || ''
     const cleanedStem = _cleanStemText(sourceStemText, opts, optionKeys)
-    q._stemText = cleanedStem
-    q._stemNeedsRich = _needsRichRender(cleanedStem)
+    const plainStem = _toPlainInlineMathText(cleanedStem)
+    q._stemText = plainStem || cleanedStem
+    q._stemNeedsRich = !plainStem && _needsRichRender(cleanedStem)
     q._stemHtml = q._stemNeedsRich ? _textToHtml(cleanedStem) : ''
-    q._segments = (q.content && q.content.render_mode === 'segments') ? _textToSegments(cleanedStem) : []
+    q._segments = (q.content && q.content.render_mode === 'segments') ? _textToSegments(q._stemText) : []
     q._opts = opts
     const optHtml = {}
     const optText = {}
     const optNeedsRich = {}
     for (const key of optionKeys) {
-      const optionText = (opts && opts[key]) || ''
-      optText[key] = optionText
-      optNeedsRich[key] = _needsRichRender(optionText)
+      const optionText = _stripLeadingOptionLabel(key, (opts && opts[key]) || '')
+      const plainOptionText = _toPlainInlineMathText(optionText)
+      optText[key] = plainOptionText || optionText
+      optNeedsRich[key] = !plainOptionText && _needsRichRender(optionText)
       optHtml[key] = optNeedsRich[key] ? _optionTextToHtml(key, optionText) : ''
     }
     q._optHtml = optHtml

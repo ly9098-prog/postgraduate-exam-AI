@@ -1,5 +1,13 @@
 # Bugs History
 
+## 2026-06-02 — 刷题页 `$...$` 简单公式导致题干/选项重复显示
+
+- **现象**：OCR 导入的简单 inline math 题目在刷题页出现重复文本，例如题干重复显示，选项显示为 `A. A. S.value < 0`、`B. B. S.value ≤ 0`。
+- **原因**：部分 OCR 结果把整组选项写成 `$A. ...$`、`$B. ...$`，而刷题页本身还会渲染选项 key；同时简单 `$...$` 内容进入富文本/LaTeX 渲染链路后，在当前小程序渲染链路中容易出现重复展示。
+- **处理**：在 `miniprogram/pages/practice/practice.js` 中对简单 inline math 做保守纯文本化：将常见 LaTeX 命令如 `\\leq`、`\\geq` 转为普通符号；对选项值去除已内嵌的 A/B/C/D 前缀；复杂公式、HTML、`$$...$$` 仍走原有 `mp-html` / `math-question` 渲染。
+- **验证**：`node --check miniprogram/pages/practice/practice.js` 通过；`git diff --check -- miniprogram/pages/practice/practice.js` 通过；微信开发者工具验证问题题目已不再重复显示。
+- **说明**：该修复仅作用于刷题页展示预处理，不修改题库数据、不修改提交逻辑、不修改 `math-question` / `mp-html` 组件。
+
 ## 2026-06-01 — PaddleOCR 本地依赖链导致误报缺失
 
 - **现象**：本地后端调试图片 OCR 时，PaddleOCR 被报告为缺失或不可用。
