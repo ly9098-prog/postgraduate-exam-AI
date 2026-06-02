@@ -115,6 +115,66 @@ def _answer_page_groups(a_pages: list[int]) -> list[list[int]]:
     return groups
 
 
+# 答案列表模式：多个 "数字.字母" 连续出现
+_NUMBERED_ANSWER_PATTERN = re.compile(
+    r"^\s*\d+\s*[.、)）]\s*[A-Da-d068TFtf]\b", re.MULTILINE
+)
+
+
+def _is_continuation_answer_page(text: str, min_answers: int = 3) -> bool:
+    """判断一个页面是否是答案续页（含有多个编号答案但无明确答案关键词）。"""
+    if not text.strip():
+        return False
+    matches = _NUMBERED_ANSWER_PATTERN.findall(text)
+    return len(matches) >= min_answers
+
+
+def _expand_answer_pages(
+    normalized_blocks: list[dict],
+    initial_answer_pages: list[int],
+    question_pages: list[int],
+) -> list[int]:
+    """从首个答案页开始，向后扩展连续答案页。
+
+    扩展条件：后续页面包含 >= 3 个编号答案模式，且不是纯题目页。
+    """
+    if not initial_answer_pages:
+        return initial_answer_pages
+
+    max_answer_page = max(initial_answer_pages)
+    all_pages = sorted(set(b.get("page", 0) for b in normalized_blocks))
+
+    if not all_pages:
+        return initial_answer_pages
+
+    max_page = max(all_pages)
+    expanded = set(initial_answer_pages)
+
+    for page in range(max_answer_page + 1, max_page + 1):
+        # Skip pages already identified as pure question pages
+        if page in question_pages and page not in expanded:
+            # Check if this page really looks like answers
+            page_text = "\n".join(
+                b.get("normalized_text", "")
+                for b in normalized_blocks
+                if b.get("page") == page
+            )
+            if not _is_continuation_answer_page(page_text):
+                break
+
+        page_text = "\n".join(
+            b.get("normalized_text", "")
+            for b in normalized_blocks
+            if b.get("page") == page
+        )
+        if _is_continuation_answer_page(page_text):
+            expanded.add(page)
+        else:
+            break
+
+    return sorted(expanded)
+
+
 def analyze_structure(
     normalized_blocks: list[dict],
     file_metadata: dict | None = None,
@@ -202,7 +262,6 @@ def analyze_structure(
         block_types, pure_question_blocks, a_blocks,
         total_q_matches, total_a_matches, total_blocks,
     )
-    reason = _diagnostic_reason(mode, total_q_matches, total_a_matches, pure_question_blocks, a_pages)
 
     question_pages = [
         page
@@ -210,6 +269,12 @@ def analyze_structure(
         if bt == "question" or (bt == "mixed" and (mode != "SEPARATED" or page not in a_pages))
     ]
     q_pages = sorted(set(question_pages))
+
+    # Expand answer pages to include continuation pages
+    if mode == "SEPARATED" and a_pages:
+        a_pages = _expand_answer_pages(normalized_blocks, a_pages, q_pages)
+
+    reason = _diagnostic_reason(mode, total_q_matches, total_a_matches, pure_question_blocks, a_pages)
 
     q_density = round(total_q_matches / max(total_blocks, 1), 3)
     a_density = round(total_a_matches / max(total_blocks, 1), 3)
