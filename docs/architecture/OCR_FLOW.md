@@ -75,9 +75,10 @@ POST /api/v1/import/batches/{id}/approve  ← 批量审批，缺字段跳过，�
 ```
 文件上传 → 解析模块
   → ImportTextNormalizer（文本标准化）
-    → DocumentStructureAnalyzer（结构分析）
-      → QuestionSplitter（题目切分）
-        → AnswerMatcher（答案匹配）
+    → OCR Correction Layer（AI 噪声修复，auto 模式仅噪声时触发）
+      → DocumentStructureAnalyzer（结构分析）
+        → QuestionSplitter（题目切分）
+          → AnswerMatcher（答案匹配）
           → QuestionNormalizer（Schema 标准化）
             → AIRepairService（AI 修复，可选）
               → 审核队列 → question_imports

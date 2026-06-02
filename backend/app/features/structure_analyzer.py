@@ -101,6 +101,20 @@ def _count_ocr_noise_signals(text: str) -> int:
     return len(re.findall(r"[\x00-\x08\x0b\x0c\x0e-\x1f�]", text))
 
 
+def _answer_page_groups(a_pages: list[int]) -> list[list[int]]:
+    """将答案页按连续页码合并为区间。"""
+    if not a_pages:
+        return []
+
+    groups = [[a_pages[0]]]
+    for page in a_pages[1:]:
+        if page == groups[-1][-1] + 1:
+            groups[-1].append(page)
+        else:
+            groups.append([page])
+    return groups
+
+
 def analyze_structure(
     normalized_blocks: list[dict],
     file_metadata: dict | None = None,
