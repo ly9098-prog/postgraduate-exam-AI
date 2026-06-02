@@ -32,13 +32,13 @@
 
   <!-- 加载失败 fallback -->
   <view class="empty-state" wx:elif="{{loadError}}">
-    <text class="empty-icon">⚠️</text>
+    <view class="empty-mark danger">!</view>
     <text class="empty-title">加载失败，请返回重试</text>
   </view>
 
   <!-- 空态 -->
   <view class="empty-state" wx:elif="{{questions.length === 0}}">
-    <text class="empty-icon">📭</text>
+    <view class="empty-mark">空</view>
     <text class="empty-title">该批次无题目</text>
   </view>
 
@@ -140,7 +140,7 @@
           </view>
           <view class="ai-suggestion" wx:if="{{item._aiSuggestion}}">
             <text class="ai-sg-row" wx:if="{{item._aiSuggestion.answer}}">
-              <text class="ai-warn">⚠ AI 建议答案：</text>{{item._aiSuggestion.answer}}（需人工核对）
+              <text class="ai-warn">AI 建议答案：</text>{{item._aiSuggestion.answer}}（需人工核对）
             </text>
             <text class="ai-sg-row" wx:if="{{item._aiSuggestion.analysis}}">建议解析：{{item._aiSuggestion.analysis}}</text>
           </view>
