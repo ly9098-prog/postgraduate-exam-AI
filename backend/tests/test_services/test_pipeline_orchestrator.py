@@ -772,7 +772,7 @@ class TestBackgroundPipeline:
                 source_file="test.txt",
             ))
 
-        status = get_pipeline_status(pid)
+        status = asyncio.run(get_pipeline_status(pid))
         assert status is not None
         assert status["pipeline_id"] == pid
         assert status["status"] == "completed"
@@ -789,12 +789,12 @@ class TestBackgroundPipeline:
                 source_file="test.txt",
             ))
 
-        status = get_pipeline_status("pl_fail_001")
+        status = asyncio.run(get_pipeline_status("pl_fail_001"))
         assert status["status"] == "failed"
         assert "catastrophic failure" in status["errors"][0]
 
     def test_status_not_found(self):
-        assert get_pipeline_status("nonexistent") is None
+        assert asyncio.run(get_pipeline_status("nonexistent")) is None
 
     def test_store_pruning(self):
         """Store should not grow unbounded."""
