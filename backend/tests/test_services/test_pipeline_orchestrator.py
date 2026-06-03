@@ -181,11 +181,15 @@ class TestExtractPdfBlocks:
 
 class TestOcrScannedPdf:
     def test_renders_pages_and_calls_ocr(self):
+        from app.services.ocr_service import OcrPageResult
+
         mock_fitz = MagicMock()
         mock_doc = MagicMock()
         mock_page = MagicMock()
         mock_pix = MagicMock()
         mock_pix.tobytes.return_value = b"fake_png"
+        mock_pix.width = 800
+        mock_pix.height = 600
         mock_page.get_pixmap.return_value = mock_pix
         mock_doc.__len__ = MagicMock(return_value=1)
         mock_doc.__getitem__ = MagicMock(return_value=mock_page)
@@ -193,8 +197,8 @@ class TestOcrScannedPdf:
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}):
             with patch(
-                "app.services.ocr_service.ocr_pages",
-                return_value={1: "OCR识别结果"},
+                "app.services.ocr_service.ocr_pages_with_boxes",
+                return_value={1: OcrPageResult(page_index=1, text="OCR识别结果", boxes=[])},
             ) as mock_ocr:
                 with patch(
                     "app.services.ocr_service.clean_ocr_text",
@@ -205,10 +209,12 @@ class TestOcrScannedPdf:
         assert len(blocks) == 1
         assert blocks[0]["page"] == 1
         assert blocks[0]["text"] == "OCR识别结果"
-        mock_ocr.assert_called_once_with([(1, b"fake_png")])
+        mock_ocr.assert_called_once_with([(1, b"fake_png")], skip_rotation=True)
         mock_doc.close.assert_called_once()
 
     def test_skips_empty_ocr_pages(self):
+        from app.services.ocr_service import OcrPageResult
+
         mock_fitz = MagicMock()
         mock_doc = MagicMock()
         pages = []
@@ -216,6 +222,8 @@ class TestOcrScannedPdf:
             p = MagicMock()
             pix = MagicMock()
             pix.tobytes.return_value = b"png"
+            pix.width = 800
+            pix.height = 600
             p.get_pixmap.return_value = pix
             pages.append(p)
         mock_doc.__len__ = MagicMock(return_value=2)
@@ -224,8 +232,11 @@ class TestOcrScannedPdf:
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}):
             with patch(
-                "app.services.ocr_service.ocr_pages",
-                return_value={1: "", 2: "第二页内容"},
+                "app.services.ocr_service.ocr_pages_with_boxes",
+                return_value={
+                    1: OcrPageResult(page_index=1, text="", boxes=[]),
+                    2: OcrPageResult(page_index=2, text="第二页内容", boxes=[]),
+                },
             ):
                 with patch(
                     "app.services.ocr_service.clean_ocr_text",
@@ -265,7 +276,7 @@ class TestRunExtractOcrFallback:
                 with patch("app.core.config.settings.OCR_ENABLED", True):
                     result = pipeline._run_extract(b"pdf content", "pdf")
 
-        mock_ocr.assert_called_once_with(b"pdf content")
+        mock_ocr.assert_called_once_with(b"pdf content", pipeline_id="")
         assert result["raw_blocks"] == ocr_blocks
         assert result["extracted"] == 1
 

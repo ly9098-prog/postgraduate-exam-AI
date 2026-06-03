@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _pipeline_store: dict[str, dict] = {}
+_ocr_progress: dict[str, str] = {}  # pipeline_id -> "32/312 pages"
 
 _MAX_STORE_SIZE = 500  # keep at most N pipelines in memory
 _PIPELINE_REDIS_PREFIX = "import:pipeline"
@@ -111,62 +112,96 @@ def _extract_pdf_blocks(content: bytes) -> list[dict]:
     return blocks
 
 
-def _ocr_scanned_pdf(content: bytes) -> list[dict]:
+def _ocr_scanned_pdf(content: bytes, pipeline_id: str = "") -> list[dict]:
     """用 PaddleOCR 识别扫描版 PDF 各页。
 
-    逐页串行处理，每页 OCR 后释放图像内存以避免累积 OOM。
-    超过 MAX_OCR_PAGES 截断。
+    分批并发处理，每批 OCR 后释放图像内存以避免累积 OOM。
+    超过 MAX_OCR_PAGES 截断，超过 OCR_TIMEOUT_SECONDS 超时中断。
     输出格式：[{page, block_index, text, boxes, page_width, page_height}]
     boxes 为每行的 bbox 坐标和置信度，供后续预处理使用。
     """
     import gc
     import os
+    import time
 
     import fitz
 
-    from app.services.ocr_service import _ocr_one_page_with_boxes, clean_ocr_text
+    from app.core.config import settings
+    from app.services.ocr_service import clean_ocr_text, ocr_pages_with_boxes
 
     max_pages = int(os.environ.get("MAX_OCR_PAGES", "0"))  # 0 = no limit
+    timeout = int(os.environ.get("OCR_TIMEOUT_SECONDS", "300"))
+    batch_size = settings.OCR_MAX_WORKERS
 
     doc = fitz.open(stream=content, filetype="pdf")
     total_pages = len(doc)
     pages_to_process = min(total_pages, max_pages) if max_pages > 0 else total_pages
 
     blocks: list[dict] = []
+    page_dimensions: dict[int, tuple[int, int]] = {}
+    timed_out = False
+    start_time = time.monotonic()
     try:
-        for i in range(pages_to_process):
-            pix = doc[i].get_pixmap(dpi=150)
-            png_bytes = pix.tobytes("png")
-            pw, ph = pix.width, pix.height
-            del pix
+        for batch_start in range(0, pages_to_process, batch_size):
+            elapsed = time.monotonic() - start_time
+            if timeout > 0 and elapsed >= timeout:
+                logger.warning(
+                    "OCR 超时中断：已用 %.1fs（限制 %ds），处理了 %d/%d 页",
+                    elapsed, timeout, batch_start, pages_to_process,
+                )
+                timed_out = True
+                break
 
-            try:
-                _, raw_text, boxes = _ocr_one_page_with_boxes(png_bytes, i + 1)
-            except Exception as e:
-                logger.warning("OCR 第 %d 页失败，跳过：%s", i + 1, e)
-                raw_text, boxes = "", []
-            finally:
-                del png_bytes
-                gc.collect()
+            batch_end = min(batch_start + batch_size, pages_to_process)
+            batch_images: list[tuple[int, bytes]] = []
 
-            text = clean_ocr_text(raw_text)
-            if text.strip():
-                blocks.append({
-                    "page": i + 1,
-                    "block_index": len(blocks),
-                    "text": text,
-                    "boxes": boxes,
-                    "page_width": pw,
-                    "page_height": ph,
-                })
+            for i in range(batch_start, batch_end):
+                pix = doc[i].get_pixmap(dpi=150)
+                png_bytes = pix.tobytes("png")
+                page_dimensions[i + 1] = (pix.width, pix.height)
+                del pix
+                batch_images.append((i + 1, png_bytes))
+
+            results = ocr_pages_with_boxes(batch_images, skip_rotation=True)
+
+            del batch_images
+            gc.collect()
+
+            for page_idx in sorted(results.keys()):
+                text = clean_ocr_text(results[page_idx].text)
+                if text.strip():
+                    pw, ph = page_dimensions[page_idx]
+                    blocks.append({
+                        "page": page_idx,
+                        "block_index": len(blocks),
+                        "text": text,
+                        "boxes": results[page_idx].boxes,
+                        "page_width": pw,
+                        "page_height": ph,
+                    })
+
+            logger.info(
+                "OCR 进度：%d/%d 页已处理（%.1fs）",
+                batch_end, pages_to_process, time.monotonic() - start_time,
+            )
+            if pipeline_id:
+                _ocr_progress[pipeline_id] = f"{batch_end}/{pages_to_process} pages"
     finally:
         doc.close()
 
-    if max_pages > 0 and total_pages > max_pages and blocks:
+    if timed_out and blocks:
+        blocks[0].setdefault("_warnings", [])
+        blocks[0]["_warnings"].append(
+            f"ocr_timeout: processed {len(blocks)} blocks in {timeout}s limit"
+        )
+    elif max_pages > 0 and total_pages > max_pages and blocks:
         blocks[0].setdefault("_warnings", [])
         blocks[0]["_warnings"].append(
             f"ocr_pages_truncated: processed {pages_to_process}/{total_pages} pages"
         )
+
+    if pipeline_id:
+        _ocr_progress.pop(pipeline_id, None)
 
     return blocks
 
@@ -321,7 +356,7 @@ class ImportPipeline:
                         "PDF text only %d chars, attempting PaddleOCR fallback", total_text,
                     )
                     try:
-                        ocr_blocks = _ocr_scanned_pdf(file_content)
+                        ocr_blocks = _ocr_scanned_pdf(file_content, pipeline_id=self.pipeline_id)
                         if ocr_blocks:
                             raw_blocks = ocr_blocks
                             logger.info(
@@ -957,4 +992,7 @@ async def run_excel_pipeline_background(
 
 async def get_pipeline_status(pipeline_id: str) -> dict | None:
     """查询流水线状态（Redis + 内存 fallback）。"""
-    return await _get_pipeline_store(pipeline_id)
+    data = await _get_pipeline_store(pipeline_id)
+    if data and pipeline_id in _ocr_progress:
+        data["ocr_progress"] = _ocr_progress[pipeline_id]
+    return data
