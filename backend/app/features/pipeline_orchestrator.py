@@ -100,11 +100,11 @@ def _ocr_scanned_pdf(content: bytes) -> list[dict]:
 
     from app.services.ocr_service import _ocr_one_page_with_boxes, clean_ocr_text
 
-    max_pages = int(os.environ.get("MAX_OCR_PAGES", "30"))
+    max_pages = int(os.environ.get("MAX_OCR_PAGES", "0"))  # 0 = no limit
 
     doc = fitz.open(stream=content, filetype="pdf")
     total_pages = len(doc)
-    pages_to_process = min(total_pages, max_pages)
+    pages_to_process = min(total_pages, max_pages) if max_pages > 0 else total_pages
 
     blocks: list[dict] = []
     try:
@@ -136,7 +136,7 @@ def _ocr_scanned_pdf(content: bytes) -> list[dict]:
     finally:
         doc.close()
 
-    if total_pages > max_pages and blocks:
+    if max_pages > 0 and total_pages > max_pages and blocks:
         blocks[0].setdefault("_warnings", [])
         blocks[0]["_warnings"].append(
             f"ocr_pages_truncated: processed {pages_to_process}/{total_pages} pages"
