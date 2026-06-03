@@ -55,6 +55,11 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       WECHAT_APP_ID: ${WECHAT_APP_ID:?必须设置 WECHAT_APP_ID}
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:?必须设置 WECHAT_APP_SECRET}
+      OCR_ENABLED: ${OCR_ENABLED:-false}
+      OCR_MAX_WORKERS: ${OCR_MAX_WORKERS:-1}
+      OMP_NUM_THREADS: 1
+      MKL_NUM_THREADS: 1
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
       CORS_ORIGINS: ${CORS_ORIGINS:-["https://your-domain.com"]}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
