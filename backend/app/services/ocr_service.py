@@ -446,8 +446,6 @@ def _ocr_one_page_with_boxes(page_png: bytes, page_index: int) -> tuple[int, str
         lines = [line["text"] for line in ordered if line["text"].strip()]
         boxes = [{"bbox": line["bbox"], "conf": line["conf"]} for line in ordered]
         return page_index, "\n".join(lines), boxes
-    except RuntimeError:
-        raise
     except Exception as e:
         logger.warning("OCR（含框）第 %d 页失败：%s", page_index, e)
         return page_index, "", []
@@ -511,8 +509,13 @@ def ocr_pages_with_boxes(
             for idx, png in page_images
         }
         for future in as_completed(futures):
-            idx, text, boxes = future.result()
-            results[idx] = OcrPageResult(page_index=idx, text=text, boxes=boxes)
+            page_idx = futures[future]
+            try:
+                idx, text, boxes = future.result()
+                results[idx] = OcrPageResult(page_index=idx, text=text, boxes=boxes)
+            except Exception as e:
+                logger.warning("OCR 第 %d 页异常，跳过：%s", page_idx, e)
+                results[page_idx] = OcrPageResult(page_index=page_idx, text="", boxes=[])
 
     return results
 
