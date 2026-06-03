@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     OCR_DROP_SCORE: float = 0.3
     OCR_MIN_IMAGE_WIDTH: int = 1500
     MAX_OCR_PAGES: int = 0  # 0 = no limit
-    OCR_TIMEOUT_SECONDS: int = 300
+    OCR_TIMEOUT_SECONDS: int = 600
     IMAGE_IMPORT_MAX_BYTES: int = 10 * 1024 * 1024
 
     # Redis

@@ -591,3 +591,57 @@ page {
 .stat-rejected .stat-dot {
   background: #C47A7A;
 }
+
+/* 页码范围 */
+.page-range-section {
+  margin: 0 32rpx 24rpx;
+  padding: 24rpx 28rpx;
+  background: #FAFBFC;
+  border-radius: 16rpx;
+  border: 1rpx solid #E8ECF0;
+}
+
+.page-range-hint {
+  font-size: 24rpx;
+  color: #8A9BAE;
+  display: block;
+  margin-bottom: 16rpx;
+}
+
+.page-range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.page-range-input {
+  flex: 1;
+  height: 64rpx;
+  background: #fff;
+  border: 1rpx solid #DDE3EA;
+  border-radius: 12rpx;
+  padding: 0 20rpx;
+  font-size: 28rpx;
+  text-align: center;
+}
+
+.page-range-sep {
+  font-size: 28rpx;
+  color: #8A9BAE;
+}
+
+.page-range-confirm {
+  margin-top: 20rpx;
+  height: 72rpx;
+  background: #4A7C6F;
+  border-radius: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page-range-confirm-text {
+  font-size: 28rpx;
+  color: #fff;
+  font-weight: 500;
+}

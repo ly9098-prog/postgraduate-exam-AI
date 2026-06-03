@@ -40,6 +40,21 @@
     </view>
   </view>
 
+  <!-- 页码范围（仅PDF） -->
+  <view class="page-range-section" wx:if="{{showPageRange}}">
+    <text class="page-range-hint">页码范围（可选，留空处理全部页面）</text>
+    <view class="page-range-inputs">
+      <input class="page-range-input" type="number" placeholder="起始页"
+        value="{{pageStart}}" bindinput="onPageStartInput" />
+      <text class="page-range-sep">—</text>
+      <input class="page-range-input" type="number" placeholder="结束页"
+        value="{{pageEnd}}" bindinput="onPageEndInput" />
+    </view>
+    <view class="page-range-confirm" bindtap="confirmUpload">
+      <text class="page-range-confirm-text">开始上传</text>
+    </view>
+  </view>
+
   <!-- 导入进度卡片 -->
   <view class="pipeline-task-card" wx:if="{{pipelineTask}}">
     <view class="pipeline-task-row">
