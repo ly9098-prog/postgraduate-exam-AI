@@ -82,9 +82,6 @@ def _extract_pdf_blocks(content: bytes) -> list[dict]:
     finally:
         doc.close()
 
-    if not blocks:
-        raise ValueError("PDF 中未提取到文本内容")
-
     return blocks
 
 
@@ -308,6 +305,16 @@ class ImportPipeline:
                         logger.warning(
                             "OCR fallback failed, using original extraction: %s", exc,
                         )
+                else:
+                    logger.warning(
+                        "PDF text only %d chars but OCR_ENABLED=false, cannot extract scanned content",
+                        total_text,
+                    )
+
+            if not raw_blocks:
+                raise ValueError(
+                    "PDF 中未提取到文本内容（文本层为空且 OCR 未启用或失败）"
+                )
         else:
             raw_blocks = _extract_text_blocks(file_content)
 

@@ -156,7 +156,7 @@ class TestExtractPdfBlocks:
         assert len(blocks) == 1
         assert blocks[0]["page"] == 2
 
-    def test_all_empty_raises(self):
+    def test_all_empty_returns_empty_list(self):
         mock_fitz = MagicMock()
         mock_doc = MagicMock()
         mock_page = MagicMock()
@@ -165,8 +165,8 @@ class TestExtractPdfBlocks:
         mock_fitz.open.return_value = mock_doc
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}):
-            with pytest.raises(ValueError, match="未提取到文本"):
-                _extract_pdf_blocks(b"empty pdf")
+            result = _extract_pdf_blocks(b"empty pdf")
+            assert result == []
 
     def test_no_fitz_raises(self):
         with patch.dict(sys.modules, {"fitz": None}):
