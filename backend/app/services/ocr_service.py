@@ -8,6 +8,7 @@
 """
 import logging
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,6 +18,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 _ocr_instance = None
+_ocr_lock = threading.Lock()  # serialize GPU inference calls
 
 
 _OCR_MAX_SIDE = 3000
@@ -302,7 +304,8 @@ def _rotate_image_for_ocr(img, degrees: int):
 
 
 def _ocr_prepared_image(ocr, img) -> Any:
-    return ocr.ocr(_image_to_array(img), cls=True)
+    with _ocr_lock:
+        return ocr.ocr(_image_to_array(img), cls=True)
 
 
 def _ocr_with_rotation_candidates(ocr, image_bytes: bytes) -> OcrCandidateResult:
