@@ -121,7 +121,6 @@ def _ocr_scanned_pdf(content: bytes, pipeline_id: str = "") -> list[dict]:
     boxes 为每行的 bbox 坐标和置信度，供后续预处理使用。
     """
     import gc
-    import os
     import time
 
     import fitz
@@ -129,8 +128,8 @@ def _ocr_scanned_pdf(content: bytes, pipeline_id: str = "") -> list[dict]:
     from app.core.config import settings
     from app.services.ocr_service import clean_ocr_text, ocr_pages_with_boxes
 
-    max_pages = int(os.environ.get("MAX_OCR_PAGES", "0"))  # 0 = no limit
-    timeout = int(os.environ.get("OCR_TIMEOUT_SECONDS", "300"))
+    max_pages = settings.MAX_OCR_PAGES
+    timeout = settings.OCR_TIMEOUT_SECONDS
     batch_size = settings.OCR_MAX_WORKERS
 
     doc = fitz.open(stream=content, filetype="pdf")
