@@ -67,3 +67,6 @@ deploy/logs/
 # Docker volumes
 pgdata/
 redisdata/
+
+# Large test fixtures
+backend/tests/fixtures/*.pdf
