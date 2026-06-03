@@ -446,3 +446,111 @@ def split_questions(
         })
 
     return questions
+
+
+def split_by_visual_boundaries(
+    normalized_blocks: list[dict],
+    boundaries: list[dict],
+) -> list[dict]:
+    """按视觉边界位置切分文本为题目列表。
+
+    Args:
+        normalized_blocks: 标准化后的 blocks（含 normalized_text）
+        boundaries: detect_visual_boundaries() 的输出
+
+    Returns:
+        raw_questions 列表，格式同 split_questions 输出
+    """
+    if not boundaries:
+        return []
+
+    # 建立 block_index → block 的映射
+    block_map: dict[int, dict] = {}
+    for block in normalized_blocks:
+        block_map[block.get("block_index", 0)] = block
+
+    # 为每个边界获取对应的文本行位置
+    segments: list[dict] = []
+    for i, bound in enumerate(boundaries):
+        blk_idx = bound["block_index"]
+        line_idx = bound["line_index"]
+        page = bound["page"]
+
+        block = block_map.get(blk_idx)
+        if not block:
+            continue
+
+        text = block.get("normalized_text") or block.get("text", "")
+        lines = text.split("\n")
+
+        # 确定当前段的结束位置
+        if i + 1 < len(boundaries):
+            next_bound = boundaries[i + 1]
+            if next_bound["block_index"] == blk_idx:
+                # 同一 block 内的下一个边界
+                end_line = next_bound["line_index"]
+                segment_lines = lines[line_idx:end_line]
+            else:
+                # 当前 block 剩余 + 中间 blocks 直到下一个边界 block
+                segment_lines = lines[line_idx:]
+                for mid_idx in range(blk_idx + 1, next_bound["block_index"]):
+                    mid_block = block_map.get(mid_idx)
+                    if mid_block:
+                        mid_text = mid_block.get("normalized_text") or mid_block.get("text", "")
+                        segment_lines.extend(mid_text.split("\n"))
+                # 下一个边界 block 的前几行
+                next_block = block_map.get(next_bound["block_index"])
+                if next_block:
+                    next_text = next_block.get("normalized_text") or next_block.get("text", "")
+                    next_lines = next_text.split("\n")
+                    segment_lines.extend(next_lines[:next_bound["line_index"]])
+        else:
+            # 最后一个边界：取当前 block 剩余 + 后续所有 blocks
+            segment_lines = lines[line_idx:]
+            max_blk_idx = max(block_map.keys()) if block_map else blk_idx
+            for tail_idx in range(blk_idx + 1, max_blk_idx + 1):
+                tail_block = block_map.get(tail_idx)
+                if tail_block:
+                    tail_text = tail_block.get("normalized_text") or tail_block.get("text", "")
+                    segment_lines.extend(tail_text.split("\n"))
+
+        raw_text = "\n".join(segment_lines).strip()
+        if not raw_text:
+            continue
+
+        segments.append({
+            "raw_text": raw_text,
+            "page": page,
+            "signal": bound.get("signal", ""),
+        })
+
+    # 转为标准 raw_question 格式
+    questions: list[dict] = []
+    for idx, seg in enumerate(segments):
+        raw_text = seg["raw_text"]
+        first_line = raw_text.split("\n")[0].strip()
+
+        # 尝试从首行提取题号
+        num_result = _detect_question_number(first_line)
+        number = num_result[0] if num_result else idx + 1
+
+        options = _extract_options(raw_text)
+
+        conf = 0.6
+        if options and len(options) >= 3:
+            conf = 0.7
+        if seg["signal"] == "large_gap":
+            conf = 0.4
+
+        questions.append({
+            "number": number,
+            "raw_question_text": raw_text,
+            "page_start": seg["page"],
+            "page_end": seg["page"],
+            "has_options": len(options) > 0,
+            "option_lines": options,
+            "confidence": conf,
+            "detection_method": "visual_boundary",
+        })
+
+    return questions

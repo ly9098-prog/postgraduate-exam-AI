@@ -608,6 +608,8 @@ async def pipeline_upload(
     subject: str | None = None,
     enable_ai_repair: bool = True,
     confidence_threshold: float = 0.6,
+    page_start: int | None = None,
+    page_end: int | None = None,
     _: User = Depends(require_app_permission("import:write")),
 ):
     """统一导入入口：支持 Excel / PDF / TXT / 图片，异步返回 pipeline_id。
@@ -634,6 +636,14 @@ async def pipeline_upload(
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="文件内容为空")
+
+    # 页码范围校验
+    if page_start is not None and page_start < 1:
+        raise HTTPException(status_code=400, detail="page_start 必须 >= 1")
+    if page_end is not None and page_end < 1:
+        raise HTTPException(status_code=400, detail="page_end 必须 >= 1")
+    if page_end is not None and page_start is not None and page_end < page_start:
+        raise HTTPException(status_code=400, detail="page_end 必须 >= page_start")
 
     # --- Image branch ---
     if is_image:
@@ -699,6 +709,8 @@ async def pipeline_upload(
     options = {
         "enable_ai_repair": enable_ai_repair,
         "confidence_threshold": confidence_threshold,
+        "page_start": page_start,
+        "page_end": page_end,
     }
 
     background_tasks.add_task(

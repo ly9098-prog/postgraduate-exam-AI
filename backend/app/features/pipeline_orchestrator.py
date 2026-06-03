@@ -84,7 +84,7 @@ async def _get_pipeline_store(pipeline_id: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-def _extract_pdf_blocks(content: bytes) -> list[dict]:
+def _extract_pdf_blocks(content: bytes, page_start: int = 1, page_end: int | None = None) -> list[dict]:
     """Extract text blocks from PDF using PyMuPDF.
 
     Returns list of {page, block_index, text} for use as raw_blocks input
@@ -96,14 +96,18 @@ def _extract_pdf_blocks(content: bytes) -> list[dict]:
         raise RuntimeError("PyMuPDF (fitz) 未安装，无法提取 PDF 文本")
 
     doc = fitz.open(stream=content, filetype="pdf")
+    total_pages = len(doc)
+    start_idx = max(0, (page_start or 1) - 1)
+    end_idx = min(total_pages, page_end or total_pages)
+
     blocks: list[dict] = []
     try:
-        for i, page in enumerate(doc):
-            text = page.get_text()
+        for i in range(start_idx, end_idx):
+            text = doc[i].get_text()
             if text.strip():
                 blocks.append({
                     "page": i + 1,
-                    "block_index": i,
+                    "block_index": len(blocks),
                     "text": text.strip(),
                 })
     finally:
@@ -112,7 +116,7 @@ def _extract_pdf_blocks(content: bytes) -> list[dict]:
     return blocks
 
 
-def _ocr_scanned_pdf(content: bytes, pipeline_id: str = "") -> list[dict]:
+def _ocr_scanned_pdf(content: bytes, pipeline_id: str = "", page_start: int = 1, page_end: int | None = None) -> list[dict]:
     """用 PaddleOCR 识别扫描版 PDF 各页。
 
     分批并发处理，每批 OCR 后释放图像内存以避免累积 OOM。
@@ -134,7 +138,12 @@ def _ocr_scanned_pdf(content: bytes, pipeline_id: str = "") -> list[dict]:
 
     doc = fitz.open(stream=content, filetype="pdf")
     total_pages = len(doc)
-    pages_to_process = min(total_pages, max_pages) if max_pages > 0 else total_pages
+
+    # Page range: convert 1-based user params to 0-based indices
+    start_idx = max(0, (page_start or 1) - 1)
+    end_idx = min(total_pages, page_end or total_pages)
+    pages_in_range = end_idx - start_idx
+    pages_to_process = min(pages_in_range, max_pages) if max_pages > 0 else pages_in_range
 
     blocks: list[dict] = []
     page_dimensions: dict[int, tuple[int, int]] = {}
@@ -155,11 +164,12 @@ def _ocr_scanned_pdf(content: bytes, pipeline_id: str = "") -> list[dict]:
             batch_images: list[tuple[int, bytes]] = []
 
             for i in range(batch_start, batch_end):
-                pix = doc[i].get_pixmap(dpi=150)
+                page_idx = start_idx + i
+                pix = doc[page_idx].get_pixmap(dpi=150)
                 png_bytes = pix.tobytes("png")
-                page_dimensions[i + 1] = (pix.width, pix.height)
+                page_dimensions[page_idx + 1] = (pix.width, pix.height)
                 del pix
-                batch_images.append((i + 1, png_bytes))
+                batch_images.append((page_idx + 1, png_bytes))
 
             results = ocr_pages_with_boxes(batch_images, skip_rotation=True)
 
@@ -342,7 +352,12 @@ class ImportPipeline:
         fallback automatically when OCR_ENABLED is True.
         """
         if source_type == "pdf":
-            raw_blocks = _extract_pdf_blocks(file_content)
+            opts = _kw.get("options") or {}
+            raw_blocks = _extract_pdf_blocks(
+                file_content,
+                page_start=opts.get("page_start") or 1,
+                page_end=opts.get("page_end"),
+            )
 
             # Scanned PDF detection: if PyMuPDF extracted very little text,
             # the PDF likely contains only images → trigger OCR fallback.
@@ -355,7 +370,13 @@ class ImportPipeline:
                         "PDF text only %d chars, attempting PaddleOCR fallback", total_text,
                     )
                     try:
-                        ocr_blocks = _ocr_scanned_pdf(file_content, pipeline_id=self.pipeline_id)
+                        opts = _kw.get("options") or {}
+                        ocr_blocks = _ocr_scanned_pdf(
+                            file_content,
+                            pipeline_id=self.pipeline_id,
+                            page_start=opts.get("page_start") or 1,
+                            page_end=opts.get("page_end"),
+                        )
                         if ocr_blocks:
                             raw_blocks = ocr_blocks
                             logger.info(
@@ -463,20 +484,38 @@ class ImportPipeline:
         warnings: list[str] = []
         if not raw_questions:
             if text_blocks:
-                raw_questions = [{
-                    "number": 1,
-                    "raw_question_text": "\n".join(
-                        str(b.get("normalized_text") or "").strip() for b in text_blocks
-                    ),
-                    "page_start": text_blocks[0].get("page", 1),
-                    "page_end": text_blocks[-1].get("page", text_blocks[0].get("page", 1)),
-                    "has_options": False,
-                    "option_lines": {},
-                    "confidence": 0.2,
-                }]
-                warnings.append("no questions found in document; created low-confidence review item")
-                split_diagnostics["fallback_created"] = True
-                split_diagnostics["failure_reason"] = "text_present_but_no_question_boundary"
+                # 尝试视觉边界检测（需要 boxes 数据）
+                has_boxes = any(b.get("boxes") for b in normalized_blocks)
+                if has_boxes:
+                    try:
+                        from app.features.visual_boundary_detector import detect_visual_boundaries
+                        from app.features.question_splitter import split_by_visual_boundaries
+                        visual_bounds = detect_visual_boundaries(normalized_blocks)
+                        if len(visual_bounds) >= 2:
+                            raw_questions = split_by_visual_boundaries(normalized_blocks, visual_bounds)
+                            warnings.append(f"visual_boundary: split {len(raw_questions)} questions via bbox")
+                            split_diagnostics["failure_reason"] = None
+                            split_diagnostics["fallback_created"] = False
+                            split_diagnostics["detection_method"] = "visual_boundary"
+                    except Exception as exc:
+                        logger.warning("visual boundary detection failed: %s", exc)
+
+                # 仍然无结果时 fallback 为单条
+                if not raw_questions:
+                    raw_questions = [{
+                        "number": 1,
+                        "raw_question_text": "\n".join(
+                            str(b.get("normalized_text") or "").strip() for b in text_blocks
+                        ),
+                        "page_start": text_blocks[0].get("page", 1),
+                        "page_end": text_blocks[-1].get("page", text_blocks[0].get("page", 1)),
+                        "has_options": False,
+                        "option_lines": {},
+                        "confidence": 0.2,
+                    }]
+                    warnings.append("no questions found in document; created low-confidence review item")
+                    split_diagnostics["fallback_created"] = True
+                    split_diagnostics["failure_reason"] = "text_present_but_no_question_boundary"
             else:
                 warnings.append("no questions found in document")
                 split_diagnostics["fallback_created"] = False

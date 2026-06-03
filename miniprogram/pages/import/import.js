@@ -18,6 +18,9 @@ Page({
     error: '',
     pipelineTask: null,
     pipelinePolling: false,
+    showPageRange: false,
+    pageStart: '',
+    pageEnd: '',
   },
 
   onLoad() {
@@ -100,7 +103,12 @@ Page({
           wx.showToast({ title: '不支持该格式，仅支持 xlsx/pdf/txt/jpg/png/webp', icon: 'none' })
           return
         }
-        this.unifiedUpload(file.path, file.name || name)
+        this.setData({ showPageRange: ext === 'pdf' })
+        if (ext === 'pdf') {
+          this.setData({ _pendingFile: { path: file.path, name: file.name || name } })
+        } else {
+          this.unifiedUpload(file.path, file.name || name)
+        }
       },
       fail: (err) => {
         if (err && err.errMsg && err.errMsg.includes('cancel')) return
@@ -151,12 +159,31 @@ Page({
   },
 
   async unifiedUpload(path, name) {
+    const ps = parseInt(this.data.pageStart, 10)
+    const pe = parseInt(this.data.pageEnd, 10)
+    if (this.data.pageStart && (isNaN(ps) || ps < 1)) {
+      wx.showToast({ title: '起始页必须为正整数', icon: 'none' })
+      return
+    }
+    if (this.data.pageEnd && (isNaN(pe) || pe < 1)) {
+      wx.showToast({ title: '结束页必须为正整数', icon: 'none' })
+      return
+    }
+    if (ps && pe && pe < ps) {
+      wx.showToast({ title: '结束页不能小于起始页', icon: 'none' })
+      return
+    }
     wx.showLoading({ title: '上传中...' })
     try {
       const token = wx.getStorageSync('token')
+      let uploadUrl = `${config.BASE_URL}/import/pipeline/upload`
+      const params = []
+      if (this.data.pageStart) params.push(`page_start=${this.data.pageStart}`)
+      if (this.data.pageEnd) params.push(`page_end=${this.data.pageEnd}`)
+      if (params.length) uploadUrl += '?' + params.join('&')
       const res = await new Promise((resolve, reject) => {
         wx.uploadFile({
-          url: `${config.BASE_URL}/import/pipeline/upload`,
+          url: uploadUrl,
           filePath: path,
           name: 'file',
           header: { Authorization: `Bearer ${token}` },
@@ -187,6 +214,10 @@ Page({
           source_file: name,
         },
         pipelinePolling: true,
+        showPageRange: false,
+        pageStart: '',
+        pageEnd: '',
+        _pendingFile: null,
       })
       this.pollPipeline(res.pipeline_id)
     } catch (err) {
@@ -197,6 +228,20 @@ Page({
         showCancel: false,
       })
     }
+  },
+
+  onPageStartInput(e) {
+    this.setData({ pageStart: e.detail.value })
+  },
+
+  onPageEndInput(e) {
+    this.setData({ pageEnd: e.detail.value })
+  },
+
+  confirmUpload() {
+    const f = this.data._pendingFile
+    if (!f) return
+    this.unifiedUpload(f.path, f.name)
   },
 
   async pollPipeline(pipelineId) {
