@@ -1,49 +1,25 @@
-## P0$号包裹的数学公式内容在刷题页面出现重复
+## P0 书籍扫描版PDF文件文件导入解析超时
 
-##### 原题：
+问题：
+导入"/backend/tests/fixtures/wangdao_408.pdf"全文扫描解析时，等待1个小时仍然没有解析完成，文件状态始终不变
 
-对信号量 S 执行 P 操作后，使该进程进入资源等待队列的条件是（ ）。
+前端控制台打印：
 
-A. S.value < 0
-B. S.value ≤ 0
-C. S.value > 0
-D. S.value ≥ 0
+```
+[TRACE:NO_TRACE][API_ERROR] ➤ {method: "GET", url: "/import/pipelines/pl_20260603_185753_ea16b3", message: "request:fail timeout"} ➤ 查询导入状态失败 ➤ {errMsg: "request:fail timeout"} (env: Windows,mp,2.01.2510290; lib: 3.6.6)
+```
 
+后端控制台打印：
 
-
-#### OCR识别内容:
-
-对信号量 $S $执行 $P $操作后，使该进程进入资源等待队列的条件是（ ）。
-
-$A. S.value < 0$
-$B. S.value \leq 0$
-$C. S.value > 0$
-$D. S.value \geq 0$
-
-
-
-##### 带数学公式题目在刷题页面显示重复内容：
-
-对信号量 S 执行 P 操作后，使该进程进入资源等待队列的条件是（ ）。
-
-对信号量 S 执行 P 操作后，使该进程进入资源等待队列的条件的是（ ）。
-
-A. A. S.value < 0
-A. S.value < 0
-
-B. B. S.value ≤ 0
-B. S.value ≤ 0
-
-C. C. S.value > 0
-C. S.value > 0
-
-D. D. S.value ≥ 0
-D. S.value ≥ 0
-
-##### 控制台打印：
-
-```javascript
-[TRACE:TRACE_20260602_c7c27c][BEFORE_RENDER]
-{questionId: 22, index: 0, renderCount: 1, optionKeys: Array(4), sourceLen: 40, ...}
+```
+2026-06-03 18:57:53,225 INFO sqlalchemy.engine.Engine [cached since 281s ago] (72,)
+2026-06-03 18:57:53 | INFO    | sqlalchemy.engine.Engine | [cached since 281s ago] (72,)
+2026-06-03 18:57:53,402 INFO sqlalchemy.engine.Engine ROLLBACK
+2026-06-03 18:57:53 | INFO    | sqlalchemy.engine.Engine | ROLLBACK
+2026-06-03 18:57:53 | INFO    | 2240ai | POST /api/v1/import/pipeline/upload → 200 (2222ms)
+2026-06-03 18:57:53 | INFO    | uvicorn.access | 127.0.0.1:54632 - "POST /api/v1/import/pipeline/upload HTTP/1.1" 200
+2026-06-03 18:57:53 | INFO    | app.features.pipeline_orchestrator | PDF text only 0 chars, attempting PaddleOCR fallback
+/home/lmh/projects/postgraduate-ai/backend/.venv/lib/python3.12/site-packages/paddle/utils/cpp_extension/extension_utils.py:712: UserWarning: No ccache found. Please be aware that recompiling all source files may be required. You can download and install ccache from: https://github.com/ccache/ccache/blob/master/doc/INSTALL.md
+  warnings.warn(warning_message)
 ```
 
