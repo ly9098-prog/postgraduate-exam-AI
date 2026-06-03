@@ -22,7 +22,7 @@ class TestRunExcelPipelineBackground:
             import_excel_fn=mock_import,
         ))
 
-        status = get_pipeline_status("xl_test_001")
+        status = asyncio.run(get_pipeline_status("xl_test_001"))
         assert status is not None
         assert status["status"] == "completed"
         assert status["source_type"] == "excel"
@@ -38,7 +38,7 @@ class TestRunExcelPipelineBackground:
             import_excel_fn=mock_import,
         ))
 
-        status = get_pipeline_status("xl_fail_001")
+        status = asyncio.run(get_pipeline_status("xl_fail_001"))
         assert status is not None
         assert status["status"] == "failed"
         assert status["source_type"] == "excel"
@@ -193,12 +193,12 @@ class TestPipelineStatusQuery:
             "status": "completed",
             "source_type": "pdf",
         }
-        status = get_pipeline_status("pl_query_001")
+        status = asyncio.run(get_pipeline_status("pl_query_001"))
         assert status is not None
         assert status["source_type"] == "pdf"
 
     def test_orchestrator_store_not_found(self):
-        status = get_pipeline_status("pl_nonexistent_999")
+        status = asyncio.run(get_pipeline_status("pl_nonexistent_999"))
         assert status is None
 
     def test_excel_pipeline_in_orchestrator_store(self):
@@ -208,7 +208,7 @@ class TestPipelineStatusQuery:
             "source_type": "excel",
             "batch_id": "b123",
         }
-        status = get_pipeline_status("xl_query_001")
+        status = asyncio.run(get_pipeline_status("xl_query_001"))
         assert status is not None
         assert status["source_type"] == "excel"
         assert status["batch_id"] == "b123"
