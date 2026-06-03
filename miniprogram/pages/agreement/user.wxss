@@ -1,36 +1,123 @@
 page {
-  background: #F5F3EE;
+  background: #F7F5F0;
 }
 
 .agreement-page {
   min-height: 100vh;
-  padding: 32rpx 32rpx calc(48rpx + env(safe-area-inset-bottom));
+  padding: 24rpx 24rpx calc(48rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
+  background: #F7F5F0;
 }
 
+.agreement-hero,
 .agreement-card {
-  background: #fff;
-  border-radius: 24rpx;
-  padding: 40rpx 34rpx;
-  box-shadow: 0 8rpx 28rpx rgba(45,62,80,0.06);
+  background: #FFFFFF;
+  border-radius: 30rpx;
+  border: 1rpx solid rgba(232, 229, 224, 0.82);
+  box-shadow: 0 6rpx 28rpx rgba(43, 60, 80, 0.06);
+}
+
+.agreement-hero {
+  padding: 34rpx 30rpx;
+  background: linear-gradient(135deg, #FFFFFF 0%, #FAFBF8 58%, #EDF1F5 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.agreement-hero::before {
+  content: '';
+  position: absolute;
+  left: 30rpx;
+  bottom: 24rpx;
+  width: 92rpx;
+  height: 6rpx;
+  border-radius: 999rpx;
+  background: #5B7B9A;
+  opacity: 0.34;
+}
+
+.agreement-hero::after {
+  content: '';
+  position: absolute;
+  right: -54rpx;
+  top: -58rpx;
+  width: 190rpx;
+  height: 190rpx;
+  border-radius: 999rpx;
+  background: rgba(107, 155, 107, 0.08);
+}
+
+.agreement-kicker {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  padding: 6rpx 14rpx;
+  border-radius: 999rpx;
+  background: #EDF1F5;
+  font-size: 21rpx;
+  line-height: 1.35;
+  color: #5B7B9A;
+  font-weight: 700;
 }
 
 .agreement-title {
+  position: relative;
+  z-index: 1;
   display: block;
-  font-size: 36rpx;
-  font-weight: 700;
+  margin-top: 16rpx;
+  font-size: 42rpx;
+  font-weight: 800;
   color: #2D3E50;
-  margin-bottom: 28rpx;
+  line-height: 1.18;
+}
+
+.agreement-desc {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: #6B7B8D;
+}
+
+.agreement-card {
+  margin-top: 18rpx;
+  padding: 26rpx;
 }
 
 .agreement-body {
   display: flex;
   flex-direction: column;
-  gap: 22rpx;
+  gap: 18rpx;
+}
+
+.agreement-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 20rpx;
+  border-radius: 22rpx;
+  background: #F7F6F2;
+}
+
+.item-index {
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 999rpx;
+  background: #EDF1F5;
+  color: #5B7B9A;
+  font-size: 22rpx;
+  line-height: 44rpx;
+  text-align: center;
+  font-weight: 800;
+  flex-shrink: 0;
 }
 
 .agreement-paragraph {
-  font-size: 28rpx;
-  line-height: 1.8;
+  flex: 1;
+  min-width: 0;
+  font-size: 27rpx;
+  line-height: 1.72;
   color: #536577;
 }
