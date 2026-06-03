@@ -88,19 +88,19 @@ def _extract_pdf_blocks(content: bytes) -> list[dict]:
 def _ocr_scanned_pdf(content: bytes) -> list[dict]:
     """用 PaddleOCR 识别扫描版 PDF 各页。
 
-    同步调用，内部通过 ThreadPoolExecutor 并发处理多页。
-    分批渲染以控制峰值内存，超过 MAX_OCR_PAGES 截断。
+    逐页串行处理，每页 OCR 后释放图像内存以避免累积 OOM。
+    超过 MAX_OCR_PAGES 截断。
     输出格式：[{page, block_index, text, boxes, page_width, page_height}]
     boxes 为每行的 bbox 坐标和置信度，供后续预处理使用。
     """
+    import gc
     import os
 
     import fitz
 
-    from app.services.ocr_service import clean_ocr_text, ocr_pages_with_boxes
+    from app.services.ocr_service import _ocr_one_page_with_boxes, clean_ocr_text
 
     max_pages = int(os.environ.get("MAX_OCR_PAGES", "30"))
-    batch_size = 5
 
     doc = fitz.open(stream=content, filetype="pdf")
     total_pages = len(doc)
@@ -108,29 +108,31 @@ def _ocr_scanned_pdf(content: bytes) -> list[dict]:
 
     blocks: list[dict] = []
     try:
-        for batch_start in range(0, pages_to_process, batch_size):
-            batch_end = min(batch_start + batch_size, pages_to_process)
-            page_images: list[tuple[int, bytes]] = []
-            page_sizes: dict[int, tuple[int, int]] = {}
-            for i in range(batch_start, batch_end):
-                pix = doc[i].get_pixmap(dpi=150)
-                page_images.append((i + 1, pix.tobytes("png")))
-                page_sizes[i + 1] = (pix.width, pix.height)
+        for i in range(pages_to_process):
+            pix = doc[i].get_pixmap(dpi=150)
+            png_bytes = pix.tobytes("png")
+            pw, ph = pix.width, pix.height
+            del pix
 
-            ocr_results = ocr_pages_with_boxes(page_images)
-            for page_idx in sorted(ocr_results.keys()):
-                result = ocr_results[page_idx]
-                text = clean_ocr_text(result.text)
-                if text.strip():
-                    pw, ph = page_sizes.get(page_idx, (0, 0))
-                    blocks.append({
-                        "page": page_idx,
-                        "block_index": len(blocks),
-                        "text": text,
-                        "boxes": result.boxes or [],
-                        "page_width": pw,
-                        "page_height": ph,
-                    })
+            try:
+                _, raw_text, boxes = _ocr_one_page_with_boxes(png_bytes, i + 1)
+            except Exception as e:
+                logger.warning("OCR 第 %d 页失败，跳过：%s", i + 1, e)
+                raw_text, boxes = "", []
+            finally:
+                del png_bytes
+                gc.collect()
+
+            text = clean_ocr_text(raw_text)
+            if text.strip():
+                blocks.append({
+                    "page": i + 1,
+                    "block_index": len(blocks),
+                    "text": text,
+                    "boxes": boxes,
+                    "page_width": pw,
+                    "page_height": ph,
+                })
     finally:
         doc.close()
 
