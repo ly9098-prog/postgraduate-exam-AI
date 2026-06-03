@@ -1,5 +1,25 @@
 # Bugs History
 
+## 2026-06-03 — P0 书籍扫描版 PDF 导入解析超时（已修复）
+
+- **现象**：导入 312 页王道 408 全文扫描 PDF 时，等待 1 小时仍未完成，前端轮询超时报 `request:fail timeout`，后端状态始终为 `parsing`。
+- **原因**：多因素叠加：
+  1. `_ocr_scanned_pdf()` 串行逐页处理 312 页，无超时保护
+  2. 每页触发旋转候选（最多 4 次 OCR 推理），312×4=1248 次推理
+  3. 已有的并发接口 `ocr_pages_with_boxes()` 未被使用
+  4. `MAX_OCR_PAGES` 默认为 0（无限制）
+  5. GPU 多线程并发时 CUDA 冲突导致部分页面失败
+- **处理**：
+  1. 添加 `OCR_TIMEOUT_SECONDS`（默认 300s）超时保护，超时后返回已处理的部分结果
+  2. 批量 PDF 处理跳过旋转候选（`skip_rotation=True`），每页仅 1 次 OCR
+  3. 改用 `ocr_pages_with_boxes()` 分批并发处理
+  4. 添加 `_ocr_lock` 序列化 GPU 推理，防止 CUDA 冲突
+  5. `OCR_MAX_WORKERS` 默认值从 4 降为 2
+  6. `.env` 设置 `MAX_OCR_PAGES=200`、`OCR_TIMEOUT_SECONDS=300`
+  7. 添加 `ocr_progress` 字段到 pipeline status，前端可显示进度
+- **验证**：修复后 312 页 PDF 在 321s 内处理了 148 页（含超时中断），成功返回 41 blocks 并正常进入后续 pipeline 阶段。
+- **说明**：生产服务器（2 核 2G）不应运行大文件 OCR，仅在本地开发机（i7+3060）执行后迁移数据。
+
 ## 2026-06-02 — 刷题页 `$...$` 简单公式导致题干/选项重复显示
 
 - **现象**：OCR 导入的简单 inline math 题目在刷题页出现重复文本，例如题干重复显示，选项显示为 `A. A. S.value < 0`、`B. B. S.value ≤ 0`。
