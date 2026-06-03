@@ -431,11 +431,18 @@ def _ocr_one_page(page_png: bytes, page_index: int) -> tuple[int, str]:
         return page_index, ""
 
 
-def _ocr_one_page_with_boxes(page_png: bytes, page_index: int) -> tuple[int, str, list[dict]]:
+def _ocr_one_page_with_boxes(
+    page_png: bytes, page_index: int, skip_rotation: bool = False,
+) -> tuple[int, str, list[dict]]:
     """对单页图片执行 OCR，返回 (page_index, text, boxes)。失败返回空。"""
     try:
         ocr = _get_ocr()
-        candidate = _ocr_with_rotation_candidates(ocr, page_png)
+        if skip_rotation:
+            img = _prepare_ocr_image(page_png)
+            result = _ocr_prepared_image(ocr, img)
+            candidate = OcrCandidateResult(result=result, image_size=img.size)
+        else:
+            candidate = _ocr_with_rotation_candidates(ocr, page_png)
         ordered = _order_ocr_lines_reading_order(
             _extract_ocr_lines(candidate.result),
             candidate.image_size[0],
@@ -490,6 +497,7 @@ def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
 
 def ocr_pages_with_boxes(
     page_images: list[tuple[int, bytes]],
+    skip_rotation: bool = False,
 ) -> dict[int, OcrPageResult]:
     """并发 OCR 多页，返回含检测框坐标的结果。
 
@@ -505,7 +513,7 @@ def ocr_pages_with_boxes(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(_ocr_one_page_with_boxes, png, idx): idx
+            executor.submit(_ocr_one_page_with_boxes, png, idx, skip_rotation): idx
             for idx, png in page_images
         }
         for future in as_completed(futures):
