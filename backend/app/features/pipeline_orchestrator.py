@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 import uuid
 from datetime import datetime
@@ -92,13 +93,14 @@ def _ocr_scanned_pdf(content: bytes) -> list[dict]:
 
     同步调用，内部通过 ThreadPoolExecutor 并发处理多页。
     分批渲染以控制峰值内存，超过 MAX_OCR_PAGES 截断。
-    输出格式与 _extract_pdf_blocks() 一致：[{page, block_index, text}]
+    输出格式：[{page, block_index, text, boxes, page_width, page_height}]
+    boxes 为每行的 bbox 坐标和置信度，供后续预处理使用。
     """
     import os
 
     import fitz
 
-    from app.services.ocr_service import clean_ocr_text, ocr_pages
+    from app.services.ocr_service import clean_ocr_text, ocr_pages_with_boxes
 
     max_pages = int(os.environ.get("MAX_OCR_PAGES", "30"))
     batch_size = 5
@@ -112,18 +114,25 @@ def _ocr_scanned_pdf(content: bytes) -> list[dict]:
         for batch_start in range(0, pages_to_process, batch_size):
             batch_end = min(batch_start + batch_size, pages_to_process)
             page_images: list[tuple[int, bytes]] = []
+            page_sizes: dict[int, tuple[int, int]] = {}
             for i in range(batch_start, batch_end):
                 pix = doc[i].get_pixmap(dpi=150)
                 page_images.append((i + 1, pix.tobytes("png")))
+                page_sizes[i + 1] = (pix.width, pix.height)
 
-            ocr_results = ocr_pages(page_images)
+            ocr_results = ocr_pages_with_boxes(page_images)
             for page_idx in sorted(ocr_results.keys()):
-                text = clean_ocr_text(ocr_results[page_idx])
+                result = ocr_results[page_idx]
+                text = clean_ocr_text(result.text)
                 if text.strip():
+                    pw, ph = page_sizes.get(page_idx, (0, 0))
                     blocks.append({
                         "page": page_idx,
                         "block_index": len(blocks),
                         "text": text,
+                        "boxes": result.boxes or [],
+                        "page_width": pw,
+                        "page_height": ph,
                     })
     finally:
         doc.close()
@@ -238,8 +247,10 @@ class ImportPipeline:
         """
         stage_specs: list[tuple[str, callable]] = [
             ("extract", self._run_extract),
-            ("normalize_text", self._run_normalize_text),
         ]
+        if self.options.get("enable_wangdao_preprocess", False):
+            stage_specs.append(("wangdao_preprocess", self._run_wangdao_preprocess))
+        stage_specs.append(("normalize_text", self._run_normalize_text))
         if self.options.get("enable_ocr_correction", True):
             stage_specs.append(("ocr_correction", self._run_ocr_correction))
         stage_specs.extend([
@@ -248,6 +259,8 @@ class ImportPipeline:
             ("match", self._run_match),
             ("normalize_schema", self._run_normalize_schema),
         ])
+        if self.options.get("enable_batch_dedup", True):
+            stage_specs.append(("batch_dedup", self._run_batch_dedup))
         if self.options.get("enable_ai_repair", True):
             stage_specs.append(("repair", self._run_repair))
             stage_specs.append(("ai_validation", self._run_ai_validation))
@@ -299,6 +312,19 @@ class ImportPipeline:
             raw_blocks = _extract_text_blocks(file_content)
 
         return {"raw_blocks": raw_blocks, "extracted": len(raw_blocks)}
+
+    def _run_wangdao_preprocess(self, raw_blocks: list[dict], **_kw) -> dict:
+        """Pre-processing stage for Wangdao PDF: filter watermarks/headers/footers."""
+        from app.features.wangdao_preprocessor import preprocess_wangdao_blocks
+
+        filtered = preprocess_wangdao_blocks(raw_blocks)
+
+        removed = len(raw_blocks) - len(filtered)
+        warnings: list[str] = []
+        if removed:
+            warnings.append(f"wangdao_preprocess: removed {removed} blocks (watermark/header/footer)")
+
+        return {"raw_blocks": filtered, "warnings": warnings}
 
     def _run_normalize_text(self, raw_blocks: list[dict], **_kw) -> dict:
         """Stage 1: text cleaning via ImportTextNormalizer."""
@@ -458,15 +484,47 @@ class ImportPipeline:
             "warnings": stage_warnings,
         }
 
+    def _run_batch_dedup(self, questions: list[dict], **_kw) -> dict:
+        """Stage 5.5: flag batch-internal duplicates to skip expensive repair."""
+        from app.features.question_normalizer import dedup_batch
+
+        result = dedup_batch(questions)
+
+        warnings: list[str] = []
+        if result["duplicate_count"] > 0:
+            warnings.append(f"{result['duplicate_count']} batch-internal duplicates flagged")
+
+        return {
+            "questions": result["questions"],
+            "batch_dedup_diagnostics": {
+                "unique_count": result["unique_count"],
+                "duplicate_count": result["duplicate_count"],
+                "duplicate_indices": result["duplicate_indices"],
+            },
+            "warnings": warnings,
+        }
+
     async def _run_repair(self, questions: list[dict], options: dict, **_kw) -> dict:
-        """Stage 6: AI repair for low-confidence questions."""
+        """Stage 6: AI repair for low-confidence questions.
+
+        Questions flagged as batch duplicates are skipped to save tokens.
+        """
+        # Separate batch duplicates from repair candidates
+        to_repair: list[dict] = []
+        duplicate_indices: set[int] = set()
+        for i, q in enumerate(questions):
+            if q.get("is_batch_duplicate"):
+                duplicate_indices.add(i)
+            else:
+                to_repair.append(q)
+
         repair_config = {
             "confidence_threshold": options.get("confidence_threshold", 0.6),
             "daily_token_limit": options.get("daily_token_limit", 100000),
             "monthly_token_limit": options.get("monthly_token_limit", 2000000),
             "enabled": options.get("enable_ai_repair", True),
         }
-        result = await repair_questions(questions, repair_config)
+        result = await repair_questions(to_repair, repair_config)
 
         repaired = result.get("repaired", [])
         unrepaired = result.get("unrepaired", [])
@@ -476,23 +534,35 @@ class ImportPipeline:
         # Build the combined question list for the review stage:
         #   repaired items use their "after" field
         #   unrepaired + skipped items use the original question by index
-        combined: list[dict] = [None] * len(questions)  # type: ignore
+        #   batch duplicates are passed through unchanged
+        repaired_combined: list[dict] = [None] * len(to_repair)  # type: ignore
 
         for r in repaired:
             idx = r["question_index"]
-            combined[idx] = r["after"]
+            repaired_combined[idx] = r["after"]
 
         for u in unrepaired:
             idx = u["question_index"]
-            combined[idx] = questions[idx]
+            repaired_combined[idx] = to_repair[idx]
 
         for s in skipped:
             idx = s["question_index"]
-            combined[idx] = questions[idx]
+            repaired_combined[idx] = to_repair[idx]
 
-        combined = [q for q in combined if q is not None]
+        repaired_combined = [q for q in repaired_combined if q is not None]
+
+        # Merge back: non-duplicates (repaired) + duplicates (unchanged)
+        combined: list[dict] = []
+        repair_iter = iter(repaired_combined)
+        for i, q in enumerate(questions):
+            if i in duplicate_indices:
+                combined.append(q)
+            else:
+                combined.append(next(repair_iter))
 
         warnings: list[str] = []
+        if duplicate_indices:
+            warnings.append(f"{len(duplicate_indices)} batch duplicates skipped repair")
         if unrepaired:
             warnings.append(f"{len(unrepaired)} questions unrepaired by AI")
         if skipped:
@@ -739,7 +809,15 @@ async def run_import_pipeline(
         Pipeline result dict.
     """
     pipeline_id = f"pl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
-    pipeline = ImportPipeline(options=options)
+
+    # Auto-detect Wangdao preset from filename
+    opts = dict(options) if options else {}
+    if "enable_wangdao_preprocess" not in opts:
+        lower_name = (source_file or "").lower()
+        if "王道" in (source_file or "") or "wangdao" in lower_name or re.search(r"(?:^|[_\-\s])408(?:[_\-\s.]|$)", lower_name):
+            opts["enable_wangdao_preprocess"] = True
+
+    pipeline = ImportPipeline(options=opts)
     pipeline.pipeline_id = pipeline_id
 
     result = await pipeline.run(
@@ -747,7 +825,7 @@ async def run_import_pipeline(
         source_type=source_type,
         source_file=source_file,
         subject=subject,
-        options=options,
+        options=opts,
         db=db,
     )
     result["pipeline_id"] = pipeline_id

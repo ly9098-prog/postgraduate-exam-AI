@@ -114,16 +114,36 @@ def _normalize_answer(answer: str | None, question_type: str) -> str:
     return answer
 
 
+_SECTION_TYPE_MAP = {
+    "question_type_single": QT_SINGLE_CHOICE,
+    "question_type_multiple": QT_MULTIPLE_CHOICE,
+    "question_type_truefalse": QT_TRUE_FALSE,
+    "question_type_subjective": QT_SUBJECTIVE,
+}
+
+
 def _detect_question_type(
     stem: str,
     options: list[dict] | None,
     answer: str | None,
+    section_type: str | None = None,
 ) -> str:
     """自动识别题型（规则优先）。"""
     if options is None:
         options = []
 
     ans_clean = (answer or "").strip()
+
+    # Section marker 提供强信号（仅在结构不矛盾时生效）
+    if section_type:
+        mapped = _SECTION_TYPE_MAP.get(section_type)
+        if mapped:
+            if mapped in (QT_SINGLE_CHOICE, QT_MULTIPLE_CHOICE) and options:
+                return mapped
+            if mapped == QT_TRUE_FALSE and len(options) <= 2:
+                return mapped
+            if mapped == QT_SUBJECTIVE and not options:
+                return mapped
 
     # 判断题：无或仅 2 个选项 + 答案为判断格式
     if ans_clean.upper() in _TRUE_FALSE_VALUES or ans_clean in _TRUE_FALSE_VALUES:
@@ -231,7 +251,8 @@ def normalize_question(
     options = _normalize_options(option_lines)
     answer_raw = matched.get("answer")
     explanation_raw = matched.get("explanation", "")
-    question_type = _detect_question_type(stem, options, answer_raw)
+    section_type = raw_question.get("section_type")
+    question_type = _detect_question_type(stem, options, answer_raw, section_type=section_type)
     answer = _normalize_answer(answer_raw, question_type)
     analysis = (explanation_raw or "").strip()
     confidence_score = _compute_confidence(stem, options, answer, question_type)
@@ -318,3 +339,29 @@ def normalize_questions(
             })
 
     return {"questions": questions, "errors": errors, "warnings": warnings}
+
+
+def dedup_batch(questions: list[dict]) -> dict:
+    """批内去重：基于 stem_hash 标记重复题目。
+
+    不删除重复项，仅标记 is_batch_duplicate=True 和 duplicate_of_index。
+    用于在 AI repair 前跳过重复题，节省 token。
+    """
+    seen: dict[str, int] = {}
+    for i, q in enumerate(questions):
+        h = q.get("stem_hash", "")
+        if not h:
+            continue
+        if h in seen:
+            q["is_batch_duplicate"] = True
+            q["duplicate_of_index"] = seen[h]
+        else:
+            seen[h] = i
+
+    duplicate_indices = [i for i, q in enumerate(questions) if q.get("is_batch_duplicate")]
+    return {
+        "questions": questions,
+        "unique_count": len(questions) - len(duplicate_indices),
+        "duplicate_count": len(duplicate_indices),
+        "duplicate_indices": duplicate_indices,
+    }

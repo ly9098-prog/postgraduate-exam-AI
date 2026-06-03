@@ -451,3 +451,74 @@ class TestNoOptions:
         assert len(result) == 3
         for q in result:
             assert q["has_options"] is False
+
+
+# ---------------------------------------------------------------
+# 12. Section Type 注解
+# ---------------------------------------------------------------
+
+class TestSectionTypeAnnotation:
+    def test_section_type_from_single_marker(self):
+        """题目页位于 question_type_single marker 之后，应标注 section_type。"""
+        blocks = _make_blocks(
+            "1. 下列说法正确的是（ ）。\nA. x\nB. y\nC. z\nD. w\n"
+            "2. 以下哪个不属于（ ）。\nA. a\nB. b\nC. c\nD. d",
+            page=3,
+        )
+        structure = {
+            "mode": "SEPARATED",
+            "question_pages": [3],
+            "answer_pages": [],
+            "content_pages": [],
+            "section_markers": [
+                {"page": 2, "block_index": 0, "marker_type": "exercise_start", "text": "习题精选"},
+                {"page": 2, "block_index": 1, "marker_type": "question_type_single", "text": "单项选择题"},
+            ],
+        }
+        result = split_questions(blocks, structure)
+        assert len(result) == 2
+        for q in result:
+            assert q["section_type"] == "question_type_single"
+
+    def test_section_type_multiple_markers(self):
+        """多个 type marker 按页匹配：后出现的 marker 覆盖前面的。"""
+        blocks = [
+            {"page": 3, "block_index": 0, "normalized_text": "1. 下列正确的是（ ）。\nA. x\nB. y\nC. z\nD. w"},
+            {"page": 5, "block_index": 1, "normalized_text": "2. 以下属于（ ）。\nA. a\nB. b\nC. c\nD. d"},
+        ]
+        structure = {
+            "mode": "SEPARATED",
+            "question_pages": [3, 5],
+            "answer_pages": [],
+            "content_pages": [],
+            "section_markers": [
+                {"page": 2, "block_index": 0, "marker_type": "exercise_start", "text": "习题精选"},
+                {"page": 2, "block_index": 1, "marker_type": "question_type_single", "text": "单项选择题"},
+                {"page": 4, "block_index": 2, "marker_type": "question_type_multiple", "text": "多项选择题"},
+            ],
+        }
+        result = split_questions(blocks, structure)
+        assert result[0]["section_type"] == "question_type_single"
+        assert result[1]["section_type"] == "question_type_multiple"
+
+    def test_section_type_none_without_markers(self):
+        """无 section markers 时 section_type 为 None。"""
+        blocks = _make_blocks("1. 下列正确的是（ ）。\nA. x\nB. y\nC. z\nD. w")
+        result = split_questions(blocks)
+        assert result[0]["section_type"] is None
+
+    def test_section_type_none_before_any_marker(self):
+        """题目在所有 type marker 之前时 section_type 为 None。"""
+        blocks = _make_blocks("1. 下列正确的是（ ）。\nA. x\nB. y\nC. z\nD. w", page=1)
+        structure = {
+            "mode": "SEPARATED",
+            "question_pages": [1, 5],
+            "answer_pages": [],
+            "content_pages": [],
+            "section_markers": [
+                {"page": 1, "block_index": 0, "marker_type": "exercise_start", "text": "习题精选"},
+                {"page": 5, "block_index": 1, "marker_type": "question_type_single", "text": "单项选择题"},
+            ],
+        }
+        result = split_questions(blocks, structure)
+        assert result[0]["section_type"] is None

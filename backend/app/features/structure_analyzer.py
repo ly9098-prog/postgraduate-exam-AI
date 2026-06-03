@@ -9,7 +9,7 @@ import re
 
 # 题号模式
 _QUESTION_PATTERN_LIST = [
-    r"^\s*\d+\s*[.、)）]",          # 1. / 1、/ 1) / 1）
+    r"^\s*\d+\s*[.．、)）]",         # 1. / 1．/ 1、/ 1) / 1）
     r"^\s*\(\d+\)",                  # (1)
     r"^\s*【\d+】",                  # 【1】
     r"^第\s*\d+\s*题",              # 第1题
@@ -30,6 +30,17 @@ ANALYSIS_KEYWORDS = [
     "解析", "解答", "讲解", "分析", "详解",
     "explanation", "Explanation",
     "【解析】", "【解答】", "【分析】",
+]
+
+# 节标志模式（王道教材特有）
+_SECTION_MARKER_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"习题精选|本节习题"), "exercise_start"),
+    (re.compile(r"单项选择题|单选题"), "question_type_single"),
+    (re.compile(r"多项选择题|多选题"), "question_type_multiple"),
+    (re.compile(r"判断题"), "question_type_truefalse"),
+    (re.compile(r"综合应用题|综合题"), "question_type_subjective"),
+    (re.compile(r"答案与解析|答案和解析"), "answer_start"),
+    (re.compile(r"本章小结|疑难点"), "summary"),
 ]
 
 
@@ -95,6 +106,57 @@ def _diagnostic_reason(
     if total_q_matches and total_a_matches and pure_question_blocks and a_pages:
         return "ambiguous_question_answer_layout"
     return "no_question_or_answer_signals"
+
+
+def _detect_section_markers(normalized_blocks: list[dict]) -> list[dict]:
+    """检测文档中的节标志（习题精选、答案与解析等）。
+
+    返回: [{page, block_index, marker_type, text}]
+    """
+    markers: list[dict] = []
+    for block in normalized_blocks:
+        text = block.get("normalized_text", "")
+        if not text:
+            continue
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            for pat, marker_type in _SECTION_MARKER_PATTERNS:
+                if pat.search(stripped):
+                    markers.append({
+                        "page": block.get("page", 0),
+                        "block_index": block.get("block_index", 0),
+                        "marker_type": marker_type,
+                        "text": stripped[:60],
+                    })
+                    break
+    return markers
+
+
+def _derive_content_pages(
+    all_pages: list[int],
+    question_pages: list[int],
+    answer_pages: list[int],
+    section_markers: list[dict],
+) -> list[int]:
+    """推断正文页：不属于题目区也不属于答案区的页面。"""
+    q_set = set(question_pages)
+    a_set = set(answer_pages)
+
+    # 通过 section_markers 中 summary 标记的页面也算正文
+    summary_pages = set()
+    for m in section_markers:
+        if m["marker_type"] == "summary":
+            summary_pages.add(m["page"])
+
+    content = []
+    for p in all_pages:
+        if p not in q_set and p not in a_set:
+            content.append(p)
+        elif p in summary_pages and p not in a_set:
+            content.append(p)
+    return sorted(set(content))
 
 
 def _count_ocr_noise_signals(text: str) -> int:
@@ -188,6 +250,8 @@ def analyze_structure(
             "question_pages": [],
             "answer_pages": [],
             "explanation_pages": [],
+            "content_pages": [],
+            "section_markers": [],
             "confidence": 0.0,
             "details": {
                 "total_blocks": 0,
@@ -206,6 +270,9 @@ def analyze_structure(
                 "has_explanation_blocks": False,
             },
         }
+
+    # Detect section markers
+    section_markers = _detect_section_markers(normalized_blocks)
 
     noise_signals = 0
     total_q_matches = 0
@@ -263,6 +330,15 @@ def analyze_structure(
         total_q_matches, total_a_matches, total_blocks,
     )
 
+    # If section markers found "answer_start", use that for more precise detection
+    answer_marker_pages = [
+        m["page"] for m in section_markers if m["marker_type"] == "answer_start"
+    ]
+    if answer_marker_pages and mode != "INLINE":
+        mode = "SEPARATED"
+        confidence = max(confidence, 0.9)
+        a_pages = sorted(set(a_pages + answer_marker_pages))
+
     question_pages = [
         page
         for page, bt in page_types
@@ -273,6 +349,10 @@ def analyze_structure(
     # Expand answer pages to include continuation pages
     if mode == "SEPARATED" and a_pages:
         a_pages = _expand_answer_pages(normalized_blocks, a_pages, q_pages)
+
+    # Derive content pages
+    all_pages = sorted(set(b.get("page", 0) for b in normalized_blocks))
+    content_pages = _derive_content_pages(all_pages, q_pages, a_pages, section_markers)
 
     reason = _diagnostic_reason(mode, total_q_matches, total_a_matches, pure_question_blocks, a_pages)
 
@@ -285,6 +365,8 @@ def analyze_structure(
         "question_pages": q_pages,
         "answer_pages": a_pages,
         "explanation_pages": e_pages,
+        "content_pages": content_pages,
+        "section_markers": section_markers,
         "confidence": confidence,
         "details": {
             "total_blocks": total_blocks,

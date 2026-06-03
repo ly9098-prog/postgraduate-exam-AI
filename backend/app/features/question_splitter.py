@@ -18,7 +18,7 @@ _OCR_DIGIT_MAP = {"O": "0", "o": "0", "l": "1", "I": "1", "S": "5"}
 
 # 题号模式：(正则, 数字提取组, 说明)
 _QUESTION_PATTERNS: list[tuple[re.Pattern, int]] = [
-    (re.compile(r"^(\d+)\s*[.、]"), 1),          # "1." "1、"
+    (re.compile(r"^(\d+)\s*[.．、]"), 1),          # "1." "1．" "1、"
     (re.compile(r"^(\d+)\s*[)）]"), 1),          # "1)" "1）"
     (re.compile(r"^\((\d+)\)"), 1),                # "(1)"
     (re.compile(r"^【(\d+)】"), 1),                # "【1】"
@@ -36,10 +36,10 @@ _OCR_Q_PATTERN = re.compile(r"^([lI])\s*[.、)）]")
 # 选项模式
 _CIRCLED_OPTION_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
 _OPTION_NOISE_PREFIX = r"(?:[?？]|[" + _CIRCLED_OPTION_CHARS + r"])?\s*"
-_OPTION_MARKER = _OPTION_NOISE_PREFIX + r"([A-Da-d])\s*[.、:：)）]"
+_OPTION_MARKER = _OPTION_NOISE_PREFIX + r"([A-Da-d])\s*[.．、:：)）]"
 
 _OPTION_PATTERNS: list[re.Pattern] = [
-    re.compile(r"^" + _OPTION_NOISE_PREFIX + r"([A-Da-d])\s*[.、:：)）]\s*(.+)"),
+    re.compile(r"^" + _OPTION_NOISE_PREFIX + r"([A-Da-d])\s*[.．、:：)）]\s*(.+)"),
     re.compile(r"^" + _OPTION_NOISE_PREFIX + r"([A-Da-d])\s+(.+)"),
 ]
 
@@ -61,6 +61,44 @@ _ANSWER_EXPLANATION_LINE = re.compile(
 _OCR_OPTION_PATTERN = re.compile(
     r"^" + _OPTION_NOISE_PREFIX + r"([" + "".join(_OCR_OPTION_MAP.keys()) + r"])\s*[.、:：)）]\s*(.+)"
 )
+
+# 章节号模式：X.X 或 X.X.X 格式（非题号）
+_SECTION_NUMBER_PATTERN = re.compile(
+    r"^\d+\.\d+(\.\d+)?\s*\S"
+)
+
+# 正文标题特征：数字后跟纯中文标题（无括号）
+_CONTENT_TITLE_PATTERN = re.compile(
+    r"^\d+\s*[.、]\s*[一-鿿]{2,}[一-鿿\s]*$"
+)
+
+_SENTENCE_END = frozenset("。！？；…")
+
+
+def _is_section_number(line: str, page: int | None = None, content_pages: set | None = None) -> bool:
+    """判断一行是否为章节号（而非题号）。"""
+    stripped = line.strip()
+    # X.X.X 格式一定是章节号
+    if _SECTION_NUMBER_PATTERN.match(stripped):
+        return True
+    # "3.分组交换" 类格式：数字+纯中文标题，无括号特征
+    # 仅在有正文页上下文时应用，避免误过滤简短题目
+    if content_pages and _CONTENT_TITLE_PATTERN.match(stripped):
+        if "（" not in stripped and "(" not in stripped:
+            if page in content_pages:
+                return True
+    return False
+
+
+def _has_question_characteristics(line: str) -> bool:
+    """判断一行是否有选择题特征（括号、选项标记等）。"""
+    if "（" in line or "(" in line:
+        return True
+    if re.search(r"[A-D]\s*[.、:：)）]", line):
+        return True
+    if re.search(r"下列|以下|正确|错误|哪|属于|不属于", line):
+        return True
+    return False
 
 
 def _detect_question_number(line: str) -> tuple[int, int] | None:
@@ -301,10 +339,25 @@ def split_questions(
     pos = 0
 
     excluded_answer_pages: set[int] = set()
+    content_pages: set[int] = set()
+    exercise_start_pages: set[int] = set()
+
     if structure and structure.get("mode") == "SEPARATED":
         answer_pages = set(structure.get("answer_pages", []))
         question_pages = set(structure.get("question_pages", []))
         excluded_answer_pages = answer_pages - question_pages
+
+    # Build section_type lookup: ordered list of (page, marker_type) for question_type_* markers
+    section_type_markers: list[tuple[int, str]] = []
+
+    if structure:
+        content_pages = set(structure.get("content_pages", []))
+        for marker in structure.get("section_markers", []):
+            if marker.get("marker_type") == "exercise_start":
+                exercise_start_pages.add(marker["page"])
+            mt = marker.get("marker_type", "")
+            if mt.startswith("question_type_"):
+                section_type_markers.append((marker["page"], mt))
 
     for block in normalized_blocks:
         text = block.get("normalized_text", "")
@@ -323,10 +376,40 @@ def split_questions(
     if not boundaries:
         return []
 
+    # Filter out section numbers masquerading as question numbers
+    filtered_boundaries: list[tuple[int, int]] = []
+    previous_valid_num: int | None = None
+    for num, start_pos in boundaries:
+        page = _pos_to_page(start_pos, page_map)
+        # Extract the line at this position for section-number check
+        line_end = full_text.find("\n", start_pos)
+        if line_end == -1:
+            line_end = len(full_text)
+        line_text = full_text[start_pos:line_end]
+
+        if _is_section_number(line_text, page, content_pages):
+            continue
+
+        # Context-aware: skip pages before any exercise section starts
+        if exercise_start_pages and page < min(exercise_start_pages):
+            continue
+
+        # Large gap check: if number jumps by more than expected, lower trust
+        if previous_valid_num is not None and num > previous_valid_num + 10:
+            # Likely a false positive from content text
+            if not _has_question_characteristics(line_text):
+                continue
+
+        filtered_boundaries.append((num, start_pos))
+        previous_valid_num = num
+
+    if not filtered_boundaries:
+        return []
+
     questions: list[dict] = []
 
-    for i, (num, start_pos) in enumerate(boundaries):
-        end_pos = boundaries[i + 1][1] if i + 1 < len(boundaries) else len(full_text)
+    for i, (num, start_pos) in enumerate(filtered_boundaries):
+        end_pos = filtered_boundaries[i + 1][1] if i + 1 < len(filtered_boundaries) else len(full_text)
         raw_text = full_text[start_pos:end_pos].strip()
 
         page_start = _pos_to_page(start_pos, page_map)
@@ -343,6 +426,14 @@ def split_questions(
         if num <= 0:
             conf -= 0.3
 
+        # Determine section_type from the most recent question_type_* marker
+        section_type = None
+        if section_type_markers:
+            for marker_page, marker_type in reversed(section_type_markers):
+                if page_start >= marker_page:
+                    section_type = marker_type
+                    break
+
         questions.append({
             "number": num,
             "raw_question_text": raw_text,
@@ -351,6 +442,7 @@ def split_questions(
             "has_options": len(options) > 0,
             "option_lines": options,
             "confidence": round(max(0.0, min(1.0, conf)), 2),
+            "section_type": section_type,
         })
 
     return questions
