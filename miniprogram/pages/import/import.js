@@ -204,6 +204,7 @@ Page({
     if (this.pollTimer) clearTimeout(this.pollTimer)
     try {
       const status = await api.get(`/import/pipelines/${pipelineId}`)
+      this._pollRetries = 0
       const currentTask = this.data.pipelineTask || {}
       if (currentTask.pipeline_id !== pipelineId) return
       const errors = status.errors || []
@@ -232,7 +233,14 @@ Page({
       this.pollTimer = setTimeout(() => this.pollPipeline(pipelineId), 2000)
     } catch (e) {
       console.error('查询导入状态失败', e)
-      this.setData({ pipelinePolling: false })
+      const retries = (this._pollRetries || 0) + 1
+      if (retries < 3) {
+        this._pollRetries = retries
+        this.pollTimer = setTimeout(() => this.pollPipeline(pipelineId), 3000)
+      } else {
+        this._pollRetries = 0
+        this.setData({ pipelinePolling: false })
+      }
     }
   },
 

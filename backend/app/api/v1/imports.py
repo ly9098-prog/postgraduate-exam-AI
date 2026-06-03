@@ -741,7 +741,7 @@ async def pipeline_status(
     _: User = Depends(require_app_permission("import:read")),
 ):
     """查询流水线执行状态和各阶段详情。"""
-    status = get_pipeline_status(pipeline_id)
+    status = await get_pipeline_status(pipeline_id)
     if status is None:
         status = await _get_image_pipeline_status(pipeline_id)
     if status is None:

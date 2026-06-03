@@ -39,6 +39,8 @@ logger = logging.getLogger(__name__)
 _pipeline_store: dict[str, dict] = {}
 
 _MAX_STORE_SIZE = 500  # keep at most N pipelines in memory
+_PIPELINE_REDIS_PREFIX = "import:pipeline"
+_PIPELINE_STATUS_TTL = 86400  # 24h
 
 
 def _prune_store() -> None:
@@ -50,6 +52,30 @@ def _prune_store() -> None:
         )
         for old_id in sorted_ids[: len(_pipeline_store) - _MAX_STORE_SIZE]:
             del _pipeline_store[old_id]
+
+
+async def _set_pipeline_store(pipeline_id: str, data: dict) -> None:
+    _pipeline_store[pipeline_id] = data
+    _prune_store()
+    try:
+        from app.core.cache import cache
+        await cache.set(f"{_PIPELINE_REDIS_PREFIX}:{pipeline_id}", data, ttl=_PIPELINE_STATUS_TTL)
+    except Exception:
+        pass
+
+
+async def _get_pipeline_store(pipeline_id: str) -> dict | None:
+    if pipeline_id in _pipeline_store:
+        return _pipeline_store[pipeline_id]
+    try:
+        from app.core.cache import cache
+        data = await cache.get(f"{_PIPELINE_REDIS_PREFIX}:{pipeline_id}")
+        if data:
+            _pipeline_store[pipeline_id] = data
+            return data
+    except Exception:
+        pass
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -850,8 +876,8 @@ async def run_pipeline_background(
     options: dict | None = None,
     db=None,
 ) -> None:
-    """后台运行流水线，结果写入 _pipeline_store。"""
-    _pipeline_store[pipeline_id] = {
+    """后台运行流水线，结果写入 Redis + 内存。"""
+    await _set_pipeline_store(pipeline_id, {
         "pipeline_id": pipeline_id,
         "status": "parsing",
         "source_type": source_type,
@@ -859,8 +885,7 @@ async def run_pipeline_background(
         "stats": {},
         "errors": [],
         "started_at": datetime.now().isoformat(),
-    }
-    _prune_store()
+    })
 
     try:
         result = await run_import_pipeline(
@@ -872,17 +897,17 @@ async def run_pipeline_background(
             db=db,
         )
         result["pipeline_id"] = pipeline_id
-        _pipeline_store[pipeline_id] = result
+        await _set_pipeline_store(pipeline_id, result)
     except Exception as exc:
         logger.exception("Pipeline %s failed", pipeline_id)
-        _pipeline_store[pipeline_id] = {
+        await _set_pipeline_store(pipeline_id, {
             "pipeline_id": pipeline_id,
             "status": "failed",
             "source_type": source_type,
             "errors": [str(exc)],
             "started_at": _pipeline_store.get(pipeline_id, {}).get("started_at", ""),
             "finished_at": datetime.now().isoformat(),
-        }
+        })
 
 
 async def run_excel_pipeline_background(
@@ -891,10 +916,10 @@ async def run_excel_pipeline_background(
     source_file: str,
     import_excel_fn,
 ) -> None:
-    """后台运行 Excel 导入，结果写入 _pipeline_store 以支持状态查询。"""
+    """后台运行 Excel 导入，结果写入 Redis + 内存以支持状态查询。"""
     from app.core.database import async_session
 
-    _pipeline_store[pipeline_id] = {
+    await _set_pipeline_store(pipeline_id, {
         "pipeline_id": pipeline_id,
         "status": "parsing",
         "source_type": "excel",
@@ -902,13 +927,12 @@ async def run_excel_pipeline_background(
         "stats": {},
         "errors": [],
         "started_at": datetime.now().isoformat(),
-    }
-    _prune_store()
+    })
 
     try:
         async with async_session() as db:
             batch_id, total = await import_excel_fn(db, file_content, source_file)
-        _pipeline_store[pipeline_id] = {
+        await _set_pipeline_store(pipeline_id, {
             "pipeline_id": pipeline_id,
             "status": "completed",
             "source_type": "excel",
@@ -918,19 +942,19 @@ async def run_excel_pipeline_background(
             "errors": [],
             "started_at": _pipeline_store[pipeline_id]["started_at"],
             "finished_at": datetime.now().isoformat(),
-        }
+        })
     except Exception as exc:
         logger.exception("Excel pipeline %s failed", pipeline_id)
-        _pipeline_store[pipeline_id] = {
+        await _set_pipeline_store(pipeline_id, {
             "pipeline_id": pipeline_id,
             "status": "failed",
             "source_type": "excel",
             "errors": [str(exc)],
             "started_at": _pipeline_store.get(pipeline_id, {}).get("started_at", ""),
             "finished_at": datetime.now().isoformat(),
-        }
+        })
 
 
-def get_pipeline_status(pipeline_id: str) -> dict | None:
-    """查询流水线状态。"""
-    return _pipeline_store.get(pipeline_id)
+async def get_pipeline_status(pipeline_id: str) -> dict | None:
+    """查询流水线状态（Redis + 内存 fallback）。"""
+    return await _get_pipeline_store(pipeline_id)

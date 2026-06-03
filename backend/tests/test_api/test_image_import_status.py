@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import HTTPException
 
@@ -136,7 +138,7 @@ async def test_fail_image_pipeline_appends_error_and_finishes(fake_cache):
 @pytest.mark.asyncio
 async def test_pipeline_status_returns_old_pipeline_first(monkeypatch, fake_cache):
     old_status = {"pipeline_id": "same", "status": "completed", "batch_id": "old_batch"}
-    monkeypatch.setattr(imports, "get_pipeline_status", lambda pipeline_id: old_status)
+    monkeypatch.setattr(imports, "get_pipeline_status", AsyncMock(return_value=old_status))
     await imports._set_image_pipeline_status("same", status="failed", batch_id="image_batch")
 
     response = await imports.pipeline_status("same", None)
@@ -147,7 +149,7 @@ async def test_pipeline_status_returns_old_pipeline_first(monkeypatch, fake_cach
 
 @pytest.mark.asyncio
 async def test_pipeline_status_returns_image_status_when_old_missing(monkeypatch, fake_cache):
-    monkeypatch.setattr(imports, "get_pipeline_status", lambda pipeline_id: None)
+    monkeypatch.setattr(imports, "get_pipeline_status", AsyncMock(return_value=None))
     await imports._set_image_pipeline_status("img_1", status="completed", batch_id="image_batch")
 
     response = await imports.pipeline_status("img_1", None)
@@ -158,7 +160,7 @@ async def test_pipeline_status_returns_image_status_when_old_missing(monkeypatch
 
 @pytest.mark.asyncio
 async def test_pipeline_status_raises_404_when_missing(monkeypatch, fake_cache):
-    monkeypatch.setattr(imports, "get_pipeline_status", lambda pipeline_id: None)
+    monkeypatch.setattr(imports, "get_pipeline_status", AsyncMock(return_value=None))
 
     with pytest.raises(HTTPException) as exc:
         await imports.pipeline_status("missing", None)
