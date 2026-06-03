@@ -4,6 +4,7 @@ import pytest
 from app.features.question_normalizer import (
     normalize_question,
     normalize_questions,
+    dedup_batch,
     _clean_stem,
     _extract_stem,
     _normalize_options,
@@ -690,3 +691,141 @@ class TestEdgeCases:
         result = normalize_question(raw, matched)
         # 全角空格应被替换
         assert "　" not in result["stem"]
+
+
+# ---------------------------------------------------------------
+# 11. Section Marker 题型识别增强
+# ---------------------------------------------------------------
+
+class TestSectionTypeDetection:
+    def test_section_type_single_with_options(self):
+        opts = [{"key": k, "text": k} for k in "ABCD"]
+        t = _detect_question_type("题干", opts, None, section_type="question_type_single")
+        assert t == QT_SINGLE_CHOICE
+
+    def test_section_type_multiple_with_options(self):
+        opts = [{"key": k, "text": k} for k in "ABCD"]
+        t = _detect_question_type("题干", opts, "A", section_type="question_type_multiple")
+        assert t == QT_MULTIPLE_CHOICE
+
+    def test_section_type_truefalse_no_options(self):
+        t = _detect_question_type("判断题干", [], None, section_type="question_type_truefalse")
+        assert t == QT_TRUE_FALSE
+
+    def test_section_type_truefalse_with_two_options(self):
+        opts = [{"key": "A", "text": "正确"}, {"key": "B", "text": "错误"}]
+        t = _detect_question_type("题干", opts, None, section_type="question_type_truefalse")
+        assert t == QT_TRUE_FALSE
+
+    def test_section_type_subjective_no_options(self):
+        t = _detect_question_type("简述题干", [], None, section_type="question_type_subjective")
+        assert t == QT_SUBJECTIVE
+
+    def test_section_type_does_not_override_when_impossible(self):
+        """section_type=multiple_choice 但无选项时不应强制覆盖。"""
+        t = _detect_question_type("题干无选项", [], None, section_type="question_type_multiple")
+        assert t != QT_MULTIPLE_CHOICE
+
+    def test_section_type_does_not_override_truefalse_with_many_options(self):
+        """section_type=truefalse 但有4个选项时不应覆盖。"""
+        opts = [{"key": k, "text": k} for k in "ABCD"]
+        t = _detect_question_type("题干", opts, "A", section_type="question_type_truefalse")
+        assert t != QT_TRUE_FALSE
+
+    def test_section_type_none_falls_through(self):
+        """section_type=None 时走原有逻辑。"""
+        opts = [{"key": k, "text": k} for k in "ABCD"]
+        t = _detect_question_type("题干", opts, "A", section_type=None)
+        assert t == QT_SINGLE_CHOICE
+
+    def test_section_type_unknown_marker_ignored(self):
+        """未知 section_type 不影响结果。"""
+        opts = [{"key": k, "text": k} for k in "ABCD"]
+        t = _detect_question_type("题干", opts, "A,C", section_type="question_type_unknown")
+        assert t == QT_MULTIPLE_CHOICE
+
+    def test_normalize_question_uses_section_type(self):
+        """section_type 字段通过 normalize_question 传递到类型检测。"""
+        raw = {
+            "number": 1,
+            "raw_question_text": "1. 下列哪些正确？\nA. x\nB. y\nC. z\nD. w",
+            "page_start": 5,
+            "page_end": 5,
+            "has_options": True,
+            "option_lines": {"A": "x", "B": "y", "C": "z", "D": "w"},
+            "confidence": 0.9,
+            "section_type": "question_type_multiple",
+        }
+        matched = {"question_number": 1, "answer": "A"}
+        result = normalize_question(raw, matched)
+        assert result["question_type"] == QT_MULTIPLE_CHOICE
+
+
+# ---------------------------------------------------------------
+# 12. 批内去重 (dedup_batch)
+# ---------------------------------------------------------------
+
+class TestDedupBatch:
+    def test_basic_dedup(self):
+        """两题相同 stem_hash → 第二题标记为 batch duplicate。"""
+        h = _compute_stem_hash("相同题干内容")
+        questions = [
+            {"stem": "相同题干内容", "stem_hash": h, "question_type": "single_choice"},
+            {"stem": "相同题干内容", "stem_hash": h, "question_type": "single_choice"},
+            {"stem": "不同题干", "stem_hash": _compute_stem_hash("不同题干"), "question_type": "single_choice"},
+        ]
+        result = dedup_batch(questions)
+        assert result["unique_count"] == 2
+        assert result["duplicate_count"] == 1
+        assert result["duplicate_indices"] == [1]
+        assert questions[0].get("is_batch_duplicate") is None
+        assert questions[1]["is_batch_duplicate"] is True
+        assert questions[1]["duplicate_of_index"] == 0
+        assert questions[2].get("is_batch_duplicate") is None
+
+    def test_no_duplicates(self):
+        """无重复时不添加任何标记。"""
+        questions = [
+            {"stem": "题干A", "stem_hash": _compute_stem_hash("题干A")},
+            {"stem": "题干B", "stem_hash": _compute_stem_hash("题干B")},
+            {"stem": "题干C", "stem_hash": _compute_stem_hash("题干C")},
+        ]
+        result = dedup_batch(questions)
+        assert result["unique_count"] == 3
+        assert result["duplicate_count"] == 0
+        assert result["duplicate_indices"] == []
+        for q in questions:
+            assert "is_batch_duplicate" not in q
+
+    def test_empty_input(self):
+        """空列表不报错。"""
+        result = dedup_batch([])
+        assert result["unique_count"] == 0
+        assert result["duplicate_count"] == 0
+        assert result["questions"] == []
+
+    def test_missing_stem_hash_skipped(self):
+        """stem_hash 为空的题目不参与去重。"""
+        questions = [
+            {"stem": "题干A", "stem_hash": ""},
+            {"stem": "题干A", "stem_hash": ""},
+        ]
+        result = dedup_batch(questions)
+        assert result["duplicate_count"] == 0
+
+    def test_multiple_duplicates_of_same_stem(self):
+        """同一题干出现3次，后两次都标记为 duplicate。"""
+        h = _compute_stem_hash("重复题干")
+        questions = [
+            {"stem": "重复题干", "stem_hash": h},
+            {"stem": "重复题干", "stem_hash": h},
+            {"stem": "重复题干", "stem_hash": h},
+        ]
+        result = dedup_batch(questions)
+        assert result["unique_count"] == 1
+        assert result["duplicate_count"] == 2
+        assert questions[0].get("is_batch_duplicate") is None
+        assert questions[1]["is_batch_duplicate"] is True
+        assert questions[1]["duplicate_of_index"] == 0
+        assert questions[2]["is_batch_duplicate"] is True
+        assert questions[2]["duplicate_of_index"] == 0

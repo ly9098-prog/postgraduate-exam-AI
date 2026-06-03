@@ -14,7 +14,7 @@ _RE_GARBLED = re.compile(
 
 _CIRCLED_OPTION_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
 _OPTION_NOISE_PREFIX = r"(?:[?？]|[" + _CIRCLED_OPTION_CHARS + r"])?\s*"
-_OPTION_MARKER = _OPTION_NOISE_PREFIX + r"([A-Da-d])\s*[.、:：)）]"
+_OPTION_MARKER = _OPTION_NOISE_PREFIX + r"([A-Da-d])\s*[.．、:：)）]"
 _INLINE_OPTION_MARKER = re.compile(r"(?<![A-Za-z0-9])" + _OPTION_MARKER)
 
 # 题号行：用于 OCR 字符纠正的上下文判断
@@ -50,6 +50,16 @@ _RE_PREV_STRUCTURE_LINE = re.compile(
 
 _SENTENCE_END = frozenset("。！？；…")
 
+# 水印关键词模式（覆盖OCR识别出的各种变体）
+_RE_WATERMARK = re.compile(
+    r"^(王道|计算?机教育|机教育|算机教育|道计算|几教育|千道|全丰道|"
+    r"王道计算机教育|道计算机|道计管教育|kaoya[no]?|Kaoyan|"
+    r"w{0,3}\.?com|n\.com|ska|ai\.).*$"
+)
+
+# 页码模式：纯数字或带少量空格的1-3位数
+_RE_PAGE_NUMBER = re.compile(r"^\s*\d{1,3}\s*$")
+
 
 class ImportTextNormalizer:
     """导入文本标准化器 — 纯规则实现。"""
@@ -60,16 +70,25 @@ class ImportTextNormalizer:
         for i, block in enumerate(raw_blocks):
             text = block.get("text", "")
             cleaned = text
+            cleaned = self._filter_watermark_text(cleaned)
+            cleaned = self._filter_page_number(cleaned)
             cleaned = self._clean_newlines(cleaned)
             cleaned = self._clean_garbled(cleaned)
             cleaned = self._normalize_spaces(cleaned)
             cleaned = self._correct_ocr_errors(cleaned)
-            normalized.append({
+            out = {
                 "page": block.get("page", 1),
                 "block_index": block.get("block_index", i),
                 "raw_text": text,
                 "normalized_text": cleaned,
-            })
+            }
+            if "boxes" in block:
+                out["boxes"] = block["boxes"]
+            if "page_width" in block:
+                out["page_width"] = block["page_width"]
+            if "page_height" in block:
+                out["page_height"] = block["page_height"]
+            normalized.append(out)
         return normalized
 
     # ---------------------------------------------------------------
@@ -218,3 +237,50 @@ class ImportTextNormalizer:
             return f"1{m.group(2)} {line[m.end():]}"
 
         return line
+
+    # ---------------------------------------------------------------
+    # 水印/页码过滤
+    # ---------------------------------------------------------------
+
+    def _filter_watermark_text(self, text: str) -> str:
+        """过滤水印行：关键词匹配 + 低信息量短文本检测。"""
+        if not text:
+            return text
+        lines = text.split("\n")
+        filtered: list[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                filtered.append(line)
+                continue
+            if _RE_WATERMARK.match(stripped):
+                continue
+            if self._is_low_info_noise(stripped):
+                continue
+            filtered.append(line)
+        return "\n".join(filtered)
+
+    def _is_low_info_noise(self, text: str) -> bool:
+        """检测低信息量噪声：短文本中非中英文字符占比过高。"""
+        if len(text) > 6:
+            return False
+        cjk_alpha = sum(
+            1 for c in text
+            if ("一" <= c <= "鿿") or c.isalpha()
+        )
+        return cjk_alpha / max(len(text), 1) < 0.5
+
+    def _filter_page_number(self, text: str) -> str:
+        """过滤页码行：纯数字且在合理页码范围内。"""
+        if not text:
+            return text
+        lines = text.split("\n")
+        filtered: list[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if _RE_PAGE_NUMBER.match(stripped):
+                num = int(stripped)
+                if 1 <= num <= 500:
+                    continue
+            filtered.append(line)
+        return "\n".join(filtered)
