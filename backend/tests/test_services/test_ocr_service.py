@@ -25,7 +25,7 @@ class TestServiceOcrImageDependencyHandling:
                 ocr_service.ocr_image(b"fake image")
 
     def test_ocr_pages_with_boxes_propagates_dependency_error(self):
-        """缺少 paddleocr 时，带框接口也应直接抛出依赖错误。"""
+        """缺少 paddleocr 时，带框接口应容错返回空文本而非抛异常。"""
         from app.services import ocr_service
 
         with patch.object(ocr_service.settings, "OCR_ENABLED", True), patch.object(
@@ -33,8 +33,9 @@ class TestServiceOcrImageDependencyHandling:
             "_ocr_instance",
             None,
         ), patch.dict(sys.modules, {"paddleocr": None}):
-            with pytest.raises(RuntimeError, match="OCR 依赖未安装：paddleocr"):
-                ocr_service.ocr_pages_with_boxes([(1, b"fake image")])
+            result = ocr_service.ocr_pages_with_boxes([(1, b"fake image")])
+            assert result[1].text == ""
+            assert result[1].boxes == []
 
 
 # ============================================================
