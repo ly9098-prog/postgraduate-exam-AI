@@ -129,7 +129,8 @@ class TestExtractPdfBlocks:
         mock_doc = MagicMock()
         mock_page = MagicMock()
         mock_page.get_text.return_value = "Page content"
-        mock_doc.__iter__.return_value = [mock_page]
+        mock_doc.__len__ = MagicMock(return_value=1)
+        mock_doc.__getitem__ = MagicMock(return_value=mock_page)
         mock_fitz.open.return_value = mock_doc
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}):
@@ -147,7 +148,8 @@ class TestExtractPdfBlocks:
         page1.get_text.return_value = ""
         page2 = MagicMock()
         page2.get_text.return_value = "Content"
-        mock_doc.__iter__.return_value = [page1, page2]
+        mock_doc.__len__ = MagicMock(return_value=2)
+        mock_doc.__getitem__ = MagicMock(side_effect=[page1, page2])
         mock_fitz.open.return_value = mock_doc
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}):
@@ -161,7 +163,8 @@ class TestExtractPdfBlocks:
         mock_doc = MagicMock()
         mock_page = MagicMock()
         mock_page.get_text.return_value = "   "
-        mock_doc.__iter__.return_value = [mock_page]
+        mock_doc.__len__ = MagicMock(return_value=1)
+        mock_doc.__getitem__ = MagicMock(return_value=mock_page)
         mock_fitz.open.return_value = mock_doc
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}):
@@ -276,7 +279,7 @@ class TestRunExtractOcrFallback:
                 with patch("app.core.config.settings.OCR_ENABLED", True):
                     result = pipeline._run_extract(b"pdf content", "pdf")
 
-        mock_ocr.assert_called_once_with(b"pdf content", pipeline_id="")
+        mock_ocr.assert_called_once_with(b"pdf content", pipeline_id="", page_start=1, page_end=None)
         assert result["raw_blocks"] == ocr_blocks
         assert result["extracted"] == 1
 
