@@ -32,6 +32,7 @@ from app.features import question_publish_service as publish_svc
 from app.features import review_service as review_svc
 from app.features.import_mode import ImportMode
 from app.features.pipeline_orchestrator import (
+    _set_pipeline_store,
     get_pipeline_status,
     run_excel_pipeline_background,
     run_import_pipeline,
@@ -695,6 +696,17 @@ async def pipeline_upload(
     if is_excel:
         pipeline_id = f"xl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
+        await _set_pipeline_store(pipeline_id, {
+            "pipeline_id": pipeline_id,
+            "status": "parsing",
+            "source_type": "excel",
+            "source_file": filename,
+            "stages": {"upload": {"status": "completed"}},
+            "stats": {},
+            "errors": [],
+            "started_at": datetime.now().isoformat(),
+        })
+
         background_tasks.add_task(
             run_excel_pipeline_background,
             pipeline_id=pipeline_id,
@@ -716,6 +728,17 @@ async def pipeline_upload(
         "page_start": page_start,
         "page_end": page_end,
     }
+
+    await _set_pipeline_store(pipeline_id, {
+        "pipeline_id": pipeline_id,
+        "status": "parsing",
+        "source_type": source_type,
+        "source_file": filename,
+        "stages": {"upload": {"status": "completed"}},
+        "stats": {},
+        "errors": [],
+        "started_at": datetime.now().isoformat(),
+    })
 
     background_tasks.add_task(
         _run_pipeline_with_db,
