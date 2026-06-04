@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     MAX_OCR_PAGES: int = 0  # 0 = no limit
     OCR_TIMEOUT_SECONDS: int = 600
     IMAGE_IMPORT_MAX_BYTES: int = 10 * 1024 * 1024
+    PAGE_CLASSIFIER_ENABLED: bool = True
 
     # Redis
     REDIS_URL: str = ""
