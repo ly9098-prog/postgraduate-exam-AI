@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.core.config import settings
+from app.core.ocr_profile import get_ocr_profile
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,6 @@ _ocr_lock = threading.Lock()  # serialize GPU inference calls
 
 
 _OCR_MAX_SIDE = 3000
-_OCR_MIN_WIDTH = settings.OCR_MIN_IMAGE_WIDTH
 _OCR_DEPENDENCY_ERROR = "OCR 依赖未安装：paddleocr，请先安装 requirements-ocr.txt"
 
 
@@ -48,10 +48,11 @@ def _get_ocr():
         except ImportError as exc:
             raise RuntimeError(_OCR_DEPENDENCY_ERROR) from exc
 
+        profile = get_ocr_profile()
         _ocr_instance = PaddleOCR(
             use_angle_cls=True,
             lang=settings.OCR_LANGUAGE,
-            use_gpu=settings.OCR_USE_GPU,
+            use_gpu=profile.use_gpu,
             show_log=False,
             det_db_thresh=settings.OCR_DET_DB_THRESH,
             det_db_box_thresh=settings.OCR_DET_DB_BOX_THRESH,
@@ -72,10 +73,11 @@ def _load_ocr_image(image_bytes: bytes):
 def _resize_for_ocr(img):
     from PIL import Image
 
+    min_width = get_ocr_profile().min_image_width
     width, height = img.size
     # Upscale small images to minimum width for better text detection
-    if width < _OCR_MIN_WIDTH:
-        scale = _OCR_MIN_WIDTH / width
+    if width < min_width:
+        scale = min_width / width
         # Also respect max side constraint
         max_scale = _OCR_MAX_SIDE / max(width, height)
         scale = min(scale, max_scale)
@@ -311,6 +313,8 @@ def _ocr_prepared_image(ocr, img) -> Any:
 def _ocr_with_rotation_candidates(ocr, image_bytes: bytes) -> OcrCandidateResult:
     img = _prepare_ocr_image(image_bytes)
     result = _ocr_prepared_image(ocr, img)
+    if not get_ocr_profile().enable_rotation:
+        return OcrCandidateResult(result=result, image_size=img.size)
     if _ocr_score_is_good(result):
         return OcrCandidateResult(result=result, image_size=img.size)
 
@@ -484,7 +488,7 @@ def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
         return {}
 
     results: dict[int, str] = {}
-    max_workers = settings.OCR_MAX_WORKERS
+    max_workers = get_ocr_profile().max_workers
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -512,7 +516,7 @@ def ocr_pages_with_boxes(
         return {}
 
     results: dict[int, OcrPageResult] = {}
-    max_workers = settings.OCR_MAX_WORKERS
+    max_workers = get_ocr_profile().max_workers
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {

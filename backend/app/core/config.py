@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     WECHAT_APP_ID: str = ""
     WECHAT_APP_SECRET: str = ""
 
+    # 部署档案（留空跟随 APP_ENV）
+    DEPLOY_PROFILE: str = ""  # "local" | "production"
+
     # OCR
     OCR_ENABLED: bool = False
     OCR_MAX_WORKERS: int = 2

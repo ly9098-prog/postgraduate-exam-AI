@@ -133,11 +133,13 @@ def _ocr_scanned_pdf(content: bytes, pipeline_id: str = "", page_start: int = 1,
     import fitz
 
     from app.core.config import settings
+    from app.core.ocr_profile import get_ocr_profile
     from app.services.ocr_service import clean_ocr_text, ocr_pages_with_boxes
 
+    profile = get_ocr_profile()
     max_pages = settings.MAX_OCR_PAGES
-    timeout = settings.OCR_TIMEOUT_SECONDS
-    batch_size = settings.OCR_MAX_WORKERS
+    timeout = profile.timeout_seconds
+    batch_size = profile.max_workers
 
     doc = fitz.open(stream=content, filetype="pdf")
     total_pages = len(doc)

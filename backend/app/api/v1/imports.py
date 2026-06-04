@@ -31,6 +31,7 @@ from app.features import question_pipeline as svc
 from app.features import question_publish_service as publish_svc
 from app.features import review_service as review_svc
 from app.features.import_mode import ImportMode
+from app.services.upload_validator import get_upload_validator
 from app.features.pipeline_orchestrator import (
     _set_pipeline_store,
     get_pipeline_status,
@@ -641,6 +642,10 @@ async def pipeline_upload(
     if not content:
         raise HTTPException(status_code=400, detail="文件内容为空")
 
+    # 环境级上传限制
+    validator = get_upload_validator()
+    validator.validate_file(filename, len(content), file.content_type)
+
     # 页码范围校验
     if page_start is not None and page_start < 1:
         raise HTTPException(status_code=400, detail="page_start 必须 >= 1")
@@ -657,8 +662,6 @@ async def pipeline_upload(
             raise HTTPException(status_code=400, detail="图片 OCR 功能未启用")
         if importlib.util.find_spec("paddleocr") is None:
             raise HTTPException(status_code=400, detail="OCR 依赖未安装：paddleocr")
-        if len(content) > settings.IMAGE_IMPORT_MAX_BYTES:
-            raise HTTPException(status_code=400, detail="图片过大，请压缩后重试")
 
         image_width, image_height, image_format = _validate_image_content(content)
         image_hash = hashlib.sha256(content).hexdigest()
@@ -720,6 +723,16 @@ async def pipeline_upload(
     # --- PDF / TXT branch ---
     source_type = "pdf" if is_pdf else "txt"
     pipeline_id = f"pl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+
+    if is_pdf:
+        try:
+            import fitz
+            with fitz.open(stream=content, filetype="pdf") as doc:
+                validator.validate_pdf_pages(len(doc))
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # malformed PDF — will fail downstream with proper error
 
     options = {
         "enable_ai_repair": enable_ai_repair,
