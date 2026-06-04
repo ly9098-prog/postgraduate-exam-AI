@@ -48,7 +48,12 @@ logger = logging.getLogger("2240ai")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting 2240AI — env=%s", settings.APP_ENV)
+    from app.core.ocr_profile import get_ocr_profile
+    profile = get_ocr_profile()
+    logger.info(
+        "Starting 2240AI — env=%s, ocr_profile=%s (gpu=%s, workers=%d, max_pdf_pages=%d)",
+        settings.APP_ENV, profile.name, profile.use_gpu, profile.max_workers, profile.max_pdf_pages,
+    )
     os.makedirs("static/formulas", exist_ok=True)
     await init_db()
     try:
