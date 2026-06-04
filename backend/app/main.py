@@ -34,6 +34,7 @@ from app.api.v1.admin_rbac import router as admin_rbac_router
 from app.api.v1.admin_subjects import router as admin_subjects_router
 from app.api.v1.admin_users import router as admin_users_router
 from app.api.v1.admin_watermark_rules import router as admin_watermark_rules_router
+from app.api.v1.sync import router as sync_router
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.logging_config import setup_logging
@@ -156,6 +157,7 @@ app.include_router(admin_rbac_router)
 app.include_router(admin_subjects_router)
 app.include_router(admin_users_router)
 app.include_router(admin_watermark_rules_router)
+app.include_router(sync_router)
 
 # 静态文件服务（开发用公式图片）
 os.makedirs("static/formulas", exist_ok=True)

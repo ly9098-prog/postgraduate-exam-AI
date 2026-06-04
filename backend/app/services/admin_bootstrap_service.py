@@ -61,6 +61,7 @@ ADMIN_PERMISSION_DEFINITIONS: tuple[dict[str, str], ...] = (
     {"name": "ai_setting:read", "resource": "ai_setting", "action": "read", "category": "ai_setting", "description": "查看 AI 解析设置"},
     {"name": "ai_setting:write", "resource": "ai_setting", "action": "write", "category": "ai_setting", "description": "修改 AI 解析设置"},
     {"name": "audit:read", "resource": "audit", "action": "read", "category": "audit", "description": "查看审计日志"},
+    {"name": "sync:write", "resource": "sync", "action": "write", "category": "sync", "description": "执行本地→云端数据同步"},
 )
 
 

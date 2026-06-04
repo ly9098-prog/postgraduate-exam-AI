@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import uuid4
 
 from sqlalchemy import Boolean, DateTime, Integer, JSON, SmallInteger, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -36,3 +37,7 @@ class Question(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+    sync_uuid: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, unique=True, index=True, default=lambda: str(uuid4())
+    )
+    sync_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
