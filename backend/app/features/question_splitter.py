@@ -527,6 +527,8 @@ def split_questions(
             "section_type": section_type,
         })
 
+    questions = _recover_cross_page_options(questions)
+
     return questions
 
 
@@ -634,5 +636,128 @@ def split_by_visual_boundaries(
             "confidence": conf,
             "detection_method": "visual_boundary",
         })
+
+    return questions
+
+
+# ---------------------------------------------------------------------------
+# Cross-page option recovery
+# ---------------------------------------------------------------------------
+
+_EXPECTED_CHOICE_KEYS = ["A", "B", "C", "D"]
+
+
+def _detect_incomplete_options(question: dict) -> tuple[bool, set[str]]:
+    """Check if a choice question has incomplete ABCD options.
+
+    Returns (is_incomplete, found_keys).
+    Only flags questions that have SOME options but are missing others.
+    """
+    option_lines = question.get("option_lines", {})
+    if not option_lines:
+        return False, set()
+
+    found_keys = {k.upper() for k in option_lines.keys()}
+
+    if "A" not in found_keys:
+        return False, found_keys
+
+    missing = set(_EXPECTED_CHOICE_KEYS) - found_keys
+    if missing:
+        return True, found_keys
+
+    return False, found_keys
+
+
+def _detect_orphan_options_at_start(raw_text: str) -> tuple[bool, dict[str, str], int]:
+    """Check if text starts with orphaned option lines (no preceding question number).
+
+    Returns (has_orphans, orphan_options, chars_consumed).
+    """
+    lines = raw_text.split("\n")
+    orphan_options: dict[str, str] = {}
+    chars_consumed = 0
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            chars_consumed += len(line) + 1
+            continue
+
+        if _detect_question_number(stripped) is not None:
+            break
+
+        result = _detect_option_line(stripped)
+        if result:
+            key, text = result
+            orphan_options[key] = text
+            chars_consumed += len(line) + 1
+            continue
+
+        if orphan_options:
+            break
+        break
+
+    if not orphan_options:
+        return False, {}, 0
+
+    return True, orphan_options, chars_consumed
+
+
+def _recover_cross_page_options(questions: list[dict]) -> list[dict]:
+    """Post-process split results to recover orphaned options from page breaks.
+
+    Detects pattern:
+    - Question i has options A, B but not C, D (incomplete)
+    - Question i+1 starts with orphan option lines C, D (no question number first)
+
+    Merges the orphaned content back into question i and recalculates.
+    """
+    if len(questions) < 2:
+        return questions
+
+    i = 0
+    while i < len(questions) - 1:
+        current = questions[i]
+        next_q = questions[i + 1]
+
+        is_incomplete, found_keys = _detect_incomplete_options(current)
+        if not is_incomplete:
+            i += 1
+            continue
+
+        if current.get("page_end", 0) == next_q.get("page_start", 0):
+            i += 1
+            continue
+
+        has_orphans, orphan_opts, chars_consumed = _detect_orphan_options_at_start(
+            next_q.get("raw_question_text", "")
+        )
+        if not has_orphans:
+            i += 1
+            continue
+
+        orphan_keys = {k.upper() for k in orphan_opts.keys()}
+        missing_keys = set(_EXPECTED_CHOICE_KEYS) - found_keys
+        if not (orphan_keys & missing_keys):
+            i += 1
+            continue
+
+        orphan_text = next_q["raw_question_text"][:chars_consumed]
+        current["raw_question_text"] = current["raw_question_text"].rstrip() + "\n" + orphan_text.strip()
+        current["option_lines"].update(orphan_opts)
+        current["has_options"] = True
+        current["page_end"] = next_q.get("page_start", current.get("page_end", 1))
+
+        remaining_text = next_q["raw_question_text"][chars_consumed:].lstrip("\n")
+        if remaining_text.strip():
+            next_q["raw_question_text"] = remaining_text
+            next_q["option_lines"] = _extract_options(remaining_text)
+            next_q["has_options"] = len(next_q["option_lines"]) > 0
+        else:
+            questions.pop(i + 1)
+            continue
+
+        i += 1
 
     return questions

@@ -208,6 +208,34 @@ class TestCrossPage:
         assert result[0]["page_start"] == 1
         assert result[0]["page_end"] == 2
 
+    def test_orphan_options_recovery(self):
+        """跨页选项恢复：题目在第1页有A、B，第2页开头有C、D。"""
+        blocks = [
+            {"page": 1, "block_index": 0, "normalized_text": "1. 以下关于死锁的说法正确的是\nA. 死锁是永久性阻塞\nB. 死锁只发生在两个进程间"},
+            {"page": 2, "block_index": 1, "normalized_text": "C. 死锁可以被预防\nD. 死锁不可能被检测\n2. 下一题题干"},
+        ]
+        result = split_questions(blocks)
+        assert len(result) == 2
+        # Question 1 should have all 4 options merged
+        assert "A" in result[0]["option_lines"]
+        assert "B" in result[0]["option_lines"]
+        assert "C" in result[0]["option_lines"]
+        assert "D" in result[0]["option_lines"]
+        # Question 2 should not contain option C/D
+        assert "C" not in result[1]["option_lines"]
+        assert "D" not in result[1]["option_lines"]
+
+    def test_no_false_merge_when_complete(self):
+        """完整选项不应触发合并。"""
+        blocks = [
+            {"page": 1, "block_index": 0, "normalized_text": "1. 题目\nA. 选项A\nB. 选项B\nC. 选项C\nD. 选项D"},
+            {"page": 2, "block_index": 1, "normalized_text": "2. 下一题\nA. 选项A\nB. 选项B\nC. 选项C\nD. 选项D"},
+        ]
+        result = split_questions(blocks)
+        assert len(result) == 2
+        assert len(result[0]["option_lines"]) == 4
+        assert len(result[1]["option_lines"]) == 4
+
 
 # ---------------------------------------------------------------
 # 7. OCR 错误容错

@@ -20,6 +20,24 @@ _GARBLED_CHARS = re.compile(r"[�□█░-▓\x00-\x08\x0e-\x1f]")
 _SHORT_LINE_THRESHOLD = 5
 
 # ---------------------------------------------------------------------------
+# Quality tier thresholds
+# ---------------------------------------------------------------------------
+
+TIER_HIGH_THRESHOLD = 0.15
+TIER_MEDIUM_THRESHOLD = 0.30
+
+
+def _classify_quality_tier(noise_score: float) -> str:
+    """HIGH = clean (skip AI), MEDIUM = AI correct, LOW = AI correct + flag."""
+    if noise_score < TIER_HIGH_THRESHOLD:
+        return "HIGH"
+    elif noise_score < TIER_MEDIUM_THRESHOLD:
+        return "MEDIUM"
+    else:
+        return "LOW"
+
+
+# ---------------------------------------------------------------------------
 # Token budget (process-level, independent from ai_repair)
 # ---------------------------------------------------------------------------
 
@@ -113,8 +131,11 @@ def _should_correct(noise_score: float, config: dict) -> bool:
         return False
     if mode == "always":
         return True
-    threshold = config.get("noise_threshold", 0.3)
-    return noise_score >= threshold
+    threshold = config.get("noise_threshold")
+    if threshold is not None:
+        return noise_score >= threshold
+    tier = _classify_quality_tier(noise_score)
+    return tier in ("MEDIUM", "LOW")
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +223,8 @@ async def correct_ocr_blocks(
     corrected_blocks: list[dict] = [None] * len(normalized_blocks)  # type: ignore
     noisy_count = 0
     corrected_count = 0
+    flagged_for_review = 0
+    tier_distribution: dict[str, int] = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
     total_tokens_before = int(_token_usage.get("daily", 0))
 
     to_correct: list[tuple[int, str, float]] = []
@@ -213,6 +236,8 @@ async def correct_ocr_blocks(
             continue
 
         noise_score = _detect_noise(block)
+        tier = _classify_quality_tier(noise_score)
+        tier_distribution[tier] += 1
         should = _should_correct(noise_score, config)
 
         if not should:
@@ -221,6 +246,7 @@ async def correct_ocr_blocks(
                 "block_index": block.get("block_index", 0),
                 "page": block.get("page", 1),
                 "noise_score": round(noise_score, 3),
+                "quality_tier": tier,
                 "corrected": False,
             })
             continue
@@ -241,6 +267,7 @@ async def correct_ocr_blocks(
 
     for (idx, text, noise_score), result in zip(to_correct, results):
         block = normalized_blocks[idx]
+        tier = _classify_quality_tier(noise_score)
 
         if isinstance(result, BaseException):
             logger.debug("ocr_correction block %d failed: %s", idx, result)
@@ -254,14 +281,21 @@ async def correct_ocr_blocks(
                 "block_index": block.get("block_index", 0),
                 "page": block.get("page", 1),
                 "noise_score": round(noise_score, 3),
+                "quality_tier": tier,
                 "corrected": False,
+                "needs_review": tier == "LOW",
                 "reason": "ai_failed_or_limit",
             })
+            if tier == "LOW":
+                flagged_for_review += 1
             continue
 
         new_block = dict(block)
         new_block["normalized_text"] = corrected_text
         new_block["ocr_correction_applied"] = True
+        if tier == "LOW":
+            new_block["needs_review"] = True
+            flagged_for_review += 1
         corrected_blocks[idx] = new_block
         corrected_count += 1
 
@@ -269,7 +303,9 @@ async def correct_ocr_blocks(
             "block_index": block.get("block_index", 0),
             "page": block.get("page", 1),
             "noise_score": round(noise_score, 3),
+            "quality_tier": tier,
             "corrected": True,
+            "needs_review": tier == "LOW",
         })
 
     final_blocks = [b for b in corrected_blocks if b is not None]
@@ -286,6 +322,8 @@ async def correct_ocr_blocks(
             "corrected_blocks": corrected_count,
             "skipped_blocks": len(normalized_blocks) - noisy_count,
             "total_tokens": max(total_tokens_used, 0),
+            "tier_distribution": tier_distribution,
+            "flagged_for_review": flagged_for_review,
         },
         "skipped_reason": None,
     }

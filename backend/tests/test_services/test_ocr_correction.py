@@ -89,13 +89,29 @@ class TestShouldCorrect:
         assert _should_correct(0.0, {"mode": "always"}) is True
 
     def test_auto_below_threshold(self):
-        assert _should_correct(0.2, {"mode": "auto", "noise_threshold": 0.3}) is False
+        # Score 0.1 is in HIGH tier (< 0.15), should NOT correct
+        assert _should_correct(0.1, {"mode": "auto"}) is False
+
+    def test_auto_medium_tier_corrects(self):
+        # Score 0.2 is in MEDIUM tier (0.15-0.30), should correct
+        assert _should_correct(0.2, {"mode": "auto"}) is True
 
     def test_auto_above_threshold(self):
         assert _should_correct(0.5, {"mode": "auto", "noise_threshold": 0.3}) is True
 
     def test_auto_at_threshold(self):
         assert _should_correct(0.3, {"mode": "auto", "noise_threshold": 0.3}) is True
+
+    def test_noise_threshold_override_below(self):
+        # With explicit threshold 0.4, score 0.35 (would be LOW tier = corrected)
+        # but threshold override says 0.35 < 0.4 → skip
+        assert _should_correct(0.35, {"mode": "auto", "noise_threshold": 0.4}) is False
+
+    def test_noise_threshold_override_above(self):
+        # With explicit threshold 0.1, score 0.12 (would be HIGH tier = skipped)
+        # but threshold override says 0.12 >= 0.1 → correct
+        assert _should_correct(0.12, {"mode": "auto", "noise_threshold": 0.1}) is True
+
 # ---------------------------------------------------------------------------
 # AI correction integration tests (mocked)
 # ---------------------------------------------------------------------------
