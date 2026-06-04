@@ -89,6 +89,10 @@ _EXAM_SECTION_HEADER = re.compile(
 
 _SENTENCE_END = frozenset("。！？；…")
 
+# 正文散文检测：用于内容页上区分知识点编号和真实题号
+_PROSE_SENTENCE_END_RE = re.compile(r"。")
+_OPTION_ABCD_RE = re.compile(r"[A-D]\s*[.．、:：)）]")
+
 
 def _iter_lines_with_pos(text: str):
     """Yield (line_start_pos, line_text) for each line in text."""
@@ -126,6 +130,21 @@ def _is_section_number(line: str, page: int | None = None, content_pages: set | 
         if re.match(r"^\d+\s*[.、]", stripped) and _YEAR_ANNOTATION_RE.search(stripped):
             if not re.search(r"[A-D]\s*[.、:：)）]", stripped):
                 return True
+    return False
+
+
+def _is_content_prose(text_segment: str) -> bool:
+    """判断从题号开始的文本段是否为正文散文（而非题目）。
+
+    在内容页上，编号后跟多句解释性文字（≥2个句号且无选项标记）几乎一定是课本正文。
+    """
+    if _OPTION_ABCD_RE.search(text_segment):
+        return False
+    periods = len(_PROSE_SENTENCE_END_RE.findall(text_segment))
+    if periods >= 2:
+        return True
+    if len(text_segment) > 150 and periods >= 1:
+        return True
     return False
 
 
@@ -430,7 +449,7 @@ def split_questions(
     # Filter out section numbers masquerading as question numbers
     filtered_boundaries: list[tuple[int, int]] = []
     previous_valid_num: int | None = None
-    for num, start_pos in boundaries:
+    for bound_idx, (num, start_pos) in enumerate(boundaries):
         page = _pos_to_page(start_pos, page_map)
         # Extract the line at this position for section-number check
         line_end = full_text.find("\n", start_pos)
@@ -440,6 +459,13 @@ def split_questions(
 
         if _is_section_number(line_text, page, content_pages):
             continue
+
+        # Content page prose detection: numbered paragraphs of explanatory text
+        if content_pages and page in content_pages:
+            next_pos = boundaries[bound_idx + 1][1] if bound_idx + 1 < len(boundaries) else len(full_text)
+            segment = full_text[start_pos:next_pos]
+            if _is_content_prose(segment):
+                continue
 
         # Context-aware: skip pages before any exercise section starts
         if exercise_start_pages and page < min(exercise_start_pages):
