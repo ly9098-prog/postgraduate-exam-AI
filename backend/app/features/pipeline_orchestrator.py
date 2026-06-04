@@ -23,6 +23,7 @@ from typing import Any
 from app.features.ai_repair import repair_questions
 from app.features.ai_validation import validate_ai_results
 from app.features.answer_matcher import match_answers
+from app.features.import_mode import ImportMode, detect_import_mode, get_strategy
 from app.features.ocr_correction import correct_ocr_blocks
 from app.features.page_classifier import classify_pages, filter_blocks_by_classification
 from app.features.question_normalizer import normalize_questions
@@ -420,7 +421,8 @@ class ImportPipeline:
 
     def _run_normalize_text(self, raw_blocks: list[dict], **_kw) -> dict:
         """Stage 1: text cleaning via ImportTextNormalizer."""
-        normalizer = ImportTextNormalizer()
+        extra_patterns = _kw.get("watermark_patterns") or []
+        normalizer = ImportTextNormalizer(extra_watermark_patterns=extra_patterns)
         normalized_blocks = normalizer.normalize(raw_blocks)
 
         warnings: list[str] = []
@@ -465,19 +467,47 @@ class ImportPipeline:
     def _run_analyze_structure(self, normalized_blocks: list[dict], **_kw) -> dict:
         """Stage 2: detect question/answer document layout."""
         structure = analyze_structure(normalized_blocks)
+
+        # In AUTO mode, refine import mode based on structure analysis
+        import_mode = _kw.get("import_mode")
+        source_file = _kw.get("source_file", "")
+        if import_mode == ImportMode.AUTO:
+            detected = detect_import_mode(source_file, structure)
+            strategy = get_strategy(detected)
+            return {
+                "structure": structure,
+                "import_mode": detected,
+                "strategy": strategy,
+                "warnings": [f"auto-detected import_mode: {detected.value}"],
+            }
+
         return {"structure": structure, "warnings": []}
 
     def _run_classify_pages(self, normalized_blocks: list[dict], structure: dict | None = None, **_kw) -> dict:
         """Stage 2.5: classify each page and filter out non-question pages."""
         from app.core.config import settings
 
-        if not settings.PAGE_CLASSIFIER_ENABLED:
+        strategy = _kw.get("strategy") or {}
+
+        if not settings.PAGE_CLASSIFIER_ENABLED and not strategy.get("page_classifier_enabled"):
             return {"page_classifications": [], "warnings": ["page classifier disabled"]}
 
         section_markers = structure.get("section_markers") if structure else None
         page_classifications = classify_pages(normalized_blocks, section_markers=section_markers)
 
-        filtered = filter_blocks_by_classification(normalized_blocks, page_classifications)
+        # Apply mode-specific filtering rules
+        filter_knowledge = strategy.get("filter_knowledge_pages", True)
+        filter_catalog = strategy.get("filter_catalog_pages", True)
+
+        allowed_labels = {"QUESTION_PAGE", "ANSWER_PAGE", "ANALYSIS_PAGE"}
+        if not filter_knowledge:
+            allowed_labels.add("KNOWLEDGE_PAGE")
+        if not filter_catalog:
+            allowed_labels.add("CATALOG_PAGE")
+
+        filtered = filter_blocks_by_classification(
+            normalized_blocks, page_classifications, allowed_labels=allowed_labels,
+        )
 
         warnings: list[str] = []
         removed_pages = len(normalized_blocks) - len(filtered)
@@ -498,7 +528,9 @@ class ImportPipeline:
 
     def _run_split(self, normalized_blocks: list[dict], structure: dict | None = None, **_kw) -> dict:
         """Stage 3: split text blocks into individual questions."""
-        raw_questions = split_questions(normalized_blocks, structure=structure)
+        strategy = _kw.get("strategy") or {}
+        gap_tolerance = strategy.get("question_number_gap_tolerance", 10)
+        raw_questions = split_questions(normalized_blocks, structure=structure, gap_tolerance=gap_tolerance)
 
         text_blocks = [
             b for b in normalized_blocks
@@ -843,6 +875,26 @@ class ImportPipeline:
 
         started_at = datetime.now().isoformat()
 
+        # Resolve import mode and strategy
+        mode_str = opts.get("import_mode", "auto")
+        try:
+            import_mode = ImportMode(mode_str)
+        except ValueError:
+            import_mode = ImportMode.AUTO
+        strategy = get_strategy(import_mode)
+
+        # Load configurable watermark rules from DB
+        watermark_patterns: list = []
+        if db:
+            try:
+                from app.services.watermark_service import load_rules
+                watermark_patterns = await load_rules(db)
+            except Exception as e:
+                logger.warning("Failed to load watermark rules from DB, using defaults: %s", e)
+        if not watermark_patterns:
+            from app.services.watermark_service import get_default_patterns
+            watermark_patterns = get_default_patterns()
+
         # Accumulated data passed between stages
         data: dict[str, Any] = {
             "file_content": file_content,
@@ -851,6 +903,9 @@ class ImportPipeline:
             "subject": subject,
             "options": opts,
             "db": db,
+            "import_mode": import_mode,
+            "strategy": strategy,
+            "watermark_patterns": watermark_patterns,
             "raw_blocks": [],
             "normalized_blocks": [],
             "raw_questions": [],
@@ -895,6 +950,7 @@ class ImportPipeline:
             "failed": sum(1 for s in self.stages.values() if s.status == "failed"),
         }
         diagnostics = {
+            "import_mode": data.get("import_mode", ImportMode.AUTO).value if hasattr(data.get("import_mode", ""), "value") else str(data.get("import_mode", "auto")),
             "structure": data.get("structure", {}),
             "page_classifications": data.get("page_classifications", []),
             "ocr_correction": data.get("ocr_correction_diagnostics", {}),
@@ -956,6 +1012,15 @@ async def run_import_pipeline(
         lower_name = (source_file or "").lower()
         if "王道" in (source_file or "") or "wangdao" in lower_name or re.search(r"(?:^|[_\-\s])408(?:[_\-\s.]|$)", lower_name):
             opts["enable_wangdao_preprocess"] = True
+
+    # EXAM mode disables wangdao preprocessing by default
+    mode_str = opts.get("import_mode", "auto")
+    try:
+        import_mode = ImportMode(mode_str)
+    except ValueError:
+        import_mode = ImportMode.AUTO
+    if import_mode == ImportMode.EXAM and "enable_wangdao_preprocess" not in (options or {}):
+        opts["enable_wangdao_preprocess"] = False
 
     pipeline = ImportPipeline(options=opts)
     pipeline.pipeline_id = pipeline_id
