@@ -41,6 +41,11 @@ _SECTION_MARKER_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"综合应用题|综合题"), "question_type_subjective"),
     (re.compile(r"答案与解析|答案和解析"), "answer_start"),
     (re.compile(r"本章小结|疑难点"), "summary"),
+    # 试卷大题节标题
+    (re.compile(r"^[一二三四五六七八九十]+\s*[、.．]\s*(?:选择|单选|多选)题?"), "question_type_single"),
+    (re.compile(r"^[一二三四五六七八九十]+\s*[、.．]\s*填空题?"), "question_type_fill"),
+    (re.compile(r"^[一二三四五六七八九十]+\s*[、.．]\s*(?:简答|解答|计算|证明|论述|程序设计|应用)题?"), "question_type_subjective"),
+    (re.compile(r"^第\s*[一二三四五六七八九十]+\s*(?:部分|大?题)"), "exam_section"),
 ]
 
 

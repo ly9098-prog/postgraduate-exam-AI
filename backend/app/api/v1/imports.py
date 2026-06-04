@@ -30,6 +30,7 @@ from app.schemas.question_publish import (
 from app.features import question_pipeline as svc
 from app.features import question_publish_service as publish_svc
 from app.features import review_service as review_svc
+from app.features.import_mode import ImportMode
 from app.features.pipeline_orchestrator import (
     get_pipeline_status,
     run_excel_pipeline_background,
@@ -606,6 +607,7 @@ async def pipeline_upload(
     file: UploadFile,
     background_tasks: BackgroundTasks,
     subject: str | None = None,
+    import_mode: ImportMode = ImportMode.AUTO,
     enable_ai_repair: bool = True,
     confidence_threshold: float = 0.6,
     page_start: int | None = None,
@@ -614,6 +616,7 @@ async def pipeline_upload(
 ):
     """统一导入入口：支持 Excel / PDF / TXT / 图片，异步返回 pipeline_id。
 
+    import_mode: "auto" | "book" | "exam"
     通过 GET /api/v1/import/pipelines/{pipeline_id} 查询进度。
     """
     if not file.filename:
@@ -709,6 +712,7 @@ async def pipeline_upload(
     options = {
         "enable_ai_repair": enable_ai_repair,
         "confidence_threshold": confidence_threshold,
+        "import_mode": import_mode.value,
         "page_start": page_start,
         "page_end": page_end,
     }

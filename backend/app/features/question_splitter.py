@@ -72,7 +72,39 @@ _CONTENT_TITLE_PATTERN = re.compile(
     r"^\d+\s*[.、]\s*[一-鿿]{2,}[一-鿿\s]*$"
 )
 
+# 试卷大题节标题：一、选择题 / 二、填空题 / 三、解答题 / Part I
+_EXAM_SECTION_HEADER = re.compile(
+    r"^(?:"
+    r"[一二三四五六七八九十]+\s*[、.．]\s*"
+    r"(?:单项选择|多项选择|选择|单选|多选|判断|填空|简答|"
+    r"计算|证明|综合应用|综合|解答|论述|分析|程序设计|应用)"
+    r"(?:题|部分)?"
+    r"|Part\s+[IVX]+\b"
+    r"|第\s*[一二三四五六七八九十]+\s*(?:部分|大?题)"
+    r")"
+)
+
 _SENTENCE_END = frozenset("。！？；…")
+
+
+def _iter_lines_with_pos(text: str):
+    """Yield (line_start_pos, line_text) for each line in text."""
+    start = 0
+    for line in text.split("\n"):
+        yield start, line
+        start += len(line) + 1
+
+
+def _has_exam_section_before(pos: int, section_positions: set[int], full_text: str) -> bool:
+    """Check if there's an exam section header between the previous question and pos."""
+    if not section_positions:
+        return False
+    # Look backward from pos for a section header within 500 chars
+    search_start = max(0, pos - 500)
+    for sp in section_positions:
+        if search_start <= sp < pos:
+            return True
+    return False
 
 
 def _is_section_number(line: str, page: int | None = None, content_pages: set | None = None) -> bool:
@@ -320,12 +352,14 @@ def _pos_to_page(
 def split_questions(
     normalized_blocks: list[dict],
     structure: dict | None = None,
+    gap_tolerance: int = 10,
 ) -> list[dict]:
     """从文档块中切分出单道题目。
 
     Args:
         normalized_blocks: stage1 输出的标准化块列表
         structure: stage2 的结构分析结果（可选）
+        gap_tolerance: 题号跳跃容忍度，超过此值且无选择题特征则跳过
 
     Returns:
         raw_questions 列表
@@ -376,6 +410,13 @@ def split_questions(
     if not boundaries:
         return []
 
+    # Detect exam section headers in full_text (allow number resets after them)
+    exam_section_positions: set[int] = set()
+    for line_start, line in _iter_lines_with_pos(full_text):
+        stripped = line.strip()
+        if _EXAM_SECTION_HEADER.match(stripped):
+            exam_section_positions.add(line_start)
+
     # Filter out section numbers masquerading as question numbers
     filtered_boundaries: list[tuple[int, int]] = []
     previous_valid_num: int | None = None
@@ -394,8 +435,13 @@ def split_questions(
         if exercise_start_pages and page < min(exercise_start_pages):
             continue
 
+        # Allow number resets after exam section headers
+        if previous_valid_num is not None and num < previous_valid_num:
+            if num == 1 and _has_exam_section_before(start_pos, exam_section_positions, full_text):
+                previous_valid_num = None
+
         # Large gap check: if number jumps by more than expected, lower trust
-        if previous_valid_num is not None and num > previous_valid_num + 10:
+        if previous_valid_num is not None and num > previous_valid_num + gap_tolerance:
             # Likely a false positive from content text
             if not _has_question_characteristics(line_text):
                 continue

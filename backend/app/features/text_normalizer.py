@@ -64,6 +64,9 @@ _RE_PAGE_NUMBER = re.compile(r"^\s*\d{1,3}\s*$")
 class ImportTextNormalizer:
     """导入文本标准化器 — 纯规则实现。"""
 
+    def __init__(self, extra_watermark_patterns: list | None = None):
+        self._extra_watermark_patterns = extra_watermark_patterns or []
+
     def normalize(self, raw_blocks: list[dict]) -> list[dict]:
         """标准化文本块，返回 normalized_blocks。"""
         normalized = []
@@ -243,7 +246,7 @@ class ImportTextNormalizer:
     # ---------------------------------------------------------------
 
     def _filter_watermark_text(self, text: str) -> str:
-        """过滤水印行：关键词匹配 + 低信息量短文本检测。"""
+        """过滤水印行：关键词匹配 + 低信息量短文本检测 + 自定义规则。"""
         if not text:
             return text
         lines = text.split("\n")
@@ -257,8 +260,17 @@ class ImportTextNormalizer:
                 continue
             if self._is_low_info_noise(stripped):
                 continue
+            if self._match_extra_watermark(stripped):
+                continue
             filtered.append(line)
         return "\n".join(filtered)
+
+    def _match_extra_watermark(self, text: str) -> bool:
+        """检查是否匹配自定义水印规则。"""
+        for pat in self._extra_watermark_patterns:
+            if pat.search(text):
+                return True
+        return False
 
     def _is_low_info_noise(self, text: str) -> bool:
         """检测低信息量噪声：短文本中非中英文字符占比过高。"""
