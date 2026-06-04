@@ -23,6 +23,7 @@ from typing import Any
 from app.features.ai_repair import repair_questions
 from app.features.ai_validation import validate_ai_results
 from app.features.answer_matcher import match_answers
+from app.features.batch_validation import validate_batch_structure
 from app.features.import_mode import ImportMode, detect_import_mode, get_strategy
 from app.features.ocr_correction import correct_ocr_blocks
 from app.features.page_classifier import classify_pages, filter_blocks_by_classification
@@ -331,6 +332,7 @@ class ImportPipeline:
             ("match", self._run_match),
             ("normalize_schema", self._run_normalize_schema),
         ])
+        stage_specs.append(("batch_validation", self._run_batch_validation))
         if self.options.get("enable_batch_dedup", True):
             stage_specs.append(("batch_dedup", self._run_batch_dedup))
         if self.options.get("enable_ai_repair", True):
@@ -655,6 +657,25 @@ class ImportPipeline:
             "warnings": stage_warnings,
         }
 
+    def _run_batch_validation(self, questions: list[dict], **_kw) -> dict:
+        """Stage 5.6: cross-question structural integrity validation (pure rules)."""
+        result = validate_batch_structure(questions)
+
+        warnings: list[str] = []
+        stats = result["batch_validation_diagnostics"]["stats"]
+        if stats["number_gap_count"] > 0:
+            warnings.append(f"{stats['number_gap_count']} question number gaps detected")
+        if stats["incomplete_option_count"] > 0:
+            warnings.append(f"{stats['incomplete_option_count']} questions with incomplete options")
+        if stats["missing_answer_count"] > 0:
+            warnings.append(f"{stats['missing_answer_count']} questions missing answers")
+
+        return {
+            "questions": result["questions"],
+            "batch_validation_diagnostics": result["batch_validation_diagnostics"],
+            "warnings": warnings,
+        }
+
     def _run_batch_dedup(self, questions: list[dict], **_kw) -> dict:
         """Stage 5.5: flag batch-internal duplicates to skip expensive repair."""
         from app.features.question_normalizer import dedup_batch
@@ -955,6 +976,7 @@ class ImportPipeline:
             "page_classifications": data.get("page_classifications", []),
             "ocr_correction": data.get("ocr_correction_diagnostics", {}),
             "split": data.get("split_diagnostics", {}),
+            "batch_validation": data.get("batch_validation_diagnostics", {}),
             "schema_errors": data.get("errors", []),
             "ai_validation": data.get("ai_validation_diagnostics", {}),
             "similarity_match": data.get("similarity_match_diagnostics", {}),
