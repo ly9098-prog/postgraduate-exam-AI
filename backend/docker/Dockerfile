@@ -3,9 +3,9 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --user -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn -r requirements.txt
 COPY requirements-ocr.txt .
-RUN pip install --no-cache-dir --user -r requirements-ocr.txt
+RUN pip install --no-cache-dir --user -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn -r requirements-ocr.txt
 
 # Pre-download PaddleOCR models to ~/.paddleocr/ (PaddleOCR default model dir).
 RUN python3 <<'PYEOF'

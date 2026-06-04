@@ -267,7 +267,7 @@ class PipelineStage:
             if asyncio.iscoroutinefunction(self.fn):
                 result = await self.fn(**kwargs)
             else:
-                result = self.fn(**kwargs)
+                result = await asyncio.to_thread(self.fn, **kwargs)
             self.status = "completed"
             self.duration_ms = round((time.monotonic() - start) * 1000)
             return result
