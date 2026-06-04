@@ -24,6 +24,7 @@ from app.features.ai_repair import repair_questions
 from app.features.ai_validation import validate_ai_results
 from app.features.answer_matcher import match_answers
 from app.features.ocr_correction import correct_ocr_blocks
+from app.features.page_classifier import classify_pages, filter_blocks_by_classification
 from app.features.question_normalizer import normalize_questions
 from app.features.question_splitter import split_questions
 from app.features.similarity_matcher import match_similar_questions
@@ -324,6 +325,7 @@ class ImportPipeline:
             stage_specs.append(("ocr_correction", self._run_ocr_correction))
         stage_specs.extend([
             ("analyze_structure", self._run_analyze_structure),
+            ("classify_pages", self._run_classify_pages),
             ("split", self._run_split),
             ("match", self._run_match),
             ("normalize_schema", self._run_normalize_schema),
@@ -464,6 +466,35 @@ class ImportPipeline:
         """Stage 2: detect question/answer document layout."""
         structure = analyze_structure(normalized_blocks)
         return {"structure": structure, "warnings": []}
+
+    def _run_classify_pages(self, normalized_blocks: list[dict], structure: dict | None = None, **_kw) -> dict:
+        """Stage 2.5: classify each page and filter out non-question pages."""
+        from app.core.config import settings
+
+        if not settings.PAGE_CLASSIFIER_ENABLED:
+            return {"page_classifications": [], "warnings": ["page classifier disabled"]}
+
+        section_markers = structure.get("section_markers") if structure else None
+        page_classifications = classify_pages(normalized_blocks, section_markers=section_markers)
+
+        filtered = filter_blocks_by_classification(normalized_blocks, page_classifications)
+
+        warnings: list[str] = []
+        removed_pages = len(normalized_blocks) - len(filtered)
+        if removed_pages:
+            label_summary = {}
+            for pc in page_classifications:
+                label_summary[pc["label"]] = label_summary.get(pc["label"], 0) + 1
+            warnings.append(
+                f"page_classifier: {removed_pages} blocks filtered, "
+                f"page types: {label_summary}"
+            )
+
+        return {
+            "normalized_blocks": filtered,
+            "page_classifications": page_classifications,
+            "warnings": warnings,
+        }
 
     def _run_split(self, normalized_blocks: list[dict], structure: dict | None = None, **_kw) -> dict:
         """Stage 3: split text blocks into individual questions."""
@@ -865,6 +896,7 @@ class ImportPipeline:
         }
         diagnostics = {
             "structure": data.get("structure", {}),
+            "page_classifications": data.get("page_classifications", []),
             "ocr_correction": data.get("ocr_correction_diagnostics", {}),
             "split": data.get("split_diagnostics", {}),
             "schema_errors": data.get("errors", []),
