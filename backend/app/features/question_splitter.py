@@ -67,10 +67,13 @@ _SECTION_NUMBER_PATTERN = re.compile(
     r"^\d+\.\d+(\.\d+)?\s*\S"
 )
 
-# 正文标题特征：数字后跟纯中文标题（无括号）
+# 正文标题特征：数字后跟纯中文标题（允许年份标注）
 _CONTENT_TITLE_PATTERN = re.compile(
-    r"^\d+\s*[.、]\s*[一-鿿]{2,}[一-鿿\s]*$"
+    r"^\d+\s*[.、]\s*[一-鿿]{2,}[一-鿿\s、]*(?:[（(]\d{4}[）)])?[一-鿿\s、]*$"
 )
+
+# 年份标注模式：（2019）(2020) 等，王道教材标注考过年份
+_YEAR_ANNOTATION_RE = re.compile(r"[（(]\d{4}[）)]")
 
 # 试卷大题节标题：一、选择题 / 二、填空题 / 三、解答题 / Part I
 _EXAM_SECTION_HEADER = re.compile(
@@ -113,11 +116,15 @@ def _is_section_number(line: str, page: int | None = None, content_pages: set | 
     # X.X.X 格式一定是章节号
     if _SECTION_NUMBER_PATTERN.match(stripped):
         return True
-    # "3.分组交换" 类格式：数字+纯中文标题，无括号特征
+    # "3.分组交换" 类格式：数字+纯中文标题（允许年份标注）
     # 仅在有正文页上下文时应用，避免误过滤简短题目
     if content_pages and _CONTENT_TITLE_PATTERN.match(stripped):
-        if "（" not in stripped and "(" not in stripped:
-            if page in content_pages:
+        if page in content_pages:
+            return True
+    # 含年份标注的知识点编号行（如 "3. 快重传算法（2019）"）
+    if content_pages and page in content_pages:
+        if re.match(r"^\d+\s*[.、]", stripped) and _YEAR_ANNOTATION_RE.search(stripped):
+            if not re.search(r"[A-D]\s*[.、:：)）]", stripped):
                 return True
     return False
 
@@ -125,7 +132,10 @@ def _is_section_number(line: str, page: int | None = None, content_pages: set | 
 def _has_question_characteristics(line: str) -> bool:
     """判断一行是否有选择题特征（括号、选项标记等）。"""
     if "（" in line or "(" in line:
-        return True
+        # 年份标注不算题目特征
+        line_no_year = _YEAR_ANNOTATION_RE.sub("", line)
+        if "（" in line_no_year or "(" in line_no_year:
+            return True
     if re.search(r"[A-D]\s*[.、:：)）]", line):
         return True
     if re.search(r"下列|以下|正确|错误|哪|属于|不属于", line):
