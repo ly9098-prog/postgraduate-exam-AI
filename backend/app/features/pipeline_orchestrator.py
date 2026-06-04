@@ -355,6 +355,9 @@ class ImportPipeline:
 
         For PDFs with very little extractable text (< 100 chars), triggers OCR
         fallback automatically when OCR_ENABLED is True.
+
+        When EXERCISE_DETECTION_ENABLED is True, performs a lightweight pre-scan
+        to locate exercise regions and only OCRs those pages.
         """
         if source_type == "pdf":
             opts = _kw.get("options") or {}
@@ -363,6 +366,8 @@ class ImportPipeline:
                 page_start=opts.get("page_start") or 1,
                 page_end=opts.get("page_end"),
             )
+
+            exercise_regions_result: list[dict] = []
 
             # Scanned PDF detection: if PyMuPDF extracted very little text,
             # the PDF likely contains only images → trigger OCR fallback.
@@ -375,18 +380,57 @@ class ImportPipeline:
                         "PDF text only %d chars, attempting PaddleOCR fallback", total_text,
                     )
                     try:
-                        opts = _kw.get("options") or {}
-                        ocr_blocks = _ocr_scanned_pdf(
-                            file_content,
-                            pipeline_id=self.pipeline_id,
-                            page_start=opts.get("page_start") or 1,
-                            page_end=opts.get("page_end"),
-                        )
-                        if ocr_blocks:
-                            raw_blocks = ocr_blocks
-                            logger.info(
-                                "OCR fallback succeeded: %d blocks", len(ocr_blocks),
+                        exercise_regions = None
+                        import_mode_str = opts.get("import_mode", "auto")
+                        if settings.EXERCISE_DETECTION_ENABLED and import_mode_str != "exam":
+                            from app.features.exercise_region_detector import (
+                                detect_exercise_regions_from_pdf,
                             )
+
+                            exercise_regions = detect_exercise_regions_from_pdf(
+                                file_content,
+                                config={
+                                    "dpi": settings.EXERCISE_DETECTION_DPI,
+                                    "max_empty_pages": settings.EXERCISE_DETECTION_MAX_EMPTY_PAGES,
+                                    "min_confidence": settings.EXERCISE_DETECTION_MIN_CONFIDENCE,
+                                },
+                            )
+
+                        if exercise_regions:
+                            exercise_regions_result = [
+                                {"start_page": r.start_page, "end_page": r.end_page,
+                                 "confidence": r.confidence, "matched_keyword": r.matched_keyword}
+                                for r in exercise_regions
+                            ]
+                            ocr_blocks: list[dict] = []
+                            for region in exercise_regions:
+                                region_blocks = _ocr_scanned_pdf(
+                                    file_content,
+                                    pipeline_id=self.pipeline_id,
+                                    page_start=region.start_page,
+                                    page_end=region.end_page,
+                                )
+                                ocr_blocks.extend(region_blocks)
+                            if ocr_blocks:
+                                raw_blocks = ocr_blocks
+                                logger.info(
+                                    "Exercise region OCR succeeded: %d blocks from %d region(s)",
+                                    len(ocr_blocks), len(exercise_regions),
+                                )
+                        else:
+                            exercise_regions = None
+                            opts = _kw.get("options") or {}
+                            ocr_blocks = _ocr_scanned_pdf(
+                                file_content,
+                                pipeline_id=self.pipeline_id,
+                                page_start=opts.get("page_start") or 1,
+                                page_end=opts.get("page_end"),
+                            )
+                            if ocr_blocks:
+                                raw_blocks = ocr_blocks
+                                logger.info(
+                                    "OCR fallback succeeded: %d blocks", len(ocr_blocks),
+                                )
                     except RuntimeError as exc:
                         logger.warning("OCR fallback unavailable: %s", exc)
                     except Exception as exc:
@@ -405,8 +449,13 @@ class ImportPipeline:
                 )
         else:
             raw_blocks = _extract_text_blocks(file_content)
+            exercise_regions_result = []
 
-        return {"raw_blocks": raw_blocks, "extracted": len(raw_blocks)}
+        return {
+            "raw_blocks": raw_blocks,
+            "extracted": len(raw_blocks),
+            "exercise_regions": exercise_regions_result,
+        }
 
     def _run_wangdao_preprocess(self, raw_blocks: list[dict], **_kw) -> dict:
         """Pre-processing stage for Wangdao PDF: filter watermarks/headers/footers."""
@@ -972,6 +1021,7 @@ class ImportPipeline:
         }
         diagnostics = {
             "import_mode": data.get("import_mode", ImportMode.AUTO).value if hasattr(data.get("import_mode", ""), "value") else str(data.get("import_mode", "auto")),
+            "exercise_regions": data.get("exercise_regions", []),
             "structure": data.get("structure", {}),
             "page_classifications": data.get("page_classifications", []),
             "ocr_correction": data.get("ocr_correction_diagnostics", {}),
