@@ -30,7 +30,7 @@ _LOCAL_PROFILE = OCRProfile(
     enable_ai_correction=True,
     allowed_source_types=("pdf", "excel", "image", "txt"),
     max_pdf_pages=0,
-    max_upload_bytes=100 * 1024 * 1024,
+    max_upload_bytes=0,
     max_batch_files=0,
 )
 
