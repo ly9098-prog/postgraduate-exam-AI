@@ -159,6 +159,32 @@ async def _ensure_user_ban_columns(conn):
     await conn.run_sync(repair)
 
 
+async def _ensure_sync_columns(conn):
+    def repair(sync_conn):
+        inspector = inspect(sync_conn)
+        existing_tables = set(inspector.get_table_names())
+
+        if "questions" in existing_tables:
+            cols = {c["name"] for c in inspector.get_columns("questions")}
+            if "sync_uuid" not in cols:
+                sync_conn.execute(text('ALTER TABLE "questions" ADD COLUMN "sync_uuid" VARCHAR(36)'))
+            if "sync_version" not in cols:
+                sync_conn.execute(text('ALTER TABLE "questions" ADD COLUMN "sync_version" INTEGER NOT NULL DEFAULT 0'))
+            indexes = {i["name"] for i in inspector.get_indexes("questions")}
+            if "ix_questions_sync_uuid" not in indexes:
+                sync_conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS "ix_questions_sync_uuid" ON "questions" ("sync_uuid")'))
+
+        if "tags" in existing_tables:
+            cols = {c["name"] for c in inspector.get_columns("tags")}
+            if "sync_uuid" not in cols:
+                sync_conn.execute(text('ALTER TABLE "tags" ADD COLUMN "sync_uuid" VARCHAR(36)'))
+            indexes = {i["name"] for i in inspector.get_indexes("tags")}
+            if "ix_tags_sync_uuid" not in indexes:
+                sync_conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS "ix_tags_sync_uuid" ON "tags" ("sync_uuid")'))
+
+    await conn.run_sync(repair)
+
+
 async def init_db():
     if settings.APP_ENV == "production":
         return
@@ -169,3 +195,4 @@ async def init_db():
         await _ensure_user_ban_columns(conn)
         await _ensure_app_user_admin_bindings_table(conn)
         await _ensure_duplicate_check_columns(conn)
+        await _ensure_sync_columns(conn)

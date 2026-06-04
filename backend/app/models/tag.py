@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import uuid4
 
 from sqlalchemy import DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -16,3 +17,6 @@ class Tag(Base):
     parent_id: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    sync_uuid: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, unique=True, index=True, default=lambda: str(uuid4())
+    )
