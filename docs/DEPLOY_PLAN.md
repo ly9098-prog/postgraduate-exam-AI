@@ -135,12 +135,30 @@ POSTGRES_PASSWORD=...
 POSTGRES_DB=postgraduate
 ```
 
+### pip 国内镜像源
+
+Dockerfile 中 `pip install` 使用清华源加速：
+
+```dockerfile
+RUN pip install --no-cache-dir --user \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    --trusted-host pypi.tuna.tsinghua.edu.cn \
+    -r requirements.txt
+```
+
+服务器带宽有限（~20KB/s），不使用国内源时 PaddlePaddle（194MB）等大包下载需要数小时。清华源可将 build 时间从数小时缩短至 2-3 分钟。
+
+如清华源不可用，备选：
+- 阿里云：`https://mirrors.aliyun.com/pypi/simple/`
+- 中科大：`https://pypi.mirrors.ustc.edu.cn/simple/`
+
 ### Docker layer cache 保留
 
 - `requirements.txt` → `pip install` 在 builder 前一阶段
 - `requirements-ocr.txt` → `pip install` 在独立层（PaddleOCR ~500MB）
 - PaddleOCR 模型预下载到 `/root/.paddleocr/`，构建时打包到镜像
 - 日常 `update` 不使用 `--no-cache` 或默认 `--pull`
+- 修改 `requirements.txt` 或 `requirements-ocr.txt` 会破坏对应 layer cache，触发完整重新下载
 
 ---
 

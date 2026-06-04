@@ -30,7 +30,7 @@ class UploadValidator:
                 detail=f"当前环境（{self._profile.name}）不支持 {ext} 文件导入，建议在本地导入后同步至云端",
             )
 
-        if size > self._profile.max_upload_bytes:
+        if self._profile.max_upload_bytes and size > self._profile.max_upload_bytes:
             limit_mb = self._profile.max_upload_bytes / (1024 * 1024)
             raise HTTPException(
                 status_code=400,
