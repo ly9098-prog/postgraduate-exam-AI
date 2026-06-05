@@ -1167,11 +1167,27 @@ class ImportPipeline:
                     if result.get("warnings"):
                         stage.warnings.extend(result["warnings"])
                     data.update(result)
-                # P0-1: extract 完成后立即释放原始字节流，避免 100~400 MB 的
-                # PDF/图片字节随后续 8+ 个阶段一起驻留内存。
+                # P0-1 / P1-A: 大字段一过最后消费者立即释放，避免随 8+ 个阶段
+                # 一起驻留内存。400 页扫描 PDF 下，OCR 后的 normalized_blocks
+                # 单独可达 50~200 MB（含 boxes），是仅次于 PDF 字节的大头。
                 if name == "extract":
+                    # PDF/图片字节，下游阶段不需要
                     data.pop("file_content", None)
                     data.pop("file_path", None)
+                elif name == "normalize_text":
+                    # raw_blocks 已并入 normalized_blocks，无后续消费者
+                    data.pop("raw_blocks", None)
+                elif name == "match":
+                    # match 后无人再读 normalized_blocks；先存 count 供 stats 兜底
+                    blocks = data.get("normalized_blocks")
+                    if blocks is not None:
+                        data["normalized_block_count"] = len(blocks)
+                        del data["normalized_blocks"]
+                elif name == "normalize_schema":
+                    # questions 已落地，原始题目/匹配结果不再被读取
+                    data.pop("raw_questions", None)
+                    data.pop("matched", None)
+                    data.pop("unmatched", None)
             except Exception:
                 overall_status = "failed"
                 pipeline_errors.append(f"stage '{name}' failed: {stage.error}")
@@ -1196,7 +1212,11 @@ class ImportPipeline:
         stats = {
             "total": data.get("extracted", 0),
             "extracted": data.get("extracted", 0),
-            "normalized": data.get("normalized_count", len(data.get("normalized_blocks", []))),
+            "normalized": data.get(
+                "normalized_count",
+                # P1-A: normalized_blocks 在 match 之后被 pop，回落到提前缓存的 count
+                data.get("normalized_block_count", len(data.get("normalized_blocks", []))),
+            ),
             "analyzed": data.get("split_count", len(data.get("raw_questions", []))),
             "split": data.get("split_count", 0),
             "matched": data.get("matched_count", 0),
