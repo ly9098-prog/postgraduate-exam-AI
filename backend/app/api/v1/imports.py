@@ -1,6 +1,9 @@
+import asyncio
 import hashlib
 import importlib.util
 import logging
+import os
+import tempfile
 import uuid
 from datetime import datetime
 
@@ -744,23 +747,25 @@ async def pipeline_upload(
 
     await _set_pipeline_store(pipeline_id, {
         "pipeline_id": pipeline_id,
-        "status": "parsing",
+        "status": "processing",
         "source_type": source_type,
         "source_file": filename,
+        "current_stage": "extract",
         "stages": {"upload": {"status": "completed"}},
         "stats": {},
         "errors": [],
         "started_at": datetime.now().isoformat(),
     })
 
-    background_tasks.add_task(
-        _run_pipeline_with_db,
-        pipeline_id=pipeline_id,
-        file_content=content,
-        source_type=source_type,
-        source_file=filename,
-        subject=subject,
-        options=options,
+    asyncio.create_task(
+        _run_pipeline_with_db(
+            pipeline_id=pipeline_id,
+            file_content=content,
+            source_type=source_type,
+            source_file=filename,
+            subject=subject,
+            options=options,
+        )
     )
 
     return PipelineUploadResponse(pipeline_id=pipeline_id, status="parsing", source_type=source_type)
@@ -774,17 +779,65 @@ async def _run_pipeline_with_db(
     subject: str | None,
     options: dict,
 ) -> None:
-    """后台任务包装器：创建独立 DB 会话并执行流水线。"""
-    async with async_session() as db:
-        await run_pipeline_background(
-            pipeline_id=pipeline_id,
-            file_content=file_content,
-            source_type=source_type,
-            source_file=source_file,
-            subject=subject,
-            options=options,
-            db=db,
+    """后台任务包装器：创建独立 DB 会话并执行流水线。
+
+    P0-1: 入口处把 file_content bytes 落盘到 tmp 文件，后台任务结束后删除；
+    本函数局部变量持有 bytes 仅用于一次性写入文件，写完立即解除引用，
+    避免大文件 (100~400 MB) 随整个 pipeline (~分钟级) 驻留内存。
+    """
+    import traceback
+    logger = logging.getLogger("2240ai")
+    logger.info("Background task started for pipeline %s", pipeline_id)
+
+    tmp_path: str | None = None
+    try:
+        # 落盘到 tmp 文件
+        suffix = os.path.splitext(source_file or "")[1] or ".bin"
+        fd, tmp_path = tempfile.mkstemp(prefix=f"pipeline_{pipeline_id}_", suffix=suffix)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(file_content)
+        except Exception:
+            try:
+                os.close(fd)
+            except Exception:
+                pass
+            raise
+        # 立即解除对 bytes 的引用，让 GC 回收
+        del file_content
+
+        async with async_session() as db:
+            await run_pipeline_background(
+                pipeline_id=pipeline_id,
+                file_path=tmp_path,
+                source_type=source_type,
+                source_file=source_file,
+                subject=subject,
+                options=options,
+                db=db,
+            )
+    except Exception as exc:
+        logger.error(
+            "Background task for pipeline %s crashed: %s\n%s",
+            pipeline_id, exc, traceback.format_exc(),
         )
+        await _set_pipeline_store(pipeline_id, {
+            "pipeline_id": pipeline_id,
+            "status": "failed",
+            "source_type": source_type,
+            "errors": [f"后台任务崩溃: {exc}"],
+            "started_at": "",
+            "finished_at": "",
+        })
+    finally:
+        # 无论成功失败都删除 tmp 文件
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError as e:
+                logger.warning(
+                    "Failed to delete pipeline tmp file %s: %s", tmp_path, e
+                )
 
 
 @router.get("/pipelines/{pipeline_id}", response_model=PipelineStatusResponse)

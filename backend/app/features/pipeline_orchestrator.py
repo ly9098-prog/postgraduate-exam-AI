@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import time
 import uuid
@@ -87,18 +88,37 @@ async def _get_pipeline_store(pipeline_id: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-def _extract_pdf_blocks(content: bytes, page_start: int = 1, page_end: int | None = None) -> list[dict]:
+def _open_pdf_doc(source: bytes | str | os.PathLike):
+    """统一打开 PDF：bytes 走 stream，path 走 filename。
+
+    传 path 时 PyMuPDF 通过 mmap 加载，避免把整文件复制到 Python heap，
+    显著降低 100~400 MB 大文件的内存占用 (P0-1)。
+    """
+    import fitz
+
+    if isinstance(source, (str, os.PathLike)):
+        return fitz.open(str(source), filetype="pdf")
+    return fitz.open(stream=source, filetype="pdf")
+
+
+def _extract_pdf_blocks(
+    content_or_path: bytes | str,
+    page_start: int = 1,
+    page_end: int | None = None,
+) -> list[dict]:
     """Extract text blocks from PDF using PyMuPDF.
 
     Returns list of {page, block_index, text} for use as raw_blocks input
     to ImportTextNormalizer.
+
+    P0-1: content_or_path 接受 bytes 或文件路径，路径优先（mmap）。
     """
     try:
-        import fitz
+        import fitz  # noqa: F401  (used inside _open_pdf_doc)
     except ImportError:
         raise RuntimeError("PyMuPDF (fitz) 未安装，无法提取 PDF 文本")
 
-    doc = fitz.open(stream=content, filetype="pdf")
+    doc = _open_pdf_doc(content_or_path)
     total_pages = len(doc)
     start_idx = max(0, (page_start or 1) - 1)
     end_idx = min(total_pages, page_end or total_pages)
@@ -119,18 +139,25 @@ def _extract_pdf_blocks(content: bytes, page_start: int = 1, page_end: int | Non
     return blocks
 
 
-def _ocr_scanned_pdf(content: bytes, pipeline_id: str = "", page_start: int = 1, page_end: int | None = None) -> list[dict]:
+def _ocr_scanned_pdf(
+    content_or_path: bytes | str,
+    pipeline_id: str = "",
+    page_start: int = 1,
+    page_end: int | None = None,
+) -> list[dict]:
     """用 PaddleOCR 识别扫描版 PDF 各页。
 
     分批并发处理，每批 OCR 后释放图像内存以避免累积 OOM。
     超过 MAX_OCR_PAGES 截断，超过 OCR_TIMEOUT_SECONDS 超时中断。
     输出格式：[{page, block_index, text, boxes, page_width, page_height}]
     boxes 为每行的 bbox 坐标和置信度，供后续预处理使用。
+
+    P0-1: content_or_path 接受 bytes 或文件路径，路径优先 (mmap)。
     """
     import gc
     import time
 
-    import fitz
+    import fitz  # noqa: F401
 
     from app.core.config import settings
     from app.core.ocr_profile import get_ocr_profile
@@ -141,7 +168,7 @@ def _ocr_scanned_pdf(content: bytes, pipeline_id: str = "", page_start: int = 1,
     timeout = profile.timeout_seconds
     batch_size = profile.max_workers
 
-    doc = fitz.open(stream=content, filetype="pdf")
+    doc = _open_pdf_doc(content_or_path)
     total_pages = len(doc)
 
     # Page range: convert 1-based user params to 0-based indices
@@ -154,6 +181,11 @@ def _ocr_scanned_pdf(content: bytes, pipeline_id: str = "", page_start: int = 1,
     page_dimensions: dict[int, tuple[int, int]] = {}
     timed_out = False
     start_time = time.monotonic()
+
+    logger.info("OCR 开始：共 %d 页待处理（第 %d-%d 页）", pages_to_process, start_idx + 1, end_idx)
+    if pipeline_id:
+        _ocr_progress[pipeline_id] = f"0/{pages_to_process} pages"
+
     try:
         for batch_start in range(0, pages_to_process, batch_size):
             elapsed = time.monotonic() - start_time
@@ -220,8 +252,16 @@ def _ocr_scanned_pdf(content: bytes, pipeline_id: str = "", page_start: int = 1,
     return blocks
 
 
-def _extract_text_blocks(content: bytes) -> list[dict]:
-    """Extract text blocks from plain text content."""
+def _extract_text_blocks(content_or_path: bytes | str) -> list[dict]:
+    """Extract text blocks from plain text content.
+
+    P0-1: 接受 bytes 或文件路径。
+    """
+    if isinstance(content_or_path, (str, os.PathLike)):
+        with open(content_or_path, "rb") as f:
+            content = f.read()
+    else:
+        content = content_or_path
     text = content.decode("utf-8", errors="replace").strip()
     if not text:
         raise ValueError("文本内容为空")
@@ -352,7 +392,13 @@ class ImportPipeline:
     # stage implementations
     # ------------------------------------------------------------------
 
-    def _run_extract(self, file_content: bytes, source_type: str, **_kw) -> dict:
+    def _run_extract(
+        self,
+        file_content: bytes | None = None,
+        source_type: str = "pdf",
+        file_path: str | None = None,
+        **_kw,
+    ) -> dict:
         """Extract raw text blocks from file content.
 
         For PDFs with very little extractable text (< 100 chars), triggers OCR
@@ -360,11 +406,18 @@ class ImportPipeline:
 
         When EXERCISE_DETECTION_ENABLED is True, performs a lightweight pre-scan
         to locate exercise regions and only OCRs those pages.
+
+        P0-1: 优先使用 file_path（mmap），bytes 仅在调用方未提供 path 时使用。
         """
+        # 路径优先：底层 fitz.open 走 mmap，避免把 100~400 MB 拷到 heap
+        pdf_source: bytes | str = file_path if file_path else file_content
+        if pdf_source is None:
+            raise ValueError("either file_path or file_content must be provided")
+
         if source_type == "pdf":
             opts = _kw.get("options") or {}
             raw_blocks = _extract_pdf_blocks(
-                file_content,
+                pdf_source,
                 page_start=opts.get("page_start") or 1,
                 page_end=opts.get("page_end"),
             )
@@ -384,19 +437,25 @@ class ImportPipeline:
                     try:
                         exercise_regions = None
                         import_mode_str = opts.get("import_mode", "auto")
-                        if settings.EXERCISE_DETECTION_ENABLED and import_mode_str != "exam":
+                        user_specified_range = opts.get("page_start") or opts.get("page_end")
+                        if settings.EXERCISE_DETECTION_ENABLED and import_mode_str != "exam" and not user_specified_range:
+                            logger.info("Exercise region detection starting...")
                             from app.features.exercise_region_detector import (
                                 detect_exercise_regions_from_pdf,
                             )
 
                             exercise_regions = detect_exercise_regions_from_pdf(
-                                file_content,
+                                pdf_source,
                                 config={
                                     "dpi": settings.EXERCISE_DETECTION_DPI,
                                     "max_empty_pages": settings.EXERCISE_DETECTION_MAX_EMPTY_PAGES,
                                     "min_confidence": settings.EXERCISE_DETECTION_MIN_CONFIDENCE,
+                                    "sample_step": settings.EXERCISE_DETECTION_SAMPLE_STEP,
                                 },
                             )
+                        elif user_specified_range:
+                            logger.info("Skipping exercise detection: user specified page range %s-%s",
+                                        opts.get("page_start"), opts.get("page_end"))
 
                         if exercise_regions:
                             exercise_regions_result = [
@@ -407,7 +466,7 @@ class ImportPipeline:
                             ocr_blocks: list[dict] = []
                             for region in exercise_regions:
                                 region_blocks = _ocr_scanned_pdf(
-                                    file_content,
+                                    pdf_source,
                                     pipeline_id=self.pipeline_id,
                                     page_start=region.start_page,
                                     page_end=region.end_page,
@@ -423,7 +482,7 @@ class ImportPipeline:
                             exercise_regions = None
                             opts = _kw.get("options") or {}
                             ocr_blocks = _ocr_scanned_pdf(
-                                file_content,
+                                pdf_source,
                                 pipeline_id=self.pipeline_id,
                                 page_start=opts.get("page_start") or 1,
                                 page_end=opts.get("page_end"),
@@ -450,7 +509,7 @@ class ImportPipeline:
                     "PDF 中未提取到文本内容（文本层为空且 OCR 未启用或失败）"
                 )
         else:
-            raw_blocks = _extract_text_blocks(file_content)
+            raw_blocks = _extract_text_blocks(pdf_source)
             exercise_regions_result = []
 
         return {
@@ -920,26 +979,34 @@ class ImportPipeline:
 
     async def run(
         self,
-        file_content: bytes,
-        source_type: str,
-        source_file: str,
+        file_content: bytes | None = None,
+        source_type: str = "pdf",
+        source_file: str = "",
         subject: str | None = None,
         options: dict | None = None,
         db=None,
+        progress_callback=None,
+        file_path: str | None = None,
     ) -> dict:
         """Execute all pipeline stages in sequence.
 
         Args:
-            file_content: raw file bytes (PDF, txt, etc.)
+            file_content: raw file bytes (PDF, txt, etc.) — fallback when no path
+            file_path: tmp path on disk; preferred for PDF (mmap, no heap copy).
+                P0-1 changed the entry point to drop bytes immediately and pass
+                a path so the 100~400 MB payload doesn't survive 8+ stages.
             source_type: "pdf" | "txt"
             source_file: original filename
             subject: optional subject hint
             options: {"enable_ai_repair": bool, "confidence_threshold": float}
             db: optional AsyncSession for the review stage
+            progress_callback: optional async callable(stages_dict, current_stage, errors)
 
         Returns:
             Pipeline result dict with status, stats, stages, and errors.
         """
+        if file_path is None and file_content is None:
+            raise ValueError("either file_path or file_content must be provided")
         opts = options or {}
         if options is not None:
             self.options = opts
@@ -970,6 +1037,7 @@ class ImportPipeline:
         # Accumulated data passed between stages
         data: dict[str, Any] = {
             "file_content": file_content,
+            "file_path": file_path,
             "source_type": source_type,
             "source_file": source_file,
             "subject": subject,
@@ -990,18 +1058,46 @@ class ImportPipeline:
         overall_status = "completed"
 
         for name, stage in self.stages.items():
+            if progress_callback:
+                try:
+                    await progress_callback(
+                        {n: s.to_dict() for n, s in self.stages.items()},
+                        name,
+                        pipeline_errors,
+                    )
+                except Exception:
+                    pass
+
             try:
                 result = await stage.run_async(**data)
                 if isinstance(result, dict):
                     if result.get("warnings"):
                         stage.warnings.extend(result["warnings"])
                     data.update(result)
+                # P0-1: extract 完成后立即释放原始字节流，避免 100~400 MB 的
+                # PDF/图片字节随后续 8+ 个阶段一起驻留内存。
+                if name == "extract":
+                    data.pop("file_content", None)
+                    data.pop("file_path", None)
             except Exception:
                 overall_status = "failed"
                 pipeline_errors.append(f"stage '{name}' failed: {stage.error}")
                 if name in ("extract", "normalize_text"):
+                    # 失败路径同样释放
+                    data.pop("file_content", None)
+                    data.pop("file_path", None)
                     break
                 logger.warning("Stage '%s' failed, continuing with partial results", name)
+
+            if progress_callback:
+                try:
+                    await progress_callback(
+                        {n: s.to_dict() for n, s in self.stages.items()},
+                        name,
+                        pipeline_errors,
+                    )
+                except Exception:
+                    pass
 
         # Build stats from stage outputs
         stats = {
@@ -1055,12 +1151,15 @@ class ImportPipeline:
 
 
 async def run_import_pipeline(
-    file_content: bytes,
-    source_type: str,
-    source_file: str,
+    file_content: bytes | None = None,
+    source_type: str = "pdf",
+    source_file: str = "",
     subject: str | None = None,
     options: dict | None = None,
     db=None,
+    progress_callback=None,
+    pipeline_id: str | None = None,
+    file_path: str | None = None,
 ) -> dict:
     """完整的导入流水线入口。
 
@@ -1068,7 +1167,8 @@ async def run_import_pipeline(
     → Stage 5 (题目标准化) → Stage 6 (AI 修复, 可选) → Stage 7 (审核入库).
 
     Args:
-        file_content: 文件原始字节
+        file_content: 文件原始字节（无 file_path 时使用）
+        file_path: 已落盘的临时文件路径（PDF 优先走此分支以走 mmap）
         source_type: "pdf" | "txt"
         source_file: 原始文件名
         subject: 科目提示（可选）
@@ -1078,7 +1178,11 @@ async def run_import_pipeline(
     Returns:
         Pipeline result dict.
     """
-    pipeline_id = f"pl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    if file_path is None and file_content is None:
+        raise ValueError("either file_path or file_content must be provided")
+
+    if not pipeline_id:
+        pipeline_id = f"pl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
     # Auto-detect Wangdao preset from filename
     opts = dict(options) if options else {}
@@ -1101,11 +1205,13 @@ async def run_import_pipeline(
 
     result = await pipeline.run(
         file_content=file_content,
+        file_path=file_path,
         source_type=source_type,
         source_file=source_file,
         subject=subject,
         options=opts,
         db=db,
+        progress_callback=progress_callback,
     )
     result["pipeline_id"] = pipeline_id
     return result
@@ -1113,32 +1219,57 @@ async def run_import_pipeline(
 
 async def run_pipeline_background(
     pipeline_id: str,
-    file_content: bytes,
     source_type: str,
     source_file: str,
+    file_content: bytes | None = None,
+    file_path: str | None = None,
     subject: str | None = None,
     options: dict | None = None,
     db=None,
 ) -> None:
-    """后台运行流水线，结果写入 Redis + 内存。"""
+    """后台运行流水线，结果写入 Redis + 内存。
+
+    P0-1: file_path 优先（API 入口已落盘 tmp 文件），底层 fitz 走 mmap，
+    避免 100~400 MB 的 PDF 字节驻留内存。
+    """
+    if file_path is None and file_content is None:
+        raise ValueError("either file_path or file_content must be provided")
+
+    started_at = datetime.now().isoformat()
     await _set_pipeline_store(pipeline_id, {
         "pipeline_id": pipeline_id,
-        "status": "parsing",
+        "status": "processing",
         "source_type": source_type,
+        "current_stage": "extract",
         "stages": {},
         "stats": {},
         "errors": [],
-        "started_at": datetime.now().isoformat(),
+        "started_at": started_at,
     })
+
+    async def _progress(stages_dict, current_stage, errors):
+        await _set_pipeline_store(pipeline_id, {
+            "pipeline_id": pipeline_id,
+            "status": "processing",
+            "source_type": source_type,
+            "current_stage": current_stage,
+            "stages": stages_dict,
+            "stats": {},
+            "errors": errors,
+            "started_at": started_at,
+        })
 
     try:
         result = await run_import_pipeline(
             file_content=file_content,
+            file_path=file_path,
             source_type=source_type,
             source_file=source_file,
             subject=subject,
             options=options,
             db=db,
+            progress_callback=_progress,
+            pipeline_id=pipeline_id,
         )
         result["pipeline_id"] = pipeline_id
         await _set_pipeline_store(pipeline_id, result)

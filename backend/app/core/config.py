@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     EXERCISE_DETECTION_DPI: int = 72
     EXERCISE_DETECTION_MAX_EMPTY_PAGES: int = 3
     EXERCISE_DETECTION_MIN_CONFIDENCE: float = 0.5
+    # 采样步长：1 = 扫描每一页（旧行为）；>1 = 每 N 页扫一页 + 边界宽容
+    # 默认 3 表示 lightweight OCR 工作量降为 1/3，再对找到的 region 边界 ±2 页扩展避免漏题
+    EXERCISE_DETECTION_SAMPLE_STEP: int = 3
 
     # Redis
     REDIS_URL: str = ""

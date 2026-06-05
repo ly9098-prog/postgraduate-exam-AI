@@ -231,6 +231,11 @@ def detect_exercise_regions(
     cfg = config or {}
     max_empty = cfg.get("max_empty_pages", 3)
     min_confidence = cfg.get("min_confidence", 0.5)
+    sample_step = max(1, int(cfg.get("sample_step", 1) or 1))
+    # 采样模式下，未扫描的页文本为空。把 max_empty 按 step 放大，避免跨步空页
+    # 被误判为习题区结束。
+    if sample_step > 1:
+        max_empty = max(max_empty, max_empty * sample_step)
 
     if not page_texts:
         return []
@@ -268,6 +273,9 @@ def detect_exercise_regions(
                 state = _EXPANDING
                 empty_streak = 0
                 last_valid_page = page
+            elif sample_step > 1 and not text.strip():
+                # 采样模式：当前页未被扫描（empty 占位），不能据此推翻候选起点
+                continue
             else:
                 state = _SEEKING_START
 
@@ -328,24 +336,46 @@ def detect_exercise_regions(
 # Lightweight OCR scan
 # ---------------------------------------------------------------------------
 
-def _lightweight_page_ocr(content: bytes, dpi: int = 72) -> dict[int, str]:
+def _lightweight_page_ocr(
+    source: bytes | str, dpi: int = 72, sample_step: int = 1,
+) -> dict[int, str]:
     """Render PDF pages at low DPI and run PaddleOCR for quick text extraction.
 
     Minimal preprocessing: no rotation detection, no deskew.
+
+    Args:
+        source: raw PDF bytes, or a filesystem path to the PDF.
+                P0-1: 路径优先（PyMuPDF 走 mmap）以避免把 100~400 MB
+                字节复制到 Python heap。
+        dpi: render DPI
+        sample_step: 1 = OCR every page (legacy); >1 = OCR one page every N pages
+                     to cut work to 1/N. Skipped pages get empty string so the
+                     output dict still covers every page index 1..total.
     """
     import gc
+    import os as _os
 
     import fitz
 
     from app.services.ocr_service import _get_ocr, _image_to_array, _ocr_lock, _resize_for_ocr
 
-    doc = fitz.open(stream=content, filetype="pdf")
+    step = max(1, int(sample_step or 1))
+    if isinstance(source, (str, _os.PathLike)):
+        doc = fitz.open(str(source), filetype="pdf")
+    else:
+        doc = fitz.open(stream=source, filetype="pdf")
     total_pages = len(doc)
     ocr = _get_ocr()
     page_texts: dict[int, str] = {}
 
     try:
         for i in range(total_pages):
+            page_no = i + 1
+            if step > 1 and (i % step) != 0:
+                # 未采样的页：留空，由 detect_exercise_regions 的 max_empty 容忍
+                page_texts[page_no] = ""
+                continue
+
             pix = doc[i].get_pixmap(dpi=dpi)
             png_bytes = pix.tobytes("png")
             del pix
@@ -372,14 +402,14 @@ def _lightweight_page_ocr(content: bytes, dpi: int = 72) -> dict[int, str]:
                             text = str(line[1][0] or "")
                             if text.strip():
                                 lines.append(text)
-                    page_texts[i + 1] = "\n".join(lines)
+                    page_texts[page_no] = "\n".join(lines)
                 else:
-                    page_texts[i + 1] = ""
+                    page_texts[page_no] = ""
             except Exception as e:
-                logger.debug("Lightweight OCR page %d failed: %s", i + 1, e)
-                page_texts[i + 1] = ""
+                logger.debug("Lightweight OCR page %d failed: %s", page_no, e)
+                page_texts[page_no] = ""
 
-            if (i + 1) % 20 == 0:
+            if page_no % 20 == 0:
                 gc.collect()
     finally:
         doc.close()
@@ -391,24 +421,73 @@ def _lightweight_page_ocr(content: bytes, dpi: int = 72) -> dict[int, str]:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _expand_regions_for_sampling(
+    regions: list[ExerciseRegion],
+    sample_step: int,
+    total_pages: int | None,
+) -> list[ExerciseRegion]:
+    """Sampling mode misses pages between strides; widen each region by step-1
+    pages on both sides so subsequent full-quality OCR doesn't truncate the
+    real exercise span.
+
+    Overlapping regions after expansion are merged.
+    """
+    if sample_step <= 1 or not regions:
+        return regions
+
+    pad = sample_step - 1
+    expanded: list[ExerciseRegion] = []
+    for r in regions:
+        new_start = max(1, r.start_page - pad)
+        new_end = r.end_page + pad
+        if total_pages:
+            new_end = min(total_pages, new_end)
+        expanded.append(ExerciseRegion(
+            start_page=new_start,
+            end_page=new_end,
+            confidence=r.confidence,
+            matched_keyword=r.matched_keyword,
+        ))
+
+    # Merge overlapping/adjacent regions
+    expanded.sort(key=lambda r: r.start_page)
+    merged: list[ExerciseRegion] = []
+    for r in expanded:
+        if merged and r.start_page <= merged[-1].end_page + 1:
+            prev = merged[-1]
+            merged[-1] = ExerciseRegion(
+                start_page=prev.start_page,
+                end_page=max(prev.end_page, r.end_page),
+                confidence=max(prev.confidence, r.confidence),
+                matched_keyword=prev.matched_keyword,
+            )
+        else:
+            merged.append(r)
+    return merged
+
+
 def detect_exercise_regions_from_pdf(
-    content: bytes,
+    source: bytes | str,
     config: dict | None = None,
 ) -> list[ExerciseRegion]:
     """End-to-end: lightweight OCR scan → detect exercise regions.
 
     Args:
-        content: raw PDF bytes
-        config: {dpi, max_empty_pages, min_confidence}
+        source: raw PDF bytes, or a filesystem path to the PDF (preferred —
+                走 mmap 避免大文件复制到 Python heap)
+        config: {dpi, max_empty_pages, min_confidence, sample_step}
+                sample_step >= 2 reduces lightweight OCR work to 1/N; the
+                detected region边界会自动 ±(step-1) 扩展以补回采样跳过的页。
 
     Returns:
         List of ExerciseRegion, or empty list if detection fails/finds nothing.
     """
     cfg = config or {}
     dpi = cfg.get("dpi", 72)
+    sample_step = max(1, int(cfg.get("sample_step", 1) or 1))
 
     try:
-        page_texts = _lightweight_page_ocr(content, dpi=dpi)
+        page_texts = _lightweight_page_ocr(source, dpi=dpi, sample_step=sample_step)
     except Exception as e:
         logger.warning("Exercise region detection failed during OCR scan: %s", e)
         return []
@@ -416,12 +495,19 @@ def detect_exercise_regions_from_pdf(
     if not page_texts:
         return []
 
-    regions = detect_exercise_regions(page_texts, config=cfg)
+    detect_cfg = dict(cfg)
+    detect_cfg["sample_step"] = sample_step
+    regions = detect_exercise_regions(page_texts, config=detect_cfg)
+
+    if regions and sample_step > 1:
+        total_pages = max(page_texts.keys()) if page_texts else None
+        regions = _expand_regions_for_sampling(regions, sample_step, total_pages)
 
     if regions:
         logger.info(
-            "Exercise region detection found %d region(s): %s",
+            "Exercise region detection found %d region(s) (sample_step=%d): %s",
             len(regions),
+            sample_step,
             [(r.start_page, r.end_page) for r in regions],
         )
     else:
