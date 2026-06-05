@@ -72,6 +72,36 @@
 >   - 144 个相关测试通过（review_service + pipeline_orchestrator +
 >     pipeline_upload_unified + image_import_status + exercise_region_detector），
 >     无新增回归。
+> - [x] **P1 阶段审计后隐患修复（2026-06-05）**：完成
+>   - **隐患①修复**：`pipeline_orchestrator.py` `stats["normalized"]` 在
+>     `match` 之前的 stage（如 `analyze_structure`）失败时静默归零。
+>     根因：原 fallback 链 `normalized_count → normalized_block_count →
+>     len(normalized_blocks)`，前两者由 `normalize_schema` / `match` 后才
+>     写入，中段失败时全部缺失，第三层在 `normalized_blocks` 已被 pop
+>     的情况下永远是 0。
+>     修复：每次 stage 写入 `normalized_blocks` 都同步缓存
+>     `normalized_block_count`；fallback 兜底改为 `0` 而非
+>     `len(已 pop 字段)`。
+>     新增 `test_p1a_stats_normalized_survives_mid_pipeline_failure`：
+>     断言 `analyze_structure` 失败后 `stats["normalized"]` 仍为 3。
+>   - **隐患③修复**：`review_service.submit_to_review` 用
+>     `db.expunge_all()` 会把整个 session 中所有 ORM 实例（包括上层调
+>     用方 attach 的 watermark 规则、user 等）一并踢掉。
+>     修复：维护本批 `pending_qis: list[QuestionImport]`，commit 后
+>     逐条 `db.expunge(qi)`；commit 完成即 clear，避免持有引用。
+>     更新两个 P1-B 测试：`expunge` 调用次数 = 写入题数；
+>     `expunge_all` 不再被调用；按写入顺序断言 expunged_ids。
+>   - **隐患②修复**：分批 commit 中途崩溃会留下孤儿 `batch_id` 记录
+>     （前面已 commit 50 道，第二批失败后剩半截数据）。
+>     修复：把整段写入循环包到 try/except，捕获异常后先 `db.rollback()`，
+>     再 `DELETE FROM question_imports WHERE batch_id = ?` 做 best-effort
+>     清理，最后 `raise` 把原始异常抛给调用方。任意一步清理失败只记
+>     `logger.exception`，不掩盖原始异常。
+>     新增 `test_p1b_mid_batch_failure_cleans_orphan_batch`：mock 第二
+>     次 commit 抛错，断言 rollback 调用一次 + 触发一次 Delete 语句 +
+>     RuntimeError 向上传播。
+>   - 146 个相关测试通过（1 个 deselected 是 P0 阶段已存在失败，与本
+>     次修复无关）。
 > - [ ] **P2 region 流式编排 + 断点恢复**
 
 ## 项目背景
