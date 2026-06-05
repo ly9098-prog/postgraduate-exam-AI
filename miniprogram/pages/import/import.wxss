@@ -368,6 +368,116 @@ page {
   line-height: 1.6;
 }
 
+/* 进度条 */
+.pipeline-progress {
+  margin-top: 18rpx;
+}
+
+.pipeline-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10rpx;
+}
+
+.pipeline-progress-stage {
+  font-size: 24rpx;
+  color: #5B7B9A;
+  font-weight: 600;
+}
+
+.pipeline-progress-pct {
+  font-size: 24rpx;
+  color: #5B7B9A;
+  font-weight: 700;
+}
+
+.pipeline-progress-bar {
+  height: 12rpx;
+  background: #EDF1F5;
+  border-radius: 6rpx;
+  overflow: hidden;
+}
+
+.pipeline-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #7BA3C4, #5B8DB8);
+  border-radius: 6rpx;
+  transition: width 0.4s ease;
+}
+
+.pipeline-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10rpx;
+}
+
+.pipeline-progress-elapsed,
+.pipeline-progress-ocr {
+  font-size: 22rpx;
+  color: #8FA3B3;
+}
+
+/* 阶段列表 */
+.pipeline-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx 20rpx;
+  margin-top: 16rpx;
+  padding: 16rpx;
+  background: #F9FAFB;
+  border-radius: 12rpx;
+}
+
+.pipeline-stage-item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.pipeline-stage-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #D4DBE2;
+}
+
+.pipeline-stage-item.completed .pipeline-stage-dot {
+  background: #6B9B6B;
+}
+
+.pipeline-stage-item.running .pipeline-stage-dot {
+  background: #5B8DB8;
+  animation: pulse 1s infinite;
+}
+
+.pipeline-stage-item.failed .pipeline-stage-dot {
+  background: #C47A7A;
+}
+
+.pipeline-stage-label {
+  font-size: 22rpx;
+  color: #8FA3B3;
+}
+
+.pipeline-stage-item.completed .pipeline-stage-label {
+  color: #6B9B6B;
+}
+
+.pipeline-stage-item.running .pipeline-stage-label {
+  color: #5B8DB8;
+  font-weight: 600;
+}
+
+.pipeline-stage-item.failed .pipeline-stage-label {
+  color: #C47A7A;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 .template-bar {
   display: flex;
   align-items: center;
