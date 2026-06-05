@@ -716,6 +716,50 @@ class TestImportPipelineRun:
         for stage in result["stages"].values():
             assert stage["duration_ms"] >= 0
 
+    def test_p1a_large_fields_released_between_stages(self):
+        """P1-A: stage 间清理大字段，避免 normalized_blocks/raw_questions 等
+        随后续 8+ 个阶段一起驻留内存。"""
+        pipeline = self._make_pipeline()
+
+        # 用 review 阶段做哨兵：到达 review 时，stage 间应已清理：
+        #   - raw_blocks         (在 normalize_text 之后)
+        #   - normalized_blocks  (在 match 之后)
+        #   - raw_questions / matched / unmatched (在 normalize_schema 之后)
+        captured: dict = {}
+
+        async def _capture_review(**kw):
+            captured.update(kw)
+            return {
+                "batch_id": "REVIEW_p1a",
+                "written": 3,
+                "skipped": 0,
+                "total": 3,
+            }
+
+        pipeline._run_review = _capture_review
+        pipeline._build_pipeline()
+
+        result = asyncio.run(pipeline.run(
+            file_content=b"fake pdf",
+            source_type="pdf",
+            source_file="test.pdf",
+            subject="math2",
+            db=_make_mock_db(),
+        ))
+
+        assert result["status"] == "completed"
+        # review 看到的 kwargs 里不应再有大字段
+        assert "raw_blocks" not in captured
+        assert "normalized_blocks" not in captured
+        assert "raw_questions" not in captured
+        assert "matched" not in captured
+        assert "unmatched" not in captured
+        # 但仍然能拿到 questions，pipeline 出口数据完整
+        assert isinstance(captured.get("questions"), list)
+        assert len(captured["questions"]) == 3
+        # stats 里 normalized 计数仍然正确（normalized_block_count 兜底）
+        assert result["stats"]["normalized"] == 3
+
 
 # ---------------------------------------------------------------------------
 # run_import_pipeline
