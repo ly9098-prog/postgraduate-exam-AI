@@ -338,7 +338,44 @@
 >     + global_hash_index + similarity_matcher + pipeline_upload_unified），
 >     1 个 P0 阶段已存在 fail (`test_pdf_dispatch_returns_pl_prefix`) 与本
 >     次修改无关（git stash 验证失败一致）。
-> - [ ] **P2-7 端到端测试**
+> - [x] **P2-7 端到端测试**：完成（2026-06-06）
+>   - 新增 `tests/test_features/test_pipeline_e2e.py` 4 个 e2e 用例，
+>     全部走 `ImportPipeline.run() → _run_chunked → _execute_chunk →
+>     _run_single_pass` 完整链路，仅 mock `_read_pdf_page_count` + 各
+>     stage 桩，避开真 PaddleOCR / DeepSeek / fitz：
+>     - `TestE2EHappyPath::test_400p_pdf_chunked_run_completes`：400 页
+>       / chunk_size=40 / overlap=3 → 10 chunks 全部 completed，
+>       `effective_page_end` 在 9 个非末 chunk 上 +3，末 chunk=400 不扩；
+>       每 chunk 独立 batch_id；DB checkpoint `question_count=60`。
+>     - `TestE2EChunkFailureThenResume::test_chunk_failure_then_resume_recovers_pipeline`：
+>       chunk 5（pages 201-240）首次抛 `RuntimeError` →
+>       pipeline.status=paused，DB 中 chunk 5 单独 failed、其余 9 个
+>       completed。然后调 `resume_pipeline_background`：用 spy 包住
+>       `_execute_chunk` 断言 **只复跑 chunk 5**（`replay_log == [5]`），
+>       其余 chunk 的 batch_id 在 resume 前后不变（用 snapshot 校验），
+>       chunk 5 error_message 清空 + 拿到新 `REVIEW_e2e_chunk_*` batch_id，
+>       pipeline 最终 status=completed。
+>     - `TestE2ECrossChunkHashDedup::test_chunk_zero_hashes_visible_to_chunk_one`：
+>       注入真实 `GlobalHashIndex` 实例（patch 在 `app.features.global_hash_index`
+>       的 lazy import 点），spy `add_import` 调用栈；chunk 0/1 review
+>       各返回一条 `review_new_hashes`，断言 `add_import` 调用顺序与
+>       `_import_index` 内存命中（chunk 0 写入的 `("math2","HASH_AAA")
+>       →9001` 在 chunk 1 调度时就在索引里，无需 SQL fallback）。
+>       diagnostics.hash_index 暴露 `fallback_to_sql=False`。
+>     - `TestE2ELargeFieldsReleasedInChunkedMode::test_review_stage_does_not_receive_intermediate_artifacts`：
+>       review stage 桩用 kwargs spy 录 4 个 chunk 的入参，断言
+>       `raw_blocks / normalized_blocks / raw_questions / matched /
+>       unmatched / file_content / file_path` 均不在 review kwargs 里——
+>       P0-1（PDF 字节）+ P1-A（中间产物）的释放契约在 chunked 模式下
+>       依然成立，每个 chunk 进 review 时只剩 `questions` 一份大对象。
+>   - 全量回归：174 passed（pipeline_orchestrator 49 + pipeline_chunk_runner
+>     28 + pipeline_resume 6 + pipeline_status_chunk_progress 5 +
+>     pipeline_checkpoint 8 + global_hash_index 17 + pipeline_e2e 4 +
+>     similarity_matcher 22 + review_service 35）。
+>   - 邻接套件 62 passed（exercise_region_detector + pipeline_upload_unified
+>     + image_import_status），1 个 fail (`test_pdf_dispatch_returns_pl_prefix`)
+>     与之前各阶段一致——是 P0 阶段就存在的已知 fail，git stash 验证
+>     与本次 P2-7 修改无关。
 
 ------
 
