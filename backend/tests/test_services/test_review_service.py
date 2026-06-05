@@ -267,14 +267,17 @@ class TestSubmitToReview:
         assert result["items"][0]["stem_preview"] == "A" * 50 + "..."
 
     def test_p1b_batched_commit_and_expunge(self):
-        """P1-B: 大批量题目应分批 commit + expunge_all，避免 ORM 对象
-        在 session identity map 里累积导致 raw_data 长期驻留。"""
+        """P1-B: 大批量题目应分批 commit + 精确 expunge，避免 ORM 对象
+        在 session identity map 里累积导致 raw_data 长期驻留。
+        隐患③：用 db.expunge(qi) 只剔除本批写入条目，不影响调用方持有的
+        其他 ORM 实例。"""
         from app.features.review_service import _REVIEW_COMMIT_BATCH_SIZE
 
         db, added = self._setup()
-        db.expunge_all = MagicMock()
+        db.expunge = MagicMock()
+        db.expunge_all = MagicMock()  # 断言不再被调用
 
-        # 105 道题：50 + 50 + 5 → 应 commit 3 次，expunge_all 3 次
+        # 105 道题：50 + 50 + 5 → 应 commit 3 次，expunge 各条目共 105 次
         questions = [
             _make_question({"stem": f"题目 {i}", "stem_hash": f"h{i:04d}"})
             for i in range(105)
@@ -288,14 +291,20 @@ class TestSubmitToReview:
         # commit 次数 = ceil(105/50) = 3（两次满 batch + 一次尾部）
         expected_commits = -(-105 // _REVIEW_COMMIT_BATCH_SIZE)
         assert db.commit.call_count == expected_commits == 3
-        # expunge_all 与 commit 次数一致（每次 commit 后释放 ORM 引用）
-        assert db.expunge_all.call_count == 3
+        # 每条 qi 都应被精确 expunge 一次（且只一次），共 105 次
+        assert db.expunge.call_count == 105
+        # 不应再使用 expunge_all（会误清调用方的其他 ORM 实例）
+        db.expunge_all.assert_not_called()
+        # 顺序：传入的 qi 应等于 added，确认按写入顺序剔除
+        expunged_ids = [call.args[0].id for call in db.expunge.call_args_list]
+        assert expunged_ids == [qi.id for qi in added]
 
     def test_p1b_exact_batch_size_no_extra_commit(self):
         """P1-B: 题目数恰好等于 batch_size 整数倍时，只 commit batch_size 次。"""
         from app.features.review_service import _REVIEW_COMMIT_BATCH_SIZE
 
         db, added = self._setup()
+        db.expunge = MagicMock()
         db.expunge_all = MagicMock()
 
         questions = [_make_question({"stem": f"q{i}", "stem_hash": f"h{i:04d}"})
@@ -306,8 +315,51 @@ class TestSubmitToReview:
         assert result["written"] == _REVIEW_COMMIT_BATCH_SIZE
         # 50 道题：满 batch commit 一次，尾部空 commit 一次保证事务关闭
         assert db.commit.call_count == 2
-        # expunge_all 仅在满 batch 时调用一次
-        assert db.expunge_all.call_count == 1
+        # expunge 50 次（满 batch 的每条 qi 各一次）
+        assert db.expunge.call_count == _REVIEW_COMMIT_BATCH_SIZE
+        db.expunge_all.assert_not_called()
+
+    def test_p1b_mid_batch_failure_cleans_orphan_batch(self):
+        """隐患② 修复：第二批 commit 失败时，应 best-effort 按 batch_id
+        清理已 commit 的孤儿记录，并把异常往上抛。"""
+        db, added = self._setup()
+        db.expunge = MagicMock()
+        db.rollback = AsyncMock()
+
+        # 第一次 commit 成功；第二次抛异常；第三次（清理 orphan 的 commit）
+        # 必须能被 await（不是 side_effect 队列剩下的元素）
+        commit_calls = {"count": 0}
+
+        async def _commit_side_effect():
+            commit_calls["count"] += 1
+            if commit_calls["count"] == 2:
+                raise RuntimeError("simulated DB failure mid-batch")
+
+        db.commit = AsyncMock(side_effect=_commit_side_effect)
+
+        # 105 道题：第一批 50 道 commit 成功后第二批触发失败
+        questions = [
+            _make_question({"stem": f"题目 {i}", "stem_hash": f"h{i:04d}"})
+            for i in range(105)
+        ]
+
+        with pytest.raises(RuntimeError, match="simulated DB failure"):
+            asyncio.run(submit_to_review(db, questions))
+
+        # rollback 应被调用一次（清理失败事务）
+        db.rollback.assert_awaited_once()
+        # cleanup DELETE: db.execute 应被以 Delete 语句额外调一次
+        # （之前已有 _batch_find_duplicate_questions / _batch_find_duplicate_imports
+        # 的 select 调用，但都是空 hash 所以不触发；这里只断言 execute 至少
+        # 被调用一次且最后一次是删除）
+        from sqlalchemy.sql.dml import Delete
+        delete_calls = [
+            call for call in db.execute.call_args_list
+            if call.args and isinstance(call.args[0], Delete)
+        ]
+        assert len(delete_calls) == 1
+        # commit 累计 3 次：第一批成功 + 第二批抛错 + 清理后的 commit
+        assert commit_calls["count"] == 3
 
 
 # --- get_review_queue ---

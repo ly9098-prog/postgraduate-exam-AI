@@ -1167,6 +1167,12 @@ class ImportPipeline:
                     if result.get("warnings"):
                         stage.warnings.extend(result["warnings"])
                     data.update(result)
+                    # 隐患① 修复：每次 stage 写入 normalized_blocks 都同步更新
+                    # count，确保即便后续 stage 在 match 之前失败，stats 仍能
+                    # 反映真实的 block 数（之前只在 match 后缓存，前序失败会
+                    # 静默归零）。
+                    if "normalized_blocks" in result:
+                        data["normalized_block_count"] = len(result["normalized_blocks"])
                 # P0-1 / P1-A: 大字段一过最后消费者立即释放，避免随 8+ 个阶段
                 # 一起驻留内存。400 页扫描 PDF 下，OCR 后的 normalized_blocks
                 # 单独可达 50~200 MB（含 boxes），是仅次于 PDF 字节的大头。
@@ -1178,11 +1184,8 @@ class ImportPipeline:
                     # raw_blocks 已并入 normalized_blocks，无后续消费者
                     data.pop("raw_blocks", None)
                 elif name == "match":
-                    # match 后无人再读 normalized_blocks；先存 count 供 stats 兜底
-                    blocks = data.get("normalized_blocks")
-                    if blocks is not None:
-                        data["normalized_block_count"] = len(blocks)
-                        del data["normalized_blocks"]
+                    # match 后无人再读 normalized_blocks，count 已在写入时缓存
+                    data.pop("normalized_blocks", None)
                 elif name == "normalize_schema":
                     # questions 已落地，原始题目/匹配结果不再被读取
                     data.pop("raw_questions", None)
@@ -1209,13 +1212,16 @@ class ImportPipeline:
                     pass
 
         # Build stats from stage outputs
+        # 隐患① 修复：fallback 链
+        #   normalized_count（normalize_schema 输出的题目数，happy path）
+        #   → normalized_block_count（每次 normalized_blocks 被写入时缓存）
+        #   → 0（无中间产物，避免 len(已 pop 字段) 静默归零）
         stats = {
             "total": data.get("extracted", 0),
             "extracted": data.get("extracted", 0),
             "normalized": data.get(
                 "normalized_count",
-                # P1-A: normalized_blocks 在 match 之后被 pop，回落到提前缓存的 count
-                data.get("normalized_block_count", len(data.get("normalized_blocks", []))),
+                data.get("normalized_block_count", 0),
             ),
             "analyzed": data.get("split_count", len(data.get("raw_questions", []))),
             "split": data.get("split_count", 0),
