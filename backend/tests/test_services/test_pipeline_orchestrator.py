@@ -938,6 +938,53 @@ class TestPipelineStoreSlim:
             assert f"pl_prune_{i:04d}" not in _pipeline_store
             assert f"pl_prune_{i:04d}" not in _pipeline_diagnostics_store
 
+    def test_status_query_does_not_pollute_main_store(self):
+        """get_pipeline_status 必须返回拷贝，不能把 ocr_progress 写进主 store。
+
+        回归保护：之前实现里 get_pipeline_status 直接复用 _pipeline_store[pid]
+        引用，对 data["ocr_progress"] 赋值会污染主 store 的白名单契约。
+        """
+        from app.features.pipeline_orchestrator import (
+            _ocr_progress,
+            _pipeline_diagnostics_store,
+            _PIPELINE_STORE_FIELDS,
+            _set_pipeline_store,
+        )
+
+        pid = "pl_pollute_001"
+        # 隔离前序测试可能塞满的 prune 数据，避免 _set_pipeline_store
+        # 内的 _prune_store 把当前用例的新条目反被淘汰。
+        _pipeline_store.clear()
+        _pipeline_diagnostics_store.clear()
+        _ocr_progress.pop(pid, None)
+
+        asyncio.run(_set_pipeline_store(pid, {
+            "pipeline_id": pid,
+            "status": "running",
+            "source_type": "pdf",
+            "stages": {},
+            "stats": {},
+            "errors": [],
+            "started_at": "2026-06-05T00:00:00",
+        }))
+
+        _ocr_progress[pid] = "32/312 pages"
+        try:
+            status = asyncio.run(get_pipeline_status(pid))
+            assert status is not None
+            assert status.get("ocr_progress") == "32/312 pages"
+
+            # 主 store 仍只含白名单字段
+            stored = _pipeline_store[pid]
+            assert "ocr_progress" not in stored
+            assert set(stored.keys()).issubset(set(_PIPELINE_STORE_FIELDS))
+
+            # 修改返回视图不能反污染主 store
+            status["status"] = "tampered"
+            assert _pipeline_store[pid]["status"] == "running"
+        finally:
+            _ocr_progress.pop(pid, None)
+
 
 # ---------------------------------------------------------------------------
 # ImportPipeline — _run_repair data flow

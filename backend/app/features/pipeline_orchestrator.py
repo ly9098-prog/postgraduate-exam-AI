@@ -524,6 +524,28 @@ class ImportPipeline:
                                     "sample_step": settings.EXERCISE_DETECTION_SAMPLE_STEP,
                                 },
                             )
+
+                            # 采样模式漏检保护：若 step>1 一无所获，退化为 step=1
+                            # 重新探测一次。否则下方 fallback 会跑全本 OCR，整体
+                            # 工作量反而比不开检测更高（lightweight 1/N + full 100%
+                            # > full 100%）。
+                            if (
+                                not exercise_regions
+                                and settings.EXERCISE_DETECTION_SAMPLE_STEP > 1
+                            ):
+                                logger.warning(
+                                    "Exercise detection found nothing at sample_step=%d; retrying with full coverage to avoid degenerating into full-PDF OCR",
+                                    settings.EXERCISE_DETECTION_SAMPLE_STEP,
+                                )
+                                exercise_regions = detect_exercise_regions_from_pdf(
+                                    pdf_source,
+                                    config={
+                                        "dpi": settings.EXERCISE_DETECTION_DPI,
+                                        "max_empty_pages": settings.EXERCISE_DETECTION_MAX_EMPTY_PAGES,
+                                        "min_confidence": settings.EXERCISE_DETECTION_MIN_CONFIDENCE,
+                                        "sample_step": 1,
+                                    },
+                                )
                         elif user_specified_range:
                             logger.info("Skipping exercise detection: user specified page range %s-%s",
                                         opts.get("page_start"), opts.get("page_end"))
@@ -1410,9 +1432,12 @@ async def get_pipeline_status(pipeline_id: str) -> dict | None:
     data = await _get_pipeline_store(pipeline_id)
     if data is None:
         return None
+    # 防御性拷贝：_get_pipeline_store 返回的是 _pipeline_store 内引用，
+    # 任何后续字段写入都会直接污染主 store（白名单契约破坏）。
+    data = dict(data)
     diagnostics = await _get_pipeline_diagnostics(pipeline_id)
-    if diagnostics is not None and "diagnostics" not in data:
-        data = {**data, "diagnostics": diagnostics}
+    if diagnostics is not None:
+        data["diagnostics"] = diagnostics
     if pipeline_id in _ocr_progress:
         data["ocr_progress"] = _ocr_progress[pipeline_id]
     return data
