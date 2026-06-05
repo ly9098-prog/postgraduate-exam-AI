@@ -760,6 +760,41 @@ class TestImportPipelineRun:
         # stats 里 normalized 计数仍然正确（normalized_block_count 兜底）
         assert result["stats"]["normalized"] == 3
 
+    def test_p1a_stats_normalized_survives_mid_pipeline_failure(self):
+        """隐患① 修复：normalize_text 之后任意 stage 失败，stats['normalized']
+        仍应反映上一次写入 normalized_blocks 的产物，而不是静默归零。
+
+        修复前 fallback 链是 normalized_count → normalized_block_count → len([])，
+        normalized_count 由 normalize_schema 写入，normalized_block_count 由
+        match 之后才缓存；analyze_structure 失败时两者都不存在，stats 归零。
+        修复后 normalized_blocks 一被写入就同步缓存 count。
+        """
+        pipeline = self._make_pipeline()
+        # analyze_structure 在 normalize_text 之后第一个失败
+        pipeline._run_analyze_structure = MagicMock(side_effect=ValueError("structure fail"))
+        # 后续阶段也直接失败，避免它们再写入 normalized_blocks 干扰断言
+        pipeline._run_classify_pages = MagicMock(side_effect=ValueError("classify fail"))
+        pipeline._run_split = MagicMock(side_effect=ValueError("split fail"))
+        pipeline._run_match = MagicMock(side_effect=ValueError("match fail"))
+        # normalize_schema 也不写 normalized_count，模拟 schema 也未走 happy path
+        pipeline._run_normalize_schema = MagicMock(return_value={"questions": []})
+        pipeline._build_pipeline()
+
+        result = asyncio.run(pipeline.run(
+            file_content=b"fake pdf",
+            source_type="pdf",
+            source_file="test.pdf",
+            subject="math2",
+            db=_make_mock_db(),
+        ))
+
+        # pipeline 整体被标记 failed
+        assert result["status"] == "failed"
+        assert result["stages"]["analyze_structure"]["status"] == "failed"
+        # 关键断言：ocr_correction 输出 3 个 block，stats['normalized'] 应等于 3
+        # 而非修复前的 0（因为 normalized_count 和 normalized_blocks 都缺失）
+        assert result["stats"]["normalized"] == 3
+
 
 # ---------------------------------------------------------------------------
 # run_import_pipeline

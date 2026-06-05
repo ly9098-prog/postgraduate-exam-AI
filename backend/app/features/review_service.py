@@ -4,19 +4,27 @@
 提供审核队列查询和人工修复接口。
 """
 
+import logging
 import uuid
 from datetime import datetime
 
-from sqlalchemy import asc, func, select, nulls_last
+from sqlalchemy import asc, delete, func, select, nulls_last
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.question_pipeline import normalizer
 from app.models.question import Question
 from app.models.question_import import QuestionImport
 
+logger = logging.getLogger(__name__)
+
 # P1-B: review 阶段分批 commit。400+ 道题如果累在单事务里，SQLAlchemy
 # session identity map 会一直持有所有 QuestionImport ORM 对象到 commit
-# 那一刻；每 N 道 commit + expunge_all 把它们放出来，让 GC 能回收。
+# 那一刻；每 N 道 commit + 精确 expunge 把它们放出来，让 GC 能回收。
+#
+# 隐患③ 修复：使用 db.expunge(qi) 逐个剔除本批写入的 QuestionImport，
+# 而不是 db.expunge_all()。后者会把整个 session 里所有 ORM（包括上层
+# 调用方在 submit_to_review 之前已 attach 的对象，如 watermark 规则、
+# user 等）一并踢掉，副作用过大。
 _REVIEW_COMMIT_BATCH_SIZE = 50
 
 
@@ -104,6 +112,9 @@ async def submit_to_review(
     items: list[dict] = []
     written = 0
     skipped = 0
+    # 隐患③ 修复：跟踪本批刚写入的 ORM，commit 后只精确 expunge 这些条目，
+    # 不动 session 里其他 attach 的对象。
+    pending_qis: list[QuestionImport] = []
 
     # Pre-compute hashes and batch duplicate lookups (2 queries instead of 2N)
     prepared: list[tuple[dict, str, dict | None, str | None, str | None]] = []
@@ -149,89 +160,122 @@ async def submit_to_review(
     seen_hashes: dict[str, int] = {}
     pending_in_batch = 0
 
-    for q, stem, parsed_options, qi_subject, question_hash in prepared:
-        if not stem:
-            continue
+    # 隐患② 修复：分批 commit 失去原子性，中途崩溃会留下孤儿 batch_id 记录。
+    # 用 try/except 包住整段写入逻辑，失败时按 batch_id 清理已 commit 的部分。
+    try:
+        for q, stem, parsed_options, qi_subject, question_hash in prepared:
+            if not stem:
+                continue
 
-        # Build duplicate fields from pre-fetched maps
-        duplicate_fields = {
-            "question_hash": question_hash or None,
-            "duplicate_status": "normal",
-            "duplicate_of_question_id": None,
-            "duplicate_of_import_id": None,
-        }
-        if question_hash and question_hash in dup_questions:
-            duplicate_fields["duplicate_status"] = "possible_duplicate"
-            duplicate_fields["duplicate_of_question_id"] = dup_questions[question_hash]
-        elif question_hash and question_hash in dup_imports:
-            duplicate_fields["duplicate_status"] = "possible_duplicate"
-            duplicate_fields["duplicate_of_import_id"] = dup_imports[question_hash]
-        elif question_hash and question_hash in seen_hashes:
-            duplicate_fields["duplicate_status"] = "possible_duplicate"
-            duplicate_fields["duplicate_of_import_id"] = seen_hashes[question_hash]
+            # Build duplicate fields from pre-fetched maps
+            duplicate_fields = {
+                "question_hash": question_hash or None,
+                "duplicate_status": "normal",
+                "duplicate_of_question_id": None,
+                "duplicate_of_import_id": None,
+            }
+            if question_hash and question_hash in dup_questions:
+                duplicate_fields["duplicate_status"] = "possible_duplicate"
+                duplicate_fields["duplicate_of_question_id"] = dup_questions[question_hash]
+            elif question_hash and question_hash in dup_imports:
+                duplicate_fields["duplicate_status"] = "possible_duplicate"
+                duplicate_fields["duplicate_of_import_id"] = dup_imports[question_hash]
+            elif question_hash and question_hash in seen_hashes:
+                duplicate_fields["duplicate_status"] = "possible_duplicate"
+                duplicate_fields["duplicate_of_import_id"] = seen_hashes[question_hash]
 
-        question_type = q.get("question_type", "")
-        parsed_answer = (q.get("answer") or "").strip() or None
+            question_type = q.get("question_type", "")
+            parsed_answer = (q.get("answer") or "").strip() or None
 
-        qi = QuestionImport(
-            batch_id=batch_id,
-            source_type=source_type,
-            source_file=source_file or None,
-            subject=qi_subject,
-            question_type=question_type or None,
-            raw_data=q,
-            parsed_content={"text": stem},
-            parsed_options=parsed_options,
-            parsed_answer=parsed_answer,
-            parsed_analysis=(q.get("analysis") or "").strip() or None,
-            status="pending",
-            **duplicate_fields,
-            ai_confidence=q.get("confidence_score"),
-            ai_metadata={
-                "is_valid": q.get("is_valid", True),
-                "errors": q.get("errors", []),
-                "warnings": q.get("warnings", []),
-                "knowledge_points": q.get("knowledge_points", []),
-                "difficulty": q.get("difficulty", 3),
-                "stem_hash": q.get("stem_hash", ""),
-            },
-        )
-        db.add(qi)
-        await db.flush()
+            qi = QuestionImport(
+                batch_id=batch_id,
+                source_type=source_type,
+                source_file=source_file or None,
+                subject=qi_subject,
+                question_type=question_type or None,
+                raw_data=q,
+                parsed_content={"text": stem},
+                parsed_options=parsed_options,
+                parsed_answer=parsed_answer,
+                parsed_analysis=(q.get("analysis") or "").strip() or None,
+                status="pending",
+                **duplicate_fields,
+                ai_confidence=q.get("confidence_score"),
+                ai_metadata={
+                    "is_valid": q.get("is_valid", True),
+                    "errors": q.get("errors", []),
+                    "warnings": q.get("warnings", []),
+                    "knowledge_points": q.get("knowledge_points", []),
+                    "difficulty": q.get("difficulty", 3),
+                    "stem_hash": q.get("stem_hash", ""),
+                },
+            )
+            db.add(qi)
+            await db.flush()
+            pending_qis.append(qi)
 
-        if question_hash:
-            seen_hashes.setdefault(question_hash, qi.id)
+            if question_hash:
+                seen_hashes.setdefault(question_hash, qi.id)
 
-        stem_preview = stem[:50] + "..." if len(stem) > 50 else stem
-        items.append({
-            "id": qi.id,
-            "status": "pending",
-            "confidence_score": q.get("confidence_score", 0),
-            "stem_preview": stem_preview,
-            "has_issues": not q.get("is_valid", True) or bool(q.get("errors")),
-            "question_hash": qi.question_hash,
-            "duplicate_status": qi.duplicate_status,
-            "duplicate_of_question_id": qi.duplicate_of_question_id,
-            "duplicate_of_import_id": qi.duplicate_of_import_id,
-        })
-        written += 1
-        pending_in_batch += 1
+            stem_preview = stem[:50] + "..." if len(stem) > 50 else stem
+            items.append({
+                "id": qi.id,
+                "status": "pending",
+                "confidence_score": q.get("confidence_score", 0),
+                "stem_preview": stem_preview,
+                "has_issues": not q.get("is_valid", True) or bool(q.get("errors")),
+                "question_hash": qi.question_hash,
+                "duplicate_status": qi.duplicate_status,
+                "duplicate_of_question_id": qi.duplicate_of_question_id,
+                "duplicate_of_import_id": qi.duplicate_of_import_id,
+            })
+            written += 1
+            pending_in_batch += 1
 
-        # P1-B: 每 N 道 commit + expunge，让 ORM 对象脱离 session identity
-        # map，GC 才能回收 raw_data / parsed_content 等 dict（一道题约
-        # 5~30 KB，400 道累积可达 12 MB）。
-        if pending_in_batch >= _REVIEW_COMMIT_BATCH_SIZE:
+            # P1-B: 每 N 道 commit + 精确 expunge，让 ORM 对象脱离 session
+            # identity map，GC 才能回收 raw_data / parsed_content 等 dict
+            # （一道题约 5~30 KB，400 道累积可达 12 MB）。
+            # 隐患③：只 expunge 本批刚写入的 qi，不影响调用方在同 session
+            # 持有的其他 ORM 实例。
+            if pending_in_batch >= _REVIEW_COMMIT_BATCH_SIZE:
+                await db.commit()
+                for _qi in pending_qis:
+                    db.expunge(_qi)
+                pending_qis.clear()
+                pending_in_batch = 0
+
+        # 收尾：把未达 batch size 的尾部 commit；如果上一轮刚 commit 过这里
+        # 就是空 commit，对 SQLAlchemy 是 no-op，仅保证函数返回前事务关闭。
+        if pending_in_batch > 0:
             await db.commit()
-            db.expunge_all()
-            pending_in_batch = 0
-
-    # 收尾：把未达 batch size 的尾部 commit；如果上一轮刚 commit 过这里
-    # 就是空 commit，对 SQLAlchemy 是 no-op，仅保证函数返回前事务关闭。
-    if pending_in_batch > 0:
-        await db.commit()
-        db.expunge_all()
-    else:
-        await db.commit()
+            for _qi in pending_qis:
+                db.expunge(_qi)
+            pending_qis.clear()
+        else:
+            await db.commit()
+    except Exception as exc:
+        # 隐患② 修复：分批 commit 中途失败时，先回滚当前事务，再按 batch_id
+        # best-effort 清理之前已 commit 的部分；任何一步失败都只记日志，
+        # 不掩盖原始异常。
+        logger.exception("submit_to_review failed mid-batch (batch_id=%s): %s", batch_id, exc)
+        try:
+            await db.rollback()
+        except Exception:
+            logger.exception("rollback after submit_to_review failure also failed")
+        try:
+            await db.execute(
+                delete(QuestionImport).where(QuestionImport.batch_id == batch_id)
+            )
+            await db.commit()
+            logger.warning(
+                "submit_to_review cleaned up orphan batch_id=%s after mid-batch failure",
+                batch_id,
+            )
+        except Exception:
+            logger.exception(
+                "orphan cleanup for batch_id=%s failed; manual cleanup required", batch_id
+            )
+        raise
 
     return {
         "batch_id": batch_id,
