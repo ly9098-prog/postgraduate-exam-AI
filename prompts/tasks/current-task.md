@@ -256,7 +256,46 @@
 >   - 39 个 P2-4 相关测试全过；chunk runner + checkpoint 36 个无回归；
 >     pipeline_orchestrator 49 个无回归。
 >   - **不修改** `_pipeline_store`、resume API、status API；与 P2-5/P2-6 解耦。
-> - [ ] **P2-5 manual resume API**
+> - [x] **P2-5 manual resume API**：完成（2026-06-05）
+>   - `POST /api/v1/import/pipelines/{pipeline_id}/resume`（multipart 重上传
+>     PDF）：404 不存在 / 409 状态非 paused·failed / 400 非 PDF 或页数
+>     与 `pipeline.total_pages` 不匹配；只回放 `get_pending_chunks` 给出的
+>     failed+pending chunks，已 completed 的 chunk 完全不动；返回
+>     `{pipeline_id, status, resumed_chunks}`。
+>   - 共享路径重构：`_run_chunked` 内的 chunk 循环体抽成
+>     `_execute_chunk(...)`，初次导入与 resume 共用同一份
+>     `mark_chunk_running → _run_single_pass → update_chunk_status →
+>     hash_index.add_import` 的契约，避免双实现漂移。
+>   - 跨 chunk 状态在 resume 时正确重建：
+>     - `GlobalHashIndex.load(batch_ids=[...])`：扩展 `load()` 支持多批次
+>       并集，把本 pipeline 已 completed 的 chunk batch_id 全部预热进
+>       `_import_index`，resume chunk 仍能命中兄弟 chunk 已写的题。
+>     - `_load_seen_numbers_for_resume()`：从 `question_imports.raw_data`
+>       聚合已写 number，恢复 P2-3 的函数级 `seen_numbers` 集，避免重启
+>       后重复号穿透。
+>     - `watermark_patterns / strategy / import_mode` 重建逻辑与
+>       `ImportPipeline.run()` 一致。
+>   - resume 失败隔离：`_execute_chunk` 内部已捕获，resume 整体永远不
+>     抛；结束后用 `get_pipeline_progress(use_cache=False)` 重算
+>     `failed_chunks`，全部 completed 才把 pipeline 置 `completed`，否则
+>     保持 `paused` 等下次 resume。
+>   - 文件管理：API 层把上传的 PDF 落到 `tempfile.mkstemp` 临时路径，
+>     background task 在 `finally` 里 unlink；服务器**不**持久化原始
+>     PDF（v1 简化方案，与原计划一致）。
+>   - 测试：新增 `tests/test_features/test_pipeline_resume.py` 6 个测试
+>     全过——
+>     - `test_only_failed_chunk_replayed`：3 chunks（completed/failed/
+>       completed）→ 只有 chunk 1 触发 `_execute_chunk`，且 chunk 0/2 的
+>       batch_id 不变；chunk 1 error 清空、写入新 batch。
+>     - `test_no_pending_chunks_marks_completed`：所有 chunk 都已
+>       completed → 直接置 completed，不跑任何 chunk。
+>     - `test_chunk_still_fails_keeps_paused`：复跑后 chunk 仍抛 →
+>       pipeline 留在 paused、`failed_chunk_details[0].error_message` 含
+>       新错误信息。
+>     - `test_404_when_pipeline_missing` / `test_409_when_pipeline_completed`
+>       / `test_400_when_non_pdf`：endpoint 状态校验。
+>   - 全量回归：130 passed（chunk runner / checkpoint / global hash index
+>     / pipeline_orchestrator / similarity_matcher / pipeline_resume）。
 > - [ ] **P2-6 status API + 前端适配**
 > - [ ] **P2-7 端到端测试**
 
