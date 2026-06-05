@@ -38,6 +38,7 @@ from app.services.upload_validator import get_upload_validator
 from app.features.pipeline_orchestrator import (
     _set_pipeline_store,
     get_pipeline_status,
+    resume_pipeline_background,
     run_excel_pipeline_background,
     run_import_pipeline,
     run_pipeline_background,
@@ -45,6 +46,7 @@ from app.features.pipeline_orchestrator import (
 from app.schemas.import_review import (
     FixQuestionRequest,
     FixQuestionResponse,
+    PipelineResumeResponse,
     PipelineStatusResponse,
     PipelineUploadResponse,
     ReviewQueueResponse,
@@ -852,6 +854,163 @@ async def pipeline_status(
     if status is None:
         raise HTTPException(status_code=404, detail="流水线不存在")
     return PipelineStatusResponse(**status)
+
+
+_RESUMABLE_PIPELINE_STATUSES = {"paused", "failed"}
+
+
+async def _run_resume_with_db(
+    pipeline_id: str,
+    file_path: str,
+    subject: str | None,
+    options: dict,
+) -> None:
+    """Background wrapper：单独 DB 会话跑 resume，结束后无条件清理 tmp 文件。"""
+    try:
+        async with async_session() as db:
+            await resume_pipeline_background(
+                pipeline_id=pipeline_id,
+                file_path=file_path,
+                subject=subject,
+                options=options,
+                db=db,
+            )
+    except Exception:
+        logger.exception("resume pipeline %s failed", pipeline_id)
+    finally:
+        if file_path and os.path.exists(file_path):
+            try:
+                os.unlink(file_path)
+            except OSError as e:
+                logger.warning(
+                    "Failed to delete resume tmp file %s: %s", file_path, e
+                )
+
+
+@router.post(
+    "/pipelines/{pipeline_id}/resume",
+    response_model=PipelineResumeResponse,
+)
+async def resume_pipeline(
+    pipeline_id: str,
+    file: UploadFile,
+    subject: str | None = None,
+    enable_ai_repair: bool = True,
+    confidence_threshold: float = 0.6,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_app_permission("import:write")),
+):
+    """P2-5: 手动恢复 paused/failed 的导入流水线。
+
+    PDF 在首次导入结束后已被 unlink，因此 resume 必须重新上传同一个文件
+    （v1 简化方案：服务器不持久化原始 PDF）。仅复跑 failed + pending
+    chunk，已 completed 的 chunk 不动。
+    """
+    from sqlalchemy import select as sa_select
+
+    from app.models.import_pipeline import ImportPipeline
+
+    pipeline_row = (
+        await db.execute(
+            sa_select(ImportPipeline).where(
+                ImportPipeline.pipeline_id == pipeline_id
+            )
+        )
+    ).scalar_one_or_none()
+    if pipeline_row is None:
+        raise HTTPException(status_code=404, detail="流水线不存在")
+
+    if pipeline_row.status not in _RESUMABLE_PIPELINE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"流水线当前状态为 {pipeline_row.status}，不可恢复",
+        )
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="文件名不能为空")
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="resume 仅支持 PDF 文件")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="文件内容为空")
+
+    validator = get_upload_validator()
+    validator.validate_file(file.filename, len(content), file.content_type)
+
+    try:
+        import fitz
+        with fitz.open(stream=content, filetype="pdf") as doc:
+            uploaded_pages = len(doc)
+            validator.validate_pdf_pages(uploaded_pages)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"PDF 解析失败：{exc}")
+
+    if (
+        pipeline_row.total_pages is not None
+        and uploaded_pages != pipeline_row.total_pages
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"PDF 页数不匹配（原始 {pipeline_row.total_pages} 页，"
+                f"上传 {uploaded_pages} 页），请确认是同一份文件"
+            ),
+        )
+
+    # Snapshot pending chunks for the response. The background task may also
+    # mark new chunks failed, but resumed_chunks reflects the entry-time view.
+    from app.features.pipeline_checkpoint import get_pending_chunks
+
+    pending = await get_pending_chunks(db, pipeline_id)
+    resumed_chunks = [c.chunk_index for c in pending]
+
+    if not resumed_chunks:
+        return PipelineResumeResponse(
+            pipeline_id=pipeline_id,
+            status=pipeline_row.status,
+            resumed_chunks=[],
+        )
+
+    # Persist re-uploaded PDF to a tmp path; background task unlinks in finally.
+    suffix = os.path.splitext(file.filename)[1] or ".pdf"
+    fd, tmp_path = tempfile.mkstemp(prefix=f"resume_{pipeline_id}_", suffix=suffix)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(content)
+    except Exception:
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+        if os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        raise
+
+    options = {
+        "enable_ai_repair": enable_ai_repair,
+        "confidence_threshold": confidence_threshold,
+    }
+
+    asyncio.create_task(
+        _run_resume_with_db(
+            pipeline_id=pipeline_id,
+            file_path=tmp_path,
+            subject=subject,
+            options=options,
+        )
+    )
+
+    return PipelineResumeResponse(
+        pipeline_id=pipeline_id,
+        status="running",
+        resumed_chunks=resumed_chunks,
+    )
 
 
 # ---------------------------------------------------------------------------

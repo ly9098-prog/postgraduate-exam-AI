@@ -1570,6 +1570,122 @@ class ImportPipeline:
             "review_new_hashes": data.get("review_new_hashes") or [],
         }
 
+    async def _execute_chunk(
+        self,
+        *,
+        chunk_index: int,
+        page_start: int,
+        logical_end: int,
+        total_pages: int,
+        is_last_chunk: bool,
+        chunk_overlap: int,
+        file_content: bytes | None,
+        file_path: str | None,
+        source_type: str,
+        source_file: str,
+        subject: str | None,
+        opts: dict,
+        db,
+        shared: dict,
+        progress_callback,
+        started_at: str,
+        seen_numbers: set,
+        hash_index,
+    ) -> dict:
+        """Run one chunk end-to-end with checkpoint writes + failure isolation.
+
+        Shared by ``_run_chunked`` (initial import) and
+        ``resume_pipeline_background`` (P2-5 manual resume) so the chunk-level
+        contract — mark_running → run_single_pass → update_status →
+        push hashes → return outcome dict — stays in one place.
+
+        The returned dict matches the per-chunk diagnostics shape consumed by
+        ``diagnostics.chunks`` in the pipeline-level result.
+        """
+        from app.features import pipeline_checkpoint as ckpt
+
+        await ckpt.mark_chunk_running(db, self.pipeline_id, chunk_index)
+        await ckpt.invalidate_progress_cache(self.pipeline_id)
+
+        # P2-3: extend page_end by overlap so the splitter can finish the
+        # last question whose tail crosses the chunk boundary. Cap at
+        # total_pages so we never read past the document. The final chunk
+        # has no overlap (nothing comes after it).
+        effective_end = (
+            logical_end
+            if is_last_chunk
+            else min(logical_end + chunk_overlap, total_pages)
+        )
+
+        chunk_status = "completed"
+        chunk_error: str | None = None
+        chunk_result: dict = {}
+        try:
+            chunk_result = await self._run_single_pass(
+                file_content=file_content,
+                file_path=file_path,
+                source_type=source_type,
+                source_file=source_file,
+                subject=subject,
+                opts=opts,
+                db=db,
+                shared=shared,
+                progress_callback=progress_callback,
+                started_at=started_at,
+                page_start=page_start,
+                page_end=effective_end,
+                chunk_seen_numbers=seen_numbers,
+                chunk_logical_end=logical_end,
+            )
+            if chunk_result.get("status") != "completed":
+                chunk_status = "failed"
+                errs = chunk_result.get("errors") or []
+                chunk_error = errs[0] if errs else "chunk failed without explicit error"
+        except Exception as exc:
+            # _run_single_pass should swallow stage errors itself, but if
+            # something escapes (e.g. extract crash before stage loop) we
+            # must still keep the import alive.
+            logger.exception(
+                "chunk %d (pages %d-%d) raised unexpectedly",
+                chunk_index, page_start, logical_end,
+            )
+            chunk_status = "failed"
+            chunk_error = f"{type(exc).__name__}: {exc}"
+            chunk_result = {"errors": [chunk_error]}
+
+        written = (chunk_result.get("stats") or {}).get("to_review", 0)
+        batch_id = chunk_result.get("batch_id") or None
+
+        # P2-4: push (subject, hash, import_id) so subsequent chunks can hit
+        # this chunk's writes via similarity_match. add_import is a no-op when
+        # the index ran into the SQL fallback.
+        if hash_index is not None and chunk_status == "completed":
+            for subj, qhash, iid in chunk_result.get("review_new_hashes") or []:
+                hash_index.add_import(subj, qhash, iid)
+
+        await ckpt.update_chunk_status(
+            db,
+            self.pipeline_id,
+            chunk_index,
+            status=chunk_status,
+            batch_id=batch_id,
+            question_count=written,
+            error_message=chunk_error,
+        )
+        await ckpt.invalidate_progress_cache(self.pipeline_id)
+
+        return {
+            "chunk_index": chunk_index,
+            "page_start": page_start,
+            "page_end": logical_end,
+            "effective_page_end": effective_end,
+            "status": chunk_status,
+            "batch_id": batch_id,
+            "question_count": written,
+            "error_message": chunk_error,
+            "stages": chunk_result.get("stages") or {},
+        }
+
     async def _run_chunked(
         self,
         *,
@@ -1634,94 +1750,34 @@ class ImportPipeline:
         seen_numbers: set[int] = set()
 
         for chunk_index, (page_start, logical_end) in enumerate(chunk_ranges):
-            await ckpt.mark_chunk_running(db, self.pipeline_id, chunk_index)
-            await ckpt.invalidate_progress_cache(self.pipeline_id)
-
-            # P2-3: extend page_end by overlap so the splitter can finish the
-            # last question whose tail crosses the chunk boundary. Cap at
-            # total_pages so we never read past the document. The final chunk
-            # has no overlap (nothing comes after it).
             is_last_chunk = chunk_index == len(chunk_ranges) - 1
-            effective_end = (
-                logical_end
-                if is_last_chunk
-                else min(logical_end + chunk_overlap, total_pages)
+            outcome = await self._execute_chunk(
+                chunk_index=chunk_index,
+                page_start=page_start,
+                logical_end=logical_end,
+                total_pages=total_pages,
+                is_last_chunk=is_last_chunk,
+                chunk_overlap=chunk_overlap,
+                file_content=file_content,
+                file_path=file_path,
+                source_type=source_type,
+                source_file=source_file,
+                subject=subject,
+                opts=opts,
+                db=db,
+                shared=shared,
+                progress_callback=progress_callback,
+                started_at=started_at,
+                seen_numbers=seen_numbers,
+                hash_index=hash_index,
             )
-
-            chunk_status = "completed"
-            chunk_error: str | None = None
-            chunk_result: dict = {}
-            try:
-                chunk_result = await self._run_single_pass(
-                    file_content=file_content,
-                    file_path=file_path,
-                    source_type=source_type,
-                    source_file=source_file,
-                    subject=subject,
-                    opts=opts,
-                    db=db,
-                    shared=shared,
-                    progress_callback=progress_callback,
-                    started_at=started_at,
-                    page_start=page_start,
-                    page_end=effective_end,
-                    chunk_seen_numbers=seen_numbers,
-                    chunk_logical_end=logical_end,
-                )
-                if chunk_result.get("status") != "completed":
-                    chunk_status = "failed"
-                    errs = chunk_result.get("errors") or []
-                    chunk_error = errs[0] if errs else "chunk failed without explicit error"
-            except Exception as exc:
-                # _run_single_pass should swallow stage errors itself, but if
-                # something escapes (e.g. extract crash before stage loop) we
-                # must still keep the import alive.
-                logger.exception(
-                    "chunk %d (pages %d-%d) raised unexpectedly",
-                    chunk_index, page_start, logical_end,
-                )
-                chunk_status = "failed"
-                chunk_error = f"{type(exc).__name__}: {exc}"
-                chunk_result = {"errors": [chunk_error]}
-
-            written = (chunk_result.get("stats") or {}).get("to_review", 0)
-            batch_id = chunk_result.get("batch_id") or None
-
-            # P2-4: 把本 chunk 刚写入的 (subject, hash, import_id) 推到
-            # GlobalHashIndex，让后续 chunk 跑 similarity_match 时能命中
-            # 同批的兄弟 chunk。失败回落（is_fallback=True）下 add 是 no-op。
-            if hash_index is not None and chunk_status == "completed":
-                for subj, qhash, iid in chunk_result.get("review_new_hashes") or []:
-                    hash_index.add_import(subj, qhash, iid)
-
-            await ckpt.update_chunk_status(
-                db,
-                self.pipeline_id,
-                chunk_index,
-                status=chunk_status,
-                batch_id=batch_id,
-                question_count=written,
-                error_message=chunk_error,
-            )
-            await ckpt.invalidate_progress_cache(self.pipeline_id)
-
-            if chunk_status == "failed":
+            chunk_results.append(outcome)
+            if outcome["status"] == "failed":
                 any_chunk_failed = True
                 pipeline_errors.append(
-                    f"chunk {chunk_index} (pages {page_start}-{logical_end}) failed: {chunk_error}"
+                    f"chunk {chunk_index} (pages {page_start}-{logical_end}) "
+                    f"failed: {outcome['error_message']}"
                 )
-
-            chunk_results.append({
-                "chunk_index": chunk_index,
-                "page_start": page_start,
-                "page_end": logical_end,
-                "effective_page_end": effective_end,
-                "status": chunk_status,
-                "batch_id": batch_id,
-                "question_count": written,
-                "error_message": chunk_error,
-                "stages": chunk_result.get("stages") or {},
-            })
 
         overall_status = "paused" if any_chunk_failed else "completed"
         await ckpt.update_pipeline_status(
@@ -1912,6 +1968,222 @@ async def run_pipeline_background(
             "started_at": _pipeline_store.get(pipeline_id, {}).get("started_at", ""),
             "finished_at": datetime.now().isoformat(),
         })
+
+
+async def _load_seen_numbers_for_resume(db, pipeline_id: str) -> set[int]:
+    """Rebuild ``seen_numbers`` from already-imported question rows.
+
+    P2-3 keeps a function-level set of question numbers across chunks so the
+    overlap-region dedup never re-imports a number a sibling chunk already
+    wrote. After a process restart that set is gone — without rebuilding it,
+    a resumed chunk could drop legitimate questions whose numbers were
+    written earlier. Best-effort: bad/missing numbers are silently skipped.
+    """
+    from sqlalchemy import select
+
+    from app.models.import_pipeline import ImportPipelineChunk
+    from app.models.question_import import QuestionImport
+
+    chunk_subq = (
+        select(ImportPipelineChunk.batch_id)
+        .where(
+            ImportPipelineChunk.pipeline_id == pipeline_id,
+            ImportPipelineChunk.status == "completed",
+            ImportPipelineChunk.batch_id.isnot(None),
+        )
+        .scalar_subquery()
+    )
+    rows = await db.execute(
+        select(QuestionImport.raw_data).where(
+            QuestionImport.batch_id.in_(chunk_subq)
+        )
+    )
+    nums: set[int] = set()
+    for (raw,) in rows.all():
+        if not isinstance(raw, dict):
+            continue
+        candidate = raw.get("number")
+        if candidate is None:
+            continue
+        try:
+            nums.add(int(candidate))
+        except (TypeError, ValueError):
+            continue
+    return nums
+
+
+async def resume_pipeline_background(
+    *,
+    pipeline_id: str,
+    file_path: str,
+    subject: str | None = None,
+    options: dict | None = None,
+    db,
+) -> None:
+    """P2-5: replay only the failed/pending chunks of an existing pipeline.
+
+    Caller (api.v1.imports.resume_pipeline) is responsible for persisting the
+    re-uploaded PDF to ``file_path`` and unlinking it once this coroutine
+    finishes.
+
+    Behaviour:
+        - Loads chunk rows from DB; if no failed/pending chunks remain, marks
+          the pipeline ``completed`` and returns immediately.
+        - Rebuilds the cross-chunk state (watermark patterns, GlobalHashIndex
+          containing already-completed chunk batches, seen_numbers set) so the
+          replayed chunks behave the same as if they had run alongside their
+          successful siblings.
+        - Reuses ``_execute_chunk`` so checkpoint writes, error isolation, and
+          hash-index updates stay identical to ``_run_chunked``.
+        - Final pipeline status is ``completed`` iff every replayed chunk
+          succeeds AND no chunk row remains failed; otherwise stays ``paused``
+          so the user can resume again.
+    """
+    from app.features import pipeline_checkpoint as ckpt
+    from app.features.global_hash_index import GlobalHashIndex
+    from app.models.import_pipeline import (
+        ImportPipeline as ImportPipelineRow,
+        ImportPipelineChunk,
+    )
+    from sqlalchemy import select
+
+    opts = dict(options) if options else {}
+
+    pipeline_row = (
+        await db.execute(
+            select(ImportPipelineRow).where(
+                ImportPipelineRow.pipeline_id == pipeline_id
+            )
+        )
+    ).scalar_one_or_none()
+    if pipeline_row is None:
+        logger.warning("resume_pipeline_background: pipeline %s missing, abort", pipeline_id)
+        return
+
+    pending = await ckpt.get_pending_chunks(db, pipeline_id)
+    if not pending:
+        # nothing to do — caller probably hit a race; mark completed if no
+        # chunks are still failing.
+        await ckpt.update_pipeline_status(
+            db, pipeline_id, status="completed", finished=True,
+        )
+        await ckpt.invalidate_progress_cache(pipeline_id)
+        return
+
+    # All chunks (for total count + completed batch_ids), single query.
+    all_chunks = (
+        (
+            await db.execute(
+                select(ImportPipelineChunk)
+                .where(ImportPipelineChunk.pipeline_id == pipeline_id)
+                .order_by(ImportPipelineChunk.chunk_index)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not all_chunks:
+        logger.warning("resume_pipeline_background: pipeline %s has no chunk rows", pipeline_id)
+        return
+
+    total_pages = pipeline_row.total_pages or all_chunks[-1].page_end
+    chunk_overlap = _resolve_chunk_overlap()
+    max_chunk_index = all_chunks[-1].chunk_index
+    completed_batch_ids = [
+        c.batch_id for c in all_chunks if c.status == "completed" and c.batch_id
+    ]
+
+    # Resolve import mode + strategy + watermark patterns the same way
+    # ImportPipeline.run() does, so resumed chunks see the same shared context.
+    mode_str = opts.get("import_mode", "auto")
+    try:
+        import_mode = ImportMode(mode_str)
+    except ValueError:
+        import_mode = ImportMode.AUTO
+    strategy = get_strategy(import_mode)
+
+    watermark_patterns: list = []
+    try:
+        from app.services.watermark_service import load_rules
+        watermark_patterns = await load_rules(db)
+    except Exception as exc:
+        logger.warning("resume: watermark load_rules failed (%s); using defaults", exc)
+    if not watermark_patterns:
+        from app.services.watermark_service import get_default_patterns
+        watermark_patterns = get_default_patterns()
+
+    shared: dict = {
+        "import_mode": import_mode,
+        "strategy": strategy,
+        "watermark_patterns": watermark_patterns,
+    }
+
+    # Rebuild GlobalHashIndex: recent_days window + every batch_id this
+    # pipeline already wrote, so resumed chunks can dedupe against their
+    # successful siblings.
+    hash_index: GlobalHashIndex | None = GlobalHashIndex()
+    try:
+        await hash_index.load(db, batch_ids=completed_batch_ids or None)
+    except Exception:
+        logger.exception(
+            "resume: GlobalHashIndex.load failed; similarity match will fallback"
+        )
+        hash_index = None
+    if hash_index is not None:
+        shared["hash_index"] = hash_index
+
+    seen_numbers = await _load_seen_numbers_for_resume(db, pipeline_id)
+
+    # Mark the pipeline running again so status queries reflect the in-progress
+    # resume and a concurrent second resume can detect the conflict.
+    await ckpt.update_pipeline_status(db, pipeline_id, status="running")
+    await ckpt.invalidate_progress_cache(pipeline_id)
+
+    pipeline = ImportPipeline(options=opts)
+    pipeline.pipeline_id = pipeline_id
+    started_at = datetime.now().isoformat()
+
+    chunk_results: list[dict] = []
+    any_chunk_failed = False
+    for chunk in pending:
+        outcome = await pipeline._execute_chunk(
+            chunk_index=chunk.chunk_index,
+            page_start=chunk.page_start,
+            logical_end=chunk.page_end,
+            total_pages=total_pages,
+            is_last_chunk=(chunk.chunk_index == max_chunk_index),
+            chunk_overlap=chunk_overlap,
+            file_content=None,
+            file_path=file_path,
+            source_type=pipeline_row.source_type or "pdf",
+            source_file=pipeline_row.source_file or "",
+            subject=subject,
+            opts=opts,
+            db=db,
+            shared=shared,
+            progress_callback=None,
+            started_at=started_at,
+            seen_numbers=seen_numbers,
+            hash_index=hash_index,
+        )
+        chunk_results.append(outcome)
+        if outcome["status"] == "failed":
+            any_chunk_failed = True
+
+    # Recompute overall status from current DB state — chunks not in
+    # ``pending`` could still be ``failed`` if a prior resume left them so;
+    # also covers the case where an earlier chunk silently regressed (we
+    # never overwrite completed chunks here).
+    progress = await ckpt.get_pipeline_progress(db, pipeline_id, use_cache=False)
+    still_failing = (progress and progress.get("failed_chunks", 0) > 0)
+    overall_status = "paused" if (any_chunk_failed or still_failing) else "completed"
+    await ckpt.update_pipeline_status(
+        db,
+        pipeline_id,
+        status=overall_status,
+        finished=(overall_status == "completed"),
+    )
+    await ckpt.invalidate_progress_cache(pipeline_id)
 
 
 async def run_excel_pipeline_background(

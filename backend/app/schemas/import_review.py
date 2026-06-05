@@ -130,3 +130,10 @@ class PipelineStatusResponse(BaseModel):
     current_stage: str = ""
     ocr_progress: str = ""
     source_type: str = ""
+
+
+class PipelineResumeResponse(BaseModel):
+    """P2-5 manual resume — reports which chunks were re-queued."""
+    pipeline_id: str
+    status: str
+    resumed_chunks: list[int] = []
