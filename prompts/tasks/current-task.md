@@ -7,11 +7,17 @@
 > ## 当前进度（2026-06-05）
 >
 > - [x] **审计阶段**：完成 → `docs/audit/ocr-pipeline-lifecycle-audit.md`
-> - [x] **P0-2 消除双 OCR**：完成
+> - [x] **P0-2 区域检测 OCR 工作量降为 1/N**：完成
 >   - `EXERCISE_DETECTION_SAMPLE_STEP=3` 默认采样
->   - lightweight OCR 工作量降为 1/3
+>   - lightweight OCR 工作量降为 1/3（**注意：这不是"消除双 OCR"** ——
+>     区域检测仍是独立扫描，全量 OCR 仍从零开始；实际链路为
+>     `lightweight 1/N + full(region)`，最优场景 33% + 部分页，
+>     最坏场景 33% + 100%。task 文档原"消除双 OCR"措辞夸大，已修正。）
 >   - region 边界 ±(step-1) 扩展 + 重叠合并
 >   - max_empty_pages 在采样模式下自动放大
+>   - **漏检 fallback 保护（P0 隐患修复 2026-06-05）**：当 `step>1` 检测
+>     一无所获时，先退化到 `step=1` 重新探测一次再决定是否走全本 OCR。
+>     避免王道教材关键词恰好落在跳过页时，整体工作量比不开检测更高。
 >   - 39 个 detector 测试通过（含 7 个新增采样模式测试）
 > - [x] **P0-1 PDF 字节落盘 + 闭包不持有**：完成
 >   - API 入口 `_run_pipeline_with_db`：`tempfile.mkstemp` 落盘后 `del file_content`，`finally` 块 `os.unlink`
@@ -28,6 +34,12 @@
 >   - `get_pipeline_status` 把 diagnostics 合并回完整视图，前端无感
 >   - 新增 3 个 P0-3 单元测试：strip / merge-back / prune-sync
 >   - 108 个相关测试通过（pipeline_orchestrator + pipeline_upload_unified + image_import_status + exercise_region_detector），无新增回归
+> - [x] **P0 隐患修复（2026-06-05 审计后）**：完成
+>   - **隐患 2 修复**：`get_pipeline_status` 改为返回 `dict(data)` 防御性拷贝。
+>     之前实现里 `data["ocr_progress"] = ...` 会污染 `_pipeline_store[pid]`
+>     引用，破坏白名单契约。新增 `test_status_query_does_not_pollute_main_store`
+>     断言主 store 字段始终是 `_PIPELINE_STORE_FIELDS` 子集。
+>   - **隐患 1 修复**：见上方 P0-2 fallback 保护 + 命名修正。
 > - [ ] **P1 stage 间清理 data 大字段**
 > - [ ] **P1 review 阶段分批 commit**
 > - [ ] **P2 region 流式编排 + 断点恢复**
