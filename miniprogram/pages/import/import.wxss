@@ -755,3 +755,60 @@ page {
   color: #fff;
   font-weight: 500;
 }
+
+/* P2-6: 失败分块列表 + 恢复按钮 */
+.pipeline-failed-chunks {
+  margin-top: 18rpx;
+  padding: 18rpx;
+  background: #FBF1EE;
+  border: 1rpx solid #F0CFC4;
+  border-radius: 14rpx;
+}
+
+.pipeline-failed-title {
+  display: block;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #B85C4A;
+  margin-bottom: 10rpx;
+}
+
+.pipeline-failed-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  padding: 8rpx 0;
+  border-top: 1rpx dashed #E5C4BB;
+}
+
+.pipeline-failed-item:first-of-type {
+  border-top: none;
+}
+
+.pipeline-failed-range {
+  font-size: 22rpx;
+  color: #6B7B8D;
+  font-weight: 600;
+}
+
+.pipeline-failed-error {
+  font-size: 22rpx;
+  color: #B85C4A;
+  line-height: 1.5;
+}
+
+.pipeline-resume-btn {
+  margin-top: 14rpx;
+  height: 64rpx;
+  background: #4A7C6F;
+  border-radius: 10rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pipeline-resume-text {
+  font-size: 26rpx;
+  color: #fff;
+  font-weight: 500;
+}

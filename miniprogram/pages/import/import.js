@@ -10,6 +10,8 @@ const STATUS_LABELS = {
   parsing: '解析中',
   processing: '处理中',
   ocr_running: 'OCR识别中',
+  running: '处理中',
+  paused: '部分失败，可恢复',
   completed: '已完成',
   failed: '失败',
 }
@@ -288,6 +290,22 @@ Page({
       const currentStage = status.current_stage || ''
       let progressPercent = totalStages > 0 ? Math.round((completedStages / totalStages) * 100) : 0
 
+      // P2-6: chunked PDF imports surface chunk_progress; prefer it over
+      // stage-derived percent so the bar reflects per-chunk completion on
+      // long imports (400+ pages).
+      const chunkProgress = status.chunk_progress || null
+      let chunkProgressText = ''
+      let failedChunkDetails = []
+      if (chunkProgress && chunkProgress.total_chunks > 0) {
+        const total = chunkProgress.total_chunks
+        const done = chunkProgress.completed_chunks || 0
+        const failed = chunkProgress.failed_chunks || 0
+        progressPercent = Math.min(100, Math.round((done / total) * 100))
+        chunkProgressText = `分块进度 ${done}/${total}`
+        if (failed > 0) chunkProgressText += `（${failed} 个失败）`
+        failedChunkDetails = chunkProgress.failed_chunk_details || []
+      }
+
       // When inside extract stage with OCR progress, show partial progress
       const ocrProgress = status.ocr_progress || ''
       let ocrProgressText = ''
@@ -297,7 +315,7 @@ Page({
           const done = parseInt(m[1], 10)
           const total = parseInt(m[2], 10)
           ocrProgressText = `OCR识别中 ${done}/${total} 页`
-          if (totalStages === 0 || (progressPercent === 0 && total > 0)) {
+          if (!chunkProgress && (totalStages === 0 || (progressPercent === 0 && total > 0))) {
             progressPercent = Math.max(1, Math.round((done / total) * 50))
           }
         }
@@ -322,21 +340,31 @@ Page({
         elapsed = min > 0 ? `${min}分${sec}秒` : `${sec}秒`
       }
 
+      const isPaused = status.status === 'paused'
+      const totalQuestionCount = (chunkProgress && chunkProgress.question_count) ||
+        status.question_count || (status.stats && status.stats.to_review) || 0
       const task = {
         ...currentTask,
         ...status,
         errors,
         error_message: errors[0] || '',
         raw_text_preview: (status.raw_text_preview || '').slice(0, 200),
-        question_count: status.question_count || (status.stats && status.stats.to_review) || 0,
+        question_count: totalQuestionCount,
         statusLabel: STATUS_LABELS[status.status] || status.status,
-        currentStageLabel: ocrProgressText || STAGE_LABELS[currentStage] || currentStage || '准备中',
+        currentStageLabel: chunkProgressText || ocrProgressText ||
+          STAGE_LABELS[currentStage] || currentStage || '准备中',
         progressPercent,
         stageList,
         elapsed,
         ocr_progress: ocrProgressText,
+        chunk_progress: chunkProgress,
+        failed_chunk_details: failedChunkDetails,
+        canResume: isPaused && failedChunkDetails.length > 0,
       }
-      this.setData({ pipelineTask: task, pipelinePolling: !['completed', 'failed'].includes(task.status) })
+      const isTerminal = ['completed', 'failed'].includes(task.status)
+      // paused 不算 terminal —— 等用户主动 resume；停止轮询避免空跑。
+      const stopPolling = isTerminal || isPaused
+      this.setData({ pipelineTask: task, pipelinePolling: !stopPolling })
       if (task.status === 'completed') {
         wx.showToast({ title: `已导入 ${task.question_count || 0} 题，进入审核`, icon: 'none' })
         this.loadBatches()
@@ -350,6 +378,10 @@ Page({
         })
         return
       }
+      if (isPaused) {
+        // 提示用户重选 PDF 触发恢复
+        return
+      }
       this.pollTimer = setTimeout(() => this.pollPipeline(pipelineId), 2000)
     } catch (e) {
       console.error('查询导入状态失败', e)
@@ -361,6 +393,96 @@ Page({
         this._pollRetries = 0
         this.setData({ pipelinePolling: false })
       }
+    }
+  },
+
+  resumePipeline() {
+    const task = this.data.pipelineTask
+    if (!task || !task.pipeline_id) return
+    if (!task.canResume) return
+    if (!wx.chooseMessageFile) {
+      wx.showModal({
+        title: '提示',
+        content: '当前微信版本不支持文件选择，请升级微信',
+        showCancel: false,
+      })
+      return
+    }
+    wx.showModal({
+      title: '恢复导入',
+      content: '请重新选择同一份 PDF 以恢复未完成的分块',
+      confirmText: '选择文件',
+      success: (res) => {
+        if (!res.confirm) return
+        wx.chooseMessageFile({
+          count: 1,
+          type: 'file',
+          extension: ['pdf'],
+          success: (msgRes) => {
+            const file = msgRes.tempFiles && msgRes.tempFiles[0]
+            if (!file) return
+            const ext = getExtension(file.name || '')
+            if (ext !== 'pdf') {
+              wx.showToast({ title: '请选择同一份 PDF', icon: 'none' })
+              return
+            }
+            this._uploadResume(task.pipeline_id, file.path, file.name || 'resume.pdf')
+          },
+          fail: (err) => {
+            if (err && err.errMsg && err.errMsg.includes('cancel')) return
+            wx.showToast({ title: '选择文件失败', icon: 'none' })
+          },
+        })
+      },
+    })
+  },
+
+  async _uploadResume(pipelineId, path, name) {
+    wx.showLoading({ title: '提交恢复...' })
+    try {
+      const token = wx.getStorageSync('token')
+      const url = `${config.BASE_URL}/import/pipelines/${pipelineId}/resume`
+      const res = await new Promise((resolve, reject) => {
+        wx.uploadFile({
+          url,
+          filePath: path,
+          name: 'file',
+          header: { Authorization: `Bearer ${token}` },
+          success: (r) => {
+            let body = null
+            try {
+              body = JSON.parse(r.data)
+            } catch (e) {
+              return reject(new Error(`服务器返回异常 (HTTP ${r.statusCode})`))
+            }
+            if (r.statusCode >= 400) {
+              return reject(new Error(body.detail || body.message || `HTTP ${r.statusCode}`))
+            }
+            resolve(body)
+          },
+          fail: reject,
+        })
+      })
+      wx.hideLoading()
+      const resumed = (res && res.resumed_chunks) || []
+      if (!resumed.length) {
+        wx.showToast({ title: '没有可恢复的分块', icon: 'none' })
+        return
+      }
+      wx.showToast({ title: `已重试 ${resumed.length} 个分块`, icon: 'none' })
+      this.setData({
+        'pipelineTask.canResume': false,
+        'pipelineTask.statusLabel': '处理中',
+        pipelinePolling: true,
+      })
+      this.pollPipeline(pipelineId)
+    } catch (err) {
+      wx.hideLoading()
+      wx.showModal({
+        title: '恢复失败',
+        content: err.message || '未知错误',
+        showCancel: false,
+      })
     }
   },
 

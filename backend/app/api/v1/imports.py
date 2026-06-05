@@ -845,10 +845,16 @@ async def _run_pipeline_with_db(
 @router.get("/pipelines/{pipeline_id}", response_model=PipelineStatusResponse)
 async def pipeline_status(
     pipeline_id: str,
+    db: AsyncSession = Depends(get_db),
     _: User = Depends(require_app_permission("import:read")),
 ):
-    """查询流水线执行状态和各阶段详情。"""
-    status = await get_pipeline_status(pipeline_id)
+    """查询流水线执行状态和各阶段详情。
+
+    P2-6: PDF 分块导入会带上 ``chunk_progress`` 字段（completed/failed/
+    pending 计数 + failed_chunk_details）。图片 / Excel / 单 pass 路径
+    不返回该字段，前端兼容缺失即可退化为旧逻辑。
+    """
+    status = await get_pipeline_status(pipeline_id, db=db)
     if status is None:
         status = await _get_image_pipeline_status(pipeline_id)
     if status is None:

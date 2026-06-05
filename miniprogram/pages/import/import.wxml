@@ -91,6 +91,18 @@
       </view>
     </view>
 
+    <!-- P2-6: 分块失败列表 + 恢复入口 -->
+    <view class="pipeline-failed-chunks" wx:if="{{pipelineTask.failed_chunk_details.length > 0}}">
+      <text class="pipeline-failed-title">失败分块（{{pipelineTask.failed_chunk_details.length}} 个）</text>
+      <view class="pipeline-failed-item" wx:for="{{pipelineTask.failed_chunk_details}}" wx:key="chunk_index">
+        <text class="pipeline-failed-range">第 {{item.page_start}}–{{item.page_end}} 页</text>
+        <text class="pipeline-failed-error" wx:if="{{item.error_message}}">{{item.error_message}}</text>
+      </view>
+      <view class="pipeline-resume-btn" wx:if="{{pipelineTask.canResume}}" bindtap="resumePipeline">
+        <text class="pipeline-resume-text">重新选择 PDF 恢复导入</text>
+      </view>
+    </view>
+
     <text class="pipeline-task-desc completed" wx:if="{{pipelineTask.batch_id}}">已生成审核批次：{{pipelineTask.batch_id}}</text>
     <text class="pipeline-task-desc error" wx:if="{{pipelineTask.status === 'failed' && pipelineTask.error_message}}">{{pipelineTask.error_message}}</text>
     <text class="pipeline-preview" wx:if="{{pipelineTask.raw_text_preview}}">{{pipelineTask.raw_text_preview}}</text>
