@@ -842,6 +842,104 @@ class TestBackgroundPipeline:
 
 
 # ---------------------------------------------------------------------------
+# P0-3: store slimming + diagnostics split
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineStoreSlim:
+    """主 _pipeline_store 不应再持有 diagnostics（P0-3 内存瘦身）。"""
+
+    def test_set_strips_diagnostics_into_separate_store(self):
+        from app.features.pipeline_orchestrator import (
+            _pipeline_diagnostics_store,
+            _set_pipeline_store,
+        )
+
+        pid = "pl_slim_001"
+        _pipeline_store.pop(pid, None)
+        _pipeline_diagnostics_store.pop(pid, None)
+
+        diagnostics = {
+            "split": {"raw_questions_preview": [{"raw_question_text": "x" * 5000}] * 20},
+            "ocr_correction": {"corrections": [{"page": i, "text": "y" * 200} for i in range(50)]},
+        }
+        full_payload = {
+            "pipeline_id": pid,
+            "status": "completed",
+            "source_type": "pdf",
+            "stages": {"extract": {"status": "completed"}},
+            "stats": {"total": 100},
+            "errors": [],
+            "started_at": "2026-06-05T00:00:00",
+            "diagnostics": diagnostics,
+        }
+        asyncio.run(_set_pipeline_store(pid, full_payload))
+
+        # 主 store 不能含 diagnostics
+        assert "diagnostics" not in _pipeline_store[pid]
+        assert _pipeline_store[pid]["pipeline_id"] == pid
+        assert _pipeline_store[pid]["stats"] == {"total": 100}
+
+        # diagnostics 走独立 store
+        assert pid in _pipeline_diagnostics_store
+        assert _pipeline_diagnostics_store[pid] == diagnostics
+
+    def test_status_query_merges_diagnostics_back(self):
+        from app.features.pipeline_orchestrator import (
+            _pipeline_diagnostics_store,
+            _set_pipeline_store,
+        )
+
+        pid = "pl_slim_002"
+        _pipeline_store.pop(pid, None)
+        _pipeline_diagnostics_store.pop(pid, None)
+
+        diagnostics = {"split": {"failure_reason": None}, "structure": {"mode": "exam"}}
+        asyncio.run(_set_pipeline_store(pid, {
+            "pipeline_id": pid,
+            "status": "completed",
+            "source_type": "pdf",
+            "stages": {},
+            "stats": {},
+            "errors": [],
+            "started_at": "2026-06-05T00:00:00",
+            "diagnostics": diagnostics,
+        }))
+
+        status = asyncio.run(get_pipeline_status(pid))
+        assert status is not None
+        assert status["diagnostics"] == diagnostics
+        assert status["status"] == "completed"
+
+    def test_prune_removes_diagnostics_alongside_store(self):
+        from app.features.pipeline_orchestrator import (
+            _MAX_STORE_SIZE,
+            _pipeline_diagnostics_store,
+            _prune_store,
+        )
+
+        # 重置
+        _pipeline_store.clear()
+        _pipeline_diagnostics_store.clear()
+
+        for i in range(_MAX_STORE_SIZE + 5):
+            pid = f"pl_prune_{i:04d}"
+            _pipeline_store[pid] = {
+                "pipeline_id": pid,
+                "status": "completed",
+                "started_at": f"2026-06-05T00:00:{i:08d}",
+            }
+            _pipeline_diagnostics_store[pid] = {"i": i}
+
+        _prune_store()
+        # 最旧 5 个应被清除（store + diagnostics 同步）
+        assert len(_pipeline_store) == _MAX_STORE_SIZE
+        for i in range(5):
+            assert f"pl_prune_{i:04d}" not in _pipeline_store
+            assert f"pl_prune_{i:04d}" not in _pipeline_diagnostics_store
+
+
+# ---------------------------------------------------------------------------
 # ImportPipeline — _run_repair data flow
 # ---------------------------------------------------------------------------
 
