@@ -14,6 +14,11 @@ from app.features.question_pipeline import normalizer
 from app.models.question import Question
 from app.models.question_import import QuestionImport
 
+# P1-B: review 阶段分批 commit。400+ 道题如果累在单事务里，SQLAlchemy
+# session identity map 会一直持有所有 QuestionImport ORM 对象到 commit
+# 那一刻；每 N 道 commit + expunge_all 把它们放出来，让 GC 能回收。
+_REVIEW_COMMIT_BATCH_SIZE = 50
+
 
 def _options_to_dict(options: list[dict]) -> dict | None:
     """[{"key": "A", "text": "..."}] → {"A": "..."}"""
@@ -142,6 +147,7 @@ async def submit_to_review(
 
     # Track same-batch duplicates
     seen_hashes: dict[str, int] = {}
+    pending_in_batch = 0
 
     for q, stem, parsed_options, qi_subject, question_hash in prepared:
         if not stem:
@@ -209,8 +215,23 @@ async def submit_to_review(
             "duplicate_of_import_id": qi.duplicate_of_import_id,
         })
         written += 1
+        pending_in_batch += 1
 
-    await db.commit()
+        # P1-B: 每 N 道 commit + expunge，让 ORM 对象脱离 session identity
+        # map，GC 才能回收 raw_data / parsed_content 等 dict（一道题约
+        # 5~30 KB，400 道累积可达 12 MB）。
+        if pending_in_batch >= _REVIEW_COMMIT_BATCH_SIZE:
+            await db.commit()
+            db.expunge_all()
+            pending_in_batch = 0
+
+    # 收尾：把未达 batch size 的尾部 commit；如果上一轮刚 commit 过这里
+    # 就是空 commit，对 SQLAlchemy 是 no-op，仅保证函数返回前事务关闭。
+    if pending_in_batch > 0:
+        await db.commit()
+        db.expunge_all()
+    else:
+        await db.commit()
 
     return {
         "batch_id": batch_id,

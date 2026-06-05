@@ -266,6 +266,49 @@ class TestSubmitToReview:
 
         assert result["items"][0]["stem_preview"] == "A" * 50 + "..."
 
+    def test_p1b_batched_commit_and_expunge(self):
+        """P1-B: 大批量题目应分批 commit + expunge_all，避免 ORM 对象
+        在 session identity map 里累积导致 raw_data 长期驻留。"""
+        from app.features.review_service import _REVIEW_COMMIT_BATCH_SIZE
+
+        db, added = self._setup()
+        db.expunge_all = MagicMock()
+
+        # 105 道题：50 + 50 + 5 → 应 commit 3 次，expunge_all 3 次
+        questions = [
+            _make_question({"stem": f"题目 {i}", "stem_hash": f"h{i:04d}"})
+            for i in range(105)
+        ]
+
+        result = asyncio.run(submit_to_review(db, questions))
+
+        assert result["written"] == 105
+        assert len(added) == 105
+
+        # commit 次数 = ceil(105/50) = 3（两次满 batch + 一次尾部）
+        expected_commits = -(-105 // _REVIEW_COMMIT_BATCH_SIZE)
+        assert db.commit.call_count == expected_commits == 3
+        # expunge_all 与 commit 次数一致（每次 commit 后释放 ORM 引用）
+        assert db.expunge_all.call_count == 3
+
+    def test_p1b_exact_batch_size_no_extra_commit(self):
+        """P1-B: 题目数恰好等于 batch_size 整数倍时，只 commit batch_size 次。"""
+        from app.features.review_service import _REVIEW_COMMIT_BATCH_SIZE
+
+        db, added = self._setup()
+        db.expunge_all = MagicMock()
+
+        questions = [_make_question({"stem": f"q{i}", "stem_hash": f"h{i:04d}"})
+                     for i in range(_REVIEW_COMMIT_BATCH_SIZE)]
+
+        result = asyncio.run(submit_to_review(db, questions))
+
+        assert result["written"] == _REVIEW_COMMIT_BATCH_SIZE
+        # 50 道题：满 batch commit 一次，尾部空 commit 一次保证事务关闭
+        assert db.commit.call_count == 2
+        # expunge_all 仅在满 batch 时调用一次
+        assert db.expunge_all.call_count == 1
+
 
 # --- get_review_queue ---
 

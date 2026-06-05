@@ -55,7 +55,23 @@
 >     raw_questions / matched / unmatched，且 stats.normalized 计数仍正确。
 >   - 110 个相关测试通过（pipeline_orchestrator + pipeline_upload_unified +
 >     image_import_status + exercise_region_detector），无新增回归。
-> - [ ] **P1 review 阶段分批 commit**
+> - [x] **P1-B review 阶段分批 commit**：完成
+>   - `submit_to_review` 每 `_REVIEW_COMMIT_BATCH_SIZE=50` 道题做一次
+>     `commit() + expunge_all()`，把 QuestionImport ORM 对象从 session
+>     identity map 中放出来，让 GC 能回收 `raw_data` / `parsed_content` 等
+>     dict（一道题约 5~30 KB，400 道累积可达 12 MB）。
+>   - 收尾逻辑：尾部不满 batch 时再 commit 一次 + expunge；恰好整数倍时
+>     再调一次 commit 关闭事务（无新对象，对 SQLAlchemy 是 no-op）。
+>   - `seen_hashes` 只存 `hash → int`，跨 batch 不持有 ORM 引用。
+>   - **未做 raw_data 瘦身**：raw_data 被 question_publish_service /
+>     ai_import_helpers / import_service 多处读取，瘦身需要全链路兼容
+>     评估，留到后续单独处理。
+>   - 新增 2 个 P1-B 测试：105 道题断言 3 次 commit + 3 次 expunge_all；
+>     恰好 50 道断言 2 次 commit（一次满 batch + 一次空收尾）+ 1 次
+>     expunge_all。
+>   - 144 个相关测试通过（review_service + pipeline_orchestrator +
+>     pipeline_upload_unified + image_import_status + exercise_region_detector），
+>     无新增回归。
 > - [ ] **P2 region 流式编排 + 断点恢复**
 
 ## 项目背景
