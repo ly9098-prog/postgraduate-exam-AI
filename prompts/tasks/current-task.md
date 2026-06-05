@@ -40,7 +40,21 @@
 >     引用，破坏白名单契约。新增 `test_status_query_does_not_pollute_main_store`
 >     断言主 store 字段始终是 `_PIPELINE_STORE_FIELDS` 子集。
 >   - **隐患 1 修复**：见上方 P0-2 fallback 保护 + 命名修正。
-> - [ ] **P1 stage 间清理 data 大字段**
+> - [x] **P1-A stage 间清理 data 大字段**：完成
+>   - `ImportPipeline.run` 主循环按数据生命周期 pop：
+>     - `extract` 后：`file_content` / `file_path`（已有，P0-1）
+>     - `normalize_text` 后：`raw_blocks`
+>     - `match` 后：`normalized_blocks`（保留 `normalized_block_count` 给 stats 兜底）
+>     - `normalize_schema` 后：`raw_questions` / `matched` / `unmatched`
+>   - 终极效果：进入 `repair` / `ai_validation` / `similarity_match` / `review`
+>     的 `data` 只剩 `questions` 一份大对象，其它阶段间产物全部释放。
+>     400 页扫描 PDF 场景下，OCR 后的 `normalized_blocks`（含 boxes）
+>     单独可达 50~200 MB，是仅次于 PDF 字节的内存大头。
+>   - 新增 `test_p1a_large_fields_released_between_stages`：用 review 阶段
+>     做哨兵，断言 review 收到的 kwargs 里不再含 raw_blocks / normalized_blocks /
+>     raw_questions / matched / unmatched，且 stats.normalized 计数仍正确。
+>   - 110 个相关测试通过（pipeline_orchestrator + pipeline_upload_unified +
+>     image_import_status + exercise_region_detector），无新增回归。
 > - [ ] **P1 review 阶段分批 commit**
 > - [ ] **P2 region 流式编排 + 断点恢复**
 
