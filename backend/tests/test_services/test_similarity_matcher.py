@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.features.global_hash_index import GlobalHashIndex
 from app.features.similarity_matcher import (
     _compute_similarity,
     _find_best_match,
@@ -232,3 +233,121 @@ class TestMatchSimilarQuestions:
         suggestion = result["questions"][0]["similarity_suggestion"]
         assert suggestion["matched_question_id"] == 99
         assert suggestion["similarity_ratio"] >= 0.85
+
+
+# ---------------------------------------------------------------------------
+# P2-4: GlobalHashIndex injection — hash 命中走严格匹配，跳过 difflib 扫描
+# ---------------------------------------------------------------------------
+
+
+class TestHashIndexInjection:
+    """注入 hash_index 后：命中即 ratio=1.0 强匹配；miss 走 SQL 兜底（不再扫 subject 全表）。"""
+
+    @pytest.mark.asyncio
+    async def test_hash_hit_skips_subject_scan(self):
+        questions = [{
+            "stem": "题目原文一致",
+            "subject": "exam408",
+            "options": [{"key": "A", "text": "a"}, {"key": "B", "text": "b"}],
+            "answer": "A",
+        }]
+
+        # 注入 stub index：lookup_question 直接命中 question_id=42
+        index = GlobalHashIndex()
+        index._loaded = True  # 跳过 load
+        index.lookup_question = AsyncMock(return_value=42)
+
+        # _load_question_payload 会跑一条 SQL 拿题目展示字段
+        mock_row = MagicMock()
+        mock_row.__iter__ = lambda self: iter((
+            {"text": "题目原文一致"},  # content
+            {"A": "a"},                # options
+            "A",                       # answer
+        ))
+        # SQLAlchemy Row 支持 unpacking (content, options, answer) = row
+        mock_payload_row = ({"text": "题目原文一致"}, {"A": "a"}, "A")
+
+        mock_payload_result = MagicMock()
+        mock_payload_result.first.return_value = mock_payload_row
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_payload_result)
+
+        result = await match_similar_questions(
+            questions,
+            db=mock_db,
+            config={"enabled": True, "similarity_threshold": 0.85},
+            hash_index=index,
+        )
+
+        # hash 命中
+        assert result["stats"]["hash_hit_count"] == 1
+        assert result["stats"]["matched_count"] == 1
+        suggestion = result["questions"][0]["similarity_suggestion"]
+        assert suggestion["matched_question_id"] == 42
+        assert suggestion["similarity_ratio"] == 1.0
+        assert suggestion["source"] == "question_bank_hash"
+
+        # 没扫 subject 全表（_load_subject_questions 不应调用）
+        # mock_db.execute 仅被 _load_question_payload 调用一次
+        assert mock_db.execute.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_hash_miss_falls_back_to_nothing_when_index_present(self):
+        """注入 index 但 hash miss 时不再做 difflib fallback（避免每 chunk 重扫题库）。"""
+        questions = [{
+            "stem": "miss 的题",
+            "subject": "exam408",
+            "options": [{"key": "A", "text": "a"}],
+            "answer": "A",
+        }]
+
+        index = GlobalHashIndex()
+        index._loaded = True
+        index.lookup_question = AsyncMock(return_value=None)  # miss
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock()
+
+        result = await match_similar_questions(
+            questions,
+            db=mock_db,
+            config={"enabled": True, "similarity_threshold": 0.85},
+            hash_index=index,
+        )
+
+        assert result["stats"]["hash_hit_count"] == 0
+        assert result["stats"]["matched_count"] == 0
+        # 不再做 subject 全表加载（_load_subject_questions 应未被调用）
+        mock_db.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_legacy_difflib_path_still_works_without_index(self):
+        """没注入 index 时仍跑旧的 subject 全表 difflib（行为零变化）。"""
+        questions = [{
+            "stem": "OCR 题干内容大致相同",
+            "subject": "exam408",
+        }]
+
+        mock_row = MagicMock()
+        mock_row.id = 7
+        mock_row.content = {"text": "OCR 题干内容大致相同"}
+        mock_row.options = {"A": "x"}
+        mock_row.answer = "A"
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = [mock_row]
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        result = await match_similar_questions(
+            questions,
+            db=mock_db,
+            config={"enabled": True, "similarity_threshold": 0.85},
+            hash_index=None,
+        )
+
+        assert result["stats"]["hash_hit_count"] == 0
+        assert result["stats"]["matched_count"] == 1
+        assert result["questions"][0]["similarity_suggestion"]["source"] == "question_bank"

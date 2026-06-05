@@ -5,6 +5,32 @@ const config = require('../../config')
 const SUPPORTED_EXTENSIONS = ['xlsx', 'xls', 'pdf', 'txt', 'jpg', 'jpeg', 'png', 'webp']
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']
 
+const STATUS_LABELS = {
+  queued: '排队中',
+  parsing: '解析中',
+  processing: '处理中',
+  ocr_running: 'OCR识别中',
+  completed: '已完成',
+  failed: '失败',
+}
+
+const STAGE_LABELS = {
+  extract: '文本提取',
+  normalize_text: '文本清洗',
+  ocr_correction: 'OCR纠错',
+  analyze_structure: '结构分析',
+  classify_pages: '页面分类',
+  split: '题目切分',
+  match: '答案匹配',
+  normalize_schema: '格式标准化',
+  batch_validation: '批量校验',
+  batch_dedup: '去重检查',
+  repair: 'AI修复',
+  ai_validation: 'AI验证',
+  similarity_match: '相似匹配',
+  review: '入库审核',
+}
+
 function getExtension(name) {
   if (!name) return ''
   const parts = name.split('.')
@@ -253,6 +279,49 @@ Page({
       const currentTask = this.data.pipelineTask || {}
       if (currentTask.pipeline_id !== pipelineId) return
       const errors = status.errors || []
+
+      // Compute stage progress
+      const stages = status.stages || {}
+      const stageKeys = Object.keys(stages)
+      const totalStages = stageKeys.length
+      const completedStages = stageKeys.filter(k => stages[k].status === 'completed').length
+      const currentStage = status.current_stage || ''
+      let progressPercent = totalStages > 0 ? Math.round((completedStages / totalStages) * 100) : 0
+
+      // When inside extract stage with OCR progress, show partial progress
+      const ocrProgress = status.ocr_progress || ''
+      let ocrProgressText = ''
+      if (ocrProgress) {
+        const m = ocrProgress.match(/(\d+)\/(\d+)/)
+        if (m) {
+          const done = parseInt(m[1], 10)
+          const total = parseInt(m[2], 10)
+          ocrProgressText = `OCR识别中 ${done}/${total} 页`
+          if (totalStages === 0 || (progressPercent === 0 && total > 0)) {
+            progressPercent = Math.max(1, Math.round((done / total) * 50))
+          }
+        }
+      } else if (currentStage === 'extract' && progressPercent === 0) {
+        ocrProgressText = '文件预处理中...'
+        progressPercent = 1
+      }
+
+      // Build stage list for UI
+      const stageList = stageKeys.map(k => ({
+        key: k,
+        label: STAGE_LABELS[k] || k,
+        status: stages[k].status || 'pending',
+      }))
+
+      // Elapsed time
+      let elapsed = ''
+      if (status.started_at) {
+        const diffSec = Math.floor((Date.now() - new Date(status.started_at).getTime()) / 1000)
+        const min = Math.floor(diffSec / 60)
+        const sec = diffSec % 60
+        elapsed = min > 0 ? `${min}分${sec}秒` : `${sec}秒`
+      }
+
       const task = {
         ...currentTask,
         ...status,
@@ -260,6 +329,12 @@ Page({
         error_message: errors[0] || '',
         raw_text_preview: (status.raw_text_preview || '').slice(0, 200),
         question_count: status.question_count || (status.stats && status.stats.to_review) || 0,
+        statusLabel: STATUS_LABELS[status.status] || status.status,
+        currentStageLabel: ocrProgressText || STAGE_LABELS[currentStage] || currentStage || '准备中',
+        progressPercent,
+        stageList,
+        elapsed,
+        ocr_progress: ocrProgressText,
       }
       this.setData({ pipelineTask: task, pipelinePolling: !['completed', 'failed'].includes(task.status) })
       if (task.status === 'completed') {

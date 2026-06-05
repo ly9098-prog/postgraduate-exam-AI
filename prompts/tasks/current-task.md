@@ -213,7 +213,49 @@
 >     - `_run_chunked` 集成 2 case：120 页 effective_ends=
 >       [(1,43),(41,83),(81,120)] 末 chunk 不扩；overlap=0 时退化。
 >   - 回归：182 个相关测试通过（+13），1 个 P0 阶段已存在 fail 不变。
-> - [ ] **P2-4 similarity → GlobalHashIndex**
+> - [x] **P2-4 similarity → GlobalHashIndex**：完成（2026-06-05）
+>   - 新增 `app/features/global_hash_index.py` 模块：
+>     - `class GlobalHashIndex` 提供 `async load(db, recent_days, batch_id)` /
+>       `async lookup_question(db, subject, hash)` / `async lookup_import(db, subject, hash)` /
+>       `add_import(subject, hash, import_id)` / `stats` 几个 public API。
+>     - 加载策略：`questions` 表过滤 `is_active=True` + `created_at >= now - recent_days`；
+>       传入 `batch_id` 时同时加载 `question_imports.batch_id == batch_id` 且
+>       `status != 'rejected'` 的记录（用于跨 chunk 互查）。
+>     - 阈值降级：`HASH_INDEX_MAX_SIZE`（默认 500_000）超过则
+>       `is_fallback=True`，不在内存建索引；`lookup_*` 退化为单条 SQL；
+>       `add_import` 在 fallback 模式下是 no-op。
+>     - env：`HASH_INDEX_RECENT_DAYS`（默认 30，0 表示不限窗口）/
+>       `HASH_INDEX_MAX_SIZE`（默认 500000）。
+>     - 索引以 `(subject, hash)` 为键，subject 缺失/空字符串/falsy id 自动跳过。
+>   - 改造 `similarity_matcher.match_similar_questions` 接受 `hash_index` 参数：
+>     - 注入后 hash 命中走严格匹配（`ratio=1.0`，`source="question_bank_hash"`）
+>       并按命中题 id 单条查 payload，**跳过 subject 全表 difflib 扫描**。
+>     - hash miss 时**不再**做 subject 全表 fallback（避免每个 chunk 都重新
+>       拉全量题库做 difflib，原方案在 P2-2 chunk 化下已经退化成 N 倍开销）。
+>     - 未注入 `hash_index` 时退化为旧的 difflib 路径，单 pass / image OCR /
+>       短 PDF 行为零变化。
+>     - stats 增加 `hash_hit_count`，便于诊断。
+>   - 改造 `pipeline_orchestrator._run_chunked` 注入 hash_index：
+>     - 在 chunk 循环**外**构造 `GlobalHashIndex` 并 `await index.load(db, batch_id=overall_batch_id)`
+>       一次（chunk 间共享，不重复加载题库）。
+>     - 通过 `shared_data["hash_index"]` 注入到每个 chunk 的 `_run_single_pass`。
+>     - 每个 chunk 完成后从 `chunk_result["review_new_hashes"]` 取出
+>       `(subject, hash, import_id)` 推回索引，让后续 chunk 跑 similarity_match
+>       时能命中本批兄弟 chunk 已写入的题目。
+>     - `_run_review` 暴露 `(subject, hash, import_id)` 三元组，subject 优先
+>       取 stage 入参（chunk 级 batch_meta），缺失则回落到题目自带 subject。
+>     - hash_index stats 写入 `diagnostics.hash_index`，可观测。
+>   - 测试覆盖：
+>     - 新增 `tests/test_features/test_global_hash_index.py`（17 个）：
+>       `recent_days` 过滤 / `batch_id` 加载 / `is_active` 过滤 / 阈值降级 /
+>       `add_import` 跨 chunk 命中 / fallback 下 add 为 no-op / null 安全 /
+>       env 解析。
+>     - 扩展 `tests/test_services/test_similarity_matcher.py`（+3 个）：
+>       hash 命中跳过 subject 扫描 / hash miss 时不再 difflib 兜底 / 未注入 index
+>       时旧路径行为不变。
+>   - 39 个 P2-4 相关测试全过；chunk runner + checkpoint 36 个无回归；
+>     pipeline_orchestrator 49 个无回归。
+>   - **不修改** `_pipeline_store`、resume API、status API；与 P2-5/P2-6 解耦。
 > - [ ] **P2-5 manual resume API**
 > - [ ] **P2-6 status API + 前端适配**
 > - [ ] **P2-7 端到端测试**

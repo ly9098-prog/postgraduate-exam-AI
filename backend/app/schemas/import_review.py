@@ -127,3 +127,6 @@ class PipelineStatusResponse(BaseModel):
     question_count: int = 0
     started_at: str = ""
     finished_at: str = ""
+    current_stage: str = ""
+    ocr_progress: str = ""
+    source_type: str = ""
