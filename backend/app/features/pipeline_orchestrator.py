@@ -340,6 +340,107 @@ def _extract_text_blocks(content_or_path: bytes | str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# P2-2 chunk planning helpers
+# ---------------------------------------------------------------------------
+
+
+_DEFAULT_CHUNK_SIZE = 40
+
+
+def _resolve_chunk_size() -> int:
+    """Read chunk size from env, default 40. 0 disables chunking."""
+    raw = os.environ.get("IMPORT_PIPELINE_CHUNK_SIZE")
+    if raw is None:
+        return _DEFAULT_CHUNK_SIZE
+    try:
+        return int(raw)
+    except ValueError:
+        return _DEFAULT_CHUNK_SIZE
+
+
+_DEFAULT_CHUNK_OVERLAP = 3
+
+
+def _resolve_chunk_overlap() -> int:
+    """Read chunk-overlap pages from env, default 3. 0 disables overlap."""
+    raw = os.environ.get("IMPORT_PIPELINE_CHUNK_OVERLAP")
+    if raw is None:
+        return _DEFAULT_CHUNK_OVERLAP
+    try:
+        val = int(raw)
+        return max(0, val)
+    except ValueError:
+        return _DEFAULT_CHUNK_OVERLAP
+
+
+def _split_into_chunks(total_pages: int, chunk_size: int) -> list[tuple[int, int]]:
+    """Split page count into 1-based closed intervals [(start, end), ...].
+
+    Example: total_pages=100, chunk_size=40 → [(1,40), (41,80), (81,100)].
+    """
+    if total_pages <= 0 or chunk_size <= 0:
+        return []
+    ranges: list[tuple[int, int]] = []
+    start = 1
+    while start <= total_pages:
+        end = min(start + chunk_size - 1, total_pages)
+        ranges.append((start, end))
+        start = end + 1
+    return ranges
+
+
+def _read_pdf_page_count(source: bytes | str | None) -> int:
+    """Open the PDF just long enough to read len(doc); close immediately."""
+    if source is None:
+        return 0
+    doc = _open_pdf_doc(source)
+    try:
+        return len(doc)
+    finally:
+        doc.close()
+
+
+def _build_stats(data: dict, stages: dict) -> dict:
+    """Aggregate per-stage outputs into the legacy stats dict."""
+    return {
+        "total": data.get("extracted", 0),
+        "extracted": data.get("extracted", 0),
+        "normalized": data.get(
+            "normalized_count",
+            data.get("normalized_block_count", 0),
+        ),
+        "analyzed": data.get("split_count", len(data.get("raw_questions", []))),
+        "split": data.get("split_count", 0),
+        "matched": data.get("matched_count", 0),
+        "schema_normalized": data.get("normalized_count", 0),
+        "missing_options": sum(
+            1
+            for q in data.get("questions", [])
+            if "missing_options" in q.get("errors", [])
+        ),
+        "repaired": data.get("repaired_count", 0),
+        "to_review": data.get("written", 0),
+        "failed": sum(1 for s in stages.values() if s.status == "failed"),
+    }
+
+
+def _build_diagnostics(data: dict) -> dict:
+    mode = data.get("import_mode", ImportMode.AUTO)
+    return {
+        "import_mode": mode.value if hasattr(mode, "value") else str(mode),
+        "exercise_regions": data.get("exercise_regions", []),
+        "structure": data.get("structure", {}),
+        "page_classifications": data.get("page_classifications", []),
+        "ocr_correction": data.get("ocr_correction_diagnostics", {}),
+        "split": data.get("split_diagnostics", {}),
+        "batch_validation": data.get("batch_validation_diagnostics", {}),
+        "schema_errors": data.get("errors", []),
+        "ai_validation": data.get("ai_validation_diagnostics", {}),
+        "similarity_match": data.get("similarity_match_diagnostics", {}),
+    }
+
+
+# ---------------------------------------------------------------------------
 # PipelineStage
 # ---------------------------------------------------------------------------
 
@@ -732,7 +833,22 @@ class ImportPipeline:
         }
 
     def _run_split(self, normalized_blocks: list[dict], structure: dict | None = None, **_kw) -> dict:
-        """Stage 3: split text blocks into individual questions."""
+        """Stage 3: split text blocks into individual questions.
+
+        P2-3: when running in chunked mode, ``_kw`` may include
+        ``_chunk_seen_numbers`` (a mutable set of question numbers already
+        written by earlier chunks) and ``_chunk_logical_end`` (the chunk's
+        own last page; anything past that is overlap territory). Questions
+        whose ``number`` is already in seen_numbers AND whose ``page_start``
+        falls inside the overlap region are dropped here so review never
+        sees them. Numbers we keep are added to the set so the next chunk
+        sees this update.
+
+        Boundary check: if the chunk's last kept question ends at or after
+        ``_chunk_logical_end - 1`` and its option_lines lack D/E, we emit
+        a ``chunk_boundary_unclosed`` warning so the user knows the question
+        may span into the next chunk.
+        """
         strategy = _kw.get("strategy") or {}
         gap_tolerance = strategy.get("question_number_gap_tolerance", 10)
         raw_questions = split_questions(normalized_blocks, structure=structure, gap_tolerance=gap_tolerance)
@@ -795,6 +911,58 @@ class ImportPipeline:
         else:
             split_diagnostics["fallback_created"] = False
             split_diagnostics["failure_reason"] = None
+
+        # P2-3: chunk overlap dedup + boundary unclosed warning.
+        # Only kicks in when called from the chunked runner via opts.
+        seen_numbers: set | None = _kw.get("_chunk_seen_numbers")
+        logical_end: int | None = _kw.get("_chunk_logical_end")
+        if seen_numbers is not None and logical_end is not None:
+            kept: list[dict] = []
+            skipped_numbers: list[int] = []
+            for q in raw_questions:
+                num = q.get("number")
+                page_start = q.get("page_start") or 0
+                # Drop only if both: (1) number was already written by a
+                # previous chunk AND (2) the question lives in our overlap
+                # zone (page_start > logical_end). Without the page check
+                # we would also drop legitimate "first sighting" matches in
+                # weird OCR ordering scenarios.
+                if (
+                    num is not None
+                    and num in seen_numbers
+                    and page_start > logical_end
+                ):
+                    skipped_numbers.append(num)
+                    continue
+                kept.append(q)
+                if num is not None:
+                    seen_numbers.add(num)
+
+            if skipped_numbers:
+                warnings.append(
+                    f"boundary_overlap_skipped: {sorted(set(skipped_numbers))}"
+                )
+                split_diagnostics["overlap_skipped_numbers"] = sorted(set(skipped_numbers))
+            raw_questions = kept
+
+            # Boundary unclosed: last kept question whose page_end is at or
+            # past chunk's logical_end and whose options miss D/E.
+            if raw_questions:
+                last = raw_questions[-1]
+                last_page_end = last.get("page_end") or 0
+                opts = last.get("option_lines") or {}
+                opt_keys = {str(k).upper() for k in opts.keys()}
+                near_boundary = last_page_end >= max(0, logical_end - 1)
+                missing_required = bool(last.get("has_options")) and not (
+                    "D" in opt_keys or "E" in opt_keys
+                )
+                if near_boundary and missing_required:
+                    warnings.append(
+                        f"chunk_boundary_unclosed: q{last.get('number')} "
+                        f"may span next chunk (page_end={last_page_end}, "
+                        f"logical_end={logical_end})"
+                    )
+                    split_diagnostics["boundary_unclosed_question"] = last.get("number")
 
         return {
             "raw_questions": raw_questions,
@@ -1083,11 +1251,16 @@ class ImportPipeline:
     ) -> dict:
         """Execute all pipeline stages in sequence.
 
+        P2-2: when source_type == "pdf" and total_pages > chunk_size, the body
+        is split into page-chunks. Each chunk runs the full stage list in
+        isolation; a single chunk failure does not abort sibling chunks.
+        Single-chunk path retains exact backward compatibility — txt, image
+        OCR text, page-range-restricted PDFs, and short PDFs all hit the
+        legacy single-pass branch.
+
         Args:
             file_content: raw file bytes (PDF, txt, etc.) — fallback when no path
             file_path: tmp path on disk; preferred for PDF (mmap, no heap copy).
-                P0-1 changed the entry point to drop bytes immediately and pass
-                a path so the 100~400 MB payload doesn't survive 8+ stages.
             source_type: "pdf" | "txt"
             source_file: original filename
             subject: optional subject hint
@@ -1103,11 +1276,10 @@ class ImportPipeline:
         opts = options or {}
         if options is not None:
             self.options = opts
-        self._build_pipeline()
 
         started_at = datetime.now().isoformat()
 
-        # Resolve import mode and strategy
+        # Resolve import mode and strategy (shared across all chunks)
         mode_str = opts.get("import_mode", "auto")
         try:
             import_mode = ImportMode(mode_str)
@@ -1115,7 +1287,7 @@ class ImportPipeline:
             import_mode = ImportMode.AUTO
         strategy = get_strategy(import_mode)
 
-        # Load configurable watermark rules from DB
+        # Load watermark rules once (shared across all chunks)
         watermark_patterns: list = []
         if db:
             try:
@@ -1127,6 +1299,137 @@ class ImportPipeline:
             from app.services.watermark_service import get_default_patterns
             watermark_patterns = get_default_patterns()
 
+        shared = {
+            "import_mode": import_mode,
+            "strategy": strategy,
+            "watermark_patterns": watermark_patterns,
+        }
+
+        # Decide chunked vs single-pass
+        chunk_ranges = self._plan_chunks(
+            file_content=file_content,
+            file_path=file_path,
+            source_type=source_type,
+            opts=opts,
+            db=db,
+        )
+
+        if len(chunk_ranges) <= 1:
+            # Legacy single-pass: chunk_ranges may be [] (no PDF page count)
+            # or [(s, e)] (single chunk covers everything). Either way we run
+            # without page-range injection so existing behavior is preserved.
+            return await self._run_single_pass(
+                file_content=file_content,
+                file_path=file_path,
+                source_type=source_type,
+                source_file=source_file,
+                subject=subject,
+                opts=opts,
+                db=db,
+                shared=shared,
+                progress_callback=progress_callback,
+                started_at=started_at,
+            )
+
+        return await self._run_chunked(
+            file_content=file_content,
+            file_path=file_path,
+            source_type=source_type,
+            source_file=source_file,
+            subject=subject,
+            opts=opts,
+            db=db,
+            shared=shared,
+            progress_callback=progress_callback,
+            chunk_ranges=chunk_ranges,
+            started_at=started_at,
+        )
+
+    # ------------------------------------------------------------------
+    # P2-2 chunk planning + single-pass extraction
+    # ------------------------------------------------------------------
+
+    def _plan_chunks(
+        self,
+        *,
+        file_content: bytes | None,
+        file_path: str | None,
+        source_type: str,
+        opts: dict,
+        db,
+    ) -> list[tuple[int, int]]:
+        """Decide how to split this run into page-chunks.
+
+        Returns:
+            [] when chunking is not applicable (txt, no DB, user-pinned page
+              range, or PDF page count unavailable). The caller falls back to
+              the legacy single-pass branch.
+            [(s1, e1), ...] otherwise — 1-based closed page ranges.
+        """
+        # Chunking only kicks in for PDFs with a DB session (checkpoint needs DB)
+        if source_type != "pdf" or db is None:
+            return []
+
+        # User-pinned page range bypasses chunking — they explicitly asked
+        # for a slice; respecting that takes precedence over auto-chunking.
+        if opts.get("page_start") or opts.get("page_end"):
+            return []
+
+        chunk_size = _resolve_chunk_size()
+        if chunk_size <= 0:
+            return []
+
+        try:
+            total_pages = _read_pdf_page_count(file_path or file_content)
+        except Exception as exc:
+            logger.warning("Failed to read PDF page count, falling back to single-pass: %s", exc)
+            return []
+
+        if total_pages <= 0:
+            return []
+        if total_pages <= chunk_size:
+            return []  # single chunk = single-pass path
+
+        return _split_into_chunks(total_pages, chunk_size)
+
+    async def _run_single_pass(
+        self,
+        *,
+        file_content: bytes | None,
+        file_path: str | None,
+        source_type: str,
+        source_file: str,
+        subject: str | None,
+        opts: dict,
+        db,
+        shared: dict,
+        progress_callback,
+        started_at: str,
+        page_start: int | None = None,
+        page_end: int | None = None,
+        chunk_seen_numbers: set | None = None,
+        chunk_logical_end: int | None = None,
+    ) -> dict:
+        """Execute every stage once for the given (optionally page-restricted) input.
+
+        This is the legacy run() body extracted verbatim — chunked mode calls
+        this once per chunk with page_start/page_end injected.
+
+        P2-3: ``chunk_seen_numbers`` (mutable set across chunks) and
+        ``chunk_logical_end`` (this chunk's own last page; pages past it are
+        overlap territory) are threaded through ``data`` so ``_run_split`` can
+        dedupe overlap-region duplicates and emit the unclosed-boundary
+        warning. Both are None for legacy single-pass.
+        """
+        # Each pass gets its own stage instances so per-stage status doesn't
+        # leak between chunks.
+        self._build_pipeline()
+
+        # When called from the chunk loop, override the page range in opts
+        # without mutating the caller's dict.
+        if page_start is not None or page_end is not None:
+            opts = {**opts, "page_start": page_start, "page_end": page_end}
+
         # Accumulated data passed between stages
         data: dict[str, Any] = {
             "file_content": file_content,
@@ -1136,9 +1439,9 @@ class ImportPipeline:
             "subject": subject,
             "options": opts,
             "db": db,
-            "import_mode": import_mode,
-            "strategy": strategy,
-            "watermark_patterns": watermark_patterns,
+            "import_mode": shared["import_mode"],
+            "strategy": shared["strategy"],
+            "watermark_patterns": shared["watermark_patterns"],
             "raw_blocks": [],
             "normalized_blocks": [],
             "raw_questions": [],
@@ -1146,6 +1449,11 @@ class ImportPipeline:
             "unmatched": [],
             "questions": [],
         }
+        # P2-3 chunk overlap state — only populated in chunked mode
+        if chunk_seen_numbers is not None:
+            data["_chunk_seen_numbers"] = chunk_seen_numbers
+        if chunk_logical_end is not None:
+            data["_chunk_logical_end"] = chunk_logical_end
 
         pipeline_errors: list[str] = []
         overall_status = "completed"
@@ -1211,44 +1519,8 @@ class ImportPipeline:
                 except Exception:
                     pass
 
-        # Build stats from stage outputs
-        # 隐患① 修复：fallback 链
-        #   normalized_count（normalize_schema 输出的题目数，happy path）
-        #   → normalized_block_count（每次 normalized_blocks 被写入时缓存）
-        #   → 0（无中间产物，避免 len(已 pop 字段) 静默归零）
-        stats = {
-            "total": data.get("extracted", 0),
-            "extracted": data.get("extracted", 0),
-            "normalized": data.get(
-                "normalized_count",
-                data.get("normalized_block_count", 0),
-            ),
-            "analyzed": data.get("split_count", len(data.get("raw_questions", []))),
-            "split": data.get("split_count", 0),
-            "matched": data.get("matched_count", 0),
-            "schema_normalized": data.get("normalized_count", 0),
-            "missing_options": sum(
-                1
-                for q in data.get("questions", [])
-                if "missing_options" in q.get("errors", [])
-            ),
-            "repaired": data.get("repaired_count", 0),
-            "to_review": data.get("written", 0),
-            "failed": sum(1 for s in self.stages.values() if s.status == "failed"),
-        }
-        diagnostics = {
-            "import_mode": data.get("import_mode", ImportMode.AUTO).value if hasattr(data.get("import_mode", ""), "value") else str(data.get("import_mode", "auto")),
-            "exercise_regions": data.get("exercise_regions", []),
-            "structure": data.get("structure", {}),
-            "page_classifications": data.get("page_classifications", []),
-            "ocr_correction": data.get("ocr_correction_diagnostics", {}),
-            "split": data.get("split_diagnostics", {}),
-            "batch_validation": data.get("batch_validation_diagnostics", {}),
-            "schema_errors": data.get("errors", []),
-            "ai_validation": data.get("ai_validation_diagnostics", {}),
-            "similarity_match": data.get("similarity_match_diagnostics", {}),
-        }
-
+        stats = _build_stats(data, self.stages)
+        diagnostics = _build_diagnostics(data)
         finished_at = datetime.now().isoformat()
 
         return {
@@ -1258,6 +1530,186 @@ class ImportPipeline:
             "stats": stats,
             "diagnostics": diagnostics,
             "stages": {name: s.to_dict() for name, s in self.stages.items()},
+            "errors": pipeline_errors,
+            "started_at": started_at,
+            "finished_at": finished_at,
+        }
+
+    async def _run_chunked(
+        self,
+        *,
+        file_content: bytes | None,
+        file_path: str | None,
+        source_type: str,
+        source_file: str,
+        subject: str | None,
+        opts: dict,
+        db,
+        shared: dict,
+        progress_callback,
+        chunk_ranges: list[tuple[int, int]],
+        started_at: str,
+    ) -> dict:
+        """Drive a multi-chunk run with checkpoint persistence and failure isolation.
+
+        For each (page_start, page_end):
+            1. mark_chunk_running → run all stages → update_chunk_status
+            2. On chunk-level exception (after the catch in _run_single_pass)
+               or stage_status == "failed", record error_message and continue
+               to the next chunk — never raise out of this method.
+
+        Pipeline-level status:
+            - "completed" iff all chunks completed AND none recorded errors
+            - "paused" otherwise (manual resume via P2-5)
+        """
+        from app.features import pipeline_checkpoint as ckpt
+
+        total_pages = chunk_ranges[-1][1]
+        chunk_size = _resolve_chunk_size()
+        chunk_overlap = _resolve_chunk_overlap()
+
+        # Create parent + chunk records up-front (DB authoritative)
+        await ckpt.create_pipeline_record(
+            db,
+            pipeline_id=self.pipeline_id,
+            source_type=source_type,
+            source_file=source_file or None,
+            total_pages=total_pages,
+            chunk_size=chunk_size,
+        )
+        await ckpt.create_chunk_records(db, self.pipeline_id, chunk_ranges)
+
+        chunk_results: list[dict] = []
+        pipeline_errors: list[str] = []
+        any_chunk_failed = False
+        # P2-3: shared across all chunks so dedup sees what siblings already wrote
+        seen_numbers: set[int] = set()
+
+        for chunk_index, (page_start, logical_end) in enumerate(chunk_ranges):
+            await ckpt.mark_chunk_running(db, self.pipeline_id, chunk_index)
+            await ckpt.invalidate_progress_cache(self.pipeline_id)
+
+            # P2-3: extend page_end by overlap so the splitter can finish the
+            # last question whose tail crosses the chunk boundary. Cap at
+            # total_pages so we never read past the document. The final chunk
+            # has no overlap (nothing comes after it).
+            is_last_chunk = chunk_index == len(chunk_ranges) - 1
+            effective_end = (
+                logical_end
+                if is_last_chunk
+                else min(logical_end + chunk_overlap, total_pages)
+            )
+
+            chunk_status = "completed"
+            chunk_error: str | None = None
+            chunk_result: dict = {}
+            try:
+                chunk_result = await self._run_single_pass(
+                    file_content=file_content,
+                    file_path=file_path,
+                    source_type=source_type,
+                    source_file=source_file,
+                    subject=subject,
+                    opts=opts,
+                    db=db,
+                    shared=shared,
+                    progress_callback=progress_callback,
+                    started_at=started_at,
+                    page_start=page_start,
+                    page_end=effective_end,
+                    chunk_seen_numbers=seen_numbers,
+                    chunk_logical_end=logical_end,
+                )
+                if chunk_result.get("status") != "completed":
+                    chunk_status = "failed"
+                    errs = chunk_result.get("errors") or []
+                    chunk_error = errs[0] if errs else "chunk failed without explicit error"
+            except Exception as exc:
+                # _run_single_pass should swallow stage errors itself, but if
+                # something escapes (e.g. extract crash before stage loop) we
+                # must still keep the import alive.
+                logger.exception(
+                    "chunk %d (pages %d-%d) raised unexpectedly",
+                    chunk_index, page_start, logical_end,
+                )
+                chunk_status = "failed"
+                chunk_error = f"{type(exc).__name__}: {exc}"
+                chunk_result = {"errors": [chunk_error]}
+
+            written = (chunk_result.get("stats") or {}).get("to_review", 0)
+            batch_id = chunk_result.get("batch_id") or None
+
+            await ckpt.update_chunk_status(
+                db,
+                self.pipeline_id,
+                chunk_index,
+                status=chunk_status,
+                batch_id=batch_id,
+                question_count=written,
+                error_message=chunk_error,
+            )
+            await ckpt.invalidate_progress_cache(self.pipeline_id)
+
+            if chunk_status == "failed":
+                any_chunk_failed = True
+                pipeline_errors.append(
+                    f"chunk {chunk_index} (pages {page_start}-{logical_end}) failed: {chunk_error}"
+                )
+
+            chunk_results.append({
+                "chunk_index": chunk_index,
+                "page_start": page_start,
+                "page_end": logical_end,
+                "effective_page_end": effective_end,
+                "status": chunk_status,
+                "batch_id": batch_id,
+                "question_count": written,
+                "error_message": chunk_error,
+                "stages": chunk_result.get("stages") or {},
+            })
+
+        overall_status = "paused" if any_chunk_failed else "completed"
+        await ckpt.update_pipeline_status(
+            db,
+            self.pipeline_id,
+            status=overall_status,
+            error_message=pipeline_errors[0] if pipeline_errors else None,
+            finished=True,
+        )
+        await ckpt.invalidate_progress_cache(self.pipeline_id)
+
+        # Aggregate stats across chunks
+        agg_stats = {
+            "total_chunks": len(chunk_ranges),
+            "completed_chunks": sum(1 for c in chunk_results if c["status"] == "completed"),
+            "failed_chunks": sum(1 for c in chunk_results if c["status"] == "failed"),
+            "to_review": sum(c["question_count"] or 0 for c in chunk_results),
+            "extracted": total_pages,
+            "total": total_pages,
+        }
+
+        finished_at = datetime.now().isoformat()
+        # Pick a representative batch_id for the overall pipeline (first
+        # successful chunk's batch). Each chunk has its own batch_id under
+        # the hood; resume logic uses chunk-level records, not this field.
+        first_batch_id = next(
+            (c["batch_id"] for c in chunk_results if c["batch_id"]),
+            "",
+        )
+
+        return {
+            "pipeline_id": self.pipeline_id,
+            "status": overall_status,
+            "batch_id": first_batch_id,
+            "stats": agg_stats,
+            "diagnostics": {
+                "chunked": True,
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
+                "total_pages": total_pages,
+                "chunks": chunk_results,
+            },
+            "stages": {},  # per-chunk stage info lives in diagnostics.chunks
             "errors": pipeline_errors,
             "started_at": started_at,
             "finished_at": finished_at,
