@@ -2231,11 +2231,15 @@ async def run_excel_pipeline_background(
         })
 
 
-async def get_pipeline_status(pipeline_id: str) -> dict | None:
+async def get_pipeline_status(pipeline_id: str, db=None) -> dict | None:
     """查询流水线状态（Redis + 内存 fallback）。
 
     P0-3: 主 store 已瘦身，本函数把 diagnostics 从独立 KV 合并回去，
     对外返回与改造前一致的完整视图。
+
+    P2-6: 当 ``db`` 注入时，从 import_pipelines / import_pipeline_chunks 拉
+    chunk 进度并合并到 ``chunk_progress`` 字段。db=None 或无 chunk 记录时省
+    略该字段，向后兼容图片 / Excel / 单 pass 等无 chunk 场景。
     """
     data = await _get_pipeline_store(pipeline_id)
     if data is None:
@@ -2248,4 +2252,18 @@ async def get_pipeline_status(pipeline_id: str) -> dict | None:
         data["diagnostics"] = diagnostics
     if pipeline_id in _ocr_progress:
         data["ocr_progress"] = _ocr_progress[pipeline_id]
+
+    if db is not None:
+        try:
+            from app.features import pipeline_checkpoint as ckpt
+
+            progress = await ckpt.get_pipeline_progress(
+                db, pipeline_id, use_cache=True
+            )
+            if progress is not None:
+                data["chunk_progress"] = progress
+        except Exception:
+            logger.debug(
+                "fetch chunk_progress for %s failed", pipeline_id, exc_info=True
+            )
     return data

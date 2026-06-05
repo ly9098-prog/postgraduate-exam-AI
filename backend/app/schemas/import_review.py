@@ -130,6 +130,9 @@ class PipelineStatusResponse(BaseModel):
     current_stage: str = ""
     ocr_progress: str = ""
     source_type: str = ""
+    # P2-6: chunk-level progress for chunked PDF imports.
+    # Absent for image / Excel / single-pass legacy paths.
+    chunk_progress: dict[str, Any] | None = None
 
 
 class PipelineResumeResponse(BaseModel):

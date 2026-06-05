@@ -296,7 +296,48 @@
 >       / `test_400_when_non_pdf`：endpoint 状态校验。
 >   - 全量回归：130 passed（chunk runner / checkpoint / global hash index
 >     / pipeline_orchestrator / similarity_matcher / pipeline_resume）。
-> - [ ] **P2-6 status API + 前端适配**
+> - [x] **P2-6 status API + 前端适配**：完成（2026-06-05）
+>   - `pipeline_orchestrator.get_pipeline_status` 扩展签名为
+>     `(pipeline_id, db=None)`：注入 `db` 时调用
+>     `pipeline_checkpoint.get_pipeline_progress(use_cache=True)` 把 chunk 计
+>     数 + `failed_chunk_details` 合并到返回字典的 `chunk_progress` 字段；
+>     `db=None` 或 `import_pipelines` 表无该记录时省略字段，向后兼容图片 /
+>     Excel / 单 pass 路径。合并仍走 `dict(data)` 拷贝，主 store 仅保留
+>     `_PIPELINE_STORE_FIELDS` 白名单。
+>   - `PipelineStatusResponse` 新增可选 `chunk_progress: dict | None`。
+>   - `GET /api/v1/import/pipelines/{pipeline_id}` 注入 `db: AsyncSession`，
+>     转给 `get_pipeline_status` 触发 chunk_progress 合并；图片导入 fallback
+>     到 `_get_image_pipeline_status` 路径完全不变。
+>   - 前端 `miniprogram/pages/import/import.js` / `import.wxml` / `import.wxss`：
+>     - `STATUS_LABELS` 新增 `paused → "部分失败，可恢复"` / `running →
+>       "处理中"`。
+>     - `pollPipeline` 优先用 `chunk_progress.completed_chunks /
+>       total_chunks` 计算进度百分比与文案；OCR 进度仅在没有 chunk_progress
+>       时才覆盖百分比，避免双进度互相打架。
+>     - `paused` 不再继续 polling（停下来等用户主动 resume），保留 chunked
+>       分块失败列表 + 「重新选择 PDF 恢复导入」按钮，调用 multipart
+>       `POST /api/v1/import/pipelines/{pipeline_id}/resume`，成功后立即重启
+>       polling。
+>     - 缺 `chunk_progress` 字段时退化为旧逻辑（图片 / Excel / 单 pass
+>       PDF 行为零变化）。
+>   - 新增 5 个测试 `tests/test_features/test_pipeline_status_chunk_progress.py`：
+>     - `test_status_includes_chunk_progress_when_db_provided`：3 chunks
+>       (completed/failed/completed) → 注入 db 后返回里带
+>       `chunk_progress.{total/completed/failed}_chunks`、`question_count`
+>       仅累加 completed、`failed_chunk_details` 含失败 chunk error。
+>     - `test_status_omits_chunk_progress_when_db_none`：image / excel
+>       fallback 不带字段。
+>     - `test_status_omits_chunk_progress_when_pipeline_has_no_chunks`：
+>       db 注入但 `import_pipelines` 表里无记录时省略字段。
+>     - `test_status_query_does_not_pollute_main_store_with_chunk_progress`：
+>       3 次轮询后 `_pipeline_store[pid].keys()` 仍是
+>       `_PIPELINE_STORE_FIELDS` 子集。
+>     - `test_status_returns_none_for_unknown_pipeline`：未知 id 返回 None。
+>   - 全量回归 147 passed（pipeline_orchestrator + pipeline_chunk_runner +
+>     pipeline_checkpoint + pipeline_resume + pipeline_status_chunk_progress
+>     + global_hash_index + similarity_matcher + pipeline_upload_unified），
+>     1 个 P0 阶段已存在 fail (`test_pdf_dispatch_returns_pl_prefix`) 与本
+>     次修改无关（git stash 验证失败一致）。
 > - [ ] **P2-7 端到端测试**
 
 ------
