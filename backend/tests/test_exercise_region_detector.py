@@ -5,6 +5,7 @@ import pytest
 from app.features.exercise_region_detector import (
     ExerciseRegion,
     _compute_exercise_page_score,
+    _expand_regions_for_sampling,
     _has_question_pattern,
     _levenshtein,
     _match_end_keyword,
@@ -264,3 +265,96 @@ class TestDetectExerciseRegions:
         regions = detect_exercise_regions(page_texts)
         assert len(regions) == 1
         assert regions[0].end_page == 4
+
+
+# ---------------------------------------------------------------------------
+# Sampling mode (sample_step >= 2)
+# ---------------------------------------------------------------------------
+
+
+class TestSamplingMode:
+    def test_default_step_unchanged(self):
+        # step=1 should produce identical result to no config
+        page_texts = {
+            1: "正文",
+            2: "本章习题",
+            3: "1. T\nA. a\nB. b\nC. c\nD. d",
+            4: "2. T\nA. a\nB. b\nC. c\nD. d",
+            5: "参考答案",
+        }
+        baseline = detect_exercise_regions(page_texts)
+        sampled = detect_exercise_regions(page_texts, config={"sample_step": 1})
+        assert [(r.start_page, r.end_page) for r in baseline] == \
+               [(r.start_page, r.end_page) for r in sampled]
+
+    def test_sampling_widens_max_empty(self):
+        # Simulate a step=3 sampling: empty strings on non-sampled pages.
+        # Without max_empty widening, the gap of 2 empty pages between sampled
+        # exercise pages would terminate the region prematurely.
+        page_texts = {
+            1: "本章习题",
+            2: "",                              # not sampled
+            3: "",                              # not sampled
+            4: "1. T\nA. a\nB. b\nC. c\nD. d",  # sampled, exercise content
+            5: "",                              # not sampled
+            6: "",                              # not sampled
+            7: "2. T\nA. a\nB. b\nC. c\nD. d",  # sampled, exercise content
+        }
+        regions = detect_exercise_regions(
+            page_texts,
+            config={"sample_step": 3, "max_empty_pages": 3},
+        )
+        assert len(regions) == 1
+        assert regions[0].start_page == 1
+        assert regions[0].end_page >= 7
+
+    def test_expand_regions_pads_step_minus_one(self):
+        regions = [ExerciseRegion(
+            start_page=10,
+            end_page=20,
+            confidence=0.9,
+            matched_keyword="本章习题",
+        )]
+        expanded = _expand_regions_for_sampling(regions, sample_step=3, total_pages=100)
+        assert len(expanded) == 1
+        assert expanded[0].start_page == 8     # 10 - (3-1)
+        assert expanded[0].end_page == 22      # 20 + (3-1)
+
+    def test_expand_clamps_to_first_page(self):
+        regions = [ExerciseRegion(
+            start_page=2,
+            end_page=5,
+            confidence=0.9,
+            matched_keyword="本章习题",
+        )]
+        expanded = _expand_regions_for_sampling(regions, sample_step=5, total_pages=10)
+        assert expanded[0].start_page == 1     # clamped, not -2
+
+    def test_expand_clamps_to_total_pages(self):
+        regions = [ExerciseRegion(
+            start_page=8,
+            end_page=10,
+            confidence=0.9,
+            matched_keyword="本章习题",
+        )]
+        expanded = _expand_regions_for_sampling(regions, sample_step=5, total_pages=11)
+        assert expanded[0].end_page == 11      # clamped, not 14
+
+    def test_expand_merges_overlapping_regions(self):
+        regions = [
+            ExerciseRegion(start_page=10, end_page=15, confidence=0.9, matched_keyword="a"),
+            ExerciseRegion(start_page=18, end_page=22, confidence=0.8, matched_keyword="b"),
+        ]
+        # padding 4 → first becomes (6,19), second becomes (14,26) → overlap → merge
+        expanded = _expand_regions_for_sampling(regions, sample_step=5, total_pages=100)
+        assert len(expanded) == 1
+        assert expanded[0].start_page == 6
+        assert expanded[0].end_page == 26
+
+    def test_expand_step_one_is_noop(self):
+        regions = [ExerciseRegion(
+            start_page=5, end_page=10, confidence=0.9, matched_keyword="x",
+        )]
+        expanded = _expand_regions_for_sampling(regions, sample_step=1, total_pages=20)
+        assert expanded[0].start_page == 5
+        assert expanded[0].end_page == 10

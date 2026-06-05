@@ -1,340 +1,470 @@
-这个需求其实可以拆成两个独立任务让 Claude Code 实现：
+------
 
-## 任务1：双环境 OCR 架构
+# OCR Pipeline 数据生命周期审计与流式架构改造
 
-你可以直接这样描述：
+请先进行架构审计，不要直接修改代码。
 
-# 双环境 OCR 架构改造
+> ## 当前进度（2026-06-05）
+>
+> - [x] **审计阶段**：完成 → `docs/audit/ocr-pipeline-lifecycle-audit.md`
+> - [x] **P0-2 消除双 OCR**：完成
+>   - `EXERCISE_DETECTION_SAMPLE_STEP=3` 默认采样
+>   - lightweight OCR 工作量降为 1/3
+>   - region 边界 ±(step-1) 扩展 + 重叠合并
+>   - max_empty_pages 在采样模式下自动放大
+>   - 39 个 detector 测试通过（含 7 个新增采样模式测试）
+> - [x] **P0-1 PDF 字节落盘 + 闭包不持有**：完成
+>   - API 入口 `_run_pipeline_with_db`：`tempfile.mkstemp` 落盘后 `del file_content`，`finally` 块 `os.unlink`
+>   - 链路改造：`run_pipeline_background` / `run_import_pipeline` / `ImportPipeline.run` 接受 `file_path`
+>   - 底层 `_open_pdf_doc` 统一处理 bytes/path，path 走 `fitz.open(filename)` 即 mmap
+>   - `_extract_pdf_blocks` / `_ocr_scanned_pdf` / `_extract_text_blocks` / `detect_exercise_regions_from_pdf` / `_lightweight_page_ocr` 全部接受 `bytes | str`
+>   - extract 完成后 `data.pop("file_content")` 和 `data.pop("file_path")`，避免后续 8+ 个 stage 持有引用
+>   - 82 个相关测试通过（detector 39 + orchestrator 43），新增/已有功能均无回归
+> - [ ] **P0-3 `_pipeline_store` 瘦身 + diagnostics 单独存**
+> - [ ] **P1 stage 间清理 data 大字段**
+> - [ ] **P1 review 阶段分批 commit**
+> - [ ] **P2 region 流式编排 + 断点恢复**
 
-目标：
+## 项目背景
 
-构建一套支持本地开发环境和服务器生产环境的 OCR 识别架构。
+这是一个考研408题库导入系统。
 
-## 环境配置
+主要导入来源：
 
-### 本地环境（高性能）
-
-硬件：
-
-- CPU：i7 16核
-- GPU：RTX3060 4GB
-
-用途：
-
-- 扫描版书籍 PDF（100~500页）
-- 王道 408 等大型题库导入
+- 扫描版PDF（核心场景）
 - 批量图片导入
-- OCR 精度优先
+- Excel导入
 
-要求：
+典型文件：
 
-1. 使用 PaddleOCR 高精度模型
-2. 启用 GPU 加速
-3. 启用版面分析
-4. 启用表格识别
-5. 启用 OCR AI Correction Layer
-6. 支持并发处理
-7. 支持大文件长时间任务
+- 王道408教材
+- 王道习题册
+- 历年真题扫描版
 
-### 服务器环境（低配置）
+文件规模：
 
-硬件：
+- 100~400页
+- 绝大部分为扫描图片页
+- 非文本PDF
 
-- 2核2G
+当前问题：
 
-用途：
+- OCR耗时较长
+- 长文档导入容易超时
+- WSL环境导入大文件时出现崩溃
+- 怀疑存在内存持续增长问题
+- 怀疑Pipeline中存在大量中间结果长期驻留内存
 
-- 单张题目拍照
-- 少量图片上传
-- 小型 PDF（<30页）
-- 在线实时识别
+未来目标：
 
-要求：
-
-1. 使用轻量 OCR 模型
-2. CPU 模式运行
-3. 关闭耗时版面分析
-4. 关闭大型批处理
-5. 响应速度优先
-6. 保证基础识别功能可用
-
-## 技术实现
-
-要求实现：
-
-### 自动环境识别
-
-支持：
-
-ENV=local
-ENV=production
-
-根据环境自动加载不同 OCR Pipeline。
-
-### OCR Provider 模式
-
-设计：
-
-BaseOCRProvider
-
-├── HighPerformanceOCRProvider
-│ ├── PaddleOCR GPU
-│ ├── PP-Structure
-│ ├── AI Correction
-│ └── Batch Processing
-
-└── LightweightOCRProvider
-├── PaddleOCR CPU
-├── Basic Layout
-├── Fast Mode
-└── Single File Processing
-
-## 上传策略
-
-本地：
-
-允许：
-
-- PDF
-- Excel
-- 图片批量上传
-
-服务器：
-
-允许：
-
-- 单张图片
-- 小型 PDF
-
-超过阈值时提示：
-
-"建议在本地导入后同步至云端"
-
-## 目标
-
-保证：
-
-1. 两套环境共用业务逻辑
-2. OCR 模块可插拔
-3. 本地性能最大化
-4. 服务器资源占用最小化
-5. 代码维护成本最低
+- 稳定支持400页扫描版PDF
+- 未来可扩展到1000页
+- 内存占用尽量与页数无关
+- 支持低配置服务器运行
 
 ------
 
-## 任务2：本地数据库同步云端工作流
+# 核心审计目标
 
-这是你真正需要 Claude 重点设计的部分。
+不要优先关注OCR识别率。
 
-# 本地题库数据库同步云端方案
+优先分析：
 
-项目背景：
+**当前Pipeline的数据生命周期(Data Lifecycle)是否合理。**
 
-本地电脑负责大型 OCR 导入。
+重点回答：
 
-服务器仅负责在线访问和轻量导入。
+> 一页PDF数据从生成到最终入库，经历了哪些阶段？
+>
+> 哪些数据被长期保存在内存中？
+>
+> 哪些中间结果实际上已经可以提前释放？
+>
+> 哪些模块会导致内存随页数线性增长？
 
-需要实现：
+------
 
-本地数据库 -> 云端数据库
+# 请绘制当前Pipeline
 
-的增量同步机制。
+分析当前真实执行链路：
 
-## 数据库情况
+```text
+PDF
+↓
+PDF解析
+↓
+OCR
+↓
+Normalize
+↓
+Structure Analysis
+↓
+Question Split
+↓
+AI Correction
+↓
+Question Object
+↓
+Database Save
+```
 
-本地：
-SQLite
+明确说明：
 
-服务器：
-PostgreSQL
+每个阶段输入什么
 
-## 核心目标
+输出什么
 
-同步时：
+数据量大概多大
 
-✅ 新题目自动新增
+生命周期持续多久
 
-✅ 已修改题目自动更新
+------
 
-✅ 分类自动同步
+# 数据生命周期审计
 
-✅ 标签自动同步
+重点检查：
 
-✅ OCR结果自动同步
+## 1. PDF页面生命周期
 
-❌ 不允许覆盖云端已有数据
+检查：
 
-❌ 不允许删除云端数据
+当前是否：
 
-❌ 不允许因同步失败导致数据丢失
+```python
+pages = load_all_pages()
+```
 
-## 同步模式
+或者：
 
-采用：
+```python
+images = convert_all_pages()
+```
 
-增量同步（Incremental Sync）
+分析：
 
-而非：
+- PDF是否一次性全部加载
+- 是否一次性生成全部图片
+- 图片对象何时释放
 
-全量覆盖（Full Replace）
+评估：
 
-## 数据结构要求
+400页扫描PDF场景下的风险。
 
-每张表增加：
+------
 
-id
-uuid
-created_at
-updated_at
-sync_version
+## 2. OCR结果生命周期
+
+检查：
+
+是否存在：
+
+```python
+all_ocr_results.append(...)
+```
+
+或者：
+
+```python
+ocr_blocks = [...]
+```
+
+长期累积。
+
+分析：
+
+- OCR结果大小
+- bbox数据大小
+- layout数据大小
+- 是否会随着页数持续增长
+
+输出内存风险评估。
+
+------
+
+## 3. Normalize阶段
+
+检查：
+
+是否存在：
+
+```python
+normalized_blocks
+```
+
+作为新的完整数据副本。
+
+分析：
+
+- 是否复制全部OCR结果
+- 是否形成第二份大对象
+
+------
+
+## 4. Structure Analysis阶段
+
+检查：
+
+是否生成：
+
+```python
+analyzed_blocks
+```
+
+并长期保留。
+
+分析：
+
+是否形成第三份大对象。
+
+------
+
+## 5. AI Correction阶段
+
+重点审计。
+
+检查当前是否：
+
+```python
+全部OCR完成
+↓
+全部AI纠错
+```
+
+还是：
+
+```python
+OCR一页
+↓
+AI纠错一页
+```
+
+分析：
+
+- Token消耗
+- 内存占用
+- 响应时间
+- 异常恢复能力
+
+------
+
+## 6. Question Split阶段
+
+检查：
+
+是否：
+
+```python
+questions = []
+```
+
+持续累积所有题目。
+
+分析：
+
+400页文档情况下：
+
+- Question对象数量
+- 内存占用
+- 生命周期
+
+------
+
+## 7. 数据库存储策略
+
+检查：
+
+当前是否：
+
+```python
+全部处理完成
+↓
+统一写库
+```
+
+还是：
+
+```python
+处理一批
+↓
+写库一批
+```
+
+分析：
+
+SQLite与PostgreSQL下的表现差异。
+
+------
+
+# 查找生命周期过长的数据
+
+请列出：
+
+| 对象 | 来源 | 大小 | 当前释放时机 | 是否可提前释放 |
+| ---- | ---- | ---- | ------------ | -------------- |
+|      |      |      |              |                |
+
+例如：
+
+- PDF图片
+- OCR结果
+- Normalize结果
+- Structure结果
+- AI纠错结果
+- Question对象
+
+找出：
+
+生命周期最长的Top10对象。
+
+------
+
+# 查找内存增长风险
+
+重点搜索：
+
+```python
+append(
+extend(
+all_results
+all_pages
+all_questions
+cache
+buffer
+```
+
+分析：
+
+哪些容器会随着页数无限增长。
+
+------
+
+# Generator/Yield机会分析
+
+检查：
+
+哪些代码：
+
+```python
+return full_results
+```
+
+适合改成：
+
+```python
+yield page_result
+```
+
+列出：
+
+- 高收益改造点
+- 中收益改造点
+- 不建议改造点
+
+------
+
+# 流式Pipeline设计
+
+如果发现问题，请设计新的架构：
+
+```text
+PDF
+
+↓ 逐页读取
+
+Page
+
+↓ OCR
+
+OCR Result
+
+↓ AI Correction
+
+Corrected Result
+
+↓ Question Parse
+
+Question
+
+↓ Database Save
+
+Commit
+
+↓ Memory Release
+
+Next Page
+```
+
+或者：
+
+```text
+20页批处理
+
+↓ OCR
+
+↓ AI Correction
+
+↓ Parse
+
+↓ Save
+
+↓ Release
+```
 
 说明：
 
-uuid：
-跨数据库唯一标识
-
-updated_at：
-判断是否需要同步
-
-sync_version：
-解决冲突
-
-## 同步流程
-
-步骤1
-
-本地导出：
-
-sqlite
-
-↓
-
-sync package
-
-JSON
-
-步骤2
-
-生成：
-
-sync_manifest.json
-
-内容：
-
-- 导出时间
-- 数据量
-- 版本号
-- 文件校验码
-
-步骤3
-
-上传云端
-
-步骤4
-
-服务器执行：
-
-Merge Sync
-
-逻辑：
-
-如果 uuid 不存在
-
-→ INSERT
-
-如果 uuid 存在且本地更新时间更新
-
-→ UPDATE
-
-如果 uuid 存在且云端更新
-
-→ 保留云端版本并记录冲突
-
-步骤5
-
-生成同步报告
-
-输出：
-
-新增：
-xxx 条
-
-更新：
-xxx 条
-
-跳过：
-xxx 条
-
-冲突：
-xxx 条
-
-失败：
-xxx 条
-
-## Claude 实现要求
-
-请设计：
-
-1. SyncService
-2. ExportService
-3. ImportService
-4. ConflictResolver
-5. SyncReport
-
-并提供：
-
-- 架构图
-- 数据表设计
-- 同步算法
-- 伪代码
-- Python实现方案
-
-## 最终效果
-
-工作流：
-
-扫描书籍 PDF
-
-↓
-
-本地 OCR
-
-↓
-
-SQLite 入库
-
-↓
-
-一键同步
-
-↓
-
-云端 PostgreSQL 自动补充数据
-
-↓
-
-不覆盖已有数据
-
-↓
-
-不丢失数据
-
-↓
-
-生成同步报告
+为什么选择该方案。
 
 ------
 
+# 断点恢复能力
 
+分析：
 
-> **不要设计成“数据库覆盖数据库”，而是设计成 Git 类似的 Merge Sync（增量合并同步）模式。**
->
-> 本地 OCR 导入的数据量远大于服务器，服务器主要作为题库发布端，因此同步原则是：
->
-> - 新数据自动补充
-> - 已存在数据按时间戳合并
-> - 永不执行 DELETE
-> - 永不执行全量覆盖
-> - 同步失败可回滚
-> - 支持断点续传
+当前导入过程中：
+
+如果第287页失败：
+
+是否需要重新处理1~286页？
+
+设计：
+
+```text
+导入任务
+↓
+记录已完成页码
+↓
+失败
+↓
+从失败页恢复
+```
+
+方案。
+
+------
+
+# 输出要求
+
+请输出：
+
+## 1. 当前架构图
+
+## 2. 数据生命周期分析
+
+## 3. 内存风险分析
+
+## 4. 生命周期最长对象分析
+
+## 5. 流式改造方案
+
+## 6. Generator/Yield改造建议
+
+## 7. 数据库存储优化建议
+
+## 8. 断点恢复方案
+
+## 9. 实施优先级
+
+请先完成审计报告，不要修改代码。
+
+------
 
