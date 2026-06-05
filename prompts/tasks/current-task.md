@@ -20,7 +20,14 @@
 >   - `_extract_pdf_blocks` / `_ocr_scanned_pdf` / `_extract_text_blocks` / `detect_exercise_regions_from_pdf` / `_lightweight_page_ocr` 全部接受 `bytes | str`
 >   - extract 完成后 `data.pop("file_content")` 和 `data.pop("file_path")`，避免后续 8+ 个 stage 持有引用
 >   - 82 个相关测试通过（detector 39 + orchestrator 43），新增/已有功能均无回归
-> - [ ] **P0-3 `_pipeline_store` 瘦身 + diagnostics 单独存**
+> - [x] **P0-3 `_pipeline_store` 瘦身 + diagnostics 单独存**：完成
+>   - 主 store 仅保留 `_PIPELINE_STORE_FIELDS` 白名单（pipeline_id/status/source_type/source_file/current_stage/stages/stats/errors/started_at/finished_at/batch_id/raw_text_preview/question_count）
+>   - 新增 `_pipeline_diagnostics_store` 内存字典 + Redis key `import:pipeline:diagnostics:{id}`，TTL 24h 与主 store 同步
+>   - `_set_pipeline_store` 自动剥离 `data["diagnostics"]`，主 store / Redis 不再写大字段
+>   - `_prune_store` 同步淘汰 diagnostics 内存条目，不留泄漏
+>   - `get_pipeline_status` 把 diagnostics 合并回完整视图，前端无感
+>   - 新增 3 个 P0-3 单元测试：strip / merge-back / prune-sync
+>   - 108 个相关测试通过（pipeline_orchestrator + pipeline_upload_unified + image_import_status + exercise_region_detector），无新增回归
 > - [ ] **P1 stage 间清理 data 大字段**
 > - [ ] **P1 review 阶段分批 commit**
 > - [ ] **P2 region 流式编排 + 断点恢复**

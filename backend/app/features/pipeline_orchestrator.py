@@ -41,11 +41,31 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _pipeline_store: dict[str, dict] = {}
+_pipeline_diagnostics_store: dict[str, dict] = {}
 _ocr_progress: dict[str, str] = {}  # pipeline_id -> "32/312 pages"
 
 _MAX_STORE_SIZE = 500  # keep at most N pipelines in memory
 _PIPELINE_REDIS_PREFIX = "import:pipeline"
+_PIPELINE_DIAGNOSTICS_REDIS_PREFIX = "import:pipeline:diagnostics"
 _PIPELINE_STATUS_TTL = 86400  # 24h
+
+# P0-3: 主 store 只保留这些瘦身字段；diagnostics、raw_questions_preview、
+# corrections 等大对象走独立 KV 以避免单条记录被占到 1–3 MB。
+_PIPELINE_STORE_FIELDS = (
+    "pipeline_id",
+    "status",
+    "source_type",
+    "source_file",
+    "current_stage",
+    "stages",
+    "stats",
+    "errors",
+    "started_at",
+    "finished_at",
+    "batch_id",
+    "raw_text_preview",
+    "question_count",
+)
 
 
 def _prune_store() -> None:
@@ -56,17 +76,68 @@ def _prune_store() -> None:
             key=lambda k: _pipeline_store[k].get("started_at", ""),
         )
         for old_id in sorted_ids[: len(_pipeline_store) - _MAX_STORE_SIZE]:
-            del _pipeline_store[old_id]
+            _pipeline_store.pop(old_id, None)
+            _pipeline_diagnostics_store.pop(old_id, None)
+
+
+def _slim_pipeline_payload(data: dict) -> dict:
+    """仅保留 _PIPELINE_STORE_FIELDS 中存在于 data 的字段。
+
+    避免把 diagnostics / 大 result 字段写进主 store。
+    """
+    return {k: data[k] for k in _PIPELINE_STORE_FIELDS if k in data}
+
+
+async def _set_pipeline_diagnostics(pipeline_id: str, diagnostics: dict) -> None:
+    """diagnostics 单独存（主 store 之外）。"""
+    if not diagnostics:
+        return
+    _pipeline_diagnostics_store[pipeline_id] = diagnostics
+    try:
+        from app.core.cache import cache
+        await cache.set(
+            f"{_PIPELINE_DIAGNOSTICS_REDIS_PREFIX}:{pipeline_id}",
+            diagnostics,
+            ttl=_PIPELINE_STATUS_TTL,
+        )
+    except Exception:
+        pass
+
+
+async def _get_pipeline_diagnostics(pipeline_id: str) -> dict | None:
+    if pipeline_id in _pipeline_diagnostics_store:
+        return _pipeline_diagnostics_store[pipeline_id]
+    try:
+        from app.core.cache import cache
+        data = await cache.get(f"{_PIPELINE_DIAGNOSTICS_REDIS_PREFIX}:{pipeline_id}")
+        if data:
+            _pipeline_diagnostics_store[pipeline_id] = data
+            return data
+    except Exception:
+        pass
+    return None
 
 
 async def _set_pipeline_store(pipeline_id: str, data: dict) -> None:
-    _pipeline_store[pipeline_id] = data
+    """写入流水线状态。
+
+    P0-3: data 中如果含 diagnostics，会被剥离到独立 KV；主 store 仅保留
+    _PIPELINE_STORE_FIELDS 字段。前端通过 get_pipeline_status 拿到的
+    视图与改造前一致（diagnostics 合并回去）。
+    """
+    diagnostics = data.get("diagnostics")
+    slim = _slim_pipeline_payload(data)
+    _pipeline_store[pipeline_id] = slim
     _prune_store()
     try:
         from app.core.cache import cache
-        await cache.set(f"{_PIPELINE_REDIS_PREFIX}:{pipeline_id}", data, ttl=_PIPELINE_STATUS_TTL)
+        await cache.set(
+            f"{_PIPELINE_REDIS_PREFIX}:{pipeline_id}", slim, ttl=_PIPELINE_STATUS_TTL,
+        )
     except Exception:
         pass
+    if diagnostics:
+        await _set_pipeline_diagnostics(pipeline_id, diagnostics)
 
 
 async def _get_pipeline_store(pipeline_id: str) -> dict | None:
@@ -1331,8 +1402,17 @@ async def run_excel_pipeline_background(
 
 
 async def get_pipeline_status(pipeline_id: str) -> dict | None:
-    """查询流水线状态（Redis + 内存 fallback）。"""
+    """查询流水线状态（Redis + 内存 fallback）。
+
+    P0-3: 主 store 已瘦身，本函数把 diagnostics 从独立 KV 合并回去，
+    对外返回与改造前一致的完整视图。
+    """
     data = await _get_pipeline_store(pipeline_id)
-    if data and pipeline_id in _ocr_progress:
+    if data is None:
+        return None
+    diagnostics = await _get_pipeline_diagnostics(pipeline_id)
+    if diagnostics is not None and "diagnostics" not in data:
+        data = {**data, "diagnostics": diagnostics}
+    if pipeline_id in _ocr_progress:
         data["ocr_progress"] = _ocr_progress[pipeline_id]
     return data
