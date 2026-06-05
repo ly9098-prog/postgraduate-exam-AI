@@ -110,14 +110,16 @@ class GlobalHashIndex:
         *,
         recent_days: int | None = None,
         batch_id: str | None = None,
+        batch_ids: list[str] | None = None,
     ) -> None:
         """从 DB 加载索引。
 
         - 计数 ``Question`` 表内最近 ``recent_days`` 内的活跃题目；
           超过 ``HASH_INDEX_MAX_SIZE`` 则进入 SQL fallback，**不**真正
           加载到内存。
-        - 同时加载当前 ``batch_id`` 已写入的 ``QuestionImport``（同批
-          次内 chunk 间互查）。
+        - 同时加载当前 ``batch_id`` 或 ``batch_ids`` 已写入的
+          ``QuestionImport``（同批次内 chunk 间互查 / P2-5 resume 跨多个
+          已成功 chunk 互查）。``batch_ids`` 优先于 ``batch_id``。
         """
         from app.models.question import Question
         from app.models.question_import import QuestionImport
@@ -161,7 +163,14 @@ class GlobalHashIndex:
                 self._question_index[(subject, qhash)] = qid
         self._stats["question_count"] = len(self._question_index)
 
-        if batch_id:
+        if batch_ids is not None:
+            ids = [bid for bid in batch_ids if bid]
+        elif batch_id:
+            ids = [batch_id]
+        else:
+            ids = []
+
+        if ids:
             import_rows = (
                 await db.execute(
                     select(
@@ -169,7 +178,7 @@ class GlobalHashIndex:
                         QuestionImport.question_hash,
                         QuestionImport.id,
                     ).where(
-                        QuestionImport.batch_id == batch_id,
+                        QuestionImport.batch_id.in_(ids),
                         QuestionImport.question_hash.isnot(None),
                         QuestionImport.status != "rejected",
                     )
