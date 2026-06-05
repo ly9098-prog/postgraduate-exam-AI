@@ -1162,16 +1162,24 @@ class ImportPipeline:
         questions: list[dict],
         db=None,
         options: dict | None = None,
+        hash_index=None,
         **_kw,
     ) -> dict:
-        """Stage 6.5: suggest corrections from existing question bank."""
+        """Stage 6.5: suggest corrections from existing question bank.
+
+        P2-4: chunked 路径下 ``hash_index``（``GlobalHashIndex`` 实例）由
+        orchestrator 注入；命中即标 ratio=1.0 强匹配，跳过 difflib 扫描。
+        单 pass / 无注入时退化为旧的 subject-级 difflib fallback。
+        """
         opts = options or {}
         match_config = {
             "enabled": opts.get("enable_similarity_match", True),
             "similarity_threshold": opts.get("similarity_threshold", 0.85),
         }
 
-        result = await match_similar_questions(questions, db=db, config=match_config)
+        result = await match_similar_questions(
+            questions, db=db, config=match_config, hash_index=hash_index,
+        )
 
         warnings: list[str] = []
         stats = result.get("stats", {})
@@ -1225,12 +1233,31 @@ class ImportPipeline:
         if result["skipped"] > 0:
             warnings.append(f"{result['skipped']} questions skipped in review")
 
+        # P2-4: 暴露 (subject, hash, import_id) 供 _run_chunked 推到
+        # GlobalHashIndex，让后续 chunk 命中本批已写入的题目。subject
+        # 优先取 stage 入参（chunk 级 batch_meta），缺失则回落到题目自带的
+        # subject（与 review_service 落库口径一致）。
+        items = result.get("items", [])
+        question_subjects = [
+            (q.get("subject") if isinstance(q, dict) else None) for q in questions
+        ]
+        new_hashes: list[tuple[str, str, int]] = []
+        for idx, item in enumerate(items):
+            qhash = item.get("question_hash")
+            iid = item.get("id")
+            if not qhash or not iid:
+                continue
+            qsubject = subject or (question_subjects[idx] if idx < len(question_subjects) else None) or ""
+            if qsubject:
+                new_hashes.append((qsubject, qhash, iid))
+
         return {
             "batch_id": result["batch_id"],
             "written": result["written"],
             "skipped": result["skipped"],
             "total": result["total"],
-            "items": result.get("items", []),
+            "items": items,
+            "review_new_hashes": new_hashes,
             "warnings": warnings,
         }
 
@@ -1449,6 +1476,11 @@ class ImportPipeline:
             "unmatched": [],
             "questions": [],
         }
+        # P2-4: chunked 路径在 shared 里挂了 hash_index 实例，透传给
+        # similarity_match stage；单 pass 时 shared 没有该 key，stage
+        # 默认 hash_index=None 会走旧的 difflib fallback。
+        if shared.get("hash_index") is not None:
+            data["hash_index"] = shared["hash_index"]
         # P2-3 chunk overlap state — only populated in chunked mode
         if chunk_seen_numbers is not None:
             data["_chunk_seen_numbers"] = chunk_seen_numbers
@@ -1533,6 +1565,9 @@ class ImportPipeline:
             "errors": pipeline_errors,
             "started_at": started_at,
             "finished_at": finished_at,
+            # P2-4: chunked 路径需要拿到本 chunk 已写入的 hash 推到
+            # GlobalHashIndex；single-pass 调用方忽略即可。
+            "review_new_hashes": data.get("review_new_hashes") or [],
         }
 
     async def _run_chunked(
@@ -1563,6 +1598,7 @@ class ImportPipeline:
             - "paused" otherwise (manual resume via P2-5)
         """
         from app.features import pipeline_checkpoint as ckpt
+        from app.features.global_hash_index import GlobalHashIndex
 
         total_pages = chunk_ranges[-1][1]
         chunk_size = _resolve_chunk_size()
@@ -1578,6 +1614,18 @@ class ImportPipeline:
             chunk_size=chunk_size,
         )
         await ckpt.create_chunk_records(db, self.pipeline_id, chunk_ranges)
+
+        # P2-4: chunked 路径只构造一次 hash 索引，整个 pipeline 共用。失败
+        # 不阻断主流程——index_loaded=False 时 similarity_match 退化为
+        # subject 全表扫描（旧行为），仅打 warning。
+        hash_index: GlobalHashIndex | None = GlobalHashIndex()
+        try:
+            await hash_index.load(db)
+        except Exception:
+            logger.exception("GlobalHashIndex.load failed; chunked similarity match will fallback")
+            hash_index = None
+        if hash_index is not None:
+            shared = {**shared, "hash_index": hash_index}
 
         chunk_results: list[dict] = []
         pipeline_errors: list[str] = []
@@ -1638,6 +1686,13 @@ class ImportPipeline:
 
             written = (chunk_result.get("stats") or {}).get("to_review", 0)
             batch_id = chunk_result.get("batch_id") or None
+
+            # P2-4: 把本 chunk 刚写入的 (subject, hash, import_id) 推到
+            # GlobalHashIndex，让后续 chunk 跑 similarity_match 时能命中
+            # 同批的兄弟 chunk。失败回落（is_fallback=True）下 add 是 no-op。
+            if hash_index is not None and chunk_status == "completed":
+                for subj, qhash, iid in chunk_result.get("review_new_hashes") or []:
+                    hash_index.add_import(subj, qhash, iid)
 
             await ckpt.update_chunk_status(
                 db,
@@ -1708,6 +1763,9 @@ class ImportPipeline:
                 "chunk_overlap": chunk_overlap,
                 "total_pages": total_pages,
                 "chunks": chunk_results,
+                "hash_index": (
+                    dict(hash_index.stats) if hash_index is not None else None
+                ),
             },
             "stages": {},  # per-chunk stage info lives in diagnostics.chunks
             "errors": pipeline_errors,

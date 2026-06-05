@@ -65,9 +65,32 @@
           <text class="pipeline-task-type" wx:if="{{pipelineTask.source_type}}">{{pipelineTask.source_type}}</text>
         </view>
       </view>
-      <text class="pipeline-task-status {{pipelineTask.status}}">{{pipelineTask.status}}</text>
+      <text class="pipeline-task-status {{pipelineTask.status}}">{{pipelineTask.statusLabel || pipelineTask.status}}</text>
     </view>
-    <text class="pipeline-task-desc" wx:if="{{pipelinePolling}}">正在解析文件内容，请稍候...</text>
+
+    <!-- 进度条区域 -->
+    <view class="pipeline-progress" wx:if="{{pipelinePolling}}">
+      <view class="pipeline-progress-header">
+        <text class="pipeline-progress-stage">{{pipelineTask.currentStageLabel || '准备中'}}</text>
+        <text class="pipeline-progress-pct">{{pipelineTask.progressPercent}}%</text>
+      </view>
+      <view class="pipeline-progress-bar">
+        <view class="pipeline-progress-fill" style="width: {{pipelineTask.progressPercent}}%"></view>
+      </view>
+      <view class="pipeline-progress-meta">
+        <text class="pipeline-progress-elapsed" wx:if="{{pipelineTask.elapsed}}">已耗时 {{pipelineTask.elapsed}}</text>
+        <text class="pipeline-progress-ocr" wx:if="{{pipelineTask.ocr_progress}}">{{pipelineTask.ocr_progress}}</text>
+      </view>
+    </view>
+
+    <!-- 阶段步骤列表 -->
+    <view class="pipeline-stages" wx:if="{{pipelineTask.stageList.length > 0 && pipelinePolling}}">
+      <view class="pipeline-stage-item {{item.status}}" wx:for="{{pipelineTask.stageList}}" wx:key="key">
+        <view class="pipeline-stage-dot"></view>
+        <text class="pipeline-stage-label">{{item.label}}</text>
+      </view>
+    </view>
+
     <text class="pipeline-task-desc completed" wx:if="{{pipelineTask.batch_id}}">已生成审核批次：{{pipelineTask.batch_id}}</text>
     <text class="pipeline-task-desc error" wx:if="{{pipelineTask.status === 'failed' && pipelineTask.error_message}}">{{pipelineTask.error_message}}</text>
     <text class="pipeline-preview" wx:if="{{pipelineTask.raw_text_preview}}">{{pipelineTask.raw_text_preview}}</text>
