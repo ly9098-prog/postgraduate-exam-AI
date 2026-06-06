@@ -55,8 +55,37 @@ def _record_token_usage(tokens: int):
     _token_usage["monthly"] = int(_token_usage["monthly"]) + tokens  # type: ignore[operator]
 
 
+def _looks_like_non_question_text(question: dict) -> bool:
+    stem = str(question.get("stem") or "").strip()
+    raw_text = str(question.get("raw_text") or question.get("raw_question_text") or "").strip()
+    text = "\n".join(part for part in (stem, raw_text) if part)
+    if len(text) < 120:
+        return False
+
+    options = question.get("options") or []
+    answer = str(question.get("answer") or "").strip()
+    has_choice_options = bool(options) or bool(re.search(r"(^|\n)\s*[A-D][.．、)]\s*\S+", text))
+    has_question_signal = bool(re.search(r"(求|问|判断|选择|下列|正确|错误|的是|为多少|\?|？)", text))
+    has_number_signal = bool(re.search(r"(^|\n)\s*(?:第\s*\d+\s*题|\d+[.．、)]\s*)", text))
+    has_answer_signal = bool(answer) or bool(re.search(r"答案|参考答案|解析", text))
+    prose_markers = re.findall(
+        r"定义|定理|知识点|证明|证毕|解法|例题|例如|如下|因此可得|由此可知|综上|性质|推论|注意",
+        text,
+    )
+
+    weak_question_signals = sum([
+        has_choice_options,
+        has_question_signal,
+        has_number_signal,
+        has_answer_signal,
+    ])
+    return len(prose_markers) >= 2 and weak_question_signals <= 1
+
+
 def _should_repair(question: dict, threshold: float) -> tuple[bool, str]:
-    """判断是否触发 AI 修复。返回 (should_repair, reason)。"""
+    if _looks_like_non_question_text(question):
+        return False, "non_question_like"
+
     # 1. confidence_score < threshold
     if question.get("confidence_score", 1.0) < threshold:
         return True, "low_confidence"
