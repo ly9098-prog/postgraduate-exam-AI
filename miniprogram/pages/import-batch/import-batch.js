@@ -1,6 +1,14 @@
 const api = require('../../utils/api')
 const auth = require('../../utils/auth')
 
+const RISK_LABELS = {
+  no_exercise_regions: '未检出习题区',
+  book_pdf_prose_like: '疑似正文',
+  low_confidence: '低置信',
+  fallback_low_confidence: '兜底题目',
+  non_question_like: '疑似非题目',
+}
+
 Page({
   data: {
     batch: null,
@@ -49,6 +57,8 @@ Page({
         var aiSuggestion = meta.complete_suggestion || null
         var pc = (q.parsed_content && typeof q.parsed_content === 'object') ? q.parsed_content : {}
         var segments = Array.isArray(pc.segments) ? pc.segments : []
+        var riskFlags = Array.isArray(meta.risk_flags) ? meta.risk_flags : []
+        var riskLabels = riskFlags.map(function(flag) { return RISK_LABELS[flag] || flag })
         return Object.assign({}, q, {
           _preview: (pc.text || '').slice(0, 80) || '无内容',
           _subjectLabel: subjectMap[q.subject] || q.subject || '-',
@@ -58,6 +68,7 @@ Page({
           _aiSuggestion: aiSuggestion,
           _aiConfidencePct: q.ai_confidence != null ? Math.round(q.ai_confidence * 100) : null,
           _hasMath: segments.some(function(s) { return s.type === 'math_image' }),
+          _riskFlags: riskLabels,
           // 规范化 ai_metadata 供 WXML 安全访问（避免 null.chapter 崩溃）
           ai_metadata: meta,
           // 规范化 parsed_content 避免 WXML 访问 null
@@ -321,6 +332,19 @@ Page({
         showCancel: false,
       })
       return
+    }
+
+    const risky = pending.filter(q => q._riskFlags && q._riskFlags.length > 0)
+    if (risky.length > 0) {
+      const preview = risky.slice(0, 5).map(q => `#${q.id} ${q._riskFlags.join('、')}`)
+      const more = risky.length > 5 ? `\n…还有 ${risky.length - 5} 道` : ''
+      const riskConfirm = await wx.showModal({
+        title: '存在风险题目',
+        content: `有 ${risky.length} 道待审核题带风险标识：\n${preview.join('\n')}${more}\n确认仍全部通过？`,
+        confirmText: '仍然通过',
+        confirmColor: '#C47A7A',
+      })
+      if (!riskConfirm.confirm) return
     }
 
     const { confirm } = await wx.showModal({

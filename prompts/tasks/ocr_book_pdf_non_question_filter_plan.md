@@ -303,13 +303,14 @@ hash / dedup 只能识别重复文本，不能判断文本是否为真实题目�
 | P0-2 AI repair 前非题目过滤 | 完成 | `9609ad9` | `ai_repair.py::_looks_like_non_question_text` + `_should_repair` 返回 `non_question_like` 跳过 |
 | P0-3 chunked / resume 无边界跳过验证 | 完成 | `795ce00` | `_filter_book_pdf_prose` 覆盖 visual boundary fallback；测试 `test_pipeline_orchestrator.py` |
 
-### 11.2 P1 — 决策（2026-06-06）
+### 11.2 P1 — 决策与进度（2026-06-06）
 
 | 决策点 | 选择 | 备注 |
 |--------|------|------|
-| P1-2 book 模式 exercise_regions 漏检 | **跑全本 OCR + 每道题打 `no_exercise_regions` 风险标 + diagnostics 同步记录** | 不阻断产能；UI 透出由用户决定批准与否 |
-| P1-3 前端审核页风险标识 | **最小方案：卡片右上角加红色徽章 + 全部通过前弹确认框** | 改动局限在 `import-batch.wxml/wxss/js` |
-| 实施顺序 | **P1-2 → P1-1 → P1-3** | 先建立风险字段底座，再让 splitter 复用同字段，最后前端只读字段 |
+| P1-2 book 模式 exercise_regions 漏检 | **跑全本 OCR + 每道题打 `no_exercise_regions` 风险标 + diagnostics 同步记录** | 已完成，提交 `7bbe3c8` |
+| P1-1 question_splitter 正文负样本过滤 | **book 模式疑似正文降权到 0.4 并打 `book_pdf_prose_like`** | 已完成，提交 `7bbe3c8` |
+| P1-3 前端审核页风险标识 | **最小方案：卡片右上角加红色徽章 + 全部通过前弹确认框** | 已完成，本次提交 |
+| 实施顺序 | **P1-2 → P1-1 → P1-3** | P1 后端风险字段底座与前端只读字段展示均已落地 |
 
 ### 11.3 P1 实施方案细节
 
@@ -414,12 +415,12 @@ const RISK_LABELS = {
    - `pipeline_orchestrator.py::_run_split` 透传 `import_mode`。
    - 单测：`test_question_splitter.py` 新增 book 模式 prose 降权用例。
 
-3. **P1-3 前端徽章**
+3. **P1-3 前端徽章**（已完成，本次提交）
    - `import-batch.js` `_riskFlags` 字段 + batchApprove 弹确认。
    - `import-batch.wxml` 卡片增加徽章列表。
    - `import-batch.wxss` 新增 `.q-risk-badge` 样式。
 
-4. **文档同步**
+4. **文档同步**（进行中）
    - 本计划文件末尾追加 commit hash。
    - `docs/BUGS_HISTORY.md` 记录本轮修复（如有 docs-maintainer agent 路径）。
 
