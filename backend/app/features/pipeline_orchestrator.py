@@ -400,6 +400,105 @@ def _read_pdf_page_count(source: bytes | str | None) -> int:
         doc.close()
 
 
+def _compute_overlap_hash(raw_question: dict) -> str | None:
+    """P1-3: 把 split 阶段的原始题目 dict 折算成稳定的 overlap-dedup key。
+
+    复用 ``QuestionNormalizer`` 的口径（去除空白/控制字符 + 选项排序），
+    保证同一物理题在两个 chunk 里折出同一个 hash，OCR 把 ``1`` 误识成 ``I``
+    或截留前缀页码不再影响判断。
+
+    与 ``review_service.build_question_hash`` 的差别：split 阶段没有匹配到
+    答案，因此 answer 端始终为空——这只影响 hash 值本身、不影响稳定性，
+    且 chunk 间 overlap 的同一物理题答案侧也都为空，仍然命中。
+
+    返回 None 表示题干和选项都为空（异常 OCR），调用方按"无 hash"处理，
+    保留 P2-3 兜底（page_start>logical_end 时仍按 number 兜底丢弃）。
+    """
+    from app.features.question_normalizer import _extract_stem
+    from app.features.question_pipeline import QuestionNormalizer
+
+    raw_text = raw_question.get("raw_question_text") or ""
+    option_lines = raw_question.get("option_lines") or {}
+
+    stem = _extract_stem(str(raw_text), option_lines)
+    if not stem and not option_lines:
+        return None
+
+    normalizer = QuestionNormalizer()
+    return normalizer.build_question_hash(stem, option_lines, None) or None
+
+
+def _serialize_watermark_patterns(patterns: list) -> list[dict]:
+    """P0-3: 把已编译的 ``re.Pattern`` 列表转成 JSON 可序列化的快照。
+
+    每条记录保留 pattern 源字符串与 flags，足以在 resume 时重建出
+    与首次导入字节级一致的 ``re.Pattern``。非 Pattern 对象保守地
+    跳过——load_rules 偶发 fallback 路径理论上不会混入异类。
+    """
+    out: list[dict] = []
+    for pat in patterns or []:
+        try:
+            out.append({"pattern": pat.pattern, "flags": int(pat.flags)})
+        except AttributeError:
+            # 兜底：dict 形式直接收，字符串当 pattern
+            if isinstance(pat, dict) and "pattern" in pat:
+                out.append({"pattern": pat["pattern"], "flags": int(pat.get("flags", 0))})
+            elif isinstance(pat, str):
+                out.append({"pattern": pat, "flags": 0})
+    return out
+
+
+def _deserialize_watermark_patterns(snapshot: list | dict | None) -> list:
+    """P0-3: 把 watermark_snapshot JSON 反序列化回 ``re.Pattern`` 列表。
+
+    snapshot 损坏 / 元素无法编译时跳过该条而不抛错——首次导入时已通过
+    ``_validate_pattern`` 校验，这里属于纵深防御。
+    """
+    if not snapshot:
+        return []
+    items = snapshot if isinstance(snapshot, list) else [snapshot]
+    compiled: list = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        src = item.get("pattern")
+        if not isinstance(src, str):
+            continue
+        flags = item.get("flags") or 0
+        try:
+            compiled.append(re.compile(src, int(flags)))
+        except re.error:
+            continue
+    return compiled
+
+
+def _derive_session_factory(db):
+    """P0-3: 从一个已有的 ``AsyncSession`` 推导出 sessionmaker，便于 chunk
+    循环里开"独立 session、独立事务"的子上下文。
+
+    生产路径：``imports.py`` 用全局 ``async_session()`` 开 session 后传入，
+    ``db.bind`` 即全局 engine，等价于直接拿全局工厂。
+    测试路径：测试用 tmp_path SQLite 建独立 engine + sessionmaker，传入的
+    ``db`` 绑到该 engine，从这里派生出的工厂指向同一个 DB，避免污染全局。
+
+    任何异常 / db 为 None 时回退到全局 ``async_session``，保留向后兼容。
+    """
+    from app.core.database import async_session as _global_async_session
+
+    if db is None:
+        return _global_async_session
+    try:
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+        bind = getattr(db, "bind", None)
+        if bind is None:
+            return _global_async_session
+        return async_sessionmaker(bind, expire_on_commit=False, class_=AsyncSession)
+    except Exception:
+        logger.debug("derive session factory failed; using global async_session", exc_info=True)
+        return _global_async_session
+
+
 def _build_stats(data: dict, stages: dict) -> dict:
     """Aggregate per-stage outputs into the legacy stats dict."""
     return {
@@ -525,6 +624,12 @@ class ImportPipeline:
         self.options = options or {}
         self.pipeline_id = ""
         self.stages: dict[str, PipelineStage] = {}
+        # P0-1 / P0-2: 透传到 ckpt.create_pipeline_record，落到
+        # import_pipelines.created_by / source_sha256，让 resume endpoint 能
+        # 校验创建者身份与原始 PDF 字节摘要。仅 chunked PDF 路径设值，单 pass
+        # 路径不创建 pipeline 行因此无需透传。
+        self.created_by: str | None = None
+        self.source_sha256: str | None = None
 
     def _build_pipeline(self) -> None:
         """(Re)build the stage list from current options.
@@ -835,19 +940,26 @@ class ImportPipeline:
     def _run_split(self, normalized_blocks: list[dict], structure: dict | None = None, **_kw) -> dict:
         """Stage 3: split text blocks into individual questions.
 
-        P2-3: when running in chunked mode, ``_kw`` may include
-        ``_chunk_seen_numbers`` (a mutable set of question numbers already
-        written by earlier chunks) and ``_chunk_logical_end`` (the chunk's
-        own last page; anything past that is overlap territory). Questions
-        whose ``number`` is already in seen_numbers AND whose ``page_start``
-        falls inside the overlap region are dropped here so review never
-        sees them. Numbers we keep are added to the set so the next chunk
-        sees this update.
+        P2-3 / P1-3: when running in chunked mode, ``_kw`` may include
+        ``_chunk_seen_hashes`` (a mutable set of overlap-dedup hashes
+        already written by earlier chunks) and ``_chunk_logical_end``
+        (the chunk's own last page; anything past that is overlap
+        territory). The hash is computed via ``_compute_overlap_hash``
+        — same payload normalization as ``review_service`` /
+        ``QuestionImport.question_hash`` — so OCR jitter on the
+        question *number* (e.g. ``1`` vs ``I``) no longer causes
+        spurious retains, and section-reset numbers (``1, 2, …``
+        appearing twice in one PDF) no longer cause spurious drops.
+        Questions whose hash is already in seen_hashes AND whose
+        ``page_start`` falls inside the overlap region are dropped here
+        so review never sees them. Hashes we keep are added to the set
+        so the next chunk sees this update.
 
-        Boundary check: if the chunk's last kept question ends at or after
-        ``_chunk_logical_end - 1`` and its option_lines lack D/E, we emit
-        a ``chunk_boundary_unclosed`` warning so the user knows the question
-        may span into the next chunk.
+        Boundary check: if the chunk's last kept question is within ±1 page
+        of ``_chunk_logical_end`` AND its option_lines contain A/B/C but
+        miss both D and E, we emit a ``chunk_boundary_unclosed`` warning
+        — heuristic for "4-option MCQ truncated by chunk edge" only.
+        Two-option / true-false / short-answer questions don't trip this.
         """
         strategy = _kw.get("strategy") or {}
         gap_tolerance = strategy.get("question_number_gap_tolerance", 10)
@@ -912,31 +1024,35 @@ class ImportPipeline:
             split_diagnostics["fallback_created"] = False
             split_diagnostics["failure_reason"] = None
 
-        # P2-3: chunk overlap dedup + boundary unclosed warning.
+        # P2-3 / P1-3: chunk overlap dedup + boundary unclosed warning.
         # Only kicks in when called from the chunked runner via opts.
-        seen_numbers: set | None = _kw.get("_chunk_seen_numbers")
+        seen_hashes: set | None = _kw.get("_chunk_seen_hashes")
         logical_end: int | None = _kw.get("_chunk_logical_end")
-        if seen_numbers is not None and logical_end is not None:
+        if seen_hashes is not None and logical_end is not None:
             kept: list[dict] = []
             skipped_numbers: list[int] = []
             for q in raw_questions:
-                num = q.get("number")
                 page_start = q.get("page_start") or 0
-                # Drop only if both: (1) number was already written by a
+                qhash = _compute_overlap_hash(q)
+                # Drop only if both: (1) hash was already written by a
                 # previous chunk AND (2) the question lives in our overlap
                 # zone (page_start > logical_end). Without the page check
-                # we would also drop legitimate "first sighting" matches in
-                # weird OCR ordering scenarios.
+                # we would also drop legitimate non-overlap hash collisions
+                # (e.g. user pasted same MCQ twice in one PDF).
                 if (
-                    num is not None
-                    and num in seen_numbers
+                    qhash is not None
+                    and qhash in seen_hashes
                     and page_start > logical_end
                 ):
-                    skipped_numbers.append(num)
+                    num = q.get("number")
+                    if num is not None:
+                        skipped_numbers.append(num)
+                    else:
+                        skipped_numbers.append(-1)
                     continue
                 kept.append(q)
-                if num is not None:
-                    seen_numbers.add(num)
+                if qhash is not None:
+                    seen_hashes.add(qhash)
 
             if skipped_numbers:
                 warnings.append(
@@ -945,18 +1061,29 @@ class ImportPipeline:
                 split_diagnostics["overlap_skipped_numbers"] = sorted(set(skipped_numbers))
             raw_questions = kept
 
-            # Boundary unclosed: last kept question whose page_end is at or
-            # past chunk's logical_end and whose options miss D/E.
+            # Boundary unclosed: P1-2 收紧为"明显被截断的 4 选题"才警告，
+            # 避免对 A/B 双选 / A/C 判断 / 简答题误报。条件：
+            # (1) 末题 page_end 距 chunk logical_end ≤ 1 页（贴合边界）
+            # (2) has_options=True
+            # (3) A/B/C 全部出现但 D/E 都缺 → 像 4 选项被截断
             if raw_questions:
                 last = raw_questions[-1]
                 last_page_end = last.get("page_end") or 0
                 opts = last.get("option_lines") or {}
                 opt_keys = {str(k).upper() for k in opts.keys()}
-                near_boundary = last_page_end >= max(0, logical_end - 1)
-                missing_required = bool(last.get("has_options")) and not (
-                    "D" in opt_keys or "E" in opt_keys
+                near_boundary = abs(last_page_end - logical_end) <= 1
+                looks_truncated = (
+                    "A" in opt_keys
+                    and "B" in opt_keys
+                    and "C" in opt_keys
+                    and "D" not in opt_keys
+                    and "E" not in opt_keys
                 )
-                if near_boundary and missing_required:
+                if (
+                    near_boundary
+                    and bool(last.get("has_options"))
+                    and looks_truncated
+                ):
                     warnings.append(
                         f"chunk_boundary_unclosed: q{last.get('number')} "
                         f"may span next chunk (page_end={last_page_end}, "
@@ -1434,7 +1561,7 @@ class ImportPipeline:
         started_at: str,
         page_start: int | None = None,
         page_end: int | None = None,
-        chunk_seen_numbers: set | None = None,
+        chunk_seen_hashes: set | None = None,
         chunk_logical_end: int | None = None,
     ) -> dict:
         """Execute every stage once for the given (optionally page-restricted) input.
@@ -1442,7 +1569,7 @@ class ImportPipeline:
         This is the legacy run() body extracted verbatim — chunked mode calls
         this once per chunk with page_start/page_end injected.
 
-        P2-3: ``chunk_seen_numbers`` (mutable set across chunks) and
+        P2-3 / P1-3: ``chunk_seen_hashes`` (mutable set across chunks) and
         ``chunk_logical_end`` (this chunk's own last page; pages past it are
         overlap territory) are threaded through ``data`` so ``_run_split`` can
         dedupe overlap-region duplicates and emit the unclosed-boundary
@@ -1481,9 +1608,9 @@ class ImportPipeline:
         # 默认 hash_index=None 会走旧的 difflib fallback。
         if shared.get("hash_index") is not None:
             data["hash_index"] = shared["hash_index"]
-        # P2-3 chunk overlap state — only populated in chunked mode
-        if chunk_seen_numbers is not None:
-            data["_chunk_seen_numbers"] = chunk_seen_numbers
+        # P2-3 / P1-3 chunk overlap state — only populated in chunked mode
+        if chunk_seen_hashes is not None:
+            data["_chunk_seen_hashes"] = chunk_seen_hashes
         if chunk_logical_end is not None:
             data["_chunk_logical_end"] = chunk_logical_end
 
@@ -1589,7 +1716,7 @@ class ImportPipeline:
         shared: dict,
         progress_callback,
         started_at: str,
-        seen_numbers: set,
+        seen_hashes: set,
         hash_index,
     ) -> dict:
         """Run one chunk end-to-end with checkpoint writes + failure isolation.
@@ -1634,7 +1761,7 @@ class ImportPipeline:
                 started_at=started_at,
                 page_start=page_start,
                 page_end=effective_end,
-                chunk_seen_numbers=seen_numbers,
+                chunk_seen_hashes=seen_hashes,
                 chunk_logical_end=logical_end,
             )
             if chunk_result.get("status") != "completed":
@@ -1709,6 +1836,12 @@ class ImportPipeline:
                or stage_status == "failed", record error_message and continue
                to the next chunk — never raise out of this method.
 
+        P0-3: 每个 chunk 在自己的 ``AsyncSession`` 上下文里跑，事务边界 =
+        chunk 边界。整段循环不再共享单个 session，避免 PG
+        ``idle_in_transaction_session_timeout`` 在长 chunked 导入中触发。
+        初始化（create_pipeline_record / create_chunk_records / hash_index
+        load）也分别用临时 session，跑完即释放连接。
+
         Pipeline-level status:
             - "completed" iff all chunks completed AND none recorded errors
             - "paused" otherwise (manual resume via P2-5)
@@ -1720,23 +1853,39 @@ class ImportPipeline:
         chunk_size = _resolve_chunk_size()
         chunk_overlap = _resolve_chunk_overlap()
 
-        # Create parent + chunk records up-front (DB authoritative)
-        await ckpt.create_pipeline_record(
-            db,
-            pipeline_id=self.pipeline_id,
-            source_type=source_type,
-            source_file=source_file or None,
-            total_pages=total_pages,
-            chunk_size=chunk_size,
+        # P0-3: 从调用方传入的 db 推导 sessionmaker，生产路径等价于全局
+        # async_session；测试路径绑到 tmp_path engine，避免污染全局。
+        session_factory = _derive_session_factory(db)
+
+        # P0-3: 把首次实际生效的 watermark patterns 序列化后落库，resume
+        # 时直接复用，避免规则漂移。
+        watermark_snapshot = _serialize_watermark_patterns(
+            shared.get("watermark_patterns") or []
         )
-        await ckpt.create_chunk_records(db, self.pipeline_id, chunk_ranges)
+
+        # Create parent + chunk records up-front (DB authoritative).
+        # 每个初始化步骤用独立临时 session，避免长事务。
+        async with session_factory() as init_db:
+            await ckpt.create_pipeline_record(
+                init_db,
+                pipeline_id=self.pipeline_id,
+                source_type=source_type,
+                source_file=source_file or None,
+                total_pages=total_pages,
+                chunk_size=chunk_size,
+                created_by=self.created_by,
+                source_sha256=self.source_sha256,
+                watermark_snapshot=watermark_snapshot or None,
+            )
+            await ckpt.create_chunk_records(init_db, self.pipeline_id, chunk_ranges)
 
         # P2-4: chunked 路径只构造一次 hash 索引，整个 pipeline 共用。失败
         # 不阻断主流程——index_loaded=False 时 similarity_match 退化为
         # subject 全表扫描（旧行为），仅打 warning。
         hash_index: GlobalHashIndex | None = GlobalHashIndex()
         try:
-            await hash_index.load(db)
+            async with session_factory() as init_db:
+                await hash_index.load(init_db)
         except Exception:
             logger.exception("GlobalHashIndex.load failed; chunked similarity match will fallback")
             hash_index = None
@@ -1746,47 +1895,58 @@ class ImportPipeline:
         chunk_results: list[dict] = []
         pipeline_errors: list[str] = []
         any_chunk_failed = False
-        # P2-3: shared across all chunks so dedup sees what siblings already wrote
-        seen_numbers: set[int] = set()
+        # P2-3 / P1-3: shared across all chunks so dedup sees what siblings already wrote
+        seen_hashes: set[str] = set()
 
-        for chunk_index, (page_start, logical_end) in enumerate(chunk_ranges):
-            is_last_chunk = chunk_index == len(chunk_ranges) - 1
-            outcome = await self._execute_chunk(
-                chunk_index=chunk_index,
-                page_start=page_start,
-                logical_end=logical_end,
-                total_pages=total_pages,
-                is_last_chunk=is_last_chunk,
-                chunk_overlap=chunk_overlap,
-                file_content=file_content,
-                file_path=file_path,
-                source_type=source_type,
-                source_file=source_file,
-                subject=subject,
-                opts=opts,
-                db=db,
-                shared=shared,
-                progress_callback=progress_callback,
-                started_at=started_at,
-                seen_numbers=seen_numbers,
-                hash_index=hash_index,
-            )
-            chunk_results.append(outcome)
-            if outcome["status"] == "failed":
-                any_chunk_failed = True
-                pipeline_errors.append(
-                    f"chunk {chunk_index} (pages {page_start}-{logical_end}) "
-                    f"failed: {outcome['error_message']}"
-                )
+        try:
+            for chunk_index, (page_start, logical_end) in enumerate(chunk_ranges):
+                is_last_chunk = chunk_index == len(chunk_ranges) - 1
+                # P0-3: 每个 chunk 一个独立 session（事务边界 = chunk 边界）。
+                async with session_factory() as chunk_db:
+                    outcome = await self._execute_chunk(
+                        chunk_index=chunk_index,
+                        page_start=page_start,
+                        logical_end=logical_end,
+                        total_pages=total_pages,
+                        is_last_chunk=is_last_chunk,
+                        chunk_overlap=chunk_overlap,
+                        file_content=file_content,
+                        file_path=file_path,
+                        source_type=source_type,
+                        source_file=source_file,
+                        subject=subject,
+                        opts=opts,
+                        db=chunk_db,
+                        shared=shared,
+                        progress_callback=progress_callback,
+                        started_at=started_at,
+                        seen_hashes=seen_hashes,
+                        hash_index=hash_index,
+                    )
+                chunk_results.append(outcome)
+                if outcome["status"] == "failed":
+                    any_chunk_failed = True
+                    pipeline_errors.append(
+                        f"chunk {chunk_index} (pages {page_start}-{logical_end}) "
+                        f"failed: {outcome['error_message']}"
+                    )
+        finally:
+            # P1-1: 清空 hash_index 内部 dict，避免 chunk 异常路径下大字典
+            # （最坏 ~50 万条 question + N 条 import）残留在 GlobalHashIndex
+            # 实例上。低配 2C2G 服务器友好。
+            if hash_index is not None:
+                hash_index._question_index.clear()
+                hash_index._import_index.clear()
 
         overall_status = "paused" if any_chunk_failed else "completed"
-        await ckpt.update_pipeline_status(
-            db,
-            self.pipeline_id,
-            status=overall_status,
-            error_message=pipeline_errors[0] if pipeline_errors else None,
-            finished=True,
-        )
+        async with session_factory() as final_db:
+            await ckpt.update_pipeline_status(
+                final_db,
+                self.pipeline_id,
+                status=overall_status,
+                error_message=pipeline_errors[0] if pipeline_errors else None,
+                finished=True,
+            )
         await ckpt.invalidate_progress_cache(self.pipeline_id)
 
         # Aggregate stats across chunks
@@ -1845,6 +2005,8 @@ async def run_import_pipeline(
     progress_callback=None,
     pipeline_id: str | None = None,
     file_path: str | None = None,
+    created_by: str | None = None,
+    source_sha256: str | None = None,
 ) -> dict:
     """完整的导入流水线入口。
 
@@ -1887,6 +2049,8 @@ async def run_import_pipeline(
 
     pipeline = ImportPipeline(options=opts)
     pipeline.pipeline_id = pipeline_id
+    pipeline.created_by = created_by
+    pipeline.source_sha256 = source_sha256
 
     result = await pipeline.run(
         file_content=file_content,
@@ -1911,6 +2075,8 @@ async def run_pipeline_background(
     subject: str | None = None,
     options: dict | None = None,
     db=None,
+    created_by: str | None = None,
+    source_sha256: str | None = None,
 ) -> None:
     """后台运行流水线，结果写入 Redis + 内存。
 
@@ -1955,6 +2121,8 @@ async def run_pipeline_background(
             db=db,
             progress_callback=_progress,
             pipeline_id=pipeline_id,
+            created_by=created_by,
+            source_sha256=source_sha256,
         )
         result["pipeline_id"] = pipeline_id
         await _set_pipeline_store(pipeline_id, result)
@@ -1970,14 +2138,18 @@ async def run_pipeline_background(
         })
 
 
-async def _load_seen_numbers_for_resume(db, pipeline_id: str) -> set[int]:
-    """Rebuild ``seen_numbers`` from already-imported question rows.
+async def _load_seen_hashes_for_resume(db, pipeline_id: str) -> set[str]:
+    """Rebuild ``seen_hashes`` from already-imported question rows.
 
-    P2-3 keeps a function-level set of question numbers across chunks so the
-    overlap-region dedup never re-imports a number a sibling chunk already
-    wrote. After a process restart that set is gone — without rebuilding it,
-    a resumed chunk could drop legitimate questions whose numbers were
-    written earlier. Best-effort: bad/missing numbers are silently skipped.
+    P1-3: 把"以题号为 key"换成"以 ``question_hash`` 为 key"——这一字段在
+    ``QuestionImport`` 表已存在（review_service 写入时计算），因此 resume
+    路径直接读列就行，不再依赖 ``raw_data["number"]`` 这种易漂移字段。
+
+    P2-3 keeps a function-level set across chunks so the overlap-region dedup
+    never re-imports something a sibling chunk already wrote. After a process
+    restart that set is gone — without rebuilding it, a resumed chunk could
+    drop legitimate questions whose hashes were written earlier. Best-effort:
+    rows missing ``question_hash`` are silently skipped.
     """
     from sqlalchemy import select
 
@@ -1994,22 +2166,16 @@ async def _load_seen_numbers_for_resume(db, pipeline_id: str) -> set[int]:
         .scalar_subquery()
     )
     rows = await db.execute(
-        select(QuestionImport.raw_data).where(
-            QuestionImport.batch_id.in_(chunk_subq)
+        select(QuestionImport.question_hash).where(
+            QuestionImport.batch_id.in_(chunk_subq),
+            QuestionImport.question_hash.isnot(None),
         )
     )
-    nums: set[int] = set()
-    for (raw,) in rows.all():
-        if not isinstance(raw, dict):
-            continue
-        candidate = raw.get("number")
-        if candidate is None:
-            continue
-        try:
-            nums.add(int(candidate))
-        except (TypeError, ValueError):
-            continue
-    return nums
+    hashes: set[str] = set()
+    for (qhash,) in rows.all():
+        if isinstance(qhash, str) and qhash:
+            hashes.add(qhash)
+    return hashes
 
 
 async def resume_pipeline_background(
@@ -2030,7 +2196,7 @@ async def resume_pipeline_background(
         - Loads chunk rows from DB; if no failed/pending chunks remain, marks
           the pipeline ``completed`` and returns immediately.
         - Rebuilds the cross-chunk state (watermark patterns, GlobalHashIndex
-          containing already-completed chunk batches, seen_numbers set) so the
+          containing already-completed chunk batches, seen_hashes set) so the
           replayed chunks behave the same as if they had run alongside their
           successful siblings.
         - Reuses ``_execute_chunk`` so checkpoint writes, error isolation, and
@@ -2038,6 +2204,14 @@ async def resume_pipeline_background(
         - Final pipeline status is ``completed`` iff every replayed chunk
           succeeds AND no chunk row remains failed; otherwise stays ``paused``
           so the user can resume again.
+
+    P0-3:
+        - 每个 chunk 在独立 ``AsyncSession`` 里跑（事务边界 = chunk 边界），
+          避免 PG idle_in_transaction_session_timeout 在长导入中触发。
+        - 优先复用 ``pipeline_row.watermark_snapshot``——若存在则跳过
+          watermark service 的实时加载，避免管理员在 paused 与 resume
+          之间调整规则导致 hash 漂移。NULL（历史 paused pipeline）仍
+          fallback 到旧路径。
     """
     from app.features import pipeline_checkpoint as ckpt
     from app.features.global_hash_index import GlobalHashIndex
@@ -2048,6 +2222,9 @@ async def resume_pipeline_background(
     from sqlalchemy import select
 
     opts = dict(options) if options else {}
+
+    # P0-3: 推导 sessionmaker，后续每个 chunk 用独立 session。
+    session_factory = _derive_session_factory(db)
 
     pipeline_row = (
         await db.execute(
@@ -2092,6 +2269,9 @@ async def resume_pipeline_background(
     completed_batch_ids = [
         c.batch_id for c in all_chunks if c.status == "completed" and c.batch_id
     ]
+    # P0-3: snapshot 字段在 ORM 行里就是 list/dict/None；提早抓住后续不再
+    # 依赖 pipeline_row 的 detached 状态。
+    snapshot = pipeline_row.watermark_snapshot
 
     # Resolve import mode + strategy + watermark patterns the same way
     # ImportPipeline.run() does, so resumed chunks see the same shared context.
@@ -2102,15 +2282,31 @@ async def resume_pipeline_background(
         import_mode = ImportMode.AUTO
     strategy = get_strategy(import_mode)
 
+    # P0-3: 优先用首次导入时的 watermark snapshot；NULL 才回退到实时加载。
     watermark_patterns: list = []
-    try:
-        from app.services.watermark_service import load_rules
-        watermark_patterns = await load_rules(db)
-    except Exception as exc:
-        logger.warning("resume: watermark load_rules failed (%s); using defaults", exc)
+    if snapshot:
+        watermark_patterns = _deserialize_watermark_patterns(snapshot)
+        if not watermark_patterns:
+            logger.warning(
+                "resume: watermark_snapshot present but empty/unparsable for %s; "
+                "falling back to live rules",
+                pipeline_id,
+            )
     if not watermark_patterns:
-        from app.services.watermark_service import get_default_patterns
-        watermark_patterns = get_default_patterns()
+        if not snapshot:
+            logger.warning(
+                "resume: legacy pipeline %s without watermark_snapshot, "
+                "reloading from current rules",
+                pipeline_id,
+            )
+        try:
+            from app.services.watermark_service import load_rules
+            watermark_patterns = await load_rules(db)
+        except Exception as exc:
+            logger.warning("resume: watermark load_rules failed (%s); using defaults", exc)
+        if not watermark_patterns:
+            from app.services.watermark_service import get_default_patterns
+            watermark_patterns = get_default_patterns()
 
     shared: dict = {
         "import_mode": import_mode,
@@ -2123,7 +2319,8 @@ async def resume_pipeline_background(
     # successful siblings.
     hash_index: GlobalHashIndex | None = GlobalHashIndex()
     try:
-        await hash_index.load(db, batch_ids=completed_batch_ids or None)
+        async with session_factory() as init_db:
+            await hash_index.load(init_db, batch_ids=completed_batch_ids or None)
     except Exception:
         logger.exception(
             "resume: GlobalHashIndex.load failed; similarity match will fallback"
@@ -2132,11 +2329,13 @@ async def resume_pipeline_background(
     if hash_index is not None:
         shared["hash_index"] = hash_index
 
-    seen_numbers = await _load_seen_numbers_for_resume(db, pipeline_id)
+    async with session_factory() as init_db:
+        seen_hashes = await _load_seen_hashes_for_resume(init_db, pipeline_id)
 
     # Mark the pipeline running again so status queries reflect the in-progress
     # resume and a concurrent second resume can detect the conflict.
-    await ckpt.update_pipeline_status(db, pipeline_id, status="running")
+    async with session_factory() as init_db:
+        await ckpt.update_pipeline_status(init_db, pipeline_id, status="running")
     await ckpt.invalidate_progress_cache(pipeline_id)
 
     pipeline = ImportPipeline(options=opts)
@@ -2145,44 +2344,53 @@ async def resume_pipeline_background(
 
     chunk_results: list[dict] = []
     any_chunk_failed = False
-    for chunk in pending:
-        outcome = await pipeline._execute_chunk(
-            chunk_index=chunk.chunk_index,
-            page_start=chunk.page_start,
-            logical_end=chunk.page_end,
-            total_pages=total_pages,
-            is_last_chunk=(chunk.chunk_index == max_chunk_index),
-            chunk_overlap=chunk_overlap,
-            file_content=None,
-            file_path=file_path,
-            source_type=pipeline_row.source_type or "pdf",
-            source_file=pipeline_row.source_file or "",
-            subject=subject,
-            opts=opts,
-            db=db,
-            shared=shared,
-            progress_callback=None,
-            started_at=started_at,
-            seen_numbers=seen_numbers,
-            hash_index=hash_index,
-        )
-        chunk_results.append(outcome)
-        if outcome["status"] == "failed":
-            any_chunk_failed = True
+    try:
+        for chunk in pending:
+            # P0-3: 每个 chunk 一个独立 session（事务边界 = chunk 边界）。
+            async with session_factory() as chunk_db:
+                outcome = await pipeline._execute_chunk(
+                    chunk_index=chunk.chunk_index,
+                    page_start=chunk.page_start,
+                    logical_end=chunk.page_end,
+                    total_pages=total_pages,
+                    is_last_chunk=(chunk.chunk_index == max_chunk_index),
+                    chunk_overlap=chunk_overlap,
+                    file_content=None,
+                    file_path=file_path,
+                    source_type=pipeline_row.source_type or "pdf",
+                    source_file=pipeline_row.source_file or "",
+                    subject=subject,
+                    opts=opts,
+                    db=chunk_db,
+                    shared=shared,
+                    progress_callback=None,
+                    started_at=started_at,
+                    seen_hashes=seen_hashes,
+                    hash_index=hash_index,
+                )
+            chunk_results.append(outcome)
+            if outcome["status"] == "failed":
+                any_chunk_failed = True
+    finally:
+        # P1-1: 清空 hash_index 内部 dict，避免 resume 路径异常时大字典残留。
+        if hash_index is not None:
+            hash_index._question_index.clear()
+            hash_index._import_index.clear()
 
     # Recompute overall status from current DB state — chunks not in
     # ``pending`` could still be ``failed`` if a prior resume left them so;
     # also covers the case where an earlier chunk silently regressed (we
     # never overwrite completed chunks here).
-    progress = await ckpt.get_pipeline_progress(db, pipeline_id, use_cache=False)
-    still_failing = (progress and progress.get("failed_chunks", 0) > 0)
-    overall_status = "paused" if (any_chunk_failed or still_failing) else "completed"
-    await ckpt.update_pipeline_status(
-        db,
-        pipeline_id,
-        status=overall_status,
-        finished=(overall_status == "completed"),
-    )
+    async with session_factory() as final_db:
+        progress = await ckpt.get_pipeline_progress(final_db, pipeline_id, use_cache=False)
+        still_failing = (progress and progress.get("failed_chunks", 0) > 0)
+        overall_status = "paused" if (any_chunk_failed or still_failing) else "completed"
+        await ckpt.update_pipeline_status(
+            final_db,
+            pipeline_id,
+            status=overall_status,
+            finished=(overall_status == "completed"),
+        )
     await ckpt.invalidate_progress_cache(pipeline_id)
 
 
@@ -2240,6 +2448,14 @@ async def get_pipeline_status(pipeline_id: str, db=None) -> dict | None:
     P2-6: 当 ``db`` 注入时，从 import_pipelines / import_pipeline_chunks 拉
     chunk 进度并合并到 ``chunk_progress`` 字段。db=None 或无 chunk 记录时省
     略该字段，向后兼容图片 / Excel / 单 pass 等无 chunk 场景。
+
+    P2-resume-store: ``resume_pipeline_background`` 只更新 DB 的
+    ``import_pipelines.status``，不回写 ``_pipeline_store`` 主 store——首次
+    导入结束时写入的 ``status="paused"`` 在内存里会一直停在这里，导致 resume
+    途中（running）和 resume 完成（completed）期间前端轮询拿到的还是 paused。
+    chunked 路径下 ``chunk_progress.status`` 来自 DB 权威源，因此当 chunk
+    进度可用时用它覆盖顶层 ``status``，不为 chunked 路径之外的场景（image /
+    excel / 单 pass）引入新行为。
     """
     data = await _get_pipeline_store(pipeline_id)
     if data is None:
@@ -2262,6 +2478,9 @@ async def get_pipeline_status(pipeline_id: str, db=None) -> dict | None:
             )
             if progress is not None:
                 data["chunk_progress"] = progress
+                db_status = progress.get("status")
+                if db_status:
+                    data["status"] = db_status
         except Exception:
             logger.debug(
                 "fetch chunk_progress for %s failed", pipeline_id, exc_info=True
