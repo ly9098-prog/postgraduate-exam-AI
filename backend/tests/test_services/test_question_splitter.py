@@ -550,3 +550,91 @@ class TestSectionTypeAnnotation:
         }
         result = split_questions(blocks, structure)
         assert result[0]["section_type"] is None
+
+
+# ---------------------------------------------------------------
+# P1-1: book 模式下"软 prose"风险标
+# ---------------------------------------------------------------
+
+class TestBookSoftProseRiskFlag:
+    """split_questions(import_mode="book") 给"疑似教材正文"打
+    risk_flags=["book_pdf_prose_like"]，比 pipeline 的硬过滤宽松：
+    保留进审核队列，让人工最终裁决。值域见
+    prompts/tasks/ocr_book_pdf_non_question_filter_plan.md §11.3。"""
+
+    def test_book_mode_flags_prose_like_question_without_options(self):
+        # 60+ 字符 + prose marker + 无选项 + 无题问信号 → 命中 soft prose
+        text = (
+            "1. 定义：线性表是具有相同数据类型的 n 个数据元素的有限序列，"
+            "顺序存储和链式存储是其常见实现方式，本节介绍前者和后者。"
+        )
+        result = split_questions(_make_blocks(text), import_mode="book")
+
+        assert len(result) == 1
+        assert "book_pdf_prose_like" in (result[0].get("risk_flags") or [])
+        assert result[0]["confidence"] == 0.4
+
+    def test_book_mode_does_not_flag_choice_question(self):
+        text = "\n".join([
+            "1. 下列说法中正确的是？",
+            "A. 选项一",
+            "B. 选项二",
+            "C. 选项三",
+            "D. 选项四",
+        ])
+        result = split_questions(_make_blocks(text), import_mode="book")
+
+        assert len(result) == 1
+        assert "book_pdf_prose_like" not in (result[0].get("risk_flags") or [])
+
+    def test_book_mode_does_not_flag_subjective_with_question_signal(self):
+        # 含"试述/为什么/简述"题问信号 → 不打 flag，即使含 prose marker
+        text = (
+            "1. 简述线性表顺序存储与链式存储在插入删除效率上的差异，"
+            "并说明各自的适用场景。需要包含定义和性质分析。"
+        )
+        result = split_questions(_make_blocks(text), import_mode="book")
+
+        assert len(result) == 1
+        assert "book_pdf_prose_like" not in (result[0].get("risk_flags") or [])
+
+    def test_short_prose_below_threshold_not_flagged(self):
+        text = "1. 定义：线性表。"  # < 60 字符
+        result = split_questions(_make_blocks(text), import_mode="book")
+
+        if result:  # 可能因长度过短被切分逻辑过滤
+            assert "book_pdf_prose_like" not in (result[0].get("risk_flags") or [])
+
+    def test_exam_mode_does_not_flag_prose(self):
+        """exam / image / None 模式不应触发软 prose 标，避免污染其它链路。"""
+        text = (
+            "1. 定义：线性表是具有相同数据类型的 n 个数据元素的有限序列，"
+            "顺序存储和链式存储是其常见实现方式，本节介绍前者。"
+        )
+        for mode in (None, "exam", "image", "txt"):
+            result = split_questions(_make_blocks(text), import_mode=mode)
+            assert len(result) == 1, f"mode={mode} 没切出题目"
+            assert "book_pdf_prose_like" not in (
+                result[0].get("risk_flags") or []
+            ), f"mode={mode} 不应触发软 prose 标"
+
+    def test_book_mode_no_marker_no_flag(self):
+        # 长但无 prose marker → 不标
+        text = "1. 计算 1+1 等于多少？" + "A" * 80
+        result = split_questions(_make_blocks(text), import_mode="book")
+
+        assert len(result) == 1
+        assert "book_pdf_prose_like" not in (result[0].get("risk_flags") or [])
+
+    def test_book_mode_preserves_existing_risk_flags(self):
+        """未来若 splitter 自身或外部传入已有 risk_flags，软 prose 标应合并去重。"""
+        text = (
+            "1. 性质：顺序存储结构可以实现随机存取。本章讨论数据结构的基本特征。"
+            "知识点 1、知识点 2 分别说明逻辑结构与存储结构的关系。"
+        )
+        result = split_questions(_make_blocks(text), import_mode="book")
+
+        assert len(result) == 1
+        flags = result[0].get("risk_flags") or []
+        # 至少 book_pdf_prose_like，且不重复
+        assert flags.count("book_pdf_prose_like") == 1

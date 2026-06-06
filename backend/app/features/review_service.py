@@ -215,6 +215,10 @@ async def submit_to_review(
                     "knowledge_points": q.get("knowledge_points", []),
                     "difficulty": q.get("difficulty", 3),
                     "stem_hash": q.get("stem_hash", ""),
+                    # P1-2: 透传上游 stage 写入的风险标（值域见
+                    # prompts/tasks/ocr_book_pdf_non_question_filter_plan.md §11.3）。
+                    # 前端 import-batch 页据此渲染徽章；空列表写 None 减少 JSON 体积。
+                    "risk_flags": list(dict.fromkeys(q.get("risk_flags") or [])) or None,
                 },
             )
             db.add(qi)

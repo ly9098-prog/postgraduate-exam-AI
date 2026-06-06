@@ -270,6 +270,48 @@ class TestSubmitToReview:
 
         assert result["items"][0]["stem_preview"] == "A" * 50 + "..."
 
+    def test_risk_flags_written_to_ai_metadata(self):
+        """P1-2: 上游 stage 写入的 risk_flags 透传到 ai_metadata.risk_flags，
+        前端审核页据此打风险徽章。值域见
+        prompts/tasks/ocr_book_pdf_non_question_filter_plan.md §11.3。"""
+        db, added = self._setup()
+        q = _make_question({
+            "risk_flags": ["no_exercise_regions", "low_confidence"],
+        })
+
+        asyncio.run(submit_to_review(db, [q]))
+
+        assert added[0].ai_metadata["risk_flags"] == [
+            "no_exercise_regions", "low_confidence",
+        ]
+
+    def test_empty_risk_flags_stored_as_none(self):
+        """无风险时 ai_metadata.risk_flags=None，减少 JSON 体积。"""
+        db, added = self._setup()
+        q = _make_question()  # 没传 risk_flags
+
+        asyncio.run(submit_to_review(db, [q]))
+
+        assert added[0].ai_metadata["risk_flags"] is None
+
+    def test_duplicate_risk_flags_deduplicated_preserving_order(self):
+        """同一 flag 被多个 stage 重复写入时去重并保序。"""
+        db, added = self._setup()
+        q = _make_question({
+            "risk_flags": [
+                "low_confidence",
+                "no_exercise_regions",
+                "low_confidence",  # 重复
+                "book_pdf_prose_like",
+            ],
+        })
+
+        asyncio.run(submit_to_review(db, [q]))
+
+        assert added[0].ai_metadata["risk_flags"] == [
+            "low_confidence", "no_exercise_regions", "book_pdf_prose_like",
+        ]
+
     def test_p1b_batched_commit_and_expunge(self):
         """P1-B: 大批量题目应分批 commit + 精确 expunge，避免 ORM 对象
         在 session identity map 里累积导致 raw_data 长期驻留。
