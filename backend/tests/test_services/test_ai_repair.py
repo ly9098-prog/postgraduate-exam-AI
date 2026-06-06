@@ -7,6 +7,7 @@ import pytest
 from app.features.ai_repair import (
     _check_token_limit,
     _estimate_tokens,
+    _looks_like_non_question_text,
     _normalize_ai_options,
     _parse_ai_response,
     _record_token_usage,
@@ -176,6 +177,40 @@ class TestShouldRepair:
         q = {"confidence_score": 0.6, "is_valid": True, "question_type": "subjective", "options": [], "answer": "text", "stem": "long enough stem"}
         do, _ = _should_repair(q, 0.6)
         assert not do  # exactly at threshold, not below
+
+    def test_non_question_like_text_skipped(self):
+        q = {
+            "confidence_score": 0.2,
+            "is_valid": False,
+            "question_type": "subjective",
+            "options": [],
+            "answer": "",
+            "stem": "定义：线性表是具有相同数据类型的数据元素的有限序列。",
+            "raw_text": "定义：线性表是具有相同数据类型的数据元素的有限序列。\n定理：顺序存储结构可以实现随机存取。证明如下，因此可得该结构适合按下标访问。知识点：存储结构与逻辑结构不同。性质：线性表中的元素存在前驱和后继关系。推论：不同存储结构会影响插入删除操作的时间复杂度。注意：教材正文通常用于解释概念而不是提出问题。",
+        }
+
+        do, reason = _should_repair(q, 0.6)
+
+        assert _looks_like_non_question_text(q)
+        assert not do
+        assert reason == "non_question_like"
+
+    def test_question_like_long_text_still_repaired(self):
+        q = {
+            "confidence_score": 0.2,
+            "is_valid": False,
+            "question_type": "single_choice",
+            "options": [],
+            "answer": "",
+            "stem": "",
+            "raw_text": "1. 下列关于线性表的说法，正确的是哪一项？\nA. 线性表只能顺序存储\nB. 线性表可以链式存储\nC. 线性表不能插入元素\nD. 线性表没有逻辑结构\n解析：定义、性质、知识点如下。",
+        }
+
+        do, reason = _should_repair(q, 0.6)
+
+        assert not _looks_like_non_question_text(q)
+        assert do
+        assert reason == "low_confidence"
 
 
 # ============================================================

@@ -362,6 +362,38 @@ class TestImportPipelineSplit:
             "confidence": 0.2,
         }]
 
+    def test_book_mode_skips_unsplit_text_fallback(self):
+        pipeline = ImportPipeline()
+        normalized_blocks = [
+            {"page": 2, "block_index": 0, "normalized_text": "定义：线性表是具有相同数据类型的 n 个数据元素的有限序列。"},
+            {"page": 3, "block_index": 1, "normalized_text": "定理：顺序存储结构可以实现随机存取。证明如下。"},
+        ]
+
+        result = pipeline._run_split(normalized_blocks, import_mode="book", source_type="pdf")
+
+        assert result["split_count"] == 0
+        assert result["raw_questions"] == []
+        assert result["split_diagnostics"]["fallback_created"] is False
+        assert result["split_diagnostics"]["failure_reason"] == "book_text_present_but_no_question_boundary"
+        assert result["split_diagnostics"]["non_question_like_skipped"] is True
+        assert result["warnings"] == [
+            "no questions found in book import; skipped low-confidence fallback review item"
+        ]
+
+    def test_book_mode_non_pdf_still_creates_unsplit_text_fallback(self):
+        pipeline = ImportPipeline()
+        normalized_blocks = [
+            {"page": 1, "block_index": 0, "normalized_text": "这是一道没有题号但需要人工审核的单题。"},
+        ]
+
+        result = pipeline._run_split(normalized_blocks, import_mode="book", source_type="txt")
+
+        assert result["split_count"] == 1
+        assert result["split_diagnostics"]["fallback_created"] is True
+        assert result["split_diagnostics"]["failure_reason"] == "text_present_but_no_question_boundary"
+        assert result["warnings"] == ["no questions found in document; created low-confidence review item"]
+        assert result["raw_questions"][0]["raw_question_text"] == "这是一道没有题号但需要人工审核的单题。"
+
     def test_numbered_questions_do_not_use_fallback(self):
         pipeline = ImportPipeline()
         normalized_blocks = [
@@ -584,6 +616,43 @@ class TestImportPipelineRun:
         assert stage_names == ["extract", "normalize_text", "ocr_correction", "analyze_structure", "classify_pages", "split", "match", "normalize_schema", "batch_validation", "batch_dedup", "repair", "ai_validation", "similarity_match", "review"]
         for s in result["stages"].values():
             assert s["status"] == "completed"
+
+    def test_book_pdf_single_pass_unsplit_text_does_not_reach_review(self):
+        pipeline = ImportPipeline(options={"enable_ai_repair": False, "enable_similarity_match": False})
+        normalized_blocks = [
+            {"page": 1, "block_index": 0, "raw_text": "定义：数据结构用于组织数据。", "normalized_text": "定义：数据结构用于组织数据。"},
+            {"page": 2, "block_index": 1, "raw_text": "定理：顺序表支持随机访问。证明如下。", "normalized_text": "定理：顺序表支持随机访问。证明如下。"},
+        ]
+        pipeline._run_extract = MagicMock(return_value={"raw_blocks": _make_raw_blocks(2), "extracted": 2})
+        pipeline._run_normalize_text = MagicMock(return_value={"normalized_blocks": normalized_blocks})
+        async def _ocr_correction(**_kw):
+            return {"normalized_blocks": normalized_blocks}
+
+        pipeline._run_ocr_correction = _ocr_correction
+        pipeline._run_analyze_structure = MagicMock(return_value={"structure": {}})
+        pipeline._run_classify_pages = MagicMock(return_value={"normalized_blocks": normalized_blocks})
+        review_calls = []
+
+        async def _review(**_kw):
+            review_calls.append(_kw)
+            return {"batch_id": "", "written": 0, "skipped": 0, "total": 0}
+
+        pipeline._run_review = _review
+        pipeline._build_pipeline()
+
+        result = asyncio.run(pipeline.run(
+            file_content=b"fake pdf",
+            source_type="pdf",
+            source_file="book.pdf",
+            options={"import_mode": "book", "enable_ai_repair": False, "enable_similarity_match": False},
+        ))
+
+        assert result["status"] == "completed"
+        assert result["stats"]["split"] == 0
+        assert result["stats"]["to_review"] == 0
+        assert result["diagnostics"]["split"]["failure_reason"] == "book_text_present_but_no_question_boundary"
+        assert len(review_calls) == 1
+        assert review_calls[0]["questions"] == []
 
     def test_ai_repair_disabled(self):
         pipeline = self._make_pipeline()
@@ -1124,6 +1193,21 @@ class TestRepairStage:
         assert "unrepaired" in result["warnings"][0]
         assert len(result["questions"]) == 1
         assert result["questions"][0]["confidence_score"] == 0.3  # original preserved
+    def test_warnings_for_non_question_like_skipped_reason(self):
+        questions = _make_questions(1)
+        questions[0]["confidence_score"] = 0.3
+
+        pipeline = ImportPipeline()
+        with patch("app.features.pipeline_orchestrator.repair_questions", new_callable=AsyncMock, return_value={
+            "repaired": [],
+            "unrepaired": [],
+            "skipped": [{"question_index": 0, "reason": "non_question_like", "confidence": 0.3}],
+            "stats": {"total_candidates": 1, "repaired": 0, "unrepaired": 0, "skipped": 1, "total_tokens": 0},
+        }):
+            result = asyncio.run(pipeline._run_repair(questions=questions, options={}))
+
+        assert result["warnings"] == ["1 questions skipped repair (non_question_like=1)"]
+        assert len(result["questions"]) == 1
 
 
 # ---------------------------------------------------------------------------
