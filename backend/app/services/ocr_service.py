@@ -31,6 +31,8 @@ class OcrPageResult:
     page_index: int
     text: str
     boxes: list[dict] | None = field(default=None)
+    failed: bool = False
+    error: str | None = None
 
 
 @dataclass
@@ -440,8 +442,8 @@ def _ocr_one_page(page_png: bytes, page_index: int) -> tuple[int, str]:
 
 def _ocr_one_page_with_boxes(
     page_png: bytes, page_index: int, skip_rotation: bool = False,
-) -> tuple[int, str, list[dict]]:
-    """对单页图片执行 OCR，返回 (page_index, text, boxes)。失败返回空。"""
+) -> OcrPageResult:
+    """对单页图片执行 OCR，返回含文本、检测框与失败状态的结果。"""
     try:
         ocr = _get_ocr()
         if skip_rotation:
@@ -456,13 +458,13 @@ def _ocr_one_page_with_boxes(
             candidate.image_size[1],
         )
         if not ordered:
-            return page_index, "", []
+            return OcrPageResult(page_index=page_index, text="", boxes=[])
         lines = [line["text"] for line in ordered if line["text"].strip()]
         boxes = [{"bbox": line["bbox"], "conf": line["conf"]} for line in ordered]
-        return page_index, "\n".join(lines), boxes
+        return OcrPageResult(page_index=page_index, text="\n".join(lines), boxes=boxes)
     except Exception as e:
         logger.warning("OCR（含框）第 %d 页失败：%s", page_index, e)
-        return page_index, "", []
+        return OcrPageResult(page_index=page_index, text="", boxes=[], failed=True, error=str(e))
 
 
 def ocr_image(image_bytes: bytes) -> str:
@@ -526,11 +528,17 @@ def ocr_pages_with_boxes(
         for future in as_completed(futures):
             page_idx = futures[future]
             try:
-                idx, text, boxes = future.result()
-                results[idx] = OcrPageResult(page_index=idx, text=text, boxes=boxes)
+                result = future.result()
+                results[result.page_index] = result
             except Exception as e:
                 logger.warning("OCR 第 %d 页异常，跳过：%s", page_idx, e)
-                results[page_idx] = OcrPageResult(page_index=page_idx, text="", boxes=[])
+                results[page_idx] = OcrPageResult(
+                    page_index=page_idx,
+                    text="",
+                    boxes=[],
+                    failed=True,
+                    error=str(e),
+                )
 
     return results
 
