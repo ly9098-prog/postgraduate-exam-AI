@@ -380,6 +380,62 @@ class TestImportPipelineSplit:
             "no questions found in book import; skipped low-confidence fallback review item"
         ]
 
+    def test_book_mode_skips_numbered_prose_after_split(self):
+        pipeline = ImportPipeline()
+        prose = "\n".join([
+            "1. 定义：线性表是具有相同数据类型的数据元素的有限序列。",
+            "性质：顺序存储结构可以实现随机存取。",
+            "证明如下：由于每个元素占用相同存储空间，因此可得任意元素地址。",
+            "知识点：存储结构与逻辑结构不同，教材正文通常用于解释概念。",
+            "2. 定理：链式存储结构不要求逻辑上相邻的元素物理位置也相邻。",
+            "推论：插入和删除操作只需要修改指针。",
+            "注意：本节内容主要说明数据结构的基本概念和算法性质。",
+            "例如：单链表通过指针域表示元素之间的逻辑关系。",
+            "综上，教材正文的编号段落用于说明概念而不是提出待解问题。",
+        ])
+        normalized_blocks = [{"page": 245, "block_index": 0, "normalized_text": prose}]
+
+        result = pipeline._run_split(normalized_blocks, import_mode="book", source_type="pdf")
+
+        assert result["split_count"] == 0
+        assert result["raw_questions"] == []
+        assert result["split_diagnostics"]["book_pdf_prose_skipped"] == 2
+        assert result["split_diagnostics"]["failure_reason"] == "book_text_present_but_no_question_boundary"
+        assert "book_pdf_prose_skipped: 2" in result["warnings"]
+
+    def test_book_mode_keeps_question_like_long_split(self):
+        pipeline = ImportPipeline()
+        text = "\n".join([
+            "1. 下列关于线性表的说法，正确的是哪一项？",
+            "A. 线性表只能顺序存储",
+            "B. 线性表可以链式存储",
+            "C. 线性表不能插入元素",
+            "D. 线性表没有逻辑结构",
+            "解析：定义、性质、知识点如下，线性表既可以顺序存储也可以链式存储。",
+        ])
+        normalized_blocks = [{"page": 245, "block_index": 0, "normalized_text": text}]
+
+        result = pipeline._run_split(normalized_blocks, import_mode="book", source_type="pdf")
+
+        assert result["split_count"] == 1
+        assert result["raw_questions"][0]["has_options"] is True
+        assert "book_pdf_prose_skipped" not in result["split_diagnostics"]
+
+    def test_book_mode_keeps_long_subjective_question_without_options(self):
+        pipeline = ImportPipeline()
+        text = "\n".join([
+            "1. 简述顺序表和链表在存储结构、插入删除操作以及查找效率上的主要区别。",
+            "要求结合线性表的基本概念进行说明，并分别指出两种结构在实际算法设计中的适用场景。",
+            "为什么顺序表支持随机存取，而链表在插入和删除时通常不需要移动大量元素？",
+        ])
+        normalized_blocks = [{"page": 245, "block_index": 0, "normalized_text": text}]
+
+        result = pipeline._run_split(normalized_blocks, import_mode="book", source_type="pdf")
+
+        assert result["split_count"] == 1
+        assert result["raw_questions"][0]["has_options"] is False
+        assert "book_pdf_prose_skipped" not in result["split_diagnostics"]
+
     def test_book_mode_non_pdf_still_creates_unsplit_text_fallback(self):
         pipeline = ImportPipeline()
         normalized_blocks = [
