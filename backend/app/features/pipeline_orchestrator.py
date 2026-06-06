@@ -77,6 +77,18 @@ def _count_risk_flags(questions: list[dict]) -> dict[str, int]:
     return counts
 
 
+def _build_raw_questions_preview(raw_questions: list[dict]) -> list[dict]:
+    preview: list[dict] = []
+    for question in raw_questions[:20]:
+        item = dict(question)
+        raw_text = item.get("raw_question_text")
+        if isinstance(raw_text, str) and len(raw_text) > 300:
+            item["raw_question_text"] = raw_text[:300]
+            item["raw_question_text_truncated"] = True
+        preview.append(item)
+    return preview
+
+
 # ---------------------------------------------------------------------------
 # in-memory pipeline state store
 # ---------------------------------------------------------------------------
@@ -273,7 +285,7 @@ def _ocr_scanned_pdf(
 
     from app.core.config import settings
     from app.core.ocr_profile import get_ocr_profile
-    from app.services.ocr_service import clean_ocr_text, ocr_pages_with_boxes
+    from app.services.ocr_service import clean_ocr_text, ocr_pages, ocr_pages_with_boxes
 
     profile = get_ocr_profile()
     max_pages = settings.MAX_OCR_PAGES
@@ -321,21 +333,50 @@ def _ocr_scanned_pdf(
                 batch_images.append((page_idx + 1, png_bytes))
 
             results = ocr_pages_with_boxes(batch_images, skip_rotation=True)
+            batch_image_map = {idx: png for idx, png in batch_images}
+            failed_images = [
+                (idx, batch_image_map[idx])
+                for idx, result in results.items()
+                if result.failed and idx in batch_image_map
+            ]
+            fallback_results = ocr_pages(failed_images) if failed_images else {}
 
             del batch_images
             gc.collect()
 
             for page_idx in sorted(results.keys()):
-                text = clean_ocr_text(results[page_idx].text)
+                result = results[page_idx]
+                pw, ph = page_dimensions[page_idx]
+                if result.failed:
+                    text = clean_ocr_text(fallback_results.get(page_idx, ""))
+                    if text.strip():
+                        blocks.append({
+                            "page": page_idx,
+                            "page_index": page_idx,
+                            "block_index": len(blocks),
+                            "text": text,
+                            "boxes": [],
+                            "page_width": pw,
+                            "page_height": ph,
+                            "source": "ocr_text_fallback",
+                            "has_boxes": False,
+                            "_ocr_boxes_failed": True,
+                        })
+                    continue
+
+                text = clean_ocr_text(result.text)
                 if text.strip():
-                    pw, ph = page_dimensions[page_idx]
+                    boxes = result.boxes or []
                     blocks.append({
                         "page": page_idx,
+                        "page_index": page_idx,
                         "block_index": len(blocks),
                         "text": text,
-                        "boxes": results[page_idx].boxes,
+                        "boxes": boxes,
                         "page_width": pw,
                         "page_height": ph,
+                        "source": "ocr_boxes",
+                        "has_boxes": bool(boxes),
                     })
 
             logger.info(
@@ -572,6 +613,8 @@ def _build_diagnostics(data: dict) -> dict:
         "exercise_regions_missing": bool(data.get("exercise_regions_missing")),
         "structure": data.get("structure", {}),
         "page_classifications": data.get("page_classifications", []),
+        "ocr_boxes_failed_pages": data.get("ocr_boxes_failed_pages", []),
+        "ocr_text_fallback_pages": data.get("ocr_text_fallback_pages", []),
         "ocr_correction": data.get("ocr_correction_diagnostics", {}),
         "split": data.get("split_diagnostics", {}),
         "risk_flag_counts": data.get("risk_flag_counts", {}),
@@ -909,6 +952,16 @@ class ImportPipeline:
             "extracted": len(raw_blocks),
             "exercise_regions": exercise_regions_result,
             "exercise_regions_missing": exercise_regions_missing,
+            "ocr_boxes_failed_pages": sorted({
+                int(b.get("page") or b.get("page_index") or 0)
+                for b in raw_blocks
+                if b.get("_ocr_boxes_failed") and (b.get("page") or b.get("page_index"))
+            }),
+            "ocr_text_fallback_pages": sorted({
+                int(b.get("page") or b.get("page_index") or 0)
+                for b in raw_blocks
+                if b.get("source") == "ocr_text_fallback" and (b.get("page") or b.get("page_index"))
+            }),
         }
 
     def _run_wangdao_preprocess(self, raw_blocks: list[dict], **_kw) -> dict:
@@ -1106,7 +1159,7 @@ class ImportPipeline:
                 if "book_pdf_prose_like" in (q.get("risk_flags") or [])
             ),
             "layout_filter": layout_filter_diagnostics,
-            "raw_questions_preview": raw_questions[:20],
+            "raw_questions_preview": _build_raw_questions_preview(raw_questions),
             "failure_reason": None,
         }
 
@@ -1122,9 +1175,21 @@ class ImportPipeline:
                 return
             kept_questions = []
             prose_skipped = 0
+            prose_preview: list[dict] = []
             for question in raw_questions:
                 if _looks_like_book_pdf_prose_candidate(question):
                     prose_skipped += 1
+                    if len(prose_preview) < 20:
+                        preview_text = re.sub(
+                            r"\s+",
+                            " ",
+                            str(question.get("raw_question_text") or "").strip(),
+                        )[:80]
+                        prose_preview.append({
+                            "page": question.get("page_start"),
+                            "number": question.get("number"),
+                            "text": preview_text,
+                        })
                     continue
                 kept_questions.append(question)
             if prose_skipped:
@@ -1133,9 +1198,45 @@ class ImportPipeline:
                 split_diagnostics["book_pdf_prose_skipped"] = (
                     split_diagnostics.get("book_pdf_prose_skipped", 0) + prose_skipped
                 )
+                split_diagnostics["prose_skipped_count"] = (
+                    split_diagnostics.get("prose_skipped_count", 0) + prose_skipped
+                )
+                split_diagnostics.setdefault("prose_skipped_preview", []).extend(prose_preview)
                 split_diagnostics["raw_question_count_after_prose_filter"] = len(raw_questions)
 
+        def _record_book_pdf_prose_from_blocks() -> None:
+            if (
+                raw_questions
+                or not _is_book_import_mode(_kw.get("import_mode"))
+                or str(_kw.get("source_type") or "").lower() != "pdf"
+            ):
+                return
+            previews: list[dict] = []
+            for block in text_blocks:
+                text = str(block.get("normalized_text") or "").strip()
+                first_line = text.split("\n", 1)[0].strip()
+                match = re.match(r"^(\d+)\s*[.．、]\s*", first_line)
+                if not match:
+                    continue
+                if _BOOK_PDF_QUESTION_SIGNAL_RE.search(text) or re.search(r"(?:^|\n)\s*[A-D]\s*[.．、:：)）]", text):
+                    continue
+                marker_count = len(_BOOK_PDF_PROSE_MARKER_RE.findall(text))
+                sentence_count = len(_BOOK_PDF_SENTENCE_END_RE.findall(text))
+                if marker_count < 2 or sentence_count < 2:
+                    continue
+                previews.append({
+                    "page": block.get("page"),
+                    "number": int(match.group(1)),
+                    "text": re.sub(r"\s+", " ", text)[:80],
+                })
+                if len(previews) >= 20:
+                    break
+            if previews:
+                split_diagnostics["prose_skipped_count"] = len(previews)
+                split_diagnostics["prose_skipped_preview"] = previews
+
         _filter_book_pdf_prose()
+        _record_book_pdf_prose_from_blocks()
 
         if not raw_questions:
             if text_blocks:

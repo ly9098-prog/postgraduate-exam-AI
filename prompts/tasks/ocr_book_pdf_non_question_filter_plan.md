@@ -462,3 +462,247 @@ PYTHONPATH=backend pytest backend/tests/test_exercise_region_detector.py -v
 - 大规模重构 `page_classifier.py` / `structure_analyzer.py`。
 - 取消 `question_imports` 人工确认流程。
 - 小程序真机 UI 验证（本轮 P2 未改前端）。
+
+---
+
+## 12. Wangdao 408 PDF 245-280 页 P0 追加修复计划（2026-06-06）
+
+### 12.1 目标与范围
+
+本节同步 `prompts/tasks/wangdao_408_pages_245_280_ocr_fix_plan.md` 的 P0 实施计划，仅覆盖王道 408 PDF 第 245-280 页相关的最小修复，不包含 P1 layout filter 增强和真实 PDF live OCR eval 常规 CI 化。
+
+目标：
+
+- 减少 `2.快重传和快恢复`、TCP 拥塞控制说明等教材正文被识别为正常题目；
+- 恢复 TCP 选择题 `01-12`、统考真题选择题 `43-45` 的候选生成；
+- OCR 含框识别单页失败时不再静默丢失整页文本；
+- P0 修复必须有可重复 synthetic/golden 测试和最小 diagnostics 支撑验收。
+
+边界：
+
+- 不引入新的 OCR / 版面模型；
+- 不大规模重构 `page_classifier.py` / `structure_analyzer.py`；
+- 不取消 `question_imports` + 人工确认流程；
+- 不依赖 AI 判断正文或题目；
+- 不把 live OCR 不稳定测试设为常规 CI 必过项；
+- 不把 diagnostics 或整页 OCR 原文写入单题结构、`question_imports.raw_data` 或 `question_imports.ai_metadata`。
+
+### 12.2 P0-0：建立 synthetic/golden 回归样本
+
+**位置**：
+
+- `backend/tests/test_services/test_question_splitter.py`
+- `backend/tests/test_services/test_pipeline_orchestrator.py`
+- 可选：`backend/tests/ocr_eval/eval_wangdao.py`，但不作为常规 CI 必过 live OCR 项。
+
+**必须覆盖的样本结构**：
+
+1. 教材正文标题与解释性正文：
+
+```text
+2.快重传和快恢复
+采用快重传算法可以让发送方尽早知道个别报文段的丢失...
+```
+
+期望：book/content 场景下不作为正常题目进入候选。
+
+2. 普通 TCP 连续选择题：
+
+```text
+01. 下列关于 TCP 协议的说法，正确的是
+A. ...
+B. ...
+C. ...
+D. ...
+
+02. TCP 拥塞控制中，下列说法正确的是
+A. ...
+B. ...
+C. ...
+D. ...
+```
+
+期望：`01`、`02` 正常生成候选，保留 A/B/C/D 选项。
+
+3. 统考真题连续选择题：
+
+```text
+43. 【2009 统考真题】下列关于 TCP 拥塞窗口的说法，正确的是
+A. ...
+B. ...
+C. ...
+D. ...
+
+44. 【2010 统考真题】...
+A. ...
+B. ...
+C. ...
+D. ...
+
+45. 【2011 统考真题】...
+A. ...
+B. ...
+C. ...
+D. ...
+```
+
+期望：`43`、`44`、`45` 正常生成候选。
+
+**关键断言**：
+
+- `2.快重传和快恢复` 不生成正常题；
+- `01`、`02`、`43`、`44`、`45` 均能生成候选；
+- `协议`、`窗口`、`拥塞`、`报文段`、`快重传`、`快恢复` 等领域词不能单独触发过滤；
+- exam / image / text-like 路径不受 book/content 正文编号规则影响。
+
+### 12.3 P0-1：OCR 含框失败页纯文本兜底
+
+**位置**：
+
+- `backend/app/services/ocr_service.py`
+- `backend/app/features/pipeline_orchestrator.py::_ocr_scanned_pdf`
+
+**实现要求**：
+
+1. 在 `OcrPageResult` 上增加兼容失败标记，例如：
+   - `failed: bool = False`
+   - `error: str | None = None`
+2. `ocr_pages_with_boxes()` 必须区分：
+   - OCR 含框真实异常：`failed=True`；
+   - 空白页或识别不到文字：`failed=False` 且 text 为空。
+3. `_ocr_scanned_pdf()` 对 `failed=True` 的页执行普通 OCR / 纯文本 OCR fallback。
+4. 每页最多追加一个 block：
+   - boxes 成功且有文本：`source="ocr_boxes"`、`has_boxes=bool(boxes)`；
+   - boxes 失败且 fallback 有文本：`source="ocr_text_fallback"`、`has_boxes=False`、`boxes=[]`；
+   - boxes 未失败但无文本：按空白页处理，不触发 fallback。
+5. fallback block 必须保留：
+   - `page` / `page_index`
+   - `block_index`
+   - `text`
+   - `source="ocr_text_fallback"`
+   - `has_boxes=False`
+   - `boxes=[]`
+6. 同一次 OCR 收集内按 page 去重并保持页码顺序，避免同页同时追加 boxes 空块和 fallback 块。
+7. 不跨 chunk 去重，避免破坏 chunk overlap 的题目边界处理。
+
+**diagnostics 要求**：
+
+- `ocr_boxes_failed_pages: [...]`
+- `ocr_text_fallback_pages: [...]`
+
+preview 或 diagnostics 不记录整页 OCR 原文。
+
+### 12.4 P0-2：收紧 book/content 模式正文编号误判
+
+**位置**：
+
+- `backend/app/features/question_splitter.py`
+
+**实现要求**：
+
+仅在 `import_mode == "book"` 且当前页面属于 `structure.content_pages` 时，数字编号候选才可能被识别为教材正文标题。遇到 `^\d+[.．、)]` 候选时，只有同时满足以下组合条件才跳过或降权：
+
+1. 无 A/B/C/D 选项结构；
+2. 无明确题问信号，例如：
+   - `下列`
+   - `以下`
+   - `正确`
+   - `错误`
+   - `的是`
+   - `求`
+   - `问`
+   - `？`
+3. 呈现明显教材正文 / 标题形态，例如：
+   - 短小节标题；
+   - 解释性长句；
+   - 连续知识点说明；
+   - 缺少题干与选项结构。
+
+以下领域词只能作为弱信号，不能单独触发过滤：
+
+- `算法`
+- `协议`
+- `机制`
+- `定义`
+- `定理`
+- `原理`
+- `过程`
+- `拥塞`
+- `报文段`
+- `窗口`
+- `慢开始`
+- `快重传`
+- `快恢复`
+
+**处理方式**：
+
+- 明显正文：跳过，并写入 split diagnostics；
+- 疑似正文但不确定：保留为低置信候选，打 `book_pdf_prose_like`；
+- 有明确选项结构或题问信号：不得因为领域词命中而跳过。
+
+### 12.5 P0-3：补充最小 diagnostics
+
+**位置**：
+
+- `backend/app/features/pipeline_orchestrator.py::_build_diagnostics`
+- OCR 调用结果结构
+- split diagnostics
+
+**最小字段**：
+
+```python
+diagnostics = {
+    "ocr_boxes_failed_pages": [...],
+    "ocr_text_fallback_pages": [...],
+    "split": {
+        "prose_skipped_count": 0,
+        "prose_skipped_preview": [...],
+    },
+}
+```
+
+**要求**：
+
+- `prose_skipped_preview` 每条最多约 80 字；
+- 只记录页码、计数、短 preview，不记录整页 OCR 原文；
+- chunked / resume 下只聚合计数和页码；
+- diagnostics 仅用于导入诊断，不改变题目 JSON 结构；
+- 不把 diagnostics 写入每道 question dict；
+- 不污染 `QuestionImport.raw_data` 和 `QuestionImport.ai_metadata`。
+
+### 12.6 推荐实施顺序
+
+1. **P0-0：先补 synthetic/golden 回归样本**
+   - 固定 `2.快重传和快恢复` 被跳过、`01/02/43/44/45` 被保留的验收基线。
+2. **P0-1：实现 OCR boxes 失败页 plain text fallback**
+   - 解决真实题页因含框 OCR 异常而整页丢文本的问题。
+3. **P0-2：收紧 book/content 正文编号过滤**
+   - 使用组合条件避免正文标题误入，同时不误杀真实 TCP 选择题。
+4. **P0-3：补最小 diagnostics**
+   - 让 OCR fallback、prose skipped 可验收、可排查。
+
+### 12.7 P0 验收标准
+
+完成后至少满足：
+
+- synthetic/golden 中 `2.快重传和快恢复` 不生成正常题；
+- synthetic/golden 中 `01`、`02`、`43`、`44`、`45` 均能生成候选；
+- `协议`、`窗口`、`拥塞`、`报文段` 等领域词出现在真实题干中时不触发跳过；
+- 含框 OCR 单页失败后仍产生该页 text block；
+- fallback block 包含 `page_index`、`source="ocr_text_fallback"`、`has_boxes=False`；
+- chunked / resume 场景不会重复合并同一页 fallback block；
+- exam / image / text 导入模式测试不变；
+- diagnostics 能区分 OCR boxes 失败、text fallback、prose skipped；
+- `question_imports.raw_data` 和 `ai_metadata` 不出现整页 OCR 原文或 pipeline diagnostics 大字段。
+
+建议优先运行：
+
+```bash
+cd backend && pytest tests/test_services/test_question_splitter.py tests/test_services/test_pipeline_orchestrator.py
+```
+
+如 chunk diagnostics 相关测试受影响，再运行：
+
+```bash
+cd backend && pytest tests/test_features/test_pipeline_chunk_runner.py tests/test_features/test_pipeline_status_chunk_progress.py
+```

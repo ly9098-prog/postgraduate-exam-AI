@@ -69,7 +69,7 @@ _SECTION_NUMBER_PATTERN = re.compile(
 
 # 正文标题特征：数字后跟纯中文标题（允许年份标注）
 _CONTENT_TITLE_PATTERN = re.compile(
-    r"^\d+\s*[.、]\s*[一-鿿]{2,}[一-鿿\s、]*(?:[（(]\d{4}[）)])?[一-鿿\s、]*$"
+    r"^\d+\s*[.．、]\s*[一-鿿]{2,}[一-鿿\s、]*(?:[（(]\d{4}[）)])?[一-鿿\s、]*$"
 )
 
 # 年份标注模式：（2019）(2020) 等，王道教材标注考过年份
@@ -201,8 +201,8 @@ def _is_section_number(line: str, page: int | None = None, content_pages: set | 
             return True
     # 含年份标注的知识点编号行（如 "3. 快重传算法（2019）"）
     if content_pages and page in content_pages:
-        if re.match(r"^\d+\s*[.、]", stripped) and _YEAR_ANNOTATION_RE.search(stripped):
-            if not re.search(r"[A-D]\s*[.、:：)）]", stripped):
+        if re.match(r"^\d+\s*[.．、]", stripped) and _YEAR_ANNOTATION_RE.search(stripped):
+            if not re.search(r"[A-D]\s*[.．、:：)）]", stripped):
                 return True
     return False
 
@@ -513,7 +513,8 @@ def split_questions(
         pos += len(text) + 1  # +1 for the joining newline
 
     full_text = "\n".join(parts)
-    if isinstance(import_mode, str) and import_mode.lower() == "book":
+    book_mode = isinstance(import_mode, str) and import_mode.lower() == "book"
+    if book_mode:
         full_text = _trim_book_text_before_exercises(full_text)
     boundaries = _find_question_boundaries(full_text)
 
@@ -538,11 +539,11 @@ def split_questions(
             line_end = len(full_text)
         line_text = full_text[start_pos:line_end]
 
-        if _is_section_number(line_text, page, content_pages):
+        if book_mode and _is_section_number(line_text, page, content_pages):
             continue
 
         # Content page prose detection: numbered paragraphs of explanatory text
-        if content_pages and page in content_pages:
+        if book_mode and content_pages and page in content_pages:
             next_pos = boundaries[bound_idx + 1][1] if bound_idx + 1 < len(boundaries) else len(full_text)
             segment = full_text[start_pos:next_pos]
             if _is_content_prose(segment):
@@ -613,7 +614,7 @@ def split_questions(
     # P1-1: book 模式下软 prose 标记。命中条件比 pipeline 的硬过滤宽松，
     # 仅打 risk_flags 不丢弃，让人工最终裁决。orchestrator `_run_split`
     # 已把 import_mode 透传过来；其它模式（exam/image/txt/None）无影响。
-    if isinstance(import_mode, str) and import_mode.lower() == "book":
+    if book_mode:
         questions = [q for q in questions if not _looks_like_book_non_question_segment(q)]
         for q in questions:
             if _looks_like_book_soft_prose(q):
