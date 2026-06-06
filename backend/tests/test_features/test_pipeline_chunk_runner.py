@@ -478,8 +478,21 @@ class TestSplitOverlapDedup:
     """直接调 _run_split，验证 chunk overlap 去重 + boundary 警告逻辑。"""
 
     def test_overlap_zone_dedup_drops_duplicates(self):
-        """seen_numbers 已含的题号，且 page_start > logical_end 的会被丢弃。"""
+        """P1-3: seen_hashes 已含的 hash，且 page_start > logical_end 的会被丢弃。
+
+        keying 改用 question_hash 而非 OCR 题号——题号在 OCR 抖动下不稳定。
+        """
+        from app.features.pipeline_orchestrator import _compute_overlap_hash
+
         pipeline = ImportPipeline()
+
+        dup_q = {
+            "number": 41, "page_start": 42, "page_end": 42,
+            "raw_question_text": "Q41 stem", "has_options": True,
+            "option_lines": {"A": "a", "B": "b", "C": "c", "D": "d"},
+        }
+        dup_hash = _compute_overlap_hash(dup_q)
+        assert dup_hash, "fixture should produce a non-empty hash"
 
         # 模拟 split_questions 直接返回 3 题
         fake_questions = [
@@ -488,12 +501,11 @@ class TestSplitOverlapDedup:
             {"number": 40, "page_start": 40, "page_end": 41, "raw_question_text": "Q40",
              "has_options": True, "option_lines": {"A": "a", "B": "b", "C": "c", "D": "d"}},
             # 第 41 题在 overlap 区（page_start=42 > logical_end=40），且
-            # seen_numbers 已含 41，应被丢
-            {"number": 41, "page_start": 42, "page_end": 42, "raw_question_text": "Q41",
-             "has_options": True, "option_lines": {"A": "a", "B": "b", "C": "c", "D": "d"}},
+            # 上一个 chunk 已写过同一 hash，应被丢
+            dup_q,
         ]
 
-        seen_numbers = {41}  # 上一个 chunk 已写入 41
+        seen_hashes = {dup_hash}
         with patch(
             "app.features.pipeline_orchestrator.split_questions",
             return_value=fake_questions,
@@ -502,59 +514,133 @@ class TestSplitOverlapDedup:
                 normalized_blocks=[
                     {"page": 38, "block_index": 0, "normalized_text": "x", "raw_text": "x"},
                 ],
-                _chunk_seen_numbers=seen_numbers,
+                _chunk_seen_hashes=seen_hashes,
                 _chunk_logical_end=40,
             )
 
         kept_numbers = [q["number"] for q in result["raw_questions"]]
         assert kept_numbers == [39, 40]
         assert 41 not in kept_numbers
-        # seen_numbers 累加被保留的题号
-        assert 39 in seen_numbers
-        assert 40 in seen_numbers
-        # warning + diagnostics 记录跳过项
+        # seen_hashes 累加被保留题目的 hash
+        assert _compute_overlap_hash(fake_questions[0]) in seen_hashes
+        assert _compute_overlap_hash(fake_questions[1]) in seen_hashes
+        # warning + diagnostics 记录跳过项（按题号汇报，便于人工查阅）
         assert any("boundary_overlap_skipped" in w for w in result["warnings"])
         assert result["split_diagnostics"]["overlap_skipped_numbers"] == [41]
 
     def test_first_sighting_in_overlap_zone_is_kept(self):
-        """page_start 在 overlap 区，但 seen_numbers 不包含该题号 → 保留（首次出现）。"""
+        """page_start 在 overlap 区，但 seen_hashes 不包含该 hash → 保留。"""
         pipeline = ImportPipeline()
         fake_questions = [
             {"number": 42, "page_start": 42, "page_end": 42, "raw_question_text": "Q42",
              "has_options": True, "option_lines": {"A": "a", "B": "b", "C": "c", "D": "d"}},
         ]
-        seen_numbers: set = set()
+        seen_hashes: set = set()
         with patch(
             "app.features.pipeline_orchestrator.split_questions",
             return_value=fake_questions,
         ):
             result = pipeline._run_split(
                 normalized_blocks=[{"page": 42, "block_index": 0, "normalized_text": "x", "raw_text": "x"}],
-                _chunk_seen_numbers=seen_numbers,
+                _chunk_seen_hashes=seen_hashes,
                 _chunk_logical_end=40,
             )
         assert [q["number"] for q in result["raw_questions"]] == [42]
-        assert 42 in seen_numbers
+        assert len(seen_hashes) == 1
 
     def test_duplicate_inside_logical_range_kept(self):
-        """seen_numbers 含某题号但 page_start ≤ logical_end → 保留，避免误删合法重号。"""
+        """seen_hashes 含某 hash 但 page_start ≤ logical_end → 保留，避免误删合法重号。"""
+        from app.features.pipeline_orchestrator import _compute_overlap_hash
+
         pipeline = ImportPipeline()
-        fake_questions = [
-            {"number": 41, "page_start": 39, "page_end": 39, "raw_question_text": "Q41",
-             "has_options": True, "option_lines": {"A": "a", "B": "b", "C": "c", "D": "d"}},
-        ]
-        seen_numbers = {41}
+        q = {
+            "number": 41, "page_start": 39, "page_end": 39,
+            "raw_question_text": "Q41", "has_options": True,
+            "option_lines": {"A": "a", "B": "b", "C": "c", "D": "d"},
+        }
+        seen_hashes = {_compute_overlap_hash(q)}
         with patch(
             "app.features.pipeline_orchestrator.split_questions",
-            return_value=fake_questions,
+            return_value=[q],
         ):
             result = pipeline._run_split(
                 normalized_blocks=[{"page": 39, "block_index": 0, "normalized_text": "x", "raw_text": "x"}],
-                _chunk_seen_numbers=seen_numbers,
+                _chunk_seen_hashes=seen_hashes,
                 _chunk_logical_end=40,
             )
         # 41 在 page 39（< logical_end=40），不算 overlap，保留
         assert [q["number"] for q in result["raw_questions"]] == [41]
+
+    def test_overlap_dedup_robust_to_ocr_number_jitter(self):
+        """P1-3: 同一物理题在两个 chunk 的 OCR 题号不一致（如 41/I）也能命中去重。
+
+        老逻辑用 ``number`` 当 key——OCR 把 ``41`` 识成 ``I/l/4l`` 时漏掉
+        重复项。新逻辑用 stem+option 的 hash，hash 与 number 无关，因此
+        无论上一个 chunk 写入的题号是多少，只要题干和选项一致，第二个
+        chunk 的 overlap 区就能正确丢弃。
+        """
+        from app.features.pipeline_orchestrator import _compute_overlap_hash
+
+        pipeline = ImportPipeline()
+        prev_chunk_q = {
+            "number": 41, "page_start": 39, "page_end": 40,
+            "raw_question_text": "下列哪个是质数",
+            "has_options": True,
+            "option_lines": {"A": "4", "B": "6", "C": "7", "D": "9"},
+        }
+        # OCR 在第二个 chunk 把 41 误识成别的
+        jittered_q = {**prev_chunk_q, "number": 999, "page_start": 42, "page_end": 42}
+
+        seen_hashes = {_compute_overlap_hash(prev_chunk_q)}
+        with patch(
+            "app.features.pipeline_orchestrator.split_questions",
+            return_value=[jittered_q],
+        ):
+            result = pipeline._run_split(
+                normalized_blocks=[
+                    {"page": 42, "block_index": 0, "normalized_text": "x", "raw_text": "x"},
+                ],
+                _chunk_seen_hashes=seen_hashes,
+                _chunk_logical_end=40,
+            )
+
+        # 题号变了但 hash 没变 → 仍被识别为 overlap 重复
+        assert result["raw_questions"] == []
+        assert any("boundary_overlap_skipped" in w for w in result["warnings"])
+
+    def test_overlap_dedup_does_not_drop_section_reset_numbers(self):
+        """P1-3: 同一文档里题号重置（一卷 1-50、二卷 1-50）不再误删。
+
+        老逻辑只看 number，第二卷的题 1 在 overlap 区会被当成重复丢弃。
+        新逻辑用 stem+option 的 hash，题干不同 → hash 不同 → 保留。
+        """
+        from app.features.pipeline_orchestrator import _compute_overlap_hash
+
+        pipeline = ImportPipeline()
+        prev_q = {
+            "number": 1, "page_start": 1, "page_end": 1,
+            "raw_question_text": "数学一卷 第一题",
+            "has_options": True,
+            "option_lines": {"A": "a", "B": "b", "C": "c", "D": "d"},
+        }
+        new_section_q = {
+            "number": 1, "page_start": 42, "page_end": 42,
+            "raw_question_text": "英语二卷 第一题",
+            "has_options": True,
+            "option_lines": {"A": "x", "B": "y", "C": "z", "D": "w"},
+        }
+        seen_hashes = {_compute_overlap_hash(prev_q)}
+        with patch(
+            "app.features.pipeline_orchestrator.split_questions",
+            return_value=[new_section_q],
+        ):
+            result = pipeline._run_split(
+                normalized_blocks=[{"page": 42, "block_index": 0, "normalized_text": "x", "raw_text": "x"}],
+                _chunk_seen_hashes=seen_hashes,
+                _chunk_logical_end=40,
+            )
+        assert [q["number"] for q in result["raw_questions"]] == [1]
+        assert not any("boundary_overlap_skipped" in w for w in result["warnings"])
 
     def test_boundary_unclosed_warning_emitted(self):
         """末题落在 logical_end 附近且选项缺 D/E → emit chunk_boundary_unclosed。"""
@@ -564,14 +650,14 @@ class TestSplitOverlapDedup:
             {"number": 50, "page_start": 39, "page_end": 40, "raw_question_text": "Q50",
              "has_options": True, "option_lines": {"A": "a", "B": "b", "C": "c"}},
         ]
-        seen_numbers: set = set()
+        seen_hashes: set = set()
         with patch(
             "app.features.pipeline_orchestrator.split_questions",
             return_value=fake_questions,
         ):
             result = pipeline._run_split(
                 normalized_blocks=[{"page": 40, "block_index": 0, "normalized_text": "x", "raw_text": "x"}],
-                _chunk_seen_numbers=seen_numbers,
+                _chunk_seen_hashes=seen_hashes,
                 _chunk_logical_end=40,
             )
         assert any("chunk_boundary_unclosed" in w for w in result["warnings"])
@@ -584,20 +670,98 @@ class TestSplitOverlapDedup:
             {"number": 50, "page_start": 39, "page_end": 40, "raw_question_text": "Q50",
              "has_options": True, "option_lines": {"A": "a", "B": "b", "C": "c", "D": "d"}},
         ]
-        seen_numbers: set = set()
+        seen_hashes: set = set()
         with patch(
             "app.features.pipeline_orchestrator.split_questions",
             return_value=fake_questions,
         ):
             result = pipeline._run_split(
                 normalized_blocks=[{"page": 40, "block_index": 0, "normalized_text": "x", "raw_text": "x"}],
-                _chunk_seen_numbers=seen_numbers,
+                _chunk_seen_hashes=seen_hashes,
+                _chunk_logical_end=40,
+            )
+        assert not any("chunk_boundary_unclosed" in w for w in result["warnings"])
+
+    def test_boundary_unclosed_not_emitted_for_two_option_question(self):
+        """P1-2: 双选题（只有 A/B）不应误报 chunk_boundary_unclosed。"""
+        pipeline = ImportPipeline()
+        fake_questions = [
+            {"number": 50, "page_start": 39, "page_end": 40, "raw_question_text": "对错判断",
+             "has_options": True, "option_lines": {"A": "正确", "B": "错误"}},
+        ]
+        seen_hashes: set = set()
+        with patch(
+            "app.features.pipeline_orchestrator.split_questions",
+            return_value=fake_questions,
+        ):
+            result = pipeline._run_split(
+                normalized_blocks=[{"page": 40, "block_index": 0, "normalized_text": "x", "raw_text": "x"}],
+                _chunk_seen_hashes=seen_hashes,
+                _chunk_logical_end=40,
+            )
+        assert not any("chunk_boundary_unclosed" in w for w in result["warnings"])
+        assert "boundary_unclosed_question" not in result["split_diagnostics"]
+
+    def test_boundary_unclosed_not_emitted_for_short_answer(self):
+        """P1-2: 简答题 has_options=False 不应误报。"""
+        pipeline = ImportPipeline()
+        fake_questions = [
+            {"number": 50, "page_start": 39, "page_end": 40, "raw_question_text": "简述...",
+             "has_options": False, "option_lines": {}},
+        ]
+        seen_hashes: set = set()
+        with patch(
+            "app.features.pipeline_orchestrator.split_questions",
+            return_value=fake_questions,
+        ):
+            result = pipeline._run_split(
+                normalized_blocks=[{"page": 40, "block_index": 0, "normalized_text": "x", "raw_text": "x"}],
+                _chunk_seen_hashes=seen_hashes,
+                _chunk_logical_end=40,
+            )
+        assert not any("chunk_boundary_unclosed" in w for w in result["warnings"])
+
+    def test_boundary_unclosed_not_emitted_when_far_from_boundary(self):
+        """P1-2: 末题 page_end 远离 logical_end（>1 页）不报警。"""
+        pipeline = ImportPipeline()
+        fake_questions = [
+            # page_end=35 vs logical_end=40 差 5 页，不算贴合边界
+            {"number": 30, "page_start": 34, "page_end": 35, "raw_question_text": "Q30",
+             "has_options": True, "option_lines": {"A": "a", "B": "b", "C": "c"}},
+        ]
+        seen_hashes: set = set()
+        with patch(
+            "app.features.pipeline_orchestrator.split_questions",
+            return_value=fake_questions,
+        ):
+            result = pipeline._run_split(
+                normalized_blocks=[{"page": 35, "block_index": 0, "normalized_text": "x", "raw_text": "x"}],
+                _chunk_seen_hashes=seen_hashes,
+                _chunk_logical_end=40,
+            )
+        assert not any("chunk_boundary_unclosed" in w for w in result["warnings"])
+
+    def test_boundary_unclosed_not_emitted_when_only_a_b(self):
+        """P1-2: 仅 A/B（缺 C）也不算 truncated 4-option，不报警。"""
+        pipeline = ImportPipeline()
+        fake_questions = [
+            {"number": 50, "page_start": 39, "page_end": 40, "raw_question_text": "Q50",
+             "has_options": True, "option_lines": {"A": "a", "B": "b"}},
+        ]
+        seen_hashes: set = set()
+        with patch(
+            "app.features.pipeline_orchestrator.split_questions",
+            return_value=fake_questions,
+        ):
+            result = pipeline._run_split(
+                normalized_blocks=[{"page": 40, "block_index": 0, "normalized_text": "x", "raw_text": "x"}],
+                _chunk_seen_hashes=seen_hashes,
                 _chunk_logical_end=40,
             )
         assert not any("chunk_boundary_unclosed" in w for w in result["warnings"])
 
     def test_legacy_single_pass_skips_overlap_logic(self):
-        """没有 _chunk_seen_numbers / _chunk_logical_end → P2-3 逻辑不介入。"""
+        """没有 _chunk_seen_hashes / _chunk_logical_end → P2-3 逻辑不介入。"""
         pipeline = ImportPipeline()
         fake_questions = [
             {"number": 1, "page_start": 1, "page_end": 1, "raw_question_text": "Q1",
@@ -703,5 +867,187 @@ class TestChunkedRunWithOverlap:
 
                 assert effective_ends == [(1, 40), (41, 80)]
                 assert result["diagnostics"]["chunk_overlap"] == 0
+
+        _run(_go())
+
+
+# ---------------------------------------------------------------------------
+# P0-3 per-chunk session
+# ---------------------------------------------------------------------------
+
+
+class TestChunkedUsesPerChunkSession:
+    """P0-3: chunked 路径每个 chunk 用独立 AsyncSession，避免长事务。"""
+
+    def test_chunked_uses_per_chunk_session(self, tmp_path):
+        """跑 3 chunks 的 chunked pipeline，断言 session_factory 被
+        ``__aenter__`` 至少 3 次（每 chunk 至少一次）。"""
+
+        async def _go():
+            sm, _ = await _make_session(tmp_path)
+
+            enter_count = {"n": 0}
+            real_factory = sm
+
+            class _CountingFactory:
+                def __call__(self, *args, **kwargs):
+                    enter_count["n"] += 1
+                    return real_factory(*args, **kwargs)
+
+            counting_factory = _CountingFactory()
+
+            async with sm() as db:
+                pipeline = ImportPipeline()
+                pipeline.pipeline_id = "pl_per_chunk_session_001"
+                _stub_pipeline_stages(pipeline, written_per_chunk=2)
+
+                with patch(
+                    "app.features.pipeline_orchestrator._derive_session_factory",
+                    return_value=counting_factory,
+                ):
+                    with patch.dict(os.environ, {"IMPORT_PIPELINE_CHUNK_SIZE": "40"}):
+                        with patch(
+                            "app.features.pipeline_orchestrator._read_pdf_page_count",
+                            return_value=120,
+                        ):
+                            result = await pipeline.run(
+                                file_path="/tmp/fake.pdf",
+                                source_type="pdf",
+                                source_file="x.pdf",
+                                db=db,
+                            )
+
+                assert result["status"] == "completed"
+                assert result["stats"]["total_chunks"] == 3
+                # 至少 3 次 chunk 用 + 初始化 + 收尾 → 5+。下限定 3 即可
+                # 满足"每 chunk 至少一次"的契约。
+                assert enter_count["n"] >= 3, (
+                    f"expected ≥3 session enters (one per chunk), got {enter_count['n']}"
+                )
+
+        _run(_go())
+
+
+# ---------------------------------------------------------------------------
+# P1-1 GlobalHashIndex finally release
+# ---------------------------------------------------------------------------
+
+
+class TestChunkedReleasesHashIndex:
+    """P1-1: chunk loop 完成或异常都要清空 hash_index 的内部 dict，
+    避免大字典残留在 GlobalHashIndex 实例上（低配 2C2G 服务器友好）。"""
+
+    def test_hash_index_cleared_on_happy_path(self, tmp_path):
+        """正常完成的 chunked 跑批，跑完后 hash_index 内部 dict 为空。"""
+
+        async def _go():
+            sm, _ = await _make_session(tmp_path)
+
+            captured = {"index": None}
+            real_factory_cls = None
+
+            async with sm() as db:
+                from app.features import global_hash_index as ghi_mod
+                real_factory_cls = ghi_mod.GlobalHashIndex
+
+                class _CapturingIndex(real_factory_cls):
+                    def __init__(self):
+                        super().__init__()
+                        captured["index"] = self
+                        # 预填两条假数据，断言 finally 真的清空了它
+                        self._question_index[("math", "h1")] = 1
+                        self._import_index[("math", "h2")] = 2
+
+                pipeline = ImportPipeline()
+                pipeline.pipeline_id = "pl_hashidx_clear_001"
+                _stub_pipeline_stages(pipeline, written_per_chunk=2)
+
+                with patch(
+                    "app.features.pipeline_orchestrator._derive_session_factory",
+                    return_value=sm,
+                ):
+                    with patch(
+                        "app.features.global_hash_index.GlobalHashIndex",
+                        _CapturingIndex,
+                    ):
+                        with patch.dict(os.environ, {"IMPORT_PIPELINE_CHUNK_SIZE": "40"}):
+                            with patch(
+                                "app.features.pipeline_orchestrator._read_pdf_page_count",
+                                return_value=80,
+                            ):
+                                result = await pipeline.run(
+                                    file_path="/tmp/fake.pdf",
+                                    source_type="pdf",
+                                    source_file="x.pdf",
+                                    db=db,
+                                )
+
+                assert result["status"] == "completed"
+                idx = captured["index"]
+                assert idx is not None, "GlobalHashIndex was never constructed"
+                assert idx._question_index == {}, "question_index should be cleared in finally"
+                assert idx._import_index == {}, "import_index should be cleared in finally"
+
+        _run(_go())
+
+    def test_hash_index_cleared_when_chunk_raises(self, tmp_path):
+        """chunk 跑批中抛异常时，finally 仍要清空 hash_index 内部 dict。"""
+
+        async def _go():
+            sm, _ = await _make_session(tmp_path)
+
+            captured = {"index": None}
+
+            async with sm() as db:
+                from app.features import global_hash_index as ghi_mod
+                real_factory_cls = ghi_mod.GlobalHashIndex
+
+                class _CapturingIndex(real_factory_cls):
+                    def __init__(self):
+                        super().__init__()
+                        captured["index"] = self
+                        self._question_index[("math", "h1")] = 1
+                        self._import_index[("math", "h2")] = 2
+
+                pipeline = ImportPipeline()
+                pipeline.pipeline_id = "pl_hashidx_clear_002"
+                _stub_pipeline_stages(pipeline, written_per_chunk=2)
+
+                # 让 _execute_chunk 直接抛异常（绕过其内部 try/except，
+                # 模拟 chunk 边界外的失败路径，比如 session_factory 返回的
+                # context manager __aexit__ 出错）。
+                async def _boom(*args, **kwargs):
+                    raise RuntimeError("simulated chunk crash")
+
+                with patch.object(pipeline, "_execute_chunk", side_effect=_boom):
+                    with patch(
+                        "app.features.pipeline_orchestrator._derive_session_factory",
+                        return_value=sm,
+                    ):
+                        with patch(
+                            "app.features.global_hash_index.GlobalHashIndex",
+                            _CapturingIndex,
+                        ):
+                            with patch.dict(os.environ, {"IMPORT_PIPELINE_CHUNK_SIZE": "40"}):
+                                with patch(
+                                    "app.features.pipeline_orchestrator._read_pdf_page_count",
+                                    return_value=80,
+                                ):
+                                    with pytest.raises(RuntimeError, match="simulated chunk crash"):
+                                        await pipeline.run(
+                                            file_path="/tmp/fake.pdf",
+                                            source_type="pdf",
+                                            source_file="x.pdf",
+                                            db=db,
+                                        )
+
+                idx = captured["index"]
+                assert idx is not None, "GlobalHashIndex was never constructed"
+                assert idx._question_index == {}, (
+                    "question_index should be cleared even when chunk raises"
+                )
+                assert idx._import_index == {}, (
+                    "import_index should be cleared even when chunk raises"
+                )
 
         _run(_go())

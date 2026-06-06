@@ -64,6 +64,76 @@ def test_create_pipeline_record_writes_row(tmp_path):
             assert row.status == "running"
             assert row.total_pages == 120
             assert row.chunk_size == 40
+            # P0-1 / P0-2: 不传 kwargs 时默认 NULL，向后兼容老调用方
+            assert row.created_by is None
+            assert row.source_sha256 is None
+
+    _run(_go())
+
+
+def test_create_pipeline_record_persists_owner_and_hash(tmp_path):
+    """P0-1 / P0-2: created_by + source_sha256 写入后能从 DB 读回。"""
+    from sqlalchemy import select
+
+    async def _go():
+        sm, _engine = await _make_session(tmp_path)
+        async with sm() as db:
+            await create_pipeline_record(
+                db,
+                pipeline_id="pl_security_001",
+                source_type="pdf",
+                source_file="王道.pdf",
+                total_pages=120,
+                chunk_size=40,
+                created_by="u1",
+                source_sha256="abc" + "0" * 61,
+            )
+
+        async with sm() as db:
+            row = (
+                await db.execute(
+                    select(ImportPipeline).where(
+                        ImportPipeline.pipeline_id == "pl_security_001"
+                    )
+                )
+            ).scalar_one()
+            assert row.created_by == "u1"
+            assert row.source_sha256 == "abc" + "0" * 61
+
+    _run(_go())
+
+
+def test_create_pipeline_record_persists_watermark_snapshot(tmp_path):
+    """P0-3: watermark_snapshot 写入后能从 DB 读回（list[dict] 结构）。"""
+    from sqlalchemy import select
+
+    snapshot = [
+        {"pattern": r"^内部资料$", "flags": 0},
+        {"pattern": r"^第\s*\d+\s*页$", "flags": 0},
+    ]
+
+    async def _go():
+        sm, _engine = await _make_session(tmp_path)
+        async with sm() as db:
+            await create_pipeline_record(
+                db,
+                pipeline_id="pl_wm_snapshot_001",
+                source_type="pdf",
+                source_file="x.pdf",
+                total_pages=120,
+                chunk_size=40,
+                watermark_snapshot=snapshot,
+            )
+
+        async with sm() as db:
+            row = (
+                await db.execute(
+                    select(ImportPipeline).where(
+                        ImportPipeline.pipeline_id == "pl_wm_snapshot_001"
+                    )
+                )
+            ).scalar_one()
+            assert row.watermark_snapshot == snapshot
 
     _run(_go())
 

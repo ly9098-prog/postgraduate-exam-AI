@@ -395,14 +395,21 @@ class TestE2ECrossChunkHashDedup:
             sm, _ = await _make_session(tmp_path)
 
             # 我们用一个真实的 GlobalHashIndex 实例，记录 add_import 调用 +
-            # lookup_import 在 chunk 1 时的命中行为。
+            # 调用瞬间的内存索引快照（验证 chunk 1 启动时已经能看到 chunk 0
+            # 的 hash）。
             real_index = GlobalHashIndex()
             add_calls: list[tuple[str, str, int]] = []
+            # 每次 add_import 触发时记录 _import_index 的当前内容；P1-1
+            # finally 清理只发生在 _run_chunked 退出后，不会影响 chunk 内
+            # 的可见性检测。
+            index_snapshots: list[dict[tuple[str, str], int]] = []
             orig_add = real_index.add_import
 
             def _spy_add(subject, qhash, iid):
                 add_calls.append((subject, qhash, iid))
-                return orig_add(subject, qhash, iid)
+                result = orig_add(subject, qhash, iid)
+                index_snapshots.append(dict(real_index._import_index))
+                return result
 
             real_index.add_import = _spy_add  # type: ignore[assignment]
 
@@ -449,22 +456,23 @@ class TestE2ECrossChunkHashDedup:
                 ("math2", "HASH_AAA", 9001),
                 ("math2", "HASH_BBB", 9002),
             ]
-            # chunk 1 启动时索引里应已有 chunk 0 的 hash → lookup_import 命中
-            hit_after = await real_index.lookup_import(
-                db=None,  # 命中走内存，不需要 db
-                subject="math2",
-                question_hash="HASH_AAA",
-            )
-            assert hit_after == 9001
+            # chunk 1 的 add_import（第 2 次调用）触发瞬间，索引里已经包含
+            # chunk 0 写入的 HASH_AAA → 跨 chunk 可见性满足。
+            assert index_snapshots[0] == {("math2", "HASH_AAA"): 9001}
+            assert index_snapshots[1] == {
+                ("math2", "HASH_AAA"): 9001,
+                ("math2", "HASH_BBB"): 9002,
+            }
             # diagnostics 把 hash_index stats 写出来供观测（load 时计算，
             # 不随 add_import 增加；这里只断言字段存在 + 已加载）
             stats = result["diagnostics"]["hash_index"]
             assert stats is not None
             assert stats["fallback_to_sql"] is False
-            # 内存索引在 chunk 0/1 跑完后已累加两条 hash → resume 路径或下一
-            # 个兄弟 chunk 都能直接拿到，不再走 difflib 全表扫描
-            assert real_index._import_index[("math2", "HASH_AAA")] == 9001
-            assert real_index._import_index[("math2", "HASH_BBB")] == 9002
+            # P1-1: _run_chunked 退出后 finally 会清空内部 dict，避免大字典
+            # 残留在 GlobalHashIndex 实例上。跨 chunk 可见性已在
+            # index_snapshots 里验证过，这里只断言清理生效。
+            assert real_index._import_index == {}
+            assert real_index._question_index == {}
 
         _run(_go())
 

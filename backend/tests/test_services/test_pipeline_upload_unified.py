@@ -77,7 +77,7 @@ class TestPipelineUploadDispatch:
         user = MagicMock()
 
         with pytest.raises(Exception) as exc_info:
-            asyncio.run(pipeline_upload(file=file, background_tasks=bt, _=user))
+            asyncio.run(pipeline_upload(file=file, background_tasks=bt, current_user=user))
 
         assert "400" in str(exc_info.value.status_code) or exc_info.value.status_code == 400
 
@@ -89,7 +89,7 @@ class TestPipelineUploadDispatch:
         user = MagicMock()
 
         with pytest.raises(Exception) as exc_info:
-            asyncio.run(pipeline_upload(file=file, background_tasks=bt, _=user))
+            asyncio.run(pipeline_upload(file=file, background_tasks=bt, current_user=user))
 
         assert exc_info.value.status_code == 400
 
@@ -102,7 +102,7 @@ class TestPipelineUploadDispatch:
         user = MagicMock()
 
         with pytest.raises(Exception) as exc_info:
-            asyncio.run(pipeline_upload(file=file, background_tasks=bt, _=user))
+            asyncio.run(pipeline_upload(file=file, background_tasks=bt, current_user=user))
 
         assert exc_info.value.status_code == 400
 
@@ -113,7 +113,7 @@ class TestPipelineUploadDispatch:
         bt = self._make_background_tasks()
         user = MagicMock()
 
-        result = asyncio.run(pipeline_upload(file=file, background_tasks=bt, _=user))
+        result = asyncio.run(pipeline_upload(file=file, background_tasks=bt, current_user=user))
 
         assert result.pipeline_id.startswith("pl_")
         assert result.source_type == "pdf"
@@ -127,7 +127,7 @@ class TestPipelineUploadDispatch:
         bt = self._make_background_tasks()
         user = MagicMock()
 
-        result = asyncio.run(pipeline_upload(file=file, background_tasks=bt, _=user))
+        result = asyncio.run(pipeline_upload(file=file, background_tasks=bt, current_user=user))
 
         assert result.pipeline_id.startswith("pl_")
         assert result.source_type == "txt"
@@ -140,7 +140,7 @@ class TestPipelineUploadDispatch:
         bt = self._make_background_tasks()
         user = MagicMock()
 
-        result = asyncio.run(pipeline_upload(file=file, background_tasks=bt, _=user))
+        result = asyncio.run(pipeline_upload(file=file, background_tasks=bt, current_user=user))
 
         assert result.pipeline_id.startswith("xl_")
         assert result.source_type == "excel"
@@ -157,7 +157,7 @@ class TestPipelineUploadDispatch:
         with patch("app.api.v1.imports._validate_image_content", return_value=(800, 600, "PNG")), \
              patch("app.api.v1.imports._set_image_pipeline_status", new_callable=AsyncMock) as mock_status, \
              patch("importlib.util.find_spec", return_value=MagicMock()):
-            result = asyncio.run(pipeline_upload(file=file, background_tasks=bt, _=user))
+            result = asyncio.run(pipeline_upload(file=file, background_tasks=bt, current_user=user))
 
         assert result.pipeline_id.startswith("img_")
         assert result.source_type == "image"
@@ -178,7 +178,7 @@ class TestPipelineUploadDispatch:
             mock_settings.IMAGE_IMPORT_MAX_BYTES = 10 * 1024 * 1024
 
             with pytest.raises(Exception) as exc_info:
-                asyncio.run(pipeline_upload(file=file, background_tasks=bt, _=user))
+                asyncio.run(pipeline_upload(file=file, background_tasks=bt, current_user=user))
 
             assert exc_info.value.status_code == 400
             assert "OCR" in str(exc_info.value.detail)

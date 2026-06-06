@@ -619,7 +619,7 @@ async def pipeline_upload(
     confidence_threshold: float = 0.6,
     page_start: int | None = None,
     page_end: int | None = None,
-    _: User = Depends(require_app_permission("import:write")),
+    current_user: User = Depends(require_app_permission("import:write")),
 ):
     """统一导入入口：支持 Excel / PDF / TXT / 图片，异步返回 pipeline_id。
 
@@ -767,6 +767,7 @@ async def pipeline_upload(
             source_file=filename,
             subject=subject,
             options=options,
+            created_by=str(current_user.id) if current_user is not None else None,
         )
     )
 
@@ -780,12 +781,17 @@ async def _run_pipeline_with_db(
     source_file: str,
     subject: str | None,
     options: dict,
+    created_by: str | None = None,
 ) -> None:
     """后台任务包装器：创建独立 DB 会话并执行流水线。
 
     P0-1: 入口处把 file_content bytes 落盘到 tmp 文件，后台任务结束后删除；
     本函数局部变量持有 bytes 仅用于一次性写入文件，写完立即解除引用，
     避免大文件 (100~400 MB) 随整个 pipeline (~分钟级) 驻留内存。
+
+    P0-1/P0-2 (security): ``created_by`` 用于记录创建者，``source_sha256``
+    用文件落盘后流式计算（避免 bytes 重新加载进堆内存），一并落到
+    ``import_pipelines`` 表，让 resume endpoint 能做创建者 + 文件身份校验。
     """
     import traceback
     logger = logging.getLogger("2240ai")
@@ -808,6 +814,22 @@ async def _run_pipeline_with_db(
         # 立即解除对 bytes 的引用，让 GC 回收
         del file_content
 
+        # P0-2: 流式从 tmp 文件计算 sha256（仅 PDF chunked 路径会落到
+        # import_pipelines 表，但 hash 计算成本低，在此统一算一次最简单；
+        # 单 pass 路径不创建 pipeline 行，下游不会用到这个值）。
+        source_sha256: str | None = None
+        try:
+            hasher = hashlib.sha256()
+            with open(tmp_path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                    hasher.update(chunk)
+            source_sha256 = hasher.hexdigest()
+        except Exception:
+            logger.exception(
+                "compute source_sha256 failed for pipeline %s; resume identity check will be skipped",
+                pipeline_id,
+            )
+
         async with async_session() as db:
             await run_pipeline_background(
                 pipeline_id=pipeline_id,
@@ -817,6 +839,8 @@ async def _run_pipeline_with_db(
                 subject=subject,
                 options=options,
                 db=db,
+                created_by=created_by,
+                source_sha256=source_sha256,
             )
     except Exception as exc:
         logger.error(
@@ -904,13 +928,18 @@ async def resume_pipeline(
     enable_ai_repair: bool = True,
     confidence_threshold: float = 0.6,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_app_permission("import:write")),
+    current_user: User = Depends(require_app_permission("import:write")),
 ):
     """P2-5: 手动恢复 paused/failed 的导入流水线。
 
     PDF 在首次导入结束后已被 unlink，因此 resume 必须重新上传同一个文件
     （v1 简化方案：服务器不持久化原始 PDF）。仅复跑 failed + pending
     chunk，已 completed 的 chunk 不动。
+
+    P0-1 安全校验：仅 pipeline 创建者可 resume。历史记录（created_by IS NULL）
+    保持向后兼容，import:write 持有者均可 resume，但会写一条 warning 日志。
+    P0-2 安全校验：上传 PDF 字节 sha256 必须等于首次导入时记录的 source_sha256，
+    否则返回 400，避免不同内容、相同页数的 PDF 替换原始上下文。
     """
     from sqlalchemy import select as sa_select
 
@@ -925,6 +954,23 @@ async def resume_pipeline(
     ).scalar_one_or_none()
     if pipeline_row is None:
         raise HTTPException(status_code=404, detail="流水线不存在")
+
+    # P0-1: 创建者鉴权。NULL 表示历史 pipeline，按旧行为放行（带 warning）。
+    if pipeline_row.created_by is None:
+        logger.warning(
+            "legacy pipeline without created_by, allowing import:write to resume "
+            "(pipeline_id=%s, requester=%s)",
+            pipeline_id,
+            getattr(current_user, "id", None),
+        )
+    else:
+        requester_id = (
+            str(current_user.id) if current_user is not None else None
+        )
+        if requester_id != pipeline_row.created_by:
+            raise HTTPException(
+                status_code=403, detail="not the pipeline creator"
+            )
 
     if pipeline_row.status not in _RESUMABLE_PIPELINE_STATUSES:
         raise HTTPException(
@@ -964,6 +1010,22 @@ async def resume_pipeline(
                 f"PDF 页数不匹配（原始 {pipeline_row.total_pages} 页，"
                 f"上传 {uploaded_pages} 页），请确认是同一份文件"
             ),
+        )
+
+    # P0-2: 字节级身份校验。复用已读到内存的 content（resume 上限 ≤ 200MB，
+    # 与全局 PDF 上传校验一致），避免再读一遍 file。
+    uploaded_sha256 = hashlib.sha256(content).hexdigest()
+    if pipeline_row.source_sha256 is None:
+        logger.warning(
+            "legacy pipeline without source_sha256, skipping content identity check "
+            "(pipeline_id=%s, uploaded_sha256=%s)",
+            pipeline_id,
+            uploaded_sha256,
+        )
+    elif uploaded_sha256 != pipeline_row.source_sha256:
+        raise HTTPException(
+            status_code=400,
+            detail="uploaded file content does not match original pipeline source",
         )
 
     # Snapshot pending chunks for the response. The background task may also
