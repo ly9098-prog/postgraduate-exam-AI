@@ -316,6 +316,28 @@
   background: #F5F1EB;
 }
 
+.q-status-wrap {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8rpx;
+}
+
+.q-risk-badge {
+  font-size: 20rpx;
+  line-height: 1.35;
+  padding: 5rpx 10rpx;
+  border-radius: 8rpx;
+  color: #FFFFFF;
+  background: #C47A7A;
+  font-weight: 700;
+  max-width: 180rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .q-status-badge {
   flex-shrink: 0;
 }
