@@ -8,6 +8,7 @@ import pytest
 from app.features.pipeline_orchestrator import (
     ImportPipeline,
     PipelineStage,
+    _count_risk_flags,
     _extract_pdf_blocks,
     _extract_text_blocks,
     _ocr_scanned_pdf,
@@ -348,6 +349,13 @@ class TestImportPipelineSplit:
             "text_block_count": 2,
             "raw_question_count": 0,
             "book_prose_downgraded": 0,
+            "layout_filter": {
+                "enabled": False,
+                "pages_considered": 0,
+                "filtered_line_count": 0,
+                "kept_line_count": 0,
+                "region_signals": [],
+            },
             "raw_questions_preview": [],
             "failure_reason": "text_present_but_no_question_boundary",
             "fallback_created": True,
@@ -401,9 +409,11 @@ class TestImportPipelineSplit:
 
         assert result["split_count"] == 0
         assert result["raw_questions"] == []
-        assert result["split_diagnostics"]["book_pdf_prose_skipped"] == 2
         assert result["split_diagnostics"]["failure_reason"] == "book_text_present_but_no_question_boundary"
-        assert "book_pdf_prose_skipped: 2" in result["warnings"]
+        assert result["split_diagnostics"]["non_question_like_skipped"] is True
+        assert result["warnings"] == [
+            "no questions found in book import; skipped low-confidence fallback review item"
+        ]
 
     def test_book_mode_keeps_question_like_long_split(self):
         pipeline = ImportPipeline()
@@ -466,6 +476,90 @@ class TestImportPipelineSplit:
         assert result["warnings"] == ["no questions found in document; created low-confidence review item"]
         assert result["raw_questions"][0]["raw_question_text"] == "这是一道没有题号但需要人工审核的单题。"
 
+    def test_book_mode_filters_layout_prose_before_split(self):
+        pipeline = ImportPipeline()
+        normalized_blocks = [{
+            "page": 1,
+            "block_index": 0,
+            "normalized_text": "\n".join([
+                "1. 栈的定义",
+                "栈是只允许在一端进行插入和删除的线性表。",
+                "例题解析：如下过程说明栈的先进后出性质。",
+                "习题精选",
+                "01．下列关于栈的说法中，正确的是（  ）。",
+                "A．先进先出",
+                "B．后进先出",
+                "C．随机访问",
+                "D．链式存储",
+            ]),
+            "boxes": [
+                {"bbox": [100, 120, 430, 150], "conf": 0.94},
+                {"bbox": [100, 165, 920, 195], "conf": 0.94},
+                {"bbox": [100, 210, 900, 240], "conf": 0.94},
+                {"bbox": [460, 500, 650, 535], "conf": 0.94},
+                {"bbox": [100, 570, 980, 605], "conf": 0.94},
+                {"bbox": [120, 625, 420, 655], "conf": 0.94},
+                {"bbox": [120, 665, 420, 695], "conf": 0.94},
+                {"bbox": [120, 705, 420, 735], "conf": 0.94},
+                {"bbox": [120, 745, 420, 775], "conf": 0.94},
+            ],
+            "page_width": 1128,
+            "page_height": 1571,
+        }]
+
+        result = pipeline._run_split(normalized_blocks, import_mode="book", source_type="pdf")
+
+        assert result["split_count"] == 1
+        text = result["raw_questions"][0]["raw_question_text"]
+        assert "下列关于栈" in text
+        assert "栈的定义" not in text
+        layout_filter = result["split_diagnostics"]["layout_filter"]
+        assert layout_filter["enabled"] is True
+        assert layout_filter["filtered_line_count"] == 4
+        assert layout_filter["region_signals"][0]["signal"] == "exercise_marker+question"
+
+    def test_exam_mode_does_not_run_book_layout_filter(self):
+        pipeline = ImportPipeline()
+        normalized_blocks = [{
+            "page": 1,
+            "block_index": 0,
+            "normalized_text": "1. 已编号题目\nA. 选项A\nB. 选项B\nC. 选项C\nD. 选项D",
+            "boxes": [
+                {"bbox": [100, 120, 900, 150], "conf": 0.94},
+                {"bbox": [120, 170, 420, 200], "conf": 0.94},
+                {"bbox": [120, 220, 420, 250], "conf": 0.94},
+                {"bbox": [120, 270, 420, 300], "conf": 0.94},
+                {"bbox": [120, 320, 420, 350], "conf": 0.94},
+            ],
+            "page_width": 1128,
+            "page_height": 1571,
+        }]
+
+        result = pipeline._run_split(normalized_blocks, import_mode="exam", source_type="pdf")
+
+        assert result["split_count"] == 1
+        assert result["split_diagnostics"]["layout_filter"]["enabled"] is False
+
+    def test_book_mode_non_pdf_does_not_run_layout_filter(self):
+        pipeline = ImportPipeline()
+        normalized_blocks = [{
+            "page": 1,
+            "block_index": 0,
+            "normalized_text": "1. 已编号题目\nA. 选项A\nB. 选项B",
+            "boxes": [
+                {"bbox": [100, 120, 900, 150], "conf": 0.94},
+                {"bbox": [120, 170, 420, 200], "conf": 0.94},
+                {"bbox": [120, 220, 420, 250], "conf": 0.94},
+            ],
+            "page_width": 1128,
+            "page_height": 1571,
+        }]
+
+        result = pipeline._run_split(normalized_blocks, import_mode="book", source_type="txt")
+
+        assert result["split_count"] == 1
+        assert result["split_diagnostics"]["layout_filter"]["enabled"] is False
+
     def test_numbered_questions_do_not_use_fallback(self):
         pipeline = ImportPipeline()
         normalized_blocks = [
@@ -480,6 +574,13 @@ class TestImportPipelineSplit:
             "text_block_count": 1,
             "raw_question_count": 1,
             "book_prose_downgraded": 0,
+            "layout_filter": {
+                "enabled": False,
+                "pages_considered": 0,
+                "filtered_line_count": 0,
+                "kept_line_count": 0,
+                "region_signals": [],
+            },
             "raw_questions_preview": [
                 {
                     "number": 1,
@@ -610,6 +711,29 @@ class TestPipelineStage:
 
 
 class TestImportPipelineRun:
+    def test_build_diagnostics_includes_risk_flag_counts(self):
+        from app.features.pipeline_orchestrator import _build_diagnostics
+
+        diagnostics = _build_diagnostics({
+            "import_mode": "book",
+            "split_diagnostics": {
+                "layout_filter": {"enabled": True},
+                "visual_boundary": {"boundary_count": 2, "signals": ["gap+number"]},
+            },
+            "risk_flag_counts": {"book_pdf_prose_like": 1, "low_confidence": 2},
+        })
+
+        assert diagnostics["split"]["layout_filter"]["enabled"] is True
+        assert diagnostics["split"]["visual_boundary"]["boundary_count"] == 2
+        assert diagnostics["risk_flag_counts"] == {"book_pdf_prose_like": 1, "low_confidence": 2}
+
+    def test_count_risk_flags_deduplicates_per_question_contract(self):
+        assert _count_risk_flags([
+            {"risk_flags": ["book_pdf_prose_like", "low_confidence"]},
+            {"risk_flags": ["low_confidence"]},
+            {"risk_flags": []},
+        ]) == {"book_pdf_prose_like": 1, "low_confidence": 2}
+
     """Test pipeline orchestration by mocking individual stages."""
 
     def _make_pipeline(self, **overrides):

@@ -8,6 +8,10 @@ import re
 import statistics
 
 _QUESTION_NUMBER_PATTERN = re.compile(r"^\d+\s*[.．、)）]")
+_OPTION_PATTERN = re.compile(r"^[A-D]\s*[.．、:：)）]")
+_EXERCISE_MARKER_PATTERN = re.compile(r"习题精选|练习题|巩固练习|单项选择题|多项选择题|选择题")
+_QUESTION_SIGNAL_PATTERN = re.compile(r"下列|以下|正确|错误|的是|哪|选择|计算|判断|已知|设|若|求|问|？|\?")
+_PROSE_MARKER_PATTERN = re.compile(r"定义|定理|知识点|证明|证毕|解法|例题|性质|推论|本节|本章")
 
 
 def _percentile(data: list[float], p: float) -> float:
@@ -20,6 +24,108 @@ def _percentile(data: list[float], p: float) -> float:
     hi = min(lo + 1, len(sorted_data) - 1)
     frac = idx - lo
     return sorted_data[lo] * (1 - frac) + sorted_data[hi] * frac
+
+
+def filter_book_layout_blocks(normalized_blocks: list[dict]) -> tuple[list[dict], dict]:
+    diagnostics = {
+        "enabled": False,
+        "pages_considered": 0,
+        "filtered_line_count": 0,
+        "kept_line_count": 0,
+        "region_signals": [],
+    }
+    filtered_blocks: list[dict] = []
+
+    for block in normalized_blocks:
+        boxes = block.get("boxes")
+        page_w = block.get("page_width", 0)
+        page_h = block.get("page_height", 0)
+        text = block.get("normalized_text") or block.get("text", "")
+        lines = text.split("\n")
+        line_count = min(len(lines), len(boxes or []))
+        if not boxes or line_count < 4 or not page_w or not page_h:
+            filtered_blocks.append(block)
+            continue
+
+        diagnostics["enabled"] = True
+        diagnostics["pages_considered"] += 1
+        keep_start: int | None = None
+        signal = ""
+
+        for i in range(line_count):
+            line = lines[i].strip()
+            if not line:
+                continue
+            if _EXERCISE_MARKER_PATTERN.search(line):
+                for j in range(i + 1, line_count):
+                    candidate = lines[j].strip()
+                    if _QUESTION_NUMBER_PATTERN.match(candidate) and _QUESTION_SIGNAL_PATTERN.search(candidate):
+                        keep_start = j
+                        signal = "exercise_marker+question"
+                        break
+                if keep_start is not None:
+                    break
+
+        if keep_start is None:
+            page_mid = page_w / 2
+            left_prose = 0
+            right_prose = 0
+            left_question = 0
+            right_question = 0
+            first_question_by_side: dict[str, int] = {}
+            for i in range(line_count):
+                line = lines[i].strip()
+                bbox = boxes[i].get("bbox", [0, 0, 0, 0])
+                side = "right" if bbox[0] >= page_mid else "left"
+                if _PROSE_MARKER_PATTERN.search(line):
+                    if side == "right":
+                        right_prose += 1
+                    else:
+                        left_prose += 1
+                is_question = (
+                    _QUESTION_NUMBER_PATTERN.match(line)
+                    and (_QUESTION_SIGNAL_PATTERN.search(line) or i + 3 < line_count)
+                ) or _OPTION_PATTERN.match(line)
+                if is_question:
+                    if side == "right":
+                        right_question += 1
+                    else:
+                        left_question += 1
+                    first_question_by_side.setdefault(side, i)
+            if right_question >= 3 and left_prose >= 2 and left_question == 0:
+                keep_start = first_question_by_side.get("right")
+                signal = "two_column_right_question"
+            elif left_question >= 3 and right_prose >= 2 and right_question == 0:
+                keep_start = first_question_by_side.get("left")
+                signal = "two_column_left_question"
+
+        if keep_start is None:
+            filtered_blocks.append(block)
+            diagnostics["kept_line_count"] += line_count
+            continue
+
+        kept_lines = lines[keep_start:]
+        kept_boxes = list(boxes[keep_start:line_count])
+        diagnostics["filtered_line_count"] += keep_start
+        diagnostics["kept_line_count"] += len(kept_lines)
+        diagnostics["region_signals"].append({
+            "page": block.get("page", 1),
+            "block_index": block.get("block_index", 0),
+            "line_index": keep_start,
+            "signal": signal,
+            "preview": "".join(kept_lines[:2])[:80],
+        })
+        new_block = dict(block)
+        new_text = "\n".join(kept_lines).strip()
+        new_block["normalized_text"] = new_text
+        if "raw_text" in new_block:
+            new_block["raw_text"] = new_text
+        if "text" in new_block:
+            new_block["text"] = new_text
+        new_block["boxes"] = kept_boxes
+        filtered_blocks.append(new_block)
+
+    return filtered_blocks, diagnostics
 
 
 def detect_visual_boundaries(normalized_blocks: list[dict]) -> list[dict]:

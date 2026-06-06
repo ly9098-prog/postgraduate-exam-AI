@@ -1,5 +1,13 @@
 # Bugs History
 
+## 2026-06-06 — OCR/PDF 教材正文误识别与风险标识缺失（已修复）
+
+- **现象**：扫描版教材 / 书籍 PDF 导入时，正文、知识点讲解或例题解析可能被拆成低置信候选题；人工审核页此前缺少醒目的风险提示，批量通过时存在将正文型候选题发布到正式题库的误操作风险。
+- **原因**：book 模式在习题区域漏检、split fallback、AI repair / validation 与 review 提交之间缺少统一风险信号贯通；前端审核页未读取 `question_imports.ai_metadata.risk_flags` 并提示低置信或疑似正文项。
+- **处理**：后端已在 OCR/PDF 导入链路贯通 `risk_flags`，覆盖 `no_exercise_regions`、`book_pdf_prose_like`、`low_confidence`、`fallback_low_confidence`、`non_question_like` 等标识，并透传到 `question_imports.ai_metadata.risk_flags`；小程序 import-batch 审核页读取该字段映射中文风险徽章，且“全部通过”前若待审核题含风险标识则弹确认框。
+- **验证**：后端风险字段底座提交 `7bbe3c8`；前端风险徽章与批量通过确认提交 `c990950`。
+- **说明**：风险标识只辅助人工审核，不绕过 `question_imports` 人工确认流程；未知 flag 前端按原值降级展示。
+
 ## 2026-06-06 — 本地扫描 PDF OCR 导入进程被终止（已修复）
 
 - **现象**：本地导入扫描版 PDF 时，后端在进入 OCR fallback 后持续处理页面，日志出现 `Terminated` / `Stopping reloader process`，没有 Python traceback；此前还曾因启动目录不正确出现 `ModuleNotFoundError: No module named 'app'`。
