@@ -12,6 +12,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     DateTime,
     ForeignKey,
     Integer,
@@ -36,6 +37,20 @@ class ImportPipeline(Base):
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="running", index=True
     )
+    # P0-1: resume endpoint 校验"是否原创建者"。NULL 表示历史 pipeline，
+    # 此时回退到旧的 import:write 权限放行（带 warning 日志）。
+    created_by: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    # P0-2: resume endpoint 校验"上传 PDF 与首次导入是否同一份文件"。
+    # NULL 表示历史 pipeline，跳过校验（带 warning 日志）。
+    source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # P0-3: 首次导入时实际生效的水印规则快照（list[{"pattern":..., "flags":...}]）。
+    # resume 时直接复用，避免管理员在 paused 与 resume 之间调整 watermark 规则
+    # 导致新旧 chunk 文本归一化结果不一致 / GlobalHashIndex 去重契约失效。
+    # NULL 表示历史 paused pipeline（迁移前创建），resume 路径回退到重新
+    # 加载当前规则并打 warning。
+    watermark_snapshot: Mapped[list | dict | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

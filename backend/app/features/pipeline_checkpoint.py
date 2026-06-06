@@ -74,9 +74,21 @@ async def create_pipeline_record(
     source_file: str | None,
     total_pages: int | None,
     chunk_size: int,
+    created_by: str | None = None,
+    source_sha256: str | None = None,
+    watermark_snapshot: list | dict | None = None,
 ) -> ImportPipeline:
     """创建一条 pipeline 父记录。重复 pipeline_id 直接抛错（PK 冲突），
-    上层应保证 ID 唯一（orchestrator 已用 timestamp + uuid）。"""
+    上层应保证 ID 唯一（orchestrator 已用 timestamp + uuid）。
+
+    P0-1 / P0-2: ``created_by`` 与 ``source_sha256`` 用于 resume endpoint
+    校验创建者身份与上传文件是否一致。新调用方应同时传入两者；旧调用方
+    （未升级链路 / 单 pass 路径）不传也能工作，写入 NULL。
+
+    P0-3: ``watermark_snapshot`` 记录首次导入时实际生效的水印规则，resume
+    时复用以避免规则漂移。NULL 表示老调用方 / 历史路径，resume 会回退到
+    重新加载当前规则。
+    """
     record = ImportPipeline(
         pipeline_id=pipeline_id,
         source_type=source_type,
@@ -84,6 +96,9 @@ async def create_pipeline_record(
         total_pages=total_pages,
         chunk_size=chunk_size,
         status="running",
+        created_by=created_by,
+        source_sha256=source_sha256,
+        watermark_snapshot=watermark_snapshot,
     )
     db.add(record)
     await db.commit()

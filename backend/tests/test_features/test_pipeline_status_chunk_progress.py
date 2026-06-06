@@ -197,3 +197,79 @@ def test_status_returns_none_for_unknown_pipeline(tmp_path):
             assert await orch.get_pipeline_status("pl_does_not_exist", db=db) is None
 
     _run(_go())
+
+
+# ---------------------------------------------------------------------------
+# P2-resume-store: 主 store 状态滞后 → chunk_progress.status 应覆盖顶层 status
+# ---------------------------------------------------------------------------
+
+
+def test_status_top_level_uses_chunk_progress_status_during_resume(tmp_path):
+    """resume_pipeline_background 只更新 DB，不回写主 store。
+    用户此时轮询 status，主 store 仍是首次导入结束时写入的 "paused"，
+    DB 已经被 update_pipeline_status("running") 推进到 running。
+    顶层 status 应该跟 DB 走，否则前端永远看不到 resume 已启动。
+    """
+
+    async def _go():
+        sm, _engine = await _make_sessionmaker(tmp_path)
+        pipeline_id = "pl_resume_sync_001"
+
+        async with sm() as db:
+            await create_pipeline_record(
+                db,
+                pipeline_id=pipeline_id,
+                source_type="pdf",
+                source_file="x.pdf",
+                total_pages=80,
+                chunk_size=40,
+            )
+            # 模拟首次导入留下的 chunk 状态：1 completed + 1 failed → paused
+            await create_chunk_records(
+                db, pipeline_id, page_ranges=[(1, 40), (41, 80)]
+            )
+            await update_chunk_status(
+                db, pipeline_id, 0,
+                status="completed", batch_id="REVIEW_a", question_count=10,
+            )
+            await update_chunk_status(
+                db, pipeline_id, 1,
+                status="failed", error_message="boom",
+            )
+
+        # 首次导入结束时主 store 写入的是 "paused"
+        _seed_main_store(pipeline_id)
+        # 模拟 resume 把 DB 推进到 running（主 store 不动）
+        from app.features.pipeline_checkpoint import update_pipeline_status
+        async with sm() as db:
+            await update_pipeline_status(db, pipeline_id, status="running")
+
+        try:
+            async with sm() as db:
+                snapshot = await orch.get_pipeline_status(pipeline_id, db=db)
+            assert snapshot is not None
+            # 顶层 status 跟 DB（=chunk_progress.status）走
+            assert snapshot["status"] == "running"
+            assert snapshot["chunk_progress"]["status"] == "running"
+
+            # 主 store 不被污染：仍只持有白名单字段
+            stored = orch._pipeline_store[pipeline_id]
+            assert "chunk_progress" not in stored
+            # 主 store 的 status 字段没被 status 查询接口反向改写
+            assert stored["status"] == "paused"
+        finally:
+            orch._pipeline_store.pop(pipeline_id, None)
+
+    _run(_go())
+
+
+def test_status_top_level_unchanged_when_db_none(tmp_path):
+    """db=None / 无 chunk 记录路径不应触发 status 覆盖（image / excel / 单 pass）。"""
+    pipeline_id = "pl_resume_sync_002"
+    _seed_main_store(pipeline_id)
+    try:
+        snapshot = asyncio.run(orch.get_pipeline_status(pipeline_id))
+        assert snapshot is not None
+        assert snapshot["status"] == "paused"
+    finally:
+        orch._pipeline_store.pop(pipeline_id, None)
