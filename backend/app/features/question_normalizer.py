@@ -326,6 +326,12 @@ def normalize_questions(
 
         try:
             result = normalize_question(raw_q, matched, source_info)
+            # P1-2: 透传 splitter / 上游写入的 risk_flags，让下游 stage
+            # （ai_repair / submit_to_review）和前端审核页能看到完整风险信号。
+            # 值域见 prompts/tasks/ocr_book_pdf_non_question_filter_plan.md §11.3。
+            upstream_flags = raw_q.get("risk_flags") or []
+            if upstream_flags:
+                result["risk_flags"] = list(dict.fromkeys(upstream_flags))
             questions.append(result)
 
             if result["errors"]:

@@ -94,6 +94,43 @@ _PROSE_SENTENCE_END_RE = re.compile(r"。")
 _OPTION_ABCD_RE = re.compile(r"[A-D]\s*[.．、:：)）]")
 
 
+# P1-1: book 模式下的"软 prose"检测信号。比 pipeline_orchestrator
+# `_looks_like_book_pdf_prose_candidate` 更宽松——后者会**整道丢弃**明显正文
+# （marker ≥ 2 + 句号 ≥ 2 + 长度 ≥ 90），这里只**打 risk_flag 降权**，让 edge
+# case（短 prose / 单一 marker）仍能进入审核，但前端醒目展示 "疑似正文"。
+# 与 ai_repair `_looks_like_non_question_text` 保持词表一致，避免链路漂移。
+_BOOK_SOFT_PROSE_MARKER_RE = re.compile(
+    r"定义|定理|知识点|证明|证毕|解法|例题|例如|如下|因此可得|由此可知|综上|性质|推论|注意|本节|本章"
+)
+_BOOK_SOFT_QUESTION_SIGNAL_RE = re.compile(
+    r"下列|以下|正确|错误|的是|哪|选择|计算|判断|已知|设|若|试述|简述|回答|为什么|求|问|\?|？"
+)
+_BOOK_SOFT_INLINE_OPTION_RE = re.compile(r"(?:^|\n|\s)[A-D]\s*[.．、:：)）]")
+
+
+def _looks_like_book_soft_prose(question: dict) -> bool:
+    """P1-1: 判断一道已切出的题目是否"疑似教材正文"。
+
+    标准比 pipeline 的硬过滤更宽松，命中时给题目打 ``book_pdf_prose_like``
+    flag、保留进审核队列，让人工最后裁判：
+    - 长度 ≥ 60；
+    - 没有 has_options / option_lines（已抽出选项的就别再判）；
+    - segment 内无 A./B./C./D. 选项行；
+    - segment 内无题问信号（下列/以下/求/问/?/？等）；
+    - segment 内出现至少 1 个 prose marker（定义/定理/性质/例题/证明 等）。
+    """
+    text = str(question.get("raw_question_text") or "").strip()
+    if len(text) < 60:
+        return False
+    if question.get("has_options") or question.get("option_lines"):
+        return False
+    if _BOOK_SOFT_INLINE_OPTION_RE.search(text):
+        return False
+    if _BOOK_SOFT_QUESTION_SIGNAL_RE.search(text):
+        return False
+    return bool(_BOOK_SOFT_PROSE_MARKER_RE.search(text))
+
+
 def _iter_lines_with_pos(text: str):
     """Yield (line_start_pos, line_text) for each line in text."""
     start = 0
@@ -382,6 +419,7 @@ def split_questions(
     normalized_blocks: list[dict],
     structure: dict | None = None,
     gap_tolerance: int = 10,
+    import_mode: str | None = None,
 ) -> list[dict]:
     """从文档块中切分出单道题目。
 
@@ -389,6 +427,10 @@ def split_questions(
         normalized_blocks: stage1 输出的标准化块列表
         structure: stage2 的结构分析结果（可选）
         gap_tolerance: 题号跳跃容忍度，超过此值且无选择题特征则跳过
+        import_mode: ``"book"`` / ``"exam"`` / ``"image"`` / ``"txt"`` / None。
+            book 模式下会额外给"疑似教材正文"的候选题打
+            ``risk_flags=["book_pdf_prose_like"]``，由前端审核页提示，但仍保留
+            到审核队列让人工最终裁决。
 
     Returns:
         raw_questions 列表
@@ -528,6 +570,16 @@ def split_questions(
         })
 
     questions = _recover_cross_page_options(questions)
+
+    # P1-1: book 模式下软 prose 标记。命中条件比 pipeline 的硬过滤宽松，
+    # 仅打 risk_flags 不丢弃，让人工最终裁决。orchestrator `_run_split`
+    # 已把 import_mode 透传过来；其它模式（exam/image/txt/None）无影响。
+    if isinstance(import_mode, str) and import_mode.lower() == "book":
+        for q in questions:
+            if _looks_like_book_soft_prose(q):
+                existing = q.get("risk_flags") or []
+                q["risk_flags"] = list(dict.fromkeys([*existing, "book_pdf_prose_like"]))
+                q["confidence"] = min(q.get("confidence", 0.4), 0.4)
 
     return questions
 

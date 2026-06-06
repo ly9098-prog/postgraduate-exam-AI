@@ -347,6 +347,7 @@ class TestImportPipelineSplit:
             "normalized_block_count": 2,
             "text_block_count": 2,
             "raw_question_count": 0,
+            "book_prose_downgraded": 0,
             "raw_questions_preview": [],
             "failure_reason": "text_present_but_no_question_boundary",
             "fallback_created": True,
@@ -360,6 +361,7 @@ class TestImportPipelineSplit:
             "has_options": False,
             "option_lines": {},
             "confidence": 0.2,
+            "risk_flags": ["fallback_low_confidence"],
         }]
 
     def test_book_mode_skips_unsplit_text_fallback(self):
@@ -419,7 +421,21 @@ class TestImportPipelineSplit:
 
         assert result["split_count"] == 1
         assert result["raw_questions"][0]["has_options"] is True
-        assert "book_pdf_prose_skipped" not in result["split_diagnostics"]
+        assert result["split_diagnostics"]["book_prose_downgraded"] == 0
+
+    def test_book_mode_soft_prose_diagnostics_counts_downgraded(self):
+        pipeline = ImportPipeline()
+        text = (
+            "1. 定义：线性表是具有相同数据类型的 n 个数据元素的有限序列，"
+            "顺序存储和链式存储是其常见实现方式，本节介绍前者和后者。"
+        )
+        normalized_blocks = [{"page": 245, "block_index": 0, "normalized_text": text}]
+
+        result = pipeline._run_split(normalized_blocks, import_mode="book", source_type="pdf")
+
+        assert result["split_count"] == 1
+        assert result["raw_questions"][0]["confidence"] == 0.4
+        assert result["split_diagnostics"]["book_prose_downgraded"] == 1
 
     def test_book_mode_keeps_long_subjective_question_without_options(self):
         pipeline = ImportPipeline()
@@ -463,6 +479,7 @@ class TestImportPipelineSplit:
             "normalized_block_count": 1,
             "text_block_count": 1,
             "raw_question_count": 1,
+            "book_prose_downgraded": 0,
             "raw_questions_preview": [
                 {
                     "number": 1,
@@ -1098,7 +1115,7 @@ class TestPipelineStoreSlim:
         _pipeline_store.pop(pid, None)
         _pipeline_diagnostics_store.pop(pid, None)
 
-        diagnostics = {"split": {"failure_reason": None}, "structure": {"mode": "exam"}}
+        diagnostics = {"split": {"failure_reason": None}, "structure": {"mode": "exam"}, "exercise_regions_missing": True}
         asyncio.run(_set_pipeline_store(pid, {
             "pipeline_id": pid,
             "status": "completed",
@@ -1264,6 +1281,31 @@ class TestRepairStage:
 
         assert result["warnings"] == ["1 questions skipped repair (non_question_like=1)"]
         assert len(result["questions"]) == 1
+        assert result["questions"][0]["risk_flags"] == ["non_question_like"]
+
+    def test_repair_success_preserves_risk_flags(self):
+        questions = _make_questions(1)
+        questions[0]["risk_flags"] = ["book_pdf_prose_like"]
+        repaired = [{
+            "question_index": 0,
+            "before": questions[0],
+            "after": {**questions[0], "stem": "Repaired stem", "risk_flags": ["book_pdf_prose_like"]},
+            "repair_actions": ["fixed_stem"],
+            "confidence": 0.75,
+            "token_used": 100,
+        }]
+
+        pipeline = ImportPipeline()
+        with patch("app.features.pipeline_orchestrator.repair_questions", new_callable=AsyncMock, return_value={
+            "repaired": repaired,
+            "unrepaired": [],
+            "skipped": [],
+            "stats": {"total_candidates": 1, "repaired": 1, "unrepaired": 0, "skipped": 0, "total_tokens": 100},
+        }):
+            result = asyncio.run(pipeline._run_repair(questions=questions, options={}))
+
+        assert result["questions"][0]["stem"] == "Repaired stem"
+        assert result["questions"][0]["risk_flags"] == ["book_pdf_prose_like"]
 
 
 # ---------------------------------------------------------------------------
@@ -1291,3 +1333,270 @@ class TestPipelineOptions:
             call_config = mock_repair.call_args[0][1]
             assert call_config["confidence_threshold"] == 0.8
             assert call_config["enabled"] is True
+
+
+# ---------------------------------------------------------------------------
+# P1-2: 风险标 risk_flags 落地（exercise_regions_missing → no_exercise_regions）
+# ---------------------------------------------------------------------------
+
+
+class TestRunExtractExerciseRegionsMissing:
+    """覆盖 _run_extract 的 P1-2 行为：仅当 detection 真正跑了但返回空时，
+    才在结果里设 exercise_regions_missing=True。下游 normalize_schema 才会
+    把 no_exercise_regions 写到题目 risk_flags。"""
+
+    def _patch_settings(self):
+        return [
+            patch("app.core.config.settings.OCR_ENABLED", True),
+            patch("app.core.config.settings.EXERCISE_DETECTION_ENABLED", True),
+            patch("app.core.config.settings.EXERCISE_DETECTION_SAMPLE_STEP", 1),
+            patch("app.core.config.settings.EXERCISE_DETECTION_DPI", 100),
+            patch("app.core.config.settings.EXERCISE_DETECTION_MAX_EMPTY_PAGES", 2),
+            patch("app.core.config.settings.EXERCISE_DETECTION_MIN_CONFIDENCE", 0.5),
+        ]
+
+    def test_book_pdf_detection_empty_marks_missing(self):
+        pipeline = ImportPipeline()
+        sparse = [{"page": 1, "block_index": 0, "text": "x"}]
+        ocr_blocks = [{"page": 1, "block_index": 0, "text": "OCR 全本兜底内容"}]
+
+        patches = self._patch_settings() + [
+            patch(
+                "app.features.pipeline_orchestrator._extract_pdf_blocks",
+                return_value=sparse,
+            ),
+            patch(
+                "app.features.pipeline_orchestrator._ocr_scanned_pdf",
+                return_value=ocr_blocks,
+            ),
+            patch(
+                "app.features.exercise_region_detector.detect_exercise_regions_from_pdf",
+                return_value=[],
+            ),
+        ]
+        for p in patches:
+            p.start()
+        try:
+            result = pipeline._run_extract(
+                b"pdf", "pdf", options={"import_mode": "book"},
+            )
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+        assert result["exercise_regions"] == []
+        assert result["exercise_regions_missing"] is True
+        assert result["raw_blocks"] == ocr_blocks
+
+    def test_detection_hit_does_not_mark_missing(self):
+        from app.features.exercise_region_detector import ExerciseRegion
+
+        pipeline = ImportPipeline()
+        sparse = [{"page": 1, "block_index": 0, "text": "x"}]
+        ocr_blocks = [{"page": 1, "block_index": 0, "text": "习题区 OCR"}]
+        hit_region = ExerciseRegion(
+            start_page=1, end_page=2, confidence=0.9, matched_keyword="本节习题",
+        )
+
+        patches = self._patch_settings() + [
+            patch(
+                "app.features.pipeline_orchestrator._extract_pdf_blocks",
+                return_value=sparse,
+            ),
+            patch(
+                "app.features.pipeline_orchestrator._ocr_scanned_pdf",
+                return_value=ocr_blocks,
+            ),
+            patch(
+                "app.features.exercise_region_detector.detect_exercise_regions_from_pdf",
+                return_value=[hit_region],
+            ),
+        ]
+        for p in patches:
+            p.start()
+        try:
+            result = pipeline._run_extract(
+                b"pdf", "pdf", options={"import_mode": "book"},
+            )
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+        assert result["exercise_regions"] != []
+        assert result["exercise_regions_missing"] is False
+
+    def test_user_specified_page_range_skips_detection_no_missing(self):
+        pipeline = ImportPipeline()
+        sparse = [{"page": 1, "block_index": 0, "text": "x"}]
+        ocr_blocks = [{"page": 1, "block_index": 0, "text": "用户指定范围 OCR"}]
+
+        patches = self._patch_settings() + [
+            patch(
+                "app.features.pipeline_orchestrator._extract_pdf_blocks",
+                return_value=sparse,
+            ),
+            patch(
+                "app.features.pipeline_orchestrator._ocr_scanned_pdf",
+                return_value=ocr_blocks,
+            ),
+        ]
+        for p in patches:
+            p.start()
+        try:
+            result = pipeline._run_extract(
+                b"pdf",
+                "pdf",
+                options={"import_mode": "book", "page_start": 10, "page_end": 20},
+            )
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+        assert result["exercise_regions_missing"] is False
+
+    def test_exam_mode_skips_detection_no_missing(self):
+        pipeline = ImportPipeline()
+        sparse = [{"page": 1, "block_index": 0, "text": "x"}]
+        ocr_blocks = [{"page": 1, "block_index": 0, "text": "exam 全本 OCR"}]
+
+        patches = self._patch_settings() + [
+            patch(
+                "app.features.pipeline_orchestrator._extract_pdf_blocks",
+                return_value=sparse,
+            ),
+            patch(
+                "app.features.pipeline_orchestrator._ocr_scanned_pdf",
+                return_value=ocr_blocks,
+            ),
+        ]
+        for p in patches:
+            p.start()
+        try:
+            result = pipeline._run_extract(
+                b"pdf", "pdf", options={"import_mode": "exam"},
+            )
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+        assert result["exercise_regions_missing"] is False
+
+    def test_txt_source_returns_missing_false(self):
+        pipeline = ImportPipeline()
+        with patch(
+            "app.features.pipeline_orchestrator._extract_text_blocks",
+            return_value=[{"page": 1, "block_index": 0, "text": "纯文本"}],
+        ):
+            result = pipeline._run_extract(b"hi", "txt")
+
+        assert result["exercise_regions_missing"] is False
+
+
+class TestRunNormalizeSchemaRiskFlags:
+    """覆盖 _run_normalize_schema 的 P1-2 行为：根据 import_mode +
+    exercise_regions_missing + confidence_score 给每道题打 risk_flags。"""
+
+    def test_book_mode_with_missing_regions_adds_no_exercise_regions(self):
+        pipeline = ImportPipeline()
+        with patch(
+            "app.features.pipeline_orchestrator.normalize_questions",
+            return_value={
+                "questions": [
+                    {"stem": "Q1", "confidence_score": 0.9, "is_valid": True, "errors": []},
+                    {"stem": "Q2", "confidence_score": 0.3, "is_valid": True, "errors": []},
+                ],
+                "errors": [],
+                "warnings": [],
+            },
+        ):
+            result = pipeline._run_normalize_schema(
+                raw_questions=[{"number": 1}, {"number": 2}],
+                matched=[],
+                source_file="book.pdf",
+                source_type="pdf",
+                import_mode="book",
+                exercise_regions_missing=True,
+            )
+
+        questions = result["questions"]
+        assert "no_exercise_regions" in questions[0]["risk_flags"]
+        assert "no_exercise_regions" in questions[1]["risk_flags"]
+        # 第二题 confidence 0.3 → low_confidence；去重 + 保序
+        assert "low_confidence" in questions[1]["risk_flags"]
+        assert "low_confidence" not in questions[0].get("risk_flags", [])
+        assert any("no_exercise_regions risk flag" in w for w in result["warnings"])
+
+    def test_exam_mode_skips_no_exercise_regions_even_when_missing(self):
+        pipeline = ImportPipeline()
+        with patch(
+            "app.features.pipeline_orchestrator.normalize_questions",
+            return_value={
+                "questions": [{"stem": "Q1", "confidence_score": 0.8, "is_valid": True, "errors": []}],
+                "errors": [],
+                "warnings": [],
+            },
+        ):
+            result = pipeline._run_normalize_schema(
+                raw_questions=[{"number": 1}],
+                matched=[],
+                source_file="exam.pdf",
+                source_type="pdf",
+                import_mode="exam",
+                exercise_regions_missing=True,
+            )
+
+        assert "risk_flags" not in result["questions"][0]
+
+    def test_book_mode_without_missing_does_not_flag(self):
+        pipeline = ImportPipeline()
+        with patch(
+            "app.features.pipeline_orchestrator.normalize_questions",
+            return_value={
+                "questions": [{"stem": "Q1", "confidence_score": 0.8, "is_valid": True, "errors": []}],
+                "errors": [],
+                "warnings": [],
+            },
+        ):
+            result = pipeline._run_normalize_schema(
+                raw_questions=[{"number": 1}],
+                matched=[],
+                source_file="book.pdf",
+                source_type="pdf",
+                import_mode="book",
+                exercise_regions_missing=False,
+            )
+
+        assert "risk_flags" not in result["questions"][0]
+
+    def test_upstream_risk_flags_preserved_and_extended(self):
+        """splitter 写入的 upstream flag 应被保留，normalize 阶段追加自己的 flag。"""
+        pipeline = ImportPipeline()
+        with patch(
+            "app.features.pipeline_orchestrator.normalize_questions",
+            return_value={
+                "questions": [{
+                    "stem": "Q1",
+                    "confidence_score": 0.3,
+                    "is_valid": True,
+                    "errors": [],
+                    "risk_flags": ["book_pdf_prose_like"],
+                }],
+                "errors": [],
+                "warnings": [],
+            },
+        ):
+            result = pipeline._run_normalize_schema(
+                raw_questions=[{"number": 1}],
+                matched=[],
+                source_file="book.pdf",
+                source_type="pdf",
+                import_mode="book",
+                exercise_regions_missing=True,
+            )
+
+        flags = result["questions"][0]["risk_flags"]
+        assert "book_pdf_prose_like" in flags
+        assert "no_exercise_regions" in flags
+        assert "low_confidence" in flags
+        # 去重保序：上游 flag 在最前
+        assert flags.index("book_pdf_prose_like") < flags.index("no_exercise_regions")

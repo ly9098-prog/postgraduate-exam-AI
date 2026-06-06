@@ -23,7 +23,7 @@ class OCRProfile:
 _LOCAL_PROFILE = OCRProfile(
     name="local",
     use_gpu=True,
-    max_workers=4,
+    max_workers=2,
     timeout_seconds=1200,
     min_image_width=1500,
     enable_rotation=True,

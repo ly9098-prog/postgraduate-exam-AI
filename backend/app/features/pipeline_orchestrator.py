@@ -561,6 +561,7 @@ def _build_diagnostics(data: dict) -> dict:
     return {
         "import_mode": mode.value if hasattr(mode, "value") else str(mode),
         "exercise_regions": data.get("exercise_regions", []),
+        "exercise_regions_missing": bool(data.get("exercise_regions_missing")),
         "structure": data.get("structure", {}),
         "page_classifications": data.get("page_classifications", []),
         "ocr_correction": data.get("ocr_correction_diagnostics", {}),
@@ -733,6 +734,10 @@ class ImportPipeline:
             )
 
             exercise_regions_result: list[dict] = []
+            # P1-2: 仅当 exercise_regions 检测真正跑了但返回为空时设为 True；
+            # 用户指定 page_start/page_end、exam 模式、OCR 未启用等场景下保持
+            # False，避免误打 no_exercise_regions 风险标。
+            exercise_regions_missing = False
 
             # Scanned PDF detection: if PyMuPDF extracted very little text,
             # the PDF likely contains only images → trigger OCR fallback.
@@ -746,9 +751,11 @@ class ImportPipeline:
                     )
                     try:
                         exercise_regions = None
+                        exercise_regions_attempted = False  # P1-2
                         import_mode_str = opts.get("import_mode", "auto")
                         user_specified_range = opts.get("page_start") or opts.get("page_end")
                         if settings.EXERCISE_DETECTION_ENABLED and import_mode_str != "exam" and not user_specified_range:
+                            exercise_regions_attempted = True
                             logger.info("Exercise region detection starting...")
                             from app.features.exercise_region_detector import (
                                 detect_exercise_regions_from_pdf,
@@ -811,6 +818,13 @@ class ImportPipeline:
                                     len(ocr_blocks), len(exercise_regions),
                                 )
                         else:
+                            # P1-2: detection 跑了但 exercise_regions 为空 → 标记
+                            # exercise_regions_missing=True；下游 normalize_schema
+                            # 看到 import_mode==book 时会把 no_exercise_regions
+                            # 写到每道题的 risk_flags，前端审核页据此打风险徽章。
+                            # detection 跳过（exam / 用户指定页码）不算 missing。
+                            if exercise_regions_attempted:
+                                exercise_regions_missing = True
                             exercise_regions = None
                             opts = _kw.get("options") or {}
                             ocr_blocks = _ocr_scanned_pdf(
@@ -843,11 +857,13 @@ class ImportPipeline:
         else:
             raw_blocks = _extract_text_blocks(pdf_source)
             exercise_regions_result = []
+            exercise_regions_missing = False
 
         return {
             "raw_blocks": raw_blocks,
             "extracted": len(raw_blocks),
             "exercise_regions": exercise_regions_result,
+            "exercise_regions_missing": exercise_regions_missing,
         }
 
     def _run_wangdao_preprocess(self, raw_blocks: list[dict], **_kw) -> dict:
@@ -996,7 +1012,20 @@ class ImportPipeline:
         """
         strategy = _kw.get("strategy") or {}
         gap_tolerance = strategy.get("question_number_gap_tolerance", 10)
-        raw_questions = split_questions(normalized_blocks, structure=structure, gap_tolerance=gap_tolerance)
+        # P1-1: 透传 import_mode（统一为小写字符串）给 splitter，
+        # 让 book 模式的"软 prose" 检测能给可疑题打 book_pdf_prose_like flag。
+        # 其它模式不受影响。
+        raw_im = _kw.get("import_mode")
+        if isinstance(raw_im, ImportMode):
+            import_mode_str = raw_im.value
+        else:
+            import_mode_str = str(raw_im or "").lower() or None
+        raw_questions = split_questions(
+            normalized_blocks,
+            structure=structure,
+            gap_tolerance=gap_tolerance,
+            import_mode=import_mode_str,
+        )
 
         text_blocks = [
             b for b in normalized_blocks
@@ -1006,6 +1035,10 @@ class ImportPipeline:
             "normalized_block_count": len(normalized_blocks),
             "text_block_count": len(text_blocks),
             "raw_question_count": len(raw_questions),
+            "book_prose_downgraded": sum(
+                1 for q in raw_questions
+                if "book_pdf_prose_like" in (q.get("risk_flags") or [])
+            ),
             "raw_questions_preview": raw_questions[:20],
             "failure_reason": None,
         }
@@ -1076,6 +1109,7 @@ class ImportPipeline:
                             "has_options": False,
                             "option_lines": {},
                             "confidence": 0.2,
+                            "risk_flags": ["fallback_low_confidence"],
                         }]
                         warnings.append("no questions found in document; created low-confidence review item")
                         split_diagnostics["fallback_created"] = True
@@ -1216,6 +1250,27 @@ class ImportPipeline:
         if invalid_count:
             stage_warnings.append(f"{invalid_count} questions marked invalid")
 
+        # P1-2: stage 级风险信号写到每道题的 risk_flags。命名口径见
+        # prompts/tasks/ocr_book_pdf_non_question_filter_plan.md §11.3，
+        # 前端 import-batch 页面据此打风险徽章；ai_repair / submit_to_review
+        # 后续会继续追加 non_question_like / fallback_low_confidence 等 flag。
+        exercise_regions_missing = bool(_kw.get("exercise_regions_missing"))
+        is_book = _is_book_import_mode(_kw.get("import_mode"))
+        no_regions_flagged = 0
+        for q in questions:
+            flags = list(q.get("risk_flags") or [])
+            if exercise_regions_missing and is_book:
+                flags.append("no_exercise_regions")
+                no_regions_flagged += 1
+            if (q.get("confidence_score") or 0) < 0.5:
+                flags.append("low_confidence")
+            if flags:
+                q["risk_flags"] = list(dict.fromkeys(flags))
+        if no_regions_flagged:
+            stage_warnings.append(
+                f"no_exercise_regions risk flag attached to {no_regions_flagged} questions"
+            )
+
         return {
             "questions": questions,
             "normalized_count": len(questions),
@@ -1305,7 +1360,12 @@ class ImportPipeline:
 
         for s in skipped:
             idx = s["question_index"]
-            repaired_combined[idx] = to_repair[idx]
+            original = dict(to_repair[idx])
+            if s.get("reason") == "non_question_like":
+                flags = list(original.get("risk_flags") or [])
+                flags.append("non_question_like")
+                original["risk_flags"] = list(dict.fromkeys(flags))
+            repaired_combined[idx] = original
 
         repaired_combined = [q for q in repaired_combined if q is not None]
 

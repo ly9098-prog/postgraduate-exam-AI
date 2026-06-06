@@ -347,6 +347,7 @@ async def repair_questions(
             "warnings": q.get("warnings", []),
             "stem_hash": q.get("stem_hash", ""),
             "confidence_score": result_data.get("confidence", q.get("confidence_score", 0)),
+            "risk_flags": list(dict.fromkeys(q.get("risk_flags") or [])),
         }
 
         repaired.append({
