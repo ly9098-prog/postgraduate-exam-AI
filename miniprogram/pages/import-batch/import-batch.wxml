@@ -68,7 +68,10 @@
           <text class="q-ai-flag" wx:if="{{item.ai_generated}}">AI</text>
           <text class="q-math-flag" wx:if="{{item._hasMath}}" bindtap="showMathPreview" catchtap data-id="{{item.id}}">含公式</text>
         </view>
-        <view class="q-status-badge {{item.status}}">{{item._statusLabel}}</view>
+        <view class="q-status-wrap">
+          <text class="q-risk-badge" wx:for="{{item._riskFlags}}" wx:for-item="flag" wx:key="*this">{{flag}}</text>
+          <view class="q-status-badge {{item.status}}">{{item._statusLabel}}</view>
+        </view>
       </view>
       <text class="q-preview">{{item._preview}}</text>
 
