@@ -582,6 +582,42 @@ def _build_diagnostics(data: dict) -> dict:
     }
 
 
+def _slim_chunk_diagnostics(diagnostics: dict) -> dict:
+    split = diagnostics.get("split") or {}
+    slim_split: dict[str, Any] = {}
+    for key in ("layout_filter", "visual_boundary", "failure_reason"):
+        if key in split:
+            slim_split[key] = split[key]
+    return {
+        "split": slim_split,
+        "risk_flag_counts": diagnostics.get("risk_flag_counts") or {},
+    }
+
+
+def _merge_risk_flag_counts(chunks: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for chunk in chunks:
+        chunk_counts = (chunk.get("diagnostics") or {}).get("risk_flag_counts") or {}
+        for flag, count in chunk_counts.items():
+            counts[str(flag)] = counts.get(str(flag), 0) + int(count or 0)
+    return counts
+
+
+def _visual_boundary_preview(blocks: list[dict], boundary: dict) -> str:
+    block_index = boundary.get("block_index")
+    line_index = boundary.get("line_index")
+    if not isinstance(block_index, int) or not isinstance(line_index, int):
+        return ""
+    for block in blocks:
+        if block.get("block_index", 0) != block_index:
+            continue
+        text = block.get("normalized_text") or block.get("text") or ""
+        lines = str(text).split("\n")
+        if 0 <= line_index < len(lines):
+            return "".join(line.strip() for line in lines[line_index:line_index + 2])[:80]
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # PipelineStage
 # ---------------------------------------------------------------------------
@@ -1112,7 +1148,14 @@ class ImportPipeline:
                         visual_bounds = detect_visual_boundaries(split_blocks)
                         split_diagnostics["visual_boundary"] = {
                             "boundary_count": len(visual_bounds),
-                            "signals": [b.get("signal") for b in visual_bounds[:20]],
+                            "boundaries": [
+                                {
+                                    "page": b.get("page"),
+                                    "signal": b.get("signal"),
+                                    "preview": _visual_boundary_preview(split_blocks, b),
+                                }
+                                for b in visual_bounds[:20]
+                            ],
                         }
                         if len(visual_bounds) >= 2:
                             raw_questions = split_by_visual_boundaries(split_blocks, visual_bounds)
@@ -1985,6 +2028,7 @@ class ImportPipeline:
             "batch_id": batch_id,
             "question_count": written,
             "error_message": chunk_error,
+            "diagnostics": _slim_chunk_diagnostics(chunk_result.get("diagnostics") or {}),
             "stages": chunk_result.get("stages") or {},
         }
 
@@ -2134,6 +2178,8 @@ class ImportPipeline:
             "total": total_pages,
         }
 
+        risk_flag_counts = _merge_risk_flag_counts(chunk_results)
+
         finished_at = datetime.now().isoformat()
         # Pick a representative batch_id for the overall pipeline (first
         # successful chunk's batch). Each chunk has its own batch_id under
@@ -2153,6 +2199,7 @@ class ImportPipeline:
                 "chunk_size": chunk_size,
                 "chunk_overlap": chunk_overlap,
                 "total_pages": total_pages,
+                "risk_flag_counts": risk_flag_counts,
                 "chunks": chunk_results,
                 "hash_index": (
                     dict(hash_index.stats) if hash_index is not None else None

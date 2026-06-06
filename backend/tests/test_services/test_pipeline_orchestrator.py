@@ -560,6 +560,53 @@ class TestImportPipelineSplit:
         assert result["split_count"] == 1
         assert result["split_diagnostics"]["layout_filter"]["enabled"] is False
 
+    def test_book_pdf_without_boxes_does_not_run_layout_filter(self):
+        pipeline = ImportPipeline()
+        normalized_blocks = [{
+            "page": 1,
+            "block_index": 0,
+            "normalized_text": "1. 已编号题目\nA. 选项A\nB. 选项B",
+            "page_width": 1128,
+            "page_height": 1571,
+        }]
+
+        result = pipeline._run_split(normalized_blocks, import_mode="book", source_type="pdf")
+
+        assert result["split_count"] == 1
+        assert result["split_diagnostics"]["layout_filter"]["enabled"] is False
+
+    def test_visual_boundary_diagnostics_include_bounded_preview(self):
+        pipeline = ImportPipeline()
+        normalized_blocks = [{
+            "page": 3,
+            "block_index": 0,
+            "normalized_text": "\n".join([
+                "教材说明：顺序表的存储结构如下。",
+                "这一段仍然是知识点解释。",
+                "新的视觉区域开始但没有题号。",
+                "这一行用于验证 preview 被截断为短文本。",
+            ]),
+            "boxes": [
+                {"bbox": [100, 100, 900, 120], "conf": 0.94},
+                {"bbox": [100, 130, 900, 150], "conf": 0.94},
+                {"bbox": [100, 300, 900, 320], "conf": 0.94},
+                {"bbox": [100, 330, 900, 350], "conf": 0.94},
+            ],
+            "page_width": 1128,
+            "page_height": 1571,
+        }]
+
+        result = pipeline._run_split(normalized_blocks, source_type="pdf")
+
+        visual_boundary = result["split_diagnostics"]["visual_boundary"]
+        assert visual_boundary["boundary_count"] == 1
+        assert visual_boundary["boundaries"] == [{
+            "page": 3,
+            "signal": "large_gap",
+            "preview": "新的视觉区域开始但没有题号。这一行用于验证 preview 被截断为短文本。",
+        }]
+        assert len(visual_boundary["boundaries"][0]["preview"]) <= 80
+
     def test_numbered_questions_do_not_use_fallback(self):
         pipeline = ImportPipeline()
         normalized_blocks = [
