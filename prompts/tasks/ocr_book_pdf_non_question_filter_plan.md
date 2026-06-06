@@ -309,7 +309,7 @@ hash / dedup 只能识别重复文本，不能判断文本是否为真实题目�
 |--------|------|------|
 | P1-2 book 模式 exercise_regions 漏检 | **跑全本 OCR + 每道题打 `no_exercise_regions` 风险标 + diagnostics 同步记录** | 已完成，提交 `7bbe3c8` |
 | P1-1 question_splitter 正文负样本过滤 | **book 模式疑似正文降权到 0.4 并打 `book_pdf_prose_like`** | 已完成，提交 `7bbe3c8` |
-| P1-3 前端审核页风险标识 | **最小方案：卡片右上角加红色徽章 + 全部通过前弹确认框** | 已完成，本次提交 |
+| P1-3 前端审核页风险标识 | **最小方案：卡片右上角加红色徽章 + 全部通过前弹确认框** | 已完成，提交 `c990950` |
 | 实施顺序 | **P1-2 → P1-1 → P1-3** | P1 后端风险字段底座与前端只读字段展示均已落地 |
 
 ### 11.3 P1 实施方案细节
@@ -415,17 +415,50 @@ const RISK_LABELS = {
    - `pipeline_orchestrator.py::_run_split` 透传 `import_mode`。
    - 单测：`test_question_splitter.py` 新增 book 模式 prose 降权用例。
 
-3. **P1-3 前端徽章**（已完成，本次提交）
+3. **P1-3 前端徽章**（已完成，提交 `c990950`）
    - `import-batch.js` `_riskFlags` 字段 + batchApprove 弹确认。
    - `import-batch.wxml` 卡片增加徽章列表。
    - `import-batch.wxss` 新增 `.q-risk-badge` 样式。
 
-4. **文档同步**（进行中）
-   - 本计划文件末尾追加 commit hash。
-   - `docs/BUGS_HISTORY.md` 记录本轮修复（如有 docs-maintainer agent 路径）。
+4. **文档同步**（已完成，2026-06-06）
+   - 本计划文件末尾已补充提交 `7bbe3c8` / `c990950`。
+   - `docs/BUGS_HISTORY.md` 已记录本轮 OCR/PDF 教材正文误识别与风险标识修复。
 
-### 11.5 不在本轮范围
+### 11.5 P2 — 已完成（2026-06-06）
 
-- P2-1 OCR boxes 版面级过滤（仍按 §6 P2 推迟）。
-- P2-2 可观测性日志结构化（仅本轮新增的 risk_flags 字段会进 diagnostics）。
-- P2-3 误判样本回归集（需要单独建样本目录，下一轮）。
+| 项目 | 状态 | 落地位置 | 验证 |
+|------|------|----------|------|
+| P2-3 误判样本回归集 | 完成 | `backend/tests/ocr_eval/eval_wangdao.py` 增加纯知识点、答案页、混合页、双栏页 synthetic blocks | `TestWangdaoStructureOnly` 14 passed |
+| P2-1 OCR boxes 版面级过滤 | 完成 | `visual_boundary_detector.py::filter_book_layout_blocks` + `pipeline_orchestrator.py::_run_split` book/pdf/boxes 路径接入 | pipeline orchestrator 相关用例通过 |
+| P2-2 可观测 diagnostics | 完成 | `split.layout_filter`、`split.visual_boundary`、顶层 `risk_flag_counts` | diagnostics 单测通过 |
+
+**实现边界**：
+- 仅在 `import_mode == book`、`source_type == pdf` 且 OCR block 含 `boxes` 时启用布局过滤。
+- exam / image / text / 手动文本导入不运行该过滤。
+- 无高置信布局信号时保留原 block，仅记录 kept 计数，不做破坏性丢弃。
+- diagnostics 只记录计数、页码、signal 与短 preview，不写入大段 OCR 原文。
+
+**回归验证**：
+
+```bash
+PYTHONPATH=backend pytest backend/tests/ocr_eval/eval_wangdao.py::TestWangdaoStructureOnly -v
+# 14 passed
+
+PYTHONPATH=backend pytest backend/tests/test_services/test_pipeline_orchestrator.py -v
+# 72 passed, 4 warnings
+
+PYTHONPATH=backend pytest backend/tests/test_services/test_question_splitter.py backend/tests/test_services/test_page_classifier.py -v
+# 77 passed
+
+PYTHONPATH=backend pytest backend/tests/test_exercise_region_detector.py -v
+# 39 passed
+```
+
+完整 `backend/tests/ocr_eval/eval_wangdao.py` 仍有 live OCR 环境相关失败：`TestWangdaoLiveOCR::test_live_structure_detection` 返回 `UNKNOWN`，伴随多页 `OCR（含框）... could not execute a primitive` 警告；本轮稳定 synthetic 回归集已通过。
+
+### 11.6 不在本轮范围
+
+- 引入新的 OCR / 版面模型。
+- 大规模重构 `page_classifier.py` / `structure_analyzer.py`。
+- 取消 `question_imports` 人工确认流程。
+- 小程序真机 UI 验证（本轮 P2 未改前端）。

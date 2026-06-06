@@ -106,6 +106,43 @@ _BOOK_SOFT_QUESTION_SIGNAL_RE = re.compile(
     r"下列|以下|正确|错误|的是|哪|选择|计算|判断|已知|设|若|试述|简述|回答|为什么|求|问|\?|？"
 )
 _BOOK_SOFT_INLINE_OPTION_RE = re.compile(r"(?:^|\n|\s)[A-D]\s*[.．、:：)）]")
+_BOOK_EXERCISE_MARKER_RE = re.compile(r"习题精选|练习题|巩固练习|单项选择题|多项选择题|选择题")
+_BOOK_ANSWER_ONLY_RE = re.compile(r"答案与解析|参考答案|正确答案")
+
+
+def _trim_book_text_before_exercises(text: str) -> str:
+    marker = _BOOK_EXERCISE_MARKER_RE.search(text)
+    if not marker:
+        return text
+    tail = text[marker.end():]
+    question = re.search(r"\d+\s*[.．、)）]", tail)
+    if not question:
+        return text
+    return tail[question.start():].lstrip()
+
+
+def _looks_like_book_non_question_segment(question: dict) -> bool:
+    text = str(question.get("raw_question_text") or "").strip()
+    if not text:
+        return True
+    if _BOOK_ANSWER_ONLY_RE.search(text) and not question.get("has_options"):
+        return True
+    if re.search(r"(?:^|\n)\s*解析[：:]", text) and not question.get("has_options"):
+        return True
+    if question.get("has_options") or question.get("option_lines"):
+        return False
+    if _BOOK_SOFT_INLINE_OPTION_RE.search(text):
+        return False
+    marker_count = len(_BOOK_SOFT_PROSE_MARKER_RE.findall(text))
+    if marker_count == 0:
+        return False
+    if re.search(r"(?:^|\n)\s*(?:证明|证毕|例题解析|解法)[：:]", text) and not question.get("has_options"):
+        return True
+    if _BOOK_SOFT_QUESTION_SIGNAL_RE.search(text):
+        return marker_count >= 2 and len(text) >= 90
+    if marker_count == 1 and len(text) < 60:
+        return True
+    return marker_count >= 2 and len(text) >= 90
 
 
 def _looks_like_book_soft_prose(question: dict) -> bool:
@@ -476,6 +513,8 @@ def split_questions(
         pos += len(text) + 1  # +1 for the joining newline
 
     full_text = "\n".join(parts)
+    if isinstance(import_mode, str) and import_mode.lower() == "book":
+        full_text = _trim_book_text_before_exercises(full_text)
     boundaries = _find_question_boundaries(full_text)
 
     if not boundaries:
@@ -575,6 +614,7 @@ def split_questions(
     # 仅打 risk_flags 不丢弃，让人工最终裁决。orchestrator `_run_split`
     # 已把 import_mode 透传过来；其它模式（exam/image/txt/None）无影响。
     if isinstance(import_mode, str) and import_mode.lower() == "book":
+        questions = [q for q in questions if not _looks_like_book_non_question_segment(q)]
         for q in questions:
             if _looks_like_book_soft_prose(q):
                 existing = q.get("risk_flags") or []
