@@ -36,6 +36,13 @@ from app.features.text_normalizer import ImportTextNormalizer
 
 logger = logging.getLogger(__name__)
 
+
+def _is_book_import_mode(import_mode) -> bool:
+    if isinstance(import_mode, ImportMode):
+        return import_mode == ImportMode.BOOK
+    return str(import_mode or "").lower() == ImportMode.BOOK.value
+
+
 # ---------------------------------------------------------------------------
 # in-memory pipeline state store
 # ---------------------------------------------------------------------------
@@ -998,20 +1005,28 @@ class ImportPipeline:
 
                 # 仍然无结果时 fallback 为单条
                 if not raw_questions:
-                    raw_questions = [{
-                        "number": 1,
-                        "raw_question_text": "\n".join(
-                            str(b.get("normalized_text") or "").strip() for b in text_blocks
-                        ),
-                        "page_start": text_blocks[0].get("page", 1),
-                        "page_end": text_blocks[-1].get("page", text_blocks[0].get("page", 1)),
-                        "has_options": False,
-                        "option_lines": {},
-                        "confidence": 0.2,
-                    }]
-                    warnings.append("no questions found in document; created low-confidence review item")
-                    split_diagnostics["fallback_created"] = True
-                    split_diagnostics["failure_reason"] = "text_present_but_no_question_boundary"
+                    if _is_book_import_mode(_kw.get("import_mode")) and str(_kw.get("source_type") or "").lower() == "pdf":
+                        warnings.append(
+                            "no questions found in book import; skipped low-confidence fallback review item"
+                        )
+                        split_diagnostics["fallback_created"] = False
+                        split_diagnostics["failure_reason"] = "book_text_present_but_no_question_boundary"
+                        split_diagnostics["non_question_like_skipped"] = True
+                    else:
+                        raw_questions = [{
+                            "number": 1,
+                            "raw_question_text": "\n".join(
+                                str(b.get("normalized_text") or "").strip() for b in text_blocks
+                            ),
+                            "page_start": text_blocks[0].get("page", 1),
+                            "page_end": text_blocks[-1].get("page", text_blocks[0].get("page", 1)),
+                            "has_options": False,
+                            "option_lines": {},
+                            "confidence": 0.2,
+                        }]
+                        warnings.append("no questions found in document; created low-confidence review item")
+                        split_diagnostics["fallback_created"] = True
+                        split_diagnostics["failure_reason"] = "text_present_but_no_question_boundary"
             else:
                 warnings.append("no questions found in document")
                 split_diagnostics["fallback_created"] = False
@@ -1256,7 +1271,17 @@ class ImportPipeline:
         if unrepaired:
             warnings.append(f"{len(unrepaired)} questions unrepaired by AI")
         if skipped:
-            warnings.append(f"{len(skipped)} questions skipped (above threshold)")
+            reason_counts: dict[str, int] = {}
+            for s in skipped:
+                reason = str(s.get("reason") or "unknown")
+                reason_counts[reason] = reason_counts.get(reason, 0) + 1
+            if reason_counts == {"above_threshold": len(skipped)}:
+                warnings.append(f"{len(skipped)} questions skipped (above threshold)")
+            else:
+                reason_summary = ", ".join(
+                    f"{reason}={count}" for reason, count in sorted(reason_counts.items())
+                )
+                warnings.append(f"{len(skipped)} questions skipped repair ({reason_summary})")
 
         return {
             "questions": combined,
