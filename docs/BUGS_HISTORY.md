@@ -1,5 +1,13 @@
 # Bugs History
 
+## 2026-06-06 — 本地扫描 PDF OCR 导入进程被终止（已修复）
+
+- **现象**：本地导入扫描版 PDF 时，后端在进入 OCR fallback 后持续处理页面，日志出现 `Terminated` / `Stopping reloader process`，没有 Python traceback；此前还曾因启动目录不正确出现 `ModuleNotFoundError: No module named 'app'`。
+- **原因**：本地 OCR profile 过于激进，`use_gpu=True` 且 `max_workers=4`，扫描 PDF 页渲染、PNG 中间数据、PaddleOCR 推理和 `uvicorn --reload` 同进程叠加，容易触发本地资源压力并被外部终止。启动失败的 `No module named 'app'` 是单独的 `PYTHONPATH` 问题。
+- **处理**：将 `backend/app/core/ocr_profile.py` 本地 profile 调整为 CPU 单 worker：`use_gpu=False`、`max_workers=1`，保留本地大文件导入能力但降低瞬时资源占用；启动后端时使用 `PYTHONPATH=/home/lmh/projects/postgraduate-ai/backend`。
+- **验证**：后端启动日志确认 `ocr_profile=local (gpu=False, workers=1, max_pdf_pages=0)`；`/health` 返回 `{"status":"ok","env":"development"}`；当前 `logs.txt` 显示 OCR 后续导入链路已成功进入 AI enrich，`POST /api/v1/ai-import/enrich-batch/REVIEW_20260606_152730_c5d293 → 200`，随后 `GET /api/v1/import/batches/REVIEW_20260606_152730_c5d293 → 200`。
+- **说明**：本地扫描 PDF OCR 应优先稳定完成导入，不追求 GPU 并发吞吐；生产 2 核 2G 环境仍不建议执行大文件 OCR。
+
 ## 2026-06-03 — P0 书籍扫描版 PDF 导入解析超时（已修复）
 
 - **现象**：导入 312 页王道 408 全文扫描 PDF 时，等待 1 小时仍未完成，前端轮询超时报 `request:fail timeout`，后端状态始终为 `parsing`。

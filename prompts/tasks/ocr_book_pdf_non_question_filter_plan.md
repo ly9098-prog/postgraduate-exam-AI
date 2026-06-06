@@ -290,3 +290,141 @@ hash / dedup 只能识别重复文本，不能判断文本是否为真实题目�
 - book 模式应比 exam / image / text 模式更保守。
 - AI repair 只修复“像题目的低质量题”，不修复“像正文的非题目”。
 - 所有跳过行为必须写入 diagnostics，方便用户理解和后续调试。
+
+---
+
+## 11. 实施进度与决策记录
+
+### 11.1 P0 — 已完成
+
+| 项目 | 状态 | 提交 | 落地位置 |
+|------|------|------|----------|
+| P0-1 收紧 book 模式 `_run_split()` fallback | 完成 | `9609ad9` | `pipeline_orchestrator.py::_run_split` 增加 `_looks_like_book_pdf_prose_candidate` + `book_text_present_but_no_question_boundary` 分支 |
+| P0-2 AI repair 前非题目过滤 | 完成 | `9609ad9` | `ai_repair.py::_looks_like_non_question_text` + `_should_repair` 返回 `non_question_like` 跳过 |
+| P0-3 chunked / resume 无边界跳过验证 | 完成 | `795ce00` | `_filter_book_pdf_prose` 覆盖 visual boundary fallback；测试 `test_pipeline_orchestrator.py` |
+
+### 11.2 P1 — 决策（2026-06-06）
+
+| 决策点 | 选择 | 备注 |
+|--------|------|------|
+| P1-2 book 模式 exercise_regions 漏检 | **跑全本 OCR + 每道题打 `no_exercise_regions` 风险标 + diagnostics 同步记录** | 不阻断产能；UI 透出由用户决定批准与否 |
+| P1-3 前端审核页风险标识 | **最小方案：卡片右上角加红色徽章 + 全部通过前弹确认框** | 改动局限在 `import-batch.wxml/wxss/js` |
+| 实施顺序 | **P1-2 → P1-1 → P1-3** | 先建立风险字段底座，再让 splitter 复用同字段，最后前端只读字段 |
+
+### 11.3 P1 实施方案细节
+
+#### 统一风险信号契约
+
+为了让前端只读一处字段就能展示所有风险，后端把所有风险标都写到 `question_imports.ai_metadata.risk_flags`，类型为 `list[str]`。约定字段值域如下，新值由后端追加，前端按已知值翻译为中文徽章，未知值原样降级展示。
+
+| flag 值 | 触发条件 | 来源阶段 | 前端徽章文案 |
+|---------|----------|----------|--------------|
+| `no_exercise_regions` | book 模式 OCR fallback 且 exercise_regions 检测为空 | extract | 未检出习题区 |
+| `book_pdf_prose_like` | splitter 内 book 模式 prose 检测命中（候选题被保留但置信度低于 0.5） | split | 疑似正文 |
+| `low_confidence` | `confidence_score < 0.5` | normalize_schema / repair | 低置信 |
+| `fallback_low_confidence` | 进入 `text_present_but_no_question_boundary` 分支（仅非 book 模式触发） | split | 兜底题目 |
+| `non_question_like` | AI repair 阶段被 `_looks_like_non_question_text` 拦截 | repair | 疑似非题目 |
+
+**实现要点**：
+- `submit_to_review` 写入 `ai_metadata` 时，从 `q.get("risk_flags", [])` 透传整个列表，去重后落库。
+- 现有 `is_valid` / `errors` / `warnings` 不变；`risk_flags` 是**追加**字段，不替换现有诊断。
+- API `/import/batches/{batch_id}` 返回的 `ai_metadata.risk_flags` 字段保持原始 list 类型，前端无须协议改动。
+
+#### P1-2：book 模式 exercise_regions 漏检
+
+**改动位置**：`backend/app/features/pipeline_orchestrator.py::_run_extract`
+
+**改动**：
+1. 当 `exercise_regions` 为空且 `_is_book_import_mode(import_mode)` 时：
+   - 仍跑全本 OCR（保留现有 fallback 路径）；
+   - 在返回 dict 中添加 `exercise_regions_missing=True`；
+   - 在 stage warnings 中追加 `book_no_exercise_regions: fallback to full OCR`。
+2. 在 `_run_normalize_schema` 中，如果上游 `exercise_regions_missing=True`，把 `no_exercise_regions` 追加到每道题的 `risk_flags`。
+3. `_build_diagnostics` 暴露 `exercise_regions_missing` 字段，便于诊断查询。
+
+**边界**：
+- 仅 book 模式触发；exam / image / text 不受影响。
+- 用户传入 `page_start`/`page_end` 时跳过 exercise detection，不打 flag（用户已明确范围）。
+
+**回归验证**：
+- book 模式 + 无 exercise_regions → 题目入库且 `ai_metadata.risk_flags` 含 `no_exercise_regions`。
+- book 模式 + exercise_regions 命中 → flag 不被打。
+- exam 模式 + 无 exercise_regions → flag 不被打（exam 自身不跑 exercise detection）。
+
+#### P1-1：question_splitter 正文负样本过滤
+
+**改动位置**：`backend/app/features/question_splitter.py::split_questions`
+
+**改动**：
+1. `split_questions` 签名追加可选参数 `import_mode: str | None = None`。
+2. 在 boundary 过滤循环中，当 `import_mode == "book"` 且当前候选 segment 满足以下任一条件时，降低 confidence 至 0.4 并打 `book_pdf_prose_like` flag：
+   - segment 包含 ≥ 2 个 prose markers（定义/定理/知识点/证明/例题/性质 等）；
+   - segment 无任何选项标记（A./B./C./D.）；
+   - segment 无题问信号（下列/以下/正确/错误/的是/求/问/？等）；
+   - segment 长度 > 200 字符。
+3. 跳过/降权动作写入 `split_diagnostics.book_prose_downgraded` 计数。
+4. `pipeline_orchestrator._run_split` 透传 `import_mode=str(_kw.get("import_mode") or "")` 给 splitter。
+
+**与 P0-1 的关系**：
+- P0-1 `_looks_like_book_pdf_prose_candidate` 在 splitter 之后**整道丢弃** prose。
+- P1-1 在 splitter 内部**早期降权**，让 prose 仍能进入下游但带低置信 + flag，留给前端审阅决定。
+- 两层防线互补：明显 prose（marker ≥ 4，无题问信号）→ P0-1 直接丢；疑似 prose（marker 2-3，有部分题问信号）→ P1-1 降权打 flag。
+
+**回归验证**：
+- 纯知识点段落：P0-1 已丢；新规则不应误降真实题。
+- 同页知识点 + 习题：习题保留正常 confidence；知识点段被 P1-1 降权。
+- exam 整卷：splitter 不进入 book 分支，行为不变。
+
+#### P1-3：前端审核页风险徽章
+
+**改动位置**：
+- `miniprogram/pages/import-batch/import-batch.js::loadBatch` — 在 question map 中加 `_riskFlags`（已知 flag 翻译为中文文案，未知 flag 保留原值）。
+- `miniprogram/pages/import-batch/import-batch.wxml` — 卡片 `q-overview` 行尾追加 `_riskFlags.length` 条徽章。
+- `miniprogram/pages/import-batch/import-batch.wxss` — 新增 `.q-risk-badge` 样式（红底白字，圆角 8rpx）。
+- `import-batch.js::batchApprove` — 全部通过前，若任一待审核项 `_riskFlags.length > 0`，弹 `wx.showModal` 确认。
+
+**前端 flag → 文案映射**：
+
+```javascript
+const RISK_LABELS = {
+  no_exercise_regions: '未检出习题区',
+  book_pdf_prose_like: '疑似正文',
+  low_confidence: '低置信',
+  fallback_low_confidence: '兜底题目',
+  non_question_like: '疑似非题目',
+}
+```
+
+**回归验证**：
+- 无风险题目：卡片 UI 与改造前一致。
+- 含风险题目：徽章正确显示且颜色醒目。
+- 含风险批次的 "全部通过"：弹确认框 + 用户确认后才执行。
+- 单条 approve / batch approve（部分选择）：不弹框，保留原行为。
+
+### 11.4 实施清单（按顺序）
+
+1. **P1-2 后端 + 风险字段底座**
+   - `pipeline_orchestrator.py::_run_extract` 增加 `exercise_regions_missing`。
+   - `pipeline_orchestrator.py::_run_normalize_schema` 把 flag 写到题目 `risk_flags`。
+   - `review_service.py::submit_to_review` 透传 `risk_flags` 到 `ai_metadata`。
+   - 单测：`test_pipeline_orchestrator.py` 新增 book 漏检场景。
+
+2. **P1-1 splitter 增强**
+   - `question_splitter.py::split_questions` 加 `import_mode` 参数 + book 模式降权逻辑。
+   - `pipeline_orchestrator.py::_run_split` 透传 `import_mode`。
+   - 单测：`test_question_splitter.py` 新增 book 模式 prose 降权用例。
+
+3. **P1-3 前端徽章**
+   - `import-batch.js` `_riskFlags` 字段 + batchApprove 弹确认。
+   - `import-batch.wxml` 卡片增加徽章列表。
+   - `import-batch.wxss` 新增 `.q-risk-badge` 样式。
+
+4. **文档同步**
+   - 本计划文件末尾追加 commit hash。
+   - `docs/BUGS_HISTORY.md` 记录本轮修复（如有 docs-maintainer agent 路径）。
+
+### 11.5 不在本轮范围
+
+- P2-1 OCR boxes 版面级过滤（仍按 §6 P2 推迟）。
+- P2-2 可观测性日志结构化（仅本轮新增的 risk_flags 字段会进 diagnostics）。
+- P2-3 误判样本回归集（需要单独建样本目录，下一轮）。
