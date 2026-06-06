@@ -69,6 +69,14 @@ def _looks_like_book_pdf_prose_candidate(question: dict) -> bool:
     return True
 
 
+def _count_risk_flags(questions: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for question in questions:
+        for flag in question.get("risk_flags") or []:
+            counts[str(flag)] = counts.get(str(flag), 0) + 1
+    return counts
+
+
 # ---------------------------------------------------------------------------
 # in-memory pipeline state store
 # ---------------------------------------------------------------------------
@@ -566,6 +574,7 @@ def _build_diagnostics(data: dict) -> dict:
         "page_classifications": data.get("page_classifications", []),
         "ocr_correction": data.get("ocr_correction_diagnostics", {}),
         "split": data.get("split_diagnostics", {}),
+        "risk_flag_counts": data.get("risk_flag_counts", {}),
         "batch_validation": data.get("batch_validation_diagnostics", {}),
         "schema_errors": data.get("errors", []),
         "ai_validation": data.get("ai_validation_diagnostics", {}),
@@ -1020,15 +1029,36 @@ class ImportPipeline:
             import_mode_str = raw_im.value
         else:
             import_mode_str = str(raw_im or "").lower() or None
+
+        split_blocks = normalized_blocks
+        layout_filter_diagnostics = {
+            "enabled": False,
+            "pages_considered": 0,
+            "filtered_line_count": 0,
+            "kept_line_count": 0,
+            "region_signals": [],
+        }
+        if (
+            import_mode_str == "book"
+            and str(_kw.get("source_type") or "").lower() == "pdf"
+            and any(b.get("boxes") for b in normalized_blocks)
+        ):
+            try:
+                from app.features.visual_boundary_detector import filter_book_layout_blocks
+
+                split_blocks, layout_filter_diagnostics = filter_book_layout_blocks(normalized_blocks)
+            except Exception as exc:
+                logger.warning("book layout filter failed: %s", exc)
+
         raw_questions = split_questions(
-            normalized_blocks,
+            split_blocks,
             structure=structure,
             gap_tolerance=gap_tolerance,
             import_mode=import_mode_str,
         )
 
         text_blocks = [
-            b for b in normalized_blocks
+            b for b in split_blocks
             if str(b.get("normalized_text") or "").strip()
         ]
         split_diagnostics = {
@@ -1039,6 +1069,7 @@ class ImportPipeline:
                 1 for q in raw_questions
                 if "book_pdf_prose_like" in (q.get("risk_flags") or [])
             ),
+            "layout_filter": layout_filter_diagnostics,
             "raw_questions_preview": raw_questions[:20],
             "failure_reason": None,
         }
@@ -1078,9 +1109,13 @@ class ImportPipeline:
                     try:
                         from app.features.visual_boundary_detector import detect_visual_boundaries
                         from app.features.question_splitter import split_by_visual_boundaries
-                        visual_bounds = detect_visual_boundaries(normalized_blocks)
+                        visual_bounds = detect_visual_boundaries(split_blocks)
+                        split_diagnostics["visual_boundary"] = {
+                            "boundary_count": len(visual_bounds),
+                            "signals": [b.get("signal") for b in visual_bounds[:20]],
+                        }
                         if len(visual_bounds) >= 2:
-                            raw_questions = split_by_visual_boundaries(normalized_blocks, visual_bounds)
+                            raw_questions = split_by_visual_boundaries(split_blocks, visual_bounds)
                             warnings.append(f"visual_boundary: split {len(raw_questions)} questions via bbox")
                             split_diagnostics["failure_reason"] = None
                             split_diagnostics["fallback_created"] = False
@@ -1274,6 +1309,7 @@ class ImportPipeline:
         return {
             "questions": questions,
             "normalized_count": len(questions),
+            "risk_flag_counts": _count_risk_flags(questions),
             "errors": list(errors),
             "warnings": stage_warnings,
         }
@@ -1402,6 +1438,7 @@ class ImportPipeline:
             "unrepaired_count": len(unrepaired),
             "skipped_count": len(skipped),
             "total_tokens": stats.get("total_tokens", 0),
+            "risk_flag_counts": _count_risk_flags(combined),
             "warnings": warnings,
         }
 

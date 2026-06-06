@@ -78,11 +78,119 @@ EXPECTED_QUESTIONS_CH1 = [
 ]
 
 
+def _ocr_block(page: int, block_index: int, lines: list[str], coords: list[list[int]]) -> dict:
+    return {
+        "page": page,
+        "block_index": block_index,
+        "text": "\n".join(lines),
+        "boxes": [{"bbox": bbox, "conf": 0.94} for bbox in coords],
+        "page_width": 1128,
+        "page_height": 1571,
+    }
+
+
+SAMPLE_KNOWLEDGE_ONLY_NUMBERED = [
+    _ocr_block(
+        1,
+        0,
+        [
+            "1. 数据结构的定义",
+            "数据结构是相互之间存在一种或多种特定关系的数据元素的集合。",
+            "2. 线性表的性质",
+            "线性表中的元素具有相同的数据类型，除第一个元素外每个元素有且仅有一个直接前驱。",
+            "证明：由定义可知，顺序存储结构可以支持随机访问。",
+        ],
+        [
+            [100, 120, 480, 150],
+            [100, 165, 980, 195],
+            [100, 235, 480, 265],
+            [100, 280, 980, 310],
+            [100, 350, 900, 380],
+        ],
+    ),
+]
+
+SAMPLE_MIXED_PROSE_AND_EXERCISE = [
+    _ocr_block(
+        1,
+        0,
+        [
+            "1. 栈的定义",
+            "栈是只允许在一端进行插入和删除的线性表。",
+            "例题解析：如下过程说明栈的先进后出性质。",
+            "习题精选",
+            "01．下列关于栈的说法中，正确的是（  ）。",
+            "A．先进先出",
+            "B．后进先出",
+            "C．随机访问",
+            "D．链式存储",
+        ],
+        [
+            [100, 120, 430, 150],
+            [100, 165, 920, 195],
+            [100, 210, 900, 240],
+            [460, 500, 650, 535],
+            [100, 570, 980, 605],
+            [120, 625, 420, 655],
+            [120, 665, 420, 695],
+            [120, 705, 420, 735],
+            [120, 745, 420, 775],
+        ],
+    ),
+]
+
+SAMPLE_TWO_COLUMN_PROSE_AND_QUESTIONS = [
+    _ocr_block(
+        1,
+        0,
+        [
+            "定义：二叉树是每个结点至多有两棵子树的树形结构。",
+            "性质：第 i 层上至多有 2 的 i-1 次方个结点。",
+            "证明：可用数学归纳法得到上述结论。",
+            "01．下列关于二叉树的说法，正确的是（  ）。",
+            "A．每个结点都有两个孩子",
+            "B．可以为空树",
+            "C．只能顺序存储",
+            "D．高度一定等于结点数",
+        ],
+        [
+            [80, 120, 510, 150],
+            [80, 170, 510, 200],
+            [80, 220, 510, 250],
+            [600, 120, 1060, 150],
+            [620, 170, 1040, 200],
+            [620, 220, 1040, 250],
+            [620, 270, 1040, 300],
+            [620, 320, 1040, 350],
+        ],
+    ),
+]
+
+SAMPLE_ANSWER_ONLY = [
+    _ocr_block(
+        1,
+        0,
+        [
+            "答案与解析",
+            "01．B 栈的特点是后进先出。",
+            "02．C 队列的特点是先进先出。",
+            "解析：本题考查线性结构的基本概念。",
+        ],
+        [
+            [430, 100, 700, 135],
+            [100, 180, 940, 210],
+            [100, 240, 940, 270],
+            [100, 310, 940, 340],
+        ],
+    ),
+]
+
+
 # ---------------------------------------------------------------------------
 # Pipeline helpers
 # ---------------------------------------------------------------------------
 
-def run_pipeline_stages(raw_blocks: list[dict]) -> dict:
+def run_pipeline_stages(raw_blocks: list[dict], import_mode: str | None = None) -> dict:
     """Run the full pipeline stages and return intermediate results."""
     from app.features.wangdao_preprocessor import preprocess_wangdao_blocks
     from app.features.text_normalizer import ImportTextNormalizer
@@ -100,7 +208,7 @@ def run_pipeline_stages(raw_blocks: list[dict]) -> dict:
     structure = analyze_structure(normalized)
 
     # Stage 4: Question splitting
-    questions = split_questions(normalized, structure)
+    questions = split_questions(normalized, structure, import_mode=import_mode)
 
     return {
         "preprocessed_count": len(preprocessed),
@@ -229,6 +337,46 @@ class TestWangdaoStructureOnly:
     def test_no_watermark_in_output(self):
         result = run_pipeline_stages(SAMPLE_BLOCKS_CH1)
         assert result["removed_by_preprocess"] >= 1
+
+    def test_knowledge_only_numbered_text_not_extracted(self):
+        result = run_pipeline_stages(SAMPLE_KNOWLEDGE_ONLY_NUMBERED, import_mode="book")
+        assert result["questions"] == [], (
+            "Knowledge-only numbered prose should not be extracted as questions: "
+            f"{[q['raw_question_text'] for q in result['questions']]}"
+        )
+
+    def test_answer_only_page_not_extracted_as_stems(self):
+        result = run_pipeline_stages(SAMPLE_ANSWER_ONLY, import_mode="book")
+        assert result["questions"] == [], (
+            "Answer-only pages should not create new question stems: "
+            f"{[q['raw_question_text'] for q in result['questions']]}"
+        )
+
+    def test_mixed_prose_and_exercise_keeps_exercise_only(self):
+        result = run_pipeline_stages(SAMPLE_MIXED_PROSE_AND_EXERCISE, import_mode="book")
+        questions = result["questions"]
+        assert len(questions) == 1, f"Expected one real exercise, got {len(questions)}"
+        q = questions[0]
+        assert q["number"] == 1
+        assert q["has_options"]
+        assert len(q["option_lines"]) >= 4
+        text = q["raw_question_text"]
+        assert "下列关于栈" in text
+        assert "栈的定义" not in text
+        assert "例题解析" not in text
+
+    def test_two_column_prose_and_question_keeps_question_only(self):
+        result = run_pipeline_stages(SAMPLE_TWO_COLUMN_PROSE_AND_QUESTIONS, import_mode="book")
+        questions = result["questions"]
+        assert len(questions) == 1, f"Expected one two-column exercise, got {len(questions)}"
+        q = questions[0]
+        assert q["number"] == 1
+        assert q["has_options"]
+        assert len(q["option_lines"]) >= 4
+        text = q["raw_question_text"]
+        assert "下列关于二叉树" in text
+        assert "定义：二叉树" not in text
+        assert "证明：" not in text
 
 
 # ---------------------------------------------------------------------------
