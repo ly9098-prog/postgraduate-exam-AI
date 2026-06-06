@@ -39,6 +39,10 @@ def _options_to_dict(options: list[dict]) -> dict | None:
     return result or None
 
 
+def _review_now() -> datetime:
+    return datetime.now().astimezone().replace(tzinfo=None)
+
+
 async def _batch_find_duplicate_questions(
     db: AsyncSession,
     subject_hash_pairs: list[tuple[str | None, str | None]],
@@ -104,7 +108,8 @@ async def submit_to_review(
     if batch_meta is None:
         batch_meta = {}
 
-    batch_id = f"REVIEW_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    now = _review_now()
+    batch_id = f"REVIEW_{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     source_type = batch_meta.get("source_type", "pdf")
     source_file = batch_meta.get("source_file", "")
     subject = batch_meta.get("subject", "")
@@ -201,6 +206,8 @@ async def submit_to_review(
                 status="pending",
                 **duplicate_fields,
                 ai_confidence=q.get("confidence_score"),
+                created_at=now,
+                updated_at=now,
                 ai_metadata={
                     "is_valid": q.get("is_valid", True),
                     "errors": q.get("errors", []),
