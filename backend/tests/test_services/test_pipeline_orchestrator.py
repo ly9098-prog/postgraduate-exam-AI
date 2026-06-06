@@ -251,6 +251,91 @@ class TestOcrScannedPdf:
         assert len(blocks) == 1
         assert blocks[0]["page"] == 2
 
+    def test_fallbacks_failed_boxes_page_to_plain_text_ocr(self):
+        from app.services.ocr_service import OcrPageResult
+
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        pages = []
+        for i in range(2):
+            page = MagicMock()
+            pix = MagicMock()
+            pix.tobytes.return_value = f"png{i + 1}".encode()
+            pix.width = 800
+            pix.height = 600
+            page.get_pixmap.return_value = pix
+            pages.append(page)
+        mock_doc.__len__ = MagicMock(return_value=2)
+        mock_doc.__getitem__ = MagicMock(side_effect=lambda i: pages[i])
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            with patch(
+                "app.services.ocr_service.ocr_pages_with_boxes",
+                return_value={
+                    1: OcrPageResult(page_index=1, text="", boxes=[], failed=True, error="could not execute a primitive"),
+                    2: OcrPageResult(page_index=2, text="", boxes=[], failed=False),
+                },
+            ):
+                with patch(
+                    "app.services.ocr_service.ocr_pages",
+                    return_value={1: "01. 下列关于 TCP 协议的说法，正确的是\nA. 可靠传输"},
+                ) as mock_plain_ocr:
+                    with patch(
+                        "app.services.ocr_service.clean_ocr_text",
+                        side_effect=lambda t: t,
+                    ):
+                        blocks = _ocr_scanned_pdf(b"pdf")
+
+        mock_plain_ocr.assert_called_once_with([(1, b"png1")])
+        assert len(blocks) == 1
+        assert blocks[0]["page"] == 1
+        assert blocks[0]["page_index"] == 1
+        assert blocks[0]["source"] == "ocr_text_fallback"
+        assert blocks[0]["has_boxes"] is False
+        assert blocks[0]["boxes"] == []
+        assert blocks[0]["text"].startswith("01. 下列关于 TCP")
+        assert blocks[0]["_ocr_boxes_failed"] is True
+
+    def test_successful_boxes_block_has_source_and_no_plain_fallback(self):
+        from app.services.ocr_service import OcrPageResult
+
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        mock_page = MagicMock()
+        mock_pix = MagicMock()
+        mock_pix.tobytes.return_value = b"png"
+        mock_pix.width = 800
+        mock_pix.height = 600
+        mock_page.get_pixmap.return_value = mock_pix
+        mock_doc.__len__ = MagicMock(return_value=1)
+        mock_doc.__getitem__ = MagicMock(return_value=mock_page)
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            with patch(
+                "app.services.ocr_service.ocr_pages_with_boxes",
+                return_value={
+                    1: OcrPageResult(
+                        page_index=1,
+                        text="OCR识别结果",
+                        boxes=[{"bbox": [1, 2, 3, 4], "conf": 0.9}],
+                    )
+                },
+            ):
+                with patch("app.services.ocr_service.ocr_pages") as mock_plain_ocr:
+                    with patch(
+                        "app.services.ocr_service.clean_ocr_text",
+                        side_effect=lambda t: t,
+                    ):
+                        blocks = _ocr_scanned_pdf(b"pdf")
+
+        mock_plain_ocr.assert_not_called()
+        assert len(blocks) == 1
+        assert blocks[0]["source"] == "ocr_boxes"
+        assert blocks[0]["has_boxes"] is True
+        assert blocks[0]["boxes"] == [{"bbox": [1, 2, 3, 4], "conf": 0.9}]
+
     def test_empty_pdf_returns_empty(self):
         mock_fitz = MagicMock()
         mock_doc = MagicMock()
@@ -313,6 +398,46 @@ class TestRunExtractOcrFallback:
                     result = pipeline._run_extract(b"pdf content", "pdf")
 
         assert result["raw_blocks"] == sparse_blocks
+
+    def test_run_extract_exposes_ocr_fallback_page_diagnostics(self):
+        pipeline = ImportPipeline()
+        sparse_blocks = [{"page": 1, "block_index": 0, "text": "x"}]
+        ocr_blocks = [
+            {
+                "page": 245,
+                "page_index": 245,
+                "block_index": 0,
+                "text": "01. 下列关于 TCP 协议的说法，正确的是",
+                "source": "ocr_text_fallback",
+                "has_boxes": False,
+                "boxes": [],
+                "_ocr_boxes_failed": True,
+            },
+            {
+                "page": 246,
+                "page_index": 246,
+                "block_index": 1,
+                "text": "02. TCP 拥塞控制中，下列说法正确的是",
+                "source": "ocr_boxes",
+                "has_boxes": True,
+                "boxes": [{"bbox": [1, 2, 3, 4], "conf": 0.9}],
+            },
+        ]
+
+        with patch(
+            "app.features.pipeline_orchestrator._extract_pdf_blocks",
+            return_value=sparse_blocks,
+        ):
+            with patch(
+                "app.features.pipeline_orchestrator._ocr_scanned_pdf",
+                return_value=ocr_blocks,
+            ):
+                with patch("app.core.config.settings.OCR_ENABLED", True):
+                    result = pipeline._run_extract(b"pdf content", "pdf")
+
+        assert result["raw_blocks"] == ocr_blocks
+        assert result["ocr_boxes_failed_pages"] == [245]
+        assert result["ocr_text_fallback_pages"] == [245]
 
     def test_normal_pdf_no_ocr_triggered(self):
         pipeline = ImportPipeline()
@@ -414,6 +539,28 @@ class TestImportPipelineSplit:
         assert result["warnings"] == [
             "no questions found in book import; skipped low-confidence fallback review item"
         ]
+
+    def test_book_pdf_prose_skip_diagnostics_include_bounded_preview(self):
+        pipeline = ImportPipeline()
+        prose = "\n".join([
+            "1. 定义：TCP 拥塞控制用于避免网络过载并提高传输效率。",
+            "性质：拥塞窗口会根据慢开始、拥塞避免、快重传和快恢复过程不断调整。",
+            "证明如下：当发送方收到重复确认时，可以推断个别报文段可能丢失，因此可得教材中的快重传算法说明。",
+            "本节知识点继续解释协议机制、窗口变化和报文段重传过程，而不是提出待解题目。",
+        ])
+        normalized_blocks = [{"page": 245, "block_index": 0, "normalized_text": prose}]
+
+        result = pipeline._run_split(normalized_blocks, import_mode="book", source_type="pdf")
+
+        assert result["split_count"] == 0
+        split = result["split_diagnostics"]
+        assert split["prose_skipped_count"] == 1
+        assert len(split["prose_skipped_preview"]) == 1
+        preview = split["prose_skipped_preview"][0]
+        assert preview["page"] == 245
+        assert preview["number"] == 1
+        assert "快重传" in preview["text"]
+        assert len(preview["text"]) <= 80
 
     def test_book_mode_keeps_question_like_long_split(self):
         pipeline = ImportPipeline()
@@ -645,6 +792,22 @@ class TestImportPipelineSplit:
         }
         assert result["warnings"] == []
         assert result["raw_questions"][0]["confidence"] != 0.2
+
+    def test_raw_questions_preview_truncates_long_text(self):
+        pipeline = ImportPipeline()
+        long_tail = "这是一段很长的 OCR 文本。" * 40
+        normalized_blocks = [{
+            "page": 1,
+            "block_index": 0,
+            "normalized_text": f"1. {long_tail}\nA. 选项A\nB. 选项B",
+        }]
+
+        result = pipeline._run_split(normalized_blocks)
+
+        preview = result["split_diagnostics"]["raw_questions_preview"][0]
+        assert len(preview["raw_question_text"]) == 300
+        assert preview["raw_question_text_truncated"] is True
+        assert len(result["raw_questions"][0]["raw_question_text"]) > 300
 
     def test_match_uses_separated_structure(self):
         pipeline = ImportPipeline()

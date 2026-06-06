@@ -638,3 +638,81 @@ class TestBookSoftProseRiskFlag:
         flags = result[0].get("risk_flags") or []
         # 至少 book_pdf_prose_like，且不重复
         assert flags.count("book_pdf_prose_like") == 1
+
+
+# ---------------------------------------------------------------
+# Wangdao 408 pages 245-280 P0: TCP prose vs. MCQ golden cases
+# ---------------------------------------------------------------
+
+class TestWangdao408TcpP0Golden:
+    def test_book_content_skips_tcp_prose_heading_with_fullwidth_dot(self):
+        text = "\n".join([
+            "2．快重传和快恢复",
+            "采用快重传算法可以让发送方尽早知道个别报文段的丢失。",
+            "TCP 拥塞控制中的窗口机制会根据网络状态调整发送速率。",
+            "因此可得，快恢复过程属于教材正文解释而不是待解题目。",
+        ])
+        structure = {"mode": "SEPARATED", "content_pages": [245], "question_pages": [], "answer_pages": []}
+
+        result = split_questions(_make_blocks(text, page=245), structure=structure, import_mode="book")
+
+        assert result == []
+
+    def test_tcp_choice_questions_survive_book_content_context(self):
+        text = "\n".join([
+            "01. 下列关于 TCP 协议的说法，正确的是",
+            "A. TCP 提供可靠传输服务",
+            "B. TCP 不使用确认机制",
+            "C. TCP 的拥塞窗口固定不变",
+            "D. TCP 报文段不包含序号字段",
+            "02. TCP 拥塞控制中，下列关于窗口的说法正确的是",
+            "A. 拥塞窗口用于限制发送方注入网络的数据量",
+            "B. 慢开始阶段拥塞窗口一定不变",
+            "C. 快重传会关闭所有连接",
+            "D. 快恢复与协议可靠性无关",
+        ])
+        structure = {"mode": "SEPARATED", "content_pages": [246], "question_pages": [246], "answer_pages": []}
+
+        result = split_questions(_make_blocks(text, page=246), structure=structure, import_mode="book")
+
+        assert [q["number"] for q in result] == [1, 2]
+        assert all(q["has_options"] for q in result)
+        assert all(set(q["option_lines"]) == {"A", "B", "C", "D"} for q in result)
+        assert all("book_pdf_prose_like" not in (q.get("risk_flags") or []) for q in result)
+
+    def test_postgraduate_exam_choice_questions_43_to_45_survive_domain_terms(self):
+        text = "\n".join([
+            "43. 【2009 统考真题】下列关于 TCP 拥塞窗口的说法，正确的是",
+            "A. 拥塞窗口反映网络拥塞程度",
+            "B. 报文段序号字段只在 UDP 协议中出现",
+            "C. 快重传算法不需要重复确认",
+            "D. 快恢复过程一定使窗口变为 0",
+            "44. 【2010 统考真题】以下关于 TCP 协议机制的说法，正确的是",
+            "A. TCP 可以通过确认和重传提高可靠性",
+            "B. TCP 没有流量控制过程",
+            "C. 窗口字段与接收能力无关",
+            "D. 拥塞控制不影响发送速率",
+            "45. 【2011 统考真题】下列关于快重传和快恢复的说法，错误的是",
+            "A. 快重传依赖重复确认信号",
+            "B. 快恢复属于 TCP 拥塞控制机制",
+            "C. 协议中的窗口变化可能影响吞吐量",
+            "D. 发生丢失时一定不需要重传报文段",
+        ])
+        structure = {"mode": "SEPARATED", "content_pages": [247], "question_pages": [247], "answer_pages": []}
+
+        result = split_questions(_make_blocks(text, page=247), structure=structure, import_mode="book")
+
+        assert [q["number"] for q in result] == [43, 44, 45]
+        assert all(set(q["option_lines"]) == {"A", "B", "C", "D"} for q in result)
+
+    def test_content_page_prose_filter_does_not_affect_exam_or_image_modes(self):
+        text = "\n".join([
+            "2．快重传和快恢复",
+            "采用快重传算法可以让发送方尽早知道个别报文段的丢失。",
+            "TCP 拥塞控制中的窗口机制会根据网络状态调整发送速率。",
+        ])
+        structure = {"mode": "SEPARATED", "content_pages": [245], "question_pages": [], "answer_pages": []}
+
+        for mode in (None, "exam", "image", "txt"):
+            result = split_questions(_make_blocks(text, page=245), structure=structure, import_mode=mode)
+            assert len(result) == 1, f"mode={mode} should not apply book/content prose skip"
