@@ -43,6 +43,32 @@ def _is_book_import_mode(import_mode) -> bool:
     return str(import_mode or "").lower() == ImportMode.BOOK.value
 
 
+_BOOK_PDF_PROSE_MARKER_RE = re.compile(
+    r"定义|定理|知识点|证明如下|证毕|解法|例题|例如|如下|因此可得|由此可知|综上|性质|推论|注意|本节|本章|算法|图\s*\d|表\s*\d"
+)
+_BOOK_PDF_QUESTION_SIGNAL_RE = re.compile(
+    r"下列|以下|正确|错误|的是|哪|选择|计算|判断|已知|设|若|试述|简述|回答|为什么|(?:^|[，。；;：:\s])(?:求|问)[：:\s]|\?|？"
+)
+_BOOK_PDF_SENTENCE_END_RE = re.compile(r"[。；;！!？?]")
+
+
+def _looks_like_book_pdf_prose_candidate(question: dict) -> bool:
+    text = str(question.get("raw_question_text") or "").strip()
+    if len(text) < 90:
+        return False
+    if question.get("has_options") or question.get("option_lines"):
+        return False
+    marker_count = len(_BOOK_PDF_PROSE_MARKER_RE.findall(text))
+    if marker_count < 2:
+        return False
+    sentence_count = len(_BOOK_PDF_SENTENCE_END_RE.findall(text))
+    if sentence_count < 2:
+        return False
+    if _BOOK_PDF_QUESTION_SIGNAL_RE.search(text):
+        return len(text) > 360 and marker_count >= 4 and sentence_count >= 4
+    return True
+
+
 # ---------------------------------------------------------------------------
 # in-memory pipeline state store
 # ---------------------------------------------------------------------------
@@ -985,6 +1011,32 @@ class ImportPipeline:
         }
 
         warnings: list[str] = []
+
+        def _filter_book_pdf_prose() -> None:
+            nonlocal raw_questions
+            if (
+                not raw_questions
+                or not _is_book_import_mode(_kw.get("import_mode"))
+                or str(_kw.get("source_type") or "").lower() != "pdf"
+            ):
+                return
+            kept_questions = []
+            prose_skipped = 0
+            for question in raw_questions:
+                if _looks_like_book_pdf_prose_candidate(question):
+                    prose_skipped += 1
+                    continue
+                kept_questions.append(question)
+            if prose_skipped:
+                raw_questions = kept_questions
+                warnings.append(f"book_pdf_prose_skipped: {prose_skipped}")
+                split_diagnostics["book_pdf_prose_skipped"] = (
+                    split_diagnostics.get("book_pdf_prose_skipped", 0) + prose_skipped
+                )
+                split_diagnostics["raw_question_count_after_prose_filter"] = len(raw_questions)
+
+        _filter_book_pdf_prose()
+
         if not raw_questions:
             if text_blocks:
                 # 尝试视觉边界检测（需要 boxes 数据）
@@ -1000,6 +1052,7 @@ class ImportPipeline:
                             split_diagnostics["failure_reason"] = None
                             split_diagnostics["fallback_created"] = False
                             split_diagnostics["detection_method"] = "visual_boundary"
+                            _filter_book_pdf_prose()
                     except Exception as exc:
                         logger.warning("visual boundary detection failed: %s", exc)
 
