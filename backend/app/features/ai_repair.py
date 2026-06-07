@@ -182,6 +182,14 @@ def _normalize_ai_options(options) -> list[dict]:
     return []
 
 
+def _marker_ids(groups: list[dict] | None) -> set[str]:
+    return {str(group.get("id") or group.get("marker") or "").strip() for group in (groups or []) if str(group.get("id") or group.get("marker") or "").strip()}
+
+
+def _stem_contains_markers(stem: str, markers: set[str]) -> bool:
+    return all(marker in stem for marker in markers)
+
+
 async def _call_ai_for_repair(
     raw_text: str, existing: dict, config: dict
 ) -> dict | None:
@@ -330,13 +338,20 @@ async def repair_questions(
         token_used = ai_result["token_used"]
         total_tokens += token_used
 
+        blank_option_groups = result_data.get("blank_option_groups") or q.get("blank_option_groups", [])
+        repaired_stem = result_data.get("stem", "")
+        original_markers = _marker_ids(q.get("blank_option_groups"))
+        if original_markers and not _stem_contains_markers(repaired_stem, original_markers):
+            repaired_stem = q.get("stem", "")
+            ai_errors = [*ai_errors, "ai_stem_lost_blank_markers"]
+
         after = {
             "schema_version": q.get("schema_version", "v1"),
             "subject": q.get("subject", ""),
             "question_type": result_data.get("question_type", q.get("question_type", "")),
-            "stem": result_data.get("stem", ""),
+            "stem": repaired_stem,
             "options": _normalize_ai_options(result_data.get("options")),
-            "blank_option_groups": result_data.get("blank_option_groups") or q.get("blank_option_groups", []),
+            "blank_option_groups": blank_option_groups,
             "answer": result_data.get("answer", ""),
             "analysis": result_data.get("analysis", ""),
             "raw_text": raw_text,

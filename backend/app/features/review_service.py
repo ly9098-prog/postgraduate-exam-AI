@@ -404,7 +404,9 @@ async def fix_question(
 
     stem = fixes.get("stem")
     if stem is not None:
-        qi.parsed_content = {"text": str(stem).strip()}
+        parsed_content = dict(qi.parsed_content or {})
+        parsed_content["text"] = str(stem).strip()
+        qi.parsed_content = parsed_content
         updated.append("stem")
 
     options = fixes.get("options")
