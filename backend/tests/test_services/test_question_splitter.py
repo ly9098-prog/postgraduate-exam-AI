@@ -372,6 +372,22 @@ class TestOcrTolerance:
         assert _detect_question_number("32) 第32题内容") == (32, 3)
         assert _detect_question_number("32）下列说法正确的是") == (32, 3)
 
+    def test_parened_grouped_option_marker_is_not_question_number(self):
+        assert _detect_question_number("(1) A. n+1  B. n  C. n−1  D. 1") is None
+        assert _detect_question_number("(2) B. n") is None
+
+    def test_parened_sub_question_with_english_text_is_not_split(self):
+        blocks = _make_blocks(
+            "1. 某算法分析如下：\n"
+            "(1) A variable stores the queue length.\n"
+            "(2) B variable stores the blocked count.\n"
+            "A. 选项一\nB. 选项二\nC. 选项三\nD. 选项四"
+        )
+        result = split_questions(blocks)
+        assert len(result) == 1
+        assert "(1) A variable" in result[0]["raw_question_text"]
+        assert "(2) B variable" in result[0]["raw_question_text"]
+
     def test_multi_digit_paren_question_number_splits(self):
         blocks = _make_blocks(
             "31. 上一道题\n"
@@ -410,7 +426,49 @@ class TestOcrTolerance:
         assert "（）" not in raw_text
         assert "① A. n+1" in raw_text
         assert "② A. n+1" in raw_text
-        assert result[0]["option_lines"] == {"A": "n+1", "B": "n", "C": "n−1", "D": "1"}
+        assert result[0]["option_lines"] == {}
+        assert result[0]["has_grouped_options"] is True
+        assert [group["id"] for group in result[0]["blank_option_groups"]] == ["①", "②"]
+        normalized = normalize_question(result[0], {"answer": ""}, {"subject": "exam408"})
+        assert normalized["question_type"] == "multi_blank_choice"
+        assert normalized["options"] == []
+        assert len(normalized["blank_option_groups"]) == 2
+
+    def test_grouped_parened_option_rows_do_not_split_questions(self):
+        blocks = _make_blocks(
+            "1. 若系统有 n 个进程，则就绪队列中进程的个数最多有（1）个；阻塞队列中进程的个数最多有（2）个。\n"
+            "(1) A. n+1  B. n  C. n−1  D. 1\n"
+            "(2) A. n+1  B. n  C. n−1  D. 1"
+        )
+        result = split_questions(blocks)
+        assert len(result) == 1
+        assert result[0]["option_lines"] == {}
+        assert result[0]["has_grouped_options"] is True
+        assert [group["id"] for group in result[0]["blank_option_groups"]] == ["1", "2"]
+
+    def test_degraded_blank_repeated_option_blocks_become_groups(self):
+        blocks = _make_blocks(
+            "1. 若系统有 n 个进程，则就绪队列中进程的个数最多有（）个；阻塞队列中进程的个数最多有（）个。\n"
+            "A. n+1  B. n  C. n−1  D. 1\n"
+            "A. n+1  B. n  C. n−1  D. 1"
+        )
+        result = split_questions(blocks)
+        assert len(result) == 1
+        assert result[0]["option_lines"] == {}
+        assert result[0]["has_grouped_options"] is True
+        assert [group["id"] for group in result[0]["blank_option_groups"]] == ["1", "2"]
+
+    def test_grouped_roman_option_rows_preserve_groups(self):
+        blocks = _make_blocks(
+            "1. 若系统有 n 个进程，则就绪队列中进程的个数最多有Ⅰ个；阻塞队列中进程的个数最多有Ⅱ个。\n"
+            "Ⅰ A. n+1  B. n  C. n−1  D. 1\n"
+            "Ⅱ A. n+1  B. n  C. n−1  D. 1"
+        )
+        result = split_questions(blocks)
+        assert len(result) == 1
+        assert result[0]["option_lines"] == {}
+        assert result[0]["has_grouped_options"] is True
+        assert [group["id"] for group in result[0]["blank_option_groups"]] == ["Ⅰ", "Ⅱ"]
 
     def test_inline_option_truncates_answer_and_explanation_tail(self):
         blocks = _make_blocks("1. 题干\nA. 1 B. 2 C. 3 D. 4 答案：A 解析：因为如此")
