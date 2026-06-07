@@ -72,6 +72,22 @@ class TestNewlineCleaning:
         assert "\n① A." in normalized
         assert "\n②B." in normalized
 
+    def test_grouped_circled_option_rows_preserve_stem_placeholders(self, normalizer):
+        text = (
+            "1. 若系统有 n 个进程，则就绪队列中进程的个数最多有（①）个；阻塞队列中进程的个数最多有（②）个。\n"
+            "① A. n+1  B. n  C. n−1  D. 1\n"
+            "② A. n+1  B. n  C. n−1  D. 1"
+        )
+        result = normalizer.normalize(_make_blocks(text))
+        normalized = result[0]["normalized_text"]
+        assert "（①）" in normalized
+        assert "（②）" in normalized
+        assert "（）" not in normalized
+        assert "\n① A." in normalized
+        assert "\n② A." in normalized
+        assert "\nB. n" in normalized
+        assert "\nD. 1" in normalized
+
     def test_inline_circled_options_are_split_for_parser(self, normalizer):
         text = "题干文本 ① A. n + 1 ② B. 2n ③ C. n - 1 ④ D. 2n - 1"
         result = normalizer.normalize(_make_blocks(text))
