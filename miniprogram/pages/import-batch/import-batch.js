@@ -51,11 +51,14 @@ Page({
         'math2-calculus': '高数', 'math2-linalg': '线代',
         'exam408-ds': 'DS', 'exam408-os': 'OS', 'exam408-co': 'CO', 'exam408-cn': 'CN' }
       var statusMap = { pending: '待审核', approved: '已通过', published: '已发布', rejected: '已拒绝' }
+      var typeMap = { choice: '选择题', single_choice: '单选题', multiple_choice: '多选题', fill: '填空题', fill_blank: '填空题', multi_blank_choice: '多空选择题', true_false: '判断题', subjective: '主观题' }
       var questions = (res.questions || []).map(function(q) {
         var meta = (q.ai_metadata && typeof q.ai_metadata === 'object') ? q.ai_metadata : {}
         var aiKps = Array.isArray(meta.knowledge_points) ? meta.knowledge_points : []
         var aiSuggestion = meta.complete_suggestion || null
         var pc = (q.parsed_content && typeof q.parsed_content === 'object') ? q.parsed_content : {}
+        var rawData = (q.raw_data && typeof q.raw_data === 'object') ? q.raw_data : {}
+        var blankOptionGroups = Array.isArray(pc.blank_option_groups) ? pc.blank_option_groups : (Array.isArray(rawData.blank_option_groups) ? rawData.blank_option_groups : [])
         var segments = Array.isArray(pc.segments) ? pc.segments : []
         var riskFlags = Array.isArray(meta.risk_flags) ? meta.risk_flags : []
         var riskLabels = riskFlags.map(function(flag) { return RISK_LABELS[flag] || flag })
@@ -63,7 +66,10 @@ Page({
           _preview: (pc.text || '').slice(0, 80) || '无内容',
           _subjectLabel: subjectMap[q.subject] || q.subject || '-',
           _statusLabel: statusMap[q.status] || q.status,
+          _typeLabel: typeMap[q.question_type] || (blankOptionGroups.length ? '多空选择题' : q.question_type || '-'),
           _optionKeys: q.parsed_options ? Object.keys(q.parsed_options).sort() : [],
+          _blankOptionGroups: blankOptionGroups,
+          _hasBlankOptionGroups: blankOptionGroups.length > 0,
           _aiKps: aiKps,
           _aiSuggestion: aiSuggestion,
           _aiConfidencePct: q.ai_confidence != null ? Math.round(q.ai_confidence * 100) : null,
