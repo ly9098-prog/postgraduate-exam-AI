@@ -21,6 +21,7 @@ _RE_CIRCLED_GROUP_MARKER = re.compile(
     r"^(?:[" + _CIRCLED_OPTION_CHARS + r"]|[（(]\s*[" + _CIRCLED_OPTION_CHARS + r"]\s*[）)])$"
 )
 _CIRCLED_GROUP_MARKER_PATTERN = r"(?:[" + _CIRCLED_OPTION_CHARS + r"]|[（(]\s*[" + _CIRCLED_OPTION_CHARS + r"]\s*[）)])"
+_GROUP_MARKER_PATTERN = r"(?:" + _CIRCLED_GROUP_MARKER_PATTERN + r"|[（(]\s*\d{1,2}\s*[）)]|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])"
 
 # 题号行：用于 OCR 字符纠正的上下文判断
 _RE_QUESTION_NUMBER = re.compile(
@@ -37,7 +38,7 @@ _RE_STRUCTURE_LINE = re.compile(
     r"^("
     r"\d+\s*[.、)）]"
     r"|" + _OPTION_MARKER +
-    r"|" + _CIRCLED_GROUP_MARKER_PATTERN + r"\s*$"
+    r"|" + _GROUP_MARKER_PATTERN + r"\s*$"
     r"|[（(]\s*[A-D]\s*[）)]"
     r"|(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:]"
     r"|(?:【)?(?:解析|解答|讲解|分析)(?:】)?\s*[：:]"
@@ -48,7 +49,7 @@ _RE_STRUCTURE_LINE = re.compile(
 _RE_PREV_STRUCTURE_LINE = re.compile(
     r"^"
     r"(" + _OPTION_MARKER + r"\s*.{1,}"
-    r"|" + _CIRCLED_GROUP_MARKER_PATTERN + r"\s*$"
+    r"|" + _GROUP_MARKER_PATTERN + r"\s*$"
     r"|[（(]\s*[A-Da-d]\s*[）)]\s*.{1,}"
     r"|(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:]\s*.{1,}"
     r"|(?:【)?(?:解析|解答|讲解|分析)(?:】)?\s*[：:]\s*.{1,}"

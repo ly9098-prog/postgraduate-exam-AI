@@ -14,6 +14,7 @@ QT_TRUE_FALSE = "true_false"
 QT_FILL_BLANK = "fill_blank"
 QT_MULTI_BLANK_CHOICE = "multi_blank_choice"
 QT_SUBJECTIVE = "subjective"
+_OPTION_LINE_RE = re.compile(r"^(?:[?？]|[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])?\s*[A-Ha-h][.、:：)）\s]")
 
 _TYPE_ALIAS_MAP = {
     "单选": QT_SINGLE_CHOICE, "单选题": QT_SINGLE_CHOICE,
@@ -82,7 +83,7 @@ def _extract_stem(raw_text: str, option_lines: dict[str, str], blank_option_grou
                 continue
 
         # 选项行
-        if option_lines and re.match(r"^(?:[?？]|[①②③④⑤⑥⑦⑧])?\s*[A-Ha-h][.、:：)）\s]", stripped):
+        if _OPTION_LINE_RE.match(stripped):
             in_options = True
             continue
 

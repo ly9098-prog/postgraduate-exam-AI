@@ -64,7 +64,7 @@
       <view class="q-overview">
         <view class="q-meta">
           <text class="q-subject-tag">{{item._subjectLabel}}</text>
-          <text class="q-type-label">{{item.question_type === 'choice' ? '选择题' : item.question_type === 'fill' ? '填空题' : item.question_type || '-'}}</text>
+          <text class="q-type-label">{{item._typeLabel}}</text>
           <text class="q-ai-flag" wx:if="{{item.ai_generated}}">AI</text>
           <text class="q-math-flag" wx:if="{{item._hasMath}}" bindtap="showMathPreview" catchtap data-id="{{item.id}}">含公式</text>
         </view>
@@ -86,7 +86,21 @@
           <text class="detail-label">题目</text>
           <text class="detail-text">{{item.parsed_content.text}}</text>
         </view>
-        <view class="detail-body" wx:if="{{item.parsed_options}}">
+        <view class="detail-body" wx:if="{{item._hasBlankOptionGroups}}">
+          <text class="detail-label">空位选项组</text>
+          <view class="blank-option-groups">
+            <view class="blank-option-group" wx:for="{{item._blankOptionGroups}}" wx:for-item="group" wx:key="id">
+              <text class="blank-group-title">{{group.id}}</text>
+              <view class="detail-options">
+                <view class="option-row" wx:for="{{group.options}}" wx:for-item="opt" wx:key="key">
+                  <text class="opt-key">{{opt.key}}.</text>
+                  <text class="opt-val">{{opt.text}}</text>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+        <view class="detail-body" wx:elif="{{item.parsed_options}}">
           <text class="detail-label">选项</text>
           <view class="detail-options">
             <view class="option-row" wx:for="{{item.parsed_options}}" wx:for-item="optVal" wx:for-index="optKey" wx:key="optKey">
