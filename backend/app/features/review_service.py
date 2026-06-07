@@ -43,6 +43,69 @@ def _review_now() -> datetime:
     return datetime.now().astimezone().replace(tzinfo=None)
 
 
+def _get_blank_option_groups(data: dict | None) -> list[dict]:
+    if not isinstance(data, dict):
+        return []
+    groups = data.get("blank_option_groups")
+    if groups is None:
+        parsed_content = data.get("parsed_content")
+        if isinstance(parsed_content, dict):
+            groups = parsed_content.get("blank_option_groups")
+    return groups if isinstance(groups, list) else []
+
+
+def _summarize_blank_option_groups(groups: list[dict]) -> list[dict]:
+    summary = []
+    for index, group in enumerate(groups):
+        if not isinstance(group, dict):
+            continue
+        options = group.get("options") or {}
+        if isinstance(options, dict):
+            keys = sorted(str(key).upper() for key in options.keys() if str(key).strip())
+        elif isinstance(options, list):
+            keys = sorted(
+                str(option.get("key") or "").upper()
+                for option in options
+                if isinstance(option, dict) and str(option.get("key") or "").strip()
+            )
+        else:
+            keys = []
+        summary.append({
+            "id": group.get("id") or group.get("blank_id") or group.get("label") or index + 1,
+            "option_keys": keys,
+        })
+    return summary
+
+
+def _log_multi_blank_review_item(
+    *,
+    batch_id: str,
+    qi: QuestionImport,
+    source_question: dict,
+    stem: str,
+) -> None:
+    raw_groups = _get_blank_option_groups(source_question)
+    parsed_content = qi.parsed_content if isinstance(qi.parsed_content, dict) else {}
+    parsed_groups = _get_blank_option_groups(parsed_content)
+    if qi.question_type != "multi_blank_choice" and not raw_groups and not parsed_groups:
+        return
+
+    logger.warning(
+        "multi_blank_choice review item imported",
+        extra={
+            "import_id": qi.id,
+            "batch_id": batch_id,
+            "question_type": qi.question_type,
+            "stem_preview": stem[:80],
+            "parsed_options_is_none": qi.parsed_options is None,
+            "blank_option_group_count": len(parsed_groups or raw_groups),
+            "blank_option_groups": _summarize_blank_option_groups(parsed_groups or raw_groups),
+            "parsed_content_has_blank_option_groups": bool(parsed_groups),
+            "raw_data_has_blank_option_groups": bool(raw_groups),
+        },
+    )
+
+
 async def _batch_find_duplicate_questions(
     db: AsyncSession,
     subject_hash_pairs: list[tuple[str | None, str | None]],
@@ -230,6 +293,13 @@ async def submit_to_review(
 
             if question_hash:
                 seen_hashes.setdefault(question_hash, qi.id)
+
+            _log_multi_blank_review_item(
+                batch_id=batch_id,
+                qi=qi,
+                source_question=q,
+                stem=stem,
+            )
 
             stem_preview = stem[:50] + "..." if len(stem) > 50 else stem
             items.append({

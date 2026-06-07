@@ -3,13 +3,18 @@ from math import ceil
 from uuid import uuid4
 
 from fastapi import Request
-from sqlalchemy import case, desc, func, or_, select
+from sqlalchemy import case, delete, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
 from app.core.cache import cache
 from app.models.question_import import QuestionImport
-from app.schemas.admin_imports import AdminImportBatchDetail, AdminImportEnrichResponse, AdminImportQuestionItem
+from app.schemas.admin_imports import (
+    AdminImportBatchDetail,
+    AdminImportEnrichResponse,
+    AdminImportQuestionItem,
+    AdminImportQuestionUpdateRequest,
+)
 from app.services.admin_ai_settings_service import ensure_ai_parse_allowed
 from app.services.admin_audit_service import write_admin_audit
 
@@ -72,6 +77,139 @@ async def get_import_batch_detail(
     )
 
 
+async def list_review_queue(
+    db: AsyncSession,
+    page: int,
+    page_size: int,
+    status: str | None = "pending",
+    batch_id: str | None = None,
+    subject: str | None = None,
+    source_type: str | None = None,
+    keyword: str | None = None,
+) -> tuple[list[AdminImportQuestionItem], int]:
+    conditions = _question_conditions(status, batch_id, subject, source_type, keyword)
+    total = await db.scalar(select(func.count()).select_from(QuestionImport).where(*conditions))
+    result = await db.execute(
+        select(QuestionImport)
+        .where(*conditions)
+        .order_by(QuestionImport.created_at.asc(), QuestionImport.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return [AdminImportQuestionItem.model_validate(item) for item in result.scalars().all()], int(total or 0)
+
+
+async def update_import_question(
+    db: AsyncSession,
+    import_id: int,
+    data: AdminImportQuestionUpdateRequest,
+) -> AdminImportQuestionItem:
+    qi = await _get_import_question(db, import_id)
+    if qi.status == "published" or qi.question_id is not None:
+        raise ValueError("已发布题目不可编辑")
+
+    payload = data.model_dump(exclude_none=True)
+    if "stem" in payload:
+        content = dict(qi.parsed_content or {})
+        content["text"] = payload.pop("stem")
+        qi.parsed_content = content
+    if "options" in payload:
+        options = payload.pop("options")
+        qi.parsed_options = {str(item.get("key") or item.get("label")): item.get("text") or item.get("value") for item in options if isinstance(item, dict)} if isinstance(options, list) else options
+    if "answer" in payload:
+        qi.parsed_answer = payload.pop("answer")
+    if "analysis" in payload:
+        qi.parsed_analysis = payload.pop("analysis")
+
+    for field in (
+        "subject",
+        "question_type",
+        "raw_data",
+        "parsed_content",
+        "parsed_options",
+        "parsed_answer",
+        "parsed_analysis",
+        "review_note",
+    ):
+        if field in payload:
+            setattr(qi, field, payload[field])
+    await db.flush()
+    await db.refresh(qi)
+    return AdminImportQuestionItem.model_validate(qi)
+
+
+async def approve_import_question(db: AsyncSession, import_id: int, operator_id: int) -> AdminImportQuestionItem:
+    qi = await _get_import_question(db, import_id)
+    if qi.status == "published" or qi.question_id is not None:
+        raise ValueError("已发布题目不可重复审核")
+    qi.status = "approved"
+    qi.reject_reason = None
+    qi.reviewed_by = operator_id
+    qi.reviewed_at = datetime.utcnow()
+    await db.flush()
+    await db.refresh(qi)
+    return AdminImportQuestionItem.model_validate(qi)
+
+
+async def reject_import_question(db: AsyncSession, import_id: int, operator_id: int, reason: str | None = None) -> AdminImportQuestionItem:
+    qi = await _get_import_question(db, import_id)
+    if qi.status == "published" or qi.question_id is not None:
+        raise ValueError("已发布题目不可驳回")
+    qi.status = "rejected"
+    qi.reject_reason = reason
+    qi.review_note = reason or qi.review_note
+    qi.reviewed_by = operator_id
+    qi.reviewed_at = datetime.utcnow()
+    await db.flush()
+    await db.refresh(qi)
+    return AdminImportQuestionItem.model_validate(qi)
+
+
+async def approve_import_batch(db: AsyncSession, batch_id: str, operator_id: int) -> int:
+    records = await _get_batch_records(db, batch_id, statuses={"pending", "rejected"})
+    now = datetime.utcnow()
+    for qi in records:
+        if qi.question_id is None:
+            qi.status = "approved"
+            qi.reject_reason = None
+            qi.reviewed_by = operator_id
+            qi.reviewed_at = now
+    await db.flush()
+    return len(records)
+
+
+async def reject_import_batch(db: AsyncSession, batch_id: str, operator_id: int, reason: str | None = None) -> int:
+    records = await _get_batch_records(db, batch_id, statuses={"pending", "approved"})
+    now = datetime.utcnow()
+    for qi in records:
+        if qi.question_id is None:
+            qi.status = "rejected"
+            qi.reject_reason = reason
+            qi.review_note = reason or qi.review_note
+            qi.reviewed_by = operator_id
+            qi.reviewed_at = now
+    await db.flush()
+    return len(records)
+
+
+async def delete_import_question(db: AsyncSession, import_id: int) -> int:
+    qi = await _get_import_question(db, import_id)
+    if qi.status == "published" or qi.question_id is not None:
+        raise ValueError("已发布题目不可删除")
+    await db.delete(qi)
+    await db.flush()
+    return 1
+
+
+async def delete_import_batch(db: AsyncSession, batch_id: str) -> int:
+    records = await _get_batch_records(db, batch_id)
+    if any(qi.status == "published" or qi.question_id is not None for qi in records):
+        raise ValueError("已发布批次不可删除")
+    result = await db.execute(delete(QuestionImport).where(QuestionImport.batch_id == batch_id))
+    await db.flush()
+    return int(result.rowcount or 0)
+
+
 async def create_enrich_task(
     db: AsyncSession,
     batch_id: str,
@@ -121,7 +259,58 @@ async def get_enrich_status(batch_id: str) -> dict:
     return payload
 
 
-def _batch_conditions(status: str | None, source_type: str | None, keyword: str | None) -> list:
+def _question_conditions(
+    status: str | None,
+    batch_id: str | None,
+    subject: str | None,
+    source_type: str | None,
+    keyword: str | None,
+) -> list:
+    conditions = []
+    if status:
+        conditions.append(QuestionImport.status == status)
+    if batch_id:
+        conditions.append(QuestionImport.batch_id == batch_id)
+    if subject:
+        conditions.append(QuestionImport.subject == subject)
+    if source_type:
+        conditions.append(QuestionImport.source_type == source_type)
+    if keyword:
+        pattern = f"%{keyword}%"
+        conditions.append(
+            or_(
+                QuestionImport.batch_id.ilike(pattern),
+                QuestionImport.source_file.ilike(pattern),
+                QuestionImport.parsed_answer.ilike(pattern),
+                QuestionImport.parsed_analysis.ilike(pattern),
+            )
+        )
+    return conditions
+
+
+async def _get_import_question(db: AsyncSession, import_id: int) -> QuestionImport:
+    result = await db.execute(select(QuestionImport).where(QuestionImport.id == import_id))
+    qi = result.scalar_one_or_none()
+    if qi is None:
+        raise ValueError("导入题目不存在")
+    return qi
+
+
+async def _get_batch_records(
+    db: AsyncSession,
+    batch_id: str,
+    statuses: set[str] | None = None,
+) -> list[QuestionImport]:
+    conditions = [QuestionImport.batch_id == batch_id]
+    if statuses:
+        conditions.append(QuestionImport.status.in_(statuses))
+    result = await db.execute(select(QuestionImport).where(*conditions).order_by(QuestionImport.id.asc()))
+    records = list(result.scalars().all())
+    if not records:
+        raise ValueError("导入批次不存在")
+    return records
+
+
     conditions = []
     if status:
         conditions.append(QuestionImport.status == status)
