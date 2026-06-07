@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+import re
 
 import logging
 from sqlalchemy import and_, case, func, or_, select
@@ -24,6 +25,22 @@ def _normalize_true_false_answer(value: str) -> str:
     if v in _TRUE_FALSE_FALSE:
         return "B"
     return v.upper()
+
+
+def _normalize_blank_choice_answer(value: str) -> dict[str, str]:
+    result = {}
+    for part in re.split(r"[;；,，\n]+", str(value or "")):
+        match = re.match(r"^(.+?)\s*[:：=]\s*([A-Za-z])\s*$", part.strip())
+        if match:
+            result[match.group(1).strip()] = match.group(2).upper()
+    return result
+
+
+def _is_multi_blank_answer_correct(user_answer: str, correct_answer: str) -> bool:
+    correct_map = _normalize_blank_choice_answer(correct_answer)
+    if not correct_map:
+        return False
+    return _normalize_blank_choice_answer(user_answer) == correct_map
 
 
 async def get_practice_questions(
@@ -88,9 +105,12 @@ async def submit_answer(
     if not question:
         raise ValueError(f"题目不存在: {question_id}")
 
-    is_correct = user_answer.strip().lower() == question.answer.strip().lower()
-    if question.question_type == "true_false":
+    if question.question_type == "multi_blank_choice":
+        is_correct = _is_multi_blank_answer_correct(user_answer, question.answer)
+    elif question.question_type in ("true_false", "judgement"):
         is_correct = _normalize_true_false_answer(user_answer) == _normalize_true_false_answer(question.answer)
+    else:
+        is_correct = user_answer.strip().lower() == question.answer.strip().lower()
 
     record = PracticeRecord(
         user_id=user_id,

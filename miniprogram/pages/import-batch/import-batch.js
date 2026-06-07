@@ -9,6 +9,119 @@ const RISK_LABELS = {
   non_question_like: '疑似非题目',
 }
 
+function normalizeBlankAnswer(answer) {
+  if (!answer) return {}
+  if (typeof answer === 'object') return answer
+  var text = String(answer).trim()
+  if (!text) return {}
+  try {
+    var parsed = JSON.parse(text)
+    if (parsed && typeof parsed === 'object') return parsed
+  } catch (e) {}
+  var result = {}
+  text.split(/[;；,，\n]+/).forEach(function(part) {
+    var m = part.trim().match(/^(.+?)\s*[:：=]\s*([A-Za-z])$/)
+    if (m) result[m[1].trim()] = m[2].trim().toUpperCase()
+  })
+  return result
+}
+
+function textToHtml(text) {
+  if (!text) return ''
+  var parts = String(text).split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/)
+  var out = parts.map(function(part, i) {
+    if (i % 2 === 1) return part
+    return part
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\n/g, '<br>')
+  })
+  return '<p>' + out.join('') + '</p>'
+}
+
+function needsRichRender(text) {
+  if (!text) return false
+  return /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/.test(text) || /<\/?[a-z][\s\S]*>/i.test(text)
+}
+
+function replaceSimpleLatexCommands(text) {
+  return String(text || '')
+    .replace(/\\leq/g, '≤')
+    .replace(/\\geq/g, '≥')
+    .replace(/\\neq/g, '≠')
+    .replace(/\\times/g, '×')
+    .replace(/\\cdot/g, '·')
+    .replace(/\\lt/g, '<')
+    .replace(/\\gt/g, '>')
+}
+
+function toPlainInlineMathText(text) {
+  if (!text) return ''
+  var source = String(text)
+  if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
+  var plain = source.replace(/\$([^$\n]+?)\$/g, function(_, expr) {
+    return replaceSimpleLatexCommands(expr).trim()
+  })
+  if (/\\[a-zA-Z]+/.test(plain)) return null
+  plain = plain.replace(/[ \t]+/g, ' ').replace(/\s+([，。！？；：,.!?;:])/g, '$1').trim()
+  return plain
+}
+
+function enrichOptionText(opt) {
+  var text = String((opt && opt.text) || '').trim()
+  var plain = toPlainInlineMathText(text)
+  return Object.assign({}, opt, {
+    _text: plain || text,
+    _needsRich: !plain && needsRichRender(text),
+    _html: (!plain && needsRichRender(text)) ? textToHtml(text) : '',
+  })
+}
+
+function normalizeBlankOptionList(options) {
+  if (Array.isArray(options)) return options
+  if (options && typeof options === 'object') {
+    return Object.keys(options).map(function(key) {
+      return { key: key, text: options[key] }
+    })
+  }
+  return []
+}
+
+function enrichBlankOptionGroups(groups) {
+  return (groups || []).map(function(group) {
+    return Object.assign({}, group, {
+      options: normalizeBlankOptionList(group.options).map(enrichOptionText),
+    })
+  })
+}
+
+function serializeBlankAnswer(groups, blankAnswers) {
+  var parts = []
+  ;(groups || []).forEach(function(group) {
+    var id = String(group.id || '').trim()
+    var value = blankAnswers && blankAnswers[id]
+    if (id && value) parts.push(id + ':' + String(value).trim().toUpperCase())
+  })
+  return parts.join(';')
+}
+
+function hasCompleteAnswer(q, edit) {
+  if (q.parsed_answer) return true
+  if (q._hasBlankOptionGroups) {
+    var answers = (edit && edit.blankAnswers) || {}
+    return q._blankOptionGroups.every(function(group) {
+      return !!answers[String(group.id || '').trim()]
+    })
+  }
+  return !!(edit && edit.parsedAnswer)
+}
+
+function editedAnswer(q, edit) {
+  if (!q._hasBlankOptionGroups) return edit && edit.parsedAnswer
+  return serializeBlankAnswer(q._blankOptionGroups, (edit && edit.blankAnswers) || {})
+}
+
 Page({
   data: {
     batch: null,
@@ -68,7 +181,7 @@ Page({
           _statusLabel: statusMap[q.status] || q.status,
           _typeLabel: typeMap[q.question_type] || (blankOptionGroups.length ? '多空选择题' : q.question_type || '-'),
           _optionKeys: q.parsed_options ? Object.keys(q.parsed_options).sort() : [],
-          _blankOptionGroups: blankOptionGroups,
+          _blankOptionGroups: enrichBlankOptionGroups(blankOptionGroups),
           _hasBlankOptionGroups: blankOptionGroups.length > 0,
           _aiKps: aiKps,
           _aiSuggestion: aiSuggestion,
@@ -84,7 +197,11 @@ Page({
       var editing = {}
       for (var i = 0; i < questions.length; i++) {
         var q = questions[i]
-        editing[q.id] = { subject: q.subject || '', parsedAnswer: q.parsed_answer || '' }
+        editing[q.id] = {
+          subject: q.subject || '',
+          parsedAnswer: q.parsed_answer || '',
+          blankAnswers: normalizeBlankAnswer(q.parsed_answer),
+        }
       }
       this.setData({
         batch: { batch_id: res.batch_id, source_file: res.source_file, source_type: res.source_type },
@@ -204,12 +321,13 @@ Page({
       const q = this.data.questions.find(item => item.id === idNum)
       if (!q || q.status !== 'pending') { fail++; continue }
       if (!q.subject && !edit.subject) { fail++; continue }
-      if (!q.parsed_answer && !edit.parsedAnswer) { fail++; continue }
+      if (!hasCompleteAnswer(q, edit)) { fail++; continue }
 
       try {
         const body = { status: 'approved' }
+        const answer = editedAnswer(q, edit)
         if (!q.subject && edit.subject) body.subject = edit.subject
-        if (!q.parsed_answer && edit.parsedAnswer) body.parsed_answer = edit.parsedAnswer
+        if (!q.parsed_answer && answer) body.parsed_answer = answer
         await api.put(`/import/questions/${idNum}`, body)
         success++
       } catch (err) {
@@ -265,6 +383,16 @@ Page({
     })
   },
 
+  onBlankAnswerSelect(e) {
+    const id = e.currentTarget.dataset.id
+    const blankId = e.currentTarget.dataset.blankId
+    const value = e.currentTarget.dataset.value
+    if (!id || !blankId || !value) return
+    this.setData({
+      [`editing.${id}.blankAnswers.${blankId}`]: value,
+    })
+  },
+
   async approve(e) {
     const id = e.currentTarget.dataset.id
     const edit = this.data.editing[id] || {}
@@ -274,7 +402,7 @@ Page({
       wx.showToast({ title: '请先选择科目', icon: 'none' })
       return
     }
-    if (!q.parsed_answer && !edit.parsedAnswer) {
+    if (!q.parsed_answer && !hasCompleteAnswer(q, edit)) {
       wx.showToast({ title: '请先填写答案', icon: 'none' })
       return
     }
@@ -282,8 +410,9 @@ Page({
     wx.showLoading({ title: '通过中...' })
     try {
       const body = { status: 'approved' }
+      const answer = editedAnswer(q, edit)
       if (!q.subject && edit.subject) body.subject = edit.subject
-      if (!q.parsed_answer && edit.parsedAnswer) body.parsed_answer = edit.parsedAnswer
+      if (!q.parsed_answer && answer) body.parsed_answer = answer
 
       const res = await api.put(`/import/questions/${id}`, body)
       wx.hideLoading()
@@ -324,12 +453,12 @@ Page({
       return
     }
 
-    const willFail = pending.filter(q => !q.subject || !q.parsed_answer)
+    const willFail = pending.filter(q => !q.subject || !hasCompleteAnswer(q, this.data.editing[q.id] || {}))
     if (willFail.length > 0) {
       const hints = willFail.map(q => {
         const fields = []
         if (!q.subject) fields.push('科目')
-        if (!q.parsed_answer) fields.push('答案')
+        if (!hasCompleteAnswer(q, this.data.editing[q.id] || {})) fields.push('答案')
         return `#${q.id} 缺 ${fields.join('、')}`
       })
       wx.showModal({

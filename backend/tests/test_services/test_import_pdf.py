@@ -123,11 +123,36 @@ class TestImportPdfRouteCallPattern:
     """模拟 API 路由的实际调用方式 — 这正是触发原 TypeError 的路径。"""
 
     def test_route_call_pattern_no_crash(self):
-        """完全模拟 imports.py:80 的调用方式，确保不再出现 TypeError。"""
+        """完全模拟 imports.py 的调用方式，确保不再出现 TypeError。"""
         from fastapi import BackgroundTasks
         bg = BackgroundTasks()
         db = _make_db()
-        # This is exactly: await svc.import_pdf(db, content, file.filename, background_tasks)
         batch_id, total = asyncio.run(import_pdf(db, PDF_WITH_QUESTION, "upload.pdf", bg))
         assert isinstance(batch_id, str)
         assert isinstance(total, int)
+
+
+class TestImportPdfMultiBlankChoice:
+    def test_pipeline_pdf_preserves_grouped_first_a_option(self):
+        text = (
+            "1. 若系统有 n 个进程，则就绪队列中进程的个数最多有（①）个；阻塞队列中进程的个数最多有（②）个。\n"
+            "① A n+1 B n C n−1 D 1\n"
+            "② A n+1 B n C n−1 D 1\n"
+            "答案：①:A;②:C\n解析：略"
+        )
+        db = _make_db()
+
+        batch_id, total = asyncio.run(import_pdf(db, _make_pdf(text), "multi-blank.pdf"))
+
+        assert batch_id.startswith("BATCH_")
+        assert total == 1
+        qi = db.add.call_args.args[0]
+        groups = qi.parsed_content["blank_option_groups"]
+        assert qi.question_type == "multi_blank_choice"
+        assert groups[0]["options"][0] == {"key": "A", "text": "n+1"}
+        assert groups[0]["options"] == [
+            {"key": "A", "text": "n+1"},
+            {"key": "B", "text": "n"},
+            {"key": "C", "text": "$n^{1}$"},
+            {"key": "D", "text": "1"},
+        ]

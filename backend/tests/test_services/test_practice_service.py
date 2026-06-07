@@ -115,6 +115,28 @@ class TestGetPracticeQuestions:
         assert result == []
 
 
+# --- multi blank answer helpers ---
+
+class TestMultiBlankAnswerHelpers:
+    def test_normalize_blank_choice_answer(self):
+        from app.services.practice_service import _normalize_blank_choice_answer
+
+        assert _normalize_blank_choice_answer("①:A;②:C") == {"①": "A", "②": "C"}
+        assert _normalize_blank_choice_answer("①：a；②：c") == {"①": "A", "②": "C"}
+        assert _normalize_blank_choice_answer("①=A\n②=C") == {"①": "A", "②": "C"}
+
+    def test_multi_blank_answer_order_insensitive(self):
+        from app.services.practice_service import _is_multi_blank_answer_correct
+
+        assert _is_multi_blank_answer_correct("②:C;①:A", "①:A;②:C") is True
+
+    def test_multi_blank_answer_rejects_partial_or_wrong(self):
+        from app.services.practice_service import _is_multi_blank_answer_correct
+
+        assert _is_multi_blank_answer_correct("①:A", "①:A;②:C") is False
+        assert _is_multi_blank_answer_correct("①:A;②:B", "①:A;②:C") is False
+
+
 # --- submit_answer ---
 
 class TestSubmitAnswer:
@@ -224,6 +246,34 @@ class TestSubmitAnswer:
         db.add.assert_called()
         db.commit.assert_called()
         assert "record_id" in result
+
+    def test_multi_blank_choice_order_insensitive_submit(self):
+        from app.services.practice_service import submit_answer
+
+        db = _make_mock_db()
+        q = _make_question(1, question_type="multi_blank_choice", answer="①:A;②:C")
+        db.execute.return_value = _make_execute_result(scalar_one_or_none=q)
+
+        result = _run(submit_answer(db, user_id=1, question_id=1, user_answer="②:C;①:A"))
+        assert result["is_correct"] is True
+        assert result["is_wrong_added"] is False
+
+    def test_multi_blank_choice_partial_submit_is_wrong(self):
+        from app.services.practice_service import submit_answer
+
+        db = _make_mock_db()
+        q = _make_question(1, question_type="multi_blank_choice", answer="①:A;②:C")
+        db.execute.side_effect = [
+            _make_execute_result(scalar_one_or_none=q),
+            _make_execute_result(scalar_one_or_none=None),
+            _make_execute_result(scalar_one_or_none=None),
+            _make_execute_result(scalar_one_or_none=q),
+            _make_execute_result(scalar_one_or_none=None),
+        ]
+
+        result = _run(submit_answer(db, user_id=1, question_id=1, user_answer="①:A"))
+        assert result["is_correct"] is False
+        assert result["is_wrong_added"] is True
 
 
 # --- batch_submit_answers ---
