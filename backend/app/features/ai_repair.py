@@ -13,7 +13,7 @@ import time
 logger = logging.getLogger(__name__)
 
 _VALID_QUESTION_TYPES = (
-    "single_choice", "multiple_choice", "true_false", "fill_blank", "subjective",
+    "single_choice", "multiple_choice", "true_false", "fill_blank", "multi_blank_choice", "subjective",
 )
 
 # 内存 token 计数器（进程级，后续可对接 ai_chats 表）
@@ -101,7 +101,7 @@ def _should_repair(question: dict, threshold: float) -> tuple[bool, str]:
         return True, "missing_options"
 
     # 4. answer 为空
-    if not (question.get("answer") or "").strip():
+    if qt in ("single_choice", "multiple_choice", "true_false") and not (question.get("answer") or "").strip():
         return True, "missing_answer"
 
     # 5. stem 异常短
@@ -336,6 +336,7 @@ async def repair_questions(
             "question_type": result_data.get("question_type", q.get("question_type", "")),
             "stem": result_data.get("stem", ""),
             "options": _normalize_ai_options(result_data.get("options")),
+            "blank_option_groups": result_data.get("blank_option_groups") or q.get("blank_option_groups", []),
             "answer": result_data.get("answer", ""),
             "analysis": result_data.get("analysis", ""),
             "raw_text": raw_text,

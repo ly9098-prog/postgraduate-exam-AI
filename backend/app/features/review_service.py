@@ -191,6 +191,9 @@ async def submit_to_review(
 
             question_type = q.get("question_type", "")
             parsed_answer = (q.get("answer") or "").strip() or None
+            parsed_content = {"text": stem}
+            if q.get("blank_option_groups"):
+                parsed_content["blank_option_groups"] = q.get("blank_option_groups")
 
             qi = QuestionImport(
                 batch_id=batch_id,
@@ -199,7 +202,7 @@ async def submit_to_review(
                 subject=qi_subject,
                 question_type=question_type or None,
                 raw_data=q,
-                parsed_content={"text": stem},
+                parsed_content=parsed_content,
                 parsed_options=parsed_options,
                 parsed_answer=parsed_answer,
                 parsed_analysis=(q.get("analysis") or "").strip() or None,
