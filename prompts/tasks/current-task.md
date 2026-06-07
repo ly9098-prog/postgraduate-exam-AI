@@ -376,7 +376,7 @@ raw_data.blank_option_groups
 - [x] **`(1)` / `(2)` 边界已专项复查并修复**：`question_splitter.py` 已避免把 `(1) A...` / `(2) A...` 组选项误判成新题边界，专项单测覆盖该场景。
 - [x] **OCR 退化兜底已专项样例确认**：两个普通 `（）` + 重复 A/B/C/D 选项块可生成两个独立 group，且 `option_lines` 不再作为主展示来源。
 - [ ] **前端展示需真实页面验证**：小程序审核页和管理端审核页已具备代码入口，管理端 `lint` / `next build` 已通过；仍需用实际导入批次在浏览器 / 微信开发者工具中检查展示、编辑、通过/拒绝流程。
-- [ ] **多空选择题首个选项组 A 选项丢失待修复**：部分多空选择题解析后，第一个 `blank_option_groups` 的 `A` 选项缺失，需要定位 splitter / normalizer / 前端映射中是否误吞了组选项起始项。
+- [x] **多空选择题首个选项组 A 选项丢失已修复（2026-06-07）**：真实根因不是 `①/(1)/Ⅰ` group marker 与 option prefix 正则冲突，而是 SQLite 审核池记录 `id=1163` 的 `raw_text` 在进入 splitter 前已退化为两个普通 `（）`，选项顺序为 `D/B/C/A/D/B/C`，导致第一组已有 B/C/D、第二组完整 A/B/C/D。`question_splitter.py` 已新增 `_repair_repeated_degraded_groups`，仅在普通空括号退化、存在完整组、缺 A 组的 B/C/D 与完整组一致时，从完整组补回 A；显式 grouped options 路径不变。已新增真实失败形态回归测试、非重复组选项负例，并加强 grouped options 断言。验证：`PYTHONPATH=/home/lmh/projects/postgraduate-ai/backend pytest -q /home/lmh/projects/postgraduate-ai/backend/tests/test_services/test_question_splitter.py /home/lmh/projects/postgraduate-ai/backend/tests/test_services/test_review_service.py` → `123 passed, 1 warning in 1.04s`。
 - [ ] **小程序审核页答案表单待适配多空选择题**：小程序前端审核页面当前多空选择题无法选择答案 / 无法填写答案表单，需要按 `blank_option_groups` 提供每个空位的答案录入与编辑能力。
 - [ ] **多空选择题数学公式识别与展示待同步单选题能力**：多空选择题中的数学公式识别、渲染和展示效果需要参考单选题链路同步处理，避免组选项中的公式丢失或显示异常。
 - [ ] **小程序答题页缺少多空选择题作答方案**：正式刷题 / 答题页面需要补齐 `multi_blank_choice` 的选择交互、答案保存、判题与回显方案。
