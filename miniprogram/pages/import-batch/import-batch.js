@@ -88,10 +88,59 @@ function normalizeBlankOptionList(options) {
   return []
 }
 
+function normalizeResponseObject(value) {
+  if (value && typeof value === 'object') return value
+  if (typeof value === 'string') {
+    try {
+      var parsed = JSON.parse(value)
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch (e) {
+      return {}
+    }
+  }
+  return {}
+}
+
 function enrichBlankOptionGroups(groups) {
   return (groups || []).map(function(group) {
     return Object.assign({}, group, {
       options: normalizeBlankOptionList(group.options).map(enrichOptionText),
+    })
+  })
+}
+
+function summarizeBlankOptionGroups(groups) {
+  return (groups || []).filter(function(g) { return g && typeof g === 'object' }).map(function(g, index) {
+    var options = g.options || {}
+    var optionKeys = []
+    if (Array.isArray(options)) {
+      optionKeys = options.map(function(o) { return o && o.key }).filter(Boolean)
+    } else if (options && typeof options === 'object') {
+      optionKeys = Object.keys(options)
+    }
+    return {
+      id: g.id || g.blank_id || g.label || index + 1,
+      optionKeys: optionKeys.map(function(k) { return String(k).toUpperCase() }).sort(),
+    }
+  })
+}
+
+function debugMultiBlankQuestions(questions, batchId) {
+  if (typeof console === 'undefined') return
+  ;(questions || []).forEach(function(q) {
+    var groups = q._blankOptionGroups || []
+    if (q.question_type !== 'multi_blank_choice' && groups.length === 0) return
+    var pc = normalizeResponseObject(q.parsed_content)
+    var raw = normalizeResponseObject(q.raw_data)
+    console.info('[import-batch] multi_blank_choice loaded', {
+      batchId: batchId,
+      questionId: q.id,
+      questionType: q.question_type,
+      stemPreview: String(pc.text || '').slice(0, 80),
+      blankOptionGroupCount: groups.length,
+      blankOptionGroups: summarizeBlankOptionGroups(groups),
+      parsedContentHasBlankOptionGroups: Array.isArray(pc.blank_option_groups),
+      rawDataHasBlankOptionGroups: Array.isArray(raw.blank_option_groups),
     })
   })
 }
@@ -169,8 +218,8 @@ Page({
         var meta = (q.ai_metadata && typeof q.ai_metadata === 'object') ? q.ai_metadata : {}
         var aiKps = Array.isArray(meta.knowledge_points) ? meta.knowledge_points : []
         var aiSuggestion = meta.complete_suggestion || null
-        var pc = (q.parsed_content && typeof q.parsed_content === 'object') ? q.parsed_content : {}
-        var rawData = (q.raw_data && typeof q.raw_data === 'object') ? q.raw_data : {}
+        var pc = normalizeResponseObject(q.parsed_content)
+        var rawData = normalizeResponseObject(q.raw_data)
         var blankOptionGroups = Array.isArray(pc.blank_option_groups) ? pc.blank_option_groups : (Array.isArray(rawData.blank_option_groups) ? rawData.blank_option_groups : [])
         var segments = Array.isArray(pc.segments) ? pc.segments : []
         var riskFlags = Array.isArray(meta.risk_flags) ? meta.risk_flags : []
@@ -212,6 +261,7 @@ Page({
         selectedIds: {},
         selectedCount: 0,
       })
+      debugMultiBlankQuestions(questions, this.batchId)
     } catch (e) {
       console.error('loadBatch 失败', e)
       this.setData({ loadError: true })

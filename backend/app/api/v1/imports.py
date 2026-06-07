@@ -7,7 +7,7 @@ import tempfile
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -302,23 +302,8 @@ async def review_question(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_app_permission("import:write")),
 ):
-    """审核单题：通过或拒绝"""
-    if data.status == "rejected":
-        await svc.reject_question(db, question_id, data.review_note)
-        return {"status": "rejected"}
-
-    try:
-        result = await svc.approve_question(db, question_id, data.model_dump(exclude_none=True))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    qi = result["qi"]
-    return {
-        "status": "duplicate" if result["is_duplicate"] else "approved",
-        "id": qi.id,
-        "question_id": result["question_id"],
-        "is_duplicate": result["is_duplicate"],
-    }
+    """小程序端不再开放导入审核能力。"""
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请在 Admin 后台审核导入题目")
 
 
 @router.post("/batches/{batch_id}/approve", response_model=dict)
@@ -327,19 +312,8 @@ async def approve_batch(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_app_permission("import:write")),
 ):
-    """批量通过一个批次。skipped 题目会列出缺失字段，前端可据此提示用户去逐题审核。"""
-    try:
-        approved, skipped = await svc.batch_approve(db, batch_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    skipped_details = [
-        {"id": qid, "missing": fields} for qid, fields in skipped.items()
-    ]
-    return {
-        "approved_count": approved,
-        "skipped_count": len(skipped),
-        "skipped": skipped_details,
-    }
+    """小程序端不再开放批量通过能力。"""
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请在 Admin 后台审核导入题目")
 
 
 @router.post("/batches/{batch_id}/reject", response_model=dict)
@@ -348,12 +322,8 @@ async def reject_batch(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_app_permission("import:write")),
 ):
-    """批量拒绝一个批次的所有待审核题目"""
-    try:
-        count = await svc.batch_reject(db, batch_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return {"rejected_count": count}
+    """小程序端不再开放批量拒绝能力。"""
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请在 Admin 后台审核导入题目")
 
 
 @router.post("/submit-review", response_model=SubmitReviewResponse)
@@ -609,8 +579,8 @@ async def _run_image_pipeline_with_db(
         await _fail_image_pipeline(pipeline_id, str(exc))
 
 
-@router.post("/pipeline/upload", response_model=PipelineUploadResponse)
-async def pipeline_upload(
+async def start_import_pipeline_from_upload(
+    *,
     file: UploadFile,
     background_tasks: BackgroundTasks,
     subject: str | None = None,
@@ -619,13 +589,8 @@ async def pipeline_upload(
     confidence_threshold: float = 0.6,
     page_start: int | None = None,
     page_end: int | None = None,
-    current_user: User = Depends(require_app_permission("import:write")),
-):
-    """统一导入入口：支持 Excel / PDF / TXT / 图片，异步返回 pipeline_id。
-
-    import_mode: "auto" | "book" | "exam"
-    通过 GET /api/v1/import/pipelines/{pipeline_id} 查询进度。
-    """
+    created_by: str | None = None,
+) -> PipelineUploadResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="文件名不能为空")
 
@@ -647,11 +612,9 @@ async def pipeline_upload(
     if not content:
         raise HTTPException(status_code=400, detail="文件内容为空")
 
-    # 环境级上传限制
     validator = get_upload_validator()
     validator.validate_file(filename, len(content), file.content_type)
 
-    # 页码范围校验
     if page_start is not None and page_start < 1:
         raise HTTPException(status_code=400, detail="page_start 必须 >= 1")
     if page_end is not None and page_end < 1:
@@ -659,7 +622,6 @@ async def pipeline_upload(
     if page_end is not None and page_start is not None and page_end < page_start:
         raise HTTPException(status_code=400, detail="page_end 必须 >= page_start")
 
-    # --- Image branch ---
     if is_image:
         if file.content_type and file.content_type not in _IMAGE_CONTENT_TYPES:
             raise HTTPException(status_code=400, detail="图片 Content-Type 不支持")
@@ -700,7 +662,6 @@ async def pipeline_upload(
 
         return PipelineUploadResponse(pipeline_id=pipeline_id, status="queued", source_type="image")
 
-    # --- Excel branch ---
     if is_excel:
         pipeline_id = f"xl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
@@ -725,7 +686,6 @@ async def pipeline_upload(
 
         return PipelineUploadResponse(pipeline_id=pipeline_id, status="parsing", source_type="excel")
 
-    # --- PDF / TXT branch ---
     source_type = "pdf" if is_pdf else "txt"
     pipeline_id = f"pl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
@@ -737,7 +697,7 @@ async def pipeline_upload(
         except HTTPException:
             raise
         except Exception:
-            pass  # malformed PDF — will fail downstream with proper error
+            pass
 
     options = {
         "enable_ai_repair": enable_ai_repair,
@@ -767,11 +727,50 @@ async def pipeline_upload(
             source_file=filename,
             subject=subject,
             options=options,
-            created_by=str(current_user.id) if current_user is not None else None,
+            created_by=created_by,
         )
     )
 
     return PipelineUploadResponse(pipeline_id=pipeline_id, status="parsing", source_type=source_type)
+
+
+@router.post("/pipeline/upload", response_model=PipelineUploadResponse)
+async def pipeline_upload(
+    file: UploadFile,
+    background_tasks: BackgroundTasks,
+    subject: str | None = None,
+    import_mode: ImportMode = ImportMode.AUTO,
+    enable_ai_repair: bool = True,
+    confidence_threshold: float = 0.6,
+    page_start: int | None = None,
+    page_end: int | None = None,
+    current_user: User = Depends(require_app_permission("import:write")),
+):
+    """统一导入入口：支持 Excel / PDF / TXT / 图片，异步返回 pipeline_id。
+
+    import_mode: "auto" | "book" | "exam"
+    通过 GET /api/v1/import/pipelines/{pipeline_id} 查询进度。
+    """
+    return await start_import_pipeline_from_upload(
+        file=file,
+        background_tasks=background_tasks,
+        subject=subject,
+        import_mode=import_mode,
+        enable_ai_repair=enable_ai_repair,
+        confidence_threshold=confidence_threshold,
+        page_start=page_start,
+        page_end=page_end,
+        created_by=str(current_user.id) if current_user is not None else None,
+    )
+
+
+async def get_import_pipeline_status(pipeline_id: str, db: AsyncSession) -> PipelineStatusResponse:
+    status = await get_pipeline_status(pipeline_id, db=db)
+    if status is None:
+        status = await _get_image_pipeline_status(pipeline_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="流水线不存在")
+    return PipelineStatusResponse(**status)
 
 
 async def _run_pipeline_with_db(
@@ -878,12 +877,7 @@ async def pipeline_status(
     pending 计数 + failed_chunk_details）。图片 / Excel / 单 pass 路径
     不返回该字段，前端兼容缺失即可退化为旧逻辑。
     """
-    status = await get_pipeline_status(pipeline_id, db=db)
-    if status is None:
-        status = await _get_image_pipeline_status(pipeline_id)
-    if status is None:
-        raise HTTPException(status_code=404, detail="流水线不存在")
-    return PipelineStatusResponse(**status)
+    return await get_import_pipeline_status(pipeline_id, db)
 
 
 _RESUMABLE_PIPELINE_STATUSES = {"paused", "failed"}
@@ -1092,13 +1086,8 @@ async def publish_questions(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_app_permission("import:write")),
 ):
-    """发布审核通过的题目到正式题库。question_ids 和 batch_id 二选一。"""
-    try:
-        return await publish_svc.publish_questions(
-            db, question_ids=data.question_ids, batch_id=data.batch_id
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    """小程序端不再开放发布能力。"""
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请在 Admin 后台发布导入题目")
 
 
 @router.get("/review/publish-history", response_model=PublishHistoryResponse)
@@ -1121,11 +1110,8 @@ async def approve_and_publish(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_app_permission("import:write")),
 ):
-    """快捷操作：审核通过并发布，一步完成。"""
-    try:
-        return await publish_svc.approve_and_publish(db, question_ids=data.question_ids)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    """小程序端不再开放快捷审核发布能力。"""
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请在 Admin 后台审核并发布导入题目")
 
 
 # ---------------------------------------------------------------------------

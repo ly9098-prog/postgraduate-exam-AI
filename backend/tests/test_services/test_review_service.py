@@ -260,6 +260,8 @@ class TestSubmitToReview:
                 "options": [
                     {"key": "A", "text": "n+1"},
                     {"key": "B", "text": "n"},
+                    {"key": "C", "text": "n−1"},
+                    {"key": "D", "text": "1"},
                 ],
             },
             {
@@ -267,6 +269,8 @@ class TestSubmitToReview:
                 "options": [
                     {"key": "A", "text": "n+1"},
                     {"key": "B", "text": "n"},
+                    {"key": "C", "text": "n−1"},
+                    {"key": "D", "text": "1"},
                 ],
             },
         ]
@@ -289,6 +293,31 @@ class TestSubmitToReview:
             "blank_option_groups": groups,
         }
         assert added[0].raw_data["blank_option_groups"] == groups
+
+    def test_multi_blank_choice_logs_group_summary(self, caplog):
+        db, added = self._setup()
+        q = _make_question({
+            "question_type": "multi_blank_choice",
+            "options": [],
+            "blank_option_groups": [
+                {"id": 1, "options": {"A": "a1", "B": "b1", "C": "c1", "D": "d1"}},
+            ],
+        })
+
+        with caplog.at_level("INFO", logger="app.features.review_service"):
+            asyncio.run(submit_to_review(db, [q]))
+
+        assert added[0].parsed_options is None
+        records = [
+            record for record in caplog.records
+            if record.message == "multi_blank_choice review item imported"
+        ]
+        assert len(records) == 1
+        assert records[0].import_id == added[0].id
+        assert records[0].question_type == "multi_blank_choice"
+        assert records[0].blank_option_group_count == 1
+        assert records[0].blank_option_groups == [{"id": 1, "option_keys": ["A", "B", "C", "D"]}]
+        assert records[0].raw_data_has_blank_option_groups is True
 
     def test_stem_preview_truncation(self):
         db, added = self._setup()
