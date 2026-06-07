@@ -429,6 +429,18 @@ class TestOcrTolerance:
         assert result[0]["option_lines"] == {}
         assert result[0]["has_grouped_options"] is True
         assert [group["id"] for group in result[0]["blank_option_groups"]] == ["①", "②"]
+        assert result[0]["blank_option_groups"][0]["options"] == {
+            "A": "n+1",
+            "B": "n",
+            "C": "n−1",
+            "D": "1",
+        }
+        assert result[0]["blank_option_groups"][1]["options"] == {
+            "A": "n+1",
+            "B": "n",
+            "C": "n−1",
+            "D": "1",
+        }
         normalized = normalize_question(result[0], {"answer": ""}, {"subject": "exam408"})
         assert normalized["question_type"] == "multi_blank_choice"
         assert normalized["options"] == []
@@ -445,6 +457,18 @@ class TestOcrTolerance:
         assert result[0]["option_lines"] == {}
         assert result[0]["has_grouped_options"] is True
         assert [group["id"] for group in result[0]["blank_option_groups"]] == ["1", "2"]
+        assert result[0]["blank_option_groups"][0]["options"] == {
+            "A": "n+1",
+            "B": "n",
+            "C": "n−1",
+            "D": "1",
+        }
+        assert result[0]["blank_option_groups"][1]["options"] == {
+            "A": "n+1",
+            "B": "n",
+            "C": "n−1",
+            "D": "1",
+        }
 
     def test_grouped_option_marker_preserves_unpunctuated_first_a_option(self):
         blocks = _make_blocks(
@@ -557,6 +581,59 @@ class TestOcrTolerance:
         assert result[0]["has_grouped_options"] is True
         assert [group["id"] for group in result[0]["blank_option_groups"]] == ["1", "2"]
 
+    def test_degraded_blank_repeated_option_blocks_restore_missing_first_a(self):
+        blocks = _make_blocks(
+            "1. 若系统有 n 个进程，则就绪队列中进程的个数最多有（）个；阻塞队列中进程的个数最多有（）个。\n"
+            "D. 1\n"
+            "B. n\n"
+            "C. n-1\n"
+            "A. n+1\n"
+            "D. 1\n"
+            "B. n\n"
+            "C. n-1"
+        )
+        result = split_questions(blocks)
+        assert len(result) == 1
+        assert result[0]["has_grouped_options"] is True
+        assert result[0]["blank_option_groups"][0]["options"] == {
+            "A": "n+1",
+            "B": "n",
+            "C": "n-1",
+            "D": "1",
+        }
+        assert result[0]["blank_option_groups"][1]["options"] == {
+            "A": "n+1",
+            "B": "n",
+            "C": "n-1",
+            "D": "1",
+        }
+
+    def test_degraded_blank_repeated_option_blocks_do_not_repair_different_group(self):
+        blocks = _make_blocks(
+            "1. 若系统有 n 个进程，则就绪队列中进程的个数最多有（）个；阻塞队列中进程的个数最多有（）个。\n"
+            "D. 1\n"
+            "B. n\n"
+            "C. n-2\n"
+            "A. n+1\n"
+            "D. 1\n"
+            "B. n\n"
+            "C. n-1"
+        )
+        result = split_questions(blocks)
+        assert len(result) == 1
+        assert result[0]["has_grouped_options"] is True
+        assert result[0]["blank_option_groups"][0]["options"] == {
+            "B": "n",
+            "C": "n-2",
+            "D": "1",
+        }
+        assert result[0]["blank_option_groups"][1]["options"] == {
+            "A": "n+1",
+            "B": "n",
+            "C": "n-1",
+            "D": "1",
+        }
+
     def test_grouped_roman_option_rows_preserve_groups(self):
         blocks = _make_blocks(
             "1. 若系统有 n 个进程，则就绪队列中进程的个数最多有Ⅰ个；阻塞队列中进程的个数最多有Ⅱ个。\n"
@@ -568,6 +645,18 @@ class TestOcrTolerance:
         assert result[0]["option_lines"] == {}
         assert result[0]["has_grouped_options"] is True
         assert [group["id"] for group in result[0]["blank_option_groups"]] == ["Ⅰ", "Ⅱ"]
+        assert result[0]["blank_option_groups"][0]["options"] == {
+            "A": "n+1",
+            "B": "n",
+            "C": "n−1",
+            "D": "1",
+        }
+        assert result[0]["blank_option_groups"][1]["options"] == {
+            "A": "n+1",
+            "B": "n",
+            "C": "n−1",
+            "D": "1",
+        }
 
     def test_inline_option_truncates_answer_and_explanation_tail(self):
         blocks = _make_blocks("1. 题干\nA. 1 B. 2 C. 3 D. 4 答案：A 解析：因为如此")

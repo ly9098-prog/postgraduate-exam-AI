@@ -1,5 +1,13 @@
 # Bugs History
 
+## 2026-06-07 — OCR/PDF 多空选择题首个选项组 A 选项丢失（已修复）
+
+- **现象**：OCR/PDF 导入后，多空选择题已识别为 `multi_blank_choice`，但审核页中第一个 `blank_option_groups` 只有 B/C/D，第二组为 A/B/C/D。
+- **原因**：真实失败记录 `question_imports.id=1163` 的 `raw_text` 在进入 splitter 前已退化为两个普通 `（）`，选项行顺序为 `D/B/C/A/D/B/C`；退化空括号兜底拆组后第一组缺失 A。该问题不是 `①/(1)/Ⅰ` 显式 group marker 与 option prefix 正则冲突。
+- **处理**：`question_splitter.py` 新增 `_repair_repeated_degraded_groups`，仅在普通空括号退化、存在完整组、缺 A 组已有 B/C/D 与完整组一致时，从完整组补回 A；显式 grouped options 路径保持不变。
+- **验证**：新增真实失败形态回归测试和非重复组选项负例；运行 `PYTHONPATH=/home/lmh/projects/postgraduate-ai/backend pytest -q /home/lmh/projects/postgraduate-ai/backend/tests/test_services/test_question_splitter.py /home/lmh/projects/postgraduate-ai/backend/tests/test_services/test_review_service.py`，结果 `123 passed, 1 warning in 1.04s`。
+- **说明**：该修复只作用于 OCR 退化后的多空选择题兜底拆组，不补齐内容不一致的组选项，避免污染非重复组。
+
 ## 2026-06-06 — OCR/PDF 教材正文误识别与风险标识缺失（已修复）
 
 - **现象**：扫描版教材 / 书籍 PDF 导入时，正文、知识点讲解或例题解析可能被拆成低置信候选题；人工审核页此前缺少醒目的风险提示，批量通过时存在将正文型候选题发布到正式题库的误操作风险。

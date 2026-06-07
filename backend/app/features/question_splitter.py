@@ -629,11 +629,39 @@ def _split_option_blocks_by_repeated_keys(text: str) -> list[dict[str, str]]:
     return blocks
 
 
+def _repair_repeated_degraded_groups(blocks: list[dict[str, str]]) -> list[dict[str, str]]:
+    if len(blocks) < 2:
+        return blocks
+
+    complete_groups = [block for block in blocks if "A" in block and len(block) >= 4]
+    if not complete_groups:
+        return blocks
+
+    repaired: list[dict[str, str]] = []
+    for block in blocks:
+        if "A" in block:
+            repaired.append(block)
+            continue
+        matched_group = next(
+            (
+                group
+                for group in complete_groups
+                if all(group.get(key) == value for key, value in block.items())
+            ),
+            None,
+        )
+        if matched_group:
+            repaired.append({"A": matched_group["A"], **block})
+        else:
+            repaired.append(block)
+    return repaired
+
+
 def _extract_degraded_blank_groups(text: str) -> list[dict]:
     plain_blank_count = len(re.findall(r"[（(]\s*[）)]", text))
     if plain_blank_count < 2:
         return []
-    blocks = _split_option_blocks_by_repeated_keys(text)
+    blocks = _repair_repeated_degraded_groups(_split_option_blocks_by_repeated_keys(text))
     if len(blocks) >= plain_blank_count:
         return [
             {"id": str(i + 1), "options": dict(blocks[i])}
