@@ -415,14 +415,17 @@ def _parse_options_from_text(text: str) -> dict[str, str]:
 
 def _line_group_marker(line: str) -> tuple[str, str] | None:
     stripped = line.strip()
-    for marker in _CIRCLED_OPTION_CHARS:
-        for prefix in (marker, f"（{marker}）", f"({marker})"):
-            if stripped == prefix:
-                return marker, ""
-            if stripped.startswith(prefix) and stripped[len(prefix):len(prefix) + 1].isspace():
-                rest = stripped[len(prefix):].strip()
-                if rest and re.match(r"^(?:[?？]\s*)?[A-Da-d]\s*[.．、:：)）\s]", rest):
-                    return marker, rest
+    marker_chars = re.escape(_CIRCLED_OPTION_CHARS)
+    m = re.match(rf"^(?:[（(]\s*([{marker_chars}])\s*[）)]|([{marker_chars}]))\s*(.*)$", stripped)
+    if not m:
+        return None
+
+    marker = m.group(1) or m.group(2)
+    rest = m.group(3).strip()
+    if not rest:
+        return marker, ""
+    if re.match(r"^(?:[?？]\s*)?[A-Da-d]\s*[.．、:：)）\s]", rest):
+        return marker, rest
     return None
 
 
@@ -479,12 +482,28 @@ def _extract_grouped_options(text: str) -> list[dict]:
 def _has_numbered_blank_markers(text: str, grouped_options: list[dict]) -> bool:
     if len(grouped_options) < 2:
         return False
-    markers = {group.get("id") for group in grouped_options}
-    marker_positions = [match.start() for match in re.finditer(r"(?<![（(])[" + _CIRCLED_OPTION_CHARS + r"]\s+[A-Da-d]\s*[.．、:：)）]", text)]
+    markers = {str(group.get("id") or "") for group in grouped_options}
+    marker_chars = re.escape(_CIRCLED_OPTION_CHARS)
+    marker_positions = [
+        match.start()
+        for match in re.finditer(
+            rf"(?<![（(])(?:[{marker_chars}]|[（(]\s*[{marker_chars}]\s*[）)])\s*[A-Da-d]\s*[.．、:：)）]",
+            text,
+        )
+    ]
     stem_part = text
     if marker_positions:
         stem_part = text[:min(marker_positions)]
-    return sum(1 for marker in markers if marker and re.search(rf"[（(]\s*{re.escape(str(marker))}\s*[）)]", stem_part)) >= 2
+    marker_count = 0
+    for marker in markers:
+        if not marker:
+            continue
+        if re.search(rf"[（(]\s*{re.escape(marker)}\s*[）)]", stem_part):
+            marker_count += 1
+            continue
+        if re.search(rf"(?<![（(]){re.escape(marker)}(?!\s*[A-Da-d]\s*[.．、:：)）])", stem_part):
+            marker_count += 1
+    return marker_count >= 2
 
 
 def _flatten_first_option_group(grouped_options: list[dict]) -> dict[str, str]:
