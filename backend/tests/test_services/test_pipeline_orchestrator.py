@@ -336,6 +336,89 @@ class TestOcrScannedPdf:
         assert blocks[0]["has_boxes"] is True
         assert blocks[0]["boxes"] == [{"bbox": [1, 2, 3, 4], "conf": 0.9}]
 
+    def test_failed_boxes_with_empty_plain_fallback_marks_unavailable_page(self):
+        from app.services.ocr_service import OcrPageResult
+
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        pages = []
+        for i in range(2):
+            page = MagicMock()
+            pix = MagicMock()
+            pix.tobytes.return_value = f"png{i + 1}".encode()
+            pix.width = 800
+            pix.height = 600
+            page.get_pixmap.return_value = pix
+            pages.append(page)
+        mock_doc.__len__ = MagicMock(return_value=2)
+        mock_doc.__getitem__ = MagicMock(side_effect=lambda i: pages[i])
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            with patch(
+                "app.services.ocr_service.ocr_pages_with_boxes",
+                return_value={
+                    1: OcrPageResult(page_index=1, text="", boxes=[], failed=True, error="could not execute a primitive"),
+                    2: OcrPageResult(page_index=2, text="02. TCP 拥塞控制中，下列说法正确的是", boxes=[]),
+                },
+            ):
+                with patch(
+                    "app.services.ocr_service.ocr_pages",
+                    return_value={1: ""},
+                ):
+                    with patch(
+                        "app.services.ocr_service.clean_ocr_text",
+                        side_effect=lambda t: t,
+                    ):
+                        blocks = _ocr_scanned_pdf(b"pdf")
+
+        assert len(blocks) == 1
+        assert blocks[0]["page"] == 2
+        assert blocks[0]["_ocr_text_fallback_unavailable_pages"] == [1]
+        assert blocks[0]["_ocr_runtime_failed_pages"] == [1]
+        assert "could not execute a primitive" not in str(blocks[0])
+
+    def test_plain_fallback_batch_exception_preserves_successful_boxes_blocks(self):
+        from app.services.ocr_service import OcrPageResult
+
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        pages = []
+        for i in range(2):
+            page = MagicMock()
+            pix = MagicMock()
+            pix.tobytes.return_value = f"png{i + 1}".encode()
+            pix.width = 800
+            pix.height = 600
+            page.get_pixmap.return_value = pix
+            pages.append(page)
+        mock_doc.__len__ = MagicMock(return_value=2)
+        mock_doc.__getitem__ = MagicMock(side_effect=lambda i: pages[i])
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            with patch(
+                "app.services.ocr_service.ocr_pages_with_boxes",
+                return_value={
+                    1: OcrPageResult(page_index=1, text="", boxes=[], failed=True, error="could not execute a primitive"),
+                    2: OcrPageResult(page_index=2, text="02. TCP 拥塞控制中，下列说法正确的是", boxes=[]),
+                },
+            ):
+                with patch(
+                    "app.services.ocr_service.ocr_pages",
+                    side_effect=RuntimeError("could not execute a primitive"),
+                ):
+                    with patch(
+                        "app.services.ocr_service.clean_ocr_text",
+                        side_effect=lambda t: t,
+                    ):
+                        blocks = _ocr_scanned_pdf(b"pdf")
+
+        assert len(blocks) == 1
+        assert blocks[0]["page"] == 2
+        assert blocks[0]["_ocr_text_fallback_unavailable_pages"] == [1]
+        assert blocks[0]["_ocr_runtime_failed_pages"] == [1]
+
     def test_empty_pdf_returns_empty(self):
         mock_fitz = MagicMock()
         mock_doc = MagicMock()
@@ -412,6 +495,8 @@ class TestRunExtractOcrFallback:
                 "has_boxes": False,
                 "boxes": [],
                 "_ocr_boxes_failed": True,
+                "_ocr_text_fallback_unavailable_pages": [247],
+                "_ocr_runtime_failed_pages": [247],
             },
             {
                 "page": 246,
@@ -438,6 +523,8 @@ class TestRunExtractOcrFallback:
         assert result["raw_blocks"] == ocr_blocks
         assert result["ocr_boxes_failed_pages"] == [245]
         assert result["ocr_text_fallback_pages"] == [245]
+        assert result["ocr_text_fallback_unavailable_pages"] == [247]
+        assert result["ocr_runtime_failed_pages"] == [247]
 
     def test_normal_pdf_no_ocr_triggered(self):
         pipeline = ImportPipeline()
