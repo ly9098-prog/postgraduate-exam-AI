@@ -130,7 +130,7 @@
     >
       <!-- 题目卡片 -->
       <view class="q-wrap {{animClass}}" wx:if="{{currentQuestion}}">
-        <view class="q-badge">{{currentQuestion.question_type === 'multiple_choice' ? '多选题' : currentQuestion.question_type === 'true_false' || currentQuestion.question_type === 'judgement' ? '判断题' : '单选题'}}</view>
+        <view class="q-badge">{{currentQuestion.question_type === 'multi_blank_choice' || currentQuestion._hasBlankOptionGroups ? '多空选择题' : currentQuestion.question_type === 'multiple_choice' ? '多选题' : currentQuestion.question_type === 'true_false' || currentQuestion.question_type === 'judgement' ? '判断题' : '单选题'}}</view>
         <block wx:if="{{enableMathImage && currentQuestion.content.render_mode === 'segments'}}">
           <math-question segments="{{currentQuestion._segments}}" />
         </block>
@@ -139,8 +139,38 @@
           <text wx:else class="q-content q-text">{{currentQuestion._stemText}}</text>
         </block>
 
+        <!-- 多空选择题选项 -->
+        <view class="blank-options" wx:if="{{currentQuestion._hasBlankOptionGroups}}">
+          <view class="blank-group" wx:for="{{currentQuestion._blankOptionGroups}}" wx:for-item="group" wx:key="id">
+            <view class="blank-group-head">
+              <text class="blank-group-title">{{group.id}}</text>
+              <text class="blank-group-hint">请选择该空答案</text>
+            </view>
+            <view class="blank-group-options">
+              <view
+                wx:for="{{group.options}}"
+                wx:for-item="opt"
+                wx:key="key"
+                class="option-item blank-option-item {{opt._selected ? 'selected' : ''}}"
+                bindtap="selectBlankOption"
+                data-blank-id="{{group.id}}"
+                data-option="{{opt.key}}"
+              >
+                <view class="option-indicator {{opt._selected ? 'checked' : ''}}">
+                  <text wx:if="{{opt._selected}}" class="check-mark">●</text>
+                </view>
+                <view class="option-body">
+                  <text class="option-key">{{opt.key}}.</text>
+                  <mp-html wx:if="{{opt._needsRich}}" content="{{opt._html}}" style="display:inline-block"></mp-html>
+                  <text wx:else class="option-text">{{opt._text}}</text>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+
         <!-- 选项 -->
-        <view class="options" wx:if="{{optionKeys.length > 0}}">
+        <view class="options" wx:elif="{{optionKeys.length > 0}}">
           <view
             wx:for="{{optionKeys}}"
             wx:key="*this"
@@ -204,7 +234,7 @@
         <view
           wx:for="{{questions}}"
           wx:key="id"
-          class="sheet-cell {{answerMap[String(item.id)] ? 'done' : ''}} {{currentIndex === index ? 'current' : ''}}"
+          class="sheet-cell {{item._answered ? 'done' : ''}} {{currentIndex === index ? 'current' : ''}}"
           data-index="{{index}}"
           bindtap="goQuestion"
         >

@@ -36,6 +36,7 @@ from app.core.config import settings
 from app.models.ai_generation_log import AiGenerationLog
 from app.models.question import Question
 from app.models.question_import import QuestionImport
+from app.features.question_splitter import split_questions
 from app.utils.trace.debug import debug_log, save_debug_snapshot
 
 logger = logging.getLogger(__name__)
@@ -860,6 +861,16 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
     blocks = re.split(r"\n\s*(?=\d+\s*[.、)）])", text)
     blocks = [b.strip() for b in blocks if len(b.strip()) > 20]
 
+    splitter_questions = split_questions(
+        [{"normalized_text": text, "page": 1, "block_index": 0}],
+        import_mode="pdf",
+    )
+    grouped_options_by_number = {
+        item.get("number"): item.get("blank_option_groups")
+        for item in splitter_questions
+        if item.get("number") and item.get("blank_option_groups")
+    }
+
     def _stem_key(line: str) -> str:
         """规范化行内容用于去重：去题号前缀、折叠空白。"""
         k = re.sub(r"^\d+\s*[.、)）]\s*", "", line).strip()
@@ -867,6 +878,10 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
 
     results: list[dict] = []
     for block in blocks:
+        question_number = None
+        number_match = re.match(r"^(\d+)\s*[.、)）]", block)
+        if number_match:
+            question_number = int(number_match.group(1))
         stem_lines: list[str] = []
         stem_seen: set[str] = set()
         options: dict = {}
@@ -921,18 +936,20 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
             if options
             else ""
         )
+        blank_option_groups = grouped_options_by_number.get(question_number) or []
         per_question_subject = (
             _guess_subject(stem + " " + analysis, min_score=1) or default_subject
         )
         results.append({
             "subject": per_question_subject,
             "stem": stem,
-            "options": options_str,
+            "options": "" if blank_option_groups else options_str,
+            "blank_option_groups": blank_option_groups,
             "answer": answer,
             "explanation": analysis,
-            "question_type": "choice" if options else (
+            "question_type": "multi_blank_choice" if blank_option_groups else ("choice" if options else (
                 "true_false" if re.search(r"[（(]\s*判断题?\s*[）)]|^\s*判断题?[：:]", stem) else "fill"
-            ),
+            )),
         })
 
     if not results:

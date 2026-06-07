@@ -94,7 +94,8 @@
               <view class="detail-options">
                 <view class="option-row" wx:for="{{group.options}}" wx:for-item="opt" wx:key="key">
                   <text class="opt-key">{{opt.key}}.</text>
-                  <text class="opt-val">{{opt.text}}</text>
+                  <mp-html wx:if="{{opt._needsRich}}" class="opt-val" content="{{opt._html}}"></mp-html>
+                  <text wx:else class="opt-val">{{opt._text}}</text>
                 </view>
               </view>
             </view>
@@ -111,7 +112,28 @@
         </view>
 
         <!-- 答案（可编辑） -->
-        <view class="detail-body" wx:if="{{item.status === 'pending' && !item.parsed_answer}}">
+        <view class="detail-body" wx:if="{{item.status === 'pending' && !item.parsed_answer && item._hasBlankOptionGroups}}">
+          <text class="detail-label">答案 <text class="req">*</text></text>
+          <view class="blank-answer-groups">
+            <view class="blank-answer-group" wx:for="{{item._blankOptionGroups}}" wx:for-item="group" wx:key="id">
+              <text class="blank-answer-title">{{group.id}}</text>
+              <view class="answer-quick-keys">
+                <view
+                  class="answer-key {{editing[item.id].blankAnswers[group.id] === opt.key ? 'active' : ''}}"
+                  wx:for="{{group.options}}"
+                  wx:for-item="opt"
+                  wx:key="key"
+                  data-id="{{item.id}}"
+                  data-blank-id="{{group.id}}"
+                  data-value="{{opt.key}}"
+                  bindtap="onBlankAnswerSelect"
+                  catchtap
+                >{{opt.key}}</view>
+              </view>
+            </view>
+          </view>
+        </view>
+        <view class="detail-body" wx:elif="{{item.status === 'pending' && !item.parsed_answer}}">
           <text class="detail-label">答案 <text class="req">*</text></text>
           <view class="answer-quick-keys">
             <view

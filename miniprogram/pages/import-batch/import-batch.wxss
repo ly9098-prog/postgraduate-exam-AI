@@ -521,6 +521,24 @@
   box-shadow: 0 4rpx 12rpx rgba(107, 155, 107, 0.24);
 }
 
+.blank-answer-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.blank-answer-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.blank-answer-title {
+  font-size: 24rpx;
+  font-weight: 800;
+  color: #C49A6B;
+}
+
 /* ── 操作按钮 ── */
 .q-actions {
   display: flex;
