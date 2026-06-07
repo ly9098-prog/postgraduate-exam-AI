@@ -13,9 +13,10 @@ _RE_GARBLED = re.compile(
 )
 
 _CIRCLED_OPTION_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
-_OPTION_NOISE_PREFIX = r"(?:[?？]|[" + _CIRCLED_OPTION_CHARS + r"])?\s*"
-_OPTION_MARKER = _OPTION_NOISE_PREFIX + r"([A-Da-d])\s*[.．、:：)）]"
+_OPTION_PREFIX_MARKER = r"(?:[?？]\s*|[" + _CIRCLED_OPTION_CHARS + r"]\s*)?"
+_OPTION_MARKER = _OPTION_PREFIX_MARKER + r"([A-Da-d])\s*[.．、:：)）]"
 _INLINE_OPTION_MARKER = re.compile(r"(?<![A-Za-z0-9])" + _OPTION_MARKER)
+_RE_OPTION_MARKER = re.compile(_OPTION_MARKER)
 
 # 题号行：用于 OCR 字符纠正的上下文判断
 _RE_QUESTION_NUMBER = re.compile(
@@ -275,6 +276,8 @@ class ImportTextNormalizer:
     def _is_low_info_noise(self, text: str) -> bool:
         """检测低信息量噪声：短文本中非中英文字符占比过高。"""
         if len(text) > 6:
+            return False
+        if _RE_OPTION_MARKER.match(text):
             return False
         cjk_alpha = sum(
             1 for c in text

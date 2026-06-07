@@ -35,12 +35,12 @@ _OCR_Q_PATTERN = re.compile(r"^([lI])\s*[.、)）]")
 
 # 选项模式
 _CIRCLED_OPTION_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
-_OPTION_NOISE_PREFIX = r"(?:[?？]|[" + _CIRCLED_OPTION_CHARS + r"])?\s*"
-_OPTION_MARKER = _OPTION_NOISE_PREFIX + r"([A-Da-d])\s*[.．、:：)）]"
+_OPTION_PREFIX_MARKER = r"(?:[?？]\s*|[" + _CIRCLED_OPTION_CHARS + r"]\s*)?"
+_OPTION_MARKER = _OPTION_PREFIX_MARKER + r"([A-Da-d])\s*[.．、:：)）]"
 
 _OPTION_PATTERNS: list[re.Pattern] = [
-    re.compile(r"^" + _OPTION_NOISE_PREFIX + r"([A-Da-d])\s*[.．、:：)）]\s*(.+)"),
-    re.compile(r"^" + _OPTION_NOISE_PREFIX + r"([A-Da-d])\s+(.+)"),
+    re.compile(r"^" + _OPTION_PREFIX_MARKER + r"([A-Da-d])\s*[.．、:：)）]\s*(.+)"),
+    re.compile(r"^" + _OPTION_PREFIX_MARKER + r"([A-Da-d])\s+(.+)"),
 ]
 
 # OCR 容错选项
@@ -59,7 +59,7 @@ _ANSWER_EXPLANATION_LINE = re.compile(
 )
 
 _OCR_OPTION_PATTERN = re.compile(
-    r"^" + _OPTION_NOISE_PREFIX + r"([" + "".join(_OCR_OPTION_MAP.keys()) + r"])\s*[.、:：)）]\s*(.+)"
+    r"^" + _OPTION_PREFIX_MARKER + r"([" + "".join(_OCR_OPTION_MAP.keys()) + r"])\s*[.、:：)）]\s*(.+)"
 )
 
 # 章节号模式：X.X 或 X.X.X 格式（非题号）
