@@ -8,7 +8,8 @@ import re
 import statistics
 
 _QUESTION_NUMBER_PATTERN = re.compile(r"^\d+\s*[.．、)）]")
-_OPTION_PATTERN = re.compile(r"^[A-D]\s*[.．、:：)）]")
+_CIRCLED_OPTION_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+_OPTION_PATTERN = re.compile(r"^(?:[" + _CIRCLED_OPTION_CHARS + r"]\s*)?[A-D]\s*[.．、:：)）]")
 _EXERCISE_MARKER_PATTERN = re.compile(r"习题精选|练习题|巩固练习|单项选择题|多项选择题|选择题")
 _QUESTION_SIGNAL_PATTERN = re.compile(r"下列|以下|正确|错误|的是|哪|选择|计算|判断|已知|设|若|求|问|？|\?")
 _PROSE_MARKER_PATTERN = re.compile(r"定义|定理|知识点|证明|证毕|解法|例题|性质|推论|本节|本章")

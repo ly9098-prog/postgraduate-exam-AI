@@ -396,6 +396,22 @@ class TestOcrTolerance:
         result = split_questions(blocks)
         assert result[0]["option_lines"]["A"] == "第一项很长 需要换行继续说明"
 
+    def test_grouped_circled_option_rows_preserve_placeholders(self):
+        blocks = _make_blocks(
+            "1. 若系统有 n 个进程，则就绪队列中进程的个数最多有（①）个；阻塞队列中进程的个数最多有（②）个。\n"
+            "① A. n+1  B. n  C. n−1  D. 1\n"
+            "② A. n+1  B. n  C. n−1  D. 1"
+        )
+        result = split_questions(blocks)
+        assert len(result) == 1
+        raw_text = result[0]["raw_question_text"]
+        assert "（①）" in raw_text
+        assert "（②）" in raw_text
+        assert "（）" not in raw_text
+        assert "① A. n+1" in raw_text
+        assert "② A. n+1" in raw_text
+        assert result[0]["option_lines"] == {"A": "n+1", "B": "n", "C": "n−1", "D": "1"}
+
     def test_inline_option_truncates_answer_and_explanation_tail(self):
         blocks = _make_blocks("1. 题干\nA. 1 B. 2 C. 3 D. 4 答案：A 解析：因为如此")
         result = split_questions(blocks)
