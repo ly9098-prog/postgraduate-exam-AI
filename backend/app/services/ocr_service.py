@@ -313,29 +313,35 @@ def _ocr_prepared_image(ocr, img) -> Any:
 
 
 def _ocr_with_rotation_candidates(ocr, image_bytes: bytes) -> OcrCandidateResult:
-    img = _prepare_ocr_image(image_bytes)
-    result = _ocr_prepared_image(ocr, img)
-    if not get_ocr_profile().enable_rotation:
-        return OcrCandidateResult(result=result, image_size=img.size)
-    if _ocr_score_is_good(result):
-        return OcrCandidateResult(result=result, image_size=img.size)
+    try:
+        img = _prepare_ocr_image(image_bytes)
+        result = _ocr_prepared_image(ocr, img)
+        if not get_ocr_profile().enable_rotation:
+            return OcrCandidateResult(result=result, image_size=img.size)
+        if _ocr_score_is_good(result):
+            return OcrCandidateResult(result=result, image_size=img.size)
 
-    best_result = result
-    best_score = _score_ocr_result(result)
-    best_size = img.size
-    initial_score = best_score
-    for degrees in (90, 180, 270):
-        candidate_img = _rotate_image_for_ocr(img, degrees)
-        candidate = _ocr_prepared_image(ocr, candidate_img)
-        candidate_score = _score_ocr_result(candidate)
-        if candidate_score > best_score:
-            best_result = candidate
-            best_score = candidate_score
-            best_size = candidate_img.size
+        best_result = result
+        best_score = _score_ocr_result(result)
+        best_size = img.size
+        initial_score = best_score
+        for degrees in (90, 180, 270):
+            candidate_img = _rotate_image_for_ocr(img, degrees)
+            candidate = _ocr_prepared_image(ocr, candidate_img)
+            candidate_score = _score_ocr_result(candidate)
+            if candidate_score > best_score:
+                best_result = candidate
+                best_score = candidate_score
+                best_size = candidate_img.size
 
-    if best_score >= max(3.0, initial_score * 1.5):
-        return OcrCandidateResult(result=best_result, image_size=best_size)
-    return OcrCandidateResult(result=result, image_size=img.size)
+        if best_score >= max(3.0, initial_score * 1.5):
+            return OcrCandidateResult(result=best_result, image_size=best_size)
+        return OcrCandidateResult(result=result, image_size=img.size)
+    except RuntimeError as exc:
+        logger.warning("OCR 预处理失败，回退到原始图片：%s", exc)
+        fallback_img = _load_ocr_image(image_bytes)
+        fallback_result = _ocr_prepared_image(ocr, fallback_img)
+        return OcrCandidateResult(result=fallback_result, image_size=fallback_img.size)
 
 
 def _extract_ocr_lines(result: Any) -> list[dict]:
@@ -498,8 +504,13 @@ def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
             for idx, png in page_images
         }
         for future in as_completed(futures):
-            idx, text = future.result()
-            results[idx] = text
+            page_idx = futures[future]
+            try:
+                idx, text = future.result()
+                results[idx] = text
+            except Exception as e:
+                logger.warning("OCR 第 %d 页异常，跳过：%s", page_idx, e)
+                results[page_idx] = ""
 
     return results
 

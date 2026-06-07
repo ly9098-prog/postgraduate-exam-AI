@@ -303,6 +303,7 @@ def _ocr_scanned_pdf(
 
     blocks: list[dict] = []
     page_dimensions: dict[int, tuple[int, int]] = {}
+    ocr_text_fallback_unavailable_pages: set[int] = set()
     timed_out = False
     start_time = time.monotonic()
 
@@ -339,7 +340,12 @@ def _ocr_scanned_pdf(
                 for idx, result in results.items()
                 if result.failed and idx in batch_image_map
             ]
-            fallback_results = ocr_pages(failed_images) if failed_images else {}
+            try:
+                fallback_results = ocr_pages(failed_images) if failed_images else {}
+            except RuntimeError as exc:
+                logger.warning("OCR text fallback unavailable: %s", exc)
+                fallback_results = {}
+                ocr_text_fallback_unavailable_pages.update(idx for idx, _ in failed_images)
 
             del batch_images
             gc.collect()
@@ -362,6 +368,8 @@ def _ocr_scanned_pdf(
                             "has_boxes": False,
                             "_ocr_boxes_failed": True,
                         })
+                    else:
+                        ocr_text_fallback_unavailable_pages.add(page_idx)
                     continue
 
                 text = clean_ocr_text(result.text)
@@ -398,6 +406,11 @@ def _ocr_scanned_pdf(
         blocks[0]["_warnings"].append(
             f"ocr_pages_truncated: processed {pages_to_process}/{total_pages} pages"
         )
+
+    if ocr_text_fallback_unavailable_pages and blocks:
+        pages = sorted(ocr_text_fallback_unavailable_pages)
+        blocks[0]["_ocr_text_fallback_unavailable_pages"] = pages
+        blocks[0]["_ocr_runtime_failed_pages"] = pages
 
     if pipeline_id:
         _ocr_progress.pop(pipeline_id, None)
@@ -615,6 +628,8 @@ def _build_diagnostics(data: dict) -> dict:
         "page_classifications": data.get("page_classifications", []),
         "ocr_boxes_failed_pages": data.get("ocr_boxes_failed_pages", []),
         "ocr_text_fallback_pages": data.get("ocr_text_fallback_pages", []),
+        "ocr_text_fallback_unavailable_pages": data.get("ocr_text_fallback_unavailable_pages", []),
+        "ocr_runtime_failed_pages": data.get("ocr_runtime_failed_pages", []),
         "ocr_correction": data.get("ocr_correction_diagnostics", {}),
         "split": data.get("split_diagnostics", {}),
         "risk_flag_counts": data.get("risk_flag_counts", {}),
@@ -961,6 +976,18 @@ class ImportPipeline:
                 int(b.get("page") or b.get("page_index") or 0)
                 for b in raw_blocks
                 if b.get("source") == "ocr_text_fallback" and (b.get("page") or b.get("page_index"))
+            }),
+            "ocr_text_fallback_unavailable_pages": sorted({
+                int(page)
+                for b in raw_blocks
+                for page in (b.get("_ocr_text_fallback_unavailable_pages") or [])
+                if page
+            }),
+            "ocr_runtime_failed_pages": sorted({
+                int(page)
+                for b in raw_blocks
+                for page in (b.get("_ocr_runtime_failed_pages") or [])
+                if page
             }),
         }
 

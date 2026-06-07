@@ -145,6 +145,35 @@ class TestOcrRotationAndOrdering:
         assert candidate.image_size == (800, 1200)
         assert mock_ocr.ocr.call_count == 4
 
+    def test_rotation_candidates_fallback_to_raw_image_on_runtime_error(self):
+        from PIL import Image
+        from app.services import ocr_service
+
+        prepared = Image.new("RGB", (1200, 800), "white")
+        raw = Image.new("RGB", (900, 600), "white")
+        raw_result = [[self._ocr_line("1. 原图 OCR 文本", [[0, 0], [300, 0], [300, 20], [0, 20]])]]
+        mock_ocr = MagicMock()
+        mock_ocr.ocr.side_effect = [RuntimeError("could not execute a primitive"), raw_result]
+
+        with patch.object(ocr_service, "_prepare_ocr_image", return_value=prepared), patch.object(
+            ocr_service,
+            "_load_ocr_image",
+            return_value=raw,
+        ):
+            candidate = ocr_service._ocr_with_rotation_candidates(mock_ocr, b"image")
+
+        assert candidate.result == raw_result
+        assert candidate.image_size == raw.size
+        assert mock_ocr.ocr.call_count == 2
+
+    def test_ocr_pages_converts_page_exception_to_empty_text(self):
+        from app.services import ocr_service
+
+        with patch.object(ocr_service, "_ocr_one_page", side_effect=RuntimeError("could not execute a primitive")):
+            result = ocr_service.ocr_pages([(247, b"png")])
+
+        assert result == {247: ""}
+
     def test_single_column_order_uses_top_then_left(self):
         from app.services.ocr_service import _order_ocr_lines_reading_order
 

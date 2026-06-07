@@ -6,6 +6,7 @@
 > 目标：减少教材正文被误识别为题目，同时恢复 TCP 选择题 `01-12`、`43-45` 的识别。  
 > 审计更新：根据方案审计结果，前置最小回归样本和 P0 diagnostics，避免修复后无法验收或误杀真实题。
 > 当前状态：P0 已完成（P0-0 synthetic/golden 回归、P0-1 OCR text fallback、P0-2 book/content 正文编号过滤、P0-3 最小 diagnostics）。聚焦测试 `PYTHONPATH=. pytest tests/test_services/test_question_splitter.py tests/test_services/test_pipeline_orchestrator.py` 已通过：`149 passed, 4 warnings`。
+> 2026-06-07 追加：真实导入仍出现 `stage 'extract' failed: PDF 中未提取到文本内容（文本层为空且 OCR 未启用或失败）`，日志显示含框 OCR 和 text fallback 都可能触发 `could not execute a primitive`，需补 P0-4 单页 OCR runtime 失败保底。
 
 ## 1. 问题现象
 
@@ -169,6 +170,57 @@ D. ...
 - 断言 diagnostics 包含失败页；
 - 断言 chunked/resume 下不会重复合并同一页；
 - 断言单页含框失败不会导致整页题目消失。
+
+### P0-4：单页 OCR runtime 失败保底
+
+**目标**：解决真实导入中含框 OCR 与 text fallback 都可能触发 `could not execute a primitive`，最终 extract 阶段判定无文本的问题。
+
+**新增现象**：
+
+`logs.txt` 中同一批第 245-280 页导入出现以下组合信号：
+
+- 多页 `OCR（含框）第 X 页失败：could not execute a primitive`；
+- 第 247/249/250/251/252/253 页又出现 `OCR 第 X 页识别到 N 行文本`，说明纯文本 OCR 曾对部分页成功；
+- 最后出现 `OCR fallback unavailable: could not execute a primitive`；
+- pipeline 抛出 `stage 'extract' failed: PDF 中未提取到文本内容（文本层为空且 OCR 未启用或失败）`。
+
+**根因判断**：
+
+P0-1 只覆盖“含框 OCR 失败但纯文本 OCR 成功”的场景；当前真实失败还包含 OCR 引擎/图像预处理层面的 runtime primitive error，导致 fallback 批次自身也可能抛错或返回空，最终 `_run_extract()` 看到 `raw_blocks` 为空或文本不足而失败。
+
+**位置**：
+
+- `backend/app/features/pipeline_orchestrator.py::_ocr_scanned_pdf`
+- `backend/app/features/pipeline_orchestrator.py::_run_extract`
+- `backend/app/services/ocr_service.py::_prepare_ocr_image`
+- `backend/app/services/ocr_service.py::_ocr_with_rotation_candidates`
+
+**建议规则**：
+
+1. 含框 OCR 单页失败后，text fallback 仍按页兜底；
+2. text fallback 如果对某页或某批抛 `RuntimeError`，不能让整批 extract 直接归零；
+3. 对 fallback unavailable 的页写入 diagnostics：
+   - `ocr_text_fallback_unavailable_pages: [...]`
+   - `ocr_runtime_failed_pages: [...]`
+4. OCR 图像预处理或旋转候选触发 primitive error 时，降级尝试未裁剪、未旋转原图 OCR；
+5. fallback 仍无文本时只标记失败页，不把空文本 block 写入题目结构；
+6. 如果至少有其它页 OCR 成功，应继续进入 splitter，而不是因为单页 fallback runtime error 直接抛 extract 空文本错误。
+
+**边界**：
+
+- 不改变正常含框 OCR 页；
+- 不把失败页原文或图片数据写入 diagnostics；
+- 不把 diagnostics 混入 `question_imports.ai_metadata` 的题目结构字段；
+- 不吞掉整份 PDF 都无文本的真实失败，整批无任何有效文本时仍允许 extract 报错；
+- 只把 OCR runtime failure 从“整批打穿”降级为“页级不可用诊断”。
+
+**回归测试**：
+
+补充 `backend/tests/test_services/test_pipeline_orchestrator.py`：
+
+- mock 含框 OCR 失败且 text fallback 对单页抛 `RuntimeError`，断言 pipeline 记录 unavailable 页；
+- mock 部分页 fallback 成功、部分页 fallback 失败，断言成功页 block 保留且失败页不导致整批 extract 失败；
+- 断言 diagnostics 不包含整页 OCR 原文。
 
 ### P0-2：收紧 book 模式正文编号误判
 
