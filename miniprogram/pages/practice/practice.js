@@ -210,6 +210,120 @@ function _optionTextToHtml(key, value) {
   return _textToHtml(normalized)
 }
 
+function _normalizeBlankAnswer(answer) {
+  if (!answer) return {}
+  if (typeof answer === 'object') return answer
+  const result = {}
+  String(answer).split(/[;；,，\n]+/).forEach(function(part) {
+    const m = part.trim().match(/^(.+?)\s*[:：=]\s*([A-Za-z])$/)
+    if (m) result[m[1].trim()] = m[2].trim().toUpperCase()
+  })
+  return result
+}
+
+function _normalizeBlankOptionList(options) {
+  if (Array.isArray(options)) return options
+  if (options && typeof options === 'object') {
+    return Object.keys(options).map(function(key) {
+      return { key, text: options[key] }
+    })
+  }
+  return []
+}
+
+function _enrichBlankOptionGroups(groups, answer) {
+  const blankAnswers = _normalizeBlankAnswer(answer)
+  return (groups || []).map(function(group) {
+    const groupId = String((group && group.id) || '').trim()
+    return {
+      id: groupId,
+      options: _normalizeBlankOptionList(group && group.options).map(function(opt) {
+        const key = String((opt && opt.key) || '').trim().toUpperCase()
+        const text = String((opt && opt.text) || '').trim()
+        const optionText = _stripLeadingOptionLabel(key, text)
+        const plain = _toPlainInlineMathText(optionText)
+        const needsRich = !plain && _needsRichRender(optionText)
+        return Object.assign({}, opt, {
+          key,
+          _text: plain || optionText,
+          _selected: blankAnswers[groupId] === key,
+          _needsRich: needsRich,
+          _html: needsRich ? _optionTextToHtml(key, optionText) : '',
+        })
+      }).filter(function(opt) {
+        return opt.key
+      }),
+    }
+  }).filter(function(group) {
+    return group.id && group.options.length > 0
+  })
+}
+
+function _serializeBlankAnswer(groups, blankAnswers) {
+  const parts = []
+  ;(groups || []).forEach(function(group) {
+    const id = String((group && group.id) || '').trim()
+    const value = blankAnswers && blankAnswers[id]
+    if (id && value) parts.push(id + ':' + String(value).trim().toUpperCase())
+  })
+  return parts.join(';')
+}
+
+function _getBlankOptionGroups(q) {
+  if (!q) return []
+  if (q.content && Array.isArray(q.content.blank_option_groups)) return q.content.blank_option_groups
+  if (Array.isArray(q.blank_option_groups)) return q.blank_option_groups
+  return []
+}
+
+function _isMultiBlankChoice(q) {
+  return q && (q.question_type === 'multi_blank_choice' || _getBlankOptionGroups(q).length > 0)
+}
+
+function _isQuestionAnswered(q, answer) {
+  if (!_isMultiBlankChoice(q)) return !!answer
+  const groups = _getBlankOptionGroups(q)
+  if (!groups.length) return !!answer
+  const blankAnswers = _normalizeBlankAnswer(answer)
+  return groups.every(function(group) {
+    return !!blankAnswers[String((group && group.id) || '').trim()]
+  })
+}
+
+function _buildAnsweredFlags(questions, answerMap) {
+  const flags = {}
+  ;(questions || []).forEach(function(q) {
+    const id = String(q.id)
+    flags[id] = _isQuestionAnswered(q, (answerMap || {})[id] || '')
+  })
+  return flags
+}
+
+function _countAnswered(flags) {
+  return Object.keys(flags || {}).filter(function(id) {
+    return flags[id]
+  }).length
+}
+
+function _applyAnsweredFlags(questions, flags) {
+  return (questions || []).map(function(q) {
+    return Object.assign({}, q, { _answered: !!(flags || {})[String(q.id)] })
+  })
+}
+
+function _buildBlankSelectedFlags(groups, answer) {
+  const blankAnswers = _normalizeBlankAnswer(answer)
+  const flags = {}
+  ;(groups || []).forEach(function(group) {
+    const groupId = String((group && group.id) || '').trim()
+    flags[groupId] = {}
+    ;(group.options || []).forEach(function(opt) {
+      flags[groupId][opt.key] = blankAnswers[groupId] === opt.key
+    })
+  })
+  return flags
+}
+
 Page({
   data: {
     // 设置
@@ -230,7 +344,9 @@ Page({
 
     // 答题卡
     answerMap: {},
+    answeredFlags: {},
     answeredCount: 0,
+    blankSelectedFlags: {},
 
     // 提交后
     submitted: false,
@@ -284,7 +400,9 @@ Page({
       started: true,
       currentIndex: 0,
       answerMap: {},
+      answeredFlags: {},
       answeredCount: 0,
+      blankSelectedFlags: {},
       results: [],
       submitted: false,
       correctCount: 0,
@@ -327,7 +445,7 @@ Page({
         mode: this.data.selectedMode || 'random',
         _traceId: this.data.traceId,
       })
-      const questions = res.questions || []
+      const questions = _applyAnsweredFlags(res.questions || [], {})
       debugLog(this.data.traceId, 'STATE_AFTER_API', {
         total: questions.length,
         responseTraceId: res.trace_id,
@@ -336,7 +454,7 @@ Page({
         total: questions.length,
         questionIds: questions.map(q => q.id),
       })
-      this.setData({ questions, totalQuestions: questions.length, loading: false })
+      this.setData({ questions, totalQuestions: questions.length, loading: false, answeredFlags: {} })
       if (questions.length > 0) {
         this._showQuestion(0)
       } else {
@@ -362,18 +480,20 @@ Page({
   _showQuestion(index) {
     const q = this.data.questions[index]
     if (!q) return
-    // 判断题兜底：若无选项则注入标准 A/B 选项
-    const isTrueFalse = q.question_type === 'true_false' || q.question_type === 'judgement'
-    const opts = (q.options && Object.keys(q.options).length > 0)
-      ? q.options
-      : (isTrueFalse ? { A: '正确', B: '错误' } : null)
-    const optionKeys = opts ? Object.keys(opts) : []
+    const isBlankChoice = _isMultiBlankChoice(q)
     const answer = this.data.answerMap[String(q.id)] || ''
+    const blankOptionGroups = isBlankChoice ? _enrichBlankOptionGroups(_getBlankOptionGroups(q), answer) : []
+    const isTrueFalse = q.question_type === 'true_false' || q.question_type === 'judgement'
+    const opts = !isBlankChoice && q.options && Object.keys(q.options).length > 0
+      ? q.options
+      : (!isBlankChoice && isTrueFalse ? { A: '正确', B: '错误' } : null)
+    const optionKeys = opts ? Object.keys(opts) : []
     const isMulti = q.question_type === 'multiple_choice'
     const selectedFlags = {}
     for (const key of optionKeys) {
       selectedFlags[key] = isMulti ? answer.split(',').indexOf(key) >= 0 : answer === key
     }
+    const blankSelectedFlags = _buildBlankSelectedFlags(blankOptionGroups, answer)
     // 预处理 LaTeX，去重相邻重复段落
     const stemText = (q.content && (q.content.text || q.content.stem)) || ''
     const sourceStemText = stemText || (q.content && _segmentsToText(q.content.segments)) || ''
@@ -384,6 +504,8 @@ Page({
     q._stemHtml = q._stemNeedsRich ? _textToHtml(cleanedStem) : ''
     q._segments = (q.content && q.content.render_mode === 'segments') ? _textToSegments(q._stemText) : []
     q._opts = opts
+    q._blankOptionGroups = blankOptionGroups
+    q._hasBlankOptionGroups = blankOptionGroups.length > 0
     const optHtml = {}
     const optText = {}
     const optNeedsRich = {}
@@ -404,6 +526,7 @@ Page({
         index,
         renderCount,
         optionKeys,
+        blankGroupCount: blankOptionGroups.length,
         sourceLen: sourceStemText.length,
         cleanedLen: cleanedStem.length,
         hasEmbeddedOptions: _containsTrailingOptionBlock(sourceStemText, optionKeys),
@@ -416,6 +539,7 @@ Page({
         index,
         renderCount,
         optionKeys,
+        blankGroupCount: blankOptionGroups.length,
         stem: cleanedStem,
       })
     }
@@ -424,6 +548,7 @@ Page({
       currentQuestion: q,
       optionKeys,
       selectedFlags,
+      blankSelectedFlags,
       renderCount,
     })
   },
@@ -541,7 +666,9 @@ Page({
     } else {
       delete answerMap[key]
     }
-    const answeredCount = Object.keys(answerMap).length
+    const answeredFlags = _buildAnsweredFlags(this.data.questions, answerMap)
+    const answeredCount = _countAnswered(answeredFlags)
+    const questions = _applyAnsweredFlags(this.data.questions, answeredFlags)
     if (shouldDebugQuestion(q.id)) {
       debugLog(this.data.traceId || q.trace_id, 'STATE_CHANGE', {
         questionId: q.id,
@@ -563,7 +690,64 @@ Page({
         ? newAnswer.split(',').indexOf(k) >= 0
         : newAnswer === k
     }
-    this.setData({ answerMap, answeredCount, selectedFlags })
+    this.setData({ questions, answerMap, answeredFlags, answeredCount, selectedFlags })
+  },
+
+  selectBlankOption(e) {
+    if (this._animating || this.data.submitted) return
+    if (this._swiped) {
+      this._swiped = false
+      return
+    }
+
+    const blankId = String(e.currentTarget.dataset.blankId || '').trim()
+    const opt = String(e.currentTarget.dataset.option || '').trim().toUpperCase()
+    const q = this.data.currentQuestion
+    if (!q || !_isMultiBlankChoice(q) || !blankId || !opt) return
+
+    const key = String(q.id)
+    const prev = this.data.answerMap[key] || ''
+    const blankAnswers = _normalizeBlankAnswer(prev)
+    if (blankAnswers[blankId] === opt) {
+      delete blankAnswers[blankId]
+    } else {
+      blankAnswers[blankId] = opt
+    }
+
+    const groupsForAnswer = q._blankOptionGroups || _enrichBlankOptionGroups(_getBlankOptionGroups(q), prev)
+    const newAnswer = _serializeBlankAnswer(groupsForAnswer, blankAnswers)
+    const answerMap = { ...this.data.answerMap }
+    if (newAnswer) {
+      answerMap[key] = newAnswer
+    } else {
+      delete answerMap[key]
+    }
+    const answeredFlags = _buildAnsweredFlags(this.data.questions, answerMap)
+    const answeredCount = _countAnswered(answeredFlags)
+    const questions = _applyAnsweredFlags(this.data.questions, answeredFlags)
+    const groups = _enrichBlankOptionGroups(_getBlankOptionGroups(q), newAnswer)
+    const blankSelectedFlags = _buildBlankSelectedFlags(groups, newAnswer)
+    const currentQuestion = Object.assign({}, q, {
+      _blankOptionGroups: groups,
+      _hasBlankOptionGroups: groups.length > 0,
+    })
+
+    if (shouldDebugQuestion(q.id)) {
+      debugLog(this.data.traceId || q.trace_id, 'STATE_CHANGE', {
+        questionId: q.id,
+        previousAnswer: prev,
+        nextAnswer: newAnswer,
+        answeredCount,
+      })
+      saveDebugSnapshot(this.data.traceId || q.trace_id, 'state_change', {
+        questionId: q.id,
+        previousAnswer: prev,
+        nextAnswer: newAnswer,
+        answeredCount,
+      })
+    }
+
+    this.setData({ questions, answerMap, answeredFlags, answeredCount, blankSelectedFlags, currentQuestion })
   },
 
   goNext() {
@@ -603,7 +787,11 @@ Page({
   async doSubmit() {
     const { answerMap, questions, startTime, selectedSubject } = this.data
     const total = questions.length || 0
-    const answeredCount = Object.keys(answerMap).length
+    const answeredFlags = _buildAnsweredFlags(questions, answerMap)
+    const answeredCount = _countAnswered(answeredFlags)
+    const completedQuestions = questions.filter(function(q) {
+      return answeredFlags[String(q.id)]
+    })
     const unanswered = total - answeredCount
 
     if (unanswered > 0) {
@@ -621,7 +809,7 @@ Page({
     wx.showLoading({ title: '批改中...' })
 
     try {
-      const answers = questions.map(q => ({
+      const answers = completedQuestions.map(q => ({
         question_id: q.id,
         user_answer: answerMap[String(q.id)] || '',
         used_time: Math.floor((Date.now() - startTime) / 1000),
@@ -672,7 +860,8 @@ Page({
   },
 
   finishEarly() {
-    const answered = Object.keys(this.data.answerMap).length
+    const answeredFlags = _buildAnsweredFlags(this.data.questions, this.data.answerMap)
+    const answered = _countAnswered(answeredFlags)
     wx.showModal({
       title: '结束练习',
       content: `已完成 ${answered} / ${this.data.totalQuestions} 题，确定结束吗？`,

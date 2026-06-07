@@ -53,6 +53,9 @@ _INLINE_OPTION_PATTERN = re.compile(
     r"(?<![A-Za-z0-9])" + _OPTION_MARKER +
     r"\s*(.+?)(?=\s+" + _OPTION_MARKER + r"\s*|$)"
 )
+_LEADING_SPACE_OPTION_PATTERN = re.compile(
+    r"^" + _OPTION_PREFIX_MARKER + r"([A-Da-d])\s+(.+?)(?=\s+" + _OPTION_MARKER + r"\s*|$)"
+)
 _ANSWER_EXPLANATION_MARKER = re.compile(
     r"(?:答案|正确答案|参考答案|解析|解答|讲解|分析)\s*[：:]"
 )
@@ -422,6 +425,47 @@ def _parse_options_from_text(text: str) -> dict[str, str]:
     return options
 
 
+def _parse_leading_space_option_from_text(text: str) -> tuple[str, str] | None:
+    match = _LEADING_SPACE_OPTION_PATTERN.match(text.strip())
+    if not match:
+        return None
+    key = match.group(1).upper()
+    value = _truncate_answer_explanation_tail(match.group(2))
+    if not value:
+        return None
+    return key, value
+
+
+def _parse_grouped_options_from_text(text: str) -> dict[str, str]:
+    parsed = _parse_options_from_text(text)
+    leading_option = _parse_leading_space_option_from_text(text)
+    if leading_option and leading_option[0] not in parsed:
+        key, value = leading_option
+        parsed = {key: value, **parsed}
+
+    if len(parsed) >= 2:
+        return parsed
+
+    text = text.strip()
+    options: dict[str, str] = {}
+    token_pattern = re.compile(
+        r"(?<![A-Za-z0-9])([A-Da-d])\s*(?:[.．、:：)）]\s*|\s+)"
+    )
+    matches = list(token_pattern.finditer(text))
+    if len(matches) < 2:
+        return parsed
+
+    for idx, match in enumerate(matches):
+        key = match.group(1).upper()
+        value_start = match.end()
+        value_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        value = _truncate_answer_explanation_tail(text[value_start:value_end])
+        if key not in options and value:
+            options[key] = value
+
+    return options if len(options) >= 2 else parsed
+
+
 def _line_group_marker(line: str) -> tuple[str, str] | None:
     stripped = line.strip()
     marker_chars = re.escape(_CIRCLED_OPTION_CHARS)
@@ -448,6 +492,8 @@ def _line_group_marker(line: str) -> tuple[str, str] | None:
 
 
 def _extract_grouped_options(text: str) -> list[dict]:
+    marker_chars = re.escape(_CIRCLED_OPTION_CHARS)
+    text = re.sub(rf"(?<!^)\s*([{marker_chars}])\s*(?=[A-Da-d]\s)", r"\n\1 ", text)
     groups: list[dict] = []
     current: dict | None = None
     last_key: str | None = None
@@ -464,7 +510,12 @@ def _extract_grouped_options(text: str) -> list[dict]:
             groups.append(current)
             last_key = None
             if rest:
-                parsed = _parse_options_from_text(rest)
+                parsed = _parse_grouped_options_from_text(rest)
+                if not parsed:
+                    option_result = _detect_option_line(rest)
+                    if option_result:
+                        key, value = option_result
+                        parsed[key] = _truncate_answer_explanation_tail(value)
                 current["options"].update(parsed)
                 if parsed:
                     last_key = next(reversed(parsed))
@@ -473,7 +524,7 @@ def _extract_grouped_options(text: str) -> list[dict]:
         if current is None:
             continue
 
-        inline_options = _parse_options_from_text(stripped)
+        inline_options = _parse_grouped_options_from_text(stripped)
         if inline_options:
             current["options"].update(inline_options)
             last_key = next(reversed(inline_options))

@@ -570,6 +570,48 @@
   color: #5B7B9A;
 }
 
+.blank-options {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+}
+
+.blank-group {
+  padding: 20rpx;
+  border-radius: 18rpx;
+  background: #FAF9F6;
+  border: 1rpx solid rgba(232, 229, 224, 0.9);
+}
+
+.blank-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 14rpx;
+}
+
+.blank-group-title {
+  font-size: 28rpx;
+  font-weight: 800;
+  color: #5B7B9A;
+}
+
+.blank-group-hint {
+  font-size: 22rpx;
+  color: #9AABBA;
+}
+
+.blank-group-options {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.blank-option-item {
+  background: #FFFFFF;
+}
+
 /* ==================== 底部操作栏 ==================== */
 
 .bottom-bar {
