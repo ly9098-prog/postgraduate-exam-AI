@@ -58,11 +58,12 @@ def _clean_stem(text: str) -> str:
     return text.strip()
 
 
-def _extract_stem(raw_text: str, option_lines: dict[str, str]) -> str:
+def _extract_stem(raw_text: str, option_lines: dict[str, str], blank_option_groups: list[dict] | None = None) -> str:
     """从原始题目文本中提取题干（去除选项行和答案/解析行）。"""
     lines = raw_text.split("\n")
     stem_lines: list[str] = []
     in_options = False
+    blank_markers = {str(group.get("id") or group.get("marker") or "").strip() for group in (blank_option_groups or [])}
 
     for line in lines:
         stripped = line.strip()
@@ -71,6 +72,14 @@ def _extract_stem(raw_text: str, option_lines: dict[str, str]) -> str:
         for pat in _STRIP_PATTERNS:
             if pat.match(stripped):
                 return _clean_stem("\n".join(stem_lines))
+
+        if blank_markers:
+            for marker in blank_markers:
+                if marker and re.match(rf"^(?:{re.escape(marker)}|[（(]\s*{re.escape(marker)}\s*[）)])(?:\s*$|\s*(?:[?？]\s*)?[A-Ha-h][.、:：)）\s])", stripped):
+                    in_options = True
+                    break
+            if in_options:
+                continue
 
         # 选项行
         if option_lines and re.match(r"^(?:[?？]|[①②③④⑤⑥⑦⑧])?\s*[A-Ha-h][.、:：)）\s]", stripped):
@@ -261,7 +270,7 @@ def normalize_question(
     blank_option_groups = _normalize_blank_option_groups(raw_question.get("blank_option_groups"))
     page = raw_question.get("page_start", source_info.get("page", 1))
 
-    stem = _extract_stem(raw_text, option_lines)
+    stem = _extract_stem(raw_text, option_lines, blank_option_groups)
     options = [] if blank_option_groups else _normalize_options(option_lines)
     answer_raw = matched.get("answer")
     explanation_raw = matched.get("explanation", "")

@@ -59,6 +59,7 @@ class QuestionNormalizer:
         "multiple_choice",
         "true_false",
         "fill_blank",
+        "multi_blank_choice",
         "subjective",
     }
     TYPE_ALIASES = {
@@ -97,6 +98,9 @@ class QuestionNormalizer:
         "fill_blank": "fill_blank",
         "填空": "fill_blank",
         "填空题": "fill_blank",
+        "多空选择": "multi_blank_choice",
+        "多空选择题": "multi_blank_choice",
+        "multi_blank_choice": "multi_blank_choice",
         "subjective": "subjective",
         "主观": "subjective",
         "主观题": "subjective",
@@ -143,9 +147,14 @@ class QuestionNormalizer:
         options = self.normalize_options(
             raw.get("options") or raw.get("选项") or raw.get("parsed_options")
         )
+        blank_option_groups = raw.get("blank_option_groups") or (raw.get("parsed_content") or {}).get("blank_option_groups") or []
+        if blank_option_groups:
+            options = []
         question_type = self.normalize_type(
             raw.get("question_type") or raw.get("题型"), options
         )
+        if blank_option_groups and question_type == "fill_blank":
+            question_type = "multi_blank_choice"
         stem = wrap_inline_math(self.clean_text(
             raw.get("stem")
             or raw.get("题目")
@@ -175,6 +184,7 @@ class QuestionNormalizer:
             "question_type": question_type,
             "stem": stem,
             "options": options,
+            "blank_option_groups": blank_option_groups,
             "answer": answer,
             "analysis": analysis,
             "knowledge_points": knowledge_points,
@@ -306,7 +316,7 @@ class QuestionNormalizer:
         warnings: list[str] = []
         if not question.get("stem"):
             errors.append("stem_empty")
-        if not question.get("answer"):
+        if not question.get("answer") and question.get("question_type") != "multi_blank_choice":
             errors.append("answer_empty")
         if question.get("question_type") in {"single_choice", "multiple_choice"}:
             if not question.get("options"):
@@ -391,10 +401,13 @@ class QuestionNormalizer:
         return difflib.SequenceMatcher(None, a, b).ratio() >= threshold
 
     def to_import_fields(self, question: dict) -> dict:
+        parsed_content = {"text": question["stem"]}
+        if question.get("blank_option_groups"):
+            parsed_content["blank_option_groups"] = question["blank_option_groups"]
         return {
             "subject": question["subject"] or None,
             "question_type": question["question_type"],
-            "parsed_content": {"text": question["stem"]},
+            "parsed_content": parsed_content,
             "parsed_options": self.options_to_dict(question["options"]),
             "parsed_answer": self.answer_to_db(question["answer"]),
             "parsed_analysis": question["analysis"] or None,
