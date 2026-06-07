@@ -12,6 +12,7 @@ QT_SINGLE_CHOICE = "single_choice"
 QT_MULTIPLE_CHOICE = "multiple_choice"
 QT_TRUE_FALSE = "true_false"
 QT_FILL_BLANK = "fill_blank"
+QT_MULTI_BLANK_CHOICE = "multi_blank_choice"
 QT_SUBJECTIVE = "subjective"
 
 _TYPE_ALIAS_MAP = {
@@ -90,6 +91,18 @@ def _normalize_options(raw_options: dict[str, str]) -> list[dict]:
     for key in sorted(raw_options.keys()):
         result.append({"key": key.upper(), "text": raw_options[key].strip()})
     return result
+
+
+def _normalize_blank_option_groups(groups: list[dict] | None) -> list[dict]:
+    if not groups:
+        return []
+    normalized: list[dict] = []
+    for group in groups:
+        marker = str(group.get("id") or group.get("marker") or "").strip()
+        options = _normalize_options(group.get("options") or {})
+        if marker and options:
+            normalized.append({"id": marker, "options": options})
+    return normalized
 
 
 def _normalize_answer(answer: str | None, question_type: str) -> str:
@@ -245,14 +258,15 @@ def normalize_question(
 
     raw_text = raw_question.get("raw_question_text", "")
     option_lines = raw_question.get("option_lines", {})
+    blank_option_groups = _normalize_blank_option_groups(raw_question.get("blank_option_groups"))
     page = raw_question.get("page_start", source_info.get("page", 1))
 
     stem = _extract_stem(raw_text, option_lines)
-    options = _normalize_options(option_lines)
+    options = [] if blank_option_groups else _normalize_options(option_lines)
     answer_raw = matched.get("answer")
     explanation_raw = matched.get("explanation", "")
     section_type = raw_question.get("section_type")
-    question_type = _detect_question_type(stem, options, answer_raw, section_type=section_type)
+    question_type = QT_MULTI_BLANK_CHOICE if blank_option_groups else _detect_question_type(stem, options, answer_raw, section_type=section_type)
     answer = _normalize_answer(answer_raw, question_type)
     analysis = (explanation_raw or "").strip()
     confidence_score = _compute_confidence(stem, options, answer, question_type)
@@ -265,12 +279,14 @@ def normalize_question(
         errors.append("missing_stem")
     if question_type in (QT_SINGLE_CHOICE, QT_MULTIPLE_CHOICE) and not options:
         errors.append("missing_options")
+    if question_type == QT_MULTI_BLANK_CHOICE and not blank_option_groups:
+        errors.append("missing_blank_option_groups")
     if question_type in (QT_SINGLE_CHOICE, QT_MULTIPLE_CHOICE, QT_TRUE_FALSE) and not answer:
         errors.append("missing_answer")
     if confidence_score < 0.5:
         warnings.append("low_confidence")
 
-    return {
+    result = {
         "schema_version": "v1",
         "subject": source_info.get("subject", ""),
         "question_type": question_type,
@@ -292,6 +308,9 @@ def normalize_question(
         "stem_hash": stem_hash,
         "confidence_score": confidence_score,
     }
+    if blank_option_groups:
+        result["blank_option_groups"] = blank_option_groups
+    return result
 
 
 def normalize_questions(
