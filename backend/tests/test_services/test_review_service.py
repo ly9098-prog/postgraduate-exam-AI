@@ -252,14 +252,43 @@ class TestSubmitToReview:
         assert result["batch_id"].startswith("REVIEW_")
         assert added[0].source_type == "pdf"
 
-    def test_null_options(self):
+    def test_multi_blank_choice_preserves_blank_option_groups(self):
         db, added = self._setup()
-        q = _make_question({"options": None, "question_type": "fill_blank"})
+        groups = [
+            {
+                "id": "1",
+                "options": [
+                    {"key": "A", "text": "n+1"},
+                    {"key": "B", "text": "n"},
+                ],
+            },
+            {
+                "id": "2",
+                "options": [
+                    {"key": "A", "text": "n+1"},
+                    {"key": "B", "text": "n"},
+                ],
+            },
+        ]
+        q = _make_question({
+            "stem": "若系统有 n 个进程，则就绪队列中进程的个数最多有（1）个；阻塞队列中进程的个数最多有（2）个。",
+            "options": [],
+            "answer": "",
+            "question_type": "multi_blank_choice",
+            "blank_option_groups": groups,
+        })
 
         result = asyncio.run(submit_to_review(db, [q]))
 
         assert result["written"] == 1
+        assert added[0].question_type == "multi_blank_choice"
         assert added[0].parsed_options is None
+        assert added[0].parsed_answer is None
+        assert added[0].parsed_content == {
+            "text": q["stem"],
+            "blank_option_groups": groups,
+        }
+        assert added[0].raw_data["blank_option_groups"] == groups
 
     def test_stem_preview_truncation(self):
         db, added = self._setup()

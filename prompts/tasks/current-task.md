@@ -373,13 +373,20 @@ raw_data.blank_option_groups
 ### 未完成 / 待验证
 
 - [ ] **最终验收尚未通过**：还需要用真实 OCR/PDF 导入样本确认审核池记录实际变为 `multi_blank_choice`，且 `parsed_content.blank_option_groups` 存在。
-- [ ] **`(1)` / `(2)` 边界仍需专项复查**：`question_splitter.py` 已有 `_PARENED_QUESTION_PATTERN`，但需要确认 `_detect_question_number()` 不会把 `(1) A...` / `(2) A...` 组选项误判成新题边界。
-- [ ] **OCR 退化兜底需专项样例确认**：两个普通 `（）` + 重复 A/B/C/D 选项块应生成两个独立 group，不能只保留一组 flat options。
+- [x] **`(1)` / `(2)` 边界已专项复查并修复**：`question_splitter.py` 已避免把 `(1) A...` / `(2) A...` 组选项误判成新题边界，专项单测覆盖该场景。
+- [x] **OCR 退化兜底已专项样例确认**：两个普通 `（）` + 重复 A/B/C/D 选项块可生成两个独立 group，且 `option_lines` 不再作为主展示来源。
 - [ ] **前端展示需真实页面验证**：小程序审核页和管理端审核页已具备代码入口，但仍需用实际导入批次检查展示、编辑、通过/拒绝流程。
-- [ ] **测试记录缺失**：当前任务文档尚未记录后端 smoke/专项测试、Python 编译或前端页面验证结果。
+- [x] **测试记录已补充**：已记录后端 smoke/专项测试与 mock 入审透传测试；前端页面验证仍待真实页面执行。
+
+### 本轮新增修复（2026-06-07）
+
+- [x] **修复 `(1)` / `(2)` 组选项误切题**：当括号编号后紧跟 A/B/C/D 选项标记时，不再识别为题号边界，保留在当前题的 `blank_option_groups` 中。
+- [x] **补充多空选择题专项单测**：覆盖 `（①）（②）`、`(1)(2)`、OCR 退化普通 `（）` + 重复选项块、`ⅠⅡ` 罗马数字变体，以及标准化输出 `multi_blank_choice` / `options = []`。
+- [x] **补充审核入池透传单测**：`review_service.submit_to_review()` 已验证 `multi_blank_choice` 入池时 `parsed_options is None`、`parsed_answer is None`，并在 `parsed_content.blank_option_groups` / `raw_data.blank_option_groups` 中保留组选项。
+- [x] **执行后端验证**：`PYTHONPATH=/home/lmh/projects/postgraduate-ai/backend pytest -q /home/lmh/projects/postgraduate-ai/backend/tests/test_services/test_question_splitter.py /home/lmh/projects/postgraduate-ai/backend/tests/test_services/test_review_service.py`，结果 `114 passed, 1 warning in 1.32s`；同时用 4 类 smoke 样例验证 splitter → normalizer 输出均为 `multi_blank_choice` 且保留两组 `blank_option_groups`。
 
 ### 下一步
 
-1. 优先补查并修复 `question_splitter.py` 中 `(1)` / `(2)` 作为组选项 marker 与题号边界的冲突。
-2. 跑 5 类验收样例，记录 splitter → normalizer → review 入池的结构输出。
-3. 用真实导入批次确认审核池与前端页面展示后，再将本任务状态改为“已验收”。
+1. 用真实 OCR/PDF 导入样本确认审核池记录实际变为 `multi_blank_choice`，且 `parsed_content.blank_option_groups` 存在。
+2. 用真实导入批次确认小程序审核页与管理端审核页展示、编辑、通过/拒绝流程。
+3. 真实链路验收完成后，再将本任务状态改为“已验收”。
