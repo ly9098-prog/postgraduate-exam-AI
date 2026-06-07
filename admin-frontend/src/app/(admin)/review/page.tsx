@@ -24,6 +24,11 @@ function textFromContent(content: Record<string, unknown> | string | null | unde
   return JSON.stringify(content, null, 2);
 }
 
+function blankOptionGroupsFromContent(content: Record<string, unknown> | string | null | undefined) {
+  if (!content || typeof content === "string") return null;
+  return content.blank_option_groups ?? null;
+}
+
 function renderJson(value: unknown) {
   if (value === undefined || value === null || value === "") return "—";
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
@@ -281,6 +286,7 @@ export default function ReviewPage() {
                 </div>
               ) : null}
               {renderDiff("题干", textFromContent(pendingQuestion.content), previousVersion ? textFromContent(previousVersion.content) : "")}
+              {renderDiff("空位选项组", blankOptionGroupsFromContent(pendingQuestion.content), previousVersion ? blankOptionGroupsFromContent(previousVersion.content) : null)}
               {renderDiff("选项", pendingQuestion.options ?? null, previousVersion ? previousVersion.options ?? null : null)}
               {renderDiff("答案", pendingQuestion.answer, previousVersion ? previousVersion.answer : "")}
               {renderDiff("解析", pendingQuestion.analysis ?? null, previousVersion ? previousVersion.analysis ?? null : null)}

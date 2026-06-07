@@ -467,6 +467,26 @@
   word-break: break-all;
 }
 
+.blank-option-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.blank-option-group {
+  padding: 14rpx;
+  border-radius: 16rpx;
+  background: #F7F6F2;
+}
+
+.blank-group-title {
+  display: block;
+  margin-bottom: 8rpx;
+  font-size: 24rpx;
+  font-weight: 800;
+  color: #C49A6B;
+}
+
 .detail-answer {
   font-size: 28rpx;
   font-weight: 800;

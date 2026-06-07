@@ -29,12 +29,14 @@ _QUESTION_PATTERNS: list[tuple[re.Pattern, int]] = [
 ]
 
 _PAREN_QUESTION_PATTERN = _QUESTION_PATTERNS[1][0]
+_PARENED_QUESTION_PATTERN = _QUESTION_PATTERNS[2][0]
 
 # OCR 容错题号：l/I → 1
 _OCR_Q_PATTERN = re.compile(r"^([lI])\s*[.、)）]")
 
 # 选项模式
 _CIRCLED_OPTION_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+_ROMAN_MARKER_CHARS = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ"
 _OPTION_PREFIX_MARKER = r"(?:[?？]\s*|[" + _CIRCLED_OPTION_CHARS + r"]\s*)?"
 _OPTION_MARKER = _OPTION_PREFIX_MARKER + r"([A-Da-d])\s*[.．、:：)）]"
 
@@ -46,7 +48,7 @@ _OPTION_PATTERNS: list[re.Pattern] = [
 # OCR 容错选项
 _OCR_OPTION_MAP = {"8": "B", "6": "B", "0": "D", "Ｏ": "D"}
 
-_INLINE_QUESTION_PATTERN = re.compile(r"(?<!\d)(\d{1,3})\s*[.、)）]\s*\S")
+_INLINE_QUESTION_PATTERN = re.compile(r"(?<![\d（(])(\d{1,3})\s*[.、)）]\s*\S")
 _INLINE_OPTION_PATTERN = re.compile(
     r"(?<![A-Za-z0-9])" + _OPTION_MARKER +
     r"\s*(.+?)(?=\s+" + _OPTION_MARKER + r"\s*|$)"
@@ -416,12 +418,21 @@ def _parse_options_from_text(text: str) -> dict[str, str]:
 def _line_group_marker(line: str) -> tuple[str, str] | None:
     stripped = line.strip()
     marker_chars = re.escape(_CIRCLED_OPTION_CHARS)
-    m = re.match(rf"^(?:[（(]\s*([{marker_chars}])\s*[）)]|([{marker_chars}]))\s*(.*)$", stripped)
+    roman_chars = re.escape(_ROMAN_MARKER_CHARS)
+    m = re.match(
+        rf"^(?:"
+        rf"[（(]\s*([{marker_chars}])\s*[）)]"
+        rf"|([{marker_chars}])"
+        rf"|[（(]\s*(\d{{1,2}})\s*[）)]"
+        rf"|([{roman_chars}])"
+        rf")\s*(.*)$",
+        stripped,
+    )
     if not m:
         return None
 
-    marker = m.group(1) or m.group(2)
-    rest = m.group(3).strip()
+    marker = next(group for group in m.groups()[:-1] if group)
+    rest = m.group(5).strip()
     if not rest:
         return marker, ""
     if re.match(r"^(?:[?？]\s*)?[A-Da-d]\s*[.．、:：)）\s]", rest):
@@ -479,15 +490,28 @@ def _extract_grouped_options(text: str) -> list[dict]:
     return [group for group in groups if len(group.get("options", {})) >= 2]
 
 
+def _blank_marker_patterns(marker: str) -> list[str]:
+    escaped = re.escape(marker)
+    patterns = [rf"[（(]\s*{escaped}\s*[）)]"]
+    if marker.isdigit():
+        patterns.append(rf"[（(]\s*{escaped}\s*[）)]")
+    elif marker in _ROMAN_MARKER_CHARS:
+        patterns.append(rf"(?<![A-Za-z0-9]){escaped}(?![A-Za-z0-9])")
+    else:
+        patterns.append(rf"(?<![（(]){escaped}(?!\s*[A-Da-d]\s*[.．、:：)）])")
+    return patterns
+
+
 def _has_numbered_blank_markers(text: str, grouped_options: list[dict]) -> bool:
     if len(grouped_options) < 2:
         return False
     markers = {str(group.get("id") or "") for group in grouped_options}
     marker_chars = re.escape(_CIRCLED_OPTION_CHARS)
+    roman_chars = re.escape(_ROMAN_MARKER_CHARS)
     marker_positions = [
         match.start()
         for match in re.finditer(
-            rf"(?<![（(])(?:[{marker_chars}]|[（(]\s*[{marker_chars}]\s*[）)])\s*[A-Da-d]\s*[.．、:：)）]",
+            rf"(?:[{marker_chars}]|[（(]\s*(?:[{marker_chars}]|\d{{1,2}})\s*[）)]|[{roman_chars}])\s*[A-Da-d]\s*[.．、:：)）]",
             text,
         )
     ]
@@ -498,10 +522,7 @@ def _has_numbered_blank_markers(text: str, grouped_options: list[dict]) -> bool:
     for marker in markers:
         if not marker:
             continue
-        if re.search(rf"[（(]\s*{re.escape(marker)}\s*[）)]", stem_part):
-            marker_count += 1
-            continue
-        if re.search(rf"(?<![（(]){re.escape(marker)}(?!\s*[A-Da-d]\s*[.．、:：)）])", stem_part):
+        if any(re.search(pattern, stem_part) for pattern in _blank_marker_patterns(marker)):
             marker_count += 1
     return marker_count >= 2
 
@@ -510,6 +531,63 @@ def _flatten_first_option_group(grouped_options: list[dict]) -> dict[str, str]:
     if not grouped_options:
         return {}
     return dict(grouped_options[0].get("options") or {})
+
+
+def _split_option_blocks_by_repeated_keys(text: str) -> list[dict[str, str]]:
+    blocks: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    last_key: str | None = None
+
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if not stripped or _ANSWER_EXPLANATION_LINE.match(stripped):
+            continue
+
+        inline_options = _parse_options_from_text(stripped)
+        if inline_options:
+            for key, value in inline_options.items():
+                if key == "A" and len(current) >= 2:
+                    blocks.append(current)
+                    current = {}
+                current[key] = value
+                last_key = key
+            continue
+
+        result = _detect_option_line(stripped)
+        if result:
+            key, value = result
+            if key == "A" and len(current) >= 2:
+                blocks.append(current)
+                current = {}
+            current[key] = _truncate_answer_explanation_tail(value)
+            last_key = key
+            continue
+
+        if last_key and last_key in current and not _detect_question_number(stripped):
+            current[last_key] = f"{current[last_key]} {stripped}"
+
+    if len(current) >= 2:
+        blocks.append(current)
+    return blocks
+
+
+def _extract_degraded_blank_groups(text: str) -> list[dict]:
+    plain_blank_count = len(re.findall(r"[（(]\s*[）)]", text))
+    if plain_blank_count < 2:
+        return []
+    blocks = _split_option_blocks_by_repeated_keys(text)
+    if len(blocks) >= plain_blank_count:
+        return [
+            {"id": str(i + 1), "options": dict(blocks[i])}
+            for i in range(plain_blank_count)
+            if len(blocks[i]) >= 2
+        ]
+    if len(blocks) == 1 and len(blocks[0]) >= 2:
+        return [
+            {"id": str(i + 1), "options": dict(blocks[0])}
+            for i in range(plain_blank_count)
+        ]
+    return []
 
 
 def _extract_options(text: str) -> dict[str, str]:
@@ -690,7 +768,12 @@ def split_questions(
 
         grouped_options = _extract_grouped_options(raw_text)
         has_grouped_options = _has_numbered_blank_markers(raw_text, grouped_options)
-        options = _flatten_first_option_group(grouped_options) if has_grouped_options else _extract_options(raw_text)
+        if not has_grouped_options:
+            degraded_groups = _extract_degraded_blank_groups(raw_text)
+            if degraded_groups:
+                grouped_options = degraded_groups
+                has_grouped_options = True
+        options = {} if has_grouped_options else _extract_options(raw_text)
 
         # 置信度：基于题号格式清晰度 + 选项完整度
         conf = 0.9
@@ -826,7 +909,12 @@ def split_by_visual_boundaries(
 
         grouped_options = _extract_grouped_options(raw_text)
         has_grouped_options = _has_numbered_blank_markers(raw_text, grouped_options)
-        options = _flatten_first_option_group(grouped_options) if has_grouped_options else _extract_options(raw_text)
+        if not has_grouped_options:
+            degraded_groups = _extract_degraded_blank_groups(raw_text)
+            if degraded_groups:
+                grouped_options = degraded_groups
+                has_grouped_options = True
+        options = {} if has_grouped_options else _extract_options(raw_text)
 
         conf = 0.6
         if options and len(options) >= 3:

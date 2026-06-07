@@ -147,14 +147,16 @@ class QuestionNormalizer:
         options = self.normalize_options(
             raw.get("options") or raw.get("选项") or raw.get("parsed_options")
         )
-        blank_option_groups = raw.get("blank_option_groups") or (raw.get("parsed_content") or {}).get("blank_option_groups") or []
+        blank_option_groups = self.normalize_blank_option_groups(
+            raw.get("blank_option_groups") or (raw.get("parsed_content") or {}).get("blank_option_groups") or []
+        )
         if blank_option_groups:
             options = []
-        question_type = self.normalize_type(
-            raw.get("question_type") or raw.get("题型"), options
-        )
-        if blank_option_groups and question_type == "fill_blank":
             question_type = "multi_blank_choice"
+        else:
+            question_type = self.normalize_type(
+                raw.get("question_type") or raw.get("题型"), options
+            )
         stem = wrap_inline_math(self.clean_text(
             raw.get("stem")
             or raw.get("题目")
@@ -287,6 +289,19 @@ class QuestionNormalizer:
             normalized.append({"key": key, "text": text})
         return sorted(normalized, key=lambda item: item["key"])
 
+    def normalize_blank_option_groups(self, groups: Any) -> list[dict]:
+        if not isinstance(groups, list):
+            return []
+        normalized: list[dict] = []
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            marker = str(group.get("id") or group.get("marker") or "").strip()
+            options = self.normalize_options(group.get("options"))
+            if marker and options:
+                normalized.append({"id": marker, "options": options})
+        return normalized
+
     def clean_text(self, text: Any) -> str:
         from app.services.pdf_text_normalizer import deduplicate_repeated_text
         text = str(text or "")
@@ -324,7 +339,7 @@ class QuestionNormalizer:
             elif len(question["options"]) < 2:
                 warnings.append("options_too_few")
         if not question.get("subject"):
-            warnings.append("subject_missing")
+            errors.append("subject_empty")
         return {"is_valid": not errors, "errors": errors, "warnings": warnings}
 
     def stem_hash(self, stem: str) -> str:
