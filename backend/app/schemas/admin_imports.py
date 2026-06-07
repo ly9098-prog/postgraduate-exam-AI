@@ -65,6 +65,38 @@ class AdminImportEnrichResponse(BaseModel):
     created_at: datetime
 
 
+class AdminImportQuestionUpdateRequest(BaseModel):
+    subject: str | None = None
+    question_type: str | None = None
+    stem: str | None = None
+    options: list[dict] | dict | None = None
+    answer: str | None = None
+    analysis: str | None = None
+    parsed_content: dict | None = None
+    parsed_options: dict | None = None
+    parsed_answer: str | None = None
+    parsed_analysis: str | None = None
+    raw_data: dict | None = None
+    review_note: str | None = None
+
+
+class AdminImportRejectRequest(BaseModel):
+    reason: str | None = None
+
+
+class AdminImportActionResponse(BaseModel):
+    id: int | None = None
+    batch_id: str | None = None
+    status: str
+    affected_count: int = 0
+
+
+class AdminImportDeleteResponse(BaseModel):
+    batch_id: str | None = None
+    id: int | None = None
+    deleted_count: int
+
+
 class AdminImportTaskStatusResponse(BaseModel):
     task_id: str
     batch_id: str
