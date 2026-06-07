@@ -403,6 +403,96 @@ def _truncate_answer_explanation_tail(text: str) -> str:
     return text.strip()
 
 
+def _parse_options_from_text(text: str) -> dict[str, str]:
+    options: dict[str, str] = {}
+    for match in _INLINE_OPTION_PATTERN.finditer(text.strip()):
+        key = match.group(1).upper()
+        value = _truncate_answer_explanation_tail(match.group(2))
+        if key not in options and value:
+            options[key] = value
+    return options
+
+
+def _line_group_marker(line: str) -> tuple[str, str] | None:
+    stripped = line.strip()
+    for marker in _CIRCLED_OPTION_CHARS:
+        for prefix in (marker, f"（{marker}）", f"({marker})"):
+            if stripped == prefix:
+                return marker, ""
+            if stripped.startswith(prefix) and stripped[len(prefix):len(prefix) + 1].isspace():
+                rest = stripped[len(prefix):].strip()
+                if rest and re.match(r"^(?:[?？]\s*)?[A-Da-d]\s*[.．、:：)）\s]", rest):
+                    return marker, rest
+    return None
+
+
+def _extract_grouped_options(text: str) -> list[dict]:
+    groups: list[dict] = []
+    current: dict | None = None
+    last_key: str | None = None
+
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        marker_result = _line_group_marker(stripped)
+        if marker_result:
+            marker, rest = marker_result
+            current = {"id": marker, "options": {}}
+            groups.append(current)
+            last_key = None
+            if rest:
+                parsed = _parse_options_from_text(rest)
+                current["options"].update(parsed)
+                if parsed:
+                    last_key = next(reversed(parsed))
+            continue
+
+        if current is None:
+            continue
+
+        inline_options = _parse_options_from_text(stripped)
+        if inline_options:
+            current["options"].update(inline_options)
+            last_key = next(reversed(inline_options))
+            continue
+
+        result = _detect_option_line(stripped)
+        if result:
+            key, value = result
+            current["options"][key] = _truncate_answer_explanation_tail(value)
+            last_key = key
+            continue
+
+        if (
+            last_key
+            and not _detect_question_number(stripped)
+            and not _ANSWER_EXPLANATION_LINE.match(stripped)
+            and last_key in current["options"]
+        ):
+            current["options"][last_key] = f"{current['options'][last_key]} {stripped}"
+
+    return [group for group in groups if len(group.get("options", {})) >= 2]
+
+
+def _has_numbered_blank_markers(text: str, grouped_options: list[dict]) -> bool:
+    if len(grouped_options) < 2:
+        return False
+    markers = {group.get("id") for group in grouped_options}
+    marker_positions = [match.start() for match in re.finditer(r"(?<![（(])[" + _CIRCLED_OPTION_CHARS + r"]\s+[A-Da-d]\s*[.．、:：)）]", text)]
+    stem_part = text
+    if marker_positions:
+        stem_part = text[:min(marker_positions)]
+    return sum(1 for marker in markers if marker and re.search(rf"[（(]\s*{re.escape(str(marker))}\s*[）)]", stem_part)) >= 2
+
+
+def _flatten_first_option_group(grouped_options: list[dict]) -> dict[str, str]:
+    if not grouped_options:
+        return {}
+    return dict(grouped_options[0].get("options") or {})
+
+
 def _extract_options(text: str) -> dict[str, str]:
     """从题目文本中提取选项行。"""
     options: dict[str, str] = {}
@@ -579,7 +669,9 @@ def split_questions(
         page_start = _pos_to_page(start_pos, page_map)
         page_end = _pos_to_page(max(start_pos, end_pos - 1), page_map)
 
-        options = _extract_options(raw_text)
+        grouped_options = _extract_grouped_options(raw_text)
+        has_grouped_options = _has_numbered_blank_markers(raw_text, grouped_options)
+        options = _flatten_first_option_group(grouped_options) if has_grouped_options else _extract_options(raw_text)
 
         # 置信度：基于题号格式清晰度 + 选项完整度
         conf = 0.9
@@ -605,6 +697,8 @@ def split_questions(
             "page_end": page_end,
             "has_options": len(options) > 0,
             "option_lines": options,
+            "blank_option_groups": grouped_options if has_grouped_options else [],
+            "has_grouped_options": has_grouped_options,
             "confidence": round(max(0.0, min(1.0, conf)), 2),
             "section_type": section_type,
         })
@@ -711,7 +805,9 @@ def split_by_visual_boundaries(
         num_result = _detect_question_number(first_line)
         number = num_result[0] if num_result else idx + 1
 
-        options = _extract_options(raw_text)
+        grouped_options = _extract_grouped_options(raw_text)
+        has_grouped_options = _has_numbered_blank_markers(raw_text, grouped_options)
+        options = _flatten_first_option_group(grouped_options) if has_grouped_options else _extract_options(raw_text)
 
         conf = 0.6
         if options and len(options) >= 3:
@@ -726,6 +822,8 @@ def split_by_visual_boundaries(
             "page_end": seg["page"],
             "has_options": len(options) > 0,
             "option_lines": options,
+            "blank_option_groups": grouped_options if has_grouped_options else [],
+            "has_grouped_options": has_grouped_options,
             "confidence": conf,
             "detection_method": "visual_boundary",
         })
@@ -813,6 +911,10 @@ def _recover_cross_page_options(questions: list[dict]) -> list[dict]:
     while i < len(questions) - 1:
         current = questions[i]
         next_q = questions[i + 1]
+
+        if current.get("has_grouped_options") or current.get("blank_option_groups"):
+            i += 1
+            continue
 
         is_incomplete, found_keys = _detect_incomplete_options(current)
         if not is_incomplete:
