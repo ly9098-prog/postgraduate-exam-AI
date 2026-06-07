@@ -256,6 +256,8 @@ def _detect_question_number(line: str) -> tuple[int, int] | None:
                 return None
             if pat is _PAREN_QUESTION_PATTERN and not _looks_like_paren_question(line, m.end()):
                 return None
+            if pat is _PARENED_QUESTION_PATTERN and _looks_like_grouped_option_marker(line, m.end()):
+                return None
             return (num, m.end())
 
     # OCR 容错：l/I → 1
@@ -284,6 +286,11 @@ def _looks_like_paren_question(line: str, match_end: int) -> bool:
     if len(num_text) >= 2 and rest:
         return True
     return bool(re.match(r"(?:第\s*)?\S+题", rest))
+
+
+def _looks_like_grouped_option_marker(line: str, match_end: int) -> bool:
+    rest = line[match_end:].lstrip()
+    return bool(re.match(r"(?:[?？]\s*)?[A-Da-d]\s*[.．、:：)）\s]", rest))
 
 
 def _has_option_marker_before_question(text: str) -> bool:
@@ -330,7 +337,7 @@ def _find_inline_question_boundaries(line: str, previous_num: int | None) -> lis
 
 
 def _is_sub_question_line(line: str, num: int, previous_num: int | None, in_subquestion: bool) -> bool:
-    if not re.match(r"^\d+\s*[)）]", line):
+    if not re.match(r"^(?:\d+\s*[)）]|[（(]\s*\d+\s*[）)])", line):
         return False
     if previous_num is None:
         return False
