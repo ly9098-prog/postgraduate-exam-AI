@@ -1,5 +1,4 @@
 const api = require('../../utils/api')
-const auth = require('../../utils/auth')
 const config = require('../../config')
 
 const SUPPORTED_EXTENSIONS = ['xlsx', 'xls', 'pdf', 'txt', 'jpg', 'jpeg', 'png', 'webp']
@@ -41,7 +40,6 @@ function getExtension(name) {
 
 Page({
   data: {
-    batches: [],
     loading: false,
     error: '',
     pipelineTask: null,
@@ -51,20 +49,9 @@ Page({
     pageEnd: '',
   },
 
-  onLoad() {
-    if (!auth.requireAdminAccess()) {
-      wx.redirectTo({ url: '/pages/home/home' })
-    }
-  },
+  onLoad() {},
 
-  onShow() {
-    try {
-      if (!auth.isAdmin()) return
-      this.loadBatches()
-    } catch (e) {
-      console.error('import page onShow error:', e)
-    }
-  },
+  onShow() {},
 
   onUnload() {
     if (this.pollTimer) clearTimeout(this.pollTimer)
@@ -74,27 +61,8 @@ Page({
     if (this.pollTimer) clearTimeout(this.pollTimer)
   },
 
-  async loadBatches() {
-    this.setData({ loading: true, error: '' })
-    try {
-      const res = await api.get('/import/batches')
-      const items = (res && res.items) ? res.items : []
-      this.setData({
-        batches: items.map(b => ({
-          ...b,
-          _date: b.created_at ? b.created_at.slice(0, 16) : '',
-        })),
-      })
-    } catch (e) {
-      console.error('加载批次列表失败', e)
-      this.setData({ error: '加载失败，下拉重试' })
-    } finally {
-      this.setData({ loading: false })
-    }
-  },
-
   onPullDownRefresh() {
-    this.loadBatches().then(() => wx.stopPullDownRefresh())
+    wx.stopPullDownRefresh()
   },
 
   chooseFile() {
@@ -366,8 +334,7 @@ Page({
       const stopPolling = isTerminal || isPaused
       this.setData({ pipelineTask: task, pipelinePolling: !stopPolling })
       if (task.status === 'completed') {
-        wx.showToast({ title: `已导入 ${task.question_count || 0} 题，进入审核`, icon: 'none' })
-        this.loadBatches()
+        wx.showToast({ title: `已提交 ${task.question_count || 0} 题待审核`, icon: 'none' })
         return
       }
       if (task.status === 'failed') {

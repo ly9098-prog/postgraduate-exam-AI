@@ -1,210 +1,96 @@
 <view class="page">
-  <!-- 顶部导航 -->
   <view class="nav-bar">
     <view class="nav-left" bindtap="goBack">
       <text class="nav-back">‹ 返回</text>
     </view>
-    <text class="nav-title">批次审核</text>
-    <view class="nav-right">
-      <text class="nav-action" wx:if="{{hasPending && !selectMode}}" bindtap="toggleSelectMode">多选</text>
-      <text class="nav-action cancel" wx:if="{{selectMode}}" bindtap="toggleSelectMode">取消</text>
-    </view>
+    <text class="nav-title">提交详情</text>
+    <view class="nav-right"></view>
   </view>
-  <text class="page-subtitle" wx:if="{{batch}}">{{batch.source_file || batch.batch_id}}</text>
+  <text class="page-subtitle" wx:if="{{batch}}">已提交审核，管理员审核后会加入题库 · {{batch.source_file || batch.batch_id}}</text>
 
-  <!-- 选择模式提示条 -->
-  <view class="select-bar" wx:if="{{selectMode}}">
-    <text class="select-bar-text">已选 {{selectedCount}} 道</text>
-    <text class="select-bar-link" bindtap="selectAllPending">全选待审核</text>
-  </view>
-
-  <!-- 顶部操作按钮（非选择模式） -->
-  <view class="top-actions" wx:if="{{hasPending && !selectMode}}">
-    <button class="btn-ai-batch" bindtap="aiEnrichBatch">AI 补全</button>
-    <button class="btn-batch-approve" bindtap="batchApprove">全部通过</button>
-  </view>
-
-  <!-- 加载态 -->
   <view class="loading-wrap" wx:if="{{loading}}">
     <view class="loading-spinner"></view>
     <text class="loading-text">加载中...</text>
   </view>
 
-  <!-- 加载失败 fallback -->
   <view class="empty-state" wx:elif="{{loadError}}">
     <view class="empty-mark danger">!</view>
     <text class="empty-title">加载失败，请返回重试</text>
   </view>
 
-  <!-- 空态 -->
   <view class="empty-state" wx:elif="{{questions.length === 0}}">
     <view class="empty-mark">空</view>
-    <text class="empty-title">该批次无题目</text>
+    <text class="empty-title">该批次暂无题目</text>
   </view>
 
-  <!-- 题目列表 -->
   <view class="q-list" wx:else>
     <view
-      class="q-card {{selectedIds[item.id] ? 'selected' : ''}}"
+      class="q-card"
       wx:for="{{questions}}"
       wx:key="id"
       data-id="{{item.id}}"
       bindtap="onCardTap"
     >
-      <!-- 选择模式复选框 -->
-      <view class="q-check" wx:if="{{selectMode}}" catchtap="toggleSelect" data-id="{{item.id}}">
-        <view class="check-box {{selectedIds[item.id] ? 'checked' : ''}}">
-          <text class="check-mark" wx:if="{{selectedIds[item.id]}}">✓</text>
-        </view>
-      </view>
-
-      <!-- 卡片主体 -->
       <view class="q-card-body">
-      <!-- 概览行 -->
-      <view class="q-overview">
-        <view class="q-meta">
-          <text class="q-subject-tag">{{item._subjectLabel}}</text>
-          <text class="q-type-label">{{item._typeLabel}}</text>
-          <text class="q-ai-flag" wx:if="{{item.ai_generated}}">AI</text>
-          <text class="q-math-flag" wx:if="{{item._hasMath}}" bindtap="showMathPreview" catchtap data-id="{{item.id}}">含公式</text>
+        <view class="q-overview">
+          <view class="q-meta">
+            <text class="q-subject-tag">{{item._subjectLabel}}</text>
+            <text class="q-type-label">{{item._typeLabel}}</text>
+            <text class="q-ai-flag" wx:if="{{item.ai_generated}}">AI</text>
+            <text class="q-math-flag" wx:if="{{item._hasMath}}" bindtap="showMathPreview" catchtap data-id="{{item.id}}">含公式</text>
+          </view>
+          <view class="q-status-wrap">
+            <text class="q-risk-badge" wx:for="{{item._riskFlags}}" wx:for-item="flag" wx:key="*this">{{flag}}</text>
+            <view class="q-status-badge {{item.status}}">{{item._statusLabel}}</view>
+          </view>
         </view>
-        <view class="q-status-wrap">
-          <text class="q-risk-badge" wx:for="{{item._riskFlags}}" wx:for-item="flag" wx:key="*this">{{flag}}</text>
-          <view class="q-status-badge {{item.status}}">{{item._statusLabel}}</view>
+        <text class="q-preview">{{item._preview}}</text>
+        <view class="q-expand-hint">
+          <text class="expand-arrow {{expanding === item.id ? 'expanded' : ''}}">▼</text>
         </view>
-      </view>
-      <text class="q-preview">{{item._preview}}</text>
-
-      <!-- 展开箭头（非选择模式） -->
-      <view class="q-expand-hint" wx:if="{{!selectMode}}">
-        <text class="expand-arrow {{expanding === item.id ? 'expanded' : ''}}">▼</text>
-      </view>
-
-      <!-- 展开详情（非选择模式） -->
-      <view class="q-detail {{expanding === item.id ? 'show' : ''}}" wx:if="{{!selectMode}}" catchtap>
-        <view class="detail-body" wx:if="{{item.parsed_content}}">
-          <text class="detail-label">题目</text>
-          <text class="detail-text">{{item.parsed_content.text}}</text>
-        </view>
-        <view class="detail-body" wx:if="{{item._hasBlankOptionGroups}}">
-          <text class="detail-label">空位选项组</text>
-          <view class="blank-option-groups">
-            <view class="blank-option-group" wx:for="{{item._blankOptionGroups}}" wx:for-item="group" wx:key="id">
-              <text class="blank-group-title">{{group.id}}</text>
-              <view class="detail-options">
-                <view class="option-row" wx:for="{{group.options}}" wx:for-item="opt" wx:key="key">
-                  <text class="opt-key">{{opt.key}}.</text>
-                  <mp-html wx:if="{{opt._needsRich}}" class="opt-val" content="{{opt._html}}"></mp-html>
-                  <text wx:else class="opt-val">{{opt._text}}</text>
+        <view class="q-detail {{expanding === item.id ? 'show' : ''}}" catchtap>
+          <view class="detail-body">
+            <text class="detail-label">题目</text>
+            <text class="detail-text">{{item.parsed_content && item.parsed_content.text ? item.parsed_content.text : '—'}}</text>
+          </view>
+          <view class="detail-body" wx:if="{{item._hasBlankOptionGroups}}">
+            <text class="detail-label">空位选项组</text>
+            <view class="blank-option-groups">
+              <view class="blank-option-group" wx:for="{{item._blankOptionGroups}}" wx:for-item="group" wx:key="id">
+                <text class="blank-group-title">{{group.id}}</text>
+                <view class="detail-options">
+                  <view class="option-row" wx:for="{{group.options}}" wx:for-item="opt" wx:key="key">
+                    <text class="opt-key">{{opt.key}}.</text>
+                    <mp-html wx:if="{{opt._needsRich}}" class="opt-val" content="{{opt._html}}"></mp-html>
+                    <text wx:else class="opt-val">{{opt._text}}</text>
+                  </view>
                 </view>
               </view>
             </view>
           </view>
-        </view>
-        <view class="detail-body" wx:elif="{{item.parsed_options}}">
-          <text class="detail-label">选项</text>
-          <view class="detail-options">
-            <view class="option-row" wx:for="{{item.parsed_options}}" wx:for-item="optVal" wx:for-index="optKey" wx:key="optKey">
-              <text class="opt-key">{{optKey}}.</text>
-              <text class="opt-val">{{optVal}}</text>
-            </view>
-          </view>
-        </view>
-
-        <!-- 答案（可编辑） -->
-        <view class="detail-body" wx:if="{{item.status === 'pending' && !item.parsed_answer && item._hasBlankOptionGroups}}">
-          <text class="detail-label">答案 <text class="req">*</text></text>
-          <view class="blank-answer-groups">
-            <view class="blank-answer-group" wx:for="{{item._blankOptionGroups}}" wx:for-item="group" wx:key="id">
-              <text class="blank-answer-title">{{group.id}}</text>
-              <view class="answer-quick-keys">
-                <view
-                  class="answer-key {{editing[item.id].blankAnswers[group.id] === opt.key ? 'active' : ''}}"
-                  wx:for="{{group.options}}"
-                  wx:for-item="opt"
-                  wx:key="key"
-                  data-id="{{item.id}}"
-                  data-blank-id="{{group.id}}"
-                  data-value="{{opt.key}}"
-                  bindtap="onBlankAnswerSelect"
-                  catchtap
-                >{{opt.key}}</view>
+          <view class="detail-body" wx:elif="{{item.parsed_options}}">
+            <text class="detail-label">选项</text>
+            <view class="detail-options">
+              <view class="option-row" wx:for="{{item.parsed_options}}" wx:for-item="optVal" wx:for-index="optKey" wx:key="optKey">
+                <text class="opt-key">{{optKey}}.</text>
+                <text class="opt-val">{{optVal}}</text>
               </view>
             </view>
           </view>
-        </view>
-        <view class="detail-body" wx:elif="{{item.status === 'pending' && !item.parsed_answer}}">
-          <text class="detail-label">答案 <text class="req">*</text></text>
-          <view class="answer-quick-keys">
-            <view
-              class="answer-key {{editing[item.id].parsedAnswer === k ? 'active' : ''}}"
-              wx:for="{{item._optionKeys}}"
-              wx:for-item="k"
-              wx:key="*this"
-              data-id="{{item.id}}"
-              data-value="{{k}}"
-              bindtap="onAnswerSelect"
-              catchtap
-            >{{k}}</view>
+          <view class="detail-body">
+            <text class="detail-label">答案</text>
+            <text class="detail-answer">{{item.parsed_answer || '—'}}</text>
           </view>
-        </view>
-        <view class="detail-body" wx:elif="{{item.parsed_answer}}">
-          <text class="detail-label">答案</text>
-          <text class="detail-answer">{{item.parsed_answer}}</text>
-        </view>
-
-        <!-- 科目选择 -->
-        <view class="detail-body" wx:if="{{item.status === 'pending' && !item.subject}}">
-          <text class="detail-label">科目 <text class="req">*</text></text>
-          <picker class="detail-picker" mode="selector" range="{{subjectOpts}}" range-key="label" bindchange="onSubjectChange">
-            <view class="picker-value">{{editing[item.id].subject ? subjectLabel(editing[item.id].subject) : '请选择科目'}}</view>
-          </picker>
-        </view>
-
-        <!-- 解析 -->
-        <view class="detail-body" wx:if="{{item.parsed_analysis}}">
-          <text class="detail-label">解析</text>
-          <text class="detail-text">{{item.parsed_analysis}}</text>
-        </view>
-
-        <!-- AI 元数据 -->
-        <view class="detail-body ai-block" wx:if="{{item.ai_generated && (item._aiKps.length || item._aiSuggestion || item.ai_metadata.chapter)}}">
-          <view class="ai-head">
-            <text class="detail-label">AI 建议</text>
-            <text class="ai-confidence" wx:if="{{item._aiConfidencePct !== null}}">置信度 {{item._aiConfidencePct}}%</text>
+          <view class="detail-body" wx:if="{{item.parsed_analysis}}">
+            <text class="detail-label">解析</text>
+            <text class="detail-text">{{item.parsed_analysis}}</text>
           </view>
-          <text class="ai-chapter" wx:if="{{item.ai_metadata && item.ai_metadata.chapter}}">章节：{{item.ai_metadata.chapter}}</text>
-          <view class="ai-tags" wx:if="{{item._aiKps.length}}">
-            <text class="ai-tag" wx:for="{{item._aiKps}}" wx:for-item="kp" wx:key="*this">{{kp}}</text>
+          <view class="detail-body" wx:if="{{item.ai_generated}}">
+            <text class="detail-label">AI / OCR 信息</text>
+            <text class="detail-text">{{item.ai_metadata && item.ai_metadata.chapter ? '章节：' + item.ai_metadata.chapter : '—'}}</text>
           </view>
-          <view class="ai-suggestion" wx:if="{{item._aiSuggestion}}">
-            <text class="ai-sg-row" wx:if="{{item._aiSuggestion.answer}}">
-              <text class="ai-warn">AI 建议答案：</text>{{item._aiSuggestion.answer}}（需人工核对）
-            </text>
-            <text class="ai-sg-row" wx:if="{{item._aiSuggestion.analysis}}">建议解析：{{item._aiSuggestion.analysis}}</text>
-          </view>
-          <button class="ai-apply-btn" wx:if="{{item.status === 'pending' && item._aiSuggestion}}" data-id="{{item.id}}" bindtap="applyAiSuggestion" catchtap>采纳 AI 建议</button>
-        </view>
-
-        <!-- AI 操作按钮 -->
-        <view class="q-ai-actions" wx:if="{{item.status === 'pending'}}">
-          <button class="ai-btn" data-id="{{item.id}}" bindtap="aiEnrichOne" catchtap>AI 标知识点</button>
-          <button class="ai-btn" data-id="{{item.id}}" bindtap="aiCompleteOne" catchtap>AI 补缺字段</button>
-        </view>
-
-        <!-- 单个操作按钮 -->
-        <view class="q-actions" wx:if="{{item.status === 'pending'}}">
-          <button class="action-btn action-reject" data-id="{{item.id}}" bindtap="reject" catchtap>拒绝</button>
-          <button class="action-btn action-approve" data-id="{{item.id}}" bindtap="approve" catchtap>通过</button>
         </view>
       </view>
-      </view><!-- /q-card-body -->
     </view>
-  </view>
-
-  <!-- 底部批量操作栏（选择模式） -->
-  <view class="bottom-bar safe-bottom" wx:if="{{selectMode && selectedCount > 0}}">
-    <button class="bar-btn bar-reject" bindtap="batchReject">批量拒绝 ({{selectedCount}})</button>
-    <button class="bar-btn bar-approve" bindtap="batchApproveSelected">批量通过 ({{selectedCount}})</button>
   </view>
 </view>
