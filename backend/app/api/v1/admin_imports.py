@@ -316,7 +316,7 @@ async def import_text_questions(
     for i, q in enumerate(data.questions):
         try:
             q_input = {
-                "subject": data.subject,
+                "subject": q.subject or data.subject,
                 "stem": q.stem,
                 "options": q.options,
                 "answer": q.answer or "",
