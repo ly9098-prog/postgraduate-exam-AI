@@ -69,11 +69,11 @@
     </view>
     <text class="action-arrow">›</text>
   </view>
-  <view class="action-card" wx:if="{{isAdmin}}" bindtap="goImport">
+  <view class="action-card" bindtap="goImport">
     <view class="icon-badge icon-success">导</view>
     <view class="action-info">
       <text class="action-title">题库导入</text>
-      <text class="action-desc">Excel 批量导题</text>
+      <text class="action-desc">拍照 / 文件上传导题</text>
     </view>
     <text class="action-arrow">›</text>
   </view>
