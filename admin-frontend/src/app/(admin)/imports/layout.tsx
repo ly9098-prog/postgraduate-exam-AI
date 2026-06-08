@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ClipboardCheck, FileQuestion, History, UploadCloud } from "lucide-react";
+import { ClipboardCheck, FileQuestion, FileText, History, UploadCloud } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const importTabs = [
   { href: "/imports/questions", label: "题目列表", icon: FileQuestion },
   { href: "/imports/tasks", label: "导入任务", icon: UploadCloud },
+  { href: "/imports/text-import", label: "文本导入", icon: FileText },
   { href: "/imports/review", label: "待审核题目", icon: ClipboardCheck },
   { href: "/imports/history", label: "导入记录", icon: History },
 ];
