@@ -76,6 +76,12 @@ _FALSE_VALUES = {"错误", "错", "false", "×", "f"}
 
 _BATCH_Q_NUMBER_RE = re.compile(r"^\s*(\d+)\s*[.．、)）]\s*")
 
+# 回退分题：【题目】/【题干】标签（格式化破坏时可能不在行首）
+_QUESTION_LABEL_SPLIT_RE = re.compile(r"(?=(?:【|\[)\s*(?:题目|题干)\s*(?:】|\]))")
+
+# 回退分题：内联 --- 分隔（格式化破坏时可能不在独立行）
+_INLINE_BATCH_SEP_RE = re.compile(r"\s{2,}-{3,}\s{2,}|[。！？.!?]\s*-{3,}\s*")
+
 
 def _normalize_text(text: str) -> str:
     """文本预处理：符号规范化、空行清洗。保留 【】 不被转换。"""
@@ -116,6 +122,18 @@ def _split_batch(text: str) -> list[str]:
     if len(blocks) > 1:
         return ["\n".join(b) for b in blocks]
 
+    # 回退：【题目】/【题干】标签拆分（格式化破坏时可能不在行首）
+    parts = _QUESTION_LABEL_SPLIT_RE.split(text)
+    parts = [p.strip() for p in parts if p.strip()]
+    if len(parts) > 1:
+        return parts
+
+    # 回退：内联 --- 拆分（格式化破坏时可能不在独立行）
+    parts = _INLINE_BATCH_SEP_RE.split(text)
+    parts = [p.strip() for p in parts if p.strip()]
+    if len(parts) > 1:
+        return parts
+
     return [text]
 
 
@@ -143,6 +161,19 @@ def _clean_bracket_residue(text: str) -> str:
     return text.strip()
 
 
+def _break_inline_text(text: str) -> str:
+    """将单行内联文本拆分为多行，便于行级启发式解析器处理。
+
+    处理复制粘贴后格式化被破坏的文本：题干、选项、答案、解析全部连在一行，
+    通过插入换行符恢复基本结构。
+    """
+    # 去除内联 **第X题** / 第X题： 标题
+    text = re.sub(r"\*{0,2}\s*第\s*[一二三四五六七八九十\d]+\s*题\s*\*{0,2}\s*[：:]?\s*", "", text)
+    # 在选项标记前插入换行（A.xxx B.xxx 等，要求选项后跟空格以确保是真实选项）
+    text = re.sub(r"(?<=[^\s])\s*(?=[A-Da-d]\s*[.．、:：)）]\s)", "\n", text)
+    return text
+
+
 def _parse_labeled_block(text: str) -> dict[str, Any]:
     """解析带标签格式的题目块。"""
     positions = _find_labels(text)
@@ -166,6 +197,10 @@ def _parse_labeled_block(text: str) -> dict[str, Any]:
     return result
 
 
+# 内联选项拆分：A. xxx B. xxx → 拆为独立选项
+_INLINE_OPTION_SPLIT_RE = re.compile(r"\s+(?=[A-Da-d]\s*[.．、:：)）])")
+
+
 def _parse_options_from_text(text: str) -> list[dict[str, str]]:
     """从文本中提取选项。"""
     if not text.strip():
@@ -179,29 +214,42 @@ def _parse_options_from_text(text: str) -> list[dict[str, str]]:
         if not stripped:
             continue
 
-        # 精确匹配
-        m = _OPTION_LINE_RE.match(stripped)
-        if m:
-            key = m.group(1).upper()
-            value = m.group(2).strip()
-            if key not in options and value:
-                options[key] = value
-            continue
+        # 检查是否包含内联多选项（一行含多个 A.xxx B.xxx）
+        parts = _INLINE_OPTION_SPLIT_RE.split(stripped)
+        candidates = parts if len(parts) > 1 else [stripped]
 
-        # OCR 容错
-        m = _OPTION_OCR_RE.match(stripped)
-        if m:
-            key = m.group(1).upper()
-            value = m.group(2).strip()
-            if key not in options and value:
-                options[key] = value
-            continue
+        for cand in candidates:
+            cand = cand.strip()
+            if not cand:
+                continue
+
+            # 精确匹配
+            m = _OPTION_LINE_RE.match(cand)
+            if m:
+                key = m.group(1).upper()
+                value = m.group(2).strip()
+                if key not in options and value:
+                    options[key] = value
+                continue
+
+            # OCR 容错
+            m = _OPTION_OCR_RE.match(cand)
+            if m:
+                key = m.group(1).upper()
+                value = m.group(2).strip()
+                if key not in options and value:
+                    options[key] = value
+                continue
 
     return [{"key": k, "text": v} for k, v in sorted(options.items())]
 
 
 def _parse_unlabeled_block(text: str) -> dict[str, Any]:
     """解析无标签格式的题目块（位置启发式）。"""
+    # 单行文本 → 尝试拆分为多行（格式化被破坏的内联文本）
+    if len(text.split("\n")) <= 2:
+        text = _break_inline_text(text)
+
     lines = text.strip().split("\n")
     result: dict[str, Any] = {
         "stem": "",
@@ -275,10 +323,52 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
 
         # 选项行检测
         if section in ("stem", "options"):
-            if _OPTION_LINE_RE.match(stripped) or _OPTION_OCR_RE.match(stripped):
-                option_lines.append(stripped)
-                option_seen = True
-                section = "options"
+            opt_m = _OPTION_LINE_RE.match(stripped) or _OPTION_OCR_RE.match(stripped)
+            if opt_m:
+                opt_key = opt_m.group(1).upper()
+                opt_val = opt_m.group(2).strip()
+                # 值中含连续空格 → 后半段可能是答案/解析（内联格式污染）
+                if "  " in opt_val:
+                    parts = opt_val.split("  ", 1)
+                    opt_val = parts[0].strip()
+                    excess = parts[1].strip()
+                    option_lines.append(f"{opt_key}. {opt_val}")
+                    option_seen = True
+                    section = "options"
+                    # 尝试将 excess 分为答案 + 解析
+                    if "  " in excess:
+                        ans_part, ana_part = excess.split("  ", 1)
+                        answer_lines.append(ans_part.strip())
+                        analysis_lines.append(ana_part.strip())
+                        section = "analysis"
+                    elif len(excess) <= 40:
+                        answer_lines.append(excess)
+                        section = "answer"
+                    else:
+                        analysis_lines.append(excess)
+                        section = "analysis"
+                # 值中嵌入单个答案字母（如 "指令系统 C 虚拟存储器"）
+                else:
+                    m2 = re.match(r"(.+?)\s+([A-Da-d])\s+(.+)", opt_val)
+                    if m2:
+                        clean_val = m2.group(1).strip()
+                        ans_letter = m2.group(2).upper()
+                        ana_text = m2.group(3).strip()
+                        if len(clean_val) > 4:  # 选项值必须足够长，避免 "选 A 或 B" 误匹配
+                            option_lines.append(f"{opt_key}. {clean_val}")
+                            option_seen = True
+                            section = "options"
+                            answer_lines.append(ans_letter)
+                            analysis_lines.append(ana_text)
+                            section = "analysis"
+                        else:
+                            option_lines.append(stripped)
+                            option_seen = True
+                            section = "options"
+                    else:
+                        option_lines.append(stripped)
+                        option_seen = True
+                        section = "options"
                 continue
 
         # 判断题答案必须在选项前出现（无选项时 option_seen=False，正常识别）
