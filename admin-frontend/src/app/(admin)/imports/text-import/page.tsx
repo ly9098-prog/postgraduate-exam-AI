@@ -138,10 +138,6 @@ export default function TextImportPage() {
       setGlobalError("请输入题目文本");
       return;
     }
-    if (!subject) {
-      setGlobalError("请选择科目");
-      return;
-    }
     parseMutation.mutate();
   };
 
@@ -220,14 +216,14 @@ export default function TextImportPage() {
             {/* 科目选择 */}
             <div>
               <label className="mb-1 block text-sm font-semibold text-[var(--ink)]">
-                科目 <span className="text-[var(--color-danger)]">*</span>
+                科目 <span className="text-xs text-[var(--color-text-hint)]">(选填，留空自动识别)</span>
               </label>
               <select
                 className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
               >
-                <option value="">请选择科目</option>
+                <option value="">自动识别</option>
                 {SUBJECTS.map((s) => (
                   <option key={s.value} value={s.value}>
                     {s.label}
@@ -283,7 +279,7 @@ C
             <Button
               className="w-full"
               onClick={handleParse}
-              disabled={parseMutation.isPending || !text.trim() || !subject}
+              disabled={parseMutation.isPending || !text.trim()}
             >
               {parseMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -481,6 +477,11 @@ C
                               <span className="text-xs text-[var(--color-text-hint)]">
                                 [{q.detection_method}]
                               </span>
+                              {q.subject ? (
+                                <span className="rounded-full bg-[var(--color-primary-light)] px-2 py-0.5 text-xs font-medium text-[var(--color-primary-dark)]">
+                                  {q.subject}
+                                </span>
+                              ) : null}
                             </div>
                             <div className="flex shrink-0 gap-1">
                               <Button

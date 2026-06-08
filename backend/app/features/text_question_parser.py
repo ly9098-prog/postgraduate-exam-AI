@@ -12,7 +12,7 @@ import re
 import logging
 from typing import Any
 
-from app.features.question_pipeline import process_question_pipeline, normalizer
+from app.features.question_pipeline import process_question_pipeline, normalizer, _guess_subject
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 # 批量题分隔：3+ 个 = 或 3+ 个 *
-_BATCH_SEPARATOR_RE = re.compile(r"\n\s*(?:={3,}|\*{3,})\s*\n")
+_BATCH_SEPARATOR_RE = re.compile(r"\n\s*(?:={3,}|\*{3,}|\-{3,})\s*\n")
 
 # 题内分隔（自测版上下分栏）：3+ 个 -
 _SECTION_SEPARATOR_RE = re.compile(r"\n\s*\-{3,}\s*\n")
@@ -82,6 +82,11 @@ def _normalize_text(text: str) -> str:
     text = text.replace("\xa0", " ").replace("　", " ")
     text = text.replace("：", ":").replace("（", "(").replace("）", ")")
     text = text.replace("．", ".")
+    # 去除中文括号周围的 Markdown 加粗标记（如 **【题目】** → 【题目】）
+    text = re.sub(r"\*{1,2}\s*([【\[\<])", r"\1", text)
+    text = re.sub(r"([】\]\>])\s*\*{1,2}", r"\1", text)
+    # 去除 "第X题" 独立标题行（如 **第一题**、第2题）
+    text = re.sub(r"^\*{0,2}\s*第\s*[一二三四五六七八九十\d]+\s*题\s*\*{0,2}\s*$", "", text, flags=re.MULTILINE)
     # 连续空行压缩
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -297,13 +302,28 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
                 section = "answer"
                 continue
 
+        # 数字/文本答案（选项后未识别的短行 → 可能是答案）
+        if section in ("stem", "options") and option_seen and not answer_lines:
+            if len(stripped) <= 40 and not re.match(r"^\s*[A-Da-d]\s*[.．、:：)）]", stripped):
+                answer_lines.append(stripped)
+                section = "answer"
+                continue
+
         # 累积到当前 section
         if section == "stem":
             stem_lines.append(stripped)
         elif section == "options":
             option_lines.append(stripped)
         elif section == "answer":
-            answer_lines.append(stripped)
+            # 答案通常为短文本（1-2行），后续长文本/分析特征 → 自动切换为解析
+            if answer_lines and (
+                len(stripped) > 60
+                or re.search(r"[→=]|故[答案为]|因此|所以|故选|综上|根据|由.*可知", stripped)
+            ):
+                analysis_lines.append(stripped)
+                section = "analysis"
+            else:
+                answer_lines.append(stripped)
         elif section == "analysis":
             analysis_lines.append(stripped)
 
@@ -324,6 +344,26 @@ _STRICT_LABEL_RE = re.compile(
 def _has_labels(text: str) -> bool:
     """检查文本是否包含结构化标签（括号形式、出现在行首）。"""
     return bool(_STRICT_LABEL_RE.search(text))
+
+
+def _has_question_indicators(text: str) -> bool:
+    """检查文本块是否包含题目特征，用于过滤引言、说明等无关文本。"""
+    if _has_labels(text):
+        return True
+    # 选项标记（2+ 行 A/B/C/D 格式）
+    lines = text.split("\n")
+    option_count = 0
+    for line in lines:
+        if _OPTION_LINE_RE.match(line.strip()):
+            option_count += 1
+    if option_count >= 2:
+        return True
+    # 问答题特征
+    if re.search(r"[？?]|（\s*）|\(\s*\)|_{2,}", text):
+        return True
+    if re.search(r"(?:答案|正确答案|Answer)\s*[：:]", text):
+        return True
+    return False
 
 
 def _detect_question_type(options: list[dict], answer: str | list[str] | bool) -> str:
@@ -460,22 +500,31 @@ def parse_text_questions(text: str, subject: str) -> dict[str, Any]:
 
     # 3. 逐个块解析
     raw_questions: list[dict] = []
+    q_index = 0
     for i, block in enumerate(blocks):
+        # 过滤引言、说明等与题目无关的文本块
+        if not _has_question_indicators(block):
+            continue
+
         # 题内分隔线（自测版上下分栏），合并为一块
         sections = _SECTION_SEPARATOR_RE.split(block)
         if len(sections) > 1:
             block = "\n".join(s.strip() for s in sections if s.strip())
 
         raw = _block_to_raw(block)
-        raw["block_index"] = i
+        raw["block_index"] = q_index
         raw_questions.append(raw)
         for w in raw.get("warnings", []):
-            global_warnings.append(f"第{i + 1}题: {w}")
+            global_warnings.append(f"第{q_index + 1}题: {w}")
+        q_index += 1
 
     # 4. 通过 pipeline 标准化
     for raw in raw_questions:
+        # 自动检测科目
+        q_subject = subject or _guess_subject(raw["stem"] + " " + (raw.get("analysis") or "")) or ""
+
         pipeline_input = {
-            "subject": subject,
+            "subject": q_subject,
             "stem": raw["stem"],
             "options": raw["options"],
             "answer": raw["answer"],
