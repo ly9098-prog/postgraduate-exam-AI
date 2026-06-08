@@ -25,9 +25,13 @@ function _needsRichRender(text) {
 function _deduplicateLines(text) {
   if (!text) return text
   const lines = text.split('\n')
+  const seen = new Set()
   const out = []
   for (let i = 0; i < lines.length; i++) {
-    if (i === 0 || lines[i].trim() !== lines[i - 1].trim()) out.push(lines[i])
+    const trimmed = lines[i].trim()
+    if (trimmed && seen.has(trimmed)) continue
+    if (trimmed) seen.add(trimmed)
+    out.push(lines[i])
   }
   return out.join('\n')
 }
@@ -53,6 +57,14 @@ function _buildOptionPattern(key, value) {
   const separator = '[.．、:：）)]'
   const valuePattern = _escapeRegExp(normalizedValue).replace(/\s+/g, '[\\s\\u00A0]+')
   return `${label}${spaces}${separator}${spaces}${valuePattern}`
+}
+
+function _stripLeadingOptionLabel(key, value) {
+  const text = String(value || '').trim()
+  if (!key || !text) return text
+  const label = _escapeRegExp(String(key).trim())
+  const labelPattern = new RegExp(`^${label}[\\s\\u00A0]*[.．、:：）)]\\s*`, 'i')
+  return text.replace(labelPattern, '')
 }
 
 function _stripEmbeddedOptionBlock(stemText, options) {
@@ -194,7 +206,9 @@ Page({
       const stemHtml = stemNeedsRich ? _textToHtml(stemText) : ''
       const stemSegments = (wq.content && wq.content.render_mode === 'segments') ? _textToSegments(stemText) : []
       const optionItems = optionKeys.map((key) => {
-        const text = (opts && opts[key]) || ''
+        const rawText = (opts && opts[key]) || ''
+        let text = _deduplicateLines(rawText)
+        text = _stripLeadingOptionLabel(key, text)
         const needsRich = _needsRichRender(text)
         const className = `option-value ${key === wq.answer ? 'right' : ''} ${key === wq.wrong_answer ? 'wrong' : ''}`
         return {
