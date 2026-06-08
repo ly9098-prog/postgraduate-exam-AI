@@ -132,7 +132,6 @@ Page({
   goAnalysis() { wx.navigateTo({ url: '/pages/wrong-book/wrong-book?tab=analysis' }) },
   goDashboard() { wx.navigateTo({ url: '/pages/dashboard/dashboard' }) },
   goImport() {
-    if (!auth.requireAdminAccess()) return
     wx.navigateTo({ url: '/pages/import/import' })
   },
 })

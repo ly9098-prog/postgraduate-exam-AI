@@ -29,7 +29,7 @@ const STAGE_LABELS = {
   repair: 'AI修复',
   ai_validation: 'AI验证',
   similarity_match: '相似匹配',
-  review: '入库审核',
+  review: '入库整理',
 }
 
 function getExtension(name) {
@@ -327,14 +327,11 @@ Page({
         ocr_progress: ocrProgressText,
         chunk_progress: chunkProgress,
         failed_chunk_details: failedChunkDetails,
-        canResume: isPaused && failedChunkDetails.length > 0,
       }
-      const isTerminal = ['completed', 'failed'].includes(task.status)
-      // paused 不算 terminal —— 等用户主动 resume；停止轮询避免空跑。
-      const stopPolling = isTerminal || isPaused
-      this.setData({ pipelineTask: task, pipelinePolling: !stopPolling })
+      const isTerminal = ['completed', 'failed', 'paused'].includes(task.status)
+      this.setData({ pipelineTask: task, pipelinePolling: !isTerminal })
       if (task.status === 'completed') {
-        wx.showToast({ title: `已提交 ${task.question_count || 0} 题待审核`, icon: 'none' })
+        wx.showToast({ title: `导入完成，共解析 ${task.question_count || 0} 题`, icon: 'none' })
         return
       }
       if (task.status === 'failed') {
@@ -346,7 +343,11 @@ Page({
         return
       }
       if (isPaused) {
-        // 提示用户重选 PDF 触发恢复
+        wx.showModal({
+          title: '导入中断',
+          content: '部分内容处理失败，请重新上传文件',
+          showCancel: false,
+        })
         return
       }
       this.pollTimer = setTimeout(() => this.pollPipeline(pipelineId), 2000)
@@ -361,102 +362,6 @@ Page({
         this.setData({ pipelinePolling: false })
       }
     }
-  },
-
-  resumePipeline() {
-    const task = this.data.pipelineTask
-    if (!task || !task.pipeline_id) return
-    if (!task.canResume) return
-    if (!wx.chooseMessageFile) {
-      wx.showModal({
-        title: '提示',
-        content: '当前微信版本不支持文件选择，请升级微信',
-        showCancel: false,
-      })
-      return
-    }
-    wx.showModal({
-      title: '恢复导入',
-      content: '请重新选择同一份 PDF 以恢复未完成的分块',
-      confirmText: '选择文件',
-      success: (res) => {
-        if (!res.confirm) return
-        wx.chooseMessageFile({
-          count: 1,
-          type: 'file',
-          extension: ['pdf'],
-          success: (msgRes) => {
-            const file = msgRes.tempFiles && msgRes.tempFiles[0]
-            if (!file) return
-            const ext = getExtension(file.name || '')
-            if (ext !== 'pdf') {
-              wx.showToast({ title: '请选择同一份 PDF', icon: 'none' })
-              return
-            }
-            this._uploadResume(task.pipeline_id, file.path, file.name || 'resume.pdf')
-          },
-          fail: (err) => {
-            if (err && err.errMsg && err.errMsg.includes('cancel')) return
-            wx.showToast({ title: '选择文件失败', icon: 'none' })
-          },
-        })
-      },
-    })
-  },
-
-  async _uploadResume(pipelineId, path, name) {
-    wx.showLoading({ title: '提交恢复...' })
-    try {
-      const token = wx.getStorageSync('token')
-      const url = `${config.BASE_URL}/import/pipelines/${pipelineId}/resume`
-      const res = await new Promise((resolve, reject) => {
-        wx.uploadFile({
-          url,
-          filePath: path,
-          name: 'file',
-          header: { Authorization: `Bearer ${token}` },
-          success: (r) => {
-            let body = null
-            try {
-              body = JSON.parse(r.data)
-            } catch (e) {
-              return reject(new Error(`服务器返回异常 (HTTP ${r.statusCode})`))
-            }
-            if (r.statusCode >= 400) {
-              return reject(new Error(body.detail || body.message || `HTTP ${r.statusCode}`))
-            }
-            resolve(body)
-          },
-          fail: reject,
-        })
-      })
-      wx.hideLoading()
-      const resumed = (res && res.resumed_chunks) || []
-      if (!resumed.length) {
-        wx.showToast({ title: '没有可恢复的分块', icon: 'none' })
-        return
-      }
-      wx.showToast({ title: `已重试 ${resumed.length} 个分块`, icon: 'none' })
-      this.setData({
-        'pipelineTask.canResume': false,
-        'pipelineTask.statusLabel': '处理中',
-        pipelinePolling: true,
-      })
-      this.pollPipeline(pipelineId)
-    } catch (err) {
-      wx.hideLoading()
-      wx.showModal({
-        title: '恢复失败',
-        content: err.message || '未知错误',
-        showCancel: false,
-      })
-    }
-  },
-
-  goBatch(e) {
-    const batchId = e.currentTarget.dataset.batchId
-    if (!batchId) return
-    wx.navigateTo({ url: `/pages/import-batch/import-batch?batchId=${batchId}` })
   },
 
   async downloadTemplate() {
@@ -478,10 +383,5 @@ Page({
       wx.hideLoading()
       wx.showToast({ title: '下载失败', icon: 'none' })
     }
-  },
-
-  subjectLabel(s) {
-    const map = { math2: '数学二', exam408: '408', english: '英语' }
-    return map[s] || s || '-'
   },
 })
