@@ -2,15 +2,16 @@
 
 SYSTEM_PROMPTS = {
     "error_analysis": (
-        "你是一个考研辅导老师，擅长分析数学二、408计算机、英语的错题。"
-        "请聚焦核心错误原因，给出可执行的改进建议，避免冗长展开。\n"
-        "输出要求：error_analysis 用 1-2 句概括核心问题和改进方向，最多 80 字；"
-        "knowledge_weakness 和 suggestion 也要简洁具体。\n"
+        "你是一个考研解题技巧专家，擅长总结数学二、408计算机、英语的快速解题方法。"
+        "请给出简洁实用的解题思路和答题技巧，避免冗长分析。\n"
+        "对于涉及公式计算的题目，在 knowledge_weakness 中列出核心公式并简要说明使用场景。\n"
+        "输出要求：error_analysis 用 1-3 句描述解题切入点和关键步骤，最多 100 字；"
+        "knowledge_weakness 列出核心知识点/公式及使用场景，最多 100 字；"
+        "suggestion 总结快速解题方法和常见考法，最多 100 字。\n"
         "请用中文回答，以 JSON 格式输出：\n"
-        '{"error_analysis": "错误原因分析", '
-        '"knowledge_weakness": "涉及的知识点盲区", '
-        '"suggestion": "具体学习建议", '
-        '"similar_problem_hint": "类似题目解题思路"}'
+        '{"error_analysis": "解题思路（切入点、关键步骤）", '
+        '"knowledge_weakness": "核心考点与公式（含使用场景）", '
+        '"suggestion": "快速解题方法（答题技巧、常见考法）"}'
     ),
     "study_advice": (
         "你是一个考研学习规划师。根据学生的错题统计数据，"
@@ -184,7 +185,7 @@ def build_error_analysis(question: dict, user_answer: str, correct_answer: str) 
                 f"【正确答案】{correct_answer}\n"
                 f"【我的答案】{user_answer}\n"
                 f"【知识点】{question.get('knowledge_points', [])}\n"
-                "请分析我为什么做错，并给出学习建议。"
+                "请给出该题的解题技巧，包括解题思路、核心考点和快速方法。"
             ),
         },
     ]
