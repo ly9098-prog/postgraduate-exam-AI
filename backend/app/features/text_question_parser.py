@@ -91,8 +91,8 @@ def _normalize_text(text: str) -> str:
     # 去除中文括号周围的 Markdown 加粗标记（如 **【题目】** → 【题目】）
     text = re.sub(r"\*{1,2}\s*([【\[\<])", r"\1", text)
     text = re.sub(r"([】\]\>])\s*\*{1,2}", r"\1", text)
-    # 去除 "第X题" 独立标题行（如 **第一题**、第2题）
-    text = re.sub(r"^\*{0,2}\s*第\s*[一二三四五六七八九十\d]+\s*题\s*\*{0,2}\s*$", "", text, flags=re.MULTILINE)
+    # "第X题" 独立标题行 → 批量分隔标记，让 _split_batch 能正确分题
+    text = re.sub(r"^\*{0,2}\s*第\s*[一二三四五六七八九十\d]+\s*题\s*\*{0,2}\s*$", "\n===\n", text, flags=re.MULTILINE)
     # 连续空行压缩
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
