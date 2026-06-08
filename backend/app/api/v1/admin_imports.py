@@ -29,6 +29,10 @@ from app.schemas.admin_imports import (
     AdminImportQuestionUpdateRequest,
     AdminImportRejectRequest,
     AdminImportTaskStatusResponse,
+    TextImportRequest,
+    TextImportResponse,
+    TextParseRequest,
+    TextParseResponse,
 )
 from app.schemas.import_review import PipelineStatusResponse, PipelineUploadResponse
 from app.schemas.question_publish import PublishResponse
@@ -279,6 +283,94 @@ async def create_import_enrich_task(
         _raise_import_error(exc)
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+
+
+@router.post("/text-parse", response_model=TextParseResponse)
+async def parse_text_questions(
+    data: TextParseRequest,
+    _=Depends(require_permissions("import:write")),
+):
+    """解析用户粘贴的文本，返回结构化题目预览。"""
+    from app.features.text_question_parser import parse_text_questions
+
+    result = parse_text_questions(data.text, data.subject)
+    return TextParseResponse(**result)
+
+
+@router.post("/text-import", response_model=TextImportResponse)
+async def import_text_questions(
+    data: TextImportRequest,
+    _=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    """将解析后的文本题目写入 question_imports 暂存区。"""
+    import uuid
+    from datetime import datetime
+    from app.features.question_pipeline import process_question_pipeline, _create_question_import
+
+    batch_id = f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    items: list[TextImportResultItem] = []
+    succeeded = 0
+    failed = 0
+
+    for i, q in enumerate(data.questions):
+        try:
+            q_input = {
+                "subject": data.subject,
+                "stem": q.stem,
+                "options": q.options,
+                "answer": q.answer or "",
+                "analysis": q.analysis or "",
+                "question_type": q.question_type or "",
+                "knowledge_points": q.knowledge_points,
+                "difficulty": q.difficulty,
+            }
+
+            result = process_question_pipeline(
+                q_input,
+                source_type="text",
+                source={"file": "text_import", "page": 0},
+            )
+
+            if not result["is_valid"]:
+                items.append(TextImportResultItem(
+                    block_index=i,
+                    status="fail",
+                    error=f"校验失败: {', '.join(result['errors'])}",
+                ))
+                failed += 1
+                continue
+
+            qi = await _create_question_import(
+                db,
+                batch_id=batch_id,
+                source_type="text",
+                source_file="text_import",
+                raw_data=q,
+                result=result,
+            )
+            items.append(TextImportResultItem(
+                block_index=i,
+                import_id=qi.id,
+                status="ok",
+            ))
+            succeeded += 1
+        except Exception as exc:
+            items.append(TextImportResultItem(
+                block_index=i,
+                status="fail",
+                error=str(exc),
+            ))
+            failed += 1
+
+    await db.commit()
+    return TextImportResponse(
+        batch_id=batch_id,
+        items=items,
+        total=len(data.questions),
+        succeeded=succeeded,
+        failed=failed,
+    )
 
 
 @router.get("/{batch_id}/status", response_model=AdminImportTaskStatusResponse)

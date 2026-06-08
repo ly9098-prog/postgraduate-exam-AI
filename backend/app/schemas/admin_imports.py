@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AdminImportBatchListItem(BaseModel):
@@ -115,3 +115,63 @@ class AdminImportTaskStatusResponse(BaseModel):
     total_count: int | None = None
     processed_count: int | None = None
     error_message: str | None = None
+
+
+class TextParseRequest(BaseModel):
+    text: str = Field(..., max_length=100_000)  # ~100KB
+    subject: str
+
+
+class TextParseQuestion(BaseModel):
+    subject: str | None = None
+    question_type: str | None = None
+    stem: str = ""
+    options: list[dict] = []
+    answer: str | list[str] | bool | None = None
+    analysis: str | None = None
+    knowledge_points: list[str] = []
+    difficulty: int = 3
+    is_valid: bool = False
+    errors: list[str] = []
+    warnings: list[str] = []
+    question_hash: str | None = None
+    stem_hash: str | None = None
+    block_index: int = 0
+    detection_method: str = "unknown"
+
+
+class TextParseResponse(BaseModel):
+    questions: list[TextParseQuestion]
+    warnings: list[str] = []
+    raw_count: int = 0
+    valid_count: int = 0
+
+
+class TextImportQuestion(BaseModel):
+    stem: str
+    options: list[dict] = []
+    answer: str | list[str] | bool | None = None
+    analysis: str | None = None
+    question_type: str | None = None
+    knowledge_points: list[str] = []
+    difficulty: int = 3
+
+
+class TextImportRequest(BaseModel):
+    subject: str
+    questions: list[TextImportQuestion]
+
+
+class TextImportResultItem(BaseModel):
+    block_index: int
+    import_id: int | None = None
+    status: str = "ok"  # ok | fail
+    error: str | None = None
+
+
+class TextImportResponse(BaseModel):
+    batch_id: str
+    items: list[TextImportResultItem]
+    total: int
+    succeeded: int
+    failed: int
