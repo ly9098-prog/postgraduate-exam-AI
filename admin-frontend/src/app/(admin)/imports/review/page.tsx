@@ -198,7 +198,15 @@ export default function ImportReviewPage() {
       queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
       setPreviewId(result.item.id);
       setCompletedItem(result.item);
-      setEditState(editStateFromItem(result.item));
+      const suggestion = completeSuggestionFromItem(result.item);
+      if (suggestion) {
+        setEditState((prev) => ({
+          ...prev,
+          subject: prev.subject || (typeof suggestion.subject === "string" ? suggestion.subject : ""),
+          question_type: prev.question_type || (typeof suggestion.question_type === "string" ? suggestion.question_type : ""),
+          analysis: prev.analysis || (typeof suggestion.analysis === "string" ? suggestion.analysis : ""),
+        }));
+      }
     },
     onError: (error) => {
       setMessage(error instanceof Error ? error.message : "AI 补全失败，请稍后重试。");
