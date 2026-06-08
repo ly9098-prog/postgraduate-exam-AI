@@ -738,7 +738,7 @@ _PDF_SUBJECT_KEYWORDS = {
         "互斥", "同步", "管程", "临界区", "时间片", "fcfs", "rr",
     ],
     "exam408-co": [
-        "cpu", "存储器", "指令", "中断", "dma", "cache", "流水线",
+        "cpu", "存储器", "主存", "指令", "中断", "dma", "cache", "流水线",
         "微指令", "寻址", "补码", "原码", "浮点", "运算器", "控制器",
         "总线", "字长", "定长指令", "条件转移",
     ],
@@ -793,6 +793,8 @@ def _guess_subject(text: str, *, min_score: int = 2) -> str | None:
                 return "exam408"
             if best.startswith("math2-"):
                 return "math2"
+            if best in ("math2", "exam408", "english"):
+                return best
         return None
     return best
 

@@ -119,7 +119,7 @@ class AdminImportTaskStatusResponse(BaseModel):
 
 class TextParseRequest(BaseModel):
     text: str = Field(..., max_length=100_000)  # ~100KB
-    subject: str
+    subject: str = ""  # 可选，为空时自动检测
 
 
 class TextParseQuestion(BaseModel):
@@ -148,6 +148,7 @@ class TextParseResponse(BaseModel):
 
 
 class TextImportQuestion(BaseModel):
+    subject: str = ""
     stem: str
     options: list[dict] = []
     answer: str | list[str] | bool | None = None
@@ -158,7 +159,7 @@ class TextImportQuestion(BaseModel):
 
 
 class TextImportRequest(BaseModel):
-    subject: str
+    subject: str = ""
     questions: list[TextImportQuestion]
 
 
