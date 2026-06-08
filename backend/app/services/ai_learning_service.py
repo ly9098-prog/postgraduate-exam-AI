@@ -11,6 +11,7 @@ from app.ai.client import deepseek
 from app.ai.fallback import (
     get_fallback_analysis,
     get_fallback_explain,
+    get_fallback_mistake_analysis,
     get_fallback_report,
 )
 from app.ai.prompts_learning import (
@@ -250,12 +251,12 @@ async def ai_analyze_mistake(
     result = await _call_ai(messages)
 
     if result is None:
-        fallback = get_fallback_analysis()
+        fallback = get_fallback_mistake_analysis()
         return {
-            "error_type": "unknown",
-            "error_type_label": "无法分析",
-            "analysis": fallback.get("error_analysis", ""),
-            "suggestion": fallback.get("suggestion", ""),
+            "error_type": fallback["error_type"],
+            "error_type_label": fallback["error_type_label"],
+            "analysis": fallback["analysis"],
+            "suggestion": fallback["suggestion"],
             "tokens_used": 0,
             "from_fallback": True,
         }
