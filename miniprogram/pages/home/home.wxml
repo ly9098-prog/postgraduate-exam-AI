@@ -57,7 +57,7 @@
     <view class="icon-badge icon-primary">AI</view>
     <view class="action-info">
       <text class="action-title">AI 分析</text>
-      <text class="action-desc">错因与建议</text>
+      <text class="action-desc">解题技巧</text>
     </view>
     <text class="action-arrow">›</text>
   </view>

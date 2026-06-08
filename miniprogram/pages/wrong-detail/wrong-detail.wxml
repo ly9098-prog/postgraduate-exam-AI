@@ -6,9 +6,9 @@
 <view class="page" wx:if="{{!loading && wq}}">
   <view class="detail-hero">
     <view class="hero-copy">
-      <text class="eyebrow">错题复盘</text>
+      <text class="eyebrow">解题技巧</text>
       <text class="hero-title">错题详情</text>
-      <text class="hero-desc">先核对答案和错因，再决定是否标记掌握</text>
+      <text class="hero-desc">参考答案和解题技巧，巩固知识点</text>
     </view>
     <view class="hero-badge {{wq.mastered ? 'mastered' : ''}}">
       <text class="hero-badge-main">{{wq.mastered ? '✓' : '复'}}</text>
@@ -71,42 +71,42 @@
   <view class="ai-card" wx:if="{{!aiLoading && aiResult}}">
     <view class="section-head">
       <view>
-        <text class="section-title">AI 错题分析</text>
-        <text class="section-subtitle">从错因、知识点和复习建议三个角度辅助判断</text>
+        <text class="section-title">解题技巧</text>
+        <text class="section-subtitle">提供解题思路、核心考点与快速答题方法</text>
       </view>
       <text class="section-chip">AI</text>
     </view>
 
     <view class="ai-section">
-      <text class="ai-label">错误原因</text>
+      <text class="ai-label">解题思路</text>
       <text class="ai-text">{{aiResult.error_analysis}}</text>
     </view>
 
     <view class="ai-section">
-      <text class="ai-label">薄弱知识点</text>
+      <text class="ai-label">核心考点</text>
       <text class="ai-text">{{aiResult.knowledge_weakness}}</text>
     </view>
 
     <view class="ai-section">
-      <text class="ai-label">学习建议</text>
+      <text class="ai-label">快速方法</text>
       <text class="ai-text">{{aiResult.suggestion}}</text>
     </view>
 
-    <text class="ai-hint">AI 分析由 DeepSeek 生成，仅供参考</text>
+    <text class="ai-hint">内容由 AI 生成，仅供参考</text>
   </view>
 
   <!-- AI 加载 -->
   <view class="ai-card" wx:if="{{aiLoading}}">
     <view class="section-head compact">
       <view>
-        <text class="section-title">AI 分析中</text>
-        <text class="section-subtitle">正在整理错因和复习建议</text>
+        <text class="section-title">正在生成</text>
+        <text class="section-subtitle">正在分析题目和整理解题方法</text>
       </view>
       <text class="section-chip">处理中</text>
     </view>
     <view class="ai-loading">
       <view class="loading-spinner small"></view>
-      <text>正在分析你的错题原因</text>
+      <text>正在生成解题技巧</text>
     </view>
   </view>
 
@@ -114,8 +114,8 @@
   <view class="ai-card" wx:if="{{!aiLoading && aiFallback}}">
     <view class="ai-fallback">
       <view class="fallback-mark">!</view>
-      <text class="fallback-title">AI 分析暂时不可用</text>
-      <text class="fallback-desc">建议先查看题目解析和知识点，稍后再试</text>
+      <text class="fallback-title">解题技巧暂时不可用</text>
+      <text class="fallback-desc">建议先查看题目解析，稍后再试</text>
     </view>
   </view>
 </view>
