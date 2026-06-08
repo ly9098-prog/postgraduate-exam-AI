@@ -236,6 +236,11 @@ export default function ImportReviewPage() {
 
   return (
     <div className="space-y-6">
+      {message ? (
+        <div role="status" aria-live="polite" className="fixed right-6 top-6 z-[60] max-w-sm rounded-2xl border border-[var(--color-success)] bg-white px-5 py-4 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-floating)]">
+          {message}
+        </div>
+      ) : null}
       <Card>
         <CardHeader className="space-y-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -275,7 +280,6 @@ export default function ImportReviewPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {message ? <p className="rounded-2xl border border-[var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[var(--color-text-secondary)]">{message}</p> : null}
           <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
             <section className="space-y-3">
               <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[var(--color-text-secondary)]">
