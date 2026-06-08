@@ -354,7 +354,7 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
                         clean_val = m2.group(1).strip()
                         ans_letter = m2.group(2).upper()
                         ana_text = m2.group(3).strip()
-                        if len(clean_val) > 4:  # 选项值必须足够长，避免 "选 A 或 B" 误匹配
+                        if len(clean_val) > 3:  # 选项值必须足够长，避免 "选 A 或 B" 误匹配
                             option_lines.append(f"{opt_key}. {clean_val}")
                             option_seen = True
                             section = "options"
