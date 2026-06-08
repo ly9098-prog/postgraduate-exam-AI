@@ -31,6 +31,7 @@ from app.schemas.admin_imports import (
     AdminImportTaskStatusResponse,
     TextImportRequest,
     TextImportResponse,
+    TextImportResultItem,
     TextParseRequest,
     TextParseResponse,
 )
@@ -341,14 +342,15 @@ async def import_text_questions(
                 failed += 1
                 continue
 
-            qi = await _create_question_import(
-                db,
-                batch_id=batch_id,
-                source_type="text",
-                source_file="text_import",
-                raw_data=q,
-                result=result,
-            )
+            async with db.begin_nested():
+                qi = await _create_question_import(
+                    db,
+                    batch_id=batch_id,
+                    source_type="text",
+                    source_file="text_import",
+                    raw_data=q.model_dump(),
+                    result=result,
+                )
             items.append(TextImportResultItem(
                 block_index=i,
                 import_id=qi.id,
