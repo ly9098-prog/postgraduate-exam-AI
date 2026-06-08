@@ -155,9 +155,16 @@ export default function ImportReviewPage() {
       if (variables.action === "publish") {
         const published = "published" in result ? result.published : 0;
         setMessage(`发布完成，已发布 ${published} 题。`);
+      } else if (variables.action === "approve") {
+        setMessage(`导入题目 #${variables.id} 已通过审核。`);
+      } else if (variables.action === "reject") {
+        setMessage(`导入题目 #${variables.id} 已驳回。`);
+      } else if (variables.action === "batch-approve") {
+        const affected = "affected_count" in result ? result.affected_count : 0;
+        setMessage(`批量审核通过完成，影响 ${affected} 条导入题目。`);
       } else {
         const affected = "affected_count" in result ? result.affected_count : 0;
-        setMessage(`操作完成，影响 ${affected} 条导入题目。`);
+        setMessage(`批量驳回完成，影响 ${affected} 条导入题目。`);
       }
       setSelectedIds(new Set());
       setConfirmState(null);
