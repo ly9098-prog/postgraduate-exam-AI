@@ -309,8 +309,7 @@ async def _get_batch_records(
     if not records:
         raise ValueError("导入批次不存在")
     return records
-
-
+def _batch_conditions(status: str | None, source_type: str | None, keyword: str | None) -> list:
     conditions = []
     if status:
         conditions.append(QuestionImport.status == status)

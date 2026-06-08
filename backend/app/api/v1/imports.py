@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import get_db, async_session
-from app.core.security import require_app_permission
+from app.core.security import get_current_user, require_app_permission
 from app.models.user import User
 from app.schemas.question_import import (
     ImportBatchDetailResponse,
@@ -210,7 +210,7 @@ async def _fail_image_pipeline(pipeline_id: str, error: str) -> None:
 
 @router.get("/template")
 async def download_template(
-    _: User = Depends(require_app_permission("import:read")),
+    _: User = Depends(get_current_user),
 ):
     """下载 Excel 导入模板"""
     content = svc.generate_template()
@@ -363,14 +363,8 @@ async def fix_question(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_app_permission("import:write")),
 ):
-    """人工修复题目字段（仅 pending 状态）"""
-    try:
-        result = await review_svc.fix_question(
-            db, question_id, data.model_dump(exclude_none=True)
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return FixQuestionResponse(**result)
+    """小程序端不再开放题目修复能力。"""
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请在 Admin 后台编辑导入题目")
 
 
 # ---------------------------------------------------------------------------
