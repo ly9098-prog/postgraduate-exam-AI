@@ -65,6 +65,15 @@ class AdminImportEnrichResponse(BaseModel):
     created_at: datetime
 
 
+class AdminImportCompleteResponse(BaseModel):
+    missing: list[str]
+    from_fallback: bool
+    ai_metadata: dict
+    tokens_used: int = 0
+    duration_ms: int = 0
+    item: AdminImportQuestionItem
+
+
 class AdminImportQuestionUpdateRequest(BaseModel):
     subject: str | None = None
     question_type: str | None = None

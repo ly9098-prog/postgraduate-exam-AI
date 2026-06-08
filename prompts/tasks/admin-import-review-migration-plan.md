@@ -2,19 +2,19 @@
 
 ## 任务背景
 
-当前题目导入的重流程主要在小程序 `/api/v1/import` 链路中完成，小程序页面同时承担了批量导入、审核、AI 补全、批量通过/驳回等管理职责。目标是调整为：
+当前题目导入的重流程已从小程序 `/api/v1/import` 迁移到 Admin 后台主链路，小程序仅保留拍照录题、单张图片导入和少量题目导入。所有导入结果必须先进入 `question_imports` 待审核，由后台管理员审核后发布到正式题库。
 
-```text
-Admin后台
-    ↓
-主要导入入口
+## 当前状态
 
-微信小程序
-    ↓
-轻量导入入口
-```
-
-后续大规模题目导入优先在 Admin 后台完成；小程序只保留拍照录题、单张图片导入和少量题目导入。所有导入结果必须先进入 `question_imports` 待审核，由后台管理员审核后发布到正式题库。
+- 迁移主体已完成。
+- Admin 后台导入 / 进度 / 待审核 / 发布相关 API 已补齐。
+- Admin 前端导入任务页、导入记录页、待审核页 / 题目列表页已接入。
+- 小程序导入流已简化为轻量读入链路。
+- App / 小程序管理型写入接口已收紧或禁止，模板下载仍保留给已认证 App 用户。
+- 已补充导入边界与写入边界测试。
+- 当前剩余事项：
+  - Admin 浏览器端上传、进度轮询、待审核、发布全流程手工 UI 走查验证。
+  - Admin 审核阶段补齐单题 AI 补全能力，复用现有 `question_pipeline.complete_import`，补全后仍需管理员人工复核、保存或通过。
 
 ## 核心原则
 
@@ -81,6 +81,7 @@ user:{user_id}
 | `GET` | `/api/admin/v1/imports/pipelines/{pipeline_id}` | 查看导入任务进度 |
 | `GET` | `/api/admin/v1/imports/review-queue` | 查看待审核导入题目 |
 | `PUT` | `/api/admin/v1/imports/questions/{import_id}` | 编辑待审核题目 |
+| `POST` | `/api/admin/v1/imports/questions/{import_id}/complete` | Admin 单题 AI 补全暂存题目 |
 | `POST` | `/api/admin/v1/imports/questions/{import_id}/approve` | 单题通过 |
 | `POST` | `/api/admin/v1/imports/questions/{import_id}/reject` | 单题驳回 |
 | `POST` | `/api/admin/v1/imports/{batch_id}/approve` | 批量通过 |
@@ -217,6 +218,8 @@ MVP 可先用平铺路由：
 - 查看题干、选项、答案、解析、OCR 原文/原始数据。
 - 查看重复状态、AI/OCR metadata。
 - 支持单题通过、驳回、编辑后通过。
+- 支持单题 AI 补全：复用后端暂存题目补全能力，只补齐 `question_imports`，不直接发布正式题库。
+- 展示 `ai_metadata.complete_suggestion` 等 AI 建议；AI 建议答案不得自动入库，需管理员应用建议、保存并通过后才可发布。
 - 支持批量通过、批量驳回。
 - 仅允许发布 `approved` 题目。
 
@@ -284,15 +287,15 @@ MVP 不新增表、不改 schema。
 
 ## 五、本轮暂缓范围
 
-本轮不做：
-
-- ZIP 图片包导入。
-- 新 OCR 引擎。
-- 书籍类 PDF 优化。
-- 复杂 AI 增强。
-- 原文件持久化。
-- 真正服务端 reimport。
-- 大规模 sidebar 架构重构。
+- 当前不做：
+  - ZIP 图片包导入。
+  - 新 OCR 引擎。
+  - 书籍类 PDF 优化。
+  - 复杂 AI 增强。
+  - 原文件持久化。
+  - 真正服务端 reimport。
+  - 大规模 sidebar 架构重构。
+- 当前新增待办：Admin 审核阶段单题 AI 补全，仅作为人工审核辅助，不改变“无纯 AI 自动入库”约束。
 
 ZIP 导入涉及解压安全、路径穿越防护、文件数/大小限制和多任务编排，建议等 Admin PDF/普通图片/文本 PDF 跑通后单独处理。
 
@@ -305,29 +308,28 @@ ZIP 导入涉及解压安全、路径穿越防护、文件数/大小限制和多
 - Admin 可查询 pipeline status。
 - pipeline 完成后写入 `question_imports`，默认 `status = pending`。
 - Admin 单题 approve/reject/edit 正确更新 staging 字段。
+- Admin 单题 AI 补全只更新 `question_imports` 暂存字段和 AI metadata，不直接发布正式题库。
+- Admin AI 补全需受 `import:write` 和后台 AI 设置约束。
 - Admin batch approve/reject 正确计数。
 - Admin publish 只发布 approved rows。
 - 删除未发布 batch 成功。
 - 删除已发布或已关联正式题目的 batch 失败。
 - 小程序 publish/approve/reject 接口不可用。
 
-### Admin 前端验证
+### 已完成验证
 
-1. 登录 Admin。
-2. 打开 `题目导入管理 -> 导入任务`。
-3. 上传普通 PDF。
-4. 观察导入进度、OCR/解析阶段、错误日志。
-5. 完成后进入导入记录，确认 batch 和 pending 数量。
-6. 进入待审核题目，查看 OCR 原文和解析结果。
-7. 编辑一题后通过，驳回一题，批量通过剩余题目。
-8. 发布 approved 题目。
-9. 确认正式题库出现新题。
-10. 尝试删除已发布批次，应失败。
+- 后端边界测试已通过，覆盖 app 导入边界、Admin 导入服务/API 边界，以及模板下载 / 写入边界。
+- 关键写入边界已收紧，确认管理型写接口不会向普通 App / 小程序开放。
 
-### 小程序验证
+### 待完成手工验证
 
-1. 拍照或上传单图。
-2. 显示上传/OCR/解析/提交审核进度。
-3. 完成后只显示“已提交审核”。
-4. 不出现审核、发布、批量通过、批量驳回按钮。
-5. 直接调用小程序发布/审核接口应被拒绝。
+1. Admin 浏览器端上传、进度轮询、待审核、发布全流程走查。
+2. Admin 待审核页单题 AI 补全走查：确认补全结果刷新到暂存题目，AI 建议可复核，答案建议不会自动保存或通过。
+3. 小程序真机 / 开发者工具轻量导入只读流程走查。
+4. 确认模板下载仍可供已认证 App 用户使用。
+
+## 七、当前结论
+
+- 迁移实现已进入收尾阶段。
+- 当前不再补充新能力，优先完成手工 UI 验证。
+- 如手工验证未通过，再单独补齐缺口或回写待同步内容。

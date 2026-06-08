@@ -82,6 +82,15 @@ export type ImportActionResponse = {
   affected_count: number;
 };
 
+export type AdminImportCompleteResponse = {
+  missing: string[];
+  from_fallback: boolean;
+  ai_metadata: Record<string, unknown>;
+  tokens_used: number;
+  duration_ms: number;
+  item: ImportQuestionItem;
+};
+
 export type ImportPublishResponse = {
   batch_id: string;
   total: number;

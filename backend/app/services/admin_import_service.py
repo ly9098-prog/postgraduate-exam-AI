@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
 from app.core.cache import cache
+from app.features import question_pipeline
 from app.models.question_import import QuestionImport
 from app.schemas.admin_imports import (
     AdminImportBatchDetail,
@@ -208,6 +209,44 @@ async def delete_import_batch(db: AsyncSession, batch_id: str) -> int:
     result = await db.execute(delete(QuestionImport).where(QuestionImport.batch_id == batch_id))
     await db.flush()
     return int(result.rowcount or 0)
+
+
+async def complete_import_question(
+    db: AsyncSession,
+    import_id: int,
+    operator: AdminPrincipal,
+    request: Request | None = None,
+) -> dict:
+    qi = await _get_import_question(db, import_id)
+    if qi.status != "pending":
+        raise ValueError("仅支持对 pending 记录使用 AI 补全")
+    await ensure_ai_parse_allowed(db, operator, request)
+
+    result = await question_pipeline.complete_import(db, operator.id, import_id)
+    refreshed = await _get_import_question(db, import_id)
+    await write_admin_audit(
+        db,
+        operator,
+        "import.complete",
+        "question_import",
+        str(import_id),
+        severity="important",
+        detail={
+            "import_id": import_id,
+            "batch_id": refreshed.batch_id,
+            "missing": result.get("missing", []),
+            "from_fallback": result.get("from_fallback", False),
+        },
+        request=request,
+    )
+    return {
+        "missing": result.get("missing", []),
+        "from_fallback": result.get("from_fallback", False),
+        "ai_metadata": result.get("ai_metadata", {}),
+        "tokens_used": result.get("tokens_used", 0),
+        "duration_ms": result.get("duration_ms", 0),
+        "item": AdminImportQuestionItem.model_validate(refreshed),
+    }
 
 
 async def create_enrich_task(
