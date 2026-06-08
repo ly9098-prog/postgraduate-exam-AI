@@ -8,7 +8,7 @@ from app.core.admin_security import AdminPrincipal
 from app.models.admin import AdminUser
 from app.models.question_import import QuestionImport
 from app.services import admin_import_service
-from app.services.admin_import_service import create_enrich_task, get_enrich_status, get_import_batch_detail, list_import_batches
+from app.services.admin_import_service import complete_import_question, create_enrich_task, get_enrich_status, get_import_batch_detail, list_import_batches
 
 
 class _Scalars:
@@ -138,6 +138,34 @@ async def test_get_import_batch_detail_returns_paginated_items():
 async def test_get_import_batch_detail_missing_batch():
     with pytest.raises(ValueError, match="导入批次不存在"):
         await get_import_batch_detail(_Db([]), "missing", 1, 20)
+
+
+@pytest.mark.asyncio
+async def test_complete_import_question_reuses_pipeline_and_audits(monkeypatch):
+    record = _import_record(1)
+    db = _Db([record])
+    audit = AsyncMock()
+    parse_allowed = AsyncMock()
+    complete = AsyncMock(return_value={"missing": ["answer"], "from_fallback": False, "ai_metadata": {"complete_suggestion": {"answer": "B"}}, "tokens_used": 10, "duration_ms": 20})
+    monkeypatch.setattr(admin_import_service, "write_admin_audit", audit)
+    monkeypatch.setattr(admin_import_service, "ensure_ai_parse_allowed", parse_allowed)
+    monkeypatch.setattr(admin_import_service.question_pipeline, "complete_import", complete)
+
+    result = await complete_import_question(db, 1, _principal())
+
+    assert result["missing"] == ["answer"]
+    assert result["item"].id == 1
+    parse_allowed.assert_awaited_once()
+    complete.assert_awaited_once_with(db, 9, 1)
+    audit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_complete_import_question_requires_pending():
+    db = _Db([_import_record(1, status="approved")])
+
+    with pytest.raises(ValueError, match="仅支持对 pending 记录使用 AI 补全"):
+        await complete_import_question(db, 1, _principal())
 
 
 @pytest.mark.asyncio

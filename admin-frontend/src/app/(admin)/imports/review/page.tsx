@@ -3,14 +3,14 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { CheckCircle2, Eye, Save, Search, Send, XCircle } from "lucide-react";
+import { CheckCircle2, Eye, Save, Search, Send, Sparkles, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { apiRequest, toQuery } from "@/lib/api/client";
-import type { ImportActionResponse, ImportPublishResponse, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
+import type { AdminImportCompleteResponse, ImportActionResponse, ImportPublishResponse, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 
 type ConfirmState =
   | { action: "approve"; id: number }
@@ -85,6 +85,16 @@ function renderOptions(value: unknown) {
   return renderJson(value);
 }
 
+function completeSuggestionFromItem(item: ImportQuestionItem | null | undefined) {
+  const suggestion = item?.ai_metadata?.complete_suggestion;
+  if (suggestion && typeof suggestion === "object" && !Array.isArray(suggestion)) return suggestion as Record<string, unknown>;
+  return null;
+}
+
+function stringSuggestion(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
 function statusTone(status: string) {
   if (status === "approved") return "success";
   if (status === "rejected") return "danger";
@@ -109,6 +119,7 @@ export default function ImportReviewPage() {
   const [filters, setFilters] = useState({ batch_id: "", status: "pending", subject: "", source_type: "", keyword: "" });
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [previewId, setPreviewId] = useState<number | null>(null);
+  const [completedItem, setCompletedItem] = useState<ImportQuestionItem | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
@@ -126,7 +137,10 @@ export default function ImportReviewPage() {
   });
 
   const items = queue.data?.items ?? [];
-  const previewItem = items.find((item) => item.id === previewId) ?? null;
+  const queuedPreviewItem = items.find((item) => item.id === previewId) ?? null;
+  const previewItem = completedItem?.id === previewId ? completedItem : queuedPreviewItem;
+  const completeSuggestion = completeSuggestionFromItem(previewItem);
+  const answerSuggestion = stringSuggestion(completeSuggestion?.answer);
   const allChecked = items.length > 0 && items.every((item) => selectedIds.has(item.id));
 
   const actionMutation = useMutation({
@@ -170,10 +184,25 @@ export default function ImportReviewPage() {
     },
   });
 
+  const completeMutation = useMutation({
+    mutationFn: async (id: number) => apiRequest<AdminImportCompleteResponse>(`/imports/questions/${id}/complete`, { method: "POST" }),
+    onSuccess: (result) => {
+      setMessage(result.missing.length === 0 ? "当前题目信息已完整，无需补全。" : "AI 补全完成，请复核后保存/通过。");
+      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
+      setPreviewId(result.item.id);
+      setCompletedItem(result.item);
+      setEditState(editStateFromItem(result.item));
+    },
+    onError: (error) => {
+      setMessage(error instanceof Error ? error.message : "AI 补全失败，请稍后重试。");
+    },
+  });
+
   const updateFilter = (key: keyof typeof filters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
     setSelectedIds(new Set());
     setPreviewId(null);
+    setCompletedItem(null);
     setEditState(null);
   };
 
@@ -192,6 +221,7 @@ export default function ImportReviewPage() {
 
   const openPreview = (item: ImportQuestionItem) => {
     setPreviewId(item.id);
+    setCompletedItem(null);
     setEditState(editStateFromItem(item));
   };
 
@@ -258,6 +288,10 @@ export default function ImportReviewPage() {
                         <Eye className="h-4 w-4" />
                         预览
                       </Button>
+                      <Button variant="ghost" disabled={item.status !== "pending" || completeMutation.isPending} onClick={() => completeMutation.mutate(item.id)}>
+                        <Sparkles className="h-4 w-4" />
+                        AI补全
+                      </Button>
                       <Button variant="secondary" disabled={item.status === "published"} onClick={() => setConfirmState({ action: "approve", id: item.id })}>
                         <CheckCircle2 className="h-4 w-4" />
                         通过
@@ -285,10 +319,16 @@ export default function ImportReviewPage() {
                       <p className="font-mono text-xs text-[var(--color-text-hint)]">#{previewItem.id}</p>
                       <h4 className="font-display text-xl font-bold text-[var(--ink)]">导入题目详情</h4>
                     </div>
-                    <Button disabled={updateMutation.isPending || previewItem.status === "published"} onClick={() => updateMutation.mutate()}>
-                      <Save className="h-4 w-4" />
-                      保存编辑
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button disabled={completeMutation.isPending || previewItem.status !== "pending"} onClick={() => completeMutation.mutate(previewItem.id)}>
+                        <Sparkles className="h-4 w-4" />
+                        AI补全
+                      </Button>
+                      <Button disabled={updateMutation.isPending || previewItem.status === "published"} onClick={() => updateMutation.mutate()}>
+                        <Save className="h-4 w-4" />
+                        保存编辑
+                      </Button>
+                    </div>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <Input placeholder="科目" value={editState.subject} onChange={(event) => setEditState({ ...editState, subject: event.target.value })} />
@@ -298,6 +338,10 @@ export default function ImportReviewPage() {
                     <span className="text-xs font-semibold text-[var(--color-text-secondary)]">题干</span>
                     <textarea className="min-h-36 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm" value={editState.stem} onChange={(event) => setEditState({ ...editState, stem: event.target.value })} />
                   </label>
+                  <section>
+                    <p className="font-semibold text-[var(--ink)]">选项</p>
+                    <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderOptions(optionDataFromImport(previewItem))}</pre>
+                  </section>
                   <label className="block space-y-1">
                     <span className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</span>
                     <Input value={editState.answer} onChange={(event) => setEditState({ ...editState, answer: event.target.value })} />
@@ -306,10 +350,19 @@ export default function ImportReviewPage() {
                     <span className="text-xs font-semibold text-[var(--color-text-secondary)]">解析</span>
                     <textarea className="min-h-28 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm" value={editState.analysis} onChange={(event) => setEditState({ ...editState, analysis: event.target.value })} />
                   </label>
-                  <section>
-                    <p className="font-semibold text-[var(--ink)]">选项</p>
-                    <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderOptions(optionDataFromImport(previewItem))}</pre>
-                  </section>
+                  {completeSuggestion ? (
+                    <section>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-semibold text-[var(--ink)]">AI 补全建议</p>
+                        {answerSuggestion ? (
+                          <Button variant="ghost" onClick={() => setEditState({ ...editState, answer: answerSuggestion })}>
+                            应用答案建议
+                          </Button>
+                        ) : null}
+                      </div>
+                      <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderJson(completeSuggestion)}</pre>
+                    </section>
+                  ) : null}
                   <section>
                     <p className="font-semibold text-[var(--ink)]">OCR / 原始数据</p>
                     <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderJson(previewItem.raw_data)}</pre>

@@ -8,7 +8,7 @@ from app.core.admin_security import AdminPrincipal, get_current_admin
 from app.core.database import get_db
 from app.main import app
 from app.models.admin import AdminUser
-from app.schemas.admin_imports import AdminImportBatchDetail, AdminImportEnrichResponse, AdminImportQuestionItem
+from app.schemas.admin_imports import AdminImportBatchDetail, AdminImportCompleteResponse, AdminImportEnrichResponse, AdminImportQuestionItem
 
 client = TestClient(app)
 
@@ -127,6 +127,40 @@ def test_create_enrich_task_and_status(monkeypatch):
     assert create_resp.json()["task_id"] == "task-1"
     assert status_resp.status_code == 200
     assert status_resp.json()["status"] == "pending"
+
+
+def test_complete_import_question(monkeypatch):
+    response = AdminImportCompleteResponse(
+        missing=["answer"],
+        from_fallback=False,
+        ai_metadata={"complete_suggestion": {"answer": "B"}},
+        tokens_used=12,
+        duration_ms=34,
+        item=_question_item(),
+    )
+    monkeypatch.setattr(admin_imports, "complete_import_question", AsyncMock(return_value=response))
+    app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
+    try:
+        resp = client.post("/api/admin/v1/imports/questions/1/complete")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    assert resp.json()["missing"] == ["answer"]
+    assert resp.json()["item"]["id"] == 1
+
+
+def test_complete_import_question_missing(monkeypatch):
+    monkeypatch.setattr(admin_imports, "complete_import_question", AsyncMock(side_effect=ValueError("导入题目不存在")))
+    app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
+    try:
+        resp = client.post("/api/admin/v1/imports/questions/1/complete")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 404
 
 
 def test_import_errors(monkeypatch):
