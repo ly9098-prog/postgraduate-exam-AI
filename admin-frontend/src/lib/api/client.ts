@@ -49,7 +49,7 @@ function readMessage(payload: unknown) {
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
+  if (!headers.has("Content-Type") && init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   const token = getApiAccessToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
