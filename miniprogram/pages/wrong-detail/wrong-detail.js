@@ -64,6 +64,10 @@ function _stripLeadingOptionLabel(key, value) {
   if (!key || !text) return text
   const label = _escapeRegExp(String(key).trim())
   const labelPattern = new RegExp(`^${label}[\\s\\u00A0]*[.．、:：）)]\\s*`, 'i')
+  if (/^\s*\$/.test(text)) {
+    const inner = text.replace(/^\s*\$\s*/, '')
+    return '$' + inner.replace(labelPattern, '')
+  }
   return text.replace(labelPattern, '')
 }
 
