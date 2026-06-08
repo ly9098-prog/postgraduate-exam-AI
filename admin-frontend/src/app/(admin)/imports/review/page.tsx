@@ -43,6 +43,48 @@ function renderJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
+function optionDataFromImport(item: ImportQuestionItem | null | undefined) {
+  if (!item) return null;
+  const raw = item.raw_data;
+  return item.parsed_options ?? raw?.options ?? raw?.parsed_options ?? raw?.option_text ?? raw?.optionText ?? null;
+}
+
+function renderOptions(value: unknown) {
+  if (value === undefined || value === null || value === "") return "—";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((item, index) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object") {
+          const entry = item as Record<string, unknown>;
+          const label = entry.label ?? entry.key ?? entry.name;
+          const content = [entry.content, entry.text, entry.stem, entry.option, entry.value, entry.answer]
+            .map((part) => (typeof part === "string" || typeof part === "number" ? String(part) : ""))
+            .find(Boolean);
+          const prefix = label ? `${label}: ` : `选项${index + 1}: `;
+          if (content) return `${prefix}${content}`;
+        }
+        return renderJson(item);
+      })
+      .join("\n");
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length > 0) {
+      return entries
+        .map(([key, item]) => {
+          if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
+            return `${key}: ${item}`;
+          }
+          return `${key}: ${renderJson(item)}`;
+        })
+        .join("\n");
+    }
+  }
+  return renderJson(value);
+}
+
 function statusTone(status: string) {
   if (status === "approved") return "success";
   if (status === "rejected") return "danger";
@@ -266,7 +308,7 @@ export default function ImportReviewPage() {
                   </label>
                   <section>
                     <p className="font-semibold text-[var(--ink)]">选项</p>
-                    <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderJson(previewItem.parsed_options)}</pre>
+                    <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderOptions(optionDataFromImport(previewItem))}</pre>
                   </section>
                   <section>
                     <p className="font-semibold text-[var(--ink)]">OCR / 原始数据</p>
