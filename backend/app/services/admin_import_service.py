@@ -92,7 +92,7 @@ async def list_review_queue(
     result = await db.execute(
         select(QuestionImport)
         .where(*conditions)
-        .order_by(QuestionImport.created_at.asc(), QuestionImport.id.asc())
+        .order_by(QuestionImport.created_at.desc(), QuestionImport.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
