@@ -3,7 +3,7 @@
 注意：AI 仅生成"待审核数据"，永远不直接写入 questions 正式表。
 所有结果统一进入 question_imports 暂存区，再走人工审核流。
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -30,12 +30,8 @@ async def enrich_one(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """对一条暂存题目调用 AI 补全学科/章节/知识点/难度/题型。"""
-    try:
-        result = await svc.enrich_import(db, current_user.id, import_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    return EnrichResponse(**result)
+    """小程序端不再开放 AI 补全暂存题目能力。"""
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请在 Admin 后台补全导入题目")
 
 
 @router.post("/enrich-batch/{batch_id}", response_model=EnrichBatchResponse)
@@ -44,9 +40,8 @@ async def enrich_batch(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """对一个批次中所有 pending 记录批量补全。"""
-    result = await svc.enrich_batch(db, current_user.id, batch_id)
-    return EnrichBatchResponse(**result)
+    """小程序端不再开放批量 AI 补全能力。"""
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请在 Admin 后台补全导入题目")
 
 
 @router.post("/generate", response_model=GenerateResponse)
@@ -78,12 +73,8 @@ async def complete_one(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """AI 补全单条 import 记录的缺失字段（答案不会自动写入暂存字段）。"""
-    try:
-        result = await svc.complete_import(db, current_user.id, import_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    return CompleteResponse(**result)
+    """小程序端不再开放 AI 完善暂存题目能力。"""
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请在 Admin 后台补全导入题目")
 
 
 @router.get("/logs", response_model=AiLogListResponse)
