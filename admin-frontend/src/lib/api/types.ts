@@ -1,3 +1,101 @@
+export type ImportBatchListItem = {
+  batch_id: string;
+  source_type: string;
+  source_file?: string | null;
+  total_count: number;
+  pending_count: number;
+  approved_count: number;
+  rejected_count: number;
+  published_count: number;
+  ai_count: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type ImportQuestionItem = {
+  id: number;
+  batch_id: string;
+  source_type: string;
+  source_file?: string | null;
+  subject?: string | null;
+  question_type?: string | null;
+  raw_data: Record<string, unknown>;
+  parsed_content?: Record<string, unknown> | null;
+  parsed_options?: Record<string, unknown> | null;
+  parsed_answer?: string | null;
+  parsed_analysis?: string | null;
+  question_hash?: string | null;
+  duplicate_status?: string | null;
+  duplicate_of_question_id?: number | null;
+  duplicate_of_import_id?: number | null;
+  status: string;
+  review_note?: string | null;
+  question_id?: number | null;
+  reject_reason?: string | null;
+  reviewed_by?: number | null;
+  reviewed_at?: string | null;
+  ai_generated: boolean;
+  ai_source?: string | null;
+  ai_confidence?: number | null;
+  ai_metadata?: Record<string, unknown> | null;
+  ai_reviewed_at?: string | null;
+  ai_answer_flag: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ImportBatchDetail = ImportBatchListItem & {
+  items: ImportQuestionItem[];
+  page: number;
+  page_size: number;
+  total_pages: number;
+};
+
+export type ImportPipelineUploadResponse = {
+  pipeline_id: string;
+  status: string;
+  source_type?: string | null;
+};
+
+export type ImportPipelineStatusResponse = {
+  pipeline_id: string;
+  status: string;
+  stages: Record<string, unknown>;
+  stats: Record<string, unknown>;
+  diagnostics: Record<string, unknown>;
+  errors: string[];
+  batch_id: string;
+  raw_text_preview: string;
+  question_count: number;
+  started_at: string;
+  finished_at: string;
+  current_stage: string;
+  ocr_progress: string;
+  source_type: string;
+  chunk_progress?: Record<string, unknown> | null;
+};
+
+export type ImportActionResponse = {
+  id?: number | null;
+  batch_id?: string | null;
+  status: string;
+  affected_count: number;
+};
+
+export type ImportPublishResponse = {
+  batch_id: string;
+  total: number;
+  published: number;
+  failed: number;
+  items: Array<Record<string, unknown>>;
+};
+
+export type ImportDeleteResponse = {
+  batch_id?: string | null;
+  id?: number | null;
+  deleted_count: number;
+};
+
 export type PaginatedResponse<T> = {
   items: T[];
   total: number;
