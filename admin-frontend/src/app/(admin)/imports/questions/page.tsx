@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Eye, Search } from "lucide-react";
+import { Eye, Search, FileText, Code2 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,48 @@ function renderJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
+function optionDataFromImport(item: ImportQuestionItem | null | undefined) {
+  if (!item) return null;
+  const raw = item.raw_data;
+  return item.parsed_options ?? raw?.options ?? raw?.parsed_options ?? raw?.option_text ?? raw?.optionText ?? null;
+}
+
+function renderOptions(value: unknown) {
+  if (value === undefined || value === null || value === "") return "—";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((item, index) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object") {
+          const entry = item as Record<string, unknown>;
+          const label = entry.label ?? entry.key ?? entry.name;
+          const content = [entry.content, entry.text, entry.stem, entry.option, entry.value, entry.answer]
+            .map((part) => (typeof part === "string" || typeof part === "number" ? String(part) : ""))
+            .find(Boolean);
+          const prefix = label ? `${label}: ` : `选项${index + 1}: `;
+          if (content) return `${prefix}${content}`;
+        }
+        return renderJson(item);
+      })
+      .join("\n");
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length > 0) {
+      return entries
+        .map(([key, item]) => {
+          if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
+            return `${key}: ${item}`;
+          }
+          return `${key}: ${renderJson(item)}`;
+        })
+        .join("\n");
+    }
+  }
+  return renderJson(value);
+}
+
 function statusTone(status: string) {
   if (status === "approved") return "success";
   if (status === "rejected") return "danger";
@@ -45,6 +87,7 @@ export default function ImportQuestionsPage() {
   const batchIdParam = searchParams.get("batch_id") || "";
   const [filters, setFilters] = useState({ batch_id: "", status: "", subject: "", source_type: "", keyword: "" });
   const [previewId, setPreviewId] = useState<number | null>(null);
+  const [detailView, setDetailView] = useState<"formatted" | "json">("formatted");
 
   const queryParams = useMemo(
     () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject: filters.subject, source_type: filters.source_type, keyword: filters.keyword }),
@@ -134,28 +177,67 @@ export default function ImportQuestionsPage() {
                       <p className="font-mono text-xs text-[var(--color-text-hint)]">#{previewItem.id}</p>
                       <h4 className="font-display text-xl font-bold text-[var(--ink)]">导入题目详情</h4>
                     </div>
-                    <Link className="text-sm font-semibold text-[var(--color-primary-dark)] underline" href={`/imports/review?batch_id=${encodeURIComponent(previewItem.batch_id)}`}>审核该批次</Link>
+                    <div className="flex items-center gap-2">
+                      <div className="flex overflow-hidden rounded-xl border border-[var(--color-border)]">
+                        <button
+                          type="button"
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition ${detailView === "formatted" ? "bg-[var(--color-primary)] text-white" : "bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]"}`}
+                          onClick={() => setDetailView("formatted")}
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          文本
+                        </button>
+                        <button
+                          type="button"
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition ${detailView === "json" ? "bg-[var(--color-primary)] text-white" : "bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]"}`}
+                          onClick={() => setDetailView("json")}
+                        >
+                          <Code2 className="h-3.5 w-3.5" />
+                          JSON
+                        </button>
+                      </div>
+                      <Link className="text-sm font-semibold text-[var(--color-primary-dark)] underline" href={`/imports/review?batch_id=${encodeURIComponent(previewItem.batch_id)}`}>审核该批次</Link>
+                    </div>
                   </div>
-                  <section>
-                    <p className="font-semibold text-[var(--ink)]">题干</p>
-                    <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{textFromImport(previewItem) || "—"}</pre>
-                  </section>
-                  <section>
-                    <p className="font-semibold text-[var(--ink)]">选项</p>
-                    <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderJson(previewItem.parsed_options)}</pre>
-                  </section>
-                  <section>
-                    <p className="font-semibold text-[var(--ink)]">答案与解析</p>
-                    <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderJson({ answer: previewItem.parsed_answer, analysis: previewItem.parsed_analysis })}</pre>
-                  </section>
-                  <section>
-                    <p className="font-semibold text-[var(--ink)]">重复检测</p>
-                    <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderJson({ duplicate_status: previewItem.duplicate_status, duplicate_of_question_id: previewItem.duplicate_of_question_id, duplicate_of_import_id: previewItem.duplicate_of_import_id, question_hash: previewItem.question_hash })}</pre>
-                  </section>
-                  <section>
-                    <p className="font-semibold text-[var(--ink)]">OCR / AI 原始信息</p>
-                    <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderJson({ raw_data: previewItem.raw_data, ai_metadata: previewItem.ai_metadata })}</pre>
-                  </section>
+                  {detailView === "formatted" ? (
+                    <div className="space-y-4">
+                      <section>
+                        <p className="font-semibold text-[var(--ink)]">题干</p>
+                        <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{textFromImport(previewItem) || "—"}</pre>
+                      </section>
+                      <section>
+                        <p className="font-semibold text-[var(--ink)]">选项</p>
+                        <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderOptions(optionDataFromImport(previewItem))}</pre>
+                      </section>
+                      <section>
+                        <p className="font-semibold text-[var(--ink)]">答案</p>
+                        <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{previewItem.parsed_answer || "—"}</pre>
+                      </section>
+                      <section>
+                        <p className="font-semibold text-[var(--ink)]">解析</p>
+                        <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{previewItem.parsed_analysis || "—"}</pre>
+                      </section>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <section>
+                        <p className="font-semibold text-[var(--ink)]">基础信息</p>
+                        <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ id: previewItem.id, batch_id: previewItem.batch_id, source_type: previewItem.source_type, subject: previewItem.subject, question_type: previewItem.question_type, status: previewItem.status, ai_generated: previewItem.ai_generated, ai_answer_flag: previewItem.ai_answer_flag, created_at: previewItem.created_at, updated_at: previewItem.updated_at })}</pre>
+                      </section>
+                      <section>
+                        <p className="font-semibold text-[var(--ink)]">解析数据</p>
+                        <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ parsed_content: previewItem.parsed_content, parsed_options: previewItem.parsed_options, parsed_answer: previewItem.parsed_answer, parsed_analysis: previewItem.parsed_analysis })}</pre>
+                      </section>
+                      <section>
+                        <p className="font-semibold text-[var(--ink)]">重复检测</p>
+                        <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ duplicate_status: previewItem.duplicate_status, duplicate_of_question_id: previewItem.duplicate_of_question_id, duplicate_of_import_id: previewItem.duplicate_of_import_id, question_hash: previewItem.question_hash })}</pre>
+                      </section>
+                      <section>
+                        <p className="font-semibold text-[var(--ink)]">OCR / AI 原始数据</p>
+                        <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ raw_data: previewItem.raw_data, ai_metadata: previewItem.ai_metadata })}</pre>
+                      </section>
+                    </div>
+                  )}
                 </div>
               ) : null}
             </aside>

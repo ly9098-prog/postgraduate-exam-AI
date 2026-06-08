@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { CheckCircle2, Eye, Save, Search, Send, Sparkles, XCircle } from "lucide-react";
+import { CheckCircle2, Code2, Eye, FileText, Save, Search, Send, Sparkles, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
@@ -24,9 +24,44 @@ type EditState = {
   subject: string;
   question_type: string;
   stem: string;
+  options: Array<{ key: string; text: string }>;
   answer: string;
   analysis: string;
 };
+
+function parseOptionsToEditable(item: ImportQuestionItem | null | undefined): Array<{ key: string; text: string }> {
+  if (!item) return [];
+  const raw = item.raw_data;
+  const source = item.parsed_options ?? raw?.options ?? raw?.parsed_options ?? raw?.option_text ?? raw?.optionText ?? null;
+  if (!source) return [];
+  if (Array.isArray(source)) {
+    return source
+      .map((entry, index) => {
+        if (typeof entry === "string") {
+          const key = String.fromCharCode(65 + index);
+          return { key, text: entry };
+        }
+        if (entry && typeof entry === "object") {
+          const obj = entry as Record<string, unknown>;
+          const key = String(obj.key ?? obj.label ?? obj.name ?? String.fromCharCode(65 + index));
+          const text = String(obj.text ?? obj.content ?? obj.value ?? obj.stem ?? "");
+          return { key, text };
+        }
+        return { key: String.fromCharCode(65 + index), text: "" };
+      })
+      .filter((opt) => opt.key && opt.text);
+  }
+  if (typeof source === "object") {
+    return Object.entries(source as Record<string, unknown>)
+      .map(([key, value]) => ({ key, text: typeof value === "string" ? value : String(value ?? "") }))
+      .filter((opt) => opt.key && opt.text);
+  }
+  return [];
+}
+
+function isMultiChoice(questionType: string): boolean {
+  return /多选|多空|多项/i.test(questionType);
+}
 
 function textFromImport(item: ImportQuestionItem | null | undefined) {
   if (!item) return "";
@@ -41,48 +76,6 @@ function renderJson(value: unknown) {
   if (value === undefined || value === null || value === "") return "—";
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
   return JSON.stringify(value, null, 2);
-}
-
-function optionDataFromImport(item: ImportQuestionItem | null | undefined) {
-  if (!item) return null;
-  const raw = item.raw_data;
-  return item.parsed_options ?? raw?.options ?? raw?.parsed_options ?? raw?.option_text ?? raw?.optionText ?? null;
-}
-
-function renderOptions(value: unknown) {
-  if (value === undefined || value === null || value === "") return "—";
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) {
-    return value
-      .map((item, index) => {
-        if (typeof item === "string") return item;
-        if (item && typeof item === "object") {
-          const entry = item as Record<string, unknown>;
-          const label = entry.label ?? entry.key ?? entry.name;
-          const content = [entry.content, entry.text, entry.stem, entry.option, entry.value, entry.answer]
-            .map((part) => (typeof part === "string" || typeof part === "number" ? String(part) : ""))
-            .find(Boolean);
-          const prefix = label ? `${label}: ` : `选项${index + 1}: `;
-          if (content) return `${prefix}${content}`;
-        }
-        return renderJson(item);
-      })
-      .join("\n");
-  }
-  if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-    if (entries.length > 0) {
-      return entries
-        .map(([key, item]) => {
-          if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
-            return `${key}: ${item}`;
-          }
-          return `${key}: ${renderJson(item)}`;
-        })
-        .join("\n");
-    }
-  }
-  return renderJson(value);
 }
 
 function completeSuggestionFromItem(item: ImportQuestionItem | null | undefined) {
@@ -107,6 +100,7 @@ function editStateFromItem(item: ImportQuestionItem): EditState {
     subject: item.subject || "",
     question_type: item.question_type || "",
     stem: textFromImport(item),
+    options: parseOptionsToEditable(item),
     answer: item.parsed_answer || "",
     analysis: item.parsed_analysis || "",
   };
@@ -124,6 +118,7 @@ export default function ImportReviewPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [detailView, setDetailView] = useState<"formatted" | "json">("formatted");
 
   const queryParams = useMemo(
     () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject: filters.subject, source_type: filters.source_type, keyword: filters.keyword }),
@@ -180,7 +175,12 @@ export default function ImportReviewPage() {
   const updateMutation = useMutation({
     mutationFn: async () => {
       if (!previewId || !editState) throw new Error("请选择要编辑的题目");
-      return apiRequest<ImportQuestionItem>(`/imports/questions/${previewId}`, { method: "PUT", body: JSON.stringify(editState) });
+      const { options, ...rest } = editState;
+      const body = {
+        ...rest,
+        options: options.map((o) => ({ key: o.key, text: o.text })),
+      };
+      return apiRequest<ImportQuestionItem>(`/imports/questions/${previewId}`, { method: "PUT", body: JSON.stringify(body) });
     },
     onSuccess: (result) => {
       setMessage(`导入题目 #${result.id} 已保存。`);
@@ -330,7 +330,25 @@ export default function ImportReviewPage() {
                       <p className="font-mono text-xs text-[var(--color-text-hint)]">#{previewItem.id}</p>
                       <h4 className="font-display text-xl font-bold text-[var(--ink)]">导入题目详情</h4>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex overflow-hidden rounded-xl border border-[var(--color-border)]">
+                        <button
+                          type="button"
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition ${detailView === "formatted" ? "bg-[var(--color-primary)] text-white" : "bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]"}`}
+                          onClick={() => setDetailView("formatted")}
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          文本
+                        </button>
+                        <button
+                          type="button"
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition ${detailView === "json" ? "bg-[var(--color-primary)] text-white" : "bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]"}`}
+                          onClick={() => setDetailView("json")}
+                        >
+                          <Code2 className="h-3.5 w-3.5" />
+                          JSON
+                        </button>
+                      </div>
                       <Button disabled={completeMutation.isPending || previewItem.status !== "pending"} onClick={() => completeMutation.mutate(previewItem.id)}>
                         <Sparkles className="h-4 w-4" />
                         AI补全
@@ -349,39 +367,105 @@ export default function ImportReviewPage() {
                     <span className="text-xs font-semibold text-[var(--color-text-secondary)]">题干</span>
                     <textarea className="min-h-36 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm" value={editState.stem} onChange={(event) => setEditState({ ...editState, stem: event.target.value })} />
                   </label>
-                  <section>
-                    <p className="font-semibold text-[var(--ink)]">选项</p>
-                    <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderOptions(optionDataFromImport(previewItem))}</pre>
-                  </section>
-                  <label className="block space-y-1">
-                    <span className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</span>
-                    <Input value={editState.answer} onChange={(event) => setEditState({ ...editState, answer: event.target.value })} />
-                  </label>
-                  <label className="block space-y-1">
-                    <span className="text-xs font-semibold text-[var(--color-text-secondary)]">解析</span>
-                    <textarea className="min-h-28 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm" value={editState.analysis} onChange={(event) => setEditState({ ...editState, analysis: event.target.value })} />
-                  </label>
-                  {completeSuggestion ? (
-                    <section>
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="font-semibold text-[var(--ink)]">AI 补全建议</p>
-                        {answerSuggestion ? (
-                          <Button variant="ghost" onClick={() => setEditState({ ...editState, answer: answerSuggestion })}>
-                            应用答案建议
-                          </Button>
+                  {detailView === "formatted" ? (
+                    <div className="space-y-4">
+                      <section>
+                        <p className="mb-2 font-semibold text-[var(--ink)]">选项</p>
+                        <div className="space-y-2">
+                          {editState.options.length === 0 ? <p className="text-sm text-[var(--color-text-hint)]">暂无可编辑选项</p> : null}
+                          {editState.options.map((opt, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary-light)] text-xs font-bold text-[var(--color-primary-dark)]">{opt.key}</span>
+                              <input
+                                className="h-9 flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)]"
+                                value={opt.text}
+                                onChange={(event) => {
+                                  const next = [...editState.options];
+                                  next[index] = { ...next[index], text: event.target.value };
+                                  setEditState({ ...editState, options: next });
+                                }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                      <section>
+                        <p className="mb-2 font-semibold text-[var(--ink)]">快速选择答案</p>
+                        {editState.options.length === 0 ? <p className="text-sm text-[var(--color-text-hint)]">请先编辑选项</p> : null}
+                        {editState.options.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {editState.options.map((opt) => {
+                              const selected = isMultiChoice(editState.question_type)
+                                ? editState.answer.split(/[,，\s]+/).includes(opt.key)
+                                : editState.answer === opt.key;
+                              return (
+                                <button
+                                  key={opt.key}
+                                  type="button"
+                                  className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-4 text-sm font-medium transition ${
+                                    selected
+                                      ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+                                      : "border-[var(--color-border)] bg-transparent text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-dark)]"
+                                  }`}
+                                  onClick={() => {
+                                    if (isMultiChoice(editState.question_type)) {
+                                      const keys = editState.answer.split(/[,，\s]+/).filter(Boolean);
+                                      const next = keys.includes(opt.key) ? keys.filter((k) => k !== opt.key) : [...keys, opt.key];
+                                      setEditState({ ...editState, answer: next.join(",") });
+                                    } else {
+                                      setEditState({ ...editState, answer: editState.answer === opt.key ? "" : opt.key });
+                                    }
+                                  }}
+                                >
+                                  {opt.key}
+                                </button>
+                              );
+                            })}
+                          </div>
                         ) : null}
-                      </div>
-                      <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderJson(completeSuggestion)}</pre>
-                    </section>
-                  ) : null}
-                  <section>
-                    <p className="font-semibold text-[var(--ink)]">OCR / 原始数据</p>
-                    <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderJson(previewItem.raw_data)}</pre>
-                  </section>
-                  <section>
-                    <p className="font-semibold text-[var(--ink)]">AI metadata</p>
-                    <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderJson(previewItem.ai_metadata)}</pre>
-                  </section>
+                      </section>
+                      <label className="block space-y-1">
+                        <span className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</span>
+                        <Input value={editState.answer} onChange={(event) => setEditState({ ...editState, answer: event.target.value })} />
+                      </label>
+                      <label className="block space-y-1">
+                        <span className="text-xs font-semibold text-[var(--color-text-secondary)]">解析</span>
+                        <textarea className="min-h-28 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm" value={editState.analysis} onChange={(event) => setEditState({ ...editState, analysis: event.target.value })} />
+                      </label>
+                      {completeSuggestion ? (
+                        <section>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="font-semibold text-[var(--ink)]">AI 补全建议</p>
+                            {answerSuggestion ? (
+                              <Button variant="ghost" onClick={() => setEditState({ ...editState, answer: answerSuggestion })}>
+                                应用答案建议
+                              </Button>
+                            ) : null}
+                          </div>
+                          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderJson(completeSuggestion)}</pre>
+                        </section>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <section>
+                        <p className="font-semibold text-[var(--ink)]">基础信息</p>
+                        <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ id: previewItem.id, batch_id: previewItem.batch_id, source_type: previewItem.source_type, subject: previewItem.subject, question_type: previewItem.question_type, status: previewItem.status, ai_generated: previewItem.ai_generated, ai_answer_flag: previewItem.ai_answer_flag, created_at: previewItem.created_at, updated_at: previewItem.updated_at })}</pre>
+                      </section>
+                      <section>
+                        <p className="font-semibold text-[var(--ink)]">解析数据</p>
+                        <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ parsed_content: previewItem.parsed_content, parsed_options: previewItem.parsed_options, parsed_answer: previewItem.parsed_answer, parsed_analysis: previewItem.parsed_analysis })}</pre>
+                      </section>
+                      <section>
+                        <p className="font-semibold text-[var(--ink)]">重复检测</p>
+                        <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ duplicate_status: previewItem.duplicate_status, duplicate_of_question_id: previewItem.duplicate_of_question_id, duplicate_of_import_id: previewItem.duplicate_of_import_id, question_hash: previewItem.question_hash })}</pre>
+                      </section>
+                      <section>
+                        <p className="font-semibold text-[var(--ink)]">OCR / AI 原始数据</p>
+                        <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ raw_data: previewItem.raw_data, ai_metadata: previewItem.ai_metadata })}</pre>
+                      </section>
+                    </div>
+                  )}
                 </div>
               ) : null}
             </aside>
