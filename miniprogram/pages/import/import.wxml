@@ -1,13 +1,13 @@
 <view class="page">
   <view class="import-hero">
     <view class="hero-copy">
-      <text class="eyebrow">题库管理</text>
-      <text class="hero-title">题库导入</text>
-      <text class="hero-desc">上传文件后先解析成待审核题目，确认无误再入库</text>
+      <text class="eyebrow">题目导入</text>
+      <text class="hero-title">上传并提交审核</text>
+      <text class="hero-desc">上传文件后系统会解析为待审核题目，管理员确认后才会入库</text>
     </view>
     <view class="hero-badge">
       <text class="hero-badge-main">审</text>
-      <text class="hero-badge-label">人工确认</text>
+      <text class="hero-badge-label">待审核</text>
     </view>
   </view>
 
@@ -118,14 +118,14 @@
     <text class="template-arrow">›</text>
   </view>
 
-  <!-- 导入记录 -->
+  <!-- 提交结果 -->
   <view class="records-panel">
     <view class="section-head records-head">
       <view>
-        <text class="section-title">导入记录</text>
-        <text class="section-subtitle">查看解析批次与待审核题目状态</text>
+        <text class="section-title">提交结果</text>
+        <text class="section-subtitle">查看最近一次导入提交状态</text>
       </view>
-      <text class="section-chip">记录</text>
+      <text class="section-chip">状态</text>
     </view>
 
     <!-- 加载态 -->
@@ -142,45 +142,32 @@
     </view>
 
     <!-- 空态 -->
-    <view class="empty-state" wx:elif="{{batches.length === 0}}">
+    <view class="empty-state" wx:elif="{{!pipelineTask}}">
       <view class="empty-icon">空</view>
-      <text class="empty-title">暂无导入记录</text>
-      <text class="empty-desc">点击上方上传区域，解析完成后会在这里生成审核批次</text>
+      <text class="empty-title">暂无提交结果</text>
+      <text class="empty-desc">上传文件后，这里会显示最近一次提交的批次编号与状态</text>
     </view>
 
-    <!-- 导入批次列表 -->
     <view class="batch-list" wx:else>
-      <view
-        class="batch-card"
-        wx:for="{{batches}}"
-        wx:key="batch_id"
-        data-batch-id="{{item.batch_id}}"
-        bindtap="goBatch"
-      >
+      <view class="batch-card" bindtap="goBatch" data-batch-id="{{pipelineTask.batch_id}}">
         <view class="batch-top">
           <view class="batch-left">
-            <view class="batch-icon {{item.source_type}}">
-              {{item.source_type === 'excel' ? '表' : item.source_type === 'image' ? '图' : '文'}}
-            </view>
+            <view class="batch-icon {{pipelineTask.source_type}}">提</view>
             <view class="batch-info">
-              <text class="batch-name">{{item.source_file || item.batch_id}}</text>
-              <text class="batch-meta">{{item.total}} 道题 · {{item._date}}</text>
+              <text class="batch-name">{{pipelineTask.source_file || pipelineTask.batch_id}}</text>
+              <text class="batch-meta">{{pipelineTask.batch_id}}</text>
             </view>
           </view>
           <text class="batch-arrow">›</text>
         </view>
         <view class="batch-stats">
-          <view class="stat-chip stat-pending" wx:if="{{item.pending > 0}}">
+          <view class="stat-chip stat-pending" wx:if="{{pipelineTask.status}}">
             <text class="stat-dot"></text>
-            {{item.pending}} 待审核
+            {{pipelineTask.statusLabel || pipelineTask.status}}
           </view>
-          <view class="stat-chip stat-approved" wx:if="{{item.approved > 0}}">
+          <view class="stat-chip stat-approved" wx:if="{{pipelineTask.question_count}}">
             <text class="stat-dot"></text>
-            {{item.approved}} 已通过
-          </view>
-          <view class="stat-chip stat-rejected" wx:if="{{item.rejected > 0}}">
-            <text class="stat-dot"></text>
-            {{item.rejected}} 已拒绝
+            {{pipelineTask.question_count}} 道题待审核
           </view>
         </view>
       </view>
