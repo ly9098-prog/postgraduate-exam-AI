@@ -120,7 +120,7 @@ async def test_ensure_dev_super_admin_initializes_defaults_and_is_idempotent(tmp
     assert admin_role.is_system is True
     assert admin_role.display_name == "普通管理员"
     assert admin_user.username == "admin"
-    assert verify_admin_password("Admin@123456", admin_user.password_hash)
+    assert verify_admin_password("admin", admin_user.password_hash)
     assert len(permissions) == len(ADMIN_PERMISSION_DEFINITIONS)
     assert {permission.name for permission in permissions} == {item["name"] for item in ADMIN_PERMISSION_DEFINITIONS}
     assert role_permission_ids == {permission.id for permission in permissions}

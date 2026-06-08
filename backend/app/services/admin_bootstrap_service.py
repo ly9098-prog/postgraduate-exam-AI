@@ -1,10 +1,10 @@
-from app.core.admin_security import hash_admin_password
+from app.core.admin_security import hash_admin_password, verify_admin_password
 from app.models.admin import AdminUser, AuditLog, Permission, Role, RolePermission
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 DEV_ADMIN_USERNAME = "admin"
-DEV_ADMIN_PASSWORD = "Admin@123456"
+DEV_ADMIN_PASSWORD = "admin"
 SUPER_ADMIN_ROLE_NAME = "super_admin"
 ADMIN_ROLE_NAME = "admin"
 LOCAL_APP_ENVS = {"development", "local", "test"}
@@ -162,6 +162,9 @@ async def _ensure_admin_user(db: AsyncSession, role_id: int) -> AdminUser | None
     result = await db.execute(select(AdminUser).where(AdminUser.username == DEV_ADMIN_USERNAME))
     admin_user = result.scalar_one_or_none()
     if admin_user:
+        if not verify_admin_password(DEV_ADMIN_PASSWORD, admin_user.password_hash):
+            admin_user.password_hash = hash_admin_password(DEV_ADMIN_PASSWORD)
+            await db.flush()
         return None
 
     admin_user = AdminUser(
