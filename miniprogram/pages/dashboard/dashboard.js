@@ -39,16 +39,12 @@ Page({
     const subjectTotal = subjects.reduce((sum, s) => sum + (s.total_questions || 0), 0)
     const subjectPalette = ['#5B7B9A', '#C49A6B', '#6B9B6B', '#C47A7A', '#7D8CC4', '#8CA7A1']
 
-    // 预计算总览字段
     const ov = {
       ...overview,
       _accuracyPct: Math.max(0, Math.min(100, (overview.accuracy || 0) * 100)).toFixed(0),
       _accuracyText: (overview.accuracy * 100 || 0).toFixed(1) + '%',
-      _totalDuration: this._fmt(overview.total_duration_sec || 0),
-      _todayDuration: this._fmt(overview.today_duration_sec || 0),
     }
 
-    // 预计算学科字段与饼图区间
     let start = 0
     const subs = subjects.map((s, index) => {
       const share = subjectTotal ? (s.total_questions || 0) / subjectTotal : 0

@@ -153,61 +153,6 @@
   margin-top: 16rpx;
 }
 
-/* KPI */
-.kpi-strip {
-  margin: 0 24rpx 18rpx;
-  padding: 24rpx 20rpx;
-  background: #fff;
-  border-radius: 24rpx;
-  display: flex;
-  align-items: stretch;
-  box-shadow: 0 6rpx 28rpx rgba(43, 60, 80, 0.05);
-  border: 1rpx solid rgba(232, 229, 224, 0.75);
-}
-
-.kpi-item {
-  flex: 1;
-  min-width: 0;
-  min-height: 98rpx;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border-radius: 18rpx;
-}
-
-.kpi-item.emphasis {
-  background: #F7F6F2;
-}
-
-.kpi-divider {
-  width: 1rpx;
-  background: #E8E5E0;
-  margin: 8rpx 8rpx;
-}
-
-.kpi-value {
-  max-width: 100%;
-  font-size: 38rpx;
-  font-weight: 800;
-  line-height: 1.18;
-  color: #5B7B9A;
-  font-variant-numeric: tabular-nums;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.kpi-value.compact { font-size: 28rpx; line-height: 1.45; }
-.kpi-value.warning { color: #C49A6B; }
-
-.kpi-label {
-  margin-top: 8rpx;
-  font-size: 22rpx;
-  line-height: 1.35;
-  color: #6B7B8D;
-}
-
 /* Shared cards */
 .chart-card,
 .risk-panel {
