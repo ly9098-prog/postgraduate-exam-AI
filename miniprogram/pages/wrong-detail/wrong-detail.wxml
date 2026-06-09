@@ -7,9 +7,9 @@
   <view class="swiper-content {{contentState}}">
     <view wx:if="{{swiperEnabled}}" class="progress-area">
       <view class="progress-track">
-        <view class="progress-fill" style="width:{{totalQuestions > 0 ? (currentIdx + 1) / totalQuestions * 100 : 0}}%"></view>
+        <view wx:for="{{progressDots}}" wx:for-index="index" wx:key="index" class="progress-dot {{index === currentIdx ? 'active' : ''}}"></view>
       </view>
-      <text class="progress-text">{{currentIdx + 1}} / {{totalQuestions}} · {{totalQuestions > 0 ? Math.round((currentIdx + 1) / totalQuestions * 100) : 0}}%</text>
+      <text class="progress-text">{{currentIdx + 1}} / {{totalQuestions}}</text>
     </view>
     <view class="swipe-hint" wx:if="{{swiperEnabled && showSwipeHint}}">
       <text class="swipe-hint-text">← 左右滑动切换 →</text>
