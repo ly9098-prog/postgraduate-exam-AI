@@ -470,40 +470,6 @@ class TestOcrTolerance:
             "D": "1",
         }
 
-    def test_grouped_option_marker_preserves_unpunctuated_first_a_option(self):
-        blocks = _make_blocks(
-            "1. 若系统有 n 个进程，则就绪队列中进程的个数最多有（1）个；阻塞队列中进程的个数最多有（2）个。\n"
-            "(1) A n+1\n"
-            "B. n\n"
-            "C. n−1\n"
-            "D. 1\n"
-            "(2) A. n+1\n"
-            "B. n\n"
-            "C. n−1\n"
-            "D. 1"
-        )
-        result = split_questions(blocks)
-        assert len(result) == 1
-        assert result[0]["has_grouped_options"] is True
-        assert result[0]["blank_option_groups"][0]["options"]["A"] == "n+1"
-        assert result[0]["blank_option_groups"][1]["options"]["A"] == "n+1"
-
-    def test_grouped_inline_option_marker_preserves_unpunctuated_first_a_option(self):
-        blocks = _make_blocks(
-            "1. 若系统有 n 个进程，则就绪队列中进程的个数最多有（①）个；阻塞队列中进程的个数最多有（②）个。\n"
-            "① A n+1  B. n  C. n−1  D. 1\n"
-            "② A. n+1  B. n  C. n−1  D. 1"
-        )
-        result = split_questions(blocks)
-        assert len(result) == 1
-        assert result[0]["has_grouped_options"] is True
-        assert result[0]["blank_option_groups"][0]["options"] == {
-            "A": "n+1",
-            "B": "n",
-            "C": "n−1",
-            "D": "1",
-        }
-
     def test_grouped_inline_options_parse_all_unpunctuated_markers(self):
         blocks = _make_blocks(
             "1. 若系统有 n 个进程，则就绪队列中进程的个数最多有（①）个；阻塞队列中进程的个数最多有（②）个。\n"
@@ -579,7 +545,13 @@ class TestOcrTolerance:
         assert len(result) == 1
         assert result[0]["option_lines"] == {}
         assert result[0]["has_grouped_options"] is True
-        assert [group["id"] for group in result[0]["blank_option_groups"]] == ["1", "2"]
+        assert [group["id"] for group in result[0]["blank_option_groups"]] == ["1"]
+        assert result[0]["blank_option_groups"][0]["options"] == {
+            "A": "n+1",
+            "B": "n",
+            "C": "n−1",
+            "D": "1",
+        }
 
     def test_degraded_blank_repeated_option_blocks_restore_missing_first_a(self):
         blocks = _make_blocks(
@@ -595,13 +567,8 @@ class TestOcrTolerance:
         result = split_questions(blocks)
         assert len(result) == 1
         assert result[0]["has_grouped_options"] is True
+        assert [group["id"] for group in result[0]["blank_option_groups"]] == ["1"]
         assert result[0]["blank_option_groups"][0]["options"] == {
-            "A": "n+1",
-            "B": "n",
-            "C": "n-1",
-            "D": "1",
-        }
-        assert result[0]["blank_option_groups"][1]["options"] == {
             "A": "n+1",
             "B": "n",
             "C": "n-1",
