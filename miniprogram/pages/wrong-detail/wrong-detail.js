@@ -318,7 +318,7 @@ Page({
     currentIdx: 0,
     totalQuestions: 0,
     swiperEnabled: false,
-    animClass: '',
+    contentState: '',
     showSwipeHint: false,
   },
 
@@ -434,17 +434,18 @@ Page({
 
     if (!canGo) {
       this._animating = true
-      this.setData({ animClass: isLeft ? 'edge-left' : 'edge-right' })
+      this.setData({ contentState: isLeft ? 'edge-left' : 'edge-right' })
       setTimeout(() => {
-        this.setData({ animClass: '' })
+        this.setData({ contentState: '' })
         this._animating = false
-      }, 200)
+      }, 250)
       return
     }
 
-    const animMs = dt < 200 ? 120 : 160
+    const animMs = Math.min(Math.max(dt * 0.5, 120), 200)
     this._animating = true
-    this.setData({ animClass: isLeft ? 'slide-out-left' : 'slide-out-right' })
+    this._swipeDir = isLeft ? 'left' : 'right'
+    this.setData({ contentState: isLeft ? 'slide-out-left' : 'slide-out-right' })
 
     const nextIdx = currentIdx + (isLeft ? 1 : -1)
     setTimeout(() => {
@@ -462,18 +463,21 @@ Page({
       data.aiResult = null
       data.aiFallback = false
 
-      this.setData(data)
-      this.setData({ animClass: 'slide-in' })
+      // 先瞬间定位到滑入起始位置（transition: none）
+      const fromState = this._swipeDir === 'left' ? 'from-right' : 'from-left'
+      this.setData(Object.assign({ contentState: fromState }, data))
+
+      // 下一帧启用过渡，滑入目标位置
       setTimeout(() => {
-        this.setData({ animClass: '' })
-        this._animating = false
-      }, animMs)
+        this.setData({ contentState: '' })
+        setTimeout(() => { this._animating = false }, animMs)
+      }, 50)
 
       this.loadAiAnalysis(wqId)
     } catch (e) {
       console.error('切换题目失败', e)
       wx.showToast({ title: '加载失败', icon: 'none' })
-      this.setData({ animClass: '' })
+      this.setData({ contentState: '' })
       this._animating = false
     }
   },
