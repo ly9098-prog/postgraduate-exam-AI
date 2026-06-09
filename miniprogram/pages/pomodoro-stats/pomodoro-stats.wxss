@@ -19,6 +19,7 @@
 
 .stats-content {
   flex: 1;
+  padding-top: 48rpx;
 }
 
 /* ── Entrance Animation ── */
