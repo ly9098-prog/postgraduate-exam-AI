@@ -1,6 +1,3 @@
-<view class="page-title">学习概览</view>
-
-<!-- 学习进度卡片 -->
 <view class="card progress-card">
   <view class="progress-top">
     <view class="greeting-block">
@@ -12,7 +9,7 @@
   <view class="progress-stats">
     <view class="pstat-item">
       <text class="pstat-num">{{wrongStats.total || 0}}</text>
-      <text class="pstat-label">错题总</text>
+      <text class="pstat-label">错题总数</text>
     </view>
     <view class="pstat-divider"></view>
     <view class="pstat-item">
@@ -21,13 +18,12 @@
     </view>
     <view class="pstat-divider"></view>
     <view class="pstat-item">
-      <text class="pstat-num">{{practiceCount || 0}}</text>
-      <text class="pstat-label">练习次</text>
+      <text class="pstat-num">{{wrongStats.mastered || 0}}</text>
+      <text class="pstat-label">已掌握</text>
     </view>
   </view>
 </view>
 
-<!-- 快捷入口 -->
 <view class="action-grid">
   <view class="action-card" bindtap="startRandom">
     <view class="icon-badge icon-primary">练</view>
@@ -41,7 +37,7 @@
     <view class="icon-badge icon-warning">错</view>
     <view class="action-info">
       <text class="action-title">错题本</text>
-      <text class="action-desc">{{wrongStats.total || 0}} 道待复盘</text>
+      <text class="action-desc">全部错题 · 按条件筛选</text>
     </view>
     <text class="action-arrow">›</text>
   </view>
@@ -49,15 +45,7 @@
     <view class="icon-badge icon-success">复</view>
     <view class="action-info">
       <text class="action-title">今日复习</text>
-      <text class="action-desc">{{wrongStats.unmastered || 0}} 道待复习</text>
-    </view>
-    <text class="action-arrow">›</text>
-  </view>
-  <view class="action-card" bindtap="goAnalysis">
-    <view class="icon-badge icon-primary">AI</view>
-    <view class="action-info">
-      <text class="action-title">AI 分析</text>
-      <text class="action-desc">解题技巧</text>
+      <text class="action-desc">SM-2 到期错题 · 科学排期</text>
     </view>
     <text class="action-arrow">›</text>
   </view>
@@ -65,40 +53,15 @@
     <view class="icon-badge icon-muted">数</view>
     <view class="action-info">
       <text class="action-title">学习统计</text>
-      <text class="action-desc">数据看板与分析</text>
-    </view>
-    <text class="action-arrow">›</text>
-  </view>
-  <view class="action-card" bindtap="goImport">
-    <view class="icon-badge icon-success">导</view>
-    <view class="action-info">
-      <text class="action-title">题库导入</text>
-      <text class="action-desc">拍照 / 文件上传导题</text>
+      <text class="action-desc">正确率 · 学科分布 · 趋势</text>
     </view>
     <text class="action-arrow">›</text>
   </view>
 </view>
 
-<!-- 错题分布 -->
-<view class="card pie-card" wx:if="{{subjectPieData.length > 0}}">
-  <text class="section-title">错题分布</text>
-  <view class="pie-wrap">
-    <view class="pie-box">
-      <canvas class="pie-canvas" canvas-id="subject-pie-canvas" id="subject-pie-canvas"></canvas>
-      <view class="pie-center">
-        <text class="pie-total">{{pieTotal}}</text>
-        <text class="pie-total-label">错题</text>
-      </view>
-    </view>
-    <view class="pie-legend">
-      <view class="legend-row" wx:for="{{subjectPieData}}" wx:key="subject">
-        <view class="legend-dot" style="background:{{item._color}}"></view>
-        <view class="legend-main">
-          <text class="legend-name">{{item._label}}</text>
-          <text class="legend-percent">{{item._percentText}}%</text>
-        </view>
-        <text class="legend-count">{{item.count}}题</text>
-      </view>
-    </view>
+<view class="secondary-actions">
+  <view class="secondary-action" bindtap="goImport">
+    <text class="secondary-icon">+</text>
+    <text class="secondary-label">题库导入</text>
   </view>
 </view>

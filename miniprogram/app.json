@@ -9,7 +9,6 @@
     "pages/practice-result/practice-result",
     "pages/wrong-book/wrong-book",
     "pages/wrong-detail/wrong-detail",
-    "pages/plan/plan",
     "pages/import/import",
     "pages/dashboard/dashboard"
   ],
