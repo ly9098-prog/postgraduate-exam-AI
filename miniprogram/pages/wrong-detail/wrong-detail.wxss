@@ -181,7 +181,47 @@
   border-top: 1rpx solid #EDF1F5;
 }
 
-.option-line {
+.blank-options {
+  margin-top: 12rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid #EDF1F5;
+}
+
+.blank-group {
+  padding: 18rpx 0;
+}
+
+.blank-group + .blank-group {
+  border-top: 1rpx dashed #EDF1F5;
+}
+
+.blank-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 14rpx;
+}
+
+.blank-group-title {
+  font-size: 26rpx;
+  font-weight: 800;
+  color: #5B7B9A;
+}
+
+.blank-group-hint {
+  font-size: 22rpx;
+  color: #9AABBA;
+}
+
+.blank-group-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.option-line,
+.blank-option-item {
   display: flex;
   align-items: flex-start;
   gap: 10rpx;
@@ -190,17 +230,48 @@
   line-height: 1.6;
 }
 
+.blank-option-item {
+  padding: 16rpx 14rpx;
+  border-radius: 18rpx;
+  background: #F7F6F2;
+  align-items: flex-start;
+}
+
+.blank-option-item.selected {
+  background: #EFF5EF;
+}
+
+.option-body {
+  flex: 1;
+  min-width: 0;
+  color: #2D3E50;
+  word-break: break-word;
+}
+
 .option-key {
   color: #5B7B9A;
   font-weight: 800;
   flex-shrink: 0;
 }
 
+.option-text,
 .option-value {
-  flex: 1;
-  min-width: 0;
-  color: #2D3E50;
+  display: inline;
+  color: inherit;
   word-break: break-word;
+}
+
+.correct-mark {
+  display: inline-block;
+  margin-left: 12rpx;
+  padding: 4rpx 10rpx;
+  border-radius: 999rpx;
+  background: #EFF5EF;
+  color: #6B9B6B;
+  font-size: 20rpx;
+  font-weight: 800;
+  line-height: 1.35;
+  vertical-align: middle;
 }
 
 .option-value.right {
