@@ -888,6 +888,11 @@ Page({
     return map[m] || m || ''
   },
 
+  goPomodoro() {
+    const subj = this.data.selectedSubject || ''
+    wx.navigateTo({ url: `/pages/pomodoro/pomodoro?subject=${subj}` })
+  },
+
   noop() {},
 
   onUnload() {

@@ -98,6 +98,9 @@
     >
       开始练习
     </button>
+    <view class="pomodoro-link" wx:if="{{selectedSubject}}" bindtap="goPomodoro">
+      <text>⏱ 先去番茄钟专注学习</text>
+    </view>
   </view>
 
   <!-- ==================== 答题页 ==================== -->
