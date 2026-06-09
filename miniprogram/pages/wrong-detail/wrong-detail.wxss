@@ -5,6 +5,7 @@
   min-height: 100vh;
   background: #F7F5F0;
   padding-bottom: 48rpx;
+  overflow-x: hidden;
 }
 
 .detail-hero {
@@ -179,6 +180,8 @@
   margin-top: 12rpx;
   padding-top: 16rpx;
   border-top: 1rpx solid #EDF1F5;
+  border-radius: 12rpx;
+  overflow: hidden;
 }
 
 .blank-options {
@@ -209,11 +212,6 @@
   color: #5B7B9A;
 }
 
-.blank-group-hint {
-  font-size: 22rpx;
-  color: #9AABBA;
-}
-
 .blank-group-options {
   display: flex;
   flex-direction: column;
@@ -235,10 +233,25 @@
   border-radius: 18rpx;
   background: #F7F6F2;
   align-items: flex-start;
+  border: 2rpx solid transparent;
 }
 
-.blank-option-item.selected {
-  background: #EFF5EF;
+.blank-option-item.correct {
+  background: #E8F5E9;
+  border: 2rpx solid #6B9B6B;
+}
+
+.blank-option-item.correct .option-key {
+  color: #6B9B6B;
+}
+
+.blank-option-item.user-answer {
+  background: #E3F2FD;
+  border: 2rpx solid #5B7B9A;
+}
+
+.blank-option-item.user-answer .option-key {
+  color: #5B7B9A;
 }
 
 .option-body {
@@ -261,68 +274,26 @@
   word-break: break-word;
 }
 
-.correct-mark {
-  display: inline-block;
-  margin-left: 12rpx;
-  padding: 4rpx 10rpx;
-  border-radius: 999rpx;
-  background: #EFF5EF;
-  color: #6B9B6B;
-  font-size: 20rpx;
-  font-weight: 800;
-  line-height: 1.35;
-  vertical-align: middle;
+.option-line.correct {
+  background: #E8F5E9;
+  border-radius: 12rpx;
+  padding: 14rpx 16rpx;
+}
+
+.option-line.user-answer {
+  background: #E3F2FD;
+  border-radius: 12rpx;
+  padding: 14rpx 16rpx;
 }
 
 .option-value.right {
-  color: #6B9B6B;
+  color: #2E7D32;
   font-weight: 800;
 }
 
 .option-value.wrong {
-  color: #C47A7A;
-  text-decoration: line-through;
-}
-
-.answer-panel {
-  margin-top: 18rpx;
-  padding: 18rpx 20rpx;
-  border-radius: 20rpx;
-  background: #F7F6F2;
-  display: flex;
-  flex-direction: column;
-  gap: 12rpx;
-}
-
-.answer-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18rpx;
-  font-size: 28rpx;
-}
-
-.answer-label {
-  color: #6B7B8D;
-  flex-shrink: 0;
-}
-
-.answer-value {
-  flex: 1;
-  min-width: 0;
-  text-align: right;
+  color: #1565C0;
   font-weight: 800;
-  color: #6B9B6B;
-  word-break: break-word;
-}
-
-.answer-value.wrong {
-  color: #C47A7A;
-}
-
-.wrong-answer {
-  padding-top: 12rpx;
-  border-top: 1rpx solid #E8E5E0;
 }
 
 .sm2-info {
@@ -354,6 +325,24 @@
 
 .master-btn:active {
   opacity: 0.84;
+  transform: scale(0.97);
+}
+
+.option-line:active {
+  background: #F3F2EF;
+}
+
+.blank-option-item:active {
+  background: #EDF1F5;
+  border-color: #D0D5DD;
+}
+
+.blank-option-item.correct:active {
+  background: #C8E6C9;
+}
+
+.blank-option-item.user-answer:active {
+  background: #BBDEFB;
 }
 
 /* AI 分析 */
@@ -427,19 +416,6 @@
   margin-top: 18rpx;
 }
 
-.ai-loading {
-  min-height: 132rpx;
-  border-radius: 20rpx;
-  background: #F7F6F2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: #6B7B8D;
-  font-size: 25rpx;
-  gap: 14rpx;
-}
-
 .ai-fallback {
   display: flex;
   flex-direction: column;
@@ -496,6 +472,44 @@
   height: 40rpx;
 }
 
+.loading-spinner.mini {
+  width: 20rpx;
+  height: 20rpx;
+  border-width: 2rpx;
+}
+
+.chip-loading {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 6rpx 14rpx;
+  border-radius: 999rpx;
+  background: #EDF1F5;
+}
+.chip-loading-text {
+  font-size: 20rpx;
+  font-weight: 700;
+  color: #5B7B9A;
+  line-height: 1.35;
+}
+
+.ai-loading-skeleton {
+  padding: 18rpx;
+  background: #F7F6F2;
+  border-radius: 20rpx;
+}
+.skeleton-block {
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, #EDF1F5 25%, #E2E8EC 50%, #EDF1F5 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -504,4 +518,116 @@
   font-size: 26rpx;
   color: #9AABBA;
   margin-top: 16rpx;
+}
+
+/* 进度条 */
+.progress-area {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin: 8rpx 24rpx 0;
+}
+.progress-track {
+  flex: 1;
+  height: 4rpx;
+  border-radius: 999rpx;
+  background: #EDF1F5;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: #C49A6B;
+  transition: width 0.25s ease;
+}
+.progress-text {
+  font-size: 22rpx;
+  font-weight: 700;
+  color: #9AABBA;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 滑动提示 */
+.swipe-hint {
+  text-align: center;
+  margin-top: 8rpx;
+  animation: fadeInOut 3s ease forwards;
+}
+.swipe-hint-text {
+  font-size: 20rpx;
+  color: #BCC8D4;
+}
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateY(-4rpx); }
+  10% { opacity: 1; transform: translateY(0); }
+  70% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-4rpx); }
+}
+
+/* 答案图例 */
+.answer-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  margin-top: 18rpx;
+  padding: 10rpx 16rpx;
+  border-radius: 999rpx;
+  background: #F7F6F2;
+}
+.legend-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 4rpx;
+}
+.legend-dot.correct {
+  background: #6B9B6B;
+}
+.legend-dot.user-answer {
+  background: #5B7B9A;
+  margin-left: 12rpx;
+}
+.legend-label {
+  font-size: 20rpx;
+  color: #6B7B8D;
+  line-height: 1;
+}
+
+/* 滑动动画 */
+.slide-out-left {
+  animation: slideOutLeft 0.12s ease;
+}
+.slide-out-right {
+  animation: slideOutRight 0.12s ease;
+}
+.slide-in {
+  animation: slideIn 0.12s ease;
+}
+.edge-left {
+  animation: edgeShakeLeft 0.2s ease;
+}
+.edge-right {
+  animation: edgeShakeRight 0.2s ease;
+}
+
+@keyframes slideOutLeft {
+  to { transform: translateX(-30%); opacity: 0; }
+}
+@keyframes slideOutRight {
+  to { transform: translateX(30%); opacity: 0; }
+}
+@keyframes slideIn {
+  from { transform: translateX(30%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes edgeShakeLeft {
+  25% { transform: translateX(-12rpx); }
+  50% { transform: translateX(6rpx); }
+  75% { transform: translateX(-3rpx); }
+}
+@keyframes edgeShakeRight {
+  25% { transform: translateX(12rpx); }
+  50% { transform: translateX(-6rpx); }
+  75% { transform: translateX(3rpx); }
 }

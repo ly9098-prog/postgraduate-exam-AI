@@ -65,8 +65,9 @@ Page({
   },
 
   goDetail(e) {
+    const ids = this.data.list.map(item => item.id).join(',')
     wx.navigateTo({
-      url: `/pages/wrong-detail/wrong-detail?id=${e.currentTarget.dataset.id}`,
+      url: `/pages/wrong-detail/wrong-detail?id=${e.currentTarget.dataset.id}&ids=${ids}`,
     })
   },
 
