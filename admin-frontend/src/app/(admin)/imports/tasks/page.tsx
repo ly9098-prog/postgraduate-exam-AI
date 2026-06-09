@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { FileUp, RefreshCw } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileBox, FileText, FileUp, History, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +37,7 @@ export default function ImportTasksPage() {
   const [pageEnd, setPageEnd] = useState("");
   const [pipelineId, setPipelineId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const fileInputId = useId();
 
   const statusQuery = useQuery({
     queryKey: ["import-pipeline", pipelineId],
@@ -68,6 +69,7 @@ export default function ImportTasksPage() {
     },
   });
 
+  const isPipelineRunning = pipelineId !== null && !(statusQuery.data && isTerminalStatus(statusQuery.data.status));
   const status = statusQuery.data;
   const progressItems = [
     ["当前状态", status?.status],
@@ -80,102 +82,263 @@ export default function ImportTasksPage() {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h3 className="font-display text-2xl font-bold text-[var(--ink)]">导入任务</h3>
-            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">上传 PDF、图片、TXT 或 Excel，导入结果会进入待审核区。</p>
-          </div>
-          <Button disabled={!file || uploadMutation.isPending} onClick={() => uploadMutation.mutate()}>
-            <FileUp className="h-4 w-4" />
-            {uploadMutation.isPending ? "上传中..." : "开始导入"}
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {message ? <p className="rounded-2xl border border-[var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[var(--color-text-secondary)]">{message}</p> : null}
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <label className="space-y-1 xl:col-span-2">
-              <span className="text-xs font-semibold text-[var(--color-text-secondary)]">导入文件</span>
-              <Input type="file" accept=".pdf,.txt,.xlsx,.xls,.jpg,.jpeg,.png,.webp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</span>
-              <Input placeholder="如 math / 408 / english" value={subject} onChange={(event) => setSubject(event.target.value)} />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-[var(--color-text-secondary)]">导入模式</span>
-              <select className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm" value={importMode} onChange={(event) => setImportMode(event.target.value)}>
-                <option value="auto">auto</option>
-                <option value="book">book</option>
-                <option value="exam">exam</option>
-              </select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-[var(--color-text-secondary)]">起始页</span>
-              <Input type="number" min="1" value={pageStart} onChange={(event) => setPageStart(event.target.value)} />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-[var(--color-text-secondary)]">结束页</span>
-              <Input type="number" min="1" value={pageEnd} onChange={(event) => setPageEnd(event.target.value)} />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-semibold text-[var(--color-text-secondary)]">置信度阈值</span>
-              <Input type="number" step="0.1" min="0" max="1" value={confidenceThreshold} onChange={(event) => setConfidenceThreshold(event.target.value)} />
-            </label>
-            <label className="flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm text-[var(--color-text-secondary)]">
-              <input type="checkbox" checked={enableAiRepair} onChange={(event) => setEnableAiRepair(event.target.checked)} />
-              启用 AI 修复
-            </label>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Empty-state message banner — only when there's a non-terminal message */}
+      {message && !isPipelineRunning ? (
+        <div className="flex items-center gap-2.5 rounded-2xl border border-[var(--color-border)] bg-white/80 px-4 py-3 text-sm text-[var(--color-text-secondary)] shadow-[var(--shadow-crisp)]">
+          {uploadMutation.isSuccess ? <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" /> : <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />}
+          {message}
+        </div>
+      ) : null}
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h3 className="font-display text-2xl font-bold text-[var(--ink)]">导入进度</h3>
-            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">任务提交后自动轮询 pipeline 状态。</p>
-          </div>
-          <Button variant="secondary" disabled={!pipelineId || statusQuery.isFetching} onClick={() => statusQuery.refetch()}>
-            <RefreshCw className="h-4 w-4" />
-            刷新
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {!pipelineId ? <p className="text-sm text-[var(--color-text-hint)]">暂无导入任务。</p> : null}
-          {status ? (
-            <>
-              <div className="grid gap-3 md:grid-cols-3">
-                {progressItems.map(([label, value]) => (
-                  <div key={String(label)} className="rounded-2xl border border-[var(--color-border)] bg-white/70 p-4">
-                    <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--color-text-hint)]">{label}</p>
-                    <div className="mt-2 text-sm font-semibold text-[var(--ink)]">
-                      {label === "当前状态" ? <StatusBadge tone={statusTone(String(value || ""))}>{String(value || "—")}</StatusBadge> : String(value || "—")}
+      <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+        {/* ===== Left Column: Upload Form ===== */}
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col gap-1">
+              <h3 className="font-display text-2xl font-bold text-[var(--ink)]">导入任务</h3>
+              <p className="text-sm text-[var(--color-text-secondary)]">上传 PDF、图片、TXT 或 Excel，导入结果会进入待审核区。</p>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* File & Subject */}
+            <div>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded bg-[var(--color-primary-light)] text-[9px] font-bold text-[var(--color-primary-dark)]">1</span>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-hint)]">文件与科目</span>
+              </div>
+              <label htmlFor={fileInputId}>
+                <div className={`relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-5 transition ${
+                  isPipelineRunning
+                    ? "border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-50"
+                    : file
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]"
+                      : "border-[var(--color-border)] bg-white/50 hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)]"
+                }`}>
+                  <FileBox className={`mb-2 h-7 w-7 ${file ? "text-[var(--color-primary-dark)]" : "text-[var(--color-text-hint)]"}`} />
+                  {file ? (
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-[var(--ink)]">{file.name}</p>
+                      <p className="mt-0.5 text-xs text-[var(--color-text-hint)]">{(file.size / 1024 / 1024).toFixed(1)} MB · 已就绪</p>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-[var(--ink)]">点击选择文件</p>
+                      <p className="mt-0.5 text-xs text-[var(--color-text-hint)]">PDF、JPG、PNG、WebP、TXT、Excel</p>
+                    </div>
+                  )}
+                  <input id={fileInputId} type="file" accept=".pdf,.txt,.xlsx,.xls,.jpg,.jpeg,.png,.webp" disabled={isPipelineRunning} className="absolute inset-0 cursor-pointer opacity-0" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+                </div>
+              </label>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</span>
+                  <Input placeholder="如 math2 / exam408" value={subject} onChange={(event) => setSubject(event.target.value)} />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">导入模式</span>
+                  <select className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]" value={importMode} onChange={(event) => setImportMode(event.target.value)}>
+                    <option value="auto">auto（自动检测）</option>
+                    <option value="book">book（教辅）</option>
+                    <option value="exam">exam（试卷）</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <hr className="border-[var(--color-border)]" />
+
+            {/* Page Range */}
+            <div>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded bg-[var(--color-primary-light)] text-[9px] font-bold text-[var(--color-primary-dark)]">2</span>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-hint)]">页面范围</span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">起始页</span>
+                  <Input type="number" min="1" placeholder="留空从第1页开始" value={pageStart} onChange={(event) => setPageStart(event.target.value)} />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">结束页</span>
+                  <Input type="number" min="1" placeholder="留空到最后一页" value={pageEnd} onChange={(event) => setPageEnd(event.target.value)} />
+                </label>
+              </div>
+            </div>
+
+            <hr className="border-[var(--color-border)]" />
+
+            {/* AI Options */}
+            <div>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded bg-[var(--color-primary-light)] text-[9px] font-bold text-[var(--color-primary-dark)]">3</span>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-hint)]">AI 选项</span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">置信度阈值</span>
+                  <Input type="number" step="0.1" min="0" max="1" value={confidenceThreshold} onChange={(event) => setConfidenceThreshold(event.target.value)} />
+                </label>
+                <label className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] ${
+                  enableAiRepair ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]" : "border-[var(--color-border)] bg-white/50"
+                }`}>
+                  <input type="checkbox" checked={enableAiRepair} onChange={(event) => setEnableAiRepair(event.target.checked)} disabled={isPipelineRunning} className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary)] accent-[var(--color-primary)]" />
+                  <div>
+                    <span className="font-semibold text-[var(--ink)]">AI 修复</span>
+                    <p className="text-[10px] text-[var(--color-text-hint)]">自动校正 OCR 偏差</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Submit */}
+            <div className="flex items-center justify-end gap-4 border-t border-[var(--color-border)] pt-5">
+              <Button disabled={!file || uploadMutation.isPending || isPipelineRunning} onClick={() => uploadMutation.mutate()} className="h-11 px-5">
+                <FileUp className="h-4 w-4" />
+                {uploadMutation.isPending ? "上传中..." : isPipelineRunning ? "解析中..." : "开始导入"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ===== Right Column: Contextual Panel ===== */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <h3 className="font-display text-xl font-bold text-[var(--ink)]">
+                {pipelineId ? "导入进度" : "准备就绪"}
+              </h3>
+              <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
+                {pipelineId ? "实时追踪导入管线状态" : "配置左侧参数后提交文件"}
+              </p>
+            </div>
+            {pipelineId ? (
+              <Button variant="secondary" disabled={!pipelineId || statusQuery.isFetching} onClick={() => statusQuery.refetch()} className="shrink-0">
+                <RefreshCw className={`h-3.5 w-3.5 ${statusQuery.isFetching ? "animate-spin" : ""}`} />
+              </Button>
+            ) : null}
+          </CardHeader>
+          <CardContent>
+            {/* ——— No pipeline yet ——— */}
+            {!pipelineId ? (
+              <div className="flex flex-col items-center py-8 text-center">
+                <FileUp className="mb-3 h-9 w-9 text-[var(--color-text-hint)]" />
+                <p className="text-sm font-semibold text-[var(--color-text-secondary)]">等待文件提交</p>
+                <p className="mt-1 max-w-xs text-xs leading-relaxed text-[var(--color-text-hint)]">
+                  在左侧选择导入文件并配置参数，点击「开始导入」后将在此处实时追踪进度。
+                </p>
+              </div>
+            ) : null}
+
+            {/* ——— Pipeline submitted, fetching ——— */}
+            {pipelineId && !status && !statusQuery.isError ? (
+              <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white/70 px-4 py-6 text-sm text-[var(--color-text-secondary)]">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                正在获取导入进度...
+              </div>
+            ) : null}
+
+            {/* ——— Active pipeline ——— */}
+            {status ? (
+              <div className="space-y-4">
+                {/* Status badge row */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {isPipelineRunning ? (
+                    <span className="flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+                      处理中
+                    </span>
+                  ) : (
+                    <span className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+                      ["failed", "error"].includes(status.status) ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"
+                    }`}>
+                      <span className={`inline-block h-2 w-2 rounded-full ${
+                        ["failed", "error"].includes(status.status) ? "bg-red-500" : "bg-green-500"
+                      }`} />
+                      {status.status === "completed" || status.status === "success" || status.status === "finished" ? "已完成" : "失败"}
+                    </span>
+                  )}
+                  {status.current_stage ? <span className="rounded-full bg-[var(--color-bg-input)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--color-text-secondary)]">{status.current_stage}</span> : null}
+                </div>
+
+                {/* Progress bar */}
+                {isPipelineRunning ? (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] text-[var(--color-text-hint)]">
+                      <span>解析进度</span>
+                      <span>{status.ocr_progress || "0%"}</span>
+                    </div>
+                    <div className="overflow-hidden rounded-full bg-[var(--color-bg-input)]">
+                      <div className="h-2.5 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[#7b9bbb] transition-all duration-700" style={{ width: status.ocr_progress || "0%" }} />
                     </div>
                   </div>
-                ))}
-              </div>
-              <div className="grid gap-4 lg:grid-cols-2">
-                <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
-                  <p className="font-semibold text-[var(--ink)]">统计</p>
-                  <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-xs text-[var(--color-text-secondary)]">{renderJson(status.stats)}</pre>
-                </section>
-                <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
-                  <p className="font-semibold text-[var(--ink)]">错误日志</p>
-                  <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-xs text-[var(--color-text-secondary)]">{renderJson(status.errors)}</pre>
-                </section>
-              </div>
-              {status.batch_id ? (
-                <div className="flex flex-wrap gap-2">
-                  <a className="text-sm font-semibold text-[var(--color-primary-dark)] underline" href={`/imports/history?batch_id=${encodeURIComponent(status.batch_id)}`}>查看导入记录</a>
-                  <a className="text-sm font-semibold text-[var(--color-primary-dark)] underline" href={`/imports/review?batch_id=${encodeURIComponent(status.batch_id)}`}>进入待审核题目</a>
+                ) : null}
+
+                {/* Pipeline summary cards */}
+                <div className="grid grid-cols-2 gap-2">
+                  {progressItems.slice(0, 4).map(([label, value]) => (
+                    <div key={String(label)} className="rounded-xl border border-[var(--color-border)] bg-white/70 p-3">
+                      <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--color-text-hint)]">{label}</p>
+                      <div className="mt-1.5 text-xs font-semibold text-[var(--ink)]">
+                        {label === "当前状态" ? <StatusBadge tone={statusTone(String(value || ""))}>{String(value || "—")}</StatusBadge> : String(value || "—")}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ) : null}
-            </>
-          ) : null}
-          {statusQuery.isError ? <p className="text-sm text-[var(--color-danger)]">无法获取导入进度。</p> : null}
-        </CardContent>
-      </Card>
+
+                {/* Stats & Errors */}
+                <div className="space-y-2">
+                  <details className="group rounded-xl border border-[var(--color-border)] bg-white/70">
+                    <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5 text-xs font-semibold text-[var(--ink)]">
+                      <span className="flex items-center gap-2">
+                        <span>统计</span>
+                        {status.stats && Object.keys(status.stats).length > 0 ? <span className="rounded-full bg-[var(--color-primary-light)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-primary-dark)]">{Object.keys(status.stats).length}</span> : null}
+                      </span>
+                      <span className="text-[9px] text-[var(--color-text-hint)] transition group-open:rotate-180">▼</span>
+                    </summary>
+                    <pre className="max-h-48 overflow-auto border-t border-[var(--color-border)] px-3 py-2.5 whitespace-pre-wrap text-[10px] text-[var(--color-text-secondary)]">{renderJson(status.stats)}</pre>
+                  </details>
+                  <details className="group rounded-xl border border-[var(--color-border)] bg-white/70">
+                    <summary className="flex cursor-pointer items-center justify-between px-3 py-2.5 text-xs font-semibold text-[var(--ink)]">
+                      <span className="flex items-center gap-2">
+                        <span>错误日志</span>
+                        {Array.isArray(status.errors) && status.errors.length > 0 ? <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-medium text-red-600">{status.errors.length}</span> : null}
+                      </span>
+                      <span className="text-[9px] text-[var(--color-text-hint)] transition group-open:rotate-180">▼</span>
+                    </summary>
+                    {Array.isArray(status.errors) && status.errors.length > 0 ? (
+                      <pre className="max-h-48 overflow-auto border-t border-[var(--color-border)] px-3 py-2.5 whitespace-pre-wrap text-[10px] text-red-600">{status.errors.map((e) => `• ${e}`).join("\n")}</pre>
+                    ) : (
+                      <p className="border-t border-[var(--color-border)] px-3 py-2.5 text-[10px] text-[var(--color-text-hint)]">暂无错误</p>
+                    )}
+                  </details>
+                </div>
+
+                {/* Quick actions */}
+                {status.batch_id ? (
+                  <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-3">
+                    <a className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white/70 px-3 text-[10px] font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]" href={`/imports/history?batch_id=${encodeURIComponent(status.batch_id)}`}>
+                      <History className="h-3 w-3" />
+                      导入记录
+                    </a>
+                    <a className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white/70 px-3 text-[10px] font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]" href={`/imports/review?batch_id=${encodeURIComponent(status.batch_id)}`}>
+                      <FileText className="h-3 w-3" />
+                      待审核
+                    </a>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* ——— Fetch error ——— */}
+            {statusQuery.isError ? (
+              <div className="flex items-center gap-2.5 rounded-2xl border border-[var(--color-danger)] bg-red-50/70 px-4 py-3 text-xs text-[var(--color-danger)]">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                无法获取导入进度，请刷新重试。
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

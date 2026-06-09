@@ -12,6 +12,15 @@ import { StatusBadge } from "@/components/status-badge";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import type { ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 
+function isMultiBlankChoice(item: ImportQuestionItem | null | undefined): boolean {
+  return item?.question_type === "multi_blank_choice";
+}
+
+interface BlankOptionGroup {
+  id?: string;
+  options?: Array<{ key: string; text: string }>;
+}
+
 function textFromImport(item: ImportQuestionItem | null | undefined) {
   if (!item) return "";
   const content = item.parsed_content;
@@ -205,10 +214,34 @@ export default function ImportQuestionsPage() {
                         <p className="font-semibold text-[var(--ink)]">题干</p>
                         <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{textFromImport(previewItem) || "—"}</pre>
                       </section>
-                      <section>
-                        <p className="font-semibold text-[var(--ink)]">选项</p>
-                        <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderOptions(optionDataFromImport(previewItem))}</pre>
-                      </section>
+                      {isMultiBlankChoice(previewItem) ? (
+                        <section>
+                          <p className="font-semibold text-[var(--ink)]">选项组</p>
+                          <div className="mt-2 space-y-3">
+                            {(() => {
+                              const groups = previewItem?.parsed_content?.blank_option_groups;
+                              const list: BlankOptionGroup[] = Array.isArray(groups) ? (groups as BlankOptionGroup[]) : [];
+                              return list.length > 0 ? list.map((group, gi) => (
+                                <div key={gi} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3">
+                                  <p className="mb-2 text-xs font-semibold text-[var(--color-text-secondary)]">空 {group.id ?? gi + 1}</p>
+                                  <div className="space-y-1">
+                                    {group.options?.map((opt, oi) => (
+                                      <p key={oi} className="text-xs text-[var(--color-text-secondary)]">
+                                        <span className="font-bold text-[var(--ink)]">{opt.key}.</span> {opt.text}
+                                      </p>
+                                    ))}
+                                  </div>
+                                </div>
+                              )) : <p className="text-sm text-[var(--color-text-hint)]">暂无选项组数据</p>;
+                            })()}
+                          </div>
+                        </section>
+                      ) : (
+                        <section>
+                          <p className="font-semibold text-[var(--ink)]">选项</p>
+                          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderOptions(optionDataFromImport(previewItem))}</pre>
+                        </section>
+                      )}
                       <section>
                         <p className="font-semibold text-[var(--ink)]">答案</p>
                         <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{previewItem.parsed_answer || "—"}</pre>

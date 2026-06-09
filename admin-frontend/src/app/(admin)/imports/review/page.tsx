@@ -33,7 +33,36 @@ function parseOptionsToEditable(item: ImportQuestionItem | null | undefined): Ar
   if (!item) return [];
   const raw = item.raw_data;
   const source = item.parsed_options ?? raw?.options ?? raw?.parsed_options ?? raw?.option_text ?? raw?.optionText ?? null;
-  if (!source) return [];
+  if (!source || (Array.isArray(source) && source.length === 0)) {
+    if (item.question_type === "multi_blank_choice") {
+      const groups = item.parsed_content?.blank_option_groups ?? raw?.blank_option_groups;
+      if (Array.isArray(groups)) {
+        const result: Array<{ key: string; text: string; _groupId?: string }> = [];
+        for (const group of groups) {
+          if (!group || typeof group !== "object") continue;
+          const g = group as Record<string, unknown>;
+          const groupId = String(g.id ?? "");
+          const opts = g.options;
+          if (Array.isArray(opts)) {
+            for (const opt of opts) {
+              if (opt && typeof opt === "object") {
+                const o = opt as Record<string, unknown>;
+                const key = String(o.key ?? "");
+                const text = String(o.text ?? "");
+                if (key && text) result.push({ key, text });
+              }
+            }
+          } else if (opts && typeof opts === "object") {
+            for (const [key, text] of Object.entries(opts as Record<string, unknown>)) {
+              if (key && text) result.push({ key, text: String(text) });
+            }
+          }
+        }
+        return result;
+      }
+    }
+    return [];
+  }
   if (Array.isArray(source)) {
     return source
       .map((entry, index) => {
@@ -379,26 +408,50 @@ export default function ImportReviewPage() {
                     <div className="space-y-4">
                       <section>
                         <p className="mb-2 font-semibold text-[var(--ink)]">选项</p>
-                        <div className="space-y-2">
-                          {editState.options.length === 0 ? <p className="text-sm text-[var(--color-text-hint)]">暂无可编辑选项</p> : null}
-                          {editState.options.map((opt, index) => (
-                            <div key={index} className="flex items-center gap-2">
-                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary-light)] text-xs font-bold text-[var(--color-primary-dark)]">{opt.key}</span>
-                              <input
-                                className="h-9 flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)]"
-                                value={opt.text}
-                                onChange={(event) => {
-                                  const next = [...editState.options];
-                                  next[index] = { ...next[index], text: event.target.value };
-                                  setEditState({ ...editState, options: next });
-                                }}
-                              />
-                            </div>
-                          ))}
-                        </div>
+                        {editState.question_type === "multi_blank_choice" ? (
+                          <div className="space-y-3">
+                            {(() => {
+                              const groups = previewItem?.parsed_content?.blank_option_groups ?? previewItem?.raw_data?.blank_option_groups;
+                              const groupList: Array<{ id?: string; options?: Array<{ key: string; text: string }> }> = Array.isArray(groups) ? groups : [];
+                              return groupList.length > 0 ? groupList.map((group, gi) => (
+                                <div key={gi} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3">
+                                  <p className="mb-2 text-xs font-semibold text-[var(--color-text-hint)]">空 {group.id ?? gi + 1}</p>
+                                  <div className="space-y-1.5">
+                                    {group.options?.map((opt, oi) => (
+                                      <div key={oi} className="flex items-center gap-2">
+                                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-light)] text-[10px] font-bold text-[var(--color-primary-dark)]">{opt.key}</span>
+                                        <span className="text-sm text-[var(--color-text-secondary)]">{opt.text}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )) : null;
+                            })()}
+                            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">多空选择题选项由导入管线管理，如需修改请切换 JSON 视图编辑 parsed_content.blank_option_groups。</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {editState.options.length === 0 ? <p className="text-sm text-[var(--color-text-hint)]">暂无可编辑选项</p> : null}
+                            {editState.options.map((opt, index) => (
+                              <div key={index} className="flex items-center gap-2">
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary-light)] text-xs font-bold text-[var(--color-primary-dark)]">{opt.key}</span>
+                                <input
+                                  className="h-9 flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)]"
+                                  value={opt.text}
+                                  onChange={(event) => {
+                                    const next = [...editState.options];
+                                    next[index] = { ...next[index], text: event.target.value };
+                                    setEditState({ ...editState, options: next });
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </section>
                       <section>
-                        <p className="mb-2 font-semibold text-[var(--ink)]">快速选择答案</p>
+                        <p className="mb-1 font-semibold text-[var(--ink)]">快速选择答案</p>
+                        {editState.question_type === "multi_blank_choice" ? <p className="mb-2 text-[10px] text-[var(--color-text-hint)]">多空选择题：单击切换各空答案，以逗号分隔</p> : null}
                         {editState.options.length === 0 ? <p className="text-sm text-[var(--color-text-hint)]">请先编辑选项</p> : null}
                         {editState.options.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
@@ -435,6 +488,7 @@ export default function ImportReviewPage() {
                       <label className="block space-y-1">
                         <span className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</span>
                         <Input value={editState.answer} onChange={(event) => setEditState({ ...editState, answer: event.target.value })} />
+                        {editState.question_type === "multi_blank_choice" ? <p className="text-[10px] text-amber-600">多空选择题答案格式：各空答案用逗号分隔（如 A,B 表示第1空选A、第2空选B）</p> : null}
                       </label>
                       <label className="block space-y-1">
                         <span className="text-xs font-semibold text-[var(--color-text-secondary)]">解析</span>
