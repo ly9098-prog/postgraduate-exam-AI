@@ -166,7 +166,7 @@ class TextImportRequest(BaseModel):
 class TextImportResultItem(BaseModel):
     block_index: int
     import_id: int | None = None
-    status: str = "ok"  # ok | fail
+    status: str = "ok"  # ok | fail | duplicate
     error: str | None = None
 
 
@@ -176,3 +176,4 @@ class TextImportResponse(BaseModel):
     total: int
     succeeded: int
     failed: int
+    duplicates_filtered: int = 0

@@ -1765,9 +1765,11 @@ class ImportPipeline:
             "subject": subject or "",
         }
         _log_multi_blank_stage("review_input", questions, source_type=source_type, source_file=source_file)
-        result = await submit_to_review(db, questions, batch_meta)
+        result = await submit_to_review(db, questions, batch_meta, skip_existing=True)
 
         warnings: list[str] = []
+        if result.get("duplicates_filtered", 0) > 0:
+            warnings.append(f"{result['duplicates_filtered']} duplicates filtered (already in bank)")
         if result["skipped"] > 0:
             warnings.append(f"{result['skipped']} questions skipped in review")
 
