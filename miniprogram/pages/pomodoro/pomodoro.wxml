@@ -86,10 +86,11 @@
         <canvas class="ring-canvas" canvas-id="progress-ring" id="progress-ring"></canvas>
         <view class="timer-display">
           <text class="timer-time">{{displayMin}}:{{displaySec}}</text>
-          <text class="timer-hint">专注学习中</text>
+          <text class="timer-hint">{{isPaused ? '已暂停' : '专注学习中'}}</text>
         </view>
       </view>
       <view class="timer-actions">
+        <button class="btn-pause" bindtap="togglePause">{{isPaused ? '继续' : '暂停'}}</button>
         <button class="btn-end" bindtap="interruptSession">结束</button>
       </view>
     </view>
