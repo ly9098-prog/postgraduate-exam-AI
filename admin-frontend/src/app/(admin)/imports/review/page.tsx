@@ -230,10 +230,12 @@ export default function ImportReviewPage() {
       const suggestion = completeSuggestionFromItem(result.item);
       if (suggestion) {
         setEditState((prev) => ({
-          ...prev,
-          subject: prev.subject || (typeof suggestion.subject === "string" ? suggestion.subject : ""),
-          question_type: prev.question_type || (typeof suggestion.question_type === "string" ? suggestion.question_type : ""),
-          analysis: prev.analysis || (typeof suggestion.analysis === "string" ? suggestion.analysis : ""),
+          subject: prev?.subject || (typeof suggestion.subject === "string" ? suggestion.subject : ""),
+          question_type: prev?.question_type || (typeof suggestion.question_type === "string" ? suggestion.question_type : ""),
+          stem: prev?.stem ?? "",
+          options: prev?.options ?? [],
+          answer: prev?.answer ?? "",
+          analysis: prev?.analysis || (typeof suggestion.analysis === "string" ? suggestion.analysis : ""),
         }));
       }
     },

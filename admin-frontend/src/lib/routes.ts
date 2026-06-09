@@ -1,5 +1,4 @@
 import {
-  ClipboardCheck,
   FileInput,
   FileQuestion,
   Gauge,
@@ -26,7 +25,6 @@ export const adminRoutes: AdminRoute[] = [
   { href: "/admin-users", label: "管理员", description: "账号与角色", permission: "admin-user:read", icon: UserCog },
   { href: "/questions", label: "题库", description: "题目治理", permission: "question:read", icon: FileQuestion },
   { href: "/imports/tasks", label: "题目导入管理", description: "导入与审核", permission: "import:read", icon: FileInput },
-  { href: "/review", label: "审核工作台", description: "快速复核", permission: "question:review", icon: ClipboardCheck },
   { href: "/roles", label: "角色权限", description: "权限矩阵", permission: "role:read", icon: ShieldCheck },
   { href: "/ai-settings", label: "AI 解析设置", description: "开关与额度", permission: "ai_setting:read", icon: SlidersHorizontal },
   { href: "/audit-logs", label: "审计日志", description: "操作追踪", permission: "audit:read", icon: History },

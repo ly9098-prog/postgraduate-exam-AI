@@ -19,6 +19,7 @@ from app.schemas.common import paginated_response
 from app.services.admin_question_service import (
     approve_admin_question,
     batch_approve_admin_questions,
+    batch_delete_admin_questions,
     batch_reject_admin_questions,
     get_admin_question_detail,
     get_question_version_detail,
@@ -66,6 +67,18 @@ async def list_questions(
         import_batch_id,
     )
     return paginated_response([AdminQuestionListItem.model_validate(question) for question in questions], total, page, page_size)
+
+
+@router.post("/batch-delete", response_model=AdminQuestionBatchResult)
+async def batch_delete_questions(
+    data: AdminQuestionBatchRequest,
+    request: Request,
+    current_admin=Depends(require_permissions("question:delete")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await batch_delete_admin_questions(db, data.ids, current_admin, request)
+    await db.commit()
+    return result
 
 
 @router.post("/batch-approve", response_model=AdminQuestionBatchResult)
