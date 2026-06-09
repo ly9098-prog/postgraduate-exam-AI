@@ -20,24 +20,6 @@
   </view>
 
   <block wx:else>
-    <!-- 核心指标 -->
-    <view class="kpi-strip">
-      <view class="kpi-item">
-        <text class="kpi-value">{{overview.total_questions || 0}}</text>
-        <text class="kpi-label">累计刷题</text>
-      </view>
-      <view class="kpi-divider"></view>
-      <view class="kpi-item emphasis">
-        <text class="kpi-value compact">{{overview._totalDuration || '0'}}</text>
-        <text class="kpi-label">学习时长</text>
-      </view>
-      <view class="kpi-divider"></view>
-      <view class="kpi-item">
-        <text class="kpi-value warning">{{overview.consecutive_days || 0}}</text>
-        <text class="kpi-label">连续天数</text>
-      </view>
-    </view>
-
     <!-- 今日表现 -->
     <view class="chart-card today-card">
       <view class="section-head in-card">
@@ -59,9 +41,9 @@
           <text class="today-label">答对题数</text>
         </view>
         <view class="today-metric muted">
-          <text class="today-kicker">用时</text>
-          <text class="today-num small">{{overview._todayDuration || '0'}}</text>
-          <text class="today-label">累计学习</text>
+          <text class="today-kicker">累计</text>
+          <text class="today-num">{{overview.total_questions || 0}}</text>
+          <text class="today-label">总刷题数</text>
         </view>
         <view class="today-metric warning">
           <text class="today-kicker">复习</text>
@@ -71,7 +53,7 @@
       </view>
     </view>
 
-    <!-- 学科分布：环形图 + 列表 + 对比条 -->
+    <!-- 学科分布 -->
     <view class="chart-card subject-card" wx:if="{{subjects.length > 0}}">
       <view class="section-head in-card">
         <view>
@@ -119,7 +101,7 @@
       <text class="empty-desc">开始练习后会生成学科分布图</text>
     </view>
 
-    <!-- 近 7 天：折线 + 时间轴 -->
+    <!-- 近 7 天 -->
     <view class="chart-card trend-card" wx:if="{{trends.length > 0}}">
       <view class="section-head in-card">
         <view>
@@ -172,7 +154,7 @@
       <text class="empty-desc">连续练习后会形成折线趋势</text>
     </view>
 
-    <!-- 学习行为：提醒式水平条 -->
+    <!-- 学习行为 -->
     <view class="chart-card behavior-card" wx:if="{{behavior}}">
       <view class="section-head in-card">
         <view>

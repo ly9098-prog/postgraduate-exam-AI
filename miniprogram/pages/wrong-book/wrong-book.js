@@ -3,7 +3,7 @@ const config = require('../../config')
 
 Page({
   data: {
-    filter: 'unmastered',
+    tab: 'all',
     list: [],
     stats: {},
     page: 1,
@@ -12,8 +12,11 @@ Page({
     enableMathImage: false,
   },
 
-  onLoad() {
+  onLoad(options) {
     this.setData({ enableMathImage: config.enableMathImage || false })
+    if (options.tab && ['all', 'due', 'mastered'].includes(options.tab)) {
+      this.setData({ tab: options.tab })
+    }
   },
 
   onShow() {
@@ -36,15 +39,26 @@ Page({
     this.setData({ loading: true })
 
     try {
-      const params = { page, page_size: 20 }
-      if (this.data.filter === 'unmastered') params.mastered = false
-      if (this.data.filter === 'mastered') params.mastered = true
+      let data
+      if (this.data.tab === 'due') {
+        data = await api.get('/review/due', { page, page_size: 20 })
+      } else {
+        const params = { page, page_size: 20 }
+        if (this.data.tab === 'mastered') params.mastered = true
+        data = await api.get('/wrong-questions', params)
+      }
 
-      const data = await api.get('/wrong-questions', params)
+      const items = (data.items || []).map(item => ({
+        ...item,
+        _subjectLabel: this.subjectLabel(item.subject),
+        _errorTypeLabel: this.errorTypeLabel(item.error_type),
+        _intervalLabel: this.intervalLabel(item.interval),
+      }))
+
       this.setData({
-        list: reset ? data.items : [...this.data.list, ...data.items],
+        list: reset ? items : [...this.data.list, ...items],
         hasMore: page < data.total_pages,
-        page: page + 1,
+        page: reset ? 2 : page + 1,
         loading: false,
       })
     } catch (e) {
@@ -53,10 +67,10 @@ Page({
     }
   },
 
-  switchFilter(e) {
-    var ds = e.currentTarget && e.currentTarget.dataset
-    var filter = (ds && ds.filter) || e
-    this.setData({ filter: filter, list: [], page: 1 })
+  switchTab(e) {
+    const tab = e.currentTarget.dataset.tab
+    if (tab === this.data.tab) return
+    this.setData({ tab, list: [], page: 1 })
     this.loadList(true)
   },
 
@@ -65,10 +79,13 @@ Page({
   },
 
   goDetail(e) {
-    const ids = this.data.list.map(item => item.id).join(',')
-    wx.navigateTo({
-      url: `/pages/wrong-detail/wrong-detail?id=${e.currentTarget.dataset.id}&ids=${ids}`,
-    })
+    const id = e.currentTarget.dataset.id
+    if (this.data.tab === 'due') {
+      wx.navigateTo({ url: `/pages/wrong-detail/wrong-detail?id=${id}` })
+    } else {
+      const ids = this.data.list.map(item => item.id).join(',')
+      wx.navigateTo({ url: `/pages/wrong-detail/wrong-detail?id=${id}&ids=${ids}` })
+    }
   },
 
   subjectLabel(s) {
@@ -84,5 +101,13 @@ Page({
   errorTypeLabel(t) {
     const map = { concept_mistake: '概念', calculation: '计算', careless: '粗心', method: '方法', other: '其他' }
     return map[t] || t
+  },
+
+  intervalLabel(days) {
+    if (!days && days !== 0) return ''
+    if (days === 0) return '今天到期'
+    if (days === 1) return '明天到期'
+    if (days <= 7) return `${days} 天后到期`
+    return `${Math.round(days / 7)} 周后到期`
   },
 })
