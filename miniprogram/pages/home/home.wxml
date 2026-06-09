@@ -59,9 +59,12 @@
   </view>
 </view>
 
-<view class="secondary-actions">
-  <view class="secondary-action" bindtap="goImport">
-    <text class="secondary-icon">+</text>
-    <text class="secondary-label">题库导入</text>
+  <view class="action-card" bindtap="goImport">
+    <view class="icon-badge icon-success">导</view>
+    <view class="action-info">
+      <text class="action-title">题库导入</text>
+      <text class="action-desc">拍照 / 文件上传导题</text>
+    </view>
+    <text class="action-arrow">›</text>
   </view>
 </view>
