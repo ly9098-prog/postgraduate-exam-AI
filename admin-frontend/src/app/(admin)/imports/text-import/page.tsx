@@ -92,7 +92,6 @@ function typeLabel(t: string | null) {
 
 export default function TextImportPage() {
   const [text, setText] = useState("");
-  const [subject, setSubject] = useState("");
   const [parseResult, setParseResult] = useState<ParseResponse | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<ParsedQuestion | null>(null);
@@ -105,7 +104,7 @@ export default function TextImportPage() {
     mutationFn: () =>
       apiRequest<ParseResponse>("/imports/text-parse", {
         method: "POST",
-        body: JSON.stringify({ text, subject }),
+        body: JSON.stringify({ text, subject: "" }),
       }),
     onSuccess: (data) => {
       setParseResult(data);
@@ -122,7 +121,7 @@ export default function TextImportPage() {
       apiRequest<ImportResponse>("/imports/text-import", {
         method: "POST",
         body: JSON.stringify({
-          subject,
+          subject: "",
           questions: parseResult?.questions.filter((q) => q.is_valid) ?? [],
         }),
       }),
@@ -193,18 +192,6 @@ export default function TextImportPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--color-text-hint)]">
-          Text Import
-        </p>
-        <h2 className="mt-2 font-display text-4xl font-bold text-[var(--ink)]">
-          文本导入
-        </h2>
-        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-          粘贴题目文本，自动解析为结构化题目数据
-        </p>
-      </div>
-
       <div className="grid gap-6 items-start xl:grid-cols-[1fr_1fr]">
         {/* ===== Left: Input ===== */}
         <Card className="min-w-0">
@@ -215,24 +202,6 @@ export default function TextImportPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <label className="mb-1 block text-sm font-semibold text-[var(--ink)]">
-                科目 <span className="text-xs text-[var(--color-text-hint)]">(选填，留空自动识别)</span>
-              </label>
-              <select
-                className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-              >
-                <option value="">自动识别</option>
-                {SUBJECTS.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
               <div className="mb-1 flex items-center justify-between">
                 <label className="text-sm font-semibold text-[var(--ink)]">
                   题目文本
@@ -242,7 +211,7 @@ export default function TextImportPage() {
                 </span>
               </div>
               <textarea
-                className="min-h-[320px] w-full resize-y rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4 font-mono text-sm leading-relaxed outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]"
+                className="min-h-[420px] w-full resize-y rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4 font-mono text-sm leading-relaxed outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]"
                 placeholder={`支持格式示例：
 
 【题目】
