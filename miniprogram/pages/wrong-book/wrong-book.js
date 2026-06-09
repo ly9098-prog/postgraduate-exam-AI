@@ -6,6 +6,7 @@ Page({
     tab: 'all',
     list: [],
     stats: {},
+    reviewStats: {},
     page: 1,
     hasMore: false,
     loading: false,
@@ -27,8 +28,11 @@ Page({
 
   async loadStats() {
     try {
-      const stats = await api.get('/wrong-questions/stats')
-      this.setData({ stats })
+      const [stats, reviewStats] = await Promise.all([
+        api.get('/wrong-questions/stats'),
+        api.get('/review/stats'),
+      ])
+      this.setData({ stats, reviewStats })
     } catch (e) {
       console.error('加载错题统计失败', e)
     }
@@ -99,7 +103,7 @@ Page({
   },
 
   errorTypeLabel(t) {
-    const map = { concept_mistake: '概念', calculation: '计算', careless: '粗心', method: '方法', other: '其他' }
+    const map = { concept_mistake: '概念错误', calculation: '计算错误', careless: '粗心', method: '方法错误', other: '其他' }
     return map[t] || t
   },
 
