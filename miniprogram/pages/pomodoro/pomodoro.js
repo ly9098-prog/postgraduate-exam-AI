@@ -31,6 +31,9 @@ Page({
     workDuration: 25,
     breakDuration: 5,
     showCustom: false,
+    isPaused: false,
+    totalPausedMs: 0,
+    pauseStartTime: null,
 
     // 当前 session
     sessionId: null,
@@ -80,6 +83,8 @@ Page({
     const active = await this._fetchActiveSession()
     if (active) {
       this._restoreSession(active)
+    } else if (this.data.phase !== PHASE.RUNNING) {
+      this._restoreBreak()
     }
   },
 
@@ -171,16 +176,47 @@ Page({
       sessionStartTime: startTime,
       remainingSec: totalSec,
       progress: 1,
+      isPaused: false,
+      totalPausedMs: 0,
+      pauseStartTime: null,
     })
     this._startTimer(totalSec)
     setTimeout(() => this.drawRing(totalSec, false), 100)
+  },
+
+  togglePause() {
+    if (this.data.isPaused) {
+      this._resumeSession()
+    } else {
+      this._pauseSession()
+    }
+  },
+
+  _pauseSession() {
+    this._clearTimer()
+    this.setData({
+      isPaused: true,
+      pauseStartTime: Date.now(),
+    })
+  },
+
+  _resumeSession() {
+    const pausedDuration = Date.now() - (this.data.pauseStartTime || Date.now())
+    const totalPausedMs = (this.data.totalPausedMs || 0) + pausedDuration
+    this.setData({
+      isPaused: false,
+      totalPausedMs: totalPausedMs,
+      pauseStartTime: null,
+    })
+    const totalSec = this.data.workDuration * 60
+    this._startTimer(totalSec)
   },
 
   _startTimer(totalSec) {
     this._clearTimer()
     const tick = () => {
       const now = Date.now()
-      const elapsed = Math.floor((now - this.data.sessionStartTime) / 1000)
+      const elapsed = Math.floor((now - this.data.sessionStartTime - (this.data.totalPausedMs || 0)) / 1000)
       const remaining = Math.max(0, totalSec - elapsed)
       const m = Math.floor(remaining / 60)
       const s = remaining % 60
@@ -234,6 +270,7 @@ Page({
   },
 
   _startBreak(totalSec) {
+    wx.setStorageSync('pomodoro_break', { startTime: Date.now(), totalSec: totalSec })
     this.setData({
       phase: PHASE.BREAK,
       remainingSec: totalSec,
@@ -253,6 +290,7 @@ Page({
       this.drawRing(totalSec, true)
       if (remaining <= 0) {
         this._clearTimer()
+        wx.removeStorageSync('pomodoro_break')
         wx.vibrateShort()
         wx.showToast({ title: '休息结束', icon: 'none' })
         this._resetToIdle()
@@ -265,6 +303,7 @@ Page({
 
   skipBreak() {
     this._clearTimer()
+    wx.removeStorageSync('pomodoro_break')
     this._resetToIdle()
   },
 
@@ -295,8 +334,33 @@ Page({
       workDuration: session.work_duration,
       breakDuration: session.break_duration,
       remainingSec: remaining,
+      isPaused: false,
+      totalPausedMs: 0,
+      pauseStartTime: null,
     })
     this._startTimer(totalSec)
+  },
+
+  _restoreBreak() {
+    try {
+      const saved = wx.getStorageSync('pomodoro_break')
+      if (!saved) return
+      wx.removeStorageSync('pomodoro_break')
+      const elapsed = Math.floor((Date.now() - saved.startTime) / 1000)
+      const remaining = Math.max(0, saved.totalSec - elapsed)
+      if (remaining <= 0) {
+        this._resetToIdle()
+        return
+      }
+      this.setData({
+        phase: PHASE.BREAK,
+        remainingSec: remaining,
+        displayMin: String(Math.floor(remaining / 60)).padStart(2, '0'),
+        displaySec: String(remaining % 60).padStart(2, '0'),
+        progress: remaining / saved.totalSec,
+      })
+      this._startBreak(saved.totalSec)
+    } catch (_) {}
   },
 
   drawRing(totalSec, isBreak) {
@@ -364,6 +428,7 @@ Page({
   },
 
   _resetToIdle() {
+    wx.removeStorageSync('pomodoro_break')
     this.setData({
       phase: PHASE.IDLE,
       sessionId: null,
@@ -372,6 +437,9 @@ Page({
       displayMin: '00',
       displaySec: '00',
       progress: 1,
+      isPaused: false,
+      totalPausedMs: 0,
+      pauseStartTime: null,
     })
   },
 

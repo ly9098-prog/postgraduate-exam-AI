@@ -300,6 +300,24 @@
   opacity: 0.84;
 }
 
+.btn-pause {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 200rpx;
+  height: 80rpx;
+  background: #EDF1F5;
+  color: #5B7B9A;
+  font-size: 28rpx;
+  font-weight: 600;
+  border-radius: 40rpx;
+  border: 1rpx solid #DDE3E9;
+}
+
+.btn-pause:active {
+  opacity: 0.84;
+}
+
 .btn-skip {
   display: flex;
   align-items: center;
