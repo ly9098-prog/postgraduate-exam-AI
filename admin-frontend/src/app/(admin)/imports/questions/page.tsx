@@ -366,8 +366,7 @@ export default function ImportQuestionsPage() {
                     <div className="flex shrink-0 items-start sm:pl-3">
                       <Button
                         variant="ghost"
-                        size="sm"
-                        className="h-9 gap-1.5 px-3 text-xs font-medium"
+className="h-9 gap-1.5 px-3 text-xs font-medium"
                         onClick={() => setPreviewId(item.id)}
                       >
                         <Eye className="h-4 w-4" />

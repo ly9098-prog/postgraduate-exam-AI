@@ -12,6 +12,7 @@ from app.models.question import Question
 from app.models.question_import import QuestionImport
 from app.features.question_pipeline import normalizer
 from app.schemas.admin_questions import (
+    AdminQuestionBatchFailure,
     AdminQuestionBatchRejectRequest,
     AdminQuestionBatchRequest,
     AdminQuestionBatchResult,
@@ -208,6 +209,23 @@ async def soft_delete_admin_question(
         request=request,
     )
     return question
+
+
+async def batch_delete_admin_questions(
+    db: AsyncSession,
+    ids: list[int],
+    operator: AdminPrincipal,
+    request: Request | None = None,
+) -> AdminQuestionBatchResult:
+    success_ids: list[int] = []
+    failed_items: list[AdminQuestionBatchFailure] = []
+    for qid in ids:
+        try:
+            await soft_delete_admin_question(db, qid, operator, request)
+            success_ids.append(qid)
+        except ValueError as exc:
+            failed_items.append(AdminQuestionBatchFailure(id=qid, error=str(exc)))
+    return AdminQuestionBatchResult(success_ids=success_ids, failed_items=failed_items)
 
 
 async def _sync_import_review(
