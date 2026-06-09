@@ -204,8 +204,8 @@ export default function TextImportPage() {
         </p>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        {/* 左侧：输入区 */}
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        {/* ===== Left: Input ===== */}
         <Card>
           <CardHeader>
             <h3 className="font-display text-xl font-bold text-[var(--ink)]">
@@ -213,13 +213,12 @@ export default function TextImportPage() {
             </h3>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* 科目选择 */}
             <div>
               <label className="mb-1 block text-sm font-semibold text-[var(--ink)]">
                 科目 <span className="text-xs text-[var(--color-text-hint)]">(选填，留空自动识别)</span>
               </label>
               <select
-                className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
+                className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
               >
@@ -232,7 +231,6 @@ export default function TextImportPage() {
               </select>
             </div>
 
-            {/* 文本输入 */}
             <div>
               <div className="mb-1 flex items-center justify-between">
                 <label className="text-sm font-semibold text-[var(--ink)]">
@@ -243,7 +241,7 @@ export default function TextImportPage() {
                 </span>
               </div>
               <textarea
-                className="min-h-[320px] w-full resize-y rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4 font-mono text-sm leading-relaxed outline-none focus:border-[var(--color-primary)]"
+                className="min-h-[320px] w-full resize-y rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4 font-mono text-sm leading-relaxed outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]"
                 placeholder={`支持格式示例：
 
 【题目】
@@ -272,12 +270,14 @@ C
                   setText(e.target.value);
                   setParseResult(null);
                   setImportStatus(null);
+                  setEditingIndex(null);
+                  setEditForm(null);
                 }}
               />
             </div>
 
             <Button
-              className="w-full"
+              className="w-full h-12"
               onClick={handleParse}
               disabled={parseMutation.isPending || !text.trim()}
             >
@@ -290,7 +290,7 @@ C
             </Button>
 
             {globalError ? (
-              <div className="flex items-start gap-2 rounded-2xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] p-3 text-sm text-[var(--color-danger)]">
+              <div className="flex items-start gap-2 rounded-2xl border border-[var(--color-danger)] bg-red-50/70 px-4 py-3 text-sm text-[var(--color-danger)]">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{globalError}</span>
               </div>
@@ -298,26 +298,26 @@ C
           </CardContent>
         </Card>
 
-        {/* 右侧：解析结果 */}
-        <div className="space-y-4">
+        {/* ===== Right: Results ===== */}
+        <div className="flex flex-col gap-4">
           {parseResult ? (
             <>
-              {/* 统计栏 */}
-              <Card>
-                <CardContent className="py-4">
+              {/* Stats bar */}
+              <Card className="shrink-0">
+                <CardContent className="py-3">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4 text-sm">
+                    <div className="flex items-center gap-3 text-sm">
                       <span className="text-[var(--color-text-secondary)]">
                         解析结果
                       </span>
                       <span className="font-semibold text-[var(--ink)]">
                         {parseResult.raw_count} 题
                       </span>
-                      <span className="text-[var(--color-success)]">
+                      <span className="text-green-600">
                         {parseResult.valid_count} 有效
                       </span>
                       {parseResult.raw_count - parseResult.valid_count > 0 ? (
-                        <span className="text-[var(--color-danger)]">
+                        <span className="text-red-500">
                           {parseResult.raw_count - parseResult.valid_count} 无效
                         </span>
                       ) : null}
@@ -338,9 +338,9 @@ C
                 </CardContent>
               </Card>
 
-              {/* 全局警告 */}
+              {/* Warnings */}
               {parseResult.warnings.length > 0 ? (
-                <div className="flex items-start gap-2 rounded-2xl border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-3 text-sm text-[var(--color-warning-dark)]">
+                <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-700">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   <ul className="list-inside list-disc space-y-1">
                     {parseResult.warnings.map((w, i) => (
@@ -350,213 +350,175 @@ C
                 </div>
               ) : null}
 
-              {/* 导入结果 */}
+              {/* Import result */}
               {importStatus ? (
-                <div className="rounded-2xl border border-[var(--color-success)] bg-[var(--color-success-light)] p-4 text-sm">
-                  <p className="font-semibold text-[var(--color-success)]">
-                    导入完成
-                  </p>
-                  <p className="mt-1 text-[var(--color-text-secondary)]">
-                    批次 {importStatus.batch_id}：成功 {importStatus.succeeded}{" "}
-                    题，失败 {importStatus.failed} 题
-                  </p>
+                <div className="flex items-center gap-2.5 rounded-2xl border border-green-200 bg-green-50/70 px-4 py-3 text-sm">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+                  <div>
+                    <span className="font-semibold text-green-700">导入完成</span>
+                    <span className="ml-2 text-green-600">
+                      批次 {importStatus.batch_id}：成功 {importStatus.succeeded}
+                      题，失败 {importStatus.failed} 题
+                    </span>
+                  </div>
                 </div>
               ) : null}
 
-              {/* 题目列表 */}
-              <div className="max-h-[600px] space-y-3 overflow-y-auto">
-                {parseResult.questions.map((q, index) => (
-                  <Card key={index}>
-                    <CardContent className="py-4">
-                      {editingIndex === index && editForm ? (
-                        /* 编辑模式 */
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <h4 className="font-semibold text-[var(--ink)]">
-                              编辑 题目 {index + 1}
-                            </h4>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="secondary"
-                                onClick={() => {
-                                  setEditingIndex(null);
-                                  setEditForm(null);
-                                }}
-                              >
-                                取消
-                              </Button>
-                              <Button onClick={saveEdit}>保存</Button>
-                            </div>
-                          </div>
-                          <label className="block">
-                            <span className="text-xs font-semibold">题干</span>
-                            <textarea
-                              className="mt-1 min-h-[80px] w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-2 text-sm"
-                              value={editForm.stem}
-                              onChange={(e) =>
-                                setEditForm({ ...editForm, stem: e.target.value })
-                              }
-                            />
-                          </label>
-                          <label className="block">
-                            <span className="text-xs font-semibold">选项</span>
-                            <textarea
-                              className="mt-1 min-h-[60px] w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-2 text-sm font-mono"
-                              value={editForm.options
-                                .map((o) => `${o.key}. ${o.text}`)
-                                .join("\n")}
-                              onChange={(e) => {
-                                const lines = e.target.value.split("\n");
-                                const opts: ParsedOption[] = [];
-                                for (const line of lines) {
-                                  const m = line.match(
-                                    /^([A-Da-d])\s*[.．、:：)）]?\s*(.+)/,
-                                  );
-                                  if (m) {
-                                    opts.push({
-                                      key: m[1].toUpperCase(),
-                                      text: m[2].trim(),
-                                    });
-                                  }
-                                }
-                                setEditForm({ ...editForm, options: opts });
-                              }}
-                            />
-                          </label>
-                          <label className="block">
-                            <span className="text-xs font-semibold">答案</span>
-                            <input
-                              className="mt-1 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-2 text-sm"
-                              value={
-                                typeof editForm.answer === "boolean"
-                                  ? editForm.answer
-                                    ? "正确"
-                                    : "错误"
-                                  : Array.isArray(editForm.answer)
-                                    ? editForm.answer.join(",")
-                                    : String(editForm.answer ?? "")
-                              }
-                              onChange={(e) =>
-                                setEditForm({
-                                  ...editForm,
-                                  answer: e.target.value,
-                                })
-                              }
-                            />
-                          </label>
-                          <label className="block">
-                            <span className="text-xs font-semibold">解析</span>
-                            <textarea
-                              className="mt-1 min-h-[60px] w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-2 text-sm"
-                              value={editForm.analysis ?? ""}
-                              onChange={(e) =>
-                                setEditForm({
-                                  ...editForm,
-                                  analysis: e.target.value,
-                                })
-                              }
-                            />
-                          </label>
-                        </div>
-                      ) : (
-                        /* 预览模式 */
-                        <div className="space-y-2">
+              {/* Question list + edit panel */}
+              <div className="flex flex-col gap-3">
+                {/* Compact question cards */}
+                <div className="space-y-2">
+                  {parseResult.questions.map((q, index) => (
+                    <Card key={index}>
+                      <CardContent className="px-4 py-3">
+                        <div className="space-y-1.5">
+                          {/* Header row */}
                           <div className="flex items-start justify-between gap-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-semibold text-[var(--ink)]">
-                                题目 {index + 1}
+                            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                              <span className="shrink-0 text-sm font-semibold text-[var(--ink)]">
+                                题 {index + 1}
                               </span>
-                              <StatusBadge
-                                tone={q.is_valid ? "success" : "danger"}
-                              >
+                              <StatusBadge tone={q.is_valid ? "success" : "danger"}>
                                 {q.is_valid ? "有效" : "无效"}
                               </StatusBadge>
-                              <span className="text-xs text-[var(--color-text-hint)]">
-                                [{typeLabel(q.question_type)}]
-                              </span>
-                              <span className="text-xs text-[var(--color-text-hint)]">
-                                [{q.detection_method}]
+                              <span className="text-[10px] text-[var(--color-text-hint)]">
+                                {typeLabel(q.question_type)}
                               </span>
                               {q.subject ? (
-                                <span className="rounded-full bg-[var(--color-primary-light)] px-2 py-0.5 text-xs font-medium text-[var(--color-primary-dark)]">
+                                <span className="rounded-full bg-[var(--color-primary-light)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-primary-dark)]">
                                   {q.subject}
                                 </span>
                               ) : null}
                             </div>
-                            <div className="flex shrink-0 gap-1">
-                              <Button
-                                variant="ghost"
-                                onClick={() => startEdit(index)}
-                              >
+                            <div className="flex shrink-0 gap-0.5">
+                              <Button variant="ghost" className="h-7 w-7 p-0" onClick={() => startEdit(index)}>
                                 <Edit3 className="h-3.5 w-3.5" />
                               </Button>
-                              <Button
-                                variant="ghost"
-                                onClick={() => handleDelete(index)}
-                              >
+                              <Button variant="ghost" className="h-7 w-7 p-0" onClick={() => handleDelete(index)}>
                                 <Trash2 className="h-3.5 w-3.5 text-[var(--color-danger)]" />
                               </Button>
                             </div>
                           </div>
 
-                          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-sm">
-                            <p className="font-semibold text-[var(--ink)]">题干</p>
-                            <pre className="mt-1 whitespace-pre-wrap font-sans text-[var(--color-text-secondary)]">
-                              {q.stem || "—"}
-                            </pre>
-                          </div>
+                          {/* Stem — single line truncated */}
+                          <p className="truncate text-xs text-[var(--color-text-secondary)]" title={q.stem}>
+                            {q.stem || "—"}
+                          </p>
 
+                          {/* Options inline */}
                           {q.options.length > 0 ? (
-                            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-sm">
-                              <p className="font-semibold text-[var(--ink)]">选项</p>
-                              <ul className="mt-1 space-y-0.5">
-                                {q.options.map((opt) => (
-                                  <li
-                                    key={opt.key}
-                                    className="text-[var(--color-text-secondary)]"
-                                  >
-                                    <span className="font-semibold">
-                                      {opt.key}.
-                                    </span>{" "}
-                                    {opt.text}
-                                  </li>
-                                ))}
-                              </ul>
+                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[var(--color-text-hint)]">
+                              {q.options.map((opt) => (
+                                <span key={opt.key}>
+                                  <span className="font-semibold text-[var(--color-text-secondary)]">{opt.key}.</span>{" "}
+                                  {opt.text.length > 20 ? opt.text.slice(0, 20) + "…" : opt.text}
+                                </span>
+                              ))}
                             </div>
                           ) : null}
 
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-sm">
-                              <p className="font-semibold text-[var(--ink)]">答案</p>
-                              <p className="mt-1 text-[var(--color-text-secondary)]">
-                                {renderAnswer(q.answer)}
-                              </p>
-                            </div>
-                            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-sm">
-                              <p className="font-semibold text-[var(--ink)]">解析</p>
-                              <p className="mt-1 text-[var(--color-text-secondary)]">
-                                {q.analysis || "—"}
-                              </p>
-                            </div>
+                          {/* Answer + analysis + warnings */}
+                          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-[var(--color-text-hint)]">
+                            <span>
+                              答案：<span className="font-semibold text-[var(--color-text-secondary)]">{renderAnswer(q.answer)}</span>
+                            </span>
+                            {q.analysis ? (
+                              <span className="max-w-[200px] truncate" title={q.analysis}>
+                                解析：<span className="text-[var(--color-text-secondary)]">{q.analysis}</span>
+                              </span>
+                            ) : null}
+                            {q.warnings.length > 0 ? (
+                              <span className="text-amber-500" title={q.warnings.join("；")}>
+                                ⚠ {q.warnings.length}
+                              </span>
+                            ) : null}
+                            {q.errors.length > 0 ? (
+                              <span className="text-red-400" title={q.errors.join("、")}>
+                                ✗ {q.errors.length}
+                              </span>
+                            ) : null}
                           </div>
-
-                          {q.warnings.length > 0 ? (
-                            <div className="flex items-start gap-1.5 text-xs text-[var(--color-warning)]">
-                              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                              <span>{q.warnings.join("；")}</span>
-                            </div>
-                          ) : null}
-
-                          {q.errors.length > 0 ? (
-                            <div className="text-xs text-[var(--color-danger)]">
-                              错误：{q.errors.join("、")}
-                            </div>
-                          ) : null}
                         </div>
-                      )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Edit panel — always below the question list, never inline */}
+                {editingIndex !== null && editForm ? (
+                  <Card className="shrink-0 border-[var(--color-primary)]">
+                    <CardContent className="py-4">
+                      <div className="space-y-4">
+                        {/* Header */}
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-display text-lg font-bold text-[var(--ink)]">
+                            编辑 题目 {editingIndex + 1}
+                          </h4>
+                          <div className="flex gap-2">
+                            <Button variant="ghost" onClick={() => { setEditingIndex(null); setEditForm(null); }}>
+                              取消
+                            </Button>
+                            <Button onClick={saveEdit}>
+                              <CheckCircle2 className="h-4 w-4" />
+                              保存
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Subject & Type */}
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="block space-y-1">
+                            <span className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</span>
+                            <select className="h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)]" value={editForm.subject ?? ""} onChange={(e) => setEditForm({ ...editForm, subject: e.target.value || null })}>
+                              <option value="">未指定</option>
+                              {SUBJECTS.map((s) => (
+                                <option key={s.value} value={s.value}>{s.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="block space-y-1">
+                            <span className="text-xs font-semibold text-[var(--color-text-secondary)]">题型</span>
+                            <input className="h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)]" value={editForm.question_type ?? ""} onChange={(e) => setEditForm({ ...editForm, question_type: e.target.value || null })} />
+                          </label>
+                        </div>
+
+                        {/* Stem */}
+                        <label className="block space-y-1">
+                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">题干</span>
+                          <textarea className="mt-1 min-h-[80px] w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm outline-none transition focus:border-[var(--color-primary)]" value={editForm.stem} onChange={(e) => setEditForm({ ...editForm, stem: e.target.value })} />
+                        </label>
+
+                        {/* Options */}
+                        <label className="block space-y-1">
+                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">选项 <span className="text-[10px] text-[var(--color-text-hint)]">(每行一个，格式 A. xxx)</span></span>
+                          <textarea className="mt-1 min-h-[60px] w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm font-mono outline-none transition focus:border-[var(--color-primary)]" value={editForm.options.map((o) => `${o.key}. ${o.text}`).join("\n")} onChange={(e) => {
+                            const lines = e.target.value.split("\n");
+                            const opts: ParsedOption[] = [];
+                            for (const line of lines) {
+                              const m = line.match(/^([A-Da-d])\s*[.．、:：)）]?\s*(.+)/);
+                              if (m) opts.push({ key: m[1].toUpperCase(), text: m[2].trim() });
+                            }
+                            setEditForm({ ...editForm, options: opts });
+                          }} />
+                        </label>
+
+                        {/* Answer */}
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="block space-y-1">
+                            <span className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</span>
+                            <input className="mt-1 h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)]" value={typeof editForm.answer === "boolean" ? (editForm.answer ? "正确" : "错误") : Array.isArray(editForm.answer) ? editForm.answer.join(",") : String(editForm.answer ?? "")} onChange={(e) => setEditForm({ ...editForm, answer: e.target.value })} />
+                          </label>
+                        </div>
+
+                        {/* Analysis */}
+                        <label className="block space-y-1">
+                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">解析</span>
+                          <textarea className="mt-1 min-h-[60px] w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm outline-none transition focus:border-[var(--color-primary)]" value={editForm.analysis ?? ""} onChange={(e) => setEditForm({ ...editForm, analysis: e.target.value })} />
+                        </label>
+                      </div>
                     </CardContent>
                   </Card>
-                ))}
+                ) : null}
               </div>
             </>
           ) : (
