@@ -1,25 +1,40 @@
 const api = require('../../utils/api')
 
 const SUBJECTS = [
-  { key: 'data_structure', label: '数据结构', color: '#5B7B9A' },
-  { key: 'computer_organization', label: '计算机组成原理', color: '#C49A6B' },
-  { key: 'operating_system', label: '操作系统', color: '#6B9B6B' },
-  { key: 'computer_network', label: '计算机网络', color: '#7B8DB3' },
-  { key: 'english', label: '英语', color: '#B38B6B' },
-  { key: 'math', label: '数学', color: '#8B9B7B' },
-  { key: 'politics', label: '政治', color: '#A08B8B' },
+  { key: 'data_structure', label: '数据结构', emoji: '📃', color: '#5B7B9A' },
+  { key: 'computer_organization', label: '组成原理', emoji: '💻', color: '#C49A6B' },
+  { key: 'operating_system', label: '操作系统', emoji: '⚙️', color: '#6B9B6B' },
+  { key: 'computer_network', label: '计算机网络', emoji: '🌐', color: '#7B8DB3' },
+  { key: 'english', label: '英语', emoji: '📖', color: '#B38B6B' },
+  { key: 'math', label: '数学', emoji: '📐', color: '#8B9B7B' },
+  { key: 'politics', label: '政治', emoji: '📜', color: '#A08B8B' },
 ]
 
 const SUBJECT_COLOR_MAP = {}
-SUBJECTS.forEach(s => { SUBJECT_COLOR_MAP[s.key] = s.color })
+const SUBJECT_EMOJI_MAP = {}
+SUBJECTS.forEach(s => {
+  SUBJECT_COLOR_MAP[s.key] = s.color
+  SUBJECT_EMOJI_MAP[s.key] = s.emoji
+})
 
 const PRESETS = [
-  { key: 'standard', label: '标准番茄钟', work: 25, break: 5 },
-  { key: 'long', label: '长时间学习', work: 50, break: 10 },
+  { key: 'standard', label: '标准', work: 25, break: 5 },
+  { key: 'long', label: '长时间', work: 50, break: 10 },
   { key: 'custom', label: '自定义', work: 25, break: 5 },
 ]
 
-const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break' }
+const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'ceremony' }
+
+const MOTTOES = [
+  '击败了昨天的自己',
+  '每一步都算数',
+  '坚持就是胜利',
+  '离上岸又近一步',
+  '今天的你比昨天更强',
+  '积少成多，聚沙成塔',
+  '专注是最好的努力',
+  '为梦想全力以赴',
+]
 
 Page({
   data: {
@@ -35,47 +50,51 @@ Page({
     totalPausedMs: 0,
     pauseStartTime: null,
 
-    // 当前 session
+    // session
     sessionId: null,
     sessionStartTime: null,
 
-    // 计时器显示
+    // timer display
     remainingSec: 0,
     displayMin: '00',
     displaySec: '00',
     progress: 1,
 
-    // 今日统计
+    // today stats
     todaySessions: 0,
     todayDurationSec: 0,
     todayDurationText: '0分钟',
 
-    // 从刷题页面传入
+    // practice page context
     fromSubject: '',
     fromChapterId: '',
     fromChapterName: '',
+
+    // new features
+    examDays: 0,
+    showCelebration: false,
+    celebrationMotto: '',
+    pageEntered: false,
   },
 
   _timer: null,
+  _touchStartX: 0,
+
+  /* ==================== Lifecycle ==================== */
 
   onLoad(opts) {
+    wx.setNavigationBarColor({
+      frontColor: '#ffffff',
+      backgroundColor: '#0B1121',
+    })
+    this.setData({ examDays: this._getExamDays() })
+
     if (opts.subject) {
       const mapped = this._mapPracticeSubject(opts.subject)
       this.setData({ fromSubject: mapped, selectedSubject: mapped })
     }
     if (opts.chapterId) this.setData({ fromChapterId: opts.chapterId })
     if (opts.chapterName) this.setData({ fromChapterName: decodeURIComponent(opts.chapterName) })
-  },
-
-  _mapPracticeSubject(raw) {
-    const map = {
-      'math2': 'math', 'math2-calculus': 'math', 'math2-linalg': 'math',
-      'exam408': 'data_structure',
-      'exam408-ds': 'data_structure', 'exam408-os': 'operating_system',
-      'exam408-co': 'computer_organization', 'exam408-cn': 'computer_network',
-      'english': 'english',
-    }
-    return map[raw] || raw
   },
 
   async onShow() {
@@ -86,6 +105,10 @@ Page({
     } else if (this.data.phase !== PHASE.RUNNING) {
       this._restoreBreak()
     }
+    // trigger entrance animation on next frame
+    setTimeout(() => {
+      this.setData({ pageEntered: true })
+    }, 50)
   },
 
   onHide() {
@@ -94,9 +117,13 @@ Page({
 
   onUnload() {
     this._clearTimer()
+    wx.setNavigationBarColor({
+      frontColor: '#ffffff',
+      backgroundColor: '#5B7B9A',
+    })
   },
 
-  /* ==================== 设置阶段 ==================== */
+  /* ==================== UI Handlers ==================== */
 
   selectSubject(e) {
     this.setData({ selectedSubject: e.currentTarget.dataset.key })
@@ -123,13 +150,42 @@ Page({
     this.setData({ breakDuration: v })
   },
 
-  /* ==================== 开始 / 结束 ==================== */
+  /* ==================== Touch / Swipe ==================== */
+
+  onTouchStart(e) {
+    this._touchStartX = e.touches[0].clientX
+  },
+
+  onTouchEnd(e) {
+    if (this.data.phase !== PHASE.IDLE) return
+    const diff = e.changedTouches[0].clientX - this._touchStartX
+    if (Math.abs(diff) < 50) return
+
+    const keys = PRESETS.map(p => p.key)
+    const idx = keys.indexOf(this.data.selectedPreset)
+    if (diff < 0) {
+      // swipe left → next
+      const next = (idx + 1) % keys.length
+      this.selectPreset({ currentTarget: { dataset: { key: keys[next] } } })
+    } else {
+      // swipe right → previous
+      const prev = (idx - 1 + keys.length) % keys.length
+      this.selectPreset({ currentTarget: { dataset: { key: keys[prev] } } })
+    }
+  },
+
+  /* ==================== Start Ceremony ==================== */
 
   async startSession() {
     if (!this.data.selectedSubject) {
       wx.showToast({ title: '请选择学习科目', icon: 'none' })
       return
     }
+    this.setData({ phase: PHASE.CEREMONY })
+
+    // ceremony duration: 2.5s
+    await new Promise(r => setTimeout(r, 2500))
+
     try {
       const session = await api.post('/pomodoro/start', {
         subject: this.data.selectedSubject,
@@ -141,6 +197,7 @@ Page({
       this._beginCountdown(session)
     } catch (e) {
       wx.showToast({ title: '启动失败', icon: 'none' })
+      this.setData({ phase: PHASE.IDLE })
     }
   },
 
@@ -165,10 +222,10 @@ Page({
     this._resetToIdle()
   },
 
-  /* ==================== 计时器 ==================== */
+  /* ==================== Countdown Timer ==================== */
 
   _beginCountdown(session) {
-    const startTime = new Date(session.start_time).getTime()
+    const startTime = new Date(session.start_time + '+00:00').getTime()
     const totalSec = this.data.workDuration * 60
     this.setData({
       phase: PHASE.RUNNING,
@@ -181,7 +238,7 @@ Page({
       pauseStartTime: null,
     })
     this._startTimer(totalSec)
-    setTimeout(() => this.drawRing(totalSec, false), 100)
+    setTimeout(() => this.drawRing(totalSec, false), 200)
   },
 
   togglePause() {
@@ -243,38 +300,43 @@ Page({
     }
   },
 
+  /* ==================== Work Complete ==================== */
+
   async _onWorkComplete() {
     wx.vibrateLong()
     try {
       await api.post(`/pomodoro/${this.data.sessionId}/complete`)
     } catch (e) {
-      console.error('番茄钟完成同步失败', e)
+      console.error('同步失败', e)
     }
     this.loadTodayStats()
 
-    // 进入休息阶段
+    // Celebration overlay
+    const motto = MOTTOES[Math.floor(Math.random() * MOTTOES.length)]
+    this.setData({ showCelebration: true, celebrationMotto: motto })
+
+    await new Promise(r => setTimeout(r, 2800))
+    this.setData({ showCelebration: false })
+
+    // Auto-start break
     const breakSec = this.data.breakDuration * 60
-    wx.showModal({
-      title: '学习完成！',
-      content: `太棒了！休息 ${this.data.breakDuration} 分钟吧`,
-      confirmText: '开始休息',
-      cancelText: '跳过休息',
-      success: (res) => {
-        if (res.confirm) {
-          this._startBreak(breakSec)
-        } else {
-          this._resetToIdle()
-        }
-      },
-    })
+    if (breakSec > 0) {
+      this._startBreak(breakSec)
+    } else {
+      this._resetToIdle()
+    }
   },
 
+  /* ==================== Break Timer ==================== */
+
   _startBreak(totalSec) {
-    wx.setStorageSync('pomodoro_break', { startTime: Date.now(), totalSec: totalSec })
+    wx.setStorageSync('pomodoro_break', { startTime: Date.now(), totalSec })
     this.setData({
       phase: PHASE.BREAK,
       remainingSec: totalSec,
       progress: 1,
+      displayMin: String(Math.floor(totalSec / 60)).padStart(2, '0'),
+      displaySec: String(totalSec % 60).padStart(2, '0'),
     })
     this._clearTimer()
     const tick = () => {
@@ -292,7 +354,6 @@ Page({
         this._clearTimer()
         wx.removeStorageSync('pomodoro_break')
         wx.vibrateShort()
-        wx.showToast({ title: '休息结束', icon: 'none' })
         this._resetToIdle()
       }
     }
@@ -307,7 +368,7 @@ Page({
     this._resetToIdle()
   },
 
-  /* ==================== 恢复与统计 ==================== */
+  /* ==================== Session Restore ==================== */
 
   async _fetchActiveSession() {
     try {
@@ -318,7 +379,7 @@ Page({
   },
 
   _restoreSession(session) {
-    const startTime = new Date(session.start_time).getTime()
+    const startTime = new Date(session.start_time + '+00:00').getTime()
     const totalSec = session.work_duration * 60
     const elapsed = Math.floor((Date.now() - startTime) / 1000)
     const remaining = Math.max(0, totalSec - elapsed)
@@ -334,6 +395,8 @@ Page({
       workDuration: session.work_duration,
       breakDuration: session.break_duration,
       remainingSec: remaining,
+      displayMin: String(Math.floor(remaining / 60)).padStart(2, '0'),
+      displaySec: String(remaining % 60).padStart(2, '0'),
       isPaused: false,
       totalPausedMs: 0,
       pauseStartTime: null,
@@ -363,65 +426,54 @@ Page({
     } catch (_) {}
   },
 
+  /* ==================== Progress Ring (Canvas) ==================== */
+
   drawRing(totalSec, isBreak) {
-    const canvasId = isBreak ? 'progress-ring-break' : 'progress-ring'
     const query = wx.createSelectorQuery().in(this)
-    query.select(`#${canvasId}`).boundingClientRect(rect => {
+    query.select('#progress-ring').boundingClientRect(rect => {
       if (!rect || !rect.width) return
       const size = Math.min(rect.width, rect.height)
       const center = size / 2
-      const radius = center - 14
+      const radius = center - 18
       const lineWidth = 12
       const progress = this.data.progress
-      const ctx = wx.createCanvasContext(canvasId, this)
+
+      const ctx = wx.createCanvasContext('progress-ring', this)
       ctx.clearRect(0, 0, size, size)
 
-      const baseColor = isBreak ? '#6B9B6B' : '#5B7B9A'
-
-      // 底色圆环（带微弱内阴影效果）
+      // Background track — very dim on dark bg
       ctx.beginPath()
-      ctx.setStrokeStyle('#E8E5E0')
+      ctx.setStrokeStyle('rgba(255,255,255,0.06)')
       ctx.setLineWidth(lineWidth)
       ctx.arc(center, center, radius, 0, Math.PI * 2)
       ctx.stroke()
 
-      // 外层光晕
-      if (progress < 1) {
-        ctx.beginPath()
-        ctx.setStrokeStyle(isBreak ? 'rgba(107,155,107,0.08)' : 'rgba(91,123,154,0.08)')
-        ctx.setLineWidth(lineWidth + 8)
-        ctx.setLineCap('round')
-        ctx.arc(center, center, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - progress))
-        ctx.stroke()
-      }
+      // Gradient colors
+      const colors = isBreak
+        ? { start: '#F43F5E', end: '#F97316', dot: '#F97316' }
+        : { start: '#06B6D4', end: '#3B82F6', dot: '#3B82F6' }
 
-      // 进度弧
+      // Progress arc
       ctx.beginPath()
-      ctx.setStrokeStyle(baseColor)
+      const grad = ctx.createLinearGradient(0, 0, size, size)
+      grad.addColorStop(0, colors.start)
+      grad.addColorStop(1, colors.end)
+      ctx.setStrokeStyle(grad)
       ctx.setLineWidth(lineWidth)
       ctx.setLineCap('round')
-      ctx.arc(center, center, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - progress))
+      ctx.arc(center, center, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress)
       ctx.stroke()
 
-      // 进度起点圆点
-      if (progress < 1) {
-        const startAngle = -Math.PI / 2
-        const dotX = center + radius * Math.cos(startAngle)
-        const dotY = center + radius * Math.sin(startAngle)
+      // End dot (only if there's progress)
+      if (progress > 0 && progress < 1) {
+        const endAngle = -Math.PI / 2 + Math.PI * 2 * progress
+        const endX = center + radius * Math.cos(endAngle)
+        const endY = center + radius * Math.sin(endAngle)
         ctx.beginPath()
-        ctx.setFillStyle(baseColor)
-        ctx.arc(dotX, dotY, lineWidth / 2, 0, Math.PI * 2)
+        ctx.setFillStyle(colors.dot)
+        ctx.arc(endX, endY, lineWidth / 2 + 1, 0, Math.PI * 2)
         ctx.fill()
       }
-
-      // 进度终点圆点
-      const endAngle = -Math.PI / 2 + Math.PI * 2 * (1 - progress)
-      const endX = center + radius * Math.cos(endAngle)
-      const endY = center + radius * Math.sin(endAngle)
-      ctx.beginPath()
-      ctx.setFillStyle(baseColor)
-      ctx.arc(endX, endY, lineWidth / 2, 0, Math.PI * 2)
-      ctx.fill()
 
       ctx.draw()
     }).exec()
@@ -443,6 +495,8 @@ Page({
     })
   },
 
+  /* ==================== Stats ==================== */
+
   async loadTodayStats() {
     try {
       const stats = await api.get('/pomodoro/stats')
@@ -459,7 +513,7 @@ Page({
     wx.navigateTo({ url: '/pages/pomodoro-stats/pomodoro-stats' })
   },
 
-  /* ==================== 工具 ==================== */
+  /* ==================== Utility ==================== */
 
   subjectLabel(key) {
     const s = SUBJECTS.find(s => s.key === key)
@@ -470,9 +524,58 @@ Page({
     return SUBJECT_COLOR_MAP[key] || '#5B7B9A'
   },
 
+  subjectEmoji(key) {
+    return SUBJECT_EMOJI_MAP[key] || '📚'
+  },
+
+  presetLabel(key) {
+    const p = PRESETS.find(p => p.key === key)
+    return p ? p.label : key
+  },
+
   getDateStr() {
     const d = new Date()
     const week = ['日', '一', '二', '三', '四', '五', '六']
     return `${d.getMonth() + 1}月${d.getDate()}日 星期${week[d.getDay()]}`
+  },
+
+  /**
+   * 获取距离最近一次考研初试（第一天）的剩余天数
+   * 考研时间规则：每年12月倒数第二个星期六（通常为初试第一天）
+   * 若当年考试已结束，则自动顺延至下一年
+   * @returns {number} 剩余天数（非负整数）
+   */
+  _getExamDays() {
+    // 当前日期（当天0点，消除时间影响）
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
+
+    // 计算指定年份的考研日期（12月倒数第二个星期六）
+    const getExamDate = (year) => {
+      const dec31 = new Date(year, 11, 31)
+      const dayOfWeek = dec31.getDay()            // 周日0 ~ 周六6
+      const lastSaturday = dec31.getDate() - ((dayOfWeek - 6 + 7) % 7)
+      const targetDay = lastSaturday - 7           // 倒数第二个周六
+      return new Date(year, 11, targetDay)
+    }
+
+    let examDate = getExamDate(now.getFullYear())
+    if (examDate < now) {
+      examDate = getExamDate(now.getFullYear() + 1)
+    }
+
+    const diff = Math.ceil((examDate - now) / (1000 * 60 * 60 * 24))
+    return Math.max(0, diff)
+  },
+
+  _mapPracticeSubject(raw) {
+    const map = {
+      'math2': 'math', 'math2-calculus': 'math', 'math2-linalg': 'math',
+      'exam408': 'data_structure',
+      'exam408-ds': 'data_structure', 'exam408-os': 'operating_system',
+      'exam408-co': 'computer_organization', 'exam408-cn': 'computer_network',
+      'english': 'english',
+    }
+    return map[raw] || raw
   },
 })
