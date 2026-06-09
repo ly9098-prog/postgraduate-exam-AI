@@ -6,7 +6,7 @@
       <text class="mini-label">全部</text>
     </view>
     <view class="mini-stat warning" bindtap="switchTab" data-tab="due">
-      <text class="mini-num">{{stats.unmastered || 0}}</text>
+      <text class="mini-num">{{reviewStats.due_today || 0}}</text>
       <text class="mini-label">待复习</text>
     </view>
     <view class="mini-stat success" bindtap="switchTab" data-tab="mastered">
