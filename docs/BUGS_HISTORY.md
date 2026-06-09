@@ -60,7 +60,7 @@
 - **验证**：修复后 312 页 PDF 在 321s 内处理了 148 页（含超时中断），成功返回 41 blocks 并正常进入后续 pipeline 阶段。
 - **说明**：生产服务器（2 核 2G）不应运行大文件 OCR，仅在本地开发机（i7+3060）执行后迁移数据。
 
-## 2026-06-02 — 刷题页 `$...$` 简单公式导致题干/选项重复显示
+## 2026-06-02 — 刷题页 `$...$` 简单公式导致题干/选项重复显示（已修复）
 
 - **现象**：OCR 导入的简单 inline math 题目在刷题页出现重复文本，例如题干重复显示，选项显示为 `A. A. S.value < 0`、`B. B. S.value ≤ 0`。
 - **原因**：部分 OCR 结果把整组选项写成 `$A. ...$`、`$B. ...$`，而刷题页本身还会渲染选项 key；同时简单 `$...$` 内容进入富文本/LaTeX 渲染链路后，在当前小程序渲染链路中容易出现重复展示。
@@ -68,7 +68,7 @@
 - **验证**：`node --check miniprogram/pages/practice/practice.js` 通过；`git diff --check -- miniprogram/pages/practice/practice.js` 通过；微信开发者工具验证问题题目已不再重复显示。
 - **说明**：该修复仅作用于刷题页展示预处理，不修改题库数据、不修改提交逻辑、不修改 `math-question` / `mp-html` 组件。
 
-## 2026-06-01 — PaddleOCR 本地依赖链导致误报缺失
+## 2026-06-01 — PaddleOCR 本地依赖链导致误报缺失（已修复） 
 
 - **现象**：本地后端调试图片 OCR 时，PaddleOCR 被报告为缺失或不可用。
 - **原因**：根因不是单一 Python 包缺失，而是依赖 / 运行时链路问题：先缺少系统库 `libgomp.so.1`，恢复后又遇到 NumPy 2.x 与 `opencv-python` 4.6.x 的 ABI 不兼容。
@@ -76,7 +76,7 @@
 - **验证**：使用 `backend/.venv/bin/python` 成功导入 `numpy`、`cv2`、`paddleocr`。
 - **说明**：后续若再次出现“PaddleOCR 缺失”，应优先检查系统运行库、解释器路径和 NumPy / OpenCV ABI 组合，而不是只重装 `paddleocr`。
 
-## 2026-06-01 — P4 本地后端启动端口占用
+## 2026-06-01 — P4 本地后端启动端口占用（已修复）
 
 - **现象**：P4 本地后端依赖检查通过后，启动仍失败。
 - **原因**：端口 `8000` 已被既有 `uvicorn` / reloader 进程占用，导致新进程无法绑定监听端口。
@@ -84,7 +84,7 @@
 - **验证**：依赖检查已通过，失败点定位为端口绑定冲突。
 - **说明**：该问题不属于依赖安装失败；排查本地启动失败时应在依赖检查后继续确认端口占用。
 
-## 2026-06-01 — 本地调试图片 OCR 功能未启用
+## 2026-06-01 — 本地调试图片 OCR 功能未启用（已修复）
 
 - **现象**：小程序本地调试上传图片时，仍提示 `图片OCR功能未启用`；响应详情在部分展示链路中显示为 `{"detail":"å¾ç OCR åè½æªå¯ç¨"}`。
 - **原因**：小程序 `miniprogram/config.js` 中 `DEV=false` 时请求会走生产地址，不是本地后端；本地后端图片上传接口又会在进入 OCR 流水线前检查 `settings.OCR_ENABLED`，而 `backend/.env` 未设置 `OCR_ENABLED=true` 时会被提前拦截。乱码是中文错误详情的编码错显，原始后端错误为 `图片 OCR 功能未启用`。
@@ -92,7 +92,7 @@
 - **验证**：`python3 -m py_compile backend/app/api/v1/imports.py backend/app/core/config.py backend/app/core/security.py backend/app/services/user_service.py` 通过；`node -e "require('/home/lmh/projects/postgraduate-ai/miniprogram/config.js'); console.log('config ok')"` 通过；`PYTHONPATH=/home/lmh/projects/postgraduate-ai/backend python3 -m pytest /home/lmh/projects/postgraduate-ai/backend/tests/test_services/test_dev_permissions.py -q` 通过。
 - **说明**：修改 `.env` 后需要重启本地后端进程；否则运行时 `settings.OCR_ENABLED` 仍可能是旧值。
 
-## 2026-05-31 — 开发者模式导入页 403 Permission denied
+## 2026-05-31 — 开发者模式导入页 403 Permission denied（已修复）
 
 - **现象**：小程序开发者模式进入导入页时，请求 `GET /api/v1/import/batches` 返回 403，前端显示 `Permission denied`，批次列表加载失败；若完全依赖服务端权限，首页题库导入入口又会在本地调试时被隐藏。
 - **原因**：本地开发者应具备与超管同等权限，但此前只有前端 `config.DEV === true` 放开了入口，后端 `require_app_permission("import:read")` 仍按真实 RBAC 绑定校验；开发模式登录生成的是 `dev_` openid 普通小程序用户，不会自动建立 `app_user_admin_bindings`。
@@ -100,7 +100,7 @@
 - **验证**：`node -e "require('/home/lmh/projects/postgraduate-ai/miniprogram/utils/auth.js'); console.log('auth ok')"` 通过；`PYTHONPATH=/home/lmh/projects/postgraduate-ai/backend python3 -m pytest /home/lmh/projects/postgraduate-ai/backend/tests/test_services/test_dev_permissions.py -q` 通过。
 - **说明**：返回 403 而不是 401 说明 JWT 有效且用户存在，失败点是当前用户未命中 `import:read` 权限。生产环境不按 `dev_` openid 放行，仍要求后台绑定和 RBAC 权限。
 
-## 2026-05-31 — users.is_banned 缺列导致登录/用户查询失败
+## 2026-05-31 — users.is_banned 缺列导致登录/用户查询失败（已修复）
 
 - **现象**：接口查询 `users` 时返回 `UndefinedColumnError: column users.is_banned does not exist`，导致按 openid 查询用户失败。
 - **原因**：`User` 模型已包含封禁字段，但历史数据库表结构未完成对应迁移；开发环境 `create_all()` 不会补齐既有表缺失列。

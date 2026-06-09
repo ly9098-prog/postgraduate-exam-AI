@@ -313,6 +313,7 @@ async def import_text_questions(
     items: list[TextImportResultItem] = []
     succeeded = 0
     failed = 0
+    duplicates_filtered = 0
 
     for i, q in enumerate(data.questions):
         try:
@@ -350,7 +351,16 @@ async def import_text_questions(
                     source_file="text_import",
                     raw_data=q.model_dump(),
                     result=result,
+                    skip_existing=True,
                 )
+            if qi is None:
+                items.append(TextImportResultItem(
+                    block_index=i,
+                    status="duplicate",
+                    error="题库中已存在相同题目",
+                ))
+                duplicates_filtered += 1
+                continue
             items.append(TextImportResultItem(
                 block_index=i,
                 import_id=qi.id,
@@ -372,6 +382,7 @@ async def import_text_questions(
         total=len(data.questions),
         succeeded=succeeded,
         failed=failed,
+        duplicates_filtered=duplicates_filtered,
     )
 
 

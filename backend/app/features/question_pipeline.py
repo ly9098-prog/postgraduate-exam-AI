@@ -1049,21 +1049,45 @@ async def _create_question_import(
     raw_data: dict,
     result: dict,
     extra_fields: dict | None = None,
-) -> QuestionImport:
+    skip_existing: bool = False,
+) -> QuestionImport | None:
+    question_hash = result["normalized"].get("question_hash")
+    subject = result["import_fields"].get("subject")
+
+    if skip_existing and question_hash and subject:
+        existing = await _find_duplicate_by_hash(db, subject, question_hash)
+        if existing:
+            logger.info(
+                "[DuplicateFilter] 跳过已存在的题目 subject=%s hash=%s existing_id=%s",
+                subject,
+                question_hash,
+                existing.id,
+            )
+            return None
+        existing_import = await _find_import_duplicate_by_hash(db, subject, question_hash)
+        if existing_import:
+            logger.info(
+                "[DuplicateFilter] 跳过审核池中已存在的题目 subject=%s hash=%s existing_import_id=%s",
+                subject,
+                question_hash,
+                existing_import.id,
+            )
+            return None
+
     qi = QuestionImport(
         batch_id=batch_id,
         source_type=source_type,
         source_file=source_file,
         raw_data=raw_data,
         status="pending",
-        question_hash=result["normalized"].get("question_hash") or None,
+        question_hash=question_hash or None,
         **{k: v for k, v in result["import_fields"].items() if k in _QI_PARSED_FIELDS},
         **(extra_fields or {}),
     )
     db.add(qi)
     await db.flush()
     await _refresh_import_duplicate_status(
-        db, qi, result["normalized"].get("question_hash")
+        db, qi, question_hash,
     )
     return qi
 
@@ -1077,22 +1101,29 @@ async def import_excel(
 
     batch_id = f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     imported = 0
+    skipped_duplicates = 0
     for row in raw_rows:
         result = process_question_pipeline(
             row, "excel", {"file": filename, "page": 0}
         )
         if not result["is_valid"]:
             continue
-        await _create_question_import(
+        qi = await _create_question_import(
             db,
             batch_id=batch_id,
             source_type="excel",
             source_file=filename,
             raw_data=row,
             result=result,
+            skip_existing=True,
         )
+        if qi is None:
+            skipped_duplicates += 1
+            continue
         imported += 1
     await db.commit()
+    if skipped_duplicates:
+        logger.info("[DuplicateFilter] Excel导入跳过 %d 道重复题目", skipped_duplicates)
     return batch_id, imported
 
 
@@ -1102,22 +1133,29 @@ async def import_pdf(
     raw_rows = _parse_pdf(content, filename)
     batch_id = f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     imported = 0
+    skipped_duplicates = 0
     for row in raw_rows:
         result = process_question_pipeline(
             row, "pdf", {"file": filename, "page": row.get("page", 0)}
         )
         if not result["is_valid"]:
             continue
-        await _create_question_import(
+        qi = await _create_question_import(
             db,
             batch_id=batch_id,
             source_type="pdf",
             source_file=filename,
             raw_data=row,
             result=result,
+            skip_existing=True,
         )
+        if qi is None:
+            skipped_duplicates += 1
+            continue
         imported += 1
     await db.commit()
+    if skipped_duplicates:
+        logger.info("[DuplicateFilter] PDF导入跳过 %d 道重复题目", skipped_duplicates)
     return batch_id, imported
 
 
@@ -1664,47 +1702,48 @@ async def generate_drafts(
         questions = []
 
     generated = 0
+    skipped_duplicate = 0
     for q in questions:
         if not isinstance(q, dict):
             continue
         result = process_question_pipeline(q, "ai")
         if not result["is_valid"]:
             continue
-        f = result["import_fields"]
         norm = result["normalized"]
-        db.add(QuestionImport(
+        qi = await _create_question_import(
+            db,
             batch_id=batch_id,
             source_type="ai_generated",
             source_file=None,
-            subject=f["subject"],
-            question_type=f["question_type"],
             raw_data=q,
-            parsed_content=f["parsed_content"],
-            parsed_options=f["parsed_options"],
-            parsed_answer=f["parsed_answer"],
-            parsed_analysis=f["parsed_analysis"],
-            status="pending",
-            ai_generated=True,
-            ai_source="generate",
-            ai_metadata={
-                "knowledge_points": norm["knowledge_points"],
-                "difficulty": norm["difficulty"],
-                "request": {
-                    "subject": subject,
-                    "knowledge_points": knowledge_points,
-                    "difficulty": difficulty,
-                    "question_type": question_type,
+            result=result,
+            extra_fields={
+                "ai_generated": True,
+                "ai_source": "generate",
+                "ai_metadata": {
+                    "knowledge_points": norm["knowledge_points"],
+                    "difficulty": norm["difficulty"],
+                    "request": {
+                        "subject": subject,
+                        "knowledge_points": knowledge_points,
+                        "difficulty": difficulty,
+                        "question_type": question_type,
+                    },
                 },
+                "ai_raw_response": raw,
+                "ai_answer_flag": bool(result["import_fields"].get("parsed_answer")),
             },
-            ai_raw_response=raw,
-            ai_answer_flag=bool(f["parsed_answer"]),
-        ))
+            skip_existing=True,
+        )
+        if qi is None:
+            skipped_duplicate += 1
+            continue
         generated += 1
 
     db.add(_build_log(
         user_id=user_id, action="generate", target_type="batch",
         target_id=None, batch_id=batch_id, prompt_text=prompt_text,
-        raw_response=raw, parsed_result={"count": generated},
+        raw_response=raw, parsed_result={"count": generated, "skipped_duplicate": skipped_duplicate},
         confidence=None,
         model=resp["model"], tokens_used=resp["tokens_used"],
         duration_ms=resp["duration_ms"], success=True,
@@ -1713,6 +1752,7 @@ async def generate_drafts(
     return {
         "batch_id": batch_id,
         "generated": generated,
+        "skipped_duplicate": skipped_duplicate,
         "from_fallback": False,
         "tokens_used": resp["tokens_used"],
         "duration_ms": resp["duration_ms"],
