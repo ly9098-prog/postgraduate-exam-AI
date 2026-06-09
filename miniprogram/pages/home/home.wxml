@@ -57,6 +57,14 @@
     </view>
     <text class="action-arrow">›</text>
   </view>
+  <view class="action-card" bindtap="goPomodoro">
+    <view class="icon-badge icon-warning">钟</view>
+    <view class="action-info">
+      <text class="action-title">番茄钟</text>
+      <text class="action-desc">专注计时 · 学习节奏管理</text>
+    </view>
+    <text class="action-arrow">›</text>
+  </view>
   <view class="action-card" bindtap="goImport" wx:if="{{isAdmin}}">
     <view class="icon-badge icon-success">导</view>
     <view class="action-info">

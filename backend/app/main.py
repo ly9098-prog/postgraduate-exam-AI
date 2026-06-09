@@ -22,6 +22,7 @@ from app.api.v1.knowledge_points import router as knowledge_points_router
 from app.api.v1.ai_import import router as ai_import_router
 from app.api.v1.cache import router as cache_router
 from app.api.v1.health import router as health_router
+from app.api.v1.pomodoro import router as pomodoro_router
 from app.api.v1.admin_ai_settings import router as admin_ai_settings_router
 from app.api.v1.admin_audit_logs import router as admin_audit_logs_router
 from app.api.v1.admin_auth import router as admin_auth_router
@@ -147,6 +148,7 @@ app.include_router(admin_subjects_router)
 app.include_router(admin_users_router)
 app.include_router(admin_watermark_rules_router)
 app.include_router(sync_router)
+app.include_router(pomodoro_router)
 
 # 静态文件服务（开发用公式图片）
 os.makedirs("static/formulas", exist_ok=True)

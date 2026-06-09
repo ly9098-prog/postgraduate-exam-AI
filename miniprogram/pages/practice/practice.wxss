@@ -298,6 +298,18 @@
   color: #9AABBA;
 }
 
+.pomodoro-link {
+  text-align: center;
+  padding: 24rpx;
+  font-size: 26rpx;
+  color: #C49A6B;
+  font-weight: 500;
+}
+
+.pomodoro-link:active {
+  opacity: 0.76;
+}
+
 /* ==================== 答题页 ==================== */
 
 .practice {

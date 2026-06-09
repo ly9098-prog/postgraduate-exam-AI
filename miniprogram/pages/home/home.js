@@ -53,6 +53,7 @@ Page({
   goWrongBook() { wx.navigateTo({ url: '/pages/wrong-book/wrong-book' }) },
   goReview() { wx.navigateTo({ url: '/pages/wrong-book/wrong-book?tab=due' }) },
   goDashboard() { wx.navigateTo({ url: '/pages/dashboard/dashboard' }) },
+  goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
   goImport() {
     wx.navigateTo({ url: '/pages/import/import' })
   },
