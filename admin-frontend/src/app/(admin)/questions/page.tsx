@@ -2,14 +2,41 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, FileQuestion, Search, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  FileQuestion,
+  Search,
+  ChevronRight,
+  BookOpen,
+  BarChart3,
+  Tag,
+  Hash,
+  Layers,
+  Clock,
+  Pencil,
+  Trash2,
+  Save,
+  X,
+} from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
+import { MathFormula } from "@/components/ui/math-formula";
+import { useAuthStore } from "@/lib/auth/auth-store";
+import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest, toQuery } from "@/lib/api/client";
-import type { AdminQuestion, AdminQuestionDetail, AdminQuestionImportSummary, BatchResult, PaginatedResponse, QuestionVersion, QuestionVersionDetail } from "@/lib/api/types";
+import type {
+  AdminQuestion,
+  AdminQuestionDetail,
+  AdminQuestionImportSummary,
+  BatchResult,
+  PaginatedResponse,
+  QuestionEditRequest,
+  QuestionVersion,
+  QuestionVersionDetail,
+} from "@/lib/api/types";
 
 const reviewStatuses = ["", "pending", "re_pending", "approved", "rejected"];
 const activeOptions = [
@@ -19,8 +46,9 @@ const activeOptions = [
 ];
 
 type ConfirmState =
-  | { action: "single-approve" | "single-reject"; id: number }
-  | { action: "batch-approve" | "batch-reject" }
+  | { action: "single-approve"; id: number }
+  | { action: "batch-approve" | "batch-delete" }
+  | { action: "delete"; id: number }
   | null;
 
 function textFromContent(content: Record<string, unknown> | string | null | undefined) {
@@ -110,15 +138,60 @@ function renderDuplicateInfo(importRecord: AdminQuestionImportSummary | null | u
   );
 }
 
+/** Difficulty pill */
+function DifficultyBadge({ difficulty }: { difficulty: number | string | null | undefined }) {
+  const d = Number(difficulty) || 0;
+  const colors = [
+    "bg-emerald-50 text-emerald-700 border-emerald-200",
+    "bg-green-50 text-green-700 border-green-200",
+    "bg-amber-50 text-amber-700 border-amber-200",
+    "bg-orange-50 text-orange-700 border-orange-200",
+    "bg-red-50 text-red-700 border-red-200",
+  ];
+  const idx = Math.min(Math.max(Math.round(d) - 1, 0), colors.length - 1);
+  const label = ["简单", "较易", "中等", "较难", "困难"];
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${colors[idx]}`}>
+      <BarChart3 className="h-3 w-3" />
+      {label[idx] ?? d}
+    </span>
+  );
+}
+
+/** Type badge */
+const TYPE_LABELS: Record<string, string> = {
+  single_choice: "单选题",
+  multiple_choice: "多选题",
+  true_false: "判断题",
+  fill_blank: "填空题",
+  multi_blank_choice: "多空选择",
+  subjective: "问答题",
+};
+
+function TypeBadge({ type: t }: { type: string | null | undefined }) {
+  const label = TYPE_LABELS[t ?? ""] ?? t ?? "未知";
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-white/80 px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-text-secondary)]">
+      <Layers className="h-3 w-3" />
+      {label}
+    </span>
+  );
+}
+
 export default function QuestionsPage() {
   const queryClient = useQueryClient();
+  const permissions = useAuthStore((state) => state.permissions);
   const [filters, setFilters] = useState({ subject: "", review_status: "", is_active: "", question_type: "", keyword: "", year: "" });
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [selectedQuestionId, setSelectedQuestionId] = useState<number | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState<QuestionEditRequest>({});
+
+  const canWrite = hasPermission(permissions, "question:write");
+  const canDelete = hasPermission(permissions, "question:delete");
 
   const queryParams = useMemo(
     () => ({
@@ -164,16 +237,21 @@ export default function QuestionsPage() {
   const reviewMutation = useMutation({
     mutationFn: async (state: Exclude<ConfirmState, null>) => {
       if (state.action === "single-approve") return apiRequest<AdminQuestion>(`/questions/${state.id}/approve`, { method: "POST" });
-      if (state.action === "single-reject") return apiRequest<AdminQuestion>(`/questions/${state.id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) });
       if (state.action === "batch-approve") return apiRequest<BatchResult>("/questions/batch-approve", { method: "POST", body: JSON.stringify({ ids: Array.from(selectedIds) }) });
-      return apiRequest<BatchResult>("/questions/batch-reject", { method: "POST", body: JSON.stringify({ ids: Array.from(selectedIds), reason: rejectReason }) });
+      if (state.action === "batch-delete") return apiRequest<BatchResult>("/questions/batch-delete", { method: "POST", body: JSON.stringify({ ids: Array.from(selectedIds) }) });
+      if (state.action === "delete") return apiRequest<{ status: string }>(`/questions/${state.id}`, { method: "DELETE" });
+      throw new Error("未知操作");
     },
-    onSuccess: (result) => {
-      if ("id" in result) {
+    onSuccess: (result, variables: Exclude<ConfirmState, null>) => {
+      if (variables.action === "delete") {
+        setMessage(`题目 #${variables.id} 已删除。`);
+        setSelectedQuestionId(null);
+      } else if ("id" in result) {
         setMessage(`操作成功，题目 #${result.id} 已处理。`);
       } else {
-        const successIds = result.success_ids ?? result.successIds ?? [];
-        const failedItems = result.failed_items ?? result.failedItems ?? [];
+        const r = result as BatchResult;
+        const successIds = r.success_ids ?? r.successIds ?? [];
+        const failedItems = r.failed_items ?? r.failedItems ?? [];
         const failures = failedItems.length
           ? `失败 ${failedItems.length} 条：${failedItems.map((item) => `#${item.id} ${item.error}`).join("；")}`
           : "无失败项";
@@ -181,11 +259,29 @@ export default function QuestionsPage() {
       }
       setSelectedIds(new Set());
       setConfirmState(null);
-      setRejectReason("");
       queryClient.invalidateQueries({ queryKey: ["questions"] });
     },
     onError: (error) => {
       setMessage(error instanceof Error ? error.message : "操作失败，请稍后重试。");
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedQuestionId) throw new Error("未选中题目");
+      return apiRequest<AdminQuestion>(`/questions/${selectedQuestionId}`, {
+        method: "PATCH",
+        body: JSON.stringify(editForm),
+      });
+    },
+    onSuccess: () => {
+      setMessage("题目已更新。");
+      setEditing(false);
+      queryClient.invalidateQueries({ queryKey: ["questions"] });
+      queryClient.invalidateQueries({ queryKey: ["questions", selectedQuestionId] });
+    },
+    onError: (error) => {
+      setMessage(error instanceof Error ? error.message : "更新失败，请稍后重试。");
     },
   });
 
@@ -216,36 +312,76 @@ export default function QuestionsPage() {
   const openDetail = (id: number) => {
     setSelectedQuestionId(id);
     setSelectedVersion(null);
+    setEditing(false);
+    setEditForm({});
   };
 
-  const confirmDescription = confirmState?.action.includes("reject")
-    ? "拒绝题目需要填写原因，确认后将提交到后端审核接口。"
-    : "确认后将提交审核通过操作。";
+  const startEditing = () => {
+    if (!selectedQuestion) return;
+    // Pre-fill form from current question data
+    const content = selectedQuestion.content;
+    const stem = textFromContent(content);
+    setEditForm({
+      subject: selectedQuestion.subject || "",
+      question_type: selectedQuestion.question_type || "",
+      difficulty: selectedQuestion.difficulty,
+      answer: selectedQuestion.answer || "",
+      analysis: selectedQuestion.analysis || "",
+      options: selectedQuestion.options ?? undefined,
+      content: { ...content, stem },
+      knowledge_points: selectedQuestion.knowledge_points ?? undefined,
+    });
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setEditing(false);
+    setEditForm({});
+  };
+
+  const confirmDescription = (() => {
+    if (confirmState?.action === "delete" || confirmState?.action === "batch-delete") return "删除后题目将从题库永久移除，此操作不可撤销。";
+    return "确认后将提交审核通过操作。";
+  })();
+
+  const countByStatus = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const item of items) {
+      const s = item.review_status || "pending";
+      counts[s] = (counts[s] || 0) + 1;
+    }
+    return counts;
+  }, [items]);
 
   return (
     <div className="space-y-6">
       <div>
         <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--color-text-hint)]">Questions</p>
-        <h2 className="mt-2 font-display text-4xl font-bold text-[var(--ink)]">题库</h2>
+        <h2 className="mt-2 font-display text-4xl font-bold text-[var(--ink)]">题目管理</h2>
       </div>
+
       <Card>
         <CardHeader className="space-y-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h3 className="font-display text-2xl font-bold text-[var(--ink)]">题目列表</h3>
-              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">支持多条件筛选、批量审核、详情查看与版本历史。</p>
+              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">题库中全部正式题目，支持筛选、批量审核、详情查看。</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" disabled={selectedIds.size === 0} onClick={() => setConfirmState({ action: "batch-approve" })}>
                 <CheckCircle2 className="h-4 w-4" />
                 批量通过
               </Button>
-              <Button variant="danger" disabled={selectedIds.size === 0} onClick={() => setConfirmState({ action: "batch-reject" })}>
-                <XCircle className="h-4 w-4" />
-                批量拒绝
-              </Button>
+              {canDelete && (
+                <Button variant="danger" disabled={selectedIds.size === 0} onClick={() => setConfirmState({ action: "batch-delete" })}>
+                  <Trash2 className="h-4 w-4" />
+                  批量删除
+                </Button>
+              )}
             </div>
           </div>
+
+          {/* Search + filters */}
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <label className="relative xl:col-span-2">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
@@ -266,95 +402,311 @@ export default function QuestionsPage() {
             </select>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3">
-          {message ? <p className="rounded-2xl border border-[var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[var(--color-text-secondary)]">{message}</p> : null}
-          <label className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-            <input type="checkbox" checked={allChecked} onChange={toggleAll} />
-            选择当前页全部题目
+
+        <CardContent className="space-y-4">
+          {message ? (
+            <div role="status" aria-live="polite" className="fixed right-6 top-6 z-[60] max-w-sm rounded-2xl border border-[var(--color-success)] bg-white px-5 py-4 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-floating)]">
+              {message}
+            </div>
+          ) : null}
+
+          {/* Stats bar */}
+          {items.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white/60 px-4 py-2.5 text-xs text-[var(--color-text-secondary)]">
+              <span className="flex items-center gap-1.5 font-medium text-[var(--ink)]">
+                <Hash className="h-3.5 w-3.5" />
+                共 {items.length} 题
+              </span>
+              {Object.entries(countByStatus).map(([status, count]) => (
+                <StatusBadge key={status} tone={statusTone(status)}>
+                  {status} {count}
+                </StatusBadge>
+              ))}
+            </div>
+          ) : null}
+
+          {/* Select all */}
+          <label className="inline-flex items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white/70 px-4 py-2.5 text-sm text-[var(--color-text-secondary)] transition hover:bg-white">
+            <input type="checkbox" checked={allChecked} onChange={toggleAll} className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary)]" />
+            <span className="font-medium">选择当前页全部题目</span>
+            {selectedIds.size > 0 && (
+              <span className="ml-1 rounded-md bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-dark)]">
+                已选 {selectedIds.size}
+              </span>
+            )}
           </label>
-          {items.map((question) => (
-            <div key={question.id} className="rounded-2xl border border-[var(--color-border)] bg-white/70 p-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div className="flex min-w-0 gap-3">
-                  <input className="mt-1" type="checkbox" checked={selectedIds.has(question.id)} onChange={() => toggleOne(question.id)} />
-                  <div className="min-w-0">
+
+          {/* Question list */}
+          {items.map((question) => {
+            const stemText = textFromContent(question.content) || `题目 #${question.id}`;
+            return (
+              <div
+                key={question.id}
+                className="group relative rounded-2xl border border-[var(--color-border)] bg-white/70 transition hover:border-[var(--color-primary-light)] hover:bg-white hover:shadow-sm"
+              >
+                <div className="flex items-start gap-3 p-4">
+                  {/* Checkbox */}
+                  <div className="flex shrink-0 items-center pt-1">
+                    <input type="checkbox" checked={selectedIds.has(question.id)} onChange={() => toggleOne(question.id)} className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary)]" />
+                  </div>
+
+                  {/* Content */}
+                  <div className="min-w-0 flex-1 space-y-2.5">
+                    {/* Badge row */}
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge tone={statusTone(question.review_status)}>{question.review_status || "pending"}</StatusBadge>
-                      <StatusBadge tone={question.is_active ? "success" : "neutral"}>{question.is_active ? "启用" : "停用"}</StatusBadge>
-                      <span className="text-xs text-[var(--color-text-hint)]">{question.subject || "未分类"} · {question.question_type || "未标注题型"} · 难度 {question.difficulty}</span>
+                      {question.is_active ? (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">
+                          启用
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-white/80 px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-text-hint)]">
+                          停用
+                        </span>
+                      )}
+                      {question.subject && (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-primary-light)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-primary-dark)]">
+                          <BookOpen className="h-3 w-3" />
+                          {question.subject}
+                        </span>
+                      )}
+                      <TypeBadge type={question.question_type} />
+                      <DifficultyBadge difficulty={question.difficulty} />
                     </div>
-                    <p className="mt-3 whitespace-pre-wrap font-semibold text-[var(--ink)]">{textFromContent(question.content) || `题目 #${question.id}`}</p>
+
+                    {/* Stem */}
+                    <div className="leading-relaxed text-[var(--ink)]">
+                      <MathFormula text={stemText} />
+                    </div>
+
+                    {/* Footer metadata */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--color-text-hint)]">
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        #{question.id}
+                      </span>
+                      {question.year && (
+                        <span className="inline-flex items-center gap-1">
+                          <Tag className="h-3 w-3" />
+                          {question.year}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex shrink-0 items-start gap-2 opacity-60 transition group-hover:opacity-100">
+                    <Button variant="secondary" onClick={() => openDetail(question.id)} className="h-9 gap-1.5 px-3 text-xs font-medium">
+                      <FileQuestion className="h-4 w-4" />
+                      详情
+                      <ChevronRight className="h-3 w-3" />
+                    </Button>
+                    <Button variant="secondary" onClick={() => setConfirmState({ action: "single-approve", id: question.id })} className="h-9 px-3 text-xs font-medium">
+                      通过
+                    </Button>
                   </div>
                 </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  <Button variant="secondary" onClick={() => openDetail(question.id)}>
-                    <FileQuestion className="h-4 w-4" />
-                    详情
-                  </Button>
-                  <Button variant="secondary" onClick={() => setConfirmState({ action: "single-approve", id: question.id })}>通过</Button>
-                  <Button variant="danger" onClick={() => setConfirmState({ action: "single-reject", id: question.id })}>拒绝</Button>
-                </div>
               </div>
+            );
+          })}
+
+          {!questions.isLoading && items.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-16 text-center">
+              <FileQuestion className="h-12 w-12 text-[var(--color-text-hint)]" />
+              <p className="text-sm text-[var(--color-text-hint)]">暂无题目</p>
+              <p className="text-xs text-[var(--color-text-hint)]">尝试调整筛选条件</p>
             </div>
-          ))}
-          {!questions.isLoading && items.length === 0 ? <p className="py-10 text-center text-sm text-[var(--color-text-hint)]">暂无题目</p> : null}
-          {questions.isError ? <p className="text-sm text-[var(--color-danger)]">题库接口当前不可用，若 router 未挂载则属于后端阻塞。</p> : null}
+          ) : null}
+
+          {questions.isError ? (
+            <div className="rounded-2xl border border-[var(--color-danger-light)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
+              题目接口当前不可用，若 router 未挂载则属于后端阻塞。
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
+      {/* Detail drawer */}
       {selectedQuestionId !== null ? (
         <div className="fixed inset-0 z-40 flex justify-end bg-[rgba(16,24,40,0.28)]" onClick={() => setSelectedQuestionId(null)}>
           <aside className="h-full w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-[var(--shadow-floating)]" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between gap-4">
-              <h3 className="font-display text-2xl font-bold text-[var(--ink)]">题目详情</h3>
-              <Button variant="ghost" onClick={() => setSelectedQuestionId(null)}>关闭</Button>
-            </div>
-            {selectedQuestion ? (
-              <div className="mt-6 space-y-5 text-sm">
-                {renderDuplicateInfo(selectedQuestion.import_record)}
-                {[
-                  ["题干", textFromContent(selectedQuestion.content)],
-                  ["选项", renderJson(selectedQuestion.options)],
-                  ["答案", selectedQuestion.answer],
-                  ["解析", selectedQuestion.analysis],
-                  ["知识点", renderJson(selectedQuestion.knowledge_points)],
-                  ["难度", selectedQuestion.difficulty],
-                ].map(([label, value]) => (
-                  <section key={String(label)} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
-                    <p className="font-semibold text-[var(--ink)]">{label}</p>
-                    <pre className="mt-2 whitespace-pre-wrap font-sans text-[var(--color-text-secondary)]">{renderJson(value)}</pre>
-                  </section>
-                ))}
-                <section className="rounded-2xl border border-[var(--color-border)] p-4">
-                  <p className="font-semibold text-[var(--ink)]">版本历史</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {(versions.data?.items ?? []).map((version) => (
-                      <Button key={version.id} variant={selectedVersion === version.version ? "primary" : "secondary"} onClick={() => setSelectedVersion(version.version)}>
-                        v{version.version}
-                      </Button>
-                    ))}
-                  </div>
-                  {versionDetail.data ? (
-                    <div className="mt-4 space-y-4">
-                      <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
-                        <p className="font-semibold text-[var(--ink)]">对比基线：当前题目 vs v{versionDetail.data.version} 历史快照</p>
-                      </div>
-                      {renderDiff("题干", textFromContent(selectedQuestion.content), textFromContent(versionDetail.data.content))}
-                      {renderDiff("选项", selectedQuestion.options ?? null, versionDetail.data.options ?? null)}
-                      {renderDiff("答案", selectedQuestion.answer, versionDetail.data.answer)}
-                      {renderDiff("解析", selectedQuestion.analysis ?? null, versionDetail.data.analysis ?? null)}
-                      {renderDiff("难度", selectedQuestion.difficulty, versionDetail.data.difficulty)}
-                      {renderDiff("知识点", selectedQuestion.knowledge_points ?? null, versionDetail.data.knowledge_points ?? null)}
-                      <details className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
-                        <summary className="cursor-pointer font-semibold text-[var(--ink)]">原始 JSON</summary>
-                        <pre className="mt-4 max-h-80 overflow-auto text-xs text-[var(--color-text-secondary)]">
-                          {JSON.stringify(versionDetail.data, null, 2)}
-                        </pre>
-                      </details>
-                    </div>
-                  ) : null}
-                </section>
+              <h3 className="font-display text-2xl font-bold text-[var(--ink)]">
+                {editing ? "编辑题目" : "题目详情"}
+                {!editing && <span className="ml-2 font-mono text-base text-[var(--color-text-hint)]">#{selectedQuestionId}</span>}
+              </h3>
+              <div className="flex items-center gap-2">
+                {!editing && canWrite && (
+                  <Button variant="secondary" onClick={startEditing}>
+                    <Pencil className="h-4 w-4" />
+                    编辑
+                  </Button>
+                )}
+                {!editing && canDelete && (
+                  <Button variant="danger" onClick={() => setConfirmState({ action: "delete", id: selectedQuestionId })}>
+                    <Trash2 className="h-4 w-4" />
+                    删除
+                  </Button>
+                )}
+                <Button variant="ghost" onClick={() => setSelectedQuestionId(null)}>关闭</Button>
               </div>
+            </div>
+
+            {selectedQuestion ? (
+              editing ? (
+                /* ===== Edit form ===== */
+                <div className="mt-6 space-y-5">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</p>
+                      <Input value={editForm.subject ?? ""} onChange={(e) => setEditForm({ ...editForm, subject: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">题型</p>
+                      <Input value={editForm.question_type ?? ""} onChange={(e) => setEditForm({ ...editForm, question_type: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">难度</p>
+                      <select
+                        className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
+                        value={editForm.difficulty ?? 3}
+                        onChange={(e) => setEditForm({ ...editForm, difficulty: Number(e.target.value) })}
+                      >
+                        {[1, 2, 3, 4, 5].map((d) => (
+                          <option key={d} value={d}>{d} - {["简单", "较易", "中等", "较难", "困难"][d - 1]}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-[var(--color-text-secondary)]">题干</p>
+                    <textarea
+                      className="min-h-32 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm"
+                      value={textFromContent(editForm.content) ?? ""}
+                      onChange={(e) => setEditForm({ ...editForm, content: { ...editForm.content, stem: e.target.value } })}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-[var(--color-text-secondary)]">选项 (JSON)</p>
+                    <textarea
+                      className="min-h-24 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 font-mono text-xs"
+                      value={editForm.options ? JSON.stringify(editForm.options, null, 2) : ""}
+                      onChange={(e) => {
+                        try {
+                          setEditForm({ ...editForm, options: JSON.parse(e.target.value) });
+                        } catch {
+                          // Allow invalid JSON while typing
+                        }
+                      }}
+                    />
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</p>
+                      <Input value={editForm.answer ?? ""} onChange={(e) => setEditForm({ ...editForm, answer: e.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">知识点 (JSON)</p>
+                      <input
+                        className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 font-mono text-xs"
+                        value={editForm.knowledge_points ? JSON.stringify(editForm.knowledge_points) : ""}
+                        onChange={(e) => {
+                          try {
+                            setEditForm({ ...editForm, knowledge_points: JSON.parse(e.target.value) });
+                          } catch {
+                            // Allow invalid JSON while typing
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-[var(--color-text-secondary)]">解析</p>
+                    <textarea
+                      className="min-h-24 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm"
+                      value={editForm.analysis ?? ""}
+                      onChange={(e) => setEditForm({ ...editForm, analysis: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-3">
+                    <Button variant="secondary" onClick={cancelEditing}>
+                      <X className="h-4 w-4" />
+                      取消
+                    </Button>
+                    <Button variant="primary" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending}>
+                      <Save className="h-4 w-4" />
+                      {updateMutation.isPending ? "保存中..." : "保存修改"}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                /* ===== Detail view ===== */
+                <div className="mt-6 space-y-5 text-sm">
+                  {renderDuplicateInfo(selectedQuestion.import_record)}
+
+                  {/* Stem with math rendering */}
+                  <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
+                    <p className="mb-2 font-semibold text-[var(--ink)]">题干</p>
+                    <div className="whitespace-pre-wrap font-sans leading-relaxed text-[var(--color-text-secondary)]">
+                      <MathFormula text={textFromContent(selectedQuestion.content)} />
+                    </div>
+                  </section>
+
+                  {[
+                    ["选项", renderJson(selectedQuestion.options)],
+                    ["答案", selectedQuestion.answer],
+                    ["解析", selectedQuestion.analysis],
+                    ["知识点", renderJson(selectedQuestion.knowledge_points)],
+                    ["难度", selectedQuestion.difficulty],
+                  ].map(([label, value]) => (
+                    <section key={String(label)} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
+                      <p className="font-semibold text-[var(--ink)]">{label}</p>
+                      {(label === "选项" || label === "解析") ? (
+                        <div className="mt-2 whitespace-pre-wrap font-sans leading-relaxed text-[var(--color-text-secondary)]">
+                          <MathFormula text={String(renderJson(value))} />
+                        </div>
+                      ) : (
+                        <pre className="mt-2 whitespace-pre-wrap font-sans text-[var(--color-text-secondary)]">{renderJson(value)}</pre>
+                      )}
+                    </section>
+                  ))}
+
+                  <section className="rounded-2xl border border-[var(--color-border)] p-4">
+                    <p className="font-semibold text-[var(--ink)]">版本历史</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {(versions.data?.items ?? []).map((version) => (
+                        <Button key={version.id} variant={selectedVersion === version.version ? "primary" : "secondary"} onClick={() => setSelectedVersion(version.version)}>
+                          v{version.version}
+                        </Button>
+                      ))}
+                    </div>
+                    {versionDetail.data ? (
+                      <div className="mt-4 space-y-4">
+                        <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
+                          <p className="font-semibold text-[var(--ink)]">对比基线：当前题目 vs v{versionDetail.data.version} 历史快照</p>
+                        </div>
+                        {renderDiff("题干", textFromContent(selectedQuestion.content), textFromContent(versionDetail.data.content))}
+                        {renderDiff("选项", selectedQuestion.options ?? null, versionDetail.data.options ?? null)}
+                        {renderDiff("答案", selectedQuestion.answer, versionDetail.data.answer)}
+                        {renderDiff("解析", selectedQuestion.analysis ?? null, versionDetail.data.analysis ?? null)}
+                        {renderDiff("难度", selectedQuestion.difficulty, versionDetail.data.difficulty)}
+                        {renderDiff("知识点", selectedQuestion.knowledge_points ?? null, versionDetail.data.knowledge_points ?? null)}
+                        <details className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
+                          <summary className="cursor-pointer font-semibold text-[var(--ink)]">原始 JSON</summary>
+                          <pre className="mt-4 max-h-80 overflow-auto text-xs text-[var(--color-text-secondary)]">
+                            {JSON.stringify(versionDetail.data, null, 2)}
+                          </pre>
+                        </details>
+                      </div>
+                    ) : null}
+                  </section>
+                </div>
+              )
             ) : (
               <p className="mt-6 text-sm text-[var(--color-text-secondary)]">正在加载详情...</p>
             )}
@@ -364,10 +716,16 @@ export default function QuestionsPage() {
 
       <ConfirmDialog
         open={confirmState !== null}
-        title="确认审核操作"
+        title={
+          confirmState?.action === "delete" || confirmState?.action === "batch-delete"
+            ? "确认删除题目"
+            : "确认审核操作"
+        }
         description={confirmDescription}
-        confirmText="提交"
-        danger={confirmState?.action.includes("reject")}
+        confirmText={
+          confirmState?.action === "delete" || confirmState?.action === "batch-delete" ? "删除" : "提交"
+        }
+        danger={Boolean(confirmState && (confirmState.action === "delete" || confirmState.action === "batch-delete"))}
         loading={reviewMutation.isPending}
         onCancel={() => setConfirmState(null)}
         onConfirm={() => {
@@ -375,16 +733,6 @@ export default function QuestionsPage() {
           reviewMutation.mutate(confirmState);
         }}
       />
-      {confirmState?.action.includes("reject") ? (
-        <div className="fixed inset-x-0 bottom-6 z-[60] mx-auto w-full max-w-md px-4">
-          <textarea
-            className="min-h-24 w-full rounded-2xl border border-[var(--color-border)] bg-white p-3 text-sm outline-none focus:border-[var(--color-primary)]"
-            placeholder="请输入拒绝原因"
-            value={rejectReason}
-            onChange={(event) => setRejectReason(event.target.value)}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }

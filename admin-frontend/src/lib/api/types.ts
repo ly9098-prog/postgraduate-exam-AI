@@ -206,6 +206,19 @@ export type AppUserDetail = AppUser & {
   recent_active_at?: string | null;
 };
 
+export type QuestionEditRequest = {
+  subject?: string;
+  question_type?: string;
+  content?: Record<string, unknown>;
+  options?: Record<string, unknown>;
+  answer?: string;
+  analysis?: string;
+  knowledge_points?: unknown[];
+  difficulty?: number;
+  source?: string;
+  source_type?: string;
+};
+
 export type AdminQuestion = {
   id: number;
   subject: string;
