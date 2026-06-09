@@ -204,9 +204,9 @@ export default function TextImportPage() {
         </p>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="grid gap-6 items-start xl:grid-cols-[1fr_1fr]">
         {/* ===== Left: Input ===== */}
-        <Card>
+        <Card className="min-w-0">
           <CardHeader>
             <h3 className="font-display text-xl font-bold text-[var(--ink)]">
               输入文本
@@ -299,7 +299,7 @@ C
         </Card>
 
         {/* ===== Right: Results ===== */}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 min-w-0">
           {parseResult ? (
             <>
               {/* Stats bar */}
@@ -366,8 +366,8 @@ C
 
               {/* Question list + edit panel */}
               <div className="flex flex-col gap-3">
-                {/* Compact question cards */}
-                <div className="space-y-2">
+                {/* Compact question cards — scrollable to keep right column bounded */}
+                <div className="space-y-2 overflow-y-auto max-h-[55vh]">
                   {parseResult.questions.map((q, index) => (
                     <Card key={index}>
                       <CardContent className="px-4 py-3">
@@ -405,35 +405,35 @@ C
                             {q.stem || "—"}
                           </p>
 
-                          {/* Options inline */}
+                          {/* Options inline — wrap naturally */}
                           {q.options.length > 0 ? (
                             <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[var(--color-text-hint)]">
                               {q.options.map((opt) => (
-                                <span key={opt.key}>
+                                <span key={opt.key} className="truncate max-w-[30%]">
                                   <span className="font-semibold text-[var(--color-text-secondary)]">{opt.key}.</span>{" "}
-                                  {opt.text.length > 20 ? opt.text.slice(0, 20) + "…" : opt.text}
+                                  {opt.text}
                                 </span>
                               ))}
                             </div>
                           ) : null}
 
-                          {/* Answer + analysis + warnings */}
+                          {/* Answer + analysis + warnings — nowrap for key-value, wrap for content */}
                           <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-[var(--color-text-hint)]">
-                            <span>
+                            <span className="whitespace-nowrap">
                               答案：<span className="font-semibold text-[var(--color-text-secondary)]">{renderAnswer(q.answer)}</span>
                             </span>
                             {q.analysis ? (
-                              <span className="max-w-[200px] truncate" title={q.analysis}>
+                              <span className="min-w-0 truncate" title={q.analysis}>
                                 解析：<span className="text-[var(--color-text-secondary)]">{q.analysis}</span>
                               </span>
                             ) : null}
                             {q.warnings.length > 0 ? (
-                              <span className="text-amber-500" title={q.warnings.join("；")}>
+                              <span className="shrink-0 text-amber-500" title={q.warnings.join("；")}>
                                 ⚠ {q.warnings.length}
                               </span>
                             ) : null}
                             {q.errors.length > 0 ? (
-                              <span className="text-red-400" title={q.errors.join("、")}>
+                              <span className="shrink-0 text-red-400" title={q.errors.join("、")}>
                                 ✗ {q.errors.length}
                               </span>
                             ) : null}
