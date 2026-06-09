@@ -10,7 +10,9 @@
     "pages/wrong-book/wrong-book",
     "pages/wrong-detail/wrong-detail",
     "pages/import/import",
-    "pages/dashboard/dashboard"
+    "pages/dashboard/dashboard",
+    "pages/pomodoro/pomodoro",
+    "pages/pomodoro-stats/pomodoro-stats"
   ],
   "window": {
     "navigationBarBackgroundColor": "#5B7B9A",

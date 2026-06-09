@@ -1,0 +1,90 @@
+<view class="page">
+  <block wx:if="{{loading}}">
+    <view class="loading-wrap"><text class="loading-text">加载中...</text></view>
+  </block>
+
+  <block wx:if="{{!loading}}">
+    <!-- 概览卡片：2×2 网格 -->
+    <view class="card overview-card">
+      <view class="overview-row">
+        <view class="overview-item">
+          <text class="ov-icon">🍅</text>
+          <text class="ov-num">{{todaySessions}}</text>
+          <text class="ov-label">今日番茄</text>
+        </view>
+        <view class="overview-divider-v"></view>
+        <view class="overview-item">
+          <text class="ov-icon">⏱</text>
+          <text class="ov-num accent">{{todayDurationText}}</text>
+          <text class="ov-label">今日专注</text>
+        </view>
+      </view>
+      <view class="overview-divider-h"></view>
+      <view class="overview-row">
+        <view class="overview-item">
+          <text class="ov-icon">📊</text>
+          <text class="ov-num">{{weekSessions}}</text>
+          <text class="ov-label">本周番茄</text>
+        </view>
+        <view class="overview-divider-v"></view>
+        <view class="overview-item">
+          <text class="ov-icon">🔥</text>
+          <text class="ov-num green">{{weekDurationText}}</text>
+          <text class="ov-label">本周专注</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 7天趋势 -->
+    <view class="card section-card">
+      <text class="section-title">最近7天专注趋势</text>
+      <view class="chart-wrap">
+        <canvas class="trend-canvas" canvas-id="trend-bars-canvas" id="trend-bars-canvas"></canvas>
+      </view>
+      <view class="trend-legend">
+        <view class="legend-item">
+          <view class="legend-dot" style="background: #5B7B9A;"></view>
+          <text class="legend-text">有记录</text>
+        </view>
+        <view class="legend-item">
+          <view class="legend-dot" style="background: #E8E5E0;"></view>
+          <text class="legend-text">无记录</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 今日科目分布 -->
+    <view class="card section-card" wx:if="{{subjects.length > 0}}">
+      <text class="section-title">今日科目分布</text>
+      <view class="subject-list">
+        <view class="subject-row" wx:for="{{subjects}}" wx:key="subject">
+          <text class="subj-label">{{item._label}}</text>
+          <view class="subj-bar-wrap">
+            <view class="subj-bar" style="width: {{(item.duration_sec / subjects[0].duration_sec) * 100}}%; background: {{item._color}};"></view>
+          </view>
+          <text class="subj-dur">{{item._durationText}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 最近记录 -->
+    <view class="card section-card">
+      <text class="section-title">最近记录</text>
+      <view wx:if="{{history.length === 0}}" class="empty-hint">
+        <text>暂无记录，开始你的第一个番茄钟吧</text>
+      </view>
+      <view class="history-list" wx:if="{{history.length > 0}}">
+        <view class="history-item" wx:for="{{history}}" wx:key="id">
+          <view class="hist-left">
+            <text class="hist-date">{{item._date}} {{item._time}}</text>
+            <text class="hist-subject">{{item._subjectLabel}}</text>
+          </view>
+          <view class="hist-right">
+            <text class="hist-duration">{{item._duration}}</text>
+            <text class="hist-status {{item._statusClass}}">{{item._statusLabel}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>

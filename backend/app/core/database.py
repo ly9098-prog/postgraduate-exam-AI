@@ -185,6 +185,18 @@ async def _ensure_sync_columns(conn):
     await conn.run_sync(repair)
 
 
+async def _ensure_pomodoro_table(conn):
+    def repair(sync_conn):
+        inspector = inspect(sync_conn)
+        if "pomodoro_sessions" in set(inspector.get_table_names()):
+            return
+        from app.models.pomodoro import PomodoroSession
+
+        PomodoroSession.__table__.create(sync_conn, checkfirst=True)
+
+    await conn.run_sync(repair)
+
+
 async def init_db():
     if settings.APP_ENV == "production":
         return
@@ -196,3 +208,4 @@ async def init_db():
         await _ensure_app_user_admin_bindings_table(conn)
         await _ensure_duplicate_check_columns(conn)
         await _ensure_sync_columns(conn)
+        await _ensure_pomodoro_table(conn)
