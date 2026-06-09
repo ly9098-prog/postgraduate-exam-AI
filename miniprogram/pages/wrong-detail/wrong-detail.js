@@ -208,8 +208,76 @@ function _normalizeBlankOptionList(options) {
   return []
 }
 
-function _enrichBlankOptionGroups(groups, answer) {
+function _optionTextToHtml(text) {
+  return _textToHtml(text)
+}
+
+function _subjectLabel(s) {
+  var map = {
+    math2: '数学二', 'math2-calculus': '数学二·高数', 'math2-linalg': '数学二·线代',
+    exam408: '408', 'exam408-ds': '408·DS', 'exam408-os': '408·OS',
+    'exam408-co': '408·CO', 'exam408-cn': '408·CN',
+    english: '英语',
+  }
+  return map[s] || s
+}
+
+function _errorTypeLabel(t) {
+  const map = { concept_mistake: '概念错误', calculation: '计算错误', careless: '粗心', method: '方法错误', other: '其他' }
+  return map[t] || t
+}
+
+function _processWqData(wq) {
+  const opts = wq.options || null
+  const optionKeys = opts ? Object.keys(opts) : []
+  const sourceStemText = (wq.content && (wq.content.text || wq.content.stem)) || (wq.content && _segmentsToText(wq.content.segments)) || ''
+  const stemText = _cleanStemText(sourceStemText, opts, optionKeys)
+  const plainStem = _toPlainInlineMathText(stemText)
+  const stemNeedsRich = !plainStem && _needsRichRender(stemText)
+  const stemHtml = stemNeedsRich ? _textToHtml(stemText) : ''
+  const stemSegments = (wq.content && wq.content.render_mode === 'segments') ? _textToSegments(stemText) : []
+  const blankOptionGroups = _enrichBlankOptionGroups(wq.content && wq.content.blank_option_groups, wq.answer, wq.wrong_answer)
+  const optionItems = optionKeys.map((key) => {
+    const rawText = (opts && opts[key]) || ''
+    const text = _deduplicateLines(_plainOptionText(key, rawText))
+    const needsRich = _needsRichRender(text)
+    const isCorrect = key === wq.answer
+    const isUserAnswer = key === wq.wrong_answer
+    let lineClass = ''
+    let valueClass = 'option-value'
+    if (isCorrect) {
+      lineClass = 'correct'
+      valueClass += ' right'
+    } else if (isUserAnswer) {
+      lineClass = 'user-answer'
+      valueClass += ' wrong'
+    }
+    return {
+      key,
+      text,
+      html: needsRich ? _optionTextToHtml(text) : '',
+      needsRich,
+      className: valueClass,
+      lineClass,
+    }
+  })
+  return {
+    wq,
+    optionKeys,
+    optionItems,
+    blankOptionGroups,
+    stemText,
+    stemNeedsRich,
+    stemHtml,
+    stemSegments,
+    subjectLabelText: _subjectLabel(wq.subject),
+    errorTypeLabelText: _errorTypeLabel(wq.error_type),
+  }
+}
+
+function _enrichBlankOptionGroups(groups, answer, wrongAnswer) {
   const blankAnswers = _normalizeBlankAnswer(answer)
+  const wrongAnswers = _normalizeBlankAnswer(wrongAnswer)
   return (groups || []).map((group) => {
     const groupId = String((group && group.id) || '').trim()
     const options = _normalizeBlankOptionList(group && group.options).map((opt) => {
@@ -218,11 +286,12 @@ function _enrichBlankOptionGroups(groups, answer) {
       const optionText = _stripLeadingOptionLabel(key, text)
       const plain = _toPlainInlineMathText(optionText)
       const needsRich = !plain && _needsRichRender(optionText)
+      const isCorrect = blankAnswers[groupId] === key
       return Object.assign({}, opt, {
         key,
         _text: plain || optionText,
-        _selected: blankAnswers[groupId] === key,
-        _isCorrect: blankAnswers[groupId] === key,
+        _isCorrect: isCorrect,
+        _isUserAnswer: !isCorrect && wrongAnswers[groupId] === key,
         _needsRich: needsRich,
         _html: needsRich ? _optionTextToHtml(optionText) : '',
       })
@@ -245,11 +314,32 @@ Page({
     aiLoading: false,
     aiFallback: false,
     loading: true,
+    questionIds: [],
+    currentIdx: 0,
+    totalQuestions: 0,
+    swiperEnabled: false,
+    animClass: '',
+    showSwipeHint: false,
   },
 
   onLoad(options) {
-    this.setData({ enableMathImage: config.enableMathImage || false })
-    this.loadData(options.id)
+    const { id, ids } = options
+    const questionIds = ids ? ids.split(',').map(Number).filter(Boolean) : []
+    const currentId = Number(id)
+    const currentIdx = questionIds.indexOf(currentId)
+    const swiperEnabled = questionIds.length > 1
+    this.setData({
+      enableMathImage: config.enableMathImage || false,
+      questionIds,
+      currentIdx: currentIdx >= 0 ? currentIdx : 0,
+      totalQuestions: questionIds.length,
+      swiperEnabled,
+      showSwipeHint: swiperEnabled,
+    })
+    if (swiperEnabled) {
+      setTimeout(() => { this.setData({ showSwipeHint: false }) }, 3000)
+    }
+    this.loadData(currentId)
   },
 
   async loadData(wqId) {
@@ -257,32 +347,11 @@ Page({
     try {
       const wq = await api.get(`/wrong-questions/${wqId}`)
       if (!wq) throw new Error('not found')
-
-      const opts = wq.options || null
-      const optionKeys = opts ? Object.keys(opts) : []
-      const sourceStemText = (wq.content && (wq.content.text || wq.content.stem)) || (wq.content && _segmentsToText(wq.content.segments)) || ''
-      const stemText = _cleanStemText(sourceStemText, opts, optionKeys)
-      const plainStem = _toPlainInlineMathText(stemText)
-      const stemNeedsRich = !plainStem && _needsRichRender(stemText)
-      const stemHtml = stemNeedsRich ? _textToHtml(stemText) : ''
-      const stemSegments = (wq.content && wq.content.render_mode === 'segments') ? _textToSegments(stemText) : []
-      const blankOptionGroups = _enrichBlankOptionGroups(wq.content && wq.content.blank_option_groups, wq.answer)
-      const optionItems = optionKeys.map((key) => {
-        const rawText = (opts && opts[key]) || ''
-        const text = _deduplicateLines(_plainOptionText(key, rawText))
-        const needsRich = _needsRichRender(text)
-        const className = `option-value ${key === wq.answer ? 'right' : ''} ${key === wq.wrong_answer ? 'wrong' : ''}`
-        return {
-          key,
-          text,
-          html: needsRich ? _optionTextToHtml(text) : '',
-          needsRich,
-          className,
-        }
-      })
-      const subjectLabelText = this.subjectLabel(wq.subject)
-      const errorTypeLabelText = this.errorTypeLabel(wq.error_type)
-      this.setData({ wq, subjectLabelText, errorTypeLabelText, optionKeys, optionItems, blankOptionGroups, stemText, stemNeedsRich, stemHtml, stemSegments, loading: false })
+      const data = _processWqData(wq)
+      data.aiResult = null
+      data.aiFallback = false
+      this.setData(data)
+      this.setData({ loading: false })
       this.loadAiAnalysis(wqId)
     } catch (e) {
       console.error('加载错题详情失败', e)
@@ -295,8 +364,17 @@ Page({
     this.setData({ aiLoading: true })
     try {
       const result = await api.post('/ai/error-analysis', { wrong_question_id: wqId })
+      const content = result.content
+      if (content) {
+        if (content.error_analysis) {
+          content.error_analysis = content.error_analysis.replace(/^切入点[：:]\s*/, '')
+        }
+        if (content.knowledge_weakness) {
+          content.knowledge_weakness = content.knowledge_weakness.replace(/^核心考点[：:]\s*/, '')
+        }
+      }
       this.setData({
-        aiResult: result.content,
+        aiResult: content,
         aiFallback: result.from_fallback,
         aiLoading: false,
       })
@@ -317,18 +395,86 @@ Page({
     }
   },
 
-  subjectLabel(s) {
-    var map = {
-      math2: '数学二', 'math2-calculus': '数学二·高数', 'math2-linalg': '数学二·线代',
-      exam408: '408', 'exam408-ds': '408·DS', 'exam408-os': '408·OS',
-      'exam408-co': '408·CO', 'exam408-cn': '408·CN',
-      english: '英语',
-    }
-    return map[s] || s
+  // ---- 左滑/右滑切换 ----
+  onTouchStart(e) {
+    if (this._animating || !this.data.swiperEnabled) return
+    const t = e.touches[0]
+    this._touchX = t.clientX
+    this._touchY = t.clientY
+    this._touchTime = Date.now()
+    this._swiped = false
   },
 
-  errorTypeLabel(t) {
-    const map = { concept_mistake: '概念错误', calculation: '计算错误', careless: '粗心', method: '方法错误', other: '其他' }
-    return map[t] || t
+  onTouchEnd(e) {
+    if (this._animating || !this.data.swiperEnabled) return
+    if (this._touchX === undefined) return
+
+    const t = e.changedTouches[0]
+    const dx = t.clientX - this._touchX
+    const dy = t.clientY - this._touchY
+    const dt = Date.now() - this._touchTime
+
+    if (Math.abs(dy) > Math.abs(dx) * 1.5) {
+      this._touchX = undefined
+      return
+    }
+
+    if (Math.abs(dx) < 60) {
+      this._touchX = undefined
+      return
+    }
+
+    this._swiped = true
+    this._touchX = undefined
+
+    const isLeft = dx < 0
+    const currentIdx = this.data.currentIdx
+    const total = this.data.totalQuestions
+    const canGo = isLeft ? currentIdx < total - 1 : currentIdx > 0
+
+    if (!canGo) {
+      this._animating = true
+      this.setData({ animClass: isLeft ? 'edge-left' : 'edge-right' })
+      setTimeout(() => {
+        this.setData({ animClass: '' })
+        this._animating = false
+      }, 200)
+      return
+    }
+
+    const animMs = dt < 200 ? 120 : 160
+    this._animating = true
+    this.setData({ animClass: isLeft ? 'slide-out-left' : 'slide-out-right' })
+
+    const nextIdx = currentIdx + (isLeft ? 1 : -1)
+    setTimeout(() => {
+      this._navigateTo(nextIdx, animMs)
+    }, animMs)
+  },
+
+  async _navigateTo(idx, animMs) {
+    const wqId = this.data.questionIds[idx]
+    try {
+      const wq = await api.get(`/wrong-questions/${wqId}`)
+      if (!wq) throw new Error('not found')
+      const data = _processWqData(wq)
+      data.currentIdx = idx
+      data.aiResult = null
+      data.aiFallback = false
+
+      this.setData(data)
+      this.setData({ animClass: 'slide-in' })
+      setTimeout(() => {
+        this.setData({ animClass: '' })
+        this._animating = false
+      }, animMs)
+
+      this.loadAiAnalysis(wqId)
+    } catch (e) {
+      console.error('切换题目失败', e)
+      wx.showToast({ title: '加载失败', icon: 'none' })
+      this.setData({ animClass: '' })
+      this._animating = false
+    }
   },
 })
