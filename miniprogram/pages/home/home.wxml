@@ -57,9 +57,7 @@
     </view>
     <text class="action-arrow">›</text>
   </view>
-</view>
-
-  <view class="action-card" bindtap="goImport">
+  <view class="action-card" bindtap="goImport" wx:if="{{isAdmin}}">
     <view class="icon-badge icon-success">导</view>
     <view class="action-info">
       <text class="action-title">题库导入</text>
