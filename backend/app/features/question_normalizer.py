@@ -59,6 +59,17 @@ def _clean_stem(text: str) -> str:
     return text.strip()
 
 
+def _break_before_number_markers(text: str) -> str:
+    """在题号标记前插入换行：① ② ...、（1）（2）...、1) 2) ..."""
+    # ①-⑳ 圈号标记
+    text = re.sub(r"(?<!\n)([①-⑳])", r"\n\1", text)
+    # （1）（2）全角括号数字，前面有非空白字符时换行
+    text = re.sub(r"(?<=[^\s])[　 ]*([（][0-9]+[）])", r"\n\1", text)
+    # 1) 2) 数字+括号，排除数学表达式(0,1)和全角括号（1）的误匹配
+    text = re.sub(r"(?<=[^\s\d,（(])[　 ]*(\d+[)）])(?=\s*[一-鿟\w])", r"\n\1", text)
+    return text
+
+
 def _extract_stem(raw_text: str, option_lines: dict[str, str], blank_option_groups: list[dict] | None = None) -> str:
     """从原始题目文本中提取题干（去除选项行和答案/解析行）。"""
     lines = raw_text.split("\n")
@@ -277,6 +288,9 @@ def normalize_question(
     explanation_raw = matched.get("explanation", "")
     section_type = raw_question.get("section_type")
     question_type = QT_MULTI_BLANK_CHOICE if blank_option_groups else _detect_question_type(stem, options, answer_raw, section_type=section_type)
+    # 多空选择题除外：在题号标记（①、（1）、1) 等）前插入换行
+    if question_type != QT_MULTI_BLANK_CHOICE:
+        stem = _break_before_number_markers(stem)
     answer = _normalize_answer(answer_raw, question_type)
     analysis = (explanation_raw or "").strip()
     confidence_score = _compute_confidence(stem, options, answer, question_type)
