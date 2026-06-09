@@ -9,7 +9,7 @@
       <view class="progress-track">
         <view class="progress-fill" style="width:{{totalQuestions > 0 ? (currentIdx + 1) / totalQuestions * 100 : 0}}%"></view>
       </view>
-      <text class="progress-text">{{currentIdx + 1}} / {{totalQuestions}}</text>
+      <text class="progress-text">{{currentIdx + 1}} / {{totalQuestions}} · {{totalQuestions > 0 ? Math.round((currentIdx + 1) / totalQuestions * 100) : 0}}%</text>
     </view>
     <view class="swipe-hint" wx:if="{{swiperEnabled && showSwipeHint}}">
       <text class="swipe-hint-text">← 左右滑动切换 →</text>

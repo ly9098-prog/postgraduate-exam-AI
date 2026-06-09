@@ -446,31 +446,30 @@
   margin-top: 16rpx;
 }
 
-/* 进度条 */
+/* 进度条 — 方案B：胶囊式 + 百分比 */
 .progress-area {
   display: flex;
   align-items: center;
-  gap: 14rpx;
+  gap: 16rpx;
   padding: 20rpx 24rpx 0;
 }
 .progress-track {
   flex: 1;
-  height: 6rpx;
+  height: 8rpx;
   border-radius: 999rpx;
   background: #EDF1F5;
   overflow: hidden;
-  box-shadow: inset 0 1rpx 2rpx rgba(0,0,0,0.04);
 }
 .progress-fill {
   height: 100%;
   border-radius: 999rpx;
-  background: linear-gradient(90deg, #C49A6B, #B8895A);
+  background: linear-gradient(90deg, #5B7B9A, #4A6B8A);
   transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .progress-text {
   font-size: 22rpx;
   font-weight: 700;
-  color: #9AABBA;
+  color: #5B7B9A;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
