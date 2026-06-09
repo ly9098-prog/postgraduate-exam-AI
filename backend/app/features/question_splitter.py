@@ -661,19 +661,30 @@ def _extract_degraded_blank_groups(text: str) -> list[dict]:
     plain_blank_count = len(re.findall(r"[（(]\s*[）)]", text))
     if plain_blank_count < 2:
         return []
+
     blocks = _repair_repeated_degraded_groups(_split_option_blocks_by_repeated_keys(text))
-    if len(blocks) >= plain_blank_count:
-        return [
-            {"id": str(i + 1), "options": dict(blocks[i])}
-            for i in range(plain_blank_count)
-            if len(blocks[i]) >= 2
-        ]
-    if len(blocks) == 1 and len(blocks[0]) >= 2:
-        return [
-            {"id": str(i + 1), "options": dict(blocks[0])}
-            for i in range(plain_blank_count)
-        ]
-    return []
+    if len(blocks) < plain_blank_count:
+        return []
+
+    groups = [
+        {"id": str(i + 1), "options": dict(blocks[i])}
+        for i in range(plain_blank_count)
+        if len(blocks[i]) >= 2
+    ]
+    if not groups:
+        return []
+
+    unique_groups: list[dict] = []
+    seen_signatures: set[tuple[tuple[str, str], ...]] = set()
+    for group in groups:
+        options = group.get("options") or {}
+        signature = tuple((key, options[key]) for key in sorted(options))
+        if signature in seen_signatures:
+            continue
+        seen_signatures.add(signature)
+        unique_groups.append(group)
+
+    return unique_groups if len(unique_groups) >= 2 else unique_groups
 
 
 def _extract_options(text: str) -> dict[str, str]:

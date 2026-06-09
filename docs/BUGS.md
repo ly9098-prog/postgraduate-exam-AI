@@ -1,6 +1,6 @@
 # 小程序错题详情页面题干/选项出现重复内容
 
-##### 原题
+##### 原题(多空选择题)
 
 ```
 若系统有 n 个进程，则就绪队列中进程的个数最多有（ ）个；阻塞队列中进程的个数最多有（ ）个。
@@ -33,13 +33,169 @@ D. 1
 1
 ```
 
----
+##### OCR / AI 原始数据
 
-##### 修复
+```python
+{
+  "raw_data": {
+    "schema_version": "v1",
+    "subject": "",
+    "question_type": "multi_blank_choice",
+    "stem": "31．若系统有n个进程，则就绪队列中进程的个数最多有()个；阻塞队列中进程的个数最多有()个。",
+    "options": [],
+    "answer": "",
+    "analysis": "",
+    "raw_text": "31．若系统有n个进程，则就绪队列中进程的个数最多有（）个；阻塞队列中进程的个数最多有（）个。\nD. 1\nB. n\nC. n-1\nA. n+1\nD. 1\nB. n\nC. n-1",
+    "knowledge_points": [],
+    "difficulty": 3,
+    "source": {
+      "file": "扫描文档2026-05-23 09-57-52.pdf",
+      "page": 1,
+      "type": "pdf"
+    },
+    "is_valid": true,
+    "errors": [],
+    "warnings": [],
+    "stem_hash": "a8f9a906",
+    "confidence_score": 0.7,
+    "blank_option_groups": [
+      {
+        "id": "1",
+        "options": [
+          {
+            "key": "A",
+            "text": "n+1"
+          },
+          {
+            "key": "B",
+            "text": "n"
+          },
+          {
+            "key": "C",
+            "text": "n-1"
+          },
+          {
+            "key": "D",
+            "text": "1"
+          }
+        ]
+      },
+      {
+        "id": "2",
+        "options": [
+          {
+            "key": "A",
+            "text": "n+1"
+          },
+          {
+            "key": "B",
+            "text": "n"
+          },
+          {
+            "key": "C",
+            "text": "n-1"
+          },
+          {
+            "key": "D",
+            "text": "1"
+          }
+        ]
+      }
+    ],
+    "risk_flags": [
+      "no_exercise_regions"
+    ],
+    "ai_validation": {
+      "is_valid": true,
+      "issues": [],
+      "severity": "none"
+    }
+  },
+  "ai_metadata": {
+    "is_valid": true,
+    "errors": [],
+    "warnings": [],
+    "knowledge_points": [],
+    "difficulty": 3,
+    "stem_hash": "a8f9a906",
+    "risk_flags": [
+      "no_exercise_regions"
+    ]
+  }
+}
+```
 
-1. **`_deduplicateLines`**：从仅去重相邻重复行改为使用 `seen` 集合去重所有位置上的重复行，解决题干被空白行分隔的重复文本无法折叠的问题。
-2. **`_stripLeadingOptionLabel`**：新增函数（移植自 `practice.js`），去除选项值中内嵌的选项 key 前缀（如 `A. n + 4` → `n + 4`），防止 `A.` 因 key 和 value 各渲染一次导致重复。
-3. **选项值预处理**：每个选项值在渲染前先经过 `_deduplicateLines` 去重和 `_stripLeadingOptionLabel` 去前缀。
+##### 解析数据
 
-与 `BUGS_HISTORY.md` 中 2026-06-02 刷题页修复的模式一致。
+```python
+{
+  "parsed_content": {
+    "text": "31．若系统有n个进程，则就绪队列中进程的个数最多有()个；阻塞队列中进程的个数最多有()个。",
+    "blank_option_groups": [
+      {
+        "id": "1",
+        "options": [
+          {
+            "key": "A",
+            "text": "n+1"
+          },
+          {
+            "key": "B",
+            "text": "n"
+          },
+          {
+            "key": "C",
+            "text": "n-1"
+          },
+          {
+            "key": "D",
+            "text": "1"
+          }
+        ]
+      },
+      {
+        "id": "2",
+        "options": [
+          {
+            "key": "A",
+            "text": "n+1"
+          },
+          {
+            "key": "B",
+            "text": "n"
+          },
+          {
+            "key": "C",
+            "text": "n-1"
+          },
+          {
+            "key": "D",
+            "text": "1"
+          }
+        ]
+      }
+    ]
+  },
+  "parsed_options": null,
+  "parsed_answer": null,
+  "parsed_analysis": null
+}
+```
+
+##### 基础信息
+
+```python
+{
+  "id": 1189,
+  "batch_id": "REVIEW_20260609_103352_250f7f",
+  "source_type": "pdf",
+  "subject": null,
+  "question_type": "multi_blank_choice",
+  "status": "pending",
+  "ai_generated": false,
+  "ai_answer_flag": false,
+  "created_at": "2026-06-09T10:33:52.391195",
+  "updated_at": "2026-06-09T10:33:52.391195"
+}
+```
 
