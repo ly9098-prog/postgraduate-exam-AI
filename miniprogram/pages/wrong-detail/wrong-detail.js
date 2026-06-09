@@ -171,14 +171,64 @@ function _cleanStemText(stemText, options, optionKeys) {
   return _removeTrailingOptionKeys(withoutLabelOptions, optionKeys)
 }
 
-function _optionTextToHtml(value) {
-  return _textToHtml(String(value || '').trim())
+function _toPlainInlineMathText(text) {
+  if (!text) return text
+  const plain = String(text)
+    .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
+    .replace(/\$([^$\n]+?)\$/g, '$1')
+    .replace(/\\leq/g, '≤')
+    .replace(/\\geq/g, '≥')
+    .replace(/\\lt/g, '<')
+    .replace(/\\gt/g, '>')
+  return plain === String(text) ? null : plain
 }
 
 function _plainOptionText(key, value) {
   const stripped = _stripLeadingOptionLabel(key, value)
   const plain = _toPlainInlineMathText(stripped)
   return plain !== null ? plain : stripped
+}
+
+function _normalizeBlankAnswer(answer) {
+  if (!answer) return {}
+  if (typeof answer === 'object') return answer
+  const result = {}
+  String(answer).split(/[;；,，\n]+/).forEach((part) => {
+    const match = part.trim().match(/^(.+?)\s*[:：=]\s*([A-Za-z])$/)
+    if (match) result[match[1].trim()] = match[2].trim().toUpperCase()
+  })
+  return result
+}
+
+function _normalizeBlankOptionList(options) {
+  if (Array.isArray(options)) return options
+  if (options && typeof options === 'object') {
+    return Object.keys(options).map((key) => ({ key, text: options[key] }))
+  }
+  return []
+}
+
+function _enrichBlankOptionGroups(groups, answer) {
+  const blankAnswers = _normalizeBlankAnswer(answer)
+  return (groups || []).map((group) => {
+    const groupId = String((group && group.id) || '').trim()
+    const options = _normalizeBlankOptionList(group && group.options).map((opt) => {
+      const key = String((opt && opt.key) || '').trim().toUpperCase()
+      const text = String((opt && opt.text) || '').trim()
+      const optionText = _stripLeadingOptionLabel(key, text)
+      const plain = _toPlainInlineMathText(optionText)
+      const needsRich = !plain && _needsRichRender(optionText)
+      return Object.assign({}, opt, {
+        key,
+        _text: plain || optionText,
+        _selected: blankAnswers[groupId] === key,
+        _isCorrect: blankAnswers[groupId] === key,
+        _needsRich: needsRich,
+        _html: needsRich ? _optionTextToHtml(optionText) : '',
+      })
+    }).filter((opt) => opt.key)
+    return { id: groupId, options }
+  }).filter((group) => group.id && group.options.length > 0)
 }
 
 Page({
@@ -216,6 +266,7 @@ Page({
       const stemNeedsRich = !plainStem && _needsRichRender(stemText)
       const stemHtml = stemNeedsRich ? _textToHtml(stemText) : ''
       const stemSegments = (wq.content && wq.content.render_mode === 'segments') ? _textToSegments(stemText) : []
+      const blankOptionGroups = _enrichBlankOptionGroups(wq.content && wq.content.blank_option_groups, wq.answer)
       const optionItems = optionKeys.map((key) => {
         const rawText = (opts && opts[key]) || ''
         const text = _deduplicateLines(_plainOptionText(key, rawText))
@@ -231,7 +282,7 @@ Page({
       })
       const subjectLabelText = this.subjectLabel(wq.subject)
       const errorTypeLabelText = this.errorTypeLabel(wq.error_type)
-      this.setData({ wq, subjectLabelText, errorTypeLabelText, optionKeys, optionItems, stemText, stemNeedsRich, stemHtml, stemSegments, loading: false })
+      this.setData({ wq, subjectLabelText, errorTypeLabelText, optionKeys, optionItems, blankOptionGroups, stemText, stemNeedsRich, stemHtml, stemSegments, loading: false })
       this.loadAiAnalysis(wqId)
     } catch (e) {
       console.error('加载错题详情失败', e)
