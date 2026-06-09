@@ -4,7 +4,18 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Eye, Search, FileText, Code2 } from "lucide-react";
+import {
+  Eye,
+  Search,
+  FileText,
+  Code2,
+  X,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  Globe,
+  AlertTriangle,
+} from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,17 +89,167 @@ function renderOptions(value: unknown) {
   return renderJson(value);
 }
 
+function statusIcon(status: string) {
+  if (status === "approved") return CheckCircle2;
+  if (status === "rejected") return XCircle;
+  if (status === "published") return Globe;
+  return Clock;
+}
+
+function statusColor(status: string) {
+  if (status === "approved") return "text-green-600";
+  if (status === "rejected") return "text-red-500";
+  if (status === "published") return "text-blue-600";
+  return "text-amber-500";
+}
+
 function statusTone(status: string) {
-  if (status === "approved") return "success";
-  if (status === "rejected") return "danger";
-  if (status === "published") return "primary";
-  return "warning";
+  if (status === "approved") return "success" as const;
+  if (status === "rejected") return "danger" as const;
+  if (status === "published") return "primary" as const;
+  return "warning" as const;
+}
+
+function statusLabel(status: string) {
+  if (status === "approved") return "已通过";
+  if (status === "rejected") return "已拒绝";
+  if (status === "published") return "已发布";
+  if (status === "pending") return "待审核";
+  return status;
 }
 
 function duplicateStatusTone(status: string | null | undefined) {
-  if (status === "possible_duplicate") return "warning";
-  if (status === "normal") return "success";
-  return "neutral";
+  if (status === "possible_duplicate") return "warning" as const;
+  if (status === "normal") return "success" as const;
+  return "neutral" as const;
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  single_choice: "单选题",
+  multiple_choice: "多选题",
+  true_false: "判断题",
+  fill_blank: "填空题",
+  multi_blank_choice: "多空选择",
+  subjective: "问答题",
+};
+
+function typeLabel(t: string | null | undefined) {
+  return TYPE_LABELS[t ?? ""] ?? t ?? "未知";
+}
+
+/** Compact detail modal */
+function DetailModal({ item, onClose }: { item: ImportQuestionItem; onClose: () => void }) {
+  const [detailView, setDetailView] = useState<"formatted" | "json">("formatted");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgba(16,24,40,0.42)] px-4 py-10">
+      <div className="relative mt-6 w-full max-w-2xl rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-floating)]">
+        {/* ===== Header with large close hit area ===== */}
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-5 py-3 pr-14">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="shrink-0 font-mono text-xs text-[var(--color-text-hint)]">#{item.id}</span>
+            <h3 className="truncate font-display text-base font-bold text-[var(--ink)]">导入题目详情</h3>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex overflow-hidden rounded-lg border border-[var(--color-border)]">
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium transition ${detailView === "formatted" ? "bg-[var(--color-primary)] text-white" : "bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]"}`}
+                onClick={() => setDetailView("formatted")}
+              >
+                <FileText className="h-3 w-3" />文本
+              </button>
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium transition ${detailView === "json" ? "bg-[var(--color-primary)] text-white" : "bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]"}`}
+                onClick={() => setDetailView("json")}
+              >
+                <Code2 className="h-3 w-3" />JSON
+              </button>
+            </div>
+            <Link
+              className="hidden sm:inline text-xs font-semibold text-[var(--color-primary-dark)] underline"
+              href={`/imports/review?batch_id=${encodeURIComponent(item.batch_id)}`}
+            >
+              审核批次
+            </Link>
+          </div>
+        </div>
+
+        {/* Large close button — positioned absolutely to avoid crowded header */}
+        <button
+          className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-xl bg-white text-[var(--color-text-hint)] shadow-sm ring-1 ring-[var(--color-border)] transition hover:bg-[var(--color-bg-secondary)] hover:text-[var(--ink)] hover:ring-[var(--color-text-hint)] active:scale-95"
+          onClick={onClose}
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        {/* ===== Scrollable body ===== */}
+        <div className="overflow-y-auto max-h-[70vh] px-5 py-4">
+          {detailView === "formatted" ? (
+            <div className="space-y-3">
+              <section>
+                <p className="mb-1 text-xs font-semibold text-[var(--color-text-secondary)]">题干</p>
+                <pre className="whitespace-pre-wrap rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-2.5 text-xs leading-relaxed text-[var(--color-text-secondary)]">{textFromImport(item) || "—"}</pre>
+              </section>
+
+              {isMultiBlankChoice(item) ? (
+                <section>
+                  <p className="mb-1 text-xs font-semibold text-[var(--color-text-secondary)]">选项组</p>
+                  <div className="space-y-2">
+                    {(() => {
+                      const groups = item?.parsed_content?.blank_option_groups;
+                      const list: BlankOptionGroup[] = Array.isArray(groups) ? (groups as BlankOptionGroup[]) : [];
+                      return list.length > 0 ? list.map((group, gi) => (
+                        <div key={gi} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-2.5">
+                          <p className="mb-1.5 text-[10px] font-semibold text-[var(--color-text-secondary)]">空 {group.id ?? gi + 1}</p>
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[var(--color-text-secondary)]">
+                            {group.options?.map((opt, oi) => (
+                              <span key={oi}><span className="font-bold text-[var(--ink)]">{opt.key}.</span> {opt.text}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )) : <p className="text-xs text-[var(--color-text-hint)]">暂无选项组数据</p>;
+                    })()}
+                  </div>
+                </section>
+              ) : (
+                <section>
+                  <p className="mb-1 text-xs font-semibold text-[var(--color-text-secondary)]">选项</p>
+                  <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-2.5 text-xs leading-relaxed text-[var(--color-text-secondary)]">{renderOptions(optionDataFromImport(item))}</pre>
+                </section>
+              )}
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <section>
+                  <p className="mb-1 text-xs font-semibold text-[var(--color-text-secondary)]">答案</p>
+                  <pre className="whitespace-pre-wrap rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-2.5 text-xs leading-relaxed text-[var(--color-text-secondary)]">{item.parsed_answer || "—"}</pre>
+                </section>
+                <section>
+                  <p className="mb-1 text-xs font-semibold text-[var(--color-text-secondary)]">解析</p>
+                  <pre className="whitespace-pre-wrap rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-2.5 text-xs leading-relaxed text-[var(--color-text-secondary)]">{item.parsed_analysis || "—"}</pre>
+                </section>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {[
+                { title: "基础信息", data: { id: item.id, batch_id: item.batch_id, source_type: item.source_type, subject: item.subject, question_type: item.question_type, status: item.status, ai_generated: item.ai_generated, ai_answer_flag: item.ai_answer_flag, created_at: item.created_at, updated_at: item.updated_at } },
+                { title: "解析数据", data: { parsed_content: item.parsed_content, parsed_options: item.parsed_options, parsed_answer: item.parsed_answer, parsed_analysis: item.parsed_analysis } },
+                { title: "重复检测", data: { duplicate_status: item.duplicate_status, duplicate_of_question_id: item.duplicate_of_question_id, duplicate_of_import_id: item.duplicate_of_import_id, question_hash: item.question_hash } },
+                { title: "OCR / AI 原始数据", data: { raw_data: item.raw_data, ai_metadata: item.ai_metadata } },
+              ].map(({ title, data }) => (
+                <section key={title}>
+                  <p className="mb-1 text-xs font-semibold text-[var(--color-text-secondary)]">{title}</p>
+                  <pre className="max-h-36 overflow-auto whitespace-pre-wrap rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-2.5 font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)]">{renderJson(data)}</pre>
+                </section>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function ImportQuestionsPage() {
@@ -96,7 +257,6 @@ export default function ImportQuestionsPage() {
   const batchIdParam = searchParams.get("batch_id") || "";
   const [filters, setFilters] = useState({ batch_id: "", status: "", subject: "", source_type: "", keyword: "" });
   const [previewId, setPreviewId] = useState<number | null>(null);
-  const [detailView, setDetailView] = useState<"formatted" | "json">("formatted");
 
   const queryParams = useMemo(
     () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject: filters.subject, source_type: filters.source_type, keyword: filters.keyword }),
@@ -146,138 +306,93 @@ export default function ImportQuestionsPage() {
             </select>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-            <section className="overflow-hidden rounded-3xl border border-[var(--color-border)] bg-white/70">
-              <div className="grid grid-cols-[0.7fr_1.8fr_0.8fr_0.8fr_0.7fr] gap-3 border-b border-[var(--color-border)] px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)]">
-                <span>状态</span>
-                <span>题干</span>
-                <span>科目</span>
-                <span>批次</span>
-                <span>操作</span>
-              </div>
-              {items.map((item) => (
-                <div key={item.id} className="grid grid-cols-[0.7fr_1.8fr_0.8fr_0.8fr_0.7fr] gap-3 border-b border-[var(--color-border)] px-4 py-4 text-sm last:border-b-0">
-                  <div className="space-y-1">
-                    <StatusBadge tone={statusTone(item.status)}>{item.status}</StatusBadge>
-                    {item.duplicate_status ? <StatusBadge tone={duplicateStatusTone(item.duplicate_status)}>{item.duplicate_status}</StatusBadge> : null}
-                  </div>
-                  <p className="line-clamp-3 whitespace-pre-wrap font-semibold text-[var(--ink)]">{textFromImport(item) || `导入题目 #${item.id}`}</p>
-                  <div className="text-xs text-[var(--color-text-secondary)]">
-                    <p>{item.subject || "—"}</p>
-                    <p>{item.question_type || "—"}</p>
-                  </div>
-                  <p className="break-all font-mono text-xs text-[var(--color-text-secondary)]">{item.batch_id}</p>
-                  <Button variant="ghost" onClick={() => setPreviewId(item.id)}>
-                    <Eye className="h-4 w-4" />
-                    查看
-                  </Button>
-                </div>
-              ))}
-              {!questions.isLoading && items.length === 0 ? <p className="py-10 text-center text-sm text-[var(--color-text-hint)]">暂无导入题目</p> : null}
-            </section>
+        <CardContent>
+          {/* ===== Card-style question list ===== */}
+          <section className="space-y-2">
+            {items.map((item) => {
+              const StatusIcon = statusIcon(item.status);
+              return (
+                <div
+                  key={item.id}
+                  className="rounded-xl border border-[var(--color-border)] bg-white px-4 py-3.5 transition hover:border-[var(--color-primary-light)] hover:shadow-sm"
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    {/* Left: main content */}
+                    <div className="min-w-0 flex-1 space-y-2">
+                      {/* Top row: status + metadata */}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        {/* Status */}
+                        <div className="flex items-center gap-1.5">
+                          <StatusIcon className={`h-4 w-4 ${statusColor(item.status)}`} />
+                          <StatusBadge tone={statusTone(item.status)}>
+                            {statusLabel(item.status)}
+                          </StatusBadge>
+                        </div>
 
-            <aside className="rounded-3xl border border-[var(--color-border)] bg-white/70 p-5">
-              {!previewItem ? <p className="text-sm text-[var(--color-text-hint)]">选择一题查看详情。</p> : null}
-              {previewItem ? (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="font-mono text-xs text-[var(--color-text-hint)]">#{previewItem.id}</p>
-                      <h4 className="font-display text-xl font-bold text-[var(--ink)]">导入题目详情</h4>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex overflow-hidden rounded-xl border border-[var(--color-border)]">
-                        <button
-                          type="button"
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition ${detailView === "formatted" ? "bg-[var(--color-primary)] text-white" : "bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]"}`}
-                          onClick={() => setDetailView("formatted")}
-                        >
-                          <FileText className="h-3.5 w-3.5" />
-                          文本
-                        </button>
-                        <button
-                          type="button"
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition ${detailView === "json" ? "bg-[var(--color-primary)] text-white" : "bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]"}`}
-                          onClick={() => setDetailView("json")}
-                        >
-                          <Code2 className="h-3.5 w-3.5" />
-                          JSON
-                        </button>
+                        {/* Duplicate badge */}
+                        {item.duplicate_status ? (
+                          <StatusBadge tone={duplicateStatusTone(item.duplicate_status)}>
+                            <AlertTriangle className="mr-0.5 inline h-2.5 w-2.5" />
+                            {item.duplicate_status === "possible_duplicate" ? "疑似重复" : item.duplicate_status}
+                          </StatusBadge>
+                        ) : null}
+
+                        {/* Separator */}
+                        <span className="hidden h-3 w-px bg-[var(--color-border)] sm:block" />
+
+                        {/* Subject + type pills */}
+                        {item.subject ? (
+                          <span className="rounded-md bg-[var(--color-primary-light)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-primary-dark)]">
+                            {item.subject}
+                          </span>
+                        ) : null}
+                        <span className="text-[11px] text-[var(--color-text-hint)]">
+                          {typeLabel(item.question_type)}
+                        </span>
+
+                        {/* Batch ID */}
+                        <span className="ml-auto truncate font-mono text-[10px] text-[var(--color-text-hint)] sm:ml-0" title={item.batch_id}>
+                          {item.batch_id}
+                        </span>
                       </div>
-                      <Link className="text-sm font-semibold text-[var(--color-primary-dark)] underline" href={`/imports/review?batch_id=${encodeURIComponent(previewItem.batch_id)}`}>审核该批次</Link>
+
+                      {/* Stem */}
+                      <p className="line-clamp-2 whitespace-pre-wrap text-sm leading-relaxed text-[var(--ink)]">
+                        {textFromImport(item) || `导入题目 #${item.id}`}
+                      </p>
+                    </div>
+
+                    {/* Right: action */}
+                    <div className="flex shrink-0 items-start sm:pl-3">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 gap-1.5 px-3 text-xs font-medium"
+                        onClick={() => setPreviewId(item.id)}
+                      >
+                        <Eye className="h-4 w-4" />
+                        查看
+                      </Button>
                     </div>
                   </div>
-                  {detailView === "formatted" ? (
-                    <div className="space-y-4">
-                      <section>
-                        <p className="font-semibold text-[var(--ink)]">题干</p>
-                        <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{textFromImport(previewItem) || "—"}</pre>
-                      </section>
-                      {isMultiBlankChoice(previewItem) ? (
-                        <section>
-                          <p className="font-semibold text-[var(--ink)]">选项组</p>
-                          <div className="mt-2 space-y-3">
-                            {(() => {
-                              const groups = previewItem?.parsed_content?.blank_option_groups;
-                              const list: BlankOptionGroup[] = Array.isArray(groups) ? (groups as BlankOptionGroup[]) : [];
-                              return list.length > 0 ? list.map((group, gi) => (
-                                <div key={gi} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3">
-                                  <p className="mb-2 text-xs font-semibold text-[var(--color-text-secondary)]">空 {group.id ?? gi + 1}</p>
-                                  <div className="space-y-1">
-                                    {group.options?.map((opt, oi) => (
-                                      <p key={oi} className="text-xs text-[var(--color-text-secondary)]">
-                                        <span className="font-bold text-[var(--ink)]">{opt.key}.</span> {opt.text}
-                                      </p>
-                                    ))}
-                                  </div>
-                                </div>
-                              )) : <p className="text-sm text-[var(--color-text-hint)]">暂无选项组数据</p>;
-                            })()}
-                          </div>
-                        </section>
-                      ) : (
-                        <section>
-                          <p className="font-semibold text-[var(--ink)]">选项</p>
-                          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderOptions(optionDataFromImport(previewItem))}</pre>
-                        </section>
-                      )}
-                      <section>
-                        <p className="font-semibold text-[var(--ink)]">答案</p>
-                        <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{previewItem.parsed_answer || "—"}</pre>
-                      </section>
-                      <section>
-                        <p className="font-semibold text-[var(--ink)]">解析</p>
-                        <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{previewItem.parsed_analysis || "—"}</pre>
-                      </section>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <section>
-                        <p className="font-semibold text-[var(--ink)]">基础信息</p>
-                        <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ id: previewItem.id, batch_id: previewItem.batch_id, source_type: previewItem.source_type, subject: previewItem.subject, question_type: previewItem.question_type, status: previewItem.status, ai_generated: previewItem.ai_generated, ai_answer_flag: previewItem.ai_answer_flag, created_at: previewItem.created_at, updated_at: previewItem.updated_at })}</pre>
-                      </section>
-                      <section>
-                        <p className="font-semibold text-[var(--ink)]">解析数据</p>
-                        <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ parsed_content: previewItem.parsed_content, parsed_options: previewItem.parsed_options, parsed_answer: previewItem.parsed_answer, parsed_analysis: previewItem.parsed_analysis })}</pre>
-                      </section>
-                      <section>
-                        <p className="font-semibold text-[var(--ink)]">重复检测</p>
-                        <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ duplicate_status: previewItem.duplicate_status, duplicate_of_question_id: previewItem.duplicate_of_question_id, duplicate_of_import_id: previewItem.duplicate_of_import_id, question_hash: previewItem.question_hash })}</pre>
-                      </section>
-                      <section>
-                        <p className="font-semibold text-[var(--ink)]">OCR / AI 原始数据</p>
-                        <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ raw_data: previewItem.raw_data, ai_metadata: previewItem.ai_metadata })}</pre>
-                      </section>
-                    </div>
-                  )}
                 </div>
-              ) : null}
-            </aside>
-          </div>
-          {questions.isError ? <p className="text-sm text-[var(--color-danger)]">导入题目接口当前不可用。</p> : null}
+              );
+            })}
+            {!questions.isLoading && items.length === 0 ? (
+              <p className="py-16 text-center text-sm text-[var(--color-text-hint)]">暂无导入题目</p>
+            ) : null}
+          </section>
+
+          {questions.isError ? (
+            <p className="mt-4 text-sm text-[var(--color-danger)]">导入题目接口当前不可用。</p>
+          ) : null}
         </CardContent>
       </Card>
+
+      {/* ===== Detail modal ===== */}
+      {previewItem ? (
+        <DetailModal item={previewItem} onClose={() => setPreviewId(null)} />
+      ) : null}
     </div>
   );
 }
