@@ -317,6 +317,7 @@ Page({
     questionIds: [],
     currentIdx: 0,
     totalQuestions: 0,
+    progressDots: [],
     swiperEnabled: false,
     contentState: '',
     showSwipeHint: false,
@@ -333,6 +334,7 @@ Page({
       questionIds,
       currentIdx: currentIdx >= 0 ? currentIdx : 0,
       totalQuestions: questionIds.length,
+      progressDots: Array.from({ length: questionIds.length }, (_, i) => i),
       swiperEnabled,
       showSwipeHint: swiperEnabled,
     })
