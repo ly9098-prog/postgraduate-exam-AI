@@ -175,6 +175,12 @@ function _optionTextToHtml(value) {
   return _textToHtml(String(value || '').trim())
 }
 
+function _plainOptionText(key, value) {
+  const stripped = _stripLeadingOptionLabel(key, value)
+  const plain = _toPlainInlineMathText(stripped)
+  return plain !== null ? plain : stripped
+}
+
 Page({
   data: {
     wq: null,
@@ -206,13 +212,13 @@ Page({
       const optionKeys = opts ? Object.keys(opts) : []
       const sourceStemText = (wq.content && (wq.content.text || wq.content.stem)) || (wq.content && _segmentsToText(wq.content.segments)) || ''
       const stemText = _cleanStemText(sourceStemText, opts, optionKeys)
-      const stemNeedsRich = _needsRichRender(stemText)
+      const plainStem = _toPlainInlineMathText(stemText)
+      const stemNeedsRich = !plainStem && _needsRichRender(stemText)
       const stemHtml = stemNeedsRich ? _textToHtml(stemText) : ''
       const stemSegments = (wq.content && wq.content.render_mode === 'segments') ? _textToSegments(stemText) : []
       const optionItems = optionKeys.map((key) => {
         const rawText = (opts && opts[key]) || ''
-        let text = _deduplicateLines(rawText)
-        text = _stripLeadingOptionLabel(key, text)
+        const text = _deduplicateLines(_plainOptionText(key, rawText))
         const needsRich = _needsRichRender(text)
         const className = `option-value ${key === wq.answer ? 'right' : ''} ${key === wq.wrong_answer ? 'wrong' : ''}`
         return {
