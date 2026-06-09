@@ -109,48 +109,60 @@ def _log_multi_blank_review_item(
 async def _batch_find_duplicate_questions(
     db: AsyncSession,
     subject_hash_pairs: list[tuple[str | None, str | None]],
-) -> dict[str, int]:
-    """Batch lookup: hash → question.id for active questions."""
+) -> dict[tuple[str, str], int]:
+    """Batch lookup: (subject, hash) → question.id for active questions."""
     valid = [(s, h) for s, h in subject_hash_pairs if s and h]
     if not valid:
         return {}
-    hashes = list({h for _, h in valid})
 
-    # Split into chunks of 500 for SQLite compatibility
-    result_map: dict[str, int] = {}
-    for i in range(0, len(hashes), 500):
-        chunk = hashes[i:i + 500]
-        stmt = select(Question.question_hash, Question.id).where(
-            Question.question_hash.in_(chunk),
+    unique_pairs: list[tuple[str, str]] = list({(s, h) for s, h in valid})
+    result_map: dict[tuple[str, str], int] = {}
+
+    for i in range(0, len(unique_pairs), 500):
+        chunk = unique_pairs[i:i + 500]
+        conditions = [
+            (Question.subject == s) & (Question.question_hash == h)
+            for s, h in chunk
+        ]
+        from sqlalchemy import or_
+        stmt = select(Question.subject, Question.question_hash, Question.id).where(
+            or_(*conditions),
             Question.is_active == True,  # noqa: E712
         )
         rows = (await db.execute(stmt)).all()
         for row in rows:
-            result_map[row.question_hash] = row.id
+            result_map[(row.subject, row.question_hash)] = row.id
     return result_map
 
 
 async def _batch_find_duplicate_imports(
     db: AsyncSession,
     subject_hash_pairs: list[tuple[str | None, str | None]],
-) -> dict[str, int]:
-    """Batch lookup: hash → import.id for non-rejected imports."""
+) -> dict[tuple[str, str], int]:
+    """Batch lookup: (subject, hash) → import.id for non-rejected imports."""
     valid = [(s, h) for s, h in subject_hash_pairs if s and h]
     if not valid:
         return {}
-    hashes = list({h for _, h in valid})
 
-    result_map: dict[str, int] = {}
-    for i in range(0, len(hashes), 500):
-        chunk = hashes[i:i + 500]
-        stmt = select(QuestionImport.question_hash, QuestionImport.id).where(
-            QuestionImport.question_hash.in_(chunk),
+    unique_pairs: list[tuple[str, str]] = list({(s, h) for s, h in valid})
+    result_map: dict[tuple[str, str], int] = {}
+
+    for i in range(0, len(unique_pairs), 500):
+        chunk = unique_pairs[i:i + 500]
+        conditions = [
+            (QuestionImport.subject == s) & (QuestionImport.question_hash == h)
+            for s, h in chunk
+        ]
+        from sqlalchemy import or_
+        stmt = select(QuestionImport.subject, QuestionImport.question_hash, QuestionImport.id).where(
+            or_(*conditions),
             QuestionImport.status != "rejected",
         )
         rows = (await db.execute(stmt)).all()
         for row in rows:
-            if row.question_hash not in result_map:
-                result_map[row.question_hash] = row.id
+            key = (row.subject, row.question_hash)
+            if key not in result_map:
+                result_map[key] = row.id
     return result_map
 
 
@@ -158,6 +170,7 @@ async def submit_to_review(
     db: AsyncSession,
     questions: list[dict],
     batch_meta: dict | None = None,
+    skip_existing: bool = False,
 ) -> dict:
     """将 Stage 5/6 标准化题目写入 question_imports 暂存区。
 
@@ -180,6 +193,7 @@ async def submit_to_review(
     items: list[dict] = []
     written = 0
     skipped = 0
+    duplicates_filtered = 0
     # 隐患③ 修复：跟踪本批刚写入的 ORM，commit 后只精确 expunge 这些条目，
     # 不动 session 里其他 attach 的对象。
     pending_qis: list[QuestionImport] = []
@@ -235,6 +249,27 @@ async def submit_to_review(
             if not stem:
                 continue
 
+            # Skip existing questions in the published bank or review pool
+            dup_key = (qi_subject, question_hash) if (qi_subject and question_hash) else None
+            if skip_existing and dup_key and dup_key in dup_questions:
+                skipped += 1
+                duplicates_filtered += 1
+                items.append({
+                    "block_index": len(items),
+                    "status": "duplicate",
+                    "error": "题库中已存在相同题目",
+                })
+                continue
+            if skip_existing and dup_key and dup_key in dup_imports:
+                skipped += 1
+                duplicates_filtered += 1
+                items.append({
+                    "block_index": len(items),
+                    "status": "duplicate",
+                    "error": "审核池中已存在相同题目",
+                })
+                continue
+
             # Build duplicate fields from pre-fetched maps
             duplicate_fields = {
                 "question_hash": question_hash or None,
@@ -242,12 +277,12 @@ async def submit_to_review(
                 "duplicate_of_question_id": None,
                 "duplicate_of_import_id": None,
             }
-            if question_hash and question_hash in dup_questions:
+            if dup_key and dup_key in dup_questions:
                 duplicate_fields["duplicate_status"] = "possible_duplicate"
-                duplicate_fields["duplicate_of_question_id"] = dup_questions[question_hash]
-            elif question_hash and question_hash in dup_imports:
+                duplicate_fields["duplicate_of_question_id"] = dup_questions[dup_key]
+            elif dup_key and dup_key in dup_imports:
                 duplicate_fields["duplicate_status"] = "possible_duplicate"
-                duplicate_fields["duplicate_of_import_id"] = dup_imports[question_hash]
+                duplicate_fields["duplicate_of_import_id"] = dup_imports[dup_key]
             elif question_hash and question_hash in seen_hashes:
                 duplicate_fields["duplicate_status"] = "possible_duplicate"
                 duplicate_fields["duplicate_of_import_id"] = seen_hashes[question_hash]
@@ -366,6 +401,7 @@ async def submit_to_review(
         "total": len(questions),
         "written": written,
         "skipped": skipped,
+        "duplicates_filtered": duplicates_filtered,
         "items": items,
     }
 

@@ -46,7 +46,7 @@ type ParseResponse = {
 type ImportResultItem = {
   block_index: number;
   import_id?: number;
-  status: "ok" | "fail";
+  status: "ok" | "fail" | "duplicate";
   error?: string;
 };
 
@@ -56,6 +56,7 @@ type ImportResponse = {
   total: number;
   succeeded: number;
   failed: number;
+  duplicates_filtered: number;
 };
 
 const SUBJECTS = [
@@ -352,15 +353,28 @@ C
 
               {/* Import result */}
               {importStatus ? (
-                <div className="flex items-center gap-2.5 rounded-2xl border border-green-200 bg-green-50/70 px-4 py-3 text-sm">
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
-                  <div>
-                    <span className="font-semibold text-green-700">导入完成</span>
-                    <span className="ml-2 text-green-600">
-                      批次 {importStatus.batch_id}：成功 {importStatus.succeeded}
-                      题，失败 {importStatus.failed} 题
-                    </span>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2.5 rounded-2xl border border-green-200 bg-green-50/70 px-4 py-3 text-sm">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+                    <div>
+                      <span className="font-semibold text-green-700">导入完成</span>
+                      <span className="ml-2 text-green-600">
+                        批次 {importStatus.batch_id}：成功 {importStatus.succeeded}
+                        题{importStatus.duplicates_filtered > 0 ? (
+                          <span className="text-amber-600">，过滤重复 {importStatus.duplicates_filtered} 题</span>
+                        ) : null}
+                        {importStatus.failed > 0 ? (
+                          <span className="text-red-500">，失败 {importStatus.failed} 题</span>
+                        ) : null}
+                      </span>
+                    </div>
                   </div>
+                  {importStatus.duplicates_filtered > 0 ? (
+                    <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-700">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>已自动过滤 {importStatus.duplicates_filtered} 道题库中已存在的题目，不重复导入。</span>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
