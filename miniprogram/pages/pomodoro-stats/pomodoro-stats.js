@@ -11,18 +11,19 @@ const SUBJECT_LABELS = {
 }
 
 const SUBJECT_COLORS = {
-  data_structure: '#5B7B9A',
-  computer_organization: '#C49A6B',
-  operating_system: '#6B9B6B',
-  computer_network: '#7B8DB3',
-  english: '#B38B6B',
-  math: '#8B9B7B',
-  politics: '#A08B8B',
+  data_structure: '#3B82F6',
+  computer_organization: '#F59E0B',
+  operating_system: '#10B981',
+  computer_network: '#06B6D4',
+  english: '#8B5CF6',
+  math: '#EC4899',
+  politics: '#F97316',
 }
 
 Page({
   data: {
     loading: true,
+    pageEntered: false,
     todaySessions: 0,
     todayDurationText: '0分钟',
     weekSessions: 0,
@@ -33,8 +34,18 @@ Page({
     historyTotal: 0,
   },
 
+  onLoad() {
+    wx.setNavigationBarColor({
+      frontColor: '#ffffff',
+      backgroundColor: '#0B1121',
+    })
+  },
+
   onShow() {
     this.loadData()
+    setTimeout(() => {
+      this.setData({ pageEntered: true })
+    }, 50)
   },
 
   async loadData() {
@@ -46,6 +57,8 @@ Page({
         api.get('/pomodoro/subjects'),
         api.get('/pomodoro/history', { page: 1, page_size: 20 }),
       ])
+      const subjArr = subjects || []
+      const maxDur = Math.max(1, ...subjArr.map(s => s.duration_sec || 0))
       this.setData({
         todaySessions: stats.today_sessions || 0,
         todayDurationText: this._fmtMin(stats.today_duration_sec || 0),
@@ -57,11 +70,12 @@ Page({
           _barPct: this._calcBarPct(trends, t.duration_sec),
           _durationText: this._fmtMin(t.duration_sec || 0),
         })),
-        subjects: (subjects || []).map(s => ({
+        subjects: subjArr.map(s => ({
           ...s,
           _label: SUBJECT_LABELS[s.subject] || s.subject || '未分类',
-          _color: SUBJECT_COLORS[s.subject] || '#5B7B9A',
+          _color: SUBJECT_COLORS[s.subject] || '#3B82F6',
           _durationText: this._fmtMin(s.duration_sec || 0),
+          _barPct: maxDur > 0 ? (s.duration_sec || 0) / maxDur * 100 : 0,
         })),
         history: (hist.items || []).map(this._formatSession),
         historyTotal: hist.total || 0,
@@ -81,7 +95,7 @@ Page({
   },
 
   _formatSession(s) {
-    const start = new Date(s.start_time)
+    const start = new Date(s.start_time + '+00:00')
     const timeStr = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`
     const durMin = Math.floor((s.actual_duration || 0) / 60)
     return {
@@ -110,26 +124,26 @@ Page({
       const chartW = w - padL - padR
       const chartH = h - padT - padB
       const trends = this.data.trends
-      const barW = Math.min(36, chartW / trends.length * 0.55)
+      const barW = Math.min(32, chartW / trends.length * 0.5)
       const gap = chartW / trends.length
       const maxDur = Math.max(1, ...trends.map(t => t.duration_sec || 0))
 
       ctx.clearRect(0, 0, w, h)
 
-      // 水平网格线
+      // Horizontal grid lines
       for (let i = 0; i <= 3; i++) {
         const y = padT + chartH * (1 - i / 3)
         ctx.beginPath()
-        ctx.setStrokeStyle('#EDF1F5')
+        ctx.setStrokeStyle('rgba(255,255,255,0.04)')
         ctx.setLineWidth(0.5)
         ctx.moveTo(padL, y)
         ctx.lineTo(w - padR, y)
         ctx.stroke()
       }
 
-      // 基线
+      // Baseline
       ctx.beginPath()
-      ctx.setStrokeStyle('#E8E5E0')
+      ctx.setStrokeStyle('rgba(255,255,255,0.06)')
       ctx.setLineWidth(1)
       ctx.moveTo(padL, padT + chartH)
       ctx.lineTo(w - padR, padT + chartH)
@@ -141,32 +155,28 @@ Page({
         const y = padT + chartH - barH
 
         if (t.duration_sec > 0) {
-          // 柱形主体
+          // Bar with rounded look
+          const radius = Math.min(4, barW / 2)
           ctx.beginPath()
-          ctx.setFillStyle('#5B7B9A')
+          ctx.setFillStyle('#3B82F6')
           ctx.rect(x, y, barW, barH)
           ctx.fill()
 
-          // 柱形顶部高亮
+          // Top highlight
           ctx.beginPath()
-          ctx.setFillStyle('rgba(255,255,255,0.25)')
-          ctx.rect(x, y, barW, Math.min(6, barH / 3))
-          ctx.fill()
-
-          // 柱形底部加深
-          ctx.beginPath()
-          ctx.setFillStyle('rgba(0,0,0,0.06)')
-          ctx.rect(x, y + barH - Math.min(4, barH / 4), barW, Math.min(4, barH / 4))
+          ctx.setFillStyle('rgba(255,255,255,0.15)')
+          ctx.rect(x, y, barW, Math.min(4, barH / 3))
           ctx.fill()
         } else {
+          // Empty bar (dim)
           ctx.beginPath()
-          ctx.setFillStyle('#E8E5E0')
+          ctx.setFillStyle('rgba(255,255,255,0.05)')
           ctx.rect(x, y, barW, barH)
           ctx.fill()
         }
 
-        // 日期标签
-        ctx.setFillStyle('#9AABBA')
+        // Date label
+        ctx.setFillStyle('rgba(255,255,255,0.25)')
         ctx.setFontSize(9)
         ctx.setTextAlign('center')
         ctx.fillText(t._shortDate || '', x + barW / 2, padT + chartH + 18)

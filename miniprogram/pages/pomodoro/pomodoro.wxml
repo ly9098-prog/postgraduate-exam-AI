@@ -1,120 +1,183 @@
-<view class="page">
-  <!-- 顶部：日期 + 今日统计 -->
-  <view class="card top-card">
-    <view class="top-row">
-      <text class="date-text">{{getDateStr()}}</text>
-      <view class="today-stats">
-        <text class="stat-badge">🍅 {{todaySessions}}</text>
-        <text class="stat-badge">⏱ {{todayDurationText}}</text>
+<view class="page page-{{phase === 'break' ? 'break' : 'focus'}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
+  <view class="page-inner animation-entrance {{pageEntered ? 'entered' : ''}}">
+
+    <!-- ===== TOP BAR ===== -->
+    <view class="top-bar">
+      <view class="top-left">
+        <text class="exam-label">距考研</text>
+        <text class="exam-count">{{examDays}}</text>
+        <text class="exam-label">天</text>
+      </view>
+      <view class="top-right">
+        <view class="stat-pill">
+          <text class="stat-icon">🍅</text>
+          <text class="stat-num">{{todaySessions}}</text>
+        </view>
+        <view class="stat-pill">
+          <text class="stat-icon">⏱</text>
+          <text class="stat-num">{{todayDurationText}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- ===== MAIN CONTENT ===== -->
+    <view class="main-content">
+
+      <!-- ===== IDLE STATE ===== -->
+      <block wx:if="{{phase === 'idle'}}">
+        <view class="idle-wrap">
+          <!-- Subject Grid -->
+          <view class="subj-section">
+            <text class="section-label">选择科目</text>
+            <view class="subj-grid">
+              <view
+                class="subj-card {{selectedSubject === item.key ? 'active' : ''}}"
+                wx:for="{{subjects}}" wx:key="key"
+                catchtap="selectSubject"
+                data-key="{{item.key}}"
+              >
+                <text class="subj-emoji">{{item.emoji}}</text>
+                <text class="subj-name">{{item.label}}</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- Mode Dots -->
+          <view class="mode-section">
+            <text class="section-label">时长</text>
+            <view class="mode-row">
+              <view
+                class="mode-dot {{selectedPreset === item.key ? 'active' : ''}}"
+                wx:for="{{presets}}" wx:key="key"
+                catchtap="selectPreset"
+                data-key="{{item.key}}"
+              >
+                <view class="dot-ring">
+                  <view class="dot-fill"></view>
+                </view>
+                <text class="dot-label">{{item.label}}</text>
+              </view>
+            </view>
+            <text class="mode-info">{{workDuration}} 分钟学习 · {{breakDuration}} 分钟休息</text>
+            <!-- Custom sliders -->
+            <view class="custom-area {{showCustom ? 'visible' : ''}}">
+              <view class="custom-row">
+                <text class="custom-label">学习</text>
+                <slider
+                  min="5" max="120" value="{{workDuration}}"
+                  bindchange="onWorkChange" show-value
+                  activeColor="#3B82F6" block-size="16" block-color="#ffffff"
+                  backgroundColor="rgba(255,255,255,0.06)"
+                />
+              </view>
+              <view class="custom-row">
+                <text class="custom-label">休息</text>
+                <slider
+                  min="5" max="120" value="{{breakDuration}}"
+                  bindchange="onBreakChange" show-value
+                  activeColor="#F97316" block-size="16" block-color="#ffffff"
+                  backgroundColor="rgba(255,255,255,0.06)"
+                />
+              </view>
+            </view>
+          </view>
+
+          <!-- Context hint from practice page -->
+          <view class="context-hint" wx:if="{{fromSubject && selectedSubject}}">
+            <text>从刷题进入 · {{subjectLabel(selectedSubject)}}</text>
+          </view>
+
+          <!-- START BUTTON -->
+          <button class="btn-start" catchtap="startSession" hover-class="btn-hover">
+            <text class="btn-start-text">开始专注</text>
+          </button>
+        </view>
+      </block>
+
+      <!-- ===== CEREMONY STATE ===== -->
+      <block wx:if="{{phase === 'ceremony'}}">
+        <view class="ceremony-wrap">
+          <text class="ceremony-emoji">{{subjectEmoji(selectedSubject)}}</text>
+          <text class="ceremony-subject">{{subjectLabel(selectedSubject)}}</text>
+          <view class="ceremony-divider"></view>
+          <text class="ceremony-duration">{{workDuration}} 分钟</text>
+          <text class="ceremony-preset">{{presetLabel(selectedPreset)}}</text>
+          <view class="ceremony-spinner">
+            <view class="spinner-ring"></view>
+          </view>
+          <text class="ceremony-status">准备开始</text>
+        </view>
+      </block>
+
+      <!-- ===== RUNNING / BREAK STATE ===== -->
+      <block wx:if="{{phase === 'running' || phase === 'break'}}">
+        <view class="timer-wrap">
+          <view class="timer-header">
+            <text class="timer-subject">{{subjectEmoji(selectedSubject)}} {{subjectLabel(selectedSubject)}}</text>
+            <text class="timer-hint">{{phase === 'break' ? '休息时间' : '专注中'}}</text>
+          </view>
+
+          <!-- Progress Ring -->
+          <view class="ring-wrapper">
+            <view class="ring-glow"></view>
+            <canvas class="ring-canvas" canvas-id="progress-ring" id="progress-ring"></canvas>
+            <view class="ring-center">
+              <text class="ring-time {{phase === 'break' ? 'time-warm' : ''}}">{{displayMin}}:{{displaySec}}</text>
+              <text class="ring-status" wx:if="{{isPaused}}">已暂停</text>
+            </view>
+          </view>
+
+          <!-- Controls: running -->
+          <view class="controls-row" wx:if="{{phase === 'running'}}">
+            <view class="ctrl-btn ctrl-secondary" catchtap="interruptSession">
+              <text class="ctrl-icon">■</text>
+              <text class="ctrl-label">结束</text>
+            </view>
+            <view class="ctrl-btn ctrl-primary" catchtap="togglePause">
+              <text class="ctrl-icon">{{isPaused ? '▶' : '⏸'}}</text>
+              <text class="ctrl-label">{{isPaused ? '继续' : '暂停'}}</text>
+            </view>
+          </view>
+          <!-- Controls: break -->
+          <view class="controls-row" wx:if="{{phase === 'break'}}">
+            <view class="ctrl-btn ctrl-primary" catchtap="skipBreak">
+              <text class="ctrl-icon">✓</text>
+              <text class="ctrl-label">跳过休息</text>
+            </view>
+          </view>
+        </view>
+      </block>
+    </view>
+
+    <!-- ===== BOTTOM BAR ===== -->
+    <view class="bottom-bar">
+      <view class="stats-link" catchtap="goStats">
+        <text>学习统计</text>
+        <text class="stats-arrow">›</text>
       </view>
     </view>
   </view>
 
-  <!-- 从刷题页面带来的上下文 -->
-  <view class="context-tag" wx:if="{{fromSubject && selectedSubject}}">
-    <text class="context-text">从刷题页面进入 · 已自动选择「{{subjectLabel(selectedSubject)}}」</text>
-  </view>
-
-  <!-- ==================== 空闲态：设置 ==================== -->
-  <block wx:if="{{phase === 'idle'}}">
-    <!-- 科目选择 -->
-    <view class="card section-card">
-      <text class="section-title">选择科目</text>
-      <view class="subject-grid">
-        <view
-          class="subject-item {{selectedSubject === item.key ? 'subject-selected' : ''}}"
-          wx:for="{{subjects}}"
-          wx:key="key"
-          bindtap="selectSubject"
-          data-key="{{item.key}}"
-        >
-          <view class="subject-dot" style="background: {{selectedSubject === item.key ? subjectColor(item.key) : '#BCC8D4'}}"></view>
-          <text>{{item.label}}</text>
+  <!-- ===== CELEBRATION OVERLAY ===== -->
+  <block wx:if="{{showCelebration}}">
+    <view class="celebration-overlay">
+      <view class="celeb-bg"></view>
+      <view class="celeb-content">
+        <view class="celeb-check-wrap">
+          <text class="celeb-check">✓</text>
         </view>
+        <text class="celeb-title">完成一个番茄钟</text>
+        <text class="celeb-detail">专注 {{workDuration}} 分钟</text>
+        <text class="celeb-motto">{{celebrationMotto}}</text>
       </view>
-    </view>
-
-    <!-- 模式选择 -->
-    <view class="card section-card">
-      <text class="section-title">学习模式</text>
-      <view class="preset-row">
-        <view
-          class="preset-item {{selectedPreset === item.key ? 'preset-selected' : ''}}"
-          wx:for="{{presets}}"
-          wx:key="key"
-          bindtap="selectPreset"
-          data-key="{{item.key}}"
-        >
-          <text class="preset-icon">{{item.key === 'standard' ? '⏰' : (item.key === 'long' ? '🔥' : '⚙')}}</text>
-          <text class="preset-label">{{item.label}}</text>
-          <text class="preset-desc" wx:if="{{item.key !== 'custom'}}">{{item.work}}分学习 · {{item.break}}分休息</text>
-        </view>
-      </view>
-
-      <!-- 自定义时长 -->
-      <view class="custom-row" wx:if="{{showCustom}}">
-        <view class="custom-item">
-          <text class="custom-label">学习时长（分）</text>
-          <slider
-            min="5" max="120" value="{{workDuration}}"
-            bindchange="onWorkChange" show-value
-            activeColor="#5B7B9A" block-size="20"
-          />
-        </view>
-        <view class="custom-item">
-          <text class="custom-label">休息时长（分）</text>
-          <slider
-            min="5" max="120" value="{{breakDuration}}"
-            bindchange="onBreakChange" show-value
-            activeColor="#6B9B6B" block-size="20"
-          />
-        </view>
-      </view>
-    </view>
-
-    <!-- 开始按钮 -->
-    <view class="start-area">
-      <button class="btn-start" bindtap="startSession">开始学习</button>
-    </view>
-  </block>
-
-  <!-- ==================== 运行态：计时器 ==================== -->
-  <block wx:if="{{phase === 'running'}}">
-    <view class="timer-card">
-      <text class="timer-subject">{{subjectLabel(selectedSubject)}}</text>
-      <view class="timer-ring">
-        <canvas class="ring-canvas" canvas-id="progress-ring" id="progress-ring"></canvas>
-        <view class="timer-display">
-          <text class="timer-time">{{displayMin}}:{{displaySec}}</text>
-          <text class="timer-hint">{{isPaused ? '已暂停' : '专注学习中'}}</text>
-        </view>
-      </view>
-      <view class="timer-actions">
-        <button class="btn-pause" bindtap="togglePause">{{isPaused ? '继续' : '暂停'}}</button>
-        <button class="btn-end" bindtap="interruptSession">结束</button>
+      <view class="particle-container">
+        <view class="particle p1"></view>
+        <view class="particle p2"></view>
+        <view class="particle p3"></view>
+        <view class="particle p4"></view>
+        <view class="particle p5"></view>
+        <view class="particle p6"></view>
       </view>
     </view>
   </block>
-
-  <!-- ==================== 休息态 ==================== -->
-  <block wx:if="{{phase === 'break'}}">
-    <view class="timer-card break-card">
-      <text class="timer-subject">☕ 休息时间</text>
-      <view class="timer-ring">
-        <canvas class="ring-canvas" canvas-id="progress-ring-break" id="progress-ring-break"></canvas>
-        <view class="timer-display">
-          <text class="timer-time break-time">{{displayMin}}:{{displaySec}}</text>
-          <text class="timer-hint">放松一下</text>
-        </view>
-      </view>
-      <view class="timer-actions">
-        <button class="btn-skip" bindtap="skipBreak">跳过休息</button>
-      </view>
-    </view>
-  </block>
-
-  <!-- 查看统计 -->
-  <view class="stats-entry" bindtap="goStats">
-    <text class="stats-entry-text">查看学习统计 ›</text>
-  </view>
 </view>
