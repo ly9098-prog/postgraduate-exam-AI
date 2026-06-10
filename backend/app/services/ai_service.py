@@ -43,7 +43,13 @@ async def analyze_error(
             "duration_ms": 0,
         }
 
-    if not deepseek.is_available():
+    from app.services.model_config_resolver import ensure_db_model_configured
+    creds = await ensure_db_model_configured(db)
+
+    api_key = creds[0] if creds else None
+    base_url = creds[1] if creds else None
+
+    if not (api_key or deepseek.is_available()):
         fallback = get_fallback_analysis()
         return {
             "content": fallback,
@@ -60,7 +66,7 @@ async def analyze_error(
     )
 
     try:
-        result = await deepseek.chat(messages)
+        result = await deepseek.chat(messages, api_key=api_key, base_url=base_url)
     except RuntimeError:
         fallback = get_fallback_analysis()
         return {
@@ -105,7 +111,13 @@ async def analyze_error(
 
 
 async def generate_advice(db: AsyncSession, user_id: int, subject: str | None = None) -> dict:
-    if not deepseek.is_available():
+    from app.services.model_config_resolver import ensure_db_model_configured
+    creds = await ensure_db_model_configured(db)
+
+    api_key = creds[0] if creds else None
+    base_url = creds[1] if creds else None
+
+    if not (api_key or deepseek.is_available()):
         return {
             "content": get_fallback_advice(),
             "from_cache": False,
@@ -153,7 +165,7 @@ async def generate_advice(db: AsyncSession, user_id: int, subject: str | None = 
     )
 
     try:
-        result = await deepseek.chat(messages)
+        result = await deepseek.chat(messages, api_key=api_key, base_url=base_url)
     except RuntimeError:
         fallback = get_fallback_advice()
         return {

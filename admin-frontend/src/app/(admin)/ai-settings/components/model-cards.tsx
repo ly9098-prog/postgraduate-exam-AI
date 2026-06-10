@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Brain, Cpu, Globe, ToggleLeft, ToggleRight, CheckCircle2, Info } from "lucide-react";
+import { Brain, Cpu, Globe, Key, ToggleLeft, ToggleRight, CheckCircle2, Info, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
 import type { AdminAiModelConfig, AdminAiModelConfigPatchRequest } from "@/lib/api/types";
@@ -23,13 +24,33 @@ function ModelCard({
   model,
   onToggle,
   onSetDefault,
+  onSaveApiConfig,
   disabled,
 }: {
   model: AdminAiModelConfig;
   onToggle: () => void;
   onSetDefault: () => void;
+  onSaveApiConfig: (id: number, data: { api_key?: string; api_base_url?: string }) => void;
   disabled: boolean;
 }) {
+  const [isEditingApi, setIsEditingApi] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [apiBaseUrlInput, setApiBaseUrlInput] = useState("");
+
+  const openApiEdit = () => {
+    setApiKeyInput(model.api_configured ? "****" : "");
+    setApiBaseUrlInput(model.api_base_url ?? "");
+    setIsEditingApi(true);
+  };
+
+  const saveApiConfig = () => {
+    const payload: { api_key?: string; api_base_url?: string } = {};
+    if (apiKeyInput && apiKeyInput !== "****") payload.api_key = apiKeyInput;
+    if (apiBaseUrlInput !== model.api_base_url) payload.api_base_url = apiBaseUrlInput;
+    onSaveApiConfig(model.id, payload);
+    setIsEditingApi(false);
+  };
+
   const Icon = PROVIDER_ICONS[model.provider] || Brain;
   const color = PROVIDER_COLORS[model.provider] || "#5b7b9a";
 
@@ -107,6 +128,66 @@ function ModelCard({
         </div>
       </div>
 
+      {/* API Config – inline edit */}
+      {isEditingApi ? (
+        <div className="mt-4 space-y-3 rounded-xl border border-[var(--color-border)]/60 bg-white p-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-secondary)]">
+              <Key className="h-3 w-3" />
+              API 配置
+            </div>
+            <button onClick={() => setIsEditingApi(false)} className="text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">API Key</label>
+            <input
+              type="password"
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              className="h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
+              placeholder={model.api_configured ? "输入新 API Key 以替换" : "sk-..."}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">
+              API Base URL <span className="text-[var(--color-text-hint)]">（可选）</span>
+            </label>
+            <input
+              type="text"
+              value={apiBaseUrlInput}
+              onChange={(e) => setApiBaseUrlInput(e.target.value)}
+              className="h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
+              placeholder="https://api.deepseek.com"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={saveApiConfig}
+              disabled={disabled}
+              className="flex-1 rounded-lg bg-[var(--color-primary)] py-2 text-xs font-semibold text-white transition-colors hover:bg-[var(--color-primary-dark)] disabled:opacity-50"
+            >
+              保存
+            </button>
+            <button
+              onClick={() => setIsEditingApi(false)}
+              className="flex-1 rounded-lg border border-[var(--color-border)] py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-input)]"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={openApiEdit}
+          className="mt-3 w-full rounded-lg border border-dashed border-[var(--color-border)] py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-solid hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]"
+        >
+          <Key className="mr-1 inline-block h-3 w-3" />
+          {model.api_configured ? "编辑 API 配置" : "配置 API Key"}
+        </button>
+      )}
+
       {model.is_enabled && !model.is_default && (
         <button
           onClick={onSetDefault}
@@ -141,6 +222,10 @@ export function ModelCards() {
 
   const toggleModel = (model: AdminAiModelConfig) => {
     patchMutation.mutate({ id: model.id, data: { is_enabled: !model.is_enabled } });
+  };
+
+  const handleSaveApiConfig = (id: number, data: { api_key?: string; api_base_url?: string }) => {
+    patchMutation.mutate({ id, data });
   };
 
   const setDefault = (model: AdminAiModelConfig) => {
@@ -179,6 +264,7 @@ export function ModelCards() {
                 model={model}
                 onToggle={() => toggleModel(model)}
                 onSetDefault={() => setDefault(model)}
+                onSaveApiConfig={handleSaveApiConfig}
                 disabled={patchMutation.isPending}
               />
             ))}

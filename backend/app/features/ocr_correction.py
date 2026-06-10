@@ -10,6 +10,8 @@ import logging
 import re
 import time
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 logger = logging.getLogger(__name__)
 
 _VALID_OPTION_MARKERS = re.compile(r"^[A-D][.、．）)\s]", re.MULTILINE)
@@ -143,11 +145,14 @@ def _should_correct(noise_score: float, config: dict) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def _call_ai_correction(block_text: str, config: dict) -> str | None:
+async def _call_ai_correction(
+    block_text: str, config: dict,
+    api_key: str | None = None, base_url: str | None = None,
+) -> str | None:
     from app.ai.client import deepseek
     from app.ai.prompts import build_ocr_correction
 
-    if not deepseek.is_available():
+    if not (api_key or deepseek.is_available()):
         return None
 
     messages = build_ocr_correction(block_text)
@@ -157,7 +162,7 @@ async def _call_ai_correction(block_text: str, config: dict) -> str | None:
         return None
 
     try:
-        result = await deepseek.chat(messages, temperature=0.1)
+        result = await deepseek.chat(messages, temperature=0.1, api_key=api_key, base_url=base_url)
     except Exception:
         return None
 
@@ -183,10 +188,19 @@ async def _call_ai_correction(block_text: str, config: dict) -> str | None:
 async def correct_ocr_blocks(
     normalized_blocks: list[dict],
     config: dict | None = None,
+    db: AsyncSession | None = None,
 ) -> dict:
     """AI OCR 文本纠错层。"""
     if config is None:
         config = {}
+
+    creds = None
+    if db is not None:
+        from app.services.model_config_resolver import ensure_db_model_configured
+        creds = await ensure_db_model_configured(db)
+
+    _api_key = creds[0] if creds else None
+    _base_url = creds[1] if creds else None
 
     enabled = config.get("enabled", True)
     if not enabled:
@@ -205,7 +219,7 @@ async def correct_ocr_blocks(
 
     from app.ai.client import deepseek
 
-    if not deepseek.is_available():
+    if not (_api_key or deepseek.is_available()):
         return {
             "corrected_blocks": normalized_blocks,
             "corrections": [],
@@ -258,7 +272,7 @@ async def correct_ocr_blocks(
 
     async def _correct_one(idx: int, text: str):
         async with sem:
-            return idx, await _call_ai_correction(text, config)
+            return idx, await _call_ai_correction(text, config, api_key=_api_key, base_url=_base_url)
 
     results = await asyncio.gather(
         *[_correct_one(idx, text) for idx, text, _ in to_correct],
