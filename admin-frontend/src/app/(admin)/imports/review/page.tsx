@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { Check, CheckCircle2, Code2, Eye, FileText, Save, Search, Send, Sparkles, X, XCircle } from "lucide-react";
@@ -150,6 +150,7 @@ export default function ImportReviewPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [detailView, setDetailView] = useState<"formatted" | "json">("formatted");
   const [editing, setEditing] = useState(false);
+  const editSnapshotRef = useRef("");
 
   const queryParams = useMemo(
     () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject: filters.subject, source_type: filters.source_type, keyword: filters.keyword }),
@@ -287,10 +288,17 @@ export default function ImportReviewPage() {
   const openPreview = (item: ImportQuestionItem) => {
     setPreviewId(item.id);
     setCompletedItem(null);
-    setEditState(editStateFromItem(item));
+    const snapshot = editStateFromItem(item);
+    setEditState(snapshot);
+    editSnapshotRef.current = JSON.stringify(snapshot);
+    setEditing(false);
+    setDetailView("formatted");
   };
 
   const closeDrawer = () => {
+    if (editing && editState && JSON.stringify(editState) !== editSnapshotRef.current) {
+      if (!window.confirm("有未保存的修改，确定关闭吗？")) return;
+    }
     setPreviewId(null);
     setCompletedItem(null);
     setEditState(null);
@@ -306,6 +314,15 @@ export default function ImportReviewPage() {
     setEditState(previewItem ? editStateFromItem(previewItem) : null);
     setEditing(false);
   };
+
+  useEffect(() => {
+    if (previewId === null) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeDrawer();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [previewId, editing, editState]);
 
   const canBatchOperate = items.length > 0 && (selectedIds.size > 0 || Boolean(filters.batch_id || batchIdParam));
 
@@ -447,14 +464,14 @@ export default function ImportReviewPage() {
       </Card>
 
       {previewId !== null && previewItem && editState ? (
-        <div className="fixed inset-0 z-40 flex justify-end bg-[rgba(16,24,40,0.28)]" onClick={closeDrawer}>
-          <aside className="flex h-full w-full max-w-3xl flex-col overflow-y-auto bg-white shadow-[var(--shadow-floating)]" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-40 flex justify-end bg-[rgba(16,24,40,0.28)]" role="presentation" onClick={closeDrawer}>
+          <aside role="dialog" aria-modal="true" aria-labelledby="drawer-title" className="flex h-full w-full max-w-3xl flex-col overflow-y-auto bg-white shadow-[var(--shadow-floating)]" onClick={(e) => e.stopPropagation()}>
             {/* ===== Sticky Header ===== */}
             <div className="sticky top-0 z-10 border-b border-[var(--color-border)] bg-white/95 px-6 py-4 backdrop-blur-xl">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="font-mono text-xs text-[var(--color-text-hint)]">#{previewItem.id}</p>
-                  <h4 className="font-display text-xl font-bold text-[var(--ink)]">导入题目详情</h4>
+                  <h4 id="drawer-title" className="font-display text-xl font-bold text-[var(--ink)]">导入题目详情</h4>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
                   {/* View toggle */}
@@ -797,14 +814,6 @@ export default function ImportReviewPage() {
         </div>
       ) : null}
 
-      {confirmState?.action === "reject" || confirmState?.action === "batch-reject" ? (
-        <Card>
-          <CardContent className="pt-6">
-            <Input placeholder="驳回原因" value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} />
-          </CardContent>
-        </Card>
-      ) : null}
-
       <ConfirmDialog
         open={confirmState !== null}
         title={confirmState?.action.includes("reject") ? "驳回导入题目" : confirmState?.action === "publish" ? "发布已通过题目" : "通过导入题目"}
@@ -822,7 +831,11 @@ export default function ImportReviewPage() {
         loading={actionMutation.isPending}
         onCancel={() => setConfirmState(null)}
         onConfirm={() => confirmState && actionMutation.mutate(confirmState)}
-      />
+      >
+        {confirmState?.action === "reject" || confirmState?.action === "batch-reject" ? (
+          <Input placeholder="驳回原因" value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} />
+        ) : null}
+      </ConfirmDialog>
     </div>
   );
 }
