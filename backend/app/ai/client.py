@@ -10,7 +10,6 @@ class DeepSeekClient:
         self._api_key = settings.DEEPSEEK_API_KEY
         self._base_url = settings.DEEPSEEK_BASE_URL
         self.timeout = settings.AI_TIMEOUT
-        self._configured_from_db = False
         self._client: httpx.AsyncClient | None = None
 
     @property
@@ -20,22 +19,6 @@ class DeepSeekClient:
     @property
     def base_url(self) -> str:
         return self._base_url
-
-    @property
-    def configured_from_db(self) -> bool:
-        return self._configured_from_db
-
-    def configure(self, api_key: str, base_url: str) -> None:
-        """Override client config with DB-stored model credentials."""
-        self._api_key = api_key
-        self._base_url = base_url
-        self._configured_from_db = True
-
-    def reset_to_env(self) -> None:
-        """Revert client config back to environment variables."""
-        self._api_key = settings.DEEPSEEK_API_KEY
-        self._base_url = settings.DEEPSEEK_BASE_URL
-        self._configured_from_db = False
 
     @property
     def client(self) -> httpx.AsyncClient:
