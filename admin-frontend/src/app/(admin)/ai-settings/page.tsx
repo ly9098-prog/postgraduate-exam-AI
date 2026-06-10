@@ -1,13 +1,14 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Save, SlidersHorizontal, Power, Sparkles } from "lucide-react";
+import { AlertTriangle, Ban, Save, SlidersHorizontal, Power, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
+import { useAuthStore } from "@/lib/auth/auth-store";
 import type { AISettings, AISettingsPatchRequest, AIStatsResponse, AdminAiConfigsResponse } from "@/lib/api/types";
 import { StatCards } from "./components/stat-cards";
 import { TrendChart } from "./components/trend-chart";
@@ -16,6 +17,8 @@ import { OcrAccordion } from "./components/ocr-accordion";
 import { AiCompletionPreview } from "./components/ai-completion";
 
 export default function AISettingsPage() {
+  const role = useAuthStore((s) => s.role);
+  const isSuperAdmin = role?.name === "super_admin";
   const queryClient = useQueryClient();
   const [monthlyLimit, setMonthlyLimit] = useState("");
   const [enabled, setEnabled] = useState(true);
@@ -85,6 +88,20 @@ export default function AISettingsPage() {
       monthly_call_limit: parsedLimit,
     });
   };
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-danger-light)]">
+          <Ban className="h-8 w-8 text-[var(--color-danger)]" />
+        </div>
+        <h3 className="text-xl font-semibold text-[var(--ink)]">权限不足</h3>
+        <p className="max-w-sm text-sm text-[var(--color-text-secondary)]">
+          仅超级管理员可访问 AI 解析设置页面
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-rise-in">
