@@ -7,6 +7,7 @@ from app.schemas.common import paginated_response
 from app.services.admin_import_service import (
     approve_import_batch,
     approve_import_question,
+    batch_complete_import_questions,
     complete_import_question,
     create_enrich_task,
     delete_import_batch,
@@ -21,6 +22,8 @@ from app.services.admin_import_service import (
 )
 from app.schemas.admin_imports import (
     AdminImportActionResponse,
+    AdminImportBatchCompleteRequest,
+    AdminImportBatchCompleteResponse,
     AdminImportBatchDetail,
     AdminImportBatchListItem,
     AdminImportCompleteResponse,
@@ -132,6 +135,24 @@ async def complete_import_question_item(
         _raise_import_error(exc)
     except PermissionError as exc:
         await db.rollback()
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+
+
+@router.post("/questions/batch-complete", response_model=AdminImportBatchCompleteResponse)
+async def batch_complete_import_questions_item(
+    data: AdminImportBatchCompleteRequest,
+    request: Request,
+    current_admin=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await batch_complete_import_questions(
+            db, data.import_ids, data.fields, data.strategy, current_admin, request,
+        )
+        return result
+    except ValueError as exc:
+        _raise_import_error(exc)
+    except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
 

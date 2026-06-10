@@ -117,6 +117,27 @@ class AdminImportTaskStatusResponse(BaseModel):
     error_message: str | None = None
 
 
+class AdminImportBatchCompleteRequest(BaseModel):
+    import_ids: list[int] = Field(..., description="要补全的导入题目 ID 列表，最多 50 条")
+    fields: list[str] = Field(..., description="补全字段列表: answer, analysis, knowledge_points, difficulty, subject, question_type, stem, options, tips, tags")
+    strategy: str = Field("fill_empty", description="fill_empty | force_overwrite")
+
+
+class AdminImportBatchCompleteItem(BaseModel):
+    import_id: int
+    status: str  # success | failed | skipped
+    error: str | None = None
+    completed_fields: list[str] = []
+
+
+class AdminImportBatchCompleteResponse(BaseModel):
+    total: int
+    succeeded: int
+    failed: int
+    skipped: int
+    items: list[AdminImportBatchCompleteItem]
+
+
 class TextParseRequest(BaseModel):
     text: str = Field(..., max_length=100_000)  # ~100KB
     subject: str = ""  # 可选，为空时自动检测

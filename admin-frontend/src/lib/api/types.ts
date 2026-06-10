@@ -105,6 +105,21 @@ export type ImportDeleteResponse = {
   deleted_count: number;
 };
 
+export type BatchCompleteResponseItem = {
+  import_id: number;
+  status: string; // "success" | "failed" | "skipped"
+  error?: string | null;
+  completed_fields: string[];
+};
+
+export type BatchCompleteResponse = {
+  total: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  items: BatchCompleteResponseItem[];
+};
+
 export type PaginatedResponse<T> = {
   items: T[];
   total: number;

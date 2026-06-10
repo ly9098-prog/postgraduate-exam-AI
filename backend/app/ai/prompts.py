@@ -291,6 +291,57 @@ def build_repair_question(raw_text: str, existing: dict | None = None) -> list:
     ]
 
 
+def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: str) -> list:
+    """对一条 question_imports 记录批量补全指定字段。
+
+    strategy: fill_empty | force_overwrite
+    target_fields: 需补全的字段列表
+    """
+    stem = (qi.get("parsed_content") or {}).get("text") or qi.get("raw_text") or ""
+    options = qi.get("parsed_options") or {}
+    answer = qi.get("parsed_answer") or ""
+    analysis = qi.get("parsed_analysis") or ""
+    subject = qi.get("subject") or ""
+    question_type = qi.get("question_type") or ""
+
+    field_descriptions = {
+        "answer": "题目答案",
+        "analysis": "题目解析",
+        "knowledge_points": "知识点列表",
+        "difficulty": "难度等级(1-5)",
+        "subject": "学科分类",
+        "question_type": "题型",
+        "stem": "题干文本（修复OCR错误/补全缺失内容）",
+        "options": "选项（规范格式/补全缺失选项）",
+        "tips": "解题技巧",
+        "tags": "题目标签",
+    }
+    field_names = ", ".join(field_descriptions.get(f, f) for f in target_fields)
+    instruction = (
+        "请仅补全以下字段中内容为空的部分，已有内容保持不变。"
+        if strategy == "fill_empty"
+        else "请重新生成以下字段的内容，覆盖原有值。"
+    )
+    return [
+        {"role": "system", "content": SYSTEM_PROMPTS["complete_question"]},
+        {
+            "role": "user",
+            "content": (
+                f"【已有题干】{stem}\n"
+                f"【已有选项】{options}\n"
+                f"【已有答案】{answer}\n"
+                f"【已有解析】{analysis}\n"
+                f"【已有学科】{subject}\n"
+                f"【已有题型】{question_type}\n"
+                f"【需补全字段】{field_names}\n"
+                f"【策略】{instruction}\n"
+                "输出 JSON 包含上述所有需补全字段。若答案不确定，"
+                "请将 answer_uncertain 设为 true。"
+            ),
+        },
+    ]
+
+
 def build_complete_question(qi: dict, missing_fields: list[str]) -> list:
     stem = (qi.get("parsed_content") or {}).get("text") or qi.get("raw_text") or ""
     options = qi.get("parsed_options") or {}
