@@ -6,6 +6,7 @@ import { WandSparkles, ArrowRight, FileQuestion, ListChecks, MessageSquareText }
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
+import { Toggle } from "@/components/ui/toggle";
 import type { AdminAiConfigsResponse } from "@/lib/api/types";
 
 type PreviewType = "question" | "answer" | "explanation";
@@ -172,12 +173,11 @@ export function AiCompletionPreview({
               {toggles.map((item) => (
                 <label key={item.key} className="flex items-center justify-between gap-2">
                   <span className="text-sm text-[var(--ink)]">{item.label}</span>
-                  <input
-                    type="checkbox"
+                  <Toggle
                     checked={Boolean(data[item.key])}
                     onChange={() => toggleConfig(item.key)}
                     disabled={saveMutation.isPending || loading}
-                    className="h-4 w-4 rounded disabled:opacity-50"
+                    size="sm"
                   />
                 </label>
               ))}
