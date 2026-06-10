@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { CheckCircle2, Code2, Eye, FileText, Save, Search, Send, Sparkles, XCircle } from "lucide-react";
+import { Check, CheckCircle2, Code2, Eye, FileText, Save, Search, Send, Sparkles, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
@@ -276,8 +276,14 @@ export default function ImportReviewPage() {
   return (
     <div className="space-y-6">
       {message ? (
-        <div role="status" aria-live="polite" className="fixed right-6 top-6 z-[60] max-w-sm rounded-2xl border border-[var(--color-success)] bg-white px-5 py-4 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-floating)]">
-          {message}
+        <div role="status" aria-live="polite" className="fixed right-6 top-6 z-[60] max-w-sm animate-rise-in rounded-2xl border border-[var(--color-success)]/30 bg-white px-5 py-4 shadow-[var(--shadow-floating)]">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-success-light)]">
+              <CheckCircle2 className="h-4 w-4 text-[var(--color-success)]" />
+            </div>
+            <p className="text-sm font-medium text-[var(--ink)]">{message}</p>
+          </div>
+          <button className="absolute right-3 top-3 text-[var(--color-text-hint)] hover:text-[var(--ink)] transition" onClick={() => setMessage(null)}>✕</button>
         </div>
       ) : null}
       <Card>
@@ -288,14 +294,16 @@ export default function ImportReviewPage() {
               <p className="mt-1 text-sm text-[var(--color-text-secondary)]">审核 question_imports 暂存题目，通过后再发布到正式题库。</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" disabled={!canBatchOperate} onClick={() => setConfirmState({ action: "batch-approve" })}>
-                <CheckCircle2 className="h-4 w-4" />
-                批量通过当前批次
-              </Button>
-              <Button variant="danger" disabled={!canBatchOperate} onClick={() => setConfirmState({ action: "batch-reject" })}>
-                <XCircle className="h-4 w-4" />
-                批量驳回当前批次
-              </Button>
+              <div className="flex items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white/60 p-1">
+                <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!canBatchOperate} onClick={() => setConfirmState({ action: "batch-approve" })}>
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  批量通过
+                </Button>
+                <Button variant="danger" className="h-8 px-3 text-xs" disabled={!canBatchOperate} onClick={() => setConfirmState({ action: "batch-reject" })}>
+                  <XCircle className="h-3.5 w-3.5" />
+                  批量驳回
+                </Button>
+              </div>
               <Button variant="primary" disabled={!(filters.batch_id || batchIdParam)} onClick={() => setConfirmState({ action: "publish", batchId: filters.batch_id || batchIdParam })}>
                 <Send className="h-4 w-4" />
                 发布已通过
@@ -309,71 +317,122 @@ export default function ImportReviewPage() {
             </label>
             <Input placeholder="批次 ID" value={filters.batch_id || batchIdParam} onChange={(event) => updateFilter("batch_id", event.target.value)} />
             <Input placeholder="科目" value={filters.subject} onChange={(event) => updateFilter("subject", event.target.value)} />
-            <select className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm" value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
-              <option value="pending">pending</option>
-              <option value="approved">approved</option>
-              <option value="rejected">rejected</option>
-              <option value="published">published</option>
-              <option value="">全部状态</option>
+            <select className="h-11 cursor-pointer rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20" value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
+              <option value="pending">⏳ pending</option>
+              <option value="approved">✓ approved</option>
+              <option value="rejected">✗ rejected</option>
+              <option value="published">● published</option>
+              <option value="">— 全部状态</option>
             </select>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
             <section className="space-y-3">
-              <label className="flex items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[var(--color-text-secondary)]">
-                <input type="checkbox" checked={allChecked} onChange={toggleAll} />
+              <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-[var(--color-border)] bg-white/60 px-4 py-2.5 text-sm text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)]/30 hover:bg-white/90 select-none group">
+                <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-[var(--color-border)] bg-white transition-all group-hover:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
+                  <input type="checkbox" checked={allChecked} onChange={toggleAll} className="peer absolute inset-0 cursor-pointer opacity-0" />
+                  <Check className="h-3.5 w-3.5 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
+                </span>
                 全选当前结果
+                {selectedIds.size > 0 ? <span className="ml-auto rounded-full bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary-dark)]">已选 {selectedIds.size} 题</span> : null}
               </label>
-              {items.map((item) => (
-                <article key={item.id} className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleOne(item.id)} />
+              {items.map((item, index) => (
+                <article
+                  key={item.id}
+                  className="rounded-2xl border border-[var(--color-border)] bg-white/85 p-4 transition-all hover:border-[var(--color-primary)]/30 hover:shadow-sm animate-rise-in"
+                  style={{ animationDelay: `${(index % 20) * 30}ms` }}
+                >
+                  {/* Top bar: checkbox + ID + status badges */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <label className="group relative flex shrink-0 cursor-pointer items-center gap-2">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-md border-2 border-[var(--color-border)] bg-white transition-all group-hover:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(item.id)}
+                            onChange={() => toggleOne(item.id)}
+                            className="peer absolute inset-0 cursor-pointer opacity-0"
+                          />
+                          <Check className="h-3.5 w-3.5 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
+                        </span>
+                      </label>
+                      <span className="shrink-0 font-mono text-xs text-[var(--color-text-hint)]">#{item.id}</span>
                       <StatusBadge tone={statusTone(item.status)}>{item.status}</StatusBadge>
-                      {item.duplicate_status ? <StatusBadge tone={item.duplicate_status === "possible_duplicate" ? "warning" : "neutral"}>{item.duplicate_status}</StatusBadge> : null}
+                      {item.duplicate_status ? (
+                        <StatusBadge tone={item.duplicate_status === "possible_duplicate" ? "warning" : "neutral"}>
+                          {item.duplicate_status === "possible_duplicate" ? "疑似重复" : item.duplicate_status}
+                        </StatusBadge>
+                      ) : null}
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button variant="ghost" onClick={() => openPreview(item)}>
-                        <Eye className="h-4 w-4" />
-                        预览
+                  </div>
+
+                  {/* Metadata pills */}
+                  <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {item.subject ? (
+                      <span className="rounded-md bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-dark)]">{item.subject}</span>
+                    ) : (
+                      <span className="text-xs text-[var(--color-text-hint)]">未分类</span>
+                    )}
+                    <span className="text-xs text-[var(--color-text-secondary)]">{item.question_type || "未标注题型"}</span>
+                    <span className="max-w-[160px] truncate font-mono text-[10px] text-[var(--color-text-hint)]" title={item.batch_id}>{item.batch_id}</span>
+                  </div>
+
+                  {/* Stem */}
+                  <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-[var(--ink)] line-clamp-2">
+                    {textFromImport(item) || <span className="italic text-[var(--color-text-hint)]">导入题目 #{item.id}</span>}
+                  </p>
+
+                  {/* Action bar */}
+                  <div className="mt-3 flex items-center gap-1.5 border-t border-[var(--color-border)]/50 pt-3">
+                    <Button variant="ghost" className="h-8 px-2.5 text-xs" onClick={() => openPreview(item)}>
+                      <Eye className="h-3.5 w-3.5" />
+                      预览详情
+                    </Button>
+                    <div className="ml-auto flex items-center gap-1.5">
+                      <Button variant="ghost" className="h-8 w-8 p-0" disabled={item.status !== "pending" || completeMutation.isPending} onClick={() => completeMutation.mutate(item.id)} title="AI 补全">
+                        <Sparkles className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" disabled={item.status !== "pending" || completeMutation.isPending} onClick={() => completeMutation.mutate(item.id)}>
-                        <Sparkles className="h-4 w-4" />
-                        AI补全
-                      </Button>
-                      <Button variant="secondary" disabled={item.status === "published"} onClick={() => setConfirmState({ action: "approve", id: item.id })}>
-                        <CheckCircle2 className="h-4 w-4" />
+                      <Button variant="secondary" className="h-8 px-3 text-xs" disabled={item.status === "published"} onClick={() => setConfirmState({ action: "approve", id: item.id })}>
+                        <CheckCircle2 className="h-3.5 w-3.5" />
                         通过
                       </Button>
-                      <Button variant="danger" disabled={item.status === "published"} onClick={() => setConfirmState({ action: "reject", id: item.id })}>
-                        <XCircle className="h-4 w-4" />
+                      <Button variant="danger" className="h-8 px-3 text-xs" disabled={item.status === "published"} onClick={() => setConfirmState({ action: "reject", id: item.id })}>
+                        <XCircle className="h-3.5 w-3.5" />
                         驳回
                       </Button>
                     </div>
                   </div>
-                  <h4 className="mt-4 whitespace-pre-wrap text-sm font-semibold text-[var(--ink)]">{textFromImport(item) || `导入题目 #${item.id}`}</h4>
-                  <p className="mt-2 text-xs text-[var(--color-text-secondary)]">{item.subject || "未分类"} · {item.question_type || "未标注题型"} · {item.batch_id}</p>
                 </article>
               ))}
               {!queue.isLoading && items.length === 0 ? <p className="py-10 text-center text-sm text-[var(--color-text-hint)]">暂无待审核题目</p> : null}
               {queue.isError ? <p className="text-sm text-[var(--color-danger)]">待审核接口当前不可用。</p> : null}
             </section>
 
-            <aside className="rounded-3xl border border-[var(--color-border)] bg-white/70 p-5">
-              {!previewItem || !editState ? <p className="text-sm text-[var(--color-text-hint)]">选择一题查看 OCR 原文、解析结果并编辑。</p> : null}
+            <aside className="rounded-3xl border border-[var(--color-border)] bg-white/80 p-5">
+              {!previewItem || !editState ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <FileText className="mb-3 h-10 w-10 text-[var(--color-text-hint)]/50" />
+                  <p className="text-sm text-[var(--color-text-hint)]">选择一题查看 OCR 原文、解析结果并编辑。</p>
+                  <p className="mt-1 text-xs text-[var(--color-text-hint)]/60">点击列表中的「预览详情」按钮即可打开</p>
+                </div>
+              ) : null}
               {previewItem && editState ? (
                 <div className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)]/60 pb-4">
                     <div>
                       <p className="font-mono text-xs text-[var(--color-text-hint)]">#{previewItem.id}</p>
                       <h4 className="font-display text-xl font-bold text-[var(--ink)]">导入题目详情</h4>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="flex overflow-hidden rounded-xl border border-[var(--color-border)]">
+                      <div className="flex rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] p-0.5 shadow-sm">
                         <button
                           type="button"
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition ${detailView === "formatted" ? "bg-[var(--color-primary)] text-white" : "bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]"}`}
+                          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
+                            detailView === "formatted"
+                              ? "bg-[var(--color-primary)] text-white shadow-sm ring-1 ring-[var(--color-primary-dark)]/40"
+                              : "bg-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-primary-dark)] hover:bg-white/60"
+                          }`}
                           onClick={() => setDetailView("formatted")}
                         >
                           <FileText className="h-3.5 w-3.5" />
@@ -381,35 +440,49 @@ export default function ImportReviewPage() {
                         </button>
                         <button
                           type="button"
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition ${detailView === "json" ? "bg-[var(--color-primary)] text-white" : "bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]"}`}
+                          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
+                            detailView === "json"
+                              ? "bg-[var(--color-primary)] text-white shadow-sm ring-1 ring-[var(--color-primary-dark)]/40"
+                              : "bg-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-primary-dark)] hover:bg-white/60"
+                          }`}
                           onClick={() => setDetailView("json")}
                         >
                           <Code2 className="h-3.5 w-3.5" />
                           JSON
                         </button>
                       </div>
-                      <Button disabled={completeMutation.isPending || previewItem.status !== "pending"} onClick={() => completeMutation.mutate(previewItem.id)}>
-                        <Sparkles className="h-4 w-4" />
-                        AI补全
+                      <Button className="h-8 px-3 text-xs" disabled={completeMutation.isPending || previewItem.status !== "pending"} onClick={() => completeMutation.mutate(previewItem.id)}>
+                        <Sparkles className="h-3.5 w-3.5" />
+                        AI 补全
                       </Button>
-                      <Button disabled={updateMutation.isPending || previewItem.status === "published"} onClick={() => updateMutation.mutate()}>
-                        <Save className="h-4 w-4" />
-                        保存编辑
+                      <Button className="h-8 px-3 text-xs" variant="secondary" disabled={updateMutation.isPending || previewItem.status === "published"} onClick={() => updateMutation.mutate()}>
+                        <Save className="h-3.5 w-3.5" />
+                        保存
                       </Button>
                     </div>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
-                    <Input placeholder="科目" value={editState.subject} onChange={(event) => setEditState({ ...editState, subject: event.target.value })} />
-                    <Input placeholder="题型" value={editState.question_type} onChange={(event) => setEditState({ ...editState, question_type: event.target.value })} />
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</label>
+                      <Input placeholder="科目" value={editState.subject} onChange={(event) => setEditState({ ...editState, subject: event.target.value })} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-[var(--color-text-secondary)]">题型</label>
+                      <Input placeholder="题型" value={editState.question_type} onChange={(event) => setEditState({ ...editState, question_type: event.target.value })} />
+                    </div>
                   </div>
                   <label className="block space-y-1">
                     <span className="text-xs font-semibold text-[var(--color-text-secondary)]">题干</span>
                     <textarea className="min-h-36 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm" value={editState.stem} onChange={(event) => setEditState({ ...editState, stem: event.target.value })} />
                   </label>
                   {detailView === "formatted" ? (
-                    <div className="space-y-4">
-                      <section>
-                        <p className="mb-2 font-semibold text-[var(--ink)]">选项</p>
+                    <div className="space-y-5">
+                      {/* === Options Section === */}
+                      <section className="rounded-xl border border-[var(--color-border)]/60 bg-white/50 p-4">
+                        <div className="mb-3 flex items-center gap-2">
+                          <div className="h-0.5 w-4 rounded-full bg-[var(--color-primary)]/40" />
+                          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">选项</p>
+                        </div>
                         {editState.question_type === "multi_blank_choice" ? (
                           <div className="space-y-3">
                             {(() => {
@@ -429,7 +502,7 @@ export default function ImportReviewPage() {
                                 </div>
                               )) : null;
                             })()}
-                            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">多空选择题选项由导入管线管理，如需修改请切换 JSON 视图编辑 parsed_content.blank_option_groups。</p>
+                            <p className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-700">多空选择题选项由导入管线管理，如需修改请切换 JSON 视图编辑 parsed_content.blank_option_groups。</p>
                           </div>
                         ) : (
                           <div className="space-y-2">
@@ -438,7 +511,7 @@ export default function ImportReviewPage() {
                               <div key={index} className="flex items-center gap-2">
                                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary-light)] text-xs font-bold text-[var(--color-primary-dark)]">{opt.key}</span>
                                 <input
-                                  className="h-9 flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)]"
+                                  className="h-9 flex-1 rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
                                   value={opt.text}
                                   onChange={(event) => {
                                     const next = [...editState.options];
@@ -451,12 +524,18 @@ export default function ImportReviewPage() {
                           </div>
                         )}
                       </section>
-                      <section>
-                        <p className="mb-1 font-semibold text-[var(--ink)]">快速选择答案</p>
+
+                      {/* === Answer Section === */}
+                      <section className="rounded-xl border border-[var(--color-border)]/60 bg-white/50 p-4">
+                        <div className="mb-3 flex items-center gap-2">
+                          <div className="h-0.5 w-4 rounded-full bg-[var(--color-success)]/40" />
+                          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">答案与解析</p>
+                        </div>
+                        <p className="mb-2 text-xs font-semibold text-[var(--color-text-secondary)]">快速选择答案</p>
                         {editState.question_type === "multi_blank_choice" ? <p className="mb-2 text-[10px] text-[var(--color-text-hint)]">多空选择题：单击切换各空答案，以逗号分隔</p> : null}
-                        {editState.options.length === 0 ? <p className="text-sm text-[var(--color-text-hint)]">请先编辑选项</p> : null}
+                        {editState.options.length === 0 ? <p className="mb-2 text-sm text-[var(--color-text-hint)]">请先编辑选项</p> : null}
                         {editState.options.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
+                          <div className="mb-4 flex flex-wrap gap-2">
                             {editState.options.map((opt) => {
                               const selected = isMultiChoice(editState.question_type)
                                 ? editState.answer.split(/[,，\s]+/).includes(opt.key)
@@ -465,10 +544,10 @@ export default function ImportReviewPage() {
                                 <button
                                   key={opt.key}
                                   type="button"
-                                  className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-4 text-sm font-medium transition ${
+                                  className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3.5 text-sm font-medium transition ${
                                     selected
-                                      ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
-                                      : "border-[var(--color-border)] bg-transparent text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-dark)]"
+                                      ? "border-[var(--color-success)] bg-[var(--color-success)] text-white shadow-sm"
+                                      : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-success)] hover:text-[var(--color-success)]"
                                   }`}
                                   onClick={() => {
                                     if (isMultiChoice(editState.question_type)) {
@@ -486,48 +565,54 @@ export default function ImportReviewPage() {
                             })}
                           </div>
                         ) : null}
+                        <label className="mb-3 block space-y-1">
+                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</span>
+                          <Input value={editState.answer} onChange={(event) => setEditState({ ...editState, answer: event.target.value })} />
+                          {editState.question_type === "multi_blank_choice" ? <p className="mt-1 text-[10px] text-amber-600">多空选择题答案格式：各空答案用逗号分隔（如 A,B 表示第1空选A、第2空选B）</p> : null}
+                        </label>
+                        <label className="block space-y-1">
+                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">解析</span>
+                          <textarea className="min-h-24 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20" value={editState.analysis} onChange={(event) => setEditState({ ...editState, analysis: event.target.value })} />
+                        </label>
                       </section>
-                      <label className="block space-y-1">
-                        <span className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</span>
-                        <Input value={editState.answer} onChange={(event) => setEditState({ ...editState, answer: event.target.value })} />
-                        {editState.question_type === "multi_blank_choice" ? <p className="text-[10px] text-amber-600">多空选择题答案格式：各空答案用逗号分隔（如 A,B 表示第1空选A、第2空选B）</p> : null}
-                      </label>
-                      <label className="block space-y-1">
-                        <span className="text-xs font-semibold text-[var(--color-text-secondary)]">解析</span>
-                        <textarea className="min-h-28 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm" value={editState.analysis} onChange={(event) => setEditState({ ...editState, analysis: event.target.value })} />
-                      </label>
+
                       {completeSuggestion ? (
-                        <section>
+                        <section className="rounded-xl border border-amber-200/60 bg-amber-50/30 p-4">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="font-semibold text-[var(--ink)]">AI 补全建议</p>
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="h-4 w-4 text-amber-600" />
+                              <p className="text-sm font-semibold text-amber-800">AI 补全建议</p>
+                            </div>
                             {answerSuggestion ? (
-                              <Button variant="ghost" onClick={() => setEditState({ ...editState, answer: answerSuggestion })}>
+                              <Button variant="ghost" className="h-7 px-2.5 text-xs text-amber-700 hover:bg-amber-100" onClick={() => setEditState({ ...editState, answer: answerSuggestion })}>
                                 应用答案建议
                               </Button>
                             ) : null}
                           </div>
-                          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">{renderJson(completeSuggestion)}</pre>
+                          <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-xl border border-amber-200/50 bg-white/80 p-3 text-xs text-[var(--color-text-secondary)]">{renderJson(completeSuggestion)}</pre>
                         </section>
                       ) : null}
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      <section>
-                        <p className="font-semibold text-[var(--ink)]">基础信息</p>
-                        <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ id: previewItem.id, batch_id: previewItem.batch_id, source_type: previewItem.source_type, subject: previewItem.subject, question_type: previewItem.question_type, status: previewItem.status, ai_generated: previewItem.ai_generated, ai_answer_flag: previewItem.ai_answer_flag, created_at: previewItem.created_at, updated_at: previewItem.updated_at })}</pre>
-                      </section>
-                      <section>
-                        <p className="font-semibold text-[var(--ink)]">解析数据</p>
-                        <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ parsed_content: previewItem.parsed_content, parsed_options: previewItem.parsed_options, parsed_answer: previewItem.parsed_answer, parsed_analysis: previewItem.parsed_analysis })}</pre>
-                      </section>
-                      <section>
-                        <p className="font-semibold text-[var(--ink)]">重复检测</p>
-                        <pre className="mt-2 whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ duplicate_status: previewItem.duplicate_status, duplicate_of_question_id: previewItem.duplicate_of_question_id, duplicate_of_import_id: previewItem.duplicate_of_import_id, question_hash: previewItem.question_hash })}</pre>
-                      </section>
-                      <section>
-                        <p className="font-semibold text-[var(--ink)]">OCR / AI 原始数据</p>
-                        <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-xs text-[var(--color-text-secondary)]">{renderJson({ raw_data: previewItem.raw_data, ai_metadata: previewItem.ai_metadata })}</pre>
-                      </section>
+                    <div className="space-y-3">
+                      {[
+                        { title: "基础信息", icon: FileText, data: { id: previewItem.id, batch_id: previewItem.batch_id, source_type: previewItem.source_type, subject: previewItem.subject, question_type: previewItem.question_type, status: previewItem.status, ai_generated: previewItem.ai_generated, ai_answer_flag: previewItem.ai_answer_flag, created_at: previewItem.created_at, updated_at: previewItem.updated_at } },
+                        { title: "解析数据", icon: FileText, data: { parsed_content: previewItem.parsed_content, parsed_options: previewItem.parsed_options, parsed_answer: previewItem.parsed_answer, parsed_analysis: previewItem.parsed_analysis } },
+                        { title: "重复检测", icon: FileText, data: { duplicate_status: previewItem.duplicate_status, duplicate_of_question_id: previewItem.duplicate_of_question_id, duplicate_of_import_id: previewItem.duplicate_of_import_id, question_hash: previewItem.question_hash } },
+                        { title: "OCR / AI 原始数据", icon: FileText, data: { raw_data: previewItem.raw_data, ai_metadata: previewItem.ai_metadata } },
+                      ].map(({ title, data }) => (
+                        <section key={title} className="rounded-xl border border-[var(--color-border)]/60 bg-white/50">
+                          <details className="group" open>
+                            <summary className="flex cursor-pointer items-center gap-2 px-4 py-2.5 text-xs font-semibold text-[var(--color-text-secondary)] hover:text-[var(--ink)] transition [&::-webkit-details-marker]:hidden">
+                              <span className="inline-block transition-transform group-open:rotate-90">▶</span>
+                              {title}
+                            </summary>
+                            <div className="border-t border-[var(--color-border)]/40 px-4 pb-3 pt-2">
+                              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)]">{renderJson(data)}</pre>
+                            </div>
+                          </details>
+                        </section>
+                      ))}
                     </div>
                   )}
                 </div>
