@@ -94,32 +94,34 @@
       </view>
     </block>
 
-    <!-- ===== DETAIL POPUP ===== -->
-    <view class="detail-overlay {{selectedSubjectDetail ? 'visible' : ''}}" catchtap="closeDetail">
-      <view class="detail-card" catchtap="noop" wx:if="{{selectedSubjectDetail}}">
-        <view class="detail-header">
-          <view class="detail-dot" style="background: {{selectedSubjectDetail._color}};"></view>
-          <text class="detail-subject">{{selectedSubjectDetail._label}}</text>
+  </view>
+
+  <!-- ===== DETAIL POPUP ===== -->
+  <view class="detail-overlay {{selectedSubjectDetail ? 'visible' : ''}}" catchtap="closeDetail"
+        catchtouchmove="noop">
+    <view class="detail-card" catchtap="noop" wx:if="{{selectedSubjectDetail}}">
+      <view class="detail-header">
+        <view class="detail-dot" style="background: {{selectedSubjectDetail._color}};"></view>
+        <text class="detail-subject">{{selectedSubjectDetail._label}}</text>
+      </view>
+      <view class="detail-body">
+        <view class="detail-item">
+          <text class="detail-label">学习时长</text>
+          <text class="detail-value">{{selectedSubjectDetail._durationText}}</text>
         </view>
-        <view class="detail-body">
-          <view class="detail-item">
-            <text class="detail-label">学习时长</text>
-            <text class="detail-value">{{selectedSubjectDetail._durationText}}</text>
-          </view>
-          <view class="detail-item">
-            <text class="detail-label">今日占比</text>
-            <text class="detail-value">{{selectedSubjectDetail._pctText}}</text>
-          </view>
-          <view class="detail-item">
-            <text class="detail-label">完成番茄</text>
-            <text class="detail-value">{{selectedSubjectDetail.sessions || 0}} 个</text>
-          </view>
+        <view class="detail-item">
+          <text class="detail-label">今日占比</text>
+          <text class="detail-value">{{selectedSubjectDetail._pctText}}</text>
         </view>
-        <view class="detail-close-wrap">
-          <text class="detail-close-text">点击关闭</text>
+        <view class="detail-item">
+          <text class="detail-label">完成番茄</text>
+          <text class="detail-value">{{selectedSubjectDetail.sessions || 0}} 个</text>
         </view>
       </view>
+      <view class="detail-close-wrap" catchtap="closeDetail">
+        <text class="detail-close-text">点击关闭</text>
+      </view>
     </view>
-
   </view>
+
 </view>

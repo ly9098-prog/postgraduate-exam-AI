@@ -161,10 +161,11 @@
   gap: 8rpx;
 }
 
-.legend-dot {
+.chart-legend .legend-dot {
   width: 14rpx;
   height: 14rpx;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .legend-text {
@@ -348,7 +349,7 @@
   transform: scale(0.98);
 }
 
-.legend-dot {
+.pie-legend .legend-dot {
   width: 18rpx;
   height: 18rpx;
   border-radius: 50%;
