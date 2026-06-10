@@ -74,7 +74,8 @@ _FALSE_VALUES = {"错误", "错", "false", "×", "f"}
 # 批量题号检测
 # ============================================================
 
-_BATCH_Q_NUMBER_RE = re.compile(r"^\s*(\d+)\s*[.．、)）]\s*")
+# 仅匹配 . ． 、 结尾的题号（不含 ) ），避免将 "1）" 等子项标记误判为分题分隔
+_BATCH_Q_NUMBER_RE = re.compile(r"^\s*(\d+)\s*[.．、]\s*")
 
 # 回退分题：【题目】/【题干】标签（格式化破坏时可能不在行首）
 _QUESTION_LABEL_SPLIT_RE = re.compile(r"(?=(?:【|\[)\s*(?:题目|题干)\s*(?:】|\]))")
@@ -82,15 +83,36 @@ _QUESTION_LABEL_SPLIT_RE = re.compile(r"(?=(?:【|\[)\s*(?:题目|题干)\s*(?:�
 # 回退分题：内联 --- 分隔（格式化破坏时可能不在独立行）
 _INLINE_BATCH_SEP_RE = re.compile(r"\s{2,}-{3,}\s{2,}|[。！？.!?]\s*-{3,}\s*")
 
+# 子题标记（如 ①、②、(①)、\(①\) 等，常见于 AI 复制格式的多小题题干）
+_SUBQ_MARKER_RE = re.compile(r"^\s*(?:\\?[\(\\]?\s*)?[①②③④⑤⑥⑦⑧⑨⑩](?:\s*\\?[\)]?)?\s*")
+
+# 题号前缀（如 "29．"、"30. "、"1) "）
+_Q_NUMBER_PREFIX_RE = re.compile(r"^\s*\d+\s*[.．、)）]\s*")
+
 
 def _normalize_text(text: str) -> str:
     """文本预处理：符号规范化、空行清洗。保留 【】 不被转换。"""
     text = text.replace("\xa0", " ").replace("　", " ")
     text = text.replace("：", ":").replace("（", "(").replace("）", ")")
     text = text.replace("．", ".")
-    # 去除中文括号周围的 Markdown 加粗标记（如 **【题目】** → 【题目】）
-    text = re.sub(r"\*{1,2}\s*([【\[\<])", r"\1", text)
-    text = re.sub(r"([】\]\>])\s*\*{1,2}", r"\1", text)
+    # 去除 Markdown 加粗标记（如 **答案：C** → 答案：C，**29．xxx** → 29．xxx）
+    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
+    # LaTeX 定界符统一为 $...$ 格式（前端渲染器仅支持 $）
+    # 1) 清除 \( 和 \) 旁边多余的 $（如 \($P_{1}\) → \(P_{1}\)）
+    text = re.sub(r"\\\(\$", r"\\(", text)
+    text = re.sub(r"\$\\\)", r"\\)", text)
+    # 2) 将 \(...\) 转换为 $...$（前端只识别 $ 定界符）
+    text = re.sub(r"\\\((.+?)\\\)", r"$\1$", text, flags=re.DOTALL)
+    # 3) 保护成对的 $...$，移除残余孤立 $
+    _pairs = re.findall(r"\$[^$\n]+?\$", text)
+    _map = {}
+    for _i, _p in enumerate(_pairs):
+        _k = f"\x00PROT{_i}\x00"
+        _map[_k] = _p
+        text = text.replace(_p, _k)
+    text = re.sub(r"\$", "", text)
+    for _k, _p in _map.items():
+        text = text.replace(_k, _p)
     # "第X题" 独立标题行 → 批量分隔标记，让 _split_batch 能正确分题
     text = re.sub(r"^\*{0,2}\s*第\s*[一二三四五六七八九十\d]+\s*题\s*\*{0,2}\s*$", "\n===\n", text, flags=re.MULTILINE)
     # 连续空行压缩
@@ -171,7 +193,17 @@ def _break_inline_text(text: str) -> str:
     text = re.sub(r"\*{0,2}\s*第\s*[一二三四五六七八九十\d]+\s*题\s*\*{0,2}\s*[：:]?\s*", "", text)
     # 在选项标记前插入换行（A.xxx B.xxx 等，要求选项后跟空格以确保是真实选项）
     text = re.sub(r"(?<=[^\s])\s*(?=[A-Da-d]\s*[.．、:：)）]\s)", "\n", text)
+    # 在子题标记（如 \(①\)、\(②\)）前插入换行，确保其独立成行后被跳过
+    text = re.sub(r"\s+(?=[\(\\]?\s*[①②③④⑤⑥⑦⑧⑨⑩]\s*\)?\s*[A-Da-d]\s*[.．、:：)）])", "\n", text)
     return text
+
+
+def _clean_stem_number(stem: str) -> str:
+    """去除题干开头的题号前缀（如 '29．'、'30. '、'1) '）。"""
+    lines = stem.split("\n")
+    if lines:
+        lines[0] = _Q_NUMBER_PREFIX_RE.sub("", lines[0])
+    return "\n".join(lines).strip()
 
 
 def _parse_labeled_block(text: str) -> dict[str, Any]:
@@ -246,11 +278,17 @@ def _parse_options_from_text(text: str) -> list[dict[str, str]]:
 
 def _parse_unlabeled_block(text: str) -> dict[str, Any]:
     """解析无标签格式的题目块（位置启发式）。"""
-    # 单行文本 → 尝试拆分为多行（格式化被破坏的内联文本）
-    if len(text.split("\n")) <= 2:
-        text = _break_inline_text(text)
-
     lines = text.strip().split("\n")
+
+    # 检测内联选项：任何行包含多个选项标记（如 "A. xxx B. xxx"）
+    has_inline_options = any(
+        len(_INLINE_OPTION_SPLIT_RE.split(ln.strip())) > 1
+        for ln in lines if ln.strip()
+    )
+    if has_inline_options or len(lines) <= 2:
+        text = _break_inline_text(text)
+        lines = text.strip().split("\n")
+
     result: dict[str, Any] = {
         "stem": "",
         "options_text": "",
@@ -321,9 +359,12 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
                 section = "analysis"
                 continue
 
-        # 选项行检测
+        # 选项行检测（先去除子题标记如 ①、② 等，再匹配选项）
+        stripped_for_opt = _SUBQ_MARKER_RE.sub("", stripped).strip()
+        if not stripped_for_opt:
+            continue
         if section in ("stem", "options"):
-            opt_m = _OPTION_LINE_RE.match(stripped) or _OPTION_OCR_RE.match(stripped)
+            opt_m = _OPTION_LINE_RE.match(stripped_for_opt) or _OPTION_OCR_RE.match(stripped_for_opt)
             if opt_m:
                 opt_key = opt_m.group(1).upper()
                 opt_val = opt_m.group(2).strip()
@@ -362,11 +403,11 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
                             analysis_lines.append(ana_text)
                             section = "analysis"
                         else:
-                            option_lines.append(stripped)
+                            option_lines.append(f"{opt_key}. {opt_val}")
                             option_seen = True
                             section = "options"
                     else:
-                        option_lines.append(stripped)
+                        option_lines.append(f"{opt_key}. {opt_val}")
                         option_seen = True
                         section = "options"
                 continue
@@ -417,7 +458,7 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
         elif section == "analysis":
             analysis_lines.append(stripped)
 
-    result["stem"] = "\n".join(stem_lines).strip()
+    result["stem"] = _clean_stem_number("\n".join(stem_lines).strip())
     result["options_text"] = "\n".join(option_lines).strip()
     result["answer"] = "\n".join(answer_lines).strip()
     result["analysis"] = "\n".join(analysis_lines).strip()
