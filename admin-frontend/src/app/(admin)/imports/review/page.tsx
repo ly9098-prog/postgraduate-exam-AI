@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { Check, CheckCircle2, Code2, Eye, FileText, Save, Search, Send, Sparkles, X, XCircle } from "lucide-react";
+import { Check, CheckCircle2, ChevronDown, Code2, Eye, FileText, Save, Search, Send, Sparkles, X, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { MathFormula } from "@/components/ui/math-formula";
@@ -117,6 +117,8 @@ function completeSuggestionFromItem(item: ImportQuestionItem | null | undefined)
 function stringSuggestion(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
+
+const ALL_BATCH_FIELDS = ["answer", "analysis", "knowledge_points", "difficulty", "subject", "question_type", "stem", "options", "tips", "tags"];
 
 function statusTone(status: string) {
   if (status === "approved") return "success";
@@ -467,18 +469,35 @@ export default function ImportReviewPage() {
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <label className="relative xl:col-span-2">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
+              <span className="mb-1.5 block text-xs font-medium text-[var(--color-text-secondary)]">关键词搜索</span>
+              <Search className="absolute left-3 top-[34px] h-4 w-4 text-[var(--color-text-hint)]" />
               <Input className="pl-9" placeholder="搜索题干 / OCR 原文" value={filters.keyword} onChange={(event) => updateFilter("keyword", event.target.value)} />
             </label>
-            <Input placeholder="批次 ID" value={filters.batch_id || batchIdParam} onChange={(event) => updateFilter("batch_id", event.target.value)} />
-            <Input placeholder="科目" value={filters.subject} onChange={(event) => updateFilter("subject", event.target.value)} />
-            <select className="h-11 cursor-pointer rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20" value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
-              <option value="pending">⏳ pending</option>
-              <option value="approved">✓ approved</option>
-              <option value="rejected">✗ rejected</option>
-              <option value="published">● published</option>
-              <option value="">— 全部状态</option>
-            </select>
+            <label className="space-y-1.5">
+              <span className="block text-xs font-medium text-[var(--color-text-secondary)]">批次 ID</span>
+              <Input placeholder="输入批次 ID" value={filters.batch_id || batchIdParam} onChange={(event) => updateFilter("batch_id", event.target.value)} />
+            </label>
+            <label className="space-y-1.5">
+              <span className="block text-xs font-medium text-[var(--color-text-secondary)]">科目</span>
+              <Input placeholder="输入科目" value={filters.subject} onChange={(event) => updateFilter("subject", event.target.value)} />
+            </label>
+            <label className="space-y-1.5">
+              <span className="block text-xs font-medium text-[var(--color-text-secondary)]">审核状态</span>
+              <div className="relative">
+                <select
+                  className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-[var(--color-border)] bg-white/80 pl-3 pr-9 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+                  value={filters.status}
+                  onChange={(event) => updateFilter("status", event.target.value)}
+                >
+                  <option value="pending">待审核</option>
+                  <option value="approved">已通过</option>
+                  <option value="rejected">已驳回</option>
+                  <option value="published">已发布</option>
+                  <option value="">全部状态</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
+              </div>
+            </label>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1014,19 +1033,27 @@ export default function ImportReviewPage() {
                   <section className="space-y-3">
                     <p className="text-sm font-semibold text-[var(--ink)]">补全字段</p>
                     <p className="text-xs text-[var(--color-text-secondary)]">选择需要 AI 补全的字段（至少选一项）</p>
+                    <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-[var(--color-border)] bg-white/60 px-3.5 py-2.5 text-sm text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)]/30 hover:bg-white/90 select-none">
+                      <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-[var(--color-border)] bg-white transition-all [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
+                        <input
+                          type="checkbox"
+                          checked={ALL_BATCH_FIELDS.every(f => batchFields.includes(f))}
+                          onChange={() => setBatchFields(batchFields.length === ALL_BATCH_FIELDS.length ? [] : [...ALL_BATCH_FIELDS])}
+                          className="peer absolute inset-0 cursor-pointer opacity-0"
+                        />
+                        <Check className="h-3.5 w-3.5 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
+                      </span>
+                      全选
+                      <span className="ml-auto rounded-full bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary-dark)]">已选 {batchFields.length}/{ALL_BATCH_FIELDS.length}</span>
+                    </label>
                     <div className="grid grid-cols-2 gap-2">
-                      {[
-                        { value: "answer", label: "题目答案" },
-                        { value: "analysis", label: "题目解析" },
-                        { value: "knowledge_points", label: "知识点" },
-                        { value: "difficulty", label: "难度等级" },
-                        { value: "subject", label: "科目" },
-                        { value: "question_type", label: "题型" },
-                        { value: "stem", label: "题干修复" },
-                        { value: "options", label: "选项格式化" },
-                        { value: "tips", label: "解题技巧" },
-                        { value: "tags", label: "题目标签" },
-                      ].map(({ value, label }) => (
+                      {ALL_BATCH_FIELDS.map((value) => {
+                        const labels: Record<string, string> = {
+                          answer: "题目答案", analysis: "题目解析", knowledge_points: "知识点",
+                          difficulty: "难度等级", subject: "科目", question_type: "题型",
+                          stem: "题干修复", options: "选项格式化", tips: "解题技巧", tags: "题目标签",
+                        };
+                        return (
                         <label key={value} className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-3.5 py-2.5 transition ${
                           batchFields.includes(value)
                             ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]/15"
@@ -1040,9 +1067,10 @@ export default function ImportReviewPage() {
                             <input type="checkbox" checked={batchFields.includes(value)} onChange={() => toggleBatchField(value)} className="peer absolute inset-0 cursor-pointer opacity-0" />
                             <Check className={`h-3.5 w-3.5 text-white transition-opacity ${batchFields.includes(value) ? "opacity-100" : "opacity-0"}`} />
                           </span>
-                          <span className="text-sm text-[var(--ink)]">{label}</span>
+                          <span className="text-sm text-[var(--ink)]">{labels[value]}</span>
                         </label>
-                      ))}
+                      );
+                    })}
                     </div>
                   </section>
                 </>
