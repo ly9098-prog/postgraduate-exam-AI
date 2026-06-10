@@ -32,6 +32,9 @@ Page({
     subjects: [],
     history: [],
     historyTotal: 0,
+
+    // pie chart detail popup
+    selectedSubjectDetail: null,
   },
 
   onLoad() {
@@ -59,6 +62,8 @@ Page({
       ])
       const subjArr = subjects || []
       const maxDur = Math.max(1, ...subjArr.map(s => s.duration_sec || 0))
+      const totalDur = Math.max(1, subjArr.reduce((sum, s) => sum + (s.duration_sec || 0), 0))
+      let cumulativeAngle = -Math.PI / 2
       this.setData({
         todaySessions: stats.today_sessions || 0,
         todayDurationText: this._fmtMin(stats.today_duration_sec || 0),
@@ -70,18 +75,31 @@ Page({
           _barPct: this._calcBarPct(trends, t.duration_sec),
           _durationText: this._fmtMin(t.duration_sec || 0),
         })),
-        subjects: subjArr.map(s => ({
-          ...s,
-          _label: SUBJECT_LABELS[s.subject] || s.subject || '未分类',
-          _color: SUBJECT_COLORS[s.subject] || '#3B82F6',
-          _durationText: this._fmtMin(s.duration_sec || 0),
-          _barPct: maxDur > 0 ? (s.duration_sec || 0) / maxDur * 100 : 0,
-        })),
+        subjects: subjArr.map(s => {
+          const dur = s.duration_sec || 0
+          const pct = dur / totalDur
+          const sectorStart = cumulativeAngle
+          const sectorEnd = cumulativeAngle + Math.PI * 2 * pct
+          cumulativeAngle = sectorEnd
+          return {
+            ...s,
+            _label: SUBJECT_LABELS[s.subject] || s.subject || '未分类',
+            _color: SUBJECT_COLORS[s.subject] || '#3B82F6',
+            _durationText: this._fmtMin(dur),
+            _barPct: maxDur > 0 ? dur / maxDur * 100 : 0,
+            _pct: pct,
+            _pctText: (pct * 100).toFixed(1) + '%',
+            _sectorStart: sectorStart,
+            _sectorEnd: sectorEnd,
+            sessions: s.sessions || 0,
+          }
+        }),
         history: (hist.items || []).map(this._formatSession),
         historyTotal: hist.total || 0,
         loading: false,
       })
       setTimeout(() => this.drawTrendBars(), 100)
+      setTimeout(() => this.drawPieChart(), 200)
     } catch (e) {
       console.error('加载统计失败', e)
       this.setData({ loading: false })
@@ -185,6 +203,137 @@ Page({
       ctx.draw()
     }).exec()
   },
+
+  /* ==================== Pie Chart ==================== */
+
+  drawPieChart() {
+    const subjects = this.data.subjects
+    if (!subjects || !subjects.length) return
+    const query = wx.createSelectorQuery().in(this)
+    query.select('#pie-canvas').boundingClientRect(rect => {
+      if (!rect || !rect.width) return
+      const size = Math.min(rect.width, rect.height)
+      const center = size / 2
+      const radius = center - 24
+      const ctx = wx.createCanvasContext('pie-canvas', this)
+      ctx.clearRect(0, 0, size, size)
+
+      const total = subjects.reduce((sum, s) => sum + (s._pct > 0 ? 1 : 0), 0)
+      if (total === 0) {
+        ctx.beginPath()
+        ctx.setFillStyle('rgba(255,255,255,0.04)')
+        ctx.arc(center, center, radius, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.setFillStyle('rgba(255,255,255,0.2)')
+        ctx.setFontSize(11)
+        ctx.setTextAlign('center')
+        ctx.fillText('今日暂无数据', center, center + 4)
+        ctx.draw()
+        return
+      }
+
+      const totalDur = subjects.reduce((sum, s) => sum + (s.duration_sec || 0), 0) || 1
+      let startAngle = -Math.PI / 2
+
+      subjects.forEach(s => {
+        const pct = (s.duration_sec || 0) / totalDur
+        const endAngle = startAngle + Math.PI * 2 * pct
+
+        // Draw sector
+        ctx.beginPath()
+        ctx.moveTo(center, center)
+        ctx.arc(center, center, radius, startAngle, endAngle)
+        ctx.closePath()
+        ctx.setFillStyle(s._color || '#3B82F6')
+        ctx.fill()
+
+        // Draw separator line
+        ctx.beginPath()
+        ctx.moveTo(center, center)
+        ctx.arc(center, center, radius, endAngle, endAngle)
+        ctx.setStrokeStyle('rgba(11,17,33,0.4)')
+        ctx.setLineWidth(1)
+        ctx.stroke()
+
+        // Percentage label on sector (if large enough)
+        if (pct > 0.06) {
+          const midAngle = startAngle + (endAngle - startAngle) / 2
+          const labelR = radius * 0.6
+          const lx = center + labelR * Math.cos(midAngle)
+          const ly = center + labelR * Math.sin(midAngle)
+          ctx.setFillStyle('rgba(255,255,255,0.9)')
+          ctx.setFontSize(11)
+          ctx.setTextAlign('center')
+          ctx.setTextBaseline('middle')
+          ctx.fillText(Math.round(pct * 100) + '%', lx, ly)
+        }
+
+        startAngle = endAngle
+      })
+
+      // Center hole (donut effect)
+      ctx.beginPath()
+      ctx.setFillStyle('#111827')
+      ctx.arc(center, center, radius * 0.35, 0, Math.PI * 2)
+      ctx.fill()
+
+      ctx.draw()
+    }).exec()
+  },
+
+  onPieTap(e) {
+    const query = wx.createSelectorQuery().in(this)
+    query.select('#pie-chart-wrap').boundingClientRect(rect => {
+      if (!rect) return
+      const x = e.detail.x - rect.left
+      const y = e.detail.y - rect.top
+      const centerX = rect.width / 2
+      const centerY = rect.height / 2
+      const radius = Math.min(rect.width, rect.height) / 2 - 24
+
+      const dx = x - centerX
+      const dy = y - centerY
+      const dist = Math.sqrt(dx * dx + dy * dy)
+
+      // Outside pie or inside center hole
+      if (dist > radius || dist < radius * 0.35) {
+        this.setData({ selectedSubjectDetail: null })
+        return
+      }
+
+      let angle = Math.atan2(dy, dx)
+      if (angle < -Math.PI / 2) angle += Math.PI * 2
+
+      const subjects = this.data.subjects
+      const totalDur = subjects.reduce((sum, s) => sum + (s.duration_sec || 0), 0) || 1
+      let cumulativeStart = -Math.PI / 2
+      for (const s of subjects) {
+        const pct = (s.duration_sec || 0) / totalDur
+        const cumulativeEnd = cumulativeStart + Math.PI * 2 * pct
+        if (pct > 0 && angle >= cumulativeStart && angle < cumulativeEnd) {
+          this.setData({ selectedSubjectDetail: s })
+          return
+        }
+        cumulativeStart = cumulativeEnd
+      }
+
+      this.setData({ selectedSubjectDetail: null })
+    }).exec()
+  },
+
+  onLegendTap(e) {
+    const subject = e.currentTarget.dataset.subject
+    const found = this.data.subjects.find(s => s.subject === subject)
+    if (found) {
+      this.setData({ selectedSubjectDetail: found })
+    }
+  },
+
+  closeDetail() {
+    this.setData({ selectedSubjectDetail: null })
+  },
+
+  noop() {},
 
   _fmtMin(sec) {
     const s = Math.max(0, sec || 0)

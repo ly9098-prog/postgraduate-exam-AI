@@ -1,5 +1,5 @@
 <view class="page page-{{phase === 'break' ? 'break' : 'focus'}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
-  <view class="page-inner animation-entrance {{pageEntered ? 'entered' : ''}}">
+  <view class="page-inner animation-entrance size-{{fontSizeLevel}} {{pageEntered ? 'entered' : ''}}">
 
     <!-- ===== TOP BAR ===== -->
     <view class="top-bar">
@@ -16,6 +16,9 @@
         <view class="stat-pill">
           <text class="stat-icon">⏱</text>
           <text class="stat-num">{{todayDurationText}}</text>
+        </view>
+        <view class="font-size-btn" catchtap="cycleFontSize">
+          <text class="font-size-icon {{fontSizeLevel === 'large' ? 'active' : ''}}">Aa</text>
         </view>
       </view>
     </view>
