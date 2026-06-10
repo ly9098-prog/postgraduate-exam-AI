@@ -46,7 +46,7 @@ async def list_questions(
     page_size: int = Query(20, ge=1, le=100),
     subject: str | None = None,
     review_status: str | None = None,
-    is_active: bool | None = None,
+    is_active: bool | None = Query(True),
     question_type: str | None = None,
     keyword: str | None = None,
     year: int | None = None,
