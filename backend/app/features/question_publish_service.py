@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import difflib
 import logging
+import re
 from datetime import datetime
 
 from sqlalchemy import func, select
@@ -89,6 +91,38 @@ async def _migrate_old_approved(db: AsyncSession) -> int:
     return migrated_status + published_orphans
 
 
+async def _find_duplicate_by_stem_similarity(
+    db: AsyncSession,
+    subject: str | None,
+    stem: str,
+) -> Question | None:
+    """Hash 未命中时的回退方案：按题干文本相似度检测重复。"""
+    if not subject or not stem:
+        return None
+    stem_clean = re.sub(r"\s+", "", stem.strip())
+    if not stem_clean:
+        return None
+    result = await db.execute(
+        select(Question).where(
+            Question.subject == subject,
+            Question.is_active == True,
+        )
+    )
+    for q in result.scalars().all():
+        q_stem = (q.content or {}).get("text", "")
+        q_stem_clean = re.sub(r"\s+", "", q_stem.strip())
+        if not q_stem_clean:
+            continue
+        ratio = difflib.SequenceMatcher(None, stem_clean, q_stem_clean).ratio()
+        if ratio >= 0.92:
+            logger.info(
+                "[StemSimilarity] question %s (subject=%s) matches import (ratio=%.4f)",
+                q.id, subject, ratio,
+            )
+            return q
+    return None
+
+
 async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
     """发布单条记录到 questions 表。不提交事务。"""
     if qi.status == "published":
@@ -150,6 +184,24 @@ async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
             "question_id": duplicate.id,
             "reason": "question_hash collision",
         }
+
+    # Stem-similarity fallback: 应对归一化规则变更导致 hash 不匹配的场景
+    stem = (result.get("normalized") or {}).get("stem", "")
+    if stem:
+        similar = await _find_duplicate_by_stem_similarity(
+            db, result["normalized"]["subject"], stem,
+        )
+        if similar:
+            logger.info(
+                "[StemFallback] questionId=%s importId=%s result=matched_by_stem matchedId=%s",
+                similar.id, qi.id, similar.id,
+            )
+            return {
+                "id": qi.id,
+                "status": "duplicate",
+                "question_id": similar.id,
+                "reason": "stem_similarity_fallback",
+            }
 
     q = Question(
         **result["question_fields"],
