@@ -1,11 +1,12 @@
 # 后台管理系统 — 总体架构设计
 
-> 版本：v2.2（Phase 6 前端实现同步版） | 状态：Phase 6 主要前端已完成 | 更新：2026-05-30
+> 版本：v2.3（AI 模型与配置接口同步版） | 状态：Phase 7+ 扩展已实施 | 更新：2026-06-10
 > 修订自审计报告 C1/C2、模块拆分调整；2026-05-29 根据维护者确认收敛为现有 FastAPI 后端内实现。
 >
 > - **变更原因**：Admin Backend 已确认遵循 `docs/PROJECT_RULES.md`，并入现有 FastAPI + SQLAlchemy + Alembic 技术栈；不再采用独立 `NestJS + Prisma + BullMQ` 后端方案。
 > - **Phase 4 同步原因**：2026-05-29 根据已完成的科目树与导入管理实现，补充实际 router 注册、Subject/Import service 行为与 Redis 任务指针。
 > - **Phase 6 同步原因**：2026-05-30 根据 `admin-frontend` 主要前端实现，补充 Next.js 16、React 19、React Query、Zustand 页面与 API client 约束；前端仅消费 `/api/admin/v1`，不修改后端。
+> - **Phase 7+ 同步原因**：2026-06-10 根据 AI 解析设置页面配置接口实施，补充 `admin_ai_model_configs`、`admin_ai_configs` 表与对应路由。
 > - **技术结论**：Admin API 统一挂载在 `/api/admin/v1`；ORM 使用 SQLAlchemy；数据库迁移使用 Alembic；Redis 可选且必须可降级；Phase 1 审计日志同步写入，队列能力延后。
 
 ---
@@ -114,6 +115,8 @@ backend/app/
 │       ├── subjects.py        # 科目树管理
 │       ├── audit_logs.py      # 审计日志
 │       ├── dashboard.py       # 统计概览
+│       ├── admin_ai_settings.py  # AI 解析设置全局开关 / 月度额度
+│       ├── admin_ai_config.py    # AI 模型配置 / AI 配置键值对
 │       └── health.py          # liveness / readiness
 ├── core/                      # 配置 / 数据库 / 安全 / JWT
 ├── models/                    # SQLAlchemy 模型（admin_users / roles / permissions ...）

@@ -103,7 +103,7 @@ function ModelCard({
       <div className="mt-4 grid grid-cols-1 gap-3 rounded-xl bg-[var(--color-bg-input)] p-3">
         <div className="flex items-center gap-2 text-xs text-[var(--color-text-hint)]">
           <Info className="h-3 w-3 shrink-0" />
-          <span>当前版本实际使用模型为 DeepSeek，此处配置仅作为管理记录</span>
+          <span>当前版本实际使用模型为 DeepSeek V4 Flash，此处配置仅作为管理记录</span>
         </div>
       </div>
 

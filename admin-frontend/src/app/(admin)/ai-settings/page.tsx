@@ -119,18 +119,18 @@ export default function AISettingsPage() {
       {/* ===== Part 3: Model Configuration ===== */}
       <ModelCards />
 
-      {configs.isError ? (
+      {configs.isError && (
         <p className="rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
           {getErrorMessage(configs.error)}
         </p>
-      ) : (
-        <>
-          {/* ===== Part 4: OCR Correction Config ===== */}
-          <OcrAccordion configs={configs.data} loading={configs.isLoading} />
-          {/* ===== Part 5: AI Completion Config ===== */}
-          <AiCompletionPreview configs={configs.data} loading={configs.isLoading} />
-        </>
       )}
+      {/* ===== Part 4: OCR Correction Config ===== */}
+      <OcrAccordion configs={configs.data} loading={configs.isLoading} />
+      {/* ===== Part 5: AI Completion Config ===== */}
+      <AiCompletionPreview configs={configs.data} loading={configs.isLoading} />
+      <p className="mt-1 text-xs text-[var(--color-text-hint)]">
+        配置已保存，将在后续版本中生效
+      </p>
 
       {/* ===== System Configuration ===== */}
       <div className="rounded-2xl border border-[var(--color-border)]/80 bg-white/80 p-5 shadow-sm">

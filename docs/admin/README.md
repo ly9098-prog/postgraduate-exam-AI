@@ -1,11 +1,11 @@
 # Admin 文档体系索引
 
 > 本目录包含 2240AI 后台管理系统（Admin Dashboard）的所有设计文档。
-> 当前文档版本：**v2.3（Phase 7 AI 设置与月度额度同步版，2026-05-30）**
-> **当前状态：Admin Backend 已确认并入现有 FastAPI 后端，在 `/api/admin/v1` 命名空间实现；ORM 使用 SQLAlchemy，迁移使用 Alembic，不再采用独立 NestJS + Prisma + BullMQ 后端方案。Phase 6 `admin-frontend` 已完成 Next.js Admin Dashboard 主要前端实现；Phase 7 已实现后台 AI 解析设置与全局月度额度控制。**
+> 当前文档版本：**v2.4（Phase 7+ AI 模型与配置接口同步版，2026-06-10）**
+> **当前状态：Admin Backend 已确认并入现有 FastAPI 后端，在 `/api/admin/v1` 命名空间实现；ORM 使用 SQLAlchemy，迁移使用 Alembic，不再采用独立 NestJS + Prisma + BullMQ 后端方案。Phase 6 `admin-frontend` 已完成 Next.js Admin Dashboard 主要前端实现；Phase 7 已实现后台 AI 解析设置与全局月度额度控制；Phase 7+ 扩展已实现 AI 模型配置与 AI 配置键值表。**
 >
-> - **更新时间**：2026-05-30
-> - **变更原因**：同步 Phase 7 后台 AI 解析设置、全局月度额度、RBAC 权限、Admin API、DB schema 与前端入口实现。
+> - **更新时间**：2026-06-10
+> - **变更原因**：同步 Phase 7+ 扩展 AI 模型配置表、AI 配置键值表、模型列表/更新接口、配置读取/更新接口实现。
 
 ---
 
@@ -38,6 +38,7 @@
 | Phase 4 | ADMIN_API_SPEC, ADMIN_ARCHITECTURE | ADMIN_ARCHITECTURE |
 | Phase 5 | AUDIT_LOG, REDIS_PLAN | AUDIT_LOG, ADMIN_API_SPEC, REDIS_PLAN, README |
 | Phase 6 | 全部文档，ADMIN_UI_RULES | ADMIN_ARCHITECTURE，docs/frontend/ADMIN_UI_RULES.md |
+| Phase 7+ | ADMIN_API_SPEC, DB_SCHEMA_ADMIN, AUDIT_LOG, ADMIN_ARCHITECTURE | ADMIN_API_SPEC, DB_SCHEMA_ADMIN, AUDIT_LOG, CHANGELOG, ADMIN_ARCHITECTURE, ADMIN_UI_RULES, PHASE_PLAN, README |
 
 ---
 
@@ -46,15 +47,15 @@
 | 文档 | 版本 | 状态 |
 |------|------|------|
 | AUDIT_REPORT.md | v1.0 | 审计输出，永久参考 |
-| ADMIN_ARCHITECTURE.md | v2.2 | Phase 6 前端实现同步 |
-| PHASE_PLAN.md | v2.4 | Phase 7 AI 设置与月度额度同步 |
-| RBAC_RULES.md | v2.2 | Phase 7 AI 设置权限同步 |
-| DB_SCHEMA_ADMIN.md | v2.2 | Phase 7 AI 设置与月度用量表同步 |
+| ADMIN_ARCHITECTURE.md | v2.3 | Phase 7+ AI 模型与配置接口同步 |
+| PHASE_PLAN.md | v2.5 | Phase 7+ AI 模型与配置接口扩展同步 |
+| RBAC_RULES.md | v2.2 | Phase 7 AI 设置权限同步（未变化） |
+| DB_SCHEMA_ADMIN.md | v2.4 | Phase 7+ AI 模型配置表与配置键值表同步 |
 | REDIS_PLAN.md | v2.1 | FastAPI 方案确认，可启动 |
-| ADMIN_API_SPEC.md | v2.3 | Phase 7 AI 设置接口同步 |
-| ADMIN_UI_RULES.md | v1.2 | Phase 7 AI 设置页面同步 |
+| ADMIN_API_SPEC.md | v2.5 | Phase 7+ AI 模型与配置接口同步 |
+| ADMIN_UI_RULES.md | v1.3 | Phase 7+ AI 模型与配置 UI 同步 |
 | REVIEW_FLOW.md | v2.0 | 已修订，可启动 |
-| AUDIT_LOG.md | v2.1 | Phase 7 AI 设置审计 Action 同步 |
+| AUDIT_LOG.md | v2.2 | Phase 7+ AI 模型与配置审计 Action 同步 |
 | DEEPSEEK_DEV_RULES.md | v2.1 | FastAPI 方案确认，可启动 |
 
 ---
@@ -91,3 +92,4 @@
 | Admin Dashboard UI 规则补齐 | 2026-05-29 auditor 审计缺口 | ADMIN_UI_RULES, README |
 | Phase 6 Next.js Admin Dashboard 主要前端实现完成 | 2026-05-30 Phase 6 实现同步 | ADMIN_ARCHITECTURE, PHASE_PLAN, ADMIN_UI_RULES, CHANGELOG |
 | Phase 7 后台 AI 解析设置与全局月度额度完成 | 2026-05-30 Phase 7 实现同步 | README, PHASE_PLAN, ADMIN_API_SPEC, RBAC_RULES, DB_SCHEMA_ADMIN, AUDIT_LOG, ADMIN_UI_RULES, CHANGELOG |
+| Phase 7+ AI 解析设置页面配置接口实施 | 2026-06-10 Phase 7+ 扩展实现同步 | ADMIN_API_SPEC, DB_SCHEMA_ADMIN, AUDIT_LOG, CHANGELOG, ADMIN_ARCHITECTURE, ADMIN_UI_RULES, PHASE_PLAN, README |
