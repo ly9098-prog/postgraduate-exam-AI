@@ -209,6 +209,9 @@ export default function ImportReviewPage() {
       setRejectReason("");
       queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
       queryClient.invalidateQueries({ queryKey: ["import-batches"] });
+      if (variables.action !== "reject" && variables.action !== "batch-reject") {
+        queryClient.invalidateQueries({ queryKey: ["questions"] });
+      }
     },
     onError: (error) => {
       setMessage(error instanceof Error ? error.message : "操作失败，请稍后重试。");
