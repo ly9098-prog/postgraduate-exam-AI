@@ -170,6 +170,46 @@ async def approve_import_question(db: AsyncSession, import_id: int, operator_id:
     return AdminImportQuestionItem.model_validate(qi)
 
 
+async def batch_complete_import_questions(
+    db: AsyncSession,
+    import_ids: list[int],
+    fields: list[str],
+    strategy: str,
+    operator: AdminPrincipal,
+    request: Request | None = None,
+) -> dict:
+    """批量 AI 补全导入题目。"""
+    if len(import_ids) > 50:
+        raise ValueError("单次批量补全最多支持 50 条")
+    if not fields:
+        raise ValueError("请选择至少一个补全字段")
+    if strategy not in ("fill_empty", "force_overwrite"):
+        raise ValueError("strategy 仅支持 fill_empty 或 force_overwrite")
+
+    await ensure_ai_parse_allowed(db, operator, request)
+    result = await question_pipeline.batch_complete_questions(
+        db, operator.id, import_ids, fields, strategy,
+    )
+    await db.commit()
+
+    await write_admin_audit(
+        db,
+        operator,
+        "import.batch_complete",
+        "question_import",
+        f"ids={import_ids}",
+        severity="important",
+        detail={
+            "import_ids": import_ids,
+            "fields": fields,
+            "strategy": strategy,
+            "result": {k: result[k] for k in ("total", "succeeded", "failed", "skipped")},
+        },
+        request=request,
+    )
+    return result
+
+
 async def reject_import_question(db: AsyncSession, import_id: int, operator_id: int, reason: str | None = None) -> AdminImportQuestionItem:
     qi = await _get_import_question(db, import_id)
     if qi.status == "published" or qi.question_id is not None:
