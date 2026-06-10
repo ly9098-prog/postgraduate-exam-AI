@@ -311,6 +311,11 @@ class QuestionNormalizer:
         text = text.replace("\xa0", " ").replace("　", " ")
         text = re.sub(r"[​﻿]", "", text)
         text = re.sub(r"[□■●◆◇]+", "", text)
+        # 清除 LaTeX 文本字体命令（AI 常对普通文本过度使用 \mathrm 等）
+        text = re.sub(r"\\mathrm\{([^}]*)\}", r"\1", text)
+        text = re.sub(r"\\textbf\{([^}]*)\}", r"\1", text)
+        text = re.sub(r"\\textit\{([^}]*)\}", r"\1", text)
+        text = re.sub(r"\\mathtt\{([^}]*)\}", r"\1", text)
         lines: list[str] = []
         seen: set[str] = set()
         for raw_line in text.splitlines():
