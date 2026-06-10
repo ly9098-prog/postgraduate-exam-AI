@@ -3,9 +3,10 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { Check, CheckCircle2, Code2, Eye, FileText, Save, Search, Send, Sparkles, XCircle } from "lucide-react";
+import { Check, CheckCircle2, Code2, Eye, FileText, Save, Search, Send, Sparkles, X, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { MathFormula } from "@/components/ui/math-formula";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
@@ -148,6 +149,7 @@ export default function ImportReviewPage() {
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [detailView, setDetailView] = useState<"formatted" | "json">("formatted");
+  const [editing, setEditing] = useState(false);
 
   const queryParams = useMemo(
     () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject: filters.subject, source_type: filters.source_type, keyword: filters.keyword }),
@@ -288,6 +290,23 @@ export default function ImportReviewPage() {
     setEditState(editStateFromItem(item));
   };
 
+  const closeDrawer = () => {
+    setPreviewId(null);
+    setCompletedItem(null);
+    setEditState(null);
+    setEditing(false);
+  };
+
+  const startEditing = () => {
+    if (!previewId) return;
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setEditState(previewItem ? editStateFromItem(previewItem) : null);
+    setEditing(false);
+  };
+
   const canBatchOperate = items.length > 0 && (selectedIds.size > 0 || Boolean(filters.batch_id || batchIdParam));
 
   return (
@@ -344,8 +363,7 @@ export default function ImportReviewPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-            <section className="space-y-3">
+          <section className="space-y-3">
               <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-[var(--color-border)] bg-white/60 px-4 py-2.5 text-sm text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)]/30 hover:bg-white/90 select-none group">
                 <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-[var(--color-border)] bg-white transition-all group-hover:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
                   <input type="checkbox" checked={allChecked} onChange={toggleAll} className="peer absolute inset-0 cursor-pointer opacity-0" />
@@ -425,59 +443,222 @@ export default function ImportReviewPage() {
               {!queue.isLoading && items.length === 0 ? <p className="py-10 text-center text-sm text-[var(--color-text-hint)]">暂无待审核题目</p> : null}
               {queue.isError ? <p className="text-sm text-[var(--color-danger)]">待审核接口当前不可用。</p> : null}
             </section>
+        </CardContent>
+      </Card>
 
-            <aside className="rounded-3xl border border-[var(--color-border)] bg-white/80 p-5">
-              {!previewItem || !editState ? (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <FileText className="mb-3 h-10 w-10 text-[var(--color-text-hint)]/50" />
-                  <p className="text-sm text-[var(--color-text-hint)]">选择一题查看 OCR 原文、解析结果并编辑。</p>
-                  <p className="mt-1 text-xs text-[var(--color-text-hint)]/60">点击列表中的「预览详情」按钮即可打开</p>
+      {previewId !== null && previewItem && editState ? (
+        <div className="fixed inset-0 z-40 flex justify-end bg-[rgba(16,24,40,0.28)]" onClick={closeDrawer}>
+          <aside className="flex h-full w-full max-w-3xl flex-col overflow-y-auto bg-white shadow-[var(--shadow-floating)]" onClick={(e) => e.stopPropagation()}>
+            {/* ===== Sticky Header ===== */}
+            <div className="sticky top-0 z-10 border-b border-[var(--color-border)] bg-white/95 px-6 py-4 backdrop-blur-xl">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs text-[var(--color-text-hint)]">#{previewItem.id}</p>
+                  <h4 className="font-display text-xl font-bold text-[var(--ink)]">导入题目详情</h4>
                 </div>
-              ) : null}
-              {previewItem && editState ? (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)]/60 pb-4">
-                    <div>
-                      <p className="font-mono text-xs text-[var(--color-text-hint)]">#{previewItem.id}</p>
-                      <h4 className="font-display text-xl font-bold text-[var(--ink)]">导入题目详情</h4>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] p-0.5 shadow-sm">
-                        <button
-                          type="button"
-                          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
-                            detailView === "formatted"
-                              ? "bg-[var(--color-primary)] text-white shadow-sm ring-1 ring-[var(--color-primary-dark)]/40"
-                              : "bg-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-primary-dark)] hover:bg-white/60"
-                          }`}
-                          onClick={() => setDetailView("formatted")}
-                        >
-                          <FileText className="h-3.5 w-3.5" />
-                          文本
-                        </button>
-                        <button
-                          type="button"
-                          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
-                            detailView === "json"
-                              ? "bg-[var(--color-primary)] text-white shadow-sm ring-1 ring-[var(--color-primary-dark)]/40"
-                              : "bg-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-primary-dark)] hover:bg-white/60"
-                          }`}
-                          onClick={() => setDetailView("json")}
-                        >
-                          <Code2 className="h-3.5 w-3.5" />
-                          JSON
-                        </button>
-                      </div>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  {/* View toggle */}
+                  <div className="flex rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] p-0.5 shadow-sm">
+                    <button
+                      type="button"
+                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
+                        detailView === "formatted"
+                          ? "bg-[var(--color-primary)] text-white shadow-sm ring-1 ring-[var(--color-primary-dark)]/40"
+                          : "bg-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-primary-dark)] hover:bg-white/60"
+                      }`}
+                      onClick={() => setDetailView("formatted")}
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      文本
+                    </button>
+                    <button
+                      type="button"
+                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
+                        detailView === "json"
+                          ? "bg-[var(--color-primary)] text-white shadow-sm ring-1 ring-[var(--color-primary-dark)]/40"
+                          : "bg-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-primary-dark)] hover:bg-white/60"
+                      }`}
+                      onClick={() => setDetailView("json")}
+                    >
+                      <Code2 className="h-3.5 w-3.5" />
+                      JSON
+                    </button>
+                  </div>
+                  {editing ? (
+                    <>
+                      <Button className="h-8 px-3 text-xs" variant="secondary" disabled={updateMutation.isPending || previewItem.status === "published"} onClick={() => updateMutation.mutate()}>
+                        <Save className="h-3.5 w-3.5" />
+                        {updateMutation.isPending ? "保存中..." : "保存"}
+                      </Button>
+                      <Button className="h-8 px-3 text-xs" variant="ghost" onClick={cancelEditing}>
+                        <X className="h-3.5 w-3.5" />
+                        取消编辑
+                      </Button>
+                    </>
+                  ) : (
+                    <>
                       <Button className="h-8 px-3 text-xs" disabled={completeMutation.isPending || previewItem.status !== "pending"} onClick={() => completeMutation.mutate(previewItem.id)}>
                         <Sparkles className="h-3.5 w-3.5" />
                         AI 补全
                       </Button>
-                      <Button className="h-8 px-3 text-xs" variant="secondary" disabled={updateMutation.isPending || previewItem.status === "published"} onClick={() => updateMutation.mutate()}>
-                        <Save className="h-3.5 w-3.5" />
-                        保存
+                      <Button className="h-8 px-3 text-xs" variant="secondary" onClick={startEditing}>
+                        <FileText className="h-3.5 w-3.5" />
+                        编辑
                       </Button>
+                    </>
+                  )}
+                  <Button className="h-8 px-3 text-xs" variant="ghost" onClick={closeDrawer}>
+                    <X className="h-3.5 w-3.5" />
+                    关闭
+                  </Button>
+                </div>
+              </div>
+              {/* Badge row */}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <StatusBadge tone={statusTone(previewItem.status)}>{previewItem.status}</StatusBadge>
+                {editState.subject ? (
+                  <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-dark)]">{editState.subject}</span>
+                ) : null}
+                {editState.question_type ? (
+                  <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-white/80 px-2 py-0.5 text-[11px] font-medium text-[var(--color-text-secondary)]">{editState.question_type}</span>
+                ) : null}
+                {previewItem.duplicate_status ? (
+                  <StatusBadge tone={previewItem.duplicate_status === "possible_duplicate" ? "warning" : "neutral"}>
+                    {previewItem.duplicate_status === "possible_duplicate" ? "疑似重复" : previewItem.duplicate_status}
+                  </StatusBadge>
+                ) : null}
+              </div>
+              {/* Action buttons row */}
+              <div className="mt-3 flex items-center gap-2">
+                <Button variant="primary" className="h-8 px-3 text-xs" disabled={previewItem.status === "published"} onClick={() => setConfirmState({ action: "approve", id: previewItem.id })}>
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  通过
+                </Button>
+                <Button variant="danger" className="h-8 px-3 text-xs" disabled={previewItem.status === "published"} onClick={() => setConfirmState({ action: "reject", id: previewItem.id })}>
+                  <XCircle className="h-3.5 w-3.5" />
+                  驳回
+                </Button>
+              </div>
+            </div>
+
+            {/* ===== Content ===== */}
+            <div className="flex-1 px-6 py-5">
+              {detailView === "formatted" && !editing ? (
+                /* --- Read-only display with MathFormula --- */
+                <div className="space-y-5">
+                  {/* Stem */}
+                  <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
+                    <p className="mb-2 font-semibold text-[var(--ink)]">题干</p>
+                    <div className="whitespace-pre-wrap leading-relaxed text-[var(--color-text-secondary)]">
+                      <MathFormula text={editState.stem || "（空）"} />
                     </div>
-                  </div>
+                  </section>
+
+                  {/* Options */}
+                  {editState.question_type === "multi_blank_choice" ? (
+                    <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
+                      <p className="mb-2 font-semibold text-[var(--ink)]">选项</p>
+                      {(() => {
+                        const groups = previewItem?.parsed_content?.blank_option_groups ?? previewItem?.raw_data?.blank_option_groups;
+                        const groupList: Array<{ id?: string; options?: Array<{ key: string; text: string }> }> = Array.isArray(groups) ? groups : [];
+                        return groupList.length > 0 ? (
+                          <div className="space-y-3">
+                            {groupList.map((group, gi) => (
+                              <div key={gi} className="rounded-xl border border-[var(--color-border)] bg-white/70 p-3">
+                                <p className="mb-2 text-xs font-semibold text-[var(--color-text-hint)]">空 {group.id ?? gi + 1}</p>
+                                <div className="space-y-1.5">
+                                  {group.options?.map((opt, oi) => (
+                                    <div key={oi} className="flex items-center gap-2">
+                                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-light)] text-[10px] font-bold text-[var(--color-primary-dark)]">{opt.key}</span>
+                                      <span className="text-sm text-[var(--color-text-secondary)]"><MathFormula text={opt.text} /></span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : <p className="text-sm text-[var(--color-text-hint)]">（无分组选项数据）</p>;
+                      })()}
+                    </section>
+                  ) : (
+                    <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
+                      <p className="mb-2 font-semibold text-[var(--ink)]">选项</p>
+                      {editState.options.length === 0 ? (
+                        <p className="text-sm text-[var(--color-text-hint)]">（无选项）</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {editState.options.map((opt) => (
+                            <div key={opt.key} className="flex items-center gap-3">
+                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary-light)] text-xs font-bold text-[var(--color-primary-dark)]">{opt.key}</span>
+                              <span className="text-sm text-[var(--color-text-secondary)]"><MathFormula text={opt.text} /></span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {/* Answer */}
+                  <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
+                    <p className="mb-2 font-semibold text-[var(--ink)]">答案</p>
+                    <p className="text-sm font-medium text-[var(--color-success)]">{editState.answer || <span className="text-[var(--color-text-hint)]">（未设置）</span>}</p>
+                  </section>
+
+                  {/* Analysis */}
+                  <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
+                    <p className="mb-2 font-semibold text-[var(--ink)]">解析</p>
+                    {editState.analysis ? (
+                      <div className="whitespace-pre-wrap leading-relaxed text-[var(--color-text-secondary)]">
+                        <MathFormula text={editState.analysis} />
+                      </div>
+                    ) : (
+                      <p className="text-sm text-[var(--color-text-hint)]">（无解析）</p>
+                    )}
+                  </section>
+
+                  {/* AI suggestion */}
+                  {completeSuggestion ? (
+                    <section className="rounded-xl border border-amber-200/60 bg-amber-50/30 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="h-4 w-4 text-amber-600" />
+                          <p className="text-sm font-semibold text-amber-800">AI 补全建议</p>
+                        </div>
+                        {answerSuggestion ? (
+                          <Button variant="ghost" className="h-7 px-2.5 text-xs text-amber-700 hover:bg-amber-100" onClick={() => { setEditState((prev) => prev ? { ...prev, answer: answerSuggestion } : prev); }}>
+                            应用答案建议
+                          </Button>
+                        ) : null}
+                      </div>
+                      <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-xl border border-amber-200/50 bg-white/80 p-3 text-xs text-[var(--color-text-secondary)]">{renderJson(completeSuggestion)}</pre>
+                    </section>
+                  ) : null}
+                </div>
+              ) : detailView === "json" && !editing ? (
+                /* --- JSON view --- */
+                <div className="space-y-3">
+                  {[
+                    { title: "基础信息", data: { id: previewItem.id, batch_id: previewItem.batch_id, source_type: previewItem.source_type, subject: previewItem.subject, question_type: previewItem.question_type, status: previewItem.status, ai_generated: previewItem.ai_generated, ai_answer_flag: previewItem.ai_answer_flag, created_at: previewItem.created_at, updated_at: previewItem.updated_at } },
+                    { title: "解析数据", data: { parsed_content: previewItem.parsed_content, parsed_options: previewItem.parsed_options, parsed_answer: previewItem.parsed_answer, parsed_analysis: previewItem.parsed_analysis } },
+                    { title: "重复检测", data: { duplicate_status: previewItem.duplicate_status, duplicate_of_question_id: previewItem.duplicate_of_question_id, duplicate_of_import_id: previewItem.duplicate_of_import_id, question_hash: previewItem.question_hash } },
+                    { title: "OCR / AI 原始数据", data: { raw_data: previewItem.raw_data, ai_metadata: previewItem.ai_metadata } },
+                  ].map(({ title, data }) => (
+                    <section key={title} className="rounded-xl border border-[var(--color-border)]/60 bg-white/50">
+                      <details className="group" open>
+                        <summary className="flex cursor-pointer items-center gap-2 px-4 py-2.5 text-xs font-semibold text-[var(--color-text-secondary)] hover:text-[var(--ink)] transition [&::-webkit-details-marker]:hidden">
+                          <span className="inline-block transition-transform group-open:rotate-90">▶</span>
+                          {title}
+                        </summary>
+                        <div className="border-t border-[var(--color-border)]/40 px-4 pb-3 pt-2">
+                          <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)]">{renderJson(data)}</pre>
+                        </div>
+                      </details>
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                /* --- Edit mode --- */
+                <div className="space-y-5">
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</label>
@@ -492,152 +673,129 @@ export default function ImportReviewPage() {
                     <span className="text-xs font-semibold text-[var(--color-text-secondary)]">题干</span>
                     <textarea className="min-h-36 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm" value={editState.stem} onChange={(event) => setEditState({ ...editState, stem: event.target.value })} />
                   </label>
-                  {detailView === "formatted" ? (
-                    <div className="space-y-5">
-                      {/* === Options Section === */}
-                      <section className="rounded-xl border border-[var(--color-border)]/60 bg-white/50 p-4">
-                        <div className="mb-3 flex items-center gap-2">
-                          <div className="h-0.5 w-4 rounded-full bg-[var(--color-primary)]/40" />
-                          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">选项</p>
-                        </div>
-                        {editState.question_type === "multi_blank_choice" ? (
-                          <div className="space-y-3">
-                            {(() => {
-                              const groups = previewItem?.parsed_content?.blank_option_groups ?? previewItem?.raw_data?.blank_option_groups;
-                              const groupList: Array<{ id?: string; options?: Array<{ key: string; text: string }> }> = Array.isArray(groups) ? groups : [];
-                              return groupList.length > 0 ? groupList.map((group, gi) => (
-                                <div key={gi} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3">
-                                  <p className="mb-2 text-xs font-semibold text-[var(--color-text-hint)]">空 {group.id ?? gi + 1}</p>
-                                  <div className="space-y-1.5">
-                                    {group.options?.map((opt, oi) => (
-                                      <div key={oi} className="flex items-center gap-2">
-                                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-light)] text-[10px] font-bold text-[var(--color-primary-dark)]">{opt.key}</span>
-                                        <span className="text-sm text-[var(--color-text-secondary)]">{opt.text}</span>
-                                      </div>
-                                    ))}
+
+                  {/* Options edit */}
+                  <section className="rounded-xl border border-[var(--color-border)]/60 bg-white/50 p-4">
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="h-0.5 w-4 rounded-full bg-[var(--color-primary)]/40" />
+                      <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">选项</p>
+                    </div>
+                    {editState.question_type === "multi_blank_choice" ? (
+                      <div className="space-y-3">
+                        {(() => {
+                          const groups = previewItem?.parsed_content?.blank_option_groups ?? previewItem?.raw_data?.blank_option_groups;
+                          const groupList: Array<{ id?: string; options?: Array<{ key: string; text: string }> }> = Array.isArray(groups) ? groups : [];
+                          return groupList.length > 0 ? groupList.map((group, gi) => (
+                            <div key={gi} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3">
+                              <p className="mb-2 text-xs font-semibold text-[var(--color-text-hint)]">空 {group.id ?? gi + 1}</p>
+                              <div className="space-y-1.5">
+                                {group.options?.map((opt, oi) => (
+                                  <div key={oi} className="flex items-center gap-2">
+                                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-light)] text-[10px] font-bold text-[var(--color-primary-dark)]">{opt.key}</span>
+                                    <span className="text-sm text-[var(--color-text-secondary)]">{opt.text}</span>
                                   </div>
-                                </div>
-                              )) : null;
-                            })()}
-                            <p className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-700">多空选择题选项由导入管线管理，如需修改请切换 JSON 视图编辑 parsed_content.blank_option_groups。</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {editState.options.length === 0 ? <p className="text-sm text-[var(--color-text-hint)]">暂无可编辑选项</p> : null}
-                            {editState.options.map((opt, index) => (
-                              <div key={index} className="flex items-center gap-2">
-                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary-light)] text-xs font-bold text-[var(--color-primary-dark)]">{opt.key}</span>
-                                <input
-                                  className="h-9 flex-1 rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-                                  value={opt.text}
-                                  onChange={(event) => {
-                                    const next = [...editState.options];
-                                    next[index] = { ...next[index], text: event.target.value };
-                                    setEditState({ ...editState, options: next });
-                                  }}
-                                />
+                                ))}
                               </div>
-                            ))}
+                            </div>
+                          )) : null;
+                        })()}
+                        <p className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-700">多空选择题选项由导入管线管理，如需修改请切换 JSON 视图编辑 parsed_content.blank_option_groups。</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {editState.options.length === 0 ? <p className="text-sm text-[var(--color-text-hint)]">暂无可编辑选项</p> : null}
+                        {editState.options.map((opt, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary-light)] text-xs font-bold text-[var(--color-primary-dark)]">{opt.key}</span>
+                            <input
+                              className="h-9 flex-1 rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+                              value={opt.text}
+                              onChange={(event) => {
+                                const next = [...editState.options];
+                                next[index] = { ...next[index], text: event.target.value };
+                                setEditState({ ...editState, options: next });
+                              }}
+                            />
                           </div>
-                        )}
-                      </section>
+                        ))}
+                      </div>
+                    )}
+                  </section>
 
-                      {/* === Answer Section === */}
-                      <section className="rounded-xl border border-[var(--color-border)]/60 bg-white/50 p-4">
-                        <div className="mb-3 flex items-center gap-2">
-                          <div className="h-0.5 w-4 rounded-full bg-[var(--color-success)]/40" />
-                          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">答案与解析</p>
+                  {/* Answer & Analysis edit */}
+                  <section className="rounded-xl border border-[var(--color-border)]/60 bg-white/50 p-4">
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="h-0.5 w-4 rounded-full bg-[var(--color-success)]/40" />
+                      <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">答案与解析</p>
+                    </div>
+                    <p className="mb-2 text-xs font-semibold text-[var(--color-text-secondary)]">快速选择答案</p>
+                    {editState.question_type === "multi_blank_choice" ? <p className="mb-2 text-[10px] text-[var(--color-text-hint)]">多空选择题：单击切换各空答案，以逗号分隔</p> : null}
+                    {editState.options.length === 0 ? <p className="mb-2 text-sm text-[var(--color-text-hint)]">请先编辑选项</p> : null}
+                    {editState.options.length > 0 ? (
+                      <div className="mb-4 flex flex-wrap gap-2">
+                        {editState.options.map((opt) => {
+                          const selected = isMultiChoice(editState.question_type)
+                            ? editState.answer.split(/[,，\s]+/).includes(opt.key)
+                            : editState.answer === opt.key;
+                          return (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3.5 text-sm font-medium transition ${
+                                selected
+                                  ? "border-[var(--color-success)] bg-[var(--color-success)] text-white shadow-sm"
+                                  : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-success)] hover:text-[var(--color-success)]"
+                              }`}
+                              onClick={() => {
+                                if (isMultiChoice(editState.question_type)) {
+                                  const keys = editState.answer.split(/[,，\s]+/).filter(Boolean);
+                                  const next = keys.includes(opt.key) ? keys.filter((k) => k !== opt.key) : [...keys, opt.key];
+                                  setEditState({ ...editState, answer: next.join(",") });
+                                } else {
+                                  setEditState({ ...editState, answer: editState.answer === opt.key ? "" : opt.key });
+                                }
+                              }}
+                            >
+                              {opt.key}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                    <label className="mb-3 block space-y-1">
+                      <span className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</span>
+                      <Input value={editState.answer} onChange={(event) => setEditState({ ...editState, answer: event.target.value })} />
+                      {editState.question_type === "multi_blank_choice" ? <p className="mt-1 text-[10px] text-amber-600">多空选择题答案格式：各空答案用逗号分隔（如 A,B 表示第1空选A、第2空选B）</p> : null}
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="text-xs font-semibold text-[var(--color-text-secondary)]">解析</span>
+                      <textarea className="min-h-24 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20" value={editState.analysis} onChange={(event) => setEditState({ ...editState, analysis: event.target.value })} />
+                    </label>
+                  </section>
+
+                  {/* AI suggestion in edit mode */}
+                  {completeSuggestion ? (
+                    <section className="rounded-xl border border-amber-200/60 bg-amber-50/30 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="h-4 w-4 text-amber-600" />
+                          <p className="text-sm font-semibold text-amber-800">AI 补全建议</p>
                         </div>
-                        <p className="mb-2 text-xs font-semibold text-[var(--color-text-secondary)]">快速选择答案</p>
-                        {editState.question_type === "multi_blank_choice" ? <p className="mb-2 text-[10px] text-[var(--color-text-hint)]">多空选择题：单击切换各空答案，以逗号分隔</p> : null}
-                        {editState.options.length === 0 ? <p className="mb-2 text-sm text-[var(--color-text-hint)]">请先编辑选项</p> : null}
-                        {editState.options.length > 0 ? (
-                          <div className="mb-4 flex flex-wrap gap-2">
-                            {editState.options.map((opt) => {
-                              const selected = isMultiChoice(editState.question_type)
-                                ? editState.answer.split(/[,，\s]+/).includes(opt.key)
-                                : editState.answer === opt.key;
-                              return (
-                                <button
-                                  key={opt.key}
-                                  type="button"
-                                  className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3.5 text-sm font-medium transition ${
-                                    selected
-                                      ? "border-[var(--color-success)] bg-[var(--color-success)] text-white shadow-sm"
-                                      : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-success)] hover:text-[var(--color-success)]"
-                                  }`}
-                                  onClick={() => {
-                                    if (isMultiChoice(editState.question_type)) {
-                                      const keys = editState.answer.split(/[,，\s]+/).filter(Boolean);
-                                      const next = keys.includes(opt.key) ? keys.filter((k) => k !== opt.key) : [...keys, opt.key];
-                                      setEditState({ ...editState, answer: next.join(",") });
-                                    } else {
-                                      setEditState({ ...editState, answer: editState.answer === opt.key ? "" : opt.key });
-                                    }
-                                  }}
-                                >
-                                  {opt.key}
-                                </button>
-                              );
-                            })}
-                          </div>
+                        {answerSuggestion ? (
+                          <Button variant="ghost" className="h-7 px-2.5 text-xs text-amber-700 hover:bg-amber-100" onClick={() => setEditState({ ...editState, answer: answerSuggestion })}>
+                            应用答案建议
+                          </Button>
                         ) : null}
-                        <label className="mb-3 block space-y-1">
-                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</span>
-                          <Input value={editState.answer} onChange={(event) => setEditState({ ...editState, answer: event.target.value })} />
-                          {editState.question_type === "multi_blank_choice" ? <p className="mt-1 text-[10px] text-amber-600">多空选择题答案格式：各空答案用逗号分隔（如 A,B 表示第1空选A、第2空选B）</p> : null}
-                        </label>
-                        <label className="block space-y-1">
-                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">解析</span>
-                          <textarea className="min-h-24 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20" value={editState.analysis} onChange={(event) => setEditState({ ...editState, analysis: event.target.value })} />
-                        </label>
-                      </section>
-
-                      {completeSuggestion ? (
-                        <section className="rounded-xl border border-amber-200/60 bg-amber-50/30 p-4">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <Sparkles className="h-4 w-4 text-amber-600" />
-                              <p className="text-sm font-semibold text-amber-800">AI 补全建议</p>
-                            </div>
-                            {answerSuggestion ? (
-                              <Button variant="ghost" className="h-7 px-2.5 text-xs text-amber-700 hover:bg-amber-100" onClick={() => setEditState({ ...editState, answer: answerSuggestion })}>
-                                应用答案建议
-                              </Button>
-                            ) : null}
-                          </div>
-                          <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-xl border border-amber-200/50 bg-white/80 p-3 text-xs text-[var(--color-text-secondary)]">{renderJson(completeSuggestion)}</pre>
-                        </section>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {[
-                        { title: "基础信息", icon: FileText, data: { id: previewItem.id, batch_id: previewItem.batch_id, source_type: previewItem.source_type, subject: previewItem.subject, question_type: previewItem.question_type, status: previewItem.status, ai_generated: previewItem.ai_generated, ai_answer_flag: previewItem.ai_answer_flag, created_at: previewItem.created_at, updated_at: previewItem.updated_at } },
-                        { title: "解析数据", icon: FileText, data: { parsed_content: previewItem.parsed_content, parsed_options: previewItem.parsed_options, parsed_answer: previewItem.parsed_answer, parsed_analysis: previewItem.parsed_analysis } },
-                        { title: "重复检测", icon: FileText, data: { duplicate_status: previewItem.duplicate_status, duplicate_of_question_id: previewItem.duplicate_of_question_id, duplicate_of_import_id: previewItem.duplicate_of_import_id, question_hash: previewItem.question_hash } },
-                        { title: "OCR / AI 原始数据", icon: FileText, data: { raw_data: previewItem.raw_data, ai_metadata: previewItem.ai_metadata } },
-                      ].map(({ title, data }) => (
-                        <section key={title} className="rounded-xl border border-[var(--color-border)]/60 bg-white/50">
-                          <details className="group" open>
-                            <summary className="flex cursor-pointer items-center gap-2 px-4 py-2.5 text-xs font-semibold text-[var(--color-text-secondary)] hover:text-[var(--ink)] transition [&::-webkit-details-marker]:hidden">
-                              <span className="inline-block transition-transform group-open:rotate-90">▶</span>
-                              {title}
-                            </summary>
-                            <div className="border-t border-[var(--color-border)]/40 px-4 pb-3 pt-2">
-                              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)]">{renderJson(data)}</pre>
-                            </div>
-                          </details>
-                        </section>
-                      ))}
-                    </div>
-                  )}
+                      </div>
+                      <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-xl border border-amber-200/50 bg-white/80 p-3 text-xs text-[var(--color-text-secondary)]">{renderJson(completeSuggestion)}</pre>
+                    </section>
+                  ) : null}
                 </div>
-              ) : null}
-            </aside>
-          </div>
-        </CardContent>
-      </Card>
+              )}
+            </div>
+          </aside>
+        </div>
+      ) : null}
 
       {confirmState?.action === "reject" || confirmState?.action === "batch-reject" ? (
         <Card>
