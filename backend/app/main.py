@@ -35,6 +35,7 @@ from app.api.v1.admin_rbac import router as admin_rbac_router
 from app.api.v1.admin_subjects import router as admin_subjects_router
 from app.api.v1.admin_users import router as admin_users_router
 from app.api.v1.admin_watermark_rules import router as admin_watermark_rules_router
+from app.api.v1.admin_ai_config import router as admin_ai_config_router
 from app.api.v1.sync import router as sync_router
 from app.core.config import settings
 from app.core.database import init_db
@@ -147,6 +148,7 @@ app.include_router(admin_rbac_router)
 app.include_router(admin_subjects_router)
 app.include_router(admin_users_router)
 app.include_router(admin_watermark_rules_router)
+app.include_router(admin_ai_config_router)
 app.include_router(sync_router)
 app.include_router(pomodoro_router)
 

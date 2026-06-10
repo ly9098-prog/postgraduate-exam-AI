@@ -349,6 +349,24 @@ export type AISettingsPatchRequest = {
   monthly_call_limit?: number;
 };
 
+export type DailyTrendPoint = {
+  date: string;
+  calls: number;
+  tokens: number;
+  success_rate: number;
+  avg_latency_ms: number;
+};
+
+export type AIStatsResponse = {
+  today_calls: number;
+  monthly_calls: number;
+  success_rate: number;
+  avg_latency_ms: number;
+  total_tokens: number;
+  estimated_cost: number;
+  daily_trends: DailyTrendPoint[];
+};
+
 export type AuditLog = {
   id: number;
   operator_id?: number | null;
@@ -363,4 +381,33 @@ export type AuditLog = {
   ip?: string | null;
   error_message?: string | null;
   created_at?: string;
+};
+
+export type AdminAiModelConfig = {
+  id: number;
+  name: string;
+  display_name: string;
+  provider: string;
+  api_base_url: string | null;
+  api_configured: boolean;
+  is_enabled: boolean;
+  is_default: boolean;
+  sort_order: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type AdminAiModelConfigPatchRequest = {
+  is_enabled?: boolean;
+  is_default?: boolean;
+  api_key?: string;
+  api_base_url?: string;
+};
+
+export type AdminAiConfigsResponse = {
+  configs: Record<string, string | number | boolean>;
+};
+
+export type AdminAiConfigsPatchRequest = {
+  configs: Record<string, string | number | boolean>;
 };

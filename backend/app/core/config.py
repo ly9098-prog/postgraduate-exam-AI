@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     AI_DAILY_TOKEN_LIMIT: int = 50000
     AI_MONTHLY_TOKEN_LIMIT: int = 500000
     AI_SINGLE_MAX_TOKENS: int = 2000
+    AI_CONFIG_ENCRYPT_KEY: str = ""
 
     # WeChat (jscode2session)
     WECHAT_APP_ID: str = ""
