@@ -6,6 +6,7 @@ import { ChevronDown, FileText, Braces, Filter, Rows3, Save } from "lucide-react
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
+import { Toggle } from "@/components/ui/toggle";
 import type { AdminAiConfigsPatchRequest, AdminAiConfigsResponse } from "@/lib/api/types";
 
 interface AccordionItem {
@@ -132,13 +133,7 @@ function StrategyPanel({ configs }: { configs: Record<string, string | number | 
             <span className="text-sm font-medium text-[var(--ink)]">{item.label}</span>
             <p className="text-xs text-[var(--color-text-hint)]">{item.desc}</p>
           </div>
-          <input
-            type="checkbox"
-            checked={Boolean(configs[item.key])}
-            onChange={() => toggle(item.key)}
-            disabled={mutation.isPending}
-            className="h-4 w-4 rounded"
-          />
+          <Toggle checked={Boolean(configs[item.key])} onChange={() => toggle(item.key)} disabled={mutation.isPending} />
         </label>
       ))}
       {mutation.isError && (
@@ -201,18 +196,16 @@ function FilterPanel({ configs }: { configs: Record<string, string | number | bo
           </label>
         ))}
       </div>
-      <label className="flex items-center gap-3 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] px-4 py-3">
-        <input
-          type="checkbox"
-          checked={Boolean(configs["ocr_filter_sensitive"])}
-          onChange={() => mutation.mutate({ configs: { ocr_filter_sensitive: !configs["ocr_filter_sensitive"] } })}
-          disabled={mutation.isPending}
-          className="h-4 w-4"
-        />
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] px-4 py-3">
         <div>
           <span className="text-sm font-medium text-[var(--ink)]">启用敏感内容过滤</span>
           <p className="text-xs text-[var(--color-text-hint)]">自动过滤 OCR 结果中的敏感内容</p>
         </div>
+        <Toggle
+          checked={Boolean(configs["ocr_filter_sensitive"])}
+          onChange={() => mutation.mutate({ configs: { ocr_filter_sensitive: !configs["ocr_filter_sensitive"] } })}
+          disabled={mutation.isPending}
+        />
       </label>
       {dirty && (
         <div className="flex items-center gap-3">
