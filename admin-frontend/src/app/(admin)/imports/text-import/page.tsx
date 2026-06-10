@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   CheckCircle2,
@@ -91,6 +91,7 @@ function typeLabel(t: string | null) {
 }
 
 export default function TextImportPage() {
+  const queryClient = useQueryClient();
   const [text, setText] = useState("");
   const [parseResult, setParseResult] = useState<ParseResponse | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -127,6 +128,7 @@ export default function TextImportPage() {
       }),
     onSuccess: (data) => {
       setImportStatus(data);
+      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
     },
     onError: (err) => {
       setGlobalError(err instanceof Error ? err.message : "导入请求失败");
