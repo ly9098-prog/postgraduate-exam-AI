@@ -120,6 +120,14 @@ function stringSuggestion(value: unknown) {
 
 const ALL_BATCH_FIELDS = ["answer", "analysis", "knowledge_points", "difficulty", "subject", "question_type", "stem", "options", "tips", "tags"];
 
+const STATUS_OPTIONS = [
+  { value: "pending", label: "待审核" },
+  { value: "approved", label: "已通过" },
+  { value: "rejected", label: "已驳回" },
+  { value: "published", label: "已发布" },
+  { value: "", label: "全部状态" },
+] as const;
+
 function statusTone(status: string) {
   if (status === "approved") return "success";
   if (status === "rejected") return "danger";
@@ -143,6 +151,7 @@ export default function ImportReviewPage() {
   const searchParams = useSearchParams();
   const batchIdParam = searchParams.get("batch_id") || "";
   const [filters, setFilters] = useState({ batch_id: "", status: "pending", subject: "", source_type: "", keyword: "" });
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [completedItem, setCompletedItem] = useState<ImportQuestionItem | null>(null);
@@ -484,18 +493,38 @@ export default function ImportReviewPage() {
             <label className="space-y-1.5">
               <span className="block text-xs font-medium text-[var(--color-text-secondary)]">审核状态</span>
               <div className="relative">
-                <select
-                  className="h-11 w-full cursor-pointer appearance-none rounded-xl border border-[var(--color-border)] bg-white/80 pl-3 pr-9 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-                  value={filters.status}
-                  onChange={(event) => updateFilter("status", event.target.value)}
+                <button
+                  type="button"
+                  className="flex h-11 w-full items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+                  onClick={() => setStatusDropdownOpen((v) => !v)}
+                  onBlur={() => setTimeout(() => setStatusDropdownOpen(false), 150)}
                 >
-                  <option value="pending">待审核</option>
-                  <option value="approved">已通过</option>
-                  <option value="rejected">已驳回</option>
-                  <option value="published">已发布</option>
-                  <option value="">全部状态</option>
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
+                  <span className="flex-1 text-left">{STATUS_OPTIONS.find((o) => o.value === filters.status)?.label}</span>
+                  <ChevronDown className={`h-4 w-4 text-[var(--color-text-hint)] transition-transform ${statusDropdownOpen ? "rotate-180" : ""}`} />
+                </button>
+                {statusDropdownOpen ? (
+                  <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-[var(--color-border)] bg-white py-1 shadow-lg">
+                    {STATUS_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-[var(--color-primary-light)]/40 ${
+                          filters.status === opt.value
+                            ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold"
+                            : "text-[var(--color-text-primary)]"
+                        }`}
+                        onMouseDown={(e) => { e.preventDefault(); updateFilter("status", opt.value); setStatusDropdownOpen(false); }}
+                      >
+                        {filters.status === opt.value ? (
+                          <Check className="h-4 w-4 shrink-0 text-[var(--color-primary)]" />
+                        ) : (
+                          <span className="inline-block w-4 shrink-0" />
+                        )}
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </label>
           </div>
