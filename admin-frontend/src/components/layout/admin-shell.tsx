@@ -2,7 +2,6 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { AdminFooter } from "./admin-footer";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { useAuthBootstrap } from "@/lib/auth/use-auth-bootstrap";
@@ -31,7 +30,6 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
         <main className="flex-1 overflow-y-auto px-4 py-6 lg:px-8">{children}</main>
-        <AdminFooter />
       </div>
     </div>
   );

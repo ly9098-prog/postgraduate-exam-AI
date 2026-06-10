@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.admin_security import require_permissions
+from app.core.admin_security import require_roles
 from app.core.database import get_db
 from app.schemas.admin_ai_config import AdminAiModelConfigPatchRequest, AdminAiModelConfigResponse, AdminAiConfigsPatchRequest, AdminAiConfigsResponse
 from app.services.admin_ai_config_service import get_all_configs, list_models, patch_configs, patch_model
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/admin/v1", tags=["admin-ai-config"])
 
 @router.get("/ai-models", response_model=list[AdminAiModelConfigResponse])
 async def read_models(
-    _=Depends(require_permissions("ai_setting:read")),
+    _=Depends(require_roles("super_admin")),
     db: AsyncSession = Depends(get_db),
 ):
     return await list_models(db)
@@ -25,7 +25,7 @@ async def update_model(
     model_id: int,
     data: AdminAiModelConfigPatchRequest,
     request: Request,
-    current_admin=Depends(require_permissions("ai_setting:write")),
+    current_admin=Depends(require_roles("super_admin")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -42,7 +42,7 @@ async def update_model(
 
 @router.get("/ai-configs", response_model=AdminAiConfigsResponse)
 async def read_configs(
-    _=Depends(require_permissions("ai_setting:read")),
+    _=Depends(require_roles("super_admin")),
     db: AsyncSession = Depends(get_db),
 ):
     configs = await get_all_configs(db)
@@ -53,7 +53,7 @@ async def read_configs(
 async def update_configs(
     data: AdminAiConfigsPatchRequest,
     request: Request,
-    current_admin=Depends(require_permissions("ai_setting:write")),
+    current_admin=Depends(require_roles("super_admin")),
     db: AsyncSession = Depends(get_db),
 ):
     configs = await patch_configs(db, data.configs, current_admin)
