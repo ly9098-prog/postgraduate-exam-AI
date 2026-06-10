@@ -1088,7 +1088,7 @@ class ImportPipeline:
             "monthly_token_limit": opts.get("ocr_correction_monthly_token_limit", 1000000),
         }
 
-        result = await correct_ocr_blocks(normalized_blocks, correction_config)
+        result = await correct_ocr_blocks(normalized_blocks, correction_config, db=_kw.get("db"))
 
         warnings: list[str] = []
         stats = result.get("stats", {})
@@ -1607,7 +1607,7 @@ class ImportPipeline:
             "monthly_token_limit": options.get("monthly_token_limit", 2000000),
             "enabled": options.get("enable_ai_repair", True),
         }
-        result = await repair_questions(to_repair, repair_config)
+        result = await repair_questions(to_repair, repair_config, db=_kw.get("db"))
 
         repaired = result.get("repaired", [])
         unrepaired = result.get("unrepaired", [])

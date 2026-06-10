@@ -10,6 +10,8 @@ import logging
 import re
 import time
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 logger = logging.getLogger(__name__)
 
 _VALID_QUESTION_TYPES = (
@@ -191,11 +193,19 @@ def _stem_contains_markers(stem: str, markers: set[str]) -> bool:
 
 
 async def _call_ai_for_repair(
-    raw_text: str, existing: dict, config: dict
+    raw_text: str, existing: dict, config: dict, db: AsyncSession | None = None
 ) -> dict | None:
     """调用 DeepSeek 修复单题。返回修复结果或 None（降级）。"""
     from app.ai.client import deepseek
     from app.ai.prompts import build_repair_question
+
+    creds = None
+    if db is not None:
+        from app.services.model_config_resolver import ensure_db_model_configured
+        creds = await ensure_db_model_configured(db)
+
+    api_key = creds[0] if creds else None
+    base_url = creds[1] if creds else None
 
     messages = build_repair_question(raw_text, existing)
     prompt_text = json.dumps(messages, ensure_ascii=False)
@@ -205,7 +215,7 @@ async def _call_ai_for_repair(
         return None
 
     try:
-        result = await deepseek.chat(messages, temperature=0.3)
+        result = await deepseek.chat(messages, temperature=0.3, api_key=api_key, base_url=base_url)
     except Exception:
         return None
 
@@ -227,6 +237,7 @@ async def _call_ai_for_repair(
 async def repair_questions(
     questions: list[dict],
     config: dict | None = None,
+    db: AsyncSession | None = None,
 ) -> dict:
     """对低置信度题目进行 AI 修复（并发，最多 3 路）。
 
@@ -303,7 +314,7 @@ async def repair_questions(
 
     async def _repair_one(idx: int, q: dict, raw_text: str):
         async with sem:
-            return idx, await _call_ai_for_repair(raw_text, q, config)
+            return idx, await _call_ai_for_repair(raw_text, q, config, db)
 
     results = await asyncio.gather(
         *[_repair_one(i, q, rt) for i, q, rt in candidates],
