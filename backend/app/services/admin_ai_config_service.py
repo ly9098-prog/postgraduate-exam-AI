@@ -142,7 +142,9 @@ async def _seed_models_if_empty(db: AsyncSession):
 
 
 async def _ensure_env_key_synced(db: AsyncSession):
-    """对于已存在的数据库，确保 deepseek-v4-flash 模型有 API key（从环境变量同步）。"""
+    """对于已存在的数据库，确保 deepseek-v4-flash 模型有 API key（从环境变量同步）。
+    当 env key 被轮换时也自动更新 DB。
+    """
     env_key = settings.DEEPSEEK_API_KEY
     if not env_key or env_key == "sk-your-key-here":
         return
@@ -154,7 +156,11 @@ async def _ensure_env_key_synced(db: AsyncSession):
     if model is None:
         return
     if model.api_key_encrypted:
-        return
+        # 已加密的 key 能解密且与当前 env key 一致时不覆盖
+        # 解密失败（key 轮换）或与新 key 不同时更新
+        existing = decrypt_api_key(model.api_key_encrypted)
+        if existing and existing == env_key:
+            return
     model.api_key_encrypted = encrypt_api_key(env_key)
     await db.flush()
 
@@ -165,13 +171,19 @@ async def _ensure_env_key_synced(db: AsyncSession):
 
 
 def _model_to_response(m: AdminAiModelConfig) -> AdminAiModelConfigResponse:
+    api_ok = False
+    if m.api_key_encrypted:
+        try:
+            api_ok = bool(decrypt_api_key(m.api_key_encrypted))
+        except Exception:
+            api_ok = False
     return AdminAiModelConfigResponse(
         id=m.id,
         name=m.name,
         display_name=m.display_name,
         provider=m.provider,
         api_base_url=m.api_base_url,
-        api_configured=bool(m.api_key_encrypted),
+        api_configured=api_ok,
         is_enabled=m.is_enabled,
         is_default=m.is_default,
         sort_order=m.sort_order,
