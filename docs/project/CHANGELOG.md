@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-06-10
+
+- **AI 解析设置页面 — 配置接口实施完成**
+  - 新增 `AdminAiModelConfig` 表（`admin_ai_model_configs`）：模型配置，API key 使用 Fernet 加密存储。
+  - 新增 `AdminAiConfig` 表（`admin_ai_configs`）：键值对配置表，存储 17 个 AI Prompt / OCR / 补全策略配置项。
+  - 新增 `GET /api/admin/v1/ai-models` — 模型列表（不含 api_key，含 `api_configured: bool`）。
+  - 新增 `PATCH /api/admin/v1/ai-models/{id}` — 更新模型字段（api_key="****" 时不修改，设为 default 时自动清除其他 default）。
+  - 新增 `GET /api/admin/v1/ai-configs` — 扁平 JSON 键值对读取。
+  - 新增 `PATCH /api/admin/v1/ai-configs` — 部分更新（不存在的 key 忽略，prompt 字段 max_length=5000）。
+  - 权限控制：使用已有 `ai_setting:read` / `ai_setting:write` 权限。
+  - 审计日志：PATCH 操作记录 `severity=normal`，action=`ai_config.update` / `ai_model_config.update`。
+  - 前端 ModelCards / OcrAccordion / AiCompletionPreview 三个组件对接后端 API，骨架屏加载态、错误态保留上次数据。
+  - 模型卡片提示"当前版本实际使用模型为 DeepSeek V4 Flash，此处配置仅作为记录"；配置区域提示"配置已保存，将在后续版本中生效"。
+  - 修复：prompt 字段 max_length=5000 校验、TypeScript 类型修正、文案修正 (DeepSeek → DeepSeek V4 Flash)、错误态保留上次值、配置区域提示文案补全。
+  - 受影响文档：`docs/admin/ADMIN_API_SPEC.md`、`docs/admin/DB_SCHEMA_ADMIN.md`、`docs/admin/AUDIT_LOG.md`、`docs/admin/ADMIN_ARCHITECTURE.md`、`docs/project/CHANGELOG.md`。
+
 ## 2026-06-02
 
 - **真实题库相似匹配纠错层接入导入管线**

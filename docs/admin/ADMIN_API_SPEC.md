@@ -1,10 +1,11 @@
 # Admin API 规范
 
-> 版本：v2.4（题库 Level 1 去重字段同步版） | 状态：Phase 7 后端已完成 | 更新：2026-05-30
+> 版本：v2.5（AI 解析设置配置接口同步版） | 状态：Phase 7+ 扩展已实施 | 更新：2026-06-10
 > 修订自审计报告 I8（统一 Stripe 风格）、I10（liveness/readiness）、C1（拆分 app-users 与 admin-users）
 >
 > - **变更原因**：2026-05-30 同步 Phase 7 新增 AI 解析设置与月度用量接口、权限要求和导入 enrich 前置拦截语义。
 > - **变更原因**：2026-05-30 同步题库 Level 1 完全重复检测在导入批次详情 / 审核队列返回的重复字段，以及发布阶段拦截语义。
+> - **变更原因**：2026-06-10 同步 AI 解析设置页面配置接口（`/ai-models`、`/ai-configs`）。
 
 ---
 
@@ -310,6 +311,74 @@ POST   /v1/auth/refresh
 - `POST /imports/{batchId}/enrich` 创建任务前会执行 `ensure_ai_parse_allowed`。
 - 全局关闭时所有管理员均被拦截；`super_admin` 不绕过全局关闭。
 - 月度额度超限时普通管理员被拦截；`super_admin` 仅绕过额度限制。
+
+### 3.13 AI 模型配置 `/ai-models`（2026-06-10 新增）
+
+| 方法 | 路径 | 描述 | 权限 |
+|------|------|------|------|
+| GET | `/ai-models` | 获取模型列表（不含 api_key，含 `api_configured: bool`） | ai_setting:read |
+| PATCH | `/ai-models/{id}` | 更新模型字段（is_enabled / is_default / api_key / api_base_url） | ai_setting:write |
+
+**GET `/ai-models` 响应字段（摘要）**：
+- `id`、`name`、`display_name`、`provider`、`api_base_url`、`api_configured`（布尔，表示是否已配置 API key）、`is_enabled`、`is_default`、`sort_order`、`created_at`、`updated_at`。
+
+**PATCH `/ai-models/{id}` 行为**：
+- `api_key="****"` 时视为不修改（保留原值）。
+- 传入非掩码 api_key 时使用 Fernet 加密存储（依赖环境变量 `AI_CONFIG_ENCRYPT_KEY`；未配置时以明文存储并记录警告）。
+- 设为 `is_default=true` 时自动清除其他模型的 default 标志。
+- 写入审计日志 `action=ai_model_config.update, severity=normal`。
+
+**Seed 默认模型**：
+| name | display_name | provider |
+|------|-------------|----------|
+| deepseek-v4-flash | DeepSeek V4 Flash | deepseek |
+| gpt-4o | GPT-4o | openai |
+| claude-3.5-sonnet | Claude 3.5 Sonnet | anthropic |
+
+### 3.14 AI 配置键值对 `/ai-configs`（2026-06-10 新增）
+
+| 方法 | 路径 | 描述 | 权限 |
+|------|------|------|------|
+| GET | `/ai-configs` | 获取全部配置键值，返回扁平 JSON | ai_setting:read |
+| PATCH | `/ai-configs` | 部分更新配置项 | ai_setting:write |
+
+**GET `/ai-configs` 响应**：
+```json
+{
+  "configs": {
+    "ocr_correction_prompt": "你是 OCR 文本纠错助手...",
+    "ocr_strategy_math_formula": true,
+    "completion_prompt": "你是考研题目补全助手...",
+    "completion_auto_stem": true
+  }
+}
+```
+值会自动转换为 bool / int / str 类型。
+
+**PATCH `/ai-configs` 请求体**：
+```json
+{
+  "configs": {
+    "ocr_strategy_digit_letter": false,
+    "ocr_correction_prompt": "新的 prompt 内容..."
+  }
+}
+```
+
+**约束**：
+- 不存在的 config_key 静默忽略（仅更新 `_DEFAULT_CONFIGS` 中定义的 17 个 key）。
+- `ocr_correction_prompt` 和 `completion_prompt` 字段 max_length=5000，超长返回 422。
+- 写入审计日志 `action=ai_config.update, severity=normal`。
+
+**Seed 默认 config_key 清单（17 个）**：
+```
+ocr_correction_prompt, ocr_strategy_math_formula, ocr_strategy_punctuation,
+ocr_strategy_digit_letter, ocr_strategy_space_newline, ocr_structure_question_type,
+ocr_structure_options, ocr_structure_answer, ocr_structure_analysis,
+ocr_filter_max_chars, ocr_filter_max_tokens, ocr_filter_sensitive,
+completion_prompt, completion_auto_stem, completion_auto_options,
+completion_auto_answer_reasoning, completion_auto_knowledge_tags
+```
 
 ---
 

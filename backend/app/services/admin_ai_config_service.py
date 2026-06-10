@@ -229,9 +229,13 @@ async def patch_configs(
     await _seed_configs_if_empty(db)
     changed_keys: list[str] = []
 
+    MAX_PROMPT_LENGTH = 5000
+
     for key, value in updates.items():
         if key not in _DEFAULT_CONFIGS:
             continue  # 忽略不存在的 key
+        if key in ("ocr_correction_prompt", "completion_prompt") and len(str(value)) > MAX_PROMPT_LENGTH:
+            raise ValueError(f"{key} exceeds max length of {MAX_PROMPT_LENGTH}")
         serialized = str(value).lower() if isinstance(value, bool) else str(value)
         existing = await db.get(AdminAiConfig, key)
         if existing is None:

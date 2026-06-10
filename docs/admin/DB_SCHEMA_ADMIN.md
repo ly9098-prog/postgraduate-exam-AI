@@ -1,11 +1,12 @@
 # 数据库设计规划
 
-> 版本：v2.3（题库 Level 1 去重字段同步版） | 状态：Phase 7 已完成 | 更新：2026-05-30
+> 版本：v2.4（AI 模型配置与 AI 配置键值表同步版） | 状态：Phase 7+ 扩展已实施 | 更新：2026-06-10
 > ORM：SQLAlchemy | DB：PostgreSQL（生产共享实例）/ SQLite（开发兼容）
 > 修订自审计报告 I1（新增 subjects）、C6（新增 question_versions）、C5（operation_logs → audit_log + severity）、O1（IP 字段）、C1（双身份系统说明）
 >
 > - **变更原因**：2026-05-30 同步 Phase 7 新增 `admin_ai_settings`、`admin_ai_usage_monthly` 与 Alembic migration `i0e1f2a3b4c5_add_admin_ai_settings.py`。
 > - **变更原因**：2026-05-30 同步题库 Level 1 去重在既有 `questions` / `question_imports` 上新增的 hash 与重复标记字段。
+> - **变更原因**：2026-06-10 同步 AI 解析设置配置接口新增 `admin_ai_model_configs`（模型配置表）和 `admin_ai_configs`（AI 配置键值表）。
 
 ---
 
@@ -307,6 +308,50 @@ model QuestionVersion {
 - `ensure_ai_parse_allowed` 在导入 enrich 前读取设置与用量，执行全局关闭和额度拦截。
 
 ---
+### 2.10 admin_ai_model_configs（AI 模型配置表，2026-06-10 新增）
+
+> 保存可配置的 AI 模型列表及其 API 密钥（Fernet 加密）。Seed 默认包含 DeepSeek V4 Flash、GPT-4o、Claude 3.5 Sonnet。
+
+核心字段：
+- `id`：主键，自增。
+- `name`：模型内部标识（唯一），如 `deepseek-v4-flash`。
+- `display_name`：展示名称，如 `DeepSeek V4 Flash`。
+- `provider`：供应商，如 `deepseek` / `openai` / `anthropic`。
+- `api_base_url`：可选的 API 基地址。
+- `api_key_encrypted`：Fernet 加密后的 API key（`cryptography.fernet.Fernet`）；依赖环境变量 `AI_CONFIG_ENCRYPT_KEY` 作为加密密钥；该变量未配置时以明文存储并记录启动警告。
+- `is_enabled`：是否启用。
+- `is_default`：是否为默认模型（全局唯一，`PATCH /ai-models/{id}` 设 default 时自动清除其他 default）。
+- `sort_order`：排序号。
+- `created_at` / `updated_at`。
+
+业务约束：
+- API key 响应时不返回，仅通过 `api_configured` 布尔字段指示是否已配置。
+- `api_key="****"` 在 PATCH 请求中视为"不修改"。
+
+---
+### 2.11 admin_ai_configs（AI 配置键值表，2026-06-10 新增）
+
+> 键值对表，存储 AI Prompts 文本、OCR 策略开关、补全策略开关等 17 个配置项。默认值同步自 `app/ai/prompts.py`。
+
+核心字段：
+- `config_key`：主键，字符串（如 `ocr_correction_prompt`、`ocr_strategy_math_formula`）。
+- `config_value`：配置值文本（prompt 字段 max_length=5000 校验）。
+- `updated_by`：最近更新管理员 ID。
+- `updated_at`。
+
+默认 config_key 清单（17 个）：
+```
+OCR 管线相关：   ocr_correction_prompt, ocr_strategy_math_formula,
+                ocr_strategy_punctuation, ocr_strategy_digit_letter,
+                ocr_strategy_space_newline, ocr_structure_question_type,
+                ocr_structure_options, ocr_structure_answer,
+                ocr_structure_analysis, ocr_filter_max_chars,
+                ocr_filter_max_tokens, ocr_filter_sensitive
+
+题目补全相关：   completion_prompt, completion_auto_stem,
+                completion_auto_options, completion_auto_answer_reasoning,
+                completion_auto_knowledge_tags
+```
 
 ## 三、复用已有表（需变更字段）
 
@@ -442,6 +487,9 @@ model QuestionImport {
 | question_imports | 既有 + `question_hash` + `duplicate_status` + `reviewed_by` | 导入去重标记、反查审核人 |
 | admin_ai_settings | `updated_by` | 设置页读取与审计追溯 |
 | admin_ai_usage_monthly | `month` (unique) | 按月查询与额度校验 |
+| admin_ai_model_configs | `name` (unique), `is_default`, `sort_order` | 模型列表查询与排序 |
+| admin_ai_configs | PK(`config_key`) | 键值对查询与更新 |
+
 
 **部分索引示例**（PostgreSQL 特性）：
 ```sql
@@ -543,6 +591,7 @@ await redis.set(`admin:role:version:${roleId}`, uuid());
 |-----------|-------|------|
 | f6a7b8c9d0e1_add_admin_core_tables.py | Phase 0-4 已实现 | Alembic revision `f6a7b8c9d0e1`，一次性创建 roles / permissions / subjects / admin_users / role_permissions / audit_logs / question_versions |
 | i0e1f2a3b4c5_add_admin_ai_settings.py | Phase 7 已实现 | 创建 admin_ai_settings / admin_ai_usage_monthly，并 seed `ai_setting:read`、`ai_setting:write` 权限 |
+| 2f5e1aae7d6c_add_admin_ai_configs_and_admin_ai_model_configs.py | Phase 7+ 扩展 2026-06-10 | 创建 admin_ai_model_configs / admin_ai_configs，包含默认模型 seed 与 17 个默认配置键值 |
 | j1f2a3b4c5d6_add_duplicate_question_hash_fields.py | 题库去重已实现 | 为 questions 添加 `question_hash`；为 question_imports 添加 `question_hash`、`duplicate_status`、`duplicate_of_question_id`、`duplicate_of_import_id` 及索引 |
 | 0004_audit_log_partition | 生产部署（待确认） | PostgreSQL audit_logs 按月分区；开发/SQLite 不启用，当前 Alembic core migration 未启用 pg_partman |
 | 0005_users_add_banned | Phase 2 | users 表新增 is_banned / banned_reason / banned_at / banned_by |
