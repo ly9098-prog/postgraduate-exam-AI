@@ -7,10 +7,35 @@ from app.core.config import settings
 
 class DeepSeekClient:
     def __init__(self):
-        self.api_key = settings.DEEPSEEK_API_KEY
-        self.base_url = settings.DEEPSEEK_BASE_URL
+        self._api_key = settings.DEEPSEEK_API_KEY
+        self._base_url = settings.DEEPSEEK_BASE_URL
         self.timeout = settings.AI_TIMEOUT
+        self._configured_from_db = False
         self._client: httpx.AsyncClient | None = None
+
+    @property
+    def api_key(self) -> str:
+        return self._api_key
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
+    @property
+    def configured_from_db(self) -> bool:
+        return self._configured_from_db
+
+    def configure(self, api_key: str, base_url: str) -> None:
+        """Override client config with DB-stored model credentials."""
+        self._api_key = api_key
+        self._base_url = base_url
+        self._configured_from_db = True
+
+    def reset_to_env(self) -> None:
+        """Revert client config back to environment variables."""
+        self._api_key = settings.DEEPSEEK_API_KEY
+        self._base_url = settings.DEEPSEEK_BASE_URL
+        self._configured_from_db = False
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -19,10 +44,20 @@ class DeepSeekClient:
         return self._client
 
     def is_available(self) -> bool:
-        return bool(self.api_key) and self.api_key != "sk-your-key-here"
+        return bool(self._api_key) and self._api_key != "sk-your-key-here"
 
-    async def chat(self, messages: list, temperature: float = 0.3, model: str = "deepseek-v4-flash") -> dict:
-        if not self.is_available():
+    async def chat(
+        self,
+        messages: list,
+        temperature: float = 0.3,
+        model: str = "deepseek-v4-flash",
+        api_key: str | None = None,
+        base_url: str | None = None,
+    ) -> dict:
+        _api_key = api_key if api_key is not None else self._api_key
+        _base_url = base_url if base_url is not None else self._base_url
+
+        if not _api_key or _api_key == "sk-your-key-here":
             raise RuntimeError("DEEPSEEK_API_KEY 未配置")
 
         payload = {
@@ -33,9 +68,9 @@ class DeepSeekClient:
 
         start = time.time()
         resp = await self.client.post(
-            f"{self.base_url}/v1/chat/completions",
+            f"{_base_url}/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {self.api_key}",
+                "Authorization": f"Bearer {_api_key}",
                 "Content-Type": "application/json",
             },
             json=payload,

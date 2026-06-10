@@ -1564,9 +1564,17 @@ def _build_log(
 
 
 async def _call_or_fallback(
-    messages: list, fallback_value: dict
+    messages: list, fallback_value: dict, db: AsyncSession | None = None
 ) -> tuple[dict, str | None, dict | None]:
-    if not deepseek.is_available():
+    creds = None
+    if db is not None:
+        from app.services.model_config_resolver import ensure_db_model_configured
+        creds = await ensure_db_model_configured(db)
+
+    api_key = creds[0] if creds else None
+    base_url = creds[1] if creds else None
+
+    if not (api_key or deepseek.is_available()):
         return (
             {
                 "content": "", "tokens_used": 0, "model": "fallback",
@@ -1576,7 +1584,7 @@ async def _call_or_fallback(
             None, None,
         )
     try:
-        resp = await deepseek.chat(messages)
+        resp = await deepseek.chat(messages, api_key=api_key, base_url=base_url)
         return (resp, resp["content"], resp)
     except RuntimeError as e:
         return (
@@ -1598,7 +1606,7 @@ async def enrich_import(
 
     messages = build_enrich_question(_qi_to_dict(qi))
     prompt_text = json.dumps(messages, ensure_ascii=False)
-    resp, raw, _ = await _call_or_fallback(messages, fallback.get_fallback_enrich())
+    resp, raw, _ = await _call_or_fallback(messages, fallback.get_fallback_enrich(), db)
 
     if raw is None:
         parsed = resp["fallback_value"]
@@ -1700,7 +1708,7 @@ async def generate_drafts(
     )
     prompt_text = json.dumps(messages, ensure_ascii=False)
     resp, raw, _ = await _call_or_fallback(
-        messages, fallback.get_fallback_generation(count)
+        messages, fallback.get_fallback_generation(count), db
     )
 
     if raw is None:
@@ -1792,7 +1800,7 @@ async def complete_import(
     messages = build_complete_question(_qi_to_dict(qi), missing)
     prompt_text = json.dumps(messages, ensure_ascii=False)
     resp, raw, _ = await _call_or_fallback(
-        messages, fallback.get_fallback_complete(missing)
+        messages, fallback.get_fallback_complete(missing), db
     )
 
     if raw is None:
@@ -2011,7 +2019,7 @@ async def complete_import_with_strategy(
     messages = build_batch_complete_question(_qi_to_dict(qi), to_complete, strategy)
     prompt_text = json.dumps(messages, ensure_ascii=False)
     resp, raw, _ = await _call_or_fallback(
-        messages, fallback.get_fallback_complete(to_complete)
+        messages, fallback.get_fallback_complete(to_complete), db
     )
 
     if raw is None:

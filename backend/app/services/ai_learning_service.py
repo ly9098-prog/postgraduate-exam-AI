@@ -89,12 +89,20 @@ async def _record_token_usage(
     await db.commit()
 
 
-async def _call_ai(messages: list) -> dict:
+async def _call_ai(messages: list, db: AsyncSession | None = None) -> dict:
     """调用 DeepSeek API，失败返回 None。"""
-    if not deepseek.is_available():
+    creds = None
+    if db is not None:
+        from app.services.model_config_resolver import ensure_db_model_configured
+        creds = await ensure_db_model_configured(db)
+
+    api_key = creds[0] if creds else None
+    base_url = creds[1] if creds else None
+
+    if not (api_key or deepseek.is_available()):
         return None
     try:
-        return await deepseek.chat(messages)
+        return await deepseek.chat(messages, api_key=api_key, base_url=base_url)
     except RuntimeError:
         return None
 
@@ -172,7 +180,7 @@ async def ai_explain(
             "from_fallback": True,
         }
 
-    result = await _call_ai(messages)
+    result = await _call_ai(messages, db)
 
     if result is None:
         fallback = get_fallback_explain()
@@ -248,7 +256,7 @@ async def ai_analyze_mistake(
             "from_fallback": True,
         }
 
-    result = await _call_ai(messages)
+    result = await _call_ai(messages, db)
 
     if result is None:
         fallback = get_fallback_mistake_analysis()
@@ -505,7 +513,7 @@ async def generate_learning_report(
             "from_fallback": True,
         }
 
-    result = await _call_ai(messages)
+    result = await _call_ai(messages, db)
 
     if result is None:
         fallback = get_fallback_report()
