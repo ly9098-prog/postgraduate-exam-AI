@@ -135,6 +135,20 @@ POSTGRES_PASSWORD=...
 POSTGRES_DB=postgraduate
 ```
 
+### 生产 OCR Profile
+
+由 `backend/app/core/ocr_profile.py` 定义，自动根据 `APP_ENV` 加载：
+
+| 参数 | 值 | 说明 |
+|------|----|------|
+| `use_gpu` | `true` | GPU 加速（需服务器配置 GPU 驱动和 CUDA） |
+| `max_workers` | `1` | OCR 并发线程数（与 Gunicorn workers 一致） |
+| `max_pdf_pages` | `30` | 单次 PDF 最大页数 |
+| `timeout_seconds` | `300` | 单次 OCR 超时 |
+| `min_image_width` | `1200` | 图像最小宽度 |
+| `allowed_source_types` | `pdf, image, txt` | 允许的上传类型 |
+| `max_upload_bytes` | `5 MB` | 单文件大小限制 |
+
 ### pip 国内镜像源
 
 Dockerfile 中 `pip install` 使用清华源加速：

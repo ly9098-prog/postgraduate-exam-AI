@@ -36,8 +36,8 @@ _LOCAL_PROFILE = OCRProfile(
 
 _PRODUCTION_PROFILE = OCRProfile(
     name="production",
-    use_gpu=False,
-    max_workers=2,
+    use_gpu=True,
+    max_workers=1,
     timeout_seconds=300,
     min_image_width=1200,
     enable_rotation=False,

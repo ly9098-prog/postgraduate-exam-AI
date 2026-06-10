@@ -328,7 +328,7 @@ class QuestionNormalizer:
     def _break_before_number_markers(text: str) -> str:
         """在题号标记前插入换行：① ② ...、（1）（2）...、1) 2) ..."""
         # ①-⑳ 圈号标记
-        text = re.sub(r"(?<!\n)([①-⑳])", r"\n\1", text)
+        text = re.sub(r"(?<![（(\n])([①-⑳])", r"\n\1", text)
         # （1）（2）全角括号数字，前面有非空白字符时换行
         text = re.sub(r"(?<=[^\s])[　 ]*([（][0-9]+[）])", r"\n\1", text)
         # 1) 2) 数字+括号，排除数学表达式(0,1)和全角括号（1）的误匹配
