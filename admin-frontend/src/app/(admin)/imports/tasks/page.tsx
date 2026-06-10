@@ -1,7 +1,7 @@
 "use client";
 
-import { useId, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useId, useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, FileBox, FileText, FileUp, History, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,8 @@ export default function ImportTasksPage() {
   const [pipelineId, setPipelineId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const fileInputId = useId();
+  const queryClient = useQueryClient();
+  const wasNotTerminal = useRef(true);
 
   const statusQuery = useQuery({
     queryKey: ["import-pipeline", pipelineId],
@@ -79,6 +81,13 @@ export default function ImportTasksPage() {
     ["批次 ID", status?.batch_id],
     ["题目数量", status?.question_count],
   ];
+
+  useEffect(() => {
+    if (status && wasNotTerminal.current && isTerminalStatus(status.status)) {
+      wasNotTerminal.current = false;
+      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
+    }
+  }, [status, queryClient]);
 
   return (
     <div className="space-y-6">
