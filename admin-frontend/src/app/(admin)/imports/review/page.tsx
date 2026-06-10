@@ -171,8 +171,22 @@ export default function ImportReviewPage() {
     mutationFn: async (state: Exclude<ConfirmState, null>) => {
       if (state.action === "approve") return apiRequest<ImportActionResponse>(`/imports/questions/${state.id}/approve`, { method: "POST" });
       if (state.action === "reject") return apiRequest<ImportActionResponse>(`/imports/questions/${state.id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) });
-      if (state.action === "batch-approve") return apiRequest<ImportActionResponse>(`/imports/${filters.batch_id}/approve`, { method: "POST" });
-      if (state.action === "batch-reject") return apiRequest<ImportActionResponse>(`/imports/${filters.batch_id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) });
+      if (state.action === "batch-approve") {
+        if (selectedIds.size > 0) {
+          const ids = Array.from(selectedIds);
+          const results = await Promise.all(ids.map((id) => apiRequest<ImportActionResponse>(`/imports/questions/${id}/approve`, { method: "POST" })));
+          return { affected_count: results.length } as ImportActionResponse;
+        }
+        return apiRequest<ImportActionResponse>(`/imports/${filters.batch_id}/approve`, { method: "POST" });
+      }
+      if (state.action === "batch-reject") {
+        if (selectedIds.size > 0) {
+          const ids = Array.from(selectedIds);
+          const results = await Promise.all(ids.map((id) => apiRequest<ImportActionResponse>(`/imports/questions/${id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) })));
+          return { affected_count: results.length } as ImportActionResponse;
+        }
+        return apiRequest<ImportActionResponse>(`/imports/${filters.batch_id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) });
+      }
       return apiRequest<ImportPublishResponse>(`/imports/${state.batchId}/publish`, { method: "POST" });
     },
     onSuccess: (result, variables) => {
@@ -271,7 +285,7 @@ export default function ImportReviewPage() {
     setEditState(editStateFromItem(item));
   };
 
-  const canBatchOperate = Boolean(filters.batch_id || batchIdParam) && items.length > 0;
+  const canBatchOperate = items.length > 0 && (selectedIds.size > 0 || Boolean(filters.batch_id || batchIdParam));
 
   return (
     <div className="space-y-6">
@@ -633,7 +647,15 @@ export default function ImportReviewPage() {
       <ConfirmDialog
         open={confirmState !== null}
         title={confirmState?.action.includes("reject") ? "驳回导入题目" : confirmState?.action === "publish" ? "发布已通过题目" : "通过导入题目"}
-        description={confirmState?.action === "publish" ? "将当前批次中已通过的题目发布到正式题库。" : "操作会更新 question_imports 暂存审核状态。"}
+        description={
+          confirmState?.action === "publish"
+            ? "将当前批次中已通过的题目发布到正式题库。"
+            : confirmState?.action === "batch-approve" && selectedIds.size > 0
+              ? `将对已选的 ${selectedIds.size} 条导入题目执行批量通过操作。`
+              : confirmState?.action === "batch-reject" && selectedIds.size > 0
+                ? `将对已选的 ${selectedIds.size} 条导入题目执行批量驳回操作。`
+                : "操作会更新 question_imports 暂存审核状态。"
+        }
         confirmText={confirmState?.action.includes("reject") ? "驳回" : confirmState?.action === "publish" ? "发布" : "通过"}
         danger={Boolean(confirmState?.action.includes("reject"))}
         loading={actionMutation.isPending}
