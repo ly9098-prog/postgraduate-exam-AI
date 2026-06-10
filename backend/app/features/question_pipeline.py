@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import fallback
 from app.ai.client import deepseek
 from app.ai.prompts import (
+    build_batch_complete_question,
     build_complete_question,
     build_enrich_question,
     build_generate_questions,
@@ -1874,6 +1875,234 @@ def _apply_complete_suggestion(
     if isinstance(parsed.get("difficulty"), (int, float)):
         suggestion["difficulty"] = max(1, min(5, int(parsed["difficulty"])))
     return suggestion
+
+
+def _detect_fields_to_complete(
+    qi: QuestionImport, target_fields: list[str], strategy: str
+) -> list[str]:
+    """根据策略确定需要 AI 处理的字段列表。"""
+    if strategy == "force_overwrite":
+        return list(target_fields)
+
+    need: list[str] = []
+    for field in target_fields:
+        if field == "subject" and not qi.subject:
+            need.append("subject")
+        elif field == "question_type" and not qi.question_type:
+            need.append("question_type")
+        elif field == "stem" and not (qi.parsed_content and qi.parsed_content.get("text")):
+            need.append("stem")
+        elif field == "answer" and not qi.parsed_answer:
+            need.append("answer")
+        elif field == "analysis" and not qi.parsed_analysis:
+            need.append("analysis")
+        elif field == "options" and not qi.parsed_options:
+            need.append("options")
+        elif field == "knowledge_points":
+            meta = qi.ai_metadata or {}
+            if not meta.get("knowledge_points"):
+                need.append("knowledge_points")
+        elif field == "difficulty":
+            meta = qi.ai_metadata or {}
+            if not meta.get("difficulty"):
+                need.append("difficulty")
+        elif field in ("tips", "tags"):
+            meta = qi.ai_metadata or {}
+            if not meta.get(field):
+                need.append(field)
+    return need
+
+
+def _apply_batch_complete_result(
+    qi: QuestionImport, parsed: dict, fields: list[str], strategy: str
+) -> list[str]:
+    """将 AI 结果应用到 QuestionImport 记录，返回实际完成的字段列表。"""
+    completed: list[str] = []
+
+    def _should_apply(field: str) -> bool:
+        return strategy == "force_overwrite" or field in fields
+
+    if "subject" in fields and parsed.get("subject") in SUBJECT_VALUES:
+        qi.subject = parsed["subject"]
+        completed.append("subject")
+
+    if "question_type" in fields and parsed.get("question_type") in TYPE_VALUES:
+        qi.question_type = parsed["question_type"]
+        completed.append("question_type")
+
+    if _should_apply("analysis"):
+        a = parsed.get("analysis")
+        if isinstance(a, str) and a.strip():
+            qi.parsed_analysis = a.strip()
+            completed.append("analysis")
+
+    if "answer" in fields:
+        ans = parsed.get("answer")
+        if isinstance(ans, str) and ans.strip():
+            qi.parsed_answer = ans
+            qi.ai_answer_flag = True
+            completed.append("answer")
+
+    if "stem" in fields:
+        stem_val = parsed.get("stem") or (parsed.get("parsed_content") or {}).get("text")
+        if isinstance(stem_val, str) and stem_val.strip():
+            content = dict(qi.parsed_content or {})
+            content["text"] = stem_val.strip()
+            qi.parsed_content = content
+            completed.append("stem")
+
+    if "options" in fields:
+        opts = parsed.get("options") or parsed.get("parsed_options")
+        if isinstance(opts, dict) and opts:
+            qi.parsed_options = opts
+            completed.append("options")
+        elif isinstance(opts, list) and opts:
+            qi.parsed_options = {str(i): o for i, o in enumerate(opts) if o}
+            completed.append("options")
+
+    qi.ai_generated = True
+    qi.ai_source = "batch_complete"
+    ai_meta = dict(qi.ai_metadata or {})
+
+    if "knowledge_points" in fields:
+        kps = parsed.get("knowledge_points")
+        if isinstance(kps, list) and kps:
+            ai_meta["knowledge_points"] = [str(k).strip() for k in kps if str(k).strip()]
+            completed.append("knowledge_points")
+
+    if "difficulty" in fields:
+        diff = parsed.get("difficulty")
+        if isinstance(diff, (int, float)):
+            ai_meta["difficulty"] = max(1, min(5, int(diff)))
+            completed.append("difficulty")
+
+    if "tips" in fields:
+        tips = parsed.get("tips") or parsed.get("solving_tips")
+        if isinstance(tips, str) and tips.strip():
+            ai_meta["tips"] = tips.strip()
+            completed.append("tips")
+
+    if "tags" in fields:
+        tags = parsed.get("tags")
+        if isinstance(tags, list) and tags:
+            ai_meta["tags"] = [str(t).strip() for t in tags if str(t).strip()]
+            completed.append("tags")
+
+    qi.ai_metadata = ai_meta
+    return completed
+
+
+async def complete_import_with_strategy(
+    db: AsyncSession,
+    user_id: int,
+    import_id: int,
+    target_fields: list[str],
+    strategy: str,
+) -> dict:
+    """带字段选择和策略的 AI 补全。不提交事务，供 batch 调用。"""
+    qi = await _get_qi(db, import_id)
+    if qi.status != "pending":
+        return {"completed": [], "from_fallback": False, "ai_metadata": {}, "error": f"非 pending 状态: {qi.status}"}
+
+    to_complete = _detect_fields_to_complete(qi, target_fields, strategy)
+    if not to_complete:
+        return {"completed": [], "from_fallback": False, "ai_metadata": {}}
+
+    messages = build_batch_complete_question(_qi_to_dict(qi), to_complete, strategy)
+    prompt_text = json.dumps(messages, ensure_ascii=False)
+    resp, raw, _ = await _call_or_fallback(
+        messages, fallback.get_fallback_complete(to_complete)
+    )
+
+    if raw is None:
+        parsed = resp["fallback_value"]
+        db.add(_build_log(
+            user_id=user_id, action="batch_complete", target_type="import",
+            target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
+            raw_response=None, parsed_result=parsed, confidence=0.0,
+            model=resp["model"], tokens_used=0, duration_ms=0,
+            success=False, error_message=resp.get("error"),
+        ))
+        return {"completed": [], "from_fallback": True, "ai_metadata": parsed, "error": resp.get("error")}
+
+    parsed_raw = _extract_json(raw) or {}
+    completed = _apply_batch_complete_result(qi, parsed_raw, to_complete, strategy)
+    confidence = _coerce_confidence(parsed_raw.get("confidence"))
+
+    qi.ai_confidence = confidence
+    qi.ai_raw_response = raw
+
+    db.add(_build_log(
+        user_id=user_id, action="batch_complete", target_type="import",
+        target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
+        raw_response=raw, parsed_result=qi.ai_metadata,
+        confidence=confidence,
+        model=resp["model"], tokens_used=resp["tokens_used"],
+        duration_ms=resp["duration_ms"], success=True,
+    ))
+    return {
+        "completed": completed,
+        "from_fallback": False,
+        "ai_metadata": qi.ai_metadata,
+        "tokens_used": resp["tokens_used"],
+        "duration_ms": resp["duration_ms"],
+    }
+
+
+async def batch_complete_questions(
+    db: AsyncSession,
+    user_id: int,
+    import_ids: list[int],
+    target_fields: list[str],
+    strategy: str,
+) -> dict:
+    """批量 AI 补全。外部需自行 commit。"""
+    succeeded = 0
+    failed = 0
+    skipped = 0
+    results: list[dict] = []
+
+    for import_id in import_ids:
+        try:
+            r = await complete_import_with_strategy(
+                db, user_id, import_id, target_fields, strategy
+            )
+            if r.get("completed"):
+                succeeded += 1
+            elif r.get("error"):
+                failed += 1
+            else:
+                skipped += 1
+            results.append({
+                "import_id": import_id,
+                "status": "success" if r.get("completed") else ("skipped" if not r.get("error") else "failed"),
+                "error": r.get("error"),
+                "completed_fields": r.get("completed", []),
+            })
+        except ValueError as e:
+            failed += 1
+            results.append({
+                "import_id": import_id,
+                "status": "failed",
+                "error": str(e),
+                "completed_fields": [],
+            })
+        except Exception as e:
+            failed += 1
+            results.append({
+                "import_id": import_id,
+                "status": "failed",
+                "error": str(e),
+                "completed_fields": [],
+            })
+
+    return {
+        "total": len(import_ids),
+        "succeeded": succeeded,
+        "failed": failed,
+        "skipped": skipped,
+        "items": results,
+    }
 
 
 async def list_logs(
