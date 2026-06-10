@@ -13,6 +13,7 @@ type ConfirmDialogProps = {
   loading?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  children?: React.ReactNode;
 };
 
 export function ConfirmDialog({
@@ -25,6 +26,7 @@ export function ConfirmDialog({
   loading = false,
   onConfirm,
   onCancel,
+  children,
 }: ConfirmDialogProps) {
   if (!open) return null;
 
@@ -33,6 +35,7 @@ export function ConfirmDialog({
       <div className="w-full max-w-md rounded-3xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-floating)]">
         <h3 className="font-display text-2xl font-bold text-[var(--ink)]">{title}</h3>
         {description ? <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">{description}</p> : null}
+        {children ? <div className="mt-4">{children}</div> : null}
         <div className="mt-6 flex justify-end gap-3">
           <Button variant="secondary" onClick={onCancel} disabled={loading}>
             {cancelText}
