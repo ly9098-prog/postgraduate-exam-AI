@@ -1,6 +1,6 @@
 # Admin UI Rules
 
-> 版本：v1.2（Phase 7 AI 设置页面同步版） | 状态：Phase 7 前端入口已完成 | 更新：2026-05-30
+> 版本：v1.3（AI 解析设置配置接口同步版） | 状态：Phase 7+ 扩展已实施 | 更新：2026-06-10
 > 变更原因：同步 `admin-frontend` 新增 `/ai-settings` 独立页面、侧边栏入口、权限门禁、AI 解析开关/月度额度/月度用量展示，以及 build 网络阻塞验证结果。
 
 ---
@@ -125,6 +125,18 @@
 - 前端不得绕过设置页直接触发 `/imports/{batchId}/enrich`；后端 `ensure_ai_parse_allowed` 是最终拦截来源。
 
 ---
+
+## 11.5 AI 模型与配置（2026-06-10 新增）
+
+- AI 设置页面 `/ai-settings` 消费 `GET /api/admin/v1/ai-models` 和 `GET /api/admin/v1/ai-configs` 接口。
+- ModelCards 组件展示模型列表：卡片显示 `display_name`、`provider`、`api_configured` 状态，使用 `PATCH /ai-models/{id}` 更新。
+- OcrAccordion / AiCompletionPreview 组件展示 AI 配置键值对：OCR 策略开关、Prompt 编辑区域、补全策略开关等，使用 `PATCH /ai-configs` 批量保存。
+- 更新模型和配置统一使用 `PATCH` 方法；配置区域提示"配置已保存，将在后续版本中生效"。
+- 模型卡片提示"当前版本实际使用模型为 DeepSeek V4 Flash，此处配置仅作为记录"。
+- API key 输入以 `****` 掩码显示已配置状态；提交全新值时通过后端 Fernet 加密存储。
+- 加载态：组件首次加载展示骨架屏。
+- 错误态：API 失败时保留上次成功数据，不因网络问题清空用户可见内容。
+- 所有写操作成功后刷新对应列表/config 数据，不重复拉取整页。
 
 ## 12. 危险操作二次确认
 

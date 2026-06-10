@@ -1,13 +1,13 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { WandSparkles, ArrowRight, FileQuestion, ListChecks, MessageSquareText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
 import { Toggle } from "@/components/ui/toggle";
-import type { AdminAiConfigsResponse } from "@/lib/api/types";
+import type { AdminAiConfigsResponse, AdminAiConfigsPatchRequest } from "@/lib/api/types";
 
 type PreviewType = "question" | "answer" | "explanation";
 
@@ -51,20 +51,21 @@ export function AiCompletionPreview({
   loading?: boolean;
 }) {
   const queryClient = useQueryClient();
-  const [prompt, setPrompt] = useState("");
   const [activePreview, setActivePreview] = useState<PreviewType>("question");
   const [isGenerating, setIsGenerating] = useState(false);
 
   const data = configs ?? {};
   const savedPrompt = String(data["completion_prompt"] ?? "");
+  const [prompt, setPrompt] = useState(savedPrompt);
 
-  // Sync prompt from saved config on first load
-  if (!prompt && savedPrompt) {
-    // only set on first render — but we need useEffect for this
-  }
+  useEffect(() => {
+    if (savedPrompt && !prompt) {
+      setPrompt(savedPrompt);
+    }
+  }, [savedPrompt]);
 
   const saveMutation = useMutation({
-    mutationFn: (patch: AdminAiConfigsResponse) =>
+    mutationFn: (patch: AdminAiConfigsPatchRequest) =>
       apiRequest<AdminAiConfigsResponse>("/ai-configs", {
         method: "PATCH",
         body: JSON.stringify(patch),

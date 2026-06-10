@@ -1,6 +1,6 @@
 # 分阶段开发计划
 
-> 版本：v2.4（Phase 7 AI 设置与月度额度同步版） | 状态：Phase 7 后端与前端主要实现已完成 | 更新：2026-05-30
+> 版本：v2.5（Phase 7+ AI 模型与配置接口同步版） | 状态：Phase 7 后端与前端主要实现已完成，Phase 7+ 扩展已实施 | 更新：2026-06-10
 > 修订自审计报告 I1（subjects）、I2（明确不实现 question_banks）、C6（question_versions）、C5（audit_log 分级）；2026-05-29 根据维护者确认收敛为现有 FastAPI 后端内实现。
 >
 > - **变更原因**：同步 Phase 7 后台 AI 解析设置、全局月度额度、权限拦截、前端入口与验证结果。
@@ -20,6 +20,7 @@
 | Phase 5 | 审计日志与统计 | 已完成 | audit-logs 查询、Dashboard 统计（Redis 可用时缓存防穿透） |
 | Phase 6 | 前端 Admin Dashboard | 已完成 | Next.js 16 + React 19 Admin UI，仅消费 `/api/admin/v1` |
 | Phase 7 | 后台 AI 解析设置与全局月度额度 | 已完成 | AI 解析开关、月度全局 API 调用额度、用量查询、前端设置页 |
+| Phase 7+ | AI 解析设置页配置接口扩展 | 2026-06-10 完成 | 模型配置表、AI 配置键值表、模型列表/更新接口、配置读取/更新接口 |
 
 ---
 
@@ -465,6 +466,45 @@ Next.js 完整后台 UI，仅消费现有 FastAPI Admin API `/api/admin/v1`，�
 ### 本阶段完成后更新文档
 - `docs/admin/README.md`、`docs/admin/PHASE_PLAN.md`、`docs/admin/ADMIN_API_SPEC.md`、`docs/admin/RBAC_RULES.md`、`docs/admin/DB_SCHEMA_ADMIN.md`、`docs/admin/AUDIT_LOG.md`、`docs/frontend/ADMIN_UI_RULES.md`、`docs/project/CHANGELOG.md` 已于 2026-05-30 同步 Phase 7 实现。
 
+---
+
+## Phase 7+：AI 解析设置页面配置接口扩展（2026-06-10 完成）
+
+### 目标
+为 AI 解析设置页面（`/ai-settings`）的 3 个配置 UI 组件（ModelCards / OcrAccordion / AiCompletionPreview）补充后端 API、数据库表与持久化逻辑。
+
+### 实际完成（2026-06-10）
+
+1. **数据库表**
+   - 新增 `admin_ai_model_configs`：模型配置表（id, name, display_name, provider, api_base_url, api_key_encrypted[Fernet], is_enabled, is_default, sort_order, created_at, updated_at）。
+   - 新增 `admin_ai_configs`：AI 配置键值表（config_key[PK], config_value, updated_by, updated_at），含 17 个默认配置项。
+
+2. **Admin API**
+   - `GET /api/admin/v1/ai-models`：模型列表（不含 api_key，含 api_configured: bool）。
+   - `PATCH /api/admin/v1/ai-models/{id}`：更新模型（api_key="****" 时不修改；设为 default 时清除其他 default；Fernet 加密存储）。
+   - `GET /api/admin/v1/ai-configs`：返回扁平 JSON 键值对。
+   - `PATCH /api/admin/v1/ai-configs`：部分更新（不存在的 key 忽略；prompt 字段 max_length=5000 校验）。
+
+3. **权限与审计**
+   - 复用 `ai_setting:read` / `ai_setting:write`（无需新增权限）。
+   - PATCH 操作写审计日志：action=`ai_config.update` / `ai_model_config.update`，severity=normal。
+
+4. **前端对接**
+   - ModelCards / OcrAccordion / AiCompletionPreview 对接后端 API。
+   - 骨架屏加载态、错误态保留上次数据。
+   - 文案提示：模型卡片提示"当前版本实际使用模型为 DeepSeek V4 Flash"；配置区域提示"配置已保存，将在后续版本中生效"。
+
+5. **修复项**
+   - prompt 字段 max_length=5000 校验；AiCompletionPreview useEffect 同步 prompt state；TypeScript 类型修正；文案修正 (DeepSeek → DeepSeek V4 Flash)；错误态保留上次值；配置区域提示文案补全。
+
+### 禁止修改
+- 不改变 Phase 7 已有的 `admin_ai_settings` / `admin_ai_usage_monthly` 表结构。
+- 不改变 `/ai-settings` / `/ai-settings/usage` 已有 API 路径与语义。
+- 不改变 `ensure_ai_parse_allowed` 的全局关闭优先于额度绕过语义。
+
+### 本阶段完成后更新文档
+- `docs/admin/ADMIN_API_SPEC.md`、`docs/admin/DB_SCHEMA_ADMIN.md`、`docs/admin/AUDIT_LOG.md`、`docs/project/CHANGELOG.md`、`docs/admin/ADMIN_ARCHITECTURE.md`、`docs/frontend/ADMIN_UI_RULES.md`、`docs/admin/PHASE_PLAN.md`、`docs/admin/README.md` 已于 2026-06-10 同步 Phase 7+ 扩展实现。
+
 
 
 | 已完成阶段 | 禁止修改 |
@@ -476,6 +516,7 @@ Next.js 完整后台 UI，仅消费现有 FastAPI Admin API `/api/admin/v1`，�
 | Phase 4 之后 | Subject 表结构 / Imports API 路径 |
 | Phase 5 之后 | Dashboard 接口路径 / audit-logs 查询参数 |
 | Phase 7 之后 | AI 设置接口路径 / `ai_setting:*` 权限名 / 全局关闭优先于额度绕过语义 |
+| Phase 7+ 之后 | `admin_ai_model_configs` / `admin_ai_configs` 表结构 / `/ai-models` / `/ai-configs` 接口路径与语义 |
 
 **修改已完成阶段必须**：
 1. 提出变更原因（写入 commit message）
