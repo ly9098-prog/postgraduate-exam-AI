@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
+from app.core.config import settings
 from app.models.admin_ai_config import AdminAiConfig, AdminAiModelConfig, decrypt_api_key, encrypt_api_key
 from app.schemas.admin_ai_config import AdminAiModelConfigResponse, AdminAiModelConfigPatchRequest
 from app.services.admin_audit_service import write_admin_audit
@@ -131,8 +132,30 @@ async def _seed_models_if_empty(db: AsyncSession):
     result = await db.execute(select(AdminAiModelConfig).limit(1))
     if result.scalar_one_or_none() is not None:
         return
+    env_key = settings.DEEPSEEK_API_KEY
     for m in _DEFAULT_MODELS:
-        db.add(AdminAiModelConfig(**m))
+        model = AdminAiModelConfig(**m)
+        if m["name"] == "deepseek-v4-flash" and env_key and env_key != "sk-your-key-here":
+            model.api_key_encrypted = encrypt_api_key(env_key)
+        db.add(model)
+    await db.flush()
+
+
+async def _ensure_env_key_synced(db: AsyncSession):
+    """对于已存在的数据库，确保 deepseek-v4-flash 模型有 API key（从环境变量同步）。"""
+    env_key = settings.DEEPSEEK_API_KEY
+    if not env_key or env_key == "sk-your-key-here":
+        return
+    model = (
+        await db.execute(
+            select(AdminAiModelConfig).where(AdminAiModelConfig.name == "deepseek-v4-flash")
+        )
+    ).scalar_one_or_none()
+    if model is None:
+        return
+    if model.api_key_encrypted:
+        return
+    model.api_key_encrypted = encrypt_api_key(env_key)
     await db.flush()
 
 
@@ -159,6 +182,7 @@ def _model_to_response(m: AdminAiModelConfig) -> AdminAiModelConfigResponse:
 
 async def list_models(db: AsyncSession) -> list[AdminAiModelConfigResponse]:
     await _seed_models_if_empty(db)
+    await _ensure_env_key_synced(db)
     result = await db.execute(select(AdminAiModelConfig).order_by(AdminAiModelConfig.sort_order))
     return [_model_to_response(m) for m in result.scalars().all()]
 
