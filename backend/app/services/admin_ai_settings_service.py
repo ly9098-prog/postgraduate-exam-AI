@@ -1,12 +1,13 @@
-from datetime import datetime
+from datetime import datetime, date, time, timedelta
 
 from fastapi import Request
-from sqlalchemy import select
+from sqlalchemy import Date, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
 from app.models.admin import AdminAISettings, AdminAIUsageMonthly, Role
-from app.schemas.admin_ai_settings import AdminAISettingsPatchRequest, AdminAISettingsResponse, AdminAIUsageMonthlyResponse
+from app.models.ai_generation_log import AiGenerationLog
+from app.schemas.admin_ai_settings import AdminAISettingsPatchRequest, AdminAISettingsResponse, AdminAIUsageMonthlyResponse, AdminAIStatsResponse, DailyTrendPoint
 from app.services.admin_audit_service import write_admin_audit
 
 DEFAULT_MONTHLY_CALL_LIMIT = 1000
@@ -167,3 +168,105 @@ async def ensure_ai_parse_allowed(
         )
         await db.commit()
         raise PermissionError("AI 解析月度额度已用尽")
+
+
+async def get_ai_stats(db: AsyncSession, days: int = 7) -> AdminAIStatsResponse:
+    """从 AiGenerationLog 聚合统计数据和趋势。"""
+    now = datetime.utcnow()
+    today_start = datetime.combine(now.date(), time.min)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    trend_start = today_start - timedelta(days=days - 1)
+
+    bucket_expr = cast(AiGenerationLog.created_at, Date)
+
+    # 当日统计
+    today_row = (
+        await db.execute(
+            select(
+                func.count().label("calls"),
+                func.sum(AiGenerationLog.tokens_used).label("tokens"),
+                func.avg(AiGenerationLog.duration_ms).label("latency"),
+                func.sum(AiGenerationLog.success).label("success_count"),
+            )
+            .where(AiGenerationLog.created_at >= today_start, AiGenerationLog.created_at < today_start + timedelta(days=1))
+        )
+    ).one()
+
+    # 本月统计
+    month_row = (
+        await db.execute(
+            select(
+                func.count().label("calls"),
+                func.sum(AiGenerationLog.tokens_used).label("tokens"),
+                func.avg(AiGenerationLog.duration_ms).label("latency"),
+                func.sum(AiGenerationLog.success).label("success_count"),
+            )
+            .where(AiGenerationLog.created_at >= month_start)
+        )
+    ).one()
+
+    # 日趋势
+    trend_rows = (
+        await db.execute(
+            select(
+                bucket_expr.label("day"),
+                func.count().label("calls"),
+                func.sum(AiGenerationLog.tokens_used).label("tokens"),
+                func.avg(AiGenerationLog.duration_ms).label("latency"),
+                func.sum(AiGenerationLog.success).label("success_count"),
+                func.count().label("total"),
+            )
+            .where(AiGenerationLog.created_at >= trend_start, AiGenerationLog.created_at < today_start + timedelta(days=1))
+            .group_by(bucket_expr)
+            .order_by(bucket_expr)
+        )
+    ).all()
+
+    trend_map = {}
+    for row in trend_rows:
+        raw_day = row.day.isoformat() if hasattr(row.day, "isoformat") else str(row.day)
+        total_calls = int(row.calls or 0)
+        success_count = int(row.success_count or 0)
+        trend_map[str(raw_day)] = {
+            "date": str(raw_day)[5:].replace("-", "/"),  # "2026-06-10" → "06/10"
+            "calls": total_calls,
+            "tokens": int(row.tokens or 0),
+            "success_rate": round(success_count / total_calls * 100, 1) if total_calls > 0 else 0.0,
+            "avg_latency_ms": round(float(row.latency or 0), 1),
+        }
+
+    daily_trends = []
+    current = trend_start
+    while current < today_start + timedelta(days=1):
+        key = current.strftime("%m/%d")
+        iso_key = current.date().isoformat()
+        if iso_key in trend_map:
+            daily_trends.append(trend_map[iso_key])
+        else:
+            daily_trends.append({"date": key, "calls": 0, "tokens": 0, "success_rate": 0.0, "avg_latency_ms": 0.0})
+        current += timedelta(days=1)
+
+    today_calls = int(today_row.calls or 0)
+    month_calls = int(month_row.calls or 0)
+    month_success = int(month_row.success_count or 0)
+    month_tokens = int(month_row.tokens or 0)
+    month_latency = float(month_row.latency or 0)
+
+    success_rate = round(month_success / month_calls * 100, 1) if month_calls > 0 else 0.0
+    avg_latency_ms = round(month_latency, 1) if month_calls > 0 else 0.0
+
+    # 费用估算：假设输入占 75%，输出占 25%
+    # 输入: ¥1/1M tokens, 输出: ¥2/1M tokens
+    input_tokens_est = int(month_tokens * 0.75)
+    output_tokens_est = month_tokens - input_tokens_est
+    estimated_cost = round((input_tokens_est / 1_000_000 * 1.0 + output_tokens_est / 1_000_000 * 2.0) * 100) / 100
+
+    return AdminAIStatsResponse(
+        today_calls=today_calls,
+        monthly_calls=month_calls,
+        success_rate=success_rate,
+        avg_latency_ms=avg_latency_ms,
+        total_tokens=month_tokens,
+        estimated_cost=estimated_cost,
+        daily_trends=[DailyTrendPoint(**d) for d in daily_trends],
+    )

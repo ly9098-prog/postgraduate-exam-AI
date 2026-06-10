@@ -156,8 +156,10 @@ async def _call_ocr_api(image: bytes, page_num: int) -> dict | None:
         },
     ]
 
+    # DeepSeek 当前无多模态 API 模型，视觉 OCR 暂不可用
+    # 待接入支持 vision 的模型后恢复
     payload = {
-        "model": "deepseek-chat",
+        "model": "",
         "messages": messages,
         "temperature": 0.1,
         "max_tokens": _OCR_MAX_TOKENS,

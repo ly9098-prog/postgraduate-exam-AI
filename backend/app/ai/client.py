@@ -21,12 +21,12 @@ class DeepSeekClient:
     def is_available(self) -> bool:
         return bool(self.api_key) and self.api_key != "sk-your-key-here"
 
-    async def chat(self, messages: list, temperature: float = 0.3) -> dict:
+    async def chat(self, messages: list, temperature: float = 0.3, model: str = "deepseek-v4-flash") -> dict:
         if not self.is_available():
             raise RuntimeError("DEEPSEEK_API_KEY 未配置")
 
         payload = {
-            "model": "deepseek-chat",
+            "model": model,
             "messages": messages,
             "temperature": temperature,
         }
