@@ -103,7 +103,12 @@ def _normalize_text(text: str) -> str:
     text = re.sub(r"\$\\\)", r"\\)", text)
     # 2) 将 \(...\) 转换为 $...$（前端只识别 $ 定界符）
     text = re.sub(r"\\\((.+?)\\\)", r"$\1$", text, flags=re.DOTALL)
-    # 3) 保护成对的 $...$，移除残余孤立 $
+    # 3) 清除 LaTeX 文本字体命令（AI 常对普通文本过度使用 \mathrm 等）
+    text = re.sub(r"\\mathrm\{([^}]*)\}", r"\1", text)
+    text = re.sub(r"\\textbf\{([^}]*)\}", r"\1", text)
+    text = re.sub(r"\\textit\{([^}]*)\}", r"\1", text)
+    text = re.sub(r"\\mathtt\{([^}]*)\}", r"\1", text)
+    # 4) 保护成对的 $...$，移除残余孤立 $
     _pairs = re.findall(r"\$[^$\n]+?\$", text)
     _map = {}
     for _i, _p in enumerate(_pairs):
