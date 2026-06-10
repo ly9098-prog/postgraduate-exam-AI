@@ -177,7 +177,8 @@ async def get_ai_stats(db: AsyncSession, days: int = 7) -> AdminAIStatsResponse:
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     trend_start = today_start - timedelta(days=days - 1)
 
-    bucket_expr = cast(AiGenerationLog.created_at, Date)
+    dialect_name = db.bind.dialect.name if db.bind else "postgresql"
+    bucket_expr = func.date(AiGenerationLog.created_at) if dialect_name == "sqlite" else cast(AiGenerationLog.created_at, Date)
 
     # 当日统计
     today_row = (
