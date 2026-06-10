@@ -259,6 +259,7 @@
   background: rgba(255, 255, 255, 0.02);
   border: 1rpx solid rgba(255, 255, 255, 0.04);
   border-radius: 16rpx;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .history-item:active {
@@ -302,6 +303,194 @@
 .status-interrupt {
   color: rgba(244, 63, 94, 0.6);
   background: rgba(244, 63, 94, 0.08);
+}
+
+/* ============================================
+   PIE CHART
+   ============================================ */
+.pie-wrap {
+  width: 100%;
+  height: 440rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 16rpx;
+}
+
+.pie-canvas {
+  width: 440rpx;
+  height: 440rpx;
+}
+
+/* ============================================
+   PIE LEGEND
+   ============================================ */
+.pie-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 14rpx 18rpx;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1rpx solid rgba(255, 255, 255, 0.04);
+  border-radius: 14rpx;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.legend-row:active {
+  background: rgba(255, 255, 255, 0.06);
+  transform: scale(0.98);
+}
+
+.legend-dot {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.legend-name {
+  flex: 1;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 500;
+}
+
+.legend-pct {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.35);
+  width: 64rpx;
+  text-align: right;
+  font-weight: 500;
+}
+
+.legend-dur {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.5);
+  width: 100rpx;
+  text-align: right;
+  font-weight: 600;
+}
+
+/* ============================================
+   DETAIL POPUP
+   ============================================ */
+.detail-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.detail-overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.detail-overlay::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(11, 17, 33, 0.85);
+  backdrop-filter: blur(12rpx);
+}
+
+.detail-card {
+  position: relative;
+  z-index: 2;
+  width: 520rpx;
+  padding: 40rpx 36rpx;
+  background: linear-gradient(180deg, #1A1F35 0%, #111827 100%);
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+  border-radius: 32rpx;
+  animation: popup-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes popup-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(20rpx);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 32rpx;
+  padding-bottom: 24rpx;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.06);
+}
+
+.detail-dot {
+  width: 24rpx;
+  height: 24rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.detail-subject {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+  margin-bottom: 28rpx;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.detail-label {
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 400;
+}
+
+.detail-value {
+  font-size: 28rpx;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+}
+
+.detail-close-wrap {
+  text-align: center;
+  padding-top: 20rpx;
+  border-top: 1rpx solid rgba(255, 255, 255, 0.04);
+}
+
+.detail-close-text {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.25);
+  letter-spacing: 2rpx;
 }
 
 /* ── Bottom Spacer ── */

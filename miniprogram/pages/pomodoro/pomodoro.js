@@ -70,6 +70,9 @@ Page({
     fromChapterId: '',
     fromChapterName: '',
 
+    // font size accessibility
+    fontSizeLevel: 'medium',
+
     // new features
     examDays: 0,
     showCelebration: false,
@@ -87,7 +90,10 @@ Page({
       frontColor: '#ffffff',
       backgroundColor: '#0B1121',
     })
-    this.setData({ examDays: this._getExamDays() })
+    this.setData({
+      examDays: this._getExamDays(),
+      fontSizeLevel: wx.getStorageSync('pomodoro_font_size') || 'medium',
+    })
 
     if (opts.subject) {
       const mapped = this._mapPracticeSubject(opts.subject)
@@ -511,6 +517,17 @@ Page({
 
   goStats() {
     wx.navigateTo({ url: '/pages/pomodoro-stats/pomodoro-stats' })
+  },
+
+  /* ==================== Font Size Toggle ==================== */
+
+  cycleFontSize() {
+    const levels = ['medium', 'large']
+    const current = this.data.fontSizeLevel
+    const idx = levels.indexOf(current)
+    const next = levels[(idx + 1) % levels.length]
+    this.setData({ fontSizeLevel: next })
+    wx.setStorageSync('pomodoro_font_size', next)
   },
 
   /* ==================== Utility ==================== */
