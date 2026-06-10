@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from math import ceil
 from uuid import uuid4
@@ -18,6 +19,8 @@ from app.schemas.admin_imports import (
 )
 from app.services.admin_ai_settings_service import ensure_ai_parse_allowed
 from app.services.admin_audit_service import write_admin_audit
+
+logger = logging.getLogger(__name__)
 
 _TASK_TTL_SECONDS = 86400
 
@@ -143,10 +146,25 @@ async def approve_import_question(db: AsyncSession, import_id: int, operator_id:
     qi = await _get_import_question(db, import_id)
     if qi.status == "published" or qi.question_id is not None:
         raise ValueError("已发布题目不可重复审核")
+
     qi.status = "approved"
     qi.reject_reason = None
     qi.reviewed_by = operator_id
     qi.reviewed_at = datetime.utcnow()
+
+    # 审核即发布：写入 questions 正式题库
+    from app.features.question_publish_service import publish_single_question
+
+    pub_result = await publish_single_question(db, qi)
+    if pub_result["status"] == "duplicate":
+        qi.status = "published"
+        qi.question_id = pub_result["question_id"]
+    elif pub_result["status"] == "failed":
+        logger.warning(
+            "Auto-publish failed for import %d: %s (question stays approved for retry)",
+            import_id, pub_result.get("reason"),
+        )
+
     await db.flush()
     await db.refresh(qi)
     return AdminImportQuestionItem.model_validate(qi)
@@ -169,14 +187,36 @@ async def reject_import_question(db: AsyncSession, import_id: int, operator_id: 
 async def approve_import_batch(db: AsyncSession, batch_id: str, operator_id: int) -> int:
     records = await _get_batch_records(db, batch_id, statuses={"pending", "rejected"})
     now = datetime.utcnow()
+    from app.features.question_publish_service import publish_single_question
+
+    count = 0
     for qi in records:
         if qi.question_id is None:
             qi.status = "approved"
             qi.reject_reason = None
             qi.reviewed_by = operator_id
             qi.reviewed_at = now
+
+            # 批量审核即批量发布
+            try:
+                pub = await publish_single_question(db, qi)
+                if pub["status"] == "duplicate":
+                    qi.status = "published"
+                    qi.question_id = pub["question_id"]
+                elif pub["status"] == "failed":
+                    logger.warning(
+                        "Batch auto-publish failed for import %d: %s",
+                        qi.id, pub.get("reason"),
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Batch auto-publish error for import %d: %s", qi.id, exc,
+                )
+
+            count += 1
+
     await db.flush()
-    return len(records)
+    return count
 
 
 async def reject_import_batch(db: AsyncSession, batch_id: str, operator_id: int, reason: str | None = None) -> int:

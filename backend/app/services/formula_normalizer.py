@@ -133,7 +133,7 @@ def wrap_inline_math(text: str) -> str:
     """
     if not text:
         return text
-    parts = re.split(r"(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)", text)
+    parts = re.split(r"(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\])", text)
     result = []
     for i, part in enumerate(parts):
         if i % 2 == 1:
