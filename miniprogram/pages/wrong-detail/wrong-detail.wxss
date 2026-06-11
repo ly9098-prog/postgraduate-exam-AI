@@ -222,38 +222,6 @@
   font-weight: 800;
 }
 
-.sm2-info {
-  margin-top: 16rpx;
-  padding: 12rpx 16rpx;
-  background: #EDF1F5;
-  border-radius: 999rpx;
-  font-size: 23rpx;
-  color: #5B7B9A;
-  text-align: center;
-}
-
-.master-btn {
-  margin-top: 24rpx;
-  width: 100%;
-  min-height: 86rpx;
-  border-radius: 999rpx;
-  background: #6B9B6B;
-  color: #FFFFFF;
-  font-size: 28rpx;
-  font-weight: 800;
-  line-height: 86rpx;
-  border: none;
-}
-
-.master-btn::after {
-  border: none;
-}
-
-.master-btn:active {
-  opacity: 0.84;
-  transform: scale(0.97);
-}
-
 .option-line:active {
   background: #F3F2EF;
 }

@@ -9,6 +9,7 @@
     "pages/practice-result/practice-result",
     "pages/wrong-book/wrong-book",
     "pages/wrong-detail/wrong-detail",
+    "pages/review-today/review-today",
     "pages/import/import",
     "pages/dashboard/dashboard",
     "pages/pomodoro/pomodoro",

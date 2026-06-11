@@ -51,7 +51,7 @@ Page({
 
   startRandom() { wx.navigateTo({ url: '/pages/practice/practice' }) },
   goWrongBook() { wx.navigateTo({ url: '/pages/wrong-book/wrong-book' }) },
-  goReview() { wx.navigateTo({ url: '/pages/wrong-book/wrong-book?tab=due' }) },
+  goReview() { wx.navigateTo({ url: '/pages/review-today/review-today' }) },
   goDashboard() { wx.navigateTo({ url: '/pages/dashboard/dashboard' }) },
   goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
   goImport() {

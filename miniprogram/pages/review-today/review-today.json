@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "今日复习",
+  "usingComponents": {
+    "mp-html": "/components/mp-html/index",
+    "math-question": "/components/math-question/math-question"
+  }
+}

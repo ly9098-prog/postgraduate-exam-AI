@@ -1,88 +1,88 @@
 <view class="page">
-  <!-- 统计 -->
-  <view class="stats-panel">
-    <view class="mini-stat primary" bindtap="switchTab" data-tab="all">
-      <text class="mini-num">{{stats.total || 0}}</text>
-      <text class="mini-label">全部</text>
+  <!-- 顶部统计条 -->
+  <view class="stats-bar">
+    <view class="stats-icon">
+      <text class="stats-icon-text">!</text>
     </view>
-    <view class="mini-stat warning" bindtap="switchTab" data-tab="due">
-      <text class="mini-num">{{reviewStats.due_today || 0}}</text>
-      <text class="mini-label">待复习</text>
+    <view class="stats-info">
+      <text class="stats-num">{{stats.total || 0}}</text>
+      <text class="stats-label">道错题待回顾</text>
     </view>
-    <view class="mini-stat success" bindtap="switchTab" data-tab="mastered">
-      <text class="mini-num">{{stats.mastered || 0}}</text>
-      <text class="mini-label">已掌握</text>
+    <view class="stats-filter-btn" bindtap="toggleFilter">
+      <text class="filter-btn-text">筛选</text>
     </view>
   </view>
 
-  <!-- 标签栏 -->
-  <view class="tab-card">
-    <view class="tab-bar">
-      <view class="tab-item {{tab === 'all' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="all">全部错题</view>
-      <view class="tab-item {{tab === 'due' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="due">今日待复习</view>
-      <view class="tab-item {{tab === 'mastered' ? 'tab-active' : ''}}" bindtap="switchTab" data-tab="mastered">已掌握</view>
+  <!-- 筛选面板 -->
+  <view class="filter-panel {{showFilter ? 'filter-open' : ''}}">
+    <view class="filter-section">
+      <text class="filter-section-title">学科</text>
+      <view class="filter-chips">
+        <view
+          wx:for="{{subjects}}"
+          wx:key="value"
+          class="chip {{selectedSubject === item.value ? 'chip-active' : ''}}"
+          bindtap="selectSubject"
+          data-value="{{item.value}}"
+        >{{item.label}}</view>
+      </view>
     </view>
-    <text class="tab-subtitle" wx:if="{{tab === 'all'}}">按时间倒序浏览全部错题</text>
-    <text class="tab-subtitle" wx:if="{{tab === 'due'}}">SM-2 间隔复习到期错题，优先处理</text>
-    <text class="tab-subtitle" wx:if="{{tab === 'mastered'}}">已标记掌握的错题，可随时回顾</text>
+    <view class="filter-section">
+      <text class="filter-section-title">错因</text>
+      <view class="filter-chips">
+        <view
+          wx:for="{{errorTypes}}"
+          wx:key="value"
+          class="chip {{selectedErrorType === item.value ? 'chip-active' : ''}}"
+          bindtap="selectErrorType"
+          data-value="{{item.value}}"
+        >{{item.label}}</view>
+      </view>
+    </view>
   </view>
 
   <!-- 加载态 -->
   <view wx:if="{{loading && list.length === 0}}" class="loading-wrap">
     <view class="loading-spinner"></view>
-    <text class="loading-text" wx:if="{{tab === 'due'}}">正在整理复习计划...</text>
-    <text class="loading-text" wx:else>正在加载错题...</text>
+    <text class="loading-text">正在加载错题...</text>
   </view>
 
   <!-- 空态 -->
   <view wx:if="{{!loading && list.length === 0}}" class="empty-state">
-    <view class="empty-mark">✓</view>
-    <text class="empty-title" wx:if="{{tab === 'due'}}">今日没有待复习的错题</text>
-    <text class="empty-title" wx:elif="{{tab === 'mastered'}}">还没有掌握任何错题</text>
-    <text class="empty-title" wx:else>没有错题，继续保持</text>
-    <text class="empty-desc" wx:if="{{tab === 'due'}}">可以继续刷题积累错题，系统会按间隔排期安排复习</text>
-    <text class="empty-desc" wx:elif="{{tab === 'mastered'}}">在错题详情页标记掌握后可在此查看</text>
-    <text class="empty-desc" wx:else>后续练习中产生的错题会自动沉淀到这里</text>
+    <view class="empty-icon">
+      <text class="empty-icon-text">✓</text>
+    </view>
+    <text class="empty-title">没有错题</text>
+    <text class="empty-desc">刷题中产生的错题会自动出现在这里</text>
   </view>
 
-  <!-- 列表：全部 / 已掌握 -->
-  <view class="wrong-list" wx:if="{{list.length > 0 && tab !== 'due'}}">
-    <view wx:for="{{list}}" wx:key="id" class="wrong-card" bindtap="goDetail" data-id="{{item.id}}">
-      <view class="wrong-header">
-        <text class="subject-tag">{{item._subjectLabel || subjectLabel(item.subject)}}</text>
-        <text class="error-tag tag {{item.error_type}}">{{item._errorTypeLabel || errorTypeLabel(item.error_type)}}</text>
-        <text wx:if="{{item.mastered}}" class="tag tag-success">已掌握</text>
+  <!-- 错题卡片列表 -->
+  <view class="card-list" wx:if="{{list.length > 0}}">
+    <view
+      wx:for="{{list}}"
+      wx:key="id"
+      class="wrong-card"
+      bindtap="goDetail"
+      data-id="{{item.id}}"
+    >
+      <view class="card-top">
+        <text class="subject-tag">{{item._subjectLabel}}</text>
+        <text class="error-tag type-{{item.error_type}}">{{item._errorTypeLabel}}</text>
       </view>
-      <block wx:if="{{enableMathImage && item.content && item.content.render_mode === 'segments'}}">
-        <math-question segments="{{item.content.segments}}" />
-      </block>
-      <block wx:else>
-        <view class="wrong-question">{{item.content && item.content.text}}</view>
-      </block>
-      <view class="wrong-meta">
-        <text>复习 {{item.review_count || 0}} 次</text>
-        <text wx:if="{{!item.mastered}}">待复习</text>
+      <view class="card-body">
+        <block wx:if="{{enableMathImage && item.content && item.content.render_mode === 'segments'}}">
+          <math-question segments="{{item.content.segments}}" />
+        </block>
+        <block wx:else>
+          <text class="card-question">{{item.content && item.content.text}}</text>
+        </block>
+      </view>
+      <view class="card-footer">
+        <text class="card-review-count">复习 {{item.review_count || 0}} 次</text>
+        <text class="card-time">{{item._timeLabel}}</text>
       </view>
     </view>
-  </view>
 
-  <!-- 列表：今日待复习（SM-2） -->
-  <view class="review-list" wx:if="{{list.length > 0 && tab === 'due'}}">
-    <view wx:for="{{list}}" wx:key="id" class="review-card" bindtap="goDetail" data-id="{{item.id}}">
-      <view class="review-header">
-        <text class="subject-tag">{{item._subjectLabel || subjectLabel(item.subject)}}</text>
-        <text class="review-count">已复习 {{item.review_count || 0}} 次</text>
-      </view>
-      <view class="review-question">{{item.content && item.content.text}}</view>
-      <view class="review-meta">
-        <text class="meta-item" wx:if="{{item.efactor}}">难度因子 {{item.efactor}}</text>
-        <text class="meta-item">间隔 {{item._intervalLabel || intervalLabel(item.interval)}}</text>
-      </view>
-      <view class="review-actions">
-        <button class="review-button" catchtap="goDetail" data-id="{{item.id}}">开始复习</button>
-      </view>
-    </view>
+    <view class="load-more" wx:if="{{hasMore}}" bindtap="loadMore">加载更多</view>
   </view>
-
-  <view class="load-more" wx:if="{{hasMore}}" bindtap="loadMore">加载更多</view>
 </view>

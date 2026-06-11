@@ -384,17 +384,6 @@ Page({
     }
   },
 
-  async markMastered() {
-    try {
-      await api.put(`/wrong-questions/${this.data.wq.id}`, { mastered: true })
-      wx.showToast({ title: '已标记掌握', icon: 'success' })
-      this.setData({ 'wq.mastered': true })
-    } catch (e) {
-      console.error('标记掌握失败', e)
-      wx.showToast({ title: '操作失败', icon: 'none' })
-    }
-  },
-
   // ---- 左滑/右滑切换 ----
   onTouchStart(e) {
     if (this._animating || !this.data.swiperEnabled) return

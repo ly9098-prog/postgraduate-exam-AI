@@ -19,7 +19,6 @@
     <view class="detail-header">
       <text class="subject-tag">{{subjectLabelText}}</text>
       <text class="error-type-tag">{{errorTypeLabelText}}</text>
-      <text wx:if="{{wq.mastered}}" class="tag tag-success">已掌握</text>
     </view>
 
     <view class="question-block">
@@ -69,13 +68,6 @@
       <text class="legend-label">我的选项</text>
     </view>
 
-    <view class="sm2-info" wx:if="{{wq.review_count > 0}}">
-      <text class="sm2-label">复习 {{wq.review_count}} 次 · EF {{wq.efactor}} · 间隔 {{wq.interval || 0}} 天</text>
-    </view>
-
-    <button class="master-btn" bindtap="markMastered" wx:if="{{!wq.mastered}}">
-      标记已掌握
-    </button>
   </view>
 
   <!-- AI 分析 -->
