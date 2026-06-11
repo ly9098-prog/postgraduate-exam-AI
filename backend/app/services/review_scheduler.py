@@ -18,6 +18,7 @@ async def get_today_review(
     conditions = [
         ReviewSchedule.user_id == user_id,
         ReviewSchedule.next_review_at <= now,
+        ReviewSchedule.mastered == False,
     ]
 
     count_q = select(func.count(ReviewSchedule.id)).where(and_(*conditions))
@@ -187,17 +188,19 @@ async def get_review_stats(
     )
     total_reviewed_today = (await db.execute(reviewed_today_q)).scalar()
 
-    # Remaining today
+    # Remaining today (exclude mastered)
     remaining_q = select(func.count(ReviewSchedule.id)).where(
         ReviewSchedule.user_id == user_id,
         ReviewSchedule.next_review_at <= now,
+        ReviewSchedule.mastered == False,
     )
     remaining_today = (await db.execute(remaining_q)).scalar()
 
-    # Overdue (next_review_at < now, not reviewed today)
+    # Overdue (next_review_at < now, not reviewed today, exclude mastered)
     overdue_q = select(func.count(ReviewSchedule.id)).where(
         ReviewSchedule.user_id == user_id,
         ReviewSchedule.next_review_at < now,
+        ReviewSchedule.mastered == False,
     )
     overdue = (await db.execute(overdue_q)).scalar()
 
@@ -225,7 +228,7 @@ async def get_review_stats(
             func.count(ReviewSchedule.id).label("scheduled"),
             func.sum(
                 case(
-                    (ReviewSchedule.next_review_at <= now, 1), else_=0
+                    (and_(ReviewSchedule.next_review_at <= now, ReviewSchedule.mastered == False), 1), else_=0
                 )
             ).label("remaining"),
         )
@@ -350,6 +353,44 @@ async def auto_schedule_wrong_question(
         )
         db.add(schedule)
 
+    await db.commit()
+    await db.refresh(schedule)
+    return schedule
+
+
+async def mark_mastered(
+    db: AsyncSession, user_id: int, schedule_id: int
+) -> ReviewSchedule | None:
+    """标记复习题目为已掌握，从复习池移除。"""
+    result = await db.execute(
+        select(ReviewSchedule).where(
+            ReviewSchedule.id == schedule_id,
+            ReviewSchedule.user_id == user_id,
+        )
+    )
+    schedule = result.scalar_one_or_none()
+    if not schedule:
+        return None
+    schedule.mastered = True
+    await db.commit()
+    await db.refresh(schedule)
+    return schedule
+
+
+async def unmark_mastered(
+    db: AsyncSession, user_id: int, schedule_id: int
+) -> ReviewSchedule | None:
+    """取消已掌握标记，恢复到复习池。"""
+    result = await db.execute(
+        select(ReviewSchedule).where(
+            ReviewSchedule.id == schedule_id,
+            ReviewSchedule.user_id == user_id,
+        )
+    )
+    schedule = result.scalar_one_or_none()
+    if not schedule:
+        return None
+    schedule.mastered = False
     await db.commit()
     await db.refresh(schedule)
     return schedule
