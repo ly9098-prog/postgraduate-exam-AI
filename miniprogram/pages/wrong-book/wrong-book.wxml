@@ -74,7 +74,7 @@
           <math-question segments="{{item.content.segments}}" />
         </block>
         <block wx:else>
-          <text class="card-question">{{item.content && item.content.text}}</text>
+          <text class="card-question">{{item._cleanText}}</text>
         </block>
       </view>
       <view class="card-footer">

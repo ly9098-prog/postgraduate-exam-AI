@@ -72,6 +72,7 @@ Page({
         _subjectLabel: this._subjectLabel(item.subject),
         _errorTypeLabel: this._errorTypeLabel(item.error_type),
         _timeLabel: this._timeLabel(item.created_at),
+        _cleanText: item.content ? this._toCleanText(item.content.text || item.content) : '',
       }))
 
       this.setData({
@@ -139,5 +140,18 @@ Page({
     const m = d.getMonth() + 1
     const day = d.getDate()
     return `${m}月${day}日`
+  },
+
+  /** 剥离 LaTeX $ 符号，显示可读的纯文本预览 */
+  _toCleanText(text) {
+    if (!text || typeof text !== 'string') return ''
+    return String(text)
+      .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
+      .replace(/\$([^$\n]+?)\$/g, '$1')
+      .replace(/\\leq/g, '≤')
+      .replace(/\\geq/g, '≥')
+      .replace(/\\lt/g, '<')
+      .replace(/\\gt/g, '>')
+      .trim()
   },
 })
