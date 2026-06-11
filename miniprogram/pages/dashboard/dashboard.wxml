@@ -1,228 +1,265 @@
-<view class="page">
-  <view class="dashboard-hero">
-    <view class="hero-copy">
-      <text class="eyebrow">学习数据</text>
-      <text class="hero-title">学习统计</text>
-      <text class="hero-desc">看见今天的节奏，也看见下一步该复习哪里</text>
+<view class="page {{darkMode ? 'dark' : ''}} {{pageEntered ? 'entered' : ''}}">
+
+  <!-- ===== LOADING ===== -->
+  <view class="load-wrap" wx:if="{{loading}}">
+    <view class="load-dots">
+      <view class="load-dot" style="animation-delay:0ms"></view>
+      <view class="load-dot" style="animation-delay:150ms"></view>
+      <view class="load-dot" style="animation-delay:300ms"></view>
     </view>
-    <view class="hero-score-card">
-      <canvas class="score-ring-canvas" canvas-id="score-ring-canvas" id="score-ring-canvas"></canvas>
-      <view class="score-center">
-        <text class="score-num">{{overview._accuracyText || '0%'}}</text>
-        <text class="score-label">总正确率</text>
-      </view>
-    </view>
+    <text class="load-text">加载学习数据...</text>
   </view>
 
-  <view class="loading-wrap" wx:if="{{loading}}">
-    <view class="loading-spinner"></view>
-    <text class="loading-text">正在生成统计图表...</text>
-  </view>
-
+  <!-- ===== MAIN CONTENT ===== -->
   <block wx:else>
-    <!-- 今日表现 -->
-    <view class="chart-card today-card">
-      <view class="section-head in-card">
-        <view>
-          <text class="section-title">今日表现</text>
-          <text class="section-subtitle">先看今天的节奏，再决定下一组练习</text>
+
+    <!-- ════════════════════════════════════════════
+         TIER 1 · 今日概览
+         ════════════════════════════════════════════ -->
+    <view class="section">
+      <view class="today-bento">
+        <!-- Score Ring + Mini Stats -->
+        <view class="t1-ring-card">
+          <view class="ring-wrap">
+            <canvas class="ring-canvas" canvas-id="score-ring" id="score-ring"></canvas>
+            <view class="ring-center">
+              <text class="ring-pct">{{overview._accuracyPct || '0'}}<text class="ring-pct-sym">%</text></text>
+              <text class="ring-label">总正确率</text>
+            </view>
+          </view>
+          <view class="t1-stats">
+            <text class="t1-eyebrow">今日学习</text>
+            <view class="t1-stat-row">
+              <text class="t1-stat-label">刷题</text>
+              <text class="t1-stat-value">{{overview.today_questions || 0}}</text>
+              <text class="t1-stat-unit">题</text>
+            </view>
+            <view class="t1-stat-row">
+              <text class="t1-stat-label">正确</text>
+              <text class="t1-stat-value t1-correct">{{overview.today_correct || 0}}</text>
+              <text class="t1-stat-unit">题</text>
+            </view>
+            <view class="t1-stat-row">
+              <text class="t1-stat-label">时长</text>
+              <text class="t1-stat-value t1-duration">{{overview._todayDurationText || '0min'}}</text>
+            </view>
+          </view>
         </view>
-        <text class="section-chip">今日</text>
-      </view>
-      <view class="today-metrics">
-        <view class="today-metric primary">
-          <text class="today-kicker">题量</text>
-          <text class="today-num">{{overview.today_questions || 0}}</text>
-          <text class="today-label">今日刷题</text>
-        </view>
-        <view class="today-metric success">
-          <text class="today-kicker">正确</text>
-          <text class="today-num">{{overview.today_correct || 0}}</text>
-          <text class="today-label">答对题数</text>
-        </view>
-        <view class="today-metric muted">
-          <text class="today-kicker">累计</text>
-          <text class="today-num">{{overview.total_questions || 0}}</text>
-          <text class="today-label">总刷题数</text>
-        </view>
-        <view class="today-metric warning">
-          <text class="today-kicker">复习</text>
-          <text class="today-num">{{overview.due_review_count || 0}}</text>
-          <text class="today-label">待处理</text>
+
+        <!-- Streak + Due Reviews -->
+        <view class="t1-compact-row">
+          <view class="t1-compact-card streak-card">
+            <view class="compact-icon-wrap streak-icon-wrap">
+              <text class="compact-icon">🔥</text>
+            </view>
+            <text class="compact-num">{{overview.consecutive_days || 0}}</text>
+            <text class="compact-label">连续学习</text>
+            <text class="compact-hint">天数</text>
+          </view>
+          <view class="t1-compact-card due-card">
+            <view class="compact-icon-wrap due-icon-wrap">
+              <text class="compact-icon">📝</text>
+            </view>
+            <text class="compact-num">{{overview.due_review_count || 0}}</text>
+            <text class="compact-label">待复习</text>
+            <text class="compact-hint">题目</text>
+          </view>
+          <view class="t1-compact-card total-card">
+            <view class="compact-icon-wrap total-icon-wrap">
+              <text class="compact-icon">📊</text>
+            </view>
+            <text class="compact-num">{{overview.total_questions || 0}}</text>
+            <text class="compact-label">累计刷题</text>
+            <text class="compact-hint">总题量</text>
+          </view>
         </view>
       </view>
     </view>
 
-    <!-- 学科分布 -->
-    <view class="chart-card subject-card" wx:if="{{subjects.length > 0}}">
-      <view class="section-head in-card">
-        <view>
-          <text class="section-title">学科分布</text>
-          <text class="section-subtitle">看投入占比，也看各科正确率是否均衡</text>
+    <!-- ════════════════════════════════════════════
+         TIER 2 · 学习趋势
+         ════════════════════════════════════════════ -->
+    <view class="section">
+      <view class="section-head">
+        <view class="sh-left">
+          <text class="sh-title">学习趋势</text>
+          <text class="sh-desc">观察节奏，保持稳定</text>
         </view>
-        <text class="section-chip">学科</text>
+        <view class="tab-switch">
+          <text class="tab-btn {{trendDays === 7 ? 'active' : ''}}" data-days="7" bindtap="onTrendTab">7天</text>
+          <text class="tab-btn {{trendDays === 30 ? 'active' : ''}}" data-days="30" bindtap="onTrendTab">30天</text>
+        </view>
       </view>
-      <view class="donut-layout">
-        <view class="donut-wrap">
-          <canvas class="donut-canvas" canvas-id="subject-donut-canvas" id="subject-donut-canvas"></canvas>
-          <view class="donut-center">
-            <text class="donut-total">{{subjectTotal}}</text>
-            <text class="donut-label">总题量</text>
+
+      <view class="card trend-card" wx:if="{{trends.length > 0}}">
+        <view class="trend-chart-wrap">
+          <canvas class="trend-canvas" canvas-id="trend-line" id="trend-line"></canvas>
+        </view>
+        <view class="trend-meta">
+          <view class="trend-meta-item">
+            <text class="trend-meta-val">{{trendMeta.totalQuestions || 0}}</text>
+            <text class="trend-meta-label">累计做题</text>
+          </view>
+          <view class="trend-meta-item">
+            <text class="trend-meta-val">{{trendMeta.avgAccuracyText || '0%'}}</text>
+            <text class="trend-meta-label">平均正确率</text>
+          </view>
+          <view class="trend-meta-item">
+            <text class="trend-meta-val">{{trendMeta.activeDays || 0}}<text class="trend-meta-unit">/{{trendDays}}</text></text>
+            <text class="trend-meta-label">活跃天数</text>
           </view>
         </view>
-        <view class="subject-legend">
-          <view class="subject-row" wx:for="{{subjects}}" wx:key="subject">
-            <view class="legend-mark" style="background:{{item._color}}"></view>
-            <view class="subject-main">
-              <view class="subject-title-row">
-                <text class="subject-name">{{item._label}}</text>
-                <text class="subject-share">{{item._sharePct}}%</text>
+        <!-- Activity heat dots -->
+        <view class="heat-bar">
+          <view class="heat-cell {{d._heatClass}}" wx:for="{{trends}}" wx:key="date" wx:for-index="di">
+            <text class="heat-tip">{{d._shortDate}}</text>
+          </view>
+        </view>
+      </view>
+      <view class="empty-card" wx:if="{{trends.length === 0}}">
+        <text class="empty-icon">📈</text>
+        <text class="empty-title">暂无趋势数据</text>
+        <text class="empty-desc">坚持练习后会生成学习趋势</text>
+      </view>
+    </view>
+
+    <!-- ════════════════════════════════════════════
+         TIER 3 · 学科分析
+         ════════════════════════════════════════════ -->
+    <view class="section">
+      <view class="section-head">
+        <view class="sh-left">
+          <text class="sh-title">学科分析</text>
+          <text class="sh-desc">看清强弱项，调整复习策略</text>
+        </view>
+      </view>
+
+      <block wx:if="{{subjects.length > 0}}">
+        <!-- Donut + Legend -->
+        <view class="card subject-card">
+          <view class="subject-top">
+            <view class="donut-wrap">
+              <canvas class="donut-canvas" canvas-id="subject-donut" id="subject-donut"></canvas>
+              <view class="donut-center">
+                <text class="donut-total">{{subjectTotal}}</text>
+                <text class="donut-label">总题量</text>
               </view>
-              <text class="subject-meta">{{item.total_questions}} 题 · {{item._durationText}}</text>
             </view>
-            <text class="subject-acc {{item._accClass}}">{{item._accPct}}%</text>
+            <view class="subject-legend">
+              <view class="subj-legend-row" wx:for="{{subjects}}" wx:key="subject" data-subject="{{item.subject}}" bindtap="onSubjectTap">
+                <view class="legend-dot" style="background:{{item._color}}"></view>
+                <view class="legend-info">
+                  <text class="legend-name">{{item._label}}</text>
+                  <text class="legend-share">{{item._sharePct}}%</text>
+                </view>
+                <text class="legend-acc {{item._accClass}}">{{item._accPct}}%</text>
+              </view>
+            </view>
           </view>
         </view>
-      </view>
-      <view class="subject-bars">
-        <view class="subject-bar-row" wx:for="{{subjects}}" wx:key="subject">
-          <view class="subject-bar-top">
-            <text class="subject-bar-name">{{item._label}}</text>
-            <text class="subject-bar-count">{{item.total_questions}}题</text>
+
+        <!-- Subject accuracy bars -->
+        <view class="card subj-bars-card">
+          <view class="card-label-row">
+            <text class="card-label">各科正确率</text>
+            <text class="card-label-hint">点击查看详情</text>
           </view>
-          <view class="subject-bar-track">
-            <view class="subject-bar-fill" style="width:{{item._barPct}}%;background:{{item._color}}"></view>
+          <view class="subj-bars">
+            <view class="subj-bar-row" wx:for="{{subjects}}" wx:key="subject" data-subject="{{item.subject}}" bindtap="onSubjectTap">
+              <view class="sbar-top">
+                <view class="sbar-dot" style="background:{{item._color}}"></view>
+                <text class="sbar-name">{{item._label}}</text>
+                <text class="sbar-pct {{item._accClass}}">{{item._accPct}}%</text>
+              </view>
+              <view class="sbar-track">
+                <view class="sbar-fill" style="width:{{item._accPct}}%;background:{{item._accColor}}"></view>
+              </view>
+              <view class="sbar-meta">
+                <text>{{item.total_questions}}题</text>
+                <text>{{item._durationText}}</text>
+              </view>
+            </view>
           </view>
         </view>
+      </block>
+      <view class="empty-card" wx:if="{{subjects.length === 0}}">
+        <text class="empty-icon">📚</text>
+        <text class="empty-title">暂无学科数据</text>
+        <text class="empty-desc">开始练习后会生成学科分布</text>
       </view>
-    </view>
-    <view class="empty-hint" wx:if="{{subjects.length === 0}}">
-      <text class="empty-title">暂无学科数据</text>
-      <text class="empty-desc">开始练习后会生成学科分布图</text>
     </view>
 
-    <!-- 近 7 天 -->
-    <view class="chart-card trend-card" wx:if="{{trends.length > 0}}">
-      <view class="section-head in-card">
-        <view>
-          <text class="section-title">近 7 天走势</text>
-          <text class="section-subtitle">蓝色面积看刷题节奏，绿色折线看正确率稳定性</text>
-        </view>
-        <text class="section-chip">趋势</text>
-      </view>
-      <view class="trend-legend-row">
-        <view class="trend-legend-item">
-          <view class="trend-legend-mark primary"></view>
-          <text class="trend-legend-text">刷题量</text>
-        </view>
-        <view class="trend-legend-item">
-          <view class="trend-legend-mark success"></view>
-          <text class="trend-legend-text">正确率</text>
+    <!-- ════════════════════════════════════════════
+         TIER 4 · 掌握与成就
+         ════════════════════════════════════════════ -->
+    <view class="section">
+      <view class="section-head">
+        <view class="sh-left">
+          <text class="sh-title">掌握情况</text>
+          <text class="sh-desc">了解薄弱点，及时复盘</text>
         </view>
       </view>
-      <view class="line-chart-wrap">
-        <canvas class="line-canvas" canvas-id="trend-line-canvas" id="trend-line-canvas"></canvas>
-      </view>
-      <view class="trend-summary-row">
-        <view class="trend-summary-card">
-          <text class="trend-summary-kicker">7 天合计</text>
-          <text class="trend-summary-value">{{trendMeta.totalQuestions || 0}}</text>
-          <text class="trend-summary-label">累计刷题</text>
-        </view>
-        <view class="trend-summary-card success">
-          <text class="trend-summary-kicker">稳定性</text>
-          <text class="trend-summary-value">{{trendMeta.activeDays || 0}}天</text>
-          <text class="trend-summary-label">有练习记录</text>
-        </view>
-        <view class="trend-summary-card warning">
-          <text class="trend-summary-kicker">平均</text>
-          <text class="trend-summary-value">{{trendMeta.avgAccuracyText || '0%'}}</text>
-          <text class="trend-summary-label">近 7 天正确率</text>
-        </view>
-      </view>
-      <view class="trend-timeline">
-        <view class="trend-day" wx:for="{{trends}}" wx:key="date">
-          <text class="trend-date">{{item._shortDate}}</text>
-          <view class="trend-dot {{item._accClass}}"></view>
-          <text class="trend-num">{{item.questions}}题</text>
-          <text class="trend-acc {{item._accClass}}">{{item._accPct}}%</text>
-        </view>
-      </view>
-    </view>
-    <view class="empty-hint" wx:if="{{trends.length === 0}}">
-      <text class="empty-title">暂无趋势数据</text>
-      <text class="empty-desc">连续练习后会形成折线趋势</text>
-    </view>
 
-    <!-- 学习行为 -->
-    <view class="chart-card behavior-card" wx:if="{{behavior}}">
-      <view class="section-head in-card">
-        <view>
-          <text class="section-title">学习行为</text>
-          <text class="section-subtitle">把答题习惯转成可调整的复盘提醒</text>
+      <view class="mastery-grid" wx:if="{{forgetting && forgetting._hasRisk}}">
+        <!-- 高频遗忘 -->
+        <view class="mastery-card mc-danger">
+          <view class="mc-icon-wrap">
+            <text class="mc-icon">⚠️</text>
+          </view>
+          <text class="mc-num">{{forgetting.high_forget_count || 0}}</text>
+          <text class="mc-label">高频遗忘</text>
+          <text class="mc-desc">反复出错，优先复盘</text>
         </view>
-        <text class="section-chip">行为</text>
+        <!-- 长期未掌握 -->
+        <view class="mastery-card mc-warning">
+          <view class="mc-icon-wrap">
+            <text class="mc-icon">🔒</text>
+          </view>
+          <text class="mc-num">{{forgetting.stuck_questions || 0}}</text>
+          <text class="mc-label">长期未掌握</text>
+          <text class="mc-desc">需要拆解知识点</text>
+        </view>
+        <!-- 假掌握 -->
+        <view class="mastery-card mc-primary">
+          <view class="mc-icon-wrap">
+            <text class="mc-icon">🎯</text>
+          </view>
+          <text class="mc-num">{{forgetting._pseudoMasteredCount || 0}}</text>
+          <text class="mc-label">假掌握</text>
+          <text class="mc-desc">需要巩固验证</text>
+        </view>
       </view>
-      <view class="behavior-list">
-        <view class="behavior-time-card">
-          <view>
-            <text class="behavior-label strong">平均答题用时</text>
-            <text class="behavior-hint">观察解题速度，避免卡在单题太久</text>
-          </view>
-          <text class="behavior-time-value">{{behavior._avgTimeText || '0秒'}}</text>
+
+      <!-- Overall mastery progress -->
+      <view class="card mastery-progress-card" wx:if="{{overview.total_questions > 0}}">
+        <view class="mp-header">
+          <text class="mp-title">总掌握进度</text>
+          <text class="mp-pct">{{overview._masteryPct}}%</text>
         </view>
-        <view class="behavior-row">
-          <view class="behavior-top">
-            <view>
-              <text class="behavior-label">查看答案率</text>
-              <text class="behavior-hint">{{behavior._viewHint}}</text>
-            </view>
-            <text class="behavior-value">{{behavior._viewRate || '0%'}}</text>
-          </view>
-          <view class="hbar-track"><view class="hbar-fill primary" style="width:{{behavior._viewRatePct}}%"></view></view>
+        <view class="mp-track">
+          <view class="mp-fill" style="width:{{overview._masteryPct}}%"></view>
         </view>
-        <view class="behavior-row">
-          <view class="behavior-top">
-            <view>
-              <text class="behavior-label">放弃率</text>
-              <text class="behavior-hint">{{behavior._abandonHint}}</text>
-            </view>
-            <text class="behavior-value danger">{{behavior._abandonRate || '0%'}}</text>
-          </view>
-          <view class="hbar-track"><view class="hbar-fill danger" style="width:{{behavior._abandonRatePct}}%"></view></view>
+        <view class="mp-meta">
+          <text class="mp-meta-item">已掌握 {{overview.mastered_count || 0}} 题</text>
+          <text class="mp-meta-item">总错题 {{overview._wrongTotal || 0}} 题</text>
+        </view>
+      </view>
+
+      <!-- Average answer time mini card -->
+      <view class="card avg-time-card" wx:if="{{behavior && behavior.avg_time_sec > 0}}">
+        <view class="at-left">
+          <text class="at-label">平均答题用时</text>
+          <text class="at-hint">解题速度监测</text>
+        </view>
+        <view class="at-right">
+          <text class="at-value">{{behavior._avgTimeText || '0秒'}}</text>
         </view>
       </view>
     </view>
 
-    <!-- 复习风险 -->
-    <view class="risk-panel" wx:if="{{forgetting}}">
-      <view class="section-head in-card">
-        <view>
-          <text class="section-title">复习风险</text>
-          <text class="section-subtitle">{{forgetting._priorityText}}</text>
-        </view>
-        <text class="section-chip">{{forgetting._totalRisk || 0}} 项</text>
-      </view>
-      <view class="risk-grid">
-        <view class="risk-card danger">
-          <text class="risk-priority">优先</text>
-          <text class="risk-num">{{forgetting.high_forget_count || 0}}</text>
-          <text class="risk-label">高频遗忘</text>
-          <text class="risk-desc">近期反复出错，先复盘</text>
-        </view>
-        <view class="risk-card warning">
-          <text class="risk-priority">跟进</text>
-          <text class="risk-num">{{forgetting.stuck_questions || 0}}</text>
-          <text class="risk-label">长期未掌握</text>
-          <text class="risk-desc">需要拆知识点重练</text>
-        </view>
-        <view class="risk-card primary">
-          <text class="risk-priority">校准</text>
-          <text class="risk-num">{{forgetting._pseudoMasteredCount || 0}}</text>
-          <text class="risk-label">假掌握</text>
-          <text class="risk-desc">看似会了，仍需验证</text>
-        </view>
-      </view>
-    </view>
+    <!-- ════════════════════════════════════════════
+         FOOTER
+         ════════════════════════════════════════════ -->
+    <view class="footer-safe"></view>
   </block>
 </view>
