@@ -163,7 +163,7 @@
 
   <!-- ===== CELEBRATION OVERLAY ===== -->
   <block wx:if="{{showCelebration}}">
-    <view class="celebration-overlay">
+    <view class="celebration-overlay" catchtap="confirmCelebration">
       <view class="celeb-bg"></view>
       <view class="celeb-content">
         <view class="celeb-check-wrap">
@@ -172,6 +172,7 @@
         <text class="celeb-title">完成一个番茄钟</text>
         <text class="celeb-detail">专注 {{workDuration}} 分钟</text>
         <text class="celeb-motto">{{celebrationMotto}}</text>
+        <text class="celeb-tap-hint">点击继续</text>
       </view>
       <view class="particle-container">
         <view class="particle p1"></view>

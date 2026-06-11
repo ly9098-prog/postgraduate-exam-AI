@@ -24,6 +24,10 @@ class PomodoroStartRequest(BaseModel):
         return v
 
 
+class PomodoroCompleteRequest(BaseModel):
+    total_paused_ms: int = Field(default=0, ge=0)
+
+
 class PomodoroSessionResponse(BaseModel):
     id: int
     user_id: int

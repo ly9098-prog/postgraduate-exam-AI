@@ -52,45 +52,57 @@ function _textToSegments(text) {
   })
 }
 
+const GROUP_SIZES = [5, 10, 20]
+
 Page({
   data: {
-    // 页面阶段: entry / practice / result
+    // 页面阶段: entry / practice / group-result / final-result
     phase: 'entry',
 
     // 入口
     stats: null,
     entryLoading: true,
+    groupSize: 10,
 
     // 练习
-    questions: [],
+    allQuestions: [],
+    groups: [],
+    currentGroupIdx: 0,
+    groupQuestions: [],
+    answers: {},         // {schedule_id: selectedOption}
     currentIndex: 0,
-    totalQuestions: 0,
     currentQuestion: null,
     optionKeys: [],
-    selectedAnswer: '',
-    submitted: false,
-    isCorrect: false,
-    correctAnswer: '',
-    practiceLoading: false,
-    submittingAnswer: false,
-    enableMathImage: false,
+
+    // 已掌握确认
+    masterConfirmId: null,
 
     // 滑动动画
     animClass: '',
 
-    // 环图样式（JS 计算避免 WXML 编译问题）
-    _ringStyle: '',
-    _accuracyStyle: '',
+    // 提交中
+    submittingGroup: false,
 
-    // 结果
-    results: [],
-    correctCount: 0,
-    wrongCount: 0,
+    // 组结果
+    groupResults: [],
+    groupCorrect: 0,
+    groupWrong: 0,
+
+    // 最终
+    allGroupResults: [],
+    totalCorrect: 0,
+    totalWrong: 0,
 
     // UI 增强
     _dateStr: '',
     _motivationMsg: '',
+    _ringStyle: '',
+    _accuracyStyle: '',
     entryDone: false,
+    enableMathImage: false,
+
+    // 进度
+    groupProgress: 0,
   },
 
   onLoad() {
@@ -136,6 +148,8 @@ Page({
     return '就差一点点了！'
   },
 
+  /* ==================== 入口 ==================== */
+
   async _loadEntry() {
     this.setData({ entryLoading: true })
     try {
@@ -155,30 +169,36 @@ Page({
     }
   },
 
+  selectGroupSize(e) {
+    this.setData({ groupSize: parseInt(e.currentTarget.dataset.size) || 10 })
+  },
+
   async startReview() {
     this.setData({ practiceLoading: true, phase: 'practice' })
     try {
-      const res = await api.get('/review/today', { limit: 50 })
-      const questions = (res.questions || []).map(q => this._enrichQuestion(q))
-      this.setData({
-        questions,
-        totalQuestions: questions.length,
-        practiceLoading: false,
-        currentIndex: 0,
-        results: [],
-        correctCount: 0,
-        wrongCount: 0,
-        selectedAnswer: '',
-        submitted: false,
-      })
-      if (questions.length > 0) {
-        this._showQuestion(0)
-      } else {
-        // 没有待复习题目
+      const res = await api.get('/review/today', { limit: 100 })
+      const allQuestions = (res.questions || []).map(q => this._enrichQuestion(q))
+      if (allQuestions.length === 0) {
         wx.showToast({ title: '今日没有待复习题目', icon: 'none' })
-        this.setData({ phase: 'entry' })
+        this.setData({ practiceLoading: false, phase: 'entry' })
         this._loadEntry()
+        return
       }
+
+      const groups = this._splitGroups(allQuestions, this.data.groupSize)
+      this.setData({
+        allQuestions,
+        groups,
+        currentGroupIdx: 0,
+        groupQuestions: groups[0] || [],
+        answers: {},
+        currentIndex: 0,
+        allGroupResults: [],
+        totalCorrect: 0,
+        totalWrong: 0,
+        practiceLoading: false,
+      })
+      this._showQuestion(0)
     } catch (e) {
       console.error('加载复习题目失败', e)
       this.setData({ practiceLoading: false })
@@ -186,22 +206,29 @@ Page({
     }
   },
 
+  _splitGroups(questions, size) {
+    const groups = []
+    for (let i = 0; i < questions.length; i += size) {
+      groups.push(questions.slice(i, i + size))
+    }
+    return groups
+  },
+
+  /* ==================== 题目渲染 ==================== */
+
   _enrichQuestion(q) {
     const stemText = (q.content && (q.content.text || q.content.stem)) || q.stem || ''
-    // 尝试从 options 获取选项
     let opts = null
     let optionKeys = []
     if (q.options && Object.keys(q.options).length > 0) {
       opts = q.options
       optionKeys = Object.keys(opts)
     }
-    // 判断题特殊处理
     if (q.question_type === 'true_false' || q.question_type === 'judgement') {
       opts = { A: '正确', B: '错误' }
       optionKeys = ['A', 'B']
     }
 
-    // 提取选项文本
     const optText = {}
     const optNeedsRich = {}
     const optHtml = {}
@@ -214,7 +241,6 @@ Page({
       optHtml[key] = optNeedsRich[key] ? _textToHtml(text) : ''
     }
 
-    // 题目内容
     const plainStem = _toPlainInlineMathText(stemText)
     const stemNeedsRich = !plainStem && _needsRichRender(stemText)
     const stemHtml = stemNeedsRich ? _textToHtml(stemText) : ''
@@ -235,70 +261,43 @@ Page({
   },
 
   _showQuestion(index) {
-    const q = this.data.questions[index]
+    const q = this.data.groupQuestions[index]
     if (!q) return
     this.setData({
       currentIndex: index,
       currentQuestion: q,
       optionKeys: q._optionKeys,
-      selectedAnswer: '',
-      submitted: false,
-      isCorrect: false,
-      correctAnswer: '',
     })
   },
 
   /* ==================== 选择答案 ==================== */
 
   selectOption(e) {
-    if (this.data.submitted || this.data.submittingAnswer) return
+    if (this.data.submittingGroup) return
     const opt = e.currentTarget.dataset.option
     if (!opt) return
-    this.setData({ selectedAnswer: opt, submitted: true, submittingAnswer: true })
-    this._submitAnswer(opt)
-  },
-
-  async _submitAnswer(answer) {
     const q = this.data.currentQuestion
-    try {
-      const res = await api.post('/review/grade-submit', {
-        schedule_id: q.schedule_id,
-        question_id: q.question_id,
-        user_answer: answer,
-      })
-      const results = [...this.data.results, {
-        question_id: q.question_id,
-        is_correct: res.is_correct,
-        correct_answer: res.correct_answer,
-        user_answer: answer,
-      }]
-      const correctCount = results.filter(r => r.is_correct).length
-      const totalQuestions = this.data.totalQuestions
-      this.setData({
-        isCorrect: res.is_correct,
-        correctAnswer: res.correct_answer,
-        submittingAnswer: false,
-        results,
-        correctCount,
-        wrongCount: results.filter(r => !r.is_correct).length,
-        _accuracyStyle: this._calcAccuracyStyle(correctCount, totalQuestions),
-      })
-    } catch (e) {
-      console.error('提交答案失败', e)
-      wx.showToast({ title: '提交失败', icon: 'none' })
-      this.setData({ submitted: false, selectedAnswer: '', submittingAnswer: false })
+    const answers = { ...this.data.answers }
+    // Toggle: tap same option to deselect (allow skipping)
+    if (answers[q.schedule_id] === opt) {
+      delete answers[q.schedule_id]
+    } else {
+      answers[q.schedule_id] = opt
     }
+    this.setData({ answers })
+
+    // Re-render current question to show updated selection
+    // (the WXML template reads answers directly from data)
+    const currentQuestion = this.data.currentQuestion
+    this.setData({ currentQuestion })
   },
 
-  /* ==================== 切换题目 ==================== */
+  /* ==================== 题目导航 ==================== */
 
   goNext() {
     if (this._animating) return
     const next = this.data.currentIndex + 1
-    if (next >= this.data.totalQuestions) {
-      this.setData({ phase: 'result' })
-      return
-    }
+    if (next >= this.data.groupQuestions.length) return
     this._animating = true
     this.setData({ animClass: 'slide-out-left' })
     setTimeout(() => {
@@ -326,17 +325,15 @@ Page({
     }, 120)
   },
 
-  /* ==================== 滑动切换 ==================== */
-
   onTouchStart(e) {
-    if (this.data.submittingAnswer || this._animating) return
+    if (this.data.submittingGroup || this._animating) return
     const t = e.touches[0]
     this._touchX = t.clientX
     this._touchY = t.clientY
   },
 
   onTouchEnd(e) {
-    if (this.data.submittingAnswer || this._animating) return
+    if (this.data.submittingGroup || this._animating) return
     if (this._touchX === undefined) return
 
     const t = e.changedTouches[0]
@@ -357,7 +354,158 @@ Page({
     else this.goPrev()
   },
 
-  /* ==================== 完成 ==================== */
+  /* ==================== 已掌握 ==================== */
+
+  tapMaster(e) {
+    const scheduleId = parseInt(e.currentTarget.dataset.sid)
+    this.setData({ masterConfirmId: scheduleId })
+  },
+
+  cancelMaster() {
+    this.setData({ masterConfirmId: null })
+  },
+
+  async confirmMaster() {
+    const scheduleId = this.data.masterConfirmId
+    this.setData({ masterConfirmId: null })
+    try {
+      await api.post(`/review/${scheduleId}/master`)
+
+      // Remove from current group and allQuestions
+      const allQuestions = this.data.allQuestions.filter(q => q.schedule_id !== scheduleId)
+      const groups = this._splitGroups(allQuestions, this.data.groupSize)
+
+      // If current group is now empty or we're past it, adjust
+      let { currentGroupIdx, currentIndex, answers } = this.data
+      const groupQuestions = groups[currentGroupIdx] || []
+
+      // Clean answer entry
+      delete answers[scheduleId]
+      answers = { ...answers }
+
+      if (groupQuestions.length === 0 && groups.length > 0) {
+        // All questions in current group mastered, move to next group
+        currentGroupIdx = Math.min(currentGroupIdx, groups.length - 1)
+        this.setData({
+          allQuestions,
+          groups,
+          currentGroupIdx,
+          groupQuestions: groups[currentGroupIdx] || [],
+          answers,
+          currentIndex: 0,
+        })
+        if (groups[currentGroupIdx] && groups[currentGroupIdx].length > 0) {
+          this._showQuestion(0)
+        } else {
+          // No groups left → all mastered
+          this.setData({ phase: 'final-result', totalCorrect: 0, totalWrong: 0, _accuracyStyle: '' })
+        }
+      } else {
+        // Adjust current index if needed
+        if (currentIndex >= groupQuestions.length) {
+          currentIndex = Math.max(0, groupQuestions.length - 1)
+        }
+        this.setData({
+          allQuestions,
+          groups,
+          currentGroupIdx,
+          groupQuestions: groupQuestions.length > 0 ? groupQuestions : groups[currentGroupIdx] || [],
+          answers,
+          currentIndex,
+        })
+        if (groupQuestions.length > 0) {
+          this._showQuestion(Math.min(currentIndex, groupQuestions.length - 1))
+        }
+      }
+      wx.showToast({ title: '已标记为已掌握', icon: 'none' })
+    } catch (e) {
+      wx.showToast({ title: '操作失败', icon: 'none' })
+    }
+  },
+
+  /* ==================== 提交本组 ==================== */
+
+  async submitGroup() {
+    const { groupQuestions, answers } = this.data
+    const unanswered = groupQuestions.filter(q => !answers[q.schedule_id])
+
+    this.setData({ submittingGroup: true })
+
+    // Build payload — only submit answered questions
+    const reviews = []
+    for (const q of groupQuestions) {
+      const answer = answers[q.schedule_id]
+      reviews.push({
+        schedule_id: q.schedule_id,
+        question_id: q.question_id,
+        user_answer: answer || '',
+      })
+    }
+
+    try {
+      const res = await api.post('/review/grade-batch', { reviews })
+      const groupResults = groupQuestions.map(q => {
+        const r = res.results.find(rr => rr.question_id === q.question_id)
+        return {
+          ...q,
+          isCorrect: r ? r.is_correct : false,
+          correctAnswer: r ? r.correct_answer : '',
+          userAnswer: answers[q.schedule_id] || '',
+          wasAnswered: !!answers[q.schedule_id],
+        }
+      })
+      const groupCorrect = groupResults.filter(r => r.isCorrect && r.wasAnswered).length
+      const groupWrong = groupResults.filter(r => !r.isCorrect || !r.wasAnswered).length
+
+      const allGroupResults = [...this.data.allGroupResults, ...groupResults]
+      const totalCorrect = allGroupResults.filter(r => r.isCorrect && r.wasAnswered).length
+      const totalWrong = allGroupResults.filter(r => !r.isCorrect || !r.wasAnswered).length
+
+      this.setData({
+        phase: 'group-result',
+        groupResults,
+        groupCorrect,
+        groupWrong,
+        submittingGroup: false,
+        allGroupResults,
+        totalCorrect,
+        totalWrong,
+        unansweredCount: unanswered.length,
+      })
+    } catch (e) {
+      console.error('提交失败', e)
+      wx.showToast({ title: '提交失败，请重试', icon: 'none' })
+      this.setData({ submittingGroup: false })
+    }
+  },
+
+  /* ==================== 下一组 / 最终结果 ==================== */
+
+  nextGroup() {
+    const nextGroupIdx = this.data.currentGroupIdx + 1
+    if (nextGroupIdx >= this.data.groups.length) {
+      // All groups done
+      const { totalCorrect, allGroupResults } = this.data
+      this.setData({
+        phase: 'final-result',
+        _accuracyStyle: this._calcAccuracyStyle(totalCorrect, allGroupResults.length),
+      })
+      return
+    }
+    this.setData({
+      phase: 'practice',
+      currentGroupIdx: nextGroupIdx,
+      groupQuestions: this.data.groups[nextGroupIdx],
+      answers: {},
+      currentIndex: 0,
+      groupResults: [],
+      groupCorrect: 0,
+      groupWrong: 0,
+    })
+    this._showQuestion(0)
+  },
+
+  /* ==================== 完成复习 ==================== */
 
   finishReview() {
     wx.navigateBack()
@@ -373,5 +521,9 @@ Page({
       english: '英语',
     }
     return map[s] || s || ''
+  },
+
+  _stripTrailing(optKey) {
+    return optKey ? optKey.replace(/[.．、:：）)]\s*$/, '') : ''
   },
 })

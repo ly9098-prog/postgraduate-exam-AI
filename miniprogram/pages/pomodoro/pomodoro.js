@@ -105,6 +105,19 @@ Page({
 
   async onShow() {
     this.loadTodayStats()
+
+    // Check completion flag (handles background-complete + page-unload cases)
+    const completionFlag = wx.getStorageSync('pomodoro_completion')
+    if (completionFlag && !this.data.showCelebration) {
+      wx.removeStorageSync('pomodoro_completion')
+      wx.vibrateLong()
+      this.setData({ showCelebration: true, celebrationMotto: completionFlag.motto })
+      return
+    }
+    if (completionFlag) {
+      wx.removeStorageSync('pomodoro_completion')
+    }
+
     const active = await this._fetchActiveSession()
     if (active) {
       this._restoreSession(active)
@@ -261,6 +274,12 @@ Page({
       isPaused: true,
       pauseStartTime: Date.now(),
     })
+    // Persist pause state to survive page unload
+    wx.setStorageSync('pomodoro_pause', {
+      totalPausedMs: this.data.totalPausedMs,
+      pauseStartTime: Date.now(),
+      sessionId: this.data.sessionId,
+    })
   },
 
   _resumeSession() {
@@ -271,6 +290,7 @@ Page({
       totalPausedMs: totalPausedMs,
       pauseStartTime: null,
     })
+    wx.removeStorageSync('pomodoro_pause')
     const totalSec = this.data.workDuration * 60
     this._startTimer(totalSec)
   },
@@ -311,20 +331,24 @@ Page({
   async _onWorkComplete() {
     wx.vibrateLong()
     try {
-      await api.post(`/pomodoro/${this.data.sessionId}/complete`)
+      await api.post(`/pomodoro/${this.data.sessionId}/complete`, {
+        total_paused_ms: this.data.totalPausedMs || 0,
+      })
     } catch (e) {
       console.error('同步失败', e)
     }
     this.loadTodayStats()
 
-    // Celebration overlay
+    // Celebration overlay — wait for user confirmation, DO NOT auto-start break
     const motto = MOTTOES[Math.floor(Math.random() * MOTTOES.length)]
+    wx.setStorageSync('pomodoro_completion', { motto, sessionId: this.data.sessionId })
     this.setData({ showCelebration: true, celebrationMotto: motto })
+    // Break starts only when user taps confirmCelebration()
+  },
 
-    await new Promise(r => setTimeout(r, 2800))
+  confirmCelebration() {
+    wx.removeStorageSync('pomodoro_completion')
     this.setData({ showCelebration: false })
-
-    // Auto-start break
     const breakSec = this.data.breakDuration * 60
     if (breakSec > 0) {
       this._startBreak(breakSec)
@@ -387,12 +411,24 @@ Page({
   _restoreSession(session) {
     const startTime = new Date(session.start_time + '+00:00').getTime()
     const totalSec = session.work_duration * 60
-    const elapsed = Math.floor((Date.now() - startTime) / 1000)
+
+    // Recover paused state from storage (survives page unload)
+    const savedPause = wx.getStorageSync('pomodoro_pause')
+    let totalPausedMs = 0
+    let isPaused = false
+    if (savedPause && savedPause.sessionId === session.id) {
+      totalPausedMs = (savedPause.totalPausedMs || 0) + (Date.now() - (savedPause.pauseStartTime || Date.now()))
+      isPaused = true
+    }
+
+    const elapsed = Math.floor((Date.now() - startTime - totalPausedMs) / 1000)
     const remaining = Math.max(0, totalSec - elapsed)
     if (remaining <= 0) {
+      wx.removeStorageSync('pomodoro_pause')
       this._onWorkComplete()
       return
     }
+
     this.setData({
       phase: PHASE.RUNNING,
       sessionId: session.id,
@@ -403,11 +439,21 @@ Page({
       remainingSec: remaining,
       displayMin: String(Math.floor(remaining / 60)).padStart(2, '0'),
       displaySec: String(remaining % 60).padStart(2, '0'),
-      isPaused: false,
-      totalPausedMs: 0,
-      pauseStartTime: null,
+      isPaused: isPaused,
+      totalPausedMs: totalPausedMs,
+      pauseStartTime: isPaused ? Date.now() : null,
     })
-    this._startTimer(totalSec)
+
+    if (isPaused) {
+      // Update stored pause start to now, with accumulated totalPausedMs
+      wx.setStorageSync('pomodoro_pause', {
+        totalPausedMs: totalPausedMs,
+        pauseStartTime: Date.now(),
+        sessionId: session.id,
+      })
+    } else {
+      this._startTimer(totalSec)
+    }
   },
 
   _restoreBreak() {
@@ -487,6 +533,8 @@ Page({
 
   _resetToIdle() {
     wx.removeStorageSync('pomodoro_break')
+    wx.removeStorageSync('pomodoro_completion')
+    wx.removeStorageSync('pomodoro_pause')
     this.setData({
       phase: PHASE.IDLE,
       sessionId: null,

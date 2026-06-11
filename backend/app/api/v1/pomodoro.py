@@ -5,6 +5,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.pomodoro import (
+    PomodoroCompleteRequest,
     PomodoroHistoryResponse,
     PomodoroSessionResponse,
     PomodoroStartRequest,
@@ -39,10 +40,11 @@ async def start_session(
 @router.post("/{session_id}/complete", response_model=PomodoroSessionResponse)
 async def complete_session(
     session_id: int,
+    req: PomodoroCompleteRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    session = await svc.complete_session(db, session_id, current_user.id)
+    session = await svc.complete_session(db, session_id, current_user.id, req.total_paused_ms)
     if not session:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")

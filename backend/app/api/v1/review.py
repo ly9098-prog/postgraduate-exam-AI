@@ -16,6 +16,8 @@ from app.schemas.review import (
     ReviewSubmitResult,
 )
 from app.schemas.review_scheduler import (
+    BatchGradeRequest,
+    BatchGradeResponse,
     BatchReviewRequest,
     BatchReviewResponse,
     GradeSubmit,
@@ -226,3 +228,98 @@ async def get_review_history(
     return await review_scheduler.get_review_history(
         db, current_user.id, page=page, page_size=page_size
     )
+
+
+@router.post("/grade-batch")
+async def grade_batch(
+    data: BatchGradeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """批量自动批改并提交复习结果。"""
+    if not data.reviews:
+        raise HTTPException(status_code=400, detail="复习列表不能为空")
+
+    results = []
+    correct_count = 0
+    wrong_count = 0
+
+    for item in data.reviews:
+        # 获取正确答案
+        result = await db.execute(
+            select(Question).where(Question.id == item.question_id)
+        )
+        question = result.scalar_one_or_none()
+        if not question:
+            continue
+
+        # 判对错
+        user_answer = (item.user_answer or "").strip().upper()
+        correct_answer = (question.answer or "").strip().upper()
+        is_correct = user_answer == correct_answer
+
+        # 根据对错决定评分
+        rating = 5 if is_correct else 0
+
+        try:
+            review_result = await review_scheduler.submit_review(
+                db,
+                current_user.id,
+                schedule_id=item.schedule_id,
+                question_id=item.question_id,
+                rating=rating,
+            )
+            results.append({
+                "schedule_id": review_result["schedule_id"],
+                "question_id": item.question_id,
+                "is_correct": is_correct,
+                "correct_answer": correct_answer,
+                "rating": rating,
+                "interval_after": review_result["interval_after"],
+                "ease_factor_after": review_result["ease_factor_after"],
+                "next_review_at": review_result["next_review_at"],
+            })
+            if is_correct:
+                correct_count += 1
+            else:
+                wrong_count += 1
+        except ValueError:
+            continue
+
+    await cache.delete(f"review:*:{current_user.id}*")
+    await cache.delete(f"stats:*:{current_user.id}*")
+
+    return {
+        "results": results,
+        "total": len(results),
+        "correct_count": correct_count,
+        "wrong_count": wrong_count,
+    }
+
+
+@router.post("/{schedule_id}/master")
+async def mark_mastered(
+    schedule_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """标记题目为已掌握。"""
+    schedule = await review_scheduler.mark_mastered(db, current_user.id, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=404, detail="复习记录不存在")
+    await cache.delete(f"review:*:{current_user.id}*")
+    return {"schedule_id": schedule_id, "mastered": True}
+
+
+@router.post("/{schedule_id}/unmaster")
+async def unmark_mastered(
+    schedule_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """取消已掌握标记。"""
+    schedule = await review_scheduler.unmark_mastered(db, current_user.id, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=404, detail="复习记录不存在")
+    await cache.delete(f"review:*:{current_user.id}*")
+    return {"schedule_id": schedule_id, "mastered": False}
