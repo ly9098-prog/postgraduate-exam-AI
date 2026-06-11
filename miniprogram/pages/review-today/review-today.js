@@ -86,30 +86,69 @@ Page({
     results: [],
     correctCount: 0,
     wrongCount: 0,
+
+    // UI 增强
+    _dateStr: '',
+    _motivationMsg: '',
+    entryDone: false,
   },
 
   onLoad() {
     this.setData({ enableMathImage: config.enableMathImage || false })
+    this._setDateStr()
     this._loadEntry()
   },
 
+  _setDateStr() {
+    const now = new Date()
+    const weekdays = ['日', '一', '二', '三', '四', '五', '六']
+    this.setData({
+      _dateStr: `${now.getMonth() + 1}月${now.getDate()}日 星期${weekdays[now.getDay()]}`
+    })
+  },
+
   _calcRingStyle(stats) {
-    const pct = stats && stats.total_scheduled > 0
-      ? Math.round((stats.total_scheduled - stats.remaining_today) / stats.total_scheduled * 360)
-      : 0
-    return `background: conic-gradient(#5B7B9A ${pct}deg, #EDF1F5 0deg)`
+    if (!stats || stats.total_scheduled === 0) return ''
+    const done = stats.total_scheduled - stats.remaining_today
+    const pct = Math.round(done / stats.total_scheduled * 360)
+    if (pct <= 0) return ''
+    const mid = Math.round(pct * 0.4)
+    return `background: conic-gradient(#5B7B9A 0deg, #7BA0BE ${mid}deg, #A5C5D9 ${pct}deg, rgba(255,255,255,0.25) 0deg)`
   },
 
   _calcAccuracyStyle(correctCount, totalQuestions) {
     const pct = totalQuestions > 0 ? Math.round(correctCount / totalQuestions * 360) : 0
-    return `background: conic-gradient(#6B9B6B 0deg ${pct}deg, #EDF1F5 0deg)`
+    if (pct <= 0) return ''
+    const mid = Math.round(pct * 0.5)
+    return `background: conic-gradient(#6B9B6B 0deg, #8BC88B ${mid}deg, #A8D8A8 ${pct}deg, #EDF1F5 0deg)`
+  },
+
+  _calcMotivationMsg(stats) {
+    if (!stats) return ''
+    if (stats.total_scheduled === 0) return '刷题后系统会自动安排复习'
+    if (stats.remaining_today === 0) return '太棒了！今日复习全部完成'
+    const done = stats.total_scheduled - stats.remaining_today
+    const pct = Math.round(done / stats.total_scheduled * 100)
+    if (pct === 0) return '开始今天的复习吧，每一步都算数'
+    if (pct < 30) return '好的开始是成功的一半，继续加油'
+    if (pct < 60) return '保持节奏，稳步前进'
+    if (pct < 90) return '快完成啦，再坚持一下'
+    return '就差一点点了！'
   },
 
   async _loadEntry() {
     this.setData({ entryLoading: true })
     try {
       const stats = await api.get('/review/schedule-stats')
-      this.setData({ stats, entryLoading: false, _ringStyle: this._calcRingStyle(stats) })
+      const _motivationMsg = this._calcMotivationMsg(stats)
+      const entryDone = stats && stats.total_scheduled > 0 && stats.remaining_today === 0
+      this.setData({
+        stats,
+        entryLoading: false,
+        _ringStyle: this._calcRingStyle(stats),
+        _motivationMsg,
+        entryDone,
+      })
     } catch (e) {
       console.error('加载复习统计失败', e)
       this.setData({ entryLoading: false })
