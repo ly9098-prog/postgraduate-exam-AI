@@ -1,3 +1,15 @@
+<view class="welcome-section animation-fade-in">
+  <view class="welcome-content">
+    <view class="welcome-greeting-row">
+      <text class="welcome-greeting">{{greeting}}，</text>
+      <text class="welcome-user" wx:if="{{user.nickName}}">{{user.nickName}}</text>
+      <text class="welcome-user" wx:else>同学</text>
+    </view>
+    <view class="welcome-date">{{dateStr}}</view>
+    <view class="welcome-quote">{{motto}}</view>
+  </view>
+</view>
+
 <view class="action-grid">
   <view class="action-card" bindtap="startRandom">
     <view class="icon-badge icon-primary">练</view>
