@@ -52,7 +52,7 @@ Page({
   getDateStr() {
     const d = new Date()
     const week = ['日', '一', '二', '三', '四', '五', '六']
-    return `${d.getMonth()+1}月${d.getDate()}日 星期${week[d.getDay()]}`
+    return `${d.getMonth()+1}月${d.getDate()}日 · 星期${week[d.getDay()]}`
   },
 
   startRandom() { wx.navigateTo({ url: '/pages/practice/practice' }) },
