@@ -78,6 +78,10 @@ Page({
     // 滑动动画
     animClass: '',
 
+    // 环图样式（JS 计算避免 WXML 编译问题）
+    _ringStyle: '',
+    _accuracyStyle: '',
+
     // 结果
     results: [],
     correctCount: 0,
@@ -89,11 +93,23 @@ Page({
     this._loadEntry()
   },
 
+  _calcRingStyle(stats) {
+    const pct = stats && stats.total_scheduled > 0
+      ? Math.round((stats.total_scheduled - stats.remaining_today) / stats.total_scheduled * 360)
+      : 0
+    return `background: conic-gradient(#5B7B9A ${pct}deg, #EDF1F5 0deg)`
+  },
+
+  _calcAccuracyStyle(correctCount, totalQuestions) {
+    const pct = totalQuestions > 0 ? Math.round(correctCount / totalQuestions * 360) : 0
+    return `background: conic-gradient(#6B9B6B 0deg ${pct}deg, #EDF1F5 0deg)`
+  },
+
   async _loadEntry() {
     this.setData({ entryLoading: true })
     try {
       const stats = await api.get('/review/schedule-stats')
-      this.setData({ stats, entryLoading: false })
+      this.setData({ stats, entryLoading: false, _ringStyle: this._calcRingStyle(stats) })
     } catch (e) {
       console.error('加载复习统计失败', e)
       this.setData({ entryLoading: false })
@@ -217,13 +233,16 @@ Page({
         correct_answer: res.correct_answer,
         user_answer: answer,
       }]
+      const correctCount = results.filter(r => r.is_correct).length
+      const totalQuestions = this.data.totalQuestions
       this.setData({
         isCorrect: res.is_correct,
         correctAnswer: res.correct_answer,
         submittingAnswer: false,
         results,
-        correctCount: results.filter(r => r.is_correct).length,
+        correctCount,
         wrongCount: results.filter(r => !r.is_correct).length,
+        _accuracyStyle: this._calcAccuracyStyle(correctCount, totalQuestions),
       })
     } catch (e) {
       console.error('提交答案失败', e)

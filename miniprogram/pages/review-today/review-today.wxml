@@ -14,7 +14,7 @@
         <view class="ring-bg"></view>
         <view
           class="ring-fg"
-          style="background: conic-gradient(#5B7B9A {{stats && stats.total_scheduled > 0 ? (stats.total_scheduled - stats.remaining_today) / stats.total_scheduled * 360 : 0}}deg, #EDF1F5 0deg);"
+          style="{{_ringStyle}}"
           wx:if="{{stats}}"
         ></view>
         <view class="ring-center">
@@ -101,7 +101,7 @@
           <math-question segments="{{currentQuestion._stemSegments}}" />
         </block>
         <block wx:elif="{{currentQuestion._stemNeedsRich}}">
-          <mp-html content="{{currentQuestion._stemHtml}}" lazy-load />
+          <mp-html content="{{currentQuestion._stemHtml}}" lazy-load></mp-html>
         </block>
         <text wx:else class="q-text">{{currentQuestion._stemText}}</text>
       </view>
@@ -174,7 +174,7 @@
         <view class="accuracy-bg"></view>
         <view
           class="accuracy-fg"
-          style="background: conic-gradient(#6B9B6B 0deg {{totalQuestions > 0 ? correctCount / totalQuestions * 360 : 0}}deg, #EDF1F5 0deg);"
+          style="{{_accuracyStyle}}"
         ></view>
         <view class="accuracy-center">
           <text class="accuracy-num">{{totalQuestions > 0 ? Math.round(correctCount / totalQuestions * 100) : 0}}%</text>
