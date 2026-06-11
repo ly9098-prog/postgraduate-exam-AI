@@ -10,9 +10,16 @@ class ReviewQuestion(BaseModel):
     question_type: str
     stem: str
     options: dict = {}
+    content: dict | None = None
     interval: int
     repetitions: int
     ease_factor: float
+
+
+class GradeSubmit(BaseModel):
+    schedule_id: int
+    question_id: int
+    user_answer: str
 
 
 class TodayReviewResponse(BaseModel):

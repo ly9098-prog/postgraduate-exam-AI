@@ -25,7 +25,6 @@ def enrich_wq(wq, question):
         wrong_answer=wq.wrong_answer,
         error_type=wq.error_type,
         review_count=wq.review_count,
-        mastered=wq.mastered,
         created_at=wq.created_at,
         updated_at=wq.updated_at,
         efactor=wq.efactor or 2.5,
@@ -45,7 +44,6 @@ def enrich_wq(wq, question):
 @router.get("")
 async def list_wrong(
     subject: str | None = Query(None),
-    mastered: bool | None = Query(None),
     error_type: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -53,7 +51,7 @@ async def list_wrong(
     current_user: User = Depends(get_current_user),
 ):
     items, total = await svc.list_wrong(
-        db, current_user.id, subject, mastered, error_type, page, page_size
+        db, current_user.id, subject, error_type, page, page_size
     )
 
     question_ids = [w.question_id for w in items]
@@ -106,7 +104,7 @@ async def update_wrong(
     current_user: User = Depends(get_current_user),
 ):
     wq = await svc.update_wrong(
-        db, current_user.id, wq_id, data.mastered, data.error_type
+        db, current_user.id, wq_id, data.error_type
     )
     if not wq:
         raise HTTPException(status_code=404, detail="错题记录不存在")

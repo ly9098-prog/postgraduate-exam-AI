@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
+from app.models.question import Question
 from app.schemas.common import paginated_response
 from app.schemas.review import (
     ReviewDueItem,
@@ -16,6 +18,7 @@ from app.schemas.review import (
 from app.schemas.review_scheduler import (
     BatchReviewRequest,
     BatchReviewResponse,
+    GradeSubmit,
     ReviewHistoryResponse,
     ReviewStatsResponse as ScheduleStatsResponse,
     ReviewSubmit,
@@ -101,7 +104,7 @@ async def get_today_review(
     result = await review_scheduler.get_today_review(
         db, current_user.id, subject=subject, limit=limit
     )
-    await cache.set(cache_key, result.model_dump(), ttl=60)
+    await cache.set(cache_key, result, ttl=60)
     return result
 
 
@@ -148,6 +151,54 @@ async def batch_submit_review(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/grade-submit")
+async def grade_submit(
+    data: GradeSubmit,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """自动批改并提交复习结果。"""
+
+    # 获取正确答案
+    result = await db.execute(
+        select(Question).where(Question.id == data.question_id)
+    )
+    question = result.scalar_one_or_none()
+    if not question:
+        raise HTTPException(status_code=404, detail="题目不存在")
+
+    # 判对错
+    user_answer = (data.user_answer or "").strip().upper()
+    correct_answer = (question.answer or "").strip().upper()
+    is_correct = user_answer == correct_answer
+
+    # 根据对错决定评分
+    rating = 5 if is_correct else 0
+
+    try:
+        review_result = await review_scheduler.submit_review(
+            db,
+            current_user.id,
+            schedule_id=data.schedule_id,
+            question_id=data.question_id,
+            rating=rating,
+        )
+        await cache.delete(f"review:*:{current_user.id}*")
+        await cache.delete(f"stats:*:{current_user.id}*")
+
+        return {
+            "is_correct": is_correct,
+            "correct_answer": correct_answer,
+            "rating": rating,
+            "schedule_id": review_result["schedule_id"],
+            "interval_after": review_result["interval_after"],
+            "ease_factor_after": review_result["ease_factor_after"],
+            "next_review_at": review_result["next_review_at"],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/schedule-stats", response_model=ScheduleStatsResponse)
 async def get_schedule_stats(
     days: int = Query(7, ge=1, le=90),
@@ -160,7 +211,7 @@ async def get_schedule_stats(
     if cached_data is not None:
         return cached_data
     result = await review_scheduler.get_review_stats(db, current_user.id, days=days)
-    await cache.set(cache_key, result.model_dump(), ttl=300)
+    await cache.set(cache_key, result, ttl=300)
     return result
 
 

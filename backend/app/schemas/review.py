@@ -56,6 +56,5 @@ class ReviewStatsResponse(BaseModel):
     due_today: int              # 今日待复习
     reviewed_today: int         # 今日已复习
     reviewed_this_week: int     # 本周已复习数
-    mastered: int               # 已掌握数
     average_efactor: float      # 平均难度因子
     by_subject: list[dict]      # 按科目统计

@@ -11,7 +11,6 @@ class WrongQuestionCreate(BaseModel):
 
 class WrongQuestionUpdate(BaseModel):
     error_type: str | None = None
-    mastered: bool | None = None
 
 
 class WrongQuestionQualityUpdate(BaseModel):
@@ -24,7 +23,6 @@ class WrongQuestionResponse(BaseModel):
     wrong_answer: str | None = None
     error_type: str
     review_count: int
-    mastered: bool
     created_at: datetime
     updated_at: datetime
     # SM-2 字段
@@ -44,7 +42,5 @@ class WrongQuestionResponse(BaseModel):
 
 class WrongQuestionStats(BaseModel):
     total: int
-    mastered: int
-    unmastered: int
     by_subject: list[dict]
     by_error_type: list[dict]

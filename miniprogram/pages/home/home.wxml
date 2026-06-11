@@ -12,14 +12,9 @@
       <text class="pstat-label">错题总数</text>
     </view>
     <view class="pstat-divider"></view>
-    <view class="pstat-item">
-      <text class="pstat-num accent">{{wrongStats.unmastered || 0}}</text>
-      <text class="pstat-label">待复习</text>
-    </view>
-    <view class="pstat-divider"></view>
-    <view class="pstat-item">
-      <text class="pstat-num">{{wrongStats.mastered || 0}}</text>
-      <text class="pstat-label">已掌握</text>
+    <view class="pstat-item" bindtap="goReview">
+      <text class="pstat-num accent">待复习</text>
+      <text class="pstat-label">点击开始 →</text>
     </view>
   </view>
 </view>

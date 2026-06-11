@@ -1,231 +1,245 @@
-# AI 解析设置页面 — 配置接口实施
+# 小程序端错题本与今日复习模块重构
 
-## 目标
+## 一、产品职责重新划分
 
-为 AI 解析设置页面（`/ai-settings`）的 3 个配置 UI（ModelCards / OcrAccordion / AiCompletionPreview）补全后端 API、数据库表和持久化逻辑，使配置可保存、可读取、可编辑。默认值沿用当前代码中硬编码的 prompt 和配置项。
+当前「错题本」与「今日复习」存在功能重叠、逻辑混乱的问题，需要重新定义两者职责边界。
 
----
+### 1. 错题本页面（Wrong Book）
 
-## 总览
+定位：**错题沉淀与错因分析中心**
 
-| Phase | 内容 | 涉及新文件 |
-|-------|------|-----------|
-| A | 提取现有 prompt 保存到 `/docs/` | `docs/backend/ai-prompts.md` |
-| B | 数据库表 + Alembic migration | `models/admin_ai_config.py` |
-| C | Pydantic schema + Service + Route | `schemas/admin_ai_config.py`, `services/admin_ai_config_service.py`, `api/v1/admin_ai_config.py` |
-| D | 前端对接（TypeScript 类型 + 组件重写） | 修改现有 3 个组件 |
+仅负责：
 
----
+- 查看历史错题
+- 查看题目详情
+- 查看AI错因分析
+- 查看解题技巧
+- 查看知识点关联
+- 按学科、章节、时间等维度筛选错题
 
-## 审计风险处置对照
+不负责：
 
-| 风险 | 级别 | 处置方式 |
-|------|------|---------|
-| R1 api_key 明文存储 | 🔴 | 加密存储，API 响应不返回明文 |
-| R2 单行表兼容性 | 🔴 | 改用键值对表 `admin_ai_configs` |
-| R3 PATCH/PUT 不统一 | 🟡 | 全部统一为 PATCH |
-| R4 权限颗粒度 | 🟡 | 沿用现有 `ai_setting:read/write`，关键操作写审计日志 |
-| R5 结构修复面板缺失 | 🟡 | 补全 `structure_fix_*` 字段 |
-| R6 前后端字段错位 | 🟡 | 重新对齐字段命名 |
-| R7 命名规范 / migration | 🟡 | 使用 `admin_` 前缀 + Alembic |
-| R8 假配置 | 🟡 | UI 标注提示，预留抽象层 |
-| R9 不热更新 | 🟢 | 现阶段只存不用 |
-| R10 统计数据缺失 | 🟢 | 保留前端静态展示 |
-| R11 API Key 验证 | 🟢 | 保存时测试调用 |
-| R12 Prompt 长度校验 | 🟢 | Schema 加 `max_length` |
+- 不进行复习
+- 不进行掌握状态管理
+- 不进行SM2调度
+- 不提供“标记已掌握”功能
 
----
+### 2. 今日复习页面（Review Today）
 
-## Phase A — 保存 prompt 到 /docs/
+定位：**基于SM2算法的主动复习中心**
 
-**文件**: `docs/backend/ai-prompts.md`
+仅负责：
 
-从以下文件提取所有系统 prompt：
-- `app/ai/prompts.py` — OCR 纠错 / 题目修复 / 题目富化 / 题目生成 / 题目补全
-- `app/ai/prompts_learning.py` — 题目讲解 / 错因分析 / 学习报告
-- `app/features/ocr_service.py` — 视觉 OCR 提示词
+- 展示SM2算法计算出的待复习题目
+- 按复习计划完成刷题
+- 记录本次复习结果
+- 更新SM2相关参数
 
-每个 prompt 标注：来源文件、用途、对应函数名。
+不负责：
 
----
+- 不展示全部错题
+- 不承担错题管理功能
+- 不承担错题分析功能
 
-## Phase B — 数据库表
+------
 
-### B1. `admin_ai_model_configs`
+## 二、错题本页面调整
 
-```python
-class AdminAiModelConfig(Base):
-    __tablename__ = "admin_ai_model_configs"
-    
-    id: int (PK, autoincrement)
-    name: str(64)         # "deepseek-v4-flash"
-    display_name: str(64) # "DeepSeek V4 Flash"
-    provider: str(32)     # "deepseek" / "openai" / "anthropic"
-    api_base_url: str | None
-    api_key_encrypted: str | None  # AES-256 加密存储
-    is_enabled: bool (default=True)
-    is_default: bool (default=False)
-    sort_order: int (default=0)
-    created_at: datetime
-    updated_at: datetime
-```
+### 删除功能
 
-- `api_key_encrypted` 在 API 响应中替换为 `api_configured: bool`
-- 加密密钥从环境变量 `AI_CONFIG_ENCRYPT_KEY` 读取
-- 加密使用 `cryptography.fernet`
+移除：
 
-### B2. `admin_ai_configs`（键值对表，避免单行表兼容性问题）
+- 标记已掌握按钮
+- 已掌握状态展示
+- 已掌握筛选项
+- 相关交互逻辑
 
-```python
-class AdminAiConfig(Base):
-    __tablename__ = "admin_ai_configs"
-    
-    config_key: str(64) (PK)
-    config_value: Text  # JSON 序列化存储
-    updated_by: int | None
-    updated_at: datetime
-```
+同时检查并清理：
 
-支持的 config_key 及值类型：
+- 数据库相关字段
+- API接口
+- Service层逻辑
+- 前端状态管理
+- 无用统计数据
 
-| Key | 类型 | 默认值 | 对应 UI |
-|-----|------|--------|---------|
-| `ocr_correction_prompt` | str | `SYSTEM_PROMPTS["ocr_correction"]` 全文 | OCR 纠错 Prompt 文本框 |
-| `ocr_strategy_math_formula` | bool | true | OCR 纠错策略 - 数学公式修复 |
-| `ocr_strategy_punctuation` | bool | true | OCR 纠错策略 - 标点符号校正 |
-| `ocr_strategy_digit_letter` | bool | true | OCR 纠错策略 - 数字与字母混淆修复 |
-| `ocr_strategy_space_newline` | bool | false | OCR 纠错策略 - 空格与换行处理 |
-| `ocr_structure_question_type` | bool | true | 题目结构修复 - 题型识别 |
-| `ocr_structure_options` | bool | true | 题目结构修复 - 选项提取 |
-| `ocr_structure_answer` | bool | true | 题目结构修复 - 答案匹配 |
-| `ocr_structure_analysis` | bool | true | 题目结构修复 - 解析分离 |
-| `ocr_filter_max_chars` | int | 2000 | 长文本过滤 - 单题最大字符数 |
-| `ocr_filter_max_tokens` | int | 4096 | 长文本过滤 - 单次最大 Token 数 |
-| `ocr_filter_sensitive` | bool | true | 长文本过滤 - 敏感内容过滤 |
-| `completion_prompt` | str | `SYSTEM_PROMPTS["complete_question"]` 全文 | AI 补全 Prompt 文本框 |
-| `completion_auto_stem` | bool | true | 自动补全题干 |
-| `completion_auto_options` | bool | true | 智能选项生成 |
-| `completion_auto_answer_reasoning` | bool | false | 答案推理链 |
-| `completion_auto_knowledge_tags` | bool | true | 知识点标签 |
+确保整个系统不再依赖“手动标记已掌握”。
 
----
+------
 
-## Phase C — 后端 API
+## 三、今日复习页面调整
 
-### 路由前缀: `/api/admin/v1`
+### 复习流程重构
 
-统一文件 `api/v1/admin_ai_config.py`、`services/admin_ai_config_service.py`、`schemas/admin_ai_config.py`
+参考当前刷题页/答题页的成熟交互模式。
 
-#### C1 模型配置
+用户进入今日复习：
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/ai-models` | GET | 返回模型列表（不含 api_key，含 `api_configured: bool`） |
-| `/ai-models/{id}` | PATCH | 更新单个模型字段（is_enabled / is_default / api_key / api_base_url） |
+1. 获取SM2算法计算出的待复习题目
+2. 按正常答题流程完成作答
+3. 系统自动判定结果
 
-- PATCH 时若 `api_key` 为 `"****"` 表示不修改
-- PATCH 时若 `api_key` 为真实值 → 加密存储 → 并做一次测试调用验证有效性
-- 设置 `is_default=true` 时，自动清除其他模型的 default 标志
+#### 答对
 
-#### C2 配置项
+表示：
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/ai-configs` | GET | 返回所有配置键值对（扁平 JSON 对象） |
-| `/ai-configs` | PATCH | 部分更新提交的配置项（只提交有变化的字段） |
+- 当前知识已掌握程度提升
+- 更新SM2间隔
+- 延长下次复习时间
 
-- PATCH body: `{"key": value, ...}` — 只包含要修改的项
-- 不存在的 key 自动忽略
-- prompt 字段 `max_length=5000`
+记录：
 
-#### 权限控制
+- 作答时间
+- 正确率
+- 复习次数
+- SM2参数变化
 
-- 均沿用 `ai_setting:read`（GET）和 `ai_setting:write`（PATCH）
-- PATCH 操作记录 `severity=normal` 审计日志（action: `ai_config.update`）
+#### 答错
 
----
+表示：
 
-## Phase D — 前端对接
+- 当前知识仍未掌握
+- 缩短复习间隔
+- 提高复习优先级
 
-### D1 TypeScript 类型 (`types.ts`)
+记录：
 
-```typescript
-export type AdminAiModelConfig = {
-  id: number;
-  name: string;
-  display_name: string;
-  provider: string;
-  api_base_url: string | null;
-  api_configured: boolean;
-  is_enabled: boolean;
-  is_default: boolean;
-  sort_order: number;
-  call_count?: number;      // 前端本地从 stats 拼接
-  avg_latency_ms?: number;  // 前端本地从 stats 拼接
-};
+- 作答时间
+- 错误次数
+- 错误率
+- SM2参数变化
 
-export type AdminAiModelPatchRequest = {
-  is_enabled?: boolean;
-  is_default?: boolean;
-  api_key?: string;
-  api_base_url?: string;
-};
+### 核心原则
 
-export type AdminAiConfigs = Record<string, string | number | boolean>;
-```
+掌握状态由用户真实作答结果自动判断，而不是手动点击“已掌握”。
 
-### D2 ModelCards 组件重写
+------
 
-- 从 `GET /api/admin/v1/ai-models` 获取模型列表
-- 开关/默认按钮 → `PATCH /api/admin/v1/ai-models/{id}`
-- 统计数据（callCount/avgLatency）保留静态展示，阶段目标暂不接真实数据
-- 加载态：卡片骨架屏
-- 错误态：保留上次成功数据 + toast 提示
+## 四、页面视觉重构
 
-### D3 OcrAccordion 组件重写
+### 通用要求
 
-- 从 `GET /api/admin/v1/ai-configs` 读取所有 OCR 相关 key
-- 保存时 `PATCH /api/admin/v1/ai-configs` 只发送修改的 key
-- 加载态：各 panel 内容显示骨架屏
-- 错误态：保留上次成功值，操作栏显示错误提示
-- 第 3 面板数据补齐：后端 `structure_fix_*` 4 字段
+删除两个页面顶部Hero区域：
 
-### D4 AiCompletionPreview 组件重写
+- 错题本Hero
+- 今日复习Hero
 
-- 从 `GET /api/admin/v1/ai-configs` 读取 `completion_*` 相关 key
-- Prompt 默认值从 API 返回的 `completion_prompt` 中读取
-- 补全维度按钮重新对齐为：补全内容类型（题干/答案/解析/知识点），toggle 为"补全时包含该字段"
+避免大面积占用首屏空间。
 
-### D5 页面集成（page.tsx）
+------
 
-- 新增 `useQuery(["ai-models"])` 和 `useQuery(["ai-configs"])`
-- 数据传给各子组件
-- 统一 loading / error 状态管理
+## 五、错题本UI重构
 
----
+参考市面优秀刷题产品：
 
-## 不变的部分
+- 小猿搜题
+- 粉笔
+- 不背单词
+- 墨墨背单词
+- 百词斩
 
-- `app/ai/client.py` — 模型调用仍硬编码，新表仅存储不生效
-- `app/ai/prompts.py` — prompt 仍从常量读取，新表初始值为这些常量副本
-- `app/core/config.py` / `app/features/ocr_service.py` — 不受影响
-- 扫描版 OCR（视觉识别）不动
+设计方向：
 
-## UI 标注文案
+### 首页即内容
 
-- 模型卡片底部提示：*"当前版本实际使用模型为 DeepSeek V4 Flash，此处配置仅作为记录"*
-- 配置区域提示：*"配置已保存，将在后续版本中生效"*
+首屏直接展示：
 
----
+- 错题数量
+- 最近错题
+- 学科分类
+- 筛选入口
 
-## 执行顺序
+减少空白区域。
 
-```
-Phase A (docs)
-  ↓
-Phase B (model + migration) ─→ Phase C (API) ─→ Phase D (frontend)
-  └── B1 model_configs ─────→ C1 ai-models API ──→ D2 ModelCards
-  └── B2 ai_configs (kv) ───→ C2 ai-configs API ──→ D3 OcrAccordion
-                                                    └── D4 AiCompletionPreview
-                                                    └── D5 page integration
-```
+### 卡片化设计
+
+每道错题采用：
+
+- 圆角卡片
+- 轻阴影
+- 信息分层
+
+展示：
+
+- 题干摘要
+- 错误时间
+- 学科标签
+- 错因标签
+
+### AI分析入口强化
+
+AI分析作为核心功能：
+
+- 显眼但不突兀
+- 支持展开收起
+- 信息层级清晰
+
+------
+
+## 六、今日复习UI重构
+
+目标：
+
+打造接近专业刷题APP的沉浸式体验。
+
+### 首页展示
+
+突出：
+
+- 今日待复习数量
+- 已完成数量
+- 完成进度
+
+采用：
+
+- 环形进度
+- 动态数字
+- 平滑过渡动画
+
+### 答题过程
+
+参考主刷题页：
+
+- 全屏沉浸式答题
+- 卡片切换动画
+- 顺滑翻页
+- 答题反馈动画
+
+### 完成页
+
+展示：
+
+- 今日完成题数
+- 正确率
+- 连续复习天数
+- 下次预计复习数量
+
+增加成就感与激励反馈。
+
+------
+
+## 七、视觉设计要求
+
+整体风格参考现代学习类APP：
+
+- 极简布局
+- 卡片化设计
+- 柔和阴影
+- 大圆角
+- 统一间距系统
+- 高级感渐变
+- 流畅微交互
+- 骨架屏加载
+- 页面切换动画
+
+避免：
+
+- 传统后台风
+- 信息堆砌
+- 大面积文字
+- 过多边框
+- 低级渐变
+- Hero大横幅
+
+最终目标：
+
+让「错题本」负责沉淀与分析，让「今日复习」负责SM2复习与掌握验证，两者职责清晰、逻辑闭环、视觉达到市面主流学习类APP水准。
