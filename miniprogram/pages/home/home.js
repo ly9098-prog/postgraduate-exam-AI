@@ -1,10 +1,8 @@
-const api = require('../../utils/api')
 const auth = require('../../utils/auth')
 
 Page({
   data: {
     user: {},
-    wrongStats: {},
     greeting: '你好',
     dateStr: '',
     authed: false,
@@ -21,7 +19,6 @@ Page({
     } catch (e) {
       console.error('同步用户权限失败', e)
     }
-    this.loadStats()
   },
 
   getGreeting() {
@@ -38,15 +35,6 @@ Page({
     const d = new Date()
     const week = ['日', '一', '二', '三', '四', '五', '六']
     return `${d.getMonth()+1}月${d.getDate()}日 星期${week[d.getDay()]}`
-  },
-
-  async loadStats() {
-    try {
-      const stats = await api.get('/wrong-questions/stats')
-      this.setData({ wrongStats: stats })
-    } catch (e) {
-      console.error('加载错题统计失败', e)
-    }
   },
 
   startRandom() { wx.navigateTo({ url: '/pages/practice/practice' }) },
