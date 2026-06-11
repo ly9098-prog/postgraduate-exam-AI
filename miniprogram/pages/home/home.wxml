@@ -1,24 +1,3 @@
-<view class="card progress-card">
-  <view class="progress-top">
-    <view class="greeting-block">
-      <text class="greeting">{{greeting}}，{{user.nickname || '考研人'}}</text>
-      <text class="greeting-subtitle">保持节奏，今天也稳步前进</text>
-    </view>
-    <text class="date-text">{{dateStr}}</text>
-  </view>
-  <view class="progress-stats">
-    <view class="pstat-item">
-      <text class="pstat-num">{{wrongStats.total || 0}}</text>
-      <text class="pstat-label">错题总数</text>
-    </view>
-    <view class="pstat-divider"></view>
-    <view class="pstat-item" bindtap="goReview">
-      <text class="pstat-num accent">待复习</text>
-      <text class="pstat-label">点击开始 →</text>
-    </view>
-  </view>
-</view>
-
 <view class="action-grid">
   <view class="action-card" bindtap="startRandom">
     <view class="icon-badge icon-primary">练</view>
