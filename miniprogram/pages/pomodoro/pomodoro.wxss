@@ -761,6 +761,16 @@
   animation: celeb-text-in 0.6s ease 0.5s both;
 }
 
+.celeb-tap-hint {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.3);
+  margin-top: 36rpx;
+  padding: 12rpx 36rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.1);
+  border-radius: 999rpx;
+  animation: celeb-text-in 0.6s ease 0.65s both;
+}
+
 @keyframes celeb-text-in {
   from {
     opacity: 0;

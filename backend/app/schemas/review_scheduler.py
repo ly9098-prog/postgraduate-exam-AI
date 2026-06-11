@@ -86,3 +86,36 @@ class ReviewHistoryResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class BatchGradeItem(BaseModel):
+    schedule_id: int
+    question_id: int
+    user_answer: str = ""
+
+
+class BatchGradeRequest(BaseModel):
+    reviews: list[BatchGradeItem]
+
+
+class BatchGradeResult(BaseModel):
+    schedule_id: int
+    question_id: int
+    is_correct: bool
+    correct_answer: str
+    rating: int
+    interval_after: int
+    ease_factor_after: float
+    next_review_at: datetime
+
+
+class BatchGradeResponse(BaseModel):
+    results: list[BatchGradeResult]
+    total: int
+    correct_count: int
+    wrong_count: int
+
+
+class MasterUnmasterResponse(BaseModel):
+    schedule_id: int
+    mastered: bool

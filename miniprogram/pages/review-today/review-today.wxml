@@ -1,20 +1,16 @@
 <!-- ==================== 入口页 ==================== -->
 <view class="page review-entry" wx:if="{{phase === 'entry'}}">
-  <!-- 加载 -->
   <view wx:if="{{entryLoading}}" class="loading-wrap">
     <view class="loading-spinner"></view>
     <text class="loading-text">加载中...</text>
   </view>
 
-  <!-- 入口内容 -->
   <view wx:else class="entry-wrap">
     <!-- 渐变头部 -->
     <view class="header-gradient">
       <view class="header-content">
-        <!-- 日期 -->
         <text class="header-date">{{_dateStr}}</text>
 
-        <!-- 环形进度 -->
         <view class="ring-section">
           <view class="ring-container">
             <view class="ring-bg"></view>
@@ -26,7 +22,6 @@
           </view>
         </view>
 
-        <!-- 激励文案 -->
         <text class="motivation-text">{{_motivationMsg}}</text>
       </view>
     </view>
@@ -47,6 +42,22 @@
         <text class="glass-num success">{{Math.round(stats.accuracy_last_7d * 100)}}%</text>
         <text class="glass-label">正确率</text>
       </view>
+    </view>
+
+    <!-- 组量选择 -->
+    <view class="group-size-section" wx:if="{{stats && stats.remaining_today > 0}}">
+      <text class="section-label">每组题数</text>
+      <view class="size-options">
+        <view
+          wx:for="{{[5, 10, 20]}}" wx:key="*this"
+          class="size-chip {{groupSize === item ? 'active' : ''}}"
+          catchtap="selectGroupSize"
+          data-size="{{item}}"
+        >{{item}}题</view>
+      </view>
+      <text class="size-hint" wx:if="{{stats.remaining_today > groupSize}}">
+        共 {{Math.ceil(stats.remaining_today / groupSize)}} 组
+      </text>
     </view>
 
     <!-- 开始按钮 / 完成状态 -->
@@ -73,30 +84,40 @@
   bindtouchstart="onTouchStart"
   bindtouchend="onTouchEnd"
 >
-  <!-- 加载 -->
   <view wx:if="{{practiceLoading}}" class="loading-wrap">
     <view class="loading-spinner"></view>
     <text class="loading-text">正在准备复习题目...</text>
   </view>
 
-  <!-- 练习内容 -->
   <view wx:else class="practice-wrap">
-    <!-- 进度条 -->
+    <!-- 组进度 -->
+    <view class="group-header">
+      <text class="group-title">第 {{currentGroupIdx + 1}} / {{groups.length}} 组</text>
+      <text class="group-meta">{{groupQuestions.length}} 题</text>
+    </view>
+
+    <!-- 题号进度条 -->
     <view class="review-progress">
-      <text class="progress-text">{{currentIndex + 1}} / {{totalQuestions}}</text>
-      <view class="progress-track">
+      <view class="question-dots">
         <view
-          class="progress-fill"
-          style="width:{{totalQuestions > 0 ? (currentIndex + 1) / totalQuestions * 100 : 0}}%"
-        ></view>
+          wx:for="{{groupQuestions}}" wx:key="schedule_id"
+          class="q-dot {{answers[item.schedule_id] ? 'answered' : ''}} {{currentIndex === index ? 'current' : ''}} {{item.mastered ? 'mastered' : ''}}"
+          catchtap="goNext"
+          data-index="{{index}}"
+        >
+          <text>{{index + 1}}</text>
+        </view>
       </view>
     </view>
 
     <!-- 题目卡片 -->
     <view class="question-card {{animClass}}" wx:if="{{currentQuestion}}">
-      <!-- 学科标签 -->
-      <view class="q-subject">
+      <!-- 学科标签 + 已掌握按钮 -->
+      <view class="q-top-bar">
         <text class="subject-badge">{{subjectLabel(currentQuestion.subject)}}</text>
+        <view class="master-btn" catchtap="tapMaster" data-sid="{{currentQuestion.schedule_id}}">
+          <text class="master-icon">✓</text>
+        </view>
       </view>
 
       <!-- 题干 -->
@@ -115,11 +136,7 @@
         <view
           wx:for="{{optionKeys}}"
           wx:key="*this"
-          class="option-item
-            {{selectedAnswer === item && submitted && isCorrect ? 'opt-correct' : ''}}
-            {{selectedAnswer === item && submitted && !isCorrect ? 'opt-wrong' : ''}}
-            {{selectedAnswer !== item && submitted && correctAnswer === item ? 'opt-reveal' : ''}}
-            {{selectedAnswer === item ? 'opt-selected' : ''}}"
+          class="option-item {{answers[currentQuestion.schedule_id] === item ? 'opt-selected' : ''}}"
           bindtap="selectOption"
           data-option="{{item}}"
         >
@@ -133,65 +150,119 @@
         </view>
       </view>
 
-      <!-- 答题反馈 -->
-      <view class="feedback {{submitted ? 'feedback-show' : ''}}" wx:if="{{submitted}}">
-        <view class="feedback-badge {{isCorrect ? 'badge-right' : 'badge-wrong'}}">
-          <text wx:if="{{isCorrect}}">✓ 回答正确</text>
-          <text wx:else>✗ 回答错误 · 正确答案 {{correctAnswer}}</text>
-        </view>
-        <button class="next-btn" bindtap="goNext">
-          {{currentIndex < totalQuestions - 1 ? '下一题' : '查看结果'}}
+      <!-- 导航按钮 -->
+      <view class="nav-row">
+        <button class="nav-btn" bindtap="goPrev" disabled="{{currentIndex === 0}}">
+          <text>上一题</text>
+        </button>
+        <button class="nav-btn" bindtap="goNext" disabled="{{currentIndex >= groupQuestions.length - 1}}">
+          <text>下一题</text>
         </button>
       </view>
+
+      <!-- 提交按钮 -->
+      <button class="submit-group-btn" bindtap="submitGroup" loading="{{submittingGroup}}">
+        提交本组（{{Object.keys(answers).length}} / {{groupQuestions.length}}）
+      </button>
     </view>
   </view>
 </view>
 
-<!-- ==================== 结果页 ==================== -->
-<view class="page" wx:if="{{phase === 'result'}}">
+<!-- ==================== 组结果页 ==================== -->
+<view class="page" wx:if="{{phase === 'group-result'}}">
   <view class="result-wrap">
-    <!-- 完成动画 -->
+    <view class="result-icon">
+      <text class="result-icon-text">{{groupCorrect >= groupWrong ? '✅' : '📝'}}</text>
+    </view>
+    <text class="result-title">第 {{currentGroupIdx + 1}} 组完成</text>
+
+    <view class="result-stats">
+      <view class="result-stat-item">
+        <text class="result-stat-val">{{groupQuestions.length}}</text>
+        <text class="result-stat-lbl">本组题数</text>
+      </view>
+      <view class="result-stat-item">
+        <text class="result-stat-val success">{{groupCorrect}}</text>
+        <text class="result-stat-lbl">正确</text>
+      </view>
+      <view class="result-stat-item">
+        <text class="result-stat-val danger">{{groupWrong}}</text>
+        <text class="result-stat-lbl">错误</text>
+      </view>
+    </view>
+
+    <!-- 逐题结果 -->
+    <view class="group-answers">
+      <view
+        wx:for="{{groupResults}}" wx:key="schedule_id"
+        class="ga-item {{item.isCorrect ? 'ga-correct' : 'ga-wrong'}}"
+      >
+        <text class="ga-status">{{item.isCorrect ? '✓' : '✗'}}</text>
+        <view class="ga-body">
+          <text class="ga-stem">{{item._stemText.slice(0, 60)}}{{item._stemText.length > 60 ? '...' : ''}}</text>
+          <text class="ga-answer" wx:if="{{!item.isCorrect}}">
+            你的：{{item.userAnswer || '未作答'}}　正确：{{item.correctAnswer}}
+          </text>
+        </view>
+      </view>
+    </view>
+
+    <button class="gradient-btn" bindtap="nextGroup">
+      {{currentGroupIdx + 1 >= groups.length ? '查看总体结果' : '下一组'}}
+    </button>
+  </view>
+</view>
+
+<!-- ==================== 最终结果页 ==================== -->
+<view class="page" wx:if="{{phase === 'final-result'}}">
+  <view class="result-wrap">
     <view class="result-icon">
       <text class="result-icon-text">🎉</text>
     </view>
     <text class="result-title">复习完成</text>
 
-    <!-- 统计卡片 -->
     <view class="result-stats">
       <view class="result-stat-item">
-        <text class="result-stat-val">{{totalQuestions}}</text>
+        <text class="result-stat-val">{{allGroupResults.length}}</text>
         <text class="result-stat-lbl">复习题数</text>
       </view>
       <view class="result-stat-item">
-        <text class="result-stat-val success">{{correctCount}}</text>
+        <text class="result-stat-val success">{{totalCorrect}}</text>
         <text class="result-stat-lbl">正确</text>
       </view>
       <view class="result-stat-item">
-        <text class="result-stat-val danger">{{wrongCount}}</text>
+        <text class="result-stat-val danger">{{totalWrong}}</text>
         <text class="result-stat-lbl">错误</text>
       </view>
     </view>
 
-    <!-- 正确率 -->
     <view class="accuracy-section">
       <view class="accuracy-ring">
         <view class="accuracy-bg"></view>
-        <view
-          class="accuracy-fg"
-          style="{{_accuracyStyle}}"
-        ></view>
+        <view class="accuracy-fg" style="{{_accuracyStyle}}"></view>
         <view class="accuracy-center">
-          <text class="accuracy-num">{{totalQuestions > 0 ? Math.round(correctCount / totalQuestions * 100) : 0}}%</text>
+          <text class="accuracy-num">{{allGroupResults.length > 0 ? Math.round(totalCorrect / allGroupResults.length * 100) : 0}}%</text>
           <text class="accuracy-lbl">正确率</text>
         </view>
       </view>
     </view>
 
-    <!-- 下次复习提示 -->
     <view class="next-hint">
       <text class="next-hint-text">系统已根据你的作答结果更新复习计划</text>
     </view>
 
     <button class="finish-btn" bindtap="finishReview">完成</button>
+  </view>
+</view>
+
+<!-- ==================== 已掌握确认弹窗 ==================== -->
+<view class="master-overlay" wx:if="{{masterConfirmId}}" catchtap="cancelMaster">
+  <view class="master-dialog" catchtap="">
+    <text class="master-dialog-title">标记为已掌握</text>
+    <text class="master-dialog-desc">该题将从复习池中移除，不再出现</text>
+    <view class="master-dialog-actions">
+      <button class="master-btn-cancel" bindtap="cancelMaster">取消</button>
+      <button class="master-btn-confirm" bindtap="confirmMaster">确认掌握</button>
+    </view>
   </view>
 </view>

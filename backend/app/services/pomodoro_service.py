@@ -32,7 +32,7 @@ async def start_session(
     return session
 
 
-async def complete_session(db: AsyncSession, session_id: int, user_id: int) -> PomodoroSession | None:
+async def complete_session(db: AsyncSession, session_id: int, user_id: int, total_paused_ms: int = 0) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession).where(
             PomodoroSession.id == session_id,
@@ -45,7 +45,8 @@ async def complete_session(db: AsyncSession, session_id: int, user_id: int) -> P
         return None
     now = datetime.utcnow()
     session.end_time = now
-    session.actual_duration = int((now - session.start_time).total_seconds())
+    raw_seconds = int((now - session.start_time).total_seconds())
+    session.actual_duration = max(0, raw_seconds - int(total_paused_ms / 1000))
     session.status = "completed"
     await db.flush()
     await db.refresh(session)
