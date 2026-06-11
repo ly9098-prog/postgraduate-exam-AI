@@ -63,6 +63,7 @@ async def get_today_review(
             "question_type": q.question_type,
             "stem": stem,
             "options": q.options or {},
+            "content": q.content,
             "interval": s.interval,
             "repetitions": s.repetitions,
             "ease_factor": s.ease_factor,
@@ -93,6 +94,8 @@ async def submit_review(
     schedule = result.scalar_one_or_none()
     if not schedule:
         raise ValueError(f"复习记录不存在: {schedule_id}")
+    if schedule.question_id != question_id:
+        raise ValueError(f"题目与复习记录不匹配")
 
     sm2_result = calc_sm2(
         quality=rating,

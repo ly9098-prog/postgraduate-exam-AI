@@ -1,0 +1,193 @@
+<!-- ==================== 入口页 ==================== -->
+<view class="page" wx:if="{{phase === 'entry'}}">
+  <!-- 加载 -->
+  <view wx:if="{{entryLoading}}" class="loading-wrap">
+    <view class="loading-spinner"></view>
+    <text class="loading-text">加载中...</text>
+  </view>
+
+  <!-- 入口内容 -->
+  <view wx:else class="entry-wrap">
+    <!-- 环形进度 -->
+    <view class="ring-section">
+      <view class="ring-container">
+        <view class="ring-bg"></view>
+        <view
+          class="ring-fg"
+          style="background: conic-gradient(#5B7B9A {{stats && stats.total_scheduled > 0 ? (stats.total_scheduled - stats.remaining_today) / stats.total_scheduled * 360 : 0}}deg, #EDF1F5 0deg);"
+          wx:if="{{stats}}"
+        ></view>
+        <view class="ring-center">
+          <text class="ring-num">{{stats ? stats.total_scheduled - stats.remaining_today : 0}}</text>
+          <text class="ring-label">已完成</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 今日统计卡片 -->
+    <view class="stats-card">
+      <view class="stat-item">
+        <text class="stat-val warning">{{stats ? stats.remaining_today : 0}}</text>
+        <text class="stat-lbl">待复习</text>
+      </view>
+      <view class="stat-divider"></view>
+      <view class="stat-item">
+        <text class="stat-val">{{stats ? stats.total_scheduled : 0}}</text>
+        <text class="stat-lbl">总排期</text>
+      </view>
+      <view class="stat-divider"></view>
+      <view class="stat-item">
+        <text class="stat-val success">{{stats ? Math.round(stats.accuracy_last_7d * 100) : 0}}%</text>
+        <text class="stat-lbl">正确率</text>
+      </view>
+    </view>
+
+    <!-- 开始按钮 -->
+    <button
+      class="start-btn"
+      bindtap="startReview"
+      wx:if="{{stats && stats.remaining_today > 0}}"
+    >
+      开始今日复习
+    </button>
+    <view wx:elif="{{stats && stats.remaining_today === 0 && stats.total_scheduled > 0}}" class="done-message">
+      <text class="done-icon">✓</text>
+      <text class="done-title">今日复习已完成</text>
+    </view>
+    <view wx:elif="{{stats && stats.total_scheduled === 0}}" class="done-message">
+      <text class="done-icon">📝</text>
+      <text class="done-title">暂无复习安排</text>
+      <text class="done-desc">刷题后系统会自动安排复习</text>
+    </view>
+  </view>
+</view>
+
+<!-- ==================== 练习页 ==================== -->
+<view
+  class="page review-practice"
+  wx:if="{{phase === 'practice'}}"
+  bindtouchstart="onTouchStart"
+  bindtouchend="onTouchEnd"
+>
+  <!-- 加载 -->
+  <view wx:if="{{practiceLoading}}" class="loading-wrap">
+    <view class="loading-spinner"></view>
+    <text class="loading-text">正在准备复习题目...</text>
+  </view>
+
+  <!-- 练习内容 -->
+  <view wx:else class="practice-wrap">
+    <!-- 进度条 -->
+    <view class="review-progress">
+      <text class="progress-text">{{currentIndex + 1}} / {{totalQuestions}}</text>
+      <view class="progress-track">
+        <view
+          class="progress-fill"
+          style="width:{{totalQuestions > 0 ? (currentIndex + 1) / totalQuestions * 100 : 0}}%"
+        ></view>
+      </view>
+    </view>
+
+    <!-- 题目卡片 -->
+    <view class="question-card {{animClass}}" wx:if="{{currentQuestion}}">
+      <!-- 学科标签 -->
+      <view class="q-subject">
+        <text class="subject-badge">{{subjectLabel(currentQuestion.subject)}}</text>
+      </view>
+
+      <!-- 题干 -->
+      <view class="q-stem">
+        <block wx:if="{{enableMathImage && currentQuestion._stemSegments.length > 0}}">
+          <math-question segments="{{currentQuestion._stemSegments}}" />
+        </block>
+        <block wx:elif="{{currentQuestion._stemNeedsRich}}">
+          <mp-html content="{{currentQuestion._stemHtml}}" lazy-load />
+        </block>
+        <text wx:else class="q-text">{{currentQuestion._stemText}}</text>
+      </view>
+
+      <!-- 选项 -->
+      <view class="q-options">
+        <view
+          wx:for="{{optionKeys}}"
+          wx:key="*this"
+          class="option-item
+            {{selectedAnswer === item && submitted && isCorrect ? 'opt-correct' : ''}}
+            {{selectedAnswer === item && submitted && !isCorrect ? 'opt-wrong' : ''}}
+            {{selectedAnswer !== item && submitted && correctAnswer === item ? 'opt-reveal' : ''}}
+            {{selectedAnswer === item ? 'opt-selected' : ''}}"
+          bindtap="selectOption"
+          data-option="{{item}}"
+        >
+          <view class="opt-key">{{item}}.</view>
+          <mp-html
+            wx:if="{{currentQuestion._optNeedsRich[item]}}"
+            content="{{currentQuestion._optHtml[item]}}"
+            class="opt-val"
+          ></mp-html>
+          <text wx:else class="opt-val">{{currentQuestion._optText[item]}}</text>
+        </view>
+      </view>
+
+      <!-- 答题反馈 -->
+      <view class="feedback {{submitted ? 'feedback-show' : ''}}" wx:if="{{submitted}}">
+        <view class="feedback-badge {{isCorrect ? 'badge-right' : 'badge-wrong'}}">
+          <text wx:if="{{isCorrect}}">✓ 回答正确</text>
+          <text wx:else>✗ 回答错误 · 正确答案 {{correctAnswer}}</text>
+        </view>
+        <button class="next-btn" bindtap="goNext">
+          {{currentIndex < totalQuestions - 1 ? '下一题' : '查看结果'}}
+        </button>
+      </view>
+    </view>
+  </view>
+</view>
+
+<!-- ==================== 结果页 ==================== -->
+<view class="page" wx:if="{{phase === 'result'}}">
+  <view class="result-wrap">
+    <!-- 完成动画 -->
+    <view class="result-icon">
+      <text class="result-icon-text">🎉</text>
+    </view>
+    <text class="result-title">复习完成</text>
+
+    <!-- 统计卡片 -->
+    <view class="result-stats">
+      <view class="result-stat-item">
+        <text class="result-stat-val">{{totalQuestions}}</text>
+        <text class="result-stat-lbl">复习题数</text>
+      </view>
+      <view class="result-stat-item">
+        <text class="result-stat-val success">{{correctCount}}</text>
+        <text class="result-stat-lbl">正确</text>
+      </view>
+      <view class="result-stat-item">
+        <text class="result-stat-val danger">{{wrongCount}}</text>
+        <text class="result-stat-lbl">错误</text>
+      </view>
+    </view>
+
+    <!-- 正确率 -->
+    <view class="accuracy-section">
+      <view class="accuracy-ring">
+        <view class="accuracy-bg"></view>
+        <view
+          class="accuracy-fg"
+          style="background: conic-gradient(#6B9B6B 0deg {{totalQuestions > 0 ? correctCount / totalQuestions * 360 : 0}}deg, #EDF1F5 0deg);"
+        ></view>
+        <view class="accuracy-center">
+          <text class="accuracy-num">{{totalQuestions > 0 ? Math.round(correctCount / totalQuestions * 100) : 0}}%</text>
+          <text class="accuracy-lbl">正确率</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 下次复习提示 -->
+    <view class="next-hint">
+      <text class="next-hint-text">系统已根据你的作答结果更新复习计划</text>
+    </view>
+
+    <button class="finish-btn" bindtap="finishReview">完成</button>
+  </view>
+</view>
