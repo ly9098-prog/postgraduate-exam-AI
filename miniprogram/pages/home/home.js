@@ -3,15 +3,23 @@ const auth = require('../../utils/auth')
 Page({
   data: {
     user: {},
-    greeting: '你好',
+    greeting: '',
     dateStr: '',
+    motto: '',
     authed: false,
     isAdmin: false,
   },
 
   async onShow() {
     const authed = auth.isLoggedIn()
-    this.setData({ user: auth.getUser() || {}, authed, isAdmin: auth.isAdmin(), greeting: this.getGreeting(), dateStr: this.getDateStr() })
+    this.setData({
+      user: auth.getUser() || {},
+      authed,
+      isAdmin: auth.isAdmin(),
+      greeting: this.getGreeting(),
+      dateStr: this.getDateStr(),
+      motto: this.getMotto(),
+    })
     if (!authed) return
     try {
       const syncedUser = await auth.syncCurrentUser()
@@ -29,6 +37,16 @@ Page({
     if (h < 14) return '中午好'
     if (h < 18) return '下午好'
     return '晚上好'
+  },
+
+  getMotto() {
+    const h = new Date().getHours()
+    if (h < 6) return '休息也是学习的一部分，明天再战'
+    if (h < 9) return '清晨是记忆的黄金时间'
+    if (h < 12) return '开始今天的学习计划吧'
+    if (h < 14) return '午后小憩一下，学习更高效'
+    if (h < 18) return '保持专注，坚持就是胜利'
+    return '完成今日计划，收获满满成就感'
   },
 
   getDateStr() {
