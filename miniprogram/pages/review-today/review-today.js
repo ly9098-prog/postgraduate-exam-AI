@@ -286,10 +286,7 @@ Page({
     }
     this.setData({ answers })
 
-    // Re-render current question to show updated selection
     // (the WXML template reads answers directly from data)
-    const currentQuestion = this.data.currentQuestion
-    this.setData({ currentQuestion })
   },
 
   /* ==================== 题目导航 ==================== */
@@ -413,6 +410,11 @@ Page({
           answers,
           currentIndex,
         })
+        // All questions mastered → go to final result
+        if (groups.length === 0 || groups.every(g => g.length === 0)) {
+          this.setData({ phase: 'final-result', totalCorrect: 0, totalWrong: 0, _accuracyStyle: '' })
+          return
+        }
         if (groupQuestions.length > 0) {
           this._showQuestion(Math.min(currentIndex, groupQuestions.length - 1))
         }

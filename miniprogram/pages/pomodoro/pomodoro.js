@@ -224,7 +224,9 @@ Page({
     if (!this.data.sessionId) return
     this._clearTimer()
     try {
-      await api.post(`/pomodoro/${this.data.sessionId}/complete`)
+      await api.post(`/pomodoro/${this.data.sessionId}/complete`, {
+        total_paused_ms: this.data.totalPausedMs || 0,
+      })
     } catch (e) {
       try { await api.post(`/pomodoro/${this.data.sessionId}/interrupt`) } catch (_) {}
     }
@@ -474,7 +476,7 @@ Page({
         displaySec: String(remaining % 60).padStart(2, '0'),
         progress: remaining / saved.totalSec,
       })
-      this._startBreak(saved.totalSec)
+      this._startBreak(remaining > 0 ? remaining : saved.totalSec)
     } catch (_) {}
   },
 

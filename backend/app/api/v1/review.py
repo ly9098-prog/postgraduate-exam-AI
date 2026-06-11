@@ -230,7 +230,7 @@ async def get_review_history(
     )
 
 
-@router.post("/grade-batch")
+@router.post("/grade-batch", response_model=BatchGradeResponse)
 async def grade_batch(
     data: BatchGradeRequest,
     db: AsyncSession = Depends(get_db),
@@ -251,6 +251,17 @@ async def grade_batch(
         )
         question = result.scalar_one_or_none()
         if not question:
+            results.append({
+                "schedule_id": item.schedule_id,
+                "question_id": item.question_id,
+                "is_correct": False,
+                "correct_answer": "",
+                "rating": 0,
+                "interval_after": 0,
+                "ease_factor_after": 0.0,
+                "next_review_at": None,
+            })
+            wrong_count += 1
             continue
 
         # 判对错
@@ -284,6 +295,17 @@ async def grade_batch(
             else:
                 wrong_count += 1
         except ValueError:
+            results.append({
+                "schedule_id": item.schedule_id,
+                "question_id": item.question_id,
+                "is_correct": False,
+                "correct_answer": "",
+                "rating": 0,
+                "interval_after": 0,
+                "ease_factor_after": 0.0,
+                "next_review_at": None,
+            })
+            wrong_count += 1
             continue
 
     await cache.delete(f"review:*:{current_user.id}*")
