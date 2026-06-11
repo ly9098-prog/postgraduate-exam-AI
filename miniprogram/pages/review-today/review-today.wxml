@@ -1,5 +1,5 @@
 <!-- ==================== 入口页 ==================== -->
-<view class="page" wx:if="{{phase === 'entry'}}">
+<view class="page review-entry" wx:if="{{phase === 'entry'}}">
   <!-- 加载 -->
   <view wx:if="{{entryLoading}}" class="loading-wrap">
     <view class="loading-spinner"></view>
@@ -8,54 +8,58 @@
 
   <!-- 入口内容 -->
   <view wx:else class="entry-wrap">
-    <!-- 环形进度 -->
-    <view class="ring-section">
-      <view class="ring-container">
-        <view class="ring-bg"></view>
-        <view
-          class="ring-fg"
-          style="{{_ringStyle}}"
-          wx:if="{{stats}}"
-        ></view>
-        <view class="ring-center">
-          <text class="ring-num">{{stats ? stats.total_scheduled - stats.remaining_today : 0}}</text>
-          <text class="ring-label">已完成</text>
+    <!-- 渐变头部 -->
+    <view class="header-gradient">
+      <view class="header-content">
+        <!-- 日期 -->
+        <text class="header-date">{{_dateStr}}</text>
+
+        <!-- 环形进度 -->
+        <view class="ring-section">
+          <view class="ring-container">
+            <view class="ring-bg"></view>
+            <view class="ring-fg" style="{{_ringStyle}}" wx:if="{{stats}}"></view>
+            <view class="ring-center">
+              <text class="ring-num">{{stats ? stats.total_scheduled - stats.remaining_today : 0}}</text>
+              <text class="ring-label">已完成</text>
+            </view>
+          </view>
         </view>
+
+        <!-- 激励文案 -->
+        <text class="motivation-text">{{_motivationMsg}}</text>
       </view>
     </view>
 
-    <!-- 今日统计卡片 -->
-    <view class="stats-card">
-      <view class="stat-item">
-        <text class="stat-val warning">{{stats ? stats.remaining_today : 0}}</text>
-        <text class="stat-lbl">待复习</text>
+    <!-- 玻璃卡片 · 今日统计 -->
+    <view class="glass-card" wx:if="{{stats}}">
+      <view class="glass-item">
+        <text class="glass-num warning">{{stats.remaining_today}}</text>
+        <text class="glass-label">待复习</text>
       </view>
-      <view class="stat-divider"></view>
-      <view class="stat-item">
-        <text class="stat-val">{{stats ? stats.total_scheduled : 0}}</text>
-        <text class="stat-lbl">总排期</text>
+      <view class="glass-divider"></view>
+      <view class="glass-item">
+        <text class="glass-num">{{stats.total_scheduled}}</text>
+        <text class="glass-label">总排期</text>
       </view>
-      <view class="stat-divider"></view>
-      <view class="stat-item">
-        <text class="stat-val success">{{stats ? Math.round(stats.accuracy_last_7d * 100) : 0}}%</text>
-        <text class="stat-lbl">正确率</text>
+      <view class="glass-divider"></view>
+      <view class="glass-item">
+        <text class="glass-num success">{{Math.round(stats.accuracy_last_7d * 100)}}%</text>
+        <text class="glass-label">正确率</text>
       </view>
     </view>
 
-    <!-- 开始按钮 -->
-    <button
-      class="start-btn"
-      bindtap="startReview"
-      wx:if="{{stats && stats.remaining_today > 0}}"
-    >
+    <!-- 开始按钮 / 完成状态 -->
+    <button class="gradient-btn" wx:if="{{stats && stats.remaining_today > 0}}" bindtap="startReview">
       开始今日复习
     </button>
-    <view wx:elif="{{stats && stats.remaining_today === 0 && stats.total_scheduled > 0}}" class="done-message">
-      <text class="done-icon">✓</text>
+    <view wx:elif="{{stats && stats.remaining_today === 0 && stats.total_scheduled > 0}}" class="done-wrap">
+      <view class="done-check">✓</view>
       <text class="done-title">今日复习已完成</text>
+      <text class="done-desc">明天继续加油</text>
     </view>
-    <view wx:elif="{{stats && stats.total_scheduled === 0}}" class="done-message">
-      <text class="done-icon">📝</text>
+    <view wx:elif="{{stats && stats.total_scheduled === 0}}" class="done-wrap">
+      <view class="done-check mute">📝</view>
       <text class="done-title">暂无复习安排</text>
       <text class="done-desc">刷题后系统会自动安排复习</text>
     </view>
