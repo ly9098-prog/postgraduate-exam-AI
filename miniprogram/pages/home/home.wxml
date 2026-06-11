@@ -12,7 +12,7 @@
 </view>
 
 <view class="action-grid">
-  <view class="action-card" bindtap="startRandom">
+  <view class="action-card" hover-class="active-surface" bindtap="startRandom">
     <view class="icon-badge icon-primary">练</view>
     <view class="action-info">
       <text class="action-title">随机刷题</text>
@@ -20,7 +20,7 @@
     </view>
     <text class="action-arrow">›</text>
   </view>
-  <view class="action-card" bindtap="goWrongBook">
+  <view class="action-card" hover-class="active-surface" bindtap="goWrongBook">
     <view class="icon-badge icon-warning">错</view>
     <view class="action-info">
       <text class="action-title">错题本</text>
@@ -28,7 +28,7 @@
     </view>
     <text class="action-arrow">›</text>
   </view>
-  <view class="action-card" bindtap="goReview">
+  <view class="action-card" hover-class="active-surface" bindtap="goReview">
     <view class="icon-badge icon-success">复</view>
     <view class="action-info">
       <text class="action-title">今日复习</text>
@@ -36,7 +36,7 @@
     </view>
     <text class="action-arrow">›</text>
   </view>
-  <view class="action-card" bindtap="goDashboard">
+  <view class="action-card" hover-class="active-surface" bindtap="goDashboard">
     <view class="icon-badge icon-muted">数</view>
     <view class="action-info">
       <text class="action-title">学习统计</text>
@@ -44,7 +44,7 @@
     </view>
     <text class="action-arrow">›</text>
   </view>
-  <view class="action-card" bindtap="goPomodoro">
+  <view class="action-card" hover-class="active-surface" bindtap="goPomodoro">
     <view class="icon-badge icon-warning">钟</view>
     <view class="action-info">
       <text class="action-title">番茄钟</text>
@@ -52,7 +52,7 @@
     </view>
     <text class="action-arrow">›</text>
   </view>
-  <view class="action-card" bindtap="goImport" wx:if="{{isAdmin}}">
+  <view class="action-card" hover-class="active-surface" bindtap="goImport" wx:if="{{isAdmin}}">
     <view class="icon-badge icon-success">导</view>
     <view class="action-info">
       <text class="action-title">题库导入</text>

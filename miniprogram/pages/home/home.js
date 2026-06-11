@@ -15,7 +15,7 @@ Page({
     this.setData({
       user: auth.getUser() || {},
       authed,
-      isAdmin: auth.isAdmin(),
+      isAdmin: authed ? auth.isAdmin() : false,
       greeting: this.getGreeting(),
       dateStr: this.getDateStr(),
       motto: this.getMotto(),
