@@ -53,7 +53,7 @@ async def complete_session(db: AsyncSession, session_id: int, user_id: int, tota
     return session
 
 
-async def interrupt_session(db: AsyncSession, session_id: int, user_id: int) -> PomodoroSession | None:
+async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, total_paused_ms: int = 0) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession).where(
             PomodoroSession.id == session_id,
@@ -66,7 +66,8 @@ async def interrupt_session(db: AsyncSession, session_id: int, user_id: int) -> 
         return None
     now = datetime.utcnow()
     session.end_time = now
-    session.actual_duration = int((now - session.start_time).total_seconds())
+    raw_seconds = int((now - session.start_time).total_seconds())
+    session.actual_duration = max(0, raw_seconds - int(total_paused_ms / 1000))
     session.status = "interrupted"
     await db.flush()
     await db.refresh(session)
@@ -106,13 +107,14 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=today_start.weekday())
 
+    _status_cond = PomodoroSession.status.in_(["completed", "interrupted"])
     today_result = await db.execute(
         select(
             func.count(PomodoroSession.id),
             func.coalesce(func.sum(PomodoroSession.actual_duration), 0),
         ).where(
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status == "completed",
+            _status_cond,
             PomodoroSession.end_time >= today_start,
         )
     )
@@ -124,7 +126,7 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
             func.coalesce(func.sum(PomodoroSession.actual_duration), 0),
         ).where(
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status == "completed",
+            _status_cond,
             PomodoroSession.end_time >= week_start,
         )
     )
@@ -149,7 +151,7 @@ async def get_trends(db: AsyncSession, user_id: int, days: int = 7) -> list[dict
         )
         .where(
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status == "completed",
+            PomodoroSession.status.in_(["completed", "interrupted"]),
             PomodoroSession.end_time >= since,
         )
         .group_by(func.date(PomodoroSession.end_time))
@@ -180,7 +182,7 @@ async def get_subject_breakdown(db: AsyncSession, user_id: int) -> list[dict]:
         )
         .where(
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status == "completed",
+            PomodoroSession.status.in_(["completed", "interrupted"]),
             PomodoroSession.end_time >= today_start,
         )
         .group_by(PomodoroSession.subject)
