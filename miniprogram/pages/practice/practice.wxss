@@ -1082,6 +1082,48 @@
 .s1 { left: 12rpx; top: 28rpx; animation-delay: 0.04s; }
 .s2 { left: 48rpx; top: 4rpx; animation-delay: 0.1s; }
 .s3 { right: 10rpx; top: 36rpx; animation-delay: 0.16s; }
+.s4 { left: 70rpx; top: 18rpx; animation-delay: 0.2s; }
+.s5 { right: 48rpx; top: 8rpx; animation-delay: 0.24s; }
+.s6 { left: 36rpx; bottom: 4rpx; animation-delay: 0.28s; }
+
+/* Combo milestone effects */
+.answer-feedback.combo-warm .feedback-card {
+  box-shadow: 0 18rpx 44rpx rgba(34, 197, 94, 0.2);
+}
+
+.answer-feedback.combo-hot .feedback-card {
+  background: linear-gradient(135deg, rgba(236, 253, 243, 0.98) 0%, rgba(255, 251, 235, 0.96) 100%);
+  border-color: rgba(245, 158, 11, 0.28);
+  box-shadow: 0 22rpx 52rpx rgba(245, 158, 11, 0.22);
+}
+.answer-feedback.combo-hot .feedback-icon-wrap {
+  background: linear-gradient(135deg, #F59E0B 0%, #FFD166 100%);
+  box-shadow: 0 12rpx 28rpx rgba(245, 158, 11, 0.3);
+}
+
+.answer-feedback.combo-fire .feedback-card {
+  background: linear-gradient(135deg, rgba(254, 242, 242, 0.98) 0%, rgba(255, 247, 237, 0.96) 100%);
+  border-color: rgba(239, 68, 68, 0.28);
+  box-shadow: 0 24rpx 56rpx rgba(239, 68, 68, 0.22);
+}
+.answer-feedback.combo-fire .feedback-icon-wrap {
+  background: linear-gradient(135deg, #EF4444 0%, #F97316 100%);
+  box-shadow: 0 14rpx 32rpx rgba(239, 68, 68, 0.34);
+  animation: firePop 0.4s ease-out;
+}
+.answer-feedback.combo-fire .feedback-combo {
+  background: linear-gradient(135deg, #FEF2F2, #FFF7ED);
+  color: #DC2626;
+  font-size: 26rpx;
+  padding: 8rpx 18rpx;
+  animation: firePop 0.5s ease-out;
+}
+
+@keyframes firePop {
+  0% { transform: scale(0.7); }
+  60% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
 
 @keyframes feedbackFloatIn {
   from { opacity: 0; transform: translateY(24rpx) scale(0.98); }

@@ -116,6 +116,11 @@ Page({
     celebrationType: 'group',
     celebrationProgressText: '',
     celebrationRewardText: '',
+    growthLevel: '',
+    growthExpText: '',
+    growthLevelPct: 0,
+    growthBadgeCount: 0,
+    growthDesc: '',
   },
 
   onLoad() {
@@ -586,10 +591,11 @@ Page({
     }, 2400)
   },
 
-  _showFinalCelebration() {
+  async _showFinalCelebration() {
     const total = this.data.allGroupResults.length
     const correct = this.data.totalCorrect
     const accuracy = total > 0 ? Math.round(correct / total * 100) : 0
+    await this._loadGrowthForCelebration()
     this._showCelebration({
       celebrationType: 'final',
       celebrationIcon: '章',
@@ -599,6 +605,23 @@ Page({
       celebrationProgressText: `今日正确率 ${accuracy}%`,
       celebrationRewardText: '解锁今日复习徽章',
     }, 3600)
+  },
+
+  async _loadGrowthForCelebration() {
+    try {
+      const growth = await api.get('/stats/growth')
+      if (!growth) return
+      const unlockedCount = (growth.badges || []).filter(b => b.unlocked).length
+      this.setData({
+        growthLevel: growth.level_title || 'Lv1 起步',
+        growthExpText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
+        growthLevelPct: growth.level_progress_pct || 0,
+        growthBadgeCount: unlockedCount,
+        growthDesc: unlockedCount > 0
+          ? `已点亮 ${unlockedCount} 个徽章 · ${growth.level_title || ''}`
+          : `当前 ${growth.level_title || 'Lv1 起步'} · 继续保持`,
+      })
+    } catch (_) {}
   },
 
   _showCelebration(copy, duration) {

@@ -56,8 +56,13 @@ Page({
   async loadGrowthSnapshot() {
     this.setData({ _animStreakDays: 0, _animGoalDone: 0, _animLevelProgress: 0 })
     try {
-      const res = await api.get('/stats/dashboard')
-      this.setData(this.buildGrowthSnapshot((res && res.overview) || {}))
+      const [dashRes, growthRes] = await Promise.all([
+        api.get('/stats/dashboard'),
+        api.get('/stats/growth').catch(() => null),
+      ])
+      const overview = (dashRes && dashRes.overview) || {}
+      const growth = growthRes || null
+      this.setData(this.buildGrowthSnapshot(overview, growth))
       this._animateNumbers()
     } catch (e) {
       console.error('加载成长数据失败', e)
@@ -107,7 +112,7 @@ Page({
     }
   },
 
-  buildGrowthSnapshot(overview) {
+  buildGrowthSnapshot(overview, growth) {
     this._lastOverview = overview || {}
     const streakDays = this.toNonNegativeInt(overview.consecutive_days)
     const todayGoalDone = this.toNonNegativeInt(overview.today_questions)
@@ -115,8 +120,29 @@ Page({
     const dueReviewCount = this.toNonNegativeInt(overview.due_review_count)
     const todayGoalTotal = this.getStoredTodayGoal()
     const levelProgress = Math.min(100, Math.round((todayGoalDone / todayGoalTotal) * 100))
-    const levelMeta = this.getLevelMeta(totalQuestions)
 
+    if (growth) {
+      const topBadges = (growth.badges || []).slice(0, 3)
+      return {
+        streakDays,
+        studyLevel: growth.level_title || 'Lv1 起步',
+        levelProgress,
+        todayGoalDone,
+        todayGoalTotal,
+        expText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
+        nextLevelText: growth.level_progress_pct >= 100
+          ? '已满级，继续保持题感'
+          : `距离下一级还差 ${Math.max(0, (growth.exp_to_next || 0) - (growth.exp_current || 0))} EXP`,
+        dailyBoostText: growth.daily_boost || this.getDailyBoostText(todayGoalDone, todayGoalTotal, streakDays),
+        badgeList: topBadges.map(b => ({
+          key: b.key, title: b.title, desc: b.unlocked ? '已点亮' : b.desc, unlocked: b.unlocked
+        })),
+        badgeTitle: streakDays >= 30 ? '连续30天徽章' : streakDays >= 7 ? '连续7天徽章' : topBadges.some(b => b.unlocked) ? '徽章进行中' : '今日待点亮',
+        missionText: this.getMissionText(todayGoalDone, todayGoalTotal, dueReviewCount),
+      }
+    }
+
+    const levelMeta = this.getLevelMeta(totalQuestions)
     return {
       streakDays,
       studyLevel: levelMeta.studyLevel,

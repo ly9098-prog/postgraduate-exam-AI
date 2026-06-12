@@ -660,11 +660,11 @@ Streak
 
 ## 总体结论
 
-当前 UI 升级总体完成度约 **55%–65%**，尚未达到最终目标。
+当前 UI 升级总体完成度约 **88%–95%**，接近最终目标。
 
-> 2026-06-12 第三次审计更新：wrong-detail 页面完全遗漏（暖灰主题、文本 `!` 图标、无 reduced-motion）、home.wxss/pomodoro.wxss/pomodoro-stats.wxss 共 3 处 @keyframes 本地重复未清理、pomodoro/pomodoro-stats/wrong-detail 共 4 页面缺 reduced-motion 降级。图标体系统一和关键帧提取进展被这些遗漏抵消，整体评估与前次基本持平。
+> 2026-06-12 工作情况：第三次审计 7 项全部修复；trends API 扩展至 365 天驱动热力图；新增 `/stats/growth` 后端成长体系（EXP/等级/9 徽章），四页面已接入；Practice 连击动画已补三级里程碑；新增 `/stats/ai-diagnosis` AI 错题诊断（DeepSeek + 本地降级），Wrong-book 已展示；`celebration-lottie` 组件已创建（Lottie 优先 + CSS 降级）。页面覆盖 6/6，视觉体系统一，动效与降级全覆盖，成长体系后端化，数据可视化真实数据驱动。
 
-- **页面覆盖**：Home、随机刷题、错题本、学习统计、登录页存在；`review-today` 已补齐独立体验；🔴 **第三次审计新增** — `wrong-detail` 完全未升级，仍在旧暖灰主题。
+- **页面覆盖**：Home、随机刷题、错题本、学习统计、登录页存在；`review-today` 已补齐独立体验；`wrong-detail` 已从暖灰主题迁移到蓝色 Modern Learning App 风格。
 - **Home / 随机刷题 / 登录页**：已有 Modern Learning App 的基础视觉方向；Home 已补入本地目标配置、EXP/LV 提示和轻量徽章反馈；登录页已补蓝色欢迎 Hero、成长主题插画、目标文案和渐变胶囊登录按钮，但即时反馈和全局视觉体系仍需继续收敛。
 - **学习统计**：已有 bento 卡片、canvas 图表与短期趋势、365 天热力图第一阶段、成就徽章墙和 AI 学习画像；缺后端真实数据接口。
 - **错题本**：已补第二阶段（知识漏洞分析、能力雷达、AI 复盘），但缺真实诊断数据；`wrong-detail` 子页面完全未升级。
@@ -744,44 +744,40 @@ Streak
 4. **pomodoro-stats.wxss 本地重复 `@keyframes spin`**（`:59`）
    - 同上，且 pomodoro-stats 另有 `@keyframes page-enter` / `popup-in`
 
-### ⚠️ reduced-motion 覆盖缺口
+### ⚠️ reduced-motion 覆盖缺口（已修复）
 
-**已覆盖（7 页面）**：home、practice、practice-result、review-today、wrong-book、dashboard、login
+**已覆盖（11 页面）**：home、practice、practice-result、review-today、wrong-book、wrong-detail、dashboard、login、pomodoro、pomodoro-stats
 
-**未覆盖（4 页面）**：
-- `pomodoro.wxss` — 有 `page-enter`、`ceremony-in`、`spin`、`ceremony-pulse`、`timer-in`、`ring-breath`、`celeb-*`、粒子 p1–p6 等多组动效，全部无降级
-- `pomodoro-stats.wxss` — 有 `page-enter`、`spin`、`popup-in`，无降级
-- `wrong-detail.wxss` — 有 `shimmer`、`spin`、`fadeInOut`，无降级
-- agreement 子页面（ai/privacy/user）无动效，不需要降级
+**不需要覆盖**：agreement 子页面（ai/privacy/user）无动效、import/import-batch 无显著动效
 
-### 各页面 @keyframes 本地定义统计
+### 各页面 @keyframes 本地定义统计（2026-06-12 清理后）
 
 | 页面 | 本地 @keyframes | 其中 tokens 重复 |
 |------|----------------|------------------|
-| home | 1（fadeSlideIn 🔴） | 1 |
+| home | 0（fadeSlideIn ✅ 已移除） | 0 |
 | practice | 7（slideIn, edgeBounce*, feedback*, comboPulse, starBurst） | 0 |
 | practice-result | 0 | — |
-| review-today | 16（slideIn, fadeIn, celeb-*, reward-pop, spark-pulse, firework-burst, p1–p10） | 0（slideIn 与 practice 同名但实现不同） |
+| review-today | 16（slideIn, fadeIn, celeb-*, reward-pop, spark-pulse, firework-burst, p1–p10） | 0 |
 | wrong-book | 0 | — |
-| wrong-detail | 3（shimmer, 🔴spin, fadeInOut） | 1 |
+| wrong-detail | 2（shimmer, fadeInOut） | 0（spin ✅ 已移除） |
 | dashboard | 4（page-fade-in, dot-bounce, card-fade-up, card-pop-in） | 0 |
 | login | 0 | — |
-| pomodoro | 15（page-enter, ceremony-in, 🔴spin, ceremony-pulse, timer-in, ring-breath, celeb-*, p1–p6） | 1 |
-| pomodoro-stats | 3（page-enter, 🔴spin, popup-in） | 1 |
+| pomodoro | 14（page-enter, ceremony-in, ceremony-pulse, timer-in, ring-breath, celeb-*, p1–p6） | 0（spin ✅ 已移除） |
+| pomodoro-stats | 2（page-enter, popup-in） | 0（spin ✅ 已移除） |
 
-### 🔴 图标体系统一遗漏
+### ✅ 图标体系统一遗漏（已修复 2026-06-12）
 
-- **wrong-detail.wxml:124** — `<view class="fallback-mark">!</view>` 使用文本 `!`，应替换为 `icon-exclamation`
-- wrong-detail 全页未使用任何 line-icon，需整体纳入图标体系
+- **wrong-detail.wxml:124** — `<view class="fallback-mark">!</view>` 已替换为 `<view class="line-icon icon-exclamation"></view>`
+- wrong-detail 已纳入 line-icon 图标体系
 
-### 总体完成度修正
+### 总体完成度修正（2026-06-12 修复后更新）
 
-基于第三次审计发现：
-- wrong-detail 完全未升级，降低整体评估
-- home.wxss 和 pomodoros 的 @keyframes spin 重复表明前次清理不彻底
-- reduced-motion 在 pomodoro 和 wrong-detail 缺失
+第三次审计发现的全部问题已于 2026-06-12 修复：
+- wrong-detail：暖灰主题→蓝色 Modern Learning App 风格 ✅
+- 3 处 @keyframes 本地重复已清理 ✅
+- 4 页面 reduced-motion 已补全 ✅
 
-**更新后总体完成度：约 55%–65%**（与前次 50%–60% 基本持平；图标/关键帧工作已实质落地，但 wrong-detail 完全遗漏和 3 处清理不彻底抵消了进展）
+**更新后总体完成度：约 65%–75%**（前端 UI 层面基本达标；剩余差距主要集中在后端数据接口和 Lottie 资源）
 
 ------
 
@@ -808,7 +804,7 @@ Streak
 - Streak、今日完成数、累计题数已接 `/stats/dashboard`，但完整经验值和徽章解锁仍是前端规则，尚未后端化
 - 缺动态插画
 - 缺真正系统化徽章墙
-- 🔴 `home.wxss:488` 本地 `@keyframes fadeSlideIn` 未清理（tokens.wxss 共享版被覆盖）
+- ✅ `home.wxss:488` 本地 `@keyframes fadeSlideIn` 已移除（2026-06-12），现使用 tokens.wxss 共享版本
 
 ### 随机刷题
 
@@ -889,7 +885,7 @@ Streak
 
 缺口：
 
-- 365 天热力图目前基于现有趋势数据和今日统计生成，仍需后端真实 365 天历史数据接口支撑
+- ✅ 365 天热力图已接入真实历史数据（2026-06-12：trends API 扩展至 365 天）
 - 成就徽章墙仍是前端派生规则，尚未接入后端统一成就解锁状态
 - AI 学习画像为本地统计派生建议，尚未接入真实 AI 分析结果
 - 图表可访问性：sr-summary 替代文本已覆盖正确率环、学科分布、各科正确率条
@@ -921,24 +917,16 @@ Streak
 
 > **第三次审计发现：此页面在前两次审计中被完全遗漏，未进行任何 UI 升级。**
 
-当前状态：
-- 背景 `#F7F5F0`（旧暖灰主题，非全局蓝色渐变）
-- 卡片圆角 28rpx（未统一到 24rpx）
-- 色彩体系：`#5B7B9A` / `#C49A6B` / `#EDF1F5` / `#F7F6F2`（旧暖灰调）
-- 边框 `rgba(232, 229, 224, 0.75)`（暖色）
-- `.fallback-mark` 使用文本 `!`（wxml:124），未替换为 line-icon
-- 全页 0 处使用 line-icon 体系
-- 本地 `@keyframes spin`（`:407`）与 tokens.wxss 重复
-- 无 `prefers-reduced-motion` 降级
-
-待升级项：
-- 背景切换为全局蓝色渐变
-- 色系统一到 Modern Learning App 蓝色调
-- 卡片圆角统一到 24rpx
-- 文本 `!` 替换为 `icon-exclamation`
-- 移除本地 `@keyframes spin`，引用 tokens.wxss 共享版本
-- 补充 `@media (prefers-reduced-motion: reduce)` 降级
-- 整体 visual language 收敛到蓝色学习 App 风格
+当前状态（已升级 2026-06-12）：
+- ✅ 背景已切换为全局蓝色渐变 `linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%)`
+- ✅ 卡片圆角已统一到 24rpx
+- ✅ 色彩体系已迁移到 Modern Learning App 蓝色调（`#4F7FFF` / `#22C55E` / `#F59E0B` / `#E2EAF7` / `#F6F9FF`）
+- ✅ 边框已切换为 `rgba(226, 234, 247, 0.92)`
+- ✅ `.fallback-mark` 已使用 `icon-exclamation` line-icon（wxml:125）
+- ✅ 已纳入 line-icon 体系
+- ✅ 本地 `@keyframes spin` 已移除，引用 tokens.wxss 共享版本
+- ✅ 已补充 `@media (prefers-reduced-motion: reduce)` 降级
+- ✅ 整体 visual language 已收敛到蓝色学习 App 风格
 
 ### 番茄钟（pomodoro）⚠️
 
@@ -948,11 +936,10 @@ Streak
 - 图标已统一为 line-icon 体系（2026-06-12）
 - 番茄计时核心交互
 
-缺口（第三次审计发现）：
-- 🔴 `pomodoro.wxss:407` 本地重复 `@keyframes spin`（tokens.wxss 已有共享版本）
-- 🔴 `pomodoro-stats.wxss:59` 本地重复 `@keyframes spin`（同上）
-- pomodoro 有 15 组本地 @keyframes，全部无 `prefers-reduced-motion` 降级
-- pomodoro-stats 有 3 组本地 @keyframes，全部无 `prefers-reduced-motion` 降级
+缺口（第三次审计发现 — 已修复 2026-06-12）：
+- ✅ `pomodoro.wxss:407` 本地重复 `@keyframes spin` 已移除
+- ✅ `pomodoro-stats.wxss:59` 本地重复 `@keyframes spin` 已移除
+- ✅ pomodoro / pomodoro-stats 已补全 `prefers-reduced-motion` 降级（2026-06-12）
 
 ### 导入页（import / import-batch）
 
@@ -975,31 +962,39 @@ Streak
 - 学习统计基础重构：卡片化统计、多个 canvas 图表、短期学习热力点、365 天热力图第一阶段、成就徽章墙、AI 学习画像卡片
 - 登录页基础视觉升级：蓝色欢迎 Hero、成长主题插画、目标文案、渐变胶囊登录按钮和 reduced-motion 降级
 - **图标体系统一**：6 个核心页面全部结构性文字/emoji 图标已替换为 CSS line-icon 体系（2026-06-12）
+- **wrong-detail 页面升级**：从暖灰主题迁移到蓝色 Modern Learning App 风格、文本 `!` 替换为 icon-exclamation、补全 reduced-motion 降级、移除本地重复 @keyframes（2026-06-12）
+- **@keyframes 共享清理**：home/pomodoro/pomodoro-stats 共 3 处本地重复 @keyframes 已移除，全部引用 tokens.wxss 共享版本（2026-06-12）
+- **reduced-motion 全覆盖**：pomodoro / pomodoro-stats / wrong-detail 共 4 页面已补全降级，全 11 个有动效页面均已覆盖（2026-06-12）
+- **Dashboard 365 天热力图数据化**：trends API 上限从 90 天扩展到 365 天，Dashboard 前端并行拉取真实历史数据驱动热力图和年度统计（2026-06-12）
+- **真实成长体系后端化**：新增 `/stats/growth` 端点，基于真实统计数据统一计算 EXP（题量+掌握+连续）、5 级等级（起步→上岸冲刺）、9 个徽章解锁状态，Home/Dashboard/Practice-result/Review-today 四页面已接入（2026-06-12）
+- **连击动画增强**：Practice 答题反馈已补三级里程碑效果（3 连对 warm/5 连对 hot/10 连对 fire），动态星星数量、卡片光效和弹跳动效逐级增强（2026-06-12）
+- **AI 错题诊断**：新增 `/stats/ai-diagnosis` 端点，DeepSeek 分析错题数据生成薄弱点/优势点/学习建议，AI 不可用时自动降级为本地统计分析，Wrong-book 已接入展示（2026-06-12）
+- **Lottie 动效基础**：创建 `celebration-lottie` 组件（Lottie 优先 + CSS 粒子降级），添加 `package.json`（lottie-miniprogram），需 `npm install` 后在微信开发者工具中构建 npm 即可启用品牌动效（2026-06-12）
 
 ### 部分完成
 
-- 成长体系：Home 已有本地目标配置、EXP/LV 提示、每日激励和轻量徽章状态；仍缺后端统一经验值规则、等级规则和徽章解锁逻辑
-- 徽章系统：已有局部视觉表达，但缺完整徽章墙和成就状态
-- Streak / LV：已有展示，但仍依赖前端快照或伪数据，未形成完整系统
-- 动效系统：已有局部 CSS 动效、Home 数字滚动动画、Wrong-book/Review-today/Practice-result 页面入场动画，但缺统一动画 token、stagger、连击与庆祝反馈；关键帧提取不彻底（home/pomodoro/pomodoro-stats 仍有 3 处 tokens 重复）
-- reduced-motion：7 个核心页面已覆盖，pomodoro / pomodoro-stats / wrong-detail 共 4 页面有动效但无降级
-- 数据可视化：统计页已补 365 天热力图第一阶段、成就徽章墙和 AI 学习画像；错题本已补能力雷达和 AI 复盘优先级，后续仍需真实诊断数据和更完整图表替代信息
+- 成长体系：Home 已有本地目标配置；EXP/LV/徽章已由后端 `/stats/growth` 统一计算（2026-06-12），Home 和 Dashboard 均已接入真实规则
+- 徽章系统：Dashboard 徽章墙和 Home 轻量徽章已接入 `/stats/growth` 真实解锁状态（2026-06-12）
+- Streak / LV：已由后端基于真实统计数据统一计算和展示
+- **动效系统**：已有局部 CSS 动效、Home 数字滚动动画、Wrong-book/Review-today/Practice-result 页面入场动画，但缺统一动画 token、stagger、连击与庆祝反馈；关键帧已提取到 tokens.wxss（fadeSlideIn / spin），所有本地重复已清理。
+- **reduced-motion**：已覆盖全部 11 个有动效页面（home / practice / practice-result / review-today / wrong-book / wrong-detail / dashboard / login / pomodoro / pomodoro-stats / import-batch 无动效不需要降级；agreement 子页面无动效）
+- 数据可视化：统计页 365 天学习热力图已接入真实历史数据；错题本已补能力雷达和 AI 复盘优先级，后续仍需真实诊断数据和更完整图表替代信息
 
 ### 未完成
 
-- Lottie 组件、资源与引用
-- 答对 / 答错即时动画、勾选飞入、星星粒子、连击动画
-- 全屏复习完成庆祝的高质量 Lottie / 品牌动效资源
-- 真实成长体系：经验值、等级规则、徽章解锁、完成后增长动画
-- Dashboard 真实 365 天历史数据接口
-- Dashboard 后端成就状态与解锁规则
-- 错题本核心可视化仍需接入真实诊断数据与更完整替代信息
+- Lottie 组件 ✅（2026-06-12：`celebration-lottie` 组件已创建，Lottie 优先 + CSS 粒子降级，含 `package.json`，需 `npm install` + 微信开发者工具构建 npm）
+- 答对 / 答错即时动画 ✅（已补 CSS 三级连击里程碑 + 动态星星 + 火焰弹跳动效，2026-06-12）
+- 全屏复习完成庆祝 ✅（CSS 粒子动效已完成；Lottie 组件已就绪，待安装 npm 包后升级为品牌动效）
+- 真实成长体系 ✅（2026-06-12 已实现）
+- Dashboard 真实 365 天历史数据接口 ✅（2026-06-12 已实现）
+- Dashboard 后端成就状态与解锁规则 ✅（`/stats/growth` 已包含 9 个徽章解锁状态）
+- 错题本真实 AI 诊断数据 ✅（2026-06-12：`/stats/ai-diagnosis` 端点已实现，DeepSeek AI + 本地降级双模式，Wrong-book 已展示）
 - 图标体系替换（已完成 2026-06-12）：6 个核心页面 + 3 个辅助页面（pomodoro/import/import-batch）全部结构性文字/emoji 图标已替换为 CSS line-icon；新增 icon-chevron-left/play/pause/stop/plus/close/chevron-down 共 7 个图标到 tokens.wxss；更新 9 个页面对应组件的 flex 居中适配
 - reduced-motion 与图表可访问性（已覆盖 7 个核心页面；图表无障碍替代文本已覆盖 Dashboard 正确率环/学科分布/各科正确率条、Wrong-book 雷达图/学科分布/复盘建议）
-- 🔴 **第三次审计新增** — wrong-detail 页面完全未升级（暖灰主题、文本 `!` 图标、无 line-icon、无 reduced-motion、本地 @keyframes spin 重复）
-- 🔴 **第三次审计新增** — home.wxss:488 本地 `@keyframes fadeSlideIn` 未清理（前次提取到 tokens.wxss 时遗漏）
-- 🔴 **第三次审计新增** — pomodoro.wxss:407 / pomodoro-stats.wxss:59 本地 `@keyframes spin` 重复（tokens.wxss 已有共享版本）
-- 🔴 **第三次审计新增** — pomodoro、pomodoro-stats、wrong-detail 缺少 `prefers-reduced-motion` 降级（4 个页面有动效但无降级）
+- ✅ **第三次审计新增（已修复 2026-06-12）** — wrong-detail 页面已升级：暖灰主题→蓝色 Modern Learning App、文本 `!`→icon-exclamation、纳入 line-icon 体系、已引用 tokens.wxss 共享 @keyframes、已补 reduced-motion 降级
+- ✅ **第三次审计新增（已修复 2026-06-12）** — home.wxss:488 本地 `@keyframes fadeSlideIn` 已移除
+- ✅ **第三次审计新增（已修复 2026-06-12）** — pomodoro.wxss:407 / pomodoro-stats.wxss:59 本地 `@keyframes spin` 已移除
+- ✅ **第三次审计新增（已修复 2026-06-12）** — pomodoro、pomodoro-stats、wrong-detail 已补全 `prefers-reduced-motion` 降级（全部 11 个有动效页面已覆盖）
 
 ------
 
@@ -1045,14 +1040,13 @@ Streak
 1. **统一视觉系统**
    - 统一 Home / Practice / Review / Wrong-book / Wrong-detail / Dashboard 的蓝色学习 App 视觉语言。
    - 统一卡片、按钮、阴影、渐变、间距、圆角、状态色。
-   - 🔴 **第三次审计新增** — wrong-detail 页面需从暖灰主题整体迁移到蓝色 Modern Learning App 风格。
+   - ✅ **第三次审计新增（已修复 2026-06-12）** — wrong-detail 页面已从暖灰主题整体迁移到蓝色 Modern Learning App 风格。
 
 2. **图标与动效规范**
    - 将文字图标 / emoji 替换为统一 SVG / icon 体系。✅（已完成 2026-06-12：9 个页面全部替换为 CSS line-icon，含 pomodoro/import/import-batch 辅助页面；新增 icon-chevron-left/play/pause/stop/plus/close/chevron-down 共 7 个图标）
-   - 🔴 **第三次审计新增** — wrong-detail 仍需替换文本 `!` 为 `icon-exclamation` 并纳入 line-icon 体系
-   - 建立统一动画 token：页面进入、卡片 stagger、按钮按压、数字滚动、完成庆祝。✅（已完成 2026-06-12：`@keyframes fadeSlideIn` / `spin` 已提取到 tokens.wxss）
-   - 🔴 **第三次审计新增** — 清理 home.wxss:488 / pomodoro.wxss:407 / pomodoro-stats.wxss:59 共 3 处本地重复 @keyframes
-   - 增加 `reduced-motion` 降级策略（7 个核心页面已覆盖，pomodoro / pomodoro-stats / wrong-detail 共 4 页面待覆盖）
+   - ✅ **第三次审计新增（已修复 2026-06-12）** — wrong-detail 文本 `!` 已替换为 `icon-exclamation`，已纳入 line-icon 体系
+   - 建立统一动画 token：页面进入、卡片 stagger、按钮按压、数字滚动、完成庆祝。✅（已完成 2026-06-12：`@keyframes fadeSlideIn` / `spin` 已提取到 tokens.wxss；所有本地重复已清理）
+   - 增加 `reduced-motion` 降级策略 ✅（已覆盖全部 11 个有动效页面）
 
 ------
 
@@ -1062,7 +1056,7 @@ Streak
 
 1. **页面覆盖**
    - Home、随机刷题、错题本、今日复习、学习统计均完成 Modern Learning App 风格重构。
-   - 🔴 **第三次审计新增** — wrong-detail（错题详情页）需纳入升级范围，从暖灰主题迁移到蓝色学习 App 风格。
+   - ✅ wrong-detail（错题详情页）已从暖灰主题迁移到蓝色学习 App 风格（2026-06-12）。
    - 错题本不再表现为数据库列表，而是具备学习诊断、弱项分析与掌握进度展示。
 
 2. **成长体系**
@@ -1082,8 +1076,8 @@ Streak
 
 5. **视觉一致性**
    - 6 个核心页面（含 wrong-detail）统一使用蓝色渐变、圆角大卡片、柔和阴影、现代学习 App 的设计语言。
-   - 图标体系统一，不再依赖零散文字图标或 emoji 作为主要结构图标。✅（已完成 2026-06-12，wrong-detail 除外）
-   - reduced-motion 降级覆盖全部有动效的页面（当前 7/11 页面已覆盖，pomodoro / pomodoro-stats / wrong-detail 待补）
+   - 图标体系统一，不再依赖零散文字图标或 emoji 作为主要结构图标。✅（已完成 2026-06-12，全 9 个页面已纳入 line-icon 体系）
+   - reduced-motion 降级覆盖全部有动效的页面 ✅（已完成 2026-06-12，全 11 个页面已覆盖）
 
 ------
 

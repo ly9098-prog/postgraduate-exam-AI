@@ -5,6 +5,8 @@ from app.core.cache import cache, make_cache_key
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
+from app.schemas.ai_diagnosis import AiDiagnosis
+from app.schemas.growth import GrowthProfile
 from app.schemas.stats import (
     BehaviorStats,
     DashboardResponse,
@@ -48,7 +50,7 @@ async def get_subject_stats(
 
 @router.get("/trends", response_model=list[TrendPoint])
 async def get_trends(
-    days: int = Query(7, ge=1, le=90),
+    days: int = Query(7, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -112,3 +114,31 @@ async def get_dashboard(
     )
     await cache.set(cache_key, result.model_dump(), ttl=120)
     return result
+
+
+@router.get("/growth", response_model=GrowthProfile)
+async def get_growth(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    cache_key = f"stats:growth:{current_user.id}"
+    cached_data = await cache.get(cache_key)
+    if cached_data is not None:
+        return cached_data
+    data = await svc.get_growth_profile(db, current_user.id)
+    await cache.set(cache_key, data, ttl=120)
+    return GrowthProfile(**data)
+
+
+@router.get("/ai-diagnosis", response_model=AiDiagnosis)
+async def get_ai_diagnosis(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    cache_key = f"stats:ai_diagnosis:{current_user.id}"
+    cached_data = await cache.get(cache_key)
+    if cached_data is not None:
+        return cached_data
+    data = await svc.get_ai_diagnosis(db, current_user.id)
+    await cache.set(cache_key, data, ttl=600)
+    return AiDiagnosis(**data)

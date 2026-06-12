@@ -397,6 +397,8 @@ Page({
     feedbackTitle: '',
     feedbackDetail: '',
     feedbackComboText: '',
+    feedbackComboLevel: '',
+    feedbackStarCount: 0,
 
     // 计时
     startTime: 0,
@@ -807,11 +809,47 @@ Page({
     }
 
     const feedbackType = isCorrect === true ? 'correct' : (isCorrect === false ? 'wrong' : 'selected')
-    const feedbackTitle = isCorrect === true ? '回答正确' : (isCorrect === false ? '继续加油' : '已选择答案')
-    const feedbackDetail = isCorrect === true
-      ? '这题很稳，保持当前节奏'
-      : (isCorrect === false ? '先记录选择，交卷后集中复盘' : '已记录本题选择')
-    const feedbackComboText = nextCombo >= 3 ? `${nextCombo} 连对` : ''
+    let feedbackTitle, feedbackDetail, feedbackComboText, feedbackComboLevel, feedbackStarCount
+
+    if (isCorrect === true) {
+      if (nextCombo >= 10) {
+        feedbackTitle = '学霸连击'
+        feedbackDetail = '状态火热，无人能挡'
+        feedbackComboText = `🔥 ${nextCombo} 连对`
+        feedbackComboLevel = 'fire'
+        feedbackStarCount = 6
+      } else if (nextCombo >= 5) {
+        feedbackTitle = '五连斩'
+        feedbackDetail = '进入心流状态，继续推进'
+        feedbackComboText = `⚡ ${nextCombo} 连对`
+        feedbackComboLevel = 'hot'
+        feedbackStarCount = 5
+      } else if (nextCombo >= 3) {
+        feedbackTitle = '三连对'
+        feedbackDetail = '手感正热，保持这个状态'
+        feedbackComboText = `${nextCombo} 连对`
+        feedbackComboLevel = 'warm'
+        feedbackStarCount = 3
+      } else {
+        feedbackTitle = '回答正确'
+        feedbackDetail = '这题很稳，保持当前节奏'
+        feedbackComboText = ''
+        feedbackComboLevel = ''
+        feedbackStarCount = 0
+      }
+    } else if (isCorrect === false) {
+      feedbackTitle = '继续加油'
+      feedbackDetail = '先记录选择，交卷后集中复盘'
+      feedbackComboText = ''
+      feedbackComboLevel = ''
+      feedbackStarCount = 0
+    } else {
+      feedbackTitle = '已选择答案'
+      feedbackDetail = '已记录本题选择'
+      feedbackComboText = ''
+      feedbackComboLevel = ''
+      feedbackStarCount = 0
+    }
 
     if (this._feedbackTimer) clearTimeout(this._feedbackTimer)
     this.setData({
@@ -821,11 +859,13 @@ Page({
       feedbackTitle,
       feedbackDetail,
       feedbackComboText,
+      feedbackComboLevel,
+      feedbackStarCount,
     })
     this._feedbackTimer = setTimeout(() => {
       this.setData({ feedbackVisible: false })
       this._feedbackTimer = null
-    }, feedbackComboText ? 1700 : 1200)
+    }, feedbackComboText ? 2000 : 1200)
   },
 
   goNext() {
@@ -972,8 +1012,6 @@ Page({
     const subj = this.data.selectedSubject || ''
     wx.navigateTo({ url: `/pages/pomodoro/pomodoro?subject=${subj}` })
   },
-
-  noop() {},
 
   onUnload() {
     this._clearTimer()
