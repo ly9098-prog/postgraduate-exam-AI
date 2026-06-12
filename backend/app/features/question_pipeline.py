@@ -143,12 +143,18 @@ class QuestionNormalizer:
     }
 
     def normalize(self, raw: dict, source: dict | None = None) -> dict:
-        from app.services.formula_normalizer import wrap_inline_math
+        from app.services.formula_normalizer import normalize_text_import_math, wrap_inline_math
 
+        plain_math = bool(raw.get("preserve_plain_math"))
         subject = self.normalize_subject(raw.get("subject") or raw.get("科目"))
-        options = self.normalize_options(
-            raw.get("options") or raw.get("选项") or raw.get("parsed_options")
-        )
+        previous_plain_math = getattr(self, "_plain_math_options", False)
+        self._plain_math_options = plain_math
+        try:
+            options = self.normalize_options(
+                raw.get("options") or raw.get("选项") or raw.get("parsed_options")
+            )
+        finally:
+            self._plain_math_options = previous_plain_math
         blank_option_groups = self.normalize_blank_option_groups(
             raw.get("blank_option_groups") or (raw.get("parsed_content") or {}).get("blank_option_groups") or []
         )
@@ -159,14 +165,15 @@ class QuestionNormalizer:
             question_type = self.normalize_type(
                 raw.get("question_type") or raw.get("题型"), options
             )
-        stem = wrap_inline_math(self.clean_text(
+        stem = self.clean_text(
             raw.get("stem")
             or raw.get("题目")
             or raw.get("题干")
             or (raw.get("content") or {}).get("text")
             or (raw.get("parsed_content") or {}).get("text")
             or ""
-        ))
+        )
+        stem = normalize_text_import_math(stem) if plain_math else wrap_inline_math(stem)
         if question_type != "multi_blank_choice":
             stem = self._break_before_number_markers(stem)
         stem = self._remove_embedded_options(stem, options)
@@ -277,10 +284,12 @@ class QuestionNormalizer:
         normalized: list[dict] = []
         used: set[str] = set()
         next_index = 0
-        from app.services.formula_normalizer import wrap_inline_math
+        from app.services.formula_normalizer import normalize_text_import_math, wrap_inline_math
 
+        plain_math = bool(getattr(self, "_plain_math_options", False))
         for key, text in items:
-            text = wrap_inline_math(self.clean_text(text))
+            text = self.clean_text(text)
+            text = normalize_text_import_math(text, compact=plain_math) if plain_math else wrap_inline_math(text)
             if not text:
                 continue
             if not key or not re.fullmatch(r"[A-Z]", key):
