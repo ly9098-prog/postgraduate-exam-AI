@@ -339,6 +339,36 @@ function _buildBlankSelectedFlags(groups, answer) {
   return flags
 }
 
+function _normalizeAnswerValue(answer) {
+  return String(answer || '')
+    .split(/[;；,，\n]+/)
+    .map(item => item.trim().toUpperCase())
+    .filter(Boolean)
+    .sort()
+    .join(',')
+}
+
+function _getCorrectAnswer(q) {
+  if (!q) return ''
+  return q.answer || q.correct_answer || q.standard_answer || q.right_answer || ''
+}
+
+function _isAnswerCorrect(q, answer) {
+  const correct = _getCorrectAnswer(q)
+  if (!correct || !answer) return null
+  if (_isMultiBlankChoice(q)) {
+    const user = _normalizeBlankAnswer(answer)
+    const standard = _normalizeBlankAnswer(correct)
+    const groups = _getBlankOptionGroups(q)
+    if (!groups.length) return null
+    return groups.every(group => {
+      const id = String((group && group.id) || '').trim()
+      return id && String(user[id] || '').toUpperCase() === String(standard[id] || '').toUpperCase()
+    })
+  }
+  return _normalizeAnswerValue(answer) === _normalizeAnswerValue(correct)
+}
+
 Page({
   data: {
     // 设置
@@ -369,6 +399,12 @@ Page({
     results: [],
     correctCount: 0,
     wrongCount: 0,
+    comboCount: 0,
+    feedbackVisible: false,
+    feedbackType: '',
+    feedbackTitle: '',
+    feedbackDetail: '',
+    feedbackComboText: '',
 
     // 计时
     startTime: 0,
@@ -427,6 +463,12 @@ Page({
       submitted: false,
       correctCount: 0,
       wrongCount: 0,
+      comboCount: 0,
+      feedbackVisible: false,
+      feedbackType: '',
+      feedbackTitle: '',
+      feedbackDetail: '',
+      feedbackComboText: '',
       elapsedSec: 0,
       startTime: Date.now(),
     })
@@ -474,7 +516,7 @@ Page({
         total: questions.length,
         questionIds: questions.map(q => q.id),
       })
-      this.setData({ questions, totalQuestions: questions.length, loading: false, answeredFlags: {} })
+      this.setData({ questions, totalQuestions: questions.length, loading: false, answeredFlags: {}, comboCount: 0 })
       if (questions.length > 0) {
         this._showQuestion(0)
       } else {
@@ -700,6 +742,7 @@ Page({
     }
     const optionList = _buildOptionList(q._opts, optionKeys, selectedFlags)
     this.setData({ questions, answerMap, answeredFlags, answeredCount, selectedFlags, 'currentQuestion._optionList': optionList })
+    this._showAnswerFeedback(q, newAnswer)
   },
 
   selectBlankOption(e) {
@@ -757,6 +800,40 @@ Page({
     }
 
     this.setData({ questions, answerMap, answeredFlags, answeredCount, blankSelectedFlags, currentQuestion })
+    this._showAnswerFeedback(q, newAnswer)
+  },
+
+  noop() {},
+
+  _showAnswerFeedback(q, answer) {
+    const isCorrect = _isAnswerCorrect(q, answer)
+    const hasAnswer = !!answer
+    const nextCombo = isCorrect === true ? this.data.comboCount + 1 : (isCorrect === false ? 0 : this.data.comboCount)
+    if (!hasAnswer) {
+      this.setData({ comboCount: nextCombo, feedbackVisible: false })
+      return
+    }
+
+    const feedbackType = isCorrect === true ? 'correct' : (isCorrect === false ? 'wrong' : 'selected')
+    const feedbackTitle = isCorrect === true ? '回答正确' : (isCorrect === false ? '继续加油' : '已选择答案')
+    const feedbackDetail = isCorrect === true
+      ? '这题很稳，保持当前节奏'
+      : (isCorrect === false ? '先记录选择，交卷后集中复盘' : '已记录本题选择')
+    const feedbackComboText = nextCombo >= 3 ? `${nextCombo} 连对` : ''
+
+    if (this._feedbackTimer) clearTimeout(this._feedbackTimer)
+    this.setData({
+      comboCount: nextCombo,
+      feedbackVisible: true,
+      feedbackType,
+      feedbackTitle,
+      feedbackDetail,
+      feedbackComboText,
+    })
+    this._feedbackTimer = setTimeout(() => {
+      this.setData({ feedbackVisible: false })
+      this._feedbackTimer = null
+    }, feedbackComboText ? 1700 : 1200)
   },
 
   goNext() {
@@ -795,7 +872,7 @@ Page({
 
   async doSubmit() {
     if (this.data.submitting) return
-    const { answerMap, questions, startTime, selectedSubject } = this.data
+    const { answerMap, questions, startTime, selectedSubject, comboCount } = this.data
     const total = questions.length || 0
     const answeredFlags = _buildAnsweredFlags(questions, answerMap)
     const answeredCount = _countAnswered(answeredFlags)
@@ -849,6 +926,7 @@ Page({
         duration,
         traceId: result.trace_id || this.data.traceId,
         results: result.results || [],
+        comboCount,
       })
 
       wx.redirectTo({
@@ -907,5 +985,9 @@ Page({
 
   onUnload() {
     this._clearTimer()
+    if (this._feedbackTimer) {
+      clearTimeout(this._feedbackTimer)
+      this._feedbackTimer = null
+    }
   },
 })

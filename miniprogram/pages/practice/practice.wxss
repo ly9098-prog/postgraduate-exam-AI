@@ -956,6 +956,159 @@
 
 .btn-submit:active { transform: scale(0.99); opacity: 0.9; }
 
+
+/* ==================== 答题即时反馈 ==================== */
+
+.answer-feedback {
+  position: fixed;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: calc(178rpx + env(safe-area-inset-bottom));
+  z-index: 80;
+  pointer-events: none;
+  animation: feedbackFloatIn 0.22s ease-out;
+}
+
+.feedback-card {
+  position: relative;
+  overflow: hidden;
+  min-height: 116rpx;
+  padding: 22rpx 24rpx;
+  border-radius: 30rpx;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1rpx solid rgba(232, 240, 255, 0.95);
+  box-shadow: 0 18rpx 44rpx rgba(43, 60, 80, 0.14);
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  backdrop-filter: blur(18rpx);
+  -webkit-backdrop-filter: blur(18rpx);
+}
+
+.answer-feedback.correct .feedback-card {
+  background: linear-gradient(135deg, rgba(236, 253, 243, 0.98) 0%, rgba(248, 251, 255, 0.98) 100%);
+  border-color: rgba(34, 197, 94, 0.22);
+  box-shadow: 0 18rpx 44rpx rgba(34, 197, 94, 0.16);
+}
+
+.answer-feedback.wrong .feedback-card {
+  background: linear-gradient(135deg, rgba(255, 247, 237, 0.98) 0%, rgba(248, 251, 255, 0.98) 100%);
+  border-color: rgba(245, 158, 11, 0.22);
+  box-shadow: 0 18rpx 44rpx rgba(245, 158, 11, 0.14);
+}
+
+.feedback-icon-wrap {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 24rpx;
+  background: linear-gradient(135deg, #4F7FFF 0%, #6EC1FF 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 10rpx 22rpx rgba(79, 127, 255, 0.2);
+  animation: feedbackPop 0.28s ease-out;
+}
+
+.answer-feedback.correct .feedback-icon-wrap {
+  background: linear-gradient(135deg, #22C55E 0%, #7BD88F 100%);
+  box-shadow: 0 10rpx 22rpx rgba(34, 197, 94, 0.22);
+}
+
+.answer-feedback.wrong .feedback-icon-wrap {
+  background: linear-gradient(135deg, #F59E0B 0%, #FFD166 100%);
+  box-shadow: 0 10rpx 22rpx rgba(245, 158, 11, 0.2);
+}
+
+.feedback-icon {
+  color: #FFFFFF;
+  font-size: 38rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.feedback-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.feedback-title,
+.feedback-detail,
+.feedback-combo {
+  display: block;
+}
+
+.feedback-title {
+  color: #172033;
+  font-size: 29rpx;
+  font-weight: 900;
+  line-height: 1.3;
+}
+
+.feedback-detail {
+  margin-top: 4rpx;
+  color: #617089;
+  font-size: 23rpx;
+  line-height: 1.45;
+}
+
+.feedback-combo {
+  margin-top: 10rpx;
+  display: inline-block;
+  padding: 6rpx 14rpx;
+  border-radius: 999rpx;
+  background: #FFF7E8;
+  color: #B87509;
+  font-size: 22rpx;
+  font-weight: 900;
+  line-height: 1.35;
+  animation: comboPulse 0.5s ease-out;
+}
+
+.feedback-stars {
+  position: absolute;
+  top: 10rpx;
+  right: 16rpx;
+  width: 112rpx;
+  height: 86rpx;
+  pointer-events: none;
+}
+
+.star {
+  position: absolute;
+  color: #F59E0B;
+  font-size: 22rpx;
+  opacity: 0;
+  animation: starBurst 0.82s ease-out forwards;
+}
+
+.s1 { left: 12rpx; top: 28rpx; animation-delay: 0.04s; }
+.s2 { left: 48rpx; top: 4rpx; animation-delay: 0.1s; }
+.s3 { right: 10rpx; top: 36rpx; animation-delay: 0.16s; }
+
+@keyframes feedbackFloatIn {
+  from { opacity: 0; transform: translateY(24rpx) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes feedbackPop {
+  0% { transform: scale(0.78); }
+  72% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+@keyframes comboPulse {
+  0% { transform: scale(0.9); }
+  55% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+@keyframes starBurst {
+  0% { opacity: 0; transform: translateY(18rpx) scale(0.6) rotate(0deg); }
+  35% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-22rpx) scale(1.12) rotate(18deg); }
+}
+
 /* ==================== 加载 ==================== */
 
 .loading-wrap {
@@ -1125,7 +1278,11 @@
   .option-indicator,
   .dot,
   .loading-spinner,
-  .sheet-cell {
+  .sheet-cell,
+  .answer-feedback,
+  .feedback-icon-wrap,
+  .feedback-combo,
+  .star {
     animation: none !important;
     transition: none !important;
     transform: none !important;

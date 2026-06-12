@@ -30,6 +30,8 @@ Page({
       weaknessTags: [],
       radarItems: [],
       subjectItems: [],
+      summaryCards: [],
+      actionPlan: [],
     },
     page: 1,
     hasMore: false,
@@ -152,16 +154,62 @@ Page({
     const subjectCounts = subjectRows.length ? subjectRows : this._countsFromList(list, 'subject')
     const sourceLabel = errorRows.length || subjectRows.length ? '按错因统计' : (list.length ? '按当前列表统计' : '待积累')
 
+    const weaknessTags = this._topItems(errorCounts, 5).map(row => ({
+      key: row.key,
+      label: this._errorTypeLabel(row.key),
+      count: row.count,
+    }))
+    const radarItems = this._toPercentItems(this._topItems(errorCounts, 4), this._errorTypeLabel.bind(this))
+    const subjectItems = this._toPercentItems(this._topItems(subjectCounts, 4), this._subjectLabel.bind(this))
+
     return {
       sourceLabel,
-      weaknessTags: this._topItems(errorCounts, 5).map(row => ({
-        key: row.key,
-        label: this._errorTypeLabel(row.key),
-        count: row.count,
-      })),
-      radarItems: this._toPercentItems(this._topItems(errorCounts, 4), this._errorTypeLabel.bind(this)),
-      subjectItems: this._toPercentItems(this._topItems(subjectCounts, 4), this._subjectLabel.bind(this)),
+      weaknessTags,
+      radarItems,
+      subjectItems,
+      summaryCards: this._buildSummaryCards(stats, list, weaknessTags),
+      actionPlan: this._buildActionPlan(weaknessTags, subjectItems, list),
     }
+  },
+
+  _buildSummaryCards(stats = {}, list = [], weaknessTags = []) {
+    const unmastered = this._positiveNumber(stats.unmastered, this.data.primaryStatCount || stats.total || list.length || 0)
+    const reviewed = list.filter(item => this._positiveNumber(item._reviewCount, 0) > 0).length
+    const avgMastery = list.length
+      ? Math.round(list.reduce((sum, item) => sum + this._positiveNumber(item._masteryPercent, 0), 0) / list.length)
+      : 0
+    const topWeakness = weaknessTags[0] ? weaknessTags[0].label : '待积累'
+
+    return [
+      { key: 'unmastered', value: unmastered, label: '待攻克', tone: 'danger' },
+      { key: 'weakness', value: topWeakness, label: '首要弱项', tone: 'blue' },
+      { key: 'reviewed', value: `${reviewed}/${list.length || 0}`, label: '已复盘', tone: 'success' },
+      { key: 'mastery', value: `${avgMastery}%`, label: '平均掌握', tone: 'gold' },
+    ]
+  },
+
+  _buildActionPlan(weaknessTags = [], subjectItems = [], list = []) {
+    if (!list.length && !weaknessTags.length && !subjectItems.length) return []
+    const firstWeakness = weaknessTags[0]
+    const firstSubject = subjectItems[0]
+    const lowMasteryCount = list.filter(item => this._positiveNumber(item._masteryPercent, 0) < 40).length
+    return [
+      {
+        key: 'weakness',
+        title: firstWeakness ? `优先复盘「${firstWeakness.label}」` : '先完成一组错题复盘',
+        desc: firstWeakness ? `${firstWeakness.count} 道题集中暴露该问题` : '积累数据后会生成更明确的弱项计划',
+      },
+      {
+        key: 'subject',
+        title: firstSubject ? `重点看 ${firstSubject.label}` : '按学科建立错题节奏',
+        desc: firstSubject ? `${firstSubject.count} 道错题集中在该方向` : '筛选学科后可缩小复盘范围',
+      },
+      {
+        key: 'mastery',
+        title: lowMasteryCount > 0 ? `先攻克 ${lowMasteryCount} 道低掌握题` : '保持复盘节奏',
+        desc: lowMasteryCount > 0 ? '掌握进度低于 40% 的题建议优先重做' : '当前列表掌握度较稳定，适合做限时巩固',
+      },
+    ]
   },
 
   _rowsFromStats(stats, keys) {
