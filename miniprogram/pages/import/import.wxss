@@ -112,9 +112,6 @@ page {
   align-items: center;
   justify-content: center;
 }
-  color: #5B7B9A;
-  line-height: 1;
-}
 
 .upload-title {
   font-size: 33rpx;
@@ -369,11 +366,6 @@ page {
   justify-content: center;
   flex-shrink: 0;
 }
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
 
 .pipeline-result.error .pipeline-result-icon {
   background: #C47A7A;
@@ -531,6 +523,4 @@ page {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-  flex-shrink: 0;
 }
