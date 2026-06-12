@@ -5,19 +5,37 @@
 
   <view class="login-shell">
     <view class="brand-stage">
-      <view class="paper-brand-card">
-        <view class="paper-bookmark"></view>
-        <view class="paper-pin"></view>
-        <view class="paper-content">
-          <view class="paper-topline">
-            <text class="paper-label">考研错题复习本</text>
-            <text class="paper-date">Today</text>
+      <view class="hero-brand-card">
+        <view class="hero-orb hero-orb-one"></view>
+        <view class="hero-orb hero-orb-two"></view>
+        <view class="hero-content">
+          <view class="hero-topline">
+            <text class="hero-label">考研错题成长助手</text>
+            <text class="hero-status">AI Review</text>
           </view>
-          <text class="paper-brand-name">2240AI</text>
-          <text class="paper-slogan">把错题整理成复习节奏</text>
-          <view class="paper-note-row">
-            <view class="paper-note-dot"></view>
-            <text class="paper-note-text">今日从一组复习开始</text>
+          <text class="hero-brand-name">2240AI</text>
+          <text class="hero-slogan">每天进步一点点</text>
+          <text class="hero-desc">让错题成为成长的阶梯</text>
+          <view class="hero-note-row">
+            <view class="hero-note-dot"></view>
+            <text class="hero-note-text">登录后同步错题、复习计划与学习进度</text>
+          </view>
+        </view>
+        <view class="growth-illustration" aria-label="学习成长插画">
+          <view class="book-stack book-back"></view>
+          <view class="book-stack book-front"></view>
+          <view class="growth-card mini-card-one">
+            <text class="mini-card-value">LV</text>
+            <text class="mini-card-label">成长</text>
+          </view>
+          <view class="growth-card mini-card-two">
+            <text class="mini-card-value">+1</text>
+            <text class="mini-card-label">复习</text>
+          </view>
+          <view class="growth-sprout">
+            <view class="sprout-stem"></view>
+            <view class="sprout-leaf leaf-left"></view>
+            <view class="sprout-leaf leaf-right"></view>
           </view>
         </view>
       </view>
@@ -41,8 +59,8 @@
     <view class="login-panel">
       <view class="panel-header">
         <text class="panel-label">微信同步</text>
-        <text class="panel-title">开始使用 2240AI</text>
-        <text class="panel-desc">使用微信身份保存错题、复习计划与学习进度</text>
+        <text class="panel-title">开启你的学习成长档案</text>
+        <text class="panel-desc">用微信身份保存错题、复习计划和连续学习记录</text>
       </view>
 
       <button class="wechat-login-btn" bindtap="onWechatLogin" loading="{{loading}}" disabled="{{loading}}">
@@ -52,7 +70,7 @@
       <view class="agreement-box">
         <checkbox-group bindchange="onAgreementChange">
           <label class="agreement-check">
-            <checkbox value="agreed" checked="{{agreed}}" color="#172033" />
+            <checkbox value="agreed" checked="{{agreed}}" color="#4F7FFF" />
             <text class="agreement-text">我已阅读并同意以下协议</text>
           </label>
         </checkbox-group>
