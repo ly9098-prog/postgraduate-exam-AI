@@ -914,6 +914,322 @@
   font-variant-numeric: tabular-nums;
 }
 
+
+/* Yearly Heatmap */
+.heat-year-badge {
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 22rpx;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.yearly-heat-card {
+  background: linear-gradient(160deg, #FFFFFF 0%, #F8FAFF 52%, #EEF5FF 100%);
+}
+
+.yearly-heat-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr;
+  gap: 14rpx;
+}
+
+.yearly-heat-head > view {
+  padding: 18rpx 14rpx;
+  border-radius: 22rpx;
+  background: rgba(79, 127, 255, 0.08);
+}
+
+.yh-value {
+  display: block;
+  font-size: 34rpx;
+  font-weight: 900;
+  color: var(--text-primary);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.yh-value.small {
+  font-size: 24rpx;
+  line-height: 1.3;
+}
+
+.yh-label {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  color: var(--text-hint);
+}
+
+.yearly-heat-scroll {
+  margin-top: 22rpx;
+  width: 100%;
+  white-space: nowrap;
+}
+
+.yearly-heat-grid {
+  display: inline-flex;
+  gap: 6rpx;
+  min-width: 100%;
+  padding: 8rpx 0 20rpx;
+}
+
+.year-week {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.year-day {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 5rpx;
+  background: #E8EEF8;
+  position: relative;
+}
+
+.year-day.lv1,
+.legend-cell.lv1 { background: #DDE8FF; }
+.year-day.lv2,
+.legend-cell.lv2 { background: #AFC8FF; }
+.year-day.lv3,
+.legend-cell.lv3 { background: #79A5FF; }
+.year-day.lv4,
+.legend-cell.lv4 { background: var(--primary); }
+
+.year-day-tip {
+  position: absolute;
+  bottom: calc(100% + 8rpx);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6rpx 10rpx;
+  border-radius: 10rpx;
+  background: rgba(24, 35, 58, 0.9);
+  color: #FFFFFF;
+  font-size: 18rpx;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+  z-index: 4;
+}
+
+.year-day:active .year-day-tip {
+  opacity: 1;
+}
+
+.heat-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8rpx;
+  color: var(--text-hint);
+  font-size: 20rpx;
+}
+
+.legend-cell {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 5rpx;
+  background: #E8EEF8;
+}
+
+.sr-summary {
+  position: absolute;
+  width: 1rpx;
+  height: 1rpx;
+  overflow: hidden;
+  opacity: 0;
+}
+
+/* Badge Wall */
+.badge-wall-card {
+  background: linear-gradient(160deg, #FFFFFF 0%, #F7FAFF 50%, #EFF5FF 100%);
+}
+
+.badge-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.badge-item {
+  padding: 20rpx 16rpx;
+  border-radius: 24rpx;
+  border: 1rpx solid var(--border-color);
+  background: rgba(255, 255, 255, 0.76);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 176rpx;
+  position: relative;
+  overflow: hidden;
+}
+
+.badge-item.unlocked {
+  border-color: rgba(79, 127, 255, 0.28);
+  box-shadow: 0 10rpx 24rpx rgba(79, 127, 255, 0.1);
+}
+
+.badge-item.locked {
+  opacity: 0.62;
+}
+
+.badge-medal {
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 18rpx;
+  background: linear-gradient(135deg, #4F7FFF, #6EC1FF);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14rpx;
+}
+
+.badge-item.locked .badge-medal {
+  background: #D6DFEE;
+}
+
+.badge-medal-icon {
+  color: #FFFFFF;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.badge-title {
+  font-size: 25rpx;
+  font-weight: 900;
+  color: var(--text-primary);
+  line-height: 1.25;
+}
+
+.badge-desc {
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.badge-progress {
+  margin-top: auto;
+  padding: 6rpx 12rpx;
+  border-radius: 999rpx;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 19rpx;
+  font-weight: 800;
+}
+
+/* Learning Profile */
+.profile-card {
+  padding: 0;
+  background: #FFFFFF;
+}
+
+.profile-hero {
+  position: relative;
+  padding: 30rpx 28rpx;
+  background: linear-gradient(135deg, #4F7FFF 0%, #6EC1FF 100%);
+  overflow: hidden;
+}
+
+.profile-orb {
+  position: absolute;
+  right: -40rpx;
+  top: -52rpx;
+  width: 220rpx;
+  height: 220rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.profile-copy {
+  position: relative;
+  z-index: 1;
+}
+
+.profile-kicker {
+  display: inline-block;
+  padding: 6rpx 14rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
+.profile-title {
+  display: block;
+  margin-top: 18rpx;
+  color: #FFFFFF;
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.profile-summary {
+  display: block;
+  margin-top: 8rpx;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 23rpx;
+  line-height: 1.5;
+}
+
+.profile-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+  padding: 22rpx 22rpx 0;
+}
+
+.profile-panel {
+  padding: 18rpx;
+  border-radius: 22rpx;
+  background: var(--bg-surface);
+}
+
+.profile-panel.strength {
+  background: #ECFDF3;
+}
+
+.profile-panel.weakness {
+  background: #FFF7E8;
+}
+
+.profile-panel-title {
+  display: block;
+  margin-bottom: 12rpx;
+  font-size: 24rpx;
+  font-weight: 900;
+  color: var(--text-primary);
+}
+
+.profile-point {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 21rpx;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.profile-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  padding: 20rpx 22rpx 24rpx;
+}
+
+.profile-action {
+  padding: 16rpx 18rpx;
+  border-radius: 18rpx;
+  background: rgba(79, 127, 255, 0.08);
+  color: var(--text-primary);
+  font-size: 23rpx;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 /* ============================================
    FOOTER SAFE AREA
    ============================================ */
@@ -976,6 +1292,10 @@
   }
   .t1-compact-card {
     padding: 16rpx 10rpx;
+  }
+  .yearly-heat-head,
+  .profile-columns {
+    grid-template-columns: 1fr;
   }
   .compact-num {
     font-size: 28rpx;
