@@ -101,7 +101,7 @@
           <text class="ai-diag-col-title weak">薄弱环节</text>
           <view class="ai-diag-item" wx:for="{{aiDiagnosis.weak_points}}" wx:key="knowledge_point">
             <text class="ai-diag-kp">{{item.knowledge_point}}</text>
-            <text class="ai-diag-acc">{{(item.accuracy * 100).toFixed(0)}}%</text>
+            <text class="ai-diag-acc">{{item._accuracyPercent}}%</text>
             <text class="ai-diag-tip">{{item.suggestion}}</text>
           </view>
         </view>
@@ -109,7 +109,7 @@
           <text class="ai-diag-col-title strong">优势领域</text>
           <view class="ai-diag-item" wx:for="{{aiDiagnosis.strong_points}}" wx:key="knowledge_point">
             <text class="ai-diag-kp">{{item.knowledge_point}}</text>
-            <text class="ai-diag-acc good">{{(item.accuracy * 100).toFixed(0)}}%</text>
+            <text class="ai-diag-acc good">{{item._accuracyPercent}}%</text>
             <text class="ai-diag-tip">{{item.suggestion}}</text>
           </view>
         </view>
@@ -118,7 +118,7 @@
         <text class="ai-diag-sug-title">学习建议</text>
         <text class="ai-diag-sug-item" wx:for="{{aiDiagnosis.learning_suggestions}}" wx:key="*this">{{index + 1}}. {{item}}</text>
       </view>
-      <text class="sr-summary">{{aiDiagnosis.summary}} 薄弱环节：<text wx:for="{{aiDiagnosis.weak_points}}" wx:key="knowledge_point">{{item.knowledge_point}}掌握率{{(item.accuracy * 100).toFixed(0)}}%。 </text>学习建议：<text wx:for="{{aiDiagnosis.learning_suggestions}}" wx:key="*this">{{item}}。 </text></text>
+      <text class="sr-summary">{{aiDiagnosis.summary}} 薄弱环节：<text wx:for="{{aiDiagnosis.weak_points}}" wx:key="knowledge_point">{{item.knowledge_point}}掌握率{{item._accuracyPercent}}%。 </text>学习建议：<text wx:for="{{aiDiagnosis.learning_suggestions}}" wx:key="*this">{{item}}。 </text></text>
     </view>
     <view class="ai-diagnosis-loading" wx:elif="{{aiDiagnosisLoading}}">
       <view class="ai-loading-pulse"></view>
