@@ -416,7 +416,6 @@ Page({
   /* ==================== Session Restore ==================== */
 
   async _fetchActiveSession() {
-    // Check local state first (survives background suspend / network loss)
     const local = wx.getStorageSync('pomodoro_running_state')
     try {
       const server = await api.get('/pomodoro/active')
@@ -424,8 +423,12 @@ Page({
         wx.removeStorageSync('pomodoro_running_state')
         return server
       }
-    } catch (_) {}
-    // Fallback to local state if server is unreachable
+      // Server reachable but no active session — clear stale local state, don't fabricate
+      wx.removeStorageSync('pomodoro_running_state')
+      return null
+    } catch (_) {
+      // Network unreachable — fall through to local fallback
+    }
     if (local && (Date.now() - local.savedAt < 7200000)) {
       return {
         id: local.sessionId,

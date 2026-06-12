@@ -160,15 +160,26 @@ async def _batch_find_duplicate_imports(
             QuestionImport.status != "rejected",
         )
         rows = (await db.execute(stmt)).all()
+
+        # Batch resolve Question active status (avoid N+1 per-row db.get)
+        qids = {row.question_id for row in rows if row.question_id is not None}
+        active_qids: set[int] = set()
+        if qids:
+            q_result = await db.execute(
+                select(Question.id).where(
+                    Question.id.in_(list(qids)),
+                    Question.is_active == True,  # noqa: E712
+                )
+            )
+            active_qids = {qid for qid, in q_result.all()}
+
         for row in rows:
             key = (row.subject, row.question_hash)
             if key in result_map:
                 continue
             # Skip imports whose approved question was soft-deleted
-            if row.question_id is not None:
-                q = await db.get(Question, row.question_id)
-                if q is None or not q.is_active:
-                    continue
+            if row.question_id is not None and row.question_id not in active_qids:
+                continue
             result_map[key] = row.id
     return result_map
 
