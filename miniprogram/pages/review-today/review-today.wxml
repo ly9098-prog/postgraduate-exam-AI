@@ -2,75 +2,89 @@
 <view class="page review-entry" wx:if="{{phase === 'entry'}}">
   <view wx:if="{{entryLoading}}" class="loading-wrap">
     <view class="loading-spinner"></view>
-    <text class="loading-text">加载中...</text>
+    <text class="loading-text">正在读取今日复习任务...</text>
   </view>
 
   <view wx:else class="entry-wrap">
-    <!-- 渐变头部 -->
-    <view class="header-gradient">
-      <view class="header-content">
-        <text class="header-date">{{_dateStr}}</text>
-
-        <view class="ring-section">
-          <view class="ring-container">
-            <view class="ring-bg"></view>
-            <view class="ring-fg" style="{{_ringStyle}}" wx:if="{{stats}}"></view>
-            <view class="ring-center">
-              <text class="ring-num">{{stats ? stats.total_scheduled - stats.remaining_today : 0}}</text>
-              <text class="ring-label">已完成</text>
-            </view>
+    <view class="review-hero animation-fade-in">
+      <view class="hero-orbit hero-orbit-one"></view>
+      <view class="hero-orbit hero-orbit-two"></view>
+      <view class="hero-copy">
+        <text class="eyebrow">今日复习 · {{_dateStr}}</text>
+        <text class="hero-title">把遗忘曲线拉回掌控</text>
+        <text class="hero-desc">按组复习到期错题，完成后系统会更新你的复习计划</text>
+      </view>
+      <view class="ring-section" wx:if="{{stats}}">
+        <view class="ring-container">
+          <view class="ring-bg"></view>
+          <view class="ring-fg" style="{{_ringStyle}}"></view>
+          <view class="ring-center">
+            <text class="ring-num">{{stats.total_scheduled - stats.remaining_today}}</text>
+            <text class="ring-label">已完成</text>
           </view>
         </view>
-
-        <text class="motivation-text">{{_motivationMsg}}</text>
       </view>
     </view>
 
-    <!-- 玻璃卡片 · 今日统计 -->
-    <view class="glass-card" wx:if="{{stats}}">
-      <view class="glass-item">
-        <text class="glass-num warning">{{stats.remaining_today}}</text>
-        <text class="glass-label">待复习</text>
+    <view class="mission-card animation-fade-in" wx:if="{{stats}}">
+      <view class="mission-head">
+        <view>
+          <text class="mission-kicker">今日待复习</text>
+          <text class="mission-title">{{stats.remaining_today}} 题</text>
+        </view>
+        <view class="mission-badge">{{entryDone ? '全部完成' : '记忆加固'}}</view>
       </view>
-      <view class="glass-divider"></view>
-      <view class="glass-item">
-        <text class="glass-num">{{stats.total_scheduled}}</text>
-        <text class="glass-label">总排期</text>
-      </view>
-      <view class="glass-divider"></view>
-      <view class="glass-item">
-        <text class="glass-num success">{{Math.round(stats.accuracy_last_7d * 100)}}%</text>
-        <text class="glass-label">正确率</text>
+      <text class="motivation-text">{{_motivationMsg}}</text>
+      <view class="glass-card">
+        <view class="glass-item">
+          <text class="glass-num warning">{{stats.remaining_today}}</text>
+          <text class="glass-label">待攻克</text>
+        </view>
+        <view class="glass-divider"></view>
+        <view class="glass-item">
+          <text class="glass-num">{{stats.total_scheduled}}</text>
+          <text class="glass-label">总排期</text>
+        </view>
+        <view class="glass-divider"></view>
+        <view class="glass-item">
+          <text class="glass-num success">{{Math.round(stats.accuracy_last_7d * 100)}}%</text>
+          <text class="glass-label">近7天正确率</text>
+        </view>
       </view>
     </view>
 
-    <!-- 组量选择 -->
-    <view class="group-size-section" wx:if="{{stats && stats.remaining_today > 0}}">
-      <text class="section-label">每组题数</text>
+    <view class="group-size-section animation-fade-in" wx:if="{{stats && stats.remaining_today > 0}}">
+      <view class="section-head">
+        <view>
+          <text class="section-title">选择复习节奏</text>
+          <text class="section-subtitle">短组适合碎片时间，大组适合沉浸攻克</text>
+        </view>
+        <text class="section-chip">{{groupSize}}题/组</text>
+      </view>
       <view class="size-options">
         <view
           wx:for="{{[5, 10, 20]}}" wx:key="*this"
           class="size-chip {{groupSize === item ? 'active' : ''}}"
+          hover-class="tap-scale"
           catchtap="selectGroupSize"
           data-size="{{item}}"
         >{{item}}题</view>
       </view>
       <text class="size-hint" wx:if="{{stats.remaining_today > groupSize}}">
-        共 {{Math.ceil(stats.remaining_today / groupSize)}} 组
+        预计分为 {{Math.ceil(stats.remaining_today / groupSize)}} 组完成
       </text>
     </view>
 
-    <!-- 开始按钮 / 完成状态 -->
     <button class="gradient-btn" wx:if="{{stats && stats.remaining_today > 0}}" bindtap="startReview">
       开始今日复习
     </button>
-    <view wx:elif="{{stats && stats.remaining_today === 0 && stats.total_scheduled > 0}}" class="done-wrap">
+    <view wx:elif="{{stats && stats.remaining_today === 0 && stats.total_scheduled > 0}}" class="done-wrap animation-fade-in">
       <view class="done-check">✓</view>
       <text class="done-title">今日复习已完成</text>
-      <text class="done-desc">明天继续加油</text>
+      <text class="done-desc">记忆曲线已更新，明天继续保持</text>
     </view>
-    <view wx:elif="{{stats && stats.total_scheduled === 0}}" class="done-wrap">
-      <view class="done-check mute">📝</view>
+    <view wx:elif="{{stats && stats.total_scheduled === 0}}" class="done-wrap animation-fade-in">
+      <view class="done-check mute">记</view>
       <text class="done-title">暂无复习安排</text>
       <text class="done-desc">刷题后系统会自动安排复习</text>
     </view>
@@ -90,19 +104,20 @@
   </view>
 
   <view wx:else class="practice-wrap">
-    <!-- 组进度 -->
     <view class="group-header">
-      <text class="group-title">第 {{currentGroupIdx + 1}} / {{groups.length}} 组</text>
+      <view>
+        <text class="group-title">第 {{currentGroupIdx + 1}} / {{groups.length}} 组</text>
+        <text class="group-subtitle">已选 {{Object.keys(answers).length}} / {{groupQuestions.length}} 题</text>
+      </view>
       <text class="group-meta">{{groupQuestions.length}} 题</text>
     </view>
 
-    <!-- 题号进度条 -->
     <view class="review-progress">
       <view class="question-dots">
         <view
           wx:for="{{groupQuestions}}" wx:key="schedule_id"
-          class="q-dot {{answers[item.schedule_id] ? 'answered' : ''}} {{currentIndex === index ? 'current' : ''}} {{item.mastered ? 'mastered' : ''}}"
-          catchtap="goNext"
+          class="q-dot {{answers[item.schedule_id] ? 'answered' : ''}} {{currentIndex === index ? 'current' : ''}}"
+          catchtap="goQuestion"
           data-index="{{index}}"
         >
           <text>{{index + 1}}</text>
@@ -110,17 +125,17 @@
       </view>
     </view>
 
-    <!-- 题目卡片 -->
     <view class="question-card {{animClass}}" wx:if="{{currentQuestion}}">
-      <!-- 学科标签 + 已掌握按钮 -->
       <view class="q-top-bar">
-        <text class="subject-badge">{{subjectLabel(currentQuestion.subject)}}</text>
+        <view>
+          <text class="subject-badge">{{subjectLabel(currentQuestion.subject)}}</text>
+          <text class="q-kicker">先回忆，再选择</text>
+        </view>
         <view class="master-btn" catchtap="tapMaster" data-sid="{{currentQuestion.schedule_id}}">
           <text class="master-icon">✓</text>
         </view>
       </view>
 
-      <!-- 题干 -->
       <view class="q-stem">
         <block wx:if="{{enableMathImage && currentQuestion._stemSegments.length > 0}}">
           <math-question segments="{{currentQuestion._stemSegments}}" />
@@ -131,12 +146,12 @@
         <text wx:else class="q-text">{{currentQuestion._stemText}}</text>
       </view>
 
-      <!-- 选项 -->
       <view class="q-options">
         <view
           wx:for="{{optionKeys}}"
           wx:key="*this"
           class="option-item {{answers[currentQuestion.schedule_id] === item ? 'opt-selected' : ''}}"
+          hover-class="option-pressed"
           bindtap="selectOption"
           data-option="{{item}}"
         >
@@ -150,7 +165,6 @@
         </view>
       </view>
 
-      <!-- 导航按钮 -->
       <view class="nav-row">
         <button class="nav-btn" bindtap="goPrev" disabled="{{currentIndex === 0}}">
           <text>上一题</text>
@@ -160,21 +174,22 @@
         </button>
       </view>
 
-      <!-- 提交按钮 -->
       <button class="submit-group-btn" bindtap="submitGroup" loading="{{submittingGroup}}">
-        提交本组（{{Object.keys(answers).length}} / {{groupQuestions.length}}）
+        提交本组复盘（{{Object.keys(answers).length}} / {{groupQuestions.length}}）
       </button>
     </view>
   </view>
 </view>
 
 <!-- ==================== 组结果页 ==================== -->
-<view class="page" wx:if="{{phase === 'group-result'}}">
-  <view class="result-wrap">
-    <view class="result-icon">
-      <text class="result-icon-text">{{groupCorrect >= groupWrong ? '✅' : '📝'}}</text>
+<view class="page result-page" wx:if="{{phase === 'group-result'}}">
+  <view class="result-wrap animation-fade-in">
+    <view class="result-medal">
+      <text class="result-medal-main">{{groupCorrect >= groupWrong ? '优' : '练'}}</text>
+      <text class="result-medal-sub">本组完成</text>
     </view>
-    <text class="result-title">第 {{currentGroupIdx + 1}} 组完成</text>
+    <text class="result-title">第 {{currentGroupIdx + 1}} 组复盘完成</text>
+    <text class="result-desc">继续下一组，把短期记忆变成长期掌握</text>
 
     <view class="result-stats">
       <view class="result-stat-item">
@@ -187,17 +202,16 @@
       </view>
       <view class="result-stat-item">
         <text class="result-stat-val danger">{{groupWrong}}</text>
-        <text class="result-stat-lbl">错误</text>
+        <text class="result-stat-lbl">需巩固</text>
       </view>
     </view>
 
-    <!-- 逐题结果 -->
     <view class="group-answers">
       <view
         wx:for="{{groupResults}}" wx:key="schedule_id"
         class="ga-item {{item.isCorrect ? 'ga-correct' : 'ga-wrong'}}"
       >
-        <text class="ga-status">{{item.isCorrect ? '✓' : '✗'}}</text>
+        <text class="ga-status">{{item.isCorrect ? '✓' : '!'}}</text>
         <view class="ga-body">
           <text class="ga-stem">{{item._stemText.slice(0, 60)}}{{item._stemText.length > 60 ? '...' : ''}}</text>
           <text class="ga-answer" wx:if="{{!item.isCorrect}}">
@@ -207,19 +221,23 @@
       </view>
     </view>
 
-    <button class="gradient-btn" bindtap="nextGroup">
-      {{currentGroupIdx + 1 >= groups.length ? '查看总体结果' : '下一组'}}
+    <button class="gradient-btn result-btn" bindtap="nextGroup">
+      {{currentGroupIdx + 1 >= groups.length ? '查看总体结果' : '进入下一组'}}
     </button>
   </view>
 </view>
 
 <!-- ==================== 最终结果页 ==================== -->
-<view class="page" wx:if="{{phase === 'final-result'}}">
-  <view class="result-wrap">
-    <view class="result-icon">
-      <text class="result-icon-text">🎉</text>
+<view class="page result-page" wx:if="{{phase === 'final-result'}}">
+  <view class="result-wrap final-wrap animation-fade-in">
+    <view class="celebrate-bg celebrate-one"></view>
+    <view class="celebrate-bg celebrate-two"></view>
+    <view class="result-medal final-medal">
+      <text class="result-medal-main">章</text>
+      <text class="result-medal-sub">今日复习</text>
     </view>
-    <text class="result-title">复习完成</text>
+    <text class="result-title">今日复习完成</text>
+    <text class="result-desc">系统已根据你的作答结果更新复习计划</text>
 
     <view class="result-stats">
       <view class="result-stat-item">
@@ -232,7 +250,7 @@
       </view>
       <view class="result-stat-item">
         <text class="result-stat-val danger">{{totalWrong}}</text>
-        <text class="result-stat-lbl">错误</text>
+        <text class="result-stat-lbl">需巩固</text>
       </view>
     </view>
 
@@ -247,8 +265,9 @@
       </view>
     </view>
 
-    <view class="next-hint">
-      <text class="next-hint-text">系统已根据你的作答结果更新复习计划</text>
+    <view class="reward-card">
+      <text class="reward-title">已获得</text>
+      <text class="reward-desc">复习完成徽章 · 记忆曲线更新 · 明日计划刷新</text>
     </view>
 
     <button class="finish-btn" bindtap="finishReview">完成</button>
@@ -257,9 +276,9 @@
 
 <!-- ==================== 已掌握确认弹窗 ==================== -->
 <view class="master-overlay" wx:if="{{masterConfirmId}}" catchtap="cancelMaster">
-  <view class="master-dialog" catchtap="">
+  <view class="master-dialog" catchtap="noop">
     <text class="master-dialog-title">标记为已掌握</text>
-    <text class="master-dialog-desc">该题将从复习池中移除，不再出现</text>
+    <text class="master-dialog-desc">该题将从复习池中移除，不再出现在今日复习中</text>
     <view class="master-dialog-actions">
       <button class="master-btn-cancel" bindtap="cancelMaster">取消</button>
       <button class="master-btn-confirm" bindtap="confirmMaster">确认掌握</button>
