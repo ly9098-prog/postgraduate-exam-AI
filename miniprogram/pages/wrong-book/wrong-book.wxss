@@ -412,6 +412,169 @@
   flex-shrink: 0;
 }
 
+/* ── AI 深度诊断 ── */
+.ai-diagnosis-card {
+  margin-top: 20rpx;
+  padding: 28rpx 24rpx;
+  border-radius: 24rpx;
+  background: linear-gradient(135deg, #F6F9FF 0%, #EEF4FF 100%);
+  border: 1rpx solid rgba(79, 127, 255, 0.12);
+}
+
+.ai-diag-head {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-bottom: 14rpx;
+}
+
+.ai-diag-kicker {
+  font-size: 24rpx;
+  font-weight: 900;
+  color: #4F7FFF;
+}
+
+.ai-diag-badge {
+  padding: 4rpx 12rpx;
+  border-radius: 999rpx;
+  background: #4F7FFF;
+  color: #FFFFFF;
+  font-size: 18rpx;
+  font-weight: 800;
+}
+
+.ai-diag-badge.local {
+  background: #E2EAF7;
+  color: #4F7FFF;
+}
+
+.ai-diag-summary {
+  display: block;
+  font-size: 24rpx;
+  color: #617089;
+  line-height: 1.55;
+  margin-bottom: 20rpx;
+}
+
+.ai-diag-columns {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 18rpx;
+}
+
+.ai-diag-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-diag-col-title {
+  display: block;
+  font-size: 22rpx;
+  font-weight: 900;
+  margin-bottom: 10rpx;
+  padding-bottom: 8rpx;
+  border-bottom: 2rpx solid rgba(79, 127, 255, 0.08);
+}
+
+.ai-diag-col-title.weak { color: #EF4444; }
+.ai-diag-col-title.strong { color: #22C55E; }
+
+.ai-diag-item {
+  padding: 12rpx 14rpx;
+  margin-bottom: 8rpx;
+  border-radius: 16rpx;
+  background: #FFFFFF;
+  border: 1rpx solid #E2EAF7;
+}
+
+.ai-diag-kp {
+  display: block;
+  font-size: 24rpx;
+  font-weight: 700;
+  color: #18233A;
+  margin-bottom: 4rpx;
+}
+
+.ai-diag-acc {
+  display: inline-block;
+  padding: 2rpx 10rpx;
+  border-radius: 999rpx;
+  background: #FEF2F2;
+  color: #EF4444;
+  font-size: 20rpx;
+  font-weight: 800;
+  margin-bottom: 4rpx;
+}
+
+.ai-diag-acc.good {
+  background: #ECFDF3;
+  color: #22C55E;
+}
+
+.ai-diag-tip {
+  display: block;
+  font-size: 22rpx;
+  color: #617089;
+  line-height: 1.45;
+}
+
+.ai-diag-suggestions {
+  padding-top: 16rpx;
+  border-top: 1rpx solid rgba(79, 127, 255, 0.08);
+}
+
+.ai-diag-sug-title {
+  display: block;
+  font-size: 22rpx;
+  font-weight: 900;
+  color: #4F7FFF;
+  margin-bottom: 10rpx;
+}
+
+.ai-diag-sug-item {
+  display: block;
+  font-size: 23rpx;
+  color: #18233A;
+  line-height: 1.6;
+  padding: 6rpx 0;
+}
+
+.ai-diagnosis-loading {
+  margin-top: 20rpx;
+  padding: 40rpx 24rpx;
+  border-radius: 24rpx;
+  background: #F6F9FF;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.ai-loading-pulse {
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4F7FFF, #6EC1FF);
+  animation: aiPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes aiPulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.ai-loading-text {
+  font-size: 24rpx;
+  color: #617089;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-loading-pulse {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 .map-grid {
   margin-top: 24rpx;
   display: flex;

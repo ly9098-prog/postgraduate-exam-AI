@@ -1,0 +1,42 @@
+<!-- celebration-lottie: Lottie 优先 + CSS 粒子降级 -->
+<view class="celebration-shell {{visible ? 'active' : ''}} type-{{type}}" catchtap="onTap">
+  <!-- Lottie 层（需要构建 npm 后启用） -->
+  <view class="lottie-layer" wx:if="{{lottieReady && !fallbackMode}}">
+    <canvas
+      type="2d"
+      id="celebration-canvas"
+      class="celebration-canvas"
+    ></canvas>
+  </view>
+
+  <!-- CSS 降级层（始终可用） -->
+  <view class="fallback-layer" wx:else>
+    <view class="fallback-bg"></view>
+    <view class="fallback-fireworks">
+      <view class="fw fw-1"></view>
+      <view class="fw fw-2"></view>
+      <view class="fw fw-3"></view>
+      <view class="fw fw-4"></view>
+      <view class="fw fw-5"></view>
+      <view class="fw fw-6"></view>
+    </view>
+    <view class="fallback-particles">
+      <view class="fp fp-1"></view>
+      <view class="fp fp-2"></view>
+      <view class="fp fp-3"></view>
+      <view class="fp fp-4"></view>
+      <view class="fp fp-5"></view>
+      <view class="fp fp-6"></view>
+      <view class="fp fp-7"></view>
+      <view class="fp fp-8"></view>
+    </view>
+    <view class="fallback-content">
+      <view class="fb-badge {{type}}">
+        <text wx:if="{{type === 'excellent' || type === 'final'}}">★</text>
+        <text wx:elif="{{type === 'combo'}}">🔥</text>
+        <text wx:else>✓</text>
+      </view>
+    </view>
+    <text class="fallback-hint">点击继续</text>
+  </view>
+</view>

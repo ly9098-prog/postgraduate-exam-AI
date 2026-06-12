@@ -1,3 +1,4 @@
+const api = require('../../utils/api')
 const { formatInlineMathText } = require('../../utils/math-format')
 Page({
   data: {
@@ -19,10 +20,14 @@ Page({
     celebrationType: 'steady',
     growthTitle: '',
     growthDesc: '',
+    growthLevel: '',
+    growthExpText: '',
+    growthLevelPct: 0,
+    growthBadgeCount: 0,
     subjectDisplay: '练习',
   },
 
-  onLoad(options) {
+  async onLoad(options) {
     const correct = parseInt(options.correct, 10) || 0
     const wrong = parseInt(options.wrong, 10) || 0
     const total = parseInt(options.total, 10) || 0
@@ -56,6 +61,25 @@ Page({
       ...this._celebrationCopy(passRate, correct, wrong, total),
     })
     this._showCelebration()
+    this._loadGrowth()
+  },
+
+  async _loadGrowth() {
+    try {
+      const growth = await api.get('/stats/growth')
+      if (!growth) return
+      const unlockedBadges = (growth.badges || []).filter(b => b.unlocked).length
+      this.setData({
+        growthLevel: growth.level_title || 'Lv1 起步',
+        growthExpText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
+        growthLevelPct: growth.level_progress_pct || 0,
+        growthBadgeCount: unlockedBadges,
+        growthTitle: `练习经验 +${Math.max(1, this.data.total)}`,
+        growthDesc: unlockedBadges > 0
+          ? `已点亮 ${unlockedBadges} 个徽章 · ${growth.level_title || ''}`
+          : `当前 ${growth.level_title || 'Lv1 起步'} · 继续保持`,
+      })
+    } catch (_) {}
   },
 
   _fmt(sec) {

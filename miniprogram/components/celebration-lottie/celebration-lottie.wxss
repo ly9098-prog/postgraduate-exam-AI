@@ -1,0 +1,178 @@
+/* celebration-lottie — Lottie 优先 + CSS 降级动效 */
+
+.celebration-shell {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.celebration-shell.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.lottie-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.celebration-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── CSS 降级层 ── */
+
+.fallback-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.fallback-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(11, 17, 33, 0.78);
+  backdrop-filter: blur(18rpx);
+  -webkit-backdrop-filter: blur(18rpx);
+}
+
+.fallback-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.fb-badge {
+  width: 130rpx;
+  height: 130rpx;
+  border-radius: 999rpx;
+  background: linear-gradient(135deg, #4F7FFF 0%, #6EC1FF 100%);
+  box-shadow: 0 22rpx 56rpx rgba(79, 127, 255, 0.36);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 56rpx;
+  color: #FFFFFF;
+  animation: fbPop 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.fb-badge.excellent,
+.fb-badge.final {
+  background: linear-gradient(135deg, #22C55E 0%, #7BD88F 100%);
+  box-shadow: 0 22rpx 56rpx rgba(34, 197, 94, 0.36);
+}
+
+.fb-badge.combo {
+  background: linear-gradient(135deg, #F59E0B 0%, #FFD166 100%);
+  box-shadow: 0 22rpx 56rpx rgba(245, 158, 11, 0.4);
+}
+
+.fallback-hint {
+  position: relative;
+  z-index: 2;
+  margin-top: 28rpx;
+  padding: 10rpx 28rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 24rpx;
+  animation: fbTextIn 0.5s ease 0.3s both;
+}
+
+/* 粒子 */
+.fallback-fireworks,
+.fallback-particles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.fw {
+  position: absolute;
+  width: 10rpx;
+  height: 10rpx;
+  border-radius: 50%;
+  animation: fwBurst 1.2s ease-out forwards;
+}
+
+.fw-1 { left: 20%; top: 30%; background: #4F7FFF; animation-delay: 0.1s; }
+.fw-2 { left: 50%; top: 20%; background: #22C55E; animation-delay: 0.15s; }
+.fw-3 { left: 72%; top: 38%; background: #F59E0B; animation-delay: 0.2s; }
+.fw-4 { right: 15%; top: 55%; background: #6EC1FF; animation-delay: 0.25s; }
+.fw-5 { left: 35%; top: 60%; background: #EF4444; animation-delay: 0.12s; }
+.fw-6 { left: 58%; top: 70%; background: #22C55E; animation-delay: 0.28s; }
+
+.fp {
+  position: absolute;
+  border-radius: 50%;
+  animation: fpFloat 1.5s ease-out forwards;
+}
+
+.fp-1 { left: 15%; top: 50%; width: 6rpx; height: 6rpx; background: #4F7FFF; animation-delay: 0.05s; }
+.fp-2 { left: 30%; top: 15%; width: 8rpx; height: 8rpx; background: #6EC1FF; animation-delay: 0.1s; }
+.fp-3 { left: 65%; top: 25%; width: 5rpx; height: 5rpx; background: #22C55E; animation-delay: 0.15s; }
+.fp-4 { right: 25%; top: 60%; width: 7rpx; height: 7rpx; background: #F59E0B; animation-delay: 0.2s; }
+.fp-5 { left: 45%; bottom: 30%; width: 6rpx; height: 6rpx; background: #EF4444; animation-delay: 0.08s; }
+.fp-6 { left: 75%; bottom: 40%; width: 8rpx; height: 8rpx; background: #4F7FFF; animation-delay: 0.22s; }
+.fp-7 { left: 10%; bottom: 50%; width: 5rpx; height: 5rpx; background: #6EC1FF; animation-delay: 0.18s; }
+.fp-8 { right: 30%; top: 40%; width: 7rpx; height: 7rpx; background: #22C55E; animation-delay: 0.25s; }
+
+@keyframes fbPop {
+  0% { transform: scale(0.4); opacity: 0; }
+  60% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes fbTextIn {
+  from { opacity: 0; transform: translateY(16rpx); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fwBurst {
+  0% { opacity: 1; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(var(--dx, 60rpx), var(--dy, -80rpx)) scale(0.2); }
+}
+
+@keyframes fpFloat {
+  0% { opacity: 0; transform: translateY(30rpx) scale(0.5); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-120rpx) scale(1.2); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fb-badge,
+  .fallback-hint,
+  .fw,
+  .fp {
+    animation: none !important;
+    opacity: 1;
+  }
+}

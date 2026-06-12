@@ -1397,6 +1397,56 @@
   animation: celeb-text-in 0.5s ease 0.48s both;
 }
 
+.celeb-growth {
+  margin-top: 24rpx;
+  padding: 18rpx 22rpx;
+  border-radius: 22rpx;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.celeb-growth-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.celeb-growth-level {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.88);
+  font-weight: 800;
+}
+
+.celeb-growth-pct {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.76);
+  font-weight: 800;
+}
+
+.celeb-growth-track {
+  margin-top: 10rpx;
+  height: 6rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.celeb-growth-fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.celeb-growth-desc {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 20rpx;
+  color: rgba(255, 255, 255, 0.62);
+  text-align: center;
+}
+
 .firework-container,
 .particle-container {
   position: absolute;

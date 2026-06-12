@@ -125,7 +125,7 @@ def build_report_prompt(
 
     kp_text = ""
     for kp in knowledge_point_stats:
-        kp_text += f"  - {kp['knowledge_point']}: 正确率 {kp['accuracy']:.0%}（{kp['correct']}/{kp['total']}）\n"
+        kp_text += f"  - {kp['knowledge_point']}: 错题掌握率 {kp['mastery_rate']:.0%}（已掌握{kp['mastered']}/{kp['total_wrong']}道错题）\n"
 
     return [
         {"role": "system", "content": SYSTEM_REPORT},
@@ -136,7 +136,7 @@ def build_report_prompt(
                 f"统计周期：最近 {days} 天\n"
                 f"总做题数：{total}\n"
                 f"总正确率：{accuracy:.0%}\n"
-                f"各知识点正确率：\n{kp_text}\n"
+                f"各科目错题掌握率（注意：这是错题掌握进度，不是做题正确率）：\n{kp_text}\n"
                 "请生成学习报告，识别薄弱点和优势点，给出 3-5 条具体学习建议。"
             ),
         },
