@@ -1,6 +1,7 @@
 const api = require('../../utils/api')
 const config = require('../../config')
 const { createTraceId, debugLog, saveDebugSnapshot, shouldDebugQuestion } = require('../../utils/debug')
+const { formatInlineMathText, replaceSimpleLatexCommands } = require('../../utils/math-format')
 
 function _textToHtml(text) {
   if (!text) return ''
@@ -38,23 +39,14 @@ function _escapeRegExp(text) {
 }
 
 function _replaceSimpleLatexCommands(text) {
-  return String(text || '')
-    .replace(/\\leq/g, '≤')
-    .replace(/\\geq/g, '≥')
-    .replace(/\\neq/g, '≠')
-    .replace(/\\times/g, '×')
-    .replace(/\\cdot/g, '·')
-    .replace(/\\lt/g, '<')
-    .replace(/\\gt/g, '>')
+  return replaceSimpleLatexCommands(text)
 }
 
 function _toPlainInlineMathText(text) {
   if (!text) return ''
   const source = String(text)
   if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
-  let plain = source.replace(/\$([^$\n]+?)\$/g, function(_, expr) {
-    return _replaceSimpleLatexCommands(expr).trim()
-  })
+  let plain = formatInlineMathText(source)
   if (/\\[a-zA-Z]+/.test(plain)) return null
   plain = plain.replace(/[ \t]+/g, ' ').replace(/\s+([，。！？；：,.!?;:])/g, '$1').trim()
   return plain

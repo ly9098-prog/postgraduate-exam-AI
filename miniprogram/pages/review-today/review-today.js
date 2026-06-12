@@ -1,5 +1,6 @@
 const api = require('../../utils/api')
 const config = require('../../config')
+const { formatInlineMathText } = require('../../utils/math-format')
 
 function _textToHtml(text) {
   if (!text) return ''
@@ -20,7 +21,7 @@ function _toPlainInlineMathText(text) {
   if (!text) return ''
   const source = String(text)
   if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
-  let plain = source.replace(/\$([^$\n]+?)\$/g, (_, expr) => expr.replace(/\\leq/g, '≤').replace(/\\geq/g, '≥').replace(/\\neq/g, '≠').replace(/\\times/g, '×').replace(/\\cdot/g, '·').trim())
+  const plain = formatInlineMathText(source)
   if (/\\[a-zA-Z]+/.test(plain)) return null
   return plain.replace(/[ \t]+/g, ' ').trim()
 }
