@@ -17,7 +17,7 @@
 
     <view class="mission-strip animation-fade-in">
       <view class="mission-strip-item">
-        <text class="mission-strip-num">{{selectedSubject ? subjectLabel(selectedSubject) : '待选择'}}</text>
+        <text class="mission-strip-num">{{selectedSubject ? selectedSubjectLabel : '待选择'}}</text>
         <text class="mission-strip-label">挑战科目</text>
       </view>
       <view class="mission-strip-divider"></view>
@@ -143,7 +143,7 @@
     <!-- 顶部状态栏 -->
     <view class="top-bar">
       <view class="bar-left">
-        <text class="bar-subject">{{subjectLabel(selectedSubject)}}</text>
+        <text class="bar-subject">{{selectedSubjectLabel}}</text>
         <text class="bar-counter">第 {{currentIndex + 1}} / {{totalQuestions || 0}} 题</text>
         <text class="bar-subtitle">已完成 {{answeredCount || 0}} 题</text>
       </view>
@@ -219,22 +219,22 @@
         </view>
 
         <!-- 选项 -->
-        <view class="options" wx:elif="{{optionKeys.length > 0}}">
+        <view class="options" wx:elif="{{currentQuestion._optionList.length > 0}}">
           <view
-            wx:for="{{optionKeys}}"
-            wx:key="*this"
-            class="option-item {{selectedFlags[item] ? 'selected' : ''}}"
+            wx:for="{{currentQuestion._optionList}}"
+            wx:key="key"
+            class="option-item {{item._selected ? 'selected' : ''}}"
             hover-class="option-pressed"
             bindtap="selectOption"
-            data-option="{{item}}"
+            data-option="{{item.key}}"
           >
-            <view class="option-indicator {{selectedFlags[item] ? 'checked' : ''}}">
-              <text wx:if="{{selectedFlags[item]}}" class="check-mark">{{selectedFlags[item] && currentQuestion.question_type === 'multiple_choice' ? '✓' : '●'}}</text>
+            <view class="option-indicator {{item._selected ? 'checked' : ''}}">
+              <text wx:if="{{item._selected}}" class="check-mark">{{item._selected && currentQuestion.question_type === 'multiple_choice' ? '✓' : '●'}}</text>
             </view>
             <view class="option-body">
-              <text class="option-key">{{item}}.</text>
-              <mp-html wx:if="{{currentQuestion._optNeedsRich[item]}}" content="{{currentQuestion._optHtml[item]}}" style="display:inline-block"></mp-html>
-              <text wx:else class="option-text">{{currentQuestion._optText[item]}}</text>
+              <text class="option-key">{{item.key}}.</text>
+              <mp-html wx:if="{{item._needsRich}}" content="{{item._html}}" style="display:inline-block"></mp-html>
+              <text wx:else class="option-text">{{item._text}}</text>
             </view>
           </view>
         </view>
@@ -258,7 +258,7 @@
           <text class="nav-arrow">›</text>
         </view>
       </view>
-      <button class="btn-submit" bindtap="doSubmit" loading="{{submitting}}">
+      <button class="btn-submit" bindtap="doSubmit" loading="{{submitting}}" disabled="{{submitting}}">
         交卷复盘（{{answeredCount || 0}}/{{totalQuestions || 0}}）
       </button>
     </view>
@@ -294,7 +294,7 @@
           {{index + 1}}
         </view>
       </view>
-      <button class="btn-submit sheet-submit" bindtap="doSubmit">交卷复盘</button>
+      <button class="btn-submit sheet-submit" bindtap="doSubmit" loading="{{submitting}}" disabled="{{submitting}}">交卷复盘</button>
     </view>
   </view>
 </view>
