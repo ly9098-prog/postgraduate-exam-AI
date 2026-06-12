@@ -55,10 +55,11 @@ async def complete_session(
 @router.post("/{session_id}/interrupt", response_model=PomodoroSessionResponse)
 async def interrupt_session(
     session_id: int,
+    req: PomodoroCompleteRequest = PomodoroCompleteRequest(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    session = await svc.interrupt_session(db, session_id, current_user.id)
+    session = await svc.interrupt_session(db, session_id, current_user.id, req.total_paused_ms)
     if not session:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")

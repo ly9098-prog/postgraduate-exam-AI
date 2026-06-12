@@ -321,18 +321,15 @@ class QuestionNormalizer:
         text = text.replace("\xa0", " ").replace("　", " ")
         text = re.sub(r"[​﻿]", "", text)
         text = re.sub(r"[□■●◆◇]+", "", text)
-        # 清除 LaTeX 文本字体命令（AI 常对普通文本过度使用 \mathrm 等）
         text = re.sub(r"\\mathrm\{([^}]*)\}", r"\1", text)
         text = re.sub(r"\\textbf\{([^}]*)\}", r"\1", text)
         text = re.sub(r"\\textit\{([^}]*)\}", r"\1", text)
         text = re.sub(r"\\mathtt\{([^}]*)\}", r"\1", text)
         lines: list[str] = []
-        seen: set[str] = set()
         for raw_line in text.splitlines():
-            line = re.sub(r"\s+", " ", raw_line).strip()
-            if not line or self._is_noise_line(line) or line in seen:
+            line = raw_line.strip()
+            if not line or self._is_noise_line(line):
                 continue
-            seen.add(line)
             lines.append(line)
         text = "\n".join(lines)
         text = re.sub(r"^\d+\s*[.、)）]\s*", "", text)
@@ -541,6 +538,9 @@ class QuestionNormalizer:
             return False
         if prev[-1] in "。！？；…":
             return False
+        # Don't merge code-block lines (braces alone on a line, or lines with C/Java-like syntax)
+        if re.search(r"[{};]\s*(?://.*)?$", prev) or re.search(r"^\s*[{}]", curr):
+            return False
         return True
 
     def _is_noise_line(self, line: str) -> bool:
@@ -670,7 +670,15 @@ async def _find_import_duplicate_by_hash(
             QuestionImport.status != "rejected",
         )
     )
-    return result.scalars().first()
+    existing = result.scalars().first()
+    if existing is None:
+        return None
+    # If the import was already approved but the question was later soft-deleted, allow re-import
+    if existing.question_id is not None:
+        q = await db.get(Question, existing.question_id)
+        if q is None or not q.is_active:
+            return None
+    return existing
 
 
 async def find_duplicate_question(
