@@ -1138,36 +1138,67 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(11, 17, 33, 0.9);
+  background: radial-gradient(circle at 50% 34%, rgba(79, 127, 255, 0.28), rgba(11, 17, 33, 0.92) 58%);
   backdrop-filter: blur(18rpx);
   -webkit-backdrop-filter: blur(18rpx);
+}
+
+.celebration-final .celeb-bg {
+  background: radial-gradient(circle at 50% 28%, rgba(245, 158, 11, 0.28), rgba(79, 127, 255, 0.2) 36%, rgba(11, 17, 33, 0.94) 66%);
 }
 
 .celeb-content {
   position: relative;
   z-index: 2;
   width: 620rpx;
-  padding: 56rpx 40rpx 48rpx;
-  border-radius: 36rpx;
-  background: linear-gradient(160deg, rgba(79, 127, 255, 0.24), rgba(34, 197, 94, 0.1));
-  border: 1rpx solid rgba(255, 255, 255, 0.18);
+  padding: 60rpx 40rpx 48rpx;
+  border-radius: 40rpx;
+  background: linear-gradient(160deg, rgba(79, 127, 255, 0.28), rgba(34, 197, 94, 0.12));
+  border: 1rpx solid rgba(255, 255, 255, 0.22);
   display: flex;
   flex-direction: column;
   align-items: center;
   box-shadow: 0 28rpx 80rpx rgba(0, 0, 0, 0.24);
+  overflow: hidden;
+}
+
+.celebration-final .celeb-content {
+  background: linear-gradient(160deg, rgba(255, 247, 232, 0.18), rgba(79, 127, 255, 0.28), rgba(34, 197, 94, 0.1));
+}
+
+.celeb-badge-halo {
+  position: absolute;
+  top: 34rpx;
+  width: 220rpx;
+  height: 220rpx;
+  border-radius: 999rpx;
+  background: radial-gradient(circle, rgba(110, 193, 255, 0.32) 0%, rgba(110, 193, 255, 0) 68%);
+  animation: celeb-halo 1.8s ease-in-out infinite;
+}
+
+.celebration-final .celeb-badge-halo {
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.38) 0%, rgba(245, 158, 11, 0) 68%);
 }
 
 .celeb-check-wrap {
-  width: 144rpx;
-  height: 144rpx;
+  width: 154rpx;
+  height: 154rpx;
   border-radius: 999rpx;
-  background: rgba(79, 127, 255, 0.18);
-  border: 4rpx solid rgba(110, 193, 255, 0.36);
+  background: rgba(79, 127, 255, 0.2);
+  border: 4rpx solid rgba(110, 193, 255, 0.42);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 28rpx;
+  margin-bottom: 20rpx;
+  position: relative;
+  z-index: 1;
   animation: celeb-check 0.72s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.celebration-final .celeb-check-wrap {
+  background: linear-gradient(145deg, rgba(245, 158, 11, 0.36), rgba(34, 197, 94, 0.22));
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 44rpx rgba(245, 158, 11, 0.28);
 }
 
 .celeb-check {
@@ -1176,8 +1207,19 @@
   font-weight: 900;
 }
 
+.celeb-progress {
+  padding: 8rpx 20rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 22rpx;
+  font-weight: 800;
+  animation: celeb-text-in 0.5s ease 0.1s both;
+}
+
 .celeb-title {
-  font-size: 38rpx;
+  margin-top: 18rpx;
+  font-size: 40rpx;
   font-weight: 900;
   color: #FFFFFF;
   line-height: 1.25;
@@ -1195,25 +1237,46 @@
   animation: celeb-text-in 0.5s ease 0.24s both;
 }
 
+.celeb-reward {
+  margin-top: 20rpx;
+  padding: 14rpx 22rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.14);
+  color: #FFFFFF;
+  font-size: 24rpx;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  animation: reward-pop 0.58s cubic-bezier(0.34, 1.56, 0.64, 1) 0.32s both;
+}
+
+.reward-spark {
+  color: #FCD34D;
+  font-size: 26rpx;
+  animation: spark-pulse 0.9s ease-in-out infinite;
+}
+
 .celeb-motto {
   margin-top: 18rpx;
   font-size: 24rpx;
   color: rgba(255, 255, 255, 0.68);
   line-height: 1.5;
   text-align: center;
-  animation: celeb-text-in 0.5s ease 0.32s both;
-}
-
-.celeb-tap-hint {
-  margin-top: 30rpx;
-  padding: 10rpx 24rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 22rpx;
   animation: celeb-text-in 0.5s ease 0.4s both;
 }
 
+.celeb-tap-hint {
+  margin-top: 28rpx;
+  padding: 10rpx 24rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 22rpx;
+  animation: celeb-text-in 0.5s ease 0.48s both;
+}
+
+.firework-container,
 .particle-container {
   position: absolute;
   top: 0;
@@ -1224,6 +1287,21 @@
   pointer-events: none;
   overflow: hidden;
 }
+
+.firework {
+  position: absolute;
+  width: 150rpx;
+  height: 150rpx;
+  border-radius: 999rpx;
+  opacity: 0;
+  background: repeating-conic-gradient(from 0deg, transparent 0deg 13deg, rgba(255,255,255,0.9) 14deg 16deg, transparent 17deg 30deg);
+  mask: radial-gradient(circle, transparent 0 42rpx, #000 44rpx 48rpx, transparent 50rpx);
+  -webkit-mask: radial-gradient(circle, transparent 0 42rpx, #000 44rpx 48rpx, transparent 50rpx);
+}
+
+.f1 { left: 66rpx; top: 180rpx; animation: firework-burst 1.5s ease-out 0.06s infinite; }
+.f2 { right: 58rpx; top: 132rpx; animation: firework-burst 1.5s ease-out 0.28s infinite; }
+.f3 { left: 50%; bottom: 150rpx; margin-left: -75rpx; animation: firework-burst 1.5s ease-out 0.5s infinite; }
 
 .particle {
   position: absolute;
@@ -1236,12 +1314,16 @@
   margin-left: -7rpx;
 }
 
-.p1 { background: #6EC1FF; animation: p1 1.45s ease-out 0s forwards; }
-.p2 { background: #4F7FFF; animation: p2 1.45s ease-out 0.08s forwards; }
-.p3 { background: #F59E0B; animation: p3 1.45s ease-out 0.16s forwards; }
-.p4 { background: #22C55E; animation: p4 1.45s ease-out 0.24s forwards; }
-.p5 { background: #EF4444; animation: p5 1.45s ease-out 0.32s forwards; }
-.p6 { background: #8B5CF6; animation: p6 1.45s ease-out 0.4s forwards; }
+.p1 { background: #6EC1FF; animation: p1 1.6s ease-out 0s forwards; }
+.p2 { background: #4F7FFF; animation: p2 1.6s ease-out 0.08s forwards; }
+.p3 { background: #F59E0B; animation: p3 1.6s ease-out 0.16s forwards; }
+.p4 { background: #22C55E; animation: p4 1.6s ease-out 0.24s forwards; }
+.p5 { background: #EF4444; animation: p5 1.6s ease-out 0.32s forwards; }
+.p6 { background: #8B5CF6; animation: p6 1.6s ease-out 0.4s forwards; }
+.p7 { background: #FCD34D; animation: p7 1.6s ease-out 0.12s forwards; }
+.p8 { background: #FFFFFF; animation: p8 1.6s ease-out 0.2s forwards; }
+.p9 { background: #A7F3D0; animation: p9 1.6s ease-out 0.28s forwards; }
+.p10 { background: #BFDBFE; animation: p10 1.6s ease-out 0.36s forwards; }
 
 @keyframes celeb-fade-in {
   from { opacity: 0; }
@@ -1255,17 +1337,42 @@
   100% { transform: scale(1) rotate(0deg); }
 }
 
+@keyframes celeb-halo {
+  0%, 100% { transform: scale(0.92); opacity: 0.58; }
+  50% { transform: scale(1.12); opacity: 0.9; }
+}
+
 @keyframes celeb-text-in {
   from { opacity: 0; transform: translateY(18rpx); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes p1 { to { transform: translate(-230rpx, -280rpx) scale(0); opacity: 0; } }
-@keyframes p2 { to { transform: translate(230rpx, -260rpx) scale(0); opacity: 0; } }
-@keyframes p3 { to { transform: translate(-280rpx, 40rpx) scale(0); opacity: 0; } }
-@keyframes p4 { to { transform: translate(280rpx, 70rpx) scale(0); opacity: 0; } }
-@keyframes p5 { to { transform: translate(-150rpx, 280rpx) scale(0); opacity: 0; } }
-@keyframes p6 { to { transform: translate(150rpx, 280rpx) scale(0); opacity: 0; } }
+@keyframes reward-pop {
+  from { opacity: 0; transform: translateY(20rpx) scale(0.86); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes spark-pulse {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.28) rotate(16deg); }
+}
+
+@keyframes firework-burst {
+  0% { transform: scale(0.1) rotate(0deg); opacity: 0; }
+  35% { opacity: 0.85; }
+  100% { transform: scale(1.2) rotate(24deg); opacity: 0; }
+}
+
+@keyframes p1 { to { transform: translate(-250rpx, -300rpx) scale(0); opacity: 0; } }
+@keyframes p2 { to { transform: translate(250rpx, -280rpx) scale(0); opacity: 0; } }
+@keyframes p3 { to { transform: translate(-300rpx, 20rpx) scale(0); opacity: 0; } }
+@keyframes p4 { to { transform: translate(300rpx, 48rpx) scale(0); opacity: 0; } }
+@keyframes p5 { to { transform: translate(-170rpx, 300rpx) scale(0); opacity: 0; } }
+@keyframes p6 { to { transform: translate(170rpx, 300rpx) scale(0); opacity: 0; } }
+@keyframes p7 { to { transform: translate(-42rpx, -340rpx) scale(0); opacity: 0; } }
+@keyframes p8 { to { transform: translate(42rpx, 340rpx) scale(0); opacity: 0; } }
+@keyframes p9 { to { transform: translate(-320rpx, -140rpx) scale(0); opacity: 0; } }
+@keyframes p10 { to { transform: translate(320rpx, -120rpx) scale(0); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
   .animation-fade-in,
@@ -1274,11 +1381,16 @@
   .question-card.slide-in,
   .master-overlay,
   .celebration-overlay,
+  .celeb-badge-halo,
   .celeb-check-wrap,
+  .celeb-progress,
   .celeb-title,
   .celeb-detail,
+  .celeb-reward,
+  .reward-spark,
   .celeb-motto,
   .celeb-tap-hint,
+  .firework,
   .particle {
     animation: none !important;
     transition: none !important;
