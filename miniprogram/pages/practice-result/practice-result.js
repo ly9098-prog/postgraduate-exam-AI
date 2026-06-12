@@ -1,3 +1,4 @@
+const { formatInlineMathText } = require('../../utils/math-format')
 Page({
   data: {
     correct: 0,
@@ -31,6 +32,7 @@ Page({
       if (stored && stored.results) {
         results = stored.results.map(r => ({
           ...r,
+          correct_answer: formatInlineMathText(r.correct_answer),
           _label: r.is_correct ? '✓' : '✗',
           _cls: r.is_correct ? 'correct' : 'wrong',
         }))

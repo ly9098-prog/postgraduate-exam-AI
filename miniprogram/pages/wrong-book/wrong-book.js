@@ -1,5 +1,6 @@
 const api = require('../../utils/api')
 const config = require('../../config')
+const { formatInlineMathText } = require('../../utils/math-format')
 
 const SUBJECTS = [
   { value: '', label: '全部' },
@@ -303,16 +304,8 @@ Page({
     return `${m}月${day}日`
   },
 
-  /** 剥离 LaTeX $ 符号，显示可读的纯文本预览 */
   _toCleanText(text) {
     if (!text || typeof text !== 'string') return ''
-    return String(text)
-      .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
-      .replace(/\$([^$\n]+?)\$/g, '$1')
-      .replace(/\\leq/g, '≤')
-      .replace(/\\geq/g, '≥')
-      .replace(/\\lt/g, '<')
-      .replace(/\\gt/g, '>')
-      .trim()
+    return formatInlineMathText(text)
   },
 })
