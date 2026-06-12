@@ -117,7 +117,7 @@
       开始今日复习
     </button>
     <view wx:elif="{{stats && stats.remaining_today === 0 && stats.total_scheduled > 0}}" class="done-wrap animation-fade-in">
-      <view class="done-check">✓</view>
+      <view class="done-check"><text class="line-icon icon-check done-check-icon"></text></view>
       <text class="done-title">今日复习已完成</text>
       <text class="done-desc">记忆曲线已更新，明天继续保持</text>
     </view>
@@ -170,7 +170,7 @@
           <text class="q-kicker">先回忆，再选择</text>
         </view>
         <view class="master-btn" catchtap="tapMaster" data-sid="{{currentQuestion.schedule_id}}">
-          <text class="master-icon">✓</text>
+          <text class="master-icon line-icon icon-check master-icon-check"></text>
         </view>
       </view>
 
@@ -231,7 +231,10 @@
 
     <view class="group-reward-strip">
       <view class="group-reward-main">
-        <text class="group-reward-icon">{{groupCorrect >= groupWrong ? '✓' : '↗'}}</text>
+        <view class="group-reward-icon">
+          <text wx:if="{{groupCorrect >= groupWrong}}" class="line-icon icon-check" style="width:40rpx;height:40rpx;color:#FFFFFF;"></text>
+          <text wx:else class="line-icon icon-trend" style="width:40rpx;height:40rpx;color:#FFFFFF;"></text>
+        </view>
         <view class="group-reward-copy">
           <text class="group-reward-title">{{groupCorrect >= groupWrong ? '本组记忆稳定' : '本组已完成诊断'}}</text>
           <text class="group-reward-desc">{{groupCorrect >= groupWrong ? '获得专注星光 +1，继续保持节奏' : '获得复盘能量 +1，错题会进入巩固计划'}}</text>
@@ -263,7 +266,10 @@
         wx:for="{{groupResults}}" wx:key="schedule_id"
         class="ga-item {{item.isCorrect ? 'ga-correct' : 'ga-wrong'}}"
       >
-        <text class="ga-status">{{item.isCorrect ? '✓' : '!'}}</text>
+        <view class="ga-status">
+          <text wx:if="{{item.isCorrect}}" class="line-icon icon-check" style="width:22rpx;height:22rpx;color:#FFFFFF;"></text>
+          <text wx:else class="line-icon icon-exclamation" style="width:22rpx;height:22rpx;color:#FFFFFF;"></text>
+        </view>
         <view class="ga-body">
           <text class="ga-stem">{{item._stemPreview}}</text>
           <text class="ga-answer" wx:if="{{!item.isCorrect}}">

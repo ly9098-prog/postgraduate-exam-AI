@@ -2,6 +2,7 @@
    🎯 极夜·专注 — Pomodoro Timer
    Dark immersive theme for deep focus
    ============================================ */
+@import '../../styles/tokens.wxss';
 
 /* ── Page ── */
 .page {
@@ -403,10 +404,6 @@
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
 .ceremony-status {
   font-size: 26rpx;
   color: rgba(255, 255, 255, 0.35);
@@ -598,9 +595,10 @@
 }
 
 .ctrl-icon {
-  font-size: 38rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: rgba(255, 255, 255, 0.7);
-  line-height: 1;
 }
 
 .ctrl-icon-end {
@@ -658,8 +656,9 @@
 }
 
 .stats-arrow {
-  font-size: 28rpx;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ============================================
@@ -733,9 +732,10 @@
 }
 
 .celeb-check {
-  font-size: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: #10B981;
-  font-weight: 700;
 }
 
 .celeb-title {
@@ -898,7 +898,7 @@
 .size-large .timer-hint { font-size: 28rpx; }
 .size-large .ring-time { font-size: 100rpx; }
 .size-large .ring-status { font-size: 30rpx; }
-.size-large .ctrl-icon { font-size: 42rpx; }
+.size-large .ctrl-icon { width: 38rpx; height: 38rpx; }
 .size-large .ctrl-label { font-size: 26rpx; }
 .size-large .ctrl-primary {
   width: 132rpx;
@@ -909,3 +909,21 @@
   height: 110rpx;
 }
 .size-large .stats-link { font-size: 28rpx; }
+
+@media (prefers-reduced-motion: reduce) {
+  .page,
+  .timer-ring,
+  .timer-inner,
+  .ceremony-overlay,
+  .ceremony-card,
+  .ceremony-badge,
+  .celeb-particle,
+  .font-size-btn,
+  .stats-link {
+    animation: none !important;
+    transition: none !important;
+  }
+  .timer-ring {
+    animation: none !important;
+  }
+}

@@ -83,7 +83,7 @@
 
       <view wx:if="{{showDevLogin}}" class="dev-entry" bindtap="onDevLogin">
         <text class="dev-text">开发者模式</text>
-        <text class="dev-arrow">›</text>
+        <text class="dev-arrow line-icon icon-chevron-right" style="width:28rpx;height:28rpx;color:#315CFF;"></text>
       </view>
 
       <view wx:if="{{error}}" class="error-msg">{{error}}</view>

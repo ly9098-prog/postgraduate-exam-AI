@@ -314,7 +314,8 @@
         <view class="badge-grid">
           <view class="badge-item {{item.unlocked ? 'unlocked' : 'locked'}}" wx:for="{{badgeWall}}" wx:key="key">
             <view class="badge-medal">
-              <text class="badge-medal-icon">{{item.unlocked ? '✓' : '·'}}</text>
+              <text wx:if="{{item.unlocked}}" class="badge-medal-icon line-icon icon-check" style="width:26rpx;height:26rpx;color:#FFFFFF;"></text>
+              <text wx:else class="badge-medal-icon line-icon icon-dot" style="width:26rpx;height:26rpx;color:#FFFFFF;"></text>
             </view>
             <text class="badge-title">{{item.title}}</text>
             <text class="badge-desc">{{item.desc}}</text>
