@@ -644,8 +644,6 @@
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
-
 .loading-text {
   font-size: 26rpx;
   color: #7B8AA8;
@@ -678,10 +676,10 @@
 }
 
 .empty-icon-text {
-  font-size: 48rpx;
-  font-weight: 900;
   color: #22C55E;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .empty-title {

@@ -56,10 +56,6 @@
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
 .loading-text {
   font-size: 24rpx;
   color: rgba(255, 255, 255, 0.3);
@@ -497,4 +493,13 @@
 /* ── Bottom Spacer ── */
 .bottom-spacer {
   height: 40rpx;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page,
+  .loading-spinner,
+  .detail-modal {
+    animation: none !important;
+    transition: none !important;
+  }
 }

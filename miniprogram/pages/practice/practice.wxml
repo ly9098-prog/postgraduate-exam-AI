@@ -206,7 +206,7 @@
                 data-option="{{opt.key}}"
               >
                 <view class="option-indicator {{opt._selected ? 'checked' : ''}}">
-                  <text wx:if="{{opt._selected}}" class="check-mark">●</text>
+                  <text wx:if="{{opt._selected}}" class="check-mark line-icon icon-dot"></text>
                 </view>
                 <view class="option-body">
                   <text class="option-key">{{opt.key}}.</text>
@@ -229,7 +229,8 @@
             data-option="{{item.key}}"
           >
             <view class="option-indicator {{item._selected ? 'checked' : ''}}">
-              <text wx:if="{{item._selected}}" class="check-mark">{{item._selected && currentQuestion.question_type === 'multiple_choice' ? '✓' : '●'}}</text>
+              <text wx:if="{{item._selected && currentQuestion.question_type === 'multiple_choice'}}" class="check-mark line-icon icon-check"></text>
+              <text wx:elif="{{item._selected}}" class="check-mark line-icon icon-dot"></text>
             </view>
             <view class="option-body">
               <text class="option-key">{{item.key}}.</text>
@@ -245,7 +246,7 @@
     <view class="bottom-bar">
       <view class="bottom-inner">
         <view class="nav-btn prev {{currentIndex <= 0 ? 'disabled' : ''}}" bindtap="goPrev">
-          <text class="nav-arrow">‹</text>
+          <text class="nav-arrow line-icon icon-chevron-left"></text>
           <text class="nav-label">上一题</text>
         </view>
 
@@ -255,7 +256,7 @@
 
         <view class="nav-btn next {{currentIndex >= totalQuestions - 1 ? 'disabled' : ''}}" bindtap="goNext">
           <text class="nav-label">下一题</text>
-          <text class="nav-arrow">›</text>
+          <text class="nav-arrow line-icon icon-chevron-right"></text>
         </view>
       </view>
       <button class="btn-submit" bindtap="doSubmit" loading="{{submitting}}" disabled="{{submitting}}">
@@ -266,7 +267,9 @@
     <view class="answer-feedback {{feedbackType}}" wx:if="{{feedbackVisible}}" catchtap="noop">
       <view class="feedback-card">
         <view class="feedback-icon-wrap">
-          <text class="feedback-icon">{{feedbackType === 'correct' ? '✓' : feedbackType === 'wrong' ? '!' : '•'}}</text>
+          <text wx:if="{{feedbackType === 'correct'}}" class="feedback-icon line-icon icon-check"></text>
+          <text wx:elif="{{feedbackType === 'wrong'}}" class="feedback-icon line-icon icon-exclamation"></text>
+          <text wx:else class="feedback-icon line-icon icon-dot"></text>
         </view>
         <view class="feedback-copy">
           <text class="feedback-title">{{feedbackTitle}}</text>

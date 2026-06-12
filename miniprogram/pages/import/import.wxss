@@ -108,8 +108,10 @@ page {
 }
 
 .upload-icon {
-  font-size: 48rpx;
-  font-weight: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
   color: #5B7B9A;
   line-height: 1;
 }
@@ -362,9 +364,11 @@ page {
   height: 40rpx;
   border-radius: 50%;
   background: #6B9B6B;
-  color: #fff;
-  font-size: 22rpx;
-  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
   display: flex;
   align-items: center;
   justify-content: center;
@@ -524,7 +528,9 @@ page {
 }
 
 .template-arrow {
-  font-size: 34rpx;
-  color: #BCC8D4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
   flex-shrink: 0;
 }

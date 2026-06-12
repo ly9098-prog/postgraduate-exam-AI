@@ -1,7 +1,8 @@
 <view class="page">
   <view class="nav-bar">
     <view class="nav-left" bindtap="goBack">
-      <text class="nav-back">‹ 返回</text>
+      <text class="nav-back line-icon icon-chevron-left" style="width:24rpx;height:24rpx;color:#5B7B9A;margin-right:6rpx;"></text>
+      <text>返回</text>
     </view>
     <text class="nav-title">提交详情</text>
     <view class="nav-right"></view>
@@ -14,7 +15,7 @@
   </view>
 
   <view class="empty-state" wx:elif="{{loadError}}">
-    <view class="empty-mark danger">!</view>
+    <view class="empty-mark danger"><text class="line-icon icon-exclamation" style="width:32rpx;height:32rpx;color:#FFFFFF;"></text></view>
     <text class="empty-title">加载失败，请返回重试</text>
   </view>
 
@@ -46,7 +47,7 @@
         </view>
         <text class="q-preview">{{item._preview}}</text>
         <view class="q-expand-hint">
-          <text class="expand-arrow {{expanding === item.id ? 'expanded' : ''}}">▼</text>
+          <text class="expand-arrow {{expanding === item.id ? 'expanded' : ''}} line-icon icon-chevron-down" style="width:24rpx;height:24rpx;color:#B7C4DA;"></text>
         </view>
         <view class="q-detail {{expanding === item.id ? 'show' : ''}}" catchtap>
           <view class="detail-body">

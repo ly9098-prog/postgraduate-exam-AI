@@ -121,7 +121,9 @@
   <!-- AI 降级 -->
   <view class="ai-card" wx:if="{{!aiLoading && aiFallback}}">
     <view class="ai-fallback">
-      <view class="fallback-mark">!</view>
+      <view class="fallback-mark">
+        <view class="line-icon icon-exclamation"></view>
+      </view>
       <text class="fallback-title">解题技巧暂时不可用</text>
       <text class="fallback-desc">建议先查看题目解析，稍后再试</text>
     </view>

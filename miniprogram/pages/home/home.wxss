@@ -485,11 +485,6 @@
   transform: translateZ(0);
 }
 
-@keyframes fadeSlideIn {
-  from { opacity: 0; transform: translateY(18rpx); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 .action-grid {
   padding: 0 24rpx;
   margin-top: 2rpx;

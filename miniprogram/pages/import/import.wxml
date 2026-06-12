@@ -12,7 +12,7 @@
   <view class="upload-section">
     <view class="upload-zone" bindtap="chooseFile">
       <view class="upload-icon-wrap">
-        <text class="upload-icon">+</text>
+        <text class="upload-icon line-icon icon-plus" style="width:44rpx;height:44rpx;color:#5B7B9A;"></text>
       </view>
       <text class="upload-title">选择文件上传</text>
       <text class="upload-desc">拍照 / 相册图片 / PDF / TXT / Excel</text>
@@ -87,11 +87,11 @@
 
     <!-- 完成/失败提示 -->
     <view class="pipeline-result" wx:if="{{pipelineTask.status === 'completed'}}">
-      <text class="pipeline-result-icon">✓</text>
+      <text class="pipeline-result-icon line-icon icon-check" style="width:32rpx;height:32rpx;color:#22C55E;"></text>
       <text class="pipeline-result-text">导入完成，共解析 {{pipelineTask.question_count || 0}} 题</text>
     </view>
     <view class="pipeline-result error" wx:if="{{pipelineTask.status === 'failed'}}">
-      <text class="pipeline-result-icon">✕</text>
+      <text class="pipeline-result-icon line-icon icon-close" style="width:32rpx;height:32rpx;color:#EF4444;"></text>
       <text class="pipeline-result-text">{{pipelineTask.error_message || '导入失败，请重试'}}</text>
     </view>
   </view>
@@ -105,6 +105,6 @@
       <text class="template-label">下载导入模板</text>
       <text class="template-desc">适合批量整理 Excel 题库，按字段填写更稳定</text>
     </view>
-    <text class="template-arrow">›</text>
+    <text class="template-arrow line-icon icon-chevron-right" style="width:28rpx;height:28rpx;color:#B7C4DA;"></text>
   </view>
 </view>
