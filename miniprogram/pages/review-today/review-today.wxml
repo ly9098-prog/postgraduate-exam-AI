@@ -1,3 +1,26 @@
+<block wx:if="{{showCelebration}}">
+  <view class="celebration-overlay" catchtap="dismissCelebration">
+    <view class="celeb-bg"></view>
+    <view class="celeb-content">
+      <view class="celeb-check-wrap">
+        <text class="celeb-check">{{celebrationIcon}}</text>
+      </view>
+      <text class="celeb-title">{{celebrationTitle}}</text>
+      <text class="celeb-detail">{{celebrationDetail}}</text>
+      <text class="celeb-motto">{{celebrationMotto}}</text>
+      <text class="celeb-tap-hint">点击继续</text>
+    </view>
+    <view class="particle-container">
+      <view class="particle p1"></view>
+      <view class="particle p2"></view>
+      <view class="particle p3"></view>
+      <view class="particle p4"></view>
+      <view class="particle p5"></view>
+      <view class="particle p6"></view>
+    </view>
+  </view>
+</block>
+
 <!-- ==================== 入口页 ==================== -->
 <view class="page review-entry" wx:if="{{phase === 'entry'}}">
   <view wx:if="{{entryLoading}}" class="loading-wrap">
@@ -47,7 +70,7 @@
         </view>
         <view class="glass-divider"></view>
         <view class="glass-item">
-          <text class="glass-num success">{{Math.round(stats.accuracy_last_7d * 100)}}%</text>
+          <text class="glass-num success">{{_accuracyLast7dText}}</text>
           <text class="glass-label">近7天正确率</text>
         </view>
       </view>
@@ -71,7 +94,7 @@
         >{{item}}题</view>
       </view>
       <text class="size-hint" wx:if="{{stats.remaining_today > groupSize}}">
-        预计分为 {{Math.ceil(stats.remaining_today / groupSize)}} 组完成
+        预计分为 {{_reviewGroupCountText}} 组完成
       </text>
     </view>
 
@@ -107,7 +130,7 @@
     <view class="group-header">
       <view>
         <text class="group-title">第 {{currentGroupIdx + 1}} / {{groups.length}} 组</text>
-        <text class="group-subtitle">已选 {{Object.keys(answers).length}} / {{groupQuestions.length}} 题</text>
+        <text class="group-subtitle">已选 {{_answeredCount}} / {{groupQuestions.length}} 题</text>
       </view>
       <text class="group-meta">{{groupQuestions.length}} 题</text>
     </view>
@@ -128,7 +151,7 @@
     <view class="question-card {{animClass}}" wx:if="{{currentQuestion}}">
       <view class="q-top-bar">
         <view>
-          <text class="subject-badge">{{subjectLabel(currentQuestion.subject)}}</text>
+          <text class="subject-badge">{{currentQuestion._subjectLabel}}</text>
           <text class="q-kicker">先回忆，再选择</text>
         </view>
         <view class="master-btn" catchtap="tapMaster" data-sid="{{currentQuestion.schedule_id}}">
@@ -175,7 +198,7 @@
       </view>
 
       <button class="submit-group-btn" bindtap="submitGroup" loading="{{submittingGroup}}">
-        提交本组复盘（{{Object.keys(answers).length}} / {{groupQuestions.length}}）
+        提交本组复盘（{{_answeredCount}} / {{groupQuestions.length}}）
       </button>
     </view>
   </view>
@@ -213,7 +236,7 @@
       >
         <text class="ga-status">{{item.isCorrect ? '✓' : '!'}}</text>
         <view class="ga-body">
-          <text class="ga-stem">{{item._stemText.slice(0, 60)}}{{item._stemText.length > 60 ? '...' : ''}}</text>
+          <text class="ga-stem">{{item._stemPreview}}</text>
           <text class="ga-answer" wx:if="{{!item.isCorrect}}">
             你的：{{item.userAnswer || '未作答'}}　正确：{{item.correctAnswer}}
           </text>
@@ -259,7 +282,7 @@
         <view class="accuracy-bg"></view>
         <view class="accuracy-fg" style="{{_accuracyStyle}}"></view>
         <view class="accuracy-center">
-          <text class="accuracy-num">{{allGroupResults.length > 0 ? Math.round(totalCorrect / allGroupResults.length * 100) : 0}}%</text>
+          <text class="accuracy-num">{{_accuracyText}}</text>
           <text class="accuracy-lbl">正确率</text>
         </view>
       </view>
