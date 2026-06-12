@@ -96,6 +96,7 @@
           <canvas class="trend-canvas" canvas-id="trend-line" id="trend-line"></canvas>
         </view>
         <text class="chart-summary">近{{trendDays}}天累计做题{{trendMeta.totalQuestions || 0}}题，平均正确率{{trendMeta.avgAccuracyText || '0%'}}，活跃{{trendMeta.activeDays || 0}}天。</text>
+        <view class="sr-summary">{{trendMeta.summaryText || ''}}</view>
         <view class="trend-meta">
           <view class="trend-meta-item">
             <text class="trend-meta-val">{{trendMeta.totalQuestions || 0}}</text>
@@ -121,6 +122,55 @@
         <text class="empty-icon line-icon icon-trend"></text>
         <text class="empty-title">暂无趋势数据</text>
         <text class="empty-desc">坚持练习后会生成学习趋势</text>
+      </view>
+    </view>
+
+    <!-- ════════════════════════════════════════════
+         TIER 2.5 · 365天热力图
+         ════════════════════════════════════════════ -->
+    <view class="section" wx:if="{{yearlyHeatmapWeeks.length > 0}}">
+      <view class="section-head">
+        <view class="sh-left">
+          <text class="sh-title">365天学习热力图</text>
+          <text class="sh-desc">把每一天的努力变成可见轨迹</text>
+        </view>
+        <text class="heat-year-badge">过去一年</text>
+      </view>
+
+      <view class="card yearly-heat-card">
+        <view class="yearly-heat-head">
+          <view>
+            <text class="yh-value">{{yearlyHeatmapMeta.activeDays || 0}}</text>
+            <text class="yh-label">活跃天数</text>
+          </view>
+          <view>
+            <text class="yh-value">{{yearlyHeatmapMeta.totalQuestions || 0}}</text>
+            <text class="yh-label">累计题量</text>
+          </view>
+          <view>
+            <text class="yh-value small">{{yearlyHeatmapMeta.bestDayText}}</text>
+            <text class="yh-label">最高单日</text>
+          </view>
+        </view>
+        <text class="chart-summary">{{yearlyHeatmapMeta.summaryText}}</text>
+        <scroll-view class="yearly-heat-scroll" scroll-x enhanced show-scrollbar="false">
+          <view class="yearly-heat-grid">
+            <view class="year-week" wx:for="{{yearlyHeatmapWeeks}}" wx:for-item="week" wx:key="key">
+              <view class="year-day {{day._heatClass}}" wx:for="{{week.days}}" wx:for-item="day" wx:key="date">
+                <text class="year-day-tip">{{day._shortDate}} · {{day.questions}}题</text>
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+        <view class="heat-legend">
+          <text>少</text>
+          <view class="legend-cell"></view>
+          <view class="legend-cell lv1"></view>
+          <view class="legend-cell lv2"></view>
+          <view class="legend-cell lv3"></view>
+          <view class="legend-cell lv4"></view>
+          <text>多</text>
+        </view>
       </view>
     </view>
 
@@ -244,6 +294,48 @@
         <view class="mp-meta">
           <text class="mp-meta-item">已掌握 {{overview.mastered_count || 0}} 题</text>
           <text class="mp-meta-item">总错题 {{overview._wrongTotal || 0}} 题</text>
+        </view>
+      </view>
+
+
+      <view class="card badge-wall-card" wx:if="{{badgeWall.length > 0}}">
+        <view class="card-label-row">
+          <text class="card-label">成就徽章墙</text>
+          <text class="card-label-hint">{{overview.consecutive_days || 0}}天连续学习</text>
+        </view>
+        <view class="badge-grid">
+          <view class="badge-item {{item.unlocked ? 'unlocked' : 'locked'}}" wx:for="{{badgeWall}}" wx:key="key">
+            <view class="badge-medal">
+              <text class="badge-medal-icon">{{item.unlocked ? '✓' : '·'}}</text>
+            </view>
+            <text class="badge-title">{{item.title}}</text>
+            <text class="badge-desc">{{item.desc}}</text>
+            <text class="badge-progress">{{item.progressText}}</text>
+          </view>
+        </view>
+      </view>
+
+      <view class="card profile-card" wx:if="{{learningProfile}}">
+        <view class="profile-hero">
+          <view class="profile-orb"></view>
+          <view class="profile-copy">
+            <text class="profile-kicker">智能诊断</text>
+            <text class="profile-title">{{learningProfile.title}}</text>
+            <text class="profile-summary">{{learningProfile.summary}}</text>
+          </view>
+        </view>
+        <view class="profile-columns">
+          <view class="profile-panel strength">
+            <text class="profile-panel-title">你的优势</text>
+            <text class="profile-point" wx:for="{{learningProfile.strengths}}" wx:key="*this">{{item}}</text>
+          </view>
+          <view class="profile-panel weakness">
+            <text class="profile-panel-title">需要补强</text>
+            <text class="profile-point" wx:for="{{learningProfile.weaknesses}}" wx:key="*this">{{item}}</text>
+          </view>
+        </view>
+        <view class="profile-actions">
+          <text class="profile-action" wx:for="{{learningProfile.actions}}" wx:key="*this">{{item}}</text>
         </view>
       </view>
 
