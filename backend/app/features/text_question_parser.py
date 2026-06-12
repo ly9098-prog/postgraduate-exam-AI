@@ -13,6 +13,7 @@ import logging
 from typing import Any
 
 from app.features.question_pipeline import process_question_pipeline, normalizer, _guess_subject
+from app.services.formula_normalizer import normalize_text_import_math
 
 logger = logging.getLogger(__name__)
 
@@ -264,7 +265,7 @@ def _parse_options_from_text(text: str) -> list[dict[str, str]]:
             m = _OPTION_LINE_RE.match(cand)
             if m:
                 key = m.group(1).upper()
-                value = m.group(2).strip()
+                value = normalize_text_import_math(m.group(2).strip(), compact=True)
                 if key not in options and value:
                     options[key] = value
                 continue
@@ -273,7 +274,7 @@ def _parse_options_from_text(text: str) -> list[dict[str, str]]:
             m = _OPTION_OCR_RE.match(cand)
             if m:
                 key = m.group(1).upper()
-                value = m.group(2).strip()
+                value = normalize_text_import_math(m.group(2).strip(), compact=True)
                 if key not in options and value:
                     options[key] = value
                 continue
@@ -463,10 +464,10 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
         elif section == "analysis":
             analysis_lines.append(stripped)
 
-    result["stem"] = _clean_stem_number("\n".join(stem_lines).strip())
+    result["stem"] = normalize_text_import_math(_clean_stem_number("\n".join(stem_lines).strip()))
     result["options_text"] = "\n".join(option_lines).strip()
     result["answer"] = "\n".join(answer_lines).strip()
-    result["analysis"] = "\n".join(analysis_lines).strip()
+    result["analysis"] = normalize_text_import_math("\n".join(analysis_lines).strip())
     return result
 
 
@@ -666,6 +667,7 @@ def parse_text_questions(text: str, subject: str) -> dict[str, Any]:
             "answer": raw["answer"],
             "analysis": raw["analysis"],
             "question_type": raw["question_type"],
+            "preserve_plain_math": True,
         }
 
         # 判断题：bool → 字符串格式（pipeline 能处理）

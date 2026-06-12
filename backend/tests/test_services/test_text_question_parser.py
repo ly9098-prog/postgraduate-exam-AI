@@ -135,3 +135,61 @@ C"""
         text = "Q?\n\nA. a\nB. b\n\n答案: A\n\n解析：略"
         result = parse_text_questions(text, subject="math")
         assert result["raw_count"] == 1
+
+
+class TestMathFormulaImport:
+    """数学公式文本导入兼容测试。"""
+
+    def test_latex_option_delimiters_are_removed_and_compacted(self):
+        text = "A. \\( T_1(n) = n \\log_2 n + 5000n \\)"
+        result = parse_text_questions("题干？\n" + text + "\nB. x\n答案：A", subject="exam408")
+        assert result["questions"][0]["options"][0]["text"] == r"T_1(n)=n\log_2n+5000n"
+
+    def test_unicode_math_is_standardized(self):
+        text = "题干？\nA. T₁(n)=nlog₂n+5000n\nB. x\n答案：A"
+        result = parse_text_questions(text, subject="exam408")
+        assert result["questions"][0]["options"][0]["text"] == r"T_1(n)=n\log_2n+5000n"
+
+    def test_escaped_latex_command_is_collapsed(self):
+        text = "题干？\nA. T_1(n)=n\\log_2n+5000n\nB. x\n答案：A"
+        result = parse_text_questions(text, subject="exam408")
+        assert result["questions"][0]["options"][0]["text"] == r"T_1(n)=n\log_2n+5000n"
+
+    def test_display_math_delimiters_are_removed(self):
+        text = "题干？\nA. $$T_1(n)=n\log_2n+5000n$$\nB. x\n答案：A"
+        result = parse_text_questions(text, subject="exam408")
+        assert result["questions"][0]["options"][0]["text"] == r"T_1(n)=n\log_2n+5000n"
+
+    def test_full_time_complexity_question(self):
+        text = """
+05. 下列关于时间复杂度的函数中，时间复杂度最小的是（ ）。
+
+A. \( T_1(n) = n \log_2 n + 5000n \)
+
+B. \( T_2(n) = n^2 - 8000n \)
+
+C. \( T_3(n) = n \log_2 n - 6000n \)
+
+D. \( T_4(n) = 20000 \log_2 n \)
+
+答案：D
+"""
+        result = parse_text_questions(text, subject="exam408")
+        assert result["raw_count"] == 1
+        question = result["questions"][0]
+        assert question["question_type"] == "single_choice"
+        assert question["stem"] == "下列关于时间复杂度的函数中，时间复杂度最小的是( )。"
+        assert {item["key"]: item["text"] for item in question["options"]} == {
+            "A": r"T_1(n)=n\log_2n+5000n",
+            "B": "T_2(n)=n^2-8000n",
+            "C": r"T_3(n)=n\log_2n-6000n",
+            "D": r"T_4(n)=20000\log_2n",
+        }
+        assert question["answer"] == "D"
+        assert question["is_valid"]
+
+    @pytest.mark.parametrize("answer_line", ["答案：D", "答案:D", "参考答案：D", "正确答案：D", "【答案】D"])
+    def test_answer_label_variants(self, answer_line):
+        text = f"题干？\nA. a\nB. b\nC. c\nD. d\n{answer_line}"
+        result = parse_text_questions(text, subject="exam408")
+        assert result["questions"][0]["answer"] == "D"

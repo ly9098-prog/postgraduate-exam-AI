@@ -124,6 +124,56 @@ def fix_ocr_formula(text: str) -> str:
     return text
 
 
+def normalize_text_import_math(text: str, *, compact: bool = False) -> str:
+    """Normalize math copied from text/OCR imports without adding render delimiters."""
+    if not text:
+        return text
+    text = _collapse_latex_escapes(text)
+    text = _strip_math_delimiters(text)
+    text = fix_ocr_formula(text)
+    text = _normalize_common_math_notation(text)
+    if compact:
+        text = _compact_formula_spacing(text)
+    return text.strip()
+
+
+def _collapse_latex_escapes(text: str) -> str:
+    text = re.sub(r"\\{2,}([A-Za-z]+)", r"\\\1", text)
+    text = re.sub(r"\\{2,}([()[\]{}])", r"\\\1", text)
+    return text
+
+
+def _strip_math_delimiters(text: str) -> str:
+    text = re.sub(r"\\\((.*?)\\\)", r"\1", text, flags=re.S)
+    text = re.sub(r"\\\[(.*?)\\\]", r"\1", text, flags=re.S)
+    text = re.sub(r"\$\$(.*?)\$\$", r"\1", text, flags=re.S)
+    text = re.sub(r"\$([^$\n]+?)\$", r"\1", text)
+    return text
+
+
+def _normalize_common_math_notation(text: str) -> str:
+    text = re.sub(r"_\{([0-9A-Za-z+-]+)\}", r"_\1", text)
+    text = re.sub(r"\^\{([0-9A-Za-z+-]+)\}", r"^\1", text)
+
+    def repl_named_with_base(match: re.Match) -> str:
+        name = match.group(1)
+        base = match.group(2)
+        return rf"\{name}_{base}"
+
+    text = re.sub(r"(?<!\\)(log|ln|sin|cos|tan)\s*_?\{?([0-9]+)\}?", repl_named_with_base, text)
+    text = re.sub(r"(?<!\\)\b(log|ln|sin|cos|tan|sqrt|frac)\b", r"\\\1", text)
+    return text
+
+
+def _compact_formula_spacing(text: str) -> str:
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s*([=+\-*/^_(),])\s*", r"\1", text)
+    text = re.sub(r"(?<=\\[A-Za-z])\s+(?=_?\d|[A-Za-z0-9(])", "", text)
+    text = re.sub(r"(?<=[A-Za-z0-9)])\s+(?=\\[A-Za-z])", "", text)
+    text = re.sub(r"(?<=\\log_\d)\s+(?=[A-Za-z])", "", text)
+    return text
+
+
 def wrap_inline_math(text: str) -> str:
     """裸の LaTeX コマンド片段を $...$ で囲む。
 
