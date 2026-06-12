@@ -1,7 +1,10 @@
 const auth = require('../../utils/auth')
 const api = require('../../utils/api')
+const storage = require('../../utils/storage')
 
 const TODAY_GOAL_TOTAL = 30
+const TODAY_GOAL_KEY = 'home_today_goal_total'
+const GOAL_OPTIONS = [10, 20, 30, 50]
 
 Page({
   data: {
@@ -16,6 +19,12 @@ Page({
     levelProgress: 0,
     todayGoalDone: 0,
     todayGoalTotal: TODAY_GOAL_TOTAL,
+    goalOptions: GOAL_OPTIONS,
+    showGoalPicker: false,
+    expText: '0 / 50 EXP',
+    nextLevelText: '距离 Lv2 还差 50 题',
+    dailyBoostText: '完成今日目标后，可点亮坚持徽章',
+    badgeList: [],
     badgeTitle: '今日待点亮',
     missionText: '完成一组练习，点亮今日目标',
   },
@@ -51,42 +60,109 @@ Page({
   },
 
   getGrowthFallback() {
+    const todayGoalTotal = this.getStoredTodayGoal()
+    const levelMeta = this.getLevelMeta(0)
     return {
       streakDays: 0,
       studyLevel: 'Lv1 起步',
       levelProgress: 0,
       todayGoalDone: 0,
-      todayGoalTotal: TODAY_GOAL_TOTAL,
+      todayGoalTotal,
+      expText: levelMeta.expText,
+      nextLevelText: levelMeta.nextLevelText,
+      dailyBoostText: this.getDailyBoostText(0, todayGoalTotal, 0),
+      badgeList: this.getBadgeList(0, 0, 0),
       badgeTitle: '今日待点亮',
       missionText: '完成一组练习，点亮今日目标',
     }
   },
 
   buildGrowthSnapshot(overview) {
+    this._lastOverview = overview || {}
     const streakDays = this.toNonNegativeInt(overview.consecutive_days)
     const todayGoalDone = this.toNonNegativeInt(overview.today_questions)
     const totalQuestions = this.toNonNegativeInt(overview.total_questions)
     const dueReviewCount = this.toNonNegativeInt(overview.due_review_count)
-    const todayGoalTotal = TODAY_GOAL_TOTAL
+    const todayGoalTotal = this.getStoredTodayGoal()
     const levelProgress = Math.min(100, Math.round((todayGoalDone / todayGoalTotal) * 100))
+    const levelMeta = this.getLevelMeta(totalQuestions)
 
     return {
       streakDays,
-      studyLevel: this.getStudyLevel(totalQuestions),
+      studyLevel: levelMeta.studyLevel,
       levelProgress,
       todayGoalDone,
       todayGoalTotal,
+      expText: levelMeta.expText,
+      nextLevelText: levelMeta.nextLevelText,
+      dailyBoostText: this.getDailyBoostText(todayGoalDone, todayGoalTotal, streakDays),
+      badgeList: this.getBadgeList(streakDays, totalQuestions, levelProgress),
       badgeTitle: this.getBadgeTitle(streakDays, levelProgress),
       missionText: this.getMissionText(todayGoalDone, todayGoalTotal, dueReviewCount),
     }
   },
 
+  getStoredTodayGoal() {
+    const stored = Number(storage.get(TODAY_GOAL_KEY))
+    return GOAL_OPTIONS.includes(stored) ? stored : TODAY_GOAL_TOTAL
+  },
+
+  toggleGoalPicker() {
+    this.setData({ showGoalPicker: !this.data.showGoalPicker })
+  },
+
+  selectTodayGoal(e) {
+    const goal = Number(e.currentTarget.dataset.goal)
+    if (!GOAL_OPTIONS.includes(goal)) return
+    storage.set(TODAY_GOAL_KEY, goal)
+    this.setData({
+      ...this.buildGrowthSnapshot(this._lastOverview || {}),
+      showGoalPicker: false,
+    })
+  },
+
+  getLevelMeta(totalQuestions) {
+    const levels = [
+      { level: 1, title: 'Lv1 起步', min: 0, next: 50 },
+      { level: 2, title: 'Lv2 坚持者', min: 50, next: 200 },
+      { level: 3, title: 'Lv3 刷题达人', min: 200, next: 500 },
+      { level: 4, title: 'Lv4 高效进阶', min: 500, next: 1000 },
+      { level: 5, title: 'Lv5 上岸冲刺', min: 1000, next: null },
+    ]
+    const current = levels.slice().reverse().find(item => totalQuestions >= item.min) || levels[0]
+    if (!current.next) {
+      return {
+        studyLevel: current.title,
+        expText: `${totalQuestions} EXP`,
+        nextLevelText: '已进入冲刺等级，继续保持题感',
+      }
+    }
+    const currentExp = Math.max(0, totalQuestions - current.min)
+    const nextExp = current.next - current.min
+    return {
+      studyLevel: current.title,
+      expText: `${currentExp} / ${nextExp} EXP`,
+      nextLevelText: `距离 Lv${current.level + 1} 还差 ${Math.max(0, current.next - totalQuestions)} 题`,
+    }
+  },
+
+  getDailyBoostText(todayGoalDone, todayGoalTotal, streakDays) {
+    const remaining = Math.max(0, todayGoalTotal - todayGoalDone)
+    if (remaining === 0) return '今日目标已达成，明天打开可延续学习连续感'
+    if (streakDays >= 7) return `连续学习 ${streakDays} 天，再完成 ${remaining} 题守住节奏`
+    return `再坚持 ${remaining} 题，给今天的学习打上完成标记`
+  },
+
+  getBadgeList(streakDays, totalQuestions, levelProgress) {
+    return [
+      { key: 'today', title: '今日目标', desc: '完成每日题量', unlocked: levelProgress >= 100 },
+      { key: 'streak7', title: '连续 7 天', desc: '保持复习节奏', unlocked: streakDays >= 7 },
+      { key: 'hundred', title: '百题积累', desc: '累计完成 100 题', unlocked: totalQuestions >= 100 },
+    ]
+  },
+
   getStudyLevel(totalQuestions) {
-    if (totalQuestions >= 1000) return 'Lv5 上岸冲刺'
-    if (totalQuestions >= 500) return 'Lv4 高效进阶'
-    if (totalQuestions >= 200) return 'Lv3 刷题达人'
-    if (totalQuestions >= 50) return 'Lv2 坚持者'
-    return 'Lv1 起步'
+    return this.getLevelMeta(totalQuestions).studyLevel
   },
 
   getBadgeTitle(streakDays, levelProgress) {

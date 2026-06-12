@@ -29,7 +29,19 @@
         <text class="mission-kicker">今日目标</text>
         <text class="mission-title">{{todayGoalDone}} / {{todayGoalTotal}} 题</text>
       </view>
-      <view class="mission-badge">{{badgeTitle}}</view>
+      <view class="mission-side">
+        <view class="mission-badge">{{badgeTitle}}</view>
+        <view class="goal-config" bindtap="toggleGoalPicker">调整目标</view>
+      </view>
+    </view>
+    <view class="goal-picker" wx:if="{{showGoalPicker}}">
+      <view
+        wx:for="{{goalOptions}}"
+        wx:key="*this"
+        class="goal-option {{item === todayGoalTotal ? 'goal-option-active' : ''}}"
+        data-goal="{{item}}"
+        bindtap="selectTodayGoal"
+      >{{item}} 题</view>
     </view>
     <view class="mission-track">
       <view class="mission-fill" style="width:{{levelProgress}}%"></view>
@@ -37,6 +49,23 @@
     <view class="mission-foot">
       <text>{{missionText}}</text>
       <text class="mission-percent">{{levelProgress}}%</text>
+    </view>
+    <view class="exp-panel">
+      <view class="exp-copy">
+        <text class="exp-label">成长经验</text>
+        <text class="exp-value">{{expText}}</text>
+      </view>
+      <text class="exp-next">{{nextLevelText}}</text>
+    </view>
+    <view class="daily-boost">{{dailyBoostText}}</view>
+    <view class="badge-row">
+      <view wx:for="{{badgeList}}" wx:key="key" class="badge-chip {{item.unlocked ? 'badge-unlocked' : ''}}">
+        <text class="badge-dot"></text>
+        <view class="badge-copy">
+          <text class="badge-name">{{item.title}}</text>
+          <text class="badge-desc">{{item.unlocked ? '已点亮' : item.desc}}</text>
+        </view>
+      </view>
     </view>
   </view>
 

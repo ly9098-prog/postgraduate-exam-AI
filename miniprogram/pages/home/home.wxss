@@ -177,6 +177,55 @@
   font-weight: 800;
 }
 
+.mission-side {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10rpx;
+}
+
+.goal-config {
+  min-height: 48rpx;
+  padding: 0 18rpx;
+  border-radius: 999rpx;
+  background: #EEF5FF;
+  color: #3157D5;
+  font-size: 22rpx;
+  font-weight: 800;
+  line-height: 48rpx;
+}
+
+.goal-config:active { opacity: 0.82; }
+
+.goal-picker {
+  margin-top: 22rpx;
+  padding: 14rpx;
+  border-radius: 24rpx;
+  background: #F6F9FF;
+  display: flex;
+  gap: 12rpx;
+}
+
+.goal-option {
+  flex: 1;
+  min-height: 58rpx;
+  border-radius: 18rpx;
+  background: #FFFFFF;
+  color: #5D6B82;
+  font-size: 23rpx;
+  font-weight: 800;
+  line-height: 58rpx;
+  text-align: center;
+  box-shadow: inset 0 0 0 1rpx rgba(79, 127, 255, 0.08);
+}
+
+.goal-option-active {
+  color: #FFFFFF;
+  background: linear-gradient(135deg, #4F7FFF 0%, #6EC1FF 100%);
+  box-shadow: 0 8rpx 20rpx rgba(79, 127, 255, 0.22);
+}
+
 .mission-track {
   height: 16rpx;
   margin-top: 24rpx;
@@ -204,6 +253,126 @@
   color: #4F7FFF;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
+}
+
+.exp-panel {
+  margin-top: 20rpx;
+  padding: 20rpx 22rpx;
+  border-radius: 24rpx;
+  background: linear-gradient(180deg, #F8FBFF 0%, #EEF5FF 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.exp-copy {
+  flex-shrink: 0;
+}
+
+.exp-label,
+.exp-value,
+.exp-next,
+.daily-boost,
+.badge-name,
+.badge-desc {
+  display: block;
+}
+
+.exp-label {
+  color: #7B8AA8;
+  font-size: 21rpx;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.exp-value {
+  margin-top: 6rpx;
+  color: #172033;
+  font-size: 30rpx;
+  font-weight: 900;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.exp-next {
+  flex: 1;
+  min-width: 0;
+  color: #617089;
+  font-size: 23rpx;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.daily-boost {
+  margin-top: 16rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 22rpx;
+  background: #FFF7ED;
+  color: #B87509;
+  font-size: 23rpx;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.badge-row {
+  margin-top: 18rpx;
+  display: flex;
+  gap: 12rpx;
+}
+
+.badge-chip {
+  flex: 1;
+  min-width: 0;
+  padding: 16rpx 12rpx;
+  border-radius: 22rpx;
+  background: #F8FAFC;
+  border: 1rpx solid #EEF4FF;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.badge-unlocked {
+  background: #EAF8F0;
+  border-color: rgba(34, 197, 94, 0.18);
+}
+
+.badge-dot {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 999rpx;
+  background: #C9D5E8;
+  flex-shrink: 0;
+}
+
+.badge-unlocked .badge-dot {
+  background: #22C55E;
+  box-shadow: 0 0 14rpx rgba(34, 197, 94, 0.32);
+}
+
+.badge-copy {
+  min-width: 0;
+}
+
+.badge-name {
+  color: #172033;
+  font-size: 21rpx;
+  font-weight: 900;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge-desc {
+  margin-top: 4rpx;
+  color: #7B8AA8;
+  font-size: 18rpx;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .route-section {
@@ -375,6 +544,7 @@
   .welcome-section::before,
   .welcome-section::after,
   .mission-fill,
+  .goal-option,
   .route-card,
   .route-pressed {
     animation: none !important;
