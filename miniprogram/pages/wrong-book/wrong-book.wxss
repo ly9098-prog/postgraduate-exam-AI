@@ -904,3 +904,12 @@
     transform: none !important;
   }
 }
+
+/* ── Accessibility ── */
+.sr-summary {
+  position: absolute;
+  width: 1rpx;
+  height: 1rpx;
+  overflow: hidden;
+  opacity: 0;
+}
