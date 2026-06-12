@@ -111,6 +111,9 @@ Page({
     celebrationTitle: '',
     celebrationDetail: '',
     celebrationMotto: '',
+    celebrationType: 'group',
+    celebrationProgressText: '',
+    celebrationRewardText: '',
   },
 
   onLoad() {
@@ -561,23 +564,32 @@ Page({
   /* ==================== 完成反馈 ==================== */
 
   _showGroupCelebration(correct, total) {
+    const groupIndex = this.data.currentGroupIdx + 1
+    const groupTotal = this.data.groups.length || groupIndex
     this._showCelebration({
+      celebrationType: 'group',
       celebrationIcon: correct >= total ? '✓' : '↗',
-      celebrationTitle: `第 ${this.data.currentGroupIdx + 1} 组复盘完成`,
+      celebrationTitle: `第 ${groupIndex} 组复盘完成`,
       celebrationDetail: `答对 ${correct}/${total} 题`,
       celebrationMotto: correct >= total ? '这组很稳，继续保持节奏' : '错题已暴露，复盘后会更牢固',
-    }, 2200)
+      celebrationProgressText: `今日进度 ${groupIndex}/${groupTotal} 组`,
+      celebrationRewardText: correct >= total ? '获得专注星光 +1' : '获得复盘能量 +1',
+    }, 2400)
   },
 
   _showFinalCelebration() {
     const total = this.data.allGroupResults.length
     const correct = this.data.totalCorrect
+    const accuracy = total > 0 ? Math.round(correct / total * 100) : 0
     this._showCelebration({
+      celebrationType: 'final',
       celebrationIcon: '章',
       celebrationTitle: '今日复习完成',
       celebrationDetail: `完成 ${total} 题 · 答对 ${correct} 题`,
       celebrationMotto: '记忆曲线已更新，今天的积累会在明天生效',
-    }, 3200)
+      celebrationProgressText: `今日正确率 ${accuracy}%`,
+      celebrationRewardText: '解锁今日复习徽章',
+    }, 3600)
   },
 
   _showCelebration(copy, duration) {

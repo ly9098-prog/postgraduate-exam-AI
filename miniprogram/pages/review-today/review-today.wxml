@@ -1,12 +1,23 @@
 <block wx:if="{{showCelebration}}">
-  <view class="celebration-overlay" catchtap="dismissCelebration">
+  <view class="celebration-overlay celebration-{{celebrationType}}" catchtap="dismissCelebration">
     <view class="celeb-bg"></view>
+    <view class="firework-container">
+      <view class="firework f1"></view>
+      <view class="firework f2"></view>
+      <view class="firework f3"></view>
+    </view>
     <view class="celeb-content">
+      <view class="celeb-badge-halo"></view>
       <view class="celeb-check-wrap">
         <text class="celeb-check">{{celebrationIcon}}</text>
       </view>
+      <text class="celeb-progress">{{celebrationProgressText}}</text>
       <text class="celeb-title">{{celebrationTitle}}</text>
       <text class="celeb-detail">{{celebrationDetail}}</text>
+      <view class="celeb-reward">
+        <text class="reward-spark">★</text>
+        <text>{{celebrationRewardText}}</text>
+      </view>
       <text class="celeb-motto">{{celebrationMotto}}</text>
       <text class="celeb-tap-hint">点击继续</text>
     </view>
@@ -17,6 +28,10 @@
       <view class="particle p4"></view>
       <view class="particle p5"></view>
       <view class="particle p6"></view>
+      <view class="particle p7"></view>
+      <view class="particle p8"></view>
+      <view class="particle p9"></view>
+      <view class="particle p10"></view>
     </view>
   </view>
 </block>
