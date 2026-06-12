@@ -154,6 +154,7 @@
           </view>
         </view>
         <text class="chart-summary">{{yearlyHeatmapMeta.summaryText}}</text>
+        <text class="sr-summary">365天中活跃{{yearlyHeatmapMeta.activeDays || 0}}天，累计{{yearlyHeatmapMeta.totalQuestions || 0}}题，最高单日{{yearlyHeatmapMeta.bestDayText || '0题'}}。</text>
         <scroll-view class="yearly-heat-scroll" scroll-x enhanced show-scrollbar="false">
           <view class="yearly-heat-grid">
             <view class="year-week" wx:for="{{yearlyHeatmapWeeks}}" wx:for-item="week" wx:key="key">

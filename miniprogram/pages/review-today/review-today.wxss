@@ -1501,6 +1501,7 @@
 @keyframes p10 { to { transform: translate(320rpx, -120rpx) scale(0); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
+  .page { opacity: 1 !important; }
   .group-reward-strip,
   .group-progress-fill,
   .animation-fade-in,

@@ -697,6 +697,7 @@
 @keyframes p10 { to { transform: translate(250rpx, 190rpx) scale(0); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
+  .page { opacity: 1 !important; }
   .celebration-overlay,
   .celeb-badge-halo,
   .celeb-check-wrap,
