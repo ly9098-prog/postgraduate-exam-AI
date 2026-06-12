@@ -88,6 +88,43 @@
       <view class="focus-score">{{analysis.radarItems[0].percent}}</view>
     </view>
 
+    <!-- AI 深度诊断 -->
+    <view class="ai-diagnosis-card" wx:if="{{aiDiagnosis}}">
+      <view class="ai-diag-head">
+        <text class="ai-diag-kicker">AI 深度诊断</text>
+        <text class="ai-diag-badge" wx:if="{{aiDiagnosis.generated}}">DeepSeek</text>
+        <text class="ai-diag-badge local" wx:else>本地分析</text>
+      </view>
+      <text class="ai-diag-summary">{{aiDiagnosis.summary}}</text>
+      <view class="ai-diag-columns" wx:if="{{aiDiagnosis.weak_points.length > 0 || aiDiagnosis.strong_points.length > 0}}">
+        <view class="ai-diag-col" wx:if="{{aiDiagnosis.weak_points.length > 0}}">
+          <text class="ai-diag-col-title weak">薄弱环节</text>
+          <view class="ai-diag-item" wx:for="{{aiDiagnosis.weak_points}}" wx:key="knowledge_point">
+            <text class="ai-diag-kp">{{item.knowledge_point}}</text>
+            <text class="ai-diag-acc">{{(item.accuracy * 100).toFixed(0)}}%</text>
+            <text class="ai-diag-tip">{{item.suggestion}}</text>
+          </view>
+        </view>
+        <view class="ai-diag-col" wx:if="{{aiDiagnosis.strong_points.length > 0}}">
+          <text class="ai-diag-col-title strong">优势领域</text>
+          <view class="ai-diag-item" wx:for="{{aiDiagnosis.strong_points}}" wx:key="knowledge_point">
+            <text class="ai-diag-kp">{{item.knowledge_point}}</text>
+            <text class="ai-diag-acc good">{{(item.accuracy * 100).toFixed(0)}}%</text>
+            <text class="ai-diag-tip">{{item.suggestion}}</text>
+          </view>
+        </view>
+      </view>
+      <view class="ai-diag-suggestions" wx:if="{{aiDiagnosis.learning_suggestions.length > 0}}">
+        <text class="ai-diag-sug-title">学习建议</text>
+        <text class="ai-diag-sug-item" wx:for="{{aiDiagnosis.learning_suggestions}}" wx:key="*this">{{index + 1}}. {{item}}</text>
+      </view>
+      <text class="sr-summary">{{aiDiagnosis.summary}} 薄弱环节：<text wx:for="{{aiDiagnosis.weak_points}}" wx:key="knowledge_point">{{item.knowledge_point}}掌握率{{(item.accuracy * 100).toFixed(0)}}%。 </text>学习建议：<text wx:for="{{aiDiagnosis.learning_suggestions}}" wx:key="*this">{{item}}。 </text></text>
+    </view>
+    <view class="ai-diagnosis-loading" wx:elif="{{aiDiagnosisLoading}}">
+      <view class="ai-loading-pulse"></view>
+      <text class="ai-loading-text">AI 正在分析错题数据...</text>
+    </view>
+
     <view class="map-grid">
       <view class="map-block radar-block">
         <text class="map-title">能力雷达</text>

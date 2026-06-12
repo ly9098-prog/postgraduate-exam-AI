@@ -89,6 +89,7 @@
         <view class="tab-switch">
           <text class="tab-btn {{trendDays === 7 ? 'active' : ''}}" data-days="7" bindtap="onTrendTab">7天</text>
           <text class="tab-btn {{trendDays === 30 ? 'active' : ''}}" data-days="30" bindtap="onTrendTab">30天</text>
+          <text class="tab-btn {{trendDays === 90 ? 'active' : ''}}" data-days="90" bindtap="onTrendTab">90天</text>
         </view>
       </view>
 

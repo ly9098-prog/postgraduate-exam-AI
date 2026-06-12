@@ -19,6 +19,16 @@
         <text>{{celebrationRewardText}}</text>
       </view>
       <text class="celeb-motto">{{celebrationMotto}}</text>
+      <view class="celeb-growth" wx:if="{{celebrationType === 'final' && growthLevel}}">
+        <view class="celeb-growth-head">
+          <text class="celeb-growth-level">{{growthLevel}}</text>
+          <text class="celeb-growth-pct">{{growthLevelPct}}%</text>
+        </view>
+        <view class="celeb-growth-track">
+          <view class="celeb-growth-fill" style="width:{{growthLevelPct}}%"></view>
+        </view>
+        <text class="celeb-growth-desc">{{growthDesc}}</text>
+      </view>
       <text class="celeb-tap-hint">点击继续</text>
     </view>
     <view class="particle-container">

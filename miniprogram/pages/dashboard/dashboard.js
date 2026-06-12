@@ -27,12 +27,22 @@ Page({
   async loadData() {
     this.setData({ loading: true })
     try {
-      const res = await api.get('/stats/dashboard')
+      const [res, yearlyTrends, growthRes] = await Promise.all([
+        api.get('/stats/dashboard'),
+        api.get('/stats/trends?days=365').catch(() => []),
+        api.get('/stats/growth').catch(() => null),
+      ])
       this._cachedDashboard = res
-      const processed = this._process(res)
-      this.setData(processed, () => {
+      this._cachedYearlyTrends = yearlyTrends
+      this._cachedGrowth = growthRes
+      const processed = this._process(res, yearlyTrends, growthRes)
+      const { yearlyHeatmap, yearlyHeatmapWeeks, yearlyHeatmapMeta, ...coreData } = processed
+      this.setData(coreData, () => {
         this.drawAllCharts()
       })
+      setTimeout(() => {
+        this.setData({ yearlyHeatmap, yearlyHeatmapWeeks, yearlyHeatmapMeta })
+      }, 60)
     } catch (e) {
       console.error('加载学习统计失败', e)
       wx.showToast({ title: '加载失败', icon: 'none' })
@@ -78,7 +88,7 @@ Page({
   // DATA PROCESSING
   // ─────────────────────────────────────────────
 
-  _process(res) {
+  _process(res, yearlyTrends, growthRes) {
     const overview = res.overview || {}
     const subjects = (res.subject_stats || []).filter(s => s.total_questions > 0)
     const trends = res.recent_trend || []
@@ -92,10 +102,16 @@ Page({
     const trendMeta = this._calcTrendMeta(trs)
     const bh = this._processBehavior(behavior)
     const fg = this._processForgetting(forgetting)
-    const yearlyHeatmap = this._buildYearlyHeatmap(trs, ov)
+    const yearlyTrendsProc = this._processTrends(yearlyTrends || [])
+    const yearlyHeatmap = this._buildYearlyHeatmap(yearlyTrendsProc, ov)
     const yearlyHeatmapWeeks = this._chunkHeatmapWeeks(yearlyHeatmap)
     const yearlyHeatmapMeta = this._calcYearlyHeatmapMeta(yearlyHeatmap)
-    const badgeWall = this._buildBadgeWall(ov, trendMeta, fg)
+    const badgeWall = growthRes && growthRes.badges
+      ? growthRes.badges.map(b => ({
+          key: b.key, title: b.title, desc: b.desc,
+          unlocked: b.unlocked, progressText: b.progress_text,
+        }))
+      : this._buildBadgeWall(ov, trendMeta, fg)
     const learningProfile = this._buildLearningProfile(ov, subs, trendMeta, fg, bh)
 
     return {
@@ -536,11 +552,10 @@ Page({
   onTrendTab(e) {
     const days = parseInt(e.currentTarget.dataset.days, 10)
     if (days === this.data.trendDays) return
-    if (days === 30) {
-      this.loadTrendData(30)
-    } else if (this._cachedDashboard) {
-      // Use cached dashboard data for instant 7-day switch
-      const processed = this._process(this._cachedDashboard)
+    if (days === 30 || days === 90) {
+      this.loadTrendData(days)
+    } else if (this._cachedDashboard && this._cachedYearlyTrends) {
+      const processed = this._process(this._cachedDashboard, this._cachedYearlyTrends, this._cachedGrowth)
       this.setData({ ...processed, trendDays: 7 }, () => this.drawTrendLine())
     } else {
       this.loadData()

@@ -34,6 +34,8 @@ Page({
       summaryCards: [],
       actionPlan: [],
     },
+    aiDiagnosis: null,
+    aiDiagnosisLoading: false,
     page: 1,
     hasMore: false,
     loading: false,
@@ -56,6 +58,7 @@ Page({
     this.setData({ list: [], page: 1 })
     this.loadStats()
     this.loadList(true)
+    this.loadAiDiagnosis()
   },
 
   async loadStats() {
@@ -69,6 +72,21 @@ Page({
       })
     } catch (e) {
       console.error('加载错题统计失败', e)
+    }
+  },
+
+  async loadAiDiagnosis() {
+    this.setData({ aiDiagnosisLoading: true, aiDiagnosis: null })
+    try {
+      const diagnosis = await api.get('/stats/ai-diagnosis')
+      if (diagnosis && (diagnosis.weak_points.length > 0 || diagnosis.strong_points.length > 0 || diagnosis.learning_suggestions.length > 0 || diagnosis.summary)) {
+        this.setData({ aiDiagnosis: diagnosis, aiDiagnosisLoading: false })
+      } else {
+        this.setData({ aiDiagnosisLoading: false, aiDiagnosis: null })
+      }
+    } catch (e) {
+      console.error('加载AI诊断失败', e)
+      this.setData({ aiDiagnosisLoading: false })
     }
   },
 

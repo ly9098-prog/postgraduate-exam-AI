@@ -1,1 +1,6 @@
-{ "navigationBarTitleText": "练习结果" }
+{
+  "navigationBarTitleText": "练习结果",
+  "usingComponents": {
+    "celebration-lottie": "/components/celebration-lottie/celebration-lottie"
+  }
+}

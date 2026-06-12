@@ -83,6 +83,16 @@
         <text class="growth-kicker">成长结算</text>
         <text class="growth-title">{{growthTitle}}</text>
         <text class="growth-desc">{{growthDesc}}</text>
+        <view class="growth-level-bar" wx:if="{{growthLevel}}">
+          <view class="growth-level-head">
+            <text class="growth-level-label">{{growthLevel}}</text>
+            <text class="growth-level-pct">{{growthLevelPct}}%</text>
+          </view>
+          <view class="growth-level-track">
+            <view class="growth-level-fill" style="width:{{growthLevelPct}}%"></view>
+          </view>
+          <text class="growth-exp-text">{{growthExpText}}</text>
+        </view>
       </view>
     </view>
   </view>
