@@ -12,7 +12,7 @@
 
       <view class="growth-row">
         <view class="growth-pill">
-          <text class="growth-num">{{streakDays}}</text>
+          <text class="growth-num">{{_animStreakDays}}</text>
           <text class="growth-label">连续学习</text>
         </view>
         <view class="growth-pill level-pill">
@@ -27,7 +27,7 @@
     <view class="mission-head">
       <view>
         <text class="mission-kicker">今日目标</text>
-        <text class="mission-title">{{todayGoalDone}} / {{todayGoalTotal}} 题</text>
+        <text class="mission-title">{{_animGoalDone}} / {{todayGoalTotal}} 题</text>
       </view>
       <view class="mission-side">
         <view class="mission-badge">{{badgeTitle}}</view>
@@ -48,7 +48,7 @@
     </view>
     <view class="mission-foot">
       <text>{{missionText}}</text>
-      <text class="mission-percent">{{levelProgress}}%</text>
+      <text class="mission-percent">{{_animLevelProgress}}%</text>
     </view>
     <view class="exp-panel">
       <view class="exp-copy">
@@ -97,7 +97,7 @@
         <text class="action-title">错题本</text>
         <text class="action-desc">全部错题 · 按条件筛选</text>
       </view>
-      <text class="action-arrow">›</text>
+      <text class="action-arrow line-icon icon-chevron-right"></text>
     </view>
     <view class="action-card learning-card" hover-class="active-surface" bindtap="goDashboard">
       <view class="icon-badge icon-muted"><text class="line-icon icon-chart"></text></view>
@@ -105,7 +105,7 @@
         <text class="action-title">学习统计</text>
         <text class="action-desc">正确率 · 学科分布 · 趋势</text>
       </view>
-      <text class="action-arrow">›</text>
+      <text class="action-arrow line-icon icon-chevron-right"></text>
     </view>
     <view class="action-card learning-card" hover-class="active-surface" bindtap="goPomodoro">
       <view class="icon-badge icon-warning"><text class="line-icon icon-clock"></text></view>
@@ -113,7 +113,7 @@
         <text class="action-title">番茄钟</text>
         <text class="action-desc">专注计时 · 学习节奏管理</text>
       </view>
-      <text class="action-arrow">›</text>
+      <text class="action-arrow line-icon icon-chevron-right"></text>
     </view>
     <view class="action-card learning-card" hover-class="active-surface" bindtap="goImport" wx:if="{{isAdmin}}">
       <view class="icon-badge icon-success"><text class="line-icon icon-import"></text></view>
@@ -121,7 +121,7 @@
         <text class="action-title">题库导入</text>
         <text class="action-desc">拍照 / 文件上传导题</text>
       </view>
-      <text class="action-arrow">›</text>
+      <text class="action-arrow line-icon icon-chevron-right"></text>
     </view>
   </view>
 </view>
