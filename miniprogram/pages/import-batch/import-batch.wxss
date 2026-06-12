@@ -185,10 +185,9 @@
   height: 88rpx;
   border-radius: 999rpx;
   background: #EDF1F5;
-  color: #5B7B9A;
-  font-size: 34rpx;
-  line-height: 88rpx;
-  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin-bottom: 18rpx;
 }
 
@@ -378,9 +377,9 @@
 .expand-arrow {
   width: 44rpx;
   height: 32rpx;
-  line-height: 32rpx;
-  text-align: center;
-  font-size: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: #BCC8D4;
   transition: transform 0.2s;
 }

@@ -140,7 +140,7 @@
   <!-- 空态 -->
   <view wx:if="{{!loading && list.length === 0}}" class="empty-state">
     <view class="empty-icon">
-      <text class="empty-icon-text">✓</text>
+      <text class="empty-icon-text line-icon icon-check" style="width:44rpx;height:44rpx;color:#22C55E;"></text>
     </view>
     <text class="empty-title">没有错题</text>
     <text class="empty-desc">刷题中产生的错题会自动出现在这里</text>

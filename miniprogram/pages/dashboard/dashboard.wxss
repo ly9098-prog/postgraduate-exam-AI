@@ -1096,8 +1096,9 @@
 
 .badge-medal-icon {
   color: #FFFFFF;
-  font-size: 28rpx;
-  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .badge-title {

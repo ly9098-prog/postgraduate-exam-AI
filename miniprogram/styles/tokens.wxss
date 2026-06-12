@@ -189,6 +189,15 @@
 .icon-check-circle::before { left: 3rpx; top: 3rpx; width: 24rpx; height: 24rpx; border: 3rpx solid currentColor; border-radius: 50%; }
 .icon-check-circle::after { left: 9rpx; top: 12rpx; width: 7rpx; height: 11rpx; border-right: 3rpx solid currentColor; border-bottom: 3rpx solid currentColor; transform: rotate(45deg); border-radius: 2rpx; }
 .icon-chevron-right::before { left: 10rpx; top: 8rpx; width: 12rpx; height: 12rpx; border-right: 3rpx solid currentColor; border-bottom: 3rpx solid currentColor; transform: rotate(-45deg); border-radius: 2rpx; }
+.icon-chevron-left::before { left: 8rpx; top: 8rpx; width: 12rpx; height: 12rpx; border-left: 3rpx solid currentColor; border-bottom: 3rpx solid currentColor; transform: rotate(45deg); border-radius: 2rpx; }
+.icon-chevron-down::before { left: 9rpx; top: 10rpx; width: 12rpx; height: 12rpx; border-left: 3rpx solid currentColor; border-bottom: 3rpx solid currentColor; transform: rotate(-45deg); border-radius: 2rpx; }
+.icon-play::before { left: 9rpx; top: 5rpx; width: 0; height: 0; border-top: 10rpx solid transparent; border-bottom: 10rpx solid transparent; border-left: 16rpx solid currentColor; }
+.icon-pause::before { left: 9rpx; top: 5rpx; width: 4rpx; height: 20rpx; background: currentColor; border-radius: 2rpx; box-shadow: 8rpx 0 0 currentColor; }
+.icon-stop::before { left: 6rpx; top: 6rpx; width: 18rpx; height: 18rpx; background: currentColor; border-radius: 4rpx; }
+.icon-plus::before { left: 13rpx; top: 5rpx; width: 4rpx; height: 20rpx; background: currentColor; border-radius: 2rpx; }
+.icon-plus::after { left: 5rpx; top: 13rpx; width: 20rpx; height: 4rpx; background: currentColor; border-radius: 2rpx; }
+.icon-close::before { left: 5rpx; top: 13rpx; width: 20rpx; height: 4rpx; background: currentColor; border-radius: 2rpx; transform: rotate(45deg); }
+.icon-close::after { left: 5rpx; top: 13rpx; width: 20rpx; height: 4rpx; background: currentColor; border-radius: 2rpx; transform: rotate(-45deg); }
 .icon-exclamation::before { left: 12rpx; top: 5rpx; width: 5rpx; height: 12rpx; background: currentColor; border-radius: 4rpx; }
 .icon-exclamation::after { left: 12rpx; top: 20rpx; width: 5rpx; height: 5rpx; background: currentColor; border-radius: 50%; }
 .icon-up::before { left: 8rpx; top: 4rpx; width: 14rpx; height: 14rpx; border-top: 3rpx solid currentColor; border-left: 3rpx solid currentColor; transform: rotate(45deg); border-radius: 2rpx; }
@@ -213,6 +222,16 @@
 @keyframes card-enter {
   from { opacity: 0; transform: translateY(28rpx) scale(0.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Shared Keyframes ── */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(18rpx); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -481,9 +481,10 @@ page {
 }
 
 .dev-arrow {
-  font-size: 30rpx;
-  line-height: 1;
   color: #315CFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .error-msg {
