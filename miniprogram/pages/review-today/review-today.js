@@ -103,6 +103,7 @@ Page({
     enableMathImage: false,
     _accuracyText: '0%',
     _reviewGroupCountText: '0',
+    _groupProgressStyle: '',
 
     // 进度
     groupProgress: 0,
@@ -525,6 +526,7 @@ Page({
         totalCorrect,
         totalWrong,
         unansweredCount: unanswered.length,
+        _groupProgressStyle: this._calcGroupProgressStyle(this.data.currentGroupIdx + 1, this.data.groups.length),
       })
       this._showGroupCelebration(groupCorrect, groupQuestions.length)
     } catch (e) {
@@ -563,6 +565,12 @@ Page({
   },
 
   /* ==================== 完成反馈 ==================== */
+
+  _calcGroupProgressStyle(doneGroups, totalGroups) {
+    const total = totalGroups || 1
+    const pct = Math.max(0, Math.min(100, Math.round(doneGroups * 100 / total)))
+    return `width: ${pct}%`
+  },
 
   _showGroupCelebration(correct, total) {
     const groupIndex = this.data.currentGroupIdx + 1
