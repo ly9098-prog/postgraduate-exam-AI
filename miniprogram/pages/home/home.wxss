@@ -532,9 +532,6 @@
   height: 44rpx;
   border-radius: 22rpx;
   background: #F3F7FF;
-  font-size: 34rpx;
-  line-height: 40rpx;
-  text-align: center;
   color: #4F7FFF;
   margin-left: 16rpx;
   flex-shrink: 0;

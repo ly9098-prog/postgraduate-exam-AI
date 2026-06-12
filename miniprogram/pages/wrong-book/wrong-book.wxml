@@ -161,7 +161,7 @@
           <text class="subject-tag">{{item._subjectLabel}}</text>
           <text class="error-tag type-{{item.error_type}}">{{item._errorTypeLabel}}</text>
         </view>
-        <text class="card-arrow">›</text>
+        <text class="card-arrow line-icon icon-chevron-right"></text>
       </view>
       <view class="card-body">
         <block wx:if="{{enableMathImage && item.content && item.content.render_mode === 'segments'}}">

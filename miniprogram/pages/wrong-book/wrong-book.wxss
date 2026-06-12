@@ -4,7 +4,16 @@
   min-height: 100vh;
   background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
   padding: 18rpx 0 56rpx;
+  animation: page-enter 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+
+.hero-card { animation: card-enter 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.insight-grid { animation: card-enter 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) 0.04s both; }
+.filter-panel { animation: card-enter 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) 0.08s both; }
+.analysis-card { animation: card-enter 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s both; }
+.card-list { animation: card-enter 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) 0.16s both; }
+.empty-state { animation: card-enter 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s both; }
+.loading-wrap { animation: card-enter 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s both; }
 
 /* ── 顶部 Hero ── */
 .hero-card {
@@ -766,9 +775,9 @@
 
 .card-arrow {
   flex-shrink: 0;
+  width: 36rpx;
+  height: 36rpx;
   color: #B7C4DA;
-  font-size: 42rpx;
-  line-height: 1;
 }
 
 .card-body {

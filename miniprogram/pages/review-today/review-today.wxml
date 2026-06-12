@@ -44,7 +44,7 @@
   </view>
 
   <view wx:else class="entry-wrap">
-    <view class="review-hero animation-fade-in">
+    <view class="review-hero animation-fade-in motion-card-enter">
       <view class="hero-orbit hero-orbit-one"></view>
       <view class="hero-orbit hero-orbit-two"></view>
       <view class="hero-copy">

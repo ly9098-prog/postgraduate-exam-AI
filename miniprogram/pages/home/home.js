@@ -15,9 +15,12 @@ Page({
     authed: false,
     isAdmin: false,
     streakDays: 0,
+    _animStreakDays: 0,
     studyLevel: 'Lv1 起步',
     levelProgress: 0,
+    _animLevelProgress: 0,
     todayGoalDone: 0,
+    _animGoalDone: 0,
     todayGoalTotal: TODAY_GOAL_TOTAL,
     goalOptions: GOAL_OPTIONS,
     showGoalPicker: false,
@@ -51,12 +54,39 @@ Page({
   },
 
   async loadGrowthSnapshot() {
+    this.setData({ _animStreakDays: 0, _animGoalDone: 0, _animLevelProgress: 0 })
     try {
       const res = await api.get('/stats/dashboard')
       this.setData(this.buildGrowthSnapshot((res && res.overview) || {}))
+      this._animateNumbers()
     } catch (e) {
       console.error('加载成长数据失败', e)
     }
+  },
+
+  _animateNumbers() {
+    this._animateNumber(this.data._animStreakDays, this.data.streakDays, 600, '_animStreakDays')
+    this._animateNumber(this.data._animGoalDone, this.data.todayGoalDone, 600, '_animGoalDone')
+    this._animateNumber(this.data._animLevelProgress, this.data.levelProgress, 500, '_animLevelProgress')
+  },
+
+  _animateNumber(from, to, duration, dataKey) {
+    const timerKey = '_animTimer' + dataKey
+    if (this[timerKey]) clearTimeout(this[timerKey])
+    if (from === to) return
+    const startTime = Date.now()
+    const diff = to - from
+    const animStep = () => {
+      const elapsed = Date.now() - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      const eased = 1 - Math.pow(1 - progress, 3)
+      const current = Math.round(from + diff * eased)
+      this.setData({ [dataKey]: Math.min(to, Math.max(Math.min(from, to), current)) })
+      if (progress < 1) {
+        this[timerKey] = setTimeout(animStep, 16)
+      }
+    }
+    this[timerKey] = setTimeout(animStep, 16)
   },
 
   getGrowthFallback() {
@@ -116,9 +146,13 @@ Page({
     if (!GOAL_OPTIONS.includes(goal)) return
     storage.set(TODAY_GOAL_KEY, goal)
     this.setData({
+      _animStreakDays: 0,
+      _animGoalDone: 0,
+      _animLevelProgress: 0,
       ...this.buildGrowthSnapshot(this._lastOverview || {}),
       showGoalPicker: false,
     })
+    this._animateNumbers()
   },
 
   getLevelMeta(totalQuestions) {
@@ -225,5 +259,11 @@ Page({
   goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
   goImport() {
     wx.navigateTo({ url: '/pages/import/import' })
+  },
+
+  onUnload() {
+    ['_animTimer_animStreakDays', '_animTimer_animGoalDone', '_animTimer_animLevelProgress'].forEach(function(key) {
+      if (this[key]) clearTimeout(this[key])
+    }, this)
   },
 })

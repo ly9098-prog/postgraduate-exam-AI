@@ -185,6 +185,15 @@
 .icon-target::after { left: 12rpx; top: 12rpx; width: 6rpx; height: 6rpx; background: currentColor; border-radius: 50%; }
 .icon-trend::before { left: 4rpx; top: 17rpx; width: 22rpx; height: 3rpx; background: currentColor; transform: rotate(-28deg); border-radius: 3rpx; }
 .icon-trend::after { right: 3rpx; top: 7rpx; width: 9rpx; height: 9rpx; border-top: 3rpx solid currentColor; border-right: 3rpx solid currentColor; transform: rotate(18deg); }
+.icon-check::before { left: 8rpx; top: 12rpx; width: 7rpx; height: 12rpx; border-right: 3rpx solid currentColor; border-bottom: 3rpx solid currentColor; transform: rotate(45deg); border-radius: 2rpx; }
+.icon-check-circle::before { left: 3rpx; top: 3rpx; width: 24rpx; height: 24rpx; border: 3rpx solid currentColor; border-radius: 50%; }
+.icon-check-circle::after { left: 9rpx; top: 12rpx; width: 7rpx; height: 11rpx; border-right: 3rpx solid currentColor; border-bottom: 3rpx solid currentColor; transform: rotate(45deg); border-radius: 2rpx; }
+.icon-chevron-right::before { left: 10rpx; top: 8rpx; width: 12rpx; height: 12rpx; border-right: 3rpx solid currentColor; border-bottom: 3rpx solid currentColor; transform: rotate(-45deg); border-radius: 2rpx; }
+.icon-exclamation::before { left: 12rpx; top: 5rpx; width: 5rpx; height: 12rpx; background: currentColor; border-radius: 4rpx; }
+.icon-exclamation::after { left: 12rpx; top: 20rpx; width: 5rpx; height: 5rpx; background: currentColor; border-radius: 50%; }
+.icon-up::before { left: 8rpx; top: 4rpx; width: 14rpx; height: 14rpx; border-top: 3rpx solid currentColor; border-left: 3rpx solid currentColor; transform: rotate(45deg); border-radius: 2rpx; }
+.icon-up::after { left: 14rpx; top: 9rpx; width: 3rpx; height: 15rpx; background: currentColor; border-radius: 2rpx; }
+.icon-dot::before { left: 50%; top: 50%; width: 8rpx; height: 8rpx; background: currentColor; border-radius: 50%; transform: translate(-50%, -50%); }
 
 /* ── Motion ── */
 .motion-page-enter { animation: page-enter 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
