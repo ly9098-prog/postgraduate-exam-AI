@@ -8,6 +8,13 @@ Page({
     motto: '',
     authed: false,
     isAdmin: false,
+    streakDays: 15,
+    studyLevel: 'Lv2 坚持者',
+    levelProgress: 68,
+    todayGoalDone: 20,
+    todayGoalTotal: 30,
+    badgeTitle: '连续学习徽章',
+    missionText: '再坚持 5 题，就能超过昨天的自己',
   },
 
   async onShow() {
@@ -19,6 +26,7 @@ Page({
       greeting: this.getGreeting(),
       dateStr: this.getDateStr(),
       motto: this.getMotto(),
+      ...this.getGrowthSnapshot(),
     })
     if (!authed) return
     try {
@@ -26,6 +34,24 @@ Page({
       this.setData({ user: syncedUser || {}, isAdmin: auth.isAdmin() })
     } catch (e) {
       console.error('同步用户权限失败', e)
+    }
+  },
+
+  getGrowthSnapshot() {
+    const daySeed = Math.floor(Date.now() / 86400000)
+    const streakDays = 12 + (daySeed % 9)
+    const todayGoalDone = 16 + (daySeed % 8)
+    const todayGoalTotal = 30
+    const levelProgress = Math.min(92, Math.round(todayGoalDone / todayGoalTotal * 100))
+    const studyLevel = streakDays >= 18 ? 'Lv3 刷题达人' : 'Lv2 坚持者'
+    return {
+      streakDays,
+      studyLevel,
+      levelProgress,
+      todayGoalDone,
+      todayGoalTotal,
+      badgeTitle: streakDays >= 15 ? '连续 15 天徽章' : '坚持学习徽章',
+      missionText: `再完成 ${Math.max(1, todayGoalTotal - todayGoalDone)} 题，点亮今日目标`,
     }
   },
 
