@@ -210,6 +210,21 @@ function _optionTextToHtml(key, value) {
   return _textToHtml(normalized)
 }
 
+function _buildOptionList(opts, optionKeys, selectedFlags) {
+  return (optionKeys || []).map(function(key) {
+    const optionText = _stripLeadingOptionLabel(key, (opts && opts[key]) || '')
+    const plainOptionText = _toPlainInlineMathText(optionText)
+    const needsRich = !plainOptionText && _needsRichRender(optionText)
+    return {
+      key,
+      _selected: !!(selectedFlags || {})[key],
+      _text: plainOptionText || optionText,
+      _needsRich: needsRich,
+      _html: needsRich ? _optionTextToHtml(key, optionText) : '',
+    }
+  })
+}
+
 function _normalizeBlankAnswer(answer) {
   if (!answer) return {}
   if (typeof answer === 'object') return answer
@@ -328,6 +343,7 @@ Page({
   data: {
     // 设置
     selectedSubject: '',
+    selectedSubjectLabel: '',
     selectedMode: 'random',
     count: 5,
     started: false,
@@ -381,7 +397,11 @@ Page({
   /* ==================== 设置阶段 ==================== */
 
   chooseSubject(e) {
-    this.setData({ selectedSubject: e.currentTarget.dataset.subject })
+    const selectedSubject = e.currentTarget.dataset.subject
+    this.setData({
+      selectedSubject,
+      selectedSubjectLabel: this.subjectLabel(selectedSubject),
+    })
   },
 
   chooseMode(e) {
@@ -504,21 +524,9 @@ Page({
     q._stemHtml = q._stemNeedsRich ? _textToHtml(cleanedStem) : ''
     q._segments = (q.content && q.content.render_mode === 'segments') ? _textToSegments(q._stemText) : []
     q._opts = opts
+    q._optionList = _buildOptionList(opts, optionKeys, selectedFlags)
     q._blankOptionGroups = blankOptionGroups
     q._hasBlankOptionGroups = blankOptionGroups.length > 0
-    const optHtml = {}
-    const optText = {}
-    const optNeedsRich = {}
-    for (const key of optionKeys) {
-      const optionText = _stripLeadingOptionLabel(key, (opts && opts[key]) || '')
-      const plainOptionText = _toPlainInlineMathText(optionText)
-      optText[key] = plainOptionText || optionText
-      optNeedsRich[key] = !plainOptionText && _needsRichRender(optionText)
-      optHtml[key] = optNeedsRich[key] ? _optionTextToHtml(key, optionText) : ''
-    }
-    q._optHtml = optHtml
-    q._optText = optText
-    q._optNeedsRich = optNeedsRich
     const renderCount = (this.data.renderCount || 0) + 1
     if (shouldDebugQuestion(q.id)) {
       debugLog(this.data.traceId || q.trace_id, 'BEFORE_RENDER', {
@@ -690,7 +698,8 @@ Page({
         ? newAnswer.split(',').indexOf(k) >= 0
         : newAnswer === k
     }
-    this.setData({ questions, answerMap, answeredFlags, answeredCount, selectedFlags })
+    const optionList = _buildOptionList(q._opts, optionKeys, selectedFlags)
+    this.setData({ questions, answerMap, answeredFlags, answeredCount, selectedFlags, 'currentQuestion._optionList': optionList })
   },
 
   selectBlankOption(e) {
@@ -785,6 +794,7 @@ Page({
   /* ==================== 交卷 ==================== */
 
   async doSubmit() {
+    if (this.data.submitting) return
     const { answerMap, questions, startTime, selectedSubject } = this.data
     const total = questions.length || 0
     const answeredFlags = _buildAnsweredFlags(questions, answerMap)
