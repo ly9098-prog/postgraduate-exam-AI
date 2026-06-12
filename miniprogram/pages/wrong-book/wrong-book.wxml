@@ -16,6 +16,13 @@
     </view>
   </view>
 
+  <view class="insight-grid" wx:if="{{analysis.summaryCards.length > 0}}">
+    <view wx:for="{{analysis.summaryCards}}" wx:key="key" class="insight-card tone-{{item.tone}}">
+      <text class="insight-value">{{item.value}}</text>
+      <text class="insight-label">{{item.label}}</text>
+    </view>
+  </view>
+
   <!-- 筛选面板 -->
   <view class="filter-panel {{showFilter ? 'filter-open' : ''}}">
     <view class="filter-section">
@@ -60,6 +67,16 @@
       </view>
     </view>
     <view wx:else class="analysis-pending">错题数据积累后，将按错因生成弱项标签</view>
+
+    <view class="action-plan" wx:if="{{analysis.actionPlan.length > 0}}">
+      <view wx:for="{{analysis.actionPlan}}" wx:key="key" class="plan-item">
+        <text class="plan-dot"></text>
+        <view class="plan-copy">
+          <text class="plan-title">{{item.title}}</text>
+          <text class="plan-desc">{{item.desc}}</text>
+        </view>
+      </view>
+    </view>
 
     <view class="map-grid">
       <view class="map-block">
