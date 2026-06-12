@@ -26,8 +26,6 @@
 .practice-hero {
   margin: 24rpx 24rpx 16rpx;
   padding: 36rpx 30rpx;
-  border-radius: 36rpx;
-  background: linear-gradient(145deg, #4F7FFF 0%, #6EC1FF 56%, #8AAFC8 100%);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -152,10 +150,7 @@
 .mission-strip {
   margin: 0 24rpx 18rpx;
   padding: 22rpx 12rpx;
-  border-radius: 28rpx;
-  background: rgba(255,255,255,0.86);
-  border: 1rpx solid rgba(255,255,255,0.72);
-  box-shadow: 0 12rpx 34rpx rgba(79, 127, 255, 0.1);
+
   backdrop-filter: blur(18rpx);
   -webkit-backdrop-filter: blur(18rpx);
   display: flex;
@@ -195,12 +190,8 @@
 }
 
 .card {
-  background: rgba(255,255,255,0.94);
-  border-radius: 30rpx;
   padding: 28rpx;
   margin: 18rpx 24rpx 0;
-  box-shadow: 0 10rpx 30rpx rgba(43, 60, 80, 0.07);
-  border: 1rpx solid rgba(226, 234, 247, 0.92);
 }
 
 .challenge-card {
@@ -569,9 +560,7 @@
 }
 
 .sheet-icon {
-  font-size: 26rpx;
   color: #FFFFFF;
-  font-weight: 900;
 }
 
 .sheet-badge {
@@ -1116,4 +1105,29 @@
 
 .sheet-submit {
   margin-top: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-orbit,
+  .practice-hero::before,
+  .practice-hero::after,
+  .subject-item,
+  .mode-card,
+  .count-btn,
+  .progress-fill,
+  .q-wrap,
+  .slide-in,
+  .slide-out-left,
+  .slide-out-right,
+  .edge-left,
+  .edge-right,
+  .option-item,
+  .option-indicator,
+  .dot,
+  .loading-spinner,
+  .sheet-cell {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
 }

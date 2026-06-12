@@ -1,5 +1,5 @@
 <view class="home-page">
-  <view class="welcome-section animation-fade-in">
+  <view class="welcome-section hero-panel motion-card-enter">
     <view class="welcome-glass"></view>
     <view class="welcome-content">
       <view class="welcome-greeting-row">
@@ -23,7 +23,7 @@
     </view>
   </view>
 
-  <view class="mission-card animation-fade-in">
+  <view class="mission-card learning-card motion-card-enter motion-delay-1">
     <view class="mission-head">
       <view>
         <text class="mission-kicker">今日目标</text>
@@ -47,13 +47,13 @@
     </view>
     <view class="primary-routes">
       <view class="route-card random" hover-class="route-pressed" bindtap="startRandom">
-        <view class="route-orb">练</view>
+        <view class="route-orb"><text class="line-icon icon-book"></text></view>
         <text class="route-title">随机挑战</text>
         <text class="route-desc">挑战新的题目</text>
         <text class="route-cta">开始 →</text>
       </view>
       <view class="route-card review" hover-class="route-pressed" bindtap="goReview">
-        <view class="route-orb">复</view>
+        <view class="route-orb"><text class="line-icon icon-review"></text></view>
         <text class="route-title">今日复习</text>
         <text class="route-desc">攻克到期错题</text>
         <text class="route-cta">复习 →</text>
@@ -62,32 +62,32 @@
   </view>
 
   <view class="action-grid">
-    <view class="action-card" hover-class="active-surface" bindtap="goWrongBook">
-      <view class="icon-badge icon-warning">错</view>
+    <view class="action-card learning-card" hover-class="active-surface" bindtap="goWrongBook">
+      <view class="icon-badge icon-warning"><text class="line-icon icon-alert"></text></view>
       <view class="action-info">
         <text class="action-title">错题本</text>
         <text class="action-desc">全部错题 · 按条件筛选</text>
       </view>
       <text class="action-arrow">›</text>
     </view>
-    <view class="action-card" hover-class="active-surface" bindtap="goDashboard">
-      <view class="icon-badge icon-muted">数</view>
+    <view class="action-card learning-card" hover-class="active-surface" bindtap="goDashboard">
+      <view class="icon-badge icon-muted"><text class="line-icon icon-chart"></text></view>
       <view class="action-info">
         <text class="action-title">学习统计</text>
         <text class="action-desc">正确率 · 学科分布 · 趋势</text>
       </view>
       <text class="action-arrow">›</text>
     </view>
-    <view class="action-card" hover-class="active-surface" bindtap="goPomodoro">
-      <view class="icon-badge icon-warning">钟</view>
+    <view class="action-card learning-card" hover-class="active-surface" bindtap="goPomodoro">
+      <view class="icon-badge icon-warning"><text class="line-icon icon-clock"></text></view>
       <view class="action-info">
         <text class="action-title">番茄钟</text>
         <text class="action-desc">专注计时 · 学习节奏管理</text>
       </view>
       <text class="action-arrow">›</text>
     </view>
-    <view class="action-card" hover-class="active-surface" bindtap="goImport" wx:if="{{isAdmin}}">
-      <view class="icon-badge icon-success">导</view>
+    <view class="action-card learning-card" hover-class="active-surface" bindtap="goImport" wx:if="{{isAdmin}}">
+      <view class="icon-badge icon-success"><text class="line-icon icon-import"></text></view>
       <view class="action-info">
         <text class="action-title">题库导入</text>
         <text class="action-desc">拍照 / 文件上传导题</text>
