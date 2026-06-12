@@ -1,5 +1,6 @@
 const api = require('../../utils/api')
 const config = require('../../config')
+const { formatInlineMathText } = require('../../utils/math-format')
 
 // 将纯文本（可能含 $...$ LaTeX）转为 mp-html 可接受的 HTML 字符串。
 // $...$ 内部保持原样，外部普通文本做 HTML 转义，换行转 <br>。
@@ -173,13 +174,7 @@ function _cleanStemText(stemText, options, optionKeys) {
 
 function _toPlainInlineMathText(text) {
   if (!text) return text
-  const plain = String(text)
-    .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
-    .replace(/\$([^$\n]+?)\$/g, '$1')
-    .replace(/\\leq/g, '≤')
-    .replace(/\\geq/g, '≥')
-    .replace(/\\lt/g, '<')
-    .replace(/\\gt/g, '>')
+  const plain = formatInlineMathText(text)
   return plain === String(text) ? null : plain
 }
 
