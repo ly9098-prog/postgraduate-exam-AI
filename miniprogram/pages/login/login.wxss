@@ -1,5 +1,5 @@
 page {
-  background: #F4EFE5;
+  background: #F8FAFF;
 }
 
 .login-page {
@@ -10,8 +10,8 @@ page {
   overflow: hidden;
   background:
     radial-gradient(circle at 16% 12%, rgba(255, 255, 255, 0.82) 0%, transparent 28%),
-    radial-gradient(circle at 88% 22%, rgba(52, 49, 43, 0.12) 0%, transparent 26%),
-    linear-gradient(180deg, #F8F1E4 0%, #F3E9D8 58%, #EEE4D2 100%);
+    radial-gradient(circle at 88% 22%, rgba(79, 127, 255, 0.14) 0%, transparent 26%),
+    linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
 }
 
 .sky-layer {
@@ -33,7 +33,7 @@ page {
   height: 520rpx;
   left: -250rpx;
   bottom: 210rpx;
-  background: radial-gradient(circle, rgba(214, 187, 142, 0.24) 0%, rgba(52, 49, 43, 0.06) 42%, transparent 72%);
+  background: radial-gradient(circle, rgba(110, 193, 255, 0.22) 0%, rgba(79, 127, 255, 0.08) 42%, transparent 72%);
 }
 
 .grid-layer {
@@ -44,8 +44,8 @@ page {
   bottom: 132rpx;
   border-radius: 44rpx;
   background-image:
-    linear-gradient(rgba(157, 126, 80, 0.09) 1rpx, transparent 1rpx),
-    linear-gradient(90deg, rgba(157, 126, 80, 0.045) 1rpx, transparent 1rpx);
+    linear-gradient(rgba(79, 127, 255, 0.08) 1rpx, transparent 1rpx),
+    linear-gradient(90deg, rgba(110, 193, 255, 0.06) 1rpx, transparent 1rpx);
   background-size: 100% 54rpx, 46rpx 46rpx;
   mask-image: linear-gradient(180deg, transparent 0%, #000 14%, #000 82%, transparent 100%);
   -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 14%, #000 82%, transparent 100%);
@@ -73,9 +73,9 @@ page {
   min-height: 310rpx;
   padding: 34rpx 34rpx 32rpx 54rpx;
   border-radius: 38rpx;
-  background: linear-gradient(145deg, #FFFDF7 0%, #FFF7E8 100%);
+  background: linear-gradient(145deg, #FFFFFF 0%, #F6F9FF 100%);
   border: 1rpx solid rgba(255, 255, 255, 0.92);
-  box-shadow: 0 22rpx 48rpx rgba(118, 91, 49, 0.13);
+  box-shadow: 0 18rpx 46rpx rgba(79, 127, 255, 0.14);
 }
 
 .paper-brand-card::before {
@@ -106,7 +106,7 @@ page {
   top: 0;
   width: 18rpx;
   height: 100%;
-  background: linear-gradient(180deg, #34312B 0%, #5A5247 100%);
+  background: linear-gradient(180deg, #4F7FFF 0%, #6EC1FF 100%);
 }
 
 .paper-pin {
@@ -128,7 +128,7 @@ page {
   width: 18rpx;
   height: 18rpx;
   border-radius: 999rpx;
-  background: #34312B;
+  background: #4F7FFF;
 }
 
 .paper-content {
@@ -191,7 +191,7 @@ page {
   width: 12rpx;
   height: 12rpx;
   border-radius: 999rpx;
-  background: #34312B;
+  background: #4F7FFF;
   flex-shrink: 0;
 }
 
@@ -244,9 +244,9 @@ page {
   margin-top: 8rpx;
   padding: 32rpx 28rpx 28rpx;
   border-radius: 34rpx;
-  background: linear-gradient(145deg, rgba(255, 253, 247, 0.96) 0%, rgba(255, 247, 232, 0.94) 100%);
-  border: 1rpx solid rgba(224, 199, 158, 0.56);
-  box-shadow: 0 18rpx 40rpx rgba(118, 91, 49, 0.1);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96) 0%, rgba(246, 249, 255, 0.94) 100%);
+  border: 1rpx solid rgba(226, 234, 247, 0.92);
+  box-shadow: 0 14rpx 36rpx rgba(42, 84, 160, 0.1);
 }
 
 .panel-header {
@@ -289,8 +289,8 @@ page {
   padding: 0;
   border: none;
   border-radius: 24rpx;
-  background: linear-gradient(135deg, #24221E 0%, #5A5247 100%);
-  box-shadow: 0 16rpx 32rpx rgba(52, 49, 43, 0.18);
+  background: linear-gradient(135deg, #4F7FFF 0%, #6EC1FF 100%);
+  box-shadow: 0 14rpx 30rpx rgba(79, 127, 255, 0.24);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -322,7 +322,7 @@ page {
   padding: 18rpx 18rpx 16rpx;
   border-radius: 24rpx;
   background: rgba(255, 255, 255, 0.48);
-  border: 1rpx dashed rgba(157, 126, 80, 0.3);
+  border: 1rpx dashed rgba(79, 127, 255, 0.22);
 }
 
 .agreement-check {
@@ -408,6 +408,6 @@ page {
 .footer-text {
   font-size: 21rpx;
   line-height: 1.45;
-  color: #9A8565;
+  color: #8EA0BA;
   text-align: center;
 }
