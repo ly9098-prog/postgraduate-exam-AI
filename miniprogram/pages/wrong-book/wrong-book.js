@@ -170,6 +170,9 @@ Page({
       subjectItems,
       summaryCards: this._buildSummaryCards(stats, list, weaknessTags),
       actionPlan: this._buildActionPlan(weaknessTags, subjectItems, list),
+      radarPolygonStyle: this._radarPolygonStyle(radarItems),
+      radarAxisText: this._radarAxisText(radarItems),
+      focusInsight: this._focusInsight(weaknessTags, subjectItems, list),
     }
   },
 
@@ -255,6 +258,31 @@ Page({
       percent: Math.max(12, Math.round((row.count / max) * 100)),
       height: Math.max(46, Math.round((row.count / max) * 100) + 34),
     }))
+  },
+
+  _radarPolygonStyle(items = []) {
+    if (!items.length) return ''
+    const points = [
+      [50, 50 - items[0].percent * 0.42],
+      [50 + (items[1] ? items[1].percent : items[0].percent) * 0.42, 50],
+      [50, 50 + (items[2] ? items[2].percent : items[0].percent) * 0.42],
+      [50 - (items[3] ? items[3].percent : items[0].percent) * 0.42, 50],
+    ]
+    return `clip-path: polygon(${points.map(point => `${Math.round(point[0])}% ${Math.round(point[1])}%`).join(', ')});`
+  },
+
+  _radarAxisText(items = []) {
+    if (!items.length) return '暂无能力图谱数据'
+    return items.map(item => `${item.label}${item.count}题`).join('，')
+  },
+
+  _focusInsight(weaknessTags = [], subjectItems = [], list = []) {
+    const weakness = weaknessTags[0]
+    const subject = subjectItems[0]
+    if (weakness && subject) return `${subject.label}的「${weakness.label}」最需要优先攻克`
+    if (weakness) return `优先攻克「${weakness.label}」相关错题`
+    if (list.length) return '当前错题已形成复盘样本，建议先完成一轮筛选复盘'
+    return '错题数据积累后，将生成知识漏洞诊断。'
   },
 
   _masteryProgress(item, reviewCount) {
