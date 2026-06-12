@@ -2,7 +2,7 @@
 
 .page {
   min-height: 100vh;
-  background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 58%, #F7F5F0 100%);
+  background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
   padding-bottom: 48rpx;
   overflow-x: hidden;
 }
@@ -145,7 +145,7 @@
 .hero-badge-label {
   margin-top: 8rpx;
   font-size: 21rpx;
-  color: #6B7B8D;
+  color: #617089;
   font-weight: 700;
 }
 
@@ -184,7 +184,7 @@
   display: block;
   margin-top: 6rpx;
   font-size: 21rpx;
-  color: #6B7B8D;
+  color: #617089;
   line-height: 1.35;
 }
 
@@ -200,7 +200,7 @@
   padding: 28rpx;
   margin: 18rpx 24rpx 0;
   box-shadow: 0 10rpx 30rpx rgba(43, 60, 80, 0.07);
-  border: 1rpx solid rgba(232, 229, 224, 0.78);
+  border: 1rpx solid rgba(226, 234, 247, 0.92);
 }
 
 .challenge-card {
@@ -229,7 +229,7 @@
   margin-top: 6rpx;
   font-size: 22rpx;
   line-height: 1.45;
-  color: #6B7B8D;
+  color: #617089;
 }
 
 .section-chip {
@@ -324,7 +324,7 @@
   background: #F7FAFF;
   border-radius: 999rpx;
   font-size: 25rpx;
-  color: #6B7B8D;
+  color: #617089;
   font-weight: 800;
   border: 2rpx solid transparent;
 }
@@ -379,7 +379,7 @@
   display: block;
   margin-top: 6rpx;
   font-size: 22rpx;
-  color: #6B7B8D;
+  color: #617089;
   line-height: 1.45;
 }
 
@@ -402,7 +402,7 @@
   background: #F7FAFF;
   border-radius: 999rpx;
   font-size: 27rpx;
-  color: #6B7B8D;
+  color: #617089;
   font-weight: 800;
   transition: transform 0.15s ease, background 0.15s ease;
 }
@@ -486,7 +486,7 @@
   flex-direction: column;
   min-height: 100vh;
   overflow: hidden;
-  background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 64%, #F7F5F0 100%);
+  background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
 }
 
 /* 顶部状态栏 */
@@ -531,7 +531,7 @@
 
 .bar-subtitle {
   font-size: 22rpx;
-  color: #6B7B8D;
+  color: #617089;
   line-height: 1.35;
 }
 
@@ -818,7 +818,7 @@
 
 .option-text {
   font-size: 28rpx;
-  color: #2D3E50;
+  color: #18233A;
   line-height: 1.6;
   word-break: break-word;
   white-space: pre-wrap;
@@ -914,7 +914,7 @@
 
 .nav-btn.disabled .nav-arrow,
 .nav-btn.disabled .nav-label {
-  color: #BCC8D4;
+  color: #B7C4D8;
 }
 
 .nav-center {
@@ -950,7 +950,7 @@
 
 .btn-submit {
   width: 100%;
-  background: linear-gradient(135deg, #172033 0%, #2D3E50 100%);
+  background: linear-gradient(135deg, #172033 0%, #18233A 100%);
   color: #fff;
   font-size: 28rpx;
   font-weight: 900;
@@ -993,7 +993,7 @@
 
 .loading-text {
   font-size: 26rpx;
-  color: #6B7B8D;
+  color: #617089;
   margin-top: 18rpx;
   font-weight: 700;
 }
@@ -1044,7 +1044,7 @@
   display: block;
   margin-top: 6rpx;
   font-size: 23rpx;
-  color: #6B7B8D;
+  color: #617089;
   line-height: 1.4;
 }
 
@@ -1086,7 +1086,7 @@
   align-items: center;
   justify-content: center;
   font-size: 27rpx;
-  color: #6B7B8D;
+  color: #617089;
   background: #F7FAFF;
   border-radius: 18rpx;
   font-weight: 800;
