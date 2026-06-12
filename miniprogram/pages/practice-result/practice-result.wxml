@@ -1,4 +1,27 @@
 <view class="page">
+  <block wx:if="{{showCelebration}}">
+    <view class="celebration-overlay" catchtap="dismissCelebration">
+      <view class="celeb-bg"></view>
+      <view class="celeb-content">
+        <view class="celeb-check-wrap">
+          <text class="celeb-check">{{celebrationIcon}}</text>
+        </view>
+        <text class="celeb-title">{{celebrationTitle}}</text>
+        <text class="celeb-detail">{{celebrationDetail}}</text>
+        <text class="celeb-motto">{{celebrationMotto}}</text>
+        <text class="celeb-tap-hint">点击继续</text>
+      </view>
+      <view class="particle-container">
+        <view class="particle p1"></view>
+        <view class="particle p2"></view>
+        <view class="particle p3"></view>
+        <view class="particle p4"></view>
+        <view class="particle p5"></view>
+        <view class="particle p6"></view>
+      </view>
+    </view>
+  </block>
+
   <!-- 结果头部 -->
   <view class="result-hero {{passRate >= 60 ? 'pass' : 'fail'}}">
     <view class="hero-copy">
@@ -20,7 +43,7 @@
         <text class="section-title">本次概览</text>
         <text class="section-subtitle">先看整体结果，再决定是否复盘错题</text>
       </view>
-      <text class="section-chip">{{subjectLabel(subject) || '练习'}}</text>
+      <text class="section-chip">{{subjectDisplay}}</text>
     </view>
     <view class="stats-grid">
       <view class="stat-item primary">

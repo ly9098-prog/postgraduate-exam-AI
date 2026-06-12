@@ -367,3 +367,151 @@
 .detail-toggle:active {
   opacity: 0.82;
 }
+
+/* 完成反馈 */
+.celebration-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: celeb-fade-in 0.28s ease both;
+}
+
+.celeb-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(11, 17, 33, 0.9);
+  backdrop-filter: blur(18rpx);
+}
+
+.celeb-content {
+  position: relative;
+  z-index: 2;
+  width: 620rpx;
+  padding: 56rpx 40rpx 48rpx;
+  border-radius: 36rpx;
+  background: linear-gradient(160deg, rgba(79, 127, 255, 0.22), rgba(110, 193, 255, 0.08));
+  border: 1rpx solid rgba(255, 255, 255, 0.18);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 28rpx 80rpx rgba(0, 0, 0, 0.24);
+}
+
+.celeb-check-wrap {
+  width: 144rpx;
+  height: 144rpx;
+  border-radius: 999rpx;
+  background: rgba(79, 127, 255, 0.18);
+  border: 4rpx solid rgba(110, 193, 255, 0.36);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 28rpx;
+  animation: celeb-check 0.72s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.celeb-check {
+  font-size: 66rpx;
+  color: #FFFFFF;
+  font-weight: 900;
+}
+
+.celeb-title {
+  font-size: 38rpx;
+  font-weight: 800;
+  color: #FFFFFF;
+  line-height: 1.25;
+  text-align: center;
+  animation: celeb-text-in 0.5s ease 0.16s both;
+}
+
+.celeb-detail {
+  margin-top: 14rpx;
+  font-size: 25rpx;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.82);
+  line-height: 1.45;
+  text-align: center;
+  animation: celeb-text-in 0.5s ease 0.24s both;
+}
+
+.celeb-motto {
+  margin-top: 18rpx;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.68);
+  line-height: 1.5;
+  text-align: center;
+  animation: celeb-text-in 0.5s ease 0.32s both;
+}
+
+.celeb-tap-hint {
+  margin-top: 30rpx;
+  padding: 10rpx 24rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 22rpx;
+  animation: celeb-text-in 0.5s ease 0.4s both;
+}
+
+.particle-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.particle {
+  position: absolute;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 999rpx;
+  top: 50%;
+  left: 50%;
+  margin-top: -7rpx;
+  margin-left: -7rpx;
+}
+
+.p1 { background: #6EC1FF; animation: p1 1.45s ease-out 0s forwards; }
+.p2 { background: #4F7FFF; animation: p2 1.45s ease-out 0.08s forwards; }
+.p3 { background: #F59E0B; animation: p3 1.45s ease-out 0.16s forwards; }
+.p4 { background: #22C55E; animation: p4 1.45s ease-out 0.24s forwards; }
+.p5 { background: #EF4444; animation: p5 1.45s ease-out 0.32s forwards; }
+.p6 { background: #8B5CF6; animation: p6 1.45s ease-out 0.4s forwards; }
+
+@keyframes celeb-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes celeb-check {
+  0% { transform: scale(0) rotate(-18deg); opacity: 0; }
+  55% { transform: scale(1.14) rotate(5deg); opacity: 1; }
+  78% { transform: scale(0.96) rotate(-2deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+@keyframes celeb-text-in {
+  from { opacity: 0; transform: translateY(18rpx); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes p1 { to { transform: translate(-230rpx, -280rpx) scale(0); opacity: 0; } }
+@keyframes p2 { to { transform: translate(230rpx, -260rpx) scale(0); opacity: 0; } }
+@keyframes p3 { to { transform: translate(-280rpx, 40rpx) scale(0); opacity: 0; } }
+@keyframes p4 { to { transform: translate(280rpx, 70rpx) scale(0); opacity: 0; } }
+@keyframes p5 { to { transform: translate(-150rpx, 280rpx) scale(0); opacity: 0; } }
+@keyframes p6 { to { transform: translate(150rpx, 280rpx) scale(0); opacity: 0; } }
