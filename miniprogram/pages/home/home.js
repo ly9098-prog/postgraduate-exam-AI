@@ -1,4 +1,7 @@
 const auth = require('../../utils/auth')
+const api = require('../../utils/api')
+
+const TODAY_GOAL_TOTAL = 30
 
 Page({
   data: {
@@ -8,13 +11,13 @@ Page({
     motto: '',
     authed: false,
     isAdmin: false,
-    streakDays: 15,
-    studyLevel: 'Lv2 坚持者',
-    levelProgress: 68,
-    todayGoalDone: 20,
-    todayGoalTotal: 30,
-    badgeTitle: '连续学习徽章',
-    missionText: '再坚持 5 题，就能超过昨天的自己',
+    streakDays: 0,
+    studyLevel: 'Lv1 起步',
+    levelProgress: 0,
+    todayGoalDone: 0,
+    todayGoalTotal: TODAY_GOAL_TOTAL,
+    badgeTitle: '今日待点亮',
+    missionText: '完成一组练习，点亮今日目标',
   },
 
   async onShow() {
@@ -26,7 +29,7 @@ Page({
       greeting: this.getGreeting(),
       dateStr: this.getDateStr(),
       motto: this.getMotto(),
-      ...this.getGrowthSnapshot(),
+      ...this.getGrowthFallback(),
     })
     if (!authed) return
     try {
@@ -35,24 +38,82 @@ Page({
     } catch (e) {
       console.error('同步用户权限失败', e)
     }
+    await this.loadGrowthSnapshot()
   },
 
-  getGrowthSnapshot() {
-    const daySeed = Math.floor(Date.now() / 86400000)
-    const streakDays = 12 + (daySeed % 9)
-    const todayGoalDone = 16 + (daySeed % 8)
-    const todayGoalTotal = 30
-    const levelProgress = Math.min(92, Math.round(todayGoalDone / todayGoalTotal * 100))
-    const studyLevel = streakDays >= 18 ? 'Lv3 刷题达人' : 'Lv2 坚持者'
+  async loadGrowthSnapshot() {
+    try {
+      const res = await api.get('/stats/dashboard')
+      this.setData(this.buildGrowthSnapshot((res && res.overview) || {}))
+    } catch (e) {
+      console.error('加载成长数据失败', e)
+    }
+  },
+
+  getGrowthFallback() {
+    return {
+      streakDays: 0,
+      studyLevel: 'Lv1 起步',
+      levelProgress: 0,
+      todayGoalDone: 0,
+      todayGoalTotal: TODAY_GOAL_TOTAL,
+      badgeTitle: '今日待点亮',
+      missionText: '完成一组练习，点亮今日目标',
+    }
+  },
+
+  buildGrowthSnapshot(overview) {
+    const streakDays = this.toNonNegativeInt(overview.consecutive_days)
+    const todayGoalDone = this.toNonNegativeInt(overview.today_questions)
+    const totalQuestions = this.toNonNegativeInt(overview.total_questions)
+    const dueReviewCount = this.toNonNegativeInt(overview.due_review_count)
+    const todayGoalTotal = TODAY_GOAL_TOTAL
+    const levelProgress = Math.min(100, Math.round((todayGoalDone / todayGoalTotal) * 100))
+
     return {
       streakDays,
-      studyLevel,
+      studyLevel: this.getStudyLevel(totalQuestions),
       levelProgress,
       todayGoalDone,
       todayGoalTotal,
-      badgeTitle: streakDays >= 15 ? '连续 15 天徽章' : '坚持学习徽章',
-      missionText: `再完成 ${Math.max(1, todayGoalTotal - todayGoalDone)} 题，点亮今日目标`,
+      badgeTitle: this.getBadgeTitle(streakDays, levelProgress),
+      missionText: this.getMissionText(todayGoalDone, todayGoalTotal, dueReviewCount),
     }
+  },
+
+  getStudyLevel(totalQuestions) {
+    if (totalQuestions >= 1000) return 'Lv5 上岸冲刺'
+    if (totalQuestions >= 500) return 'Lv4 高效进阶'
+    if (totalQuestions >= 200) return 'Lv3 刷题达人'
+    if (totalQuestions >= 50) return 'Lv2 坚持者'
+    return 'Lv1 起步'
+  },
+
+  getBadgeTitle(streakDays, levelProgress) {
+    if (levelProgress >= 100) return '今日目标已完成'
+    if (streakDays >= 30) return '连续 30 天徽章'
+    if (streakDays >= 15) return '连续 15 天徽章'
+    if (streakDays >= 7) return '连续 7 天徽章'
+    if (streakDays > 0) return '坚持学习徽章'
+    return '今日待点亮'
+  },
+
+  getMissionText(todayGoalDone, todayGoalTotal, dueReviewCount) {
+    const remaining = Math.max(0, todayGoalTotal - todayGoalDone)
+    if (remaining === 0) {
+      if (dueReviewCount > 0) return `今日目标完成，再复习 ${dueReviewCount} 题巩固记忆`
+      return '今日目标已完成，保持节奏'
+    }
+    if (dueReviewCount > 0) {
+      return `再完成 ${remaining} 题，另有 ${dueReviewCount} 道复习待处理`
+    }
+    return `再完成 ${remaining} 题，点亮今日目标`
+  },
+
+  toNonNegativeInt(value) {
+    const n = Number(value)
+    if (!Number.isFinite(n) || n < 0) return 0
+    return Math.round(n)
   },
 
   getGreeting() {
