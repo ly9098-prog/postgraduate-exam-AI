@@ -229,6 +229,20 @@
     <text class="result-title">第 {{currentGroupIdx + 1}} 组复盘完成</text>
     <text class="result-desc">继续下一组，把短期记忆变成长期掌握</text>
 
+    <view class="group-reward-strip">
+      <view class="group-reward-main">
+        <text class="group-reward-icon">{{groupCorrect >= groupWrong ? '✓' : '↗'}}</text>
+        <view class="group-reward-copy">
+          <text class="group-reward-title">{{groupCorrect >= groupWrong ? '本组记忆稳定' : '本组已完成诊断'}}</text>
+          <text class="group-reward-desc">{{groupCorrect >= groupWrong ? '获得专注星光 +1，继续保持节奏' : '获得复盘能量 +1，错题会进入巩固计划'}}</text>
+        </view>
+      </view>
+      <view class="group-progress-track">
+        <view class="group-progress-fill" style="{{_groupProgressStyle}}"></view>
+      </view>
+      <text class="group-progress-text">今日组进度 {{currentGroupIdx + 1}} / {{groups.length}}</text>
+    </view>
+
     <view class="result-stats">
       <view class="result-stat-item">
         <text class="result-stat-val">{{groupQuestions.length}}</text>
@@ -300,6 +314,11 @@
           <text class="accuracy-num">{{_accuracyText}}</text>
           <text class="accuracy-lbl">正确率</text>
         </view>
+      </view>
+      <view class="final-growth-card">
+        <text class="final-growth-kicker">成长结算</text>
+        <text class="final-growth-title">复习经验 +{{allGroupResults.length}}</text>
+        <text class="final-growth-desc">完成 {{groups.length}} 组复习，明日记忆计划已刷新</text>
       </view>
     </view>
 
