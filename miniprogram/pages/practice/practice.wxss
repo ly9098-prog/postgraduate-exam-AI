@@ -1261,6 +1261,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .page { opacity: 1 !important; }
   .hero-orbit,
   .practice-hero::before,
   .practice-hero::after,

@@ -235,6 +235,7 @@
 
 /* ── 知识漏洞分析 ── */
 .analysis-card {
+  position: relative;
   margin: 18rpx 24rpx 0;
   padding: 28rpx;
   background: rgba(255, 255, 255, 0.94);
@@ -894,6 +895,7 @@
 .load-more:active { opacity: 0.82; }
 
 @media (prefers-reduced-motion: reduce) {
+  .page { opacity: 1 !important; }
   .filter-panel,
   .insight-card,
   .loading-spinner,
@@ -902,6 +904,7 @@
     animation: none !important;
     transition: none !important;
     transform: none !important;
+    opacity: 1 !important;
   }
 }
 
@@ -911,5 +914,7 @@
   width: 1rpx;
   height: 1rpx;
   overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
   opacity: 0;
 }
