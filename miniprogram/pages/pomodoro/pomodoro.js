@@ -106,15 +106,15 @@ Page({
   async onShow() {
     this.loadTodayStats()
 
-    // Check completion flag (handles background-complete + page-unload cases)
     const completionFlag = wx.getStorageSync('pomodoro_completion')
-    if (completionFlag && !this.data.showCelebration) {
-      wx.removeStorageSync('pomodoro_completion')
-      wx.vibrateLong()
-      this.setData({ showCelebration: true, celebrationMotto: completionFlag.motto })
-      return
-    }
     if (completionFlag) {
+      // Vibration can now fire since we're back in foreground
+      wx.vibrateLong()
+      if (!this.data.showCelebration) {
+        this.setData({ showCelebration: true, celebrationMotto: completionFlag.motto })
+        return
+      }
+      // Already showing celebration — clean up stale flag but don't replay
       wx.removeStorageSync('pomodoro_completion')
     }
 
@@ -124,13 +124,24 @@ Page({
     } else if (this.data.phase !== PHASE.RUNNING) {
       this._restoreBreak()
     }
-    // trigger entrance animation on next frame
     setTimeout(() => {
       this.setData({ pageEntered: true })
     }, 50)
   },
 
   onHide() {
+    // Save running state for offline restore when app returns from background
+    if (this.data.phase === PHASE.RUNNING && this.data.sessionId) {
+      wx.setStorageSync('pomodoro_running_state', {
+        sessionStartTime: this.data.sessionStartTime,
+        workDuration: this.data.workDuration,
+        isPaused: this.data.isPaused,
+        totalPausedMs: this.data.totalPausedMs,
+        pauseStartTime: this.data.isPaused ? (this.data.pauseStartTime || Date.now()) : null,
+        sessionId: this.data.sessionId,
+        savedAt: Date.now(),
+      })
+    }
     this._clearTimer()
   },
 
@@ -238,7 +249,9 @@ Page({
     if (!this.data.sessionId) return
     this._clearTimer()
     try {
-      await api.post(`/pomodoro/${this.data.sessionId}/interrupt`)
+      await api.post(`/pomodoro/${this.data.sessionId}/interrupt`, {
+        total_paused_ms: this.data.totalPausedMs || 0,
+      })
     } catch (_) {}
     this._resetToIdle()
   },
@@ -403,11 +416,27 @@ Page({
   /* ==================== Session Restore ==================== */
 
   async _fetchActiveSession() {
+    // Check local state first (survives background suspend / network loss)
+    const local = wx.getStorageSync('pomodoro_running_state')
     try {
-      return await api.get('/pomodoro/active')
-    } catch (_) {
-      return null
+      const server = await api.get('/pomodoro/active')
+      if (server) {
+        wx.removeStorageSync('pomodoro_running_state')
+        return server
+      }
+    } catch (_) {}
+    // Fallback to local state if server is unreachable
+    if (local && (Date.now() - local.savedAt < 7200000)) {
+      return {
+        id: local.sessionId,
+        start_time: new Date(local.sessionStartTime).toISOString(),
+        work_duration: local.workDuration,
+        break_duration: this.data.breakDuration,
+        subject: this.data.selectedSubject,
+      }
     }
+    wx.removeStorageSync('pomodoro_running_state')
+    return null
   },
 
   _restoreSession(session) {
@@ -537,6 +566,7 @@ Page({
     wx.removeStorageSync('pomodoro_break')
     wx.removeStorageSync('pomodoro_completion')
     wx.removeStorageSync('pomodoro_pause')
+    wx.removeStorageSync('pomodoro_running_state')
     this.setData({
       phase: PHASE.IDLE,
       sessionId: null,

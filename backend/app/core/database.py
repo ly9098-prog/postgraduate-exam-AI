@@ -197,6 +197,23 @@ async def _ensure_pomodoro_table(conn):
     await conn.run_sync(repair)
 
 
+async def _repair_postgres_sequences(conn):
+    """Sync PG sequences for tables that may have explicit-ID inserts (bootstrap, etc)."""
+    def repair(sync_conn):
+        if sync_conn.dialect.name != "postgresql":
+            return
+        # Tables whose sequences may be out of sync due to bootstrap explicit-ID inserts
+        tables_with_sequences = ["audit_logs", "question_versions"]
+        for table_name in tables_with_sequences:
+            sync_conn.execute(
+                text(
+                    f"SELECT setval('{table_name}_id_seq', "
+                    f"COALESCE((SELECT MAX(id) FROM {table_name}), 1))"
+                )
+            )
+    await conn.run_sync(repair)
+
+
 async def init_db():
     if settings.APP_ENV == "production":
         return
@@ -204,6 +221,7 @@ async def init_db():
     async with engine.begin() as conn:
         await _repair_sqlite_admin_bigint_pk(conn)
         await conn.run_sync(Base.metadata.create_all)
+        await _repair_postgres_sequences(conn)
         await _ensure_user_ban_columns(conn)
         await _ensure_app_user_admin_bindings_table(conn)
         await _ensure_duplicate_check_columns(conn)

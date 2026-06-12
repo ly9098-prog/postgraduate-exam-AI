@@ -78,10 +78,8 @@ async def ensure_dev_super_admin(db: AsyncSession, app_env: str) -> bool:
     created_admin = await _ensure_admin_user(db, role.id)
 
     if created_admin:
-        audit_log_id = await _next_audit_log_id(db)
         db.add(
             AuditLog(
-                id=audit_log_id,
                 operator_id=None,
                 operator_name=None,
                 action="system.init_super_admin",
@@ -95,10 +93,6 @@ async def ensure_dev_super_admin(db: AsyncSession, app_env: str) -> bool:
         )
     return created_admin is not None
 
-
-async def _next_audit_log_id(db: AsyncSession) -> int:
-    result = await db.execute(select(func.max(AuditLog.id)))
-    return int(result.scalar_one() or 0) + 1
 
 
 async def _ensure_super_admin_role(db: AsyncSession) -> Role:

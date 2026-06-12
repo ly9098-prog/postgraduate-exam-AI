@@ -139,7 +139,8 @@ async def _batch_find_duplicate_imports(
     db: AsyncSession,
     subject_hash_pairs: list[tuple[str | None, str | None]],
 ) -> dict[tuple[str, str], int]:
-    """Batch lookup: (subject, hash) → import.id for non-rejected imports."""
+    """Batch lookup: (subject, hash) → import.id for non-rejected imports
+    whose approved question (if any) is still active."""
     valid = [(s, h) for s, h in subject_hash_pairs if s and h]
     if not valid:
         return {}
@@ -154,15 +155,21 @@ async def _batch_find_duplicate_imports(
             for s, h in chunk
         ]
         from sqlalchemy import or_
-        stmt = select(QuestionImport.subject, QuestionImport.question_hash, QuestionImport.id).where(
+        stmt = select(QuestionImport.subject, QuestionImport.question_hash, QuestionImport.id, QuestionImport.question_id).where(
             or_(*conditions),
             QuestionImport.status != "rejected",
         )
         rows = (await db.execute(stmt)).all()
         for row in rows:
             key = (row.subject, row.question_hash)
-            if key not in result_map:
-                result_map[key] = row.id
+            if key in result_map:
+                continue
+            # Skip imports whose approved question was soft-deleted
+            if row.question_id is not None:
+                q = await db.get(Question, row.question_id)
+                if q is None or not q.is_active:
+                    continue
+            result_map[key] = row.id
     return result_map
 
 
