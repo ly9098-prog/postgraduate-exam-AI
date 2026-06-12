@@ -1,14 +1,17 @@
 <view class="page">
-  <!-- 顶部统计条 -->
-  <view class="stats-bar">
-    <view class="stats-icon">
-      <text class="stats-icon-text">!</text>
+  <!-- 顶部 Hero -->
+  <view class="hero-card">
+    <view class="hero-glow"></view>
+    <view class="hero-content">
+      <view class="hero-kicker">错题本</view>
+      <view class="hero-title">{{primaryStatLabel}}</view>
+      <view class="hero-number-row">
+        <text class="hero-number">{{primaryStatCount}}</text>
+        <text class="hero-unit">题</text>
+      </view>
+      <view class="hero-desc">把每一次错误变成下一次提分线索</view>
     </view>
-    <view class="stats-info">
-      <text class="stats-num">{{stats.total || 0}}</text>
-      <text class="stats-label">道错题待回顾</text>
-    </view>
-    <view class="stats-filter-btn" bindtap="toggleFilter">
+    <view class="hero-filter-btn" bindtap="toggleFilter">
       <text class="filter-btn-text">筛选</text>
     </view>
   </view>
@@ -41,6 +44,53 @@
     </view>
   </view>
 
+  <!-- 知识漏洞分析 -->
+  <view class="analysis-card">
+    <view class="section-head">
+      <view>
+        <text class="section-title">知识漏洞分析</text>
+        <text class="section-subtitle">{{analysis.sourceLabel}}，用于定位优先复盘方向</text>
+      </view>
+    </view>
+
+    <view wx:if="{{analysis.weaknessTags.length > 0}}" class="weakness-tags">
+      <view wx:for="{{analysis.weaknessTags}}" wx:key="key" class="weakness-tag">
+        <text class="weakness-label">{{item.label}}</text>
+        <text class="weakness-count">{{item.count}}题</text>
+      </view>
+    </view>
+    <view wx:else class="analysis-pending">错题数据积累后，将按错因生成弱项标签</view>
+
+    <view class="map-grid">
+      <view class="map-block">
+        <text class="map-title">能力图谱</text>
+        <view wx:if="{{analysis.radarItems.length > 0}}" class="radar-wrap">
+          <view wx:for="{{analysis.radarItems}}" wx:key="key" class="radar-row">
+            <text class="radar-label">{{item.label}}</text>
+            <view class="radar-track">
+              <view class="radar-fill" style="width: {{item.percent}}%;"></view>
+            </view>
+            <text class="radar-count">{{item.count}}</text>
+          </view>
+        </view>
+        <view wx:else class="mini-pending">待积累</view>
+      </view>
+
+      <view class="map-block">
+        <text class="map-title">学科分布</text>
+        <view wx:if="{{analysis.subjectItems.length > 0}}" class="subject-map">
+          <view wx:for="{{analysis.subjectItems}}" wx:key="key" class="subject-dot" style="height: {{item.height}}rpx;">
+            <text class="subject-count">{{item.count}}</text>
+          </view>
+        </view>
+        <view wx:if="{{analysis.subjectItems.length > 0}}" class="subject-labels">
+          <text wx:for="{{analysis.subjectItems}}" wx:key="key" class="subject-label">{{item.label}}</text>
+        </view>
+        <view wx:else class="mini-pending">待积累</view>
+      </view>
+    </view>
+  </view>
+
   <!-- 加载态 -->
   <view wx:if="{{loading && list.length === 0}}" class="loading-wrap">
     <view class="loading-spinner"></view>
@@ -58,6 +108,10 @@
 
   <!-- 错题卡片列表 -->
   <view class="card-list" wx:if="{{list.length > 0}}">
+    <view class="list-title-row">
+      <text class="list-title">错题清单</text>
+      <text class="list-subtitle">点击卡片进入复盘</text>
+    </view>
     <view
       wx:for="{{list}}"
       wx:key="id"
@@ -66,8 +120,11 @@
       data-id="{{item.id}}"
     >
       <view class="card-top">
-        <text class="subject-tag">{{item._subjectLabel}}</text>
-        <text class="error-tag type-{{item.error_type}}">{{item._errorTypeLabel}}</text>
+        <view class="tag-group">
+          <text class="subject-tag">{{item._subjectLabel}}</text>
+          <text class="error-tag type-{{item.error_type}}">{{item._errorTypeLabel}}</text>
+        </view>
+        <text class="card-arrow">›</text>
       </view>
       <view class="card-body">
         <block wx:if="{{enableMathImage && item.content && item.content.render_mode === 'segments'}}">
@@ -77,9 +134,30 @@
           <text class="card-question">{{item._cleanText}}</text>
         </block>
       </view>
-      <view class="card-footer">
-        <text class="card-review-count">复习 {{item.review_count || 0}} 次</text>
-        <text class="card-time">{{item._timeLabel}}</text>
+
+      <view class="metric-row">
+        <view class="metric-pill danger">
+          <text class="metric-value">{{item._wrongCount}}</text>
+          <text class="metric-label">记录次数</text>
+        </view>
+        <view class="metric-pill blue">
+          <text class="metric-value">{{item._reviewCount}}</text>
+          <text class="metric-label">复习次数</text>
+        </view>
+        <view class="metric-pill soft">
+          <text class="metric-value small">{{item._lastErrorLabel}}</text>
+          <text class="metric-label">最近错误</text>
+        </view>
+      </view>
+
+      <view class="mastery-block">
+        <view class="mastery-head">
+          <text class="mastery-title">掌握进度</text>
+          <text class="mastery-percent">{{item._masteryPercent}}% · {{item._masteryLabel}}</text>
+        </view>
+        <view class="mastery-track">
+          <view class="mastery-fill" style="width: {{item._masteryPercent}}%;"></view>
+        </view>
       </view>
     </view>
 
