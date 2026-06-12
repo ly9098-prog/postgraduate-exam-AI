@@ -1,63 +1,98 @@
-<view class="welcome-section animation-fade-in">
-  <view class="welcome-glass"></view>
-  <view class="welcome-content">
-    <view class="welcome-greeting-row">
-      <text class="welcome-greeting">{{greeting}}，</text>
-      <text class="welcome-user" wx:if="{{user.nickName}}">{{user.nickName}}</text>
-      <text class="welcome-user" wx:else>研友</text>
-    </view>
-    <view class="welcome-date">{{dateStr}}</view>
-    <view class="welcome-quote">{{motto}}</view>
-  </view>
-</view>
+<view class="home-page">
+  <view class="welcome-section animation-fade-in">
+    <view class="welcome-glass"></view>
+    <view class="welcome-content">
+      <view class="welcome-greeting-row">
+        <text class="welcome-greeting">{{greeting}}，</text>
+        <text class="welcome-user" wx:if="{{user.nickName}}">{{user.nickName}}</text>
+        <text class="welcome-user" wx:else>研友</text>
+      </view>
+      <view class="welcome-date">{{dateStr}}</view>
+      <view class="welcome-quote">{{motto}}</view>
 
-<view class="action-grid">
-  <view class="action-card" hover-class="active-surface" bindtap="startRandom">
-    <view class="icon-badge icon-primary">练</view>
-    <view class="action-info">
-      <text class="action-title">随机刷题</text>
-      <text class="action-desc">开始一组练习</text>
+      <view class="growth-row">
+        <view class="growth-pill">
+          <text class="growth-num">{{streakDays}}</text>
+          <text class="growth-label">连续学习</text>
+        </view>
+        <view class="growth-pill level-pill">
+          <text class="growth-num small">{{studyLevel}}</text>
+          <text class="growth-label">当前等级</text>
+        </view>
+      </view>
     </view>
-    <text class="action-arrow">›</text>
   </view>
-  <view class="action-card" hover-class="active-surface" bindtap="goWrongBook">
-    <view class="icon-badge icon-warning">错</view>
-    <view class="action-info">
-      <text class="action-title">错题本</text>
-      <text class="action-desc">全部错题 · 按条件筛选</text>
+
+  <view class="mission-card animation-fade-in">
+    <view class="mission-head">
+      <view>
+        <text class="mission-kicker">今日目标</text>
+        <text class="mission-title">{{todayGoalDone}} / {{todayGoalTotal}} 题</text>
+      </view>
+      <view class="mission-badge">{{badgeTitle}}</view>
     </view>
-    <text class="action-arrow">›</text>
+    <view class="mission-track">
+      <view class="mission-fill" style="width:{{levelProgress}}%"></view>
+    </view>
+    <view class="mission-foot">
+      <text>{{missionText}}</text>
+      <text class="mission-percent">{{levelProgress}}%</text>
+    </view>
   </view>
-  <view class="action-card" hover-class="active-surface" bindtap="goReview">
-    <view class="icon-badge icon-success">复</view>
-    <view class="action-info">
-      <text class="action-title">今日复习</text>
-      <text class="action-desc">SM-2 到期错题 · 科学排期</text>
+
+  <view class="route-section">
+    <view class="section-headline">
+      <text class="section-title">开始今天的学习</text>
+      <text class="section-subtitle">优先完成挑战和复习，成长值会更快提升</text>
     </view>
-    <text class="action-arrow">›</text>
+    <view class="primary-routes">
+      <view class="route-card random" hover-class="route-pressed" bindtap="startRandom">
+        <view class="route-orb">练</view>
+        <text class="route-title">随机挑战</text>
+        <text class="route-desc">挑战新的题目</text>
+        <text class="route-cta">开始 →</text>
+      </view>
+      <view class="route-card review" hover-class="route-pressed" bindtap="goReview">
+        <view class="route-orb">复</view>
+        <text class="route-title">今日复习</text>
+        <text class="route-desc">攻克到期错题</text>
+        <text class="route-cta">复习 →</text>
+      </view>
+    </view>
   </view>
-  <view class="action-card" hover-class="active-surface" bindtap="goDashboard">
-    <view class="icon-badge icon-muted">数</view>
-    <view class="action-info">
-      <text class="action-title">学习统计</text>
-      <text class="action-desc">正确率 · 学科分布 · 趋势</text>
+
+  <view class="action-grid">
+    <view class="action-card" hover-class="active-surface" bindtap="goWrongBook">
+      <view class="icon-badge icon-warning">错</view>
+      <view class="action-info">
+        <text class="action-title">错题本</text>
+        <text class="action-desc">全部错题 · 按条件筛选</text>
+      </view>
+      <text class="action-arrow">›</text>
     </view>
-    <text class="action-arrow">›</text>
-  </view>
-  <view class="action-card" hover-class="active-surface" bindtap="goPomodoro">
-    <view class="icon-badge icon-warning">钟</view>
-    <view class="action-info">
-      <text class="action-title">番茄钟</text>
-      <text class="action-desc">专注计时 · 学习节奏管理</text>
+    <view class="action-card" hover-class="active-surface" bindtap="goDashboard">
+      <view class="icon-badge icon-muted">数</view>
+      <view class="action-info">
+        <text class="action-title">学习统计</text>
+        <text class="action-desc">正确率 · 学科分布 · 趋势</text>
+      </view>
+      <text class="action-arrow">›</text>
     </view>
-    <text class="action-arrow">›</text>
-  </view>
-  <view class="action-card" hover-class="active-surface" bindtap="goImport" wx:if="{{isAdmin}}">
-    <view class="icon-badge icon-success">导</view>
-    <view class="action-info">
-      <text class="action-title">题库导入</text>
-      <text class="action-desc">拍照 / 文件上传导题</text>
+    <view class="action-card" hover-class="active-surface" bindtap="goPomodoro">
+      <view class="icon-badge icon-warning">钟</view>
+      <view class="action-info">
+        <text class="action-title">番茄钟</text>
+        <text class="action-desc">专注计时 · 学习节奏管理</text>
+      </view>
+      <text class="action-arrow">›</text>
     </view>
-    <text class="action-arrow">›</text>
+    <view class="action-card" hover-class="active-surface" bindtap="goImport" wx:if="{{isAdmin}}">
+      <view class="icon-badge icon-success">导</view>
+      <view class="action-info">
+        <text class="action-title">题库导入</text>
+        <text class="action-desc">拍照 / 文件上传导题</text>
+      </view>
+      <text class="action-arrow">›</text>
+    </view>
   </view>
 </view>

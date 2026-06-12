@@ -291,6 +291,14 @@ Page({
 
   /* ==================== 题目导航 ==================== */
 
+  goQuestion(e) {
+    if (this._animating) return
+    const index = Number(e.currentTarget.dataset.index)
+    if (!Number.isInteger(index) || index < 0 || index >= this.data.groupQuestions.length) return
+    if (index === this.data.currentIndex) return
+    this._showQuestion(index)
+  },
+
   goNext() {
     if (this._animating) return
     const next = this.data.currentIndex + 1
@@ -512,6 +520,8 @@ Page({
   finishReview() {
     wx.navigateBack()
   },
+
+  noop() {},
 
   /* ==================== 工具 ==================== */
 

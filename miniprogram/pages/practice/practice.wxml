@@ -1,47 +1,72 @@
 <view class="page">
   <!-- ==================== 设置页 ==================== -->
   <view class="setup" wx:if="{{!started}}">
-    <view class="practice-hero">
+    <view class="practice-hero animation-fade-in">
+      <view class="hero-orbit hero-orbit-one"></view>
+      <view class="hero-orbit hero-orbit-two"></view>
       <view class="hero-copy">
-        <text class="eyebrow">智能刷题</text>
-        <text class="hero-title">随机练习</text>
-        <text class="hero-desc">选择科目、模式和题量，开始一组专注练习</text>
+        <text class="eyebrow">今日挑战 · {{count}} 题</text>
+        <text class="hero-title">把薄弱点练成得分点</text>
+        <text class="hero-desc">选择一组专注练习，完成后收获成长值和复盘线索</text>
       </view>
       <view class="hero-badge">
-        <text class="hero-badge-main">练</text>
-        <text class="hero-badge-label">本组 {{count}} 题</text>
+        <text class="hero-badge-main">+{{count * 6}}</text>
+        <text class="hero-badge-label">成长值</text>
       </view>
     </view>
 
-    <view class="card">
+    <view class="mission-strip animation-fade-in">
+      <view class="mission-strip-item">
+        <text class="mission-strip-num">{{selectedSubject ? subjectLabel(selectedSubject) : '待选择'}}</text>
+        <text class="mission-strip-label">挑战科目</text>
+      </view>
+      <view class="mission-strip-divider"></view>
+      <view class="mission-strip-item">
+        <text class="mission-strip-num">{{modeLabel(selectedMode)}}</text>
+        <text class="mission-strip-label">出题节奏</text>
+      </view>
+      <view class="mission-strip-divider"></view>
+      <view class="mission-strip-item">
+        <text class="mission-strip-num">{{count}}题</text>
+        <text class="mission-strip-label">本组目标</text>
+      </view>
+    </view>
+
+    <view class="card challenge-card">
       <view class="section-head">
         <view>
-          <text class="section-title">选择科目</text>
-          <text class="section-subtitle">先确定本组练习范围</text>
+          <text class="section-title">选择今天的战场</text>
+          <text class="section-subtitle">用一组短挑战快速校准状态</text>
         </view>
         <text class="section-chip">科目</text>
       </view>
       <view class="subject-grid">
         <view
           class="subject-item {{selectedSubject==='math2' ? 'active' : ''}}"
+          hover-class="tap-scale"
           bindtap="chooseSubject" data-subject="math2"
         >
           <text class="subject-icon">数</text>
           <text class="subject-name">数学二</text>
+          <text class="subject-desc">计算与推导</text>
         </view>
         <view
           class="subject-item {{selectedSubject==='exam408' ? 'active' : ''}}"
+          hover-class="tap-scale"
           bindtap="chooseSubject" data-subject="exam408"
         >
           <text class="subject-icon">408</text>
           <text class="subject-name">408</text>
+          <text class="subject-desc">体系化攻克</text>
         </view>
         <view
           class="subject-item {{selectedSubject==='english' ? 'active' : ''}}"
+          hover-class="tap-scale"
           bindtap="chooseSubject" data-subject="english"
         >
           <text class="subject-icon">英</text>
           <text class="subject-name">英语</text>
+          <text class="subject-desc">语感与阅读</text>
         </view>
       </view>
 
@@ -65,29 +90,39 @@
     <view class="card" wx:if="{{selectedSubject}}">
       <view class="section-head">
         <view>
-          <text class="section-title">刷题模式</text>
-          <text class="section-subtitle">随机更适合查漏，顺序更适合系统复习</text>
+          <text class="section-title">挑战模式</text>
+          <text class="section-subtitle">随机查漏，顺序巩固，把节奏交给今天的状态</text>
         </view>
-        <text class="section-chip">模式</text>
+        <text class="section-chip">{{modeLabel(selectedMode)}}</text>
       </view>
-      <view class="count-row">
-        <view class="count-btn {{selectedMode==='random' ? 'active' : ''}}" bindtap="chooseMode" data-mode="random">随机</view>
-        <view class="count-btn {{selectedMode==='sequential' ? 'active' : ''}}" bindtap="chooseMode" data-mode="sequential">顺序</view>
+      <view class="mode-row">
+        <view class="mode-card {{selectedMode==='random' ? 'active' : ''}}" bindtap="chooseMode" data-mode="random">
+          <text class="mode-title">随机挑战</text>
+          <text class="mode-desc">更适合查漏补缺</text>
+        </view>
+        <view class="mode-card {{selectedMode==='sequential' ? 'active' : ''}}" bindtap="chooseMode" data-mode="sequential">
+          <text class="mode-title">顺序推进</text>
+          <text class="mode-desc">更适合体系复习</text>
+        </view>
       </view>
     </view>
 
     <view class="card" wx:if="{{selectedSubject}}">
       <view class="section-head">
         <view>
-          <text class="section-title">题数</text>
-          <text class="section-subtitle">短练习保持手感，长练习适合整组复盘</text>
+          <text class="section-title">设定本组目标</text>
+          <text class="section-subtitle">完成越多，成长值越高</text>
         </view>
-        <text class="section-chip">{{count}} 题</text>
+        <text class="section-chip">+{{count * 6}}</text>
       </view>
       <view class="count-row">
         <view class="count-btn {{count===5 ? 'active' : ''}}" bindtap="setCount" data-count="5">5 题</view>
         <view class="count-btn {{count===10 ? 'active' : ''}}" bindtap="setCount" data-count="10">10 题</view>
         <view class="count-btn {{count===20 ? 'active' : ''}}" bindtap="setCount" data-count="20">20 题</view>
+      </view>
+      <view class="reward-preview">
+        <text class="reward-title">完成奖励</text>
+        <text class="reward-desc">成长值 +{{count * 6}} · 连续学习记录 +1 · 生成本组复盘</text>
       </view>
     </view>
 
@@ -96,10 +131,10 @@
       disabled="{{!selectedSubject}}"
       bindtap="startPractice"
     >
-      开始练习
+      {{selectedSubject ? '开始挑战' : '先选择科目'}}
     </button>
     <view class="pomodoro-link" wx:if="{{selectedSubject}}" bindtap="goPomodoro">
-      <text>⏱ 先去番茄钟专注学习</text>
+      <text>先用番茄钟锁定一段专注时间</text>
     </view>
   </view>
 
@@ -109,7 +144,8 @@
     <view class="top-bar">
       <view class="bar-left">
         <text class="bar-subject">{{subjectLabel(selectedSubject)}}</text>
-        <text class="bar-counter">{{currentIndex + 1}} / {{totalQuestions || 0}}</text>
+        <text class="bar-counter">第 {{currentIndex + 1}} / {{totalQuestions || 0}} 题</text>
+        <text class="bar-subtitle">已完成 {{answeredCount || 0}} 题</text>
       </view>
       <view class="bar-right">
         <text class="bar-timer">{{elapsedText}}</text>
@@ -121,8 +157,11 @@
     </view>
 
     <!-- 进度条 -->
-    <view class="progress-track">
-      <view class="progress-fill" style="width:{{totalQuestions > 0 ? (currentIndex + 1) / totalQuestions * 100 : 0}}%"></view>
+    <view class="progress-shell">
+      <view class="progress-track">
+        <view class="progress-fill" style="width:{{totalQuestions > 0 ? (answeredCount || 0) / totalQuestions * 100 : 0}}%"></view>
+      </view>
+      <text class="progress-label">{{totalQuestions > 0 ? Math.round((answeredCount || 0) / totalQuestions * 100) : 0}}%</text>
     </view>
 
     <!-- 滑动容器 -->
@@ -133,7 +172,13 @@
     >
       <!-- 题目卡片 -->
       <view class="q-wrap {{animClass}}" wx:if="{{currentQuestion}}">
-        <view class="q-badge">{{currentQuestion.question_type === 'multi_blank_choice' || currentQuestion._hasBlankOptionGroups ? '多空选择题' : currentQuestion.question_type === 'multiple_choice' ? '多选题' : currentQuestion.question_type === 'true_false' || currentQuestion.question_type === 'judgement' ? '判断题' : '单选题'}}</view>
+        <view class="q-card-head">
+          <view>
+            <text class="q-badge">{{currentQuestion.question_type === 'multi_blank_choice' || currentQuestion._hasBlankOptionGroups ? '多空选择题' : currentQuestion.question_type === 'multiple_choice' ? '多选题' : currentQuestion.question_type === 'true_false' || currentQuestion.question_type === 'judgement' ? '判断题' : '单选题'}}</text>
+            <text class="q-card-kicker">保持节奏，认真读题</text>
+          </view>
+          <text class="q-card-index">{{currentIndex + 1}}</text>
+        </view>
         <block wx:if="{{enableMathImage && currentQuestion.content.render_mode === 'segments'}}">
           <math-question segments="{{currentQuestion._segments}}" />
         </block>
@@ -155,6 +200,7 @@
                 wx:for-item="opt"
                 wx:key="key"
                 class="option-item blank-option-item {{opt._selected ? 'selected' : ''}}"
+                hover-class="option-pressed"
                 bindtap="selectBlankOption"
                 data-blank-id="{{group.id}}"
                 data-option="{{opt.key}}"
@@ -178,6 +224,7 @@
             wx:for="{{optionKeys}}"
             wx:key="*this"
             class="option-item {{selectedFlags[item] ? 'selected' : ''}}"
+            hover-class="option-pressed"
             bindtap="selectOption"
             data-option="{{item}}"
           >
@@ -203,7 +250,7 @@
         </view>
 
         <view class="nav-center">
-          <view class="dot {{index === currentIndex ? 'active' : ''}}" wx:for="{{questions}}" wx:key="index" data-index="{{index}}" bindtap="goQuestion"></view>
+          <view class="dot {{item._answered ? 'done' : ''}} {{index === currentIndex ? 'active' : ''}}" wx:for="{{questions}}" wx:key="index" data-index="{{index}}" bindtap="goQuestion"></view>
         </view>
 
         <view class="nav-btn next {{currentIndex >= totalQuestions - 1 ? 'disabled' : ''}}" bindtap="goNext">
@@ -212,7 +259,7 @@
         </view>
       </view>
       <button class="btn-submit" bindtap="doSubmit" loading="{{submitting}}">
-        交卷（{{answeredCount || 0}}/{{totalQuestions || 0}}）
+        交卷复盘（{{answeredCount || 0}}/{{totalQuestions || 0}}）
       </button>
     </view>
   </view>
@@ -220,14 +267,17 @@
   <!-- 加载 -->
   <view class="loading-wrap" wx:if="{{started && loading}}">
     <view class="loading-spinner"></view>
-    <text class="loading-text">加载题目中...</text>
+    <text class="loading-text">正在生成挑战题组...</text>
   </view>
 
   <!-- ==================== 答题卡弹窗 ==================== -->
   <view class="sheet-overlay" wx:if="{{showSheet}}" bindtap="closeSheet">
     <view class="sheet-modal" catchtap="noop">
       <view class="sheet-head">
-        <text class="sheet-title">答题卡</text>
+        <view>
+          <text class="sheet-title">答题进度</text>
+          <text class="sheet-subtitle">点选题号快速跳转</text>
+        </view>
         <text class="sheet-close" bindtap="closeSheet">关闭</text>
       </view>
       <view class="sheet-stats">
@@ -244,7 +294,7 @@
           {{index + 1}}
         </view>
       </view>
-      <button class="btn-submit sheet-submit" bindtap="doSubmit">交卷</button>
+      <button class="btn-submit sheet-submit" bindtap="doSubmit">交卷复盘</button>
     </view>
   </view>
 </view>
