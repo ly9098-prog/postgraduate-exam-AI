@@ -13,6 +13,11 @@ Page({
     trendMeta: null,
     trendDays: 7,
     darkMode: false,
+    yearlyHeatmap: [],
+    yearlyHeatmapWeeks: [],
+    yearlyHeatmapMeta: null,
+    badgeWall: [],
+    learningProfile: null,
   },
 
   onShow() {
@@ -41,6 +46,11 @@ Page({
         subjectTotal: 0,
         trendMeta: null,
         pageEntered: false,
+        yearlyHeatmap: [],
+        yearlyHeatmapWeeks: [],
+        yearlyHeatmapMeta: null,
+        badgeWall: [],
+        learningProfile: null,
       })
     }
   },
@@ -82,6 +92,11 @@ Page({
     const trendMeta = this._calcTrendMeta(trs)
     const bh = this._processBehavior(behavior)
     const fg = this._processForgetting(forgetting)
+    const yearlyHeatmap = this._buildYearlyHeatmap(trs, ov)
+    const yearlyHeatmapWeeks = this._chunkHeatmapWeeks(yearlyHeatmap)
+    const yearlyHeatmapMeta = this._calcYearlyHeatmapMeta(yearlyHeatmap)
+    const badgeWall = this._buildBadgeWall(ov, trendMeta, fg)
+    const learningProfile = this._buildLearningProfile(ov, subs, trendMeta, fg, bh)
 
     return {
       overview: ov,
@@ -91,6 +106,11 @@ Page({
       forgetting: fg,
       subjectTotal,
       trendMeta,
+      yearlyHeatmap,
+      yearlyHeatmapWeeks,
+      yearlyHeatmapMeta,
+      badgeWall,
+      learningProfile,
       pageEntered: true,
       loading: false,
     }
@@ -167,6 +187,109 @@ Page({
       totalQuestions: total,
       activeDays: active,
       avgAccuracyText: Math.round(avgAcc * 100) + '%',
+      summaryText: `近${this.data.trendDays}天累计做题${total}题，平均正确率${Math.round(avgAcc * 100)}%，活跃${active}天。`,
+    }
+  },
+
+  _buildYearlyHeatmap(trends, overview) {
+    const byDate = {}
+    ;(trends || []).forEach(item => {
+      if (item && item.date) byDate[item.date] = item
+    })
+
+    const today = new Date()
+    const cells = []
+    for (let i = 364; i >= 0; i--) {
+      const d = new Date(today)
+      d.setDate(today.getDate() - i)
+      const date = this._fmtDateKey(d)
+      const source = byDate[date] || {}
+      const questions = source.questions || 0
+      const heatClass = questions === 0 ? '' : questions <= 5 ? 'lv1' : questions <= 15 ? 'lv2' : questions <= 30 ? 'lv3' : 'lv4'
+      cells.push({
+        date,
+        questions,
+        accuracy: source.accuracy || 0,
+        _shortDate: date.slice(5),
+        _heatClass: heatClass,
+      })
+    }
+
+    const todayCell = cells[cells.length - 1]
+    if (todayCell && overview) {
+      todayCell.questions = overview.today_questions || todayCell.questions
+      todayCell.accuracy = overview.today_questions ? (overview.today_correct || 0) / Math.max(1, overview.today_questions) : todayCell.accuracy
+      todayCell._heatClass = todayCell.questions === 0 ? '' : todayCell.questions <= 5 ? 'lv1' : todayCell.questions <= 15 ? 'lv2' : todayCell.questions <= 30 ? 'lv3' : 'lv4'
+    }
+
+    return cells
+  },
+
+  _chunkHeatmapWeeks(cells) {
+    const weeks = []
+    for (let i = 0; i < cells.length; i += 7) {
+      weeks.push({ key: 'w' + i, days: cells.slice(i, i + 7) })
+    }
+    return weeks
+  },
+
+  _calcYearlyHeatmapMeta(cells) {
+    const activeDays = cells.filter(item => item.questions > 0).length
+    const totalQuestions = cells.reduce((sum, item) => sum + item.questions, 0)
+    const bestDay = cells.reduce((best, item) => item.questions > best.questions ? item : best, { questions: 0, date: '' })
+    return {
+      activeDays,
+      totalQuestions,
+      bestDayText: bestDay.questions ? `${bestDay._shortDate} · ${bestDay.questions}题` : '暂无记录',
+      summaryText: `过去365天活跃${activeDays}天，累计完成${totalQuestions}题，最高单日${bestDay.questions || 0}题。`,
+    }
+  },
+
+  _buildBadgeWall(overview, trendMeta, forgetting) {
+    const total = overview.total_questions || 0
+    const streak = overview.consecutive_days || 0
+    const accuracy = overview._accuracyPct || 0
+    const mastered = overview.mastered_count || 0
+    const due = overview.due_review_count || 0
+    return [
+      { key: 'first', title: '首次学习', desc: '完成第一道题', unlocked: total > 0, progressText: total > 0 ? '已解锁' : '0/1' },
+      { key: 'streak7', title: '连续7天', desc: '保持一周学习节奏', unlocked: streak >= 7, progressText: `${Math.min(streak, 7)}/7天` },
+      { key: 'hundred', title: '完成100题', desc: '建立刷题手感', unlocked: total >= 100, progressText: `${Math.min(total, 100)}/100题` },
+      { key: 'thousand', title: '完成1000题', desc: '进入高强度训练', unlocked: total >= 1000, progressText: `${Math.min(total, 1000)}/1000题` },
+      { key: 'accuracy90', title: '正确率90%', desc: '稳定高质量输出', unlocked: accuracy >= 90 && total >= 30, progressText: `${accuracy}%` },
+      { key: 'review-clear', title: '清空复习', desc: '今日复习全部完成', unlocked: due === 0 && total > 0, progressText: due === 0 && total > 0 ? '已完成' : `${due}题待复习` },
+      { key: 'active-month', title: '活跃30天', desc: '形成长期学习习惯', unlocked: (trendMeta.activeDays || 0) >= 30, progressText: `${Math.min(trendMeta.activeDays || 0, 30)}/30天` },
+      { key: 'master100', title: '掌握100题', desc: '错题转化为能力', unlocked: mastered >= 100, progressText: `${Math.min(mastered, 100)}/100题` },
+    ]
+  },
+
+  _buildLearningProfile(overview, subjects, trendMeta, forgetting, behavior) {
+    const strongest = subjects.reduce((best, item) => item._accPct > best._accPct ? item : best, { _label: '待积累', _accPct: 0 })
+    const weakest = subjects.reduce((worst, item) => item._accPct < worst._accPct ? item : worst, subjects[0] || { _label: '待积累', _accPct: 0 })
+    const total = overview.total_questions || 0
+    const streak = overview.consecutive_days || 0
+    const focus = forgetting._hasRisk
+      ? '优先复盘高频遗忘和长期未掌握题'
+      : (overview.due_review_count > 0 ? '先完成今日复习，再补充新题训练' : '保持当前节奏，适合提高题量')
+    const rhythm = trendMeta.activeDays >= 5 ? '节奏稳定' : (trendMeta.activeDays > 0 ? '节奏起步' : '等待数据')
+
+    return {
+      title: total > 0 ? 'AI学习画像' : '学习画像待生成',
+      summary: total > 0
+        ? `${rhythm}，累计${total}题，连续学习${streak}天。`
+        : '开始刷题后会自动生成优势、弱项和下一步建议。',
+      strengths: [
+        strongest._label !== '待积累' ? `${strongest._label}正确率${strongest._accPct}%` : '完成更多题目后识别优势',
+        streak >= 7 ? `连续学习${streak}天，习惯稳定` : `当前连续${streak}天，建议先冲刺7天`,
+      ],
+      weaknesses: [
+        weakest._label !== '待积累' ? `${weakest._label}正确率${weakest._accPct}%` : '暂无明显弱项',
+        forgetting._hasRisk ? `遗忘风险${forgetting._totalRisk}项，需要集中复盘` : '遗忘风险较低，适合巩固提升',
+      ],
+      actions: [
+        focus,
+        behavior.avg_time_sec > 0 ? `平均用时${behavior._avgTimeText}，可做限时训练` : '积累用时数据后会给出速度建议',
+      ],
     }
   },
 
@@ -440,6 +563,13 @@ Page({
   // ─────────────────────────────────────────────
   // HELPERS
   // ─────────────────────────────────────────────
+
+  _fmtDateKey(date) {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  },
 
   _fmtDuration(sec) {
     const s = Math.max(0, sec || 0)
