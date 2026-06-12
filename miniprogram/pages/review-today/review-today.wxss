@@ -5,7 +5,12 @@
   background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
   padding-bottom: 48rpx;
   overflow-x: hidden;
+  animation: page-enter 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+
+.review-hero { animation: card-enter 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.mission-card { animation: card-enter 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) 0.04s both; }
+.question-card { animation: card-enter 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) 0.08s both; }
 
 .animation-fade-in {
   animation: fadeSlideIn 0.58s ease-out;
