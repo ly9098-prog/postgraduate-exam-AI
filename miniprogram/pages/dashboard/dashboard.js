@@ -556,7 +556,11 @@ Page({
       this.loadTrendData(days)
     } else if (this._cachedDashboard && this._cachedYearlyTrends) {
       const processed = this._process(this._cachedDashboard, this._cachedYearlyTrends, this._cachedGrowth)
-      this.setData({ ...processed, trendDays: 7 }, () => this.drawTrendLine())
+      const { yearlyHeatmap, yearlyHeatmapWeeks, yearlyHeatmapMeta, ...coreData } = processed
+      this.setData({ ...coreData, trendDays: 7 }, () => this.drawTrendLine())
+      setTimeout(() => {
+        this.setData({ yearlyHeatmap, yearlyHeatmapWeeks, yearlyHeatmapMeta })
+      }, 60)
     } else {
       this.loadData()
     }
