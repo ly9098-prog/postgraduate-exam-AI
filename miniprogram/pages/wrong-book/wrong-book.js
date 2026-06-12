@@ -23,6 +23,14 @@ Page({
   data: {
     list: [],
     stats: { total: 0 },
+    primaryStatCount: 0,
+    primaryStatLabel: '错题总数',
+    analysis: {
+      sourceLabel: '待积累',
+      weaknessTags: [],
+      radarItems: [],
+      subjectItems: [],
+    },
     page: 1,
     hasMore: false,
     loading: false,
@@ -50,7 +58,12 @@ Page({
   async loadStats() {
     try {
       const stats = await api.get('/wrong-questions/stats')
-      this.setData({ stats })
+      this.setData({
+        stats,
+        primaryStatCount: typeof stats.unmastered === 'number' ? stats.unmastered : (stats.total || 0),
+        primaryStatLabel: typeof stats.unmastered === 'number' ? '待攻克错题' : '错题总数',
+        analysis: this._buildAnalysis(stats, this.data.list),
+      })
     } catch (e) {
       console.error('加载错题统计失败', e)
     }
@@ -67,16 +80,12 @@ Page({
 
       const data = await api.get('/wrong-questions', params)
 
-      const items = (data.items || []).map(item => ({
-        ...item,
-        _subjectLabel: this._subjectLabel(item.subject),
-        _errorTypeLabel: this._errorTypeLabel(item.error_type),
-        _timeLabel: this._timeLabel(item.created_at),
-        _cleanText: item.content ? this._toCleanText(item.content.text || item.content) : '',
-      }))
+      const items = (data.items || []).map(item => this._decorateItem(item))
+      const nextList = reset ? items : [...this.data.list, ...items]
 
       this.setData({
-        list: reset ? items : [...this.data.list, ...items],
+        list: nextList,
+        analysis: this._buildAnalysis(this.data.stats, nextList),
         hasMore: page < data.total_pages,
         page: reset ? 2 : page + 1,
         loading: false,
@@ -113,6 +122,109 @@ Page({
     wx.navigateTo({ url: `/pages/wrong-detail/wrong-detail?id=${id}&ids=${ids}` })
   },
 
+  _decorateItem(item) {
+    const wrongCount = this._positiveNumber(
+      item.wrong_count || item.error_count || item.mistake_count || item.incorrect_count,
+      1
+    )
+    const reviewCount = this._positiveNumber(item.review_count, 0)
+    const lastErrorAt = item.last_wrong_at || item.last_error_at || item.updated_at || item.created_at
+    const mastery = this._masteryProgress(item, reviewCount)
+
+    return {
+      ...item,
+      _subjectLabel: this._subjectLabel(item.subject),
+      _errorTypeLabel: this._errorTypeLabel(item.error_type),
+      _timeLabel: this._timeLabel(item.created_at),
+      _lastErrorLabel: this._timeLabel(lastErrorAt) || '待记录',
+      _wrongCount: wrongCount,
+      _reviewCount: reviewCount,
+      _masteryPercent: mastery.percent,
+      _masteryLabel: mastery.label,
+      _cleanText: item.content ? this._toCleanText(item.content.text || item.content) : '',
+    }
+  },
+
+  _buildAnalysis(stats = {}, list = []) {
+    const errorRows = this._rowsFromStats(stats, ['by_error_type', 'error_types', 'errors'])
+    const subjectRows = this._rowsFromStats(stats, ['by_subject', 'subjects'])
+    const errorCounts = errorRows.length ? errorRows : this._countsFromList(list, 'error_type')
+    const subjectCounts = subjectRows.length ? subjectRows : this._countsFromList(list, 'subject')
+    const sourceLabel = errorRows.length || subjectRows.length ? '按错因统计' : (list.length ? '按当前列表统计' : '待积累')
+
+    return {
+      sourceLabel,
+      weaknessTags: this._topItems(errorCounts, 5).map(row => ({
+        key: row.key,
+        label: this._errorTypeLabel(row.key),
+        count: row.count,
+      })),
+      radarItems: this._toPercentItems(this._topItems(errorCounts, 4), this._errorTypeLabel.bind(this)),
+      subjectItems: this._toPercentItems(this._topItems(subjectCounts, 4), this._subjectLabel.bind(this)),
+    }
+  },
+
+  _rowsFromStats(stats, keys) {
+    for (const key of keys) {
+      const value = stats && stats[key]
+      if (Array.isArray(value)) {
+        return value.map(row => ({
+          key: row.key || row.type || row.error_type || row.subject || row.name || row.label || '',
+          count: this._positiveNumber(row.count || row.total || row.value, 0),
+        })).filter(row => row.key && row.count > 0)
+      }
+      if (value && typeof value === 'object') {
+        return Object.keys(value).map(k => ({ key: k, count: this._positiveNumber(value[k], 0) }))
+          .filter(row => row.key && row.count > 0)
+      }
+    }
+    return []
+  },
+
+  _countsFromList(list, field) {
+    const counts = {}
+    list.forEach(item => {
+      const key = item[field] || 'unknown'
+      counts[key] = (counts[key] || 0) + 1
+    })
+    return Object.keys(counts).map(key => ({ key, count: counts[key] }))
+  },
+
+  _topItems(rows, limit) {
+    return rows
+      .filter(row => row.key && row.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit)
+  },
+
+  _toPercentItems(rows, labelFn) {
+    const max = rows.reduce((m, row) => Math.max(m, row.count), 0) || 1
+    return rows.map(row => ({
+      key: row.key,
+      label: labelFn(row.key),
+      count: row.count,
+      percent: Math.max(12, Math.round((row.count / max) * 100)),
+      height: Math.max(46, Math.round((row.count / max) * 100) + 34),
+    }))
+  },
+
+  _masteryProgress(item, reviewCount) {
+    const raw = item.mastery_progress || item.mastery_percent || item.mastery
+    if (raw !== undefined && raw !== null && raw !== '') {
+      const percent = Math.max(0, Math.min(100, Number(raw) > 1 ? Number(raw) : Number(raw) * 100))
+      return { percent: Math.round(percent), label: percent >= 80 ? '接近掌握' : percent >= 40 ? '巩固中' : '待攻克' }
+    }
+
+    const percent = Math.min(90, reviewCount * 20)
+    return { percent, label: reviewCount > 0 ? '按复习次数估算' : '待复习' }
+  },
+
+  _positiveNumber(value, fallback) {
+    const n = Number(value)
+    if (!Number.isFinite(n) || n < 0) return fallback
+    return Math.round(n)
+  },
+
   _subjectLabel(s) {
     const map = {
       math2: '数学二', 'math2-calculus': '数学二·高数', 'math2-linalg': '数学二·线代',
@@ -124,13 +236,14 @@ Page({
   },
 
   _errorTypeLabel(t) {
-    const map = { concept_mistake: '概念错误', calculation: '计算错误', careless: '粗心', method: '方法错误', other: '其他' }
+    const map = { concept_mistake: '概念错误', calculation: '计算错误', careless: '粗心', method: '方法错误', other: '其他', unknown: '未分类' }
     return map[t] || t || '未知'
   },
 
   _timeLabel(dateStr) {
     if (!dateStr) return ''
     const d = new Date(dateStr)
+    if (Number.isNaN(d.getTime())) return ''
     const now = new Date()
     const diff = now - d
     const days = Math.floor(diff / 86400000)
