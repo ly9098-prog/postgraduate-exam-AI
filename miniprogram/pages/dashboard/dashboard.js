@@ -113,7 +113,7 @@ Page({
   },
 
   _processSubjects(subjects) {
-    const palette = ['#5B7B9A', '#C49A6B', '#6B9B6B', '#C47A7A', '#7D8CC4', '#8CA7A1']
+    const palette = ['#4F7FFF', '#22C55E', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4']
     const total = subjects.reduce((sum, s) => sum + (s.total_questions || 0), 0)
 
     let startAngle = 0
@@ -132,7 +132,7 @@ Page({
         _sharePct: Math.round(share * 100),
         _accPct: Math.round(acc * 100),
         _accClass: accClass,
-        _accColor: acc >= 0.7 ? '#6B9B6B' : acc >= 0.4 ? '#C49A6B' : '#C47A7A',
+        _accColor: acc >= 0.7 ? '#22C55E' : acc >= 0.4 ? '#F59E0B' : '#EF4444',
         _durationText: this._fmtDuration(s.total_duration_sec || 0),
       }
       startAngle = endAngle
@@ -216,7 +216,7 @@ Page({
 
       // Track ring
       ctx.beginPath()
-      ctx.setStrokeStyle('#EDF1F5')
+      ctx.setStrokeStyle('#E2EAF7')
       ctx.setLineWidth(lineWidth)
       ctx.arc(center, center, radius, 0, Math.PI * 2)
       ctx.stroke()
@@ -225,9 +225,9 @@ Page({
       const startAngle = -Math.PI / 2
       const endAngle = startAngle + Math.PI * 2 * accuracy
       const gradient = ctx.createLinearGradient(0, 0, size, size)
-      gradient.addColorStop(0, '#5B7B9A')
-      gradient.addColorStop(0.5, '#7B9BBA')
-      gradient.addColorStop(1, '#5B7B9A')
+      gradient.addColorStop(0, '#4F7FFF')
+      gradient.addColorStop(0.5, '#6EC1FF')
+      gradient.addColorStop(1, '#4F7FFF')
 
       ctx.beginPath()
       ctx.setStrokeStyle(gradient)
@@ -244,7 +244,7 @@ Page({
         ctx.setFillStyle('#FFFFFF')
         ctx.arc(dotX, dotY, 5, 0, Math.PI * 2)
         ctx.fill()
-        ctx.setStrokeStyle('#5B7B9A')
+        ctx.setStrokeStyle('#4F7FFF')
         ctx.setLineWidth(2)
         ctx.stroke()
       }
@@ -306,7 +306,7 @@ Page({
       ctx.clearRect(0, 0, w, h)
 
       // Grid lines
-      ctx.setStrokeStyle('#EDF1F5')
+      ctx.setStrokeStyle('#E2EAF7')
       ctx.setLineWidth(1)
       for (let i = 0; i <= 3; i++) {
         const y = pad.t + (ch * i) / 3
@@ -317,7 +317,7 @@ Page({
       }
 
       // Y-axis labels
-      ctx.setFillStyle('#9AABBA')
+      ctx.setFillStyle('#8EA0BA')
       ctx.setFontSize(10)
       ctx.fillText(maxQ + '题', 2, pad.t + 10)
       ctx.fillText('0', 8, pad.t + ch + 4)
@@ -340,7 +340,7 @@ Page({
       qPoints.forEach(p => ctx.lineTo(p.x, p.y))
       ctx.lineTo(qPoints[qPoints.length - 1].x, pad.t + ch)
       ctx.closePath()
-      ctx.setFillStyle('rgba(91, 123, 154, 0.08)')
+      ctx.setFillStyle('rgba(79, 127, 255, 0.08)')
       ctx.fill()
 
       // Question line
@@ -349,7 +349,7 @@ Page({
         if (i === 0) ctx.moveTo(p.x, p.y)
         else ctx.lineTo(p.x, p.y)
       })
-      ctx.setStrokeStyle('#5B7B9A')
+      ctx.setStrokeStyle('#4F7FFF')
       ctx.setLineWidth(2.5)
       ctx.stroke()
 
@@ -359,7 +359,7 @@ Page({
         ctx.setFillStyle('#FFFFFF')
         ctx.arc(p.x, p.y, 4, 0, Math.PI * 2)
         ctx.fill()
-        ctx.setStrokeStyle('#5B7B9A')
+        ctx.setStrokeStyle('#4F7FFF')
         ctx.setLineWidth(2)
         ctx.stroke()
       })
@@ -372,7 +372,7 @@ Page({
           if (i === 0) ctx.moveTo(p.x, p.y)
           else ctx.lineTo(p.x, p.y)
         })
-        ctx.setStrokeStyle('rgba(107, 155, 107, 0.7)')
+        ctx.setStrokeStyle('rgba(34, 197, 94, 0.72)')
         ctx.setLineWidth(2)
         ctx.stroke()
 
@@ -383,7 +383,7 @@ Page({
             ctx.setFillStyle('#FFFFFF')
             ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2)
             ctx.fill()
-            ctx.setStrokeStyle('rgba(107, 155, 107, 0.8)')
+            ctx.setStrokeStyle('rgba(34, 197, 94, 0.82)')
             ctx.setLineWidth(1.5)
             ctx.stroke()
           }
@@ -395,7 +395,7 @@ Page({
         const showLabel = count <= 7 || i % Math.ceil(count / 7) === 0 || i === count - 1
         if (showLabel) {
           const x = pad.l + step * i
-          ctx.setFillStyle('#9AABBA')
+          ctx.setFillStyle('#8EA0BA')
           ctx.setFontSize(9)
           ctx.setTextAlign('center')
           ctx.fillText(t._shortDate, x, pad.t + ch + 18)
