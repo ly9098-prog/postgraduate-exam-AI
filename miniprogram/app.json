@@ -16,10 +16,10 @@
     "pages/pomodoro-stats/pomodoro-stats"
   ],
   "window": {
-    "navigationBarBackgroundColor": "#5B7B9A",
+    "navigationBarBackgroundColor": "#4F7FFF",
     "navigationBarTitleText": "MemoGrad",
     "navigationBarTextStyle": "white",
-    "backgroundColor": "#F7F5F0"
+    "backgroundColor": "#EEF5FF"
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",

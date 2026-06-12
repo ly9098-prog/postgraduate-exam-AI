@@ -3,7 +3,7 @@
 .home-page {
   min-height: 100vh;
   padding-bottom: 52rpx;
-  background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 58%, #F7F5F0 100%);
+  background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
   overflow-x: hidden;
 }
 
@@ -234,7 +234,7 @@
   display: block;
   margin-top: 6rpx;
   font-size: 24rpx;
-  color: #6B7B8D;
+  color: #617089;
   line-height: 1.45;
 }
 
@@ -343,8 +343,8 @@
   margin-bottom: 14rpx;
   display: flex;
   align-items: center;
-  box-shadow: 0 8rpx 26rpx rgba(43, 60, 80, 0.06);
-  border: 1rpx solid rgba(232, 229, 224, 0.78);
+  box-shadow: 0 8rpx 26rpx rgba(42, 84, 160, 0.08);
+  border: 1rpx solid rgba(226, 234, 247, 0.92);
 }
 
 .action-info {
@@ -356,13 +356,13 @@
   font-size: 29rpx;
   font-weight: 800;
   line-height: 1.4;
-  color: #2D3E50;
+  color: #18233A;
   display: block;
 }
 
 .action-desc {
   font-size: 24rpx;
-  color: #6B7B8D;
+  color: #617089;
   line-height: 1.45;
   margin-top: 4rpx;
   display: block;

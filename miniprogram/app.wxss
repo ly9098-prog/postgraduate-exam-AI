@@ -4,8 +4,8 @@
 /* 全局基础 */
 page {
   min-height: 100%;
-  background-color: #F7F5F0;
-  color: #2D3E50;
+  background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
+  color: #18233A;
   font-size: 28rpx;
   line-height: 1.5;
   box-sizing: border-box;
