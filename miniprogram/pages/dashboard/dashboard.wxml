@@ -27,6 +27,7 @@
               <text class="ring-label">总正确率</text>
             </view>
           </view>
+          <text class="sr-summary">总正确率 {{overview._accuracyPct || '0'}}%。今日刷题 {{overview.today_questions || 0}} 题，正确 {{overview.today_correct || 0}} 题，用时 {{overview._todayDurationText || '0min'}}。</text>
           <view class="t1-stats">
             <text class="t1-eyebrow">今日学习</text>
             <view class="t1-stat-row">
@@ -188,7 +189,10 @@
       <block wx:if="{{subjects.length > 0}}">
         <!-- Donut + Legend -->
         <view class="card subject-card">
-          <text class="chart-summary">学科分布共{{subjectTotal || 0}}题，右侧列出各科占比与正确率。</text>
+          <text class="chart-summary">学科分布共{{subjectTotal || 0}}题。</text>
+          <view class="sr-summary">
+            <text wx:for="{{subjects}}" wx:key="subject">{{item._label}}占比{{item._sharePct}}%、正确率{{item._accPct}}%。 </text>
+          </view>
           <view class="subject-top">
             <view class="donut-wrap">
               <canvas class="donut-canvas" canvas-id="subject-donut" id="subject-donut"></canvas>
@@ -215,6 +219,9 @@
           <view class="card-label-row">
             <text class="card-label">各科正确率</text>
             <text class="card-label-hint">点击查看详情</text>
+          </view>
+          <view class="sr-summary">
+            <text wx:for="{{subjects}}" wx:key="subject">{{item._label}}共{{item.total_questions}}题、正确率{{item._accPct}}%。 </text>
           </view>
           <view class="subj-bars">
             <view class="subj-bar-row" wx:for="{{subjects}}" wx:key="subject" data-subject="{{item.subject}}" bindtap="onSubjectTap">
