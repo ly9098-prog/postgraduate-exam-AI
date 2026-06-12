@@ -100,15 +100,30 @@ Page({
     _accuracyStyle: '',
     entryDone: false,
     enableMathImage: false,
+    _accuracyText: '0%',
+    _reviewGroupCountText: '0',
 
     // 进度
     groupProgress: 0,
+
+    showCelebration: false,
+    celebrationIcon: '✓',
+    celebrationTitle: '',
+    celebrationDetail: '',
+    celebrationMotto: '',
   },
 
   onLoad() {
     this.setData({ enableMathImage: config.enableMathImage || false })
     this._setDateStr()
     this._loadEntry()
+  },
+
+  onUnload() {
+    if (this._celebrationTimer) {
+      clearTimeout(this._celebrationTimer)
+      this._celebrationTimer = null
+    }
   },
 
   _setDateStr() {
@@ -162,6 +177,8 @@ Page({
         _ringStyle: this._calcRingStyle(stats),
         _motivationMsg,
         entryDone,
+        _accuracyLast7dText: `${Math.round((stats.accuracy_last_7d || 0) * 100)}%`,
+        _reviewGroupCountText: stats.remaining_today > 0 ? Math.ceil(stats.remaining_today / this.data.groupSize) : 0,
       })
     } catch (e) {
       console.error('加载复习统计失败', e)
@@ -170,7 +187,12 @@ Page({
   },
 
   selectGroupSize(e) {
-    this.setData({ groupSize: parseInt(e.currentTarget.dataset.size) || 10 })
+    const groupSize = parseInt(e.currentTarget.dataset.size) || 10
+    const stats = this.data.stats
+    this.setData({
+      groupSize,
+      _reviewGroupCountText: stats && stats.remaining_today > 0 ? Math.ceil(stats.remaining_today / groupSize) : 0,
+    })
   },
 
   async startReview() {
@@ -193,6 +215,7 @@ Page({
         groupQuestions: groups[0] || [],
         answers: {},
         currentIndex: 0,
+        _answeredCount: 0,
         allGroupResults: [],
         totalCorrect: 0,
         totalWrong: 0,
@@ -201,7 +224,8 @@ Page({
       this._showQuestion(0)
     } catch (e) {
       console.error('加载复习题目失败', e)
-      this.setData({ practiceLoading: false })
+      this.setData({ practiceLoading: false, phase: 'entry' })
+      this._loadEntry()
       wx.showToast({ title: '加载失败', icon: 'none' })
     }
   },
@@ -257,16 +281,20 @@ Page({
       _stemNeedsRich: stemNeedsRich,
       _stemHtml: stemHtml,
       _stemSegments: stemSegments,
+      _stemPreview: stemText.length > 60 ? `${stemText.slice(0, 60)}...` : stemText,
+      _subjectLabel: this.subjectLabel(q.subject),
     }
   },
 
   _showQuestion(index) {
     const q = this.data.groupQuestions[index]
     if (!q) return
+    const answeredCount = Object.keys(this.data.answers || {}).length
     this.setData({
       currentIndex: index,
       currentQuestion: q,
       optionKeys: q._optionKeys,
+      _answeredCount: answeredCount,
     })
   },
 
@@ -284,7 +312,7 @@ Page({
     } else {
       answers[q.schedule_id] = opt
     }
-    this.setData({ answers })
+    this.setData({ answers, _answeredCount: Object.keys(answers).length })
 
     // (the WXML template reads answers directly from data)
   },
@@ -398,12 +426,18 @@ Page({
           groupQuestions: groups[currentGroupIdx] || [],
           answers,
           currentIndex: 0,
+          _answeredCount: Object.keys(answers).length,
         })
         if (groups[currentGroupIdx] && groups[currentGroupIdx].length > 0) {
           this._showQuestion(0)
         } else {
           // No groups left → all mastered
-          this.setData({ phase: 'final-result', totalCorrect: 0, totalWrong: 0, _accuracyStyle: '' })
+          this.setData({
+            phase: 'final-result',
+            _accuracyStyle: this._calcAccuracyStyle(this.data.totalCorrect, this.data.allGroupResults.length),
+            _accuracyText: this.data.allGroupResults.length > 0 ? `${Math.round(this.data.totalCorrect / this.data.allGroupResults.length * 100)}%` : '0%',
+          })
+          this._showFinalCelebration()
         }
       } else {
         // Adjust current index if needed
@@ -417,10 +451,16 @@ Page({
           groupQuestions: groupQuestions.length > 0 ? groupQuestions : groups[currentGroupIdx] || [],
           answers,
           currentIndex,
+          _answeredCount: Object.keys(answers).length,
         })
         // All questions mastered → go to final result
         if (groups.length === 0 || groups.every(g => g.length === 0)) {
-          this.setData({ phase: 'final-result', totalCorrect: 0, totalWrong: 0, _accuracyStyle: '' })
+          this.setData({
+            phase: 'final-result',
+            _accuracyStyle: this._calcAccuracyStyle(this.data.totalCorrect, this.data.allGroupResults.length),
+            _accuracyText: this.data.allGroupResults.length > 0 ? `${Math.round(this.data.totalCorrect / this.data.allGroupResults.length * 100)}%` : '0%',
+          })
+          this._showFinalCelebration()
           return
         }
         if (groupQuestions.length > 0) {
@@ -482,6 +522,7 @@ Page({
         totalWrong,
         unansweredCount: unanswered.length,
       })
+      this._showGroupCelebration(groupCorrect, groupQuestions.length)
     } catch (e) {
       console.error('提交失败', e)
       wx.showToast({ title: '提交失败，请重试', icon: 'none' })
@@ -499,7 +540,9 @@ Page({
       this.setData({
         phase: 'final-result',
         _accuracyStyle: this._calcAccuracyStyle(totalCorrect, allGroupResults.length),
+        _accuracyText: allGroupResults.length > 0 ? `${Math.round(totalCorrect / allGroupResults.length * 100)}%` : '0%',
       })
+      this._showFinalCelebration()
       return
     }
     this.setData({
@@ -513,6 +556,48 @@ Page({
       groupWrong: 0,
     })
     this._showQuestion(0)
+  },
+
+  /* ==================== 完成反馈 ==================== */
+
+  _showGroupCelebration(correct, total) {
+    this._showCelebration({
+      celebrationIcon: correct >= total ? '✓' : '↗',
+      celebrationTitle: `第 ${this.data.currentGroupIdx + 1} 组复盘完成`,
+      celebrationDetail: `答对 ${correct}/${total} 题`,
+      celebrationMotto: correct >= total ? '这组很稳，继续保持节奏' : '错题已暴露，复盘后会更牢固',
+    }, 2200)
+  },
+
+  _showFinalCelebration() {
+    const total = this.data.allGroupResults.length
+    const correct = this.data.totalCorrect
+    this._showCelebration({
+      celebrationIcon: '章',
+      celebrationTitle: '今日复习完成',
+      celebrationDetail: `完成 ${total} 题 · 答对 ${correct} 题`,
+      celebrationMotto: '记忆曲线已更新，今天的积累会在明天生效',
+    }, 3200)
+  },
+
+  _showCelebration(copy, duration) {
+    if (this._celebrationTimer) clearTimeout(this._celebrationTimer)
+    this.setData({
+      ...copy,
+      showCelebration: true,
+    })
+    this._celebrationTimer = setTimeout(() => {
+      this.setData({ showCelebration: false })
+      this._celebrationTimer = null
+    }, duration)
+  },
+
+  dismissCelebration() {
+    if (this._celebrationTimer) {
+      clearTimeout(this._celebrationTimer)
+      this._celebrationTimer = null
+    }
+    this.setData({ showCelebration: false })
   },
 
   /* ==================== 完成复习 ==================== */
