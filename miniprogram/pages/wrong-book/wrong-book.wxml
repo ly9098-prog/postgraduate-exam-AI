@@ -78,16 +78,36 @@
       </view>
     </view>
 
+    <view class="focus-diagnosis" wx:if="{{analysis.radarItems.length > 0}}">
+      <view class="focus-copy">
+        <text class="focus-kicker">AI 复盘优先级</text>
+        <text class="focus-title">{{analysis.focusInsight}}</text>
+        <text class="focus-desc">{{analysis.radarAxisText}}</text>
+      </view>
+      <view class="focus-score">{{analysis.radarItems[0].percent}}</view>
+    </view>
+
     <view class="map-grid">
-      <view class="map-block">
-        <text class="map-title">能力图谱</text>
-        <view wx:if="{{analysis.radarItems.length > 0}}" class="radar-wrap">
-          <view wx:for="{{analysis.radarItems}}" wx:key="key" class="radar-row">
-            <text class="radar-label">{{item.label}}</text>
-            <view class="radar-track">
-              <view class="radar-fill" style="width: {{item.percent}}%;"></view>
+      <view class="map-block radar-block">
+        <text class="map-title">能力雷达</text>
+        <view wx:if="{{analysis.radarItems.length > 0}}" class="radar-panel">
+          <view class="radar-chart">
+            <view class="radar-ring radar-ring-one"></view>
+            <view class="radar-ring radar-ring-two"></view>
+            <view class="radar-cross radar-cross-x"></view>
+            <view class="radar-cross radar-cross-y"></view>
+            <view class="radar-shape" style="{{analysis.radarPolygonStyle}}"></view>
+            <text class="radar-axis radar-axis-top">{{analysis.radarItems[0].label}}</text>
+            <text class="radar-axis radar-axis-right">{{analysis.radarItems[1] ? analysis.radarItems[1].label : '巩固'}}</text>
+            <text class="radar-axis radar-axis-bottom">{{analysis.radarItems[2] ? analysis.radarItems[2].label : '复盘'}}</text>
+            <text class="radar-axis radar-axis-left">{{analysis.radarItems[3] ? analysis.radarItems[3].label : '掌握'}}</text>
+          </view>
+          <view class="radar-legend">
+            <view wx:for="{{analysis.radarItems}}" wx:key="key" class="radar-legend-item">
+              <text class="legend-dot"></text>
+              <text class="legend-label">{{item.label}}</text>
+              <text class="legend-count">{{item.count}}题</text>
             </view>
-            <text class="radar-count">{{item.count}}</text>
           </view>
         </view>
         <view wx:else class="mini-pending">待积累</view>
