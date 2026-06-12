@@ -68,6 +68,7 @@
     </view>
     <view wx:else class="analysis-pending">错题数据积累后，将按错因生成弱项标签</view>
 
+    <text class="sr-summary">复盘建议：<text wx:for="{{analysis.actionPlan}}" wx:key="key">{{item.title}}——{{item.desc}}。 </text></text>
     <view class="action-plan" wx:if="{{analysis.actionPlan.length > 0}}">
       <view wx:for="{{analysis.actionPlan}}" wx:key="key" class="plan-item">
         <text class="plan-dot"></text>
@@ -91,6 +92,7 @@
       <view class="map-block radar-block">
         <text class="map-title">能力雷达</text>
         <view wx:if="{{analysis.radarItems.length > 0}}" class="radar-panel">
+          <text class="sr-summary">能力雷达：{{analysis.radarAxisText}}</text>
           <view class="radar-chart">
             <view class="radar-ring radar-ring-one"></view>
             <view class="radar-ring radar-ring-two"></view>
@@ -115,6 +117,7 @@
 
       <view class="map-block">
         <text class="map-title">学科分布</text>
+        <text class="sr-summary">学科分布：<text wx:for="{{analysis.subjectItems}}" wx:key="key">{{item.label}}{{item.count}}题 </text></text>
         <view wx:if="{{analysis.subjectItems.length > 0}}" class="subject-map">
           <view wx:for="{{analysis.subjectItems}}" wx:key="key" class="subject-dot" style="height: {{item.height}}rpx;">
             <text class="subject-count">{{item.count}}</text>
