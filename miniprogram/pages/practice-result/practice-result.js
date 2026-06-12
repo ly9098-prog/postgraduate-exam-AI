@@ -15,6 +15,10 @@ Page({
     celebrationTitle: '',
     celebrationDetail: '',
     celebrationMotto: '',
+    celebrationRewardText: '',
+    celebrationType: 'steady',
+    growthTitle: '',
+    growthDesc: '',
     subjectDisplay: '练习',
   },
 
@@ -49,7 +53,7 @@ Page({
       subject: options.subject || '',
       subjectDisplay: this.subjectLabel(options.subject || '') || '练习',
       results,
-      ...this._celebrationCopy(passRate, correct, total),
+      ...this._celebrationCopy(passRate, correct, wrong, total),
     })
     this._showCelebration()
   },
@@ -61,13 +65,17 @@ Page({
     return `${m} 分 ${ss} 秒`
   },
 
-  _celebrationCopy(passRate, correct, total) {
+  _celebrationCopy(passRate, correct, wrong, total) {
     if (passRate >= 80) {
       return {
         celebrationIcon: '✓',
         celebrationTitle: '高质量挑战完成',
         celebrationDetail: `答对 ${correct}/${total} 题 · 正确率 ${passRate}%`,
         celebrationMotto: '这组表现很稳，继续把优势变成习惯',
+        celebrationRewardText: `专注星光 +${Math.max(1, correct)}`,
+        celebrationType: 'excellent',
+        growthTitle: `练习经验 +${Math.max(1, total)}`,
+        growthDesc: '高正确率完成挑战，今日成长能量已点亮',
       }
     }
     if (passRate >= 50) {
@@ -76,6 +84,10 @@ Page({
         celebrationTitle: '完成一次有效练习',
         celebrationDetail: `答对 ${correct}/${total} 题 · 正确率 ${passRate}%`,
         celebrationMotto: '复盘后再来一组，薄弱点会越来越少',
+        celebrationRewardText: `复盘能量 +${Math.max(1, correct)}`,
+        celebrationType: 'steady',
+        growthTitle: `练习经验 +${Math.max(1, total)}`,
+        growthDesc: '本组薄弱点已记录，继续巩固会更稳',
       }
     }
     return {
@@ -83,6 +95,10 @@ Page({
       celebrationTitle: '薄弱点已暴露',
       celebrationDetail: `答对 ${correct}/${total} 题 · 正确率 ${passRate}%`,
       celebrationMotto: '先把错题吃透，这次练习就很有价值',
+      celebrationRewardText: '错题诊断 +1',
+      celebrationType: 'focus',
+      growthTitle: `复盘经验 +${Math.max(1, wrong || total)}`,
+      growthDesc: '错题已进入复盘路径，下一组会更有方向',
     }
   },
 
