@@ -79,6 +79,16 @@ Page({
     this.setData({ aiDiagnosisLoading: true, aiDiagnosis: null })
     try {
       const diagnosis = await api.get('/stats/ai-diagnosis')
+      if (diagnosis) {
+        for (const listKey of ['weak_points', 'strong_points']) {
+          if (diagnosis[listKey]) {
+            diagnosis[listKey] = diagnosis[listKey].map(item => ({
+              ...item,
+              _accuracyPercent: Math.round((item.accuracy || 0) * 100),
+            }))
+          }
+        }
+      }
       if (diagnosis && (diagnosis.weak_points.length > 0 || diagnosis.strong_points.length > 0 || diagnosis.learning_suggestions.length > 0 || diagnosis.summary)) {
         this.setData({ aiDiagnosis: diagnosis, aiDiagnosisLoading: false })
       } else {
