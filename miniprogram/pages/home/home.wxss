@@ -9,11 +9,7 @@
 
 .welcome-section {
   margin: 24rpx 24rpx 12rpx;
-  border-radius: 34rpx;
   position: relative;
-  overflow: hidden;
-  background: linear-gradient(145deg, #4F7FFF 0%, #6EC1FF 52%, #8AAFC8 100%);
-  box-shadow: 0 18rpx 46rpx rgba(79, 127, 255, 0.22);
 }
 
 .welcome-glass {
@@ -141,10 +137,6 @@
 .mission-card {
   margin: -4rpx 24rpx 22rpx;
   padding: 28rpx;
-  border-radius: 30rpx;
-  background: rgba(255,255,255,0.88);
-  border: 1rpx solid rgba(255,255,255,0.72);
-  box-shadow: 0 14rpx 38rpx rgba(79, 127, 255, 0.12);
   backdrop-filter: blur(18rpx);
   -webkit-backdrop-filter: blur(18rpx);
 }
@@ -286,10 +278,9 @@
   border-radius: 22rpx;
   background: rgba(255,255,255,0.24);
   border: 1rpx solid rgba(255,255,255,0.28);
-  text-align: center;
-  line-height: 68rpx;
-  font-size: 30rpx;
-  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .route-title,
@@ -337,14 +328,10 @@
 
 .action-card {
   min-height: 104rpx;
-  background: rgba(255,255,255,0.92);
-  border-radius: 24rpx;
   padding: 24rpx 28rpx;
   margin-bottom: 14rpx;
   display: flex;
   align-items: center;
-  box-shadow: 0 8rpx 26rpx rgba(42, 84, 160, 0.08);
-  border: 1rpx solid rgba(226, 234, 247, 0.92);
 }
 
 .action-info {
@@ -382,4 +369,16 @@
   color: #4F7FFF;
   margin-left: 16rpx;
   flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-section::before,
+  .welcome-section::after,
+  .mission-fill,
+  .route-card,
+  .route-pressed {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
 }

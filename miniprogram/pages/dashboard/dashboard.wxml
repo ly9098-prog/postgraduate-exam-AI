@@ -50,7 +50,7 @@
         <view class="t1-compact-row">
           <view class="t1-compact-card streak-card">
             <view class="compact-icon-wrap streak-icon-wrap">
-              <text class="compact-icon">🔥</text>
+              <text class="compact-icon line-icon icon-trend"></text>
             </view>
             <text class="compact-num">{{overview.consecutive_days || 0}}</text>
             <text class="compact-label">连续学习</text>
@@ -58,7 +58,7 @@
           </view>
           <view class="t1-compact-card due-card">
             <view class="compact-icon-wrap due-icon-wrap">
-              <text class="compact-icon">📝</text>
+              <text class="compact-icon line-icon icon-list"></text>
             </view>
             <text class="compact-num">{{overview.due_review_count || 0}}</text>
             <text class="compact-label">待复习</text>
@@ -66,7 +66,7 @@
           </view>
           <view class="t1-compact-card total-card">
             <view class="compact-icon-wrap total-icon-wrap">
-              <text class="compact-icon">📊</text>
+              <text class="compact-icon line-icon icon-chart"></text>
             </view>
             <text class="compact-num">{{overview.total_questions || 0}}</text>
             <text class="compact-label">累计刷题</text>
@@ -95,6 +95,7 @@
         <view class="trend-chart-wrap">
           <canvas class="trend-canvas" canvas-id="trend-line" id="trend-line"></canvas>
         </view>
+        <text class="chart-summary">近{{trendDays}}天累计做题{{trendMeta.totalQuestions || 0}}题，平均正确率{{trendMeta.avgAccuracyText || '0%'}}，活跃{{trendMeta.activeDays || 0}}天。</text>
         <view class="trend-meta">
           <view class="trend-meta-item">
             <text class="trend-meta-val">{{trendMeta.totalQuestions || 0}}</text>
@@ -117,7 +118,7 @@
         </view>
       </view>
       <view class="empty-card" wx:if="{{trends.length === 0}}">
-        <text class="empty-icon">📈</text>
+        <text class="empty-icon line-icon icon-trend"></text>
         <text class="empty-title">暂无趋势数据</text>
         <text class="empty-desc">坚持练习后会生成学习趋势</text>
       </view>
@@ -137,6 +138,7 @@
       <block wx:if="{{subjects.length > 0}}">
         <!-- Donut + Legend -->
         <view class="card subject-card">
+          <text class="chart-summary">学科分布共{{subjectTotal || 0}}题，右侧列出各科占比与正确率。</text>
           <view class="subject-top">
             <view class="donut-wrap">
               <canvas class="donut-canvas" canvas-id="subject-donut" id="subject-donut"></canvas>
@@ -183,7 +185,7 @@
         </view>
       </block>
       <view class="empty-card" wx:if="{{subjects.length === 0}}">
-        <text class="empty-icon">📚</text>
+        <text class="empty-icon line-icon icon-book"></text>
         <text class="empty-title">暂无学科数据</text>
         <text class="empty-desc">开始练习后会生成学科分布</text>
       </view>
@@ -204,7 +206,7 @@
         <!-- 高频遗忘 -->
         <view class="mastery-card mc-danger">
           <view class="mc-icon-wrap">
-            <text class="mc-icon">⚠️</text>
+            <text class="mc-icon line-icon icon-alert"></text>
           </view>
           <text class="mc-num">{{forgetting.high_forget_count || 0}}</text>
           <text class="mc-label">高频遗忘</text>
@@ -213,7 +215,7 @@
         <!-- 长期未掌握 -->
         <view class="mastery-card mc-warning">
           <view class="mc-icon-wrap">
-            <text class="mc-icon">🔒</text>
+            <text class="mc-icon line-icon icon-lock"></text>
           </view>
           <text class="mc-num">{{forgetting.stuck_questions || 0}}</text>
           <text class="mc-label">长期未掌握</text>
@@ -222,7 +224,7 @@
         <!-- 假掌握 -->
         <view class="mastery-card mc-primary">
           <view class="mc-icon-wrap">
-            <text class="mc-icon">🎯</text>
+            <text class="mc-icon line-icon icon-target"></text>
           </view>
           <text class="mc-num">{{forgetting._pseudoMasteredCount || 0}}</text>
           <text class="mc-label">假掌握</text>
