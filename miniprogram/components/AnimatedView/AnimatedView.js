@@ -107,6 +107,7 @@ Component({
     growthLevelPct: { type: Number, value: 0 },
     growthDesc: { type: String, value: '' },
     duration: { type: Number, value: 2800 },
+    theme: { type: String, value: 'light' },
     gifSrc: { type: String, value: '' },
     pngSrc: { type: String, value: '' },
     enableLottie: { type: Boolean, value: true },

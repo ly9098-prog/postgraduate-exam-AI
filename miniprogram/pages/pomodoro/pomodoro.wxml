@@ -133,19 +133,19 @@
           <!-- Controls: running -->
           <view class="controls-row" wx:if="{{phase === 'running'}}">
             <view class="ctrl-btn ctrl-secondary" catchtap="interruptSession">
-              <text class="ctrl-icon line-icon icon-stop" style="width:32rpx;height:32rpx;color:#637394;"></text>
+              <view class="ctrl-icon line-icon icon-stop" style="color:#637394;"></view>
               <text class="ctrl-label">结束</text>
             </view>
             <view class="ctrl-btn ctrl-primary" catchtap="togglePause">
-              <text wx:if="{{isPaused}}" class="ctrl-icon line-icon icon-play" style="width:32rpx;height:32rpx;color:#FFFFFF;"></text>
-              <text wx:else class="ctrl-icon line-icon icon-pause" style="width:32rpx;height:32rpx;color:#FFFFFF;"></text>
+              <view wx:if="{{isPaused}}" class="ctrl-icon line-icon icon-play" style="color:#FFFFFF;"></view>
+              <view wx:else class="ctrl-icon line-icon icon-pause" style="color:#FFFFFF;"></view>
               <text class="ctrl-label">{{isPaused ? '继续' : '暂停'}}</text>
             </view>
           </view>
           <!-- Controls: break -->
           <view class="controls-row" wx:if="{{phase === 'break'}}">
             <view class="ctrl-btn ctrl-primary" catchtap="skipBreak">
-              <text class="ctrl-icon line-icon icon-check" style="width:32rpx;height:32rpx;color:#FFFFFF;"></text>
+              <view class="ctrl-icon line-icon icon-check" style="color:#FFFFFF;"></view>
               <text class="ctrl-label">跳过休息</text>
             </view>
           </view>
@@ -157,32 +157,20 @@
     <view class="bottom-bar">
       <view class="stats-link" catchtap="goStats">
         <text>学习统计</text>
-        <text class="stats-arrow line-icon icon-chevron-right" style="width:26rpx;height:26rpx;color:#637394;"></text>
+        <view class="stats-arrow line-icon icon-chevron-right" style="color:#637394;"></view>
       </view>
     </view>
   </view>
 
-  <!-- ===== CELEBRATION OVERLAY ===== -->
-  <block wx:if="{{showCelebration}}">
-    <view class="celebration-overlay" catchtap="confirmCelebration">
-      <view class="celeb-bg"></view>
-      <view class="celeb-content">
-        <view class="celeb-check-wrap">
-          <text class="celeb-check line-icon icon-check" style="width:52rpx;height:52rpx;color:#FFFFFF;"></text>
-        </view>
-        <text class="celeb-title">完成一个番茄钟</text>
-        <text class="celeb-detail">专注 {{workDuration}} 分钟</text>
-        <text class="celeb-motto">{{celebrationMotto}}</text>
-        <text class="celeb-tap-hint">点击继续</text>
-      </view>
-      <view class="particle-container">
-        <view class="particle p1"></view>
-        <view class="particle p2"></view>
-        <view class="particle p3"></view>
-        <view class="particle p4"></view>
-        <view class="particle p5"></view>
-        <view class="particle p6"></view>
-      </view>
-    </view>
-  </block>
+  <!-- ===== CELEBRATION OVERLAY (Lottie) ===== -->
+  <animated-view
+    show="{{showCelebration}}"
+    type="excellent"
+    theme="dark"
+    title="完成一个番茄钟"
+    detail="专注 {{workDuration}} 分钟"
+    motto="{{celebrationMotto}}"
+    duration="{{3500}}"
+    bind:done="dismissCelebration"
+  />
 </view>
