@@ -1,4 +1,5 @@
 const api = require('../../utils/api')
+const config = require('../../config')
 
 const SUBJECTS = [
   { key: 'data_structure', label: '数据结构', emoji: '📃', color: '#5B7B9A' },
@@ -166,11 +167,7 @@ Page({
   },
 
   onExamTap() {
-    // Only allow debug mode in local dev environment
-    if (this._debugAllowed == null) {
-      try { this._debugAllowed = wx.getAccountInfoSync().miniProgram.envVersion === 'develop' } catch (_) { this._debugAllowed = false }
-    }
-    if (!this._debugAllowed) return
+    if (!config.DEBUG_MODE) return
     this._debugTapCount++
     if (this._debugTapTimer) clearTimeout(this._debugTapTimer)
     if (this._debugTapCount >= 5) {
