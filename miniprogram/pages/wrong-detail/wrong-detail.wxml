@@ -1,6 +1,5 @@
 <view wx:if="{{loading}}" class="loading-wrap">
-  <view class="loading-spinner"></view>
-  <text class="loading-text">正在加载错题详情...</text>
+  <loading-lottie text="正在加载错题详情..." size="large" />
 </view>
 
 <view class="page" wx:if="{{!loading && wq}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">

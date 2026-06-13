@@ -290,8 +290,7 @@
 
   <!-- 加载 -->
   <view class="loading-wrap" wx:if="{{started && loading}}">
-    <view class="loading-spinner"></view>
-    <text class="loading-text">正在生成挑战题组...</text>
+    <loading-lottie text="正在生成挑战题组..." size="large" />
   </view>
 
   <!-- ==================== 答题卡弹窗 ==================== -->

@@ -10,8 +10,7 @@
   <text class="page-subtitle" wx:if="{{batch}}">已提交审核，管理员审核后会加入题库 · {{batch.source_file || batch.batch_id}}</text>
 
   <view class="loading-wrap" wx:if="{{loading}}">
-    <view class="loading-spinner"></view>
-    <text class="loading-text">加载中...</text>
+    <loading-lottie text="加载中..." size="large" />
   </view>
 
   <view class="empty-state" wx:elif="{{loadError}}">

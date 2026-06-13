@@ -18,8 +18,7 @@
 <!-- ==================== 入口页 ==================== -->
 <view class="page review-entry" wx:if="{{phase === 'entry'}}">
   <view wx:if="{{entryLoading}}" class="loading-wrap">
-    <view class="loading-spinner"></view>
-    <text class="loading-text">正在读取今日复习任务...</text>
+    <loading-lottie text="正在读取今日复习任务..." size="large" />
   </view>
 
   <view wx:else class="entry-wrap">
@@ -116,8 +115,7 @@
   bindtouchend="onTouchEnd"
 >
   <view wx:if="{{practiceLoading}}" class="loading-wrap">
-    <view class="loading-spinner"></view>
-    <text class="loading-text">正在准备复习题目...</text>
+    <loading-lottie text="正在准备复习题目..." size="large" />
   </view>
 
   <view wx:else class="practice-wrap">
