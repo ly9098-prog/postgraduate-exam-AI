@@ -555,17 +555,32 @@ Page({
       const ctx = wx.createCanvasContext('progress-ring', this)
       ctx.clearRect(0, 0, size, size)
 
+      // Gradient colors
+      const colors = isBreak
+        ? { start: '#F43F5E', end: '#F97316', dot: '#F97316' }
+        : { start: '#06B6D4', end: '#3B82F6', dot: '#3B82F6' }
+
+      // Glow layer — wide semi-transparent arc behind the main ring
+      if (progress > 0) {
+        const glowGrad = ctx.createLinearGradient(0, 0, size, size)
+        glowGrad.addColorStop(0, colors.start)
+        glowGrad.addColorStop(1, colors.end)
+        ctx.beginPath()
+        ctx.setStrokeStyle(glowGrad)
+        ctx.setLineWidth(lineWidth + 14)
+        ctx.setLineCap('round')
+        ctx.setGlobalAlpha(0.18)
+        ctx.arc(center, center, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress)
+        ctx.stroke()
+        ctx.setGlobalAlpha(1)
+      }
+
       // Background track — very dim on dark bg
       ctx.beginPath()
       ctx.setStrokeStyle('rgba(255,255,255,0.06)')
       ctx.setLineWidth(lineWidth)
       ctx.arc(center, center, radius, 0, Math.PI * 2)
       ctx.stroke()
-
-      // Gradient colors
-      const colors = isBreak
-        ? { start: '#F43F5E', end: '#F97316', dot: '#F97316' }
-        : { start: '#06B6D4', end: '#3B82F6', dot: '#3B82F6' }
 
       // Progress arc
       ctx.beginPath()

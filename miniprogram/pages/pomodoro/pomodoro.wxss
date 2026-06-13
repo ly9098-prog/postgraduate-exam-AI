@@ -502,24 +502,27 @@
 
 .ring-glow {
   position: absolute;
-  top: -20rpx;
-  left: -20rpx;
-  right: -20rpx;
-  bottom: -20rpx;
+  top: -30rpx;
+  left: -30rpx;
+  right: -30rpx;
+  bottom: -30rpx;
   border-radius: 50%;
+  pointer-events: none;
   animation: ring-breath 3s ease-in-out infinite;
 }
 
 .page-focus .ring-glow {
   box-shadow:
-    0 0 60rpx rgba(59, 130, 246, 0.12),
-    0 0 120rpx rgba(6, 182, 212, 0.06);
+    0 0 40rpx rgba(59, 130, 246, 0.25),
+    0 0 80rpx rgba(59, 130, 246, 0.12),
+    0 0 140rpx rgba(6, 182, 212, 0.08);
 }
 
 .page-break .ring-glow {
   box-shadow:
-    0 0 60rpx rgba(249, 115, 22, 0.12),
-    0 0 120rpx rgba(244, 63, 94, 0.06);
+    0 0 40rpx rgba(249, 115, 22, 0.25),
+    0 0 80rpx rgba(249, 115, 22, 0.12),
+    0 0 140rpx rgba(244, 63, 94, 0.08);
 }
 
 @keyframes ring-breath {
@@ -578,7 +581,7 @@
   display: flex;
   gap: 40rpx;
   align-items: center;
-  margin-top: 48rpx;
+  margin-top: 80rpx;
 }
 
 .ctrl-btn {
@@ -628,29 +631,42 @@
 }
 
 .ctrl-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32rpx;
-  height: 32rpx;
-  color: rgba(255, 255, 255, 0.7);
+  width: 36rpx;
+  height: 36rpx;
 }
 
-.ctrl-icon-end {
-  font-size: 28rpx;
+.ctrl-icon--pause {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+.ctrl-icon--stop {
+  width: 34rpx;
+  height: 34rpx;
+  opacity: 0.55;
+}
+
+.ctrl-icon--skip {
+  width: 44rpx;
+  height: 44rpx;
 }
 
 .ctrl-label {
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.3);
+  font-size: 20rpx;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 1rpx;
 }
 
-.page-break .ctrl-primary .ctrl-icon {
-  color: rgba(249, 115, 22, 0.7);
+.ctrl-primary:active {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 32rpx rgba(59, 130, 246, 0.2);
 }
 
-.page-break .ctrl-primary .ctrl-label {
-  color: rgba(249, 115, 22, 0.4);
+.ctrl-secondary:active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 /* ── Skip Break (inside break timer-wrap) ── */
@@ -759,8 +775,11 @@
 .size-large .timer-hint { font-size: 28rpx; }
 .size-large .ring-time { font-size: 100rpx; }
 .size-large .ring-status { font-size: 30rpx; }
-.size-large .ctrl-icon { width: 38rpx; height: 38rpx; }
-.size-large .ctrl-label { font-size: 26rpx; }
+.size-large .ctrl-icon { width: 42rpx; height: 42rpx; }
+.size-large .ctrl-icon--pause { width: 56rpx; height: 56rpx; }
+.size-large .ctrl-icon--stop { width: 40rpx; height: 40rpx; }
+.size-large .ctrl-icon--skip { width: 52rpx; height: 52rpx; }
+.size-large .ctrl-label { font-size: 24rpx; }
 .size-large .ctrl-primary {
   width: 132rpx;
   height: 132rpx;
