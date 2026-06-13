@@ -170,8 +170,7 @@
 
   <!-- 加载态 -->
   <view wx:if="{{loading && list.length === 0}}" class="loading-wrap">
-    <view class="loading-spinner"></view>
-    <text class="loading-text">正在加载错题...</text>
+    <loading-lottie text="正在加载错题..." size="large" />
   </view>
 
   <!-- 空态 -->

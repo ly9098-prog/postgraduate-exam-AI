@@ -1,6 +1,7 @@
 {
   "navigationBarTitleText": "题目审核",
   "usingComponents": {
-    "mp-html": "/components/mp-html/index"
+    "mp-html": "/components/mp-html/index",
+    "loading-lottie": "/components/loading-lottie/loading-lottie"
   }
 }
