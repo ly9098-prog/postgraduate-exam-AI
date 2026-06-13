@@ -1174,6 +1174,31 @@
   100% { opacity: 0; transform: translateY(-22rpx) scale(1.12) rotate(18deg); }
 }
 
+
+.submit-loading-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 180;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(248, 250, 255, 0.72);
+  backdrop-filter: blur(12rpx);
+  -webkit-backdrop-filter: blur(12rpx);
+}
+
+.submit-loading-card {
+  width: 420rpx;
+  padding: 48rpx 34rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.82);
+  border-radius: 36rpx;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.92), rgba(238, 245, 255, 0.78));
+  box-shadow: 0 28rpx 72rpx rgba(23, 32, 51, 0.18);
+}
+
 /* ==================== 加载 ==================== */
 
 .loading-wrap {
