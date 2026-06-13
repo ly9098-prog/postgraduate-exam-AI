@@ -155,7 +155,7 @@ Page({
     this._clearTimer()
     wx.setNavigationBarColor({
       frontColor: '#ffffff',
-      backgroundColor: '#5B7B9A',
+      backgroundColor: '#4F7FFF',
     })
   },
 
@@ -430,7 +430,6 @@ Page({
       if (remaining <= 0) {
         this._clearTimer()
         wx.removeStorageSync('pomodoro_break')
-        wx.vibrateShort()
         this._resetToIdle()
       }
     }
