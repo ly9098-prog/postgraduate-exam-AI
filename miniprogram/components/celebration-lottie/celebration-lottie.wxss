@@ -20,6 +20,7 @@
 }
 
 /* ── 白色磨砂背景（独立 view，避免被 canvas 原生层级覆盖）── */
+/* backdrop-filter 在部分微信版本不支持，故将 alpha 降到 0.52 保证降级时也能透出底层内容 */
 .celeb-overlay-bg {
   position: absolute;
   top: 0;
@@ -27,7 +28,7 @@
   width: 100%;
   height: 100%;
   z-index: 1;
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.52);
   backdrop-filter: blur(20rpx);
   -webkit-backdrop-filter: blur(20rpx);
 }
@@ -58,7 +59,7 @@
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: 2;
+  z-index: 12;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -73,7 +74,7 @@
   width: 100%;
   height: 100%;
   z-index: 2;
-  background: rgba(248, 250, 255, 0.88);
+  background: rgba(248, 250, 255, 0.52);
   backdrop-filter: blur(18rpx);
   -webkit-backdrop-filter: blur(18rpx);
 }
@@ -87,6 +88,8 @@
 }
 
 .fb-badge {
+  position: relative;
+  z-index: 15;
   width: 130rpx;
   height: 130rpx;
   border-radius: 999rpx;
@@ -349,7 +352,7 @@
 /* ── 文字庆祝内容（view 叠加层，用于 CSS 降级模式）── */
 .celeb-text-overlay {
   position: absolute;
-  top: 48%;
+  top: 54%;
   left: 0;
   width: 100%;
   z-index: 10;
