@@ -902,7 +902,7 @@ Page({
 
   /* ==================== 交卷 ==================== */
 
-  async doSubmit() {
+  async doSubmit(skipConfirm) {
     if (this.data.submitting) return
     const { answerMap, questions, startTime, selectedSubject, comboCount } = this.data
     const total = questions.length || 0
@@ -919,6 +919,14 @@ Page({
         content: `还有 ${unanswered} 道题未作答，确定提交吗？`,
         confirmText: '确定提交',
         cancelText: '继续作答',
+      })
+      if (!confirm) return
+    } else if (skipConfirm !== true) {
+      const { confirm } = await wx.showModal({
+        title: '确认交卷',
+        content: `共 ${total} 题，已全部作答。确认提交并复盘？`,
+        confirmText: '确定提交',
+        cancelText: '取消',
       })
       if (!confirm) return
     }
@@ -982,7 +990,7 @@ Page({
       title: '结束练习',
       content: `已完成 ${answered} / ${this.data.totalQuestions} 题，确定结束吗？`,
       success: (res) => {
-        if (res.confirm) this.doSubmit()
+        if (res.confirm) this.doSubmit(true)
       },
     })
   },
