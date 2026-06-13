@@ -3,10 +3,11 @@
 
     <!-- ===== TOP BAR ===== -->
     <view class="top-bar">
-      <view class="top-left">
+      <view class="top-left" catchtap="onExamTap">
         <text class="exam-label">距考研</text>
         <text class="exam-count">{{examDays}}</text>
         <text class="exam-label">天</text>
+        <text wx:if="{{debugMode}}" class="debug-badge">DEV</text>
       </view>
       <view class="top-right">
         <view class="stat-pill">
@@ -60,8 +61,19 @@
                 </view>
                 <text class="dot-label">{{item.label}}</text>
               </view>
+              <view
+                wx:if="{{debugMode}}"
+                class="mode-dot {{selectedPreset === 'debug' ? 'active' : ''}}"
+                catchtap="selectPreset"
+                data-key="debug"
+              >
+                <view class="dot-ring debug-ring">
+                  <view class="dot-fill"></view>
+                </view>
+                <text class="dot-label">10s测试</text>
+              </view>
             </view>
-            <text class="mode-info">{{workDuration}} 分钟学习 · {{breakDuration}} 分钟休息</text>
+            <text class="mode-info">{{selectedPreset === 'debug' ? '10秒学习 · 5秒休息' : workDuration + ' 分钟学习 · ' + breakDuration + ' 分钟休息'}}</text>
             <!-- Custom sliders -->
             <view class="custom-area {{showCustom ? 'visible' : ''}}">
               <view class="custom-row">
@@ -103,7 +115,7 @@
           <text class="ceremony-emoji">{{subjectEmoji(selectedSubject)}}</text>
           <text class="ceremony-subject">{{subjectLabel(selectedSubject)}}</text>
           <view class="ceremony-divider"></view>
-          <text class="ceremony-duration">{{workDuration}} 分钟</text>
+          <text class="ceremony-duration">{{selectedPreset === 'debug' ? '10 秒' : workDuration + ' 分钟'}}</text>
           <text class="ceremony-preset">{{presetLabel(selectedPreset)}}</text>
           <view class="ceremony-spinner">
             <view class="spinner-ring"></view>

@@ -78,11 +78,14 @@ Page({
     showCelebration: false,
     celebrationMotto: '',
     pageEntered: false,
+    debugMode: false,
   },
 
   _timer: null,
   _touchStartX: 0,
   _pageVisible: false,
+  _debugTapCount: 0,
+  _debugTapTimer: null,
 
   /* ==================== Lifecycle ==================== */
 
@@ -162,8 +165,33 @@ Page({
     this.setData({ selectedSubject: e.currentTarget.dataset.key })
   },
 
+  onExamTap() {
+    // Only allow debug mode in local dev environment
+    if (this._debugAllowed == null) {
+      try { this._debugAllowed = wx.getAccountInfoSync().miniProgram.envVersion === 'develop' } catch (_) { this._debugAllowed = false }
+    }
+    if (!this._debugAllowed) return
+    this._debugTapCount++
+    if (this._debugTapTimer) clearTimeout(this._debugTapTimer)
+    if (this._debugTapCount >= 5) {
+      this._debugTapCount = 0
+      const next = !this.data.debugMode
+      this.setData({ debugMode: next })
+      wx.showToast({ title: next ? '开发模式已开启' : '开发模式已关闭', icon: 'none', duration: 1500 })
+      if (!next && this.data.selectedPreset === 'debug') {
+        this.setData({ selectedPreset: 'standard', workDuration: 25, breakDuration: 5 })
+      }
+    } else {
+      this._debugTapTimer = setTimeout(() => { this._debugTapCount = 0 }, 1500)
+    }
+  },
+
   selectPreset(e) {
     const key = e.currentTarget.dataset.key
+    if (key === 'debug') {
+      this.setData({ selectedPreset: 'debug', showCustom: false, workDuration: 0, breakDuration: 0 })
+      return
+    }
     const preset = PRESETS.find(p => p.key === key)
     this.setData({
       selectedPreset: key,
@@ -216,16 +244,16 @@ Page({
     }
     this.setData({ phase: PHASE.CEREMONY })
 
-    // ceremony duration: 2.5s
-    await new Promise(r => setTimeout(r, 2500))
+    // ceremony duration: shorter for debug
+    await new Promise(r => setTimeout(r, this.data.selectedPreset === 'debug' ? 1000 : 2500))
 
     try {
       const session = await api.post('/pomodoro/start', {
         subject: this.data.selectedSubject,
         chapter_id: this.data.fromChapterId || null,
         preset: this.data.selectedPreset,
-        work_duration: this.data.workDuration,
-        break_duration: this.data.breakDuration,
+        work_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.workDuration,
+        break_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.breakDuration,
       })
       this._beginCountdown(session)
     } catch (e) {
@@ -263,7 +291,7 @@ Page({
 
   _beginCountdown(session) {
     const startTime = new Date(session.start_time + '+00:00').getTime()
-    const totalSec = this.data.workDuration * 60
+    const totalSec = this.data.selectedPreset === 'debug' ? 10 : this.data.workDuration * 60
     this.setData({
       phase: PHASE.RUNNING,
       sessionId: session.id,
@@ -368,7 +396,7 @@ Page({
   dismissCelebration() {
     wx.removeStorageSync('pomodoro_completion')
     this.setData({ showCelebration: false })
-    const breakSec = this.data.breakDuration * 60
+    const breakSec = this.data.selectedPreset === 'debug' ? 5 : this.data.breakDuration * 60
     if (breakSec > 0) {
       this._startBreak(breakSec)
     } else {

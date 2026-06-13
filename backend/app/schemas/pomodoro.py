@@ -12,9 +12,9 @@ VALID_SUBJECTS = {
 class PomodoroStartRequest(BaseModel):
     subject: str = ""
     chapter_id: str | None = None
-    preset: Literal["standard", "long", "custom"] = "standard"
-    work_duration: int = Field(default=25, ge=5, le=120)
-    break_duration: int = Field(default=5, ge=5, le=120)
+    preset: Literal["standard", "long", "custom", "debug"] = "standard"
+    work_duration: int = Field(default=25, ge=0, le=120)
+    break_duration: int = Field(default=5, ge=0, le=120)
 
     @field_validator("subject")
     @classmethod
