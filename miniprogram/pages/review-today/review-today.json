@@ -3,6 +3,6 @@
   "usingComponents": {
     "mp-html": "/components/mp-html/index",
     "math-question": "/components/math-question/math-question",
-    "celebration-lottie": "/components/celebration-lottie/celebration-lottie"
+    "animated-view": "/components/AnimatedView/AnimatedView"
   }
 }

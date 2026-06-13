@@ -115,6 +115,7 @@ Page({
     celebrationType: 'group',
     celebrationProgressText: '',
     celebrationRewardText: '',
+    celebrationDuration: 2600,
     growthLevel: '',
     growthExpText: '',
     growthLevelPct: 0,
@@ -128,11 +129,13 @@ Page({
     this._loadEntry()
   },
 
+  onHide() {
+    this._clearCelebrationTimer()
+    if (this.data.showCelebration) this.setData({ showCelebration: false })
+  },
+
   onUnload() {
-    if (this._celebrationTimer) {
-      clearTimeout(this._celebrationTimer)
-      this._celebrationTimer = null
-    }
+    this._clearCelebrationTimer()
   },
 
   _setDateStr() {
@@ -622,23 +625,29 @@ Page({
   },
 
   _showCelebration(copy, duration) {
-    if (this._celebrationTimer) clearTimeout(this._celebrationTimer)
+    const displayDuration = duration || 2600
+    this._clearCelebrationTimer()
     this.setData({
       ...copy,
+      celebrationDuration: displayDuration,
       showCelebration: true,
     })
     this._celebrationTimer = setTimeout(() => {
       this.setData({ showCelebration: false })
       this._celebrationTimer = null
-    }, duration)
+    }, displayDuration)
   },
 
   dismissCelebration() {
+    this._clearCelebrationTimer()
+    this.setData({ showCelebration: false })
+  },
+
+  _clearCelebrationTimer() {
     if (this._celebrationTimer) {
       clearTimeout(this._celebrationTimer)
       this._celebrationTimer = null
     }
-    this.setData({ showCelebration: false })
   },
 
   /* ==================== 完成复习 ==================== */

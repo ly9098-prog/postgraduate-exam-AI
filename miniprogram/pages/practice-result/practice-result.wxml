@@ -1,5 +1,5 @@
 <view class="page">
-  <celebration-lottie
+  <animated-view
     show="{{showCelebration}}"
     type="{{celebrationType}}"
     title="{{celebrationTitle}}"
@@ -7,6 +7,8 @@
     motto="{{celebrationMotto}}"
     reward-text="{{celebrationRewardText}}"
     duration="{{2600}}"
+    gif-src="/assets/animation/celebration.gif"
+    png-src="/assets/animation/celebration-static.png"
     bind:done="dismissCelebration"
   />
 
