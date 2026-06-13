@@ -488,7 +488,21 @@ Page({
   /* ==================== 提交本组 ==================== */
 
   async submitGroup() {
-    const { groupQuestions, answers } = this.data
+    const { groupQuestions, answers, submittingGroup } = this.data
+    if (submittingGroup) return
+
+    try {
+      const confirmed = await new Promise(resolve => {
+        wx.showModal({
+          title: '确认提交',
+          content: `共 ${groupQuestions.length} 题，已作答 ${Object.keys(answers).length} 题。确认提交并复盘？`,
+          success: (r) => resolve(r.confirm),
+          fail: () => resolve(false),
+        })
+      })
+      if (!confirmed) return
+    } catch (_) { return }
+
     const unanswered = groupQuestions.filter(q => !answers[q.schedule_id])
 
     this.setData({ submittingGroup: true })
