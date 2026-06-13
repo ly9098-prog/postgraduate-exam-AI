@@ -340,6 +340,7 @@ Page({
 
   _startTimer(totalSec) {
     this._clearTimer()
+    this._initCanvas()
     const tick = () => {
       const now = Date.now()
       const elapsed = Math.floor((now - this.data.sessionStartTime - (this.data.totalPausedMs || 0)) / 1000)
@@ -431,6 +432,7 @@ Page({
       }
     }
     tick()
+    this._initCanvas()
     setTimeout(() => this.drawRing(totalSec, true), 100)
     this._timer = setInterval(tick, 500)
   },
@@ -540,75 +542,103 @@ Page({
     } catch (_) {}
   },
 
-  /* ==================== Progress Ring (Canvas) ==================== */
+  /* ==================== Progress Ring (Canvas 2D) ==================== */
+
+  _initCanvas() {
+    this._canvasReady = false
+    this._ctx = null
+    const query = wx.createSelectorQuery().in(this)
+    query.select('#progress-ring')
+      .fields({ node: true, size: true })
+      .exec((res) => {
+        if (!res[0] || !res[0].node) return
+        const canvas = res[0].node
+        const ctx = canvas.getContext('2d')
+        const dpr = wx.getSystemInfoSync().pixelRatio
+        const width = res[0].width
+        const height = res[0].height
+        // Super-sample at 2x device resolution for smooth anti-aliasing
+        const scale = dpr * 2
+        canvas.width = Math.round(width * scale)
+        canvas.height = Math.round(height * scale)
+        ctx.scale(scale, scale)
+        this._ctx = ctx
+        this._canvasSize = Math.min(width, height)
+        this._canvasReady = true
+        if (this._pendingDraw) {
+          this.drawRing(this._pendingDraw.totalSec, this._pendingDraw.isBreak)
+          this._pendingDraw = null
+        }
+      })
+  },
 
   drawRing(totalSec, isBreak) {
-    const query = wx.createSelectorQuery().in(this)
-    query.select('#progress-ring').boundingClientRect(rect => {
-      if (!rect || !rect.width) return
-      const size = Math.min(rect.width, rect.height)
-      const center = size / 2
-      const radius = center - 18
-      const lineWidth = 12
-      const progress = this.data.progress
+    if (!this._ctx) {
+      this._pendingDraw = { totalSec, isBreak }
+      return
+    }
+    const ctx = this._ctx
+    const size = this._canvasSize
+    const center = size / 2
+    const radius = center - 18
+    const lineWidth = 12
+    const progress = this.data.progress
 
-      const ctx = wx.createCanvasContext('progress-ring', this)
-      ctx.clearRect(0, 0, size, size)
+    ctx.clearRect(0, 0, size, size)
 
-      // Gradient colors
-      const colors = isBreak
-        ? { start: '#F43F5E', end: '#F97316', dot: '#F97316' }
-        : { start: '#06B6D4', end: '#3B82F6', dot: '#3B82F6' }
+    const colors = isBreak
+      ? { start: '#F43F5E', end: '#F97316', dot: '#F97316' }
+      : { start: '#06B6D4', end: '#3B82F6', dot: '#3B82F6' }
 
-      // Glow layer — wide semi-transparent arc behind the main ring
-      if (progress > 0) {
-        const glowGrad = ctx.createLinearGradient(0, 0, size, size)
-        glowGrad.addColorStop(0, colors.start)
-        glowGrad.addColorStop(1, colors.end)
-        ctx.beginPath()
-        ctx.setStrokeStyle(glowGrad)
-        ctx.setLineWidth(lineWidth + 14)
-        ctx.setLineCap('round')
-        ctx.setGlobalAlpha(0.18)
-        ctx.arc(center, center, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress)
-        ctx.stroke()
-        ctx.setGlobalAlpha(1)
-      }
-
-      // Background track — very dim on dark bg
+    // Glow layer
+    if (progress > 0) {
+      const glowGrad = ctx.createLinearGradient(0, 0, size, size)
+      glowGrad.addColorStop(0, colors.start)
+      glowGrad.addColorStop(1, colors.end)
       ctx.beginPath()
-      ctx.setStrokeStyle('rgba(255,255,255,0.06)')
-      ctx.setLineWidth(lineWidth)
-      ctx.arc(center, center, radius, 0, Math.PI * 2)
-      ctx.stroke()
-
-      // Progress arc
-      ctx.beginPath()
-      const grad = ctx.createLinearGradient(0, 0, size, size)
-      grad.addColorStop(0, colors.start)
-      grad.addColorStop(1, colors.end)
-      ctx.setStrokeStyle(grad)
-      ctx.setLineWidth(lineWidth)
-      ctx.setLineCap('round')
+      ctx.strokeStyle = glowGrad
+      ctx.lineWidth = lineWidth + 14
+      ctx.lineCap = 'round'
+      ctx.globalAlpha = 0.18
       ctx.arc(center, center, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress)
       ctx.stroke()
+      ctx.globalAlpha = 1
+    }
 
-      // End dot (only if there's progress)
-      if (progress > 0 && progress < 1) {
-        const endAngle = -Math.PI / 2 + Math.PI * 2 * progress
-        const endX = center + radius * Math.cos(endAngle)
-        const endY = center + radius * Math.sin(endAngle)
-        ctx.beginPath()
-        ctx.setFillStyle(colors.dot)
-        ctx.arc(endX, endY, lineWidth / 2 + 1, 0, Math.PI * 2)
-        ctx.fill()
-      }
+    // Background track
+    ctx.beginPath()
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)'
+    ctx.lineWidth = lineWidth
+    ctx.arc(center, center, radius, 0, Math.PI * 2)
+    ctx.stroke()
 
-      ctx.draw()
-    }).exec()
+    // Progress arc
+    ctx.beginPath()
+    const grad = ctx.createLinearGradient(0, 0, size, size)
+    grad.addColorStop(0, colors.start)
+    grad.addColorStop(1, colors.end)
+    ctx.strokeStyle = grad
+    ctx.lineWidth = lineWidth
+    ctx.lineCap = 'round'
+    ctx.arc(center, center, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress)
+    ctx.stroke()
+
+    // End dot
+    if (progress > 0 && progress < 1) {
+      const endAngle = -Math.PI / 2 + Math.PI * 2 * progress
+      const endX = center + radius * Math.cos(endAngle)
+      const endY = center + radius * Math.sin(endAngle)
+      ctx.beginPath()
+      ctx.fillStyle = colors.dot
+      ctx.arc(endX, endY, lineWidth / 2 + 1, 0, Math.PI * 2)
+      ctx.fill()
+    }
   },
 
   _resetToIdle() {
+    this._canvasReady = false
+    this._ctx = null
+    this._pendingDraw = null
     wx.removeStorageSync('pomodoro_break')
     wx.removeStorageSync('pomodoro_completion')
     wx.removeStorageSync('pomodoro_pause')
