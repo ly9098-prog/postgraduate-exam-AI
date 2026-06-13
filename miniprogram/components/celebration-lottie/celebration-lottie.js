@@ -13,6 +13,7 @@ Component({
     duration: { type: Number, value: 2800 },
     gifSrc: { type: String, value: '' },
     pngSrc: { type: String, value: '' },
+    // Lottie 默认关闭：真机 createTag 兼容性问题，需 Lottie 的页面请直接使用 AnimatedView
     enableLottie: { type: Boolean, value: false },
   },
 
