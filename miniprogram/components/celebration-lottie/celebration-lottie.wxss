@@ -90,42 +90,98 @@
 .fb-badge {
   position: relative;
   z-index: 15;
+  width: 180rpx;
+  height: 180rpx;
+  border-radius: 999rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+}
+
+.fb-ring {
+  position: absolute;
+  width: 154rpx;
+  height: 154rpx;
+  border-radius: 999rpx;
+  background: rgba(201, 247, 226, 0.92);
+  border: 3rpx solid rgba(255, 255, 255, 0.9);
+  transform: scale(0);
+  opacity: 0;
+  animation: fbSuccessRing 1.1s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both;
+}
+
+.fb-core {
+  position: relative;
+  z-index: 2;
   width: 130rpx;
   height: 130rpx;
   border-radius: 999rpx;
-  background: linear-gradient(135deg, #4F7FFF 0%, #6EC1FF 100%);
-  box-shadow: 0 22rpx 56rpx rgba(79, 127, 255, 0.36);
+  background: linear-gradient(135deg, #2CD992 0%, #22C55E 100%);
+  box-shadow: 0 22rpx 56rpx rgba(34, 197, 94, 0.34);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 56rpx;
-  color: #FFFFFF;
-  animation: fbPop 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  transform: scale(0);
+  animation: fbSuccessCore 0.72s cubic-bezier(0.16, 1, 0.3, 1) 0.18s both;
 }
 
-.fb-badge.practice,
-.fb-badge.steady {
-  background: linear-gradient(135deg, #4F7FFF 0%, #6EC1FF 100%);
-  box-shadow: 0 22rpx 56rpx rgba(79, 127, 255, 0.36);
+.fb-check {
+  position: relative;
+  width: 82rpx;
+  height: 58rpx;
+  transform: rotate(-45deg);
 }
 
-.fb-badge.excellent,
-.fb-badge.final {
+.fb-check-stem,
+.fb-check-tail {
+  position: absolute;
+  left: 8rpx;
+  bottom: 8rpx;
+  background: #FFFFFF;
+  border-radius: 999rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+
+.fb-check-stem {
+  width: 34rpx;
+  height: 14rpx;
+  animation: fbCheckDraw 0.18s ease-out 0.72s both;
+}
+
+.fb-check-tail {
+  width: 76rpx;
+  height: 14rpx;
+  transform: rotate(90deg) scaleX(0);
+  animation: fbCheckDrawTail 0.26s ease-out 0.88s both;
+}
+
+.fb-badge.practice .fb-core,
+.fb-badge.steady .fb-core {
+  background: linear-gradient(135deg, #2CD992 0%, #22C55E 100%);
+  box-shadow: 0 22rpx 56rpx rgba(34, 197, 94, 0.34);
+}
+
+.fb-badge.excellent .fb-core,
+.fb-badge.final .fb-core {
   background: linear-gradient(135deg, #22C55E 0%, #7BD88F 100%);
   box-shadow: 0 22rpx 56rpx rgba(34, 197, 94, 0.36);
 }
 
-.fb-badge.combo {
+.fb-badge.combo .fb-core {
   background: linear-gradient(135deg, #F59E0B 0%, #FFD166 100%);
   box-shadow: 0 22rpx 56rpx rgba(245, 158, 11, 0.4);
 }
 
-.fb-badge.focus {
+.fb-badge.focus .fb-core {
   background: linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%);
   box-shadow: 0 22rpx 56rpx rgba(139, 92, 246, 0.36);
 }
 
-.fb-badge.group {
+.fb-badge.group .fb-core {
   background: linear-gradient(135deg, #6EC1FF 0%, #4F7FFF 100%);
   box-shadow: 0 22rpx 56rpx rgba(110, 193, 255, 0.36);
 }
@@ -184,10 +240,26 @@
 .fp-7 { left: 10%; bottom: 50%; width: 5rpx; height: 5rpx; background: #22C55E; animation-delay: 0.18s; }
 .fp-8 { right: 30%; top: 40%; width: 7rpx; height: 7rpx; background: #4F7FFF; animation-delay: 0.25s; }
 
-@keyframes fbPop {
-  0% { transform: scale(0.4); opacity: 0; }
-  60% { transform: scale(1.1); }
-  100% { transform: scale(1); opacity: 1; }
+@keyframes fbSuccessRing {
+  0% { opacity: 0; transform: scale(0.2); }
+  35% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.38); }
+}
+
+@keyframes fbSuccessCore {
+  0% { opacity: 0; transform: scale(0); }
+  58% { opacity: 1; transform: scale(1.16); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes fbCheckDraw {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes fbCheckDrawTail {
+  from { transform: rotate(90deg) scaleX(0); }
+  to { transform: rotate(90deg) scaleX(1); }
 }
 
 @keyframes fbTextIn {
@@ -487,7 +559,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fb-badge,
+  .fb-core,
+  .fb-ring,
+  .fb-check-stem,
+  .fb-check-tail,
   .fallback-hint,
   .fw,
   .fp,
@@ -502,6 +577,16 @@
   }
   .celeb-text-overlay {
     transform: none !important;
+  }
+  .fb-core,
+  .fb-ring,
+  .fb-check-stem,
+  .fb-check-tail {
+    opacity: 1;
+    transform: none !important;
+  }
+  .fb-check-tail {
+    transform: rotate(90deg) !important;
   }
   .canvas-layer {
     display: none;
