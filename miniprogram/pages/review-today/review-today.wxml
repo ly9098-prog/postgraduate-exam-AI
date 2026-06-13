@@ -180,10 +180,17 @@
         </view>
       </view>
 
-      <button class="submit-group-btn" bindtap="submitGroup" loading="{{submittingGroup}}">
-        提交本组复盘（{{_answeredCount}} / {{groupQuestions.length}}）
-      </button>
     </view>
+
+    <button
+      class="submit-group-btn"
+      wx:if="{{currentQuestion && currentIndex === groupQuestions.length - 1}}"
+      bindtap="submitGroup"
+      loading="{{submittingGroup}}"
+    >
+      提交本组复盘
+    </button>
+  </view>
   </view>
 </view>
 
