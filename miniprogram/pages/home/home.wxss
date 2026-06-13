@@ -47,6 +47,51 @@
   z-index: 0;
 }
 
+/* 装饰浮动粒子 */
+.welcome-particle {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1;
+  animation: welcomeFloat 5s ease-in-out infinite;
+}
+
+.wp-1 {
+  right: 40rpx;
+  top: 22rpx;
+  width: 14rpx;
+  height: 14rpx;
+  background: rgba(255, 255, 255, 0.56);
+  animation-delay: 0s;
+}
+
+.wp-2 {
+  right: 72rpx;
+  bottom: 56rpx;
+  width: 10rpx;
+  height: 10rpx;
+  background: rgba(255, 255, 255, 0.42);
+  animation-delay: 1.2s;
+}
+
+.wp-3 {
+  left: 48rpx;
+  bottom: 28rpx;
+  width: 8rpx;
+  height: 8rpx;
+  background: rgba(255, 255, 255, 0.5);
+  animation-delay: 2.5s;
+}
+
+.wp-4 {
+  right: 36%;
+  top: 46rpx;
+  width: 6rpx;
+  height: 6rpx;
+  background: rgba(34, 197, 94, 0.42);
+  animation-delay: 3.6s;
+}
+
 .welcome-content {
   position: relative;
   z-index: 2;
@@ -532,9 +577,15 @@
   flex-shrink: 0;
 }
 
+@keyframes welcomeFloat {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 1; }
+  50% { transform: translateY(-18rpx) scale(1.15); opacity: 0.65; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .welcome-section::before,
   .welcome-section::after,
+  .welcome-particle,
   .mission-fill,
   .goal-option,
   .route-card,

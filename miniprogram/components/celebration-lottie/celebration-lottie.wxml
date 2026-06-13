@@ -1,7 +1,7 @@
-<!-- celebration-lottie: Lottie 优先 + CSS 粒子降级 -->
+<!-- celebration-lottie: Canvas 粒子动画 + CSS 降级 -->
 <view class="celebration-shell {{visible ? 'active' : ''}} type-{{type}}" catchtap="onTap">
-  <!-- Lottie 层（需要构建 npm 后启用） -->
-  <view class="lottie-layer" wx:if="{{lottieReady && !fallbackMode}}">
+  <!-- Canvas 粒子动画层（首选，canvas 2D 渲染） -->
+  <view class="canvas-layer" wx:if="{{canvasReady}}">
     <canvas
       type="2d"
       id="celebration-canvas"
@@ -9,7 +9,7 @@
     ></canvas>
   </view>
 
-  <!-- CSS 降级层（始终可用） -->
+  <!-- CSS 降级层（canvas 2d 不可用时） -->
   <view class="fallback-layer" wx:else>
     <view class="fallback-bg"></view>
     <view class="fallback-fireworks">
@@ -34,9 +34,32 @@
       <view class="fb-badge {{type}}">
         <text wx:if="{{type === 'excellent' || type === 'final'}}">★</text>
         <text wx:elif="{{type === 'combo'}}">🔥</text>
+        <text wx:elif="{{type === 'focus'}}">!</text>
         <text wx:else>✓</text>
       </view>
     </view>
-    <text class="fallback-hint">点击继续</text>
+  </view>
+
+  <!-- 文字庆祝内容（叠加在粒子层上方） -->
+  <view class="celeb-text-overlay {{showContent ? 'content-in' : ''}}">
+    <text class="celeb-progress-text" wx:if="{{progressText}}">{{progressText}}</text>
+    <text class="celeb-title" wx:if="{{title}}">{{title}}</text>
+    <text class="celeb-detail" wx:if="{{detail}}">{{detail}}</text>
+    <view class="celeb-reward" wx:if="{{rewardText}}">
+      <text class="reward-spark">★</text>
+      <text>{{rewardText}}</text>
+    </view>
+    <view class="celeb-growth" wx:if="{{growthLevel}}">
+      <view class="celeb-growth-head">
+        <text class="celeb-growth-level">{{growthLevel}}</text>
+        <text class="celeb-growth-pct">{{growthLevelPct}}%</text>
+      </view>
+      <view class="celeb-growth-track">
+        <view class="celeb-growth-fill" style="width:{{growthLevelPct}}%"></view>
+      </view>
+      <text class="celeb-growth-desc">{{growthDesc}}</text>
+    </view>
+    <text class="celeb-motto" wx:if="{{motto}}">{{motto}}</text>
+    <text class="celeb-tap-hint">点击继续</text>
   </view>
 </view>
