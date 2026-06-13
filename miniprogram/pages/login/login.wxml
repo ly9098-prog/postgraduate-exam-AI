@@ -13,7 +13,7 @@
             <text class="hero-label">考研错题成长助手</text>
             <text class="hero-status">AI Review</text>
           </view>
-          <text class="hero-brand-name">2240AI</text>
+          <text class="hero-brand-name">MemoGrad</text>
           <text class="hero-slogan">每天进步一点点</text>
           <text class="hero-desc">让错题成为成长的阶梯</text>
           <view class="hero-note-row">
@@ -22,6 +22,10 @@
           </view>
         </view>
         <view class="growth-illustration" aria-label="学习成长插画">
+          <view class="illustration-particle ip-1"></view>
+          <view class="illustration-particle ip-2"></view>
+          <view class="illustration-particle ip-3"></view>
+          <view class="illustration-particle ip-4"></view>
           <view class="book-stack book-back"></view>
           <view class="book-stack book-front"></view>
           <view class="growth-card mini-card-one">
