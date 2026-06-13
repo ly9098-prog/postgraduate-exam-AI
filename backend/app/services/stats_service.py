@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer_behavior import AnswerBehavior
 from app.models.practice_record import PracticeRecord
+from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
 
 
@@ -34,12 +35,13 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
             func.coalesce(
                 func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)), 0
             ),
+            func.coalesce(func.sum(PracticeRecord.used_time), 0),
         ).where(
             PracticeRecord.user_id == user_id,
             PracticeRecord.answered_at >= today_start,
         )
     )
-    today_count, today_correct = today_result.one()
+    today_count, today_correct, today_duration = today_result.one()
 
     consecutive_days = await _calc_consecutive_days(db, user_id)
 
@@ -70,7 +72,7 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
         "consecutive_days": consecutive_days,
         "today_questions": today_count,
         "today_correct": today_correct,
-        "today_duration_sec": 0,
+        "today_duration_sec": today_duration or 0,
         "mastered_count": mastered_count or 0,
         "due_review_count": due_count.scalar() or 0,
     }
@@ -281,11 +283,29 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
         )
     )
 
+    # Aggregate forgotten topics from unmastered wrong questions
+    kp_result = await db.execute(
+        select(Question.knowledge_points)
+        .join(WrongQuestion, WrongQuestion.question_id == Question.id)
+        .where(
+            WrongQuestion.user_id == user_id,
+            WrongQuestion.mastered == False,
+        )
+    )
+    kp_counter: dict[str, int] = {}
+    for (kps,) in kp_result.all():
+        if kps and isinstance(kps, list):
+            for kp in kps:
+                if isinstance(kp, str):
+                    kp_counter[kp] = kp_counter.get(kp, 0) + 1
+    top_forgotten = sorted(kp_counter.items(), key=lambda x: x[1], reverse=True)[:8]
+    top_forgotten_topics = [{"topic": k, "count": v} for k, v in top_forgotten]
+
     return {
         "high_forget_count": stuck.scalar() or 0,
         "stuck_questions": long_unmastered.scalar() or 0,
         "pseudo_mastered": pseudo_items,
-        "top_forgotten_topics": [],
+        "top_forgotten_topics": top_forgotten_topics,
     }
 
 
