@@ -687,7 +687,7 @@ Streak
 | Canvas 2D | 28 粒子 + 10 星光 + 徽章弹性动画（60fps） | celebration-lottie 组件 |
 | CSS | 粒子 + 渐变徽章 + 文字淡入 | celebration-lottie 降级 + 页面内联动效 |
 | 连击 | 3 级里程碑 warm/hot/fire + 动态星星 | Practice 答题 |
-| reduced-motion | 11 页面 + celebration-lottie 组件全覆盖 | 全局 |
+| reduced-motion | 10 页面（Import 无动画） + celebration-lottie 组件全覆盖 | 全局 |
 
 ## 图标体系
 
@@ -699,13 +699,13 @@ Streak
 
 - 共享 `fadeSlideIn`、`spin`、`page-enter`、`card-enter` 仅在 `tokens.wxss` 定义
 - 各页面仅保留与特定组件绑定的专用 @keyframes
-- review-today: 16→2（fadeIn、reward-pop）
+- review-today: 16→3（fadeIn、reward-pop、slideIn）
 - practice-result: 0（全部清除）
 
 ## celebration-lottie 组件
 
-- Lottie 优先（8 JSON 映射）→ Canvas 2D 粒子 → CSS 降级
-- 6 种类型：practice、steady、excellent、final、combo、group、focus
+- Lottie 优先（8 组映射：6 个 JSON 文件 + 2 个共享映射）→ Canvas 2D 粒子 → CSS 降级
+- 7 种类型：practice、steady、excellent、final、combo、group、focus
 - 文字叠加层：title、detail、motto、rewardText、progressText、growthLevel
 - JS 层 `reduceMotion` 检测，避免浪费渲染
 
@@ -726,7 +726,7 @@ Streak
 |---|---------|------|------|
 | 1 | 6 页面蓝色风格统一 | ✅ | 全部页面背景 `linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%)` |
 | 2 | 成长体系真实 API | ✅ | `api.get('/stats/dashboard')` + `api.get('/stats/growth')` 四页面接入 |
-| 3 | 庆祝动效 + reduced-motion | ✅ | celebration-lottie 三级保障；`_reducedMotion` JS 检测 + 11 页面 CSS 降级 |
+| 3 | 庆祝动效 + reduced-motion | ✅ | celebration-lottie 三级保障；`_reducedMotion` JS 检测 + 10 页面 CSS 降级 |
 | 4 | 365 天热力图 + 雷达图 + AI 诊断 | ✅ | dashboard 构建 365 cell 热力图；wrong-book CSS 固定菱形雷达图 + DeepSeek 诊断 |
 | 5 | 图标统一 line-icon | ✅ | tokens.wxss 定义 ~25 个 icon；抽查各页面无文字/emoji 图标残留 |
 | 6 | 组件完整 + @keyframes 无重复 | ✅ | celebration-lottie 4 文件一致；shared keyframes 仅在 tokens.wxss |
