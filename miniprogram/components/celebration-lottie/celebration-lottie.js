@@ -11,29 +11,42 @@
 //
 // Lottie 动画文件位于 /assets/lottie/ ，需先执行 微信开发者工具 → 构建 npm
 
-// ── 类型 → Lottie JSON 映射 ──
-var LOTTIE_MAP
-try {
-  LOTTIE_MAP = {
-    excellent: require('../../assets/lottie/trophy.json'),
-    practice: require('../../assets/lottie/success-check.json'),
-    steady: require('../../assets/lottie/success-check.json'),
-    final: require('../../assets/lottie/celebration.json'),
-    combo: require('../../assets/lottie/fireworks.json'),
-    group: require('../../assets/lottie/medal.json'),
-    focus: require('../../assets/lottie/study.json'),
+// ── 类型 → Lottie JSON 映射（逐个加载，单个失败不影响其他类型）──
+function _loadLottieMap() {
+  var files = {
+    excellent: 'trophy.json',
+    practice: 'success-check.json',
+    steady: 'success-check.json',
+    final: 'celebration.json',
+    combo: 'fireworks.json',
+    group: 'medal.json',
+    focus: 'study.json',
   }
-} catch (_) { LOTTIE_MAP = null }
+  var map = {}
+  var prefix = '../../assets/lottie/'
+  for (var key in files) {
+    try {
+      map[key] = require(prefix + files[key])
+    } catch (_) {
+      console.warn('[celebration-lottie] 无法加载 Lottie JSON:', files[key])
+    }
+  }
+  return Object.keys(map).length > 0 ? map : null
+}
+var LOTTIE_MAP = _loadLottieMap()
 
-// ── 尝试加载 lottie-miniprogram ──
+// ── 尝试加载 lottie-miniprogram（多路径回退）──
 var lottieModule = null
-try {
-  lottieModule = require('lottie-miniprogram')
-} catch (_) {
-  // 如果 build npm 之前不可用，尝试直接路径
+var LOTTIE_PATHS = [
+  'lottie-miniprogram',
+  '../../miniprogram_npm/lottie-miniprogram/index',
+  '../../node_modules/lottie-miniprogram/miniprogram_dist/index',
+]
+for (var i = 0; i < LOTTIE_PATHS.length; i++) {
   try {
-    lottieModule = require('../../miniprogram_npm/lottie-miniprogram/index')
-  } catch (_2) { lottieModule = null }
+    lottieModule = require(LOTTIE_PATHS[i])
+    if (lottieModule) break
+  } catch (_) {}
 }
 
 // ── 调色板（Canvas / CSS 降级使用）──
@@ -100,7 +113,7 @@ Component({
       this._lottieAnim = null
       this._reducedMotion = false
       // 判断能否走 Lottie 渲染
-      this._canLottie = !!(lottieModule && LOTTIE_MAP && LOTTIE_MAP[this.data.type || 'steady'])
+      this._canLottie = !!(lottieModule && LOTTIE_MAP)
       // 检测 reduced-motion 偏好
       try {
         var sysInfo = wx.getSystemInfoSync()
@@ -175,6 +188,8 @@ Component({
       var self = this
       var animationData = LOTTIE_MAP && LOTTIE_MAP[this.data.type]
       if (!animationData || !lottieModule) {
+        console.warn('[celebration-lottie] Lottie 不可用，降级到 Canvas 粒子。type=' + this.data.type + ' lottieModule=' + !!lottieModule + ' hasData=' + !!(LOTTIE_MAP && LOTTIE_MAP[this.data.type]))
+        this.setData({ useLottie: false })
         this._startCanvasParticles()
         return
       }
@@ -189,8 +204,7 @@ Component({
           },
           canvas: this._canvas,
         })
-        // 绘制暗色背景（Lottie 动画本身不含全屏背景）
-        this._drawLottieBg()
+        // 暗色背景由独立 view (.celeb-overlay-bg) 提供，canvas 仅绘制动画内容
       } catch (e) {
         console.error('[celebration-lottie] Lottie 加载失败，降级到 Canvas 粒子', e)
         this._lottieAnim = null
@@ -199,19 +213,12 @@ Component({
       }
     },
 
-    _drawLottieBg: function () {
-      if (!this._ctx || !this._cw || !this._ch) return
-      this._ctx.fillStyle = 'rgba(11, 17, 33, 0.72)'
-      this._ctx.fillRect(0, 0, this._cw, this._ch)
-    },
-
     /* ──── Canvas 2D 粒子渲染路径（降级）─── */
 
     _startCanvasParticles: function () {
       var palette = TYPE_PALETTE[this.data.type] || TYPE_PALETTE.steady
       this._palette = palette
       this._startTime = Date.now()
-      this._bgAlpha = 0
       this._spawnParticles()
       this._renderLoop()
     },
@@ -272,10 +279,7 @@ Component({
       var p = this._palette
 
       ctx.clearRect(0, 0, w, h)
-
-      this._bgAlpha = Math.min(0.72, this._bgAlpha + 0.04)
-      ctx.fillStyle = 'rgba(11, 17, 33, ' + this._bgAlpha + ')'
-      ctx.fillRect(0, 0, w, h)
+      // 暗色背景由独立 view (.celeb-overlay-bg) 提供，canvas 仅渲染粒子
 
       for (var i = this._particles.length - 1; i >= 0; i--) {
         var pt = this._particles[i]

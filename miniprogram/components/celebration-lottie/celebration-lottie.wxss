@@ -1,4 +1,6 @@
-/* celebration-lottie — Canvas 粒子动画 + CSS 降级 */
+/* celebration-lottie — Lottie 优先 → Canvas 粒子 → CSS 降级
+   风格：白色磨砂玻璃 + 蓝调（MemoGrad 学习 App 主题）
+   与番茄钟的暗色沉浸风格明确区分 */
 
 .celebration-shell {
   position: fixed;
@@ -17,6 +19,19 @@
   pointer-events: auto;
 }
 
+/* ── 白色磨砂背景（独立 view，避免被 canvas 原生层级覆盖）── */
+.celeb-overlay-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20rpx);
+  -webkit-backdrop-filter: blur(20rpx);
+}
+
 /* ── Canvas 粒子层 ── */
 .canvas-layer {
   position: absolute;
@@ -24,6 +39,7 @@
   left: 0;
   width: 100%;
   height: 100%;
+  z-index: 2;
 }
 
 .celebration-canvas {
@@ -38,6 +54,7 @@
   left: 0;
   width: 100%;
   height: 100%;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -51,14 +68,15 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(11, 17, 33, 0.78);
+  z-index: 2;
+  background: rgba(248, 250, 255, 0.88);
   backdrop-filter: blur(18rpx);
   -webkit-backdrop-filter: blur(18rpx);
 }
 
 .fallback-content {
   position: relative;
-  z-index: 2;
+  z-index: 5;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -107,12 +125,12 @@
 
 .fallback-hint {
   position: relative;
-  z-index: 2;
+  z-index: 6;
   margin-top: 28rpx;
   padding: 10rpx 28rpx;
   border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.7);
+  background: rgba(79, 127, 255, 0.08);
+  color: #4F7FFF;
   font-size: 24rpx;
   animation: fbTextIn 0.5s ease 0.3s both;
 }
@@ -125,6 +143,7 @@
   left: 0;
   width: 100%;
   height: 100%;
+  z-index: 3;
   pointer-events: none;
 }
 
@@ -137,11 +156,11 @@
 }
 
 .fw-1 { left: 20%; top: 30%; background: #4F7FFF; animation-delay: 0.1s; }
-.fw-2 { left: 50%; top: 20%; background: #22C55E; animation-delay: 0.15s; }
-.fw-3 { left: 72%; top: 38%; background: #F59E0B; animation-delay: 0.2s; }
-.fw-4 { right: 15%; top: 55%; background: #6EC1FF; animation-delay: 0.25s; }
-.fw-5 { left: 35%; top: 60%; background: #EF4444; animation-delay: 0.12s; }
-.fw-6 { left: 58%; top: 70%; background: #22C55E; animation-delay: 0.28s; }
+.fw-2 { left: 50%; top: 20%; background: #6EC1FF; animation-delay: 0.15s; }
+.fw-3 { left: 72%; top: 38%; background: #22C55E; animation-delay: 0.2s; }
+.fw-4 { right: 15%; top: 55%; background: #F59E0B; animation-delay: 0.25s; }
+.fw-5 { left: 35%; top: 60%; background: #4F7FFF; animation-delay: 0.12s; }
+.fw-6 { left: 58%; top: 70%; background: #6EC1FF; animation-delay: 0.28s; }
 
 .fp {
   position: absolute;
@@ -153,10 +172,10 @@
 .fp-2 { left: 30%; top: 15%; width: 8rpx; height: 8rpx; background: #6EC1FF; animation-delay: 0.1s; }
 .fp-3 { left: 65%; top: 25%; width: 5rpx; height: 5rpx; background: #22C55E; animation-delay: 0.15s; }
 .fp-4 { right: 25%; top: 60%; width: 7rpx; height: 7rpx; background: #F59E0B; animation-delay: 0.2s; }
-.fp-5 { left: 45%; bottom: 30%; width: 6rpx; height: 6rpx; background: #EF4444; animation-delay: 0.08s; }
-.fp-6 { left: 75%; bottom: 40%; width: 8rpx; height: 8rpx; background: #4F7FFF; animation-delay: 0.22s; }
-.fp-7 { left: 10%; bottom: 50%; width: 5rpx; height: 5rpx; background: #6EC1FF; animation-delay: 0.18s; }
-.fp-8 { right: 30%; top: 40%; width: 7rpx; height: 7rpx; background: #22C55E; animation-delay: 0.25s; }
+.fp-5 { left: 45%; bottom: 30%; width: 6rpx; height: 6rpx; background: #4F7FFF; animation-delay: 0.08s; }
+.fp-6 { left: 75%; bottom: 40%; width: 8rpx; height: 8rpx; background: #6EC1FF; animation-delay: 0.22s; }
+.fp-7 { left: 10%; bottom: 50%; width: 5rpx; height: 5rpx; background: #22C55E; animation-delay: 0.18s; }
+.fp-8 { right: 30%; top: 40%; width: 7rpx; height: 7rpx; background: #4F7FFF; animation-delay: 0.25s; }
 
 @keyframes fbPop {
   0% { transform: scale(0.4); opacity: 0; }
@@ -186,7 +205,7 @@
   top: 48%;
   left: 0;
   width: 100%;
-  z-index: 3;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -205,7 +224,7 @@
   display: block;
   font-size: 28rpx;
   font-weight: 800;
-  color: rgba(255, 255, 255, 0.76);
+  color: #4F7FFF;
   line-height: 1.3;
   margin-bottom: 10rpx;
 }
@@ -214,16 +233,16 @@
   display: block;
   font-size: 42rpx;
   font-weight: 900;
-  color: #FFFFFF;
+  color: #1E293B;
   line-height: 1.2;
   margin-bottom: 12rpx;
-  text-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.2);
+  text-shadow: 0 2rpx 12rpx rgba(79, 127, 255, 0.12);
 }
 
 .celeb-detail {
   display: block;
   font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.82);
+  color: #475569;
   line-height: 1.45;
   margin-bottom: 14rpx;
 }
@@ -234,22 +253,22 @@
   gap: 8rpx;
   padding: 10rpx 24rpx;
   border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.16);
-  color: rgba(255, 255, 255, 0.94);
+  background: linear-gradient(135deg, rgba(79, 127, 255, 0.12), rgba(110, 193, 255, 0.08));
+  color: #4F7FFF;
   font-size: 24rpx;
   font-weight: 800;
   margin-bottom: 16rpx;
 }
 
 .reward-spark {
-  color: #FFD700;
+  color: #F59E0B;
   font-size: 24rpx;
 }
 
 .celeb-motto {
   display: block;
   font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.6);
+  color: #64748B;
   line-height: 1.5;
   margin-bottom: 28rpx;
   padding: 0 48rpx;
@@ -262,10 +281,9 @@
   margin-bottom: 16rpx;
   padding: 22rpx 28rpx;
   border-radius: 24rpx;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(12rpx);
-  -webkit-backdrop-filter: blur(12rpx);
-  border: 1rpx solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.06);
+  border: 1rpx solid rgba(79, 127, 255, 0.1);
 }
 
 .celeb-growth-head {
@@ -278,19 +296,19 @@
 .celeb-growth-level {
   font-size: 28rpx;
   font-weight: 900;
-  color: #FFFFFF;
+  color: #1E293B;
 }
 
 .celeb-growth-pct {
   font-size: 28rpx;
   font-weight: 900;
-  color: rgba(255, 255, 255, 0.8);
+  color: #4F7FFF;
 }
 
 .celeb-growth-track {
   height: 10rpx;
   border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.16);
+  background: #E2E8F0;
   overflow: hidden;
   margin-bottom: 10rpx;
 }
@@ -298,22 +316,22 @@
 .celeb-growth-fill {
   height: 100%;
   border-radius: 999rpx;
-  background: linear-gradient(90deg, #22C55E, #7BD88F);
+  background: linear-gradient(90deg, #4F7FFF, #6EC1FF);
   transition: width 0.4s ease-out;
 }
 
 .celeb-growth-desc {
   display: block;
   font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.56);
+  color: #64748B;
   line-height: 1.4;
 }
 
 .celeb-tap-hint {
   padding: 10rpx 28rpx;
   border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
+  background: rgba(79, 127, 255, 0.08);
+  color: #4F7FFF;
   font-size: 24rpx;
   pointer-events: auto;
 }
