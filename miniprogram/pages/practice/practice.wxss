@@ -1210,22 +1210,6 @@
   min-height: 60vh;
 }
 
-.loading-spinner {
-  width: 54rpx;
-  height: 54rpx;
-  border: 5rpx solid #DDE8FF;
-  border-top-color: #4F7FFF;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-.loading-text {
-  font-size: 26rpx;
-  color: #617089;
-  margin-top: 18rpx;
-  font-weight: 700;
-}
-
 /* ==================== 答题卡弹窗 ==================== */
 
 .sheet-overlay {
@@ -1365,7 +1349,6 @@
   .option-item::after,
   .option-indicator,
   .dot,
-  .loading-spinner,
   .sheet-cell,
   .answer-feedback,
   .feedback-icon-wrap,
