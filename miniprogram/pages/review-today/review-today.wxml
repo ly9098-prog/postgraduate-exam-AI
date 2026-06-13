@@ -180,15 +180,6 @@
         </view>
       </view>
 
-      <view class="nav-row">
-        <button class="nav-btn" bindtap="goPrev" disabled="{{currentIndex === 0}}">
-          <text>上一题</text>
-        </button>
-        <button class="nav-btn" bindtap="goNext" disabled="{{currentIndex >= groupQuestions.length - 1}}">
-          <text>下一题</text>
-        </button>
-      </view>
-
       <button class="submit-group-btn" bindtap="submitGroup" loading="{{submittingGroup}}">
         提交本组复盘（{{_answeredCount}} / {{groupQuestions.length}}）
       </button>
