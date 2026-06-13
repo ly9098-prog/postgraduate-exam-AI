@@ -1,4 +1,6 @@
 {
   "navigationBarTitleText": "番茄钟",
-  "usingComponents": {}
+  "usingComponents": {
+    "animated-view": "/components/AnimatedView/AnimatedView"
+  }
 }

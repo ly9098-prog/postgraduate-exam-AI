@@ -82,6 +82,7 @@ Page({
 
   _timer: null,
   _touchStartX: 0,
+  _pageVisible: false,
 
   /* ==================== Lifecycle ==================== */
 
@@ -104,13 +105,14 @@ Page({
   },
 
   async onShow() {
+    this._pageVisible = true
     this.loadTodayStats()
 
     const completionFlag = wx.getStorageSync('pomodoro_completion')
     if (completionFlag) {
-      // Vibration can now fire since we're back in foreground
-      wx.vibrateLong()
       if (!this.data.showCelebration) {
+        // Deferred celebration — timer completed while page was in background / locked
+        wx.vibrateLong()
         this.setData({ showCelebration: true, celebrationMotto: completionFlag.motto })
         return
       }
@@ -130,6 +132,7 @@ Page({
   },
 
   onHide() {
+    this._pageVisible = false
     // Save running state for offline restore when app returns from background
     if (this.data.phase === PHASE.RUNNING && this.data.sessionId) {
       wx.setStorageSync('pomodoro_running_state', {
@@ -354,14 +357,15 @@ Page({
     }
     this.loadTodayStats()
 
-    // Celebration overlay — wait for user confirmation, DO NOT auto-start break
+    // Celebration — only show if page is in foreground; otherwise defer to onShow
     const motto = MOTTOES[Math.floor(Math.random() * MOTTOES.length)]
     wx.setStorageSync('pomodoro_completion', { motto, sessionId: this.data.sessionId })
-    this.setData({ showCelebration: true, celebrationMotto: motto })
-    // Break starts only when user taps confirmCelebration()
+    if (this._pageVisible) {
+      this.setData({ showCelebration: true, celebrationMotto: motto })
+    }
   },
 
-  confirmCelebration() {
+  dismissCelebration() {
     wx.removeStorageSync('pomodoro_completion')
     this.setData({ showCelebration: false })
     const breakSec = this.data.breakDuration * 60
