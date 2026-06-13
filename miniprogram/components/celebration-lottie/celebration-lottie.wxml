@@ -35,10 +35,17 @@
     </view>
     <view class="fallback-content">
       <view class="fb-badge {{type}}">
-        <text wx:if="{{type === 'excellent' || type === 'final'}}">★</text>
-        <text wx:elif="{{type === 'combo'}}">🔥</text>
-        <text wx:elif="{{type === 'focus'}}">!</text>
-        <text wx:else>✓</text>
+        <view class="fb-ring"></view>
+        <view class="fb-core">
+          <view wx:if="{{type === 'practice' || type === 'steady'}}" class="fb-check">
+            <view class="fb-check-stem"></view>
+            <view class="fb-check-tail"></view>
+          </view>
+          <text wx:elif="{{type === 'excellent' || type === 'final'}}">★</text>
+          <text wx:elif="{{type === 'combo'}}">🔥</text>
+          <text wx:elif="{{type === 'focus'}}">!</text>
+          <text wx:else>✓</text>
+        </view>
       </view>
     </view>
   </view>
