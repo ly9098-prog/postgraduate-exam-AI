@@ -42,5 +42,6 @@ class WrongQuestionResponse(BaseModel):
 
 class WrongQuestionStats(BaseModel):
     total: int
+    unmastered: int = 0
     by_subject: list[dict]
     by_error_type: list[dict]

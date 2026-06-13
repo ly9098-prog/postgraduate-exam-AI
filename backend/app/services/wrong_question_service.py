@@ -140,8 +140,15 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
 
     by_subject = [{"subject": r[0], "count": r[1]} for r in result3.all()]
 
+    unmastered_q = select(func.count(WrongQuestion.id)).where(
+        WrongQuestion.user_id == user_id,
+        WrongQuestion.mastered == False,
+    )
+    unmastered = (await db.execute(unmastered_q)).scalar() or 0
+
     return {
         "total": total,
+        "unmastered": unmastered,
         "by_subject": by_subject,
         "by_error_type": by_error_type,
     }
