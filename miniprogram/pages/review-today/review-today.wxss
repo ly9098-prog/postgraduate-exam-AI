@@ -713,7 +713,8 @@
 .nav-btn[disabled] { opacity: 0.38; }
 
 .submit-group-btn {
-  width: 100%;
+  width: auto;
+  margin: 18rpx 24rpx 0;
   height: 90rpx;
   border-radius: 22rpx;
   background: linear-gradient(135deg, #18233A 0%, #27446E 100%);
@@ -721,7 +722,6 @@
   font-size: 28rpx;
   font-weight: 900;
   border: none;
-  margin-top: 22rpx;
   display: flex;
   align-items: center;
   justify-content: center;
