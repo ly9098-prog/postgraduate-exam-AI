@@ -48,17 +48,34 @@ function _loadLottieMap() {
 }
 var LOTTIE_MAP = _loadLottieMap()
 
+var ENABLE_LOTTIE = false
+
 // ── 尝试加载 lottie-miniprogram（静态 require 多路径回退）──
 var lottieModule = null
-try { lottieModule = require('lottie-miniprogram') } catch (_) {}
-if (!lottieModule) {
-  try { lottieModule = require('../../miniprogram_npm/lottie-miniprogram/index') } catch (_) {}
+if (ENABLE_LOTTIE) {
+  try { lottieModule = require('lottie-miniprogram') } catch (_) {}
+  if (!lottieModule) {
+    try { lottieModule = require('../../miniprogram_npm/lottie-miniprogram/index') } catch (_) {}
+  }
+}
+
+function _getDevicePixelRatio() {
+  if (wx.getWindowInfo) {
+    return wx.getWindowInfo().pixelRatio || 2
+  }
+  return 2
+}
+
+function _isReducedMotionEnabled() {
+  if (wx.getSystemSetting) {
+    return wx.getSystemSetting().reduceMotion === true
+  }
+  return false
 }
 
 // lottie-miniprogram 内部通过 createTag('canvas') 动态创建 canvas 用于图层合成，
 // 但微信小程序不支持 document.createElement，返回 mock 对象导致动画无法渲染。
 // 该问题在基础库提供 createOffscreenCanvas 或库适配后可解决，届时改为 true 即可启用 Lottie。
-var ENABLE_LOTTIE = false
 
 Component({
   properties: {
@@ -111,12 +128,7 @@ Component({
       this._reducedMotion = false
       // 判断能否走 Lottie 渲染（lottie-miniprogram 可用 + 至少有一种动画数据 + 功能开关开启）
       this._canLottie = !!(ENABLE_LOTTIE && lottieModule && LOTTIE_MAP)
-      try {
-        var sysInfo = wx.getSystemInfoSync()
-        if (sysInfo && sysInfo.reduceMotion === true) {
-          this._reducedMotion = true
-        }
-      } catch (_) {}
+      this._reducedMotion = _isReducedMotionEnabled()
     },
     ready: function () {
       if (this._canLottie) {
@@ -152,7 +164,7 @@ Component({
           }
           var canvas = res[0].node
           var ctx = canvas.getContext('2d')
-          var dpr = wx.getSystemInfoSync().pixelRatio || 2
+          var dpr = _getDevicePixelRatio()
           var width = res[0].width
           var height = res[0].height
           canvas.width = width * dpr

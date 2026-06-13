@@ -6,7 +6,7 @@ Component({
     ctrl: {}, // 控制信号
     nodes: [],
     // #ifdef MP-WEIXIN
-    isiOS: (wx.canIUse('getDeviceInfo') ? wx.getDeviceInfo() : wx.getSystemInfoSync()).system.includes('iOS')
+    isiOS: wx.getDeviceInfo().system.includes('iOS')
     // #endif
   },
   properties: {
