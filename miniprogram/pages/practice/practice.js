@@ -925,7 +925,6 @@ Page({
 
     this._clearTimer()
     this.setData({ submitting: true })
-    wx.showLoading({ title: '批改中...' })
 
     try {
       const answers = completedQuestions.map(q => ({
@@ -947,8 +946,6 @@ Page({
       })
 
       const duration = Math.floor((Date.now() - startTime) / 1000)
-      wx.hideLoading()
-
       // 存储详细结果供 result 页使用
       wx.setStorageSync('lastPracticeResult', {
         correct: result.total_correct || 0,
@@ -973,7 +970,6 @@ Page({
       })
     } catch (e) {
       console.error('提交失败', e)
-      wx.hideLoading()
       this.setData({ submitting: false })
       wx.showToast({ title: '提交失败', icon: 'none' })
     }

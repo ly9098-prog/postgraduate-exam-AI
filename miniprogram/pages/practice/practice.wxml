@@ -1,4 +1,10 @@
 <view class="page">
+  <view class="submit-loading-mask" wx:if="{{submitting}}" catchtap="noop">
+    <view class="submit-loading-card">
+      <loading-lottie text="正在批改..." size="large" />
+    </view>
+  </view>
+
   <!-- ==================== 设置页 ==================== -->
   <view class="setup" wx:if="{{!started}}">
     <view class="practice-hero hero-panel motion-card-enter">
@@ -259,7 +265,7 @@
           <text class="nav-arrow line-icon icon-chevron-right"></text>
         </view>
       </view>
-      <button class="btn-submit" bindtap="doSubmit" loading="{{submitting}}" disabled="{{submitting}}">
+      <button class="btn-submit" bindtap="doSubmit" disabled="{{submitting}}">
         交卷复盘（{{answeredCount || 0}}/{{totalQuestions || 0}}）
       </button>
     </view>
@@ -317,7 +323,7 @@
           {{index + 1}}
         </view>
       </view>
-      <button class="btn-submit sheet-submit" bindtap="doSubmit" loading="{{submitting}}" disabled="{{submitting}}">交卷复盘</button>
+      <button class="btn-submit sheet-submit" bindtap="doSubmit" disabled="{{submitting}}">交卷复盘</button>
     </view>
   </view>
 </view>
