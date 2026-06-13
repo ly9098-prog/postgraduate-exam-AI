@@ -71,16 +71,8 @@ const config = {
 const tagSelector = {}
 let windowWidth, system
 // #ifdef MP-WEIXIN
-if (wx.canIUse('getWindowInfo')) {
-  windowWidth = wx.getWindowInfo().windowWidth
-  system = wx.getDeviceInfo().system
-} else {
-// #endif
-  const systemInfo = wx.getSystemInfoSync()
-  windowWidth = systemInfo.windowWidth
-  // #ifdef MP-WEIXIN
-  system = systemInfo.system
-}
+windowWidth = wx.getWindowInfo().windowWidth
+system = wx.getDeviceInfo().system
 // #endif
 const blankChar = makeMap(' ,\r,\n,\t,\f')
 let idIndex = 0
