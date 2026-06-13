@@ -135,7 +135,7 @@
           <!-- Progress Ring -->
           <view class="ring-wrapper">
             <view class="ring-glow"></view>
-            <canvas class="ring-canvas" canvas-id="progress-ring" id="progress-ring"></canvas>
+            <canvas class="ring-canvas" type="2d" id="progress-ring"></canvas>
             <view class="ring-center">
               <text class="ring-time {{phase === 'break' ? 'time-warm' : ''}}">{{displayMin}}:{{displaySec}}</text>
               <text class="ring-status" wx:if="{{isPaused}}">已暂停</text>
