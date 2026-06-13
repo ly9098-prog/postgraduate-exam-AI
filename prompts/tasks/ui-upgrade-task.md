@@ -671,7 +671,7 @@ Streak
 | Dashboard | ✅ | ✅ | ✅ | ✅ | 365 天热力图 + 徽章墙 + AI 画像 + 趋势折线/环形图 |
 | Login | ✅ | ✅ | ✅ | ✅ | 品牌名 MemoGrad + CSS 插画 + 浮动粒子微动效 |
 | Pomodoro | ✅ | ✅ | ✅ | ✅ | 番茄计时 + 独立 CSS 庆祝层 |
-| Import | ✅ | ✅ | ✅ | — | 图标体系统一 |
+| Import | — | ✅ | ✅ | — | 暖调纸张色背景（刻意区别于蓝色学习主题），图标体系统一 |
 
 ## 成长体系（后端化）
 
@@ -683,7 +683,7 @@ Streak
 
 | 层级 | 方案 | 覆盖 |
 |------|------|------|
-| Lottie | 8 个品牌 JSON 动画（需构建 npm） | celebration-lottie 组件 |
+| Lottie | 6 个品牌 JSON 动画（需构建 npm；success-check.json 被 practice 和 steady 类型共享） | celebration-lottie 组件 |
 | Canvas 2D | 28 粒子 + 10 星光 + 徽章弹性动画（60fps） | celebration-lottie 组件 |
 | CSS | 粒子 + 渐变徽章 + 文字淡入 | celebration-lottie 降级 + 页面内联动效 |
 | 连击 | 3 级里程碑 warm/hot/fire + 动态星星 | Practice 答题 |
@@ -699,7 +699,7 @@ Streak
 
 - 共享 `fadeSlideIn`、`spin`、`page-enter`、`card-enter` 仅在 `tokens.wxss` 定义
 - 各页面仅保留与特定组件绑定的专用 @keyframes
-- review-today: 16→2（slideIn、fadeIn）
+- review-today: 16→2（fadeIn、reward-pop）
 - practice-result: 0（全部清除）
 
 ## celebration-lottie 组件
@@ -727,7 +727,7 @@ Streak
 | 1 | 6 页面蓝色风格统一 | ✅ | 全部页面背景 `linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%)` |
 | 2 | 成长体系真实 API | ✅ | `api.get('/stats/dashboard')` + `api.get('/stats/growth')` 四页面接入 |
 | 3 | 庆祝动效 + reduced-motion | ✅ | celebration-lottie 三级保障；`_reducedMotion` JS 检测 + 11 页面 CSS 降级 |
-| 4 | 365 天热力图 + 雷达图 + AI 诊断 | ✅ | dashboard 构建 364 cell 热力图；wrong-book CSS 雷达图 + DeepSeek 诊断 |
+| 4 | 365 天热力图 + 雷达图 + AI 诊断 | ✅ | dashboard 构建 365 cell 热力图；wrong-book CSS 固定菱形雷达图 + DeepSeek 诊断 |
 | 5 | 图标统一 line-icon | ✅ | tokens.wxss 定义 ~25 个 icon；抽查各页面无文字/emoji 图标残留 |
 | 6 | 组件完整 + @keyframes 无重复 | ✅ | celebration-lottie 4 文件一致；shared keyframes 仅在 tokens.wxss |
 
