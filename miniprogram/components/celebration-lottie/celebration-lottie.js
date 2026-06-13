@@ -13,43 +13,52 @@
 // Lottie 路径：canvas 上播放 Lottie + cover-view 文字叠加（cover-view 可渲染在原生 canvas 上方）
 // CSS 降级路径：纯 CSS 粒子 + 徽章 + view 文字叠加（无原生 canvas，无层级问题）
 
-// ── 类型 → Lottie JS 映射（逐个加载，单个失败不影响其他类型）──
+// ── 类型 → Lottie JS 映射（静态 require，单个失败不影响其他类型）──
+// 微信小程序打包器对 require() 做静态依赖分析 —— 动态拼接的路径无法被识别，
+// 必须用字面量字符串写出每个 require，打包器才会将对应文件打入分包。
 function _loadLottieMap() {
-  var files = {
-    excellent: 'trophy.js',
-    practice: 'success-check.js',
-    steady: 'success-check.js',
-    final: 'celebration.js',
-    combo: 'fireworks.js',
-    group: 'medal.js',
-    focus: 'study.js',
-  }
   var map = {}
-  var prefix = '../../assets/lottie/'
-  for (var key in files) {
-    try {
-      map[key] = require(prefix + files[key])
-    } catch (_) {
-      console.warn('[celebration-lottie] 无法加载 Lottie JS:', files[key])
-    }
+
+  var trophyMod = null
+  var successMod = null
+  var celebrationMod = null
+  var fireworksMod = null
+  var medalMod = null
+  var studyMod = null
+
+  try { trophyMod = require('../../assets/lottie/trophy.js') } catch (_) {}
+  try { successMod = require('../../assets/lottie/success-check.js') } catch (_) {}
+  try { celebrationMod = require('../../assets/lottie/celebration.js') } catch (_) {}
+  try { fireworksMod = require('../../assets/lottie/fireworks.js') } catch (_) {}
+  try { medalMod = require('../../assets/lottie/medal.js') } catch (_) {}
+  try { studyMod = require('../../assets/lottie/study.js') } catch (_) {}
+
+  if (trophyMod) map.excellent = trophyMod
+  if (successMod) { map.practice = successMod; map.steady = successMod }
+  if (celebrationMod) map.final = celebrationMod
+  if (fireworksMod) map.combo = fireworksMod
+  if (medalMod) map.group = medalMod
+  if (studyMod) map.focus = studyMod
+
+  if (Object.keys(map).length === 0) {
+    console.warn('[celebration-lottie] 所有 Lottie 动画加载失败，将使用 CSS 降级')
+    return null
   }
-  return Object.keys(map).length > 0 ? map : null
+  return map
 }
 var LOTTIE_MAP = _loadLottieMap()
 
-// ── 尝试加载 lottie-miniprogram（多路径回退）──
+// ── 尝试加载 lottie-miniprogram（静态 require 多路径回退）──
 var lottieModule = null
-var LOTTIE_PATHS = [
-  'lottie-miniprogram',
-  '../../miniprogram_npm/lottie-miniprogram/index',
-  '../../node_modules/lottie-miniprogram/miniprogram_dist/index',
-]
-for (var i = 0; i < LOTTIE_PATHS.length; i++) {
-  try {
-    lottieModule = require(LOTTIE_PATHS[i])
-    if (lottieModule) break
-  } catch (_) {}
+try { lottieModule = require('lottie-miniprogram') } catch (_) {}
+if (!lottieModule) {
+  try { lottieModule = require('../../miniprogram_npm/lottie-miniprogram/index') } catch (_) {}
 }
+
+// lottie-miniprogram 内部通过 createTag('canvas') 动态创建 canvas 用于图层合成，
+// 但微信小程序不支持 document.createElement，返回 mock 对象导致动画无法渲染。
+// 该问题在基础库提供 createOffscreenCanvas 或库适配后可解决，届时改为 true 即可启用 Lottie。
+var ENABLE_LOTTIE = false
 
 Component({
   properties: {
@@ -100,8 +109,8 @@ Component({
     attached: function () {
       this._lottieAnim = null
       this._reducedMotion = false
-      // 判断能否走 Lottie 渲染（lottie-miniprogram 可用 + 至少有一种动画数据）
-      this._canLottie = !!(lottieModule && LOTTIE_MAP)
+      // 判断能否走 Lottie 渲染（lottie-miniprogram 可用 + 至少有一种动画数据 + 功能开关开启）
+      this._canLottie = !!(ENABLE_LOTTIE && lottieModule && LOTTIE_MAP)
       try {
         var sysInfo = wx.getSystemInfoSync()
         if (sysInfo && sysInfo.reduceMotion === true) {
@@ -111,7 +120,10 @@ Component({
     },
     ready: function () {
       if (this._canLottie) {
-        this._initCanvas()
+        // 先用 setData 将 canvas 渲染到 DOM，再在回调中获取节点初始化
+        this.setData({ canvasReady: true }, function () {
+          this._initCanvas()
+        }.bind(this))
       }
       // 否则不初始化 canvas，WXML 走 wx:else → CSS 降级
     },
@@ -135,6 +147,7 @@ Component({
         .exec(function (res) {
           if (!res || !res[0] || !res[0].node) {
             // canvas 节点获取失败，降级到 CSS
+            self.setData({ canvasReady: false })
             return
           }
           var canvas = res[0].node
@@ -150,9 +163,10 @@ Component({
 
           try {
             lottieModule.setup(canvas)
-            self.setData({ canvasReady: true, useLottie: true })
+            self.setData({ useLottie: true })
           } catch (_) {
             // Lottie.setup 失败，降级到 CSS
+            self.setData({ canvasReady: false })
           }
         })
     },

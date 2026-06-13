@@ -3,8 +3,8 @@
   <!-- 白色磨砂背景（独立 view） -->
   <view class="celeb-overlay-bg"></view>
 
-  <!-- Canvas 层：仅 Lottie 路径使用 -->
-  <view class="canvas-layer" wx:if="{{canvasReady && useLottie}}">
+  <!-- Canvas 层：canvasReady 触发渲染（让 canvas 先进入 DOM，_initCanvas 才能在回调中获取节点） -->
+  <view class="canvas-layer" wx:if="{{canvasReady}}">
     <canvas
       type="2d"
       id="celebration-canvas"
