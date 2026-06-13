@@ -499,7 +499,7 @@
   opacity: 0.82;
 }
 
-/* 完成反馈已迁移至 celebration-lottie 组件 */
+/* 完成反馈已迁移至 AnimatedView 组件 */
 
 @media (prefers-reduced-motion: reduce) {
   .page { animation: none !important; }

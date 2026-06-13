@@ -123,7 +123,7 @@ Page({
   },
 
   _showCelebration() {
-    if (this._celebrationTimer) clearTimeout(this._celebrationTimer)
+    this._clearCelebrationTimer()
     this.setData({ showCelebration: true })
     this._celebrationTimer = setTimeout(() => {
       this.setData({ showCelebration: false })
@@ -132,14 +132,20 @@ Page({
   },
 
   dismissCelebration() {
-    if (this._celebrationTimer) {
-      clearTimeout(this._celebrationTimer)
-      this._celebrationTimer = null
-    }
+    this._clearCelebrationTimer()
     this.setData({ showCelebration: false })
   },
 
+  onHide() {
+    this._clearCelebrationTimer()
+    if (this.data.showCelebration) this.setData({ showCelebration: false })
+  },
+
   onUnload() {
+    this._clearCelebrationTimer()
+  },
+
+  _clearCelebrationTimer() {
     if (this._celebrationTimer) {
       clearTimeout(this._celebrationTimer)
       this._celebrationTimer = null
