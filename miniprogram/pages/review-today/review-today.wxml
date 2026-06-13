@@ -1,4 +1,4 @@
-<celebration-lottie
+<animated-view
   show="{{showCelebration}}"
   type="{{celebrationType}}"
   title="{{celebrationTitle}}"
@@ -9,7 +9,9 @@
   growth-level="{{growthLevel}}"
   growth-level-pct="{{growthLevelPct}}"
   growth-desc="{{growthDesc}}"
-  duration="{{2600}}"
+  duration="{{celebrationDuration}}"
+  gif-src="/assets/animation/celebration.gif"
+  png-src="/assets/animation/celebration-static.png"
   bind:done="dismissCelebration"
 />
 
