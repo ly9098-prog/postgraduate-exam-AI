@@ -109,7 +109,6 @@ Page({
     groupProgress: 0,
 
     showCelebration: false,
-    celebrationIcon: '✓',
     celebrationTitle: '',
     celebrationDetail: '',
     celebrationMotto: '',
@@ -150,14 +149,14 @@ Page({
     const pct = Math.round(done / stats.total_scheduled * 360)
     if (pct <= 0) return ''
     const mid = Math.round(pct * 0.4)
-    return `background: conic-gradient(#5B7B9A 0deg, #7BA0BE ${mid}deg, #A5C5D9 ${pct}deg, rgba(255,255,255,0.25) 0deg)`
+    return `background: conic-gradient(#4F7FFF 0deg, #6EC1FF ${mid}deg, #8BB8FF ${pct}deg, rgba(226, 234, 247, 0.4) 0deg)`
   },
 
   _calcAccuracyStyle(correctCount, totalQuestions) {
     const pct = totalQuestions > 0 ? Math.round(correctCount / totalQuestions * 360) : 0
     if (pct <= 0) return ''
     const mid = Math.round(pct * 0.5)
-    return `background: conic-gradient(#6B9B6B 0deg, #8BC88B ${mid}deg, #A8D8A8 ${pct}deg, #EDF1F5 0deg)`
+    return `background: conic-gradient(#22C55E 0deg, #4ADE80 ${mid}deg, #86EFAC ${pct}deg, #E2EAF7 0deg)`
   },
 
   _calcMotivationMsg(stats) {
@@ -582,7 +581,6 @@ Page({
     const groupTotal = this.data.groups.length || groupIndex
     this._showCelebration({
       celebrationType: 'group',
-      celebrationIcon: correct >= total ? '✓' : '↗',
       celebrationTitle: `第 ${groupIndex} 组复盘完成`,
       celebrationDetail: `答对 ${correct}/${total} 题`,
       celebrationMotto: correct >= total ? '这组很稳，继续保持节奏' : '错题已暴露，复盘后会更牢固',
@@ -598,7 +596,6 @@ Page({
     await this._loadGrowthForCelebration()
     this._showCelebration({
       celebrationType: 'final',
-      celebrationIcon: '章',
       celebrationTitle: '今日复习完成',
       celebrationDetail: `完成 ${total} 题 · 答对 ${correct} 题`,
       celebrationMotto: '记忆曲线已更新，今天的积累会在明天生效',

@@ -808,7 +808,13 @@ Page({
       return
     }
 
-    const feedbackType = isCorrect === true ? 'correct' : (isCorrect === false ? 'wrong' : 'selected')
+    // 仅在明确判对/判错时弹出反馈，无法判定则不弹
+    if (isCorrect !== true && isCorrect !== false) {
+      this.setData({ comboCount: nextCombo })
+      return
+    }
+
+    const feedbackType = isCorrect === true ? 'correct' : 'wrong'
     let feedbackTitle, feedbackDetail, feedbackComboText, feedbackComboLevel, feedbackStarCount
 
     if (isCorrect === true) {
@@ -837,15 +843,9 @@ Page({
         feedbackComboLevel = ''
         feedbackStarCount = 0
       }
-    } else if (isCorrect === false) {
+    } else {
       feedbackTitle = '继续加油'
       feedbackDetail = '先记录选择，交卷后集中复盘'
-      feedbackComboText = ''
-      feedbackComboLevel = ''
-      feedbackStarCount = 0
-    } else {
-      feedbackTitle = '已选择答案'
-      feedbackDetail = '已记录本题选择'
       feedbackComboText = ''
       feedbackComboLevel = ''
       feedbackStarCount = 0

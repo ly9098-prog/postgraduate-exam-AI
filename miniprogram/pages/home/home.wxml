@@ -1,6 +1,10 @@
 <view class="home-page">
   <view class="welcome-section hero-panel motion-card-enter">
     <view class="welcome-glass"></view>
+    <view class="welcome-particle wp-1"></view>
+    <view class="welcome-particle wp-2"></view>
+    <view class="welcome-particle wp-3"></view>
+    <view class="welcome-particle wp-4"></view>
     <view class="welcome-content">
       <view class="welcome-greeting-row">
         <text class="welcome-greeting">{{greeting}}，</text>
