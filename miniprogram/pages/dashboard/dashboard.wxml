@@ -291,6 +291,19 @@
         </view>
       </view>
 
+      <!-- Top forgotten topics -->
+      <view class="card forgotten-topics-card" wx:if="{{forgetting.top_forgotten_topics.length > 0}}">
+        <view class="card-label-row">
+          <text class="card-label">高频遗忘知识点</text>
+          <text class="card-label-hint">共{{forgetting.top_forgotten_topics.length}}项</text>
+        </view>
+        <view class="forgotten-tag-list">
+          <text class="forgotten-tag" wx:for="{{forgetting.top_forgotten_topics}}" wx:key="topic">
+            {{item.topic}} · {{item.count}}次
+          </text>
+        </view>
+      </view>
+
       <!-- Overall mastery progress -->
       <view class="card mastery-progress-card" wx:if="{{overview.total_questions > 0}}">
         <view class="mp-header">
