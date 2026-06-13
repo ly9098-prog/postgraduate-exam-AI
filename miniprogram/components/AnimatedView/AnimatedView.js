@@ -118,6 +118,7 @@ Component({
     mode: 'hidden',
     canvasReady: false,
     useLottie: false,
+    fallbackActive: false,
     fallbackGlyph: 'check',
   },
 
@@ -207,6 +208,7 @@ Component({
         showContent: false,
         mode: mode,
         useLottie: false,
+        fallbackActive: mode !== 'lottie',
         canvasReady: mode === 'lottie',
         fallbackGlyph: getFallbackGlyph(this.data.type),
       }
@@ -285,7 +287,7 @@ Component({
     _fallbackFromLottie: function () {
       this._destroyLottie()
       var mode = this.data.gifSrc ? 'gif' : (this.data.pngSrc ? 'png' : 'static')
-      this.setData({ mode: mode, canvasReady: false, useLottie: false })
+      this.setData({ mode: mode, canvasReady: false, useLottie: false, fallbackActive: true })
     },
 
     _pauseAnimation: function () {
@@ -318,7 +320,7 @@ Component({
       this._clearTimers()
       this._destroyLottie()
       if (this.data.visible || this.data.showContent || this.data.mode !== 'hidden') {
-        this.setData({ visible: false, showContent: false, mode: 'hidden', canvasReady: false, useLottie: false })
+        this.setData({ visible: false, showContent: false, mode: 'hidden', canvasReady: false, useLottie: false, fallbackActive: false })
       }
       if (emitDone) this.triggerEvent('done')
     },

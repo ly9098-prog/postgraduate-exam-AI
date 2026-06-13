@@ -1,7 +1,14 @@
-<view class="celebration-shell {{visible ? 'active' : ''}} type-{{type}}" catchtap="onTap">
+<view class="celebration-shell {{visible ? 'active' : ''}} type-{{type}} mode-{{mode}}" catchtap="onTap">
   <view class="celeb-overlay-bg"></view>
+  <view wx:if="{{mode !== 'hidden'}}" class="celeb-orb orb-a"></view>
+  <view wx:if="{{mode !== 'hidden'}}" class="celeb-orb orb-b"></view>
+  <view wx:if="{{mode !== 'hidden'}}" class="celeb-glass-card">
+    <view class="glass-rim"></view>
+    <view class="glass-shine"></view>
+    <view class="glass-stage"></view>
+  </view>
 
-  <view class="canvas-layer" wx:if="{{mode === 'lottie' && canvasReady}}">
+  <view class="canvas-layer" wx:if="{{mode === 'lottie' && canvasReady && !fallbackActive}}">
     <canvas
       type="2d"
       id="animated-view-canvas"
@@ -9,15 +16,15 @@
     ></canvas>
   </view>
 
-  <view class="media-layer" wx:elif="{{mode === 'gif'}}">
+  <view class="media-layer" wx:if="{{fallbackActive && mode === 'gif'}}">
     <image class="fallback-media" src="{{gifSrc}}" mode="aspectFit" show-menu-by-longpress="false" />
   </view>
 
-  <view class="media-layer" wx:elif="{{mode === 'png'}}">
+  <view class="media-layer" wx:if="{{fallbackActive && mode === 'png'}}">
     <image class="fallback-media static-media" src="{{pngSrc}}" mode="aspectFit" show-menu-by-longpress="false" />
   </view>
 
-  <view class="fallback-layer" wx:elif="{{mode === 'static'}}">
+  <view class="fallback-layer" wx:if="{{fallbackActive && mode === 'static'}}">
     <view class="fallback-bg"></view>
     <view class="fallback-fireworks">
       <view class="fw fw-1"></view>
