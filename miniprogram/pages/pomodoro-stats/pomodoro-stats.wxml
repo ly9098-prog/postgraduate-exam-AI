@@ -3,8 +3,7 @@
 
     <block wx:if="{{loading}}">
       <view class="loading-wrap">
-        <view class="loading-spinner"></view>
-        <text class="loading-text">加载中...</text>
+        <loading-lottie text="加载中..." size="large" />
       </view>
     </block>
 

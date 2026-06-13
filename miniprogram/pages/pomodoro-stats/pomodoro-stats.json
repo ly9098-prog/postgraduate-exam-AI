@@ -1,4 +1,6 @@
 {
   "navigationBarTitleText": "专注统计",
-  "usingComponents": {}
+  "usingComponents": {
+    "loading-lottie": "/components/loading-lottie/loading-lottie"
+  }
 }
