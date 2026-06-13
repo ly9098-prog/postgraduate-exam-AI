@@ -722,7 +722,9 @@
   font-weight: 900;
   border: none;
   margin-top: 22rpx;
-  line-height: 90rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   box-shadow: 0 12rpx 28rpx rgba(23, 32, 51, 0.14);
 }
 
