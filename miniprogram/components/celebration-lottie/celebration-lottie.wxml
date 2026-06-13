@@ -1,5 +1,8 @@
 <!-- celebration-lottie: Canvas 粒子动画 + CSS 降级 -->
 <view class="celebration-shell {{visible ? 'active' : ''}} type-{{type}}" catchtap="onTap">
+  <!-- 暗色背景层（独立 view，避免 canvas 原生组件遮挡） -->
+  <view class="celeb-overlay-bg"></view>
+
   <!-- Canvas 粒子动画层（首选，canvas 2D 渲染） -->
   <view class="canvas-layer" wx:if="{{canvasReady}}">
     <canvas
