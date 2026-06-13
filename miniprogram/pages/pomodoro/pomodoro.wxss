@@ -74,6 +74,17 @@
   letter-spacing: 2rpx;
 }
 
+.debug-badge {
+  font-size: 18rpx;
+  font-weight: 800;
+  color: #F59E0B;
+  padding: 2rpx 8rpx;
+  border: 1rpx solid rgba(245, 158, 11, 0.3);
+  border-radius: 6rpx;
+  margin-left: 8rpx;
+  letter-spacing: 2rpx;
+}
+
 .top-right {
   display: flex;
   gap: 12rpx;
@@ -230,6 +241,11 @@
 .mode-dot.active .dot-ring {
   border-color: rgba(59, 130, 246, 0.6);
   box-shadow: 0 0 20rpx rgba(59, 130, 246, 0.15);
+}
+
+.mode-dot.active .debug-ring {
+  border-color: rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 20rpx rgba(245, 158, 11, 0.15);
 }
 
 .dot-fill {
