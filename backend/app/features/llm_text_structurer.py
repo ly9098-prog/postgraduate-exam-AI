@@ -210,6 +210,25 @@ def _appears_in(needle: str, haystack_norm: str, *, ratio_threshold: float = 0.8
     return False
 
 
+# 答案信号：原文中存在答案标签 / 末行独立字母 / 判断答案 / "答 X" 形式
+_TRAILING_LETTER_LINE_RE = re.compile(r"(?:^|\n)\s*([A-Da-d]{1,4})\s*(?:\n|$)")
+_TRUE_FALSE_LINE_RE = re.compile(
+    r"(?:^|\n)\s*(?:正确|错误|对|错|True|False|√|×|T|F)\s*(?:\n|$)",
+    re.IGNORECASE,
+)
+
+
+def _original_has_answer_signal(original: str) -> bool:
+    """检查原文是否包含任何答案信号，避免 LLM 凭空捏造单字母答案。"""
+    if _ANSWER_LABEL_RE.search(original):
+        return True
+    if _TRAILING_LETTER_LINE_RE.search(original):
+        return True
+    if _TRUE_FALSE_LINE_RE.search(original):
+        return True
+    return False
+
+
 def _validate_no_hallucination(
     structured: dict[str, Any], original: str
 ) -> tuple[dict[str, Any], list[str]]:
@@ -261,14 +280,21 @@ def _validate_no_hallucination(
                 dropped.append(f"option_{key}")
     cleaned["options"] = sorted(valid_options, key=lambda x: x["key"])
 
-    # answer — 字符串答案必须在原文（A-D 单字母放宽）
+    # answer — 字符串答案必须在原文（A-D 单字母放宽，但需原文存在答案信号）
+    has_answer_signal = _original_has_answer_signal(original)
     answer = structured.get("answer")
     if isinstance(answer, str):
         ans = answer.strip()
         if ans:
-            # 单字母 / 多字母组合 / 判断题答案 — 直接保留（极易在 _normalize_for_match 后丢失）
-            if re.fullmatch(r"[A-Da-d]+|[正错对]|true|false|T|F|√|×", ans, re.IGNORECASE):
-                cleaned["answer"] = ans
+            is_letter_or_tf = bool(
+                re.fullmatch(r"[A-Da-d]+|[正错对]|true|false|T|F|√|×", ans, re.IGNORECASE)
+            )
+            if is_letter_or_tf:
+                # 字母 / 判断答案 — 仅当原文存在答案信号时保留
+                if has_answer_signal:
+                    cleaned["answer"] = ans
+                else:
+                    dropped.append("answer")
             elif _appears_in(ans, haystack, ratio_threshold=0.8):
                 cleaned["answer"] = ans
             else:
@@ -277,7 +303,10 @@ def _validate_no_hallucination(
         # 多选答案数组
         joined = ",".join(str(x) for x in answer if isinstance(x, str))
         if joined and re.fullmatch(r"[A-D,]+", joined.upper()):
-            cleaned["answer"] = joined
+            if has_answer_signal:
+                cleaned["answer"] = joined
+            else:
+                dropped.append("answer")
         elif joined:
             dropped.append("answer")
 

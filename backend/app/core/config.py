@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     # 文本导入 LLM 结构化层（仅做格式整理，不补全/不推测）
     TEXT_IMPORT_LLM_ENABLED: bool = True
-    TEXT_IMPORT_LLM_MODEL: str = "deepseek-chat"
+    TEXT_IMPORT_LLM_MODEL: str = "deepseek-v4-flash"
     TEXT_IMPORT_LLM_DAILY_TOKEN: int = 50000
     TEXT_IMPORT_LLM_MAX_BLOCK_CHARS: int = 6000
 
