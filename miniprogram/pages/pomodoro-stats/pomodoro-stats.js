@@ -35,6 +35,12 @@ Page({
 
     // pie chart detail popup
     selectedSubjectDetail: null,
+
+    // Animated display values
+    _dispTodaySessions: 0,
+    _dispTodayDurationText: '0分钟',
+    _dispWeekSessions: 0,
+    _dispWeekDurationText: '0分钟',
   },
 
   onLoad() {
@@ -50,6 +56,18 @@ Page({
       this.setData({ pageEntered: true })
     }, 50)
   },
+
+  onUnload() {
+    this._stopAnimation()
+  },
+
+  /* ==================== Color Helpers ==================== */
+
+  _easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3)
+  },
+
+  /* ==================== Data Loading ==================== */
 
   async loadData() {
     this.setData({ loading: true })
@@ -97,9 +115,22 @@ Page({
         history: (hist.items || []).map(this._formatSession),
         historyTotal: hist.total || 0,
         loading: false,
+
+        // Reset display values
+        _dispTodaySessions: 0,
+        _dispTodayDurationText: '0分钟',
+        _dispWeekSessions: 0,
+        _dispWeekDurationText: '0分钟',
       })
-      setTimeout(() => this.drawTrendBars(), 100)
-      setTimeout(() => this.drawPieChart(), 200)
+
+      // Store raw seconds for animation
+      this._rawTodayDur = stats.today_duration_sec || 0
+      this._rawWeekDur = stats.week_duration_sec || 0
+
+      // Draw initial empty chart backgrounds then animate
+      this._drawEmptyChart()
+      this._drawEmptyBars()
+      this._cacheDimensions(() => this._startAnimations())
     } catch (e) {
       console.error('加载统计失败', e)
       this.setData({ loading: false })
@@ -127,159 +158,344 @@ Page({
     }
   },
 
-  drawTrendBars() {
-    if (!this.data.trends.length) return
-    const query = wx.createSelectorQuery().in(this)
-    query.select('#trend-bars-canvas').boundingClientRect(rect => {
-      if (!rect || !rect.width) return
-      const ctx = wx.createCanvasContext('trend-bars-canvas', this)
-      const w = rect.width
-      const h = rect.height
-      const padL = 44
-      const padR = 16
-      const padT = 24
-      const padB = 32
-      const chartW = w - padL - padR
-      const chartH = h - padT - padB
-      const trends = this.data.trends
-      const barW = Math.min(32, chartW / trends.length * 0.5)
-      const gap = chartW / trends.length
-      const maxDur = Math.max(1, ...trends.map(t => t.duration_sec || 0))
+  /* ==================== Animation Control ==================== */
 
-      ctx.clearRect(0, 0, w, h)
+  _stopAnimation() {
+    if (this._animTimer) {
+      clearTimeout(this._animTimer)
+      this._animTimer = null
+    }
+    this._animActive = false
+  },
 
-      // Horizontal grid lines
-      for (let i = 0; i <= 3; i++) {
-        const y = padT + chartH * (1 - i / 3)
-        ctx.beginPath()
-        ctx.setStrokeStyle('rgba(255,255,255,0.04)')
-        ctx.setLineWidth(0.5)
-        ctx.moveTo(padL, y)
-        ctx.lineTo(w - padR, y)
-        ctx.stroke()
-      }
+  _cacheDimensions(callback) {
+    let count = 0
+    const check = () => { if (++count >= 2) callback() }
 
-      // Baseline
-      ctx.beginPath()
-      ctx.setStrokeStyle('rgba(255,255,255,0.06)')
-      ctx.setLineWidth(1)
-      ctx.moveTo(padL, padT + chartH)
-      ctx.lineTo(w - padR, padT + chartH)
-      ctx.stroke()
+    const q1 = wx.createSelectorQuery().in(this)
+    q1.select('#trend-bars-canvas').boundingClientRect(rect => {
+      this._trendBarsRect = rect
+      check()
+    }).exec()
 
-      trends.forEach((t, i) => {
-        const x = padL + gap * i + (gap - barW) / 2
-        const barH = Math.max(4, (t.duration_sec || 0) / maxDur * chartH)
-        const y = padT + chartH - barH
+    const q2 = wx.createSelectorQuery().in(this)
+    q2.select('#pie-canvas').boundingClientRect(rect => {
+      this._pieRect = rect
+      check()
+    }).exec()
+  },
 
-        if (t.duration_sec > 0) {
-          // Bar with rounded look
-          const radius = Math.min(4, barW / 2)
-          ctx.beginPath()
-          ctx.setFillStyle('#3B82F6')
-          ctx.rect(x, y, barW, barH)
-          ctx.fill()
+  _startAnimations() {
+    this._animActive = true
+    const animDuration = 1200
+    const startTime = Date.now()
+    const tSessions = this.data.todaySessions
+    const wSessions = this.data.weekSessions
 
-          // Top highlight
-          ctx.beginPath()
-          ctx.setFillStyle('rgba(255,255,255,0.15)')
-          ctx.rect(x, y, barW, Math.min(4, barH / 3))
-          ctx.fill()
-        } else {
-          // Empty bar (dim)
-          ctx.beginPath()
-          ctx.setFillStyle('rgba(255,255,255,0.05)')
-          ctx.rect(x, y, barW, barH)
-          ctx.fill()
-        }
+    const tick = () => {
+      if (!this._animActive) return
+      const elapsed = Date.now() - startTime
+      const rawP = Math.min(1, elapsed / animDuration)
+      const eased = this._easeOutCubic(rawP)
 
-        // Date label
-        ctx.setFillStyle('rgba(255,255,255,0.25)')
-        ctx.setFontSize(9)
-        ctx.setTextAlign('center')
-        ctx.fillText(t._shortDate || '', x + barW / 2, padT + chartH + 18)
+      // Update number animations
+      const curTodaySess = Math.round(tSessions * eased)
+      const curWeekSess = Math.round(wSessions * eased)
+      const curTodayDur = Math.round(this._rawTodayDur * eased)
+      const curWeekDur = Math.round(this._rawWeekDur * eased)
+
+      this.setData({
+        _dispTodaySessions: curTodaySess,
+        _dispTodayDurationText: this._fmtMin(curTodayDur),
+        _dispWeekSessions: curWeekSess,
+        _dispWeekDurationText: this._fmtMin(curWeekDur),
       })
 
-      ctx.draw()
-    }).exec()
+      // Draw chart animations
+      this._renderPieChart(eased)
+      this._renderTrendBars(eased)
+
+      if (rawP < 1) {
+        this._animTimer = setTimeout(tick, 16)
+      } else {
+        this._animActive = false
+        this._animTimer = null
+        // Final draw at full progress to ensure crisp rendering
+        this._renderPieChart(1)
+        this._renderTrendBars(1)
+      }
+    }
+    tick()
+  },
+
+  /* ==================== Trend Bars ==================== */
+
+  _drawEmptyBars() {
+    this._renderTrendBars(0)
+  },
+
+  _renderTrendBars(progress) {
+    const trends = this.data.trends
+    if (!trends || !trends.length) return
+    const rect = this._trendBarsRect
+    if (!rect || !rect.width) return
+
+    const ctx = wx.createCanvasContext('trend-bars-canvas', this)
+    const w = rect.width
+    const h = rect.height
+    const padL = 44
+    const padR = 16
+    const padT = 24
+    const padB = 32
+    const chartW = w - padL - padR
+    const chartH = h - padT - padB
+    const barW = Math.min(32, chartW / trends.length * 0.5)
+    const gap = chartW / trends.length
+    const maxDur = Math.max(1, ...trends.map(t => t.duration_sec || 0))
+
+    ctx.clearRect(0, 0, w, h)
+
+    // Horizontal grid lines
+    for (let i = 0; i <= 3; i++) {
+      const y = padT + chartH * (1 - i / 3)
+      ctx.beginPath()
+      ctx.setStrokeStyle('rgba(255,255,255,0.04)')
+      ctx.setLineWidth(0.5)
+      ctx.moveTo(padL, y)
+      ctx.lineTo(w - padR, y)
+      ctx.stroke()
+    }
+
+    // Baseline
+    ctx.beginPath()
+    ctx.setStrokeStyle('rgba(255,255,255,0.06)')
+    ctx.setLineWidth(1)
+    ctx.moveTo(padL, padT + chartH)
+    ctx.lineTo(w - padR, padT + chartH)
+    ctx.stroke()
+
+    // Gradient fill for positive bars
+    const grad = ctx.createLinearGradient(0, padT, 0, padT + chartH)
+    grad.addColorStop(0, 'rgba(59,130,246,0.5)')
+    grad.addColorStop(0.6, '#3B82F6')
+    grad.addColorStop(1, 'rgba(59,130,246,0.8)')
+
+    trends.forEach((t, i) => {
+      const x = padL + gap * i + (gap - barW) / 2
+      const finalBarH = (t.duration_sec || 0) / maxDur * chartH
+      const barH = Math.max(0, finalBarH * progress)
+      const y = padT + chartH - barH
+
+      if (t.duration_sec > 0 && barH > 0) {
+        // Main bar with gradient
+        ctx.beginPath()
+        ctx.setFillStyle(grad)
+        ctx.rect(x, y, barW, barH)
+        ctx.fill()
+
+        // Top highlight cap
+        if (barH > 4) {
+          ctx.beginPath()
+          ctx.setFillStyle('rgba(255,255,255,0.2)')
+          ctx.rect(x, y, barW, Math.min(4, barH / 3))
+          ctx.fill()
+        }
+      } else if (t.duration_sec > 0) {
+        // Very thin bar (when progress is near 0)
+        ctx.beginPath()
+        ctx.setFillStyle('rgba(255,255,255,0.05)')
+        ctx.rect(x, padT + chartH - 1, barW, 1)
+        ctx.fill()
+      } else {
+        // Empty bar placeholder
+        ctx.beginPath()
+        ctx.setFillStyle('rgba(255,255,255,0.03)')
+        ctx.rect(x, padT + chartH - 2, barW, 2)
+        ctx.fill()
+      }
+
+      // Date label
+      ctx.setFillStyle('rgba(255,255,255,0.25)')
+      ctx.setFontSize(9)
+      ctx.setTextAlign('center')
+      ctx.fillText(t._shortDate || '', x + barW / 2, padT + chartH + 18)
+    })
+
+    ctx.draw()
   },
 
   /* ==================== Pie Chart ==================== */
 
-  drawPieChart() {
+  _drawEmptyChart() {
+    const rect = this._pieRect
+    if (!rect || !rect.width) return
+    const size = Math.min(rect.width, rect.height)
+    const center = size / 2
+    const radius = center - 24
+    const ctx = wx.createCanvasContext('pie-canvas', this)
+    ctx.clearRect(0, 0, size, size)
+    ctx.beginPath()
+    ctx.setFillStyle('rgba(255,255,255,0.02)')
+    ctx.arc(center, center, radius, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.draw()
+  },
+
+  _renderPieChart(progress) {
     const subjects = this.data.subjects
-    if (!subjects || !subjects.length) return
-    const query = wx.createSelectorQuery().in(this)
-    query.select('#pie-canvas').boundingClientRect(rect => {
-      if (!rect || !rect.width) return
-      const size = Math.min(rect.width, rect.height)
-      const center = size / 2
-      const radius = center - 24
-      const ctx = wx.createCanvasContext('pie-canvas', this)
-      ctx.clearRect(0, 0, size, size)
+    const rect = this._pieRect
+    if (!rect || !rect.width) return
+    const size = Math.min(rect.width, rect.height)
+    const center = size / 2
+    const radius = center - 24
+    const holeR = radius * 0.35
+    const ctx = wx.createCanvasContext('pie-canvas', this)
+    ctx.clearRect(0, 0, size, size)
 
-      const total = subjects.reduce((sum, s) => sum + (s._pct > 0 ? 1 : 0), 0)
-      if (total === 0) {
+    const hasData = subjects && subjects.length && subjects.some(s => (s.duration_sec || 0) > 0)
+
+    if (!hasData) {
+      ctx.beginPath()
+      ctx.setFillStyle('rgba(255,255,255,0.04)')
+      ctx.arc(center, center, radius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.setFillStyle('rgba(255,255,255,0.2)')
+      ctx.setFontSize(11)
+      ctx.setTextAlign('center')
+      ctx.fillText('今日暂无数据', center, center + 4)
+      ctx.draw()
+      return
+    }
+
+    const totalDur = subjects.reduce((sum, s) => sum + (s.duration_sec || 0), 0) || 1
+    const total = subjects.filter(s => (s.duration_sec || 0) > 0)
+
+    // Helper: draw a sector from startAngle to endAngle
+    const drawSector = (cx, cy, r, startA, endA, fillStyle, strokeStyle, lineW) => {
+      ctx.beginPath()
+      ctx.moveTo(cx, cy)
+      ctx.arc(cx, cy, r, startA, endA)
+      ctx.closePath()
+      ctx.setFillStyle(fillStyle)
+      ctx.fill()
+      if (strokeStyle) {
         ctx.beginPath()
-        ctx.setFillStyle('rgba(255,255,255,0.04)')
-        ctx.arc(center, center, radius, 0, Math.PI * 2)
-        ctx.fill()
-        ctx.setFillStyle('rgba(255,255,255,0.2)')
-        ctx.setFontSize(11)
-        ctx.setTextAlign('center')
-        ctx.fillText('今日暂无数据', center, center + 4)
-        ctx.draw()
-        return
-      }
-
-      const totalDur = subjects.reduce((sum, s) => sum + (s.duration_sec || 0), 0) || 1
-      let startAngle = -Math.PI / 2
-
-      subjects.forEach(s => {
-        const pct = (s.duration_sec || 0) / totalDur
-        const endAngle = startAngle + Math.PI * 2 * pct
-
-        // Draw sector
-        ctx.beginPath()
-        ctx.moveTo(center, center)
-        ctx.arc(center, center, radius, startAngle, endAngle)
-        ctx.closePath()
-        ctx.setFillStyle(s._color || '#3B82F6')
-        ctx.fill()
-
-        // Draw separator line
-        ctx.beginPath()
-        ctx.moveTo(center, center)
-        ctx.arc(center, center, radius, endAngle, endAngle)
-        ctx.setStrokeStyle('rgba(11,17,33,0.4)')
-        ctx.setLineWidth(1)
+        ctx.moveTo(cx, cy)
+        ctx.arc(cx, cy, r, endA, endA)
+        ctx.setStrokeStyle(strokeStyle)
+        ctx.setLineWidth(lineW || 1)
         ctx.stroke()
+      }
+    }
 
-        // Percentage label on sector (if large enough)
-        if (pct > 0.06) {
-          const midAngle = startAngle + (endAngle - startAngle) / 2
-          const labelR = radius * 0.6
-          const lx = center + labelR * Math.cos(midAngle)
-          const ly = center + labelR * Math.sin(midAngle)
-          ctx.setFillStyle('rgba(255,255,255,0.9)')
-          ctx.setFontSize(11)
-          ctx.setTextAlign('center')
-          ctx.setTextBaseline('middle')
-          ctx.fillText(Math.round(pct * 100) + '%', lx, ly)
-        }
+    // Compute all sector angles first (at full progress)
+    const sectors = []
+    let angle = -Math.PI / 2
+    total.forEach(s => {
+      const pct = (s.duration_sec || 0) / totalDur
+      const endA = angle + Math.PI * 2 * pct
+      sectors.push({
+        subject: s,
+        color: s._color || '#3B82F6',
+        startA: angle,
+        endA: endA,
+        pct: pct,
+      })
+      angle = endA
+    })
 
-        startAngle = endAngle
+    // === Layer 1: Drop shadow (offset dark circle) ===
+    ctx.beginPath()
+    ctx.arc(center + 4, center + 5, radius + 2, 0, Math.PI * 2)
+    ctx.setFillStyle('rgba(0,0,0,0.18)')
+    ctx.fill()
+
+    // === Layer 2: Dark thickness ring (offset sectors = 3D depth) ===
+    // Only when progress is enough to show
+    if (progress > 0.02) {
+      const thickOffX = 3
+      const thickOffY = 5
+      sectors.forEach(sec => {
+        const curEnd = sec.startA + (sec.endA - sec.startA) * Math.min(1, progress * 1.5)
+        if (curEnd - sec.startA < 0.005) return
+        // Draw offset sector in darker color to simulate side face
+        ctx.beginPath()
+        ctx.moveTo(center + thickOffX, center + thickOffY)
+        ctx.arc(center + thickOffX, center + thickOffY, radius, sec.startA, curEnd)
+        ctx.closePath()
+        ctx.setFillStyle('rgba(0,0,0,0.25)')
+        ctx.fill()
+      })
+    }
+
+    // === Layer 3: Sectors (top face, flat colors) ===
+    if (progress > 0) {
+      sectors.forEach(sec => {
+        const curEnd = sec.startA + (sec.endA - sec.startA) * progress
+        if (curEnd - sec.startA < 0.001) return
+
+        // Solid color sector
+        drawSector(center, center, radius, sec.startA, curEnd, sec.color, 'rgba(11,17,33,0.5)', 1.2)
       })
 
-      // Center hole (donut effect)
-      ctx.beginPath()
-      ctx.setFillStyle('#111827')
-      ctx.arc(center, center, radius * 0.35, 0, Math.PI * 2)
-      ctx.fill()
+      // === Layer 4: Strong directional lighting overlay ===
+      if (progress >= 0.05) {
+        const grad = ctx.createLinearGradient(
+          0, 0,
+          size, size
+        )
+        grad.addColorStop(0, 'rgba(255,255,255,0.22)')
+        grad.addColorStop(0.3, 'rgba(255,255,255,0.05)')
+        grad.addColorStop(0.5, 'rgba(0,0,0,0)')
+        grad.addColorStop(0.7, 'rgba(0,0,0,0.15)')
+        grad.addColorStop(1, 'rgba(0,0,0,0.35)')
 
-      ctx.draw()
-    }).exec()
+        ctx.beginPath()
+        ctx.arc(center, center, radius, 0, Math.PI * 2)
+        ctx.setFillStyle(grad)
+        ctx.fill()
+      }
+
+      // === Layer 5: Outer edge bevel ===
+      // Top arc highlight
+      ctx.beginPath()
+      ctx.arc(center, center, radius - 0.5, -Math.PI * 0.9, -Math.PI * 0.1)
+      ctx.setStrokeStyle('rgba(255,255,255,0.2)')
+      ctx.setLineWidth(2)
+      ctx.stroke()
+
+      // Bottom arc shadow
+      ctx.beginPath()
+      ctx.arc(center, center, radius - 0.5, Math.PI * 0.1, Math.PI * 0.9)
+      ctx.setStrokeStyle('rgba(0,0,0,0.2)')
+      ctx.setLineWidth(2)
+      ctx.stroke()
+    }
+
+    // === Layer 6: Center hole ===
+    ctx.beginPath()
+    ctx.setFillStyle('#111827')
+    ctx.arc(center, center, holeR, 0, Math.PI * 2)
+    ctx.fill()
+
+    // === Layer 7: Inner shadow bevel (center hole edge) ===
+    ctx.beginPath()
+    ctx.arc(center, center, holeR + 1, 0, Math.PI * 2)
+    ctx.setStrokeStyle('rgba(0,0,0,0.4)')
+    ctx.setLineWidth(2)
+    ctx.stroke()
+
+    // === Layer 8: Subtle outer glow ===
+    ctx.beginPath()
+    ctx.arc(center, center, radius + 2, 0, Math.PI * 2)
+    ctx.setStrokeStyle('rgba(255,255,255,0.04)')
+    ctx.setLineWidth(1)
+    ctx.stroke()
+
+    ctx.draw()
   },
+
+  /* ==================== Touch Interactions ==================== */
 
   onPieTap(e) {
     const query = wx.createSelectorQuery().in(this)
@@ -295,7 +511,6 @@ Page({
       const dy = y - centerY
       const dist = Math.sqrt(dx * dx + dy * dy)
 
-      // Outside pie or inside center hole
       if (dist > radius || dist < radius * 0.35) {
         this.setData({ selectedSubjectDetail: null })
         return

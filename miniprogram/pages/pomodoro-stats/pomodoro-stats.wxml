@@ -14,21 +14,21 @@
           <view class="ov-row">
             <view class="ov-card">
               <text class="ov-label">今日番茄</text>
-              <text class="ov-value">{{todaySessions}}</text>
+              <text class="ov-value">{{_dispTodaySessions}}</text>
             </view>
             <view class="ov-card">
               <text class="ov-label">今日专注</text>
-              <text class="ov-value ov-accent">{{todayDurationText}}</text>
+              <text class="ov-value ov-accent">{{_dispTodayDurationText}}</text>
             </view>
           </view>
           <view class="ov-row">
             <view class="ov-card">
               <text class="ov-label">本周番茄</text>
-              <text class="ov-value">{{weekSessions}}</text>
+              <text class="ov-value">{{_dispWeekSessions}}</text>
             </view>
             <view class="ov-card">
               <text class="ov-label">本周专注</text>
-              <text class="ov-value ov-green">{{weekDurationText}}</text>
+              <text class="ov-value ov-green">{{_dispWeekDurationText}}</text>
             </view>
           </view>
         </view>
