@@ -187,14 +187,46 @@ class TestHallucinationGuard:
         assert cleaned["analysis"] is None
         assert "analysis" in dropped
 
-    def test_letter_answer_always_passes(self):
-        original = "A. a\nB. b\n（答案在某处）"
+    def test_letter_answer_passes_when_signal_in_source(self):
+        # 原文有答案标签，字母答案放宽通过
+        original = "题干？\nA. a\nB. b\n答案：C"
         structured = {
             "stem": None, "question_type": None,
             "options": [], "answer": "C", "analysis": None,
         }
         cleaned, _ = mod._validate_no_hallucination(structured, original)
         assert cleaned["answer"] == "C"
+
+    def test_letter_answer_passes_with_trailing_standalone_letter(self):
+        # 原文末尾独立单字母也算答案信号
+        original = "题干？\nA. a\nB. b\n\nC"
+        structured = {
+            "stem": None, "question_type": None,
+            "options": [], "answer": "C", "analysis": None,
+        }
+        cleaned, _ = mod._validate_no_hallucination(structured, original)
+        assert cleaned["answer"] == "C"
+
+    def test_letter_answer_dropped_when_no_signal_in_source(self):
+        # 原文没有任何答案信号 → LLM 输出的字母答案应被拦截
+        original = "下列哪个是正确的？\nA. 选项甲\nB. 选项乙\nC. 选项丙\nD. 选项丁"
+        structured = {
+            "stem": None, "question_type": None,
+            "options": [], "answer": "B", "analysis": None,
+        }
+        cleaned, dropped = mod._validate_no_hallucination(structured, original)
+        assert cleaned["answer"] is None
+        assert "answer" in dropped
+
+    def test_multi_letter_answer_dropped_when_no_signal(self):
+        original = "下列哪些正确？\nA. a\nB. b\nC. c\nD. d"
+        structured = {
+            "stem": None, "question_type": None,
+            "options": [], "answer": ["A", "C"], "analysis": None,
+        }
+        cleaned, dropped = mod._validate_no_hallucination(structured, original)
+        assert cleaned["answer"] is None
+        assert "answer" in dropped
 
     def test_invalid_question_type_dropped(self):
         original = "题干？"
