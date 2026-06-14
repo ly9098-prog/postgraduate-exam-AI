@@ -15,6 +15,7 @@ class PomodoroStartRequest(BaseModel):
     preset: Literal["standard", "long", "custom", "debug"] = "standard"
     work_duration: int = Field(default=25, ge=0, le=120)
     break_duration: int = Field(default=5, ge=0, le=120)
+    notification_enabled: bool = False
 
     @field_validator("subject")
     @classmethod
@@ -39,8 +40,12 @@ class PomodoroSessionResponse(BaseModel):
     break_duration: int
     start_time: datetime
     end_time: datetime | None = None
+    expected_end_time: datetime | None = None
     actual_duration: int | None = None
     status: str
+    notification_enabled: bool = False
+    notification_sent: bool = False
+    notification_sent_at: datetime | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
