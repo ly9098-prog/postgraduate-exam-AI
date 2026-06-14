@@ -1,21 +1,27 @@
-"""Add pomodoro paused_at (stub — already applied to DB)
+"""add pomodoro paused_at
 
 Revision ID: q2g3h4i5j6k7
 Revises: p1f2g3h4i5j6
+Create Date: 2026-06-14 12:00:00.000000
+
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
 
-
 revision: str = "q2g3h4i5j6k7"
 down_revision: Union[str, Sequence[str], None] = "p1f2g3h4i5j6"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    pass
+    op.add_column(
+        "pomodoro_sessions",
+        sa.Column("paused_at", sa.DateTime(), nullable=True),
+    )
 
 
 def downgrade() -> None:
-    pass
+    op.drop_column("pomodoro_sessions", "paused_at")

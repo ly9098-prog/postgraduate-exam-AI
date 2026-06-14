@@ -367,6 +367,10 @@ Page({
       pauseStartTime: Date.now(),
       sessionId: this.data.sessionId,
     })
+    // 通知后端暂停（推迟通知推送时刻）；失败不阻断本地暂停
+    if (this.data.sessionId) {
+      api.post(`/pomodoro/${this.data.sessionId}/pause`, {}).catch(() => {})
+    }
   },
 
   _resumeSession() {
@@ -378,6 +382,10 @@ Page({
       pauseStartTime: null,
     })
     wx.removeStorageSync('pomodoro_pause')
+    // 通知后端恢复（按暂停时长延后通知推送时刻）；失败不阻断本地继续
+    if (this.data.sessionId) {
+      api.post(`/pomodoro/${this.data.sessionId}/resume`, {}).catch(() => {})
+    }
     const totalSec = this.data.workDuration * 60
     this._startTimer(totalSec)
   },
@@ -532,6 +540,11 @@ Page({
     let isPaused = false
     if (savedPause && savedPause.sessionId === session.id) {
       totalPausedMs = (savedPause.totalPausedMs || 0) + (Date.now() - (savedPause.pauseStartTime || Date.now()))
+      isPaused = true
+    } else if (session.paused_at) {
+      // 后端有暂停标记但本地没存（清缓存/换设备）；按后端 paused_at 重建本地状态
+      const pausedAtMs = new Date(session.paused_at + '+00:00').getTime()
+      totalPausedMs = Math.max(0, Date.now() - pausedAtMs)
       isPaused = true
     }
 

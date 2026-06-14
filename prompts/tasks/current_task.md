@@ -1,348 +1,175 @@
-你是资深 Python/FastAPI 后端工程师与 AI Pipeline 架构师。请基于当前项目代码，按照《OCR Pipeline 全量工程审计报告》（ocr-pipeline-full-engineering-audit.md）中的待完成任务，对 OCR 导入管线进行渐进式修改。
-
-目标不是重写整个系统，而是优先完成 P0 阶段任务：稳定性、路径统一、清洗逻辑归并、AI 幻觉防护、真实回归基线。请严格遵守以下原则：
-
-1. 不要一次性大规模重构。
-2. 不要改变现有 API 的入参和出参，除非必须。
-3. 不要破坏现有 PDF、图片、Excel 导入能力。
-4. 每次修改后运行相关测试。
-5. 对每个修改点说明：修改了哪些文件、为什么改、如何验证。
-6. 如果发现审计报告与实际代码不一致，以实际代码为准，但要在总结中说明差异。
-7. 优先完成 P0，P1/P2 只做低风险、独立、收益明显的任务。
-8. 所有 AI/LLM 调用必须加保护，不允许无条件信任模型输出。
-9. 所有大字段、大 bytes、大 OCR 中间结果都不能长期驻留内存。
-10. 保留可回滚能力，避免把 OCR 错误通过 AI 修复链路二次放大。
-
-## P0 任务进度
-
-| 任务 | 状态 | 提交 | 备注 |
-|------|------|------|------|
-| 任务 1: 释放 PDF bytes | ✅ 完成 | 待提交 | 3 处 del 补充：resume endpoint / image pipeline / Excel background |
-| 任务 2: 消除双 OCR | ✅ 完成 | d7b2ae5 | 单次 _ocr_scanned_pdf + _extract_page_texts_from_blocks 复用，detect_exercise_regions_from_pdf / _lightweight_page_ocr 标记 DEPRECATED |
-| 任务 3: _pipeline_store 剥离大字段 | ✅ 完成 | 待提交 | _slim_pipeline_payload + _slim_diagnostics_arrays |
-| 任务 4: 统一 OCR 纠错路径 | ✅ 完成 | edcfd0c | ocr_fix/router 为唯一主路径 |
-| 任务 5: 统一 OCR 清洗与字符映射 | ✅ 完成 | cc419dd | normalize_ocr_text() in text_normalizer.py |
-| 任务 6: AI diff 记录与版本回退 | ✅ 完成 | 待提交 | safe_accept_ai_result + trace 结构 |
-| 任务 7: 建立真实图片回归基线 | ✅ 完成 | 待提交 | 19 cases (8 real), --review/--force/CI/pytest.ini |
-| 任务 8: AI 补全和丰富并行化 | ✅ 完成 | 本期 | enrich_batch 三阶段并发 + batch_complete 参数化 max_concurrency |
-| 任务 9: 高置信度跳过 ai_repair | ✅ 完成 | 本期 | high_confidence_threshold=0.95，可配置 |
-| 任务 10: 合并 token budget | ✅ 完成 | 本期 | llm_text_structurer 接入共享 token_budget.py |
-
-请先阅读并定位以下关键模块：
-
-- features/pipeline_orchestrator.py
-- features/question_pipeline.py
-- features/ocr_correction.py
-- features/ocr_quality_gate.py
-- features/text_normalizer.py
-- features/question_splitter.py
-- features/ai_repair.py
-- features/llm_text_structurer.py
-- features/token_budget.py
-- features/ocr_fix/router.py
-- features/ocr_fix/qwen_adapter.py
-- features/ocr_fix/deepseek_adapter.py
-- features/ocr_fix/rule_adapter.py
-- services/ocr_service.py
-- api/v1/imports.py
-- models/question_import.py
-- 相关 tests 目录
-
-请按照以下阶段执行。
-
-# ============================================================ 阶段 1：P0 稳定性与路径统一
-
-任务 1：释放 PDF bytes，避免大 PDF 内存崩溃 ✅ 已完成
-
-> 完成日期: 2026-06-21
->
-> 核心机制（前序已实现）：
-> - _run_pipeline_with_db: tempfile + finally cleanup
-> - _run_pass: 在 ocr_correction 后 pop file_content / file_path / page_images
-> - _pipeline_store: slim 白名单只保留状态字段
-> - run(): file_path 优先于 file_content，PyMuPDF mmap
->
-> 本次补充（3 处 del）：
-> - imports.py resume endpoint: del content after tempfile write
-> - imports.py _run_image_pipeline_with_db: del image_content after pipeline
-> - pipeline_orchestrator.py run_excel_pipeline_background: del file_content after import_excel_fn
+# ✅ 代码题结构修复功能优化
 
 ------
 
-任务 2：消除 EXERCISE_DETECTION 双 OCR ✅ 已完成
+你现在需要优化一个功能模块：“代码题结构修复（AI 补全配置）”。
 
-> 完成日期: 2026-06-21（d7b2ae5）
->
-> 改动文件：
-> - app/features/exercise_region_detector.py: _lightweight_page_ocr 和
->   detect_exercise_regions_from_pdf 标记 DEPRECATED，说明 pipeline 已不再
->   调用
-> - app/features/pipeline_orchestrator.py: _run_extract 只调用一次
->   _ocr_scanned_pdf，后续通过 _extract_page_texts_from_blocks 从同一 OCR
->   结果中提取页面文本传给 detect_exercise_regions()（纯函数），无需二次
->   PaddleOCR
-> - tests/test_services/test_pipeline_orchestrator.py: mock 目标从
->   detect_exercise_regions_from_pdf 切换为 detect_exercise_regions
->
-> 当前状态：
-> - _run_extract 中 OCR 路径：_ocr_scanned_pdf（唯一全量 OCR）→
->   _extract_page_texts_from_blocks → detect_exercise_regions（纯函数，复用
->   文本，不再调 OCR）
-> - deprecated 函数仅内部自引用，无外部调用者
-> - EXERCISE_DETECTION_DPI / EXERCISE_DETECTION_SAMPLE_STEP 配置项已失效
->   （仅被 deprecated 路径引用），可后续清理
-> - 118 tests pass（2 个 pre-existing 失败与 Task 2 无关：
->   test_numbered_questions_do_not_use_fallback /
->   test_match_uses_separated_structure）
+当前问题：
+该功能对代码题中的结构错误（如断行、运算符拆分、缩进混乱）修复效果不稳定，甚至部分输入无变化。
 
 ------
 
-任务 3：_pipeline_store 剥离大字段
+# 🧠 任务模式：审计 → 规划 → 实现（必须严格执行）
 
-目标：
-
-- _pipeline_store 不应保存 raw_blocks、normalized_blocks、corrections、raw_questions_preview、大 diagnostics 等大字段。
-- store 只保存任务状态、阶段进度、小摘要、引用路径或 ID。
-
-需要实现：
-
-- 搜索 _pipeline_store 写入位置。
-- 将大字段迁移到临时 KV 文件、临时 JSON、DB 临时表或受控 artifact store。
-- _pipeline_store 中只保存 large_payload_ref。
-- 设置 TTL 或 cleanup 机制。
-- diagnostics 中的预览字段限制长度，例如最多 20 条、每条最多 500 字符。
-
-验收标准：
-
-- _pipeline_store 单任务体积明显下降。
-- 不影响前端查询进度。
-- 不影响错误诊断的基本信息展示。
+你必须按照以下三个阶段输出，不允许跳步：
 
 ------
 
-任务 4：统一 OCR 纠错路径，清理旧版 ocr_correction.py 主流程
+# 🧩 第一阶段：审计（Audit）
 
-目标：
+请先对当前问题进行结构审计，包括：
 
-- OCR AI 纠错只保留 features/ocr_fix/router.py 作为唯一主路径。
-- 旧版 features/ocr_correction.py 不再作为主流程调用。
-- 旧版中仍有价值的逻辑，例如 _filter_sensitive_content、噪声检测、结构异常检测，可以迁移到新版 router 或 quality gate。
+### 1. 输入问题类型分类
 
-需要实现：
+识别常见错误类型，例如：
 
-- 查找所有 correct_ocr_blocks、_call_ai_correction、ocr_correction.py 的调用点。
-- 将调用点切换为 OCRFixRouter。
-- 配置统一为：Qwen-VL → DeepSeek → RuleFixer。
-- Qwen-VL 只在有原图或低质量 OCR 时调用。
-- DeepSeek 只作为文本回退，不做伪视觉 OCR。
-- RuleFixer 作为最终 no-op fallback，不应抛出致命异常。
-- 如果不能完全删除 ocr_correction.py，请至少将其标记 deprecated，并确保主流程不可再调用。
-- 将旧版敏感内容过滤逻辑迁移到新版路径。
-
-验收标准：
-
-- 同一 OCR 文本不会先走旧版 DeepSeek 再走新版 Qwen/DeepSeek。
-- enable_ai_correction 与 enable_ai_repair 的语义清晰，不再控制两套重复 OCR 纠错路径。
-- 旧版路径不再被主 pipeline 调用。
-- 所有相关测试通过。
+- 运算符断裂（+ +、< =、* =）
+- 代码断行错误（if / for / 参数被拆开）
+- 缩进结构丢失
+- 代码与题干混排
+- 代码块缺失或错误
 
 ------
 
-任务 5：统一 OCR 清洗与字符映射逻辑
+### 2. 当前系统失败原因分析
 
-目标：
+说明为什么现有“修复功能”无效，例如：
 
-- clean_ocr_text、字符映射、乱码过滤、箭头修复、水印过滤、代码保护，只能集中维护在 features/text_normalizer.py。
-- services/ocr_service.py、question_splitter.py、pipeline_orchestrator.py 不应再各自维护一套不同的 OCR 清洗逻辑。
-
-需要实现：
-
-- 在 text_normalizer.py 中提供唯一入口，例如：
-  - normalize_ocr_text(text: str, context: Optional[str] = None) -> str
-  - 或复用现有 ImportTextNormalizer.normalize
-- 合并以下规则：
-  - 换行规范化
-  - 空格规范化
-  - 全角/半角标点规范化
-  - Unicode 乱码字符移除
-  - OCR 数字/字母混淆修正
-  - C 指针箭头修复，例如 ->、-＞、一> 等
-  - 水印和页码过滤
-  - LaTeX 清理
-  - 代码围栏保护
-  - CJK 字符保护，不能误删中文、日文、韩文字符
-- 其他模块只调用 text_normalizer，不再内联 re.sub 和 replace。
-- 如果某些模块确实需要局部格式处理，请命名为局部结构处理，不要再叫 OCR clean。
-
-验收标准：
-
-- clean_ocr_text 只剩一个权威实现。
-- CJK 字符不会丢失。
-- 代码符号不会被错误替换。
-- question_splitter 中只保留结构分割逻辑，不负责 OCR 通用清洗。
+- 是否没有 token 级处理
+- 是否没有结构识别
+- 是否只是文本替换
+- 是否没有代码块边界感知
 
 ------
 
-任务 6：AI 纠错和 AI 修复之间添加 diff 记录与版本回退
+### 3. 问题本质总结
 
-目标：
-
-- 所有 AI 修改都必须可追踪。
-- OCR 纠错 → AI 修复 → AI 补全 → AI 丰富之间不能无保护串联。
-- 如果 AI 输出疑似破坏原文，应自动回滚或标记人工审核。
-
-需要实现：
-
-- 新增统一的 AI edit trace 结构，例如：
-  {
-  "stage": "ocr_fix",
-  "model": "qwen-vl",
-  "before": "...",
-  "after": "...",
-  "diff": "...",
-  "risk_flags": [],
-  "accepted": true/false,
-  "rollback_reason": null
-  }
-- 新增 safe_accept_ai_result(before, after, context, quality_report)。
-- 至少实现以下保护：
-  - after 为空：拒绝
-  - after 长度小于 before 0.5 倍或大于 2 倍：拒绝
-  - 题干明显丢失：拒绝
-  - 选项数量减少：拒绝
-  - 答案被无依据修改：标记风险
-  - 代码场景中 ->、==、!=、<=、>=、*、& 等关键符号数量异常变化：拒绝或标记人工审核
-  - 水印文字被 AI 保留：标记风险
-- 在 ocr_fix/router、ai_repair、complete_import、enrich_import 等 AI 介入点记录 trace。
-- trace 不要无限塞进 _pipeline_store，大字段走 large_payload_ref 或 DB。
-
-验收标准：
-
-- 每次 AI 修改都能看到 before/after/diff。
-- 高风险修改会自动回滚。
-- AI 纠错不会静默覆盖原始 OCR 文本。
-- 失败时可定位是哪个模型、哪个阶段改坏了文本。
+用一句话总结核心问题，例如：
+“当前系统是文本补全器，而不是结构恢复器”
 
 ------
 
-任务 7：建立真实图片回归基线 ✅ 已完成
+# 🧭 第二阶段：规划（Plan）
 
-> 完成日期: 2026-06-21
->
-> 改动文件：
-> - tests/ocr_regression/runner.py: --baseline 写入 expected.auto.txt（不覆盖 expected.txt），--force / --review 模式，CI strict/skip 逻辑，[NEEDS REVIEW] 标注
-> - tests/ocr_regression/cases/*/meta.json (19个): review_status=verified, ground_truth_source=manual, tags
-> - pytest.ini (新增): testpaths, markers: ocr/real_image/synthetic
->
-> 状态: 19 cases (8 real-image + 11 synthetic), 16 PASS / 3 DEGRADED, CI-ready
-
-# ============================================================ 阶段 2：P1 低风险优化
-
-完成 P0 后，再选择以下低风险 P1 任务。
-
-## 任务 8：AI 补全和丰富并行化 ✅ 已完成
-
-> 完成日期: 2026-06-21
->
-> 改动文件: backend/app/features/question_pipeline.py
->
-> 关键修改点：
-> - **enrich_batch**: 从串行循环改为三阶段模式（顺序预读 → 并发 LLM → 顺序落 DB），使用 `asyncio.Semaphore(max_concurrency)` + `asyncio.gather`，默认并发 3
-> - **enrich_batch 新增参数**: `max_concurrency: int = 3`，可配置并发数
-> - **batch_complete_questions**: 原有硬编码 `Semaphore(3)` 改为参数化 `max_concurrency`，保持默认值 3
-> - 预读模型凭据仅一次，纯 HTTP 调用阶段并发，DB 操作阶段串行，单题异常不影响其他题
-> - 与现有 batch_complete_questions 模式一致，无新增风险
-
-## 任务 9：高置信度题目跳过 ai_repair ✅ 已完成
-
-> 完成日期: 2026-06-21
->
-> 改动文件:
-> - backend/app/features/ai_repair.py
-> - backend/app/features/pipeline_orchestrator.py
->
-> 关键修改点：
-> - **_should_repair**: 新增 `high_confidence_threshold` 关键词参数（默认 0.95），置信度 ≥阈值时直接返回 `(False, "high_confidence")`，跳过 AI 修复
-> - **_should_repair 新增检查优先级**: Roman 异常（最高）→ 高置信度跳过 → 低置信度/结构问题（现有逻辑）
-> - **repair_questions**: 从 config 读取 `high_confidence_threshold`（默认 0.95），传递给 `_should_repair`
-> - **pipeline_orchestrator._run_repair**: 在 repair_config 中添加 `high_confidence_threshold: options.get("high_confidence_threshold", 0.95)`
-> - 被跳过的题目自动记录 `reason="high_confidence"` + 置信度值到 skipped 列表
-
-## 任务 10：合并 token budget ✅ 已完成
-
-> 完成日期: 2026-06-21
->
-> 改动文件: backend/app/features/llm_text_structurer.py
->
-> 关键修改点：
-> - 移除独立预算：删除 `_token_usage`、`_reset_daily_budget`、`_estimate_tokens`、`_budget_available`、`_record_tokens`
-> - 统一使用 `app.features.token_budget` 的共享系统：`estimate_tokens`、`check_token_limit`、`record_token_usage`
-> - `structure_text_block` 中的预算检查改为 `await check_token_limit(estimated, {"daily_token_limit": settings.TEXT_IMPORT_LLM_DAILY_TOKEN})`
-> - `structure_text_block` 中的记录改为 `await record_token_usage(...)`
-> - `_reset_budget_for_test` 保留并重定向到共享 token_budget 的计数器
-> - 共享预算后，llm_text_structurer 与 ai_repair/ocr_correction 共用同一每日/每月预算池
-
-# ============================================================ 阶段 3：P1/P2 架构拆分，仅在 P0 稳定后执行
-
-任务 11：拆分 pipeline_orchestrator.py
-
-目标：
-
-- 不要一次性重写。
-- 先建立 pipeline_stages/ 目录，把 OCR、normalize、quality_gate、ai_fix、split、repair、persist 等阶段逐步抽出。
-- 原 ImportPipeline 保留为编排器。
-
-建议结构：
-features/pipeline_stages/
-extract_stage.py
-ocr_stage.py
-normalize_stage.py
-quality_gate_stage.py
-ai_fix_stage.py
-split_stage.py
-match_stage.py
-repair_stage.py
-persist_stage.py
-
-验收标准：
-
-- 每个 stage 可单独测试。
-- 原有 pipeline API 不变。
-- 旧测试通过。
+基于审计结果，设计一个新的修复方案架构，必须包含：
 
 ------
 
-任务 12：拆分 question_pipeline.py
+## 1. 总体处理流程（必须分步骤）
 
-目标：
+例如：
 
-- 将 question_pipeline.py 拆分为 normalizer、enricher、writer。
-- 不要改变外部 process_question_pipeline 行为。
+1️⃣ 代码区域识别
+2️⃣ token 断裂修复
+3️⃣ 语法结构重建
+4️⃣ 缩进/层级恢复
+5️⃣ 输出标准化
 
-建议结构：
-features/question_processing/
-normalizer.py
-enricher.py
-writer.py
-drafts.py
+------
 
-验收标准：
+## 2. 每一步的输入输出定义
 
-- process_question_pipeline 仍可作为兼容入口。
-- DB 写入逻辑与 AI 丰富逻辑分离。
-- Excel 导入不受影响。
+例如：
 
-# ============================================================ 最终输出要求
+- 输入：原始混乱文本
+- 输出：结构化代码块
 
-请按以下格式输出你的修改结果：
+------
 
-1. 本次完成了哪些任务
-2. 修改了哪些文件
-3. 每个文件的关键修改点
-4. 是否存在与审计报告不一致的地方
-5. 运行了哪些测试
-6. 哪些测试通过，哪些失败
-7. 仍未完成的任务
-8. 下一步建议
+## 3. 关键规则设计（必须包含）
 
-如果某个任务风险较高，请不要强行修改，先说明原因，并给出最小安全改法。
+至少包括：
+
+- 运算符合并规则（++, >=, *=）
+- 换行合并规则
+- 控制流结构识别规则（if/for/while）
+- 代码块边界识别规则
+
+------
+
+## 4. 成功标准（必须量化）
+
+例如：
+
+- 代码可读性恢复
+- 语法结构完整
+- 不改变语义
+- 无多余换行
+
+------
+
+# ⚙️ 第三阶段：实现（Implement）
+
+基于规划结果，输出一个**可直接使用的最终 Prompt / 规则系统**，要求：
+
+------
+
+### 1. 必须是可执行规则（不是描述）
+
+必须可以直接用于：
+
+- GPT
+- Claude
+- 代码解析器
+
+------
+
+### 2. 必须包含强约束
+
+例如：
+
+- 不允许改写语义
+- 不允许添加解释
+- 只输出修复结果
+
+------
+
+### 3. 必须包含示例
+
+至少 2 个：
+
+- 断裂 for 循环
+- if + 嵌套结构
+
+------
+
+### 4. 输出格式统一
+
+- 保持题干不变
+- 代码必须规范化
+- 使用统一代码块
+
+------
+
+# 🚨 额外要求（非常重要）
+
+你不是在“润色文本”，你是在构建：
+
+👉 一个“代码题结构恢复引擎”
+
+必须优先保证：
+
+- 结构正确性 > 美观
+- 语义不变 > 格式优化
+- 稳定性 > 创造性
+
+------
+
+# 🎯 这个模式的核心价值（你为什么要这样写）
+
+你现在这个问题的关键不是 prompt 不够好，而是：
+
+### ❌ 普通 prompt
+
+→ Claude 会“随便改一点试试”
+
+### ✅ 审计-规划-实现
+
+→ Claude 会：
+
+- 先找问题
+- 再设计系统
+- 最后落地规则
+
+👉 输出会稳定很多，特别适合你这种“题目结构修复器”
+
