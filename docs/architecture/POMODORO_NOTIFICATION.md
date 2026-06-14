@@ -56,7 +56,7 @@ wechat_notify_service.send_subscribe_message
 | **不重复推送** | 认领事务中先 `UPDATE notification_sent=true` 再发送；发送失败仅记录 `notification_error` |
 | **重启容错** | scheduler 启动时 `next_run_time=utcnow()` 立即跑一次，吸收停机期间到期任务 |
 | **多 worker 兼容** | Redis 锁 `pomodoro:scheduler:tick` 互斥；生产 `GUNICORN_WORKERS=1` 也安全 |
-| **暂停不延后通知** | 本期简化：`expected_end_time` 在 start 时计算，前端暂停只影响 UX |
+| **暂停延后通知** | `/pause` 写入 `paused_at`，scheduler 跳过；`/resume` 把暂停时长加到 `expected_end_time` 后清空 `paused_at` |
 | **用户提前结束** | `complete/interrupt` 把 `notification_sent=true` 置位，scheduler 跳过 |
 | **新启动覆盖旧任务** | `_cancel_running` 把旧 running 任务标 interrupted 并关闭通知通道 |
 | **access_token 失效** | errcode 40001/40014/42001 → 强刷一次重发，仍失败写 `notification_error` |
@@ -72,8 +72,11 @@ wechat_notify_service.send_subscribe_message
 | `notification_sent_at` | DateTime | 发送/置位时间 |
 | `notification_error` | Text | 失败原因/跳过原因 |
 | `openid_snapshot` | String(64) | start 时的 openid 快照，发送不再 join users |
+| `paused_at` | DateTime | 暂停时刻；非空时 scheduler 跳过；resume 时按其计算延后量 |
 
-迁移：`p1f2g3h4i5j6_add_pomodoro_notification_fields.py`
+迁移：
+- `p1f2g3h4i5j6_add_pomodoro_notification_fields.py`（首批字段）
+- `q2g3h4i5j6k7_add_pomodoro_paused_at.py`（暂停延后通知）
 
 ## 配置项
 
@@ -87,8 +90,14 @@ wechat_notify_service.send_subscribe_message
 
 ## 模板字段
 
-代码当前使用占位字段 `thing1 / time2 / thing3`（`pomodoro_scheduler_service._send_one`）。
-公众平台模板申请通过后，按真实字段名（如 `thing1`/`time2`/`character_string3`/`phrase4`）调整。
+公众平台已申请模板 ID：`Dc2tD7nbZn4FQi9nYOXZCtpmK3KUbcG_vrJ57UokMUQ`
+
+| 字段 | 类型 | 当前传值 | 备注 |
+|------|------|----------|------|
+| `thing1.DATA` | thing（中文/数字，≤20 字符，禁止符号） | `{科目}番茄钟`（如 `数学番茄钟`） | 打卡活动 |
+| `character_string2.DATA` | character_string（字母+数字，≤20 字符） | `{N}min`（如 `25min`） | 打卡进度 |
+
+实现位置：`app/services/pomodoro_scheduler_service.py::_send_one`
 
 ## 日志锚点
 
@@ -99,6 +108,18 @@ wechat_notify_service.send_subscribe_message
 
 ## 已知限制
 
-1. 暂停延长番茄钟时不延后通知（任务确认接受）
-2. 失败不重试（避免 24 小时内重发骚扰）
-3. 多副本部署必须同时具备可达 Redis；否则可能出现重复 tick（生产 1 worker 当前不受影响）
+1. 失败不重试（避免 24 小时内重发骚扰）
+2. 多副本部署必须同时具备可达 Redis；否则可能出现重复 tick（生产 1 worker 当前不受影响）
+3. `paused_at` 仅在调用 `/pause` 时写入；前端若崩溃未上报暂停，scheduler 仍会按原 `expected_end_time` 推送（前端在 `_pauseSession` 中调用，本地暂停 UI 与后端推迟同步）
+
+## 暂停/恢复 API
+
+```
+POST /api/v1/pomodoro/{session_id}/pause
+POST /api/v1/pomodoro/{session_id}/resume
+```
+
+- `pause` 幂等：重复调用不刷新 `paused_at`
+- `resume` 幂等：未暂停时不改 `expected_end_time`
+- 暂停期间 `expected_end_time` 不变，scheduler 通过 `paused_at IS NOT NULL` 跳过
+- 恢复时 `expected_end_time += (now - paused_at)`，并清空 `paused_at`
