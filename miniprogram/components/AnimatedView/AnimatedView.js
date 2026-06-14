@@ -13,12 +13,12 @@ function loadLottieData() {
   var medalMod = null
   var studyMod = null
 
-  try { trophyMod = require('../../assets/lottie/trophy.js') } catch (_) {}
-  try { successMod = require('../../assets/lottie/success-check.js') } catch (_) {}
-  try { celebrationMod = require('../../assets/lottie/celebration.js') } catch (_) {}
-  try { fireworksMod = require('../../assets/lottie/fireworks.js') } catch (_) {}
-  try { medalMod = require('../../assets/lottie/medal.js') } catch (_) {}
-  try { studyMod = require('../../assets/lottie/study.js') } catch (_) {}
+  try { trophyMod = require('../../assets/lottie/reward/trophy.js') } catch (_) {}
+  try { successMod = require('../../assets/lottie/success/success-check.js') } catch (_) {}
+  try { celebrationMod = require('../../assets/lottie/reward/celebration.js') } catch (_) {}
+  try { fireworksMod = require('../../assets/lottie/reward/fireworks.js') } catch (_) {}
+  try { medalMod = require('../../assets/lottie/reward/medal.js') } catch (_) {}
+  try { studyMod = require('../../assets/lottie/study/study.js') } catch (_) {}
 
   if (trophyMod) map.excellent = trophyMod
   if (successMod) { map.practice = successMod; map.steady = successMod }
