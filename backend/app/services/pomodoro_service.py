@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.pomodoro import PomodoroSession
+from app.models.user import User
 
 
 async def start_session(
@@ -14,8 +15,16 @@ async def start_session(
     preset: str,
     work_duration: int,
     break_duration: int,
+    notification_enabled: bool = False,
 ) -> PomodoroSession:
     await _cancel_running(db, user_id)
+
+    user_row = await db.execute(select(User.openid).where(User.id == user_id))
+    openid_snapshot = user_row.scalar_one_or_none()
+
+    start = datetime.utcnow()
+    expected_end = start + timedelta(minutes=max(0, work_duration)) if work_duration > 0 else None
+
     session = PomodoroSession(
         user_id=user_id,
         subject=subject,
@@ -23,8 +32,12 @@ async def start_session(
         preset=preset,
         work_duration=work_duration,
         break_duration=break_duration,
-        start_time=datetime.utcnow(),
+        start_time=start,
+        expected_end_time=expected_end,
         status="running",
+        notification_enabled=bool(notification_enabled),
+        notification_sent=False,
+        openid_snapshot=openid_snapshot,
     )
     db.add(session)
     await db.flush()
@@ -51,6 +64,12 @@ async def complete_session(db: AsyncSession, session_id: int, user_id: int, tota
         raw_seconds = int((now - session.start_time).total_seconds())
         session.actual_duration = max(0, raw_seconds - int(total_paused_ms / 1000))
     session.status = "completed"
+    # 用户已主动 complete → 调度器不再发送通知（防止双重提醒）
+    if not session.notification_sent:
+        session.notification_sent = True
+        session.notification_sent_at = now
+        if not session.notification_error:
+            session.notification_error = "skipped: user completed before scheduler"
     await db.flush()
     await db.refresh(session)
     return session
@@ -75,6 +94,12 @@ async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, tot
         raw_seconds = int((now - session.start_time).total_seconds())
         session.actual_duration = max(0, raw_seconds - int(total_paused_ms / 1000))
     session.status = "interrupted"
+    # 主动中断 → 关闭通知通道
+    if not session.notification_sent:
+        session.notification_sent = True
+        session.notification_sent_at = now
+        if not session.notification_error:
+            session.notification_error = "skipped: user interrupted"
     await db.flush()
     await db.refresh(session)
     return session
@@ -107,6 +132,11 @@ async def _cancel_running(db: AsyncSession, user_id: int) -> None:
         session.end_time = now
         session.actual_duration = int((now - session.start_time).total_seconds())
         session.status = "interrupted"
+        if not session.notification_sent:
+            session.notification_sent = True
+            session.notification_sent_at = now
+            if not session.notification_error:
+                session.notification_error = "skipped: superseded by new session"
 
 
 async def get_stats(db: AsyncSession, user_id: int) -> dict:
