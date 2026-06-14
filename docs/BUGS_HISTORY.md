@@ -3,9 +3,9 @@
 ## 2026-06-14 — 小程序答题页整段题干重复显示（已修复）
 
 - **现象**：文本导入后的部分题目在小程序答题页出现整段题干重复显示，尤其是包含多行程序代码和 LaTeX 标记的题干。
-- **原因**：刷题页展示预处理只去除相邻重复行，无法折叠 `题干块 + 空行 + 同一题干块` 这类整段重复拼接。
-- **处理**：`miniprogram/pages/practice/practice.js` 新增整段重复块折叠逻辑，在题干去选项前先对重复题干块做归一化比较并保留首段。
-- **验证**：`node --check miniprogram/pages/practice/practice.js` 通过；`git diff --check -- miniprogram/pages/practice/practice.js docs/BUGS.md docs/BUGS_HISTORY.md` 通过；P2 样例脚本验证重复题干块可折叠为单段。
+- **原因**：问题分两类：一类是题干文本本身出现 `题干块 + 空行 + 同一题干块` 的整段重复拼接；另一类参考 2026-06-02 的相似问题，简单 `$...$` inline math 进入 `mp-html` 富文本链路后可能发生视觉重复。此前只处理了整段文本重复，未覆盖 questionId=11 这类多行题干中包含简单 `$P_1$`、`$z$` 的富文本渲染重复。
+- **处理**：`miniprogram/pages/practice/practice.js` 在题干去选项前先折叠重复题干块；同时对多行题干中的简单 `$...$` inline math 做保守纯文本化，避免简单公式题干进入 `mp-html`，复杂公式、HTML、`$$...$$` 仍保留原富文本/公式渲染链路。
+- **验证**：`node --check miniprogram/pages/practice/practice.js` 通过；P2 重复块样例验证可折叠为单段；本地 questionId=11 内容验证渲染路径由 `mp-html` 降级为 `text`，且 `$P_1$` 等简单 inline math 被转为 `P₁`。
 - **说明**：该修复仅作用于刷题页展示清洗，不修改题库原始数据、不影响答案提交逻辑。
 
 ## 2026-06-08 — 文本导入内联格式解析失败（已修复）
