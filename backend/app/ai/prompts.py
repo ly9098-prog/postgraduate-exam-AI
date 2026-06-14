@@ -98,6 +98,46 @@ SYSTEM_PROMPTS = {
         "repair_actions 可选值：stem_cleaned / options_structured / answer_normalized / "
         "type_detected / analysis_extracted / answer_filled"
     ),
+    "text_structure": (
+        "你是题目文本结构化助手。输入是从用户复制粘贴的题目原文，"
+        "你的唯一职责是识别原文中的结构区域（题干 / 选项 / 答案 / 解析），"
+        "并将其整理为标准 JSON。\n\n"
+        "严格禁止：\n"
+        "- 禁止生成、推测或补全任何答案\n"
+        "- 禁止生成、补写或扩展任何解析\n"
+        "- 禁止补全缺失的选项\n"
+        "- 禁止根据知识判断题目正确性\n"
+        "- 禁止修改题目语义\n"
+        "- 禁止创造、改写、翻译原文中不存在的任何内容\n"
+        "- 禁止合并多道题，禁止拆分单道题\n\n"
+        "允许的操作：\n"
+        "- 修复换行错误：把被错误断开的句子拼接为完整句\n"
+        "- 修复选项拆分错误：让 A/B/C/D 选项各自独立\n"
+        "- 识别多空题结构：标记题干中的多个空 ① ② / ( ) / ___ 与对应答案区域\n"
+        "- 识别非标准答案标签（如 Ans:、Key:、参考答案、答：）并标准化为 answer 字段\n"
+        "- 去除题号前缀、Markdown 标记、HTML 标签、空白污染\n\n"
+        "缺失字段处理：\n"
+        "- 找不到答案 → answer 输出 null\n"
+        "- 找不到解析 → analysis 输出 null\n"
+        "- 找不到选项 → options 输出空数组 []，绝不补全\n"
+        "- 任何字段不确定 → 输出 null，绝不编造\n\n"
+        "题型识别（question_type）取值：\n"
+        "single_choice / multiple_choice / true_false / fill_blank / "
+        "multi_blank_choice / subjective\n"
+        "无法判断时输出 null。\n\n"
+        "数学公式：保持原文 LaTeX/Unicode 形式，不要主动转换或重写。\n\n"
+        "输出要求：必须严格 JSON，不允许任何自由文本、Markdown 代码块包裹或解释。\n"
+        "JSON 结构：\n"
+        "{\n"
+        '  "stem": "题干原文（可修复换行）",\n'
+        '  "question_type": "single_choice | multiple_choice | true_false | '
+        'fill_blank | multi_blank_choice | subjective | null",\n'
+        '  "options": [{"key": "A", "text": "选项A原文"}, ...],\n'
+        '  "answer": "原文答案 | null",\n'
+        '  "analysis": "原文解析 | null"\n'
+        "}\n"
+        "options 中 key 必须是 A/B/C/D 等大写字母；找不到选项时返回空数组。"
+    ),
     "ocr_correction": (
         "你是 OCR 文本纠错助手。输入是 OCR 识别的考研题目文本片段。\n"
         "你的任务是修复 OCR 识别错误，保持原文含义不变。\n\n"
@@ -361,6 +401,32 @@ def build_complete_question(qi: dict, missing_fields: list[str]) -> list:
                 f"【缺失字段】{missing_fields}\n"
                 "请仅补全缺失字段，已有字段保持不变。若答案不确定，"
                 "请将 answer_uncertain 设为 true。"
+            ),
+        },
+    ]
+
+
+def build_text_structure(block_text: str, rule_hint: dict | None = None) -> list:
+    """构建文本结构化 prompt — 仅做格式整理，不补全。"""
+    hint_lines = ""
+    if rule_hint:
+        hint_lines = (
+            "\n【规则解析参考结果（仅供识别区域，不要据此补全任何字段）】\n"
+            f"- 已识别题干长度: {len(rule_hint.get('stem') or '')}\n"
+            f"- 已识别选项数: {len(rule_hint.get('options') or [])}\n"
+            f"- 已识别答案是否为空: {not rule_hint.get('answer')}\n"
+            f"- 已识别解析是否为空: {not rule_hint.get('analysis')}\n"
+        )
+    return [
+        {"role": "system", "content": SYSTEM_PROMPTS["text_structure"]},
+        {
+            "role": "user",
+            "content": (
+                "请仅做格式结构化，不要生成、补全或修改任何内容。"
+                "输出严格 JSON。\n"
+                f"{hint_lines}"
+                "【原文】\n"
+                f"{block_text}"
             ),
         },
     ]

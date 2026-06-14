@@ -313,9 +313,9 @@ async def parse_text_questions(
     _=Depends(require_permissions("import:write")),
 ):
     """解析用户粘贴的文本，返回结构化题目预览。"""
-    from app.features.text_question_parser import parse_text_questions
+    from app.features.text_question_parser import parse_text_questions_async
 
-    result = parse_text_questions(data.text, data.subject)
+    result = await parse_text_questions_async(data.text, data.subject)
     return TextParseResponse(**result)
 
 
