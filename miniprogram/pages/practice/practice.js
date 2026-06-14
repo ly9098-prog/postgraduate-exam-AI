@@ -92,6 +92,18 @@ function _toPlainInlineMathText(text) {
   return plain
 }
 
+function _toPlainSimpleInlineMathText(text) {
+  if (!text) return ''
+  const source = String(text)
+  if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
+  if (!/\$[^$\n]+?\$/.test(source)) return null
+  const plain = source.replace(/\$([^$\n]+?)\$/g, function(_, inner) {
+    const value = formatInlineMathText(inner)
+    return /\\[a-zA-Z]+/.test(value) ? '$' + inner + '$' : value
+  })
+  return /\$[^$\n]+?\$/.test(plain) ? null : plain
+}
+
 function _stripLeadingOptionLabel(key, value) {
   const text = String(value || '').trim()
   if (!key || !text) return text
@@ -594,7 +606,7 @@ Page({
     const stemText = (q.content && (q.content.text || q.content.stem)) || ''
     const sourceStemText = stemText || (q.content && _segmentsToText(q.content.segments)) || ''
     const cleanedStem = _cleanStemText(sourceStemText, opts, optionKeys)
-    const plainStem = _toPlainInlineMathText(cleanedStem)
+    const plainStem = _toPlainInlineMathText(cleanedStem) || _toPlainSimpleInlineMathText(cleanedStem)
     q._stemText = plainStem || cleanedStem
     q._stemNeedsRich = !plainStem && _needsRichRender(cleanedStem)
     q._stemHtml = q._stemNeedsRich ? _textToHtml(cleanedStem) : ''
@@ -614,7 +626,7 @@ Page({
         sourceLen: sourceStemText.length,
         cleanedLen: cleanedStem.length,
         hasEmbeddedOptions: _containsTrailingOptionBlock(sourceStemText, optionKeys),
-        hasCleanedOptions: _containsTrailingOptionBlock(cleanedStem, optionKeys),
+        stemRenderPath: q._stemNeedsRich ? 'mp-html' : (q.content && q.content.render_mode === 'segments' && config.enableMathImage ? 'math-question' : 'text'),
         sourceTail: _shortText(sourceStemText.slice(-120)),
         cleanedTail: _shortText(cleanedStem.slice(-120)),
       })
