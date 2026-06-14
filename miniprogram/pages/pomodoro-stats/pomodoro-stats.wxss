@@ -306,6 +306,7 @@
    PIE CHART
    ============================================ */
 .pie-wrap {
+  position: relative;
   width: 100%;
   height: 440rpx;
   display: flex;
@@ -319,60 +320,40 @@
   height: 440rpx;
 }
 
-/* ============================================
-   PIE LEGEND
-   ============================================ */
-.pie-legend {
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
+.pie-hit-cover {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
 }
 
-.legend-row {
+/* ── Color Legend ── */
+.color-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12rpx 24rpx;
+  margin-top: 12rpx;
+}
+
+.color-legend-item {
   display: flex;
   align-items: center;
-  gap: 12rpx;
-  padding: 14rpx 18rpx;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1rpx solid rgba(255, 255, 255, 0.04);
-  border-radius: 14rpx;
-  transition: all 0.2s ease;
-  -webkit-tap-highlight-color: transparent;
+  gap: 8rpx;
 }
 
-.legend-row:active {
-  background: rgba(255, 255, 255, 0.06);
-  transform: scale(0.98);
-}
-
-.pie-legend .legend-dot {
-  width: 18rpx;
-  height: 18rpx;
+.color-legend-dot {
+  width: 14rpx;
+  height: 14rpx;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
-.legend-name {
-  flex: 1;
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.6);
-  font-weight: 500;
-}
-
-.legend-pct {
+.color-legend-label {
   font-size: 22rpx;
   color: rgba(255, 255, 255, 0.35);
-  width: 64rpx;
-  text-align: right;
-  font-weight: 500;
-}
-
-.legend-dur {
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.5);
-  width: 100rpx;
-  text-align: right;
-  font-weight: 600;
+  font-weight: 400;
 }
 
 /* ============================================
