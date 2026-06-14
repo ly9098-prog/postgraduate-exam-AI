@@ -239,6 +239,10 @@ Page({
       wx.showToast({ title: '请选择学习科目', icon: 'none' })
       return
     }
+
+    // 申请番茄钟完成订阅消息授权（用户拒绝不影响启动）
+    const notificationEnabled = await this._requestPomodoroSubscribe()
+
     this.setData({ phase: PHASE.CEREMONY })
 
     // ceremony duration: shorter for debug
@@ -251,12 +255,41 @@ Page({
         preset: this.data.selectedPreset,
         work_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.workDuration,
         break_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.breakDuration,
+        notification_enabled: notificationEnabled,
       })
       this._beginCountdown(session)
     } catch (e) {
       wx.showToast({ title: '启动失败', icon: 'none' })
       this.setData({ phase: PHASE.IDLE })
     }
+  },
+
+  /**
+   * 申请番茄钟完成订阅消息授权。
+   * 通知核心由后端推送（即使小程序退出/锁屏也能收到），前端只负责申请权限。
+   * 用户拒绝时返回 false，不阻断番茄钟启动。
+   */
+  _requestPomodoroSubscribe() {
+    return new Promise((resolve) => {
+      const tmplId = (config && config.POMODORO_SUBSCRIBE_TMPL_ID) || ''
+      if (!tmplId) {
+        // 模板未配置，跳过申请，正常启动番茄钟
+        resolve(false)
+        return
+      }
+      try {
+        wx.requestSubscribeMessage({
+          tmplIds: [tmplId],
+          success: (res) => {
+            const status = res && res[tmplId]
+            resolve(status === 'accept')
+          },
+          fail: () => resolve(false),
+        })
+      } catch (_) {
+        resolve(false)
+      }
+    })
   },
 
   async endSession() {
