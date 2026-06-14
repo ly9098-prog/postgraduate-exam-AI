@@ -102,6 +102,15 @@
             <text>从刷题进入 · {{subjectLabel(selectedSubject)}}</text>
           </view>
 
+          <!-- Notification toggle -->
+          <view class="notify-row">
+            <view class="notify-text" catchtap="toggleNotify">
+              <text class="notify-title">完成时微信提醒</text>
+              <text class="notify-sub">{{notifyOn ? '开启后退出/锁屏也能收到' : '关闭：启动时不弹订阅授权'}}</text>
+            </view>
+            <switch checked="{{notifyOn}}" bindchange="toggleNotify" color="#3B82F6" />
+          </view>
+
           <!-- START BUTTON -->
           <button class="btn-start" catchtap="startSession" hover-class="btn-hover">
             <text class="btn-start-text">开始专注</text>
