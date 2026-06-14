@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     AI_SINGLE_MAX_TOKENS: int = 2000
     AI_CONFIG_ENCRYPT_KEY: str = ""
 
+    # 文本导入 LLM 结构化层（仅做格式整理，不补全/不推测）
+    TEXT_IMPORT_LLM_ENABLED: bool = True
+    TEXT_IMPORT_LLM_MODEL: str = "deepseek-chat"
+    TEXT_IMPORT_LLM_DAILY_TOKEN: int = 50000
+    TEXT_IMPORT_LLM_MAX_BLOCK_CHARS: int = 6000
+
     # WeChat (jscode2session)
     WECHAT_APP_ID: str = ""
     WECHAT_APP_SECRET: str = ""
