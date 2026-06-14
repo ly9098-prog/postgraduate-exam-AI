@@ -26,4 +26,5 @@ class PomodoroSession(Base):
     notification_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     notification_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     openid_snapshot: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
