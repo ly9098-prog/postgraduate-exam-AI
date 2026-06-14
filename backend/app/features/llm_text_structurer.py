@@ -210,19 +210,54 @@ def _appears_in(needle: str, haystack_norm: str, *, ratio_threshold: float = 0.8
     return False
 
 
-# 答案信号：原文中存在答案标签 / 末行独立字母 / 判断答案 / "答 X" 形式
+# 答案信号：精确提取原文里"作为答案出现的字母集合"，做白名单匹配
+# 答案标签后紧跟 1-4 个 A-D 字母（容许逗号 / 顿号 / 空格 / 直连）
+_ANSWER_LABEL_LETTERS_RE = re.compile(
+    r"(?:【|\[)?\s*(?:参考|正确)?\s*(?:答案|Answer|Ans|Key)\s*(?:】|\])?\s*[：:]\s*"
+    r"([A-Da-d](?:\s*[,，、\s]?\s*[A-Da-d]){0,3})",
+    re.IGNORECASE,
+)
+# 答案标签后紧跟判断题答案
+_ANSWER_LABEL_TF_RE = re.compile(
+    r"(?:【|\[)?\s*(?:参考|正确)?\s*(?:答案|Answer|Ans|Key)\s*(?:】|\])?\s*[：:]\s*"
+    r"(?:正确|错误|对|错|True|False|√|×|T|F)\b",
+    re.IGNORECASE,
+)
+# 末行独立 1-4 字母（自测版试卷常见尾部答案行）
 _TRAILING_LETTER_LINE_RE = re.compile(r"(?:^|\n)\s*([A-Da-d]{1,4})\s*(?:\n|$)")
+# 独立成行的判断答案
 _TRUE_FALSE_LINE_RE = re.compile(
     r"(?:^|\n)\s*(?:正确|错误|对|错|True|False|√|×|T|F)\s*(?:\n|$)",
     re.IGNORECASE,
 )
 
+_LETTER_ONLY_RE = re.compile(r"^[A-Da-d]+$")
+_TF_TRUE_TOKENS = {"正确", "对", "true", "t", "√"}
+_TF_FALSE_TOKENS = {"错误", "错", "false", "f", "×"}
 
-def _original_has_answer_signal(original: str) -> bool:
-    """检查原文是否包含任何答案信号，避免 LLM 凭空捏造单字母答案。"""
-    if _ANSWER_LABEL_RE.search(original):
-        return True
-    if _TRAILING_LETTER_LINE_RE.search(original):
+
+def _extract_source_answer_letters(original: str) -> set[str]:
+    """提取原文中明确作为答案出现的 A-D 字母集合（白名单）。
+
+    候选来源：
+    - 答案标签后紧跟的字母（"答案：D" / "参考答案: A,C" / "Answer: B"）
+    - 末行独立 1-4 字母行
+    """
+    letters: set[str] = set()
+    for m in _ANSWER_LABEL_LETTERS_RE.finditer(original):
+        for ch in m.group(1).upper():
+            if "A" <= ch <= "D":
+                letters.add(ch)
+    for m in _TRAILING_LETTER_LINE_RE.finditer(original):
+        for ch in m.group(1).upper():
+            if "A" <= ch <= "D":
+                letters.add(ch)
+    return letters
+
+
+def _source_has_tf_signal(original: str) -> bool:
+    """原文是否含判断题答案信号（答案标签后跟 T/F 或独立 T/F 行）。"""
+    if _ANSWER_LABEL_TF_RE.search(original):
         return True
     if _TRUE_FALSE_LINE_RE.search(original):
         return True
@@ -280,18 +315,27 @@ def _validate_no_hallucination(
                 dropped.append(f"option_{key}")
     cleaned["options"] = sorted(valid_options, key=lambda x: x["key"])
 
-    # answer — 字符串答案必须在原文（A-D 单字母放宽，但需原文存在答案信号）
-    has_answer_signal = _original_has_answer_signal(original)
+    # answer — 字母 / 判断答案走白名单匹配，其它字符串走子串匹配
+    source_letters = _extract_source_answer_letters(original)
+    source_has_tf = _source_has_tf_signal(original)
     answer = structured.get("answer")
     if isinstance(answer, str):
         ans = answer.strip()
         if ans:
-            is_letter_or_tf = bool(
-                re.fullmatch(r"[A-Da-d]+|[正错对]|true|false|T|F|√|×", ans, re.IGNORECASE)
-            )
-            if is_letter_or_tf:
-                # 字母 / 判断答案 — 仅当原文存在答案信号时保留
-                if has_answer_signal:
+            ans_upper = ans.upper()
+            if _LETTER_ONLY_RE.fullmatch(ans):
+                # 字母答案：必须是原文白名单的子集
+                ans_letters = {c for c in ans_upper}
+                if ans_letters and ans_letters.issubset(source_letters):
+                    cleaned["answer"] = (
+                        ans_upper if len(ans_letters) == 1
+                        else ",".join(sorted(ans_letters))
+                    )
+                else:
+                    dropped.append("answer")
+            elif ans.lower() in _TF_TRUE_TOKENS or ans.lower() in _TF_FALSE_TOKENS or ans in {"√", "×"}:
+                # 判断题答案：原文必须有 T/F 信号
+                if source_has_tf:
                     cleaned["answer"] = ans
                 else:
                     dropped.append("answer")
@@ -300,14 +344,21 @@ def _validate_no_hallucination(
             else:
                 dropped.append("answer")
     elif isinstance(answer, list):
-        # 多选答案数组
-        joined = ",".join(str(x) for x in answer if isinstance(x, str))
-        if joined and re.fullmatch(r"[A-D,]+", joined.upper()):
-            if has_answer_signal:
-                cleaned["answer"] = joined
-            else:
-                dropped.append("answer")
-        elif joined:
+        # 多选答案数组：每个元素必须是单字母，且整体落在白名单内
+        letters: set[str] = set()
+        all_letters = True
+        for item in answer:
+            if not isinstance(item, str):
+                all_letters = False
+                break
+            tok = item.strip().upper()
+            if not _LETTER_ONLY_RE.fullmatch(tok) or len(tok) != 1:
+                all_letters = False
+                break
+            letters.add(tok)
+        if all_letters and letters and letters.issubset(source_letters):
+            cleaned["answer"] = ",".join(sorted(letters))
+        elif letters or not all_letters:
             dropped.append("answer")
 
     # analysis
