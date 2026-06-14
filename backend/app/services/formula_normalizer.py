@@ -88,7 +88,8 @@ def _replace_symbols(text: str) -> str:
 # 每条规则：(pattern, replacement)，按顺序应用
 _OCR_FIXES: list[tuple[re.Pattern, str]] = [
     # "x2" / "x3" 裸上标（字母后直接接数字，且不在已有 ^ 之后）
-    (re.compile(r"(?<![_^{])\b([a-zA-Z])[ \t]*([0-9]+)\b(?!\s*[_^}])"), r"\1^{\2}"),
+    # 排除单数字 1（常见标识符后缀，如 P1/A1/B1）；排除后接 ( 的函数调用
+    (re.compile(r"(?<![_^{])\b([a-zA-Z])[ \t]*((?:[2-9]\d*|\d{2,}))\b(?!\s*[_^}(])"), r"\1^{\2}"),
     # "1 /2"、"1/2" 孤立分数 → \frac{1}{2}
     (re.compile(r"\b(\d+)\s*/\s*(\d+)\b"), r"\\frac{\1}{\2}"),
     # √x / √(expr) → \sqrt{x} / \sqrt{expr}
@@ -125,12 +126,15 @@ def fix_ocr_formula(text: str) -> str:
 
 
 def normalize_text_import_math(text: str, *, compact: bool = False) -> str:
-    """Normalize math copied from text/OCR imports without adding render delimiters."""
+    """Normalize math from text imports. Preserves $ delimiters for frontend rendering.
+
+    Does NOT strip math delimiters (frontend needs $...$ to render math).
+    Does NOT apply OCR fixes (text import is user-pasted, not OCR-generated;
+    OCR fixes are applied separately in PDF/OCR paths).
+    """
     if not text:
         return text
     text = _collapse_latex_escapes(text)
-    text = _strip_math_delimiters(text)
-    text = fix_ocr_formula(text)
     text = _normalize_common_math_notation(text)
     if compact:
         text = _compact_formula_spacing(text)

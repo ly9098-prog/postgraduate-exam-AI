@@ -65,7 +65,7 @@ function formatInlineMathText(text) {
     })
     .replace(/([A-Za-z0-9)])\s*(=|\+|×|÷|≤|≥|≠|→)\s*/g, '$1 $2 ')
     .replace(/\s*(-)\s*/g, ' − ')
-    .replace(/\s*([*/])\s*/g, ' $1 ')
+    .replace(/(?<![*/])\s*([*/])\s*(?![*/])/g, ' $1 ')
     .replace(/([A-Za-z0-9)])(log[₀-₉₊₋]+)/g, '$1 $2')
     .replace(/(log[₀-₉₊₋]+)([A-Za-z])/g, '$1 $2')
     .replace(/[ \t]+/g, ' ')

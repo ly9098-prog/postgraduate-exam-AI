@@ -30,8 +30,12 @@ function _deduplicateLines(text) {
   const out = []
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim()
-    if (trimmed && seen.has(trimmed)) continue
-    if (trimmed) seen.add(trimmed)
+    if (!trimmed) {
+      out.push(lines[i])
+      continue
+    }
+    if (seen.has(trimmed)) continue
+    seen.add(trimmed)
     out.push(lines[i])
   }
   return out.join('\n')
