@@ -33,6 +33,41 @@ function _deduplicateLines(text) {
   return out.join('\n')
 }
 
+function _trimEmptyLines(lines) {
+  let start = 0
+  let end = lines.length
+  while (start < end && !String(lines[start]).trim()) start++
+  while (end > start && !String(lines[end - 1]).trim()) end--
+  return lines.slice(start, end)
+}
+
+function _sameNormalizedLines(left, right) {
+  if (left.length !== right.length || left.length === 0) return false
+  for (let i = 0; i < left.length; i++) {
+    if (String(left[i]).trim() !== String(right[i]).trim()) return false
+  }
+  return true
+}
+
+function _deduplicateRepeatedText(text) {
+  if (!text) return text
+  const stripped = String(text).trim()
+  const half = Math.floor(stripped.length / 2)
+  if (half > 0) {
+    if (stripped.slice(0, half) === stripped.slice(half)) return stripped.slice(0, half).replace(/\n+$/, '')
+    const candidate = stripped.slice(0, half).trim()
+    if (candidate && stripped.slice(half).trim() === candidate) return candidate
+  }
+
+  const lines = stripped.split('\n')
+  for (let split = 1; split < lines.length; split++) {
+    const left = _trimEmptyLines(lines.slice(0, split))
+    const right = _trimEmptyLines(lines.slice(split))
+    if (_sameNormalizedLines(left, right)) return left.join('\n').trim()
+  }
+  return stripped
+}
+
 function _needsRichRender(text) {
   if (!text) return false
   return /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/.test(text) || /<\/?[a-z][\s\S]*>/i.test(text)
@@ -186,7 +221,7 @@ function _textToSegments(text) {
 }
 
 function _cleanStemText(stemText, options, optionKeys) {
-  const dedupedStem = _deduplicateLines(stemText)
+  const dedupedStem = _deduplicateRepeatedText(_deduplicateLines(stemText))
   const withoutExactOptions = _stripEmbeddedOptionBlock(dedupedStem, options)
   const withoutLabelOptions = _stripTrailingOptionBlockByLabels(withoutExactOptions, optionKeys)
   return _removeTrailingOptionKeys(withoutLabelOptions, optionKeys)
