@@ -48,7 +48,7 @@ function formatMathText(text: string) {
     .replace(/([A-Za-z0-9)])\^([0-9A-Za-z])/g, (_, base: string, sup: string) => `${base}${toScript(sup, superscript)}`)
     .replace(/([A-Za-z0-9)])\s*(=|\+|×|÷|≤|≥|≠|→)\s*/g, "$1 $2 ")
     .replace(/\s*(-)\s*/g, " − ")
-    .replace(/\s*([*/])\s*/g, " $1 ")
+    .replace(/(?<![*/])\s*([*/])\s*(?![*/])/g, " $1 ")
     .replace(/([A-Za-z0-9)])(log[₀-₉₊₋]+)/g, "$1 $2")
     .replace(/(log[₀-₉₊₋]+)([A-Za-z])/g, "$1 $2")
     .replace(/[ \t]+/g, " ")
