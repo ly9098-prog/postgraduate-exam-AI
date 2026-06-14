@@ -99,7 +99,8 @@ async def _make_user(db, openid: str = "openid_test") -> int:
 
 async def _insert(db, *, user_id: int, openid: str, due_offset_sec: int,
                  enabled: bool = True, sent: bool = False,
-                 status: str = "running", work: int = 25):
+                 status: str = "running", work: int = 25,
+                 paused_at: datetime | None = None):
     from app.models.pomodoro import PomodoroSession
     now = datetime.utcnow()
     s = PomodoroSession(
@@ -111,6 +112,7 @@ async def _insert(db, *, user_id: int, openid: str, due_offset_sec: int,
         notification_enabled=enabled,
         notification_sent=sent,
         openid_snapshot=openid,
+        paused_at=paused_at,
     )
     db.add(s)
     await db.flush()
@@ -261,6 +263,38 @@ class TestSchedulerClaiming:
         assert "template_id not configured" in (row.notification_error or "")
         assert sent == []
 
+    @pytest.mark.asyncio
+    async def test_paused_session_not_claimed(self, isolated_db, monkeypatch):
+        from app.services import pomodoro_scheduler_service as ssvc
+        from app.core.config import settings as s
+
+        sent: list[dict] = []
+
+        async def _fake_send(**kwargs):
+            sent.append(kwargs)
+            return {"errcode": 0}
+
+        monkeypatch.setattr(ssvc.wechat, "send_subscribe_message", _fake_send)
+        monkeypatch.setattr(s, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
+
+        async with isolated_db.async_session() as db:
+            uid = await _make_user(db, "u_paused")
+            sid = await _insert(
+                db, user_id=uid, openid="u_paused",
+                due_offset_sec=-30, paused_at=datetime.utcnow() - timedelta(seconds=60),
+            )
+            await db.commit()
+
+        await ssvc.PomodoroScheduler().tick()
+
+        async with isolated_db.async_session() as db:
+            from sqlalchemy import select
+            from app.models.pomodoro import PomodoroSession
+            row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
+
+        assert row.notification_sent is False, "paused session must not be claimed"
+        assert sent == []
+
 
 class TestServiceLayer:
     @pytest.mark.asyncio
@@ -335,6 +369,109 @@ class TestServiceLayer:
         assert row.openid_snapshot == "u_start"
         assert row.notification_enabled is True
         assert row.notification_sent is False
+
+    @pytest.mark.asyncio
+    async def test_pause_then_resume_extends_expected_end_time(self, isolated_db):
+        from app.services import pomodoro_service as svc
+        from sqlalchemy import select, update
+        from app.models.pomodoro import PomodoroSession
+
+        async with isolated_db.async_session() as db:
+            uid = await _make_user(db, "u_pause")
+            session = await svc.start_session(
+                db, uid, "math", None, "standard", 25, 5, notification_enabled=True
+            )
+            sid = session.id
+            await db.commit()
+
+        # 暂停
+        async with isolated_db.async_session() as db:
+            await svc.pause_session(db, sid, uid)
+            await db.commit()
+
+        async with isolated_db.async_session() as db:
+            row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
+            paused_eet = row.expected_end_time
+            assert row.paused_at is not None, "暂停后 paused_at 必须有值"
+
+        # 把 paused_at 倒推 90 秒模拟"暂停了 90 秒"
+        async with isolated_db.async_session() as db:
+            await db.execute(
+                update(PomodoroSession)
+                .where(PomodoroSession.id == sid)
+                .values(paused_at=datetime.utcnow() - timedelta(seconds=90))
+            )
+            await db.commit()
+
+        # 恢复
+        async with isolated_db.async_session() as db:
+            await svc.resume_session(db, sid, uid)
+            await db.commit()
+
+        async with isolated_db.async_session() as db:
+            row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
+
+        assert row.paused_at is None
+        # expected_end_time 应延后 ~90 秒（容忍 ±2 秒处理时延）
+        delta = (row.expected_end_time - paused_eet).total_seconds()
+        assert 88 <= delta <= 92, f"expected ~90s shift, got {delta}s"
+
+    @pytest.mark.asyncio
+    async def test_pause_is_idempotent(self, isolated_db):
+        from app.services import pomodoro_service as svc
+        from sqlalchemy import select
+        from app.models.pomodoro import PomodoroSession
+
+        async with isolated_db.async_session() as db:
+            uid = await _make_user(db, "u_pause_idem")
+            session = await svc.start_session(
+                db, uid, "math", None, "standard", 25, 5, notification_enabled=True
+            )
+            sid = session.id
+            await db.commit()
+
+        async with isolated_db.async_session() as db:
+            await svc.pause_session(db, sid, uid)
+            await db.commit()
+        async with isolated_db.async_session() as db:
+            row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
+            first_paused_at = row.paused_at
+
+        # 第二次 pause 不应改变 paused_at
+        async with isolated_db.async_session() as db:
+            await svc.pause_session(db, sid, uid)
+            await db.commit()
+
+        async with isolated_db.async_session() as db:
+            row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
+
+        assert row.paused_at == first_paused_at, "重复暂停不应推后 paused_at"
+
+    @pytest.mark.asyncio
+    async def test_resume_without_pause_is_noop(self, isolated_db):
+        from app.services import pomodoro_service as svc
+        from sqlalchemy import select
+        from app.models.pomodoro import PomodoroSession
+
+        async with isolated_db.async_session() as db:
+            uid = await _make_user(db, "u_resume_noop")
+            session = await svc.start_session(
+                db, uid, "math", None, "standard", 25, 5, notification_enabled=True
+            )
+            sid = session.id
+            original_eet = session.expected_end_time
+            await db.commit()
+
+        async with isolated_db.async_session() as db:
+            await svc.resume_session(db, sid, uid)
+            await db.commit()
+
+        async with isolated_db.async_session() as db:
+            row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
+
+        assert row.paused_at is None
+        # 未暂停的 resume 不应改 expected_end_time
+        assert abs((row.expected_end_time - original_eet).total_seconds()) < 1
 
 
 class TestWechatTokenRetry:

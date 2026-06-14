@@ -45,6 +45,7 @@ class PomodoroSessionResponse(BaseModel):
     notification_enabled: bool = False
     notification_sent: bool = False
     notification_sent_at: datetime | None = None
+    paused_at: datetime | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

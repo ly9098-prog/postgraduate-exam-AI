@@ -131,6 +131,7 @@ class PomodoroScheduler:
                 PomodoroSession.expected_end_time.isnot(None),
                 PomodoroSession.expected_end_time <= now,
                 PomodoroSession.openid_snapshot.isnot(None),
+                PomodoroSession.paused_at.is_(None),
             )
             .order_by(PomodoroSession.expected_end_time.asc())
             .limit(50)
@@ -157,6 +158,7 @@ class PomodoroScheduler:
                         PomodoroSession.expected_end_time.isnot(None),
                         PomodoroSession.expected_end_time <= now,
                         PomodoroSession.openid_snapshot.isnot(None),
+                        PomodoroSession.paused_at.is_(None),
                     )
                 )
 
@@ -198,13 +200,12 @@ class PomodoroScheduler:
             logger.warning("番茄钟通知未发送：未配置 WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID (session_id=%s)", sid)
             return
 
-        # 模板 data 字段名取决于公众平台模板，这里给出 4 个常见占位字段；
-        # 实际模板申请下来后按真实字段名调整即可（thing/time/character_string/phrase）
-        end_time = sess["expected_end_time"] or datetime.utcnow()
+        # 模板 ID Dc2tD7nbZn4FQi9nYOXZCtpmK3KUbcG_vrJ57UokMUQ：
+        #   thing1.DATA            打卡活动（中文/数字，20 字内，禁止符号）
+        #   character_string2.DATA 打卡进度（字母+数字，20 字内）
         data = {
-            "thing1": {"value": f"{subject_label}专注完成"},
-            "time2": {"value": end_time.strftime("%Y-%m-%d %H:%M")},
-            "thing3": {"value": f"已专注{work}分钟，休息一下"},
+            "thing1": {"value": f"{subject_label}番茄钟"},
+            "character_string2": {"value": f"{work}min"},
         }
 
         try:

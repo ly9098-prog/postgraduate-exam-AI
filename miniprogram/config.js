@@ -19,7 +19,6 @@ module.exports = {
   DEBUG_QUESTION_ID: '',
   enableMathImage: false,
   // 微信公众平台申请的"番茄钟完成"订阅消息模板 ID。
-  // 申请通过前留空：前端会跳过 wx.requestSubscribeMessage，
-  // 后端 scheduler 也会跳过推送并把 notification_error 标记为 "skipped: template_id not configured"。
-  POMODORO_SUBSCRIBE_TMPL_ID: '',
+  // 字段：thing1（打卡活动）+ character_string2（打卡进度）
+  POMODORO_SUBSCRIBE_TMPL_ID: 'Dc2tD7nbZn4FQi9nYOXZCtpmK3KUbcG_vrJ57UokMUQ',
 }
