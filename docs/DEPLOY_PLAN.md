@@ -128,6 +128,10 @@ REDIS_URL=redis://redis:6379/0
 DEEPSEEK_API_KEY=...
 WECHAT_APP_ID=...
 WECHAT_APP_SECRET=...
+WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID=...   # 番茄钟订阅消息模板 ID（未配置则跳过推送）
+POMODORO_NOTIFY_ENABLED=true                # 后端调度器总开关
+POMODORO_NOTIFY_PAGE=pages/pomodoro/pomodoro
+POMODORO_SCHEDULER_INTERVAL_SEC=60
 OCR_ENABLED=true
 GUNICORN_WORKERS=1
 POSTGRES_USER=postgraduate
@@ -135,6 +139,8 @@ POSTGRES_PASSWORD=...
 POSTGRES_DB=postgraduate
 CODE_DETECTOR_ENABLED=true   # 灰度开启
 ```
+
+> 番茄钟通知调度器在 `lifespan` 中通过 `AsyncIOScheduler` 启动，Redis 锁 `pomodoro:scheduler:tick` 防多实例重叠。详见 `docs/architecture/POMODORO_NOTIFICATION.md`。
 
 ### 生产 OCR Profile
 
