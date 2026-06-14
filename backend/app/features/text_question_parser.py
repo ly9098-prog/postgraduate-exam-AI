@@ -644,6 +644,41 @@ def _prepare_blocks(text: str) -> tuple[list[str], dict[str, Any] | None]:
     return cleaned, None
 
 
+_INLINE_ANSWER_LABEL_RE = re.compile(
+    r"(?:【|\[)?\s*(?:参考|正确)?\s*(?:答案|Answer|Ans|Key)\s*(?:】|\])?\s*[：:]",
+    re.IGNORECASE,
+)
+_INLINE_OPTION_MARKER_RE = re.compile(r"\s[A-Da-d]\s*[.．、:：)）]\s*\S")
+
+
+def _rule_options_look_broken(options: list[dict[str, Any]]) -> bool:
+    """检测规则解析出的选项是否明显损坏。
+
+    判定标准：
+    - 选项 key 不从 A 开始或不连续（如 [B, C, D] 或 [A, C, D]）
+    - 选项 text 内嵌答案标签（"答案：" / "Answer:"）— 说明答案区段被吃进选项
+    - 选项 text 内嵌另一个选项标记（如 " B. " / " C. "）— 说明选项之间未被正确切分
+    - 选项 text 含换行 — 通常意味着粘合了下一段内容
+    """
+    if not options:
+        return False
+    keys = [str(opt.get("key") or "").strip().upper() for opt in options]
+    expected = [chr(ord("A") + i) for i in range(len(keys))]
+    if keys != expected:
+        return True
+    for opt in options:
+        text = str(opt.get("text") or "")
+        if not text:
+            continue
+        if "\n" in text:
+            return True
+        if _INLINE_ANSWER_LABEL_RE.search(text):
+            return True
+        if _INLINE_OPTION_MARKER_RE.search(text):
+            return True
+    return False
+
+
 def _merge_llm_into_raw(raw: dict[str, Any], llm_out: dict[str, Any]) -> dict[str, Any]:
     """将 LLM 结构化结果合并回 raw dict。
 
@@ -658,7 +693,14 @@ def _merge_llm_into_raw(raw: dict[str, Any], llm_out: dict[str, Any]) -> dict[st
         merged["stem"] = normalize_text_import_math(_clean_stem_number(llm_stem))
 
     llm_options = llm_out.get("options") or []
-    if llm_options and len(llm_options) > len(merged.get("options") or []):
+    rule_options = merged.get("options") or []
+    if llm_options and (
+        len(llm_options) > len(rule_options)
+        or (
+            len(llm_options) == len(rule_options)
+            and _rule_options_look_broken(rule_options)
+        )
+    ):
         # 重新走选项数学公式归一化
         merged["options"] = [
             {"key": opt["key"], "text": _normalize_option_math(opt["text"])}
