@@ -529,3 +529,168 @@ class TestParseAsyncIntegration:
         assert not q["analysis"]
         # 守门移除字段应记入 warnings
         assert any("LLM 输出字段 analysis 未通过反幻觉校验" in w for w in result["warnings"])
+
+
+# ============================================================
+# 选项损坏检测 + 等数量替换合并
+# ============================================================
+
+
+class TestRuleOptionsLookBroken:
+    def test_clean_options_not_broken(self):
+        from app.features.text_question_parser import _rule_options_look_broken
+        opts = [
+            {"key": "A", "text": "选项A"},
+            {"key": "B", "text": "选项B"},
+            {"key": "C", "text": "选项C"},
+            {"key": "D", "text": "选项D"},
+        ]
+        assert _rule_options_look_broken(opts) is False
+
+    def test_empty_options_not_broken(self):
+        from app.features.text_question_parser import _rule_options_look_broken
+        assert _rule_options_look_broken([]) is False
+
+    def test_non_contiguous_keys_broken(self):
+        from app.features.text_question_parser import _rule_options_look_broken
+        opts = [
+            {"key": "A", "text": "选项A"},
+            {"key": "C", "text": "选项C"},
+            {"key": "D", "text": "选项D"},
+        ]
+        assert _rule_options_look_broken(opts) is True
+
+    def test_keys_not_starting_from_a_broken(self):
+        from app.features.text_question_parser import _rule_options_look_broken
+        opts = [
+            {"key": "B", "text": "选项B"},
+            {"key": "C", "text": "选项C"},
+            {"key": "D", "text": "选项D"},
+        ]
+        assert _rule_options_look_broken(opts) is True
+
+    def test_embedded_answer_label_in_option_broken(self):
+        from app.features.text_question_parser import _rule_options_look_broken
+        # D 选项把答案区段吃了进来
+        opts = [
+            {"key": "A", "text": "选项A"},
+            {"key": "B", "text": "选项B"},
+            {"key": "C", "text": "选项C"},
+            {"key": "D", "text": "选项D 答案：D"},
+        ]
+        assert _rule_options_look_broken(opts) is True
+
+    def test_embedded_option_marker_in_option_broken(self):
+        from app.features.text_question_parser import _rule_options_look_broken
+        # A 选项内部含 "B." 标记，说明选项未被切分
+        opts = [
+            {"key": "A", "text": "选项A的内容 B. 选项B的内容"},
+            {"key": "B", "text": "选项B"},
+            {"key": "C", "text": "选项C"},
+            {"key": "D", "text": "选项D"},
+        ]
+        assert _rule_options_look_broken(opts) is True
+
+    def test_newline_in_option_broken(self):
+        from app.features.text_question_parser import _rule_options_look_broken
+        opts = [
+            {"key": "A", "text": "选项A\n粘连了下一段"},
+            {"key": "B", "text": "选项B"},
+            {"key": "C", "text": "选项C"},
+            {"key": "D", "text": "选项D"},
+        ]
+        assert _rule_options_look_broken(opts) is True
+
+
+@pytest.mark.asyncio
+class TestEqualCountMerge:
+    async def test_llm_replaces_broken_options_at_equal_count(self, monkeypatch):
+        """规则解析得到 4 个选项但末选项粘连答案 — LLM 等数量替换应触发。"""
+        from app.features import text_question_parser
+        from app.features import llm_text_structurer
+
+        # 让规则解析器拿到 4 个选项，但 D 选项里粘连了答案标签
+        block = (
+            "下列关于二叉树高度的描述，正确的是？\n"
+            "A. 高度等于logN\n"
+            "B. 高度等于N\n"
+            "C. 高度至多为N-1\n"
+            "D. 高度恰好为N-1 答案：C\n"
+        )
+
+        async def _fake(block_text, rule_hint=None):
+            # 规则的 D 选项已含 "答案：C"，LLM 提供干净的 4 个选项
+            return {
+                "stem": "下列关于二叉树高度的描述，正确的是？",
+                "question_type": "single_choice",
+                "options": [
+                    {"key": "A", "text": "高度等于logN"},
+                    {"key": "B", "text": "高度等于N"},
+                    {"key": "C", "text": "高度至多为N-1"},
+                    {"key": "D", "text": "高度恰好为N-1"},
+                ],
+                "answer": "C",
+                "analysis": None,
+                "_dropped": [],
+                "_tokens": 200,
+            }
+
+        monkeypatch.setattr(llm_text_structurer, "structure_text_block", _fake)
+        # 强制触发 LLM
+        monkeypatch.setattr(
+            llm_text_structurer,
+            "should_call_llm",
+            lambda block_text, parsed: (True, "test_force"),
+        )
+
+        result = await text_question_parser.parse_text_questions_async(block, subject="exam408")
+        q = result["questions"][0]
+        assert q["detection_method"] == "llm_structured"
+        # D 选项不应再含 "答案" 残留
+        d_text = next(o["text"] for o in q["options"] if o["key"] == "D")
+        assert "答案" not in d_text
+        assert q["answer"] == "C"
+
+    async def test_llm_does_not_replace_clean_equal_count_options(self, monkeypatch):
+        """规则解析的选项干净 + 数量与 LLM 相等 — 不应替换，保留规则结果。"""
+        from app.features import text_question_parser
+        from app.features import llm_text_structurer
+
+        block = (
+            "题干？\n"
+            "A. 选项A原文\n"
+            "B. 选项B原文\n"
+            "C. 选项C原文\n"
+            "D. 选项D原文\n"
+            "答案: A"
+        )
+
+        async def _fake(block_text, rule_hint=None):
+            # LLM 返回略不同的选项（仅作为兜底，不应被采用）
+            return {
+                "stem": "题干？",
+                "question_type": "single_choice",
+                "options": [
+                    {"key": "A", "text": "选项A原文"},
+                    {"key": "B", "text": "选项B原文"},
+                    {"key": "C", "text": "选项C原文"},
+                    {"key": "D", "text": "选项D原文"},
+                ],
+                "answer": "A",
+                "analysis": None,
+                "_dropped": [],
+                "_tokens": 100,
+            }
+
+        monkeypatch.setattr(llm_text_structurer, "structure_text_block", _fake)
+        monkeypatch.setattr(
+            llm_text_structurer,
+            "should_call_llm",
+            lambda block_text, parsed: (True, "test_force"),
+        )
+
+        result = await text_question_parser.parse_text_questions_async(block, subject="exam408")
+        q = result["questions"][0]
+        # 选项数量相同 + 规则版本干净 → 保留规则解析结果（不会触发等数量替换）
+        assert len(q["options"]) == 4
+        assert q["answer"] == "A"
