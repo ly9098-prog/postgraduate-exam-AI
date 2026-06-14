@@ -250,7 +250,7 @@
               <math-question segments="{{item._stemSegments}}" />
             </block>
             <block wx:elif="{{item._stemNeedsRich}}">
-              <mp-html content="{{item._stemHtml}}" lazy-load />
+              <mp-html content="{{item._stemHtml}}" lazy-load></mp-html>
             </block>
             <text wx:else>{{item._stemText}}</text>
           </view>

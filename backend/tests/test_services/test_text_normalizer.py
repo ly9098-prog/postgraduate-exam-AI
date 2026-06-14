@@ -178,6 +178,14 @@ class TestSpaceNormalization:
         assert "    " not in normalized
         assert "word1 word2" == normalized
 
+    def test_fenced_code_spaces_preserved(self, normalizer):
+        text = "题干如下:\n```tex\nP1() {                     P2() {\n x = 1;      // A1          x = -3;     // B1\n}\n```\n答案：A"
+        result = normalizer.normalize(_make_blocks(text))
+        normalized = result[0]["normalized_text"]
+        assert "P1() {                     P2() {" in normalized
+        assert " x = 1;      // A1          x = -3;     // B1" in normalized
+        assert "```tex\nP1()" in normalized
+
 
 # ---------------------------------------------------------------
 # 4. OCR 字符纠正

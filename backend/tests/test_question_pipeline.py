@@ -109,6 +109,21 @@ def test_text_cleaning() -> None:
     check("去题号", not out.startswith("1."), repr(out))
     check("去重复行", out.count("求导数") == 1, repr(out))
 
+    code_out = normalizer.clean_text(
+        "1. 有两个并发进程 $P_{1}$ 和 $P_{2}$，其程序代码如下:\n"
+        "```tex\n"
+        "P1() {                     P2() {\n"
+        " x = 1;      // A1          x = -3;     // B1\n"
+        " y = 2;                     c = x * x;\n"
+        " z = x + y;                 print c;    // B2\n"
+        " print z;    // A2          }\n"
+        "}\n"
+        "```"
+    )
+    check("代码围栏保留", "```tex" in code_out and "```" in code_out, repr(code_out))
+    check("代码换行保留", "\nP1() {                     P2() {\n" in code_out, repr(code_out))
+    check("代码缩进保留", "\n x = 1;      // A1          x = -3;" in code_out, repr(code_out))
+
 
 def test_dedup_helpers() -> None:
     print("\n[6] 去重辅助")

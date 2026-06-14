@@ -2,18 +2,20 @@ const api = require('../../utils/api')
 const config = require('../../config')
 const { formatInlineMathText } = require('../../utils/math-format')
 
-// 将纯文本（可能含 $...$ LaTeX）转为 mp-html 可接受的 HTML 字符串。
-// $...$ 内部保持原样，外部普通文本做 HTML 转义，换行转 <br>。
+function _formatHtmlTextSegment(text) {
+  return String(text || '').split('\n').map((line) => {
+    const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    if (/(```|[{};=]|\/\/)/.test(line)) return escaped.replace(/\t/g, '    ').replace(/ /g, '&nbsp;')
+    return escaped.replace(/ {2,}/g, (spaces) => ' ' + '&nbsp;'.repeat(spaces.length - 1))
+  }).join('<br>')
+}
+
 function _textToHtml(text) {
   if (!text) return ''
   const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/)
   const out = parts.map((part, i) => {
     if (i % 2 === 1) return part
-    return part
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/\n/g, '<br>')
+    return _formatHtmlTextSegment(part)
   })
   return '<p>' + out.join('') + '</p>'
 }
@@ -178,8 +180,12 @@ function _cleanStemText(stemText, options, optionKeys) {
 
 function _toPlainInlineMathText(text) {
   if (!text) return text
-  const plain = formatInlineMathText(text)
-  return plain === String(text) ? null : plain
+  const source = String(text)
+  if (/\n/.test(source)) return null
+  if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
+  const plain = formatInlineMathText(source)
+  if (/\\[a-zA-Z]+/.test(plain)) return null
+  return plain === source ? null : plain.replace(/[ \t]+/g, ' ').trim()
 }
 
 function _plainOptionText(key, value) {
