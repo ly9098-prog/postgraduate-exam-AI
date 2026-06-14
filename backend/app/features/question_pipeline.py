@@ -326,10 +326,17 @@ class QuestionNormalizer:
         text = re.sub(r"\\textit\{([^}]*)\}", r"\1", text)
         text = re.sub(r"\\mathtt\{([^}]*)\}", r"\1", text)
         lines: list[str] = []
+        prev_empty = False
         for raw_line in text.splitlines():
-            line = raw_line.strip()
-            if not line or self._is_noise_line(line):
+            line = raw_line.rstrip()
+            if not line:
+                if not prev_empty and lines:
+                    lines.append("")
+                prev_empty = True
                 continue
+            if self._is_noise_line(line):
+                continue
+            prev_empty = False
             lines.append(line)
         text = "\n".join(lines)
         text = re.sub(r"^\d+\s*[.、)）]\s*", "", text)
@@ -541,6 +548,9 @@ class QuestionNormalizer:
         # Don't merge code-block lines (braces alone on a line, or lines with C/Java-like syntax)
         if re.search(r"[{};]\s*(?://.*)?$", prev) or re.search(r"^\s*[{}]", curr):
             return False
+        # Don't merge when a colon-ended intro line meets a code line
+        if prev.rstrip().endswith(":") and re.search(r"[{};=]", curr):
+            return False
         return True
 
     def _is_noise_line(self, line: str) -> bool:
@@ -548,7 +558,7 @@ class QuestionNormalizer:
             return True
         if re.fullmatch(r"[-—_=]{3,}", line):
             return True
-        if len(line) <= 2 and not re.search(r"[一-鿿A-Za-z0-9]", line):
+        if len(line) <= 2 and not re.search(r"[一-鿿A-Za-z0-9{}\[\]()]", line):
             return True
         return False
 

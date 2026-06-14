@@ -98,6 +98,10 @@ def _normalize_text(text: str) -> str:
     text = text.replace("．", ".")
     # 去除 Markdown 加粗标记（如 **答案：C** → 答案：C，**29．xxx** → 29．xxx）
     text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
+    # 去除 Markdown 引用标记（> 开头，可能连续多个 > >）
+    text = re.sub(r"^(?:>\s?)+", "", text, flags=re.MULTILINE)
+    # 去除 Markdown 代码围栏（```lang 和 ```）
+    text = re.sub(r"```[a-zA-Z]*\s*", "", text)
     # LaTeX 定界符统一为 $...$ 格式（前端渲染器仅支持 $）
     # 1) 清除 \( 和 \) 旁边多余的 $（如 \($P_{1}\) → \(P_{1}\)）
     text = re.sub(r"\\\(\$", r"\\(", text)
@@ -310,10 +314,18 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
     section = "stem"
     option_seen = False
 
+    prev_empty = False
+
     for line in lines:
         stripped = line.strip()
         if not stripped:
+            # Preserve blank lines in stem to keep visual separation (e.g. around code blocks)
+            # Collapse consecutive blanks — skip if we already recorded an empty line
+            if section == "stem" and not prev_empty and stem_lines:
+                stem_lines.append("")
+                prev_empty = True
             continue
+        prev_empty = False
 
         # 跳过长分隔线
         if re.match(r"^\-{3,}$", stripped) or re.match(r"^={3,}$", stripped):
@@ -448,7 +460,8 @@ def _parse_unlabeled_block(text: str) -> dict[str, Any]:
 
         # 累积到当前 section
         if section == "stem":
-            stem_lines.append(stripped)
+            # Preserve leading whitespace for code indentation (use rstrip only)
+            stem_lines.append(line.rstrip())
         elif section == "options":
             option_lines.append(stripped)
         elif section == "answer":
