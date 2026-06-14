@@ -35,6 +35,7 @@ Page({
 
     // pie chart detail popup
     selectedSubjectDetail: null,
+    _selectedSubject: null,
 
     // Animated display values
     _dispTodaySessions: 0,
@@ -430,12 +431,27 @@ Page({
 
     // === Layer 3: Sectors (top face, flat colors) ===
     if (progress > 0) {
+      const hlSubject = this.data._selectedSubject
+
       sectors.forEach(sec => {
         const curEnd = sec.startA + (sec.endA - sec.startA) * progress
         if (curEnd - sec.startA < 0.001) return
 
-        // Solid color sector
-        drawSector(center, center, radius, sec.startA, curEnd, sec.color, 'rgba(11,17,33,0.5)', 1.2)
+        const isHL = hlSubject && sec.subject.subject === hlSubject
+        let cx = center, cy = center
+        let strokeStyle = 'rgba(11,17,33,0.5)'
+        let lineW = 1.2
+
+        if (isHL) {
+          const mid = (sec.startA + curEnd) / 2
+          const pull = 12
+          cx += Math.cos(mid) * pull
+          cy += Math.sin(mid) * pull
+          strokeStyle = 'rgba(255,255,255,0.6)'
+          lineW = 2.5
+        }
+
+        drawSector(cx, cy, radius, sec.startA, curEnd, sec.color, strokeStyle, lineW)
       })
 
       // === Layer 4: Strong directional lighting overlay ===
@@ -470,6 +486,37 @@ Page({
       ctx.setStrokeStyle('rgba(0,0,0,0.2)')
       ctx.setLineWidth(2)
       ctx.stroke()
+
+      // === Layer 5b: Highlighted sector glow ===
+      if (progress >= 0.05) {
+        const hlSubject = this.data._selectedSubject
+        if (hlSubject) {
+          sectors.forEach(sec => {
+            if (sec.subject.subject !== hlSubject) return
+            const curEnd = sec.startA + (sec.endA - sec.startA) * progress
+            if (curEnd - sec.startA < 0.001) return
+
+            const mid = (sec.startA + curEnd) / 2
+            const pull = 12
+            const cx = center + Math.cos(mid) * pull
+            const cy = center + Math.sin(mid) * pull
+
+            // Outer glow ring
+            ctx.beginPath()
+            ctx.arc(cx, cy, radius + 5, sec.startA, curEnd)
+            ctx.setStrokeStyle('rgba(255,255,255,0.15)')
+            ctx.setLineWidth(8)
+            ctx.stroke()
+
+            // Inner bright rim
+            ctx.beginPath()
+            ctx.arc(cx, cy, radius + 1, sec.startA, curEnd)
+            ctx.setStrokeStyle('rgba(255,255,255,0.35)')
+            ctx.setLineWidth(2)
+            ctx.stroke()
+          })
+        }
+      }
     }
 
     // === Layer 6: Center hole ===
@@ -511,8 +558,25 @@ Page({
       const dy = y - centerY
       const dist = Math.sqrt(dx * dx + dy * dy)
 
-      if (dist > radius || dist < radius * 0.35) {
-        this.setData({ selectedSubjectDetail: null })
+      // Outside the pie — dismiss
+      if (dist > radius) {
+        if (this.data.selectedSubjectDetail) {
+          this.setData({
+            selectedSubjectDetail: null,
+            _selectedSubject: null,
+          }, () => this._renderPieChart(1))
+        }
+        return
+      }
+
+      // Center hole — dismiss if popup is open
+      if (dist < radius * 0.35) {
+        if (this.data.selectedSubjectDetail) {
+          this.setData({
+            selectedSubjectDetail: null,
+            _selectedSubject: null,
+          }, () => this._renderPieChart(1))
+        }
         return
       }
 
@@ -526,26 +590,22 @@ Page({
         const pct = (s.duration_sec || 0) / totalDur
         const cumulativeEnd = cumulativeStart + Math.PI * 2 * pct
         if (pct > 0 && angle >= cumulativeStart && angle < cumulativeEnd) {
-          this.setData({ selectedSubjectDetail: s })
+          this.setData({
+            selectedSubjectDetail: s,
+            _selectedSubject: s.subject,
+          }, () => this._renderPieChart(1))
           return
         }
         cumulativeStart = cumulativeEnd
       }
-
-      this.setData({ selectedSubjectDetail: null })
     }).exec()
   },
 
-  onLegendTap(e) {
-    const subject = e.currentTarget.dataset.subject
-    const found = this.data.subjects.find(s => s.subject === subject)
-    if (found) {
-      this.setData({ selectedSubjectDetail: found })
-    }
-  },
-
   closeDetail() {
-    this.setData({ selectedSubjectDetail: null })
+    this.setData({
+      selectedSubjectDetail: null,
+      _selectedSubject: null,
+    }, () => this._renderPieChart(1))
   },
 
   noop() {},
