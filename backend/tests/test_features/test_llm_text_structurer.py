@@ -228,6 +228,79 @@ class TestHallucinationGuard:
         assert cleaned["answer"] is None
         assert "answer" in dropped
 
+    def test_letter_answer_dropped_when_does_not_match_source(self):
+        # 原文答案是 D，LLM 输出 C → 必须拦截（核心反幻觉场景）
+        original = "题干？\nA. a\nB. b\nC. c\nD. d\n参考答案：D"
+        structured = {
+            "stem": None, "question_type": None,
+            "options": [], "answer": "C", "analysis": None,
+        }
+        cleaned, dropped = mod._validate_no_hallucination(structured, original)
+        assert cleaned["answer"] is None
+        assert "answer" in dropped
+
+    def test_letter_answer_passes_when_matches_label(self):
+        # 原文 "参考答案：D"，LLM 输出 D → 通过
+        original = "题干？\nA. a\nB. b\n参考答案：D"
+        structured = {
+            "stem": None, "question_type": None,
+            "options": [], "answer": "D", "analysis": None,
+        }
+        cleaned, _ = mod._validate_no_hallucination(structured, original)
+        assert cleaned["answer"] == "D"
+
+    def test_multi_letter_partial_mismatch_dropped(self):
+        # 原文 "答案: A,C"，LLM 输出 "AB" → B 不在白名单，整体拦截
+        original = "题干？\nA. a\nB. b\nC. c\n答案: A,C"
+        structured = {
+            "stem": None, "question_type": None,
+            "options": [], "answer": "AB", "analysis": None,
+        }
+        cleaned, dropped = mod._validate_no_hallucination(structured, original)
+        assert cleaned["answer"] is None
+        assert "answer" in dropped
+
+    def test_multi_letter_passes_when_subset_of_source(self):
+        # 原文 "答案: A,B,C"，LLM 输出 ["A","C"] → 通过
+        original = "题干？\nA. a\nB. b\nC. c\n答案: A,B,C"
+        structured = {
+            "stem": None, "question_type": None,
+            "options": [], "answer": ["A", "C"], "analysis": None,
+        }
+        cleaned, _ = mod._validate_no_hallucination(structured, original)
+        assert cleaned["answer"] == "A,C"
+
+    def test_chinese_separator_in_answer_label_extracts_all(self):
+        # 原文 "答案：A、C"，LLM 输出 "A,C" → 通过
+        original = "题干？\nA. a\nB. b\nC. c\n答案：A、C"
+        structured = {
+            "stem": None, "question_type": None,
+            "options": [], "answer": "AC", "analysis": None,
+        }
+        cleaned, _ = mod._validate_no_hallucination(structured, original)
+        assert cleaned["answer"] == "A,C"
+
+    def test_tf_answer_dropped_without_tf_signal(self):
+        # 原文只有字母答案信号、没有判断题信号，LLM 输出"正确" → 拦截
+        original = "下列说法是否正确？\nA. a\nB. b\n答案：A"
+        structured = {
+            "stem": None, "question_type": None,
+            "options": [], "answer": "正确", "analysis": None,
+        }
+        cleaned, dropped = mod._validate_no_hallucination(structured, original)
+        assert cleaned["answer"] is None
+        assert "answer" in dropped
+
+    def test_tf_answer_passes_with_label(self):
+        # 原文 "答案：正确"，LLM 输出"正确" → 通过
+        original = "下列说法是否正确？\n答案：正确"
+        structured = {
+            "stem": None, "question_type": None,
+            "options": [], "answer": "正确", "analysis": None,
+        }
+        cleaned, _ = mod._validate_no_hallucination(structured, original)
+        assert cleaned["answer"] == "正确"
+
     def test_invalid_question_type_dropped(self):
         original = "题干？"
         structured = {
