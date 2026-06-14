@@ -74,6 +74,9 @@ Page({
     // font size accessibility
     fontSizeLevel: 'medium',
 
+    // 番茄钟完成提醒（默认关闭；开启后启动专注会请求微信订阅消息授权）
+    notifyOn: false,
+
     // new features
     examDays: 0,
     showCelebration: false,
@@ -99,6 +102,7 @@ Page({
     this.setData({
       examDays: this._getExamDays(),
       fontSizeLevel: wx.getStorageSync('pomodoro_font_size') || 'medium',
+      notifyOn: !!wx.getStorageSync('pomodoro_notify_on'),
     })
 
     if (opts.subject) {
@@ -251,8 +255,10 @@ Page({
       return
     }
 
-    // 申请番茄钟完成订阅消息授权（用户拒绝不影响启动）
-    const notificationEnabled = await this._requestPomodoroSubscribe()
+    // 申请番茄钟完成订阅消息授权（开关关闭则跳过；用户拒绝不影响启动）
+    const notificationEnabled = this.data.notifyOn
+      ? await this._requestPomodoroSubscribe()
+      : false
 
     this.setData({ phase: PHASE.CEREMONY })
 
@@ -301,6 +307,37 @@ Page({
         resolve(false)
       }
     })
+  },
+
+  /**
+   * 切换"番茄钟完成提醒"开关。
+   * 开 → 立即弹一次订阅授权，引导用户勾选"总是保持以上选择"以避免每次启动都弹窗。
+   * 关 → 静默关闭，启动番茄钟时不会再请求授权。
+   */
+  async toggleNotify() {
+    const next = !this.data.notifyOn
+    if (next) {
+      const tmplId = (config && config.POMODORO_SUBSCRIBE_TMPL_ID) || ''
+      if (!tmplId) {
+        wx.showToast({ title: '订阅模板未配置', icon: 'none' })
+        return
+      }
+      const accepted = await this._requestPomodoroSubscribe()
+      if (!accepted) {
+        wx.showToast({ title: '未授权，提醒未开启', icon: 'none' })
+        return
+      }
+      this.setData({ notifyOn: true })
+      wx.setStorageSync('pomodoro_notify_on', true)
+      wx.showToast({
+        title: '建议勾选"总是保持以上选择"',
+        icon: 'none',
+        duration: 2400,
+      })
+    } else {
+      this.setData({ notifyOn: false })
+      wx.setStorageSync('pomodoro_notify_on', false)
+    }
   },
 
   async endSession() {
