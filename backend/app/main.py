@@ -42,6 +42,7 @@ from app.core.database import init_db
 from app.core.logging_config import setup_logging
 from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
+from app.services.pomodoro_scheduler_service import pomodoro_scheduler
 
 setup_logging()
 init_sentry()
@@ -68,7 +69,15 @@ async def lifespan(app: FastAPI):
                 logger.info("Development super admin initialized")
     except Exception as e:
         logger.warning("Development super admin init failed (non-fatal): %s", e)
+    try:
+        await pomodoro_scheduler.start()
+    except Exception as e:
+        logger.warning("Pomodoro scheduler start failed (non-fatal): %s", e)
     yield
+    try:
+        await pomodoro_scheduler.stop()
+    except Exception:
+        logger.exception("Pomodoro scheduler stop failed")
     logger.info("Shutting down 2240AI")
 
 

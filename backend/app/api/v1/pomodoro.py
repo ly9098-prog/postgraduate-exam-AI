@@ -32,6 +32,7 @@ async def start_session(
         req.preset,
         req.work_duration,
         req.break_duration,
+        notification_enabled=req.notification_enabled,
     )
     await db.commit()
     return session
