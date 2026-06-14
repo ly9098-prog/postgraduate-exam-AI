@@ -5,7 +5,7 @@ function loadLottieData() {
   if (LOTTIE_DATA_CACHE !== null) return LOTTIE_DATA_CACHE
 
   var mod = null
-  try { mod = require('../../assets/lottie/loading.js') } catch (_) {}
+  try { mod = require('../../assets/lottie/loading/loading.js') } catch (_) {}
 
   LOTTIE_DATA_CACHE = mod || false
   return LOTTIE_DATA_CACHE
