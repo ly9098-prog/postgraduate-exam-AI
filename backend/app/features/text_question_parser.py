@@ -13,7 +13,7 @@ import logging
 from typing import Any
 
 from app.features.question_pipeline import process_question_pipeline, normalizer, _guess_subject
-from app.services.formula_normalizer import normalize_text_import_math
+from app.services.formula_normalizer import fix_ocr_formula, normalize_text_import_math
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +100,6 @@ def _normalize_text(text: str) -> str:
     text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
     # 去除 Markdown 引用标记（> 开头，可能连续多个 > >）
     text = re.sub(r"^(?:>\s?)+", "", text, flags=re.MULTILINE)
-    # 去除 Markdown 代码围栏（```lang 和 ```）
-    text = re.sub(r"```[a-zA-Z]*\s*", "", text)
     # LaTeX 定界符统一为 $...$ 格式（前端渲染器仅支持 $）
     # 1) 清除 \( 和 \) 旁边多余的 $（如 \($P_{1}\) → \(P_{1}\)）
     text = re.sub(r"\\\(\$", r"\\(", text)
@@ -240,6 +238,13 @@ def _parse_labeled_block(text: str) -> dict[str, Any]:
 
 
 # 内联选项拆分：A. xxx B. xxx → 拆为独立选项
+def _normalize_option_math(text: str) -> str:
+    value = fix_ocr_formula(text)
+    value = normalize_text_import_math(value, compact=True)
+    value = re.sub(r"^\$\s*(.*?)\s*\$$", r"\1", value, flags=re.S)
+    return value
+
+
 _INLINE_OPTION_SPLIT_RE = re.compile(r"\s+(?=[A-Da-d]\s*[.．、:：)）])")
 
 
@@ -269,7 +274,7 @@ def _parse_options_from_text(text: str) -> list[dict[str, str]]:
             m = _OPTION_LINE_RE.match(cand)
             if m:
                 key = m.group(1).upper()
-                value = normalize_text_import_math(m.group(2).strip(), compact=True)
+                value = _normalize_option_math(m.group(2).strip())
                 if key not in options and value:
                     options[key] = value
                 continue
@@ -278,7 +283,7 @@ def _parse_options_from_text(text: str) -> list[dict[str, str]]:
             m = _OPTION_OCR_RE.match(cand)
             if m:
                 key = m.group(1).upper()
-                value = normalize_text_import_math(m.group(2).strip(), compact=True)
+                value = _normalize_option_math(m.group(2).strip())
                 if key not in options and value:
                     options[key] = value
                 continue

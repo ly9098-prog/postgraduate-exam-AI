@@ -475,7 +475,7 @@ export default function QuestionsPage() {
                     </div>
 
                     {/* Stem */}
-                    <div className="leading-relaxed text-[var(--ink)]">
+                    <div className="whitespace-pre-wrap leading-relaxed text-[var(--ink)]">
                       <MathFormula text={stemText} />
                     </div>
 
