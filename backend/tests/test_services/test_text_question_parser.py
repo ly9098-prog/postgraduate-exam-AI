@@ -215,3 +215,81 @@ D. \( T_4(n) = 20000 \log_2 n \)
         text = f"题干？\nA. a\nB. b\nC. c\nD. d\n{answer_line}"
         result = parse_text_questions(text, subject="exam408")
         assert result["questions"][0]["answer"] == "D"
+
+
+class TestCodeBlockInStem:
+    """题干内嵌 C 代码块：缩进 + 控制流括号结尾，多行不可被合并。"""
+
+    def test_p3_while_loop_keeps_increment_on_separate_line(self):
+        """BUGS.md P3: while(...) 后的 i++ 必须独立一行，不与条件合并。"""
+        text = (
+            "7. 下列算法的时间复杂度为（ ）。\n"
+            "\n"
+            "void fun(int n) {\n"
+            "    int i=0;\n"
+            "    while(i*i*i<=n)\n"
+            "    i++;\n"
+            "}\n"
+            "\n"
+            "A. \\( O(n) \\)\n"
+            "B. \\( O(n \\log_2 n) \\)\n"
+            "C. \\( O(\\sqrt[3]{n}) \\)\n"
+            "D. \\( O(\\sqrt{n}) \\)\n"
+            "答案：C\n"
+        )
+        result = parse_text_questions(text, subject="exam408-ds")
+        assert result["raw_count"] == 1
+        q = result["questions"][0]
+        stem = q["stem"]
+        # 控制流括号结尾的行不能被合并
+        assert "while(i*i*i<=n)\n    i++;" in stem
+        # 缩进保留
+        assert "    int i=0;" in stem
+        assert "    while(i*i*i<=n)" in stem
+        # 大括号独立成行
+        assert "void fun(int n) {" in stem
+        assert stem.rstrip().endswith("}")
+        # 选项内嵌 LaTeX 应被识别为 4 个并保留公式
+        opts = {item["key"]: item["text"] for item in q["options"]}
+        assert set(opts) == {"A", "B", "C", "D"}
+        assert opts["A"] == "O(n)"
+        assert opts["C"] == r"O(\sqrt[3]{n})"
+        assert opts["D"] == r"O(\sqrt{n})"
+        assert q["answer"] == "C"
+        assert q["is_valid"]
+
+    def test_p4_nested_for_loops_each_on_separate_line(self):
+        """BUGS.md P4: 嵌套 for(...) 与 printf 必须各自独占一行。"""
+        text = (
+            "8. 下列程序段的时间复杂度为( )。\n"
+            "\n"
+            "if (n>=0) {\n"
+            "    for (int i = 0; i<n; i++)\n"
+            "    for (int j = 0; j<n; j++)\n"
+            '    printf("输入数据大于或等于零\\n");\n'
+            "}\n"
+            "else {\n"
+            "    for (int j = 0; j<n; j++)\n"
+            '    printf("输入数据小于零\\n");\n'
+            "}\n"
+            "\n"
+            "A. O(n)\n"
+            "B. O(n^2)\n"
+            "C. O(n^3)\n"
+            "D. O(1)\n"
+            "答案：B\n"
+        )
+        result = parse_text_questions(text, subject="exam408-ds")
+        q = result["questions"][0]
+        stem = q["stem"]
+        # 两个 for 必须各自一行，不能粘成一行
+        assert "for (int i = 0; i<n; i++)\n    for (int j = 0; j<n; j++)" in stem
+        # printf 必须独立一行
+        assert 'for (int j = 0; j<n; j++)\n    printf("输入数据大于或等于零\\n");' in stem
+        # else 分支同样保持
+        assert 'for (int j = 0; j<n; j++)\n    printf("输入数据小于零\\n");' in stem
+        # 没有把多行合并成一行的痕迹
+        assert "i++)    for" not in stem
+        assert "j++)    printf" not in stem
+        assert q["answer"] == "B"
+        assert q["is_valid"]

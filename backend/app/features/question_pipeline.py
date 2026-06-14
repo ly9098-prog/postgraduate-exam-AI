@@ -553,8 +553,18 @@ class QuestionNormalizer:
             return False
         if prev[-1] in "。！？；…":
             return False
+        # Don't merge into / out of indented code-block lines
+        if re.match(r"^[ \t]{2,}\S", curr) or re.match(r"^[ \t]{2,}\S", prev):
+            return False
         # Don't merge code-block lines (braces alone on a line, or lines with C/Java-like syntax)
         if re.search(r"[{};]\s*(?://.*)?$", prev) or re.search(r"^\s*[{}]", curr):
+            return False
+        # Don't merge when previous line ends with `)` belonging to a control-flow header
+        # (e.g. `if (...)`, `while (...)`, `for (...)`, `switch (...)`) followed by a code line
+        if re.search(r"\b(if|while|for|switch|else\s+if)\s*\(.*\)\s*$", prev):
+            return False
+        # Don't merge bare `else` / `do` headers with the following code line
+        if re.match(r"^\s*(?:else|do)\s*$", prev):
             return False
         # Don't merge when a colon-ended intro line meets a code line
         if prev.rstrip().endswith(":") and re.search(r"[{};=]", curr):
