@@ -621,61 +621,87 @@ def _block_to_raw(block_text: str) -> dict[str, Any]:
     }
 
 
-def parse_text_questions(text: str, subject: str) -> dict[str, Any]:
-    """解析用户粘贴的文本，返回结构化题目列表。
-
-    Args:
-        text: 用户粘贴的原始文本
-        subject: 科目（必填，由前端下拉框选择）
-
-    Returns:
-        {
-            "questions": [...],
-            "warnings": [...],
-            "raw_count": int,
-            "valid_count": int,
-        }
-    """
-    global_warnings: list[str] = []
-    all_questions: list[dict] = []
-
-    # 1. 文本预处理
+def _prepare_blocks(text: str) -> tuple[list[str], dict[str, Any] | None]:
+    """文本预处理 + 拆分。返回 (blocks, early_return)。"""
     text = _normalize_text(text)
-
     if not text.strip():
-        return {
+        return [], {
             "questions": [],
             "warnings": ["输入文本为空"],
             "raw_count": 0,
             "valid_count": 0,
         }
 
-    # 2. 拆分为题目块
-    blocks = _split_batch(text)
-
-    # 3. 逐个块解析
-    raw_questions: list[dict] = []
-    q_index = 0
-    for i, block in enumerate(blocks):
-        # 过滤引言、说明等与题目无关的文本块
+    raw_blocks = _split_batch(text)
+    cleaned: list[str] = []
+    for block in raw_blocks:
         if not _has_question_indicators(block):
             continue
-
-        # 题内分隔线（自测版上下分栏），合并为一块
         sections = _SECTION_SEPARATOR_RE.split(block)
         if len(sections) > 1:
             block = "\n".join(s.strip() for s in sections if s.strip())
+        cleaned.append(block)
+    return cleaned, None
 
-        raw = _block_to_raw(block)
-        raw["block_index"] = q_index
-        raw_questions.append(raw)
-        for w in raw.get("warnings", []):
-            global_warnings.append(f"第{q_index + 1}题: {w}")
-        q_index += 1
 
-    # 4. 通过 pipeline 标准化
+def _merge_llm_into_raw(raw: dict[str, Any], llm_out: dict[str, Any]) -> dict[str, Any]:
+    """将 LLM 结构化结果合并回 raw dict。
+
+    合并策略：仅在 LLM 提供了"更完整"或"原本缺失"的字段时替换。
+    LLM 输出已经过反幻觉守门，未通过的字段在 llm_out 中为 null / 空。
+    """
+    merged = dict(raw)
+
+    llm_stem = (llm_out.get("stem") or "").strip()
+    if llm_stem and (not merged.get("stem") or len(llm_stem) > len(merged["stem"])):
+        # 用 LLM 题干，但仍走规则解析器的去题号 + 数学公式归一化
+        merged["stem"] = normalize_text_import_math(_clean_stem_number(llm_stem))
+
+    llm_options = llm_out.get("options") or []
+    if llm_options and len(llm_options) > len(merged.get("options") or []):
+        # 重新走选项数学公式归一化
+        merged["options"] = [
+            {"key": opt["key"], "text": _normalize_option_math(opt["text"])}
+            for opt in llm_options
+        ]
+
+    llm_answer = llm_out.get("answer")
+    rule_answer = merged.get("answer")
+    rule_answer_empty = (
+        rule_answer is None
+        or rule_answer == ""
+        or (isinstance(rule_answer, list) and not rule_answer)
+    )
+    if llm_answer and rule_answer_empty:
+        merged["answer"] = _normalize_answer_text(
+            llm_answer if isinstance(llm_answer, str) else ",".join(llm_answer)
+        )
+
+    llm_analysis = (llm_out.get("analysis") or "").strip() if isinstance(llm_out.get("analysis"), str) else ""
+    if llm_analysis and not (merged.get("analysis") or "").strip():
+        merged["analysis"] = normalize_text_import_math(llm_analysis)
+
+    llm_qt = llm_out.get("question_type")
+    if llm_qt and (
+        not merged.get("question_type")
+        or merged.get("question_type") == "subjective"
+    ):
+        merged["question_type"] = llm_qt
+
+    # 重新推断题型（避免 LLM 给的 question_type 与 answer 不一致）
+    merged["question_type"] = _detect_question_type(
+        merged.get("options") or [], merged.get("answer")
+    )
+    return merged
+
+
+def _finalize_questions(
+    raw_questions: list[dict[str, Any]],
+    subject: str,
+) -> tuple[list[dict[str, Any]], int]:
+    """走 pipeline 标准化 + 校验，返回 (questions, valid_count)。"""
+    out: list[dict] = []
     for raw in raw_questions:
-        # 自动检测科目
         q_subject = subject or _guess_subject(raw["stem"] + " " + (raw.get("analysis") or "")) or ""
 
         pipeline_input = {
@@ -687,8 +713,6 @@ def parse_text_questions(text: str, subject: str) -> dict[str, Any]:
             "question_type": raw["question_type"],
             "preserve_plain_math": True,
         }
-
-        # 判断题：bool → 字符串格式（pipeline 能处理）
         if isinstance(pipeline_input["answer"], bool):
             pipeline_input["answer"] = "正确" if pipeline_input["answer"] else "错误"
 
@@ -699,8 +723,7 @@ def parse_text_questions(text: str, subject: str) -> dict[str, Any]:
         )
 
         normalized = result["normalized"]
-
-        q_data = {
+        out.append({
             "subject": normalized.get("subject"),
             "question_type": normalized.get("question_type"),
             "stem": normalized.get("stem"),
@@ -716,16 +739,99 @@ def parse_text_questions(text: str, subject: str) -> dict[str, Any]:
             "stem_hash": normalized.get("stem_hash"),
             "block_index": raw.get("block_index", 0),
             "detection_method": raw.get("detection_method", "unknown"),
-        }
-        all_questions.append(q_data)
+        })
 
-    valid_count = sum(1 for q in all_questions if q["is_valid"])
+    valid_count = sum(1 for q in out if q["is_valid"])
+    return out, valid_count
 
-    if not all_questions:
+
+def parse_text_questions(text: str, subject: str) -> dict[str, Any]:
+    """解析用户粘贴的文本，返回结构化题目列表（仅规则解析）。
+
+    保留同步入口以兼容现有调用方与测试。需要 LLM 兜底请使用
+    parse_text_questions_async。
+    """
+    blocks, early = _prepare_blocks(text)
+    if early is not None:
+        return early
+
+    global_warnings: list[str] = []
+    raw_questions: list[dict] = []
+    for q_index, block in enumerate(blocks):
+        raw = _block_to_raw(block)
+        raw["block_index"] = q_index
+        raw_questions.append(raw)
+        for w in raw.get("warnings", []):
+            global_warnings.append(f"第{q_index + 1}题: {w}")
+
+    questions, valid_count = _finalize_questions(raw_questions, subject)
+    if not questions:
         global_warnings.append("未识别到任何题目，请检查文本格式")
 
     return {
-        "questions": all_questions,
+        "questions": questions,
+        "warnings": global_warnings,
+        "raw_count": len(raw_questions),
+        "valid_count": valid_count,
+    }
+
+
+async def parse_text_questions_async(text: str, subject: str) -> dict[str, Any]:
+    """规则解析为主，结构完整度低时调用 LLM 结构化兜底。
+
+    LLM 仅做格式整理：识别题干 / 选项 / 答案 / 解析区域、修复换行、
+    提取多空结构。绝不补全、推测、生成内容。所有 LLM 输出经过反幻觉
+    守门后才合并回结果，最终仍走 process_question_pipeline 标准化。
+    """
+    from app.features.llm_text_structurer import should_call_llm, structure_text_block
+
+    blocks, early = _prepare_blocks(text)
+    if early is not None:
+        return early
+
+    global_warnings: list[str] = []
+    raw_questions: list[dict] = []
+
+    for q_index, block in enumerate(blocks):
+        raw = _block_to_raw(block)
+        raw["block_index"] = q_index
+
+        should_call, reason = should_call_llm(block, raw)
+        if should_call:
+            llm_out = await structure_text_block(
+                block,
+                rule_hint={
+                    "stem": raw.get("stem"),
+                    "options": raw.get("options"),
+                    "answer": raw.get("answer"),
+                    "analysis": raw.get("analysis"),
+                },
+            )
+            if llm_out is not None:
+                raw = _merge_llm_into_raw(raw, llm_out)
+                raw["block_index"] = q_index
+                raw["detection_method"] = "llm_structured"
+                raw["llm_reason"] = reason
+                raw["llm_dropped"] = llm_out.get("_dropped") or []
+                # 守门移除字段记录到 warnings，便于排查
+                for f in raw["llm_dropped"]:
+                    global_warnings.append(
+                        f"第{q_index + 1}题: LLM 输出字段 {f} 未通过反幻觉校验，已置空"
+                    )
+            else:
+                raw["llm_reason"] = reason
+                raw["detection_method"] = raw.get("detection_method", "heuristic") + "_llm_failed"
+
+        raw_questions.append(raw)
+        for w in raw.get("warnings", []):
+            global_warnings.append(f"第{q_index + 1}题: {w}")
+
+    questions, valid_count = _finalize_questions(raw_questions, subject)
+    if not questions:
+        global_warnings.append("未识别到任何题目，请检查文本格式")
+
+    return {
+        "questions": questions,
         "warnings": global_warnings,
         "raw_count": len(raw_questions),
         "valid_count": valid_count,
