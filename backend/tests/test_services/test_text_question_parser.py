@@ -136,6 +136,28 @@ C"""
         result = parse_text_questions(text, subject="math")
         assert result["raw_count"] == 1
 
+    def test_fenced_code_block_is_preserved(self):
+        text = """有两个并发进程 \(P_{1}\) 和 \(P_{2}\)，其程序代码如下:
+```tex
+P1() {                     P2() {
+ x = 1;      // A1          x = -3;     // B1
+ y = 2;                     c = x * x;
+ z = x + y;                 print c;    // B2
+ print z;    // A2          }
+}
+```
+可能打印出的 z 值有( )，可能打印出的 c 值有( )。
+
+A. 1,1
+B. 2,2
+答案：A"""
+        result = parse_text_questions(text, subject="408")
+        question = result["questions"][0]
+        assert "```tex" in question["stem"]
+        assert "P1() {                     P2() {" in question["stem"]
+        assert " x = 1;      // A1          x = -3;     // B1" in question["stem"]
+        assert "$P_1$" in question["stem"]
+
 
 class TestMathFormulaImport:
     """数学公式文本导入兼容测试。"""

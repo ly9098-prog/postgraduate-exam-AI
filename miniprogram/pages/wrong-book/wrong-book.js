@@ -362,6 +362,7 @@ Page({
 
   _toCleanText(text) {
     if (!text || typeof text !== 'string') return ''
+    if (/\n/.test(text)) return text
     return formatInlineMathText(text)
   },
 })

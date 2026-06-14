@@ -526,7 +526,15 @@ class QuestionNormalizer:
 
     def _merge_broken_lines(self, text: str) -> str:
         result: list[str] = []
+        in_code_fence = False
         for line in text.split("\n"):
+            if line.strip().startswith("```"):
+                result.append(line)
+                in_code_fence = not in_code_fence
+                continue
+            if in_code_fence:
+                result.append(line)
+                continue
             if not result:
                 result.append(line)
                 continue

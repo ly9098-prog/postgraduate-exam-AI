@@ -117,9 +117,19 @@ class ImportTextNormalizer:
 
         lines = text.split("\n")
         result: list[str] = []
+        in_code_fence = False
 
         for line in lines:
             stripped = line.strip()
+
+            if stripped.startswith("```"):
+                result.append(line.rstrip())
+                in_code_fence = not in_code_fence
+                continue
+
+            if in_code_fence:
+                result.append(line.rstrip())
+                continue
 
             if not stripped:
                 result.append("")
@@ -199,8 +209,11 @@ class ImportTextNormalizer:
             return text
         text = text.replace("　", " ")   # 全角空格 → 半角
         text = text.replace("\xa0", " ")     # 非断空格 → 半角
-        text = re.sub(r" {2,}", " ", text)   # 连续空格 → 单空格
-        return text
+        parts = re.split(r"(```[\s\S]*?```)", text)
+        return "".join(
+            part if part.startswith("```") else re.sub(r" {2,}", " ", part)
+            for part in parts
+        )
 
     # ---------------------------------------------------------------
     # OCR 字符纠正
@@ -259,8 +272,16 @@ class ImportTextNormalizer:
             return text
         lines = text.split("\n")
         filtered: list[str] = []
+        in_code_fence = False
         for line in lines:
             stripped = line.strip()
+            if stripped.startswith("```"):
+                filtered.append(line)
+                in_code_fence = not in_code_fence
+                continue
+            if in_code_fence:
+                filtered.append(line)
+                continue
             if not stripped:
                 filtered.append(line)
                 continue

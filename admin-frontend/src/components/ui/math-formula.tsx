@@ -23,8 +23,8 @@ function toScript(value: string, map: Record<string, string>) {
   return value.split("").map((ch) => map[ch] ?? ch).join("");
 }
 
-function formatMathText(text: string) {
-  return text
+function formatMathText(text: string, { preserveWhitespace = false }: { preserveWhitespace?: boolean } = {}) {
+  let value = text
     .replace(/\*\*([^*]+?)\*\*/g, "$1")
     .replace(/\\\(([\s\S]*?)\\\)/g, "$1")
     .replace(/\\\[([\s\S]*?)\\\]/g, "$1")
@@ -50,11 +50,17 @@ function formatMathText(text: string) {
     .replace(/\s*(-)\s*/g, " − ")
     .replace(/(?<![*/])\s*([*/])\s*(?![*/])/g, " $1 ")
     .replace(/([A-Za-z0-9)])(log[₀-₉₊₋]+)/g, "$1 $2")
-    .replace(/(log[₀-₉₊₋]+)([A-Za-z])/g, "$1 $2")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\s+([，。！？；：,.!?;:)])/g, "$1")
-    .replace(/([(])\s+/g, "$1")
-    .trim();
+    .replace(/(log[₀-₉₊₋]+)([A-Za-z])/g, "$1 $2");
+
+  if (!preserveWhitespace) {
+    value = value
+      .replace(/[ \t]+/g, " ")
+      .replace(/\s+([，。！？；：,.!?;:)])/g, "$1")
+      .replace(/([(])\s+/g, "$1")
+      .trim();
+  }
+
+  return value;
 }
 
 function parseMath(text: string): Segment[] {
@@ -85,7 +91,7 @@ function parseMath(text: string): Segment[] {
 
 function renderSegments(segments: Segment[]): ReactNode[] {
   return segments.map((seg, i) => {
-    const value = formatMathText(seg.value);
+    const value = seg.type === "text" ? formatMathText(seg.value, { preserveWhitespace: true }) : formatMathText(seg.value);
     if (seg.type === "text") {
       return <span key={i}>{value}</span>;
     }
@@ -102,7 +108,7 @@ function renderSegments(segments: Segment[]): ReactNode[] {
 
 export function MathFormula({ text, className = "" }: { text: string; className?: string }) {
   const segments = parseMath(text);
-  const formatted = formatMathText(text);
+  const formatted = formatMathText(text, { preserveWhitespace: true });
   const hasMath = segments.some((s) => s.type !== "text");
 
   if (!hasMath) {
