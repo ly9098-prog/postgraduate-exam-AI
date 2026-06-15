@@ -107,7 +107,23 @@ print z;    // A2		   }
 可能打印出的 \(z\) 值有（ ），可能打印出的 \(c\) 值有（ ）（其中 \(x\) 为 \(P_{1}, P_{2}\) 的共享变量）。
 ```
 
-## [P3] 题干选项解析异常（已解决）
+## [P3] 选项解析异常(已解决)
+
+涉及显示页面：
+
+```
+miniprogram/pages/practice/
+
+miniprogram/pages/practice-result/
+
+miniprogram/pages/wrong-book/
+
+miniprogram/pages/wrong-detail/
+
+miniprogram/pages/review-today/
+
+admin-frontend/src/app/(admin)/questions/
+```
 
 ##### 文本导入输入内容
 
@@ -146,11 +162,30 @@ C. O(∛n)
 D. O(√n)
 
 答案：C
-
-
 ~~~
 
-## [P4] 题干选项格式异常（已解决）
+##### 展示内容
+
+```
+下列算法的时间复杂度为( )。
+
+void fun(int n) {
+    int i = 0;
+    while(i * i * i<=n)
+    i + +;
+}
+
+A. O(n)
+B. O(nlog₂ n)
+C. O(\\sqrt[3]{n})
+D. O(\\sqrt{n})
+
+答案：C
+```
+
+
+
+## [P4] 题干格式异常(已解决)
 
 ##### 前端显示内容
 

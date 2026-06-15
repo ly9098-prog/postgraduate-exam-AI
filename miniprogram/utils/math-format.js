@@ -22,8 +22,32 @@ function toScript(value, map) {
   return result
 }
 
+const ROOT_SYMBOLS = { '2': '√', '3': '∛', '4': '∜' }
+
+function _renderSqrtFrac(text) {
+  let value = String(text || '')
+  // Resolve up to two levels of nesting for \frac and \sqrt
+  for (let i = 0; i < 3; i++) {
+    const before = value
+    value = value.replace(/\\{1,}frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g, function(_, num, den) {
+      const n = /^[A-Za-z0-9]+$/.test(num.trim()) ? num.trim() : '(' + num + ')'
+      const d = /^[A-Za-z0-9]+$/.test(den.trim()) ? den.trim() : '(' + den + ')'
+      return n + '/' + d
+    })
+    value = value.replace(/\\{1,}sqrt\s*\[([^\]]+)\]\s*\{([^{}]+)\}/g, function(_, idx, inner) {
+      const trimmed = String(idx).trim()
+      const symbol = ROOT_SYMBOLS[trimmed] || (toScript(trimmed, SUPERSCRIPT) + '√')
+      return symbol + inner
+    })
+    value = value.replace(/\\{1,}sqrt\s*\{([^{}]+)\}/g, '√$1')
+    value = value.replace(/\\{1,}sqrt\s+([A-Za-z0-9]+)/g, '√$1')
+    if (value === before) break
+  }
+  return value
+}
+
 function replaceSimpleLatexCommands(text) {
-  return String(text || '')
+  return _renderSqrtFrac(String(text || ''))
     .replace(/\\{1,}(leq|le)/g, '≤')
     .replace(/\\{1,}(geq|ge)/g, '≥')
     .replace(/\\{1,}neq/g, '≠')
