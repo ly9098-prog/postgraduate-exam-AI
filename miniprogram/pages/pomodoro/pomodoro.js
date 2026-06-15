@@ -147,6 +147,9 @@ Page({
       wx.setStorageSync('pomodoro_running_state', {
         sessionStartTime: this.data.sessionStartTime,
         workDuration: this.data.workDuration,
+        breakDuration: this.data.breakDuration,
+        selectedPreset: this.data.selectedPreset,
+        selectedSubject: this.data.selectedSubject,
         isPaused: this.data.isPaused,
         totalPausedMs: this.data.totalPausedMs,
         pauseStartTime: this.data.isPaused ? (this.data.pauseStartTime || Date.now()) : null,
@@ -473,8 +476,9 @@ Page({
         id: local.sessionId,
         start_time: new Date(local.sessionStartTime).toISOString(),
         work_duration: local.workDuration,
-        break_duration: this.data.breakDuration,
-        subject: this.data.selectedSubject,
+        break_duration: local.breakDuration,
+        preset: local.selectedPreset || 'standard',
+        subject: local.selectedSubject || this.data.selectedSubject,
       }
     }
     wx.removeStorageSync('pomodoro_running_state')
@@ -499,11 +503,8 @@ Page({
     if (remaining <= 0) {
       wx.removeStorageSync('pomodoro_pause')
       wx.removeStorageSync('pomodoro_running_state')
-      wx.removeStorageSync('pomodoro_completion')
-      // Session expired while page was closed — sync silently with the explicit
-      // session id so the server clears its "active" flag. Do NOT vibrate or
-      // start a break — the user wasn't watching and didn't earn a celebration
-      // for this restore path.
+      // Session expired while page was hidden — complete it now and show
+      // deferred celebration so the user gets their earned break.
       api.post(`/pomodoro/${session.id}/complete`, {
         total_paused_ms: totalPausedMs || 0,
       }).catch(() => {
@@ -511,8 +512,21 @@ Page({
           total_paused_ms: totalPausedMs || 0,
         }).catch(() => {})
       })
-      this._resetToIdle()
+      // Restore session config so dismissCelebration reads correct durations
+      this.setData({
+        selectedSubject: session.subject,
+        selectedPreset: session.preset || 'standard',
+        workDuration: session.work_duration,
+        breakDuration: session.break_duration,
+        isPaused: false,
+        totalPausedMs: 0,
+        pauseStartTime: null,
+      })
       this.loadTodayStats()
+      wx.vibrateLong()
+      const motto = MOTTOES[Math.floor(Math.random() * MOTTOES.length)]
+      wx.setStorageSync('pomodoro_completion', { motto, sessionId: session.id })
+      this.setData({ showCelebration: true, celebrationMotto: motto })
       return
     }
 
@@ -521,6 +535,7 @@ Page({
       sessionId: session.id,
       sessionStartTime: startTime,
       selectedSubject: session.subject,
+      selectedPreset: session.preset || 'standard',
       workDuration: session.work_duration,
       breakDuration: session.break_duration,
       remainingSec: remaining,
