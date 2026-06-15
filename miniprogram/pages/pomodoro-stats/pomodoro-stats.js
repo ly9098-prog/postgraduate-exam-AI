@@ -388,6 +388,9 @@ Page({
     const radius = size * 0.39
     const tilt = 0.58
     const depth = size * 0.16
+    // In motion the eye can't see micro-edge fidelity. Use full 27 layers + gloss
+    // + specular only on the final still frame; mid-animation runs lean.
+    const isFinal = progress >= 1
 
     ctx.clearRect(0, 0, w, h)
 
@@ -420,7 +423,9 @@ Page({
       this._pieSectors = sectors
       const sideStepsFull = Math.max(8, Math.round(depth / 3))
       this._pieSideSteps = sideStepsFull
-      // Pre-compute per-layer shade amounts (sector color + layer index)
+      // Pre-compute per-layer shade amounts (sector color + layer index) for ALL
+      // layers up to full quality. During animation we use a subset; final frame
+      // uses every entry.
       sectors.forEach(sec => {
         sec._shades = []
         for (let layer = 1; layer <= sideStepsFull; layer++) {
@@ -430,27 +435,38 @@ Page({
     }
 
     const sectors = this._pieSectors
-    const sideSteps = this._pieSideSteps
+    const sideStepsFull = this._pieSideSteps
+    // 12 layers in motion = ~56% less pixel fill than 27, edge difference invisible
+    // while spinning. Final paint uses every layer for crisp depth.
+    const sideSteps = isFinal ? sideStepsFull : Math.min(12, sideStepsFull)
+    // When using a reduced layer count, sample shades evenly from the full cache so
+    // gradient feels the same — just coarser steps.
+    const shadeStride = sideStepsFull / sideSteps
 
-    // Drop shadow
-    ctx.save()
-    ctx.translate(centerX, centerY + depth * 1.02)
-    ctx.scale(1, 0.32)
-    const shadow = ctx.createLinearGradient(0, -radius * 0.4, 0, radius * 1.2)
-    shadow.addColorStop(0, 'rgba(0,0,0,0.34)')
-    shadow.addColorStop(0.55, 'rgba(0,0,0,0.22)')
-    shadow.addColorStop(1, 'rgba(0,0,0,0)')
-    ctx.fillStyle = shadow
-    ctx.beginPath()
-    ctx.arc(0, 0, radius * 1.18, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.restore()
+    // Drop shadow — only on final frame; rebuilds a linearGradient and ellipse fill
+    // each call, and it doesn't read as motion to the eye anyway.
+    if (isFinal) {
+      ctx.save()
+      ctx.translate(centerX, centerY + depth * 1.02)
+      ctx.scale(1, 0.32)
+      const shadow = ctx.createLinearGradient(0, -radius * 0.4, 0, radius * 1.2)
+      shadow.addColorStop(0, 'rgba(0,0,0,0.34)')
+      shadow.addColorStop(0.55, 'rgba(0,0,0,0.22)')
+      shadow.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.fillStyle = shadow
+      ctx.beginPath()
+      ctx.arc(0, 0, radius * 1.18, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
 
     const selectedSubject = this.data._selectedSubject
 
     // Side depth layers
     for (let layer = sideSteps; layer >= 1; layer--) {
       const layerOffset = depth * layer / sideSteps * progress
+      // Map reduced-count layer index back into full-cache index for the shade
+      const shadeIdx = Math.max(1, Math.min(sideStepsFull, Math.round(layer * shadeStride)))
       sectors.forEach(sec => {
         const curEnd = sec.startA + (sec.endA - sec.startA) * progress
         if (curEnd - sec.startA < 0.002) return
@@ -459,7 +475,7 @@ Page({
         const pull = isSelected ? 14 : 0
         const cx = centerX + Math.cos(mid) * pull
         const cy = centerY + Math.sin(mid) * pull * tilt + layerOffset
-        this._drawEllipticSector(ctx, cx, cy, radius, tilt, sec.startA, curEnd, sec._shades[layer], 'rgba(0,0,0,0.12)', 0.5)
+        this._drawEllipticSector(ctx, cx, cy, radius, tilt, sec.startA, curEnd, sec._shades[shadeIdx], 'rgba(0,0,0,0.12)', 0.5)
       })
     }
 
@@ -486,33 +502,35 @@ Page({
       )
     })
 
-    // Gloss overlay
-    ctx.save()
-    ctx.translate(centerX, centerY)
-    ctx.scale(1, tilt)
-    ctx.beginPath()
-    ctx.arc(0, 0, radius, 0, Math.PI * 2)
-    ctx.clip()
-    const gloss = ctx.createLinearGradient(-radius, -radius, radius, radius)
-    gloss.addColorStop(0, 'rgba(255,255,255,0.32)')
-    gloss.addColorStop(0.28, 'rgba(255,255,255,0.08)')
-    gloss.addColorStop(0.58, 'rgba(255,255,255,0)')
-    gloss.addColorStop(1, 'rgba(0,0,0,0.28)')
-    ctx.fillStyle = gloss
-    ctx.beginPath()
-    ctx.arc(0, 0, radius, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.restore()
+    // Gloss + specular — final frame only. These each cost a clip / linearGradient /
+    // arc fill and contribute nothing visible while the pie is sweeping in.
+    if (isFinal) {
+      ctx.save()
+      ctx.translate(centerX, centerY)
+      ctx.scale(1, tilt)
+      ctx.beginPath()
+      ctx.arc(0, 0, radius, 0, Math.PI * 2)
+      ctx.clip()
+      const gloss = ctx.createLinearGradient(-radius, -radius, radius, radius)
+      gloss.addColorStop(0, 'rgba(255,255,255,0.32)')
+      gloss.addColorStop(0.28, 'rgba(255,255,255,0.08)')
+      gloss.addColorStop(0.58, 'rgba(255,255,255,0)')
+      gloss.addColorStop(1, 'rgba(0,0,0,0.28)')
+      ctx.fillStyle = gloss
+      ctx.beginPath()
+      ctx.arc(0, 0, radius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
 
-    // Specular highlight
-    ctx.save()
-    ctx.translate(centerX - radius * 0.23, centerY - radius * 0.14)
-    ctx.scale(1, 0.24)
-    ctx.beginPath()
-    ctx.arc(0, 0, radius * 0.48, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(255,255,255,0.16)'
-    ctx.fill()
-    ctx.restore()
+      ctx.save()
+      ctx.translate(centerX - radius * 0.23, centerY - radius * 0.14)
+      ctx.scale(1, 0.24)
+      ctx.beginPath()
+      ctx.arc(0, 0, radius * 0.48, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255,255,255,0.16)'
+      ctx.fill()
+      ctx.restore()
+    }
 
     // Selected sector ring
     if (selectedSubject) {
