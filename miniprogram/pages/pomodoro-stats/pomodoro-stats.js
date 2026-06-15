@@ -189,10 +189,14 @@ Page({
 
   _startAnimations() {
     this._animActive = true
-    const animDuration = 1200
+    const animDuration = 900
     const startTime = Date.now()
     const tSessions = this.data.todaySessions
     const wSessions = this.data.weekSessions
+    let prevTodaySess = -1
+    let prevWeekSess = -1
+    let prevTodayDur = -1
+    let prevWeekDur = -1
 
     const tick = () => {
       if (!this._animActive) return
@@ -200,30 +204,41 @@ Page({
       const rawP = Math.min(1, elapsed / animDuration)
       const eased = this._easeOutCubic(rawP)
 
-      // Update number animations
       const curTodaySess = Math.round(tSessions * eased)
       const curWeekSess = Math.round(wSessions * eased)
       const curTodayDur = Math.round(this._rawTodayDur * eased)
       const curWeekDur = Math.round(this._rawWeekDur * eased)
 
-      this.setData({
-        _dispTodaySessions: curTodaySess,
-        _dispTodayDurationText: this._fmtMin(curTodayDur),
-        _dispWeekSessions: curWeekSess,
-        _dispWeekDurationText: this._fmtMin(curWeekDur),
-      })
+      // Only setData when a displayed value actually changed — avoids ~30 redundant
+      // view updates per second when rounding produces the same int two ticks in a row.
+      if (curTodaySess !== prevTodaySess ||
+          curWeekSess !== prevWeekSess ||
+          curTodayDur !== prevTodayDur ||
+          curWeekDur !== prevWeekDur) {
+        prevTodaySess = curTodaySess
+        prevWeekSess = curWeekSess
+        prevTodayDur = curTodayDur
+        prevWeekDur = curWeekDur
+        this.setData({
+          _dispTodaySessions: curTodaySess,
+          _dispTodayDurationText: this._fmtMin(curTodayDur),
+          _dispWeekSessions: curWeekSess,
+          _dispWeekDurationText: this._fmtMin(curWeekDur),
+        })
+      }
 
-      // Draw chart animations
-      this._renderPieChart(eased)
+      // quick=true keeps 3D look but cuts depth-layer count from ~27 to 4 during animation
+      this._renderPieChart(eased, true)
       this._renderTrendBars(eased)
 
       if (rawP < 1) {
-        this._animTimer = setTimeout(tick, 16)
+        // 30fps tick — visually smooth, halves canvas work vs. 60fps
+        this._animTimer = setTimeout(tick, 33)
       } else {
         this._animActive = false
         this._animTimer = null
-        // Final draw at full progress to ensure crisp rendering
-        this._renderPieChart(1)
+        // Final draw at full quality (all depth layers, gloss, highlights)
+        this._renderPieChart(1, false)
         this._renderTrendBars(1)
       }
     }
@@ -331,7 +346,7 @@ Page({
   _drawEmptyChart() {
     const rect = this._pieRect
     if (!rect || !rect.width) return
-    this._renderPieChart(0)
+    this._renderPieChart(0, true)
   },
 
   _shadeColor(hex, amount) {
@@ -362,7 +377,7 @@ Page({
     ctx.restore()
   },
 
-  _renderPieChart(progress) {
+  _renderPieChart(progress, quick) {
     const subjects = this.data.subjects
     const rect = this._pieRect
     if (!rect || !rect.width) return
@@ -429,7 +444,9 @@ Page({
     ctx.restore()
 
     const selectedSubject = this.data._selectedSubject
-    const sideSteps = Math.max(8, Math.round(depth / 3))
+    // quick mode (during entrance animation): 4 depth layers ≈ 85% fewer canvas ops
+    // full mode (final paint, taps): ~27 layers for crisp 3D edge
+    const sideSteps = quick ? 4 : Math.max(8, Math.round(depth / 3))
     for (let layer = sideSteps; layer >= 1; layer--) {
       const layerOffset = depth * layer / sideSteps * progress
       sectors.forEach(sec => {
@@ -514,10 +531,11 @@ Page({
     const touch = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0])
     const tapX = touch ? touch.clientX : e.detail && e.detail.x
     const tapY = touch ? touch.clientY : e.detail && e.detail.y
+    if (typeof tapX !== 'number' || typeof tapY !== 'number') return
 
     const query = wx.createSelectorQuery().in(this)
-    query.select('#pie-chart-wrap').boundingClientRect(rect => {
-      if (!rect || typeof tapX !== 'number' || typeof tapY !== 'number') return
+    query.select('#pie-canvas').boundingClientRect(rect => {
+      if (!rect || !rect.width) return
       const x = tapX - rect.left
       const y = tapY - rect.top
       const centerX = rect.width / 2
@@ -535,7 +553,7 @@ Page({
           this.setData({
             selectedSubjectDetail: null,
             _selectedSubject: null,
-          }, () => this._renderPieChart(1))
+          }, () => this._renderPieChart(1, false))
         }
         return
       }
@@ -555,7 +573,7 @@ Page({
             _selectedSubject: s.subject,
             pieTapped: true,
           }, () => {
-            this._renderPieChart(1)
+            this._renderPieChart(1, false)
             setTimeout(() => this.setData({ pieTapped: false }), 350)
           })
           return
@@ -569,7 +587,7 @@ Page({
     this.setData({
       selectedSubjectDetail: null,
       _selectedSubject: null,
-    }, () => this._renderPieChart(1))
+    }, () => this._renderPieChart(1, false))
   },
 
   noop() {},
