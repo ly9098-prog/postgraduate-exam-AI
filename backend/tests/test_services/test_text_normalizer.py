@@ -250,6 +250,89 @@ class TestOptionFix:
 
 
 # ---------------------------------------------------------------
+# 5b. C 指针箭头 OCR 伪影修复（docs/BUGS.md 案例三/七/十）
+# ---------------------------------------------------------------
+
+class TestPointerArrowFix:
+    def test_minus_space_arrow_fixed(self, normalizer):
+        """"p − >next" → "p->next"（减号+空格+大于号）。"""
+        text = "A. s − >next = p − >next;"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "s->next" in normalized
+        assert "p->next" in normalized
+        assert "− >" not in normalized
+
+    def test_chained_arrows_fixed(self, normalizer):
+        """连续箭头 "q − >prior − >next" → "q->prior->next"。"""
+        text = "D. q − >prior − >next = p;"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "q->prior->next" in normalized
+
+    def test_ascii_hyphen_arrow_fixed(self, normalizer):
+        """ASCII 连字符变体 "p - >next" → "p->next"。"""
+        text = "B. p - >next = s;"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "p->next" in normalized
+
+    def test_correct_arrow_idempotent(self, normalizer):
+        """已正确的 "p->next" 再跑一次仍正确。"""
+        text = "C. q->next=s;s->next=p;"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "q->next" in normalized
+        assert "s->next" in normalized
+
+    def test_math_minus_not_touched(self, normalizer):
+        """数学式 "a − > b"（> 后有空格）不应被改成箭头。"""
+        text = "若 a − > b 则成立"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "a->" not in normalized
+
+    def test_subtraction_not_touched(self, normalizer):
+        """减法式 "2n − i − 1" 的减号必须保留。"""
+        text = "交换第 i 个元素和第 2n − i − 1 个元素的值"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "2n − i − 1" in normalized
+
+
+# ---------------------------------------------------------------
+# 5c. 水印过滤扩展（研大/公众号/永久微信，docs/BUGS.md 案例二/十）
+# ---------------------------------------------------------------
+
+class TestWatermarkFilter:
+    def test_yanda_bracket_line_filtered(self, normalizer):
+        """整行 "[研大]" 水印应被过滤。"""
+        text = "题干内容在此\n[研大]\nA. 选项一"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "题干内容在此" in normalized
+        assert "A. 选项一" in normalized
+        assert "研大" not in normalized
+
+    def test_gongzhonghao_line_filtered(self, normalizer):
+        """"后续关注公众号..." 水印行应被过滤。"""
+        text = "题干内容\n后续关注公众号研大\nA. 甲"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "题干内容" in normalized
+        assert "A. 甲" in normalized
+        assert "公众号" not in normalized
+
+    def test_wechat_line_filtered(self, normalizer):
+        """"永久微信1866224xxx" 水印行应被过滤。"""
+        text = "题干\n永久微信1866224xxx\nB. 乙"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "题干" in normalized
+        assert "B. 乙" in normalized
+        assert "永久微信" not in normalized
+
+    def test_legit_content_not_filtered(self, normalizer):
+        """正常题干/选项不应被水印规则误删。"""
+        text = "1. 设线性表有n个元素\nA. 输出第i个元素\nB. 交换元素"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "设线性表有n个元素" in normalized
+        assert "A. 输出第i个元素" in normalized
+        assert "B. 交换元素" in normalized
+
+
+# ---------------------------------------------------------------
 # 6. 空文本
 # ---------------------------------------------------------------
 

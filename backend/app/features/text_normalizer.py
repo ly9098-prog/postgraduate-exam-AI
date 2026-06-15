@@ -59,14 +59,31 @@ _RE_PREV_STRUCTURE_LINE = re.compile(
 _SENTENCE_END = frozenset("。！？；…")
 
 # 水印关键词模式（覆盖OCR识别出的各种变体）
+# 仅过滤「整行即水印」的安全情形；当水印位置性地渗入题目正文中间时（OCR 版面
+# 错乱），无法在文本层安全切除，留给 OCR 引擎层处理（参见 docs/BUGS.md 案例二/十）。
 _RE_WATERMARK = re.compile(
     r"^(王道|计算?机教育|机教育|算机教育|道计算|几教育|千道|全丰道|"
     r"王道计算机教育|道计算机|道计管教育|kaoya[no]?|Kaoyan|"
-    r"w{0,3}\.?com|n\.com|ska|ai\.).*$"
+    r"w{0,3}\.?com|n\.com|ska|ai\.|"
+    r"后续关注|关注公众号|扫码关注|扫描二维码|永久微信|微信号|公众号|"
+    r"[\[【（(]?\s*研大\s*[\]】）)]?).*$"
 )
 
 # 页码模式：纯数字或带少量空格的1-3位数
 _RE_PAGE_NUMBER = re.compile(r"^\s*\d{1,3}\s*$")
+
+# ASCII 罗马数字子项标记 I./II./III. ——多项选择题的子项枚举，区别于阿拉伯题号。
+# 用于避免把子项 "I." 误纠正成题号 "1."（OCR 纠错 l/I→1 的副作用）。
+_ROMAN_SUBITEM_TOKEN = r"(?:VIII|VII|III|VI|IV|IX|II|V|X|I)"
+_RE_ROMAN_SUBITEM_MARKER = re.compile(
+    r"(?<![A-Za-z])" + _ROMAN_SUBITEM_TOKEN + r"(?![A-Za-z])\s*[.、)）]"
+)
+
+# C 指针箭头 OCR 伪影：PaddleOCR 常把 "->" 识别成 "− >"/"- >"（减号/各类破折号 +
+# 空格 + 大于号），导致 408 链表代码（p->next、q->prior->next）面目全非。
+# 仅当 ">" 紧跟标识符字符时才纠正，避免误伤数学式 "a − > b"（> 后有空格不命中）。
+# 规则幂等：已正确的 "p->next" 再跑一次仍是 "p->next"（参见 docs/BUGS.md 案例三/七/十）。
+_RE_POINTER_ARROW = re.compile(r"([\w)\]）】])\s*[−\-–—]\s*>(?=\w)")
 
 
 class ImportTextNormalizer:
@@ -87,6 +104,7 @@ class ImportTextNormalizer:
             cleaned = self._clean_garbled(cleaned)
             cleaned = self._normalize_spaces(cleaned)
             cleaned = self._correct_ocr_errors(cleaned)
+            cleaned = self._fix_pointer_arrows(cleaned)
             out = {
                 "page": block.get("page", 1),
                 "block_index": block.get("block_index", i),
@@ -225,14 +243,33 @@ class ImportTextNormalizer:
             return text
 
         lines = text.split("\n")
+        has_roman_list = self._has_roman_subitem_list(text)
         corrected: list[str] = []
 
         for line in lines:
             line = self._fix_option_line(line)
-            line = self._fix_question_number_line(line)
+            line = self._fix_question_number_line(line, has_roman_list)
             corrected.append(line)
 
         return "\n".join(corrected)
+
+    def _has_roman_subitem_list(self, text: str) -> bool:
+        """检测文本中是否存在 ASCII 罗马数字子项列表（I./II./III. ...）。
+
+        命中条件：出现至少 2 个不同的罗马标记（如 I. 和 II.）。这种枚举几乎
+        只出现在「下列说法正确的是」类多选子项中，此时行首的 ``I.`` 是子项而非
+        OCR 误识的题号 ``1.``，不应被 _fix_question_number_line 改写。
+        """
+        markers = _RE_ROMAN_SUBITEM_MARKER.findall(text)
+        if len(markers) < 2:
+            return False
+        # 提取标记字符（去掉尾部分隔符），确认至少两种不同罗马数字
+        distinct = {
+            re.match(_ROMAN_SUBITEM_TOKEN, m).group(0)
+            for m in markers
+            if re.match(_ROMAN_SUBITEM_TOKEN, m)
+        }
+        return len(distinct) >= 2
 
     def _fix_option_line(self, line: str) -> str:
         """修复选项行 OCR 错误：8/６→B, 6→B, 0/O→D。"""
@@ -247,20 +284,43 @@ class ImportTextNormalizer:
 
         return line
 
-    def _fix_question_number_line(self, line: str) -> str:
-        """修复题号行 OCR 错误：O/o→0, l/I→1。"""
+    def _fix_question_number_line(self, line: str, has_roman_list: bool = False) -> str:
+        """修复题号行 OCR 错误：O/o→0, l/I→1。
+
+        当 ``has_roman_list`` 为真（文本含 I./II./III. 罗马子项枚举）时，行首大写
+        ``I.`` 是多选子项标记而非误识题号，跳过 I→1 改写，避免把一道多选题
+        撕成两题（参见 docs/BUGS.md 案例一/二/五/六）。小写 ``l.`` 仍始终纠正，
+        因为罗马数字不会用小写 l。
+        """
         # 匹配题号模式：数字后的混淆字符
         # 例："1.O" → "1.0", "2,0" → "2.0"
         m = re.match(r"^(\d+)\s*([.、)）])\s*[Oo](?=\s)", line)
         if m:
             return f"{m.group(1)}{m.group(2)} 0{line[m.end() + 1:]}"
 
-        # "l." → "1." 题号
-        m = re.match(r"^([lI])\s*([.、)）])\s*", line)
+        # 小写 "l." → "1." 题号（罗马数字不用小写 l，始终纠正）
+        m = re.match(r"^(l)\s*([.、)）])\s*", line)
         if m:
             return f"1{m.group(2)} {line[m.end():]}"
 
+        # 大写 "I." → "1." 题号：仅当不在罗马子项列表上下文中才纠正
+        if not has_roman_list:
+            m = re.match(r"^(I)\s*([.、)）])\s*", line)
+            if m:
+                return f"1{m.group(2)} {line[m.end():]}"
+
         return line
+
+    def _fix_pointer_arrows(self, text: str) -> str:
+        """修复 C 指针箭头 OCR 伪影： "p − >next" / "p - >next" → "p->next"。
+
+        PaddleOCR 常把 "->" 拆成「减号/破折号 + 空格 + 大于号」，链表代码因此不可读。
+        仅在 ">" 后紧跟标识符字符时纠正（数学式 "a − > b" 因 > 后有空格不命中），
+        规则幂等。连续箭头（p->next->prev）逐个命中，正则全局替换即可。
+        """
+        if not text or ">" not in text:
+            return text
+        return _RE_POINTER_ARROW.sub(r"\1->", text)
 
     # ---------------------------------------------------------------
     # 水印/页码过滤
