@@ -81,69 +81,65 @@ Page({
         api.get('/pomodoro/history', { page: 1, page_size: 20 }),
       ])
       const subjArr = subjects || []
-      const maxDur = Math.max(1, ...subjArr.map(s => s.duration_sec || 0))
       const totalDur = Math.max(1, subjArr.reduce((sum, s) => sum + (s.duration_sec || 0), 0))
-      let cumulativeAngle = -Math.PI / 2
+      this._rawTodayDur = stats.today_duration_sec || 0
+      this._rawWeekDur = stats.week_duration_sec || 0
+      this._pieSectors = null
+      this._shadeCache = null
+
       this.setData({
         todaySessions: stats.today_sessions || 0,
         todayDurationText: this._fmtMin(stats.today_duration_sec || 0),
         weekSessions: stats.week_sessions || 0,
         weekDurationText: this._fmtMin(stats.week_duration_sec || 0),
         trends: (trends || []).map(t => ({
-          ...t,
+          date: t.date,
+          duration_sec: t.duration_sec,
           _shortDate: (t.date || '').slice(5),
-          _barPct: this._calcBarPct(trends, t.duration_sec),
-          _durationText: this._fmtMin(t.duration_sec || 0),
         })),
         subjects: subjArr.map(s => {
           const dur = s.duration_sec || 0
           const pct = dur / totalDur
-          const sectorStart = cumulativeAngle
-          const sectorEnd = cumulativeAngle + Math.PI * 2 * pct
-          cumulativeAngle = sectorEnd
           return {
-            ...s,
+            subject: s.subject,
+            duration_sec: dur,
+            sessions: s.sessions || 0,
             _label: SUBJECT_LABELS[s.subject] || s.subject || '未分类',
             _color: SUBJECT_COLORS[s.subject] || '#3B82F6',
             _durationText: this._fmtMin(dur),
-            _barPct: maxDur > 0 ? dur / maxDur * 100 : 0,
-            _pct: pct,
             _pctText: (pct * 100).toFixed(1) + '%',
-            _sectorStart: sectorStart,
-            _sectorEnd: sectorEnd,
-            sessions: s.sessions || 0,
           }
         }),
         history: (hist.items || []).map(this._formatSession),
         historyTotal: hist.total || 0,
         loading: false,
-
-        // Reset display values
         _dispTodaySessions: 0,
         _dispTodayDurationText: '0分钟',
         _dispWeekSessions: 0,
         _dispWeekDurationText: '0分钟',
+      }, () => {
+        // setData has committed; view layer is mounting. Init canvases inside the
+        // callback so #pie-canvas / #trend-bars-canvas are guaranteed in the tree.
+        this._initCanvases(() => {
+          // Pre-warm: build _pieSectors cache and paint frame 0 of both charts so
+          // the first animation frame doesn't pay the cache-construction tax.
+          this._renderPieChart(0)
+          this._renderTrendBars(0)
+          // Defer 2 vsync ticks so initial page paint (history list, cards, legend)
+          // completes before the heavy 60fps render loop starts. Avoids contention
+          // on the first few frames that produced the visible entry stutter.
+          const node = this._pieCanvasNode
+          const raf = node && node.requestAnimationFrame
+            ? cb => node.requestAnimationFrame(cb)
+            : cb => setTimeout(cb, 16)
+          raf(() => raf(() => this._startAnimations()))
+        })
       })
-
-      // Store raw seconds for animation
-      this._rawTodayDur = stats.today_duration_sec || 0
-      this._rawWeekDur = stats.week_duration_sec || 0
-      // Invalidate caches that depend on subject set
-      this._pieSectors = null
-      this._shadeCache = null
-
-      // Initialize canvases (sync 2D contexts) then animate
-      this._initCanvases(() => this._startAnimations())
     } catch (e) {
       console.error('加载统计失败', e)
       this.setData({ loading: false })
       wx.showToast({ title: '加载失败', icon: 'none' })
     }
-  },
-
-  _calcBarPct(trends, value) {
-    const max = Math.max(1, ...(trends || []).map(t => t.duration_sec || 0))
-    return Math.max(4, Math.min(100, (value || 0) / max * 100)).toFixed(0)
   },
 
   _formatSession(s) {
@@ -178,6 +174,9 @@ Page({
   _initCanvases(callback) {
     let pending = 2
     const done = () => { if (--pending === 0) callback() }
+    // Cap DPR at 2 — backbuffer cost grows quadratically and DPR=3 on iPhones
+    // produces ~56% more pixel-fill work for negligible visual gain on a 250px pie.
+    const dpr = Math.min(2, wx.getSystemInfoSync().pixelRatio || 2)
 
     const setup = (selector, nodeKey, ctxKey, rectKey) => {
       wx.createSelectorQuery().in(this)
@@ -187,7 +186,6 @@ Page({
           if (!res || !res[0] || !res[0].node) { done(); return }
           const node = res[0].node
           const ctx = node.getContext('2d')
-          const dpr = wx.getSystemInfoSync().pixelRatio || 2
           const w = res[0].width
           const h = res[0].height
           node.width = Math.round(w * dpr)
