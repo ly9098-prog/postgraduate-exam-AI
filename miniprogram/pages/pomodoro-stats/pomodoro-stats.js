@@ -213,7 +213,7 @@ Page({
 
   _startAnimations() {
     this._animActive = true
-    const animDuration = 900
+    const animDuration = 700
     const startTime = Date.now()
     const tSessions = this.data.todaySessions
     const wSessions = this.data.weekSessions
@@ -227,35 +227,44 @@ Page({
       ? cb => node.requestAnimationFrame(cb)
       : cb => setTimeout(cb, 16)
 
+    let frameCount = 0
+
     const tick = () => {
       if (!this._animActive) return
       const elapsed = Date.now() - startTime
       const rawP = Math.min(1, elapsed / animDuration)
       const eased = this._easeOutCubic(rawP)
+      frameCount++
 
-      const curTodaySess = Math.round(tSessions * eased)
-      const curWeekSess = Math.round(wSessions * eased)
-      const curTodayDur = Math.round(this._rawTodayDur * eased)
-      const curWeekDur = Math.round(this._rawWeekDur * eased)
+      // Throttle setData to ~3-frame intervals (~48ms) to reduce cross-bridge cost
+      if (frameCount % 3 === 1 || rawP >= 1) {
+        const curTodaySess = Math.round(tSessions * eased)
+        const curWeekSess = Math.round(wSessions * eased)
+        const curTodayDur = Math.round(this._rawTodayDur * eased)
+        const curWeekDur = Math.round(this._rawWeekDur * eased)
 
-      if (curTodaySess !== prevTodaySess ||
-          curWeekSess !== prevWeekSess ||
-          curTodayDur !== prevTodayDur ||
-          curWeekDur !== prevWeekDur) {
-        prevTodaySess = curTodaySess
-        prevWeekSess = curWeekSess
-        prevTodayDur = curTodayDur
-        prevWeekDur = curWeekDur
-        this.setData({
-          _dispTodaySessions: curTodaySess,
-          _dispTodayDurationText: this._fmtMin(curTodayDur),
-          _dispWeekSessions: curWeekSess,
-          _dispWeekDurationText: this._fmtMin(curWeekDur),
-        })
+        if (curTodaySess !== prevTodaySess ||
+            curWeekSess !== prevWeekSess ||
+            curTodayDur !== prevTodayDur ||
+            curWeekDur !== prevWeekDur) {
+          prevTodaySess = curTodaySess
+          prevWeekSess = curWeekSess
+          prevTodayDur = curTodayDur
+          prevWeekDur = curWeekDur
+          this.setData({
+            _dispTodaySessions: curTodaySess,
+            _dispTodayDurationText: this._fmtMin(curTodayDur),
+            _dispWeekSessions: curWeekSess,
+            _dispWeekDurationText: this._fmtMin(curWeekDur),
+          })
+        }
       }
 
-      this._renderPieChart(eased)
-      this._renderTrendBars(eased)
+      // Throttle canvas renders to alternating frames (~30fps) — final frame always renders
+      if (frameCount % 2 === 1 || rawP >= 1) {
+        this._renderPieChart(eased)
+        this._renderTrendBars(eased)
+      }
 
       if (rawP < 1) {
         this._rafId = raf(tick)
