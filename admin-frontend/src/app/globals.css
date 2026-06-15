@@ -119,3 +119,18 @@ a {
 .animate-rise-in {
   animation: rise-in 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-drop-in {
+  animation: drop-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
