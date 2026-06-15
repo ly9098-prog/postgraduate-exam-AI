@@ -4,8 +4,9 @@
 - 不重构 OCR 核心逻辑、不改 PaddleOCR 配置、不换模型；
 - 最大化复用现有 OCR(`ocr_image`/`clean_ocr_text`) 与导入流水线
   (`run_import_pipeline`，source_type="txt") 与待审核入库；
-- 队列模式：并发 2~4（默认 2，与本地 OCR profile max_workers 对齐），
-  其余排队，避免 N 张图片同时 OCR 撑爆内存/CPU/AI 限流；
+- 队列模式：并发 clamp 到 1~4（默认取 settings.BATCH_IMAGE_DEFAULT_CONCURRENCY，
+  与本地 OCR profile max_workers 对齐），其余排队，避免 N 张图片同时 OCR
+  撑爆内存/CPU/AI 限流；
 - 单张失败只记录日志并继续，不终止整批；
 - 缓存 OCR 原始文本，支持「不重复 OCR」的重新解析；
 - 架构 source-agnostic：未来 PDF 拆页成图片数组后，直接复用
