@@ -34,6 +34,26 @@ _PARENED_QUESTION_PATTERN = _QUESTION_PATTERNS[2][0]
 # OCR 容错题号：l/I → 1
 _OCR_Q_PATTERN = re.compile(r"^([lI])\s*[.、)）]")
 
+# ASCII 罗马数字子项标记 I./II./III. ——多选题子项枚举，区别于阿拉伯题号。
+# 用于避免把行首子项 "I." 误当成题号 "1." 而把一道多选题切成两题。
+_ROMAN_SUBITEM_TOKEN = r"(?:VIII|VII|III|VI|IV|IX|II|V|X|I)"
+_RE_ROMAN_SUBITEM_MARKER = re.compile(
+    r"(?<![A-Za-z])" + _ROMAN_SUBITEM_TOKEN + r"(?![A-Za-z])\s*[.、)）]"
+)
+
+
+def _has_roman_subitem_list(text: str) -> bool:
+    """文本中是否存在 ASCII 罗马数字子项列表（出现 ≥2 个不同罗马标记）。"""
+    markers = _RE_ROMAN_SUBITEM_MARKER.findall(text)
+    if len(markers) < 2:
+        return False
+    distinct = {
+        re.match(_ROMAN_SUBITEM_TOKEN, m).group(0)
+        for m in markers
+        if re.match(_ROMAN_SUBITEM_TOKEN, m)
+    }
+    return len(distinct) >= 2
+
 # 选项模式
 _CIRCLED_OPTION_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
 _ROMAN_MARKER_CHARS = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ"
@@ -374,12 +394,20 @@ def _find_question_boundaries(text: str) -> list[tuple[int, int]]:
     boundaries: list[tuple[int, int]] = []
     lines = text.split("\n")
 
+    # 文本含罗马数字子项枚举时，行首 "I." 是多选子项而非题号，
+    # 跳过其边界检测，避免把一道多选题切成两题（docs/BUGS.md 案例一/二/五/六）。
+    roman_list = _has_roman_subitem_list(text)
+
     char_pos = 0
     previous_num: int | None = None
     in_subquestion = False
     for line in lines:
         stripped = line.lstrip()
         indent = len(line) - len(stripped)
+
+        if roman_list and _RE_ROMAN_SUBITEM_MARKER.match(stripped):
+            char_pos += len(line) + 1
+            continue
 
         result = _detect_question_number(stripped)
         if result is not None:
