@@ -36,13 +36,22 @@ Page({
       this._cachedYearlyTrends = yearlyTrends
       this._cachedGrowth = growthRes
       const processed = this._process(res, yearlyTrends, growthRes)
-      const { yearlyHeatmap, yearlyHeatmapWeeks, yearlyHeatmapMeta, ...coreData } = processed
+      // Phase 1: render core sections only, defer canvas draws
+      const { yearlyHeatmap, yearlyHeatmapWeeks, yearlyHeatmapMeta, badgeWall, ...coreData } = processed
       this.setData(coreData, () => {
-        this.drawAllCharts()
+        // Stagger canvas draws to spread JS thread cost on low-end devices
+        setTimeout(() => this.drawScoreRing(), 80)
+        setTimeout(() => this.drawSubjectDonut(), 180)
+        setTimeout(() => this.drawTrendLine(), 280)
       })
+
+      // Phase 2: defer heavy DOM sections after main layout settles
       setTimeout(() => {
         this.setData({ yearlyHeatmap, yearlyHeatmapWeeks, yearlyHeatmapMeta })
-      }, 60)
+      }, 500)
+      setTimeout(() => {
+        this.setData({ badgeWall })
+      }, 700)
     } catch (e) {
       console.error('加载学习统计失败', e)
       wx.showToast({ title: '加载失败', icon: 'none' })
@@ -74,6 +83,7 @@ Page({
       this.setData({
         trends,
         trendMeta,
+        _heatBarData: this._sampleHeatBar(trends),
         trendDays: days,
       }, () => {
         this.drawTrendLine()
@@ -118,6 +128,7 @@ Page({
       overview: ov,
       subjects: subs,
       trends: trs,
+      _heatBarData: this._sampleHeatBar(trs),
       behavior: bh,
       forgetting: fg,
       subjectTotal,
@@ -332,14 +343,6 @@ Page({
   // ─────────────────────────────────────────────
   // CHART DRAWING
   // ─────────────────────────────────────────────
-
-  drawAllCharts() {
-    setTimeout(() => {
-      this.drawScoreRing()
-      this.drawSubjectDonut()
-      this.drawTrendLine()
-    }, 100)
-  },
 
   drawScoreRing() {
     const query = wx.createSelectorQuery().in(this)
@@ -556,11 +559,16 @@ Page({
       this.loadTrendData(days)
     } else if (this._cachedDashboard && this._cachedYearlyTrends) {
       const processed = this._process(this._cachedDashboard, this._cachedYearlyTrends, this._cachedGrowth)
-      const { yearlyHeatmap, yearlyHeatmapWeeks, yearlyHeatmapMeta, ...coreData } = processed
-      this.setData({ ...coreData, trendDays: 7 }, () => this.drawTrendLine())
+      const { yearlyHeatmap, yearlyHeatmapWeeks, yearlyHeatmapMeta, badgeWall, ...coreData } = processed
+      this.setData({ ...coreData, trendDays: 7 }, () => {
+        setTimeout(() => this.drawTrendLine(), 50)
+      })
       setTimeout(() => {
         this.setData({ yearlyHeatmap, yearlyHeatmapWeeks, yearlyHeatmapMeta })
-      }, 60)
+      }, 300)
+      setTimeout(() => {
+        this.setData({ badgeWall })
+      }, 500)
     } else {
       this.loadData()
     }
@@ -602,5 +610,17 @@ Page({
   _subjectLabel(s) {
     const map = { math2: '数学二', exam408: '408', english: '英语' }
     return map[s] || s || ''
+  },
+
+  // Limit heat-bar cells to reduce DOM nodes on 30/90-day views
+  _sampleHeatBar(trends) {
+    if (!trends || trends.length <= 14) return trends || []
+    const step = Math.floor(trends.length / 14)
+    const sampled = []
+    for (let i = 0; i < trends.length; i += step) {
+      if (sampled.length >= 14) break
+      sampled.push(trends[i])
+    }
+    return sampled
   },
 })
