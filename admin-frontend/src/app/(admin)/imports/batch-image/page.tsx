@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, ClipboardCheck, Images, RefreshCw, Trash2, UploadCloud, X } from "lucide-react";
+import { AlertCircle, Check, CheckCircle2, ChevronDown, ClipboardCheck, Images, RefreshCw, Trash2, UploadCloud, X } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +47,8 @@ export default function BatchImagePage() {
   const fileInputId = useId();
   const queryClient = useQueryClient();
   const wasNotTerminal = useRef(true);
+  const [selectOpen, setSelectOpen] = useState(false);
+  const selectRef = useRef<HTMLDivElement>(null);
 
   const statusQuery = useQuery({
     queryKey: ["batch-image-job", jobId],
@@ -154,6 +156,16 @@ export default function BatchImagePage() {
       queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
     }
   }, [status, queryClient]);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (selectRef.current && !selectRef.current.contains(e.target as Node)) {
+        setSelectOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
   const total = status?.total ?? 0;
   const completed = status?.completed ?? 0;
@@ -265,20 +277,64 @@ export default function BatchImagePage() {
                 <span className="text-xs font-semibold text-[var(--color-text-secondary)]">科目（可选）</span>
                 <Input placeholder="如 math2 / exam408" value={subject} disabled={isRunning} onChange={(event) => setSubject(event.target.value)} />
               </label>
-              <label className="space-y-1">
+              <div className="space-y-1">
                 <span className="text-xs font-semibold text-[var(--color-text-secondary)]">并发数</span>
-                <select
-                  className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)] disabled:opacity-50"
-                  value={concurrency}
-                  disabled={isRunning}
-                  onChange={(event) => setConcurrency(event.target.value)}
-                >
-                  <option value="1">1（最稳）</option>
-                  <option value="2">2（推荐）</option>
-                  <option value="3">3</option>
-                  <option value="4">4（最快）</option>
-                </select>
-              </label>
+                <div className="relative" ref={selectRef}>
+                  <button
+                    type="button"
+                    disabled={isRunning}
+                    onClick={() => setSelectOpen((prev) => !prev)}
+                    className={`h-11 w-full rounded-xl border px-3 text-sm outline-none transition-all duration-200 flex items-center justify-between gap-2 ${
+                      isRunning
+                        ? "border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-50 cursor-not-allowed"
+                        : selectOpen
+                          ? "border-[var(--color-primary)] bg-white ring-4 ring-[rgba(91,123,154,0.14)]"
+                          : "border-[var(--color-border)] bg-[var(--color-bg-input)] hover:border-[var(--color-primary)] hover:bg-white"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="font-semibold text-[var(--ink)]">{concurrency}</span>
+                      {concurrency === "1" && <span className="text-[10px] font-semibold leading-none text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">最稳</span>}
+                      {concurrency === "2" && <span className="text-[10px] font-semibold leading-none text-green-700 bg-green-50 px-1.5 py-0.5 rounded">推荐</span>}
+                      {concurrency === "4" && <span className="text-[10px] font-semibold leading-none text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">最快</span>}
+                    </span>
+                    <ChevronDown className={`h-4 w-4 text-[var(--color-text-hint)] transition-transform duration-200 ${selectOpen ? "rotate-180" : ""}`} />
+                  </button>
+
+                  {selectOpen && (
+                    <div
+                      className="absolute top-full left-0 right-0 z-50 mt-1.5 surface-card rounded-xl overflow-hidden p-1 animate-drop-in"
+                      onKeyDown={(e) => { if (e.key === "Escape") setSelectOpen(false); }}
+                    >
+                      {[
+                        { value: "1", label: "1", tag: "最稳", tagClass: "bg-amber-50 text-amber-700" },
+                        { value: "2", label: "2", tag: "推荐", tagClass: "bg-green-50 text-green-700" },
+                        { value: "3", label: "3", tag: null, tagClass: "" },
+                        { value: "4", label: "4", tag: "最快", tagClass: "bg-indigo-50 text-indigo-700" },
+                      ].map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => { setConcurrency(opt.value); setSelectOpen(false); }}
+                          className={`w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-sm transition-all duration-150 ${
+                            concurrency === opt.value
+                              ? "bg-[var(--color-primary-light)] text-[var(--color-primary-dark)]"
+                              : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)]"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className={`font-semibold ${concurrency === opt.value ? "text-[var(--color-primary-dark)]" : "text-[var(--ink)]"}`}>{opt.label}</span>
+                            {opt.tag && <span className={`text-[10px] font-semibold leading-none px-1.5 py-0.5 rounded ${opt.tagClass}`}>{opt.tag}</span>}
+                          </span>
+                          {concurrency === opt.value && (
+                            <Check className="h-3.5 w-3.5 text-[var(--color-primary-dark)]" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Submit */}
