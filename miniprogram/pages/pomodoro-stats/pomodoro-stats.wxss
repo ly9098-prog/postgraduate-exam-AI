@@ -308,20 +308,37 @@
 .pie-wrap {
   position: relative;
   width: 100%;
-  height: 440rpx;
+  height: 500rpx;
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-bottom: 16rpx;
+  margin-bottom: 12rpx;
+  overflow: visible;
+}
+
+.pie-wrap::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 78rpx;
+  width: 420rpx;
+  height: 110rpx;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.34) 0%, rgba(0, 0, 0, 0.18) 46%, rgba(0, 0, 0, 0) 72%);
+  filter: blur(16rpx);
 }
 
 .pie-canvas {
-  width: 440rpx;
-  height: 440rpx;
+  position: relative;
+  z-index: 1;
+  width: 500rpx;
+  height: 500rpx;
 }
 
 .pie-hit-cover {
   position: absolute;
+  z-index: 2;
   top: 0;
   left: 0;
   width: 100%;
