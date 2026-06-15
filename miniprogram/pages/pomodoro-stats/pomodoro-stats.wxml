@@ -40,7 +40,7 @@
             <canvas class="trend-canvas" type="2d" id="trend-bars-canvas" hidden="{{!!selectedSubjectDetail}}"></canvas>
           </view>
           <view class="chart-legend">
-            <view class="legend-item"><view class="legend-dot" style="background: #3B82F6;"></view><text class="legend-text">有记录</text></view>
+            <view class="legend-item"><view class="legend-dot" style="background: #A78BFA;"></view><text class="legend-text">有记录</text></view>
             <view class="legend-item"><view class="legend-dot" style="background: rgba(255,255,255,0.08);"></view><text class="legend-text">无记录</text></view>
           </view>
         </view>
