@@ -388,9 +388,12 @@ Page({
     const radius = size * 0.39
     const tilt = 0.58
     const depth = size * 0.16
-    // In motion the eye can't see micro-edge fidelity. Use full 27 layers + gloss
-    // + specular only on the final still frame; mid-animation runs lean.
+    // Phase final-quality effects (full depth, shadow, gloss, specular) across
+    // the last 18% of sweep so per-frame render cost stays flat instead of
+    // spiking 2-3x on the last tick. easeOutCubic reaches ~99% visual completion
+    // by t=0.82 — the tail is idle eye-time, ideal for layering detail.
     const isFinal = progress >= 1
+    const finalFade = Math.max(0, Math.min(1, (progress - 0.82) / 0.18))
 
     ctx.clearRect(0, 0, w, h)
 
@@ -436,17 +439,19 @@ Page({
 
     const sectors = this._pieSectors
     const sideStepsFull = this._pieSideSteps
-    // 12 layers in motion = ~56% less pixel fill than 27, edge difference invisible
-    // while spinning. Final paint uses every layer for crisp depth.
-    const sideSteps = isFinal ? sideStepsFull : Math.min(12, sideStepsFull)
+    const motionSteps = Math.min(12, sideStepsFull)
+    const sideSteps = isFinal
+      ? sideStepsFull
+      : Math.round(motionSteps + (sideStepsFull - motionSteps) * finalFade)
     // When using a reduced layer count, sample shades evenly from the full cache so
     // gradient feels the same — just coarser steps.
     const shadeStride = sideStepsFull / sideSteps
 
-    // Drop shadow — only on final frame; rebuilds a linearGradient and ellipse fill
-    // each call, and it doesn't read as motion to the eye anyway.
-    if (isFinal) {
+    // Drop shadow — fade in during the quality-transition tail so its gradient
+    // build + ellipse fill cost is amortized across frames.
+    if (finalFade > 0) {
       ctx.save()
+      ctx.globalAlpha = finalFade
       ctx.translate(centerX, centerY + depth * 1.02)
       ctx.scale(1, 0.32)
       const shadow = ctx.createLinearGradient(0, -radius * 0.4, 0, radius * 1.2)
@@ -502,10 +507,10 @@ Page({
       )
     })
 
-    // Gloss + specular — final frame only. These each cost a clip / linearGradient /
-    // arc fill and contribute nothing visible while the pie is sweeping in.
-    if (isFinal) {
+    // Gloss + specular — fade in during quality-transition tail.
+    if (finalFade > 0) {
       ctx.save()
+      ctx.globalAlpha = finalFade
       ctx.translate(centerX, centerY)
       ctx.scale(1, tilt)
       ctx.beginPath()
@@ -523,6 +528,7 @@ Page({
       ctx.restore()
 
       ctx.save()
+      ctx.globalAlpha = finalFade
       ctx.translate(centerX - radius * 0.23, centerY - radius * 0.14)
       ctx.scale(1, 0.24)
       ctx.beginPath()
