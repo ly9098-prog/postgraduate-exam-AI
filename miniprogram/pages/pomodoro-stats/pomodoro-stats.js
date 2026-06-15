@@ -15,9 +15,9 @@ const SUBJECT_COLORS = {
   computer_organization: '#F59E0B',
   operating_system: '#10B981',
   computer_network: '#06B6D4',
-  english: '#8B5CF6',
-  math: '#EC4899',
-  politics: '#F97316',
+  english: '#F97316',
+  math: '#2DD4BF',
+  politics: '#EA580C',
 }
 
 Page({
@@ -272,6 +272,7 @@ Page({
   /* ==================== Trend Bars ==================== */
 
   _renderTrendBars(progress) {
+    const TREND_COLORS = ['#22C55E', '#06B6D4', '#3B82F6', '#818CF8', '#A78BFA', '#D946EF']
     const trends = this.data.trends
     if (!trends || !trends.length) return
     const ctx = this._trendCtx
@@ -316,14 +317,6 @@ Page({
     ctx.lineTo(w - padR, padT + chartH)
     ctx.stroke()
 
-    if (!this._trendGrad) {
-      const g = ctx.createLinearGradient(0, padT, 0, padT + chartH)
-      g.addColorStop(0, 'rgba(59,130,246,0.5)')
-      g.addColorStop(0.6, '#3B82F6')
-      g.addColorStop(1, 'rgba(59,130,246,0.8)')
-      this._trendGrad = g
-    }
-
     trends.forEach((t, i) => {
       const x = padL + gap * i + (gap - barW) / 2
       const finalBarH = (t.duration_sec || 0) / maxDur * chartH
@@ -350,11 +343,17 @@ Page({
           ctx.restore()
         }
 
-        // Right side face — darker shade, recedes in depth
+        // Per-bar color
+        const barColor = TREND_COLORS[i % TREND_COLORS.length]
+        const rc = parseInt(barColor.slice(1, 3), 16)
+        const gc = parseInt(barColor.slice(3, 5), 16)
+        const bc = parseInt(barColor.slice(5, 7), 16)
+
+        // Right side face — darker crystal depth
         if (show3D) {
           ctx.save()
           ctx.globalAlpha = finalFade
-          ctx.fillStyle = 'rgba(8,18,40,0.65)'
+          ctx.fillStyle = `rgba(${Math.round(rc*0.5)},${Math.round(gc*0.5)},${Math.round(bc*0.5)},0.85)`
           ctx.beginPath()
           ctx.moveTo(x + barW, topY)
           ctx.lineTo(x + barW + depth, topY - depth * topTilt)
@@ -365,35 +364,59 @@ Page({
           ctx.restore()
         }
 
-        // Front face
-        ctx.fillStyle = this._trendGrad
+        // Left edge glow — light escaping crystal facet
+        ctx.fillStyle = `rgba(${Math.min(255,rc+110)},${Math.min(255,gc+110)},${Math.min(255,bc+110)},0.3)`
+        ctx.fillRect(x, topY + 2, 1.5, barH - 4)
+
+        // Front face — translucent crystal gradient
+        const barGrad = ctx.createLinearGradient(0, topY, 0, baseY)
+        barGrad.addColorStop(0, 'rgba(255,255,255,0.12)')
+        barGrad.addColorStop(0.1, `rgba(${rc},${gc},${bc},0.6)`)
+        barGrad.addColorStop(0.42, `rgba(${rc},${gc},${bc},0.92)`)
+        barGrad.addColorStop(0.82, `rgba(${Math.round(rc*0.7)},${Math.round(gc*0.7)},${Math.round(bc*0.7)},0.72)`)
+        barGrad.addColorStop(1, `rgba(${Math.round(rc*0.4)},${Math.round(gc*0.4)},${Math.round(bc*0.4)},0.5)`)
+        ctx.fillStyle = barGrad
         ctx.fillRect(x, topY, barW, barH)
 
-        // Front top-edge highlight
-        if (barH > 4) {
-          ctx.fillStyle = 'rgba(255,255,255,0.2)'
-          ctx.fillRect(x, topY, barW, Math.min(4, barH / 3))
+        // Center light channel — light pipe through crystal
+        if (barH > 8) {
+          const lcW = Math.max(2, barW * 0.28)
+          const lcX = x + (barW - lcW) / 2
+          const lcGrad = ctx.createLinearGradient(0, topY, 0, topY + barH * 0.7)
+          lcGrad.addColorStop(0, 'rgba(255,255,255,0.52)')
+          lcGrad.addColorStop(0.35, 'rgba(255,255,255,0.12)')
+          lcGrad.addColorStop(1, 'rgba(255,255,255,0)')
+          ctx.fillStyle = lcGrad
+          ctx.fillRect(lcX, topY, lcW, barH)
         }
 
-        // Front gloss sweep — soft light wash on upper-left portion
+        // Front top-edge highlight — sharp crystal rim
+        if (barH > 4) {
+          ctx.fillStyle = 'rgba(255,255,255,0.35)'
+          ctx.fillRect(x, topY, barW, Math.min(2.5, barH / 5))
+          ctx.fillStyle = 'rgba(255,255,255,0.15)'
+          ctx.fillRect(x, topY + Math.min(2.5, barH / 5), barW, Math.min(1.5, barH / 8))
+        }
+
+        // Front gloss sweep — refined light wash on upper portion
         if (show3D && barH > 20) {
           ctx.save()
-          ctx.globalAlpha = finalFade * 0.22
+          ctx.globalAlpha = finalFade * 0.28
           const fg = ctx.createLinearGradient(x, topY, x + barW, topY)
           fg.addColorStop(0, 'rgba(255,255,255,0)')
-          fg.addColorStop(0.25, 'rgba(255,255,255,0.6)')
-          fg.addColorStop(0.5, 'rgba(255,255,255,0.06)')
+          fg.addColorStop(0.2, 'rgba(255,255,255,0.5)')
+          fg.addColorStop(0.45, 'rgba(255,255,255,0.04)')
           fg.addColorStop(1, 'rgba(255,255,255,0)')
           ctx.fillStyle = fg
-          ctx.fillRect(x, topY, barW, barH * 0.5)
+          ctx.fillRect(x, topY, barW, barH * 0.55)
           ctx.restore()
         }
 
-        // Top face — lighter, catches overhead light
+        // Top face — bright crystal facet
         if (show3D) {
           ctx.save()
           ctx.globalAlpha = finalFade
-          ctx.fillStyle = 'rgba(130,180,255,0.52)'
+          ctx.fillStyle = `rgba(${Math.min(255,rc+100)},${Math.min(255,gc+100)},${Math.min(255,bc+100)},0.6)`
           ctx.beginPath()
           ctx.moveTo(x, topY)
           ctx.lineTo(x + depth, topY - depth * topTilt)
@@ -402,9 +425,15 @@ Page({
           ctx.closePath()
           ctx.fill()
 
-          // Top-face specular strip — bright edge along the front rim
-          ctx.fillStyle = 'rgba(255,255,255,0.28)'
-          ctx.fillRect(x + depth * 0.25, topY - depth * topTilt * 0.55, barW * 0.55, depth * topTilt * 0.38)
+          // Crystal ridge — bright seam along front-top edge
+          ctx.fillStyle = 'rgba(255,255,255,0.4)'
+          ctx.fillRect(x + depth * 0.15, topY - depth * topTilt * 0.3, barW * 0.7, depth * topTilt * 0.3)
+
+          // Top facet highlight spot
+          ctx.fillStyle = 'rgba(255,255,255,0.18)'
+          const spotW = barW * 0.3
+          const spotX = x + barW * 0.5
+          ctx.fillRect(spotX, topY - depth * topTilt * 0.65, spotW, depth * topTilt * 0.35)
           ctx.restore()
         }
       } else if (t.duration_sec > 0) {
@@ -510,7 +539,7 @@ Page({
       sectors.forEach(sec => {
         sec._shades = []
         for (let layer = 1; layer <= sideStepsFull; layer++) {
-          sec._shades[layer] = this._shadeColorCached(sec.color, -80 + Math.round(layer / sideStepsFull * 24))
+          sec._shades[layer] = this._shadeColorCached(sec.color, -30 + Math.round(layer / sideStepsFull * 20))
         }
       })
     }
@@ -580,10 +609,66 @@ Page({
         sec.startA,
         curEnd,
         sec.color,
-        isSelected ? 'rgba(255,255,255,0.72)' : 'rgba(11,17,33,0.48)',
-        isSelected ? 2.4 : 1
+        isSelected ? 'rgba(200,230,255,0.95)' : 'rgba(200,230,255,0.65)',
+        isSelected ? 3 : 2.5
       )
     })
+
+    // Center light burst — ice glows from center, radiates through all sectors
+    if (finalFade > 0) {
+      ctx.save()
+      ctx.globalAlpha = finalFade * 0.5
+      ctx.translate(centerX, centerY)
+      ctx.scale(1, tilt)
+      ctx.beginPath()
+      ctx.arc(0, 0, radius, 0, Math.PI * 2)
+      ctx.clip()
+      const centerLight = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 0.7)
+      centerLight.addColorStop(0, 'rgba(220,235,255,0.6)')
+      centerLight.addColorStop(0.25, 'rgba(220,235,255,0.18)')
+      centerLight.addColorStop(0.55, 'rgba(220,235,255,0.05)')
+      centerLight.addColorStop(1, 'rgba(220,235,255,0)')
+      ctx.fillStyle = centerLight
+      ctx.beginPath()
+      ctx.arc(0, 0, radius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
+
+    // Outer rim glow — ice edge catches light
+    if (finalFade > 0) {
+      ctx.save()
+      ctx.globalAlpha = finalFade * 0.45
+      ctx.translate(centerX, centerY)
+      ctx.scale(1, tilt)
+      ctx.beginPath()
+      ctx.arc(0, 0, radius * 1.02, -1.2, 0.2)
+      ctx.strokeStyle = 'rgba(200,230,255,0.6)'
+      ctx.lineWidth = 6
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    // Frost overlay — icy sheen across top facets
+    if (finalFade > 0) {
+      ctx.save()
+      ctx.globalAlpha = finalFade * 0.25
+      ctx.translate(centerX, centerY)
+      ctx.scale(1, tilt)
+      ctx.beginPath()
+      ctx.arc(0, 0, radius, 0, Math.PI * 2)
+      ctx.clip()
+      const frost = ctx.createLinearGradient(-radius, -radius * 0.5, radius, radius * 0.5)
+      frost.addColorStop(0, 'rgba(200,230,255,0.5)')
+      frost.addColorStop(0.25, 'rgba(240,248,255,0.1)')
+      frost.addColorStop(0.65, 'rgba(200,230,255,0.05)')
+      frost.addColorStop(1, 'rgba(180,215,250,0.15)')
+      ctx.fillStyle = frost
+      ctx.beginPath()
+      ctx.arc(0, 0, radius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
 
     // Gloss + specular — fade in during quality-transition tail.
     if (finalFade > 0) {
@@ -595,10 +680,11 @@ Page({
       ctx.arc(0, 0, radius, 0, Math.PI * 2)
       ctx.clip()
       const gloss = ctx.createLinearGradient(-radius, -radius, radius, radius)
-      gloss.addColorStop(0, 'rgba(255,255,255,0.32)')
-      gloss.addColorStop(0.28, 'rgba(255,255,255,0.08)')
-      gloss.addColorStop(0.58, 'rgba(255,255,255,0)')
-      gloss.addColorStop(1, 'rgba(0,0,0,0.28)')
+      gloss.addColorStop(0, 'rgba(220,240,255,0.55)')
+      gloss.addColorStop(0.2, 'rgba(220,240,255,0.2)')
+      gloss.addColorStop(0.45, 'rgba(255,255,255,0)')
+      gloss.addColorStop(0.75, 'rgba(200,225,255,0.08)')
+      gloss.addColorStop(1, 'rgba(140,175,215,0.4)')
       ctx.fillStyle = gloss
       ctx.beginPath()
       ctx.arc(0, 0, radius, 0, Math.PI * 2)
@@ -607,11 +693,33 @@ Page({
 
       ctx.save()
       ctx.globalAlpha = finalFade
-      ctx.translate(centerX - radius * 0.23, centerY - radius * 0.14)
+      ctx.translate(centerX - radius * 0.17, centerY - radius * 0.09)
       ctx.scale(1, tilt)
       ctx.beginPath()
-      ctx.arc(0, 0, radius * 0.48, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(255,255,255,0.16)'
+      ctx.arc(0, 0, radius * 0.28, 0, Math.PI * 2)
+      const specGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 0.28)
+      specGrad.addColorStop(0, 'rgba(230,245,255,0.85)')
+      specGrad.addColorStop(0.25, 'rgba(220,240,255,0.2)')
+      specGrad.addColorStop(1, 'rgba(200,230,255,0)')
+      ctx.fillStyle = specGrad
+      ctx.fill()
+      ctx.restore()
+
+      // Crystal inner glow — ice light from center
+      ctx.save()
+      ctx.globalAlpha = finalFade * 0.4
+      ctx.translate(centerX, centerY)
+      ctx.scale(1, tilt)
+      ctx.beginPath()
+      ctx.arc(0, 0, radius, 0, Math.PI * 2)
+      ctx.clip()
+      const innerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, radius)
+      innerGlow.addColorStop(0, 'rgba(220,240,255,0.45)')
+      innerGlow.addColorStop(0.25, 'rgba(220,240,255,0.12)')
+      innerGlow.addColorStop(1, 'rgba(200,230,255,0)')
+      ctx.fillStyle = innerGlow
+      ctx.beginPath()
+      ctx.arc(0, 0, radius, 0, Math.PI * 2)
       ctx.fill()
       ctx.restore()
     }
@@ -624,7 +732,7 @@ Page({
         const mid = (sec.startA + curEnd) / 2
         const cx = centerX + Math.cos(mid) * 14
         const cy = centerY + Math.sin(mid) * 14 * tilt
-        this._drawEllipticSector(ctx, cx, cy, radius * 1.08, tilt, sec.startA, curEnd, 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0.28)', 7)
+        this._drawEllipticSector(ctx, cx, cy, radius * 1.08, tilt, sec.startA, curEnd, 'rgba(200,230,255,0.08)', 'rgba(200,230,255,0.3)', 7)
       })
     }
   },
