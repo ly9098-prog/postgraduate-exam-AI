@@ -50,8 +50,7 @@
           <text class="section-title">今日科目分布</text>
           <!-- Pie Chart -->
           <view class="pie-wrap {{pieTapped ? 'pie-tapped' : ''}}" id="pie-chart-wrap">
-            <canvas class="pie-canvas" canvas-id="pie-canvas" id="pie-canvas"></canvas>
-            <cover-view class="pie-hit-cover" catchtap="onPieTap"></cover-view>
+            <canvas class="pie-canvas" canvas-id="pie-canvas" id="pie-canvas" catchtap="onPieTap"></canvas>
           </view>
           <view class="subject-legend" aria-label="学科图例">
             <view class="subject-legend-item" wx:for="{{subjects}}" wx:key="subject">
