@@ -453,7 +453,7 @@ Page({
       ctx.save()
       ctx.globalAlpha = finalFade
       ctx.translate(centerX, centerY + depth * 1.02)
-      ctx.scale(1, 0.32)
+      ctx.scale(1, tilt)
       const shadow = ctx.createLinearGradient(0, -radius * 0.4, 0, radius * 1.2)
       shadow.addColorStop(0, 'rgba(0,0,0,0.34)')
       shadow.addColorStop(0.55, 'rgba(0,0,0,0.22)')
@@ -530,7 +530,7 @@ Page({
       ctx.save()
       ctx.globalAlpha = finalFade
       ctx.translate(centerX - radius * 0.23, centerY - radius * 0.14)
-      ctx.scale(1, 0.24)
+      ctx.scale(1, tilt)
       ctx.beginPath()
       ctx.arc(0, 0, radius * 0.48, 0, Math.PI * 2)
       ctx.fillStyle = 'rgba(255,255,255,0.16)'
