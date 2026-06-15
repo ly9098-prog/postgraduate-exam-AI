@@ -49,15 +49,14 @@
         <view class="card-section" wx:if="{{subjects.length > 0}}">
           <text class="section-title">今日科目分布</text>
           <!-- Pie Chart -->
-          <view class="pie-wrap" id="pie-chart-wrap">
+          <view class="pie-wrap {{pieTapped ? 'pie-tapped' : ''}}" id="pie-chart-wrap">
             <canvas class="pie-canvas" canvas-id="pie-canvas" id="pie-canvas"></canvas>
             <cover-view class="pie-hit-cover" catchtap="onPieTap"></cover-view>
           </view>
-          <!-- Color Legend -->
-          <view class="color-legend">
-            <view class="color-legend-item" wx:for="{{subjects}}" wx:key="subject">
-              <view class="color-legend-dot" style="background: {{item._color}};"></view>
-              <text class="color-legend-label">{{item._label}}</text>
+          <view class="subject-legend" aria-label="学科图例">
+            <view class="subject-legend-item" wx:for="{{subjects}}" wx:key="subject">
+              <view class="subject-legend-dot" style="background: {{item._color}};"></view>
+              <text class="subject-legend-name">{{item._label}}</text>
             </view>
           </view>
         </view>

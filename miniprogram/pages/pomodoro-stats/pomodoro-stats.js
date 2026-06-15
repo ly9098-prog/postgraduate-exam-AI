@@ -36,6 +36,7 @@ Page({
     // pie chart detail popup
     selectedSubjectDetail: null,
     _selectedSubject: null,
+    pieTapped: false,
 
     // Animated display values
     _dispTodaySessions: 0,
@@ -545,11 +546,15 @@ Page({
   /* ==================== Touch Interactions ==================== */
 
   onPieTap(e) {
+    const touch = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0])
+    const tapX = touch ? touch.clientX : e.detail && e.detail.x
+    const tapY = touch ? touch.clientY : e.detail && e.detail.y
+
     const query = wx.createSelectorQuery().in(this)
     query.select('#pie-chart-wrap').boundingClientRect(rect => {
-      if (!rect) return
-      const x = e.detail.x - rect.left
-      const y = e.detail.y - rect.top
+      if (!rect || typeof tapX !== 'number' || typeof tapY !== 'number') return
+      const x = tapX - rect.left
+      const y = tapY - rect.top
       const centerX = rect.width / 2
       const centerY = rect.height / 2
       const radius = Math.min(rect.width, rect.height) / 2 - 24
@@ -593,7 +598,11 @@ Page({
           this.setData({
             selectedSubjectDetail: s,
             _selectedSubject: s.subject,
-          }, () => this._renderPieChart(1))
+            pieTapped: true,
+          }, () => {
+            this._renderPieChart(1)
+            setTimeout(() => this.setData({ pieTapped: false }), 350)
+          })
           return
         }
         cumulativeStart = cumulativeEnd
