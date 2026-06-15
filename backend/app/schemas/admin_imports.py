@@ -198,3 +198,54 @@ class TextImportResponse(BaseModel):
     succeeded: int
     failed: int
     duplicates_filtered: int = 0
+
+
+# --- 批量图片导题 ---
+
+class BatchImageUploadResponse(BaseModel):
+    job_id: str
+    status: str
+    total: int = 0  # 实际入队的图片数
+    rejected: int = 0  # 上传时校验未通过、未入队的文件数
+    rejected_files: list[str] = []
+    concurrency: int = 2
+
+
+class BatchImageJobItem(BaseModel):
+    id: int
+    seq: int
+    source_file: str | None = None
+    status: str  # pending | processing | succeeded | failed
+    review_batch_id: str | None = None
+    question_count: int = 0
+    error_message: str | None = None
+    has_ocr_cache: bool = False
+
+
+class BatchImageJobStatusResponse(BaseModel):
+    job_id: str
+    status: str  # queued | running | completed | failed
+    source_type: str = "image"
+    subject: str | None = None
+    concurrency: int = 2
+    total: int = 0
+    completed: int = 0
+    processing: int = 0
+    pending: int = 0
+    succeeded: int = 0
+    failed: int = 0
+    total_questions: int = 0
+    current_seq: int = 0
+    current_file: str = ""
+    error_message: str | None = None
+    started_at: str = ""
+    finished_at: str = ""
+    items: list[BatchImageJobItem] = []
+
+
+class BatchImageReparseResponse(BaseModel):
+    item_id: int
+    status: str
+    review_batch_id: str | None = None
+    question_count: int = 0
+    error_message: str | None = None

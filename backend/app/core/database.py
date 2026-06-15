@@ -197,6 +197,16 @@ async def _ensure_pomodoro_table(conn):
     await conn.run_sync(repair)
 
 
+async def _ensure_batch_job_tables(conn):
+    def repair(sync_conn):
+        from app.models.import_batch_job import ImportBatchJob, ImportBatchJobItem
+
+        ImportBatchJob.__table__.create(sync_conn, checkfirst=True)
+        ImportBatchJobItem.__table__.create(sync_conn, checkfirst=True)
+
+    await conn.run_sync(repair)
+
+
 async def _repair_postgres_sequences(conn):
     """Sync PG sequences for tables that may have explicit-ID inserts (bootstrap, etc)."""
     def repair(sync_conn):
@@ -227,3 +237,4 @@ async def init_db():
         await _ensure_duplicate_check_columns(conn)
         await _ensure_sync_columns(conn)
         await _ensure_pomodoro_table(conn)
+        await _ensure_batch_job_tables(conn)

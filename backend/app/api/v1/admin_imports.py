@@ -1,7 +1,12 @@
+import importlib.util
+import os
+import tempfile
+
 from fastapi import BackgroundTasks, APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
+from app.core.config import settings
 from app.core.database import get_db
 from app.schemas.common import paginated_response
 from app.services.admin_import_service import (
@@ -32,6 +37,9 @@ from app.schemas.admin_imports import (
     AdminImportQuestionUpdateRequest,
     AdminImportRejectRequest,
     AdminImportTaskStatusResponse,
+    BatchImageJobStatusResponse,
+    BatchImageReparseResponse,
+    BatchImageUploadResponse,
     TextImportRequest,
     TextImportResponse,
     TextImportResultItem,
@@ -416,3 +424,172 @@ async def get_import_enrich_status(
         return await get_enrich_status(batch_id)
     except ValueError as exc:
         _raise_import_error(exc)
+
+
+# ---------------------------------------------------------------------------
+# 批量图片导题（多图片 → 复用现有单图 OCR/AI/审核流水线）
+# ---------------------------------------------------------------------------
+
+_BATCH_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+_BATCH_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+def _validate_batch_image(filename: str, content: bytes, content_type: str | None) -> str | None:
+    """轻量校验单张图片，返回错误原因（None 表示通过）。
+
+    重型 PIL 解码留给 worker（ocr_image 内部会做），避免上传阶段就因单张
+    损坏图片拖慢/卡住整批；这里只做扩展名 / content-type / 大小 / 非空检查。
+    """
+    if not filename:
+        return "文件名为空"
+    if not filename.lower().endswith(_BATCH_IMAGE_EXTENSIONS):
+        return "仅支持 .jpg / .jpeg / .png / .webp"
+    if content_type and content_type not in _BATCH_IMAGE_CONTENT_TYPES:
+        return f"Content-Type 不支持: {content_type}"
+    if not content:
+        return "图片内容为空"
+    if settings.IMAGE_IMPORT_MAX_BYTES and len(content) > settings.IMAGE_IMPORT_MAX_BYTES:
+        return "图片过大"
+    return None
+
+
+@router.post("/batch-image/upload", response_model=BatchImageUploadResponse)
+async def batch_image_upload(
+    files: list[UploadFile],
+    background_tasks: BackgroundTasks,
+    subject: str | None = None,
+    concurrency: int | None = None,
+    enable_ai_repair: bool = True,
+    confidence_threshold: float = 0.6,
+    current_admin=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    """批量上传图片，逐张走现有 OCR → AI 解析 → 待审核流水线（队列模式）。
+
+    - 并发 2~4（默认取 settings.BATCH_IMAGE_DEFAULT_CONCURRENCY），其余排队；
+    - 单张失败只记录、不终止整批；
+    - 返回 job_id，通过 GET /imports/batch-image/{job_id} 查询进度。
+    """
+    from app.features import batch_image_import_service as batch_svc
+
+    if not files:
+        raise HTTPException(status_code=400, detail="未上传任何图片")
+    if len(files) > settings.BATCH_IMAGE_MAX_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"单次最多上传 {settings.BATCH_IMAGE_MAX_FILES} 张图片",
+        )
+
+    if not settings.OCR_ENABLED:
+        raise HTTPException(status_code=400, detail="图片 OCR 功能未启用")
+    if importlib.util.find_spec("paddleocr") is None:
+        raise HTTPException(status_code=400, detail="OCR 依赖未安装：paddleocr")
+
+    sources: list[batch_svc.BatchImageSource] = []
+    rejected_files: list[str] = []
+    seq = 0
+    try:
+        for upload in files:
+            filename = upload.filename or f"image_{seq + 1}"
+            content = await upload.read()
+            reason = _validate_batch_image(upload.filename or "", content, upload.content_type)
+            if reason is not None:
+                rejected_files.append(f"{filename}: {reason}")
+                continue
+
+            seq += 1
+            suffix = os.path.splitext(filename)[1] or ".png"
+            fd, tmp_path = tempfile.mkstemp(prefix="batch_img_", suffix=suffix)
+            try:
+                with os.fdopen(fd, "wb") as fh:
+                    fh.write(content)
+            except Exception:
+                try:
+                    os.close(fd)
+                except Exception:
+                    pass
+                raise
+            del content
+            sources.append(
+                batch_svc.BatchImageSource(seq=seq, source_file=filename, temp_path=tmp_path)
+            )
+    except Exception:
+        # 任意一步异常都要清理已落盘的临时文件，避免泄漏。
+        for src in sources:
+            if os.path.exists(src.temp_path):
+                try:
+                    os.unlink(src.temp_path)
+                except OSError:
+                    pass
+        raise
+
+    if not sources:
+        raise HTTPException(
+            status_code=400,
+            detail="没有可处理的图片" + (f"（{rejected_files[0]}）" if rejected_files else ""),
+        )
+
+    concurrency = batch_svc.clamp_concurrency(concurrency)
+    job_id = batch_svc.new_job_id()
+    options = {
+        "enable_ai_repair": enable_ai_repair,
+        "confidence_threshold": confidence_threshold,
+    }
+
+    await batch_svc.create_batch_job(
+        db,
+        job_id=job_id,
+        sources=sources,
+        subject=subject,
+        concurrency=concurrency,
+        created_by=f"admin:{current_admin.id}",
+    )
+
+    background_tasks.add_task(
+        batch_svc.run_batch_job,
+        job_id=job_id,
+        sources=sources,
+        subject=subject,
+        options=options,
+        concurrency=concurrency,
+    )
+
+    return BatchImageUploadResponse(
+        job_id=job_id,
+        status="queued",
+        total=len(sources),
+        rejected=len(rejected_files),
+        rejected_files=rejected_files,
+        concurrency=concurrency,
+    )
+
+
+@router.get("/batch-image/{job_id}", response_model=BatchImageJobStatusResponse)
+async def get_batch_image_job(
+    job_id: str,
+    _=Depends(require_permissions("import:read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """查询批量导题任务进度（总数/已完成/处理中/等待中 + 每张明细）。"""
+    from app.features import batch_image_import_service as batch_svc
+
+    try:
+        return await batch_svc.get_batch_job_status(db, job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+
+@router.post("/batch-image/items/{item_id}/reparse", response_model=BatchImageReparseResponse)
+async def reparse_batch_image_item(
+    item_id: int,
+    subject: str | None = None,
+    _=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    """基于缓存的 OCR 文本重新解析单张图片（不重复 OCR）。"""
+    from app.features import batch_image_import_service as batch_svc
+
+    try:
+        return await batch_svc.reparse_item_from_cache(db, item_id, subject)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))

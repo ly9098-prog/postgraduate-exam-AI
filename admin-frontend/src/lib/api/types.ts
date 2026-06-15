@@ -105,6 +105,55 @@ export type ImportDeleteResponse = {
   deleted_count: number;
 };
 
+export type BatchImageUploadResponse = {
+  job_id: string;
+  status: string;
+  total: number;
+  rejected: number;
+  rejected_files: string[];
+  concurrency: number;
+};
+
+export type BatchImageJobItem = {
+  id: number;
+  seq: number;
+  source_file: string | null;
+  status: string; // pending | processing | succeeded | failed
+  review_batch_id: string | null;
+  question_count: number;
+  error_message: string | null;
+  has_ocr_cache: boolean;
+};
+
+export type BatchImageJobStatusResponse = {
+  job_id: string;
+  status: string; // queued | running | completed | failed
+  source_type: string;
+  subject: string | null;
+  concurrency: number;
+  total: number;
+  completed: number;
+  processing: number;
+  pending: number;
+  succeeded: number;
+  failed: number;
+  total_questions: number;
+  current_seq: number;
+  current_file: string;
+  error_message: string | null;
+  started_at: string;
+  finished_at: string;
+  items: BatchImageJobItem[];
+};
+
+export type BatchImageReparseResponse = {
+  item_id: number;
+  status: string;
+  review_batch_id: string | null;
+  question_count: number;
+  error_message: string | null;
+};
+
 export type BatchCompleteResponseItem = {
   import_id: number;
   status: string; // "success" | "failed" | "skipped"

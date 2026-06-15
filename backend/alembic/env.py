@@ -21,6 +21,7 @@ from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.admin import AdminUser, AuditLog, Permission, QuestionVersion, Role, RolePermission, Subject
 from app.models.watermark_rule import WatermarkRule
 from app.models.admin_ai_config import AdminAiModelConfig, AdminAiConfig
+from app.models.import_batch_job import ImportBatchJob, ImportBatchJobItem
 
 config = context.config
 if config.config_file_name is not None:
