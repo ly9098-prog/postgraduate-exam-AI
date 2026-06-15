@@ -115,7 +115,7 @@
         </view>
         <!-- Activity heat dots -->
         <view class="heat-bar">
-          <view class="heat-cell {{d._heatClass}}" wx:for="{{trends}}" wx:key="date" wx:for-index="di">
+          <view class="heat-cell {{d._heatClass}}" wx:for="{{_heatBarData}}" wx:key="date" wx:for-index="di">
             <text class="heat-tip">{{d._shortDate}}</text>
           </view>
         </view>
