@@ -303,7 +303,8 @@ Page({
     const topTilt = 0.45
 
     const isFinal = progress >= 1
-    const finalFade = Math.max(0, Math.min(1, (progress - 0.82) / 0.18))
+    const fadeIn = (start) => Math.max(0, Math.min(1, (progress - start) / (1 - start)))
+    const finalFade = fadeIn(0.82)
 
     ctx.clearRect(0, 0, w, h)
 
@@ -410,7 +411,7 @@ Page({
         // Front gloss sweep — refined light wash on upper portion
         if (show3D && barH > 20) {
           ctx.save()
-          ctx.globalAlpha = finalFade * 0.28
+          ctx.globalAlpha = fadeIn(0.84) * 0.28
           const fg = ctx.createLinearGradient(x, topY, x + barW, topY)
           fg.addColorStop(0, 'rgba(255,255,255,0)')
           fg.addColorStop(0.2, 'rgba(255,255,255,0.5)')
@@ -424,7 +425,7 @@ Page({
         // Top face — bright crystal facet
         if (show3D) {
           ctx.save()
-          ctx.globalAlpha = finalFade
+          ctx.globalAlpha = fadeIn(0.83)
           ctx.fillStyle = `rgba(${Math.min(255,rc+100)},${Math.min(255,gc+100)},${Math.min(255,bc+100)},0.6)`
           ctx.beginPath()
           ctx.moveTo(x, topY)
@@ -505,11 +506,10 @@ Page({
     const tilt = 0.58
     const depth = size * 0.16
     // Phase final-quality effects (full depth, shadow, gloss, specular) across
-    // the last 18% of sweep so per-frame render cost stays flat instead of
-    // spiking 2-3x on the last tick. easeOutCubic reaches ~99% visual completion
-    // by t=0.82 — the tail is idle eye-time, ideal for layering detail.
+    // the tail of animation. Staggered start times (0.82→0.92) spread the
+    // clip + gradient draw-call cost frame-to-frame instead of spiking at once.
     const isFinal = progress >= 1
-    const finalFade = Math.max(0, Math.min(1, (progress - 0.82) / 0.18))
+    const fadeIn = (start) => Math.max(0, Math.min(1, (progress - start) / (1 - start)))
 
     ctx.clearRect(0, 0, w, h)
 
@@ -558,16 +558,16 @@ Page({
     const motionSteps = Math.min(12, sideStepsFull)
     const sideSteps = isFinal
       ? sideStepsFull
-      : Math.round(motionSteps + (sideStepsFull - motionSteps) * finalFade)
+      : Math.round(motionSteps + (sideStepsFull - motionSteps) * fadeIn(0.82))
     // When using a reduced layer count, sample shades evenly from the full cache so
     // gradient feels the same — just coarser steps.
     const shadeStride = sideStepsFull / sideSteps
 
     // Drop shadow — fade in during the quality-transition tail so its gradient
     // build + ellipse fill cost is amortized across frames.
-    if (finalFade > 0) {
+    if (fadeIn(0.82) > 0) {
       ctx.save()
-      ctx.globalAlpha = finalFade
+      ctx.globalAlpha = fadeIn(0.82)
       ctx.translate(centerX, centerY + depth * 1.02)
       ctx.scale(1, tilt)
       const shadow = ctx.createLinearGradient(0, -radius * 0.4, 0, radius * 1.2)
@@ -624,9 +624,9 @@ Page({
     })
 
     // Center light burst — ice glows from center, radiates through all sectors
-    if (finalFade > 0) {
+    if (fadeIn(0.84) > 0) {
       ctx.save()
-      ctx.globalAlpha = finalFade * 0.5
+      ctx.globalAlpha = fadeIn(0.84) * 0.5
       ctx.translate(centerX, centerY)
       ctx.scale(1, tilt)
       ctx.beginPath()
@@ -645,9 +645,9 @@ Page({
     }
 
     // Outer rim glow — ice edge catches light
-    if (finalFade > 0) {
+    if (fadeIn(0.86) > 0) {
       ctx.save()
-      ctx.globalAlpha = finalFade * 0.45
+      ctx.globalAlpha = fadeIn(0.86) * 0.45
       ctx.translate(centerX, centerY)
       ctx.scale(1, tilt)
       ctx.beginPath()
@@ -659,9 +659,9 @@ Page({
     }
 
     // Frost overlay — icy sheen across top facets
-    if (finalFade > 0) {
+    if (fadeIn(0.88) > 0) {
       ctx.save()
-      ctx.globalAlpha = finalFade * 0.25
+      ctx.globalAlpha = fadeIn(0.88) * 0.25
       ctx.translate(centerX, centerY)
       ctx.scale(1, tilt)
       ctx.beginPath()
@@ -679,10 +679,10 @@ Page({
       ctx.restore()
     }
 
-    // Gloss + specular — fade in during quality-transition tail.
-    if (finalFade > 0) {
+    // Gloss sheen — most expensive clip+gradient pass, starts late
+    if (fadeIn(0.90) > 0) {
       ctx.save()
-      ctx.globalAlpha = finalFade
+      ctx.globalAlpha = fadeIn(0.90)
       ctx.translate(centerX, centerY)
       ctx.scale(1, tilt)
       ctx.beginPath()
@@ -699,9 +699,12 @@ Page({
       ctx.arc(0, 0, radius, 0, Math.PI * 2)
       ctx.fill()
       ctx.restore()
+    }
 
+    // Specular highlight — last to fade, no clip, cheap radial gradient
+    if (fadeIn(0.92) > 0) {
       ctx.save()
-      ctx.globalAlpha = finalFade
+      ctx.globalAlpha = fadeIn(0.92)
       ctx.translate(centerX - radius * 0.17, centerY - radius * 0.09)
       ctx.scale(1, tilt)
       ctx.beginPath()
@@ -711,24 +714,6 @@ Page({
       specGrad.addColorStop(0.25, 'rgba(220,240,255,0.2)')
       specGrad.addColorStop(1, 'rgba(200,230,255,0)')
       ctx.fillStyle = specGrad
-      ctx.fill()
-      ctx.restore()
-
-      // Crystal inner glow — ice light from center
-      ctx.save()
-      ctx.globalAlpha = finalFade * 0.4
-      ctx.translate(centerX, centerY)
-      ctx.scale(1, tilt)
-      ctx.beginPath()
-      ctx.arc(0, 0, radius, 0, Math.PI * 2)
-      ctx.clip()
-      const innerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, radius)
-      innerGlow.addColorStop(0, 'rgba(220,240,255,0.45)')
-      innerGlow.addColorStop(0.25, 'rgba(220,240,255,0.12)')
-      innerGlow.addColorStop(1, 'rgba(200,230,255,0)')
-      ctx.fillStyle = innerGlow
-      ctx.beginPath()
-      ctx.arc(0, 0, radius, 0, Math.PI * 2)
       ctx.fill()
       ctx.restore()
     }
