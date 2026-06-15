@@ -114,14 +114,19 @@ Page({
 
     const completionFlag = wx.getStorageSync('pomodoro_completion')
     if (completionFlag) {
-      if (!this.data.showCelebration) {
+      // Drop stale/corrupt flags (missing sessionId from earlier buggy paths)
+      // so we never replay vibration for a session that was never synced.
+      if (!completionFlag.sessionId) {
+        wx.removeStorageSync('pomodoro_completion')
+      } else if (!this.data.showCelebration) {
         // Deferred celebration — timer completed while page was in background / locked
         wx.vibrateLong()
         this.setData({ showCelebration: true, celebrationMotto: completionFlag.motto })
         return
+      } else {
+        // Already showing celebration — clean up stale flag but don't replay
+        wx.removeStorageSync('pomodoro_completion')
       }
-      // Already showing celebration — clean up stale flag but don't replay
-      wx.removeStorageSync('pomodoro_completion')
     }
 
     const active = await this._fetchActiveSession()
@@ -373,6 +378,10 @@ Page({
   /* ==================== Work Complete ==================== */
 
   async _onWorkComplete() {
+    if (!this.data.sessionId) {
+      this._resetToIdle()
+      return
+    }
     wx.vibrateLong()
     try {
       await api.post(`/pomodoro/${this.data.sessionId}/complete`, {
@@ -489,7 +498,21 @@ Page({
     const remaining = Math.max(0, totalSec - elapsed)
     if (remaining <= 0) {
       wx.removeStorageSync('pomodoro_pause')
-      this._onWorkComplete()
+      wx.removeStorageSync('pomodoro_running_state')
+      wx.removeStorageSync('pomodoro_completion')
+      // Session expired while page was closed — sync silently with the explicit
+      // session id so the server clears its "active" flag. Do NOT vibrate or
+      // start a break — the user wasn't watching and didn't earn a celebration
+      // for this restore path.
+      api.post(`/pomodoro/${session.id}/complete`, {
+        total_paused_ms: totalPausedMs || 0,
+      }).catch(() => {
+        api.post(`/pomodoro/${session.id}/interrupt`, {
+          total_paused_ms: totalPausedMs || 0,
+        }).catch(() => {})
+      })
+      this._resetToIdle()
+      this.loadTodayStats()
       return
     }
 
