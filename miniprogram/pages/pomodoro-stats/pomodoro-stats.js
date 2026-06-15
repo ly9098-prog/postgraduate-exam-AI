@@ -331,214 +331,179 @@ Page({
   _drawEmptyChart() {
     const rect = this._pieRect
     if (!rect || !rect.width) return
-    const size = Math.min(rect.width, rect.height)
-    const center = size / 2
-    const radius = center - 24
-    const ctx = wx.createCanvasContext('pie-canvas', this)
-    ctx.clearRect(0, 0, size, size)
+    this._renderPieChart(0)
+  },
+
+  _shadeColor(hex, amount) {
+    const safeHex = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : '#3B82F6'
+    const num = parseInt(safeHex.slice(1), 16)
+    const clamp = value => Math.max(0, Math.min(255, value))
+    const r = clamp((num >> 16) + amount)
+    const g = clamp(((num >> 8) & 0xff) + amount)
+    const b = clamp((num & 0xff) + amount)
+    return `rgb(${r}, ${g}, ${b})`
+  },
+
+  _drawEllipticSector(ctx, cx, cy, radius, scaleY, startA, endA, fillStyle, strokeStyle, lineW) {
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.scale(1, scaleY)
     ctx.beginPath()
-    ctx.setFillStyle('rgba(255,255,255,0.02)')
-    ctx.arc(center, center, radius, 0, Math.PI * 2)
+    ctx.moveTo(0, 0)
+    ctx.arc(0, 0, radius, startA, endA)
+    ctx.closePath()
+    ctx.setFillStyle(fillStyle)
     ctx.fill()
-    ctx.draw()
+    if (strokeStyle) {
+      ctx.setStrokeStyle(strokeStyle)
+      ctx.setLineWidth(lineW || 1)
+      ctx.stroke()
+    }
+    ctx.restore()
   },
 
   _renderPieChart(progress) {
     const subjects = this.data.subjects
     const rect = this._pieRect
     if (!rect || !rect.width) return
-    const size = Math.min(rect.width, rect.height)
-    const center = size / 2
-    const radius = center - 24
-    const holeR = radius * 0.35
     const ctx = wx.createCanvasContext('pie-canvas', this)
-    ctx.clearRect(0, 0, size, size)
+    const w = rect.width
+    const h = rect.height
+    const size = Math.min(w, h)
+    const centerX = w / 2
+    const centerY = h * 0.44
+    const radius = size * 0.39
+    const tilt = 0.58
+    const depth = size * 0.16
+
+    ctx.clearRect(0, 0, w, h)
 
     const hasData = subjects && subjects.length && subjects.some(s => (s.duration_sec || 0) > 0)
-
     if (!hasData) {
+      const shadow = ctx.createLinearGradient(centerX, centerY + depth * 0.4, centerX, centerY + depth * 1.7)
+      shadow.addColorStop(0, 'rgba(0,0,0,0.28)')
+      shadow.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.save()
+      ctx.translate(centerX, centerY + depth)
+      ctx.scale(1, 0.35)
       ctx.beginPath()
-      ctx.setFillStyle('rgba(255,255,255,0.04)')
-      ctx.arc(center, center, radius, 0, Math.PI * 2)
+      ctx.arc(0, 0, radius * 1.1, 0, Math.PI * 2)
+      ctx.setFillStyle(shadow)
       ctx.fill()
-      ctx.setFillStyle('rgba(255,255,255,0.2)')
-      ctx.setFontSize(11)
+      ctx.restore()
+      this._drawEllipticSector(ctx, centerX, centerY, radius, tilt, 0, Math.PI * 2, 'rgba(255,255,255,0.05)', 'rgba(255,255,255,0.08)', 1)
+      ctx.setFillStyle('rgba(255,255,255,0.28)')
+      ctx.setFontSize(12)
       ctx.setTextAlign('center')
-      ctx.fillText('今日暂无数据', center, center + 4)
+      ctx.fillText('今日暂无数据', centerX, centerY + 6)
       ctx.draw()
       return
     }
 
     const totalDur = subjects.reduce((sum, s) => sum + (s.duration_sec || 0), 0) || 1
-    const total = subjects.filter(s => (s.duration_sec || 0) > 0)
-
-    // Helper: draw a sector from startAngle to endAngle
-    const drawSector = (cx, cy, r, startA, endA, fillStyle, strokeStyle, lineW) => {
-      ctx.beginPath()
-      ctx.moveTo(cx, cy)
-      ctx.arc(cx, cy, r, startA, endA)
-      ctx.closePath()
-      ctx.setFillStyle(fillStyle)
-      ctx.fill()
-      if (strokeStyle) {
-        ctx.beginPath()
-        ctx.moveTo(cx, cy)
-        ctx.arc(cx, cy, r, endA, endA)
-        ctx.setStrokeStyle(strokeStyle)
-        ctx.setLineWidth(lineW || 1)
-        ctx.stroke()
-      }
-    }
-
-    // Compute all sector angles first (at full progress)
     const sectors = []
     let angle = -Math.PI / 2
-    total.forEach(s => {
+    subjects.filter(s => (s.duration_sec || 0) > 0).forEach(s => {
       const pct = (s.duration_sec || 0) / totalDur
       const endA = angle + Math.PI * 2 * pct
       sectors.push({
         subject: s,
         color: s._color || '#3B82F6',
         startA: angle,
-        endA: endA,
-        pct: pct,
+        endA,
       })
       angle = endA
     })
 
-    // === Layer 1: Drop shadow (offset dark circle) ===
+    const shadow = ctx.createLinearGradient(centerX, centerY + depth * 0.35, centerX, centerY + depth * 1.85)
+    shadow.addColorStop(0, 'rgba(0,0,0,0.34)')
+    shadow.addColorStop(0.55, 'rgba(0,0,0,0.22)')
+    shadow.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.save()
+    ctx.translate(centerX, centerY + depth * 1.02)
+    ctx.scale(1, 0.32)
     ctx.beginPath()
-    ctx.arc(center + 4, center + 5, radius + 2, 0, Math.PI * 2)
-    ctx.setFillStyle('rgba(0,0,0,0.18)')
+    ctx.arc(0, 0, radius * 1.18, 0, Math.PI * 2)
+    ctx.setFillStyle(shadow)
     ctx.fill()
+    ctx.restore()
 
-    // === Layer 2: Dark thickness ring (offset sectors = 3D depth) ===
-    // Only when progress is enough to show
-    if (progress > 0.02) {
-      const thickOffX = 3
-      const thickOffY = 5
-      sectors.forEach(sec => {
-        const curEnd = sec.startA + (sec.endA - sec.startA) * Math.min(1, progress * 1.5)
-        if (curEnd - sec.startA < 0.005) return
-        // Draw offset sector in darker color to simulate side face
-        ctx.beginPath()
-        ctx.moveTo(center + thickOffX, center + thickOffY)
-        ctx.arc(center + thickOffX, center + thickOffY, radius, sec.startA, curEnd)
-        ctx.closePath()
-        ctx.setFillStyle('rgba(0,0,0,0.25)')
-        ctx.fill()
-      })
-    }
-
-    // === Layer 3: Sectors (top face, flat colors) ===
-    if (progress > 0) {
-      const hlSubject = this.data._selectedSubject
-
+    const selectedSubject = this.data._selectedSubject
+    const sideSteps = Math.max(8, Math.round(depth / 3))
+    for (let layer = sideSteps; layer >= 1; layer--) {
+      const layerOffset = depth * layer / sideSteps * progress
       sectors.forEach(sec => {
         const curEnd = sec.startA + (sec.endA - sec.startA) * progress
-        if (curEnd - sec.startA < 0.001) return
-
-        const isHL = hlSubject && sec.subject.subject === hlSubject
-        let cx = center, cy = center
-        let strokeStyle = 'rgba(11,17,33,0.5)'
-        let lineW = 1.2
-
-        if (isHL) {
-          const mid = (sec.startA + curEnd) / 2
-          const pull = 12
-          cx += Math.cos(mid) * pull
-          cy += Math.sin(mid) * pull
-          strokeStyle = 'rgba(255,255,255,0.6)'
-          lineW = 2.5
-        }
-
-        drawSector(cx, cy, radius, sec.startA, curEnd, sec.color, strokeStyle, lineW)
+        if (curEnd - sec.startA < 0.002) return
+        const isSelected = selectedSubject && sec.subject.subject === selectedSubject
+        const mid = (sec.startA + curEnd) / 2
+        const pull = isSelected ? 14 : 0
+        const cx = centerX + Math.cos(mid) * pull
+        const cy = centerY + Math.sin(mid) * pull * tilt + layerOffset
+        const shade = this._shadeColor(sec.color, -80 + Math.round(layer / sideSteps * 24))
+        this._drawEllipticSector(ctx, cx, cy, radius, tilt, sec.startA, curEnd, shade, 'rgba(0,0,0,0.12)', 0.5)
       })
-
-      // === Layer 4: Strong directional lighting overlay ===
-      if (progress >= 0.05) {
-        const grad = ctx.createLinearGradient(
-          0, 0,
-          size, size
-        )
-        grad.addColorStop(0, 'rgba(255,255,255,0.22)')
-        grad.addColorStop(0.3, 'rgba(255,255,255,0.05)')
-        grad.addColorStop(0.5, 'rgba(0,0,0,0)')
-        grad.addColorStop(0.7, 'rgba(0,0,0,0.15)')
-        grad.addColorStop(1, 'rgba(0,0,0,0.35)')
-
-        ctx.beginPath()
-        ctx.arc(center, center, radius, 0, Math.PI * 2)
-        ctx.setFillStyle(grad)
-        ctx.fill()
-      }
-
-      // === Layer 5: Outer edge bevel ===
-      // Top arc highlight
-      ctx.beginPath()
-      ctx.arc(center, center, radius - 0.5, -Math.PI * 0.9, -Math.PI * 0.1)
-      ctx.setStrokeStyle('rgba(255,255,255,0.2)')
-      ctx.setLineWidth(2)
-      ctx.stroke()
-
-      // Bottom arc shadow
-      ctx.beginPath()
-      ctx.arc(center, center, radius - 0.5, Math.PI * 0.1, Math.PI * 0.9)
-      ctx.setStrokeStyle('rgba(0,0,0,0.2)')
-      ctx.setLineWidth(2)
-      ctx.stroke()
-
-      // === Layer 5b: Highlighted sector glow ===
-      if (progress >= 0.05) {
-        const hlSubject = this.data._selectedSubject
-        if (hlSubject) {
-          sectors.forEach(sec => {
-            if (sec.subject.subject !== hlSubject) return
-            const curEnd = sec.startA + (sec.endA - sec.startA) * progress
-            if (curEnd - sec.startA < 0.001) return
-
-            const mid = (sec.startA + curEnd) / 2
-            const pull = 12
-            const cx = center + Math.cos(mid) * pull
-            const cy = center + Math.sin(mid) * pull
-
-            // Outer glow ring
-            ctx.beginPath()
-            ctx.arc(cx, cy, radius + 5, sec.startA, curEnd)
-            ctx.setStrokeStyle('rgba(255,255,255,0.15)')
-            ctx.setLineWidth(8)
-            ctx.stroke()
-
-            // Inner bright rim
-            ctx.beginPath()
-            ctx.arc(cx, cy, radius + 1, sec.startA, curEnd)
-            ctx.setStrokeStyle('rgba(255,255,255,0.35)')
-            ctx.setLineWidth(2)
-            ctx.stroke()
-          })
-        }
-      }
     }
 
-    // === Layer 6: Center hole ===
+    sectors.forEach(sec => {
+      const curEnd = sec.startA + (sec.endA - sec.startA) * progress
+      if (curEnd - sec.startA < 0.002) return
+      const isSelected = selectedSubject && sec.subject.subject === selectedSubject
+      const mid = (sec.startA + curEnd) / 2
+      const pull = isSelected ? 14 : 0
+      const cx = centerX + Math.cos(mid) * pull
+      const cy = centerY + Math.sin(mid) * pull * tilt
+      this._drawEllipticSector(
+        ctx,
+        cx,
+        cy,
+        radius * (isSelected ? 1.03 : 1),
+        tilt,
+        sec.startA,
+        curEnd,
+        sec.color,
+        isSelected ? 'rgba(255,255,255,0.72)' : 'rgba(11,17,33,0.48)',
+        isSelected ? 2.4 : 1
+      )
+    })
+
+    ctx.save()
+    ctx.translate(centerX, centerY)
+    ctx.scale(1, tilt)
     ctx.beginPath()
-    ctx.setFillStyle('#111827')
-    ctx.arc(center, center, holeR, 0, Math.PI * 2)
+    ctx.arc(0, 0, radius, 0, Math.PI * 2)
+    ctx.closePath()
+    ctx.clip()
+    const gloss = ctx.createLinearGradient(-radius, -radius, radius, radius)
+    gloss.addColorStop(0, 'rgba(255,255,255,0.32)')
+    gloss.addColorStop(0.28, 'rgba(255,255,255,0.08)')
+    gloss.addColorStop(0.58, 'rgba(255,255,255,0)')
+    gloss.addColorStop(1, 'rgba(0,0,0,0.28)')
+    ctx.beginPath()
+    ctx.arc(0, 0, radius, 0, Math.PI * 2)
+    ctx.setFillStyle(gloss)
     ctx.fill()
+    ctx.restore()
 
-    // === Layer 7: Inner shadow bevel (center hole edge) ===
+    ctx.save()
+    ctx.translate(centerX - radius * 0.23, centerY - radius * 0.14)
+    ctx.scale(1, 0.24)
     ctx.beginPath()
-    ctx.arc(center, center, holeR + 1, 0, Math.PI * 2)
-    ctx.setStrokeStyle('rgba(0,0,0,0.4)')
-    ctx.setLineWidth(2)
-    ctx.stroke()
+    ctx.arc(0, 0, radius * 0.48, 0, Math.PI * 2)
+    ctx.setFillStyle('rgba(255,255,255,0.16)')
+    ctx.fill()
+    ctx.restore()
 
-    // === Layer 8: Subtle outer glow ===
-    ctx.beginPath()
-    ctx.arc(center, center, radius + 2, 0, Math.PI * 2)
-    ctx.setStrokeStyle('rgba(255,255,255,0.04)')
-    ctx.setLineWidth(1)
-    ctx.stroke()
+    if (selectedSubject) {
+      sectors.forEach(sec => {
+        if (sec.subject.subject !== selectedSubject) return
+        const curEnd = sec.startA + (sec.endA - sec.startA) * progress
+        const mid = (sec.startA + curEnd) / 2
+        const cx = centerX + Math.cos(mid) * 14
+        const cy = centerY + Math.sin(mid) * 14 * tilt
+        this._drawEllipticSector(ctx, cx, cy, radius * 1.08, tilt, sec.startA, curEnd, 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0.28)', 7)
+      })
+    }
 
     ctx.draw()
   },
@@ -556,26 +521,16 @@ Page({
       const x = tapX - rect.left
       const y = tapY - rect.top
       const centerX = rect.width / 2
-      const centerY = rect.height / 2
-      const radius = Math.min(rect.width, rect.height) / 2 - 24
+      const centerY = rect.height * 0.44
+      const radius = Math.min(rect.width, rect.height) * 0.39
+      const tilt = 0.58
 
       const dx = x - centerX
-      const dy = y - centerY
+      const dy = (y - centerY) / tilt
       const dist = Math.sqrt(dx * dx + dy * dy)
 
-      // Outside the pie — dismiss
+      // Outside the 3D pie footprint — dismiss
       if (dist > radius) {
-        if (this.data.selectedSubjectDetail) {
-          this.setData({
-            selectedSubjectDetail: null,
-            _selectedSubject: null,
-          }, () => this._renderPieChart(1))
-        }
-        return
-      }
-
-      // Center hole — dismiss if popup is open
-      if (dist < radius * 0.35) {
         if (this.data.selectedSubjectDetail) {
           this.setData({
             selectedSubjectDetail: null,
