@@ -37,7 +37,7 @@
         <view class="card-section">
           <text class="section-title">最近 7 天趋势</text>
           <view class="chart-wrap">
-            <canvas class="trend-canvas" canvas-id="trend-bars-canvas" id="trend-bars-canvas" hidden="{{!!selectedSubjectDetail}}"></canvas>
+            <canvas class="trend-canvas" type="2d" id="trend-bars-canvas" hidden="{{!!selectedSubjectDetail}}"></canvas>
           </view>
           <view class="chart-legend">
             <view class="legend-item"><view class="legend-dot" style="background: #3B82F6;"></view><text class="legend-text">有记录</text></view>
@@ -50,7 +50,7 @@
           <text class="section-title">今日科目分布</text>
           <!-- Pie Chart -->
           <view class="pie-wrap {{pieTapped ? 'pie-tapped' : ''}}" id="pie-chart-wrap">
-            <canvas class="pie-canvas" canvas-id="pie-canvas" id="pie-canvas" catchtap="onPieTap" hidden="{{!!selectedSubjectDetail}}"></canvas>
+            <canvas class="pie-canvas" type="2d" id="pie-canvas" catchtap="onPieTap" hidden="{{!!selectedSubjectDetail}}"></canvas>
           </view>
           <view class="subject-legend" aria-label="学科图例">
             <view class="subject-legend-item" wx:for="{{subjects}}" wx:key="subject">
