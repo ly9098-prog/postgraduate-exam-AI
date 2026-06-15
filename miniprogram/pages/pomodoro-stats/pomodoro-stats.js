@@ -289,21 +289,28 @@ Page({
     const barW = Math.min(32, chartW / trends.length * 0.5)
     const gap = chartW / trends.length
     const maxDur = Math.max(1, ...trends.map(t => t.duration_sec || 0))
+    const depth = Math.min(7, barW * 0.28)
+    const topTilt = 0.45
+
+    const isFinal = progress >= 1
+    const finalFade = Math.max(0, Math.min(1, (progress - 0.82) / 0.18))
 
     ctx.clearRect(0, 0, w, h)
 
+    // Grid lines — subtle horizontal guides
     for (let i = 0; i <= 3; i++) {
       const y = padT + chartH * (1 - i / 3)
       ctx.beginPath()
-      ctx.strokeStyle = 'rgba(255,255,255,0.04)'
+      ctx.strokeStyle = 'rgba(255,255,255,0.03)'
       ctx.lineWidth = 0.5
       ctx.moveTo(padL, y)
       ctx.lineTo(w - padR, y)
       ctx.stroke()
     }
 
+    // Baseline
     ctx.beginPath()
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)'
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)'
     ctx.lineWidth = 1
     ctx.moveTo(padL, padT + chartH)
     ctx.lineTo(w - padR, padT + chartH)
@@ -321,27 +328,98 @@ Page({
       const x = padL + gap * i + (gap - barW) / 2
       const finalBarH = (t.duration_sec || 0) / maxDur * chartH
       const barH = Math.max(0, finalBarH * progress)
-      const y = padT + chartH - barH
+      const baseY = padT + chartH
+      const topY = baseY - barH
+      const show3D = finalFade > 0.01 && barH > depth * topTilt * 2
 
       if (t.duration_sec > 0 && barH > 0) {
+        // Ground shadow — soft ellipse at base, fades in with finalFade
+        if (finalFade > 0) {
+          ctx.save()
+          ctx.globalAlpha = finalFade * 0.45
+          ctx.translate(x + barW / 2, baseY + 2)
+          ctx.scale(1, 0.28)
+          const shGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, barW * 0.75)
+          shGrad.addColorStop(0, 'rgba(0,0,0,0.32)')
+          shGrad.addColorStop(0.5, 'rgba(0,0,0,0.14)')
+          shGrad.addColorStop(1, 'rgba(0,0,0,0)')
+          ctx.fillStyle = shGrad
+          ctx.beginPath()
+          ctx.arc(0, 0, barW * 0.75, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.restore()
+        }
+
+        // Right side face — darker shade, recedes in depth
+        if (show3D) {
+          ctx.save()
+          ctx.globalAlpha = finalFade
+          ctx.fillStyle = 'rgba(8,18,40,0.65)'
+          ctx.beginPath()
+          ctx.moveTo(x + barW, topY)
+          ctx.lineTo(x + barW + depth, topY - depth * topTilt)
+          ctx.lineTo(x + barW + depth, baseY - depth * topTilt)
+          ctx.lineTo(x + barW, baseY)
+          ctx.closePath()
+          ctx.fill()
+          ctx.restore()
+        }
+
+        // Front face
         ctx.fillStyle = this._trendGrad
-        ctx.fillRect(x, y, barW, barH)
+        ctx.fillRect(x, topY, barW, barH)
+
+        // Front top-edge highlight
         if (barH > 4) {
           ctx.fillStyle = 'rgba(255,255,255,0.2)'
-          ctx.fillRect(x, y, barW, Math.min(4, barH / 3))
+          ctx.fillRect(x, topY, barW, Math.min(4, barH / 3))
+        }
+
+        // Front gloss sweep — soft light wash on upper-left portion
+        if (show3D && barH > 20) {
+          ctx.save()
+          ctx.globalAlpha = finalFade * 0.22
+          const fg = ctx.createLinearGradient(x, topY, x + barW, topY)
+          fg.addColorStop(0, 'rgba(255,255,255,0)')
+          fg.addColorStop(0.25, 'rgba(255,255,255,0.6)')
+          fg.addColorStop(0.5, 'rgba(255,255,255,0.06)')
+          fg.addColorStop(1, 'rgba(255,255,255,0)')
+          ctx.fillStyle = fg
+          ctx.fillRect(x, topY, barW, barH * 0.5)
+          ctx.restore()
+        }
+
+        // Top face — lighter, catches overhead light
+        if (show3D) {
+          ctx.save()
+          ctx.globalAlpha = finalFade
+          ctx.fillStyle = 'rgba(130,180,255,0.52)'
+          ctx.beginPath()
+          ctx.moveTo(x, topY)
+          ctx.lineTo(x + depth, topY - depth * topTilt)
+          ctx.lineTo(x + barW + depth, topY - depth * topTilt)
+          ctx.lineTo(x + barW, topY)
+          ctx.closePath()
+          ctx.fill()
+
+          // Top-face specular strip — bright edge along the front rim
+          ctx.fillStyle = 'rgba(255,255,255,0.28)'
+          ctx.fillRect(x + depth * 0.25, topY - depth * topTilt * 0.55, barW * 0.55, depth * topTilt * 0.38)
+          ctx.restore()
         }
       } else if (t.duration_sec > 0) {
         ctx.fillStyle = 'rgba(255,255,255,0.05)'
-        ctx.fillRect(x, padT + chartH - 1, barW, 1)
+        ctx.fillRect(x, baseY - 1, barW, 1)
       } else {
         ctx.fillStyle = 'rgba(255,255,255,0.03)'
-        ctx.fillRect(x, padT + chartH - 2, barW, 2)
+        ctx.fillRect(x, baseY - 2, barW, 2)
       }
 
+      // Date label
       ctx.fillStyle = 'rgba(255,255,255,0.25)'
       ctx.font = '9px sans-serif'
       ctx.textAlign = 'center'
-      ctx.fillText(t._shortDate || '', x + barW / 2, padT + chartH + 18)
+      ctx.fillText(t._shortDate || '', x + barW / 2, baseY + 18)
     })
   },
 
