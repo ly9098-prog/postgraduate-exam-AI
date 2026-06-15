@@ -23,13 +23,38 @@ function toScript(value: string, map: Record<string, string>) {
   return value.split("").map((ch) => map[ch] ?? ch).join("");
 }
 
+const rootSymbols: Record<string, string> = { "2": "√", "3": "∛", "4": "∜" };
+
+function renderSqrtFrac(text: string) {
+  let value = text;
+  for (let i = 0; i < 3; i++) {
+    const before = value;
+    value = value.replace(/\\{1,}frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g, (_, num: string, den: string) => {
+      const n = /^[A-Za-z0-9]+$/.test(num.trim()) ? num.trim() : `(${num})`;
+      const d = /^[A-Za-z0-9]+$/.test(den.trim()) ? den.trim() : `(${den})`;
+      return `${n}/${d}`;
+    });
+    value = value.replace(/\\{1,}sqrt\s*\[([^\]]+)\]\s*\{([^{}]+)\}/g, (_, idx: string, inner: string) => {
+      const trimmed = idx.trim();
+      const symbol = rootSymbols[trimmed] ?? `${toScript(trimmed, superscript)}√`;
+      return `${symbol}${inner}`;
+    });
+    value = value.replace(/\\{1,}sqrt\s*\{([^{}]+)\}/g, "√$1");
+    value = value.replace(/\\{1,}sqrt\s+([A-Za-z0-9]+)/g, "√$1");
+    if (value === before) break;
+  }
+  return value;
+}
+
 function formatMathText(text: string, { preserveWhitespace = false }: { preserveWhitespace?: boolean } = {}) {
   let value = text
     .replace(/\*\*([^*]+?)\*\*/g, "$1")
     .replace(/\\\(([\s\S]*?)\\\)/g, "$1")
     .replace(/\\\[([\s\S]*?)\\\]/g, "$1")
     .replace(/\$\$([\s\S]*?)\$\$/g, "$1")
-    .replace(/\$([^$\n]+?)\$/g, "$1")
+    .replace(/\$([^$\n]+?)\$/g, "$1");
+  value = renderSqrtFrac(value);
+  value = value
     .replace(/\\{1,}(leq|le)/g, "≤")
     .replace(/\\{1,}(geq|ge)/g, "≥")
     .replace(/\\{1,}neq/g, "≠")
