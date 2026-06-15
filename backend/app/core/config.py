@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     IMAGE_IMPORT_MAX_BYTES: int = 10 * 1024 * 1024
     PAGE_CLASSIFIER_ENABLED: bool = True
 
+    # 批量导题（多图片）
+    BATCH_IMAGE_MAX_FILES: int = 100        # 单次最多上传图片数
+    BATCH_IMAGE_DEFAULT_CONCURRENCY: int = 2  # 默认并发（仍被 clamp 到 1~4）
+
     # Exercise Region Detection
     EXERCISE_DETECTION_ENABLED: bool = True
     EXERCISE_DETECTION_DPI: int = 72
