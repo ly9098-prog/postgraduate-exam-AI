@@ -62,17 +62,35 @@
 
         <!-- ===== HISTORY ===== -->
         <view class="card-section">
-          <text class="section-title">最近记录</text>
+          <view class="section-header">
+            <text class="section-title">最近记录</text>
+            <view class="header-actions">
+              <view class="today-btn {{selectedDate === _todayDate ? 'active' : ''}}" wx:if="{{selectedDate !== _todayDate}}" catchtap="goToToday">
+                <text class="today-btn-text">今天</text>
+              </view>
+              <picker mode="date" value="{{selectedDate}}" bindchange="onDateChange">
+                <view class="date-picker-btn">
+                  <text class="date-picker-text">{{selectedDate}}</text>
+                  <text class="date-picker-arrow">▾</text>
+                </view>
+              </picker>
+            </view>
+          </view>
           <view wx:if="{{history.length === 0}}" class="empty-hint">
-            <text>暂无记录，开始你的第一个番茄钟吧</text>
+            <view class="empty-icon"></view>
+            <text class="empty-text" wx:if="{{selectedDate === _todayDate}}">今天还没有学习记录<br/>开始一个番茄钟吧</text>
+            <text class="empty-text" wx:else>{{selectedDate}} 暂无学习记录</text>
           </view>
           <view class="history-list" wx:if="{{history.length > 0}}">
-            <view class="history-item" wx:for="{{history}}" wx:key="id">
+            <view class="history-item" wx:for="{{history}}" wx:key="id"
+                  style="--idx: {{index}};">
+              <view class="hist-accent" style="background: {{item._color}};"></view>
               <view class="hist-left">
                 <text class="hist-subject">{{item._subjectLabel}}</text>
                 <text class="hist-meta">{{item._date}} {{item._time}} · {{item._duration}}</text>
               </view>
               <view class="hist-right">
+                <view class="hist-status-dot {{item._statusClass}}"></view>
                 <text class="hist-status {{item._statusClass}}">{{item._statusLabel}}</text>
               </view>
             </view>

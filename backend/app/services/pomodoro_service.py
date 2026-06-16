@@ -195,22 +195,24 @@ async def get_subject_breakdown(db: AsyncSession, user_id: int) -> list[dict]:
 
 
 async def get_history(
-    db: AsyncSession, user_id: int, page: int = 1, page_size: int = 20
+    db: AsyncSession, user_id: int, page: int = 1, page_size: int = 20,
+    filter_date: date | None = None,
 ) -> tuple[list[PomodoroSession], int]:
+    where = [
+        PomodoroSession.user_id == user_id,
+        PomodoroSession.status != "running",
+    ]
+    if filter_date is not None:
+        where.append(func.date(PomodoroSession.end_time) == filter_date)
+
     count_result = await db.execute(
-        select(func.count(PomodoroSession.id)).where(
-            PomodoroSession.user_id == user_id,
-            PomodoroSession.status != "running",
-        )
+        select(func.count(PomodoroSession.id)).where(*where)
     )
     total = count_result.scalar() or 0
 
     result = await db.execute(
         select(PomodoroSession)
-        .where(
-            PomodoroSession.user_id == user_id,
-            PomodoroSession.status != "running",
-        )
+        .where(*where)
         .order_by(PomodoroSession.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
