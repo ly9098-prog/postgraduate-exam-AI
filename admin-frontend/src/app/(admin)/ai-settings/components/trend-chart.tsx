@@ -138,19 +138,19 @@ export function TrendChart({
           lineStyle: { color: "rgba(91,123,154,0.2)", type: "dashed" },
         },
       },
-      legend: {
+      legend: hasData ? {
         data: [
-          { name: "调用次数", icon: "circle" },
-          { name: "Token 消耗 (K)", icon: "diamond" },
-          { name: "成功率 (%)", icon: "roundRect" },
-          { name: "平均耗时 (s)", icon: "triangle" },
-        ],
+          series.calls && { name: "调用次数", icon: "circle" },
+          series.tokens && { name: "Token 消耗 (K)", icon: "diamond" },
+          series.success && { name: "成功率 (%)", icon: "roundRect" },
+          series.latency && { name: "平均耗时 (s)", icon: "triangle" },
+        ].filter(Boolean),
         bottom: 0,
         left: "center",
         itemWidth: 10,
         itemHeight: 10,
         textStyle: { color: "#6b7b8d", fontSize: 12 },
-      },
+      } : undefined,
       grid: { left: 48, right: 16, top: 16, bottom: 48 },
       xAxis: {
         type: "category",

@@ -46,6 +46,13 @@ def _make_execute_result(**methods):
     return mock_result
 
 
+def _make_no_model_result():
+    """Mock result for AdminAiModelConfig query — returns no enabled model."""
+    m = MagicMock()
+    m.scalars.return_value.first.return_value = None
+    return m
+
+
 def _make_question(id=1, subject="math2", question_type="single_choice",
                    answer="A", analysis="求导得 2x", knowledge_points=None,
                    is_active=True, difficulty=2, review_status="approved"):
@@ -142,10 +149,12 @@ class TestAIExplain:
         # First execute: get question → ok
         # Second execute: token check (daily sum) → 0
         # Third execute: token check (monthly sum) → 0
+        # Fourth execute: AdminAiModelConfig → no enabled model
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
             _make_execute_result(scalar=0),
             _make_execute_result(scalar=0),
+            _make_no_model_result(),
         ]
 
         with patch("app.services.ai_learning_service.deepseek") as mock_ds:
@@ -166,6 +175,7 @@ class TestAIExplain:
             _make_execute_result(scalar_one_or_none=q),
             _make_execute_result(scalar=0),
             _make_execute_result(scalar=0),
+            _make_no_model_result(),
         ]
 
         with patch("app.services.ai_learning_service.deepseek") as mock_ds:
@@ -186,6 +196,7 @@ class TestAIExplain:
             _make_execute_result(scalar_one_or_none=q),
             _make_execute_result(scalar=0),
             _make_execute_result(scalar=0),
+            _make_no_model_result(),
         ]
 
         with patch("app.services.ai_learning_service.deepseek") as mock_ds:
@@ -208,6 +219,7 @@ class TestAIExplain:
             _make_execute_result(scalar_one_or_none=q),
             _make_execute_result(scalar=0),
             _make_execute_result(scalar=0),
+            _make_no_model_result(),
         ]
 
         with patch("app.services.ai_learning_service.deepseek") as mock_ds:
@@ -230,6 +242,7 @@ class TestAIExplain:
             _make_execute_result(scalar_one_or_none=q),
             _make_execute_result(scalar=0),
             _make_execute_result(scalar=0),
+            _make_no_model_result(),
         ]
 
         with patch("app.services.ai_learning_service.deepseek") as mock_ds:
@@ -271,6 +284,7 @@ class TestMistakeAnalysis:
             _make_execute_result(scalar_one_or_none=q),
             _make_execute_result(scalar=0),
             _make_execute_result(scalar=0),
+            _make_no_model_result(),
         ]
 
         with patch("app.services.ai_learning_service.deepseek") as mock_ds:
@@ -288,6 +302,7 @@ class TestMistakeAnalysis:
             _make_execute_result(scalar_one_or_none=q),
             _make_execute_result(scalar=0),
             _make_execute_result(scalar=0),
+            _make_no_model_result(),
         ]
 
         with patch("app.services.ai_learning_service.deepseek") as mock_ds:
@@ -449,6 +464,7 @@ class TestLearningReport:
             _make_execute_result(all=[(i, ["导数"]) for i in range(1, 11)]),  # question KPs
             _make_execute_result(scalar=0),              # daily token check
             _make_execute_result(scalar=0),              # monthly token check
+            _make_no_model_result(),                     # AdminAiModelConfig → no enabled model
         ]
 
         with patch("app.services.ai_learning_service.deepseek") as mock_ds:
@@ -486,6 +502,7 @@ class TestLearningReport:
             _make_execute_result(all=[(i, ["导数"]) for i in range(1, 11)]),
             _make_execute_result(scalar=0),
             _make_execute_result(scalar=0),
+            _make_no_model_result(),
         ]
 
         with patch("app.services.ai_learning_service.deepseek") as mock_ds:

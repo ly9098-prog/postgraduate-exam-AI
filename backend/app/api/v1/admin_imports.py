@@ -319,11 +319,12 @@ async def create_import_enrich_task(
 async def parse_text_questions(
     data: TextParseRequest,
     _=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
 ):
     """解析用户粘贴的文本，返回结构化题目预览。"""
     from app.features.text_question_parser import parse_text_questions_async
 
-    result = await parse_text_questions_async(data.text, data.subject)
+    result = await parse_text_questions_async(data.text, data.subject, db=db)
     return TextParseResponse(**result)
 
 

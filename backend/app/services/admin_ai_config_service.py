@@ -178,9 +178,13 @@ async def _ensure_env_key_synced(db: AsyncSession):
 
 def _model_to_response(m: AdminAiModelConfig) -> AdminAiModelConfigResponse:
     api_ok = False
+    api_key_masked = None
     if m.api_key_encrypted:
         try:
-            api_ok = bool(decrypt_api_key(m.api_key_encrypted))
+            raw = decrypt_api_key(m.api_key_encrypted)
+            if raw:
+                api_ok = True
+                api_key_masked = "*" * len(raw)
         except Exception:
             api_ok = False
     return AdminAiModelConfigResponse(
@@ -190,6 +194,7 @@ def _model_to_response(m: AdminAiModelConfig) -> AdminAiModelConfigResponse:
         provider=m.provider,
         api_base_url=m.api_base_url,
         api_configured=api_ok,
+        api_key_masked=api_key_masked,
         is_enabled=m.is_enabled,
         is_default=m.is_default,
         sort_order=m.sort_order,
@@ -216,6 +221,10 @@ async def patch_model(
         raise ValueError(f"模型 {model_id} 不存在")
 
     changes = {}
+
+    if data.name is not None and data.name.strip():
+        model.name = data.name.strip()
+        changes["name"] = data.name.strip()
 
     if data.is_default is True:
         # 清除其它模型的 default 标志

@@ -61,7 +61,9 @@ async def delete_model_endpoint(
         await db.commit()
     except ValueError as exc:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        msg = str(exc)
+        code = status.HTTP_404_NOT_FOUND if "不存在" in msg else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=code, detail=msg)
 
 
 # ========== Config key-value ==========

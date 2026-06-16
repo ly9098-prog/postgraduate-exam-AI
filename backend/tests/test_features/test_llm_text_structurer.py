@@ -443,7 +443,7 @@ class TestParseAsyncIntegration:
             "C. 高度至多为N-1 D. 高度恰好为N-1 答案: C"
         )
 
-        async def _fake(block_text, rule_hint=None):
+        async def _fake(block_text, rule_hint=None, **kwargs):
             assert "二叉树" in block_text
             return {
                 "stem": "下列关于二叉树高度的描述，正确的是？",
@@ -501,7 +501,7 @@ class TestParseAsyncIntegration:
             "D. 完全二叉树高度为logN+1 答案: D"
         )
 
-        async def _llm_with_fabricated_analysis(block_text, rule_hint=None):
+        async def _llm_with_fabricated_analysis(block_text, rule_hint=None, **kwargs):
             from app.features.llm_text_structurer import _validate_no_hallucination
             cleaned, dropped = _validate_no_hallucination({
                 "stem": "下列关于二叉树高度N的描述中，从根到叶子的最长路径长度即为高度。",
@@ -618,7 +618,7 @@ class TestEqualCountMerge:
             "D. 高度恰好为N-1 答案：C\n"
         )
 
-        async def _fake(block_text, rule_hint=None):
+        async def _fake(block_text, rule_hint=None, **kwargs):
             # 规则的 D 选项已含 "答案：C"，LLM 提供干净的 4 个选项
             return {
                 "stem": "下列关于二叉树高度的描述，正确的是？",
@@ -665,7 +665,7 @@ class TestEqualCountMerge:
             "答案: A"
         )
 
-        async def _fake(block_text, rule_hint=None):
+        async def _fake(block_text, rule_hint=None, **kwargs):
             # LLM 返回略不同的选项（仅作为兜底，不应被采用）
             return {
                 "stem": "题干？",

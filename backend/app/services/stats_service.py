@@ -461,7 +461,13 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
             accuracy=accuracy,
             knowledge_point_stats=knowledge_point_stats,
         )
-        ai_resp = await deepseek.chat(messages, temperature=0.3)
+
+        # Use DB-configured model when available
+        from app.services.model_config_resolver import ensure_db_model_configured
+        _creds = await ensure_db_model_configured(db)
+        _model_name = _creds[2] if _creds else None
+
+        ai_resp = await deepseek.chat(messages, temperature=0.3, model=_model_name)
         content = ai_resp["content"]
         import json
         try:
