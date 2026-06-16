@@ -194,6 +194,39 @@ async def _call_ai_correction(
 
 
 # ---------------------------------------------------------------------------
+# Sensitive content filter
+# ---------------------------------------------------------------------------
+
+_SENSITIVE_PATTERNS = [
+    (re.compile(r"1[3-9]\d{9}"), "[phone]"),                     # 手机号
+    (re.compile(r"\b\d{17}[\dXx]\b"), "[id-number]"),             # 身份证号
+    (re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"), "[email]"),
+    (re.compile(r"(?:(?:https?|ftp)://|www\.)[^\s，。、；：)]+"), "[url]"),
+]
+
+_SENSITIVE_CJK_TERMS: list[re.Pattern] = [
+    re.compile(term) for term in [
+        r"代[考写发作]",
+        r"助考",
+        r"作弊",
+        r"答案\s*[免免wx微信]",
+        r"加\s*[微VQq微信]{1,4}\s*[信信号]?",
+    ]
+]
+
+
+def _filter_sensitive(text: str) -> str:
+    """过滤敏感内容：替换手机号、邮箱、网址、广告词等。"""
+    if not text:
+        return text
+    for pat, replacement in _SENSITIVE_PATTERNS:
+        text = pat.sub(replacement, text)
+    for pat in _SENSITIVE_CJK_TERMS:
+        text = pat.sub("[sensitive]", text)
+    return text
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -213,7 +246,7 @@ async def correct_ocr_blocks(
             from app.services.admin_ai_config_service import get_all_configs
 
             db_cfg = await get_all_configs(db)
-            for key in ("ocr_filter_max_chars", "ocr_filter_max_tokens", "ocr_correction_prompt"):
+            for key in ("ocr_filter_max_chars", "ocr_filter_max_tokens", "ocr_correction_prompt", "ocr_filter_sensitive"):
                 if key in db_cfg and key not in config:
                     val = db_cfg[key]
                     if val is not None and val != "":
@@ -351,6 +384,18 @@ async def correct_ocr_blocks(
         })
 
     final_blocks = [b for b in corrected_blocks if b is not None]
+
+    # 敏感内容过滤
+    if config.get("ocr_filter_sensitive", False):
+        filtered_count = 0
+        for b in final_blocks:
+            text = b.get("normalized_text", "")
+            filtered = _filter_sensitive(text)
+            if filtered != text:
+                b["normalized_text"] = filtered
+                filtered_count += 1
+        if filtered_count:
+            logger.debug("ocr_filter_sensitive: filtered %d blocks", filtered_count)
 
     _reset_counters_if_needed()
     total_tokens_used = int(_token_usage.get("daily", 0)) - total_tokens_before
