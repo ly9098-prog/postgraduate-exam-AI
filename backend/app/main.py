@@ -46,7 +46,7 @@ from app.services.admin_bootstrap_service import ensure_dev_super_admin
 setup_logging()
 init_sentry()
 
-logger = logging.getLogger("2240ai")
+logger = logging.getLogger("postgraduate-ai")
 
 
 @asynccontextmanager
