@@ -453,6 +453,14 @@ export type AdminAiModelConfigPatchRequest = {
   api_base_url?: string;
 };
 
+export type AdminAiModelConfigCreateRequest = {
+  name: string;
+  display_name: string;
+  provider: string;
+  api_base_url?: string;
+  api_key?: string;
+};
+
 export type AdminAiConfigsResponse = {
   configs: Record<string, string | number | boolean>;
 };
