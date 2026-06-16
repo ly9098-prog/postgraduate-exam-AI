@@ -16,6 +16,7 @@ import type {
 import { getErrorMessage } from "@/lib/api/errors";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 
 const PROVIDER_ICONS: Record<string, React.ElementType> = {
   deepseek: Brain,
@@ -148,14 +149,18 @@ function AddModelDialog({
               className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
               placeholder="sk-..." />
           </div>
-          <div>
+            <div>
             <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">用途 <span className="text-[var(--color-text-hint)]">（可选）</span></label>
-            <select value={feature} onChange={(e) => setFeature(e.target.value)}
-              className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]">
-              {FEATURE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+            <Select
+              value={feature}
+              onChange={setFeature}
+              placeholder="选择用途"
+              className="h-10 text-sm w-full"
+              options={FEATURE_OPTIONS.map((opt) => ({
+                value: opt.value,
+                label: opt.label,
+              }))}
+            />
           </div>
         </div>
 
@@ -329,12 +334,16 @@ function ModelCard({
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">用途</label>
-            <select value={featureInput} onChange={(e) => setFeatureInput(e.target.value)}
-              className="h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]">
-              {FEATURE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+            <Select
+              value={featureInput}
+              onChange={setFeatureInput}
+              placeholder="选择用途"
+              className="h-9 text-sm w-full"
+              options={FEATURE_OPTIONS.map((opt) => ({
+                value: opt.value,
+                label: opt.label,
+              }))}
+            />
           </div>
           <div className="flex gap-2">
             <button onClick={saveApiConfig} disabled={disabled}
@@ -383,60 +392,122 @@ function FeatureMapping({
   ];
 
   const enabledModels = models.filter((m) => m.is_enabled);
+  const untaggedModel = models.find((m) => m.is_enabled && !m.feature);
 
   return (
-    <div className="mb-6 rounded-xl border border-[var(--color-border)]/60 bg-white/60 p-4">
-      <h4 className="mb-3 text-sm font-semibold text-[var(--ink)]">功能模型映射</h4>
-      <p className="mb-4 text-xs text-[var(--color-text-hint)]">
-        为每个功能指定专用模型。未指定的功能将使用标记为"通用"的模型。
-      </p>
-      <div className="space-y-3">
+    <div className="mb-6 rounded-xl border border-[var(--color-border)]/60 bg-gradient-to-b from-[var(--color-bg-input)]/40 to-white/40 p-5">
+      <div className="mb-4">
+        <h4 className="font-display text-base font-bold text-[var(--ink)]">功能模型映射</h4>
+        <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-text-hint)]">
+          为每个 AI 功能指定专用模型。
+          {untaggedModel ? (
+            <>未指定的功能将使用 <span className="font-medium text-[var(--color-text-secondary)]">{untaggedModel.display_name}</span> 兜底。</>
+          ) : enabledModels.length > 0 ? (
+            <>当前没有通用模型，需为各功能单独指定。</>
+          ) : (
+            <>请先添加并启用至少一个模型。</>
+          )}
+        </p>
+      </div>
+      <div className="space-y-2.5">
         {features.map((feat) => {
           const assigned = resolveFeatureModel(models, feat.key);
+          const hasDedicated = assigned?.feature === feat.key;
           return (
-            <div key={feat.key}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-border)]/40 bg-white px-4 py-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: feat.color }} />
-                <div>
-                  <p className="text-sm font-medium text-[var(--ink)]">{feat.label}</p>
-                  <p className="text-xs text-[var(--color-text-hint)]">{feat.desc}</p>
+            <div
+              key={feat.key}
+              className="group relative overflow-hidden rounded-xl border bg-white transition-all duration-200 hover:shadow-sm"
+              style={{
+                borderColor: hasDedicated
+                  ? `${feat.color}30`
+                  : "var(--color-border)",
+              }}
+            >
+              {/* Left accent bar */}
+              <div
+                className="absolute left-0 top-0 w-1 transition-all duration-300"
+                style={{
+                  height: hasDedicated ? "100%" : "0%",
+                  backgroundColor: feat.color,
+                  opacity: hasDedicated ? 1 : 0,
+                }}
+              />
+
+              <div className="flex flex-wrap items-center gap-2 pl-5 pr-4 py-3">
+                {/* Feature info */}
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset"
+                    style={{
+                      backgroundColor: `${feat.color}0d`,
+                      "--tw-ring-color": `${feat.color}20`,
+                    } as React.CSSProperties}
+                  >
+                    <div className="h-2 w-2 rounded-full" style={{ backgroundColor: feat.color }} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-[var(--ink)]">{feat.label}</span>
+                      {hasDedicated && (
+                        <span
+                          className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm"
+                          style={{ backgroundColor: feat.color }}
+                        >
+                          专用
+                        </span>
+                      )}
+                      {assigned && !hasDedicated && assigned.is_enabled && (
+                        <span className="inline-flex items-center rounded-md border border-[var(--color-border)]/60 bg-white/80 px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-hint)]">
+                          兜底
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-[var(--color-text-hint)]">{feat.desc}</p>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {assigned ? (
-                  <span className="text-xs font-medium text-[var(--color-text-secondary)]">
-                    {assigned.display_name}
-                    {assigned.feature !== feat.key && (
-                      <span className="ml-1 text-[var(--color-text-hint)]">（兜底）</span>
-                    )}
-                  </span>
-                ) : (
-                  <span className="text-xs text-[var(--color-text-hint)]">未配置</span>
-                )}
-                {enabledModels.length > 0 && (
-                  <select
-                    value={assigned?.id ?? ""}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (!val) {
-                        // 清除该功能的模型指定 → 设置 feature 为 null
-                        const current = models.find((m) => m.feature === feat.key);
-                        if (current) onAssign(current.id, null);
-                        return;
-                      }
-                      onAssign(Number(val), feat.key);
-                    }}
-                    disabled={disabled}
-                    className="h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-2 text-xs outline-none focus:border-[var(--color-primary)] disabled:opacity-50">
-                    <option value="">默认</option>
-                    {enabledModels.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.display_name}{m.feature === feat.key ? " ✓" : ""}
-                      </option>
-                    ))}
-                  </select>
-                )}
+
+                {/* Model selector */}
+                <div className="flex items-center gap-2.5 shrink-0">
+                  {assigned ? (
+                    <span className={cn(
+                      "text-xs font-medium transition-colors",
+                      hasDedicated ? "text-[var(--ink)]" : "text-[var(--color-text-hint)]",
+                    )}>
+                      <span className="hidden sm:inline">{assigned.display_name}</span>
+                      <span className="sm:hidden">
+                        {assigned.display_name.length > 12
+                          ? assigned.display_name.slice(0, 10) + "…"
+                          : assigned.display_name}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-xs italic text-[var(--color-text-hint)]">未配置</span>
+                  )}
+                  {enabledModels.length > 0 && (
+                    <Select
+                      value={assigned?.id ? String(assigned.id) : ""}
+                      onChange={(val) => {
+                        if (!val) {
+                          const current = models.find((m) => m.feature === feat.key);
+                          if (current) onAssign(current.id, null);
+                          return;
+                        }
+                        onAssign(Number(val), feat.key);
+                      }}
+                      disabled={disabled}
+                      color={hasDedicated ? feat.color : undefined}
+                      placeholder="取消指定"
+                      options={[
+                        { value: "", label: "取消指定" },
+                        ...enabledModels.map((m) => ({
+                          value: String(m.id),
+                          label: m.display_name,
+                          suffix: m.feature === feat.key ? "已分配" : undefined,
+                        })),
+                      ]}
+                    />
+                  )}
+                </div>
               </div>
             </div>
           );

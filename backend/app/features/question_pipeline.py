@@ -1843,7 +1843,16 @@ async def complete_import(
     if not missing:
         return {"missing": [], "from_fallback": False, "ai_metadata": {}}
 
-    messages = build_complete_question(_qi_to_dict(qi), missing)
+    # 从 admin_ai_configs 读取自定义 completion_prompt
+    system_prompt: str | None = None
+    try:
+        from app.services.admin_ai_config_service import get_all_configs as _get_cfg
+        _cfg = await _get_cfg(db)
+        system_prompt = str(_cfg.get("completion_prompt")) if _cfg.get("completion_prompt") else None
+    except Exception:
+        pass
+
+    messages = build_complete_question(_qi_to_dict(qi), missing, system_prompt=system_prompt)
     prompt_text = json.dumps(messages, ensure_ascii=False)
     resp, raw, _ = await _call_or_fallback(
         messages, fallback.get_fallback_complete(missing), db
@@ -1931,15 +1940,49 @@ def _apply_complete_suggestion(
     return suggestion
 
 
+# ---------------------------------------------------------------------------
+# Completion auto-switch → field mapping (for admin config)
+# ---------------------------------------------------------------------------
+
+_COMPLETION_AUTO_MAP: dict[str, str] = {
+    "stem": "completion_auto_stem",
+    "options": "completion_auto_options",
+    "analysis": "completion_auto_answer_reasoning",
+    "knowledge_points": "completion_auto_knowledge_tags",
+}
+
+
+def _get_disabled_completion_fields(configs: dict) -> set[str]:
+    """从 admin_ai_configs 中读取 completion_auto_* 开关，返回应禁用的字段集合。"""
+    disabled: set[str] = set()
+    for field, cfg_key in _COMPLETION_AUTO_MAP.items():
+        if not configs.get(cfg_key, True):
+            disabled.add(field)
+    return disabled
+
+
+# ---------------------------------------------------------------------------
+# Batch complete
+# ---------------------------------------------------------------------------
+
+
 def _detect_fields_to_complete(
-    qi: QuestionImport, target_fields: list[str], strategy: str
+    qi: QuestionImport, target_fields: list[str], strategy: str,
+    disabled_fields: set[str] | None = None,
 ) -> list[str]:
-    """根据策略确定需要 AI 处理的字段列表。"""
+    """根据策略确定需要 AI 处理的字段列表。
+
+    disabled_fields: 被 admin 配置禁用的字段（即使缺失也不补全）。
+    """
     if strategy == "force_overwrite":
+        if disabled_fields:
+            return [f for f in target_fields if f not in disabled_fields]
         return list(target_fields)
 
     need: list[str] = []
     for field in target_fields:
+        if disabled_fields and field in disabled_fields:
+            continue
         if field == "subject" and not qi.subject:
             need.append("subject")
         elif field == "question_type" and not qi.question_type:
@@ -2052,17 +2095,23 @@ async def complete_import_with_strategy(
     import_id: int,
     target_fields: list[str],
     strategy: str,
+    disabled_fields: set[str] | None = None,
+    system_prompt: str | None = None,
 ) -> dict:
-    """带字段选择和策略的 AI 补全。不提交事务，供 batch 调用。"""
+    """带字段选择和策略的 AI 补全。不提交事务，供 batch 调用。
+
+    disabled_fields: 被 admin 配置禁用的字段，即使缺失也不补全。
+    system_prompt: 来自 DB admin_ai_configs 的自定义 prompt。
+    """
     qi = await _get_qi(db, import_id)
     if qi.status != "pending":
         return {"completed": [], "from_fallback": False, "ai_metadata": {}, "error": f"非 pending 状态: {qi.status}"}
 
-    to_complete = _detect_fields_to_complete(qi, target_fields, strategy)
+    to_complete = _detect_fields_to_complete(qi, target_fields, strategy, disabled_fields)
     if not to_complete:
         return {"completed": [], "from_fallback": False, "ai_metadata": {}}
 
-    messages = build_batch_complete_question(_qi_to_dict(qi), to_complete, strategy)
+    messages = build_batch_complete_question(_qi_to_dict(qi), to_complete, strategy, system_prompt=system_prompt)
     prompt_text = json.dumps(messages, ensure_ascii=False)
     resp, raw, _ = await _call_or_fallback(
         messages, fallback.get_fallback_complete(to_complete), db
@@ -2111,6 +2160,18 @@ async def batch_complete_questions(
     strategy: str,
 ) -> dict:
     """批量 AI 补全。外部需自行 commit。"""
+    # 从 admin_ai_configs 读取 completion_auto_* 开关和自定义 prompt
+    disabled_fields: set[str] = set()
+    system_prompt: str | None = None
+    try:
+        from app.services.admin_ai_config_service import get_all_configs
+
+        cfg = await get_all_configs(db)
+        disabled_fields = _get_disabled_completion_fields(cfg)
+        system_prompt = str(cfg.get("completion_prompt")) if cfg.get("completion_prompt") else None
+    except Exception:
+        pass  # 默认全部启用
+
     succeeded = 0
     failed = 0
     skipped = 0
@@ -2119,7 +2180,7 @@ async def batch_complete_questions(
     for import_id in import_ids:
         try:
             r = await complete_import_with_strategy(
-                db, user_id, import_id, target_fields, strategy
+                db, user_id, import_id, target_fields, strategy, disabled_fields, system_prompt,
             )
             if r.get("completed"):
                 succeeded += 1
