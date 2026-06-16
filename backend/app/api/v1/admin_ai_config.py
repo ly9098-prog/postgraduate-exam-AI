@@ -3,8 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_roles
 from app.core.database import get_db
-from app.schemas.admin_ai_config import AdminAiModelConfigPatchRequest, AdminAiModelConfigResponse, AdminAiConfigsPatchRequest, AdminAiConfigsResponse
-from app.services.admin_ai_config_service import get_all_configs, list_models, patch_configs, patch_model
+from app.schemas.admin_ai_config import AdminAiModelConfigCreateRequest, AdminAiModelConfigPatchRequest, AdminAiModelConfigResponse, AdminAiConfigsPatchRequest, AdminAiConfigsResponse
+from app.services.admin_ai_config_service import create_model, delete_model, get_all_configs, list_models, patch_configs, patch_model
 
 router = APIRouter(prefix="/api/admin/v1", tags=["admin-ai-config"])
 
@@ -35,6 +35,33 @@ async def update_model(
     except ValueError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+
+@router.post("/ai-models", response_model=AdminAiModelConfigResponse, status_code=status.HTTP_201_CREATED)
+async def create_model_endpoint(
+    data: AdminAiModelConfigCreateRequest,
+    request: Request,
+    current_admin=Depends(require_roles("super_admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await create_model(db, data, current_admin)
+    await db.commit()
+    return result
+
+
+@router.delete("/ai-models/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_model_endpoint(
+    model_id: int,
+    request: Request,
+    current_admin=Depends(require_roles("super_admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await delete_model(db, model_id, current_admin)
+        await db.commit()
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
 
 # ========== Config key-value ==========
