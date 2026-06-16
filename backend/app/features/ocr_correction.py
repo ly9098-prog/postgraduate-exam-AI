@@ -148,6 +148,7 @@ def _should_correct(noise_score: float, config: dict) -> bool:
 async def _call_ai_correction(
     block_text: str, config: dict,
     api_key: str | None = None, base_url: str | None = None,
+    model: str | None = None,
 ) -> str | None:
     from app.ai.client import deepseek
     from app.ai.prompts import build_ocr_correction
@@ -162,7 +163,7 @@ async def _call_ai_correction(
         return None
 
     try:
-        result = await deepseek.chat(messages, temperature=0.1, api_key=api_key, base_url=base_url)
+        result = await deepseek.chat(messages, temperature=0.1, model=model, api_key=api_key, base_url=base_url)
     except Exception:
         return None
 
@@ -201,6 +202,7 @@ async def correct_ocr_blocks(
 
     _api_key = creds[0] if creds else None
     _base_url = creds[1] if creds else None
+    _model_name = creds[2] if creds else None
 
     enabled = config.get("enabled", True)
     if not enabled:
@@ -272,7 +274,7 @@ async def correct_ocr_blocks(
 
     async def _correct_one(idx: int, text: str):
         async with sem:
-            return idx, await _call_ai_correction(text, config, api_key=_api_key, base_url=_base_url)
+            return idx, await _call_ai_correction(text, config, api_key=_api_key, base_url=_base_url, model=_model_name)
 
     results = await asyncio.gather(
         *[_correct_one(idx, text) for idx, text, _ in to_correct],

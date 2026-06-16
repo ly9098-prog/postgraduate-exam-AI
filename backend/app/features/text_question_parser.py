@@ -12,6 +12,8 @@ import re
 import logging
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.features.question_pipeline import process_question_pipeline, normalizer, _guess_subject
 from app.services.formula_normalizer import fix_ocr_formula, normalize_text_import_math
 
@@ -818,7 +820,7 @@ def parse_text_questions(text: str, subject: str) -> dict[str, Any]:
     }
 
 
-async def parse_text_questions_async(text: str, subject: str) -> dict[str, Any]:
+async def parse_text_questions_async(text: str, subject: str, db: AsyncSession | None = None) -> dict[str, Any]:
     """规则解析为主，结构完整度低时调用 LLM 结构化兜底。
 
     LLM 仅做格式整理：识别题干 / 选项 / 答案 / 解析区域、修复换行、
@@ -848,6 +850,7 @@ async def parse_text_questions_async(text: str, subject: str) -> dict[str, Any]:
                     "answer": raw.get("answer"),
                     "analysis": raw.get("analysis"),
                 },
+                db=db,
             )
             if llm_out is not None:
                 raw = _merge_llm_into_raw(raw, llm_out)

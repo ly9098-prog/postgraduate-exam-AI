@@ -439,6 +439,7 @@ export type AdminAiModelConfig = {
   provider: string;
   api_base_url: string | null;
   api_configured: boolean;
+  api_key_masked: string | null;
   is_enabled: boolean;
   is_default: boolean;
   sort_order: number;
@@ -447,6 +448,7 @@ export type AdminAiModelConfig = {
 };
 
 export type AdminAiModelConfigPatchRequest = {
+  name?: string;
   is_enabled?: boolean;
   is_default?: boolean;
   api_key?: string;

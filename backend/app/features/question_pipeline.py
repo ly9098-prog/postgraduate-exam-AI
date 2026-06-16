@@ -1618,6 +1618,7 @@ async def _call_or_fallback(
 
     api_key = creds[0] if creds else None
     base_url = creds[1] if creds else None
+    model_name = creds[2] if creds else None
 
     if not (api_key or deepseek.is_available()):
         return (
@@ -1629,7 +1630,7 @@ async def _call_or_fallback(
             None, None,
         )
     try:
-        resp = await deepseek.chat(messages, api_key=api_key, base_url=base_url)
+        resp = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
         return (resp, resp["content"], resp)
     except RuntimeError as e:
         return (

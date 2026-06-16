@@ -98,11 +98,12 @@ async def _call_ai(messages: list, db: AsyncSession | None = None) -> dict:
 
     api_key = creds[0] if creds else None
     base_url = creds[1] if creds else None
+    model_name = creds[2] if creds else None
 
     if not (api_key or deepseek.is_available()):
         return None
     try:
-        return await deepseek.chat(messages, api_key=api_key, base_url=base_url)
+        return await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
     except RuntimeError:
         return None
 
