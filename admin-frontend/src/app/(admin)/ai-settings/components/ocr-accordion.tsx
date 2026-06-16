@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ChevronDown, FileText, Braces, Filter, Rows3, Save } from "lucide-react";
+import { ChevronDown, FileText, Braces, Filter, Rows3, Save, Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
@@ -111,6 +111,18 @@ function StrategyPanel({ configs }: { configs: Record<string, string | number | 
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-configs"] }),
   });
 
+  const setConfig = (key: string, value: string | boolean) => {
+    mutation.mutate({ configs: { [key]: value } });
+  };
+
+  const toggle = (key: string) => {
+    mutation.mutate({ configs: { [key]: !configs[key] } });
+  };
+
+  const ocrFixModel = String(configs["ocr_fix_model"] ?? "deepseek");
+  const ocrFixStrategy = String(configs["ocr_fix_strategy"] ?? "auto");
+  const ocrFixEnabled = Boolean(configs["ocr_fix_feature_flag"] ?? false);
+
   const toggles = [
     { key: "ocr_strategy_math_formula", label: "数学公式修复", desc: "识别并修正 LaTeX 公式中的 OCR 错误" },
     { key: "ocr_strategy_punctuation", label: "标点符号校正", desc: "统一中英文标点符号格式" },
@@ -118,24 +130,87 @@ function StrategyPanel({ configs }: { configs: Record<string, string | number | 
     { key: "ocr_strategy_space_newline", label: "空格与换行处理", desc: "智能合并错误断行和多余空格" },
   ];
 
-  const toggle = (key: string) => {
-    mutation.mutate({ configs: { [key]: !configs[key] } });
-  };
-
   return (
-    <div className="space-y-3">
-      {toggles.map((item) => (
-        <label
-          key={item.key}
-          className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] px-4 py-3"
-        >
-          <div>
-            <span className="text-sm font-medium text-[var(--ink)]">{item.label}</span>
-            <p className="text-xs text-[var(--color-text-hint)]">{item.desc}</p>
-          </div>
-          <Toggle checked={Boolean(configs[item.key])} onChange={() => toggle(item.key)} disabled={mutation.isPending} />
-        </label>
-      ))}
+    <div className="space-y-4">
+      {/* OCR Fix 模型选择 */}
+      <div className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-primary-light)]/40 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Cpu className="h-4 w-4 text-[var(--color-primary)]" />
+          <span className="text-sm font-bold text-[var(--ink)]">OCR 纠错模型路由</span>
+        </div>
+        <div className="space-y-3">
+          {/* Feature flag */}
+          <label className="flex items-center justify-between gap-3 rounded-lg bg-white/70 px-3 py-2.5">
+            <div>
+              <span className="text-sm font-medium text-[var(--ink)]">启用多模型路由</span>
+              <p className="text-xs text-[var(--color-text-hint)]">开启后使用 OCRFixRouter 进行多模型纠错（feature flag）</p>
+            </div>
+            <Toggle checked={ocrFixEnabled} onChange={() => setConfig("ocr_fix_feature_flag", !ocrFixEnabled)} disabled={mutation.isPending} />
+          </label>
+
+          {/* Strategy */}
+          <label className="flex items-center justify-between gap-3 rounded-lg bg-white/70 px-3 py-2.5">
+            <div>
+              <span className="text-sm font-medium text-[var(--ink)]">降级策略</span>
+              <p className="text-xs text-[var(--color-text-hint)]">auto: Qwen → DeepSeek → Rule / manual: 固定模型</p>
+            </div>
+            <select
+              value={ocrFixStrategy}
+              onChange={(e) => setConfig("ocr_fix_strategy", e.target.value)}
+              disabled={mutation.isPending || !ocrFixEnabled}
+              className="h-8 rounded-lg border border-[var(--color-border)] bg-white px-2 text-xs font-medium outline-none focus:border-[var(--color-primary)] disabled:opacity-50"
+            >
+              <option value="auto">Auto（自动降级）</option>
+              <option value="manual">Manual（固定模型）</option>
+            </select>
+          </label>
+
+          {/* Model selector (only in manual mode) */}
+          {ocrFixStrategy === "manual" && (
+            <label className="flex items-center justify-between gap-3 rounded-lg bg-white/70 px-3 py-2.5">
+              <div>
+                <span className="text-sm font-medium text-[var(--ink)]">纠错模型</span>
+                <p className="text-xs text-[var(--color-text-hint)]">选择用于 OCR 纠错的 AI 模型</p>
+              </div>
+              <select
+                value={ocrFixModel}
+                onChange={(e) => setConfig("ocr_fix_model", e.target.value)}
+                disabled={mutation.isPending || !ocrFixEnabled}
+                className="h-8 rounded-lg border border-[var(--color-border)] bg-white px-2 text-xs font-medium outline-none focus:border-[var(--color-primary)] disabled:opacity-50"
+              >
+                <option value="qwen">Qwen-VL（视觉+文本）</option>
+                <option value="deepseek">DeepSeek（文本纠错）</option>
+                <option value="rule_fallback">Rule（本地规则）</option>
+              </select>
+            </label>
+          )}
+
+          {ocrFixEnabled && (
+            <p className="text-xs text-[var(--color-text-hint)] px-1">
+              API Key 配置请在上方「模型配置」中设置对应模型（DeepSeek / Qwen-VL-Max）。
+              {ocrFixStrategy === "auto" && " Auto 模式按 Qwen → DeepSeek → Rule 顺序自动降级。"}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Existing strategy toggles */}
+      <div className="border-t border-[var(--color-border)]/40 pt-3">
+        <p className="text-xs font-semibold text-[var(--color-text-secondary)] mb-2">纠错策略开关</p>
+        {toggles.map((item) => (
+          <label
+            key={item.key}
+            className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] px-4 py-3"
+          >
+            <div>
+              <span className="text-sm font-medium text-[var(--ink)]">{item.label}</span>
+              <p className="text-xs text-[var(--color-text-hint)]">{item.desc}</p>
+            </div>
+            <Toggle checked={Boolean(configs[item.key])} onChange={() => toggle(item.key)} disabled={mutation.isPending} />
+          </label>
+        ))}
+      </div>
+
       {mutation.isError && (
         <p className="text-xs text-[var(--color-danger)]">{getErrorMessage(mutation.error)}</p>
       )}
