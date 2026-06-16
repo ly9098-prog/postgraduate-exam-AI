@@ -3,6 +3,7 @@ import time
 import httpx
 
 from app.core.config import settings
+from app.utils.sentry_utils import capture_exception, set_tag, start_span
 
 
 class DeepSeekClient:
@@ -49,28 +50,46 @@ class DeepSeekClient:
             "temperature": temperature,
         }
 
-        start = time.time()
-        resp = await self.client.post(
-            f"{_base_url}/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {_api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
-        elapsed = int((time.time() - start) * 1000)
+        with start_span(op="ai.deepseek.chat", description=f"model={model}"):
+            set_tag("ai.model", model)
+            set_tag("ai.provider", "deepseek")
 
-        if resp.status_code != 200:
-            raise RuntimeError(f"DeepSeek API error: {resp.status_code} {resp.text}")
+            start = time.time()
+            try:
+                resp = await self.client.post(
+                    f"{_base_url}/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+                elapsed = int((time.time() - start) * 1000)
 
-        data = resp.json()
-        choice = data["choices"][0]
-        return {
-            "content": choice["message"]["content"],
-            "tokens_used": data["usage"]["total_tokens"],
-            "model": data["model"],
-            "duration_ms": elapsed,
-        }
+                if resp.status_code != 200:
+                    raise RuntimeError(f"DeepSeek API error: {resp.status_code} {resp.text}")
+
+                data = resp.json()
+                choice = data["choices"][0]
+                tokens = data["usage"]["total_tokens"]
+
+                set_tag("ai.tokens", tokens)
+                set_tag("ai.duration_ms", elapsed)
+                if elapsed >= self.timeout * 1000:
+                    set_tag("ai.timeout", True)
+
+                return {
+                    "content": choice["message"]["content"],
+                    "tokens_used": tokens,
+                    "model": data["model"],
+                    "duration_ms": elapsed,
+                }
+            except Exception as exc:
+                capture_exception(
+                    exc,
+                    tags={"ai.model": model, "ai.provider": "deepseek"},
+                )
+                raise
 
     async def close(self):
         if self._client:

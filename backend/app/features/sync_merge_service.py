@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.question import Question
 from app.models.tag import Tag
 
-logger = logging.getLogger("2240ai.sync")
+logger = logging.getLogger("postgraduate-ai.sync")
 
 MAX_QUESTIONS_PER_SYNC = 5000
 MAX_TAGS_PER_SYNC = 1000

@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from app.features.ocr_fix.interfaces import OCRFixResult
+from app.utils.sentry_utils import capture_exception, set_tag, start_span
 
 logger = logging.getLogger(__name__)
 
@@ -67,33 +68,46 @@ class QwenFixer:
                 raw_response="qwen api_key not configured",
             )
 
-        start = time.monotonic()
-        try:
-            corrected = await self._call_qwen(image, ocr_text, context)
-            duration_ms = int((time.monotonic() - start) * 1000)
+        with start_span(op="ai.qwen.fix", description=f"model={self._model}"):
+            set_tag("ai.model", self._model)
+            set_tag("ai.provider", "qwen")
 
-            if corrected is None:
+            start = time.monotonic()
+            try:
+                corrected = await self._call_qwen(image, ocr_text, context)
+                duration_ms = int((time.monotonic() - start) * 1000)
+                set_tag("ai.duration_ms", duration_ms)
+
+                if corrected is None:
+                    capture_exception(
+                        RuntimeError("Qwen returned empty"),
+                        tags={"ai.model": self._model, "ai.provider": "qwen"},
+                    )
+                    return OCRFixResult(
+                        fixed_text=ocr_text,
+                        model_used=self.model_name,
+                        duration_ms=duration_ms,
+                        raw_response="qwen returned empty",
+                    )
+
+                return OCRFixResult(
+                    fixed_text=corrected,
+                    confidence=0.9,
+                    model_used=self.model_name,
+                    raw_response=corrected,
+                    duration_ms=duration_ms,
+                )
+            except Exception as exc:
+                logger.warning("Qwen OCR fix failed: %s", exc)
+                capture_exception(
+                    exc,
+                    tags={"ai.model": self._model, "ai.provider": "qwen"},
+                )
                 return OCRFixResult(
                     fixed_text=ocr_text,
                     model_used=self.model_name,
-                    duration_ms=duration_ms,
-                    raw_response="qwen returned empty",
+                    raw_response=f"error: {exc}",
                 )
-
-            return OCRFixResult(
-                fixed_text=corrected,
-                confidence=0.9,
-                model_used=self.model_name,
-                raw_response=corrected,
-                duration_ms=duration_ms,
-            )
-        except Exception as exc:
-            logger.warning("Qwen OCR fix failed: %s", exc)
-            return OCRFixResult(
-                fixed_text=ocr_text,
-                model_used=self.model_name,
-                raw_response=f"error: {exc}",
-            )
 
     async def _call_qwen(
         self,

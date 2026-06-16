@@ -9,7 +9,7 @@ from typing import Any
 
 from app.core.config import settings
 
-logger = logging.getLogger("2240ai.debug")
+logger = logging.getLogger("postgraduate-ai.debug")
 
 SENSITIVE_KEYS = {"token", "authorization", "secret", "password", "openid"}
 MAX_STRING_LENGTH = 500

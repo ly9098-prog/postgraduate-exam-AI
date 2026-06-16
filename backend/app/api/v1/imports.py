@@ -43,6 +43,7 @@ from app.features.pipeline_orchestrator import (
     run_import_pipeline,
     run_pipeline_background,
 )
+from app.utils.sentry_utils import capture_exception, set_tag
 from app.schemas.import_review import (
     FixQuestionRequest,
     FixQuestionResponse,
@@ -473,8 +474,14 @@ async def _run_image_pipeline_with_db(
     options: dict,
 ) -> None:
     """图片后台任务：OCR → TXT bytes → 现有导入流水线。"""
+    set_tag("stage", "upload")
+    set_tag("upload.filename", source_file)
+    set_tag("upload.type", "image")
     try:
         from app.services.ocr_service import clean_ocr_text, ocr_image
+
+        set_tag("stage", "ocr")
+        set_tag("ocr.engine", "PaddleOCR")
 
         logger.info("image OCR started: pipeline_id=%s file=%s", pipeline_id, source_file)
         runtime_diagnostics = _build_ocr_runtime_diagnostics()
@@ -570,6 +577,7 @@ async def _run_image_pipeline_with_db(
         await _set_image_pipeline_status(pipeline_id, **result)
     except Exception as exc:
         logger.exception("image pipeline failed: pipeline_id=%s file=%s", pipeline_id, source_file)
+        capture_exception(exc, tags={"pipeline_id": pipeline_id, "source_file": source_file, "stage": "ocr"})
         await _fail_image_pipeline(pipeline_id, str(exc))
 
 
@@ -587,6 +595,11 @@ async def start_import_pipeline_from_upload(
 ) -> PipelineUploadResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="文件名不能为空")
+
+    # Sentry upload stage tag
+    set_tag("stage", "upload")
+    set_tag("upload.filename", file.filename or "unknown")
+    set_tag("upload.type", "pipeline")
 
     filename = file.filename
     lower_name = filename.lower()
@@ -787,7 +800,7 @@ async def _run_pipeline_with_db(
     ``import_pipelines`` 表，让 resume endpoint 能做创建者 + 文件身份校验。
     """
     import traceback
-    logger = logging.getLogger("2240ai")
+    logger = logging.getLogger("postgraduate-ai")
     logger.info("Background task started for pipeline %s", pipeline_id)
 
     tmp_path: str | None = None
@@ -840,6 +853,7 @@ async def _run_pipeline_with_db(
             "Background task for pipeline %s crashed: %s\n%s",
             pipeline_id, exc, traceback.format_exc(),
         )
+        capture_exception(exc, tags={"pipeline_id": pipeline_id, "stage": "pipeline_background"})
         await _set_pipeline_store(pipeline_id, {
             "pipeline_id": pipeline_id,
             "status": "failed",
@@ -895,6 +909,10 @@ async def _run_resume_with_db(
             )
     except Exception:
         logger.exception("resume pipeline %s failed", pipeline_id)
+        capture_exception(
+            RuntimeError(f"resume pipeline {pipeline_id} failed"),
+            tags={"pipeline_id": pipeline_id, "stage": "resume"},
+        )
     finally:
         if file_path and os.path.exists(file_path):
             try:
@@ -942,6 +960,10 @@ async def resume_pipeline(
     ).scalar_one_or_none()
     if pipeline_row is None:
         raise HTTPException(status_code=404, detail="流水线不存在")
+
+    set_tag("stage", "upload")
+    set_tag("upload.filename", file.filename or "unknown")
+    set_tag("upload.type", "resume")
 
     # P0-1: 创建者鉴权。NULL 表示历史 pipeline，按旧行为放行（带 warning）。
     if pipeline_row.created_by is None:

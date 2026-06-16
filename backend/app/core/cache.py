@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from app.core.config import settings
 
-logger = logging.getLogger("2240ai.cache")
+logger = logging.getLogger("postgraduate-ai.cache")
 
 
 class CacheClient:
