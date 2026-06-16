@@ -78,6 +78,7 @@ Page({
     examDays: 0,
     showCelebration: false,
     celebrationMotto: '',
+    celebrationType: 'excellent',
     pageEntered: false,
     debugMode: false,
   },
@@ -121,7 +122,7 @@ Page({
       } else if (!this.data.showCelebration) {
         // Deferred celebration — timer completed while page was in background / locked
         wx.vibrateLong()
-        this.setData({ showCelebration: true, celebrationMotto: completionFlag.motto })
+        this.setData({ showCelebration: true, celebrationMotto: completionFlag.motto, celebrationType: completionFlag.type || 'excellent' })
         return
       } else {
         // Already showing celebration — clean up stale flag but don't replay
@@ -397,9 +398,10 @@ Page({
 
     // Celebration — only show if page is in foreground; otherwise defer to onShow
     const motto = MOTTOES[Math.floor(Math.random() * MOTTOES.length)]
-    wx.setStorageSync('pomodoro_completion', { motto, sessionId: this.data.sessionId })
+    const type = this._nextCelebrationType()
+    wx.setStorageSync('pomodoro_completion', { motto, type: type, sessionId: this.data.sessionId })
     if (this._pageVisible) {
-      this.setData({ showCelebration: true, celebrationMotto: motto })
+      this.setData({ showCelebration: true, celebrationMotto: motto, celebrationType: type })
     }
   },
 
@@ -525,8 +527,9 @@ Page({
       this.loadTodayStats()
       wx.vibrateLong()
       const motto = MOTTOES[Math.floor(Math.random() * MOTTOES.length)]
-      wx.setStorageSync('pomodoro_completion', { motto, sessionId: session.id })
-      this.setData({ showCelebration: true, celebrationMotto: motto })
+      const type = this._nextCelebrationType()
+      wx.setStorageSync('pomodoro_completion', { motto, type: type, sessionId: session.id })
+      this.setData({ showCelebration: true, celebrationMotto: motto, celebrationType: type })
       return
     }
 
@@ -742,6 +745,14 @@ Page({
   presetLabel(key) {
     const p = PRESETS.find(p => p.key === key)
     return p ? p.label : key
+  },
+
+  _nextCelebrationType() {
+    var types = ['excellent', 'award', 'thumbsUp']
+    var idx = wx.getStorageSync('pomodoro_anim_idx') || 0
+    var next = (idx + 1) % types.length
+    wx.setStorageSync('pomodoro_anim_idx', next)
+    return types[idx]
   },
 
   getDateStr() {
