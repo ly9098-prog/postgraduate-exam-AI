@@ -1,0 +1,106 @@
+"""DeepSeek 文本纠错适配器 — 作为低成本 fallback。"""
+
+from __future__ import annotations
+
+import logging
+import time
+from typing import Any
+
+from app.features.ocr_fix.interfaces import OCRFixResult
+
+logger = logging.getLogger(__name__)
+
+
+class DeepSeekFixer:
+    """DeepSeek 文本模型 OCR 纠错适配器。
+
+    通过 DeepSeek API 对 OCR 文本进行 AI 纠错。
+    视觉能力有限，仅做文本纠错。
+    """
+
+    model_name = "deepseek"
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        config: dict[str, Any] | None = None,
+    ):
+        from app.ai.client import deepseek
+
+        self._deepseek = deepseek
+        self._api_key = api_key
+        self._base_url = base_url
+        self.config = config or {}
+
+    @property
+    def is_available(self) -> bool:
+        return bool(self._api_key) or self._deepseek.is_available()
+
+    async def fix(
+        self,
+        image: bytes | None = None,
+        ocr_text: str = "",
+        context: dict[str, Any] | None = None,
+    ) -> OCRFixResult:
+        if not ocr_text.strip():
+            return OCRFixResult(
+                fixed_text=ocr_text,
+                model_used=self.model_name,
+            )
+
+        if not self._api_key and not self._deepseek.is_available():
+            return OCRFixResult(
+                fixed_text=ocr_text,
+                confidence=None,
+                model_used=self.model_name,
+                raw_response="deepseek unavailable",
+            )
+
+        from app.ai.prompts import build_ocr_correction
+
+        messages = build_ocr_correction(ocr_text)
+
+        start = time.monotonic()
+        try:
+            result = await self._deepseek.chat(
+                messages,
+                temperature=0.1,
+                api_key=self._api_key,
+                base_url=self._base_url,
+            )
+            duration_ms = int((time.monotonic() - start) * 1000)
+
+            corrected = (result.get("content") or "").strip()
+            if not corrected:
+                return OCRFixResult(
+                    fixed_text=ocr_text,
+                    model_used=self.model_name,
+                    duration_ms=duration_ms,
+                )
+
+            # Safety: reject if AI output is drastically different in length
+            original_len = len(ocr_text)
+            if len(corrected) > original_len * 2 or len(corrected) < original_len * 0.3:
+                return OCRFixResult(
+                    fixed_text=ocr_text,
+                    model_used=self.model_name,
+                    duration_ms=duration_ms,
+                    raw_response="output length out of bounds",
+                )
+
+            return OCRFixResult(
+                fixed_text=corrected,
+                confidence=0.85,
+                model_used=self.model_name,
+                raw_response=corrected,
+                tokens_used=result.get("tokens_used"),
+                duration_ms=duration_ms,
+            )
+        except Exception as exc:
+            logger.warning("DeepSeek OCR fix failed: %s", exc)
+            return OCRFixResult(
+                fixed_text=ocr_text,
+                model_used=self.model_name,
+                raw_response=f"error: {exc}",
+            )

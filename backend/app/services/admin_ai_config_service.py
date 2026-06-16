@@ -55,6 +55,13 @@ _DEFAULT_CONFIGS: dict[str, str] = {
     "ocr_filter_max_chars": "2000",
     "ocr_filter_max_tokens": "4096",
     "ocr_filter_sensitive": "true",
+    # OCR 纠错模型路由配置
+    "ocr_fix_model": "deepseek",
+    "ocr_fix_strategy": "auto",
+    "qwen_api_key": "",
+    "qwen_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "qwen_model": "qwen-vl-max",
+    "ocr_fix_feature_flag": "false",
     "completion_prompt": (
         "你是考研题目补全助手。根据已有的题干和上下文，补全缺失字段。"
         "你的输出仅是辅助提示，必须经过人工审核后才能采用。"
@@ -111,6 +118,9 @@ _DEFAULT_MODELS: list[dict] = [
      "api_base_url": None, "is_enabled": False, "is_default": False, "sort_order": 2},
     {"name": "claude-3.5-sonnet", "display_name": "Claude 3.5 Sonnet", "provider": "anthropic",
      "api_base_url": None, "is_enabled": False, "is_default": False, "sort_order": 3},
+    {"name": "qwen-vl-max", "display_name": "Qwen-VL-Max", "provider": "openai",
+     "api_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+     "is_enabled": False, "is_default": False, "sort_order": 4},
 ]
 
 
