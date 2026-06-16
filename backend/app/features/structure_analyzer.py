@@ -245,8 +245,21 @@ def _expand_answer_pages(
 def analyze_structure(
     normalized_blocks: list[dict],
     file_metadata: dict | None = None,
+    features: dict | None = None,
 ) -> dict:
-    """分析文档结构，返回结构分析结果。"""
+    """分析文档结构，返回结构分析结果。
+
+    features: 可选的功能开关 dict，控制具体检测项目。
+        {"question_type": True, "options": True, "answer": True, "analysis": True}
+        禁用的检测项将被跳过。
+    """
+    if features is None:
+        features = {"question_type": True, "options": True, "answer": True, "analysis": True}
+
+    detect_question = features.get("question_type", True)
+    detect_answer = features.get("answer", True)
+    detect_analysis = features.get("analysis", True)
+
     total_blocks = len(normalized_blocks)
 
     if total_blocks == 0:
@@ -289,9 +302,9 @@ def analyze_structure(
         block_idx = block.get("block_index", 0)
         page = block.get("page", block_idx)
 
-        q_count = _count_patterns(text, QUESTION_PATTERNS)
-        a_count = _count_keywords(text, ANSWER_KEYWORDS)
-        e_count = _count_keywords(text, ANALYSIS_KEYWORDS)
+        q_count = _count_patterns(text, QUESTION_PATTERNS) if detect_question else 0
+        a_count = _count_keywords(text, ANSWER_KEYWORDS) if detect_answer else 0
+        e_count = _count_keywords(text, ANALYSIS_KEYWORDS) if detect_analysis else 0
         noise_signals += _count_ocr_noise_signals(text)
 
         total_q_matches += q_count
