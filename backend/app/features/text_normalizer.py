@@ -5,6 +5,7 @@
 """
 
 import re
+from typing import Set as TypedSet
 
 
 # Unicode 替换字符和常见 OCR 乱码
@@ -87,10 +88,26 @@ _RE_POINTER_ARROW = re.compile(r"([\w)\]）】])\s*[−\-–—]\s*>(?=\w)")
 
 
 class ImportTextNormalizer:
-    """导入文本标准化器 — 纯规则实现。"""
+    """导入文本标准化器 — 纯规则实现。
 
-    def __init__(self, extra_watermark_patterns: list | None = None):
+    enabled_strategies: 启用的策略名称集合。
+        None = 全部启用（向后兼容）。
+        可用的策略名: space_newline, digit_letter, math_formula, punctuation
+    """
+
+    def __init__(
+        self,
+        extra_watermark_patterns: list | None = None,
+        enabled_strategies: TypedSet[str] | None = None,
+    ):
         self._extra_watermark_patterns = extra_watermark_patterns or []
+        self._enabled_strategies = enabled_strategies
+
+    def _strategy_enabled(self, name: str) -> bool:
+        """检查某策略是否启用。None = 全部启用。"""
+        if self._enabled_strategies is None:
+            return True
+        return name in self._enabled_strategies
 
     def normalize(self, raw_blocks: list[dict]) -> list[dict]:
         """标准化文本块，返回 normalized_blocks。"""
@@ -100,11 +117,19 @@ class ImportTextNormalizer:
             cleaned = text
             cleaned = self._filter_watermark_text(cleaned)
             cleaned = self._filter_page_number(cleaned)
-            cleaned = self._clean_newlines(cleaned)
+            if self._strategy_enabled("space_newline"):
+                cleaned = self._clean_newlines(cleaned)
             cleaned = self._clean_garbled(cleaned)
-            cleaned = self._normalize_spaces(cleaned)
-            cleaned = self._correct_ocr_errors(cleaned)
+            if self._strategy_enabled("space_newline"):
+                cleaned = self._normalize_spaces(cleaned)
+            if self._strategy_enabled("digit_letter"):
+                cleaned = self._correct_ocr_errors(cleaned)
             cleaned = self._fix_pointer_arrows(cleaned)
+            if self._strategy_enabled("math_formula"):
+                from app.services.formula_normalizer import fix_ocr_formula
+                cleaned = fix_ocr_formula(cleaned)
+            if self._strategy_enabled("punctuation"):
+                cleaned = self._normalize_punctuation(cleaned)
             out = {
                 "page": block.get("page", 1),
                 "block_index": block.get("block_index", i),
@@ -321,6 +346,44 @@ class ImportTextNormalizer:
         if not text or ">" not in text:
             return text
         return _RE_POINTER_ARROW.sub(r"\1->", text)
+
+    # ---------------------------------------------------------------
+    # 标点符号规范化
+    # ---------------------------------------------------------------
+
+    _RE_FULLWIDTH_ASCII = re.compile(r"[！-～]")
+    _RE_CJK_PUNCT = re.compile(r"([一-鿿])[,;!?](?=\s*[一-鿿])")
+
+    def _normalize_punctuation(self, text: str) -> str:
+        """标点符号规范化：统一中英文标点。
+
+        1. 全角 ASCII → 半角（保留中文全角标点）
+        2. 中文语境下半角逗号/分号/感叹号/问号 → 中文标点
+        """
+        if not text:
+            return text
+
+        # 全角 ASCII 转半角（! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~）
+        # 但保留全角逗号句号等中文标点
+        def _to_halfwidth(m: re.Match) -> str:
+            ch = m.group(0)
+            code = ord(ch) - 0xfee0
+            return chr(code) if 0x21 <= code <= 0x7e else ch
+
+        text = self._RE_FULLWIDTH_ASCII.sub(_to_halfwidth, text)
+
+        # 中文后跟半角逗号/分号/叹号/问号 → 中文标点
+        text = self._RE_CJK_PUNCT.sub(r"\1\g<2>", text)
+        text = self._RE_CJK_PUNCT.sub(
+            lambda m: {
+                ",": "，", ";": "；", "!": "！", "?": "？",
+            }.get(m.group(2), m.group(2)),
+            text,
+        )
+
+        # 连续中文引号配对统一
+        text = text.replace("'", "'").replace("'", "'")
+        return text
 
     # ---------------------------------------------------------------
     # 水印/页码过滤

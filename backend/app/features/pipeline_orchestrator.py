@@ -1064,10 +1064,18 @@ class ImportPipeline:
 
         return {"raw_blocks": filtered, "warnings": warnings}
 
-    def _run_normalize_text(self, raw_blocks: list[dict], **_kw) -> dict:
+    async def _run_normalize_text(self, raw_blocks: list[dict], **_kw) -> dict:
         """Stage 1: text cleaning via ImportTextNormalizer."""
         extra_patterns = _kw.get("watermark_patterns") or []
-        normalizer = ImportTextNormalizer(extra_watermark_patterns=extra_patterns)
+
+        # 从 DB admin_ai_configs 加载 ocr_strategy_* 开关
+        db = _kw.get("db")
+        enabled_strategies = await self._load_ocr_strategies(db)
+
+        normalizer = ImportTextNormalizer(
+            extra_watermark_patterns=extra_patterns,
+            enabled_strategies=enabled_strategies,
+        )
         normalized_blocks = normalizer.normalize(raw_blocks)
 
         warnings: list[str] = []
@@ -1076,6 +1084,55 @@ class ImportPipeline:
             warnings.append(f"{empty_count} blocks empty after normalization")
 
         return {"normalized_blocks": normalized_blocks, "warnings": warnings}
+
+    async def _load_ocr_strategies(self, db) -> set[str] | None:
+        """从 DB 读取 ocr_strategy_* 配置，返回启用的策略名称集合。
+        None = 默认全部启用（无 DB 时）。
+        """
+        if not db:
+            return None
+        try:
+            from app.services.admin_ai_config_service import get_all_configs
+
+            cfg = await get_all_configs(db)
+        except Exception:
+            return None
+
+        strategy_map = {
+            "math_formula": "ocr_strategy_math_formula",
+            "punctuation": "ocr_strategy_punctuation",
+            "digit_letter": "ocr_strategy_digit_letter",
+            "space_newline": "ocr_strategy_space_newline",
+        }
+        enabled = set()
+        for name, cfg_key in strategy_map.items():
+            val = cfg.get(cfg_key) if cfg else None
+            if val is None or str(val).lower() == "true":
+                enabled.add(name)
+        return enabled
+
+    async def _load_structure_features_async(self, db) -> dict[str, bool]:
+        """从 DB 读取 ocr_structure_* 配置，返回 feature flags 字典。"""
+        features = {"question_type": True, "options": True, "answer": True, "analysis": True}
+        if not db:
+            return features
+        try:
+            from app.services.admin_ai_config_service import get_all_configs
+
+            cfg = await get_all_configs(db)
+        except Exception:
+            return features
+        feature_map = {
+            "question_type": "ocr_structure_question_type",
+            "options": "ocr_structure_options",
+            "answer": "ocr_structure_answer",
+            "analysis": "ocr_structure_analysis",
+        }
+        for name, cfg_key in feature_map.items():
+            val = cfg.get(cfg_key) if cfg else None
+            if val is not None and str(val).lower() == "false":
+                features[name] = False
+        return features
 
     async def _run_ocr_correction(self, normalized_blocks: list[dict], options: dict | None = None, **_kw) -> dict:
         """Stage 1.5: AI OCR text correction for noisy blocks.
@@ -1313,9 +1370,11 @@ class ImportPipeline:
 
         return config
 
-    def _run_analyze_structure(self, normalized_blocks: list[dict], **_kw) -> dict:
+    async def _run_analyze_structure(self, normalized_blocks: list[dict], **_kw) -> dict:
         """Stage 2: detect question/answer document layout."""
-        structure = analyze_structure(normalized_blocks)
+        db = _kw.get("db")
+        features = await self._load_structure_features_async(db)
+        structure = analyze_structure(normalized_blocks, features=features)
 
         # In AUTO mode, refine import mode based on structure analysis
         import_mode = _kw.get("import_mode")
