@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.admin_security import AdminPrincipal
 from app.core.config import settings
 from app.models.admin_ai_config import AdminAiConfig, AdminAiModelConfig, decrypt_api_key, encrypt_api_key
-from app.schemas.admin_ai_config import AdminAiModelConfigResponse, AdminAiModelConfigPatchRequest
+from app.schemas.admin_ai_config import AdminAiModelConfigCreateRequest, AdminAiModelConfigResponse, AdminAiModelConfigPatchRequest
 from app.services.admin_audit_service import write_admin_audit
 
 # ---------------------------------------------------------------------------
@@ -114,13 +114,9 @@ _DEFAULT_CONFIGS: dict[str, str] = {
 _DEFAULT_MODELS: list[dict] = [
     {"name": "deepseek-v4-flash", "display_name": "DeepSeek V4 Flash", "provider": "deepseek",
      "api_base_url": "https://api.deepseek.com", "is_enabled": True, "is_default": True, "sort_order": 1},
-    {"name": "gpt-4o", "display_name": "GPT-4o", "provider": "openai",
-     "api_base_url": None, "is_enabled": False, "is_default": False, "sort_order": 2},
-    {"name": "claude-3.5-sonnet", "display_name": "Claude 3.5 Sonnet", "provider": "anthropic",
-     "api_base_url": None, "is_enabled": False, "is_default": False, "sort_order": 3},
     {"name": "qwen-vl-max", "display_name": "Qwen-VL-Max", "provider": "openai",
      "api_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-     "is_enabled": False, "is_default": False, "sort_order": 4},
+     "is_enabled": False, "is_default": False, "sort_order": 2},
 ]
 
 
@@ -254,6 +250,69 @@ async def patch_model(
         model.id, detail={"model_name": model.name, "changes": changes},
     )
     return _model_to_response(model)
+
+
+async def create_model(
+    db: AsyncSession,
+    data: AdminAiModelConfigCreateRequest,
+    operator: AdminPrincipal,
+) -> AdminAiModelConfigResponse:
+    """动态添加新模型。"""
+    from sqlalchemy import func
+
+    # 计算下一个 sort_order
+    max_order = await db.scalar(select(func.max(AdminAiModelConfig.sort_order)))
+    next_order = (max_order or 0) + 1
+
+    model = AdminAiModelConfig(
+        name=data.name,
+        display_name=data.display_name,
+        provider=data.provider,
+        api_base_url=data.api_base_url,
+        is_enabled=True,
+        is_default=False,
+        sort_order=next_order,
+    )
+    if data.api_key and data.api_key.strip():
+        model.api_key_encrypted = encrypt_api_key(data.api_key)
+    db.add(model)
+    await db.flush()
+
+    await write_admin_audit(
+        db, operator, "ai_model_config.create", "ai_model_config",
+        model.id, detail={"model_name": model.name, "provider": model.provider},
+    )
+    return _model_to_response(model)
+
+
+async def delete_model(
+    db: AsyncSession,
+    model_id: int,
+    operator: AdminPrincipal,
+) -> None:
+    """删除模型（保留最后一个启用模型）。"""
+    model = await db.get(AdminAiModelConfig, model_id)
+    if model is None:
+        raise ValueError(f"模型 {model_id} 不存在")
+
+    # 检查是否最后一个启用模型
+    if model.is_enabled:
+        result = await db.execute(
+            select(AdminAiModelConfig).where(
+                AdminAiModelConfig.is_enabled == True,  # noqa: E712
+                AdminAiModelConfig.id != model_id,
+            )
+        )
+        enabled_count = len(result.scalars().all())
+        if enabled_count == 0:
+            raise ValueError("不能删除最后一个启用的模型")
+
+    await write_admin_audit(
+        db, operator, "ai_model_config.delete", "ai_model_config",
+        model.id, detail={"model_name": model.name},
+    )
+    await db.delete(model)
+    await db.flush()
 
 
 # ---------------------------------------------------------------------------

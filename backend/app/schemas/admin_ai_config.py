@@ -26,6 +26,14 @@ class AdminAiModelConfigPatchRequest(BaseModel):
     api_base_url: str | None = None
 
 
+class AdminAiModelConfigCreateRequest(BaseModel):
+    name: str
+    display_name: str
+    provider: str
+    api_base_url: str | None = None
+    api_key: str | None = None
+
+
 class AdminAiConfigsResponse(BaseModel):
     """扁平映射: config_key → config_value (自动 JSON 反序列化)"""
     configs: dict
