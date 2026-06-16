@@ -12,6 +12,7 @@ class AdminAiModelConfigResponse(BaseModel):
     provider: str
     api_base_url: str | None = None
     api_configured: bool = False
+    api_key_masked: str | None = None
     is_enabled: bool
     is_default: bool
     sort_order: int
@@ -20,6 +21,7 @@ class AdminAiModelConfigResponse(BaseModel):
 
 
 class AdminAiModelConfigPatchRequest(BaseModel):
+    name: str | None = None
     is_enabled: bool | None = None
     is_default: bool | None = None
     api_key: str | None = None

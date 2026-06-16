@@ -206,6 +206,7 @@ async def _call_ai_for_repair(
 
     api_key = creds[0] if creds else None
     base_url = creds[1] if creds else None
+    model_name = creds[2] if creds else None
 
     messages = build_repair_question(raw_text, existing)
     prompt_text = json.dumps(messages, ensure_ascii=False)
@@ -215,7 +216,7 @@ async def _call_ai_for_repair(
         return None
 
     try:
-        result = await deepseek.chat(messages, temperature=0.3, api_key=api_key, base_url=base_url)
+        result = await deepseek.chat(messages, temperature=0.3, model=model_name, api_key=api_key, base_url=base_url)
     except Exception:
         return None
 

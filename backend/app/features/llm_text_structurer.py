@@ -21,6 +21,8 @@ import time
 from difflib import SequenceMatcher
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -380,6 +382,7 @@ def _validate_no_hallucination(
 async def structure_text_block(
     block_text: str,
     rule_hint: dict[str, Any] | None = None,
+    db: AsyncSession | None = None,
 ) -> dict[str, Any] | None:
     """对单个文本块调用 LLM 结构化。失败 / 不可用时返回 None（静默降级）。
 
@@ -404,6 +407,14 @@ async def structure_text_block(
     if not deepseek.is_available():
         return None
 
+    # Read model name from DB config when available, fall back to env var
+    _model_name = settings.TEXT_IMPORT_LLM_MODEL
+    if db is not None:
+        from app.services.model_config_resolver import ensure_db_model_configured
+        _creds = await ensure_db_model_configured(db)
+        if _creds:
+            _model_name = _creds[2]
+
     messages = build_text_structure(block_text, rule_hint)
     estimated = _estimate_tokens(json.dumps(messages, ensure_ascii=False))
     if not _budget_available(estimated):
@@ -414,7 +425,7 @@ async def structure_text_block(
         result = await deepseek.chat(
             messages,
             temperature=0.0,
-            model=settings.TEXT_IMPORT_LLM_MODEL,
+            model=_model_name,
         )
     except Exception as exc:
         logger.warning("text_structure llm call failed: %s", exc)

@@ -75,7 +75,6 @@ function AddModelDialog({
 
   const handleSaveAndClose = () => {
     handleSave();
-    reset();
   };
 
   return (
@@ -162,23 +161,26 @@ function ModelCard({
   model: AdminAiModelConfig;
   onToggle: () => void;
   onSetDefault: () => void;
-  onSaveApiConfig: (id: number, data: { api_key?: string; api_base_url?: string }) => void;
+  onSaveApiConfig: (id: number, data: { name?: string; api_key?: string; api_base_url?: string }) => void;
   onDelete: () => void;
   disabled: boolean;
 }) {
   const [isEditingApi, setIsEditingApi] = useState(false);
+  const [nameInput, setNameInput] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiBaseUrlInput, setApiBaseUrlInput] = useState("");
 
   const openApiEdit = () => {
-    setApiKeyInput(model.api_configured ? "****" : "");
+    setNameInput(model.name);
+    setApiKeyInput(model.api_configured ? (model.api_key_masked ?? "****") : "");
     setApiBaseUrlInput(model.api_base_url ?? "");
     setIsEditingApi(true);
   };
 
   const saveApiConfig = () => {
-    const payload: { api_key?: string; api_base_url?: string } = {};
-    if (apiKeyInput && apiKeyInput !== "****") payload.api_key = apiKeyInput;
+    const payload: { name?: string; api_key?: string; api_base_url?: string } = {};
+    if (nameInput.trim() && nameInput.trim() !== model.name) payload.name = nameInput.trim();
+    if (apiKeyInput && apiKeyInput !== model.api_key_masked) payload.api_key = apiKeyInput;
     if (apiBaseUrlInput !== model.api_base_url) payload.api_base_url = apiBaseUrlInput;
     onSaveApiConfig(model.id, payload);
     setIsEditingApi(false);
@@ -282,6 +284,16 @@ function ModelCard({
             <button onClick={() => setIsEditingApi(false)} className="text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]">
               <X className="h-4 w-4" />
             </button>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">模型标识</label>
+            <input
+              type="text"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              className="h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
+              placeholder="deepseek-v4-flash"
+            />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">API Key</label>
