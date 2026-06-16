@@ -173,7 +173,7 @@
   <!-- ===== CELEBRATION OVERLAY (Lottie) ===== -->
   <animated-view
     show="{{showCelebration}}"
-    type="excellent"
+    type="{{celebrationType}}"
     theme="dark"
     title="完成一个番茄钟"
     detail="专注 {{workDuration}} 分钟"

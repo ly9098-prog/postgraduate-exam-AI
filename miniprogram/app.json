@@ -21,6 +21,14 @@
     "navigationBarTextStyle": "white",
     "backgroundColor": "#EEF5FF"
   },
+  "subPackages": [
+    {
+      "root": "subpackages/animation",
+      "name": "animation",
+      "independent": false,
+      "pages": ["animation-index/animation-index"]
+    }
+  ],
   "style": "v2",
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents"
