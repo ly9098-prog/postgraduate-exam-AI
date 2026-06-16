@@ -331,11 +331,12 @@ def build_repair_question(raw_text: str, existing: dict | None = None) -> list:
     ]
 
 
-def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: str) -> list:
+def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: str, system_prompt: str | None = None) -> list:
     """对一条 question_imports 记录批量补全指定字段。
 
     strategy: fill_empty | force_overwrite
     target_fields: 需补全的字段列表
+    system_prompt: 来自 DB admin_ai_configs 的自定义 prompt，为 None 时使用默认值。
     """
     stem = (qi.get("parsed_content") or {}).get("text") or qi.get("raw_text") or ""
     options = qi.get("parsed_options") or {}
@@ -363,7 +364,7 @@ def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: 
         else "请重新生成以下字段的内容，覆盖原有值。"
     )
     return [
-        {"role": "system", "content": SYSTEM_PROMPTS["complete_question"]},
+        {"role": "system", "content": system_prompt or SYSTEM_PROMPTS["complete_question"]},
         {
             "role": "user",
             "content": (
@@ -382,14 +383,14 @@ def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: 
     ]
 
 
-def build_complete_question(qi: dict, missing_fields: list[str]) -> list:
+def build_complete_question(qi: dict, missing_fields: list[str], system_prompt: str | None = None) -> list:
     stem = (qi.get("parsed_content") or {}).get("text") or qi.get("raw_text") or ""
     options = qi.get("parsed_options") or {}
     answer = qi.get("parsed_answer") or ""
     analysis = qi.get("parsed_analysis") or ""
     subject = qi.get("subject") or ""
     return [
-        {"role": "system", "content": SYSTEM_PROMPTS["complete_question"]},
+        {"role": "system", "content": system_prompt or SYSTEM_PROMPTS["complete_question"]},
         {
             "role": "user",
             "content": (
@@ -432,10 +433,13 @@ def build_text_structure(block_text: str, rule_hint: dict | None = None) -> list
     ]
 
 
-def build_ocr_correction(block_text: str) -> list:
-    """构建 OCR 文本纠错 prompt。"""
+def build_ocr_correction(block_text: str, system_prompt: str | None = None) -> list:
+    """构建 OCR 文本纠错 prompt。
+
+    system_prompt: 来自 DB admin_ai_configs 的自定义 prompt，为 None 时使用默认值。
+    """
     return [
-        {"role": "system", "content": SYSTEM_PROMPTS["ocr_correction"]},
+        {"role": "system", "content": system_prompt or SYSTEM_PROMPTS["ocr_correction"]},
         {
             "role": "user",
             "content": (

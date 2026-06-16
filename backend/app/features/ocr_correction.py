@@ -156,7 +156,19 @@ async def _call_ai_correction(
     if not (api_key or deepseek.is_available()):
         return None
 
-    messages = build_ocr_correction(block_text)
+    # ocr_filter_max_chars: 截断超长文本
+    max_chars = config.get("ocr_filter_max_chars")
+    if max_chars is not None and len(block_text) > int(max_chars):
+        block_text = block_text[:int(max_chars)]
+
+    # ocr_filter_max_tokens: 超过上限则跳过
+    max_tokens = config.get("ocr_filter_max_tokens")
+    if max_tokens is not None:
+        estimated = _estimate_tokens(block_text) * 3  # prompt + response overhead
+        if estimated > int(max_tokens):
+            return None
+
+    messages = build_ocr_correction(block_text, system_prompt=config.get("ocr_correction_prompt"))
     estimated = _estimate_tokens(block_text) * 3  # prompt + response overhead
 
     if not _check_token_limit(estimated, config):
@@ -194,6 +206,20 @@ async def correct_ocr_blocks(
     """AI OCR 文本纠错层。"""
     if config is None:
         config = {}
+
+    # 从 DB admin_ai_configs 读取过滤配置
+    if db is not None:
+        try:
+            from app.services.admin_ai_config_service import get_all_configs
+
+            db_cfg = await get_all_configs(db)
+            for key in ("ocr_filter_max_chars", "ocr_filter_max_tokens", "ocr_correction_prompt"):
+                if key in db_cfg and key not in config:
+                    val = db_cfg[key]
+                    if val is not None and val != "":
+                        config[key] = val
+        except Exception:
+            pass
 
     creds = None
     if db is not None:

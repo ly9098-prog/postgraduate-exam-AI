@@ -1,8 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { ChevronDown, FileText, Braces, Filter, Rows3, Save, Brain } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronDown, FileText, Braces, Filter, Rows3, Save, Brain, WandSparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
@@ -26,17 +26,7 @@ const items: AccordionItem[] = [
     icon: FileText,
     color: "#5b7b9a",
     content: (configs) => (
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-semibold text-[var(--ink)]">OCR 纠错 Prompt</label>
-          <p className="mt-0.5 text-xs text-[var(--color-text-hint)]">用于纠正 OCR 识别结果中的常见错误</p>
-          <textarea
-            className="mt-2 h-28 w-full resize-none rounded-xl border border-[var(--color-border)] bg-white p-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
-            value={String(configs["ocr_correction_prompt"] ?? "")}
-            readOnly
-          />
-        </div>
-      </div>
+      <PromptPanel configs={configs} />
     ),
   },
   {
@@ -98,6 +88,65 @@ const items: AccordionItem[] = [
     ),
   },
 ];
+
+function PromptPanel({ configs }: { configs: Record<string, string | number | boolean> }) {
+  const queryClient = useQueryClient();
+  const savedPrompt = String(configs["ocr_correction_prompt"] ?? "");
+  const [prompt, setPrompt] = useState(savedPrompt);
+
+  useEffect(() => {
+    setPrompt(savedPrompt);
+  }, [savedPrompt]);
+
+  const mutation = useMutation({
+    mutationFn: (data: AdminAiConfigsPatchRequest) =>
+      apiRequest<AdminAiConfigsResponse>("/ai-configs", {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-configs"] }),
+  });
+
+  const hasChanges = prompt !== savedPrompt;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-semibold text-[var(--ink)]">OCR 纠错 Prompt</label>
+        <p className="mt-0.5 text-xs text-[var(--color-text-hint)]">自定义 OCR 纠错提示词，修改后需要点击保存</p>
+        <div className="relative mt-2">
+          <textarea
+            className="h-28 w-full resize-none rounded-xl border border-[var(--color-border)] bg-white p-3 pr-12 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+          <WandSparkles className="absolute right-4 top-3 h-5 w-5 text-[var(--color-text-hint)]" />
+        </div>
+      </div>
+      {hasChanges && (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => mutation.mutate({ configs: { ocr_correction_prompt: prompt } })}
+            disabled={mutation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-primary-dark)] bg-[var(--color-primary)] px-4 py-2 text-xs font-semibold text-white transition-all hover:bg-[var(--color-primary-dark)] disabled:opacity-50"
+          >
+            <Save className="h-3.5 w-3.5" />
+            {mutation.isPending ? "保存中..." : "保存 Prompt"}
+          </button>
+          <button
+            onClick={() => setPrompt(savedPrompt)}
+            className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-xs font-semibold text-[var(--color-text-secondary)]"
+          >
+            取消
+          </button>
+        </div>
+      )}
+      {mutation.isError && (
+        <p className="text-xs text-[var(--color-danger)]">{getErrorMessage(mutation.error)}</p>
+      )}
+    </div>
+  );
+}
 
 function StrategyPanel({ configs }: { configs: Record<string, string | number | boolean> }) {
   const queryClient = useQueryClient();
