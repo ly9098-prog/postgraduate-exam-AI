@@ -133,6 +133,15 @@ export function AiCompletionPreview({
                 disabled={loading}
               />
               <WandSparkles className="absolute right-4 top-4 h-5 w-5 text-[var(--color-text-hint)]" />
+              {prompt !== savedPrompt && !loading && (
+                <button
+                  onClick={() => saveMutation.mutate({ configs: { completion_prompt: prompt } })}
+                  disabled={saveMutation.isPending}
+                  className="absolute bottom-3 right-4 inline-flex items-center gap-1 rounded-lg border border-[var(--color-primary-dark)] bg-[var(--color-primary)] px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-all hover:bg-[var(--color-primary-dark)] disabled:opacity-50"
+                >
+                  {saveMutation.isPending ? "保存中..." : "保存"}
+                </button>
+              )}
             </div>
           </label>
 
