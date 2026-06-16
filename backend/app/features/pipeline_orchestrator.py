@@ -26,7 +26,7 @@ from app.features.ai_validation import validate_ai_results
 from app.features.answer_matcher import match_answers
 from app.features.batch_validation import validate_batch_structure
 from app.features.import_mode import ImportMode, detect_import_mode, get_strategy
-from app.features.ocr_correction import correct_ocr_blocks
+from app.features.ocr_correction import correct_ocr_blocks, _detect_noise, _should_correct
 from app.features.page_classifier import classify_pages, filter_blocks_by_classification
 from app.features.question_normalizer import normalize_questions
 from app.features.question_splitter import split_questions
@@ -1078,8 +1078,57 @@ class ImportPipeline:
         return {"normalized_blocks": normalized_blocks, "warnings": warnings}
 
     async def _run_ocr_correction(self, normalized_blocks: list[dict], options: dict | None = None, **_kw) -> dict:
-        """Stage 1.5: AI OCR text correction for noisy blocks."""
+        """Stage 1.5: AI OCR text correction for noisy blocks.
+
+        支持两种模式（feature flag 控制）：
+        - legacy（默认）: 原有 correct_ocr_blocks 逻辑
+        - router: 通过 OCRFixRouter 的多模型纠错
+        """
         opts = options or {}
+        db = _kw.get("db")
+
+        # 检查 feature flag
+        use_router = await self._check_ocr_fix_feature_flag(db)
+
+        if use_router:
+            return await self._run_ocr_correction_router(
+                normalized_blocks, opts, db,
+            )
+
+        # Legacy mode: 原有逻辑
+        return await self._run_ocr_correction_legacy(normalized_blocks, opts, db)
+
+    async def _check_ocr_fix_feature_flag(self, db) -> bool:
+        """检查 OCR fix router feature flag。
+
+        优先级: options > DB config > env var > default (False)。
+        """
+        flag = self.options.get("ocr_fix_feature_flag")
+        if flag is not None:
+            return str(flag).lower() == "true"
+        # 尝试从 DB admin_ai_configs 读取
+        if db:
+            try:
+                from app.services.admin_ai_config_service import get_all_configs
+                db_configs = await get_all_configs(db)
+                val = db_configs.get("ocr_fix_feature_flag")
+                if val is not None:
+                    if isinstance(val, bool):
+                        return val
+                    return str(val).lower() == "true"
+            except Exception:
+                pass
+        # 尝试从环境变量读取
+        import os
+        env_val = os.environ.get("OCR_FIX_FEATURE_FLAG")
+        if env_val is not None:
+            return env_val.lower() == "true"
+        return False
+
+    async def _run_ocr_correction_legacy(
+        self, normalized_blocks: list[dict], opts: dict, db,
+    ) -> dict:
+        """原有 correct_ocr_blocks 逻辑。"""
         correction_config = {
             "enabled": opts.get("enable_ocr_correction", True),
             "mode": opts.get("ocr_correction_mode", "auto"),
@@ -1088,7 +1137,7 @@ class ImportPipeline:
             "monthly_token_limit": opts.get("ocr_correction_monthly_token_limit", 1000000),
         }
 
-        result = await correct_ocr_blocks(normalized_blocks, correction_config, db=_kw.get("db"))
+        result = await correct_ocr_blocks(normalized_blocks, correction_config, db=db)
 
         warnings: list[str] = []
         stats = result.get("stats", {})
@@ -1108,6 +1157,161 @@ class ImportPipeline:
             },
             "warnings": warnings,
         }
+
+    async def _run_ocr_correction_router(
+        self, normalized_blocks: list[dict], opts: dict, db,
+    ) -> dict:
+        """通过 OCRFixRouter 执行多模型 OCR 纠错。"""
+        from app.features.ocr_fix import OCRFixRouter
+
+        # 构建 router 配置
+        router_config = await self._build_router_config(opts, db)
+
+        router = OCRFixRouter()
+        router.configure(router_config)
+
+        # 对每个 block 执行纠错（仅对有 noise 的 block）
+        corrections: list[dict] = []
+        corrected_blocks: list[dict] = []
+        stats = {
+            "total_blocks": len(normalized_blocks),
+            "noisy_blocks": 0,
+            "corrected_blocks": 0,
+            "skipped_blocks": 0,
+            "model_used": "",
+        }
+
+        for idx, block in enumerate(normalized_blocks):
+            text = str(block.get("normalized_text") or "")
+            if not text.strip():
+                corrected_blocks.append(block)
+                continue
+
+            noise_score = _detect_noise(block)
+            should = _should_correct(noise_score, router_config)
+
+            if not should:
+                corrected_blocks.append(block)
+                stats["skipped_blocks"] += 1
+                corrections.append({
+                    "block_index": block.get("block_index", 0),
+                    "page": block.get("page", 1),
+                    "noise_score": round(noise_score, 3),
+                    "corrected": False,
+                })
+                continue
+
+            stats["noisy_blocks"] += 1
+
+            # 通过 router 纠错
+            result = await router.fix(
+                ocr_text=text,
+                context={"block_index": idx, "page": block.get("page", 1)},
+            )
+
+            new_block = dict(block)
+            if result.fixed_text != text and result.confidence and result.confidence > 0:
+                new_block["normalized_text"] = result.fixed_text
+                new_block["ocr_correction_applied"] = True
+                new_block["ocr_fix_model"] = result.model_used
+                stats["corrected_blocks"] += 1
+                corrections.append({
+                    "block_index": block.get("block_index", 0),
+                    "page": block.get("page", 1),
+                    "noise_score": round(noise_score, 3),
+                    "corrected": True,
+                    "model_used": result.model_used,
+                })
+            else:
+                corrections.append({
+                    "block_index": block.get("block_index", 0),
+                    "page": block.get("page", 1),
+                    "noise_score": round(noise_score, 3),
+                    "corrected": False,
+                    "reason": result.raw_response or "no_change",
+                })
+
+            corrected_blocks.append(new_block)
+
+        # 记录使用的模型
+        used_models = {c.get("model_used") for c in corrections if c.get("model_used")}
+        stats["model_used"] = ", ".join(sorted(used_models)) if used_models else "none"
+
+        warnings: list[str] = []
+        if stats["corrected_blocks"] > 0:
+            warnings.append(
+                f"Router corrected {stats['corrected_blocks']}/{stats['total_blocks']} blocks "
+                f"(model: {stats['model_used']})"
+            )
+
+        return {
+            "normalized_blocks": corrected_blocks,
+            "ocr_correction_diagnostics": {
+                "stats": stats,
+                "corrections": corrections,
+            },
+            "warnings": warnings,
+        }
+
+    async def _build_router_config(self, opts: dict, db) -> dict:
+        """从 options + DB config 构建 router 配置。"""
+        config: dict = {
+            "mode": opts.get("ocr_correction_mode", "auto"),
+            "noise_threshold": opts.get("ocr_noise_threshold", 0.3),
+            "daily_token_limit": opts.get("ocr_correction_daily_token_limit", 50000),
+            "monthly_token_limit": opts.get("ocr_correction_monthly_token_limit", 1000000),
+        }
+
+        # 从 options 读取 OCR fix 特定配置
+        for key in ("ocr_fix_model", "ocr_fix_strategy", "qwen_api_key",
+                     "qwen_base_url", "qwen_model", "deepseek_base_url"):
+            val = opts.get(key)
+            if val is not None:
+                config[key] = val
+
+        # 从 DB admin_ai_configs 读取配置
+        if db:
+            try:
+                from app.services.admin_ai_config_service import get_all_configs
+
+                db_configs = await get_all_configs(db)
+                for key in ("ocr_fix_model", "ocr_fix_strategy", "qwen_api_key",
+                             "qwen_base_url", "qwen_model",
+                             "ocr_fix_feature_flag"):
+                    if key in db_configs and key not in config:
+                        val = db_configs[key]
+                        # 空字符串不覆盖
+                        if val is not None and val != "":
+                            config[key] = val
+            except Exception:
+                pass
+
+        # 从 DB AdminAiModelConfig 解析 DeepSeek API key
+        if db:
+            try:
+                from app.services.model_config_resolver import resolve_active_model
+
+                model_creds = await resolve_active_model(db)
+                if model_creds:
+                    config["deepseek_api_key"] = model_creds["api_key"]
+                    if "deepseek_base_url" not in config:
+                        config["deepseek_base_url"] = model_creds["api_base_url"]
+            except Exception:
+                pass
+
+        # 从环境变量补充（兜底）
+        import os
+        if "deepseek_api_key" not in config:
+            config["deepseek_api_key"] = os.environ.get("DEEPSEEK_API_KEY", "")
+        if "qwen_api_key" not in config:
+            config["qwen_api_key"] = os.environ.get("QWEN_API_KEY", "")
+        if "qwen_base_url" not in config:
+            config["qwen_base_url"] = os.environ.get(
+                "QWEN_BASE_URL",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            )
+
+        return config
 
     def _run_analyze_structure(self, normalized_blocks: list[dict], **_kw) -> dict:
         """Stage 2: detect question/answer document layout."""
