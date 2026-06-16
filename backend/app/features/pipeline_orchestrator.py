@@ -33,6 +33,7 @@ from app.features.question_splitter import split_questions
 from app.features.similarity_matcher import match_similar_questions
 from app.features.structure_analyzer import analyze_structure
 from app.features.text_normalizer import ImportTextNormalizer
+from app.utils.sentry_utils import capture_exception, set_tag, start_span
 
 logger = logging.getLogger(__name__)
 
@@ -355,6 +356,11 @@ def _ocr_scanned_pdf(
     doc = _open_pdf_doc(content_or_path)
     total_pages = len(doc)
 
+    # Sentry OCR monitoring
+    set_tag("ocr.engine", "PaddleOCR")
+    ocr_source = str(content_or_path) if isinstance(content_or_path, (str, os.PathLike)) else pipeline_id
+    set_tag("ocr.source", ocr_source[:200])
+
     # Page range: convert 1-based user params to 0-based indices
     start_idx = max(0, (page_start or 1) - 1)
     end_idx = min(total_pages, page_end or total_pages)
@@ -474,6 +480,18 @@ def _ocr_scanned_pdf(
 
     if pipeline_id:
         _ocr_progress.pop(pipeline_id, None)
+
+    # Sentry OCR summary
+    ocr_duration = time.monotonic() - start_time
+    set_tag("ocr.pages_total", pages_to_process)
+    set_tag("ocr.pages_processed", len(set(b.get("page") for b in blocks)))
+    set_tag("ocr.blocks", len(blocks))
+    set_tag("ocr.duration_ms", int(ocr_duration * 1000))
+    if timed_out:
+        set_tag("ocr.timed_out", True)
+    failed_count = len(ocr_text_fallback_unavailable_pages)
+    if failed_count:
+        set_tag("ocr.failed_pages", failed_count)
 
     return blocks
 
@@ -771,19 +789,48 @@ class PipelineStage:
         """异步执行阶段。"""
         self.status = "running"
         start = time.monotonic()
-        try:
-            if asyncio.iscoroutinefunction(self.fn):
-                result = await self.fn(**kwargs)
-            else:
-                result = await asyncio.to_thread(self.fn, **kwargs)
-            self.status = "completed"
-            self.duration_ms = round((time.monotonic() - start) * 1000)
-            return result
-        except Exception as exc:
-            self.status = "failed"
-            self.error = str(exc)
-            self.duration_ms = round((time.monotonic() - start) * 1000)
-            raise
+
+        # Stage → 业务阶段映射（用于 Sentry 导题链路埋点）
+        _STAGE_BUSINESS_MAP = {
+            "extract": "ocr",
+            "normalize_text": "parse",
+            "ocr_correction": "ai_correct",
+            "analyze_structure": "parse",
+            "classify_pages": "parse",
+            "split": "parse",
+            "match": "parse",
+            "normalize_schema": "parse",
+            "batch_validation": "parse",
+            "batch_dedup": "parse",
+            "repair": "ai_correct",
+            "ai_validation": "parse",
+            "similarity_match": "parse",
+            "review": "save",
+        }
+        set_tag("stage", _STAGE_BUSINESS_MAP.get(self.name, "unknown"))
+        set_tag("pipeline.stage", self.name)
+
+        with start_span(op=f"pipeline.{self.name}", description=f"stage={self.name}"):
+            try:
+                if asyncio.iscoroutinefunction(self.fn):
+                    result = await self.fn(**kwargs)
+                else:
+                    result = await asyncio.to_thread(self.fn, **kwargs)
+                self.status = "completed"
+                self.duration_ms = round((time.monotonic() - start) * 1000)
+                set_tag("pipeline.stage_status", "completed")
+                set_tag("pipeline.stage_duration_ms", self.duration_ms)
+                return result
+            except Exception as exc:
+                self.status = "failed"
+                self.error = str(exc)
+                self.duration_ms = round((time.monotonic() - start) * 1000)
+                set_tag("pipeline.stage_status", "failed")
+                capture_exception(
+                    exc,
+                    tags={"pipeline.stage": self.name, "stage": _STAGE_BUSINESS_MAP.get(self.name, "unknown")},
+                )
+                raise
 
     def to_dict(self) -> dict:
         d = {

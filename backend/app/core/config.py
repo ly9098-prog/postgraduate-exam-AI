@@ -84,6 +84,7 @@ class Settings(BaseSettings):
 
     # Sentry
     SENTRY_DSN: str = ""
+    SENTRY_ENV: str = ""
 
     # 数学公式图片化
     MATH_IMAGE_RENDER_ENABLED: bool = False

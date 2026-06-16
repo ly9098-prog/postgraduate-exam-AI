@@ -12,7 +12,7 @@ from app.features.sync_merge_service import (
 )
 from app.schemas.sync import SyncPackage, SyncReportResponse
 
-logger = logging.getLogger("2240ai.sync")
+logger = logging.getLogger("postgraduate-ai.sync")
 
 router = APIRouter(prefix="/api/v1/sync", tags=["sync"])
 
