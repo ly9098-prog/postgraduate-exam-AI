@@ -443,6 +443,7 @@ export type AdminAiModelConfig = {
   is_enabled: boolean;
   is_default: boolean;
   sort_order: number;
+  feature: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -453,6 +454,7 @@ export type AdminAiModelConfigPatchRequest = {
   is_default?: boolean;
   api_key?: string;
   api_base_url?: string;
+  feature?: string | null;
 };
 
 export type AdminAiModelConfigCreateRequest = {
@@ -461,6 +463,7 @@ export type AdminAiModelConfigCreateRequest = {
   provider: string;
   api_base_url?: string;
   api_key?: string;
+  feature?: string | null;
 };
 
 export type AdminAiConfigsResponse = {

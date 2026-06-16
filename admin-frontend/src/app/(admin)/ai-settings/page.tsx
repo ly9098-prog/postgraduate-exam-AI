@@ -9,7 +9,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
 import { useAuthStore } from "@/lib/auth/auth-store";
-import type { AISettings, AISettingsPatchRequest, AIStatsResponse, AdminAiConfigsResponse } from "@/lib/api/types";
+import type { AISettings, AISettingsPatchRequest, AIStatsResponse, AdminAiConfigsResponse, AdminAiModelConfig } from "@/lib/api/types";
 import { StatCards } from "./components/stat-cards";
 import { TrendChart } from "./components/trend-chart";
 import { ModelCards } from "./components/model-cards";
@@ -45,6 +45,28 @@ export default function AISettingsPage() {
     queryFn: () => apiRequest<AdminAiConfigsResponse>("/ai-configs"),
     select: (data) => data.configs,
   });
+
+  const models = useQuery({
+    queryKey: ["ai-models"],
+    queryFn: () => apiRequest<AdminAiModelConfig[]>("/ai-models"),
+  });
+
+  const resolvedModels = useMemo(() => {
+    const list = models.data ?? [];
+    const resolve = (feature: string): string | null => {
+      const featured = list.find((m) => m.is_enabled && m.feature === feature);
+      if (featured) return featured.display_name;
+      const untagged = list.find((m) => m.is_enabled && !m.feature);
+      if (untagged) return untagged.display_name;
+      const any = list.find((m) => m.is_enabled);
+      return any?.display_name ?? null;
+    };
+    return {
+      ocr: resolve("ocr"),
+      completion: resolve("completion"),
+      analysis: resolve("analysis"),
+    };
+  }, [models.data]);
 
   const current = settings.data;
   const usageRate = useMemo(() => {
@@ -142,9 +164,9 @@ export default function AISettingsPage() {
         </p>
       )}
       {/* ===== Part 4: OCR Correction Config ===== */}
-      <OcrAccordion configs={configs.data} loading={configs.isLoading} />
+      <OcrAccordion configs={configs.data} loading={configs.isLoading} modelName={resolvedModels.ocr} />
       {/* ===== Part 5: AI Completion Config ===== */}
-      <AiCompletionPreview configs={configs.data} loading={configs.isLoading} />
+      <AiCompletionPreview configs={configs.data} loading={configs.isLoading} modelName={resolvedModels.completion} />
       <p className="mt-1 text-xs text-[var(--color-text-hint)]">
         配置已保存，将在后续版本中生效
       </p>
