@@ -94,7 +94,7 @@ async def _call_ai(messages: list, db: AsyncSession | None = None) -> dict:
     creds = None
     if db is not None:
         from app.services.model_config_resolver import ensure_db_model_configured
-        creds = await ensure_db_model_configured(db)
+        creds = await ensure_db_model_configured(db, feature="analysis")
 
     api_key = creds[0] if creds else None
     base_url = creds[1] if creds else None

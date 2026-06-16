@@ -44,7 +44,7 @@ async def analyze_error(
         }
 
     from app.services.model_config_resolver import ensure_db_model_configured
-    creds = await ensure_db_model_configured(db)
+    creds = await ensure_db_model_configured(db, feature="analysis")
 
     api_key = creds[0] if creds else None
     base_url = creds[1] if creds else None
@@ -113,7 +113,7 @@ async def analyze_error(
 
 async def generate_advice(db: AsyncSession, user_id: int, subject: str | None = None) -> dict:
     from app.services.model_config_resolver import ensure_db_model_configured
-    creds = await ensure_db_model_configured(db)
+    creds = await ensure_db_model_configured(db, feature="analysis")
 
     api_key = creds[0] if creds else None
     base_url = creds[1] if creds else None

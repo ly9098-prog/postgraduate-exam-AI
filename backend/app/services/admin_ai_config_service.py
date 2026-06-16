@@ -113,10 +113,12 @@ _DEFAULT_CONFIGS: dict[str, str] = {
 
 _DEFAULT_MODELS: list[dict] = [
     {"name": "deepseek-v4-flash", "display_name": "DeepSeek V4 Flash", "provider": "deepseek",
-     "api_base_url": "https://api.deepseek.com", "is_enabled": True, "is_default": True, "sort_order": 1},
+     "api_base_url": "https://api.deepseek.com", "is_enabled": True, "is_default": True, "sort_order": 1,
+     "feature": None},
     {"name": "qwen-vl-max", "display_name": "Qwen-VL-Max", "provider": "openai",
      "api_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-     "is_enabled": False, "is_default": False, "sort_order": 2},
+     "is_enabled": False, "is_default": False, "sort_order": 2,
+     "feature": None},
 ]
 
 
@@ -198,6 +200,7 @@ def _model_to_response(m: AdminAiModelConfig) -> AdminAiModelConfigResponse:
         is_enabled=m.is_enabled,
         is_default=m.is_default,
         sort_order=m.sort_order,
+        feature=m.feature,
         created_at=m.created_at,
         updated_at=m.updated_at,
     )
@@ -251,6 +254,20 @@ async def patch_model(
         model.api_key_encrypted = encrypt_api_key(data.api_key)
         changes["api_key_updated"] = True
 
+    if "feature" in data.model_fields_set:
+        if data.feature:
+            # 同一功能只能分配给一个模型，清除其它模型的相同特征
+            others = await db.execute(
+                select(AdminAiModelConfig).where(
+                    AdminAiModelConfig.feature == data.feature,
+                    AdminAiModelConfig.id != model_id,
+                )
+            )
+            for other in others.scalars().all():
+                other.feature = None
+        model.feature = data.feature  # explicit null/None clears the tag
+        changes["feature"] = model.feature
+
     model.updated_at = datetime.utcnow()
     await db.flush()
 
@@ -273,6 +290,16 @@ async def create_model(
     max_order = await db.scalar(select(func.max(AdminAiModelConfig.sort_order)))
     next_order = (max_order or 0) + 1
 
+    if data.feature:
+        # 新模型接管该功能时，清除其它模型的相同特征标记
+        others = await db.execute(
+            select(AdminAiModelConfig).where(
+                AdminAiModelConfig.feature == data.feature,
+            )
+        )
+        for other in others.scalars().all():
+            other.feature = None
+
     model = AdminAiModelConfig(
         name=data.name,
         display_name=data.display_name,
@@ -281,6 +308,7 @@ async def create_model(
         is_enabled=True,
         is_default=False,
         sort_order=next_order,
+        feature=data.feature if data.feature else None,
     )
     if data.api_key and data.api_key.strip():
         model.api_key_encrypted = encrypt_api_key(data.api_key)

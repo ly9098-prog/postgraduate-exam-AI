@@ -2,10 +2,17 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Brain, Cpu, Globe, Key, ToggleLeft, ToggleRight, CheckCircle2, Info, X, Trash2, Plus } from "lucide-react";
+import {
+  Brain, Cpu, Globe, Key, ToggleLeft, ToggleRight,
+  CheckCircle2, Info, X, Trash2, Plus, Tag,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
-import type { AdminAiModelConfig, AdminAiModelConfigCreateRequest, AdminAiModelConfigPatchRequest } from "@/lib/api/types";
+import type {
+  AdminAiModelConfig,
+  AdminAiModelConfigCreateRequest,
+  AdminAiModelConfigPatchRequest,
+} from "@/lib/api/types";
 import { getErrorMessage } from "@/lib/api/errors";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
@@ -22,6 +29,19 @@ const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "#c49a6b",
 };
 
+const FEATURE_LABELS: Record<string, { label: string; color: string }> = {
+  ocr: { label: "OCR 纠错", color: "#5b7b9a" },
+  completion: { label: "AI 补全", color: "#6b9b6b" },
+  analysis: { label: "AI 解析", color: "#c49a6b" },
+};
+
+const FEATURE_OPTIONS = [
+  { value: "", label: "通用（所有功能）" },
+  { value: "ocr", label: "OCR 纠错" },
+  { value: "completion", label: "AI 补全" },
+  { value: "analysis", label: "AI 解析" },
+];
+
 function getProviderIcon(provider: string) {
   return PROVIDER_ICONS[provider] || Brain;
 }
@@ -30,11 +50,22 @@ function getProviderColor(provider: string) {
   return PROVIDER_COLORS[provider] || "#5b7b9a";
 }
 
+function resolveFeatureModel(
+  models: AdminAiModelConfig[], feature: string,
+): AdminAiModelConfig | null {
+  const featured = models.find((m) => m.is_enabled && m.feature === feature);
+  if (featured) return featured;
+  const untagged = models.find((m) => m.is_enabled && !m.feature);
+  if (untagged) return untagged;
+  return models.find((m) => m.is_enabled) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Add Model Dialog
+// ---------------------------------------------------------------------------
+
 function AddModelDialog({
-  open,
-  onClose,
-  onSave,
-  loading,
+  open, onClose, onSave, loading,
 }: {
   open: boolean;
   onClose: () => void;
@@ -46,15 +77,13 @@ function AddModelDialog({
   const [provider, setProvider] = useState("openai");
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [feature, setFeature] = useState("");
 
   if (!open) return null;
 
   const reset = () => {
-    setName("");
-    setDisplayName("");
-    setProvider("openai");
-    setApiBaseUrl("");
-    setApiKey("");
+    setName(""); setDisplayName(""); setProvider("openai");
+    setApiBaseUrl(""); setApiKey(""); setFeature("");
   };
 
   const handleSave = () => {
@@ -65,22 +94,16 @@ function AddModelDialog({
       provider: provider.trim(),
       api_base_url: apiBaseUrl.trim() || undefined,
       api_key: apiKey.trim() || undefined,
+      feature: feature || null,
     });
   };
 
-  const handleClose = () => {
-    reset();
-    onClose();
-  };
-
-  const handleSaveAndClose = () => {
-    handleSave();
-  };
+  const handleClose = () => { reset(); onClose(); };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(16,24,40,0.42)] px-4">
       <div className="w-full max-w-md rounded-3xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-floating)]">
-        <div className="flex items-center justify-between mb-5">
+        <div className="mb-5 flex items-center justify-between">
           <h3 className="font-display text-2xl font-bold text-[var(--ink)]">添加模型</h3>
           <button onClick={handleClose} className="text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]">
             <X className="h-5 w-5" />
@@ -89,59 +112,56 @@ function AddModelDialog({
 
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">模型标识 <span className="text-[var(--color-danger)]">*</span></label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">
+              模型标识 <span className="text-[var(--color-danger)]">*</span>
+            </label>
+            <input value={name} onChange={(e) => setName(e.target.value)}
               className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
-              placeholder="gpt-4o"
-            />
+              placeholder="gpt-4o" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">显示名称 <span className="text-[var(--color-danger)]">*</span></label>
-            <input
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
+            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">
+              显示名称 <span className="text-[var(--color-danger)]">*</span>
+            </label>
+            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)}
               className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
-              placeholder="GPT-4o"
-            />
+              placeholder="GPT-4o" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">提供商 <span className="text-[var(--color-danger)]">*</span></label>
-            <input
-              value={provider}
-              onChange={(e) => setProvider(e.target.value)}
+            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">
+              提供商 <span className="text-[var(--color-danger)]">*</span>
+            </label>
+            <input value={provider} onChange={(e) => setProvider(e.target.value)}
               className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
-              placeholder="openai"
-            />
+              placeholder="openai" />
             <p className="mt-1 text-xs text-[var(--color-text-hint)]">常用值: deepseek / openai / anthropic / google</p>
           </div>
           <div>
             <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">API Base URL <span className="text-[var(--color-text-hint)]">（可选）</span></label>
-            <input
-              value={apiBaseUrl}
-              onChange={(e) => setApiBaseUrl(e.target.value)}
+            <input value={apiBaseUrl} onChange={(e) => setApiBaseUrl(e.target.value)}
               className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
-              placeholder="https://api.openai.com/v1"
-            />
+              placeholder="https://api.openai.com/v1" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">API Key <span className="text-[var(--color-text-hint)]">（可选）</span></label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+            <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
               className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
-              placeholder="sk-..."
-            />
+              placeholder="sk-..." />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">用途 <span className="text-[var(--color-text-hint)]">（可选）</span></label>
+            <select value={feature} onChange={(e) => setFeature(e.target.value)}
+              className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]">
+              {FEATURE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
           </div>
         </div>
 
         <div className="mt-6 flex justify-end gap-3">
-          <Button variant="secondary" onClick={handleClose} disabled={loading}>
-            取消
-          </Button>
-          <Button onClick={handleSaveAndClose} disabled={loading || !name.trim() || !displayName.trim() || !provider.trim()}>
+          <Button variant="secondary" onClick={handleClose} disabled={loading}>取消</Button>
+          <Button onClick={handleSave} disabled={loading || !name.trim() || !displayName.trim() || !provider.trim()}>
             {loading ? "添加中..." : "添加"}
           </Button>
         </div>
@@ -150,18 +170,17 @@ function AddModelDialog({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Model Card
+// ---------------------------------------------------------------------------
+
 function ModelCard({
-  model,
-  onToggle,
-  onSetDefault,
-  onSaveApiConfig,
-  onDelete,
-  disabled,
+  model, onToggle, onSetDefault, onSaveApiConfig, onDelete, disabled,
 }: {
   model: AdminAiModelConfig;
   onToggle: () => void;
   onSetDefault: () => void;
-  onSaveApiConfig: (id: number, data: { name?: string; api_key?: string; api_base_url?: string }) => void;
+  onSaveApiConfig: (id: number, data: AdminAiModelConfigPatchRequest) => void;
   onDelete: () => void;
   disabled: boolean;
 }) {
@@ -169,25 +188,29 @@ function ModelCard({
   const [nameInput, setNameInput] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiBaseUrlInput, setApiBaseUrlInput] = useState("");
+  const [featureInput, setFeatureInput] = useState("");
 
   const openApiEdit = () => {
     setNameInput(model.name);
     setApiKeyInput(model.api_configured ? (model.api_key_masked ?? "****") : "");
     setApiBaseUrlInput(model.api_base_url ?? "");
+    setFeatureInput(model.feature ?? "");
     setIsEditingApi(true);
   };
 
   const saveApiConfig = () => {
-    const payload: { name?: string; api_key?: string; api_base_url?: string } = {};
+    const payload: AdminAiModelConfigPatchRequest = {};
     if (nameInput.trim() && nameInput.trim() !== model.name) payload.name = nameInput.trim();
     if (apiKeyInput && apiKeyInput !== model.api_key_masked) payload.api_key = apiKeyInput;
     if (apiBaseUrlInput !== model.api_base_url) payload.api_base_url = apiBaseUrlInput;
+    if (featureInput !== (model.feature ?? "")) payload.feature = featureInput || null;
     onSaveApiConfig(model.id, payload);
     setIsEditingApi(false);
   };
 
   const Icon = getProviderIcon(model.provider);
   const color = getProviderColor(model.provider);
+  const featureInfo = model.feature ? FEATURE_LABELS[model.feature] : null;
 
   return (
     <div
@@ -222,25 +245,17 @@ function ModelCard({
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <button
-            onClick={onDelete}
-            disabled={disabled}
+          <button onClick={onDelete} disabled={disabled}
             className="rounded-lg p-1.5 text-[var(--color-text-hint)] opacity-0 transition-all hover:bg-[var(--color-danger-light)] hover:text-[var(--color-danger)] group-hover:opacity-100 disabled:opacity-30"
-            title="删除模型"
-          >
+            title="删除模型">
             <Trash2 className="h-4 w-4" />
           </button>
-          <button
-            onClick={onToggle}
-            disabled={disabled}
+          <button onClick={onToggle} disabled={disabled}
             className="transition-transform hover:scale-110 disabled:opacity-50"
-            title={model.is_enabled ? "禁用" : "启用"}
-          >
-            {model.is_enabled ? (
-              <ToggleRight className="h-6 w-6" style={{ color }} />
-            ) : (
-              <ToggleLeft className="h-6 w-6 text-[var(--color-text-hint)]" />
-            )}
+            title={model.is_enabled ? "禁用" : "启用"}>
+            {model.is_enabled
+              ? <ToggleRight className="h-6 w-6" style={{ color }} />
+              : <ToggleLeft className="h-6 w-6 text-[var(--color-text-hint)]" />}
           </button>
         </div>
       </div>
@@ -257,11 +272,20 @@ function ModelCard({
           </span>
         )}
         {model.is_default && (
-          <span
-            className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-white"
-            style={{ backgroundColor: color }}
-          >
+          <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-white"
+            style={{ backgroundColor: color }}>
             默认模型
+          </span>
+        )}
+        {featureInfo ? (
+          <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-white"
+            style={{ backgroundColor: featureInfo.color }}>
+            <Tag className="h-3 w-3" />
+            {featureInfo.label}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-bg-input)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-hint)]">
+            通用
           </span>
         )}
       </div>
@@ -273,7 +297,6 @@ function ModelCard({
         </div>
       </div>
 
-      {/* API Config – inline edit */}
       {isEditingApi ? (
         <div className="mt-4 space-y-3 rounded-xl border border-[var(--color-border)]/60 bg-white p-3">
           <div className="flex items-center justify-between">
@@ -281,80 +304,151 @@ function ModelCard({
               <Key className="h-3 w-3" />
               API 配置
             </div>
-            <button onClick={() => setIsEditingApi(false)} className="text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]">
+            <button onClick={() => setIsEditingApi(false)}
+              className="text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]">
               <X className="h-4 w-4" />
             </button>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">模型标识</label>
-            <input
-              type="text"
-              value={nameInput}
-              onChange={(e) => setNameInput(e.target.value)}
+            <input type="text" value={nameInput} onChange={(e) => setNameInput(e.target.value)}
               className="h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
-              placeholder="deepseek-v4-flash"
-            />
+              placeholder="deepseek-v4-flash" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">API Key</label>
-            <input
-              type="password"
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
+            <input type="password" value={apiKeyInput} onChange={(e) => setApiKeyInput(e.target.value)}
               className="h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
-              placeholder={model.api_configured ? "输入新 API Key 以替换" : "sk-..."}
-            />
+              placeholder={model.api_configured ? "输入新 API Key 以替换" : "sk-..."} />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">
-              API Base URL <span className="text-[var(--color-text-hint)]">（可选）</span>
-            </label>
-            <input
-              type="text"
-              value={apiBaseUrlInput}
-              onChange={(e) => setApiBaseUrlInput(e.target.value)}
+            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">API Base URL <span className="text-[var(--color-text-hint)]">（可选）</span></label>
+            <input type="text" value={apiBaseUrlInput} onChange={(e) => setApiBaseUrlInput(e.target.value)}
               className="h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
-              placeholder="https://api.deepseek.com"
-            />
+              placeholder="https://api.deepseek.com" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">用途</label>
+            <select value={featureInput} onChange={(e) => setFeatureInput(e.target.value)}
+              className="h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]">
+              {FEATURE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={saveApiConfig}
-              disabled={disabled}
-              className="flex-1 rounded-lg bg-[var(--color-primary)] py-2 text-xs font-semibold text-white transition-colors hover:bg-[var(--color-primary-dark)] disabled:opacity-50"
-            >
+            <button onClick={saveApiConfig} disabled={disabled}
+              className="flex-1 rounded-lg bg-[var(--color-primary)] py-2 text-xs font-semibold text-white transition-colors hover:bg-[var(--color-primary-dark)] disabled:opacity-50">
               保存
             </button>
-            <button
-              onClick={() => setIsEditingApi(false)}
-              className="flex-1 rounded-lg border border-[var(--color-border)] py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-input)]"
-            >
+            <button onClick={() => setIsEditingApi(false)}
+              className="flex-1 rounded-lg border border-[var(--color-border)] py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-input)]">
               取消
             </button>
           </div>
         </div>
       ) : (
-        <button
-          onClick={openApiEdit}
-          className="mt-3 w-full rounded-lg border border-dashed border-[var(--color-border)] py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-solid hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]"
-        >
+        <button onClick={openApiEdit}
+          className="mt-3 w-full rounded-lg border border-dashed border-[var(--color-border)] py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-solid hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]">
           <Key className="mr-1 inline-block h-3 w-3" />
           {model.api_configured ? "编辑 API 配置" : "配置 API Key"}
         </button>
       )}
 
       {model.is_enabled && !model.is_default && (
-        <button
-          onClick={onSetDefault}
-          disabled={disabled}
-          className="mt-3 w-full rounded-lg border border-[var(--color-border)] py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:opacity-50"
-        >
+        <button onClick={onSetDefault} disabled={disabled}
+          className="mt-3 w-full rounded-lg border border-[var(--color-border)] py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:opacity-50">
           设为默认模型
         </button>
       )}
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Feature Mapping Section
+// ---------------------------------------------------------------------------
+
+function FeatureMapping({
+  models, onAssign, disabled,
+}: {
+  models: AdminAiModelConfig[];
+  onAssign: (modelId: number, feature: string | null) => void;
+  disabled: boolean;
+}) {
+  const features = [
+    { key: "ocr", label: "OCR 纠错", desc: "OCR 识别结果纠错与结构化", color: "#5b7b9a" },
+    { key: "completion", label: "AI 补全", desc: "导入题目字段补全与生成", color: "#6b9b6b" },
+    { key: "analysis", label: "AI 解析", desc: "错题分析与学习建议生成", color: "#c49a6b" },
+  ];
+
+  const enabledModels = models.filter((m) => m.is_enabled);
+
+  return (
+    <div className="mb-6 rounded-xl border border-[var(--color-border)]/60 bg-white/60 p-4">
+      <h4 className="mb-3 text-sm font-semibold text-[var(--ink)]">功能模型映射</h4>
+      <p className="mb-4 text-xs text-[var(--color-text-hint)]">
+        为每个功能指定专用模型。未指定的功能将使用标记为"通用"的模型。
+      </p>
+      <div className="space-y-3">
+        {features.map((feat) => {
+          const assigned = resolveFeatureModel(models, feat.key);
+          return (
+            <div key={feat.key}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-border)]/40 bg-white px-4 py-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: feat.color }} />
+                <div>
+                  <p className="text-sm font-medium text-[var(--ink)]">{feat.label}</p>
+                  <p className="text-xs text-[var(--color-text-hint)]">{feat.desc}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {assigned ? (
+                  <span className="text-xs font-medium text-[var(--color-text-secondary)]">
+                    {assigned.display_name}
+                    {assigned.feature !== feat.key && (
+                      <span className="ml-1 text-[var(--color-text-hint)]">（兜底）</span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="text-xs text-[var(--color-text-hint)]">未配置</span>
+                )}
+                {enabledModels.length > 0 && (
+                  <select
+                    value={assigned?.id ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (!val) {
+                        // 清除该功能的模型指定 → 设置 feature 为 null
+                        const current = models.find((m) => m.feature === feat.key);
+                        if (current) onAssign(current.id, null);
+                        return;
+                      }
+                      onAssign(Number(val), feat.key);
+                    }}
+                    disabled={disabled}
+                    className="h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-2 text-xs outline-none focus:border-[var(--color-primary)] disabled:opacity-50">
+                    <option value="">默认</option>
+                    {enabledModels.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.display_name}{m.feature === feat.key ? " ✓" : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Export
+// ---------------------------------------------------------------------------
 
 export function ModelCards() {
   const queryClient = useQueryClient();
@@ -372,9 +466,7 @@ export function ModelCards() {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ai-models"] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-models"] }),
   });
 
   const createMutation = useMutation({
@@ -383,31 +475,29 @@ export function ModelCards() {
         method: "POST",
         body: JSON.stringify(data),
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ai-models"] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-models"] }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) =>
-      apiRequest<void>(`/ai-models/${id}`, {
-        method: "DELETE",
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ai-models"] });
-    },
+      apiRequest<void>(`/ai-models/${id}`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-models"] }),
   });
 
   const toggleModel = (model: AdminAiModelConfig) => {
     patchMutation.mutate({ id: model.id, data: { is_enabled: !model.is_enabled } });
   };
 
-  const handleSaveApiConfig = (id: number, data: { api_key?: string; api_base_url?: string }) => {
+  const handleSaveApiConfig = (id: number, data: AdminAiModelConfigPatchRequest) => {
     patchMutation.mutate({ id, data });
   };
 
   const setDefault = (model: AdminAiModelConfig) => {
     patchMutation.mutate({ id: model.id, data: { is_default: true } });
+  };
+
+  const handleAssignFeature = (modelId: number, feature: string | null) => {
+    patchMutation.mutate({ id: modelId, data: { feature } });
   };
 
   const handleDelete = () => {
@@ -422,9 +512,14 @@ export function ModelCards() {
     <div className="rounded-2xl border border-[var(--color-border)]/80 bg-white/80 p-5 shadow-sm">
       <div className="mb-5">
         <h3 className="font-display text-xl font-bold text-[var(--ink)]">模型配置</h3>
-        <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">管理接入的 AI 模型及其调用优先级</p>
+        <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">管理接入的 AI 模型及其功能映射</p>
       </div>
 
+      {patchMutation.isError && (
+        <p className="mb-4 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
+          {getErrorMessage(patchMutation.error)}
+        </p>
+      )}
       {createMutation.isError && (
         <p className="mb-4 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
           {getErrorMessage(createMutation.error)}
@@ -441,6 +536,16 @@ export function ModelCards() {
         </p>
       )}
 
+      {/* Feature Mapping */}
+      {!models.isLoading && modelList.length > 0 && (
+        <FeatureMapping
+          models={modelList}
+          onAssign={handleAssignFeature}
+          disabled={patchMutation.isPending}
+        />
+      )}
+
+      {/* Model Grid */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
         {models.isLoading
           ? Array.from({ length: 2 }).map((_, i) => (
@@ -467,10 +572,8 @@ export function ModelCards() {
             ))}
       </div>
 
-      <button
-        onClick={() => setShowAddDialog(true)}
-        className="mt-4 w-full rounded-xl border-2 border-dashed border-[var(--color-border)] py-4 text-sm font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-solid hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]"
-      >
+      <button onClick={() => setShowAddDialog(true)}
+        className="mt-4 w-full rounded-xl border-2 border-dashed border-[var(--color-border)] py-4 text-sm font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-solid hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]">
         <Plus className="mr-1.5 inline-block h-4 w-4" />
         添加模型
       </button>
@@ -478,10 +581,7 @@ export function ModelCards() {
       <AddModelDialog
         open={showAddDialog}
         onClose={() => setShowAddDialog(false)}
-        onSave={(data) => {
-          createMutation.mutate(data);
-          setShowAddDialog(false);
-        }}
+        onSave={(data) => { createMutation.mutate(data); setShowAddDialog(false); }}
         loading={createMutation.isPending}
       />
 

@@ -198,7 +198,7 @@ async def correct_ocr_blocks(
     creds = None
     if db is not None:
         from app.services.model_config_resolver import ensure_db_model_configured
-        creds = await ensure_db_model_configured(db)
+        creds = await ensure_db_model_configured(db, feature="ocr")
 
     _api_key = creds[0] if creds else None
     _base_url = creds[1] if creds else None
