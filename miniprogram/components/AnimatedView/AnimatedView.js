@@ -1,48 +1,23 @@
-var LOTTIE_DATA_CACHE = null
-var LOTTIE_MODULE_CACHE = undefined
-var LOTTIE_DISABLED = false
+var _lottieLoader = null
+
+function _getLottieLoader() {
+  if (_lottieLoader) return _lottieLoader
+  try { _lottieLoader = require('../../subpackages/animation/lottie-loader.js') } catch (_) {}
+  return _lottieLoader
+}
 
 function loadLottieData() {
-  if (LOTTIE_DATA_CACHE !== null) return LOTTIE_DATA_CACHE
-
-  var map = {}
-  var trophyMod = null
-  var successMod = null
-  var celebrationMod = null
-  var fireworksMod = null
-  var medalMod = null
-  var studyMod = null
-
-  try { trophyMod = require('../../assets/lottie/reward/trophy.js') } catch (_) {}
-  try { successMod = require('../../assets/lottie/success/success-check.js') } catch (_) {}
-  try { celebrationMod = require('../../assets/lottie/reward/celebration.js') } catch (_) {}
-  try { fireworksMod = require('../../assets/lottie/reward/fireworks.js') } catch (_) {}
-  try { medalMod = require('../../assets/lottie/reward/medal.js') } catch (_) {}
-  try { studyMod = require('../../assets/lottie/study/study.js') } catch (_) {}
-
-  if (trophyMod) map.excellent = trophyMod
-  if (successMod) { map.practice = successMod; map.steady = successMod }
-  if (celebrationMod) map.final = celebrationMod
-  if (fireworksMod) map.combo = fireworksMod
-  if (medalMod) map.group = medalMod
-  if (studyMod) map.focus = studyMod
-
-  LOTTIE_DATA_CACHE = Object.keys(map).length ? map : false
-  return LOTTIE_DATA_CACHE
+  var loader = _getLottieLoader()
+  if (!loader) return false
+  try { return loader.getRewardData() } catch (_) {}
+  return false
 }
 
 function loadLottieModule() {
-  if (LOTTIE_DISABLED) return null
-  if (LOTTIE_MODULE_CACHE !== undefined) return LOTTIE_MODULE_CACHE
-
-  var mod = null
-  try { mod = require('lottie-miniprogram') } catch (_) {}
-  if (!mod) {
-    try { mod = require('../../miniprogram_npm/lottie-miniprogram/index') } catch (_) {}
-  }
-
-  LOTTIE_MODULE_CACHE = mod || null
-  return LOTTIE_MODULE_CACHE
+  var loader = _getLottieLoader()
+  if (!loader) return null
+  try { return loader.getModule() } catch (_) {}
+  return null
 }
 
 function getDevicePixelRatio() {

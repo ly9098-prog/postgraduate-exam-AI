@@ -29,12 +29,7 @@
     "showShadowRootInWxmlPanel": true,
     "packNpmManually": true,
     "enableEngines": true,
-    "packNpmRelationList": [
-      {
-        "packageJsonPath": "./package.json",
-        "miniprogramNpmDistDir": "./"
-      }
-    ],
+    "packNpmRelationList": [],
     "minifyWXSS": true,
     "showES6CompileOption": false,
     "minifyWXML": true,

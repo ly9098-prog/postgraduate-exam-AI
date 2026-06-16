@@ -1,27 +1,23 @@
-var LOTTIE_DATA_CACHE = null
-var LOTTIE_MODULE_CACHE = undefined
+var _lottieLoader = null
+
+function _getLottieLoader() {
+  if (_lottieLoader) return _lottieLoader
+  try { _lottieLoader = require('../../subpackages/animation/lottie-loader.js') } catch (_) {}
+  return _lottieLoader
+}
 
 function loadLottieData() {
-  if (LOTTIE_DATA_CACHE !== null) return LOTTIE_DATA_CACHE
-
-  var mod = null
-  try { mod = require('../../assets/lottie/loading/loading.js') } catch (_) {}
-
-  LOTTIE_DATA_CACHE = mod || false
-  return LOTTIE_DATA_CACHE
+  var loader = _getLottieLoader()
+  if (!loader) return false
+  try { return loader.getLoadingData() } catch (_) {}
+  return false
 }
 
 function loadLottieModule() {
-  if (LOTTIE_MODULE_CACHE !== undefined) return LOTTIE_MODULE_CACHE
-
-  var mod = null
-  try { mod = require('lottie-miniprogram') } catch (_) {}
-  if (!mod) {
-    try { mod = require('../../miniprogram_npm/lottie-miniprogram/index') } catch (_) {}
-  }
-
-  LOTTIE_MODULE_CACHE = mod || null
-  return LOTTIE_MODULE_CACHE
+  var loader = _getLottieLoader()
+  if (!loader) return null
+  try { return loader.getModule() } catch (_) {}
+  return null
 }
 
 function getDevicePixelRatio() {
