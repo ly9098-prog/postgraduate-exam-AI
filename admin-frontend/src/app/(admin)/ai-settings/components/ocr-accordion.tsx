@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ChevronDown, FileText, Braces, Filter, Rows3, Save } from "lucide-react";
+import { ChevronDown, FileText, Braces, Filter, Rows3, Save, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
@@ -237,7 +237,11 @@ function FilterPanel({ configs }: { configs: Record<string, string | number | bo
   );
 }
 
-export function OcrAccordion({ configs, loading }: { configs?: Record<string, string | number | boolean> | null; loading?: boolean }) {
+export function OcrAccordion({ configs, loading, modelName }: {
+  configs?: Record<string, string | number | boolean> | null;
+  loading?: boolean;
+  modelName?: string | null;
+}) {
   const [openId, setOpenId] = useState<string | null>("prompt");
 
   const toggle = (id: string) => {
@@ -249,8 +253,18 @@ export function OcrAccordion({ configs, loading }: { configs?: Record<string, st
   return (
     <div className="rounded-2xl border border-[var(--color-border)]/80 bg-white/80 p-5 shadow-sm">
       <div className="mb-5">
-        <h3 className="font-display text-xl font-bold text-[var(--ink)]">OCR 纠错配置</h3>
-        <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">管理 OCR 识别结果的纠错策略和处理规则</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-display text-xl font-bold text-[var(--ink)]">OCR 纠错配置</h3>
+            <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">管理 OCR 识别结果的纠错策略和处理规则</p>
+          </div>
+          {modelName && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)]/60 bg-white/60 px-3 py-1.5 text-xs text-[var(--color-text-secondary)]">
+              <Brain className="h-3.5 w-3.5" />
+              模型: {modelName}
+            </span>
+          )}
+        </div>
       </div>
       <div className="space-y-2">
         {items.map((item) => {
