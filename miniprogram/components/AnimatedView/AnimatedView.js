@@ -20,13 +20,6 @@ function loadLottieModule() {
   return null
 }
 
-function getDevicePixelRatio() {
-  try {
-    if (wx.getWindowInfo) return wx.getWindowInfo().pixelRatio || 2
-  } catch (_) {}
-  return 2
-}
-
 function getSystemInfo() {
   try {
     if (wx.getDeviceInfo && wx.getAppBaseInfo) {
@@ -163,6 +156,21 @@ Component({
       this._lottieData = lottieData
       this._canUseCanvas = !!baseOk
       this._canUseLottie = !!(this.data.enableLottie && baseOk && lottieModule && lottieData)
+
+      // 分包可能尚未就绪，延迟重试一次
+      if (!this._canUseLottie && this.data.enableLottie && baseOk) {
+        var self = this
+        setTimeout(function () {
+          var m = null, d = null
+          try { m = loadLottieModule() } catch (_) {}
+          try { d = loadLottieData() } catch (_) {}
+          if (m && d) {
+            self._lottieModule = m
+            self._lottieData = d
+            self._canUseLottie = true
+          }
+        }, 2000)
+      }
     },
 
     _resolveMode: function () {
@@ -219,12 +227,10 @@ Component({
               self._fallbackFromLottie()
               return
             }
-            var dpr = getDevicePixelRatio()
             var width = res[0].width || 1
             var height = res[0].height || 1
-            canvas.width = width * dpr
-            canvas.height = height * dpr
-            ctx.scale(dpr, dpr)
+            canvas.width = width
+            canvas.height = height
             self._canvas = canvas
             self._ctx = ctx
             self._lottieModule.setup(canvas)
