@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -107,10 +109,14 @@ async def get_subject_breakdown(
 async def get_history(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    date: str | None = Query(None, description="Filter by date (YYYY-MM-DD)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    sessions, total = await svc.get_history(db, current_user.id, page, page_size)
+    filter_date = None
+    if date:
+        filter_date = datetime.strptime(date, "%Y-%m-%d").date()
+    sessions, total = await svc.get_history(db, current_user.id, page, page_size, filter_date)
     return {
         "items": [PomodoroSessionResponse.model_validate(s) for s in sessions],
         "total": total,

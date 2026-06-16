@@ -33,6 +33,10 @@ Page({
     history: [],
     historyTotal: 0,
 
+    // date picker
+    selectedDate: '',
+    _todayDate: '',
+
     // pie chart detail popup
     selectedSubjectDetail: null,
     _selectedSubject: null,
@@ -50,6 +54,12 @@ Page({
       frontColor: '#ffffff',
       backgroundColor: '#0B1121',
     })
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, '0')
+    const d = String(now.getDate()).padStart(2, '0')
+    const today = `${y}-${m}-${d}`
+    this.setData({ selectedDate: today, _todayDate: today })
   },
 
   onShow() {
@@ -78,7 +88,7 @@ Page({
         api.get('/pomodoro/stats'),
         api.get('/pomodoro/trends', { days: 7 }),
         api.get('/pomodoro/subjects'),
-        api.get('/pomodoro/history', { page: 1, page_size: 20 }),
+        api.get('/pomodoro/history', { page: 1, page_size: 20, date: this.data.selectedDate }),
       ])
       const subjArr = subjects || []
       const totalDur = Math.max(1, subjArr.reduce((sum, s) => sum + (s.duration_sec || 0), 0))
@@ -152,8 +162,41 @@ Page({
       _date: `${start.getMonth() + 1}/${start.getDate()}`,
       _duration: durMin >= 60 ? `${Math.floor(durMin / 60)}时${durMin % 60}分` : `${durMin}分钟`,
       _subjectLabel: SUBJECT_LABELS[s.subject] || s.subject || '未分类',
+      _color: SUBJECT_COLORS[s.subject] || '#3B82F6',
       _statusLabel: s.status === 'completed' ? '完成' : '中断',
       _statusClass: s.status === 'completed' ? 'status-done' : 'status-interrupt',
+    }
+  },
+
+  onDateChange(e) {
+    const date = e.detail.value
+    this.setData({ selectedDate: date }, () => {
+      this.loadHistory(date)
+    })
+  },
+
+  goToToday() {
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, '0')
+    const d = String(now.getDate()).padStart(2, '0')
+    const today = `${y}-${m}-${d}`
+    if (today === this.data.selectedDate) return
+    this.setData({ selectedDate: today }, () => {
+      this.loadHistory(today)
+    })
+  },
+
+  async loadHistory(date) {
+    try {
+      const hist = await api.get('/pomodoro/history', { page: 1, page_size: 20, date })
+      const formatted = (hist.items || []).map(this._formatSession)
+      this.setData({
+        history: formatted,
+        historyTotal: hist.total || 0,
+      })
+    } catch (e) {
+      console.error('加载历史记录失败', e)
     }
   },
 
