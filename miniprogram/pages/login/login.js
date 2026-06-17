@@ -45,6 +45,7 @@ Page({
     this.setData({ loading: true, error: '' })
     try {
       await auth.wechatLogin()
+      api.resetRedirecting()
       wx.redirectTo({ url: '/pages/home/home' })
     } catch (e) {
       const msg = e.message || (typeof e === 'string' ? e : '登录失败')
@@ -62,6 +63,7 @@ Page({
       const { code } = await wx.login()
       const data = await api.post('/auth/login', { code })
       auth.loginDirect(data.access_token, data.user)
+      api.resetRedirecting()
       wx.redirectTo({ url: '/pages/home/home' })
     } catch (e) {
       this.setData({ error: '开发模式登录失败，请确保后端已启动' })
