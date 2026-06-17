@@ -6,6 +6,7 @@ import logging
 import time
 from typing import Any
 
+from app.features.ocr_fix.canonical_output import canonicalize
 from app.features.ocr_fix.interfaces import OCRFixResult
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,8 @@ class DeepSeekFixer:
             )
             duration_ms = int((time.monotonic() - start) * 1000)
 
-            corrected = (result.get("content") or "").strip()
+            corrected_raw = (result.get("content") or "").strip()
+            corrected, _meta = canonicalize(corrected_raw, model_name="deepseek")
             if not corrected:
                 return OCRFixResult(
                     fixed_text=ocr_text,
