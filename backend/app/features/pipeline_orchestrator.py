@@ -324,6 +324,48 @@ def _extract_pdf_blocks(
     return blocks
 
 
+def _render_page_images(
+    *,
+    file_content: bytes | None = None,
+    file_path: str | None = None,
+    source_type: str = "pdf",
+    max_dimension: int = 2048,
+) -> dict[int, bytes] | None:
+    """Render PDF pages to PNG images keyed by page number (1-based).
+
+    Only renders when source is PDF and content/path is available.
+    Images are limited to *max_dimension* on the longest side.
+    Returns None for non-PDF sources or when rendering fails.
+    """
+    if source_type != "pdf":
+        return None
+
+    pdf_source = file_path or file_content
+    if pdf_source is None:
+        return None
+
+    try:
+        import fitz
+
+        doc = fitz.open(pdf_source) if isinstance(pdf_source, str) else fitz.open(stream=pdf_source, filetype="pdf")
+        page_images: dict[int, bytes] = {}
+        for i in range(len(doc)):
+            page = doc[i]
+            dpi = 150
+            pix = page.get_pixmap(dpi=dpi)
+            png = pix.tobytes("png")
+            # Resize if exceeds max dimension
+            if max(pix.width, pix.height) > max_dimension:
+                scale = max_dimension / max(pix.width, pix.height)
+                pix = page.get_pixmap(dpi=int(dpi * scale))
+                png = pix.tobytes("png")
+            page_images[i + 1] = png
+        doc.close()
+        return page_images
+    except Exception:
+        return None
+
+
 def _ocr_scanned_pdf(
     content_or_path: bytes | str,
     pipeline_id: str = "",
@@ -1184,9 +1226,8 @@ class ImportPipeline:
     async def _run_ocr_correction(self, normalized_blocks: list[dict], options: dict | None = None, **_kw) -> dict:
         """Stage 1.5: AI OCR text correction for noisy blocks.
 
-        支持两种模式（feature flag 控制）：
-        - legacy（默认）: 原有 correct_ocr_blocks 逻辑
-        - router: 通过 OCRFixRouter 的多模型纠错
+        Router 模式（默认）: OCRFixRouter 多模型纠错，自动降级。
+        Legacy 模式可通过 ocr_fix_feature_flag=false 切换。
         """
         opts = options or {}
         db = _kw.get("db")
@@ -1196,7 +1237,7 @@ class ImportPipeline:
 
         if use_router:
             return await self._run_ocr_correction_router(
-                normalized_blocks, opts, db,
+                normalized_blocks, opts, db, **_kw,
             )
 
         # Legacy mode: 原有逻辑
@@ -1205,12 +1246,11 @@ class ImportPipeline:
     async def _check_ocr_fix_feature_flag(self, db) -> bool:
         """检查 OCR fix router feature flag。
 
-        优先级: options > DB config > env var > default (False)。
+        优先级: options > DB config > env var > default (True — 默认启用 router)。
         """
         flag = self.options.get("ocr_fix_feature_flag")
         if flag is not None:
-            return str(flag).lower() == "true"
-        # 尝试从 DB admin_ai_configs 读取
+            return str(flag).lower() != "false"
         if db:
             try:
                 from app.services.admin_ai_config_service import get_all_configs
@@ -1219,15 +1259,14 @@ class ImportPipeline:
                 if val is not None:
                     if isinstance(val, bool):
                         return val
-                    return str(val).lower() == "true"
+                    return str(val).lower() != "false"
             except Exception:
                 pass
-        # 尝试从环境变量读取
         import os
         env_val = os.environ.get("OCR_FIX_FEATURE_FLAG")
         if env_val is not None:
-            return env_val.lower() == "true"
-        return False
+            return env_val.lower() != "false"
+        return True
 
     async def _run_ocr_correction_legacy(
         self, normalized_blocks: list[dict], opts: dict, db,
@@ -1263,7 +1302,7 @@ class ImportPipeline:
         }
 
     async def _run_ocr_correction_router(
-        self, normalized_blocks: list[dict], opts: dict, db,
+        self, normalized_blocks: list[dict], opts: dict, db, **_kw,
     ) -> dict:
         """通过 OCRFixRouter 执行多模型 OCR 纠错。"""
         from app.features.ocr_fix import OCRFixRouter
@@ -1274,7 +1313,9 @@ class ImportPipeline:
         router = OCRFixRouter()
         router.configure(router_config)
 
-        # 对每个 block 执行纠错（仅对有 noise 的 block）
+        # 页面图像由 run() 预渲染后传入，避免 chunked 模式重复渲染
+        page_images = _kw.get("page_images")
+
         corrections: list[dict] = []
         corrected_blocks: list[dict] = []
         stats = {
@@ -1307,10 +1348,15 @@ class ImportPipeline:
 
             stats["noisy_blocks"] += 1
 
-            # 通过 router 纠错
+            # Look up the page image for this block
+            page_num = block.get("page", 1)
+            page_image = page_images.get(page_num) if page_images else None
+
+            # 通过 router 纠错（传入图片供视觉模型使用）
             result = await router.fix(
+                image=page_image,
                 ocr_text=text,
-                context={"block_index": idx, "page": block.get("page", 1)},
+                context={"block_index": idx, "page": page_num},
             )
 
             new_block = dict(block)
@@ -1358,7 +1404,11 @@ class ImportPipeline:
         }
 
     async def _build_router_config(self, opts: dict, db) -> dict:
-        """从 options + DB config 构建 router 配置。"""
+        """从 options + AdminAiModelConfig 表构建 router 配置。
+
+        所有模型凭据均从 AdminAiModelConfig 表解析（通过 model_config_resolver），
+        不依赖硬编码 env var 或 admin_ai_configs 中的独立 key。
+        """
         config: dict = {
             "mode": opts.get("ocr_correction_mode", "auto"),
             "noise_threshold": opts.get("ocr_noise_threshold", 0.3),
@@ -1366,54 +1416,46 @@ class ImportPipeline:
             "monthly_token_limit": opts.get("ocr_correction_monthly_token_limit", 1000000),
         }
 
-        # 从 options 读取 OCR fix 特定配置
-        for key in ("ocr_fix_model", "ocr_fix_strategy", "qwen_api_key",
-                     "qwen_base_url", "qwen_model", "deepseek_base_url"):
+        for key in ("ocr_fix_model", "ocr_fix_strategy"):
             val = opts.get(key)
             if val is not None:
                 config[key] = val
 
-        # 从 DB admin_ai_configs 读取配置
-        if db:
-            try:
-                from app.services.admin_ai_config_service import get_all_configs
-
-                db_configs = await get_all_configs(db)
-                for key in ("ocr_fix_model", "ocr_fix_strategy", "qwen_api_key",
-                             "qwen_base_url", "qwen_model",
-                             "ocr_fix_feature_flag"):
-                    if key in db_configs and key not in config:
-                        val = db_configs[key]
-                        # 空字符串不覆盖
-                        if val is not None and val != "":
-                            config[key] = val
-            except Exception:
-                pass
-
-        # 从 DB AdminAiModelConfig 解析 DeepSeek API key
         if db:
             try:
                 from app.services.model_config_resolver import resolve_active_model
 
-                model_creds = await resolve_active_model(db)
-                if model_creds:
-                    config["deepseek_api_key"] = model_creds["api_key"]
+                # Resolve OCR feature model (could be qwen-vl, deepseek, etc.)
+                ocr_model = await resolve_active_model(db, feature="ocr")
+                if ocr_model:
+                    provider = ocr_model.get("provider", "")
+                    if provider in ("qwen-vl", "qwen"):
+                        config["qwen_api_key"] = ocr_model["api_key"]
+                        config["qwen_base_url"] = ocr_model["api_base_url"]
+                        config["qwen_model"] = ocr_model["model_name"]
+                    elif provider == "deepseek":
+                        config["deepseek_api_key"] = ocr_model["api_key"]
+                        config["deepseek_base_url"] = ocr_model["api_base_url"]
+                    else:
+                        # OpenAI-compatible provider → treat as vision-capable (Qwen path)
+                        config["qwen_api_key"] = ocr_model["api_key"]
+                        config["qwen_base_url"] = ocr_model["api_base_url"]
+                        config["qwen_model"] = ocr_model["model_name"]
+
+                # Resolve a DeepSeek model as fallback for auto chain
+                ds_model = await resolve_active_model(db, feature=None)
+                if ds_model and ds_model.get("provider") == "deepseek":
+                    if "deepseek_api_key" not in config:
+                        config["deepseek_api_key"] = ds_model["api_key"]
                     if "deepseek_base_url" not in config:
-                        config["deepseek_base_url"] = model_creds["api_base_url"]
+                        config["deepseek_base_url"] = ds_model["api_base_url"]
             except Exception:
                 pass
 
-        # 从环境变量补充（兜底）
+        # DeepSeek env var fallback for backward compat only
         import os
         if "deepseek_api_key" not in config:
             config["deepseek_api_key"] = os.environ.get("DEEPSEEK_API_KEY", "")
-        if "qwen_api_key" not in config:
-            config["qwen_api_key"] = os.environ.get("QWEN_API_KEY", "")
-        if "qwen_base_url" not in config:
-            config["qwen_base_url"] = os.environ.get(
-                "QWEN_BASE_URL",
-                "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            )
 
         return config
 
@@ -2191,6 +2233,13 @@ class ImportPipeline:
             db=db,
         )
 
+        # Pre-render page images once (expensive — reused across chunks)
+        page_images = _render_page_images(
+            file_content=file_content,
+            file_path=file_path,
+            source_type=source_type,
+        )
+
         if len(chunk_ranges) <= 1:
             # Legacy single-pass: chunk_ranges may be [] (no PDF page count)
             # or [(s, e)] (single chunk covers everything). Either way we run
@@ -2206,6 +2255,7 @@ class ImportPipeline:
                 shared=shared,
                 progress_callback=progress_callback,
                 started_at=started_at,
+                page_images=page_images,
             )
 
         return await self._run_chunked(
@@ -2220,6 +2270,7 @@ class ImportPipeline:
             progress_callback=progress_callback,
             chunk_ranges=chunk_ranges,
             started_at=started_at,
+            page_images=page_images,
         )
 
     # ------------------------------------------------------------------
@@ -2286,6 +2337,7 @@ class ImportPipeline:
         page_end: int | None = None,
         chunk_seen_hashes: set | None = None,
         chunk_logical_end: int | None = None,
+        page_images: dict[int, bytes] | None = None,
     ) -> dict:
         """Execute every stage once for the given (optionally page-restricted) input.
 
@@ -2319,6 +2371,7 @@ class ImportPipeline:
             "import_mode": shared["import_mode"],
             "strategy": shared["strategy"],
             "watermark_patterns": shared["watermark_patterns"],
+            "page_images": page_images,
             "raw_blocks": [],
             "normalized_blocks": [],
             "raw_questions": [],
@@ -2367,12 +2420,15 @@ class ImportPipeline:
                 # 一起驻留内存。400 页扫描 PDF 下，OCR 后的 normalized_blocks
                 # 单独可达 50~200 MB（含 boxes），是仅次于 PDF 字节的大头。
                 if name == "extract":
-                    # PDF/图片字节，下游阶段不需要
-                    data.pop("file_content", None)
-                    data.pop("file_path", None)
+                    # PDF/图片字节保留给 ocr_correction（Qwen-VL 需要原始图像）
+                    pass
                 elif name == "normalize_text":
                     # raw_blocks 已并入 normalized_blocks，无后续消费者
                     data.pop("raw_blocks", None)
+                elif name == "ocr_correction":
+                    # OCR correction stage finished, release original bytes
+                    data.pop("file_content", None)
+                    data.pop("file_path", None)
                 elif name == "match":
                     # match 后无人再读 normalized_blocks，count 已在写入时缓存
                     data.pop("normalized_blocks", None)
@@ -2384,11 +2440,12 @@ class ImportPipeline:
             except Exception:
                 overall_status = "failed"
                 pipeline_errors.append(f"stage '{name}' failed: {stage.error}")
-                if name in ("extract", "normalize_text"):
+                if name in ("extract", "normalize_text", "ocr_correction"):
                     # 失败路径同样释放
                     data.pop("file_content", None)
                     data.pop("file_path", None)
-                    break
+                    if name in ("extract", "normalize_text"):
+                        break
                 logger.warning("Stage '%s' failed, continuing with partial results", name)
 
             if progress_callback:
@@ -2441,6 +2498,7 @@ class ImportPipeline:
         started_at: str,
         seen_hashes: set,
         hash_index,
+        page_images: dict[int, bytes] | None = None,
     ) -> dict:
         """Run one chunk end-to-end with checkpoint writes + failure isolation.
 
@@ -2486,6 +2544,7 @@ class ImportPipeline:
                 page_end=effective_end,
                 chunk_seen_hashes=seen_hashes,
                 chunk_logical_end=logical_end,
+                page_images=page_images,
             )
             if chunk_result.get("status") != "completed":
                 chunk_status = "failed"
@@ -2551,6 +2610,7 @@ class ImportPipeline:
         progress_callback,
         chunk_ranges: list[tuple[int, int]],
         started_at: str,
+        page_images: dict[int, bytes] | None = None,
     ) -> dict:
         """Drive a multi-chunk run with checkpoint persistence and failure isolation.
 
@@ -2646,6 +2706,7 @@ class ImportPipeline:
                         started_at=started_at,
                         seen_hashes=seen_hashes,
                         hash_index=hash_index,
+                        page_images=page_images,
                     )
                 chunk_results.append(outcome)
                 if outcome["status"] == "failed":
