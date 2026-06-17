@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 export interface SelectOption {
@@ -148,25 +148,57 @@ function PortalDropdown({
   onChange: (value: string) => void;
   options: SelectOption[];
 }) {
-  const [style, setStyle] = useState<React.CSSProperties>({});
+  const [style, setStyle] = useState<React.CSSProperties>({
+    position: "fixed",
+    zIndex: 9999,
+    visibility: "hidden",
+    minWidth: 200,
+  });
   const listRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const btn = triggerRef.current?.querySelector("button");
     if (!btn) return;
     const rect = btn.getBoundingClientRect();
-    const estH = 44;
-    const spaceBelow = window.innerHeight - rect.bottom - 8;
-    const spaceAbove = rect.top - 8;
-    const dir = spaceBelow >= estH || spaceBelow > spaceAbove ? "down" : "up";
+
+    // Determine direction
+    const spaceBelow = window.innerHeight - rect.bottom - 12;
+    const spaceAbove = rect.top - 12;
+    const dir = spaceBelow >= spaceAbove ? "down" : "up";
+
+    // Calculate available height
+    const maxH = dir === "down" ? spaceBelow : spaceAbove;
+
+    // Calculate default position
+    let top: number | undefined;
+    let bottom: number | undefined;
+    let left = rect.left;
+    if (dir === "down") {
+      top = rect.bottom + 6;
+    } else {
+      bottom = window.innerHeight - rect.top + 6;
+    }
+
+    // Estimate dropdown width
+    const estimatedW = Math.min(Math.max(rect.width, 200), window.innerWidth - 16);
+
+    // Prevent overflow beyond right edge
+    if (left + estimatedW > window.innerWidth - 8) {
+      left = window.innerWidth - estimatedW - 8;
+    }
+    if (left < 8) left = 8;
 
     setStyle({
       position: "fixed",
       zIndex: 9999,
+      visibility: "visible",
       minWidth: Math.max(rect.width, 200),
-      ...(dir === "down"
-        ? { top: rect.bottom + 6, left: rect.left }
-        : { bottom: window.innerHeight - rect.top + 6, left: rect.left }),
+      width: estimatedW,
+      maxHeight: Math.max(maxH, 80),
+      overflowY: "auto",
+      top,
+      bottom,
+      left,
     });
   }, [triggerRef]);
 
@@ -175,7 +207,7 @@ function PortalDropdown({
       ref={listRef}
       role="listbox"
       className={cn(
-        "overflow-hidden rounded-xl border border-[var(--color-border)]/80 bg-white py-1 shadow-lg",
+        "rounded-xl border border-[var(--color-border)]/80 bg-white py-1 shadow-lg",
         optionClassName,
       )}
       style={style}
