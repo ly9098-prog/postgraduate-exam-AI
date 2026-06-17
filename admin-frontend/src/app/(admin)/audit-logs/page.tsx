@@ -13,6 +13,13 @@ import type { AuditLog, PaginatedResponse } from "@/lib/api/types";
 const severityOptions = ["", "critical", "important", "normal", "low"];
 const statusOptions = ["", "success", "failed"];
 
+const formatDate = (dateStr: string | null | undefined) => {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+};
+
 const toneMap: Record<string, "danger" | "warning" | "primary" | "neutral"> = {
   critical: "danger",
   important: "warning",
@@ -69,7 +76,7 @@ export default function AuditLogsPage() {
         <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--color-text-hint)]">Audit Logs</p>
         <h2 className="mt-2 font-display text-4xl font-bold text-[var(--ink)]">审计日志</h2>
       </div>
-      <Card>
+      <Card className="overflow-hidden">
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h3 className="font-display text-2xl font-bold text-[var(--ink)]">日志列表</h3>
@@ -88,25 +95,27 @@ export default function AuditLogsPage() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
               <Input className="pl-9" placeholder="搜索动作 / 资源" value={keyword} onChange={(event) => { setKeyword(event.target.value); setPage(1); }} />
             </label>
-            <select className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm" value={severity} onChange={(event) => { setSeverity(event.target.value); setPage(1); }}>
+            <select className="h-11 w-full min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm" value={severity} onChange={(event) => { setSeverity(event.target.value); setPage(1); }}>
               {severityOptions.map((s) => (
                 <option key={s || "all"} value={s}>{s || "全部级别"}</option>
               ))}
             </select>
-            <select className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
+            <select className="h-11 w-full min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
               {statusOptions.map((s) => (
                 <option key={s || "all"} value={s}>{s || "全部状态"}</option>
               ))}
             </select>
             <Input placeholder="资源类型" value={resourceType} onChange={(event) => { setResourceType(event.target.value); setPage(1); }} />
-            <div className="flex gap-2">
-              <Input type="date" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setPage(1); }} />
-              <Input type="date" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setPage(1); }} />
-            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-[var(--color-text-secondary)]">日期范围</span>
+            <Input className="min-w-0 flex-1 sm:flex-none sm:w-44" type="date" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); setPage(1); }} />
+            <span className="text-[var(--color-text-hint)]">—</span>
+            <Input className="min-w-0 flex-1 sm:flex-none sm:w-44" type="date" value={dateTo} onChange={(event) => { setDateTo(event.target.value); setPage(1); }} />
           </div>
           <div className="space-y-3">
             {logs.data?.items?.map((log) => (
-              <button key={log.id} className="w-full rounded-2xl border border-[var(--color-border)] bg-white/70 p-4 text-left" onClick={() => setDetailId(log.id)}>
+              <button key={log.id} className="w-full rounded-2xl border border-[var(--color-border)] bg-white/70 p-4 text-left transition hover:border-[var(--color-primary)] hover:bg-white hover:shadow-sm" onClick={() => setDetailId(log.id)}>
                 <div className="flex flex-wrap items-center gap-3">
                   <StatusBadge tone={toneMap[log.severity] ?? "neutral"}>{log.severity}</StatusBadge>
                   <StatusBadge tone={log.status === "failed" ? "danger" : log.status === "success" ? "success" : "neutral"}>{log.status ?? "—"}</StatusBadge>
@@ -116,7 +125,7 @@ export default function AuditLogsPage() {
                 <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-[var(--color-text-secondary)]">
                   <span>{log.resource_type || "resource"} {log.resource_id ? `#${log.resource_id}` : ""}</span>
                   <span>{log.ip || ""}</span>
-                  <span>{log.created_at || ""}</span>
+                  <span>{formatDate(log.created_at)}</span>
                 </div>
                 {log.error_message ? (
                   <p className="mt-2 rounded-2xl bg-[var(--color-danger-light)] px-3 py-2 text-xs text-[var(--color-danger)]">{log.error_message}</p>
@@ -124,7 +133,23 @@ export default function AuditLogsPage() {
               </button>
             ))}
           </div>
-          {!logs.isLoading && (logs.data?.items?.length ?? 0) === 0 ? (
+          {logs.isLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="animate-pulse rounded-2xl border border-[var(--color-border)] bg-white/70 p-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="h-5 w-16 rounded-full bg-[var(--color-border)]" />
+                    <div className="h-5 w-14 rounded-full bg-[var(--color-border)]" />
+                    <div className="h-4 w-32 rounded bg-[var(--color-border)]" />
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-4">
+                    <div className="h-3 w-24 rounded bg-[var(--color-border)]" />
+                    <div className="h-3 w-36 rounded bg-[var(--color-border)]" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (logs.data?.items?.length ?? 0) === 0 ? (
             <p className="py-10 text-center text-sm text-[var(--color-text-hint)]">暂无审计日志</p>
           ) : null}
           <div className="mt-4 flex items-center justify-between text-sm text-[var(--color-text-secondary)]">
