@@ -1,340 +1,150 @@
-## [P0] admin批量导入图片识别错误/异常案例（部分修复）
-
-> **状态更新 2026-06-16**
->
-> 本组 P0 分两层根因，已分类处理：
->
-> 1. **规则层「假切分」**（含罗马数字子项 I./II./III. 的多选题被误切成两题）——**已修复**。
->    - 修复位置：`backend/app/features/text_normalizer.py`（`_has_roman_subitem_list` + 上下文门控的
->      `_fix_question_number_line`，行首大写 `I.` 在罗马子项列表上下文中不再被误纠成题号 `1.`；
->      小写 `l.` 仍始终纠正）；`backend/app/features/question_splitter.py`
->      （`_find_question_boundaries` 中 `roman_list` 守卫，跳过行首罗马标记作为题号边界）。
->    - 实测（真实 normalize + `split_questions(import_mode="txt")`）：案例五形态→1 题 number=4 选项完整；
->      案例一形态→1 题 number=8 选项完整；真正以 `I.` 开头的单题（无子项列表）→仍正确纠正为 number=1。
->    - **潜在副作用**：罗马列表门控作用于整段拼接文本；若一个批次里多题拼接且任意一题含 ≥2 个不同
->      罗马标记，会对整段关闭 `I.→1.` 纠正。考研选择题顶层题号用阿拉伯数字，风险低，但若出现「真正以
->      I./II. 编号的题目序列」会受影响。
->
-> 2. **规则层「系统性 OCR 伪影」**——**已修复**（`backend/app/features/text_normalizer.py`）：
->    - **C 指针箭头**：PaddleOCR 把 `->` 识别成 `− >`/`- >`（减号/破折号+空格+大于号），
->      `_fix_pointer_arrows` 用 `_RE_POINTER_ARROW` 还原成 `->`；仅当 `>` 紧跟标识符时命中，
->      数学式 `a − > b`、减法 `2n − i − 1` 不受影响；规则幂等。覆盖案例三/七/十的代码符号。
->    - **水印行**：`_RE_WATERMARK` 扩展覆盖「后续关注/关注公众号/永久微信/微信号/公众号/[研大]」等
->      整行水印，按行过滤。覆盖案例二/十中**自成一行**的水印。
->    - 单元测试见 `tests/test_services/test_text_normalizer.py::TestPointerArrowFix` 与 `TestWatermarkFilter`。
->
-> 3. **OCR 引擎层**（阅读顺序错乱、镜像乱码、下标/数字误识如 100→50、水印位置性渗入正文中间）
->    ——**未解决**，需在本地 GPU 环境做 OCR 引擎层处理（PaddleOCR 识别质量），纯规则文本层无法修复。
->
-> **真实 OCR 验证**（`ocr_test/images/`，4 张实拍图片通过完整管线验证）：
-> - `faulty_case_1.png`（对应案例三类型）：规则层指针箭头修复生效（`p->next` 正确还原），但镜像乱码
->   `d=xau<-s...` 导致选项 B/D 丢失，仅解出 A/C。引擎层问题确认。
-> - `faulty_case_2.png`（对应案例八类型）：下标误识 `a₁₀₀→a10o`、`a₅₀→aso`，切分正常（1 题 number=12，
->   4 选项完整）。字符级误识属引擎层，确认。
-> - `faulty_case_3.png`（对应案例九类型）：规则层指针箭头修复生效，但选项 D 被镜像乱码吞噬
->   `! (d) aaxy !axau<-d=...` 并附加到 C 末尾，仅解出 A/B/C。引擎层问题确认。
-> - `success_case.png`：干净识别，1 题 number=26，4 选项完整（尽管 OCR 返回顺序为 B/A/D/C，
->   option parser 按字母键索引，结果正确）。规则层修复对正常案例无副作用，确认。
->
-> **结论**：规则层修复在真实 OCR 输出上验证有效（假切分消除、指针箭头还原、水印过滤均工作）；
-> 引擎层问题（镜像文本、字符误识、选项截断）在实拍图片中复现，确认需 PaddleOCR 引擎层优化。
->
-> | 案例 | 症状 | 状态 |
-> |------|------|------|
-> | 一 | 含罗马子项多选题被切两题 + 真实 OCR 阅读顺序错乱（标记落行尾） | 假切分**已修**；阅读顺序错乱属引擎层（待） |
-> | 二 | 同案例一 + 水印混入（公众号[研大]/永久微信） | 假切分**已修**；整行水印**已修**；阅读顺序/正文中嵌入水印属引擎层（待） |
-> | 三 | 代码语句乱码、`q→α`、选项截断 | 指针箭头 `− >`→`->`**已修**；`q→α`/截断属引擎层（待） |
-> | 四 | 公式 LaTeX 化（识别基本正确） | 轻微，引擎层（低优先） |
-> | 五 | 含罗马子项多选题被切两题 | **已修** ✅ |
-> | 六 | 同案例五 + 识别结果混入异题内容 | 假切分**已修**；异题内容混入属引擎层（待） |
-> | 七 | 代码语句乱码 + 选项 D 缺失 | 指针箭头**已修**；选项 D 缺失属引擎层（待） |
-> | 八 | 下标/题干轻微错识 | OCR 引擎层（待） |
-> | 九 | 选项严重乱码成乱字符串 | OCR 引擎层（待） |
-> | 十 | 代码符号错识 + 水印 + 选项截断 | 指针箭头**已修**；整行水印**已修**；选项截断属引擎层（待） |
-
-#### 案例一
-
-> 状态：**规则层假切分已修**（行首罗马子项不再触发假题号）。真实 OCR 输出仍有阅读顺序错乱（罗马标记落在行尾、子项与题干分块），属 OCR 引擎层，待处理。
-
-##### 原题
-
-```
-08. 设线性表有n个元素，严格说来，以下操作中,( )在顺序表上实现要比在链表上实现的效率高。
-I. 输出第i(1≤i≤n)个元素值  
-II. 交换第3个元素与第4个元素的值  
-III. 顺序输出这n个元素的值  
-
-A. I  	B. I, III  	C. I, II  	D. II, III
-```
-
-##### 识别结果(误识别为两题)
-
-```
-1、输出第i（1 ≤ i ≤ n）个元素值 I. 交换第3个元素与第4个元素的值 II. 顺序输出这n个元素的值 III.
-
-A. I
-B. I.III
-C. I.II
-D. II.III
-```
-
-```
-2、设线性表有n 个元素严格说条、以下模作中。了】在顺序表上实现要比在链表上实现的效率高。
-
-```
-
-#### 案例二
-
-> 状态：**部分修复**。规则层假切分已修；整行水印（"后续关注公众号"/"永久微信1866224xxx"）已过滤。但真实 OCR 输出仍有阅读顺序错乱、以及位置性嵌入正文中间的水印，属 OCR 引擎层，待处理。
-
-##### 原题
-
-```
-在n个元素的线性表的数组表示中，时间复杂度为O(1)的操作是（ ）。
-I. 访问第i(1≤i≤n)个结点和求第i(2≤i≤n)个结点的直接前驱  
-II. 在最后一个结点后插入一个新的结点  
-III. 删除第1个结点  
-IV. 在第i(1≤i≤n)个结点后插入一个结点  
-
-A. I  	B. II, III  	C. I, II  	D. I, II, III
-```
-
-##### 识别结果(误识别为两题)
+# BUGS
 
-导入的图片中含有水印”后续关注公众号[研大]“”永久微信1866224xxx“
+> 审计日期: 2026-06-17
+> 修复日期: 2026-06-17
+> 优先级: CRITICAL > HIGH > MEDIUM > LOW
 
-```
-1、在最后一个结点后插入一个新的结点IIIL.删除第1个结点IV.在第(1 ≤ 点后括个结号[研大]
-A. I
-B. 1I.1I
-C. 1. 11
-D .I.II.II
-```
+---
 
-```
-2、访问第1（1 ≤ i ≤ n）个结点和求第i（2 ≤ i ≤ n）个结点的直接前驱
+## CRITICAL
 
-```
+### C1. `deepseek.chat()` URL 双写 `/v1` 风险 ✅
 
-#### 案例三
+**位置**: `backend/app/ai/client.py:60`
 
-> 状态：**部分修复**。指针箭头 `− >`→`->` 已在文本层还原；但代码语句整体乱码、`q` 误识为 `α`、选项 D 截断属 OCR 引擎层（待）。
+`f"{_base_url}/v1/chat/completions"` 在 `_base_url` 已含 `/v1` 时构造出 `/v1/v1/chat/completions`。
 
-##### 原题
+- 触发条件: legacy 路径 + DB 中 `feature="ocr"` 配置为 Qwen-VL（`base_url=https://dashscope.aliyuncs.com/compatible-mode/v1`）
+- 影响: 请求失败 → `return None` → 纠错静默跳过，无日志告警
+- 当前实际影响有限（`ocr_fix_feature_flag` 默认 true 走 router，不走 legacy）
 
-```
-06. 在一个单链表中，已知 q 所指结点是 p 所指结点的前驱结点，若在 q 和 p 之间插入结点 s，则执行（ ）。
+**修复**: 构造 URL 前检查并 strip 末尾 `/v1`，再统一拼接 `/v1/chat/completions`。
 
-A. s->next=p->next;p->next=s;  
-B. p->next=s->next;s->next=p;  
-C. q->next=s;s->next=p;  
-D. p->next=s;s->next=q;  
-```
+### C2. 两套独立 token 计数器，无共享预算 ✅
 
-##### 识别结果
+**位置**: `ocr_correction.py:57-59` / `ai_repair.py:22`
 
-```
-在一个单链表中，已知 \alpha 所指结点是p所指结点的前驱结点，若在 \alpha 和p之间插入结点s，则执行()。
-A. s − >next = p − >next;p − >next = s;
-B. p − >next = s − >next;s − >next = p;
-C. q − >next − ss − Snex − ;AD,pmex = s − ext = q;
-```
+OCR 纠错和 AI Repair 各自维护模块级 `_token_usage` dict，进程重启归零，日/月总额限制形同虚设。
 
-#### 案例四
+- 影响: 无法实施真实预算控制，成本不可控
+- 并发: `_token_usage` 操作无锁保护（见 M5）
 
-> 状态：**低优先（引擎层）**。识别基本正确，仅公式被 LaTeX 化（`\dots` 等），不影响切分与入库。
+**修复**: 抽取共享模块 `backend/app/features/token_budget.py`，两处统一导入，加 `asyncio.Lock` 保护并发。
 
-##### 原题
+---
 
-```
-设线性表中有2n个元素，（ ）在单链表上实现要比在顺序表上实现效率更高。
-A. 删除所有值为x的元素  
-B. 在最后一个元素的后面插入一个新元素  
-C. 顺序输出前k个元素  
-D. 交换第i个元素和第2n-i-1个元素的值(i=0, ···,n-1)
-```
+## HIGH
 
-##### 识别结果
+### H1. Router 模式逐块串行调用 ✅
 
-```
-设线性表中有 2n 个元素，（）在单链表上实现要比在顺序表上实现效率更高。
-A. 删除所有值为 x 的元素
-B. 在最后一个元素的后面插入一个新元素
-C. 顺序输出前 k 个元素
-D. 交换第 i 个元素和第 2n − i − 1 个元素的值（i = 0,\dots,n − 1）
-```
+**位置**: `pipeline_orchestrator.py:1381`
 
-#### 案例五
+`_run_ocr_correction_router` 用 `for idx, block in enumerate(...)` 逐块串行调用 `router.fix()`。Legacy 路径 `ocr_correction.py:463-472` 使用 `asyncio.gather` + `Semaphore(3)` 并发 3 路。
 
-> 状态：**已修 ✅**。含罗马子项多选题不再被切成两题，实测 normalize + split 后为 1 题 number=4、选项 A/B/C/D 完整。
+- 影响: Router 模式多 block 导入显著更慢
+- 额外问题: `qwen_adapter.py:279` 每次新建 `httpx.AsyncClient`，无连接复用
 
-##### 原题
+**修复**: Router 模式改为两阶段（分类 + `asyncio.gather` 并发调用），QwenFixer 增加实例级 `httpx.AsyncClient` 复用。
 
-```
-下列关于线性表的说法中，正确的是（ ）。
-I. 顺序存储方式只能用于存储线性结构  
-II. 在一个设有头指针和尾指针的单链表中，删除表尾元素的时间复杂度与表长无关  
-III. 带头结点的循环单链表中不存在空指针  
-IV. 在一个长度为n的有序单链表中插入一个新结点并仍保持有序的时间复杂度为O(n)  
-V. 若用单链表来表示队列，则应该选用带尾指针的循环链表  
+### H2. 长度安全阈值不一致 ✅
 
-A. I, II  
-B. I, III, IV, V  
-C. IV, V  
-D. III, IV, V
-```
+**位置**: `ocr_correction.py:318` vs `deepseek_adapter.py:86`
 
-##### 识别结果(误识别为两题)
+同一 OCR 纠错功能，legacy 使用 `0.3` 倍下限，DeepSeekFixer 使用 `0.5` 倍下限。
 
-```
-1、4．下列关于线性表的说法中，正确的是()。
+- 影响: `0.3` 过于宽松，可能接受 AI 输出严重截断的文本
 
-```
+**修复**: legacy 路径统一切换为 `0.5`。
 
-```
-2、顺序存储方式只能用于存储线性结构。II.在一个设有头指针和尾指针的单链表中，删除表尾元素的时间复杂度与表长无关。III.带头结点的循环单链表中不存在空指针。IV. 在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n)。V.若用单链表来表示队列，则应该选用带尾指针的循环链表。
+### H3. Legacy 路径无法利用 VL 模型的图片能力 ✅
 
-A. I、I
-B. I、II、IV、V
-C. IV. V
-D. II、IV、V
-```
+**位置**: `ocr_correction.py:276-321`
 
-#### 案例六
+`_call_ai_correction` 仅传入文本 `block_text`，调用 `deepseek.chat()`（纯文本 API）。即使 `feature="ocr"` 配置为 Qwen-VL 视觉模型，图片数据完全不传递，Qwen-VL 退化为纯文本纠错。
 
-> 状态：**规则层假切分已修**。但本案例识别结果混入了**异题内容**（与原题不符的另一道题），属 OCR 引擎层阅读顺序/取页错误，待处理。
+**修复**: `correct_ocr_blocks` 新增 `page_images` 参数，透传到 `_call_ai_correction`；当 base_url 含 dashscope 且提供了页面图片时，构造多模态 vision 请求。
 
-##### 原题
+---
 
-```
-下列关于线性表的说法中，正确的是（ ）。
-I. 顺序存储方式只能用于存储线性结构  
-II. 在一个设有头指针和尾指针的单链表中，删除表尾元素的时间复杂度与表长无关  
-III. 带头结点的循环单链表中不存在空指针  
-IV. 在一个长度为n的有序单链表中插入一个新结点并仍保持有序的时间复杂度为O(n)  
-V. 若用单链表来表示队列，则应该选用带尾指针的循环链表  
+## MEDIUM
 
-A. I, II  
-B. I, III, IV, V  
-C. IV, V  
-D. III, IV, V
-```
+### M1. 批次 token 计数截断 ✅
 
-##### 识别结果(误识别为两题)
+**位置**: `ai_repair.py:349`
 
-```
-1、01．下列关于线性表的存储结构的描述中，正确的是()。
+`token_used: result["tokens_used"] // len(batch)` 整数除法丢弃余数，逐批累加后总 token 计数偏小。
 
-```
+**修复**: 改为 `base + (1 if pos < rem else 0)` 公平分配余数。
 
-```
-2、
-I. 线性表的顺序存储结构优于其链式存储结构
-II. 链式存储结构比顺序存储结构能更方便地表示各种逻辑结构
-III. 若频繁使用插入和删除结点操作，则顺序存储结构更优于链式存储结构
-IV. 顺序存储结构和链式存储结构都可以进行顺序存取
+### M2. `corrected_blocks` None 穿透风险 ✅
 
-A. I、II、III
-B. II、IV
-C. II、I
-D. I、IV
-```
+**位置**: `ocr_correction.py:426-428` / `ocr_correction.py:520`
 
-#### 案例七
+初始化为 `[None] * len(...)`，末尾 list comprehension 过滤 None。若循环遗漏任何 block（当前逻辑不会，但代码脆弱），None 被静默丢弃，最终 blocks 数量 < 输入数量，下游 splitter 可能收到不完整数据。
 
-> 状态：**部分修复**。指针箭头 `− >`→`->` 已在文本层还原；但选项 D 缺失（OCR 漏识）属引擎层（待）。
+**修复**: 过滤前增加防御性检查，对残留 None 打印 error 日志并回退为原始 block。Router 路径同步加固。
 
-##### 原题
+### M3. 白板 marker 恢复丢失 AI 修复结果 ✅
 
-```
-在双链表中向 p 所指的结点之前插入一个结点 q 的操作为（ ）。
+**位置**: `ai_repair.py:491-493`
 
-A. p->prior=q; q->next=p; p->prior->next=q; q->prior=p->prior;
-B. q->prior=p->prior; p->prior->next=q; q->next=p; p->prior=q->next;
-C. q->next=p; p->next=q; q->prior->next=q; q->next=p;
-D. p->prior->next=q; q->next=p; q->prior=p->prior; p->prior=q;
-```
+AI 修复的 stem 若不含原始 blank_option_groups 的全部 markers，整个修复的 stem 被丢弃、回退为原始 stem。该保护正确但未记录 warning 日志，排查时无法知道 AI 修复因 marker 丢失被弃用。
 
-##### 识别结果
+**修复**: 添加 `logger.warning(...)` 记录丢弃原因和涉及的 markers。
 
-```
-在双链表中向p所指的结点之前插入一个结点α的操作为（）。
-A. p − >prior = q; q − >next = p; p − >prior − >next = q; q − >prior = p − >prior;
-B. q − >prior = p − >prior; p − >prior − >next = q; q − >next = p; p − >prior = q − >next;
-C. q − >next = p; p − >next = q; q − >prior − >next = q; q − >next = p;
-```
+### M4. Token 估算重复计算 ✅
 
-#### 案例八
+**位置**: `ocr_correction.py:288-297`
 
-> 状态：**OCR 引擎层（待）**。下标与题干轻微错识（`a₁₀₀→a₅₀`、"删除元素a_50"→"删除元素a₀ 或 a₅₀"），与切分逻辑无关。
+先做 `_estimate_tokens(block_text) * 3` 与 `max_tokens` 比较，line 300 又重复计算一次 `_estimate_tokens(block_text) * 3` 用于预算检查。
 
-##### 原题
+**修复**: 合并为一次计算，统一复用。
 
-```
-在线性表a_0, a_1,···, a_100 中，删除元素a_50需要移动（ ）个元素。
+### M5. `_token_usage` 并发非安全 ✅
 
-A. 0  
-B. 50  
-C. 51  
-D. 0 或 50
-```
+**位置**: `ocr_correction.py` / `ai_repair.py`
 
-##### 识别结果
+两个模块的 `_token_usage` dict 操作（`_reset_counters_if_needed` / `_record_token_usage`）无锁保护。多并发导入时存在竞态条件。
 
-```
-在线性表 a₀, a₁, \ldots, a₅₀ 中，删除元素 a₀ 或 a₅₀ 需要移动（）个元素。
-A. 0
-B. 50
-C. 51
-D. 0或50
-```
+**修复**: 共享模块 `token_budget.py` 所有 dict 操作由 `asyncio.Lock` 保护。
 
-#### 案例九
+---
 
-> 状态：**OCR 引擎层（待）**。选项区被识别成完全乱码字符串，与切分逻辑无关。
+## LOW
 
-##### 原题
+### L1. `ocr_correction.py` 和 `ai_repair.py` 代码重复 ✅
 
-```
-【2016 统考真题】已知一个带有表头结点的循环双链表 L，结点结构为 prev data next，  
-其中 prev 和 next 分别是指向其直接前驱和直接后继结点的指针。现要删除指针 p 所  
-指的结点，正确的语句序列是（ ）。  
+`_reset_counters_if_needed`、`_check_token_limit`、`_record_token_usage`、`_estimate_tokens` 在两处完全重复。任何 budget 逻辑修改需改两处。
 
-A. p->next->prev=p->prev; p->prev->next=p->prev; free(p);  
-B. p->next->prev=p->next; p->prev->next=p->next; free(p);  
-C. p->next->prev=p->next; p->prev->next=p->prev; free(p);  
-D. p->next->prev=p->prev; p->prev->next=p->next; free(p);
-```
+**修复**: 抽取共享模块 `backend/app/features/token_budget.py`，两处统一导入。
 
-##### 识别结果
+### L2. AI 修复降级时无区分日志 ✅
 
-```
-【2016 统考真题】已知一个带有表头结点的循环双链表 L,结点结构为prevdatanext 其中 prev和 next分别是指向其直接前驱和直接后继结点的指针。现要删除指针p 所指的结点，正确的语句序列是()。
-:(d) aaxy :Aaxd< − d = axau< − Aaxd< − d :aaxd< − d = aaxd< − axau< − d 'v !(d) aaxg :axau< − d = axau< − aaxd< − d :axau< − d = axd< − xau< − d 'α :(d) aaxy :Aaxd< − d = axau< − aaxd< − d :axau< − d = aaxd< − axau< − d ' :(d) aaxy !axau< − d = axau< − Aaxd< − d !aaxd< − d = aaxd< − axau< − d '(
-```
+**位置**: `ai_repair.py:352-358`
 
-#### 案例十
+batch parse 失败时逐题降级调用 `_call_ai_for_repair`，降级原因只记录了一条 warning，未在最终结果中标记"此题为 batch-fallback 修复"，排查困难。
 
-> 状态：**部分修复**。指针箭头 `->` 符号错识（`->` → `− >`）已在文本层还原；整行水印已过滤。但选项 C/D 截断（OCR 漏识）+ 正文中位置性嵌入的水印属 OCR 引擎层（待）。
+**修复**: 降级结果添加 `_batch_fallback=True` 标记，最终 repaired 条目携带 `repair_method: "batch_fallback"` 和 `batch_fallback_repair` risk flag。
 
-导入的图片中含有水印”后续关注公众号[研大]“”永久微信1866224xxx“
+---
 
-##### 原题
+## 总结
 
-```
-【2023 统考真题】现有非空双链表 L，其结点结构为 prev data next，prev 是指向直接前驱结点的指针，next 是指向直接后继结点的指针。若要在 L 中指针 p 所指向的结点（非尾结点）之后插入指针 s 指向的新结点，则在执行语句序列 “s->next=p->next; p->next=s;” 后，下列语句序列中还需要执行的是（ ）
+| 指标 | 修复前 | 修复后 |
+|------|--------|--------|
+| 总问题数 | 10 | 0 |
+| CRITICAL | 2 | 0 |
+| HIGH | 3 | 0 |
+| MEDIUM | 5 | 0 |
+| LOW | 2 | 0 |
 
-A. s->next->prev=p; s->prev=p;
-B. p->next->prev=s; s->prev=p;
-C. s->prev=s->next->prev; s->next->prev=s;
-D. p->next->prev=s->prev; s->next->prev=p;
-```
+所有问题均已修复，涉及文件:
 
-##### 识别结果
-
-```
-【2023 统考真题】现有非空双链表 L，其结点结构为[prevdata|next]，prev 是指向直接前驱结点的指针，next 是指向直接后继结点的指针。若要在 L 中指针 p 所指向的结点（非尾结点）之后插入指针 s 指向的新结点，则在执行语句序列 s − >next = p − >next; p − >next = s; 后，下列语句序列中还需要执行的是（ ）
-A. s − >next − >prev = p; s − >prev = p;
-B. p − >next − >prev = s; s − >prev = p;
-```
-
+| 文件 | 涉及问题 |
+|------|----------|
+| `backend/app/ai/client.py` | C1 |
+| `backend/app/features/token_budget.py` | C2, M5, L1 (新增) |
+| `backend/app/features/ocr_correction.py` | C2, H2, H3, M2, M4, M5, L1 |
+| `backend/app/features/ai_repair.py` | C2, M1, M3, M5, L1, L2 |
+| `backend/app/features/pipeline_orchestrator.py` | H1, H3 |
+| `backend/app/features/ocr_fix/qwen_adapter.py` | H1 |

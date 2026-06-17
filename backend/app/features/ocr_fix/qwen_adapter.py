@@ -159,10 +159,18 @@ class QwenFixer:
         self._base_url = (base_url or _QWEN_DEFAULT_BASE_URL).rstrip("/")
         self._model = model
         self.config = config or {}
+        self._client: httpx.AsyncClient | None = None
 
     @property
     def is_available(self) -> bool:
         return bool(self._api_key)
+
+    @property
+    def client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            timeout = self.config.get("qwen_timeout", 60.0)
+            self._client = httpx.AsyncClient(timeout=timeout)
+        return self._client
 
     async def fix(
         self,
@@ -275,26 +283,24 @@ class QwenFixer:
             "max_tokens": self.config.get("max_tokens", 4096),
         }
 
-        timeout = self.config.get("qwen_timeout", 60.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(
-                f"{self._base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self._api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
+        resp = await self.client.post(
+            f"{self._base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+
+        if resp.status_code != 200:
+            logger.warning(
+                "Qwen API returned %d: %s",
+                resp.status_code, resp.text[:300],
             )
+            return None
 
-            if resp.status_code != 200:
-                logger.warning(
-                    "Qwen API returned %d: %s",
-                    resp.status_code, resp.text[:300],
-                )
-                return None
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
 
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-
-            canonical_text, _meta = canonicalize(content, model_name=self._model)
-            return canonical_text
+        canonical_text, _meta = canonicalize(content, model_name=self._model)
+        return canonical_text

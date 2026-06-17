@@ -22,6 +22,17 @@ _GARBLED_CHARS = re.compile(r"[�□█░-▓\x00-\x08\x0e-\x1f]")
 _SHORT_LINE_THRESHOLD = 5
 
 # ---------------------------------------------------------------------------
+# Structure anomaly detection patterns (多维触发引擎)
+# ---------------------------------------------------------------------------
+
+# Runs of consecutive unusual symbols (mirror chars, arrows, etc.)
+_RE_ABNORMAL_SYMBOLS = re.compile(r"[<>=!_:]{2,}|<-+|>-+")
+# ASCII letter runs of 3+ consecutive lowercase chars (potential garbled words)
+_RE_ASCII_RUN = re.compile(r"[a-z]{3,}")
+# Short ASCII-only lines that might be garbled option markers
+_RE_SHORT_ASCII_LINE = re.compile(r"^[!-~]{1,14}$", re.MULTILINE)
+
+# ---------------------------------------------------------------------------
 # Quality tier thresholds
 # ---------------------------------------------------------------------------
 
@@ -40,43 +51,14 @@ def _classify_quality_tier(noise_score: float) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Token budget (process-level, independent from ai_repair)
+# Token budget (shared with ai_repair via token_budget module)
 # ---------------------------------------------------------------------------
 
-_token_usage: dict[str, int | str] = {
-    "daily": 0, "monthly": 0, "daily_date": "", "monthly_month": "",
-}
+from app.features.token_budget import (
+    estimate_tokens, check_token_limit, record_token_usage, get_token_usage_snapshot,
+)
 
-
-def _estimate_tokens(text: str) -> int:
-    chinese = len(re.findall(r"[一-鿿]", text))
-    return int(chinese * 1.3 + (len(text) - chinese) * 0.3)
-
-
-def _reset_counters_if_needed():
-    today = time.strftime("%Y-%m-%d")
-    month = time.strftime("%Y-%m")
-    if _token_usage["daily_date"] != today:
-        _token_usage["daily"] = 0
-        _token_usage["daily_date"] = today
-    if _token_usage["monthly_month"] != month:
-        _token_usage["monthly"] = 0
-        _token_usage["monthly_month"] = month
-
-
-def _check_token_limit(estimated_tokens: int, config: dict) -> bool:
-    _reset_counters_if_needed()
-    daily_limit = config.get("daily_token_limit", 50000)
-    monthly_limit = config.get("monthly_token_limit", 1000000)
-    if int(_token_usage["daily"]) + estimated_tokens > daily_limit:
-        return False
-    if int(_token_usage["monthly"]) + estimated_tokens > monthly_limit:
-        return False
-    return True
-def _record_token_usage(tokens: int):
-    _reset_counters_if_needed()
-    _token_usage["daily"] = int(_token_usage["daily"]) + tokens
-    _token_usage["monthly"] = int(_token_usage["monthly"]) + tokens
+_estimate_tokens = estimate_tokens  # backward-compat alias for local use
 
 
 # ---------------------------------------------------------------------------
@@ -127,16 +109,133 @@ def _detect_noise(block: dict) -> float:
     return min(score, 1.0)
 
 
-def _should_correct(noise_score: float, config: dict) -> bool:
+# ---------------------------------------------------------------------------
+# Structure anomaly detection (多维触发引擎)
+# ---------------------------------------------------------------------------
+
+
+def _detect_structure_abnormal(text: str) -> float:
+    """检测 OCR 结果中的结构性异常（不依赖具体乱码字符）。
+
+    五维检测：
+    A. 中文占比异常 — 有中文但占比极低时说明识别丢失了中文字符
+    B. 异常符号密度 — <-, =:, > > 等非正常考试文本的符号组合
+    C. 无意义 ASCII 连续串 — 不含元音的连续小写字母（非英文单词特征）
+    D. 选项结构异常 — 短 ASCII 行应匹配选项格式但未匹配
+    E. 选项完整性异常 — 选项序列跳缺或数量不足（clean-but-incomplete）
+
+    返回 0.0 ~ 1.0 的分数。
+    """
+    if not text.strip():
+        return 0.0
+
+    total = len(text.strip())
+    if total < 5:
+        return 0.0  # 太短无法判断
+
+    score = 0.0
+
+    # ---- A. 中文占比异常 ----
+    chinese = len(re.findall(r"[一-鿿]", text))
+    chinese_ratio = chinese / max(total, 1)
+    has_some_chinese = chinese > 0
+
+    if has_some_chinese and chinese_ratio < 0.10 and total > 20:
+        score += 0.30  # 确定是中文文本但中文占比极低 → 严重异常
+    elif has_some_chinese and chinese_ratio < 0.20 and total > 30:
+        score += 0.15  # 中文占比偏低
+
+    # ---- B. 异常符号密度 ----
+    symbols = _RE_ABNORMAL_SYMBOLS.findall(text)
+    symbol_chars = sum(len(m) for m in symbols)
+    symbol_density = symbol_chars / max(total, 1)
+    if symbol_density > 0.12:
+        score += 0.30
+    elif symbol_density > 0.06:
+        score += 0.15
+
+    # ---- C. 无意义 ASCII 连续串（不含元音的低位字母串） ----
+    runs = _RE_ASCII_RUN.findall(text)
+    bad_runs = sum(1 for r in runs if not re.search(r"[aeiou]", r))
+    if bad_runs >= 3:
+        score += 0.30  # 多个不含元音的"单词" → 极可能乱码
+    elif bad_runs >= 1 and len(runs) >= 2:
+        score += 0.15
+
+    # ---- D. 选项结构异常 ----
+    # 检查短 ASCII 行：如果存在大量短 ASCII 行但都不像选项标记
+    lines = text.split("\n")
+    ascii_short = [
+        ln.strip() for ln in lines
+        if 1 < len(ln.strip()) < 15 and not re.search(r"[一-鿿]", ln)
+    ]
+    if len(ascii_short) >= 3:
+        option_like = sum(
+            1 for ln in ascii_short
+            if re.match(r"^[A-Da-d][.、．）)\s]", ln)
+        )
+        if option_like < len(ascii_short) * 0.3:
+            score += 0.20
+
+    # ---- E. 选项完整性异常（clean-but-incomplete：文本正常但选项缺失） ----
+    option_markers = re.findall(r"^([A-D])\s*[.、．）)\s]", text, re.MULTILINE)
+    if option_markers:
+        present = set(option_markers)
+
+        # 序列跳缺：A→C 跳过 B，或 A→D 缺少 B/C，或 B→D 跳过 C
+        if "A" in present and "C" in present and "B" not in present:
+            score += 0.30
+        if "A" in present and "D" in present and ("B" not in present or "C" not in present):
+            score += 0.30
+        if "B" in present and "D" in present and "C" not in present:
+            score += 0.25
+
+        # 长文本（>150 字符）但选项数 ≤2 → 明显缺失
+        if len(text) > 150 and len(present) <= 2:
+            score += 0.20
+
+        # 有 A/B/C 但缺 D（考研选择题通常为 4 个选项）
+        if present == {"A", "B", "C"} and len(text) > 150:
+            score += 0.20
+
+    return min(score, 1.0)
+
+
+def _should_correct(
+    noise_score: float,
+    config: dict,
+    structure_score: float = 0.0,
+    low_confidence: bool = False,
+    has_image: bool = False,
+) -> bool:
+    """多维触发判断：noise OR structure_abnormal OR low_confidence。
+
+    图片场景（has_image=True）降低触发阈值，但不无条件调用。
+    """
     mode = config.get("mode", "auto")
     if mode == "never":
         return False
     if mode == "always":
         return True
+
+    # 低置信度直接触发纠错
+    if low_confidence:
+        return True
+
+    # 合并 noise 和 structure 分数
+    combined = max(noise_score, structure_score)
+
+    # 自定义阈值优先（向后兼容现有配置）
     threshold = config.get("noise_threshold")
     if threshold is not None:
-        return noise_score >= threshold
-    tier = _classify_quality_tier(noise_score)
+        return combined >= threshold
+
+    # 图片场景降低门槛：TIER_HIGH 的 70%
+    if has_image:
+        return combined >= TIER_HIGH_THRESHOLD * 0.7
+
+    # 默认基于 quality tier（>= MEDIUM 触发）
+    tier = _classify_quality_tier(combined)
     return tier in ("MEDIUM", "LOW")
 
 
@@ -149,6 +248,7 @@ async def _call_ai_correction(
     block_text: str, config: dict,
     api_key: str | None = None, base_url: str | None = None,
     model: str | None = None,
+    page_image: bytes | None = None,
 ) -> str | None:
     from app.ai.client import deepseek
     from app.ai.prompts import build_ocr_correction
@@ -163,15 +263,27 @@ async def _call_ai_correction(
 
     # ocr_filter_max_tokens: 超过上限则跳过
     max_tokens = config.get("ocr_filter_max_tokens")
+    estimated = _estimate_tokens(block_text) * 3  # prompt + response overhead (computed once)
     if max_tokens is not None:
-        estimated = _estimate_tokens(block_text) * 3  # prompt + response overhead
         if estimated > int(max_tokens):
             return None
 
-    messages = build_ocr_correction(block_text, system_prompt=config.get("ocr_correction_prompt"))
-    estimated = _estimate_tokens(block_text) * 3  # prompt + response overhead
+    # 图片场景：base_url 含 dashscope 且提供了页面图片时，走 VL 多模态请求
+    is_vl = base_url and "dashscope" in base_url and page_image
+    if is_vl:
+        import base64
+        image_b64 = base64.b64encode(page_image).decode("ascii")
+        messages = [
+            {"role": "system", "content": config.get("ocr_correction_prompt") or "你是专业 OCR 校验助手。"},
+            {"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
+                {"type": "text", "text": f"请根据图片核对并修正以下 OCR 识别文本：\n\n{block_text}"},
+            ]},
+        ]
+    else:
+        messages = build_ocr_correction(block_text, system_prompt=config.get("ocr_correction_prompt"))
 
-    if not _check_token_limit(estimated, config):
+    if not await check_token_limit(estimated, config):
         return None
 
     try:
@@ -179,7 +291,7 @@ async def _call_ai_correction(
     except Exception:
         return None
 
-    _record_token_usage(result["tokens_used"])
+    await record_token_usage(result["tokens_used"])
 
     corrected = result["content"].strip()
     if not corrected:
@@ -187,7 +299,7 @@ async def _call_ai_correction(
 
     # Safety: reject if AI output is drastically different in length
     original_len = len(block_text)
-    if len(corrected) > original_len * 2 or len(corrected) < original_len * 0.3:
+    if len(corrected) > original_len * 2 or len(corrected) < original_len * 0.5:
         return None
 
     return corrected
@@ -235,6 +347,7 @@ async def correct_ocr_blocks(
     normalized_blocks: list[dict],
     config: dict | None = None,
     db: AsyncSession | None = None,
+    page_images: dict[int, bytes] | None = None,
 ) -> dict:
     """AI OCR 文本纠错层。"""
     if config is None:
@@ -300,7 +413,8 @@ async def correct_ocr_blocks(
     corrected_count = 0
     flagged_for_review = 0
     tier_distribution: dict[str, int] = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
-    total_tokens_before = int(_token_usage.get("daily", 0))
+    snapshot_before = get_token_usage_snapshot()
+    total_tokens_before = snapshot_before["daily"]
 
     to_correct: list[tuple[int, str, float]] = []
 
@@ -311,9 +425,11 @@ async def correct_ocr_blocks(
             continue
 
         noise_score = _detect_noise(block)
-        tier = _classify_quality_tier(noise_score)
+        structure_score = _detect_structure_abnormal(text)
+        combined = max(noise_score, structure_score)
+        tier = _classify_quality_tier(combined)
         tier_distribution[tier] += 1
-        should = _should_correct(noise_score, config)
+        should = _should_correct(noise_score, config, structure_score=structure_score)
 
         if not should:
             corrected_blocks[idx] = block
@@ -321,28 +437,35 @@ async def correct_ocr_blocks(
                 "block_index": block.get("block_index", 0),
                 "page": block.get("page", 1),
                 "noise_score": round(noise_score, 3),
+                "structure_score": round(structure_score, 3),
                 "quality_tier": tier,
                 "corrected": False,
             })
             continue
 
         noisy_count += 1
-        to_correct.append((idx, text, noise_score))
+        to_correct.append((idx, text, noise_score, structure_score))
 
     sem = asyncio.Semaphore(3)
 
-    async def _correct_one(idx: int, text: str):
+    async def _correct_one(idx: int, text: str, block: dict):
         async with sem:
-            return idx, await _call_ai_correction(text, config, api_key=_api_key, base_url=_base_url, model=_model_name)
+            page_num = block.get("page", 1)
+            page_img = page_images.get(page_num) if page_images else None
+            return idx, await _call_ai_correction(
+                text, config, api_key=_api_key, base_url=_base_url, model=_model_name,
+                page_image=page_img,
+            )
 
     results = await asyncio.gather(
-        *[_correct_one(idx, text) for idx, text, _ in to_correct],
+        *[_correct_one(idx, text, normalized_blocks[idx]) for idx, text, _, _ in to_correct],
         return_exceptions=True,
     )
 
-    for (idx, text, noise_score), result in zip(to_correct, results):
+    for (idx, text, noise_score, structure_score), result in zip(to_correct, results):
         block = normalized_blocks[idx]
-        tier = _classify_quality_tier(noise_score)
+        combined = max(noise_score, structure_score)
+        tier = _classify_quality_tier(combined)
 
         if isinstance(result, BaseException):
             logger.debug("ocr_correction block %d failed: %s", idx, result)
@@ -356,6 +479,7 @@ async def correct_ocr_blocks(
                 "block_index": block.get("block_index", 0),
                 "page": block.get("page", 1),
                 "noise_score": round(noise_score, 3),
+                "structure_score": round(structure_score, 3),
                 "quality_tier": tier,
                 "corrected": False,
                 "needs_review": tier == "LOW",
@@ -378,10 +502,17 @@ async def correct_ocr_blocks(
             "block_index": block.get("block_index", 0),
             "page": block.get("page", 1),
             "noise_score": round(noise_score, 3),
+            "structure_score": round(structure_score, 3),
             "quality_tier": tier,
             "corrected": True,
             "needs_review": tier == "LOW",
         })
+
+    # M2: ensure all blocks are non-None (defense against silent data loss)
+    for idx, b in enumerate(corrected_blocks):
+        if b is None:
+            logger.error("ocr_correction: block %d was not filled — falling back to original", idx)
+            corrected_blocks[idx] = normalized_blocks[idx]
 
     final_blocks = [b for b in corrected_blocks if b is not None]
 
@@ -397,8 +528,8 @@ async def correct_ocr_blocks(
         if filtered_count:
             logger.debug("ocr_filter_sensitive: filtered %d blocks", filtered_count)
 
-    _reset_counters_if_needed()
-    total_tokens_used = int(_token_usage.get("daily", 0)) - total_tokens_before
+    snapshot_after = get_token_usage_snapshot()
+    total_tokens_used = snapshot_after["daily"] - total_tokens_before
 
     return {
         "corrected_blocks": final_blocks,
