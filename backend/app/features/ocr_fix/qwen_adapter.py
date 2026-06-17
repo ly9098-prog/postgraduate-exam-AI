@@ -68,30 +68,46 @@ def _is_options_only(text: str) -> bool:
 
 
 def _preserve_stem_from_original(original: str, corrected: str) -> str:
-    """当 Qwen 只返回选项（丢弃了题号+题干），从原始文本中提取题号。
+    """当 Qwen 只返回选项（丢弃了题号+题干），从原始文本中恢复完整题干。
 
     Qwen-VL 有时只输出修正后的选项行，不包含题号和题干。
-    此函数从原始 OCR 文本中提取**纯题号数字**，拼到修正选项前，
-    确保 splitter 能找到题号边界正常切分。AI repair 会从图片重新
-    生成完整题干。
+    此函数从原始 OCR 文本中提取题号所在行到第一个选项行之前的
+    **完整题干文本**（而非仅题号数字），拼到修正选项前。
 
-    为什么只提取题号数字而不是完整题干行？
-    原始 OCR 题干可能含有严重乱码（cao->a0, 多余引号等），
-    保留乱码会让 AI repair 无法判断是否需要修复。
+    为什么不拼接题干行？
+    旧逻辑只恢复题号数字（担心原始 OCR 含乱码传递给 AI repair），
+    但 AI repair（DeepSeek）是纯文本模型，无图片访问能力，无法
+    从空字符串恢复题干。乱码题干优于空题干：
+    - 有文本线索即可在审核页面人工判断
+    - AI repair 对有内容的文本（即使带乱码）修复成功率远高于空字符串
+    - _looks_like_non_question_text 有保护机制防止纯乱码绕过
     """
     if not _is_options_only(corrected):
         return corrected  # 修正文本已有题干
 
-    m = _RE_QUESTION_NUMBER_LINE.search(original)
-    if not m:
-        return corrected  # 原文也无题号，无法恢复
+    lines = original.split("\n")
+    stem_lines: list[str] = []
+    found_qnum = False
+    for line in lines:
+        stripped = line.strip()
+        if not found_qnum:
+            if _RE_QUESTION_NUMBER_LINE.match(stripped):
+                found_qnum = True
+                stem_lines.append(line)
+            continue
+        if _RE_OPTION_LINE.match(stripped):
+            break
+        stem_lines.append(line)
 
-    qnum = m.group(0).strip()
+    if not stem_lines:
+        return corrected  # 无法恢复
+
+    stem_text = "\n".join(stem_lines).strip()
     logger.info(
-        "Qwen dropped stem, recovered number='%s' from original (corrected_len=%d)",
-        qnum, len(corrected),
+        "Qwen dropped stem, recovered stem='%s...' from original (corrected_len=%d)",
+        stem_text[:60], len(corrected),
     )
-    return qnum + "\n" + corrected
+    return stem_text + "\n" + corrected
 
 
 def _compress_image(image: bytes) -> bytes:
