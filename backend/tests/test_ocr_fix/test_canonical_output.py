@@ -243,7 +243,7 @@ class TestPreserveStem:
     """QwenAdapter stem preservation test (imported helper)."""
 
     def test_options_only_with_qnum(self):
-        """修正文本只有选项，原文有题号 → 恢复题干。"""
+        """修正文本只有选项，原文有题号 → 恢复纯题号数字。"""
         from app.features.ocr_fix.qwen_adapter import _preserve_stem_from_original
 
         original = "06. 在一个单链表中，已知q所指结点是p所指结点\n的前驱结点，若在q和p之间插入结点s，则执行()。\nA. s->next=p->next;p->next=s;\nB. p->next=s->next;s->next=p;"
@@ -251,7 +251,9 @@ class TestPreserveStem:
         result = _preserve_stem_from_original(original, corrected)
         assert result.startswith("06.")
         assert "s->next=p->next" in result
-        assert "A." in result.split("\n")[-2]  # options preserved after stem
+        # only the bare number preserved, not the garbled stem content
+        first_line = result.split("\n")[0]
+        assert first_line == "06."
 
     def test_corrected_has_stem(self):
         """修正文本已有题干 → 不修改。"""

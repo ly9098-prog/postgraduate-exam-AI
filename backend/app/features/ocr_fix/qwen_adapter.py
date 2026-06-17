@@ -68,41 +68,30 @@ def _is_options_only(text: str) -> bool:
 
 
 def _preserve_stem_from_original(original: str, corrected: str) -> str:
-    """当 Qwen 只返回选项（丢弃了题号+题干），从原始文本中恢复题干。
+    """当 Qwen 只返回选项（丢弃了题号+题干），从原始文本中提取题号。
 
     Qwen-VL 有时只输出修正后的选项行，不包含题号和题干。
-    此函数检测到该情况后，从原始 OCR 文本中提取题号行及之前的题干内容，
-    拼接到修正后的选项前。
+    此函数从原始 OCR 文本中提取**纯题号数字**，拼到修正选项前，
+    确保 splitter 能找到题号边界正常切分。AI repair 会从图片重新
+    生成完整题干。
+
+    为什么只提取题号数字而不是完整题干行？
+    原始 OCR 题干可能含有严重乱码（cao->a0, 多余引号等），
+    保留乱码会让 AI repair 无法判断是否需要修复。
     """
     if not _is_options_only(corrected):
         return corrected  # 修正文本已有题干
 
-    if not _RE_QUESTION_NUMBER_LINE.search(original):
+    m = _RE_QUESTION_NUMBER_LINE.search(original)
+    if not m:
         return corrected  # 原文也无题号，无法恢复
 
-    lines = original.split("\n")
-    pre_option_parts: list[str] = []
-    found_qnum = False
-
-    for line in lines:
-        stripped = line.strip()
-        if _RE_OPTION_LINE.match(stripped):
-            break  # 遇到选项行停止
-        if stripped:
-            pre_option_parts.append(stripped)
-        if _RE_QUESTION_NUMBER_LINE.match(stripped):
-            found_qnum = True
-
-    if found_qnum and pre_option_parts:
-        stem = "\n".join(pre_option_parts).strip()
-        if stem:
-            logger.info(
-                "Qwen dropped stem, recovered from original: stem_len=%d corrected_len=%d",
-                len(stem), len(corrected),
-            )
-            return stem + "\n" + corrected
-
-    return corrected
+    qnum = m.group(0).strip()
+    logger.info(
+        "Qwen dropped stem, recovered number='%s' from original (corrected_len=%d)",
+        qnum, len(corrected),
+    )
+    return qnum + "\n" + corrected
 
 
 def _compress_image(image: bytes) -> bytes:
