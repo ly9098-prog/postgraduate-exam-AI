@@ -220,7 +220,6 @@ def _parse_batch_ai_response(content: str) -> list[dict] | None:
 
     # 按行扫描，逐题提取每个 {...}
     items: list[dict] = []
-    start = text.find("{")
     depth = 0
     current_start = -1
     brace_count = 0
@@ -244,20 +243,22 @@ def _parse_batch_ai_response(content: str) -> list[dict] | None:
 
 
 async def _call_ai_for_repair(
-    raw_text: str, existing: dict, config: dict, db: AsyncSession | None = None
+    raw_text: str, existing: dict, config: dict, db: AsyncSession | None = None,
+    api_key: str | None = None, base_url: str | None = None, model_name: str | None = None,
 ) -> dict | None:
-    """调用 DeepSeek 修复单题。返回修复结果或 None（降级）。"""
+    """调用 DeepSeek 修复单题。返回修复结果或 None（降级）。
+
+    外部可传入 api_key/base_url/model_name 避免重复查询 DB 凭据。
+    """
     from app.ai.client import deepseek
     from app.ai.prompts import build_repair_question
 
-    creds = None
-    if db is not None:
+    if db is not None and api_key is None:
         from app.services.model_config_resolver import ensure_db_model_configured
         creds = await ensure_db_model_configured(db)
-
-    api_key = creds[0] if creds else None
-    base_url = creds[1] if creds else None
-    model_name = creds[2] if creds else None
+        api_key = creds[0] if creds else None
+        base_url = creds[1] if creds else None
+        model_name = creds[2] if creds else None
 
     messages = build_repair_question(raw_text, existing)
     prompt_text = json.dumps(messages, ensure_ascii=False)
@@ -309,9 +310,10 @@ async def _call_ai_for_batch_repair(
 
     all_results: list[tuple[int, dict | None]] = []
 
-    # 自动分批
-    for batch_start in range(0, len(candidates), _BATCH_LIMIT):
-        batch = candidates[batch_start : batch_start + _BATCH_LIMIT]
+    # 自动分批（优先使用 config 中的 batch_size，默认 _BATCH_LIMIT）
+    batch_limit = config.get("batch_size", _BATCH_LIMIT) or _BATCH_LIMIT
+    for batch_start in range(0, len(candidates), batch_limit):
+        batch = candidates[batch_start : batch_start + batch_limit]
         messages = build_batch_repair_prompt(batch)
         prompt_text = json.dumps(messages, ensure_ascii=False)
         estimated = _estimate_tokens(prompt_text)
@@ -354,7 +356,7 @@ async def _call_ai_for_batch_repair(
                 len(responses) if responses else 0, len(batch),
             )
             for idx, q, raw_text in batch:
-                single = await _call_ai_for_repair(raw_text, q, config, db)
+                single = await _call_ai_for_repair(raw_text, q, config, db, api_key=api_key, base_url=base_url, model_name=model_name)
                 all_results.append((idx, single))
 
     return all_results
