@@ -429,25 +429,27 @@ async def test_model_connection(
 
     import httpx
 
-    # 若有 model_id，从数据库解析真实凭证，避免前端传掩码导致 auth 失败
+    # 若有 model_id，优先用环境变量（最权威），其次 DB 存储，最后请求体
     if model_id is not None and db is not None:
         from app.models.admin_ai_config import AdminAiModelConfig
+        from app.core.config import settings as app_settings
+
         model = await db.get(AdminAiModelConfig, model_id)
         if model is not None:
             if model.api_base_url:
                 api_base_url = model.api_base_url
-            if model.api_key_encrypted:
-                decrypted = decrypt_api_key(model.api_key_encrypted)
-                if decrypted:
-                    api_key = decrypted
             model_name = model.name
-            # 解析后仍可能是前端掩码（DB 无存储 / 空值 / 旧明文不匹配等），
-            # 此时从环境变量兜底，确保密钥可用
-            if not api_key or api_key == "****" or set(api_key) == {"*"}:
-                from app.core.config import settings as app_settings
-                env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
-                if env_key and env_key != "sk-your-key-here":
-                    api_key = env_key
+
+            # 1) 环境变量兜底 — 最权威的凭证来源，不依赖 DB 同步
+            env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
+            if env_key and env_key != "sk-your-key-here":
+                api_key = env_key
+            else:
+                # 2) DB 存储的 key（解密后）
+                if model.api_key_encrypted:
+                    decrypted = decrypt_api_key(model.api_key_encrypted)
+                    if decrypted and decrypted != "****" and set(decrypted) != {"*"}:
+                        api_key = decrypted
         else:
             pass  # model not found — fall through to request body values
 
