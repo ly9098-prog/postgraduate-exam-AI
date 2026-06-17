@@ -161,8 +161,14 @@ async def approve_import_question(db: AsyncSession, import_id: int, operator_id:
         qi.question_id = pub_result["question_id"]
     elif pub_result["status"] == "failed":
         logger.warning(
-            "Auto-publish failed for import %d: %s (question stays approved for retry)",
+            "Auto-publish failed for import %d: %s (rolling back approval)",
             import_id, pub_result.get("reason"),
+        )
+        qi.status = "pending"  # 回滚状态，保留在审核队列等待修复后重试
+        qi.reviewed_by = None
+        qi.reviewed_at = None
+        raise ValueError(
+            f"题目数据不完整，无法发布到题库：{pub_result.get('reason', '未知错误')}"
         )
 
     await db.flush()
@@ -245,13 +251,19 @@ async def approve_import_batch(db: AsyncSession, batch_id: str, operator_id: int
                     qi.question_id = pub["question_id"]
                 elif pub["status"] == "failed":
                     logger.warning(
-                        "Batch auto-publish failed for import %d: %s",
+                        "Batch auto-publish failed for import %d: %s (skipped)",
                         qi.id, pub.get("reason"),
                     )
+                    qi.status = "pending"  # 回滚，留在审核队列
+                    qi.reviewed_by = None
+                    qi.reviewed_at = None
             except Exception as exc:
                 logger.warning(
                     "Batch auto-publish error for import %d: %s", qi.id, exc,
                 )
+                qi.status = "pending"  # 异常也回滚
+                qi.reviewed_by = None
+                qi.reviewed_at = None
 
             count += 1
 
