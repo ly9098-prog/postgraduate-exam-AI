@@ -620,7 +620,7 @@ function FeatureMapping({
                   )}
                   {enabledModels.length > 0 && (
                     <Select
-                      value={assigned?.id ? String(assigned.id) : ""}
+                      value={assigned ? String(assigned.id) : ""}
                       onChange={(val) => {
                         if (!val) {
                           const current = models.find((m) => m.feature === feat.key);
@@ -631,7 +631,7 @@ function FeatureMapping({
                       }}
                       disabled={disabled}
                       color={hasDedicated ? feat.color : undefined}
-                      placeholder="取消指定"
+                      placeholder="选择模型"
                       options={[
                         { value: "", label: "取消指定" },
                         ...enabledModels.map((m) => ({
@@ -672,7 +672,24 @@ export function ModelCards() {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-models"] }),
+    onSuccess: (result, variables) => {
+      // 用 API 响应结果更新缓存，同步清除旧模型的相同 feature
+      queryClient.setQueryData<AdminAiModelConfig[]>(["ai-models"], (old) => {
+        if (!old) return [result];
+        const feature = variables.data.feature;
+        return old.map((m) => {
+          if (m.id === result.id) return { ...result };
+          // 如果 feature 被分配给其他模型，清除旧模型上的相同 feature
+          if (feature != null && m.feature === feature) {
+            return { ...m, feature: null };
+          }
+          return m;
+        });
+      });
+    },
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-models"] });
+    },
   });
 
   const createMutation = useMutation({
