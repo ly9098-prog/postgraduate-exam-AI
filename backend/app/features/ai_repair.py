@@ -192,6 +192,57 @@ def _stem_contains_markers(stem: str, markers: set[str]) -> bool:
     return all(marker in stem for marker in markers)
 
 
+_BATCH_LIMIT = 15  # 单次 batch 最多 15 题，超长自动分批
+
+
+def _parse_batch_ai_response(content: str) -> list[dict] | None:
+    """从 AI 返回内容中提取 JSON 数组（多题批量修复结果）。"""
+    text = content.strip()
+
+    # 直接解析 JSON 数组
+    if text.startswith("["):
+        try:
+            items = json.loads(text)
+            if isinstance(items, list):
+                return items
+        except json.JSONDecodeError:
+            pass
+
+    # 提取 ```json ... ``` 代码块中的数组
+    m = re.search(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", text)
+    if m:
+        try:
+            items = json.loads(m.group(1).strip())
+            if isinstance(items, list):
+                return items
+        except json.JSONDecodeError:
+            pass
+
+    # 按行扫描，逐题提取每个 {...}
+    items: list[dict] = []
+    start = text.find("{")
+    depth = 0
+    current_start = -1
+    brace_count = 0
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if brace_count == 0:
+                current_start = i
+            brace_count += 1
+        elif ch == "}":
+            brace_count -= 1
+            if brace_count == 0 and current_start >= 0:
+                try:
+                    item = json.loads(text[current_start : i + 1])
+                    if isinstance(item, dict):
+                        items.append(item)
+                except json.JSONDecodeError:
+                    pass
+                current_start = -1
+
+    return items if len(items) >= 2 else None
+
+
 async def _call_ai_for_repair(
     raw_text: str, existing: dict, config: dict, db: AsyncSession | None = None
 ) -> dict | None:
@@ -233,6 +284,80 @@ async def _call_ai_for_repair(
         "ai_errors": errors,
         "token_used": result["tokens_used"],
     }
+
+
+async def _call_ai_for_batch_repair(
+    candidates: list[tuple[int, dict, str]],
+    config: dict,
+    db: AsyncSession | None = None,
+) -> list[tuple[int, dict | None]]:
+    """批量调用 DeepSeek 修复多题。自动分批（每批最多 _BATCH_LIMIT 题）。"""
+    from app.ai.client import deepseek
+    from app.ai.prompts import build_batch_repair_prompt
+
+    if not candidates:
+        return []
+
+    creds = None
+    if db is not None:
+        from app.services.model_config_resolver import ensure_db_model_configured
+        creds = await ensure_db_model_configured(db)
+
+    api_key = creds[0] if creds else None
+    base_url = creds[1] if creds else None
+    model_name = creds[2] if creds else None
+
+    all_results: list[tuple[int, dict | None]] = []
+
+    # 自动分批
+    for batch_start in range(0, len(candidates), _BATCH_LIMIT):
+        batch = candidates[batch_start : batch_start + _BATCH_LIMIT]
+        messages = build_batch_repair_prompt(batch)
+        prompt_text = json.dumps(messages, ensure_ascii=False)
+        estimated = _estimate_tokens(prompt_text)
+
+        if not _check_token_limit(estimated, config):
+            for idx, _q, _rt in batch:
+                all_results.append((idx, None))
+            continue
+
+        try:
+            result = await deepseek.chat(
+                messages, temperature=0.3, model=model_name,
+                api_key=api_key, base_url=base_url,
+            )
+        except Exception:
+            for idx, _q, _rt in batch:
+                all_results.append((idx, None))
+            continue
+
+        _record_token_usage(result["tokens_used"])
+        responses = _parse_batch_ai_response(result["content"])
+
+        if responses and len(responses) == len(batch):
+            for (idx, q, _rt), repaired in zip(batch, responses):
+                is_valid, errors = _validate_repaired(repaired)
+                all_results.append((
+                    idx,
+                    {
+                        "repaired": repaired,
+                        "ai_valid": is_valid,
+                        "ai_errors": errors,
+                        "token_used": result["tokens_used"] // len(batch),
+                    } if is_valid else None,
+                ))
+        else:
+            # batch 解析失败，逐题降级
+            logger.warning(
+                "Batch repair parse failed (%d responses for %d questions), "
+                "falling back to per-question repair",
+                len(responses) if responses else 0, len(batch),
+            )
+            for idx, q, raw_text in batch:
+                single = await _call_ai_for_repair(raw_text, q, config, db)
+                all_results.append((idx, single))
+
+    return all_results
 
 
 async def repair_questions(
@@ -311,23 +436,31 @@ async def repair_questions(
             raw_text = q.get("raw_text", "") or q.get("raw_question_text", "")
             candidates.append((i, q, raw_text))
 
-    sem = asyncio.Semaphore(3)
+    # 批量修复（一次 LLM 调用修复多题），超长自动分批
+    batch_size = config.get("batch_size", _BATCH_LIMIT)
+    if batch_size > 1 and len(candidates) > 1:
+        results = await _call_ai_for_batch_repair(candidates, config, db)
+    else:
+        # 单题修复（并发 3 路）
+        sem = asyncio.Semaphore(3)
 
-    async def _repair_one(idx: int, q: dict, raw_text: str):
-        async with sem:
-            return idx, await _call_ai_for_repair(raw_text, q, config, db)
+        async def _repair_one(idx: int, q: dict, raw_text: str):
+            async with sem:
+                return idx, await _call_ai_for_repair(raw_text, q, config, db)
 
-    results = await asyncio.gather(
-        *[_repair_one(i, q, rt) for i, q, rt in candidates],
-        return_exceptions=True,
-    )
+        gathered = await asyncio.gather(
+            *[_repair_one(i, q, rt) for i, q, rt in candidates],
+            return_exceptions=True,
+        )
 
-    for (i, q, raw_text), result in zip(candidates, results):
-        if isinstance(result, BaseException):
-            logger.debug("ai_repair question %d failed: %s", i, result)
-            ai_result = None
-        else:
-            _, ai_result = result
+        results: list[tuple[int, dict | None]] = []
+        for (i, _q, _rt), result in zip(candidates, gathered):
+            if isinstance(result, BaseException):
+                results.append((i, None))
+            else:
+                results.append(result)  # type: ignore[assignment]
+
+    for (i, q, raw_text), (_, ai_result) in zip(candidates, results):
 
         if ai_result is None:
             unrepaired.append({
