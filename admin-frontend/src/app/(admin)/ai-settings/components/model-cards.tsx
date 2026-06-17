@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Brain, Cpu, Globe, Key, ToggleLeft, ToggleRight,
   CheckCircle2, Info, X, Trash2, Plus, Tag, ScanEye,
+  Loader2, AlertTriangle, Wifi,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
@@ -12,6 +13,8 @@ import type {
   AdminAiModelConfig,
   AdminAiModelConfigCreateRequest,
   AdminAiModelConfigPatchRequest,
+  ModelTestConnectionRequest,
+  ModelTestConnectionResponse,
 } from "@/lib/api/types";
 import { getErrorMessage } from "@/lib/api/errors";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -83,12 +86,41 @@ function AddModelDialog({
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [feature, setFeature] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<ModelTestConnectionResponse | null>(null);
 
   if (!open) return null;
+
+  const handleTestConnection = async () => {
+    if (!apiBaseUrl.trim() || !apiKey.trim() || !name.trim()) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await apiRequest<ModelTestConnectionResponse>("/ai-models/test-connection", {
+        method: "POST",
+        body: JSON.stringify({
+          api_base_url: apiBaseUrl.trim(),
+          api_key: apiKey.trim(),
+          model_name: name.trim(),
+        } satisfies ModelTestConnectionRequest),
+      });
+      setTestResult(result);
+    } catch (err) {
+      setTestResult({
+        success: false,
+        status: "network_error",
+        message: getErrorMessage(err),
+        latency_ms: null,
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const reset = () => {
     setName(""); setDisplayName(""); setProvider("openai");
     setApiBaseUrl(""); setApiKey(""); setFeature("");
+    setTestResult(null);
   };
 
   const handleSave = () => {
@@ -168,6 +200,40 @@ function AddModelDialog({
           </div>
         </div>
 
+        <div className="mt-4 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleTestConnection}
+            disabled={testing || !apiBaseUrl.trim() || !apiKey.trim() || !name.trim()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-40"
+          >
+            {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
+            测试连接
+          </button>
+        </div>
+
+        {testResult && (
+          <div className={cn(
+            "mt-3 rounded-lg px-3 py-2 text-xs",
+            testResult.success
+              ? "border border-[var(--color-success)] bg-[var(--color-success-light)] text-[var(--color-success)]"
+              : "border border-[var(--color-danger)] bg-[var(--color-danger-light)] text-[var(--color-danger)]",
+          )}>
+            <div className="flex items-start gap-1.5">
+              {testResult.success
+                ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+              <div>
+                <p className="font-semibold">{testResult.success ? "连接成功" : "连接失败"}</p>
+                <p className="mt-0.5">{testResult.message}</p>
+                {testResult.latency_ms != null && (
+                  <p className="mt-0.5 opacity-70">耗时 {testResult.latency_ms}ms</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mt-6 flex justify-end gap-3">
           <Button variant="secondary" onClick={handleClose} disabled={loading}>取消</Button>
           <Button onClick={handleSave} disabled={loading || !name.trim() || !displayName.trim() || !provider.trim()}>
@@ -198,12 +264,15 @@ function ModelCard({
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiBaseUrlInput, setApiBaseUrlInput] = useState("");
   const [featureInput, setFeatureInput] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<ModelTestConnectionResponse | null>(null);
 
   const openApiEdit = () => {
     setNameInput(model.name);
     setApiKeyInput(model.api_configured ? (model.api_key_masked ?? "****") : "");
     setApiBaseUrlInput(model.api_base_url ?? "");
     setFeatureInput(model.feature ?? "");
+    setTestResult(null);
     setIsEditingApi(true);
   };
 
@@ -215,6 +284,32 @@ function ModelCard({
     if (featureInput !== (model.feature ?? "")) payload.feature = featureInput || null;
     onSaveApiConfig(model.id, payload);
     setIsEditingApi(false);
+  };
+
+  const handleTestConnection = async () => {
+    if (!apiBaseUrlInput.trim() || !apiKeyInput.trim() || !nameInput.trim()) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await apiRequest<ModelTestConnectionResponse>("/ai-models/test-connection", {
+        method: "POST",
+        body: JSON.stringify({
+          api_base_url: apiBaseUrlInput.trim(),
+          api_key: apiKeyInput.trim(),
+          model_name: nameInput.trim(),
+        } satisfies ModelTestConnectionRequest),
+      });
+      setTestResult(result);
+    } catch (err) {
+      setTestResult({
+        success: false,
+        status: "network_error",
+        message: getErrorMessage(err),
+        latency_ms: null,
+      });
+    } finally {
+      setTesting(false);
+    }
   };
 
   const Icon = getProviderIcon(model.provider);
@@ -313,7 +408,7 @@ function ModelCard({
               <Key className="h-3 w-3" />
               API 配置
             </div>
-            <button onClick={() => setIsEditingApi(false)}
+            <button onClick={() => { setIsEditingApi(false); setTestResult(null); }}
               className="text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]">
               <X className="h-4 w-4" />
             </button>
@@ -354,11 +449,45 @@ function ModelCard({
               className="flex-1 rounded-lg bg-[var(--color-primary)] py-2 text-xs font-semibold text-white transition-colors hover:bg-[var(--color-primary-dark)] disabled:opacity-50">
               保存
             </button>
-            <button onClick={() => setIsEditingApi(false)}
+            <button onClick={() => { setIsEditingApi(false); setTestResult(null); }}
               className="flex-1 rounded-lg border border-[var(--color-border)] py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-input)]">
               取消
             </button>
           </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleTestConnection}
+              disabled={testing || !apiBaseUrlInput.trim() || !apiKeyInput.trim() || !nameInput.trim()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-40"
+            >
+              {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
+              测试连接
+            </button>
+          </div>
+
+          {testResult && (
+            <div className={cn(
+              "rounded-lg px-3 py-2 text-xs",
+              testResult.success
+                ? "border border-[var(--color-success)] bg-[var(--color-success-light)] text-[var(--color-success)]"
+                : "border border-[var(--color-danger)] bg-[var(--color-danger-light)] text-[var(--color-danger)]",
+            )}>
+              <div className="flex items-start gap-1.5">
+                {testResult.success
+                  ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                <div>
+                  <p className="font-semibold">{testResult.success ? "连接成功" : "连接失败"}</p>
+                  <p className="mt-0.5">{testResult.message}</p>
+                  {testResult.latency_ms != null && (
+                    <p className="mt-0.5 opacity-70">耗时 {testResult.latency_ms}ms</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <button onClick={openApiEdit}

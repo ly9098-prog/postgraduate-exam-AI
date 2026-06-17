@@ -3,8 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_roles
 from app.core.database import get_db
-from app.schemas.admin_ai_config import AdminAiModelConfigCreateRequest, AdminAiModelConfigPatchRequest, AdminAiModelConfigResponse, AdminAiConfigsPatchRequest, AdminAiConfigsResponse
-from app.services.admin_ai_config_service import create_model, delete_model, get_all_configs, list_models, patch_configs, patch_model
+from app.schemas.admin_ai_config import AdminAiModelConfigCreateRequest, AdminAiModelConfigPatchRequest, AdminAiModelConfigResponse, AdminAiConfigsPatchRequest, AdminAiConfigsResponse, ModelTestConnectionRequest, ModelTestConnectionResponse
+from app.services.admin_ai_config_service import create_model, delete_model, get_all_configs, list_models, patch_configs, patch_model, test_model_connection
 
 router = APIRouter(prefix="/api/admin/v1", tags=["admin-ai-config"])
 
@@ -64,6 +64,20 @@ async def delete_model_endpoint(
         msg = str(exc)
         code = status.HTTP_404_NOT_FOUND if "不存在" in msg else status.HTTP_400_BAD_REQUEST
         raise HTTPException(status_code=code, detail=msg)
+
+
+@router.post("/ai-models/test-connection", response_model=ModelTestConnectionResponse)
+async def test_connection(
+    data: ModelTestConnectionRequest,
+    _=Depends(require_roles("super_admin")),
+):
+    """对给定模型配置发起一次最小连通性测试，不保存任何状态。"""
+    result = await test_model_connection(
+        api_base_url=data.api_base_url,
+        api_key=data.api_key,
+        model_name=data.model_name,
+    )
+    return result
 
 
 # ========== Config key-value ==========
