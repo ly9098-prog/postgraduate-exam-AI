@@ -56,8 +56,11 @@ class DeepSeekClient:
 
             start = time.time()
             try:
+                _url = _base_url.rstrip("/")
+                if _url.endswith("/v1"):
+                    _url = _url[:-3]
                 resp = await self.client.post(
-                    f"{_base_url}/v1/chat/completions",
+                    f"{_url}/v1/chat/completions",
                     headers={
                         "Authorization": f"Bearer {_api_key}",
                         "Content-Type": "application/json",

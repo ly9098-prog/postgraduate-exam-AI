@@ -18,43 +18,12 @@ _VALID_QUESTION_TYPES = (
     "single_choice", "multiple_choice", "true_false", "fill_blank", "multi_blank_choice", "subjective",
 )
 
-# 内存 token 计数器（进程级，后续可对接 ai_chats 表）
-_token_usage: dict[str, int | str] = {"daily": 0, "monthly": 0, "daily_date": "", "monthly_month": ""}
+# 内存 token 计数器（共享模块，与 ocr_correction 同一预算池）
+from app.features.token_budget import (
+    estimate_tokens, check_token_limit, record_token_usage, get_token_usage_snapshot,
+)
 
-
-def _estimate_tokens(text: str) -> int:
-    """简单 token 估算（中文 ~1.3 token/字，其余 ~0.3 token/字）。"""
-    chinese = len(re.findall(r"[一-鿿]", text))
-    return int(chinese * 1.3 + (len(text) - chinese) * 0.3)
-
-
-def _reset_counters_if_needed():
-    today = time.strftime("%Y-%m-%d")
-    month = time.strftime("%Y-%m")
-    if _token_usage["daily_date"] != today:
-        _token_usage["daily"] = 0
-        _token_usage["daily_date"] = today
-    if _token_usage["monthly_month"] != month:
-        _token_usage["monthly"] = 0
-        _token_usage["monthly_month"] = month
-
-
-def _check_token_limit(estimated_tokens: int, config: dict) -> bool:
-    """检查 token 限额。返回 True 表示可以继续调用。"""
-    _reset_counters_if_needed()
-    daily_limit = config.get("daily_token_limit", 100000)
-    monthly_limit = config.get("monthly_token_limit", 2000000)
-    if int(_token_usage["daily"]) + estimated_tokens > daily_limit:  # type: ignore[operator]
-        return False
-    if int(_token_usage["monthly"]) + estimated_tokens > monthly_limit:  # type: ignore[operator]
-        return False
-    return True
-
-
-def _record_token_usage(tokens: int):
-    _reset_counters_if_needed()
-    _token_usage["daily"] = int(_token_usage["daily"]) + tokens  # type: ignore[operator]
-    _token_usage["monthly"] = int(_token_usage["monthly"]) + tokens  # type: ignore[operator]
+_estimate_tokens = estimate_tokens  # backward-compat alias
 
 
 def _looks_like_non_question_text(question: dict) -> bool:
@@ -264,7 +233,7 @@ async def _call_ai_for_repair(
     prompt_text = json.dumps(messages, ensure_ascii=False)
     estimated = _estimate_tokens(prompt_text)
 
-    if not _check_token_limit(estimated, config):
+    if not await check_token_limit(estimated, config):
         return None
 
     try:
@@ -272,7 +241,7 @@ async def _call_ai_for_repair(
     except Exception:
         return None
 
-    _record_token_usage(result["tokens_used"])
+    await record_token_usage(result["tokens_used"])
 
     repaired = _parse_ai_response(result["content"])
     if repaired is None:
@@ -318,7 +287,7 @@ async def _call_ai_for_batch_repair(
         prompt_text = json.dumps(messages, ensure_ascii=False)
         estimated = _estimate_tokens(prompt_text)
 
-        if not _check_token_limit(estimated, config):
+        if not await check_token_limit(estimated, config):
             for idx, _q, _rt in batch:
                 all_results.append((idx, None))
             continue
@@ -333,11 +302,15 @@ async def _call_ai_for_batch_repair(
                 all_results.append((idx, None))
             continue
 
-        _record_token_usage(result["tokens_used"])
+        await record_token_usage(result["tokens_used"])
         responses = _parse_batch_ai_response(result["content"])
 
         if responses and len(responses) == len(batch):
-            for (idx, q, _rt), repaired in zip(batch, responses):
+            # M1: distribute tokens fairly, tracking remainder to avoid truncation
+            total_tokens = result["tokens_used"]
+            base = total_tokens // len(batch)
+            rem = total_tokens % len(batch)
+            for pos, ((idx, q, _rt), repaired) in enumerate(zip(batch, responses)):
                 is_valid, errors = _validate_repaired(repaired)
                 all_results.append((
                     idx,
@@ -345,7 +318,7 @@ async def _call_ai_for_batch_repair(
                         "repaired": repaired,
                         "ai_valid": is_valid,
                         "ai_errors": errors,
-                        "token_used": result["tokens_used"] // len(batch),
+                        "token_used": base + (1 if pos < rem else 0),
                     } if is_valid else None,
                 ))
         else:
@@ -357,6 +330,8 @@ async def _call_ai_for_batch_repair(
             )
             for idx, q, raw_text in batch:
                 single = await _call_ai_for_repair(raw_text, q, config, db, api_key=api_key, base_url=base_url, model_name=model_name)
+                if single:
+                    single["_batch_fallback"] = True  # L2: mark degradation source
                 all_results.append((idx, single))
 
     return all_results
@@ -489,6 +464,10 @@ async def repair_questions(
         repaired_stem = result_data.get("stem", "")
         original_markers = _marker_ids(q.get("blank_option_groups"))
         if original_markers and not _stem_contains_markers(repaired_stem, original_markers):
+            logger.warning(
+                "AI repair lost blank markers for question %d: markers=%s not in stem, discarding repaired stem",
+                i, original_markers,
+            )
             repaired_stem = q.get("stem", "")
             ai_errors = [*ai_errors, "ai_stem_lost_blank_markers"]
 
@@ -513,14 +492,20 @@ async def repair_questions(
             "risk_flags": list(dict.fromkeys(q.get("risk_flags") or [])),
         }
 
-        repaired.append({
+        repair_entry = {
             "question_index": i,
             "before": {k: v for k, v in q.items() if k != "raw_text"},
             "after": after,
             "repair_actions": result_data.get("repair_actions", []),
             "confidence": result_data.get("confidence", 0),
             "token_used": token_used,
-        })
+        }
+        if ai_result.get("_batch_fallback"):  # L2: mark batch-fallback degradation
+            repair_entry["repair_method"] = "batch_fallback"
+            after.setdefault("risk_flags", [])
+            if "batch_fallback_repair" not in after["risk_flags"]:
+                after["risk_flags"] = [*after["risk_flags"], "batch_fallback_repair"]
+        repaired.append(repair_entry)
 
     return {
         "repaired": repaired,

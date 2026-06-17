@@ -1260,7 +1260,9 @@ class ImportPipeline:
             )
 
         # Legacy mode: 原有逻辑
-        return await self._run_ocr_correction_legacy(normalized_blocks, opts, db)
+        return await self._run_ocr_correction_legacy(
+            normalized_blocks, opts, db, page_images=_kw.get("page_images"),
+        )
 
     async def _check_ocr_fix_feature_flag(self, db) -> bool:
         """检查 OCR fix router feature flag。
@@ -1289,6 +1291,7 @@ class ImportPipeline:
 
     async def _run_ocr_correction_legacy(
         self, normalized_blocks: list[dict], opts: dict, db,
+        page_images: dict[int, bytes] | None = None,
     ) -> dict:
         """原有 correct_ocr_blocks 逻辑。"""
         correction_config = {
@@ -1299,7 +1302,7 @@ class ImportPipeline:
             "monthly_token_limit": opts.get("ocr_correction_monthly_token_limit", 1000000),
         }
 
-        result = await correct_ocr_blocks(normalized_blocks, correction_config, db=db)
+        result = await correct_ocr_blocks(normalized_blocks, correction_config, db=db, page_images=page_images)
 
         # Log blocks flagged as noisy before correction
         for b in normalized_blocks:
@@ -1369,7 +1372,7 @@ class ImportPipeline:
         page_images = _kw.get("page_images")
 
         corrections: list[dict] = []
-        corrected_blocks: list[dict] = []
+        corrected_blocks: list[dict] = [None] * len(normalized_blocks)  # type: ignore
         stats = {
             "total_blocks": len(normalized_blocks),
             "noisy_blocks": 0,
@@ -1378,10 +1381,12 @@ class ImportPipeline:
             "model_used": "",
         }
 
+        # Phase 1: classify blocks and collect correction candidates
+        to_correct: list[tuple[int, dict, str, float, float]] = []
         for idx, block in enumerate(normalized_blocks):
             text = str(block.get("normalized_text") or "")
             if not text.strip():
-                corrected_blocks.append(block)
+                corrected_blocks[idx] = block
                 continue
 
             noise_score = _detect_noise(block)
@@ -1390,7 +1395,7 @@ class ImportPipeline:
             should = _should_correct(noise_score, router_config, structure_score=structure_score, has_image=has_image)
 
             if not should:
-                corrected_blocks.append(block)
+                corrected_blocks[idx] = block
                 stats["skipped_blocks"] += 1
                 corrections.append({
                     "block_index": block.get("block_index", 0),
@@ -1402,23 +1407,49 @@ class ImportPipeline:
                 continue
 
             stats["noisy_blocks"] += 1
+            to_correct.append((idx, block, text, noise_score, structure_score))
 
-            # Look up the page image for this block
-            page_num = block.get("page", 1)
-            page_image = page_images.get(page_num) if page_images else None
+        # Phase 2: concurrent fix (same pattern as legacy path)
+        sem = asyncio.Semaphore(3)
 
-            logger.info(
-                "【OCR-4】AI纠错输入 | block=%d page=%s noise=%.3f structure=%.3f\n%s",
-                idx, page_num, noise_score, structure_score, text[:2000],
-            )
+        async def _fix_one(idx: int, block: dict, text: str):
+            async with sem:
+                page_num = block.get("page", 1)
+                page_image = page_images.get(page_num) if page_images else None
+                logger.info(
+                    "【OCR-4】AI纠错输入 | block=%d page=%s noise=%.3f structure=%.3f\n%s",
+                    idx, page_num,
+                    _detect_noise(block), _detect_structure_abnormal(text),
+                    text[:2000],
+                )
+                result = await router.fix(
+                    image=page_image,
+                    ocr_text=text,
+                    context={"block_index": idx, "page": page_num},
+                )
+                return idx, result
 
-            # 通过 router 纠错（传入图片供视觉模型使用）
-            result = await router.fix(
-                image=page_image,
-                ocr_text=text,
-                context={"block_index": idx, "page": page_num},
-            )
+        fix_results = await asyncio.gather(
+            *[_fix_one(idx, block, text) for idx, block, text, _, _ in to_correct],
+            return_exceptions=True,
+        )
 
+        # Phase 3: process results
+        for (idx, block, text, noise_score, structure_score), fix_result in zip(to_correct, fix_results):
+            if isinstance(fix_result, BaseException):
+                logger.warning("router fix block %d failed: %s", idx, fix_result)
+                corrected_blocks[idx] = block
+                corrections.append({
+                    "block_index": block.get("block_index", 0),
+                    "page": block.get("page", 1),
+                    "noise_score": round(noise_score, 3),
+                    "structure_score": round(structure_score, 3),
+                    "corrected": False,
+                    "reason": f"exception: {fix_result}",
+                })
+                continue
+
+            _, result = fix_result
             new_block = dict(block)
             if result.fixed_text != text and result.confidence and result.confidence > 0:
                 new_block["normalized_text"] = result.fixed_text
@@ -1427,9 +1458,9 @@ class ImportPipeline:
                 stats["corrected_blocks"] += 1
 
                 logger.info(
-                    "【OCR-5】AI纠错输出 | block=%d page=%s model=%s conf=%.2f\n"
+                    "【OCR-5】AI纠错输出 | block=%d page=%d model=%s conf=%.2f\n"
                     "  └─ 纠错前: %.160s\n  └─ 纠错后: %.160s",
-                    idx, page_num, result.model_used, result.confidence,
+                    idx, block.get("page", 1), result.model_used, result.confidence,
                     text, result.fixed_text,
                 )
                 corrections.append({
@@ -1450,7 +1481,14 @@ class ImportPipeline:
                     "reason": result.raw_response or "no_change",
                 })
 
-            corrected_blocks.append(new_block)
+            corrected_blocks[idx] = new_block
+
+        # ensure all blocks are filled (defense)
+        for idx, b in enumerate(corrected_blocks):
+            if b is None:
+                corrected_blocks[idx] = normalized_blocks[idx]
+
+        corrected_blocks = [b for b in corrected_blocks if b is not None]
 
         # 记录使用的模型
         used_models = {c.get("model_used") for c in corrections if c.get("model_used")}
