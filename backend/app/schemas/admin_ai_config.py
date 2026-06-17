@@ -56,6 +56,7 @@ class ModelTestConnectionRequest(BaseModel):
     api_base_url: str
     api_key: str
     model_name: str
+    model_id: int | None = None
 
 
 class ModelTestConnectionResponse(BaseModel):

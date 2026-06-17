@@ -478,6 +478,7 @@ export type ModelTestConnectionRequest = {
   api_base_url: string;
   api_key: string;
   model_name: string;
+  model_id?: number;
 };
 
 export type ModelTestConnectionResponse = {
