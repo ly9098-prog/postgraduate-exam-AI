@@ -112,6 +112,7 @@ Component({
       this._timer = null
       this._contentTimer = null
       this._canvasTimer = null
+      this._retryTimer = null
       this._pausedByPage = false
       this._reducedMotion = isReducedMotionEnabled()
       this._canUseCanvas = false
@@ -160,7 +161,8 @@ Component({
       // 分包可能尚未就绪，延迟重试一次
       if (!this._canUseLottie && this.data.enableLottie && baseOk) {
         var self = this
-        setTimeout(function () {
+        self._retryTimer = setTimeout(function () {
+          self._retryTimer = null
           var m = null, d = null
           try { m = loadLottieModule() } catch (_) {}
           try { d = loadLottieData() } catch (_) {}
@@ -314,6 +316,7 @@ Component({
       if (this._timer) { clearTimeout(this._timer); this._timer = null }
       if (this._contentTimer) { clearTimeout(this._contentTimer); this._contentTimer = null }
       if (this._canvasTimer) { clearTimeout(this._canvasTimer); this._canvasTimer = null }
+      if (this._retryTimer) { clearTimeout(this._retryTimer); this._retryTimer = null }
     },
 
     _destroyLottie: function () {
