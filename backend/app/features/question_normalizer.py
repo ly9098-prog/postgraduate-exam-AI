@@ -53,9 +53,11 @@ _CLEAN_RULES: list[tuple[re.Pattern, str]] = [
 
 
 def _clean_stem(text: str) -> str:
-    """清洗题干：去除题号前缀、题型标签、多余空白。"""
+    """清洗题干：去除题号前缀、题型标签、多余空白、LaTeX 标记。"""
     for pat, repl in _CLEAN_RULES:
         text = pat.sub(repl, text)
+    text = re.sub(r"\\(?:dots|ldots|dotsquare)", "...", text)
+    text = re.sub(r"\\(?:cdots|cdots|cdotsquare)", "···", text)
     return text.strip()
 
 
@@ -110,7 +112,10 @@ def _normalize_options(raw_options: dict[str, str]) -> list[dict]:
         return []
     result: list[dict] = []
     for key in sorted(raw_options.keys()):
-        result.append({"key": key.upper(), "text": raw_options[key].strip()})
+        text = raw_options[key].strip()
+        text = re.sub(r"\\(?:dots|ldots|dotsquare)", "...", text)
+        text = re.sub(r"\\(?:cdots|cdots|cdotsquare)", "···", text)
+        result.append({"key": key.upper(), "text": text})
     return result
 
 
