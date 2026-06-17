@@ -441,6 +441,13 @@ async def test_model_connection(
                 if decrypted:
                     api_key = decrypted
             model_name = model.name
+            # 数据库无存储 key 时，从环境变量兜底（DeepSeek）
+            if not model.api_key_encrypted:
+                from app.core.config import settings as app_settings
+                if model.provider == "deepseek" and app_settings.DEEPSEEK_API_KEY:
+                    api_key = app_settings.DEEPSEEK_API_KEY
+        else:
+            pass  # model not found — fall through to request body values
 
     base = api_base_url.rstrip("/")
     # Normalize: some providers include /v1 in the base URL (OpenAI, DashScope compatible mode),
