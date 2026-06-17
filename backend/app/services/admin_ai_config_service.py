@@ -425,6 +425,10 @@ async def test_model_connection(
     import httpx
 
     base = api_base_url.rstrip("/")
+    # Normalize: some providers include /v1 in the base URL (OpenAI, DashScope compatible mode),
+    # while others don't (DeepSeek). Strip trailing /v1 so we can construct it uniformly.
+    if base.endswith("/v1"):
+        base = base[:-3]
     url = f"{base}/v1/chat/completions"
 
     payload = {
@@ -479,9 +483,8 @@ async def test_model_connection(
             return {
                 "success": False,
                 "status": "unknown_error",
-                "message": f"接口返回异常状态码 {resp.status_code}",
+                "message": f"接口返回异常状态码 {resp.status_code}: {body}",
                 "latency_ms": elapsed,
-                "detail": body,
             }
 
         # 校验响应格式
