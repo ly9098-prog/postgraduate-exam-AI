@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import re
 import time
 from typing import Any
 
@@ -53,6 +54,55 @@ _OCR_VERIFY_PROMPT = (
 
 _IMAGE_MAX_DIMENSION = 2048
 _IMAGE_MAX_BYTES = 2 * 1024 * 1024  # 2MB
+
+# 题号行正则：行首数字 + "." / "．" / "、"
+_RE_QUESTION_NUMBER_LINE = re.compile(r"^\d+\s*[.．、]")
+# 选项行正则：行首 A-D + "." / "．" / "、" / ":" / "：" / ")" / "）"
+_RE_OPTION_LINE = re.compile(r"^[A-Da-d]\s*[.．、:：)）]")
+
+
+def _is_options_only(text: str) -> bool:
+    """判断文本是否只包含选项行（无题干）。"""
+    first_line = text.strip().split("\n")[0].strip()
+    return bool(_RE_OPTION_LINE.match(first_line))
+
+
+def _preserve_stem_from_original(original: str, corrected: str) -> str:
+    """当 Qwen 只返回选项（丢弃了题号+题干），从原始文本中恢复题干。
+
+    Qwen-VL 有时只输出修正后的选项行，不包含题号和题干。
+    此函数检测到该情况后，从原始 OCR 文本中提取题号行及之前的题干内容，
+    拼接到修正后的选项前。
+    """
+    if not _is_options_only(corrected):
+        return corrected  # 修正文本已有题干
+
+    if not _RE_QUESTION_NUMBER_LINE.search(original):
+        return corrected  # 原文也无题号，无法恢复
+
+    lines = original.split("\n")
+    pre_option_parts: list[str] = []
+    found_qnum = False
+
+    for line in lines:
+        stripped = line.strip()
+        if _RE_OPTION_LINE.match(stripped):
+            break  # 遇到选项行停止
+        if stripped:
+            pre_option_parts.append(stripped)
+        if _RE_QUESTION_NUMBER_LINE.match(stripped):
+            found_qnum = True
+
+    if found_qnum and pre_option_parts:
+        stem = "\n".join(pre_option_parts).strip()
+        if stem:
+            logger.info(
+                "Qwen dropped stem, recovered from original: stem_len=%d corrected_len=%d",
+                len(stem), len(corrected),
+            )
+            return stem + "\n" + corrected
+
+    return corrected
 
 
 def _compress_image(image: bytes) -> bytes:
@@ -150,6 +200,10 @@ class QwenFixer:
                         duration_ms=duration_ms,
                         raw_response="qwen returned empty",
                     )
+
+                # 保护层：Qwen 有时只返回选项行（丢弃题干），
+                # 此时从原始文本恢复题号+题干以避免 splitter 找不到边界。
+                corrected = _preserve_stem_from_original(ocr_text, corrected)
 
                 return OCRFixResult(
                     fixed_text=corrected,

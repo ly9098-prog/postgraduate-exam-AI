@@ -237,3 +237,45 @@ class TestCanonicalizeLengthTracking:
         _, meta = canonicalize(text)
         assert meta["before_length"] == len(text)
         assert meta["after_length"] == 5  # "Hello"
+
+
+class TestPreserveStem:
+    """QwenAdapter stem preservation test (imported helper)."""
+
+    def test_options_only_with_qnum(self):
+        """修正文本只有选项，原文有题号 → 恢复题干。"""
+        from app.features.ocr_fix.qwen_adapter import _preserve_stem_from_original
+
+        original = "06. 在一个单链表中，已知q所指结点是p所指结点\n的前驱结点，若在q和p之间插入结点s，则执行()。\nA. s->next=p->next;p->next=s;\nB. p->next=s->next;s->next=p;"
+        corrected = "A. s->next=p->next;p->next=s;\nB. p->next=s->next;s->next=p;"
+        result = _preserve_stem_from_original(original, corrected)
+        assert result.startswith("06.")
+        assert "s->next=p->next" in result
+        assert "A." in result.split("\n")[-2]  # options preserved after stem
+
+    def test_corrected_has_stem(self):
+        """修正文本已有题干 → 不修改。"""
+        from app.features.ocr_fix.qwen_adapter import _preserve_stem_from_original
+
+        original = "06. stem\nA. opt"
+        corrected = "06. stem\nA. opt"
+        result = _preserve_stem_from_original(original, corrected)
+        assert result == corrected
+
+    def test_no_qnum_in_original(self):
+        """原文也没有题号 → 不做修改。"""
+        from app.features.ocr_fix.qwen_adapter import _preserve_stem_from_original
+
+        original = "一些文字\nA. opt"
+        corrected = "A. opt\nB. opt2"
+        result = _preserve_stem_from_original(original, corrected)
+        assert result == corrected
+
+    def test_empty_original_stem(self):
+        """原文选项前的内容为空 → 不做修改。"""
+        from app.features.ocr_fix.qwen_adapter import _preserve_stem_from_original
+
+        original = "A. opt\nB. opt2"
+        corrected = "A. opt\nB. opt2"
+        result = _preserve_stem_from_original(original, corrected)
+        assert result == corrected
