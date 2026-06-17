@@ -181,9 +181,20 @@ function AddModelDialog({
           </div>
           <div>
             <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">API Key <span className="text-[var(--color-text-hint)]">（可选）</span></label>
-            <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
-              className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
-              placeholder="sk-..." />
+            <div className="flex gap-2">
+              <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+                className="h-10 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
+                placeholder="sk-..." />
+              <button
+                type="button"
+                onClick={handleTestConnection}
+                disabled={testing || !apiKey.trim() || !apiBaseUrl.trim() || !name.trim()}
+                className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-40"
+              >
+                {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
+                测试
+              </button>
+            </div>
           </div>
             <div>
             <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">用途 <span className="text-[var(--color-text-hint)]">（可选）</span></label>
@@ -200,18 +211,6 @@ function AddModelDialog({
           </div>
         </div>
 
-        <div className="mt-4 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleTestConnection}
-            disabled={testing || !apiBaseUrl.trim() || !apiKey.trim() || !name.trim()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-40"
-          >
-            {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
-            测试连接
-          </button>
-        </div>
-
         {testResult && (
           <div className={cn(
             "mt-3 rounded-lg px-3 py-2 text-xs",
@@ -223,9 +222,9 @@ function AddModelDialog({
               {testResult.success
                 ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
-              <div>
+              <div className="min-w-0">
                 <p className="font-semibold">{testResult.success ? "连接成功" : "连接失败"}</p>
-                <p className="mt-0.5">{testResult.message}</p>
+                <p className="mt-0.5 break-words">{testResult.message}</p>
                 {testResult.latency_ms != null && (
                   <p className="mt-0.5 opacity-70">耗时 {testResult.latency_ms}ms</p>
                 )}
@@ -234,7 +233,7 @@ function AddModelDialog({
           </div>
         )}
 
-        <div className="mt-6 flex justify-end gap-3">
+        <div className="mt-4 flex justify-end gap-3">
           <Button variant="secondary" onClick={handleClose} disabled={loading}>取消</Button>
           <Button onClick={handleSave} disabled={loading || !name.trim() || !displayName.trim() || !provider.trim()}>
             {loading ? "添加中..." : "添加"}
@@ -422,9 +421,21 @@ function ModelCard({
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">API Key</label>
-            <input type="password" value={apiKeyInput} onChange={(e) => setApiKeyInput(e.target.value)}
-              className="h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
-              placeholder={model.api_configured ? "输入新 API Key 以替换" : "sk-..."} />
+            <div className="flex gap-2">
+              <input type="password" value={apiKeyInput} onChange={(e) => setApiKeyInput(e.target.value)}
+                className="h-9 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
+                placeholder={model.api_configured ? "输入新 API Key 以替换" : "sk-..."} />
+              <button
+                type="button"
+                onClick={handleTestConnection}
+                disabled={testing || !apiKeyInput.trim() || !apiBaseUrlInput.trim() || !nameInput.trim()}
+                className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-40"
+                title="测试连接"
+              >
+                {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
+                测试
+              </button>
+            </div>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">API Base URL <span className="text-[var(--color-text-hint)]">（可选）</span></label>
@@ -456,18 +467,6 @@ function ModelCard({
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleTestConnection}
-              disabled={testing || !apiBaseUrlInput.trim() || !apiKeyInput.trim() || !nameInput.trim()}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-40"
-            >
-              {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
-              测试连接
-            </button>
-          </div>
-
           {testResult && (
             <div className={cn(
               "rounded-lg px-3 py-2 text-xs",
@@ -479,9 +478,9 @@ function ModelCard({
                 {testResult.success
                   ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
-                <div>
+                <div className="min-w-0">
                   <p className="font-semibold">{testResult.success ? "连接成功" : "连接失败"}</p>
-                  <p className="mt-0.5">{testResult.message}</p>
+                  <p className="mt-0.5 break-words">{testResult.message}</p>
                   {testResult.latency_ms != null && (
                     <p className="mt-0.5 opacity-70">耗时 {testResult.latency_ms}ms</p>
                   )}
