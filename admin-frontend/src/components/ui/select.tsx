@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -119,55 +120,103 @@ export function Select({
       </button>
 
       {open && (
-        <div
-          ref={listRef}
-          role="listbox"
-          className={cn(
-            "absolute right-0 top-full z-50 mt-1.5 min-w-[200px] overflow-hidden rounded-xl border border-[var(--color-border)]/80 bg-white py-1 shadow-lg",
-            optionClassName,
-          )}
-        >
-          {options.length === 0 ? (
-            <div className="px-4 py-3 text-xs text-[var(--color-text-hint)]">无可用选项</div>
-          ) : (
-            options.map((opt) => {
-              const isSelected = opt.value === value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  role="option"
-                  aria-selected={isSelected}
-                  disabled={opt.disabled}
-                  onClick={() => {
-                    onChange(opt.value);
-                    setOpen(false);
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs transition-colors",
-                    isSelected
-                      ? "font-semibold text-[var(--ink)]"
-                      : "text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-light)]",
-                    opt.disabled && "cursor-not-allowed opacity-40",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "h-1.5 w-1.5 shrink-0 rounded-full transition-opacity",
-                      isSelected ? "opacity-100" : "opacity-0",
-                    )}
-                    style={{ backgroundColor: color }}
-                  />
-                  <span className="flex-1">{opt.label}</span>
-                  {opt.suffix && (
-                    <span className="shrink-0 text-[10px] text-[var(--color-text-hint)]">{opt.suffix}</span>
-                  )}
-                </button>
-              );
-            })
-          )}
-        </div>
+        <PortalDropdown
+          triggerRef={ref}
+          color={color}
+          optionClassName={optionClassName}
+          value={value}
+          onChange={(v) => { onChange(v); setOpen(false); }}
+          options={options}
+        />
       )}
     </div>
+  );
+}
+
+function PortalDropdown({
+  triggerRef,
+  color,
+  optionClassName,
+  value,
+  onChange,
+  options,
+}: {
+  triggerRef: React.RefObject<HTMLDivElement | null>;
+  color?: string;
+  optionClassName?: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: SelectOption[];
+}) {
+  const [style, setStyle] = useState<React.CSSProperties>({});
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const btn = triggerRef.current?.querySelector("button");
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    const estH = 44;
+    const spaceBelow = window.innerHeight - rect.bottom - 8;
+    const spaceAbove = rect.top - 8;
+    const dir = spaceBelow >= estH || spaceBelow > spaceAbove ? "down" : "up";
+
+    setStyle({
+      position: "fixed",
+      zIndex: 9999,
+      minWidth: Math.max(rect.width, 200),
+      ...(dir === "down"
+        ? { top: rect.bottom + 6, left: rect.left }
+        : { bottom: window.innerHeight - rect.top + 6, left: rect.left }),
+    });
+  }, [triggerRef]);
+
+  return createPortal(
+    <div
+      ref={listRef}
+      role="listbox"
+      className={cn(
+        "overflow-hidden rounded-xl border border-[var(--color-border)]/80 bg-white py-1 shadow-lg",
+        optionClassName,
+      )}
+      style={style}
+    >
+      {options.length === 0 ? (
+        <div className="px-4 py-3 text-xs text-[var(--color-text-hint)]">无可用选项</div>
+      ) : (
+        options.map((opt) => {
+          const isSelected = opt.value === value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              role="option"
+              aria-selected={isSelected}
+              disabled={opt.disabled}
+              onClick={() => onChange(opt.value)}
+              className={cn(
+                "flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs transition-colors",
+                isSelected
+                  ? "font-semibold text-[var(--ink)]"
+                  : "text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-light)]",
+                opt.disabled && "cursor-not-allowed opacity-40",
+              )}
+            >
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 shrink-0 rounded-full transition-opacity",
+                  isSelected ? "opacity-100" : "opacity-0",
+                )}
+                style={{ backgroundColor: color }}
+              />
+              <span className="flex-1">{opt.label}</span>
+              {opt.suffix && (
+                <span className="shrink-0 text-[10px] text-[var(--color-text-hint)]">{opt.suffix}</span>
+              )}
+            </button>
+          );
+        })
+      )}
+    </div>,
+    document.body,
   );
 }
