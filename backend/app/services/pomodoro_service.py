@@ -32,7 +32,7 @@ async def start_session(
     return session
 
 
-async def complete_session(db: AsyncSession, session_id: int, user_id: int, total_paused_ms: int = 0) -> PomodoroSession | None:
+async def complete_session(db: AsyncSession, session_id: int, user_id: int, total_paused_ms: int = 0, actual_duration_sec: int | None = None) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession).where(
             PomodoroSession.id == session_id,
@@ -45,15 +45,18 @@ async def complete_session(db: AsyncSession, session_id: int, user_id: int, tota
         return None
     now = datetime.utcnow()
     session.end_time = now
-    raw_seconds = int((now - session.start_time).total_seconds())
-    session.actual_duration = max(0, raw_seconds - int(total_paused_ms / 1000))
+    if actual_duration_sec is not None:
+        session.actual_duration = actual_duration_sec
+    else:
+        raw_seconds = int((now - session.start_time).total_seconds())
+        session.actual_duration = max(0, raw_seconds - int(total_paused_ms / 1000))
     session.status = "completed"
     await db.flush()
     await db.refresh(session)
     return session
 
 
-async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, total_paused_ms: int = 0) -> PomodoroSession | None:
+async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, total_paused_ms: int = 0, actual_duration_sec: int | None = None) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession).where(
             PomodoroSession.id == session_id,
@@ -66,8 +69,11 @@ async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, tot
         return None
     now = datetime.utcnow()
     session.end_time = now
-    raw_seconds = int((now - session.start_time).total_seconds())
-    session.actual_duration = max(0, raw_seconds - int(total_paused_ms / 1000))
+    if actual_duration_sec is not None:
+        session.actual_duration = actual_duration_sec
+    else:
+        raw_seconds = int((now - session.start_time).total_seconds())
+        session.actual_duration = max(0, raw_seconds - int(total_paused_ms / 1000))
     session.status = "interrupted"
     await db.flush()
     await db.refresh(session)

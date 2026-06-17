@@ -46,7 +46,7 @@ async def complete_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    session = await svc.complete_session(db, session_id, current_user.id, req.total_paused_ms)
+    session = await svc.complete_session(db, session_id, current_user.id, req.total_paused_ms, req.actual_duration_sec)
     if not session:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")
@@ -61,7 +61,7 @@ async def interrupt_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    session = await svc.interrupt_session(db, session_id, current_user.id, req.total_paused_ms)
+    session = await svc.interrupt_session(db, session_id, current_user.id, req.total_paused_ms, req.actual_duration_sec)
     if not session:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")
