@@ -58,10 +58,6 @@ _DEFAULT_CONFIGS: dict[str, str] = {
     # OCR 纠错模型路由配置
     "ocr_fix_model": "deepseek",
     "ocr_fix_strategy": "auto",
-    "qwen_api_key": "",
-    "qwen_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "qwen_model": "qwen-vl-max",
-    "ocr_fix_feature_flag": "false",
     "completion_prompt": (
         "你是考研题目补全助手。根据已有的题干和上下文，补全缺失字段。"
         "你的输出仅是辅助提示，必须经过人工审核后才能采用。"
@@ -115,10 +111,10 @@ _DEFAULT_MODELS: list[dict] = [
     {"name": "deepseek-v4-flash", "display_name": "DeepSeek V4 Flash", "provider": "deepseek",
      "api_base_url": "https://api.deepseek.com", "is_enabled": True, "is_default": True, "sort_order": 1,
      "feature": None},
-    {"name": "qwen-vl-max", "display_name": "Qwen-VL-Max", "provider": "openai",
+    {"name": "qwen-vl-max", "display_name": "Qwen-VL-Max", "provider": "qwen-vl",
      "api_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
      "is_enabled": False, "is_default": False, "sort_order": 2,
-     "feature": None},
+     "feature": "ocr"},
 ]
 
 

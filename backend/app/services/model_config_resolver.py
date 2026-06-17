@@ -98,6 +98,9 @@ def _decrypt_model(model: AdminAiModelConfig) -> dict | None:
         "api_key": api_key,
         "api_base_url": model.api_base_url or "https://api.deepseek.com",
         "model_name": model.name,
+        "provider": model.provider,
+        "feature": model.feature,
+        "display_name": model.display_name,
     }
 
 
