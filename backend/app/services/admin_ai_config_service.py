@@ -418,11 +418,29 @@ async def test_model_connection(
     api_base_url: str,
     api_key: str,
     model_name: str,
+    model_id: int | None = None,
+    db: AsyncSession | None = None,
 ) -> dict:
-    """对给定模型配置发起一次最小 chat/completions 调用，返回连通性诊断结果。"""
+    """对给定模型配置发起一次最小 chat/completions 调用，返回连通性诊断结果。
+
+    若提供 model_id + db，优先使用数据库中已加密存储的凭证（忽略前端的掩码 key）。
+    """
     import time
 
     import httpx
+
+    # 若有 model_id，从数据库解析真实凭证，避免前端传掩码导致 auth 失败
+    if model_id is not None and db is not None:
+        from app.models.admin_ai_config import AdminAiModelConfig
+        model = await db.get(AdminAiModelConfig, model_id)
+        if model is not None:
+            if model.api_base_url:
+                api_base_url = model.api_base_url
+            if model.api_key_encrypted:
+                decrypted = decrypt_api_key(model.api_key_encrypted)
+                if decrypted:
+                    api_key = decrypted
+            model_name = model.name
 
     base = api_base_url.rstrip("/")
     # Normalize: some providers include /v1 in the base URL (OpenAI, DashScope compatible mode),
