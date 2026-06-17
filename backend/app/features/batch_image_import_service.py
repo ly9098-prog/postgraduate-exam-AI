@@ -137,7 +137,19 @@ async def _run_single_image(item_id: int, source_file: str, content: bytes, subj
     from app.services.ocr_service import clean_ocr_text, ocr_image
 
     raw_ocr_text = await asyncio.to_thread(ocr_image, content)
+    logger.info(
+        "【OCR-1】PaddleOCR 原始结果 | file=%s chars=%d lines=%d\n%s",
+        source_file, len(raw_ocr_text), raw_ocr_text.count("\n") + 1,
+        raw_ocr_text[:2000],
+    )
+
     cleaned_text = clean_ocr_text(raw_ocr_text)
+    logger.info(
+        "【OCR-2】clean_ocr_text 清洗结果 | file=%s chars=%d lines=%d%s\n%s",
+        source_file, len(cleaned_text), cleaned_text.count("\n") + 1,
+        " (未变化)" if cleaned_text == raw_ocr_text else "",
+        cleaned_text[:2000],
+    )
 
     # 先缓存 OCR 文本（即便后续解析失败，也能支持不重复 OCR 的重新解析）
     await _update_item(
@@ -159,7 +171,17 @@ async def _run_single_image(item_id: int, source_file: str, content: bytes, subj
             subject=subject,
             options=options,
             db=pdb,
+            page_images={1: content},
         )
+    batch_id = result.get("batch_id")
+    qcount = (result.get("stats") or {}).get("to_review", 0)
+    stage_errors = result.get("errors", [])
+    logger.info(
+        "【OCR-9】流水线汇总 | file=%s status=%s batch=%s questions=%d errors=%s",
+        source_file, result.get("status", "?"),
+        batch_id or "❌", qcount,
+        stage_errors[0] if stage_errors else "无",
+    )
     result["_ocr_raw_text"] = raw_ocr_text
     result["_ocr_cleaned_text"] = cleaned_text
     return result
