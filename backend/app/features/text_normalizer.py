@@ -125,6 +125,7 @@ class ImportTextNormalizer:
             if self._strategy_enabled("digit_letter"):
                 cleaned = self._correct_ocr_errors(cleaned)
             cleaned = self._fix_pointer_arrows(cleaned)
+            cleaned = self._clean_latex_markers(cleaned)
             if self._strategy_enabled("math_formula"):
                 from app.services.formula_normalizer import fix_ocr_formula
                 cleaned = fix_ocr_formula(cleaned)
@@ -348,11 +349,30 @@ class ImportTextNormalizer:
         return _RE_POINTER_ARROW.sub(r"\1->", text)
 
     # ---------------------------------------------------------------
+    # LaTeX 标记清洗
+    # ---------------------------------------------------------------
+
+    _RE_LATEX_DOTS = re.compile(r"\\l(?:dots|dotsquare|ldots)")
+    _RE_LATEX_CDOTS = re.compile(r"\\c(dots|dotsquare|ldots)")
+
+    def _clean_latex_markers(self, text: str) -> str:
+        """清理 OCR 保留的 LaTeX 命令标记。
+
+        OCR 有时直接保留 LaTeX 源码（如 ``\\ldots``、``\\cdots``），
+        未渲染为实际符号。将它们转为可读的纯文本。
+        """
+        if not text or "\\" not in text:
+            return text
+        text = self._RE_LATEX_CDOTS.sub("···", text)
+        text = self._RE_LATEX_DOTS.sub("...", text)
+        return text
+
+    # ---------------------------------------------------------------
     # 标点符号规范化
     # ---------------------------------------------------------------
 
     _RE_FULLWIDTH_ASCII = re.compile(r"[！-～]")
-    _RE_CJK_PUNCT = re.compile(r"([一-鿿])[,;!?](?=\s*[一-鿿])")
+    _RE_CJK_PUNCT = re.compile(r"([一-鿿])([,;!?])(?=\s*[一-鿿])")
 
     def _normalize_punctuation(self, text: str) -> str:
         """标点符号规范化：统一中英文标点。
