@@ -81,12 +81,30 @@ class DeepSeekFixer:
 
             # Safety: reject if AI output is drastically different in length
             original_len = len(ocr_text)
-            if len(corrected) > original_len * 2 or len(corrected) < original_len * 0.3:
+            if len(corrected) > original_len * 2 or len(corrected) < original_len * 0.5:
                 return OCRFixResult(
                     fixed_text=ocr_text,
                     model_used=self.model_name,
                     duration_ms=duration_ms,
                     raw_response="output length out of bounds",
+                )
+
+            # 检查是否丢失了题干：如果原文包含题号模式（如"06."或"1."）
+            # 但校正后文本以选项字母开头，说明题干被丢弃了
+            import re
+            has_question_number = bool(re.search(r'^\s*\d+\s*[.．、]', ocr_text, re.MULTILINE))
+            first_line = corrected.split('\n')[0].strip()
+            starts_with_option = bool(re.match(r'^[A-D]\s*[.．、:：)）]\s*', first_line))
+            if has_question_number and starts_with_option and not re.search(r'^\s*\d+\s*[.．、]', corrected, re.MULTILINE):
+                logger.warning(
+                    "DeepSeek output dropped the question stem, using original text | "
+                    "first_line=%.80s", first_line,
+                )
+                return OCRFixResult(
+                    fixed_text=ocr_text,
+                    model_used=self.model_name,
+                    duration_ms=duration_ms,
+                    raw_response="stem lost in correction",
                 )
 
             return OCRFixResult(
