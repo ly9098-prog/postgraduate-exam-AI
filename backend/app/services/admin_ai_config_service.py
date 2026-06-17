@@ -441,11 +441,13 @@ async def test_model_connection(
                 if decrypted:
                     api_key = decrypted
             model_name = model.name
-            # 数据库无存储 key 时，从环境变量兜底（DeepSeek）
-            if not model.api_key_encrypted:
+            # 解析后仍可能是前端掩码（DB 无存储 / 空值 / 旧明文不匹配等），
+            # 此时从环境变量兜底，确保密钥可用
+            if not api_key or api_key == "****" or set(api_key) == {"*"}:
                 from app.core.config import settings as app_settings
-                if model.provider == "deepseek" and app_settings.DEEPSEEK_API_KEY:
-                    api_key = app_settings.DEEPSEEK_API_KEY
+                env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
+                if env_key and env_key != "sk-your-key-here":
+                    api_key = env_key
         else:
             pass  # model not found — fall through to request body values
 
