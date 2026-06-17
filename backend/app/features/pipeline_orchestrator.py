@@ -1361,6 +1361,7 @@ class ImportPipeline:
     ) -> dict:
         """通过 OCRFixRouter 执行多模型 OCR 纠错。"""
         from app.features.ocr_fix import OCRFixRouter
+        from app.features.ocr_fix.interfaces import OCRFixResult
 
         # 构建 router 配置
         router_config = await self._build_router_config(opts, db)
@@ -1410,10 +1411,20 @@ class ImportPipeline:
             to_correct.append((idx, block, text, noise_score, structure_score))
 
         # Phase 2: concurrent fix (same pattern as legacy path)
+        from app.features.token_budget import estimate_tokens as _est, check_token_limit, record_token_usage
+
         sem = asyncio.Semaphore(3)
 
         async def _fix_one(idx: int, block: dict, text: str):
             async with sem:
+                estimated = _est(text) * 3
+                if not await check_token_limit(estimated, router_config):
+                    return idx, OCRFixResult(
+                        fixed_text=text,
+                        model_used="skipped_budget",
+                        raw_response="token_limit",
+                    )
+
                 page_num = block.get("page", 1)
                 page_image = page_images.get(page_num) if page_images else None
                 logger.info(
@@ -1427,6 +1438,10 @@ class ImportPipeline:
                     ocr_text=text,
                     context={"block_index": idx, "page": page_num},
                 )
+
+                if result.tokens_used:
+                    await record_token_usage(result.tokens_used)
+
                 return idx, result
 
         fix_results = await asyncio.gather(

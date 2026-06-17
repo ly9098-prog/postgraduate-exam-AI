@@ -198,7 +198,7 @@ class QwenFixer:
 
             start = time.monotonic()
             try:
-                corrected = await self._call_qwen(image, ocr_text, context)
+                corrected, tokens_used = await self._call_qwen(image, ocr_text, context)
                 duration_ms = int((time.monotonic() - start) * 1000)
                 set_tag("ai.duration_ms", duration_ms)
 
@@ -223,6 +223,7 @@ class QwenFixer:
                     confidence=0.9,
                     model_used=self.model_name,
                     raw_response=corrected,
+                    tokens_used=tokens_used,
                     duration_ms=duration_ms,
                 )
             except Exception as exc:
@@ -242,7 +243,7 @@ class QwenFixer:
         image: bytes | None,
         ocr_text: str,
         context: dict[str, Any] | None,
-    ) -> str | None:
+    ) -> tuple[str | None, int]:
         """调用通义千问 API（OCR 校验模式）。"""
         messages = [
             {"role": "system", "content": _OCR_VERIFY_PROMPT},
@@ -297,10 +298,12 @@ class QwenFixer:
                 "Qwen API returned %d: %s",
                 resp.status_code, resp.text[:300],
             )
-            return None
+            return None, 0
 
         data = resp.json()
         content = data["choices"][0]["message"]["content"]
+        usage = data.get("usage", {})
+        tokens_used = usage.get("total_tokens") or 0
 
         canonical_text, _meta = canonicalize(content, model_name=self._model)
-        return canonical_text
+        return canonical_text, tokens_used
