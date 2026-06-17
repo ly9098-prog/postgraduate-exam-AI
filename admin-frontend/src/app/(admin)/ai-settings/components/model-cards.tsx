@@ -297,6 +297,7 @@ function ModelCard({
           api_base_url: apiBaseUrlInput.trim(),
           api_key: apiKeyInput.trim(),
           model_name: nameInput.trim(),
+          model_id: model.id,
         } satisfies ModelTestConnectionRequest),
       });
       setTestResult(result);

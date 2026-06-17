@@ -70,12 +70,15 @@ async def delete_model_endpoint(
 async def test_connection(
     data: ModelTestConnectionRequest,
     _=Depends(require_roles("super_admin")),
+    db: AsyncSession = Depends(get_db),
 ):
     """对给定模型配置发起一次最小连通性测试，不保存任何状态。"""
     result = await test_model_connection(
         api_base_url=data.api_base_url,
         api_key=data.api_key,
         model_name=data.model_name,
+        model_id=data.model_id,
+        db=db,
     )
     return result
 
