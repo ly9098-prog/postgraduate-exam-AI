@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Brain, Cpu, Globe, Key, ToggleLeft, ToggleRight,
-  CheckCircle2, Info, X, Trash2, Plus, Tag,
+  CheckCircle2, Info, X, Trash2, Plus, Tag, ScanEye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
@@ -22,12 +22,16 @@ const PROVIDER_ICONS: Record<string, React.ElementType> = {
   deepseek: Brain,
   openai: Globe,
   anthropic: Cpu,
+  "qwen-vl": ScanEye,
+  qwen: ScanEye,
 };
 
 const PROVIDER_COLORS: Record<string, string> = {
   deepseek: "#5b7b9a",
   openai: "#6b9b6b",
   anthropic: "#c49a6b",
+  "qwen-vl": "#7c5ce7",
+  qwen: "#7c5ce7",
 };
 
 const FEATURE_LABELS: Record<string, { label: string; color: string }> = {
@@ -135,7 +139,7 @@ function AddModelDialog({
             <input value={provider} onChange={(e) => setProvider(e.target.value)}
               className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
               placeholder="openai" />
-            <p className="mt-1 text-xs text-[var(--color-text-hint)]">常用值: deepseek / openai / anthropic / google</p>
+            <p className="mt-1 text-xs text-[var(--color-text-hint)]">常用值: deepseek / openai / anthropic / qwen-vl / google</p>
           </div>
           <div>
             <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">API Base URL <span className="text-[var(--color-text-hint)]">（可选）</span></label>
@@ -220,7 +224,7 @@ function ModelCard({
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-xl border p-5 transition-all duration-300",
+        "group relative rounded-xl border p-5 transition-all duration-300",
         model.is_enabled
           ? "border-[var(--color-border)]/80 hover:border-[var(--color-border)] hover:shadow-md"
           : "border-dashed border-[var(--color-border)] opacity-60 hover:opacity-80",
@@ -232,7 +236,7 @@ function ModelCard({
       }}
     >
       <div
-        className="absolute left-0 right-0 top-0 h-0.5 transition-opacity"
+        className="absolute left-0 right-0 top-0 h-0.5 rounded-t-xl transition-opacity"
         style={{ backgroundColor: color, opacity: model.is_enabled ? 1 : 0.3 }}
       />
 
@@ -416,7 +420,7 @@ function FeatureMapping({
           return (
             <div
               key={feat.key}
-              className="group relative overflow-hidden rounded-xl border bg-white transition-all duration-200 hover:shadow-sm"
+              className="group relative rounded-xl border bg-white transition-all duration-200 hover:shadow-sm"
               style={{
                 borderColor: hasDedicated
                   ? `${feat.color}30`
@@ -425,7 +429,7 @@ function FeatureMapping({
             >
               {/* Left accent bar */}
               <div
-                className="absolute left-0 top-0 w-1 transition-all duration-300"
+                className="absolute left-0 top-0 w-1 rounded-l-xl transition-all duration-300"
                 style={{
                   height: hasDedicated ? "100%" : "0%",
                   backgroundColor: feat.color,
