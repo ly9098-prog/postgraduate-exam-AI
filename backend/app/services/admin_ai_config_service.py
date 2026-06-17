@@ -407,3 +407,141 @@ def _coerce_value(raw: str):
     except (ValueError, TypeError):
         pass
     return raw
+
+
+# ---------------------------------------------------------------------------
+# Test connection
+# ---------------------------------------------------------------------------
+
+
+async def test_model_connection(
+    api_base_url: str,
+    api_key: str,
+    model_name: str,
+) -> dict:
+    """对给定模型配置发起一次最小 chat/completions 调用，返回连通性诊断结果。"""
+    import time
+
+    import httpx
+
+    base = api_base_url.rstrip("/")
+    url = f"{base}/v1/chat/completions"
+
+    payload = {
+        "model": model_name,
+        "messages": [{"role": "user", "content": "Hi"}],
+        "max_tokens": 5,
+        "temperature": 0,
+    }
+
+    start = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+        elapsed = int((time.time() - start) * 1000)
+
+        if resp.status_code == 401 or resp.status_code == 403:
+            return {
+                "success": False,
+                "status": "auth_error",
+                "message": "API Key 无效或无权限访问",
+                "latency_ms": elapsed,
+            }
+
+        if resp.status_code == 404:
+            body = resp.text[:200]
+            return {
+                "success": False,
+                "status": "model_not_found",
+                "message": f"模型「{model_name}」不存在，请检查模型名称是否正确",
+                "latency_ms": elapsed,
+            }
+
+        if resp.status_code == 400:
+            body_lower = resp.text.lower()
+            if any(kw in body_lower for kw in ("model", "does not exist", "not found", "not_found", "invalid model")):
+                return {
+                    "success": False,
+                    "status": "model_not_found",
+                    "message": f"模型「{model_name}」不存在，请检查模型名称是否正确",
+                    "latency_ms": elapsed,
+                }
+
+        if resp.status_code != 200:
+            body = resp.text[:300]
+            return {
+                "success": False,
+                "status": "unknown_error",
+                "message": f"接口返回异常状态码 {resp.status_code}",
+                "latency_ms": elapsed,
+                "detail": body,
+            }
+
+        # 校验响应格式
+        try:
+            data = resp.json()
+        except Exception:
+            return {
+                "success": False,
+                "status": "format_error",
+                "message": "接口返回的不是合法 JSON，请检查 API Base URL 是否正确",
+                "latency_ms": elapsed,
+            }
+
+        if "choices" not in data or not isinstance(data["choices"], list) or len(data["choices"]) == 0:
+            return {
+                "success": False,
+                "status": "format_error",
+                "message": "接口返回格式不符合预期（缺少 choices 字段），请检查 API Base URL",
+                "latency_ms": elapsed,
+            }
+
+        choice = data["choices"][0]
+        if "message" not in choice or "content" not in choice["message"]:
+            return {
+                "success": False,
+                "status": "format_error",
+                "message": "接口返回格式不符合预期（缺少 message.content），请检查 API Base URL",
+                "latency_ms": elapsed,
+            }
+
+        returned_model = data.get("model", "")
+        return {
+            "success": True,
+            "status": "ok",
+            "message": f"连接成功，模型「{returned_model or model_name}」响应正常",
+            "latency_ms": elapsed,
+            "model_returned": returned_model or None,
+        }
+
+    except httpx.ConnectError:
+        elapsed = int((time.time() - start) * 1000)
+        return {
+            "success": False,
+            "status": "network_error",
+            "message": f"无法连接到 {base}，请检查接口地址是否正确、网络是否可达",
+            "latency_ms": elapsed,
+        }
+    except httpx.TimeoutException:
+        elapsed = int((time.time() - start) * 1000)
+        return {
+            "success": False,
+            "status": "timeout",
+            "message": f"连接 {base} 超时（15s），请检查网络或 API 地址是否可达",
+            "latency_ms": elapsed,
+        }
+    except Exception as exc:
+        elapsed = int((time.time() - start) * 1000)
+        return {
+            "success": False,
+            "status": "network_error",
+            "message": f"请求失败: {exc}",
+            "latency_ms": elapsed,
+        }

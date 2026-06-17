@@ -473,3 +473,17 @@ export type AdminAiConfigsResponse = {
 export type AdminAiConfigsPatchRequest = {
   configs: Record<string, string | number | boolean>;
 };
+
+export type ModelTestConnectionRequest = {
+  api_base_url: string;
+  api_key: string;
+  model_name: string;
+};
+
+export type ModelTestConnectionResponse = {
+  success: boolean;
+  status: string;
+  message: string;
+  latency_ms: number | null;
+  model_returned?: string | null;
+};
