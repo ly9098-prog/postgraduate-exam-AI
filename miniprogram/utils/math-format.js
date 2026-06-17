@@ -1,3 +1,5 @@
+const { applyLatexSymbols, unescapeFunctionNames } = require('./latex-symbols')
+
 const SUBSCRIPT = {
   '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
   '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
@@ -47,18 +49,11 @@ function _renderSqrtFrac(text) {
 }
 
 function replaceSimpleLatexCommands(text) {
-  return _renderSqrtFrac(String(text || ''))
-    .replace(/\\{1,}(leq|le)/g, '≤')
-    .replace(/\\{1,}(geq|ge)/g, '≥')
-    .replace(/\\{1,}neq/g, '≠')
-    .replace(/\\{1,}times/g, '×')
-    .replace(/\\{1,}div/g, '÷')
-    .replace(/\\{1,}cdot/g, '·')
-    .replace(/\\{1,}pm/g, '±')
-    .replace(/\\{1,}to/g, '→')
-    .replace(/\\{1,}lt/g, '<')
-    .replace(/\\{1,}gt/g, '>')
-    .replace(/\\{1,}(log|ln|sin|cos|tan)/g, '$1')
+  return unescapeFunctionNames(
+    applyLatexSymbols(
+      _renderSqrtFrac(String(text || ''))
+    )
+  )
 }
 
 function formatInlineMathText(text) {
@@ -87,7 +82,7 @@ function formatInlineMathText(text) {
     .replace(/([A-Za-z0-9)])\^([0-9A-Za-z])/g, function(_, base, sup) {
       return base + toScript(sup, SUPERSCRIPT)
     })
-    .replace(/([A-Za-z0-9)])\s*(=|\+|×|÷|≤|≥|≠|→)\s*/g, '$1 $2 ')
+    .replace(/([A-Za-z0-9)])\s*(=|\+|×|÷|≤|≥|≠|≈|≡|∼|∈|⊆|∩|∪|→)\s*/g, '$1 $2 ')
     .replace(/\s*(-)\s*/g, ' − ')
     .replace(/(?<![*/])\s*([*/])\s*(?![*/])/g, ' $1 ')
     .replace(/([A-Za-z0-9)])(log[₀-₉₊₋]+)/g, '$1 $2')
