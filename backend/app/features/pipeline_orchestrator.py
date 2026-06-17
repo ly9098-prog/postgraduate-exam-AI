@@ -26,7 +26,10 @@ from app.features.ai_validation import validate_ai_results
 from app.features.answer_matcher import match_answers
 from app.features.batch_validation import validate_batch_structure
 from app.features.import_mode import ImportMode, detect_import_mode, get_strategy
-from app.features.ocr_correction import correct_ocr_blocks, _detect_noise, _should_correct
+from app.features.ocr_correction import (
+    TIER_HIGH_THRESHOLD, correct_ocr_blocks,
+    _detect_noise, _detect_structure_abnormal, _should_correct,
+)
 from app.features.page_classifier import classify_pages, filter_blocks_by_classification
 from app.features.question_normalizer import normalize_questions
 from app.features.question_splitter import split_questions
@@ -1167,6 +1170,17 @@ class ImportPipeline:
         )
         normalized_blocks = normalizer.normalize(raw_blocks)
 
+        for b in normalized_blocks:
+            raw = b.get("text") or ""
+            norm = b.get("normalized_text") or ""
+            if raw and norm and raw != norm:
+                logger.info(
+                    "【OCR-3】text_normalizer 修正 | block=%d page=%s len=%d→%d\n"
+                    "  └─ 原始: %.160s\n  └─ 清洗: %.160s",
+                    b.get("block_index", 0), b.get("page", "?"),
+                    len(raw), len(norm), raw, norm,
+                )
+
         warnings: list[str] = []
         empty_count = sum(1 for b in normalized_blocks if not b.get("normalized_text"))
         if empty_count:
@@ -1234,10 +1248,15 @@ class ImportPipeline:
 
         # 检查 feature flag
         use_router = await self._check_ocr_fix_feature_flag(db)
+        logger.info(
+            "【OCR-4】ocr_correction 模式 | blocks=%d mode=%s",
+            len(normalized_blocks), "router" if use_router else "legacy",
+        )
 
         if use_router:
+            kw = {k: v for k, v in _kw.items() if k != "db"}
             return await self._run_ocr_correction_router(
-                normalized_blocks, opts, db, **_kw,
+                normalized_blocks, opts, db, **kw,
             )
 
         # Legacy mode: 原有逻辑
@@ -1281,6 +1300,39 @@ class ImportPipeline:
         }
 
         result = await correct_ocr_blocks(normalized_blocks, correction_config, db=db)
+
+        # Log blocks flagged as noisy before correction
+        for b in normalized_blocks:
+            text = str(b.get("normalized_text") or "")
+            if not text.strip():
+                continue
+            noise = _detect_noise(b)
+            struct = _detect_structure_abnormal(text)
+            if noise >= TIER_HIGH_THRESHOLD * 0.7 or struct >= TIER_HIGH_THRESHOLD * 0.7:
+                logger.info(
+                    "【OCR-4】AI纠错输入(legacy) | block=%d page=%s noise=%.3f struct=%.3f\n%s",
+                    b.get("block_index", 0), b.get("page", "?"),
+                    noise, struct, text[:2000],
+                )
+
+        # Log each correction
+        for c in result.get("corrections", []):
+            if c.get("corrected"):
+                idx = c.get("block_index", 0)
+                original = ""
+                if idx < len(normalized_blocks):
+                    original = str(normalized_blocks[idx].get("normalized_text") or "")[:160]
+                corrected_blocks_out = result.get("corrected_blocks", [])
+                corrected = ""
+                if idx < len(corrected_blocks_out):
+                    corrected = str(corrected_blocks_out[idx].get("normalized_text") or "")[:160]
+                logger.info(
+                    "【OCR-5】AI纠错输出(legacy) | block=%d page=%s noise=%.3f struct=%.3f\n"
+                    "  └─ 纠错前: %s\n  └─ 纠错后: %s",
+                    idx, c.get("page", "?"),
+                    c.get("noise_score", 0), c.get("structure_score", 0),
+                    original, corrected,
+                )
 
         warnings: list[str] = []
         stats = result.get("stats", {})
@@ -1333,7 +1385,9 @@ class ImportPipeline:
                 continue
 
             noise_score = _detect_noise(block)
-            should = _should_correct(noise_score, router_config)
+            structure_score = _detect_structure_abnormal(text)
+            has_image = bool(page_images)
+            should = _should_correct(noise_score, router_config, structure_score=structure_score, has_image=has_image)
 
             if not should:
                 corrected_blocks.append(block)
@@ -1342,6 +1396,7 @@ class ImportPipeline:
                     "block_index": block.get("block_index", 0),
                     "page": block.get("page", 1),
                     "noise_score": round(noise_score, 3),
+                    "structure_score": round(structure_score, 3),
                     "corrected": False,
                 })
                 continue
@@ -1351,6 +1406,11 @@ class ImportPipeline:
             # Look up the page image for this block
             page_num = block.get("page", 1)
             page_image = page_images.get(page_num) if page_images else None
+
+            logger.info(
+                "【OCR-4】AI纠错输入 | block=%d page=%s noise=%.3f structure=%.3f\n%s",
+                idx, page_num, noise_score, structure_score, text[:2000],
+            )
 
             # 通过 router 纠错（传入图片供视觉模型使用）
             result = await router.fix(
@@ -1365,10 +1425,18 @@ class ImportPipeline:
                 new_block["ocr_correction_applied"] = True
                 new_block["ocr_fix_model"] = result.model_used
                 stats["corrected_blocks"] += 1
+
+                logger.info(
+                    "【OCR-5】AI纠错输出 | block=%d page=%s model=%s conf=%.2f\n"
+                    "  └─ 纠错前: %.160s\n  └─ 纠错后: %.160s",
+                    idx, page_num, result.model_used, result.confidence,
+                    text, result.fixed_text,
+                )
                 corrections.append({
                     "block_index": block.get("block_index", 0),
                     "page": block.get("page", 1),
                     "noise_score": round(noise_score, 3),
+                    "structure_score": round(structure_score, 3),
                     "corrected": True,
                     "model_used": result.model_used,
                 })
@@ -1377,6 +1445,7 @@ class ImportPipeline:
                     "block_index": block.get("block_index", 0),
                     "page": block.get("page", 1),
                     "noise_score": round(noise_score, 3),
+                    "structure_score": round(structure_score, 3),
                     "corrected": False,
                     "reason": result.raw_response or "no_change",
                 })
@@ -1813,6 +1882,21 @@ class ImportPipeline:
 
         _log_multi_blank_stage("split", raw_questions, source_type=_kw.get("source_type"), import_mode=import_mode_str)
 
+        # Log each parsed question
+        for q in raw_questions:
+            opts = q.get("option_lines") or {}
+            opt_summary = ", ".join(
+                f"{k}: {str(v)[:40]}" for k, v in sorted(opts.items())
+            ) or "(无选项)"
+            logger.info(
+                "【OCR-6】题目解析结果 | number=%s page=%s has_options=%s options=%s\n"
+                "  └─ 题干: %.200s",
+                q.get("number", "?"), q.get("page_start", "?"),
+                q.get("has_options", False),
+                opt_summary[:120],
+                str(q.get("raw_question_text") or ""),
+            )
+
         return {
             "raw_questions": raw_questions,
             "split_count": len(raw_questions),
@@ -1890,6 +1974,33 @@ class ImportPipeline:
         if no_regions_flagged:
             stage_warnings.append(
                 f"no_exercise_regions risk flag attached to {no_regions_flagged} questions"
+            )
+
+        for q in questions:
+            raw_opts = q.get("parsed_options") or q.get("options") or {}
+            if isinstance(raw_opts, dict):
+                opt_summary = ", ".join(
+                    f"{k}: {str(v)[:60]}" for k, v in sorted(raw_opts.items())
+                ) or "(无选项)"
+            elif isinstance(raw_opts, list):
+                opt_summary = ", ".join(
+                    f"{o.get('key', '?')}: {str(o.get('text', ''))[:60]}"
+                    for o in raw_opts
+                ) or "(无选项)"
+            else:
+                opt_summary = str(raw_opts)[:200]
+            logger.info(
+                "【OCR-7】schema归一化结果 | number=%s type=%s valid=%s conf=%.2f\n"
+                "  └─ 题干: %.200s\n"
+                "  └─ 选项: %s\n"
+                "  └─ 答案: %s\n"
+                "  └─ risk_flags: %s",
+                q.get("number", "?"), q.get("question_type", "?"),
+                q.get("is_valid", True), q.get("confidence_score", 0),
+                str(q.get("stem") or q.get("parsed_content") or "")[:200],
+                opt_summary[:200],
+                str(q.get("parsed_answer") or "❌"),
+                q.get("risk_flags") or [],
             )
 
         return {
@@ -2143,6 +2254,25 @@ class ImportPipeline:
             if qsubject:
                 new_hashes.append((qsubject, qhash, iid))
 
+        logger.info(
+            "【OCR-8】数据库入库结果 | batch=%s source=%s total=%d written=%d skipped=%d dup=%d\n"
+            "  └─ 题目明细:",
+            result["batch_id"], source_file,
+            result["total"], result["written"], result["skipped"],
+            result.get("duplicates_filtered", 0),
+        )
+        for idx, item in enumerate(items):
+            q = questions[idx] if idx < len(questions) else {}
+            opts = q.get("parsed_options") or q.get("options") or {}
+            opt_count = len(opts) if isinstance(opts, (dict, list)) else 0
+            logger.info(
+                "  ▶ import_id=%s hash=%s status=%s type=%s options=%d conf=%.2f answer=%s",
+                item.get("id", "?"), item.get("question_hash", "?")[:12],
+                item.get("status", "?"), q.get("question_type", "?"),
+                opt_count, q.get("confidence_score", 0),
+                q.get("parsed_answer") or "❌",
+            )
+
         return {
             "batch_id": result["batch_id"],
             "written": result["written"],
@@ -2167,6 +2297,7 @@ class ImportPipeline:
         db=None,
         progress_callback=None,
         file_path: str | None = None,
+        page_images: dict[int, bytes] | None = None,
     ) -> dict:
         """Execute all pipeline stages in sequence.
 
@@ -2186,6 +2317,10 @@ class ImportPipeline:
             options: {"enable_ai_repair": bool, "confidence_threshold": float}
             db: optional AsyncSession for the review stage
             progress_callback: optional async callable(stages_dict, current_stage, errors)
+            page_images: pre-rendered page image bytes keyed by 1-based page number.
+                         When provided (e.g. from image imports), bypasses
+                         _render_page_images so the ocr_correction stage can
+                         pass the original image to multimodal models like Qwen-VL.
 
         Returns:
             Pipeline result dict with status, stats, stages, and errors.
@@ -2234,11 +2369,14 @@ class ImportPipeline:
         )
 
         # Pre-render page images once (expensive — reused across chunks)
-        page_images = _render_page_images(
-            file_content=file_content,
-            file_path=file_path,
-            source_type=source_type,
-        )
+        # Caller may pass pre-rendered pages (e.g. image imports keep the
+        # original image bytes so multimodal OCR correction can use them).
+        if page_images is None:
+            page_images = _render_page_images(
+                file_content=file_content,
+                file_path=file_path,
+                source_type=source_type,
+            )
 
         if len(chunk_ranges) <= 1:
             # Legacy single-pass: chunk_ranges may be [] (no PDF page count)
@@ -2795,6 +2933,7 @@ async def run_import_pipeline(
     file_path: str | None = None,
     created_by: str | None = None,
     source_sha256: str | None = None,
+    page_images: dict[int, bytes] | None = None,
 ) -> dict:
     """完整的导入流水线入口。
 
@@ -2809,6 +2948,9 @@ async def run_import_pipeline(
         subject: 科目提示（可选）
         options: {"enable_ai_repair": bool, "confidence_threshold": float}
         db: 异步数据库会话（review 阶段需要）
+        page_images: 预渲染的页面图片字典（{1: image_bytes}），传入后管线跳过
+                     _render_page_images，直接使用。用于图片导入场景，让多模态
+                     OCR 纠错模型（如 Qwen-VL）能看到原始图片。
 
     Returns:
         Pipeline result dict.
@@ -2849,6 +2991,7 @@ async def run_import_pipeline(
         options=opts,
         db=db,
         progress_callback=progress_callback,
+        page_images=page_images,
     )
     result["pipeline_id"] = pipeline_id
     return result

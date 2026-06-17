@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import logging
 import time
 from typing import Any
@@ -31,10 +32,12 @@ _OCR_VERIFY_PROMPT = (
     "1. 图片与 OCR 一致时不要修改\n"
     "2. 不允许补充图片中不存在的内容\n"
     "3. 不允许解释或添加备注\n"
-    "4. 不允许输出 Markdown 格式\n"
+    "4. 只输出纯文本，不要输出 JSON、Markdown、代码块或任何结构化格式\n"
     "5. 只输出最终修正后的文本\n"
     "6. 保持原有换行结构\n"
-    "7. 保持题目格式和选项顺序\n\n"
+    "7. 保持题目格式和选项顺序\n"
+    "8. 非常重要：不要输出 ```json 包裹、不要输出 JSON 对象、"
+    "不要输出选项数组\n\n"
     "重点检查：\n"
     "- 数学公式（LaTeX 格式，行内 $...$，块级 $$...$$）\n"
     "- 编程代码（保持缩进）\n"
@@ -50,6 +53,95 @@ _OCR_VERIFY_PROMPT = (
 
 _IMAGE_MAX_DIMENSION = 2048
 _IMAGE_MAX_BYTES = 2 * 1024 * 1024  # 2MB
+
+
+import re
+
+_JSON_CODE_BLOCK_RE = re.compile(r"^```(?:json)?\s*\n(.*?)\n```\s*$", re.DOTALL)
+
+
+def _looks_like_json(text: str) -> bool:
+    """快速判断文本是否包含 JSON 内容。"""
+    t = text.strip()
+    return (t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]"))
+
+
+def _extract_plain_text(content: str) -> str:
+    """从 Qwen-VL 响应中提取纯文本。
+
+    Qwen-VL 有时返回 JSON（```json 包裹或裸 JSON），
+    而非纯文本。本函数检测并恢复。
+    """
+    text = content.strip()
+
+    # 先尝试用 regex 剥离 ```json ... ``` 包裹（更健壮，容忍尾部空格）
+    m = _JSON_CODE_BLOCK_RE.match(text)
+    if m:
+        text = m.group(1).strip()
+
+    # 模糊检测是否为 JSON
+    if not _looks_like_json(text):
+        return text  # 纯文本，直接返回
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        logger.debug("_extract_plain_text: json.loads failed")
+        return content  # 返回原始内容（含 ```json 包裹）
+
+    # 尝试从常见结构中提取文本
+    if isinstance(parsed, dict):
+        # {"text": "..."} 或 {"corrected": "..."} 或 {"fixed_text": "..."}
+        for key in ("corrected_text", "corrected", "fixed_text", "text", "output", "content"):
+            val = parsed.get(key)
+            if val and isinstance(val, str) and len(val) > 10:
+                return val.strip()
+        # {"option": [{"text": "..."}, ...]}  → 拼接文本
+        for key in ("option", "options", "choices"):
+            items = parsed.get(key)
+            if isinstance(items, list) and items:
+                texts = []
+                for item in items:
+                    if isinstance(item, dict):
+                        txt = item.get("text") or item.get("content") or ""
+                        if txt:
+                            texts.append(txt.strip())
+                    elif isinstance(item, str):
+                        texts.append(item.strip())
+                if texts:
+                    return "\n".join(texts)
+        # 兜底：提取所有字符串值拼接
+        all_texts = []
+        for v in parsed.values():
+            if isinstance(v, str) and len(v) > 5:
+                all_texts.append(v.strip())
+            elif isinstance(v, list):
+                for item in v:
+                    if isinstance(item, dict):
+                        txt = item.get("text") or item.get("content") or ""
+                        if txt:
+                            all_texts.append(txt.strip())
+                    elif isinstance(item, str):
+                        all_texts.append(item.strip())
+        if all_texts:
+            return "\n".join(all_texts)
+    elif isinstance(parsed, list):
+        texts = []
+        for item in parsed:
+            if isinstance(item, dict):
+                txt = item.get("text") or item.get("content") or ""
+                if txt:
+                    texts.append(txt.strip())
+            elif isinstance(item, str):
+                texts.append(item.strip())
+        if texts:
+            return "\n".join(texts)
+
+    logger.debug(
+        "_extract_plain_text: JSON parsed but no known keys matched; keys=%s",
+        list(parsed.keys()) if isinstance(parsed, dict) else "list",
+    )
+    return content
 
 
 def _compress_image(image: bytes) -> bytes:
@@ -148,6 +240,20 @@ class QwenFixer:
                         raw_response="qwen returned empty",
                     )
 
+                # 检测 Qwen 是否仍然返回 JSON（虽然 prompt 禁止），
+                # 此时提取失败 → 触发 router 降级到 DeepSeek
+                if _looks_like_json(corrected) or corrected.strip().startswith("```"):
+                    logger.warning(
+                        "Qwen returned JSON output (len=%d), triggering fallback to DeepSeek",
+                        len(corrected),
+                    )
+                    return OCRFixResult(
+                        fixed_text=ocr_text,
+                        model_used=self.model_name,
+                        duration_ms=duration_ms,
+                        raw_response="error: qwen returned json",
+                    )
+
                 return OCRFixResult(
                     fixed_text=corrected,
                     confidence=0.9,
@@ -233,4 +339,8 @@ class QwenFixer:
 
             data = resp.json()
             content = data["choices"][0]["message"]["content"]
-            return content.strip()
+            stripped = content.strip()
+
+            # Qwen-VL 有时返回 JSON 而非纯文本（含 ```json 包裹或裸 JSON），
+            # 破坏下游 splitter 的文本解析。这里做后处理恢复纯文本。
+            return _extract_plain_text(stripped)
