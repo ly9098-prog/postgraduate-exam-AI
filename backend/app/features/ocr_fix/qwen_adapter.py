@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import base64
 import io
-import json
 import logging
 import time
 from typing import Any
 
 import httpx
 
+from app.features.ocr_fix.canonical_output import canonicalize
 from app.features.ocr_fix.interfaces import OCRFixResult
 from app.utils.sentry_utils import capture_exception, set_tag, start_span
 
@@ -53,95 +53,6 @@ _OCR_VERIFY_PROMPT = (
 
 _IMAGE_MAX_DIMENSION = 2048
 _IMAGE_MAX_BYTES = 2 * 1024 * 1024  # 2MB
-
-
-import re
-
-_JSON_CODE_BLOCK_RE = re.compile(r"^```(?:json)?\s*\n(.*?)\n```\s*$", re.DOTALL)
-
-
-def _looks_like_json(text: str) -> bool:
-    """快速判断文本是否包含 JSON 内容。"""
-    t = text.strip()
-    return (t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]"))
-
-
-def _extract_plain_text(content: str) -> str:
-    """从 Qwen-VL 响应中提取纯文本。
-
-    Qwen-VL 有时返回 JSON（```json 包裹或裸 JSON），
-    而非纯文本。本函数检测并恢复。
-    """
-    text = content.strip()
-
-    # 先尝试用 regex 剥离 ```json ... ``` 包裹（更健壮，容忍尾部空格）
-    m = _JSON_CODE_BLOCK_RE.match(text)
-    if m:
-        text = m.group(1).strip()
-
-    # 模糊检测是否为 JSON
-    if not _looks_like_json(text):
-        return text  # 纯文本，直接返回
-
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        logger.debug("_extract_plain_text: json.loads failed")
-        return content  # 返回原始内容（含 ```json 包裹）
-
-    # 尝试从常见结构中提取文本
-    if isinstance(parsed, dict):
-        # {"text": "..."} 或 {"corrected": "..."} 或 {"fixed_text": "..."}
-        for key in ("corrected_text", "corrected", "fixed_text", "text", "output", "content"):
-            val = parsed.get(key)
-            if val and isinstance(val, str) and len(val) > 10:
-                return val.strip()
-        # {"option": [{"text": "..."}, ...]}  → 拼接文本
-        for key in ("option", "options", "choices"):
-            items = parsed.get(key)
-            if isinstance(items, list) and items:
-                texts = []
-                for item in items:
-                    if isinstance(item, dict):
-                        txt = item.get("text") or item.get("content") or ""
-                        if txt:
-                            texts.append(txt.strip())
-                    elif isinstance(item, str):
-                        texts.append(item.strip())
-                if texts:
-                    return "\n".join(texts)
-        # 兜底：提取所有字符串值拼接
-        all_texts = []
-        for v in parsed.values():
-            if isinstance(v, str) and len(v) > 5:
-                all_texts.append(v.strip())
-            elif isinstance(v, list):
-                for item in v:
-                    if isinstance(item, dict):
-                        txt = item.get("text") or item.get("content") or ""
-                        if txt:
-                            all_texts.append(txt.strip())
-                    elif isinstance(item, str):
-                        all_texts.append(item.strip())
-        if all_texts:
-            return "\n".join(all_texts)
-    elif isinstance(parsed, list):
-        texts = []
-        for item in parsed:
-            if isinstance(item, dict):
-                txt = item.get("text") or item.get("content") or ""
-                if txt:
-                    texts.append(txt.strip())
-            elif isinstance(item, str):
-                texts.append(item.strip())
-        if texts:
-            return "\n".join(texts)
-
-    logger.debug(
-        "_extract_plain_text: JSON parsed but no known keys matched; keys=%s",
-        list(parsed.keys()) if isinstance(parsed, dict) else "list",
-    )
-    return content
 
 
 def _compress_image(image: bytes) -> bytes:
@@ -228,7 +139,7 @@ class QwenFixer:
                 duration_ms = int((time.monotonic() - start) * 1000)
                 set_tag("ai.duration_ms", duration_ms)
 
-                if corrected is None:
+                if not corrected:
                     capture_exception(
                         RuntimeError("Qwen returned empty"),
                         tags={"ai.model": self._model, "ai.provider": "qwen"},
@@ -238,20 +149,6 @@ class QwenFixer:
                         model_used=self.model_name,
                         duration_ms=duration_ms,
                         raw_response="qwen returned empty",
-                    )
-
-                # 检测 Qwen 是否仍然返回 JSON（虽然 prompt 禁止），
-                # 此时提取失败 → 触发 router 降级到 DeepSeek
-                if _looks_like_json(corrected) or corrected.strip().startswith("```"):
-                    logger.warning(
-                        "Qwen returned JSON output (len=%d), triggering fallback to DeepSeek",
-                        len(corrected),
-                    )
-                    return OCRFixResult(
-                        fixed_text=ocr_text,
-                        model_used=self.model_name,
-                        duration_ms=duration_ms,
-                        raw_response="error: qwen returned json",
                     )
 
                 return OCRFixResult(
@@ -339,8 +236,6 @@ class QwenFixer:
 
             data = resp.json()
             content = data["choices"][0]["message"]["content"]
-            stripped = content.strip()
 
-            # Qwen-VL 有时返回 JSON 而非纯文本（含 ```json 包裹或裸 JSON），
-            # 破坏下游 splitter 的文本解析。这里做后处理恢复纯文本。
-            return _extract_plain_text(stripped)
+            canonical_text, _meta = canonicalize(content, model_name=self._model)
+            return canonical_text
