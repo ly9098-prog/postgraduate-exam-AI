@@ -3,6 +3,7 @@
  */
 
 import type { ReactNode } from "react";
+import { applyLatexSymbols, unescapeFunctionNames } from "@/lib/latex-symbols";
 
 interface Segment {
   type: "text" | "inline-math" | "block-math";
@@ -54,24 +55,14 @@ function formatMathText(text: string, { preserveWhitespace = false }: { preserve
     .replace(/\$\$([\s\S]*?)\$\$/g, "$1")
     .replace(/\$([^$\n]+?)\$/g, "$1");
   value = renderSqrtFrac(value);
-  value = value
-    .replace(/\\{1,}(leq|le)/g, "≤")
-    .replace(/\\{1,}(geq|ge)/g, "≥")
-    .replace(/\\{1,}neq/g, "≠")
-    .replace(/\\{1,}times/g, "×")
-    .replace(/\\{1,}div/g, "÷")
-    .replace(/\\{1,}cdot/g, "·")
-    .replace(/\\{1,}pm/g, "±")
-    .replace(/\\{1,}to/g, "→")
-    .replace(/\\{1,}lt/g, "<")
-    .replace(/\\{1,}gt/g, ">")
-    .replace(/\\{1,}(log|ln|sin|cos|tan)/g, "$1")
+  value = applyLatexSymbols(value);
+  value = unescapeFunctionNames(value)
     .replace(/_\{([0-9A-Za-z+-]+)\}/g, (_, sub: string) => toScript(sub, subscript))
     .replace(/\^\{([0-9A-Za-z+-]+)\}/g, (_, sup: string) => toScript(sup, superscript))
     .replace(/(log|ln|sin|cos|tan)_([0-9]+)/g, (_, name: string, sub: string) => `${name}${toScript(sub, subscript)}`)
     .replace(/([A-Za-z0-9)])_([0-9A-Za-z])/g, (_, base: string, sub: string) => `${base}${toScript(sub, subscript)}`)
     .replace(/([A-Za-z0-9)])\^([0-9A-Za-z])/g, (_, base: string, sup: string) => `${base}${toScript(sup, superscript)}`)
-    .replace(/([A-Za-z0-9)])\s*(=|\+|×|÷|≤|≥|≠|→)\s*/g, "$1 $2 ")
+    .replace(/([A-Za-z0-9)])\s*(=|\+|×|÷|≤|≥|≠|≈|≡|∼|∈|⊆|∩|∪|→)\s*/g, "$1 $2 ")
     .replace(/\s*(-)\s*/g, " − ")
     .replace(/(?<![*/])\s*([*/])\s*(?![*/])/g, " $1 ")
     .replace(/([A-Za-z0-9)])(log[₀-₉₊₋]+)/g, "$1 $2")
