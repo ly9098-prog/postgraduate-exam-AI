@@ -227,10 +227,13 @@ Component({
               self._fallbackFromLottie()
               return
             }
+            var dpr = 1
+            try { dpr = wx.getSystemInfoSync().pixelRatio || 1 } catch (_) {}
             var width = res[0].width || 1
             var height = res[0].height || 1
-            canvas.width = width
-            canvas.height = height
+            canvas.width = Math.round(width * dpr)
+            canvas.height = Math.round(height * dpr)
+            ctx.scale(dpr, dpr)
             self._canvas = canvas
             self._ctx = ctx
             self._lottieModule.setup(canvas)

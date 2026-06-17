@@ -75,7 +75,7 @@
             </view>
             <text class="mode-info">{{selectedPreset === 'debug' ? '10秒学习 · 5秒休息' : workDuration + ' 分钟学习 · ' + breakDuration + ' 分钟休息'}}</text>
             <!-- Custom sliders -->
-            <view class="custom-area {{showCustom ? 'visible' : ''}}">
+            <view class="custom-area {{showCustom ? 'visible' : ''}}" catchtouchstart="onCustomAreaTouch" catchtouchend="onCustomAreaTouch">
               <view class="custom-row">
                 <text class="custom-label">学习</text>
                 <slider

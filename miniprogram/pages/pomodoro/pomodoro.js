@@ -219,6 +219,8 @@ Page({
 
   /* ==================== Touch / Swipe ==================== */
 
+  onCustomAreaTouch() {},
+
   onTouchStart(e) {
     this._touchStartX = e.touches[0].clientX
   },
@@ -507,11 +509,16 @@ Page({
       wx.removeStorageSync('pomodoro_running_state')
       // Session expired while page was hidden — complete it now and show
       // deferred celebration so the user gets their earned break.
+      // Send the actual duration directly since the timer ran to completion.
+      // This prevents the server from computing inflated duration
+      // (now - start_time - paused) when the user returns hours later.
       api.post(`/pomodoro/${session.id}/complete`, {
         total_paused_ms: totalPausedMs || 0,
+        actual_duration_sec: session.work_duration * 60,
       }).catch(() => {
         api.post(`/pomodoro/${session.id}/interrupt`, {
           total_paused_ms: totalPausedMs || 0,
+          actual_duration_sec: session.work_duration * 60,
         }).catch(() => {})
       })
       // Restore session config so dismissCelebration reads correct durations
