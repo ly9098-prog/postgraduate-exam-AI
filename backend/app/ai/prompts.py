@@ -334,6 +334,45 @@ def build_repair_question(raw_text: str, existing: dict | None = None) -> list:
     ]
 
 
+def build_batch_repair_prompt(candidates: list[tuple[int, dict, str]]) -> list:
+    """构建批量题目修复 prompt。
+
+    Args:
+        candidates: [(index, question_dict, raw_text), ...]
+
+    Returns:
+        messages list，单次 LLM 调用修复多题。
+    """
+    parts: list[str] = []
+    for idx, (i, q, raw_text) in enumerate(candidates, 1):
+        existing = (
+            f"【规则解析题干】{q.get('stem', '')}\n"
+            f"【规则解析选项】{q.get('options', [])}\n"
+            f"【规则解析答案】{q.get('answer', '')}\n"
+            f"【规则解析题型】{q.get('question_type', '')}\n"
+            f"【规则解析解析】{q.get('analysis', '')}\n"
+            f"【已知错误】{q.get('errors', [])}\n"
+        )
+        parts.append(
+            f"【题目{idx}】\n"
+            f"【原始文本】\n{raw_text}\n\n"
+            f"{existing}"
+        )
+
+    return [
+        {"role": "system", "content": SYSTEM_PROMPTS["question_repair"]},
+        {
+            "role": "user",
+            "content": (
+                "\n---\n".join(parts)
+                + f"\n请修复以上 {len(candidates)} 道题目，按顺序输出 JSON 数组：\n"
+                '[{"question_type": "...", "stem": "...", ...}, '
+                '{"question_type": "...", "stem": "...", ...}]'
+            ),
+        },
+    ]
+
+
 def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: str, system_prompt: str | None = None) -> list:
     """对一条 question_imports 记录批量补全指定字段。
 
