@@ -1,151 +1,273 @@
 # BUGS
 
-> 审计日期: 2026-06-17
-> 修复日期: 2026-06-17
-> 复查日期: 2026-06-17 (二次审计，发现并修复 R1)
-> 优先级: CRITICAL > HIGH > MEDIUM > LOW
+##### 原题
+
+```tex
+下列关于线性表的说法，正确的是()。
+I.顺序存储方式只能用于存储线性结构 
+II.在一个设有头指针和尾指针的单链表，删除表尾元素的时间复杂度与表长无关 
+III.带头结点的循环单链表中不存在空指针 
+IV.在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n) V.若用单链表来表示队，则应该选用带尾指针的循环链表
+
+
+A. I、II
+B. I、III、IV、V
+C. IV、 V
+D. II、IV、V
+```
+
+##### 前端内容显示
+
+```tex
+下列关于线性表的说法，正确的是()。I.顺序存储方式只能用于存储线性结构 II.在一个设有头指针和尾指针的单链表，删除表尾元素的时间复杂度与表长无关 III.带头结点的循环单链表中不存在空指针 IV.在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n) V.若用单链表来表示队，则应该选用带尾指针的循环链表
+
+
+A. 1、I
+B. I、II、IV、V
+C. IV、 V
+D. II、IV、V
+```
+
+##### 解析结果
+
+```json
+{
+  "parsed_content": {
+    "text": "下列关于线性表的说法，正确的是()。I.顺序存储方式只能用于存储线性结构 II.在一个设有头指针和尾指针的单链表，删除表尾元素的时间复杂度与表长无关 III.带头结点的循环单链表中不存在空指针 IV.在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n) V.若用单链表来表示队，则应该选用带尾指针的循环链表"
+  },
+  "parsed_options": {
+    "A": "1、I",
+    "B": "I、II、IV、V",
+    "C": "IV、 V",
+    "D": "II、IV、V"
+  },
+  "parsed_answer": "D",
+  "parsed_analysis": null
+}
+```
+
+##### OCR解析结果
+
+```json
+{
+  "raw_data": {
+    "schema_version": "v1",
+    "subject": "",
+    "question_type": "single_choice",
+    "stem": "下列关于线性表的说法，正确的是()。I.顺序存储方式只能用于存储线性结构 II.在一个设有头指针和尾指针的单链表，删除表尾元素的时间复杂度与表长无关 III.带头结点的循环单链表中不存在空指针 IV.在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n) V.若用单链表来表示队，则应该选用带尾指针的循环链表",
+    "options": [
+      {
+        "key": "A",
+        "text": "1、I"
+      },
+      {
+        "key": "B",
+        "text": "I、II、IV、V"
+      },
+      {
+        "key": "C",
+        "text": "IV、 V"
+      },
+      {
+        "key": "D",
+        "text": "II、IV、V"
+      }
+    ],
+    "blank_option_groups": [],
+    "answer": "D",
+    "analysis": "",
+    "raw_text": "04.下列关于线性表的说法，正确的是()。\nI.顺序存储方式只能用于存储线性结构\nII.在一个设有头指针和尾指针的单链表，删除表尾元素的时间复杂度与表长无关\nII.带头结点的循环单链表中不存在空指针\nIV. 在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n)\nV.若用单链表来表示队，则应该选用带尾指针的循环链表\nB. I、II、IV、V\nA. 1、I\nD. II、IV、V\nC. IV、 V",
+    "knowledge_points": [],
+    "difficulty": 3,
+    "source": {
+      "file": "1.png",
+      "page": 1,
+      "type": "txt"
+    },
+    "is_valid": true,
+    "errors": [],
+    "warnings": [
+      "missing_answer_for_objective_question"
+    ],
+    "stem_hash": "cc2010b3",
+    "confidence_score": 0.85,
+    "risk_flags": [],
+    "ai_validation": {
+      "is_valid": true,
+      "issues": [],
+      "severity": "none"
+    }
+  },
+  "ai_metadata": {
+    "is_valid": true,
+    "errors": [],
+    "warnings": [
+      "missing_answer_for_objective_question"
+    ],
+    "knowledge_points": [],
+    "difficulty": 3,
+    "stem_hash": "cc2010b3",
+    "risk_flags": null
+  }
+}
+```
+
+### 问题描述
+
+#### 问题现象
+
+OCR 导题后，题干中的罗马编号（`I、II、III、IV、V`）被错误识别和处理，导致：
+
+1. 题干内容丢失换行结构，所有判断项被拼接成一行。
+2. 原本的 `III.` 被 OCR 识别成 `II.`。
+3. 选项 A 中应为 `I、II`，却被错误解析为 `1、I`（数字 1 替换了罗马数字 I）。
+4. 最终前端展示内容与原题不一致，影响题目正确性。
+
+------
+
+#### 原题内容
+
+```text
+下列关于线性表的说法，正确的是()。
+
+I. 顺序存储方式只能用于存储线性结构
+II. 在一个设有头指针和尾指针的单链表，删除表尾元素的时间复杂度与表长无关
+III. 带头结点的循环单链表中不存在空指针
+IV. 在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n)
+V. 若用单链表来表示队，则应该选用带尾指针的循环链表
+
+A. I、II
+B. I、III、IV、V
+C. IV、V
+D. II、IV、V
+```
+
+------
+
+#### 实际导题结果
+
+```text
+下列关于线性表的说法，正确的是()。I.顺序存储方式只能用于存储线性结构 II.在一个设有头指针和尾指针的单链表，删除表尾元素的时间复杂度与表长无关 III.带头结点的循环单链表中不存在空指针 IV.在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n) V.若用单链表来表示队，则应该选用带尾指针的循环链表
+
+A. 1、I
+B. I、II、IV、V
+C. IV、V
+D. II、IV、V
+```
+
+------
+
+#### OCR 输出分析
+
+OCR 原始结果中已经出现识别错误：
+
+```text
+I.
+II.
+II.   ← 实际应为 III.
+IV.
+V.
+```
+
+同时选项区域被识别为：
+
+```text
+A. 1、I
+```
+
+实际应为：
+
+```text
+A. I、II
+```
+
+说明 OCR 阶段已将部分罗马数字 `I` 错误识别为阿拉伯数字 `1`，并将 `III` 错误识别为 `II`。
+
+------
+
+#### 根因分析
+
+当前导题链路缺少对罗马数字序号的校验与纠错机制：
+
+1. **OCR 识别错误**
+   - `III` → `II`
+   - `I` → `1`
+2. **解析阶段未进行语义校验**
+   - 未检测题干中罗马编号序列是否连续（I、II、III、IV、V）。
+   - 未检测选项内容与题干中的编号集合是否匹配。
+3. **后处理阶段缺少规则修复**
+   - 未对常见 OCR 错误（`1 ↔ I`、`II ↔ III`）进行自动纠正。
+   - 未利用上下文推断缺失的罗马数字。
+
+------
+
+#### 期望结果
+
+系统应能够正确识别并保留罗马数字编号：
+
+```text
+I.
+II.
+III.
+IV.
+V.
+```
+
+选项应解析为：
+
+```json
+{
+  "A": "I、II",
+  "B": "I、III、IV、V",
+  "C": "IV、V",
+  "D": "II、IV、V"
+}
+```
+
+前端最终展示内容应与原题保持一致，避免因 OCR 对罗马数字的误识别导致题目语义发生变化。
+
+------
+
+#### 建议排查方向
+
+1. OCR 纠错层增加罗马数字专项修复规则。
+2. 建立罗马数字序列完整性校验（I→II→III→IV→V）。
+3. 在 AI OCR 校验阶段增加：
+   - 罗马数字与阿拉伯数字混淆检测。
+   - 选项引用编号合法性检测。
+4. 在结构化解析阶段增加题干与选项交叉验证，发现异常时自动修正或标记高风险题目。
 
 ---
 
-## CRITICAL
+### 修复评估（2026-06-18）
 
-### C1. `deepseek.chat()` URL 双写 `/v1` 风险 ✅
+对 `text_normalizer.py` 修复（`_RE_STRUCTURE_LINE` 增加罗马数字匹配）后的全面评估。
 
-**位置**: `backend/app/ai/client.py:60`
+#### 已修复
 
-`f"{_base_url}/v1/chat/completions"` 在 `_base_url` 已含 `/v1` 时构造出 `/v1/v1/chat/completions`。
+| 问题 | 措施 |
+|------|------|
+| 题干罗马数字枚举行合并 | `_RE_STRUCTURE_LINE` 增加 `_ROMAN_SUBITEM_TOKEN` 匹配 |
+| 罗马数字序列完整性校验 | `batch_validation._check_roman_numeral_sequence()` 检测序列断裂并追加 warning |
+| AI 修复感知罗马数字混淆 | `ai_repair` prompt 增加规则 7，指示 LLM 修正 III→II 和 1→I |
+| 测试防护 | 51 passed, 1 deselected（既有全角括号转化失败，与修复无关） |
 
-- 触发条件: legacy 路径 + DB 中 `feature="ocr"` 配置为 Qwen-VL（`base_url=https://dashscope.aliyuncs.com/compatible-mode/v1`）
-- 影响: 请求失败 → `return None` → 纠错静默跳过，无日志告警
-- 当前实际影响有限（`ocr_fix_feature_flag` 默认 true 走 router，不走 legacy）
+#### 短期未修复（需 AI 修复阶段处理）
 
-**修复**: 构造 URL 前检查并 strip 末尾 `/v1`，再统一拼接 `/v1/chat/completions`。
+**`III.` → `II.` OCR 误识 — 规则层无法可靠修复**
 
-### C2. 两套独立 token 计数器，无共享预算 ✅
+PaddleOCR 将 `III.` 识别为 `II.`。规则层无法区分合法 `II.` 与被误识的 `II.`，二者文本相同。已在 `batch_validation` 增加序列断裂检测（I→II→II→IV→V），触发 `broken_roman_numeral_sequence` warning；AI repair 阶段会收到该信号并尝试修正。
 
-**位置**: `ocr_correction.py:57-59` / `ai_repair.py:22`
+**选项 `1、I` → `I、II` — 规则层修复风险较高**
 
-OCR 纠错和 AI Repair 各自维护模块级 `_token_usage` dict，进程重启归零，日/月总额限制形同虚设。
+选项 A 文本 `1、I` 应修正为 `I、II`。行内 `1→I` 和 `I→II` 混淆不属于行首题号保护范围，无法通过 `_fix_question_number_line` 修复。依赖 AI repair 阶段（prompt 规则 7）利用语义理解修正。
 
-- 影响: 无法实施真实预算控制，成本不可控
-- 并发: `_token_usage` 操作无锁保护（见 M5）
+**预存在测试失败 `test_grouped_circled_option_rows_preserve_stem_placeholders`**
 
-**修复**: 抽取共享模块 `backend/app/features/token_budget.py`，两处统一导入，加 `asyncio.Lock` 保护并发。
+`_normalize_punctuation()` 将全角 `（` 转为半角 `(`，破坏对全角占位符 `（ ）` 的预期。与本次修复无关。
 
----
+#### 长期风险
 
-## HIGH
+**选项文本内容无合理性校验**
 
-### H1. Router 模式逐块串行调用 ✅
-
-**位置**: `pipeline_orchestrator.py:1381`
-
-`_run_ocr_correction_router` 用 `for idx, block in enumerate(...)` 逐块串行调用 `router.fix()`。Legacy 路径 `ocr_correction.py:463-472` 使用 `asyncio.gather` + `Semaphore(3)` 并发 3 路。
-
-- 影响: Router 模式多 block 导入显著更慢
-- 额外问题: `qwen_adapter.py:279` 每次新建 `httpx.AsyncClient`，无连接复用
-
-**修复**: Router 模式改为两阶段（分类 + `asyncio.gather` 并发调用），QwenFixer 增加实例级 `httpx.AsyncClient` 复用。
-
-### H2. 长度安全阈值不一致 ✅
-
-**位置**: `ocr_correction.py:318` vs `deepseek_adapter.py:86`
-
-同一 OCR 纠错功能，legacy 使用 `0.3` 倍下限，DeepSeekFixer 使用 `0.5` 倍下限。
-
-- 影响: `0.3` 过于宽松，可能接受 AI 输出严重截断的文本
-
-**修复**: legacy 路径统一切换为 `0.5`。
-
-### H3. Legacy 路径无法利用 VL 模型的图片能力 ✅
-
-**位置**: `ocr_correction.py:276-321`
-
-`_call_ai_correction` 仅传入文本 `block_text`，调用 `deepseek.chat()`（纯文本 API）。即使 `feature="ocr"` 配置为 Qwen-VL 视觉模型，图片数据完全不传递，Qwen-VL 退化为纯文本纠错。
-
-**修复**: `correct_ocr_blocks` 新增 `page_images` 参数，透传到 `_call_ai_correction`；当 base_url 含 dashscope 且提供了页面图片时，构造多模态 vision 请求。
-
----
-
-## MEDIUM
-
-### M1. 批次 token 计数截断 ✅
-
-**位置**: `ai_repair.py:349`
-
-`token_used: result["tokens_used"] // len(batch)` 整数除法丢弃余数，逐批累加后总 token 计数偏小。
-
-**修复**: 改为 `base + (1 if pos < rem else 0)` 公平分配余数。
-
-### M2. `corrected_blocks` None 穿透风险 ✅
-
-**位置**: `ocr_correction.py:426-428` / `ocr_correction.py:520`
-
-初始化为 `[None] * len(...)`，末尾 list comprehension 过滤 None。若循环遗漏任何 block（当前逻辑不会，但代码脆弱），None 被静默丢弃，最终 blocks 数量 < 输入数量，下游 splitter 可能收到不完整数据。
-
-**修复**: 过滤前增加防御性检查，对残留 None 打印 error 日志并回退为原始 block。Router 路径同步加固。
-
-### M3. 白板 marker 恢复丢失 AI 修复结果 ✅
-
-**位置**: `ai_repair.py:491-493`
-
-AI 修复的 stem 若不含原始 blank_option_groups 的全部 markers，整个修复的 stem 被丢弃、回退为原始 stem。该保护正确但未记录 warning 日志，排查时无法知道 AI 修复因 marker 丢失被弃用。
-
-**修复**: 添加 `logger.warning(...)` 记录丢弃原因和涉及的 markers。
-
-### M4. Token 估算重复计算 ✅
-
-**位置**: `ocr_correction.py:288-297`
-
-先做 `_estimate_tokens(block_text) * 3` 与 `max_tokens` 比较，line 300 又重复计算一次 `_estimate_tokens(block_text) * 3` 用于预算检查。
-
-**修复**: 合并为一次计算，统一复用。
-
-### M5. `_token_usage` 并发非安全 ✅
-
-**位置**: `ocr_correction.py` / `ai_repair.py`
-
-两个模块的 `_token_usage` dict 操作（`_reset_counters_if_needed` / `_record_token_usage`）无锁保护。多并发导入时存在竞态条件。
-
-**修复**: 共享模块 `token_budget.py` 所有 dict 操作由 `asyncio.Lock` 保护。
-
----
-
-## LOW
-
-### L1. `ocr_correction.py` 和 `ai_repair.py` 代码重复 ✅
-
-`_reset_counters_if_needed`、`_check_token_limit`、`_record_token_usage`、`_estimate_tokens` 在两处完全重复。任何 budget 逻辑修改需改两处。
-
-**修复**: 抽取共享模块 `backend/app/features/token_budget.py`，两处统一导入。
-
-### L2. AI 修复降级时无区分日志 ✅
-
-**位置**: `ai_repair.py:352-358`
-
-batch parse 失败时逐题降级调用 `_call_ai_for_repair`，降级原因只记录了一条 warning，未在最终结果中标记"此题为 batch-fallback 修复"，排查困难。
-
-**修复**: 降级结果添加 `_batch_fallback=True` 标记，最终 repaired 条目携带 `repair_method: "batch_fallback"` 和 `batch_fallback_repair` risk flag。
-
----
-
-## 总结
-
-| 指标 | 修复前 | 修复后 |
-|------|--------|--------|
-| 总问题数 | 10 | 0 |
-| CRITICAL | 2 | 0 |
-| HIGH | 3 | 0 |
-| MEDIUM | 5 | 0 |
-| LOW | 2 | 0 |
-
-所有问题均已修复，涉及文件:
-
-| 文件 | 涉及问题 |
-|------|----------|
-| `backend/app/ai/client.py` | C1 |
-| `backend/app/features/token_budget.py` | C2, M5, L1 (新增) |
-| `backend/app/features/ocr_correction.py` | C2, H2, H3, M2, M4, M5, L1 |
-| `backend/app/features/ai_repair.py` | C2, M1, M3, M5, L1, L2 |
-| `backend/app/features/pipeline_orchestrator.py` | H1, H3 |
-| `backend/app/features/ocr_fix/qwen_adapter.py` | H1 |
+`batch_validation` 只检查选项键的存在性，不检查文本内容。无法发现 `1、I` 这类异常选项文本。

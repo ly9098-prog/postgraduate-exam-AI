@@ -17,6 +17,16 @@ logger = logging.getLogger(__name__)
 _CHOICE_TYPES = ("single_choice", "multiple_choice")
 _EXPECTED_OPTION_KEYS = {"A", "B", "C", "D"}
 
+# 罗马数字枚举检测 — 用于验证题干中 I./II./III. 序列的完整性
+_ROMAN_SUBITEM_TOKEN = r"(?:VIII|VII|III|VI|IV|IX|II|V|X|I)"
+_RE_ROMAN_SUBITEM_MARKER = re.compile(
+    r"(?<![A-Za-z])" + _ROMAN_SUBITEM_TOKEN + r"(?![A-Za-z])\s*[.、)）]"
+)
+_ROMAN_TO_VALUE = {
+    "I": 1, "II": 2, "III": 3, "IV": 4, "V": 5,
+    "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10,
+}
+
 
 def _check_number_continuity(questions: list[dict]) -> list[dict]:
     """Detect gaps in question numbering sequence.
@@ -103,6 +113,44 @@ def _check_answer_presence(question: dict, index: int) -> dict | None:
     return None
 
 
+def _check_roman_numeral_sequence(questions: list[dict]) -> list[dict]:
+    """检测题干中罗马数字枚举序列的完整性。
+
+    识别 I→II→II→IV→V 这类序列断裂（重复/非递增），
+    标记具体断裂位置供下游 AI repair 和前端审核参考。
+    """
+    issues: list[dict] = []
+    for i, q in enumerate(questions):
+        stem = q.get("stem", "")
+        if not stem:
+            continue
+
+        markers = _RE_ROMAN_SUBITEM_MARKER.findall(stem)
+        if len(markers) < 3:
+            continue
+
+        values: list[int] = []
+        tokens: list[str] = []
+        for m in markers:
+            rm = re.match(_ROMAN_SUBITEM_TOKEN, m)
+            if rm:
+                token = rm.group(0)
+                tokens.append(token)
+                values.append(_ROMAN_TO_VALUE.get(token, 0))
+
+        if len(values) < 3:
+            continue
+
+        if any(values[j] <= values[j - 1] for j in range(1, len(values))):
+            issues.append({
+                "index": i,
+                "found_tokens": tokens,
+                "found_values": values,
+            })
+
+    return issues
+
+
 def validate_batch_structure(questions: list[dict]) -> dict:
     """Run cross-question structural integrity checks.
 
@@ -115,6 +163,7 @@ def validate_batch_structure(questions: list[dict]) -> dict:
     number_gaps = _check_number_continuity(questions)
     incomplete_options: list[dict] = []
     missing_answers: list[dict] = []
+    roman_issues = _check_roman_numeral_sequence(questions)
 
     for i, q in enumerate(questions):
         opt_issue = _check_option_completeness(q, i)
@@ -128,6 +177,7 @@ def validate_batch_structure(questions: list[dict]) -> dict:
     # Append warnings to individual questions
     incomplete_indices = {item["index"] for item in incomplete_options}
     missing_ans_indices = {item["index"] for item in missing_answers}
+    roman_issue_indices = {item["index"] for item in roman_issues}
 
     updated_questions: list[dict] = []
     for i, q in enumerate(questions):
@@ -141,6 +191,14 @@ def validate_batch_structure(questions: list[dict]) -> dict:
         if i in missing_ans_indices:
             warnings.append("missing_answer_for_objective_question")
 
+        if i in roman_issue_indices:
+            issue = next(item for item in roman_issues if item["index"] == i)
+            warnings.append(
+                f"broken_roman_numeral_sequence: "
+                f"found {','.join(issue['found_tokens'])} "
+                f"(values {issue['found_values']})"
+            )
+
         new_q["warnings"] = warnings
         updated_questions.append(new_q)
 
@@ -149,6 +207,7 @@ def validate_batch_structure(questions: list[dict]) -> dict:
         "number_gap_count": len(number_gaps),
         "incomplete_option_count": len(incomplete_options),
         "missing_answer_count": len(missing_answers),
+        "roman_numeral_issue_count": len(roman_issues),
     }
 
     return {
@@ -157,6 +216,7 @@ def validate_batch_structure(questions: list[dict]) -> dict:
             "number_gaps": number_gaps,
             "incomplete_options": incomplete_options,
             "missing_answers": missing_answers,
+            "roman_numeral_issues": roman_issues,
             "stats": stats,
         },
     }
