@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-06-18
+
+- **修复：`_extract_stem()` 无选项时误剥离圈号前缀行**
+  - `question_normalizer.py` 中 `_extract_stem()` 的 `_OPTION_LINE_RE` 缺少 `option_lines` 前置守卫，当上游未检测到选项时仍匹配 `① A. n + 1` 类行并从题干中剥离。
+  - 修复：在 `_OPTION_LINE_RE.match()` 前增加 `option_lines and` 守卫。
+  - `test_partial_missing` 测试数据补齐 Q1 完整 A/B/C/D 选项。
+  - 新增 `test_cross_path_consistency()` 跨路径一致性冒烟测试，防止两条标准化路径（Path A: module-level `normalize_question()` / Path B: `QuestionNormalizer.normalize()`）功能发散。
+  - 受影响文件：`app/features/question_normalizer.py`、`tests/test_services/test_question_normalizer.py`、`tests/test_question_pipeline.py`。
+  - 受影响文档：`docs/ai/STANDARDIZATION_FLOW.md`、`docs/project/CHANGELOG.md`。
+
 ## 2026-06-10
 
 - **AI 解析设置页面 — 配置接口实施完成**

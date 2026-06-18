@@ -30,7 +30,7 @@
 | `docs/project/` | 项目规则、路线图、MVP、变更日志 | 阶段完成、范围调整、规则变化 |
 | `docs/backend/` | API、数据库、存储设计 | 后端接口、模型、迁移、存储链路变化 |
 | `docs/frontend/` | UI 规则、组件规范、设计系统 | 小程序页面、组件、交互规则变化 |
-| `docs/architecture/` | 系统架构、OCR、记忆系统、复习算法 | 跨模块流程、架构约束、核心算法变化 |
+| `docs/architecture/` | 系统架构、OCR（流程/策略/使用说明/双环境）、记忆系统、复习算法 | 跨模块流程、架构约束、核心算法变化 |
 | `docs/ai/` | AI 管线、OCR 策略、标准化流程 | AI 标准化、Prompt、OCR/PDF 导入链路变化 |
 | `docs/admin/` | 后台管理系统设计与实施文档 | Admin 后台 API、RBAC、审计日志、审核流变化 |
 | `docs/debug/` | 调试体系与排查规则 | 形成稳定调试方法或复盘结论 |
@@ -99,6 +99,8 @@
 | `docs/API_SPEC.md` | `docs/backend/API_SPEC.md` |
 | `docs/DB_SCHEMA.md` | `docs/backend/DB_SCHEMA.md` |
 | `docs/OCR_FLOW.md` | `docs/architecture/OCR_FLOW.md` |
+| `docs/OCR_USAGE.md` | `docs/architecture/OCR_USAGE.md` |
+| `docs/DUAL_ENV_OCR.md` | `docs/architecture/DUAL_ENV_OCR.md` |
 | `docs/AI_PIPELINE.md` | `docs/ai/AI_PIPELINE.md` |
 | `docs/PROJECT_RULES.md` | `docs/project/PROJECT_RULES.md` |
 | `docs/UI_RULES.md` | `docs/frontend/UI_RULES.md` |

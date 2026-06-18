@@ -3,9 +3,11 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn -r requirements.txt
+RUN pip install --no-cache-dir --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com -r requirements.txt
 COPY requirements-ocr.txt .
-RUN pip install --no-cache-dir --user -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn -r requirements-ocr.txt
+# Install OCR deps + paddleocr without its opencv deps (replaced by headless)
+RUN pip install --no-cache-dir --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com -r requirements-ocr.txt && \
+    pip install --no-cache-dir --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com --no-deps paddleocr
 
 # Pre-download PaddleOCR models to ~/.paddleocr/ (PaddleOCR default model dir).
 RUN python3 <<'PYEOF'
