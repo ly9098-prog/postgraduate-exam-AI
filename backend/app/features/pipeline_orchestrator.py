@@ -2076,6 +2076,10 @@ class ImportPipeline:
             warnings.append(f"{stats['incomplete_option_count']} questions with incomplete options")
         if stats["missing_answer_count"] > 0:
             warnings.append(f"{stats['missing_answer_count']} questions missing answers")
+        if stats.get("roman_numeral_issue_count", 0) > 0:
+            warnings.append(f"{stats['roman_numeral_issue_count']} Roman numeral sequence issues detected")
+        if stats.get("roman_digit_confusion_count", 0) > 0:
+            warnings.append(f"{stats['roman_digit_confusion_count']} Roman digit confusion issues detected")
 
         return {
             "questions": result["questions"],
@@ -2123,7 +2127,13 @@ class ImportPipeline:
             "monthly_token_limit": options.get("monthly_token_limit", 2000000),
             "enabled": options.get("enable_ai_repair", True),
         }
-        result = await repair_questions(to_repair, repair_config, db=_kw.get("db"))
+        # Pass structured Roman numeral anomalies from batch_validation stage
+        batch_diag = _kw.get("batch_validation_diagnostics", {})
+        roman_anomalies = batch_diag.get("roman_anomalies", [])
+        result = await repair_questions(
+            to_repair, repair_config, db=_kw.get("db"),
+            roman_diagnostics=roman_anomalies,
+        )
 
         repaired = result.get("repaired", [])
         unrepaired = result.get("unrepaired", [])

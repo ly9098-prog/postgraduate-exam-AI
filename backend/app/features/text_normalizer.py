@@ -34,16 +34,10 @@ _RE_OPTION_LINE = re.compile(
     r"^[A-Da-d8６0Oo]\s*[.、:：）]"
 )
 
-# ASCII 罗马数字子项标记 I./II./III. ——多项选择题的子项枚举，区别于阿拉伯题号。
-# 用于避免把子项 "I." 误纠正成题号 "1."（OCR 纠错 l/I→1 的副作用）。
-# 定义在 _RE_STRUCTURE_LINE 之前，供结构行检测和 OCR 纠正两处使用。
-_ROMAN_SUBITEM_TOKEN = r"(?:VIII|VII|III|VI|IV|IX|II|V|X|I)"
-_RE_ROMAN_SUBITEM_MARKER = re.compile(
-    r"(?<![A-Za-z])" + _ROMAN_SUBITEM_TOKEN + r"(?![A-Za-z])\s*[.、)）]"
+# Roman numeral constants imported from shared module (single source of truth)
+from app.features.roman_schema import (  # noqa: E402
+    _ROMAN_SUBITEM_TOKEN, _RE_ROMAN_SUBITEM_MARKER, _ROMAN_TO_VALUE, _VALUE_TO_ROMAN,
 )
-# Roman numeral value mapping (longest-first for unambiguous token matching)
-_ROMAN_TO_VALUE = {"VIII": 8, "VII": 7, "III": 3, "VI": 6, "IV": 4, "IX": 9, "II": 2, "V": 5, "X": 10, "I": 1}
-_VALUE_TO_ROMAN = {v: k for k, v in _ROMAN_TO_VALUE.items()}
 
 # 结构标记行：不应被合并到上行的模式
 _RE_STRUCTURE_LINE = re.compile(

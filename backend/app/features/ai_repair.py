@@ -53,9 +53,17 @@ def _looks_like_non_question_text(question: dict) -> bool:
     return len(prose_markers) >= 2 and weak_question_signals <= 1
 
 
-def _should_repair(question: dict, threshold: float) -> tuple[bool, str]:
+def _should_repair(
+    question: dict,
+    threshold: float,
+    roman_anomalies: list[dict] | None = None,
+) -> tuple[bool, str]:
     if _looks_like_non_question_text(question):
         return False, "non_question_like"
+
+    # 0. Roman numeral anomalies — always trigger repair regardless of confidence
+    if roman_anomalies:
+        return True, "roman_anomaly"
 
     # 1. confidence_score < threshold
     if question.get("confidence_score", 1.0) < threshold:
@@ -337,12 +345,257 @@ async def _call_ai_for_batch_repair(
     return all_results
 
 
+# ---------------------------------------------------------------------------
+# Roman numeral constrained-decision repair (Phase 1 of AI repair)
+# ---------------------------------------------------------------------------
+
+
+def _parse_roman_decision_response(content: str) -> dict | None:
+    """Parse the AI's Roman numeral decision JSON."""
+    try:
+        result = json.loads(content)
+        if isinstance(result, dict) and "decisions" in result:
+            return result
+    except json.JSONDecodeError:
+        pass
+
+    m = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", content)
+    if m:
+        try:
+            result = json.loads(m.group(1).strip())
+            if isinstance(result, dict) and "decisions" in result:
+                return result
+        except json.JSONDecodeError:
+            pass
+
+    return None
+
+
+async def _call_ai_for_roman_decision(
+    question: dict,
+    anomalies: list[dict],
+    config: dict,
+    db: AsyncSession | None = None,
+) -> dict | None:
+    """Call DeepSeek for constrained Roman numeral repair decisions.
+
+    Returns: {"decisions": [...], "token_used": N} or None on failure.
+    """
+    from app.ai.client import deepseek
+    from app.ai.prompts import build_roman_decision_prompt
+
+    if db is not None:
+        from app.services.model_config_resolver import ensure_db_model_configured
+        creds = await ensure_db_model_configured(db)
+        api_key = creds[0] if creds else None
+        base_url = creds[1] if creds else None
+        model_name = creds[2] if creds else None
+    else:
+        api_key = base_url = model_name = None
+
+    messages = build_roman_decision_prompt(question, anomalies)
+    prompt_text = json.dumps(messages, ensure_ascii=False)
+    estimated = _estimate_tokens(prompt_text)
+
+    if not await check_token_limit(estimated, config):
+        return None
+
+    try:
+        result = await deepseek.chat(
+            messages, temperature=0.2, model=model_name,
+            api_key=api_key, base_url=base_url,
+        )
+    except Exception:
+        return None
+
+    await record_token_usage(result["tokens_used"])
+
+    parsed = _parse_roman_decision_response(result["content"])
+    if parsed is None:
+        return None
+
+    return {
+        "decisions": parsed.get("decisions", []),
+        "token_used": result["tokens_used"],
+    }
+
+
+def _build_roman_fix_from_decision(
+    anomaly: dict, decision: dict
+) -> dict:
+    """Convert an AI-chosen flat candidate into a mechanical fix instruction.
+
+    The anomaly has pre-generated flat candidates (each a self-contained action).
+    The decision picks one by chosen_candidate_index. This function translates
+    the chosen candidate into a fix instruction that apply_roman_fix() can execute.
+    """
+    candidates = anomaly.get("candidates", [])
+    chosen_idx = decision.get("chosen_candidate_index", -1)
+
+    if chosen_idx < 0 or chosen_idx >= len(candidates):
+        return {"action": "keep_as_is"}
+
+    chosen = candidates[chosen_idx]
+    source = anomaly.get("source", "")
+    action = chosen.get("action", "")
+
+    if action == "keep_as_is":
+        return {"action": "keep_as_is"}
+
+    if action == "replace_token":
+        return {
+            "action": "replace_token",
+            "source": source,
+            "position": chosen["position"],
+            "from_token": chosen["current_token"],
+            "to_token": chosen["token"],
+        }
+
+    if action == "replace_token_at_position":
+        return {
+            "action": "replace_token",
+            "source": source,
+            "position": chosen["position"],
+            "from_token": chosen["current_token"],
+            "to_token": chosen["token"],
+        }
+
+    if action == "insert_token":
+        return {
+            "action": "insert_token",
+            "source": source,
+            "after_position": chosen["position"] - 1,
+            "token": chosen["token"],
+        }
+
+    if action == "replace_1_with_I":
+        return {
+            "action": "replace_1_with_I",
+            "source": source,
+            "original_fragment": "1、",
+            "fixed_fragment": "I、",
+        }
+
+    return {"action": "keep_as_is"}
+
+
+def _apply_roman_decisions(
+    question: dict, anomalies: list[dict], decisions: list[dict]
+) -> dict:
+    """Apply AI-chosen Roman numeral fixes to a question mechanically."""
+    from app.features.roman_schema import apply_roman_fix
+
+    q = dict(question)
+
+    # Track resolved anomaly sources so we only clear their warnings
+    resolved_sequence_sources: set[str] = set()  # e.g. {"stem", "option_A"}
+    resolved_digit_option_keys: set[str] = set()  # e.g. {"A"}
+
+    for i, decision in enumerate(decisions):
+        if i >= len(anomalies):
+            break
+        fix = _build_roman_fix_from_decision(anomalies[i], decision)
+        if fix.get("action") != "keep_as_is":
+            q = apply_roman_fix(q, fix)
+            anom = anomalies[i]
+            source = anom.get("source", "")
+            issue_type = anom.get("issue_type", "")
+            if issue_type == "ocr_digit_confusion":
+                opt_key = source.split("_", 1)[1] if source.startswith("option_") else ""
+                resolved_digit_option_keys.add(opt_key)
+            else:
+                resolved_sequence_sources.add(source)
+
+    # Only clear warnings that correspond to resolved anomalies
+    existing_warnings: list[str] = list(q.get("warnings", []))
+    filtered_warnings: list[str] = []
+    for w in existing_warnings:
+        keep = True
+        for src in resolved_sequence_sources:
+            if w.startswith(f"broken_roman_numeral_sequence({src})"):
+                keep = False
+                break
+        if keep:
+            for key in resolved_digit_option_keys:
+                if w.startswith("option_roman_digit_confusion") and f"option {key}" in w:
+                    keep = False
+                    break
+        if keep:
+            filtered_warnings.append(w)
+    q["warnings"] = filtered_warnings
+
+    # Record the repair
+    risk_flags = list(q.get("risk_flags") or [])
+    if "roman_repair_applied" not in risk_flags:
+        risk_flags.append("roman_repair_applied")
+    q["risk_flags"] = risk_flags
+
+    return q
+
+
+async def _run_roman_repair_phase(
+    questions: list[dict],
+    roman_anomalies: list[dict],
+    config: dict,
+    db: AsyncSession | None = None,
+) -> list[dict]:
+    """Run the constrained Roman numeral decision phase.
+
+    Groups anomalies by question index, calls AI for decisions per question,
+    applies fixes mechanically.
+
+    Returns a list of repair result dicts: [{"index": N, "decisions": [...], "token_used": T}]
+    """
+    if not roman_anomalies:
+        return []
+
+    # Group anomalies by question index
+    by_index: dict[int, list[dict]] = {}
+    for anom in roman_anomalies:
+        idx = anom.get("index", 0)
+        by_index.setdefault(idx, []).append(anom)
+
+    import asyncio
+    sem = asyncio.Semaphore(3)
+    results: list[dict] = []
+
+    async def _decide_one(idx: int, anoms: list[dict]):
+        async with sem:
+            q = questions[idx] if idx < len(questions) else {}
+            ai_result = await _call_ai_for_roman_decision(q, anoms, config, db)
+            if ai_result:
+                return {
+                    "index": idx,
+                    "decisions": ai_result["decisions"],
+                    "token_used": ai_result["token_used"],
+                }
+            return {"index": idx, "decisions": [], "token_used": 0}
+
+    gathered = await asyncio.gather(
+        *[_decide_one(idx, anoms) for idx, anoms in by_index.items()],
+        return_exceptions=True,
+    )
+
+    for result in gathered:
+        if isinstance(result, dict):
+            results.append(result)
+        elif isinstance(result, BaseException):
+            logger.warning("Roman decision phase exception: %s", result)
+
+    return results
+
+
 async def repair_questions(
     questions: list[dict],
     config: dict | None = None,
     db: AsyncSession | None = None,
+    roman_diagnostics: list[dict] | None = None,
 ) -> dict:
-    """对低置信度题目进行 AI 修复（并发，最多 3 路）。
+    """对低置信度题目进行 AI 修复（两阶段：Roman 决策 + 通用修复）。
+
+    Phase 1: Roman numeral constrained-decision repair (AI chooses from
+             candidate fixes; code applies the fix mechanically).
+    Phase 2: Standard free-form AI repair (existing behavior, unchanged).
 
     Args:
         questions: stage5 输出的标准化题目列表
@@ -352,6 +605,7 @@ async def repair_questions(
             "monthly_token_limit": 2000000,
             "enabled": True,
         }
+        roman_diagnostics: 结构化 Roman 异常列表（来自 batch_validation）
 
     Returns:
         {"repaired": [...], "unrepaired": [...], "skipped": [...], "stats": {...}}
@@ -400,9 +654,67 @@ async def repair_questions(
             },
         }
 
-    candidates: list[tuple[int, dict, str]] = []
+    # ------------------------------------------------------------------
+    # Phase 1: Roman numeral constrained-decision repair
+    # ------------------------------------------------------------------
+    roman_diagnostics = roman_diagnostics or []
+    roman_results: dict[int, dict] = {}  # index → {decisions, token_used}
+    roman_total_tokens = 0
+
+    if roman_diagnostics and deepseek.is_available():
+        phase1_results = await _run_roman_repair_phase(
+            questions, roman_diagnostics, config, db,
+        )
+        for r in phase1_results:
+            idx = r["index"]
+            roman_results[idx] = r
+            roman_total_tokens += r.get("token_used", 0)
+
+    # Apply Roman fixes to questions before standard repair
+    roman_fixed_questions: list[dict] = []
     for i, q in enumerate(questions):
-        do_repair, reason = _should_repair(q, threshold)
+        if i in roman_results and roman_results[i].get("decisions"):
+            # Find anomalies for this question
+            q_anomalies = [a for a in roman_diagnostics if a.get("index") == i]
+            fixed = _apply_roman_decisions(
+                q, q_anomalies, roman_results[i]["decisions"],
+            )
+            roman_fixed_questions.append(fixed)
+        else:
+            roman_fixed_questions.append(q)
+
+    # Build per-question roman anomaly lookup for _should_repair
+    roman_anomalies_by_index: dict[int, list[dict]] = {}
+    for anom in roman_diagnostics:
+        idx = anom.get("index", 0)
+        roman_anomalies_by_index.setdefault(idx, []).append(anom)
+
+    # ------------------------------------------------------------------
+    # Phase 2: Standard AI repair (unchanged logic)
+    # ------------------------------------------------------------------
+    candidates: list[tuple[int, dict, str]] = []
+    for i, q in enumerate(roman_fixed_questions):
+        q_anomalies = roman_anomalies_by_index.get(i)
+        # Roman-repaired questions that had ONLY roman issues skip Phase 2
+        if i in roman_results and roman_results[i].get("decisions"):
+            # Check if there are still non-roman reasons to repair
+            _, reason = _should_repair(q, threshold, roman_anomalies=None)
+            if reason == "above_threshold":
+                # Roman repair was the only issue — record and skip Phase 2
+                roman_entry = {
+                    "question_index": i,
+                    "before": {k: v for k, v in questions[i].items() if k != "raw_text"},
+                    "after": q,
+                    "repair_actions": ["roman_numeral_fixed"],
+                    "repair_method": "roman_decision",
+                    "confidence": 0.95,
+                    "token_used": roman_results[i].get("token_used", 0),
+                }
+                repaired.append(roman_entry)
+                total_tokens += roman_results[i].get("token_used", 0)
+                continue
+
+        do_repair, reason = _should_repair(q, threshold, roman_anomalies=q_anomalies)
         if not do_repair:
             skipped.append({
                 "question_index": i,
@@ -492,13 +804,21 @@ async def repair_questions(
             "risk_flags": list(dict.fromkeys(q.get("risk_flags") or [])),
         }
 
+        repair_actions = result_data.get("repair_actions", [])
+        # If this question was also Roman-repaired, merge that info
+        if i in roman_results:
+            repair_actions = ["roman_numeral_fixed", *repair_actions]
+            after.setdefault("risk_flags", [])
+            if "roman_repair_applied" not in after["risk_flags"]:
+                after["risk_flags"] = ["roman_repair_applied", *after["risk_flags"]]
+
         repair_entry = {
             "question_index": i,
-            "before": {k: v for k, v in q.items() if k != "raw_text"},
+            "before": {k: v for k, v in questions[i].items() if k != "raw_text"},
             "after": after,
-            "repair_actions": result_data.get("repair_actions", []),
+            "repair_actions": repair_actions,
             "confidence": result_data.get("confidence", 0),
-            "token_used": token_used,
+            "token_used": token_used + roman_results.get(i, {}).get("token_used", 0),
         }
         if ai_result.get("_batch_fallback"):  # L2: mark batch-fallback degradation
             repair_entry["repair_method"] = "batch_fallback"
@@ -516,6 +836,6 @@ async def repair_questions(
             "repaired": len(repaired),
             "unrepaired": len(unrepaired),
             "skipped": len(skipped),
-            "total_tokens": total_tokens,
+            "total_tokens": total_tokens + roman_total_tokens,
         },
     }
