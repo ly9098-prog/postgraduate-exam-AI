@@ -1,8 +1,10 @@
-# PENDING_FIXED_TASK
+# COMPLETED_FIX_TASK
 
-> **状态：✅ 已完成** (2026-06-18)
+> **状态：✅ 已完成 + 已审计** (2026-06-18)
 >
-> 详见 commit `fix(ocr): add quality gate, option completeness validation, anti-false-success, parse cache`
+> 实现 commit: `fix(ocr): add quality gate, option completeness validation, anti-false-success, parse cache`
+>
+> 审计结论：所有 6 个目标正常工作，无回归（398 tests passed）。发现 6 个低/中风险点，均不阻塞上线。
 
 ##### 原题(原题选项区域存在半透明水印)
 
@@ -331,6 +333,34 @@ Frontend
 - 同一输入不会产生多个 parsed 版本
 
 ------
+
+## 🔍 审计结果 (2026-06-18)
+
+### 无问题
+- 脏 OCR（得分 1.0）正确阻断：`ocr_critical_corruption` + `is_valid=False` + `retry_recommended=True`
+- 干净文本（得分 0.0）零误报通过
+- 缺 D 选项正确阻断为 `missing_option_D`，即使其他字段正常
+- 解析缓存正确防止相同输入被重新解析
+- `batch_validation.py` 中的 is_valid 逻辑正确
+- 现有测试套件 398 passed，无回归
+
+### 中风险（建议后续关注，不阻塞上线）
+
+| # | 问题 | 说明 |
+|---|------|------|
+| 1 | **LaTeX 数学误报** | `\alpha`/`\beta` 等模式对合法数学题产生 `symbol_substitution_detected` 警告（得分 0.35）。当前仅警告（阻断阈值 0.50），但若结合其他轻微问题可能级联误阻断。建议后续加数学上下文感知 |
+| 2 | **缓存无失效机制** | `_parse_cache` 模块字典永不失效（除非重启或手动 `parse_cache_clear()`）。部署修复后已缓存题目仍返回旧结果 |
+| 3 | **两路径 schema 不一致** | `question_pipeline.py:validate()` 缺少 `validation_status` / `failure_reason` / `retry_recommended` / `ocr_quality_flags` 字段 |
+
+### 低风险（代码质量）
+
+| # | 问题 |
+|---|------|
+| 4 | 选项完整性校验逻辑在 `question_normalizer.py` 和 `batch_validation.py` 中重复 |
+| 5 | `parse_cache_get(raw_text, stem_hash)` 参数名误导——实际传入 raw_text hash |
+| 6 | 缓存条目中 `version` / `cached_at` 字段从未被读取（死元数据） |
+
+---
 
 ## ⚠️ 强约束
 
