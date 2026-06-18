@@ -359,7 +359,7 @@ class ImportTextNormalizer:
             prefix = m.group(1)
             content = m.group(2)
             fixed_content = re.sub(r"^1\s*([、,])", r"I\1", content)
-            return f"{prefix}. {fixed_content}"
+            return f"{prefix}. {fixed_content}{line[m.end():]}"
         return line
 
     def _fix_roman_numeral_duplicates(self, text: str) -> str:
