@@ -67,9 +67,14 @@ def classify_roman_issue(tokens: list[str], values: list[int]) -> str:
         if values[j] == values[j - 1]:
             return DUPLICATE
 
-    # Check for gaps
+    # Check for reverse / non-monotonic
     for j in range(1, len(values)):
-        if values[j] - values[j - 1] != 1:
+        if values[j] < values[j - 1]:
+            return SEQUENCE_BREAK
+
+    # Check for gaps (skip > 1)
+    for j in range(1, len(values)):
+        if values[j] - values[j - 1] > 1:
             return GAP
 
     return ""

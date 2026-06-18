@@ -83,6 +83,9 @@ class TestClassifyRomanIssue:
     def test_gap(self):
         assert classify_roman_issue(["I", "II", "IV", "V"], [1, 2, 4, 5]) == GAP
 
+    def test_sequence_break(self):
+        assert classify_roman_issue(["II", "I", "III"], [2, 1, 3]) == SEQUENCE_BREAK
+
     def test_short_sequence(self):
         assert classify_roman_issue(["I"], [1]) == ""
         assert classify_roman_issue([], []) == ""
