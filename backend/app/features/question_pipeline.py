@@ -367,10 +367,18 @@ class QuestionNormalizer:
         if not question.get("answer") and question.get("question_type") != "multi_blank_choice":
             errors.append("answer_empty")
         if question.get("question_type") in {"single_choice", "multiple_choice"}:
-            if not question.get("options"):
+            options = question.get("options") or []
+            if not options:
                 errors.append("options_empty")
-            elif len(question["options"]) < 2:
+            elif len(options) < 2:
                 warnings.append("options_too_few")
+            # PENDING_FIX: 单选题必须包含全部 A/B/C/D 选项
+            if question.get("question_type") == "single_choice" and options:
+                present = {o.get("key", "").upper() for o in options if isinstance(o, dict) and o.get("key")}
+                missing = {"A", "B", "C", "D"} - present
+                if missing:
+                    for k in sorted(missing):
+                        errors.append(f"missing_option_{k}")
         if not question.get("subject"):
             errors.append("subject_empty")
         return {"is_valid": not errors, "errors": errors, "warnings": warnings}
