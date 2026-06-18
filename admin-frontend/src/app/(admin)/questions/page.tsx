@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
@@ -183,6 +183,7 @@ export default function QuestionsPage() {
   const permissions = useAuthStore((state) => state.permissions);
   const [filters, setFilters] = useState({ subject: "", review_status: "", is_active: "", question_type: "", keyword: "", year: "" });
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [page, setPage] = useState(1);
   const [selectedQuestionId, setSelectedQuestionId] = useState<number | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
@@ -195,7 +196,7 @@ export default function QuestionsPage() {
 
   const queryParams = useMemo(
     () => ({
-      page: 1,
+      page,
       page_size: 20,
       subject: filters.subject,
       review_status: filters.review_status,
@@ -204,7 +205,7 @@ export default function QuestionsPage() {
       keyword: filters.keyword,
       year: filters.year,
     }),
-    [filters],
+    [page, filters],
   );
 
   const questions = useQuery({
@@ -291,6 +292,7 @@ export default function QuestionsPage() {
 
   const updateFilter = (key: keyof typeof filters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
+    setPage(1);
   };
 
   const toggleAll = () => {
@@ -521,6 +523,57 @@ export default function QuestionsPage() {
           {questions.isError ? (
             <div className="rounded-2xl border border-[var(--color-danger-light)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
               题目接口当前不可用，若 router 未挂载则属于后端阻塞。
+            </div>
+          ) : null}
+
+          {/* Pagination */}
+          {questions.data && questions.data.total_pages > 1 ? (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[var(--blueprint-line)] bg-white/80 px-5 py-3 shadow-[var(--shadow-crisp)]">
+              <span className="font-display text-sm tracking-wide text-[var(--color-text-secondary)]">
+                <span className="font-semibold text-[var(--ink)]">{questions.data.total}</span> 道题目
+                <span className="mx-2 text-[var(--color-text-hint)]">/</span>
+                <span className="text-[var(--color-text-hint)]">第 </span>
+                <span className="font-semibold text-[var(--ink)]">{questions.data.page}</span>
+                <span className="text-[var(--color-text-hint)]"> / {questions.data.total_pages} 页</span>
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="inline-flex h-9 items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-xs font-semibold text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:pointer-events-none disabled:opacity-40"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                  上一页
+                </button>
+                {Array.from({ length: Math.min(questions.data.total_pages, 5) }, (_, i) => {
+                  const start = Math.max(1, Math.min(page - 2, questions.data.total_pages - 4));
+                  const p = start + i;
+                  if (p > questions.data.total_pages) return null;
+                  const isActive = p === page;
+                  return (
+                    <button
+                      key={p}
+                      disabled={isActive}
+                      onClick={() => setPage(p)}
+                      className={
+                        isActive
+                          ? "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-primary-dark)] bg-[var(--color-primary)] text-sm font-bold text-white shadow-[var(--shadow-crisp)]"
+                          : "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white/80 text-sm font-medium text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]"
+                      }
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+                <button
+                  disabled={page >= (questions.data?.total_pages ?? 1)}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="inline-flex h-9 items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-xs font-semibold text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:pointer-events-none disabled:opacity-40"
+                >
+                  下一页
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                </button>
+              </div>
             </div>
           ) : null}
         </CardContent>
