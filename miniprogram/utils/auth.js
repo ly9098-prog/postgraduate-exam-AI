@@ -32,7 +32,6 @@ async function wechatLogin() {
   storage.set(KEYS.TOKEN_EXPIRES_AT, data.expires_at)
   storage.set(KEYS.REFRESH_TOKEN, data.refresh_token)
   storage.set(KEYS.USER, user)
-  storage.set('_login_persist_test', Date.now())
   return user
 }
 
@@ -73,7 +72,6 @@ function loginDirect(token, user, expiresAt, refreshToken) {
   if (expiresAt) storage.set(KEYS.TOKEN_EXPIRES_AT, expiresAt)
   if (refreshToken) storage.set(KEYS.REFRESH_TOKEN, refreshToken)
   storage.set(KEYS.USER, normalizeUser(user))
-  storage.set('_login_persist_test', Date.now())
 }
 
 /**
