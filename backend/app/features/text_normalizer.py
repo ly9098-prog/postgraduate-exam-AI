@@ -34,12 +34,21 @@ _RE_OPTION_LINE = re.compile(
     r"^[A-Da-d8６0Oo]\s*[.、:：）]"
 )
 
+# ASCII 罗马数字子项标记 I./II./III. ——多项选择题的子项枚举，区别于阿拉伯题号。
+# 用于避免把子项 "I." 误纠正成题号 "1."（OCR 纠错 l/I→1 的副作用）。
+# 定义在 _RE_STRUCTURE_LINE 之前，供结构行检测和 OCR 纠正两处使用。
+_ROMAN_SUBITEM_TOKEN = r"(?:VIII|VII|III|VI|IV|IX|II|V|X|I)"
+_RE_ROMAN_SUBITEM_MARKER = re.compile(
+    r"(?<![A-Za-z])" + _ROMAN_SUBITEM_TOKEN + r"(?![A-Za-z])\s*[.、)）]"
+)
+
 # 结构标记行：不应被合并到上行的模式
 _RE_STRUCTURE_LINE = re.compile(
     r"^("
     r"\d+\s*[.、)）]"
     r"|" + _OPTION_MARKER +
     r"|" + _GROUP_MARKER_PATTERN + r"\s*$"
+    r"|" + _ROMAN_SUBITEM_TOKEN + r"\s*[.、)）]"
     r"|[（(]\s*[A-D]\s*[）)]"
     r"|(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:]"
     r"|(?:【)?(?:解析|解答|讲解|分析)(?:】)?\s*[：:]"
@@ -72,13 +81,6 @@ _RE_WATERMARK = re.compile(
 
 # 页码模式：纯数字或带少量空格的1-3位数
 _RE_PAGE_NUMBER = re.compile(r"^\s*\d{1,3}\s*$")
-
-# ASCII 罗马数字子项标记 I./II./III. ——多项选择题的子项枚举，区别于阿拉伯题号。
-# 用于避免把子项 "I." 误纠正成题号 "1."（OCR 纠错 l/I→1 的副作用）。
-_ROMAN_SUBITEM_TOKEN = r"(?:VIII|VII|III|VI|IV|IX|II|V|X|I)"
-_RE_ROMAN_SUBITEM_MARKER = re.compile(
-    r"(?<![A-Za-z])" + _ROMAN_SUBITEM_TOKEN + r"(?![A-Za-z])\s*[.、)）]"
-)
 
 # C 指针箭头 OCR 伪影：PaddleOCR 常把 "->" 识别成 "− >"/"- >"（减号/各类破折号 +
 # 空格 + 大于号），导致 408 链表代码（p->next、q->prior->next）面目全非。
