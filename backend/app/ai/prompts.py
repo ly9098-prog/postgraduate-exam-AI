@@ -175,6 +175,20 @@ SYSTEM_PROMPTS = {
         "- 不允许只输出选项而不保留题干\n\n"
         "输出格式：直接返回纠错后的完整纯文本，不要包含任何 JSON、代码块或其他标记。"
     ),
+    "roman_repair_decision": (
+        "你是考研题库中的罗马数字序列修复决策助手。\n"
+        "你的任务不是自由生成修复文本，而是从候选方案中选择最合理的修复动作。\n\n"
+        "规则：\n"
+        "1. 仅从提供的候选方案(candidates)中选择，禁止自行创造新方案\n"
+        "2. 若所有候选方案都不合理，选择 keep_as_is（候选列表中最后一项）\n"
+        "3. 基于上下文语义判断：罗马数字是序列枚举还是独立引用\n"
+        "4. 考虑选项间的对应关系：若选项 A 引用了罗马数字序列，其他选项可能也有类似结构\n"
+        "5. 对于 OCR 数字混淆(1 vs I)：判断上下文是阿拉伯数字语境还是罗马数字语境\n"
+        "6. 递增序列是最常见模式：I→II→III→IV→V 比跳号更可能\n\n"
+        "输出严格 JSON 格式，不要包含任何解释或 Markdown 代码块：\n"
+        '{"decisions": [{"anomaly_index": 0, "chosen_candidate_index": 0, '
+        '"confidence": 0.9, "rationale": "选择理由（一句话）"}]}'
+    ),
     "complete_question": (
         "你是考研题目补全助手。根据已有的题干和上下文，补全缺失字段。"
         "你的输出仅是辅助提示，必须经过人工审核后才能采用。"
@@ -491,6 +505,72 @@ def build_ocr_correction(block_text: str, system_prompt: str | None = None) -> l
             "content": (
                 "请纠错以下 OCR 识别文本：\n\n"
                 f"{block_text}"
+            ),
+        },
+    ]
+
+
+def build_roman_decision_prompt(
+    question: dict,
+    anomalies: list[dict],
+) -> list:
+    """构建受约束的罗马数字修复决策 prompt。
+
+    将结构化异常数据 + 候选修复方案呈现给 AI，
+    AI 仅需从候选中选择最合理的方案，而非自由生成文本。
+
+    Args:
+        question: 题目 dict（包含 stem, options）
+        anomalies: 结构化异常列表（来自 roman_schema.build_roman_anomaly）
+
+    Returns:
+        messages list
+    """
+    import json
+
+    anomaly_blocks: list[str] = []
+    for i, anom in enumerate(anomalies):
+        block = (
+            f"【异常 {i + 1}】\n"
+            f"  位置: {anom.get('source', '')}\n"
+            f"  发现序列: {', '.join(anom.get('found_tokens', []))}"
+            f" (值: {anom.get('found_values', [])})\n"
+            f"  异常类型: {anom.get('issue_type', '')}\n"
+        )
+        snippet = anom.get("text_snippet", "")
+        if snippet:
+            block += f"  文本上下文:\n    {snippet[:200]}\n"
+
+        candidates = anom.get("candidates", [])
+        if candidates:
+            block += "  候选修复方案:\n"
+            for j, cand in enumerate(candidates):
+                cand_str = json.dumps(cand, ensure_ascii=False)
+                block += f"    [{j}] {cand_str}\n"
+
+        anomaly_blocks.append(block)
+
+    stem_text = question.get("stem", "")
+    if len(stem_text) > 500:
+        stem_text = stem_text[:500] + "…"
+
+    options_text = ""
+    for opt in question.get("options", []):
+        if isinstance(opt, dict):
+            opt_text = opt.get("text", "")
+            if len(opt_text) > 150:
+                opt_text = opt_text[:150] + "…"
+            options_text += f"{opt.get('key', '')}. {opt_text}\n"
+
+    return [
+        {"role": "system", "content": SYSTEM_PROMPTS["roman_repair_decision"]},
+        {
+            "role": "user",
+            "content": (
+                f"【题目题干】{stem_text}\n"
+                f"【题目选项】\n{options_text}\n"
+                + "\n---\n".join(anomaly_blocks)
+                + "\n\n请对每个异常选择一个候选修复方案，输出 JSON。"
             ),
         },
     ]

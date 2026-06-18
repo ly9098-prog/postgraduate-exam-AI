@@ -18,14 +18,14 @@ _CHOICE_TYPES = ("single_choice", "multiple_choice")
 _EXPECTED_OPTION_KEYS = {"A", "B", "C", "D"}
 
 # 罗马数字枚举检测 — 用于验证题干中 I./II./III. 序列的完整性
-_ROMAN_SUBITEM_TOKEN = r"(?:VIII|VII|III|VI|IV|IX|II|V|X|I)"
-_RE_ROMAN_SUBITEM_MARKER = re.compile(
-    r"(?<![A-Za-z])" + _ROMAN_SUBITEM_TOKEN + r"(?![A-Za-z])\s*[.、)）]"
+# Constants imported from shared module (single source of truth)
+from app.features.roman_schema import (  # noqa: E402
+    _ROMAN_SUBITEM_TOKEN, _RE_ROMAN_SUBITEM_MARKER, _ROMAN_TO_VALUE, _VALUE_TO_ROMAN,
+    has_roman_subitem_list, classify_roman_issue, build_roman_anomaly,
+    generate_duplicate_candidates, generate_gap_candidates,
+    generate_digit_confusion_candidates,
+    DUPLICATE, GAP, OCR_DIGIT_CONFUSION, SEQUENCE_BREAK,
 )
-_ROMAN_TO_VALUE = {
-    "I": 1, "II": 2, "III": 3, "IV": 4, "V": 5,
-    "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10,
-}
 
 
 def _check_number_continuity(questions: list[dict]) -> list[dict]:
@@ -195,6 +195,78 @@ def _check_option_roman_digit_confusion(questions: list[dict]) -> list[dict]:
     return issues
 
 
+def _build_structured_roman_anomalies(
+    roman_issues: list[dict],
+    roman_digit_issues: list[dict],
+    questions: list[dict],
+) -> list[dict]:
+    """Convert raw roman_issues / roman_digit_issues into structured anomaly dicts.
+
+    Each anomaly includes issue_type classification, text_snippet context,
+    and pre-generated candidate fix options for AI constrained-decision prompts.
+    """
+    anomalies: list[dict] = []
+
+    for raw in roman_issues:
+        idx = raw["index"]
+        source = raw["source"]
+        tokens: list[str] = raw["found_tokens"]
+        values: list[int] = raw["found_values"]
+        issue_type = classify_roman_issue(tokens, values)
+
+        # Extract text snippet from the question
+        q = questions[idx] if idx < len(questions) else {}
+        text_snippet = ""
+        if source == "stem":
+            text_snippet = q.get("stem", "")[:300]
+        elif source.startswith("option_"):
+            opt_key = source.split("_", 1)[1].upper()
+            for opt in q.get("options", []):
+                if isinstance(opt, dict) and opt.get("key", "").upper() == opt_key:
+                    text_snippet = opt.get("text", "")[:300]
+                    break
+
+        # Generate candidates based on issue type
+        candidates: list[dict] = []
+        if issue_type == DUPLICATE:
+            candidates = generate_duplicate_candidates(tokens, values)
+        elif issue_type == GAP:
+            candidates = generate_gap_candidates(tokens, values)
+
+        anomalies.append(build_roman_anomaly(
+            index=idx,
+            source=source,
+            issue_type=issue_type,
+            tokens=tokens,
+            values=values,
+            text_snippet=text_snippet,
+            candidates=candidates,
+        ))
+
+    for raw in roman_digit_issues:
+        idx = raw["index"]
+        opt_key = raw["option_key"]
+        opt_text = raw["option_text"]
+        source = f"option_{opt_key}"
+
+        q = questions[idx] if idx < len(questions) else {}
+        text_snippet = opt_text[:300]
+
+        candidates = generate_digit_confusion_candidates(opt_key, opt_text)
+
+        anomalies.append(build_roman_anomaly(
+            index=idx,
+            source=source,
+            issue_type=OCR_DIGIT_CONFUSION,
+            tokens=[],
+            values=[],
+            text_snippet=text_snippet,
+            candidates=candidates,
+        ))
+
+    return anomalies
+
+
 def validate_batch_structure(questions: list[dict]) -> dict:
     """Run cross-question structural integrity checks.
 
@@ -209,6 +281,9 @@ def validate_batch_structure(questions: list[dict]) -> dict:
     missing_answers: list[dict] = []
     roman_issues = _check_roman_numeral_sequence(questions)
     roman_digit_issues = _check_option_roman_digit_confusion(questions)
+    roman_anomalies = _build_structured_roman_anomalies(
+        roman_issues, roman_digit_issues, questions,
+    )
 
     for i, q in enumerate(questions):
         opt_issue = _check_option_completeness(q, i)
@@ -279,6 +354,7 @@ def validate_batch_structure(questions: list[dict]) -> dict:
             "missing_answers": missing_answers,
             "roman_numeral_issues": roman_issues,
             "roman_digit_confusions": roman_digit_issues,
+            "roman_anomalies": roman_anomalies,
             "stats": stats,
         },
     }
