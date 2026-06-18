@@ -805,9 +805,14 @@ async def repair_questions(
         }
 
         repair_actions = result_data.get("repair_actions", [])
-        # If this question was also Roman-repaired, merge that info
+        # If this question was also Roman-repaired, re-apply fixes and merge info
         if i in roman_results:
             repair_actions = ["roman_numeral_fixed", *repair_actions]
+            # Re-apply Phase 1 Roman fixes on Phase 2 result so they aren't
+            # overwritten when the question also needed non-Roman repair.
+            q_anoms = roman_anomalies_by_index.get(i)
+            if q_anoms:
+                after = _apply_roman_decisions(after, q_anoms, roman_results[i]["decisions"])
             after.setdefault("risk_flags", [])
             if "roman_repair_applied" not in after["risk_flags"]:
                 after["risk_flags"] = ["roman_repair_applied", *after["risk_flags"]]
