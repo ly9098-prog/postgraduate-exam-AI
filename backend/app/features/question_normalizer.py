@@ -8,6 +8,7 @@
 import re
 import hashlib
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -269,8 +270,8 @@ def _compute_confidence(
     return round(min(1.0, score), 2)
 
 
-def _check_option_completeness(
-    question_type: str, options: list[dict]
+def check_option_completeness(
+    question_type: str, options: list[dict],
 ) -> tuple[bool, list[str]]:
     """检查选择题选项完整性。
 
@@ -295,7 +296,10 @@ def _check_option_completeness(
     return True, []
 
 
-def _run_ocr_quality_gate(raw_text: str) -> dict:
+_check_option_completeness = check_option_completeness  # 向后兼容
+
+
+def run_ocr_quality_gate(raw_text: str) -> dict:
     """在解析前运行 OCR 质量门控。
 
     Returns:
@@ -322,6 +326,9 @@ def _run_ocr_quality_gate(raw_text: str) -> dict:
         "ocr_quality_flags": flags,
         "ocr_contamination_score": score,
     }
+
+
+_run_ocr_quality_gate = run_ocr_quality_gate  # 向后兼容
 
 
 def _run_consistency_cross_check(raw_text: str, question_type: str, parsed_options: list[dict]) -> dict:
@@ -378,12 +385,11 @@ def normalize_question(
 
     # === Goal 5: Cache lookup — 防止同一输入重复解析 ===
     # 使用 raw_text hash 做预缓存键（stem 尚未提取）
-    import hashlib as _hashlib
-    _pre_cache_key = _hashlib.sha256(raw_text.encode()).hexdigest() if raw_text else ""
+    _pre_cache_key = hashlib.sha256(raw_text.encode()).hexdigest() if raw_text else ""
     if _pre_cache_key:
         _cached = parse_cache_get(raw_text, _pre_cache_key)
         if _cached is not None:
-            return _cached["result"]
+            return _cached
 
     blank_option_groups = _normalize_blank_option_groups(raw_question.get("blank_option_groups"))
     page = raw_question.get("page_start", source_info.get("page", 1))
@@ -614,30 +620,47 @@ def dedup_batch(questions: list[dict]) -> dict:
 
 # ---------------------------------------------------------------------------
 # Goal 5: Parse cache — 防止同一输入多次解析产生不同版本
+# 版本化失效：修改 PARSER_CACHE_VERSION 即可使所有旧缓存自动失效。
 # ---------------------------------------------------------------------------
 
 _MAX_CACHE_SIZE = 500
+_MAX_CACHE_AGE = 86400  # 24小时自动过期
+
+# 缓存版本 — 修改此值会使所有旧缓存失效，触发重新解析。
+# 更新时机：解析规则、选项校验逻辑、题型识别规则等发生变化时。
+PARSER_CACHE_VERSION = "2026.06.18"
 
 _parse_cache: dict[str, dict] = {}
 
 
-def _make_cache_key(raw_text: str, stem_hash: str) -> str:
-    """生成缓存键：stem_hash + raw_text 的联合 hash。"""
-    import hashlib
-    payload = f"{stem_hash}|{raw_text}"
+def _make_cache_key(raw_text: str, raw_hash: str) -> str:
+    """生成缓存键：raw_hash + raw_text 的联合 hash。"""
+    payload = f"{raw_hash}|{raw_text}"
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
-def parse_cache_get(raw_text: str, stem_hash: str) -> dict | None:
-    """查询缓存：命中返回上次验证结果，未命中返回 None。"""
-    key = _make_cache_key(raw_text, stem_hash)
-    return _parse_cache.get(key)
+def parse_cache_get(raw_text: str, raw_hash: str) -> dict | None:
+    """查询缓存。
+
+    版本匹配（cache_version == PARSER_CACHE_VERSION）才命中。
+    版本不匹配或无 version 字段 → 自动失效，返回 None。
+    """
+    key = _make_cache_key(raw_text, raw_hash)
+    entry = _parse_cache.get(key)
+    if entry is None:
+        return None
+    if entry.get("cache_version") != PARSER_CACHE_VERSION:
+        return None
+    # 被动 TTL 过期：超 24h 的条目自动失效
+    if time.time() - (entry.get("cached_at") or 0) > _MAX_CACHE_AGE:
+        return None
+    return entry.get("result")  # type: ignore[return-value]
 
 
-def parse_cache_put(raw_text: str, stem_hash: str, result: dict) -> None:
-    """写入缓存。超过容量时按 FIFO 淘汰最旧条目。"""
+def parse_cache_put(raw_text: str, raw_hash: str, result: dict) -> None:
+    """写入缓存（携带版本号）。超过容量时按 FIFO 淘汰最旧条目。"""
     global _parse_cache
-    key = _make_cache_key(raw_text, stem_hash)
+    key = _make_cache_key(raw_text, raw_hash)
     if key in _parse_cache:
         return
     if len(_parse_cache) >= _MAX_CACHE_SIZE:
@@ -645,8 +668,8 @@ def parse_cache_put(raw_text: str, stem_hash: str, result: dict) -> None:
         del _parse_cache[oldest]
     _parse_cache[key] = {
         "result": result,
-        "version": 1,
-        "cached_at": __import__("time").time(),
+        "cache_version": PARSER_CACHE_VERSION,
+        "cached_at": time.time(),
     }
 
 
