@@ -10,50 +10,45 @@ Page({
   },
 
   onLoad() {
-    this._diagStorage()
     if (auth.isLoggedIn()) {
       this._tryAutoLogin()
       return
     }
-    // 冷启动 storage 可能延迟就绪（部分真机环境），延迟重试一次
-    this._retryTimer = setTimeout(() => {
-      if (auth.isLoggedIn()) {
-        console.log('[AUTH_DIAG] delayed check: token found, redirecting')
-        wx.redirectTo({ url: '/pages/home/home' })
-      }
-    }, 500)
+
     const config = require('../../config')
     this.setData({ showDevLogin: config.DEV === true })
+
+    // 开发模式：无 token 时自动静默登录，避免重新预览后需手动登录
+    if (config.DEV === true) {
+      this._silentDevLogin()
+    }
   },
 
-  onUnload() {
-    if (this._retryTimer) clearTimeout(this._retryTimer)
-  },
-
-  _diagStorage() {
-    const info = wx.getStorageInfoSync()
-    const keys = info.keys || []
-    console.log('[AUTH_DIAG] storage keys:', JSON.stringify(keys))
-    console.log('[AUTH_DIAG] has token key:', keys.includes('token'))
-    console.log('[AUTH_DIAG] has token_expires_at:', keys.includes('token_expires_at'))
-    console.log('[AUTH_DIAG] has refresh_token:', keys.includes('refresh_token'))
-    console.log('[AUTH_DIAG] isLoggedIn():', auth.isLoggedIn())
+  async _silentDevLogin() {
+    // 开发模式静默登录：绕过 agreement 检查，wx.login 后直接创建/恢复 session
+    this.setData({ loading: true, error: '' })
+    try {
+      const { code } = await wx.login()
+      const data = await api.post('/auth/login', { code })
+      auth.loginDirect(data.access_token, data.user, data.expires_at, data.refresh_token)
+      api.resetRedirecting()
+      wx.redirectTo({ url: '/pages/home/home' })
+    } catch (e) {
+      console.warn('[AUTH_DIAG] silent dev login failed:', e)
+      this.setData({ loading: false })
+    }
   },
 
   async _tryAutoLogin() {
     this.setData({ loading: true })
-    console.log('[AUTH_DIAG] _tryAutoLogin: attempt 1')
     const ok = await auth.checkAndRefreshToken()
-    console.log('[AUTH_DIAG] _tryAutoLogin: attempt 1 result:', ok)
     if (ok) {
       this.setData({ loading: false })
       wx.redirectTo({ url: '/pages/home/home' })
       return
     }
     await new Promise(r => setTimeout(r, 2000))
-    console.log('[AUTH_DIAG] _tryAutoLogin: attempt 2')
     const ok2 = await auth.checkAndRefreshToken()
-    console.log('[AUTH_DIAG] _tryAutoLogin: attempt 2 result:', ok2)
     this.setData({ loading: false })
     if (ok2) {
       wx.redirectTo({ url: '/pages/home/home' })
