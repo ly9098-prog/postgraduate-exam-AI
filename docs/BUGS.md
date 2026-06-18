@@ -302,3 +302,28 @@ PaddleOCR 将 `III.` 识别为 `II.`。规则层无法区分合法 `II.` 与被�
 **选项文本内容合理性校验仍不完整**
 
 `batch_validation` 新增了 `_check_option_roman_digit_confusion()` 检测常见罗马数字混淆，但仅限于 `1` 与罗马数字混用场景。其他选项文本内容异常（如拼写错误、语义冲突、结构错乱）仍无规则层校验。
+
+---
+
+### 修复评估（2026-06-18 第三轮 — 尾部内容丢失修复）
+
+`_fix_option_roman_digit_confusion()` 的 `return` 语句丢弃了匹配后的尾部内容。
+
+#### 问题
+
+```python
+return f"{prefix}. {fixed_content}"  # line[m.end():] 未追加
+```
+
+当选项含 3 个以上罗马数字引用且首个出现数字混淆时（如 `A. 1、I、II`），尾部 `、II` 被截断。已知案例 `A. 1、I`（仅 2 个 token）不触发此 bug，因为匹配后无剩余内容。
+
+#### 修复
+
+```python
+return f"{prefix}. {fixed_content}{line[m.end():]}"
+```
+
+#### 测试结果
+
+- text_normalizer: 45/45 passed
+- 无回归

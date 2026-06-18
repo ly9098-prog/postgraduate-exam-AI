@@ -51,7 +51,7 @@
         <view class="q-detail {{expanding === item.id ? 'show' : ''}}" catchtap>
           <view class="detail-body">
             <text class="detail-label">题目</text>
-            <text class="detail-text">{{item.parsed_content && item.parsed_content.text ? item.parsed_content.text : '—'}}</text>
+            <text class="detail-text">{{item._detailText || '—'}}</text>
           </view>
           <view class="detail-body" wx:if="{{item._hasBlankOptionGroups}}">
             <text class="detail-label">空位选项组</text>

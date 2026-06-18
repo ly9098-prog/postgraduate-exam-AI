@@ -14,6 +14,61 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# 数学上下文关键词 — LaTeX 命令在此类文本中属于合法数学符号
+# ---------------------------------------------------------------------------
+_MATH_CONTEXT_KEYWORDS: frozenset[str] = frozenset([
+    "向量", "矩阵", "行列式", "特征值", "特征向量", "二次型",
+    "积分", "导数", "微分方程", "偏导", "极限", "收敛", "连续",
+    "可导", "可微", "单调", "极值", "拐点", "渐近线",
+    "概率", "分布", "期望", "方差", "统计",
+    "方程", "不等式", "函数", "线性无关", "线性相关",
+    "正交", "相似矩阵", "对角化", "秩",
+])
+
+# ---------------------------------------------------------------------------
+# 编程上下文关键词 — LaTeX 命令在此类文本中更可能是 OCR 污染
+# ---------------------------------------------------------------------------
+_PROGRAMMING_CONTEXT_KEYWORDS: frozenset[str] = frozenset([
+    "链表", "结点", "节点", "指针", "数组", "栈", "队列",
+    "二叉树", "排序", "递归", "迭代", "遍历", "查找",
+    "next", "prev", "NULL", "malloc", "free", "struct",
+    "->", "typedef", "void", "int ", "char ", "float ",
+])
+
+
+def _assess_context(text: str) -> str:
+    """评估文本所属上下文领域。
+
+    Returns:
+        "math": 数学上下文（LaTeX 命令应视为合法）
+        "programming": 编程上下文（LaTeX 命令更可能是污染）
+        "mixed": 上下文不明确
+        "unknown": 无明确上下文信号
+    """
+    text_lower = text.lower()
+    math_score = 0
+    for kw in _MATH_CONTEXT_KEYWORDS:
+        if kw in text_lower:
+            math_score += 1
+    prog_score = 0
+    for kw in _PROGRAMMING_CONTEXT_KEYWORDS:
+        if kw in text_lower:
+            prog_score += 1
+
+    if math_score >= 2 and math_score > prog_score:
+        return "math"
+    if prog_score >= 2 and prog_score > math_score:
+        return "programming"
+    if math_score >= 1 and prog_score >= 1:
+        return "mixed"
+    if math_score >= 1:
+        return "math"
+    if prog_score >= 1:
+        return "programming"
+    return "unknown"
+
+
+# ---------------------------------------------------------------------------
 # 符号替换检测 — OCR 将拉丁字符误识为希腊/数学符号
 # ---------------------------------------------------------------------------
 _SYMBOL_SUBSTITUTION_PATTERNS = [
@@ -79,7 +134,7 @@ def detect_ocr_contamination(raw_text: str) -> dict:
     details: list[str] = []
     score = 0.0
 
-    # ---- 1. 符号替换检测 ----
+    # ---- 1. 符号替换检测（上下文感知） ----
     symbol_hits = 0
     for pat, desc in _SYMBOL_SUBSTITUTION_PATTERNS:
         if pat.search(raw_text):
@@ -88,10 +143,20 @@ def detect_ocr_contamination(raw_text: str) -> dict:
                 flags.append("symbol_substitution_detected")
             details.append(desc)
 
-    if symbol_hits >= 2:
-        score += 0.35
-    elif symbol_hits >= 1:
-        score += 0.15
+    if symbol_hits >= 1:
+        context = _assess_context(raw_text)
+        if context == "math":
+            # 数学上下文中 LaTeX 命令属于合法数学符号，不扣分
+            symbol_score = 0.0
+        elif context == "programming":
+            # 编程上下文中希腊符号更可能是 OCR 污染，加重扣分
+            symbol_score = 0.35 if symbol_hits >= 2 else 0.25
+        else:
+            # 无明确上下文时走默认评分
+            symbol_score = 0.35 if symbol_hits >= 2 else 0.15
+        score += symbol_score
+        if symbol_score > 0:
+            details.append(f"上下文='{context}', 符号污染分数={symbol_score:.2f}")
 
     # ---- 2. 乱码模式检测 ----
     garbled_hits = 0

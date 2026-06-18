@@ -103,8 +103,8 @@ def _extract_stem(raw_text: str, option_lines: dict[str, str], blank_option_grou
             if in_options:
                 continue
 
-        # 选项行
-        if _OPTION_LINE_RE.match(stripped):
+        # 选项行：仅在 upstream 确实提取到选项时才剥离
+        if option_lines and _OPTION_LINE_RE.match(stripped):
             in_options = True
             continue
 

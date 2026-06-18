@@ -1,5 +1,12 @@
 # Bugs History
 
+## 2026-06-18 — `_extract_stem()` 圈号前缀行误剥离（已修复）
+
+- **现象**：OCR 导入的多选题，题干末尾的 `① A. n + 1` 类行被错误剥离，导致选项 A 部分文本丢失、题干不完整。
+- **原因**：`_extract_stem()` 中的 `_OPTION_LINE_RE` 匹配了以 `① A.` 开头的行并将其从题干中剔除，即使上游 OCR 解析并未实际检测到选项（`option_lines` 为空）。该行原本是题干末尾的提示性内容（如"① A. n + 1；② B. 2n"），不应被当成选项行清除。
+- **修复**：在 `_OPTION_LINE_RE.match()` 前增加 `option_lines and` 守卫，仅当上游确实提取到选项时才剥离匹配行。
+- **验证**：`test_circled_option_like_lines_stay_in_stem` 通过；全量 139 测试通过。
+
 ## 2026-06-14 — 小程序答题页整段题干重复显示（已修复）
 
 - **现象**：文本导入后的部分题目在小程序答题页出现整段题干重复显示，尤其是包含多行程序代码和 LaTeX 标记的题干。
@@ -7,6 +14,42 @@
 - **处理**：`miniprogram/pages/practice/practice.js` 在题干去选项前先折叠重复题干块；同时对多行题干中的简单 `$...$` inline math 做保守纯文本化，避免简单公式题干进入 `mp-html`，复杂公式、HTML、`$$...$$` 仍保留原富文本/公式渲染链路。
 - **验证**：`node --check miniprogram/pages/practice/practice.js` 通过；P2 重复块样例验证可折叠为单段；本地 questionId=11 内容验证渲染路径由 `mp-html` 降级为 `text`，且 `$P_1$` 等简单 inline math 被转为 `P₁`。
 - **说明**：该修复仅作用于刷题页展示清洗，不修改题库原始数据、不影响答案提交逻辑。
+
+## 2026-06-16 — OCR 规则层三连修：罗马子项假切分、指针箭头、水印过滤（已修复）
+
+- **现象**：含罗马数字子项（I./II./III.）的多选题被误切成两题；OCR 将 `->` 识别成 `− >`（减号+空格+大于号）；水印行"后续关注公众号[研大]""永久微信1866224xxx"混入正文导致错误切分。
+- **原因**：
+  1. 行首 `I.` 的 OCR 纠正 `I→1` 将罗马子项标记变为阿拉伯题号 `1.`，触发 splitter 边界检测
+  2. `->` 在 OCR 中被识别为 `− >`（Unicode 减号 + 空格 + 大于号），纯文本层未还原
+  3. 水印行无过滤，被当作题干处理
+- **处理**：
+  1. `_has_roman_subitem_list` 检测文本中 ≥2 个不同罗马标记时关闭行首 `I.→1.` 纠正；splitter `_find_question_boundaries` 跳过罗马标记行作为边界
+  2. `_fix_pointer_arrows` 用正则 `(?<![<>])\s*(?:−|-–|—|–|—)\s*>\s*(?=[a-zA-Z_])` 还原指针箭头
+  3. `_RE_WATERMARK` 扩展覆盖「后续关注/关注公众号/永久微信/微信号/公众号/[研大]」等整行水印
+- **验证**：4 张实拍图片通过完整管线验证（`faulty_case_1~3.png` + `success_case.png`），假切分消除、指针箭头还原、水印过滤均工作。
+- **说明**：镜像乱码、字符误识等引擎层问题仍存在，需在本地 GPU 环境优化 PaddleOCR。
+
+## 2026-06-17 — Canonical Output Layer（统一输出兼容层）（已修复）
+
+- **现象**：Qwen-VL 返回 JSON（`{"option": [...]}`）而非 prompt 要求的纯文本时，`_extract_plain_text` 提取失败 → JSON 检测 → 触发 router 降级 DeepSeek → 浪费请求费用 + 增加响应延迟。若 DeepSeek 也不可用，最终 0 题入库。
+- **原因**：Qwen-VL 不严格遵循"禁止输出 JSON"的 prompt 指令；旧架构将 JSON 直接判为失败，未尝试将 JSON 内容转换为可用文本。
+- **处理**：新增 `canonical_output.py` 统一输出兼容层，支持：
+  - 纯文本 → 直通
+  - Markdown 代码块 → 自动剥离
+  - JSON（裸或 ` ```json ``` 包裹）→ `json_to_text()` 提取
+  - 混合格式 → 容错处理
+  JSON 不再直接判定失败，只有无法提取有效内容时才触发 fallback。
+  同时增加结构化日志 `[CanonicalOutput] model= type= strategy= length=→`。
+- **验证**：30 个单元测试覆盖所有输出类型；Qwen 返回 JSON 时可正确提取选项文本并继续管线。
+- **说明**：QwenAdapter 的 `_extract_plain_text`、`_looks_like_json`、`_JSON_CODE_BLOCK_RE` 已删除，统一由 `canonicalize()` 接管。
+
+## 2026-06-17 — Qwen 题干恢复保护层（已修复）
+
+- **现象**：PaddleOCR 识别出带题号 `06.` 的完整文本（题干 + 4 个乱码选项），Qwen-VL JSON 输出被 `canonicalize` 提取后只得到 4 行选项文本，题干完全丢失。block 的 `normalized_text` 被替换为纯选项 → splitter 找不到题号边界 → 创建低置信 fallback 题目 → 入库后题干为空、选项为空、`type=subjective`。
+- **原因**：Qwen-VL 只返回 JSON 选项数组（`{"option": [...]}`），不包含题号和题干。`canonicalize` 正确提取了 JSON 中唯一的内容（选项），但失去题干后 splitter 无法正常工作。
+- **处理**：`QwenFixer.fix()` 新增 `_preserve_stem_from_original()`：检测 `corrected` 是否为"纯选项"（首行为 `A.`/`B.` 开头）→ 从原文 `ocr_text` 提取题号行及之前的题干 → 拼接到修正文本前。修正文本已有题干 / 原文无题号时不做修改。
+- **验证**：4 个单元测试覆盖选项纯文本恢复、已有题干不修改、原文无题号不修改等场景。34 个新测试全部通过。
+- **说明**：该保护层与 `canonical_output.py` 协同工作：canonicalize 负责提取，stem preservation 负责补全。
 
 ## 2026-06-08 — 文本导入内联格式解析失败（已修复）
 

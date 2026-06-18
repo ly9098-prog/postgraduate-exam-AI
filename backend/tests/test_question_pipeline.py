@@ -8,6 +8,9 @@ from app.features.question_pipeline import (  # noqa: E402
     normalizer,
     process_question_pipeline,
 )
+from app.features.question_normalizer import (  # noqa: E402
+    normalize_question as path_a_normalize,
+)
 
 PASSED: list[str] = []
 FAILED: list[tuple[str, str]] = []
@@ -133,8 +136,64 @@ def test_dedup_helpers() -> None:
     check("相似题检测", normalizer.is_similar_stem(left, right))
 
 
+def test_unified_schema_valid() -> None:
+    print("\n[7] 统一 Schema — 有效题目包含全部验证字段")
+    raw = {
+        "subject": "math2",
+        "question_type": "single_choice",
+        "stem": "1+1=?",
+        "options": {"A": "1", "B": "2", "C": "3", "D": "4"},
+        "answer": "B",
+    }
+    result = process_question_pipeline(raw, "excel")
+    norm = result["normalized"]
+    check("有 validation_status (valid)", norm.get("validation_status") == "passed", repr(norm.get("validation_status")))
+    check("有 failure_reason (None)", norm.get("failure_reason") is None, repr(norm.get("failure_reason")))
+    check("有 retry_recommended (False)", norm.get("retry_recommended") is False, repr(norm.get("retry_recommended")))
+    check("有 ocr_quality_flags ([])", norm.get("ocr_quality_flags") == [], repr(norm.get("ocr_quality_flags")))
+
+
+def test_unified_schema_invalid() -> None:
+    print("\n[8] 统一 Schema — 无效题目输出正确验证字段")
+    result = process_question_pipeline(
+        {"stem": "", "answer": ""}, "excel"
+    )
+    norm = result["normalized"]
+    check("validation_status=failed", norm.get("validation_status") == "failed", repr(norm.get("validation_status")))
+    check("failure_reason 非空列表", isinstance(norm.get("failure_reason"), list) and len(norm["failure_reason"]) > 0, repr(norm.get("failure_reason")))
+    check("retry_recommended=False (非选项错误)", norm.get("retry_recommended") is False, repr(norm.get("retry_recommended")))
+
+
+def test_unified_schema_non_ocr() -> None:
+    print("\n[9] 统一 Schema — 非 OCR 来源 ocr_quality_flags 为空")
+    for src in ("excel", "ai", "manual"):
+        result = process_question_pipeline(
+            {"subject": "math2", "question_type": "fill", "stem": "1+1=?", "answer": "2"},
+            src,
+        )
+        flags = result["normalized"].get("ocr_quality_flags", None)
+        check(f"{src} ocr_quality_flags=[]", flags == [], repr(flags))
+
+
+def test_unified_schema_all_sources() -> None:
+    print("\n[10] 统一 Schema — 所有来源的字段键一致")
+    expected_keys = {
+        "validation_status", "failure_reason", "retry_recommended", "ocr_quality_flags",
+        "is_valid", "errors", "warnings", "subject", "question_type",
+        "stem", "options", "answer", "analysis", "source", "stem_hash",
+    }
+    for src in ("excel", "pdf", "ai", "manual", "ocr"):
+        result = process_question_pipeline(
+            {"subject": "math2", "question_type": "fill", "stem": "1+1=?", "answer": "2"},
+            src,
+        )
+        norm_keys = set(result["normalized"].keys())
+        missing = expected_keys - norm_keys
+        check(f"{src} 不缺验证字段", not missing, f"缺少: {missing}")
+
+
 def test_source_type_meta() -> None:
-    print("\n[7] source_type 元信息保留")
+    print("\n[11] source_type 元信息保留")
     result = process_question_pipeline(
         {"stem": "1+1=?", "answer": "2", "question_type": "fill"},
         "ocr",
@@ -142,6 +201,48 @@ def test_source_type_meta() -> None:
     )
     check("source_type 字段", result["source_type"] == "ocr", repr(result["source_type"]))
     check("source 元信息", result["normalized"]["source"] == {"file": "x.pdf", "page": 3}, repr(result["normalized"]["source"]))
+
+
+def test_cross_path_consistency() -> None:
+    """两条标准化路径对同一输入输出一致（防止功能发散）。"""
+    print("\n[12] 跨路径一致性")
+
+    # Path A: question_normalizer.normalize_question (used by pipeline_orchestrator)
+    path_a_input = {
+        "raw_question_text": "1. 1+1=?\nA. 1\nB. 2\nC. 3\nD. 4\n答案：B",
+        "option_lines": {"A": "1", "B": "2", "C": "3", "D": "4"},
+        "page_start": 1,
+    }
+    path_a_result = path_a_normalize(
+        path_a_input,
+        matched={"answer": "B"},
+        source_info={"subject": "math2"},
+    )
+
+    # Path B: question_pipeline.QuestionNormalizer.normalize (used by process_question_pipeline)
+    path_b_result = normalizer.normalize({
+        "subject": "math2",
+        "question_type": "single_choice",
+        "stem": "1. 1+1=?",
+        "options": {"A": "1", "B": "2", "C": "3", "D": "4"},
+        "answer": "B",
+    })
+
+    # 核心字段比对
+    check("stem 一致", path_a_result["stem"] == path_b_result["stem"],
+          f"A={path_a_result['stem']!r} B={path_b_result['stem']!r}")
+    check("question_type 一致", path_a_result["question_type"] == path_b_result["question_type"],
+          f"A={path_a_result['question_type']} B={path_b_result['question_type']}")
+    check("answer 一致", path_a_result["answer"] == path_b_result["answer"],
+          f"A={path_a_result['answer']!r} B={path_b_result['answer']!r}")
+    check("is_valid 一致", path_a_result["is_valid"] == path_b_result["is_valid"],
+          f"A={path_a_result['is_valid']} B={path_b_result['is_valid']}")
+
+    # 选项语义一致（忽略 text 中因 LaTeX wrap 导致的细小差异）
+    a_opts = {(o["key"], o["text"]) for o in path_a_result.get("options", [])}
+    b_opts = {(o["key"], o["text"]) for o in path_b_result.get("options", [])}
+    check("options 语义一致", a_opts == b_opts,
+          f"A={a_opts} B={b_opts}")
 
 
 def main() -> int:
@@ -154,7 +255,12 @@ def main() -> int:
     test_invalid_input()
     test_text_cleaning()
     test_dedup_helpers()
+    test_unified_schema_valid()
+    test_unified_schema_invalid()
+    test_unified_schema_non_ocr()
+    test_unified_schema_all_sources()
     test_source_type_meta()
+    test_cross_path_consistency()
     print("\n" + "=" * 60)
     print(f"通过 {len(PASSED)} 项，失败 {len(FAILED)} 项")
     if FAILED:
