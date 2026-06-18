@@ -7,6 +7,9 @@ const { KEYS } = storage
 let _refreshing = null
 let _redirecting = false
 
+// 主动续签阈值：token 过期前 24 小时即触发续签
+const PROACTIVE_REFRESH_SEC = 24 * 60 * 60
+
 // 重置重定向锁，供登录成功后调用
 function resetRedirecting() {
   _redirecting = false
@@ -69,8 +72,26 @@ function _wxLogin() {
   })
 }
 
-// Refresh JWT token: wx.login → POST /auth/login → store new token
+// Refresh JWT token: try refresh token first, fall back to wx.login
 async function _refreshToken() {
+  const refreshToken = storage.get(KEYS.REFRESH_TOKEN)
+  if (refreshToken) {
+    const header = { 'Content-Type': 'application/json' }
+    const res = await _rawRequest('POST', '/auth/refresh', { refresh_token: refreshToken }, header)
+    if (res.statusCode === 200 && res.data && res.data.access_token) {
+      storage.set(KEYS.TOKEN, res.data.access_token)
+      storage.set(KEYS.TOKEN_EXPIRES_AT, res.data.expires_at)
+      storage.set(KEYS.REFRESH_TOKEN, res.data.refresh_token)
+      if (res.data.user) {
+        storage.set(KEYS.USER, res.data.user)
+      }
+      return res.data.access_token
+    }
+    // Refresh token invalid → clear it, fall through to wx.login
+    storage.remove(KEYS.REFRESH_TOKEN)
+  }
+
+  // Fallback: full re-auth via wx.login
   const code = await _wxLogin()
   const header = { 'Content-Type': 'application/json' }
   const res = await _rawRequest('POST', '/auth/login', { code }, header)
@@ -78,10 +99,41 @@ async function _refreshToken() {
     throw new Error('刷新 token 失败')
   }
   storage.set(KEYS.TOKEN, res.data.access_token)
+  storage.set(KEYS.TOKEN_EXPIRES_AT, res.data.expires_at)
+  storage.set(KEYS.REFRESH_TOKEN, res.data.refresh_token)
   if (res.data.user) {
     storage.set(KEYS.USER, res.data.user)
   }
   return res.data.access_token
+}
+
+// 主动续签：检查 token 过期时间，即将过期时提前刷新
+// 跳过无需 token 的端点（登录/注册），避免不必要的 wx.login 调用
+function _skipProactiveRefresh(url) {
+  return url === '/auth/login'
+}
+
+async function ensureValidToken() {
+  const token = storage.get(KEYS.TOKEN)
+  if (!token) return false
+
+  const expiresAt = storage.get(KEYS.TOKEN_EXPIRES_AT)
+  if (!expiresAt) return true  // 无过期信息，视为有效
+
+  const timeToExpiry = expiresAt - Math.floor(Date.now() / 1000)
+  if (timeToExpiry > PROACTIVE_REFRESH_SEC) return true  // 远未过期
+
+  // Token 即将过期 → 主动续签
+  if (!_refreshing) {
+    _refreshing = _refreshToken().finally(() => { _refreshing = null })
+  }
+
+  try {
+    await _refreshing
+    return true
+  } catch {
+    return false  // 续签失败不影响后续请求，真实 API 调用遇到 401 会再试一次
+  }
 }
 
 function _buildHeader(traceId) {
@@ -95,6 +147,12 @@ function _buildHeader(traceId) {
 async function request(method, url, data = {}) {
   const traceId = _extractTraceId(data)
   const payload = _stripTraceId(data)
+
+  // 主动续签：在发起请求前检查 token 是否需要刷新
+  if (!_skipProactiveRefresh(url)) {
+    await ensureValidToken()
+  }
+
   const header = _buildHeader(traceId)
 
   // First attempt
@@ -122,6 +180,8 @@ async function request(method, url, data = {}) {
     } catch (_e) {
       // Refresh failed → clear auth, redirect to login
       storage.remove(KEYS.TOKEN)
+      storage.remove(KEYS.TOKEN_EXPIRES_AT)
+      storage.remove(KEYS.REFRESH_TOKEN)
       storage.remove(KEYS.USER)
       if (!_redirecting) {
         _redirecting = true
@@ -162,4 +222,5 @@ module.exports = {
   put: (url, data) => request('PUT', url, data),
   del: (url) => request('DELETE', url),
   resetRedirecting,
+  ensureValidToken,
 }

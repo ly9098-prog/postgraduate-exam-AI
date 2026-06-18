@@ -228,6 +228,8 @@ async def init_db():
     if settings.APP_ENV == "production":
         return
 
+    from app.models.refresh_token import RefreshToken  # noqa: F401 — register model for create_all
+
     async with engine.begin() as conn:
         await _repair_sqlite_admin_bigint_pk(conn)
         await conn.run_sync(Base.metadata.create_all)

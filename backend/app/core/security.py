@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,12 +14,15 @@ from app.models.app_user_admin_binding import AppUserAdminBinding
 security = HTTPBearer()
 
 
-def create_token(user_id: int) -> str:
-    expire = datetime.utcnow() + timedelta(days=settings.JWT_EXPIRE_DAYS)
-    return jwt.encode(
-        {"sub": str(user_id), "exp": expire},
-        settings.APP_SECRET,
-        algorithm="HS256",
+def create_token(user_id: int) -> tuple[str, int]:
+    expire_dt = datetime.utcnow() + timedelta(days=settings.JWT_EXPIRE_DAYS)
+    return (
+        jwt.encode(
+            {"sub": str(user_id), "exp": expire_dt},
+            settings.APP_SECRET,
+            algorithm="HS256",
+        ),
+        int(expire_dt.timestamp()),
     )
 
 
@@ -27,7 +30,7 @@ def decode_token(token: str) -> int:
     try:
         payload = jwt.decode(token, settings.APP_SECRET, algorithms=["HS256"])
         return int(payload["sub"])
-    except (JWTError, ValueError, KeyError):
+    except (jwt.PyJWTError, ValueError, KeyError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",

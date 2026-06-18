@@ -24,20 +24,21 @@ async function syncCurrentUser() {
 }
 
 async function wechatLogin() {
-  // 1. wx.login 获取临时 code
   const { code } = await wx.login()
   if (!code) throw new Error('微信登录失败，请重试')
-
-  // 2. 发送 code 到后端换 token
   const data = await api.post('/auth/login', { code })
   const user = normalizeUser(data.user)
   storage.set(KEYS.TOKEN, data.access_token)
+  storage.set(KEYS.TOKEN_EXPIRES_AT, data.expires_at)
+  storage.set(KEYS.REFRESH_TOKEN, data.refresh_token)
   storage.set(KEYS.USER, user)
   return user
 }
 
 function logout() {
   storage.remove(KEYS.TOKEN)
+  storage.remove(KEYS.TOKEN_EXPIRES_AT)
+  storage.remove(KEYS.REFRESH_TOKEN)
   storage.remove(KEYS.USER)
 }
 
@@ -66,9 +67,24 @@ function requireAdminAccess(message = '仅管理员可访问') {
 }
 
 // 开发模式：直接设置 token（不经过 wx.login）
-function loginDirect(token, user) {
+function loginDirect(token, user, expiresAt, refreshToken) {
   storage.set(KEYS.TOKEN, token)
+  if (expiresAt) storage.set(KEYS.TOKEN_EXPIRES_AT, expiresAt)
+  if (refreshToken) storage.set(KEYS.REFRESH_TOKEN, refreshToken)
   storage.set(KEYS.USER, normalizeUser(user))
 }
 
-module.exports = { wechatLogin, loginDirect, logout, getToken, isLoggedIn, getUser, isAdmin, requireAdminAccess, syncCurrentUser, normalizeUser }
+/**
+ * 检查并刷新登录态（供 App 生命周期调用）
+ * 无 token 或无需刷新则静默跳过，不弹错误
+ */
+async function checkAndRefreshToken() {
+  if (!getToken()) return false
+  try {
+    return await api.ensureValidToken()
+  } catch {
+    return false
+  }
+}
+
+module.exports = { wechatLogin, loginDirect, logout, getToken, isLoggedIn, getUser, isAdmin, requireAdminAccess, syncCurrentUser, normalizeUser, checkAndRefreshToken }
