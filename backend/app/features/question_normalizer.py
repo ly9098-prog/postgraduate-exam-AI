@@ -7,6 +7,9 @@
 
 import re
 import hashlib
+import logging
+
+logger = logging.getLogger(__name__)
 
 QT_SINGLE_CHOICE = "single_choice"
 QT_MULTIPLE_CHOICE = "multiple_choice"
@@ -15,6 +18,10 @@ QT_FILL_BLANK = "fill_blank"
 QT_MULTI_BLANK_CHOICE = "multi_blank_choice"
 QT_SUBJECTIVE = "subjective"
 _OPTION_LINE_RE = re.compile(r"^(?:[?？]|[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])?\s*[A-Ha-h][.、:：)）\s]")
+
+# 单选题必须包含的标准选项集合
+REQUIRED_OPTION_KEYS = frozenset({"A", "B", "C", "D"})
+_OCR_CONTAMINATION_THRESHOLD = 0.30
 
 _TYPE_ALIAS_MAP = {
     "单选": QT_SINGLE_CHOICE, "单选题": QT_SINGLE_CHOICE,
@@ -262,6 +269,90 @@ def _compute_confidence(
     return round(min(1.0, score), 2)
 
 
+def _check_option_completeness(
+    question_type: str, options: list[dict]
+) -> tuple[bool, list[str]]:
+    """检查选择题选项完整性。
+
+    单选题必须包含 A/B/C/D 全部四个选项。
+    多选题至少需要 2 个选项。
+    """
+    if question_type not in (QT_SINGLE_CHOICE, QT_MULTIPLE_CHOICE):
+        return True, []
+    if not options:
+        return False, ["missing_all_options"]
+
+    present_keys = {o["key"].upper() for o in options if o.get("key")}
+
+    if question_type == QT_SINGLE_CHOICE:
+        missing = REQUIRED_OPTION_KEYS - present_keys
+        if missing:
+            return False, [f"missing_option_{k}" for k in sorted(missing)]
+    else:
+        if len(present_keys) < 2:
+            return False, ["options_too_few_for_multiple_choice"]
+
+    return True, []
+
+
+def _run_ocr_quality_gate(raw_text: str) -> dict:
+    """在解析前运行 OCR 质量门控。
+
+    Returns:
+        {"passed": bool, "ocr_quality_flags": [...], "ocr_contamination_score": float}
+    """
+    if not raw_text or not raw_text.strip():
+        return {"passed": True, "ocr_quality_flags": [], "ocr_contamination_score": 0.0}
+
+    from app.features.ocr_quality_gate import detect_ocr_contamination
+
+    contamination = detect_ocr_contamination(raw_text)
+    flags = contamination["flags"]
+    score = contamination["score"]
+    passed = score < _OCR_CONTAMINATION_THRESHOLD
+
+    if not passed:
+        logger.warning(
+            "OCR quality gate REJECTED: score=%.2f flags=%s raw_preview=%.100s",
+            score, flags, raw_text,
+        )
+
+    return {
+        "passed": passed,
+        "ocr_quality_flags": flags,
+        "ocr_contamination_score": score,
+    }
+
+
+def _run_consistency_cross_check(raw_text: str, question_type: str, parsed_options: list[dict]) -> dict:
+    """校验 raw_text 选项与 parsed_options 的一致性。
+
+    Returns:
+        {"consistent": bool, "missing_in_parsed": set, "severity": str}
+    """
+    if question_type not in (QT_SINGLE_CHOICE, QT_MULTIPLE_CHOICE):
+        return {"consistent": True, "missing_in_parsed": set(), "severity": "ok"}
+    if not raw_text or not parsed_options:
+        return {"consistent": True, "missing_in_parsed": set(), "severity": "ok"}
+
+    from app.features.ocr_quality_gate import cross_check_consistency
+
+    parsed_dict = {o["key"]: o["text"] for o in parsed_options if o.get("key")}
+    result = cross_check_consistency(raw_text, parsed_dict)
+
+    if not result["is_consistent"]:
+        logger.warning(
+            "Consistency cross-check FAILED: raw=%s parsed=%s missing=%s",
+            result["raw_options"], result["parsed_options"], result["missing_in_parsed"],
+        )
+
+    return {
+        "consistent": result["is_consistent"],
+        "missing_in_parsed": result["missing_in_parsed"],
+        "severity": result["severity"],
+    }
+
+
 def normalize_question(
     raw_question: dict,
     matched: dict | None = None,
@@ -275,7 +366,7 @@ def normalize_question(
         source_info: 来源信息 {"file", "type", "page", "subject"}
 
     Returns:
-        标准 Question Schema dict
+        标准 Question Schema dict（含 validation_status / failure_reason 字段）
     """
     if matched is None:
         matched = {}
@@ -284,8 +375,25 @@ def normalize_question(
 
     raw_text = raw_question.get("raw_question_text", "")
     option_lines = raw_question.get("option_lines", {})
+
+    # === Goal 5: Cache lookup — 防止同一输入重复解析 ===
+    # 使用 raw_text hash 做预缓存键（stem 尚未提取）
+    import hashlib as _hashlib
+    _pre_cache_key = _hashlib.sha256(raw_text.encode()).hexdigest() if raw_text else ""
+    if _pre_cache_key:
+        _cached = parse_cache_get(raw_text, _pre_cache_key)
+        if _cached is not None:
+            return _cached["result"]
+
     blank_option_groups = _normalize_blank_option_groups(raw_question.get("blank_option_groups"))
     page = raw_question.get("page_start", source_info.get("page", 1))
+
+    # === OCR Quality Gate: 在解析前检测污染 ===
+    quality_gate = _run_ocr_quality_gate(raw_text)
+    ocr_critical_corruption = (
+        not quality_gate["passed"]
+        and quality_gate["ocr_contamination_score"] >= 0.50
+    )
 
     stem = _extract_stem(raw_text, option_lines, blank_option_groups)
     options = [] if blank_option_groups else _normalize_options(option_lines)
@@ -301,19 +409,91 @@ def normalize_question(
     confidence_score = _compute_confidence(stem, options, answer, question_type)
     stem_hash = _compute_stem_hash(stem)
 
+    # === Consistency cross-check: raw_text vs parsed ===
+    consistency = _run_consistency_cross_check(raw_text, question_type, options)
+
     errors: list[str] = []
     warnings: list[str] = []
+    failure_reasons: list[str] = []
 
+    # --- 基础校验 ---
     if not stem:
         errors.append("missing_stem")
-    if question_type in (QT_SINGLE_CHOICE, QT_MULTIPLE_CHOICE) and not options:
-        errors.append("missing_options")
+        failure_reasons.append("stem_empty")
+
+    # --- 选项完整性强校验 (Goal 1) ---
+    if question_type in (QT_SINGLE_CHOICE, QT_MULTIPLE_CHOICE):
+        if not options:
+            errors.append("missing_options")
+            failure_reasons.append("options_empty")
+        else:
+            opts_complete, opt_errors = _check_option_completeness(question_type, options)
+            if not opts_complete:
+                for e in opt_errors:
+                    errors.append(e)
+                failure_reasons.extend(opt_errors)
+
     if question_type == QT_MULTI_BLANK_CHOICE and not blank_option_groups:
         errors.append("missing_blank_option_groups")
+        failure_reasons.append("missing_blank_option_groups")
+
     if question_type in (QT_SINGLE_CHOICE, QT_MULTIPLE_CHOICE, QT_TRUE_FALSE) and not answer:
         errors.append("missing_answer")
+        failure_reasons.append("missing_answer_for_objective_question")
+
+    # --- OCR 污染阻断 (Goal 2) ---
+    if not quality_gate["passed"]:
+        warnings.append("ocr_contamination_detected")
+        for flag in quality_gate["ocr_quality_flags"]:
+            warnings.append(f"ocr_quality:{flag}")
+        if ocr_critical_corruption:
+            errors.append("ocr_critical_corruption")
+            failure_reasons.append("ocr_corruption_detected")
+            # 污染严重时强制降置信度
+            confidence_score = min(confidence_score, 0.30)
+
+    # --- 一致性校验阻断 (Goal 3) ---
+    if not consistency["consistent"]:
+        severity = consistency["severity"]
+        missing_opts = ",".join(sorted(consistency["missing_in_parsed"]))
+        if severity == "critical":
+            errors.append(f"parse_loss: raw_has_{missing_opts}_parsed_missing")
+            failure_reasons.append(f"parse_option_loss: {missing_opts}")
+        else:
+            warnings.append(f"parse_extra_options: parsed has extra {missing_opts}")
+
     if confidence_score < 0.5:
         warnings.append("low_confidence")
+
+    # === 防假成功: is_valid 复合判定 (Goal 4) ===
+    # is_valid = stem_valid AND options_complete AND no_critical_ocr_corruption
+    stem_valid = "missing_stem" not in errors
+    options_complete = not any(e.startswith("missing_option_") for e in errors)
+    no_critical_corruption = "ocr_critical_corruption" not in errors
+    no_parse_loss = not any(e.startswith("parse_loss") for e in errors)
+
+    is_valid = (
+        stem_valid
+        and options_complete
+        and no_critical_corruption
+        and no_parse_loss
+        and len([e for e in errors if e not in ("missing_answer", "missing_answer_for_objective_question")]) == 0
+    )
+    # missing_answer 本身不阻断 is_valid（答案可能在后续匹配），但与其他错误组合时阻断
+
+    if not is_valid and not failure_reasons:
+        failure_reasons.append("validation_failed")
+
+    # === 失败追踪 (Goal 6) ===
+    validation_status = "passed" if is_valid else "failed"
+    retry_recommended = (
+        not is_valid
+        and (
+            "missing_option_" in " ".join(errors)
+            or "ocr_corruption_detected" in failure_reasons
+            or "parse_option_loss" in " ".join(failure_reasons)
+        )
+    )
 
     result = {
         "schema_version": "v1",
@@ -331,14 +511,25 @@ def normalize_question(
             "page": page,
             "type": source_info.get("type", "pdf"),
         },
-        "is_valid": len(errors) == 0,
+        "is_valid": is_valid,
         "errors": errors,
         "warnings": warnings,
         "stem_hash": stem_hash,
         "confidence_score": confidence_score,
+        # Goal 6: 失败追踪字段
+        "validation_status": validation_status,
+        "failure_reason": failure_reasons,
+        "retry_recommended": retry_recommended,
+        # Goal 2: OCR 质量标记
+        "ocr_quality_flags": quality_gate["ocr_quality_flags"],
     }
     if blank_option_groups:
         result["blank_option_groups"] = blank_option_groups
+
+    # === Goal 5: 写入缓存 ===
+    if _pre_cache_key:
+        parse_cache_put(raw_text, _pre_cache_key, result)
+
     return result
 
 
@@ -419,3 +610,47 @@ def dedup_batch(questions: list[dict]) -> dict:
         "duplicate_count": len(duplicate_indices),
         "duplicate_indices": duplicate_indices,
     }
+
+
+# ---------------------------------------------------------------------------
+# Goal 5: Parse cache — 防止同一输入多次解析产生不同版本
+# ---------------------------------------------------------------------------
+
+_MAX_CACHE_SIZE = 500
+
+_parse_cache: dict[str, dict] = {}
+
+
+def _make_cache_key(raw_text: str, stem_hash: str) -> str:
+    """生成缓存键：stem_hash + raw_text 的联合 hash。"""
+    import hashlib
+    payload = f"{stem_hash}|{raw_text}"
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def parse_cache_get(raw_text: str, stem_hash: str) -> dict | None:
+    """查询缓存：命中返回上次验证结果，未命中返回 None。"""
+    key = _make_cache_key(raw_text, stem_hash)
+    return _parse_cache.get(key)
+
+
+def parse_cache_put(raw_text: str, stem_hash: str, result: dict) -> None:
+    """写入缓存。超过容量时按 FIFO 淘汰最旧条目。"""
+    global _parse_cache
+    key = _make_cache_key(raw_text, stem_hash)
+    if key in _parse_cache:
+        return
+    if len(_parse_cache) >= _MAX_CACHE_SIZE:
+        oldest = next(iter(_parse_cache))
+        del _parse_cache[oldest]
+    _parse_cache[key] = {
+        "result": result,
+        "version": 1,
+        "cached_at": __import__("time").time(),
+    }
+
+
+def parse_cache_clear() -> None:
+    """清空缓存（用于测试或强制重新解析）。"""
+    global _parse_cache
+    _parse_cache.clear()

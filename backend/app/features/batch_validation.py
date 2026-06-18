@@ -316,13 +316,30 @@ def validate_batch_structure(questions: list[dict]) -> dict:
     for i, q in enumerate(questions):
         new_q = dict(q)
         warnings = list(new_q.get("warnings", []))
+        errors = list(new_q.get("errors", []))
 
         if i in incomplete_indices:
             issue = next(item for item in incomplete_options if item["index"] == i)
-            warnings.append(f"incomplete_options: missing {','.join(issue['missing'])}")
+            missing_keys = issue["missing"]
+            # PENDING_FIX: 单选题缺选项升级为 error（不再仅 warning）
+            if new_q.get("question_type") == "single_choice":
+                for k in missing_keys:
+                    err_tag = f"missing_option_{k}"
+                    if err_tag not in errors:
+                        errors.append(err_tag)
+                if not new_q.get("is_valid", True):
+                    pass  # 已被上游标记为 invalid
+                else:
+                    new_q["is_valid"] = False
+            warnings.append(f"incomplete_options: missing {','.join(missing_keys)}")
 
         if i in missing_ans_indices:
             warnings.append("missing_answer_for_objective_question")
+            # PENDING_FIX: objective question missing answer → invalid
+            if new_q.get("question_type") in ("single_choice", "multiple_choice", "true_false"):
+                if "missing_answer" not in errors:
+                    errors.append("missing_answer_for_objective_question")
+                new_q["is_valid"] = False
 
         if i in roman_issues_by_index:
             for issue in roman_issues_by_index[i]:
@@ -342,6 +359,7 @@ def validate_batch_structure(questions: list[dict]) -> dict:
                     )
 
         new_q["warnings"] = warnings
+        new_q["errors"] = errors
         updated_questions.append(new_q)
 
     stats = {
