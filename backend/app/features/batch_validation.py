@@ -232,6 +232,13 @@ def _build_structured_roman_anomalies(
             candidates = generate_duplicate_candidates(tokens, values)
         elif issue_type == GAP:
             candidates = generate_gap_candidates(tokens, values)
+        elif issue_type == SEQUENCE_BREAK:
+            candidates = [{
+                "position": 0,
+                "current_token": tokens[0] if tokens else "",
+                "action": "keep_as_is",
+                "rationale": "序列不单调，无法推断正确顺序",
+            }]
 
         anomalies.append(build_roman_anomaly(
             index=idx,
