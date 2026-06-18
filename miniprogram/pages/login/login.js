@@ -34,21 +34,22 @@ Page({
     }
   },
 
-  /** 同步直连跳转：不经过任何 async API，直接检查 storage 后 redirect */
+  /** 同步直连跳转：不经过任何 async API，直接检查 storage 后延迟跳转 */
   _tryDirectRedirect() {
     const token = storage.get(storage.KEYS.TOKEN)
     const expiresAt = storage.get(storage.KEYS.TOKEN_EXPIRES_AT)
     if (!token) return false
-    // 无过期信息 → 视为有效
     if (!expiresAt) {
+      // 无过期信息 → 视为有效
       console.log('[AUTH_DIAG] direct redirect: no expires_at')
-      wx.redirectTo({ url: '/pages/home/home' })
+      setTimeout(() => wx.reLaunch({ url: '/pages/home/home' }), 100)
       return true
     }
     const tte = expiresAt - Math.floor(Date.now() / 1000)
     if (tte > 86400) {
       console.log('[AUTH_DIAG] direct redirect: token valid, tte=' + tte + 's')
-      wx.redirectTo({ url: '/pages/home/home' })
+      // setTimeout 延迟确保 WeChat 冷启动 onLoad 阶段后导航不被吞
+      setTimeout(() => wx.reLaunch({ url: '/pages/home/home' }), 100)
       return true
     }
     // Token 需要刷新 → 走 _autoLogin async 链路
