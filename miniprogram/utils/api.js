@@ -115,12 +115,19 @@ function _skipProactiveRefresh(url) {
 
 async function ensureValidToken() {
   const token = storage.get(KEYS.TOKEN)
-  if (!token) return false
+  if (!token) {
+    console.log('[AUTH_DIAG] ensureValidToken: token missing in storage')
+    return false
+  }
 
   const expiresAt = storage.get(KEYS.TOKEN_EXPIRES_AT)
-  if (!expiresAt) return true  // 无过期信息，视为有效
+  if (!expiresAt) {
+    console.log('[AUTH_DIAG] ensureValidToken: no expires_at, treating as valid')
+    return true  // 无过期信息，视为有效
+  }
 
   const timeToExpiry = expiresAt - Math.floor(Date.now() / 1000)
+  console.log('[AUTH_DIAG] ensureValidToken: timeToExpiry=' + timeToExpiry + 's')
   if (timeToExpiry > PROACTIVE_REFRESH_SEC) return true  // 远未过期
 
   // Token 即将过期 → 主动续签（最多重试 1 次，应对冷启动网络延迟）
