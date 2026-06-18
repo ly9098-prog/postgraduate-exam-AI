@@ -601,9 +601,9 @@ class TestNormalizeQuestions:
     def test_partial_missing(self):
         """Q2 无答案时仍能标准化其他题目。"""
         raw = [
-            {"number": 1, "raw_question_text": "1. Q1\nA. x\nB. y\n答案：A",
+            {"number": 1, "raw_question_text": "1. Q1\nA. x\nB. y\nC. z\nD. w\n答案：A",
              "page_start": 1, "page_end": 1, "has_options": True,
-             "option_lines": {"A": "x", "B": "y"}, "confidence": 0.9},
+             "option_lines": {"A": "x", "B": "y", "C": "z", "D": "w"}, "confidence": 0.9},
             {"number": 2, "raw_question_text": "2. Q2\nA. z\nB. w",
              "page_start": 1, "page_end": 1, "has_options": True,
              "option_lines": {"A": "z", "B": "w"}, "confidence": 0.9},
@@ -829,3 +829,86 @@ class TestDedupBatch:
         assert questions[1]["duplicate_of_index"] == 0
         assert questions[2]["is_batch_duplicate"] is True
         assert questions[2]["duplicate_of_index"] == 0
+
+
+# ---------------------------------------------------------------
+# 13. 解析缓存版本化 (PARSER_CACHE_VERSION)
+# ---------------------------------------------------------------
+
+class TestParseCacheVersion:
+    """验证缓存版本化失效机制。"""
+
+    def setup_method(self):
+        from app.features.question_normalizer import (
+            parse_cache_clear, _parse_cache, PARSER_CACHE_VERSION,
+        )
+        parse_cache_clear()
+        self._parse_cache = _parse_cache
+        self.PARSER_CACHE_VERSION = PARSER_CACHE_VERSION
+
+    def test_same_version_hits(self):
+        """同版本缓存应命中。"""
+        from app.features.question_normalizer import parse_cache_get, parse_cache_put
+
+        raw = "测试题干内容"
+        key = "test_key_123"
+        parse_cache_put(raw, key, {"my_value": "cached_data"})
+        cached = parse_cache_get(raw, key)
+        assert cached == {"my_value": "cached_data"}
+
+    def test_different_version_misses(self):
+        """不同版本（模拟升级后）应自动失效。"""
+        from app.features.question_normalizer import parse_cache_get, parse_cache_put, _parse_cache, PARSER_CACHE_VERSION
+
+        raw = "测试题干内容"
+        key = "test_key_456"
+
+        # 写入当前版本缓存
+        parse_cache_put(raw, key, {"result": "old_value"})
+        # 篡改为旧版本号，模拟升级场景
+        for entry in _parse_cache.values():
+            entry["cache_version"] = "old_version_2025.01.01"
+
+        cached = parse_cache_get(raw, key)
+        assert cached is None, "版本不同时应返回 None"
+
+    def test_no_version_field_misses(self):
+        """无 cache_version 字段的历史缓存应自动失效。"""
+        from app.features.question_normalizer import parse_cache_get
+
+        # 手动插入一个无版本的缓存条目（模拟遗留数据）
+        from app.features.question_normalizer import _parse_cache, _make_cache_key
+        raw = "历史遗留文本"
+        key = "test_legacy"
+        cache_key = _make_cache_key(raw, key)
+        _parse_cache[cache_key] = {
+            "result": {"legacy": True},
+            "cached_at": 1234567890,
+        }
+
+        cached = parse_cache_get(raw, key)
+        assert cached is None, "无 cache_version 字段时应返回 None"
+
+    def test_cache_clear_works(self):
+        """parse_cache_clear 应清空所有条目。"""
+        from app.features.question_normalizer import parse_cache_get, parse_cache_put, parse_cache_clear
+
+        parse_cache_put("raw", "key", {"result": "val"})
+        assert parse_cache_get("raw", "key") is not None
+        parse_cache_clear()
+        assert parse_cache_get("raw", "key") is None
+
+    def test_fifo_eviction(self):
+        """超过 _MAX_CACHE_SIZE 时应淘汰最旧条目。"""
+        from app.features.question_normalizer import (
+            parse_cache_get, parse_cache_put, parse_cache_clear, _MAX_CACHE_SIZE,
+        )
+        parse_cache_clear()
+        # 写入 _MAX_CACHE_SIZE 条
+        for i in range(_MAX_CACHE_SIZE):
+            parse_cache_put(f"raw_{i}", f"key_{i}", {"result": i})
+        # 再写一条触发淘汰
+        parse_cache_put("new_raw", "new_key", {"result": "new"})
+        # 第一条应已被淘汰
+        first = parse_cache_get("raw_0", "key_0")
+        assert first is None, "FIFO 应淘汰最旧条目"

@@ -16,7 +16,24 @@
 #   - paddlepaddle 3.3.1 已安装，保持兼容
 #   - 升级理由: PP-OCRv4 模型精度提升 ~5%, 更稳定的文本行检测
 #   - 风险: 低 — API 签名完全一致
-paddleocr>=2.8.1,<3.0
+#
+# WARNING: opencv-contrib-python 和 opencv-python 与 opencv-python-headless 冲突
+# 故 paddleocr 用 --no-deps 安装，其依赖在此显式声明（替换 opencv 为 headless）
 paddlepaddle>=2.6.2
 Pillow>=10.3.0
 numpy>=1.26,<2.0
+stringzilla<4.6.2
+opencv-python-headless>=4.9.0.80
+shapely
+scikit-image
+pyclipper
+lmdb
+tqdm
+rapidfuzz
+pyyaml
+python-docx
+beautifulsoup4
+fonttools>=4.24.0
+fire>=0.3.0
+requests
+albumentations

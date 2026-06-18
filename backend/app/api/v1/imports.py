@@ -541,6 +541,7 @@ async def _run_image_pipeline_with_db(
                 subject=subject,
                 options=options,
                 db=db,
+                page_images={1: image_content},
             )
 
         status = "completed" if result.get("status") == "completed" else "failed"

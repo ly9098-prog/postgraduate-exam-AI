@@ -1,4 +1,5 @@
 const api = require('../../utils/api')
+const { formatInlineMathText, replaceSimpleLatexCommands } = require('../../utils/math-format')
 
 const RISK_LABELS = {
   no_exercise_regions: '未检出习题区',
@@ -25,17 +26,6 @@ function textToHtml(text) {
 function needsRichRender(text) {
   if (!text) return false
   return /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/.test(text) || /<\/?[a-z][\s\S]*>/i.test(text)
-}
-
-function replaceSimpleLatexCommands(text) {
-  return String(text || '')
-    .replace(/\\leq/g, '≤')
-    .replace(/\\geq/g, '≥')
-    .replace(/\\neq/g, '≠')
-    .replace(/\\times/g, '×')
-    .replace(/\\cdot/g, '·')
-    .replace(/\\lt/g, '<')
-    .replace(/\\gt/g, '>')
 }
 
 function toPlainInlineMathText(text) {
@@ -159,8 +149,11 @@ Page({
         var segments = Array.isArray(pc.segments) ? pc.segments : []
         var riskFlags = Array.isArray(meta.risk_flags) ? meta.risk_flags : []
         var riskLabels = riskFlags.map(function(flag) { return RISK_LABELS[flag] || flag })
+        var textContent = pc.text || ''
+        var detailText = formatInlineMathText(textContent) || textContent
         return Object.assign({}, q, {
-          _preview: (pc.text || '').slice(0, 80) || '无内容',
+          _preview: (textContent || '').slice(0, 80) || '无内容',
+          _detailText: detailText,
           _subjectLabel: subjectMap[q.subject] || q.subject || '-',
           _statusLabel: statusMap[q.status] || q.status,
           _typeLabel: typeMap[q.question_type] || (blankOptionGroups.length ? '多空选择题' : q.question_type || '-'),

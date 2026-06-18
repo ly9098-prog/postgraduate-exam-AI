@@ -17,7 +17,9 @@ async def read_models(
     _=Depends(require_roles("super_admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    return await list_models(db)
+    result = await list_models(db)
+    await db.commit()  # 持久化 seed 数据，确保后续请求可见
+    return result
 
 
 @router.patch("/ai-models/{model_id}", response_model=AdminAiModelConfigResponse)

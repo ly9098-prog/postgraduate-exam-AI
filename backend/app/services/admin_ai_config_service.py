@@ -440,18 +440,44 @@ async def test_model_connection(
                 api_base_url = model.api_base_url
             model_name = model.name
 
-            # 1) 环境变量兜底 — 最权威的凭证来源，不依赖 DB 同步
-            env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
-            if env_key and env_key != "sk-your-key-here":
-                api_key = env_key
+            # 1) 环境变量兜底 — 仅当 provider 为 deepseek 时才使用 DEEPSEEK_API_KEY
+            if model.provider == "deepseek":
+                env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
+                if env_key and env_key != "sk-your-key-here":
+                    api_key = env_key
+                elif model.api_key_encrypted:
+                    # 2) DB 存储的 key（解密后）
+                    decrypted = decrypt_api_key(model.api_key_encrypted)
+                    if decrypted and decrypted != "****" and set(decrypted) != {"*"}:
+                        api_key = decrypted
             else:
-                # 2) DB 存储的 key（解密后）
+                # 非 DeepSeek 模型：优先用 DB 存储的 key
                 if model.api_key_encrypted:
                     decrypted = decrypt_api_key(model.api_key_encrypted)
                     if decrypted and decrypted != "****" and set(decrypted) != {"*"}:
                         api_key = decrypted
         else:
-            pass  # model not found — fall through to request body values
+            # 模型表可能为空（seed 未持久化），触发初始化后重试
+            await _seed_models_if_empty(db)
+            await db.flush()
+            model = await db.get(AdminAiModelConfig, model_id)
+            if model is not None:
+                if model.api_base_url:
+                    api_base_url = model.api_base_url
+                model_name = model.name
+                if model.provider == "deepseek":
+                    env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
+                    if env_key and env_key != "sk-your-key-here":
+                        api_key = env_key
+                    elif model.api_key_encrypted:
+                        decrypted = decrypt_api_key(model.api_key_encrypted)
+                        if decrypted and decrypted != "****" and set(decrypted) != {"*"}:
+                            api_key = decrypted
+                else:
+                    if model.api_key_encrypted:
+                        decrypted = decrypt_api_key(model.api_key_encrypted)
+                        if decrypted and decrypted != "****" and set(decrypted) != {"*"}:
+                            api_key = decrypted
 
     base = api_base_url.rstrip("/")
     # Normalize: some providers include /v1 in the base URL (OpenAI, DashScope compatible mode),
@@ -481,10 +507,11 @@ async def test_model_connection(
         elapsed = int((time.time() - start) * 1000)
 
         if resp.status_code == 401 or resp.status_code == 403:
+            body = resp.text[:500]
             return {
                 "success": False,
                 "status": "auth_error",
-                "message": "API Key 无效或无权限访问",
+                "message": f"API Key 无效或无权限访问 (HTTP {resp.status_code}): {body}",
                 "latency_ms": elapsed,
             }
 
