@@ -21,11 +21,21 @@ Page({
   },
 
   async _tryAutoLogin() {
+    this.setData({ loading: true })
     const ok = await auth.checkAndRefreshToken()
     if (ok) {
+      this.setData({ loading: false })
+      wx.redirectTo({ url: '/pages/home/home' })
+      return
+    }
+    // 首次失败，延迟重试（覆盖冷启动网络延迟）
+    await new Promise(r => setTimeout(r, 2000))
+    const ok2 = await auth.checkAndRefreshToken()
+    this.setData({ loading: false })
+    if (ok2) {
       wx.redirectTo({ url: '/pages/home/home' })
     }
-    // 续签失败则留在登录页
+    // 仍失败则留在登录页，显示正常登录按钮
   },
 
   onAgreementChange(e) {

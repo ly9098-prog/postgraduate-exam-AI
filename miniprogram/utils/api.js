@@ -123,17 +123,23 @@ async function ensureValidToken() {
   const timeToExpiry = expiresAt - Math.floor(Date.now() / 1000)
   if (timeToExpiry > PROACTIVE_REFRESH_SEC) return true  // 远未过期
 
-  // Token 即将过期 → 主动续签
-  if (!_refreshing) {
-    _refreshing = _refreshToken().finally(() => { _refreshing = null })
+  // Token 即将过期 → 主动续签（最多重试 1 次，应对冷启动网络延迟）
+  for (let attempt = 0; attempt <= 1; attempt++) {
+    if (!_refreshing) {
+      _refreshing = _refreshToken().finally(() => { _refreshing = null })
+    }
+    try {
+      await _refreshing
+      return true
+    } catch {
+      if (attempt === 0) {
+        await new Promise(r => setTimeout(r, 1500))
+        continue
+      }
+      return false
+    }
   }
-
-  try {
-    await _refreshing
-    return true
-  } catch {
-    return false  // 续签失败不影响后续请求，真实 API 调用遇到 401 会再试一次
-  }
+  return false
 }
 
 function _buildHeader(traceId) {
