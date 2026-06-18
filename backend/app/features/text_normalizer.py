@@ -41,6 +41,9 @@ _ROMAN_SUBITEM_TOKEN = r"(?:VIII|VII|III|VI|IV|IX|II|V|X|I)"
 _RE_ROMAN_SUBITEM_MARKER = re.compile(
     r"(?<![A-Za-z])" + _ROMAN_SUBITEM_TOKEN + r"(?![A-Za-z])\s*[.、)）]"
 )
+# Roman numeral value mapping (longest-first for unambiguous token matching)
+_ROMAN_TO_VALUE = {"VIII": 8, "VII": 7, "III": 3, "VI": 6, "IV": 4, "IX": 9, "II": 2, "V": 5, "X": 10, "I": 1}
+_VALUE_TO_ROMAN = {v: k for k, v in _ROMAN_TO_VALUE.items()}
 
 # 结构标记行：不应被合并到上行的模式
 _RE_STRUCTURE_LINE = re.compile(
@@ -270,6 +273,9 @@ class ImportTextNormalizer:
         if not text:
             return text
 
+        # Pre-process: fix Roman numeral duplicates before line-by-line correction
+        text = self._fix_roman_numeral_duplicates(text)
+
         lines = text.split("\n")
         has_roman_list = self._has_roman_subitem_list(text)
         corrected: list[str] = []
@@ -277,6 +283,7 @@ class ImportTextNormalizer:
         for line in lines:
             line = self._fix_option_line(line)
             line = self._fix_question_number_line(line, has_roman_list)
+            line = self._fix_option_roman_digit_confusion(line, has_roman_list)
             corrected.append(line)
 
         return "\n".join(corrected)
@@ -339,6 +346,75 @@ class ImportTextNormalizer:
 
         return line
 
+    def _fix_option_roman_digit_confusion(self, line: str, has_roman_list: bool) -> str:
+        """修复选项文本中数字 1 与罗马数字 I 的 OCR 混淆。
+
+        当题干含罗马子项枚举时，选项内容中的 "1、" → "I、"，
+        如 "A. 1、I" → "A. I、I"（OCR 将 I、II 误识为 1、I）。
+        """
+        if not has_roman_list:
+            return line
+        m = re.match(r"^([A-D])\s*[.、:：）]\s*(1\s*[、,]\s*" + _ROMAN_SUBITEM_TOKEN + r")", line)
+        if m:
+            prefix = m.group(1)
+            content = m.group(2)
+            fixed_content = re.sub(r"^1\s*([、,])", r"I\1", content)
+            return f"{prefix}. {fixed_content}"
+        return line
+
+    def _fix_roman_numeral_duplicates(self, text: str) -> str:
+        """修复 OCR 将 III. 误识为 II. 造成的罗马数字序列断裂。
+
+        仅检测行首罗马枚举标记（I./II./III.），修复已知 OCR 误识模式（III→II）。
+        选项内的罗马数字引用（如 A. I、II）不参与序列校验。
+        """
+        if not text:
+            return text
+
+        lines = text.split("\n")
+        roman_entries: list[dict] = []  # {line_idx, token, value, start, end}
+
+        for i, line in enumerate(lines):
+            m = _RE_ROMAN_SUBITEM_MARKER.match(line.lstrip())
+            if not m:
+                continue
+            token_m = re.match(_ROMAN_SUBITEM_TOKEN, m.group(0))
+            if not token_m:
+                continue
+            token = token_m.group(0)
+            value = _ROMAN_TO_VALUE.get(token)
+            if not value:
+                continue
+            # start/end positions in the original line
+            start = line.index(m.group(0))
+            roman_entries.append({
+                "line_idx": i, "token": token, "value": value,
+                "start": start, "end": start + len(m.group(0)),
+                "match": m.group(0),
+            })
+
+        if len(roman_entries) < 2:
+            return text
+
+        for j in range(1, len(roman_entries)):
+            prev = roman_entries[j - 1]
+            curr = roman_entries[j]
+            # Skip if values are on different lines but both are option lines —
+            # those are independent references, not a sequence
+            if curr["value"] == prev["value"]:
+                expected = prev["value"] + 1
+                new_token = _VALUE_TO_ROMAN.get(expected)
+                if new_token and new_token != curr["token"]:
+                    new_match = curr["match"].replace(curr["token"], new_token, 1)
+                    li = curr["line_idx"]
+                    lines[li] = lines[li][:curr["start"]] + new_match + lines[li][curr["end"]:]
+                    curr["token"] = new_token
+                    curr["value"] = expected
+                    curr["match"] = new_match
+                    curr["end"] = curr["start"] + len(new_match)
+
+        return "\n".join(lines)
+
     def _fix_pointer_arrows(self, text: str) -> str:
         """修复 C 指针箭头 OCR 伪影： "p − >next" / "p - >next" → "p->next"。
 
@@ -376,6 +452,10 @@ class ImportTextNormalizer:
     _RE_FULLWIDTH_ASCII = re.compile(r"[！-～]")
     _RE_CJK_PUNCT = re.compile(r"([一-鿿])([,;!?])(?=\s*[一-鿿])")
 
+    _RE_CIRCLED_FW_PAREN = re.compile(
+        r"（(\s*[" + _CIRCLED_OPTION_CHARS + r"]\s*)）"
+    )
+
     def _normalize_punctuation(self, text: str) -> str:
         """标点符号规范化：统一中英文标点。
 
@@ -385,14 +465,25 @@ class ImportTextNormalizer:
         if not text:
             return text
 
+        # 保护全角括号包围的圈号占位符（如 （①）），避免被转为半角
+        stash: dict[str, str] = {}
+        def _stash_circled(m: re.Match) -> str:
+            key = f"\x00C{len(stash)}\x00"
+            stash[key] = m.group(0)
+            return key
+        text = self._RE_CIRCLED_FW_PAREN.sub(_stash_circled, text)
+
         # 全角 ASCII 转半角（! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~）
-        # 但保留全角逗号句号等中文标点
         def _to_halfwidth(m: re.Match) -> str:
             ch = m.group(0)
             code = ord(ch) - 0xfee0
             return chr(code) if 0x21 <= code <= 0x7e else ch
 
         text = self._RE_FULLWIDTH_ASCII.sub(_to_halfwidth, text)
+
+        # 恢复圈号占位符
+        for key, original in stash.items():
+            text = text.replace(key, original)
 
         # 中文后跟半角逗号/分号/叹号/问号 → 中文标点
         text = self._RE_CJK_PUNCT.sub(r"\1\g<2>", text)

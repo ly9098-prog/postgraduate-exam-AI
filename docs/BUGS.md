@@ -269,6 +269,34 @@ PaddleOCR 将 `III.` 识别为 `II.`。规则层无法区分合法 `II.` 与被�
 
 `_normalize_punctuation()` 将全角 `（` 转为半角 `(`，破坏对全角占位符 `（ ）` 的预期。与本次修复无关。
 
+---
+
+### 修复评估（2026-06-18 第二轮 — 最小规则层修复）
+
+在现有检测能力基础上，增加规则层自动修复，减少对 AI repair 阶段的硬依赖。
+
+#### 新增修复
+
+| 问题 | 措施 | 覆盖范围 |
+|------|------|----------|
+| `III.` → `II.` 行首枚举重复 | `_fix_roman_numeral_duplicates()` — 检测行首罗马枚举序列中的重复值，自动递增修复（II→II→IV → II→III→IV） | 仅行首枚举标记（`I.`/`II.`/…），选项内引用不参与 |
+| 选项 `1、I` 数字混淆 | `_fix_option_roman_digit_confusion()` — 罗马上下文中的 `1、` → `I、` | 选项行（`A-D` 前缀）内容 |
+| 全角括号 `（①）` 被转半角 | `_normalize_punctuation()` — 圈号占位符 `（①）` 在全角→半角转换前暂存保护 | 所有 `（①）`-`（⑳）` 形式 |
+
+#### 仍无法规则层修复
+
+| 问题 | 原因 | 处理方式 |
+|------|------|----------|
+| 选项 `I→II`缺失（`1、I` → `I、I`仅修复了数字混淆，未补全缺失的 II） | 规则层无法判断选项引用的正确罗马编号集合 | 仍依赖 AI repair |
+| 非行首 `III→II`（如选项内容 `I、II、IV、V` 应为 `I、III、IV、V`） | 选项内罗马数字是引用而非枚举，规则层无法区分 | batch_validation 检测 + AI repair |
+| 跳号（I→II→IV→V）未修复 | 无法确定是 II 误识还是 IV 误识 | batch_validation 检测 + AI repair |
+
+#### 测试结果
+
+- text_normalizer: 45/45 passed（含之前失败的 `test_grouped_circled_option_rows_preserve_stem_placeholders`）
+- batch_validation: 13/13 passed
+- 全量回归: 398 passed, 1 failed（`test_ai_unavailable_graceful` — 预存异步 mock 问题，与本次无关）
+
 #### 长期风险
 
 **选项文本内容合理性校验仍不完整**
