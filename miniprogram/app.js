@@ -49,17 +49,21 @@ function _onAnimLoaded() {
 
 App({
   onLaunch() {
-    // 不自动跳转首页，让 login 页面处理登录态
-    // 避免 token 过期时闪现首页后跳登录页
-
-    // 预加载动画分包
     tryLoadAnimSubpkg()
+    // 在 login 页面加载前尽可能提前建立 session
+    this._preWarmSession()
   },
 
   onShow() {
-    // 应用从后台切回前台时，静默尝试恢复登录态
-    // 不阻塞页面渲染，不弹错误提示
     this._tryRestoreLogin()
+  },
+
+  /** 提前预热：无 token 时提前 wx.login，避免 login 页冷启动时首次调用失败 */
+  async _preWarmSession() {
+    const storage = require('./utils/storage')
+    if (storage.get(storage.KEYS.TOKEN)) return
+    // 仅跑一次 wx.login 让 WeChat JSSDK 内部状态就绪
+    try { await wx.login() } catch (_) {}
   },
 
   async _tryRestoreLogin() {
@@ -68,8 +72,6 @@ App({
     if (!storage.get(storage.KEYS.TOKEN)) return
     try {
       await auth.checkAndRefreshToken()
-    } catch (_) {
-      // 续签失败静默忽略，真实 API 调用遇到 401 会再试一次
-    }
+    } catch (_) {}
   },
 })
