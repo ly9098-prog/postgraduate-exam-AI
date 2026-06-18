@@ -37,6 +37,7 @@ from app.core.config import settings
 from app.models.ai_generation_log import AiGenerationLog
 from app.models.question import Question
 from app.models.question_import import QuestionImport
+from app.features.question_normalizer import run_ocr_quality_gate
 from app.features.question_splitter import split_questions
 from app.utils.trace.debug import debug_log, save_debug_snapshot
 
@@ -177,6 +178,8 @@ class QuestionNormalizer:
         if question_type != "multi_blank_choice":
             stem = self._break_before_number_markers(stem)
         stem = self._remove_embedded_options(stem, options)
+        # OCR quality gate on cleaned stem
+        _ocr_gate_result = run_ocr_quality_gate(stem)
         answer = self.normalize_answer(
             raw.get("answer") or raw.get("答案") or raw.get("parsed_answer") or "",
             question_type,
@@ -210,6 +213,22 @@ class QuestionNormalizer:
             "warnings": [],
         }
         normalized.update(self.validate(normalized))
+
+        # 统一验证字段 (Goal: 所有导题入口输出一致)
+        is_valid = normalized["is_valid"]
+        errors = normalized["errors"]
+        normalized["validation_status"] = "passed" if is_valid else "failed"
+        normalized["failure_reason"] = list(errors) if errors else None
+        normalized["retry_recommended"] = (
+            not is_valid
+            and any("missing_option_" in e for e in errors)
+        )
+        normalized["ocr_quality_flags"] = _ocr_gate_result["ocr_quality_flags"]
+        if not _ocr_gate_result["passed"]:
+            normalized["warnings"].append("ocr_contamination_detected")
+            for flag in _ocr_gate_result["ocr_quality_flags"]:
+                normalized["warnings"].append(f"ocr_quality:{flag}")
+
         return normalized
 
     def normalize_subject(self, value: Any) -> str:
@@ -372,13 +391,10 @@ class QuestionNormalizer:
                 errors.append("options_empty")
             elif len(options) < 2:
                 warnings.append("options_too_few")
-            # PENDING_FIX: 单选题必须包含全部 A/B/C/D 选项
-            if question.get("question_type") == "single_choice" and options:
-                present = {o.get("key", "").upper() for o in options if isinstance(o, dict) and o.get("key")}
-                missing = {"A", "B", "C", "D"} - present
-                if missing:
-                    for k in sorted(missing):
-                        errors.append(f"missing_option_{k}")
+            # 单选题必须包含全部 A/B/C/D 选项（共享校验逻辑）
+            from app.features.question_normalizer import check_option_completeness as _check_opts
+            _, opt_errors = _check_opts(question.get("question_type"), options)
+            errors.extend(opt_errors)
         if not question.get("subject"):
             errors.append("subject_empty")
         return {"is_valid": not errors, "errors": errors, "warnings": warnings}
