@@ -1,6 +1,8 @@
 const KEYS = {
   TOKEN: 'token',
   USER: 'user',
+  TOKEN_EXPIRES_AT: 'token_expires_at',
+  REFRESH_TOKEN: 'refresh_token',
 }
 
 function get(key) {

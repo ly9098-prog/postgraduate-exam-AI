@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     APP_ENV: str = "development"
     APP_SECRET: str = "change-me-in-production"
-    JWT_EXPIRE_DAYS: int = 7
+    JWT_EXPIRE_DAYS: int = 30
     DATABASE_URL: str = "sqlite+aiosqlite:///./postgraduate.db"
 
     # CORS — 使用凭证请求时必须是显式 origin，不能使用 "*"

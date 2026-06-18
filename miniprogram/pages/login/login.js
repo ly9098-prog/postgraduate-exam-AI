@@ -10,14 +10,22 @@ Page({
   },
 
   onLoad() {
-    // 已有 token 则自动登录进首页
+    // 已有 token 则尝试验证并自动进入首页
     if (auth.isLoggedIn()) {
-      wx.redirectTo({ url: '/pages/home/home' })
+      this._tryAutoLogin()
       return
     }
     // 仅开发环境显示开发者模式入口
     const config = require('../../config')
     this.setData({ showDevLogin: config.DEV === true })
+  },
+
+  async _tryAutoLogin() {
+    const ok = await auth.checkAndRefreshToken()
+    if (ok) {
+      wx.redirectTo({ url: '/pages/home/home' })
+    }
+    // 续签失败则留在登录页
   },
 
   onAgreementChange(e) {
@@ -62,7 +70,7 @@ Page({
     try {
       const { code } = await wx.login()
       const data = await api.post('/auth/login', { code })
-      auth.loginDirect(data.access_token, data.user)
+      auth.loginDirect(data.access_token, data.user, data.expires_at, data.refresh_token)
       api.resetRedirecting()
       wx.redirectTo({ url: '/pages/home/home' })
     } catch (e) {

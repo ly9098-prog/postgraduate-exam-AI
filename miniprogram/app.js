@@ -55,4 +55,21 @@ App({
     // 预加载动画分包
     tryLoadAnimSubpkg()
   },
+
+  onShow() {
+    // 应用从后台切回前台时，静默尝试恢复登录态
+    // 不阻塞页面渲染，不弹错误提示
+    this._tryRestoreLogin()
+  },
+
+  async _tryRestoreLogin() {
+    const storage = require('./utils/storage')
+    const auth = require('./utils/auth')
+    if (!storage.get(storage.KEYS.TOKEN)) return
+    try {
+      await auth.checkAndRefreshToken()
+    } catch (_) {
+      // 续签失败静默忽略，真实 API 调用遇到 401 会再试一次
+    }
+  },
 })

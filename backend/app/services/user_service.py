@@ -19,7 +19,8 @@ def _dev_openid(code: str) -> str:
     return "dev_" + hashlib.md5(code.encode()).hexdigest()[:16]
 
 
-async def wechat_login(db: AsyncSession, code: str) -> tuple[str, User]:
+async def wechat_login(db: AsyncSession, code: str) -> tuple[str, int, User]:
+    """Returns (token, expires_at, user) tuple."""
     openid: str | None = None
     session_key: str | None = None
 
@@ -55,8 +56,8 @@ async def wechat_login(db: AsyncSession, code: str) -> tuple[str, User]:
     await db.commit()
     await db.refresh(user)
 
-    token = create_token(user.id)
-    return token, user
+    token, expires_at = create_token(user.id)
+    return token, expires_at, user
 
 
 async def get_user_response(db: AsyncSession, user: User) -> UserResponse:
