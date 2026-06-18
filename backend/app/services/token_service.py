@@ -2,7 +2,7 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.refresh_token import RefreshToken
@@ -91,3 +91,16 @@ async def revoke_all_user_tokens(db: AsyncSession, user_id: int) -> None:
         .values(revoked_at=now)
     )
     await db.commit()
+
+
+async def cleanup_expired_tokens(db: AsyncSession) -> int:
+    """Delete expired or long-revoked refresh tokens. Returns count of deleted rows."""
+    now = datetime.utcnow()
+    result = await db.execute(
+        delete(RefreshToken).where(
+            (RefreshToken.expires_at < now)
+            | ((RefreshToken.revoked_at.isnot(None)) & (RefreshToken.revoked_at < now - timedelta(hours=24)))
+        )
+    )
+    await db.commit()
+    return result.rowcount
