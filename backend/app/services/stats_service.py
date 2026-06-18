@@ -400,17 +400,18 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
 
     result = await db.execute(
         select(
-            WrongQuestion.subject,
+            Question.subject,
             func.count(WrongQuestion.id),
             func.coalesce(
                 func.sum(case((WrongQuestion.mastered == True, 1), else_=0)), 0
             ),
         )
+        .join(Question, WrongQuestion.question_id == Question.id)
         .where(
             WrongQuestion.user_id == user_id,
             WrongQuestion.created_at >= since,
         )
-        .group_by(WrongQuestion.subject)
+        .group_by(Question.subject)
     )
     subject_rows = result.all()
     if not subject_rows:
@@ -490,7 +491,7 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
             "summary": f"基于最近60天{len(subject_rows)}个科目的真实错题数据进行AI诊断。",
             "generated": True,
         }
-    except RuntimeError:
+    except Exception:
         return {
             "weak_points": [],
             "strong_points": [],
