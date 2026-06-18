@@ -1,31 +1,25 @@
 # BUGS
 
+#### 案例一
+
 ##### 原题
 
 ```tex
-下列关于线性表的说法，正确的是()。
-I.顺序存储方式只能用于存储线性结构 
-II.在一个设有头指针和尾指针的单链表，删除表尾元素的时间复杂度与表长无关 
-III.带头结点的循环单链表中不存在空指针 
-IV.在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n) V.若用单链表来表示队，则应该选用带尾指针的循环链表
-
-
-A. I、II
-B. I、III、IV、V
-C. IV、 V
-D. II、IV、V
+在双链表中向 p所指的结点之前插入一个结点q的操作为( )。
+A. p − >prior = q; q − >next = p; p − >prior − >next = q; q − >prior = p − >prior;
+B. q − >prior = p − >prior; p − >prior − >next = q; q − >next = p; p − >prior = q − >next;
+C. q − >next = p; p − >next = q; q − >prior − >next = q; q − >next = p;
+D. p − >prior = q;q − >next = p;q − >prior = p − >prior;p − >prior = q; 
 ```
 
 ##### 前端内容显示
 
 ```tex
-下列关于线性表的说法，正确的是()。I.顺序存储方式只能用于存储线性结构 II.在一个设有头指针和尾指针的单链表，删除表尾元素的时间复杂度与表长无关 III.带头结点的循环单链表中不存在空指针 IV.在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n) V.若用单链表来表示队，则应该选用带尾指针的循环链表
+在双链表中向 p所指的结点之前插入一个结点 α 的操作为( )。
 
-
-A. 1、I
-B. I、II、IV、V
-C. IV、 V
-D. II、IV、V
+A. p − >prior = q; q − >next = p; p − >prior − >next = q; q − >prior = p − >prior;
+B. q − >prior = p − >prior; p − >prior − >next = q; q − >next = p; p − >prior = q − >next;
+C. q − >next = p; p − >next = q; q − >prior − >next = q; q − >next = p;
 ```
 
 ##### 解析结果
@@ -33,15 +27,14 @@ D. II、IV、V
 ```json
 {
   "parsed_content": {
-    "text": "下列关于线性表的说法，正确的是()。I.顺序存储方式只能用于存储线性结构 II.在一个设有头指针和尾指针的单链表，删除表尾元素的时间复杂度与表长无关 III.带头结点的循环单链表中不存在空指针 IV.在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n) V.若用单链表来表示队，则应该选用带尾指针的循环链表"
+    "text": "在双链表中向 p所指的结点之前插入一个结点 $\\alpha$ 的操作为( )。"
   },
   "parsed_options": {
-    "A": "1、I",
-    "B": "I、II、IV、V",
-    "C": "IV、 V",
-    "D": "II、IV、V"
+    "A": "p->prior=q; q->next=p; p->prior->next=q; q->prior=p->prior;",
+    "B": "q->prior=p->prior; p->prior->next=q; q->next=p; p->prior=q->next;",
+    "C": "q->next=p; p->next=q; q->prior->next=q; q->next=p;"
   },
-  "parsed_answer": "D",
+  "parsed_answer": null,
   "parsed_analysis": null
 }
 ```
@@ -54,33 +47,344 @@ D. II、IV、V
     "schema_version": "v1",
     "subject": "",
     "question_type": "single_choice",
-    "stem": "下列关于线性表的说法，正确的是()。I.顺序存储方式只能用于存储线性结构 II.在一个设有头指针和尾指针的单链表，删除表尾元素的时间复杂度与表长无关 III.带头结点的循环单链表中不存在空指针 IV.在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n) V.若用单链表来表示队，则应该选用带尾指针的循环链表",
+    "stem": "在双链表中向 p所指的结点之前插入一个结点 $\\alpha$ 的操作为( )。",
     "options": [
       {
         "key": "A",
-        "text": "1、I"
+        "text": "p->prior=q; q->next=p; p->prior->next=q; q->prior=p->prior;"
       },
       {
         "key": "B",
-        "text": "I、II、IV、V"
+        "text": "q->prior=p->prior; p->prior->next=q; q->next=p; p->prior=q->next;"
       },
       {
         "key": "C",
-        "text": "IV、 V"
-      },
-      {
-        "key": "D",
-        "text": "II、IV、V"
+        "text": "q->next=p; p->next=q; q->prior->next=q; q->next=p;"
       }
     ],
     "blank_option_groups": [],
-    "answer": "D",
+    "answer": "",
     "analysis": "",
-    "raw_text": "04.下列关于线性表的说法，正确的是()。\nI.顺序存储方式只能用于存储线性结构\nII.在一个设有头指针和尾指针的单链表，删除表尾元素的时间复杂度与表长无关\nII.带头结点的循环单链表中不存在空指针\nIV. 在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n)\nV.若用单链表来表示队，则应该选用带尾指针的循环链表\nB. I、II、IV、V\nA. 1、I\nD. II、IV、V\nC. IV、 V",
+    "raw_text": "15.在双链表中向 p所指的结点之前插入一个结点\\alpha的操作为()。\nA. p->prior=q; q->next=p; p->prior->next=q; q->prior=p->prior;\nB. q->prior=p->prior; p->prior->next=q; q->next=p; p->prior=q->next;\nC. q->next=p; p->next=q; q->prior->next=q; q->next=p;\n:b=oxd<-d !xot\\pid<-d=xotxd<-b :d=xau<-b :b=xau<-\\pio\\pid<-d '\\alpha",
     "knowledge_points": [],
     "difficulty": 3,
     "source": {
-      "file": "1.png",
+      "file": "3.png",
+      "page": 1,
+      "type": "txt"
+    },
+    "is_valid": true,
+    "errors": [],
+    "warnings": [
+      "ocr_contamination_detected",
+      "ocr_quality:symbol_substitution_detected",
+      "ocr_quality:option_structure_corrupted",
+      "incomplete_options: missing D",
+      "missing_answer_for_objective_question"
+    ],
+    "stem_hash": "650603c0",
+    "confidence_score": 0.2,
+    "risk_flags": [],
+    "ai_validation": {
+      "is_valid": true,
+      "issues": [
+        "stem_too_short"
+      ],
+      "severity": "warning"
+    }
+  },
+  "ai_metadata": {
+    "is_valid": true,
+    "errors": [],
+    "warnings": [
+      "ocr_contamination_detected",
+      "ocr_quality:symbol_substitution_detected",
+      "ocr_quality:option_structure_corrupted",
+      "incomplete_options: missing D",
+      "missing_answer_for_objective_question"
+    ],
+    "knowledge_points": [],
+    "difficulty": 3,
+    "stem_hash": "650603c0",
+    "risk_flags": null
+  }
+}
+```
+
+##### 问题
+- OCR 将变量 `q` 误识别为 `\alpha`，将原题中以下标形式出现在题干中的字母误转为 LaTeX 公式
+- 选项 D 被 OCR 吞掉，导致选项不完整
+
+##### 修复
+- OCR 后处理：对 `\alpha` 等单字母 LaTeX 符号做上下文校验，判断应为普通变量而非数学公式
+- 选项完整性校验：检测预期选项数与实际数不一致时告警/自动补偿
+
+---
+
+#### 案例二
+
+##### 原题（单选题）
+
+```tex
+一个链表最常用的操作是在末尾插入结点和删除结，则选用( )最节省时间。
+
+A.不带头结点的循环双链表		B. 双链表
+C.单链表			 		 D.不带头结点且有尾指针的循环单链表
+```
+
+##### 前端内容显示（多空选择题）
+
+```tex
+一个链表最常用的操作是在末尾插入结点和删除结，则选用( )最节省时间。
+B. 循环单链表
+A.带头结点的循环双链表
+D.单链表
+C.带尾指针的循环单链表在第一个元素之前插入新元；在最后一个元素之后插入新元，则最好使用()
+O
+口
+医
+2027年数据结构考研复习指导
+口
+A. 只有尾结点指针没有头结点指针的循环单链表
+B.只有尾结点指针没有头结点指针的非循环双链表
+C.只有头结点指针没有尾结点指针的循环双链表
+D.既有头结点指针又有尾结点指针的循环单链表
+```
+
+##### 解析结果
+
+```json
+{
+  "parsed_content": {
+    "text": "一个链表最常用的操作是在末尾插入结点和删除结，则选用( )最节省时间。\nB. 循环单链表\nA.带头结点的循环双链表\nD.单链表\nC.带尾指针的循环单链表在第一个元素之前插入新元；在最后一个元素之后插入新元，则最好使用()\nO\n口\n医\n2027年数据结构考研复习指导\n口\nA. 只有尾结点指针没有头结点指针的循环单链表\nB.只有尾结点指针没有头结点指针的非循环双链表\nC.只有头结点指针没有尾结点指针的循环双链表\nD.既有头结点指针又有尾结点指针的循环单链表",
+    "blank_option_groups": [
+      {
+        "id": "1",
+        "options": [
+          {
+            "key": "A",
+            "text": "带头结点的循环双链表"
+          },
+          {
+            "key": "B",
+            "text": "循环单链表"
+          },
+          {
+            "key": "C",
+            "text": "带尾指针的循环单链表在第一个元素之前插入新元；在最后一个元素之后插入新元，则最好使用() O 口 医 2027年数据结构考研复习指导 口"
+          },
+          {
+            "key": "D",
+            "text": "单链表"
+          }
+        ]
+      },
+      {
+        "id": "2",
+        "options": [
+          {
+            "key": "A",
+            "text": "只有尾结点指针没有头结点指针的循环单链表"
+          },
+          {
+            "key": "B",
+            "text": "只有尾结点指针没有头结点指针的非循环双链表"
+          },
+          {
+            "key": "C",
+            "text": "只有头结点指针没有尾结点指针的循环双链表"
+          },
+          {
+            "key": "D",
+            "text": "既有头结点指针又有尾结点指针的循环单链表"
+          }
+        ]
+      }
+    ]
+  },
+  "parsed_options": null,
+  "parsed_answer": null,
+  "parsed_analysis": null
+}
+```
+
+##### OCR解析结果
+
+```json
+{
+  "raw_data": {
+    "schema_version": "v1",
+    "subject": "",
+    "question_type": "multi_blank_choice",
+    "stem": "一个链表最常用的操作是在末尾插入结点和删除结，则选用( )最节省时间。\nB. 循环单链表\nA.带头结点的循环双链表\nD.单链表\nC.带尾指针的循环单链表在第一个元素之前插入新元；在最后一个元素之后插入新元，则最好使用()\nO\n口\n医\n2027年数据结构考研复习指导\n口\nA. 只有尾结点指针没有头结点指针的循环单链表\nB.只有尾结点指针没有头结点指针的非循环双链表\nC.只有头结点指针没有尾结点指针的循环双链表\nD.既有头结点指针又有尾结点指针的循环单链表",
+    "options": [],
+    "answer": "",
+    "analysis": "",
+    "raw_text": "23. 一个链表最常用的操作是在末尾插入结点和删除结，则选用( )最节省时间。\nB. 循环单链表\nA.带头结点的循环双链表\nD.单链表\nC.带尾指针的循环单链表在第一个元素之前插入新元；在最后一个元素之后插入新元，则最好使用()\nO\n口\n医\n2027年数据结构考研复习指导\n口\nA. 只有尾结点指针没有头结点指针的循环单链表\nB.只有尾结点指针没有头结点指针的非循环双链表\nC.只有头结点指针没有尾结点指针的循环双链表\nD.既有头结点指针又有尾结点指针的循环单链表",
+    "knowledge_points": [],
+    "difficulty": 3,
+    "source": {
+      "file": "4.png",
+      "page": 1,
+      "type": "txt"
+    },
+    "is_valid": true,
+    "errors": [],
+    "warnings": [],
+    "stem_hash": "892e09a9",
+    "confidence_score": 0.7,
+    "validation_status": "passed",
+    "failure_reason": [],
+    "retry_recommended": false,
+    "ocr_quality_flags": [],
+    "blank_option_groups": [
+      {
+        "id": "1",
+        "options": [
+          {
+            "key": "A",
+            "text": "带头结点的循环双链表"
+          },
+          {
+            "key": "B",
+            "text": "循环单链表"
+          },
+          {
+            "key": "C",
+            "text": "带尾指针的循环单链表在第一个元素之前插入新元；在最后一个元素之后插入新元，则最好使用() O 口 医 2027年数据结构考研复习指导 口"
+          },
+          {
+            "key": "D",
+            "text": "单链表"
+          }
+        ]
+      },
+      {
+        "id": "2",
+        "options": [
+          {
+            "key": "A",
+            "text": "只有尾结点指针没有头结点指针的循环单链表"
+          },
+          {
+            "key": "B",
+            "text": "只有尾结点指针没有头结点指针的非循环双链表"
+          },
+          {
+            "key": "C",
+            "text": "只有头结点指针没有尾结点指针的循环双链表"
+          },
+          {
+            "key": "D",
+            "text": "既有头结点指针又有尾结点指针的循环单链表"
+          }
+        ]
+      }
+    ],
+    "ai_validation": {
+      "is_valid": true,
+      "issues": [],
+      "severity": "none"
+    }
+  },
+  "ai_metadata": {
+    "is_valid": true,
+    "errors": [],
+    "warnings": [],
+    "knowledge_points": [],
+    "difficulty": 3,
+    "stem_hash": "892e09a9",
+    "risk_flags": null
+  }
+}
+```
+
+##### 问题
+- 相邻两道独立题目（一页两列排版）被 OCR 合并为一道多空选择题
+- 第一题选项顺序被打乱（原 A↔B 互换），第二题题干碎片混入第一题选项 C
+- 教材页脚/水印（"2027年数据结构考研复习指导""O 口 医"）作为乱码混入
+
+##### 修复
+- OCR 排版分析：检测一页两列/多区域排版，用垂直坐标/列分割判断题目边界
+- 水印/页脚过滤：识别并剥离教材页脚、半透明水印等非题目内容
+
+---
+
+#### 案例三
+
+##### 原题
+
+```tex
+通过含有 n(n>1) 个元素的数组 a，采用头插法建立单链表 L，则 L 中的元素次序( )。
+A. 与数组a的元素次序相同
+B. 与数组a的元素次序相反
+C. 与数组a的元素次序无关
+D. 以上都错误
+```
+
+##### 前端内容显示
+
+```tex
+通过含有 n(n>1) 个元素的数组 α，采用头插法建立单链表 L，则 L 中的元素次序( )。
+A. 与数组a的元素次序相同
+B. 与数组a的元素次序相反
+C. 与数组a的元素次序无关
+D. 以上都错误
+```
+
+##### 解析结果
+
+```json
+{
+  "parsed_content": {
+    "text": "通过含有 $n(n>1)$ 个元素的数组 $\\alpha$，采用头插法建立单链表 L，则 L 中的元素次序( )。"
+  },
+  "parsed_options": {
+    "A": "与数组a的元素次序相同",
+    "B": "与数组a的元素次序相反",
+    "C": "与数组a的元素次序无关",
+    "D": "以上都错误"
+  },
+  "parsed_answer": "B",
+  "parsed_analysis": "头插法每次将新结点插入链表头部，因此元素顺序与原数组相反。"
+}xxxxxxxxxx {  "parsed_content": {    "text": "通过含有 $n(n>1)$ 个元素的数组 $\\alpha$，采用头插法建立单链表 L，则 L 中的元素次序( )。"  },  "parsed_options": {    "A": "与数组a的元素次序相同",    "B": "与数组a的元素次序相反",    "C": "与数组a的元素次序无关",    "D": "以上都错误"  },  "parsed_answer": "B",  "parsed_analysis": "头插法每次将新结点插入链表头部，因此元素顺序与原数组相反。"}{  "parsed_content": {    "text": "在双链表中向 p所指的结点之前插入一个结点 $\\alpha$ 的操作为( )。"  },  "parsed_options": {    "A": "p->prior=q; q->next=p; p->prior->next=q; q->prior=p->prior;",    "B": "q->prior=p->prior; p->prior->next=q; q->next=p; p->prior=q->next;",    "C": "q->next=p; p->next=q; q->prior->next=q; q->next=p;"  },  "parsed_answer": null,  "parsed_analysis": null}
+```
+
+##### OCR解析结果
+
+```json
+{
+  "raw_data": {
+    "schema_version": "v1",
+    "subject": "",
+    "question_type": "single_choice",
+    "stem": "通过含有 $n(n>1)$ 个元素的数组 $\\alpha$，采用头插法建立单链表 L，则 L 中的元素次序( )。",
+    "options": [
+      {
+        "key": "A",
+        "text": "与数组a的元素次序相同"
+      },
+      {
+        "key": "B",
+        "text": "与数组a的元素次序相反"
+      },
+      {
+        "key": "C",
+        "text": "与数组a的元素次序无关"
+      },
+      {
+        "key": "D",
+        "text": "以上都错误"
+      }
+    ],
+    "blank_option_groups": [],
+    "answer": "B",
+    "analysis": "头插法每次将新结点插入链表头部，因此元素顺序与原数组相反。",
+    "raw_text": "13. 通过含有 n(n>1)个元素的数组\\alpha,采用头插法建立单链表 L,则 L 中的元素次序( )。\nA.与数组a的元素次序相同\nB.与数组a的元素次序相反口\n第2章线性表口\nC.与数组a的元素次序无关\nD. 以上都错误",
+    "knowledge_points": [],
+    "difficulty": 3,
+    "source": {
+      "file": "3.png",
       "page": 1,
       "type": "txt"
     },
@@ -89,8 +393,8 @@ D. II、IV、V
     "warnings": [
       "missing_answer_for_objective_question"
     ],
-    "stem_hash": "cc2010b3",
-    "confidence_score": 0.85,
+    "stem_hash": "1225eae9",
+    "confidence_score": 0.95,
     "risk_flags": [],
     "ai_validation": {
       "is_valid": true,
@@ -106,224 +410,268 @@ D. II、IV、V
     ],
     "knowledge_points": [],
     "difficulty": 3,
-    "stem_hash": "cc2010b3",
+    "stem_hash": "1225eae9",
     "risk_flags": null
   }
 }
 ```
 
-### 问题描述
+##### 问题
+- 与案例一同源：变量 `a`（"数组 a"）被 OCR 误识别为 `\alpha` 并转为 LaTeX 公式
+- 选项和答案/解析保留完整，但题干显示被 `\alpha` 污染
 
-#### 问题现象
+##### 修复
+- 与案例一同一修复路径：OCR 后处理过滤误识别的单字母 LaTeX 符号
 
-OCR 导题后，题干中的罗马编号（`I、II、III、IV、V`）被错误识别和处理，导致：
+---
 
-1. 题干内容丢失换行结构，所有判断项被拼接成一行。
-2. 原本的 `III.` 被 OCR 识别成 `II.`。
-3. 选项 A 中应为 `I、II`，却被错误解析为 `1、I`（数字 1 替换了罗马数字 I）。
-4. 最终前端展示内容与原题不一致，影响题目正确性。
+#### 案例四
 
-------
+##### 原题(背景含水印)
 
-#### 原题内容
+背景半透明水印内容："后续关注公众号[研大]" "永久微信xxxx" 
 
-```text
-下列关于线性表的说法，正确的是()。
+```tex
+在一个单链表，已知a所指结点是p所指结点的前驱结点，若在a和p之间插入结点s,则执行()。
 
-I. 顺序存储方式只能用于存储线性结构
-II. 在一个设有头指针和尾指针的单链表，删除表尾元素的时间复杂度与表长无关
-III. 带头结点的循环单链表中不存在空指针
-IV. 在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n)
-V. 若用单链表来表示队，则应该选用带尾指针的循环链表
-
-A. I、II
-B. I、III、IV、V
-C. IV、V
-D. II、IV、V
+A. s − >next = p − >next;p − >next = s;		B. p − >next = s − >next;s − >next = p;
+C. q − >next = s;s − >next = p;				D. p − >next = s − >next;s − >next = q;
 ```
 
-------
+##### 前端内容显示
 
-#### 实际导题结果
+```tex
+在一个单链表，已知a所指结点是p所指结点的前驱结，若在a和p之间插入结点s,则执行()。
 
-```text
-下列关于线性表的说法，正确的是()。I.顺序存储方式只能用于存储线性结构 II.在一个设有头指针和尾指针的单链表，删除表尾元素的时间复杂度与表长无关 III.带头结点的循环单链表中不存在空指针 IV.在一个长度为 n 的有序单链表中插入一个新结点并仍保持有序的时间复杂度为 O(n) V.若用单链表来表示队，则应该选用带尾指针的循环链表
-
-A. 1、I
-B. I、II、IV、V
-C. IV、V
-D. II、IV、V
+A. s − >next = p − >next;p − >next = s;
+B. p − >next = s − >next;s − >next = p;
+C. q − >next = s;s − >next = p;				
 ```
 
-------
-
-#### OCR 输出分析
-
-OCR 原始结果中已经出现识别错误：
-
-```text
-I.
-II.
-II.   ← 实际应为 III.
-IV.
-V.
-```
-
-同时选项区域被识别为：
-
-```text
-A. 1、I
-```
-
-实际应为：
-
-```text
-A. I、II
-```
-
-说明 OCR 阶段已将部分罗马数字 `I` 错误识别为阿拉伯数字 `1`，并将 `III` 错误识别为 `II`。
-
-------
-
-#### 根因分析
-
-当前导题链路缺少对罗马数字序号的校验与纠错机制：
-
-1. **OCR 识别错误**
-   - `III` → `II`
-   - `I` → `1`
-2. **解析阶段未进行语义校验**
-   - 未检测题干中罗马编号序列是否连续（I、II、III、IV、V）。
-   - 未检测选项内容与题干中的编号集合是否匹配。
-3. **后处理阶段缺少规则修复**
-   - 未对常见 OCR 错误（`1 ↔ I`、`II ↔ III`）进行自动纠正。
-   - 未利用上下文推断缺失的罗马数字。
-
-------
-
-#### 期望结果
-
-系统应能够正确识别并保留罗马数字编号：
-
-```text
-I.
-II.
-III.
-IV.
-V.
-```
-
-选项应解析为：
+##### 解析结果
 
 ```json
 {
-  "A": "I、II",
-  "B": "I、III、IV、V",
-  "C": "IV、V",
-  "D": "II、IV、V"
+  "parsed_content": {
+    "text": "在一个单链表，已知a所指结点是p所指结点的前驱结，若在a和p之间插入结点s,则执行()。"
+  },
+  "parsed_options": {
+    "A": "s->next=p->next;p->next=s;",
+    "B": "p->next=s->next;s->next=p;",
+    "C": "q->next=s;s->next=p;"
+  },
+  "parsed_answer": "C",
+  "parsed_analysis": "在单链表中，在已知前驱结点a后插入新结点s，应先将s的next指向p，再将a的next指向s。选项C中q即为a，顺序正确。"
+}
+
+```
+
+##### OCR解析结果
+
+```json
+{
+  "raw_data": {
+    "schema_version": "v1",
+    "subject": "",
+    "question_type": "single_choice",
+    "stem": "在一个单链表，已知a所指结点是p所指结点的前驱结，若在a和p之间插入结点s,则执行()。",
+    "options": [
+      {
+        "key": "A",
+        "text": "s->next=p->next;p->next=s;"
+      },
+      {
+        "key": "B",
+        "text": "p->next=s->next;s->next=p;"
+      },
+      {
+        "key": "C",
+        "text": "q->next=s;s->next=p;"
+      }
+    ],
+    "blank_option_groups": [],
+    "answer": "C",
+    "analysis": "在单链表中，在已知前驱结点a后插入新结点s，应先将s的next指向p，再将a的next指向s。选项C中q即为a，顺序正确。",
+    "raw_text": "06.在一个单链表，已知a所指结点是p所指结点的前驱结，若在\\alpha和p之间插入结点\ns,则执行()。\nA. s->next=p->next;p->next=s; B. p->next=s->next;s->next=p;\nC. q->next=s;s-next-p;3D.p-ext=ss-next=q;",
+    "knowledge_points": [],
+    "difficulty": 3,
+    "source": {
+      "file": "2.png",
+      "page": 1,
+      "type": "txt"
+    },
+    "is_valid": true,
+    "errors": [],
+    "warnings": [
+      "ocr_contamination_detected",
+      "ocr_quality:symbol_substitution_detected",
+      "ocr_quality:option_structure_corrupted",
+      "low_confidence",
+      "incomplete_options: missing D",
+      "missing_answer_for_objective_question"
+    ],
+    "stem_hash": "d34ad259",
+    "confidence_score": 0.65,
+    "risk_flags": [
+      "low_confidence"
+    ],
+    "ai_validation": {
+      "is_valid": true,
+      "issues": [],
+      "severity": "none"
+    }
+  },
+  "ai_metadata": {
+    "is_valid": true,
+    "errors": [],
+    "warnings": [
+      "ocr_contamination_detected",
+      "ocr_quality:symbol_substitution_detected",
+      "ocr_quality:option_structure_corrupted",
+      "low_confidence",
+      "incomplete_options: missing D",
+      "missing_answer_for_objective_question"
+    ],
+    "knowledge_points": [],
+    "difficulty": 3,
+    "stem_hash": "d34ad259",
+    "risk_flags": [
+      "low_confidence"
+    ]
+  }
 }
 ```
 
-前端最终展示内容应与原题保持一致，避免因 OCR 对罗马数字的误识别导致题目语义发生变化。
+##### 问题
+- 同案例一/四：变量 `a` 被 OCR 为 `\alpha`（题干 "在\\alpha和p之间"）
+- 选项 D 丢失，题干末尾缺字（"前驱结" 少 "点"）
+- 水印背景导致 raw_text 尾部追加了乱码（"3D.p-ext=ss-next=q;" 是选项 D 的 OCR 碎片）
 
-------
-
-#### 建议排查方向
-
-1. OCR 纠错层增加罗马数字专项修复规则。
-2. 建立罗马数字序列完整性校验（I→II→III→IV→V）。
-3. 在 AI OCR 校验阶段增加：
-   - 罗马数字与阿拉伯数字混淆检测。
-   - 选项引用编号合法性检测。
-4. 在结构化解析阶段增加题干与选项交叉验证，发现异常时自动修正或标记高风险题目。
+##### 修复
+- 与案例一同一修复路径：OCR 后处理（单字母 LaTeX + 选项完整性）
+- OCR 碎片清理：raw_text 尾部异常字符截断/清洗
 
 ---
 
-### 修复评估（2026-06-18）
+#### 案例五
 
-对 `text_normalizer.py` 修复（`_RE_STRUCTURE_LINE` 增加罗马数字匹配）后的全面评估。
+##### 原题(背景含水印)
 
-#### 已修复
+背景半透明水印内容："后续关注公众号[研大]" "永久微信xxxx" 
 
-| 问题 | 措施 |
-|------|------|
-| 题干罗马数字枚举行合并 | `_RE_STRUCTURE_LINE` 增加 `_ROMAN_SUBITEM_TOKEN` 匹配 |
-| 罗马数字序列完整性校验 | `batch_validation._check_roman_numeral_sequence()` 检测序列断裂并追加 warning |
-| 跳号检测 | 条件从 `<=` 改为 `- != 1`，捕获 I→II→III→V 类缺失项 |
-| 选项文本罗马数字检测 | `_check_roman_numeral_sequence()` 扩展到扫描选项文本，识别选项中的非连续序列 |
-| 选项数字 1 与罗马数字混淆 | 新增 `_check_option_roman_digit_confusion()` 检测选项中出现阿拉伯数字 1 的罗马数字上下文 |
-| AI 修复感知罗马数字混淆 | `ai_repair` prompt 增加规则 7，指示 LLM 修正 III→II 和 1→I |
-| 测试防护 | 13 batch_validation passed，全量 1132 passed（27 预存失败，与本次修复无关） |
+```tex
+给定有 n 个元素的一维数组，建立一个有序单链表的最低时间复杂度是( )。
 
-#### 短期未修复（需 AI 修复阶段处理）
-
-**`III.` → `II.` OCR 误识 — 规则层无法可靠修复**
-
-PaddleOCR 将 `III.` 识别为 `II.`。规则层无法区分合法 `II.` 与被误识的 `II.`，二者文本相同。已在 `batch_validation` 增加序列断裂检测（I→II→II→IV→V），触发 `broken_roman_numeral_sequence` warning；AI repair 阶段会收到该信号并尝试修正。
-
-**选项 `1、I` → `I、II` — 规则层仅能检测，无法自动修正**
-
-选项 A 文本 `1、I` 已可被 `_check_option_roman_digit_confusion()` 检测并标记 `option_roman_digit_confusion` warning。但规则层无法确定 `1` 应替换为哪个罗马数字（`I` 还是 `II` 等），依赖 AI repair 阶段（prompt 规则 7）利用语义理解修正。
-
-**预存在测试失败 `test_grouped_circled_option_rows_preserve_stem_placeholders`**
-
-`_normalize_punctuation()` 将全角 `（` 转为半角 `(`，破坏对全角占位符 `（ ）` 的预期。与本次修复无关。
-
----
-
-### 修复评估（2026-06-18 第二轮 — 最小规则层修复）
-
-在现有检测能力基础上，增加规则层自动修复，减少对 AI repair 阶段的硬依赖。
-
-#### 新增修复
-
-| 问题 | 措施 | 覆盖范围 |
-|------|------|----------|
-| `III.` → `II.` 行首枚举重复 | `_fix_roman_numeral_duplicates()` — 检测行首罗马枚举序列中的重复值，自动递增修复（II→II→IV → II→III→IV） | 仅行首枚举标记（`I.`/`II.`/…），选项内引用不参与 |
-| 选项 `1、I` 数字混淆 | `_fix_option_roman_digit_confusion()` — 罗马上下文中的 `1、` → `I、` | 选项行（`A-D` 前缀）内容 |
-| 全角括号 `（①）` 被转半角 | `_normalize_punctuation()` — 圈号占位符 `（①）` 在全角→半角转换前暂存保护 | 所有 `（①）`-`（⑳）` 形式 |
-
-#### 仍无法规则层修复
-
-| 问题 | 原因 | 处理方式 |
-|------|------|----------|
-| 选项 `I→II`缺失（`1、I` → `I、I`仅修复了数字混淆，未补全缺失的 II） | 规则层无法判断选项引用的正确罗马编号集合 | 仍依赖 AI repair |
-| 非行首 `III→II`（如选项内容 `I、II、IV、V` 应为 `I、III、IV、V`） | 选项内罗马数字是引用而非枚举，规则层无法区分 | batch_validation 检测 + AI repair |
-| 跳号（I→II→IV→V）未修复 | 无法确定是 II 误识还是 IV 误识 | batch_validation 检测 + AI repair |
-
-#### 测试结果
-
-- text_normalizer: 45/45 passed（含之前失败的 `test_grouped_circled_option_rows_preserve_stem_placeholders`）
-- batch_validation: 13/13 passed
-- 全量回归: 398 passed, 1 failed（`test_ai_unavailable_graceful` — 预存异步 mock 问题，与本次无关）
-
-#### 长期风险
-
-**选项文本内容合理性校验仍不完整**
-
-`batch_validation` 新增了 `_check_option_roman_digit_confusion()` 检测常见罗马数字混淆，但仅限于 `1` 与罗马数字混用场景。其他选项文本内容异常（如拼写错误、语义冲突、结构错乱）仍无规则层校验。
-
----
-
-### 修复评估（2026-06-18 第三轮 — 尾部内容丢失修复）
-
-`_fix_option_roman_digit_confusion()` 的 `return` 语句丢弃了匹配后的尾部内容。
-
-#### 问题
-
-```python
-return f"{prefix}. {fixed_content}"  # line[m.end():] 未追加
+A. O(1)			B. O(n)			C. O(m)			D. O(n+m)
 ```
 
-当选项含 3 个以上罗马数字引用且首个出现数字混淆时（如 `A. 1、I、II`），尾部 `、II` 被截断。已知案例 `A. 1、I`（仅 2 个 token）不触发此 bug，因为匹配后无剩余内容。
+##### 前端内容显示
 
-#### 修复
+```tex
+给定有 n 个元素的一维数组，建立一个有序单链表的最低时间复杂度是( )。
 
-```python
-return f"{prefix}. {fixed_content}{line[m.end():]}"
+A. O(1)
+B. O(n)
+D. O(nlog2n)
 ```
 
-#### 测试结果
+##### 解析结果
 
-- text_normalizer: 45/45 passed
-- 无回归
+```json
+{
+  "parsed_content": {
+    "text": "给定有 n 个元素的一维数组，建立一个有序单链表的最低时间复杂度是( )。"
+  },
+  "parsed_options": {
+    "A": "O(1)",
+    "B": "O(n)",
+    "D": "O(nlog2n)"
+  },
+  "parsed_answer": "B",
+  "parsed_analysis": "当原数组有序时，依次插入即可建立有序链表，时间复杂度为O(n)；若原数组无序，则最低时间复杂度为O(n^2)或O(nlogn)，但题目问“最低”，故取最好情况。"
+}
+```
+
+##### OCR解析结果
+
+```json
+{
+  "raw_data": {
+    "schema_version": "v1",
+    "subject": "",
+    "question_type": "single_choice",
+    "stem": "给定有 n 个元素的一维数组，建立一个有序单链表的最低时间复杂度是( )。",
+    "options": [
+      {
+        "key": "A",
+        "text": "O(1)"
+      },
+      {
+        "key": "B",
+        "text": "O(n)"
+      },
+      {
+        "key": "C",
+        "text": ""
+      },
+      {
+        "key": "D",
+        "text": "O(nlog2n)"
+      }
+    ],
+    "blank_option_groups": [],
+    "answer": "B",
+    "analysis": "当原数组有序时，依次插入即可建立有序链表，时间复杂度为O(n)；若原数组无序，则最低时间复杂度为O(n^2)或O(nlogn)，但题目问“最低”，故取最好情况。",
+    "raw_text": "07. 给定有 n 个元素的一维数，建立一个有序单链表的最低时间复杂度是( )。\nA. 0(1) B. 0n)[95C @() 7888D. 0(nlog2n)",
+    "knowledge_points": [],
+    "difficulty": 3,
+    "source": {
+      "file": "2.png",
+      "page": 1,
+      "type": "txt"
+    },
+    "is_valid": true,
+    "errors": [],
+    "warnings": [
+      "incomplete_options: missing C,D",
+      "missing_answer_for_objective_question"
+    ],
+    "stem_hash": "7a1d359d",
+    "confidence_score": 0.5,
+    "risk_flags": [],
+    "ai_validation": {
+      "is_valid": true,
+      "issues": [],
+      "severity": "none"
+    }
+  },
+  "ai_metadata": {
+    "is_valid": true,
+    "errors": [],
+    "warnings": [
+      "incomplete_options: missing C,D",
+      "missing_answer_for_objective_question"
+    ],
+    "knowledge_points": [
+      "单链表",
+      "时间复杂度",
+      "有序链表建立"
+    ],
+    "difficulty": 3,
+    "stem_hash": "7a1d359d",
+    "risk_flags": null
+  }
+}
+```
+
+
+##### 问题
+- 原题选项 C（O(m)）和 D（O(n+m)）被 OCR 完全破坏：C 为空，D 变为 O(nlog2n)
+- raw_text 严重污染（"0(1)""0n)[95C @() 7888D"），OCR 基本不可读
+- AI 标准化正确提取了答案和解析，说明 AI 可修正重度 OCR 污染
+
+##### 修复
+- OCR confidence < 0.6 时优先信赖 AI 标准化结果而非 OCR 原始字段
+- 选项完整性校验：选项为空或格式异常时触发 AI 重新补全
+
+---
