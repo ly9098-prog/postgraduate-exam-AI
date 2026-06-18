@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import time
@@ -49,6 +50,25 @@ init_sentry()
 logger = logging.getLogger("postgraduate-ai")
 
 
+_INTERVAL_SEC = 6 * 3600  # 6 hours
+
+
+async def _periodic_token_cleanup():
+    """Background task: clean up expired refresh tokens every 6 hours."""
+    while True:
+        await asyncio.sleep(_INTERVAL_SEC)
+        try:
+            from app.core.database import async_session
+            from app.services import token_service
+
+            async with async_session() as db:
+                deleted = await token_service.cleanup_expired_tokens(db)
+                if deleted:
+                    logger.info("Cleaned up %d expired refresh tokens", deleted)
+        except Exception as e:
+            logger.warning("Refresh token cleanup failed (non-fatal): %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.core.ocr_profile import get_ocr_profile
@@ -68,7 +88,16 @@ async def lifespan(app: FastAPI):
                 logger.info("Development super admin initialized")
     except Exception as e:
         logger.warning("Development super admin init failed (non-fatal): %s", e)
+
+    cleanup_task = asyncio.create_task(_periodic_token_cleanup(), name="token-cleanup")
+
     yield
+
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
     logger.info("Shutting down 2240AI")
 
 
