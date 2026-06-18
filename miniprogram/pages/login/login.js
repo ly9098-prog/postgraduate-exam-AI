@@ -10,23 +10,26 @@ Page({
   },
 
   onLoad() {
-    if (auth.isLoggedIn()) {
-      this._tryAutoLogin()
-      return
-    }
-
-    const config = require('../../config')
-    this.setData({ showDevLogin: config.DEV === true })
-
-    // 开发模式：无 token 时自动静默登录，避免重新预览后需手动登录
-    if (config.DEV === true) {
-      this._silentDevLogin()
-    }
+    // 无论是否有 token，都尝试自动登录
+    // 有 token → 验证后跳转；无 token → 静默 wx.login 重建 session
+    this._autoLogin()
   },
 
-  async _silentDevLogin() {
-    // 开发模式静默登录：绕过 agreement 检查，wx.login 后直接创建/恢复 session
-    this.setData({ loading: true, error: '' })
+  async _autoLogin() {
+    this.setData({ loading: true })
+
+    // Phase 1: 有已持久化的 token → 尝试验证
+    if (auth.isLoggedIn()) {
+      const ok = await auth.checkAndRefreshToken()
+      if (ok) {
+        this.setData({ loading: false })
+        wx.redirectTo({ url: '/pages/home/home' })
+        return
+      }
+    }
+
+    // Phase 2: 无 token 或 token 不可用 → 静默 wx.login 重建 session
+    // 效果同 admin web：登录一次长期有效，不再每次手动登录
     try {
       const { code } = await wx.login()
       const data = await api.post('/auth/login', { code })
@@ -34,24 +37,8 @@ Page({
       api.resetRedirecting()
       wx.redirectTo({ url: '/pages/home/home' })
     } catch (e) {
-      console.warn('[AUTH_DIAG] silent dev login failed:', e)
-      this.setData({ loading: false })
-    }
-  },
-
-  async _tryAutoLogin() {
-    this.setData({ loading: true })
-    const ok = await auth.checkAndRefreshToken()
-    if (ok) {
-      this.setData({ loading: false })
-      wx.redirectTo({ url: '/pages/home/home' })
-      return
-    }
-    await new Promise(r => setTimeout(r, 2000))
-    const ok2 = await auth.checkAndRefreshToken()
-    this.setData({ loading: false })
-    if (ok2) {
-      wx.redirectTo({ url: '/pages/home/home' })
+      const config = require('../../config')
+      this.setData({ showDevLogin: config.DEV === true, loading: false, error: '' })
     }
   },
 
