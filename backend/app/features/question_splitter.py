@@ -36,23 +36,11 @@ _OCR_Q_PATTERN = re.compile(r"^([lI])\s*[.、)）]")
 
 # ASCII 罗马数字子项标记 I./II./III. ——多选题子项枚举，区别于阿拉伯题号。
 # 用于避免把行首子项 "I." 误当成题号 "1." 而把一道多选题切成两题。
-_ROMAN_SUBITEM_TOKEN = r"(?:VIII|VII|III|VI|IV|IX|II|V|X|I)"
-_RE_ROMAN_SUBITEM_MARKER = re.compile(
-    r"(?<![A-Za-z])" + _ROMAN_SUBITEM_TOKEN + r"(?![A-Za-z])\s*[.、)）]"
+# Constants imported from shared module (single source of truth)
+from app.features.roman_schema import (  # noqa: E402
+    _ROMAN_SUBITEM_TOKEN, _RE_ROMAN_SUBITEM_MARKER, has_roman_subitem_list as _has_roman_subitem_list,
 )
 
-
-def _has_roman_subitem_list(text: str) -> bool:
-    """文本中是否存在 ASCII 罗马数字子项列表（出现 ≥2 个不同罗马标记）。"""
-    markers = _RE_ROMAN_SUBITEM_MARKER.findall(text)
-    if len(markers) < 2:
-        return False
-    distinct = {
-        re.match(_ROMAN_SUBITEM_TOKEN, m).group(0)
-        for m in markers
-        if re.match(_ROMAN_SUBITEM_TOKEN, m)
-    }
-    return len(distinct) >= 2
 
 # 选项模式
 _CIRCLED_OPTION_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
