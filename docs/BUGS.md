@@ -249,8 +249,11 @@ V.
 |------|------|
 | 题干罗马数字枚举行合并 | `_RE_STRUCTURE_LINE` 增加 `_ROMAN_SUBITEM_TOKEN` 匹配 |
 | 罗马数字序列完整性校验 | `batch_validation._check_roman_numeral_sequence()` 检测序列断裂并追加 warning |
+| 跳号检测 | 条件从 `<=` 改为 `- != 1`，捕获 I→II→III→V 类缺失项 |
+| 选项文本罗马数字检测 | `_check_roman_numeral_sequence()` 扩展到扫描选项文本，识别选项中的非连续序列 |
+| 选项数字 1 与罗马数字混淆 | 新增 `_check_option_roman_digit_confusion()` 检测选项中出现阿拉伯数字 1 的罗马数字上下文 |
 | AI 修复感知罗马数字混淆 | `ai_repair` prompt 增加规则 7，指示 LLM 修正 III→II 和 1→I |
-| 测试防护 | 51 passed, 1 deselected（既有全角括号转化失败，与修复无关） |
+| 测试防护 | 13 batch_validation passed，全量 1132 passed（27 预存失败，与本次修复无关） |
 
 #### 短期未修复（需 AI 修复阶段处理）
 
@@ -258,9 +261,9 @@ V.
 
 PaddleOCR 将 `III.` 识别为 `II.`。规则层无法区分合法 `II.` 与被误识的 `II.`，二者文本相同。已在 `batch_validation` 增加序列断裂检测（I→II→II→IV→V），触发 `broken_roman_numeral_sequence` warning；AI repair 阶段会收到该信号并尝试修正。
 
-**选项 `1、I` → `I、II` — 规则层修复风险较高**
+**选项 `1、I` → `I、II` — 规则层仅能检测，无法自动修正**
 
-选项 A 文本 `1、I` 应修正为 `I、II`。行内 `1→I` 和 `I→II` 混淆不属于行首题号保护范围，无法通过 `_fix_question_number_line` 修复。依赖 AI repair 阶段（prompt 规则 7）利用语义理解修正。
+选项 A 文本 `1、I` 已可被 `_check_option_roman_digit_confusion()` 检测并标记 `option_roman_digit_confusion` warning。但规则层无法确定 `1` 应替换为哪个罗马数字（`I` 还是 `II` 等），依赖 AI repair 阶段（prompt 规则 7）利用语义理解修正。
 
 **预存在测试失败 `test_grouped_circled_option_rows_preserve_stem_placeholders`**
 
@@ -268,6 +271,6 @@ PaddleOCR 将 `III.` 识别为 `II.`。规则层无法区分合法 `II.` 与被�
 
 #### 长期风险
 
-**选项文本内容无合理性校验**
+**选项文本内容合理性校验仍不完整**
 
-`batch_validation` 只检查选项键的存在性，不检查文本内容。无法发现 `1、I` 这类异常选项文本。
+`batch_validation` 新增了 `_check_option_roman_digit_confusion()` 检测常见罗马数字混淆，但仅限于 `1` 与罗马数字混用场景。其他选项文本内容异常（如拼写错误、语义冲突、结构错乱）仍无规则层校验。

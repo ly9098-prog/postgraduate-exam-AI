@@ -114,21 +114,19 @@ def _check_answer_presence(question: dict, index: int) -> dict | None:
 
 
 def _check_roman_numeral_sequence(questions: list[dict]) -> list[dict]:
-    """检测题干中罗马数字枚举序列的完整性。
+    """检测题干和选项中罗马数字枚举序列的完整性。
 
     识别 I→II→II→IV→V 这类序列断裂（重复/非递增），
+    以及 I→II→III→V 这类跳号（缺失项），
     标记具体断裂位置供下游 AI repair 和前端审核参考。
     """
-    issues: list[dict] = []
-    for i, q in enumerate(questions):
-        stem = q.get("stem", "")
-        if not stem:
-            continue
-
-        markers = _RE_ROMAN_SUBITEM_MARKER.findall(stem)
+    def _scan_text(text: str, index: int, source: str = "stem") -> list[dict]:
+        """扫描单段文本中的罗马数字序列完整性。"""
+        if not text:
+            return []
+        markers = _RE_ROMAN_SUBITEM_MARKER.findall(text)
         if len(markers) < 3:
-            continue
-
+            return []
         values: list[int] = []
         tokens: list[str] = []
         for m in markers:
@@ -137,16 +135,62 @@ def _check_roman_numeral_sequence(questions: list[dict]) -> list[dict]:
                 token = rm.group(0)
                 tokens.append(token)
                 values.append(_ROMAN_TO_VALUE.get(token, 0))
-
         if len(values) < 3:
-            continue
-
-        if any(values[j] <= values[j - 1] for j in range(1, len(values))):
-            issues.append({
-                "index": i,
+            return []
+        if any(values[j] - values[j - 1] != 1 for j in range(1, len(values))):
+            return [{
+                "index": index,
+                "source": source,
                 "found_tokens": tokens,
                 "found_values": values,
-            })
+            }]
+        return []
+
+    issues: list[dict] = []
+    for i, q in enumerate(questions):
+        issues.extend(_scan_text(q.get("stem", ""), i, "stem"))
+        for opt in q.get("options", []):
+            if isinstance(opt, dict):
+                opt_text = opt.get("text", "")
+                opt_key = opt.get("key", "")
+                issues.extend(_scan_text(opt_text, i, f"option_{opt_key}"))
+
+    return issues
+
+
+def _check_option_roman_digit_confusion(questions: list[dict]) -> list[dict]:
+    """检测选项文本中阿拉伯数字 1 与罗马数字混淆。
+
+    当题干或其它选项含罗马数字标记时，某选项文本中出现阿拉伯数字 1，
+    说明 OCR 可能将罗马数字 I 误识为 1。典型场景：'A. 1、I' 应为 'A. I、II'。
+    """
+    issues: list[dict] = []
+    for i, q in enumerate(questions):
+        options = q.get("options", [])
+        if not options:
+            continue
+
+        stem = q.get("stem", "")
+        has_roman = bool(_RE_ROMAN_SUBITEM_MARKER.search(stem))
+        if not has_roman:
+            for opt in options:
+                if isinstance(opt, dict) and _RE_ROMAN_SUBITEM_MARKER.search(opt.get("text", "")):
+                    has_roman = True
+                    break
+
+        if not has_roman:
+            continue
+
+        for opt in options:
+            if isinstance(opt, dict):
+                opt_text = opt.get("text", "")
+                opt_key = opt.get("key", "")
+                if '1' in opt_text:
+                    issues.append({
+                        "index": i,
+                        "option_key": opt_key,
+                        "option_text": opt_text,
+                    })
 
     return issues
 
@@ -164,6 +208,7 @@ def validate_batch_structure(questions: list[dict]) -> dict:
     incomplete_options: list[dict] = []
     missing_answers: list[dict] = []
     roman_issues = _check_roman_numeral_sequence(questions)
+    roman_digit_issues = _check_option_roman_digit_confusion(questions)
 
     for i, q in enumerate(questions):
         opt_issue = _check_option_completeness(q, i)
@@ -177,7 +222,13 @@ def validate_batch_structure(questions: list[dict]) -> dict:
     # Append warnings to individual questions
     incomplete_indices = {item["index"] for item in incomplete_options}
     missing_ans_indices = {item["index"] for item in missing_answers}
-    roman_issue_indices = {item["index"] for item in roman_issues}
+
+    # Group roman numeral issues by index (stem + multiple options possible)
+    roman_issues_by_index: dict[int, list[dict]] = {}
+    for item in roman_issues:
+        roman_issues_by_index.setdefault(item["index"], []).append(item)
+
+    roman_digit_indices = {item["index"] for item in roman_digit_issues}
 
     updated_questions: list[dict] = []
     for i, q in enumerate(questions):
@@ -191,13 +242,22 @@ def validate_batch_structure(questions: list[dict]) -> dict:
         if i in missing_ans_indices:
             warnings.append("missing_answer_for_objective_question")
 
-        if i in roman_issue_indices:
-            issue = next(item for item in roman_issues if item["index"] == i)
-            warnings.append(
-                f"broken_roman_numeral_sequence: "
-                f"found {','.join(issue['found_tokens'])} "
-                f"(values {issue['found_values']})"
-            )
+        if i in roman_issues_by_index:
+            for issue in roman_issues_by_index[i]:
+                source = issue.get("source", "stem")
+                warnings.append(
+                    f"broken_roman_numeral_sequence({source}): "
+                    f"found {','.join(issue['found_tokens'])} "
+                    f"(values {issue['found_values']})"
+                )
+
+        if i in roman_digit_indices:
+            for item in roman_digit_issues:
+                if item["index"] == i:
+                    warnings.append(
+                        f"option_roman_digit_confusion: option {item['option_key']} "
+                        f"contains '1' in Roman context"
+                    )
 
         new_q["warnings"] = warnings
         updated_questions.append(new_q)
@@ -208,6 +268,7 @@ def validate_batch_structure(questions: list[dict]) -> dict:
         "incomplete_option_count": len(incomplete_options),
         "missing_answer_count": len(missing_answers),
         "roman_numeral_issue_count": len(roman_issues),
+        "roman_digit_confusion_count": len(roman_digit_issues),
     }
 
     return {
@@ -217,6 +278,7 @@ def validate_batch_structure(questions: list[dict]) -> dict:
             "incomplete_options": incomplete_options,
             "missing_answers": missing_answers,
             "roman_numeral_issues": roman_issues,
+            "roman_digit_confusions": roman_digit_issues,
             "stats": stats,
         },
     }
