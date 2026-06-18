@@ -1,5 +1,13 @@
 # Bugs History
 
+## 2026-06-18 — 体验版冷启动 wx.redirectTo 在 onLoad 中被静默丢弃（已修复）
+
+- **现象**：体验版小程序杀后台后重新冷启动，即使 storage 中 token 有效且 `[AUTH_DIAG] direct redirect: token valid` 日志已输出，用户仍停留在登录页，不会自动跳转首页。
+- **原因**：`wx.redirectTo` 在页面 `onLoad` 阶段（冷启动流程中）被 WeChat 运行时静默忽略。此时视图层级尚未就绪，导航 API 调用不生效。手动点击登录按钮触发跳转正常，因为按钮事件在页面完全渲染后执行。
+- **处理**：`_tryDirectRedirect()` 将 `wx.redirectTo` 替换为 `wx.reLaunch`（更彻底的页面栈重置）并包裹在 `setTimeout(..., 100)` 中，确保导航在 `onLoad` 返回、视图层级就绪后执行。
+- **验证**：用户确认修复后体验版冷启动可自动跳转首页，问题解决。
+- **说明**：WeChat 官方未明确记录此行为，属于运行时实现细节。后续类似 onLoad 中的导航都应使用 `setTimeout + wx.reLaunch` 模式。
+
 ## 2026-06-18 — `_extract_stem()` 圈号前缀行误剥离（已修复）
 
 - **现象**：OCR 导入的多选题，题干末尾的 `① A. n + 1` 类行被错误剥离，导致选项 A 部分文本丢失、题干不完整。

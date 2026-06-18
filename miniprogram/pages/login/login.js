@@ -11,48 +11,26 @@ Page({
   },
 
   onLoad() {
-    this._diagAuth()
-    // 同步直连跳转：不经过 async 链路，onLoad 中读取 storage → 立即 redirect
+    // 同步检查：token 有效时延迟跳转（setTimeout 确保冷启动 onLoad 后导航不被吞）
     if (this._tryDirectRedirect()) return
-    // async 链路继续尝试
     this._autoLogin()
   },
 
-  /** 同步诊断 */
-  _diagAuth() {
-    const token = storage.get(storage.KEYS.TOKEN)
-    const expiresAt = storage.get(storage.KEYS.TOKEN_EXPIRES_AT)
-    const persist = storage.get('_login_persist_test')
-    console.log('[AUTH_DIAG] _login_persist_test:', persist)
-    console.log('[AUTH_DIAG] token:', token ? token.slice(0, 20) + '…' : null)
-    console.log('[AUTH_DIAG] token_expires_at:', expiresAt)
-    console.log('[AUTH_DIAG] refresh_token:', !!storage.get(storage.KEYS.REFRESH_TOKEN))
-    console.log('[AUTH_DIAG] isLoggedIn():', auth.isLoggedIn())
-    if (token && expiresAt) {
-      const tte = expiresAt - Math.floor(Date.now() / 1000)
-      console.log('[AUTH_DIAG] timeToExpiry:', tte + 's', tte > 86400 ? '(valid)' : '(needs refresh)')
-    }
-  },
-
-  /** 同步直连跳转：不经过任何 async API，直接检查 storage 后延迟跳转 */
+  /** 同步检查 storage 中的 token，有效则延迟跳转 */
   _tryDirectRedirect() {
     const token = storage.get(storage.KEYS.TOKEN)
     const expiresAt = storage.get(storage.KEYS.TOKEN_EXPIRES_AT)
     if (!token) return false
     if (!expiresAt) {
-      // 无过期信息 → 视为有效
-      console.log('[AUTH_DIAG] direct redirect: no expires_at')
       setTimeout(() => wx.reLaunch({ url: '/pages/home/home' }), 100)
       return true
     }
     const tte = expiresAt - Math.floor(Date.now() / 1000)
     if (tte > 86400) {
-      console.log('[AUTH_DIAG] direct redirect: token valid, tte=' + tte + 's')
-      // setTimeout 延迟确保 WeChat 冷启动 onLoad 阶段后导航不被吞
       setTimeout(() => wx.reLaunch({ url: '/pages/home/home' }), 100)
       return true
     }
-    // Token 需要刷新 → 走 _autoLogin async 链路
+    // Token 需要刷新 → 走 async 链路
     return false
   },
 
@@ -65,9 +43,7 @@ Page({
     this.setData({ loading: true })
 
     if (auth.isLoggedIn()) {
-      console.log('[AUTH_DIAG] Phase 1: calling checkAndRefreshToken')
       const ok = await auth.checkAndRefreshToken()
-      console.log('[AUTH_DIAG] Phase 1: result =', ok)
       if (ok) {
         this.setData({ loading: false })
         wx.redirectTo({ url: '/pages/home/home' })
@@ -79,11 +55,11 @@ Page({
     for (let i = 0; i < 2; i++) {
       if (i > 0) await new Promise(r => setTimeout(r, 600))
       try {
-        console.log('[AUTH_DIAG] Phase 2 attempt ' + (i + 1) + ': wx.login')
+        console.log('[AUTH] Phase 2 attempt ' + (i + 1) + ': wx.login')
         const { code } = await wx.login()
-        console.log('[AUTH_DIAG] Phase 2: code received, calling POST /auth/login')
+        console.log('[AUTH] Phase 2: code received, calling POST /auth/login')
         const data = await api.post('/auth/login', { code })
-        console.log('[AUTH_DIAG] Phase 2: login succeeded, storing token')
+        console.log('[AUTH] Phase 2: login succeeded, storing token')
         auth.loginDirect(data.access_token, data.user, data.expires_at, data.refresh_token)
         api.resetRedirecting()
 
@@ -96,7 +72,7 @@ Page({
       } catch (e) {
         lastErr = e
         const msg = (e && (e.errMsg || e.message || JSON.stringify(e))) || ''
-        console.warn('[AUTH_DIAG] Phase 2 attempt ' + (i + 1) + ' FAILED:', msg)
+        console.warn('[AUTH] Phase 2 attempt ' + (i + 1) + ' FAILED:', msg)
       }
     }
 
