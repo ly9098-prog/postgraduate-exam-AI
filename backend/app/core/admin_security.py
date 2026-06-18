@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+import jwt
 from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,7 +82,7 @@ def create_admin_refresh_token(admin_user: AdminUser) -> str:
 def decode_admin_refresh_token(token: str) -> dict[str, Any]:
     try:
         payload = jwt.decode(token, settings.APP_SECRET, algorithms=["HS256"])
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
     if payload.get("type") != "admin_refresh":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
@@ -92,7 +92,7 @@ def decode_admin_refresh_token(token: str) -> dict[str, Any]:
 def decode_admin_token(token: str) -> dict[str, Any]:
     try:
         payload = jwt.decode(token, settings.APP_SECRET, algorithms=["HS256"])
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
     if payload.get("type") != "admin":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")

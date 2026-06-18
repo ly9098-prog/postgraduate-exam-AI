@@ -18,7 +18,13 @@ class UserResponse(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    expires_at: int  # Unix timestamp
+    refresh_token: str
     user: UserResponse
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 class UserUpdate(BaseModel):
