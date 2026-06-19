@@ -1,0 +1,11 @@
+{
+  "id": "010",
+  "name": "matcher_missing",
+  "description": "部分缺失答案：3题中2题缺答案/解析，测试匹配器缺失处理",
+  "subject": "math",
+  "fixture_source": "matcher_missing.txt",
+  "pipeline_stages": ["normalize", "split", "match"],
+  "expected_questions": 3,
+  "known_failure_types": [],
+  "date_added": "2026-06-19"
+}

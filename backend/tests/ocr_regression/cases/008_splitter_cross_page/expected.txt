@@ -1,0 +1,47 @@
+[normalized_full_text]
+9. 设函数 f(x) 在 [a, b] 上连，在 (a, b) 内可导且 f(
+a) = f(
+b),证明:存在一点 \xi \in (a,
+b),
+使得 f'(\xi) = 0。
+
+10. 设 A 为 n 阶矩， 证明:若 A^2 = A,则 A 的特征值为 0 或 1。
+
+11. 求二重积分∬_D (x^2 + y^2) dxdy,其中 D 为单位圆 x^2 + y^2 \leq 1。
+[/normalized_full_text]
+
+[questions]
+---
+number: 9
+stem: 9. 设函数 f(x) 在 [a, b] 上连，在 (a, b) 内可导且 f(
+a) = f(
+b),证明:存在一点 \xi \in (a,
+b),
+使得 f'(\xi) = 0。
+type: single_choice
+options:
+  A: = f(
+  B: ,证明:存在一点 \xi \in (a, 使得 f'(\xi) = 0。
+answer: 
+explanation: 
+option_keys: ["A", "B"]
+
+---
+number: 10
+stem: 10. 设 A 为 n 阶矩， 证明:若 A^2 = A,则 A 的特征值为 0 或 1。
+type: subjective
+options:
+answer: 
+explanation: 
+option_keys: []
+
+---
+number: 11
+stem: 11. 求二重积分∬_D (x^2 + y^2) dxdy,其中 D 为单位圆 x^2 + y^2 \leq 1。
+type: subjective
+options:
+answer: 
+explanation: 
+option_keys: []
+
+[/questions]

@@ -1,0 +1,11 @@
+{
+  "id": "011",
+  "name": "matcher_separated",
+  "description": "分离式答案：3道纯题目无答案段，测试分离模式下的匹配行为",
+  "subject": "math",
+  "fixture_source": "matcher_separated.txt",
+  "pipeline_stages": ["normalize", "split", "match"],
+  "expected_questions": 3,
+  "known_failure_types": [],
+  "date_added": "2026-06-19"
+}

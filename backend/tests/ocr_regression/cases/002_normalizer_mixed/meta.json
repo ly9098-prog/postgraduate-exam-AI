@@ -1,0 +1,11 @@
+{
+  "id": "002",
+  "name": "normalizer_mixed",
+  "description": "混合题型（单选/多选/判断/填空/简答）通过标准化器",
+  "subject": "math",
+  "fixture_source": "normalizer_mixed.txt",
+  "pipeline_stages": ["normalize", "split", "match"],
+  "expected_questions": 5,
+  "known_failure_types": [],
+  "date_added": "2026-06-19"
+}

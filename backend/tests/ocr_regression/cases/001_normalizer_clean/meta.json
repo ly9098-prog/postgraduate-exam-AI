@@ -1,0 +1,11 @@
+{
+  "id": "001",
+  "name": "normalizer_clean",
+  "description": "规范格式文本：多题型经过标准化器无损坏",
+  "subject": "math",
+  "fixture_source": "normalizer_clean.txt",
+  "pipeline_stages": ["normalize", "split", "match"],
+  "expected_questions": 2,
+  "known_failure_types": [],
+  "date_added": "2026-06-19"
+}

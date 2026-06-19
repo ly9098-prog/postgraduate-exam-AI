@@ -1,0 +1,50 @@
+[normalized_full_text]
+1. 设函数 f(x) = x^{2} + 1,求 f'(x)。
+
+A. 2x
+B. x^{2}
+C. 2x + 1
+D. x
+
+【答案】A 【解析】根据求导公式,(x^{2} + 1)' = 2x。
+
+2. 已知矩阵 A 的特征值为 1, 2, 3,则 A 的迹？
+
+参考答案:6
+解析:矩阵的迹等于特征值之和,1 + 2 + 3 = 6。
+[/normalized_full_text]
+
+[questions]
+---
+number: 1
+stem: 1. 设函数 f(x) = x^{2} + 1,求 f'(x)。
+
+A. 2x
+B. x^{2}
+C. 2x + 1
+D. x
+
+【答案】A 【解析】根据求导公式,(x^{2} + 1)' = 2x。
+type: single_choice
+options:
+  A: 2x
+  B: x^{2}
+  C: 2x + 1
+  D: x 【答案】A 【解析】根据求导公式,(x^{2} + 1)' = 2x。
+answer: A
+explanation: 根据求导公式,(x^{2} + 1)' = 2x。
+option_keys: ["A", "B", "C", "D"]
+
+---
+number: 2
+stem: 2. 已知矩阵 A 的特征值为 1, 2, 3,则 A 的迹？
+
+参考答案:6
+解析:矩阵的迹等于特征值之和,1 + 2 + 3 = 6。
+type: subjective
+options:
+answer: B
+explanation: 矩阵的迹等于特征值之和,1 + 2 + 3 = 6。
+option_keys: []
+
+[/questions]

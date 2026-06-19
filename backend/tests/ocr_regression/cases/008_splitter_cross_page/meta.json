@@ -1,0 +1,11 @@
+{
+  "id": "008",
+  "name": "splitter_cross_page",
+  "description": "跨页证明题：无选项的简答题跨越多个视觉块",
+  "subject": "math",
+  "fixture_source": "splitter_cross_page.txt",
+  "pipeline_stages": ["normalize", "split", "match"],
+  "expected_questions": 3,
+  "known_failure_types": [],
+  "date_added": "2026-06-19"
+}

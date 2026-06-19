@@ -104,6 +104,21 @@ _RE_PAGE_NUMBER = re.compile(r"^\s*\d{1,3}\s*$")
 # 规则幂等：已正确的 "p->next" 再跑一次仍是 "p->next"（参见 docs/BUGS.md 案例三/七/十）。
 _RE_POINTER_ARROW = re.compile(r"([\w)\]）】])\s*[−\-–—]\s*>(?=\w)")
 
+# PaddleOCR -> 误识为 <- + 随机字母前缀（已知幻觉模式）
+# 例: p->next → p xau<- next / p axau<- next / p xeu<- next
+# 这些是 OCR 引擎对特定字体/排版的确定性误识，修复安全。
+_RE_POINTER_ARROW_GARBLED_KNOWN = re.compile(
+    r"\b(xau|axau|xeu|Aaxd)<-(?=\s*[a-zA-Z_])"
+)
+
+# 通用箭头方向修复：在 C 指针上下文中 <- 不是合法运算符，
+# 小写标识符后跟 <- 极可能是 OCR 将 -> 翻转为 <- 的产物。
+# 仅当左侧是单个小写标识符（1-4 个字母+数字）时执行，
+# 负向先行断言要求右侧紧跟字母/下划线（C 成员访问模式 —>next/->data）。
+_RE_POINTER_ARROW_REVERSED = re.compile(
+    r"([a-z_][a-z0-9_]{0,3})<-(?=\s*[a-zA-Z_])"
+)
+
 
 class ImportTextNormalizer:
     """导入文本标准化器 — 纯规则实现。
@@ -435,10 +450,19 @@ class ImportTextNormalizer:
         PaddleOCR 常把 "->" 拆成「减号/破折号 + 空格 + 大于号」，链表代码因此不可读。
         仅在 ">" 后紧跟标识符字符时纠正（数学式 "a − > b" 因 > 后有空格不命中），
         规则幂等。连续箭头（p->next->prev）逐个命中，正则全局替换即可。
+
+        同时修复 PaddleOCR 对特定字体/排版将 -> 误识为 <- + 随机字母前缀的已知问题。
         """
-        if not text or ">" not in text:
+        if not text:
             return text
-        return _RE_POINTER_ARROW.sub(r"\1->", text)
+        # Pass 1: 已知 OCR 幻觉模式 xau<- / axau<- / xeu<- → ->
+        text = _RE_POINTER_ARROW_GARBLED_KNOWN.sub(r"->", text)
+        # Pass 2: 通用箭头方向修复 identifier<- → identifier->
+        text = _RE_POINTER_ARROW_REVERSED.sub(r"\1->", text)
+        # Pass 3: 破折号+空格+> 修复（原有逻辑）
+        if ">" in text:
+            text = _RE_POINTER_ARROW.sub(r"\1->", text)
+        return text
 
     # ---------------------------------------------------------------
     # LaTeX 标记清洗
@@ -551,9 +575,8 @@ class ImportTextNormalizer:
             text = text.replace(key, original)
 
         # 中文后跟半角逗号/分号/叹号/问号 → 中文标点
-        text = self._RE_CJK_PUNCT.sub(r"\1\g<2>", text)
         text = self._RE_CJK_PUNCT.sub(
-            lambda m: {
+            lambda m: m.group(1) + {
                 ",": "，", ";": "；", "!": "！", "?": "？",
             }.get(m.group(2), m.group(2)),
             text,
@@ -607,18 +630,52 @@ class ImportTextNormalizer:
         return False
 
     def _is_low_info_noise(self, text: str) -> bool:
-        """检测低信息量噪声：短文本中非中英文字符占比过高。"""
-        if len(text) > 6:
-            return False
+        """检测低信息量噪声：随机字符占比过高或结构异常的文本。
+
+        针对多种噪声模式：
+        1. OCR 箭头乱码残留（xau<-, axau<- 等独立出现）
+        2. 短文本（≤6 字符）无 CJK 且非纯字母
+        3. 长文本（>6 字符）无 CJK 且存在随机大小写跳变特征
+        """
         if _RE_OPTION_MARKER.match(text):
             return False
         if _RE_CIRCLED_GROUP_MARKER.match(text):
             return False
-        cjk_alpha = sum(
-            1 for c in text
-            if ("一" <= c <= "鿿") or c.isalpha()
-        )
-        return cjk_alpha / max(len(text), 1) < 0.5
+
+        # OCR 箭头乱码残留：独立出现的 xau<- / axau<- 等无上下文噪声
+        if _RE_POINTER_ARROW_GARBLED_KNOWN.search(text):
+            # 只过滤独立出现的情况（整个文本就是乱码或主要成分是乱码）
+            cleaned = _RE_POINTER_ARROW_GARBLED_KNOWN.sub("", text)
+            alpha_remaining = sum(1 for c in cleaned if c.isalpha())
+            if alpha_remaining < 3:
+                return True
+
+        # 含 CJK 字符的文本不按噪声处理（中文内容有语义价值）
+        has_cjk = any("一" <= c <= "鿿" for c in text)
+
+        if len(text) <= 6:
+            if has_cjk:
+                return False
+            cjk_alpha = sum(1 for c in text if c.isalpha())
+            return cjk_alpha / max(len(text), 1) < 0.5
+
+        # 长文本无 CJK 且存在随机大小写跳变：检查大小写切换频率
+        if not has_cjk:
+            alpha_chars = [c for c in text if c.isalpha()]
+            if len(alpha_chars) < 4:
+                return True  # 几乎没有字母字符的纯符号文本
+            # 统计大小写切换次数 — 正常英文/C 代码切换率较低
+            case_switches = sum(
+                1 for i in range(1, len(alpha_chars))
+                if alpha_chars[i].islower() != alpha_chars[i - 1].islower()
+            )
+            switch_ratio = case_switches / max(len(alpha_chars), 1)
+            # 随机水印文本大小写频繁切换（如 axuK, dayOOeB），
+            # 正常英文单词和 C 标识符切换率通常 < 0.3
+            if switch_ratio > 0.35:
+                return True
+
+        return False
 
     def _filter_page_number(self, text: str) -> str:
         """过滤页码行：纯数字且在合理页码范围内。"""
