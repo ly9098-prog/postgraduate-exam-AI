@@ -10,6 +10,8 @@ import hashlib
 import logging
 import time
 
+from app.services.pdf_text_normalizer import deduplicate_repeated_text
+
 logger = logging.getLogger(__name__)
 
 QT_SINGLE_CHOICE = "single_choice"
@@ -61,12 +63,15 @@ _CLEAN_RULES: list[tuple[re.Pattern, str]] = [
 
 
 def _clean_stem(text: str) -> str:
-    """清洗题干：去除题号前缀、题型标签、多余空白、LaTeX 标记。"""
+    """清洗题干：去除题号前缀、题型标签、多余空白、LaTeX 标记、重复内容。"""
     for pat, repl in _CLEAN_RULES:
         text = pat.sub(repl, text)
     text = re.sub(r"\\(?:dots|ldots|dotsquare)", "...", text)
     text = re.sub(r"\\(?:cdots|cdots|cdotsquare)", "···", text)
-    return text.strip()
+    text = text.strip()
+    # 折叠 AI 标准化后可能出现的题干重复（整段复制）
+    text = deduplicate_repeated_text(text)
+    return text
 
 
 def _break_before_number_markers(text: str) -> str:
