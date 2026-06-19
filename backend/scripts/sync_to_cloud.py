@@ -169,6 +169,7 @@ async def run(args: argparse.Namespace):
     print(f"  更新题目: {result.get('questions_updated', 0)}")
     print(f"  跳过题目: {result.get('questions_skipped', 0)}")
     print(f"  冲突题目: {result.get('questions_conflict', 0)}")
+    print(f"  去重题目: {result.get('questions_deduped', 0)}")
     print(f"  新增标签: {result.get('tags_new', 0)}")
     print(f"  跳过标签: {result.get('tags_skipped', 0)}")
 

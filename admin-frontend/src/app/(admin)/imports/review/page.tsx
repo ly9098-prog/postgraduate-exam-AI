@@ -21,6 +21,11 @@ type ConfirmState =
   | { action: "publish"; batchId: string }
   | null;
 
+type BatchActionResult = {
+  affected_count: number;
+  errors?: Array<{ id: number; message: string }>;
+};
+
 type EditState = {
   subject: string;
   question_type: string;
@@ -242,21 +247,49 @@ export default function ImportReviewPage() {
 
   const actionMutation = useMutation({
     mutationFn: async (state: Exclude<ConfirmState, null>) => {
-      if (state.action === "approve") return apiRequest<ImportActionResponse>(`/imports/questions/${state.id}/approve`, { method: "POST" });
-      if (state.action === "reject") return apiRequest<ImportActionResponse>(`/imports/questions/${state.id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) });
+      if (state.action === "approve") {
+        try {
+          return await apiRequest<ImportActionResponse>(`/imports/questions/${state.id}/approve`, { method: "POST" });
+        } catch (e) {
+          throw new Error(`题目 #${state.id} 审核通过失败：${e instanceof Error ? e.message : "未知错误"}`);
+        }
+      }
+      if (state.action === "reject") {
+        try {
+          return await apiRequest<ImportActionResponse>(`/imports/questions/${state.id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) });
+        } catch (e) {
+          throw new Error(`题目 #${state.id} 驳回失败：${e instanceof Error ? e.message : "未知错误"}`);
+        }
+      }
       if (state.action === "batch-approve") {
         if (selectedIds.size > 0) {
           const ids = Array.from(selectedIds);
-          const results = await Promise.all(ids.map((id) => apiRequest<ImportActionResponse>(`/imports/questions/${id}/approve`, { method: "POST" })));
-          return { affected_count: results.length } as ImportActionResponse;
+          const settled = await Promise.allSettled(ids.map((id) =>
+            apiRequest<ImportActionResponse>(`/imports/questions/${id}/approve`, { method: "POST" })
+          ));
+          const errors: Array<{ id: number; message: string }> = [];
+          let affected = 0;
+          settled.forEach((r, i) => {
+            if (r.status === "fulfilled") { affected++; }
+            else { errors.push({ id: ids[i], message: r.reason instanceof Error ? r.reason.message : String(r.reason) }); }
+          });
+          return { affected_count: affected, errors } as BatchActionResult;
         }
         return apiRequest<ImportActionResponse>(`/imports/${filters.batch_id}/approve`, { method: "POST" });
       }
       if (state.action === "batch-reject") {
         if (selectedIds.size > 0) {
           const ids = Array.from(selectedIds);
-          const results = await Promise.all(ids.map((id) => apiRequest<ImportActionResponse>(`/imports/questions/${id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) })));
-          return { affected_count: results.length } as ImportActionResponse;
+          const settled = await Promise.allSettled(ids.map((id) =>
+            apiRequest<ImportActionResponse>(`/imports/questions/${id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) })
+          ));
+          const errors: Array<{ id: number; message: string }> = [];
+          let affected = 0;
+          settled.forEach((r, i) => {
+            if (r.status === "fulfilled") { affected++; }
+            else { errors.push({ id: ids[i], message: r.reason instanceof Error ? r.reason.message : String(r.reason) }); }
+          });
+          return { affected_count: affected, errors } as BatchActionResult;
         }
         return apiRequest<ImportActionResponse>(`/imports/${filters.batch_id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) });
       }
@@ -272,10 +305,22 @@ export default function ImportReviewPage() {
         setMessage(`导入题目 #${variables.id} 已驳回。`);
       } else if (variables.action === "batch-approve") {
         const affected = "affected_count" in result ? result.affected_count : 0;
-        setMessage(`批量审核通过完成，影响 ${affected} 条导入题目。`);
-      } else {
+        const errors = "errors" in result ? (result as BatchActionResult).errors : undefined;
+        if (errors && errors.length > 0) {
+          const failedIds = errors.map((e) => `#${e.id}`).join("、");
+          setMessage(`批量审核通过部分完成：成功 ${affected}，失败 ${errors.length}（${failedIds}）。`);
+        } else {
+          setMessage(`批量审核通过完成，影响 ${affected} 条导入题目。`);
+        }
+      } else if (variables.action === "batch-reject") {
         const affected = "affected_count" in result ? result.affected_count : 0;
-        setMessage(`批量驳回完成，影响 ${affected} 条导入题目。`);
+        const errors = "errors" in result ? (result as BatchActionResult).errors : undefined;
+        if (errors && errors.length > 0) {
+          const failedIds = errors.map((e) => `#${e.id}`).join("、");
+          setMessage(`批量驳回部分完成：成功 ${affected}，失败 ${errors.length}（${failedIds}）。`);
+        } else {
+          setMessage(`批量驳回完成，影响 ${affected} 条导入题目。`);
+        }
       }
       setSelectedIds(new Set());
       setConfirmState(null);
