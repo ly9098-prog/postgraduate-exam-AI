@@ -5,13 +5,15 @@
 """
 import re
 
+from app.features.roman_schema import _ROMAN_SUBITEM_TOKEN
+
 # 行首结构标记正则（这些行不能被合并到上一行）
 _STRUCTURE_LINE_RE = re.compile(
     r"^("
     r"\d+\s*[.、)）]"
     r"|[A-D]\s*[.、:：]"
     r"|[（(]\s*[A-D]\s*[）)]"                          # （A）(A)（A ）( A )
-    r"|(?:VIII|VII|III|VI|IV|IX|II|V|X|I)\s*[.、)）]"   # I. II. III. IV. …
+    r"|" + _ROMAN_SUBITEM_TOKEN + r"\s*[.、)）]"
     r"|(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:]"
     r"|(?:【)?(?:解析|解答)(?:】)?\s*[：:]"
     r"|(?:[（(]\s*(?:单选|多选|选择|填空|判断|简答|论述|计算)题?[）)])"

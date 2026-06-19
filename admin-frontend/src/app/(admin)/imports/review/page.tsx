@@ -151,6 +151,16 @@ function editStateFromItem(item: ImportQuestionItem): EditState {
   };
 }
 
+async function _batchExecute<T>(ids: number[], concurrency: number, fn: (id: number) => Promise<T>): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = [];
+  for (let i = 0; i < ids.length; i += concurrency) {
+    const chunk = ids.slice(i, i + concurrency);
+    const settled = await Promise.allSettled(chunk.map(fn));
+    results.push(...settled);
+  }
+  return results;
+}
+
 export default function ImportReviewPage() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
@@ -264,9 +274,9 @@ export default function ImportReviewPage() {
       if (state.action === "batch-approve") {
         if (selectedIds.size > 0) {
           const ids = Array.from(selectedIds);
-          const settled = await Promise.allSettled(ids.map((id) =>
+          const settled = await _batchExecute(ids, 6, (id) =>
             apiRequest<ImportActionResponse>(`/imports/questions/${id}/approve`, { method: "POST" })
-          ));
+          );
           const errors: Array<{ id: number; message: string }> = [];
           let affected = 0;
           settled.forEach((r, i) => {
@@ -280,9 +290,9 @@ export default function ImportReviewPage() {
       if (state.action === "batch-reject") {
         if (selectedIds.size > 0) {
           const ids = Array.from(selectedIds);
-          const settled = await Promise.allSettled(ids.map((id) =>
+          const settled = await _batchExecute(ids, 6, (id) =>
             apiRequest<ImportActionResponse>(`/imports/questions/${id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) })
-          ));
+          );
           const errors: Array<{ id: number; message: string }> = [];
           let affected = 0;
           settled.forEach((r, i) => {
