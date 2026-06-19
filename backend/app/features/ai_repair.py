@@ -783,6 +783,9 @@ async def repair_questions(
             repaired_stem = q.get("stem", "")
             ai_errors = [*ai_errors, "ai_stem_lost_blank_markers"]
 
+        from app.services.pdf_text_normalizer import deduplicate_repeated_text
+        repaired_stem = deduplicate_repeated_text(repaired_stem)
+
         after = {
             "schema_version": q.get("schema_version", "v1"),
             "subject": q.get("subject", ""),
