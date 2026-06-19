@@ -7,11 +7,18 @@
 - 提供 clean_ocr_text() 清洗乱码/断行
 """
 import logging
+import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
+
+# 低置信度行过滤阈值（0.0–1.0），不含 CJK 字符且置信度低于此值的行视为水印/噪声
+# 可通过环境变量 OCR_LOW_CONF_THRESHOLD 覆盖
+_OCR_LOW_CONF_THRESHOLD: float = float(
+    os.environ.get("OCR_LOW_CONF_THRESHOLD", "0.55")
+)
 
 from app.core.config import settings
 from app.core.ocr_profile import get_ocr_profile
@@ -483,7 +490,7 @@ def _ocr_one_page_with_boxes(
             if not text:
                 continue
             conf = line.get("conf", 1.0)
-            if conf < 0.55 and not any("一" <= c <= "鿿" for c in text):
+            if conf < _OCR_LOW_CONF_THRESHOLD and not any("一" <= c <= "鿿" for c in text):
                 logger.debug("OCR low-conf line filtered: conf=%.2f text=%.60s", conf, text)
                 continue
             lines.append(text)
@@ -586,8 +593,12 @@ def clean_ocr_text(text: str) -> str:
     text = re.sub(r"[^一-鿿　-〿＀-￯ -~Ͱ-Ͽ∀-⋿\n]", "", text)
 
     # PaddleOCR -> 误识为 <- + 随机字母前缀（已知幻觉模式）
-    # 例: -> → xau<- / axau<- / xeu<- / Aaxd<-
-    text = re.sub(r"\b(xau|axau|xeu|Aaxd)<-(?=\s*[a-zA-Z_])", r"->", text)
+    # 模式列表来自环境变量 OCR_ARROW_GARBLED_PATTERNS
+    patterns = os.environ.get("OCR_ARROW_GARBLED_PATTERNS", "xau,axau,xeu,Aaxd")
+    garbled_re = re.compile(
+        r"\b(" + "|".join(re.escape(p) for p in patterns.split(",") if p) + r")<-(?=\s*[a-zA-Z_])"
+    )
+    text = garbled_re.sub(r"->", text)
 
     # 修复被错误断行的中文句子（如 "第\n一章" → "第一章"）
     # 行末是汉字且下行首也是汉字，则合并

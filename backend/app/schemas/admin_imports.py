@@ -236,6 +236,7 @@ class BatchImageJobStatusResponse(BaseModel):
     failed: int = 0
     total_questions: int = 0
     merged_batch_id: str = ""
+    is_merged: bool = False  # 显式标记跨图合并状态，替代隐式 review_batch_id 推断
     current_seq: int = 0
     current_file: str = ""
     error_message: str | None = None
