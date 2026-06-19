@@ -36,6 +36,7 @@ class SyncReport:
     questions_updated: int = 0
     questions_skipped: int = 0
     questions_conflict: int = 0
+    questions_deduped: int = 0
     tags_new: int = 0
     tags_skipped: int = 0
     conflicts: list[dict] = field(default_factory=list)
@@ -110,6 +111,29 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
             for q in result.scalars().all():
                 existing_questions[q.sync_uuid] = q
 
+    # Build (subject, question_hash) → sync_uuid index from ALL active questions
+    # whose hash matches any incoming question, to catch content duplicates
+    # that have different sync_uuids (e.g. re-imported locally).
+    hash_index: dict[tuple[str, str], str] = {}
+    incoming_hashes = [
+        (q.get("subject"), q.get("question_hash"))
+        for q in questions_data
+        if q.get("subject") and q.get("question_hash")
+    ]
+    if incoming_hashes:
+        all_hashes = list({h for _, h in incoming_hashes})
+        for i in range(0, len(all_hashes), 500):
+            batch = all_hashes[i:i + 500]
+            result = await db.execute(
+                select(Question.subject, Question.question_hash, Question.sync_uuid).where(
+                    Question.question_hash.in_(batch),
+                    Question.is_active == True,  # noqa: E712
+                )
+            )
+            for subject, qhash, suuid in result.all():
+                if subject and qhash and suuid:
+                    hash_index[(subject, qhash)] = suuid
+
     # --- Tags (先于 questions，保证引用关系) ---
     for tag_data in tags_data:
         sync_uuid = tag_data.get("sync_uuid")
@@ -132,6 +156,13 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
         existing = existing_questions.get(sync_uuid)
 
         if existing is None:
+            subject = q_data.get("subject")
+            q_hash = q_data.get("question_hash")
+            if subject and q_hash and (subject, q_hash) in hash_index:
+                existing_suuid = hash_index[(subject, q_hash)]
+                if existing_suuid != sync_uuid:
+                    report.questions_deduped += 1
+                    continue
             db.add(_build_question(q_data))
             report.questions_new += 1
         else:

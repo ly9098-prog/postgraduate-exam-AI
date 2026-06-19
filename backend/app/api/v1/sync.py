@@ -48,6 +48,7 @@ async def import_sync_package(
             questions_updated=report.questions_updated,
             questions_skipped=report.questions_skipped,
             questions_conflict=report.questions_conflict,
+            questions_deduped=report.questions_deduped,
             tags_new=report.tags_new,
             tags_skipped=report.tags_skipped,
             conflicts=report.conflicts,
@@ -56,9 +57,10 @@ async def import_sync_package(
 
     await db.commit()
     logger.info(
-        "Sync import complete: new=%d updated=%d skipped=%d conflicts=%d",
+        "Sync import complete: new=%d updated=%d skipped=%d conflicts=%d deduped=%d",
         report.questions_new, report.questions_updated,
         report.questions_skipped, report.questions_conflict,
+        report.questions_deduped,
     )
     return SyncReportResponse(
         success=True,
@@ -66,6 +68,7 @@ async def import_sync_package(
         questions_updated=report.questions_updated,
         questions_skipped=report.questions_skipped,
         questions_conflict=report.questions_conflict,
+        questions_deduped=report.questions_deduped,
         tags_new=report.tags_new,
         tags_skipped=report.tags_skipped,
         conflicts=report.conflicts,
