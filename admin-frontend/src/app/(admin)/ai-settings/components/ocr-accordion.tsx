@@ -46,35 +46,7 @@ const items: AccordionItem[] = [
     icon: Rows3,
     color: "#c49a6b",
     content: (configs) => (
-      <div className="space-y-4">
-        <p className="text-sm text-[var(--color-text-secondary)]">
-          当 OCR 识别结果出现结构错乱时，以下规则将被应用来自动修复题目格式。
-        </p>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {[
-            { key: "ocr_structure_question_type", label: "题型识别", value: "单选题 / 多选题 / 判断题 / 填空题", color: "#5b7b9a" },
-            { key: "ocr_structure_options", label: "选项提取", value: "A. B. C. D. 格式识别", color: "#6b9b6b" },
-            { key: "ocr_structure_answer", label: "答案匹配", value: "答案关键字定位", color: "#c49a6b" },
-            { key: "ocr_structure_analysis", label: "解析分离", value: "解析文本与题干分离", color: "#9a7aba" },
-          ].map((item) => (
-            <div
-              key={item.key}
-              className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] p-3"
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold" style={{ color: item.color }}>{item.label}</p>
-                <span className={cn(
-                  "text-xs font-medium",
-                  configs[item.key] ? "text-[var(--color-success)]" : "text-[var(--color-text-hint)]",
-                )}>
-                  {configs[item.key] ? "已启用" : "已关闭"}
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-[var(--ink)]">{item.value}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+      <StructurePanel configs={configs} />
     ),
   },
   {
@@ -281,6 +253,55 @@ function FilterPanel({ configs }: { configs: Record<string, string | number | bo
       )}
       {mutation.isError && (
         <p className="text-xs text-[var(--color-danger)]">{getErrorMessage(mutation.error)}</p>
+      )}
+    </div>
+  );
+}
+
+function StructurePanel({ configs }: { configs: Record<string, string | number | boolean> }) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (data: AdminAiConfigsPatchRequest) =>
+      apiRequest<AdminAiConfigsResponse>("/ai-configs", {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-configs"] }),
+  });
+
+  const items = [
+    { key: "ocr_structure_question_type", label: "题型识别", value: "单选题 / 多选题 / 判断题 / 填空题", color: "#5b7b9a" },
+    { key: "ocr_structure_options", label: "选项提取", value: "A. B. C. D. 格式识别", color: "#6b9b6b" },
+    { key: "ocr_structure_answer", label: "答案匹配", value: "答案关键字定位", color: "#c49a6b" },
+    { key: "ocr_structure_analysis", label: "解析分离", value: "解析文本与题干分离", color: "#9a7aba" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-[var(--color-text-secondary)]">
+        当 OCR 识别结果出现结构错乱时，以下规则将被应用来自动修复题目格式。
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {items.map((item) => (
+          <label
+            key={item.key}
+            className="flex cursor-pointer items-center justify-between gap-2 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] p-3 transition hover:border-[var(--color-primary)]/40"
+          >
+            <div>
+              <p className="text-xs font-semibold" style={{ color: item.color }}>{item.label}</p>
+              <p className="mt-0.5 text-sm text-[var(--ink)]">{item.value}</p>
+            </div>
+            <Toggle
+              checked={Boolean(configs[item.key])}
+              onChange={() => mutation.mutate({ configs: { [item.key]: !configs[item.key] } })}
+              disabled={mutation.isPending}
+              size="sm"
+            />
+          </label>
+        ))}
+      </div>
+      {mutation.isError && (
+        <p className="text-xs text-[var(--color-danger)]">保存失败，请稍后重试。</p>
       )}
     </div>
   );
