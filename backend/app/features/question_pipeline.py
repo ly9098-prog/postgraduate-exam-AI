@@ -2220,8 +2220,9 @@ def _apply_batch_complete_result(
     if "stem" in fields:
         stem_val = parsed.get("stem") or (parsed.get("parsed_content") or {}).get("text")
         if isinstance(stem_val, str) and stem_val.strip():
+            from app.services.pdf_text_normalizer import deduplicate_repeated_text
             content = dict(qi.parsed_content or {})
-            content["text"] = stem_val.strip()
+            content["text"] = deduplicate_repeated_text(stem_val.strip())
             qi.parsed_content = content
             completed.append("stem")
 
