@@ -50,11 +50,23 @@ Page({
     errorTypes: ERROR_TYPES,
   },
 
+  _ready: false,
+
   onLoad() {
     this.setData({ enableMathImage: config.enableMathImage || false })
   },
 
+  onReady() {
+    this._ready = true
+    this._loadPage()
+  },
+
   onShow() {
+    if (!this._ready) return
+    this._loadPage()
+  },
+
+  _loadPage() {
     this.setData({ list: [], page: 1 })
     this.loadStats()
     this.loadList(true)
