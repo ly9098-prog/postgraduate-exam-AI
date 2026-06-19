@@ -224,8 +224,9 @@ def _wrap_bare_latex(text: str) -> str:
 
         result.append(text[i:start])
 
-        # 数式スパンを { } の深さを追跡しながら拡張
+        # 数式スパンを { } / ( ) の深さを追跡しながら拡張
         depth = 0
+        paren_depth = 0
         j = start
         while j < n:
             c = text[j]
@@ -236,11 +237,18 @@ def _wrap_bare_latex(text: str) -> str:
                     depth -= 1
                 else:
                     break
+            elif c == "(":
+                paren_depth += 1
+            elif c == ")":
+                if paren_depth > 0:
+                    paren_depth -= 1
+                elif depth == 0:
+                    break
             elif c == "\n":
                 break
-            elif depth == 0 and "一" <= c <= "鿿":
+            elif depth == 0 and paren_depth == 0 and "一" <= c <= "鿿":
                 break
-            elif depth == 0 and c in "，。！？；：、…":
+            elif depth == 0 and paren_depth == 0 and c in "，。！？；：、…\"'`;":
                 break
             j += 1
 
