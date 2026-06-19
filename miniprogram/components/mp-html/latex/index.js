@@ -24,9 +24,21 @@ Latex.prototype.onParse = function (node, vm) {
               text: part[i]
             })
           } else {
+            // 安全解析：捕获 KaTeX 异常，失败时回退为纯文本
+            let nodes
+            try {
+              if (status === 1) {
+                nodes = parse.default(part[i])
+              } else {
+                nodes = parse.default(part[i], { displayMode: true })
+              }
+            } catch (_e) {
+              children.push({ type: 'text', text: (status === 2 ? '$$' : '$') + part[i] + (status === 2 ? '$$' : '$') })
+              status = 0
+              continue
+            }
             if (status === 1) {
               // 行内公式
-              const nodes = parse.default(part[i])
               children.push({
                 name: 'span',
                 attrs: {},
@@ -36,9 +48,6 @@ Latex.prototype.onParse = function (node, vm) {
               })
             } else {
               // 块公式
-              const nodes = parse.default(part[i], {
-                displayMode: true
-              })
               children.push({
                 name: 'div',
                 attrs: {

@@ -621,8 +621,8 @@ def clean_ocr_text(text: str) -> str:
     # 去除连续空行（超过 2 个换行压缩为 2 个）
     text = re.sub(r"\n{3,}", "\n\n", text)
 
-    # 清理行首行尾空格
-    lines = [line.strip() for line in text.split("\n")]
+    # 清理行尾空格（保留行首缩进，避免破坏代码块格式）
+    lines = [line.rstrip() for line in text.split("\n")]
     text = "\n".join(lines)
 
     return text.strip()

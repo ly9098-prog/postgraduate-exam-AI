@@ -28,17 +28,11 @@ function _needsRichRender(text) {
 function _deduplicateLines(text) {
   if (!text) return text
   const lines = text.split('\n')
-  const seen = new Set()
   const out = []
   for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim()
-    if (!trimmed) {
+    if (i === 0 || lines[i].trim() !== lines[i - 1].trim()) {
       out.push(lines[i])
-      continue
     }
-    if (seen.has(trimmed)) continue
-    seen.add(trimmed)
-    out.push(lines[i])
   }
   return out.join('\n')
 }

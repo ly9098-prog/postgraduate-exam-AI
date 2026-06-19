@@ -577,6 +577,9 @@ class QuestionNormalizer:
             return False
         if prev[-1] in "。！？；…":
             return False
+        # Don't merge Roman numeral enumeration items (I. II. III. IV. …)
+        if re.match(r"^(?:VIII|VII|III|VI|IV|IX|II|V|X|I)\s*[.、)）]", curr):
+            return False
         # Don't merge into / out of indented code-block lines
         if re.match(r"^[ \t]{2,}\S", curr) or re.match(r"^[ \t]{2,}\S", prev):
             return False
