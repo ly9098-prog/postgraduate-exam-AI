@@ -197,7 +197,7 @@ def wrap_inline_math(text: str) -> str:
     return "".join(result)
 
 
-_LATEX_CMD_RE = re.compile(r"\\[a-zA-Z]+")
+_LATEX_CMD_RE = re.compile(r"\\[a-zA-Z]{2,}")
 _SUBSCRIPT_RE = re.compile(r"[a-zA-Z0-9]\^[{0-9]|[a-zA-Z0-9]_[{0-9]")
 
 

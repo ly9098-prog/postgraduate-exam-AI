@@ -33,7 +33,7 @@ Latex.prototype.onParse = function (node, vm) {
                 nodes = parse.default(part[i], { displayMode: true })
               }
             } catch (_e) {
-              children.push({ type: 'text', text: (status === 2 ? '$$' : '$') + part[i] + (status === 2 ? '$$' : '$') })
+              children.push({ type: 'text', text: part[i] })
               status = 0
               continue
             }

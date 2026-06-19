@@ -39,6 +39,7 @@ from app.models.question import Question
 from app.models.question_import import QuestionImport
 from app.features.question_normalizer import run_ocr_quality_gate
 from app.features.question_splitter import split_questions
+from app.features.roman_schema import _RE_ROMAN_SUBITEM_MARKER
 from app.utils.trace.debug import debug_log, save_debug_snapshot
 
 logger = logging.getLogger(__name__)
@@ -578,7 +579,7 @@ class QuestionNormalizer:
         if prev[-1] in "。！？；…":
             return False
         # Don't merge Roman numeral enumeration items (I. II. III. IV. …)
-        if re.match(r"^(?:VIII|VII|III|VI|IV|IX|II|V|X|I)\s*[.、)）]", curr):
+        if _RE_ROMAN_SUBITEM_MARKER.match(curr.lstrip()):
             return False
         # Don't merge into / out of indented code-block lines
         if re.match(r"^[ \t]{2,}\S", curr) or re.match(r"^[ \t]{2,}\S", prev):
@@ -602,6 +603,9 @@ class QuestionNormalizer:
         if re.fullmatch(r"第?\s*\d+\s*页\s*(?:/\s*共?\s*\d+\s*页?)?", line):
             return True
         if re.fullmatch(r"[-—_=]{3,}", line):
+            return True
+        # Repeating-character separators (xxxxxxxxxx, ==========, etc.) — boundary artifact
+        if re.fullmatch(r"([A-Za-z0-9])\1{4,}", line):
             return True
         if len(line) <= 2 and not re.search(r"[一-鿿A-Za-z0-9{}\[\]()]", line):
             return True
