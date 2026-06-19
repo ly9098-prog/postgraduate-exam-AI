@@ -331,6 +331,89 @@ class TestWatermarkFilter:
         assert "A. 输出第i个元素" in normalized
         assert "B. 交换元素" in normalized
 
+    def test_standalone_chapter_header_filtered(self, normalizer):
+        """独立章标题行应被过滤。"""
+        text = "第1章 线性表\n1. 下列选项中正确的是\nA. 选项一"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "第1章 线性表" not in normalized
+        assert "下列选项中正确的是" in normalized
+        assert "A. 选项一" in normalized
+
+    def test_chapter_header_merged_with_question_not_filtered(self, normalizer):
+        """章标题与题目合并行不应被过滤。"""
+        text = "第1章 线性表 1.下列选项中正确的是（）\nA. x\nB. y\nC. z\nD. w"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "第1章 线性表" in normalized
+        assert "下列选项中正确的是" in normalized
+
+    def test_chapter_header_with_option_marker_not_filtered(self, normalizer):
+        """章标题后跟选项标记 A. 的行不应被过滤。"""
+        text = "第3章 栈和队列 A. 选项一\nB. 选项二"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "第3章 栈和队列" in normalized
+        assert "A. 选项一" in normalized
+
+
+# ---------------------------------------------------------------
+# 5d. LaTeX 符号还原 — 行级上下文感知（P0 修复）
+# ---------------------------------------------------------------
+
+class TestLatexSubstitution:
+    def test_prog_context_line_allow_substitution(self, normalizer):
+        """编程上下文行内 LaTeX 允许替换：p->next=\\alpha → p->next=a。"""
+        text = "链表插入操作：p->next = \\alpha"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "\\alpha" not in normalized
+        assert "= a" in normalized or "=a" in normalized
+
+    def test_math_context_line_block_substitution(self, normalizer):
+        """数学上下文行内 LaTeX 不得替换：设\\alpha+\\beta=1 保持原样。"""
+        text = "设\\alpha+\\beta=1，求极限"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "\\alpha" in normalized
+        assert "\\beta" in normalized
+
+    def test_mixed_lines_isolated(self, normalizer):
+        """跨行隔离：编程行替换，数学行保留，互不污染。
+
+        用句号结束第一行阻止 OCR 断行合并（_clean_newlines），确保两行独立判断。
+        """
+        text = "链表 p->next = \\alpha。\n设\\alpha+\\beta=1。"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        lines = normalized.split("\n")
+        prog_line = [l for l in lines if "p->next" in l][0]
+        math_line = [l for l in lines if "设" in l][0]
+        assert "\\alpha" not in prog_line
+        assert "\\alpha" in math_line
+        assert "\\beta" in math_line
+
+    def test_no_prog_signal_no_substitution(self, normalizer):
+        """无编程信号整文本：所有 LaTeX 保持不动。"""
+        text = "\\alpha + \\beta = \\gamma + \\delta"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "\\alpha" in normalized
+        assert "\\beta" in normalized
+        assert "\\gamma" in normalized
+        assert "\\delta" in normalized
+        # 不应出现 OCR 逆向替换的产物（如 gamma→r, beta→B）
+        assert "\\alpha + \\beta" in normalized
+
+    def test_prog_signal_full_line_substitutes_all(self, normalizer):
+        """含编程信号行内所有 LaTeX 符号都被替换。"""
+        text = "struct node *p = NULL; p->next = \\alpha; q->prior = \\beta"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        assert "\\alpha" not in normalized
+        assert "\\beta" not in normalized
+
+    def test_formula_normalizer_dependency(self, normalizer):
+        """Unicode → LaTeX 先执行，行级替换在其后：
+        α → \\alpha → a（编程行内）。"""
+        text = "指针 p->next 指向 α 结点"
+        normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
+        # fix_ocr_formula 把 α → \\alpha，_fix_latex_substitutions 把 \\alpha → a
+        assert "α" not in normalized
+        assert "\\alpha" not in normalized
+
 
 # ---------------------------------------------------------------
 # 6. 空文本
