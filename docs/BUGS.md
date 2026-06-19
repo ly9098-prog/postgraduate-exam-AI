@@ -119,6 +119,10 @@ C. q − >next = p; p − >next = q; q − >prior − >next = q; q − >next = p
 - OCR 后处理：对 `\alpha` 等单字母 LaTeX 符号做上下文校验，判断应为普通变量而非数学公式
 - 选项完整性校验：检测预期选项数与实际数不一致时告警/自动补偿
 
+##### 修复状态 ✅ 已修复
+- `text_normalizer.py:_fix_latex_substitutions()` — 编程上下文（链表/数组/指针）中 `\alpha`→`a`，`\beta`→`B`
+- `ocr_quality_gate.py:detect_ocr_contamination()` — 选项破损检测（有C缺D等）已存在
+
 ---
 
 #### 案例二
@@ -308,6 +312,10 @@ D.既有头结点指针又有尾结点指针的循环单链表
 - OCR 排版分析：检测一页两列/多区域排版，用垂直坐标/列分割判断题目边界
 - 水印/页脚过滤：识别并剥离教材页脚、半透明水印等非题目内容
 
+##### 修复状态 ✅ 已修复
+- `question_splitter.py:_split_merged_two_column_questions()` — 检测选项乱序 + 嵌入题干模式，自动拆分合并的题目
+- `text_normalizer.py:_RE_WATERMARK` — 新增"第X章"、"XXXX年考研指导"、页脚碎片等模式
+
 ---
 
 #### 案例三
@@ -422,6 +430,8 @@ D. 以上都错误
 
 ##### 修复
 - 与案例一同一修复路径：OCR 后处理过滤误识别的单字母 LaTeX 符号
+
+##### 修复状态 ✅ 已修复（同案例一）
 
 ---
 
@@ -551,6 +561,10 @@ C. q − >next = s;s − >next = p;
 - 与案例一同一修复路径：OCR 后处理（单字母 LaTeX + 选项完整性）
 - OCR 碎片清理：raw_text 尾部异常字符截断/清洗
 
+##### 修复状态 ✅ 已修复
+- LaTeX 替换同案例一；水印过滤同案例二
+- 选项完整性校验 `ocr_quality_gate.py` 已覆盖
+
 ---
 
 #### 案例五
@@ -673,5 +687,9 @@ D. O(nlog2n)
 ##### 修复
 - OCR confidence < 0.6 时优先信赖 AI 标准化结果而非 OCR 原始字段
 - 选项完整性校验：选项为空或格式异常时触发 AI 重新补全
+
+##### 修复状态 ✅ 已有机制
+- `ai_repair.py:_should_repair()` — confidence < 0.6 自动触发 AI 修复
+- 选项缺失/为空同样触发修复（`missing_options` / `invalid`）
 
 ---

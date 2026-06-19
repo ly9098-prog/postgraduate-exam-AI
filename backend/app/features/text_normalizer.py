@@ -73,7 +73,13 @@ _RE_WATERMARK = re.compile(
     r"王道计算机教育|道计算机|道计管教育|kaoya[no]?|Kaoyan|"
     r"w{0,3}\.?com|n\.com|ska|ai\.|"
     r"后续关注|关注公众号|扫码关注|扫描二维码|永久微信|微信号|公众号|"
-    r"[\[【（(]?\s*研大\s*[\]】）)]?).*$"
+    r"[\[【（(]?\s*研大\s*[\]】）)]?|"
+    r"\d{4}年.*考研.*指导|"
+    r"第\s*\d+\s*章\s*\S+|"
+    r"数据结构.*复习指导|"
+    r"计算机.*考研|"
+    r"O\s*口\s*医"  # 常见页脚装饰碎片（参见 BUGS.md 案例二）
+    r").*$"
 )
 
 # 页码模式：纯数字或带少量空格的1-3位数
@@ -128,6 +134,7 @@ class ImportTextNormalizer:
             if self._strategy_enabled("math_formula"):
                 from app.services.formula_normalizer import fix_ocr_formula
                 cleaned = fix_ocr_formula(cleaned)
+            cleaned = self._fix_latex_substitutions(cleaned)
             if self._strategy_enabled("punctuation"):
                 cleaned = self._normalize_punctuation(cleaned)
             out = {
@@ -438,6 +445,50 @@ class ImportTextNormalizer:
         text = self._RE_LATEX_CDOTS.sub("···", text)
         text = self._RE_LATEX_DOTS.sub("...", text)
         return text
+
+    # ---------------------------------------------------------------
+    # LaTeX 符号还原 — 编程上下文中的 OCR 误识
+    # ---------------------------------------------------------------
+
+    # OCR 常将编程/CS 上下文中的单字母变量误识为 LaTeX 希腊符号
+    # 例如：q/a → \alpha, B → \beta
+    # 仅在编程上下文（链表、指针、数组等）中触发，数学上下文不处理
+    _PROG_CONTEXT_SIGNALS = (
+        "->", "next", "prior", "链表", "结点", "节点", "指针",
+        "数组", "栈", "队列", "NULL", "malloc", "struct",
+        "单链表", "双链表", "循环链表", "头插法", "前驱", "后继",
+    )
+
+    _RE_LATEX_GREEK_SINGLE = re.compile(
+        r"\$?\\" r"(alpha|beta|gamma|delta|theta|lambda)" r"\$?"
+    )
+
+    _LATEX_GREEK_TO_LATIN = {
+        "alpha": "a",
+        "beta": "B",
+        "gamma": "r",
+        "delta": "d",
+        "theta": "0",
+        "lambda": "l",
+    }
+
+    def _fix_latex_substitutions(self, text: str) -> str:
+        """编程上下文中将 OCR 误识的希腊 LaTeX 符号还原为拉丁字母。
+
+        OCR 常把 ``q``/``a`` 误识为 ``\\alpha``，``B`` 误识为 ``\\beta`` 等。
+        仅在检测到编程/CS 上下文信号时才执行还原，数学上下文保持 LaTeX 不变。
+        同时处理裸 LaTeX 命令（``\\alpha``）和数学模式包裹（``$\\alpha$``）。
+        """
+        if not text:
+            return text
+        if not any(sig in text for sig in self._PROG_CONTEXT_SIGNALS):
+            return text
+
+        def _replace(m: re.Match) -> str:
+            cmd = m.group(1)
+            return self._LATEX_GREEK_TO_LATIN.get(cmd, m.group(0))
+
+        return self._RE_LATEX_GREEK_SINGLE.sub(_replace, text)
 
     # ---------------------------------------------------------------
     # 标点符号规范化

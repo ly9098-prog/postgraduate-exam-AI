@@ -920,6 +920,10 @@ def split_questions(
 
     questions = _recover_cross_page_options(questions)
 
+    # Detect and split questions that were merged due to two-column OCR layout
+    # (see docs/BUGS.md 案例二)
+    questions = _split_merged_two_column_questions(questions)
+
     # P1-1: book 模式下软 prose 标记。命中条件比 pipeline 的硬过滤宽松，
     # 仅打 risk_flags 不丢弃，让人工最终裁决。orchestrator `_run_split`
     # 已把 import_mode 透传过来；其它模式（exam/image/txt/None）无影响。
@@ -1049,6 +1053,124 @@ def split_by_visual_boundaries(
         })
 
     return questions
+
+
+# ---------------------------------------------------------------------------
+# Two-column merge detection — split questions merged by OCR two-column layout
+# (see docs/BUGS.md 案例二)
+# ---------------------------------------------------------------------------
+
+# Pattern: option text that contains a second question stem (ends with （） or ())
+_RE_EMBEDDED_QUESTION = re.compile(
+    r"[；;]\s*.{2,30}?[（(]\s*[）)]\s*$"
+)
+
+# Pattern to find the second group's first option marker in raw text
+_RE_SECOND_GROUP_A = re.compile(
+    r"\n\s*A\s*[.、:：)）]"
+)
+
+
+def _split_merged_two_column_questions(questions: list[dict]) -> list[dict]:
+    """Detect and split questions that were merged due to two-column OCR layout.
+
+    Detection signals:
+    - has_grouped_options is True with exactly 2 blank_option_groups
+    - Each group has 4 options (A/B/C/D)
+    - Group 1 options are shuffled (not in A/B/C/D order)
+    - Group 1's last option text contains an embedded question stem pattern
+    """
+    result: list[dict] = []
+    for q in questions:
+        groups = q.get("blank_option_groups") or []
+        if len(groups) != 2:
+            result.append(q)
+            continue
+
+        g1, g2 = groups
+        g1_opts = g1.get("options", {})
+        g2_opts = g2.get("options", {})
+
+        # Both groups must have 4 options each
+        if len(g1_opts) < 4 or len(g2_opts) < 4:
+            result.append(q)
+            continue
+
+        # Group 1 options must be shuffled (not A/B/C/D order)
+        g1_keys = list(g1_opts.keys())
+        if g1_keys == sorted(g1_keys):
+            result.append(q)
+            continue
+
+        # Group 1's last option must contain embedded question pattern
+        last_key = g1_keys[-1]
+        last_text = g1_opts.get(last_key, "")
+        embed_match = _RE_EMBEDDED_QUESTION.search(last_text)
+        if not embed_match:
+            result.append(q)
+            continue
+
+        # Found a merged question — split it
+        raw_text = q.get("raw_question_text", "")
+
+        # Extract Q2 stem from Q1's last option
+        split_pos = embed_match.start()
+        q2_stem_suffix = last_text[split_pos:].lstrip("；;；; ")
+
+        # Truncate Q1's last option to remove the embedded Q2 content
+        g1_opts[last_key] = last_text[:split_pos].rstrip("；;；; ")
+
+        # Find where Q2's options start in raw_text
+        # Look for the second A option marker (group 2's first option)
+        a_matches = list(_RE_SECOND_GROUP_A.finditer(raw_text))
+        if len(a_matches) >= 2:
+            q2_start = a_matches[1].start() + 1  # skip leading \n
+            q1_raw = raw_text[:q2_start].strip()
+            q2_opts_raw = raw_text[q2_start:].strip()
+        else:
+            # Fallback: reconstruct from groups
+            q1_raw = raw_text
+            q2_opts_raw = "\n".join(
+                f"{k}. {v}" for k, v in sorted(g2_opts.items())
+            )
+
+        # Create Q1 (with cleaned-up options)
+        q1_options = {
+            k: v for k, v in sorted(g1_opts.items())
+        }
+        q1_new = dict(q)
+        q1_new["raw_question_text"] = q1_raw
+        q1_new["option_lines"] = q1_options
+        q1_new["blank_option_groups"] = []
+        q1_new["has_grouped_options"] = False
+        q1_new["has_options"] = len(q1_options) > 0
+        q1_new["risk_flags"] = list(dict.fromkeys(
+            (q.get("risk_flags") or []) + ["two_column_merge_split"]
+        ))
+        q1_new["confidence"] = min(q.get("confidence", 0.5), 0.5)
+        result.append(q1_new)
+
+        # Create Q2 (new question from the split-off content)
+        q2_stem = q2_stem_suffix.strip()
+        q2_raw = f"{q2_stem}\n{q2_opts_raw}"
+        q2_options = {
+            k: v for k, v in sorted(g2_opts.items())
+        }
+        result.append({
+            "number": q.get("number", 0) + 0.5,  # fractional → signals auto-split
+            "raw_question_text": q2_raw,
+            "page_start": q.get("page_start", 1),
+            "page_end": q.get("page_end", q.get("page_start", 1)),
+            "has_options": True,
+            "option_lines": q2_options,
+            "blank_option_groups": [],
+            "has_grouped_options": False,
+            "confidence": 0.4,
+            "section_type": q.get("section_type"),
+            "risk_flags": ["two_column_merge_split"],
+        })
+
+    return result
 
 
 # ---------------------------------------------------------------------------
