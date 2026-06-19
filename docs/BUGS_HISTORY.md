@@ -1,5 +1,22 @@
 # Bugs History
 
+## 2026-06-19 — 题干罗马数字列举项换行符丢失 + 代码缩进丢失 + KaTeX 解析异常容错（已修复）
+
+- **现象**：OCR/PDF 导入后，题干中 I./II./III./IV. 等罗马数字列举项之间的换行符全部丢失，所有分项连成一段；代码类题干的缩进和换行结构被破坏；printf 中的 `\n` 被 KaTeX 拦截导致 `KaTeX parse error` 显示在 UI 上。
+- **原因**：
+  1. `question_pipeline.py` 的 `_should_merge()` 和 `pdf_text_normalizer.py` 的 `_STRUCTURE_LINE_RE` 未将罗马数字（I./II./III./IV.…）识别为结构标记行，导致列举项被合并到上一行
+  2. `ocr_service.py` 的 `clean_ocr_text()` 使用 `line.strip()` 同时去除行首和行尾空格，破坏了代码块的缩进结构
+  3. `mp-html/latex/index.js` 在 KaTeX 解析失败时直接将错误信息渲染到 UI（如 `KaTeX parse error: Undefined control sequence: \n`），而不是回退显示原始文本
+  4. `wrong-detail.js` 的 `_deduplicateLines()` 使用 Set 做全局去重（移除文本中所有重复行，而非仅连续重复），可能错误丢弃合法的重复代码行
+- **处理**：
+  1. `question_pipeline.py` `_should_merge()` 新增罗马数字检查：以 `I.`/`II.`/`III.`/`IV.`… 开头的行不再向上合并
+  2. `pdf_text_normalizer.py` `_STRUCTURE_LINE_RE` 新增 `(?:VIII|VII|III|VI|IV|IX|II|V|X|I)\s*[.、)）]` 模式
+  3. `ocr_service.py` `clean_ocr_text()` 将 `line.strip()` 改为 `line.rstrip()`，保留行首缩进
+  4. `mp-html/latex/index.js` KaTeX 解析增加 try-catch，失败时回退为原始纯文本而非显示错误信息
+  5. `wrong-detail.js` `_deduplicateLines()` 改为仅去重连续重复行，与 `practice.js` 保持一致
+- **验证**：`test_question_pipeline.py`（12 passed）、`test_pdf_normalizer.py`（10 passed）、`test_question_splitter.py`（85 passed），全量 107 测试通过。
+- **说明**：`text_normalizer.py` 此前已在 `_RE_STRUCTURE_LINE` 中包含罗马数字标记，无需额外修复。已入库的受影响题目（如 questions.id=20, 23）需手动修复或重新导入。
+
 ## 2026-06-18 — 体验版冷启动 wx.redirectTo 在 onLoad 中被静默丢弃（已修复）
 
 - **现象**：体验版小程序杀后台后重新冷启动，即使 storage 中 token 有效且 `[AUTH_DIAG] direct redirect: token valid` 日志已输出，用户仍停留在登录页，不会自动跳转首页。
