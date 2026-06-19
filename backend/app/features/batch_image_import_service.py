@@ -171,6 +171,7 @@ async def _merge_image_texts(
 
             merge_opts = dict(options)
             merge_opts["_merged_from_job"] = job_id
+            merge_opts["skip_ocr_correction"] = True  # 单图已纠错，合并流水线复用
             result = await run_import_pipeline(
                 file_content=merged_text.encode("utf-8"),
                 source_type="txt",
@@ -473,11 +474,13 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
             "has_ocr_cache": bool(item.ocr_cleaned_text or item.ocr_raw_text),
         })
 
-    # 检测合并状态：所有 succeeded item 共享同一 review_batch_id
+    # 显式检测合并状态：≥2 个成功图片且共享同一 review_batch_id 视为已合并
+    is_merged = False
     succeeded_items = [r for r in items if r["status"] == "succeeded" and r["review_batch_id"]]
     if len(succeeded_items) >= 2:
         candidate = succeeded_items[0]["review_batch_id"]
         if all(it["review_batch_id"] == candidate for it in succeeded_items):
+            is_merged = True
             merged_batch_id = candidate
             # 从 question_imports 查询真实题目数
             from app.models.question_import import QuestionImport as QI  # noqa: F811
@@ -500,6 +503,7 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
         "succeeded": counts["succeeded"],
         "failed": counts["failed"],
         "total_questions": total_questions,
+        "is_merged": is_merged,
         "merged_batch_id": merged_batch_id,
         "current_seq": current_seq,
         "current_file": current_file,
