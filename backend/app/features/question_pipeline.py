@@ -33,6 +33,7 @@ from app.ai.prompts import (
     build_complete_question,
     build_enrich_question,
     build_generate_questions,
+    build_repair_question,
 )
 from app.core.config import settings
 from app.models.ai_generation_log import AiGenerationLog
@@ -1925,6 +1926,72 @@ async def generate_drafts(
         "tokens_used": resp["tokens_used"],
         "duration_ms": resp["duration_ms"],
     }
+async def _complete_import_repair(
+    db: AsyncSession, user_id: int, qi: QuestionImport,
+    system_prompt: str | None = None,
+) -> dict:
+    """AI 修复模式：使用 question_repair prompt 重建题目结构。"""
+    raw_data = dict(qi.raw_data or {})
+    raw_text = (
+        raw_data.get("raw_text")
+        or raw_data.get("text")
+        or str(raw_data)
+    )
+    existing = _qi_to_dict(qi)
+
+    messages = build_repair_question(raw_text, existing)
+    if system_prompt:
+        messages[0] = {"role": "system", "content": system_prompt}
+
+    prompt_text = json.dumps(messages, ensure_ascii=False)
+    resp, raw, _ = await _call_or_fallback(
+        messages, {"error": "AI 修复不可用"}, db,
+    )
+
+    if raw is None:
+        db.add(_build_log(
+            user_id=user_id, action="complete", target_type="import",
+            target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
+            raw_response=None, parsed_result=resp.get("fallback_value", {}),
+            confidence=0.0, model="fallback", tokens_used=0, duration_ms=0,
+            success=False, error_message=resp.get("error") or "AI 修复不可用",
+        ))
+        return {"missing": [], "from_fallback": True, "ai_metadata": {}, "repair_mode": True}
+
+    parsed_raw = _extract_json(raw) or {}
+    # 修复模式覆盖所有字段
+    repair_fields = [f for f in ("stem", "options", "answer", "analysis", "subject", "question_type") if f in parsed_raw or f in existing]
+    completed = _apply_batch_complete_result(qi, parsed_raw, repair_fields, "force_overwrite")
+    confidence = _coerce_confidence(parsed_raw.get("confidence"))
+
+    qi.ai_generated = True
+    qi.ai_source = "repair"
+    qi.ai_confidence = confidence
+    qi.ai_metadata = {
+        **(qi.ai_metadata or {}),
+        "repair_suggestion": {f: parsed_raw.get(f) for f in repair_fields if f in parsed_raw},
+        "repair_mode": True,
+        "missing_fields": [],
+    }
+    qi.ai_raw_response = raw
+
+    db.add(_build_log(
+        user_id=user_id, action="complete", target_type="import",
+        target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
+        raw_response=raw, parsed_result=qi.ai_metadata,
+        confidence=confidence,
+        model=resp["model"], tokens_used=resp["tokens_used"],
+        duration_ms=resp["duration_ms"], success=True,
+    ))
+    return {
+        "missing": [],
+        "from_fallback": False,
+        "ai_metadata": qi.ai_metadata,
+        "tokens_used": resp["tokens_used"],
+        "duration_ms": resp["duration_ms"],
+        "repair_mode": True,
+        "completed_fields": completed,
+    }
 
 
 async def complete_import(
@@ -1935,22 +2002,25 @@ async def complete_import(
         raise ValueError("仅支持对 pending 记录使用 AI 补全")
 
     missing = _detect_missing(qi)
-    if not missing:
-        return {"missing": [], "from_fallback": False, "ai_metadata": {}}
 
-    # 从 admin_ai_configs 读取自定义 completion_prompt 和 completion_auto_* 开关
+    # 从 admin_ai_configs 读取自定义 completion_prompt、completion_auto_* 开关和修复模式
     system_prompt: str | None = None
+    repair_mode: bool = False
     try:
         from app.services.admin_ai_config_service import get_all_configs as _get_cfg
         _cfg = await _get_cfg(db)
         system_prompt = str(_cfg.get("completion_prompt")) if _cfg.get("completion_prompt") else None
-        # 读取 completion_auto_* 开关，排除用户禁用的字段
-        _disabled = _get_disabled_completion_fields(_cfg)
-        if _disabled:
-            missing = [f for f in missing if f not in _disabled]
+        repair_mode = bool(_cfg.get("completion_repair_structure", False))
+        if not repair_mode:
+            # 读取 completion_auto_* 开关，排除用户禁用的字段
+            _disabled = _get_disabled_completion_fields(_cfg)
+            if _disabled:
+                missing = [f for f in missing if f not in _disabled]
     except Exception:
         pass
 
+    if repair_mode:
+        return await _complete_import_repair(db, user_id, qi, system_prompt)
     if not missing:
         return {"missing": [], "from_fallback": False, "ai_metadata": {}}
 
