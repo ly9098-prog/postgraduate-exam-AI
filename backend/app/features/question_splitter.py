@@ -1088,8 +1088,8 @@ def _split_merged_two_column_questions(questions: list[dict]) -> list[dict]:
             continue
 
         g1, g2 = groups
-        g1_opts = g1.get("options", {})
-        g2_opts = g2.get("options", {})
+        g1_opts = dict(g1.get("options", {}))
+        g2_opts = dict(g2.get("options", {}))
 
         # Both groups must have 4 options each
         if len(g1_opts) < 4 or len(g2_opts) < 4:

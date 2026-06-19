@@ -945,3 +945,50 @@ class TestWangdao408TcpP0Golden:
         for mode in (None, "exam", "image", "txt"):
             result = split_questions(_make_blocks(text, page=245), structure=structure, import_mode=mode)
             assert len(result) == 1, f"mode={mode} should not apply book/content prose skip"
+
+
+# ---------------------------------------------------------------
+# P0 修复：验证 splitter 不修改输入对象（无副作用）
+# ---------------------------------------------------------------
+
+class TestSplitterImmutability:
+    def test_input_blocks_not_modified(self):
+        """split_questions 不应修改输入的 normalized_blocks。"""
+        blocks = [
+            {"page": 1, "block_index": 0, "normalized_text": "1. 题目\nA. 选A\nB. 选B\nC. 选C\nD. 选D"},
+        ]
+        blocks_snapshot = [dict(b) for b in blocks]
+        split_questions(blocks)
+        assert blocks == blocks_snapshot, "输入 blocks 被修改了"
+
+    def test_two_column_split_preserves_original(self):
+        """_split_merged_two_column_questions 不应修改原始 question 对象。
+
+        构造一个可触发两栏合并检测的题目，验证原始数据完整性。
+        """
+        # 构造两栏合并场景：2个 blank_option_groups，g1 乱序，最后选项包含嵌入式题干
+        blocks = [{
+            "page": 1, "block_index": 0,
+            "normalized_text": (
+                "1. 第一问题干\n"
+                "① A. n+1  B. n  C. n−1  D. 1\n"
+                "② A. n+1  B. n  C. n−1  D. 1"
+            ),
+        }]
+        result = split_questions(blocks)
+        # 验证原始 blocks 未被修改
+        assert blocks[0]["normalized_text"].count("① A.") == 1
+        assert blocks[0]["normalized_text"].count("② A.") == 1
+
+    def test_result_objects_independent(self):
+        """返回的 question 对象应完全独立于输入。"""
+        blocks = _make_blocks(
+            "1. 题干\nA. 选A\nB. 选B\nC. 选C\nD. 选D\n"
+            "2. 第二题\nA. 选A\nB. 选B\nC. 选C\nD. 选D"
+        )
+        result = split_questions(blocks)
+        # 修改返回结果不应影响原始输入
+        original_text = blocks[0]["normalized_text"]
+        result[0]["raw_question_text"] = "MODIFIED"
+        result[0]["option_lines"] = {}
+        assert blocks[0]["normalized_text"] == original_text

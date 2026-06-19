@@ -75,11 +75,24 @@ _RE_WATERMARK = re.compile(
     r"后续关注|关注公众号|扫码关注|扫描二维码|永久微信|微信号|公众号|"
     r"[\[【（(]?\s*研大\s*[\]】）)]?|"
     r"\d{4}年.*考研.*指导|"
-    r"第\s*\d+\s*章\s*\S+|"
     r"数据结构.*复习指导|"
     r"计算机.*考研|"
     r"O\s*口\s*医"  # 常见页脚装饰碎片（参见 BUGS.md 案例二）
     r").*$"
+)
+
+# 独立章标题行检测 — 仅删除纯章标题行，不删除章标题与题目内容合并的行
+# 不应删除："第1章 线性表 1.下列选项中正确的是（）"
+# 应删除："第1章 线性表"
+_RE_CHAPTER_HEADER = re.compile(
+    r"^第\s*\d+\s*章\s*\S+"
+)
+
+# 题目特征信号 — 用于判断章标题后是否跟有题目内容
+_RE_QUESTION_SIGNAL = re.compile(
+    r"\d+\s*[.、)）]|"
+    r"[A-D]\s*[.、:：)）]|"
+    r"下列|以下|正确|错误|的是|哪|选择|计算|判断|已知|设|若|问|求"
 )
 
 # 页码模式：纯数字或带少量空格的1-3位数
@@ -447,12 +460,22 @@ class ImportTextNormalizer:
         return text
 
     # ---------------------------------------------------------------
-    # LaTeX 符号还原 — 编程上下文中的 OCR 误识
+    # LaTeX 符号还原 — 编程上下文中的 OCR 误识（行级作用域）
     # ---------------------------------------------------------------
 
-    # OCR 常将编程/CS 上下文中的单字母变量误识为 LaTeX 希腊符号
-    # 例如：q/a → \alpha, B → \beta
-    # 仅在编程上下文（链表、指针、数组等）中触发，数学上下文不处理
+    # OCR 视觉误识逆向映射表
+    # 这不是希腊字母到拉丁字母的语义映射，而是 OCR 视觉错误的修复：
+    # OCR 看到拉丁字母，输出 LaTeX 希腊符号。此表将这些误识产物还原。
+    # 例如 gamma→r 是因为 OCR 视觉上 γ 像 r，不代表希腊语义（γ=g）
+    _OCR_LATEX_REVERSION_MAP = {
+        "alpha": "a",   # OCR 视觉: a/q → \alpha
+        "beta": "B",    # OCR 视觉: B → \beta
+        "gamma": "r",   # OCR 视觉: r → \gamma（视觉误识，非希腊语义映射）
+        "delta": "d",   # OCR 视觉: d → \delta
+        "theta": "0",   # OCR 视觉: 0 → \theta
+        "lambda": "l",  # OCR 视觉: l → \lambda
+    }
+
     _PROG_CONTEXT_SIGNALS = (
         "->", "next", "prior", "链表", "结点", "节点", "指针",
         "数组", "栈", "队列", "NULL", "malloc", "struct",
@@ -463,32 +486,29 @@ class ImportTextNormalizer:
         r"\$?\\" r"(alpha|beta|gamma|delta|theta|lambda)" r"\$?"
     )
 
-    _LATEX_GREEK_TO_LATIN = {
-        "alpha": "a",
-        "beta": "B",
-        "gamma": "r",
-        "delta": "d",
-        "theta": "0",
-        "lambda": "l",
-    }
-
     def _fix_latex_substitutions(self, text: str) -> str:
-        """编程上下文中将 OCR 误识的希腊 LaTeX 符号还原为拉丁字母。
+        """行级作用域：仅在含编程信号的「行」内还原 OCR 误识的 LaTeX 符号。
 
         OCR 常把 ``q``/``a`` 误识为 ``\\alpha``，``B`` 误识为 ``\\beta`` 等。
-        仅在检测到编程/CS 上下文信号时才执行还原，数学上下文保持 LaTeX 不变。
-        同时处理裸 LaTeX 命令（``\\alpha``）和数学模式包裹（``$\\alpha$``）。
+        改为逐行判断上下文，避免跨区域污染：
+        - ``链表 p->next = \\alpha`` → 该行含编程信号，允许替换
+        - ``设\\alpha+\\beta=1`` → 无编程信号，保留 LaTeX 不动
         """
         if not text:
-            return text
-        if not any(sig in text for sig in self._PROG_CONTEXT_SIGNALS):
             return text
 
         def _replace(m: re.Match) -> str:
             cmd = m.group(1)
-            return self._LATEX_GREEK_TO_LATIN.get(cmd, m.group(0))
+            return self._OCR_LATEX_REVERSION_MAP.get(cmd, m.group(0))
 
-        return self._RE_LATEX_GREEK_SINGLE.sub(_replace, text)
+        lines = text.split("\n")
+        result: list[str] = []
+        for line in lines:
+            if any(sig in line for sig in self._PROG_CONTEXT_SIGNALS):
+                result.append(self._RE_LATEX_GREEK_SINGLE.sub(_replace, line))
+            else:
+                result.append(line)
+        return "\n".join(result)
 
     # ---------------------------------------------------------------
     # 标点符号规范化
@@ -571,6 +591,10 @@ class ImportTextNormalizer:
             if self._is_low_info_noise(stripped):
                 continue
             if self._match_extra_watermark(stripped):
+                continue
+            # 章标题行：仅当后续无题目特征时才过滤（避免误删合并行）
+            ch_match = _RE_CHAPTER_HEADER.match(stripped)
+            if ch_match and not _RE_QUESTION_SIGNAL.search(stripped[ch_match.end():]):
                 continue
             filtered.append(line)
         return "\n".join(filtered)
