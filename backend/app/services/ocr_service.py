@@ -582,10 +582,14 @@ def ocr_pages_with_boxes(
     return results
 
 
-def clean_ocr_text(text: str) -> str:
+def clean_ocr_text(text: str, *, trace_id: str = "") -> str:
     """清洗 OCR 输出文本：去乱码、合并断行、修复常见问题。"""
     if not text:
         return ""
+
+    # Step 0: 代码块检测 — 必须在所有清洗操作之前，基于原始文本
+    from app.features.code_detector import wrap_code_fences
+    text = wrap_code_fences(text, trace_id=trace_id)
 
     # 去除乱码字符（保留中文、ASCII 可打印字符、常用标点、数学符号）
     # U+2200-U+22FF: 数学运算符（∫∑∏√∞∈∉≤≥≠≈∂∇）
@@ -615,8 +619,12 @@ def clean_ocr_text(text: str) -> str:
     )
     text = re.sub(r"\n((?:参考|正确)?)\n(答案\s*[：:])", r"\n\1\2", text)
 
-    # 去除连续空格
-    text = re.sub(r" {2,}", " ", text)
+    # 去除连续空格（围栏内保护）
+    parts = re.split(r"(```[\s\S]*?```)", text)
+    text = "".join(
+        part if part.startswith("```") else re.sub(r" {2,}", " ", part)
+        for part in parts
+    )
 
     # 去除连续空行（超过 2 个换行压缩为 2 个）
     text = re.sub(r"\n{3,}", "\n\n", text)
