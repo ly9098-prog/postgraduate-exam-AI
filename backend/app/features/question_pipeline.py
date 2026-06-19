@@ -11,6 +11,7 @@ ai_import_service、ai_import_helpers。所有入口（Excel / PDF / OCR / AI）
 """
 from __future__ import annotations
 
+import asyncio
 import difflib
 import hashlib
 import io
@@ -1704,16 +1705,15 @@ def _build_log(
 
 
 async def _call_or_fallback(
-    messages: list, fallback_value: dict, db: AsyncSession | None = None
+    messages: list, fallback_value: dict, db: AsyncSession | None = None,
+    *, api_key: str | None = None, base_url: str | None = None, model_name: str | None = None,
 ) -> tuple[dict, str | None, dict | None]:
-    creds = None
-    if db is not None:
+    if api_key is None and db is not None:
         from app.services.model_config_resolver import ensure_db_model_configured
         creds = await ensure_db_model_configured(db, feature="completion")
-
-    api_key = creds[0] if creds else None
-    base_url = creds[1] if creds else None
-    model_name = creds[2] if creds else None
+        api_key = creds[0] if creds else None
+        base_url = creds[1] if creds else None
+        model_name = creds[2] if creds else None
 
     if not (api_key or deepseek.is_available()):
         return (
@@ -1938,14 +1938,21 @@ async def complete_import(
     if not missing:
         return {"missing": [], "from_fallback": False, "ai_metadata": {}}
 
-    # 从 admin_ai_configs 读取自定义 completion_prompt
+    # 从 admin_ai_configs 读取自定义 completion_prompt 和 completion_auto_* 开关
     system_prompt: str | None = None
     try:
         from app.services.admin_ai_config_service import get_all_configs as _get_cfg
         _cfg = await _get_cfg(db)
         system_prompt = str(_cfg.get("completion_prompt")) if _cfg.get("completion_prompt") else None
+        # 读取 completion_auto_* 开关，排除用户禁用的字段
+        _disabled = _get_disabled_completion_fields(_cfg)
+        if _disabled:
+            missing = [f for f in missing if f not in _disabled]
     except Exception:
         pass
+
+    if not missing:
+        return {"missing": [], "from_fallback": False, "ai_metadata": {}}
 
     messages = build_complete_question(_qi_to_dict(qi), missing, system_prompt=system_prompt)
     prompt_text = json.dumps(messages, ensure_ascii=False)
@@ -1962,7 +1969,6 @@ async def complete_import(
             model=resp["model"], tokens_used=0, duration_ms=0,
             success=False, error_message=resp.get("error"),
         ))
-        await db.commit()
         return {"missing": missing, "from_fallback": True, "ai_metadata": parsed}
 
     parsed_raw = _extract_json(raw) or {}
@@ -1990,7 +1996,6 @@ async def complete_import(
         model=resp["model"], tokens_used=resp["tokens_used"],
         duration_ms=resp["duration_ms"], success=True,
     ))
-    await db.commit()
     return {
         "missing": missing,
         "from_fallback": False,
@@ -2258,53 +2263,172 @@ async def batch_complete_questions(
     # 从 admin_ai_configs 读取 completion_auto_* 开关和自定义 prompt
     disabled_fields: set[str] = set()
     system_prompt: str | None = None
+    from app.services.admin_ai_config_service import get_all_configs
     try:
-        from app.services.admin_ai_config_service import get_all_configs
-
         cfg = await get_all_configs(db)
         disabled_fields = _get_disabled_completion_fields(cfg)
         system_prompt = str(cfg.get("completion_prompt")) if cfg.get("completion_prompt") else None
     except Exception:
-        pass  # 默认全部启用
+        pass
 
+    # 预读取模型凭据（仅一次）
+    from app.services.model_config_resolver import ensure_db_model_configured
+    creds = await ensure_db_model_configured(db, feature="completion")
+    _api_key = creds[0] if creds else None
+    _base_url = creds[1] if creds else None
+    _model_name = creds[2] if creds else None
+
+    # Step 1: 顺序预读取所有 QI，检测缺失字段，构建 Prompt
+    prepared: list[dict] = []
+    for import_id in import_ids:
+        try:
+            qi = await _get_qi(db, import_id)
+            if qi.status != "pending":
+                prepared.append(dict(
+                    import_id=import_id, status="failed",
+                    error=f"非 pending 状态: {qi.status}", completed_fields=[],
+                ))
+                continue
+
+            to_complete = _detect_fields_to_complete(
+                qi, target_fields, strategy, disabled_fields,
+            )
+            if not to_complete:
+                prepared.append(dict(
+                    import_id=import_id, status="skipped",
+                    error=None, completed=[],
+                ))
+                continue
+
+            messages = build_batch_complete_question(
+                _qi_to_dict(qi), to_complete, strategy, system_prompt=system_prompt,
+            )
+            prompt_text = json.dumps(messages, ensure_ascii=False)
+            prepared.append(dict(
+                import_id=import_id, qi=qi, to_complete=to_complete,
+                messages=messages, prompt_text=prompt_text,
+                fallback_value=fallback.get_fallback_complete(to_complete),
+            ))
+        except Exception as e:
+            prepared.append(dict(
+                import_id=import_id, status="failed",
+                error=str(e), completed_fields=[],
+            ))
+
+    # Step 2: 并发调用 AI（纯 HTTP，无 DB 操作）
+    sem = asyncio.Semaphore(3)
+
+    async def _do_ai_call(item: dict) -> dict:
+        if "messages" not in item:
+            return item  # 跳过已失败/已跳过的项
+        async with sem:
+            if not (_api_key or deepseek.is_available()):
+                item["resp_raw"] = None
+                item["parsed_raw"] = item["fallback_value"]
+                item["error"] = "DEEPSEEK_API_KEY 未配置"
+                return item
+            try:
+                resp = await deepseek.chat(
+                    item["messages"], model=_model_name,
+                    api_key=_api_key, base_url=_base_url,
+                )
+                item["resp_raw"] = resp["content"]
+                item["parsed_raw"] = _extract_json(resp["content"]) or {}
+                item["tokens_used"] = resp["tokens_used"]
+                item["duration_ms"] = resp["duration_ms"]
+                item["model"] = resp["model"]
+            except RuntimeError as e:
+                item["resp_raw"] = None
+                item["parsed_raw"] = item["fallback_value"]
+                item["error"] = str(e)
+            except Exception as e:
+                item["resp_raw"] = None
+                item["parsed_raw"] = item["fallback_value"]
+                item["error"] = str(e)
+            return item
+
+    ai_results = await asyncio.gather(
+        *[_do_ai_call(item) for item in prepared], return_exceptions=True,
+    )
+
+    # Step 3: 顺序应用结果到 DB
     succeeded = 0
     failed = 0
     skipped = 0
     results: list[dict] = []
 
-    for import_id in import_ids:
-        try:
-            r = await complete_import_with_strategy(
-                db, user_id, import_id, target_fields, strategy, disabled_fields, system_prompt,
-            )
-            if r.get("completed"):
-                succeeded += 1
-            elif r.get("error"):
-                failed += 1
-            else:
-                skipped += 1
-            results.append({
-                "import_id": import_id,
-                "status": "success" if r.get("completed") else ("skipped" if not r.get("error") else "failed"),
-                "error": r.get("error"),
-                "completed_fields": r.get("completed", []),
-            })
-        except ValueError as e:
+    for item in ai_results:
+        # 确保返回值是 dict（防御性处理 gather 异常）
+        if not isinstance(item, dict):
+            skipped += 1
+            results.append(dict(import_id=-1, status="failed", error=str(item), completed_fields=[]))
+            continue
+
+        import_id = item["import_id"]
+
+        # 已预处理为失败/跳过
+        if item.get("status") == "failed":
             failed += 1
-            results.append({
-                "import_id": import_id,
-                "status": "failed",
-                "error": str(e),
-                "completed_fields": [],
-            })
-        except Exception as e:
+            results.append(dict(
+                import_id=import_id, status="failed",
+                error=item.get("error"), completed_fields=[],
+            ))
+            continue
+        if item.get("status") == "skipped":
+            skipped += 1
+            results.append(dict(
+                import_id=import_id, status="skipped",
+                error=None, completed_fields=[],
+            ))
+            continue
+
+        # AI 调用失败
+        if item.get("resp_raw") is None:
+            qi = item["qi"]
+            fbv = item["parsed_raw"]
+            db.add(_build_log(
+                user_id=user_id, action="batch_complete", target_type="import",
+                target_id=qi.id, batch_id=qi.batch_id, prompt_text=item["prompt_text"],
+                raw_response=None, parsed_result=fbv, confidence=0.0,
+                model="fallback", tokens_used=0, duration_ms=0,
+                success=False, error_message=item.get("error"),
+            ))
             failed += 1
-            results.append({
-                "import_id": import_id,
-                "status": "failed",
-                "error": str(e),
-                "completed_fields": [],
-            })
+            results.append(dict(
+                import_id=import_id, status="failed",
+                error=item.get("error"), completed_fields=[],
+            ))
+            continue
+
+        # 成功：应用结果
+        qi = item["qi"]
+        parsed_raw = item["parsed_raw"]
+        to_complete = item["to_complete"]
+        completed = _apply_batch_complete_result(qi, parsed_raw, to_complete, strategy)
+        confidence = _coerce_confidence(parsed_raw.get("confidence"))
+
+        qi.ai_confidence = confidence
+        qi.ai_raw_response = item["resp_raw"]
+
+        db.add(_build_log(
+            user_id=user_id, action="batch_complete", target_type="import",
+            target_id=qi.id, batch_id=qi.batch_id, prompt_text=item["prompt_text"],
+            raw_response=item["resp_raw"], parsed_result=qi.ai_metadata,
+            confidence=confidence,
+            model=item.get("model", "fallback"),
+            tokens_used=item.get("tokens_used", 0),
+            duration_ms=item.get("duration_ms", 0), success=True,
+        ))
+
+        if completed:
+            succeeded += 1
+        else:
+            skipped += 1
+        results.append(dict(
+            import_id=import_id,
+            status="success" if completed else "skipped",
+            error=None, completed_fields=completed,
+        ))
 
     return {
         "total": len(import_ids),

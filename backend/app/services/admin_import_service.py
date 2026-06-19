@@ -196,7 +196,6 @@ async def batch_complete_import_questions(
     result = await question_pipeline.batch_complete_questions(
         db, operator.id, import_ids, fields, strategy,
     )
-    await db.commit()
 
     await write_admin_audit(
         db,
@@ -213,6 +212,7 @@ async def batch_complete_import_questions(
         },
         request=request,
     )
+    await db.commit()
     return result
 
 
