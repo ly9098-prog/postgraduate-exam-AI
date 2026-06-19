@@ -1,0 +1,11 @@
+{
+  "id": "004",
+  "name": "normalizer_ocr_noise",
+  "description": "OCR字符混淆：数字/字母误识别（1→l, 0→O, 8→B）修复",
+  "subject": "math",
+  "fixture_source": "normalizer_ocr_noise.txt",
+  "pipeline_stages": ["normalize", "split", "match"],
+  "expected_questions": 5,
+  "known_failure_types": ["公式损坏", "选项错位"],
+  "date_added": "2026-06-19"
+}

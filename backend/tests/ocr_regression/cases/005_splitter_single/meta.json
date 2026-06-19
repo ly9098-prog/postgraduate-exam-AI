@@ -1,0 +1,11 @@
+{
+  "id": "005",
+  "name": "splitter_single",
+  "description": "单题矩阵公式：测试公式密集型选项的分割",
+  "subject": "math",
+  "fixture_source": "splitter_single.txt",
+  "pipeline_stages": ["normalize", "split", "match"],
+  "expected_questions": 1,
+  "known_failure_types": [],
+  "date_added": "2026-06-19"
+}

@@ -1,0 +1,92 @@
+[normalized_full_text]
+1. 设函数 f(x) 在区间[0, 1] 上连，在(0, 1) 内可，且f(0) = 0,f(1) = 1。
+证明:存在 \xi \in (0, 1),使得 f'(\xi) = 2\xi。
+
+2. 下列关于线性方程组的解的说，正确的是( )
+
+A. 齐次线性方程
+组一定有解
+
+B. 非齐次线性方程组
+可能无解
+
+C. 若系数矩阵的秩为
+r,则解空间的维数为
+
+D. 以上说法均正确
+
+3. This is a complete sentence. The next line starts a new idea that continues on this second line without a period at the end
+
+4. 正常段，句号结尾。
+
+5. 另一个正常段落。
+
+B. 第三个段落。
+[/normalized_full_text]
+
+[questions]
+---
+number: 1
+stem: 1. 设函数 f(x) 在区间[0, 1] 上连，在(0, 1) 内可，且f(0) = 0,f(1) = 1。
+证明:存在 \xi \in (0, 1),使得 f'(\xi) = 2\xi。
+type: subjective
+options:
+answer: 
+explanation: 
+option_keys: []
+
+---
+number: 2
+stem: 2. 下列关于线性方程组的解的说，正确的是( )
+
+A. 齐次线性方程
+组一定有解
+
+B. 非齐次线性方程组
+可能无解
+
+C. 若系数矩阵的秩为
+r,则解空间的维数为
+
+D. 以上说法均正确
+type: single_choice
+options:
+  A: 齐次线性方程 组一定有解
+  B: 非齐次线性方程组 可能无解
+  C: 若系数矩阵的秩为 r,则解空间的维数为
+  D: 以上说法均正确
+answer: 
+explanation: 
+option_keys: ["A", "B", "C", "D"]
+
+---
+number: 3
+stem: 3. This is a complete sentence. The next line starts a new idea that continues on this second line without a period at the end
+type: subjective
+options:
+answer: 
+explanation: 
+option_keys: []
+
+---
+number: 4
+stem: 4. 正常段，句号结尾。
+type: subjective
+options:
+answer: 
+explanation: 
+option_keys: []
+
+---
+number: 5
+stem: 5. 另一个正常段落。
+
+B. 第三个段落。
+type: single_choice
+options:
+  B: 第三个段落。
+answer: 
+explanation: 
+option_keys: ["B"]
+
+[/questions]

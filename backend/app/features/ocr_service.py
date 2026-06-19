@@ -43,8 +43,12 @@ def ocr_math_formula(image: bytes) -> str:
 
 
 def ocr_table(image: bytes) -> list[list[str]]:
-    """表格识别接口（预留）。"""
-    raise NotImplementedError("表格 OCR 暂未实现")
+    """表格识别接口（预留）。
+
+    图像级表格 OCR 暂未实现。文本级 LaTeX tabular 解析请使用
+    app.services.formula_normalizer.parse_latex_table / extract_tables_from_text。
+    """
+    raise NotImplementedError("表格 OCR 暂未实现，文本级解析见 formula_normalizer")
 
 
 # ---------------------------------------------------------------------------

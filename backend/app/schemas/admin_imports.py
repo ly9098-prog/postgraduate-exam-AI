@@ -235,6 +235,7 @@ class BatchImageJobStatusResponse(BaseModel):
     succeeded: int = 0
     failed: int = 0
     total_questions: int = 0
+    merged_batch_id: str = ""
     current_seq: int = 0
     current_file: str = ""
     error_message: str | None = None
