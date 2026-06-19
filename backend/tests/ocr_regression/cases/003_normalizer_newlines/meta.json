@@ -1,0 +1,11 @@
+{
+  "id": "003",
+  "name": "normalizer_newlines",
+  "description": "OCR断裂换行：测试换行合并与段落结构恢复",
+  "subject": "math",
+  "fixture_source": "normalizer_newlines.txt",
+  "pipeline_stages": ["normalize", "split", "match"],
+  "expected_questions": 5,
+  "known_failure_types": [],
+  "date_added": "2026-06-19"
+}

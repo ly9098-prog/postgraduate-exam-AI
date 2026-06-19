@@ -24,7 +24,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -127,6 +127,113 @@ async def _set_job_status(job_id: str, status: str, error_message: str | None = 
             job.finished_at = _now()
         job.updated_at = _now()
         await db.commit()
+
+
+async def _merge_image_texts(
+    job_id: str,
+    subject: str | None,
+    options: dict,
+) -> dict:
+    """Post-OCR merge: 将同批多张图片的 OCR 文本合并为连续文档再走一次导入流水线。
+
+    只在全部图片成功且有 ≥2 张产出 cleaned_text 时执行。
+    失败时保留原始单图批次（不删除已有结果），保证数据不丢失。
+    """
+    async with async_session() as db:
+        rows = (
+            await db.execute(
+                select(ImportBatchJobItem)
+                .where(
+                    ImportBatchJobItem.job_id == job_id,
+                    ImportBatchJobItem.status == "succeeded",
+                    ImportBatchJobItem.ocr_cleaned_text.isnot(None),
+                )
+                .order_by(ImportBatchJobItem.seq)
+            )
+        ).scalars().all()
+
+    if len(rows) < 2:
+        logger.info("【MERGE-SKIP】job=%s 成功图片数=%d，无需合并", job_id, len(rows))
+        return {"merged": False, "reason": f"only {len(rows)} succeeded item(s)"}
+
+    # 收集旧批次 ID（后续清理）
+    old_batch_ids = [r.review_batch_id for r in rows if r.review_batch_id]
+    merged_text = "\n\n".join(r.ocr_cleaned_text for r in rows if r.ocr_cleaned_text)
+
+    logger.info(
+        "【MERGE-1】合并 %d 张图片 OCR 文本 | job=%s total_chars=%d",
+        len(rows), job_id, len(merged_text),
+    )
+
+    try:
+        async with async_session() as pdb:
+            from app.features.pipeline_orchestrator import run_import_pipeline
+
+            merge_opts = dict(options)
+            merge_opts["_merged_from_job"] = job_id
+            result = await run_import_pipeline(
+                file_content=merged_text.encode("utf-8"),
+                source_type="txt",
+                source_file=f"batch_merged_{job_id}",
+                subject=subject,
+                options=merge_opts,
+                db=pdb,
+            )
+
+        merged_batch_id = result.get("batch_id")
+        qcount = (result.get("stats") or {}).get("to_review", 0)
+        pipeline_ok = result.get("status") == "completed" and bool(merged_batch_id)
+
+        if not pipeline_ok:
+            errors = result.get("errors") or []
+            reason = errors[0] if errors else "合并流水线未生成批次"
+            logger.warning("【MERGE-FAIL】job=%s reason=%s — 保留原始单图批次", job_id, reason)
+            return {"merged": False, "reason": reason}
+
+        logger.info(
+            "【MERGE-2】合并流水线成功 | job=%s merged_batch=%s questions=%d",
+            job_id, merged_batch_id, qcount,
+        )
+
+        # 更新所有 item 指向合并后的 review batch
+        for r in rows:
+            await _update_item(
+                r.id,
+                review_batch_id=merged_batch_id,
+                question_count=0,
+                pipeline_id=result.get("pipeline_id"),
+            )
+
+        # 清理旧的单图 review batch
+        from app.services.admin_import_service import delete_import_batch
+
+        cleaned = 0
+        async with async_session() as ddb:
+            for old_id in old_batch_ids:
+                if old_id and old_id != merged_batch_id:
+                    try:
+                        count = await delete_import_batch(ddb, old_id)
+                        cleaned += count
+                    except ValueError:
+                        logger.warning("【MERGE-CLEANUP】skip batch=%s（可能已发布）", old_id)
+                    except Exception:
+                        logger.exception("【MERGE-CLEANUP】删除旧批次失败 batch=%s", old_id)
+            await ddb.commit()
+
+        logger.info(
+            "【MERGE-3】清理完成 | job=%s cleaned_batches=%d cleaned_questions=%d",
+            job_id, len(old_batch_ids), cleaned,
+        )
+        return {
+            "merged": True,
+            "batch_id": merged_batch_id,
+            "question_count": qcount,
+            "source_count": len(rows),
+            "cleaned_questions": cleaned,
+        }
+    except Exception:
+        logger.exception("【MERGE-FAIL】合并流水线异常 | job=%s — 保留原始单图批次", job_id)
+        return {"merged": False, "reason": "exception during merge pipeline"}
 
 
 async def _run_single_image(item_id: int, source_file: str, content: bytes, subject: str | None, options: dict) -> dict:
@@ -302,6 +409,18 @@ async def run_batch_job(
         ]
         await asyncio.gather(*tasks)
 
+        # 跨图片题目合并：将同批多图 OCR 文本合并为连续文档再走一次流水线
+        merge_result = await _merge_image_texts(
+            job_id=job_id,
+            subject=subject,
+            options=options,
+        )
+        if merge_result.get("merged"):
+            logger.info(
+                "batch image job merged: job_id=%s merged_batch=%s questions=%d",
+                job_id, merge_result.get("batch_id"), merge_result.get("question_count"),
+            )
+
         await _set_job_status(job_id, "completed")
         logger.info("batch image job completed: job_id=%s", job_id)
     except Exception as exc:
@@ -335,6 +454,7 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
     total_questions = 0
     current_file = ""
     current_seq = 0
+    merged_batch_id = ""
     items: list[dict] = []
     for item in rows:
         counts[item.status] = counts.get(item.status, 0) + 1
@@ -353,6 +473,19 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
             "has_ocr_cache": bool(item.ocr_cleaned_text or item.ocr_raw_text),
         })
 
+    # 检测合并状态：所有 succeeded item 共享同一 review_batch_id
+    succeeded_items = [r for r in items if r["status"] == "succeeded" and r["review_batch_id"]]
+    if len(succeeded_items) >= 2:
+        candidate = succeeded_items[0]["review_batch_id"]
+        if all(it["review_batch_id"] == candidate for it in succeeded_items):
+            merged_batch_id = candidate
+            # 从 question_imports 查询真实题目数
+            from app.models.question_import import QuestionImport as QI  # noqa: F811
+            q_count = await db.scalar(
+                select(func.count()).select_from(QI).where(QI.batch_id == merged_batch_id)
+            )
+            total_questions = q_count or 0
+
     done = counts["succeeded"] + counts["failed"]
     return {
         "job_id": job.job_id,
@@ -367,6 +500,7 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
         "succeeded": counts["succeeded"],
         "failed": counts["failed"],
         "total_questions": total_questions,
+        "merged_batch_id": merged_batch_id,
         "current_seq": current_seq,
         "current_file": current_file,
         "error_message": job.error_message,

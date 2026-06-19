@@ -250,3 +250,85 @@ def _wrap_bare_latex(text: str) -> str:
         i = j
 
     return "".join(result)
+
+
+# ── LaTeX 表格解析 ─────────────────────────────────────────────────────────────
+
+_RE_TABULAR = re.compile(
+    r"\\begin\{tabular\}\{([^}]*)\}(.*?)\\end\{tabular\}",
+    re.DOTALL,
+)
+
+_RE_MULTICOLUMN = re.compile(r"\\multicolumn\{(\d+)\}\{[^}]*\}\{([^}]*)\}")
+_RE_HLINE = re.compile(r"\\hline\s*")
+_RE_CLINE = re.compile(r"\\cline\{[^}]*\}")
+
+
+def _parse_cell(text: str) -> str:
+    """清理单个单元格内容。"""
+    text = _RE_HLINE.sub("", text)
+    text = _RE_CLINE.sub("", text)
+    return text.strip()
+
+
+def _split_row(row_text: str) -> list[str]:
+    """将一行按 & 切分为单元格。"""
+    cells: list[str] = []
+    for part in row_text.split("&"):
+        cells.append(_parse_cell(part))
+    return cells
+
+
+def parse_latex_table(text: str) -> list[dict]:
+    """解析文本中的 LaTeX tabular 表格，返回结构化数据。
+
+    每个表格返回 dict: {"columns": int, "rows": [[cell, ...], ...], "raw": str}
+    若未找到表格则返回空列表。
+    """
+    tables: list[dict] = []
+    for match in _RE_TABULAR.finditer(text):
+        col_spec = match.group(1)
+        body = match.group(2)
+
+        # 粗略估计列数：计数 | 之外的非空白对齐符
+        col_count = sum(1 for c in col_spec if c in "lcrp")
+
+        rows: list[list[str]] = []
+        raw_rows = body.split(r"\\")
+        for raw_row in raw_rows:
+            if _RE_HLINE.fullmatch(raw_row.strip()):
+                continue
+            cleaned = raw_row
+            cleaned = _RE_MULTICOLUMN.sub(r"\2", cleaned)
+            cells = _split_row(cleaned)
+            if any(c for c in cells):
+                rows.append(cells)
+
+        if rows:
+            tables.append({
+                "columns": col_count or max(len(r) for r in rows),
+                "rows": rows,
+                "raw": match.group(0),
+            })
+
+    return tables
+
+
+def extract_tables_from_text(text: str) -> str:
+    """将文本中的 LaTeX tabular 替换为结构化可读文本。
+
+    保留表格原始内容并标注行列结构，方便后续人工审核。
+    """
+    tables = parse_latex_table(text)
+    if not tables:
+        return text
+
+    result = text
+    for t in tables:
+        lines = [f"[table: {t['columns']}cols x {len(t['rows'])}rows]"]
+        for row in t["rows"]:
+            lines.append(" | ".join(row))
+        replacement = "\n".join(lines)
+        result = result.replace(t["raw"], replacement, 1)
+
+    return result

@@ -1,0 +1,11 @@
+{
+  "id": "006",
+  "name": "splitter_inline",
+  "description": "5道内联选择题：测试多题目顺序识别与选项归属",
+  "subject": "mixed",
+  "fixture_source": "splitter_inline.txt",
+  "pipeline_stages": ["normalize", "split", "match"],
+  "expected_questions": 5,
+  "known_failure_types": [],
+  "date_added": "2026-06-19"
+}

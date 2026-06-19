@@ -1,0 +1,9 @@
+06.在一个单链表中，已知q所指结点是p所指结点的前驱结点，若在q和p之间插入结点
+s，则执行（）。
+A.s->next=p->next;p->next=s;
+B.
+.p->next=s->next;s->next=p;
+C.
+q->next=s;s
+next=p;
+Dp=

@@ -28,7 +28,7 @@ from app.features.batch_validation import validate_batch_structure
 from app.features.import_mode import ImportMode, detect_import_mode, get_strategy
 from app.features.ocr_correction import (
     TIER_HIGH_THRESHOLD, correct_ocr_blocks,
-    _detect_noise, _detect_structure_abnormal, _should_correct,
+    _detect_noise, _detect_structure_abnormal, _filter_sensitive, _should_correct,
 )
 from app.features.page_classifier import classify_pages, filter_blocks_by_classification
 from app.features.question_normalizer import normalize_questions
@@ -1362,6 +1362,7 @@ class ImportPipeline:
         """通过 OCRFixRouter 执行多模型 OCR 纠错。"""
         from app.features.ocr_fix import OCRFixRouter
         from app.features.ocr_fix.interfaces import OCRFixResult
+        from app.features.ocr_fix.metrics import OcrCorrectionMetrics
 
         # 构建 router 配置
         router_config = await self._build_router_config(opts, db)
@@ -1371,6 +1372,8 @@ class ImportPipeline:
 
         # 页面图像由 run() 预渲染后传入，避免 chunked 模式重复渲染
         page_images = _kw.get("page_images")
+
+        metrics = OcrCorrectionMetrics()
 
         corrections: list[dict] = []
         corrected_blocks: list[dict] = [None] * len(normalized_blocks)  # type: ignore
@@ -1409,6 +1412,12 @@ class ImportPipeline:
 
             stats["noisy_blocks"] += 1
             to_correct.append((idx, block, text, noise_score, structure_score))
+
+        metrics.record_classification(
+            total=stats["total_blocks"],
+            noisy=stats["noisy_blocks"],
+            skipped=stats["skipped_blocks"],
+        )
 
         # Phase 2: concurrent fix (same pattern as legacy path)
         from app.features.token_budget import estimate_tokens as _est, check_token_limit, record_token_usage
@@ -1462,6 +1471,7 @@ class ImportPipeline:
                     "corrected": False,
                     "reason": f"exception: {fix_result}",
                 })
+                metrics.record_failure(model="exception", before=text)
                 continue
 
             _, result = fix_result
@@ -1477,6 +1487,13 @@ class ImportPipeline:
                     "  └─ 纠错前: %.160s\n  └─ 纠错后: %.160s",
                     idx, block.get("page", 1), result.model_used, result.confidence,
                     text, result.fixed_text,
+                )
+                metrics.record_correction(
+                    model=result.model_used,
+                    before=text,
+                    after=result.fixed_text,
+                    duration_ms=getattr(result, "duration_ms", None),
+                    tokens=result.tokens_used,
                 )
                 corrections.append({
                     "block_index": block.get("block_index", 0),
@@ -1495,6 +1512,10 @@ class ImportPipeline:
                     "corrected": False,
                     "reason": result.raw_response or "no_change",
                 })
+                metrics.record_unchanged(
+                    model=result.model_used,
+                    before=text,
+                )
 
             corrected_blocks[idx] = new_block
 
@@ -1504,6 +1525,18 @@ class ImportPipeline:
                 corrected_blocks[idx] = normalized_blocks[idx]
 
         corrected_blocks = [b for b in corrected_blocks if b is not None]
+
+        # 敏感内容过滤
+        if router_config.get("ocr_filter_sensitive", True):
+            filtered_count = 0
+            for b in corrected_blocks:
+                text = b.get("normalized_text", "")
+                filtered = _filter_sensitive(text)
+                if filtered != text:
+                    b["normalized_text"] = filtered
+                    filtered_count += 1
+            if filtered_count:
+                logger.debug("ocr_filter_sensitive: filtered %d blocks", filtered_count)
 
         # 记录使用的模型
         used_models = {c.get("model_used") for c in corrections if c.get("model_used")}
@@ -1515,6 +1548,11 @@ class ImportPipeline:
                 f"Router corrected {stats['corrected_blocks']}/{stats['total_blocks']} blocks "
                 f"(model: {stats['model_used']})"
             )
+
+        metrics.flush(extra={
+            "stats": stats,
+            "used_models": sorted(used_models) if used_models else [],
+        })
 
         return {
             "normalized_blocks": corrected_blocks,
@@ -1542,6 +1580,11 @@ class ImportPipeline:
             val = opts.get(key)
             if val is not None:
                 config[key] = val
+
+        # 从 opts 读取过滤开关
+        val = opts.get("ocr_filter_sensitive")
+        if val is not None:
+            config["ocr_filter_sensitive"] = str(val).lower() != "false"
 
         if db:
             try:
@@ -1571,6 +1614,20 @@ class ImportPipeline:
                         config["deepseek_api_key"] = ds_model["api_key"]
                     if "deepseek_base_url" not in config:
                         config["deepseek_base_url"] = ds_model["api_base_url"]
+            except Exception:
+                pass
+
+            # 从 DB admin_ai_configs 读取过滤配置
+            try:
+                from app.services.admin_ai_config_service import get_all_configs
+                db_configs = await get_all_configs(db)
+                for key in ("ocr_filter_sensitive", "ocr_filter_max_chars", "ocr_filter_max_tokens"):
+                    val = db_configs.get(key)
+                    if val is not None:
+                        if isinstance(val, bool):
+                            config[key] = val
+                        else:
+                            config[key] = str(val).lower() != "false" if key == "ocr_filter_sensitive" else val
             except Exception:
                 pass
 

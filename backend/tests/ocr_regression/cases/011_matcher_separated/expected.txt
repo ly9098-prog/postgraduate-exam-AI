@@ -1,0 +1,71 @@
+[normalized_full_text]
+1. 设函数 f(x) = x^2,求 f'(x)。
+A. 2x
+B. x
+C. x^2
+D. 2
+2. 设 A = [[1, 0], [0, 1]],求 det(A)。
+A. 0
+B. 1
+C. 2
+D. -1
+3. 计算极限 lim(x\to0) sin(x)/x。
+A. 0
+B. 1
+C. \infty
+D. 不存在
+[/normalized_full_text]
+
+[questions]
+---
+number: 1
+stem: 1. 设函数 f(x) = x^2,求 f'(x)。
+A. 2x
+B. x
+C. x^2
+D. 2
+type: single_choice
+options:
+  A: 2x
+  B: x
+  C: x^2
+  D: 2
+answer: 
+explanation: 
+option_keys: ["A", "B", "C", "D"]
+
+---
+number: 2
+stem: 2. 设 A = [[1, 0], [0, 1]],求 det(A)。
+A. 0
+B. 1
+C. 2
+D. -1
+type: single_choice
+options:
+  A: 0
+  B: 1
+  C: 2
+  D: -1
+answer: 
+explanation: 
+option_keys: ["A", "B", "C", "D"]
+
+---
+number: 3
+stem: 3. 计算极限 lim(x\to0) sin(x)/x。
+A. 0
+B. 1
+C. \infty
+D. 不存在
+type: single_choice
+options:
+  A: 0
+  B: 1
+  C: \infty
+  D: 不存在
+answer: 
+explanation: 
+option_keys: ["A", "B", "C", "D"]
+
+[/questions]

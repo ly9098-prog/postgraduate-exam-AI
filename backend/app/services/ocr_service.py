@@ -369,6 +369,12 @@ def _extract_ocr_lines(result: Any) -> list[dict]:
 
 
 def _detect_column_split(lines: list[dict], image_width: int) -> float | None:
+    """Detect two-column layout from OCR line positions.
+
+    Progressive threshold fallback: starts with strict 4% gap, relaxes to 2%/1%
+    when the strict threshold rejects a layout that otherwise looks columnar.
+    Absolute minimum gap of 12px prevents false positives on narrow images.
+    """
     candidates = [line for line in lines if line["width"] < image_width * 0.65]
     if len(candidates) < 6:
         return None
@@ -388,9 +394,12 @@ def _detect_column_split(lines: list[dict], image_width: int) -> float | None:
     left_max = max(line["bbox"][2] for line in left)
     right_min = min(line["bbox"][0] for line in right)
     gap = right_min - left_max
-    if gap < image_width * 0.04:
-        return None
-    return (left_max + right_min) / 2
+
+    # Progressive thresholds: 4% → 2% → 1% of image width, minimum 12px
+    for ratio in (0.04, 0.02, 0.01):
+        if gap >= max(image_width * ratio, 12):
+            return (left_max + right_min) / 2
+    return None
 
 
 def _order_ocr_lines_reading_order(
@@ -465,8 +474,20 @@ def _ocr_one_page_with_boxes(
         )
         if not ordered:
             return OcrPageResult(page_index=page_index, text="", boxes=[])
-        lines = [line["text"] for line in ordered if line["text"].strip()]
-        boxes = [{"bbox": line["bbox"], "conf": line["conf"]} for line in ordered]
+        # 低置信度行过滤：置信度 < 0.55 且不含 CJK 字符的行视为疑似水印/噪声
+        # CJK 文本即便是较低置信度也保留（中文字符结构复杂，OCR 评分偏低是正常的）
+        lines: list[str] = []
+        boxes: list[dict] = []
+        for line in ordered:
+            text = line["text"].strip()
+            if not text:
+                continue
+            conf = line.get("conf", 1.0)
+            if conf < 0.55 and not any("一" <= c <= "鿿" for c in text):
+                logger.debug("OCR low-conf line filtered: conf=%.2f text=%.60s", conf, text)
+                continue
+            lines.append(text)
+            boxes.append({"bbox": line["bbox"], "conf": conf})
         return OcrPageResult(page_index=page_index, text="\n".join(lines), boxes=boxes)
     except Exception as e:
         logger.warning("OCR（含框）第 %d 页失败：%s", page_index, e)
@@ -563,6 +584,10 @@ def clean_ocr_text(text: str) -> str:
     # U+2200-U+22FF: 数学运算符（∫∑∏√∞∈∉≤≥≠≈∂∇）
     # U+0370-U+03FF: 希腊字母（αβγπ等）
     text = re.sub(r"[^一-鿿　-〿＀-￯ -~Ͱ-Ͽ∀-⋿\n]", "", text)
+
+    # PaddleOCR -> 误识为 <- + 随机字母前缀（已知幻觉模式）
+    # 例: -> → xau<- / axau<- / xeu<- / Aaxd<-
+    text = re.sub(r"\b(xau|axau|xeu|Aaxd)<-(?=\s*[a-zA-Z_])", r"->", text)
 
     # 修复被错误断行的中文句子（如 "第\n一章" → "第一章"）
     # 行末是汉字且下行首也是汉字，则合并

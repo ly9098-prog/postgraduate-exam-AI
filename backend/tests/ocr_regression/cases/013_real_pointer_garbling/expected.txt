@@ -1,0 +1,23 @@
+[normalized_full_text]
+32.【2016统考真题】已知一个带有表头结点的循环双链表L，结点结构为prev data next，其中prev和next分别是指向其直接前驱和直接后继结点的指针。现要删除指针p所指的结点，正确的语句序列是（）。
+A.p->next->prev=p->prev; p->prev->next=p->prev; free(p);
+B.p->next->prev=p->next;p->prev->next=p->next;free(p);
+C.p->next->prev=p->next;p->prev->next=p->prev;free(p);
+D.p->next->prev=p->prev;p->prev->next=p->next;free(p);
+[/normalized_full_text]
+
+[questions]
+---
+number: 32
+stem: 32.【2016统考真题】已知一个带有表头结点的循环双链表L，结点结构为prev data next，其中prev和next分别是指向其直接前驱和直接后继结点的指针。现要删除指针p所指的结点，正确的语句序列是（）。
+type: single_choice
+options:
+  A: p->next->prev=p->prev; p->prev->next=p->prev; free(p);
+  B: p->next->prev=p->next;p->prev->next=p->next;free(p);
+  C: p->next->prev=p->next;p->prev->next=p->prev;free(p);
+  D: p->next->prev=p->prev;p->prev->next=p->next;free(p);
+answer: D
+explanation: 删除p结点需要：1) p->next->prev=p->prev（后继的前驱指向前驱）；2) p->prev->next=p->next（前驱的后继指向后继）；3) free(p)。
+option_keys: ["A", "B", "C", "D"]
+
+[/questions]
