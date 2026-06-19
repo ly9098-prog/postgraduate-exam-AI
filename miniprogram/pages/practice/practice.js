@@ -70,7 +70,7 @@ function _deduplicateRepeatedText(text) {
 
 function _needsRichRender(text) {
   if (!text) return false
-  return /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/.test(text) || /<\/?[a-z][\s\S]*>/i.test(text)
+  return /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/.test(text) || /<\/?[a-z][\s\S]*>/i.test(text) || /\n/.test(text)
 }
 
 function _escapeRegExp(text) {

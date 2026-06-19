@@ -361,6 +361,7 @@ class QuestionNormalizer:
         text = "\n".join(lines)
         text = re.sub(r"^\d+\s*[.、)）]\s*", "", text)
         text = deduplicate_repeated_text(text)
+        text = self._normalize_code_newlines(text)
         return self._merge_broken_lines(text).strip()
 
     @staticmethod
@@ -598,6 +599,69 @@ class QuestionNormalizer:
         if prev.rstrip().endswith(":") and re.search(r"[{};=]", curr):
             return False
         return True
+
+    # Patterns: code lines that end mid-expression because the next line
+    # starts with an operator (case 2: `x < n\n/ 2`) or the line itself
+    # ends with a trailing operator (case 3: `n <=\n1`).
+    _TRAILING_OP_RE = re.compile(
+        r'(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$'
+    )
+    # Operator + word at line end → operand was split from its continuation
+    #  while (x < n\n/ 2) → merge n/2 back
+    _OP_THEN_WORD_END_RE = re.compile(r'[<>=!+\-*/%&|^]\s+\w+\s*$')
+
+    # Next-line patterns that are clearly NOT operands (statement boundaries).
+    _CODE_KW_RE = re.compile(
+        r'^\s*(?:if|else|while|for|do|switch|case|return|break|continue|'
+        r'int|float|double|char|void|long|short|struct|enum|typedef|'
+        r'public|private|protected|class|static|const|virtual)\b'
+    )
+
+    def _line_ends_broken(self, line: str) -> bool:
+        stripped = line.rstrip()
+        if not stripped:
+            return False
+        if not re.search(r'[{};=()[\]<>!&|]', stripped):
+            return False
+        return bool(
+            self._TRAILING_OP_RE.search(stripped) or self._OP_THEN_WORD_END_RE.search(stripped)
+        )
+
+    def _line_starts_continuation(self, line: str) -> bool:
+        stripped = line.lstrip()
+        if not stripped:
+            return False
+        if stripped[0] in '{};':
+            return False
+        if self._CODE_KW_RE.match(stripped):
+            return False
+        # Starts with an operator character → continuation of broken expression
+        if stripped[0] in '+*/%&|^<>!=~':
+            return True
+        # Contains code operators/separators but not a new statement
+        return bool(re.search(r'[+\-*/%<>=!&|(){};\[\]]', stripped))
+
+    def _normalize_code_newlines(self, text: str) -> str:
+        """Merge code lines that were split inside expressions by AI normalization.
+
+        Detects patterns like ``while (x < n\\n/ 2)`` where the newline sits
+        between an operator and its operand, and rejoins them with a space.
+        """
+        if '\n' not in text:
+            return text
+        lines = text.split('\n')
+        result: list[str] = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if i + 1 < len(lines) and self._line_ends_broken(line) and self._line_starts_continuation(lines[i + 1]):
+                merged = line.rstrip() + ' ' + lines[i + 1].lstrip()
+                result.append(merged)
+                i += 2
+            else:
+                result.append(line)
+                i += 1
+        return '\n'.join(result)
 
     def _is_noise_line(self, line: str) -> bool:
         if re.fullmatch(r"第?\s*\d+\s*页\s*(?:/\s*共?\s*\d+\s*页?)?", line):
