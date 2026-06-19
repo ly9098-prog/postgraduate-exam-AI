@@ -15,7 +15,7 @@ function _textToHtml(text) {
   if (!text) return ''
   const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/)
   const out = parts.map((part, i) => {
-    if (i % 2 === 1) return part
+    if (i % 2 === 1) return part.replace(/\\(n|t|r)(?![a-zA-Z])/g, ' ')
     return _formatHtmlTextSegment(part)
   })
   return '<p>' + out.join('') + '</p>'
