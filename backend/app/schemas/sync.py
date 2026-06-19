@@ -22,6 +22,7 @@ class SyncReportResponse(BaseModel):
     questions_updated: int = 0
     questions_skipped: int = 0
     questions_conflict: int = 0
+    questions_deduped: int = 0
     tags_new: int = 0
     tags_skipped: int = 0
     conflicts: list[dict] = []
