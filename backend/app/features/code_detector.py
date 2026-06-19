@@ -218,12 +218,6 @@ def _fence_code_blocks(text: str) -> tuple[str, CodeDetectStats]:
 
             block_len = i - block_start
 
-            # 边界标记存在且不在已有围栏内时去除
-            if block_start > 0 and result and result[-1].startswith("```"):
-                while block_start > 0 and not result[-1].startswith("```"):
-                    result.append(lines[block_start])
-                    block_start += 1
-
             if block_len >= 2:
                 # 排除已在围栏内的内容
                 code_lines = lines[block_start:i]
