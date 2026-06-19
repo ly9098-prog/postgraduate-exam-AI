@@ -4,8 +4,20 @@
 不做 AI 分析、不做题目识别、不做答案匹配。
 """
 
+import os
 import re
 from typing import Set as TypedSet
+
+# 已知 OCR 箭头乱码模式（PaddleOCR 特定字体/排版将 -> 误识为 <- + 随机字母前缀）
+# 支持环境变量覆盖：OCR_ARROW_GARBLED_PATTERNS="xau,axau,xeu,Aaxd"
+_OCR_ARROW_GARBLED_PATTERNS: tuple[str, ...] = tuple(
+    p for p in os.environ.get("OCR_ARROW_GARBLED_PATTERNS", "xau,axau,xeu,Aaxd").split(",")
+    if p
+)
+
+# 低信息量噪声检测阈值（可通过环境变量覆盖）
+_SHORT_NOISE_CHAR_LIMIT: int = int(os.environ.get("OCR_SHORT_NOISE_CHAR_LIMIT", "6"))
+_LOW_INFO_CASE_SWITCH_RATIO: float = float(os.environ.get("OCR_LOW_INFO_CASE_SWITCH_RATIO", "0.35"))
 
 
 # Unicode 替换字符和常见 OCR 乱码
@@ -107,8 +119,9 @@ _RE_POINTER_ARROW = re.compile(r"([\w)\]）】])\s*[−\-–—]\s*>(?=\w)")
 # PaddleOCR -> 误识为 <- + 随机字母前缀（已知幻觉模式）
 # 例: p->next → p xau<- next / p axau<- next / p xeu<- next
 # 这些是 OCR 引擎对特定字体/排版的确定性误识，修复安全。
+# 模式列表可从环境变量 OCR_ARROW_GARBLED_PATTERNS 追加。
 _RE_POINTER_ARROW_GARBLED_KNOWN = re.compile(
-    r"\b(xau|axau|xeu|Aaxd)<-(?=\s*[a-zA-Z_])"
+    r"\b(" + "|".join(re.escape(p) for p in _OCR_ARROW_GARBLED_PATTERNS) + r")<-(?=\s*[a-zA-Z_])"
 )
 
 # 通用箭头方向修复：在 C 指针上下文中 <- 不是合法运算符，
@@ -653,7 +666,7 @@ class ImportTextNormalizer:
         # 含 CJK 字符的文本不按噪声处理（中文内容有语义价值）
         has_cjk = any("一" <= c <= "鿿" for c in text)
 
-        if len(text) <= 6:
+        if len(text) <= _SHORT_NOISE_CHAR_LIMIT:
             if has_cjk:
                 return False
             cjk_alpha = sum(1 for c in text if c.isalpha())
@@ -672,7 +685,7 @@ class ImportTextNormalizer:
             switch_ratio = case_switches / max(len(alpha_chars), 1)
             # 随机水印文本大小写频繁切换（如 axuK, dayOOeB），
             # 正常英文单词和 C 标识符切换率通常 < 0.3
-            if switch_ratio > 0.35:
+            if switch_ratio > _LOW_INFO_CASE_SWITCH_RATIO:
                 return True
 
         return False

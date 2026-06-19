@@ -262,6 +262,7 @@ _RE_TABULAR = re.compile(
 _RE_MULTICOLUMN = re.compile(r"\\multicolumn\{(\d+)\}\{[^}]*\}\{([^}]*)\}")
 _RE_HLINE = re.compile(r"\\hline\s*")
 _RE_CLINE = re.compile(r"\\cline\{[^}]*\}")
+_RE_STAR_COLSPEC = re.compile(r"\*\{(\d+)\}\{([^}]+)\}")  # 展开 *{N}{cols}
 
 
 def _parse_cell(text: str) -> str:
@@ -290,8 +291,14 @@ def parse_latex_table(text: str) -> list[dict]:
         col_spec = match.group(1)
         body = match.group(2)
 
-        # 粗略估计列数：计数 | 之外的非空白对齐符
-        col_count = sum(1 for c in col_spec if c in "lcrp")
+        # 列数估算：展开 *{N}{cols} 后计数 lcrp 对齐符
+        _expanded_spec = col_spec
+        while True:
+            m = _RE_STAR_COLSPEC.search(_expanded_spec)
+            if not m:
+                break
+            _expanded_spec = _expanded_spec.replace(m.group(0), m.group(2) * int(m.group(1)))
+        col_count = sum(1 for c in _expanded_spec if c in "lcrp")
 
         rows: list[list[str]] = []
         raw_rows = body.split(r"\\")

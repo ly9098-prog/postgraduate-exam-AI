@@ -1246,6 +1246,14 @@ class ImportPipeline:
         opts = options or {}
         db = _kw.get("db")
 
+        # 合并流水线跳过 AI 纠错：单图文本已纠错，合并只需重新切分+匹配
+        if opts.get("skip_ocr_correction"):
+            logger.info(
+                "【OCR-4】skip_ocr_correction | blocks=%d — 合并流水线复用单图纠错结果",
+                len(normalized_blocks),
+            )
+            return {"normalized_blocks": normalized_blocks, "ocr_correction_diagnostics": {}}
+
         # 检查 feature flag
         use_router = await self._check_ocr_fix_feature_flag(db)
         logger.info(
@@ -1282,7 +1290,7 @@ class ImportPipeline:
                         return val
                     return str(val).lower() != "false"
             except Exception:
-                pass
+                logger.warning("OCR fix feature flag: DB query failed", exc_info=True)
         import os
         env_val = os.environ.get("OCR_FIX_FEATURE_FLAG")
         if env_val is not None:
@@ -1615,7 +1623,7 @@ class ImportPipeline:
                     if "deepseek_base_url" not in config:
                         config["deepseek_base_url"] = ds_model["api_base_url"]
             except Exception:
-                pass
+                logger.warning("OCR router: model_config_resolver failed", exc_info=True)
 
             # 从 DB admin_ai_configs 读取过滤配置
             try:
@@ -1629,7 +1637,7 @@ class ImportPipeline:
                         else:
                             config[key] = str(val).lower() != "false" if key == "ocr_filter_sensitive" else val
             except Exception:
-                pass
+                logger.warning("OCR router: admin_ai_configs read failed", exc_info=True)
 
         # DeepSeek env var fallback for backward compat only
         import os
