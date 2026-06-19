@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 
 from sqlalchemy import select
@@ -8,6 +9,20 @@ from app.core.config import settings
 from app.models.admin_ai_config import AdminAiConfig, AdminAiModelConfig, decrypt_api_key, encrypt_api_key
 from app.schemas.admin_ai_config import AdminAiModelConfigCreateRequest, AdminAiModelConfigResponse, AdminAiModelConfigPatchRequest
 from app.services.admin_audit_service import write_admin_audit
+
+# ---------------------------------------------------------------------------
+# In-memory TTL cache — avoids DB query on every single-question completion.
+# Cleared automatically on write (patch / seed).
+# ---------------------------------------------------------------------------
+
+_config_cache: dict | None = None
+_config_cache_time: float = 0
+_CONFIG_CACHE_TTL = 10  # seconds
+
+def _clear_config_cache() -> None:
+    global _config_cache, _config_cache_time
+    _config_cache = None
+    _config_cache_time = 0
 
 # ---------------------------------------------------------------------------
 # Default config values — mirrors app/ai/prompts.py
@@ -131,6 +146,7 @@ async def _seed_configs_if_empty(db: AsyncSession):
     for key, value in _DEFAULT_CONFIGS.items():
         db.add(AdminAiConfig(config_key=key, config_value=value))
     await db.flush()
+    _clear_config_cache()
 
 
 async def _seed_models_if_empty(db: AsyncSession):
@@ -355,9 +371,15 @@ async def delete_model(
 
 
 async def get_all_configs(db: AsyncSession) -> dict:
+    global _config_cache, _config_cache_time
+    now = time.time()
+    if _config_cache is not None and now - _config_cache_time < _CONFIG_CACHE_TTL:
+        return _config_cache
     await _seed_configs_if_empty(db)
     result = await db.execute(select(AdminAiConfig))
-    return {row.config_key: _coerce_value(row.config_value) for row in result.scalars().all()}
+    _config_cache = {row.config_key: _coerce_value(row.config_value) for row in result.scalars().all()}
+    _config_cache_time = now
+    return _config_cache
 
 
 async def patch_configs(
@@ -392,6 +414,7 @@ async def patch_configs(
         )
 
     await db.flush()
+    _clear_config_cache()
     return await get_all_configs(db)
 
 

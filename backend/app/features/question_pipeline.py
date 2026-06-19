@@ -1590,6 +1590,7 @@ async def _get_qi(db: AsyncSession, import_id: int) -> QuestionImport:
 
 
 def _qi_to_dict(qi: QuestionImport) -> dict:
+    content_text = (qi.parsed_content or {}).get("text", "")
     return {
         "subject": qi.subject,
         "question_type": qi.question_type,
@@ -1597,6 +1598,12 @@ def _qi_to_dict(qi: QuestionImport) -> dict:
         "parsed_options": qi.parsed_options,
         "parsed_answer": qi.parsed_answer,
         "parsed_analysis": qi.parsed_analysis,
+        # 以下字段兼容 build_repair_question 的键名
+        "stem": content_text,
+        "options": qi.parsed_options,
+        "answer": qi.parsed_answer,
+        "analysis": qi.parsed_analysis,
+        "errors": [],
         "raw_text": (qi.raw_data or {}).get("stem") if qi.raw_data else None,
     }
 
