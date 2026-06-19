@@ -88,6 +88,7 @@ export function AiCompletionPreview({
     { key: "completion_auto_options", label: "智能选项生成" },
     { key: "completion_auto_answer_reasoning", label: "答案推理链" },
     { key: "completion_auto_knowledge_tags", label: "知识点标签" },
+    { key: "completion_repair_structure", label: "修复题目结构" },
   ];
 
   const toggleConfig = (key: string) => {
@@ -192,7 +193,7 @@ export function AiCompletionPreview({
           <div className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] p-3">
             <p className="text-xs font-semibold text-[var(--color-text-hint)]">补全时包含以下字段</p>
             <div className="mt-2 space-y-2">
-              {toggles.map((item) => (
+              {toggles.slice(0, 4).map((item) => (
                 <label key={item.key} className="flex items-center justify-between gap-2">
                   <span className="text-sm text-[var(--ink)]">{item.label}</span>
                   <Toggle
@@ -203,6 +204,20 @@ export function AiCompletionPreview({
                   />
                 </label>
               ))}
+            </div>
+            <div className="mt-3 border-t border-[var(--color-border)]/40 pt-3">
+              <label className="flex items-center justify-between gap-2">
+                <div>
+                  <span className="text-sm font-medium text-[var(--ink)]">修复题目结构</span>
+                  <p className="text-xs text-[var(--color-text-hint)]">启用后将覆盖以上字段配置，使用 AI 重建完整的题目结构</p>
+                </div>
+                <Toggle
+                  checked={Boolean(data["completion_repair_structure"])}
+                  onChange={() => toggleConfig("completion_repair_structure")}
+                  disabled={saveMutation.isPending || loading}
+                  size="sm"
+                />
+              </label>
             </div>
           </div>
         </div>

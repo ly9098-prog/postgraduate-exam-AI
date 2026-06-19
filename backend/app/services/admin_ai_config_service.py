@@ -105,6 +105,7 @@ _DEFAULT_CONFIGS: dict[str, str] = {
     "completion_auto_options": "true",
     "completion_auto_answer_reasoning": "false",
     "completion_auto_knowledge_tags": "true",
+    "completion_repair_structure": "false",
 }
 
 _DEFAULT_MODELS: list[dict] = [
