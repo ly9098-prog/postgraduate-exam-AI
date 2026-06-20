@@ -1,7 +1,7 @@
 const api = require('../../utils/api')
 const config = require('../../config')
 const { createTraceId, debugLog, saveDebugSnapshot, shouldDebugQuestion } = require('../../utils/debug')
-const { RENDER_MODE, buildRenderModel, buildOptionList, setRenderGuardPage, resetRenderGuard, optionTextToHtml, toPlainInlineMathText, needsRichRender, stripLeadingOptionLabel } = require('../../utils/stem-render')
+const { RENDER_MODE, buildRenderModel, buildOptionList, setRenderGuardPage, resetRenderGuard, textToHtml, toPlainInlineMathText, needsRichRender, stripLeadingOptionLabel } = require('../../utils/stem-render')
 
 function _normalizeBlankAnswer(answer) {
   if (!answer) return {}
@@ -41,7 +41,7 @@ function _enrichBlankOptionGroups(groups, answer) {
           _text: plain || optionText,
           _selected: blankAnswers[groupId] === key,
           _needsRich: needsRich,
-          _html: needsRich ? optionTextToHtml(key, optionText) : '',
+          _html: needsRich ? textToHtml(optionText) : '',
         })
       }).filter(function(opt) {
         return opt.key
