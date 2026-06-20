@@ -583,54 +583,9 @@ def ocr_pages_with_boxes(
 
 
 def clean_ocr_text(text: str, *, trace_id: str = "") -> str:
-    """清洗 OCR 输出文本：去乱码、合并断行、修复常见问题。"""
-    if not text:
-        return ""
+    """清洗 OCR 输出文本 — 委托给 text_normalizer.normalize_ocr_text()。
 
-    # Step 0: 代码块检测 — 必须在所有清洗操作之前，基于原始文本
-    from app.features.code_detector import wrap_code_fences
-    text = wrap_code_fences(text, trace_id=trace_id)
-
-    # 去除乱码字符（保留中文、ASCII 可打印字符、常用标点、数学符号）
-    # U+2200-U+22FF: 数学运算符（∫∑∏√∞∈∉≤≥≠≈∂∇）
-    # U+0370-U+03FF: 希腊字母（αβγπ等）
-    text = re.sub(r"[^一-鿿　-〿＀-￯ -~Ͱ-Ͽ∀-⋿\n]", "", text)
-
-    # PaddleOCR -> 误识为 <- + 随机字母前缀（已知幻觉模式）
-    # 模式列表来自环境变量 OCR_ARROW_GARBLED_PATTERNS
-    patterns = os.environ.get("OCR_ARROW_GARBLED_PATTERNS", "xau,axau,xeu,Aaxd")
-    garbled_re = re.compile(
-        r"\b(" + "|".join(re.escape(p) for p in patterns.split(",") if p) + r")<-(?=\s*[a-zA-Z_])"
-    )
-    text = garbled_re.sub(r"->", text)
-
-    # 修复被错误断行的中文句子（如 "第\n一章" → "第一章"）
-    # 行末是汉字且下行首也是汉字，则合并
-    text = re.sub(
-        r"([一-鿿，。；：！？])\n(?!((?:参考|正确)?\s*答案|解析|解答)\b)([一-鿿])",
-        r"\1\3",
-        text,
-    )
-
-    text = re.sub(
-        r"(?<!\n)(?=(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:])",
-        "\n",
-        text,
-    )
-    text = re.sub(r"\n((?:参考|正确)?)\n(答案\s*[：:])", r"\n\1\2", text)
-
-    # 去除连续空格（围栏内保护）
-    parts = re.split(r"(```[\s\S]*?```)", text)
-    text = "".join(
-        part if part.startswith("```") else re.sub(r" {2,}", " ", part)
-        for part in parts
-    )
-
-    # 去除连续空行（超过 2 个换行压缩为 2 个）
-    text = re.sub(r"\n{3,}", "\n\n", text)
-
-    # 清理行尾空格（保留行首缩进，避免破坏代码块格式）
-    lines = [line.rstrip() for line in text.split("\n")]
-    text = "\n".join(lines)
-
-    return text.strip()
+    保留此函数作为向后兼容入口。所有调用点共享同一套清洗规则。
+    """
+    from app.features.text_normalizer import normalize_ocr_text
+    return normalize_ocr_text(text, trace_id=trace_id)
