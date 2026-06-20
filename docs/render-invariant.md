@@ -74,9 +74,9 @@ buildRenderModel(question, options)
 | 页面 | 接入状态 | WXML 分支数 |
 |------|----------|-------------|
 | `pages/practice` | Phase 1 完成 | 3 (SEGMENTS / RICH_TEXT / LATEX) |
-| `pages/wrong-detail` | Phase 2 待接入 | 3 (待添加 RICH_TEXT) |
-| `pages/review-today` | Phase 2 待接入 | 3 (待添加 RICH_TEXT) |
-| `pages/wrong-book` | 列表预览，仅用 `toPlainInlineMathText` 摘要 | N/A（不渲染完整题干） |
+| `pages/wrong-detail` | Phase 2 完成 | 3 (SEGMENTS / RICH_TEXT / LATEX) |
+| `pages/review-today` | Phase 2 完成 | 3 (SEGMENTS / RICH_TEXT / LATEX) |
+| `pages/wrong-book` | Phase 2 完成 | N/A（列表预览，用 `toPlainInlineMathText` 摘要） |
 
 ## 第三方渲染组件准入规则
 

@@ -2087,6 +2087,8 @@ class ImportPipeline:
                 no_regions_flagged += 1
             if (q.get("confidence_score") or 0) < 0.5:
                 flags.append("low_confidence")
+            if "garbled_text_detected" in (q.get("ocr_quality_flags") or []):
+                flags.append("ocr_garbled_code")
             if flags:
                 q["risk_flags"] = list(dict.fromkeys(flags))
         if no_regions_flagged:
