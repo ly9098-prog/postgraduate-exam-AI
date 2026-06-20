@@ -260,6 +260,35 @@ function _processWqData(wq) {
       lineClass,
     }
   })
+  // ── 开发环境渲染链路诊断 ──
+  if (config.DEV) {
+    const stemFields = {}
+    if (wq.content) {
+      if (wq.content.text !== undefined) stemFields['content.text'] = wq.content.text.length
+      if (wq.content.stem !== undefined) stemFields['content.stem'] = wq.content.stem.length
+    }
+    var _hashStr2 = function(s) {
+      var h = 0
+      for (var i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0 }
+      return (h >>> 0).toString(16).padStart(8, '0')
+    }
+    console.log('[WRONG_STEM_RENDER]', JSON.stringify({
+      qid: wq.id,
+      sourceLen: sourceStemText.length,
+      sourceHash: _hashStr2(sourceStemText),
+      cleanedLen: stemText.length,
+      cleanedHash: _hashStr2(stemText),
+      needsRich: stemNeedsRich,
+      htmlLen: stemHtml.length,
+      segmentsLen: stemSegments.length,
+      renderMode: wq.content && wq.content.render_mode || 'none',
+      mathImg: config.enableMathImage || false,
+      stemFields: stemFields,
+      sourceHead: sourceStemText.slice(0, 80),
+      sourceTail: sourceStemText.slice(-80),
+      hasDup: sourceStemText.length > 0 && stemText.length > 0 && sourceStemText.length > stemText.length * 1.8
+    }))
+  }
   return {
     wq,
     optionKeys,

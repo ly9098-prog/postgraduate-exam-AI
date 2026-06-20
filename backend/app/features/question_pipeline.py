@@ -363,6 +363,8 @@ class QuestionNormalizer:
         text = "\n".join(lines)
         text = re.sub(r"^\d+\s*[.、)）]\s*", "", text)
         text = deduplicate_repeated_text(text)
+        # Repair comparison operators broken across lines (e.g. "if (n <=\n1) return n;")
+        text = re.sub(r"(<=|>=|==|!=)\s*\n\s*", r"\1 ", text)
         text = self._normalize_code_newlines(text)
         return self._merge_broken_lines(text).strip()
 
@@ -579,7 +581,7 @@ class QuestionNormalizer:
             r"^([A-H]\s*[.、:：）]|(?:【)?(?:参考|正确)?答案|(?:【)?解析)", curr
         ):
             return False
-        if prev[-1] in "。！？；…":
+        if prev[-1] in "。！？；…，,":
             return False
         # Don't merge Roman numeral enumeration items (I. II. III. IV. …)
         if _RE_ROMAN_SUBITEM_MARKER.match(curr.lstrip()):

@@ -1,8 +1,13 @@
+import hashlib
+import logging
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
 from app.core.database import get_db
+
+logger = logging.getLogger(__name__)
 from app.core.security import get_current_user
 from app.models.question import Question
 from app.models.user import User
@@ -86,6 +91,17 @@ async def get_practice_questions(
         knowledge_points=kps,
         exclude_answered=exclude_answered,
     )
+    # ── Layer 1 诊断：API 响应 stem 数据 ──
+    for q in questions:
+        content = _sanitize_question_content(q.content)
+        stem = (content or {}).get("text") or (content or {}).get("stem") or ""
+        logger.info(
+            "[API_LAYER] qid=%s textLen=%d textHash=%s stemKeys=%s",
+            q.id,
+            len(stem),
+            hashlib.sha256(stem.encode()).hexdigest()[:8],
+            [k for k in (content or {}) if k in ("text", "stem", "segments")],
+        )
     response = PracticeQuestionsResponse(
         questions=[
             PracticeQuestion(

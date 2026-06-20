@@ -114,8 +114,9 @@ async def update_import_question(
 
     payload = data.model_dump(exclude_none=True)
     if "stem" in payload:
+        from app.services.pdf_text_normalizer import deduplicate_repeated_text
         content = dict(qi.parsed_content or {})
-        content["text"] = payload.pop("stem")
+        content["text"] = deduplicate_repeated_text(payload.pop("stem").strip())
         qi.parsed_content = content
     if "options" in payload:
         options = payload.pop("options")
