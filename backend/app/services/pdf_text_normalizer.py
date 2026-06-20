@@ -41,7 +41,7 @@ _MATH_LINE_RE = re.compile(
 )
 
 # 上一行末尾出现这些字符说明句子已完结，不应合并
-_SENTENCE_END = frozenset("。！？；…")  # 。！？；…
+_SENTENCE_END = frozenset("。！？；…，,")
 
 
 def _should_merge(prev: str, curr: str) -> bool:
@@ -106,15 +106,38 @@ def deduplicate_repeated_text(text: str) -> str:
     - "abc\\ndef"        → 不变（不同内容不折叠）
 
     算法：
-    1. 整体折叠：检查文本前半是否等于后半（strip 后比较）
-    2. 逐行折叠：去除相邻完全相同的行
+    1. 行级折叠：检查前半行是否等于后半行（处理整段题干重复）
+    2. 整体折叠：检查文本前半是否等于后半（strip 后比较）
+    3. 逐行折叠：去除相邻完全相同的行
     """
     if not text or not text.strip():
         return text
 
     stripped = text.strip()
 
-    # 整体折叠：前半 == 后半
+    # —— 行级折叠：前半行 == 后半行 ——
+    # 处理"S + 分隔符 + S"的整段重复模式，即使字符级半折叠因分割点不对齐而失败
+    lines = stripped.split("\n")
+    n_lines = len(lines)
+    if n_lines >= 2:
+        # 去除末尾可能由 trailing newline 产生的空行
+        effective = n_lines - 1 if n_lines > 1 and lines[-1] == "" else n_lines
+        if effective >= 2 and effective % 2 == 0:
+            mid = effective // 2
+            left = lines[:mid]
+            right = lines[mid:effective]
+            if left == right:
+                return "\n".join(left)
+        # 奇数行：尝试跳过中间空行（S + 空行 + S 模式）
+        if effective >= 3 and effective % 2 == 1:
+            mid = effective // 2
+            if lines[mid].strip() == "":
+                left = lines[:mid]
+                right = lines[mid + 1 : effective]
+                if left == right:
+                    return "\n".join(left)
+
+    # —— 整体折叠：前半 == 后半 ——
     half = len(stripped) // 2
     if half > 0:
         # 精确折叠（含分隔换行）
@@ -125,8 +148,7 @@ def deduplicate_repeated_text(text: str) -> str:
         if candidate and stripped[half:].strip() == candidate:
             return candidate
 
-    # 逐行折叠：去除相邻完全相同的行（保留顺序）
-    lines = stripped.split("\n")
+    # —— 逐行折叠：去除相邻完全相同的行（保留顺序） ——
     deduped: list[str] = []
     for line in lines:
         if not deduped or line.strip() != deduped[-1].strip():

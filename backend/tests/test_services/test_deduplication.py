@@ -99,6 +99,12 @@ class TestMergeBrokenLines:
     def test_should_merge_prev_answer_returns_false(self):
         assert _should_merge("答案：B", "B") is False
 
+    def test_comma_ending_line_not_merged(self):
+        """中文逗号结尾行不应与下一行合并（案例六 fix #2）。"""
+        assert _should_merge("遍历序列为 DBEAFC,", "则其前序遍历序列为:") is False
+        assert _should_merge("已知 f(x) 在 [0,1] 上连续，", "则下列结论正确的是") is False
+        assert _should_merge("若 a > b,", "则 a - b > 0") is False
+
 
 # ─── _parse_pdf 双层 PDF 模拟 ─────────────────────────────────────────────────
 
