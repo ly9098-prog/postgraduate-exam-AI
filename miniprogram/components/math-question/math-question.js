@@ -14,6 +14,8 @@ Component({
       })
     }
   },
+  attached: function() {
+  },
   methods: {
     onImgError: function(e) {
       var index = e.currentTarget.dataset.index
