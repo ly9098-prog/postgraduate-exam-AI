@@ -2,7 +2,7 @@ const api = require('../../utils/api')
 const {
   buildRenderModel, resetRenderGuard, setRenderGuardPage,
   toPlainInlineMathText, needsRichRender, stripLeadingOptionLabel,
-  optionTextToHtml, RENDER_MODE
+  textToHtml, RENDER_MODE
 } = require('../../utils/stem-render')
 
 function _normalizeBlankAnswer(answer) {
@@ -64,7 +64,7 @@ function _processWqData(wq) {
     return {
       key,
       text,
-      html: needsRich ? optionTextToHtml(key, stripped) : '',
+      html: needsRich ? textToHtml(stripped) : '',
       needsRich,
       className: valueClass,
       lineClass,
@@ -99,7 +99,7 @@ function _enrichBlankOptionGroups(groups, answer, wrongAnswer) {
         _isCorrect: isCorrect,
         _isUserAnswer: !isCorrect && wrongAnswers[groupId] === key,
         _needsRich: needsRich,
-        _html: needsRich ? optionTextToHtml(key, optionText) : '',
+        _html: needsRich ? textToHtml(optionText) : '',
       })
     }).filter((opt) => opt.key)
     return { id: groupId, options }
