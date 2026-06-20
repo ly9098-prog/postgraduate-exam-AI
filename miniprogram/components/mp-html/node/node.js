@@ -14,6 +14,18 @@ Component({
       type: Array,
       value: [],
       observer (nodes) {
+        // 检测根节点是否变化（不同解析批次产生的节点对象引用不同）
+        var rootChanged = this.data.nodes.length !== nodes.length
+        if (!rootChanged) {
+          for (var ri = 0; ri < nodes.length; ri++) {
+            if (this.data.nodes[ri] !== nodes[ri]) { rootChanged = true; break }
+          }
+        }
+        // 根节点变化时做全量数组替换，确保 wx:key 协调正确触发
+        if (rootChanged && nodes.length > 0) {
+          this.setData({ nodes: nodes })
+          return
+        }
         const data = {}
         function diff (a, b, path) {
           let alen = a.length

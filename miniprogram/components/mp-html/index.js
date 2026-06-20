@@ -147,6 +147,9 @@ Component({
     // #endif
   },
 
+  attached () {
+  },
+
   // #ifdef MP-ALIPAY
   didUpdate (e) {
     if (e.content !== this.properties.content) {

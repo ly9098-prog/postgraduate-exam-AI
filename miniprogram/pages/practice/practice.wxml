@@ -185,13 +185,11 @@
           </view>
           <text class="q-card-index">{{currentIndex + 1}}</text>
         </view>
-        <block wx:if="{{enableMathImage && currentQuestion.content.render_mode === 'segments'}}">
-          <math-question segments="{{currentQuestion._segments}}" />
+        <block wx:if="{{currentQuestion._renderModel.mode === 'SEGMENTS'}}">
+          <math-question segments="{{currentQuestion._renderModel.segments}}" />
         </block>
-        <block wx:else>
-          <mp-html wx:if="{{currentQuestion._stemNeedsRich}}" class="q-content" content="{{currentQuestion._stemHtml}}" lazy-load></mp-html>
-          <text wx:else class="q-content q-text">{{currentQuestion._stemText}}</text>
-        </block>
+        <rich-text wx:elif="{{currentQuestion._renderModel.mode === 'RICH_TEXT'}}" class="q-content" nodes="{{currentQuestion._renderModel.richTextNodes}}"></rich-text>
+        <mp-html wx:elif="{{currentQuestion._renderModel.mode === 'LATEX'}}" class="q-content" content="{{currentQuestion._renderModel.html}}" lazy-load></mp-html>
 
         <!-- 多空选择题选项 -->
         <view class="blank-options" wx:if="{{currentQuestion._hasBlankOptionGroups}}">
