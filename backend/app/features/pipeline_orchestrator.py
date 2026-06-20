@@ -224,9 +224,13 @@ def _slim_ocr_diagnostics(diag: dict) -> dict:
 def _summarize_ocr_diffs(corrections: list[dict]) -> dict:
     """Summarize OCR correction diffs for diagnostics stage_diffs."""
     corrected = [c for c in corrections if c.get("corrected")]
+    rejected = [c for c in corrections if c.get("reason", "").startswith("safety_rejected")]
+    all_safety = [c["safety"] for c in corrections if c.get("safety")]
     return {
         "total_corrected": len(corrected),
+        "safety_rejected": len(rejected),
         "models_used": list({c.get("model_used", "unknown") for c in corrected}),
+        "risk_flags": list({f for s in all_safety for f in s.get("risk_flags", [])}),
         "details": corrected[:30],  # cap at 30 to bound diagnostics
     }
 
@@ -239,6 +243,7 @@ def _build_repair_diffs(
     for r in repaired:
         before = r.get("before") or {}
         after = r.get("after") or {}
+        safety = r.get("safety") or {}
         diffs.append({
             "question_index": r.get("question_index"),
             "actions": r.get("repair_actions", []),
@@ -252,6 +257,7 @@ def _build_repair_diffs(
             "answer_changed": (
                 str(before.get("answer", "")) != str(after.get("answer", ""))
             ),
+            "safety": safety,
         })
     for u in unrepaired:
         diffs.append({
@@ -815,7 +821,7 @@ def _build_stats(data: dict, stages: dict) -> dict:
 
 def _build_diagnostics(data: dict) -> dict:
     mode = data.get("import_mode", ImportMode.AUTO)
-    return {
+    raw = {
         "import_mode": mode.value if hasattr(mode, "value") else str(mode),
         "exercise_regions": data.get("exercise_regions", []),
         "exercise_regions_missing": bool(data.get("exercise_regions_missing")),
@@ -839,6 +845,73 @@ def _build_diagnostics(data: dict) -> dict:
             "ai_repair": data.get("repair_diffs", []),
         },
     }
+    return _slim_diagnostics_arrays(raw)
+
+
+def _slim_diagnostics_arrays(diagnostics: dict) -> dict:
+    """P0-3: 截断 diagnostics 中的大数组，限制每条诊断记录的内存占用。
+
+    对于 400 页 PDF 的单 pass 路径，page_classifications、exercise_regions
+    等数组可达数百条。本函数为所有数组类字段统一设上限，超出的部分截断并注
+    记 truncated 计数。
+    """
+    if not diagnostics:
+        return diagnostics
+
+    array_caps = {
+        "page_classifications": 50,
+        "exercise_regions": 100,
+        "ocr_boxes_failed_pages": 50,
+        "ocr_text_fallback_pages": 50,
+        "ocr_text_fallback_unavailable_pages": 50,
+        "ocr_runtime_failed_pages": 50,
+    }
+
+    for key, cap in array_caps.items():
+        arr = diagnostics.get(key)
+        if isinstance(arr, list) and len(arr) > cap:
+            diagnostics = {
+                **diagnostics,
+                key: arr[:cap],
+                f"{key}_truncated": len(arr) - cap,
+            }
+
+    # structure 内的列表字段也截断
+    structure = diagnostics.get("structure")
+    if isinstance(structure, dict):
+        slim_structure: dict[str, Any] = {}
+        for skey in ("question_pages", "answer_pages", "explanation_pages",
+                       "content_pages", "section_markers"):
+            val = structure.get(skey)
+            if isinstance(val, list) and len(val) > 50:
+                slim_structure[skey] = val[:50]
+                slim_structure[f"{skey}_truncated"] = len(val) - 50
+            elif val is not None:
+                slim_structure[skey] = val
+        # 保留其他非列表字段
+        for skey, sval in structure.items():
+            if skey not in slim_structure:
+                slim_structure[skey] = sval
+        diagnostics = {**diagnostics, "structure": slim_structure}
+
+    # split 内的 layout_filter.region_signals 截断
+    split = diagnostics.get("split")
+    if isinstance(split, dict):
+        lf = split.get("layout_filter")
+        if isinstance(lf, dict):
+            signals = lf.get("region_signals")
+            if isinstance(signals, list) and len(signals) > 50:
+                split = {
+                    **split,
+                    "layout_filter": {
+                        **lf,
+                        "region_signals": signals[:50],
+                        "region_signals_truncated": len(signals) - 50,
+                    },
+                }
+                diagnostics = {**diagnostics, "split": split}
+
+    return diagnostics
 
 
 def _slim_chunk_diagnostics(diagnostics: dict) -> dict:
@@ -1474,34 +1547,73 @@ class ImportPipeline:
             _, result = fix_result
             new_block = dict(block)
             if result.fixed_text != text and result.confidence and result.confidence > 0:
-                new_block["normalized_text"] = result.fixed_text
-                new_block["ocr_correction_applied"] = True
-                new_block["ocr_fix_model"] = result.model_used
-                stats["corrected_blocks"] += 1
+                # ---- AI safety gate: 评估修改是否可接受 ----
+                from app.features.ai_safety import evaluate_and_trace
 
-                logger.info(
-                    "【OCR-5】AI纠错输出 | block=%d page=%d model=%s conf=%.2f\n"
-                    "  └─ 纠错前: %.160s\n  └─ 纠错后: %.160s",
-                    idx, block.get("page", 1), result.model_used, result.confidence,
-                    text, result.fixed_text,
-                )
-                metrics.record_correction(
+                safety_trace, safe_text = evaluate_and_trace(
+                    stage="ocr_fix",
                     model=result.model_used,
                     before=text,
                     after=result.fixed_text,
-                    duration_ms=getattr(result, "duration_ms", None),
-                    tokens=result.tokens_used,
+                    context={
+                        "has_options": bool(re.search(r"[A-D][.、．）)\s]", text)),
+                        "stem_context": text[:200],
+                    },
+                    quality_report={
+                        "low_confidence": noise_score > 0.3,
+                        "garbled_detected": structure_score > 0.2,
+                    },
+                    tokens_used=result.tokens_used or 0,
+                    duration_ms=getattr(result, "duration_ms", None) or 0,
                 )
-                corrections.append({
-                    "block_index": block.get("block_index", 0),
-                    "page": block.get("page", 1),
-                    "noise_score": round(noise_score, 3),
-                    "structure_score": round(structure_score, 3),
-                    "corrected": True,
-                    "model_used": result.model_used,
-                    "before_preview": text[:200],
-                    "after_preview": result.fixed_text[:200],
-                })
+
+                if safety_trace.accepted:
+                    new_block["normalized_text"] = safe_text
+                    new_block["ocr_correction_applied"] = True
+                    new_block["ocr_fix_model"] = result.model_used
+                    stats["corrected_blocks"] += 1
+
+                    logger.info(
+                        "【OCR-5】AI纠错输出 | block=%d page=%d model=%s conf=%.2f\n"
+                        "  └─ 纠错前: %.160s\n  └─ 纠错后: %.160s",
+                        idx, block.get("page", 1), result.model_used, result.confidence,
+                        text, safe_text,
+                    )
+                    metrics.record_correction(
+                        model=result.model_used,
+                        before=text,
+                        after=safe_text,
+                        duration_ms=getattr(result, "duration_ms", None),
+                        tokens=result.tokens_used,
+                    )
+                    corrections.append({
+                        "block_index": block.get("block_index", 0),
+                        "page": block.get("page", 1),
+                        "noise_score": round(noise_score, 3),
+                        "structure_score": round(structure_score, 3),
+                        "corrected": True,
+                        "model_used": result.model_used,
+                        "before_preview": text[:200],
+                        "after_preview": safe_text[:200],
+                        "safety": safety_trace.to_dict(),
+                    })
+                else:
+                    # AI 修改被安全门拒绝，回滚到原文
+                    logger.warning(
+                        "【OCR-5-SAFETY】纠错被拒绝 | block=%d reason=%s",
+                        idx, safety_trace.rollback_reason,
+                    )
+                    corrections.append({
+                        "block_index": block.get("block_index", 0),
+                        "page": block.get("page", 1),
+                        "noise_score": round(noise_score, 3),
+                        "structure_score": round(structure_score, 3),
+                        "corrected": False,
+                        "reason": f"safety_rejected: {safety_trace.rollback_reason}",
+                        "model_used": result.model_used,
+                        "before_preview": text[:200],
+                        "safety": safety_trace.to_dict(),
+                    })
             else:
                 corrections.append({
                     "block_index": block.get("block_index", 0),

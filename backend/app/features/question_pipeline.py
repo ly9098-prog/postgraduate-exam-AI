@@ -1783,6 +1783,20 @@ async def enrich_import(
     qi.ai_metadata = normalized
     qi.ai_raw_response = raw
 
+    # 记录 AI enrich trace
+    from app.features.ai_safety import AIEditTrace
+    enrich_trace = AIEditTrace(
+        stage="ai_enrich",
+        model=resp.get("model", "unknown"),
+        before=str(_qi_to_dict(qi))[:500],
+        after=str(normalized)[:500],
+        tokens_used=resp.get("tokens_used", 0),
+        duration_ms=resp.get("duration_ms", 0),
+    )
+    if qi.ai_metadata is None:
+        qi.ai_metadata = {}
+    qi.ai_metadata["_trace"] = enrich_trace.to_dict()
+
     db.add(_build_log(
         user_id=user_id, action="enrich", target_type="import",
         target_id=qi.id, batch_id=qi.batch_id, prompt_text=prompt_text,
@@ -2066,6 +2080,18 @@ async def complete_import(
         "missing_fields": missing,
     }
     qi.ai_raw_response = raw
+
+    # 记录 AI complete trace
+    from app.features.ai_safety import AIEditTrace
+    complete_trace = AIEditTrace(
+        stage="ai_complete",
+        model=resp.get("model", "unknown"),
+        before=str(_qi_to_dict(qi))[:500],
+        after=str(qi.ai_metadata)[:500],
+        tokens_used=resp.get("tokens_used", 0),
+        duration_ms=resp.get("duration_ms", 0),
+    )
+    qi.ai_metadata["_trace"] = complete_trace.to_dict()
 
     db.add(_build_log(
         user_id=user_id, action="complete", target_type="import",

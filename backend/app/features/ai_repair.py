@@ -820,6 +820,39 @@ async def repair_questions(
             if "roman_repair_applied" not in after["risk_flags"]:
                 after["risk_flags"] = ["roman_repair_applied", *after["risk_flags"]]
 
+        # ---- AI safety gate: 评估 AI 修复是否可接受 ----
+        from app.features.ai_safety import evaluate_and_trace
+
+        before_q = questions[i]
+        before_stem = str(before_q.get("stem", "") or "")
+        before_opts = str(before_q.get("options", "") or "")
+        before_answer = str(before_q.get("answer", "") or "")
+        after_stem = str(after.get("stem", "") or "")
+        after_opts = str(after.get("options", "") or "")
+        after_answer = str(after.get("answer", "") or "")
+
+        safety_context = {
+            "has_options": bool(before_opts or after_opts),
+            "stem_context": before_stem[:200],
+            "expected_answer": before_answer,
+        }
+
+        safety_trace, _safe_stem = evaluate_and_trace(
+            stage="ai_repair",
+            model="deepseek",
+            before=before_stem,
+            after=after_stem,
+            context=safety_context,
+            tokens_used=token_used + roman_results.get(i, {}).get("token_used", 0),
+        )
+
+        if not safety_trace.accepted:
+            unrepaired.append({
+                "question_index": i,
+                "reason": f"safety_rejected: {safety_trace.rollback_reason}",
+            })
+            continue
+
         repair_entry = {
             "question_index": i,
             "before": {k: v for k, v in questions[i].items() if k != "raw_text"},
@@ -827,7 +860,13 @@ async def repair_questions(
             "repair_actions": repair_actions,
             "confidence": result_data.get("confidence", 0),
             "token_used": token_used + roman_results.get(i, {}).get("token_used", 0),
+            "safety": safety_trace.to_dict(),
         }
+        if safety_trace.risk_flags:
+            after.setdefault("risk_flags", [])
+            for flag in safety_trace.risk_flags:
+                if flag not in after["risk_flags"]:
+                    after["risk_flags"].append(flag)
         if ai_result.get("_batch_fallback"):  # L2: mark batch-fallback degradation
             repair_entry["repair_method"] = "batch_fallback"
             after.setdefault("risk_flags", [])
