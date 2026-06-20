@@ -463,7 +463,7 @@ def _ocr_scanned_pdf(
 
     from app.core.config import settings
     from app.core.ocr_profile import get_ocr_profile
-    from app.services.ocr_service import clean_ocr_text, ocr_pages, ocr_pages_with_boxes
+    from app.services.ocr_service import ocr_pages, ocr_pages_with_boxes
 
     profile = get_ocr_profile()
     max_pages = settings.MAX_OCR_PAGES
@@ -537,7 +537,7 @@ def _ocr_scanned_pdf(
                 result = results[page_idx]
                 pw, ph = page_dimensions[page_idx]
                 if result.failed:
-                    text = clean_ocr_text(fallback_results.get(page_idx, ""))
+                    text = fallback_results.get(page_idx, "")
                     if text.strip():
                         blocks.append({
                             "page": page_idx,
@@ -555,7 +555,7 @@ def _ocr_scanned_pdf(
                         ocr_text_fallback_unavailable_pages.add(page_idx)
                     continue
 
-                text = clean_ocr_text(result.text)
+                text = result.text
                 if text.strip():
                     boxes = result.boxes or []
                     blocks.append({
