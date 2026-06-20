@@ -152,13 +152,11 @@
       </view>
 
       <view class="q-stem">
-        <block wx:if="{{enableMathImage && currentQuestion._stemSegments.length > 0}}">
-          <math-question segments="{{currentQuestion._stemSegments}}" />
+        <block wx:if="{{currentQuestion._renderModel.mode === 'SEGMENTS'}}">
+          <math-question segments="{{currentQuestion._renderModel.segments}}" />
         </block>
-        <block wx:elif="{{currentQuestion._stemNeedsRich}}">
-          <mp-html content="{{currentQuestion._stemHtml}}" lazy-load></mp-html>
-        </block>
-        <text wx:else class="q-text">{{currentQuestion._stemText}}</text>
+        <rich-text wx:elif="{{currentQuestion._renderModel.mode === 'RICH_TEXT'}}" nodes="{{currentQuestion._renderModel.richTextNodes}}"></rich-text>
+        <mp-html wx:elif="{{currentQuestion._renderModel.mode === 'LATEX'}}" content="{{currentQuestion._renderModel.html}}" lazy-load></mp-html>
       </view>
 
       <view class="q-options">
@@ -246,13 +244,11 @@
         </view>
         <view class="ga-body">
           <view class="ga-stem">
-            <block wx:if="{{enableMathImage && item._stemSegments.length > 0}}">
-              <math-question segments="{{item._stemSegments}}" />
+            <block wx:if="{{item._renderModel.mode === 'SEGMENTS'}}">
+              <math-question segments="{{item._renderModel.segments}}" />
             </block>
-            <block wx:elif="{{item._stemNeedsRich}}">
-              <mp-html content="{{item._stemHtml}}" lazy-load></mp-html>
-            </block>
-            <text wx:else>{{item._stemText}}</text>
+            <rich-text wx:elif="{{item._renderModel.mode === 'RICH_TEXT'}}" nodes="{{item._renderModel.richTextNodes}}"></rich-text>
+            <mp-html wx:elif="{{item._renderModel.mode === 'LATEX'}}" content="{{item._renderModel.html}}" lazy-load></mp-html>
           </view>
           <text class="ga-answer" wx:if="{{!item.isCorrect}}">
             你的：{{item.userAnswer || '未作答'}}　正确：{{item.correctAnswer}}

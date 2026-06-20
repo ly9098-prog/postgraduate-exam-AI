@@ -1,6 +1,6 @@
 # 任务：建立刷题页渲染架构约束，防止题干重复显示问题再次出现
 
-**状态**：Phase 1 完成，Phase 2 待实施
+**状态**：Phase 1 完成，Phase 2 完成，待真机验证
 
 ## 背景
 
@@ -61,13 +61,13 @@ buildRenderModel(question, options) → { mode, richTextNodes, html, segments }
 - 3 个历史案例详述
 - 回归测试要求与 fixture 格式
 
-### Phase 2 ⏳ 待实施
+### Phase 2 ✅ 完成（2026-06-20）
 
 | 页面 | 文件 | 变更 |
 |------|------|------|
-| wrong-detail | `.js` + `.wxml` | 接入 `buildRenderModel()`，WXML 增加 `<rich-text>` 分支 |
-| review-today | `.js` + `.wxml` | 接入 `buildRenderModel()`，WXML 增加 `<rich-text>` 分支（刷题视图 + 组结果视图两处） |
-| wrong-book | `.js` | 轻量：`_toCleanText()` 替换为 `toPlainInlineMathText` |
+| wrong-detail | `.js` + `.wxml` | 接入 `buildRenderModel()`，WXML 改为 3 分支（SEGMENTS / RICH_TEXT / LATEX） |
+| review-today | `.js` + `.wxml` | 接入 `buildRenderModel()`，WXML 改为 3 分支（刷题视图 + 组结果视图两处） |
+| wrong-book | `.js` | `_toCleanText()` 替换为 `toPlainInlineMathText`，移除 `formatInlineMathText` 依赖 |
 
 ## 验收标准
 
@@ -81,9 +81,9 @@ buildRenderModel(question, options) → { mode, richTextNodes, html, segments }
 - [x] 第三方组件准入规则文档化
 - [x] `docs/render-invariant.md` 架构文档
 - [x] practice 页面完成接入
-- [ ] wrong-detail 页面接入
-- [ ] review-today 页面接入
-- [ ] wrong-book 页面接入
+- [x] wrong-detail 页面接入
+- [x] review-today 页面接入
+- [x] wrong-book 页面接入
 - [ ] 真机/DevTools 验证
 
 ## 扩展规则

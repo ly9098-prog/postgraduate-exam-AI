@@ -1,4 +1,6 @@
-# 小程序题干重复问题&admin前端审核通过破坏题目结构问题
+# 小程序题干重复问题&admin前端审核通过破坏题目结构问题 — 已修复
+
+**状态**：全部案例已修复（2026-06-20）
 
 #### 案例一（小程序渲染）
 
@@ -91,7 +93,7 @@ for (k = 1; k <= n; k + =2)
 
 > **问题描述**：含题号的题干完整重复两次。案例一和案例四均带 "【年份 统考真题】" 前缀，说明去重不应依赖题号格式（题号格式在各题中不统一），而应基于内容本身。
 >
-> **修复任务**：最终修复方案应覆盖所有四种重复模式。建议在 AI 标准化返回后、或入库前增加一个去重步骤：对题干内容做连续性重复检测（连续两块完全相同则删去第二块），而非依赖正则匹题型号。
+> **修复任务**：✅ 已修复 — `deduplicate_repeated_text()` 在 AI 标准化后、入库前对所有 stem 做行级折叠 + 整体半折叠 + 逐行去重（2026-06-20）。
 
 #### 案例五（admin前端）
 
@@ -234,7 +236,12 @@ if (n <=
 > **修复任务**：
 > 1. **OCR 阶段**：排查 `ocr_service.py` 的 `clean_ocr_text()` — 历史修复（2026-06-19）已将 `line.strip()` 改为 `line.rstrip()`，需用该原图验证缩进是否仍丢失。对于 OCR 行遗漏问题，检查 PaddleOCR 对该图片的原始输出（`}` 和 `return` 行是否完全未被检测到，还是被后处理过滤），必要时调整 OCR 文本行过滤策略或在 fence block 检测后对代码块内行做保守保留（不因"看起来像噪声"而丢弃，见 ADR-001）。
 > 2. **审核通过阶段**：在 `question_pipeline.py` 的 `clean_text()` 中增加比较运算符断行修复正则 `(<=|>=|==|!=)\s*\n\s*` → `\1 `，在 `_normalize_code_newlines` 之前运行。同时审查 `_normalize_code_newlines` 的 `_line_ends_broken` / `_line_starts_continuation` 对 `<=` 结尾行 + 数字开头续行的合并逻辑是否正确触发。排查 admin 前端 `PUT /imports/questions/{id}` 的 `<textarea>` 是否有 `wrap="hard"` 或 EOL 转换问题。
-> 3. **入库/发布前 + 所有 stem 写入路径去重**：在 `admin_import_service.py` 的 `update_import_question()`、`review_service.py` 的 `fix_question()`、`question_pipeline.py` 的 `_apply_batch_complete_result()` 等所有 stem 写入路径均调用 `deduplicate_repeated_text()`，确保案例一～四的行级折叠去重覆盖本案例的小程序重复显示。同时在 `publish_single_question` 入库前增加最终去重守卫。
+> 3. **入库/发布前 + 所有 stem 写入路径去重**：✅ 已修复 — `deduplicate_repeated_text()` 覆盖全部 stem 写入路径（2026-06-20）。
+>
+> **修复记录**：
+> - ✅ 案例五 fix #1: OCR 缩进保留（`ocr_service.py` 使用 `line.rstrip()`），fence block 检测已就绪（ADR-001，2026-06-19）。
+> - ✅ 案例五 fix #2: 比较运算符断行修复 `(<=|>=|==|!=)\\s*\\n\\s*` → `\\1 ` 已添加到 `question_pipeline.py:367`（2026-06-20）；`_should_merge` 逗号修复同上。
+> - ✅ 案例五 fix #3: `deduplicate_repeated_text()` 已添加到 `admin_import_service.py:119`、`review_service.py:533`、`question_pipeline.py:365,2227`（2026-06-20）。
 
 #### 案例六（admin前端）
 
@@ -378,5 +385,10 @@ char data;
 > **修复任务**：
 > 1. **OCR 阶段 — 代码块保护与乱码标记**：排查 `ocr_service.py` 的 `clean_ocr_text()` 对 `struct`、`typedef` 等 C 语言关键字的识别率。对于已检测到的代码块（fence block 检测已就绪，见 ADR-001），在 AI 标准化前对块内行做保守保留，不因"低置信度"或"非自然语言"而丢弃。同时，`raw_text` 中混入的 `答案:A` 文本应被 `_extract_stem()` 的答案行过滤剥离（检查是否因紧跟前一行而未被识别为独立答案行）。OCR 严重乱码的题目应在 `ai_metadata.risk_flags` 中标记 `ocr_garbled_code`，提醒人工审核。
 > 2. **审核通过阶段 — 换行合并回退**：审查 `_should_merge` 对"逗号结尾行 + 汉字开头续行"的合并规则。当前规则 `prev[-1] in "。！？；…"` 不包含逗号 `，`，导致逗号结尾行被当作可合并行。应在 `_should_merge` 中将中文逗号 `，`、英文逗号 `,` 也加入不可合并的结尾字符列表，防止"遍历序列为 DBEAFC,\n 则其前序遍历"类正确换行被吞并。
-> 3. **入库/发布前去重**：复用案例一～四的 `deduplicate_repeated_text()` 行级折叠修复，确保本案例的空行分隔型重复也能被正确去重。现有增强函数已支持"前半行 == 后半行"检测（含中间空行跳过），应覆盖此模式。
+> 3. **入库/发布前去重**：✅ 已修复 — `deduplicate_repeated_text()` 行级折叠（2026-06-20）。
+>
+> **修复记录**：
+> - ✅ 案例六 fix #1: `ocr_garbled_code` risk_flag 映射已添加（`pipeline_orchestrator.py:2090-2091`，2026-06-20）。当 `ocr_quality_flags` 包含 `garbled_text_detected` 时，自动向 `risk_flags` 追加 `ocr_garbled_code`，前端审核页据此显示风险徽章。
+> - ✅ 案例六 fix #2: `_should_merge` 逗号已加入 `SENTENCE_END`（`pdf_text_normalizer.py:44`、`question_pipeline.py:584`，2026-06-20）。
+> - ✅ 案例六 fix #3: `deduplicate_repeated_text()` 已覆盖所有 stem 写入路径（2026-06-20）。
 

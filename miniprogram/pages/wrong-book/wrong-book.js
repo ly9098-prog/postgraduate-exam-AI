@@ -1,6 +1,6 @@
 const api = require('../../utils/api')
 const config = require('../../config')
-const { formatInlineMathText } = require('../../utils/math-format')
+const { toPlainInlineMathText } = require('../../utils/stem-render')
 
 const SUBJECTS = [
   { value: '', label: '全部' },
@@ -374,7 +374,7 @@ Page({
 
   _toCleanText(text) {
     if (!text || typeof text !== 'string') return ''
-    if (/\n/.test(text)) return text
-    return formatInlineMathText(text)
+    const plain = toPlainInlineMathText(text)
+    return plain !== null ? plain : String(text).replace(/\n/g, ' ')
   },
 })

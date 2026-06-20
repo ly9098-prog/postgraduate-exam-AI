@@ -21,13 +21,11 @@
     </view>
 
     <view class="question-block">
-      <block wx:if="{{enableMathImage && stemSegments.length > 0}}">
-        <math-question segments="{{stemSegments}}" />
+      <block wx:if="{{_renderModel.mode === 'SEGMENTS'}}">
+        <math-question segments="{{_renderModel.segments}}" />
       </block>
-      <block wx:elif="{{stemNeedsRich}}">
-        <mp-html class="q-text" content="{{stemHtml}}" lazy-load></mp-html>
-      </block>
-      <text wx:else class="q-text">{{stemText}}</text>
+      <rich-text wx:elif="{{_renderModel.mode === 'RICH_TEXT'}}" nodes="{{_renderModel.richTextNodes}}"></rich-text>
+      <mp-html wx:elif="{{_renderModel.mode === 'LATEX'}}" content="{{_renderModel.html}}" lazy-load></mp-html>
     </view>
 
     <view wx:if="{{blankOptionGroups.length > 0}}" class="blank-options">
