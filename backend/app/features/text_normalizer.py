@@ -349,13 +349,18 @@ class ImportTextNormalizer:
         return len(distinct) >= 2
 
     def _fix_option_line(self, line: str) -> str:
-        """修复选项行 OCR 错误：8/６→B, 6→B, 0/O→D。"""
+        """修复选项行 OCR 错误：8/６→B, 6→B, 0/O/o/Ｏ→D。
+
+        Primary OCR option-marker correction. question_splitter._OCR_OPTION_MAP
+        provides a defense-in-depth secondary pass for edge cases surviving
+        this normalization.
+        """
         # 匹配行首的选项标记（A-D 范围，含常见 OCR 混淆）
         m = re.match(r"^([8６6])\s*([.、:：）])", line)
         if m:
             return "B" + m.group(2) + line[m.end():]
 
-        m = re.match(r"^([0Oo])\s*([.、:：）])(?!.*[A-Ha-h]\s*[.、:：）])", line)
+        m = re.match(r"^([0OoＯ])\s*([.、:：）])(?!.*[A-Ha-h]\s*[.、:：）])", line)
         if m:
             return "D" + m.group(2) + line[m.end():]
 

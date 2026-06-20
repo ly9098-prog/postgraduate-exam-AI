@@ -1,0 +1,11 @@
+{
+  "id": "016",
+  "name": "real_page_spread",
+  "description": "真实图片：page_spread_case — 跨页题目，水印文字（王/第2章线性表）混入选项区域导致选项错位",
+  "subject": "408",
+  "fixture_source": "page_spread_case.png",
+  "pipeline_stages": ["normalize", "split", "match"],
+  "expected_questions": 1,
+  "known_failure_types": ["水印污染", "选项错位", "跨页恢复"],
+  "date_added": "2026-06-21"
+}
