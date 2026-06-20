@@ -528,8 +528,9 @@ async def fix_question(
 
     stem = fixes.get("stem")
     if stem is not None:
+        from app.services.pdf_text_normalizer import deduplicate_repeated_text
         parsed_content = dict(qi.parsed_content or {})
-        parsed_content["text"] = str(stem).strip()
+        parsed_content["text"] = deduplicate_repeated_text(str(stem).strip())
         qi.parsed_content = parsed_content
         updated.append("stem")
 

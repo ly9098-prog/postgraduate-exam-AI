@@ -133,6 +133,7 @@ GUNICORN_WORKERS=1
 POSTGRES_USER=postgraduate
 POSTGRES_PASSWORD=...
 POSTGRES_DB=postgraduate
+CODE_DETECTOR_ENABLED=true   # 灰度开启
 ```
 
 ### 生产 OCR Profile
