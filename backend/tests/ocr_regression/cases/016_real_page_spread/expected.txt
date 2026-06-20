@@ -1,0 +1,22 @@
+[normalized_full_text]
+13. 通过含有n(n>1)个元素的数组a，采用头插法建立单链表L，则L中的元素次序（）
+A. 与数组a的元素次序相同
+B. 与数组a的元素次序相反
+C. 与数组a的元素次序无关
+D. 以上都错误
+[/normalized_full_text]
+
+[questions]
+---
+number: 13
+stem: 通过含有n(n>1)个元素的数组a，采用头插法建立单链表L，则L中的元素次序（）
+type: single_choice
+options:
+  A: 与数组a的元素次序相同
+  B: 与数组a的元素次序相反
+  C: 与数组a的元素次序无关
+  D: 以上都错误
+answer: B
+option_keys: ["A", "B", "C", "D"]
+---
+[/questions]

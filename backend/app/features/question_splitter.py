@@ -13,9 +13,6 @@ _CN_NUM = {
     "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
 }
 
-# OCR 数字混淆 → 纠正
-_OCR_DIGIT_MAP = {"O": "0", "o": "0", "l": "1", "I": "1", "S": "5"}
-
 # 题号模式：(正则, 数字提取组, 说明)
 _QUESTION_PATTERNS: list[tuple[re.Pattern, int]] = [
     (re.compile(r"^(\d+)\s*[.．、]"), 1),          # "1." "1．" "1、"
@@ -53,7 +50,10 @@ _OPTION_PATTERNS: list[re.Pattern] = [
     re.compile(r"^" + _OPTION_PREFIX_MARKER + r"([A-Da-d])\s+(.+)"),
 ]
 
-# OCR 容错选项
+# OCR 容错选项 — defense-in-depth fallback for option detection during
+# splitting. Primary OCR character fixes are handled upstream in
+# text_normalizer._fix_option_line(); this map catches edge cases that
+# survive normalization (e.g., composite glyph rendering artifacts).
 _OCR_OPTION_MAP = {"8": "B", "6": "B", "0": "D", "Ｏ": "D"}
 
 _INLINE_QUESTION_PATTERN = re.compile(r"(?<![\d（(])(\d{1,3})\s*[.、)）]\s*\S")

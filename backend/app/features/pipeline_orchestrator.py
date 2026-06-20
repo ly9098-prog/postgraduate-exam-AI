@@ -26,8 +26,8 @@ from app.features.ai_validation import validate_ai_results
 from app.features.answer_matcher import match_answers
 from app.features.batch_validation import validate_batch_structure
 from app.features.import_mode import ImportMode, detect_import_mode, get_strategy
-from app.features.ocr_correction import (
-    TIER_HIGH_THRESHOLD, correct_ocr_blocks,
+from app.features.ocr_correction_common import (
+    TIER_HIGH_THRESHOLD,
     _detect_noise, _detect_structure_abnormal, _filter_sensitive, _should_correct,
 )
 from app.features.page_classifier import classify_pages, filter_blocks_by_classification
@@ -162,6 +162,7 @@ _pipeline_diagnostics_store: dict[str, dict] = {}
 _ocr_progress: dict[str, str] = {}  # pipeline_id -> "32/312 pages"
 
 _MAX_STORE_SIZE = 500  # keep at most N pipelines in memory
+_MAX_DIAGNOSTICS_SIZE = 100  # keep at most N diagnostics snapshots in memory
 _PIPELINE_REDIS_PREFIX = "import:pipeline"
 _PIPELINE_DIAGNOSTICS_REDIS_PREFIX = "import:pipeline:diagnostics"
 _PIPELINE_STATUS_TTL = 86400  # 24h
@@ -197,6 +198,76 @@ def _prune_store() -> None:
             _pipeline_diagnostics_store.pop(old_id, None)
 
 
+def _prune_diagnostics_store() -> None:
+    """Prune diagnostics store independently from main store.
+
+    Diagnostics entries lack started_at timestamps; evict oldest by
+    insertion order which is a reasonable heuristic.
+    """
+    if len(_pipeline_diagnostics_store) > _MAX_DIAGNOSTICS_SIZE:
+        excess = len(_pipeline_diagnostics_store) - _MAX_DIAGNOSTICS_SIZE
+        for key in list(_pipeline_diagnostics_store.keys())[:excess]:
+            _pipeline_diagnostics_store.pop(key, None)
+
+
+def _slim_ocr_diagnostics(diag: dict) -> dict:
+    """Truncate large arrays in OCR diagnostics to bound memory."""
+    if not diag:
+        return diag
+    corrections = diag.get("corrections", [])
+    if len(corrections) > 50:
+        diag = {**diag, "corrections": corrections[:50],
+                "corrections_truncated": len(corrections) - 50}
+    return diag
+
+
+def _summarize_ocr_diffs(corrections: list[dict]) -> dict:
+    """Summarize OCR correction diffs for diagnostics stage_diffs."""
+    corrected = [c for c in corrections if c.get("corrected")]
+    return {
+        "total_corrected": len(corrected),
+        "models_used": list({c.get("model_used", "unknown") for c in corrected}),
+        "details": corrected[:30],  # cap at 30 to bound diagnostics
+    }
+
+
+def _build_repair_diffs(
+    repaired: list[dict], unrepaired: list[dict], skipped: list[dict],
+) -> list[dict]:
+    """Build per-question repair diff records for diagnostics stage_diffs."""
+    diffs: list[dict] = []
+    for r in repaired:
+        before = r.get("before") or {}
+        after = r.get("after") or {}
+        diffs.append({
+            "question_index": r.get("question_index"),
+            "actions": r.get("repair_actions", []),
+            "confidence": r.get("confidence"),
+            "tokens_used": r.get("token_used", 0),
+            "before_stem": str(before.get("stem", ""))[:200],
+            "after_stem": str(after.get("stem", ""))[:200],
+            "options_changed": (
+                str(before.get("options", "")) != str(after.get("options", ""))
+            ),
+            "answer_changed": (
+                str(before.get("answer", "")) != str(after.get("answer", ""))
+            ),
+        })
+    for u in unrepaired:
+        diffs.append({
+            "question_index": u.get("question_index"),
+            "actions": [],
+            "reason": u.get("reason", "unrepaired"),
+        })
+    for s in skipped:
+        diffs.append({
+            "question_index": s.get("question_index"),
+            "actions": [],
+            "reason": s.get("reason", "skipped"),
+        })
+    return diffs
+
+
 def _slim_pipeline_payload(data: dict) -> dict:
     """仅保留 _PIPELINE_STORE_FIELDS 中存在于 data 的字段。
 
@@ -210,6 +281,7 @@ async def _set_pipeline_diagnostics(pipeline_id: str, diagnostics: dict) -> None
     if not diagnostics:
         return
     _pipeline_diagnostics_store[pipeline_id] = diagnostics
+    _prune_diagnostics_store()
     try:
         from app.core.cache import cache
         await cache.set(
@@ -753,13 +825,19 @@ def _build_diagnostics(data: dict) -> dict:
         "ocr_text_fallback_pages": data.get("ocr_text_fallback_pages", []),
         "ocr_text_fallback_unavailable_pages": data.get("ocr_text_fallback_unavailable_pages", []),
         "ocr_runtime_failed_pages": data.get("ocr_runtime_failed_pages", []),
-        "ocr_correction": data.get("ocr_correction_diagnostics", {}),
+        "ocr_correction": _slim_ocr_diagnostics(data.get("ocr_correction_diagnostics", {})),
         "split": data.get("split_diagnostics", {}),
         "risk_flag_counts": data.get("risk_flag_counts", {}),
         "batch_validation": data.get("batch_validation_diagnostics", {}),
         "schema_errors": data.get("errors", []),
         "ai_validation": data.get("ai_validation_diagnostics", {}),
         "similarity_match": data.get("similarity_match_diagnostics", {}),
+        "stage_diffs": {
+            "ocr_correction": _summarize_ocr_diffs(
+                data.get("ocr_correction_diagnostics", {}).get("corrections", [])
+            ),
+            "ai_repair": data.get("repair_diffs", []),
+        },
     }
 
 
@@ -996,6 +1074,18 @@ class ImportPipeline:
 
             # Scanned PDF detection: if PyMuPDF extracted very little text,
             # the PDF likely contains only images → trigger OCR fallback.
+            #
+            # OCR passes for scanned PDFs:
+            #   Pass 1 (always): _extract_pdf_blocks via PyMuPDF — cheap,
+            #       typically <10ms per page.
+            #   Pass 2 (conditional): detect_exercise_regions_from_pdf at
+            #       low DPI with sampling — lightweight image classification
+            #       only, no full OCR. Results are page ranges consumed
+            #       immediately below.
+            #   Pass 3 (conditional): _ocr_scanned_pdf at normal DPI for
+            #       detected regions or full document. Full PaddleOCR with
+            #       box-level output, batched with gc.collect() between
+            #       batches.
             total_text = sum(len(b.get("text", "")) for b in raw_blocks)
             if total_text < 100:
                 from app.core.config import settings
@@ -1072,6 +1162,9 @@ class ImportPipeline:
                                     "Exercise region OCR succeeded: %d blocks from %d region(s)",
                                     len(ocr_blocks), len(exercise_regions),
                                 )
+                            # Release region metadata; OCR text blocks in
+                            # raw_blocks are the only downstream artifact.
+                            del exercise_regions
                         else:
                             # P1-2: detection 跑了但 exercise_regions 为空 → 标记
                             # exercise_regions_missing=True；下游 normalize_schema
@@ -1238,11 +1331,7 @@ class ImportPipeline:
         return features
 
     async def _run_ocr_correction(self, normalized_blocks: list[dict], options: dict | None = None, **_kw) -> dict:
-        """Stage 1.5: AI OCR text correction for noisy blocks.
-
-        Router 模式（默认）: OCRFixRouter 多模型纠错，自动降级。
-        Legacy 模式可通过 ocr_fix_feature_flag=false 切换。
-        """
+        """Stage 1.5: AI OCR text correction via multi-model router (Qwen → DeepSeek → rule)."""
         opts = options or {}
         db = _kw.get("db")
 
@@ -1254,115 +1343,14 @@ class ImportPipeline:
             )
             return {"normalized_blocks": normalized_blocks, "ocr_correction_diagnostics": {}}
 
-        # 检查 feature flag
-        use_router = await self._check_ocr_fix_feature_flag(db)
         logger.info(
-            "【OCR-4】ocr_correction 模式 | blocks=%d mode=%s",
-            len(normalized_blocks), "router" if use_router else "legacy",
+            "【OCR-4】ocr_correction router | blocks=%d",
+            len(normalized_blocks),
         )
-
-        if use_router:
-            kw = {k: v for k, v in _kw.items() if k != "db"}
-            return await self._run_ocr_correction_router(
-                normalized_blocks, opts, db, **kw,
-            )
-
-        # Legacy mode: 原有逻辑
-        return await self._run_ocr_correction_legacy(
-            normalized_blocks, opts, db, page_images=_kw.get("page_images"),
+        kw = {k: v for k, v in _kw.items() if k != "db"}
+        return await self._run_ocr_correction_router(
+            normalized_blocks, opts, db, **kw,
         )
-
-    async def _check_ocr_fix_feature_flag(self, db) -> bool:
-        """检查 OCR fix router feature flag。
-
-        优先级: options > DB config > env var > default (True — 默认启用 router)。
-        """
-        flag = self.options.get("ocr_fix_feature_flag")
-        if flag is not None:
-            return str(flag).lower() != "false"
-        if db:
-            try:
-                from app.services.admin_ai_config_service import get_all_configs
-                db_configs = await get_all_configs(db)
-                val = db_configs.get("ocr_fix_feature_flag")
-                if val is not None:
-                    if isinstance(val, bool):
-                        return val
-                    return str(val).lower() != "false"
-            except Exception:
-                logger.warning("OCR fix feature flag: DB query failed", exc_info=True)
-        import os
-        env_val = os.environ.get("OCR_FIX_FEATURE_FLAG")
-        if env_val is not None:
-            return env_val.lower() != "false"
-        return True
-
-    async def _run_ocr_correction_legacy(
-        self, normalized_blocks: list[dict], opts: dict, db,
-        page_images: dict[int, bytes] | None = None,
-    ) -> dict:
-        """原有 correct_ocr_blocks 逻辑。"""
-        correction_config = {
-            "enabled": opts.get("enable_ocr_correction", True),
-            "mode": opts.get("ocr_correction_mode", "auto"),
-            "noise_threshold": opts.get("ocr_noise_threshold", 0.3),
-            "daily_token_limit": opts.get("ocr_correction_daily_token_limit", 50000),
-            "monthly_token_limit": opts.get("ocr_correction_monthly_token_limit", 1000000),
-        }
-
-        result = await correct_ocr_blocks(normalized_blocks, correction_config, db=db, page_images=page_images)
-
-        # Log blocks flagged as noisy before correction
-        for b in normalized_blocks:
-            text = str(b.get("normalized_text") or "")
-            if not text.strip():
-                continue
-            noise = _detect_noise(b)
-            struct = _detect_structure_abnormal(text)
-            if noise >= TIER_HIGH_THRESHOLD * 0.7 or struct >= TIER_HIGH_THRESHOLD * 0.7:
-                logger.info(
-                    "【OCR-4】AI纠错输入(legacy) | block=%d page=%s noise=%.3f struct=%.3f\n%s",
-                    b.get("block_index", 0), b.get("page", "?"),
-                    noise, struct, text[:2000],
-                )
-
-        # Log each correction
-        for c in result.get("corrections", []):
-            if c.get("corrected"):
-                idx = c.get("block_index", 0)
-                original = ""
-                if idx < len(normalized_blocks):
-                    original = str(normalized_blocks[idx].get("normalized_text") or "")[:160]
-                corrected_blocks_out = result.get("corrected_blocks", [])
-                corrected = ""
-                if idx < len(corrected_blocks_out):
-                    corrected = str(corrected_blocks_out[idx].get("normalized_text") or "")[:160]
-                logger.info(
-                    "【OCR-5】AI纠错输出(legacy) | block=%d page=%s noise=%.3f struct=%.3f\n"
-                    "  └─ 纠错前: %s\n  └─ 纠错后: %s",
-                    idx, c.get("page", "?"),
-                    c.get("noise_score", 0), c.get("structure_score", 0),
-                    original, corrected,
-                )
-
-        warnings: list[str] = []
-        stats = result.get("stats", {})
-        if stats.get("corrected_blocks", 0) > 0:
-            warnings.append(
-                f"AI corrected {stats['corrected_blocks']}/{stats['total_blocks']} blocks"
-            )
-        if result.get("skipped_reason"):
-            warnings.append(f"OCR correction skipped: {result['skipped_reason']}")
-
-        return {
-            "normalized_blocks": result["corrected_blocks"],
-            "ocr_correction_diagnostics": {
-                "stats": stats,
-                "corrections": result.get("corrections", []),
-                "skipped_reason": result.get("skipped_reason"),
-            },
-            "warnings": warnings,
-        }
 
     async def _run_ocr_correction_router(
         self, normalized_blocks: list[dict], opts: dict, db, **_kw,
@@ -1478,6 +1466,7 @@ class ImportPipeline:
                     "structure_score": round(structure_score, 3),
                     "corrected": False,
                     "reason": f"exception: {fix_result}",
+                    "before_preview": text[:200],
                 })
                 metrics.record_failure(model="exception", before=text)
                 continue
@@ -1510,6 +1499,8 @@ class ImportPipeline:
                     "structure_score": round(structure_score, 3),
                     "corrected": True,
                     "model_used": result.model_used,
+                    "before_preview": text[:200],
+                    "after_preview": result.fixed_text[:200],
                 })
             else:
                 corrections.append({
@@ -1519,6 +1510,7 @@ class ImportPipeline:
                     "structure_score": round(structure_score, 3),
                     "corrected": False,
                     "reason": result.raw_response or "no_change",
+                    "before_preview": text[:200],
                 })
                 metrics.record_unchanged(
                     model=result.model_used,
@@ -2268,6 +2260,7 @@ class ImportPipeline:
             "total_tokens": stats.get("total_tokens", 0),
             "risk_flag_counts": _count_risk_flags(combined),
             "warnings": warnings,
+            "repair_diffs": _build_repair_diffs(repaired, unrepaired, skipped),
         }
 
     def _run_ai_validation(self, questions: list[dict], **_kw) -> dict:
@@ -2695,8 +2688,10 @@ class ImportPipeline:
                     data.pop("raw_blocks", None)
                 elif name == "ocr_correction":
                     # OCR correction stage finished, release original bytes
+                    # and rendered page images (Qwen-VL was last consumer)
                     data.pop("file_content", None)
                     data.pop("file_path", None)
+                    data.pop("page_images", None)
                 elif name == "match":
                     # match 后无人再读 normalized_blocks，count 已在写入时缓存
                     data.pop("normalized_blocks", None)
@@ -2712,6 +2707,7 @@ class ImportPipeline:
                     # 失败路径同样释放
                     data.pop("file_content", None)
                     data.pop("file_path", None)
+                    data.pop("page_images", None)
                     if name in ("extract", "normalize_text"):
                         break
                 logger.warning("Stage '%s' failed, continuing with partial results", name)

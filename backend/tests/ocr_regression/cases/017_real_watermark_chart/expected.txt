@@ -1,0 +1,22 @@
+[normalized_full_text]
+35.【2023统考真题】现有非空双链表L，其结点结构为prev data next，prev是指向直接前驱结点的指针，next是指向直接后继结点的指针。若要在L中指针p所指向的结点(非尾结点)之后插入指针s指向的新结点，则在执行语句序列"s->next=p->next; p->next=s;"后，下列语句序列中还需要执行的是()
+A. s->next->prev=p; p->prev=s;
+B. p->next->prev=s; s->prev=p;
+C. s->prev=s->next->prev; s->next->prev=s;
+D. p->next->prev=s->prev; s->next->prev=p;
+[/normalized_full_text]
+
+[questions]
+---
+number: 35
+stem: 【2023统考真题】现有非空双链表L，其结点结构为prev data next，prev是指向直接前驱结点的指针，next是指向直接后继结点的指针。若要在L中指针p所指向的结点(非尾结点)之后插入指针s指向的新结点，则在执行语句序列"s->next=p->next; p->next=s;"后，下列语句序列中还需要执行的是()
+type: single_choice
+options:
+  A: s->next->prev=p; p->prev=s;
+  B: p->next->prev=s; s->prev=p;
+  C: s->prev=s->next->prev; s->next->prev=s;
+  D: p->next->prev=s->prev; s->next->prev=p;
+answer: B
+option_keys: ["A", "B", "C", "D"]
+---
+[/questions]
