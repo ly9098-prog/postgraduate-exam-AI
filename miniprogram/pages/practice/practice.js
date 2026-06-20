@@ -1,273 +1,7 @@
 const api = require('../../utils/api')
 const config = require('../../config')
 const { createTraceId, debugLog, saveDebugSnapshot, shouldDebugQuestion } = require('../../utils/debug')
-const { formatInlineMathText, replaceSimpleLatexCommands } = require('../../utils/math-format')
-
-function _formatHtmlTextSegment(text) {
-  return String(text || '').split('\n').map((line) => {
-    const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    if (/(```|[{};=]|\/\/)/.test(line)) return escaped.replace(/\t/g, '    ').replace(/ /g, '&nbsp;')
-    return escaped.replace(/ {2,}/g, (spaces) => ' ' + '&nbsp;'.repeat(spaces.length - 1))
-  }).join('<br>')
-}
-
-function _textToHtml(text) {
-  if (!text) return ''
-  const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/)
-  const out = parts.map((part, i) => {
-    if (i % 2 === 1) return part.replace(/\\(n|t|r)(?![a-zA-Z])/g, ' ')
-    return _formatHtmlTextSegment(part)
-  })
-  return '<p>' + out.join('') + '</p>'
-}
-
-function _deduplicateLines(text) {
-  if (!text) return text
-  const lines = text.split('\n')
-  const out = []
-  for (let i = 0; i < lines.length; i++) {
-    if (i === 0 || lines[i].trim() !== lines[i - 1].trim()) {
-      out.push(lines[i])
-    }
-  }
-  return out.join('\n')
-}
-
-function _trimEmptyLines(lines) {
-  let start = 0
-  let end = lines.length
-  while (start < end && !String(lines[start]).trim()) start++
-  while (end > start && !String(lines[end - 1]).trim()) end--
-  return lines.slice(start, end)
-}
-
-function _sameNormalizedLines(left, right) {
-  if (left.length !== right.length || left.length === 0) return false
-  for (let i = 0; i < left.length; i++) {
-    if (String(left[i]).trim() !== String(right[i]).trim()) return false
-  }
-  return true
-}
-
-function _deduplicateRepeatedText(text) {
-  if (!text) return text
-  const stripped = String(text).trim()
-  const half = Math.floor(stripped.length / 2)
-  if (half > 0) {
-    if (stripped.slice(0, half) === stripped.slice(half)) return stripped.slice(0, half).replace(/\n+$/, '')
-    const candidate = stripped.slice(0, half).trim()
-    if (candidate && stripped.slice(half).trim() === candidate) return candidate
-  }
-
-  const lines = stripped.split('\n')
-  for (let split = 1; split < lines.length; split++) {
-    const left = _trimEmptyLines(lines.slice(0, split))
-    const right = _trimEmptyLines(lines.slice(split))
-    if (_sameNormalizedLines(left, right)) return left.join('\n').trim()
-  }
-  return stripped
-}
-
-function _needsRichRender(text) {
-  if (!text) return false
-  return /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/.test(text) || /<\/?[a-z][\s\S]*>/i.test(text) || /\n/.test(text)
-}
-
-function _escapeRegExp(text) {
-  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function _replaceSimpleLatexCommands(text) {
-  return replaceSimpleLatexCommands(text)
-}
-
-function _toPlainInlineMathText(text) {
-  if (!text) return ''
-  const source = String(text)
-  if (/\n/.test(source)) return null
-  if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
-  let plain = formatInlineMathText(source)
-  if (/\\[a-zA-Z]+/.test(plain)) return null
-  plain = plain.replace(/[ \t]+/g, ' ').replace(/\s+([，。！？；：,.!?;:])/g, '$1').trim()
-  return plain
-}
-
-function _toPlainSimpleInlineMathText(text) {
-  if (!text) return ''
-  const source = String(text)
-  if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
-  if (!/\$[^$\n]+?\$/.test(source)) return null
-  const plain = source.replace(/\$([^$\n]+?)\$/g, function(_, inner) {
-    const value = formatInlineMathText(inner)
-    return /\\[a-zA-Z]+/.test(value) ? '$' + inner + '$' : value
-  })
-  return /\$[^$\n]+?\$/.test(plain) ? null : plain
-}
-
-function _stripLeadingOptionLabel(key, value) {
-  const text = String(value || '').trim()
-  if (!key || !text) return text
-  const label = _escapeRegExp(String(key).trim())
-  const labelPattern = new RegExp(`^${label}[\\s\\u00A0]*[.．、:：）)]\\s*`, 'i')
-  if (/^\s*\$/.test(text)) {
-    const inner = text.replace(/^\s*\$\s*/, '')
-    return '$' + inner.replace(labelPattern, '')
-  }
-  return text.replace(labelPattern, '')
-}
-
-function _normalizeOptionText(text) {
-  return String(text || '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function _buildOptionPattern(key, value) {
-  const label = _escapeRegExp(String(key || '').trim())
-  const normalizedValue = _normalizeOptionText(value)
-  if (!label || !normalizedValue) return ''
-
-  const spaces = '[\\s\\u00A0]*'
-  const separator = '[.．、:：）)]'
-  const valuePattern = _escapeRegExp(normalizedValue).replace(/\s+/g, '[\\s\\u00A0]+')
-  return `${label}${spaces}${separator}${spaces}${valuePattern}`
-}
-
-function _stripEmbeddedOptionBlock(stemText, options) {
-  if (!stemText || !options) return stemText
-  const patterns = Object.keys(options)
-    .sort()
-    .map((key) => _buildOptionPattern(key, options[key]))
-    .filter(Boolean)
-
-  if (patterns.length < 2) return stemText
-
-  const gap = '(?:\\s|<br>|\\n|\\r|&nbsp;)*'
-  const blockRegex = new RegExp(`${gap}${patterns.join(gap)}\\s*$`, 'i')
-  return blockRegex.test(stemText) ? stemText.replace(blockRegex, '').trim() : stemText
-}
-
-function _stripTrailingOptionBlockByLabels(stemText, optionKeys) {
-  if (!stemText || !optionKeys || optionKeys.length < 2) return stemText
-  const matches = _findOptionLabelMatches(stemText, optionKeys)
-
-  if (matches.length < 2) return stemText
-
-  for (const index of matches) {
-    const suffix = stemText.slice(index)
-    if (_hasTrailingOptionBlock(suffix, optionKeys)) return stemText.slice(0, index).trim()
-  }
-
-  return stemText
-}
-
-function _findOptionLabelMatches(text, optionKeys) {
-  if (!text || !optionKeys || optionKeys.length < 2) return []
-  const labels = optionKeys.map(_escapeRegExp).join('|')
-  const labelMarker = `(?:^|[\\s\\n\\r])(?:${labels})[\\s\\u00A0]*[.．、:：）)]`
-  const labelRegex = new RegExp(labelMarker, 'g')
-  const matches = []
-  let match
-  while ((match = labelRegex.exec(text)) !== null) {
-    const index = match.index + (match[0].match(/^[\s\n\r]/) ? 1 : 0)
-    matches.push(index)
-  }
-  return matches
-}
-
-function _containsTrailingOptionBlock(text, optionKeys) {
-  const matches = _findOptionLabelMatches(text, optionKeys)
-  if (matches.length < 2) return false
-  return matches.some(index => _hasTrailingOptionBlock(String(text || '').slice(index), optionKeys))
-}
-
-function _hasTrailingOptionBlock(text, optionKeys) {
-  if (!text || !optionKeys || optionKeys.length < 2) return false
-  const keys = optionKeys.map(key => String(key || '').trim()).filter(Boolean)
-  if (keys.length < 2) return false
-
-  const spaces = '[\\s\\u00A0]*'
-  const separator = '[.．、:：）)]'
-  const marker = (key, prefix) => `${prefix}${_escapeRegExp(key)}${spaces}${separator}`
-  const first = marker(keys[0], '^' + spaces)
-  const second = marker(keys[1], '[\\s\\n\\r]+')
-  const required = new RegExp(first + '[\\s\\S]+?' + second, 'i')
-  if (!required.test(text)) return false
-
-  const labels = keys.map(_escapeRegExp).join('|')
-  const labelRegex = new RegExp(`(?:^|[\\s\\n\\r])(?:${labels})${spaces}${separator}`, 'g')
-  const found = []
-  let match
-  while ((match = labelRegex.exec(text)) !== null) {
-    found.push(String(match[0]).replace(/^[\s\n\r]+/, '').charAt(0).toUpperCase())
-  }
-  if (found.length < 2) return false
-  return found[0] === keys[0].toUpperCase() && found[1] === keys[1].toUpperCase()
-}
-
-function _shortText(text) {
-  const normalized = String(text || '').replace(/\s+/g, ' ').trim()
-  return normalized.length > 80 ? normalized.slice(0, 80) + '...' : normalized
-}
-
-function _segmentsToText(segments) {
-  if (!Array.isArray(segments)) return ''
-  return segments.map((seg) => {
-    if (!seg) return ''
-    if (seg.type === 'text' || seg.type === 'newline') return seg.text || ''
-    return seg.alt ? `$${seg.alt}$` : ''
-  }).join('')
-}
-
-function _textToSegments(text) {
-  if (!text) return []
-  const lines = String(text).split('\n')
-  const segments = []
-  lines.forEach((line, index) => {
-    if (line) segments.push({ type: 'text', text: line })
-    if (index < lines.length - 1) segments.push({ type: 'newline' })
-  })
-  return segments
-}
-
-function _cleanStemText(stemText, options, optionKeys) {
-  const dedupedStem = _deduplicateRepeatedText(_deduplicateLines(stemText))
-  const withoutExactOptions = _stripEmbeddedOptionBlock(dedupedStem, options)
-  const withoutLabelOptions = _stripTrailingOptionBlockByLabels(withoutExactOptions, optionKeys)
-  return _removeTrailingOptionKeys(withoutLabelOptions, optionKeys)
-}
-
-function _removeTrailingOptionKeys(text, optionKeys) {
-  if (!text || !optionKeys || optionKeys.length === 0) return text
-  const keys = optionKeys.map(_escapeRegExp).join('')
-  const pattern = new RegExp('\\s+[' + keys + ']\\s*$', 'g')
-  return text.replace(pattern, '')
-}
-
-function _optionTextToHtml(key, value) {
-  const text = String(value || '').trim()
-  if (!key) return _textToHtml(text)
-  const keyPattern = new RegExp(`^${_escapeRegExp(String(key))}[\\s\\u00A0]*[.．、:：）)]?\\s*`, 'i')
-  const normalized = keyPattern.test(text) ? text : `${key}. ${text}`
-  return _textToHtml(normalized)
-}
-
-function _buildOptionList(opts, optionKeys, selectedFlags) {
-  return (optionKeys || []).map(function(key) {
-    const optionText = _stripLeadingOptionLabel(key, (opts && opts[key]) || '')
-    const plainOptionText = _toPlainInlineMathText(optionText)
-    const needsRich = !plainOptionText && _needsRichRender(optionText)
-    return {
-      key,
-      _selected: !!(selectedFlags || {})[key],
-      _text: plainOptionText || optionText,
-      _needsRich: needsRich,
-      _html: needsRich ? _optionTextToHtml(key, optionText) : '',
-    }
-  })
-}
+const { RENDER_MODE, buildRenderModel, buildOptionList, setRenderGuardPage, resetRenderGuard, optionTextToHtml, toPlainInlineMathText, needsRichRender, stripLeadingOptionLabel } = require('../../utils/stem-render')
 
 function _normalizeBlankAnswer(answer) {
   if (!answer) return {}
@@ -299,15 +33,15 @@ function _enrichBlankOptionGroups(groups, answer) {
       options: _normalizeBlankOptionList(group && group.options).map(function(opt) {
         const key = String((opt && opt.key) || '').trim().toUpperCase()
         const text = String((opt && opt.text) || '').trim()
-        const optionText = _stripLeadingOptionLabel(key, text)
-        const plain = _toPlainInlineMathText(optionText)
-        const needsRich = !plain && _needsRichRender(optionText)
+        const optionText = stripLeadingOptionLabel(key, text)
+        const plain = toPlainInlineMathText(optionText)
+        const needsRich = !plain && needsRichRender(optionText)
         return Object.assign({}, opt, {
           key,
           _text: plain || optionText,
           _selected: blankAnswers[groupId] === key,
           _needsRich: needsRich,
-          _html: needsRich ? _optionTextToHtml(key, optionText) : '',
+          _html: needsRich ? optionTextToHtml(key, optionText) : '',
         })
       }).filter(function(opt) {
         return opt.key
@@ -474,6 +208,20 @@ Page({
 
   onLoad() {
     this.setData({ enableMathImage: config.enableMathImage || false })
+    setRenderGuardPage('practice')
+    resetRenderGuard()
+  },
+
+  onUnload() {
+    resetRenderGuard()
+    this._clearTimer()
+  },
+
+  onShow() {
+  },
+
+  onReady() {
+    if (config.DEV) console.log('[LAYER6_ONREADY]', Date.now())
   },
 
   /* ==================== 设置阶段 ==================== */
@@ -602,20 +350,16 @@ Page({
       selectedFlags[key] = isMulti ? answer.split(',').indexOf(key) >= 0 : answer === key
     }
     const blankSelectedFlags = _buildBlankSelectedFlags(blankOptionGroups, answer)
-    // 预处理 LaTeX，去重相邻重复段落
-    const stemText = (q.content && (q.content.text || q.content.stem)) || ''
-    const sourceStemText = stemText || (q.content && _segmentsToText(q.content.segments)) || ''
-    const cleanedStem = _cleanStemText(sourceStemText, opts, optionKeys)
-    const plainStem = _toPlainInlineMathText(cleanedStem) || _toPlainSimpleInlineMathText(cleanedStem)
-    q._stemText = plainStem || cleanedStem
-    q._stemNeedsRich = !plainStem && _needsRichRender(cleanedStem)
-    q._stemHtml = q._stemNeedsRich ? _textToHtml(cleanedStem) : ''
-    q._segments = (q.content && q.content.render_mode === 'segments') ? _textToSegments(q._stemText) : []
+
+    // 统一渲染模型 — 题干渲染的唯一入口
+    const renderModel = buildRenderModel(q, opts)
+    q._renderModel = renderModel
     q._opts = opts
-    q._optionList = _buildOptionList(opts, optionKeys, selectedFlags)
+    q._optionList = buildOptionList(opts, optionKeys, selectedFlags)
     q._blankOptionGroups = blankOptionGroups
     q._hasBlankOptionGroups = blankOptionGroups.length > 0
     const renderCount = (this.data.renderCount || 0) + 1
+
     if (shouldDebugQuestion(q.id)) {
       debugLog(this.data.traceId || q.trace_id, 'BEFORE_RENDER', {
         questionId: q.id,
@@ -623,12 +367,8 @@ Page({
         renderCount,
         optionKeys,
         blankGroupCount: blankOptionGroups.length,
-        sourceLen: sourceStemText.length,
-        cleanedLen: cleanedStem.length,
-        hasEmbeddedOptions: _containsTrailingOptionBlock(sourceStemText, optionKeys),
-        stemRenderPath: q._stemNeedsRich ? 'mp-html' : (q.content && q.content.render_mode === 'segments' && config.enableMathImage ? 'math-question' : 'text'),
-        sourceTail: _shortText(sourceStemText.slice(-120)),
-        cleanedTail: _shortText(cleanedStem.slice(-120)),
+        renderMode: renderModel.mode,
+        sourceLen: ((q.content && (q.content.text || q.content.stem)) || '').length,
       })
       saveDebugSnapshot(this.data.traceId || q.trace_id, 'render', {
         questionId: q.id,
@@ -636,7 +376,7 @@ Page({
         renderCount,
         optionKeys,
         blankGroupCount: blankOptionGroups.length,
-        stem: cleanedStem,
+        renderMode: renderModel.mode,
       })
     }
     this.setData({
@@ -786,7 +526,7 @@ Page({
         ? newAnswer.split(',').indexOf(k) >= 0
         : newAnswer === k
     }
-    const optionList = _buildOptionList(q._opts, optionKeys, selectedFlags)
+    const optionList = buildOptionList(q._opts, optionKeys, selectedFlags)
     this.setData({ questions, answerMap, answeredFlags, answeredCount, selectedFlags, 'currentQuestion._optionList': optionList })
     this._showAnswerFeedback(q, newAnswer)
   },

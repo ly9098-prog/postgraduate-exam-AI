@@ -1,5 +1,17 @@
 # Bugs History
 
+## 2026-06-20 — mp-html 模板链导致刷题页题干重复显示（已修复）
+
+- **现象**：小程序答题页中，非 LaTeX 题干（含多行换行的纯文本题干）整段重复显示，上下紧挨出现两个相同副本；微信开发者工具 DOM 检查器中可见 `<wx-node>` 内存在两个相同的 `<wx-rich-text>` 元素。
+- **原因**：mp-html 内部渲染链路为 `mp-html/index.js` → `<node>` → `node.wxml` 5 层递归模板 → `<template is="el">` → `<rich-text>`。当题干内容变化（切换题目）时，`node.js` 的 `childs` observer 通过逐层 diff 产生子节点级增量更新（如 `nodes[0].children[2]`）而非全量数组替换。微信小程序的虚拟 DOM 协调在处理 `<template is="el">` 调用时未能正确移除旧的 `<rich-text>` 元素，导致新旧两个 `<rich-text>` 并存，页面出现重复文本。此前同类问题（2026-06-02、2026-06-14）通过在 `practice.js` 端做保守纯文本化/折叠重复块绕过，未触及 mp-html 内核。
+- **处理**：
+  1. `practice.js` `_showQuestion()`：对非 LaTeX 题干（无 `\commands`、无 `$$...$$`）直接构建 `<rich-text>` 节点数组 `_richTextNodes`，绕过 mp-html 完整模板链
+  2. `practice.wxml`：渲染优先级调整为 `math-question` → 原生 `<rich-text>` → `mp-html`（仅 LaTeX 备用）→ `<text>`
+  3. `node.js` `childs` observer：增加根节点是否变化的引用级检测，变化时执行全量 `setData({ nodes })` 而非增量 diff，确保后续通过 mp-html 渲染的内容（如选项）不受同样问题影响
+  4. 移除 6 层运行时诊断日志和视觉标记（`【▼题干开始▼】`/`【▲题干结束▲】`），恢复代码整洁
+- **验证**：通过逐层隔离测试确认：原生 `<text>` 无重复 → 原生 `<rich-text>` 无重复 → mp-html 全链路出现重复 → 绕过 mp-html 模板链后重复消失。6 次迭代诊断日志精确锁定了 `node.js` diff 路径与 `node.wxml` `<template>` 协调之间的交互为根因。
+- **说明**：该修复不修改 mp-html 库的核心模板结构（`node.wxml` 的 5 层递归和 `el` 模板保持不变），仅在 node 组件增加全量替换守卫；题干渲染的主体路径改为更简单可控的原生 `<rich-text>` 直出。LaTeX 题干（含 `\` 命令或 `$$` 块公式）仍走 mp-html 插件链路以支持 KaTeX 渲染，但非 LaTeX 题干占绝大多数场景。
+
 ## 2026-06-19 — 题干罗马数字列举项换行符丢失 + 代码缩进丢失 + KaTeX 解析异常容错（已修复）
 
 - **现象**：OCR/PDF 导入后，题干中 I./II./III./IV. 等罗马数字列举项之间的换行符全部丢失，所有分项连成一段；代码类题干的缩进和换行结构被破坏；printf 中的 `\n` 被 KaTeX 拦截导致 `KaTeX parse error` 显示在 UI 上。

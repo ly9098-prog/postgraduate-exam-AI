@@ -1,0 +1,24 @@
+{
+  "_bug": "2026-06-20 — Multi-line plain text with newlines, no LaTeX caused duplicate <rich-text> elements through mp-html template chain",
+  "_fix": "Bypass mp-html entirely for non-LaTeX stems; use native <rich-text> with programmatic nodes",
+  "question": {
+    "id": 62001,
+    "question_type": "single_choice",
+    "content": {
+      "text": "下列关于操作系统的描述中，正确的是\n操作系统是管理计算机硬件与软件资源的程序\n操作系统是用户和计算机之间的接口\n操作系统是计算机系统中最重要的系统软件",
+      "stem": "下列关于操作系统的描述中，正确的是\n操作系统是管理计算机硬件与软件资源的程序\n操作系统是用户和计算机之间的接口\n操作系统是计算机系统中最重要的系统软件"
+    },
+    "options": {
+      "A": "仅I和II",
+      "B": "仅II和III",
+      "C": "仅I和III",
+      "D": "I、II和III"
+    },
+    "answer": "D"
+  },
+  "expected": {
+    "mode": "RICH_TEXT",
+    "hasHtml": false,
+    "hasRichTextNodes": true
+  }
+}
