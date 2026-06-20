@@ -1,66 +1,9 @@
 const api = require('../../utils/api')
-const config = require('../../config')
-const { formatInlineMathText } = require('../../utils/math-format')
-
-function _formatHtmlTextSegment(text) {
-  return String(text || '').split('\n').map((line) => {
-    const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    if (/(```|[{};=]|\/\/)/.test(line)) return escaped.replace(/\t/g, '    ').replace(/ /g, '&nbsp;')
-    return escaped.replace(/ {2,}/g, (spaces) => ' ' + '&nbsp;'.repeat(spaces.length - 1))
-  }).join('<br>')
-}
-
-function _textToHtml(text) {
-  if (!text) return ''
-  const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/)
-  const out = parts.map((part, i) => {
-    if (i % 2 === 1) return part
-    return _formatHtmlTextSegment(part)
-  })
-  return '<p>' + out.join('') + '</p>'
-}
-
-function _needsRichRender(text) {
-  if (!text) return false
-  return /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/.test(text) || /<\/?[a-z][\s\S]*>/i.test(text)
-}
-
-function _toPlainInlineMathText(text) {
-  if (!text) return ''
-  const source = String(text)
-  if (/\n/.test(source)) return null
-  if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
-  const plain = formatInlineMathText(source)
-  if (/\\[a-zA-Z]+/.test(plain)) return null
-  return plain.replace(/[ \t]+/g, ' ').trim()
-}
-
-function _stripLeadingOptionLabel(key, value) {
-  const text = String(value || '').trim()
-  if (!key || !text) return text
-  const label = String(key).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const labelPattern = new RegExp('^' + label + '[\\s\\u00A0]*[.．、:：）)]\\s*', 'i')
-  return text.replace(labelPattern, '')
-}
-
-function _segmentsToText(segments) {
-  if (!Array.isArray(segments)) return ''
-  return segments.map(seg => {
-    if (!seg) return ''
-    if (seg.type === 'text' || seg.type === 'newline') return seg.text || ''
-    return seg.alt ? ('$' + seg.alt + '$') : ''
-  }).join('')
-}
-
-function _textToSegments(text) {
-  if (!text) return []
-  const lines = String(text).split('\n')
-  return lines.flatMap((line, i) => {
-    const segs = line ? [{ type: 'text', text: line }] : []
-    if (i < lines.length - 1) segs.push({ type: 'newline' })
-    return segs
-  })
-}
+const {
+  buildRenderModel, resetRenderGuard, setRenderGuardPage,
+  toPlainInlineMathText, needsRichRender, stripLeadingOptionLabel,
+  textToHtml
+} = require('../../utils/stem-render')
 
 const GROUP_SIZES = [5, 10, 20]
 
@@ -109,7 +52,6 @@ Page({
     _ringStyle: '',
     _accuracyStyle: '',
     entryDone: false,
-    enableMathImage: false,
     _accuracyText: '0%',
     _reviewGroupCountText: '0',
     _groupProgressStyle: '',
@@ -133,7 +75,7 @@ Page({
   },
 
   onLoad() {
-    this.setData({ enableMathImage: config.enableMathImage || false })
+    setRenderGuardPage('review-today')
     this._setDateStr()
     this._loadEntry()
   },
@@ -144,6 +86,7 @@ Page({
   },
 
   onUnload() {
+    resetRenderGuard()
     this._clearCelebrationTimer()
   },
 
@@ -274,22 +217,19 @@ Page({
       optionKeys = ['A', 'B']
     }
 
+    const _renderModel = buildRenderModel(q, opts)
+
     const optText = {}
     const optNeedsRich = {}
     const optHtml = {}
     for (const key of optionKeys) {
       const raw = (opts && opts[key]) || ''
-      const text = _stripLeadingOptionLabel(key, raw)
-      const plain = _toPlainInlineMathText(text)
+      const text = stripLeadingOptionLabel(key, raw)
+      const plain = toPlainInlineMathText(text)
       optText[key] = plain || text
-      optNeedsRich[key] = !plain && _needsRichRender(text)
-      optHtml[key] = optNeedsRich[key] ? _textToHtml(text) : ''
+      optNeedsRich[key] = !plain && needsRichRender(text)
+      optHtml[key] = optNeedsRich[key] ? textToHtml(text) : ''
     }
-
-    const plainStem = _toPlainInlineMathText(stemText)
-    const stemNeedsRich = !plainStem && _needsRichRender(stemText)
-    const stemHtml = stemNeedsRich ? _textToHtml(stemText) : ''
-    const stemSegments = (q.content && q.content.render_mode === 'segments') ? _textToSegments(stemText) : []
 
     return {
       ...q,
@@ -298,10 +238,7 @@ Page({
       _optText: optText,
       _optNeedsRich: optNeedsRich,
       _optHtml: optHtml,
-      _stemText: plainStem || stemText,
-      _stemNeedsRich: stemNeedsRich,
-      _stemHtml: stemHtml,
-      _stemSegments: stemSegments,
+      _renderModel,
       _stemPreview: stemText.length > 60 ? `${stemText.slice(0, 60)}...` : stemText,
       _subjectLabel: this.subjectLabel(q.subject),
     }
