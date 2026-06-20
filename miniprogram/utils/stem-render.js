@@ -445,7 +445,7 @@ function buildOptionList(opts, optionKeys, selectedFlags) {
       _selected: !!(selectedFlags || {})[key],
       _text: plainOptionText || optionText,
       _needsRich: needsRich,
-      _html: needsRich ? _optionTextToHtml(key, optionText) : ''
+      _html: needsRich ? _textToHtml(optionText) : ''
     }
   })
 }
