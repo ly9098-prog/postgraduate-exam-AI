@@ -32,6 +32,10 @@ _ocr_lock = threading.Lock()  # serialize GPU inference calls
 _OCR_MAX_SIDE = 3000
 _OCR_DEPENDENCY_ERROR = "OCR 依赖未安装：paddleocr，请先安装 requirements-ocr.txt"
 
+# P2-6: OCR 缓存统计
+_ocr_cache_hits = 0
+_ocr_cache_misses = 0
+
 
 @dataclass
 class OcrPageResult:
@@ -465,7 +469,28 @@ def _ocr_one_page(page_png: bytes, page_index: int) -> tuple[int, str]:
 def _ocr_one_page_with_boxes(
     page_png: bytes, page_index: int, skip_rotation: bool = False,
 ) -> OcrPageResult:
-    """对单页图片执行 OCR，返回含文本、检测框与失败状态的结果。"""
+    """对单页图片执行 OCR，返回含文本、检测框与失败状态的结果。
+
+    P2-6: 优先查询 OCR 缓存，命中时跳过 PaddleOCR 调用。
+    """
+    # P2-6: 检查缓存
+    from app.services.ocr_cache_service import get_cached, set_cached
+
+    cached = get_cached(page_png)
+    if cached is not None:
+        global _ocr_cache_hits
+        _ocr_cache_hits += 1
+        logger.debug("OCR cache HIT page=%d: %d chars, %d boxes",
+                      page_index, len(cached.text), len(cached.boxes))
+        return OcrPageResult(
+            page_index=page_index,
+            text=cached.text,
+            boxes=cached.boxes or [],
+        )
+
+    global _ocr_cache_misses
+    _ocr_cache_misses += 1
+
     try:
         ocr = _get_ocr()
         if skip_rotation:
@@ -485,6 +510,7 @@ def _ocr_one_page_with_boxes(
         # CJK 文本即便是较低置信度也保留（中文字符结构复杂，OCR 评分偏低是正常的）
         lines: list[str] = []
         boxes: list[dict] = []
+        conf_sum = 0.0
         for line in ordered:
             text = line["text"].strip()
             if not text:
@@ -495,7 +521,14 @@ def _ocr_one_page_with_boxes(
                 continue
             lines.append(text)
             boxes.append({"bbox": line["bbox"], "conf": conf})
-        return OcrPageResult(page_index=page_index, text="\n".join(lines), boxes=boxes)
+            conf_sum += conf
+
+        # P2-6: 写入 OCR 缓存
+        result_text = "\n".join(lines)
+        avg_conf = conf_sum / max(len(lines), 1) if lines else 0.0
+        set_cached(page_png, result_text, boxes, avg_conf)
+
+        return OcrPageResult(page_index=page_index, text=result_text, boxes=boxes)
     except Exception as e:
         logger.warning("OCR（含框）第 %d 页失败：%s", page_index, e)
         return OcrPageResult(page_index=page_index, text="", boxes=[], failed=True, error=str(e))
@@ -589,3 +622,14 @@ def clean_ocr_text(text: str, *, trace_id: str = "") -> str:
     """
     from app.features.text_normalizer import normalize_ocr_text
     return normalize_ocr_text(text, trace_id=trace_id)
+
+
+def get_ocr_cache_stats() -> dict:
+    """返回 OCR 缓存命中/未命中统计。"""
+    return {
+        "hits": _ocr_cache_hits,
+        "misses": _ocr_cache_misses,
+        "hit_rate": round(
+            _ocr_cache_hits / (_ocr_cache_hits + _ocr_cache_misses), 4
+        ) if (_ocr_cache_hits + _ocr_cache_misses) > 0 else 0.0,
+    }
