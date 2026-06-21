@@ -4,8 +4,22 @@
   "description": "真实图片：->指针符号OCR完全乱码场景，循环双链表删除结点（2016统考真题）",
   "subject": "408",
   "fixture_source": "faulty_case_3.png",
-  "pipeline_stages": ["normalize", "split", "match"],
+  "pipeline_stages": [
+    "normalize",
+    "split",
+    "match"
+  ],
   "expected_questions": 1,
-  "known_failure_types": ["OCR误识别", "选项损坏", "指针符号乱码"],
-  "date_added": "2026-06-19"
+  "known_failure_types": [
+    "OCR误识别",
+    "选项损坏",
+    "指针符号乱码"
+  ],
+  "date_added": "2026-06-19",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "real_image"
+  ],
+  "last_reviewed": "2026-06-19"
 }

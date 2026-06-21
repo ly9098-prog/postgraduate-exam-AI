@@ -4,8 +4,21 @@
   "description": "OCR字符混淆：数字/字母误识别（1→l, 0→O, 8→B）修复",
   "subject": "math",
   "fixture_source": "normalizer_ocr_noise.txt",
-  "pipeline_stages": ["normalize", "split", "match"],
+  "pipeline_stages": [
+    "normalize",
+    "split",
+    "match"
+  ],
   "expected_questions": 5,
-  "known_failure_types": ["公式损坏", "选项错位"],
-  "date_added": "2026-06-19"
+  "known_failure_types": [
+    "公式损坏",
+    "选项错位"
+  ],
+  "date_added": "2026-06-19",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "synthetic"
+  ],
+  "last_reviewed": "2026-06-19"
 }

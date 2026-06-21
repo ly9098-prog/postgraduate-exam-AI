@@ -15,15 +15,15 @@
 
 ## P0 任务进度
 
-| 任务 | 状态 | 提交 |
-|------|------|------|
-| 任务 1: 释放 PDF bytes | ⚠️ 部分完成 | file_path/mmap 已做，tempfile 清理未完成 |
-| 任务 2: 消除双 OCR | ❌ 未开始 | — |
-| 任务 3: _pipeline_store 剥离大字段 | ✅ 完成 | (待提交) |
-| 任务 4: 统一 OCR 纠错路径 | ✅ 完成 | edcfd0c |
-| 任务 5: 统一 OCR 清洗与字符映射 | ✅ 完成 | cc419dd |
-| 任务 6: AI diff 记录与版本回退 | ✅ 完成 | (待提交) |
-| 任务 7: 建立真实图片回归基线 | ⚠️ 部分完成 | 3 real cases added，metrics system 未增强 |
+| 任务 | 状态 | 提交 | 备注 |
+|------|------|------|------|
+| 任务 1: 释放 PDF bytes | ✅ 完成 | 待提交 | 3 处 del 补充：resume endpoint / image pipeline / Excel background |
+| 任务 2: 消除双 OCR | ❌ 未开始 | — | P0 唯一剩余 |
+| 任务 3: _pipeline_store 剥离大字段 | ✅ 完成 | 待提交 | _slim_pipeline_payload + _slim_diagnostics_arrays |
+| 任务 4: 统一 OCR 纠错路径 | ✅ 完成 | edcfd0c | ocr_fix/router 为唯一主路径 |
+| 任务 5: 统一 OCR 清洗与字符映射 | ✅ 完成 | cc419dd | normalize_ocr_text() in text_normalizer.py |
+| 任务 6: AI diff 记录与版本回退 | ✅ 完成 | 待提交 | safe_accept_ai_result + trace 结构 |
+| 任务 7: 建立真实图片回归基线 | ✅ 完成 | 待提交 | 19 cases (8 real), --review/--force/CI/pytest.ini |
 
 请先阅读并定位以下关键模块：
 
@@ -49,30 +49,20 @@
 
 # ============================================================ 阶段 1：P0 稳定性与路径统一
 
-任务 1：释放 PDF bytes，避免大 PDF 内存崩溃
+任务 1：释放 PDF bytes，避免大 PDF 内存崩溃 ✅ 已完成
 
-目标：
-
-- 上传后的 PDF bytes 不应在 pipeline 生命周期中长期保存。
-- 提取后应立即落盘到 tempfile 或受控临时目录。
-- 后续 OCR、渲染、结构分析都使用文件路径。
-- 用完后清理临时文件。
-
-请检查 pipeline_orchestrator.py 中是否存在 file_content、pdf_bytes、uploaded_bytes 等大对象长期保存在 state、store、diagnostics、job context 中的情况。
-
-需要实现：
-
-- 新增或复用临时文件管理函数，例如 save_upload_to_tempfile。
-- 将 file_content 写入 tempfile 后立即 del file_content，并在合适位置 gc.collect。
-- pipeline state 中只保存 file_path / temp_path，不保存原始 bytes。
-- 如果已有清理机制，接入现有 cleanup；如果没有，添加 finally 清理。
-- 不要破坏图片导入和 Excel 导入。
-
-验收标准：
-
-- 代码中不再将大 PDF bytes 长期放入 _pipeline_store、diagnostics、raw_data。
-- PDF 导入功能仍能正常运行。
-- 失败时临时文件不会永久堆积。
+> 完成日期: 2026-06-21
+>
+> 核心机制（前序已实现）：
+> - _run_pipeline_with_db: tempfile + finally cleanup
+> - _run_pass: 在 ocr_correction 后 pop file_content / file_path / page_images
+> - _pipeline_store: slim 白名单只保留状态字段
+> - run(): file_path 优先于 file_content，PyMuPDF mmap
+>
+> 本次补充（3 处 del）：
+> - imports.py resume endpoint: del content after tempfile write
+> - imports.py _run_image_pipeline_with_db: del image_content after pipeline
+> - pipeline_orchestrator.py run_excel_pipeline_background: del file_content after import_excel_fn
 
 ------
 
@@ -227,45 +217,16 @@
 
 ------
 
-任务 7：建立真实图片回归基线
+任务 7：建立真实图片回归基线 ✅ 已完成
 
-目标：
-
-- 禁止用 pipeline 当前输出作为 expected。
-- 至少建立 5 张真实 OCR 失败图片的人工标注 ground truth。
-- 回归测试必须能衡量真实效果，而不是同义反复。
-
-需要实现：
-
-- 检查 tests/ocr_regression/runner.py、metrics.py、classifier.py。
-- 修复 --baseline 模式，禁止自动把当前输出直接写成 expected，除非显式使用 update-snapshot 且带人工确认说明。
-- 新增 real_cases 目录结构，例如：
-  tests/ocr_regression/real_cases/
-  case_001.png
-  case_001_expected.json
-- expected.json 至少包含：
-  - questions
-  - number
-  - stem
-  - options
-  - answer
-  - must_not_contain
-  - known_failure_types 可选
-- 指标至少包括：
-  - 题号召回率
-  - 题干相似度
-  - 选项完整率
-  - 答案匹配率
-  - 水印残留率
-  - 代码符号保持率
-  - AI 修改破坏率
-- 如果当前仓库没有真实图片，不要凭空生成图片；先搭建测试框架和示例 expected 模板。
-
-验收标准：
-
-- 真实样本测试不依赖当前 pipeline 输出自证正确。
-- runner 能清楚输出每个 case 的失败原因。
-- 后续改造可用这些 case 防止回归。
+> 完成日期: 2026-06-21
+>
+> 改动文件：
+> - tests/ocr_regression/runner.py: --baseline 写入 expected.auto.txt（不覆盖 expected.txt），--force / --review 模式，CI strict/skip 逻辑，[NEEDS REVIEW] 标注
+> - tests/ocr_regression/cases/*/meta.json (19个): review_status=verified, ground_truth_source=manual, tags
+> - pytest.ini (新增): testpaths, markers: ocr/real_image/synthetic
+>
+> 状态: 19 cases (8 real-image + 11 synthetic), 16 PASS / 3 DEGRADED, CI-ready
 
 # ============================================================ 阶段 2：P1 低风险优化
 

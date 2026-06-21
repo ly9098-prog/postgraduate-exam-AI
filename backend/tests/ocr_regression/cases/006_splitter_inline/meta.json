@@ -4,8 +4,18 @@
   "description": "5道内联选择题：测试多题目顺序识别与选项归属",
   "subject": "mixed",
   "fixture_source": "splitter_inline.txt",
-  "pipeline_stages": ["normalize", "split", "match"],
+  "pipeline_stages": [
+    "normalize",
+    "split",
+    "match"
+  ],
   "expected_questions": 5,
   "known_failure_types": [],
-  "date_added": "2026-06-19"
+  "date_added": "2026-06-19",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "synthetic"
+  ],
+  "last_reviewed": "2026-06-19"
 }

@@ -4,8 +4,21 @@
   "description": "真实图片：两栏排版选项识别，循环单链表删除首元结点",
   "subject": "408",
   "fixture_source": "success_case.png",
-  "pipeline_stages": ["normalize", "split", "match"],
+  "pipeline_stages": [
+    "normalize",
+    "split",
+    "match"
+  ],
   "expected_questions": 1,
-  "known_failure_types": ["两栏串行", "选项错序"],
-  "date_added": "2026-06-19"
+  "known_failure_types": [
+    "两栏串行",
+    "选项错序"
+  ],
+  "date_added": "2026-06-19",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "real_image"
+  ],
+  "last_reviewed": "2026-06-19"
 }

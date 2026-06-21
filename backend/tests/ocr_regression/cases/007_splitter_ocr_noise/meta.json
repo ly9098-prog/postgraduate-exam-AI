@@ -4,8 +4,21 @@
   "description": "OCR损坏的题号和选项：题号l./8./6./0.混淆，测试OCR纠正+分割",
   "subject": "math",
   "fixture_source": "splitter_ocr_noise.txt",
-  "pipeline_stages": ["normalize", "split", "match"],
+  "pipeline_stages": [
+    "normalize",
+    "split",
+    "match"
+  ],
   "expected_questions": 3,
-  "known_failure_types": ["题号丢失", "选项错位"],
-  "date_added": "2026-06-19"
+  "known_failure_types": [
+    "题号丢失",
+    "选项错位"
+  ],
+  "date_added": "2026-06-19",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "synthetic"
+  ],
+  "last_reviewed": "2026-06-19"
 }

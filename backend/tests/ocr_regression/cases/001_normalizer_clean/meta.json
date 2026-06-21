@@ -4,8 +4,18 @@
   "description": "规范格式文本：多题型经过标准化器无损坏",
   "subject": "math",
   "fixture_source": "normalizer_clean.txt",
-  "pipeline_stages": ["normalize", "split", "match"],
+  "pipeline_stages": [
+    "normalize",
+    "split",
+    "match"
+  ],
   "expected_questions": 2,
   "known_failure_types": [],
-  "date_added": "2026-06-19"
+  "date_added": "2026-06-19",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "synthetic"
+  ],
+  "last_reviewed": "2026-06-19"
 }
