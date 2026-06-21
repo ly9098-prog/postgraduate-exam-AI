@@ -2281,6 +2281,7 @@ class ImportPipeline:
 
         repair_config = {
             "confidence_threshold": options.get("confidence_threshold", 0.6),
+            "high_confidence_threshold": options.get("high_confidence_threshold", 0.95),
             "daily_token_limit": options.get("daily_token_limit", 100000),
             "monthly_token_limit": options.get("monthly_token_limit", 2000000),
             "enabled": options.get("enable_ai_repair", True),

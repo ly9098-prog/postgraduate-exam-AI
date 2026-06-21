@@ -17,18 +17,17 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
 from difflib import SequenceMatcher
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.features.token_budget import (
+    estimate_tokens, check_token_limit, record_token_usage,
+)
 
 logger = logging.getLogger(__name__)
-
-# 进程级 token 计数（与 ai_repair 隔离，避免互相挤占预算）
-_token_usage: dict[str, Any] = {"daily": 0, "daily_date": ""}
 
 _VALID_QUESTION_TYPES = {
     "single_choice",
@@ -112,37 +111,11 @@ def should_call_llm(block_text: str, parsed: dict[str, Any]) -> tuple[bool, str]
     return False, "rule_ok"
 
 
-# ============================================================
-# Token 预算
-# ============================================================
-
-
-def _reset_daily_budget() -> None:
-    today = time.strftime("%Y-%m-%d")
-    if _token_usage["daily_date"] != today:
-        _token_usage["daily"] = 0
-        _token_usage["daily_date"] = today
-
-
-def _estimate_tokens(text: str) -> int:
-    chinese = len(re.findall(r"[一-鿿]", text))
-    return int(chinese * 1.3 + (len(text) - chinese) * 0.3)
-
-
-def _budget_available(estimated: int) -> bool:
-    _reset_daily_budget()
-    return int(_token_usage["daily"]) + estimated <= settings.TEXT_IMPORT_LLM_DAILY_TOKEN
-
-
-def _record_tokens(used: int) -> None:
-    _reset_daily_budget()
-    _token_usage["daily"] = int(_token_usage["daily"]) + used
-
-
 def _reset_budget_for_test() -> None:
-    """测试钩子：清零预算计数。"""
-    _token_usage["daily"] = 0
-    _token_usage["daily_date"] = ""
+    """测试钩子：清零共享预算计数。"""
+    import app.features.token_budget as _tb
+    _tb._token_usage["daily"] = 0
+    _tb._token_usage["daily_date"] = ""
 
 
 # ============================================================
@@ -416,8 +389,10 @@ async def structure_text_block(
             _model_name = _creds[2]
 
     messages = build_text_structure(block_text, rule_hint)
-    estimated = _estimate_tokens(json.dumps(messages, ensure_ascii=False))
-    if not _budget_available(estimated):
+    estimated = estimate_tokens(json.dumps(messages, ensure_ascii=False))
+    if not await check_token_limit(estimated, {
+        "daily_token_limit": settings.TEXT_IMPORT_LLM_DAILY_TOKEN,
+    }):
         logger.info("text_structure: daily token budget exhausted")
         return None
 
@@ -431,7 +406,7 @@ async def structure_text_block(
         logger.warning("text_structure llm call failed: %s", exc)
         return None
 
-    _record_tokens(int(result.get("tokens_used") or 0))
+    await record_token_usage(int(result.get("tokens_used") or 0))
 
     structured = _parse_json_response(result.get("content") or "")
     if structured is None:
