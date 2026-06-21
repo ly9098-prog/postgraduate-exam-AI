@@ -47,6 +47,9 @@ class AdminImportQuestionItem(BaseModel):
     ai_metadata: dict | None = None
     ai_reviewed_at: datetime | None = None
     ai_answer_flag: bool
+    risk_flags: list[str] = []
+    risk_level: str = "low"
+    risk_reasons: list[str] = []
     created_at: datetime
     updated_at: datetime
 

@@ -165,7 +165,7 @@ export default function ImportReviewPage() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const batchIdParam = searchParams.get("batch_id") || "";
-  const [filters, setFilters] = useState({ batch_id: "", status: "pending", subject: "", source_type: "", keyword: "" });
+  const [filters, setFilters] = useState({ batch_id: "", status: "pending", subject: "", source_type: "", keyword: "", risk_level: "" });
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [previewId, setPreviewId] = useState<number | null>(null);
@@ -238,7 +238,7 @@ export default function ImportReviewPage() {
   }, [autoSaveHint]);
 
   const queryParams = useMemo(
-    () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject: filters.subject, source_type: filters.source_type, keyword: filters.keyword }),
+    () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject: filters.subject, source_type: filters.source_type, keyword: filters.keyword, risk_level: filters.risk_level || undefined }),
     [batchIdParam, filters],
   );
 
@@ -549,7 +549,7 @@ export default function ImportReviewPage() {
               </Button>
             </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <label className="relative xl:col-span-2">
               <span className="mb-1.5 block text-xs font-medium text-[var(--color-text-secondary)]">关键词搜索</span>
               <Search className="absolute left-3 top-[34px] h-4 w-4 text-[var(--color-text-hint)]" />
@@ -562,6 +562,21 @@ export default function ImportReviewPage() {
             <label className="space-y-1.5">
               <span className="block text-xs font-medium text-[var(--color-text-secondary)]">科目</span>
               <Input placeholder="输入科目" value={filters.subject} onChange={(event) => updateFilter("subject", event.target.value)} />
+            </label>
+            <label className="space-y-1.5">
+              <span className="block text-xs font-medium text-[var(--color-text-secondary)]">风险等级</span>
+              <div className="relative">
+                <select
+                  className="flex h-11 w-full items-center rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+                  value={filters.risk_level}
+                  onChange={(event) => updateFilter("risk_level", event.target.value)}
+                >
+                  <option value="">全部</option>
+                  <option value="high">高风险</option>
+                  <option value="medium">需检查</option>
+                  <option value="low">低风险</option>
+                </select>
+              </div>
             </label>
             <label className="space-y-1.5">
               <span className="block text-xs font-medium text-[var(--color-text-secondary)]">审核状态</span>
@@ -642,8 +657,24 @@ export default function ImportReviewPage() {
                     </div>
                   </div>
 
-                  {/* Metadata pills */}
+                  {/* Risk badges + Metadata pills */}
                   <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {/* Risk level badge */}
+                    {item.risk_level === "high" ? (
+                      <span className="rounded-md bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">高风险</span>
+                    ) : item.risk_level === "medium" ? (
+                      <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">需检查</span>
+                    ) : item.risk_level === "low" ? (
+                      <span className="rounded-md bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-700">低风险</span>
+                    ) : null}
+                    {/* AI answer flag */}
+                    {item.ai_answer_flag ? (
+                      <span className="rounded-md bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-700">AI 答案</span>
+                    ) : null}
+                    {/* Answer missing flag */}
+                    {(!item.parsed_answer || item.parsed_answer.trim() === "") && item.risk_level !== "low" ? (
+                      <span className="rounded-md bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">答案缺失</span>
+                    ) : null}
                     {item.subject ? (
                       <span className="rounded-md bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-dark)]">{item.subject}</span>
                     ) : (
@@ -652,6 +683,17 @@ export default function ImportReviewPage() {
                     <span className="text-xs text-[var(--color-text-secondary)]">{item.question_type || "未标注题型"}</span>
                     <span className="max-w-[160px] truncate font-mono text-[10px] text-[var(--color-text-hint)]" title={item.batch_id}>{item.batch_id}</span>
                   </div>
+                  {/* Risk reasons */}
+                  {item.risk_reasons && item.risk_reasons.length > 0 ? (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {item.risk_reasons.slice(0, 3).map((reason, ri) => (
+                        <span key={ri} className="rounded bg-red-50/80 px-1.5 py-0.5 text-[10px] text-red-600">{reason}</span>
+                      ))}
+                      {item.risk_reasons.length > 3 ? (
+                        <span className="rounded bg-gray-50 px-1.5 py-0.5 text-[10px] text-gray-400">+{item.risk_reasons.length - 3}</span>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   {/* Stem */}
                   <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-[var(--ink)] line-clamp-2">
@@ -808,7 +850,26 @@ export default function ImportReviewPage() {
                     {previewItem.duplicate_status === "possible_duplicate" ? "疑似重复" : previewItem.duplicate_status}
                   </StatusBadge>
                 ) : null}
+                {/* Risk badges */}
+                {previewItem.risk_level === "high" ? (
+                  <span className="rounded-md bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">高风险</span>
+                ) : previewItem.risk_level === "medium" ? (
+                  <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">需检查</span>
+                ) : previewItem.risk_level === "low" ? (
+                  <span className="rounded-md bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-700">低风险</span>
+                ) : null}
+                {previewItem.ai_answer_flag ? (
+                  <span className="rounded-md bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-700">AI 答案</span>
+                ) : null}
               </div>
+              {/* Risk reasons */}
+              {previewItem.risk_reasons && previewItem.risk_reasons.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {previewItem.risk_reasons.map((reason, ri) => (
+                    <span key={ri} className="rounded bg-red-50/80 px-1.5 py-0.5 text-[10px] text-red-600">{reason}</span>
+                  ))}
+                </div>
+              ) : null}
               {/* Action buttons row */}
               <div className="mt-3 flex items-center gap-2">
                 <Button variant="primary" className="h-8 px-3 text-xs" disabled={previewItem.status === "published"} onClick={() => setConfirmState({ action: "approve", id: previewItem.id })}>
@@ -923,8 +984,18 @@ export default function ImportReviewPage() {
                         <span className="text-xs font-bold text-[var(--color-success)]" style={{ fontFamily: "'Georgia', serif" }}>答</span>
                       </span>
                       <span className="text-sm font-semibold text-[var(--ink)]">答案</span>
+                      {previewItem.ai_answer_flag ? (
+                        <span className="rounded-md bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700 ml-auto">AI 补全</span>
+                      ) : null}
                     </div>
                     <div className="ml-9">
+                      {(previewItem.ai_answer_flag && (!editState.answer || editState.answer === "（空）")) ? (
+                        <div className="mb-2 rounded-lg border border-red-200 bg-red-50/60 px-3 py-2 text-xs text-red-700">答案异常，需人工确认</div>
+                      ) : previewItem.ai_answer_flag ? (
+                        <div className="mb-2 rounded-lg border border-orange-200 bg-orange-50/60 px-3 py-2 text-xs text-orange-700">答案由 AI 补全，请核对原题</div>
+                      ) : (!editState.answer || editState.answer === "（空）") ? (
+                        <div className="mb-2 rounded-lg border border-red-200 bg-red-50/60 px-3 py-2 text-xs text-red-700">答案缺失，需人工确认</div>
+                      ) : null}
                       <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-success)]/20 bg-[var(--color-success)]/5 px-3 py-1 font-mono text-sm font-bold text-[var(--color-success)]">
                         {editState.answer || "（空）"}
                       </span>
@@ -949,6 +1020,49 @@ export default function ImportReviewPage() {
                       )}
                     </div>
                   </section>
+
+                  {/* ── OCR Raw Data ── */}
+                  {previewItem.raw_data ? (
+                    <section className="animate-fade-up drawer-section-delay-5 rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
+                      <details className="group">
+                        <summary className="flex cursor-pointer items-center gap-2.5 text-sm font-semibold text-[var(--color-text-secondary)] transition hover:text-[var(--ink)] [&::-webkit-details-marker]:hidden">
+                          <span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ backgroundColor: "rgba(154,122,186,0.1)" }}>
+                            <span className="text-xs font-bold" style={{ color: "#9a7aba", fontFamily: "'Georgia', serif" }}>原</span>
+                          </span>
+                          <span>OCR 原文 / 导入原始信息</span>
+                          <span className="ml-auto inline-block text-[10px] transition-transform group-open:rotate-90 opacity-50">▶</span>
+                        </summary>
+                        <div className="mt-3 ml-9 space-y-3">
+                          {(() => {
+                            const rd = previewItem.raw_data as Record<string, unknown>;
+                            const rawText = rd.raw_text || rd.ocr_text || rd.text || rd.stem || null;
+                            if (rawText && typeof rawText === "string") {
+                              return (
+                                <div className="rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/70 p-3">
+                                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)]">{rawText}</pre>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div>
+                                <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/70 p-3 font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)]">{JSON.stringify(previewItem.raw_data, null, 2)}</pre>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </details>
+                    </section>
+                  ) : (
+                    <section className="animate-fade-up drawer-section-delay-5 rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
+                      <div className="flex items-center gap-2.5">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ backgroundColor: "rgba(154,122,186,0.1)" }}>
+                          <span className="text-xs font-bold" style={{ color: "#9a7aba", fontFamily: "'Georgia', serif" }}>原</span>
+                        </span>
+                        <span className="text-sm font-semibold text-[var(--color-text-secondary)]">OCR 原文</span>
+                        <span className="ml-auto text-xs text-[var(--color-text-hint)]">暂无 OCR 原文</span>
+                      </div>
+                    </section>
+                  )}
 
                   {/* ── AI Suggestion Stamp ── */}
                   {completeSuggestion ? (
