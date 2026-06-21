@@ -1180,7 +1180,6 @@ class ImportPipeline:
                         "PDF text only %d chars, attempting PaddleOCR fallback", total_text,
                     )
                     try:
-                        exercise_regions_attempted = False  # P1-2
                         import_mode_str = opts.get("import_mode", "auto")
                         user_specified_range = opts.get("page_start") or opts.get("page_end")
 
@@ -1202,7 +1201,6 @@ class ImportPipeline:
                             if (settings.EXERCISE_DETECTION_ENABLED
                                     and import_mode_str != "exam"
                                     and not user_specified_range):
-                                exercise_regions_attempted = True
                                 from app.features.exercise_region_detector import (
                                     detect_exercise_regions,
                                 )

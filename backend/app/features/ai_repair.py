@@ -21,9 +21,20 @@ _VALID_QUESTION_TYPES = (
 # 内存 token 计数器（共享模块，与 ocr_correction 同一预算池）
 from app.features.token_budget import (
     estimate_tokens, check_token_limit, record_token_usage, get_token_usage_snapshot,
+    _token_usage,
 )
 
 _estimate_tokens = estimate_tokens  # backward-compat alias
+
+
+def _check_token_limit(estimated_tokens: int, config: dict) -> bool:
+    """backward-compat sync wrapper — 测试代码依赖此名称。"""
+    return asyncio.run(check_token_limit(estimated_tokens, config))
+
+
+def _record_token_usage(tokens: int) -> None:
+    """backward-compat sync wrapper — 测试代码依赖此名称。"""
+    asyncio.run(record_token_usage(tokens))
 
 
 def _looks_like_non_question_text(question: dict) -> bool:
