@@ -239,8 +239,8 @@ def cleanup_expired(
 
     Returns:
         {
-            "scanned_count": int,
-            "deleted_count": int,
+            "scanned_count": int,            # total pipeline directories examined
+            "deleted_count": int,            # files deleted (or would-be-deleted in dry_run)
             "freed_bytes": int,
             "skipped_running_count": int,
             "pipeline_results": {pipeline_id: files_removed_or_would_remove},
@@ -257,18 +257,21 @@ def cleanup_expired(
     now = time.time()
     skipped_running = 0
     freed_bytes = 0
+    total_dirs = 0
 
     for entry in os.listdir(_get_artifact_root()):
         pipeline_dir = os.path.join(_get_artifact_root(), entry)
         if not os.path.isdir(pipeline_dir):
             continue
 
+        total_dirs += 1
+
         # Use directory mtime as proxy for last activity
         mtime = os.path.getmtime(pipeline_dir)
         age = now - mtime
 
         # Determine TTL based on status heuristic
-        running = _contains_running_marker(pipeline_dir)
+        running = _is_running_pipeline(pipeline_dir)
         if running:
             ttl = _RUNNING_TTL
         elif _contains_failed_marker(pipeline_dir):
@@ -284,18 +287,21 @@ def cleanup_expired(
                     results[entry] = file_count
                     freed_bytes += _dir_size(pipeline_dir)
             else:
+                # Capture accurate size before deletion
+                dir_size = _dir_size(pipeline_dir)
                 removed = cleanup_artifacts(entry, force=True)
                 if removed > 0:
                     results[entry] = removed
-                    freed_bytes += removed * 1024  # rough estimate
+                    freed_bytes += dir_size
         else:
             if running:
                 skipped_running += 1
 
-    scanned = sum(results.values()) if results else 0
+    # deleted_count = files affected (would-be-deleted in dry_run, actually removed otherwise)
+    deleted_count = sum(results.values()) if results else 0
     return {
-        "scanned_count": scanned,
-        "deleted_count": sum(results.values()) if not dry_run else 0,
+        "scanned_count": total_dirs,
+        "deleted_count": deleted_count,
         "freed_bytes": freed_bytes,
         "skipped_running_count": skipped_running,
         "pipeline_results": results,
@@ -402,7 +408,7 @@ def _is_running(pipeline_id: str) -> bool:
     return os.path.isdir(d) and _has_no_terminal_marker(d)
 
 
-def _contains_running_marker(pipeline_dir: str) -> bool:
+def _is_running_pipeline(pipeline_dir: str) -> bool:
     return _has_no_terminal_marker(pipeline_dir)
 
 
