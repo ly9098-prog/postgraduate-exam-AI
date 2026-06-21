@@ -561,6 +561,8 @@ export type ModelTestConnectionRequest = {
   api_key: string;
   model_name: string;
   model_id?: number;
+  provider?: string;
+  feature?: string;
 };
 
 export type ModelTestConnectionResponse = {

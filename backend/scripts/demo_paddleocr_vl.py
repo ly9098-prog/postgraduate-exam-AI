@@ -5,14 +5,14 @@ Usage:
     # Set your API token (or pass via --token):
     export PADDLEOCR_VL_TOKEN="your_token_here"
 
-    # Test with a local image:
-    python demo_paddleocr_vl.py --image path/to/page.png
+    # Test with a local image (run from project root):
+    python backend/scripts/demo_paddleocr_vl.py --image path/to/page.png
 
     # Test with an image URL:
-    python demo_paddleocr_vl.py --url https://example.com/page.png
+    python backend/scripts/demo_paddleocr_vl.py --url https://example.com/page.png
 
     # Use a custom base URL:
-    python demo_paddleocr_vl.py --image test.png --base-url https://custom.api.com
+    python backend/scripts/demo_paddleocr_vl.py --image test.png --base-url https://custom.api.com
 """
 
 import argparse

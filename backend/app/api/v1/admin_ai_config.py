@@ -81,6 +81,8 @@ async def test_connection(
         model_name=data.model_name,
         model_id=data.model_id,
         db=db,
+        provider=data.provider,
+        feature=data.feature,
     )
     return result
 
