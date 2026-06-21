@@ -390,6 +390,10 @@ async def structure_text_block(
 
     messages = build_text_structure(block_text, rule_hint)
     estimated = estimate_tokens(json.dumps(messages, ensure_ascii=False))
+    # P3-7: 共享 _token_usage 计数器但限值独立。与其他模块（ocr_correction
+    # 走 admin_ai_configs, batch_complete/enrich 走配置）不同，这里用
+    # TEXT_IMPORT_LLM_DAILY_TOKEN 环境变量控制本模块的预算上限。
+    # 如需全系统统一的单一日限值，后续可引入全局配置项。
     if not await check_token_limit(estimated, {
         "daily_token_limit": settings.TEXT_IMPORT_LLM_DAILY_TOKEN,
     }):

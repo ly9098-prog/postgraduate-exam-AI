@@ -1874,6 +1874,9 @@ async def enrich_batch(
             qi.ai_metadata = dict(qi.ai_metadata or {})
             qi.ai_metadata["_enrich_skipped_reason"] = "complete_high_risk"
             qi.ai_metadata["_enrich_risk_flags"] = ["enrich_skipped_due_to_complete_risk"]
+            # 这些修改标记在 `qi` ORM 对象上，暂不提交。Phase 3 结尾的
+            # `await db.commit()` 会 flush session 中所有 dirty 对象，
+            # 包括此处被跳过的 QI。依赖 session 的 auto-flush 机制。
             skipped_count += 1
             continue
 
@@ -1893,6 +1896,16 @@ async def enrich_batch(
         async with sem:
             if not (_api_key or deepseek.is_available()):
                 item["error"] = "DEEPSEEK_API_KEY 未配置"
+                return item
+            # P3-6/7: 调用前检查 token budget
+            from app.features.token_budget import check_token_limit, estimate_tokens
+            from app.core.config import settings
+            _estimated = estimate_tokens(json.dumps(item["messages"], ensure_ascii=False)) * 3
+            if not await check_token_limit(_estimated, {
+                "daily_token_limit": settings.AI_DAILY_TOKEN_LIMIT,
+                "monthly_token_limit": settings.AI_MONTHLY_TOKEN_LIMIT,
+            }):
+                item["error"] = "token_budget_exhausted"
                 return item
             try:
                 resp = await deepseek.chat(
@@ -2690,6 +2703,18 @@ async def batch_complete_questions(
                 item["resp_raw"] = None
                 item["parsed_raw"] = item["fallback_value"]
                 item["error"] = "DEEPSEEK_API_KEY 未配置"
+                return item
+            # P3-6/7: 调用前检查 token budget，避免预算耗尽后继续消耗
+            from app.features.token_budget import check_token_limit, estimate_tokens
+            from app.core.config import settings
+            _estimated = estimate_tokens(json.dumps(item["messages"], ensure_ascii=False)) * 3
+            if not await check_token_limit(_estimated, {
+                "daily_token_limit": settings.AI_DAILY_TOKEN_LIMIT,
+                "monthly_token_limit": settings.AI_MONTHLY_TOKEN_LIMIT,
+            }):
+                item["resp_raw"] = None
+                item["parsed_raw"] = item["fallback_value"]
+                item["error"] = "token_budget_exhausted"
                 return item
             try:
                 resp = await deepseek.chat(
