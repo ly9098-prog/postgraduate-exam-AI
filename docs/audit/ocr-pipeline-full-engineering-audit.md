@@ -1,9 +1,9 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版） / 2026-06-21（复查更新） / 2026-06-21（P2 完成更新） / 2026-06-21（P4 完成更新） / 2026-06-21（PaddleOCR-VL Adapter）
+> 审计时间：2026-06-20（初版） / 2026-06-21（复查更新） / 2026-06-21（P2 完成更新） / 2026-06-21（P4 完成更新） / 2026-06-21（PaddleOCR-VL Adapter） / 2026-06-21（P5 完成更新）
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
-> 状态：P0 修复已全部落地（commit b63df47），P1 公式截图+审核提效已完成（commit c82c464），P2 三项改造已完成（2026-06-21），**P4 真断点恢复+幂等入库已完成（2026-06-21）**。新增 pipeline_artifacts.py 提供文件级 artifact 存储，resume 从 artifact 跳过已完成 stage；hash-based 去重确保同一 pipeline resume 不重复入库；质量报告 `quality_report` 随 pipeline 结果返回。**PaddleOCR-VL Adapter（2026-06-21）**新增外部高精 OCR 引擎适配器，接入 OCRFixRouter 路由链（paddleocr-vl → qwen → deepseek → rule），admin ai-settings 可动态切换。✅ 标记表示已修复项。
+> 状态：P0 修复已全部落地（commit b63df47），P1 公式截图+审核提效已完成（commit c82c464），P2 三项改造已完成（2026-06-21），**P4 真断点恢复+幂等入库已完成（2026-06-21）**。新增 pipeline_artifacts.py 提供文件级 artifact 存储，resume 从 artifact 跳过已完成 stage；hash-based 去重确保同一 pipeline resume 不重复入库；质量报告 `quality_report` 随 pipeline 结果返回。**PaddleOCR-VL Adapter（2026-06-21）**新增外部高精 OCR 引擎适配器，接入 OCRFixRouter 路由链（paddleocr-vl → qwen → deepseek → rule），admin ai-settings 可动态切换。**P5（2026-06-21）**完成 pipeline_orchestrator.py 渐进拆分（7 个 pipeline_stages/ 模块）和 question_pipeline.py 拆分（question_ai_complete.py / question_ai_enrich.py / question_draft_generator.py / question_import_writer.py），保留全部向后兼容入口。✅ 标记表示已修复项。
 
 ---
 
@@ -247,57 +247,55 @@
 
 ## 2. 代码结构审计
 
-### 2.1 模块职责评估表
+### 2.1 模块职责评估表（P5 更新）
 
 | 模块 | 行数 | 职责 | 单一职责 | 重复逻辑 | 耦合度 |
 |---|---|---|---|---|---|
-| `pipeline_orchestrator.py` | 3646 | 16 阶段编排 + 内联 OCR + 内联状态管理 | ❌ 职责过多 | 大量内联 | 🔴 极高 |
-| `question_pipeline.py` | 2573 | 标准化 + 解析 + AI + DB 写入 | ❌ 3 个子系统 | 中等 | 🔴 极高 |
-| `services/ocr_service.py` | 637 | PaddleOCR 封装 | ✅ 较好 | ✅ `clean_ocr_text` 已归并到 text_normalizer | 🟡 中 |
+| `pipeline_orchestrator.py` | 3915 | 16 阶段编排（9 stage 已委托到 `pipeline_stages/`） | 🟡 仍有降低空间 | stage 逻辑已拆分 | 🟡 中（P5-2 后降低） |
+| `question_pipeline.py` | 2921 | 保留 `QuestionNormalizer` + 向后兼容重导出 | 🟡 保留入口 | AI/导入逻辑已拆出 | 🟢 低（P5-3 后降低） |
+| `pipeline_stages/`（7 个文件） | 910 | 7 个独立 stage 实现（match/math_detect/table_detect/normalize_schema/repair/review） | ✅ 各模块单一 | 无重复 | 🟢 低 |
+| `question_ai_complete.py` | 741 | AI 补全 + 批量补全 | ✅ 单一 | 由 question_pipeline 重导出 | 🟢 低 |
+| `question_ai_enrich.py` | 323 | AI 丰富 | ✅ 单一 | 由 question_pipeline 重导出 | 🟢 低 |
+| `question_draft_generator.py` | 134 | AI 生成草稿 | ✅ 单一 | 由 question_pipeline 重导出 | 🟢 低 |
+| `question_import_writer.py` | 749 | Excel/PDF导入 + 审核操作（approve/reject/batch） | ✅ 单一 | 由 question_pipeline 重导出 | 🟢 低 |
+| `services/ocr_service.py` | 637 | PaddleOCR 封装 | ✅ 较好 | ✅ `clean_ocr_text` 已归并 | 🟡 中 |
 | `features/ocr_service.py` | 293 | AI 视觉 OCR 回退 | ✅ 单一 | 与路由纠错重叠 | 🟢 低 |
 | `text_normalizer.py` | 1101 | 规则清洗 + 统一 OCR 规范化入口 | ✅ 良好 | ✅ 字符映射已统一 | 🟢 低 |
-| `ocr_quality_gate.py` | 283 | 质量检测 | ✅ 优秀 | 无重复 | 🟢 低 |
 | `ocr_correction.py` | 171 | ✅ 向后兼容包装（委托 OCRFixRouter） | ✅ 清晰 | ✅ 已统一到 Router | 🟢 低 |
-| `ocr_correction_common.py` | — | ✅ 共享检测/过滤函数（从旧 ocr_correction 提取） | ✅ 单一 | 无重复 | 🟢 低 |
-| `ai_safety.py` | 284 | ✅ AI 编辑安全门禁（diff 记录+版本回退） | ✅ 优秀 | 无重复 | 🟢 低 |
-| `question_splitter.py` | 1301 | 题号+选项提取 | ✅ 良好 | ✅ OCR 映射已统一到 normalizer | 🟢 低 |
-| `ai_repair.py` | 899 | AI 修复 + 向后兼容别名 | ✅ 较好 | — | 🟡 中 |
-| `llm_text_structurer.py` | 451 | LLM 结构化 | ✅ 清晰 | — | 🟡 中 |
-| `ocr_fix/router.py` | 158 | 纠错路由（策略模式，唯一路径） | ✅ 清晰 | ✅ 旧版路径已移除 | 🟢 低 |
-| `ocr_fix/qwen_adapter.py` | 309 | Qwen-VL 适配器 | ✅ 单一 | ✅ 旧版内联 VL 已移除 | 🟢 低 |
-| `ocr_fix/deepseek_adapter.py` | 126 | DeepSeek 适配器 | ✅ 单一 | ✅ 旧版重复已移除 | 🟢 低 |
-| `ocr_vl/paddleocr_vl_adapter.py` | 112 | PaddleOCR-VL 适配器 | ✅ 单一 | 新增 | 🟢 低 |
-| `ocr_vl/paddleocr_vl_client.py` | 345 | PaddleOCR-VL HTTP 客户端 | ✅ 单一 | 新增 | 🟢 低 |
-| `token_budget.py` | 60 | 令牌预算 | ✅ 良好 | — | 🟢 低 |
+| `ai_safety.py` | 284 | ✅ AI 编辑安全门禁 | ✅ 优秀 | 无重复 | 🟢 低 |
+| `question_splitter.py` | 1301 | 题号+选项提取 | ✅ 良好 | ✅ OCR 映射已统一 | 🟢 低 |
+| `ai_repair.py` | 899 | AI 修复 | ✅ 较好 | — | 🟡 中 |
+| `ocr_fix/router.py` | 158 | 纠错路由 | ✅ 清晰 | ✅ 旧版路径已移除 | 🟢 低 |
 
 ### 2.2 关键结构问题
 
-**问题 1：`pipeline_orchestrator.py` 3550 行 — 超级类**
+**问题 1：✅ `pipeline_orchestrator.py` 超级类（P5-2 FIXED）**
 
-该文件包含：
-- 16 个阶段的编排逻辑
-- `_ocr_scanned_pdf()`（内联 OCR 实现，约 120 行）
-- `_render_page_images()`（图像渲染）
-- `_build_router_config()`（模型路由配置）
-- `_is_two_column_layout()`（双栏检测）
-- 完整的 `ImportPipeline` 类（含状态管理、内存管理、恢复逻辑）
-- 所有的 `_run_stage_N()` 方法
-- 公共 API 函数（`create_pipeline`, `get_pipeline`, `run_pipeline`）
-- Excel 后台管道
+该文件原包含 16 个阶段的全部内联逻辑（4454 行）。P5-2 已将以下 9 个 stage 搬至 `pipeline_stages/` 目录，保留旧方法名作为薄委托包装：
 
-**建议**：拆分出 `pipeline_stages/` 目录（每阶段独立文件）+ `pipeline_state.py` + `pipeline_api.py`
+| 已拆分 stage | 目标文件 |
+|---|---|
+| `_run_match` | `pipeline_stages/match_stage.py` |
+| `_run_normalize_schema` / `_run_batch_validation` / `_run_batch_dedup` | `pipeline_stages/normalize_schema_stage.py` |
+| `_run_repair` / `_run_ai_validation` | `pipeline_stages/repair_stage.py` |
+| `_run_math_detect` | `pipeline_stages/math_detect_stage.py` |
+| `_run_table_detect` | `pipeline_stages/table_detect_stage.py` |
+| `_run_review` | `pipeline_stages/review_stage.py` |
 
-**问题 2：`question_pipeline.py` 2548 行 — 多功能综合体**
+文件从 4454 行降至 3915 行（-539 行）。暂未拆分：`_run_extract` / `_run_split` / `_run_ocr_correction`（耦合度高，留待 P6）。
 
-包含：
-- `QuestionNormalizer` 类（标准化核心）
-- `process_question_pipeline()`（处理入口）
-- `enrich_import()` / `complete_import()` / `generate_drafts()`（AI 功能）
-- Excel 解析逻辑
-- 批量审核逻辑
-- DB 写入逻辑
+**问题 2：✅ `question_pipeline.py` 多功能综合体（P5-3 FIXED）**
 
-**建议**：拆分出 `question_normalizer.py`（核心）/ `question_enricher.py`（AI）/ `import_writer.py`（DB）
+该文件原包含标准化、AI 后处理、导入导出等职责（2895 行）。P5-3 已将以下逻辑拆出：
+
+| 已拆分逻辑 | 目标文件 |
+|---|---|
+| `complete_import` / `batch_complete_questions` / 补全辅助函数 | `question_ai_complete.py`（741 行） |
+| `enrich_import` / `enrich_batch` / `_normalize_enrich` | `question_ai_enrich.py`（323 行） |
+| `generate_drafts` | `question_draft_generator.py`（134 行） |
+| `import_excel` / `import_pdf` / `approve_question` / `batch_approve` / Excel/PDF 解析 | `question_import_writer.py`（749 行） |
+
+`question_pipeline.py` 保留 `QuestionNormalizer` 类 + `process_question_pipeline()` + 向后兼容重导出。所有外部 `from app.features.question_pipeline import fn` 继续正常工作。
 
 **问题 3：✅ OCR 清洗逻辑已统一（FIXED）**
 
@@ -566,7 +564,7 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 | **P0** | OCR 清洗逻辑三处重复（`services/ocr_service.py`, `text_normalizer.py`, `question_splitter.py`），三者不同步 | ✅ 已修复 | cc419dd |
 | **P0** | AI 纠错→修复之间无 diff 对比，幻觉放大路径无防护 | ✅ 已修复 | edcfd0c, 04fd013 |
 | **P0** | 回归测试体系「同义反复」：11 个合成 case 全部 PASS 但 5 张真实图片全部 FAIL，无人工标注 ground truth | ✅ 已修复 | 058aea3, b63df47 |
-| **P1** | `pipeline_orchestrator.py`（3646 行）和 `question_pipeline.py`（2573 行）超级类，职责混杂 | ⏳ 待处理 | — |
+| **P1** | `pipeline_orchestrator.py` 和 `question_pipeline.py` 超级类，职责混杂 | ✅ 已拆分 | P5-2 + P5-3（2026-06-21） |
 | **P1** | AI 补全串行 50 题（100-200s），可并行但未并行 | ⏳ 待处理 | — |
 | **P1** | 断点恢复完全缺失：OCR 中途崩溃全丢进度 | ⏳ 待处理 | — |
 | **P1** | `complete→enrich` 串联无版本回退；旧版敏感内容过滤未移植到新版路由 | ✅ 敏感内容过滤已移植；版本回退 ⏳ | edcfd0c |
@@ -641,8 +639,8 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 **关键变更状态（P0 ✅ / P1-公式截图审核 ✅ / P1-P2 待处理）**：
 1. ✅ **内存治理**：PDF bytes 落盘释放、消除双 OCR、pipeline_store 剥大字段（d7b2ae5, 04fd013）
 2. ✅ **删除** `ocr_correction.py` 的旧版纠错路径（保留向后兼容包装 + 移植敏感内容过滤）（edcfd0c）
-3. ⏳ **拆分** `pipeline_orchestrator.py` → `pipeline_stages/` 目录（P1，3-5 天）
-4. ⏳ **拆分** `question_pipeline.py` → `normalizer` + `enricher` + `writer`（P1，2-3 天）
+3. ✅ **拆分** `pipeline_orchestrator.py` → `pipeline_stages/` 目录（P5-2，2026-06-21）
+4. ✅ **拆分** `question_pipeline.py` → `ai_complete` + `ai_enrich` + `draft_generator` + `import_writer`（P5-3，2026-06-21）
 5. ✅ **合并** 3 处 OCR 清洗逻辑 → 统一到 `text_normalizer.py:normalize_ocr_text()`（cc419dd）
 6. ⏳ **AI 补全并行化**（P1, 0.5 天）
 7. ✅ **添加** AI 安全门禁 `ai_safety.py`（diff 记录 + 版本回退机制）（edcfd0c, 04fd013）
@@ -692,8 +690,8 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 
 | 任务 | 来源 | 前置条件 | 预估工作量 | 收益 |
 |---|---|---|---|---|
-| `pipeline_orchestrator.py` 拆分为 `pipeline_stages/` 目录（预留流式接口） | 原始审计 + 生命周期审计 | P0-1：旧版清理完成 | 3-5 天 | 可维护性大幅提升，独立测试 |
-| `question_pipeline.py` 拆分为 `normalizer` + `enricher` + `writer` | 原始审计 | P0-2：字符映射归并完成 | 2-3 天 | 职责分离，独立测试 |
+| ✅ `pipeline_orchestrator.py` 拆分 → `pipeline_stages/` 目录 | P5-2 已完成 | — | 实际：4 小时 | 行数 4454→3915，9 个 stage 搬出 |
+| ✅ `question_pipeline.py` 拆分 → `ai_complete`+`ai_enrich`+`draft_generator`+`import_writer` | P5-3 已完成 | — | 实际：4 小时 | 职责分离，向后兼容重导出 |
 | AI 补全并行化（`asyncio.gather` + 信号量控制） | 原始审计 | 无 | 0.5 天 | 5x 加速（100-200s → 20-40s） |
 | `complete→enrich` 串联版本回退机制 | 原始审计 3.5 节（补充） | diff 记录机制就绪 | 1-2 天 | 防止补全幻觉污染丰富阶段 |
 | OCR 纠错效果指标追踪 | 成熟度审计 | diff 记录完成（提供数据源） | 1 天 | 定量评估纠错效果，发现：改善还是破坏 |
@@ -715,7 +713,7 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 
 ### 6.5 推荐执行路线（2026-06-21 更新）
 
-#### 当前状态：阶段一（P0）✅ 已完成，阶段一B（P1-公式截图）✅ 已完成，**阶段二B（P2-三项改造）✅ 已完成**，阶段二（P1-结构优化）待启动
+#### 当前状态：阶段一（P0）✅ 已完成，阶段一B（P1-公式截图）✅ 已完成，**阶段二B（P2-三项改造）✅ 已完成**，**阶段二（P5-结构拆分）✅ 已完成**，阶段三（性能+幻觉防护）待启动
 
 ```
 ✅ 阶段一: 基础清理 + 回归基线 (已完成 — b63df47)
@@ -754,18 +752,18 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 └─────────────────────────────────────────────────────────────────────┘
                                      │
                                      v
-⏳ 阶段二: 结构优化 + 幻觉防护 (未开始)
+✅ 阶段二: 结构优化 (已完成 — P5, 2026-06-21)
 ┌─────────────────────────────────────────────────────────────────────┐
-│ P1-1: pipeline 结构拆分 ───────→ P1-6: 断点恢复 (结构明确后)         │
-│ P1-2: q_pipeline 拆分           │                                   │
-│ P1-5: stage data 清理 (伴随拆分) │                                   │
-│ P1-7: review 分批 commit (独立)  │                                   │
-│ P1-4: complete→enrich 版本回退   │                                   │
-│ P1-3: AI 补全并行化 (独立)       │                                   │
+│ ✅ P1-1: pipeline 结构拆分 → pipeline_stages/ (7 个 stage 模块)     │
+│ ✅ P1-2: q_pipeline 拆分 → ai_complete/enrich/draft/import_writer  │
+│ ⏳ P1-5: stage data 清理 (伴随拆分进行中)                            │
+│ ⏳ P1-7: review 分批 commit (独立，未开始)                           │
+│ ⏳ P1-4: complete→enrich 版本回退 (未开始)                           │
+│ ⏳ P1-3: AI 补全并行化 (独立，未开始)                                │
 └─────────────────────────────────────────────────────────────────────┘
                                      │
                                      v
-⏳ 阶段三: 性能优化 + 能力补充 (部分完成)
+⏳ 阶段三: 性能优化 + 能力补充 + 幻觉防护 (部分完成)
 ┌─────────────────────────────────────────────────────────────────────┐
 │ ✅ P2-1: OCR 缓存 — 已完成 (`ocr_cache_service.py`)                  │
 │ ✅ P2-4: 跳过修复 — 已完成 (`_is_low_risk_skip_candidate`)           │
@@ -805,8 +803,19 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 
 | 文件 | 行数 | 用途 |
 |---|---|---|
-| `features/pipeline_orchestrator.py` | 3646 | 主编排器（16 阶段） |
-| `features/question_pipeline.py` | 2573 | 问题标准化管道 |
+| `features/pipeline_orchestrator.py` | 3915 | 主编排器（16 阶段，9 stage 委托到 pipeline_stages/） |
+| `features/question_pipeline.py` | 2921 | 问题标准化管道 + 向后兼容重导出 |
+| `features/pipeline_stages/__init__.py` | 45 | PipelineStageContext 数据类 |
+| `features/pipeline_stages/match_stage.py` | 39 | 答案匹配 stage（自 P5-2 拆出） |
+| `features/pipeline_stages/math_detect_stage.py` | 162 | 数学公式检测 stage（自 P5-2 拆出） |
+| `features/pipeline_stages/table_detect_stage.py` | 79 | 表格检测 stage（自 P5-2 拆出） |
+| `features/pipeline_stages/normalize_schema_stage.py` | 225 | 归一化 + 校验 + 去重 stage（自 P5-2 拆出） |
+| `features/pipeline_stages/repair_stage.py` | 234 | AI 修复 + 校验 stage（自 P5-2 拆出） |
+| `features/pipeline_stages/review_stage.py` | 126 | 审核入库 stage（自 P5-2 拆出） |
+| `features/question_ai_complete.py` | 741 | ✅ AI 补全逻辑（自 P5-3 拆出） |
+| `features/question_ai_enrich.py` | 323 | ✅ AI 丰富逻辑（自 P5-3 拆出） |
+| `features/question_draft_generator.py` | 134 | ✅ AI 生成草稿（自 P5-3 拆出） |
+| `features/question_import_writer.py` | 749 | ✅ 导入+审核操作（自 P5-3 拆出） |
 | `features/ocr_service.py` | 293 | AI 视觉 OCR 回退 |
 | `features/ocr_correction.py` | 171 | ✅ 向后兼容包装（委托 OCRFixRouter） |
 | `features/ocr_correction_common.py` | — | ✅ 共享检测/过滤函数（从旧 ocr_correction 提取） |
@@ -962,17 +971,17 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 | `ai_repair.py` | 850 | 899 | +49（向后兼容别名） |
 | `tests/ocr_regression/runner.py` | ~500 | 1045 | +545（--baseline/--review/CI 模式） |
 
-### 关键遗留项（P1/P2）
+### 关键遗留项（P1/P2 更新于 P5 后）
 
-| 优先级 | 任务 | 预估工作量 |
+| 优先级 | 任务 | 状态 |
 |---|---|---|
-| P1 | `pipeline_orchestrator.py` 拆分为 `pipeline_stages/` | 3-5 天 |
-| P1 | `question_pipeline.py` 拆分为 normalizer/enricher/writer | 2-3 天 |
-| P1 | AI 补全并行化 | 0.5 天 |
-| P1 | `complete→enrich` 串联版本回退 | 1-2 天 |
-| P1 | 断点恢复（最小子集） | 2-3 天 |
+| P1 | ~~`pipeline_orchestrator.py` 拆分~~ | ✅ 已完成（P5-2） |
+| P1 | ~~`question_pipeline.py` 拆分~~ | ✅ 已完成（P5-3） |
+| P1 | AI 补全并行化 | ⏳ 待处理 |
+| P1 | `complete→enrich` 串联版本回退 | ⏳ 待处理 |
+| P1 | 断点恢复（最小子集） | ⏳ 待处理 |
 | P2 | ~~PaddleOCR 结果缓存~~ | ✅ 已完成（`ocr_cache_service.py`） |
-| P2 | Qwen-VL 回退路径修复 | 0.5 天 |
+| P2 | Qwen-VL 回退路径修复 | ⏳ 待处理 |
 | P2 | 合并两个 token budget | 0.5 天 |
 | P2 | ~~高置信度跳过 AI 修复~~ | ✅ 已完成（`_is_low_risk_skip_candidate`） |
 | P2 | 代码语义等价性检查 | 1-2 天 |

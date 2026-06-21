@@ -860,16 +860,9 @@ def _refresh_duplicate_question_display_fields(
 
 
 def _parse_excel_row(row: list, headers: list) -> dict | None:
-    raw: dict = {}
-    has_value = False
-    for i, h in enumerate(headers):
-        val = row[i] if i < len(row) else None
-        if isinstance(val, str):
-            val = val.strip()
-        if val is not None and val != "":
-            has_value = True
-        raw[h] = val
-    return raw if has_value else None
+    """Moved to question_import_writer.py (P5-3)."""
+    from app.features.question_import_writer import _parse_excel_row as _impl
+    return _impl(row, headers)
 
 
 def _parse_excel(content: bytes, filename: str) -> list[dict]:
@@ -2893,3 +2886,36 @@ async def list_logs(
         "page": page,
         "pageSize": page_size,
     }
+
+
+# ============================================================
+# P5-3: backward-compatible re-exports from extracted modules
+# ============================================================
+# These make ``from app.features.question_pipeline import fn``
+# continue to work after the P5-3 extraction.
+# ============================================================
+
+from app.features.question_draft_generator import generate_drafts  # noqa: E402, F401
+from app.features.question_ai_enrich import enrich_import, enrich_batch  # noqa: E402, F401
+from app.features.question_ai_complete import (  # noqa: E402, F401
+    batch_complete_questions,
+    complete_import,
+    complete_import_with_strategy,
+)
+from app.features.question_import_writer import (  # noqa: E402, F401
+    _build_import_duplicate_fields,
+    _create_question_import,
+    _guess_subject,
+    _parse_excel,
+    _parse_pdf,
+    _refresh_import_duplicate_status,
+    _apply_duplicate_fields,
+    approve_question,
+    batch_approve,
+    generate_template,
+    get_batch_detail,
+    import_excel,
+    import_pdf,
+    list_batches,
+    reject_question,
+)
