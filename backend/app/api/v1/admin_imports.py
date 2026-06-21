@@ -113,13 +113,16 @@ async def admin_resume_pipeline(
     pipeline_id: str,
     file: UploadFile,
     background_tasks: BackgroundTasks,
+    enable_ai_repair: bool | None = None,
+    enable_ocr_correction: bool | None = None,
+    confidence_threshold: float | None = None,
     _=Depends(require_permissions("import:write")),
     db: AsyncSession = Depends(get_db),
 ):
     """P3-3: 恢复失败的导入流水线。
 
     检查 checkpoint 后重新提交后台任务。仅允许 failed / interrupted 状态。
-    需要重新上传原始文件。
+    需要重新上传原始文件。可通过可选参数覆盖原始流水线配置。
     """
     from datetime import datetime
     import hashlib
@@ -150,6 +153,11 @@ async def admin_resume_pipeline(
     if not ckpt:
         # 没有 checkpoint 仍允许重跑，只是会完整从头开始
         logger.warning("No stage checkpoint found for pipeline %s; will run full pipeline", pipeline_id)
+    else:
+        logger.info(
+            "Pipeline %s resume with checkpoint: %d stages completed, failed_stage=%s",
+            pipeline_id, len(ckpt.get("completed_stages") or []), ckpt.get("failed_stage"),
+        )
 
     # 保存上传文件
     content = await file.read()
@@ -169,8 +177,14 @@ async def admin_resume_pipeline(
         raise
     del content
 
-    # 从 checkpoint 恢复选项
+    # 从 checkpoint 恢复选项，允许调用方覆盖
     opts = dict(ckpt.get("options") or {}) if ckpt else {}
+    if enable_ai_repair is not None:
+        opts["enable_ai_repair"] = enable_ai_repair
+    if enable_ocr_correction is not None:
+        opts["enable_ocr_correction"] = enable_ocr_correction
+    if confidence_threshold is not None:
+        opts["confidence_threshold"] = confidence_threshold
     subject = ckpt.get("subject") if ckpt else None
     source_type = ckpt.get("source_type") or "pdf"
     source_file = ckpt.get("source_file") or file.filename or ""
@@ -218,6 +232,8 @@ async def admin_resume_pipeline(
                     db=resume_db,
                     progress_callback=_progress,
                     pipeline_id=pipeline_id,
+                    # P3-3: 传入 checkpoint 让 pipeline 跳过已完成 stage
+                    resume_from_checkpoint=ckpt,
                 )
                 await _set_pipeline_store(pipeline_id, result)
         except Exception as exc:
