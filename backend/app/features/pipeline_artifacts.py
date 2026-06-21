@@ -182,6 +182,13 @@ def cleanup_artifacts(
 ) -> int:
     """Remove artifact files for a pipeline.
 
+    Note: the ttl-based code path removes files by mtime without
+    special-casing marker files (.completed / .failed).  If a marker
+    is older than its adjacent artifacts, it may be removed first —
+    the directory may appear "running" until the artifacts age past
+    ttl too.  Prefer cleanup_expired() for whole-directory removal
+    based on pipeline-status TTL.
+
     Args:
         pipeline_id: target pipeline.
         ttl: remove only if older than this many seconds.  None = remove all.

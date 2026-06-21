@@ -151,7 +151,7 @@ def _build_parsed_summary(question_import: dict) -> dict:
     summary: dict[str, Any] = {}
 
     for field in ("stem", "options", "answer", "analysis", "question_type"):
-        val = question_import.get(field) or question_import.get(f"parsed_{field}")
+        val = question_import.get(field) if question_import.get(field) is not None else question_import.get(f"parsed_{field}")
         if val is not None:
             if isinstance(val, str) and len(val) > _MAX_PARSED_LENGTH:
                 summary[field] = val[:_MAX_PARSED_LENGTH]
