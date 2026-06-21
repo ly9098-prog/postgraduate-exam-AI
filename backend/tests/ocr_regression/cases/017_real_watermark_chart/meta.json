@@ -4,8 +4,22 @@
   "description": "真实图片：watermark_chart_case — 水印+图表干扰，选项A严重乱码，C语言指针符号混淆",
   "subject": "408",
   "fixture_source": "watermark_chart_case.png",
-  "pipeline_stages": ["normalize", "split", "match"],
+  "pipeline_stages": [
+    "normalize",
+    "split",
+    "match"
+  ],
   "expected_questions": 1,
-  "known_failure_types": ["水印污染", "选项乱码", "指针字符混淆"],
-  "date_added": "2026-06-21"
+  "known_failure_types": [
+    "水印污染",
+    "选项乱码",
+    "指针字符混淆"
+  ],
+  "date_added": "2026-06-21",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "real_image"
+  ],
+  "last_reviewed": "2026-06-21"
 }

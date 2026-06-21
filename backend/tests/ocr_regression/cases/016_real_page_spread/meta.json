@@ -4,8 +4,22 @@
   "description": "真实图片：page_spread_case — 跨页题目，水印文字（王/第2章线性表）混入选项区域导致选项错位",
   "subject": "408",
   "fixture_source": "page_spread_case.png",
-  "pipeline_stages": ["normalize", "split", "match"],
+  "pipeline_stages": [
+    "normalize",
+    "split",
+    "match"
+  ],
   "expected_questions": 1,
-  "known_failure_types": ["水印污染", "选项错位", "跨页恢复"],
-  "date_added": "2026-06-21"
+  "known_failure_types": [
+    "水印污染",
+    "选项错位",
+    "跨页恢复"
+  ],
+  "date_added": "2026-06-21",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "real_image"
+  ],
+  "last_reviewed": "2026-06-21"
 }

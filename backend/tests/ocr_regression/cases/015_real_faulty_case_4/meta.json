@@ -4,8 +4,21 @@
   "description": "真实图片：faulty_case_4 — OCR将选项行合并/混淆（C/D被合并为一行乱码），需要选项边界恢复",
   "subject": "408",
   "fixture_source": "faulty_case_4.png",
-  "pipeline_stages": ["normalize", "split", "match"],
+  "pipeline_stages": [
+    "normalize",
+    "split",
+    "match"
+  ],
   "expected_questions": 1,
-  "known_failure_types": ["选项合并", "选项字符混淆"],
-  "date_added": "2026-06-21"
+  "known_failure_types": [
+    "选项合并",
+    "选项字符混淆"
+  ],
+  "date_added": "2026-06-21",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "real_image"
+  ],
+  "last_reviewed": "2026-06-21"
 }

@@ -4,8 +4,22 @@
   "description": "真实图片：水印污染+选项同行合并，单链表插入操作（与011同题不同图片）",
   "subject": "408",
   "fixture_source": "watermark_fail_case.png",
-  "pipeline_stages": ["normalize", "split", "match"],
+  "pipeline_stages": [
+    "normalize",
+    "split",
+    "match"
+  ],
   "expected_questions": 1,
-  "known_failure_types": ["水印污染", "选项合并", "C代码乱码"],
-  "date_added": "2026-06-19"
+  "known_failure_types": [
+    "水印污染",
+    "选项合并",
+    "C代码乱码"
+  ],
+  "date_added": "2026-06-19",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "real_image"
+  ],
+  "last_reviewed": "2026-06-19"
 }
