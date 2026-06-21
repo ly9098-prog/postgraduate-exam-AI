@@ -4,8 +4,22 @@
   "description": "真实图片：C代码指针符号OCR识别，单链表插入操作",
   "subject": "408",
   "fixture_source": "faulty_case_1.png",
-  "pipeline_stages": ["normalize", "split", "match"],
+  "pipeline_stages": [
+    "normalize",
+    "split",
+    "match"
+  ],
   "expected_questions": 1,
-  "known_failure_types": ["OCR误识别", "选项丢失", "C代码乱码"],
-  "date_added": "2026-06-19"
+  "known_failure_types": [
+    "OCR误识别",
+    "选项丢失",
+    "C代码乱码"
+  ],
+  "date_added": "2026-06-19",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "real_image"
+  ],
+  "last_reviewed": "2026-06-19"
 }

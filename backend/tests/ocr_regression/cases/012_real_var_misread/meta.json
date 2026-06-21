@@ -4,8 +4,21 @@
   "description": "真实图片：变量名/数组下标OCR误识别基准，线性表删除元素",
   "subject": "408",
   "fixture_source": "faulty_case_2.png",
-  "pipeline_stages": ["normalize", "split", "match"],
+  "pipeline_stages": [
+    "normalize",
+    "split",
+    "match"
+  ],
   "expected_questions": 1,
-  "known_failure_types": ["OCR误识别", "变量名错误"],
-  "date_added": "2026-06-19"
+  "known_failure_types": [
+    "OCR误识别",
+    "变量名错误"
+  ],
+  "date_added": "2026-06-19",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "real_image"
+  ],
+  "last_reviewed": "2026-06-19"
 }

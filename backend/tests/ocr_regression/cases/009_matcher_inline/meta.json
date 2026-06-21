@@ -4,8 +4,18 @@
   "description": "内联答案匹配：多种答案/解析标签格式（答案：/【答案】/KEY:/正确答案：/参考答案：）",
   "subject": "math",
   "fixture_source": "matcher_inline.txt",
-  "pipeline_stages": ["normalize", "split", "match"],
+  "pipeline_stages": [
+    "normalize",
+    "split",
+    "match"
+  ],
   "expected_questions": 5,
   "known_failure_types": [],
-  "date_added": "2026-06-19"
+  "date_added": "2026-06-19",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "synthetic"
+  ],
+  "last_reviewed": "2026-06-19"
 }

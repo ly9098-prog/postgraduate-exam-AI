@@ -31,6 +31,11 @@ STATUS_PASS = "PASS"
 STATUS_DEGRADED = "DEGRADED"
 STATUS_FAIL = "FAIL"
 
+# meta.json review_status values
+REVIEW_PENDING = "pending"
+REVIEW_VERIFIED = "verified"
+REVIEW_REJECTED = "rejected"
+
 # 综合质量分阈值
 _SCORE_PASS_THRESHOLD = 85
 _SCORE_DEGRADED_THRESHOLD = 60
@@ -417,6 +422,7 @@ def evaluate_case(case_dir: Path) -> dict:
     """评估单个回归 case。"""
     input_path = case_dir / "input.txt"
     expected_path = case_dir / "expected.txt"
+    auto_path = case_dir / "expected.auto.txt"
     meta_path = case_dir / "meta.json"
 
     if not input_path.exists():
@@ -439,21 +445,32 @@ def evaluate_case(case_dir: Path) -> dict:
             "error": f"Pipeline error: {e}",
         }
 
+    # Resolve expected file: prefer verified expected.txt, fall back to auto.txt
+    evaluation_source = None
     if not expected_path.exists():
-        return {
-            "case": case_dir.name,
-            "error": "expected.txt not found (run --baseline to generate)",
-            "normalized_text": result["normalized_text"],
-            "question_count": len(result["questions"]),
-        }
+        if auto_path.exists():
+            evaluation_source = str(auto_path)
+        else:
+            return {
+                "case": case_dir.name,
+                "error": "expected.txt not found (run --baseline to generate expected.auto.txt)",
+                "normalized_text": result["normalized_text"],
+                "question_count": len(result["questions"]),
+                "review_status": meta.get("review_status"),
+            }
+    else:
+        evaluation_source = str(expected_path)
 
-    expected_text = expected_path.read_text(encoding="utf-8")
+    expected_text = Path(evaluation_source).read_text(encoding="utf-8")
     comparison = compare_output(result, expected_text, meta)
+
+    review_status = meta.get("review_status")
 
     return {
         "case": case_dir.name,
         **comparison,
         "meta": meta,
+        "review_status": review_status,
     }
 
 
@@ -462,20 +479,215 @@ def evaluate_case(case_dir: Path) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def run_baseline(case_filter: str | None = None) -> list[Path]:
-    """从当前管道输出生成 expected.txt 文件。"""
+def run_baseline(
+    case_filter: str | None = None, force: bool = False
+) -> list[Path]:
+    """从当前管道输出生成 expected.auto.txt 文件。
+
+    永远不会直接覆盖 expected.txt——基线输出始终写入 expected.auto.txt。
+    只有 --force 时才会覆盖已有的 expected.auto.txt。
+    """
+    from datetime import date
+
     cases = discover_cases(case_filter)
     updated: list[Path] = []
+    skipped: list[str] = []
+    blocked: list[str] = []
+
     for case_dir in cases:
         input_path = case_dir / "input.txt"
+        expected_path = case_dir / "expected.txt"
+        auto_path = case_dir / "expected.auto.txt"
+        meta_path = case_dir / "meta.json"
+
+        # 已有 verified expected.txt → 拒绝覆盖，除非 --force
+        if expected_path.exists() and not force:
+            blocked.append(case_dir.name)
+            continue
+
+        # 已有 auto.txt 且未 --force → 跳过
+        if auto_path.exists() and not force:
+            skipped.append(f"{case_dir.name} (auto.txt exists, use --force to overwrite)")
+            continue
+
         input_text = input_path.read_text(encoding="utf-8")
         result = run_pipeline(input_text)
-        expected_text = _build_expected_text(result)
-        expected_path = case_dir / "expected.txt"
-        expected_path.write_text(expected_text, encoding="utf-8")
+        auto_text = _build_expected_text(result)
+
+        # 写入 expected.auto.txt
+        auto_path.write_text(auto_text, encoding="utf-8")
+
+        # 更新 meta.json
+        meta: dict = {}
+        if meta_path.exists():
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta["review_status"] = REVIEW_PENDING
+        meta["ground_truth_source"] = "auto_generated"
+        meta["auto_generated_date"] = date.today().isoformat()
+        meta_path.write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
         updated.append(case_dir)
-        print(f"  Updated baseline: {case_dir.name}")
+        if expected_path.exists():
+            print(f"  Updated auto baseline (--force): {case_dir.name}")
+        else:
+            print(f"  Generated auto baseline: {case_dir.name}")
+
+    if blocked:
+        print(
+            f"\n  Blocked {len(blocked)} case(s) with verified expected.txt "
+            f"(use --force to overwrite):"
+        )
+        for name in blocked:
+            print(f"    - {name}")
+    if skipped:
+        print(f"\n  Skipped {len(skipped)} case(s):")
+        for msg in skipped:
+            print(f"    - {msg}")
+
     return updated
+
+
+# ---------------------------------------------------------------------------
+# Review 模式
+# ---------------------------------------------------------------------------
+
+
+def run_review(case_filter: str | None = None) -> list[dict]:
+    """运行管道，对比当前输出与 expected.txt，输出逐 case diff 报告。
+
+    用于人工审核：确认管道改动后输出变化是否符合预期。
+    """
+    cases = discover_cases(case_filter)
+    reports: list[dict] = []
+    total_similarity = 0.0
+    total_diffs = 0
+
+    print("\n" + "=" * 78)
+    print("  OCR 回归 Review — 管道输出 vs expected.txt")
+    print("=" * 78)
+
+    for case_dir in cases:
+        input_path = case_dir / "input.txt"
+        expected_path = case_dir / "expected.txt"
+        auto_path = case_dir / "expected.auto.txt"
+        meta_path = case_dir / "meta.json"
+
+        meta = {}
+        if meta_path.exists():
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
+        input_text = input_path.read_text(encoding="utf-8")
+        result = run_pipeline(input_text)
+        actual_text = result["normalized_text"]
+
+        # 选择对比目标：expected.txt > expected.auto.txt
+        ref_path = None
+        ref_label = ""
+        if expected_path.exists():
+            ref_path = expected_path
+            ref_label = "expected.txt"
+        elif auto_path.exists():
+            ref_path = auto_path
+            ref_label = "expected.auto.txt"
+
+        review_status = meta.get("review_status", "unknown")
+
+        if ref_path is None:
+            reports.append({
+                "case": case_dir.name,
+                "review_status": review_status,
+                "has_reference": False,
+                "similarity": None,
+                "diff_ratio": None,
+                "missing_tokens": [],
+                "extra_tokens": [],
+            })
+            continue
+
+        ref_text = (
+            _parse_expected(ref_path.read_text(encoding="utf-8"))
+            .get("combined_text", "")
+            .strip()
+        )
+        if not ref_text:
+            ref_text = ref_path.read_text(encoding="utf-8").strip()
+
+        # Token 级比较
+        import difflib
+
+        actual_tokens = actual_text.split()
+        ref_tokens = ref_text.split()
+
+        sm = difflib.SequenceMatcher(None, ref_tokens, actual_tokens)
+        ratio = sm.ratio()
+
+        # 找缺失/多余的 token
+        missing: list[str] = []
+        extra: list[str] = []
+        for op, i1, i2, j1, j2 in sm.get_opcodes():
+            if op in ("delete", "replace"):
+                missing.extend(ref_tokens[i1:i2])
+            if op in ("insert", "replace"):
+                extra.extend(actual_tokens[j1:j2])
+
+        # 截断过长的 token 列表
+        missing_short = missing[:20]
+        extra_short = extra[:20]
+
+        total_similarity += ratio
+        total_diffs += 1
+
+        report = {
+            "case": case_dir.name,
+            "review_status": review_status,
+            "has_reference": True,
+            "reference_source": ref_label,
+            "similarity": round(ratio, 4),
+            "diff_ratio": round(1.0 - ratio, 4),
+            "missing_tokens": missing_short,
+            "missing_count": len(missing),
+            "extra_tokens": extra_short,
+            "extra_count": len(extra),
+        }
+        reports.append(report)
+
+        # 输出 per-case 报告
+        status_icon = (
+            "[NEEDS REVIEW]"
+            if review_status == REVIEW_PENDING
+            else "[VERIFIED]"
+        )
+        print(
+            f"\n  [{case_dir.name}] {status_icon} "
+            f"similarity={ratio:.4f} diff_ratio={1.0 - ratio:.4f}"
+        )
+        print(f"    reference: {ref_label}")
+        print(f"    missing tokens ({len(missing)}): {' '.join(missing_short)}")
+        print(f"    extra tokens  ({len(extra)}): {' '.join(extra_short)}")
+        if len(missing) > 20 or len(extra) > 20:
+            print(
+                f"    (truncated: {len(missing)} total missing, "
+                f"{len(extra)} total extra)"
+            )
+
+    # Summary
+    print("\n  --- Review Summary ---")
+    if total_diffs > 0:
+        avg_sim = total_similarity / total_diffs
+        print(f"  Cases reviewed: {total_diffs}")
+        print(f"  Average similarity: {avg_sim:.4f}")
+        pending = [r for r in reports if r.get("review_status") == REVIEW_PENDING]
+        verified = [r for r in reports if r.get("review_status") == REVIEW_VERIFIED]
+        no_ref = [r for r in reports if not r.get("has_reference")]
+        print(f"  Verified cases: {len(verified)}")
+        print(f"  Pending review: {len(pending)}")
+        if no_ref:
+            print(f"  No reference file: {len(no_ref)} ({', '.join(r['case'] for r in no_ref)})")
+    print()
+
+    return reports
 
 
 # ---------------------------------------------------------------------------
@@ -518,15 +730,41 @@ def print_report(results: list[dict], verbose: bool = False) -> None:
         f"({100 * pass_count / max(len(valid), 1):.0f}%)"
     )
 
+    # 审核状态摘要
+    pending = [r for r in valid if r.get("review_status") == REVIEW_PENDING]
+    verified = [r for r in valid if r.get("review_status") == REVIEW_VERIFIED]
+    unknown = [
+        r for r in valid
+        if r.get("review_status") not in (REVIEW_PENDING, REVIEW_VERIFIED)
+    ]
+    if pending or unknown:
+        status_parts: list[str] = []
+        if verified:
+            status_parts.append(f"{len(verified)} verified")
+        if pending:
+            status_parts.append(f"{len(pending)} pending review")
+        if unknown:
+            status_parts.append(f"{len(unknown)} unknown status")
+        print(f"  Review: {', '.join(status_parts)}")
+
     # 详细表格
+    pending_cases = [
+        r for r in valid if r.get("review_status") == REVIEW_PENDING
+    ]
+
     print(f"\n  {'Case':<30} {'CER':>8} {'Score':>7} {'Status':<10} Top Failures")
     print("  " + "-" * 76)
     for r in valid:
+        review_flag = (
+            " [NEEDS REVIEW]"
+            if r.get("review_status") == REVIEW_PENDING
+            else ""
+        )
         top_f = (
             r["failures"][0]["type"] if r["failures"] else "-"
         )
         print(
-            f"  {r['case']:<30} "
+            f"  {r['case'] + review_flag:<30} "
             f"{r['cer']:>8.4f} "
             f"{r['quality']['score']:>7.1f} "
             f"{r['status']:<10} "
@@ -679,11 +917,27 @@ def _case_ids() -> list[str]:
 @pytest.mark.parametrize("case_name", _case_ids())
 def test_ocr_regression(case_name: str):
     """pytest: 每个回归 case 一个参数化测试。"""
+    import os
+
     case_dir = CASES_DIR / case_name
     meta_path = case_dir / "meta.json"
     meta = {}
     if meta_path.exists():
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
+    # CI 环境：pending case 处理
+    review_status = meta.get("review_status")
+    is_ci = os.environ.get("CI", "").strip() == "true"
+    skip_pending = os.environ.get("CI_SKIP_PENDING", "").strip() == "true"
+
+    if is_ci and review_status == REVIEW_PENDING:
+        if skip_pending:
+            pytest.skip(f"[{case_name}] Skipped: review_status=pending (CI_SKIP_PENDING=true)")
+        else:
+            pytest.fail(
+                f"[{case_name}] CI reject: review_status=pending. "
+                f"Run --review to verify, then set review_status=verified."
+            )
 
     result = evaluate_case(case_dir)
 
@@ -728,25 +982,45 @@ def main():
     parser.add_argument(
         "--baseline",
         action="store_true",
-        help="从当前管道输出生成/更新 expected.txt",
+        help="从当前管道输出生成 expected.auto.txt（不覆盖 expected.txt）",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="允许 --baseline 覆盖已有 expected.auto.txt 或在有 verified expected.txt 时仍写入 auto.txt",
+    )
+    parser.add_argument(
+        "--review",
+        action="store_true",
+        help="运行管道并逐 case 对比 expected.txt，输出 diff 报告（用于人工审核）",
     )
     args = parser.parse_args()
 
     if args.baseline:
-        print("Generating baseline expected.txt files...")
-        updated = run_baseline(args.case)
+        print("Generating auto baseline files (expected.auto.txt)...")
+        updated = run_baseline(args.case, force=args.force)
         if not updated:
             print("No cases updated.", file=sys.stderr)
             sys.exit(1)
-        print(f"\nUpdated {len(updated)} baseline files.")
-        print("Review them before committing as regression expectations.")
+        print(f"\nGenerated {len(updated)} auto baseline file(s).")
+        print(
+            "Review them with --review, then rename to expected.txt "
+            "and set review_status to 'verified' when confirmed."
+        )
+        return
+
+    if args.review:
+        reports = run_review(args.case)
+        if not reports:
+            print("No cases to review.", file=sys.stderr)
+            sys.exit(1)
         return
 
     cases = discover_cases(args.case)
     if not cases:
         print("No regression cases found.", file=sys.stderr)
         print(
-            f"Run --baseline first to generate expected.txt files in {CASES_DIR}",
+            f"Run --baseline first to generate expected.auto.txt files in {CASES_DIR}",
             file=sys.stderr,
         )
         sys.exit(1)
