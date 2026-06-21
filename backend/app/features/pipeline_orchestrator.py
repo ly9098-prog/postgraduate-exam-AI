@@ -1584,7 +1584,7 @@ class ImportPipeline:
                         vision_config = _kw.get("vision_config")
                         if vision_config and vision_config.get("api_key"):
                             provider = (vision_config.get("provider") or "").lower()
-                            if provider in ("paddleocr-vl", "paddleocr_vl", "paddleocr"):
+                            if provider in ("paddleocr-vl", "paddleocr_vl"):
                                 try:
                                     logger.info(
                                         "Local OCR failed, trying PaddleOCR-VL vision fallback (provider=%s)",
