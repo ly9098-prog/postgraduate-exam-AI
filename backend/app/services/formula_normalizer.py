@@ -178,6 +178,37 @@ def _compact_formula_spacing(text: str) -> str:
     return text
 
 
+# ── 学科安全的公式标准化 ──
+
+_MATH_SUBJECT_PREFIXES = ("math", "数学", "高数")
+
+
+def is_math_subject(subject: str | None) -> bool:
+    """判断学科是否是数学类（仅用于公式 normalizer 安全调用）。"""
+    if not subject:
+        return False
+    s = subject.lower().replace("-", "").replace("_", "")
+    return any(s.startswith(p.lower().replace("-", "").replace("_", "")) for p in _MATH_SUBJECT_PREFIXES)
+
+
+def safe_fix_ocr_formula(text: str, subject: str | None = None) -> str:
+    """安全的 OCR 公式修复 — 仅在数学学科时启用。
+
+    对于 408 计算机、英语等学科，不做任何公式转换，
+    避免误将 ->、<=、>=、!= 等符号转为 LaTeX。
+
+    Args:
+        text: 要修复的文本
+        subject: 学科标识（如 math2, exam408, english）
+
+    Returns:
+        修复后的文本（非数学学科透传原文）
+    """
+    if subject and not is_math_subject(subject):
+        return text
+    return fix_ocr_formula(text)
+
+
 def wrap_inline_math(text: str) -> str:
     """裸の LaTeX コマンド片段を $...$ で囲む。
 

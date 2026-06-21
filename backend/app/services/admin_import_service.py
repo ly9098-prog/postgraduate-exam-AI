@@ -25,6 +25,107 @@ logger = logging.getLogger(__name__)
 _TASK_TTL_SECONDS = 86400
 
 
+def derive_import_risk(
+    ai_metadata: dict | None,
+    *,
+    ai_answer_flag: bool | None = None,
+    parsed_answer: str | None = None,
+    parsed_content: dict | None = None,
+    question_type: str | None = None,
+) -> dict:
+    """从导入题目元数据推导风险等级。
+
+    Returns:
+        {"risk_flags": [...], "risk_level": "high"|"medium"|"low", "risk_reasons": [...]}
+    """
+    risk_flags: list[str] = []
+    risk_reasons: list[str] = []
+    meta = ai_metadata or {}
+
+    # 1. 从 ai_metadata.risk_flags 提取已有的风险标记
+    meta_risk_flags = meta.get("risk_flags")
+    if isinstance(meta_risk_flags, list):
+        risk_flags.extend(meta_risk_flags)
+
+    # 2. 答案 AI 生成
+    if ai_answer_flag:
+        risk_flags.append("answer_ai_generated")
+
+    # 3. 答案缺失（pending 状态且无答案）
+    has_answer = bool(parsed_answer and parsed_answer.strip())
+    if not has_answer:
+        risk_flags.append("answer_missing")
+
+    # 4. AI 修复/补全来源
+    ai_source = meta.get("ai_source") or ""
+    if ai_source in ("repair", "complete", "enrich"):
+        flag = f"ai_{ai_source}"
+        if flag not in risk_flags:
+            risk_flags.append(flag)
+
+    # 5. 置信度过低
+    confidence = meta.get("confidence") or meta.get("confidence_score")
+    if confidence is not None and isinstance(confidence, (int, float)):
+        if confidence < 0.5:
+            risk_flags.append("low_confidence")
+
+    risk_reasons = _build_risk_reasons(risk_flags)
+    risk_level = _compute_risk_level(risk_flags)
+
+    return {
+        "risk_flags": risk_flags,
+        "risk_level": risk_level,
+        "risk_reasons": risk_reasons,
+    }
+
+
+def _compute_risk_level(risk_flags: list[str]) -> str:
+    flag_set = set(risk_flags)
+    high_flags = {
+        "answer_ai_generated", "code_uncertain", "formula_uncertain",
+        "options_anomaly", "answer_missing", "ai_major_edit",
+    }
+    medium_flags = {
+        "ai_repair", "ai_complete", "ai_enrich",
+        "low_confidence", "contains_code", "contains_formula",
+        "answer_uncertain",
+    }
+    if flag_set & high_flags:
+        return "high"
+    if flag_set & medium_flags:
+        return "medium"
+    return "low"
+
+
+def _build_risk_reasons(risk_flags: list[str]) -> list[str]:
+    flag_to_reason = {
+        "answer_ai_generated": "答案由 AI 补全，请核对原题",
+        "code_uncertain": "代码部分 AI 无法确认，请人工核对",
+        "formula_uncertain": "公式可能识别不准确，请人工核对",
+        "options_anomaly": "选项数量异常，请检查",
+        "answer_missing": "答案缺失，需人工确认",
+        "ai_major_edit": "AI 大幅修改了题目内容，请仔细核对",
+        "ai_repair": "AI 修复了题目结构",
+        "ai_complete": "AI 补全了缺失字段",
+        "ai_enrich": "AI 丰富了题目信息",
+        "low_confidence": "OCR 置信度偏低，请仔细核对",
+        "contains_code": "题目包含代码，请注意缩进和符号",
+        "contains_formula": "题目包含数学公式，请核对",
+        "answer_uncertain": "答案不确定，需人工确认",
+        "non_question_like": "内容可能不是标准题目格式",
+        "no_exercise_regions": "未检测到习题区域",
+        "ocr_garbled_code": "检测到 OCR 乱码",
+    }
+    reasons: list[str] = []
+    seen: set[str] = set()
+    for flag in risk_flags:
+        reason = flag_to_reason.get(flag)
+        if reason and reason not in seen:
+            reasons.append(reason)
+            seen.add(reason)
+    return reasons
+
+
 async def list_import_batches(
     db: AsyncSession,
     page: int,
@@ -71,6 +172,8 @@ async def get_import_batch_detail(
         .limit(page_size)
     )
     items = [AdminImportQuestionItem.model_validate(item) for item in item_result.scalars().all()]
+    for item in items:
+        _apply_risk_to_item(item)
     summary = _batch_row_to_dict(summary_row)
     return AdminImportBatchDetail(
         **summary,
@@ -79,6 +182,22 @@ async def get_import_batch_detail(
         page_size=page_size,
         total_pages=max(ceil(int(total or 0) / page_size), 1) if total else 0,
     )
+
+
+def _apply_risk_to_item(item: AdminImportQuestionItem) -> AdminImportQuestionItem:
+    """对单个 item 注入风险字段（risk_flags / risk_level / risk_reasons）。"""
+    risk = derive_import_risk(
+        item.ai_metadata,
+        ai_answer_flag=item.ai_answer_flag,
+        parsed_answer=item.parsed_answer,
+        parsed_content=item.parsed_content,
+        question_type=item.question_type,
+    )
+    # 用 model_config 允许额外字段
+    item.risk_flags = risk["risk_flags"]
+    item.risk_level = risk["risk_level"]
+    item.risk_reasons = risk["risk_reasons"]
+    return item
 
 
 async def list_review_queue(
@@ -90,6 +209,7 @@ async def list_review_queue(
     subject: str | None = None,
     source_type: str | None = None,
     keyword: str | None = None,
+    risk_level: str | None = None,
 ) -> tuple[list[AdminImportQuestionItem], int]:
     conditions = _question_conditions(status, batch_id, subject, source_type, keyword)
     total = await db.scalar(select(func.count()).select_from(QuestionImport).where(*conditions))
@@ -100,7 +220,17 @@ async def list_review_queue(
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    return [AdminImportQuestionItem.model_validate(item) for item in result.scalars().all()], int(total or 0)
+    items = [AdminImportQuestionItem.model_validate(item) for item in result.scalars().all()]
+
+    # 对每项注入风险字段
+    for item in items:
+        _apply_risk_to_item(item)
+
+    # 风险等级过滤（内存过滤，因为 risk_level 是动态计算的）
+    if risk_level:
+        items = [item for item in items if item.risk_level == risk_level]
+
+    return items, int(total or 0)
 
 
 async def update_import_question(
