@@ -526,6 +526,7 @@ export type AdminAiModelConfig = {
   is_default: boolean;
   sort_order: number;
   feature: string | null;
+  features: string[] | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -537,6 +538,7 @@ export type AdminAiModelConfigPatchRequest = {
   api_key?: string;
   api_base_url?: string;
   feature?: string | null;
+  features?: string[] | null;
 };
 
 export type AdminAiModelConfigCreateRequest = {
@@ -546,6 +548,7 @@ export type AdminAiModelConfigCreateRequest = {
   api_base_url?: string;
   api_key?: string;
   feature?: string | null;
+  features?: string[] | null;
 };
 
 export type AdminAiConfigsResponse = {
@@ -563,6 +566,7 @@ export type ModelTestConnectionRequest = {
   model_id?: number;
   provider?: string;
   feature?: string;
+  features?: string[];
 };
 
 export type ModelTestConnectionResponse = {

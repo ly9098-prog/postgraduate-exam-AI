@@ -126,8 +126,13 @@ _DEFAULT_CONFIGS: dict[str, str] = {
 _DEFAULT_MODELS: list[dict] = [
     {"name": "deepseek-v4-flash", "display_name": "DeepSeek V4 Flash", "provider": "deepseek",
      "api_base_url": "https://api.deepseek.com", "is_enabled": True, "is_default": True, "sort_order": 1,
-     "feature": None},
+     "feature": None, "features": None},
 ]
+
+
+def _parse_features(features_val: list[str] | None) -> list[str]:
+    """安全解析 features 字段，处理 None 情况。"""
+    return features_val if features_val else []
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +215,7 @@ def _model_to_response(m: AdminAiModelConfig) -> AdminAiModelConfigResponse:
         is_default=m.is_default,
         sort_order=m.sort_order,
         feature=m.feature,
+        features=m.features,
         created_at=m.created_at,
         updated_at=m.updated_at,
     )
@@ -218,7 +224,12 @@ def _model_to_response(m: AdminAiModelConfig) -> AdminAiModelConfigResponse:
 async def list_models(db: AsyncSession) -> list[AdminAiModelConfigResponse]:
     await _seed_models_if_empty(db)
     await _ensure_env_key_synced(db)
-    result = await db.execute(select(AdminAiModelConfig).order_by(AdminAiModelConfig.sort_order))
+    result = await db.execute(
+        select(AdminAiModelConfig).order_by(
+            AdminAiModelConfig.is_default.desc(),
+            AdminAiModelConfig.sort_order,
+        )
+    )
     return [_model_to_response(m) for m in result.scalars().all()]
 
 
@@ -263,19 +274,45 @@ async def patch_model(
         model.api_key_encrypted = encrypt_api_key(data.api_key)
         changes["api_key_updated"] = True
 
-    if "feature" in data.model_fields_set:
-        if data.feature:
-            # 同一功能只能分配给一个模型，清除其它模型的相同特征
-            others = await db.execute(
-                select(AdminAiModelConfig).where(
-                    AdminAiModelConfig.feature == data.feature,
-                    AdminAiModelConfig.id != model_id,
-                )
+    if "features" in data.model_fields_set:
+        new_features = data.features
+        if new_features:
+            # 跨 feature 复用校验：同一 feature 下最多一个 active=true 的模型
+            is_becoming_enabled = (
+                data.is_enabled if data.is_enabled is not None else model.is_enabled
             )
-            for other in others.scalars().all():
-                other.feature = None
-        model.feature = data.feature  # explicit null/None clears the tag
-        changes["feature"] = model.feature
+            if is_becoming_enabled:
+                # 查出所有其他已启用模型，在 Python 层做 features 交集检查
+                all_enabled = await db.execute(
+                    select(AdminAiModelConfig).where(
+                        AdminAiModelConfig.id != model_id,
+                        AdminAiModelConfig.is_enabled == True,  # noqa: E712
+                    )
+                )
+                for other in all_enabled.scalars().all():
+                    other_features = _parse_features(other.features)
+                    overlap = set(new_features) & set(other_features)
+                    if overlap:
+                        raise ValueError(
+                            f"功能层「{list(overlap)[0]}」已有启用模型"
+                            f"「{other.display_name}」，"
+                            "请先禁用该模型再切换"
+                        )
+            model.features = new_features
+            # 同步旧字段：取第一个 feature 写入
+            model.feature = new_features[0]
+        else:
+            model.features = None
+            model.feature = None
+        changes["features"] = model.features
+
+    # 向后兼容：单独写 feature 时同步到 features
+    if "feature" in data.model_fields_set and "features" not in data.model_fields_set:
+        if data.feature:
+            model.features = [data.feature]
+        else:
+            model.features = None
+        changes["features"] = model.features
 
     model.updated_at = datetime.utcnow()
     await db.flush()
@@ -299,15 +336,27 @@ async def create_model(
     max_order = await db.scalar(select(func.max(AdminAiModelConfig.sort_order)))
     next_order = (max_order or 0) + 1
 
-    if data.feature:
-        # 新模型接管该功能时，清除其它模型的相同特征标记
-        others = await db.execute(
+    new_features = data.features if data.features else None
+    if new_features:
+        # 查出所有已启用模型，检查 features 交集
+        all_enabled = await db.execute(
             select(AdminAiModelConfig).where(
-                AdminAiModelConfig.feature == data.feature,
+                AdminAiModelConfig.is_enabled == True,  # noqa: E712
             )
         )
-        for other in others.scalars().all():
-            other.feature = None
+        for other in all_enabled.scalars().all():
+            other_features = _parse_features(other.features)
+            overlap = set(new_features) & set(other_features)
+            if overlap:
+                raise ValueError(
+                    f"功能层「{list(overlap)[0]}」已有启用模型"
+                    f"「{other.display_name}」，"
+                    "请先禁用该模型再创建新模型"
+                )
+
+    # 向后兼容：入参只传 feature 时同步到 features
+    if "features" not in data.model_fields_set and data.feature:
+        new_features = [data.feature]
 
     model = AdminAiModelConfig(
         name=data.name,
@@ -317,7 +366,8 @@ async def create_model(
         is_enabled=True,
         is_default=False,
         sort_order=next_order,
-        feature=data.feature if data.feature else None,
+        feature=new_features[0] if new_features else None,
+        features=new_features,
     )
     if data.api_key and data.api_key.strip():
         model.api_key_encrypted = encrypt_api_key(data.api_key)
@@ -442,6 +492,7 @@ async def test_model_connection(
     db: AsyncSession | None = None,
     provider: str | None = None,
     feature: str | None = None,
+    features: list[str] | None = None,
 ) -> dict:
     """对给定模型配置发起一次最小连通性测试，返回诊断结果。
 
@@ -454,9 +505,11 @@ async def test_model_connection(
 
     import httpx
 
-    # 确定 provider / feature：优先参数，其次 DB
+    # 确定 provider / features：优先参数，其次 DB
     effective_provider = provider
-    effective_feature = feature
+    effective_features: list[str] = features if features else []
+    if feature and feature not in effective_features:
+        effective_features.append(feature)
     if model_id is not None and db is not None:
         from app.models.admin_ai_config import AdminAiModelConfig
         from app.core.config import settings as app_settings
@@ -467,7 +520,9 @@ async def test_model_connection(
                 api_base_url = model.api_base_url
             model_name = model.name
             effective_provider = model.provider
-            effective_feature = model.feature
+            effective_features = model.features if model.features else (
+                [model.feature] if model.feature else []
+            )
 
             if model.provider == "deepseek":
                 env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
@@ -475,12 +530,12 @@ async def test_model_connection(
                     api_key = env_key
                 elif model.api_key_encrypted:
                     decrypted = decrypt_api_key(model.api_key_encrypted)
-                    if decrypted and decrypted != "****" and set(decrypted) != {"*"}:
+                    if decrypted and decrypted != "****":
                         api_key = decrypted
             else:
                 if model.api_key_encrypted:
                     decrypted = decrypt_api_key(model.api_key_encrypted)
-                    if decrypted and decrypted != "****" and set(decrypted) != {"*"}:
+                    if decrypted and decrypted != "****":
                         api_key = decrypted
         else:
             await _seed_models_if_empty(db)
@@ -491,26 +546,28 @@ async def test_model_connection(
                     api_base_url = model.api_base_url
                 model_name = model.name
                 effective_provider = model.provider
-                effective_feature = model.feature
+                effective_features = model.features if model.features else (
+                    [model.feature] if model.feature else []
+                )
                 if model.provider == "deepseek":
                     env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
                     if env_key and env_key != "sk-your-key-here":
                         api_key = env_key
                     elif model.api_key_encrypted:
                         decrypted = decrypt_api_key(model.api_key_encrypted)
-                        if decrypted and decrypted != "****" and set(decrypted) != {"*"}:
+                        if decrypted and decrypted != "****":
                             api_key = decrypted
                 else:
                     if model.api_key_encrypted:
                         decrypted = decrypt_api_key(model.api_key_encrypted)
-                        if decrypted and decrypted != "****" and set(decrypted) != {"*"}:
+                        if decrypted and decrypted != "****":
                             api_key = decrypted
 
     # PaddleOCR-VL 特殊处理：不调用 chat/completions
-    # 检测依据：provider 含 paddleocr 关键字，或 feature == "vision"
+    # 检测依据：provider 含 paddleocr 关键字，或 features 含 "vision"
     _is_paddleocr = (
         (effective_provider and "paddleocr" in effective_provider.lower())
-        or effective_feature == "vision"
+        or "vision" in effective_features
     )
     if _is_paddleocr:
         return await _test_paddleocr_vl_connection(api_base_url, api_key)
