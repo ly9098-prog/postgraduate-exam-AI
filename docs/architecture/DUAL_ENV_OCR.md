@@ -76,7 +76,7 @@
 
 ## 已知遗留
 
-- `enable_ai_correction` 字段未被消费（pipeline 使用 `options.enable_ai_repair`，由用户选择控制）
+- `enable_ai_correction` 字段未被消费（pipeline 使用 OCRFixRouter 统一管理纠错路由，不再依赖此开关；旧版 `ocr_correction.py` 已精简为向后兼容包装）
 - deprecated `image_upload` 旧入口未接入验证器（计划废弃）
 - OCR 检测阈值参数（det_db_thresh 等）未纳入 profile（两环境当前用相同值）
 
@@ -84,4 +84,5 @@
 
 - `APP_ENV=development` → local profile，上传大 PDF 不受限，OCR 4 线程 + GPU + 旋转检测
 - `APP_ENV=production` → production profile，>5MB 文件/31页 PDF/.xlsx 均被拒绝，OCR 2 线程 + CPU + 无旋转
-- 测试套件 554 passed（1 pre-existing failure 为测试顺序污染，非本次引入）
+- 测试套件 1474 passed（P8 统计；24 pre-existing failures 非 P8 引入）
+- P6 新增性能 Profile：每个 stage 独立记录耗时/AI调用/tokens/缓存命中率，通过 diagnostics.performance_profile 暴露

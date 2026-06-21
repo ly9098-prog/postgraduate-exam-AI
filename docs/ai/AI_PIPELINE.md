@@ -23,7 +23,15 @@
 | `app/ai/fallback.py` | API 不可用时的降级静态响应 |
 | `app/services/ai_service.py` | 基础编排层：analyze_error / generate_advice |
 | `app/services/ai_learning_service.py` | AI 学习引擎：讲解、规则推荐、学习报告、错因分析、token 限额检查 |
-| `app/features/question_pipeline.py` | 题目标准化与 AI 辅助导题入口，AI 结果只进 `question_imports` |
+| `app/features/question_pipeline.py` | 题目标准化入口（保留 `QuestionNormalizer` + 向后兼容重导出）；AI/导入逻辑已拆至 4 个子模块（P5-3） |
+| `app/features/question_ai_complete.py` | ✅ P5-3 拆出：AI 补全 + 批量补全 |
+| `app/features/question_ai_enrich.py` | ✅ P5-3 拆出：AI 丰富 |
+| `app/features/question_draft_generator.py` | ✅ P5-3 拆出：AI 生成草稿 |
+| `app/features/question_import_writer.py` | ✅ P5-3 拆出：Excel/PDF 导入 + 审核操作 |
+| `app/features/pipeline_orchestrator.py` | 16 阶段管线编排（P5-2 已拆分 9 个 stage 到 pipeline_stages/） |
+| `app/features/pipeline_stages/` | 7 个独立 stage 模块（match/math_detect/table_detect/normalize_schema/repair/review） |
+| `app/features/ai_safety.py` | ✅ P0 新增：AI 编辑安全门禁（diff 记录 + 版本回退 + 代码/中文/选项保护） |
+| `app/features/ocr_failure_analyzer.py` | ✅ P6-3 新增：16 种失败分类 + 自动归因 |
 | `app/api/v1/ai.py` | 路由：基础 AI 端点 + Stage 13 AI 学习引擎端点 |
 
 ### 关键细节
@@ -119,45 +127,66 @@
 4. **Prompt 外置** — 所有 prompt 统一放入 `/prompts/development/`
 5. **AI 能力必须可关闭** — 关闭后不影响核心导入流程
 
-### 管线中的 AI 模块
+### 管线中的 AI 模块（2026-06-21 更新：16 阶段管线）
 
 | 阶段 | 模块 | AI 使用 | 触发条件 |
 |------|------|---------|---------|
-| stage1 | ImportTextNormalizer | 不使用 | —（纯规则） |
-| stage2 | DocumentStructureAnalyzer | 不使用 | —（纯规则） |
-| stage3 | QuestionSplitter | 不使用 | —（纯规则） |
-| stage4 | AnswerMatcher | 不使用 | —（纯规则） |
-| stage5 | QuestionNormalizer | 不使用 | —（纯规则） |
-| stage6 | AIRepairService | DeepSeek 修复 | 规则无法解析的低置信度题目 |
-| stage7 | 审核系统 | 不使用 | —（人工处理） |
-| stage8 | ImportPipelineService | 编排（不直接调用） | — |
-| stage9 | OCR 增强 | DeepSeek VL（可选） | 扫描版 PDF 检测 |
+| [1] extract | PaddleOCR | 不使用 | —（纯 OCR） |
+| [2] normalize | ImportTextNormalizer | 不使用 | —（纯规则，13 步清洗管线） |
+| [3] ocr_correction | OCRFixRouter | ✅ PaddleOCR-VL → DeepSeek → Rule | 噪声/结构异常/低置信度触发 |
+| [4] analyze_structure | DocumentStructureAnalyzer | 不使用 | —（纯规则） |
+| [5] classify_pages | PageClassifier | 不使用 | —（纯规则） |
+| [6] split | QuestionSplitter | 不使用 | —（纯规则，题号+选项提取） |
+| [7] match | AnswerMatcher | 不使用 | —（纯规则） |
+| [8] normalize_schema | QuestionNormalizer + BatchValidation + BatchDedup | 不使用 | —（纯规则标准化+校验+去重） |
+| [9] repair | AIRepairService | ✅ DeepSeek 修复 | 规则无法解析的低置信度题目 |
+| [10] ai_validation | AI 验证 | ✅ DeepSeek 验证 | repair 后补充验证 |
+| [11] similarity_match | SimilarityMatcher | 不使用 | —（difflib 规则） |
+| [12] math_detect | MathImportProfile | 不使用 | —（规则公式区域检测 + 截图裁剪） |
+| [13] table_detect | TableRegionDetector | 不使用 | —（规则多列 Token + Markdown 转换） |
+| [14] review | 审核系统 | 不使用 | —（人工处理） |
+| — | pipeline_artifacts | 不使用 | checkpoint 文件存储，resume 跳过已完成 stage |
+| — | quality_report | 不使用 | 每 pipeline 完成后输出风险分布/性能 Profile |
+| — | ocr_failure_analyzer | 不使用 | 16 种失败分类自动归因 |
 
 ### AI 触发流程
 
 ```
-规则解析成功 → 直接输出（stage1-5 主线）
-       ↓（失败）
-    AIRepairService（stage6）
-       ↓
-    AI 修复成功 → 标记 confidence 后进入审核
-       ↓
-    AI 修复失败 → 标记 unrepaired 后进入审核（人工处理）
+规则阶段（stage1-2, 4-8, 12-14）→ 直接输出，不调用 AI
+       │
+       ├─ stage3 (ocr_correction): 噪声/结构异常/低置信度 → OCRFixRouter
+       │    PaddleOCR-VL（链首，外部高精 OCR API）
+       │      → DeepSeek 纯文本纠错
+       │        → Rule（原样返回，不阻塞）
+       │  每次编辑经过 AI Safety Gate（diff 记录 + 代码/中文/选项保护）
+       │
+       ├─ stage9 (repair): 规则标准化后仍有低置信度题 → AIRepairService
+       │    高置信度题（>0.95）跳过 AI 修复
+       │    AI 修复成功 → 标记 confidence 后进入审核
+       │    AI 修复失败 → 标记 unrepaired 后进入审核（人工处理）
+       │
+       ├─ stage10 (ai_validation): repair 后补充 AI 验证
+       │
+       └─ question_pipeline (complete/enrich): 导入后 AI 补全/丰富（可选）
 ```
 
 ### Token 控制策略
 
-- 仅在 stage6 和 stage9 消耗 token
-- 低频触发：只处理规则无法解析的数据
+- AI 调用集中在 stage3（ocr_correction）、stage9（repair）和 question_pipeline（complete/enrich）
+- stage3 使用独立 token budget，auto 模式仅噪声时触发
+- stage9 高置信度题（>0.95）跳过 AI 修复
 - 可配置日/月限额，超限后静默跳过
 - 修复结果计入 `ai_chats` 表审计
+- `ai_safety.py` 对所有 AI 编辑记录可审计的 `AIEditTrace`（模型、变更前后、diff）
 
 ---
 
-### 明确不做的
+### 明确不做的（2026-06-21 更新）
 
 - ❌ Streaming 输出（小程序不适合流式渲染）
 - ❌ LangChain / Agent / Tool Calling
-- ❌ 多模型切换（deepseek-chat 够用）
 - ❌ 对话历史无限保留（只保留最近 20 条）
 - ❌ 用户自定义 Prompt
+- ❌ LLM 输出缓存（每次 AI 调用独立，缓存会导致陈旧结果无法更新）
+- ❌ 纯 AI 自动入库（所有导入必须经过 question_imports + 人工确认）
+- ❌ 完全移除旧版 `ocr_correction.py`（保留 171 行向后兼容包装，可安全删除但需验证外部调用方）
