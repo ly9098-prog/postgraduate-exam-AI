@@ -66,6 +66,30 @@ export type ImportPipelineStatusResponse = {
   stages: Record<string, unknown>;
   stats: Record<string, unknown>;
   diagnostics: Record<string, unknown>;
+  quality_report?: {
+    total_questions: number;
+    low_risk?: number;
+    medium_risk?: number;
+    high_risk?: number;
+    requires_manual_review?: number;
+    ai_answer_count?: number;
+    math_image_count?: number;
+    table_markdown_count?: number;
+    repair_skipped?: number;
+    repair_called?: number;
+    ocr_cache_hit?: number;
+    ocr_cache_miss?: number;
+    review_duplicates_skipped?: number;
+    estimated_manual_check_rate?: number;
+    performance_summary?: {
+      total_duration_ms: number;
+      total_ai_calls: number;
+      total_tokens_used: number;
+      cache_hit_rate: number;
+      slowest_stage: string;
+      slowest_duration_ms: number;
+    };
+  } | null;
   errors: string[];
   batch_id: string;
   raw_text_preview: string;

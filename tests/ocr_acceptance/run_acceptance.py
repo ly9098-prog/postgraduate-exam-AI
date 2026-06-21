@@ -5,7 +5,13 @@
 样本需手动放置到 cases/ 目录下。
 
 用法:
+    # 标准验收
     python tests/ocr_acceptance/run_acceptance.py --case-dir tests/ocr_acceptance/cases
+
+    # 严格模式（发布前检查）
+    python tests/ocr_acceptance/run_acceptance.py --case-dir tests/ocr_acceptance/cases --strict
+
+    # 输出报告到文件
     python tests/ocr_acceptance/run_acceptance.py --case-dir tests/ocr_acceptance/cases --report acceptance_report.json
 """
 
@@ -16,6 +22,13 @@ import os
 import sys
 from datetime import datetime
 from typing import Any
+
+# Ensure failure_classifier is importable regardless of invocation path
+import sys
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+if _script_dir not in sys.path:
+    sys.path.insert(0, _script_dir)
+from failure_classifier import classify_acceptance_result  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -30,6 +43,30 @@ _REFERENCE_METRICS: dict[str, float] = {
     "table_structure_presence": 0.85,
     "manual_review_rate": 0.30,
 }
+
+# Tighter thresholds for strict mode
+_STRICT_METRICS: dict[str, float] = {
+    "question_count_recall": 0.90,
+    "option_integrity": 0.95,
+    "answer_match_rate": 0.92,
+    "math_image_presence": 0.85,
+    "code_symbol_preservation": 0.97,
+    "table_structure_presence": 0.80,
+    "manual_review_rate": 0.25,
+}
+
+
+def _load_case_metadata(case_dir: str) -> dict | None:
+    """Load case.json metadata if present."""
+    meta_path = os.path.join(case_dir, "case.json")
+    if not os.path.isfile(meta_path):
+        return None
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("Failed to load case metadata %s: %s", meta_path, e)
+        return None
 
 
 def _discover_cases(case_dir: str) -> dict[str, list[str]]:
@@ -65,17 +102,22 @@ def _run_case_simple(
     case_name: str,
     files: list[str],
     metrics: dict[str, Any],
+    strict: bool = False,
 ) -> dict[str, Any]:
     """Simple structural analysis of case files without running full pipeline.
 
     For actual OCR pipeline testing, this would call PaddleOCR and the
     import pipeline. For now, performs basic file-level quality checks.
     """
+    case_dir = os.path.dirname(files[0]) if files else None
+    case_meta = _load_case_metadata(case_dir) if case_dir else None
+
     result: dict[str, Any] = {
         "status": "skipped",
         "files": len(files),
         "question_count": 0,
-        "note": "Manual execution required — place samples in cases/ directory",
+        "case_metadata": case_meta,
+        "note": "Manual execution required — place real samples in cases/ directory",
     }
 
     if files:
@@ -85,10 +127,13 @@ def _run_case_simple(
 
     # Check each metric against reference
     metric_results: dict[str, Any] = {}
-    for metric_name, ref_value in _REFERENCE_METRICS.items():
+    ref = _STRICT_METRICS if strict else _REFERENCE_METRICS
+    pass_ratio = 0.8  # 80% of reference = pass
+
+    for metric_name, ref_value in ref.items():
         actual = metrics.get(metric_name)
         if actual is not None:
-            passed = actual >= ref_value * 0.8  # 80% of reference = pass
+            passed = actual >= ref_value * pass_ratio
             metric_results[metric_name] = {
                 "reference": ref_value,
                 "actual": actual,
@@ -97,14 +142,47 @@ def _run_case_simple(
 
     if metric_results:
         result["metrics"] = metric_results
-        result["all_metrics_passed"] = all(
-            m["passed"] for m in metric_results.values()
-        )
+        all_passed = all(m["passed"] for m in metric_results.values())
+        result["all_metrics_passed"] = all_passed
+        if all_passed and result.get("status") == "skipped":
+            result["status"] = "passed"
+
+    if strict and metric_results:
+        # In strict mode, any metric below 90% of reference is a fail
+        failed_strict = [
+            name for name, m in metric_results.items()
+            if m["actual"] < m["reference"] * 0.9
+        ]
+        if failed_strict:
+            result["strict_failures"] = failed_strict
+            result["status"] = "failed"
+
+    # ---- Failure classification (P6-3) ----
+    if case_meta and metric_results:
+        try:
+            # Build acceptance_metrics dict from the computed metric_results
+            acceptance_metrics = {
+                name: m["actual"]
+                for name, m in metric_results.items()
+            }
+            classification = classify_acceptance_result(
+                case_meta=case_meta,
+                pipeline_output=None,  # Populated when real pipeline is wired in
+                acceptance_metrics=acceptance_metrics,
+            )
+            result["failure_classification"] = classification
+            # Elevate status if classification indicates failure
+            if classification.get("status") == "fail" and result.get("status") != "failed":
+                result["status"] = "failed"
+            elif classification.get("status") == "warn" and result.get("status") == "skipped":
+                result["status"] = "warn"
+        except Exception as exc:
+            logger.warning("Failure classification failed for case '%s': %s", case_name, exc)
 
     return result
 
 
-def run_acceptance(case_dir: str) -> dict[str, Any]:
+def run_acceptance(case_dir: str, strict: bool = False) -> dict[str, Any]:
     """Run acceptance tests for all discovered cases."""
     cases = _discover_cases(case_dir)
     if not cases:
@@ -117,18 +195,54 @@ def run_acceptance(case_dir: str) -> dict[str, Any]:
     for case_name, files in cases.items():
         logger.info("Running case '%s' (%d files)", case_name, len(files))
         metrics: dict[str, Any] = {}
-        results[case_name] = _run_case_simple(case_name, files, metrics)
+        results[case_name] = _run_case_simple(case_name, files, metrics, strict=strict)
 
     total = len(results)
     passed = sum(1 for r in results.values() if r.get("status") == "passed")
     failed = sum(1 for r in results.values() if r.get("status") == "failed")
+    warned = sum(1 for r in results.values() if r.get("status") == "warn")
+    strict_fails = sum(
+        1 for r in results.values() if r.get("strict_failures")
+    )
+
+    # Aggregate failure classification results across all cases
+    failure_summary: dict[str, Any] = {
+        "total_failures": 0,
+        "high_severity": 0,
+        "medium_severity": 0,
+        "low_severity": 0,
+        "failure_types": {},
+    }
+    for r in results.values():
+        classification = r.get("failure_classification")
+        if not classification:
+            continue
+        analysis = classification.get("failure_analysis") or {}
+        failures = analysis.get("failures") or []
+        failure_summary["total_failures"] += len(failures)
+        for f in failures:
+            sev = f.get("severity", "")
+            if sev == "high":
+                failure_summary["high_severity"] += 1
+            elif sev == "medium":
+                failure_summary["medium_severity"] += 1
+            elif sev == "low":
+                failure_summary["low_severity"] += 1
+            ftype = f.get("type", "unknown")
+            failure_summary["failure_types"][ftype] = failure_summary["failure_types"].get(ftype, 0) + 1
 
     summary = {
         "total_cases": total,
         "passed": passed,
         "failed": failed,
-        "skipped": total - passed - failed,
+        "warned": warned,
+        "skipped": total - passed - failed - warned,
+        "mode": "strict" if strict else "standard",
     }
+    if strict_fails:
+        summary["strict_failures"] = strict_fails
+    if failure_summary["total_failures"] > 0:
+        summary["failure_classification"] = failure_summary
 
     return {
         "date": datetime.now().isoformat(),
@@ -151,9 +265,14 @@ def main() -> None:
         default=None,
         help="Path to write acceptance report JSON",
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Strict mode for pre-release checks",
+    )
     args = parser.parse_args()
 
-    report = run_acceptance(args.case_dir)
+    report = run_acceptance(args.case_dir, strict=args.strict)
 
     if args.report:
         with open(args.report, "w", encoding="utf-8") as f:

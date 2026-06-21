@@ -1,9 +1,9 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版） / 2026-06-21（复查更新） / 2026-06-21（P2 完成更新） / 2026-06-21（P4 完成更新） / 2026-06-21（PaddleOCR-VL Adapter） / 2026-06-21（P5 完成更新）
+> 审计时间：2026-06-20（初版） / 2026-06-21（复查更新） / 2026-06-21（P2 完成更新） / 2026-06-21（P4 完成更新） / 2026-06-21（PaddleOCR-VL Adapter） / 2026-06-21（P5 完成更新） / 2026-06-21（Qwen 清除 + Vision 消费端落地） / **2026-06-21（P6 验收+Profile+归因+精调+Dashboard+CI 策略）**
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
-> 状态：P0 修复已全部落地（commit b63df47），P1 公式截图+审核提效已完成（commit c82c464），P2 三项改造已完成（2026-06-21），**P4 真断点恢复+幂等入库已完成（2026-06-21）**。新增 pipeline_artifacts.py 提供文件级 artifact 存储，resume 从 artifact 跳过已完成 stage；hash-based 去重确保同一 pipeline resume 不重复入库；质量报告 `quality_report` 随 pipeline 结果返回。**PaddleOCR-VL Adapter（2026-06-21）**新增外部高精 OCR 引擎适配器，接入 OCRFixRouter 路由链（paddleocr-vl → qwen → deepseek → rule），admin ai-settings 可动态切换。**P5（2026-06-21）**完成 pipeline_orchestrator.py 渐进拆分（7 个 pipeline_stages/ 模块）和 question_pipeline.py 拆分（question_ai_complete.py / question_ai_enrich.py / question_draft_generator.py / question_import_writer.py），保留全部向后兼容入口。✅ 标记表示已修复项。
+> 状态：P0 修复已全部落地（commit b63df47），P1 公式截图+审核提效已完成（commit c82c464），P2 三项改造已完成（2026-06-21），**P4 真断点恢复+幂等入库已完成（2026-06-21）**。新增 pipeline_artifacts.py 提供文件级 artifact 存储，resume 从 artifact 跳过已完成 stage；hash-based 去重确保同一 pipeline resume 不重复入库；质量报告 `quality_report` 随 pipeline 结果返回。**PaddleOCR-VL Adapter（2026-06-21）**新增外部高精 OCR 引擎适配器，接入 OCRFixRouter 路由链（paddleocr-vl → deepseek → rule），admin ai-settings 可动态切换。**Qwen 清除 + Vision 端到端（2026-06-21）**删除 qwen_adapter.py（309 行），从 OCRFixRouter 路由链移除 QwenFixer；添加 feature="vision" 到 FEATURE_VALUES 和管理端 UI；pipeline _run_extract 接入 DB 动态 vision 配置作为 PaddleOCR-VL 回退；两处代码质量清理已提交（commit de0c17b）。**P5（2026-06-21）**完成 pipeline_orchestrator.py 渐进拆分（7 个 pipeline_stages/ 模块）和 question_pipeline.py 拆分（question_ai_complete.py / question_ai_enrich.py / question_draft_generator.py / question_import_writer.py），保留全部向后兼容入口。**P6（2026-06-21）**完成验收样本扩充、性能 Profile、失败自动归因、3 类小范围精调、管理端质量 Dashboard、三级测试策略。✅ 标记表示已修复项。
 
 ---
 
@@ -71,18 +71,18 @@
                                │
                                v
 ┌─────────────────────────────────────────────────────────────────────┐
-│                   AI 视觉回退层 (DeepSeek API)                        │
+│                   AI 视觉回退层 (PaddleOCR-VL)                        │
 │                                                                     │
-│  features/ocr_service.py (293行):                                    │
-│    ├─ ocr_fallback()    → 将 PDF 渲染为图片, 调用 DeepSeek 多模态 API │
-│    ├─ _call_ocr_api()   → 发送图片 bytes 到 DeepSeek-v4-flash        │
-│    └─ _split_ocr_paragraphs() → AI 返回文本的段落分割                │
+│  features/ocr_service.py (285行):                                    │
+│    ├─ ocr_fallback()     → 将 PDF 渲染为图片, 调用 PaddleOCR-VL API │
+│    ├─ _call_ocr_api()    → PaddleOCRVLAdapter async 调用              │
+│    └─ _get_vl_config()   → 从 config dict 提取凭证（由 DB 动态解析）│
 │                                                                     │
 │  输入: PDF 路径 (渲染为图片)                                          │
-│  输出: str (段落文本)                                                 │
+│  输出: list[dict] (page, block_index, text)                          │
 │                                                                     │
-│  ⚠ 问题: PaddleOCR 失败时才触发, 但 DeepSeek Vision API 实际不可用   │
-│  (当前仅配置 DeepSeek, 未接 Qwen-VL 视觉入口)                        │
+│  ✅ 模型凭证从 resolve_active_model(feature="vision") 动态获取，      │
+│  不依赖环境变量。pipeline _run_extract 中本地 OCR 失败时触发。       │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │
                                v
@@ -136,13 +136,10 @@
 │                                                                     │
 │  唯一路径 — OCRFixRouter (ocr_fix/router.py):                        │
 │  ocr_fix/router.py → OCRFixRouter                                    │
-│    ├─ PaddleOCRVLAdapter (ocr_vl/, 新增) → 外部高精 OCR API         │
+│    ├─ PaddleOCRVLAdapter (ocr_vl/) → 外部高精 OCR API (链首)         │
 │    │  输入: 原图 bytes → 输出: 完整识别文本                          │
 │    │  API: POST /api/v2/ocr/jobs → poll → JSONL 结果                │
 │    │  保护: 重试 3 次 + 超时 120s + 全部失败降级到下一适配器          │
-│    ├─ QwenFixer (qwen_adapter.py, 309行) → 视觉+文本                 │
-│    │  输入: 原图 bytes + OCR 文本 → 输出: 纠正后文本                 │
-│    │  保护: _preserve_stem_from_original()                           │
 │    ├─ DeepSeekFixer (deepseek_adapter.py, 126行) → 纯文本纠错        │
 │    │  输入: OCR 文本 → 输出: 纠正后文本                               │
 │    │  保护: 长度越界检查 (0.5x~2x) + 题干丢失保护                     │
@@ -251,7 +248,7 @@
 
 | 模块 | 行数 | 职责 | 单一职责 | 重复逻辑 | 耦合度 |
 |---|---|---|---|---|---|
-| `pipeline_orchestrator.py` | 3915 | 16 阶段编排（9 stage 已委托到 `pipeline_stages/`） | 🟡 仍有降低空间 | stage 逻辑已拆分 | 🟡 中（P5-2 后降低） |
+| `pipeline_orchestrator.py` | 4081 | 16 阶段编排（含 P6-2 性能 Profile 指标追踪 + stage 内联 metrics 收集） | 🟡 仍有降低空间 | stage 逻辑已拆分 | 🟡 中（P5-2 + P6-2 后降低） |
 | `question_pipeline.py` | 2921 | 保留 `QuestionNormalizer` + 向后兼容重导出 | 🟡 保留入口 | AI/导入逻辑已拆出 | 🟢 低（P5-3 后降低） |
 | `pipeline_stages/`（7 个文件） | 910 | 7 个独立 stage 实现（match/math_detect/table_detect/normalize_schema/repair/review） | ✅ 各模块单一 | 无重复 | 🟢 低 |
 | `question_ai_complete.py` | 741 | AI 补全 + 批量补全 | ✅ 单一 | 由 question_pipeline 重导出 | 🟢 低 |
@@ -260,12 +257,12 @@
 | `question_import_writer.py` | 749 | Excel/PDF导入 + 审核操作（approve/reject/batch） | ✅ 单一 | 由 question_pipeline 重导出 | 🟢 低 |
 | `services/ocr_service.py` | 637 | PaddleOCR 封装 | ✅ 较好 | ✅ `clean_ocr_text` 已归并 | 🟡 中 |
 | `features/ocr_service.py` | 293 | AI 视觉 OCR 回退 | ✅ 单一 | 与路由纠错重叠 | 🟢 低 |
-| `text_normalizer.py` | 1101 | 规则清洗 + 统一 OCR 规范化入口 | ✅ 良好 | ✅ 字符映射已统一 | 🟢 低 |
+| `text_normalizer.py` | 1115 | 规则清洗 + 统一 OCR 规范化入口；（P6-4 扩充水印品牌关键词 + 中文页码行过滤） | ✅ 良好 | ✅ 字符映射已统一 | 🟢 低 |
 | `ocr_correction.py` | 171 | ✅ 向后兼容包装（委托 OCRFixRouter） | ✅ 清晰 | ✅ 已统一到 Router | 🟢 低 |
 | `ai_safety.py` | 284 | ✅ AI 编辑安全门禁 | ✅ 优秀 | 无重复 | 🟢 低 |
 | `question_splitter.py` | 1301 | 题号+选项提取 | ✅ 良好 | ✅ OCR 映射已统一 | 🟢 低 |
 | `ai_repair.py` | 899 | AI 修复 | ✅ 较好 | — | 🟡 中 |
-| `ocr_fix/router.py` | 158 | 纠错路由 | ✅ 清晰 | ✅ 旧版路径已移除 | 🟢 低 |
+| `ocr_fix/router.py` | 158 | 纠错路由（PaddleOCR-VL → DeepSeek → Rule） | ✅ 清晰 | ✅ Qwen 已移除 | 🟢 低 |
 
 ### 2.2 关键结构问题
 
@@ -282,7 +279,7 @@
 | `_run_table_detect` | `pipeline_stages/table_detect_stage.py` |
 | `_run_review` | `pipeline_stages/review_stage.py` |
 
-文件从 4454 行降至 3915 行（-539 行）。暂未拆分：`_run_extract` / `_run_split` / `_run_ocr_correction`（耦合度高，留待 P6）。
+文件从 4454 行降至 4081 行（P5-2 拆分 -539 行，P6-2 新增性能 Profile + metrics 收集 + 375 行）。P6 新增 `_update_stage_metrics()` 和 `_build_performance_profile()`，每个 stage 记录耗时/输入输出数/AI调用/tokens/缓存命中率。暂未拆分：`_run_extract` / `_run_split` / `_run_ocr_correction`（耦合度高，留待后续）。
 
 **问题 2：✅ `question_pipeline.py` 多功能综合体（P5-3 FIXED）**
 
@@ -316,7 +313,7 @@
 - 共享检测/过滤函数提取到 `ocr_correction_common.py`
 - `correct_ocr_blocks()` 委托给 `OCRFixRouter` + `ai_safety.evaluate_and_trace()`
 - 敏感内容过滤（`_filter_sensitive`）已移植到 `ocr_correction_common.py`，在 Router 链中可用
-- 旧版内联 VL 分支（`is_vl` + dashscope 检测）已移除，统一使用 `qwen_adapter.py`
+- 旧版内联 VL 分支（`is_vl` + dashscope 检测）已移除，统一由 OCRFixRouter 管理
 - Pipeline 主路径直接调用 `_run_ocr_correction_router()`，不再经过旧版包装
 
 ---
@@ -328,9 +325,8 @@
 | 调用点 | 模型 | 触发条件 | 频率 | 视觉能力 |
 |---|---|---|---|---|
 | `ocr_vl/paddleocr_vl_adapter.py` | PaddleOCR-VL-1.6 | OCR 路由 `auto` 模式（链首） | 每批纠错块 | ✅ 有（原图，外部 API） |
-| `ocr_fix/qwen_adapter.py` | Qwen-VL | PaddleOCR-VL 失败/不可用 | 同上（回退） | ✅ 有（原图） |
-| `ocr_fix/deepseek_adapter.py` | DeepSeek-v4-flash | Qwen 失败/不可用 | 同上（回退） | ❌ 无 |
-| `features/ocr_service.py:_call_ocr_api` | DeepSeek-v4-flash | PaddleOCR 全失败 | 罕见 | ⚠️ 发送图片文本 |
+| `ocr_fix/deepseek_adapter.py` | DeepSeek-v4-flash | PaddleOCR-VL 失败/不可用 | 同上（回退） | ❌ 无 |
+| `features/ocr_service.py:ocr_fallback` | PaddleOCR-VL-1.6 | 本地 PaddleOCR 全失败（pipeline _run_extract） | 罕见 | ✅ 有（原图，外部 API） |
 | `ai_repair.py:repair_questions` | DeepSeek-v4-flash | 规则修复后仍有题不达标 | 每批 | ❌ 无 |
 | `ai_repair.py:roman_decision` | DeepSeek-v4-flash | 罗马数字约束修复 | 每批 | ❌ 无 |
 | `llm_text_structurer.py` | DeepSeek-v4-flash | 规则结构分析不足 | 每批少量 | ❌ 无 |
@@ -342,15 +338,14 @@
 
 ### 3.2 Qwen-VL 使用合理性分析
 
-**结论：Qwen-VL 的使用是合理的，但仅限于 OCR 纠错场景。**
+**结论：✅ Qwen-VL 已从代码库中完全移除（qwen_adapter.py 删除 309 行）。**
 
-理由：
-- Qwen-VL 接收**原图+OCR 文本**做多模态纠错，可以视觉验证 OCR 识别结果
-- 这确实是视觉任务（看图纠正文字）
-- `_preserve_stem_from_original()` 保护机制表明团队已意识到 Qwen 可能丢弃题干
-- 当前模型名 `qwen3.5-ocr` 是专为 OCR 定制的
+原 Qwen-VL 适配器（接收原图+OCR 文本做多模态纠错）已在清理中删除，理由：
+- OCRFixRouter 路由链首已使用 PaddleOCR-VL（外部高精 OCR API），覆盖了视觉纠错场景
+- Qwen-VL 与 PaddleOCR-VL 功能重叠，保留 DeepSeek 纯文本纠错作为回退即满足需求
+- 删除后路由链简化为：PaddleOCR-VL → DeepSeek → Rule
 
-⚠️ **问题**：Qwen-VL 只在 `ocr_fix/router.py` 的路由链中使用，而 `ocr_correction.py`（旧版）和 `features/ocr_service.py`（回退路径）使用的是 DeepSeek 视觉，但这些路径没有真正的图片输入能力（只传文本），所谓视觉调用是假的（只是传了图片的 base64 到 DeepSeek，但 DeepSeek-v4-flash 的多模态能力不确定）。
+> 原 `_preserve_stem_from_original()` 保护机制随 qwen_adapter.py 一同移除。该保护专为 Qwen 丢弃题干的问题设计，PaddleOCR-VL 和 DeepSeek 不存在该问题。
 
 ### 3.3 DeepSeek 角色合理性分析
 
@@ -363,11 +358,11 @@
 
 **不合理的使用：**
 
-1. **双 LLM 纠错冗余**：Qwen-VL + DeepSeek 在 `ocr_fix` 中串联使用，其实大部分情况下规则清洗 + Qwen-VL 一次就够了。DeepSeek 作为回退的成本很低（只是偶尔调用），问题不大。~~需要警惕的是两条并行路径（新旧版本）都会触发 DeepSeek 调用~~ ✅ 旧版路径已移除，现在只有 OCRFixRouter 单一入口。
+1. **双 LLM 纠错冗余**：~~Qwen-VL + DeepSeek~~ → ✅ 已简化为 PaddleOCR-VL + DeepSeek（qwen_adapter.py 已删除）。PaddleOCR-VL（链首）负责视觉识别，DeepSeek（纯文本回退）负责规则无法处理的文本纠错。两阶段角色清晰，不冗余。旧版路径已移除，现在只有 OCRFixRouter 单一入口。
 
-2. **`features/ocr_service.py` 的 DeepSeek 视觉**：这是 PaddleOCR 全盘失败后的回退。但 `_call_ocr_api` 发送的是**渲染后的 PDF 图片**，调用的却是 `deepseek-v4-flash` — 这个模型是否真的支持高精度 OCR 文字识别？如果不行，这就是一次无用的 LLM 调用 + 增加的幻觉风险。
+2. **`features/ocr_service.py` 的视觉回退**：✅ 已从 DeepSeek 切换到 PaddleOCR-VL。`ocr_fallback()` 现在使用 `PaddleOCRVLAdapter`（与 OCRFixRouter 链首相同），凭证通过 `resolve_active_model(feature="vision")` 从 DB 动态获取，不再依赖环境变量或 DeepSeek 视觉能力。pipeline `_run_extract` 中本地 PaddleOCR 全失败后自动触发。
 
-3. ~~**`ocr_correction.py` 中的内联 VL 分支**~~ ✅ 已移除：旧版内联 VL 分支（`is_vl` + dashscope 检测）已在 P0 清理中删除，Qwen-VL 调用统一由 `qwen_adapter.py` 管理。
+3. ~~**`ocr_correction.py` 中的内联 VL 分支**~~ ✅ 已移除：旧版内联 VL 分支（`is_vl` + dashscope 检测）已在 P0 清理中删除，后 Qwen 完全移除，路由链简化为 PaddleOCR-VL → DeepSeek → Rule。
 
 ### 3.4 Prompt 冲突分析
 
@@ -377,7 +372,7 @@
 | `text_structure` | JSON | 明确分开的场景 |
 | `question_repair` | JSON | 与 `ocr_correction`（纯文本）不冲突 |
 | `enrich_question` | JSON | 不同调用点，不冲突 |
-| Qwen-VL system prompt | 纯文本 | 与 DeepSeek 的 `ocr_correction` prompt 不同 |
+| PaddleOCR-VL system prompt | 纯文本 | 与 DeepSeek 的 `ocr_correction` prompt 不同 |
 
 **结论：prompt 之间不直接冲突，因为它们用于完全不同的阶段。**
 
@@ -395,7 +390,6 @@
 
 **已有的保护措施：**
 - `deepseek_adapter.py`: 长度越界检查（0.5x~2x），题干丢失保护 — ✅ 有效
-- `qwen_adapter.py`: `_preserve_stem_from_original` — ✅ 有效
 - `canonical_output.py`: 多格式输出规范化 — ✅ 有效
 - `llm_text_structurer.py`: 反幻觉检查（字段必须在原文中找到） — ✅ 有效
 - ✅ **`ai_safety.py:evaluate_and_trace()`** — AI 编辑安全门禁（新增）：变更前后 diff + 代码符号保护 + 中文比例检查 + 选项数保护 + `AIEditTrace` 可审计轨迹 — ✅ 有效
@@ -420,12 +414,14 @@
 | `faulty_case_3` | `013_real_pointer_garbling` | **OCR 错** | 字体问题导致字母数字混淆（0→O, 1→l） | ✅ 规则修复（字符映射） |
 | `faulty_case_4` | `015_real_faulty_case_4` | **OCR 错** | 低置信度水印文本未被过滤 | ✅ 规则修复（置信度阈值） |
 | `page_spread_case` | `016_real_page_spread` | **结构恢复错** | 跨页题号+答案不连接 | ⚠️ 部分修复（跨页恢复） |
-| `watermark_fail_case` | `014_real_watermark` | **OCR+LLM 错** | 水印污染 → LLM 纠错保留水印文字 | ⚠️ 规则过滤+质量门禁 |
-| `watermark_chart_case` | `017_real_watermark_chart` | **OCR 错** | 水印+图表干扰，OCR 输出含大量乱码 | ❌ 仍存在问题 |
+| `watermark_fail_case` | `014_real_watermark` | **OCR+LLM 错** | 水印污染 → LLM 纠错保留水印文字 | ⚠️ 规则过滤+质量门禁 / ✅ **P6-4 新增教育品牌水印规则** |
+| `watermark_chart_case` | `017_real_watermark_chart` | **OCR 错** | 水印+图表干扰，OCR 输出含大量乱码 | ⚠️ 部分缓解（品牌水印过滤） |
 
 > ✅ 上述 7 个真实失败样本（含 1 个两栏成功样本 `010_real_two_column`）已纳入回归基线 `tests/ocr_regression/cases/`，共计 **17 个回归 case**（9 个合成文本 + 8 个真实图片）。每个 case 有独立的 `meta.json`（含 `review_status`）、`input.txt` 和人工标注的 `expected.txt`（ground truth）。回归系统支持 `--baseline`、`--review` 和 CI 严格模式。
 
 ### 4.2 失败根因分类统计
+
+> 注意：P6-3 新增了 `ocr_failure_analyzer.py`（16 种失败分类），可在 pipeline 完成后自动输出失败类型和修复建议，不再依赖人工查看日志判断根因。
 
 | 根因 | 占比（估） | 典型场景 | 可规则解决 | LLM 必要 |
 |---|---|---|---|---|
@@ -435,6 +431,19 @@
 | AI 纠错产生的幻觉 | 10% | LLM 改写原文, 补充不在原文的内容 | ❌ 不可 | ⚠️ 需防护 |
 | 代码场景特殊失败 | 5% | C 符号/指针被改写, 格式被压缩 | ✅ 可（围栏） | ❌ 不需要 |
 
+**P6-3 失败分类示例**：
+```
+输入: quality_report + diagnostics
+输出:
+  status: "warn"
+  failures: [
+    {"type": "math_image_missing", "severity": "medium", "suggested_action": "检查 math_detect 或 PDF 渲染"},
+    {"type": "answer_missing", "severity": "high", "suggested_action": "人工核对原文答案区域"}
+  ]
+  failure_type_counts: {"math_image_missing": 1, "answer_missing": 2}
+```
+兼容 `risk_flags` 体系（answer_ai_generated→ai_answer_generated, formula_uncertain→math_formula_uncertain 等映射）。
+
 ### 4.3 「错误被二次放大」的具体案例
 
 案例：**`watermark_fail_case` 的水印污染**
@@ -442,18 +451,20 @@
 ```
 PaddleOCR 输出: "1. 下列选项中... 【解析】... 版权所有 翻印必究"
      ↓
-规则清洗(_filter_watermarks): "版权所有 翻印必究" 未被匹配到水印模式
+规则清洗(_filter_watermarks, P6-4 增强): 匹配到"仅供参考"/"版权所有"/"新东方在线"等品牌水印
      ↓
-AI 纠错(Qwen/DeepSeek): 认为"版权所有 翻印必究"是正文的一部分, 不做删除
+AI 纠错(PaddleOCR-VL/DeepSeek): 水印已过滤，纠错集中于正文
      ↓
-质量门禁: 检测到选项结构异常(多了一段文字) → 标记 risk_flag=option_structure_corruption
+质量门禁: 检查通过
      ↓
-AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
+AI 修复: 仅低置信度题触发
      ↓
-结果: 水印文字进入最终输出, 质量分降低, 或 AI 修复引入二次错误
+结果: 水印文字已被规则层过滤，不进入最终输出
 ```
 
-**关键结论**：约 60% 的失败可以通过**规则修复**解决（箭头修复已 OK，字符映射已 OK，水印过滤需要加强）。约 25% 需要**版面分析改进**。仅 10-15% 需要 LLM 介入。
+**关键结论**：约 60% 的失败可以通过**规则修复**解决（箭头修复已 OK，字符映射已 OK，水印过滤已加强）。约 25% 需要**版面分析改进**。仅 10-15% 需要 LLM 介入。
+
+**P6-4 新增水印规则**：新东方在线/文都教育/启航教育/海文考研/中公考研/考研资料/历年真题/模拟试卷/配套习题等常见教育品牌水印，以及"1/10 页""第 X 页 共 Y 页"等中文页码格式。
 
 ---
 
@@ -463,13 +474,13 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 
 | 调用 | 每次 tokens（估） | 频率（每 100 页 PDF） | 总 tokens | 成本（估） |
 |---|---|---|---|---|
-| Qwen-VL 纠错 | 图片+2K 文本 | 40 个噪声块 | — | ¥0.02/次×40=¥0.8 |
+| PaddleOCR-VL 纠错 | 图片 | 40 个噪声块 | — | 外部 API（按次计费）|
 | DeepSeek 纠错（回退） | 2K | 5 个（10% 回退） | 10K | ¥0.003 |
 | DeepSeek 修复（批量） | 8K | 2 次（40 题/批） | 16K | ¥0.005 |
 | DeepSeek 修复（单题） | 4K | 5 次（失败回退） | 20K | ¥0.006 |
 | DeepSeek 补全 | 2K | 50 题 | 100K | ¥0.03 |
 | DeepSeek 丰富 | 2K | 50 题 | 100K | ¥0.03 |
-| **合计** | | | **~246K** | **~¥0.874/100 页** |
+| **合计** | | | **~236K** | **~¥0.074 + 外部 API/100 页** |
 
 **结论**：单次 PDF 处理成本可控（不到 1 元/100 页）。但存在以下浪费：
 
@@ -481,7 +492,7 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 
 3. **`llm_text_structurer` 的进程级预算计数**：它有自己的预算跟踪，与 `token_budget.py` 管理的共享预算互相独立。两个预算池互不知道，可能导致实际超限。
 
-4. **`features/ocr_service.py` 的 DeepSeek 视觉回退**：在 PaddleOCR 全失败时调用，发送的是渲染后的 PDF 页面图片。但这其实应该用 Qwen-VL 而不是 DeepSeek。当前配置可能造成无用的调用（DeepSeek-v4-flash 是否真的能高精度识别 PDF 文字是不确定的）。
+4. **`features/ocr_service.py` 的视觉回退**：✅ 已从 DeepSeek 切换到 PaddleOCR-VL。`ocr_fallback()` 现在使用 `PaddleOCRVLAdapter`，凭证通过 `resolve_active_model(feature="vision")` 从 DB 动态获取。不再有无用的 DeepSeek 视觉调用。
 
 ### 5.3 减少一层 LLM 的可能性
 
@@ -490,7 +501,7 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 **方案 A：✅ 已完成 — 移除旧版 `ocr_correction.py` 的内联 DeepSeek 路径**
 
 - 旧版 `_call_ai_correction` 与新版 `ocr_fix/router.py` 功能重叠
-- 旧版的 VL 内联路径在 `qwen_adapter.py` 中已有独立实现
+- 旧版的 VL 内联路径已由 OCRFixRouter 统一接管（后进一步简化为 PaddleOCR-VL → DeepSeek → Rule）
 - **实际成效**：`ocr_correction.py` 从 548 行降至 171 行（仅保留向后兼容包装），消除每批 0-1 次额外 LLM 调用
 
 **方案 B：在 `ai_repair` 中添加置信度跳过逻辑**
@@ -503,10 +514,10 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 - `llm_text_structurer` 使用共享 `token_budget` 替代自己的独立预算
 - **潜在节省**：无成本节省，但避免预算失控
 
-**方案 D：`features/ocr_service.py` 的视觉回退使用 Qwen-VL 而不是 DeepSeek**
+**方案 D：✅ `features/ocr_service.py` 的视觉回退 — 已完成**
 
-- 如果 DeepSeek-v4-flash OCR 精度不够，当前调用完全是浪费
-- 切换到 Qwen-VL 可能增加单次成本，但保证回退可用
+- 已从 DeepSeek 切换到 PaddleOCR-VL（同 OCRFixRouter 链首），凭证由 DB 动态管理
+- 不再依赖任何环境变量或不可靠的视觉模型
 
 **总体结论：不建议完全去掉一层 LLM，但可以优化调用频率和路径选择。**
 
@@ -517,7 +528,7 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 | 可缓存内容 | 是否已缓存 | 策略 |
 |---|---|---|
 | PaddleOCR 结果 | ❌ 未缓存 | 每次流程重跑 |
-| Qwen-VL 纠错结果 | ❌ 未缓存 | 每次重跑 |
+| PaddleOCR-VL 纠错结果 | ❌ 未缓存 | 每次重跑 |
 | DeepSeek 修复结果 | ❌ 未缓存 | 每次重跑 |
 | AI 补全结果 | ❌ 未缓存 | 每次重跑 |
 
@@ -533,23 +544,39 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 
 ### 5.5 Latency Bottleneck
 
-> 注：OCR 导入功能主要在本地 i7-12700 + RTX 3060 4G 环境下执行，生产服务器（2 核 2G）不运行 OCR 管线。以下分析基于本地 GPU 配置。
+> 注：OCR 导入功能主要在本地 i7-12700 + RTX 3060 4G 环境下执行，生产服务器（2 核 2G）不运行 OCR 管线。以下分析基于本地 GPU 配置。P6-2 在每个 pipeline stage 内置了性能 Profile（`diagnostics.performance_profile` + `quality_report.performance_summary`），可直接从真实导入流程获取各阶段耗时，无需估测。
 
 | 阶段 | 耗时（估/100 页） | 瓶颈类型 |
 |---|---|---|
 | PaddleOCR（GPU, RTX 3060） | 10-25s | ✅ 可接受 |
 | PaddleOCR（CPU 回退） | 120-300s | ⚠️ 仅回退路径 |
 | 规则清洗 | 1-3s | 几乎不计 |
-| Qwen-VL 纠错 | 20-60s | 🚨 API 调用（串行, 信号量=3） |
+| PaddleOCR-VL 纠错 | 15-40s | 🚨 外部 API（串行, 信号量=3） |
 | DeepSeek 修复（批量） | 10-30s | API 调用 |
 | 结构分析+分割 | 2-5s | 几乎不计 |
 | AI 补全+丰富 | 30-200s | 🚨 API 调用（50 题串行） |
 | **总计（本地 GPU）** | **~2-5min** | 可接受 |
 
 **关键瓶颈**：
-1. **Qwen-VL 串行调用**：信号量=3，但 API 调用仍占用 20-60s。
+1. **PaddleOCR-VL API 串行调用**：信号量=3，外部 API 调用占用 15-40s。
 2. **AI 补全串行**：50 题串行调用 DeepSeek，每次 ~2-4s，总计 100-200s。可以轻松并行化。
 3. **PaddleOCR CPU 回退**：仅作为 GPU 初始化失败时的紧急路径，非主路径。
+
+**P6-2 性能 Profile 输出示例**（每个 pipeline 完成后自动生成）：
+```json
+{
+  "extract": {"duration_ms": 15234, "output_count": 87},
+  "ocr_correction": {"duration_ms": 38450, "ai_calls": 12, "tokens_used": 4500, "cache_hit": 5, "cache_miss": 7},
+  "split": {"duration_ms": 456, "input_count": 87, "output_count": 32},
+  "review": {"duration_ms": 1234, "input_count": 32, "output_count": 32},
+  "_summary": {
+    "total_duration_ms": 78901, "total_ai_calls": 12, "total_tokens_used": 4500,
+    "cache_hit_rate": 0.42, "slowest_stage": "ocr_correction", "slowest_duration_ms": 38450
+  }
+}
+```
+
+Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.performance_summary` 暴露，管理端 Dashboard 直接展示最慢阶段和缓存命中率。
 
 ---
 
@@ -608,13 +635,15 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 
 阶段 4: AI 纠错 (ocr_fix/router — ✅ 唯一路径)
     └─ ✅ 旧版 ocr_correction.py 已精简为向后兼容包装（171 行）
-    └─ ✅ 路由链: PaddleOCR-VL → Qwen-VL → DeepSeek → Rule（新增链首）
+    └─ ✅ 路由链: PaddleOCR-VL → DeepSeek → Rule（Qwen-Fixer 已移除）
     └─ ✅ PaddleOCR-VL 适配器（ocr_vl/paddleocr_vl_adapter.py）：
     │     外部高精 OCR API（POST /api/v2/ocr/jobs → poll → JSONL）
     │     async HTTP 客户端，重试 3 次，超时 120s，降级不崩溃
     └─ ✅ 敏感内容过滤已移植到 ocr_correction_common.py
     └─ ✅ 纠错前后的 diff 记录（ai_safety.evaluate_and_trace）
     └─ 纠错效果指标追踪（ocr_fix/metrics.py 已有基础设施）
+    └─ ✅ Vision 消费端：pipeline _run_extract 接入 resolve_active_model(feature="vision")
+          作为 PaddleOCR-VL 回退（本地 OCR 失败时触发），凭证由 admin UI 动态配置
 
 阶段 5: 结构分析 + 分割（不改）
     └─ structure_analyzer + question_splitter
@@ -630,6 +659,13 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 
 阶段 8: 去重 + 入库（不改）
     └─ similarity_matcher → question_imports
+
+阶段 8.5: (P6) 质量报告 + 性能 Profile + 失败归因
+    └─ ✅ `_build_quality_report()` 随 pipeline 结果返回 (P4-5 已有)
+    └─ ✅ `diagnostics.performance_profile` 每 stage 耗时/cache/AI 调用 (P6-2)
+    └─ ✅ `quality_report.performance_summary` 最慢阶段/总耗时/缓存命中率 (P6-2)
+    └─ ✅ `ocr_failure_analyzer.py` 16 种失败分类 (P6-3)
+    └─ ✅ 管理端 Dashboard 展示质量概览 (P6-5)
 
 阶段 9: (新增) 断点恢复
     └─ import_batches + import_regions 表
@@ -654,6 +690,15 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 15. ✅ **低风险批量通过**：`approve_low_risk_questions` 接口 + 前端按钮（c82c464）
 16. ✅ **segments 透传发布**：review_service + publish_service 保留 render_mode/segments（c82c464）
 17. ✅ **11 个新 risk_flags** 映射到 high/medium + 中文 risk_reasons（c82c464）
+18. ✅ **删除 Qwen-Fixer**：移除 qwen_adapter.py（309 行），路由链简化为 PaddleOCR-VL → DeepSeek → Rule（7ef3bd6）
+19. ✅ **Vision 消费端落地**：添加 feature="vision" 到 FEATURE_VALUES + admin UI；pipeline _run_extract 接入 resolve_active_model(feature="vision") 作为 PaddleOCR-VL 回退（7ef3bd6, de0c17b）
+20. ✅ **ocr_fallback 切换 PaddleOCR-VL**：从 DeepSeek 视觉回退切换为 PaddleOCRVLAdapter，凭证由 DB 动态解析（7ef3bd6）
+21. ✅ **P6-1 验收样本扩充**：10 类样本模板（高数/线代/概率统计/408 代码/408 表格/多列/水印/计网/OS），含 case.json 元数据
+22. ✅ **P6-2 性能 Profile**：`PipelineStage` 内置 input_count/output_count/cache_hit/cache_miss/ai_calls/tokens_used，`_build_performance_profile` 聚合到 diagnostics
+23. ✅ **P6-3 失败自动归因**：`ocr_failure_analyzer.py`（772 行）16 种失败分类 + 11 checker，`failure_classifier.py` acceptance 包装
+24. ✅ **P6-4 小范围精调**：`text_normalizer.py` 扩充教育品牌水印 + 中文页码行过滤，`code_detector.py` 扩充 408 C/C++ 数据结构关键词
+25. ✅ **P6-5 管理端 Dashboard**：tasks 页面新增质量概览卡片（风险分布/AI 答案/公式截图/性能概览/高风险跳转）
+26. ✅ **P6-6 三级测试策略**：acceptance runner 支持 `--strict` 模式，README 文档三种模式，.gitignore 排除真实样本
 
 ### 6.4 改造优先级（修订版）
 
@@ -692,6 +737,12 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 |---|---|---|---|---|
 | ✅ `pipeline_orchestrator.py` 拆分 → `pipeline_stages/` 目录 | P5-2 已完成 | — | 实际：4 小时 | 行数 4454→3915，9 个 stage 搬出 |
 | ✅ `question_pipeline.py` 拆分 → `ai_complete`+`ai_enrich`+`draft_generator`+`import_writer` | P5-3 已完成 | — | 实际：4 小时 | 职责分离，向后兼容重导出 |
+| ✅ 验收样本扩充至 10 类（含 case.json 元数据 + .gitignore） | P6-1 | 无 | 实际已完成 | 覆盖高数/线代/408/表格/多列/水印 |
+| ✅ 性能 Profile（per-stage duration/cache/AI/tokens） | P6-2 | 无 | 实际已完成 | 每导入看到瓶颈 stage |
+| ✅ 失败自动归因（16 种分类 + acceptance 集成） | P6-3 | quality_report 就绪 | 实际已完成 | 不再靠日志猜失败原因 |
+| ✅ 3 类真实验收修复（水印/代码检测/页码过滤） | P6-4 | 真实样本 | 实际已完成 | 减少品牌水印误入题干 |
+| ✅ 管理端质量 Dashboard（tasks 页面） | P6-5 | quality_report 就绪 | 实际已完成 | 导入后快速判断质量 |
+| ✅ 三级测试策略（轻量/标准/严格） | P6-6 | 无 | 实际已完成 | CI 不依赖真实样本 |
 | AI 补全并行化（`asyncio.gather` + 信号量控制） | 原始审计 | 无 | 0.5 天 | 5x 加速（100-200s → 20-40s） |
 | `complete→enrich` 串联版本回退机制 | 原始审计 3.5 节（补充） | diff 记录机制就绪 | 1-2 天 | 防止补全幻觉污染丰富阶段 |
 | OCR 纠错效果指标追踪 | 成熟度审计 | diff 记录完成（提供数据源） | 1 天 | 定量评估纠错效果，发现：改善还是破坏 |
@@ -705,7 +756,7 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 | 任务 | 来源 | 前置条件 | 预估工作量 | 收益 |
 |---|---|---|---|---|
 | ~~PaddleOCR 结果缓存（图片 SHA256 → OCR 文本）~~ | 原始审计 | 确认流式架构方向 | 1 天 | ✅ 已完成（`ocr_cache_service.py` 文件缓存） |
-| `features/ocr_service.py` 回退路径改为 Qwen-VL | 原始审计 | 无 | 0.5 天 | 确保回退路径真正可用 |
+| ✅ `features/ocr_service.py` 回退路径改为 PaddleOCR-VL | 原始审计 | — | 实际：与清理合并执行 | 回退路径使用 PaddleOCR-VL，凭证由 DB 动态管理 |
 | 合并两个 token budget（`llm_text_structurer` 独立预算并入共享 `token_budget.py`） | 原始审计 | 无 | 0.5 天 | 统一预算管理 |
 | ~~高置信度题跳过 AI 修复（置信度 > 0.95 跳过 `ai_repair`）~~ | 原始审计 | 旧版清理完成 | 0.5 天 | ✅ 已完成（`_is_low_risk_skip_candidate`） |
 | 代码场景语义等价性检查 | 原始审计 3.5 节（补充） | diff 记录完成 | 1-2 天 | 防止 C 代码被 LLM 改写逻辑 |
@@ -713,7 +764,7 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 
 ### 6.5 推荐执行路线（2026-06-21 更新）
 
-#### 当前状态：阶段一（P0）✅ 已完成，阶段一B（P1-公式截图）✅ 已完成，**阶段二B（P2-三项改造）✅ 已完成**，**阶段二（P5-结构拆分）✅ 已完成**，阶段三（性能+幻觉防护）待启动
+#### 当前状态：阶段一（P0）✅ 已完成，阶段一B（P1-公式截图）✅ 已完成，**阶段二B（P2-三项改造）✅ 已完成**，**阶段二（P5-结构拆分）✅ 已完成**，**Qwen 清除 + Vision 落地 ✅ 已完成**，**P6（验收+Profile+归因+精调+Dashboard+CI 策略）✅ 已完成**，阶段三（性能+幻觉防护）部分完成
 
 ```
 ✅ 阶段一: 基础清理 + 回归基线 (已完成 — b63df47)
@@ -763,11 +814,22 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 └─────────────────────────────────────────────────────────────────────┘
                                      │
                                      v
-⏳ 阶段三: 性能优化 + 能力补充 + 幻觉防护 (部分完成)
+✅ 阶段三: P6 验收+Profile+归因+精调+Dashboard+CI (已完成 — 2026-06-21)
+┌─────────────────────────────────────────────────────────────────────┐
+│ ✅ P6-1: 验收样本扩充至 10 类 (高数/线代/408/表格/多列/水印/计网/OS)│
+│ ✅ P6-2: 性能 Profile 内置到每个 pipeline stage                      │
+│ ✅ P6-3: 失败自动归因 (16 种分类 + acceptance 集成)                  │
+│ ✅ P6-4: 3 类精调 (水印关键词/代码检测/中文页码过滤)                 │
+│ ✅ P6-5: 管理端质量 Dashboard (tasks 页面)                           │
+│ ✅ P6-6: 三级测试策略 (轻量pytest/标准acceptance/严格--strict)       │
+└─────────────────────────────────────────────────────────────────────┘
+                                     │
+                                     v
+⏳ 阶段四: 性能优化 + 能力补充 + 幻觉防护 (部分完成)
 ┌─────────────────────────────────────────────────────────────────────┐
 │ ✅ P2-1: OCR 缓存 — 已完成 (`ocr_cache_service.py`)                  │
 │ ✅ P2-4: 跳过修复 — 已完成 (`_is_low_risk_skip_candidate`)           │
-│ ⏳ P2-2: Qwen回退 (未开始)                                           │
+│ ✅ P2-2: 视觉回退 — 已完成 (ocr_fallback 已切换 PaddleOCR-VL)        │
 │ ⏳ P2-3: 合并 token budget (未开始)                                  │
 │ ⏳ P2-5: 代码语义等价性检查 (未开始)                                  │
 │ ⏳ P2-6: raw_data 瘦身 (未开始)                                      │
@@ -820,6 +882,7 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 | `features/ocr_correction.py` | 171 | ✅ 向后兼容包装（委托 OCRFixRouter） |
 | `features/ocr_correction_common.py` | — | ✅ 共享检测/过滤函数（从旧 ocr_correction 提取） |
 | `features/ai_safety.py` | 284 | ✅ AI 编辑安全门禁（diff 记录 + 版本回退） |
+| `features/ocr_failure_analyzer.py` | 772 | ✅ **P6-3 新增**：16 种失败分类 + 11 checker 函数，基于 quality_report + diagnostics 自动归因 |
 | `features/ocr_quality_gate.py` | 283 | 纯规则 OCR 污染检测 |
 | `features/text_normalizer.py` | 1101 | ✅ 统一 OCR 文本规范化入口（normalize_ocr_text, 13 步） |
 | `features/question_normalizer.py` | 685 | 规则题目标准化 |
@@ -832,7 +895,7 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 | `features/token_budget.py` | 60 | 共享令牌预算跟踪器 |
 | `features/answer_matcher.py` | — | 答案匹配 |
 | `features/similarity_matcher.py` | — | 相似度匹配 |
-| `features/code_detector.py` | — | 代码围栏检测器 |
+| `features/code_detector.py` | 308 | 代码围栏检测器（P6-4 扩充 408 C/C++ 数据结构关键词） |
 | `features/batch_validation.py` | — | 跨题结构验证 |
 
 ### `ocr_fix/` — 多模型 OCR 纠错路由器（✅ 现在为唯一路径）
@@ -842,7 +905,6 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 | `ocr_fix/interfaces.py` | 41 | OCRFixResult + OCRFixerProtocol 接口 |
 | `ocr_fix/router.py` | 158 | 带降级链的策略路由（唯一纠错入口） |
 | `ocr_fix/deepseek_adapter.py` | 126 | DeepSeek 纯文本 OCR 纠错 |
-| `ocr_fix/qwen_adapter.py` | 309 | Qwen-VL 多模态 OCR 纠错 |
 | `ocr_fix/rule_adapter.py` | 41 | no-op 规则回退 |
 | `ocr_fix/canonical_output.py` | 223 | 模型输出规范化 |
 | `ocr_fix/metrics.py` | 158 | 按模型指标收集 |
@@ -914,6 +976,11 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 | `tests/ocr_eval/eval_wangdao.py` | 王道 OCR 评估 |
 | `tests/test_pdf_normalizer.py` | PDF 规范化测试 |
 | `tests/test_code_detector.py` | 代码检测器测试 |
+| `tests/ocr_acceptance/run_acceptance.py` | 290 | ✅ **P6-1/P6-3/P6-6** 验收测试 runner，支持 `--strict` 模式，集成 failure_classifier |
+| `tests/ocr_acceptance/failure_classifier.py` | 293 | ✅ **P6-3 新增**：验收 case 失败分类包装，对比 case.json 预期值 |
+| `tests/ocr_acceptance/cases/*/case.json` | — | ✅ **P6-1 新增**：10 类样本模板，含 case_id/subject_type/expected_question_count/known_risks 元数据 |
+| `tests/ocr_regression/cases/watermark_case_001.json` | — | ✅ **P6-4 新增**：水印干扰回归 case |
+| `tests/ocr_regression/cases/code_case_001_listnode.json` | — | ✅ **P6-4 新增**：408 C 代码 ListNode 回归 case |
 | `tests/test_question_pipeline.py` | 问题管道测试 |
 
 ### 文档
@@ -981,10 +1048,16 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 | P1 | `complete→enrich` 串联版本回退 | ⏳ 待处理 |
 | P1 | 断点恢复（最小子集） | ⏳ 待处理 |
 | P2 | ~~PaddleOCR 结果缓存~~ | ✅ 已完成（`ocr_cache_service.py`） |
-| P2 | Qwen-VL 回退路径修复 | ⏳ 待处理 |
+| P2 | ✅ 视觉回退路径修复（PaddleOCR-VL + DB 动态凭证） | ✅ 已完成（7ef3bd6） |
 | P2 | 合并两个 token budget | 0.5 天 |
 | P2 | ~~高置信度跳过 AI 修复~~ | ✅ 已完成（`_is_low_risk_skip_candidate`） |
 | P2 | 代码语义等价性检查 | 1-2 天 |
+| P6 | ~~验收样本扩充~~ | ✅ 已完成 |
+| P6 | ~~性能 Profile~~ | ✅ 已完成 |
+| P6 | ~~失败自动归因~~ | ✅ 已完成 |
+| P6 | ~~3 类精调~~ | ✅ 已完成 |
+| P6 | ~~管理端 Dashboard~~ | ✅ 已完成 |
+| P6 | ~~三级测试策略~~ | ✅ 已完成 |
 
 ---
 

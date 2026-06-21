@@ -89,7 +89,17 @@ _RE_WATERMARK = re.compile(
     r"\d{4}年.*考研.*指导|"
     r"数据结构.*复习指导|"
     r"计算机.*考研|"
-    r"O\s*口\s*医"  # 常见页脚装饰碎片（参见 BUGS.md 案例二）
+    r"O\s*口\s*医|"  # 常见页脚装饰碎片（参见 BUGS.md 案例二）
+    r"新东方在线|新东方考研|"
+    r"文都教育|文都考研|"
+    r"启航教育|启航考研|"
+    r"海文考研|万学海文|"
+    r"中公考研|中公教育|"
+    r"考研[资资]料|考研真题|历年真题|"
+    r"模拟试卷|全真模拟|"
+    r"答案解析|参考答案|"
+    r"[（(]+\s*配套?.*[）)]|配套习题|配套资料|"
+    r"\d{1,2}\s*/\s*\d{1,2}\s*页数?"  # "1/10页" 等页码格式
     r").*$"
 )
 
@@ -109,6 +119,8 @@ _RE_QUESTION_SIGNAL = re.compile(
 
 # 页码模式：纯数字或带少量空格的1-3位数
 _RE_PAGE_NUMBER = re.compile(r"^\s*\d{1,3}\s*$")
+# 页码格式："第X页"、"第X页 共Y页"（独立行）
+_RE_PAGE_NUMBER_CN = re.compile(r"^\s*第\s*\d+\s*页\s*(?:[/／]\s*共\s*\d+\s*页)?\s*$")
 
 # C 指针箭头 OCR 伪影：PaddleOCR 常把 "->" 识别成 "− >"/"- >"（减号/各类破折号 +
 # 空格 + 大于号），导致 408 链表代码（p->next、q->prior->next）面目全非。
@@ -282,6 +294,8 @@ def _filter_lines(text: str, extra_watermark_patterns: list | None = None) -> st
             continue
         # 页码
         if _RE_PAGE_NUMBER.match(stripped) and 1 <= int(stripped) <= 500:
+            continue
+        if _RE_PAGE_NUMBER_CN.match(stripped):
             continue
         # 纯章标题行（无题目内容跟随）
         ch_match = _RE_CHAPTER_HEADER.match(stripped)

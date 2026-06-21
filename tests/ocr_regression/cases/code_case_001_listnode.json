@@ -1,0 +1,32 @@
+{
+  "case_id": "code_case_001",
+  "source": "ocr_code_test_1.png",
+  "source_path": "ocr_test/images/example/ocr_code_test_1.png",
+  "description": "408 C代码题：链表操作（ListNode、指针操作）",
+  "subject": "408",
+  "question_type": "code",
+  "expected": {
+    "stem_patterns": [
+      "next",
+      "ListNode",
+      "LNode"
+    ],
+    "has_options": true,
+    "option_count": 4,
+    "options_keys": ["A", "B", "C", "D"],
+    "correct_answer": "",
+    "has_math_image_segment": false,
+    "has_table_markdown_segment": false,
+    "has_code_segment": true,
+    "expected_risk_flags": [],
+    "requires_review": true,
+    "min_confidence": 0.6
+  },
+  "ocr_hints": {
+    "known_ocr_issues": [
+      "指针符号->可能被识别为- >或->",
+      "代码缩进在OCR后可能丢失",
+      "struct定义的大括号可能对齐异常"
+    ]
+  }
+}
