@@ -1022,6 +1022,15 @@ def _get_token_usage_snapshot_safe() -> dict:
         return {"daily": 0, "monthly": 0}
 
 
+def _get_ocr_cache_stats_safe() -> dict:
+    """Safe wrapper around ocr_service.get_ocr_cache_stats()."""
+    try:
+        from app.services.ocr_service import get_ocr_cache_stats
+        return get_ocr_cache_stats()
+    except Exception:
+        return {"hits": 0, "misses": 0, "hit_rate": 0.0}
+
+
 # ---------------------------------------------------------------------------
 # P4-5: quality report after pipeline completion
 # ---------------------------------------------------------------------------
@@ -1081,11 +1090,12 @@ def _build_quality_report(data: dict, diagnostics: dict) -> dict:
     review_commit = data.get("review_commit") or {}
     review_duplicates = review_commit.get("duplicates_filtered", 0)
 
-    # OCR cache stats from diagnostics
-    ocr_correction = diagnostics.get("ocr_correction") or {}
-    stats = ocr_correction.get("stats") or {}
-    ocr_cache_hit = ocr_correction.get("cache_hit_count", 0)
-    ocr_cache_miss = ocr_correction.get("cache_miss_count", 0)
+    # OCR cache stats — read from global counters (process-lifetime,
+    # first-pipeline report is most accurate; subsequent pipelines see
+    # cumulative counts which are a reasonable upper bound).
+    ocr_cache_stats = _get_ocr_cache_stats_safe()
+    ocr_cache_hit = ocr_cache_stats.get("hits", 0)
+    ocr_cache_miss = ocr_cache_stats.get("misses", 0)
 
     manual_review = medium + high
     estimated_rate = round(manual_review / total, 2) if total > 0 else 0
