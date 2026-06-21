@@ -440,8 +440,13 @@ async def test_model_connection(
     model_name: str,
     model_id: int | None = None,
     db: AsyncSession | None = None,
+    provider: str | None = None,
+    feature: str | None = None,
 ) -> dict:
-    """对给定模型配置发起一次最小 chat/completions 调用，返回连通性诊断结果。
+    """对给定模型配置发起一次最小连通性测试，返回诊断结果。
+
+    - Chat 模型 (deepseek/openai): 调用 /v1/chat/completions
+    - OCR 模型 (paddleocr_vl): 提交极小图片测试连通性
 
     若提供 model_id + db，优先使用数据库中已加密存储的凭证（忽略前端的掩码 key）。
     """
@@ -449,7 +454,9 @@ async def test_model_connection(
 
     import httpx
 
-    # 若有 model_id，优先用环境变量（最权威），其次 DB 存储，最后请求体
+    # 确定 provider / feature：优先参数，其次 DB
+    effective_provider = provider
+    effective_feature = feature
     if model_id is not None and db is not None:
         from app.models.admin_ai_config import AdminAiModelConfig
         from app.core.config import settings as app_settings
@@ -459,25 +466,23 @@ async def test_model_connection(
             if model.api_base_url:
                 api_base_url = model.api_base_url
             model_name = model.name
+            effective_provider = model.provider
+            effective_feature = model.feature
 
-            # 1) 环境变量兜底 — 仅当 provider 为 deepseek 时才使用 DEEPSEEK_API_KEY
             if model.provider == "deepseek":
                 env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
                 if env_key and env_key != "sk-your-key-here":
                     api_key = env_key
                 elif model.api_key_encrypted:
-                    # 2) DB 存储的 key（解密后）
                     decrypted = decrypt_api_key(model.api_key_encrypted)
                     if decrypted and decrypted != "****" and set(decrypted) != {"*"}:
                         api_key = decrypted
             else:
-                # 非 DeepSeek 模型：优先用 DB 存储的 key
                 if model.api_key_encrypted:
                     decrypted = decrypt_api_key(model.api_key_encrypted)
                     if decrypted and decrypted != "****" and set(decrypted) != {"*"}:
                         api_key = decrypted
         else:
-            # 模型表可能为空（seed 未持久化），触发初始化后重试
             await _seed_models_if_empty(db)
             await db.flush()
             model = await db.get(AdminAiModelConfig, model_id)
@@ -485,6 +490,8 @@ async def test_model_connection(
                 if model.api_base_url:
                     api_base_url = model.api_base_url
                 model_name = model.name
+                effective_provider = model.provider
+                effective_feature = model.feature
                 if model.provider == "deepseek":
                     env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
                     if env_key and env_key != "sk-your-key-here":
@@ -499,9 +506,30 @@ async def test_model_connection(
                         if decrypted and decrypted != "****" and set(decrypted) != {"*"}:
                             api_key = decrypted
 
+    # PaddleOCR-VL 特殊处理：不调用 chat/completions
+    # 检测依据：provider 含 paddleocr 关键字，或 feature == "vision"
+    _is_paddleocr = (
+        (effective_provider and "paddleocr" in effective_provider.lower())
+        or effective_feature == "vision"
+    )
+    if _is_paddleocr:
+        return await _test_paddleocr_vl_connection(api_base_url, api_key)
+
+    # 通用 Chat 模型测试
+    return await _test_chat_connection(api_base_url, api_key, model_name)
+
+
+async def _test_chat_connection(
+    api_base_url: str,
+    api_key: str,
+    model_name: str,
+) -> dict:
+    """对 Chat 模型发起一次最小 chat/completions 调用。"""
+    import time
+
+    import httpx
+
     base = api_base_url.rstrip("/")
-    # Normalize: some providers include /v1 in the base URL (OpenAI, DashScope compatible mode),
-    # while others don't (DeepSeek). Strip trailing /v1 so we can construct it uniformly.
     if base.endswith("/v1"):
         base = base[:-3]
     url = f"{base}/v1/chat/completions"
@@ -526,7 +554,7 @@ async def test_model_connection(
             )
         elapsed = int((time.time() - start) * 1000)
 
-        if resp.status_code == 401 or resp.status_code == 403:
+        if resp.status_code in (401, 403):
             body = resp.text[:500]
             return {
                 "success": False,
@@ -563,7 +591,6 @@ async def test_model_connection(
                 "latency_ms": elapsed,
             }
 
-        # 校验响应格式
         try:
             data = resp.json()
         except Exception:
@@ -598,6 +625,65 @@ async def test_model_connection(
             "message": f"连接成功，模型「{returned_model or model_name}」响应正常",
             "latency_ms": elapsed,
             "model_returned": returned_model or None,
+        }
+
+    except httpx.ConnectError:
+        elapsed = int((time.time() - start) * 1000)
+        return {
+            "success": False,
+            "status": "network_error",
+            "message": f"无法连接到 {base}，请检查接口地址是否正确、网络是否可达",
+            "latency_ms": elapsed,
+        }
+    except httpx.TimeoutException:
+        elapsed = int((time.time() - start) * 1000)
+        return {
+            "success": False,
+            "status": "timeout",
+            "message": f"连接 {base} 超时（15s），请检查网络或 API 地址是否可达",
+            "latency_ms": elapsed,
+        }
+    except Exception as exc:
+        elapsed = int((time.time() - start) * 1000)
+        return {
+            "success": False,
+            "status": "network_error",
+            "message": f"请求失败: {exc}",
+            "latency_ms": elapsed,
+        }
+
+
+async def _test_paddleocr_vl_connection(
+    api_base_url: str,
+    api_key: str,
+) -> dict:
+    """测试 PaddleOCR-VL 连接：检查服务端是否可达。
+
+    注意：PaddleOCR-VL API 没有轻量的健康检查端点，真正的 OCR 调用开销很大
+    （提交作业→轮询→下载结果）。因此这里只做网络连通性+基本响应检查，
+    API Token 的完整验证在实际 pipeline 处理时进行。
+    """
+    import time
+
+    import httpx
+
+    base = api_base_url.rstrip("/")
+
+    start = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(base, follow_redirects=True)
+        elapsed = int((time.time() - start) * 1000)
+
+        # 任意 HTTP 响应（包括 404/400）都说明服务可达
+        status = resp.status_code
+        return {
+            "success": True,
+            "status": "ok",
+            "message": (
+                f"服务端可达（HTTP {status}），API Token 将在实际导入时验证"
+            ),
+            "latency_ms": elapsed,
         }
 
     except httpx.ConnectError:

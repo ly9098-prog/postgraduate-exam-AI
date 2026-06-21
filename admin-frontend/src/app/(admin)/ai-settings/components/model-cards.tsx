@@ -108,6 +108,8 @@ function AddModelDialog({
           api_base_url: apiBaseUrl.trim(),
           api_key: apiKey.trim(),
           model_name: name.trim(),
+          provider: provider,
+          feature: feature,
         } satisfies ModelTestConnectionRequest),
       });
       setTestResult(result);
@@ -304,6 +306,8 @@ function ModelCard({
           api_key: apiKeyInput.trim(),
           model_name: nameInput.trim(),
           model_id: model.id,
+          provider: model.provider,
+          feature: model.feature ?? undefined,
         } satisfies ModelTestConnectionRequest),
       });
       setTestResult(result);
