@@ -483,7 +483,6 @@ async def approve_low_risk_questions(db: AsyncSession, batch_id: str, operator_i
                     qi.reviewed_by = None
                     qi.reviewed_at = None
                     skipped += 1
-                    affected -= 1 if affected > 0 else 0
                     skipped_reasons.append(f"#{qi.id}: 发布失败({pub.get('reason', '未知')})")
                     continue
             except Exception as exc:
