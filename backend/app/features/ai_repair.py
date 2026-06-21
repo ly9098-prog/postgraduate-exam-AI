@@ -18,6 +18,30 @@ _VALID_QUESTION_TYPES = (
     "single_choice", "multiple_choice", "true_false", "fill_blank", "multi_blank_choice", "subjective",
 )
 
+# P2-4: risk flags that should still allow low-risk skip (informational only)
+_HARMLESS_RISK_FLAGS = frozenset({
+    "math_region_detected",
+    "roman_repair_applied",
+    "batch_fallback_repair",
+    "math_image_crop_failed",
+    "math_image_upload_failed",
+})
+
+# P2-4: risk flags that always require AI repair
+_RISK_FLAGS_REQUIRE_REPAIR = frozenset({
+    "complex_formula_requires_review",
+    "table_low_confidence",
+    "table_requires_review",
+    "ocr_garbled_code",
+    "non_question_like",
+    "low_confidence",
+    "fallback_low_confidence",
+    "no_exercise_regions",
+    "option_structure_corruption",
+    "code_symbol_risk",
+    "math_low_confidence",
+})
+
 # 内存 token 计数器（共享模块，与 ocr_correction 同一预算池）
 from app.features.token_budget import (
     estimate_tokens, check_token_limit, record_token_usage, get_token_usage_snapshot,
@@ -64,15 +88,60 @@ def _looks_like_non_question_text(question: dict) -> bool:
     return len(prose_markers) >= 2 and weak_question_signals <= 1
 
 
+def _is_low_risk_skip_candidate(question: dict, high_confidence_threshold: float = 0.95) -> bool:
+    """P2-4: 判断是否可跳过 AI repair（低风险高置信度题）。
+
+    条件（全满足才跳过）：
+    - confidence >= high_confidence_threshold
+    - ai_answer_flag != true
+    - stem 不为空
+    - answer 不为空（选择题/判断题）
+    - risk_flags 不含需要 repair 的 flag
+    """
+    # 置信度门槛
+    confidence = question.get("confidence_score", 0)
+    if confidence < high_confidence_threshold:
+        return False
+
+    # AI 答案需要人工确认，不走跳过
+    if question.get("ai_answer_flag"):
+        return False
+
+    # stem 必须非空
+    stem = (question.get("stem") or "").strip()
+    if not stem:
+        return False
+
+    # 选择题/判断题 answer 必须非空
+    qt = question.get("question_type", "")
+    if qt in ("single_choice", "multiple_choice", "true_false"):
+        answer = (question.get("answer") or "").strip()
+        if not answer:
+            return False
+
+    # risk_flags 不能包含需要 repair 的 flag
+    risk_flags = set(question.get("risk_flags") or [])
+    dangerous = risk_flags - _HARMLESS_RISK_FLAGS
+    if dangerous & _RISK_FLAGS_REQUIRE_REPAIR:
+        return False
+
+    return True
+
+
 def _should_repair(
     question: dict,
     threshold: float,
     roman_anomalies: list[dict] | None = None,
     *,
     high_confidence_threshold: float = 0.95,
+    low_risk_skip_enabled: bool = True,
 ) -> tuple[bool, str]:
     if _looks_like_non_question_text(question):
         return False, "non_question_like"
+
+    # P2-4: 低风险题跳过 AI repair（综合条件判断）
+    if low_risk_skip_enabled and _is_low_risk_skip_candidate(question, high_confidence_threshold):
+        return False, "low_risk_high_confidence"
 
     # 0. Roman numeral anomalies — always trigger repair regardless of confidence
     if roman_anomalies:
@@ -634,6 +703,7 @@ async def repair_questions(
     threshold = config.get("confidence_threshold", 0.6)
     high_confidence_threshold = config.get("high_confidence_threshold", 0.95)
     enabled = config.get("enabled", True)
+    low_risk_skip_enabled = config.get("low_risk_skip_enabled", True)
 
     repaired: list[dict] = []
     unrepaired: list[dict] = []
@@ -717,7 +787,7 @@ async def repair_questions(
         # Roman-repaired questions that had ONLY roman issues skip Phase 2
         if i in roman_results and roman_results[i].get("decisions"):
             # Check if there are still non-roman reasons to repair
-            _, reason = _should_repair(q, threshold, roman_anomalies=None, high_confidence_threshold=high_confidence_threshold)
+            _, reason = _should_repair(q, threshold, roman_anomalies=None, high_confidence_threshold=high_confidence_threshold, low_risk_skip_enabled=low_risk_skip_enabled)
             if reason == "above_threshold":
                 # Roman repair was the only issue — record and skip Phase 2
                 roman_entry = {
@@ -733,7 +803,7 @@ async def repair_questions(
                 total_tokens += roman_results[i].get("token_used", 0)
                 continue
 
-        do_repair, reason = _should_repair(q, threshold, roman_anomalies=q_anomalies, high_confidence_threshold=high_confidence_threshold)
+        do_repair, reason = _should_repair(q, threshold, roman_anomalies=q_anomalies, high_confidence_threshold=high_confidence_threshold, low_risk_skip_enabled=low_risk_skip_enabled)
         if not do_repair:
             skipped.append({
                 "question_index": i,

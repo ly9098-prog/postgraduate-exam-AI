@@ -447,6 +447,42 @@ def _render_page_images(
         return None
 
 
+def _render_page_image_refs(
+    file_path: str | None,
+    temp_dir: str,
+    source_type: str = "pdf",
+    max_dimension: int = 2048,
+) -> dict[int, str] | None:
+    """P2-2: 渲染 PDF 页为 PNG 并写入临时文件，返回 {page_num: filepath}。
+
+    与 _render_page_images 功能相同但输出为文件路径而非 bytes。
+    供 math_detect stage 用于公式截图裁剪。
+    """
+    if source_type != "pdf" or not file_path:
+        return None
+
+    try:
+        import fitz
+
+        doc = fitz.open(file_path, filetype="pdf")
+        refs: dict[int, str] = {}
+        for i in range(len(doc)):
+            page = doc[i]
+            dpi = 150
+            pix = page.get_pixmap(dpi=dpi)
+            if max(pix.width, pix.height) > max_dimension:
+                scale = max_dimension / max(pix.width, pix.height)
+                pix = page.get_pixmap(dpi=int(dpi * scale))
+            png_path = os.path.join(temp_dir, f"page_{i + 1}.png")
+            pix.save(png_path)
+            refs[i + 1] = png_path
+        doc.close()
+        return refs
+    except Exception as e:
+        logger.warning("page image refs render failed: %s", e)
+        return None
+
+
 def _ocr_scanned_pdf(
     content_or_path: bytes | str,
     pipeline_id: str = "",
@@ -862,6 +898,7 @@ def _build_diagnostics(data: dict) -> dict:
                 data.get("ocr_correction_diagnostics", {}).get("corrections", [])
             ),
             "ai_repair": data.get("repair_diffs", []),
+            "ai_repair_stats": data.get("repair_stats", {}),
         },
     }
     return _slim_diagnostics_arrays(raw)
@@ -2289,6 +2326,7 @@ class ImportPipeline:
             "daily_token_limit": options.get("daily_token_limit", 100000),
             "monthly_token_limit": options.get("monthly_token_limit", 2000000),
             "enabled": options.get("enable_ai_repair", True),
+            "low_risk_skip_enabled": options.get("enable_low_risk_skip", True),
         }
         # Pass structured Roman numeral anomalies from batch_validation stage
         batch_diag = _kw.get("batch_validation_diagnostics", {})
@@ -2324,6 +2362,9 @@ class ImportPipeline:
                 flags = list(original.get("risk_flags") or [])
                 flags.append("non_question_like")
                 original["risk_flags"] = list(dict.fromkeys(flags))
+            elif s.get("reason") == "low_risk_high_confidence":
+                original["repair_skipped"] = True
+                original["repair_skipped_reason"] = "low_risk_high_confidence"
             repaired_combined[idx] = original
 
         repaired_combined = [q for q in repaired_combined if q is not None]
@@ -2356,6 +2397,28 @@ class ImportPipeline:
                 )
                 warnings.append(f"{len(skipped)} questions skipped repair ({reason_summary})")
 
+        # P2-5: compute repair stats for diagnostics
+        repair_total = len(to_repair)
+        repair_skipped = len(skipped)
+        repair_called = len(repaired)
+        skip_rate = round(repair_skipped / repair_total, 4) if repair_total > 0 else 0.0
+        if repaired:
+            avg_tokens_per_repair = int(round(
+                sum(r.get("token_used", 0) for r in repaired) / len(repaired)
+            ))
+            estimated_tokens_saved = avg_tokens_per_repair * repair_skipped
+        else:
+            avg_tokens_per_repair = 0
+            estimated_tokens_saved = 0
+        repair_stats = {
+            "repair_total": repair_total,
+            "repair_skipped": repair_skipped,
+            "repair_called": repair_called,
+            "skip_rate": skip_rate,
+            "estimated_tokens_saved": estimated_tokens_saved,
+            "avg_tokens_per_repair": avg_tokens_per_repair,
+        }
+
         return {
             "questions": combined,
             "repaired_count": len(repaired),
@@ -2365,6 +2428,7 @@ class ImportPipeline:
             "risk_flag_counts": _count_risk_flags(combined),
             "warnings": warnings,
             "repair_diffs": _build_repair_diffs(repaired, unrepaired, skipped),
+            "repair_stats": repair_stats,
         }
 
     def _run_ai_validation(self, questions: list[dict], **_kw) -> dict:
@@ -2428,7 +2492,7 @@ class ImportPipeline:
             "warnings": warnings,
         }
 
-    def _run_math_detect(
+    async def _run_math_detect(
         self,
         questions: list[dict],
         **_kw,
@@ -2441,6 +2505,9 @@ class ImportPipeline:
         P1-3: 对 math region 生成 math_image segment（仅 metadata，无实际截图）。
         实际截图需要 page image，pipeline 进入此 stage 时 page_images 已释放，
         此时仅写 risk_flags + segment metadata。有 page image 时会进行截图。
+
+        P2-3: 当 ``page_image_refs``（tempfile PNG 路径）可用时，进行真实公式截图
+        并上传到 StorageBackend，填充 math_image.url。
         """
         from app.features.math_import_profile import (
             apply_math_risk_flags,
@@ -2504,6 +2571,68 @@ class ImportPipeline:
             warnings.append(f"math_detect: {math_count} math candidates flagged")
         if excluded_count:
             warnings.append(f"math_detect: {excluded_count} code/408 questions excluded")
+
+        # P2-3: 当 page_image_refs 可用时，进行真实公式截图
+        page_image_refs: dict[int, str] | None = _kw.get("page_image_refs")
+        if page_image_refs and questions:
+            from app.services.storage_backend import get_storage
+
+            import hashlib as _hashlib
+            from datetime import datetime as _dt
+            from pathlib import Path as _Path
+
+            storage = get_storage()
+            virtual_import_id = _hashlib.md5(self.pipeline_id.encode()).hexdigest()[:8]
+
+            crop_warnings: list[str] = []
+            for q in questions:
+                segments = list(q.get("segments") or [])
+                updated = False
+                for seg in segments:
+                    if seg.get("type") != "math_image":
+                        continue
+                    if seg.get("url") is not None:
+                        continue
+                    source_page = seg.get("source_page")
+                    if not source_page:
+                        continue
+                    page_path = page_image_refs.get(source_page)
+                    if not page_path:
+                        continue
+
+                    try:
+                        # 读取已渲染 PNG bytes — fitz 直接输出为 PNG，无需 PIL 解码再编码
+                        png_bytes = _Path(page_path).read_bytes()
+
+                        content_hash = _hashlib.md5(png_bytes).hexdigest()[:8]
+                        month = _dt.now().strftime("%Y%m")
+                        filename = f"page_{source_page}_{content_hash}.png"
+                        url = await storage.upload(f"{month}/{virtual_import_id}_{filename}", png_bytes)
+
+                        seg["url"] = url
+                        seg["alt"] = "公式截图"
+                        updated = True
+                        crop_warnings.append(f"math_image generated for page {source_page}")
+                    except Exception as e:
+                        logger.warning("公式截图失败 import=%s page=%s: %s",
+                                       self.pipeline_id, source_page, e)
+                        seg["crop_failed"] = True
+                        seg["alt"] = "公式截图裁剪失败"
+                        risk_flags = list(q.get("risk_flags") or [])
+                        if "math_image_crop_failed" not in risk_flags:
+                            risk_flags.append("math_image_crop_failed")
+                            q["risk_flags"] = risk_flags
+
+                if updated:
+                    q["segments"] = segments
+                    q["parsed_content"] = {
+                        **(q.get("parsed_content") or {}),
+                        "render_mode": "segments",
+                        "segments": segments,
+                    }
+
+            if crop_warnings:
+                warnings.append(f"math_image: {len(crop_warnings)} formula screenshots generated")
 
         return {
             "questions": questions,
@@ -2750,38 +2879,55 @@ class ImportPipeline:
                 source_type=source_type,
             )
 
-        if len(chunk_ranges) <= 1:
-            # Legacy single-pass: chunk_ranges may be [] (no PDF page count)
-            # or [(s, e)] (single chunk covers everything). Either way we run
-            # without page-range injection so existing behavior is preserved.
-            return await self._run_single_pass(
-                file_content=file_content,
-                file_path=file_path,
-                source_type=source_type,
-                source_file=source_file,
-                subject=subject,
-                opts=opts,
-                db=db,
-                shared=shared,
-                progress_callback=progress_callback,
-                started_at=started_at,
-                page_images=page_images,
+        # P2-2: pre-render page image tempfiles for formula cropping.
+        # These survive past ocr_correction stage (unlike page_images bytes)
+        # so math_detect can use them for real formula screenshots.
+        import tempfile as _tempfile
+        import shutil as _shutil
+        page_image_tempdir: str | None = None
+        page_image_refs: dict[int, str] | None = None
+        if source_type == "pdf" and file_path:
+            page_image_tempdir = _tempfile.mkdtemp(prefix="import_pages_")
+            page_image_refs = _render_page_image_refs(
+                file_path, page_image_tempdir, source_type=source_type,
             )
 
-        return await self._run_chunked(
-            file_content=file_content,
-            file_path=file_path,
-            source_type=source_type,
-            source_file=source_file,
-            subject=subject,
-            opts=opts,
-            db=db,
-            shared=shared,
-            progress_callback=progress_callback,
-            chunk_ranges=chunk_ranges,
-            started_at=started_at,
-            page_images=page_images,
-        )
+        try:
+            if len(chunk_ranges) <= 1:
+                result = await self._run_single_pass(
+                    file_content=file_content,
+                    file_path=file_path,
+                    source_type=source_type,
+                    source_file=source_file,
+                    subject=subject,
+                    opts=opts,
+                    db=db,
+                    shared=shared,
+                    progress_callback=progress_callback,
+                    started_at=started_at,
+                    page_images=page_images,
+                    page_image_refs=page_image_refs,
+                )
+            else:
+                result = await self._run_chunked(
+                    file_content=file_content,
+                    file_path=file_path,
+                    source_type=source_type,
+                    source_file=source_file,
+                    subject=subject,
+                    opts=opts,
+                    db=db,
+                    shared=shared,
+                    progress_callback=progress_callback,
+                    chunk_ranges=chunk_ranges,
+                    started_at=started_at,
+                    page_images=page_images,
+                    page_image_refs=page_image_refs,
+                )
+        finally:
+            if page_image_tempdir is not None:
+                _shutil.rmtree(page_image_tempdir, ignore_errors=True)
+        return result
 
     # ------------------------------------------------------------------
     # P2-2 chunk planning + single-pass extraction
@@ -2848,6 +2994,7 @@ class ImportPipeline:
         chunk_seen_hashes: set | None = None,
         chunk_logical_end: int | None = None,
         page_images: dict[int, bytes] | None = None,
+        page_image_refs: dict[int, str] | None = None,
     ) -> dict:
         """Execute every stage once for the given (optionally page-restricted) input.
 
@@ -2882,6 +3029,7 @@ class ImportPipeline:
             "strategy": shared["strategy"],
             "watermark_patterns": shared["watermark_patterns"],
             "page_images": page_images,
+            "page_image_refs": page_image_refs,
             "raw_blocks": [],
             "normalized_blocks": [],
             "raw_questions": [],
@@ -3012,6 +3160,7 @@ class ImportPipeline:
         seen_hashes: set,
         hash_index,
         page_images: dict[int, bytes] | None = None,
+        page_image_refs: dict[int, str] | None = None,
     ) -> dict:
         """Run one chunk end-to-end with checkpoint writes + failure isolation.
 
@@ -3058,6 +3207,7 @@ class ImportPipeline:
                 chunk_seen_hashes=seen_hashes,
                 chunk_logical_end=logical_end,
                 page_images=page_images,
+                page_image_refs=page_image_refs,
             )
             if chunk_result.get("status") != "completed":
                 chunk_status = "failed"
@@ -3124,6 +3274,7 @@ class ImportPipeline:
         chunk_ranges: list[tuple[int, int]],
         started_at: str,
         page_images: dict[int, bytes] | None = None,
+        page_image_refs: dict[int, str] | None = None,
     ) -> dict:
         """Drive a multi-chunk run with checkpoint persistence and failure isolation.
 
@@ -3220,6 +3371,7 @@ class ImportPipeline:
                         seen_hashes=seen_hashes,
                         hash_index=hash_index,
                         page_images=page_images,
+                        page_image_refs=page_image_refs,
                     )
                 chunk_results.append(outcome)
                 if outcome["status"] == "failed":
@@ -3673,6 +3825,7 @@ async def resume_pipeline_background(
                     started_at=started_at,
                     seen_hashes=seen_hashes,
                     hash_index=hash_index,
+                    page_image_refs=None,
                 )
             chunk_results.append(outcome)
             if outcome["status"] == "failed":
