@@ -65,7 +65,6 @@ export default function AISettingsPage() {
       ocr: resolve("ocr"),
       completion: resolve("completion"),
       analysis: resolve("analysis"),
-      vision: resolve("vision"),
     };
   }, [models.data]);
 
