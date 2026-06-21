@@ -37,7 +37,7 @@
 | `docs/achieve/` | 已完成阶段归档 | 阶段完成后归档 |
 | 根目录兼容入口 | 历史兼容入口，仅保留短入口，不重复维护正文 | 仅在仍被引用或用户要求时同步 |
 
-> 2026-05-31 更新原因：一级目录旧版副本文档已精简为兼容入口；权威正文以各子目录文档为准。
+> 2026-06-21 更新原因：新增 docs/ocr/ 运维文档索引；同步 P5-P8 文档更新。
 
 ---
 
@@ -69,6 +69,11 @@
 | `docs/ai/OCR_STRATEGY.md` | OCR 策略 |
 | `docs/ai/STANDARDIZATION_FLOW.md` | AI 标准化流程 |
 | `docs/architecture/OCR_FLOW.md` | OCR 导入架构流程 |
+| `docs/architecture/OCR_USAGE.md` | OCR 导入使用说明 |
+| `docs/architecture/DUAL_ENV_OCR.md` | 双环境 OCR 配置 |
+| `docs/ocr/OPERATIONS.md` | OCR 运维手册 |
+| `docs/ocr/TROUBLESHOOTING.md` | OCR 故障排查手册 |
+| `docs/ocr/DEPLOY_CHECKLIST.md` | OCR 发布检查清单 |
 
 ### 前端
 

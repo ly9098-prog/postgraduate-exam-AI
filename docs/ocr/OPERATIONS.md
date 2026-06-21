@@ -3,10 +3,16 @@
 ## 导入流程概述
 
 ```
-源文件 → [extract] → [normalize] → [ocr_correction] → [analyze_structure]
-  → [classify_pages] → [split] → [match] → [normalize_schema]
-  → [batch_validation] → [batch_dedup] → [repair] → [ai_validation]
-  → [similarity_match] → [math_detect] → [table_detect] → [review]
+源文件 → [1.extract] → [2.normalize] → [3.ocr_correction] → [4.analyze_structure]
+  → [5.classify_pages] → [6.split] → [7.match] → [8.normalize_schema]
+  → [9.repair] → [10.ai_validation] → [11.similarity_match]
+  → [12.math_detect] → [13.table_detect] → [14.review]
+
+总计 14 个处理 stage + artifact checkpoint + quality_report 输出。
+stage3 (ocr_correction) 使用 OCRFixRouter：PaddleOCR-VL → DeepSeek → Rule。
+stage9 (repair) 高置信度题（>0.95）跳过 AI 修复。
+P5-2 已将 9 个 stage 拆至 `pipeline_stages/` 目录。
+P6 新增 quality_report + performance_profile + failure_analyzer 随 pipeline 返回。
 ```
 
 详见 `docs/architecture/OCR_FLOW.md`。
