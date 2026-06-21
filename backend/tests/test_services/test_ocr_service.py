@@ -436,97 +436,68 @@ class TestCallOcrApi:
             new_loop.close()
 
     def test_successful_ocr_call(self):
-        """模拟 AI API 成功返回 OCR 文本。"""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "choices": [{"message": {"content": "识别出的题目文字内容"}}],
-            "usage": {"total_tokens": 150},
-        }
+        """PaddleOCR-VL 成功返回 OCR 文本。"""
+        mock_result = MagicMock()
+        mock_result.fixed_text = "识别出的题目文字内容"
+        mock_result.confidence = 0.92
 
-        mock_client = AsyncMock()
-        mock_client.post.return_value = mock_response
+        mock_adapter = AsyncMock()
+        mock_adapter.fix.return_value = mock_result
 
-        mock_deepseek = MagicMock()
-        mock_deepseek.is_available.return_value = True
-        mock_deepseek.client = mock_client
-        mock_deepseek.api_key = "sk-test"
-        mock_deepseek.base_url = "https://api.deepseek.com"
+        vl_config = {"paddleocr_vl_api_token": "test-token"}
 
-        with patch("app.ai.client.deepseek", mock_deepseek):
+        with patch(
+            "app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter",
+            return_value=mock_adapter,
+        ):
             from app.features.ocr_service import _call_ocr_api
-            result = self._run_async(_call_ocr_api(b"fake-image-data", page_num=1))
+            result = self._run_async(_call_ocr_api(b"fake-image-data", page_num=1, config=vl_config))
 
         assert result is not None
         assert result["page"] == 1
         assert "识别出的题目文字内容" in result["text"]
-        assert result["tokens_used"] == 150
+        assert result["tokens_used"] == 0
 
     def test_api_unavailable(self):
-        """DeepSeek API 不可用 → 返回 None。"""
-        mock_deepseek = MagicMock()
-        mock_deepseek.is_available.return_value = False
-
-        with patch("app.ai.client.deepseek", mock_deepseek):
-            from app.features.ocr_service import _call_ocr_api
-            result = self._run_async(_call_ocr_api(b"fake-image", page_num=1))
+        """PaddleOCR-VL 未配置（无 config）→ 返回 None。"""
+        from app.features.ocr_service import _call_ocr_api
+        result = self._run_async(_call_ocr_api(b"fake-image", page_num=1, config=None))
 
         assert result is None
 
-    def test_api_error_status(self):
-        """API 返回非 200 → 返回 None。"""
-        mock_response = MagicMock()
-        mock_response.status_code = 400
-        mock_response.text = "Bad request"
+    def test_api_empty_result(self):
+        """PaddleOCR-VL 返回空文本 → 返回 None。"""
+        mock_result = MagicMock()
+        mock_result.fixed_text = ""
+        mock_result.confidence = 0.0
 
-        mock_client = AsyncMock()
-        mock_client.post.return_value = mock_response
+        mock_adapter = AsyncMock()
+        mock_adapter.fix.return_value = mock_result
 
-        mock_deepseek = MagicMock()
-        mock_deepseek.is_available.return_value = True
-        mock_deepseek.client = mock_client
-        mock_deepseek.api_key = "sk-test"
-        mock_deepseek.base_url = "https://api.deepseek.com"
+        vl_config = {"paddleocr_vl_api_token": "test-token"}
 
-        with patch("app.ai.client.deepseek", mock_deepseek):
+        with patch(
+            "app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter",
+            return_value=mock_adapter,
+        ):
             from app.features.ocr_service import _call_ocr_api
-            result = self._run_async(_call_ocr_api(b"fake-image", page_num=1))
+            result = self._run_async(_call_ocr_api(b"fake-image", page_num=2, config=vl_config))
 
         assert result is None
 
     def test_api_exception(self):
-        """API 调用抛异常 → 静默返回 None。"""
-        mock_client = AsyncMock()
-        mock_client.post.side_effect = Exception("Connection refused")
+        """PaddleOCR-VL 抛异常 → 返回 None。"""
+        mock_adapter = AsyncMock()
+        mock_adapter.fix.side_effect = Exception("API connection failed")
 
-        mock_deepseek = MagicMock()
-        mock_deepseek.is_available.return_value = True
-        mock_deepseek.client = mock_client
-        mock_deepseek.api_key = "sk-test"
-        mock_deepseek.base_url = "https://api.deepseek.com"
+        vl_config = {"paddleocr_vl_api_token": "test-token"}
 
-        with patch("app.ai.client.deepseek", mock_deepseek):
+        with patch(
+            "app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter",
+            return_value=mock_adapter,
+        ):
             from app.features.ocr_service import _call_ocr_api
-            result = self._run_async(_call_ocr_api(b"fake-image", page_num=1))
-
-        assert result is None
-
-    def test_api_timeout(self):
-        """API 超时 → 静默返回 None。"""
-        import httpx
-
-        mock_client = AsyncMock()
-        mock_client.post.side_effect = httpx.TimeoutException("timeout")
-
-        mock_deepseek = MagicMock()
-        mock_deepseek.is_available.return_value = True
-        mock_deepseek.client = mock_client
-        mock_deepseek.api_key = "sk-test"
-        mock_deepseek.base_url = "https://api.deepseek.com"
-
-        with patch("app.ai.client.deepseek", mock_deepseek):
-            from app.features.ocr_service import _call_ocr_api
-            result = self._run_async(_call_ocr_api(b"fake-image", page_num=3))
+            result = self._run_async(_call_ocr_api(b"fake-image", page_num=3, config=vl_config))
 
         assert result is None
 
@@ -538,7 +509,7 @@ class TestCallOcrApi:
 
 class TestOcrFallback:
     def _setup_mocks(self, page_count=2, ocr_texts=None):
-        """设置完整的 mock 链：fitz + deepseek + settings。"""
+        """设置完整的 mock 链：fitz + PaddleOCRVLAdapter。"""
         if ocr_texts is None:
             ocr_texts = ["第一页识别的题目内容", "第二页识别的题目内容"]
 
@@ -557,40 +528,29 @@ class TestOcrFallback:
         mock_doc.__exit__ = MagicMock(return_value=False)
         mock_fitz.open.return_value = mock_doc
 
-        # mock deepseek for _call_ocr_api
-        mock_client = AsyncMock()
-
-        def _make_response(page_text):
-            resp = MagicMock()
-            resp.status_code = 200
-            resp.json.return_value = {
-                "choices": [{"message": {"content": page_text}}],
-                "usage": {"total_tokens": 100},
-            }
-            return resp
-
-        mock_client.post = AsyncMock()
+        mock_adapter_cls = MagicMock()
+        mock_adapter_instance = AsyncMock()
         call_count = [0]
 
-        def _side_effect(*a, **kw):
+        async def _side_effect(image, ocr_text, context):
             idx = min(call_count[0], len(ocr_texts) - 1)
             call_count[0] += 1
-            return _make_response(ocr_texts[idx])
+            result = MagicMock()
+            result.fixed_text = ocr_texts[idx]
+            result.confidence = 0.92
+            return result
 
-        mock_client.post.side_effect = _side_effect
+        mock_adapter_instance.fix = _side_effect
+        mock_adapter_cls.return_value = mock_adapter_instance
 
-        mock_deepseek = MagicMock()
-        mock_deepseek.is_available.return_value = True
-        mock_deepseek.client = mock_client
-        mock_deepseek.api_key = "sk-test"
-        mock_deepseek.base_url = "https://api.deepseek.com"
+        vl_config = {"paddleocr_vl_api_token": "test-token"}
 
-        return mock_fitz, mock_deepseek
+        return mock_fitz, mock_adapter_cls, vl_config
 
 
     def test_successful_ocr_two_pages(self):
         """两页 PDF OCR 成功。"""
-        mock_fitz, mock_deepseek = self._setup_mocks(
+        mock_fitz, mock_adapter_cls, vl_config = self._setup_mocks(
             page_count=2,
             ocr_texts=[
                 "第一页：题目 1\n\n题目 1 的选项",
@@ -599,27 +559,27 @@ class TestOcrFallback:
         )
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.ai.client.deepseek", mock_deepseek), \
+             patch("app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter", mock_adapter_cls), \
              patch("app.features.ocr_service.settings") as mock_settings:
             mock_settings.OCR_ENABLED = True
             from app.features.ocr_service import ocr_fallback
-            blocks = ocr_fallback(b"fake pdf")
+            blocks = ocr_fallback(b"fake pdf", config=vl_config)
 
         assert len(blocks) >= 2  # at least one block per page
 
     def test_blocks_format(self):
         """验证返回的 blocks 格式与 pipeline 兼容。"""
-        mock_fitz, mock_deepseek = self._setup_mocks(
+        mock_fitz, mock_adapter_cls, vl_config = self._setup_mocks(
             page_count=1,
             ocr_texts=["题目文字内容"],
         )
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.ai.client.deepseek", mock_deepseek), \
+             patch("app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter", mock_adapter_cls), \
              patch("app.features.ocr_service.settings") as mock_settings:
             mock_settings.OCR_ENABLED = True
             from app.features.ocr_service import ocr_fallback
-            blocks = ocr_fallback(b"fake")
+            blocks = ocr_fallback(b"fake", config=vl_config)
 
         assert isinstance(blocks, list)
         assert len(blocks) > 0
@@ -633,10 +593,10 @@ class TestOcrFallback:
 
     def test_ocr_disabled_raises(self):
         """OCR_ENABLED=False → 抛 RuntimeError。"""
-        mock_fitz, mock_deepseek = self._setup_mocks(page_count=1, ocr_texts=["text"])
+        mock_fitz, mock_adapter_cls, _ = self._setup_mocks(page_count=1, ocr_texts=["text"])
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.ai.client.deepseek", mock_deepseek), \
+             patch("app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter", mock_adapter_cls), \
              patch("app.features.ocr_service.settings") as mock_settings:
             mock_settings.OCR_ENABLED = False
             from app.features.ocr_service import ocr_fallback
@@ -645,17 +605,17 @@ class TestOcrFallback:
 
     def test_paragraph_splitting(self):
         """双换行按段落切分 block。"""
-        mock_fitz, mock_deepseek = self._setup_mocks(
+        mock_fitz, mock_adapter_cls, vl_config = self._setup_mocks(
             page_count=1,
             ocr_texts=["段落一\n\n段落二\n\n段落三"],
         )
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.ai.client.deepseek", mock_deepseek), \
+             patch("app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter", mock_adapter_cls), \
              patch("app.features.ocr_service.settings") as mock_settings:
             mock_settings.OCR_ENABLED = True
             from app.features.ocr_service import ocr_fallback
-            blocks = ocr_fallback(b"fake")
+            blocks = ocr_fallback(b"fake", config=vl_config)
 
         assert len(blocks) == 3
         assert blocks[0]["text"] == "段落一"
@@ -675,26 +635,27 @@ class TestOcrFallback:
         mock_doc.__exit__ = MagicMock(return_value=False)
         mock_fitz.open.return_value = mock_doc
 
-        # API returns error for all pages
-        mock_client = AsyncMock()
-        mock_response = MagicMock()
-        mock_response.status_code = 500
-        mock_response.text = "Internal error"
-        mock_client.post.return_value = mock_response
+        # PaddleOCRVLAdapter returns empty for all pages
+        async def _fail_fix(image, ocr_text, context):
+            result = MagicMock()
+            result.fixed_text = ""
+            result.confidence = 0.0
+            return result
 
-        mock_deepseek = MagicMock()
-        mock_deepseek.is_available.return_value = True
-        mock_deepseek.client = mock_client
-        mock_deepseek.api_key = "sk-test"
-        mock_deepseek.base_url = "https://api.deepseek.com"
+        mock_adapter_instance = AsyncMock()
+        mock_adapter_instance.fix = _fail_fix
+        mock_adapter_cls = MagicMock()
+        mock_adapter_cls.return_value = mock_adapter_instance
+
+        vl_config = {"paddleocr_vl_api_token": "test-token"}
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.ai.client.deepseek", mock_deepseek), \
+             patch("app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter", mock_adapter_cls), \
              patch("app.features.ocr_service.settings") as mock_settings:
             mock_settings.OCR_ENABLED = True
             from app.features.ocr_service import ocr_fallback
             with pytest.raises(RuntimeError, match="均失败"):
-                ocr_fallback(b"fake")
+                ocr_fallback(b"fake", config=vl_config)
 
     def test_partial_page_failure(self):
         """部分页面 OCR 失败，成功的页面正常返回。"""
@@ -712,39 +673,33 @@ class TestOcrFallback:
         mock_doc.__exit__ = MagicMock(return_value=False)
         mock_fitz.open.return_value = mock_doc
 
-        mock_client = AsyncMock()
-
         _call_count = [0]
 
-        async def _alternating_response(*a, **kw):
+        async def _alternating_fix(image, ocr_text, context):
             cnt = _call_count[0]
             _call_count[0] += 1
-            resp = MagicMock()
+            result = MagicMock()
             if cnt == 0:  # First call succeeds
-                resp.status_code = 200
-                resp.json.return_value = {
-                    "choices": [{"message": {"content": "成功识别的文字"}}],
-                    "usage": {"total_tokens": 50},
-                }
+                result.fixed_text = "成功识别的文字"
+                result.confidence = 0.92
             else:  # Second call fails
-                resp.status_code = 500
-                resp.text = "Error"
-            return resp
+                result.fixed_text = ""
+                result.confidence = 0.0
+            return result
 
-        mock_client.post = AsyncMock(side_effect=_alternating_response)
+        mock_adapter_instance = AsyncMock()
+        mock_adapter_instance.fix = _alternating_fix
+        mock_adapter_cls = MagicMock()
+        mock_adapter_cls.return_value = mock_adapter_instance
 
-        mock_deepseek = MagicMock()
-        mock_deepseek.is_available.return_value = True
-        mock_deepseek.client = mock_client
-        mock_deepseek.api_key = "sk-test"
-        mock_deepseek.base_url = "https://api.deepseek.com"
+        vl_config = {"paddleocr_vl_api_token": "test-token"}
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.ai.client.deepseek", mock_deepseek), \
+             patch("app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter", mock_adapter_cls), \
              patch("app.features.ocr_service.settings") as mock_settings:
             mock_settings.OCR_ENABLED = True
             from app.features.ocr_service import ocr_fallback
-            blocks = ocr_fallback(b"fake")
+            blocks = ocr_fallback(b"fake", config=vl_config)
 
         # Should have blocks from the successful page
         assert len(blocks) > 0
@@ -763,28 +718,26 @@ class TestOcrFallback:
         mock_doc.__exit__ = MagicMock(return_value=False)
         mock_fitz.open.return_value = mock_doc
 
-        mock_client = AsyncMock()
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "choices": [{"message": {"content": "   "}}],  # 仅空白
-            "usage": {"total_tokens": 10},
-        }
-        mock_client.post.return_value = mock_response
+        async def _empty_fix(image, ocr_text, context):
+            result = MagicMock()
+            result.fixed_text = "   "  # 仅空白
+            result.confidence = 0.0
+            return result
 
-        mock_deepseek = MagicMock()
-        mock_deepseek.is_available.return_value = True
-        mock_deepseek.client = mock_client
-        mock_deepseek.api_key = "sk-test"
-        mock_deepseek.base_url = "https://api.deepseek.com"
+        mock_adapter_instance = AsyncMock()
+        mock_adapter_instance.fix = _empty_fix
+        mock_adapter_cls = MagicMock()
+        mock_adapter_cls.return_value = mock_adapter_instance
+
+        vl_config = {"paddleocr_vl_api_token": "test-token"}
 
         with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.ai.client.deepseek", mock_deepseek), \
+             patch("app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter", mock_adapter_cls), \
              patch("app.features.ocr_service.settings") as mock_settings:
             mock_settings.OCR_ENABLED = True
             from app.features.ocr_service import ocr_fallback
             with pytest.raises(RuntimeError, match="均失败"):
-                ocr_fallback(b"fake")
+                ocr_fallback(b"fake", config=vl_config)
 
 
 # ============================================================

@@ -1503,6 +1503,7 @@ class ImportPipeline:
                     logger.info(
                         "PDF text only %d chars, attempting PaddleOCR fallback", total_text,
                     )
+                    ocr_ok = False
                     try:
                         import_mode_str = opts.get("import_mode", "auto")
                         user_specified_range = opts.get("page_start") or opts.get("page_end")
@@ -1519,6 +1520,7 @@ class ImportPipeline:
 
                         if ocr_blocks:
                             raw_blocks = ocr_blocks
+                            ocr_ok = True
 
                             # Exercise detection reuses the full OCR text —
                             # no separate lightweight OCR pass (Task 2)
@@ -1576,6 +1578,48 @@ class ImportPipeline:
                         logger.warning(
                             "OCR fallback failed, using original extraction: %s", exc,
                         )
+
+                    # PaddleOCR-VL vision model fallback (admin-configured via feature="vision")
+                    if not ocr_ok:
+                        vision_config = _kw.get("vision_config")
+                        if vision_config and vision_config.get("api_key"):
+                            provider = (vision_config.get("provider") or "").lower()
+                            if provider in ("paddleocr-vl", "paddleocr_vl", "paddleocr"):
+                                try:
+                                    logger.info(
+                                        "Local OCR failed, trying PaddleOCR-VL vision fallback (provider=%s)",
+                                        provider,
+                                    )
+                                    from app.features.ocr_service import ocr_fallback
+
+                                    content_bytes = file_content
+                                    if content_bytes is None and file_path:
+                                        with open(file_path, "rb") as f:
+                                            content_bytes = f.read()
+
+                                    if content_bytes:
+                                        vl_config = {
+                                            "paddleocr_vl_api_token": vision_config["api_key"],
+                                            "paddleocr_vl_base_url": vision_config.get(
+                                                "api_base_url", "https://paddleocr.aistudio-app.com",
+                                            ),
+                                            "paddleocr_vl_model": vision_config.get(
+                                                "model_name", "PaddleOCR-VL-1.6",
+                                            ),
+                                        }
+                                        vl_blocks = ocr_fallback(
+                                            content_bytes,
+                                            source_file=_kw.get("source_file", ""),
+                                            config=vl_config,
+                                        )
+                                        if vl_blocks:
+                                            raw_blocks = vl_blocks
+                                            logger.info(
+                                                "PaddleOCR-VL vision fallback succeeded: %d blocks",
+                                                len(vl_blocks),
+                                            )
+                                except Exception as vl_exc:
+                                    logger.warning("PaddleOCR-VL vision fallback failed: %s", vl_exc)
                 else:
                     logger.warning(
                         "PDF text only %d chars but OCR_ENABLED=false, cannot extract scanned content",
@@ -1715,7 +1759,7 @@ class ImportPipeline:
         return features
 
     async def _run_ocr_correction(self, normalized_blocks: list[dict], options: dict | None = None, **_kw) -> dict:
-        """Stage 1.5: AI OCR text correction via multi-model router (Qwen → DeepSeek → rule)."""
+        """Stage 1.5: AI OCR text correction via multi-model router (PaddleOCR-VL → DeepSeek → rule)."""
         opts = options or {}
         db = _kw.get("db")
 
@@ -2013,15 +2057,11 @@ class ImportPipeline:
             try:
                 from app.services.model_config_resolver import resolve_active_model
 
-                # Resolve OCR feature model (could be qwen-vl, deepseek, etc.)
+                # Resolve OCR feature model (could be paddleocr-vl, deepseek, etc.)
                 ocr_model = await resolve_active_model(db, feature="ocr")
                 if ocr_model:
                     provider = ocr_model.get("provider", "")
-                    if provider in ("qwen-vl", "qwen"):
-                        config["qwen_api_key"] = ocr_model["api_key"]
-                        config["qwen_base_url"] = ocr_model["api_base_url"]
-                        config["qwen_model"] = ocr_model["model_name"]
-                    elif provider == "deepseek":
+                    if provider == "deepseek":
                         config["deepseek_api_key"] = ocr_model["api_key"]
                         config["deepseek_base_url"] = ocr_model["api_base_url"]
                     elif provider in ("paddleocr-vl", "paddleocr_vl"):
@@ -2029,10 +2069,10 @@ class ImportPipeline:
                         config["paddleocr_vl_base_url"] = ocr_model["api_base_url"]
                         config["paddleocr_vl_model"] = ocr_model["model_name"]
                     else:
-                        # OpenAI-compatible provider → treat as vision-capable (Qwen path)
-                        config["qwen_api_key"] = ocr_model["api_key"]
-                        config["qwen_base_url"] = ocr_model["api_base_url"]
-                        config["qwen_model"] = ocr_model["model_name"]
+                        # Unknown provider → assume PaddleOCR-VL compatible
+                        config["paddleocr_vl_api_token"] = ocr_model["api_key"]
+                        config["paddleocr_vl_base_url"] = ocr_model["api_base_url"]
+                        config["paddleocr_vl_model"] = ocr_model["model_name"]
 
                 # Resolve a DeepSeek model as fallback for auto chain
                 ds_model = await resolve_active_model(db, feature=None)
@@ -2612,7 +2652,7 @@ class ImportPipeline:
             page_images: pre-rendered page image bytes keyed by 1-based page number.
                          When provided (e.g. from image imports), bypasses
                          _render_page_images so the ocr_correction stage can
-                         pass the original image to multimodal models like Qwen-VL.
+                         pass the original image to multimodal models like PaddleOCR-VL.
 
         Returns:
             Pipeline result dict with status, stats, stages, and errors.
@@ -2816,6 +2856,22 @@ class ImportPipeline:
         if page_start is not None or page_end is not None:
             opts = {**opts, "page_start": page_start, "page_end": page_end}
 
+        # Resolve vision model config for PaddleOCR-VL fallback
+        vision_config = None
+        if db is not None:
+            from app.services.model_config_resolver import resolve_active_model
+            try:
+                resolved = await resolve_active_model(db, feature="vision")
+                if resolved and resolved.get("api_key"):
+                    vision_config = resolved
+                    logger.info(
+                        "Vision model configured: %s (provider=%s)",
+                        vision_config.get("display_name") or vision_config.get("model_name", "?"),
+                        vision_config.get("provider", "?"),
+                    )
+            except Exception as exc:
+                logger.warning("Failed to resolve vision model config: %s", exc)
+
         # Accumulated data passed between stages
         data: dict[str, Any] = {
             "file_content": file_content,
@@ -2825,6 +2881,7 @@ class ImportPipeline:
             "subject": subject,
             "options": opts,
             "db": db,
+            "vision_config": vision_config,
             "import_mode": shared["import_mode"],
             "strategy": shared["strategy"],
             "watermark_patterns": shared["watermark_patterns"],
@@ -2925,14 +2982,14 @@ class ImportPipeline:
                 # 一起驻留内存。400 页扫描 PDF 下，OCR 后的 normalized_blocks
                 # 单独可达 50~200 MB（含 boxes），是仅次于 PDF 字节的大头。
                 if name == "extract":
-                    # PDF/图片字节保留给 ocr_correction（Qwen-VL 需要原始图像）
+                    # PDF/图片字节保留给 ocr_correction（PaddleOCR-VL 需要原始图像）
                     pass
                 elif name == "normalize_text":
                     # raw_blocks 已并入 normalized_blocks，无后续消费者
                     data.pop("raw_blocks", None)
                 elif name == "ocr_correction":
                     # OCR correction stage finished, release original bytes
-                    # and rendered page images (Qwen-VL was last consumer)
+                    # and rendered page images (PaddleOCR-VL was last consumer)
                     data.pop("file_content", None)
                     data.pop("file_path", None)
                     data.pop("page_images", None)
@@ -3372,7 +3429,7 @@ async def run_import_pipeline(
         db: 异步数据库会话（review 阶段需要）
         page_images: 预渲染的页面图片字典（{1: image_bytes}），传入后管线跳过
                      _render_page_images，直接使用。用于图片导入场景，让多模态
-                     OCR 纠错模型（如 Qwen-VL）能看到原始图片。
+                     OCR 纠错模型（如 PaddleOCR-VL）能看到原始图片。
         resume_from_checkpoint: P3-2 resume checkpoint data. When set, the
                      pipeline re-runs from extract but uses the same pipeline_id
                      for status continuity.

@@ -2,7 +2,7 @@
 
 支持策略：
 - manual: 手动选择模型
-- auto: Qwen → DeepSeek → rule fallback（默认）
+- auto: PaddleOCR-VL → DeepSeek → rule fallback（默认）
 
 失败自动降级：当前模型失败时按顺序尝试下一个可用模型。
 """
@@ -17,9 +17,9 @@ from app.features.ocr_fix.interfaces import OCRFixResult
 logger = logging.getLogger(__name__)
 
 # Default fallback chain for "auto" strategy
-# PaddleOCR-VL is tried first (high-accuracy external OCR), then Qwen-VL
-# (visual correction), DeepSeek (text correction), and finally rule fallback.
-_AUTO_CHAIN = ["paddleocr-vl", "qwen", "deepseek", "rule_fallback"]
+# PaddleOCR-VL is tried first (high-accuracy external OCR), then DeepSeek
+# (text correction), and finally rule fallback.
+_AUTO_CHAIN = ["paddleocr-vl", "deepseek", "rule_fallback"]
 
 # Strategy constants
 STRATEGY_MANUAL = "manual"
@@ -72,16 +72,6 @@ class OCRFixRouter:
             )
             return self._adapters[name]
 
-        if name == "qwen":
-            from app.features.ocr_fix.qwen_adapter import QwenFixer
-            api_key = self._config.get("qwen_api_key")
-            base_url = self._config.get("qwen_base_url")
-            model = self._config.get("qwen_model", "qwen-vl-max")
-            self._adapters[name] = QwenFixer(
-                api_key=api_key, base_url=base_url, model=model, config=self._config,
-            )
-            return self._adapters[name]
-
         if name == "paddleocr-vl":
             from app.features.ocr_vl.paddleocr_vl_adapter import PaddleOCRVLAdapter
             api_token = self._config.get("paddleocr_vl_api_token")
@@ -128,7 +118,7 @@ class OCRFixRouter:
             if adapter is None:
                 continue
 
-            # 跳过不可用的适配器（如无 API key 的 Qwen）
+            # 跳过不可用的适配器（如无 API key 的 PaddleOCR-VL）
             if hasattr(adapter, "is_available") and not adapter.is_available:
                 logger.debug("OCR fix adapter '%s' unavailable, skipping", model_name)
                 continue

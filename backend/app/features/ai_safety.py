@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class AIEditTrace:
     """统一的 AI 修改记录。"""
     stage: str                           # "ocr_fix" / "ai_repair" / "ai_complete" / "ai_enrich"
-    model: str                           # "qwen-vl" / "deepseek" / "rule_fallback" ...
+    model: str                           # "paddleocr-vl" / "deepseek" / "rule_fallback" ...
     before: str                          # 修改前文本（截断到 2000 字符）
     after: str                           # 修改后文本（截断到 2000 字符）
     diff: str = ""                       # unified diff 摘要
