@@ -2120,6 +2120,10 @@ class ImportPipeline:
                     elif provider == "deepseek":
                         config["deepseek_api_key"] = ocr_model["api_key"]
                         config["deepseek_base_url"] = ocr_model["api_base_url"]
+                    elif provider in ("paddleocr-vl", "paddleocr_vl"):
+                        config["paddleocr_vl_api_token"] = ocr_model["api_key"]
+                        config["paddleocr_vl_base_url"] = ocr_model["api_base_url"]
+                        config["paddleocr_vl_model"] = ocr_model["model_name"]
                     else:
                         # OpenAI-compatible provider → treat as vision-capable (Qwen path)
                         config["qwen_api_key"] = ocr_model["api_key"]
