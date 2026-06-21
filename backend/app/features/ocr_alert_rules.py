@@ -107,13 +107,15 @@ def evaluate_alerts(
     high_risk_ratio = _safe_ratio(
         qr.get("high_risk"), qr.get("total_questions")
     )
+    # requires_manual_review is expected to equal medium_risk + high_risk
+    # (invariant maintained by _build_quality_report in pipeline_orchestrator)
     manual_review_rate = _safe_ratio(
         qr.get("requires_manual_review"), qr.get("total_questions")
     )
     ai_answer_count = qr.get("ai_answer_count", 0) or 0
-    duration_ms = (
-        (diag.get("performance_profile") or {}).get("_summary") or {}
-    ).get("total_duration_ms", 0) or 0
+    profile = diag.get("performance_profile") or {}
+    summary = profile.get("_summary") or {}
+    duration_ms = summary.get("total_duration_ms", 0) or 0
     ocr_cache_hit = qr.get("ocr_cache_hit", 0) or 0
     ocr_cache_miss = qr.get("ocr_cache_miss", 0) or 0
     ocr_cache_hit_rate = _safe_ratio(ocr_cache_hit, ocr_cache_hit + ocr_cache_miss)
