@@ -883,7 +883,7 @@ def _build_stats(data: dict, stages: dict) -> dict:
     }
 
 
-def _build_diagnostics(data: dict) -> dict:
+def _build_diagnostics(data: dict, stages: dict | None = None) -> dict:
     mode = data.get("import_mode", ImportMode.AUTO)
     raw = {
         "import_mode": mode.value if hasattr(mode, "value") else str(mode),
@@ -913,6 +913,11 @@ def _build_diagnostics(data: dict) -> dict:
         "review_commit": data.get("review_commit"),
         # P3-7: shared token budget snapshot for monitoring
         "token_usage": _get_token_usage_snapshot_safe(),
+        # P6-2: per-stage performance profile
+        "performance_profile": _build_performance_profile(
+            {n: s.to_dict() for n, s in stages.items()},
+            data,
+        ) if stages else {},
     }
     return _slim_diagnostics_arrays(raw)
 
@@ -933,6 +938,95 @@ def _get_ocr_cache_stats_safe() -> dict:
         return get_ocr_cache_stats()
     except Exception:
         return {"hits": 0, "misses": 0, "hit_rate": 0.0}
+
+
+# ---------------------------------------------------------------------------
+# P6-2: update per-stage profiling metrics from pipeline data
+# ---------------------------------------------------------------------------
+
+
+def _update_stage_metrics(stage, data: dict, result: dict) -> None:
+    """Set input/output counts and other per-stage profiling metrics.
+
+    Derives counts from ``data`` (pre-stage state) and ``result`` (post-stage
+    output) for each pipeline stage.  Called immediately after the stage runs.
+    """
+    name = stage.name
+    # ── extract ──
+    if name == "extract":
+        stage.output_count = len(result.get("raw_blocks") or [])
+    # ── normalize_text ──
+    elif name == "normalize_text":
+        stage.input_count = len(data.get("raw_blocks") or [])
+        stage.output_count = len(result.get("normalized_blocks") or [])
+    # ── ocr_correction ──
+    elif name == "ocr_correction":
+        stage.input_count = len(data.get("normalized_blocks") or [])
+        stage.output_count = len(result.get("normalized_blocks") or [])
+        # AI call count from correction diagnostics
+        diag = result.get("ocr_correction_diagnostics") or {}
+        corrections = diag.get("corrections") or []
+        stage.ai_calls = diag.get("ai_calls", len(corrections))
+        stage.tokens_used = diag.get("tokens_used", 0)
+        # OCR cache stats
+        cache_stats = _get_ocr_cache_stats_safe()
+        stage.cache_hit = cache_stats.get("hits", 0)
+        stage.cache_miss = cache_stats.get("misses", 0)
+    # ── analyze_structure ──
+    elif name == "analyze_structure":
+        stage.input_count = len(data.get("normalized_blocks") or [])
+        stage.output_count = 1  # single structure dict
+    # ── classify_pages ──
+    elif name == "classify_pages":
+        stage.input_count = len(data.get("normalized_blocks") or [])
+        stage.output_count = len(result.get("filtered_blocks") or
+                                 result.get("page_classifications") or [])
+    # ── split ──
+    elif name == "split":
+        stage.input_count = len(data.get("normalized_blocks") or [])
+        stage.output_count = len(result.get("raw_questions") or [])
+    # ── match ──
+    elif name == "match":
+        stage.input_count = len(data.get("raw_questions") or [])
+        stage.output_count = len(result.get("matched") or []) + len(result.get("unmatched") or [])
+    # ── normalize_schema ──
+    elif name == "normalize_schema":
+        stage.input_count = len(data.get("questions") or [])
+        stage.output_count = len(result.get("questions") or [])
+    # ── batch_validation ──
+    elif name == "batch_validation":
+        stage.input_count = len(data.get("questions") or [])
+        stage.output_count = 1  # validation result dict
+    # ── batch_dedup ──
+    elif name == "batch_dedup":
+        stage.input_count = len(data.get("questions") or [])
+        stage.output_count = len(result.get("questions") or [])
+    # ── repair ──
+    elif name == "repair":
+        stage.input_count = len(data.get("questions") or [])
+        stage.output_count = len(result.get("questions") or [])
+        rstats = result.get("repair_stats") or {}
+        stage.ai_calls = rstats.get("repaired_count", rstats.get("repaired", 0))
+    # ── ai_validation ──
+    elif name == "ai_validation":
+        stage.input_count = len(data.get("questions") or [])
+        stage.output_count = 1  # validation batch result
+    # ── similarity_match ──
+    elif name == "similarity_match":
+        # pass-through stage, no meaningful counts
+        pass
+    # ── math_detect ──
+    elif name == "math_detect":
+        stage.input_count = len(data.get("questions") or [])
+        stage.output_count = len(result.get("questions") or [])
+    # ── table_detect ──
+    elif name == "table_detect":
+        stage.input_count = len(data.get("questions") or [])
+        stage.output_count = len(result.get("questions") or [])
+    # ── review ──
+    elif name == "review":
+        stage.input_count = len(data.get("questions") or [])
+        stage.output_count = data.get("written", 0)
 
 
 # ---------------------------------------------------------------------------
@@ -1035,6 +1129,59 @@ def _build_quality_report(data: dict, diagnostics: dict) -> dict:
         report["estimated_manual_check_rate"] = estimated_rate
 
     return report
+
+
+# ---------------------------------------------------------------------------
+# P6-2: performance profile from per-stage metrics
+# ---------------------------------------------------------------------------
+
+
+def _build_performance_profile(stages: dict[str, Any], data: dict) -> dict:
+    """Build performance profile from per-stage metrics.
+
+    Each stage reports: duration_ms, input_count, output_count,
+    cache_hit/miss, ai_calls, tokens_used.
+    Aggregated into a performance_profile dict.
+    """
+    profile: dict[str, dict] = {}
+    for name, s in stages.items():
+        entry: dict[str, Any] = {"duration_ms": s.get("duration_ms", 0)}
+        if s.get("input_count"):
+            entry["input_count"] = s["input_count"]
+        if s.get("output_count"):
+            entry["output_count"] = s["output_count"]
+        if s.get("cache_hit"):
+            entry["cache_hit"] = s["cache_hit"]
+        if s.get("cache_miss"):
+            entry["cache_miss"] = s["cache_miss"]
+        if s.get("ai_calls"):
+            entry["ai_calls"] = s["ai_calls"]
+        if s.get("tokens_used"):
+            entry["tokens_used"] = s["tokens_used"]
+        profile[name] = entry
+
+    # Compute totals
+    total_duration = sum(e["duration_ms"] for e in profile.values())
+    total_ai_calls = sum(e.get("ai_calls", 0) for e in profile.values())
+    total_tokens = sum(e.get("tokens_used", 0) for e in profile.values())
+    cache_hits = sum(e.get("cache_hit", 0) for e in profile.values())
+    cache_misses = sum(e.get("cache_miss", 0) for e in profile.values())
+
+    # Find slowest stage
+    if profile:
+        slowest = max(profile.items(), key=lambda kv: kv[1]["duration_ms"])
+        profile["_summary"] = {
+            "total_duration_ms": total_duration,
+            "total_ai_calls": total_ai_calls,
+            "total_tokens_used": total_tokens,
+            "total_cache_hits": cache_hits,
+            "total_cache_misses": cache_misses,
+            "cache_hit_rate": round(cache_hits / (cache_hits + cache_misses), 2) if (cache_hits + cache_misses) > 0 else 0,
+            "slowest_stage": slowest[0],
+            "slowest_duration_ms": slowest[1]["duration_ms"],
+        }
+
+    return profile
 
 
 def _slim_diagnostics_arrays(diagnostics: dict) -> dict:
@@ -1154,6 +1301,14 @@ class PipelineStage:
         self.duration_ms = 0
         self.warnings: list[str] = []
         self.error: str | None = None
+        # P6-2: per-stage performance profiling
+        self.input_count = 0
+        self.output_count = 0
+        self.cache_hit = 0
+        self.cache_miss = 0
+        self.ai_calls = 0
+        self.tokens_used = 0
+        self.memory_mb_peak = 0
 
     def run(self, **kwargs):
         """同步执行阶段（阻塞）。"""
@@ -1226,6 +1381,21 @@ class PipelineStage:
         }
         if self.error:
             d["error"] = self.error
+        # P6-2: include non-zero profiling fields only to keep payload small
+        if self.input_count:
+            d["input_count"] = self.input_count
+        if self.output_count:
+            d["output_count"] = self.output_count
+        if self.cache_hit:
+            d["cache_hit"] = self.cache_hit
+        if self.cache_miss:
+            d["cache_miss"] = self.cache_miss
+        if self.ai_calls:
+            d["ai_calls"] = self.ai_calls
+        if self.tokens_used:
+            d["tokens_used"] = self.tokens_used
+        if self.memory_mb_peak:
+            d["memory_mb_peak"] = self.memory_mb_peak
         return d
 
 
@@ -2978,6 +3148,8 @@ class ImportPipeline:
                     # 静默归零）。
                     if "normalized_blocks" in result:
                         data["normalized_block_count"] = len(result["normalized_blocks"])
+                # P6-2: update per-stage profiling metrics from data & result
+                _update_stage_metrics(stage, data, result)
                 # P0-1 / P1-A: 大字段一过最后消费者立即释放，避免随 8+ 个阶段
                 # 一起驻留内存。400 页扫描 PDF 下，OCR 后的 normalized_blocks
                 # 单独可达 50~200 MB（含 boxes），是仅次于 PDF 字节的大头。
@@ -3063,11 +3235,15 @@ class ImportPipeline:
             _save_failed_marker(self.pipeline_id)
 
         stats = _build_stats(data, self.stages)
-        diagnostics = _build_diagnostics(data)
+        diagnostics = _build_diagnostics(data, self.stages)
         finished_at = datetime.now().isoformat()
 
         # P4-5: quality report from existing data
         quality_report = _build_quality_report(data, diagnostics)
+        # P6-2: attach performance summary to quality report
+        perf_profile = diagnostics.get("performance_profile", {})
+        if perf_profile and "_summary" in perf_profile:
+            quality_report["performance_summary"] = perf_profile["_summary"]
         # P4-2: artifact list for resume diagnostics
         artifacts_list = _list_artifacts(self.pipeline_id)
 

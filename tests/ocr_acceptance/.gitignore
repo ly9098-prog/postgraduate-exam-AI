@@ -1,0 +1,4 @@
+# Real sample files — manually placed, not committed
+cases/*/
+!cases/*/.gitkeep
+!cases/*/case.json
