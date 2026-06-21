@@ -203,8 +203,18 @@ async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
                 "reason": "stem_similarity_fallback",
             }
 
+    q_fields = dict(result["question_fields"])
+    # P1-5: 保留 segments/render_mode 等结构化内容
+    qi_content = qi.parsed_content or {}
+    if isinstance(qi_content, dict) and qi_content.get("render_mode") == "segments":
+        q_fields["content"] = {
+            **(q_fields.get("content") or {}),
+            "render_mode": "segments",
+            "segments": qi_content.get("segments"),
+        }
+
     q = Question(
-        **result["question_fields"],
+        **q_fields,
         source=qi.source_file,
         source_type=qi.source_type,
         source_file=qi.source_file,

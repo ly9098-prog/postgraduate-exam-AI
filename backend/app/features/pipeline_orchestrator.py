@@ -1118,6 +1118,10 @@ class ImportPipeline:
             stage_specs.append(("ai_validation", self._run_ai_validation))
         if self.options.get("enable_similarity_match", True):
             stage_specs.append(("similarity_match", self._run_similarity_match))
+        if self.options.get("enable_math_detect", True):
+            stage_specs.append(("math_detect", self._run_math_detect))
+        if self.options.get("enable_table_detect", True):
+            stage_specs.append(("table_detect", self._run_table_detect))
         stage_specs.append(("review", self._run_review))
 
         self.stages.clear()
@@ -2422,6 +2426,151 @@ class ImportPipeline:
                 "skipped_reason": result.get("skipped_reason"),
             },
             "warnings": warnings,
+        }
+
+    def _run_math_detect(
+        self,
+        questions: list[dict],
+        **_kw,
+    ) -> dict:
+        """Stage 6.8: detect math candidates and apply formula risk flags.
+
+        Runs after all AI stages but before review submission.
+        Pure rule engine — no AI calls, no image processing.
+
+        P1-3: 对 math region 生成 math_image segment（仅 metadata，无实际截图）。
+        实际截图需要 page image，pipeline 进入此 stage 时 page_images 已释放，
+        此时仅写 risk_flags + segment metadata。有 page image 时会进行截图。
+        """
+        from app.features.math_import_profile import (
+            apply_math_risk_flags,
+            is_math_candidate,
+        )
+
+        if not questions:
+            return {"questions": questions, "warnings": ["math_detect: empty questions"]}
+
+        warnings: list[str] = []
+        math_count = 0
+        excluded_count = 0
+
+        for q in questions:
+            diagnosis = is_math_candidate(q)
+            if diagnosis["excluded_by"]:
+                excluded_count += 1
+                continue
+            if not diagnosis["is_math"]:
+                continue
+
+            math_count += 1
+            flags = list(q.get("risk_flags") or [])
+            new_flags = apply_math_risk_flags(q, diagnosis)
+            for f in new_flags:
+                if f not in flags:
+                    flags.append(f)
+
+            # P1-3: build math_image segment metadata
+            stem = q.get("stem") or q.get("parsed_content", {}).get("text") or ""
+            analysis = q.get("analysis") or ""
+            full_text = f"{stem} {analysis}"
+
+            segments: list[dict] = list(q.get("segments") or [])
+            if diagnosis["has_complex_formula"] or diagnosis.get("low_confidence"):
+                math_segment = {
+                    "type": "math_image",
+                    "url": None,
+                    "alt": "公式截图（暂未生成）",
+                    "source_page": q.get("page_start") or 1,
+                    "bbox": None,
+                    "confidence": 0.5,
+                    "requires_review": True,
+                }
+                segments.append(math_segment)
+                if diagnosis["has_complex_formula"] and "complex_formula_requires_review" not in flags:
+                    flags.append("complex_formula_requires_review")
+
+            if segments:
+                q["segments"] = segments
+                q["parsed_content"] = {
+                    **(q.get("parsed_content") or {}),
+                    "render_mode": "segments",
+                    "segments": segments,
+                }
+
+            if flags:
+                q["risk_flags"] = flags
+
+        if math_count:
+            warnings.append(f"math_detect: {math_count} math candidates flagged")
+        if excluded_count:
+            warnings.append(f"math_detect: {excluded_count} code/408 questions excluded")
+
+        return {
+            "questions": questions,
+            "warnings": warnings,
+            "risk_flag_counts": _count_risk_flags(questions),
+        }
+
+    def _run_table_detect(
+        self,
+        questions: list[dict],
+        **_kw,
+    ) -> dict:
+        """Stage 6.9: detect table candidates in OCR text and add risk flags.
+
+        Lightweight rule engine — no AI calls. Flags table-like structures
+        and builds Markdown representation when column structure is clear.
+        """
+        from app.features.table_region_detector import detect_table_candidate
+
+        if not questions:
+            return {"questions": questions, "warnings": ["table_detect: empty questions"]}
+
+        warnings: list[str] = []
+        table_count = 0
+
+        for q in questions:
+            stem = q.get("stem") or q.get("parsed_content", {}).get("text") or ""
+            if not stem or len(stem) < 40:
+                continue
+
+            result = detect_table_candidate(stem)
+            if not result["is_table"]:
+                continue
+
+            table_count += 1
+            flags = list(q.get("risk_flags") or [])
+            flags.append("table_detected")
+            if result["confidence"] < 0.5 or not result["markdown"]:
+                flags.append("table_low_confidence")
+            else:
+                flags.append("table_requires_review")
+
+            # Write table_markdown segment
+            segments: list[dict] = list(q.get("segments") or [])
+            segments.append({
+                "type": "table_markdown",
+                "markdown": result["markdown"],
+                "source_page": q.get("page_start") or 1,
+                "bbox": None,
+                "confidence": result["confidence"],
+                "requires_review": result["confidence"] < 0.5 or not result["markdown"],
+            })
+            q["segments"] = segments
+            q["parsed_content"] = {
+                **(q.get("parsed_content") or {}),
+                "render_mode": "segments",
+                "segments": segments,
+            }
+            q["risk_flags"] = flags
+
+        if table_count:
+            warnings.append(f"table_detect: {table_count} table candidates flagged")
+
+        return {
+            "questions": questions,
+            "warnings": warnings,
+            "risk_flag_counts": _count_risk_flags(questions),
         }
 
     async def _run_review(

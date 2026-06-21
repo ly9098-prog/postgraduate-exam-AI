@@ -307,9 +307,14 @@ async def submit_to_review(
 
             question_type = q.get("question_type", "")
             parsed_answer = (q.get("answer") or "").strip() or None
-            parsed_content = {"text": stem}
+            parsed_content: dict = {"text": stem}
             if q.get("blank_option_groups"):
                 parsed_content["blank_option_groups"] = q.get("blank_option_groups")
+            # P1-5: 保留上游 stage 写入的 segments / render_mode
+            q_segments = q.get("segments") or (q.get("parsed_content") or {}).get("segments")
+            if q_segments:
+                parsed_content["render_mode"] = "segments"
+                parsed_content["segments"] = q_segments
 
             qi = QuestionImport(
                 batch_id=batch_id,
