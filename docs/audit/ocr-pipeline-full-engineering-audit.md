@@ -1,9 +1,9 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版） / 2026-06-21（复查更新） / 2026-06-21（P2 完成更新） / 2026-06-21（P4 完成更新）
+> 审计时间：2026-06-20（初版） / 2026-06-21（复查更新） / 2026-06-21（P2 完成更新） / 2026-06-21（P4 完成更新） / 2026-06-21（PaddleOCR-VL Adapter）
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
-> 状态：P0 修复已全部落地（commit b63df47），P1 公式截图+审核提效已完成（commit c82c464），P2 三项改造已完成（2026-06-21），**P4 真断点恢复+幂等入库已完成（2026-06-21）**。新增 pipeline_artifacts.py 提供文件级 artifact 存储，resume 从 artifact 跳过已完成 stage；hash-based 去重确保同一 pipeline resume 不重复入库；质量报告 `quality_report` 随 pipeline 结果返回。✅ 标记表示已修复项。
+> 状态：P0 修复已全部落地（commit b63df47），P1 公式截图+审核提效已完成（commit c82c464），P2 三项改造已完成（2026-06-21），**P4 真断点恢复+幂等入库已完成（2026-06-21）**。新增 pipeline_artifacts.py 提供文件级 artifact 存储，resume 从 artifact 跳过已完成 stage；hash-based 去重确保同一 pipeline resume 不重复入库；质量报告 `quality_report` 随 pipeline 结果返回。**PaddleOCR-VL Adapter（2026-06-21）**新增外部高精 OCR 引擎适配器，接入 OCRFixRouter 路由链（paddleocr-vl → qwen → deepseek → rule），admin ai-settings 可动态切换。✅ 标记表示已修复项。
 
 ---
 
@@ -136,6 +136,10 @@
 │                                                                     │
 │  唯一路径 — OCRFixRouter (ocr_fix/router.py):                        │
 │  ocr_fix/router.py → OCRFixRouter                                    │
+│    ├─ PaddleOCRVLAdapter (ocr_vl/, 新增) → 外部高精 OCR API         │
+│    │  输入: 原图 bytes → 输出: 完整识别文本                          │
+│    │  API: POST /api/v2/ocr/jobs → poll → JSONL 结果                │
+│    │  保护: 重试 3 次 + 超时 120s + 全部失败降级到下一适配器          │
 │    ├─ QwenFixer (qwen_adapter.py, 309行) → 视觉+文本                 │
 │    │  输入: 原图 bytes + OCR 文本 → 输出: 纠正后文本                 │
 │    │  保护: _preserve_stem_from_original()                           │
@@ -262,6 +266,8 @@
 | `ocr_fix/router.py` | 158 | 纠错路由（策略模式，唯一路径） | ✅ 清晰 | ✅ 旧版路径已移除 | 🟢 低 |
 | `ocr_fix/qwen_adapter.py` | 309 | Qwen-VL 适配器 | ✅ 单一 | ✅ 旧版内联 VL 已移除 | 🟢 低 |
 | `ocr_fix/deepseek_adapter.py` | 126 | DeepSeek 适配器 | ✅ 单一 | ✅ 旧版重复已移除 | 🟢 低 |
+| `ocr_vl/paddleocr_vl_adapter.py` | 112 | PaddleOCR-VL 适配器 | ✅ 单一 | 新增 | 🟢 低 |
+| `ocr_vl/paddleocr_vl_client.py` | 345 | PaddleOCR-VL HTTP 客户端 | ✅ 单一 | 新增 | 🟢 低 |
 | `token_budget.py` | 60 | 令牌预算 | ✅ 良好 | — | 🟢 低 |
 
 ### 2.2 关键结构问题
@@ -323,7 +329,8 @@
 
 | 调用点 | 模型 | 触发条件 | 频率 | 视觉能力 |
 |---|---|---|---|---|
-| `ocr_fix/qwen_adapter.py` | Qwen-VL | OCR 路由 `auto` 模式 | 每批纠错块 | ✅ 有（原图） |
+| `ocr_vl/paddleocr_vl_adapter.py` | PaddleOCR-VL-1.6 | OCR 路由 `auto` 模式（链首） | 每批纠错块 | ✅ 有（原图，外部 API） |
+| `ocr_fix/qwen_adapter.py` | Qwen-VL | PaddleOCR-VL 失败/不可用 | 同上（回退） | ✅ 有（原图） |
 | `ocr_fix/deepseek_adapter.py` | DeepSeek-v4-flash | Qwen 失败/不可用 | 同上（回退） | ❌ 无 |
 | `features/ocr_service.py:_call_ocr_api` | DeepSeek-v4-flash | PaddleOCR 全失败 | 罕见 | ⚠️ 发送图片文本 |
 | `ai_repair.py:repair_questions` | DeepSeek-v4-flash | 规则修复后仍有题不达标 | 每批 | ❌ 无 |
@@ -603,7 +610,10 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 
 阶段 4: AI 纠错 (ocr_fix/router — ✅ 唯一路径)
     └─ ✅ 旧版 ocr_correction.py 已精简为向后兼容包装（171 行）
-    └─ ✅ 路由链: Qwen-VL → DeepSeek → Rule（不修改）
+    └─ ✅ 路由链: PaddleOCR-VL → Qwen-VL → DeepSeek → Rule（新增链首）
+    └─ ✅ PaddleOCR-VL 适配器（ocr_vl/paddleocr_vl_adapter.py）：
+    │     外部高精 OCR API（POST /api/v2/ocr/jobs → poll → JSONL）
+    │     async HTTP 客户端，重试 3 次，超时 120s，降级不崩溃
     └─ ✅ 敏感内容过滤已移植到 ocr_correction_common.py
     └─ ✅ 纠错前后的 diff 记录（ai_safety.evaluate_and_trace）
     └─ 纠错效果指标追踪（ocr_fix/metrics.py 已有基础设施）
@@ -827,6 +837,13 @@ AI 修复: 看到 risk_flag 后尝试修复 → 可能把正确选项改错
 | `ocr_fix/rule_adapter.py` | 41 | no-op 规则回退 |
 | `ocr_fix/canonical_output.py` | 223 | 模型输出规范化 |
 | `ocr_fix/metrics.py` | 158 | 按模型指标收集 |
+
+### `ocr_vl/` — PaddleOCR-VL 外部高精 OCR 适配器（2026-06-21 新增）
+
+| 文件 | 行数 | 用途 |
+|---|---|---|
+| `ocr_vl/paddleocr_vl_adapter.py` | 112 | OCRFixerProtocol 适配器，封装客户端，接入路由链 |
+| `ocr_vl/paddleocr_vl_client.py` | 345 | async HTTP 客户端，作业提交+轮询+JSONL 解析 |
 
 ### AI/基础设施层
 
