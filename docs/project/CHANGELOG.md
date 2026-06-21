@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-06-21
+
+- **P4 真断点恢复 + 幂等入库 + 导题验收报告完成**
+  - 新增 `pipeline_artifacts.py` 提供文件级 artifact 存储（`.backend_cache/pipeline_artifacts/{pipeline_id}/`），支持 split / normalize_schema / repair / math_detect / table_detect / review 共 6 种 artifact 类型。
+  - 真断点恢复：resume 时自动检测 artifact，从 normalize_schema / repair / math_detect / table_detect 恢复 questions，跳过已完成 stage，不再重跑 OCR 和 AI 修复。
+  - 幂等入库：`submit_to_review` 通过 `subject + question_hash` 全库去重，`duplicates_filtered` 写入 review_commit diagnostics。
+  - 导入质量报告：`_build_quality_report()` 在 pipeline 完成后输出风险分布 / AI 答案 / 公式截图 / 表格 / 缓存 / 去重统计，通过 `quality_report` 字段返回。
+  - 清理策略：新增 `POST /cleanup/expired` 端点（completed: 24h, failed: 7d），artifact 目录写入 `.completed` / `.failed` marker。
+  - 验收脚本：`tests/ocr_acceptance/run_acceptance.py` 支持真实样本验收。
+  - artifact store 单元测试 18 项通过。
+  - 受影响文件：`backend/app/features/pipeline_artifacts.py`（新增）、`backend/app/features/pipeline_orchestrator.py`、`backend/app/api/v1/admin_imports.py`、`backend/app/schemas/import_review.py`、`tests/test_pipeline_artifacts.py`（新增）。
+  - 受影响文档：`docs/audit/ocr-pipeline-full-engineering-audit.md`、`docs/project/CHANGELOG.md`、`prompts/task/ocr-import-p4-true-resume-idempotency-acceptance.md`。
+
 ## 2026-06-18
 
 - **修复：`_extract_stem()` 无选项时误剥离圈号前缀行**

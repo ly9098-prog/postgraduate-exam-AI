@@ -133,6 +133,10 @@ class PipelineStatusResponse(BaseModel):
     # P2-6: chunk-level progress for chunked PDF imports.
     # Absent for image / Excel / single-pass legacy paths.
     chunk_progress: dict[str, Any] | None = None
+    # P4-5: import quality report (optional — only present after completion)
+    quality_report: dict[str, Any] | None = None
+    # P4-2: artifact list for resume diagnostics
+    artifacts: list[str] | None = None
 
 
 class PipelineResumeResponse(BaseModel):
