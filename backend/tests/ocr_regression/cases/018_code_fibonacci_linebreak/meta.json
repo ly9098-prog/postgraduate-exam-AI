@@ -1,0 +1,27 @@
+{
+  "id": "018",
+  "name": "code_fibonacci_linebreak",
+  "description": "合成文本：代码题题干异常断行（if (n <=\\n1)）检测，函数闭合大括号缺失。验证代码行完整性检测和 low_risk_high_confidence 阻断。",
+  "subject": "408",
+  "pipeline_stages": [
+    "normalize"
+  ],
+  "expected_questions": 1,
+  "known_failure_types": [
+    "代码换行破坏",
+    "大括号缺失"
+  ],
+  "assertions": {
+    "confidence_score_max": 0.5,
+    "code_risk_flags": ["code_line_break_suspicious", "code_block_incomplete"],
+    "validation_status_not": "passed",
+    "repair_skipped_not": true
+  },
+  "date_added": "2026-06-21",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "code_integrity"
+  ],
+  "last_reviewed": "2026-06-21"
+}

@@ -473,21 +473,47 @@ def normalize_question(
         else:
             warnings.append(f"parse_extra_options: parsed has extra {missing_opts}")
 
+    # --- 代码块完整性检测 (BUGS Task 1: stem 中的代码块) ---
+    from app.features.code_integrity import contains_code, detect_code_block_integrity, detect_code_regression
+    code_risk_flags: list[str] = []
+    stem_has_code = contains_code(stem)
+    if stem_has_code:
+        code_result = detect_code_block_integrity(stem)
+        if code_result["flags"]:
+            for flag in code_result["flags"]:
+                code_risk_flags.append(flag)
+                warnings.append(f"code_integrity:{flag}")
+            # 代码完整性损坏：拉低置信度、禁止通过
+            confidence_score = min(confidence_score, 0.35)
+            failure_reasons.extend(code_result["flags"])
+            code_risk_flags.append("code_block_incomplete")
+        # --- 代码结构退化检测: raw_text vs stem (BUGS Task 4) ---
+        regression = detect_code_regression(raw_text, stem)
+        if regression["has_regression"]:
+            for flag in regression["flags"]:
+                if flag not in code_risk_flags:
+                    code_risk_flags.append(flag)
+                warnings.append(f"code_integrity:{flag}")
+            confidence_score = min(confidence_score, 0.30)
+            failure_reasons.extend(regression["flags"])
+
     if confidence_score < 0.5:
         warnings.append("low_confidence")
 
     # === 防假成功: is_valid 复合判定 (Goal 4) ===
-    # is_valid = stem_valid AND options_complete AND no_critical_ocr_corruption
+    # is_valid = stem_valid AND options_complete AND no_critical_ocr_corruption AND no_code_integrity_issues
     stem_valid = "missing_stem" not in errors
     options_complete = not any(e.startswith("missing_option_") for e in errors)
     no_critical_corruption = "ocr_critical_corruption" not in errors
     no_parse_loss = not any(e.startswith("parse_loss") for e in errors)
+    no_code_integrity_issues = not code_risk_flags
 
     is_valid = (
         stem_valid
         and options_complete
         and no_critical_corruption
         and no_parse_loss
+        and no_code_integrity_issues
         and len([e for e in errors if e not in ("missing_answer", "missing_answer_for_objective_question")]) == 0
     )
     # missing_answer 本身不阻断 is_valid（答案可能在后续匹配），但与其他错误组合时阻断
@@ -503,6 +529,7 @@ def normalize_question(
             "missing_option_" in " ".join(errors)
             or "ocr_corruption_detected" in failure_reasons
             or "parse_option_loss" in " ".join(failure_reasons)
+            or any(f.startswith("code_") for f in failure_reasons)
         )
     )
 
@@ -533,6 +560,8 @@ def normalize_question(
         "retry_recommended": retry_recommended,
         # Goal 2: OCR 质量标记
         "ocr_quality_flags": quality_gate["ocr_quality_flags"],
+        # 代码完整性风险标记
+        "risk_flags": code_risk_flags,
     }
     if blank_option_groups:
         result["blank_option_groups"] = blank_option_groups
@@ -580,8 +609,10 @@ def normalize_questions(
             # （ai_repair / submit_to_review）和前端审核页能看到完整风险信号。
             # 值域见 prompts/tasks/ocr_book_pdf_non_question_filter_plan.md §11.3。
             upstream_flags = raw_q.get("risk_flags") or []
-            if upstream_flags:
-                result["risk_flags"] = list(dict.fromkeys(upstream_flags))
+            existing_flags = result.get("risk_flags") or []
+            merged_flags = list(dict.fromkeys(upstream_flags + existing_flags))
+            if merged_flags:
+                result["risk_flags"] = merged_flags
             questions.append(result)
 
             if result["errors"]:

@@ -1,0 +1,28 @@
+{
+  "id": "019",
+  "name": "code_struct_garbled_truncation",
+  "description": "合成文本：结构体定义被截断+乱码污染（(1typu* p1tysI* apo11ta aonu2s），fence未闭合。验证代码块截断+乱码检测和validation_status阻断。",
+  "subject": "408",
+  "pipeline_stages": [
+    "normalize"
+  ],
+  "expected_questions": 1,
+  "known_failure_types": [
+    "代码截断",
+    "代码乱码",
+    "Fence未闭合"
+  ],
+  "assertions": {
+    "confidence_score_max": 0.5,
+    "code_risk_flags": ["code_block_truncated", "code_garbled_text", "code_fence_unclosed", "code_block_incomplete"],
+    "validation_status_not": "passed",
+    "repair_skipped_not": true
+  },
+  "date_added": "2026-06-21",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "code_integrity"
+  ],
+  "last_reviewed": "2026-06-21"
+}
