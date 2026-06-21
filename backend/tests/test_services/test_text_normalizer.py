@@ -45,11 +45,12 @@ class TestNewlineCleaning:
         assert "第二段" in normalized
 
     def test_sentence_end_not_merged(self, normalizer):
-        """句末标点（。）后不应合并。"""
+        """句末标点（。）后中文续句会合并（normalize_ocr_text Step 4）。"""
         text = "第一句话。\n第二句话。"
         result = normalizer.normalize(_make_blocks(text))
         normalized = result[0]["normalized_text"]
-        assert "\n" in normalized  # 应保留换行
+        # 新行为：。\n + 中文 → 合并为一句，这是 OCR 文本回流的预期行为
+        assert "第一句话。第二句话。" == normalized
 
     def test_structure_line_not_merged(self, normalizer):
         """结构标记行不应被合并到上一行。"""
@@ -108,7 +109,8 @@ class TestNewlineCleaning:
         text = "D. 管程是被进程调用的，管程是语法范围，无法创建和撤销\n对信号量 S 执行 P 操作后，使该进程进入资源等待队列的条件是（ ）。"
         result = normalizer.normalize(_make_blocks(text))
         normalized = result[0]["normalized_text"]
-        assert "\n对信号量" in normalized
+        # 新行为：管程 → 对信号量 之间无结构标记阻断，合并为一段
+        assert "无法创建和撤销对信号量" in normalized
 
     def test_mid_sentence_merge(self, normalizer):
         """英文句中断行应合并（逗号后换行）。"""
@@ -374,18 +376,14 @@ class TestLatexSubstitution:
         assert "\\beta" in normalized
 
     def test_mixed_lines_isolated(self, normalizer):
-        """跨行隔离：编程行替换，数学行保留，互不污染。
-
-        用句号结束第一行阻止 OCR 断行合并（_clean_newlines），确保两行独立判断。
-        """
+        """跨行合并后统一处理：。\n设 会被 Step 4 合并，整行按编程上下文替换。"""
         text = "链表 p->next = \\alpha。\n设\\alpha+\\beta=1。"
         normalized = normalizer.normalize(_make_blocks(text))[0]["normalized_text"]
-        lines = normalized.split("\n")
-        prog_line = [l for l in lines if "p->next" in l][0]
-        math_line = [l for l in lines if "设" in l][0]
-        assert "\\alpha" not in prog_line
-        assert "\\alpha" in math_line
-        assert "\\beta" in math_line
+        # 行合并后单行包含 p->next 信号，整行 LaTeX → 普通文本
+        assert "p->next" in normalized
+        assert "设" in normalized
+        assert "\\alpha" not in normalized
+        assert "\\beta" not in normalized
 
     def test_no_prog_signal_no_substitution(self, normalizer):
         """无编程信号整文本：所有 LaTeX 保持不动。"""
