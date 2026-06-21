@@ -127,10 +127,6 @@ _DEFAULT_MODELS: list[dict] = [
     {"name": "deepseek-v4-flash", "display_name": "DeepSeek V4 Flash", "provider": "deepseek",
      "api_base_url": "https://api.deepseek.com", "is_enabled": True, "is_default": True, "sort_order": 1,
      "feature": None},
-    {"name": "qwen-vl-max", "display_name": "Qwen-VL-Max", "provider": "qwen-vl",
-     "api_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-     "is_enabled": False, "is_default": False, "sort_order": 2,
-     "feature": "ocr"},
 ]
 
 

@@ -3,7 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
-FEATURE_VALUES = {"ocr", "completion", "analysis"}
+FEATURE_VALUES = {"ocr", "completion", "analysis", "vision"}
 
 
 class AdminAiModelConfigResponse(BaseModel):
