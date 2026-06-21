@@ -1770,8 +1770,6 @@ class TestRunExtractExerciseRegionsMissing:
         return [
             patch("app.core.config.settings.OCR_ENABLED", True),
             patch("app.core.config.settings.EXERCISE_DETECTION_ENABLED", True),
-            patch("app.core.config.settings.EXERCISE_DETECTION_SAMPLE_STEP", 1),
-            patch("app.core.config.settings.EXERCISE_DETECTION_DPI", 100),
             patch("app.core.config.settings.EXERCISE_DETECTION_MAX_EMPTY_PAGES", 2),
             patch("app.core.config.settings.EXERCISE_DETECTION_MIN_CONFIDENCE", 0.5),
         ]

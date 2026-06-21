@@ -169,8 +169,9 @@ def normalize_ocr_text(
 
     # ---- Step 2: 乱码字符移除 ----
     text = _RE_GARBLED.sub("", text)
-    # 追加 Unicode 范围白名单过滤（保留 CJK / ASCII / 希腊 / 数学符号）
-    text = re.sub(r"[^一-鿿　-〿＀-￯ -~Ͱ-Ͽ∀-⋿\n]", "", text)
+    text = text.replace("\xa0", " ")   # nbsp→space 必须在白名单前执行
+    # 追加 Unicode 范围白名单过滤（保留 CJK / ASCII / 希腊 / 数学符号 / 圈号数字）
+    text = re.sub(r"[^一-鿿　-〿＀-￯ -~Ͱ-Ͽ∀-⋿\n①-⑳⑴-⒇]", "", text)
 
     # ---- Step 3: OCR 箭头乱码修正（已知 PaddleOCR 幻觉模式） ----
     text = _RE_POINTER_ARROW_GARBLED_KNOWN.sub(r"->", text)
@@ -232,6 +233,8 @@ def normalize_ocr_text(
     if _strategy_on("math_formula"):
         from app.services.formula_normalizer import fix_ocr_formula
         text = fix_ocr_formula(text)
+        # 数学公式标准化可能产生新 LaTeX（如 α→\alpha），重新清理
+        text = _fix_latex_substitutions(text)
 
     # ---- Step 12: 标点符号规范化 ----
     if _strategy_on("punctuation"):

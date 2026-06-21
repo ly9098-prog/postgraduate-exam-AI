@@ -10,6 +10,7 @@ from app.features.ocr_correction import (
     _token_usage,
     _reset_counters_if_needed,
 )
+from app.features.ocr_fix.interfaces import OCRFixResult
 
 
 # ---------------------------------------------------------------------------
@@ -166,16 +167,20 @@ class TestCorrectOcrBlocks:
             "normalized_text": noisy_text,
         }]
 
-        mock_deepseek = MagicMock()
-        mock_deepseek.is_available.return_value = True
-        mock_deepseek.chat = AsyncMock(return_value={
-            "content": corrected_text,
-            "tokens_used": 50,
-            "model": "deepseek-chat",
-            "duration_ms": 100,
-        })
+        with patch("app.ai.client.deepseek") as mock_client, \
+             patch("app.features.ocr_fix.OCRFixRouter") as mock_router_cls:
+            mock_client.is_available.return_value = True
+            mock_router = MagicMock()
+            mock_router.fix = AsyncMock(return_value=OCRFixResult(
+                fixed_text=corrected_text,
+                confidence=0.95,
+                model_used="deepseek",
+                tokens_used=50,
+                duration_ms=100,
+            ))
+            mock_router.configure = MagicMock()
+            mock_router_cls.return_value = mock_router
 
-        with patch("app.ai.client.deepseek", mock_deepseek):
             result = await correct_ocr_blocks(blocks, {
                 "enabled": True,
                 "mode": "auto",
@@ -195,10 +200,8 @@ class TestCorrectOcrBlocks:
             "normalized_text": noisy_text,
         }]
 
-        mock_deepseek = MagicMock()
-        mock_deepseek.is_available.return_value = True
-
-        with patch("app.ai.client.deepseek", mock_deepseek):
+        with patch("app.ai.client.deepseek") as mock_client:
+            mock_client.is_available.return_value = True
             result = await correct_ocr_blocks(blocks, {
                 "enabled": True,
                 "mode": "always",
@@ -216,11 +219,14 @@ class TestCorrectOcrBlocks:
             "normalized_text": noisy_text,
         }]
 
-        mock_deepseek = MagicMock()
-        mock_deepseek.is_available.return_value = True
-        mock_deepseek.chat = AsyncMock(side_effect=RuntimeError("API error"))
+        with patch("app.ai.client.deepseek") as mock_client, \
+             patch("app.features.ocr_fix.OCRFixRouter") as mock_router_cls:
+            mock_client.is_available.return_value = True
+            mock_router = MagicMock()
+            mock_router.fix = AsyncMock(side_effect=RuntimeError("API error"))
+            mock_router.configure = MagicMock()
+            mock_router_cls.return_value = mock_router
 
-        with patch("app.ai.client.deepseek", mock_deepseek):
             result = await correct_ocr_blocks(blocks, {
                 "enabled": True,
                 "mode": "always",
@@ -244,23 +250,27 @@ class TestCorrectOcrBlocks:
     @pytest.mark.asyncio
     async def test_ai_output_too_long_rejected(self):
         """AI output that's drastically longer than input is rejected."""
-        noisy_text = "1. 题目"
+        noisy_text = "1. 这是一个测试题目文本"  # > 10 chars so length check triggers
         blocks = [{
             "page": 1,
             "block_index": 0,
             "normalized_text": noisy_text,
         }]
 
-        mock_deepseek = MagicMock()
-        mock_deepseek.is_available.return_value = True
-        mock_deepseek.chat = AsyncMock(return_value={
-            "content": "1. 这是一个非常长的文本" * 50,
-            "tokens_used": 200,
-            "model": "deepseek-chat",
-            "duration_ms": 100,
-        })
+        with patch("app.ai.client.deepseek") as mock_client, \
+             patch("app.features.ocr_fix.OCRFixRouter") as mock_router_cls:
+            mock_client.is_available.return_value = True
+            mock_router = MagicMock()
+            mock_router.fix = AsyncMock(return_value=OCRFixResult(
+                fixed_text="1. 这是一个非常长的文本" * 50,
+                confidence=0.8,
+                model_used="deepseek",
+                tokens_used=200,
+                duration_ms=100,
+            ))
+            mock_router.configure = MagicMock()
+            mock_router_cls.return_value = mock_router
 
-        with patch("app.ai.client.deepseek", mock_deepseek):
             result = await correct_ocr_blocks(blocks, {
                 "enabled": True,
                 "mode": "always",
