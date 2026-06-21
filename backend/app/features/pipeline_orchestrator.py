@@ -56,6 +56,7 @@ from app.features.pipeline_stages.repair_stage import (
 )
 from app.features.pipeline_stages.review_stage import run_review_stage
 from app.features.pipeline_stages.table_detect_stage import run_table_detect_stage
+from app.features.pipeline_stages._helpers import _log_multi_blank_stage
 
 logger = logging.getLogger(__name__)
 
@@ -92,14 +93,6 @@ def _looks_like_book_pdf_prose_candidate(question: dict) -> bool:
     return True
 
 
-def _count_risk_flags(questions: list[dict]) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for question in questions:
-        for flag in question.get("risk_flags") or []:
-            counts[str(flag)] = counts.get(str(flag), 0) + 1
-    return counts
-
-
 def _build_raw_questions_preview(raw_questions: list[dict]) -> list[dict]:
     preview: list[dict] = []
     for question in raw_questions[:20]:
@@ -110,66 +103,6 @@ def _build_raw_questions_preview(raw_questions: list[dict]) -> list[dict]:
             item["raw_question_text_truncated"] = True
         preview.append(item)
     return preview
-
-
-def _blank_option_group_summary(groups: Any) -> list[dict]:
-    if not isinstance(groups, list):
-        return []
-    summary = []
-    for index, group in enumerate(groups):
-        if not isinstance(group, dict):
-            continue
-        options = group.get("options") or {}
-        if isinstance(options, dict):
-            option_keys = sorted(str(key).upper() for key in options.keys() if str(key).strip())
-            first_a_preview = str(options.get("A") or options.get("a") or "")[:40]
-        elif isinstance(options, list):
-            option_keys = sorted(
-                str(option.get("key") or "").upper()
-                for option in options
-                if isinstance(option, dict) and str(option.get("key") or "").strip()
-            )
-            first_a_preview = ""
-            for option in options:
-                if isinstance(option, dict) and str(option.get("key") or "").upper() == "A":
-                    first_a_preview = str(option.get("text") or "")[:40]
-                    break
-        else:
-            option_keys = []
-            first_a_preview = ""
-        summary.append({
-            "id": group.get("id") or group.get("blank_id") or group.get("label") or index + 1,
-            "option_keys": option_keys,
-            "has_a": "A" in option_keys,
-            "first_a_preview": first_a_preview,
-        })
-    return summary
-
-
-def _log_multi_blank_stage(stage: str, questions: list[dict], **context: Any) -> None:
-    for index, question in enumerate(questions):
-        if not isinstance(question, dict):
-            continue
-        groups = question.get("blank_option_groups")
-        if groups is None:
-            parsed_content = question.get("parsed_content")
-            if isinstance(parsed_content, dict):
-                groups = parsed_content.get("blank_option_groups")
-        summary = _blank_option_group_summary(groups)
-        if question.get("question_type") != "multi_blank_choice" and not summary:
-            continue
-        logger.warning(
-            "multi_blank_choice pipeline stage",
-            extra={
-                "stage": stage,
-                "question_index": index,
-                "question_type": question.get("question_type"),
-                "stem_preview": str(question.get("stem") or question.get("raw_question_text") or "")[:80],
-                "blank_option_group_count": len(summary),
-                "blank_option_groups": summary,
-                **context,
-            },
-        )
 
 
 # ---------------------------------------------------------------------------

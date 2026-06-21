@@ -11,16 +11,9 @@ from typing import Any
 
 from app.features.ai_repair import repair_questions
 from app.features.ai_validation import validate_ai_results
+from app.features.pipeline_stages._helpers import _count_risk_flags, _log_multi_blank_stage
 
 logger = logging.getLogger(__name__)
-
-
-def _count_risk_flags(questions: list[dict]) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for q in questions:
-        for flag in q.get("risk_flags") or []:
-            counts[str(flag)] = counts.get(str(flag), 0) + 1
-    return counts
 
 
 def _build_repair_diffs(
@@ -62,26 +55,6 @@ def _build_repair_diffs(
     return diffs
 
 
-def _log_multi_blank_stage(stage: str, questions: list[dict]) -> None:
-    for index, question in enumerate(questions):
-        if not isinstance(question, dict):
-            continue
-        groups = question.get("blank_option_groups")
-        if groups is None:
-            parsed_content = question.get("parsed_content")
-            if isinstance(parsed_content, dict):
-                groups = parsed_content.get("blank_option_groups")
-        if not groups:
-            continue
-        logger.warning(
-            "multi_blank_choice pipeline stage",
-            extra={
-                "stage": stage,
-                "question_index": index,
-                "question_type": question.get("question_type"),
-                "stem_preview": str(question.get("stem") or question.get("raw_question_text") or "")[:80],
-            },
-        )
 
 
 async def run_repair_stage(
