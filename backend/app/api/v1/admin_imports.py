@@ -123,9 +123,10 @@ async def admin_resume_pipeline(
 
     检查 checkpoint 后重新提交后台任务。仅允许 failed / interrupted 状态。
     需要重新上传原始文件。可通过可选参数覆盖原始流水线配置。
+
+    P4-3: 自动检测 artifact 实现真断点恢复（从可恢复 stage 继续而非全部重跑）。
     """
     from datetime import datetime
-    import hashlib
     import tempfile
 
     from app.features.pipeline_orchestrator import _pipeline_store
@@ -151,13 +152,25 @@ async def admin_resume_pipeline(
     # 读取 checkpoint
     ckpt = await _get_stage_checkpoint(pipeline_id)
     if not ckpt:
-        # 没有 checkpoint 仍允许重跑，只是会完整从头开始
         logger.warning("No stage checkpoint found for pipeline %s; will run full pipeline", pipeline_id)
     else:
         logger.info(
             "Pipeline %s resume with checkpoint: %d stages completed, failed_stage=%s",
             pipeline_id, len(ckpt.get("completed_stages") or []), ckpt.get("failed_stage"),
         )
+
+    # P4-3: 检查 artifact 状态，记录哪些 stage 可通过 artifact 恢复
+    artifact_stages: list[str] = []
+    try:
+        from app.features.pipeline_artifacts import list_artifacts
+        artifact_stages = list_artifacts(pipeline_id)
+        if artifact_stages:
+            logger.info(
+                "Pipeline %s has artifacts for stages: %s — will use true resume",
+                pipeline_id, artifact_stages,
+            )
+    except Exception:
+        pass
 
     # 保存上传文件
     content = await file.read()
@@ -263,6 +276,9 @@ async def admin_resume_pipeline(
         "resumed_chunks": [],
         "failed_stage": failed_stage,
         "completed_stages": len(completed_stages),
+        # P4-3: artifact-based resume diagnostics
+        "artifact_stages": artifact_stages,
+        "true_resume": bool(artifact_stages),
     }
 
 
@@ -784,3 +800,53 @@ async def reparse_batch_image_item(
         return await batch_svc.reparse_item_from_cache(db, item_id, subject)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# P4-7: artifact / checkpoint / cache cleanup
+# ---------------------------------------------------------------------------
+
+
+@router.post("/pipelines/{pipeline_id}/cleanup")
+async def admin_cleanup_pipeline_artifacts(
+    pipeline_id: str,
+    force: bool = False,
+    _=Depends(require_permissions("import:write")),
+):
+    """清理指定 pipeline 的 artifact 文件。
+
+    force=True 时跳过运行中检查，直接删除。
+    """
+    from app.features.pipeline_artifacts import cleanup_artifacts
+
+    removed = cleanup_artifacts(pipeline_id, force=force)
+    return {
+        "pipeline_id": pipeline_id,
+        "artifacts_removed": removed,
+        "force": force,
+    }
+
+
+@router.post("/cleanup/expired")
+async def admin_cleanup_expired_artifacts(
+    completed_ttl: int = 86400,
+    failed_ttl: int = 604800,
+    _=Depends(require_permissions("import:write")),
+):
+    """清理所有过期 artifact。
+
+    completed_ttl: completed pipeline artifact 保留秒数（默认 24h）
+    failed_ttl: failed pipeline artifact 保留秒数（默认 7d）
+    """
+    from app.features.pipeline_artifacts import cleanup_expired
+
+    results = cleanup_expired(
+        completed_ttl=completed_ttl,
+        failed_ttl=failed_ttl,
+    )
+    return {
+        "cleaned": results,
+        "total_pipelines": len(results),
+        "completed_ttl": completed_ttl,
+        "failed_ttl": failed_ttl,
+    }
