@@ -44,15 +44,15 @@ _REFERENCE_METRICS: dict[str, float] = {
     "manual_review_rate": 0.30,
 }
 
-# Tighter thresholds for strict mode
+# Tighter thresholds for strict mode (all ≥ reference — stricter = easier to fail)
 _STRICT_METRICS: dict[str, float] = {
-    "question_count_recall": 0.90,
-    "option_integrity": 0.95,
-    "answer_match_rate": 0.92,
-    "math_image_presence": 0.85,
-    "code_symbol_preservation": 0.97,
-    "table_structure_presence": 0.80,
-    "manual_review_rate": 0.25,
+    "question_count_recall": 0.98,
+    "option_integrity": 0.99,
+    "answer_match_rate": 0.98,
+    "math_image_presence": 0.95,
+    "code_symbol_preservation": 1.00,
+    "table_structure_presence": 0.92,
+    "manual_review_rate": 0.20,
 }
 
 

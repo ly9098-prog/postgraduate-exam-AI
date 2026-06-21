@@ -69,7 +69,7 @@ _COMMON_KW = (
     r"|function|var|let|const|console|async|await|export"
     r"|printf|scanf|malloc|free|NULL|true|false|include|define"
     r"|cout|endl|cin|iterator|namespace|template|typename|virtual|override"
-    r"|int\s*\\*|char\s*\\*|void\s*\\*"  # pointer type patterns in 408 C code
+    r"|int\s*\*|char\s*\*|void\s*\*"  # pointer type patterns in 408 C code
     r"|ListNode|TreeNode|LinkedList|LNode|TNode|BiTree|BSTNode"
     r"|BiTNode|LinkList|SqList|Stack|Queue|DeQueue|SqStack"
     r"|ElemType|ElemType\s*\*|Status|bool|NULL|nullptr"
