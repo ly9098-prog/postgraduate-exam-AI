@@ -3,9 +3,6 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
-FEATURE_VALUES = {"ocr", "completion", "analysis", "vision"}
-
-
 class AdminAiModelConfigResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -20,6 +17,7 @@ class AdminAiModelConfigResponse(BaseModel):
     is_default: bool
     sort_order: int
     feature: str | None = None
+    features: list[str] | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -31,6 +29,7 @@ class AdminAiModelConfigPatchRequest(BaseModel):
     api_key: str | None = None
     api_base_url: str | None = None
     feature: str | None = None
+    features: list[str] | None = None
 
 
 class AdminAiModelConfigCreateRequest(BaseModel):
@@ -40,6 +39,7 @@ class AdminAiModelConfigCreateRequest(BaseModel):
     api_base_url: str | None = None
     api_key: str | None = None
     feature: str | None = None
+    features: list[str] | None = None
 
 
 class AdminAiConfigsResponse(BaseModel):

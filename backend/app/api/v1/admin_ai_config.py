@@ -83,6 +83,7 @@ async def test_connection(
         db=db,
         provider=data.provider,
         feature=data.feature,
+        features=data.features,
     )
     return result
 
