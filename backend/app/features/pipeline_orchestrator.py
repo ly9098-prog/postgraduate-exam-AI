@@ -166,6 +166,10 @@ _MAX_DIAGNOSTICS_SIZE = 100  # keep at most N diagnostics snapshots in memory
 _PIPELINE_REDIS_PREFIX = "import:pipeline"
 _PIPELINE_DIAGNOSTICS_REDIS_PREFIX = "import:pipeline:diagnostics"
 _PIPELINE_STATUS_TTL = 86400  # 24h
+# P3-2: per-stage checkpoint (lightweight, only completed stage names + small metadata)
+# Key: pipeline_id, Value: dict with completed_stages, current_stage, diagnostics, etc.
+_CHECKPOINT_REDIS_PREFIX = "import:pipeline:stage_ckpt"
+_CHECKPOINT_TTL = 86400  # 24h — same as pipeline status
 
 # P0-3: 主 store 只保留这些瘦身字段；diagnostics、raw_questions_preview、
 # corrections 等大对象走独立 KV 以避免单条记录被占到 1–3 MB。
@@ -208,6 +212,96 @@ def _prune_diagnostics_store() -> None:
         excess = len(_pipeline_diagnostics_store) - _MAX_DIAGNOSTICS_SIZE
         for key in list(_pipeline_diagnostics_store.keys())[:excess]:
             _pipeline_diagnostics_store.pop(key, None)
+
+
+# P3-2: per-stage checkpoint store — lightweight, only stage names + small metadata
+_pipeline_stage_checkpoints: dict[str, dict] = {}
+_MAX_STAGE_CKPT_SIZE = 200
+
+
+def _prune_stage_checkpoints() -> None:
+    """Evict oldest stage checkpoints by insertion order."""
+    if len(_pipeline_stage_checkpoints) > _MAX_STAGE_CKPT_SIZE:
+        excess = len(_pipeline_stage_checkpoints) - _MAX_STAGE_CKPT_SIZE
+        for key in list(_pipeline_stage_checkpoints.keys())[:excess]:
+            _pipeline_stage_checkpoints.pop(key, None)
+
+
+async def _write_stage_checkpoint(
+    pipeline_id: str,
+    *,
+    completed_stages: list[str],
+    current_stage: str,
+    stage_statuses: dict,
+    failed_stage: str | None = None,
+    error: str | None = None,
+    source_type: str | None = None,
+    source_file: str | None = None,
+    subject: str | None = None,
+    options: dict | None = None,
+) -> None:
+    """Write lightweight per-stage checkpoint after each stage completes/fails.
+
+    Only small metadata is stored — no large stage outputs. The checkpoint
+    serves to track progress and enable resume (which re-derives large data
+    from the source file).
+    """
+    ckpt: dict = {
+        "completed_stages": completed_stages,
+        "current_stage": current_stage,
+        "stage_statuses": stage_statuses,
+        "failed_stage": failed_stage,
+        "error": error,
+        "source_type": source_type,
+        "source_file": source_file,
+        "subject": subject,
+        "options": options,
+        "updated_at": datetime.now().isoformat(),
+    }
+    # Strip large fields to keep checkpoint lightweight
+    if "stage_statuses" in ckpt and ckpt["stage_statuses"]:
+        ckpt["stage_statuses"] = {
+            k: {"status": v.get("status"), "duration_ms": v.get("duration_ms"),
+                "error": v.get("error")}
+            for k, v in ckpt["stage_statuses"].items()
+            if isinstance(v, dict)
+        }
+    _pipeline_stage_checkpoints[pipeline_id] = ckpt
+    _prune_stage_checkpoints()
+    try:
+        from app.core.cache import cache
+        await cache.set(
+            f"{_CHECKPOINT_REDIS_PREFIX}:{pipeline_id}",
+            ckpt,
+            ttl=_CHECKPOINT_TTL,
+        )
+    except Exception:
+        pass
+
+
+async def _get_stage_checkpoint(pipeline_id: str) -> dict | None:
+    """Read per-stage checkpoint from memory or Redis. Returns None if missing."""
+    if pipeline_id in _pipeline_stage_checkpoints:
+        return _pipeline_stage_checkpoints[pipeline_id]
+    try:
+        from app.core.cache import cache
+        data = await cache.get(f"{_CHECKPOINT_REDIS_PREFIX}:{pipeline_id}")
+        if data:
+            _pipeline_stage_checkpoints[pipeline_id] = data
+            return data
+    except Exception:
+        pass
+    return None
+
+
+async def _clear_stage_checkpoint(pipeline_id: str) -> None:
+    """Remove checkpoint — called when pipeline completes successfully."""
+    _pipeline_stage_checkpoints.pop(pipeline_id, None)
+    try:
+        from app.core.cache import cache
+        await cache.delete(f"{_CHECKPOINT_REDIS_PREFIX}:{pipeline_id}")
+    except Exception:
+        pass
 
 
 def _slim_ocr_diagnostics(diag: dict) -> dict:
@@ -900,8 +994,19 @@ def _build_diagnostics(data: dict) -> dict:
             "ai_repair": data.get("repair_diffs", []),
             "ai_repair_stats": data.get("repair_stats", {}),
         },
+        # P3-7: shared token budget snapshot for monitoring
+        "token_usage": _get_token_usage_snapshot_safe(),
     }
     return _slim_diagnostics_arrays(raw)
+
+
+def _get_token_usage_snapshot_safe() -> dict:
+    """Safe wrapper around token_budget.get_token_usage_snapshot()."""
+    try:
+        from app.features.token_budget import get_token_usage_snapshot
+        return get_token_usage_snapshot()
+    except Exception:
+        return {"daily": 0, "monthly": 0}
 
 
 def _slim_diagnostics_arrays(diagnostics: dict) -> dict:
@@ -2799,6 +2904,8 @@ class ImportPipeline:
         progress_callback=None,
         file_path: str | None = None,
         page_images: dict[int, bytes] | None = None,
+        # P3-2: resume checkpoint — when set, single-pass skips completed stages
+        resume_from_checkpoint: dict | None = None,
     ) -> dict:
         """Execute all pipeline stages in sequence.
 
@@ -2907,6 +3014,7 @@ class ImportPipeline:
                     started_at=started_at,
                     page_images=page_images,
                     page_image_refs=page_image_refs,
+                    resume_from_checkpoint=resume_from_checkpoint,
                 )
             else:
                 result = await self._run_chunked(
@@ -2995,6 +3103,9 @@ class ImportPipeline:
         chunk_logical_end: int | None = None,
         page_images: dict[int, bytes] | None = None,
         page_image_refs: dict[int, str] | None = None,
+        # P3-2: when set, skip already-completed stages. Only used by
+        # resume (single-pass). Chunked mode always passes None.
+        resume_from_checkpoint: dict | None = None,
     ) -> dict:
         """Execute every stage once for the given (optionally page-restricted) input.
 
@@ -3006,6 +3117,11 @@ class ImportPipeline:
         overlap territory) are threaded through ``data`` so ``_run_split`` can
         dedupe overlap-region duplicates and emit the unclosed-boundary
         warning. Both are None for legacy single-pass.
+
+        P3-2: ``resume_from_checkpoint`` — when set, completed stages in the
+        checkpoint are skipped. Stage outputs for skipped stages are NOT
+        restored from checkpoint (they must be re-derived from the source).
+        This saves AI call costs for completed stages but not extraction cost.
         """
         # Each pass gets its own stage instances so per-stage status doesn't
         # leak between chunks.
@@ -3051,7 +3167,30 @@ class ImportPipeline:
         pipeline_errors: list[str] = []
         overall_status = "completed"
 
+        # P3-2: per-stage checkpoint tracking
+        completed_stages: list[str] = []
+        has_resume_ckpt = resume_from_checkpoint is not None
+        if has_resume_ckpt:
+            completed_stages = list(resume_from_checkpoint.get("completed_stages") or [])
+            logger.info(
+                "Resuming pipeline %s from checkpoint: %d stages completed",
+                self.pipeline_id, len(completed_stages),
+            )
+
+        # Write initial checkpoint so we have metadata even if first stage fails
+        await _write_stage_checkpoint(
+            self.pipeline_id,
+            completed_stages=list(completed_stages),
+            current_stage="",
+            stage_statuses={},
+            source_type=source_type,
+            source_file=source_file,
+            subject=subject,
+            options=opts,
+        )
+
         for name, stage in self.stages.items():
+
             if progress_callback:
                 try:
                     await progress_callback(
@@ -3097,9 +3236,35 @@ class ImportPipeline:
                     data.pop("raw_questions", None)
                     data.pop("matched", None)
                     data.pop("unmatched", None)
+
+                # P3-2: write checkpoint after each completed stage
+                completed_stages.append(name)
+                await _write_stage_checkpoint(
+                    self.pipeline_id,
+                    completed_stages=list(completed_stages),
+                    current_stage=name,
+                    stage_statuses={n: s.to_dict() for n, s in self.stages.items()},
+                    source_type=source_type,
+                    source_file=source_file,
+                    subject=subject,
+                    options=opts,
+                )
             except Exception:
                 overall_status = "failed"
                 pipeline_errors.append(f"stage '{name}' failed: {stage.error}")
+                # P3-2: write failure checkpoint
+                await _write_stage_checkpoint(
+                    self.pipeline_id,
+                    completed_stages=list(completed_stages),
+                    current_stage=name,
+                    stage_statuses={n: s.to_dict() for n, s in self.stages.items()},
+                    failed_stage=name,
+                    error=stage.error,
+                    source_type=source_type,
+                    source_file=source_file,
+                    subject=subject,
+                    options=opts,
+                )
                 if name in ("extract", "normalize_text", "ocr_correction"):
                     # 失败路径同样释放
                     data.pop("file_content", None)
@@ -3118,6 +3283,10 @@ class ImportPipeline:
                     )
                 except Exception:
                     pass
+
+        # P3-2: clear checkpoint on successful completion
+        if overall_status == "completed":
+            await _clear_stage_checkpoint(self.pipeline_id)
 
         stats = _build_stats(data, self.stages)
         diagnostics = _build_diagnostics(data)
@@ -3461,6 +3630,8 @@ async def run_import_pipeline(
     created_by: str | None = None,
     source_sha256: str | None = None,
     page_images: dict[int, bytes] | None = None,
+    # P3-2: resume checkpoint for single-pass resume
+    resume_from_checkpoint: dict | None = None,
 ) -> dict:
     """完整的导入流水线入口。
 
@@ -3478,6 +3649,9 @@ async def run_import_pipeline(
         page_images: 预渲染的页面图片字典（{1: image_bytes}），传入后管线跳过
                      _render_page_images，直接使用。用于图片导入场景，让多模态
                      OCR 纠错模型（如 Qwen-VL）能看到原始图片。
+        resume_from_checkpoint: P3-2 resume checkpoint data. When set, the
+                     pipeline re-runs from extract but uses the same pipeline_id
+                     for status continuity.
 
     Returns:
         Pipeline result dict.
@@ -3519,6 +3693,7 @@ async def run_import_pipeline(
         db=db,
         progress_callback=progress_callback,
         page_images=page_images,
+        resume_from_checkpoint=resume_from_checkpoint,
     )
     result["pipeline_id"] = pipeline_id
     return result
