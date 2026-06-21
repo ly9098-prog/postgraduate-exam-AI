@@ -81,11 +81,17 @@ def _compute_risk_level(risk_flags: list[str]) -> str:
     high_flags = {
         "answer_ai_generated", "code_uncertain", "formula_uncertain",
         "options_anomaly", "answer_missing", "ai_major_edit",
+        "math_image_crop_failed", "math_image_upload_failed",
+        "source_image_upload_failed",
+        "table_low_confidence", "complex_formula_requires_review",
     }
     medium_flags = {
         "ai_repair", "ai_complete", "ai_enrich",
         "low_confidence", "contains_code", "contains_formula",
         "answer_uncertain",
+        "math_region_detected", "math_image_attached",
+        "table_detected", "table_requires_review",
+        "source_region_available",
     }
     if flag_set & high_flags:
         return "high"
@@ -112,6 +118,18 @@ def _build_risk_reasons(risk_flags: list[str]) -> list[str]:
         "non_question_like": "内容可能不是标准题目格式",
         "no_exercise_regions": "未检测到习题区域",
         "ocr_garbled_code": "检测到 OCR 乱码",
+        # P1: 公式截图与表格风险
+        "math_region_detected": "检测到数学公式区域",
+        "math_low_confidence": "公式 OCR 置信度偏低，请核对",
+        "complex_formula_requires_review": "检测到复杂公式，需人工核对",
+        "math_image_attached": "已生成公式截图",
+        "math_image_crop_failed": "公式截图裁剪失败",
+        "math_image_upload_failed": "公式截图上传失败",
+        "table_detected": "检测到表格内容",
+        "table_requires_review": "表格内容需核对",
+        "table_low_confidence": "表格置信度偏低，请核对",
+        "source_region_available": "原题区域截图可用",
+        "source_image_upload_failed": "原题截图上传失败",
     }
     reasons: list[str] = []
     seen: set[str] = set()
@@ -395,6 +413,105 @@ async def approve_import_batch(db: AsyncSession, batch_id: str, operator_id: int
 
     await db.flush()
     return count
+
+
+async def approve_low_risk_questions(db: AsyncSession, batch_id: str, operator_id: int) -> dict:
+    """批量通过低风险题目：只通过 risk_level == "low" 且无高风险标记的待审核题。
+
+    Returns:
+        {"affected_count": int, "skipped_count": int, "skipped_reasons": list[str]}
+    """
+    from app.features.question_publish_service import publish_single_question
+
+    records = await _get_batch_records(db, batch_id, statuses={"pending"})
+    now = datetime.utcnow()
+
+    affected = 0
+    skipped = 0
+    skipped_reasons: list[str] = []
+
+    for qi in records:
+        risk = derive_import_risk(
+            qi.ai_metadata,
+            ai_answer_flag=qi.ai_answer_flag,
+            parsed_answer=qi.parsed_answer,
+        )
+        rl = risk["risk_level"]
+        flags = risk["risk_flags"]
+
+        # 低风险条件
+        is_low_risk = (
+            rl == "low"
+            and not qi.ai_answer_flag
+            and bool(qi.parsed_answer and qi.parsed_answer.strip())
+            and "math_low_confidence" not in flags
+            and "complex_formula_requires_review" not in flags
+            and "table_low_confidence" not in flags
+            and "code_symbol_risk" not in flags
+            and "option_structure_corruption" not in flags
+        )
+
+        if not is_low_risk:
+            skipped += 1
+            if rl == "high":
+                skipped_reasons.append(f"#{qi.id}: 高风险")
+            elif qi.ai_answer_flag:
+                skipped_reasons.append(f"#{qi.id}: AI 答案")
+            elif not qi.parsed_answer or not qi.parsed_answer.strip():
+                skipped_reasons.append(f"#{qi.id}: 答案缺失")
+            else:
+                skipped_reasons.append(f"#{qi.id}: 需检查")
+            continue
+
+        if qi.question_id is None:
+            qi.status = "approved"
+            qi.reject_reason = None
+            qi.reviewed_by = operator_id
+            qi.reviewed_at = now
+
+            try:
+                pub = await publish_single_question(db, qi)
+                if pub["status"] == "duplicate":
+                    qi.status = "published"
+                    qi.question_id = pub["question_id"]
+                elif pub["status"] == "failed":
+                    logger.warning(
+                        "Low-risk approve publish failed for import %d: %s (rolled back)",
+                        qi.id, pub.get("reason"),
+                    )
+                    qi.status = "pending"
+                    qi.reviewed_by = None
+                    qi.reviewed_at = None
+                    skipped += 1
+                    affected -= 1 if affected > 0 else 0
+                    skipped_reasons.append(f"#{qi.id}: 发布失败({pub.get('reason', '未知')})")
+                    continue
+            except Exception as exc:
+                logger.warning(
+                    "Low-risk approve publish error for import %d: %s", qi.id, exc,
+                )
+                qi.status = "pending"
+                qi.reviewed_by = None
+                qi.reviewed_at = None
+                skipped += 1
+                affected -= 1 if affected > 0 else 0
+                skipped_reasons.append(f"#{qi.id}: 发布异常({exc})")
+                continue
+
+            affected += 1
+
+    await db.flush()
+
+    # 最多返回 20 条跳过原因，避免响应体过大
+    if len(skipped_reasons) > 20:
+        skipped_reasons = skipped_reasons[:20]
+        skipped_reasons.append(f"... 及其他 {skipped - 20} 条跳过原因")
+
+    return {
+        "affected_count": affected,
+        "skipped_count": skipped,
+        "skipped_reasons": skipped_reasons,
+    }
 
 
 async def reject_import_batch(db: AsyncSession, batch_id: str, operator_id: int, reason: str | None = None) -> int:

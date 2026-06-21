@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.schemas.common import paginated_response
 from app.services.admin_import_service import (
     approve_import_batch,
+    approve_low_risk_questions,
     approve_import_question,
     batch_complete_import_questions,
     complete_import_question,
@@ -209,6 +210,21 @@ async def approve_import_batch_items(
         count = await approve_import_batch(db, batch_id, current_admin.id)
         await db.commit()
         return AdminImportActionResponse(batch_id=batch_id, status="approved", affected_count=count)
+    except ValueError as exc:
+        await db.rollback()
+        _raise_import_error(exc)
+
+
+@router.post("/{batch_id}/approve-low-risk")
+async def approve_low_risk_batch_items(
+    batch_id: str,
+    current_admin=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await approve_low_risk_questions(db, batch_id, current_admin.id)
+        await db.commit()
+        return result
     except ValueError as exc:
         await db.rollback()
         _raise_import_error(exc)

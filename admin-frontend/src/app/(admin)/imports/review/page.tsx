@@ -18,6 +18,7 @@ type ConfirmState =
   | { action: "reject"; id: number }
   | { action: "batch-approve" }
   | { action: "batch-reject" }
+  | { action: "low-risk-batch-approve" }
   | { action: "publish"; batchId: string }
   | null;
 
@@ -303,6 +304,14 @@ export default function ImportReviewPage() {
         }
         return apiRequest<ImportActionResponse>(`/imports/${filters.batch_id}/reject`, { method: "POST", body: JSON.stringify({ reason: rejectReason }) });
       }
+      if (state.action === "low-risk-batch-approve") {
+        const bid = filters.batch_id || batchIdParam;
+        if (!bid) throw new Error("请先选择导入批次");
+        const res = await apiRequest<{ affected_count: number; skipped_count: number; skipped_reasons: string[] }>(
+          `/imports/${bid}/approve-low-risk`, { method: "POST" }
+        );
+        return res;
+      }
       return apiRequest<ImportPublishResponse>(`/imports/${state.batchId}/publish`, { method: "POST" });
     },
     onSuccess: (result, variables) => {
@@ -331,6 +340,10 @@ export default function ImportReviewPage() {
         } else {
           setMessage(`批量驳回完成，影响 ${affected} 条导入题目。`);
         }
+      } else if (variables.action === "low-risk-batch-approve") {
+        const res = result as { affected_count: number; skipped_count: number; skipped_reasons: string[] };
+        const msg = `低风险批量通过完成：通过 ${res.affected_count} 题，跳过 ${res.skipped_count} 题`;
+        setMessage(res.skipped_count > 0 ? `${msg}（部分高风险/需检查题已跳过）` : msg);
       }
       setSelectedIds(new Set());
       setConfirmState(null);
@@ -528,6 +541,10 @@ export default function ImportReviewPage() {
                 <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!canBatchOperate} onClick={() => setConfirmState({ action: "batch-approve" })}>
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   批量通过
+                </Button>
+                <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!(filters.batch_id || batchIdParam)} onClick={() => setConfirmState({ action: "low-risk-batch-approve" })}>
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  批量通过低风险
                 </Button>
                 <Button variant="danger" className="h-8 px-3 text-xs" disabled={!canBatchOperate} onClick={() => setConfirmState({ action: "batch-reject" })}>
                   <XCircle className="h-3.5 w-3.5" />
@@ -919,6 +936,89 @@ export default function ImportReviewPage() {
                     </div>
                   </section>
 
+                  {/* ── Segments (math_image / table_markdown / source_region) ── */}
+                  {(() => {
+                    const pc = previewItem?.parsed_content as Record<string, unknown> | undefined;
+                    const segments = (pc?.segments as Array<Record<string, unknown>> | undefined) ?? [];
+                    if (segments.length === 0) return null;
+                    return (
+                      <section className="animate-fade-up rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
+                        <div className="flex items-center gap-2.5 mb-3">
+                          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-50">
+                            <span className="text-xs font-bold text-purple-600" style={{ fontFamily: "'Georgia', serif" }}>片</span>
+                          </span>
+                          <span className="text-sm font-semibold text-[var(--ink)]">内容片段</span>
+                        </div>
+                        <div className="ml-9 space-y-3">
+                          {segments.map((seg, si) => {
+                            const segType = String(seg.type ?? "");
+                            if (segType === "math_image") {
+                              return (
+                                <div key={si} className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/50 p-3">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-xs font-semibold text-[var(--color-text-secondary)]">公式截图</span>
+                                    {seg.requires_review ? (
+                                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">公式需核对</span>
+                                    ) : null}
+                                    {((): React.ReactNode => {
+                                      const conf = seg.confidence;
+                                      const confText = typeof conf === "number" ? `${(conf * 100).toFixed(0)}%` : conf != null ? String(conf) : null;
+                                      return confText ? (
+                                        <span className="text-[10px] text-[var(--color-text-hint)]">置信度: {confText}</span>
+                                      ) : null;
+                                    })()}
+                                  </div>
+                                  {seg.url ? (
+                                    <img
+                                      src={String(seg.url)}
+                                      alt={String(seg.alt ?? "公式截图")}
+                                      className="max-w-full rounded-lg border border-[var(--color-border)]"
+                                      style={{ maxHeight: "240px" }}
+                                    />
+                                  ) : (
+                                    <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50/50 px-3 py-4 text-center text-xs text-amber-700">
+                                      {seg.upload_failed
+                                        ? "公式截图生成失败，请核对 OCR 文本"
+                                        : "公式截图（暂未生成）"}
+                                    </div>
+                                  )}
+                                  {seg.source_page ? (
+                                    <p className="mt-1 text-[10px] text-[var(--color-text-hint)]">第 {String(seg.source_page)} 页</p>
+                                  ) : null}
+                                </div>
+                              );
+                            }
+                            if (segType === "table_markdown") {
+                              return (
+                                <div key={si} className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/50 p-3">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-xs font-semibold text-[var(--color-text-secondary)]">表格内容</span>
+                                    {seg.requires_review ? (
+                                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">需核对</span>
+                                    ) : null}
+                                    {((): React.ReactNode => {
+                                      const conf = seg.confidence;
+                                      const confText = typeof conf === "number" ? `${(conf * 100).toFixed(0)}%` : conf != null ? String(conf) : null;
+                                      return confText ? (
+                                        <span className="text-[10px] text-[var(--color-text-hint)]">置信度: {confText}</span>
+                                      ) : null;
+                                    })()}
+                                  </div>
+                                  {seg.markdown ? (
+                                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--color-border)]/50 bg-white p-3 font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)]">{String(seg.markdown)}</pre>
+                                  ) : (
+                                    <p className="text-xs text-[var(--color-text-hint)]">（表格文本内容）</p>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return null;
+                          })}
+                        </div>
+                      </section>
+                    );
+                  })()}
+
                   {/* ── Options Card ── */}
                   {editState.question_type === "multi_blank_choice" ? (
                     <section className="animate-fade-up drawer-section-delay-2 rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
@@ -1063,6 +1163,52 @@ export default function ImportReviewPage() {
                       </div>
                     </section>
                   )}
+
+                  {/* ── Source Region Image ── */}
+                  {(() => {
+                    const pc = previewItem?.parsed_content as Record<string, unknown> | undefined;
+                    const srcRegion = pc?.source_region as Record<string, unknown> | undefined;
+                    const srcPage = pc?.source_page;
+                    if (!srcRegion && !srcPage) return null;
+                    return (
+                      <section className="animate-fade-up rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
+                        <details className="group">
+                          <summary className="flex cursor-pointer items-center gap-2.5 text-sm font-semibold text-[var(--color-text-secondary)] transition hover:text-[var(--ink)] [&::-webkit-details-marker]:hidden">
+                            <span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ backgroundColor: "rgba(154,122,186,0.1)" }}>
+                              <span className="text-xs font-bold" style={{ color: "#9a7aba", fontFamily: "'Georgia', serif" }}>图</span>
+                            </span>
+                            <span>原图对照</span>
+                            {srcPage ? <span className="text-[10px] text-[var(--color-text-hint)]">第 {String(srcPage)} 页</span> : null}
+                            <span className="ml-auto inline-block text-[10px] transition-transform group-open:rotate-90 opacity-50">▶</span>
+                          </summary>
+                          <div className="mt-3 ml-9 space-y-3">
+                            {srcRegion?.image_url ? (
+                              <img
+                                src={String(srcRegion.image_url)}
+                                alt="题目区域截图"
+                                className="max-w-full rounded-lg border border-[var(--color-border)]"
+                                style={{ maxHeight: "400px" }}
+                              />
+                            ) : srcRegion?.page_image_url ? (
+                              <img
+                                src={String(srcRegion.page_image_url)}
+                                alt="原页截图"
+                                className="max-w-full rounded-lg border border-[var(--color-border)]"
+                                style={{ maxHeight: "400px" }}
+                              />
+                            ) : (
+                              <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50/50 px-3 py-4 text-center text-xs text-[var(--color-text-hint)]">
+                                无原图对照
+                                {srcRegion?.bbox ? (
+                                  <p className="mt-1 text-[10px]">定位信息：bbox={JSON.stringify(srcRegion.bbox)}</p>
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      </section>
+                    );
+                  })()}
 
                   {/* ── AI Suggestion Stamp ── */}
                   {completeSuggestion ? (
@@ -1497,17 +1643,19 @@ export default function ImportReviewPage() {
 
       <ConfirmDialog
         open={confirmState !== null}
-        title={confirmState?.action.includes("reject") ? "驳回导入题目" : confirmState?.action === "publish" ? "发布已通过题目" : "通过导入题目"}
+        title={confirmState?.action === "low-risk-batch-approve" ? "批量通过低风险题" : confirmState?.action?.includes("reject") ? "驳回导入题目" : confirmState?.action === "publish" ? "发布已通过题目" : "通过导入题目"}
         description={
           confirmState?.action === "publish"
             ? "将当前批次中已通过的题目发布到正式题库。"
-            : confirmState?.action === "batch-approve" && selectedIds.size > 0
-              ? `将对已选的 ${selectedIds.size} 条导入题目执行批量通过操作。`
-              : confirmState?.action === "batch-reject" && selectedIds.size > 0
-                ? `将对已选的 ${selectedIds.size} 条导入题目执行批量驳回操作。`
-                : "操作会更新 question_imports 暂存审核状态。"
+            : confirmState?.action === "low-risk-batch-approve"
+              ? `将自动通过当前批次中所有低风险题（risk_level=low）并跳过高风险和需检查题。高风险和需检查题不会被通过。`
+              : confirmState?.action === "batch-approve" && selectedIds.size > 0
+                ? `将对已选的 ${selectedIds.size} 条导入题目执行批量通过操作。`
+                : confirmState?.action === "batch-reject" && selectedIds.size > 0
+                  ? `将对已选的 ${selectedIds.size} 条导入题目执行批量驳回操作。`
+                  : "操作会更新 question_imports 暂存审核状态。"
         }
-        confirmText={confirmState?.action.includes("reject") ? "驳回" : confirmState?.action === "publish" ? "发布" : "通过"}
+        confirmText={confirmState?.action === "low-risk-batch-approve" ? "批量通过低风险" : confirmState?.action?.includes("reject") ? "驳回" : confirmState?.action === "publish" ? "发布" : "通过"}
         danger={Boolean(confirmState?.action.includes("reject"))}
         loading={actionMutation.isPending}
         onCancel={() => setConfirmState(null)}
