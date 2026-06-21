@@ -17,7 +17,9 @@ from app.features.ocr_fix.interfaces import OCRFixResult
 logger = logging.getLogger(__name__)
 
 # Default fallback chain for "auto" strategy
-_AUTO_CHAIN = ["qwen", "deepseek", "rule_fallback"]
+# PaddleOCR-VL is tried first (high-accuracy external OCR), then Qwen-VL
+# (visual correction), DeepSeek (text correction), and finally rule fallback.
+_AUTO_CHAIN = ["paddleocr-vl", "qwen", "deepseek", "rule_fallback"]
 
 # Strategy constants
 STRATEGY_MANUAL = "manual"
@@ -77,6 +79,16 @@ class OCRFixRouter:
             model = self._config.get("qwen_model", "qwen-vl-max")
             self._adapters[name] = QwenFixer(
                 api_key=api_key, base_url=base_url, model=model, config=self._config,
+            )
+            return self._adapters[name]
+
+        if name == "paddleocr-vl":
+            from app.features.ocr_vl.paddleocr_vl_adapter import PaddleOCRVLAdapter
+            api_token = self._config.get("paddleocr_vl_api_token")
+            base_url = self._config.get("paddleocr_vl_base_url")
+            model = self._config.get("paddleocr_vl_model", "PaddleOCR-VL-1.6")
+            self._adapters[name] = PaddleOCRVLAdapter(
+                api_token=api_token, base_url=base_url, model=model, config=self._config,
             )
             return self._adapters[name]
 
