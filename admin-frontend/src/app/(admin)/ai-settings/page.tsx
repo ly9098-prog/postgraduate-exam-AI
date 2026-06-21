@@ -54,9 +54,13 @@ export default function AISettingsPage() {
   const resolvedModels = useMemo(() => {
     const list = models.data ?? [];
     const resolve = (feature: string): string | null => {
-      const featured = list.find((m) => m.is_enabled && m.feature === feature);
+      const featured = list.find(
+        (m) => m.is_enabled && (m.features ?? []).includes(feature),
+      );
       if (featured) return featured.display_name;
-      const untagged = list.find((m) => m.is_enabled && !m.feature);
+      const untagged = list.find(
+        (m) => m.is_enabled && (!m.features || m.features.length === 0),
+      );
       if (untagged) return untagged.display_name;
       const any = list.find((m) => m.is_enabled);
       return any?.display_name ?? null;
@@ -65,6 +69,7 @@ export default function AISettingsPage() {
       ocr: resolve("ocr"),
       completion: resolve("completion"),
       analysis: resolve("analysis"),
+      vision: resolve("vision"),
     };
   }, [models.data]);
 

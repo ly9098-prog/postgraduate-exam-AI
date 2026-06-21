@@ -67,9 +67,13 @@ function getProviderColor(provider: string) {
 function resolveFeatureModel(
   models: AdminAiModelConfig[], feature: string,
 ): AdminAiModelConfig | null {
-  const featured = models.find((m) => m.is_enabled && m.feature === feature);
+  const featured = models.find(
+    (m) => m.is_enabled && (m.features ?? []).includes(feature),
+  );
   if (featured) return featured;
-  const untagged = models.find((m) => m.is_enabled && !m.feature);
+  const untagged = models.find(
+    (m) => m.is_enabled && (!m.features || m.features.length === 0),
+  );
   if (untagged) return untagged;
   return models.find((m) => m.is_enabled) ?? null;
 }
@@ -91,7 +95,7 @@ function AddModelDialog({
   const [provider, setProvider] = useState("openai");
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [feature, setFeature] = useState("");
+  const [features, setFeatures] = useState<string[]>([]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ModelTestConnectionResponse | null>(null);
 
@@ -109,7 +113,7 @@ function AddModelDialog({
           api_key: apiKey.trim(),
           model_name: name.trim(),
           provider: provider,
-          feature: feature,
+          features: features,
         } satisfies ModelTestConnectionRequest),
       });
       setTestResult(result);
@@ -127,7 +131,7 @@ function AddModelDialog({
 
   const reset = () => {
     setName(""); setDisplayName(""); setProvider("openai");
-    setApiBaseUrl(""); setApiKey(""); setFeature("");
+    setApiBaseUrl(""); setApiKey(""); setFeatures([]);
     setTestResult(null);
   };
 
@@ -139,7 +143,7 @@ function AddModelDialog({
       provider: provider.trim(),
       api_base_url: apiBaseUrl.trim() || undefined,
       api_key: apiKey.trim() || undefined,
-      feature: feature || null,
+      features: features.length > 0 ? features : null,
     });
   };
 
@@ -205,17 +209,39 @@ function AddModelDialog({
             </div>
           </div>
             <div>
-            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">用途 <span className="text-[var(--color-text-hint)]">（可选）</span></label>
-            <Select
-              value={feature}
-              onChange={setFeature}
-              placeholder="选择用途"
-              className="h-10 text-sm w-full"
-              options={FEATURE_OPTIONS.map((opt) => ({
-                value: opt.value,
-                label: opt.label,
-              }))}
-            />
+            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">用途 <span className="text-[var(--color-text-hint)]">（可多选）</span></label>
+            <div className="flex flex-wrap gap-2">
+              {FEATURE_OPTIONS.filter((o) => o.value).map((opt) => {
+                const selected = features.includes(opt.value);
+                return (
+                  <label key={opt.value}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                      selected
+                        ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary)]"
+                        : "border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/40",
+                    )}>
+                    <input type="checkbox" className="sr-only"
+                      checked={selected}
+                      onChange={() => {
+                        setFeatures((prev) =>
+                          prev.includes(opt.value)
+                            ? prev.filter((f) => f !== opt.value)
+                            : [...prev, opt.value],
+                        );
+                      }} />
+                    <div className={cn(
+                      "flex h-3.5 w-3.5 items-center justify-center rounded border transition-colors",
+                      selected ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white" : "border-[var(--color-border)]",
+                    )}>
+                      {selected && <CheckCircle2 className="h-2.5 w-2.5" />}
+                    </div>
+                    {opt.label}
+                  </label>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-xs text-[var(--color-text-hint)]">一个模型可用于多个功能层</p>
           </div>
         </div>
 
@@ -271,7 +297,7 @@ function ModelCard({
   const [nameInput, setNameInput] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiBaseUrlInput, setApiBaseUrlInput] = useState("");
-  const [featureInput, setFeatureInput] = useState("");
+  const [featuresInput, setFeaturesInput] = useState<string[]>([]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ModelTestConnectionResponse | null>(null);
 
@@ -279,7 +305,7 @@ function ModelCard({
     setNameInput(model.name);
     setApiKeyInput(model.api_configured ? (model.api_key_masked ?? "****") : "");
     setApiBaseUrlInput(model.api_base_url ?? "");
-    setFeatureInput(model.feature ?? "");
+    setFeaturesInput(model.features ?? []);
     setTestResult(null);
     setIsEditingApi(true);
   };
@@ -289,7 +315,9 @@ function ModelCard({
     if (nameInput.trim() && nameInput.trim() !== model.name) payload.name = nameInput.trim();
     if (apiKeyInput && apiKeyInput !== model.api_key_masked) payload.api_key = apiKeyInput;
     if (apiBaseUrlInput !== model.api_base_url) payload.api_base_url = apiBaseUrlInput;
-    if (featureInput !== (model.feature ?? "")) payload.feature = featureInput || null;
+    if (JSON.stringify(featuresInput) !== JSON.stringify(model.features ?? [])) {
+      payload.features = featuresInput.length > 0 ? featuresInput : null;
+    }
     onSaveApiConfig(model.id, payload);
     setIsEditingApi(false);
   };
@@ -307,7 +335,7 @@ function ModelCard({
           model_name: nameInput.trim(),
           model_id: model.id,
           provider: model.provider,
-          feature: model.feature ?? undefined,
+          features: model.features ?? undefined,
         } satisfies ModelTestConnectionRequest),
       });
       setTestResult(result);
@@ -325,7 +353,10 @@ function ModelCard({
 
   const Icon = getProviderIcon(model.provider);
   const color = getProviderColor(model.provider);
-  const featureInfo = model.feature ? FEATURE_LABELS[model.feature] : null;
+  const featureList = model.features && model.features.length > 0
+    ? model.features.map((f) => FEATURE_LABELS[f]).filter(Boolean)
+    : [];
+  const hasFeatures = featureList.length > 0;
 
   return (
     <div
@@ -392,24 +423,22 @@ function ModelCard({
             默认模型
           </span>
         )}
-        {featureInfo ? (
-          <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-white"
-            style={{ backgroundColor: featureInfo.color }}>
-            <Tag className="h-3 w-3" />
-            {featureInfo.label}
-          </span>
+        {hasFeatures ? (
+          <div className="flex flex-wrap gap-1">
+            {featureList.map((fi) => (
+              <span key={fi.label}
+                className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-white"
+                style={{ backgroundColor: fi.color }}>
+                <Tag className="h-3 w-3" />
+                {fi.label}
+              </span>
+            ))}
+          </div>
         ) : (
           <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-bg-input)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-hint)]">
             通用
           </span>
         )}
-      </div>
-
-      <div className="mt-4 grid grid-cols-1 gap-3 rounded-xl bg-[var(--color-bg-input)] p-3">
-        <div className="flex items-center gap-2 text-xs text-[var(--color-text-hint)]">
-          <Info className="h-3 w-3 shrink-0" />
-          <span>当前版本实际使用模型为 DeepSeek V4 Flash，此处配置仅作为管理记录</span>
-        </div>
       </div>
 
       {isEditingApi ? (
@@ -455,17 +484,38 @@ function ModelCard({
               placeholder="https://api.deepseek.com" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">用途</label>
-            <Select
-              value={featureInput}
-              onChange={setFeatureInput}
-              placeholder="选择用途"
-              className="h-9 text-sm w-full"
-              options={FEATURE_OPTIONS.map((opt) => ({
-                value: opt.value,
-                label: opt.label,
-              }))}
-            />
+            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">用途 <span className="text-[var(--color-text-hint)]">（可多选）</span></label>
+            <div className="flex flex-wrap gap-2">
+              {FEATURE_OPTIONS.filter((o) => o.value).map((opt) => {
+                const selected = featuresInput.includes(opt.value);
+                return (
+                  <label key={opt.value}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                      selected
+                        ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary)]"
+                        : "border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/40",
+                    )}>
+                    <input type="checkbox" className="sr-only"
+                      checked={selected}
+                      onChange={() => {
+                        setFeaturesInput((prev) =>
+                          prev.includes(opt.value)
+                            ? prev.filter((f) => f !== opt.value)
+                            : [...prev, opt.value],
+                        );
+                      }} />
+                    <div className={cn(
+                      "flex h-3.5 w-3.5 items-center justify-center rounded border transition-colors",
+                      selected ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white" : "border-[var(--color-border)]",
+                    )}>
+                      {selected && <CheckCircle2 className="h-2.5 w-2.5" />}
+                    </div>
+                    {opt.label}
+                  </label>
+                );
+              })}
+            </div>
           </div>
           <div className="flex gap-2">
             <button onClick={saveApiConfig} disabled={disabled}
@@ -523,10 +573,11 @@ function ModelCard({
 // ---------------------------------------------------------------------------
 
 function FeatureMapping({
-  models, onAssign, disabled,
+  models, onAssign, onRemove, disabled,
 }: {
   models: AdminAiModelConfig[];
-  onAssign: (modelId: number, feature: string | null) => void;
+  onAssign: (modelId: number, feature: string) => void;
+  onRemove: (feature: string) => void;
   disabled: boolean;
 }) {
   const features = [
@@ -537,18 +588,20 @@ function FeatureMapping({
   ];
 
   const enabledModels = models.filter((m) => m.is_enabled);
-  const untaggedModel = models.find((m) => m.is_enabled && !m.feature);
+  const untaggedModel = models.find(
+    (m) => m.is_enabled && (!m.features || m.features.length === 0),
+  );
 
   return (
     <div className="mb-6 rounded-xl border border-[var(--color-border)]/60 bg-gradient-to-b from-[var(--color-bg-input)]/40 to-white/40 p-5">
       <div className="mb-4">
         <h4 className="font-display text-base font-bold text-[var(--ink)]">功能模型映射</h4>
         <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-text-hint)]">
-          为每个 AI 功能指定专用模型。
+          为每个 AI 功能指定专用模型。同一模型可用于多个功能层。
           {untaggedModel ? (
             <>未指定的功能将使用 <span className="font-medium text-[var(--color-text-secondary)]">{untaggedModel.display_name}</span> 兜底。</>
           ) : enabledModels.length > 0 ? (
-            <>当前没有通用模型，需为各功能单独指定。</>
+            <>需为各功能单独指定，可在多个功能层复用同一模型配置。</>
           ) : (
             <>请先添加并启用至少一个模型。</>
           )}
@@ -557,7 +610,7 @@ function FeatureMapping({
       <div className="space-y-2.5">
         {features.map((feat) => {
           const assigned = resolveFeatureModel(models, feat.key);
-          const hasDedicated = assigned?.feature === feat.key;
+          const hasDedicated = (assigned?.features ?? []).includes(feat.key);
           return (
             <div
               key={feat.key}
@@ -633,8 +686,7 @@ function FeatureMapping({
                       value={assigned ? String(assigned.id) : ""}
                       onChange={(val) => {
                         if (!val) {
-                          const current = models.find((m) => m.feature === feat.key);
-                          if (current) onAssign(current.id, null);
+                          onRemove(feat.key);
                           return;
                         }
                         onAssign(Number(val), feat.key);
@@ -647,7 +699,7 @@ function FeatureMapping({
                         ...enabledModels.map((m) => ({
                           value: String(m.id),
                           label: m.display_name,
-                          suffix: m.feature === feat.key ? "已分配" : undefined,
+                          suffix: (m.features ?? []).includes(feat.key) ? "已分配" : undefined,
                         })),
                       ]}
                     />
@@ -682,19 +734,11 @@ export function ModelCards() {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
-    onSuccess: (result, variables) => {
-      // 用 API 响应结果更新缓存，同步清除旧模型的相同 feature
+    onSuccess: (result) => {
+      // 用 API 响应结果更新缓存
       queryClient.setQueryData<AdminAiModelConfig[]>(["ai-models"], (old) => {
         if (!old) return [result];
-        const feature = variables.data.feature;
-        return old.map((m) => {
-          if (m.id === result.id) return { ...result };
-          // 如果 feature 被分配给其他模型，清除旧模型上的相同 feature
-          if (feature != null && m.feature === feature) {
-            return { ...m, feature: null };
-          }
-          return m;
-        });
+        return old.map((m) => (m.id === result.id ? { ...result } : m));
       });
     },
     onError: () => {
@@ -729,8 +773,37 @@ export function ModelCards() {
     patchMutation.mutate({ id: model.id, data: { is_default: true } });
   };
 
-  const handleAssignFeature = (modelId: number, feature: string | null) => {
-    patchMutation.mutate({ id: modelId, data: { feature } });
+  const handleRemoveFeature = (feat: string) => {
+    // 从当前拥有该 feature 的模型中移除
+    const holder = modelList.find((m) => (m.features ?? []).includes(feat));
+    if (holder) {
+      const updated = (holder.features ?? []).filter((f) => f !== feat);
+      patchMutation.mutate({
+        id: holder.id,
+        data: { features: updated.length > 0 ? updated : null },
+      });
+    }
+  };
+
+  const handleAssignFeature = async (modelId: number, feat: string) => {
+    // feat = 要移交给该模型的 feature 名称
+    // 先串行移除旧模型上的该 feature，再添加到目标模型，避免并发竞态
+    const currentHolder = modelList.find(
+      (m) => m.id !== modelId && (m.features ?? []).includes(feat),
+    );
+    if (currentHolder) {
+      const updated = (currentHolder.features ?? []).filter((f) => f !== feat);
+      await patchMutation.mutateAsync({
+        id: currentHolder.id,
+        data: { features: updated.length > 0 ? updated : null },
+      });
+    }
+    const target = modelList.find((m) => m.id === modelId);
+    if (target) {
+      const existing = target.features ?? [];
+      const merged = existing.includes(feat) ? existing : [...existing, feat];
+      await patchMutation.mutateAsync({ id: modelId, data: { features: merged } });
+    }
   };
 
   const handleDelete = () => {
@@ -774,6 +847,7 @@ export function ModelCards() {
         <FeatureMapping
           models={modelList}
           onAssign={handleAssignFeature}
+          onRemove={handleRemoveFeature}
           disabled={patchMutation.isPending}
         />
       )}
