@@ -1,0 +1,34 @@
+{
+  "case_id": "math_case_001",
+  "source": "ocr_math_1.png",
+  "source_path": "ocr_test/images/example/ocr_math_1.png",
+  "description": "高数极限题：无穷小等价判断。当x→0+时，与√x等价的无穷小量",
+  "subject": "math2",
+  "question_type": "single_choice",
+  "expected": {
+    "stem_patterns": [
+      "无穷小",
+      "等价",
+      "√x"
+    ],
+    "has_options": true,
+    "option_count": 4,
+    "options_keys": ["A", "B", "C", "D"],
+    "correct_answer": "B",
+    "has_math_image_segment": true,
+    "has_table_markdown_segment": false,
+    "expected_risk_flags": [
+      "math_region_detected",
+      "complex_formula_requires_review"
+    ],
+    "requires_review": true,
+    "min_confidence": 0.7
+  },
+  "ocr_hints": {
+    "known_ocr_issues": [
+      "根号√x可能被识别为Vx或其它变体",
+      "e^{sin x}可能断行",
+      "ln(1+x)可能被分开识别"
+    ]
+  }
+}
