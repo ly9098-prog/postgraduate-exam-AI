@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ClipboardCheck, FileQuestion, FileText, History, Images, UploadCloud } from "lucide-react";
+import { ClipboardCheck, FileQuestion, FileText, History, Images, UploadCloud, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const importTabs = [
@@ -12,6 +12,7 @@ const importTabs = [
   { href: "/imports/text-import", label: "文本导入", icon: FileText },
   { href: "/imports/review", label: "待审核题目", icon: ClipboardCheck },
   { href: "/imports/history", label: "导入记录", icon: History },
+  { href: "/imports/maintenance", label: "运维", icon: Wrench },
 ];
 
 export default function ImportsLayout({ children }: { children: React.ReactNode }) {

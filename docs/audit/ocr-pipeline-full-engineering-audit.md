@@ -1,9 +1,9 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版） / 2026-06-21（复查更新） / 2026-06-21（P2 完成更新） / 2026-06-21（P4 完成更新） / 2026-06-21（PaddleOCR-VL Adapter） / 2026-06-21（P5 完成更新） / 2026-06-21（Qwen 清除 + Vision 消费端落地） / **2026-06-21（P6 验收+Profile+归因+精调+Dashboard+CI 策略）**
+> 审计时间：2026-06-20（初版） / 2026-06-21（复查更新） / 2026-06-21（P2 完成更新） / 2026-06-21（P4 完成更新） / 2026-06-21（PaddleOCR-VL Adapter） / 2026-06-21（P5 完成更新） / 2026-06-21（Qwen 清除 + Vision 消费端落地） / **2026-06-21（P6 验收+Profile+归因+精调+Dashboard+CI 策略）** / **2026-06-21（P7 观测+告警+清理+样本导出+运维+Preflight+运维文档）**
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
-> 状态：P0 修复已全部落地（commit b63df47），P1 公式截图+审核提效已完成（commit c82c464），P2 三项改造已完成（2026-06-21），**P4 真断点恢复+幂等入库已完成（2026-06-21）**。新增 pipeline_artifacts.py 提供文件级 artifact 存储，resume 从 artifact 跳过已完成 stage；hash-based 去重确保同一 pipeline resume 不重复入库；质量报告 `quality_report` 随 pipeline 结果返回。**PaddleOCR-VL Adapter（2026-06-21）**新增外部高精 OCR 引擎适配器，接入 OCRFixRouter 路由链（paddleocr-vl → deepseek → rule），admin ai-settings 可动态切换。**Qwen 清除 + Vision 端到端（2026-06-21）**删除 qwen_adapter.py（309 行），从 OCRFixRouter 路由链移除 QwenFixer；添加 feature="vision" 到 FEATURE_VALUES 和管理端 UI；pipeline _run_extract 接入 DB 动态 vision 配置作为 PaddleOCR-VL 回退；两处代码质量清理已提交（commit de0c17b）。**P5（2026-06-21）**完成 pipeline_orchestrator.py 渐进拆分（7 个 pipeline_stages/ 模块）和 question_pipeline.py 拆分（question_ai_complete.py / question_ai_enrich.py / question_draft_generator.py / question_import_writer.py），保留全部向后兼容入口。**P6（2026-06-21）**完成验收样本扩充、性能 Profile、失败自动归因、3 类小范围精调、管理端质量 Dashboard、三级测试策略。✅ 标记表示已修复项。
+> 状态：P0 修复已全部落地（commit b63df47），P1 公式截图+审核提效已完成（commit c82c464），P2 三项改造已完成（2026-06-21），**P4 真断点恢复+幂等入库已完成（2026-06-21）**。新增 pipeline_artifacts.py 提供文件级 artifact 存储，resume 从 artifact 跳过已完成 stage；hash-based 去重确保同一 pipeline resume 不重复入库；质量报告 `quality_report` 随 pipeline 结果返回。**PaddleOCR-VL Adapter（2026-06-21）**新增外部高精 OCR 引擎适配器，接入 OCRFixRouter 路由链（paddleocr-vl → deepseek → rule），admin ai-settings 可动态切换。**Qwen 清除 + Vision 端到端（2026-06-21）**删除 qwen_adapter.py（309 行），从 OCRFixRouter 路由链移除 QwenFixer；添加 feature="vision" 到 FEATURE_VALUES 和管理端 UI；pipeline _run_extract 接入 DB 动态 vision 配置作为 PaddleOCR-VL 回退；两处代码质量清理已提交（commit de0c17b）。**P5（2026-06-21）**完成 pipeline_orchestrator.py 渐进拆分（7 个 pipeline_stages/ 模块）和 question_pipeline.py 拆分（question_ai_complete.py / question_ai_enrich.py / question_draft_generator.py / question_import_writer.py），保留全部向后兼容入口。**P6（2026-06-21）**完成验收样本扩充、性能 Profile、失败自动归因、3 类小范围精调、管理端质量 Dashboard、三级测试策略。**P7（2026-06-21）**完成观测沉淀（pipelines 列表 API）、告警规则（7 条规则 + pipeline 完成自动评估）、清理任务（OCR cache + artifact dry-run + 统一 cleanup endpoint）、失败样本导出（export-case 端点）、管理端运维页面（健康摘要+告警+清理 UI）、Preflight 检查脚本（离线优先 5 项+可选在线 3 项）、运维文档（OPERATIONS+TROUBLESHOOTING+DEPLOY_CHECKLIST）。✅ 标记表示已修复项。
 
 ---
 
@@ -263,6 +263,9 @@
 | `question_splitter.py` | 1301 | 题号+选项提取 | ✅ 良好 | ✅ OCR 映射已统一 | 🟢 低 |
 | `ai_repair.py` | 899 | AI 修复 | ✅ 较好 | — | 🟡 中 |
 | `ocr_fix/router.py` | 158 | 纠错路由（PaddleOCR-VL → DeepSeek → Rule） | ✅ 清晰 | ✅ Qwen 已移除 | 🟢 低 |
+| `ocr_alert_rules.py` | 120 | **P7-2 新增：** 7 条告警规则 + evaluate_alerts() 单 pipeline 评估 | ✅ 单一 | 无重复 | 🟢 低 |
+| `ocr_case_exporter.py` | 130 | **P7-4 新增：** 失败样本导出，raw_data 截断至 2000 字符，expected_template 为空 | ✅ 单一 | 无重复 | 🟢 低 |
+| `scripts/ocr_preflight_check.py` | 200 | **P7-6 新增：** 离线优先预检查脚本（5 项离线 + 3 项可选在线） | ✅ 单一 | 无重复 | 🟢 低 |
 
 ### 2.2 关键结构问题
 
@@ -670,9 +673,18 @@ Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.perfo
 阶段 9: (新增) 断点恢复
     └─ import_batches + import_regions 表
     └─ region 级 checkpoint，崩溃后从 region 边界恢复
+
+阶段 10: (新增) P7 生产运维（已完成）
+    └─ 观测指标: GET /imports/pipelines API 层聚合
+    └─ 告警规则: 7 条规则 + pipeline 完成自动评估
+    └─ Cleanup: OCR cache TTL 14d + artifact dry-run + 统一端点
+    └─ 失败样本导出: export-case 端点（<=2000 字符，expected 为空）
+    └─ 管理端运维页: 健康摘要 / 告警展示 / Dry-Run -> 确认清理
+    └─ Preflight 脚本: 离线 5 项 + 可选在线 3 项
+    └─ 运维文档: OPERATIONS + TROUBLESHOOTING + DEPLOY_CHECKLIST
 ```
 
-**关键变更状态（P0 ✅ / P1-公式截图审核 ✅ / P1-P2 待处理）**：
+**关键变更状态（P0 ✅ / P1-公式截图审核 ✅ / P1-P2 待处理 / P6 ✅ / P7 ✅）**：
 1. ✅ **内存治理**：PDF bytes 落盘释放、消除双 OCR、pipeline_store 剥大字段（d7b2ae5, 04fd013）
 2. ✅ **删除** `ocr_correction.py` 的旧版纠错路径（保留向后兼容包装 + 移植敏感内容过滤）（edcfd0c）
 3. ✅ **拆分** `pipeline_orchestrator.py` → `pipeline_stages/` 目录（P5-2，2026-06-21）
@@ -699,6 +711,13 @@ Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.perfo
 24. ✅ **P6-4 小范围精调**：`text_normalizer.py` 扩充教育品牌水印 + 中文页码行过滤，`code_detector.py` 扩充 408 C/C++ 数据结构关键词
 25. ✅ **P6-5 管理端 Dashboard**：tasks 页面新增质量概览卡片（风险分布/AI 答案/公式截图/性能概览/高风险跳转）
 26. ✅ **P6-6 三级测试策略**：acceptance runner 支持 `--strict` 模式，README 文档三种模式，.gitignore 排除真实样本
+27. ✅ **P7-1 观测指标沉淀**：`GET /imports/pipelines` 端点，API 层聚合 quality_report，无 DB migration
+28. ✅ **P7-2 告警规则**：`ocr_alert_rules.py` 7 条规则（import_failed/high_risk/manual_review/ai_answer/cache_hit/duration/ocr_fail）+ pipeline 完成自动评估
+29. ✅ **P7-3 清理任务**：`ocr_cache_service.cleanup_expired_entries()` + artifact cleanup dry_run 支持 + 统一 `POST /maintenance/cleanup` 端点；DB rows 保留当前版本不实现
+30. ✅ **P7-4 失败样本导出**：`ocr_case_exporter.py` raw_data 截断 2000 字符 + expected_template 全部为空 + 单题/批量端点
+31. ✅ **P7-5 管理端运维页**：`maintenance/page.tsx` 健康摘要 + 告警展示 + Dry-Run/确认清理 UI + layout 新增"运维" tab
+32. ✅ **P7-6 Preflight 检查**：`scripts/ocr_preflight_check.py` 离线 5 项（回归/验收/缓存/artifact/脚本）+ 可选在线 3 项（cleanup/AI 配置）
+33. ✅ **P7-7 运维文档**：`docs/ocr/OPERATIONS.md` + `TROUBLESHOOTING.md` + `DEPLOY_CHECKLIST.md`
 
 ### 6.4 改造优先级（修订版）
 
@@ -764,7 +783,7 @@ Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.perfo
 
 ### 6.5 推荐执行路线（2026-06-21 更新）
 
-#### 当前状态：阶段一（P0）✅ 已完成，阶段一B（P1-公式截图）✅ 已完成，**阶段二B（P2-三项改造）✅ 已完成**，**阶段二（P5-结构拆分）✅ 已完成**，**Qwen 清除 + Vision 落地 ✅ 已完成**，**P6（验收+Profile+归因+精调+Dashboard+CI 策略）✅ 已完成**，阶段三（性能+幻觉防护）部分完成
+#### 当前状态：阶段一（P0）✅ 已完成，阶段一B（P1-公式截图）✅ 已完成，**阶段二B（P2-三项改造）✅ 已完成**，**阶段二（P5-结构拆分）✅ 已完成**，**Qwen 清除 + Vision 落地 ✅ 已完成**，**P6（验收+Profile+归因+精调+Dashboard+CI 策略）✅ 已完成**，**P7（观测+告警+清理+导出+运维+Preflight+文档）✅ 已完成**，阶段三（性能+幻觉防护）部分完成
 
 ```
 ✅ 阶段一: 基础清理 + 回归基线 (已完成 — b63df47)
@@ -834,6 +853,18 @@ Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.perfo
 │ ⏳ P2-5: 代码语义等价性检查 (未开始)                                  │
 │ ⏳ P2-6: raw_data 瘦身 (未开始)                                      │
 │ 以及 P1 收尾: 纠错指标追踪、断点恢复收尾                              │
+└─────────────────────────────────────────────────────────────────────┘
+                                     │
+                                     v
+✅ 阶段五: P7 生产运维 (已完成 — 2026-06-21)
+┌─────────────────────────────────────────────────────────────────────┐
+│ ✅ P7-1: 观测指标沉淀 (GET /imports/pipelines, API 层聚合)           │
+│ ✅ P7-2: 告警规则 (ocr_alert_rules.py, 7 条规则, evaluate_alerts)   │
+│ ✅ P7-3: 清理任务 (OCR cache + artifact dry-run + 统一端点)         │
+│ ✅ P7-4: 失败样本导出 (export-case, raw_data <=2000, expected 为空) │
+│ ✅ P7-5: 管理端运维页 (健康摘要+告警+清理 UI)                        │
+│ ✅ P7-6: Preflight 检查脚本 (离线 5 项 + 可选在线 3 项)              │
+│ ✅ P7-7: 运维文档 (OPERATIONS+TROUBLESHOOTING+DEPLOY_CHECKLIST)      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -981,6 +1012,13 @@ Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.perfo
 | `tests/ocr_acceptance/cases/*/case.json` | — | ✅ **P6-1 新增**：10 类样本模板，含 case_id/subject_type/expected_question_count/known_risks 元数据 |
 | `tests/ocr_regression/cases/watermark_case_001.json` | — | ✅ **P6-4 新增**：水印干扰回归 case |
 | `tests/ocr_regression/cases/code_case_001_listnode.json` | — | ✅ **P6-4 新增**：408 C 代码 ListNode 回归 case |
+| `features/ocr_alert_rules.py` | 120 | ✅ **P7-2 新增**：7 条告警规则 + evaluate_alerts() |
+| `features/ocr_case_exporter.py` | 130 | ✅ **P7-4 新增**：失败样本导出（raw_data 截断，expected 为空） |
+| `scripts/ocr_preflight_check.py` | 200 | ✅ **P7-6 新增**：离线优先预检查脚本 |
+| `docs/ocr/OPERATIONS.md` | — | ✅ **P7-7 新增**：运维手册 |
+| `docs/ocr/TROUBLESHOOTING.md` | — | ✅ **P7-7 新增**：故障排查手册 |
+| `docs/ocr/DEPLOY_CHECKLIST.md` | — | ✅ **P7-7 新增**：发布检查清单 |
+| `admin-frontend/src/app/(admin)/imports/maintenance/page.tsx` | 220 | ✅ **P7-5 新增**：管理端运维页面 |
 | `tests/test_question_pipeline.py` | 问题管道测试 |
 
 ### 文档
