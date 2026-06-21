@@ -1,0 +1,35 @@
+{
+  "case_id": "math_case_002",
+  "source": "ocr_math_2.png",
+  "source_path": "ocr_test/images/example/ocr_math_2.png",
+  "description": "高数极值拐点：含变上限积分的函数极值与拐点判断",
+  "subject": "math2",
+  "question_type": "single_choice",
+  "expected": {
+    "stem_patterns": [
+      "极值点",
+      "拐点",
+      "sin t dt",
+      "sin²"
+    ],
+    "has_options": true,
+    "option_count": 4,
+    "options_keys": ["A", "B", "C", "D"],
+    "correct_answer": "B",
+    "has_math_image_segment": true,
+    "has_table_markdown_segment": false,
+    "expected_risk_flags": [
+      "math_region_detected",
+      "complex_formula_requires_review"
+    ],
+    "requires_review": true,
+    "min_confidence": 0.7
+  },
+  "ocr_hints": {
+    "known_ocr_issues": [
+      "变上限积分∫符号可能识别不完整",
+      "e^x作为积分上限可能错位",
+      "sin²x的上标2可能丢失"
+    ]
+  }
+}

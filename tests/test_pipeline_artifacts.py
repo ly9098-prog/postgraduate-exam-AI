@@ -150,7 +150,7 @@ class TestCleanup:
 
         # Use negative TTL to force expiry regardless of timing
         results = cleanup_expired(completed_ttl=-1, failed_ttl=-1)
-        assert pipeline_id in results
+        assert pipeline_id in results.get("pipeline_results", {})
 
     def test_cleanup_expired_failed_kept(self, temp_artifact_root):
         """Failed pipelines should be kept longer — verify with a future TTL."""

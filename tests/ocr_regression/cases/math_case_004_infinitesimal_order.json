@@ -1,0 +1,35 @@
+{
+  "case_id": "math_case_004",
+  "source": "ocr_math_4.png",
+  "source_path": "ocr_test/images/example/ocr_math_4.png",
+  "description": "高数无穷小阶数：f(x)是g(x)的高阶无穷小时o(·)运算判断",
+  "subject": "math2",
+  "question_type": "single_choice",
+  "expected": {
+    "stem_patterns": [
+      "无穷小",
+      "高阶无穷小",
+      "o(g(x))",
+      "去心邻域"
+    ],
+    "has_options": true,
+    "option_count": 4,
+    "options_keys": ["A", "B", "C", "D"],
+    "correct_answer": "C",
+    "has_math_image_segment": true,
+    "has_table_markdown_segment": false,
+    "expected_risk_flags": [
+      "math_region_detected",
+      "complex_formula_requires_review"
+    ],
+    "requires_review": true,
+    "min_confidence": 0.8
+  },
+  "ocr_hints": {
+    "known_ocr_issues": [
+      "o(·)符号可能被识别为数字0",
+      "带文字描述的长题干段落可能断行不连贯",
+      "上标2在f²(x)中可能丢失"
+    ]
+  }
+}

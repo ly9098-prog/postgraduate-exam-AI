@@ -1,0 +1,38 @@
+{
+  "case_id": "math_case_005",
+  "source": "ocr_math_5.png",
+  "source_path": "ocr_test/images/example/ocr_math_5.png",
+  "description": "高数隐函数偏导数：含变上限积分的隐函数z=z(x,y)求∂z/∂x",
+  "subject": "math2",
+  "question_type": "single_choice",
+  "expected": {
+    "stem_patterns": [
+      "z = z(x, y)",
+      "∂z/∂x",
+      "隐函数",
+      "ln z",
+      "e^{-t²}"
+    ],
+    "has_options": true,
+    "option_count": 4,
+    "options_keys": ["A", "B", "C", "D"],
+    "correct_answer": "C",
+    "has_math_image_segment": true,
+    "has_table_markdown_segment": false,
+    "expected_risk_flags": [
+      "math_region_detected",
+      "complex_formula_requires_review"
+    ],
+    "requires_review": true,
+    "min_confidence": 0.5
+  },
+  "ocr_hints": {
+    "known_ocr_issues": [
+      "偏导数∂符号可能识别为其他字符",
+      "e^{-t²}的上标负号和平方可能丢失",
+      "复杂分式结构的分子分母识别可能错位",
+      "∫符号和积分限可能混淆"
+    ],
+    "high_ocr_difficulty": true
+  }
+}
