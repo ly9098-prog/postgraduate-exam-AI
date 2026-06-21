@@ -1,0 +1,31 @@
+[normalized_full_text]
+2. 已知二叉树的结点结构定义如下，若一棵二叉树的中序遍历序列为 DBEAFC,后序遍历序列为 DEBFCA 则其前序遍历序列为:
+```text
+typedef struct BiTNode {
+char data;
+``` (1typu* p1tysI* apo11ta aonu2s
+A.ABDECF
+B.ABDCEF
+C.ABDFEC
+D. ACBEDF
+答案:A
+[/normalized_full_text]
+
+[questions]
+---
+number: 2
+stem: 2. 已知二叉树的结点结构定义如下，若一棵二叉树的中序遍历序列为 DBEAFC,后序遍历序列为 DEBFCA 则其前序遍历序列为:
+```text
+typedef struct BiTNode {
+char data;
+``` (1typu* p1tysI* apo11ta aonu2s
+type: single_choice
+options:
+  A: ABDECF
+  B: ABDCEF
+  C: ABDFEC
+  D: ACBEDF
+answer: A
+option_keys: ["A", "B", "C", "D"]
+
+[/questions]

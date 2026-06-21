@@ -109,7 +109,7 @@ _RE_BROKEN_ARROW = re.compile(r"[−–—]\s*>", re.IGNORECASE)  # 破折号替
 
 
 def detect_ocr_contamination(raw_text: str) -> dict:
-    """检测 OCR 原始文本中的污染信号。
+    """检测 OCR 原始文本中的污染信号 + 代码块完整性。
 
     Args:
         raw_text: OCR 原始识别文本
@@ -133,6 +133,16 @@ def detect_ocr_contamination(raw_text: str) -> dict:
     flags: list[str] = []
     details: list[str] = []
     score = 0.0
+
+    # ---- 0. 代码块完整性检测（在其它检测前运行） ----
+    from app.features.code_integrity import detect_code_block_integrity
+    code_result = detect_code_block_integrity(raw_text)
+    if code_result["score"] > 0:
+        for flag in code_result["flags"]:
+            if flag not in flags:
+                flags.append(flag)
+        score += code_result["score"]
+        details.extend(code_result["details"])
 
     # ---- 1. 符号替换检测（上下文感知） ----
     symbol_hits = 0
