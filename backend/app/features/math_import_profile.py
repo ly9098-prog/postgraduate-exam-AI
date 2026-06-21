@@ -110,9 +110,6 @@ def is_math_candidate(question: dict) -> dict:
 
     is_math = len(signals) > 0
 
-    if is_math and not signals:
-        signals.append("no_positive_signal")
-
     return {
         "is_math": is_math,
         "signals": signals,
