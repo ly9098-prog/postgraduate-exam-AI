@@ -137,6 +137,8 @@ class PipelineStatusResponse(BaseModel):
     quality_report: dict[str, Any] | None = None
     # P4-2: artifact list for resume diagnostics
     artifacts: list[str] | None = None
+    # P7-2: alert rules evaluation results
+    alerts: list[dict] | None = None
 
 
 class PipelineResumeResponse(BaseModel):

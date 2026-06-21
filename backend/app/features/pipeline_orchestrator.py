@@ -36,6 +36,7 @@ from app.features.pipeline_artifacts import (
     save_completed_marker as _save_completed_marker,
     save_failed_marker as _save_failed_marker,
 )
+from app.features.ocr_alert_rules import evaluate_alerts as _evaluate_alerts
 from app.features.question_splitter import split_questions
 from app.features.similarity_matcher import match_similar_questions
 from app.features.structure_analyzer import analyze_structure
@@ -3716,6 +3717,18 @@ async def run_pipeline_background(
         )
         result["pipeline_id"] = pipeline_id
         await _set_pipeline_store(pipeline_id, result)
+
+        # P7-2: evaluate alert rules against pipeline output
+        try:
+            alerts = _evaluate_alerts(
+                quality_report=result.get("quality_report"),
+                diagnostics=result.get("diagnostics"),
+            )
+            if alerts:
+                result["alerts"] = alerts
+                await _set_pipeline_store(pipeline_id, result)
+        except Exception as alert_exc:
+            logger.warning("Alert evaluation failed for pipeline %s: %s", pipeline_id, alert_exc)
     except Exception as exc:
         logger.exception("Pipeline %s failed", pipeline_id)
         await _set_pipeline_store(pipeline_id, {

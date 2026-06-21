@@ -850,3 +850,258 @@ async def admin_cleanup_expired_artifacts(
         "completed_ttl": completed_ttl,
         "failed_ttl": failed_ttl,
     }
+
+
+# ---------------------------------------------------------------------------
+# P7-1: Pipelines list (API-level aggregation, no DB migration)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/pipelines")
+async def list_pipelines(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    status: str | None = None,
+    source_type: str | None = None,
+    sort_by: str = "started_at",
+    _=Depends(require_permissions("import:read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """列出所有 ImportPipeline 记录，合并内存中的 quality_report。
+
+    不新增 DB migration；quality_report 仅对近期 pipeline 可用（内存 store 有上限）。
+    历史 pipeline 返回基础字段。
+    """
+    from app.models.import_pipeline import ImportPipeline
+    from sqlalchemy import select, func, desc
+
+    query = select(ImportPipeline)
+    count_query = select(func.count(ImportPipeline.pipeline_id))
+
+    if status:
+        query = query.where(ImportPipeline.status == status)
+        count_query = count_query.where(ImportPipeline.status == status)
+    if source_type:
+        query = query.where(ImportPipeline.source_type == source_type)
+        count_query = count_query.where(ImportPipeline.source_type == source_type)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Default sort: newest first
+    order = desc(getattr(ImportPipeline, sort_by, ImportPipeline.started_at))
+    query = query.order_by(order).offset((page - 1) * page_size).limit(page_size)
+
+    rows = (await db.execute(query)).scalars().all()
+
+    # Merge in-memory quality_report + alerts for recent pipelines
+    from app.features.pipeline_orchestrator import (
+        _pipeline_store,
+        _get_pipeline_diagnostics,
+    )
+
+    items = []
+    for row in rows:
+        item = {
+            "pipeline_id": row.pipeline_id,
+            "source_type": row.source_type,
+            "source_file": row.source_file,
+            "status": row.status,
+            "total_pages": row.total_pages,
+            "error_message": row.error_message,
+            "started_at": row.started_at.isoformat() if row.started_at else None,
+            "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+        }
+        # Merge quality_report from in-memory store if available
+        store_data = _pipeline_store.get(row.pipeline_id)
+        if store_data:
+            qr = store_data.get("quality_report")
+            if qr:
+                item["quality_report"] = qr
+            alerts = store_data.get("alerts")
+            if alerts:
+                item["alerts"] = alerts
+        items.append(item)
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+# ---------------------------------------------------------------------------
+# P7-3: Maintenance — unified cleanup (artifacts + OCR cache, dry-run support)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/maintenance/cleanup")
+async def admin_maintenance_cleanup(
+    request: dict,
+    _=Depends(require_permissions("import:write")),
+):
+    """执行清理任务。
+
+    请求:
+        {
+            "target": "all" | "artifacts" | "ocr_cache" | "db_rows",
+            "dry_run": true
+        }
+
+    - artifacts: 清理过期 pipeline artifact 文件
+    - ocr_cache: 清理过期 OCR 缓存条目
+    - db_rows: 当前版本暂不实现（返回 not_implemented）
+
+    dry_run=true 时只扫描不删除。
+    真实删除（dry_run=false）需要先执行 dry-run 并确认。
+    """
+    from app.features.pipeline_artifacts import cleanup_expired as _cleanup_artifacts
+    from app.services.ocr_cache_service import cleanup_expired_entries as _cleanup_ocr_cache
+
+    target = (request or {}).get("target", "all")
+    dry_run = (request or {}).get("dry_run", True)
+
+    results: dict[str, dict] = {}
+
+    if target in ("all", "artifacts"):
+        try:
+            art_result = _cleanup_artifacts(dry_run=dry_run)
+            results["artifacts"] = {
+                "scanned_count": art_result.get("scanned_count", 0),
+                "deleted_count": art_result.get("deleted_count", 0),
+                "freed_bytes": art_result.get("freed_bytes", 0),
+                "skipped_running_count": art_result.get("skipped_running_count", 0),
+            }
+        except Exception as exc:
+            results["artifacts"] = {"error": str(exc)}
+
+    if target in ("all", "ocr_cache"):
+        try:
+            cache_result = _cleanup_ocr_cache(dry_run=dry_run)
+            results["ocr_cache"] = {
+                "scanned_count": cache_result.get("scanned_count", 0),
+                "deleted_count": cache_result.get("deleted_count", 0),
+                "freed_bytes": cache_result.get("freed_bytes", 0),
+                "skipped_count": cache_result.get("skipped_count", 0),
+            }
+        except Exception as exc:
+            results["ocr_cache"] = {"error": str(exc)}
+
+    if target in ("all", "db_rows"):
+        # P7 第一版不实现 DB rows 物理删除
+        results["db_rows"] = {
+            "status": "not_implemented",
+            "note": "DB row cleanup 需要先 dry-run 再 confirm=true，当前版本暂不实现",
+        }
+
+    return {
+        "dry_run": dry_run,
+        "target": target,
+        "targets": results,
+    }
+
+
+# ---------------------------------------------------------------------------
+# P7-4: Failure case export
+# ---------------------------------------------------------------------------
+
+
+@router.post("/questions/{import_id}/export-case")
+async def admin_export_failure_case(
+    import_id: int,
+    _=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    """导出单道失败题为 acceptance case 模板。
+
+    expected_template 所有字段为空，必须人工填写。
+    不导出完整 PDF/图片，raw_data 截断至 2000 字符。
+    """
+    from app.features.ocr_case_exporter import export_failure_case
+    from app.models.question_import import QuestionImport
+    from sqlalchemy import select
+
+    row = (await db.execute(
+        select(QuestionImport).where(QuestionImport.id == import_id)
+    )).scalar_one_or_none()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="导入题目不存在")
+
+    # Convert ORM to dict (safe fields only)
+    q_import = {
+        "id": row.id,
+        "source_file": row.source_file,
+        "source_page": None,
+        "subject": row.subject,
+        "question_type": row.question_type,
+        "raw_data": row.raw_data or {},
+        "stem": None,
+        "options": None,
+        "answer": None,
+        "analysis": None,
+        "risk_flags": row.risk_flags or [],
+        "failure_types": [],
+    }
+    # Extract parsed content fields if available
+    pc = row.parsed_content or {}
+    if isinstance(pc, dict):
+        q_import["stem"] = pc.get("stem")
+        q_import["options"] = pc.get("options")
+        q_import["answer"] = pc.get("answer")
+        q_import["analysis"] = pc.get("analysis")
+
+    case = export_failure_case(q_import)
+    return case
+
+
+@router.post("/batches/{batch_id}/export-failure-cases")
+async def admin_export_batch_failure_cases(
+    batch_id: str,
+    failure_type: str | None = None,
+    _=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    """批量导出批次内失败题为 acceptance case 模板。
+
+    failure_type 可选：仅导出指定失败类型的题目。
+    """
+    from app.features.ocr_case_exporter import export_failure_cases_batch
+    from app.models.question_import import QuestionImport
+    from sqlalchemy import select
+
+    rows = (await db.execute(
+        select(QuestionImport)
+        .where(QuestionImport.batch_id == batch_id)
+        .order_by(QuestionImport.id)
+    )).scalars().all()
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="批次不存在或没有题目")
+
+    items = []
+    for row in rows:
+        pc = row.parsed_content or {}
+        items.append({
+            "id": row.id,
+            "source_file": row.source_file,
+            "source_page": None,
+            "subject": row.subject,
+            "question_type": row.question_type,
+            "raw_data": row.raw_data or {},
+            "stem": (pc if isinstance(pc, dict) else {}).get("stem"),
+            "options": (pc if isinstance(pc, dict) else {}).get("options"),
+            "answer": (pc if isinstance(pc, dict) else {}).get("answer"),
+            "analysis": (pc if isinstance(pc, dict) else {}).get("analysis"),
+            "risk_flags": row.risk_flags or [],
+            "failure_types": [],
+        })
+
+    cases = export_failure_cases_batch(items, failure_type_filter=failure_type)
+    return {
+        "batch_id": batch_id,
+        "total": len(items),
+        "exported": len(cases),
+        "cases": cases,
+    }
