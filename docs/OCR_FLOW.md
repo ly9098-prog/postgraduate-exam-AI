@@ -2,8 +2,8 @@
 
 > 一级目录兼容入口。权威内容请维护 `/docs/architecture/OCR_FLOW.md`。
 
-- **更新时间**：2026-06-02
-- **变更原因**：同步 AI OCR Correction Layer 接入导入管线，管线新增 ocr_correction 阶段。
+- **更新时间**：2026-06-21
+- **变更原因**：同步 P5-P8 文档更新（16 阶段管线、Qwen 清除、PaddleOCR-VL、质量报告、运维文档）。
 
 ## 权威文档
 

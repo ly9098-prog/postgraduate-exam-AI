@@ -1,6 +1,8 @@
 # OCR 策略
 
-> 2240AI 的 OCR 策略：可选、轻量、AI 驱动。
+> 2240AI 的 OCR 策略：可选、轻量、AI 辅助、规则优先。
+>
+> 更新于 2026-06-21（P8 功能冻结）。OCR 管线已进入生产验证阶段，核心策略不变，AI 视觉能力已从 DeepSeek VL 切换为 PaddleOCR-VL 外部 API。
 
 ---
 
@@ -38,41 +40,64 @@ OCR 是**可选增强模块**，不是核心功能。通过 `OCR_ENABLED` 配置
 
 ## 技术选型
 
-### 当前
+### 当前（2026-06-21）
 
-- **PaddleOCR**（CPU 模式）：生产中实际使用的 OCR 引擎
+- **PaddleOCR**（GPU 本地 / CPU 生产）：通用文字识别引擎
+- **PaddleOCR-VL**（外部高精 OCR API）：OCR 纠错路由链首 + 本地 OCR 全失败回退，凭证由 DB 动态管理
+- **DeepSeek**（文本模型）：纯文本纠错回退（OCRFixRouter 第二位）
 - **PyMuPDF**：PDF 转图片
 - **ThreadPoolExecutor**：并发处理多页
 
-### 预留接口
+### 已移除
 
-| 引擎 | 场景 | 使用方式 |
+| 引擎 | 场景 | 移除原因 |
 |------|------|---------|
-| PaddleOCR | 通用文字识别 | 当前实现 |
-| DeepSeek VL | 复杂版面/公式 | 未来可选 |
-| pix2tex | 数学公式 LaTeX 识别 | 预留接口 |
-| Mathpix | 商业公式识别 | 预留接口 |
+| ~~Qwen-VL~~ | 视觉纠错 | 2026-06-21 移除，路由链简化为 PaddleOCR-VL → DeepSeek → Rule |
+| ~~DeepSeek VL~~ | 视觉回退 | 切换到 PaddleOCR-VL，凭证由 DB 动态管理 |
+| ~~pix2tex~~ | 公式 LaTeX 识别 | 无需 LaTeX 校正，公式截图以图片形式保留 |
+| ~~Mathpix~~ | 商业公式识别 | 未使用 |
 
 ---
 
-## 触发逻辑
+## 触发逻辑（2026-06-21 更新）
 
 ```
 上传 PDF → pypdf 提取文本
   └→ 文本 < 100字符？→ 判定扫描版 → OCR_ENABLED？
-       ├─ YES → PaddleOCR → 文本清洗 → 结构化
+       ├─ YES → PaddleOCR（本地 GPU/CPU）→ 清洗 → 16 阶段管线
+       │    └─ 本地 OCR 全失败？→ PaddleOCR-VL 外部 API 回退
        └─ NO  → 报错"扫描版PDF，OCR未启用"
 ```
 
+图片上传直接进入 PaddleOCR 识别，不经过 pypdf。
+
 ---
 
-## 不做的事
+## 管线架构（当前）
+
+```
+PaddleOCR → text_normalizer（13 步规则清洗）
+  → OCRFixRouter（PaddleOCR-VL → DeepSeek → Rule）
+    → 结构分析 → 题目切分 → 答案匹配 → 标准化
+      → AI Repair（可选，低置信度触发）
+        → 相似匹配 → 公式检测 → 表格检测
+          → 审核暂存区 → 人工审核 → 入库
+```
+
+所有 16 个阶段支持 checkpoint + artifact resume。
+
+---
+
+## 不做的事（2026-06-21 更新）
 
 - ❌ 手写识别
 - ❌ 本地 OCR 模型训练
 - ❌ 拍照搜题
-- ❌ 公式深度识别（当前预留接口）
 - ❌ OCR 结果自动入库（必须人工审核）
+- ❌ LLM 输出缓存
+- ❌ 纯 AI 自动入库
+- ✅ ~~公式深度识别~~ — 公式截图以图片形式保留，无需 LaTeX 校正（已实现）
+- ✅ ~~本地 OCR 模型部署~~ — PaddleOCR 已部署（本地 GPU / 生产 CPU）（已实现）
 
 ---
 
@@ -94,8 +119,11 @@ OCR 是**可选增强模块**，不是核心功能。通过 `OCR_ENABLED` 配置
 
 ---
 
-## 未来方向
+## 未来方向（2026-06-21 更新）
 
-- DeepSeek VL 替换 PaddleOCR（减少依赖体积）
-- 数学公式识别接入
-- 表格结构化识别
+- ✅ PaddleOCR-VL 已接入（替代 DeepSeek VL 视觉能力），凭证由 DB 动态管理
+- ✅ 数学公式截图已实现（math_detect），以图片形式保留公式区域
+- ✅ 表格 Markdown 转换已实现（table_detect），保留行列结构
+- 考虑：AI 补全并行化（当前 50 题串行，可 asyncio.gather 加速）
+- 考虑：代码语义等价性检查（防止 408 C 代码被 AI 改写逻辑）
+- 考虑：合并 llm_text_structurer 独立 token budget 到共享 token_budget.py

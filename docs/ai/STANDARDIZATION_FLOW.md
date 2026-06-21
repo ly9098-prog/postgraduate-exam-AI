@@ -3,24 +3,33 @@
 ## 架构（单 pipeline）
 
 题目可能来自 OCR PDF、AI 解析、Word、Excel、手动导入。所有入口都走唯一管线
-`backend/app/features/question_pipeline.py` 中的 `process_question_pipeline()`，
+`backend/app/features/question_pipeline.py` 中的 `process_question_pipeline()`（P5-3 已将 AI 补全/丰富/草稿/导入操作拆至 4 个子模块，主文件保留 `QuestionNormalizer` + 向后兼容重导出），
 统一标准化、校验、去重，再转换成现有 DB 兼容字段。
 
 ```text
 Excel / PDF / OCR / AI / 手动编辑
-  ↓  process_question_pipeline(raw, source_type, source)
-QuestionNormalizer（同文件类）
   ↓
-question_imports 暂存区
-  ↓ 人工审核
+16 阶段管线（pipeline_orchestrator.py，P5-2 已拆分 9 个 stage 到 pipeline_stages/）
+  ├─ extract → normalize → ocr_correction → analyze_structure → classify_pages
+  ├─ split → match → normalize_schema（含 batch_validation + batch_dedup）
+  ├─ repair（AI 修复，可选低置信度触发）→ ai_validation
+  ├─ similarity_match → math_detect → table_detect → review
+  └─ 各阶段支持 checkpoint + artifact resume + quality_report
+  ↓
+process_question_pipeline(raw, source_type, source)
+  → QuestionNormalizer（同文件类，保留向后兼容）
+  → question_pipeline 子模块：ai_complete / ai_enrich / draft_generator / import_writer（P5-3 拆出）
+  ↓
+question_imports 暂存区（含 quality_report、risk_flags、performance_profile）
+  ↓ 人工审核（支持低风险批量通过、原图对照预览、公式截图展示）
 questions 正式题库
 ```
 
 原则：
 
-- 单文件聚合，不再拆 service / helper / utils。
 - AI 生成的题目必须经过 question_imports，绝不直接进 questions。
 - Level 1 去重已落库：标准化后生成 `question_hash`，导入阶段只标记疑似重复，发布/审核通过阶段再做最终完全重复拦截。
+- 质量报告（`quality_report`）和失败归因（`ocr_failure_analyzer`）随 pipeline 结果返回，自动识别 16 种失败类型。
 
 > 2026-05-30 更新原因：同步题库 Level 1 完全重复检测已实现字段与流程。
 
@@ -151,5 +160,24 @@ DB 兼容字段：
 - AI Parser（DeepSeek）输出题型、知识点、难度、答案建议，结果同样进入 pipeline。
 - 图片 OCR 导入也必须先经过 `question_imports` 暂存与人工审核，不会因为诊断信息更完整而变成自动入库。
 - AI 不可用时 pipeline 仍可正常工作，导入和刷题不依赖 AI。
+- 所有 AI 编辑经过 `ai_safety.py` 安全门禁：变更前后 diff + 代码符号保护 + 中文比例检查 + 选项数保护 + 可审计 `AIEditTrace`。
 
-> 2026-06-01 更新原因：同步图片 OCR 导入诊断增强后，仍强调人工审核边界不变。
+> 2026-06-21 更新：同步 16 阶段管线、P5 拆分、质量报告和 AI Safety Gate。
+
+## 质量报告与失败归因（P6 新增）
+
+每个 pipeline 完成后自动生成 `quality_report`：
+
+| 字段 | 含义 |
+|------|------|
+| `total_questions` | 总识别题数 |
+| `low_risk` | 低风险题数（无 risk_flag） |
+| `medium_risk` | 需检查题数（有 risk_flag 但不含高危） |
+| `high_risk` | 高风险题数（含高危 risk_flag） |
+| `ai_answer_count` | AI 辅助生成答案数 |
+| `math_image_count` | 公式截图数 |
+| `table_markdown_count` | 表格 Markdown 数 |
+| `ocr_cache_hit_rate` | OCR 缓存命中率 |
+| `performance_summary` | 各阶段耗时/AI 调用/缓存统计 |
+
+失败归因（`ocr_failure_analyzer.py`）16 种分类，兼容 `risk_flags` 体系，自动识别 math_image_missing / answer_missing / options_anomaly / watermark_noise 等失败类型并给出修复建议。

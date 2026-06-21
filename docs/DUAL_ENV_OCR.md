@@ -2,8 +2,8 @@
 
 > 一级目录兼容入口。权威内容请维护 `/docs/architecture/DUAL_ENV_OCR.md`。
 
-- **更新时间**：2026-06-17
-- **变更原因**：从根目录迁移至 architecture 子目录。
+- **更新时间**：2026-06-21
+- **变更原因**：同步 P8 文档更新（enable_ai_correction 说明、测试计数、性能 Profile）。
 
 ## 权威文档
 

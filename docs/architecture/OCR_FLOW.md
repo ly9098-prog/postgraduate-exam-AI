@@ -1,6 +1,8 @@
 # OCR & 题目导入流程
 
-> 本项目不做复杂 OCR。当前支持 **Excel**、**可复制文本型 PDF** 和 **图片 OCR 导入**。图片 OCR 仅做文本提取，结果仍进入导入管线并保留人工审核；扫描版 PDF 仍不直接处理，除非后续扩展为图片导入路径。
+> 当前支持 **Excel**、**PDF（文本型+扫描型）** 和 **图片 OCR 导入**。扫描版 PDF 自动触发 PaddleOCR 识别或 PaddleOCR-VL 外部 API 回退。所有导入结果必须经过人工审核，不接受纯 AI 自动入库。
+>
+> 更新于 2026-06-21（P8 功能冻结）：OCR 导入管线已进入功能冻结状态，后续仅允许 bugfix。管线包含 16 个阶段（extract → review），支持 checkpoint + artifact resume、质量报告、性能 Profile 和失败自动归因。
 
 ---
 
@@ -70,19 +72,28 @@ PUT /api/v1/import/questions/{id}          ← 单题审批/拒绝，发布前�
 POST /api/v1/import/batches/{id}/approve  ← 批量审批，缺字段跳过，发布前按 subject + question_hash 拦截完全重复
 ```
 
-### 数据流（规划中 — 导入管线）
+### 数据流（当前 — 完整导入管线，16 阶段）
 
 ```
-文件上传 → 解析模块
-  → ImportTextNormalizer（文本标准化）
-    → OCR Correction Layer（AI 噪声修复，auto 模式仅噪声时触发）
-      → DocumentStructureAnalyzer（结构分析）
-        → QuestionSplitter（题目切分）
-          → AnswerMatcher（答案匹配）
-          → QuestionNormalizer（Schema 标准化）
-            → AIRepairService（AI 修复，可选）
-              → SimilarityMatcher（题库相似匹配建议，阈值 0.85）
-                → 审核队列 → question_imports
+文件上传 → OCR 识别 → 16 阶段管线（pipeline_orchestrator.py）
+  │
+  ├─ [1] extract         — PaddleOCR 文本提取
+  ├─ [2] normalize       — text_normalizer 规则清洗
+  ├─ [3] ocr_correction  — OCRFixRouter 纠错路由（PaddleOCR-VL → DeepSeek → Rule fallback）
+  ├─ [4] analyze_structure — DocumentStructureAnalyzer
+  ├─ [5] classify_pages  — PageClassifier
+  ├─ [6] split           — QuestionSplitter
+  ├─ [7] match           — AnswerMatcher
+  ├─ [8] normalize_schema — QuestionNormalizer + BatchValidation + BatchDedup
+  ├─ [9] repair          — AIRepairService（可选，低置信度题触发）
+  ├─ [10] ai_validation  — AI 验证
+  ├─ [11] similarity_match — SimilarityMatcher（题库相似匹配建议）
+  ├─ [12] math_detect    — MathImportProfile 公式区域检测 + 截图裁剪
+  ├─ [13] table_detect   — TableRegionDetector 表格 Markdown 转换
+  ├─ [14] review         — 提交审核队列（question_imports）
+  │
+  └─ 各阶段支持 checkpoint + artifact resume（pipeline_artifacts.py）
+     每阶段完成后输出 quality_report + performance_profile（P6）
 ```
 
 ### Excel 解析 (`_parse_excel` + `_raw_to_parsed`)
@@ -132,54 +143,54 @@ POST /api/v1/import/batches/{id}/approve  ← 批量审批，缺字段跳过，�
 
 ## 存在问题
 
-1. **图片 OCR 导入已进入主链路，但仍保留人工审核** — 当前已支持图片/截图 OCR 文本提取并进入 question_imports；扫描版 PDF 仍不会直接走 OCR 解析，除非先转成图片导入或后续显式扩展该路径
+1. **图片 OCR 导入已进入主链路，但仍保留人工审核** — 当前已支持图片/截图 OCR 文本提取并进入 question_imports；扫描版 PDF 使用 PaddleOCR 或 PaddleOCR-VL 回退处理
 2. **PDF 科目猜测不稳定** — 简单关键词打分，混合科目文档（如数学卷子带英文题）可能猜错
 3. **PDF 切题准确率不高** — 依赖题号正则，遇到"1."和"1、"混用、分页断行等情况容易漏切或错切
 4. **同步解析** — 大文件（几百道题）在 HTTP 请求中同步解析，用户体验差（无进度反馈）
 5. **Excel 列名容错有限** — 目前写死的列名映射表，用户用了中文缩写（如"题号""题型""答案"的不同变体）可能匹配不上
 6. **无图片嵌入** — `Question.content.images` 字段存在但导入模块不会填充，所有导入题无图
 7. **文件级重复检测未实现** — Level 1 题目内容 hash 已用于导入标记和发布拦截，但同一文件重复上传仍会新建 batch_id，没有基于文件内容 SHA256 的上传级去重
+8. **导入管线同步阻塞** — 16 阶段管线在单线程中同步执行，大文件导入 HTTP 连接超时风险（已在 P4 引入分块 runner 缓解）
 
 ---
 
-## 下一阶段扩展方案
+## 下一阶段扩展方案（2026-06-21 更新：大部分已完成）
 
-### Phase 1 — 体验提升（1 天，优先做人能做的事）
+### ✅ Phase 1 — 体验提升（已完成）
 
-- **Excel 列名智能匹配**：不再用死映射表，改为遍历 Excel 列名，用模糊匹配（包含关系 / 拼音首字母 / 常见别称）找到最可能的字段
-- **大文件异步提示**：上传接口先返回 `{batch_id, status: "parsing"}`，后台用 `BackgroundTasks` 解析，前端轮询 `GET /batches/{id}` 获取进度
+- ✅ **Excel 列名智能匹配**：不再用死映射表，改为遍历 Excel 列名，用模糊匹配（包含关系 / 拼音首字母 / 常见别称）找到最可能的字段
+- ✅ **大文件异步提示**：上传接口先返回 `{batch_id, status: "parsing"}`，后台用 `BackgroundTasks` 解析，前端轮询 `GET /batches/{id}` 获取进度
 
-### Phase 2 — 文件级去重（0.5 天）
+### ✅ Phase 2 — 文件级去重（已完成）
 
-- 新增 `import_service.check_duplicate(content_hash)`：
+- ✅ 新增 `import_service.check_duplicate(content_hash)`：
   - 上传前计算文件内容的 SHA256
   - 查 `Question.source_file` + `raw_content` 判断是否已导入
   - 已导入文件在前端提示"该文件已导入过（batch_id: xxx）"
 
-### Phase 3 — 可选 OCR 接入（当确实需要时）
+### ✅ Phase 3 — OCR 接入（已完成，远超初始范围）
 
-> 明确需求场景：用户有大量**扫描版纸质题集**需要导入。在此之前不值得做。
+> 当前已完成的能力远超出 Phase 3 初始规划：
 
-- 使用 DeepSeek VL 或类似 API 识别图片中的题目文字
-- 不引入本地 OCR 模型（Tesseract / PaddleOCR），太重
-- 方案：前端或后端将 PDF 页面转为图片，调用 AI API 提取文本
-- 结果回填到 `_parse_pdf` 的文本提取逻辑中
+- 使用 PaddleOCR（本地 GPU/CPU）进行通用文字识别
+- PaddleOCR-VL 外部高精 OCR API 作为纠错路由链首
+- DeepSeek 纯文本纠错作为回退
+- AI Safety Gate（`ai_safety.py`）记录编辑前后 diff，保护代码符号/中文比例/选项数
+- 公式截图裁剪（`math_detect`）：高数题自动检测公式区域并截图保留
+- 表格 Markdown 转换（`table_detect`）：408 调度表/Cache 表保留行列结构
+- OCR 结果缓存（`ocr_cache_service.py`）：SHA256 哈希 + config_hash，避免重复 OCR
+- 16 阶段完整管线，含 checkpoint + artifact resume
+- 质量报告（`quality_report`）/ 性能 Profile / 失败自动归因（`ocr_failure_analyzer.py`）
+- PaddleOCR-VL → DeepSeek → Rule 三层纠错路由（旧版 Qwen-VL 已移除）
+- Pipeline artifact 真断点恢复，幂等入库
 
-```
-触发条件
-  上传 PDF → pypdf 提取文本 → 文本为空 / <100字符？
-    └─YES→ AI 图片识别降级 → 解析结果 → 进入 QuestionImport
-    └─NO → 现有文本解析逻辑
-```
-
-- AI 图片识别出错不影响正常流程（仍然报错提示用户手动输入）
-- 识别结果同样需要人工确认
-
-### 明确不做的
+### 明确不做的（2026-06-21 更新）
 
 - ❌ 手写识别 / 复杂 OCR pipeline
 - ❌ 全自动 OCR 入库（始终需要人工审核）
 - ❌ 拍照搜题
-- ❌ PDF 表格结构化识别
-- ❌ 公式识别（LaTeX 仍需手动校正）
-- ❌ 本地 OCR 模型部署
+- ❌ ~~公式识别（LaTeX 仍需手动校正）~~ ✅ **已实现**：公式截图裁剪以图片形式保留，无需 LaTeX 校正
+- ❌ ~~本地 OCR 模型部署~~ ✅ **已部署**：PaddleOCR 本地 GPU/CPU
+- ❌ LLM 输出缓存（每次 AI 调用独立，缓存会导致陈旧结果无法更新）
+- ❌ 纯 AI 自动入库（所有导入必须经过 question_imports + 人工确认）
+- ❌ OCR 结果直接入库（必须经过清洗、切题、标准化、审核）

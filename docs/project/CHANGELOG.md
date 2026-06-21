@@ -6,6 +6,48 @@
 
 ## 2026-06-21
 
+- **P8 功能冻结 + 回归加固 + 部署验证 + 种子数据完成**
+  - 功能冻结检查：18 个模块全部冻结，仅允许 bugfix。
+  - 回归测试加固：新增 52 个测试（ocr_alert_rules 28 tests + ocr_case_exporter 24 tests），覆盖 P7 新增模块。
+  - pipeline_artifacts assertion 修复：cleanup_expired 返回值结构变更导致测试断言错误已修正。
+  - 生产部署验证：5 容器健康 / 新模块加载正常 / HTTPS 可达 / API 端到端通过。
+  - 清理 Dry-Run：scanned=18, would_delete=0，无异常。
+  - subjects 种子数据：插入 10 条学科记录（4 一级 + 6 二级）。
+  - Release Candidate 判断：`ready_for_beta`，无阻断问题。
+  - 受影响文件：`backend/app/features/pipeline_artifacts.py`、`tests/test_pipeline_artifacts.py`、`tests/test_features/test_ocr_alert_rules.py`、`tests/test_features/test_ocr_case_exporter.py`。
+  - 受影响文档：`docs/audit/ocr-pipeline-full-engineering-audit.md`、`docs/project/CHANGELOG.md`。
+
+- **P7 生产运维 — 观测沉淀 + 告警 + 清理 + 样本导出 + 运维文档完成**
+  - 观测指标沉淀：`GET /imports/pipelines` 端点，API 层聚合 quality_report，无 DB migration。
+  - 告警规则：`ocr_alert_rules.py` 7 条规则（import_failed / high_risk / manual_review / ai_answer / cache_hit / duration / ocr_fail），pipeline 完成自动评估。
+  - 清理任务：OCR cache TTL 14d + artifact dry-run + 统一 `POST /maintenance/cleanup` 端点。
+  - 失败样本导出：`ocr_case_exporter.py` raw_data 截断 2000 字符 + expected_template 全部为空 + 单题/批量端点。
+  - 管理端运维页：健康摘要 + 告警展示 + Dry-Run/确认清理 UI + layout 新增"运维" tab。
+  - Preflight 检查：`scripts/ocr_preflight_check.py` 离线 5 项 + 可选在线 3 项。
+  - 运维文档：`docs/ocr/OPERATIONS.md` + `TROUBLESHOOTING.md` + `DEPLOY_CHECKLIST.md`。
+  - 受影响文件：`backend/app/features/ocr_alert_rules.py`（新增）、`backend/app/features/ocr_case_exporter.py`（新增）、`backend/app/api/v1/admin_imports.py`、`scripts/ocr_preflight_check.py`（新增）、`admin-frontend/src/app/(admin)/imports/maintenance/page.tsx`（新增）。
+  - 受影响文档：`docs/ocr/*`、`docs/audit/ocr-pipeline-full-engineering-audit.md`、`docs/project/CHANGELOG.md`。
+
+- **P6 验收 + 性能 Profile + 失败归因 + 精调 + Dashboard + CI 策略完成**
+  - 验收样本扩充：10 类样本模板（高数/线代/概率统计/408 代码/408 表格/多列/水印/计网/OS），含 case.json 元数据。
+  - 性能 Profile：`PipelineStage` 内置 input_count/output_count/cache_hit/cache_miss/ai_calls/tokens_used，聚合到 diagnostics。
+  - 失败自动归因：`ocr_failure_analyzer.py`（772 行）16 种失败分类 + 11 checker 函数。
+  - 小范围精调：text_normalizer 扩充教育品牌水印 + 中文页码行过滤，code_detector 扩充 408 C/C++ 数据结构关键词。
+  - 管理端 Dashboard：tasks 页面新增质量概览卡片（风险分布/AI 答案/公式截图/性能概览/高风险跳转）。
+  - 三级测试策略：acceptance runner 支持 --strict 模式，CI 不依赖真实样本。
+  - 受影响文件：`backend/app/features/ocr_failure_analyzer.py`（新增）、`backend/app/features/text_normalizer.py`、`backend/app/features/code_detector.py`、`admin-frontend/src/app/(admin)/imports/tasks/page.tsx`。
+  - 受影响文档：`docs/audit/ocr-pipeline-full-engineering-audit.md`、`docs/project/CHANGELOG.md`。
+
+- **P5 管线拆分完成**
+  - P5-2：`pipeline_orchestrator.py` 渐进拆分 → 7 个 `pipeline_stages/` 模块（match/math_detect/table_detect/normalize_schema/repair/review），文件行数 4454→4081。
+  - P5-3：`question_pipeline.py` 拆出 4 个子模块（question_ai_complete.py / question_ai_enrich.py / question_draft_generator.py / question_import_writer.py），保留全部向后兼容重导出。
+  - Qwen 清除：删除 qwen_adapter.py（309 行），路由链简化为 PaddleOCR-VL → DeepSeek → Rule。
+  - Vision 消费端落地：添加 feature="vision" 到 FEATURE_VALUES + admin UI；pipeline _run_extract 接入 resolve_active_model(feature="vision") 作为 PaddleOCR-VL 回退。
+  - 受影响文件：`backend/app/features/pipeline_stages/*`（新增）、`backend/app/features/question_ai_complete.py`（新增）、`backend/app/features/question_ai_enrich.py`（新增）、`backend/app/features/question_draft_generator.py`（新增）、`backend/app/features/question_import_writer.py`（新增）、`backend/app/features/ocr_fix/qwen_adapter.py`（删除）。
+  - 受影响文档：`docs/audit/ocr-pipeline-full-engineering-audit.md`、`docs/project/CHANGELOG.md`。
+
+## 2026-06-20
+
 - **P4 真断点恢复 + 幂等入库 + 导题验收报告完成**
   - 新增 `pipeline_artifacts.py` 提供文件级 artifact 存储（`.backend_cache/pipeline_artifacts/{pipeline_id}/`），支持 split / normalize_schema / repair / math_detect / table_detect / review 共 6 种 artifact 类型。
   - 真断点恢复：resume 时自动检测 artifact，从 normalize_schema / repair / math_detect / table_detect 恢复 questions，跳过已完成 stage，不再重跑 OCR 和 AI 修复。
