@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date
 from typing import Any
 
@@ -95,7 +96,7 @@ def export_failure_cases_batch(
     cases: list[dict] = []
     for item in question_imports:
         if failure_type_filter:
-            item_failures = item.get("failure_types") or item.get("risk_flags") or []
+            item_failures = list(item.get("failure_types") or [])
             if failure_type_filter not in item_failures:
                 continue
         cases.append(export_failure_case(item))
@@ -117,7 +118,6 @@ def _safe_filename(source_file: str | None) -> str:
     """Extract only the filename from a path, never the full path."""
     if not source_file:
         return ""
-    import os
     return os.path.basename(source_file)
 
 

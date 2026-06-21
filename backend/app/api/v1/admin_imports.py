@@ -875,6 +875,11 @@ async def list_pipelines(
     from app.models.import_pipeline import ImportPipeline
     from sqlalchemy import select, func, desc
 
+    # Whitelist sort_by to avoid getattr on arbitrary model attributes
+    _ALLOWED_SORT = {"started_at", "finished_at", "status", "source_type", "total_pages", "pipeline_id"}
+    if sort_by not in _ALLOWED_SORT:
+        sort_by = "started_at"
+
     query = select(ImportPipeline)
     count_query = select(func.count(ImportPipeline.pipeline_id))
 
