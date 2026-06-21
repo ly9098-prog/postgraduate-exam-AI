@@ -1755,6 +1755,26 @@ async def enrich_import(
     if qi.status != "pending":
         raise ValueError("仅支持对 pending 记录使用 AI 辅助")
 
+    # P3-5: check if complete stage changed answer — if so, skip enrich to avoid
+    # cascading AI hallucination (enrich shouldn't amplify a bad AI answer).
+    qi_meta = qi.ai_metadata or {}
+    if _has_complete_answer_risk(qi_meta):
+        logger.warning(
+            "P3-5: enrich_import %d skipped — complete changed answer (risk)",
+            import_id,
+        )
+        qi.ai_metadata = {
+            **qi_meta,
+            "_enrich_skipped_reason": "complete_high_risk",
+            "_enrich_risk_flags": ["enrich_skipped_due_to_complete_risk"],
+        }
+        await db.commit()
+        return {
+            "from_fallback": False,
+            "ai_metadata": qi.ai_metadata,
+            "skipped_reason": "complete_high_risk",
+        }
+
     messages = build_enrich_question(_qi_to_dict(qi))
     prompt_text = json.dumps(messages, ensure_ascii=False)
     resp, raw, _ = await _call_or_fallback(messages, fallback.get_fallback_enrich(), db)
@@ -1819,6 +1839,7 @@ async def enrich_batch(
     max_concurrency: int = 3,
 ) -> dict:
     """批量 AI 丰富。分三阶段：顺序预读 → 并发 LLM → 顺序落 DB。"""
+    _start_time = datetime.now()
     res = await db.execute(
         select(QuestionImport)
         .where(
@@ -1838,9 +1859,24 @@ async def enrich_batch(
     _base_url = creds[1] if creds else None
     _model_name = creds[2] if creds else None
 
+    # P3-5: skip enrich for questions with high-risk complete
+    skipped_count = 0
+
     # Phase 1: 顺序预读所有 QI，构建 Prompt
     prepared: list[dict] = []
     for qi in records:
+        # P3-5: check complete risk
+        if _has_complete_answer_risk(qi.ai_metadata or {}):
+            logger.warning(
+                "P3-5: enrich_batch skip import_id=%d — complete changed answer",
+                qi.id,
+            )
+            qi.ai_metadata = dict(qi.ai_metadata or {})
+            qi.ai_metadata["_enrich_skipped_reason"] = "complete_high_risk"
+            qi.ai_metadata["_enrich_risk_flags"] = ["enrich_skipped_due_to_complete_risk"]
+            skipped_count += 1
+            continue
+
         messages = build_enrich_question(_qi_to_dict(qi))
         prompt_text = json.dumps(messages, ensure_ascii=False)
         prepared.append({
@@ -1935,11 +1971,33 @@ async def enrich_batch(
         ))
         succeeded += 1
 
+    # P3-6/7: track token usage through shared budget
+    total_enrich_tokens = sum(
+        (result.get("resp") or {}).get("tokens_used", 0)
+        for result in gathered if isinstance(result, dict) and result.get("resp")
+    )
+    if total_enrich_tokens:
+        from app.features.token_budget import record_token_usage
+        await record_token_usage(total_enrich_tokens)
+
+    _duration_ms = int((datetime.now() - _start_time).total_seconds() * 1000)
+
     await db.commit()
     return {
         "processed": len(records),
         "succeeded": succeeded,
         "fallback": fallback_count,
+        "skipped_complete_risk": skipped_count,
+        # P3-6/7: stats
+        "enrich_stats": {
+            "total": len(records),
+            "success": succeeded,
+            "failed": fallback_count,
+            "skipped": skipped_count,
+            "concurrency": max_concurrency,
+            "duration_ms": _duration_ms,
+            "tokens_used": total_enrich_tokens,
+        },
     }
 
 
@@ -2162,7 +2220,19 @@ async def complete_import(
         return {"missing": missing, "from_fallback": True, "ai_metadata": parsed}
 
     parsed_raw = _extract_json(raw) or {}
+
+    # P3-5: capture before-snapshot before applying changes
+    before_snapshot = _capture_qi_snapshot(qi)
+
     suggestion = _apply_complete_suggestion(qi, parsed_raw, missing)
+
+    # P3-5: diff and compute risk flags
+    complete_risk_flags = _diff_complete_risk(before_snapshot, qi)
+    if complete_risk_flags:
+        logger.info(
+            "P3-5: complete_import %d risk flags: %s", import_id, complete_risk_flags,
+        )
+
     answer_uncertain = bool(parsed_raw.get("answer_uncertain"))
     confidence = _coerce_confidence(parsed_raw.get("confidence"))
 
@@ -2172,9 +2242,12 @@ async def complete_import(
     qi.ai_metadata = {
         **(qi.ai_metadata or {}),
         "complete_suggestion": suggestion,
-        "answer_uncertain": answer_uncertain,
+        "answer_uncertain": answer_uncertain or bool(complete_risk_flags),
         "reason": parsed_raw.get("reason"),
         "missing_fields": missing,
+        # P3-5: store risk flags for enrich gating
+        "_complete_risk_flags": complete_risk_flags,
+        "_complete_before_snapshot": before_snapshot,
     }
     qi.ai_raw_response = raw
 
@@ -2211,6 +2284,74 @@ def _coerce_confidence(value: Any) -> float | None:
     if isinstance(value, (int, float)):
         return max(0.0, min(1.0, float(value)))
     return None
+
+
+# P3-5: complete→enrich version rollback helpers
+
+
+def _capture_qi_snapshot(qi: QuestionImport) -> dict:
+    """Capture before-snapshot of key question fields for change detection."""
+    content = qi.parsed_content or {}
+    return {
+        "stem": str(content.get("text") or ""),
+        "answer": str(qi.parsed_answer or ""),
+        "options": _snapshot_options(qi.parsed_options),
+        "analysis": str(qi.parsed_analysis or ""),
+    }
+
+
+def _snapshot_options(opts: Any) -> str:
+    if not opts:
+        return ""
+    if isinstance(opts, dict):
+        return str(sorted(opts.items()))
+    if isinstance(opts, list):
+        return str(sorted(
+            (str(o.get("key", "")), str(o.get("text", "")))
+            for o in opts if isinstance(o, dict)
+        ))
+    return str(opts)
+
+
+def _diff_complete_risk(before: dict, qi: QuestionImport) -> list[str]:
+    """Diff before/after snapshot and return risk flags for significant changes.
+
+    Returns risk flags like:
+        complete_changed_answer — AI generated/wrote a new answer
+        complete_changed_stem — AI modified the stem
+        complete_changed_options — AI modified options
+    """
+    risk_flags: list[str] = []
+    content = qi.parsed_content or {}
+
+    after_stem = str(content.get("text") or "")
+    if before.get("stem") and after_stem and before["stem"] != after_stem:
+        risk_flags.append("complete_changed_stem")
+
+    after_answer = str(qi.parsed_answer or "")
+    if not before.get("answer") and after_answer:
+        # AI generated answer from scratch — always flag
+        risk_flags.append("complete_generated_answer")
+        risk_flags.append("complete_changed_answer")
+    elif before.get("answer") and after_answer and before["answer"] != after_answer:
+        risk_flags.append("complete_changed_answer")
+
+    after_options = _snapshot_options(qi.parsed_options)
+    if before.get("options") and after_options and before["options"] != after_options:
+        risk_flags.append("complete_changed_options")
+
+    return risk_flags
+
+
+def _has_complete_answer_risk(ai_metadata: dict | None) -> bool:
+    """Check if complete stage changed/generated the answer (high risk for enrich)."""
+    if not ai_metadata:
+        return False
+    risk_flags = ai_metadata.get("_complete_risk_flags") or []
+    return bool(set(risk_flags) & {"complete_changed_answer", "complete_generated_answer"})
+
+
+# P3-5: end helpers
 
 
 def _apply_complete_suggestion(
@@ -2432,11 +2573,29 @@ async def complete_import_with_strategy(
         return {"completed": [], "from_fallback": True, "ai_metadata": parsed, "error": resp.get("error")}
 
     parsed_raw = _extract_json(raw) or {}
+
+    # P3-5: capture before-snapshot before applying changes
+    before_snapshot = _capture_qi_snapshot(qi)
+
     completed = _apply_batch_complete_result(qi, parsed_raw, to_complete, strategy)
+
+    # P3-5: diff and compute risk flags
+    complete_risk_flags = _diff_complete_risk(before_snapshot, qi)
+    if complete_risk_flags:
+        logger.info(
+            "P3-5: complete_import_with_strategy %d risk flags: %s",
+            import_id, complete_risk_flags,
+        )
+
     confidence = _coerce_confidence(parsed_raw.get("confidence"))
 
     qi.ai_confidence = confidence
     qi.ai_raw_response = raw
+    # P3-5: store risk flags in ai_metadata for enrich gating
+    existing_meta = dict(qi.ai_metadata or {})
+    existing_meta["_complete_risk_flags"] = complete_risk_flags
+    existing_meta["_complete_before_snapshot"] = before_snapshot
+    qi.ai_metadata = existing_meta
 
     db.add(_build_log(
         user_id=user_id, action="batch_complete", target_type="import",
@@ -2464,6 +2623,7 @@ async def batch_complete_questions(
     max_concurrency: int = 3,
 ) -> dict:
     """批量 AI 补全。外部需自行 commit。"""
+    _start_time = datetime.now()
     # 从 admin_ai_configs 读取 completion_auto_* 开关和自定义 prompt
     disabled_fields: set[str] = set()
     system_prompt: str | None = None
@@ -2608,11 +2768,29 @@ async def batch_complete_questions(
         qi = item["qi"]
         parsed_raw = item["parsed_raw"]
         to_complete = item["to_complete"]
+
+        # P3-5: capture before-snapshot before applying changes
+        before_snapshot = _capture_qi_snapshot(qi)
+
         completed = _apply_batch_complete_result(qi, parsed_raw, to_complete, strategy)
+
+        # P3-5: diff and compute risk flags
+        complete_risk_flags = _diff_complete_risk(before_snapshot, qi)
+        if complete_risk_flags:
+            logger.info(
+                "P3-5: batch_complete %d risk flags: %s",
+                import_id, complete_risk_flags,
+            )
+
         confidence = _coerce_confidence(parsed_raw.get("confidence"))
 
         qi.ai_confidence = confidence
         qi.ai_raw_response = item["resp_raw"]
+        # P3-5: store risk flags in ai_metadata for enrich gating
+        existing_meta = dict(qi.ai_metadata or {})
+        existing_meta["_complete_risk_flags"] = complete_risk_flags
+        existing_meta["_complete_before_snapshot"] = before_snapshot
+        qi.ai_metadata = existing_meta
 
         db.add(_build_log(
             user_id=user_id, action="batch_complete", target_type="import",
@@ -2634,12 +2812,33 @@ async def batch_complete_questions(
             error=None, completed_fields=completed,
         ))
 
+    # P3-6: track total token usage through shared budget
+    total_tokens = sum(
+        item.get("tokens_used", 0) for item in ai_results if isinstance(item, dict)
+    )
+    if total_tokens:
+        from app.features.token_budget import record_token_usage
+        await record_token_usage(total_tokens)
+
+    # P3-6: wall-clock duration and concurrency stats
+    _duration_ms = int((datetime.now() - _start_time).total_seconds() * 1000)
+
     return {
         "total": len(import_ids),
         "succeeded": succeeded,
         "failed": failed,
         "skipped": skipped,
         "items": results,
+        # P3-6/7: stats
+        "complete_stats": {
+            "total": len(import_ids),
+            "success": succeeded,
+            "failed": failed,
+            "skipped": skipped,
+            "concurrency": max_concurrency,
+            "duration_ms": _duration_ms,
+            "tokens_used": total_tokens,
+        },
     }
 
 
