@@ -335,6 +335,86 @@ export default function ImportTasksPage() {
                     </a>
                   </div>
                 ) : null}
+
+              {/* ——— Quality Report Dashboard ——— */}
+              {status.quality_report && isTerminalStatus(status.status) ? (
+                <div className="mt-4 space-y-3 rounded-xl border border-[var(--color-border)] bg-white/80 p-4">
+                  <h4 className="font-display text-sm font-bold text-[var(--ink)]">导入质量概览</h4>
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="rounded-lg bg-white/70 p-2.5">
+                      <span className="text-[9px] uppercase tracking-wider text-[var(--color-text-hint)]">总题数</span>
+                      <p className="mt-0.5 font-semibold text-[var(--ink)]">{status.quality_report.total_questions}</p>
+                    </div>
+                    {status.quality_report.low_risk !== undefined ? (
+                      <div className="rounded-lg bg-green-50/70 p-2.5">
+                        <span className="text-[9px] uppercase tracking-wider text-green-600">低风险</span>
+                        <p className="mt-0.5 font-semibold text-green-700">{status.quality_report.low_risk}</p>
+                      </div>
+                    ) : null}
+                    {status.quality_report.medium_risk !== undefined ? (
+                      <div className="rounded-lg bg-amber-50/70 p-2.5">
+                        <span className="text-[9px] uppercase tracking-wider text-amber-600">需检查</span>
+                        <p className="mt-0.5 font-semibold text-amber-700">{status.quality_report.medium_risk}</p>
+                      </div>
+                    ) : null}
+                    {status.quality_report.high_risk !== undefined ? (
+                      <div className="rounded-lg bg-red-50/70 p-2.5">
+                        <span className="text-[9px] uppercase tracking-wider text-red-600">高风险</span>
+                        <p className="mt-0.5 font-semibold text-red-700">{status.quality_report.high_risk}</p>
+                      </div>
+                    ) : null}
+                    {status.quality_report.ai_answer_count !== undefined ? (
+                      <div className="rounded-lg bg-purple-50/70 p-2.5">
+                        <span className="text-[9px] uppercase tracking-wider text-purple-600">AI 答案</span>
+                        <p className="mt-0.5 font-semibold text-purple-700">{status.quality_report.ai_answer_count}</p>
+                      </div>
+                    ) : null}
+                    {status.quality_report.math_image_count !== undefined ? (
+                      <div className="rounded-lg bg-blue-50/70 p-2.5">
+                        <span className="text-[9px] uppercase tracking-wider text-blue-600">公式截图</span>
+                        <p className="mt-0.5 font-semibold text-blue-700">{status.quality_report.math_image_count}</p>
+                      </div>
+                    ) : null}
+                    {status.quality_report.table_markdown_count !== undefined ? (
+                      <div className="rounded-lg bg-cyan-50/70 p-2.5">
+                        <span className="text-[9px] uppercase tracking-wider text-cyan-600">表格</span>
+                        <p className="mt-0.5 font-semibold text-cyan-700">{status.quality_report.table_markdown_count}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                  {status.quality_report.estimated_manual_check_rate !== undefined ? (
+                    <div className="flex items-center gap-2 rounded-lg bg-[var(--color-bg-input)] px-2.5 py-2 text-[10px] text-[var(--color-text-secondary)]">
+                      <span>人工检查率：{(status.quality_report.estimated_manual_check_rate * 100).toFixed(0)}%</span>
+                      {status.quality_report.estimated_manual_check_rate > 0.4 ? (
+                        <span className="ml-auto rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] text-amber-700">偏高</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {status.quality_report.performance_summary ? (
+                    <details className="group rounded-lg border border-[var(--color-border)] bg-white/50">
+                      <summary className="flex cursor-pointer items-center justify-between px-2.5 py-2 text-[10px] font-semibold text-[var(--color-text-secondary)]">
+                        <span>性能概览</span>
+                        <span className="text-[8px] text-[var(--color-text-hint)] transition group-open:rotate-180">▼</span>
+                      </summary>
+                      <div className="border-t border-[var(--color-border)] px-2.5 py-2 text-[10px] text-[var(--color-text-secondary)] space-y-1">
+                        <div className="flex justify-between"><span>总耗时</span><span>{(status.quality_report.performance_summary.total_duration_ms / 1000).toFixed(1)}s</span></div>
+                        <div className="flex justify-between"><span>AI 调用</span><span>{status.quality_report.performance_summary.total_ai_calls} 次</span></div>
+                        <div className="flex justify-between"><span>Token 用量</span><span>{status.quality_report.performance_summary.total_tokens_used}</span></div>
+                        <div className="flex justify-between"><span>OCR 缓存命中率</span><span>{(status.quality_report.performance_summary.cache_hit_rate * 100).toFixed(0)}%</span></div>
+                        <div className="flex justify-between"><span>最慢阶段</span><span>{status.quality_report.performance_summary.slowest_stage} ({(status.quality_report.performance_summary.slowest_duration_ms / 1000).toFixed(1)}s)</span></div>
+                      </div>
+                    </details>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {status.batch_id ? (
+                      <a className="inline-flex h-7 items-center gap-1 rounded-lg border border-[var(--color-border)] bg-white/70 px-2.5 text-[10px] font-medium text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary-dark)]" href={`/imports/review?batch_id=${encodeURIComponent(status.batch_id)}&risk_filter=high`}>
+                        <AlertCircle className="h-3 w-3" />
+                        查看高风险题
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
               </div>
             ) : null}
 

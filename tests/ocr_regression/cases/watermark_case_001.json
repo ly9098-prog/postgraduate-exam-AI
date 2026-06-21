@@ -1,0 +1,29 @@
+{
+  "case_id": "watermark_case_001",
+  "source": "ocr_test/images/failure/watermark_fail_case.png",
+  "source_path": "ocr_test/images/failure/watermark_fail_case.png",
+  "description": "水印干扰题：带品牌水印和页码干扰的数学题",
+  "subject": "mixed",
+  "question_type": "unknown",
+  "expected": {
+    "stem_patterns": [
+      "下列"
+    ],
+    "has_options": false,
+    "option_count": 0,
+    "options_keys": [],
+    "correct_answer": "",
+    "has_math_image_segment": false,
+    "has_table_markdown_segment": false,
+    "expected_risk_flags": [],
+    "requires_review": true,
+    "min_confidence": 0.5
+  },
+  "ocr_hints": {
+    "known_ocr_issues": [
+      "水印文字可能混入题干",
+      "页码标记可能被错误识别为题号",
+      "品牌水印可能导致分段偏移"
+    ]
+  }
+}
