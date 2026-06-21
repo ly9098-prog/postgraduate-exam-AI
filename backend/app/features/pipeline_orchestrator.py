@@ -31,6 +31,15 @@ from app.features.ocr_correction_common import (
     _detect_noise, _detect_structure_abnormal, _filter_sensitive, _should_correct,
 )
 from app.features.page_classifier import classify_pages, filter_blocks_by_classification
+from app.features.pipeline_artifacts import (
+    cleanup_artifacts as _pipeline_cleanup_artifacts,
+    find_resumable_stage as _find_resumable_stage,
+    list_artifacts as _list_artifacts,
+    load_artifact as _load_artifact,
+    save_artifact as _save_artifact,
+    save_completed_marker as _save_completed_marker,
+    save_failed_marker as _save_failed_marker,
+)
 from app.features.question_normalizer import normalize_questions
 from app.features.question_splitter import split_questions
 from app.features.similarity_matcher import match_similar_questions
@@ -187,6 +196,8 @@ _PIPELINE_STORE_FIELDS = (
     "batch_id",
     "raw_text_preview",
     "question_count",
+    "quality_report",
+    "artifacts",
 )
 
 
@@ -1011,6 +1022,107 @@ def _get_token_usage_snapshot_safe() -> dict:
         return {"daily": 0, "monthly": 0}
 
 
+# ---------------------------------------------------------------------------
+# P4-5: quality report after pipeline completion
+# ---------------------------------------------------------------------------
+
+
+def _build_quality_report(data: dict, diagnostics: dict) -> dict:
+    """Build an import quality report from pipeline data and diagnostics.
+
+    The report is derived from existing data — no extra queries.
+    Returns a dict with optional fields (all fields can be absent/None
+    without breaking the pipeline).
+    """
+    questions = data.get("questions") or []
+    total = len(questions)
+
+    # Risk distribution from per-question risk_flags
+    low = 0
+    medium = 0
+    high = 0
+    ai_answer_count = 0
+    table_count = 0
+    math_image_count = 0
+
+    for q in questions:
+        risk_flags = q.get("risk_flags") or []
+        # Re-use the same classification as derive_import_risk
+        is_high = bool(set(risk_flags) & {
+            "answer_ai_generated", "code_uncertain", "formula_uncertain",
+            "options_anomaly", "answer_missing", "ai_major_edit",
+            "math_image_crop_failed", "table_low_confidence",
+            "complex_formula_requires_review", "answer_missing",
+        })
+        if is_high:
+            high += 1
+        elif risk_flags:
+            medium += 1
+        else:
+            low += 1
+
+        if q.get("ai_answer_flag"):
+            ai_answer_count += 1
+
+        # Count segment types
+        segments = q.get("segments") or (q.get("parsed_content") or {}).get("segments") or []
+        for seg in segments:
+            if seg.get("type") == "table_markdown":
+                table_count += 1
+            elif seg.get("type") == "math_image":
+                math_image_count += 1
+
+    # Repair stats
+    repair_stats = data.get("repair_stats") or {}
+    repair_skipped = repair_stats.get("skipped_count", repair_stats.get("skipped", 0))
+    repair_called = repair_stats.get("repaired_count", repair_stats.get("repaired", 0))
+
+    # Review idempotency
+    review_commit = data.get("review_commit") or {}
+    review_duplicates = review_commit.get("duplicates_filtered", 0)
+
+    # OCR cache stats from diagnostics
+    ocr_correction = diagnostics.get("ocr_correction") or {}
+    stats = ocr_correction.get("stats") or {}
+    ocr_cache_hit = ocr_correction.get("cache_hit_count", 0)
+    ocr_cache_miss = ocr_correction.get("cache_miss_count", 0)
+
+    manual_review = medium + high
+    estimated_rate = round(manual_review / total, 2) if total > 0 else 0
+
+    report: dict = {
+        "total_questions": total,
+    }
+    if low > 0:
+        report["low_risk"] = low
+    if medium > 0:
+        report["medium_risk"] = medium
+    if high > 0:
+        report["high_risk"] = high
+    if manual_review > 0:
+        report["requires_manual_review"] = manual_review
+    if ai_answer_count > 0:
+        report["ai_answer_count"] = ai_answer_count
+    if math_image_count > 0:
+        report["math_image_count"] = math_image_count
+    if table_count > 0:
+        report["table_markdown_count"] = table_count
+    if repair_skipped > 0:
+        report["repair_skipped"] = repair_skipped
+    if repair_called > 0:
+        report["repair_called"] = repair_called
+    if ocr_cache_hit > 0:
+        report["ocr_cache_hit"] = ocr_cache_hit
+    if ocr_cache_miss > 0:
+        report["ocr_cache_miss"] = ocr_cache_miss
+    if review_duplicates > 0:
+        report["review_duplicates_skipped"] = review_duplicates
+    if total > 0:
+        report["estimated_manual_check_rate"] = estimated_rate
+
+    return report
+
+
 def _slim_diagnostics_arrays(diagnostics: dict) -> dict:
     """P0-3: 截断 diagnostics 中的大数组，限制每条诊断记录的内存占用。
 
@@ -1201,6 +1313,156 @@ class PipelineStage:
         if self.error:
             d["error"] = self.error
         return d
+
+
+# ---------------------------------------------------------------------------
+# ImportPipeline
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# P4-3: artifact-based true resume helpers
+# ---------------------------------------------------------------------------
+
+
+def _save_stage_artifact(pipeline_id: str, stage_name: str, data: dict) -> None:
+    """Save the current stage output as an artifact for later resume.
+
+    Only resumable stages are saved.  The artifact is a JSON file on disk
+    under ``.backend_cache/pipeline_artifacts/{pipeline_id}/``.
+    """
+    if stage_name == "split":
+        _save_artifact(pipeline_id, "split", {
+            "raw_questions": data.get("raw_questions", []),
+            "structure": data.get("structure"),
+            "source_file": data.get("source_file", ""),
+            "source_type": data.get("source_type", ""),
+            "subject": data.get("subject"),
+        })
+    elif stage_name == "normalize_schema":
+        _save_artifact(pipeline_id, "normalize_schema", {
+            "questions": data.get("questions", []),
+            "source_file": data.get("source_file", ""),
+            "source_type": data.get("source_type", ""),
+            "subject": data.get("subject"),
+        })
+    elif stage_name == "repair":
+        _save_artifact(pipeline_id, "repair", {
+            "questions": data.get("questions", []),
+        })
+    elif stage_name == "math_detect":
+        _save_artifact(pipeline_id, "math_detect", {
+            "questions": data.get("questions", []),
+        })
+    elif stage_name == "table_detect":
+        _save_artifact(pipeline_id, "table_detect", {
+            "questions": data.get("questions", []),
+        })
+    elif stage_name == "review":
+        _save_artifact(pipeline_id, "review", {
+            "batch_id": data.get("batch_id", ""),
+            "written": data.get("written", 0),
+        })
+
+
+def _restore_from_artifacts(
+    pipeline_id: str,
+    completed_stages: list[str],
+    data: dict,
+) -> tuple[str | None, set[str]]:
+    """Try to restore stage outputs from saved artifacts.
+
+    Looks for the most advanced resumable artifact and populates ``data``
+    accordingly.  Also marks all preceding stages as completed.
+
+    Returns:
+        (restored_stage, skipped_stages_set) where restored_stage is the
+        resume point (e.g. "match", "repair") and skipped_stages_set contains
+        the stage names that can be skipped.  Both are empty if nothing was
+        restored (full re-run).
+    """
+    from app.features.pipeline_artifacts import artifact_exists as _artifact_exists
+
+    # Priority order: most advanced first
+    resume_artifacts = [
+        "table_detect",
+        "math_detect",
+        "repair",
+        "normalize_schema",
+        "split",
+    ]
+
+    for stage_name in resume_artifacts:
+        if not _artifact_exists(pipeline_id, stage_name):
+            continue
+        saved = _load_artifact(pipeline_id, stage_name)
+        if saved is None:
+            continue
+
+        if stage_name == "split":
+            raw_questions = saved.get("raw_questions", [])
+            if not raw_questions:
+                continue
+            data["raw_questions"] = raw_questions
+            data["split_count"] = len(raw_questions)
+            data["structure"] = saved.get("structure")
+            data["source_file"] = saved.get("source_file", data.get("source_file", ""))
+            data["source_type"] = saved.get("source_type", data.get("source_type", ""))
+            data["subject"] = saved.get("subject", data.get("subject"))
+            # Mark preceding stages as completed
+            preceding = {"extract", "normalize_text", "ocr_correction",
+                         "analyze_structure", "classify_pages", "split"}
+            for s in preceding:
+                if s not in completed_stages:
+                    completed_stages.append(s)
+            logger.info(
+                "Resume from split artifact: %d raw_questions restored",
+                len(raw_questions),
+            )
+            return "split", preceding
+
+        elif stage_name in ("normalize_schema", "repair", "math_detect", "table_detect"):
+            questions = saved.get("questions", [])
+            if not questions:
+                continue
+            data["questions"] = questions
+            data["normalized_count"] = len(questions)
+            # Determine stages to skip — only up to the restored artifact.
+            # Stages AFTER the restored point still run normally.
+            if stage_name == "normalize_schema":
+                preceding = {"extract", "normalize_text", "ocr_correction",
+                             "analyze_structure", "classify_pages", "split",
+                             "match", "normalize_schema"}
+            elif stage_name == "repair":
+                preceding = {"extract", "normalize_text", "ocr_correction",
+                             "analyze_structure", "classify_pages", "split",
+                             "match", "normalize_schema",
+                             "batch_validation", "batch_dedup",
+                             "repair", "ai_validation", "similarity_match"}
+            elif stage_name == "math_detect":
+                preceding = {"extract", "normalize_text", "ocr_correction",
+                             "analyze_structure", "classify_pages", "split",
+                             "match", "normalize_schema",
+                             "batch_validation", "batch_dedup",
+                             "repair", "ai_validation", "similarity_match",
+                             "math_detect"}
+            else:  # table_detect
+                preceding = {"extract", "normalize_text", "ocr_correction",
+                             "analyze_structure", "classify_pages", "split",
+                             "match", "normalize_schema",
+                             "batch_validation", "batch_dedup",
+                             "repair", "ai_validation", "similarity_match",
+                             "math_detect", "table_detect"}
+            for s in preceding:
+                if s not in completed_stages:
+                    completed_stages.append(s)
+            logger.info(
+                "Resume from %s artifact: %d questions restored",
+                stage_name, len(questions),
+            )
+            return stage_name, preceding
+
+    return None, set()
 
 
 # ---------------------------------------------------------------------------
@@ -2834,13 +3096,16 @@ class ImportPipeline:
             "source_type": source_type,
             "source_file": source_file,
             "subject": subject or "",
+            # P4-4: pass pipeline_id for idempotency tracking
+            "pipeline_id": self.pipeline_id,
         }
         _log_multi_blank_stage("review_input", questions, source_type=source_type, source_file=source_file)
         result = await submit_to_review(db, questions, batch_meta, skip_existing=True)
 
         warnings: list[str] = []
-        if result.get("duplicates_filtered", 0) > 0:
-            warnings.append(f"{result['duplicates_filtered']} duplicates filtered (already in bank)")
+        dup_filtered = result.get("duplicates_filtered", 0)
+        if dup_filtered > 0:
+            warnings.append(f"{dup_filtered} duplicates filtered (already in bank)")
         if result["skipped"] > 0:
             warnings.append(f"{result['skipped']} questions skipped in review")
 
@@ -2890,10 +3155,13 @@ class ImportPipeline:
             "review_new_hashes": new_hashes,
             "warnings": warnings,
             # P3-4: 分批提交 diagnostics，让 _build_diagnostics 写入诊断记录
+            # P4-4: idempotency tracking
             "review_commit": {
                 "batch_size": 50,
                 "total_questions": result["total"],
                 "written": result["written"],
+                "duplicates_filtered": dup_filtered,
+                "pipeline_id": self.pipeline_id,
             },
         }
 
@@ -3200,7 +3468,28 @@ class ImportPipeline:
                 options=opts,
             )
 
+        # P4-3: try restoring stage outputs from artifacts
+        _artifact_skipped: set[str] = set()
+        if has_resume_ckpt:
+            restored_stage, _artifact_skipped = _restore_from_artifacts(
+                self.pipeline_id, completed_stages, data,
+            )
+            if restored_stage:
+                logger.info(
+                    "True resume from artifact: restored=%s skipped_stages=%s",
+                    restored_stage, sorted(_artifact_skipped),
+                )
+
         for name, stage in self.stages.items():
+
+            # P4-3: skip stages restored from artifacts
+            if name in _artifact_skipped:
+                logger.info("Skipping stage '%s' (restored from artifact)", name)
+                stage.status = "completed"
+                stage.duration_ms = 0
+                if name not in completed_stages:
+                    completed_stages.append(name)
+                continue
 
             if progress_callback:
                 try:
@@ -3261,6 +3550,8 @@ class ImportPipeline:
                         subject=subject,
                         options=opts,
                     )
+                    # P4-3: save artifact for resumable stages
+                    _save_stage_artifact(self.pipeline_id, name, data)
             except Exception:
                 overall_status = "failed"
                 pipeline_errors.append(f"stage '{name}' failed: {stage.error}")
@@ -3300,10 +3591,20 @@ class ImportPipeline:
         # P3-2: clear checkpoint on successful completion (single-pass only)
         if not _is_chunked_mode and overall_status == "completed":
             await _clear_stage_checkpoint(self.pipeline_id)
+            _save_completed_marker(self.pipeline_id)
+
+        # P4-3: write failed marker for TTL-based artifact cleanup
+        if not _is_chunked_mode and overall_status == "failed":
+            _save_failed_marker(self.pipeline_id)
 
         stats = _build_stats(data, self.stages)
         diagnostics = _build_diagnostics(data)
         finished_at = datetime.now().isoformat()
+
+        # P4-5: quality report from existing data
+        quality_report = _build_quality_report(data, diagnostics)
+        # P4-2: artifact list for resume diagnostics
+        artifacts_list = _list_artifacts(self.pipeline_id)
 
         return {
             "pipeline_id": self.pipeline_id,
@@ -3311,6 +3612,8 @@ class ImportPipeline:
             "batch_id": data.get("batch_id", ""),
             "stats": stats,
             "diagnostics": diagnostics,
+            "quality_report": quality_report,
+            "artifacts": artifacts_list,
             "stages": {name: s.to_dict() for name, s in self.stages.items()},
             "errors": pipeline_errors,
             "started_at": started_at,
