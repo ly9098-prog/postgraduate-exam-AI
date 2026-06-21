@@ -21,10 +21,6 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from app.features.ai_repair import repair_questions
-from app.features.ai_validation import validate_ai_results
-from app.features.answer_matcher import match_answers
-from app.features.batch_validation import validate_batch_structure
 from app.features.import_mode import ImportMode, detect_import_mode, get_strategy
 from app.features.ocr_correction_common import (
     TIER_HIGH_THRESHOLD,
@@ -40,12 +36,26 @@ from app.features.pipeline_artifacts import (
     save_completed_marker as _save_completed_marker,
     save_failed_marker as _save_failed_marker,
 )
-from app.features.question_normalizer import normalize_questions
 from app.features.question_splitter import split_questions
 from app.features.similarity_matcher import match_similar_questions
 from app.features.structure_analyzer import analyze_structure
 from app.features.text_normalizer import ImportTextNormalizer
 from app.utils.sentry_utils import capture_exception, set_tag, start_span
+
+# P5-2: extracted stage implementations
+from app.features.pipeline_stages.match_stage import run_match_stage
+from app.features.pipeline_stages.math_detect_stage import run_math_detect_stage
+from app.features.pipeline_stages.normalize_schema_stage import (
+    run_batch_dedup_stage,
+    run_batch_validation_stage,
+    run_normalize_schema_stage,
+)
+from app.features.pipeline_stages.repair_stage import (
+    run_ai_validation_stage,
+    run_repair_stage,
+)
+from app.features.pipeline_stages.review_stage import run_review_stage
+from app.features.pipeline_stages.table_detect_stage import run_table_detect_stage
 
 logger = logging.getLogger(__name__)
 
@@ -338,45 +348,6 @@ def _summarize_ocr_diffs(corrections: list[dict]) -> dict:
         "risk_flags": list({f for s in all_safety for f in s.get("risk_flags", [])}),
         "details": corrected[:30],  # cap at 30 to bound diagnostics
     }
-
-
-def _build_repair_diffs(
-    repaired: list[dict], unrepaired: list[dict], skipped: list[dict],
-) -> list[dict]:
-    """Build per-question repair diff records for diagnostics stage_diffs."""
-    diffs: list[dict] = []
-    for r in repaired:
-        before = r.get("before") or {}
-        after = r.get("after") or {}
-        safety = r.get("safety") or {}
-        diffs.append({
-            "question_index": r.get("question_index"),
-            "actions": r.get("repair_actions", []),
-            "confidence": r.get("confidence"),
-            "tokens_used": r.get("token_used", 0),
-            "before_stem": str(before.get("stem", ""))[:200],
-            "after_stem": str(after.get("stem", ""))[:200],
-            "options_changed": (
-                str(before.get("options", "")) != str(after.get("options", ""))
-            ),
-            "answer_changed": (
-                str(before.get("answer", "")) != str(after.get("answer", ""))
-            ),
-            "safety": safety,
-        })
-    for u in unrepaired:
-        diffs.append({
-            "question_index": u.get("question_index"),
-            "actions": [],
-            "reason": u.get("reason", "unrepaired"),
-        })
-    for s in skipped:
-        diffs.append({
-            "question_index": s.get("question_index"),
-            "actions": [],
-            "reason": s.get("reason", "skipped"),
-        })
-    return diffs
 
 
 def _slim_pipeline_payload(data: dict) -> dict:
@@ -2544,22 +2515,8 @@ class ImportPipeline:
         structure: dict | None = None,
         **_kw,
     ) -> dict:
-        """Stage 4: match answers and explanations to questions."""
-        result = match_answers(raw_questions, normalized_blocks, structure=structure)
-
-        matched = result.get("matched", [])
-        unmatched = result.get("unmatched", [])
-
-        warnings: list[str] = []
-        if unmatched:
-            warnings.append(f"{len(unmatched)} questions have no matched answer")
-
-        return {
-            "matched": matched,
-            "unmatched": unmatched,
-            "matched_count": len(matched),
-            "warnings": warnings,
-        }
+        """Stage 4: match answers and explanations to questions (P5-2: delegated)."""
+        return run_match_stage(raw_questions, normalized_blocks, structure=structure)
 
     def _run_normalize_schema(
         self,
@@ -2570,266 +2527,35 @@ class ImportPipeline:
         subject: str | None = None,
         **_kw,
     ) -> dict:
-        """Stage 5: normalize questions to standard schema."""
-        source_info = {
-            "file": source_file,
-            "type": source_type,
-            "subject": subject or "",
-        }
-        result = normalize_questions(raw_questions, matched, source_info)
-
-        questions = result.get("questions", [])
-        _log_multi_blank_stage("normalize_schema", questions, source_type=source_type, source_file=source_file)
-        errors = result.get("errors", [])
-        warnings = result.get("warnings", [])
-
-        invalid_count = sum(1 for q in questions if not q.get("is_valid", True))
-        stage_warnings = list(warnings)
-        if invalid_count:
-            stage_warnings.append(f"{invalid_count} questions marked invalid")
-
-        # P1-2: stage 级风险信号写到每道题的 risk_flags。命名口径见
-        # prompts/tasks/ocr_book_pdf_non_question_filter_plan.md §11.3，
-        # 前端 import-batch 页面据此打风险徽章；ai_repair / submit_to_review
-        # 后续会继续追加 non_question_like / fallback_low_confidence 等 flag。
-        exercise_regions_missing = bool(_kw.get("exercise_regions_missing"))
-        is_book = _is_book_import_mode(_kw.get("import_mode"))
-        no_regions_flagged = 0
-        for q in questions:
-            flags = list(q.get("risk_flags") or [])
-            if exercise_regions_missing and is_book:
-                flags.append("no_exercise_regions")
-                no_regions_flagged += 1
-            if (q.get("confidence_score") or 0) < 0.5:
-                flags.append("low_confidence")
-            if "garbled_text_detected" in (q.get("ocr_quality_flags") or []):
-                flags.append("ocr_garbled_code")
-            if flags:
-                q["risk_flags"] = list(dict.fromkeys(flags))
-        if no_regions_flagged:
-            stage_warnings.append(
-                f"no_exercise_regions risk flag attached to {no_regions_flagged} questions"
-            )
-
-        for q in questions:
-            raw_opts = q.get("parsed_options") or q.get("options") or {}
-            if isinstance(raw_opts, dict):
-                opt_summary = ", ".join(
-                    f"{k}: {str(v)[:60]}" for k, v in sorted(raw_opts.items())
-                ) or "(无选项)"
-            elif isinstance(raw_opts, list):
-                opt_summary = ", ".join(
-                    f"{o.get('key', '?')}: {str(o.get('text', ''))[:60]}"
-                    for o in raw_opts
-                ) or "(无选项)"
-            else:
-                opt_summary = str(raw_opts)[:200]
-            logger.info(
-                "【OCR-7】schema归一化结果 | number=%s type=%s valid=%s conf=%.2f\n"
-                "  └─ 题干: %.200s\n"
-                "  └─ 选项: %s\n"
-                "  └─ 答案: %s\n"
-                "  └─ risk_flags: %s",
-                q.get("number", "?"), q.get("question_type", "?"),
-                q.get("is_valid", True), q.get("confidence_score", 0),
-                str(q.get("stem") or q.get("parsed_content") or "")[:200],
-                opt_summary[:200],
-                str(q.get("parsed_answer") or "❌"),
-                q.get("risk_flags") or [],
-            )
-
-        return {
-            "questions": questions,
-            "normalized_count": len(questions),
-            "risk_flag_counts": _count_risk_flags(questions),
-            "errors": list(errors),
-            "warnings": stage_warnings,
-        }
-
-    def _run_batch_validation(self, questions: list[dict], **_kw) -> dict:
-        """Stage 5.6: cross-question structural integrity validation (pure rules)."""
-        result = validate_batch_structure(questions)
-
-        warnings: list[str] = []
-        stats = result["batch_validation_diagnostics"]["stats"]
-        if stats["number_gap_count"] > 0:
-            warnings.append(f"{stats['number_gap_count']} question number gaps detected")
-        if stats["incomplete_option_count"] > 0:
-            warnings.append(f"{stats['incomplete_option_count']} questions with incomplete options")
-        if stats["missing_answer_count"] > 0:
-            warnings.append(f"{stats['missing_answer_count']} questions missing answers")
-        if stats.get("roman_numeral_issue_count", 0) > 0:
-            warnings.append(f"{stats['roman_numeral_issue_count']} Roman numeral sequence issues detected")
-        if stats.get("roman_digit_confusion_count", 0) > 0:
-            warnings.append(f"{stats['roman_digit_confusion_count']} Roman digit confusion issues detected")
-
-        return {
-            "questions": result["questions"],
-            "batch_validation_diagnostics": result["batch_validation_diagnostics"],
-            "warnings": warnings,
-        }
-
-    def _run_batch_dedup(self, questions: list[dict], **_kw) -> dict:
-        """Stage 5.5: flag batch-internal duplicates to skip expensive repair."""
-        from app.features.question_normalizer import dedup_batch
-
-        result = dedup_batch(questions)
-
-        warnings: list[str] = []
-        if result["duplicate_count"] > 0:
-            warnings.append(f"{result['duplicate_count']} batch-internal duplicates flagged")
-
-        return {
-            "questions": result["questions"],
-            "batch_dedup_diagnostics": {
-                "unique_count": result["unique_count"],
-                "duplicate_count": result["duplicate_count"],
-                "duplicate_indices": result["duplicate_indices"],
-            },
-            "warnings": warnings,
-        }
-
-    async def _run_repair(self, questions: list[dict], options: dict, **_kw) -> dict:
-        """Stage 6: AI repair for low-confidence questions.
-
-        Questions flagged as batch duplicates are skipped to save tokens.
-        """
-        # Separate batch duplicates from repair candidates
-        to_repair: list[dict] = []
-        duplicate_indices: set[int] = set()
-        for i, q in enumerate(questions):
-            if q.get("is_batch_duplicate"):
-                duplicate_indices.add(i)
-            else:
-                to_repair.append(q)
-
-        repair_config = {
-            "confidence_threshold": options.get("confidence_threshold", 0.6),
-            "high_confidence_threshold": options.get("high_confidence_threshold", 0.95),
-            "daily_token_limit": options.get("daily_token_limit", 100000),
-            "monthly_token_limit": options.get("monthly_token_limit", 2000000),
-            "enabled": options.get("enable_ai_repair", True),
-            "low_risk_skip_enabled": options.get("enable_low_risk_skip", True),
-        }
-        # Pass structured Roman numeral anomalies from batch_validation stage
-        batch_diag = _kw.get("batch_validation_diagnostics", {})
-        roman_anomalies = batch_diag.get("roman_anomalies", [])
-        result = await repair_questions(
-            to_repair, repair_config, db=_kw.get("db"),
-            roman_diagnostics=roman_anomalies,
+        """Stage 5: normalize questions to standard schema (P5-2: delegated)."""
+        return run_normalize_schema_stage(
+            raw_questions, matched,
+            source_file=source_file,
+            source_type=source_type,
+            subject=subject,
+            import_mode=_kw.get("import_mode"),
+            exercise_regions_missing=bool(_kw.get("exercise_regions_missing")),
         )
 
-        repaired = result.get("repaired", [])
-        unrepaired = result.get("unrepaired", [])
-        skipped = result.get("skipped", [])
-        stats = result.get("stats", {})
+    def _run_batch_validation(self, questions: list[dict], **_kw) -> dict:
+        """Stage 5.6: cross-question structural integrity validation (P5-2: delegated)."""
+        return run_batch_validation_stage(questions)
 
-        # Build the combined question list for the review stage:
-        #   repaired items use their "after" field
-        #   unrepaired + skipped items use the original question by index
-        #   batch duplicates are passed through unchanged
-        repaired_combined: list[dict] = [None] * len(to_repair)  # type: ignore
+    def _run_batch_dedup(self, questions: list[dict], **_kw) -> dict:
+        """Stage 5.5: flag batch-internal duplicates (P5-2: delegated)."""
+        return run_batch_dedup_stage(questions)
 
-        for r in repaired:
-            idx = r["question_index"]
-            repaired_combined[idx] = r["after"]
-
-        for u in unrepaired:
-            idx = u["question_index"]
-            repaired_combined[idx] = to_repair[idx]
-
-        for s in skipped:
-            idx = s["question_index"]
-            original = dict(to_repair[idx])
-            if s.get("reason") == "non_question_like":
-                flags = list(original.get("risk_flags") or [])
-                flags.append("non_question_like")
-                original["risk_flags"] = list(dict.fromkeys(flags))
-            elif s.get("reason") == "low_risk_high_confidence":
-                original["repair_skipped"] = True
-                original["repair_skipped_reason"] = "low_risk_high_confidence"
-            repaired_combined[idx] = original
-
-        repaired_combined = [q for q in repaired_combined if q is not None]
-
-        # Merge back: non-duplicates (repaired) + duplicates (unchanged)
-        combined: list[dict] = []
-        repair_iter = iter(repaired_combined)
-        for i, q in enumerate(questions):
-            if i in duplicate_indices:
-                combined.append(q)
-            else:
-                combined.append(next(repair_iter))
-        _log_multi_blank_stage("repair", combined)
-
-        warnings: list[str] = []
-        if duplicate_indices:
-            warnings.append(f"{len(duplicate_indices)} batch duplicates skipped repair")
-        if unrepaired:
-            warnings.append(f"{len(unrepaired)} questions unrepaired by AI")
-        if skipped:
-            reason_counts: dict[str, int] = {}
-            for s in skipped:
-                reason = str(s.get("reason") or "unknown")
-                reason_counts[reason] = reason_counts.get(reason, 0) + 1
-            if reason_counts == {"above_threshold": len(skipped)}:
-                warnings.append(f"{len(skipped)} questions skipped (above threshold)")
-            else:
-                reason_summary = ", ".join(
-                    f"{reason}={count}" for reason, count in sorted(reason_counts.items())
-                )
-                warnings.append(f"{len(skipped)} questions skipped repair ({reason_summary})")
-
-        # P2-5: compute repair stats for diagnostics
-        repair_total = len(to_repair)
-        repair_skipped = len(skipped)
-        repair_called = len(repaired)
-        skip_rate = round(repair_skipped / repair_total, 4) if repair_total > 0 else 0.0
-        if repaired:
-            avg_tokens_per_repair = int(round(
-                sum(r.get("token_used", 0) for r in repaired) / len(repaired)
-            ))
-            estimated_tokens_saved = avg_tokens_per_repair * repair_skipped
-        else:
-            avg_tokens_per_repair = 0
-            estimated_tokens_saved = 0
-        repair_stats = {
-            "repair_total": repair_total,
-            "repair_skipped": repair_skipped,
-            "repair_called": repair_called,
-            "skip_rate": skip_rate,
-            "estimated_tokens_saved": estimated_tokens_saved,
-            "avg_tokens_per_repair": avg_tokens_per_repair,
-        }
-
-        return {
-            "questions": combined,
-            "repaired_count": len(repaired),
-            "unrepaired_count": len(unrepaired),
-            "skipped_count": len(skipped),
-            "total_tokens": stats.get("total_tokens", 0),
-            "risk_flag_counts": _count_risk_flags(combined),
-            "warnings": warnings,
-            "repair_diffs": _build_repair_diffs(repaired, unrepaired, skipped),
-            "repair_stats": repair_stats,
-        }
+    async def _run_repair(self, questions: list[dict], options: dict, **_kw) -> dict:
+        """Stage 6: AI repair for low-confidence questions (P5-2: delegated)."""
+        return await run_repair_stage(
+            questions, options,
+            db=_kw.get("db"),
+            batch_validation_diagnostics=_kw.get("batch_validation_diagnostics"),
+        )
 
     def _run_ai_validation(self, questions: list[dict], **_kw) -> dict:
-        """Stage 6.2: validate AI repair results for anomalies."""
-        result = validate_ai_results(questions)
-
-        stats = result["stats"]
-        warnings: list[str] = []
-        if stats["errors"] > 0:
-            warnings.append(f"{stats['errors']} questions have AI validation errors")
-        if stats["warnings"] > 0:
-            warnings.append(f"{stats['warnings']} questions have AI validation warnings")
-
-        return {
-            "questions": result["questions"],
-            "ai_validation_diagnostics": stats,
-            "warnings": warnings,
-        }
+        """Stage 6.2: validate AI repair results for anomalies (P5-2: delegated)."""
+        return run_ai_validation_stage(questions)
 
     async def _run_similarity_match(
         self,
@@ -2880,210 +2606,20 @@ class ImportPipeline:
         questions: list[dict],
         **_kw,
     ) -> dict:
-        """Stage 6.8: detect math candidates and apply formula risk flags.
-
-        Runs after all AI stages but before review submission.
-        Pure rule engine — no AI calls, no image processing.
-
-        P1-3: 对 math region 生成 math_image segment（仅 metadata，无实际截图）。
-        实际截图需要 page image，pipeline 进入此 stage 时 page_images 已释放，
-        此时仅写 risk_flags + segment metadata。有 page image 时会进行截图。
-
-        P2-3: 当 ``page_image_refs``（tempfile PNG 路径）可用时，进行真实公式截图
-        并上传到 StorageBackend，填充 math_image.url。
-        """
-        from app.features.math_import_profile import (
-            apply_math_risk_flags,
-            is_math_candidate,
+        """Stage 6.8: detect math candidates and apply formula risk flags (P5-2: delegated)."""
+        return await run_math_detect_stage(
+            questions,
+            pipeline_id=self.pipeline_id,
+            page_image_refs=_kw.get("page_image_refs"),
         )
-
-        if not questions:
-            return {"questions": questions, "warnings": ["math_detect: empty questions"]}
-
-        warnings: list[str] = []
-        math_count = 0
-        excluded_count = 0
-
-        for q in questions:
-            diagnosis = is_math_candidate(q)
-            if diagnosis["excluded_by"]:
-                excluded_count += 1
-                continue
-            if not diagnosis["is_math"]:
-                continue
-
-            math_count += 1
-            flags = list(q.get("risk_flags") or [])
-            new_flags = apply_math_risk_flags(q, diagnosis)
-            for f in new_flags:
-                if f not in flags:
-                    flags.append(f)
-
-            # P1-3: build math_image segment metadata
-            stem = q.get("stem") or q.get("parsed_content", {}).get("text") or ""
-            analysis = q.get("analysis") or ""
-            full_text = f"{stem} {analysis}"
-
-            segments: list[dict] = list(q.get("segments") or [])
-            if diagnosis["has_complex_formula"] or diagnosis.get("low_confidence"):
-                math_segment = {
-                    "type": "math_image",
-                    "url": None,
-                    "alt": "公式截图（暂未生成）",
-                    "source_page": q.get("page_start") or 1,
-                    "bbox": None,
-                    "confidence": 0.5,
-                    "requires_review": True,
-                }
-                segments.append(math_segment)
-                if diagnosis["has_complex_formula"] and "complex_formula_requires_review" not in flags:
-                    flags.append("complex_formula_requires_review")
-
-            if segments:
-                q["segments"] = segments
-                q["parsed_content"] = {
-                    **(q.get("parsed_content") or {}),
-                    "render_mode": "segments",
-                    "segments": segments,
-                }
-
-            if flags:
-                q["risk_flags"] = flags
-
-        if math_count:
-            warnings.append(f"math_detect: {math_count} math candidates flagged")
-        if excluded_count:
-            warnings.append(f"math_detect: {excluded_count} code/408 questions excluded")
-
-        # P2-3: 当 page_image_refs 可用时，进行真实公式截图
-        page_image_refs: dict[int, str] | None = _kw.get("page_image_refs")
-        if page_image_refs and questions:
-            from app.services.storage_backend import get_storage
-
-            import hashlib as _hashlib
-            from datetime import datetime as _dt
-            from pathlib import Path as _Path
-
-            storage = get_storage()
-            virtual_import_id = _hashlib.md5(self.pipeline_id.encode()).hexdigest()[:8]
-
-            crop_warnings: list[str] = []
-            for q in questions:
-                segments = list(q.get("segments") or [])
-                updated = False
-                for seg in segments:
-                    if seg.get("type") != "math_image":
-                        continue
-                    if seg.get("url") is not None:
-                        continue
-                    source_page = seg.get("source_page")
-                    if not source_page:
-                        continue
-                    page_path = page_image_refs.get(source_page)
-                    if not page_path:
-                        continue
-
-                    try:
-                        # 读取已渲染 PNG bytes — fitz 直接输出为 PNG，无需 PIL 解码再编码
-                        png_bytes = _Path(page_path).read_bytes()
-
-                        content_hash = _hashlib.md5(png_bytes).hexdigest()[:8]
-                        month = _dt.now().strftime("%Y%m")
-                        filename = f"page_{source_page}_{content_hash}.png"
-                        url = await storage.upload(f"{month}/{virtual_import_id}_{filename}", png_bytes)
-
-                        seg["url"] = url
-                        seg["alt"] = "公式截图"
-                        updated = True
-                        crop_warnings.append(f"math_image generated for page {source_page}")
-                    except Exception as e:
-                        logger.warning("公式截图失败 import=%s page=%s: %s",
-                                       self.pipeline_id, source_page, e)
-                        seg["crop_failed"] = True
-                        seg["alt"] = "公式截图裁剪失败"
-                        risk_flags = list(q.get("risk_flags") or [])
-                        if "math_image_crop_failed" not in risk_flags:
-                            risk_flags.append("math_image_crop_failed")
-                            q["risk_flags"] = risk_flags
-
-                if updated:
-                    q["segments"] = segments
-                    q["parsed_content"] = {
-                        **(q.get("parsed_content") or {}),
-                        "render_mode": "segments",
-                        "segments": segments,
-                    }
-
-            if crop_warnings:
-                warnings.append(f"math_image: {len(crop_warnings)} formula screenshots generated")
-
-        return {
-            "questions": questions,
-            "warnings": warnings,
-            "risk_flag_counts": _count_risk_flags(questions),
-        }
 
     def _run_table_detect(
         self,
         questions: list[dict],
         **_kw,
     ) -> dict:
-        """Stage 6.9: detect table candidates in OCR text and add risk flags.
-
-        Lightweight rule engine — no AI calls. Flags table-like structures
-        and builds Markdown representation when column structure is clear.
-        """
-        from app.features.table_region_detector import detect_table_candidate
-
-        if not questions:
-            return {"questions": questions, "warnings": ["table_detect: empty questions"]}
-
-        warnings: list[str] = []
-        table_count = 0
-
-        for q in questions:
-            stem = q.get("stem") or q.get("parsed_content", {}).get("text") or ""
-            if not stem or len(stem) < 40:
-                continue
-
-            result = detect_table_candidate(stem)
-            if not result["is_table"]:
-                continue
-
-            table_count += 1
-            flags = list(q.get("risk_flags") or [])
-            flags.append("table_detected")
-            if result["confidence"] < 0.5 or not result["markdown"]:
-                flags.append("table_low_confidence")
-            else:
-                flags.append("table_requires_review")
-
-            # Write table_markdown segment
-            segments: list[dict] = list(q.get("segments") or [])
-            segments.append({
-                "type": "table_markdown",
-                "markdown": result["markdown"],
-                "source_page": q.get("page_start") or 1,
-                "bbox": None,
-                "confidence": result["confidence"],
-                "requires_review": result["confidence"] < 0.5 or not result["markdown"],
-            })
-            q["segments"] = segments
-            q["parsed_content"] = {
-                **(q.get("parsed_content") or {}),
-                "render_mode": "segments",
-                "segments": segments,
-            }
-            q["risk_flags"] = flags
-
-        if table_count:
-            warnings.append(f"table_detect: {table_count} table candidates flagged")
-
-        return {
-            "questions": questions,
-            "warnings": warnings,
-            "risk_flag_counts": _count_risk_flags(questions),
-        }
+        """Stage 6.9: detect table candidates (P5-2: delegated)."""
+        return run_table_detect_stage(questions)
 
     async def _run_review(
         self,
@@ -3094,90 +2630,15 @@ class ImportPipeline:
         db=None,
         **_kw,
     ) -> dict:
-        """Stage 7: submit questions to review queue."""
-        if db is None:
-            return {
-                "batch_id": "",
-                "written": 0,
-                "skipped": 0,
-                "total": len(questions),
-                "warnings": ["no db session provided, review stage skipped"],
-            }
-
-        from app.features.review_service import submit_to_review
-
-        batch_meta = {
-            "source_type": source_type,
-            "source_file": source_file,
-            "subject": subject or "",
-            # P4-4: pass pipeline_id for idempotency tracking
-            "pipeline_id": self.pipeline_id,
-        }
-        _log_multi_blank_stage("review_input", questions, source_type=source_type, source_file=source_file)
-        result = await submit_to_review(db, questions, batch_meta, skip_existing=True)
-
-        warnings: list[str] = []
-        dup_filtered = result.get("duplicates_filtered", 0)
-        if dup_filtered > 0:
-            warnings.append(f"{dup_filtered} duplicates filtered (already in bank)")
-        if result["skipped"] > 0:
-            warnings.append(f"{result['skipped']} questions skipped in review")
-
-        # P2-4: 暴露 (subject, hash, import_id) 供 _run_chunked 推到
-        # GlobalHashIndex，让后续 chunk 命中本批已写入的题目。subject
-        # 优先取 stage 入参（chunk 级 batch_meta），缺失则回落到题目自带的
-        # subject（与 review_service 落库口径一致）。
-        items = result.get("items", [])
-        question_subjects = [
-            (q.get("subject") if isinstance(q, dict) else None) for q in questions
-        ]
-        new_hashes: list[tuple[str, str, int]] = []
-        for idx, item in enumerate(items):
-            qhash = item.get("question_hash")
-            iid = item.get("id")
-            if not qhash or not iid:
-                continue
-            qsubject = subject or (question_subjects[idx] if idx < len(question_subjects) else None) or ""
-            if qsubject:
-                new_hashes.append((qsubject, qhash, iid))
-
-        logger.info(
-            "【OCR-8】数据库入库结果 | batch=%s source=%s total=%d written=%d skipped=%d dup=%d\n"
-            "  └─ 题目明细:",
-            result["batch_id"], source_file,
-            result["total"], result["written"], result["skipped"],
-            result.get("duplicates_filtered", 0),
+        """Stage 7: submit questions to review queue (P5-2: delegated)."""
+        return await run_review_stage(
+            questions,
+            source_file=source_file,
+            source_type=source_type,
+            subject=subject,
+            pipeline_id=self.pipeline_id,
+            db=db,
         )
-        for idx, item in enumerate(items):
-            q = questions[idx] if idx < len(questions) else {}
-            opts = q.get("parsed_options") or q.get("options") or {}
-            opt_count = len(opts) if isinstance(opts, (dict, list)) else 0
-            logger.info(
-                "  ▶ import_id=%s hash=%s status=%s type=%s options=%d conf=%.2f answer=%s",
-                item.get("id", "?"), item.get("question_hash", "?")[:12],
-                item.get("status", "?"), q.get("question_type", "?"),
-                opt_count, q.get("confidence_score", 0),
-                q.get("parsed_answer") or "❌",
-            )
-
-        return {
-            "batch_id": result["batch_id"],
-            "written": result["written"],
-            "skipped": result["skipped"],
-            "total": result["total"],
-            "items": items,
-            "review_new_hashes": new_hashes,
-            "warnings": warnings,
-            # P3-4: 分批提交 diagnostics，让 _build_diagnostics 写入诊断记录
-            # P4-4: idempotency tracking
-            "review_commit": {
-                "batch_size": 50,
-                "total_questions": result["total"],
-                "written": result["written"],
-                "duplicates_filtered": dup_filtered,
-                "pipeline_id": self.pipeline_id,
-            },
-        }
 
     # ------------------------------------------------------------------
     # pipeline runner
