@@ -59,10 +59,6 @@ _RESUMABLE_ARTIFACTS: dict[str, str] = {
     "review": "review_commit_state.json",
 }
 
-# Artifacts that are "large" — written compressed
-_LARGE_ARTIFACTS = frozenset({"raw_questions", "questions"})
-
-
 def _ensure_dir(pipeline_id: str) -> str:
     """Create the artifact directory for a pipeline if it doesn't exist."""
     d = os.path.join(_get_artifact_root(), pipeline_id)
@@ -344,16 +340,16 @@ def _dir_is_empty(path: str) -> bool:
 
 
 def _is_running(pipeline_id: str) -> bool:
-    """Heuristic: check if the artifact dir lacks completed/failed markers."""
+    """Check if a pipeline is still running (no completed/failed markers)."""
     d = os.path.join(_get_artifact_root(), pipeline_id)
-    if not os.path.isdir(d):
-        return False
-    has_completed = os.path.isfile(os.path.join(d, ".completed"))
-    has_failed = os.path.isfile(os.path.join(d, ".failed"))
-    return not has_completed and not has_failed
+    return os.path.isdir(d) and _has_no_terminal_marker(d)
 
 
 def _contains_running_marker(pipeline_dir: str) -> bool:
+    return _has_no_terminal_marker(pipeline_dir)
+
+
+def _has_no_terminal_marker(pipeline_dir: str) -> bool:
     has_completed = os.path.isfile(os.path.join(pipeline_dir, ".completed"))
     has_failed = os.path.isfile(os.path.join(pipeline_dir, ".failed"))
     return not has_completed and not has_failed
