@@ -543,6 +543,10 @@ async def _run_image_pipeline_with_db(
                 db=db,
                 page_images={1: image_content},
             )
+        # P0-1: image bytes have been consumed by pipeline (page_images dict
+        # is popped after ocr_correction stage); release the local reference
+        # so GC can reclaim memory before we continue with status/response.
+        del image_content
 
         status = "completed" if result.get("status") == "completed" else "failed"
         failure_reason = _classify_image_pipeline_result(result, raw_text)
@@ -1070,6 +1074,8 @@ async def resume_pipeline(
             except OSError:
                 pass
         raise
+    # P0-1: release PDF bytes after writing to tempfile
+    del content
 
     options = {
         "enable_ai_repair": enable_ai_repair,
