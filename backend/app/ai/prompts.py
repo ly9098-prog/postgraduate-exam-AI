@@ -127,7 +127,7 @@ SYSTEM_PROMPTS = {
         '"analysis": "解析", '
         '"confidence": 0.85, '
         '"risk_flags": [], '
-        '"repair_actions": ["stem_cleaned", "options_structured"]}\n"'
+        '"repair_actions": ["stem_cleaned", "options_structured"]}\n'
         "repair_actions 可选值：stem_cleaned / options_structured / answer_normalized / "
         "type_detected / analysis_extracted"
     ),
