@@ -40,6 +40,14 @@ _RISK_FLAGS_REQUIRE_REPAIR = frozenset({
     "option_structure_corruption",
     "code_symbol_risk",
     "math_low_confidence",
+    # 代码块完整性风险（BUGS Task 2: 这些 flag 禁止 low_risk_skip）
+    "code_block_incomplete",
+    "code_block_truncated",
+    "code_brace_unbalanced",
+    "code_garbled_text",
+    "code_line_break_suspicious",
+    "code_fence_unclosed",
+    "code_structure_regression",
 })
 
 # 内存 token 计数器（共享模块，与 ocr_correction 同一预算池）
@@ -88,6 +96,25 @@ def _looks_like_non_question_text(question: dict) -> bool:
     return len(prose_markers) >= 2 and weak_question_signals <= 1
 
 
+def _stem_has_code(stem: str) -> bool:
+    """快速判断题干是否包含代码（保守匹配，避免自然语言误触发）。"""
+    if not stem:
+        return False
+    if "```" in stem:
+        return True
+    if "->" in stem:
+        return True
+    # 仅匹配最不可能出现在题干自然语言中的 C 关键词
+    if re.search(r"\b(?:struct\s|typedef|printf|scanf|malloc|free|NULL|nullptr|return\s|int\s+\*|char\s+\*|void\s+\*)", stem):
+        return True
+    # 仅当关键词后明确跟标识符或括号时才触发
+    if re.search(r"\b(?:int|void|char|float|double)\s+(?:\w+\s*[\[(;=]|\*)", stem):
+        return True
+    if re.search(r"BiTNode|LinkList|SqList|ListNode|ElemType|LNode|TNode", stem):
+        return True
+    return False
+
+
 def _is_low_risk_skip_candidate(question: dict, high_confidence_threshold: float = 0.95) -> bool:
     """P2-4: 判断是否可跳过 AI repair（低风险高置信度题）。
 
@@ -124,6 +151,14 @@ def _is_low_risk_skip_candidate(question: dict, high_confidence_threshold: float
     dangerous = risk_flags - _HARMLESS_RISK_FLAGS
     if dangerous & _RISK_FLAGS_REQUIRE_REPAIR:
         return False
+
+    # ---- BUGS Task 2: 代码块完整性防护（即使 risk_flags 未同步也生效） ----
+    # 包含代码的题目，在 stem 上直接执行完整性检测，避免任何旁路导致代码损坏被跳过
+    if _stem_has_code(stem):
+        from app.features.code_integrity import detect_code_block_integrity
+        integrity = detect_code_block_integrity(stem)
+        if integrity["flags"]:
+            return False
 
     return True
 
