@@ -1791,7 +1791,7 @@ class TestRunExtractExerciseRegionsMissing:
                 return_value=ocr_blocks,
             ),
             patch(
-                "app.features.exercise_region_detector.detect_exercise_regions_from_pdf",
+                "app.features.exercise_region_detector.detect_exercise_regions",
                 return_value=[],
             ),
         ]
@@ -1829,7 +1829,7 @@ class TestRunExtractExerciseRegionsMissing:
                 return_value=ocr_blocks,
             ),
             patch(
-                "app.features.exercise_region_detector.detect_exercise_regions_from_pdf",
+                "app.features.exercise_region_detector.detect_exercise_regions",
                 return_value=[hit_region],
             ),
         ]
