@@ -8,7 +8,6 @@ import pytest
 from app.features.pipeline_orchestrator import (
     ImportPipeline,
     PipelineStage,
-    _count_risk_flags,
     _extract_pdf_blocks,
     _extract_text_blocks,
     _ocr_scanned_pdf,
@@ -17,6 +16,7 @@ from app.features.pipeline_orchestrator import (
     run_import_pipeline,
     run_pipeline_background,
 )
+from app.features.pipeline_stages._helpers import _count_risk_flags
 
 
 # ---------------------------------------------------------------------------

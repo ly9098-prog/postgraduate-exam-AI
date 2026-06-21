@@ -2893,6 +2893,14 @@ async def list_logs(
 # ============================================================
 # These make ``from app.features.question_pipeline import fn``
 # continue to work after the P5-3 extraction.
+#
+# ⚠️ CIRCULAR IMPORT BOUNDARY ⚠️
+# ``question_import_writer.py`` also imports from this module
+# (``_QI_PARSED_FIELDS``, ``_find_duplicate_by_hash``, etc.).
+# Those symbols MUST be defined BEFORE this line (they are:
+# ``_QI_PARSED_FIELDS`` at line 1123, ``_find_duplicate_by_hash``
+# at line 769). Any new cross-module symbol that ``question_import_writer``
+# needs must also be placed above this boundary.
 # ============================================================
 
 from app.features.question_draft_generator import generate_drafts  # noqa: E402, F401

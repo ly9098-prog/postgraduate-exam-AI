@@ -7,32 +7,10 @@ from __future__ import annotations
 
 import logging
 
+from app.features.pipeline_stages._helpers import _log_multi_blank_stage
 from app.features.review_service import submit_to_review
 
 logger = logging.getLogger(__name__)
-
-
-def _log_multi_blank_stage(stage: str, questions: list[dict], **context) -> None:
-    for index, question in enumerate(questions):
-        if not isinstance(question, dict):
-            continue
-        groups = question.get("blank_option_groups")
-        if groups is None:
-            parsed_content = question.get("parsed_content")
-            if isinstance(parsed_content, dict):
-                groups = parsed_content.get("blank_option_groups")
-        if not groups:
-            continue
-        logger.warning(
-            "multi_blank_choice pipeline stage",
-            extra={
-                "stage": stage,
-                "question_index": index,
-                "question_type": question.get("question_type"),
-                "stem_preview": str(question.get("stem") or question.get("raw_question_text") or "")[:80],
-                **context,
-            },
-        )
 
 
 async def run_review_stage(
