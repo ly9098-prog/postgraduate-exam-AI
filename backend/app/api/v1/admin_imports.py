@@ -1087,7 +1087,7 @@ async def admin_export_batch_failure_cases(
 
     items = []
     for row in rows:
-        pc = row.parsed_content or {}
+        pc = row.parsed_content if isinstance(row.parsed_content, dict) else {}
         items.append({
             "id": row.id,
             "source_file": row.source_file,
@@ -1095,10 +1095,10 @@ async def admin_export_batch_failure_cases(
             "subject": row.subject,
             "question_type": row.question_type,
             "raw_data": row.raw_data or {},
-            "stem": (pc if isinstance(pc, dict) else {}).get("stem"),
-            "options": (pc if isinstance(pc, dict) else {}).get("options"),
-            "answer": (pc if isinstance(pc, dict) else {}).get("answer"),
-            "analysis": (pc if isinstance(pc, dict) else {}).get("analysis"),
+            "stem": pc.get("stem"),
+            "options": pc.get("options"),
+            "answer": pc.get("answer"),
+            "analysis": pc.get("analysis"),
             "risk_flags": row.risk_flags or [],
             "failure_types": [],
         })
