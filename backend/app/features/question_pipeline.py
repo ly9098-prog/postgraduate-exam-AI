@@ -1815,8 +1815,10 @@ async def enrich_import(
 
 
 async def enrich_batch(
-    db: AsyncSession, user_id: int, batch_id: str, limit: int = 50
+    db: AsyncSession, user_id: int, batch_id: str, limit: int = 50,
+    max_concurrency: int = 3,
 ) -> dict:
+    """批量 AI 丰富。分三阶段：顺序预读 → 并发 LLM → 顺序落 DB。"""
     res = await db.execute(
         select(QuestionImport)
         .where(
@@ -1828,17 +1830,112 @@ async def enrich_batch(
     records = list(res.scalars().all())
     if not records:
         return {"processed": 0, "succeeded": 0, "fallback": 0}
+
+    # 预读模型凭据（仅一次）
+    from app.services.model_config_resolver import ensure_db_model_configured
+    creds = await ensure_db_model_configured(db, feature="completion")
+    _api_key = creds[0] if creds else None
+    _base_url = creds[1] if creds else None
+    _model_name = creds[2] if creds else None
+
+    # Phase 1: 顺序预读所有 QI，构建 Prompt
+    prepared: list[dict] = []
+    for qi in records:
+        messages = build_enrich_question(_qi_to_dict(qi))
+        prompt_text = json.dumps(messages, ensure_ascii=False)
+        prepared.append({
+            "qi": qi,
+            "messages": messages,
+            "prompt_text": prompt_text,
+            "fallback_value": fallback.get_fallback_enrich(),
+        })
+
+    # Phase 2: 并发调用 AI（纯 HTTP，无 DB 操作）
+    sem = asyncio.Semaphore(max_concurrency)
+
+    async def _call(item: dict) -> dict:
+        async with sem:
+            if not (_api_key or deepseek.is_available()):
+                item["error"] = "DEEPSEEK_API_KEY 未配置"
+                return item
+            try:
+                resp = await deepseek.chat(
+                    item["messages"], model=_model_name,
+                    api_key=_api_key, base_url=_base_url,
+                )
+                item["resp"] = resp
+                item["raw"] = resp["content"]
+            except Exception as e:
+                item["error"] = str(e)
+            return item
+
+    gathered = await asyncio.gather(
+        *[_call(item) for item in prepared], return_exceptions=True,
+    )
+
+    # Phase 3: 顺序应用结果到 DB
     succeeded = 0
     fallback_count = 0
-    for qi in records:
-        try:
-            r = await enrich_import(db, user_id, qi.id)
-        except ValueError:
-            continue
-        if r.get("from_fallback"):
+
+    for result in gathered:
+        if not isinstance(result, dict):
             fallback_count += 1
-        else:
-            succeeded += 1
+            continue
+
+        item = result
+        qi = item["qi"]
+
+        if "raw" not in item or item["raw"] is None:
+            parsed = item["fallback_value"]
+            db.add(_build_log(
+                user_id=user_id, action="enrich", target_type="import",
+                target_id=qi.id, batch_id=qi.batch_id, prompt_text=item["prompt_text"],
+                raw_response=None, parsed_result=parsed,
+                confidence=parsed.get("confidence"),
+                model="fallback", tokens_used=0, duration_ms=0,
+                success=False, error_message=item.get("error"),
+            ))
+            fallback_count += 1
+            continue
+
+        resp = item["resp"]
+        raw = item["raw"]
+        normalized = _normalize_enrich(_extract_json(raw) or {})
+        if normalized.get("subject") and not qi.subject:
+            qi.subject = normalized["subject"]
+        if normalized.get("question_type") and not qi.question_type:
+            qi.question_type = normalized["question_type"]
+        qi.ai_generated = True
+        qi.ai_source = "enrich"
+        qi.ai_confidence = normalized.get("confidence")
+        qi.ai_metadata = normalized
+        qi.ai_raw_response = raw
+
+        # 记录 AI enrich trace
+        from app.features.ai_safety import AIEditTrace
+        enrich_trace = AIEditTrace(
+            stage="ai_enrich",
+            model=resp.get("model", "unknown"),
+            before=str(_qi_to_dict(qi))[:500],
+            after=str(normalized)[:500],
+            tokens_used=resp.get("tokens_used", 0),
+            duration_ms=resp.get("duration_ms", 0),
+        )
+        if qi.ai_metadata is None:
+            qi.ai_metadata = {}
+        qi.ai_metadata["_trace"] = enrich_trace.to_dict()
+
+        db.add(_build_log(
+            user_id=user_id, action="enrich", target_type="import",
+            target_id=qi.id, batch_id=qi.batch_id, prompt_text=item["prompt_text"],
+            raw_response=raw, parsed_result=normalized,
+            confidence=normalized.get("confidence"),
+            model=resp["model"], tokens_used=resp["tokens_used"],
+            duration_ms=resp["duration_ms"], success=True,
+        ))
+        succeeded += 1
+
+    await db.commit()
     return {
         "processed": len(records),
         "succeeded": succeeded,
@@ -2364,6 +2461,7 @@ async def batch_complete_questions(
     import_ids: list[int],
     target_fields: list[str],
     strategy: str,
+    max_concurrency: int = 3,
 ) -> dict:
     """批量 AI 补全。外部需自行 commit。"""
     # 从 admin_ai_configs 读取 completion_auto_* 开关和自定义 prompt
@@ -2422,7 +2520,7 @@ async def batch_complete_questions(
             ))
 
     # Step 2: 并发调用 AI（纯 HTTP，无 DB 操作）
-    sem = asyncio.Semaphore(3)
+    sem = asyncio.Semaphore(max_concurrency or 3)
 
     async def _do_ai_call(item: dict) -> dict:
         if "messages" not in item:
