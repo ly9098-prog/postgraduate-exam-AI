@@ -225,7 +225,8 @@ def cleanup_artifacts(
 def cleanup_expired(
     completed_ttl: int | None = None,
     failed_ttl: int | None = None,
-) -> dict[str, int]:
+    dry_run: bool = False,
+) -> dict:
     """Clean up artifacts for all pipelines beyond their TTL.
 
     Scans the artifact root directory, checks each pipeline's status
@@ -234,18 +235,29 @@ def cleanup_expired(
     Args:
         completed_ttl: TTL for completed pipelines (default 24h).
         failed_ttl: TTL for failed pipelines (default 7d).
+        dry_run: if True, only scan and count, do not delete.
 
     Returns:
-        {pipeline_id: files_removed, ...}
+        {
+            "scanned_count": int,
+            "deleted_count": int,
+            "freed_bytes": int,
+            "skipped_running_count": int,
+            "pipeline_results": {pipeline_id: files_removed_or_would_remove},
+        }
     """
     completed_ttl = completed_ttl or _COMPLETED_TTL
     failed_ttl = failed_ttl or _FAILED_TTL
 
     if not os.path.isdir(_get_artifact_root()):
-        return {}
+        return {"scanned_count": 0, "deleted_count": 0, "freed_bytes": 0,
+                "skipped_running_count": 0, "pipeline_results": {}}
 
     results: dict[str, int] = {}
     now = time.time()
+    skipped_running = 0
+    freed_bytes = 0
+
     for entry in os.listdir(_get_artifact_root()):
         pipeline_dir = os.path.join(_get_artifact_root(), entry)
         if not os.path.isdir(pipeline_dir):
@@ -265,10 +277,29 @@ def cleanup_expired(
             ttl = completed_ttl
 
         if age > ttl:
-            removed = cleanup_artifacts(entry, force=True)
-            if removed > 0:
-                results[entry] = removed
-    return results
+            if dry_run:
+                # Count files that would be removed
+                file_count = _count_artifact_files(pipeline_dir)
+                if file_count > 0:
+                    results[entry] = file_count
+                    freed_bytes += _dir_size(pipeline_dir)
+            else:
+                removed = cleanup_artifacts(entry, force=True)
+                if removed > 0:
+                    results[entry] = removed
+                    freed_bytes += removed * 1024  # rough estimate
+        else:
+            if running:
+                skipped_running += 1
+
+    scanned = sum(results.values()) if results else 0
+    return {
+        "scanned_count": scanned,
+        "deleted_count": sum(results.values()) if not dry_run else 0,
+        "freed_bytes": freed_bytes,
+        "skipped_running_count": skipped_running,
+        "pipeline_results": results,
+    }
 
 
 def save_failed_marker(pipeline_id: str) -> None:
@@ -294,6 +325,32 @@ def save_completed_marker(pipeline_id: str) -> None:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _count_artifact_files(pipeline_dir: str) -> int:
+    """Count artifact files in a pipeline directory (non-recursive)."""
+    if not os.path.isdir(pipeline_dir):
+        return 0
+    try:
+        return sum(1 for f in os.listdir(pipeline_dir)
+                    if os.path.isfile(os.path.join(pipeline_dir, f)))
+    except OSError:
+        return 0
+
+
+def _dir_size(pipeline_dir: str) -> int:
+    """Estimate total size of files in a pipeline directory."""
+    total = 0
+    if not os.path.isdir(pipeline_dir):
+        return 0
+    try:
+        for f in os.listdir(pipeline_dir):
+            fpath = os.path.join(pipeline_dir, f)
+            if os.path.isfile(fpath):
+                total += os.path.getsize(fpath)
+    except OSError:
+        pass
+    return total
 
 
 def _write_json(path: str, data: Any) -> None:

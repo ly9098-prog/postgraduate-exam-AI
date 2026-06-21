@@ -200,3 +200,98 @@ def get_cache_stats() -> dict:
         "config_hash": _build_config_hash(),
         "ttl_seconds": _TTL_SECONDS,
     }
+
+
+def cleanup_expired_entries(
+    ttl: int | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """扫描 OCR 缓存目录并删除过期条目。
+
+    Args:
+        ttl: 过期秒数（默认 _TTL_SECONDS = 14 天）。
+        dry_run: 为 True 时只扫描不删除。
+
+    Returns:
+        {
+            "scanned_count": 扫描文件数,
+            "deleted_count": 删除文件数,
+            "freed_bytes": 释放字节数,
+            "skipped_count": 跳过的文件数（非缓存文件等）,
+        }
+    """
+    if not os.path.isdir(_CACHE_DIR):
+        logger.info("OCR cache directory %s does not exist, nothing to clean", _CACHE_DIR)
+        return {"scanned_count": 0, "deleted_count": 0, "freed_bytes": 0, "skipped_count": 0}
+
+    ttl = ttl or _TTL_SECONDS
+    now = time.time()
+    cutoff = now - ttl
+
+    scanned = 0
+    deleted = 0
+    freed = 0
+    skipped = 0
+
+    for root, dirs, files in os.walk(_CACHE_DIR):
+        for filename in files:
+            if not filename.endswith(".json"):
+                skipped += 1
+                continue
+
+            path = os.path.join(root, filename)
+            scanned += 1
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                skipped += 1
+                continue
+
+            if mtime < cutoff:
+                size = 0
+                try:
+                    size = os.path.getsize(path)
+                except OSError:
+                    pass
+
+                if not dry_run:
+                    try:
+                        os.remove(path)
+                        deleted += 1
+                        freed += size
+                    except OSError as exc:
+                        logger.warning("Failed to remove expired cache entry %s: %s", path, exc)
+                else:
+                    deleted += 1
+                    freed += size
+
+        # Try to remove empty subdirectories (only when not dry_run)
+        if not dry_run:
+            for d in dirs:
+                subdir = os.path.join(root, d)
+                try:
+                    if not os.listdir(subdir):
+                        os.rmdir(subdir)
+                except OSError:
+                    pass
+
+    # Try to remove top-level empty subdirs
+    if not dry_run:
+        try:
+            for entry in os.listdir(_CACHE_DIR):
+                sub = os.path.join(_CACHE_DIR, entry)
+                if os.path.isdir(sub) and not os.listdir(sub):
+                    os.rmdir(sub)
+        except OSError:
+            pass
+
+    logger.info(
+        "OCR cache cleanup: scanned=%d, deleted=%d, freed=%d bytes, skipped=%d (dry_run=%s)",
+        scanned, deleted, freed, skipped, dry_run,
+    )
+    return {
+        "scanned_count": scanned,
+        "deleted_count": deleted,
+        "freed_bytes": freed,
+        "skipped_count": skipped,
+    }

@@ -100,6 +100,7 @@ export type ImportPipelineStatusResponse = {
   ocr_progress: string;
   source_type: string;
   chunk_progress?: Record<string, unknown> | null;
+  alerts?: AlertItem[] | null;
 };
 
 export type ImportActionResponse = {
@@ -374,6 +375,60 @@ export type BatchResult = {
   successIds?: number[];
   failed_items?: BatchFailure[];
   failedItems?: BatchFailure[];
+};
+
+// P7-1: Pipeline summary for observability listing
+export type ImportPipelineSummaryItem = {
+  pipeline_id: string;
+  source_type: string;
+  source_file?: string | null;
+  status: string;
+  total_pages?: number | null;
+  error_message?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  quality_report?: ImportPipelineStatusResponse["quality_report"];
+  alerts?: AlertItem[] | null;
+};
+
+export type PipelinesListResponse = {
+  items: ImportPipelineSummaryItem[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
+// P7-2: Alert item from alert rules evaluation
+export type AlertItem = {
+  level: "error" | "warning" | "info";
+  code: string;
+  message: string;
+  value?: number | string | null;
+  threshold?: number | string | null;
+  suggested_action?: string | null;
+};
+
+// P7-3: Cleanup response
+export type CleanupResponse = {
+  dry_run: boolean;
+  target: string;
+  targets: Record<string, Record<string, unknown>>;
+};
+
+// P7-4: Failure case export
+export type ExportCaseResponse = {
+  case_id: string;
+  source_file: string;
+  source_page?: number | null;
+  subject?: string | null;
+  question_type?: string | null;
+  import_id: number;
+  raw_data: Record<string, unknown>;
+  parsed_content: Record<string, unknown>;
+  risk_flags: string[];
+  failure_types: string[];
+  expected_template: Record<string, unknown>;
+  exported_at: string;
 };
 
 export type DashboardOverview = {
