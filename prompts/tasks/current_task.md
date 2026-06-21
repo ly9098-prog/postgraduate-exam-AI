@@ -18,12 +18,15 @@
 | 任务 | 状态 | 提交 | 备注 |
 |------|------|------|------|
 | 任务 1: 释放 PDF bytes | ✅ 完成 | 待提交 | 3 处 del 补充：resume endpoint / image pipeline / Excel background |
-| 任务 2: 消除双 OCR | ❌ 未开始 | — | P0 唯一剩余 |
+| 任务 2: 消除双 OCR | ✅ 完成 | d7b2ae5 | 单次 _ocr_scanned_pdf + _extract_page_texts_from_blocks 复用，detect_exercise_regions_from_pdf / _lightweight_page_ocr 标记 DEPRECATED |
 | 任务 3: _pipeline_store 剥离大字段 | ✅ 完成 | 待提交 | _slim_pipeline_payload + _slim_diagnostics_arrays |
 | 任务 4: 统一 OCR 纠错路径 | ✅ 完成 | edcfd0c | ocr_fix/router 为唯一主路径 |
 | 任务 5: 统一 OCR 清洗与字符映射 | ✅ 完成 | cc419dd | normalize_ocr_text() in text_normalizer.py |
 | 任务 6: AI diff 记录与版本回退 | ✅ 完成 | 待提交 | safe_accept_ai_result + trace 结构 |
 | 任务 7: 建立真实图片回归基线 | ✅ 完成 | 待提交 | 19 cases (8 real), --review/--force/CI/pytest.ini |
+| 任务 8: AI 补全和丰富并行化 | ✅ 完成 | 本期 | enrich_batch 三阶段并发 + batch_complete 参数化 max_concurrency |
+| 任务 9: 高置信度跳过 ai_repair | ✅ 完成 | 本期 | high_confidence_threshold=0.95，可配置 |
+| 任务 10: 合并 token budget | ✅ 完成 | 本期 | llm_text_structurer 接入共享 token_budget.py |
 
 请先阅读并定位以下关键模块：
 
@@ -66,26 +69,31 @@
 
 ------
 
-任务 2：消除 EXERCISE_DETECTION 双 OCR
+任务 2：消除 EXERCISE_DETECTION 双 OCR ✅ 已完成
 
-目标：
-
-- 如果当前流程先做 lightweight exercise detection，又做全量 OCR，请改为共享一次 OCR 推理结果。
-- 不允许同一页 PDF 在同一 pipeline 中被 PaddleOCR 重复识别两次。
-
-需要实现：
-
-- 查找 exercise detection / lightweight scan / full OCR 的调用链。
-- 将第一次 OCR 结果保存为 OcrPageResult[] 或等价结构。
-- 后续阶段复用同一个 OCR result。
-- 如果 detection 只需要文本，可以从 OCR result 中提取轻量 text view。
-- 避免缓存大图片本体，只缓存结构化 OCR 文本和 boxes。
-
-验收标准：
-
-- 同一 PDF 页面不重复调用 PaddleOCR。
-- 原有 exercise detection 逻辑结果保持一致或更稳定。
-- 相关测试通过。
+> 完成日期: 2026-06-21（d7b2ae5）
+>
+> 改动文件：
+> - app/features/exercise_region_detector.py: _lightweight_page_ocr 和
+>   detect_exercise_regions_from_pdf 标记 DEPRECATED，说明 pipeline 已不再
+>   调用
+> - app/features/pipeline_orchestrator.py: _run_extract 只调用一次
+>   _ocr_scanned_pdf，后续通过 _extract_page_texts_from_blocks 从同一 OCR
+>   结果中提取页面文本传给 detect_exercise_regions()（纯函数），无需二次
+>   PaddleOCR
+> - tests/test_services/test_pipeline_orchestrator.py: mock 目标从
+>   detect_exercise_regions_from_pdf 切换为 detect_exercise_regions
+>
+> 当前状态：
+> - _run_extract 中 OCR 路径：_ocr_scanned_pdf（唯一全量 OCR）→
+>   _extract_page_texts_from_blocks → detect_exercise_regions（纯函数，复用
+>   文本，不再调 OCR）
+> - deprecated 函数仅内部自引用，无外部调用者
+> - EXERCISE_DETECTION_DPI / EXERCISE_DETECTION_SAMPLE_STEP 配置项已失效
+>   （仅被 deprecated 路径引用），可后续清理
+> - 118 tests pass（2 个 pre-existing 失败与 Task 2 无关：
+>   test_numbered_questions_do_not_use_fallback /
+>   test_match_uses_separated_structure）
 
 ------
 
@@ -232,66 +240,47 @@
 
 完成 P0 后，再选择以下低风险 P1 任务。
 
-任务 8：AI 补全和丰富并行化
+## 任务 8：AI 补全和丰富并行化 ✅ 已完成
 
-目标：
+> 完成日期: 2026-06-21
+>
+> 改动文件: backend/app/features/question_pipeline.py
+>
+> 关键修改点：
+> - **enrich_batch**: 从串行循环改为三阶段模式（顺序预读 → 并发 LLM → 顺序落 DB），使用 `asyncio.Semaphore(max_concurrency)` + `asyncio.gather`，默认并发 3
+> - **enrich_batch 新增参数**: `max_concurrency: int = 3`，可配置并发数
+> - **batch_complete_questions**: 原有硬编码 `Semaphore(3)` 改为参数化 `max_concurrency`，保持默认值 3
+> - 预读模型凭据仅一次，纯 HTTP 调用阶段并发，DB 操作阶段串行，单题异常不影响其他题
+> - 与现有 batch_complete_questions 模式一致，无新增风险
 
-- 当前如果 complete/enrich 对 50 题串行调用 LLM，请改为 asyncio.gather + Semaphore。
-- 并发数可配置，默认 3～5。
+## 任务 9：高置信度题目跳过 ai_repair ✅ 已完成
 
-需要实现：
+> 完成日期: 2026-06-21
+>
+> 改动文件:
+> - backend/app/features/ai_repair.py
+> - backend/app/features/pipeline_orchestrator.py
+>
+> 关键修改点：
+> - **_should_repair**: 新增 `high_confidence_threshold` 关键词参数（默认 0.95），置信度 ≥阈值时直接返回 `(False, "high_confidence")`，跳过 AI 修复
+> - **_should_repair 新增检查优先级**: Roman 异常（最高）→ 高置信度跳过 → 低置信度/结构问题（现有逻辑）
+> - **repair_questions**: 从 config 读取 `high_confidence_threshold`（默认 0.95），传递给 `_should_repair`
+> - **pipeline_orchestrator._run_repair**: 在 repair_config 中添加 `high_confidence_threshold: options.get("high_confidence_threshold", 0.95)`
+> - 被跳过的题目自动记录 `reason="high_confidence"` + 置信度值到 skipped 列表
 
-- 对 complete_import、enrich_import 或对应函数做并发包装。
-- 单题失败不能导致全批失败。
-- 保持输出顺序与输入题目顺序一致。
-- 增加限流、重试和异常记录。
+## 任务 10：合并 token budget ✅ 已完成
 
-验收标准：
-
-- 批量补全耗时明显下降。
-- 单题失败会进入 warning，不影响其他题。
-- API 限流时能降级或重试。
-
-------
-
-任务 9：高置信度题目跳过 ai_repair
-
-目标：
-
-- normalize_schema 或 question_normalizer 已给出高置信度的题目，不再进入 AI 修复。
-- 默认阈值 0.95，可配置。
-
-需要实现：
-
-- 在 ai_repair 前过滤 high_confidence questions。
-- 只对低置信度、有 risk_flags、结构不完整的题目调用 AI。
-- 被跳过的题目记录 skipped_reason。
-
-验收标准：
-
-- 高质量题不被 AI 改写。
-- repair 调用次数下降。
-- 结果一致性提高。
-
-------
-
-任务 10：合并 token budget
-
-目标：
-
-- llm_text_structurer 不再使用独立进程级预算。
-- 统一接入 features/token_budget.py。
-
-需要实现：
-
-- 查找所有独立预算计数。
-- 替换为共享 token_budget。
-- 保持原有预算上限配置兼容。
-
-验收标准：
-
-- 所有 LLM 调用共享统一预算。
-- 不会出现一个模块超限另一个模块不知道的情况。
+> 完成日期: 2026-06-21
+>
+> 改动文件: backend/app/features/llm_text_structurer.py
+>
+> 关键修改点：
+> - 移除独立预算：删除 `_token_usage`、`_reset_daily_budget`、`_estimate_tokens`、`_budget_available`、`_record_tokens`
+> - 统一使用 `app.features.token_budget` 的共享系统：`estimate_tokens`、`check_token_limit`、`record_token_usage`
+> - `structure_text_block` 中的预算检查改为 `await check_token_limit(estimated, {"daily_token_limit": settings.TEXT_IMPORT_LLM_DAILY_TOKEN})`
+> - `structure_text_block` 中的记录改为 `await record_token_usage(...)`
+> - `_reset_budget_for_test` 保留并重定向到共享 token_budget 的计数器
+> - 共享预算后，llm_text_structurer 与 ai_repair/ocr_correction 共用同一每日/每月预算池
 
 # ============================================================ 阶段 3：P1/P2 架构拆分，仅在 P0 稳定后执行
 

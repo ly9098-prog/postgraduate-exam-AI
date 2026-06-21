@@ -68,6 +68,8 @@ def _should_repair(
     question: dict,
     threshold: float,
     roman_anomalies: list[dict] | None = None,
+    *,
+    high_confidence_threshold: float = 0.95,
 ) -> tuple[bool, str]:
     if _looks_like_non_question_text(question):
         return False, "non_question_like"
@@ -76,8 +78,13 @@ def _should_repair(
     if roman_anomalies:
         return True, "roman_anomaly"
 
+    # 0.5. High confidence questions skip AI repair entirely
+    confidence = question.get("confidence_score", 1.0)
+    if confidence >= high_confidence_threshold:
+        return False, "high_confidence"
+
     # 1. confidence_score < threshold
-    if question.get("confidence_score", 1.0) < threshold:
+    if confidence < threshold:
         return True, "low_confidence"
 
     # 2. is_valid == False
@@ -625,6 +632,7 @@ async def repair_questions(
         config = {}
 
     threshold = config.get("confidence_threshold", 0.6)
+    high_confidence_threshold = config.get("high_confidence_threshold", 0.95)
     enabled = config.get("enabled", True)
 
     repaired: list[dict] = []
@@ -709,7 +717,7 @@ async def repair_questions(
         # Roman-repaired questions that had ONLY roman issues skip Phase 2
         if i in roman_results and roman_results[i].get("decisions"):
             # Check if there are still non-roman reasons to repair
-            _, reason = _should_repair(q, threshold, roman_anomalies=None)
+            _, reason = _should_repair(q, threshold, roman_anomalies=None, high_confidence_threshold=high_confidence_threshold)
             if reason == "above_threshold":
                 # Roman repair was the only issue — record and skip Phase 2
                 roman_entry = {
@@ -725,7 +733,7 @@ async def repair_questions(
                 total_tokens += roman_results[i].get("token_used", 0)
                 continue
 
-        do_repair, reason = _should_repair(q, threshold, roman_anomalies=q_anomalies)
+        do_repair, reason = _should_repair(q, threshold, roman_anomalies=q_anomalies, high_confidence_threshold=high_confidence_threshold)
         if not do_repair:
             skipped.append({
                 "question_index": i,
