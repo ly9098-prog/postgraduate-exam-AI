@@ -1,15 +1,21 @@
 """OCR 增强服务 — 扫描版 PDF 图片文字识别。
 
-通过 AI 视觉模型识别扫描版 PDF 中的文字，输出与 raw_blocks 兼容的格式，
-无缝接入现有 ImportTextNormalizer → Pipeline 流程。
+通过 PaddleOCR-VL 高精度 OCR API 识别扫描版 PDF 中的文字，
+输出与 raw_blocks 兼容的格式，无缝接入现有 ImportTextNormalizer → Pipeline 流程。
 
 触发条件：PyMuPDF 提取文本 < 100 字符 + OCR_ENABLED=True。
+
+模型配置通过 ``config`` 字典动态传入（由调用方从 DB 解析），
+keys 与 pipeline_orchestrator._build_router_config 一致：
+  - paddleocr_vl_api_token
+  - paddleocr_vl_base_url
+  - paddleocr_vl_model
+不依赖环境变量。
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import time
 from typing import Any
@@ -24,7 +30,22 @@ logger = logging.getLogger(__name__)
 
 _MIN_TEXT_LENGTH = 100  # 扫描版检测阈值（字符数）
 _OCR_DPI = 200          # PDF 渲染 DPI
-_OCR_MAX_TOKENS = 4096  # 单页 OCR 最大输出 token
+
+_DEFAULT_VL_BASE_URL = "https://paddleocr.aistudio-app.com"
+_DEFAULT_VL_MODEL = "PaddleOCR-VL-1.6"
+
+
+def _get_vl_config(config: dict | None) -> dict:
+    """从 config 字典提取 PaddleOCR-VL 配置，缺失 key 则报错。"""
+    cfg = config or {}
+    api_token = cfg.get("paddleocr_vl_api_token") or ""
+    if not api_token:
+        logger.warning("paddleocr_vl_api_token 未配置，PaddleOCR-VL 不可用")
+    return {
+        "api_token": api_token,
+        "base_url": cfg.get("paddleocr_vl_base_url") or _DEFAULT_VL_BASE_URL,
+        "model": cfg.get("paddleocr_vl_model") or _DEFAULT_VL_MODEL,
+    }
 
 
 def is_ocr_enabled() -> bool:
@@ -118,89 +139,58 @@ def _pdf_to_images(content: bytes, dpi: int = _OCR_DPI) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-async def _call_ocr_api(image: bytes, page_num: int) -> dict | None:
-    """调用 AI 视觉模型识别单页图片文字。
+async def _call_ocr_api(
+    image: bytes, page_num: int, config: dict | None = None,
+) -> dict | None:
+    """调用 PaddleOCR-VL 高精度 OCR API 识别单页图片文字。
+
+    替换了原有的 DeepSeek Vision 调用（后者无可用多模态模型）。
+    模型凭证从 ``config`` 字典读取，调用方需预先从 DB 解析
+    （参见 pipeline_orchestrator._build_router_config）。
+
+    Args:
+        image: 页面图片 PNG 字节。
+        page_num: 页码（1-based）。
+        config: 可选配置字典，包含 paddleocr_vl_api_token 等 key。
+                不传或缺少 api_token 时返回 None。
 
     Returns:
         {"page": int, "text": str, "confidence": float, "tokens_used": int} | None
     """
-    from app.ai.client import deepseek
-
-    if not deepseek.is_available():
-        logger.warning("DeepSeek API 不可用，跳过 OCR")
+    vl_cfg = _get_vl_config(config)
+    if not vl_cfg["api_token"]:
         return None
 
-    image_b64 = base64.b64encode(image).decode("ascii")
+    from app.features.ocr_vl.paddleocr_vl_adapter import PaddleOCRVLAdapter
 
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "你是一个 OCR 文字识别助手。请准确提取图片中的所有文字内容，"
-                "保留原始格式和排版。对于数学公式，请用 LaTeX 格式输出"
-                "（行内公式用 $...$，块级公式用 $$...$$）。"
-                "禁止添加额外解释或评论，只输出识别到的文字内容。"
-            ),
-        },
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": f"请逐字识别第 {page_num} 页中的所有文字，保留段落结构和公式格式。",
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/png;base64,{image_b64}",
-                        "detail": "high",
-                    },
-                },
-            ],
-        },
-    ]
-
-    # DeepSeek 当前无多模态 API 模型，视觉 OCR 暂不可用
-    # 待接入支持 vision 的模型后恢复
-    payload = {
-        "model": "",
-        "messages": messages,
-        "temperature": 0.1,
-        "max_tokens": _OCR_MAX_TOKENS,
-    }
+    adapter = PaddleOCRVLAdapter(
+        api_token=vl_cfg["api_token"],
+        base_url=vl_cfg["base_url"],
+        model=vl_cfg["model"],
+    )
 
     start = time.monotonic()
     try:
-        resp = await deepseek.client.post(
-            f"{deepseek.base_url}/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {deepseek.api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
+        ctx = {"page_num": page_num, "filename": f"page_{page_num}.png"}
+        result = await adapter.fix(image=image, ocr_text="", context=ctx)
         elapsed_ms = int((time.monotonic() - start) * 1000)
 
-        if resp.status_code != 200:
-            logger.warning(
-                "OCR API 返回 %d (page %d): %s",
-                resp.status_code, page_num, resp.text[:300],
-            )
+        if not result.fixed_text:
+            logger.warning("PaddleOCR-VL 返回空文本 (page %d)", page_num)
             return None
 
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"]
-        tokens = data["usage"]["total_tokens"]
-
-        logger.info("OCR page %d: %d tokens, %dms", page_num, tokens, elapsed_ms)
+        logger.info(
+            "PaddleOCR-VL page %d: conf=%.2f, text_len=%d, %dms",
+            page_num, result.confidence or 0, len(result.fixed_text), elapsed_ms,
+        )
         return {
             "page": page_num,
-            "text": content.strip(),
-            "confidence": 0.85,
-            "tokens_used": tokens,
+            "text": result.fixed_text.strip(),
+            "confidence": result.confidence or 0.85,
+            "tokens_used": 0,
         }
     except Exception as exc:
-        logger.warning("OCR API 调用异常 (page %d): %s", page_num, exc)
+        logger.warning("PaddleOCR-VL 调用异常 (page %d): %s", page_num, exc)
         return None
 
 
@@ -209,15 +199,17 @@ async def _call_ocr_api(image: bytes, page_num: int) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-def ocr_fallback(content: bytes, source_file: str = "") -> list[dict]:
+def ocr_fallback(content: bytes, source_file: str = "", config: dict | None = None) -> list[dict]:
     """扫描版 PDF OCR 识别主入口。
 
-    将 PDF 每页渲染为图片，调用 AI 视觉模型识别文字，
+    将 PDF 每页渲染为图片，调用 PaddleOCR-VL 识别文字，
     返回与 _extract_pdf_blocks 兼容的 raw_blocks 格式。
 
     Args:
-        content: PDF 文件原始字节
-        source_file: 原始文件名（仅用于日志）
+        content: PDF 文件原始字节。
+        source_file: 原始文件名（仅用于日志）。
+        config: 可选配置字典（传递给 _call_ocr_api）。
+                应由调用方从 DB 解析（resolve_active_model(feature="ocr")）。
 
     Returns:
         [{"page": int, "block_index": int, "text": str}, ...]
@@ -232,7 +224,7 @@ def ocr_fallback(content: bytes, source_file: str = "") -> list[dict]:
 
     async def _run_batch():
         tasks = [
-            _call_ocr_api(img["image"], img["page"])
+            _call_ocr_api(img["image"], img["page"], config=config)
             for img in images
         ]
         return await asyncio.gather(*tasks)

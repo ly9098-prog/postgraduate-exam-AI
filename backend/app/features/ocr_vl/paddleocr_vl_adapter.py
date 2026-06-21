@@ -2,12 +2,12 @@
 
 The adapter wraps ``PaddleOCRVLClient`` and conforms to the ``OCRFixerProtocol``
 interface so it can be registered with ``OCRFixRouter`` and used alongside
-Qwen-VL, DeepSeek, and Rule fixers.
+DeepSeek and Rule fixers.
 
 PaddleOCR-VL is a high-accuracy external OCR engine. Unlike the other adapters
 which *correct* existing OCR text, this adapter performs its own OCR on the
 original image and returns the recognized text.  In the router chain it sits
-before Qwen-VL so high-accuracy external OCR is tried first.
+first so high-accuracy external OCR is tried before DeepSeek text correction.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ class PaddleOCRVLAdapter:
     ) -> OCRFixResult:
         """Run OCR via PaddleOCR-VL API and return recognized text.
 
-        Unlike Qwen/DeepSeek adapters which *correct* existing OCR text,
+        Unlike DeepSeek adapter which *corrects* existing OCR text,
         this adapter performs its own OCR from the original image.  The
         ``ocr_text`` parameter is ignored when ``image`` is available.
 

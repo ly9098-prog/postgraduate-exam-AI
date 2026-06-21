@@ -15,7 +15,6 @@ from app.features.ocr_fix.canonical_output import (
 )
 from app.features.ocr_fix.deepseek_adapter import DeepSeekFixer
 from app.features.ocr_fix.interfaces import OCRFixResult, OCRFixerProtocol
-from app.features.ocr_fix.qwen_adapter import QwenFixer
 from app.features.ocr_fix.router import OCRFixRouter, STRATEGY_AUTO, STRATEGY_MANUAL
 from app.features.ocr_fix.rule_adapter import RuleFixer
 
@@ -24,7 +23,6 @@ __all__ = [
     "OCRFixerProtocol",
     "RuleFixer",
     "DeepSeekFixer",
-    "QwenFixer",
     "OCRFixRouter",
     "STRATEGY_AUTO",
     "STRATEGY_MANUAL",

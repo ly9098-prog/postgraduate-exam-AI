@@ -2,7 +2,7 @@
 
 The shared detection/filter functions live in ocr_correction_common.py.
 The AI correction logic was migrated to ocr_fix/router.py (strategy pattern
-with Qwen→DeepSeek→rule fallback chain).
+with PaddleOCR-VL → DeepSeek → rule fallback chain).
 
 This module remains for backward-compatible imports only.
 """

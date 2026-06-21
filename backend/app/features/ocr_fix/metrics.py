@@ -36,10 +36,10 @@ class OcrCorrectionMetrics:
     用法:
         metrics = OcrCorrectionMetrics()
         metrics.record_classification(total=50, noisy=12, skipped=38)
-        metrics.record_correction(model="qwen", before=text, after=fixed,
+        metrics.record_correction(model="paddleocr-vl", before=text, after=fixed,
                                   duration_ms=1200, tokens=450)
         metrics.record_unchanged(model="deepseek", before=text)
-        metrics.record_failure(model="qwen", error="timeout")
+        metrics.record_failure(model="paddleocr-vl", error="timeout")
         metrics.flush()  # 输出结构化 JSON 日志行
     """
 

@@ -36,12 +36,16 @@ const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "#c49a6b",
   "qwen-vl": "#7c5ce7",
   qwen: "#7c5ce7",
+  paddleocr: "#e67e22",
+  paddleocr_vl: "#e67e22",
+  "paddleocr-vl": "#e67e22",
 };
 
 const FEATURE_LABELS: Record<string, { label: string; color: string }> = {
   ocr: { label: "OCR 纠错", color: "#5b7b9a" },
   completion: { label: "AI 补全", color: "#6b9b6b" },
   analysis: { label: "AI 解析", color: "#c49a6b" },
+  vision: { label: "视觉层", color: "#e67e22" },
 };
 
 const FEATURE_OPTIONS = [
@@ -49,6 +53,7 @@ const FEATURE_OPTIONS = [
   { value: "ocr", label: "OCR 纠错" },
   { value: "completion", label: "AI 补全" },
   { value: "analysis", label: "AI 解析" },
+  { value: "vision", label: "视觉层" },
 ];
 
 function getProviderIcon(provider: string) {
@@ -524,6 +529,7 @@ function FeatureMapping({
     { key: "ocr", label: "OCR 纠错", desc: "OCR 识别结果纠错与结构化", color: "#5b7b9a" },
     { key: "completion", label: "AI 补全", desc: "导入题目字段补全与生成", color: "#6b9b6b" },
     { key: "analysis", label: "AI 解析", desc: "错题分析与学习建议生成", color: "#c49a6b" },
+    { key: "vision", label: "视觉层", desc: "扫描 PDF / 图片 OCR 识别", color: "#e67e22" },
   ];
 
   const enabledModels = models.filter((m) => m.is_enabled);
