@@ -1,0 +1,35 @@
+{
+  "case_id": "math_case_003",
+  "source": "ocr_math_3.png",
+  "source_path": "ocr_test/images/example/ocr_math_3.png",
+  "description": "高数二重积分：交换积分次序 ∫₀¹dy∫₀^y f(y) dx",
+  "subject": "math2",
+  "question_type": "single_choice",
+  "expected": {
+    "stem_patterns": [
+      "f(x) 连续",
+      "f(y) dx",
+      "dy",
+      "二重积分"
+    ],
+    "has_options": true,
+    "option_count": 4,
+    "options_keys": ["A", "B", "C", "D"],
+    "correct_answer": "D",
+    "has_math_image_segment": true,
+    "has_table_markdown_segment": false,
+    "expected_risk_flags": [
+      "math_region_detected",
+      "complex_formula_requires_review"
+    ],
+    "requires_review": true,
+    "min_confidence": 0.6
+  },
+  "ocr_hints": {
+    "known_ocr_issues": [
+      "积分符号∫ρ可能被误识别",
+      "积分上限/下限可能混淆",
+      "f(y)与f(x)变量可能混淆"
+    ]
+  }
+}
