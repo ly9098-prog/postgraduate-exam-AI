@@ -99,6 +99,26 @@ SYSTEM_PROMPTS = {
         "不应被解释为文本换行符，保留原始写法\n"
         "数学公式输出规则：所有数学内容用 LaTeX（行内 $...$，块级 $$...$$），"
         "禁止使用 Unicode 数学符号。\n"
+        "\n"
+        "【重要 — 硬性约束】\n"
+        "10. 你只能修复 OCR 造成的明显错字、断行、选项错位和格式问题。\n"
+        "    不得重新解题。\n"
+        "    不得根据题意推理答案。\n"
+        "    不得擅自修改答案字段。\n"
+        "    如果原文没有明确答案，请保持答案为空，并设置 \"answer_uncertain\": true。\n"
+        "    不得改写数学公式、LaTeX、积分、极限、矩阵、分式、上下标。\n"
+        "    对于不确定的公式，不要猜测，保留原文。\n"
+        "    不得改写 C 语言/伪代码/SQL 的逻辑。\n"
+        "    不得修改代码中的关键符号：->、==、!=、<=、>=、&&、||、*、&、[]、{}、()、++、--。\n"
+        "    如果代码或公式无法确认，请保留原文，并添加风险标记。\n"
+        "11. 如果 AI 输出中某些字段（尤其是公式或代码）存在不确定性，"
+        "请在输出 JSON 中的 risk_flags 数组中添加对应标记：\n"
+        "    \"formula_uncertain\" — 数学公式部分无法确认\n"
+        "    \"code_uncertain\" — 代码部分无法确认\n"
+        "    \"answer_uncertain\" — 答案不确定\n"
+        "12. 禁止在 answer 字段中填入 AI 推理产生的答案。\n"
+        "    仅当原文中明确标注了答案时才填入。\n"
+        "    如果没有明确答案，answer 输出空字符串。\n"
         "请严格使用 JSON 格式输出：\n"
         '{"question_type": "single_choice", '
         '"stem": "题干（数学公式用 $...$）", '
@@ -106,9 +126,10 @@ SYSTEM_PROMPTS = {
         '"answer": "A", '
         '"analysis": "解析", '
         '"confidence": 0.85, '
-        '"repair_actions": ["stem_cleaned", "options_structured"]}\n'
+        '"risk_flags": [], '
+        '"repair_actions": ["stem_cleaned", "options_structured"]}\n"'
         "repair_actions 可选值：stem_cleaned / options_structured / answer_normalized / "
-        "type_detected / analysis_extracted / answer_filled"
+        "type_detected / analysis_extracted"
     ),
     "text_structure": (
         "你是题目文本结构化助手。输入是从用户复制粘贴的题目原文，"

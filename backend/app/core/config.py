@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     IMAGE_IMPORT_MAX_BYTES: int = 10 * 1024 * 1024
     PAGE_CLASSIFIER_ENABLED: bool = True
     # 代码块检测 Feature Flag — 关闭后行为与线上完全一致
-    CODE_DETECTOR_ENABLED: bool = False
+    CODE_DETECTOR_ENABLED: bool = True
 
     # 批量导题（多图片）
     BATCH_IMAGE_MAX_FILES: int = 100        # 单次最多上传图片数

@@ -104,10 +104,14 @@ async def get_import_review_queue(
     subject: str | None = None,
     source_type: str | None = None,
     keyword: str | None = None,
+    risk_level: str | None = Query(None, pattern="^(high|medium|low)$"),
     _=Depends(require_permissions("import:read")),
     db: AsyncSession = Depends(get_db),
 ):
-    items, total = await list_review_queue(db, page, page_size, status, batch_id, subject, source_type, keyword)
+    items, total = await list_review_queue(
+        db, page, page_size, status, batch_id, subject, source_type, keyword,
+        risk_level=risk_level,
+    )
     return paginated_response(items, total, page, page_size)
 
 

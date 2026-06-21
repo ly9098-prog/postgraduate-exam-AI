@@ -40,6 +40,9 @@ export type ImportQuestionItem = {
   ai_metadata?: Record<string, unknown> | null;
   ai_reviewed_at?: string | null;
   ai_answer_flag: boolean;
+  risk_flags: string[];
+  risk_level: string;
+  risk_reasons: string[];
   created_at: string;
   updated_at: string;
 };
