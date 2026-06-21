@@ -994,6 +994,8 @@ def _build_diagnostics(data: dict) -> dict:
             "ai_repair": data.get("repair_diffs", []),
             "ai_repair_stats": data.get("repair_stats", {}),
         },
+        # P3-4: review 分批提交 diagnostics
+        "review_commit": data.get("review_commit"),
         # P3-7: shared token budget snapshot for monitoring
         "token_usage": _get_token_usage_snapshot_safe(),
     }
@@ -2887,6 +2889,12 @@ class ImportPipeline:
             "items": items,
             "review_new_hashes": new_hashes,
             "warnings": warnings,
+            # P3-4: 分批提交 diagnostics，让 _build_diagnostics 写入诊断记录
+            "review_commit": {
+                "batch_size": 50,
+                "total_questions": result["total"],
+                "written": result["written"],
+            },
         }
 
     # ------------------------------------------------------------------
@@ -3167,7 +3175,9 @@ class ImportPipeline:
         pipeline_errors: list[str] = []
         overall_status = "completed"
 
-        # P3-2: per-stage checkpoint tracking
+        # P3-2: per-stage checkpoint tracking — only used in single-pass mode.
+        # Chunked mode has its own checkpoint via pipeline_checkpoint.py.
+        _is_chunked_mode = chunk_seen_hashes is not None
         completed_stages: list[str] = []
         has_resume_ckpt = resume_from_checkpoint is not None
         if has_resume_ckpt:
@@ -3178,16 +3188,17 @@ class ImportPipeline:
             )
 
         # Write initial checkpoint so we have metadata even if first stage fails
-        await _write_stage_checkpoint(
-            self.pipeline_id,
-            completed_stages=list(completed_stages),
-            current_stage="",
-            stage_statuses={},
-            source_type=source_type,
-            source_file=source_file,
-            subject=subject,
-            options=opts,
-        )
+        if not _is_chunked_mode:
+            await _write_stage_checkpoint(
+                self.pipeline_id,
+                completed_stages=list(completed_stages),
+                current_stage="",
+                stage_statuses={},
+                source_type=source_type,
+                source_file=source_file,
+                subject=subject,
+                options=opts,
+            )
 
         for name, stage in self.stages.items():
 
@@ -3237,34 +3248,36 @@ class ImportPipeline:
                     data.pop("matched", None)
                     data.pop("unmatched", None)
 
-                # P3-2: write checkpoint after each completed stage
-                completed_stages.append(name)
-                await _write_stage_checkpoint(
-                    self.pipeline_id,
-                    completed_stages=list(completed_stages),
-                    current_stage=name,
-                    stage_statuses={n: s.to_dict() for n, s in self.stages.items()},
-                    source_type=source_type,
-                    source_file=source_file,
-                    subject=subject,
-                    options=opts,
-                )
+                # P3-2: write checkpoint after each completed stage (single-pass only)
+                if not _is_chunked_mode:
+                    completed_stages.append(name)
+                    await _write_stage_checkpoint(
+                        self.pipeline_id,
+                        completed_stages=list(completed_stages),
+                        current_stage=name,
+                        stage_statuses={n: s.to_dict() for n, s in self.stages.items()},
+                        source_type=source_type,
+                        source_file=source_file,
+                        subject=subject,
+                        options=opts,
+                    )
             except Exception:
                 overall_status = "failed"
                 pipeline_errors.append(f"stage '{name}' failed: {stage.error}")
-                # P3-2: write failure checkpoint
-                await _write_stage_checkpoint(
-                    self.pipeline_id,
-                    completed_stages=list(completed_stages),
-                    current_stage=name,
-                    stage_statuses={n: s.to_dict() for n, s in self.stages.items()},
-                    failed_stage=name,
-                    error=stage.error,
-                    source_type=source_type,
-                    source_file=source_file,
-                    subject=subject,
-                    options=opts,
-                )
+                # P3-2: write failure checkpoint (single-pass only)
+                if not _is_chunked_mode:
+                    await _write_stage_checkpoint(
+                        self.pipeline_id,
+                        completed_stages=list(completed_stages),
+                        current_stage=name,
+                        stage_statuses={n: s.to_dict() for n, s in self.stages.items()},
+                        failed_stage=name,
+                        error=stage.error,
+                        source_type=source_type,
+                        source_file=source_file,
+                        subject=subject,
+                        options=opts,
+                    )
                 if name in ("extract", "normalize_text", "ocr_correction"):
                     # 失败路径同样释放
                     data.pop("file_content", None)
@@ -3284,8 +3297,8 @@ class ImportPipeline:
                 except Exception:
                     pass
 
-        # P3-2: clear checkpoint on successful completion
-        if overall_status == "completed":
+        # P3-2: clear checkpoint on successful completion (single-pass only)
+        if not _is_chunked_mode and overall_status == "completed":
             await _clear_stage_checkpoint(self.pipeline_id)
 
         stats = _build_stats(data, self.stages)
