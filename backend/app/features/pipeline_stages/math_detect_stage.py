@@ -15,16 +15,9 @@ from app.features.math_import_profile import (
     apply_math_risk_flags,
     is_math_candidate,
 )
+from app.features.pipeline_stages._helpers import _count_risk_flags
 
 logger = logging.getLogger(__name__)
-
-
-def _count_risk_flags(questions: list[dict]) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for q in questions:
-        for flag in q.get("risk_flags") or []:
-            counts[str(flag)] = counts.get(str(flag), 0) + 1
-    return counts
 
 
 async def run_math_detect_stage(
