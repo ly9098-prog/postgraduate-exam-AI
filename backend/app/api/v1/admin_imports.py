@@ -1,4 +1,6 @@
+import asyncio
 import importlib.util
+import logging
 import os
 import tempfile
 
@@ -51,7 +53,14 @@ from app.schemas.import_review import PipelineStatusResponse, PipelineUploadResp
 from app.schemas.question_publish import PublishResponse
 from app.features.import_mode import ImportMode
 from app.api.v1.imports import get_import_pipeline_status, start_import_pipeline_from_upload
+from app.features.pipeline_orchestrator import (
+    _get_stage_checkpoint,
+    _set_pipeline_store,
+    run_pipeline_background,
+)
 from app.features import question_publish_service as publish_svc
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin/v1/imports", tags=["admin-imports"])
 
@@ -94,6 +103,151 @@ async def get_admin_pipeline_status(
     db: AsyncSession = Depends(get_db),
 ):
     return await get_import_pipeline_status(pipeline_id, db)
+
+
+_RESUMABLE_STATUSES = {"failed", "paused", "interrupted"}
+
+
+@router.post("/pipelines/{pipeline_id}/resume")
+async def admin_resume_pipeline(
+    pipeline_id: str,
+    file: UploadFile,
+    background_tasks: BackgroundTasks,
+    _=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    """P3-3: 恢复失败的导入流水线。
+
+    检查 checkpoint 后重新提交后台任务。仅允许 failed / interrupted 状态。
+    需要重新上传原始文件。
+    """
+    from datetime import datetime
+    import hashlib
+    import tempfile
+
+    from app.features.pipeline_orchestrator import _pipeline_store
+
+    # 检查当前状态 — use pipeline_store directly for non-DB pipelines
+    from app.features.pipeline_orchestrator import _get_pipeline_store as _get_ps
+    status_data = await _get_ps(pipeline_id)
+    if status_data is None:
+        # check image pipeline store
+        from app.api.v1.imports import _get_image_pipeline_status
+        status_data = await _get_image_pipeline_status(pipeline_id)
+
+    if status_data is None:
+        raise HTTPException(status_code=404, detail="流水线不存在")
+
+    current_status = status_data.get("status", "")
+    if current_status not in _RESUMABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"流水线当前状态为 {current_status}，不可恢复（仅允许 {_RESUMABLE_STATUSES}）",
+        )
+
+    # 读取 checkpoint
+    ckpt = await _get_stage_checkpoint(pipeline_id)
+    if not ckpt:
+        # 没有 checkpoint 仍允许重跑，只是会完整从头开始
+        logger.warning("No stage checkpoint found for pipeline %s; will run full pipeline", pipeline_id)
+
+    # 保存上传文件
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="文件内容为空")
+
+    suffix = os.path.splitext(file.filename or "")[1] or ".bin"
+    fd, tmp_path = tempfile.mkstemp(prefix=f"resume_admin_{pipeline_id}_", suffix=suffix)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(content)
+    except Exception:
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+        raise
+    del content
+
+    # 从 checkpoint 恢复选项
+    opts = dict(ckpt.get("options") or {}) if ckpt else {}
+    subject = ckpt.get("subject") if ckpt else None
+    source_type = ckpt.get("source_type") or "pdf"
+    source_file = ckpt.get("source_file") or file.filename or ""
+
+    # 设置 pipeline store 为 processing
+    await _set_pipeline_store(pipeline_id, {
+        "pipeline_id": pipeline_id,
+        "status": "processing",
+        "source_type": source_type,
+        "current_stage": "extract",
+        "stages": {},
+        "stats": {},
+        "errors": [],
+        "started_at": datetime.now().isoformat(),
+    })
+
+    # 后台任务
+    async def _run_resume():
+        try:
+            from app.core.database import async_session
+            from app.features.pipeline_orchestrator import (
+                _pipeline_store as _ps,
+                run_import_pipeline,
+            )
+
+            async def _progress(stages_dict, current_stage, errors):
+                await _set_pipeline_store(pipeline_id, {
+                    "pipeline_id": pipeline_id,
+                    "status": "processing",
+                    "source_type": source_type,
+                    "current_stage": current_stage,
+                    "stages": stages_dict,
+                    "stats": {},
+                    "errors": errors,
+                    "started_at": _ps.get(pipeline_id, {}).get("started_at", ""),
+                })
+
+            async with async_session() as resume_db:
+                result = await run_import_pipeline(
+                    file_path=tmp_path,
+                    source_type=source_type,
+                    source_file=source_file,
+                    subject=subject,
+                    options=opts,
+                    db=resume_db,
+                    progress_callback=_progress,
+                    pipeline_id=pipeline_id,
+                )
+                await _set_pipeline_store(pipeline_id, result)
+        except Exception as exc:
+            logger.exception("Admin resume pipeline %s failed", pipeline_id)
+            await _set_pipeline_store(pipeline_id, {
+                "pipeline_id": pipeline_id,
+                "status": "failed",
+                "source_type": source_type,
+                "errors": [f"恢复导入失败: {exc}"],
+                "started_at": _pipeline_store.get(pipeline_id, {}).get("started_at", ""),
+                "finished_at": datetime.now().isoformat(),
+            })
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+    asyncio.create_task(_run_resume())
+
+    failed_stage = (ckpt or {}).get("failed_stage")
+    completed_stages = (ckpt or {}).get("completed_stages", [])
+    return {
+        "pipeline_id": pipeline_id,
+        "status": "processing",
+        "resumed_chunks": [],
+        "failed_stage": failed_stage,
+        "completed_stages": len(completed_stages),
+    }
 
 
 @router.get("/review-queue")
