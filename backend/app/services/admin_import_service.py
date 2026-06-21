@@ -30,8 +30,6 @@ def derive_import_risk(
     *,
     ai_answer_flag: bool | None = None,
     parsed_answer: str | None = None,
-    parsed_content: dict | None = None,
-    question_type: str | None = None,
 ) -> dict:
     """从导入题目元数据推导风险等级。
 
@@ -39,7 +37,6 @@ def derive_import_risk(
         {"risk_flags": [...], "risk_level": "high"|"medium"|"low", "risk_reasons": [...]}
     """
     risk_flags: list[str] = []
-    risk_reasons: list[str] = []
     meta = ai_metadata or {}
 
     # 1. 从 ai_metadata.risk_flags 提取已有的风险标记
@@ -190,8 +187,6 @@ def _apply_risk_to_item(item: AdminImportQuestionItem) -> AdminImportQuestionIte
         item.ai_metadata,
         ai_answer_flag=item.ai_answer_flag,
         parsed_answer=item.parsed_answer,
-        parsed_content=item.parsed_content,
-        question_type=item.question_type,
     )
     # 用 model_config 允许额外字段
     item.risk_flags = risk["risk_flags"]
