@@ -341,6 +341,12 @@ def _lightweight_page_ocr(
 ) -> dict[int, str]:
     """Render PDF pages at low DPI and run PaddleOCR for quick text extraction.
 
+    **DEPRECATED** (Task 2: 消除双 OCR): The main pipeline no longer calls this
+    function. Exercise detection now reuses the single full-quality OCR pass
+    from _ocr_scanned_pdf instead of running a separate lightweight scan.
+
+    Kept for backward compatibility with external callers and tests.
+
     Minimal preprocessing: no rotation detection, no deskew.
 
     Args:
@@ -471,6 +477,14 @@ def detect_exercise_regions_from_pdf(
     config: dict | None = None,
 ) -> list[ExerciseRegion]:
     """End-to-end: lightweight OCR scan → detect exercise regions.
+
+    **DEPRECATED** (Task 2: 消除双 OCR): The main pipeline no longer calls
+    this function. It ran a separate lightweight PaddleOCR pass (72 DPI,
+    sampled pages) for exercise detection, causing double OCR on sampled
+    pages. The pipeline now runs a single full-quality OCR pass and calls
+    detect_exercise_regions() directly on the extracted text.
+
+    Kept for backward compatibility with external callers and tests.
 
     Args:
         source: raw PDF bytes, or a filesystem path to the PDF (preferred —

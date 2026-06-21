@@ -619,6 +619,25 @@ def _ocr_scanned_pdf(
     return blocks
 
 
+def _extract_page_texts_from_blocks(blocks: list[dict]) -> dict[int, str]:
+    """Extract per-page concatenated text from full OCR blocks.
+
+    Used by exercise detection to reuse the single full OCR pass instead of
+    running a separate lightweight OCR scan.
+    """
+    page_texts: dict[int, str] = {}
+    for block in blocks:
+        page = block.get("page", 0)
+        text = block.get("text", "")
+        if not text.strip():
+            continue
+        if page not in page_texts:
+            page_texts[page] = text
+        else:
+            page_texts[page] += "\n" + text
+    return page_texts
+
+
 def _extract_text_blocks(content_or_path: bytes | str) -> list[dict]:
     """Extract text blocks from plain text content.
 
@@ -1121,8 +1140,9 @@ class ImportPipeline:
         For PDFs with very little extractable text (< 100 chars), triggers OCR
         fallback automatically when OCR_ENABLED is True.
 
-        When EXERCISE_DETECTION_ENABLED is True, performs a lightweight pre-scan
-        to locate exercise regions and only OCRs those pages.
+        Single OCR pass: _ocr_scanned_pdf runs once at full quality. Exercise
+        detection (when enabled) reuses the same OCR text — no separate
+        lightweight scan (Task 2: 消除双 OCR).
 
         P0-1: 优先使用 file_path（mmap），bytes 仅在调用方未提供 path 时使用。
         """
@@ -1148,17 +1168,9 @@ class ImportPipeline:
             # Scanned PDF detection: if PyMuPDF extracted very little text,
             # the PDF likely contains only images → trigger OCR fallback.
             #
-            # OCR passes for scanned PDFs:
-            #   Pass 1 (always): _extract_pdf_blocks via PyMuPDF — cheap,
-            #       typically <10ms per page.
-            #   Pass 2 (conditional): detect_exercise_regions_from_pdf at
-            #       low DPI with sampling — lightweight image classification
-            #       only, no full OCR. Results are page ranges consumed
-            #       immediately below.
-            #   Pass 3 (conditional): _ocr_scanned_pdf at normal DPI for
-            #       detected regions or full document. Full PaddleOCR with
-            #       box-level output, batched with gc.collect() between
-            #       batches.
+            # Single OCR pass: _ocr_scanned_pdf at normal DPI with full
+            # PaddleOCR box-level output. Exercise detection reuses the
+            # same OCR text — no separate lightweight pass (Task 2).
             total_text = sum(len(b.get("text", "")) for b in raw_blocks)
             if total_text < 100:
                 from app.core.config import settings
@@ -1168,97 +1180,74 @@ class ImportPipeline:
                         "PDF text only %d chars, attempting PaddleOCR fallback", total_text,
                     )
                     try:
-                        exercise_regions = None
                         exercise_regions_attempted = False  # P1-2
                         import_mode_str = opts.get("import_mode", "auto")
                         user_specified_range = opts.get("page_start") or opts.get("page_end")
-                        if settings.EXERCISE_DETECTION_ENABLED and import_mode_str != "exam" and not user_specified_range:
-                            exercise_regions_attempted = True
-                            logger.info("Exercise region detection starting...")
-                            from app.features.exercise_region_detector import (
-                                detect_exercise_regions_from_pdf,
-                            )
 
-                            exercise_regions = detect_exercise_regions_from_pdf(
-                                pdf_source,
-                                config={
-                                    "dpi": settings.EXERCISE_DETECTION_DPI,
-                                    "max_empty_pages": settings.EXERCISE_DETECTION_MAX_EMPTY_PAGES,
-                                    "min_confidence": settings.EXERCISE_DETECTION_MIN_CONFIDENCE,
-                                    "sample_step": settings.EXERCISE_DETECTION_SAMPLE_STEP,
-                                },
-                            )
+                        # ── Single OCR pass (the ONLY PaddleOCR call) ──
+                        ocr_page_start = opts.get("page_start") or 1
+                        ocr_page_end = opts.get("page_end")
+                        ocr_blocks = _ocr_scanned_pdf(
+                            pdf_source,
+                            pipeline_id=self.pipeline_id,
+                            page_start=ocr_page_start,
+                            page_end=ocr_page_end,
+                        )
 
-                            # 采样模式漏检保护：若 step>1 一无所获，退化为 step=1
-                            # 重新探测一次。否则下方 fallback 会跑全本 OCR，整体
-                            # 工作量反而比不开检测更高（lightweight 1/N + full 100%
-                            # > full 100%）。
-                            if (
-                                not exercise_regions
-                                and settings.EXERCISE_DETECTION_SAMPLE_STEP > 1
-                            ):
-                                logger.warning(
-                                    "Exercise detection found nothing at sample_step=%d; retrying with full coverage to avoid degenerating into full-PDF OCR",
-                                    settings.EXERCISE_DETECTION_SAMPLE_STEP,
+                        if ocr_blocks:
+                            raw_blocks = ocr_blocks
+
+                            # Exercise detection reuses the full OCR text —
+                            # no separate lightweight OCR pass (Task 2)
+                            if (settings.EXERCISE_DETECTION_ENABLED
+                                    and import_mode_str != "exam"
+                                    and not user_specified_range):
+                                exercise_regions_attempted = True
+                                from app.features.exercise_region_detector import (
+                                    detect_exercise_regions,
                                 )
-                                exercise_regions = detect_exercise_regions_from_pdf(
-                                    pdf_source,
+
+                                page_texts = _extract_page_texts_from_blocks(raw_blocks)
+                                exercise_regions = detect_exercise_regions(
+                                    page_texts,
                                     config={
-                                        "dpi": settings.EXERCISE_DETECTION_DPI,
                                         "max_empty_pages": settings.EXERCISE_DETECTION_MAX_EMPTY_PAGES,
                                         "min_confidence": settings.EXERCISE_DETECTION_MIN_CONFIDENCE,
-                                        "sample_step": 1,
                                     },
                                 )
-                        elif user_specified_range:
-                            logger.info("Skipping exercise detection: user specified page range %s-%s",
-                                        opts.get("page_start"), opts.get("page_end"))
 
-                        if exercise_regions:
-                            exercise_regions_result = [
-                                {"start_page": r.start_page, "end_page": r.end_page,
-                                 "confidence": r.confidence, "matched_keyword": r.matched_keyword}
-                                for r in exercise_regions
-                            ]
-                            ocr_blocks: list[dict] = []
-                            for region in exercise_regions:
-                                region_blocks = _ocr_scanned_pdf(
-                                    pdf_source,
-                                    pipeline_id=self.pipeline_id,
-                                    page_start=region.start_page,
-                                    page_end=region.end_page,
-                                )
-                                ocr_blocks.extend(region_blocks)
-                            if ocr_blocks:
-                                raw_blocks = ocr_blocks
+                                if exercise_regions:
+                                    exercise_regions_result = [
+                                        {"start_page": r.start_page, "end_page": r.end_page,
+                                         "confidence": r.confidence, "matched_keyword": r.matched_keyword}
+                                        for r in exercise_regions
+                                    ]
+                                    # Filter blocks to exercise region pages
+                                    region_pages: set[int] = set()
+                                    for r in exercise_regions:
+                                        for p in range(r.start_page, r.end_page + 1):
+                                            region_pages.add(p)
+                                    raw_blocks = [b for b in raw_blocks if b.get("page", 0) in region_pages]
+                                    logger.info(
+                                        "Exercise region detection found %d region(s), filtered to %d blocks",
+                                        len(exercise_regions), len(raw_blocks),
+                                    )
+                                    del exercise_regions
+                                else:
+                                    exercise_regions_missing = True
+                                    logger.info(
+                                        "Exercise detection found no regions, keeping all %d OCR blocks",
+                                        len(raw_blocks),
+                                    )
+                            elif user_specified_range:
                                 logger.info(
-                                    "Exercise region OCR succeeded: %d blocks from %d region(s)",
-                                    len(ocr_blocks), len(exercise_regions),
+                                    "Skipping exercise detection: user specified page range %s-%s",
+                                    opts.get("page_start"), opts.get("page_end"),
                                 )
-                            # Release region metadata; OCR text blocks in
-                            # raw_blocks are the only downstream artifact.
-                            del exercise_regions
+
+                            logger.info("OCR succeeded: %d blocks", len(raw_blocks))
                         else:
-                            # P1-2: detection 跑了但 exercise_regions 为空 → 标记
-                            # exercise_regions_missing=True；下游 normalize_schema
-                            # 看到 import_mode==book 时会把 no_exercise_regions
-                            # 写到每道题的 risk_flags，前端审核页据此打风险徽章。
-                            # detection 跳过（exam / 用户指定页码）不算 missing。
-                            if exercise_regions_attempted:
-                                exercise_regions_missing = True
-                            exercise_regions = None
-                            opts = _kw.get("options") or {}
-                            ocr_blocks = _ocr_scanned_pdf(
-                                pdf_source,
-                                pipeline_id=self.pipeline_id,
-                                page_start=opts.get("page_start") or 1,
-                                page_end=opts.get("page_end"),
-                            )
-                            if ocr_blocks:
-                                raw_blocks = ocr_blocks
-                                logger.info(
-                                    "OCR fallback succeeded: %d blocks", len(ocr_blocks),
-                                )
+                            logger.warning("OCR returned no blocks")
                     except RuntimeError as exc:
                         logger.warning("OCR fallback unavailable: %s", exc)
                     except Exception as exc:
@@ -3585,6 +3574,8 @@ async def run_excel_pipeline_background(
     try:
         async with async_session() as db:
             batch_id, total = await import_excel_fn(db, file_content, source_file)
+        # P0-1: release Excel bytes after import function consumes them
+        del file_content
         await _set_pipeline_store(pipeline_id, {
             "pipeline_id": pipeline_id,
             "status": "completed",
