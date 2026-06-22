@@ -64,6 +64,9 @@ deploy/nginx/ssl/*.key
 deploy/nginx/ssl/*.crt
 deploy/logs/
 
+# Pipeline runtime artifacts
+backend/.backend_cache/
+
 # Docker volumes
 pgdata/
 redisdata/
