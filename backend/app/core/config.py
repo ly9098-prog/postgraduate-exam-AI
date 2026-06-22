@@ -41,7 +41,7 @@ class Settings(BaseSettings):
 
     # 微信订阅消息（番茄钟完成提醒）
     WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID: str = ""
-    POMODORO_NOTIFY_ENABLED: bool = True
+    POMODORO_NOTIFY_ENABLED: bool = False
     POMODORO_NOTIFY_PAGE: str = "pages/pomodoro/pomodoro"
     POMODORO_SCHEDULER_INTERVAL_SEC: int = 60
 
