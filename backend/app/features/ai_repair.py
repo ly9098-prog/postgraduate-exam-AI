@@ -46,11 +46,13 @@ _RISK_FLAGS_REQUIRE_REPAIR = frozenset({
     "code_brace_unbalanced",
     "code_garbled_text",
     "code_line_break_suspicious",
+    "code_paren_unbalanced",
     "code_fence_unclosed",
     "code_structure_regression",
 })
 
 # 内存 token 计数器（共享模块，与 ocr_correction 同一预算池）
+from app.features.code_integrity import contains_code, is_code_question, detect_code_block_integrity
 from app.features.token_budget import (
     estimate_tokens, check_token_limit, record_token_usage, get_token_usage_snapshot,
     _token_usage,
@@ -164,7 +166,6 @@ def _is_low_risk_skip_candidate(question: dict, high_confidence_threshold: float
     # ---- BUGS Task 2: 代码块完整性防护（即使 risk_flags 未同步也生效） ----
     # 包含代码的题目，在 stem 上直接执行完整性检测，避免任何旁路导致代码损坏被跳过
     if _stem_has_code(stem):
-        from app.features.code_integrity import detect_code_block_integrity
         integrity = detect_code_block_integrity(stem)
         if integrity["flags"]:
             return False
@@ -183,7 +184,6 @@ def _should_repair(
     # ---- Code integrity gate: 代码结构损坏强制 repair，优先级高于所有 skip 逻辑 ----
     stem = question.get("stem", "")
     if stem:
-        from app.features.code_integrity import contains_code, is_code_question, detect_code_block_integrity
         if contains_code(stem) or is_code_question(stem):
             integrity = detect_code_block_integrity(stem)
             if integrity["flags"]:
