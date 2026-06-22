@@ -5,6 +5,8 @@ from app.features.question_normalizer import (
     normalize_question,
     normalize_questions,
     dedup_batch,
+    _apply_outside_code_blocks,
+    _break_before_number_markers,
     _clean_stem,
     _extract_stem,
     _normalize_options,
@@ -77,6 +79,116 @@ class TestCleanStem:
 
     def test_clean_empty_parens(self):
         assert _clean_stem("填空（）") == "填空()"
+
+    # ---- fenced code block 保护测试 ----
+
+    def test_clean_stem_preserves_code_indent(self):
+        """fenced code block 内 4 空格缩进不应被压缩。"""
+        text = (
+            "设有一个递归函数如下:\n"
+            "```text\n"
+            "int F(int n) {\n"
+            "    if (n <= 1) return n;\n"
+            "    return F(n - 1) + F(n - 2);\n"
+            "}\n"
+            "```"
+        )
+        result = _clean_stem(text)
+        assert "    if (n <= 1) return n;" in result, (
+            f"fence 内 4 空格缩进应保留: {result!r}"
+        )
+
+    def test_clean_stem_protects_code_tabs(self):
+        """fenced code block 内 tab 不应被替换。"""
+        text = (
+            "题干:\n"
+            "```c\n"
+            "int main() {\n"
+            "\tprintf(\"hello\");\n"
+            "\treturn 0;\n"
+            "}\n"
+            "```"
+        )
+        result = _clean_stem(text)
+        assert "\tprintf" in result, (
+            f"fence 内 tab 应保留: {result!r}"
+        )
+
+    def test_clean_stem_normalizes_spaces_outside_fence(self):
+        """fence 外连续空格仍应正常清洗。"""
+        text = "题干    内容\n```c\nint  a;\n```\n后    续"
+        result = _clean_stem(text)
+        # fence 外空格被压缩
+        assert "题干    内容" not in result, "fence 外空格应被压缩"
+        assert "后    续" not in result, "fence 外空格应被压缩"
+        # fence 内空格保留
+        assert "int  a;" in result, (
+            f"fence 内空格应保留: {result!r}"
+        )
+
+    def test_clean_stem_normalizes_newlines_outside_fence(self):
+        """fence 外连续空行仍应正常压缩。"""
+        text = "开头\n\n\n\n```c\nint a;\n\n\nint b;\n```\n\n\n\n结尾"
+        result = _clean_stem(text)
+        # fence 上方 4 空行被压缩（与 fence 的开头 ``` 合并成 \n\n）
+        # fence 下方 4 空行被压缩
+        assert "\n" in result
+        assert "int a;\n\n\nint b;" in result, (
+            f"fence 内空行应保留: {result!r}"
+        )
+        assert "结尾" in result
+
+    def test_clean_stem_protects_unclosed_fence(self):
+        """未闭合 fence 内部缩进仍应被保护。"""
+        text = (
+            "题干开头\n"
+            "```c\n"
+            "    int a = 1;\n"
+            "    if (a) {\n"
+            "        return a;\n"
+        )
+        result = _clean_stem(text)
+        assert "    int a = 1;" in result, (
+            f"未闭合 fence 内缩进应保留: {result!r}"
+        )
+        assert "    if (a) {" in result, (
+            f"未闭合 fence 内缩进应保留: {result!r}"
+        )
+
+    def test_clean_stem_mixed_fence_and_leading_markers(self):
+        """fence 和 ^ 锚定规则同时存在时互不干扰。"""
+        text = (
+            "1. 这是一个递归函数:\n"
+            "```c\n"
+            "    int fib(int n) {\n"
+            "        if (n <= 1) return n;\n"
+            "    }\n"
+            "```\n"
+        )
+        result = _clean_stem(text)
+        # ^ 锚定规则删除 "1. "
+        assert not result.startswith("1. "), (
+            f"^ 锚定规则应删除前导编号: {result[:20]!r}"
+        )
+        # fence 内缩进保留
+        assert "    int fib(int n) {" in result, (
+            f"fence 内缩进应保留: {result!r}"
+        )
+
+    def test_apply_outside_code_blocks_empty_text(self):
+        """helper 函数对空文本无异常。"""
+        assert _apply_outside_code_blocks("", lambda t: t.upper()) == ""
+
+    def test_apply_outside_code_blocks_no_fence(self):
+        """无 fence 时 transform 应用到全文。"""
+        r = _apply_outside_code_blocks("hello world", lambda t: t.upper())
+        assert r == "HELLO WORLD"
+
+    def test_apply_outside_code_blocks_only_fence(self):
+        """只有 fence 时 transform 不应用到 fence 内容。"""
+        r = _apply_outside_code_blocks("```text\nhello\n```", lambda t: t.upper())
+        assert "hello" in r
+        assert "HELLO" not in r
 
 
 # ---------------------------------------------------------------
@@ -912,3 +1024,157 @@ class TestParseCacheVersion:
         # 第一条应已被淘汰
         first = parse_cache_get("raw_0", "key_0")
         assert first is None, "FIFO 应淘汰最旧条目"
+
+
+# ---------------------------------------------------------------
+# 14. 代码块保护 — _break_before_number_markers
+# ---------------------------------------------------------------
+
+class TestBreakBeforeNumberMarkersFenceProtection:
+    """验证 _break_before_number_markers 不破坏 fenced code block 内容。"""
+
+    def test_code_fence_not_damaged(self):
+        """if (n <= 1) return n; 在 fenced code block 内不得被拆行。"""
+        text = (
+            "设有一个递归函数如下:\n"
+            "```text\n"
+            "int F(int n) {\n"
+            "if (n <= 1) return n;\n"
+            "return F(n - 1) + F(n - 2);\n"
+            "}\n"
+            "```"
+        )
+        result = _break_before_number_markers(text)
+        assert "if (n <= 1) return n;" in result, (
+            f"代码行不应被拆行: {result!r}"
+        )
+        assert "if (n <=\n1)" not in result, (
+            "不应在 <= 后插入换行"
+        )
+
+    def test_normal_markers_outside_fence(self):
+        """fence 外的题号标记 1) 2) 仍应正常处理。"""
+        text = "这是第一题1) 这是第二题2) 继续"
+        result = _break_before_number_markers(text)
+        assert "\n1)" in result, "fence 外的 1) 应插入换行"
+        assert "\n2)" in result, "fence 外的 2) 应插入换行"
+
+    def test_unclosed_fence_protected(self):
+        """未闭合的 fence 之后的内容也应受保护。"""
+        text = (
+            "题干开头\n"
+            "```text\n"
+            "if (n <= 1) return n;\n"
+            "int x = foo(1);"
+        )
+        result = _break_before_number_markers(text)
+        assert "if (n <= 1) return n;" in result, (
+            "未闭合 fence 内代码不应被破坏"
+        )
+        assert "foo(1);" in result, (
+            "未闭合 fence 内 foo(1) 不应被拆行"
+        )
+
+    def test_multiple_fences_protected(self):
+        """多个 code fence 均能保护内部内容。"""
+        text = (
+            "题目1) 题干\n"
+            "```c\n"
+            "if (n <= 1) return n;\n"
+            "```\n"
+            "题目2) 题干\n"
+            "```python\n"
+            "if x > 1: return x\n"
+            "```"
+        )
+        result = _break_before_number_markers(text)
+        assert "if (n <= 1) return n;" in result, (
+            "第一个 fence 内的代码不应被破坏"
+        )
+        assert "if x > 1: return x" in result, (
+            "第二个 fence 内的代码不应被破坏"
+        )
+        # fence 外的 1) 2) 跟在题目后且有空格+中文 → 应被处理
+        assert "\n1)" in result, (
+            f"fence 外的 1) 应有换行: {result!r}"
+        )
+        assert "\n2)" in result, (
+            f"fence 外的 2) 应有换行: {result!r}"
+        )
+
+    def test_alternative_fence_tilde(self):
+        """~~~ 围栏也应受到保护。"""
+        # 注意：当前实现只保护 ``` fence，~~~ 是未来扩展项
+        # 本测试仅记录当前行为，不强制断言
+        text = (
+            "开头\n"
+            "~~~text\n"
+            "if (n <= 1) return n;\n"
+            "~~~\n"
+            "结尾"
+        )
+        result = _break_before_number_markers(text)
+        # ~~~ 不是标准 ``` 格式，当前不保护（已知限制）
+        # 本测试仅确认不报错
+        assert "开头" in result
+        assert "结尾" in result
+
+    def test_mixed_fence_and_markers(self):
+        """混合 fence 和非 fence 区域，非 fence 区域正常处理。"""
+        text = (
+            "前面题号1) 前面题号2)\n"
+            "```c\n"
+            "int x = func(1) + func(2);\n"
+            "```\n"
+            "后面题号3)"
+        )
+        result = _break_before_number_markers(text)
+        # 非 fence 区域的 1) 2) 应处理
+        assert "\n1)" in result or "前面题号1)" not in result.split("```")[0]
+        # fence 内的代码不应被破坏
+        fence_content = result.split("```")[1]
+        assert "func(1)" in fence_content, (
+            "fence 内 func(1) 不应被破坏: {fence_content!r}"
+        )
+
+    def test_normalize_question_with_code_fence_preserved(self):
+        """通过 normalize_question 验证 fence 保护生效。"""
+        raw = {
+            "number": 1,
+            "raw_question_text": (
+                "设有一个递归函数如下:\n"
+                "```text\n"
+                "int F(int n) {\n"
+                "if (n <= 1) return n;\n"
+                "return F(n - 1) + F(n - 2);\n"
+                "}\n"
+                "```\n"
+                "A. 15\nB. 14\nC. 9\nD. 5\n"
+                "答案:A"
+            ),
+            "page_start": 1,
+            "page_end": 1,
+            "has_options": True,
+            "option_lines": {"A": "15", "B": "14", "C": "9", "D": "5"},
+            "confidence": 0.95,
+            "section_type": "question_type_single",
+        }
+        matched = {
+            "question_number": 1,
+            "answer": "A",
+            "answer_source": "inline",
+        }
+        result = normalize_question(raw, matched)
+        # stem 中的代码块不应被破坏
+        stem = result["stem"]
+        assert "if (n <= 1) return n;" in stem, (
+            f"通过 normalize_question 后，代码行不应被拆行\n"
+            f"stem: {stem!r}"
+        )
+        # fence 外的题号（如 15 B.14 等）不应受影响
+        assert result["is_valid"] is True
+        # 不应有代码完整性相关的 warning
+        code_warnings = [w for w in result["warnings"] if "code_integrity" in w]
+        assert len(code_warnings) == 0, (
+            f"不应有代码完整性 warning: {code_warnings}"
+        )

@@ -31,6 +31,15 @@ STATUS_PASS = "PASS"
 STATUS_DEGRADED = "DEGRADED"
 STATUS_FAIL = "FAIL"
 
+# assertion field names (from meta.json assertions)
+_ASSERT_FIELD_EXPECTED_CODE_FLAGS = "expected_code_flags"
+_ASSERT_FIELD_FORBIDDEN_CODE_FLAGS = "forbidden_code_flags"
+_ASSERT_FIELD_VALIDATION_STATUS_NOT = "validation_status_not"
+_ASSERT_FIELD_REPAIR_SKIPPED_NOT = "repair_skipped_not"
+_ASSERT_FIELD_CONFIDENCE_SCORE_MAX = "confidence_score_max"
+_ASSERT_FIELD_RETRY_RECOMMENDED = "retry_recommended"
+_ASSERT_FIELD_EXPECTED_FAILURE_REASON = "expected_failure_reason"
+
 # meta.json review_status values
 REVIEW_PENDING = "pending"
 REVIEW_VERIFIED = "verified"
@@ -466,11 +475,16 @@ def evaluate_case(case_dir: Path) -> dict:
 
     review_status = meta.get("review_status")
 
+    assertion_failures = _check_assertions(meta, result, case_dir.name)
+    assertion_passed = len(assertion_failures) == 0
+
     return {
         "case": case_dir.name,
         **comparison,
         "meta": meta,
         "review_status": review_status,
+        "assertion_failures": assertion_failures,
+        "assertion_passed": assertion_passed,
     }
 
 
@@ -752,8 +766,8 @@ def print_report(results: list[dict], verbose: bool = False) -> None:
         r for r in valid if r.get("review_status") == REVIEW_PENDING
     ]
 
-    print(f"\n  {'Case':<30} {'CER':>8} {'Score':>7} {'Status':<10} Top Failures")
-    print("  " + "-" * 76)
+    print(f"\n  {'Case':<30} {'CER':>8} {'Score':>7} {'Assert':>7} {'Status':<10} Top Failures")
+    print("  " + "-" * 86)
     for r in valid:
         review_flag = (
             " [NEEDS REVIEW]"
@@ -763,10 +777,13 @@ def print_report(results: list[dict], verbose: bool = False) -> None:
         top_f = (
             r["failures"][0]["type"] if r["failures"] else "-"
         )
+        assertion_count = len(r.get("assertion_failures", []))
+        assertion_str = f"{assertion_count}FAIL" if assertion_count else "OK"
         print(
             f"  {r['case'] + review_flag:<30} "
             f"{r['cer']:>8.4f} "
             f"{r['quality']['score']:>7.1f} "
+            f"{assertion_str:>7} "
             f"{r['status']:<10} "
             f"{top_f}"
         )
@@ -809,7 +826,7 @@ def print_report(results: list[dict], verbose: bool = False) -> None:
     print("\n  --- 下一阶段优先级建议 ---")
     _print_priority_suggestions(ranked_modules, valid)
 
-    # verbose: 显示失败 diff
+    # verbose: 显示失败 diff + assertion failures
     if verbose:
         failed = [r for r in valid if r["status"] != STATUS_PASS]
         if failed:
@@ -825,6 +842,16 @@ def print_report(results: list[dict], verbose: bool = False) -> None:
                     print("  --- diff ---")
                     for line in r["diff"].split("\n")[:40]:
                         print(f"    {line}")
+
+        assert_fails = [r for r in valid if r.get("assertion_failures")]
+        if assert_fails:
+            print("\n" + "=" * 78)
+            print("  Assertion Failures")
+            print("=" * 78)
+            for r in assert_fails:
+                print(f"\n  [{r['case']}] ({len(r['assertion_failures'])} failures)")
+                for af in r["assertion_failures"]:
+                    print(f"    {af['field']}: {af['message']}")
 
     print("\n" + "=" * 78 + "\n")
 
@@ -878,6 +905,227 @@ def _print_priority_suggestions(
         )
 
 
+# ===================================================================
+# Assertion checking — 验证 meta.json assertions 字段
+# ===================================================================
+
+
+def _run_normalization(pipeline_result: dict, meta: dict) -> dict | None:
+    """对 pipeline 输出运行 normalize_questions，返回第一道题的标准化结果。
+
+    Returns:
+        normalized question dict, 或 None（pipeline 未产生题目时）。
+    """
+    questions = pipeline_result.get("questions")
+    if not questions:
+        return None
+
+    from app.features.question_normalizer import normalize_questions
+
+    matched_pairs = pipeline_result.get("matched", {}).get("matched", [])
+    case_id = meta.get("id", "unknown")
+    source_info = {"file": case_id, "page": 1, "type": "txt"}
+    normalized = normalize_questions(questions, matched_pairs, source_info)
+    nq = normalized.get("questions")
+    if not nq:
+        return None
+    return nq[0]
+
+
+def _check_assertions(
+    meta: dict,
+    pipeline_result: dict,
+    case_dir_name: str,
+) -> list[dict]:
+    """检查 meta.json assertions 是否满足。
+
+    Returns:
+        [{"field": str, "expected": any, "actual": any, "message": str}, ...]
+        空列表 = 全部通过。
+    """
+    assertions = meta.get("assertions")
+    if not assertions:
+        return []
+
+    failures: list[dict] = []
+
+    # ---- 标准化 — 获取置信度、风险标记等字段 ----
+    norm_q = _run_normalization(pipeline_result, meta)
+    if norm_q is None:
+        failures.append({
+            "field": "_normalization",
+            "expected": "normalized question",
+            "actual": "none",
+            "message": f"[{case_dir_name}] normalize_questions 返回空，无法检查断言",
+        })
+        return failures
+
+    risk_flags: list[str] = norm_q.get("risk_flags") or []
+    confidence_score: float = norm_q.get("confidence_score") or 0.0
+    validation_status: str = norm_q.get("validation_status") or ""
+    retry_recommended: bool = norm_q.get("retry_recommended") or False
+    failure_reason: list[str] = norm_q.get("failure_reason") or []
+    is_valid: bool = norm_q.get("is_valid") or False
+
+    # ---- 1. expected_code_flags ----
+    expected_flags = assertions.get(_ASSERT_FIELD_EXPECTED_CODE_FLAGS)
+    if expected_flags is not None:
+        for flag in expected_flags:
+            if flag not in risk_flags:
+                failures.append({
+                    "field": f"risk_flags missing {flag!r}",
+                    "expected": f"in risk_flags",
+                    "actual": risk_flags,
+                    "message": (
+                        f"[{case_dir_name}] 缺少预期代码风险标记 {flag!r}\n"
+                        f"  expected in: risk_flags\n"
+                        f"  actual:      {risk_flags}"
+                    ),
+                })
+
+    # ---- 2. forbidden_code_flags ----
+    forbidden_flags = assertions.get(_ASSERT_FIELD_FORBIDDEN_CODE_FLAGS)
+    if forbidden_flags is not None:
+        for flag in forbidden_flags:
+            if flag in risk_flags:
+                failures.append({
+                    "field": f"risk_flags has forbidden {flag!r}",
+                    "expected": f"not in risk_flags",
+                    "actual": risk_flags,
+                    "message": (
+                        f"[{case_dir_name}] 出现了不应存在的代码风险标记 {flag!r}\n"
+                        f"  expected not in: risk_flags\n"
+                        f"  actual:          {risk_flags}"
+                    ),
+                })
+
+    # ---- 3. validation_status_not ----
+    forbidden_status = assertions.get(_ASSERT_FIELD_VALIDATION_STATUS_NOT)
+    if forbidden_status is not None:
+        if validation_status == forbidden_status:
+            failures.append({
+                "field": "validation_status",
+                "expected": f"!= {forbidden_status!r}",
+                "actual": validation_status,
+                "message": (
+                    f"[{case_dir_name}] validation_status 不应为 {forbidden_status!r}\n"
+                    f"  expected != {forbidden_status!r}\n"
+                    f"  actual:    {validation_status!r}"
+                ),
+            })
+
+    # ---- 4. repair_skipped_not ----
+    # repair_skipped 在 normalizer 输出中不存在，由下游 ai_repair 决策。
+    # 但我们可根据 risk_flags + is_valid 推断：
+    #   risk_flags 含代码完整性标记 → ai_repair 不得跳过
+    repair_should_not_skip = assertions.get(_ASSERT_FIELD_REPAIR_SKIPPED_NOT)
+    if repair_should_not_skip is True:
+        # 检查是否至少有一个需要 repair 的 flag
+        from app.features.ai_repair import _RISK_FLAGS_REQUIRE_REPAIR
+        dangerous = set(risk_flags) & _RISK_FLAGS_REQUIRE_REPAIR
+        if not dangerous:
+            failures.append({
+                "field": "repair_skipped_not inference",
+                "expected": "risk_flags with code integrity flags",
+                "actual": risk_flags,
+                "message": (
+                    f"[{case_dir_name}] repair_skipped_not=true 但 risk_flags 中"
+                    f"无触发 AI repair 的标记\n"
+                    f"  risk_flags: {risk_flags}\n"
+                    f"  需要: 至少一个来自 {sorted(_RISK_FLAGS_REQUIRE_REPAIR)}"
+                ),
+            })
+
+    # ---- 5. confidence_score_max ----
+    max_confidence = assertions.get(_ASSERT_FIELD_CONFIDENCE_SCORE_MAX)
+    if max_confidence is not None:
+        if confidence_score > max_confidence:
+            failures.append({
+                "field": "confidence_score",
+                "expected": f"<= {max_confidence}",
+                "actual": confidence_score,
+                "message": (
+                    f"[{case_dir_name}] confidence_score 超过上限\n"
+                    f"  expected <= {max_confidence}\n"
+                    f"  actual:    {confidence_score}"
+                ),
+            })
+
+    # ---- 6. retry_recommended ----
+    expect_retry = assertions.get(_ASSERT_FIELD_RETRY_RECOMMENDED)
+    if expect_retry is not None:
+        if bool(retry_recommended) != bool(expect_retry):
+            failures.append({
+                "field": "retry_recommended",
+                "expected": expect_retry,
+                "actual": retry_recommended,
+                "message": (
+                    f"[{case_dir_name}] retry_recommended 不匹配\n"
+                    f"  expected: {expect_retry}\n"
+                    f"  actual:   {retry_recommended}"
+                ),
+            })
+
+    # ---- 7. expected_failure_reason ----
+    expected_reasons = assertions.get(_ASSERT_FIELD_EXPECTED_FAILURE_REASON)
+    if expected_reasons is not None:
+        for reason in expected_reasons:
+            if reason not in failure_reason:
+                failures.append({
+                    "field": f"failure_reason missing {reason!r}",
+                    "expected": f"in failure_reason",
+                    "actual": failure_reason,
+                    "message": (
+                        f"[{case_dir_name}] failure_reason 缺少预期条目 {reason!r}\n"
+                        f"  expected in: failure_reason\n"
+                        f"  actual:      {failure_reason}"
+                    ),
+                })
+
+    # ---- 8. regression_test — 直接测试 detect_code_regression ----
+    regression_test = meta.get("regression_test")
+    if regression_test:
+        regression_raw = regression_test.get("raw_text")
+        regression_stem = regression_test.get("stem")
+        if regression_raw and regression_stem:
+            from app.features.code_integrity import detect_code_regression
+
+            reg_result = detect_code_regression(regression_raw, regression_stem)
+            reg_flags: list[str] = reg_result.get("flags") or []
+
+            # 检查 regression_test.expected_flags
+            for flag in regression_test.get("expected_flags") or []:
+                if flag not in reg_flags:
+                    failures.append({
+                        "field": f"regression_test missing {flag!r}",
+                        "expected": f"in regression flags",
+                        "actual": reg_flags,
+                        "message": (
+                            f"[{case_dir_name}] detect_code_regression 未产生预期标记 {flag!r}\n"
+                            f"  raw_text: {regression_raw[:80]}...\n"
+                            f"  stem:     {regression_stem[:80]}...\n"
+                            f"  reg flags: {reg_flags}"
+                        ),
+                    })
+
+            # 同样检查 assertions.expected_code_flags 中与 regression 相关的部分
+            for flag in expected_flags or []:
+                if "regression" in flag and flag not in reg_flags:
+                    failures.append({
+                        "field": f"regression_test missing {flag!r}",
+                        "expected": f"in regression flags",
+                        "actual": reg_flags,
+                        "message": (
+                            f"[{case_dir_name}] detect_code_regression 未产生预期标记 {flag!r}\n"
+                            f"  raw_text: {regression_raw[:80]}...\n"
+                            f"  stem:     {regression_stem[:80]}...\n"
+                            f"  reg flags: {reg_flags}"
+                        ),
+                    })
+
+    return failures
+
+
 def print_json_report(results: list[dict]) -> None:
     """输出 JSON 格式报告。"""
     valid = [r for r in results if "error" not in r]
@@ -895,6 +1143,9 @@ def print_json_report(results: list[dict]) -> None:
             "pass": sum(1 for r in valid if r["status"] == STATUS_PASS),
             "degraded": sum(1 for r in valid if r["status"] == STATUS_DEGRADED),
             "fail": sum(1 for r in valid if r["status"] == STATUS_FAIL),
+            "assertion_fail": sum(
+                1 for r in valid if r.get("assertion_failures")
+            ),
             "average_cer": round(avg_cer, 4),
             "average_quality_score": round(avg_score, 1),
             "top_failure_types": sorted(
@@ -961,6 +1212,14 @@ def test_ocr_regression(case_name: str):
                 f"Score={result['quality']['score']}. "
                 f"Failures: {result['failures']}"
             )
+
+    # ---- 断言检查（meta.json assertions 字段） ----
+    assertion_failures = result.get("assertion_failures", [])
+    if assertion_failures:
+        parts = "\n".join(f["message"] for f in assertion_failures)
+        pytest.fail(
+            f"[{case_name}] {len(assertion_failures)} assertion(s) failed:\n{parts}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1033,11 +1292,17 @@ def main():
         print_report(results, verbose=args.verbose)
 
     # 有 FAIL 则退出码 1
-    if any(
+    has_fail = any(
         r.get("status") == STATUS_FAIL
         for r in results
         if "error" not in r
-    ):
+    )
+    has_assert_fail = any(
+        r.get("assertion_failures")
+        for r in results
+        if "error" not in r
+    )
+    if has_fail or has_assert_fail:
         sys.exit(1)
 
 

@@ -13,9 +13,12 @@
   ],
   "assertions": {
     "confidence_score_max": 0.5,
-    "code_risk_flags": ["code_line_break_suspicious", "code_block_incomplete"],
+    "expected_code_flags": ["code_line_break_suspicious", "code_block_incomplete"],
+    "forbidden_code_flags": [],
+    "expected_failure_reason": ["code_line_break_suspicious", "code_block_incomplete"],
     "validation_status_not": "passed",
-    "repair_skipped_not": true
+    "repair_skipped_not": true,
+    "retry_recommended": true
   },
   "date_added": "2026-06-21",
   "review_status": "verified",
@@ -23,5 +26,5 @@
   "tags": [
     "code_integrity"
   ],
-  "last_reviewed": "2026-06-21"
+  "last_reviewed": "2026-06-22"
 }

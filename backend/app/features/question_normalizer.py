@@ -49,6 +49,9 @@ _STRIP_PATTERNS = [
 ]
 
 # 题干清洗规则（按顺序应用）
+# 注意：^ 锚定规则只匹配全文开头，对代码块安全。
+# 而非 ^ 锚定的空格/换行规则会破坏 fenced code block 内部格式，
+# 在 _clean_stem 中通过 _apply_outside_code_blocks 跳过 fence 内部。
 _CLEAN_RULES: list[tuple[re.Pattern, str]] = [
     (re.compile(r"^\s*\d+[.、)）]\s*"), ""),
     (re.compile(r"^\(\d+\)\s*"), ""),
@@ -61,28 +64,80 @@ _CLEAN_RULES: list[tuple[re.Pattern, str]] = [
     (re.compile(r"（\s*）"), "()"),
 ]
 
+# ^ 锚定规则（只匹配全文开头，对代码块安全，可直接应用到全文）
+_LEADING_RULES: list[tuple[re.Pattern, str]] = _CLEAN_RULES[:5]
+
+# 可能破坏 fenced code block 内部格式的规则（须跳过 fence 内部文本）
+_OUTSIDE_FENCE_RULES: list[tuple[re.Pattern, str]] = _CLEAN_RULES[5:]
+
+
+def _apply_outside_code_blocks(text: str, transform_fn) -> str:
+    """将 transform_fn 应用到 fenced code block 外部的文本，块内原样保留。
+
+    支持 ``` fence，未闭合 fence 之后的内容也视为 protected。
+    注：~~~ fence 当前不处理（代码库中仅使用 ``` 围栏）。
+    """
+    parts = re.split(r"(```[\s\S]*?```|```[\s\S]*?$)", text)
+    for i, part in enumerate(parts):
+        if not part.startswith("```"):
+            parts[i] = transform_fn(part)
+    return "".join(parts)
+
 
 def _clean_stem(text: str) -> str:
-    """清洗题干：去除题号前缀、题型标签、多余空白、LaTeX 标记、重复内容。"""
-    for pat, repl in _CLEAN_RULES:
+    """清洗题干：去除题号前缀、题型标签、多余空白、LaTeX 标记、重复内容。
+
+    跳过 fenced code block（```...```）内部内容，保护代码缩进和排版。
+    """
+    # ^ 锚定规则：只匹配全文开头，对代码块安全，直接应用到全文
+    for pat, repl in _LEADING_RULES:
         text = pat.sub(repl, text)
-    text = re.sub(r"\\(?:dots|ldots|dotsquare)", "...", text)
-    text = re.sub(r"\\(?:cdots|cdots|cdotsquare)", "···", text)
+
+    # 空格/换行压缩规则 + LaTeX 替换 + 题干去重：仅应用到 fence 外部，
+    # 保护代码缩进和排版。dedup 会折叠相邻空白行，须跳过 fence 内部。
+    def _outside_only(t: str) -> str:
+        for pat, repl in _OUTSIDE_FENCE_RULES:
+            t = pat.sub(repl, t)
+        t = re.sub(r"\\(?:dots|ldots|dotsquare)", "...", t)
+        t = re.sub(r"\\(?:cdots|cdots|cdotsquare)", "···", t)
+        # deduplicate_repeated_text 内部会 strip()
+        # 导致 fence 边界处的换行丢失，需恢复
+        ends_with_nl = t.endswith("\n")
+        t = deduplicate_repeated_text(t)
+        if ends_with_nl and not t.endswith("\n"):
+            t += "\n"
+        return t
+
+    text = _apply_outside_code_blocks(text, _outside_only)
     text = text.strip()
-    # 折叠 AI 标准化后可能出现的题干重复（整段复制）
-    text = deduplicate_repeated_text(text)
     return text
 
 
 def _break_before_number_markers(text: str) -> str:
-    """在题号标记前插入换行：① ② ...、（1）（2）...、1) 2) ..."""
-    # ①-⑳ 圈号标记（避免破坏 (①) 等括号内引用）
-    text = re.sub(r"(?<![（(\n])([①-⑳])", r"\n\1", text)
-    # （1）（2）全角括号数字，前面有非空白字符时换行
-    text = re.sub(r"(?<=[^\s])[　 ]*([（][0-9]+[）])", r"\n\1", text)
-    # 1) 2) 数字+括号，排除数学表达式(0,1)和全角括号（1）的误匹配
-    text = re.sub(r"(?<=[^\s\d,（(])[　 ]*(\d+[)）])(?=\s*[一-鿟\w])", r"\n\1", text)
-    return text
+    """在题号标记前插入换行：① ② ...、（1）（2）...、1) 2) ...
+
+    跳过 fenced code block（```...```）内部内容，防止将代码中的
+    `1)`、`（1）` 等数字标记误识别为题号并插入换行。
+    """
+    lines = text.split("\n")
+    result: list[str] = []
+    in_fence = False
+    for line in lines:
+        if line.strip().startswith("```"):
+            result.append(line)
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            result.append(line)
+            continue
+        # ①-⑳ 圈号标记（避免破坏 (①) 等括号内引用）
+        line = re.sub(r"(?<![（(\n])([①-⑳])", r"\n\1", line)
+        # （1）（2）全角括号数字，前面有非空白字符时换行
+        line = re.sub(r"(?<=[^\s])[　 ]*([（][0-9]+[）])", r"\n\1", line)
+        # 1) 2) 数字+括号，排除数学表达式(0,1)和全角括号（1）的误匹配
+        line = re.sub(r"(?<=[^\s\d,（(])[　 ]*(\d+[)）])(?=\s*[一-鿟\w])", r"\n\1", line)
+        result.append(line)
+    return "\n".join(result)
 
 
 def _extract_stem(raw_text: str, option_lines: dict[str, str], blank_option_groups: list[dict] | None = None) -> str:
@@ -565,6 +620,67 @@ def normalize_question(
     }
     if blank_option_groups:
         result["blank_option_groups"] = blank_option_groups
+
+    # === PaddleOCR-VL 视觉回退：代码完整性损坏时尝试重新识别 ===
+    if not raw_question.get("_vision_fallback_attempted"):
+        page_image = raw_question.get("page_image")
+        if page_image and code_risk_flags:
+            from app.features.vision_fallback import needs_vision_fallback
+
+            if needs_vision_fallback(code_risk_flags):
+                from app.features.vision_fallback import _call_vl_sync, _build_vl_config
+
+                vl_config = _build_vl_config(raw_question.get("vl_config"))
+                vl_text = _call_vl_sync(page_image, vl_config)
+                if vl_text:
+                    vl_raw = dict(raw_question)
+                    vl_raw["raw_question_text"] = vl_text
+                    vl_raw["_vision_fallback_attempted"] = True
+                    vl_result = normalize_question(vl_raw, matched, source_info)
+
+                    from app.features.vision_fallback import _compare_code_results
+
+                    verdict = _compare_code_results(result, vl_result)
+                    if verdict == "better":
+                        vl_result["vision_fallback_attempted"] = True
+                        vl_result["vision_fallback_used"] = True
+                        vl_result["vision_fallback_status"] = "success"
+                        vl_result["vision_fallback_engine"] = "paddleocr_vl"
+                        vl_result["vision_fallback_reason"] = list(code_risk_flags)
+                        vl_result["pre_fallback_code_flags"] = list(code_risk_flags)
+                        post_flags = vl_result.get("risk_flags") or []
+                        vl_result["post_fallback_code_flags"] = list(post_flags)
+                        result = vl_result
+                        logger.info(
+                            "Vision fallback improved: flags %s → %s",
+                            code_risk_flags, post_flags,
+                        )
+                    else:
+                        result["vision_fallback_attempted"] = True
+                        result["vision_fallback_used"] = False
+                        result["vision_fallback_status"] = "not_better"
+                        result["vision_fallback_engine"] = "paddleocr_vl"
+                        result["vision_fallback_reason"] = list(code_risk_flags)
+                        result["pre_fallback_code_flags"] = list(code_risk_flags)
+                        from app.features.code_integrity import detect_code_block_integrity as _detect_code
+                        result["post_fallback_code_flags"] = list(
+                            _detect_code(vl_text).get("flags", [])
+                        )
+                else:
+                    result["vision_fallback_attempted"] = True
+                    result["vision_fallback_used"] = False
+                    result["vision_fallback_status"] = "failed"
+                    result["vision_fallback_engine"] = "paddleocr_vl"
+                    result["vision_fallback_reason"] = list(code_risk_flags)
+                    result["pre_fallback_code_flags"] = list(code_risk_flags)
+                    result["post_fallback_code_flags"] = list(code_risk_flags)
+        elif code_risk_flags:
+            result["vision_fallback_attempted"] = True
+            result["vision_fallback_used"] = False
+            result["vision_fallback_status"] = "unavailable"
+            result["vision_fallback_reason"] = list(code_risk_flags)
+            result["pre_fallback_code_flags"] = list(code_risk_flags)
+            result["post_fallback_code_flags"] = list(code_risk_flags)
 
     # === Goal 5: 写入缓存 ===
     if _pre_cache_key:
