@@ -1,0 +1,49 @@
+[normalized_full_text]
+18. 在单链表中执行:
+
+```text
+
+LNode *p = L;
+while (p != NULL && p->next != NULL) {
+    p = p->next;
+}
+```
+
+该代码的作用是:
+
+A. 找到头结点
+B. 找到尾结点
+C. 删除所有节点
+D. 逆置链表
+[/normalized_full_text]
+
+[questions]
+---
+number: 18
+stem: 18. 在单链表中执行:
+
+```text
+
+LNode *p = L;
+while (p != NULL && p->next != NULL) {
+    p = p->next;
+}
+```
+
+该代码的作用是:
+
+A. 找到头结点
+B. 找到尾结点
+C. 删除所有节点
+D. 逆置链表
+type: single_choice
+options:
+  A: 找到头结点
+  B: 找到尾结点
+  C: 删除所有节点
+  D: 逆置链表
+answer: 
+explanation: 
+option_keys: ["A", "B", "C", "D"]
+
+[/questions]

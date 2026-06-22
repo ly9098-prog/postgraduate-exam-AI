@@ -1,0 +1,21 @@
+15. 已知顺序栈定义如下：
+
+#define MAXSIZE 100
+typedef struct {
+    int data[MAXSIZE];
+    int top;
+} Stack;
+
+执行如下代码：
+
+while (S.top != -1) {
+    printf("%d", S.data[S.top]);
+    S.top--;
+}
+
+该代码实现的功能是：
+
+A. 入栈操作
+B. 出栈并输出栈中元素
+C. 判断栈满
+D. 初始化栈

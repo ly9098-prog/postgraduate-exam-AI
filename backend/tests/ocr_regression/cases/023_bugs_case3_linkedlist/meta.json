@@ -1,0 +1,29 @@
+{
+  "id": "023",
+  "name": "bugs_case3_linkedlist",
+  "description": "BUGS.md 案例三：单链表 LNode + while(p!=NULL)循环 + 4个选项。验证代码块围栏包裹和选项提取。",
+  "subject": "408",
+  "pipeline_stages": [
+    "normalize",
+    "split"
+  ],
+  "expected_questions": 1,
+  "known_failure_types": [],
+  "assertions": {
+    "forbidden_code_flags": [
+      "code_block_incomplete",
+      "code_fence_unclosed"
+    ],
+    "validation_status_not": "failed",
+    "retry_recommended": false
+  },
+  "date_added": "2026-06-22",
+  "review_status": "verified",
+  "ground_truth_source": "bugs_doc",
+  "tags": [
+    "code_integrity",
+    "linked_list"
+  ],
+  "last_reviewed": "2026-06-22",
+  "auto_generated_date": "2026-06-22"
+}
