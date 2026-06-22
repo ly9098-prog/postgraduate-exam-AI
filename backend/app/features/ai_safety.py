@@ -195,8 +195,15 @@ def safe_accept_ai_result(
 
     # ---- 6. 答案被无依据修改 ----
     expected_answer = ctx.get("expected_answer", "")
-    if expected_answer and expected_answer not in after:
-        risk_flags.append("answer_modified")
+    if expected_answer:
+        after_answer = ctx.get("after_answer", "")
+        if after_answer and after_answer != expected_answer:
+            risk_flags.append("answer_modified")
+            return _reject(
+                f"answer_modified({expected_answer} -> {after_answer})",
+                risk_flags=risk_flags,
+                diff=_build_diff(before, after),
+            )
 
     # ---- 7. 水印文字被 AI 保留 ----
     if _has_watermark(after) and not _has_watermark(before):
