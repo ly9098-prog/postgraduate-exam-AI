@@ -125,6 +125,16 @@ def _detect_length_anomaly(
     return None
 
 
+def _detect_post_repair_code_integrity(question: dict) -> list[str]:
+    """检测 AI 修复后的 stem 是否仍有代码完整性损坏。"""
+    stem = question.get("stem", "")
+    if not stem:
+        return []
+    from app.features.code_integrity import detect_code_block_integrity
+    result = detect_code_block_integrity(stem)
+    return [f"post_repair_code_integrity:{flag}" for flag in result.get("flags", [])]
+
+
 def validate_ai_result(question: dict) -> dict:
     """对单道 AI 修复后的题目做校验。
 
@@ -158,6 +168,10 @@ def validate_ai_result(question: dict) -> dict:
     struct = _detect_structure_anomalies(question)
     issues.extend(struct)
 
+    # 3.5 Post-repair code integrity re-check
+    code_issues = _detect_post_repair_code_integrity(question)
+    issues.extend(code_issues)
+
     # 4. Length anomaly
     length = _detect_length_anomaly(stem, raw_text)
     if length:
@@ -168,7 +182,10 @@ def validate_ai_result(question: dict) -> dict:
         "stem_not_string", "options_invalid_type", "answer_not_string",
         "confidence_not_numeric", "stem_duplicated",
     }
-    has_error = any(i in error_issues for i in issues)
+    has_error = any(
+        i in error_issues or i.startswith("post_repair_code_integrity:")
+        for i in issues
+    )
 
     if has_error:
         severity = "error"

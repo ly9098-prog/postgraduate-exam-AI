@@ -316,6 +316,15 @@ async def submit_to_review(
                 parsed_content["render_mode"] = "segments"
                 parsed_content["segments"] = q_segments
 
+            # P0: 追加 review 阶段决策到 decision_trace
+            q_decision_trace = list(q.get("decision_trace") or [])
+            q_decision_trace.append({
+                "stage": "review",
+                "result": "pending",
+                "reason": "written_to_review_queue",
+            })
+            q["decision_trace"] = q_decision_trace
+
             qi = QuestionImport(
                 batch_id=batch_id,
                 source_type=source_type,
@@ -339,6 +348,8 @@ async def submit_to_review(
                     "knowledge_points": q.get("knowledge_points", []),
                     "difficulty": q.get("difficulty", 3),
                     "stem_hash": q.get("stem_hash", ""),
+                    # P0: 导入管线全链路决策追踪
+                    "decision_trace": q.get("decision_trace", []),
                     # P1-2: 透传上游 stage 写入的风险标（值域见
                     # prompts/tasks/ocr_book_pdf_non_question_filter_plan.md §11.3）。
                     # 前端 import-batch 页据此渲染徽章；空列表写 None 减少 JSON 体积。
