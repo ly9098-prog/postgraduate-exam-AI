@@ -36,28 +36,42 @@ async def isolated_db(monkeypatch_module):
     monkeypatch_module.setenv("REDIS_URL", "")
     monkeypatch_module.setenv("POMODORO_NOTIFY_ENABLED", "true")
 
-    # 强制重新加载 settings + database 以应用 env
+    # 强制重新加载 settings 以应用 env
     import importlib
     from app.core import config as config_mod
-    from app.core import database as db_mod
-
     importlib.reload(config_mod)
-    importlib.reload(db_mod)
 
-    # 显式导入所有模型让外键能解析
-    import app.models  # noqa: F401
+    # 使用全局 Base — 导入所有模型让其注册到 Base.metadata
+    from app.core.database import Base
+    import app.models  # noqa: F401 — registers all models on Base
     from app.models import admin as _admin  # noqa: F401
     from app.models import app_user_admin_binding as _aub  # noqa: F401
     from app.models.user import User  # noqa: F401
     from app.models.pomodoro import PomodoroSession  # noqa: F401
 
-    async with db_mod.engine.begin() as conn:
-        await conn.run_sync(db_mod.Base.metadata.create_all)
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-    yield db_mod
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp.name}",
+        connect_args={"check_same_thread": False},
+    )
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    # 构建一个类似 db_mod 的命名空间让下游 fixture 正常工作
+    import types
+    fake_db = types.SimpleNamespace(
+        engine=engine,
+        async_session=session_factory,
+        Base=Base,
+    )
+
+    yield fake_db
 
     try:
-        await db_mod.engine.dispose()
+        await engine.dispose()
         os.unlink(tmp.name)
     except Exception:
         pass
