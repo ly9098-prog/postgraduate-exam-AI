@@ -134,6 +134,55 @@ def contains_code(text: str) -> bool:
     return False
 
 
+def is_code_question(text: str) -> bool:
+    """基于信号阈值判断是否为代码题。
+
+    使用简单的子串匹配 + 计分方式，检测以下代码信号：
+    typedef, struct, class, public:, private:,
+    return, void, int, char, {, }, (, )
+
+    当信号计数 >= 4 时判定为代码题。
+
+    相比 contains_code()，此函数更激进（不依赖 word boundary），
+    适用于 OCR 输出中关键词可能被污染的场景。
+    """
+    if not text:
+        return False
+
+    _CODE_SIGNALS = [
+        "typedef", "struct", "class",
+        "public:", "private:",
+        "return", "void ", "int ", "char ",
+        "{", "}", "(", ")",
+    ]
+
+    score = sum(1 for s in _CODE_SIGNALS if s in text)
+    return score >= 4
+
+
+def compute_code_integrity_score(text: str) -> dict:
+    """计算代码完整性分数（0-5 整数分，5=完美）。
+
+    委托 detect_code_block_integrity() 执行实际检测，
+    将 0.0-1.0（高=损坏）转换为 0-5（高=完整）格式。
+
+    Returns:
+        {
+            "score": int,         # 0-5, 5=完整无损坏
+            "flags": [str],       # 风险标签
+            "details": [str],     # 检测详情
+        }
+    """
+    raw = detect_code_block_integrity(text)
+    # 反转分数: 0.0(完美) → 5, 1.0(全损) → 0
+    task_score = max(0, 5 - round(raw["score"] * 5))
+    return {
+        "score": task_score,
+        "flags": raw["flags"],
+        "details": raw["details"],
+    }
+
+
 def detect_code_block_integrity(text: str) -> dict:
     """检测代码块完整性。
 
@@ -163,6 +212,14 @@ def detect_code_block_integrity(text: str) -> dict:
     code_blocks = _extract_fenced_blocks(text)
     unfenced_regions = _extract_unfenced_code_regions(text)
 
+    # ---- 确定用于完整性检查的代码内容 ----
+    # 有 fence 时仅检查围栏内内容（避免自然语言误报）
+    # 无 fence 但有代码时检查整个文本（捕获 OCR 后无围栏代码的损坏）
+    has_fenced_blocks = bool(code_blocks["content"])
+    code_content = "\n".join(code_blocks["content"])
+    if not has_fenced_blocks and has_code:
+        code_content = text
+
     # ---- 1. fenced code block 闭合检测 ----
     if code_blocks["unclosed"]:
         flags.append("code_fence_unclosed")
@@ -170,7 +227,6 @@ def detect_code_block_integrity(text: str) -> dict:
         details.append(f"{len(code_blocks['unclosed'])} 个 fenced code block 未闭合")
 
     # ---- 2. 大括号平衡检测 ----
-    code_content = "\n".join(code_blocks["content"])
     open_braces = len(_RE_OPEN_BRACE.findall(code_content))
     close_braces = len(_RE_CLOSE_BRACE.findall(code_content))
     if open_braces > 0 or close_braces > 0:
@@ -201,7 +257,7 @@ def detect_code_block_integrity(text: str) -> dict:
         garbled_matches.extend(_RE_GARBLED_MIXED.findall(block))
         garbled_matches.extend(_RE_KNOWN_GARBLED.findall(block))
     # 当文本中包含代码时，也检测围栏外的乱码模式（案例二: fence 提前闭合后出现乱码）
-    if code_blocks["content"] or unfenced_regions:
+    if has_fenced_blocks or unfenced_regions or has_code:
         remaining = _get_unfenced_remaining_text(text, code_blocks)
         garbled_matches.extend(_RE_KNOWN_GARBLED.findall(remaining))
         garbled_matches.extend(_RE_GARBLED_MIXED.findall(remaining))
