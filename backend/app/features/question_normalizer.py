@@ -682,6 +682,11 @@ def normalize_question(
             result["pre_fallback_code_flags"] = list(code_risk_flags)
             result["post_fallback_code_flags"] = list(code_risk_flags)
 
+    # === 决策可观测性: decision_trace 初始化 ===
+    result["decision_trace"] = _build_decision_trace(
+        quality_gate, code_risk_flags, stem_has_code, is_valid, failure_reasons,
+    )
+
     # === Goal 5: 写入缓存 ===
     if _pre_cache_key:
         parse_cache_put(raw_text, _pre_cache_key, result)
@@ -829,3 +834,56 @@ def parse_cache_clear() -> None:
     """清空缓存（用于测试或强制重新解析）。"""
     global _parse_cache
     _parse_cache.clear()
+
+
+def _build_decision_trace(
+    quality_gate: dict,
+    code_risk_flags: list[str],
+    stem_has_code: bool,
+    is_valid: bool,
+    failure_reasons: list[str],
+) -> list[dict]:
+    """构建 normalize 阶段的 decision_trace 初始条目。"""
+    trace: list[dict] = []
+
+    # OCR 质量门禁
+    if quality_gate.get("passed", True):
+        trace.append({
+            "stage": "ocr_quality_gate",
+            "result": "pass",
+            "reason": f"score={quality_gate.get('ocr_contamination_score', 0):.2f}",
+        })
+    else:
+        trace.append({
+            "stage": "ocr_quality_gate",
+            "result": "blocked",
+            "reason": (
+                f"score={quality_gate.get('ocr_contamination_score', 0):.2f} "
+                f"flags={quality_gate.get('ocr_quality_flags', [])}"
+            ),
+        })
+
+    # 代码完整性门禁
+    if code_risk_flags:
+        trace.append({
+            "stage": "code_gate",
+            "result": "blocked",
+            "reason": ";".join(code_risk_flags),
+        })
+    elif stem_has_code:
+        trace.append({
+            "stage": "code_gate",
+            "result": "pass",
+            "reason": "code_integrity_ok",
+        })
+
+    # 最终验证
+    trace.append({
+        "stage": "validation",
+        "result": "pass" if is_valid else "failed",
+        "reason": ";".join(failure_reasons) if failure_reasons else (
+            "all_checks_passed" if is_valid else "validation_failed"
+        ),
+    })
+
+    return trace

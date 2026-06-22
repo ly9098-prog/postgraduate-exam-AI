@@ -115,6 +115,15 @@ def _stem_has_code(stem: str) -> bool:
     return False
 
 
+def _append_decision_trace(question: dict, stage: str, result: str, reason: str) -> None:
+    """向题目的 decision_trace 追加入口。如果题目没有 decision_trace 则初始化。"""
+    if not isinstance(question, dict):
+        return
+    trace = list(question.get("decision_trace") or [])
+    trace.append({"stage": stage, "result": result, "reason": reason})
+    question["decision_trace"] = trace
+
+
 def _is_low_risk_skip_candidate(question: dict, high_confidence_threshold: float = 0.95) -> bool:
     """P2-4: 判断是否可跳过 AI repair（低风险高置信度题）。
 
@@ -834,12 +843,15 @@ async def repair_questions(
                     "confidence": 0.95,
                     "token_used": roman_results[i].get("token_used", 0),
                 }
+                # P0: decision_trace 记录 Roman repair 跳过 Phase 2
+                _append_decision_trace(q, "ai_repair", "skipped", "roman_only")
                 repaired.append(roman_entry)
                 total_tokens += roman_results[i].get("token_used", 0)
                 continue
 
         do_repair, reason = _should_repair(q, threshold, roman_anomalies=q_anomalies, high_confidence_threshold=high_confidence_threshold, low_risk_skip_enabled=low_risk_skip_enabled)
         if not do_repair:
+            _append_decision_trace(questions[i], "ai_repair", "skipped", reason)
             skipped.append({
                 "question_index": i,
                 "reason": reason,
@@ -876,6 +888,7 @@ async def repair_questions(
     for (i, q, raw_text), (_, ai_result) in zip(candidates, results):
 
         if ai_result is None:
+            _append_decision_trace(questions[i], "ai_repair", "failed", "ai_failed")
             unrepaired.append({
                 "question_index": i,
                 "reason": "ai_failed",
@@ -883,6 +896,7 @@ async def repair_questions(
             continue
 
         if not ai_result["ai_valid"]:
+            _append_decision_trace(questions[i], "ai_repair", "failed", "ai_invalid_result")
             unrepaired.append({
                 "question_index": i,
                 "reason": "ai_invalid_result",
@@ -959,6 +973,7 @@ async def repair_questions(
             "has_options": bool(before_opts or after_opts),
             "stem_context": before_stem[:200],
             "expected_answer": before_answer,
+            "after_answer": after_answer,
         }
 
         safety_trace, _safe_stem = evaluate_and_trace(
@@ -971,6 +986,7 @@ async def repair_questions(
         )
 
         if not safety_trace.accepted:
+            _append_decision_trace(questions[i], "ai_safety", "blocked", f"safety_rejected: {safety_trace.rollback_reason}")
             unrepaired.append({
                 "question_index": i,
                 "reason": f"safety_rejected: {safety_trace.rollback_reason}",
@@ -986,6 +1002,7 @@ async def repair_questions(
             "token_used": token_used + roman_results.get(i, {}).get("token_used", 0),
             "safety": safety_trace.to_dict(),
         }
+        _append_decision_trace(after, "ai_repair", "repaired", ";".join(repair_actions) if repair_actions else "ai_repaired")
         if safety_trace.risk_flags:
             after.setdefault("risk_flags", [])
             for flag in safety_trace.risk_flags:
