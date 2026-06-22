@@ -507,6 +507,255 @@ def _extract_fenced_blocks(text: str) -> dict:
     }
 
 
+def reconstruct_code_block(lines: list[str]) -> str:
+    """Reconstruct a truncated code block by merging lines.
+
+    Detection triggers (code start):
+    - contains: ``for``, ``while``, ``if``, ``struct``, ``typedef``
+
+    Then merges subsequent lines until:
+    - braces are balanced ({ == }), OR
+    - blank line encountered, OR
+    - question boundary detected (next number marker)
+
+    Returns the reconstructed code block string.
+    """
+    if not lines:
+        return ""
+
+    code_lines: list[str] = []
+    in_code = False
+    open_braces = 0
+    close_braces = 0
+
+    # Code start signals
+    _CODE_START_RE = re.compile(
+        r"\b(for|while|if|struct|typedef)\b"
+    )
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if in_code:
+                # blank line ends code block
+                break
+            continue
+
+        if not in_code:
+            if _CODE_START_RE.search(stripped):
+                in_code = True
+                code_lines.append(line)
+                open_braces += stripped.count("{")
+                close_braces += stripped.count("}")
+                if open_braces > 0 and open_braces == close_braces:
+                    break
+                continue
+            else:
+                continue
+
+        # In code: check for question boundary (number marker at line start)
+        if re.match(r"^\d+\s*[.、)）]", stripped):
+            break
+
+        code_lines.append(line)
+        open_braces += stripped.count("{")
+        close_braces += stripped.count("}")
+
+        if open_braces > 0 and open_braces == close_braces:
+            break
+
+    return "\n".join(code_lines)
+
+
+def fix_braces(code: str, confidence: float = 1.0) -> str:
+    """Fix unbalanced braces in code.
+
+    Auto-closes ``{`` with ``}`` only if confidence < 0.8.
+
+    Args:
+        code: The code text (may be inside or outside fence markers).
+        confidence: Integrity confidence score (0.0-1.0). Only auto-fix below 0.8.
+
+    Returns:
+        Code string with balanced braces.
+    """
+    if not code or confidence >= 0.8:
+        return code
+
+    open_braces = code.count("{")
+    close_braces = code.count("}")
+
+    if open_braces > close_braces:
+        code += "\n" + "}" * (open_braces - close_braces)
+
+    return code
+
+
+def classify_line(line: str) -> str:
+    """Classify a line as ``"code"`` or ``"text"``.
+
+    Scoring:
+    - code_score: line contains ``{``, ``->``, ``;``, ``struct``, ``int``, ``for``
+    - text_score: natural language patterns (Chinese chars, sentence ends)
+
+    Rule:
+    - code_score > 0.6 → ``"code"``
+    - else → ``"text"``
+
+    Args:
+        line: A single line of text.
+
+    Returns:
+        ``"code"`` or ``"text"``.
+    """
+    if not line or not line.strip():
+        return "text"
+
+    stripped = line.strip()
+    total_len = len(stripped)
+    if total_len == 0:
+        return "text"
+
+    # Code signals
+    _CODE_SIGNALS_WEIGHTED = {
+        "{": 0.3, "}": 0.2,
+        "->": 0.3,
+        ";": 0.25,
+        "struct": 0.35,
+        "typedef": 0.35,
+        "int ": 0.25,
+        "char ": 0.25,
+        "void ": 0.25,
+        "float ": 0.25,
+        "double ": 0.25,
+        "for ": 0.25,
+        "while ": 0.25,
+        "if ": 0.2,
+        "return ": 0.25,
+        "NULL": 0.2,
+        "malloc": 0.3,
+        "printf": 0.25,
+        "//": 0.15,
+        "sizeof": 0.25,
+        "!=": 0.1,
+        "==": 0.1,
+    }
+
+    code_score = 0.0
+    for signal, weight in _CODE_SIGNALS_WEIGHTED.items():
+        if signal in stripped:
+            code_score += weight
+
+    # Text signals (natural language)
+    has_cjk = any("一" <= c <= "鿿" for c in stripped)
+    text_score = 0.0
+    if has_cjk:
+        text_score += 0.4
+    if stripped.endswith(("。", "？", "！", "；", "。")):
+        text_score += 0.3
+    if re.search(r"[的得地是在了着过被把对于]", stripped):
+        text_score += 0.2
+    if re.search(r"[一-鿿]{4,}", stripped):
+        text_score += 0.3
+    # Short lines with CJK are text
+    if has_cjk and total_len < 20:
+        text_score += 0.2
+
+    # Newline check: non-CJK code lines often end without punctuation
+    if not has_cjk and not stripped.endswith((".", "?", "!", ";")):
+        code_score += 0.1
+
+    return "code" if code_score >= 0.5 else "text"
+
+
+def fix_tree_recursion_breaks(text: str) -> str:
+    """Fix fragmented tree recursion code by merging split conditions.
+
+    Detects patterns split across lines:
+    - ``if (T->lchild == NULL`` followed by ``T->rchild == NULL)``
+    - ``if (T->lchild != NULL`` / ``T->rchild != NULL)``
+    - ``while (p->next != NULL`` / ``p != NULL)``
+
+    Ensures the full condition stays on one logical line.
+
+    Args:
+        text: Code text possibly with split recursion conditions.
+
+    Returns:
+        Fixed text with conditions merged.
+    """
+    if not text:
+        return text
+
+    lines = text.split("\n")
+    result: list[str] = []
+    i = 0
+
+    # Pattern: first line ends with a condition fragment
+    _COND_START_RE = re.compile(
+        r"(?:if|while|else\s+if)\s*\([^)]*$"
+    )
+    _COND_CONT_RE = re.compile(r"^\s*(?:[A-Za-z_][\w*]*)\s*(?:->|\.)\s*(?:lchild|rchild|next|prior|data|key)\s*(?:==|!=)\s*(?:NULL|null|0)\s*\)?\s*\{?\s*$")
+    _PTR_COND_MID_RE = re.compile(r"^\s*(?:&&|\|\|)\s*$")
+
+    while i < len(lines):
+        current = lines[i]
+        stripped = current.strip()
+
+        # Detect: line ends with an incomplete tree condition
+        if _COND_START_RE.search(stripped):
+            # Peek ahead: merge subsequent lines until the closing paren
+            merged = current
+            j = i + 1
+            while j < len(lines):
+                next_stripped = lines[j].strip()
+                if not next_stripped:
+                    break
+                # Stop at question boundary
+                if re.match(r"^\d+\s*[.、)）]", next_stripped):
+                    break
+                # Stop if next line starts a new statement (not a continuation)
+                if re.match(r"^(?:if|while|for|return|struct)\b", next_stripped) and j > i + 1:
+                    break
+                merged = merged.rstrip() + " " + next_stripped
+                j += 1
+                # Check if we've found the closing paren
+                open_parens = merged.count("(") - merged.count(")")
+                if open_parens <= 0:
+                    break
+            result.append(merged)
+            i = j
+            continue
+
+        # Detect: line is a dangling condition mid (&& or || alone)
+        if _PTR_COND_MID_RE.match(stripped):
+            if result:
+                # Merge with previous
+                prev = result.pop()
+                merged = prev.rstrip() + " " + stripped
+                # Continue merging next lines
+                j = i + 1
+                while j < len(lines):
+                    next_stripped = lines[j].strip()
+                    if not next_stripped:
+                        break
+                    if re.match(r"^\d+\s*[.、)）]", next_stripped):
+                        break
+                    merged = merged + " " + next_stripped
+                    j += 1
+                    open_parens = merged.count("(") - merged.count(")")
+                    if open_parens <= 0:
+                        break
+                result.append(merged)
+                i = j
+                continue
+
+        result.append(current)
+        i += 1
+
+    return "\n".join(result)
+
+
 def _get_unfenced_remaining_text(text: str, fenced_result: dict) -> str:
     """获取围栏外剩余的文本片段（用于围栏闭合后紧跟的乱码检测）。"""
     if not fenced_result["content"] and not fenced_result["unclosed"]:

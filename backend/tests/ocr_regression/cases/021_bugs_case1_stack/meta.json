@@ -1,0 +1,27 @@
+{
+  "id": "021",
+  "name": "bugs_case1_stack",
+  "description": "BUGS.md 案例一：顺序栈定义+#define+typedef struct+while循环+4个选项。代码块包含#define外无序，触发代码完整性标记。",
+  "subject": "408",
+  "pipeline_stages": [
+    "normalize",
+    "split"
+  ],
+  "expected_questions": 1,
+  "known_failure_types": [
+    "代码完整性告警（#define外无序）"
+  ],
+  "assertions": {
+    "validation_status_not": "passed",
+    "retry_recommended": true
+  },
+  "date_added": "2026-06-22",
+  "review_status": "verified",
+  "ground_truth_source": "bugs_doc",
+  "tags": [
+    "code_integrity",
+    "options"
+  ],
+  "last_reviewed": "2026-06-22",
+  "auto_generated_date": "2026-06-22"
+}
