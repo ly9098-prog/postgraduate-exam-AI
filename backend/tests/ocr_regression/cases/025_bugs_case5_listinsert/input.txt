@@ -1,0 +1,13 @@
+8. 在单链表中进行如下操作：
+
+typedef struct LNode {
+    int data;
+    struct LNode *next;
+} LNode, *LinkList;
+
+已知 p 指向某节点，执行插入操作：
+
+A. p->next = s->next; s->next = p
+B. s->next = p->next; p->next = s
+C. p->next = s; s = p->next
+D. s = p; p->next = NULL

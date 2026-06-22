@@ -1,0 +1,18 @@
+19. 下列代码用于统计叶子节点：
+
+void countLeaf(BiTree T) {
+    if (T == NULL) return;
+
+    if (T->lchild == NULL && T->rchild == NULL)
+        count++;
+
+    countLeaf(T->lchild);
+    countLeaf(T->rchild);
+}
+
+该代码功能是：
+
+A. 统计所有节点
+B. 统计叶子节点数量
+C. 删除叶子节点
+D. 层序遍历

@@ -57,6 +57,22 @@ def _build_repair_diffs(
 
 
 
+def should_send_to_llm(code_integrity_score: float) -> bool:
+    """Pre-filter gate to decide if a question should be sent to LLM repair.
+
+    Rule:
+    - code_integrity_score < 0.6 → rule-based only (don't send to LLM)
+    - code_integrity_score >= 0.6 → allow LLM repair
+
+    Args:
+        code_integrity_score: Code integrity score (0.0-1.0, higher = more intact).
+
+    Returns:
+        True if the question should be sent to LLM repair.
+    """
+    return code_integrity_score >= 0.6
+
+
 async def run_repair_stage(
     questions: list[dict],
     options: dict,

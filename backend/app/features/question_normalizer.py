@@ -199,6 +199,24 @@ def _normalize_blank_option_groups(groups: list[dict] | None) -> list[dict]:
     return normalized
 
 
+def normalize_option_order(options: dict) -> dict:
+    """Force option order to A→B→C→D.
+
+    Args:
+        options: dict with letter keys (e.g., ``{"B": "...", "A": "...", ...}``).
+
+    Returns:
+        New dict sorted as ``{"A": ..., "B": ..., "C": ..., "D": ...}``.
+        Only includes keys present in the input (no padding).
+    """
+    result: dict[str, str] = {}
+    for k in ["A", "B", "C", "D"]:
+        v = options.get(k)
+        if v is not None:
+            result[k] = v
+    return result
+
+
 def _normalize_answer(answer: str | None, question_type: str) -> str:
     """标准化答案格式。"""
     if answer is None:
@@ -272,6 +290,44 @@ def _detect_question_type(
         return QT_SINGLE_CHOICE
 
     return QT_SUBJECTIVE
+
+
+def filter_isolated_tokens(text: str, context: dict | None = None) -> str:
+    """Remove standalone OCR noise tokens {A, B, C, D} outside option context.
+
+    Rules:
+    - Token must be exactly one of {A, B, C, D}
+    - NOT in an option block (not preceded by a number marker or question signal)
+    - NOT adjacent to Chinese/graphic punctuation context
+
+    Args:
+        text: The stem text to clean.
+        context: Optional dict with 'has_options' or 'option_lines' signal.
+
+    Returns:
+        Cleaned text with isolated tokens removed.
+    """
+    if not text:
+        return text
+
+    # If text has actual option context, skip aggressive filtering
+    if context:
+        if context.get("has_options") or context.get("option_lines"):
+            return text
+
+    # Remove standalone A/B/C/D tokens at end of lines (isolated noise)
+    lines = text.split("\n")
+    cleaned: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        # Skip lines that are just a single A/B/C/D
+        if len(stripped) == 1 and stripped in "ABCD":
+            continue
+        cleaned.append(line)
+    text = "\n".join(cleaned)
+    # Collapse multiple blank lines
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def _compute_stem_hash(stem: str) -> str:
@@ -443,6 +499,10 @@ def normalize_question(
     raw_text = raw_question.get("raw_question_text", "")
     option_lines = raw_question.get("option_lines", {})
 
+    # === Normalize option order to A→B→C→D ===
+    if option_lines and not raw_question.get("blank_option_groups"):
+        option_lines = normalize_option_order(option_lines)
+
     # === Goal 5: Cache lookup — 防止同一输入重复解析 ===
     # 使用 raw_text hash 做预缓存键（stem 尚未提取）
     _pre_cache_key = hashlib.sha256(raw_text.encode()).hexdigest() if raw_text else ""
@@ -462,6 +522,9 @@ def normalize_question(
     )
 
     stem = _extract_stem(raw_text, option_lines, blank_option_groups)
+
+    # === Filter isolated single-letter noise tokens from stem ===
+    stem = filter_isolated_tokens(stem, {"has_options": raw_question.get("has_options"), "option_lines": option_lines})
     options = [] if blank_option_groups else _normalize_options(option_lines)
     answer_raw = matched.get("answer")
     explanation_raw = matched.get("explanation", "")
@@ -687,6 +750,9 @@ def normalize_question(
         quality_gate, code_risk_flags, stem_has_code, is_valid, failure_reasons,
     )
 
+    # === 最终 Schema 强制统一 ===
+    result = normalize_output(result)
+
     # === Goal 5: 写入缓存 ===
     if _pre_cache_key:
         parse_cache_put(raw_text, _pre_cache_key, result)
@@ -834,6 +900,95 @@ def parse_cache_clear() -> None:
     """清空缓存（用于测试或强制重新解析）。"""
     global _parse_cache
     _parse_cache.clear()
+
+
+def normalize_output(question: dict) -> dict:
+    """Enforce the unified output schema.
+
+    REQUIRED SCHEMA fields (all guaranteed to be present):
+
+    - ``stem`` (str): cleaned question stem
+    - ``code_blocks`` (list[str]): extracted code blocks
+    - ``options`` (list[dict]): options as ``[{"key": "A", "text": "..."}, ...]``
+    - ``answer`` (str): normalized answer
+    - ``analysis`` (str): explanation text
+
+    Extra keys from upstream are preserved, and missing required keys
+    are filled with defaults.
+
+    Args:
+        question: The normalized question dict (may be partial).
+
+    Returns:
+        Dict with guaranteed schema fields.
+    """
+    stem = question.get("stem", "") or ""
+    code_blocks: list[str] = []
+    code_match = re.findall(r"```(\w*)\n(.*?)```", stem, re.DOTALL)
+    for lang, code in code_match:
+        code_blocks.append(code.strip())
+
+    # Ensure options are in list[dict] format with A→D order
+    raw_options = question.get("options", [])
+    question_type = question.get("question_type", "")
+    if isinstance(raw_options, list):
+        opts_by_key: dict[str, str] = {}
+        for opt in raw_options:
+            if isinstance(opt, dict):
+                k = opt.get("key", "").upper()
+                v = opt.get("text", "")
+                if k in "ABCD":
+                    opts_by_key[k] = v
+        # Sort existing keys A→D
+        options_list = [{"key": k, "text": opts_by_key[k]} for k in sorted(opts_by_key) if k in "ABCD"]
+        # Pad to 4 only for single_choice (others may legitimately have fewer)
+        if question_type == QT_SINGLE_CHOICE:
+            present_keys = {o["key"] for o in options_list}
+            for k in ["A", "B", "C", "D"]:
+                if k not in present_keys:
+                    options_list.append({"key": k, "text": ""})
+    elif isinstance(raw_options, dict):
+        ordered = normalize_option_order(raw_options)
+        has_all = all(k in ordered for k in ["A", "B", "C", "D"])
+        if question_type == QT_SINGLE_CHOICE or has_all:
+            options_list = [{"key": k, "text": ordered.get(k, "")} for k in ["A", "B", "C", "D"]]
+        else:
+            options_list = [{"key": k, "text": ordered[k]} for k in sorted(ordered) if k in "ABCD"]
+    else:
+        options_list = []
+
+    blank_groups = question.get("blank_option_groups", [])
+
+    result: dict = {}
+    result["stem"] = stem
+    result["code_blocks"] = code_blocks
+    result["options"] = options_list
+    result["answer"] = question.get("answer", question.get("parsed_answer", "")) or ""
+    result["analysis"] = question.get("analysis", "") or ""
+
+    # Preserve other useful keys
+    preserve_keys = [
+        "subject", "question_type", "raw_text", "knowledge_points",
+        "difficulty", "source", "is_valid", "errors", "warnings",
+        "stem_hash", "confidence_score", "validation_status",
+        "failure_reason", "retry_recommended", "ocr_quality_flags",
+        "risk_flags", "decision_trace", "blank_option_groups",
+        "vision_fallback_attempted", "vision_fallback_used",
+        "schema_version",
+    ]
+    for key in preserve_keys:
+        if key in question:
+            val = question[key]
+            if val is not None:
+                result[key] = val
+
+    if blank_groups:
+        result["blank_option_groups"] = blank_groups
+
+    # Ensure schema_version
+    result.setdefault("schema_version", "v1")
+
+    return result
 
 
 def _build_decision_trace(

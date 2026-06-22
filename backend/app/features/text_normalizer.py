@@ -513,6 +513,88 @@ def _fix_latex_substitutions(text: str) -> str:
     return "\n".join(result)
 
 
+def remove_single_letter_noise(tokens: list[str]) -> list[str]:
+    """Remove standalone single-letter tokens that are OCR noise.
+
+    Removes a token if:
+    - length == 1
+    - token in {A, B, C, D}
+    - not in option context (not preceded by a known option prefix)
+
+    Args:
+        tokens: List of token strings.
+
+    Returns:
+        Filtered token list.
+    """
+    if not tokens:
+        return []
+
+    result: list[str] = []
+    option_noise = frozenset({"A", "B", "C", "D"})
+
+    for i, token in enumerate(tokens):
+        stripped = token.strip()
+        if len(stripped) == 1 and stripped in option_noise:
+            # Check context: if previous token looks like an option marker prefix,
+            # keep it (it's part of an option line, not isolated noise)
+            if i > 0:
+                prev = tokens[i - 1].strip()
+                if prev in ("(", "（", "[", "【") or prev.endswith((".", ")", "）")):
+                    result.append(token)
+                    continue
+            # Check next token: if it's punctuation, it might be valid
+            if i + 1 < len(tokens) and tokens[i + 1].strip() in (".", ")", "）", "、"):
+                result.append(token)
+                continue
+            # Skip isolated noise token
+            continue
+        result.append(token)
+
+    return result
+
+
+def merge_pointer_lines(lines: list[str]) -> list[str]:
+    """Merge lines that end with pointer operator fragments.
+
+    If a line ends with:
+    - ``&&``
+    - ``||``
+    - ``->``
+    - ``(``
+
+    it is merged with the next line. This fixes OCR line-breaks in
+    linked list / tree code expressions.
+
+    Args:
+        lines: List of text lines.
+
+    Returns:
+        Merged lines list.
+    """
+    if not lines:
+        return lines
+
+    _MERGE_END_RE = re.compile(r"(&&|\|\||->|\(|,\s*)$")
+    result: list[str] = []
+    i = 0
+    while i < len(lines):
+        current = lines[i]
+        # Merge with next line(s) if current ends with merge signal
+        while i + 1 < len(lines) and _MERGE_END_RE.search(current.rstrip()):
+            next_line = lines[i + 1].strip()
+            if not next_line or next_line.startswith("```"):
+                break
+            # Don't merge if next line starts with a question number or option marker
+            if re.match(r"^\d+\s*[.、)）]|[A-D]\s*[.、:：)）]", next_line):
+                break
+            current = current.rstrip() + " " + next_line
+            i += 1
+        result.append(current)
+        i += 1
+    return result
+
+
 def _normalize_punctuation(text: str) -> str:
     """标点符号规范化：全角 ASCII → 半角，中文后跟半角 → 中文标点。"""
     if not text:
