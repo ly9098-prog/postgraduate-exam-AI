@@ -872,6 +872,8 @@ class TestImportPipelineSplit:
                     "option_lines": {"A": "选项A", "B": "选项B"},
                     "confidence": 0.9,
                     "section_type": None,
+                    "blank_option_groups": [],
+                    "has_grouped_options": False,
                 }
             ],
             "failure_reason": None,
@@ -896,7 +898,8 @@ class TestImportPipelineSplit:
         assert preview["raw_question_text_truncated"] is True
         assert len(result["raw_questions"][0]["raw_question_text"]) > 300
 
-    def test_match_uses_separated_structure(self):
+    @pytest.mark.asyncio
+    async def test_match_uses_separated_structure(self):
         pipeline = ImportPipeline()
         normalized_blocks = [
             {
@@ -906,7 +909,7 @@ class TestImportPipelineSplit:
             },
             {"page": 2, "block_index": 1, "normalized_text": "参考答案：\n1. B\n2. A"},
         ]
-        structure = pipeline._run_analyze_structure(normalized_blocks)["structure"]
+        structure = (await pipeline._run_analyze_structure(normalized_blocks))["structure"]
         split = pipeline._run_split(normalized_blocks, structure=structure)
         result = pipeline._run_match(split["raw_questions"], normalized_blocks, structure=structure)
 
@@ -1107,7 +1110,7 @@ class TestImportPipelineRun:
 
         # Verify stage ordering
         stage_names = list(result["stages"].keys())
-        assert stage_names == ["extract", "normalize_text", "ocr_correction", "analyze_structure", "classify_pages", "split", "match", "normalize_schema", "batch_validation", "batch_dedup", "repair", "ai_validation", "similarity_match", "review"]
+        assert stage_names == ["extract", "normalize_text", "ocr_correction", "analyze_structure", "classify_pages", "split", "match", "normalize_schema", "batch_validation", "batch_dedup", "repair", "ai_validation", "similarity_match", "math_detect", "table_detect", "review"]
         for s in result["stages"].values():
             assert s["status"] == "completed"
 
@@ -1654,7 +1657,7 @@ class TestRepairStage:
         unrepaired = [{"question_index": 1, "reason": "ai_failed"}]
         skipped = [{"question_index": 2, "reason": "above_threshold", "confidence": 0.9}]
 
-        with patch("app.features.pipeline_orchestrator.repair_questions", new_callable=AsyncMock, return_value={
+        with patch("app.features.pipeline_stages.repair_stage.repair_questions", new_callable=AsyncMock, return_value={
             "repaired": repaired,
             "unrepaired": unrepaired,
             "skipped": skipped,
@@ -1676,7 +1679,7 @@ class TestRepairStage:
         questions[0]["confidence_score"] = 0.3
 
         pipeline = ImportPipeline()
-        with patch("app.features.pipeline_orchestrator.repair_questions", new_callable=AsyncMock, return_value={
+        with patch("app.features.pipeline_stages.repair_stage.repair_questions", new_callable=AsyncMock, return_value={
             "repaired": [],
             "unrepaired": [{"question_index": 0, "reason": "ai_unavailable"}],
             "skipped": [],
@@ -1692,7 +1695,7 @@ class TestRepairStage:
         questions[0]["confidence_score"] = 0.3
 
         pipeline = ImportPipeline()
-        with patch("app.features.pipeline_orchestrator.repair_questions", new_callable=AsyncMock, return_value={
+        with patch("app.features.pipeline_stages.repair_stage.repair_questions", new_callable=AsyncMock, return_value={
             "repaired": [],
             "unrepaired": [],
             "skipped": [{"question_index": 0, "reason": "non_question_like", "confidence": 0.3}],
@@ -1717,7 +1720,7 @@ class TestRepairStage:
         }]
 
         pipeline = ImportPipeline()
-        with patch("app.features.pipeline_orchestrator.repair_questions", new_callable=AsyncMock, return_value={
+        with patch("app.features.pipeline_stages.repair_stage.repair_questions", new_callable=AsyncMock, return_value={
             "repaired": repaired,
             "unrepaired": [],
             "skipped": [],
@@ -1740,7 +1743,7 @@ class TestPipelineOptions:
 
         pipeline = ImportPipeline(options={"enable_ai_repair": True, "confidence_threshold": 0.8})
 
-        with patch("app.features.pipeline_orchestrator.repair_questions", new_callable=AsyncMock) as mock_repair:
+        with patch("app.features.pipeline_stages.repair_stage.repair_questions", new_callable=AsyncMock) as mock_repair:
             mock_repair.return_value = {
                 "repaired": [],
                 "unrepaired": [],
@@ -1918,7 +1921,7 @@ class TestRunNormalizeSchemaRiskFlags:
     def test_book_mode_with_missing_regions_adds_no_exercise_regions(self):
         pipeline = ImportPipeline()
         with patch(
-            "app.features.pipeline_orchestrator.normalize_questions",
+            "app.features.pipeline_stages.normalize_schema_stage.normalize_questions",
             return_value={
                 "questions": [
                     {"stem": "Q1", "confidence_score": 0.9, "is_valid": True, "errors": []},
@@ -1948,7 +1951,7 @@ class TestRunNormalizeSchemaRiskFlags:
     def test_exam_mode_skips_no_exercise_regions_even_when_missing(self):
         pipeline = ImportPipeline()
         with patch(
-            "app.features.pipeline_orchestrator.normalize_questions",
+            "app.features.pipeline_stages.normalize_schema_stage.normalize_questions",
             return_value={
                 "questions": [{"stem": "Q1", "confidence_score": 0.8, "is_valid": True, "errors": []}],
                 "errors": [],
@@ -1969,7 +1972,7 @@ class TestRunNormalizeSchemaRiskFlags:
     def test_book_mode_without_missing_does_not_flag(self):
         pipeline = ImportPipeline()
         with patch(
-            "app.features.pipeline_orchestrator.normalize_questions",
+            "app.features.pipeline_stages.normalize_schema_stage.normalize_questions",
             return_value={
                 "questions": [{"stem": "Q1", "confidence_score": 0.8, "is_valid": True, "errors": []}],
                 "errors": [],
@@ -1991,7 +1994,7 @@ class TestRunNormalizeSchemaRiskFlags:
         """splitter 写入的 upstream flag 应被保留，normalize 阶段追加自己的 flag。"""
         pipeline = ImportPipeline()
         with patch(
-            "app.features.pipeline_orchestrator.normalize_questions",
+            "app.features.pipeline_stages.normalize_schema_stage.normalize_questions",
             return_value={
                 "questions": [{
                     "stem": "Q1",

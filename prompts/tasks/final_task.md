@@ -1,100 +1,284 @@
-当前项目为 postgraduate-exam-AI-main，是一个基于 FastAPI + OCR + AI pipeline 的题库自动导入系统。
+# 🚀 OCR Pipeline RC Final Task（优化完整版）
 
-系统已完成以下能力：
-- OCR pipeline（PaddleOCR + fallback）
+------
+
+# 🧭 0. 系统状态声明（STATE MACHINE）
+
+```text
+SYSTEM_NAME: postgraduate-exam-AI-main
+VERSION: v1.0-rc
+STATE: FREEZE
+MODE: RELEASE_CANDIDATE
+```
+
+------
+
+## ✔ 状态规则
+
+### allowed actions
+
+- bug fix（仅修复明确缺陷）
+- performance optimization（不改逻辑）
+- test expansion（新增测试，不改pipeline）
+
+### forbidden actions
+
+- ❌ 新增 pipeline stage
+- ❌ 新增 AI 路由 / 模型
+- ❌ 修改 skip / gate 核心逻辑
+- ❌ 引入新业务流程
+
+------
+
+# 🎯 1. 系统目标（不变）
+
+系统为：
+
+> OCR + AI 驱动的题库自动导入 pipeline
+
+已具备：
+
+- OCR（PaddleOCR + VL fallback）
 - code integrity 检测
 - OCR quality gate
 - AI repair / enrich / complete
-- vision fallback（PaddleOCR-VL）
 - pipeline orchestrator
-- admin dashboard + ai settings + audit logs
-- database migration（Alembic）
+- review + DB 入库
 
----
+------
 
-## 当前任务目标：系统收敛验证（不允许新增功能）
+# 🧪 2. 核心任务（必须执行）
 
-请执行以下三项任务：
+------
 
----
+## 🥇 Task 1：全链路真实数据压测
 
-# 任务1：全链路真实数据压测
+执行完整 pipeline：
 
-请使用真实或接近真实的数据，执行完整 pipeline：
-
+```text
 PDF → OCR → normalize → quality_gate → code_gate → AI correction → split → match → review → DB
+```
 
-测试覆盖：
+------
 
-- C / C++ 代码题（必须包含结构体/递归/指针）
+## ✔ 测试覆盖必须包括：
+
+- C / C++ 代码题（结构体 / 指针 / 递归）
 - 数学公式题
 - 普通选择题
 - watermark污染样本
 - OCR截断样本
 - 双栏排版样本
 
----
+------
 
-验证要求：
+## ✔ 验证规则（CRITICAL）
 
-1. code_block_incomplete / code_structure_regression 必须阻断 skip
-2. confidence_score 不能覆盖结构错误
-3. low_risk_high_confidence 不能 bypass code gate
-4. vision fallback 在 code error 时必须触发
-5. parsed_content 与 raw_text 差异必须被检测
+```text
+✔ code_block_incomplete → 必须 BLOCK
+✔ code_structure_regression → 必须 BLOCK
+✔ confidence_score ≠ override structure error
+✔ low_risk_high_confidence → 不能 bypass code gate
+✔ vision fallback → code error 必须触发
+✔ parsed vs raw mismatch → 必须检测
+```
 
----
+------
 
-# 任务2：增加决策可观测性（decision trace）
+## 🚨 PASS / FAIL 判定
 
-在 pipeline 输出中增加标准字段：
+### PASS
 
-decision_trace: []
+必须同时满足：
 
-必须记录每一步关键决策，例如：
+- 无 code gate bypass
+- 无 skip override
+- 所有 decision_trace 完整
+- pipeline 输出稳定一致
 
-- OCR quality gate 是否通过
-- code quality gate 是否触发
-- 是否进入 skip
-- 是否触发 vision fallback
-- AI repair 是否执行
-- 最终结果为何是 passed / review / rejected
+------
 
-要求：
+### FAIL
 
-必须可以解释“为什么这个题被放行或拦截”。
+满足任一：
 
----
+- code error 被放行
+- skip bypass gate
+- confidence override structure error
+- decision_trace 缺失关键节点
 
-# 任务3：系统进入冻结状态（v1.0 RC freeze）
+------
 
-当前系统进入 release candidate 阶段：
+### BLOCK
 
-规则如下：
+满足任一：
 
-- ❌ 不允许新增功能
-- ❌ 不允许新增 pipeline stage
-- ❌ 不允许新增 AI 路由
-- ✔ 仅允许 bug fix / performance / test enhancement
+- code结构错误未被识别
+- fallback 未触发
+- gate逻辑不执行
 
----
+------
 
-# 验收标准：
+# 📊 3. Task 2：决策可观测性（decision_trace）
 
+------
+
+## ✔ 必须输出 schema（强制结构化）
+
+```json
+decision_trace: [
+  {
+    "stage": "ocr_quality_gate",
+    "result": "pass",
+    "reason": "score=0.91"
+  },
+  {
+    "stage": "code_gate",
+    "result": "blocked",
+    "reason": "code_block_incomplete"
+  },
+  {
+    "stage": "ai_repair",
+    "result": "skipped",
+    "reason": "structure_error"
+  }
+]
+```
+
+------
+
+## ✔ 必须包含字段
+
+| 字段      | 必须     |
+| --------- | -------- |
+| stage     | ✔        |
+| result    | ✔        |
+| reason    | ✔        |
+| timestamp | optional |
+
+------
+
+## ❗要求
+
+> 必须能够解释“每一个题为什么通过或失败”
+
+------
+
+# 🧱 4. Task 3：系统冻结验证（RC Freeze）
+
+------
+
+## ✔ 冻结目标
+
+确认系统进入：
+
+> 🚨 production release candidate（v1.0 RC）
+
+------
+
+## ✔ freeze验证规则
+
+系统必须满足：
+
+- pipeline行为不可变
+- 不存在隐藏 bypass
+- code gate 无例外路径
+- skip机制不可绕过
+
+------
+
+## ❌ 禁止行为（强约束）
+
+- 新增 AI pipeline
+- 新增 OCR路径
+- 新增 fallback策略
+- 修改 gate逻辑
+- 引入实验性模型
+
+------
+
+# 🧠 5. 验收标准（最终判定）
+
+------
+
+## ✔ SYSTEM PASS 条件
+
+```text
 1. code损坏题不会进入 passed
 2. skip机制无法绕过 code gate
-3. 所有决策必须可追踪（decision trace）
-4. pipeline 输出行为稳定一致
-5. 回归测试全部通过
-6. 无隐藏 bypass 路径
+3. 所有 decision_trace 完整
+4. pipeline 输出稳定一致
+5. 无 bypass路径
+```
 
----
+------
 
-## 输出要求：
+## ❌ SYSTEM FAIL 条件
 
-请返回：
+```text
+1. 任意 code error 被放行
+2. confidence override structure error
+3. missing decision_trace
+4. fallback未触发但仍pass
+```
 
-- 回归测试结果
-- 是否存在任何 bypass
-- decision trace 示例（至少3条）
-- 是否可以进入 production freeze
+------
+
+## 🚨 SYSTEM BLOCK 条件
+
+```text
+1. code gate未执行
+2. code结构未检测
+3. OCR错误未进入修复链
+```
+
+------
+
+# 📦 6. 输出要求（Claude Code CLI）
+
+------
+
+## 必须输出：
+
+### 1. 回归测试结果
+
+- 各类样本通过率
+- code类样本是否100%拦截
+
+------
+
+### 2. bypass检测结果
+
+```text
+是否存在任何：
+- skip bypass
+- confidence override bypass
+- gate绕过路径
+```
+
+------
+
+### 3. decision_trace 示例（至少3条）
+
+必须覆盖：
+
+- code题
+- 普通题
+- OCR污染题
+
+------
+
+### 4. freeze结论
+
+必须明确：
+
+```text
+CAN FREEZE: YES / NO
+```
+
+------
+
+# 🧭 7. 最终一句话定义系统目标
+
+> 本系统必须保证：任何“代码结构损坏”都不会被误判为有效题目，并且所有放行路径必须可解释、可追踪、不可绕过。
+

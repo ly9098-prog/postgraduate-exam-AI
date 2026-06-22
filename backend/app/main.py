@@ -107,7 +107,6 @@ async def lifespan(app: FastAPI):
         await pomodoro_scheduler.stop()
     except Exception:
         logger.exception("Pomodoro scheduler stop failed")
->>>>>>> a49f6d5 (feat(pomodoro): backend-driven WeChat subscribe notification on timer end)
     logger.info("Shutting down 2240AI")
 
 
