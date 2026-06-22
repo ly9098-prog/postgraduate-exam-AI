@@ -1,0 +1,14 @@
+{
+  "id": "028",
+  "name": "adversarial_mixed_noise",
+  "description": "Adversarial: 代码上下散布 A/B/C/D 噪声行，测试 P0 context-aware 删除和代码检测隔离",
+  "subject": "408",
+  "pipeline_stages": ["normalize", "split"],
+  "expected_questions": 0,
+  "known_failure_types": [],
+  "assertions": {},
+  "date_added": "2026-06-23",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": ["adversarial", "noise", "tree", "code"]
+}

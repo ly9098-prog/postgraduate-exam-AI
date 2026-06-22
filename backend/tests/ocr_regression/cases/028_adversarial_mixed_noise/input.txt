@@ -1,0 +1,20 @@
+C
+A
+12. 下列二叉树遍历算法中，正确的是？
+
+B
+void countLeaf(BiTree T, int &count) {
+    if (T != NULL) {
+        if (T->lchild == NULL && T->rchild == NULL) {
+            count++;
+        }
+        countLeaf(T->lchild, count);
+        countLeaf(T->rchild, count);
+    }
+}
+D
+
+A. 先序遍历
+B. 中序遍历
+C. 后序遍历
+D. 层序遍历

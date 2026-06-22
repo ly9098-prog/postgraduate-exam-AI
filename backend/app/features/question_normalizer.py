@@ -11,6 +11,7 @@ import logging
 import time
 
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
+from app.utils.trace.stage_tracer import StageTracer
 
 logger = logging.getLogger(__name__)
 
@@ -514,22 +515,45 @@ def normalize_question(
     blank_option_groups = _normalize_blank_option_groups(raw_question.get("blank_option_groups"))
     page = raw_question.get("page_start", source_info.get("page", 1))
 
+    # === Execution Trace: initialize per-question tracer ===
+    tracer = StageTracer(raw_text)
+
     # === OCR Quality Gate: 在解析前检测污染 ===
-    quality_gate = _run_ocr_quality_gate(raw_text)
+    quality_gate = tracer.run("ocr_quality_gate", "rule", "raw_ocr", None, _run_ocr_quality_gate, raw_text)
     ocr_critical_corruption = (
         not quality_gate["passed"]
         and quality_gate["ocr_contamination_score"] >= 0.50
     )
 
     stem = _extract_stem(raw_text, option_lines, blank_option_groups)
+    tracer.add_note("stem_extraction", f"stem length={len(stem)}", "raw_ocr", "ocr_quality_gate")
+    # Scan stem for corruption patterns
+    for c in tracer.scan_text_corruptions(stem, "stem"):
+        tracer.mark_corruption("stem_extraction", c["type"], c["detail"])
 
     # === Filter isolated single-letter noise tokens from stem ===
-    stem = filter_isolated_tokens(stem, {"has_options": raw_question.get("has_options"), "option_lines": option_lines})
-    options = [] if blank_option_groups else _normalize_options(option_lines)
+    stem = tracer.run("noise_filtering", "rule", "stem", "stem_extraction",
+                      lambda s: filter_isolated_tokens(s, {"has_options": raw_question.get("has_options"), "option_lines": option_lines}),
+                      stem)
+    options = tracer.run("options_extraction", "rule", "raw_ocr", "stem_extraction",
+                         _normalize_options, option_lines)
+    # Track options recovery path
+    if blank_option_groups:
+        tracer.mark_options_recovery("options_extraction", "raw_scan", 0, 1.0)
+    elif option_lines:
+        raw_markers = set(re.findall(r"(?:^|\n)\s*([A-D])\s*[.、:：)）]", raw_text))
+        stem_markers = set(re.findall(r"(?:^|\n)\s*([A-D])\s*[.、:：)）]", stem))
+        if raw_markers:
+            tracer.mark_options_recovery("options_extraction", "raw_scan", len(options), min(1.0, len(raw_markers) / 4.0))
+        elif stem_markers:
+            tracer.mark_options_recovery("options_extraction", "regex", len(options), min(1.0, len(stem_markers) / 4.0))
+        else:
+            tracer.mark_options_recovery("options_extraction", "fallback", len(options), 0.5)
     answer_raw = matched.get("answer")
     explanation_raw = matched.get("explanation", "")
     section_type = raw_question.get("section_type")
     question_type = QT_MULTI_BLANK_CHOICE if blank_option_groups else _detect_question_type(stem, options, answer_raw, section_type=section_type)
+    tracer.add_note("question_type_detection", f"type={question_type}", "intermediate", "options_extraction")
     # 多空选择题除外：在题号标记（①、（1）、1) 等）前插入换行
     if question_type != QT_MULTI_BLANK_CHOICE:
         stem = _break_before_number_markers(stem)
@@ -540,6 +564,7 @@ def normalize_question(
 
     # === Consistency cross-check: raw_text vs parsed ===
     consistency = _run_consistency_cross_check(raw_text, question_type, options)
+    tracer.add_note("consistency_check", f"consistent={consistency.get('consistent')}", "intermediate", "question_type_detection")
 
     errors: list[str] = []
     warnings: list[str] = []
@@ -594,24 +619,31 @@ def normalize_question(
     # --- 代码块完整性检测 (BUGS Task 1: stem 中的代码块) ---
     from app.features.code_integrity import contains_code, detect_code_block_integrity, detect_code_regression
     code_risk_flags: list[str] = []
-    stem_has_code = contains_code(stem)
+    stem_has_code = tracer.run("code_detection", "rule", "stem", "noise_filtering",
+                               contains_code, stem)
     if stem_has_code:
         code_result = detect_code_block_integrity(stem)
+        tracer.add_note("code_integrity_check", f"flags={code_result.get('flags')} score={code_result.get('score')}",
+                        "stem", "code_detection")
         if code_result["flags"]:
             for flag in code_result["flags"]:
                 code_risk_flags.append(flag)
                 warnings.append(f"code_integrity:{flag}")
+                tracer.mark_corruption("code_integrity_check", flag, f"Code integrity issue: {flag}")
             # 代码完整性损坏：拉低置信度、禁止通过
             confidence_score = min(confidence_score, 0.35)
             failure_reasons.extend(code_result["flags"])
             code_risk_flags.append("code_block_incomplete")
         # --- 代码结构退化检测: raw_text vs stem (BUGS Task 4) ---
         regression = detect_code_regression(raw_text, stem)
+        tracer.add_note("code_regression_check", f"has_regression={regression.get('has_regression')} flags={regression.get('flags')}",
+                        "intermediate", "code_integrity_check")
         if regression["has_regression"]:
             for flag in regression["flags"]:
                 if flag not in code_risk_flags:
                     code_risk_flags.append(flag)
                 warnings.append(f"code_integrity:{flag}")
+                tracer.mark_corruption("code_regression_check", flag, f"Code regression: {flag}")
             confidence_score = min(confidence_score, 0.30)
             failure_reasons.extend(regression["flags"])
 
@@ -745,13 +777,22 @@ def normalize_question(
             result["pre_fallback_code_flags"] = list(code_risk_flags)
             result["post_fallback_code_flags"] = list(code_risk_flags)
 
+    # === Execution Trace: record vision fallback note ===
+    tracer.add_note("vision_fallback",
+                    f"attempted={result.get('vision_fallback_attempted')} status={result.get('vision_fallback_status')}",
+                    "fallback", "code_integrity_check")
+
     # === 决策可观测性: decision_trace 初始化 ===
     result["decision_trace"] = _build_decision_trace(
         quality_gate, code_risk_flags, stem_has_code, is_valid, failure_reasons,
     )
 
+    # === Execution Trace: attach per-question trace ===
+    result["trace"] = tracer.to_list()
+
     # === 最终 Schema 强制统一 ===
-    result = normalize_output(result)
+    result = tracer.run("output_normalization", "pipeline", "final", "vision_fallback",
+                        normalize_output, result)
 
     # === Goal 5: 写入缓存 ===
     if _pre_cache_key:
@@ -972,8 +1013,11 @@ def normalize_output(question: dict) -> dict:
         "difficulty", "source", "is_valid", "errors", "warnings",
         "stem_hash", "confidence_score", "validation_status",
         "failure_reason", "retry_recommended", "ocr_quality_flags",
-        "risk_flags", "decision_trace", "blank_option_groups",
+        "risk_flags", "decision_trace", "trace", "blank_option_groups",
         "vision_fallback_attempted", "vision_fallback_used",
+        "vision_fallback_status", "vision_fallback_engine",
+        "vision_fallback_reason",
+        "pre_fallback_code_flags", "post_fallback_code_flags",
         "schema_version",
     ]
     for key in preserve_keys:

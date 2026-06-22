@@ -350,6 +350,8 @@ async def submit_to_review(
                     "stem_hash": q.get("stem_hash", ""),
                     # P0: 导入管线全链路决策追踪
                     "decision_trace": q.get("decision_trace", []),
+                    # Execution Trace: 每 stage 详细执行记录
+                    "trace": q.get("trace", []),
                     # P1-2: 透传上游 stage 写入的风险标（值域见
                     # prompts/tasks/ocr_book_pdf_non_question_filter_plan.md §11.3）。
                     # 前端 import-batch 页据此渲染徽章；空列表写 None 减少 JSON 体积。
