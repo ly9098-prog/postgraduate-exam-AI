@@ -148,6 +148,58 @@ _RE_POINTER_ARROW_REVERSED = re.compile(
 _RE_LATEX_DOTS = re.compile(r"\\l(?:dots|dotsquare|ldots)")
 _RE_LATEX_CDOTS = re.compile(r"\\c(dots|dotsquare|ldots)")
 
+# P0: 孤立 token 检测 — 前后窗口内的选项标记计数
+_RE_OPTION_LINE_P0 = re.compile(r"^\s*[A-Da-d]\s*[.、:：)）]")
+
+
+def _near_option_lines(lines: list[str], idx: int, window: int = 3) -> bool:
+    """检查 idx 周围 window 行内是否有选项标记 (A., B., C., D.)。
+
+    如果附近有 ≥2 个选项标记，说明 idx 行可能在选项块中，不应删除。
+    用于 preprocess_ocr_noise 的 context-aware 判断。
+    """
+    start = max(0, idx - window)
+    end = min(len(lines), idx + window + 1)
+    count = 0
+    for j in range(start, end):
+        if j == idx:
+            continue
+        if _RE_OPTION_LINE_P0.match(lines[j]):
+            count += 1
+            if count >= 2:
+                return True
+    return False
+
+
+def preprocess_ocr_noise(text: str) -> str:
+    """P0: 在 code detection 之前移除 OCR 噪声，提升代码块识别率。
+
+    Context-aware 规则（不破坏选项块、不修改代码内容）：
+    1. 删除孤立 C/B/A/D 行（仅当不在选项上下文内）
+    2. 修复明显断裂箭头（− > → ->，有限 scope）
+    3. 不合并行、不改写内容、不修正常见词
+    """
+    if not text:
+        return ""
+
+    lines = text.split("\n")
+    result_lines: list[str] = []
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        # Rule 1: 孤立 C/B/A/D token，仅当不在选项上下文内时删除
+        if stripped in ("C", "B", "A", "D") and not _near_option_lines(lines, i):
+            continue  # skip this line
+        result_lines.append(line)
+
+    text = "\n".join(result_lines)
+
+    # Rule 2: 修复明显断裂箭头 − > → ->
+    # 仅修复 em-dash + space + > 后跟字母/数字的情况
+    text = re.sub(r"−\s*>(?=\w)", "->", text)
+
+    return text
+
 
 def normalize_ocr_text(
     text: str,
@@ -172,9 +224,16 @@ def normalize_ocr_text(
     def _strategy_on(name: str) -> bool:
         return enabled_strategies is None or name in enabled_strategies
 
-    # ---- Step 0: 代码块围栏保护（必须最早，基于原始文本） ----
+    # ---- Step -1 (P0): OCR 噪声预过滤 — 在 code detection 之前 ----
+    text = preprocess_ocr_noise(text)
+
+    # ---- Step 0 (P1): 代码块围栏保护（必须最早，基于原始文本） ----
     from app.features.code_detector import wrap_code_fences
     text = wrap_code_fences(text, trace_id=trace_id)
+
+    # ---- Step 0.5 (P1 post-pass): 修复未闭合围栏 — 暂禁用（与现有代码完整性检测冲突） ----
+    # from app.features.code_detector import repair_unclosed_fences
+    # text = repair_unclosed_fences(text, trace_id=trace_id)
 
     # ---- Step 1: 水印/页码/章标题/噪声行过滤（行级，需在合并前执行） ----
     text = _filter_lines(text, extra_watermark_patterns)
@@ -216,13 +275,21 @@ def normalize_ocr_text(
             for part in parts
         )
 
-    # ---- Step 7: OCR 数字/字母混淆修正 ----
+    # ---- Step 7: OCR 数字/字母混淆修正 (fence-aware, P3) ----
     if _strategy_on("digit_letter"):
         text = _fix_roman_numeral_duplicates(text)
         lines = text.split("\n")
         has_roman = _has_roman_subitem_list(text)
         corrected: list[str] = []
+        in_fence = False
         for line in lines:
+            if line.startswith("```"):
+                in_fence = not in_fence
+                corrected.append(line)
+                continue
+            if in_fence:
+                corrected.append(line)
+                continue
             line = _fix_option_line(line)
             line = _fix_question_number_line(line, has_roman)
             line = _fix_option_roman_digit_confusion(line, has_roman)

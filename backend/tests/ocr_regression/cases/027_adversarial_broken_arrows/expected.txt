@@ -1,0 +1,22 @@
+[normalized_full_text]
+B. 在单链表中删除结点 p 的后继结点，正确的语句是:
+
+```text
+
+struct ListNode {
+    int data;
+    struct ListNode ∗next;
+};
+
+p->next = p->next->next;
+free(p->next);
+```
+
+A. 先让指针指向后继结点
+B. 直接释放后继结点空间
+C. 修改前驱结点指针域
+D. 将后继结点数据复制到当前结点
+[/normalized_full_text]
+
+[questions]
+[/questions]

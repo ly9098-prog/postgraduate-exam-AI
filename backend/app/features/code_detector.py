@@ -311,3 +311,81 @@ def _score_line(line: str) -> int:
         return 2
 
     return 0
+
+
+# ============================================================
+# P1 post-pass: 未闭合围栏修复
+# ============================================================
+
+
+def repair_unclosed_fences(text: str, *, trace_id: str = "") -> str:
+    """P1 post-pass: 修复未闭合代码围栏。
+
+    检查每个 fenced block 的 {} 平衡。如果 { 多于 }，
+    自动扩展 fence 边界以包含后续行，直到括号平衡或到达非代码边界。
+
+    Args:
+        text: 经过 wrap_code_fences() 处理后的文本。
+        trace_id: 可选的跟踪 ID。
+
+    Returns:
+        修复围栏边界后的文本（无修复时原样返回）。
+    """
+    if not text or "```" not in text:
+        return text
+
+    FENCE_PATTERN = re.compile(r"(```[\s\S]*?```)")
+    parts = FENCE_PATTERN.split(text)
+
+    result: list[str] = []
+    i = 0
+    while i < len(parts):
+        part = parts[i]
+        if part.startswith("```") and part.count("```") == 2:
+            fence_content = _extract_fence_content(part)
+            open_braces = fence_content.count("{")
+            close_braces = fence_content.count("}")
+            deficit = open_braces - close_braces
+
+            if deficit > 0 and i + 1 < len(parts):
+                merged = part.rstrip()
+                if merged.endswith("```"):
+                    merged = merged[:-3].rstrip()
+
+                next_part = parts[i + 1]
+                if not next_part.startswith("```"):
+                    lines = next_part.split("\n")
+                    consumed = 0
+                    for k, line in enumerate(lines):
+                        merged += "\n" + line
+                        consumed += 1
+                        deficit -= line.count("{")
+                        deficit += line.count("}")
+                        if deficit <= 0:
+                            break
+
+                    merged += "\n```"
+                    remaining = lines[consumed:]
+                    if remaining and any(l.strip() for l in remaining):
+                        result.append(merged)
+                        parts[i + 1] = "\n".join(remaining)
+                    else:
+                        result.append(merged)
+                        i += 1
+                else:
+                    result.append(part)
+            else:
+                result.append(part)
+        else:
+            result.append(part)
+        i += 1
+
+    return "".join(result)
+
+
+def _extract_fence_content(fence_part: str) -> str:
+    """从 fence 块中提取内容（不含 ``` 标记和语言标签）。"""
+    lines = fence_part.split("\n")
+    if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
+        return "\n".join(lines[1:-1])
+    return lines[-1] if len(lines) > 1 else ""
