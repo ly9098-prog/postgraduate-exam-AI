@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-06-22
+
+- **修复：OCR 代码块围栏断裂导致代码结构泄漏（BUG-001）**
+  - `code_detector._fence_code_blocks()` 新增单行桥接规则：孤立低分行（score=0）相邻两行均为代码行（score≥1）时提升为 score=1，防止 OCR 单行乱码导致 ``` 围栏提前关闭。
+  - 修改仅限 `code_detector.py` 5 行，不涉及 OCR 管线、清洗规则、code_integrity、AI repair。
+  - 22 个 OCR 回归测试全部 PASS，实际图片端到端验证通过。
+  - 受影响文件：`backend/app/features/code_detector.py`。
+  - 受影响文档：`docs/BUGS.md`、`docs/BUGS_HISTORY.md`、`docs/project/CHANGELOG.md`。
+
 ## 2026-06-21
 
 - **P8 功能冻结 + 回归加固 + 部署验证 + 种子数据完成**
