@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, Code2, Eye, FileText, Save, Search, Send, Sparkles, X, XCircle } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, Code2, Eye, FileText, Save, Search, Sparkles, X, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { MathFormula } from "@/components/ui/math-formula";
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { apiRequest, toQuery } from "@/lib/api/client";
-import type { AdminImportCompleteResponse, BatchCompleteResponse, ImportActionResponse, ImportPublishResponse, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
+import type { AdminImportCompleteResponse, BatchCompleteResponse, ImportActionResponse, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 
 type ConfirmState =
   | { action: "approve"; id: number }
@@ -19,7 +19,6 @@ type ConfirmState =
   | { action: "batch-approve" }
   | { action: "batch-reject" }
   | { action: "low-risk-batch-approve" }
-  | { action: "publish"; batchId: string }
   | null;
 
 type BatchActionResult = {
@@ -312,13 +311,11 @@ export default function ImportReviewPage() {
         );
         return res;
       }
-      return apiRequest<ImportPublishResponse>(`/imports/${state.batchId}/publish`, { method: "POST" });
+      // no other actions handled here (publish is on the history page)
+      throw new Error("未知操作");
     },
     onSuccess: (result, variables) => {
-      if (variables.action === "publish") {
-        const published = "published" in result ? result.published : 0;
-        setMessage(`发布完成，已发布 ${published} 题。`);
-      } else if (variables.action === "approve") {
+      if (variables.action === "approve") {
         setMessage(`导入题目 #${variables.id} 已通过审核。`);
       } else if (variables.action === "reject") {
         setMessage(`导入题目 #${variables.id} 已驳回。`);
@@ -560,10 +557,6 @@ export default function ImportReviewPage() {
                   AI 批量补全
                 </Button>
               </div>
-              <Button variant="primary" disabled={!(filters.batch_id || batchIdParam)} onClick={() => setConfirmState({ action: "publish", batchId: filters.batch_id || batchIdParam })}>
-                <Send className="h-4 w-4" />
-                发布已通过
-              </Button>
             </div>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -1643,11 +1636,9 @@ export default function ImportReviewPage() {
 
       <ConfirmDialog
         open={confirmState !== null}
-        title={confirmState?.action === "low-risk-batch-approve" ? "批量通过低风险题" : confirmState?.action?.includes("reject") ? "驳回导入题目" : confirmState?.action === "publish" ? "发布已通过题目" : "通过导入题目"}
+        title={confirmState?.action === "low-risk-batch-approve" ? "批量通过低风险题" : confirmState?.action?.includes("reject") ? "驳回导入题目" : "通过导入题目"}
         description={
-          confirmState?.action === "publish"
-            ? "将当前批次中已通过的题目发布到正式题库。"
-            : confirmState?.action === "low-risk-batch-approve"
+          confirmState?.action === "low-risk-batch-approve"
               ? `将自动通过当前批次中所有低风险题（risk_level=low）并跳过高风险和需检查题。高风险和需检查题不会被通过。`
               : confirmState?.action === "batch-approve" && selectedIds.size > 0
                 ? `将对已选的 ${selectedIds.size} 条导入题目执行批量通过操作。`
@@ -1655,7 +1646,7 @@ export default function ImportReviewPage() {
                   ? `将对已选的 ${selectedIds.size} 条导入题目执行批量驳回操作。`
                   : "操作会更新 question_imports 暂存审核状态。"
         }
-        confirmText={confirmState?.action === "low-risk-batch-approve" ? "批量通过低风险" : confirmState?.action?.includes("reject") ? "驳回" : confirmState?.action === "publish" ? "发布" : "通过"}
+        confirmText={confirmState?.action === "low-risk-batch-approve" ? "批量通过低风险" : confirmState?.action?.includes("reject") ? "驳回" : "通过"}
         danger={Boolean(confirmState?.action.includes("reject"))}
         loading={actionMutation.isPending}
         onCancel={() => setConfirmState(null)}
