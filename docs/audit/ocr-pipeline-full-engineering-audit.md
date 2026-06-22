@@ -114,18 +114,26 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │              OCR 质量门禁层 (Quality Gate)                            │
 │                                                                     │
-│  features/ocr_quality_gate.py (283行)                                │
+│  features/ocr_quality_gate.py (295行)                                │
 │    ├─ assess_quality()         → 统一入口, 返回 OCRQualityReport     │
 │    ├─ _detect_symbol_substitution()     → 符号替换检测               │
-│    ├─ _detect_garbled_text()            → 乱码序列检测               │
+│    ├─ _detect_garbled_text()            → 乱码序列检测（源自 code_integrity 共享模式） │
 │    ├─ _detect_option_structure_corruption() → 选项结构损坏检测       │
+│    ├─ _detect_code_block_integrity()    → 委托 code_integrity 模块   │
 │    ├─ _assess_context()        → 语境感知 (数学/编程/未知)          │
 │    └─ score_quality()          → 综合质量分 [0, 1]                  │
+│                                                                     │
+│  features/code_integrity.py (520行) — 代码块完整性检测引擎:           │
+│    ├─ detect_code_block_integrity()    → fence/brace/paren/截断/乱码 │
+│    ├─ is_code_question()               → 代码题信号阈值识别          │
+│    ├─ contains_code()                  → 代码存在性快速判断          │
+│    ├─ compute_code_integrity_score()   → 0-5 完整性分数              │
+│    └─ detect_code_regression()        → stem 相对于 raw_text 退化    │
 │                                                                     │
 │  输入: str (清洗后文本)                                               │
 │  输出: OCRQualityReport (quality_score, risk_flags[], context)       │
 │                                                                     │
-│  这是纯规则层, 无 AI。职责清晰, 设计良好。                            │
+│  纯规则层, 无 AI。code_integrity 同时被 OCR 质量门禁和 AI 修复层使用。│
 └──────────────────────────────┬──────────────────────────────────────┘
                                │
                                v
@@ -261,7 +269,8 @@
 | `ocr_correction.py` | 171 | ✅ 向后兼容包装（委托 OCRFixRouter） | ✅ 清晰 | ✅ 已统一到 Router | 🟢 低 |
 | `ai_safety.py` | 284 | ✅ AI 编辑安全门禁 | ✅ 优秀 | 无重复 | 🟢 低 |
 | `question_splitter.py` | 1301 | 题号+选项提取 | ✅ 良好 | ✅ OCR 映射已统一 | 🟢 低 |
-| `ai_repair.py` | 899 | AI 修复 | ✅ 较好 | — | 🟡 中 |
+| `ai_repair.py` | 1035 | AI 修复（含 code integrity gate + 罗马数字两阶段修复） | ✅ 较好 | — | 🟡 中 |
+| `code_integrity.py` | 520 | 代码块完整性检测（fence/brace/paren/截断/乱码/回归） | ✅ 单一 | 与 ocr_quality_gate 共享乱码模式 | 🟢 低 |
 | `ocr_fix/router.py` | 158 | 纠错路由（PaddleOCR-VL → DeepSeek → Rule） | ✅ 清晰 | ✅ Qwen 已移除 | 🟢 低 |
 | `ocr_alert_rules.py` | 120 | **P7-2 新增：** 7 条告警规则 + evaluate_alerts() 单 pipeline 评估 | ✅ 单一 | 无重复 | 🟢 低 |
 | `ocr_case_exporter.py` | 130 | **P7-4 新增：** 失败样本导出，raw_data 截断至 2000 字符，expected_template 为空 | ✅ 单一 | 无重复 | 🟢 低 |
@@ -929,19 +938,20 @@ Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.perfo
 | `features/ocr_correction_common.py` | — | ✅ 共享检测/过滤函数（从旧 ocr_correction 提取） |
 | `features/ai_safety.py` | 284 | ✅ AI 编辑安全门禁（diff 记录 + 版本回退） |
 | `features/ocr_failure_analyzer.py` | 772 | ✅ **P6-3 新增**：16 种失败分类 + 11 checker 函数，基于 quality_report + diagnostics 自动归因 |
-| `features/ocr_quality_gate.py` | 283 | 纯规则 OCR 污染检测 |
+| `features/ocr_quality_gate.py` | 295 | 纯规则 OCR 污染检测（乱码模式已与 code_integrity 共享） |
 | `features/text_normalizer.py` | 1101 | ✅ 统一 OCR 文本规范化入口（normalize_ocr_text, 13 步） |
 | `features/question_normalizer.py` | 685 | 规则题目标准化 |
 | `features/question_splitter.py` | 1301 | 纯规则题目分割 |
 | `features/structure_analyzer.py` | 466 | 结构分析 |
 | `features/page_classifier.py` | — | 页面分类 |
 | `features/visual_boundary_detector.py` | 223 | 视觉题目边界检测 |
-| `features/ai_repair.py` | 899 | AI 修复模块 |
+| `features/ai_repair.py` | 1035 | AI 修复模块（含 code integrity gate + 罗马数字两阶段修复） |
 | `features/llm_text_structurer.py` | 451 | LLM 文本结构化 |
 | `features/token_budget.py` | 60 | 共享令牌预算跟踪器 |
 | `features/answer_matcher.py` | — | 答案匹配 |
 | `features/similarity_matcher.py` | — | 相似度匹配 |
 | `features/code_detector.py` | 308 | 代码围栏检测器（P6-4 扩充 408 C/C++ 数据结构关键词） |
+| `features/code_integrity.py` | 520 | 代码块完整性检测（fence/brace/paren/截断/乱码/回归），含 `detect_code_block_integrity`、`is_code_question`、`contains_code` 核心函数 |
 | `features/batch_validation.py` | — | 跨题结构验证 |
 
 ### `ocr_fix/` — 多模型 OCR 纠错路由器（✅ 现在为唯一路径）
@@ -1022,6 +1032,7 @@ Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.perfo
 | `tests/ocr_eval/eval_wangdao.py` | 王道 OCR 评估 |
 | `tests/test_pdf_normalizer.py` | PDF 规范化测试 |
 | `tests/test_code_detector.py` | 代码检测器测试 |
+| `tests/test_code_integrity.py` | 398 | 代码完整性 85 个测试用例（fence/brace/paren/截断/乱码/回归/验收） |
 | `tests/ocr_acceptance/run_acceptance.py` | 290 | ✅ **P6-1/P6-3/P6-6** 验收测试 runner，支持 `--strict` 模式，集成 failure_classifier |
 | `tests/ocr_acceptance/failure_classifier.py` | 293 | ✅ **P6-3 新增**：验收 case 失败分类包装，对比 case.json 预期值 |
 | `tests/ocr_acceptance/cases/*/case.json` | — | ✅ **P6-1 新增**：10 类样本模板，含 case_id/subject_type/expected_question_count/known_risks 元数据 |
