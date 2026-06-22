@@ -1,4 +1,4 @@
-# 代码题目题干结构异常
+# 代码题目题干结构异常 — ✅ 已修复 (2026-06-22)
 
 ##### 案例一
 
@@ -321,3 +321,25 @@ char data;
 
 对于 408、C/C++、数据结构类题目，题干中的代码往往是题目核心内容。即使选项和答案都能解析成功，只要代码块被截断、括号不平衡、出现异常乱码或 fenced code block 未闭合，都不应该直接标记为高置信通过。
 
+
+
+---
+
+## ✅ 修复说明 (2026-06-22)
+
+### 修复范围
+
+| 模块 | 文件 | 功能 |
+|---|---|---|
+| Code Integrity Gate | `app/features/code_integrity.py` | 新增 520 行检测引擎 |
+| Skip 决策 | `app/features/ai_repair.py` | `_should_repair()` 顶部 code integrity gate |
+| OCR 质量门禁 | `app/features/ocr_quality_gate.py` | 集成 `detect_code_block_integrity` |
+| 视觉回退 | `app/features/vision_fallback.py` | `needs_vision_fallback()` |
+| 回归检测 | `app/features/code_integrity.py` | `detect_code_regression()` |
+| 安全门禁 | `app/features/ai_safety.py` | 代码符号保护（->, ==, !=） |
+
+### 核心原则
+
+> **Code integrity 优先级高于 OCR confidence**
+
+`confidence_score` / `parsed_success` / `answer_found` / `option_extracted` 全部不能作为代码题 skip repair 的依据。
