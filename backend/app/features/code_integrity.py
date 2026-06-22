@@ -354,6 +354,43 @@ def detect_code_regression(raw_text: str, stem: str) -> dict:
                 "score": 0.40,
             }
 
+        # 检查内容级别退化：压缩空白后相同，但存在异常拆行
+        raw_compact = re.sub(r"\s+", " ", raw_block.strip())
+        stem_compact = re.sub(r"\s+", " ", stem_block.strip())
+        if raw_compact == stem_compact:
+            # 逐行比对：检查 stem 中是否有 raw 的某一行被拆成两行
+            raw_code_lines = raw_block.strip().split("\n")
+            stem_code_lines = stem_block.strip().split("\n")
+            si = 0
+            for raw_line in raw_code_lines:
+                if si >= len(stem_code_lines):
+                    break
+                raw_s = raw_line.strip()
+                stem_s = stem_code_lines[si].strip()
+                if raw_s == stem_s:
+                    si += 1
+                    continue
+                # 尝试合并两行 stem 重建 raw 行（拆行退化模式）
+                if si + 1 < len(stem_code_lines):
+                    combined = stem_s + " " + stem_code_lines[si + 1].strip()
+                    if combined == raw_s:
+                        # 区分 OCR 损坏 vs 合法格式化：
+                        # OCR 损坏的续行没有缩进（紧贴行首），合法格式化有缩进
+                        next_line_raw = stem_code_lines[si + 1]
+                        no_indent = not next_line_raw.startswith((" ", "\t"))
+                        if no_indent:
+                            return {
+                                "has_regression": True,
+                                "flags": ["code_structure_regression"],
+                                "details": [
+                                    f"代码块内容退化: '{raw_s[:40]}' "
+                                    f"被拆成 '{stem_s[:30]}' + "
+                                    f"'{stem_code_lines[si + 1].strip()[:30]}'"
+                                ],
+                                "score": 0.40,
+                            }
+                si += 1
+
     return {"has_regression": False, "flags": [], "details": [], "score": 0.0}
 
 

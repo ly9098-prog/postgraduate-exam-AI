@@ -370,14 +370,30 @@ class QuestionNormalizer:
 
     @staticmethod
     def _break_before_number_markers(text: str) -> str:
-        """在题号标记前插入换行：① ② ...、（1）（2）...、1) 2) ..."""
-        # ①-⑳ 圈号标记
-        text = re.sub(r"(?<![（(\n])([①-⑳])", r"\n\1", text)
-        # （1）（2）全角括号数字，前面有非空白字符时换行
-        text = re.sub(r"(?<=[^\s])[　 ]*([（][0-9]+[）])", r"\n\1", text)
-        # 1) 2) 数字+括号，排除数学表达式(0,1)和全角括号（1）的误匹配
-        text = re.sub(r"(?<=[^\s\d,（(])[　 ]*(\d+[)）])(?=\s*[一-鿟\w])", r"\n\1", text)
-        return text
+        """在题号标记前插入换行：① ② ...、（1）（2）...、1) 2) ...
+
+        跳过 fenced code block（```...```）内部内容，防止将代码中的
+        `1)`、`（1）` 等数字标记误识别为题号并插入换行。
+        """
+        lines = text.split("\n")
+        result: list[str] = []
+        in_fence = False
+        for line in lines:
+            if line.strip().startswith("```"):
+                result.append(line)
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                result.append(line)
+                continue
+            # ①-⑳ 圈号标记
+            line = re.sub(r"(?<![（(\n])([①-⑳])", r"\n\1", line)
+            # （1）（2）全角括号数字，前面有非空白字符时换行
+            line = re.sub(r"(?<=[^\s])[　 ]*([（][0-9]+[）])", r"\n\1", line)
+            # 1) 2) 数字+括号，排除数学表达式(0,1)和全角括号（1）的误匹配
+            line = re.sub(r"(?<=[^\s\d,（(])[　 ]*(\d+[)）])(?=\s*[一-鿟\w])", r"\n\1", line)
+            result.append(line)
+        return "\n".join(result)
 
     def clean_analysis(self, text: Any) -> str:
         text = self.clean_text(text)

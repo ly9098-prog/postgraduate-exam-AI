@@ -1,0 +1,31 @@
+{
+  "id": "020",
+  "name": "code_regression_linebreak",
+  "description": "合成文本：raw_text 正常、stem 被破坏的退化场景。regression_test 提供显式原始/损坏文本，直接验证 detect_code_regression()。",
+  "subject": "408",
+  "pipeline_stages": [
+    "normalize"
+  ],
+  "expected_questions": 1,
+  "known_failure_types": [],
+  "assertions": {
+    "forbidden_code_flags": ["code_line_break_suspicious", "code_block_incomplete", "code_structure_regression"],
+    "validation_status_not": "failed",
+    "retry_recommended": false
+  },
+  "regression_test": {
+    "raw_text": "1. 设有一个递归函数如下，其功能是计算斐波那契数列的第n项。若执行 F(5),则函数内部发生递归调用的总次数(含初始调用)为:\n```text\nint F(int n) {\nif (n <= 1) return n;\nreturn F(n - 1) + F(n - 2);\n}\n```\nA. 15\nB.14\nC.9\nD.5\n答案:A",
+    "stem": "设有一个递归函数如下，其功能是计算斐波那契数列的第n项。若执行 F(5),则函数内部发生递归调用的总次数(含初始调用)为:\n```text\nint F(int n) {\nif (n <=\n1) return n;\nreturn F(n - 1) + F(n - 2);\n}\n```",
+    "expected_flags": [
+      "code_structure_regression"
+    ]
+  },
+  "date_added": "2026-06-22",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": [
+    "code_integrity",
+    "regression"
+  ],
+  "last_reviewed": "2026-06-22"
+}

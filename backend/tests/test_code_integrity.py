@@ -239,6 +239,71 @@ class TestCodeRegression:
         result = detect_code_regression("纯文本", "纯文本")
         assert result["has_regression"] is False
 
+    def test_linebreak_insertion_detected(self):
+        """拆行退化：压缩空白后内容相同，但 stem 行数显著增加 → 回归"""
+        raw = (
+            "```c\n"
+            "int F(int n) {\n"
+            "if (n <= 1) return n;\n"
+            "return F(n - 1) + F(n - 2);\n"
+            "}\n"
+            "```"
+        )
+        stem = (
+            "```c\n"
+            "int F(int n) {\n"
+            "if (n <=\n"
+            "1) return n;\n"
+            "return F(n - 1) + F(n - 2);\n"
+            "}\n"
+            "```"
+        )
+        result = detect_code_regression(raw, stem)
+        assert result["has_regression"] is True, (
+            f"拆行退化应检测到回归, flags={result['flags']}"
+        )
+        assert "code_structure_regression" in result["flags"]
+
+    def test_normal_linebreak_no_false_positive(self):
+        """正常多行代码不应误报回归：压缩后内容相同，但原始就多行"""
+        raw = (
+            "```c\n"
+            "int F(int n) {\n"
+            "    if (n <= 1) return n;\n"
+            "    return F(n - 1) + F(n - 2);\n"
+            "}\n"
+            "```"
+        )
+        stem = (
+            "```c\n"
+            "int F(int n) {\n"
+            "    if (n <= 1)\n"
+            "        return n;\n"
+            "    return F(n - 1) + F(n - 2);\n"
+            "}\n"
+            "```"
+        )
+        result = detect_code_regression(raw, stem)
+        # 行数差异不足（stem 仅多 1 行且 raw 仅 2 行内容行）
+        # 阈值要求 stem_line_count >= raw_line_count + 1 且 raw_line_count >= 2
+        # raw 4 行内容 → stem 5 行, 5 >= 5 且 4 >= 2 — 但这里的换行是正常格式化, 压缩后内容不同
+        assert result["has_regression"] is False, (
+            f"正常格式化不应被误判为退化, flags={result['flags']}"
+        )
+
+    def test_linebreak_insertion_single_line_code(self):
+        """单行代码被拆行但有缩进/空白差异应被检测"""
+        raw = "```\nif (n <= 1) return n;\n```"
+        stem = "```\nif (n <=\n1) return n;\n```"
+        result = detect_code_regression(raw, stem)
+        # raw 只有 2 行内容（代码行 + 空尾行），stem 3 行
+        # raw_line_count=2, stem_line_count=3, 3 >= 3 且 2 >= 2
+        # 压缩后: "if (n <= 1) return n;" == "if (n <= 1) return n;" → 相同
+        assert result["has_regression"] is True, (
+            f"单行拆行应被检测, flags={result['flags']}"
+        )
+        assert "code_structure_regression" in result["flags"]
+
 
 # ============================================================
 # 验收标准 (BUGS Task 7)
