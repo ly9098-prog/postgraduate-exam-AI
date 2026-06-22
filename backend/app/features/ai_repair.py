@@ -180,6 +180,16 @@ def _should_repair(
     high_confidence_threshold: float = 0.95,
     low_risk_skip_enabled: bool = True,
 ) -> tuple[bool, str]:
+    # ---- Code integrity gate: 代码结构损坏强制 repair，优先级高于所有 skip 逻辑 ----
+    stem = question.get("stem", "")
+    if stem:
+        from app.features.code_integrity import contains_code, is_code_question, detect_code_block_integrity
+        if contains_code(stem) or is_code_question(stem):
+            integrity = detect_code_block_integrity(stem)
+            if integrity["flags"]:
+                return True, "code_integrity_forced"
+    # ---- end code integrity gate ----
+
     if _looks_like_non_question_text(question):
         return False, "non_question_like"
 
