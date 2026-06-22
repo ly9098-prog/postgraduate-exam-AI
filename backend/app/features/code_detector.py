@@ -201,6 +201,11 @@ def _fence_code_blocks(text: str) -> tuple[str, CodeDetectStats]:
     for line in lines:
         scores.append(_score_line(line))
 
+    # Step 1.5: 桥接单行低分噪声，防止代码块因单行乱码断裂
+    for i in range(1, n - 1):
+        if scores[i] == 0 and scores[i - 1] >= 1 and scores[i + 1] >= 1:
+            scores[i] = 1
+
     # Step 2: 找连续 ≥2 行且每行 score ≥ 1 的区域
     in_block = False
     block_start = 0
