@@ -1,0 +1,14 @@
+{
+  "id": "027",
+  "name": "adversarial_broken_arrows",
+  "description": "Adversarial: 代码中 → 被 OCR 识别为 − > (em-dash + greater-than)，测试 P0 → 修复和代码完整性",
+  "subject": "408",
+  "pipeline_stages": ["normalize", "split"],
+  "expected_questions": 0,
+  "known_failure_types": [],
+  "assertions": {},
+  "date_added": "2026-06-23",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": ["adversarial", "pointer", "code"]
+}

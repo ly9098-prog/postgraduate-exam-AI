@@ -1,0 +1,14 @@
+{
+  "id": "026",
+  "name": "adversarial_isolated_c_before_code",
+  "description": "Adversarial: 孤立 C 噪声 token 在代码块之前，测试 P0 preprocessor 能否正确移除",
+  "subject": "408",
+  "pipeline_stages": ["normalize", "split"],
+  "expected_questions": 0,
+  "known_failure_types": [],
+  "assertions": {},
+  "date_added": "2026-06-23",
+  "review_status": "verified",
+  "ground_truth_source": "manual",
+  "tags": ["adversarial", "noise", "code"]
+}
