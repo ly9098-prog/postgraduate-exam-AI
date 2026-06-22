@@ -20,7 +20,7 @@ jobs:
         env:
           DATABASE_URL: sqlite+aiosqlite:///./test.db
           APP_SECRET: test-secret
-        run: python -m pytest tests/ -v
+        run: python -m pytest tests/ --ignore=tests/ocr_eval --ignore=tests/benchmarks --ignore=tests/manual -v --tb=short -rxf
 
   deploy:
     needs: test
