@@ -535,25 +535,25 @@ class TestTokenLimit:
         import app.features.ai_repair as mod
         mod._token_usage["daily"] = 0
         mod._token_usage["monthly"] = 0
-        assert _check_token_limit(500, {"daily_token_limit": 1000, "monthly_token_limit": 10000})
+        assert asyncio.run(_check_token_limit(500, {"daily_token_limit": 1000, "monthly_token_limit": 10000}))
 
     def test_token_limit_blocks_when_daily_exceeded(self):
         import app.features.ai_repair as mod
         mod._token_usage["daily"] = 900
         mod._token_usage["monthly"] = 0
-        assert not _check_token_limit(200, {"daily_token_limit": 1000, "monthly_token_limit": 10000})
+        assert not asyncio.run(_check_token_limit(200, {"daily_token_limit": 1000, "monthly_token_limit": 10000}))
 
     def test_token_limit_blocks_when_monthly_exceeded(self):
         import app.features.ai_repair as mod
         mod._token_usage["daily"] = 0
         mod._token_usage["monthly"] = 9500
-        assert not _check_token_limit(1000, {"daily_token_limit": 100000, "monthly_token_limit": 10000})
+        assert not asyncio.run(_check_token_limit(1000, {"daily_token_limit": 100000, "monthly_token_limit": 10000}))
 
     def test_record_token_usage(self):
         import app.features.ai_repair as mod
         mod._token_usage["daily"] = 100
         mod._token_usage["monthly"] = 500
-        _record_token_usage(50)
+        asyncio.run(_record_token_usage(50))
         assert mod._token_usage["daily"] == 150
         assert mod._token_usage["monthly"] == 550
 

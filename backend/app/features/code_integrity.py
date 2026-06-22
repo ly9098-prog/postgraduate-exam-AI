@@ -46,7 +46,7 @@ _RE_GARBLED_MIXED = re.compile(r"\b[a-zA-Z]+\d+[a-zA-Z]+\b")
 _RE_KNOWN_GARBLED = re.compile(
     r"(?:"
     r"1typu\s*\*|p1tysI|apo11ta|aonu2s"
-    r"|snexP|Apxt|ext=q"
+    r"|snexP|Apxt|(?<![a-zA-Z])ext=q"
     r")",
     re.IGNORECASE,
 )
@@ -91,7 +91,8 @@ _C_CODE_KEYWORDS = frozenset({
     "int", "void", "char", "float", "double", "long", "short", "struct",
     "typedef", "return", "if", "else", "for", "while", "do", "switch",
     "case", "break", "continue", "enum", "union", "const", "static",
-    "sizeof", "unsigned", "signed", "NULL", "malloc", "free", "sizeof",
+    "sizeof", "unsigned", "signed", "NULL", "malloc", "free",
+    "printf", "scanf", "true", "false", "include", "define",
     "->", "::",
 })
 
@@ -210,9 +211,8 @@ def detect_code_block_integrity(text: str) -> dict:
     details: list[str] = []
     score = 0.0
 
-    # 提取代码块内容（fenced + unfenced）
+    # 提取代码块内容（fenced）
     code_blocks = _extract_fenced_blocks(text)
-    unfenced_regions = _extract_unfenced_code_regions(text)
 
     # ---- 确定用于完整性检查的代码内容 ----
     # 有 fence 时仅检查围栏内内容（避免自然语言误报）
@@ -259,7 +259,7 @@ def detect_code_block_integrity(text: str) -> dict:
         garbled_matches.extend(_RE_GARBLED_MIXED.findall(block))
         garbled_matches.extend(_RE_KNOWN_GARBLED.findall(block))
     # 当文本中包含代码时，也检测围栏外的乱码模式（案例二: fence 提前闭合后出现乱码）
-    if has_fenced_blocks or unfenced_regions or has_code:
+    if has_fenced_blocks or has_code:
         remaining = _get_unfenced_remaining_text(text, code_blocks)
         garbled_matches.extend(_RE_KNOWN_GARBLED.findall(remaining))
         garbled_matches.extend(_RE_GARBLED_MIXED.findall(remaining))
@@ -505,21 +505,6 @@ def _extract_fenced_blocks(text: str) -> dict:
         "content": content,
         "unclosed": unclosed,
     }
-
-
-def _extract_unfenced_code_regions(text: str) -> list[str]:
-    """在没有围栏的文本中检测疑似代码区域。
-
-    仅用于粗略判断，不作为主要检测依据。
-    """
-    # 目前不需要单独提取 unfenced 区域做完整性检查，
-    # `contains_code()` 的检测已足够用于判断是否包含代码。
-    return []
-
-
-def _has_struct_unclosed(code_content: str) -> bool:
-    """检查结构体定义是否未闭合（不完整）。"""
-    return bool(_RE_STRUCT_DEF.search(code_content)) and "}" not in code_content.rstrip()[-50:]
 
 
 def _get_unfenced_remaining_text(text: str, fenced_result: dict) -> str:

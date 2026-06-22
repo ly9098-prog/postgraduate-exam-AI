@@ -137,7 +137,7 @@ def _compare_code_results(
 
     # 对 normalize_question 结果：confidence_score 越高越好，需要反转
     # detect_code_block_integrity 的结果用 score（越低越好）
-    using_confidence = "confidence_score" in original_code or "score" not in original_code
+    using_confidence = "risk_flags" in original_code
     if using_confidence:
         # confidence_score 越高越好，score_rev = 1.0 - confidence
         orig_score = 1.0 - orig_score if orig_score < 1.0 else 0.0
