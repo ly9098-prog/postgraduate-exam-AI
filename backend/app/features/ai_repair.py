@@ -55,20 +55,20 @@ _RISK_FLAGS_REQUIRE_REPAIR = frozenset({
 from app.features.code_integrity import contains_code, is_code_question, detect_code_block_integrity
 from app.features.token_budget import (
     estimate_tokens, check_token_limit, record_token_usage, get_token_usage_snapshot,
-    _token_usage,
 )
+from app.features.token_budget import _token_usage  # re-export for test access
 
 _estimate_tokens = estimate_tokens  # backward-compat alias
 
 
-def _check_token_limit(estimated_tokens: int, config: dict) -> bool:
-    """backward-compat sync wrapper — 测试代码依赖此名称。"""
-    return asyncio.run(check_token_limit(estimated_tokens, config))
+async def _check_token_limit(estimated_tokens: int, config: dict) -> bool:
+    """backward-compat async wrapper — 测试代码依赖此名称。"""
+    return await check_token_limit(estimated_tokens, config)
 
 
-def _record_token_usage(tokens: int) -> None:
-    """backward-compat sync wrapper — 测试代码依赖此名称。"""
-    asyncio.run(record_token_usage(tokens))
+async def _record_token_usage(tokens: int) -> None:
+    """backward-compat async wrapper — 测试代码依赖此名称。"""
+    await record_token_usage(tokens)
 
 
 def _looks_like_non_question_text(question: dict) -> bool:
@@ -201,12 +201,8 @@ def _should_repair(
     if roman_anomalies:
         return True, "roman_anomaly"
 
-    # 0.5. High confidence questions skip AI repair entirely
-    confidence = question.get("confidence_score", 1.0)
-    if confidence >= high_confidence_threshold:
-        return False, "high_confidence"
-
     # 1. confidence_score < threshold
+    confidence = question.get("confidence_score", 1.0)
     if confidence < threshold:
         return True, "low_confidence"
 

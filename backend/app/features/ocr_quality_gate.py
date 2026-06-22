@@ -11,6 +11,11 @@
 import re
 import logging
 
+from app.features.code_integrity import (
+    _RE_CONSECUTIVE_CONSONANTS,
+    _RE_KNOWN_GARBLED,
+)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -84,13 +89,11 @@ _SYMBOL_SUBSTITUTION_PATTERNS = [
 ]
 
 # ---------------------------------------------------------------------------
-# 乱码模式 — 无意义 ASCII 串（不含元音的连续字母，非英文单词特征）
+# 乱码模式 — 源自 code_integrity 的共享模式
 # ---------------------------------------------------------------------------
 _GARBLED_PATTERNS = [
-    re.compile(r"snexP", re.IGNORECASE),       # "snexP" 乱码片段
-    re.compile(r"Apxt", re.IGNORECASE),         # "Apxt" 乱码片段
-    re.compile(r"(?<![a-zA-Z])ext=q", re.IGNORECASE),  # "ext=q" 乱码（非 next=q）
-    re.compile(r"[b-df-hj-np-tv-z]{4,}"),       # 4+ 连续纯辅音字母（无元音、无意义）
+    _RE_KNOWN_GARBLED,                    # 已知乱码片段
+    _RE_CONSECUTIVE_CONSONANTS,           # 4+ 连续纯辅音字母
 ]
 
 # 短 ASCII 行模式：一行内全是短 ASCII 片段且无中文字符
