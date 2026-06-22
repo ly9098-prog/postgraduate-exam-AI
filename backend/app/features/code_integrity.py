@@ -95,6 +95,15 @@ _C_CODE_KEYWORDS = frozenset({
     "->", "::",
 })
 
+# 代码题信号阈值检测关键词（按信号强度排序）
+_CODE_SIGNALS = [
+    "typedef", "struct", "class",
+    "public:", "private:",
+    "return", "void ", "int ", "char ",
+    "void*", "int*", "char*",  # 指针形式（void * 会被 "void " 匹配）
+    "{", "}", "(", ")",
+]
+
 # 408 数据结构关键字
 _DS_KEYWORDS = frozenset({
     "LNode", "TNode", "BiTNode", "BiTree", "BSTNode", "LinkList",
@@ -148,13 +157,6 @@ def is_code_question(text: str) -> bool:
     """
     if not text:
         return False
-
-    _CODE_SIGNALS = [
-        "typedef", "struct", "class",
-        "public:", "private:",
-        "return", "void ", "int ", "char ",
-        "{", "}", "(", ")",
-    ]
 
     score = sum(1 for s in _CODE_SIGNALS if s in text)
     return score >= 4
@@ -246,7 +248,7 @@ def detect_code_block_integrity(text: str) -> dict:
     if open_parens > 0 or close_parens > 0:
         paren_diff = open_parens - close_parens
         if abs(paren_diff) >= 2:
-            flags.append("code_brace_unbalanced")
+            flags.append("code_paren_unbalanced")
             score += 0.20
             details.append(f"括号不平衡: {paren_diff} (open {open_parens}, close {close_parens})")
 
@@ -268,7 +270,14 @@ def detect_code_block_integrity(text: str) -> dict:
 
     # ---- 5. 异常断行检测 ----
     suspicious_break_count = 0
-    for block in code_blocks["content"]:
+    # 有 fence 时仅检查围栏内内容（避免自然语言误报）
+    # 无 fence 时使用 code_content（含自然语言，保守阈值 +1）
+    blocks_to_check = list(code_blocks["content"])
+    if not has_fenced_blocks and has_code:
+        blocks_to_check = [code_content]
+    break_threshold = 2 if has_fenced_blocks else 3
+
+    for block in blocks_to_check:
         lines = block.split("\n")
         for i, line in enumerate(lines):
             stripped = line.strip()
@@ -287,15 +296,15 @@ def detect_code_block_integrity(text: str) -> dict:
                 prev_line = lines[i - 1].strip()
                 if prev_line and not _RE_SINGLE_BRACE_LINE.match(prev_line):
                     suspicious_break_count += 1
-    if suspicious_break_count >= 2:
+    if suspicious_break_count >= break_threshold:
         flags.append("code_line_break_suspicious")
         score += 0.30
         details.append(f"代码块中检测到 {suspicious_break_count} 处异常断行")
 
     # ---- 6. 截断检测 ----
-    # 有结构体定义但没有闭合大括号
+    # 有结构体定义但没有闭合大括号（检查末尾 100 字符，容纳代码后自然语言说明）
     struct_defs = _RE_STRUCT_DEF.findall(code_content)
-    if struct_defs and "}" not in code_content.rstrip()[-10:]:
+    if struct_defs and "}" not in code_content.rstrip()[-100:]:
         flags.append("code_block_truncated")
         score += 0.45
         details.append("结构体定义未闭合（缺少结尾 '}'）")
