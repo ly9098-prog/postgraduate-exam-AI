@@ -1,23 +1,11 @@
 # Bugs History
 
-## 2026-06-22 — Code Integrity Gate 代码题结构性损坏强制修复 + 冻结代码质量 7 项修复（已修复）
+## 2026-06-22 — OCR 代码块围栏断裂导致代码结构泄漏（已修复）
 
-- **现象**：代码类选择题（C/C++/数据结构/408 算法题）在 OCR 导入后，即使题干中代码块存在截断、brace 不平衡、fence 未闭合、混入乱码等结构性损坏，系统仍因 `confidence_score=1`、`parsed_success=True` 而直接跳过修复（`repair_skipped=true`），导致损坏代码进入审核。
-- **原因**：
-  1. 缺少代码题识别 → 代码完整性检测 → 强制修复的 pipeline gate
-  2. `confidence_score`, `parsed_success`, `answer_found` 等 OCR 置信度字段被错误地用作 skip repair 的依据，但它们在代码结构化损坏场景中完全不可靠
-  3. 代码块结构性损坏（截断/brace 不平衡/fence 不闭合/乱码）没有独立的检测模块和风险标记体系
-  4. 冻结审查发现的 7 项代码质量问题：重复乱码模式、`_should_repair` 高置信度绕过、`_extract_unfenced_code_regions` 死存根、`asyncio.run` RuntimeError 风险、C 关键词集分歧、脆弱的格式检测启发式、未使用的私有导入
-- **处理**：
-  1. 新增 `code_integrity.py` 模块（`detect_code_block_integrity`、`contains_code`、`is_code_question`、`compute_code_integrity_score`、`detect_code_regression`），纯规则实现，不依赖 AI
-  2. `ai_repair.py` `_should_repair()` 顶部增加 code integrity gate：当 `contains_code(stem) or is_code_question(stem)` 且 `detect_code_block_integrity(stem)` 有风险 flag 时，强制 `return True, "code_integrity_forced"`，优先级高于所有 skip 逻辑
-  3. `_is_low_risk_skip_candidate()` 增加 `_stem_has_code(stem)` 的完整性复检，防止 risk_flags 未同步时的旁路
-  4. `_RISK_FLAGS_REQUIRE_REPAIR` 包含全部 `code_` 前缀 flag（含新增 `code_paren_unbalanced`）
-  5. `ocr_quality_gate.py` 的 `detect_ocr_contamination()` 集成 `detect_code_block_integrity`，在质量门禁层即产出代码风险
-  6. `vision_fallback.py` 增加 `needs_vision_fallback()` 和 `apply_vision_fallback()`，支持 PaddleOCR-VL 视觉回退
-  7. 7 项冻结质量修复：去重乱码模式、移除 `_should_repair` 绕过分支、删除 2 个死函数、`asyncio.run` 改为 `async def`、同步 C 关键词、改进格式检测启发式、去除未使用导入
-- **验证**：`test_code_integrity.py` 85/85 测试通过，覆盖 fence 闭合、brace 平衡、paren 平衡、截断、乱码、异常断行、回归检测、验收标准 8 项。`test_ai_repair.py` 112/112 通过。全量 1688 passed / 34 xfailed（4 个已修复），0 新回归。
-- **说明**：Code Integrity Gate 位于 `ai_repair.py` `_should_repair()` 最顶部，在任何 skip 决策之前执行。此设计确保即使 `low_risk_skip_enabled=True`，代码损坏题也不会被跳过。`is_code_question()` 使用子串匹配（非 word boundary），对 OCR 污染后的关键词兼容性更好。`detect_code_block_integrity` 的分数范围 0.0-1.0（高=损坏），在 ocr_quality_gate 中与原有污染分数累加。
+- **现象**：OCR 导入后，包含 C 结构体定义的代码题出现代码片段截断与乱码混合，导致题干结构破坏。例如 `typedef struct BiTNode { char data;` 后的完整 struct 定义被截断，`} BiTNode, *BiTree;` 泄漏到围栏外部混入正常文本，出现 `(1typu* p1tysI* apo11ta aonu2s` 等 OCR 噪声。
+- **根因**：`code_detector.py` 的 `_fence_code_blocks()` 要求连续 ≥2 行且每行 score≥1 才包裹围栏。OCR 对 `struct BiTNode *lchild, *rchild;` 行的识别结果被打成乱码（`_score_line()` 返回 0），该行夹在两行代码行之间 → 围栏在乱码行前提前关闭 → `} BiTNode, *BiTree;` 泄漏出围栏 → `_merge_ocr_newlines()` 将关闭标记与乱码行合并 → 结构代码永久丢失。
+- **处理**：`code_detector.py` `_fence_code_blocks()` 新增单行桥接规则（Step 1.5），在评分阶段对 score=0 但相邻两行均 score≥1 的孤立低分行提升为 score=1，维持围栏连续性。无需修改 OCR 管线、清洗规则、code_integrity 或 AI repair 模块。
+- **验证**：22 个 OCR 回归测试全部 PASS（含 `019_code_struct_garbled_truncation` 精确 BUG-001 用例）；实际图片 OCR + 端到端管线验证结构定义完整保留在 ```text 围栏内。
 
 ## 2026-06-20 — mp-html 模板链导致刷题页题干重复显示（已修复）
 
