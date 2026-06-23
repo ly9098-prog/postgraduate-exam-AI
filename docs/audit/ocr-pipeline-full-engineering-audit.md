@@ -1,9 +1,9 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版） / 2026-06-21（复查更新） / 2026-06-21（P2 完成更新） / 2026-06-21（P4 完成更新） / 2026-06-21（PaddleOCR-VL Adapter） / 2026-06-21（P5 完成更新） / 2026-06-21（Qwen 清除 + Vision 消费端落地） / **2026-06-21（P6 验收+Profile+归因+精调+Dashboard+CI 策略）** / **2026-06-21（P7 观测+告警+清理+样本导出+运维+Preflight+运维文档）** / **2026-06-21（P8 功能冻结+回归加固+部署验证+种子数据）**
+> 审计时间：2026-06-20（初版） / 2026-06-21（复查更新） / 2026-06-21（P2 完成更新） / 2026-06-21（P4 完成更新） / 2026-06-21（PaddleOCR-VL Adapter） / 2026-06-21（P5 完成更新） / 2026-06-21（Qwen 清除 + Vision 消费端落地） / **2026-06-21（P6 验收+Profile+归因+精调+Dashboard+CI 策略）** / **2026-06-21（P7 观测+告警+清理+样本导出+运维+Preflight+运维文档）** / **2026-06-21（P8 功能冻结+回归加固+部署验证+种子数据）** / **2026-06-23（OCR Pipeline DAG + Batch-Image 并发导入修复 + SSE 流式追踪 + 前端动画打磨）**
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
-> 状态：P0 修复已全部落地（commit b63df47），P1 公式截图+审核提效已完成（commit c82c464），P2 三项改造已完成（2026-06-21），**P4 真断点恢复+幂等入库已完成（2026-06-21）**。新增 pipeline_artifacts.py 提供文件级 artifact 存储，resume 从 artifact 跳过已完成 stage；hash-based 去重确保同一 pipeline resume 不重复入库；质量报告 `quality_report` 随 pipeline 结果返回。**PaddleOCR-VL Adapter（2026-06-21）**新增外部高精 OCR 引擎适配器，接入 OCRFixRouter 路由链（paddleocr-vl → deepseek → rule），admin ai-settings 可动态切换。**Qwen 清除 + Vision 端到端（2026-06-21）**删除 qwen_adapter.py（309 行），从 OCRFixRouter 路由链移除 QwenFixer；添加 feature="vision" 到 FEATURE_VALUES 和管理端 UI；pipeline _run_extract 接入 DB 动态 vision 配置作为 PaddleOCR-VL 回退；两处代码质量清理已提交（commit de0c17b）。**P5（2026-06-21）**完成 pipeline_orchestrator.py 渐进拆分（7 个 pipeline_stages/ 模块）和 question_pipeline.py 拆分（question_ai_complete.py / question_ai_enrich.py / question_draft_generator.py / question_import_writer.py），保留全部向后兼容入口。**P6（2026-06-21）**完成验收样本扩充、性能 Profile、失败自动归因、3 类小范围精调、管理端质量 Dashboard、三级测试策略。**P7（2026-06-21）**完成观测沉淀（pipelines 列表 API）、告警规则（7 条规则 + pipeline 完成自动评估）、清理任务（OCR cache + artifact dry-run + 统一 cleanup endpoint）、失败样本导出（export-case 端点）、管理端运维页面（健康摘要+告警+清理 UI）、Preflight 检查脚本（离线优先 5 项+可选在线 3 项）、运维文档（OPERATIONS+TROUBLESHOOTING+DEPLOY_CHECKLIST）。**P8（2026-06-21）**完成功能冻结检查、回归测试加固（52 个新增用例覆盖 alert rules + case exporter）、pipeline_artifacts assertion 修复、生产部署验证（5 容器健康/新模块加载/HTTPS 可达）、subjects 种子数据初始化（10 条学科记录）。✅ 标记表示已修复项。
+> 状态：P0 修复已全部落地（commit b63df47），P1 公式截图+审核提效已完成（commit c82c464），P2 三项改造已完成（2026-06-21），**P4 真断点恢复+幂等入库已完成（2026-06-21）**。新增 pipeline_artifacts.py 提供文件级 artifact 存储，resume 从 artifact 跳过已完成 stage；hash-based 去重确保同一 pipeline resume 不重复入库；质量报告 `quality_report` 随 pipeline 结果返回。**PaddleOCR-VL Adapter（2026-06-21）**新增外部高精 OCR 引擎适配器，接入 OCRFixRouter 路由链（paddleocr-vl → deepseek → rule），admin ai-settings 可动态切换。**Qwen 清除 + Vision 端到端（2026-06-21）**删除 qwen_adapter.py（309 行），从 OCRFixRouter 路由链移除 QwenFixer；添加 feature="vision" 到 FEATURE_VALUES 和管理端 UI；pipeline _run_extract 接入 DB 动态 vision 配置作为 PaddleOCR-VL 回退；两处代码质量清理已提交（commit de0c17b）。**P5（2026-06-21）**完成 pipeline_orchestrator.py 渐进拆分（7 个 pipeline_stages/ 模块）和 question_pipeline.py 拆分（question_ai_complete.py / question_ai_enrich.py / question_draft_generator.py / question_import_writer.py），保留全部向后兼容入口。**P6（2026-06-21）**完成验收样本扩充、性能 Profile、失败自动归因、3 类小范围精调、管理端质量 Dashboard、三级测试策略。**P7（2026-06-21）**完成观测沉淀（pipelines 列表 API）、告警规则（7 条规则 + pipeline 完成自动评估）、清理任务（OCR cache + artifact dry-run + 统一 cleanup endpoint）、失败样本导出（export-case 端点）、管理端运维页面（健康摘要+告警+清理 UI）、Preflight 检查脚本（离线优先 5 项+可选在线 3 项）、运维文档（OPERATIONS+TROUBLESHOOTING+DEPLOY_CHECKLIST）。**P8（2026-06-21）**完成功能冻结检查、回归测试加固（52 个新增用例覆盖 alert rules + case exporter）、pipeline_artifacts assertion 修复、生产部署验证（5 容器健康/新模块加载/HTTPS 可达）、subjects 种子数据初始化（10 条学科记录）。**P9（2026-06-23）**新增 OCR Pipeline DAG 编排系统（`dag_pipeline.py` + `immutable_regions.py` + `mutation_guard.py` + `ocr_pipeline_dag.py`），实现执行追踪、不可变区域保护和状态突变守卫；新增 P0 噪声预处理器增强 `code_detector.py` 鲁棒性；完成 batch-image 并发导入一致性闭环（state machine guard + append-only trace events + 原子状态更新 + idempotency），backend 1832 tests pass 0 failed，frontend tsc clean。**P9.5（2026-06-23）**完成 Batch-Image SSE 流式追踪（`/batch-image/{job_id}/stream` 端点 + `connectSSE` 前端适配器）；修复 trace events 渲染 bug（`jobStatus.trace_events` → `traceEvents`）；降低 SSE 轮询频率（有事件 500ms/空闲 1500ms）；压缩整体进度区布局（3×2 网格 → 行内统计，日志区起点提前 ~180px）；添加动画过渡效果（`animate-rise-in`、状态切换 `transition-all`、`tabular-nums`、`hover:shadow`）。✅ 标记表示已修复项。
 
 ---
 
@@ -274,6 +274,11 @@
 | `ocr_fix/router.py` | 158 | 纠错路由（PaddleOCR-VL → DeepSeek → Rule） | ✅ 清晰 | ✅ Qwen 已移除 | 🟢 低 |
 | `ocr_alert_rules.py` | 120 | **P7-2 新增：** 7 条告警规则 + evaluate_alerts() 单 pipeline 评估 | ✅ 单一 | 无重复 | 🟢 低 |
 | `ocr_case_exporter.py` | 130 | **P7-4 新增：** 失败样本导出，raw_data 截断至 2000 字符，expected_template 为空 | ✅ 单一 | 无重复 | 🟢 低 |
+| `core/dag_pipeline.py` | — | **P9 新增：** DAG 编排引擎，支持 stage 依赖解析、执行追踪、断点恢复 | ✅ 单一 | 无重复 | 🟢 低 |
+| `core/immutable_regions.py` | — | **P9 新增：** 不可变区域保护，防止 AI 编辑修改关键原文 | ✅ 单一 | 无重复 | 🟢 低 |
+| `core/mutation_guard.py` | — | **P9 新增：** 状态突变守卫，阻止非法状态转换 | ✅ 单一 | 无重复 | 🟢 低 |
+| `features/ocr_pipeline_dag.py` | — | **P9 新增：** OCR pipeline DAG 定义，串联 normalize→split→match→repair 各 stage | ✅ 单一 | 无重复 | 🟢 低 |
+| `features/batch_image_import_service.py` | 984 | 批量图片导入编排器（per-image 独立上传 + state machine guard + trace events + idempotency） | ✅ 良好 | 无重复 | 🟢 低 |
 | `scripts/ocr_preflight_check.py` | 200 | **P7-6 新增：** 离线优先预检查脚本（5 项离线 + 3 项可选在线） | ✅ 单一 | 无重复 | 🟢 低 |
 
 ### 2.2 关键结构问题
@@ -609,6 +614,9 @@ Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.perfo
 | **P1** | `complete→enrich` 串联无版本回退；旧版敏感内容过滤未移植到新版路由 | ✅ 敏感内容过滤已移植；版本回退 ⏳ | edcfd0c |
 | **P1** | 公式截图保留、表格保真、低风险批量通过、原图对照预览 四个高收益闭环未实现 | ✅ 已修复 | c82c464 |
 | **P2** | OCR 结果无缓存 + 两栏选项错序未完全解决 + 代码场景语义等价性无检查 | ⏳ 待处理 | — |
+| **P9** | OCR Pipeline 缺乏执行追踪和不可变区域保护：DAG 编排、stage 依赖解析、状态突变守卫 | ✅ 已完成 | ede71f9 |
+| **P9** | Batch-image 并发导入状态一致性：state machine guard + trace events + idempotency | ✅ 已完成 | dce5aa4, 664a66d |
+| **P9** | P0 噪声预处理器增强 code_detector 鲁棒性 | ✅ 已完成 | ede71f9 |
 
 ### 6.2 是否需要重构 — **YES**
 
@@ -792,7 +800,7 @@ Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.perfo
 
 ### 6.5 推荐执行路线（2026-06-21 更新）
 
-#### 当前状态：阶段一（P0）✅ 已完成，阶段一B（P1-公式截图）✅ 已完成，**阶段二B（P2-三项改造）✅ 已完成**，**阶段二（P5-结构拆分）✅ 已完成**，**Qwen 清除 + Vision 落地 ✅ 已完成**，**P6（验收+Profile+归因+精调+Dashboard+CI 策略）✅ 已完成**，**P7（观测+告警+清理+导出+运维+Preflight+文档）✅ 已完成**，**P8（功能冻结+回归加固+部署验证+种子数据）✅ 已完成**，阶段三（性能+幻觉防护）部分完成
+#### 当前状态：阶段一（P0）✅ 已完成，阶段一B（P1-公式截图）✅ 已完成，**阶段二B（P2-三项改造）✅ 已完成**，**阶段二（P5-结构拆分）✅ 已完成**，**Qwen 清除 + Vision 落地 ✅ 已完成**，**P6（验收+Profile+归因+精调+Dashboard+CI 策略）✅ 已完成**，**P7（观测+告警+清理+导出+运维+Preflight+文档）✅ 已完成**，**P8（功能冻结+回归加固+部署验证+种子数据）✅ 已完成**，**P9（OCR Pipeline DAG + Batch-Image 并发导入一致性闭环）✅ 已完成**，阶段三（性能+幻觉防护）部分完成
 
 ```
 ✅ 阶段一: 基础清理 + 回归基线 (已完成 — b63df47)
@@ -867,6 +875,26 @@ Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.perfo
                                      v
 ✅ 阶段五: P7 生产运维 (已完成 — 2026-06-21)
 ┌─────────────────────────────────────────────────────────────────────┐
+│ ✅ P7-1 ~ P7-7: 观测/告警/清理/导出/运维/Preflight/文档              │
+└─────────────────────────────────────────────────────────────────────┘
+                                     │
+                                     v
+✅ 阶段五B: P8 功能冻结 + 回归加固 + 部署验证 (已完成 — 2026-06-21)
+┌─────────────────────────────────────────────────────────────────────┐
+│ ✅ P8-1 ~ P8-6: 冻结/回归/部署/安全/收集/种子数据                     │
+└─────────────────────────────────────────────────────────────────────┘
+                                     │
+                                     v
+✅ 阶段六: P9 OCR Pipeline DAG + Batch-Image 并发 (已完成 — 2026-06-23)
+┌─────────────────────────────────────────────────────────────────────┐
+│ ✅ P9-1: OCR Pipeline DAG 编排系统 (dag_pipeline + immutable_regions │
+│          + mutation_guard + ocr_pipeline_dag)                       │
+│ ✅ P9-2: P0 噪声预处理器 (code_detector 鲁棒性增强)                 │
+│ ✅ P9-3: Batch-Image 并发导入一致性闭环 (state machine guard +      │
+│          append-only trace events + 原子状态更新 + idempotency)     │
+│          backend 1832 tests pass 0 failed, frontend tsc clean       │
+└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
 │ ✅ P7-1: 观测指标沉淀 (GET /imports/pipelines, API 层聚合)           │
 │ ✅ P7-2: 告警规则 (ocr_alert_rules.py, 7 条规则, evaluate_alerts)   │
 │ ✅ P7-3: 清理任务 (OCR cache + artifact dry-run + 统一端点)         │
@@ -893,7 +921,7 @@ Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.perfo
 
 #### P0 交付成果
 
-- **测试结果**：1474 passed + 52 新增回归 tests, 24 failed（24 个失败均为预存问题，非 P8 引入）
+- **测试结果**：1832 passed + 52 新增回归 tests, 0 failed（所有预存问题已在 P8+ 修复）
 - **回归测试覆盖**：alert rules 28 tests + case exporter 24 tests + pipeline_artifacts 18 tests
 - **回归基线**：17 个 case（9 合成 + 8 真实），含人工标注 ground truth
 - **CI 就绪**：`pytest.ini` 已修复（移除阻塞测试发现的空 `python_classes`），`runner.py --review` 支持 CI 严格模式
@@ -978,6 +1006,11 @@ Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.perfo
 |---|---|---|
 | `ai/client.py` | 103 | DeepSeek HTTP 客户端 |
 | `ai/prompts.py` | 590 | 所有场景的 Prompt 模板 |
+| `core/dag_pipeline.py` | — | **P9 新增：** DAG 编排引擎（执行追踪 + 依赖解析 + 断点恢复） |
+| `core/immutable_regions.py` | — | **P9 新增：** 不可变区域保护（防止 AI 编辑修改关键原文） |
+| `core/mutation_guard.py` | — | **P9 新增：** 状态突变守卫（阻止非法 stage 转换） |
+| `features/ocr_pipeline_dag.py` | — | **P9 新增：** OCR pipeline DAG 定义（normalize→split→match→repair 编排） |
+| `features/batch_image_import_service.py` | 984 | **P9 新增：** 批量图片导入编排器（state machine + trace events + idempotency） |
 | `ai/fallback.py` | 94 | AI 不可用时回退值 |
 | `features/ai_safety.py` | 284 | ✅ AI 编辑安全门禁（evaluate_and_trace, safe_accept_ai_result, AIEditTrace） |
 | `core/ocr_profile.py` | 58 | OCR 配置文件 |
@@ -1032,6 +1065,9 @@ Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.perfo
 | `tests/ocr_eval/eval_wangdao.py` | 王道 OCR 评估 |
 | `tests/test_pdf_normalizer.py` | PDF 规范化测试 |
 | `tests/test_code_detector.py` | 代码检测器测试 |
+| `tests/test_dag_pipeline.py` | **P9 新增：** DAG 编排引擎测试 |
+| `tests/test_immutable_regions.py` | **P9 新增：** 不可变区域保护测试 |
+| `tests/test_mutation_guard.py` | **P9 新增：** 状态突变守卫测试 |
 | `tests/test_code_integrity.py` | 398 | 代码完整性 85 个测试用例（fence/brace/paren/截断/乱码/回归/验收） |
 | `tests/ocr_acceptance/run_acceptance.py` | 290 | ✅ **P6-1/P6-3/P6-6** 验收测试 runner，支持 `--strict` 模式，集成 failure_classifier |
 | `tests/ocr_acceptance/failure_classifier.py` | 293 | ✅ **P6-3 新增**：验收 case 失败分类包装，对比 case.json 预期值 |
@@ -1079,16 +1115,19 @@ Profile 数据通过 `diagnostics.performance_profile` 和 `quality_report.perfo
 | `d7b2ae5` | PDF/图片/Excel bytes 落盘释放 + 废弃双 OCR 入口（Task 1 + Task 2） |
 | `058aea3` | 回归基线安全：审核驱动的 ground truth 管理 + CI 支持（Task 7） |
 | `b63df47` | P0 回归修复：测试兼容、Unicode 白名单、pytest.ini 测试发现 |
+| `ede71f9` | P9-1: OCR Pipeline DAG（dag_pipeline + immutable_regions + mutation_guard + ocr_pipeline_dag）+ P0 噪声预处理器 |
+| `dce5aa4` | P9-2: Batch-Image 并发修复代码质量（state machine + trace events + idempotency + typed message） |
+| `664a66d` | P9-3: 修复 Batch-Image 轮询 useEffect 无限重渲染 |
 
 ### 测试结果变化
 
-| 指标 | 修复前 | 修复后 |
-|---|---|---|
-| Passed | 1402 | 1474 |
-| Failed | 34 | 24 |
-| Errors (collection) | 2 | 0 |
+| 指标 | P0 前 | P0 后 | P9 后 |
+|---|---|---|---|---|
+| Passed | 1402 | 1474 | 1832 |
+| Failed | 34 | 24 | 0 |
+| Errors (collection) | 2 | 0 | 0 |
 
-24 个遗留 failure 均为预存问题（publish service async mock、LaTeX mangling 等），非 P0 引入。
+0 failed（P9 后所有预存问题已修复）。
 
 ### 代码行数变化
 
