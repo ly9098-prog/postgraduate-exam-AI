@@ -38,6 +38,7 @@ from app.features.pipeline_artifacts import (
 )
 from app.features.ocr_alert_rules import evaluate_alerts as _evaluate_alerts
 from app.features.question_splitter import split_questions
+from app.features.question_type_classifier import detect_options_from_text as _detect_options_from_text
 from app.features.similarity_matcher import match_similar_questions
 from app.features.structure_analyzer import analyze_structure
 from app.features.text_normalizer import ImportTextNormalizer
@@ -3105,8 +3106,16 @@ class ImportPipeline:
         subject: str | None = None,
         **_kw,
     ) -> dict:
-        """Stage 5: normalize questions to standard schema (P5-2: delegated)."""
-        return run_normalize_schema_stage(
+        """Stage 5: normalize questions to standard schema (P5-2: delegated).
+
+        Post-stage: enforce option invariance — if ``detect_options_from_text``
+        finds option patterns in the raw text but ``options`` is empty,
+        emit a warning trace (not silent drop).
+
+        This enforcement ensures that ANY path that drops options (classifier,
+        splitter, freeze mismatch) is detectable in logs and diagnostics.
+        """
+        result = run_normalize_schema_stage(
             raw_questions, matched,
             source_file=source_file,
             source_type=source_type,
@@ -3114,6 +3123,45 @@ class ImportPipeline:
             import_mode=_kw.get("import_mode"),
             exercise_regions_missing=bool(_kw.get("exercise_regions_missing")),
         )
+
+        # ── OPTIONS ENFORCEMENT ──
+        # If detect_options_from_text(raw_text) is True but options is empty,
+        # this is a pipeline bug — log a warning + attach to diagnostics.
+        # blank_option_groups exemption: multi_blank_choice has empty top-level
+        # options by design (options stored per-group), skip enforcement.
+        questions = result.get("questions", [])
+        enforce_warnings: list[str] = []
+        for q in questions:
+            if q.get("blank_option_groups"):
+                continue
+            raw_text = q.get("raw_text") or q.get("raw_question_text", "")
+            if not raw_text:
+                continue
+            if _detect_options_from_text(raw_text):
+                opts = q.get("options", [])
+                if not opts:
+                    qnum = q.get("number", q.get("question_index", "?"))
+                    msg = (
+                        f"[OPTIONS-ENFORCE] q{qnum}: detect_options_from_text=True "
+                        "but options is empty — pipeline dropped detected options!"
+                    )
+                    logger.warning(msg)
+                    enforce_warnings.append(msg)
+                    # Mark the question so downstream can see the enforcement
+                    existing_flags = list(q.get("risk_flags") or [])
+                    q["risk_flags"] = list(dict.fromkeys(
+                        existing_flags + ["options_dropped_enforcement"]
+                    ))
+
+        if enforce_warnings:
+            existing_warnings = list(result.get("warnings", []))
+            existing_warnings.append(
+                f"options_enforcement: {len(enforce_warnings)} question(s) "
+                "had detect_options=True but options empty"
+            )
+            result["warnings"] = existing_warnings
+
+        return result
 
     def _run_classify_questions(self, questions: list[dict], **_kw) -> dict:
         """Layer 1 Gate: enforce question type classification on all questions.
@@ -3149,6 +3197,20 @@ class ImportPipeline:
                 "has_options": has_options,
                 "options_count": len(options_list),
             }
+
+            # DEFENSE: even if options_classified=False, don't clear options if
+            # detect_options_from_text says raw_text has option patterns.
+            # This prevents the gate from overriding the Layer 1 classifier fix.
+            if not options_classified and not has_options:
+                raw_text = q.get("raw_text") or q.get("raw_question_text", "")
+                if raw_text and _detect_options_from_text(raw_text):
+                    q["options_classified"] = True
+                    options_classified = True
+                    logger.info(
+                        "[CLASSIFY-GATE] q%s: overrode options_classified=False→True "
+                        "(detect_options_from_text=True)",
+                        entry["question_number"],
+                    )
 
             # ENFORCEMENT: if classifier said no options but options exist → clear them
             if not options_classified and options_list:

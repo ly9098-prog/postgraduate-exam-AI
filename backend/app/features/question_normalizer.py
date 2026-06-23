@@ -5,12 +5,18 @@
 不做 AI 修复、不做数据库写入、不修改上游输出。
 """
 
+import copy
 import re
 import hashlib
 import logging
 import time
 
-from app.features.question_type_classifier import classify as _classify_type
+from app.features.question_type_classifier import (
+    QT_SINGLE_CHOICE,
+    classify as _classify_type,
+    detect_options_from_text as _detect_options_from_text,
+    extract_options_from_text,
+)
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 from app.utils.trace.stage_tracer import StageTracer
 
@@ -523,10 +529,20 @@ def normalize_question(
     # the insertion order from the splitter.
 
     # === Goal 5: Cache lookup — 防止同一输入重复解析 ===
-    # 使用 raw_text hash 做预缓存键（stem 尚未提取）
-    _pre_cache_key = hashlib.sha256(raw_text.encode()).hexdigest() if raw_text else ""
+    # 缓存键涵盖所有影响输出的输入字段，防止不同 option_lines 命中相同缓存。
+    _cache_inputs = {
+        "raw_text": raw_text,
+        "option_lines": str(sorted((option_lines or {}).items())),
+        "is_frozen": raw_question.get("is_frozen", False),
+        "blank_option_groups": str(raw_question.get("blank_option_groups", [])),
+        "matched": str(matched or {}),
+        "source_info": str(source_info or {}),
+        "has_options": raw_question.get("has_options", False),
+    }
+    _cache_key_raw = "|".join(f"{k}={v}" for k, v in _cache_inputs.items())
+    _pre_cache_key = hashlib.sha256(_cache_key_raw.encode()).hexdigest() if raw_text else ""
     if _pre_cache_key:
-        _cached = parse_cache_get(raw_text, _pre_cache_key)
+        _cached = parse_cache_get(_cache_key_raw, _pre_cache_key)
         if _cached is not None:
             return _cached
 
@@ -574,10 +590,12 @@ def normalize_question(
     )
     _has_options_classified = classification["has_options"]
     _classify_reason = classification["has_options_reason"]
+    _classify_question_type = classification.get("question_type")
     logger.info(
-        "[CLASSIFY] q%s: has_options=%s reason=%s",
+        "[CLASSIFY] q%s: has_options=%s reason=%s%s",
         raw_question.get("number", "?"),
         _has_options_classified, _classify_reason,
+        f" type_override={_classify_question_type}" if _classify_question_type else "",
     )
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -587,8 +605,28 @@ def normalize_question(
     # No AI generation, no padding, no guessing. Options order from upstream
     # (freeze stage or splitter) is preserved as-is.
     if _has_options_classified:
-        options = tracer.run("options_extraction", "rule", "raw_ocr", "stem_extraction",
-                             _normalize_options, option_lines)
+        if blank_option_groups:
+            # Grouped options (multi_blank_choice) are stored in blank_option_groups,
+            # not top-level options. Skip fallback extraction to avoid re-extracting
+            # ABCD patterns from grouped option lines.
+            options = []
+        elif option_lines:
+            options = tracer.run("options_extraction", "rule", "raw_ocr", "stem_extraction",
+                                 _normalize_options, option_lines)
+        else:
+            # STEP 4 FALLBACK: classifier says has_options=True but option_lines is empty.
+            # Try to extract options directly from raw_text as last resort.
+            fallback_opts = extract_options_from_text(raw_text)
+            if fallback_opts:
+                logger.info(
+                    "[OPTIONS-FALLBACK] q%s: extracted %d options from raw_text "
+                    "(option_lines was empty, classifier said has_options=True)",
+                    raw_question.get("number", "?"), len(fallback_opts),
+                )
+                options = _normalize_options(fallback_opts)
+                tracer.mark_options_recovery("options_extraction", "fallback_from_raw_text", len(options), 0.8)
+            else:
+                options = []
     else:
         options = []
     logger.info("[OPTIONS-DETECT] options=%s", [o["key"] for o in options] if options else "none")
@@ -603,6 +641,14 @@ def normalize_question(
     explanation_raw = matched.get("explanation", "")
     section_type = raw_question.get("section_type")
     question_type = QT_MULTI_BLANK_CHOICE if blank_option_groups else _detect_question_type(stem, options, answer_raw, section_type=section_type)
+    # Layer 1 classifier override: when detect_options_from_text finds options,
+    # force question_type to single_choice (even if _detect_question_type returned subjective)
+    if _classify_question_type and question_type == QT_SUBJECTIVE:
+        question_type = _classify_question_type
+        logger.info(
+            "[CLASSIFY] q%s: question_type override: subjective→%s (detect_options_from_text=True)",
+            raw_question.get("number", "?"), _classify_question_type,
+        )
     tracer.add_note("question_type_detection", f"type={question_type}", "intermediate", "options_extraction")
     # 多空选择题除外：在题号标记（①、（1）、1) 等）前插入换行
     if question_type != QT_MULTI_BLANK_CHOICE:
@@ -863,7 +909,7 @@ def normalize_question(
 
     # === Goal 5: 写入缓存 ===
     if _pre_cache_key:
-        parse_cache_put(raw_text, _pre_cache_key, result)
+        parse_cache_put(_cache_key_raw, _pre_cache_key, result)
 
     return result
 
@@ -985,7 +1031,11 @@ def parse_cache_get(raw_text: str, raw_hash: str) -> dict | None:
     # 被动 TTL 过期：超 24h 的条目自动失效
     if time.time() - (entry.get("cached_at") or 0) > _MAX_CACHE_AGE:
         return None
-    return entry.get("result")  # type: ignore[return-value]
+    result = entry.get("result")
+    if result is None:
+        return None
+    # deepcopy prevents callers from mutating the cached result
+    return copy.deepcopy(result)  # type: ignore[return-value]
 
 
 def parse_cache_put(raw_text: str, raw_hash: str, result: dict) -> None:
