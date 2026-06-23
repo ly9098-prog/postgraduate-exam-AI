@@ -904,6 +904,64 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
 
 
 # ================================================================
+# SSE 轮询（增量 trace events + job 终态检测）
+# ================================================================
+
+
+async def poll_trace_events(
+    db: AsyncSession, job_id: str, since_seq: int = 0
+) -> list[dict]:
+    """返回 seq > since_seq 的增量 trace events。"""
+    rows = (
+        await db.execute(
+            select(BatchJobTraceEvent)
+            .where(
+                BatchJobTraceEvent.job_id == job_id,
+                BatchJobTraceEvent.seq > since_seq,
+            )
+            .order_by(BatchJobTraceEvent.seq)
+        )
+    ).scalars().all()
+    return [
+        {
+            "seq": e.seq,
+            "item_seq": e.item_seq or 0,
+            "step": e.step,
+            "status": e.status,
+            "message": e.message,
+            "duration_ms": e.duration_ms,
+            "created_at": e.created_at.isoformat(),
+        }
+        for e in rows
+    ]
+
+
+async def poll_job_summary(
+    db: AsyncSession, job_id: str,
+) -> dict | None:
+    """简化的 job 终态摘要（用于 SSE done event）。"""
+    job = await db.get(ImportBatchJob, job_id)
+    if job is None:
+        return None
+    rows = (
+        await db.execute(
+            select(ImportBatchJobItem)
+            .where(ImportBatchJobItem.job_id == job_id)
+        )
+    ).scalars().all()
+    total_questions = sum(item.question_count or 0 for item in rows)
+    succeeded = sum(1 for item in rows if item.status == "succeeded")
+    failed = sum(1 for item in rows if item.status == "failed")
+    return {
+        "status": job.status,
+        "total_questions": total_questions,
+        "error_message": job.error_message,
+        "succeeded": succeeded,
+        "failed": failed,
+    }
+
+
+# ================================================================
 # 重新解析
 # ================================================================
 

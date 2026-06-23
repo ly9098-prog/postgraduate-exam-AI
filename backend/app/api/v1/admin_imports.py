@@ -4,7 +4,10 @@ import logging
 import os
 import tempfile
 
+import json
+
 from fastapi import BackgroundTasks, APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
@@ -807,6 +810,39 @@ async def get_batch_image_job(
         return await batch_svc.get_batch_job_status(db, job_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+
+@router.get("/batch-image/{job_id}/stream")
+async def stream_batch_image_job(
+    job_id: str,
+    since_seq: int = Query(0, alias="lastEventId"),
+    _=Depends(require_permissions("import:read")),
+):
+    """SSE 流：增量推送 trace events，job 终态时发送 done event 后关闭。"""
+    from app.core.database import async_session
+    from app.features import batch_image_import_service as batch_svc
+
+    async def event_generator():
+        last_seq = since_seq
+        while True:
+            async with async_session() as db:
+                events = await batch_svc.poll_trace_events(
+                    db, job_id, since_seq=last_seq
+                )
+                for ev in events:
+                    last_seq = ev["seq"]
+                    yield f"id: {ev['seq']}\nevent: trace\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
+
+                summary = await batch_svc.poll_job_summary(db, job_id)
+                if summary and summary["status"] in ("completed", "failed"):
+                    yield f"event: done\ndata: {json.dumps(summary, ensure_ascii=False)}\n\n"
+                    return
+
+            if not events:
+                yield ": heartbeat\n\n"
+            await asyncio.sleep(0.3)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @router.post("/batch-image/items/{item_id}/reparse", response_model=BatchImageReparseResponse)
