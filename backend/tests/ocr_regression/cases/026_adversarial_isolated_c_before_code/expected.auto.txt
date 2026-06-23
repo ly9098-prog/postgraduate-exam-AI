@@ -1,0 +1,20 @@
+[normalized_full_text]
+下列顺序栈操作中，正确的是?
+
+```text
+
+void push(S, x) {
+    if (S.top != -1) {
+        S.data[++S.top] = x;
+    }
+}
+```
+
+A. 栈顶指针top初始化为-1
+B. 栈满条件为top==MAX-1
+C. 入栈操作使用前缀自增
+D. 出栈操作使用后缀自减
+[/normalized_full_text]
+
+[questions]
+[/questions]

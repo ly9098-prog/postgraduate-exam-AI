@@ -1,0 +1,109 @@
+[normalized_full_text]
+1. 设函数 f(x) = x^2,求 f'(x)。
+A. 2x
+B. x
+C. x^2
+D. 2
+答案:A
+解析:对 x^2 求导得 2x。
+
+2. 下列哪些是偶数?(多选)
+A. 2
+B. 3
+C. 4
+D. 5
+答案:A,C
+解析:2 和 4 是偶数。
+
+3. 判断:0 是自然数。
+A. 正确
+B. 错误
+答案:T
+解析:0 是自然数，这是数学中的规定。
+
+4. 填空题:x^2 的导数是 ___。
+答案:2x
+解析:根据幂函数求导法则。
+
+5. 请简述导数的定义。
+答案:函数在某点的变化率极限
+解析:导数定义为 f'(x) = lim(h0) [f(x+h) - f(x)] / h。
+[/normalized_full_text]
+
+[questions]
+---
+number: 1
+stem: 1. 设函数 f(x) = x^2,求 f'(x)。
+A. 2x
+B. x
+C. x^2
+D. 2
+答案:A
+解析:对 x^2 求导得 2x。
+type: single_choice
+options:
+  A: 2x
+  B: x
+  C: x^2
+  D: 2
+answer: A
+explanation: 对 x^2 求导得 2x。
+option_keys: ["A", "B", "C", "D"]
+
+---
+number: 2
+stem: 2. 下列哪些是偶数?(多选)
+A. 2
+B. 3
+C. 4
+D. 5
+答案:A,C
+解析:2 和 4 是偶数。
+type: single_choice
+options:
+  A: 2
+  B: 3
+  C: 4
+  D: 5
+answer: A,C
+explanation: 2 和 4 是偶数。
+option_keys: ["A", "B", "C", "D"]
+
+---
+number: 3
+stem: 3. 判断:0 是自然数。
+A. 正确
+B. 错误
+答案:T
+解析:0 是自然数，这是数学中的规定。
+type: true_false
+options:
+  A: 正确
+  B: 错误
+answer: T
+explanation: 0 是自然数，这是数学中的规定。
+option_keys: ["A", "B"]
+
+---
+number: 4
+stem: 4. 填空题:x^2 的导数是 ___。
+答案:2x
+解析:根据幂函数求导法则。
+type: subjective
+options:
+answer: 
+explanation: 根据幂函数求导法则。
+option_keys: []
+
+---
+number: 5
+stem: 5. 请简述导数的定义。
+答案:函数在某点的变化率极限
+解析:导数定义为 f'(x) = lim(h0) [f(x+h) - f(x)] / h。
+type: subjective
+options:
+answer: 
+explanation: 导数定义为 f'(x) = lim(h0) [f(x+h) - f(x)] / h。
+option_keys: []
+
+[/questions]

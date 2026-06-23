@@ -1,0 +1,51 @@
+[normalized_full_text]
+17. 执行如下代码:
+
+```text
+
+for (int i = 0; i < n; i++) {
+    if (a[i] > 0) {
+        sum += a[i];
+    }
+}
+```
+
+该代码的功能是:
+
+A. 计算所有元素和
+B. 计算负数和
+C. 计算正数元素之和
+D. 查找最大值
+[/normalized_full_text]
+
+[questions]
+---
+number: 17
+stem: 17. 执行如下代码:
+
+```text
+
+for (int i = 0; i < n; i++) {
+    if (a[i] > 0) {
+        sum += a[i];
+    }
+}
+```
+
+该代码的功能是:
+
+A. 计算所有元素和
+B. 计算负数和
+C. 计算正数元素之和
+D. 查找最大值
+type: single_choice
+options:
+  A: 计算所有元素和
+  B: 计算负数和
+  C: 计算正数元素之和
+  D: 查找最大值
+answer: 
+explanation: 
+option_keys: ["A", "B", "C", "D"]
+
+[/questions]

@@ -1,0 +1,27 @@
+[normalized_full_text]
+12.在线性表a[0],a[1],...,a[100]中，删除元素a[50]需要移动()个元素。
+A.0
+B.50
+C.51
+D.0或50
+[/normalized_full_text]
+
+[questions]
+---
+number: 12
+stem: 12.在线性表a[0],a[1],...,a[100]中，删除元素a[50]需要移动()个元素。
+A.0
+B.50
+C.51
+D.0或50
+type: single_choice
+options:
+  A: 0
+  B: 50
+  C: 51
+  D: 0或50
+answer: 
+explanation: 
+option_keys: ["A", "B", "C", "D"]
+
+[/questions]

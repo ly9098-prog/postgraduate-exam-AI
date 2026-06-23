@@ -201,6 +201,117 @@ def preprocess_ocr_noise(text: str) -> str:
     return text
 
 
+def _clean_text_regions(
+    text: str,
+    *,
+    enabled_strategies: TypedSet[str] | None = None,
+    extra_watermark_patterns: list | None = None,
+) -> str:
+    """P2: 区域化文本清洗（code regions 只读）。
+
+    从 normalize_ocr_text() 提取的独立函数，
+    可被 DAG overlay 和原有 pipeline 共用。
+    """
+    if not text:
+        return ""
+
+    def _strategy_on(name: str) -> bool:
+        return enabled_strategies is None or name in enabled_strategies
+
+    from app.core.immutable_regions import TextRegions
+
+    regions = TextRegions.from_fenced_text(text)
+
+    for i, region in enumerate(regions):
+        if region.type == "code":
+            continue
+
+        content = region.content
+
+        # ---- Step 1: 水印/页码/章标题/噪声行过滤 ----
+        content = _filter_lines(content, extra_watermark_patterns)
+
+        # ---- Step 2: 乱码字符移除 ----
+        content = _RE_GARBLED.sub("", content)
+        content = content.replace("\xa0", " ")
+        content = re.sub(
+            r"[^一-鿿　-〿＀-￯ -~Ͱ-Ͽ∀-⋿\n①-⑳⑴-⒇]", "", content
+        )
+
+        # ---- Step 3: OCR 箭头乱码修正 — 仅对纯文本区域 ----
+        content = _RE_POINTER_ARROW_GARBLED_KNOWN.sub(r"->", content)
+
+        # ---- Step 4: 中文断行合并 + 答案行格式修正 ----
+        content = re.sub(
+            r"([一-鿿，。；：！？])\n(?!((?:参考|正确)?\s*答案|解析|解答)\b)([一-鿿])",
+            r"\1\3", content,
+        )
+        content = re.sub(
+            r"(?<!\n)(?=(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:])",
+            "\n", content,
+        )
+        content = re.sub(r"\n((?:参考|正确)?)\n(答案\s*[：:])", r"\n\1\2", content)
+
+        # ---- Step 5: 换行合并 ----
+        if _strategy_on("space_newline"):
+            content = _merge_ocr_newlines(content)
+            content = re.sub(r"\n{3,}", "\n\n", content)
+
+        # ---- Step 6: 空格规范化 ----
+        if _strategy_on("space_newline"):
+            content = content.replace("　", " ")
+            content = content.replace("\xa0", " ")
+            content = re.sub(r" {2,}", " ", content)
+
+        # ---- Step 7: OCR 数字/字母混淆修正 ----
+        if _strategy_on("digit_letter"):
+            content = _fix_roman_numeral_duplicates(content)
+            lines = content.split("\n")
+            has_roman = _has_roman_subitem_list(content)
+            corrected: list[str] = []
+            for line in lines:
+                line = _fix_option_line(line)
+                line = _fix_question_number_line(line, has_roman)
+                line = _fix_option_roman_digit_confusion(line, has_roman)
+                corrected.append(line)
+            content = "\n".join(corrected)
+
+        # ---- Step 9: LaTeX 命令标记清理 ----
+        content = _RE_LATEX_CDOTS.sub("···", content)
+        content = _RE_LATEX_DOTS.sub("...", content)
+
+        # ---- Step 10: LaTeX 符号还原（编程上下文中的 OCR 误识） ----
+        content = _fix_latex_substitutions(content)
+
+        # ---- Step 11: 数学公式标准化 ----
+        if _strategy_on("math_formula"):
+            from app.services.formula_normalizer import fix_ocr_formula
+            content = fix_ocr_formula(content)
+            content = _fix_latex_substitutions(content)
+
+        # ---- Step 12: 标点符号规范化 ----
+        if _strategy_on("punctuation"):
+            content = _normalize_punctuation(content)
+
+        # ---- 行尾空格清理（保留结构换行，不 strip 整个 region） ----
+        clines = [l.rstrip() for l in content.split("\n")]
+        content = "\n".join(clines)
+
+        regions = regions.update_region(i, content)
+
+    return regions.to_text()
+
+
+def _apply_global_arrow_fixes(text: str) -> str:
+    """P3: 全局 OCR 箭头修复（全文本安全）。"""
+    if not text:
+        return text
+    if ">" in text or "<-" in text:
+        text = _RE_POINTER_ARROW_REVERSED.sub(r"\1->", text)
+        text = _RE_POINTER_ARROW.sub(r"\1->", text)
+    return text.strip()
+
+
 def normalize_ocr_text(
     text: str,
     *,
@@ -217,112 +328,43 @@ def normalize_ocr_text(
       - math_formula   — 数学公式标准化
       - punctuation    — 全角/半角标点规范化
     水印/页码/乱码/指针箭头/LaTeX/代码围栏始终启用，不受策略控制。
+
+    Pipeline 架构（P0-P4）：
+      P0 — 噪声预过滤（preprocess_ocr_noise）
+      P1 — 代码检测+围栏锁定（wrap_code_fences + repair_unclosed_fences）
+      P2 — 文本清洗（仅 text regions，code regions 只读）
+      P3 — OCR 纠错（箭头修复，全文本安全）
     """
     if not text:
         return ""
 
-    def _strategy_on(name: str) -> bool:
-        return enabled_strategies is None or name in enabled_strategies
-
-    # ---- Step -1 (P0): OCR 噪声预过滤 — 在 code detection 之前 ----
+    # ================================================================
+    # P0: 噪声预过滤 — 在 code detection 之前
+    # ================================================================
     text = preprocess_ocr_noise(text)
 
-    # ---- Step 0 (P1): 代码块围栏保护（必须最早，基于原始文本） ----
-    from app.features.code_detector import wrap_code_fences
+    # ================================================================
+    # P1: 代码块围栏保护（必须最早，基于原始文本）
+    # ================================================================
+    from app.features.code_detector import wrap_code_fences, repair_unclosed_fences
     text = wrap_code_fences(text, trace_id=trace_id)
+    text = repair_unclosed_fences(text, trace_id=trace_id)
 
-    # ---- Step 0.5 (P1 post-pass): 修复未闭合围栏 — 暂禁用（与现有代码完整性检测冲突） ----
-    # from app.features.code_detector import repair_unclosed_fences
-    # text = repair_unclosed_fences(text, trace_id=trace_id)
-
-    # ---- Step 1: 水印/页码/章标题/噪声行过滤（行级，需在合并前执行） ----
-    text = _filter_lines(text, extra_watermark_patterns)
-
-    # ---- Step 2: 乱码字符移除 ----
-    text = _RE_GARBLED.sub("", text)
-    text = text.replace("\xa0", " ")   # nbsp→space 必须在白名单前执行
-    # 追加 Unicode 范围白名单过滤（保留 CJK / ASCII / 希腊 / 数学符号 / 圈号数字）
-    text = re.sub(r"[^一-鿿　-〿＀-￯ -~Ͱ-Ͽ∀-⋿\n①-⑳⑴-⒇]", "", text)
-
-    # ---- Step 3: OCR 箭头乱码修正（已知 PaddleOCR 幻觉模式） ----
-    text = _RE_POINTER_ARROW_GARBLED_KNOWN.sub(r"->", text)
-
-    # ---- Step 4: 中文断行合并 + 答案行格式修正 ----
-    text = re.sub(
-        r"([一-鿿，。；：！？])\n(?!((?:参考|正确)?\s*答案|解析|解答)\b)([一-鿿])",
-        r"\1\3",
+    # ================================================================
+    # P2: 区域化文本清洗 — code regions 只读
+    # ================================================================
+    text = _clean_text_regions(
         text,
+        enabled_strategies=enabled_strategies,
+        extra_watermark_patterns=extra_watermark_patterns,
     )
-    text = re.sub(
-        r"(?<!\n)(?=(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:])",
-        "\n",
-        text,
-    )
-    text = re.sub(r"\n((?:参考|正确)?)\n(答案\s*[：:])", r"\n\1\2", text)
 
-    # ---- Step 5: 换行合并（上下文感知，保留结构行边界） ----
-    if _strategy_on("space_newline"):
-        text = _merge_ocr_newlines(text)
-        text = re.sub(r"\n{3,}", "\n\n", text)
+    # ================================================================
+    # P3: OCR 纠错 — 全文本安全（箭头修复等恢复性操作）
+    # ================================================================
+    text = _apply_global_arrow_fixes(text)
 
-    # ---- Step 6: 空格规范化 ----
-    if _strategy_on("space_newline"):
-        text = text.replace("　", " ")   # 全角空格 → 半角
-        text = text.replace("\xa0", " ")      # 非断空格 → 半角
-        parts = re.split(r"(```[\s\S]*?```)", text)
-        text = "".join(
-            part if part.startswith("```") else re.sub(r" {2,}", " ", part)
-            for part in parts
-        )
-
-    # ---- Step 7: OCR 数字/字母混淆修正 (fence-aware, P3) ----
-    if _strategy_on("digit_letter"):
-        text = _fix_roman_numeral_duplicates(text)
-        lines = text.split("\n")
-        has_roman = _has_roman_subitem_list(text)
-        corrected: list[str] = []
-        in_fence = False
-        for line in lines:
-            if line.startswith("```"):
-                in_fence = not in_fence
-                corrected.append(line)
-                continue
-            if in_fence:
-                corrected.append(line)
-                continue
-            line = _fix_option_line(line)
-            line = _fix_question_number_line(line, has_roman)
-            line = _fix_option_roman_digit_confusion(line, has_roman)
-            corrected.append(line)
-        text = "\n".join(corrected)
-
-    # ---- Step 8: C 指针箭头修复（3-pass） ----
-    if ">" in text or "<-" in text:
-        text = _RE_POINTER_ARROW_REVERSED.sub(r"\1->", text)
-        text = _RE_POINTER_ARROW.sub(r"\1->", text)
-
-    # ---- Step 9: LaTeX 命令标记清理 ----
-    text = _RE_LATEX_CDOTS.sub("···", text)
-    text = _RE_LATEX_DOTS.sub("...", text)
-
-    # ---- Step 10: LaTeX 符号还原（编程上下文中的 OCR 误识） ----
-    text = _fix_latex_substitutions(text)
-
-    # ---- Step 11: 数学公式标准化 ----
-    if _strategy_on("math_formula"):
-        from app.services.formula_normalizer import fix_ocr_formula
-        text = fix_ocr_formula(text)
-        # 数学公式标准化可能产生新 LaTeX（如 α→\alpha），重新清理
-        text = _fix_latex_substitutions(text)
-
-    # ---- Step 12: 标点符号规范化 ----
-    if _strategy_on("punctuation"):
-        text = _normalize_punctuation(text)
-
-    # ---- Step 13: 行尾空格清理，收尾 ----
-    lines = [line.rstrip() for line in text.split("\n")]
-    text = "\n".join(lines)
-    return text.strip()
+    return text
 
 
 # ---------------------------------------------------------------------------
