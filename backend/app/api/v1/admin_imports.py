@@ -840,7 +840,9 @@ async def stream_batch_image_job(
 
             if not events:
                 yield ": heartbeat\n\n"
-            await asyncio.sleep(0.3)
+                await asyncio.sleep(1.5)
+            else:
+                await asyncio.sleep(0.5)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
