@@ -1,16 +1,17 @@
 # 2240AI 系统架构
 
-> 基于代码真实状态，不含未来设计。最后更新：2026-05-24
+> 基于代码真实状态，不含未来设计。最后更新：2026-06-23
 
 ---
 
 ## 总体架构
 
 ```
-小程序 → Nginx → FastAPI 单体后端 → PostgreSQL
-                      ├─ AI 模块 (DeepSeek httpx)
-                      ├─ OCR (可选/PaddleOCR)
-                      └─ RAG (关键词检索)
+管理端 (Next.js) ─┐
+小程序 ───────────┼→ Nginx → FastAPI 单体后端 → PostgreSQL
+                  │              ├─ AI 模块 (DeepSeek httpx)
+                  │              ├─ OCR (可选/PaddleOCR)
+                  │              └─ RAG (关键词检索)
 ```
 
 ### 核心设计原则
@@ -34,7 +35,8 @@
 | OCR | PaddleOCR | 可选依赖(~500MB) |
 | PDF | PyMuPDF | 1.24.9 (fitz) |
 | Excel | openpyxl | 3.1.5 |
-| 前端 | 微信小程序 | 原生框架 |
+| 前端（学员） | 微信小程序 | 原生框架 |
+| 管理端 | Next.js 14 | Turbopack, shadcn/ui, TanStack Query |
 | 容器 | Docker Compose | 多阶段构建 |
 | 反向代理 | Nginx | 1.25-alpine, HTTPS |
 
@@ -53,6 +55,7 @@ postgraduate-ai/
 │   ├── features/     # 导入管线 (ImportTextNormalizer 等)
 │   ├── ai/           # DeepSeek 集成
 │   └── main.py
+├── admin-frontend/   # 管理端 (Next.js, shadcn/ui)
 ├── miniprogram/      # 微信小程序 (10页面)
 ├── deploy/           # 生产部署
 ├── docs/             # 文档 (按类别分目录)
@@ -76,6 +79,8 @@ postgraduate-ai/
 | 题库导入 | ✅ 完成 | imports.py, import_service.py |
 | AI 辅助导题 | ✅ 完成 | ai_import.py, ai_import_service.py |
 | OCR 扫描 PDF | ✅ 代码就绪 | ocr_service.py, pdf_classifier.py |
+| 批量图片导入 | ✅ 完成 | batch_image_import_service.py |
+| 批量图片 SSE 流式追踪 | ✅ 完成 | sse.ts, admin_imports.py |
 | 学习统计 | ✅ 完成 | stats.py, stats_service.py |
 | 答题行为记录 | ✅ 完成 | behavior.py, behavior_service.py |
 | 知识点标签 | ✅ 完成 | knowledge_points.py, knowledge_service.py |
@@ -108,4 +113,25 @@ PDF → pdf_classifier (逐页判断)
 
 ```
 上传 → 文本提取 → 结构分析 → 题目切分 → 答案匹配 → 标准化 → 暂存区 → 人工审核 → 题库
+```
+
+### 批量图片导入 + SSE 流式追踪
+
+```
+管理端选择图片 → 逐张上传 (FormData)
+  ├─ 上传完成 → 服务端创建 ImportBatchJob + ImportBatchJobItem (status=pending)
+  ├─ 返回 job_id → 管理端打开 SSE 连接
+  ├─ 后台 Worker (asyncio, 信号量限并发)
+  │   ├─ PaddleOCR → 文本清洗 → TXT 导入流水线
+  │   └─ 状态变更 + trace event 同 DB 事务写入
+  ├─ SSE 通道推送:
+  │   event: trace { seq, step, status, message }  → 前端追加到 task.traceEvents
+  │   event: done  { status, total_questions }     → 前端标记 task 完成
+  └─ 全部完成 → 前端显示汇总消息, 刷新待审核队列
+
+关键技术:
+  - State machine guard: 非法 status 迁移被阻断 (queued→running→completed/failed)
+  - 原子更新: item 状态 + trace event 同一 DB 事务, FOR UPDATE 行锁防并发
+  - Idempotency: (batch_import_id, image_import_id) 唯一约束防重复提交
+  - 自适应轮询: SSE 有事件 500ms, 空闲 1500ms (原固定 300ms)
 ```
