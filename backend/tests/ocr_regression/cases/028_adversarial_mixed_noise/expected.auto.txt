@@ -1,0 +1,55 @@
+[normalized_full_text]
+12. 下列二叉树遍历算法中，正确的是?
+
+```text
+
+void countLeaf(BiTree T, int &count) {
+    if (T != NULL) {
+        if (T->lchild == NULL && T->rchild == NULL) {
+            count++;
+        }
+        countLeaf(T->lchild, count);
+        countLeaf(T->rchild, count);
+    }
+}
+``` D
+
+A. 先序遍历
+B. 中序遍历
+C. 后序遍历
+D. 层序遍历
+[/normalized_full_text]
+
+[questions]
+---
+number: 12
+stem: 12. 下列二叉树遍历算法中，正确的是?
+
+```text
+
+void countLeaf(BiTree T, int &count) {
+    if (T != NULL) {
+        if (T->lchild == NULL && T->rchild == NULL) {
+            count++;
+        }
+        countLeaf(T->lchild, count);
+        countLeaf(T->rchild, count);
+    }
+}
+``` D
+
+A. 先序遍历
+B. 中序遍历
+C. 后序遍历
+D. 层序遍历
+type: single_choice
+options:
+  A: 先序遍历
+  B: 中序遍历
+  C: 后序遍历
+  D: 层序遍历
+answer: 
+explanation: 
+option_keys: ["A", "B", "C", "D"]
+
+[/questions]

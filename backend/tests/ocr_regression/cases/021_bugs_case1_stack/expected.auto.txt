@@ -1,0 +1,69 @@
+[normalized_full_text]
+15. 已知顺序栈定义如下:
+
+#define MAXSIZE 100
+```text
+typedef struct {
+    int data[MAXSIZE];
+    int top;
+} Stack;
+```
+
+执行如下代码:
+
+```text
+
+while (S.top != -1) {
+    printf("%d", S.data[S.top]);
+    S.top--;
+}
+```
+
+该代码实现的功能是:
+
+A. 入栈操作
+B. 出栈并输出栈中元素
+C. 判断栈满
+D. 初始化栈
+[/normalized_full_text]
+
+[questions]
+---
+number: 15
+stem: 15. 已知顺序栈定义如下:
+
+#define MAXSIZE 100
+```text
+typedef struct {
+    int data[MAXSIZE];
+    int top;
+} Stack;
+```
+
+执行如下代码:
+
+```text
+
+while (S.top != -1) {
+    printf("%d", S.data[S.top]);
+    S.top--;
+}
+```
+
+该代码实现的功能是:
+
+A. 入栈操作
+B. 出栈并输出栈中元素
+C. 判断栈满
+D. 初始化栈
+type: single_choice
+options:
+  A: 入栈操作
+  B: 出栈并输出栈中元素
+  C: 判断栈满
+  D: 初始化栈
+answer: 
+explanation: 
+option_keys: ["A", "B", "C", "D"]
+
+[/questions]

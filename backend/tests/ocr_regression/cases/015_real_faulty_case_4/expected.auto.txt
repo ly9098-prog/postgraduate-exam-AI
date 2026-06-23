@@ -1,0 +1,21 @@
+[normalized_full_text]
+07. 给定有n个元素的一维数组，建立一个有序单链表的最低时间复杂度是()。
+A. O(1)
+B. O(n)
+[/normalized_full_text]
+
+[questions]
+---
+number: 7
+stem: 07. 给定有n个元素的一维数组，建立一个有序单链表的最低时间复杂度是()。
+A. O(1)
+B. O(n)
+type: single_choice
+options:
+  A: O(1)
+  B: O(n)
+answer: 
+explanation: 
+option_keys: ["A", "B"]
+
+[/questions]

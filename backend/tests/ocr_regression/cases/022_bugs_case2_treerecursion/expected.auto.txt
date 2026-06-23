@@ -1,0 +1,59 @@
+[normalized_full_text]
+19. 下列代码用于统计叶子节点:
+
+```text
+
+void countLeaf(BiTree T) {
+    if (T == NULL) return;
+
+    if (T->lchild == NULL && T->rchild == NULL)
+        count++;
+
+    countLeaf(T->lchild);
+    countLeaf(T->rchild);
+}
+```
+
+该代码功能是:
+
+A. 统计所有节点
+B. 统计叶子节点数量
+C. 删除叶子节点
+D. 层序遍历
+[/normalized_full_text]
+
+[questions]
+---
+number: 19
+stem: 19. 下列代码用于统计叶子节点:
+
+```text
+
+void countLeaf(BiTree T) {
+    if (T == NULL) return;
+
+    if (T->lchild == NULL && T->rchild == NULL)
+        count++;
+
+    countLeaf(T->lchild);
+    countLeaf(T->rchild);
+}
+```
+
+该代码功能是:
+
+A. 统计所有节点
+B. 统计叶子节点数量
+C. 删除叶子节点
+D. 层序遍历
+type: single_choice
+options:
+  A: 统计所有节点
+  B: 统计叶子节点数量
+  C: 删除叶子节点
+  D: 层序遍历
+answer: 
+explanation: 
+option_keys: ["A", "B", "C", "D"]
+
+[/questions]

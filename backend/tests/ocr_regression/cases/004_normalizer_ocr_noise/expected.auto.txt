@@ -1,0 +1,96 @@
+[normalized_full_text]
+1. 0设函数 f(x) = x + 1,则 f(l) 的值为?
+A.O
+B.1 6.2
+D.3
+正确答案:6
+解析:f(l) = l + 1 = 2,故选 6。
+
+2.0 已知极限 lim(xS) (x - 2S) / (x - S) = ?
+A.S^{8}.10
+C.1S
+D.20
+答案:8
+
+3.I 下列哪个算法的时间复杂度为 O(n log n)?
+[E] 冒泡排序 [F] 快速排序 [G] 插入排序
+
+4. 以下关于操作系统的描述哪个是正确的?
+A. 分时操作系统允许多用户交互
+B. 实时操作系统对响应时间无要求
+C. 批处理系统允许用户干预
+正确答案:A
+
+5.0 设矩阵 A = [[l, 0], [0, I]],则|A| = ? 解:|A| = l S = 5
+[/normalized_full_text]
+
+[questions]
+---
+number: 1
+stem: 1. 0设函数 f(x) = x + 1,则 f(l) 的值为?
+A.O
+B.1 6.2
+D.3
+正确答案:6
+解析:f(l) = l + 1 = 2,故选 6。
+type: single_choice
+options:
+  A: O
+  B: 1 6.2
+  D: 3
+answer: B
+explanation: f(l) = l + 1 = 2,故选 6。
+option_keys: ["A", "B", "D"]
+
+---
+number: 2
+stem: 2.0 已知极限 lim(xS) (x - 2S) / (x - S) = ?
+A.S^{8}.10
+C.1S
+D.20
+答案:8
+type: single_choice
+options:
+  A: S^{8}.10
+  C: 1S
+  D: 20
+answer: B
+explanation: 
+option_keys: ["A", "C", "D"]
+
+---
+number: 3
+stem: 3.I 下列哪个算法的时间复杂度为 O(n log n)?
+[E] 冒泡排序 [F] 快速排序 [G] 插入排序
+type: subjective
+options:
+answer: 
+explanation: 
+option_keys: []
+
+---
+number: 4
+stem: 4. 以下关于操作系统的描述哪个是正确的?
+A. 分时操作系统允许多用户交互
+B. 实时操作系统对响应时间无要求
+C. 批处理系统允许用户干预
+正确答案:A
+type: single_choice
+options:
+  A: 分时操作系统允许多用户交互
+  B: 实时操作系统对响应时间无要求
+  C: 批处理系统允许用户干预
+answer: A
+explanation: 
+option_keys: ["A", "B", "C"]
+
+---
+number: 5
+stem: 5.0 设矩阵 A = [[l, 0], [0, I]],则|A| = ? 解:|A| = l S = 5
+type: subjective
+options:
+answer: 
+explanation: 
+option_keys: []
+
+[/questions]

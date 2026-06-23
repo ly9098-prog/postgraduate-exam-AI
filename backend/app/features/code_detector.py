@@ -226,6 +226,16 @@ def _fence_code_blocks(text: str) -> tuple[str, CodeDetectStats]:
             while block_start > 0 and not lines[block_start - 1].strip():
                 block_start -= 1
 
+            # 向后扩展：将代码块前的 # 预处理指令和 typedef 行纳入 fence
+            while block_start > 0:
+                prev = lines[block_start - 1].strip()
+                if prev.startswith("#") and not _RE_CJK.search(prev):
+                    block_start -= 1
+                elif prev.startswith("typedef"):
+                    block_start -= 1
+                else:
+                    break
+
             block_len = i - block_start
 
             if block_len >= 2:
@@ -280,6 +290,9 @@ def _score_line(line: str) -> int:
     # C++ 访问修饰符 / switch case 标签 / goto 标签（冒号结尾 + 关键词上下文）
     if _RE_COLON_END.search(stripped) and not _RE_CJK.search(stripped):
         struct_score += 1
+    # C 预处理器指令（#define, #include, #ifdef 等） — 仅当无 CJK 时免误判
+    if stripped.startswith("#") and not _RE_CJK.search(stripped):
+        struct_score += 1
 
     # ── 关键词信号 ──
     keyword_score = 0
@@ -317,12 +330,55 @@ def _score_line(line: str) -> int:
 # P1 post-pass: 未闭合围栏修复
 # ============================================================
 
+# 最大 fence 扩展行数 — 防止吞噬选项行/噪声
+_FENCE_EXTENSION_LIMIT = 15
+
+
+def _is_valid_fence_extension(line: str) -> bool:
+    """判断是否可以将 line 纳入 fence 扩展。
+
+    保守策略：仅当行有明确代码信号时才允许扩展。
+    不满足则终止扩展（防止吞入选项行 A.、噪声乱码等）。
+    """
+    stripped = line.strip()
+    if not stripped:
+        return False  # 空行不扩展
+
+    # 强信号：大括号（最常见的 fence 未闭合场景 — 缺少闭合 }）
+    if "{" in stripped or "}" in stripped:
+        return True
+
+    # 行首缩进 ≥2 空格（代码延续的典型特征）
+    if re.match(r"^[ ]{2,}\S", line):
+        return True
+
+    # 行尾分号（语句继续）
+    if re.search(r";\s*$", stripped):
+        return True
+
+    # 预处理器 / typedef 延续
+    if re.match(r"^\s*(?:#|typedef|using|namespace)", stripped):
+        return True
+
+    # C 风格运算符承接
+    if re.search(r"^(?:&&|\|\||->|\.)", stripped.lstrip()):
+        return True
+
+    # 代码关键词行（return/break/continue/case/default）
+    if re.match(r"^\s*(?:return|break|continue|case\s|default\s*:)", stripped):
+        return True
+
+    return False
+
 
 def repair_unclosed_fences(text: str, *, trace_id: str = "") -> str:
     """P1 post-pass: 修复未闭合代码围栏。
 
     检查每个 fenced block 的 {} 平衡。如果 { 多于 }，
-    自动扩展 fence 边界以包含后续行，直到括号平衡或到达非代码边界。
+    谨慎扩展 fence 边界以包含后续行，直到括号平衡或遇到非代码行。
+
+    扩展是保守的：仅当后续行有代码信号（}、{、缩进、分号等）时
+    才纳入，且最多扩展 _FENCE_EXTENSION_LIMIT 行，避免吞入选项/噪声。
 
     Args:
         text: 经过 wrap_code_fences() 处理后的文本。
@@ -357,6 +413,10 @@ def repair_unclosed_fences(text: str, *, trace_id: str = "") -> str:
                     lines = next_part.split("\n")
                     consumed = 0
                     for k, line in enumerate(lines):
+                        if not _is_valid_fence_extension(line):
+                            break  # 非代码行，停止扩展
+                        if consumed >= _FENCE_EXTENSION_LIMIT:
+                            break  # 达到上限，防止过度扩展
                         merged += "\n" + line
                         consumed += 1
                         deficit -= line.count("{")
@@ -364,14 +424,17 @@ def repair_unclosed_fences(text: str, *, trace_id: str = "") -> str:
                         if deficit <= 0:
                             break
 
-                    merged += "\n```"
-                    remaining = lines[consumed:]
-                    if remaining and any(l.strip() for l in remaining):
-                        result.append(merged)
-                        parts[i + 1] = "\n".join(remaining)
+                    if consumed > 0:
+                        merged += "\n```"
+                        remaining = lines[consumed:]
+                        if remaining and any(l.strip() for l in remaining):
+                            result.append(merged)
+                            parts[i + 1] = "\n".join(remaining)
+                        else:
+                            result.append(merged)
+                            i += 1
                     else:
-                        result.append(merged)
-                        i += 1
+                        result.append(part)
                 else:
                     result.append(part)
             else:
