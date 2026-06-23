@@ -560,6 +560,7 @@ class TestImportPipelineSplit:
             "normalized_block_count": 2,
             "text_block_count": 2,
             "raw_question_count": 0,
+            "split_mode": "standard",
             "book_prose_downgraded": 0,
             "layout_filter": {
                 "enabled": False,
@@ -854,6 +855,7 @@ class TestImportPipelineSplit:
             "normalized_block_count": 1,
             "text_block_count": 1,
             "raw_question_count": 1,
+            "split_mode": "standard",
             "book_prose_downgraded": 0,
             "layout_filter": {
                 "enabled": False,
@@ -1050,6 +1052,21 @@ class TestImportPipelineRun:
             "normalized_blocks": _make_normalized_blocks(3),
             "ocr_correction_diagnostics": {"stats": {}, "corrections": [], "skipped_reason": None},
         })
+        pipeline._run_layout_reconstruction = MagicMock(return_value={
+            "normalized_blocks": _make_normalized_blocks(3),
+            "layout_result": {
+                "layout_blocks": _make_normalized_blocks(3),
+                "option_groups": {},
+                "layout_confidence": 0.95,
+                "option_detection_score": 0.9,
+                "option_detection_failed": False,
+                "reading_order": [],
+                "warnings": [],
+            },
+        })
+        pipeline._run_layout_router = MagicMock(return_value={
+            "split_mode": "standard",
+        })
         pipeline._run_split = MagicMock(return_value={
             "raw_questions": _make_raw_questions(3),
             "split_count": 3,
@@ -1110,7 +1127,7 @@ class TestImportPipelineRun:
 
         # Verify stage ordering
         stage_names = list(result["stages"].keys())
-        assert stage_names == ["extract", "normalize_text", "ocr_correction", "analyze_structure", "classify_pages", "split", "match", "normalize_schema", "batch_validation", "batch_dedup", "repair", "ai_validation", "similarity_match", "math_detect", "table_detect", "review"]
+        assert stage_names == ["extract", "normalize_text", "ocr_correction", "layout_reconstruction", "layout_router", "analyze_structure", "classify_pages", "split", "match", "normalize_schema", "batch_validation", "batch_dedup", "repair", "ai_validation", "similarity_match", "math_detect", "table_detect", "review"]
         for s in result["stages"].values():
             assert s["status"] == "completed"
 

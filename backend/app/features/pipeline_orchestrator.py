@@ -62,6 +62,23 @@ from app.features.pipeline_stages._helpers import _log_multi_blank_stage
 logger = logging.getLogger(__name__)
 
 
+def _run_coro_in_loop(coro) -> Any:
+    """安全地运行协程，兼容已有或新建事件循环。
+
+    在同步方法中调用异步代码时使用。优先尝试 ``asyncio.run()``，
+    RuntimeError（已有事件循环）时回退到 ``new_event_loop``。
+    与 ``ocr_service._call_ocr_api`` 的使用模式一致。
+    """
+    try:
+        return asyncio.run(coro)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+
 def _is_book_import_mode(import_mode) -> bool:
     if isinstance(import_mode, ImportMode):
         return import_mode == ImportMode.BOOK
@@ -1016,6 +1033,14 @@ def _update_stage_metrics(stage, data: dict, result: dict) -> None:
     elif name == "similarity_match":
         # pass-through stage, no meaningful counts
         pass
+    # ── layout_reconstruction ──
+    elif name == "layout_reconstruction":
+        stage.input_count = len(data.get("normalized_blocks") or [])
+        stage.output_count = 1  # single layout_result dict
+    # ── layout_router ──
+    elif name == "layout_router":
+        stage.input_count = 1  # reads layout_result
+        stage.output_count = 1  # produces split_mode
     # ── math_detect ──
     elif name == "math_detect":
         stage.input_count = len(data.get("questions") or [])
@@ -1336,6 +1361,8 @@ class PipelineStage:
             "extract": "ocr",
             "normalize_text": "parse",
             "ocr_correction": "ai_correct",
+            "layout_reconstruction": "parse",
+            "layout_router": "parse",
             "analyze_structure": "parse",
             "classify_pages": "parse",
             "split": "parse",
@@ -1496,6 +1523,7 @@ def _restore_from_artifacts(
             data["subject"] = saved.get("subject", data.get("subject"))
             # Mark preceding stages as completed
             preceding = {"extract", "normalize_text", "ocr_correction",
+                         "layout_reconstruction", "layout_router",
                          "analyze_structure", "classify_pages", "split"}
             for s in preceding:
                 if s not in completed_stages:
@@ -1516,16 +1544,19 @@ def _restore_from_artifacts(
             # Stages AFTER the restored point still run normally.
             if stage_name == "normalize_schema":
                 preceding = {"extract", "normalize_text", "ocr_correction",
+                             "layout_reconstruction", "layout_router",
                              "analyze_structure", "classify_pages", "split",
                              "match", "normalize_schema"}
             elif stage_name == "repair":
                 preceding = {"extract", "normalize_text", "ocr_correction",
+                             "layout_reconstruction", "layout_router",
                              "analyze_structure", "classify_pages", "split",
                              "match", "normalize_schema",
                              "batch_validation", "batch_dedup",
                              "repair", "ai_validation", "similarity_match"}
             elif stage_name == "math_detect":
                 preceding = {"extract", "normalize_text", "ocr_correction",
+                             "layout_reconstruction", "layout_router",
                              "analyze_structure", "classify_pages", "split",
                              "match", "normalize_schema",
                              "batch_validation", "batch_dedup",
@@ -1533,6 +1564,7 @@ def _restore_from_artifacts(
                              "math_detect"}
             else:  # table_detect
                 preceding = {"extract", "normalize_text", "ocr_correction",
+                             "layout_reconstruction", "layout_router",
                              "analyze_structure", "classify_pages", "split",
                              "match", "normalize_schema",
                              "batch_validation", "batch_dedup",
@@ -1594,6 +1626,8 @@ class ImportPipeline:
         stage_specs.append(("normalize_text", self._run_normalize_text))
         if self.options.get("enable_ocr_correction", True):
             stage_specs.append(("ocr_correction", self._run_ocr_correction))
+        stage_specs.append(("layout_reconstruction", self._run_layout_reconstruction))
+        stage_specs.append(("layout_router", self._run_layout_router))
         stage_specs.extend([
             ("analyze_structure", self._run_analyze_structure),
             ("classify_pages", self._run_classify_pages),
@@ -1879,6 +1913,186 @@ class ImportPipeline:
             warnings.append(f"{empty_count} blocks empty after normalization")
 
         return {"normalized_blocks": normalized_blocks, "warnings": warnings}
+
+    def _run_layout_reconstruction(
+        self,
+        normalized_blocks: list[dict],
+        **_kw,
+    ) -> dict:
+        """Stage 1.7: spatial layout reconstruction before structure analysis.
+
+        Uses OCR bbox + geometry heuristics to:
+        - Detect columns (single/double-column pages)
+        - Cluster option blocks (A./B./C./D. patterns)
+        - Reconstruct reading order
+        - Compute layout confidence score
+
+        Pure rule-based — no LLM dependency.
+        """
+        from app.features.pipeline_stages.layout_stage import (
+            run_layout_reconstruction_stage,
+        )
+
+        result = run_layout_reconstruction_stage(normalized_blocks=normalized_blocks)
+
+        warnings: list[str] = list(result.get("warnings", []))
+        layout_result = result.get("layout_result", {})
+
+        # Enrich normalized_blocks with layout_info (done in-place by reconstruct_layout)
+        enriched_blocks = result.get("layout_blocks", normalized_blocks)
+        layout_confidence = result.get("layout_confidence", 1.0)
+
+        page_layouts: dict = layout_result.get("page_layouts", {})
+        multi_col_count = sum(
+            1 for pl in page_layouts.values()
+            if getattr(pl, "is_multicolumn", False)
+        ) if isinstance(page_layouts, dict) else 0
+
+        logger.info(
+            "Layout reconstruction: confidence=%.2f, "
+            "multicolumn=%d pages, option_groups=%d pages, "
+            "warnings=%d",
+            layout_confidence,
+            multi_col_count,
+            len(layout_result.get("option_groups", {})),
+            len(warnings),
+        )
+
+        return {
+            "normalized_blocks": enriched_blocks,
+            "layout_result": layout_result,
+            "warnings": warnings,
+        }
+
+    def _run_layout_router(self, layout_result: dict, **_kw) -> dict:
+        """Stage 1.8: 结构感知路由决策。
+
+        根据 layout_reconstruction 的质量评估结果，决定下游 split 模式：
+            standard        — 结构清晰，标准 split + layout 注入
+            layout_enhanced — 结构不稳定，layout+OCR 融合 split
+            vl_rebuild      — 结构失败，触发 PaddleOCR-VL 重建
+
+        纯规则决定，不依赖 LLM。
+        routing 只由本方法决定，下游不重复评估。
+        """
+        from app.features.layout_router import evaluate_routing
+
+        split_mode = evaluate_routing(layout_result)
+
+        logger.info(
+            "Layout router: mode=%s (confidence=%.2f, "
+            "opt_score=%.2f, opt_failed=%s)",
+            split_mode,
+            layout_result.get("layout_confidence", 1.0),
+            layout_result.get("option_detection_score", 1.0),
+            layout_result.get("option_detection_failed", False),
+        )
+
+        return {"split_mode": split_mode}
+
+    def _run_vl_rebuild_blocks(
+        self,
+        file_path: str,
+        original_blocks: list[dict],
+        vl_config: dict | None = None,
+    ) -> list[dict] | None:
+        """用 PaddleOCR-VL 重建 blocks（VL_REBUILD 路径）。
+
+        当 layout 结构失败时，直接调用 PaddleOCR-VL 从原始 PDF 页面
+        重新识别文字，输出与 normalized_blocks 兼容的格式。
+
+        Args:
+            file_path: PDF 文件路径。
+            original_blocks: 当前 normalized_blocks（用于获取 page_width/page_height）。
+            vl_config: PaddleOCR-VL 配置（含 api_key, api_base_url, model_name）。
+
+        Returns:
+            list[dict] 重建后的 blocks，或 None（不可用/失败）。
+        """
+        if not vl_config:
+            logger.warning("VL_REBUILD: no vision config available")
+            return None
+
+        try:
+            import fitz
+            doc = fitz.open(file_path, filetype="pdf")
+        except Exception as exc:
+            logger.warning("VL_REBUILD: failed to open PDF for re-render: %s", exc)
+            return None
+
+        try:
+            api_token = vl_config.get("api_key") or vl_config.get("paddleocr_vl_api_token") or ""
+            base_url = vl_config.get("api_base_url") or "https://paddleocr.aistudio-app.com"
+            model = vl_config.get("model_name") or "PaddleOCR-VL-1.6"
+
+            if not api_token:
+                logger.warning("VL_REBUILD: PaddleOCR-VL not configured")
+                return None
+
+            from app.features.ocr_vl.paddleocr_vl_adapter import PaddleOCRVLAdapter
+
+            adapter = PaddleOCRVLAdapter(
+                api_token=api_token,
+                base_url=base_url,
+                model=model,
+            )
+
+            new_blocks: list[dict] = []
+            total_pages = len(doc)
+
+            # Derive page dimensions from original_blocks
+            page_dim: dict[int, tuple[int, int]] = {}
+            for b in original_blocks:
+                p = b.get("page") or b.get("page_index") or 0
+                pw = b.get("page_width") or 800
+                ph = b.get("page_height") or 1200
+                if p not in page_dim:
+                    page_dim[p] = (pw, ph)
+
+            for page_num in range(total_pages):
+                page_idx = page_num + 1
+                pix = doc[page_num].get_pixmap(dpi=150)
+                png_bytes = pix.tobytes("png")
+                pw, ph = page_dim.get(page_idx, (pix.width, pix.height))
+
+                ctx = {"page_num": page_idx, "filename": f"page_{page_idx}.png"}
+                result = _run_coro_in_loop(
+                    adapter.fix(image=png_bytes, ocr_text="", context=ctx)
+                )
+
+                if result.fixed_text:
+                    new_blocks.append({
+                        "page": page_idx,
+                        "page_index": page_idx,
+                        "block_index": len(new_blocks),
+                        "text": result.fixed_text.strip(),
+                        "normalized_text": result.fixed_text.strip(),
+                        "boxes": [],
+                        "page_width": pw,
+                        "page_height": ph,
+                        "source": "vl_rebuild",
+                        "has_boxes": False,
+                    })
+                    logger.info(
+                        "VL_REBUILD page %d: text_len=%d",
+                        page_idx, len(result.fixed_text),
+                    )
+
+            if not new_blocks:
+                logger.warning("VL_REBUILD: no blocks produced")
+                return None
+
+            logger.info(
+                "VL_REBUILD: %d pages → %d blocks",
+                total_pages, len(new_blocks),
+            )
+            return new_blocks
+
+        except Exception as exc:
+            logger.warning("VL_REBUILD failed: %s", exc)
+            return None
+        finally:
+            doc.close()
 
     async def _load_ocr_strategies(self, db) -> set[str] | None:
         """从 DB 读取 ocr_strategy_* 配置，返回启用的策略名称集合。
@@ -2395,11 +2609,50 @@ class ImportPipeline:
             except Exception as exc:
                 logger.warning("book layout filter failed: %s", exc)
 
+        layout_result = _kw.get("layout_result") or {}
+        split_mode = _kw.get("split_mode", "standard")
+        warnings: list[str] = []
+
+        # ── VL_REBUILD: 结构失败，尝试用 PaddleOCR-VL 重建 blocks ──
+        if split_mode == "vl_rebuild":
+            file_path = _kw.get("file_path")
+            vl_config = _kw.get("vision_config")
+            if file_path and vl_config and str(_kw.get("source_type") or "").lower() == "pdf":
+                logger.info(
+                    "VL_REBUILD: restructuring blocks via PaddleOCR-VL "
+                    "(confidence=%.2f, opt_failed=%s)",
+                    layout_result.get("layout_confidence", 1.0),
+                    layout_result.get("option_detection_failed", False),
+                )
+                rebuilt = self._run_vl_rebuild_blocks(file_path, normalized_blocks, vl_config)
+                if rebuilt:
+                    split_blocks = rebuilt
+                    # 重建后 layout 不再适用，重置为标准模式
+                    split_mode = "standard"
+                    layout_result = {}
+                    warnings.append(
+                        f"vl_rebuild: restructured {len(rebuilt)} blocks via PaddleOCR-VL"
+                    )
+                else:
+                    split_mode = "layout_enhanced"
+                    warnings.append(
+                        "vl_rebuild: PaddleOCR-VL restructuring unavailable, "
+                        "falling back to layout_enhanced"
+                    )
+            else:
+                split_mode = "layout_enhanced"
+                warnings.append(
+                    "vl_rebuild: PDF/page_images unavailable, "
+                    "falling back to layout_enhanced"
+                )
+
         raw_questions = split_questions(
             split_blocks,
             structure=structure,
             gap_tolerance=gap_tolerance,
             import_mode=import_mode_str,
+            layout_result=layout_result if layout_result.get("option_groups") else None,
+            split_mode=split_mode,
         )
 
         text_blocks = [
@@ -2410,6 +2663,7 @@ class ImportPipeline:
             "normalized_block_count": len(normalized_blocks),
             "text_block_count": len(text_blocks),
             "raw_question_count": len(raw_questions),
+            "split_mode": split_mode,
             "book_prose_downgraded": sum(
                 1 for q in raw_questions
                 if "book_pdf_prose_like" in (q.get("risk_flags") or [])
@@ -2418,8 +2672,6 @@ class ImportPipeline:
             "raw_questions_preview": _build_raw_questions_preview(raw_questions),
             "failure_reason": None,
         }
-
-        warnings: list[str] = []
 
         def _filter_book_pdf_prose() -> None:
             nonlocal raw_questions
@@ -3060,6 +3312,8 @@ class ImportPipeline:
             "page_image_refs": page_image_refs,
             "raw_blocks": [],
             "normalized_blocks": [],
+            "layout_result": {},
+            "split_mode": "standard",
             "raw_questions": [],
             "matched": [],
             "unmatched": [],
@@ -3162,10 +3416,13 @@ class ImportPipeline:
                     data.pop("raw_blocks", None)
                 elif name == "ocr_correction":
                     # OCR correction stage finished, release original bytes
-                    # and rendered page images (PaddleOCR-VL was last consumer)
+                    # and rendered page images (PaddleOCR-VL was last consumer).
+                    # Keep file_path for potential VL_REBUILD in split stage.
                     data.pop("file_content", None)
-                    data.pop("file_path", None)
                     data.pop("page_images", None)
+                elif name == "split":
+                    # split 后释放 file_path（VL_REBUILD 不再需要）
+                    data.pop("file_path", None)
                 elif name == "match":
                     # match 后无人再读 normalized_blocks，count 已在写入时缓存
                     data.pop("normalized_blocks", None)
