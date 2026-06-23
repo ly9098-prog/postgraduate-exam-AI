@@ -287,6 +287,11 @@ def _slim_ocr_diagnostics(diag: dict) -> dict:
     return diag
 
 
+def _slim_value(value: Any) -> Any:
+    """Pass through non-None values; avoid polluting diagnostics with None."""
+    return value if value is not None else {}
+
+
 def _summarize_ocr_diffs(corrections: list[dict]) -> dict:
     """Summarize OCR correction diffs for diagnostics stage_diffs."""
     corrected = [c for c in corrections if c.get("corrected")]
@@ -931,6 +936,10 @@ def _build_diagnostics(data: dict, stages: dict | None = None) -> dict:
         "review_commit": data.get("review_commit"),
         # P3-7: shared token budget snapshot for monitoring
         "token_usage": _get_token_usage_snapshot_safe(),
+        # ── 观察：split quality evaluation ──
+        "split_quality": _slim_value(data.get("split_quality")),
+        # ── 观察：per-run routing metrics ──
+        "routing_metrics": _slim_value(data.get("routing_metrics")),
         # P6-2: per-stage performance profile
         "performance_profile": _build_performance_profile(
             {n: s.to_dict() for n, s in stages.items()},
@@ -1208,6 +1217,24 @@ def _build_performance_profile(stages: dict[str, Any], data: dict) -> dict:
         }
 
     return profile
+
+
+def _log_routing_stability(
+    pipeline_id: str, routing_metrics: dict, split_quality: dict | None
+) -> None:
+    """Log routing stability record for production monitoring.
+
+    格式固化，可用于后续监控系统稳定性分析。
+    """
+    logger.info(
+        "routing_stability pipeline_id=%s layout_confidence=%.3f route=%s "
+        "final_split_quality_score=%.3f vl_triggered=%s",
+        pipeline_id,
+        routing_metrics.get("layout_confidence", 0.0),
+        routing_metrics.get("split_mode", "unknown"),
+        (split_quality or {}).get("split_quality_score", 0.0),
+        routing_metrics.get("split_mode") == "vl_rebuild",
+    )
 
 
 def _slim_diagnostics_arrays(diagnostics: dict) -> dict:
@@ -1964,7 +1991,7 @@ class ImportPipeline:
             "warnings": warnings,
         }
 
-    def _run_layout_router(self, layout_result: dict, **_kw) -> dict:
+    def _run_layout_router(self, layout_result: dict, strategy: dict | None = None, options: dict | None = None, **_kw) -> dict:
         """Stage 1.8: 结构感知路由决策。
 
         根据 layout_reconstruction 的质量评估结果，决定下游 split 模式：
@@ -1974,10 +2001,27 @@ class ImportPipeline:
 
         纯规则决定，不依赖 LLM。
         routing 只由本方法决定，下游不重复评估。
+
+        strategy / options 中的 force_split_mode 可覆盖路由决策（仅用于 A/B 实验基线）。
         """
         from app.features.layout_router import evaluate_routing
 
-        split_mode = evaluate_routing(layout_result)
+        # Allow override for A/B experiment baseline
+        force_mode = (
+            (strategy or {}).get("force_split_mode")
+            or (options or {}).get("strategy", {}).get("force_split_mode")
+        )
+        if force_mode:
+            split_mode = force_mode
+            logger.info(
+                "Layout router: FORCED mode=%s (strategy override, "
+                "original confidence=%.2f, opt_score=%.2f)",
+                split_mode,
+                layout_result.get("layout_confidence", 1.0),
+                layout_result.get("option_detection_score", 1.0),
+            )
+        else:
+            split_mode = evaluate_routing(layout_result)
 
         logger.info(
             "Layout router: mode=%s (confidence=%.2f, "
@@ -3423,6 +3467,23 @@ class ImportPipeline:
                 elif name == "split":
                     # split 后释放 file_path（VL_REBUILD 不再需要）
                     data.pop("file_path", None)
+                    # ── 观察：split 质量评估 ──
+                    try:
+                        from app.evaluation.split_quality import evaluate_split_quality
+                        sq = evaluate_split_quality(
+                            result.get("raw_questions", []),
+                            result.get("split_diagnostics"),
+                            data.get("layout_result"),
+                        )
+                        data["split_quality"] = sq
+                    except Exception as exc:
+                        logger.warning("split_quality evaluation failed: %s", exc)
+                    # ── 观察：per-run routing metrics ──
+                    try:
+                        from app.evaluation.routing_metrics import build_routing_metrics
+                        data["routing_metrics"] = build_routing_metrics(data)
+                    except Exception as exc:
+                        logger.warning("routing_metrics build failed: %s", exc)
                 elif name == "match":
                     # match 后无人再读 normalized_blocks，count 已在写入时缓存
                     data.pop("normalized_blocks", None)
@@ -3502,6 +3563,17 @@ class ImportPipeline:
         perf_profile = diagnostics.get("performance_profile", {})
         if perf_profile and "_summary" in perf_profile:
             quality_report["performance_summary"] = perf_profile["_summary"]
+        # ── 观察：routing metrics → quality report ──
+        routing_metrics = data.get("routing_metrics")
+        if routing_metrics:
+            quality_report["routing_metrics"] = routing_metrics
+        split_quality = data.get("split_quality")
+        if split_quality:
+            quality_report["split_quality_evaluation"] = split_quality
+
+        # ── 生产稳定性日志：每次 pipeline 完成记录 routing 决策 ──
+        if routing_metrics:
+            _log_routing_stability(self.pipeline_id, routing_metrics, split_quality)
         # P4-2: artifact list for resume diagnostics
         artifacts_list = _list_artifacts(self.pipeline_id)
 
