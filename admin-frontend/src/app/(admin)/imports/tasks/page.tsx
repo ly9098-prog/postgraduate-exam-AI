@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { apiRequest } from "@/lib/api/client";
 import type { ImportPipelineStatusResponse, ImportPipelineUploadResponse } from "@/lib/api/types";
+import { useImportConfig } from "../hooks/useImportConfig";
+import { OcrModeSelector } from "../components/ocr-mode-selector";
 
 function renderJson(value: unknown) {
   if (value === undefined || value === null || value === "") return "—";
@@ -35,6 +37,7 @@ export default function ImportTasksPage() {
   const [confidenceThreshold, setConfidenceThreshold] = useState("0.6");
   const [pageStart, setPageStart] = useState("");
   const [pageEnd, setPageEnd] = useState("");
+  const { ocrMode, setOcrMode } = useImportConfig();
   const [pipelineId, setPipelineId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const fileInputId = useId();
@@ -58,6 +61,7 @@ export default function ImportTasksPage() {
       formData.set("import_mode", importMode);
       formData.set("enable_ai_repair", String(enableAiRepair));
       formData.set("confidence_threshold", confidenceThreshold || "0.6");
+      formData.set("ocr_mode", ocrMode);
       if (pageStart) formData.set("page_start", pageStart);
       if (pageEnd) formData.set("page_end", pageEnd);
       return apiRequest<ImportPipelineUploadResponse>("/imports/upload", { method: "POST", body: formData });
@@ -196,6 +200,9 @@ export default function ImportTasksPage() {
                     <p className="text-[10px] text-[var(--color-text-hint)]">自动校正 OCR 偏差</p>
                   </div>
                 </label>
+              </div>
+              <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+                <OcrModeSelector value={ocrMode} onChange={setOcrMode} disabled={isPipelineRunning} />
               </div>
             </div>
 

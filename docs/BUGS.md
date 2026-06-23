@@ -1,4 +1,6 @@
-# 代码题目题干/选项部分缺失（第二次修复结果）
+# 代码题目题干/选项部分缺失（第四次修复）
+
+###### |结果：仍然存在选项缺失的情况
 
 ##### 案例一（失败）
 
@@ -35,35 +37,32 @@ D. 初始化栈
 ###### 导入后进入审核（选项缺）
 
 ~~~tex
-#define MAXSIZE 100 typedef struct {
-```text
+#>
+#define MAXSIZE 100
+typedef struct {
 int data[MAXSIZE];
 int top;
 } Stack;
-```
-执行如下代码: C
-```text
+执行如下代码：
 while (s.top != − 1) {
 printf("%d", S.data[S.top]);
 S.top −  − ;
 }
-```
 ~~~
 
 ###### OCR 原文 / 导入原始信息
 
 ~~~tex
-#define MAXSIZE 100 typedef struct {
-```text
+#>
+#define MAXSIZE 100
+typedef struct {
 int data[MAXSIZE];
 int top;
 } Stack;
-``` 执行如下代码: C
-```text
+执行如下代码：
 while (s.top != -1) {
 printf("%d", S.data[S.top]);
 S.top--;
-}
 ~~~
 
 ###### 解析数据
@@ -71,7 +70,7 @@ S.top--;
 ```json
 {
   "parsed_content": {
-    "text": "#define MAXSIZE 100 typedef struct {\n```text\nint data[MAXSIZE];\nint top;\n} Stack;\n```\n执行如下代码: C\n```text\nwhile (s.top != -1) {\nprintf(\"%d\", S.data[S.top]);\nS.top--;\n}\n```"
+    "text": "#>\n#define MAXSIZE 100\ntypedef struct {\nint data[MAXSIZE];\nint top;\n} Stack;\n执行如下代码：\nwhile (s.top != -1) {\nprintf(\"%d\", S.data[S.top]);\nS.top--;\n}"
   },
   "parsed_options": null,
   "parsed_answer": null,
@@ -87,12 +86,12 @@ S.top--;
     "schema_version": "v1",
     "subject": "",
     "question_type": "subjective",
-    "stem": "#define MAXSIZE 100 typedef struct {\n```text\nint data[MAXSIZE];\nint top;\n} Stack;\n```\n执行如下代码: C\n```text\nwhile (s.top != -1) {\nprintf(\"%d\", S.data[S.top]);\nS.top--;\n}\n```",
+    "stem": "#>\n#define MAXSIZE 100\ntypedef struct {\nint data[MAXSIZE];\nint top;\n} Stack;\n执行如下代码：\nwhile (s.top != -1) {\nprintf(\"%d\", S.data[S.top]);\nS.top--;\n}",
     "options": [],
     "blank_option_groups": [],
     "answer": "",
     "analysis": "",
-    "raw_text": "#define MAXSIZE 100 typedef struct {\n```text\nint data[MAXSIZE];\nint top;\n} Stack;\n``` 执行如下代码: C\n```text\nwhile (s.top != -1) {\nprintf(\"%d\", S.data[S.top]);\nS.top--;\n}",
+    "raw_text": "#>\n#define MAXSIZE 100\ntypedef struct {\nint data[MAXSIZE];\nint top;\n} Stack;\n执行如下代码：\nwhile (s.top != -1) {\nprintf(\"%d\", S.data[S.top]);\nS.top--;",
     "knowledge_points": [],
     "difficulty": 3,
     "source": {
@@ -104,20 +103,16 @@ S.top--;
     "errors": [],
     "warnings": [
       "ocr_contamination_detected",
-      "ocr_quality:code_fence_unclosed",
       "ocr_quality:code_brace_unbalanced",
       "ocr_quality:code_line_break_suspicious",
-      "ocr_quality:watermark_noise_detected",
-      "code_integrity:code_fence_unclosed",
       "code_integrity:code_brace_unbalanced",
       "code_integrity:code_line_break_suspicious",
       "low_confidence"
     ],
-    "stem_hash": "f66f065e",
-    "confidence_score": 0.85,
+    "stem_hash": "ff630def",
+    "confidence_score": 0.7,
     "risk_flags": [
       "fallback_low_confidence",
-      "code_fence_unclosed",
       "code_brace_unbalanced",
       "code_line_break_suspicious",
       "code_block_incomplete",
@@ -127,7 +122,7 @@ S.top--;
       {
         "stage": "ai_repair",
         "result": "repaired",
-        "reason": "stem_cleaned"
+        "reason": "type_detected"
       },
       {
         "stage": "review",
@@ -138,7 +133,6 @@ S.top--;
     "ai_validation": {
       "is_valid": false,
       "issues": [
-        "post_repair_code_integrity:code_brace_unbalanced",
         "post_repair_code_integrity:code_line_break_suspicious"
       ],
       "severity": "error"
@@ -149,23 +143,20 @@ S.top--;
     "errors": [],
     "warnings": [
       "ocr_contamination_detected",
-      "ocr_quality:code_fence_unclosed",
       "ocr_quality:code_brace_unbalanced",
       "ocr_quality:code_line_break_suspicious",
-      "ocr_quality:watermark_noise_detected",
-      "code_integrity:code_fence_unclosed",
       "code_integrity:code_brace_unbalanced",
       "code_integrity:code_line_break_suspicious",
       "low_confidence"
     ],
     "knowledge_points": [],
     "difficulty": 3,
-    "stem_hash": "f66f065e",
+    "stem_hash": "ff630def",
     "decision_trace": [
       {
         "stage": "ai_repair",
         "result": "repaired",
-        "reason": "stem_cleaned"
+        "reason": "type_detected"
       },
       {
         "stage": "review",
@@ -173,9 +164,9 @@ S.top--;
         "reason": "written_to_review_queue"
       }
     ],
+    "trace": [],
     "risk_flags": [
       "fallback_low_confidence",
-      "code_fence_unclosed",
       "code_brace_unbalanced",
       "code_line_break_suspicious",
       "code_block_incomplete",
