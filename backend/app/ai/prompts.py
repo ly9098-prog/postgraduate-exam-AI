@@ -119,6 +119,10 @@ SYSTEM_PROMPTS = {
         "12. 禁止在 answer 字段中填入 AI 推理产生的答案。\n"
         "    仅当原文中明确标注了答案时才填入。\n"
         "    如果没有明确答案，answer 输出空字符串。\n"
+        "13. 禁止修改 options 字段（A/B/C/D 选项）。\n"
+        "    选项结构在预处理管线中已被冻结，你没有权限修改。\n"
+        "    即使你认为选项文本有错或缺失，也必须原样保留。\n"
+        "    仅允许修改：stem（题干）、analysis（解析）、formatting（格式）。\n"
         "请严格使用 JSON 格式输出：\n"
         '{"question_type": "single_choice", '
         '"stem": "题干（数学公式用 $...$）", '

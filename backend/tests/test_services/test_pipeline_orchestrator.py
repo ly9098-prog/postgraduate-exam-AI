@@ -1127,7 +1127,7 @@ class TestImportPipelineRun:
 
         # Verify stage ordering
         stage_names = list(result["stages"].keys())
-        assert stage_names == ["extract", "normalize_text", "ocr_correction", "layout_reconstruction", "layout_router", "analyze_structure", "classify_pages", "split", "match", "normalize_schema", "batch_validation", "batch_dedup", "repair", "ai_validation", "similarity_match", "math_detect", "table_detect", "review"]
+        assert stage_names == ["extract", "normalize_text", "ocr_correction", "layout_reconstruction", "layout_router", "analyze_structure", "classify_pages", "structure_freeze", "split", "match", "normalize_schema", "batch_validation", "batch_dedup", "repair", "ai_validation", "similarity_match", "math_detect", "table_detect", "review"]
         for s in result["stages"].values():
             assert s["status"] == "completed"
 

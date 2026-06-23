@@ -936,6 +936,8 @@ async def repair_questions(
             "question_type": result_data.get("question_type", q.get("question_type", "")),
             "stem": repaired_stem,
             "options": _normalize_ai_options(result_data.get("options")),
+            # Frozen options guard: if original was frozen, restore unchanged options
+            "frozen_options_restored": q.get("is_frozen", False),
             "blank_option_groups": blank_option_groups,
             "answer": result_data.get("answer", ""),
             "analysis": result_data.get("analysis", ""),
@@ -950,6 +952,17 @@ async def repair_questions(
             "confidence_score": result_data.get("confidence", q.get("confidence_score", 0)),
             "risk_flags": list(dict.fromkeys(q.get("risk_flags") or [])),
         }
+
+        # ── Frozen options guard: restore original options unchanged ──
+        if q.get("is_frozen"):
+            original_opts = q.get("options", [])
+            logger.info(
+                "[FREEZE] ai_repair: restored frozen options for q%d (opts=%s -> %s)",
+                i,
+                len(_normalize_ai_options(result_data.get("options"))),
+                len(original_opts),
+            )
+            after["options"] = original_opts
 
         repair_actions = result_data.get("repair_actions", [])
         # If this question was also Roman-repaired, re-apply fixes and merge info
