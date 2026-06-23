@@ -28,6 +28,7 @@ backend/*.db.backup-*
 # Generated runtime data
 logs/
 logs.txt
+logs_*.txt
 *.log
 tmp/
 cache/
@@ -44,6 +45,7 @@ backend/static/
 node_modules/
 dist/
 build/
+.next/
 miniprogram/miniprogram_npm/
 
 # IDE and local tools
@@ -75,3 +77,6 @@ redisdata/
 
 # Large test fixtures
 backend/tests/fixtures/*.pdf
+
+# Root-level screenshots and debug images
+/*.png
