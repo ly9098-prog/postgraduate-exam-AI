@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { apiRequest, getApiAccessToken, toQuery } from "@/lib/api/client";
 import { connectSSE } from "@/lib/api/sse";
 import type { BatchImageJobStatusResponse, BatchImageUploadResponse, BatchImageReparseResponse, TraceEvent } from "@/lib/api/types";
+import { useImportConfig } from "../hooks/useImportConfig";
+import { OcrModeSelector } from "../components/ocr-mode-selector";
 
 const MAX_FILES = (() => {
   const n = Number(process.env.NEXT_PUBLIC_BATCH_IMAGE_MAX_FILES);
@@ -74,6 +76,7 @@ export default function BatchImagePage() {
   const [subject, setSubject] = useState("");
   const [concurrency, setConcurrency] = useState(DEFAULT_CONCURRENCY);
   const [message, setMessage] = useState<MessageInfo | null>(null);
+  const { ocrMode, setOcrMode } = useImportConfig();
   const [dragActive, setDragActive] = useState(false);
   const fileInputId = useId();
   const queryClient = useQueryClient();
@@ -184,6 +187,7 @@ export default function BatchImagePage() {
                 concurrency: 1,
                 enable_ai_repair: true,
                 confidence_threshold: "0.6",
+                ocr_mode: ocrMode,
                 batch_id: task.batchId,
                 image_id: task.imageId,
                 request_id: task.requestId,
@@ -272,7 +276,7 @@ export default function BatchImagePage() {
     } catch {
       // Abort or unexpected error
     }
-  }, [files, subject, concurrency]);
+  }, [files, subject, concurrency, ocrMode]);
 
   const resetQueue = useCallback(() => {
     abortRef.current?.abort();
@@ -633,6 +637,10 @@ export default function BatchImagePage() {
                   )}
                 </div>
               </div>
+            </div>
+
+            <div className="border-t border-[var(--color-border)] pt-4">
+              <OcrModeSelector value={ocrMode} onChange={setOcrMode} disabled={isJobActive} />
             </div>
 
             {/* Submit / Reset */}
