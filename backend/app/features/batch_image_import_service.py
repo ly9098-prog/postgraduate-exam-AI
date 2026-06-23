@@ -473,6 +473,47 @@ async def _merge_image_texts(
         return {"merged": False, "reason": "exception during merge pipeline"}
 
 
+async def _run_vl_ocr(content: bytes, source_file: str) -> str:
+    """使用 PaddleOCR-VL 远程 API 识别图片，返回原始文本。
+
+    从 DB 模型配置中读取 api_key/api_base_url/model_name，
+    通过 PaddleOCRVLClient 异步提交+轮询获取结果。
+    """
+    from app.services.model_config_resolver import resolve_active_model
+
+    # 解析 DB 中的 PaddleOCR-VL 模型配置
+    async with async_session() as db:
+        resolved = await resolve_active_model(db, feature="ocr")
+    if not resolved or not resolved.get("api_key"):
+        raise ValueError(
+            "PaddleOCR-VL 未配置：请在 AI 设置页面配置 paddleocr-vl 模型的 API Key"
+        )
+
+    api_token = resolved["api_key"]
+    base_url = resolved.get("api_base_url", "https://paddleocr.aistudio-app.com")
+    model = resolved.get("model_name", "PaddleOCR-VL-1.6")
+
+    from app.features.ocr_vl.paddleocr_vl_client import PaddleOCRVLClient
+
+    client = PaddleOCRVLClient(
+        api_token=api_token,
+        base_url=base_url,
+        model=model,
+    )
+
+    vl_start = _now()
+    logger.info("【OCR-VL】提交远程 OCR | file=%s model=%s", source_file, model)
+    result = await client.ocr_image(image_bytes=content, filename=source_file)
+    vl_duration = int((_now() - vl_start).total_seconds() * 1000)
+
+    logger.info(
+        "【OCR-VL】识别完成 | file=%s chars=%d conf=%.2f (%dms)\n%s",
+        source_file, len(result.text), result.confidence, vl_duration,
+        result.text[:2000],
+    )
+    return result.text
+
+
 async def _run_single_image(
     item_id: int, source_file: str, content: bytes,
     subject: str | None, options: dict,
@@ -480,31 +521,42 @@ async def _run_single_image(
 ) -> dict:
     """OCR → 清洗 → 现有 TXT 导入流水线。返回结果 dict（含 raw/cleaned 文本）。
 
-    注意：OCR 同步且 GPU 串行，用 to_thread 避免阻塞事件循环。
+    支持两种 OCR 模式：
+    - local: 本地 PaddleOCR（默认）
+    - api:   PaddleOCR-VL 远程 API（跳过本地 OCR + pipeline 纠错）
     """
     from app.services.ocr_service import clean_ocr_text, ocr_image
 
-    ocr_start = _now()
-    raw_ocr_text = await asyncio.to_thread(ocr_image, content)
-    ocr_duration = int((_now() - ocr_start).total_seconds() * 1000)
+    ocr_mode = options.get("ocr_mode", "local")
 
-    logger.info(
-        "【OCR-1】PaddleOCR 原始结果 | file=%s chars=%d lines=%d\n%s",
-        source_file, len(raw_ocr_text), raw_ocr_text.count("\n") + 1,
-        raw_ocr_text[:2000],
-    )
+    if ocr_mode == "api":
+        # ── API 模式：使用 PaddleOCR-VL 替代本地 OCR ──
+        raw_ocr_text = await _run_vl_ocr(content, source_file)
+        skip_ocr_correction = True
+    else:
+        # ── 本地模式：本地 PaddleOCR ──
+        ocr_start = _now()
+        raw_ocr_text = await asyncio.to_thread(ocr_image, content)
+        ocr_duration = int((_now() - ocr_start).total_seconds() * 1000)
 
-    # Trace: OCR done
-    await _update_item_with_trace(
-        item_id, job_id,
-        fields={},
-        trace=_TraceData(
-            step="ocr", status="success",
-            message=f"OCR 识别完成 ({ocr_duration}ms)",
-            duration_ms=ocr_duration,
-            item_seq=seq,
-        ),
-    )
+        logger.info(
+            "【OCR-1】PaddleOCR 原始结果 | file=%s chars=%d lines=%d\n%s",
+            source_file, len(raw_ocr_text), raw_ocr_text.count("\n") + 1,
+            raw_ocr_text[:2000],
+        )
+
+        # Trace: OCR done
+        await _update_item_with_trace(
+            item_id, job_id,
+            fields={},
+            trace=_TraceData(
+                step="ocr", status="success",
+                message=f"OCR 识别完成 ({ocr_duration}ms)",
+                duration_ms=ocr_duration,
+                item_seq=seq,
+            ),
+        )
+        skip_ocr_correction = False
 
     cleaned_text = clean_ocr_text(raw_ocr_text)
     logger.info(
@@ -531,13 +583,16 @@ async def _run_single_image(
     async with async_session() as pdb:
         from app.features.pipeline_orchestrator import run_import_pipeline
 
+        # API 模式：VL 已产出高质量文本，跳过 pipeline 的 ocr_correction 阶段
+        pipeline_opts = {**options, "skip_ocr_correction": skip_ocr_correction}
+
         pipeline_start = _now()
         result = await run_import_pipeline(
             file_content=cleaned_text.encode("utf-8"),
             source_type="txt",
             source_file=source_file,
             subject=subject,
-            options=options,
+            options=pipeline_opts,
             db=pdb,
             page_images={1: content},
         )

@@ -1,23 +1,13 @@
-"""OCR 增强服务 — 扫描版 PDF 图片文字识别。
+"""OCR 增强服务 — 扫描版 PDF 检测与图片转换工具。
 
-通过 PaddleOCR-VL 高精度 OCR API 识别扫描版 PDF 中的文字，
-输出与 raw_blocks 兼容的格式，无缝接入现有 ImportTextNormalizer → Pipeline 流程。
-
-触发条件：PyMuPDF 提取文本 < 100 字符 + OCR_ENABLED=True。
-
-模型配置通过 ``config`` 字典动态传入（由调用方从 DB 解析），
-keys 与 pipeline_orchestrator._build_router_config 一致：
-  - paddleocr_vl_api_token
-  - paddleocr_vl_base_url
-  - paddleocr_vl_model
-不依赖环境变量。
+提供扫描版 PDF 检测、PDF→图片渲染等基础设施函数。
+PaddleOCR-VL 调用已收敛至 ocr_fix/router.py（唯一入口），
+不再在此模块中直接调用。
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import time
 from typing import Any
 
 from app.core.config import settings
@@ -30,22 +20,6 @@ logger = logging.getLogger(__name__)
 
 _MIN_TEXT_LENGTH = 100  # 扫描版检测阈值（字符数）
 _OCR_DPI = 200          # PDF 渲染 DPI
-
-_DEFAULT_VL_BASE_URL = "https://paddleocr.aistudio-app.com"
-_DEFAULT_VL_MODEL = "PaddleOCR-VL-1.6"
-
-
-def _get_vl_config(config: dict | None) -> dict:
-    """从 config 字典提取 PaddleOCR-VL 配置，缺失 key 则报错。"""
-    cfg = config or {}
-    api_token = cfg.get("paddleocr_vl_api_token") or ""
-    if not api_token:
-        logger.warning("paddleocr_vl_api_token 未配置，PaddleOCR-VL 不可用")
-    return {
-        "api_token": api_token,
-        "base_url": cfg.get("paddleocr_vl_base_url") or _DEFAULT_VL_BASE_URL,
-        "model": cfg.get("paddleocr_vl_model") or _DEFAULT_VL_MODEL,
-    }
 
 
 def is_ocr_enabled() -> bool:
@@ -135,150 +109,20 @@ def _pdf_to_images(content: bytes, dpi: int = _OCR_DPI) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# AI OCR call
-# ---------------------------------------------------------------------------
-
-
-async def _call_ocr_api(
-    image: bytes, page_num: int, config: dict | None = None,
-) -> dict | None:
-    """调用 PaddleOCR-VL 高精度 OCR API 识别单页图片文字。
-
-    替换了原有的 DeepSeek Vision 调用（后者无可用多模态模型）。
-    模型凭证从 ``config`` 字典读取，调用方需预先从 DB 解析
-    （参见 pipeline_orchestrator._build_router_config）。
-
-    Args:
-        image: 页面图片 PNG 字节。
-        page_num: 页码（1-based）。
-        config: 可选配置字典，包含 paddleocr_vl_api_token 等 key。
-                不传或缺少 api_token 时返回 None。
-
-    Returns:
-        {"page": int, "text": str, "confidence": float, "tokens_used": int} | None
-    """
-    vl_cfg = _get_vl_config(config)
-    if not vl_cfg["api_token"]:
-        return None
-
-    from app.features.ocr_vl.paddleocr_vl_adapter import PaddleOCRVLAdapter
-
-    adapter = PaddleOCRVLAdapter(
-        api_token=vl_cfg["api_token"],
-        base_url=vl_cfg["base_url"],
-        model=vl_cfg["model"],
-    )
-
-    start = time.monotonic()
-    try:
-        ctx = {"page_num": page_num, "filename": f"page_{page_num}.png"}
-        result = await adapter.fix(image=image, ocr_text="", context=ctx)
-        elapsed_ms = int((time.monotonic() - start) * 1000)
-
-        if not result.fixed_text:
-            logger.warning("PaddleOCR-VL 返回空文本 (page %d)", page_num)
-            return None
-
-        logger.info(
-            "PaddleOCR-VL page %d: conf=%.2f, text_len=%d, %dms",
-            page_num, result.confidence or 0, len(result.fixed_text), elapsed_ms,
-        )
-        return {
-            "page": page_num,
-            "text": result.fixed_text.strip(),
-            "confidence": result.confidence or 0.85,
-            "tokens_used": 0,
-        }
-    except Exception as exc:
-        logger.warning("PaddleOCR-VL 调用异常 (page %d): %s", page_num, exc)
-        return None
-
-
-# ---------------------------------------------------------------------------
-# main OCR fallback
+# OCR fallback — 已废弃，PaddleOCR-VL 调用收敛至 ocr_fix/router.py
 # ---------------------------------------------------------------------------
 
 
 def ocr_fallback(content: bytes, source_file: str = "", config: dict | None = None) -> list[dict]:
-    """扫描版 PDF OCR 识别主入口。
+    """扫描版 PDF OCR 识别（已废弃）。
 
-    将 PDF 每页渲染为图片，调用 PaddleOCR-VL 识别文字，
-    返回与 _extract_pdf_blocks 兼容的 raw_blocks 格式。
-
-    Args:
-        content: PDF 文件原始字节。
-        source_file: 原始文件名（仅用于日志）。
-        config: 可选配置字典（传递给 _call_ocr_api）。
-                应由调用方从 DB 解析（resolve_active_model(feature="ocr")）。
-
-    Returns:
-        [{"page": int, "block_index": int, "text": str}, ...]
+    PaddleOCR-VL 调用已统一收敛至 ``ocr_fix/router.py``（通过 ocr_correction stage）。
+    此函数不再直接调用 PaddleOCR-VL。
 
     Raises:
-        ValueError: PDF 渲染或 OCR 全部失败
+        NotImplementedError: 提示使用 pipeline 的 ocr_correction stage。
     """
-    if not is_ocr_enabled():
-        raise RuntimeError("OCR 功能未启用（OCR_ENABLED=false）")
-
-    images = _pdf_to_images(content)
-
-    async def _run_batch():
-        tasks = [
-            _call_ocr_api(img["image"], img["page"], config=config)
-            for img in images
-        ]
-        return await asyncio.gather(*tasks)
-
-    try:
-        results = asyncio.run(_run_batch())
-    except RuntimeError as exc:
-        # asyncio.run 在已有 event loop 时会抛 RuntimeError
-        logger.warning("无法在当前事件循环中运行 OCR，尝试新建事件循环: %s", exc)
-        try:
-            loop = asyncio.new_event_loop()
-            results = loop.run_until_complete(_run_batch())
-            loop.close()
-        except Exception:
-            raise RuntimeError(f"OCR 执行失败: {exc}") from exc
-    except Exception as exc:
-        logger.exception("OCR 批量调用失败")
-        raise RuntimeError(f"OCR 调用异常: {exc}") from exc
-
-    blocks: list[dict] = []
-    failed_pages = 0
-
-    for i, result in enumerate(results):
-        if result is None or not result.get("text"):
-            failed_pages += 1
-            logger.warning("OCR 第 %d 页失败，跳过", images[i]["page"])
-            continue
-
-        text = result["text"]
-        # 按双换行切分段落，每个段落作为一个 block
-        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-        if not paragraphs:
-            paragraphs = [text]
-
-        for j, para in enumerate(paragraphs):
-            blocks.append({
-                "page": result["page"],
-                "block_index": len(blocks),
-                "text": para,
-            })
-
-    if not blocks:
-        raise RuntimeError(
-            f"所有 {len(images)} 页 OCR 均失败"
-            + (f"（{failed_pages} 页无结果）" if failed_pages else "")
-        )
-
-    if failed_pages:
-        logger.warning(
-            "%d/%d 页 OCR 失败，已跳过", failed_pages, len(images),
-        )
-
-    logger.info(
-        "OCR 完成: %d 页 → %d blocks (源文件: %s)",
-        len(images), len(blocks), source_file or "未知",
+    raise NotImplementedError(
+        "ocr_fallback 已废弃 — PaddleOCR-VL 调用统一由 OCRFixRouter 处理。"
+        "请使用 pipeline_orchestrator 的 ocr_correction stage。"
     )
-    return blocks

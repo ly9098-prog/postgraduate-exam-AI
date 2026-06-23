@@ -9,9 +9,11 @@ Tests cover:
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import re
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -316,8 +318,8 @@ class TestOptionsNotModified:
         assert keys == ["A"], f"Frozen options should not be padded, got {keys}"
         assert len(opts) == 1, f"Expected 1 frozen option, got {len(opts)}"
 
-    def test_non_frozen_still_padded(self):
-        """Non-frozen single_choice should still pad options to A-D."""
+    def test_non_frozen_no_padding(self):
+        """Non-frozen single_choice: no padding — options preserved as-is."""
         question = {
             "stem": "test stem",
             "options": [{"key": "A", "text": "只有A"}],
@@ -328,7 +330,7 @@ class TestOptionsNotModified:
         result = normalize_output(question)
         opts = result.get("options", [])
         keys = sorted(o.get("key", "") for o in opts)
-        assert keys == ["A", "B", "C", "D"], f"Non-frozen should pad to A-D, got {keys}"
+        assert keys == ["A"], f"Non-frozen should NOT pad, got {keys}"
 
 
 # =========================================================================
@@ -339,28 +341,73 @@ class TestOptionsNotModified:
 class TestAIRepairPreservesOptions:
     """AI repair must not modify frozen options."""
 
-    def test_ai_repair_frozen_guard_restores_options(self):
-        """The frozen options guard in ai_repair should restore original options."""
-        # This tests the code logic that restores frozen options
-        # after AI repair. We use a unit-test approach by checking
-        # that the guard code correctly identifies and restores.
-        original_q = {
-            "is_frozen": True,
+    def _make_frozen_question(self) -> dict:
+        """Create a frozen question that will trigger AI repair (low confidence)."""
+        return {
+            "schema_version": "v1",
+            "subject": "math2",
+            "question_type": "single_choice",
+            "stem": "",
             "options": [{"key": "A", "text": "OriginalA"}, {"key": "B", "text": "OriginalB"}],
+            "answer": "",
+            "analysis": "",
+            "raw_text": "1. 测试题\nA. OriginalA\nB. OriginalB",
+            "knowledge_points": [],
+            "difficulty": 3,
+            "source": {"file": "test.pdf", "page": 1, "type": "pdf"},
+            "is_valid": False,
+            "is_frozen": True,
+            "errors": ["missing_stem", "missing_answer"],
+            "warnings": [],
+            "stem_hash": "abc12345",
+            "confidence_score": 0.15,
         }
-        ai_result = {
+
+    def _modified_options_ai_response(self) -> dict:
+        """AI response that attempts to modify frozen options."""
+        return {
+            "question_type": "single_choice",
+            "stem": "测试题题干",
             "options": {"A": "ModifiedA", "B": "ModifiedB"},
+            "answer": "A",
+            "analysis": "",
+            "confidence": 0.9,
+            "repair_actions": ["stem_cleaned"],
         }
 
-        # Simulate the guard logic from ai_repair.py
-        from app.features.ai_repair import _normalize_ai_options
+    def test_ai_repair_frozen_guard_rejects_modification(self):
+        """Call real repair_questions with mocked AI; verify frozen guard works."""
+        from app.features.ai_repair import repair_questions
+        from app.features.token_budget import _token_usage
 
-        after_options = _normalize_ai_options(ai_result.get("options"))
-        if original_q.get("is_frozen"):
-            after_options = original_q.get("options", [])
+        # Reset token budget (other tests may have exhausted it)
+        _token_usage["daily"] = 0
+        _token_usage["monthly"] = 0
 
-        assert after_options == original_q["options"], (
-            f"Frozen options should be restored, got {after_options}"
+        q = self._make_frozen_question()
+        mock_response = {
+            "content": json.dumps(self._modified_options_ai_response()),
+            "tokens_used": 350,
+            "model": "deepseek-chat",
+            "duration_ms": 800,
+        }
+        mocks = {
+            "is_available": MagicMock(return_value=True),
+            "chat": AsyncMock(return_value=mock_response),
+        }
+        with patch("app.ai.client.deepseek.is_available", mocks["is_available"]), \
+             patch("app.ai.client.deepseek.chat", mocks["chat"]):
+            result = asyncio.run(repair_questions([q]))
+
+        # Frozen guard should reject the AI's option modification →
+        # question goes to unrepaired, not repaired
+        assert result["stats"]["repaired"] == 0, (
+            "AI should NOT be allowed to modify frozen options"
+        )
+        assert result["stats"]["unrepaired"] >= 1
+        unreported_reasons = [u["reason"] for u in result["unrepaired"]]
+        assert "options_modified_by_ai" in unreported_reasons, (
+            f"Expected options_modified_by_ai, got {unreported_reasons}"
         )
 
     def test_repair_stage_prompt_constraint(self):
@@ -461,7 +508,10 @@ class TestPipelineIntegration:
             {"page": 1, "block_index": 1, "normalized_text": "A. 选项甲\nB. 选项乙"}
         ]
 
-        _apply_frozen_options(raw_questions, frozen_registry)
+        _apply_frozen_options(
+            raw_questions, frozen_registry,
+            normalized_blocks=normalized_blocks,
+        )
         q = raw_questions[0]
         assert q.get("is_frozen"), "Question should be marked frozen"
         assert q.get("has_options"), "Question should have options"
@@ -478,9 +528,12 @@ class TestPipelineIntegration:
         assert "frozen_option_registry" in result
         assert "frozen_structures" in result
         assert "warnings" in result
-        assert isinstance(result["frozen_option_registry"], dict)
+        assert "freeze_checksum" in result
+        # frozen_option_registry is wrapped in MappingProxyType for immutability
+        assert isinstance(result["frozen_option_registry"], dict) or hasattr(result["frozen_option_registry"], "keys")
         assert isinstance(result["frozen_structures"], list)
         assert isinstance(result["warnings"], list)
+        assert isinstance(result["freeze_checksum"], str) and len(result["freeze_checksum"]) > 0
 
     def test_frozen_structure_has_required_fields(self):
         """Each frozen structure dict has required fields."""

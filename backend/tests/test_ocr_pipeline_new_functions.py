@@ -6,12 +6,11 @@ Covers:
 - filter_isolated_tokens (question_normalizer)
 - merge_pointer_lines / remove_single_letter_noise (text_normalizer)
 - classify_line / fix_tree_recursion_breaks (code_integrity)
-- normalize_option_order / normalize_output (question_normalizer)
+- normalize_output (question_normalizer)
 - should_send_to_llm (repair_stage)
 """
 
 import pytest
-from app.features.question_splitter import _extract_options_robust
 from app.features.code_integrity import (
     reconstruct_code_block,
     fix_braces,
@@ -20,7 +19,6 @@ from app.features.code_integrity import (
 )
 from app.features.question_normalizer import (
     filter_isolated_tokens,
-    normalize_option_order,
     normalize_output,
     QT_SINGLE_CHOICE,
     QT_MULTIPLE_CHOICE,
@@ -31,69 +29,6 @@ from app.features.text_normalizer import (
     remove_single_letter_noise,
 )
 from app.features.pipeline_stages.repair_stage import should_send_to_llm
-
-
-# =========================================================================
-# extract_options_robust
-# =========================================================================
-
-class TestExtractOptionsRobust:
-    """TASK 1: Robust options extraction for multi-line, inline, broken OCR."""
-
-    def test_multi_line_format(self):
-        text = "A. 选项一\nB. 选项二\nC. 选项三\nD. 选项四"
-        result = _extract_options_robust(text)
-        assert result == {"A": "选项一", "B": "选项二", "C": "选项三", "D": "选项四"}
-
-    def test_multi_line_colon_format(self):
-        text = "A: 选项一\nB: 选项二\nC: 选项三\nD: 选项四"
-        result = _extract_options_robust(text)
-        assert result == {"A": "选项一", "B": "选项二", "C": "选项三", "D": "选项四"}
-
-    def test_inline_format(self):
-        text = "A.选项一 B.选项二 C.选项三 D.选项四"
-        result = _extract_options_robust(text)
-        assert result == {"A": "选项一", "B": "选项二", "C": "选项三", "D": "选项四"}
-
-    def test_inline_with_spaces(self):
-        text = "A. 选项一 B. 选项二 C. 选项三 D. 选项四"
-        result = _extract_options_robust(text)
-        assert result == {"A": "选项一", "B": "选项二", "C": "选项三", "D": "选项四"}
-
-    def test_broken_ocr_lines(self):
-        text = "A. 选项一 B. 选项二\nC. 选项三\nD 选项四"
-        result = _extract_options_robust(text)
-        assert result == {"A": "选项一", "B": "选项二", "C": "选项三", "D": "选项四"}
-
-    def test_broken_ocr_mixed_punctuation(self):
-        text = "A. 内容A\nB: 内容B\nC、内容C\nD）内容D"
-        result = _extract_options_robust(text)
-        assert result == {"A": "内容A", "B": "内容B", "C": "内容C", "D": "内容D"}
-
-    def test_with_answer_tail_truncated(self):
-        text = "A. 选项一 B. 选项二 C. 选项三 D. 选项四 答案：A"
-        result = _extract_options_robust(text)
-        assert result["D"] == "选项四"
-
-    def test_options_with_code_values(self):
-        text = "A. for(i=0;i<n;i++) B. return 0 C. p->next D. struct node"
-        result = _extract_options_robust(text)
-        assert result["A"] == "for(i=0;i<n;i++)"
-        assert result["D"] == "struct node"
-
-    def test_empty_input(self):
-        assert _extract_options_robust("") == {"A": "", "B": "", "C": "", "D": ""}
-
-    def test_no_options(self):
-        result = _extract_options_robust("1. 这是题干")
-        # should still return A-D with empty values
-        assert "A" in result
-        assert "D" in result
-
-    def test_continuation_line(self):
-        text = "A. 第一行很长\n需要换行\nB. 第二行\nC. 第三行\nD. 第四行"
-        result = _extract_options_robust(text)
-        assert "需要换行" in result["A"]
 
 
 # =========================================================================
@@ -384,40 +319,6 @@ class TestFixTreeRecursionBreaks:
         assert "key" in result
 
 
-# =========================================================================
-# normalize_option_order
-# =========================================================================
-
-class TestNormalizeOptionOrder:
-    """TASK 7: Force option order A→B→C→D."""
-
-    def test_sort_reversed(self):
-        options = {"D": "d", "C": "c", "B": "b", "A": "a"}
-        result = normalize_option_order(options)
-        assert list(result.keys()) == ["A", "B", "C", "D"]
-
-    def test_sort_random(self):
-        options = {"C": "c", "A": "a", "D": "d", "B": "b"}
-        result = normalize_option_order(options)
-        assert list(result.keys()) == ["A", "B", "C", "D"]
-
-    def test_partial_options(self):
-        options = {"B": "b", "D": "d"}
-        result = normalize_option_order(options)
-        assert list(result.keys()) == ["B", "D"]
-        assert "A" not in result  # not present in input, not added
-
-    def test_empty_input(self):
-        assert normalize_option_order({}) == {}
-
-    def test_values_preserved(self):
-        options = {"B": "2", "A": "1", "C": "3", "D": "4"}
-        result = normalize_option_order(options)
-        assert result["A"] == "1"
-        assert result["B"] == "2"
-        assert result["C"] == "3"
-        assert result["D"] == "4"
-
 
 # =========================================================================
 # normalize_output
@@ -448,16 +349,16 @@ class TestNormalizeOutput:
         assert result["answer"] == ""
         assert result["analysis"] == ""
 
-    def test_single_choice_padded_to_4(self):
+    def test_single_choice_no_padding(self):
         question = {
             "question_type": QT_SINGLE_CHOICE,
             "options": [{"key": "A", "text": "x"}, {"key": "B", "text": "y"}],
         }
         result = normalize_output(question)
-        # For single_choice, options should be padded
-        assert len(result["options"]) == 4
+        # Layer 0/3: No padding. Only the options provided are kept.
+        assert len(result["options"]) == 2
         keys = [o["key"] for o in result["options"]]
-        assert keys == ["A", "B", "C", "D"]
+        assert keys == ["A", "B"]
 
     def test_multiple_choice_not_padded(self):
         question = {

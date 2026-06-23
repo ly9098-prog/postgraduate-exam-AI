@@ -10,6 +10,7 @@ import hashlib
 import logging
 import time
 
+from app.features.question_type_classifier import classify as _classify_type
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 from app.utils.trace.stage_tracer import StageTracer
 
@@ -49,6 +50,8 @@ def _has_structural_markers(text: str) -> bool:
 # 单选题必须包含的标准选项集合
 REQUIRED_OPTION_KEYS = frozenset({"A", "B", "C", "D"})
 _OCR_CONTAMINATION_THRESHOLD = 0.30
+
+_OPTION_LETTERS = frozenset({"A", "B", "C", "D"})
 
 _TYPE_ALIAS_MAP = {
     "单选": QT_SINGLE_CHOICE, "单选题": QT_SINGLE_CHOICE,
@@ -223,23 +226,6 @@ def _normalize_blank_option_groups(groups: list[dict] | None) -> list[dict]:
     return normalized
 
 
-def normalize_option_order(options: dict) -> dict:
-    """Force option order to A→B→C→D.
-
-    Args:
-        options: dict with letter keys (e.g., ``{"B": "...", "A": "...", ...}``).
-
-    Returns:
-        New dict sorted as ``{"A": ..., "B": ..., "C": ..., "D": ...}``.
-        Only includes keys present in the input (no padding).
-    """
-    result: dict[str, str] = {}
-    for k in ["A", "B", "C", "D"]:
-        v = options.get(k)
-        if v is not None:
-            result[k] = v
-    return result
-
 
 def _normalize_answer(answer: str | None, question_type: str) -> str:
     """标准化答案格式。"""
@@ -345,7 +331,7 @@ def filter_isolated_tokens(text: str, context: dict | None = None) -> str:
     for line in lines:
         stripped = line.strip()
         # Skip lines that are just a single A/B/C/D
-        if len(stripped) == 1 and stripped in "ABCD":
+        if len(stripped) == 1 and stripped in {"A", "B", "C", "D"}:
             continue
         cleaned.append(line)
     text = "\n".join(cleaned)
@@ -529,9 +515,12 @@ def normalize_question(
         logger.info("[FREEZE] normalize_question(q%s): frozen options=%s",
                      raw_question.get("number", "?"), sorted(option_lines.keys()) if option_lines else "none")
 
-    # === Normalize option order to A→B→C→D ===
-    if option_lines and not raw_question.get("blank_option_groups"):
-        option_lines = normalize_option_order(option_lines)
+    # NOTE: Layer 0 — Input Clean only. Option order is preserved as-is from
+    # the upstream (freeze stage or splitter). No reordering, no padding,
+    # no structural changes to options. normalize_option_order is NOT called
+    # here — it would violate the read-only constraint.
+    # Frozen options preserve their detected order; non-frozen options keep
+    # the insertion order from the splitter.
 
     # === Goal 5: Cache lookup — 防止同一输入重复解析 ===
     # 使用 raw_text hash 做预缓存键（stem 尚未提取）
@@ -571,49 +560,45 @@ def normalize_question(
     stem = tracer.run("noise_filtering", "rule", "stem", "stem_extraction",
                       lambda s: filter_isolated_tokens(s, {"has_options": raw_question.get("has_options"), "option_lines": option_lines}),
                       stem)
-    # === Options extraction from upstream option_lines ===
-    options = tracer.run("options_extraction", "rule", "raw_ocr", "stem_extraction",
-                         _normalize_options, option_lines)
-    # === Options re-detection from raw_text when upstream missed them ===
-    if not options and raw_text and not is_frozen:
-        _detected_lines: dict[str, str] = {}
-        _PAREN_OPTION = re.compile(r"^\s*\(\s*([A-D])\s*\)\s*\S")
-        for line in raw_text.split("\n"):
-            stripped = line.strip()
-            # 主模式：A. A) ①. (A). 等
-            m = _OPTION_PATTERN.match(stripped)
-            if m:
-                key = m.group(1).upper()
-                key = key.replace("①", "A").replace("②", "B").replace("③", "C").replace("④", "D")
-                key = re.sub(r"[()]", "", key).strip()
-                text = _OPTION_PATTERN.sub("", stripped).strip()
-                if key in "ABCD":
-                    _detected_lines[key] = text
-                continue
-            # 次级模式：(A) text（不带句点）
-            m2 = _PAREN_OPTION.match(stripped)
-            if m2:
-                key = m2.group(1).upper()
-                text = _PAREN_OPTION.sub("", stripped).strip()
-                if key in "ABCD":
-                    _detected_lines[key] = text
-        if _detected_lines:
-            logger.info("[OPTIONS-DETECT] re-detected from raw_text: keys=%s", sorted(_detected_lines.keys()))
-            options = _normalize_options(_detected_lines)
-            option_lines = _detected_lines  # 同步更新，供 stem 提取和下游使用
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Layer 1: Question Type Classification — strict has_options gatekeeper
+    # ──────────────────────────────────────────────────────────────────────────
+    # This is the SINGLE authoritative decision point. If has_options is False,
+    # no downstream stage may create or modify options.
+
+    classification = _classify_type(
+        raw_text, option_lines,
+        splitter_has_options=raw_question.get("has_options", False),
+        is_frozen=is_frozen,
+    )
+    _has_options_classified = classification["has_options"]
+    _classify_reason = classification["has_options_reason"]
+    logger.info(
+        "[CLASSIFY] q%s: has_options=%s reason=%s",
+        raw_question.get("number", "?"),
+        _has_options_classified, _classify_reason,
+    )
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Layer 3: Option Engine — only runs when has_options=True
+    # ──────────────────────────────────────────────────────────────────────────
+    # Standardizes options_raw into [{key: "A", text: "..."}].
+    # No AI generation, no padding, no guessing. Options order from upstream
+    # (freeze stage or splitter) is preserved as-is.
+    if _has_options_classified:
+        options = tracer.run("options_extraction", "rule", "raw_ocr", "stem_extraction",
+                             _normalize_options, option_lines)
+    else:
+        options = []
     logger.info("[OPTIONS-DETECT] options=%s", [o["key"] for o in options] if options else "none")
-    # Track options recovery path
+    # Track options source for observability
+    # Layer 1/3: options come from the classifier gate (has_options) and
+    # the option engine (normalization). No re-detection/recovery is performed.
     if blank_option_groups:
-        tracer.mark_options_recovery("options_extraction", "raw_scan", 0, 1.0)
-    elif option_lines:
-        raw_markers = set(re.findall(r"(?:^|\n)\s*([A-D])\s*[.、:：)）]", raw_text))
-        stem_markers = set(re.findall(r"(?:^|\n)\s*([A-D])\s*[.、:：)）]", stem))
-        if raw_markers:
-            tracer.mark_options_recovery("options_extraction", "raw_scan", len(options), min(1.0, len(raw_markers) / 4.0))
-        elif stem_markers:
-            tracer.mark_options_recovery("options_extraction", "regex", len(options), min(1.0, len(stem_markers) / 4.0))
-        else:
-            tracer.mark_options_recovery("options_extraction", "fallback", len(options), 0.5)
+        tracer.mark_options_recovery("options_extraction", "blank_groups", len(options), 1.0)
+    elif _has_options_classified and options:
+        tracer.mark_options_recovery("options_extraction", "classifier_gate", len(options), 1.0)
     answer_raw = matched.get("answer")
     explanation_raw = matched.get("explanation", "")
     section_type = raw_question.get("section_type")
@@ -783,6 +768,9 @@ def normalize_question(
         "stem_hash": stem_hash,
         "confidence_score": confidence_score,
         "is_frozen": is_frozen,
+        # Layer 1: Question Type Classification — strict has_options gate
+        "options_classified": _has_options_classified,
+        "options_classify_reason": _classify_reason,
         # Goal 6: 失败追踪字段
         "validation_status": validation_status,
         "failure_reason": failure_reasons,
@@ -1048,44 +1036,40 @@ def normalize_output(question: dict) -> dict:
     for lang, code in code_match:
         code_blocks.append(code.strip())
 
-    # Ensure options are in list[dict] format with A→D order
+    # Ensure options are in list[dict] format.
+    # Layer 0/3: preserve original order, NO re-sorting A→D, NO padding.
     raw_options = question.get("options", [])
     question_type = question.get("question_type", "")
     is_frozen = bool(question.get("is_frozen", False))
 
     if is_frozen:
-        # Frozen options: preserve exactly as-is, no padding, no mutation
+        # Frozen options: preserve exactly as-is, no padding, no mutation.
+        # Option key order from the freeze stage is authoritative.
         if isinstance(raw_options, list):
             options_list = list(raw_options)
         elif isinstance(raw_options, dict):
-            ordered = normalize_option_order(raw_options)
-            options_list = [{"key": k, "text": ordered.get(k, "")}
-                            for k in sorted(ordered) if k in "ABCD"]
+            unexpected_keys = set(raw_options) - _OPTION_LETTERS
+            if unexpected_keys:
+                logger.warning(
+                    "[FROZEN] non-ABCD option keys dropped: %s",
+                    sorted(unexpected_keys),
+                )
+            options_list = [{"key": k, "text": raw_options[k]}
+                            for k in raw_options if k in _OPTION_LETTERS]
         else:
             options_list = []
     elif isinstance(raw_options, list):
-        opts_by_key: dict[str, str] = {}
-        for opt in raw_options:
-            if isinstance(opt, dict):
-                k = opt.get("key", "").upper()
-                v = opt.get("text", "")
-                if k in "ABCD":
-                    opts_by_key[k] = v
-        # Sort existing keys A→D
-        options_list = [{"key": k, "text": opts_by_key[k]} for k in sorted(opts_by_key) if k in "ABCD"]
-        # Pad to 4 only for single_choice (others may legitimately have fewer)
-        if question_type == QT_SINGLE_CHOICE:
-            present_keys = {o["key"] for o in options_list}
-            for k in ["A", "B", "C", "D"]:
-                if k not in present_keys:
-                    options_list.append({"key": k, "text": ""})
+        # Preserve insertion order, no sorting, no padding
+        options_list = [{"key": o["key"], "text": o["text"]}
+                        for o in raw_options
+                        if isinstance(o, dict) and o.get("key")]
+        # Always normalize keys to uppercase
+        for opt in options_list:
+            opt["key"] = opt["key"].upper()
     elif isinstance(raw_options, dict):
-        ordered = normalize_option_order(raw_options)
-        has_all = all(k in ordered for k in ["A", "B", "C", "D"])
-        if question_type == QT_SINGLE_CHOICE or has_all:
-            options_list = [{"key": k, "text": ordered.get(k, "")} for k in ["A", "B", "C", "D"]]
-        else:
-            options_list = [{"key": k, "text": ordered[k]} for k in sorted(ordered) if k in "ABCD"]
+        # Preserve dict insertion order, no sorting
+        options_list = [{"key": k.upper(), "text": raw_options[k]}
+                        for k in raw_options if k.upper() in _OPTION_LETTERS]
     else:
         options_list = []
 
@@ -1106,6 +1090,7 @@ def normalize_output(question: dict) -> dict:
         "failure_reason", "retry_recommended", "ocr_quality_flags",
         "risk_flags", "decision_trace", "trace", "blank_option_groups",
         "is_frozen",
+        "options_classified", "options_classify_reason",
         "vision_fallback_attempted", "vision_fallback_used",
         "vision_fallback_status", "vision_fallback_engine",
         "vision_fallback_reason",

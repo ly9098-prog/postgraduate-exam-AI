@@ -13,8 +13,11 @@ Design:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
+import types
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -64,7 +67,7 @@ def _detect_option_line(line: str) -> tuple[str, str] | None:
             key = raw_key.upper()
             key = re.sub(r"[()]", "", key).strip()
         text = _OPTION_LINE_RE.sub("", stripped).strip()
-        if key in "ABCD" and text:
+        if key in {"A", "B", "C", "D"} and text:
             return key, text
     return None
 
@@ -80,7 +83,7 @@ def _detect_inline_options(text: str) -> dict[str, str]:
         for m in paren_matches:
             key = m.group(1).upper()
             value = m.group(2).strip().rstrip("(").strip()
-            if key in "ABCD" and value:
+            if key in {"A", "B", "C", "D"} and value:
                 options[key] = value
         return options
 
@@ -90,7 +93,7 @@ def _detect_inline_options(text: str) -> dict[str, str]:
         for m in matches:
             key = m.group(1).upper()
             value = m.group(2).strip()
-            if key in "ABCD" and value:
+            if key in {"A", "B", "C", "D"} and value:
                 options[key] = value
         return options
 
@@ -101,7 +104,7 @@ def _detect_inline_options(text: str) -> dict[str, str]:
             raw_key = m.group(1)
             key = _CIRCLED_MAP.get(raw_key, raw_key)
             value = m.group(2).strip()
-            if key in "ABCD" and value:
+            if key in {"A", "B", "C", "D"} and value:
                 options[key] = value
         return options
 
@@ -207,9 +210,20 @@ def run_structure_freeze_stage(
         "[FREEZE] stage complete: %d/%d blocks with options, %d structures frozen",
         total_option_blocks, len(normalized_blocks), len(structures),
     )
+
+    # Compute checksum over the raw registry BEFORE freezing (so we can verify
+    # downstream that the data hasn't been tampered with).
+    checksum = _compute_freeze_checksum(registry)
+
+    # Wrap registry in MappingProxyType for runtime immutability.
+    # Any downstream attempt to mutate the frozen option data will raise
+    # TypeError, enforcing the single-source-of-truth contract.
+    immutable_registry = _freeze_deep_freeze(registry)
+
     return {
-        "frozen_option_registry": registry,
+        "frozen_option_registry": immutable_registry,
         "frozen_structures": structures,
+        "freeze_checksum": checksum,
         "warnings": warnings,
     }
 
@@ -227,3 +241,32 @@ def _compute_confidence(options: dict[str, str]) -> float:
     if len(missing) <= 2:
         return 0.5
     return 0.3
+
+
+def _compute_freeze_checksum(
+    registry: dict[str, dict[str, str]],
+) -> str:
+    """Compute a deterministic SHA256 checksum over the frozen option registry.
+
+    The checksum covers only the registry (the single source of truth),
+    not the derived ``frozen_structures`` list (which may vary between runs
+    due to non-essential metadata).
+
+    Downstream stages can verify this checksum to detect any accidental
+    modification of the frozen option data.
+    """
+    # Use sorted keys and a canonical JSON representation for determinism
+    payload = json.dumps(registry, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _freeze_deep_freeze(registry: dict) -> dict[str, dict[str, str]]:
+    """Recursively wrap the registry and all nested option dicts in MappingProxyType.
+
+    This makes the entire frozen_option_registry read-only at runtime.
+    Attempting to mutate it will raise a TypeError.
+    """
+    frozen: dict[str, dict[str, str]] = {}
+    for key, opts in registry.items():
+        frozen[key] = types.MappingProxyType(dict(opts))
+    return types.MappingProxyType(frozen)  # type: ignore[return-value]
