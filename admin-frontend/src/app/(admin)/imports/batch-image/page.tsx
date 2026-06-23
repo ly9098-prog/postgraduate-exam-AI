@@ -143,8 +143,17 @@ export default function BatchImagePage() {
       };
     });
 
-    // Check if all terminal
-    if (next !== current) {
+    // Only update if any task's semantic fields actually changed
+    const hasSemanticChange = next.some((t, i) => {
+      const old = current[i];
+      if (!old) return true;
+      return (
+        t.status !== old.status ||
+        t.questionCount !== old.questionCount ||
+        t.errorMessage !== old.errorMessage
+      );
+    });
+    if (hasSemanticChange) {
       changed = true;
       setImageTasks(next);
     }
