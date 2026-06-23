@@ -698,71 +698,58 @@ export default function BatchImagePage() {
               </div>
             ) : null}
 
-            {/* Aggregate progress */}
-            {imageTasks.length > 0 ? (
-              <div className="space-y-4">
-                {/* Status badge */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {queuePhase !== "done" ? (
-                    <span className="flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 transition-all duration-300">
-                      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
-                      {queuePhase === "uploading" ? "上传中" : "识别中"}
-                    </span>
-                  ) : (
-                    <span
-                      className={`animate-rise-in flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-300 ${
-                        failedCount > 0 && succeededCount === 0
-                          ? "bg-red-50 text-red-700"
-                          : "bg-green-50 text-green-700"
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-2 w-2 rounded-full transition-all duration-300 ${failedCount > 0 && succeededCount === 0 ? "bg-red-500" : "bg-green-500"}`}
-                      />
-                      {failedCount > 0 && succeededCount === 0 ? "已结束（全部失败）" : "已完成"}
-                    </span>
-                  )}
-                  <span className="text-xs text-[var(--color-text-secondary)]">
-                    {doneImages}/{totalImages}
-                  </span>
-                </div>
+            {/* Compact aggregate progress + inline stats */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              {queuePhase !== "done" ? (
+                <span className="flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700 transition-all duration-300">
+                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+                  {queuePhase === "uploading" ? "上传中" : "识别中"}
+                </span>
+              ) : (
+                <span
+                  className={`animate-rise-in flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition-all duration-300 ${
+                    failedCount > 0 && succeededCount === 0
+                      ? "bg-red-50 text-red-700"
+                      : "bg-green-50 text-green-700"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-1.5 w-1.5 rounded-full transition-all duration-300 ${failedCount > 0 && succeededCount === 0 ? "bg-red-500" : "bg-green-500"}`}
+                  />
+                  {failedCount > 0 && succeededCount === 0 ? "全部失败" : "已完成"}
+                </span>
+              )}
 
-                {/* Progress bar */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-[10px] text-[var(--color-text-hint)]">
-                    <span>整体进度</span>
-                    <span>
-                      {doneImages}/{totalImages}（{progressPct}%）
-                    </span>
-                  </div>
-                  <div className="overflow-hidden rounded-full bg-[var(--color-bg-input)]">
-                    <div
-                      className="h-2.5 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[#7b9bbb] transition-all duration-700"
-                      style={{ width: `${progressPct}%` }}
-                    />
-                  </div>
-                </div>
+              {/* Inline stats: only show non-zero dynamic counts */}
+              <span className="flex flex-wrap items-center gap-x-2.5 gap-y-0 text-[10px] text-[var(--color-text-secondary)]">
+                <span>总数 <strong className="text-[var(--ink)] tabular-nums">{totalImages}</strong></span>
+                {uploadingCount > 0 && (
+                  <span>上传 <strong className="text-blue-600 tabular-nums">{uploadingCount}</strong></span>
+                )}
+                {processingCount > 0 && (
+                  <span>识别 <strong className="text-amber-600 tabular-nums">{processingCount}</strong></span>
+                )}
+                {succeededCount > 0 && (
+                  <span>成功 <strong className="text-green-600 tabular-nums">{succeededCount}</strong></span>
+                )}
+                {failedCount > 0 && (
+                  <span>失败 <strong className="text-red-600 tabular-nums">{failedCount}</strong></span>
+                )}
+                {totalQuestions > 0 && (
+                  <span>题目 <strong className="text-[var(--color-primary-dark)] tabular-nums">{totalQuestions}</strong></span>
+                )}
+              </span>
 
-                {/* Counters */}
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    ["总数", totalImages, "text-[var(--ink)]"],
-                    ["上传中", uploadingCount, "text-blue-600"],
-                    ["识别中", processingCount, "text-amber-600"],
-                    ["成功", succeededCount, "text-green-600"],
-                    ["失败", failedCount, "text-red-600"],
-                    ["生成题目", totalQuestions, "text-[var(--color-primary-dark)]"],
-                  ].map(([label, value, tone], idx) => (
-                    <div
-                      key={String(label)}
-                      className="animate-rise-in rounded-xl border border-[var(--color-border)] bg-white/70 p-2.5 text-center"
-                      style={{ animationDelay: `${idx * 60}ms` }}
-                    >
-                      <p className={`text-lg font-bold tabular-nums ${tone}`}>{Number(value ?? 0)}</p>
-                      <p className="mt-0.5 text-[10px] text-[var(--color-text-hint)]">{label}</p>
-                    </div>
-                  ))}
-                </div>
+              <span className="text-[10px] tabular-nums text-[var(--color-text-hint)] ml-auto">{progressPct}%</span>
+            </div>
+
+            {/* Progress bar — thin */}
+            <div className="overflow-hidden rounded-full bg-[var(--color-bg-input)]">
+              <div
+                className="h-1.5 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[#7b9bbb] transition-all duration-700"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
 
                 {/* Per-image log list */}
                 {imageTasks.length > 0 ? (
@@ -880,8 +867,6 @@ export default function BatchImagePage() {
                     </a>
                   </div>
                 ) : null}
-              </div>
-            ) : null}
           </CardContent>
         </Card>
       </div>
