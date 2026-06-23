@@ -115,37 +115,61 @@ def _looks_like_book_pdf_prose_candidate(question: dict) -> bool:
 def _apply_frozen_options(
     raw_questions: list[dict],
     frozen_option_registry: dict[str, dict[str, str]],
+    freeze_checksum: str | None = None,
+    normalized_blocks: list[dict] | None = None,
 ) -> None:
     """Enrich raw_questions with frozen option data from the freeze stage.
 
-    For each question whose ``raw_question_text`` contains text matching
-    a frozen option entry from the same page, the frozen options replace
-    or merge into the question's ``option_lines``. ``is_frozen`` is set
-    to ``True`` so downstream stages know not to re-extract or modify
+    This is the SINGLE SOURCE OF TRUTH for options. When frozen options
+    are found for a question, they REPLACE the option_lines entirely
+    (no merge with regex-extracted options). ``is_frozen`` is set to
+    ``True`` so downstream stages know not to re-extract or modify
     options.
 
-    Page-awareness prevents cross-page contamination: a question on page 1
-    will never receive options detected on page 2.
+    Uses exact page + block_index mapping (NO option-value substring matching).
+    For each question, determines which normalized blocks it spans by matching
+    block text content against the question's raw_text (both from the same
+    ``normalized_blocks`` source), then looks up ``page:block_index`` keys
+    in the frozen_option_registry.
 
     Mutates ``raw_questions`` in place.
     """
     if not frozen_option_registry:
         return
 
-    # Build a text cache of frozen option entries with parsed page number
-    # registry_key format: "{page}:{block_idx}"
-    frozen_entries: list[tuple[str, str, int]] = []  # (option_key, option_text, page)
-    for registry_key, opts in frozen_option_registry.items():
-        try:
-            page = int(registry_key.split(":")[0])
-        except (ValueError, IndexError):
-            continue
-        for key, text in opts.items():
-            if text:
-                frozen_entries.append((str(key), str(text), page))
+    # IMPORT: checksum function at module top (not inline)
+    from app.features.pipeline_stages.structure_freeze_stage import (
+        _compute_freeze_checksum as _verify_checksum,
+    )
 
-    if not frozen_entries:
-        return
+    # ── Checksum verification (best-effort, always logged on failure) ──
+    if freeze_checksum and len(frozen_option_registry) > 0:
+        try:
+            _plain: dict = {}
+            for _k, _v in frozen_option_registry.items():
+                _plain[_k] = dict(_v)
+            _actual = _verify_checksum(_plain)
+            if _actual != freeze_checksum:
+                logger.warning(
+                    "[FREEZE] checksum MISMATCH in _apply_frozen_options: "
+                    "expected=%s actual=%s — frozen data may have been modified!",
+                    freeze_checksum, _actual,
+                )
+        except Exception as exc:
+            logger.warning(
+                "[FREEZE] checksum verification failed: %s", exc,
+            )
+
+    # ── Build block text index: {page: {block_index: text}} ──
+    # Used to map each question to the specific blocks it spans.
+    block_index_by_page: dict[int, dict[int, str]] = {}
+    if normalized_blocks:
+        for b in normalized_blocks:
+            p = b.get("page", 0)
+            bi = b.get("block_index", 0)
+            txt = (b.get("normalized_text") or b.get("text", "")).strip()
+            if txt:
+                block_index_by_page.setdefault(p, {})[bi] = txt
 
     applied_count = 0
     for q in raw_questions:
@@ -155,32 +179,63 @@ def _apply_frozen_options(
         if not q_text:
             continue
 
-        current_opts = dict(q.get("option_lines") or {})
-        frozen_matches: dict[str, str] = {}
-
-        for opt_key, opt_text, entry_page in frozen_entries:
-            # Only apply frozen options from the same page range
-            if entry_page < q_page_start or entry_page > q_page_end + 1:
+        # ── Find which blocks this question spans ──
+        # For each page in the question's page range, check each block:
+        # if the block's text appears in the question's raw_text, that block
+        # contributed to this question. This is exact content matching — both
+        # come from the same normalized_blocks source.
+        question_block_keys: set[str] = set()
+        for p in range(q_page_start, q_page_end + 1):
+            if p not in block_index_by_page:
                 continue
-            if opt_text in q_text:
-                frozen_matches[opt_key] = opt_text
+            for bi, block_text in block_index_by_page[p].items():
+                registry_key = f"{p}:{bi}"
+                if registry_key not in frozen_option_registry:
+                    continue  # no frozen options in this block → skip
+                if block_text in q_text:
+                    question_block_keys.add(registry_key)
+
+        if not question_block_keys:
+            continue
+
+        # ── Collect frozen options from matching blocks ──
+        frozen_matches: dict[str, str] = {}
+        for registry_key in sorted(question_block_keys):
+            opts = frozen_option_registry.get(registry_key, {})
+            for key, text in opts.items():
+                if text and key not in frozen_matches:
+                    frozen_matches[str(key)] = str(text)
 
         if frozen_matches:
-            # Apply frozen options — they overwrite splitter's extraction
-            current_opts.update(frozen_matches)
-            q["option_lines"] = current_opts
+            # ── AUTHORITATIVE REPLACEMENT ──
+            # Frozen options COMPLETELY REPLACE option_lines. Any options that
+            # the freeze stage didn't detect are not included, ensuring zero
+            # contamination from regex extraction.
+            q["option_lines"] = dict(frozen_matches)
             q["has_options"] = True
             q["is_frozen"] = True
             applied_count += 1
             logger.debug(
-                "[FREEZE] applied frozen options to q%s (page %s): %s",
-                q.get("number", "?"), q_page_start, sorted(frozen_matches.keys()),
+                "[FREEZE] applied frozen options to q%s (page %s, blocks=%s): %s",
+                q.get("number", "?"), q_page_start,
+                sorted(question_block_keys),
+                sorted(frozen_matches.keys()),
             )
+        elif not q.get("is_frozen"):
+            pass
 
     if applied_count:
         logger.info(
             "[FREEZE] applied frozen options to %d/%d questions",
             applied_count, len(raw_questions),
+        )
+    elif raw_questions:
+        logger.info(
+            "[FREEZE] zero questions matched from %d normalized blocks, "
+            "%d registry entries, %d raw questions",
+            len(normalized_blocks or []),
+            len(frozen_option_registry),
+            len(raw_questions),
         )
 
 
@@ -1656,6 +1711,7 @@ def _restore_from_artifacts(
                              "analyze_structure", "classify_pages",
                              "structure_freeze", "split",
                              "match", "normalize_schema",
+                             "classify_questions",
                              "batch_validation", "batch_dedup",
                              "repair", "ai_validation", "similarity_match"}
             elif stage_name == "math_detect":
@@ -1664,6 +1720,7 @@ def _restore_from_artifacts(
                              "analyze_structure", "classify_pages",
                              "structure_freeze", "split",
                              "match", "normalize_schema",
+                             "classify_questions",
                              "batch_validation", "batch_dedup",
                              "repair", "ai_validation", "similarity_match",
                              "math_detect"}
@@ -1673,6 +1730,7 @@ def _restore_from_artifacts(
                              "analyze_structure", "classify_pages",
                              "structure_freeze", "split",
                              "match", "normalize_schema",
+                             "classify_questions",
                              "batch_validation", "batch_dedup",
                              "repair", "ai_validation", "similarity_match",
                              "math_detect", "table_detect"}
@@ -1742,6 +1800,8 @@ class ImportPipeline:
             ("match", self._run_match),
             ("normalize_schema", self._run_normalize_schema),
         ])
+        # Layer 1 Gate: enforce question type classification (strict has_options)
+        stage_specs.append(("classify_questions", self._run_classify_questions))
         stage_specs.append(("batch_validation", self._run_batch_validation))
         if self.options.get("enable_batch_dedup", True):
             stage_specs.append(("batch_dedup", self._run_batch_dedup))
@@ -2722,6 +2782,7 @@ class ImportPipeline:
 
         layout_result = _kw.get("layout_result") or {}
         split_mode = _kw.get("split_mode", "standard")
+        frozen_option_registry: dict = _kw.get("frozen_option_registry") or {}
         warnings: list[str] = []
 
         # ── VL_REBUILD: 结构失败，尝试用 PaddleOCR-VL 重建 blocks ──
@@ -2764,6 +2825,7 @@ class ImportPipeline:
             import_mode=import_mode_str,
             layout_result=layout_result if layout_result.get("option_groups") else None,
             split_mode=split_mode,
+            frozen_option_registry=frozen_option_registry,
         )
 
         text_blocks = [
@@ -2993,10 +3055,13 @@ class ImportPipeline:
 
         _log_multi_blank_stage("split", raw_questions, source_type=_kw.get("source_type"), import_mode=import_mode_str)
 
-        # ── Apply frozen options to raw_questions ──
-        frozen_option_registry: dict = _kw.get("frozen_option_registry") or {}
+        # ── Apply frozen options to raw_questions (single source of truth) ──
         if frozen_option_registry:
-            _apply_frozen_options(raw_questions, frozen_option_registry)
+            _apply_frozen_options(
+                raw_questions, frozen_option_registry,
+                freeze_checksum=_kw.get("freeze_checksum"),
+                normalized_blocks=split_blocks,
+            )
 
         # Log each parsed question
         for q in raw_questions:
@@ -3049,6 +3114,73 @@ class ImportPipeline:
             import_mode=_kw.get("import_mode"),
             exercise_regions_missing=bool(_kw.get("exercise_regions_missing")),
         )
+
+    def _run_classify_questions(self, questions: list[dict], **_kw) -> dict:
+        """Layer 1 Gate: enforce question type classification on all questions.
+
+        Reads the ``options_classified`` field set by the Layer 1 classifier
+        during ``normalize_schema``. For any question where the classifier
+        determined ``has_options=False``, options are set to ``[]`` to
+        enforce the SSOT rule.
+
+        This is an enforcement gate — no re-classification occurs. All
+        decisions are made by the Layer 1 classifier in
+        ``question_type_classifier.classify()``.
+
+        Returns:
+            dict with ``questions``, ``question_classifications``, ``warnings``.
+        """
+        if not questions:
+            return {"questions": [], "question_classifications": [], "warnings": []}
+
+        enforced_count = 0
+        classifications: list[dict] = []
+
+        for q in questions:
+            options_classified = q.get("options_classified", True)
+            options_list = q.get("options", [])
+            has_options = bool(options_list)
+            question_type = q.get("question_type", "")
+
+            entry: dict = {
+                "question_number": q.get("number", q.get("question_index", "?")),
+                "question_type": question_type,
+                "options_classified": options_classified,
+                "has_options": has_options,
+                "options_count": len(options_list),
+            }
+
+            # ENFORCEMENT: if classifier said no options but options exist → clear them
+            if not options_classified and options_list:
+                q["options"] = []
+                q["question_type"] = "subjective"
+                enforced_count += 1
+                entry["enforced"] = True
+                entry["cleared_options"] = len(options_list)
+                logger.info(
+                    "[CLASSIFY-GATE] q%s: has_options=False cleared %d options "
+                    "(was type=%s, now=subjective)",
+                    entry["question_number"], len(options_list), question_type,
+                )
+            else:
+                entry["enforced"] = False
+
+            classifications.append(entry)
+
+        warnings: list[str] = []
+        if enforced_count:
+            msg = (
+                f"classify_gate: cleared options for {enforced_count} questions "
+                "(has_options=False by Layer 1 classifier)"
+            )
+            warnings.append(msg)
+            logger.info("[CLASSIFY-GATE] %s", msg)
+
+        return {
+            "questions": questions,
+            "question_classifications": classifications,
+            "warnings": warnings,
+        }
 
     def _run_batch_validation(self, questions: list[dict], **_kw) -> dict:
         """Stage 5.6: cross-question structural integrity validation (P5-2: delegated)."""
@@ -3433,6 +3565,7 @@ class ImportPipeline:
             "split_mode": "standard",
             "frozen_option_registry": {},
             "frozen_structures": [],
+            "freeze_checksum": "",
             "raw_questions": [],
             "matched": [],
             "unmatched": [],

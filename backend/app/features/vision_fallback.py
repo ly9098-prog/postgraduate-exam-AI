@@ -56,10 +56,9 @@ def _build_vl_config(config: dict | None) -> dict:
 
 
 def _call_vl_sync(image_bytes: bytes, vl_config: dict) -> str:
-    """同步调用 PaddleOCR-VL。
+    """同步调用 PaddleOCR-VL（通过 OCRFixRouter 唯一入口）。
 
     在已有事件循环的环境中（如 pipeline），通过新建事件循环避免冲突。
-    采用与 ``ocr_fallback`` 相同的 ``asyncio.new_event_loop()`` 模式。
 
     Args:
         image_bytes: 页面图片 PNG 字节。
@@ -75,23 +74,28 @@ def _call_vl_sync(image_bytes: bytes, vl_config: dict) -> str:
     base_url = vl_config.get("base_url", _DEFAULT_VL_BASE_URL)
     model = vl_config.get("model", _DEFAULT_VL_MODEL)
 
-    from app.features.ocr_vl.paddleocr_vl_adapter import PaddleOCRVLAdapter
+    from app.features.ocr_fix.router import OCRFixRouter, STRATEGY_MANUAL
 
-    adapter = PaddleOCRVLAdapter(
-        api_token=api_token,
-        base_url=base_url,
-        model=model,
-    )
+    router = OCRFixRouter()
+    router.configure({
+        "ocr_fix_strategy": STRATEGY_MANUAL,
+        "ocr_fix_model": "paddleocr-vl",
+        "paddleocr_vl_api_token": api_token,
+        "paddleocr_vl_base_url": base_url,
+        "paddleocr_vl_model": model,
+    })
 
     async def _run() -> str:
-        result = await adapter.fix(image=image_bytes, ocr_text="")
+        result = await router.fix(
+            image=image_bytes, ocr_text="",
+            context={"entry_point": "vision_fallback"},
+        )
         return result.fixed_text or ""
 
     try:
         try:
             text = asyncio.run(_run())
         except RuntimeError:
-            # 已有事件循环 → 新建一个
             loop = asyncio.new_event_loop()
             try:
                 text = loop.run_until_complete(_run())
