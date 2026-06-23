@@ -419,6 +419,8 @@ class TestPdfToImages:
 # ============================================================
 
 
+@pytest.mark.ocr_deprecated
+@pytest.mark.ocr_dependency
 class TestCallOcrApi:
     @staticmethod
     def _run_async(coro):
@@ -507,6 +509,8 @@ class TestCallOcrApi:
 # ============================================================
 
 
+@pytest.mark.ocr_deprecated
+@pytest.mark.ocr_dependency
 class TestOcrFallback:
     def _setup_mocks(self, page_count=2, ocr_texts=None):
         """设置完整的 mock 链：fitz + PaddleOCRVLAdapter。"""
