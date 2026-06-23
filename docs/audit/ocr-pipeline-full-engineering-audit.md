@@ -1,7 +1,7 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ **2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）**
+> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
 
 **2026-06-23（本期新增）：**
@@ -9,6 +9,14 @@
 - **`ocr_mode=api` 路由**：batch-image 导入新增 API 模式，跳过本地 PaddleOCR，直接调用 PaddleOCR-VL，pipeline 跳过纠错阶段
 - **轮询优化**：间隔 1.5s→5s + 首次轮询前延迟 5s，减少无用 DB 写入
 - **认证头修正**：`bearer`→`Bearer`
+
+**2026-06-23（后续-本期新增）：**
+- **4 层 SSOT 架构重构**：新建 `question_type_classifier.py` 作为 Layer 1 严格 has_options 门控，`normalize_question()` 集成分类器，新增 `classify_questions` 管道阶段做 enforcement 门控
+- **Layer 0（Input Clean）**：`question_normalizer.py` 仅做字符级清洗，不重排 A/B/C/D，不填充缺失选项
+- **Layer 3（Option Engine）**：条件执行，仅当 `has_options=True` 时标准化选项
+- **Layer 4（AI Repair 不可变）**：`ai_repair.py` 扩展选项不可变约束至全部题型（3 规则：已存在+修改→拒绝，已存在+删除→拒绝，空+非冻结→允许恢复）
+- **冻结选项 SSOT**：AI 修复后始终从 `frozen_option_registry` 恢复冻结选项
+- **代码审查修复**：收紧 `_CHOICE_KEYWORDS`（移除 `"下列"`、`"以下"` 单字），修复 `in "ABCD"` 子串匹配，移除 `normalize_option_order` 死代码
 
 ---
 
@@ -126,14 +134,14 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                   标准化层 (Normalize)                                │
 │  answer_matcher.py → 题号精确匹配 + 序列回退                         │
-│  question_normalizer.py (685行) → OCR 质量门控 + 题干/选项/答案提取  │
+│  question_normalizer.py (1165行) → Layer 0/1/3: 题干清洗 + 分类器门控 + 选项标准化  │
 │  batch_validation.py → 跨题结构完整性验证 (保序/连续性/全局检查)     │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │
                                v
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    AI 修复层 (AI Repair)                              │
-│  ai_repair.py (1035行) → 两阶段修复: 罗马数字约束 + 标准批量         │
+│  ai_repair.py (1116行) → Layer 4 两阶段修复: 罗马数字 + 标准批量（选项不可变门控）         │
 │  llm_text_structurer.py (451行) → LLM 结构化 (规则不足时触发)        │
 │  保护: 反幻觉检查 + token_budget 共享管理                            │
 └──────────────────────────────┬──────────────────────────────────────┘
@@ -158,6 +166,7 @@
 | 结构分析层 | str[] | `PageStructure` | `{mode, q_count, a_count}` |
 | 结构冻结层 | 分类后 blocks | `frozen_option_registry` | `{(page,block_idx): {A: text, ...}}` |
 | 分割层 | str[] + frozen_option_registry | `RawQuestion[]` | `{number, stem, options, answer}` |
+| 题型分类层（Layer 1） | raw_text + option_lines | `classification dict` | `{has_options, reason, confidence}` |
 | 标准化层 | `RawQuestion[]` | `NormalizedQuestion[]` | `{type, stem, opts, answer, ...}` |
 | AI 修复层 | `NormalizedQuestion[]` | `NormalizedQuestion[]` | 同上（修复后） |
 | 入库层 | `NormalizedQuestion[]` | `question_imports` | DB 记录 |
@@ -170,7 +179,7 @@
 
 | 模块 | 行数 | 职责 | 单一职责 | 耦合度 |
 |---|---|---|---|---|
-| `pipeline_orchestrator.py` | ~4400 | 16 阶段编排 + 性能 Profile + routing stability log | 🟡 仍有降低空间 | 🟡 中 |
+| `pipeline_orchestrator.py` | ~4631 | 18 阶段编排（含 classify_questions）+ 性能 Profile | 🟡 仍有降低空间 | 🟡 中 |
 | `pipeline_stages/`（8 文件） | ~1140 | 8 独立 stage 实现（match/math_detect/table_detect/structure_freeze/...） | ✅ 各模块单一 | 🟢 低 |
 | `question_pipeline.py` | 2921 | `QuestionNormalizer` + 向后兼容重导出 | 🟡 保留入口 | 🟢 低 |
 | `question_ai_complete.py` | 741 | AI 补全 | ✅ 单一 | 🟢 低 |
@@ -184,8 +193,10 @@
 | `ocr_vl/paddleocr_vl_adapter.py` | 112 | OCRFixerProtocol 适配器 | ✅ 清晰 | 🟢 低 |
 | `ai_safety.py` | 284 | AI 编辑安全门禁 | ✅ 优秀 | 🟢 低 |
 | `question_splitter.py` | 1301 | 题号+选项提取 | ✅ 良好 | 🟢 低 |
-| `ai_repair.py` | 1035 | AI 修复（含 code integrity gate） | ✅ 较好 | 🟡 中 |
+| `question_normalizer.py` | 1165 | Layer 0/1/3 集成：题干清洗 + 分类器门控 + 选项标准化 + OCR 质量门控 | ✅ 单一（职责合理增长） | 🟢 低 |
+| `ai_repair.py` | 1116 | AI 修复 + Layer 4 选项不可变门控（含 code integrity gate） | ✅ 较好 | 🟢 低 |
 | `code_integrity.py` | 520 | 代码块完整性检测 | ✅ 单一 | 🟢 低 |
+| `question_type_classifier.py` | 172 | Layer 1 严格 has_options 门控（新建模块，纯规则） | ✅ 单一 | 🟢 低 |
 | `batch_image_import_service.py` | ~1050 | 批量图片导入编排器（state machine + trace events + idempotency + ocr_mode 路由） | ✅ 良好 | 🟢 低 |
 | `layout_router.py` | 76 | 生产固化路由决策（pure confidence-based） | ✅ 纯函数 | 🟢 低 |
 | `evaluation/routing_metrics.py` | 217 | 路由决策指标收集 | ✅ 单一 | 🟢 低 |
@@ -197,6 +208,8 @@
 - **P5-3**: `question_pipeline.py` 拆出 4 个模块（ai_complete/enrich/draft/import_writer）
 - **OCR 清洗统一**: 3 处重复合并到 `text_normalizer.py:normalize_ocr_text()`
 - **旧版路径清理**: `ocr_correction.py` 精简为 171 行包装层，纠错统一由 OCRFixRouter 处理
+- **4 层 SSOT 架构（本期）**: 新建 `question_type_classifier.py` Layer 1 门控，`question_normalizer.py` 集成 Layer 0/1/3，`ai_repair.py` Layer 4 选项不可变扩展至全部题型，`pipeline_orchestrator.py` 新增 `classify_questions` enforcement 阶段
+- **死代码清理（本期）**: 移除 `normalize_option_order`（Layer 0 禁止重排），收紧 `_CHOICE_KEYWORDS`（移除 `"下列"`、`"以下"` 单字防误判）
 
 ---
 
@@ -300,6 +313,10 @@
 | **Phase 2** | 路由策略固化 + Evaluation | ✅ 484d4e0, a9946af |
 | **2026-06-23** | PaddleOCR-VL 客户端 `state`/`errorMsg`/JSONL 解析 bug | ✅ 本轮修复 |
 | **2026-06-23** | `ocr_mode=api` 路由（跳过本地 OCR） | ✅ 本轮修复 |
+| **P0** | 选项检测/修复路径不一致（split→normalize→repair 各自检测选项） | ✅ SSOT 冻结 + Layer 1 分类器 + Layer 4 不可变 |
+| **P0** | AI repair 篡改 frozen/non-frozen 选项 | ✅ 773e8ef（3 规则不可变） |
+| **P1** | `_CHOICE_KEYWORDS` 过宽导致非选择题误判 | ✅ 54fbeeb（移除 `"下列"`、`"以下"` 单字） |
+| **P2** | `in "ABCD"` 子串匹配隐患 + 死代码 `normalize_option_order` | ✅ 773e8ef |
 
 ### 6.2 改造路线图（压缩）
 
@@ -313,6 +330,11 @@
 ✅ 阶段五: P9 DAG + Batch-Image 并发 (ede71f9, dce5aa4)
 ✅ Phase 2: 路由策略固化 + Evaluation (484d4e0)
 ✅ 本轮: PaddleOCR-VL 客户端修复 + ocr_mode=api 路由
+✅ **本轮后续: 4 层 SSOT 架构重构（773e8ef）**
+  - Layer 1 question_type_classifier 严格 has_options 门控
+  - Layer 0/3 option engine 不重排、不填充
+  - Layer 4 AI repair 选项不可变（3 规则）
+  - 代码审查修复（关键词收紧、死代码清理、子串匹配修复）
 
 ⏳ 待处理:
   - AI 补全并行化 (0.5d)
@@ -339,10 +361,13 @@
 阶段 3: AI 纠错 → OCRFixRouter: PaddleOCR-VL → DeepSeek → Rule (✅ 唯一入口)
   └─ 客户端修复 (2026-06-23): data.state, errorMsg, layoutParsingResults 解析
 阶段 4: 结构分析 + 页面分类 (不改)
-阶段 5: 结构冻结 → 纯正则选项锁定，split/repair 只读 (新增 deff5fc)
-阶段 6: 分割 + 答案匹配 (不改)
-阶段 7: 标准化 + AI 修复 (可选) (不改)
-阶段 8: 去重 + 入库 (不改)
+	阶段 5: 结构冻结 → 纯正则选项锁定，split/repair 只读 (新增 deff5fc)
+	阶段 6: 分割 + 答案匹配 (不改)
+	阶段 7: 标准化 + Layer 1 分类门控 + Layer 4 选项不可变 (773e8ef)
+	  ├─ Layer 0: 不重排、不填充
+	  ├─ Layer 1: question_type_classifier → has_options 严格门控
+	  └─ Layer 4: 3 规则选项不可变 (修改/删除→拒绝, 空+非冻结→允许恢复)
+	阶段 8: 去重 + 入库 (不改)
 ```
 
 ---
@@ -353,14 +378,15 @@
 
 | 文件 | 行数 | 用途 |
 |---|---|---|
-| `features/pipeline_orchestrator.py` | ~4400 | 主编排器（17 阶段） |
+| `features/pipeline_orchestrator.py` | ~4631 | 主编排器（18 阶段，含 classify_questions） |
 | `features/question_pipeline.py` | 2921 | 标准化管道 + 向后兼容重导出 |
 | `features/batch_image_import_service.py` | ~1050 | 批量图片导入编排器（含 ocr_mode 路由） |
 | `services/ocr_service.py` | 637 | PaddleOCR 封装 |
 | `features/text_normalizer.py` | 1115 | 统一 OCR 文本规范化（13 步） |
 | `features/question_splitter.py` | 1301 | 题号+选项提取 |
-| `features/ai_repair.py` | 1035 | AI 修复 |
+| `features/ai_repair.py` | 1116 | AI 修复（Layer 4 选项不可变门控） |
 | `features/code_integrity.py` | 520 | 代码块完整性检测 |
+| `features/question_type_classifier.py` | 172 | Layer 1 题型分类门控（新建模块） |
 | `features/pipeline_stages/structure_freeze_stage.py` | 230 | 选项结构冻结（纯正则，split 前锁定选项） |
 
 ### OCR 纠错
@@ -403,4 +429,4 @@
 
 ---
 
-*报告结束。初版：2026-06-20，末次更新：2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）。*
+*报告结束。初版：2026-06-20，末次更新：2026-06-23（4 层 SSOT 架构重构）。*
