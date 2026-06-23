@@ -56,6 +56,7 @@ from app.features.pipeline_stages.repair_stage import (
     run_repair_stage,
 )
 from app.features.pipeline_stages.review_stage import run_review_stage
+from app.features.pipeline_stages.structure_freeze_stage import run_structure_freeze_stage
 from app.features.pipeline_stages.table_detect_stage import run_table_detect_stage
 from app.features.pipeline_stages._helpers import _log_multi_blank_stage
 
@@ -109,6 +110,78 @@ def _looks_like_book_pdf_prose_candidate(question: dict) -> bool:
     if _BOOK_PDF_QUESTION_SIGNAL_RE.search(text):
         return len(text) > 360 and marker_count >= 4 and sentence_count >= 4
     return True
+
+
+def _apply_frozen_options(
+    raw_questions: list[dict],
+    frozen_option_registry: dict[str, dict[str, str]],
+) -> None:
+    """Enrich raw_questions with frozen option data from the freeze stage.
+
+    For each question whose ``raw_question_text`` contains text matching
+    a frozen option entry from the same page, the frozen options replace
+    or merge into the question's ``option_lines``. ``is_frozen`` is set
+    to ``True`` so downstream stages know not to re-extract or modify
+    options.
+
+    Page-awareness prevents cross-page contamination: a question on page 1
+    will never receive options detected on page 2.
+
+    Mutates ``raw_questions`` in place.
+    """
+    if not frozen_option_registry:
+        return
+
+    # Build a text cache of frozen option entries with parsed page number
+    # registry_key format: "{page}:{block_idx}"
+    frozen_entries: list[tuple[str, str, int]] = []  # (option_key, option_text, page)
+    for registry_key, opts in frozen_option_registry.items():
+        try:
+            page = int(registry_key.split(":")[0])
+        except (ValueError, IndexError):
+            continue
+        for key, text in opts.items():
+            if text:
+                frozen_entries.append((str(key), str(text), page))
+
+    if not frozen_entries:
+        return
+
+    applied_count = 0
+    for q in raw_questions:
+        q_text = q.get("raw_question_text") or ""
+        q_page_start = q.get("page_start", 1)
+        q_page_end = q.get("page_end", q_page_start)
+        if not q_text:
+            continue
+
+        current_opts = dict(q.get("option_lines") or {})
+        frozen_matches: dict[str, str] = {}
+
+        for opt_key, opt_text, entry_page in frozen_entries:
+            # Only apply frozen options from the same page range
+            if entry_page < q_page_start or entry_page > q_page_end + 1:
+                continue
+            if opt_text in q_text:
+                frozen_matches[opt_key] = opt_text
+
+        if frozen_matches:
+            # Apply frozen options — they overwrite splitter's extraction
+            current_opts.update(frozen_matches)
+            q["option_lines"] = current_opts
+            q["has_options"] = True
+            q["is_frozen"] = True
+            applied_count += 1
+            logger.debug(
+                "[FREEZE] applied frozen options to q%s (page %s): %s",
+                q.get("number", "?"), q_page_start, sorted(frozen_matches.keys()),
+            )
+
+    if applied_count:
+        logger.info(
+            "[FREEZE] applied frozen options to %d/%d questions",
+            applied_count, len(raw_questions),
+        )
 
 
 def _build_raw_questions_preview(raw_questions: list[dict]) -> list[dict]:
@@ -1392,6 +1465,7 @@ class PipelineStage:
             "layout_router": "parse",
             "analyze_structure": "parse",
             "classify_pages": "parse",
+            "structure_freeze": "parse",
             "split": "parse",
             "match": "parse",
             "normalize_schema": "parse",
@@ -1551,7 +1625,8 @@ def _restore_from_artifacts(
             # Mark preceding stages as completed
             preceding = {"extract", "normalize_text", "ocr_correction",
                          "layout_reconstruction", "layout_router",
-                         "analyze_structure", "classify_pages", "split"}
+                         "analyze_structure", "classify_pages",
+                         "structure_freeze", "split"}
             for s in preceding:
                 if s not in completed_stages:
                     completed_stages.append(s)
@@ -1572,19 +1647,22 @@ def _restore_from_artifacts(
             if stage_name == "normalize_schema":
                 preceding = {"extract", "normalize_text", "ocr_correction",
                              "layout_reconstruction", "layout_router",
-                             "analyze_structure", "classify_pages", "split",
+                             "analyze_structure", "classify_pages",
+                             "structure_freeze", "split",
                              "match", "normalize_schema"}
             elif stage_name == "repair":
                 preceding = {"extract", "normalize_text", "ocr_correction",
                              "layout_reconstruction", "layout_router",
-                             "analyze_structure", "classify_pages", "split",
+                             "analyze_structure", "classify_pages",
+                             "structure_freeze", "split",
                              "match", "normalize_schema",
                              "batch_validation", "batch_dedup",
                              "repair", "ai_validation", "similarity_match"}
             elif stage_name == "math_detect":
                 preceding = {"extract", "normalize_text", "ocr_correction",
                              "layout_reconstruction", "layout_router",
-                             "analyze_structure", "classify_pages", "split",
+                             "analyze_structure", "classify_pages",
+                             "structure_freeze", "split",
                              "match", "normalize_schema",
                              "batch_validation", "batch_dedup",
                              "repair", "ai_validation", "similarity_match",
@@ -1592,7 +1670,8 @@ def _restore_from_artifacts(
             else:  # table_detect
                 preceding = {"extract", "normalize_text", "ocr_correction",
                              "layout_reconstruction", "layout_router",
-                             "analyze_structure", "classify_pages", "split",
+                             "analyze_structure", "classify_pages",
+                             "structure_freeze", "split",
                              "match", "normalize_schema",
                              "batch_validation", "batch_dedup",
                              "repair", "ai_validation", "similarity_match",
@@ -1658,6 +1737,7 @@ class ImportPipeline:
         stage_specs.extend([
             ("analyze_structure", self._run_analyze_structure),
             ("classify_pages", self._run_classify_pages),
+            ("structure_freeze", self._run_structure_freeze),
             ("split", self._run_split),
             ("match", self._run_match),
             ("normalize_schema", self._run_normalize_schema),
@@ -1811,47 +1891,12 @@ class ImportPipeline:
                             "OCR fallback failed, using original extraction: %s", exc,
                         )
 
-                    # PaddleOCR-VL vision model fallback (admin-configured via feature="vision")
+                    # PaddleOCR-VL 不在此处调用 — 由下游 ocr_correction 阶段的路由器统一处理
                     if not ocr_ok:
-                        vision_config = _kw.get("vision_config")
-                        if vision_config and vision_config.get("api_key"):
-                            provider = (vision_config.get("provider") or "").lower()
-                            if provider in ("paddleocr-vl", "paddleocr_vl"):
-                                try:
-                                    logger.info(
-                                        "Local OCR failed, trying PaddleOCR-VL vision fallback (provider=%s)",
-                                        provider,
-                                    )
-                                    from app.features.ocr_service import ocr_fallback
-
-                                    content_bytes = file_content
-                                    if content_bytes is None and file_path:
-                                        with open(file_path, "rb") as f:
-                                            content_bytes = f.read()
-
-                                    if content_bytes:
-                                        vl_config = {
-                                            "paddleocr_vl_api_token": vision_config["api_key"],
-                                            "paddleocr_vl_base_url": vision_config.get(
-                                                "api_base_url", "https://paddleocr.aistudio-app.com",
-                                            ),
-                                            "paddleocr_vl_model": vision_config.get(
-                                                "model_name", "PaddleOCR-VL-1.6",
-                                            ),
-                                        }
-                                        vl_blocks = ocr_fallback(
-                                            content_bytes,
-                                            source_file=_kw.get("source_file", ""),
-                                            config=vl_config,
-                                        )
-                                        if vl_blocks:
-                                            raw_blocks = vl_blocks
-                                            logger.info(
-                                                "PaddleOCR-VL vision fallback succeeded: %d blocks",
-                                                len(vl_blocks),
-                                            )
-                                except Exception as vl_exc:
-                                    logger.warning("PaddleOCR-VL vision fallback failed: %s", vl_exc)
+                        logger.warning(
+                            "Local OCR returned no blocks; downstream ocr_correction stage "
+                            "will attempt PaddleOCR-VL via OCRFixRouter"
+                        )
                 else:
                     logger.warning(
                         "PDF text only %d chars but OCR_ENABLED=false, cannot extract scanned content",
@@ -2042,8 +2087,8 @@ class ImportPipeline:
     ) -> list[dict] | None:
         """用 PaddleOCR-VL 重建 blocks（VL_REBUILD 路径）。
 
-        当 layout 结构失败时，直接调用 PaddleOCR-VL 从原始 PDF 页面
-        重新识别文字，输出与 normalized_blocks 兼容的格式。
+        当 layout 结构失败时，通过 OCRFixRouter 调用 PaddleOCR-VL 从原始
+        PDF 页面重新识别文字，输出与 normalized_blocks 兼容的格式。
 
         Args:
             file_path: PDF 文件路径。
@@ -2073,13 +2118,17 @@ class ImportPipeline:
                 logger.warning("VL_REBUILD: PaddleOCR-VL not configured")
                 return None
 
-            from app.features.ocr_vl.paddleocr_vl_adapter import PaddleOCRVLAdapter
+            # 通过 OCRFixRouter 调用 PaddleOCR-VL（唯一入口）
+            from app.features.ocr_fix.router import OCRFixRouter, STRATEGY_MANUAL
 
-            adapter = PaddleOCRVLAdapter(
-                api_token=api_token,
-                base_url=base_url,
-                model=model,
-            )
+            router = OCRFixRouter()
+            router.configure({
+                "ocr_fix_strategy": STRATEGY_MANUAL,
+                "ocr_fix_model": "paddleocr-vl",
+                "paddleocr_vl_api_token": api_token,
+                "paddleocr_vl_base_url": base_url,
+                "paddleocr_vl_model": model,
+            })
 
             new_blocks: list[dict] = []
             total_pages = len(doc)
@@ -2099,9 +2148,9 @@ class ImportPipeline:
                 png_bytes = pix.tobytes("png")
                 pw, ph = page_dim.get(page_idx, (pix.width, pix.height))
 
-                ctx = {"page_num": page_idx, "filename": f"page_{page_idx}.png"}
+                ctx = {"page_num": page_idx, "filename": f"page_{page_idx}.png", "entry_point": "vl_rebuild"}
                 result = _run_coro_in_loop(
-                    adapter.fix(image=png_bytes, ocr_text="", context=ctx)
+                    router.fix(image=png_bytes, ocr_text="", context=ctx)
                 )
 
                 if result.fixed_text:
@@ -2298,7 +2347,7 @@ class ImportPipeline:
                 result = await router.fix(
                     image=page_image,
                     ocr_text=text,
-                    context={"block_index": idx, "page": page_num},
+                    context={"block_index": idx, "page": page_num, "entry_point": "ocr_correction_router"},
                 )
 
                 if result.tokens_used:
@@ -2598,8 +2647,26 @@ class ImportPipeline:
             "warnings": warnings,
         }
 
+    def _run_structure_freeze(
+        self,
+        normalized_blocks: list[dict],
+        **_kw,
+    ) -> dict:
+        """Stage 3: detect and freeze option structures before splitting.
+
+        Runs after text normalization and page classification, before
+        question splitting. Scans OCR blocks for option patterns and
+        produces a ``frozen_option_registry`` — a mapping of
+        ``(page, block_index)`` → detected options.
+
+        Downstream stages (split, normalize_schema, repair) read the
+        registry instead of re-extracting options from text, ensuring
+        that options are only extracted once in the entire pipeline.
+        """
+        return run_structure_freeze_stage(normalized_blocks)
+
     def _run_split(self, normalized_blocks: list[dict], structure: dict | None = None, **_kw) -> dict:
-        """Stage 3: split text blocks into individual questions.
+        """Stage 4: split text blocks into individual questions.
 
         P2-3 / P1-3: when running in chunked mode, ``_kw`` may include
         ``_chunk_seen_hashes`` (a mutable set of overlap-dedup hashes
@@ -2926,6 +2993,11 @@ class ImportPipeline:
 
         _log_multi_blank_stage("split", raw_questions, source_type=_kw.get("source_type"), import_mode=import_mode_str)
 
+        # ── Apply frozen options to raw_questions ──
+        frozen_option_registry: dict = _kw.get("frozen_option_registry") or {}
+        if frozen_option_registry:
+            _apply_frozen_options(raw_questions, frozen_option_registry)
+
         # Log each parsed question
         for q in raw_questions:
             opts = q.get("option_lines") or {}
@@ -2933,11 +3005,12 @@ class ImportPipeline:
                 f"{k}: {str(v)[:40]}" for k, v in sorted(opts.items())
             ) or "(无选项)"
             logger.info(
-                "【OCR-6】题目解析结果 | number=%s page=%s has_options=%s options=%s\n"
+                "【OCR-6】题目解析结果 | number=%s page=%s has_options=%s options=%s%s\n"
                 "  └─ 题干: %.200s",
                 q.get("number", "?"), q.get("page_start", "?"),
                 q.get("has_options", False),
                 opt_summary[:120],
+                " [FROZEN]" if q.get("is_frozen") else "",
                 str(q.get("raw_question_text") or ""),
             )
 
@@ -3358,6 +3431,8 @@ class ImportPipeline:
             "normalized_blocks": [],
             "layout_result": {},
             "split_mode": "standard",
+            "frozen_option_registry": {},
+            "frozen_structures": [],
             "raw_questions": [],
             "matched": [],
             "unmatched": [],
