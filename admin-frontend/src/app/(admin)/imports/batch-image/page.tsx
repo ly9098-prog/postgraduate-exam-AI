@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Check, CheckCircle2, ChevronDown, ClipboardCheck, Images, RefreshCw, Trash2, UploadCloud, X } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { apiRequest, toQuery } from "@/lib/api/client";
-import type { BatchImageJobStatusResponse, BatchImageReparseResponse, BatchImageUploadResponse, TraceEvent } from "@/lib/api/types";
+import { apiRequest, getApiAccessToken, toQuery } from "@/lib/api/client";
+import { connectSSE } from "@/lib/api/sse";
+import type { BatchImageJobStatusResponse, BatchImageUploadResponse, BatchImageReparseResponse, TraceEvent } from "@/lib/api/types";
 
 const MAX_FILES = (() => {
   const n = Number(process.env.NEXT_PUBLIC_BATCH_IMAGE_MAX_FILES);
@@ -47,10 +48,6 @@ type ImageTask = {
 };
 
 // ── Helpers ───────────────────────────────────────────────────
-
-function isTerminal(status?: string) {
-  return Boolean(status && ["completed", "failed"].includes(status));
-}
 
 function dedupeFiles(existing: File[], incoming: File[]) {
   const seen = new Set(existing.map((f) => `${f.name}_${f.size}`));
@@ -92,108 +89,30 @@ export default function BatchImagePage() {
   // Keep ref in sync
   useEffect(() => { imageTasksRef.current = imageTasks; }, [imageTasks]);
 
-  // ── Polling: per-image useQueries ──────────────────────────
+  // ── SSE streaming (replaces per-image polling) ────────────
 
-  const activeTasks = imageTasks.filter(
-    (t) => t.jobId !== null && t.status === "processing" && t.jobId.length > 0,
-  );
+  const abortSourcesRef = useRef<Map<string, () => void>>(new Map());
+  const doneRef = useRef(false); // guard: completion message shown once
 
-  const jobQueries = useQueries({
-    queries: activeTasks.map((task) => ({
-      queryKey: ["batch-image-job", task.jobId],
-      queryFn: () =>
-        apiRequest<BatchImageJobStatusResponse>(`/imports/batch-image/${task.jobId}`),
-      enabled: task.jobId !== null && task.status === "processing",
-      refetchInterval: (query: { state: { data?: BatchImageJobStatusResponse } }) =>
-        isTerminal(query.state.data?.status) ? false : 2500,
-      retry: false,
-      staleTime: 1000,
-    })),
-  });
-
-  // Merge poll results into imageTasks (using ref to avoid stale closure)
+  // Watch for all-tasks-done to show summary + invalidate review queue
   useEffect(() => {
-    const current = imageTasksRef.current;
-    let changed = false;
-
-    const next = current.map((task) => {
-      if (!task.jobId) return task;
-      const query = jobQueries.find(
-        (q) => q.data && task.jobId && q.data.job_id === task.jobId,
-      );
-      if (!query?.data || query.data === task.jobStatus) return task;
-
-      // Detect status transitions for trace events
-      const oldStatus = task.jobStatus?.status;
-      const newStatus = query.data.status;
-
-      // Has new data — update
-      return {
-        ...task,
-        jobStatus: query.data,
-        status:
-          newStatus === "completed"
-            ? ("succeeded" as const)
-            : newStatus === "failed"
-              ? ("failed" as const)
-              : task.status,
-        questionCount: query.data.total_questions,
-        errorMessage: query.data.error_message,
-        finishedAt: isTerminal(newStatus) ? Date.now() : task.finishedAt,
-      };
-    });
-
-    // Only update if any task's semantic fields actually changed
-    const hasSemanticChange = next.some((t, i) => {
-      const old = current[i];
-      if (!old) return true;
-      return (
-        t.status !== old.status ||
-        t.questionCount !== old.questionCount ||
-        t.errorMessage !== old.errorMessage
-      );
-    });
-    if (hasSemanticChange) {
-      changed = true;
-      setImageTasks(next);
-    }
-
-    // Detect global done
-    const allTerminal = next.every(
-      (t) => t.status === "pending" || t.status === "succeeded" || t.status === "failed",
+    if (doneRef.current || imageTasks.length === 0) return;
+    const done = imageTasks.every(
+      (t) => t.status === "succeeded" || t.status === "failed",
     );
-    if (allTerminal && next.length > 0 && current.length > 0) {
-      // Check if we just transitioned (any task had status changed)
-      const hadTransition = next.some((t, i) => t.status !== current[i]?.status);
-      if (hadTransition) {
-        const succeeded = next.filter((t) => t.status === "succeeded").length;
-        const failed = next.filter((t) => t.status === "failed").length;
-        const totalQ = next.reduce((s, t) => s + t.questionCount, 0);
-        setQueuePhase("done");
-        setMessage({
-          text: `导入完成：共 ${next.length} 张，成功 ${succeeded} 张（${totalQ} 道题）${failed > 0 ? `，失败 ${failed} 张` : ""}`,
-          type: failed > 0 && succeeded === 0 ? "error" : "success",
-        });
-        queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
-      }
-    }
+    if (!done) return;
+    doneRef.current = true;
 
-    if (!changed) {
-      // Check if any finishedAt values need updating
-      let stateChanged = false;
-      setImageTasks((prev) => {
-        const updated = prev.map((t) => {
-          if (t.finishedAt || !t.jobStatus) return t;
-          if (isTerminal(t.jobStatus.status)) {
-            stateChanged = true;
-            return { ...t, finishedAt: Date.now() };
-          }
-          return t;
-        });
-        return stateChanged ? updated : prev;
-      });
-    }
-  }, [jobQueries, queryClient]);
+    const succeeded = imageTasks.filter((t) => t.status === "succeeded").length;
+    const failed = imageTasks.filter((t) => t.status === "failed").length;
+    const totalQ = imageTasks.reduce((s, t) => s + t.questionCount, 0);
+    setQueuePhase("done");
+    setMessage({
+      text: `导入完成：共 ${imageTasks.length} 张，成功 ${succeeded} 张（${totalQ} 道题）${failed > 0 ? `，失败 ${failed} 张` : ""}`,
+      type: failed > 0 && succeeded === 0 ? "error" : "success",
+    });
+    queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
+  }, [imageTasks, queryClient]);
 
   // ── Queue Processing ────────────────────────────────────────
 
@@ -208,6 +127,7 @@ export default function BatchImagePage() {
     const maxConc = Math.max(1, Math.min(10, Number(concurrency) || 2));
     const batchId = `batch_${Date.now()}`;
     const now = Date.now();
+    doneRef.current = false;
 
     // 1. Clear files, create task items
     setFiles([]);
@@ -285,6 +205,43 @@ export default function BatchImagePage() {
                     : p,
                 ),
               );
+
+              // Open SSE stream for this job
+              const close = connectSSE(
+                `/imports/batch-image/${result.job_id}/stream`,
+                getApiAccessToken(),
+                {
+                  onTrace: (event) => {
+                    setImageTasks((prev) =>
+                      prev.map((p) =>
+                        p.id === task.id
+                          ? { ...p, traceEvents: [...p.traceEvents, event] }
+                          : p,
+                      ),
+                    );
+                  },
+                  onDone: (summary) => {
+                    setImageTasks((prev) =>
+                      prev.map((p) =>
+                        p.id === task.id
+                          ? {
+                              ...p,
+                              status:
+                                summary.status === "completed"
+                                  ? ("succeeded" as const)
+                                  : ("failed" as const),
+                              questionCount: summary.total_questions,
+                              errorMessage: summary.error_message,
+                              finishedAt: Date.now(),
+                            }
+                          : p,
+                      ),
+                    );
+                    abortSourcesRef.current.delete(result.job_id);
+                  },
+                },
+              );
+              abortSourcesRef.current.set(result.job_id, close);
             } catch (err: unknown) {
               if (abortCtrl.signal.aborted) return;
               const msg = err instanceof Error ? err.message : String(err);
@@ -320,6 +277,10 @@ export default function BatchImagePage() {
   const resetQueue = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
+    // Close all SSE connections
+    for (const [, close] of abortSourcesRef.current) close();
+    abortSourcesRef.current.clear();
+    doneRef.current = false;
     setImageTasks([]);
     setQueuePhase("idle");
     setMessage(null);
@@ -339,7 +300,6 @@ export default function BatchImagePage() {
           : `第 ${result.item_id} 项重新解析未成功：${result.error_message || "未知原因"}`,
         type: result.status === "succeeded" ? "success" : "error",
       });
-      queryClient.invalidateQueries({ queryKey: ["batch-image-job"] });
     },
     onError: (error) => {
       setMessage({ text: error instanceof Error ? error.message : "重新解析失败，请稍后重试。", type: "error" });
@@ -725,15 +685,6 @@ export default function BatchImagePage() {
                     : "实时追踪每张图片的识别状态"}
               </p>
             </div>
-            {queuePhase !== "idle" ? (
-              <Button
-                variant="secondary"
-                onClick={() => queryClient.invalidateQueries({ queryKey: ["batch-image-job"] })}
-                className="shrink-0"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-              </Button>
-            ) : null}
           </CardHeader>
           <CardContent>
             {/* Empty state */}
@@ -816,7 +767,7 @@ export default function BatchImagePage() {
                 {imageTasks.length > 0 ? (
                   <div className="space-y-1.5">
                     <span className="text-xs font-semibold text-[var(--color-text-secondary)]">明细</span>
-                    <div className="max-h-[360px] space-y-1.5 overflow-auto">
+                    <div className="space-y-1.5">
                       {imageTasks.map((task) => {
                         const traces = task.jobStatus?.trace_events ?? [];
                         return (
@@ -844,34 +795,32 @@ export default function BatchImagePage() {
 
                             {/* Trace events log */}
                             {traces.length > 0 ? (
-                              <div className="border-t border-[var(--color-border)] px-3 py-2 space-y-0.5 max-h-40 overflow-auto">
-                                {traces
-                                  .filter((e) => e.item_seq === task.seq)
-                                  .map((e, i) => (
-                                    <div key={i} className="flex items-start gap-2 text-[10px] leading-relaxed">
-                                      <span className="shrink-0 font-mono text-[var(--color-text-hint)] w-16">
-                                        {fmtTime(new Date(e.created_at).getTime())}
-                                      </span>
-                                      <span
-                                        className={`shrink-0 rounded px-1.5 py-0.5 font-semibold ${
-                                          e.status === "success"
-                                            ? "bg-green-50 text-green-700"
-                                            : e.status === "failed"
-                                              ? "bg-red-50 text-red-700"
-                                              : e.step === "upload"
-                                                ? "bg-blue-50 text-blue-700"
-                                                : e.step === "ocr"
-                                                  ? "bg-amber-50 text-amber-700"
-                                                  : "bg-gray-50 text-gray-500"
-                                        }`}
-                                      >
-                                        {e.step === "upload" ? "上传" : e.step === "ocr" ? "OCR" : e.step === "pipeline" ? "解析" : e.step === "done" ? "完成" : e.step === "error" ? "错误" : e.step}
-                                      </span>
-                                      <span className="text-[var(--color-text-secondary)] leading-relaxed">
-                                        {e.message}
-                                      </span>
-                                    </div>
-                                  ))}
+                              <div className="border-t border-[var(--color-border)] px-3 py-2 space-y-0.5">
+                                {traces.map((e, i) => (
+                                  <div key={i} className="flex items-start gap-2 text-[10px] leading-relaxed min-w-0 overflow-hidden">
+                                    <span className="shrink-0 font-mono text-[var(--color-text-hint)] w-16">
+                                      {fmtTime(new Date(e.created_at).getTime())}
+                                    </span>
+                                    <span
+                                      className={`shrink-0 rounded px-1.5 py-0.5 font-semibold ${
+                                        e.status === "success"
+                                          ? "bg-green-50 text-green-700"
+                                          : e.status === "failed"
+                                            ? "bg-red-50 text-red-700"
+                                            : e.step === "upload"
+                                              ? "bg-blue-50 text-blue-700"
+                                              : e.step === "ocr"
+                                                ? "bg-amber-50 text-amber-700"
+                                                : "bg-gray-50 text-gray-500"
+                                      }`}
+                                    >
+                                      {e.step === "upload" ? "上传" : e.step === "ocr" ? "OCR" : e.step === "pipeline" ? "解析" : e.step === "done" ? "完成" : e.step === "error" ? "错误" : e.step}
+                                    </span>
+                                    <span className="min-w-0 break-words text-[var(--color-text-secondary)] leading-relaxed">
+                                      {e.message}
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
                             ) : null}
 
