@@ -212,6 +212,7 @@ class BatchImageUploadResponse(BaseModel):
     rejected: int = 0  # 上传时校验未通过、未入队的文件数
     rejected_files: list[str] = []
     concurrency: int = 2
+    duplicate: bool = False  # true=命中 dedup，返回已有 job_id
 
 
 class BatchImageJobItem(BaseModel):
@@ -223,6 +224,27 @@ class BatchImageJobItem(BaseModel):
     question_count: int = 0
     error_message: str | None = None
     has_ocr_cache: bool = False
+    # Idempotency / trace identifiers (echoed back from upload)
+    batch_import_id: str | None = None
+    image_import_id: str | None = None
+    request_id: str | None = None
+
+
+class TraceEventItem(BaseModel):
+    """Single trace event in the append-only event log.
+
+    seq is per-job monotonic. item_seq=None means job-level event.
+    """
+    seq: int
+    item_seq: int
+    step: str
+    status: str
+    message: str
+    duration_ms: int | None = None
+    created_at: str
+    request_id: str | None = None
+    image_import_id: str | None = None
+    batch_import_id: str | None = None
 
 
 class BatchImageJobStatusResponse(BaseModel):
@@ -240,12 +262,14 @@ class BatchImageJobStatusResponse(BaseModel):
     total_questions: int = 0
     merged_batch_id: str = ""
     is_merged: bool = False  # 显式标记跨图合并状态，替代隐式 review_batch_id 推断
+    partial_failure: bool = False  # 部分成功（有成功也有失败）
     current_seq: int = 0
     current_file: str = ""
     error_message: str | None = None
     started_at: str = ""
     finished_at: str = ""
     items: list[BatchImageJobItem] = []
+    trace_events: list[TraceEventItem] = []  # append-only event log (backend source of truth)
 
 
 class BatchImageReparseResponse(BaseModel):

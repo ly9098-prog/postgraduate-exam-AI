@@ -15,13 +15,20 @@
 并发说明：PaddleOCR 推理被 `ocr_service._ocr_lock` 串行化（GPU 一次只跑一
 张），因此真正并行的是各 worker 的 AI 解析（httpx 异步）。OCR 用
 `asyncio.to_thread` 包裹，避免阻塞事件循环。
+
+一致性（v2 新增）：
+- State machine guard：阻止非法 status 迁移（如 completed→running）
+- Trace event：append-only 事件流，与状态更新同 DB 事务
+- Derived batch status：batch.status 由 items 状态派生
+- Idempotency：(batch_import_id, image_import_id) 唯一约束防止重复提交
 """
 
 import asyncio
+import json
 import logging
 import os
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from datetime import datetime
 
 from sqlalchemy import func, select
@@ -29,12 +36,55 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import async_session
-from app.models.import_batch_job import ImportBatchJob, ImportBatchJobItem
+from app.models.import_batch_job import (
+    BatchJobTraceEvent,
+    ImportBatchJob,
+    ImportBatchJobItem,
+)
 
 logger = logging.getLogger(__name__)
 
 _MIN_CONCURRENCY = 1
 _MAX_CONCURRENCY = 4
+
+# ================================================================
+# State Machine Guards
+# ================================================================
+
+_JOB_TRANSITIONS: dict[str, set[str]] = {
+    "queued": {"running"},
+    "running": {"completed", "failed"},
+    "completed": set(),
+    "failed": set(),
+}
+
+_ITEM_TRANSITIONS: dict[str, set[str]] = {
+    "pending": {"processing"},
+    "processing": {"succeeded", "failed"},
+    "succeeded": set(),
+    "failed": set(),
+}
+
+
+def _guard_job_transition(current: str, next_status: str) -> None:
+    if next_status not in _JOB_TRANSITIONS.get(current, set()):
+        raise ValueError(
+            f"Invalid job status transition: {current} → {next_status}"
+            f" (allowed from {current}: {_JOB_TRANSITIONS.get(current, set())})"
+        )
+
+
+def _guard_item_transition(current: str, next_status: str) -> None:
+    if next_status not in _ITEM_TRANSITIONS.get(current, set()):
+        raise ValueError(
+            f"Invalid item status transition: {current} → {next_status}"
+            f" (allowed from {current}: {_ITEM_TRANSITIONS.get(current, set())})"
+        )
+
+
+# ================================================================
+# Data structures
+# ================================================================
 
 
 @dataclass
@@ -49,7 +99,27 @@ class BatchImageSource:
     temp_path: str
 
 
+@dataclass
+class _TraceData:
+    """Trace event payload — 与 item/job 状态更新同事务写入。"""
+
+    step: str  # upload | waiting | ocr | pipeline | merge | done | error
+    status: str  # running | success | failed
+    message: str = ""
+    duration_ms: int | None = None
+    item_seq: int | None = None
+    request_id: str | None = None
+    image_import_id: str | None = None
+    batch_import_id: str | None = None
+
+
+# ================================================================
+# Helpers
+# ================================================================
+
+
 def _now() -> datetime:
+    # 返回本地时区的 naive datetime；SQLAlchemy 默认无时区，存 UTC 兼容值。
     return datetime.now().astimezone().replace(tzinfo=None)
 
 
@@ -64,6 +134,150 @@ def new_job_id() -> str:
     return f"BIMG_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
 
+async def _append_trace_event(
+    job_id: str,
+    *,
+    seq: int,
+    step: str,
+    status: str,
+    message: str = "",
+    item_seq: int | None = None,
+    request_id: str | None = None,
+    image_import_id: str | None = None,
+    batch_import_id: str | None = None,
+    duration_ms: int | None = None,
+    db: AsyncSession,
+) -> BatchJobTraceEvent:
+    """追加 trace event 到已开启的事务中（不 commit，由调用方控制）。
+
+    调用方必须确保 job 行已被 FOR UPDATE 锁定（next_event_seq 已递增）。
+    """
+    event = BatchJobTraceEvent(
+        job_id=job_id,
+        item_seq=item_seq,
+        request_id=request_id,
+        image_import_id=image_import_id,
+        batch_import_id=batch_import_id,
+        seq=seq,
+        step=step,
+        status=status,
+        message=message[:512],
+        duration_ms=duration_ms,
+    )
+    db.add(event)
+    return event
+
+
+# ================================================================
+# 原子状态更新 + Trace Event（同事务）
+# ================================================================
+
+
+async def _update_item_with_trace(
+    item_id: int,
+    job_id: str,
+    *,
+    fields: dict,
+    trace: _TraceData,
+) -> None:
+    """原子：item 字段更新 + trace event 追加。同事务、同行锁。"""
+    async with async_session() as db:
+        # 1. Lock job → 原子 seq + 防并发
+        job = await db.get(ImportBatchJob, job_id, with_for_update=True)
+        seq = job.next_event_seq
+        job.next_event_seq += 1
+
+        # 2. Update item + state guard
+        item = await db.get(ImportBatchJobItem, item_id)
+        if item is None:
+            await db.rollback()
+            return
+        if "status" in fields:
+            _guard_item_transition(item.status, fields["status"])
+        for key, value in fields.items():
+            setattr(item, key, value)
+        item.updated_at = _now()
+
+        # 3. Append trace event（同一 txn）
+        await _append_trace_event(
+            job_id,
+            seq=seq,
+            step=trace.step,
+            status=trace.status,
+            message=trace.message,
+            item_seq=trace.item_seq or item.seq,
+            request_id=trace.request_id or item.request_id,
+            image_import_id=trace.image_import_id or item.image_import_id,
+            batch_import_id=trace.batch_import_id or item.batch_import_id,
+            duration_ms=trace.duration_ms,
+            db=db,
+        )
+
+        await db.commit()
+
+
+async def _set_job_status_with_trace(
+    job_id: str,
+    status: str,
+    *,
+    error_message: str | None = None,
+    trace_message: str = "",
+    trace_step: str = "done",
+) -> None:
+    """原子：job status 更新 + trace event。同事务、同行锁。"""
+    async with async_session() as db:
+        job = await db.get(ImportBatchJob, job_id, with_for_update=True)
+        if job is None:
+            return
+        _guard_job_transition(job.status, status)
+
+        seq = job.next_event_seq
+        job.next_event_seq += 1
+
+        job.status = status
+        if error_message is not None:
+            job.error_message = error_message
+        if status in {"completed", "failed"}:
+            job.finished_at = _now()
+        job.updated_at = _now()
+
+        await _append_trace_event(
+            job_id,
+            seq=seq,
+            step=trace_step,
+            status=status,
+            message=trace_message or error_message or status,
+            db=db,
+        )
+
+        await db.commit()
+
+
+# ================================================================
+# Idempotency
+# ================================================================
+
+
+async def find_existing_job(
+    db: AsyncSession, batch_import_id: str, image_import_id: str
+) -> str | None:
+    """查找已存在的 job_id（用于去重）。"""
+    row = (
+        await db.execute(
+            select(ImportBatchJobItem.job_id).where(
+                ImportBatchJobItem.batch_import_id == batch_import_id,
+                ImportBatchJobItem.image_import_id == image_import_id,
+            ).limit(1)
+        )
+    ).scalar_one_or_none()
+    return row
+
+
+# ================================================================
+# Batch 创建
+# ================================================================
+
+
 async def create_batch_job(
     db: AsyncSession,
     *,
@@ -73,8 +287,31 @@ async def create_batch_job(
     concurrency: int,
     created_by: str | None,
     source_type: str = "image",
+    batch_import_id: str | None = None,
+    image_import_id: str | None = None,
+    request_id: str | None = None,
 ) -> ImportBatchJob:
-    """落库一个批量任务 + 每张图片的 item 行（status=pending）。"""
+    """落库一个批量任务 + 每张图片的 item 行（status=pending）。
+
+    支持 idempotency：(batch_import_id, image_import_id) 重复时返回已有 job。
+    """
+    # Idempotency check
+    if batch_import_id and image_import_id:
+        existing = await find_existing_job(db, batch_import_id, image_import_id)
+        if existing:
+            logger.info(
+                "Duplicate batch image submission: batch=%s image=%s -> existing job=%s",
+                batch_import_id, image_import_id, existing,
+            )
+            # Return a minimal ImportBatchJob stub so caller can check
+            stub = ImportBatchJob(
+                job_id=existing,
+                status="duplicate",
+                total=0,
+                concurrency=clamp_concurrency(concurrency),
+            )
+            return stub
+
     now = _now()
     job = ImportBatchJob(
         job_id=job_id,
@@ -88,6 +325,7 @@ async def create_batch_job(
         updated_at=now,
     )
     db.add(job)
+
     for src in sources:
         db.add(
             ImportBatchJobItem(
@@ -95,38 +333,36 @@ async def create_batch_job(
                 seq=src.seq,
                 source_file=src.source_file,
                 status="pending",
+                batch_import_id=batch_import_id,
+                image_import_id=image_import_id,
+                request_id=request_id,
                 created_at=now,
                 updated_at=now,
             )
         )
+
+    # Append trace event for upload (need to flush to get seq)
+    await db.flush()
+    await _append_trace_event(
+        job_id,
+        seq=job.next_event_seq,
+        step="upload",
+        status="success",
+        message=f"上传成功 ({len(sources)} 张)",
+        request_id=request_id,
+        image_import_id=image_import_id,
+        batch_import_id=batch_import_id,
+        db=db,
+    )
+    job.next_event_seq += 1
+
     await db.commit()
     return job
 
 
-async def _update_item(item_id: int, **fields) -> None:
-    """短事务更新单个 item，避免长时间持有连接。"""
-    async with async_session() as db:
-        item = await db.get(ImportBatchJobItem, item_id)
-        if item is None:
-            return
-        for key, value in fields.items():
-            setattr(item, key, value)
-        item.updated_at = _now()
-        await db.commit()
-
-
-async def _set_job_status(job_id: str, status: str, error_message: str | None = None) -> None:
-    async with async_session() as db:
-        job = await db.get(ImportBatchJob, job_id)
-        if job is None:
-            return
-        job.status = status
-        if error_message is not None:
-            job.error_message = error_message
-        if status in {"completed", "failed"}:
-            job.finished_at = _now()
-        job.updated_at = _now()
-        await db.commit()
+# ================================================================
+# 单图处理
+# ================================================================
 
 
 async def _merge_image_texts(
@@ -156,7 +392,6 @@ async def _merge_image_texts(
         logger.info("【MERGE-SKIP】job=%s 成功图片数=%d，无需合并", job_id, len(rows))
         return {"merged": False, "reason": f"only {len(rows)} succeeded item(s)"}
 
-    # 收集旧批次 ID（后续清理）
     old_batch_ids = [r.review_batch_id for r in rows if r.review_batch_id]
     merged_text = "\n\n".join(r.ocr_cleaned_text for r in rows if r.ocr_cleaned_text)
 
@@ -171,7 +406,7 @@ async def _merge_image_texts(
 
             merge_opts = dict(options)
             merge_opts["_merged_from_job"] = job_id
-            merge_opts["skip_ocr_correction"] = True  # 单图已纠错，合并流水线复用
+            merge_opts["skip_ocr_correction"] = True
             result = await run_import_pipeline(
                 file_content=merged_text.encode("utf-8"),
                 source_type="txt",
@@ -196,16 +431,17 @@ async def _merge_image_texts(
             job_id, merged_batch_id, qcount,
         )
 
-        # 更新所有 item 指向合并后的 review batch
         for r in rows:
-            await _update_item(
-                r.id,
-                review_batch_id=merged_batch_id,
-                question_count=0,
-                pipeline_id=result.get("pipeline_id"),
+            await _update_item_with_trace(
+                r.id, job_id,
+                fields={"review_batch_id": merged_batch_id, "question_count": 0},
+                trace=_TraceData(
+                    step="merge", status="success",
+                    message=f"合并至批次 {merged_batch_id}",
+                    item_seq=r.seq,
+                ),
             )
 
-        # 清理旧的单图 review batch
         from app.services.admin_import_service import delete_import_batch
 
         cleaned = 0
@@ -237,18 +473,37 @@ async def _merge_image_texts(
         return {"merged": False, "reason": "exception during merge pipeline"}
 
 
-async def _run_single_image(item_id: int, source_file: str, content: bytes, subject: str | None, options: dict) -> dict:
+async def _run_single_image(
+    item_id: int, source_file: str, content: bytes,
+    subject: str | None, options: dict,
+    job_id: str, seq: int,
+) -> dict:
     """OCR → 清洗 → 现有 TXT 导入流水线。返回结果 dict（含 raw/cleaned 文本）。
 
     注意：OCR 同步且 GPU 串行，用 to_thread 避免阻塞事件循环。
     """
     from app.services.ocr_service import clean_ocr_text, ocr_image
 
+    ocr_start = _now()
     raw_ocr_text = await asyncio.to_thread(ocr_image, content)
+    ocr_duration = int((_now() - ocr_start).total_seconds() * 1000)
+
     logger.info(
         "【OCR-1】PaddleOCR 原始结果 | file=%s chars=%d lines=%d\n%s",
         source_file, len(raw_ocr_text), raw_ocr_text.count("\n") + 1,
         raw_ocr_text[:2000],
+    )
+
+    # Trace: OCR done
+    await _update_item_with_trace(
+        item_id, job_id,
+        fields={},
+        trace=_TraceData(
+            step="ocr", status="success",
+            message=f"OCR 识别完成 ({ocr_duration}ms)",
+            duration_ms=ocr_duration,
+            item_seq=seq,
+        ),
     )
 
     cleaned_text = clean_ocr_text(raw_ocr_text)
@@ -260,10 +515,14 @@ async def _run_single_image(item_id: int, source_file: str, content: bytes, subj
     )
 
     # 先缓存 OCR 文本（即便后续解析失败，也能支持不重复 OCR 的重新解析）
-    await _update_item(
-        item_id,
-        ocr_raw_text=raw_ocr_text,
-        ocr_cleaned_text=cleaned_text,
+    await _update_item_with_trace(
+        item_id, job_id,
+        fields={"ocr_raw_text": raw_ocr_text, "ocr_cleaned_text": cleaned_text},
+        trace=_TraceData(
+            step="ocr", status="success",
+            message="OCR 文本已缓存",
+            item_seq=seq,
+        ),
     )
 
     if not cleaned_text.strip():
@@ -272,6 +531,7 @@ async def _run_single_image(item_id: int, source_file: str, content: bytes, subj
     async with async_session() as pdb:
         from app.features.pipeline_orchestrator import run_import_pipeline
 
+        pipeline_start = _now()
         result = await run_import_pipeline(
             file_content=cleaned_text.encode("utf-8"),
             source_type="txt",
@@ -281,6 +541,8 @@ async def _run_single_image(item_id: int, source_file: str, content: bytes, subj
             db=pdb,
             page_images={1: content},
         )
+        pipeline_duration = int((_now() - pipeline_start).total_seconds() * 1000)
+
     batch_id = result.get("batch_id")
     qcount = (result.get("stats") or {}).get("to_review", 0)
     stage_errors = result.get("errors", [])
@@ -290,6 +552,19 @@ async def _run_single_image(item_id: int, source_file: str, content: bytes, subj
         batch_id or "❌", qcount,
         stage_errors[0] if stage_errors else "无",
     )
+
+    # Trace: pipeline done
+    await _update_item_with_trace(
+        item_id, job_id,
+        fields={},
+        trace=_TraceData(
+            step="pipeline", status="success",
+            message=f"解析流水线完成 ({pipeline_duration}ms)",
+            duration_ms=pipeline_duration,
+            item_seq=seq,
+        ),
+    )
+
     result["_ocr_raw_text"] = raw_ocr_text
     result["_ocr_cleaned_text"] = cleaned_text
     return result
@@ -302,15 +577,30 @@ async def _process_source(
     src: BatchImageSource,
     subject: str | None,
     options: dict,
+    job_id: str,
 ) -> None:
     """单张图片 worker：失败隔离，绝不向上抛异常。"""
     async with sem:
-        await _update_item(item_id, status="processing", started_at=_now())
+        await _update_item_with_trace(
+            item_id, job_id,
+            fields={"status": "processing", "started_at": _now()},
+            trace=_TraceData(
+                step="ocr", status="running",
+                message=f"第 {src.seq} 张开始识别",
+                item_seq=src.seq,
+            ),
+        )
+
+        proc_start = _now()
+
         try:
             with open(src.temp_path, "rb") as fh:
                 content = fh.read()
 
-            result = await _run_single_image(item_id, src.source_file, content, subject, options)
+            result = await _run_single_image(
+                item_id, src.source_file, content, subject, options,
+                job_id=job_id, seq=src.seq,
+            )
             del content
 
             review_batch_id = result.get("batch_id") or None
@@ -318,14 +608,22 @@ async def _process_source(
             pipeline_ok = result.get("status") == "completed"
 
             if pipeline_ok and review_batch_id:
-                await _update_item(
-                    item_id,
-                    status="succeeded",
-                    review_batch_id=review_batch_id,
-                    pipeline_id=result.get("pipeline_id"),
-                    question_count=question_count,
-                    error_message=None,
-                    finished_at=_now(),
+                await _update_item_with_trace(
+                    item_id, job_id,
+                    fields={
+                        "status": "succeeded",
+                        "review_batch_id": review_batch_id,
+                        "pipeline_id": result.get("pipeline_id"),
+                        "question_count": question_count,
+                        "error_message": None,
+                        "finished_at": _now(),
+                    },
+                    trace=_TraceData(
+                        step="done", status="success",
+                        message=f"识别完成，生成 {question_count} 道题",
+                        item_seq=src.seq,
+                        duration_ms=int((_now() - proc_start).total_seconds() * 1000),
+                    ),
                 )
                 logger.info(
                     "batch image item succeeded: item_id=%s file=%s batch_id=%s questions=%s",
@@ -334,13 +632,20 @@ async def _process_source(
             else:
                 errors = result.get("errors") or []
                 reason = errors[0] if errors else "OCR 文本未生成待审核批次"
-                await _update_item(
-                    item_id,
-                    status="failed",
-                    pipeline_id=result.get("pipeline_id"),
-                    question_count=question_count,
-                    error_message=reason,
-                    finished_at=_now(),
+                await _update_item_with_trace(
+                    item_id, job_id,
+                    fields={
+                        "status": "failed",
+                        "pipeline_id": result.get("pipeline_id"),
+                        "question_count": question_count,
+                        "error_message": reason,
+                        "finished_at": _now(),
+                    },
+                    trace=_TraceData(
+                        step="error", status="failed",
+                        message=reason,
+                        item_seq=src.seq,
+                    ),
                 )
                 logger.warning(
                     "batch image item produced no review batch: item_id=%s file=%s reason=%s",
@@ -350,11 +655,18 @@ async def _process_source(
             logger.exception(
                 "batch image item failed: item_id=%s file=%s", item_id, src.source_file
             )
-            await _update_item(
-                item_id,
-                status="failed",
-                error_message=str(exc),
-                finished_at=_now(),
+            await _update_item_with_trace(
+                item_id, job_id,
+                fields={
+                    "status": "failed",
+                    "error_message": str(exc),
+                    "finished_at": _now(),
+                },
+                trace=_TraceData(
+                    step="error", status="failed",
+                    message=str(exc)[:512],
+                    item_seq=src.seq,
+                ),
             )
         finally:
             if src.temp_path and os.path.exists(src.temp_path):
@@ -362,6 +674,11 @@ async def _process_source(
                     os.unlink(src.temp_path)
                 except OSError as exc:
                     logger.warning("delete batch tmp file failed: %s (%s)", src.temp_path, exc)
+
+
+# ================================================================
+# 后台批量执行
+# ================================================================
 
 
 async def run_batch_job(
@@ -383,7 +700,11 @@ async def run_batch_job(
         job_id, len(sources), concurrency,
     )
     try:
-        await _set_job_status(job_id, "running")
+        await _set_job_status_with_trace(
+            job_id, "running",
+            trace_message=f"开始处理 ({len(sources)} 张)",
+            trace_step="waiting",
+        )
 
         # 把 (seq -> item_id) 映射出来，worker 用 item_id 更新行。
         async with async_session() as db:
@@ -404,29 +725,62 @@ async def run_batch_job(
                 src=src,
                 subject=subject,
                 options=options,
+                job_id=job_id,
             )
             for src in sources
             if src.seq in seq_to_item
         ]
         await asyncio.gather(*tasks)
 
-        # 跨图片题目合并：将同批多图 OCR 文本合并为连续文档再走一次流水线
-        merge_result = await _merge_image_texts(
-            job_id=job_id,
-            subject=subject,
-            options=options,
-        )
-        if merge_result.get("merged"):
-            logger.info(
-                "batch image job merged: job_id=%s merged_batch=%s questions=%d",
-                job_id, merge_result.get("batch_id"), merge_result.get("question_count"),
-            )
+        # 派生 batch status：从 items 状态计算
+        async with async_session() as db:
+            statuses = (
+                await db.execute(
+                    select(ImportBatchJobItem.status).where(
+                        ImportBatchJobItem.job_id == job_id
+                    )
+                )
+            ).scalars().all()
 
-        await _set_job_status(job_id, "completed")
-        logger.info("batch image job completed: job_id=%s", job_id)
+        total = len(statuses)
+        succeeded = sum(1 for s in statuses if s == "succeeded")
+        failed = total - succeeded
+
+        if succeeded == total:
+            batch_status = "completed"
+            error_msg = None
+        elif succeeded > 0:
+            batch_status = "completed"
+            error_msg = f"部分失败: {failed}/{total}"
+        else:
+            batch_status = "failed"
+            error_msg = f"全部失败: {failed}/{total}"
+
+        await _set_job_status_with_trace(
+            job_id, batch_status,
+            error_message=error_msg,
+            trace_message=error_msg or "全部处理完成",
+        )
+
+        # 跨图片题目合并：仅全部成功时执行
+        if succeeded == total:
+            merge_result = await _merge_image_texts(
+                job_id=job_id, subject=subject, options=options,
+            )
+            if merge_result.get("merged"):
+                logger.info(
+                    "batch image job merged: job_id=%s merged_batch=%s questions=%d",
+                    job_id, merge_result.get("batch_id"), merge_result.get("question_count"),
+                )
+
+        logger.info("batch image job completed: job_id=%s status=%s", job_id, batch_status)
     except Exception as exc:
         logger.exception("batch image job crashed: job_id=%s", job_id)
-        await _set_job_status(job_id, "failed", error_message=str(exc))
+        await _set_job_status_with_trace(
+            job_id, "failed",
+            error_message=str(exc),
+            trace_message=f"任务异常: {exc}",
+        )
     finally:
         # 兜底清理：worker 已逐个 unlink，这里清理可能残留的临时文件。
         for src in sources:
@@ -437,8 +791,13 @@ async def run_batch_job(
                     pass
 
 
+# ================================================================
+# 查询
+# ================================================================
+
+
 async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
-    """聚合任务进度（总数/已完成/处理中/等待中）+ 每张 item 明细。"""
+    """聚合任务进度（总数/已完成/处理中/等待中）+ 每张 item 明细 + trace events。"""
     job = await db.get(ImportBatchJob, job_id)
     if job is None:
         raise ValueError("批量导题任务不存在")
@@ -472,9 +831,12 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
             "question_count": item.question_count or 0,
             "error_message": item.error_message,
             "has_ocr_cache": bool(item.ocr_cleaned_text or item.ocr_raw_text),
+            "batch_import_id": item.batch_import_id,
+            "image_import_id": item.image_import_id,
+            "request_id": item.request_id,
         })
 
-    # 显式检测合并状态：≥2 个成功图片且共享同一 review_batch_id 视为已合并
+    # 显式检测合并状态
     is_merged = False
     succeeded_items = [r for r in items if r["status"] == "succeeded" and r["review_batch_id"]]
     if len(succeeded_items) >= 2:
@@ -482,14 +844,39 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
         if all(it["review_batch_id"] == candidate for it in succeeded_items):
             is_merged = True
             merged_batch_id = candidate
-            # 从 question_imports 查询真实题目数
-            from app.models.question_import import QuestionImport as QI  # noqa: F811
+            from app.models.question_import import QuestionImport as QI
             q_count = await db.scalar(
                 select(func.count()).select_from(QI).where(QI.batch_id == merged_batch_id)
             )
             total_questions = q_count or 0
 
     done = counts["succeeded"] + counts["failed"]
+    partial_failure = counts["succeeded"] > 0 and counts["failed"] > 0
+
+    # 读取 trace events
+    events = (
+        await db.execute(
+            select(BatchJobTraceEvent)
+            .where(BatchJobTraceEvent.job_id == job_id)
+            .order_by(BatchJobTraceEvent.seq)
+        )
+    ).scalars().all()
+    trace_events = [
+        {
+            "seq": e.seq,
+            "item_seq": e.item_seq or 0,
+            "request_id": e.request_id,
+            "image_import_id": e.image_import_id,
+            "batch_import_id": e.batch_import_id,
+            "step": e.step,
+            "status": e.status,
+            "message": e.message,
+            "duration_ms": e.duration_ms,
+            "created_at": e.created_at.isoformat(),
+        }
+        for e in events
+    ]
+
     return {
         "job_id": job.job_id,
         "status": job.status,
@@ -505,13 +892,20 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
         "total_questions": total_questions,
         "is_merged": is_merged,
         "merged_batch_id": merged_batch_id,
+        "partial_failure": partial_failure,
         "current_seq": current_seq,
         "current_file": current_file,
         "error_message": job.error_message,
         "started_at": job.started_at.isoformat() if job.started_at else "",
         "finished_at": job.finished_at.isoformat() if job.finished_at else "",
         "items": items,
+        "trace_events": trace_events,
     }
+
+
+# ================================================================
+# 重新解析
+# ================================================================
 
 
 async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str | None = None) -> dict:
@@ -527,7 +921,6 @@ async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str |
     cleaned = item.ocr_cleaned_text
     if not cleaned and item.ocr_raw_text:
         from app.services.ocr_service import clean_ocr_text
-
         cleaned = clean_ocr_text(item.ocr_raw_text)
     if not cleaned or not cleaned.strip():
         raise ValueError("该条目没有可复用的 OCR 缓存文本")
@@ -537,7 +930,6 @@ async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str |
 
     async with async_session() as pdb:
         from app.features.pipeline_orchestrator import run_import_pipeline
-
         result = await run_import_pipeline(
             file_content=cleaned.encode("utf-8"),
             source_type="txt",
@@ -551,19 +943,34 @@ async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str |
     question_count = (result.get("stats") or {}).get("to_review", 0)
     pipeline_ok = result.get("status") == "completed" and bool(review_batch_id)
 
-    item.status = "succeeded" if pipeline_ok else "failed"
-    item.review_batch_id = review_batch_id
-    item.pipeline_id = result.get("pipeline_id")
-    item.question_count = question_count
-    item.error_message = None if pipeline_ok else ((result.get("errors") or ["重新解析未生成待审核批次"])[0])
-    item.finished_at = _now()
-    item.updated_at = _now()
-    await db.commit()
+    new_status = "succeeded" if pipeline_ok else "failed"
+    error_msg = None if pipeline_ok else ((result.get("errors") or ["重新解析未生成待审核批次"])[0])
+
+    # 原子：item 状态更新 + trace event 同事务
+    await _update_item_with_trace(
+        item.id, item.job_id,
+        fields={
+            "status": new_status,
+            "review_batch_id": review_batch_id,
+            "pipeline_id": result.get("pipeline_id"),
+            "question_count": question_count,
+            "error_message": error_msg,
+            "finished_at": _now(),
+        },
+        trace=_TraceData(
+            step="done", status=new_status,
+            message=f"重新解析完成，生成 {question_count} 道题" if pipeline_ok else (error_msg or "重新解析失败"),
+            item_seq=item.seq,
+            request_id=item.request_id,
+            image_import_id=item.image_import_id,
+            batch_import_id=item.batch_import_id,
+        ),
+    )
 
     return {
         "item_id": item.id,
-        "status": item.status,
+        "status": new_status,
         "review_batch_id": review_batch_id,
         "question_count": question_count,
-        "error_message": item.error_message,
+        "error_message": error_msg,
     }
