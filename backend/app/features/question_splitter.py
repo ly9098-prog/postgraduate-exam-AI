@@ -4,7 +4,10 @@
 不做答案匹配、不做题型判断、不做内容清洗、不调用 AI。
 """
 
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 
 
 # 中文数字 → 阿拉伯数字
@@ -845,6 +848,8 @@ def split_questions(
     structure: dict | None = None,
     gap_tolerance: int = 10,
     import_mode: str | None = None,
+    layout_result: dict | None = None,
+    split_mode: str = "standard",
 ) -> list[dict]:
     """从文档块中切分出单道题目。
 
@@ -856,6 +861,14 @@ def split_questions(
             book 模式下会额外给"疑似教材正文"的候选题打
             ``risk_flags=["book_pdf_prose_like"]``，由前端审核页提示，但仍保留
             到审核队列让人工最终裁决。
+        layout_result: layout_reconstruction 的输出（可选）。
+            当 text-only option extraction 找不到选项时，
+            使用 layout 的 spatial option_groups 作为补充。
+        split_mode: 路由模式。
+            "standard"        — 标准模式，layout 仅当 text 找不到选项时注入。
+            "layout_enhanced" — Layout 增强模式，主动融合 layout+text 选项，
+                                使用 reading_order 优化边界检测。
+            "vl_rebuild"      — VL 重建模式，layout_result 可能为空。
 
     Returns:
         raw_questions 列表
@@ -976,6 +989,36 @@ def split_questions(
                 has_grouped_options = True
         options = {} if has_grouped_options else _extract_options(raw_text)
 
+        # Layout-aware option injection: use layout's spatial option_groups
+        # when text-only extraction is insufficient.
+        if not has_grouped_options and layout_result:
+            page_key = str(page_start)
+            layout_page_opts = layout_result.get("option_groups", {}).get(page_key, {})
+
+            if split_mode == "layout_enhanced" and layout_page_opts:
+                # LAYOUT_ENHANCED: 主动融合 layout + text 选项。
+                # 用 layout 选项填充 text 未找到的 gap，保留 text 已找到的选项。
+                merged = dict(options)
+                for k, v in layout_page_opts.items():
+                    if k not in merged:
+                        merged[k] = v
+                if len(merged) > len(options):
+                    logger.info(
+                        "split: layout_enhanced merged options for q%d "
+                        "(page=%s, text=%d, layout=%d, merged=%d)",
+                        num, page_key, len(options), len(layout_page_opts), len(merged),
+                    )
+                    options = merged
+            elif len(options) < 2:
+                # STANDARD / VL_REBUILD: 仅当 text 找不到选项时注入
+                if layout_page_opts and len(layout_page_opts) >= 2:
+                    options = dict(layout_page_opts)
+                    logger.info(
+                        "split: injected layout options for q%d "
+                        "(page=%s, text_found=%d, layout_found=%d)",
+                        num, page_key, len(options), len(layout_page_opts),
+                    )
+
         # 置信度：基于题号格式清晰度 + 选项完整度
         conf = 0.9
         if raw_text.count("\n") <= 1:
@@ -984,6 +1027,11 @@ def split_questions(
             conf = min(1.0, conf + 0.05)
         if num <= 0:
             conf -= 0.3
+        # LAYOUT_ENHANCED: 结构不稳定时适度降权
+        if split_mode == "layout_enhanced":
+            conf -= 0.05
+        elif split_mode == "vl_rebuild":
+            conf -= 0.1  # VL 重建的 blocks 无 bbox，置信度更低
 
         # Determine section_type from the most recent question_type_* marker
         section_type = None
