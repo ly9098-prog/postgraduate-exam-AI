@@ -743,94 +743,6 @@ def _extract_options(text: str) -> dict[str, str]:
     return options
 
 
-def _extract_options_robust(text: str) -> dict[str, str]:
-    """Robust options extraction supporting multi-line, inline, and broken OCR formats.
-
-    Case 1: Multi-line format
-        A. xxx
-        B. xxx
-        C. xxx
-        D. xxx
-
-    Case 2: Inline format
-        A.xxx B.xxx C.xxx D.xxx
-
-    Case 3: Broken OCR lines
-        A. xxx B. xxx
-        C.xxx
-        D xxx
-
-    Fallback: if detected options < 4, re-scan using a broad regex.
-
-    Returns dict with keys A-D (at least 4 for MCQ text, or what's found).
-    """
-    # Strategy 1: try the original _extract_options
-    options = _extract_options(text)
-    if len(options) >= 4:
-        return options
-
-    # Strategy 2: multi-line detection via _detect_option_line per line
-    options = {}
-    last_key: str | None = None
-    for line in text.split("\n"):
-        stripped = line.strip()
-        if not stripped:
-            continue
-
-        result = _detect_option_line(stripped)
-        if result:
-            key, value = result
-            value = _truncate_answer_explanation_tail(value)
-            if key not in options and value:
-                options[key] = value
-            last_key = key
-            continue
-
-        # Inline multi-option on same line: A.xxx B.xxx
-        inline_matches = list(_INLINE_OPTION_PATTERN.finditer(stripped))
-        if len(inline_matches) >= 2:
-            for match in inline_matches:
-                key = match.group(1).upper()
-                value = _truncate_answer_explanation_tail(match.group(2))
-                if key not in options and value:
-                    options[key] = value
-            last_key = inline_matches[-1].group(1).upper()
-            continue
-
-        # Continuation of the last option
-        if (
-            last_key
-            and stripped
-            and not _detect_question_number(stripped)
-            and not _ANSWER_EXPLANATION_LINE.match(stripped)
-            and last_key in options
-        ):
-            options[last_key] = f"{options[last_key]} {stripped}"
-
-    if len(options) >= 4:
-        return options
-
-    # Strategy 3: fallback broad regex
-    fallback: dict[str, str] = {}
-    fallback_re = re.compile(r"[A-D][\.\:]?\s*(.*?)(?=[A-D][\.\:]|$)")
-    for match in fallback_re.finditer(text.strip()):
-        key_candidate = match.group(0)[0].upper()
-        value = match.group(1).strip() if match.group(1) else ""
-        if key_candidate in "ABCD" and value:
-            if key_candidate not in fallback:
-                fallback[key_candidate] = value
-
-    if fallback and len(fallback) > len(options):
-        options = fallback
-
-    # Fill missing keys with empty string for A-D range
-    for k in ["A", "B", "C", "D"]:
-        options.setdefault(k, "")
-
-    # Reorder A→D
-    return {k: options[k] for k in sorted(options) if k in "ABCD"}
-
-
 def _pos_to_page(
     pos: int, page_map: list[tuple[int, int, int]]
 ) -> int:
@@ -850,6 +762,7 @@ def split_questions(
     import_mode: str | None = None,
     layout_result: dict | None = None,
     split_mode: str = "standard",
+    frozen_option_registry: dict | None = None,
 ) -> list[dict]:
     """从文档块中切分出单道题目。
 
@@ -869,6 +782,9 @@ def split_questions(
             "layout_enhanced" — Layout 增强模式，主动融合 layout+text 选项，
                                 使用 reading_order 优化边界检测。
             "vl_rebuild"      — VL 重建模式，layout_result 可能为空。
+        frozen_option_registry: Structure Freeze Stage 的输出。
+            非 None 时表示结构冻结层已运行，选项将由下游 `_apply_frozen_options`
+            统一注入，此处跳过所有 regex 选项提取，确保冻结结构为唯一事实源。
 
     Returns:
         raw_questions 列表
@@ -973,6 +889,15 @@ def split_questions(
 
     questions: list[dict] = []
 
+    # ── Structure Freeze: precompute which pages have frozen option data ──
+    _frozen_pages: set[int] = set()
+    if frozen_option_registry:
+        for key in frozen_option_registry:
+            try:
+                _frozen_pages.add(int(key.split(":")[0]))
+            except (ValueError, IndexError):
+                pass
+
     for i, (num, start_pos) in enumerate(filtered_boundaries):
         end_pos = filtered_boundaries[i + 1][1] if i + 1 < len(filtered_boundaries) else len(full_text)
         raw_text = full_text[start_pos:end_pos].strip()
@@ -987,11 +912,27 @@ def split_questions(
             if degraded_groups:
                 grouped_options = degraded_groups
                 has_grouped_options = True
-        options = {} if has_grouped_options else _extract_options(raw_text)
+
+        # ── Structure Freeze: skip all regex option extraction when frozen data exists ──
+        # frozen_option_registry is the SINGLE SOURCE OF TRUTH. When the freeze stage
+        # has produced entries for any page in this question's range, skip ALL regex
+        # option extraction (including _extract_options and layout injection).
+        # Options will be injected by _apply_frozen_options downstream.
+        _freeze_has_page_data = bool(
+            _frozen_pages and (page_start in _frozen_pages or page_end in _frozen_pages)
+        )
+
+        if _freeze_has_page_data:
+            options = {}
+        elif has_grouped_options:
+            options = {}
+        else:
+            options = _extract_options(raw_text)
 
         # Layout-aware option injection: use layout's spatial option_groups
         # when text-only extraction is insufficient.
-        if not has_grouped_options and layout_result:
+        # NOTE: skipped entirely when frozen data exists (freeze is the sole source of truth).
+        if not _freeze_has_page_data and not has_grouped_options and layout_result:
             page_key = str(page_start)
             layout_page_opts = layout_result.get("option_groups", {}).get(page_key, {})
 

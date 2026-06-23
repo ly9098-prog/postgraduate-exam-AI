@@ -92,12 +92,13 @@ class PaddleOCRVLAdapter:
         )
 
         start = time.monotonic()
+        entry_point = ctx.get("entry_point", "adapter")
         try:
             result = await client.ocr_image(image_bytes=image, filename=filename)
             duration_ms = round((time.monotonic() - start) * 1000)
             logger.info(
-                "PaddleOCR-VL succeeded (%.2fs, conf=%.2f, text_len=%d)",
-                duration_ms / 1000, result.confidence, len(result.text),
+                "PaddleOCR-VL succeeded (entry=%s, %.2fs, conf=%.2f, text_len=%d)",
+                entry_point, duration_ms / 1000, result.confidence, len(result.text),
             )
             return OCRFixResult(
                 fixed_text=result.text or ocr_text,
@@ -109,8 +110,8 @@ class PaddleOCRVLAdapter:
         except Exception as exc:
             duration_ms = round((time.monotonic() - start) * 1000)
             logger.warning(
-                "PaddleOCR-VL failed after %.2fs: %s — falling through",
-                duration_ms / 1000, exc,
+                "PaddleOCR-VL failed (entry=%s, %.2fs): %s — falling through",
+                entry_point, duration_ms / 1000, exc,
             )
             return OCRFixResult(
                 fixed_text=ocr_text,

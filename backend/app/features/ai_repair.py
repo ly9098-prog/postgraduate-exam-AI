@@ -363,6 +363,11 @@ async def _call_ai_for_repair(
     """调用 DeepSeek 修复单题。返回修复结果或 None（降级）。
 
     外部可传入 api_key/base_url/model_name 避免重复查询 DB 凭据。
+
+    Structure Freeze 约束:
+        - 当 ``existing.is_frozen`` 为 True 时，从 prompt 中移除 options 信息，
+          防止 AI 看到并尝试改写冻结的选项结构。
+        - 选项的恢复在 ``repair_questions()`` 的循环中统一处理。
     """
     from app.ai.client import deepseek
     from app.ai.prompts import build_repair_question
@@ -373,6 +378,14 @@ async def _call_ai_for_repair(
         api_key = creds[0] if creds else None
         base_url = creds[1] if creds else None
         model_name = creds[2] if creds else None
+
+    # ── Structure Freeze: prevent AI from seeing frozen options ──
+    # When is_frozen is True, the freeze stage is the single source of truth.
+    # AI should NOT receive the existing option structure in the prompt,
+    # because it might try to modify it. Only raw_text and non-option fields
+    # are sent.
+    if existing and existing.get("is_frozen"):
+        existing = {k: v for k, v in existing.items() if k != "options"}
 
     messages = build_repair_question(raw_text, existing)
     prompt_text = json.dumps(messages, ensure_ascii=False)
@@ -428,6 +441,11 @@ async def _call_ai_for_batch_repair(
     batch_limit = config.get("batch_size", _BATCH_LIMIT) or _BATCH_LIMIT
     for batch_start in range(0, len(candidates), batch_limit):
         batch = candidates[batch_start : batch_start + batch_limit]
+        # ── Structure Freeze: strip frozen options from batch prompt ──
+        batch = [
+            (idx, {k: v for k, v in q.items() if k != "options"} if q.get("is_frozen") else q, rt)
+            for idx, q, rt in batch
+        ]
         messages = build_batch_repair_prompt(batch)
         prompt_text = json.dumps(messages, ensure_ascii=False)
         estimated = _estimate_tokens(prompt_text)
@@ -930,14 +948,75 @@ async def repair_questions(
         from app.services.pdf_text_normalizer import deduplicate_repeated_text
         repaired_stem = deduplicate_repeated_text(repaired_stem)
 
+        # ══════════════════════════════════════════════════════════════════════
+        # Layer 4: Options MUST be immutable when they already exist
+        # ══════════════════════════════════════════════════════════════════════
+        # Rules:
+        #   1. If options already exist → AI must NOT modify them (exact match).
+        #      Any change (modify, add, delete) → rejection.
+        #   2. If options are empty (parser failed) → AI can extract from raw_text.
+        #      This is valid repair — recovering what the parser missed.
+        #   3. Frozen questions always have non-empty options → Rule 1 covers them.
+        #   4. If options exist and AI returns empty → rejection (deletion).
+        is_frozen = bool(q.get("is_frozen", False))
+        original_opts = q.get("options", [])
+        ai_options = _normalize_ai_options(result_data.get("options"))
+
+        # Rule 1: Existing options are IMMUTABLE
+        # AI must not modify existing options. This covers:
+        #   - Frozen questions (options from freeze stage)
+        #   - Non-frozen questions with successfully parsed options
+        if original_opts and ai_options and ai_options != original_opts:
+            logger.warning(
+                "[IMMUTABLE] ai_repair REJECTED for q%d: AI tried to modify options "
+                "(frozen=%s, ai_opts=%d, original_opts=%d)",
+                i, is_frozen, len(ai_options), len(original_opts),
+            )
+            _append_decision_trace(questions[i], "ai_repair", "rejected",
+                                   "options_modified_by_ai")
+            unrepaired.append({
+                "question_index": i,
+                "reason": "options_modified_by_ai",
+            })
+            total_tokens += token_used
+            continue
+
+        # Rule 2: Existing options must not be deleted
+        if original_opts and not ai_options:
+            logger.warning(
+                "[IMMUTABLE] ai_repair REJECTED for q%d: AI deleted existing options "
+                "(original_opts=%d)",
+                i, len(original_opts),
+            )
+            _append_decision_trace(questions[i], "ai_repair", "rejected",
+                                   "options_deleted_by_ai")
+            unrepaired.append({
+                "question_index": i,
+                "reason": "options_deleted_by_ai",
+            })
+            total_tokens += token_used
+            continue
+
+        # Rule 3: If options were empty (parser failed to extract), AI may
+        # recover them from raw_text. This is a valid repair operation.
+        # The AI is NOT generating options out of thin air — it's extracting
+        # from the raw question text that contains option patterns.
+        if not original_opts and not is_frozen:
+            # Allow AI to populate options from raw_text (repair behavior)
+            pass
+
+        # ── Restore original options when they already existed ──
+        if original_opts:
+            ai_options = list(original_opts)
+
         after = {
             "schema_version": q.get("schema_version", "v1"),
             "subject": q.get("subject", ""),
             "question_type": result_data.get("question_type", q.get("question_type", "")),
             "stem": repaired_stem,
-            "options": _normalize_ai_options(result_data.get("options")),
-            # Frozen options guard: if original was frozen, restore unchanged options
-            "frozen_options_restored": q.get("is_frozen", False),
+            "options": ai_options,
+            "frozen_options_restored": is_frozen,
+            "options_preserved": not is_frozen and bool(original_opts),
             "blank_option_groups": blank_option_groups,
             "answer": result_data.get("answer", ""),
             "analysis": result_data.get("analysis", ""),
@@ -952,17 +1031,6 @@ async def repair_questions(
             "confidence_score": result_data.get("confidence", q.get("confidence_score", 0)),
             "risk_flags": list(dict.fromkeys(q.get("risk_flags") or [])),
         }
-
-        # ── Frozen options guard: restore original options unchanged ──
-        if q.get("is_frozen"):
-            original_opts = q.get("options", [])
-            logger.info(
-                "[FREEZE] ai_repair: restored frozen options for q%d (opts=%s -> %s)",
-                i,
-                len(_normalize_ai_options(result_data.get("options"))),
-                len(original_opts),
-            )
-            after["options"] = original_opts
 
         repair_actions = result_data.get("repair_actions", [])
         # If this question was also Roman-repaired, re-apply fixes and merge info
