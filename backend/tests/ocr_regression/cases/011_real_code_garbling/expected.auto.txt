@@ -1,0 +1,31 @@
+[normalized_full_text]
+06.在一个单链表中，已知q所指结点是p所指结点的前驱结点，若在q和p之间插入结点s,则执行()。
+```text
+A.s->next=p->next;p->next=s;
+B.p->next=s->next;s->next=p;
+C.q->next=s;s->next=p;
+D.p->next=s;s->next=q;
+```
+[/normalized_full_text]
+
+[questions]
+---
+number: 6
+stem: 06.在一个单链表中，已知q所指结点是p所指结点的前驱结点，若在q和p之间插入结点s,则执行()。
+```text
+A.s->next=p->next;p->next=s;
+B.p->next=s->next;s->next=p;
+C.q->next=s;s->next=p;
+D.p->next=s;s->next=q;
+```
+type: single_choice
+options:
+  A: s->next=p->next;p->next=s;
+  B: p->next=s->next;s->next=p;
+  C: q->next=s;s->next=p;
+  D: p->next=s;s->next=q; ```
+answer: 
+explanation: 
+option_keys: ["A", "B", "C", "D"]
+
+[/questions]

@@ -1,4 +1,4 @@
-# 代码题目题干/选项部分缺失
+# 代码题目题干/选项部分缺失（第二次修复结果）
 
 ##### 案例一（失败）
 
@@ -32,10 +32,10 @@ D. 初始化栈
 
 "/ocr_test/images/example/ocr_code_test_10.png"
 
-###### 导入后进入审核
+###### 导入后进入审核（选项缺）
 
 ~~~tex
-#define MAXSIZE 100 typedef struct
+#define MAXSIZE 100 typedef struct {
 ```text
 int data[MAXSIZE];
 int top;
@@ -44,17 +44,16 @@ int top;
 执行如下代码: C
 ```text
 while (s.top != − 1) {
-printf("%d", s.data[s.top]);
-s.top −  − ;
+printf("%d", S.data[S.top]);
+S.top −  − ;
+}
 ```
-
-选项缺失
 ~~~
 
 ###### OCR 原文 / 导入原始信息
 
 ~~~tex
-#define MAXSIZE 100 typedef struct
+#define MAXSIZE 100 typedef struct {
 ```text
 int data[MAXSIZE];
 int top;
@@ -62,9 +61,9 @@ int top;
 ``` 执行如下代码: C
 ```text
 while (s.top != -1) {
-printf("%d", s.data[s.top]);
-s.top--;
-```
+printf("%d", S.data[S.top]);
+S.top--;
+}
 ~~~
 
 ###### 解析数据
@@ -72,7 +71,7 @@ s.top--;
 ```json
 {
   "parsed_content": {
-    "text": "#define MAXSIZE 100 typedef struct\n```text\nint data[MAXSIZE];\nint top;\n} Stack;\n```\n执行如下代码: C\n```text\nwhile (s.top != -1) {\nprintf(\"%d\", s.data[s.top]);\ns.top--;\n```"
+    "text": "#define MAXSIZE 100 typedef struct {\n```text\nint data[MAXSIZE];\nint top;\n} Stack;\n```\n执行如下代码: C\n```text\nwhile (s.top != -1) {\nprintf(\"%d\", S.data[S.top]);\nS.top--;\n}\n```"
   },
   "parsed_options": null,
   "parsed_answer": null,
@@ -88,12 +87,12 @@ s.top--;
     "schema_version": "v1",
     "subject": "",
     "question_type": "subjective",
-    "stem": "#define MAXSIZE 100 typedef struct\n```text\nint data[MAXSIZE];\nint top;\n} Stack;\n```\n执行如下代码: C\n```text\nwhile (s.top != -1) {\nprintf(\"%d\", s.data[s.top]);\ns.top--;\n```",
+    "stem": "#define MAXSIZE 100 typedef struct {\n```text\nint data[MAXSIZE];\nint top;\n} Stack;\n```\n执行如下代码: C\n```text\nwhile (s.top != -1) {\nprintf(\"%d\", S.data[S.top]);\nS.top--;\n}\n```",
     "options": [],
     "blank_option_groups": [],
     "answer": "",
     "analysis": "",
-    "raw_text": "#define MAXSIZE 100 typedef struct\n```text\nint data[MAXSIZE];\nint top;\n} Stack;\n``` 执行如下代码: C\n```text\nwhile (s.top != -1) {\nprintf(\"%d\", s.data[s.top]);\ns.top--;\n```",
+    "raw_text": "#define MAXSIZE 100 typedef struct {\n```text\nint data[MAXSIZE];\nint top;\n} Stack;\n``` 执行如下代码: C\n```text\nwhile (s.top != -1) {\nprintf(\"%d\", S.data[S.top]);\nS.top--;\n}",
     "knowledge_points": [],
     "difficulty": 3,
     "source": {
@@ -105,15 +104,21 @@ s.top--;
     "errors": [],
     "warnings": [
       "ocr_contamination_detected",
+      "ocr_quality:code_fence_unclosed",
+      "ocr_quality:code_brace_unbalanced",
       "ocr_quality:code_line_break_suspicious",
       "ocr_quality:watermark_noise_detected",
+      "code_integrity:code_fence_unclosed",
+      "code_integrity:code_brace_unbalanced",
       "code_integrity:code_line_break_suspicious",
       "low_confidence"
     ],
-    "stem_hash": "6495ad53",
-    "confidence_score": 0.9,
+    "stem_hash": "f66f065e",
+    "confidence_score": 0.85,
     "risk_flags": [
       "fallback_low_confidence",
+      "code_fence_unclosed",
+      "code_brace_unbalanced",
       "code_line_break_suspicious",
       "code_block_incomplete",
       "low_confidence"
@@ -133,6 +138,7 @@ s.top--;
     "ai_validation": {
       "is_valid": false,
       "issues": [
+        "post_repair_code_integrity:code_brace_unbalanced",
         "post_repair_code_integrity:code_line_break_suspicious"
       ],
       "severity": "error"
@@ -143,14 +149,18 @@ s.top--;
     "errors": [],
     "warnings": [
       "ocr_contamination_detected",
+      "ocr_quality:code_fence_unclosed",
+      "ocr_quality:code_brace_unbalanced",
       "ocr_quality:code_line_break_suspicious",
       "ocr_quality:watermark_noise_detected",
+      "code_integrity:code_fence_unclosed",
+      "code_integrity:code_brace_unbalanced",
       "code_integrity:code_line_break_suspicious",
       "low_confidence"
     ],
     "knowledge_points": [],
     "difficulty": 3,
-    "stem_hash": "6495ad53",
+    "stem_hash": "f66f065e",
     "decision_trace": [
       {
         "stage": "ai_repair",
@@ -165,6 +175,8 @@ s.top--;
     ],
     "risk_flags": [
       "fallback_low_confidence",
+      "code_fence_unclosed",
+      "code_brace_unbalanced",
       "code_line_break_suspicious",
       "code_block_incomplete",
       "low_confidence"
@@ -204,7 +216,10 @@ D. 层序遍历
 
 ###### 导入后进入审核
 
+第一次修复结果：缩进、行间空格被破坏
+
 ~~~tex
+```text
 void countLeaf(BiTree T) {
 if (T = = NULL) return;
 if (T − >lchild = = NULL && T − >rchild = = NULL)
@@ -212,6 +227,7 @@ if (T − >lchild = = NULL && T − >rchild = = NULL)
 countLeaf(T − >lchild);
 countLeaf(T − >rchild);
 }
+```
 
 选项缺失
 ~~~
@@ -229,12 +245,12 @@ countLeaf(T->rchild);
 ```
 ~~~
 
-###### 解析数据
+###### 解析数据（第一次修复结果）
 
 ```json
 {
   "parsed_content": {
-    "text": "void countLeaf(BiTree T) {\nif (T == NULL) return;\nif (T->lchild == NULL && T->rchild == NULL)\n    count++;\ncountLeaf(T->lchild);\ncountLeaf(T->rchild);\n}"
+    "text": "```text\nvoid countLeaf(BiTree T) {\nif (T == NULL) return;\nif (T->lchild == NULL && T->rchild == NULL)\n    count++;\ncountLeaf(T->lchild);\ncountLeaf(T->rchild);\n}\n```"
   },
   "parsed_options": null,
   "parsed_answer": null,
@@ -250,7 +266,7 @@ countLeaf(T->rchild);
     "schema_version": "v1",
     "subject": "",
     "question_type": "subjective",
-    "stem": "void countLeaf(BiTree T) {\nif (T == NULL) return;\nif (T->lchild == NULL && T->rchild == NULL)\n    count++;\ncountLeaf(T->lchild);\ncountLeaf(T->rchild);\n}",
+    "stem": "```text\nvoid countLeaf(BiTree T) {\nif (T == NULL) return;\nif (T->lchild == NULL && T->rchild == NULL)\n    count++;\ncountLeaf(T->lchild);\ncountLeaf(T->rchild);\n}\n```",
     "options": [],
     "blank_option_groups": [],
     "answer": "",
@@ -277,7 +293,7 @@ countLeaf(T->rchild);
       "low_confidence"
     ],
     "stem_hash": "e3bcd348",
-    "confidence_score": 0.95,
+    "confidence_score": 1,
     "risk_flags": [
       "fallback_low_confidence",
       "code_brace_unbalanced",
@@ -289,7 +305,7 @@ countLeaf(T->rchild);
       {
         "stage": "ai_repair",
         "result": "repaired",
-        "reason": "code_format_fixed"
+        "reason": "ai_repaired"
       },
       {
         "stage": "review",
@@ -300,7 +316,6 @@ countLeaf(T->rchild);
     "ai_validation": {
       "is_valid": false,
       "issues": [
-        "stem_repeated_fragment",
         "post_repair_code_integrity:code_line_break_suspicious"
       ],
       "severity": "error"
@@ -327,7 +342,7 @@ countLeaf(T->rchild);
       {
         "stage": "ai_repair",
         "result": "repaired",
-        "reason": "code_format_fixed"
+        "reason": "ai_repaired"
       },
       {
         "stage": "review",
@@ -436,8 +451,8 @@ p = p->next;
       "code_integrity:code_brace_unbalanced",
       "low_confidence"
     ],
-    "stem_hash": "9c93ab00",
-    "confidence_score": 0.9,
+    "stem_hash": "18031c04",
+    "confidence_score": 0.3,
     "risk_flags": [
       "fallback_low_confidence",
       "code_brace_unbalanced",
@@ -448,7 +463,7 @@ p = p->next;
       {
         "stage": "ai_repair",
         "result": "repaired",
-        "reason": "stem_cleaned;type_detected"
+        "reason": "ai_repaired"
       },
       {
         "stage": "review",
@@ -476,12 +491,12 @@ p = p->next;
     ],
     "knowledge_points": [],
     "difficulty": 3,
-    "stem_hash": "9c93ab00",
+    "stem_hash": "18031c04",
     "decision_trace": [
       {
         "stage": "ai_repair",
         "result": "repaired",
-        "reason": "stem_cleaned;type_detected"
+        "reason": "ai_repaired"
       },
       {
         "stage": "review",
@@ -499,7 +514,7 @@ p = p->next;
 }
 ```
 
-##### 案例四（成功）
+##### 案例四（失败）
 
 ###### 原题
 
@@ -706,7 +721,7 @@ D. s = p; p->next = NULL
 
 "/ocr_test/images/example/ocr_code_test_6.png"
 
-###### 导入后进入审核
+###### 导入后进入审核（无选项）
 
 ~~~tex
 B.在单链表中进行如下操作:
@@ -754,13 +769,15 @@ D. s = p; p->next = NULL
 ```json
 {
   "raw_data": {
-    "schema_version": "v1",
-    "subject": "",
-    "question_type": "subjective",
     "stem": "B.在单链表中进行如下操作:\n```text\ntypedef struct LNode {\nint data;\nstruct LNode *next;\n} LNode, *LinkList;\n```已知 p 指向某节点，执行插入操作: d = ->s :->s = jxau->d '\nB. s->next = p->next; p->next = s\nC. p->next = s; s = p->next\nD. s = p; p->next = NULL",
+    "code_blocks": [
+      "typedef struct LNode {\nint data;\nstruct LNode *next;\n} LNode, *LinkList;"
+    ],
     "options": [],
     "answer": "",
     "analysis": "",
+    "subject": "",
+    "question_type": "subjective",
     "raw_text": "B.在单链表中进行如下操作:\n```text\ntypedef struct LNode {\nint data;\nstruct LNode *next;\n} LNode, *LinkList;\n``` 已知 p 指向某节点，执行插入操作: d = ->s :->s = jxau->d '\nB. s->next = p->next; p->next = s\nC. p->next = s; s = p->next\nD. s = p; p->next = NULL",
     "knowledge_points": [],
     "difficulty": 3,
@@ -793,21 +810,6 @@ D. s = p; p->next = NULL
       "code_block_incomplete",
       "low_confidence"
     ],
-    "vision_fallback_attempted": true,
-    "vision_fallback_used": false,
-    "vision_fallback_status": "unavailable",
-    "vision_fallback_reason": [
-      "code_line_break_suspicious",
-      "code_block_incomplete"
-    ],
-    "pre_fallback_code_flags": [
-      "code_line_break_suspicious",
-      "code_block_incomplete"
-    ],
-    "post_fallback_code_flags": [
-      "code_line_break_suspicious",
-      "code_block_incomplete"
-    ],
     "decision_trace": [
       {
         "stage": "ocr_quality_gate",
@@ -827,7 +829,7 @@ D. s = p; p->next = NULL
       {
         "stage": "ai_safety",
         "result": "blocked",
-        "reason": "safety_rejected: options_dropped(4→0)"
+        "reason": "safety_rejected: code_symbol_lost:->"
       },
       {
         "stage": "review",
@@ -835,6 +837,9 @@ D. s = p; p->next = NULL
         "reason": "written_to_review_queue"
       }
     ],
+    "vision_fallback_attempted": true,
+    "vision_fallback_used": false,
+    "schema_version": "v1",
     "ai_validation": {
       "is_valid": false,
       "issues": [
@@ -874,7 +879,7 @@ D. s = p; p->next = NULL
       {
         "stage": "ai_safety",
         "result": "blocked",
-        "reason": "safety_rejected: options_dropped(4→0)"
+        "reason": "safety_rejected: code_symbol_lost:->"
       },
       {
         "stage": "review",
@@ -891,12 +896,6 @@ D. s = p; p->next = NULL
   }
 }
 ```
-
-
-
-
-
-
 
 ##### 回归测试映射
 
