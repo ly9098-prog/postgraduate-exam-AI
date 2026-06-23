@@ -140,6 +140,7 @@ export type BatchImageUploadResponse = {
   rejected: number;
   rejected_files: string[];
   concurrency: number;
+  duplicate?: boolean;
 };
 
 export type BatchImageJobItem = {
@@ -151,6 +152,9 @@ export type BatchImageJobItem = {
   question_count: number;
   error_message: string | null;
   has_ocr_cache: boolean;
+  batch_import_id?: string | null;
+  image_import_id?: string | null;
+  request_id?: string | null;
 };
 
 export type BatchImageJobStatusResponse = {
@@ -172,6 +176,21 @@ export type BatchImageJobStatusResponse = {
   started_at: string;
   finished_at: string;
   items: BatchImageJobItem[];
+  partial_failure?: boolean;
+  trace_events?: TraceEvent[];
+};
+
+export type TraceEvent = {
+  seq: number;
+  item_seq: number;
+  step: string;
+  status: string;
+  message: string;
+  duration_ms: number | null;
+  created_at: string;
+  request_id?: string | null;
+  image_import_id?: string | null;
+  batch_import_id?: string | null;
 };
 
 export type BatchImageReparseResponse = {
