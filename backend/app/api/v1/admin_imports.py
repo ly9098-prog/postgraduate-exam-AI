@@ -668,6 +668,10 @@ async def batch_image_upload(
     concurrency: int | None = None,
     enable_ai_repair: bool = True,
     confidence_threshold: float = 0.6,
+    # Idempotency / trace identifiers
+    batch_id: str | None = Query(None, description="前端生成的 batch 标识"),
+    image_id: str | None = Query(None, description="前端生成的 image 标识"),
+    request_id: str | None = Query(None, description="前端生成的 request 标识"),
     current_admin=Depends(require_permissions("import:write")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -676,6 +680,7 @@ async def batch_image_upload(
     - 并发 2~4（默认取 settings.BATCH_IMAGE_DEFAULT_CONCURRENCY），其余排队；
     - 单张失败只记录、不终止整批；
     - 返回 job_id，通过 GET /imports/batch-image/{job_id} 查询进度。
+    - 支持 idempotency：batch_id + image_id 重复时返回已有 job_id。
     """
     from app.features import batch_image_import_service as batch_svc
 
@@ -743,14 +748,31 @@ async def batch_image_upload(
         "confidence_threshold": confidence_threshold,
     }
 
-    await batch_svc.create_batch_job(
+    job = await batch_svc.create_batch_job(
         db,
         job_id=job_id,
         sources=sources,
         subject=subject,
         concurrency=concurrency,
         created_by=f"admin:{current_admin.id}",
+        batch_import_id=batch_id,
+        image_import_id=image_id,
+        request_id=request_id,
     )
+
+    # Idempotency: duplicate submission returns existing job_id
+    is_duplicate = job.status == "duplicate"
+    if is_duplicate:
+        logger.info("Duplicate batch image upload, returning existing job_id=%s", job.job_id)
+        return BatchImageUploadResponse(
+            job_id=job.job_id,
+            status="queued",
+            total=0,
+            rejected=0,
+            rejected_files=[],
+            concurrency=concurrency,
+            duplicate=True,
+        )
 
     background_tasks.add_task(
         batch_svc.run_batch_job,
@@ -768,6 +790,7 @@ async def batch_image_upload(
         rejected=len(rejected_files),
         rejected_files=rejected_files,
         concurrency=concurrency,
+        duplicate=False,
     )
 
 

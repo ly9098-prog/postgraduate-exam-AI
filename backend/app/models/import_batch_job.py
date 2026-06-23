@@ -26,7 +26,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
@@ -53,12 +53,15 @@ class ImportBatchJob(Base):
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 原子事件序号计数器（FOR UPDATE 保护，用于 trace_events 的 seq 生成）
+    next_event_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class ImportBatchJobItem(Base):
     __tablename__ = "import_batch_job_items"
     __table_args__ = (
         UniqueConstraint("job_id", "seq", name="uq_batch_job_items_job_seq"),
+        UniqueConstraint("batch_import_id", "image_import_id", name="uq_batch_import_id_image"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -70,6 +73,10 @@ class ImportBatchJobItem(Base):
     )
     seq: Mapped[int] = mapped_column(Integer, nullable=False)
     source_file: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # Idempotency / trace identifiers
+    batch_import_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    image_import_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # pending / processing / succeeded / failed
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="pending", index=True
@@ -89,4 +96,39 @@ class ImportBatchJobItem(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class BatchJobTraceEvent(Base):
+    """Append-only trace event log for batch image import jobs.
+
+    Each event represents one processing step (upload, ocr, pipeline, done/error).
+    Events are written atomically with the corresponding state update (same DB txn).
+    seq is per-job monotonic, protected by FOR UPDATE on ImportBatchJob.next_event_seq.
+    item_seq=None means job-level event; item_seq=N means N-th image event.
+    """
+
+    __tablename__ = "batch_job_trace_events"
+    __table_args__ = (
+        UniqueConstraint("job_id", "seq", name="uq_trace_events_job_seq"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("import_batch_jobs.job_id"),
+        nullable=False,
+        index=True,
+    )
+    item_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None = job-level
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    image_import_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    batch_import_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)  # per-job monotonic
+    step: Mapped[str] = mapped_column(String(32), nullable=False)  # upload|ocr|pipeline|merge|done|error
+    status: Mapped[str] = mapped_column(String(16), nullable=False)  # running|success|failed
+    message: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
     )
