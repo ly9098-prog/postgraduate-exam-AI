@@ -1,6 +1,7 @@
 """QuestionNormalizer 单元测试。"""
 import os
 import pytest
+from app.features.question_type_classifier import extract_options_from_text as _extract_fallback_options
 from app.features.question_normalizer import (
     normalize_question,
     normalize_questions,
@@ -20,8 +21,9 @@ from app.features.question_normalizer import (
     QT_FILL_BLANK,
     QT_SUBJECTIVE,
 )
-from app.features.question_splitter import split_questions
+from app.features.question_splitter import split_questions, scan_entire_block_including_surrounding_lines
 from app.features.answer_matcher import match_answers
+from app.features.question_type_classifier import detect_options_from_text, classify as classify_question_type
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "..", "fixtures")
 
@@ -244,6 +246,7 @@ class TestExtractStem:
 # 3. 选项标准化
 # ---------------------------------------------------------------
 
+@pytest.mark.options_pipeline
 class TestNormalizeOptions:
     def test_dict_options(self):
         result = _normalize_options({"A": "2x", "B": "x", "C": "x^2", "D": "2"})
@@ -1178,3 +1181,246 @@ class TestBreakBeforeNumberMarkersFenceProtection:
         assert len(code_warnings) == 0, (
             f"不应有代码完整性 warning: {code_warnings}"
         )
+
+
+# ---------------------------------------------------------------
+# 13. OCR Pipeline: detect_options_from_text 独立检测
+# ---------------------------------------------------------------
+
+@pytest.mark.options_pipeline
+class TestDetectOptionsFromText:
+    """验证 detect_options_from_text 在各种场景下正确检测选项。"""
+
+    def test_standard_abcd_options(self):
+        """标准 A./B./C./D. 格式。"""
+        text = "下列正确的是？\nA. 甲\nB. 乙\nC. 丙\nD. 丁"
+        assert detect_options_from_text(text) is True
+
+    def test_code_block_with_options(self):
+        """BUGS 案例一：代码块后紧接 A/B/C/D 选项。"""
+        text = (
+            "设栈的初始状态为空，元素1,2,3,4,5依次入栈，则出栈序列不可能的是？\n"
+            "```\n"
+            "// 代码略\n"
+            "```\n"
+            "A. 1,2,3,4,5\n"
+            "B. 5,4,3,2,1\n"
+            "C. 4,3,2,1,5\n"
+            "D. 3,2,1,5,4"
+        )
+        assert detect_options_from_text(text) is True
+
+    def test_inline_options_after_code(self):
+        """代码行后紧跟行内选项。"""
+        text = (
+            "int x = 1;  A. 1  B. 2  C. 3  D. 4"
+        )
+        assert detect_options_from_text(text) is True
+
+    def test_pure_code_no_options(self):
+        """纯代码题（无选项）应返回 False。"""
+        text = (
+            "请写出以下代码的输出结果：\n"
+            "```c\n"
+            "#include <stdio.h>\n"
+            "int main() {\n"
+            "    printf(\"Hello\");\n"
+            "    return 0;\n"
+            "}\n"
+            "```"
+        )
+        assert detect_options_from_text(text) is False
+
+    def test_circled_options(self):
+        """①②③④ 圈号选项。"""
+        text = "下列正确的是？\n① 甲\n② 乙\n③ 丙\n④ 丁"
+        assert detect_options_from_text(text) is True
+
+    def test_empty_text(self):
+        """空文本返回 False。"""
+        assert detect_options_from_text("") is False
+        assert detect_options_from_text(None) is False
+
+    def test_single_option_not_enough(self):
+        """只有单个选项标记不足以判定。"""
+        text = "A. 这是一个单独的选项标记"
+        assert detect_options_from_text(text) is False
+
+
+# ---------------------------------------------------------------
+# 14. OCR Pipeline: scan_entire_block_including_surrounding_lines
+# ---------------------------------------------------------------
+
+@pytest.mark.options_pipeline
+class TestScanEntireBlock:
+    """验证 scan_entire_block_including_surrounding_lines 在代码块附近正确提取选项。"""
+
+    def test_code_block_with_options(self):
+        """BUGS 案例一：代码块后选项被正确提取。"""
+        text = (
+            "设栈的初始状态为空，元素1,2,3,4,5依次入栈，则出栈序列不可能的是？\n"
+            "```\n"
+            "// 代码略\n"
+            "```\n"
+            "A. 1,2,3,4,5\n"
+            "B. 5,4,3,2,1\n"
+            "C. 4,3,2,1,5\n"
+            "D. 3,2,1,5,4"
+        )
+        options = scan_entire_block_including_surrounding_lines(text)
+        assert len(options) == 4
+        assert "A" in options
+        assert "B" in options
+        assert "C" in options
+        assert "D" in options
+
+    def test_pure_code_no_options(self):
+        """纯代码题（无选项）应返回空字典。"""
+        text = (
+            "请写出以下代码的输出结果：\n"
+            "```c\n"
+            "#include <stdio.h>\n"
+            "int main() {\n"
+            "    printf(\"Hello\");\n"
+            "    return 0;\n"
+            "}\n"
+            "```"
+        )
+        options = scan_entire_block_including_surrounding_lines(text)
+        assert options == {}
+
+
+# ---------------------------------------------------------------
+# 15. OCR Pipeline: _extract_fallback_options
+# ---------------------------------------------------------------
+
+@pytest.mark.options_pipeline
+class TestExtractFallbackOptions:
+    """验证 extract_options_from_text（SSOT）在 option_lines 为空时的回退提取。"""
+
+    def test_code_block_fallback(self):
+        """BUGS 案例一：SSOT 从 raw_text 提取 4 个选项。"""
+        text = (
+            "设栈的初始状态为空，元素1,2,3,4,5依次入栈，则出栈序列不可能的是？\n"
+            "```\n"
+            "// 代码略\n"
+            "```\n"
+            "A. 1,2,3,4,5\n"
+            "B. 5,4,3,2,1\n"
+            "C. 4,3,2,1,5\n"
+            "D. 3,2,1,5,4"
+        )
+        options = _extract_fallback_options(text)
+        assert len(options) == 4
+        assert options["A"] == "1,2,3,4,5"
+        assert options["B"] == "5,4,3,2,1"
+        assert options["D"] == "3,2,1,5,4"
+
+    def test_pure_code_no_fallback(self):
+        """纯代码题 fallback 返回空字典。"""
+        text = (
+            "请写出以下代码的输出结果：\n"
+            "```c\n"
+            "int main() { return 0; }\n"
+            "```"
+        )
+        options = _extract_fallback_options(text)
+        assert options == {}
+
+
+# ---------------------------------------------------------------
+# 16. OCR Pipeline: normalize_question 回归测试
+# ---------------------------------------------------------------
+
+@pytest.mark.options_pipeline
+class TestNormalizeQuestionCodeWithOptionsRegression:
+    """回归测试：代码+选项场景下 parsed_options 不为 null。"""
+
+    def test_code_with_options_parsed(self):
+        """BUGS 案例一：代码+选项 → parsed_options 应包含 4 个选项。"""
+        raw = {
+            "number": 1,
+            "raw_question_text": (
+                "设栈的初始状态为空，元素1,2,3,4,5依次入栈，则出栈序列不可能的是？\n"
+                "```\n"
+                "// 代码略\n"
+                "```\n"
+                "A. 1,2,3,4,5\n"
+                "B. 5,4,3,2,1\n"
+                "C. 4,3,2,1,5\n"
+                "D. 3,2,1,5,4"
+            ),
+            "page_start": 1,
+            "page_end": 1,
+            "has_options": False,  # splitter 未能提取选项（bug 场景）
+            "option_lines": {},   # option_lines 为空
+            "confidence": 0.7,
+        }
+        matched = {"question_number": 1, "answer": "D"}
+        result = normalize_question(raw, matched)
+        assert result["options_classified"] is True, (
+            f"classifier 应判定 has_options=True, 实际: {result.get('options_classify_reason')}"
+        )
+        assert len(result["options"]) == 4, (
+            f"应提取 4 个选项, 实际: {len(result['options'])} options={result['options']}"
+        )
+        assert result["question_type"] == QT_SINGLE_CHOICE, (
+            f"题型应为 single_choice, 实际: {result['question_type']}"
+        )
+        assert result["is_valid"] is True
+
+    def test_pure_code_no_options_parsed(self):
+        """纯代码题（无选项）→ parsed_options 应为空。"""
+        raw = {
+            "number": 1,
+            "raw_question_text": (
+                "请写出以下代码的输出结果：\n"
+                "```c\n"
+                "#include <stdio.h>\n"
+                "int main() {\n"
+                "    printf(\"Hello\");\n"
+                "    return 0;\n"
+                "}\n"
+                "```"
+            ),
+            "page_start": 1,
+            "page_end": 1,
+            "has_options": False,
+            "option_lines": {},
+            "confidence": 0.6,
+        }
+        matched = {"question_number": 1, "answer": "", "explanation": ""}
+        result = normalize_question(raw, matched)
+        assert len(result["options"]) == 0, (
+            f"无选项场景 options 应为空, 实际: {result['options']}"
+        )
+        assert result["question_type"] == QT_SUBJECTIVE
+
+    def test_classifier_override_subjective_to_single_choice(self):
+        """classify() 返回 question_type=QT_SINGLE_CHOICE 覆盖主观题误判。"""
+        text = "下列正确的是？\nA. 甲\nB. 乙\nC. 丙\nD. 丁"
+        result = classify_question_type(text, {})
+        assert result["has_options"] is True
+        assert result.get("question_type") == QT_SINGLE_CHOICE
+        assert result["has_options_reason"] == "structured_option_patterns_detected"
+
+    def test_question_type_override_in_normalizer(self):
+        """normalize_question 中 classifier override 生效：subjective→single_choice。"""
+        raw = {
+            "number": 1,
+            "raw_question_text": (
+                "已知栈 S 初始为空，进行以下操作后栈顶元素是？\n"
+                "push(1)\npop()\npush(2)\npush(3)\n"
+                "A. 1\nB. 2\nC. 3\nD. 空"
+            ),
+            "page_start": 1,
+            "page_end": 1,
+            "has_options": False,  # splitter 未提取
+            "option_lines": {},    # option_lines 为空
+            "confidence": 0.7,
+        }
+        matched = {"question_number": 1, "answer": "C"}
+        result = normalize_question(raw, matched)
+        assert result["options_classified"] is True
+        assert result["question_type"] == QT_SINGLE_CHOICE
+        assert len(result["options"]) >= 2

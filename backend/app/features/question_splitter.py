@@ -706,8 +706,33 @@ def _extract_degraded_blank_groups(text: str) -> list[dict]:
     return unique_groups if len(unique_groups) >= 2 else unique_groups
 
 
+def scan_entire_block_including_surrounding_lines(text: str) -> dict[str, str]:
+    """扫描全文（含代码块内部及周围行），提取所有选项模式。
+
+    此函数确保 code block 不阻断 options scan：
+    - 不跳过 ``` fence 内部内容
+    - 扫描全文每一行
+
+    委托至 ``question_type_classifier.extract_options_from_text``（SSOT）。
+
+    Args:
+        text: 完整题目文本（含代码块和选项行）。
+
+    Returns:
+        {key: text} 字典，至少包含 2 个选项。
+    """
+    from app.features.question_type_classifier import extract_options_from_text
+    return extract_options_from_text(text)
+
+
 def _extract_options(text: str) -> dict[str, str]:
-    """从题目文本中提取选项行。"""
+    """从题目文本中提取选项行。
+
+    使用多级检测：
+    1. 标准行内检测（_INLINE_OPTION_PATTERN）
+    2. 逐行检测（_detect_option_line）
+    3. SSOT 回退（extract_options_from_text）— 委托至 question_type_classifier 统一入口
+    """
     options: dict[str, str] = {}
     last_key: str | None = None
     for line in text.split("\n"):
@@ -740,6 +765,14 @@ def _extract_options(text: str) -> dict[str, str]:
             and last_key in options
         ):
             options[last_key] = f"{options[last_key]} {stripped}"
+
+    # FALLBACK: 委托至 question_type_classifier SSOT 进行宽模式提取
+    # 覆盖代码片段、断裂 OCR 等导致行首匹配失败的情况
+    if len(options) < 2:
+        from app.features.question_type_classifier import extract_options_from_text as _ssot_extract
+        fallback_opts = _ssot_extract(text)
+        if len(fallback_opts) >= len(options):
+            options = fallback_opts
     return options
 
 

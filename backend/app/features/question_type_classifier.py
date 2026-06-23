@@ -14,13 +14,18 @@ Downstream stages (normalizer, repair) must respect its output.
 
 import logging
 import re
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
+
+# Circled digit characters (used by multiple patterns)
+_CIRCLED_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+_CIRCLED_MAP = {"①": "A", "②": "B", "③": "C", "④": "D"}
 
 # Strict ABCD option line: line starts with A./B./C./D. etc. followed by content
 _STRICT_OPTION_LINE = re.compile(
     r"(?:^|\n)\s*"
-    r"(?:[?？]\s*|[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]\s*)?"
+    r"(?:[?？]\s*|[" + _CIRCLED_CHARS + r"]\s*)?"
     r"([A-Da-d])\s*[.．、:：)）]\s*\S"
 )
 
@@ -34,13 +39,27 @@ _STRICT_NUMBERED_CHOICE = re.compile(
     r"(?:^|\n)\s*[（(]\s*[1-4]\s*[）)]\s*\S"
 )
 
-# Circled digit choices: ① ② ③ ④
+# Circled digit choices: ① ② ③ ④ (only mapped entries, others are not option markers)
 _CIRCLED_CHOICE = re.compile(r"[①②③④]")
 
 # Explicit choice question keywords in Chinese
 _CHOICE_KEYWORDS = [
     "下列选项", "以下选项",
 ]
+
+# Fragmented OCR option pattern: handles OCR artifacts like "A ." / "A．\nxxx"
+_STRICT_FRAGMENTED_OPTION = re.compile(
+    r"(?:^|\n)\s*"
+    r"([A-Da-d])\s*[.\s、:：)）]{2,}\s*"
+    r"(?:\n\s*)?"
+    r"\S"
+)
+
+# Broad option-like pattern: "Atext" or "A text" without delimiter (fragmented OCR)
+_STRICT_BROAD_OPTION = re.compile(
+    r"(?:^|\n)\s*"
+    r"([A-Da-d])\s+(?=[^\sa-dA-D\n])"
+)
 
 # Question type constants (mirrored from question_normalizer to avoid circular import)
 QT_SINGLE_CHOICE = "single_choice"
@@ -50,53 +69,166 @@ QT_FILL_BLANK = "fill_blank"
 QT_SUBJECTIVE = "subjective"
 
 
-def has_structured_options(raw_text: str) -> bool:
-    """Check if raw_text contains structured option patterns.
+@lru_cache(maxsize=128)
+def detect_options_from_text(raw_text: str) -> bool:
+    """独立检测文本中是否存在选项结构（独立于 question_type）。
 
-    Strict detection rules (any one is sufficient):
-    1. At least 2 lines matching ``A. text`` / ``B. text`` / etc.
-    2. At least 2 numbered choices ``(1) text`` / ``(2) text``
-    3. At least 2 circled digit choices ① ② ③ ④
-    4. Explicit keyword "下列选项" / "以下选项" in text
-    5. ``option_lines`` dict with actual content
+    即使 question_type=subjective，只要文本包含选项格式，就返回 True。
 
-    Args:
-        raw_text: The raw question text (pre-stem-extraction).
+    检测范围：
+    - A./B./C./D. 行首格式
+    - (A)(B)(C)(D) 括号格式
+    - ①②③④ 圈号格式
+    - 断裂 OCR：A . xxx / A．\\nxxx
+    - 宽格式：A  xxx（无点号但字母后跟空格+内容）
+    - 代码块相邻：代码行后的 A. xxx 不会被阻断
 
-    Returns:
-        True if the text has structured options with sufficient confidence.
+    此函数是纯规则检测，不依赖 AI、不依赖 question_type，
+    不依赖 upstream 的 has_options 标志。
     """
     if not raw_text:
         return False
 
-    # Method 1: Line-level ABCD detection
+    # 方法 1: 标准行首选项 A. xxx \\n B. xxx
     abcd_matches = _STRICT_OPTION_LINE.findall(raw_text)
     unique_keys = set(k.upper() for k in abcd_matches)
     if len(unique_keys) >= 2:
         return True
 
-    # Method 2: Inline ABCD detection (less preferred but still valid)
+    # 方法 2: 行内选项 A.xxx B.xxx
     inline_matches = _STRICT_INLINE_OPTION.findall(raw_text)
     unique_inline = set(k.upper() for k in inline_matches)
     if len(unique_inline) >= 2:
         return True
 
-    # Method 3: Numbered choices (1)(2)(3)(4)
+    # 方法 3: 编号选项 (1)(2)(3)(4)
     numbered_matches = _STRICT_NUMBERED_CHOICE.findall(raw_text)
     if len(numbered_matches) >= 2:
         return True
 
-    # Method 4: Circled digits ① ② ③ ④
+    # 方法 4: 圈号选项 ①②③④
     circled = _CIRCLED_CHOICE.findall(raw_text)
     if len(circled) >= 2:
         return True
 
-    # Method 5: Explicit choice keywords
+    # 方法 5: 显式关键词
     for keyword in _CHOICE_KEYWORDS:
         if keyword in raw_text:
             return True
 
+    # 方法 6: 断裂 OCR — "A  ." / "A．" + 换行 + 内容
+    frag_matches = _STRICT_FRAGMENTED_OPTION.findall(raw_text)
+    unique_frag = set(k.upper() for k in frag_matches)
+    if len(unique_frag) >= 2:
+        return True
+
+    # 方法 7: 宽格式 — "A xxx"（字母 + 空格 + 非字母内容）
+    broad_matches = _STRICT_BROAD_OPTION.findall(raw_text)
+    unique_broad = set(k.upper() for k in broad_matches)
+    if len(unique_broad) >= 2:
+        return True
+
     return False
+
+
+def has_structured_options(raw_text: str) -> bool:
+    """Check if raw_text contains structured option patterns.
+
+    Delegates to ``detect_options_from_text`` for all detection logic.
+    """
+    return detect_options_from_text(raw_text)
+
+
+# ── Option extraction patterns (single SSOT for all fallback extraction) ──
+# These capture the text after the option marker, unlike the boolean detection
+# patterns above which only verify the marker's existence.
+# Supports: A. / B) / C． / ①. / A  xxx（宽格式/断裂OCR）
+_EXTRACT_OPTION_LINE = re.compile(
+    r"^\s*(?:[?？]\s*|[" + _CIRCLED_CHARS + r"]\s*)?"
+    r"([A-Da-d])\s*[.．、:：)）\s]\s*(.+)"
+)
+_EXTRACT_CIRCLED_LINE = re.compile(
+    r"^\s*([" + _CIRCLED_CHARS + r"])\s*[.．、:：\s]\s*(.+)"
+)
+_EXTRACT_INLINE_OPTIONS = re.compile(
+    r"(?<![A-Za-z])([A-Da-d])\s*[.．、:：)）]\s*"
+    r"([^A-Da-d\n]+?)"
+    r"(?=\s*[A-Da-d]\s*[.．、:：)）]|\s*$)"
+)
+_EXTRACT_BROAD_OPTION = re.compile(
+    r"(?:^|\n)\s*([A-Da-d])\s{2,}([^\n]+)"
+)
+
+
+def extract_options_from_text(raw_text: str) -> dict[str, str]:
+    """从 raw_text 中直接提取选项（key→text），作为 fallback 唯一入口。
+
+    这是 pipeline 中**唯一**的选项提取回退函数。
+    - splitter 的宽模式回退委托到此函数
+    - normalizer 的 fallback 委托到此函数
+    - 任何新 fallback 必须调用此函数
+
+    返回 {key: text} 字典。返回空字典表示未提取到有效选项。
+    当 detect_options_from_text(raw_text)==True 但此函数返回空时，
+    表示提取层有 bug（应触发 enforce 告警）。
+    """
+    if not raw_text:
+        return {}
+
+    options: dict[str, str] = {}
+
+    # Method 1: 逐行提取 A. xxx / B. xxx 等
+    for line in raw_text.split("\n"):
+        m = _EXTRACT_OPTION_LINE.match(line.strip())
+        if m:
+            key = m.group(1).upper()
+            text = m.group(2).strip()
+            if key in {"A", "B", "C", "D"} and text and key not in options:
+                options[key] = text
+
+    # 逐行找到 2+ 选项即返回（行级匹配最可靠）
+    if len(options) >= 2:
+        return options
+
+    # Method 2: 逐行提取圈号选项 ①. xxx / ②. xxx
+    for line in raw_text.split("\n"):
+        m = _EXTRACT_CIRCLED_LINE.match(line.strip())
+        if m:
+            raw_key = m.group(1)
+            mapped = _CIRCLED_MAP.get(raw_key)
+            if mapped:
+                text = m.group(2).strip()
+                if text and mapped not in options:
+                    options[mapped] = text
+
+    if len(options) >= 2:
+        return options
+
+    # Method 3: 逐行宽格式提取 "A  xxx"（字母 + 多空格 + 内容）
+    broad_matches = list(_EXTRACT_BROAD_OPTION.finditer(raw_text))
+    if len(broad_matches) >= 2:
+        options.clear()
+        for m in broad_matches:
+            key = m.group(1).upper()
+            text = m.group(2).strip()
+            if key in {"A", "B", "C", "D"} and text and key not in options:
+                options[key] = text
+        if len(options) >= 2:
+            return options
+
+    # Method 4: 行内提取 "A.xxx B.xxx C.xxx D.xxx"（同一行串联）
+    inline_matches = list(_EXTRACT_INLINE_OPTIONS.finditer(raw_text))
+    if len(inline_matches) >= 2:
+        options.clear()
+        for m in inline_matches:
+            key = m.group(1).upper()
+            text = m.group(2).strip()
+            if key in {"A", "B", "C", "D"} and text and key not in options:
+                options[key] = text
+        if len(options) >= 2:
+            return options
+
+    return {}
 
 
 def classify(
@@ -111,6 +243,12 @@ def classify(
     If ``has_options`` is False, no downstream stage should create or
     modify options.
 
+    Priority order (first match wins):
+    1. ``is_frozen`` → has_options=True
+    2. ``detect_options_from_text(raw_text)`` → has_options=True, type=single_choice
+    3. Splitter found option content → has_options=True (conservative)
+    4. Default → has_options=False
+
     Args:
         raw_text: The raw question text.
         option_lines: Dict of options detected by the splitter (may be empty).
@@ -121,13 +259,15 @@ def classify(
         dict with:
             - has_options (bool): Whether options should be processed.
             - has_options_reason (str): Why has_options is True/False.
+            - question_type (str | None): Override question_type when detected.
+              Only set when options are detected via text patterns.
             - confidence (float): Confidence in the classification.
               Note: this is an empirical estimate, not calibrated
               against ground-truth data.
     """
     option_lines = option_lines or {}
 
-    # ── Frozen questions always have options ──
+    # ── Priority 1: Frozen questions always have options ──
     if is_frozen:
         return {
             "has_options": True,
@@ -135,23 +275,26 @@ def classify(
             "confidence": 1.0,
         }
 
-    # ── Check for structured options in raw text ──
-    structured = has_structured_options(raw_text)
+    # ── Priority 2: Independent text-based option detection ──
+    # This check is INDEPENDENT of question_type, splitter result, or any
+    # upstream classification. If the raw text contains A/B/C/D patterns,
+    # we force has_options=True regardless of other signals.
+    text_has_options = detect_options_from_text(raw_text)
 
-    # ── Check if splitter actually found option content ──
-    splitter_has_content = bool(option_lines) and len(option_lines) >= 1
-
-    if structured:
-        # Text has clear option patterns → has_options
+    if text_has_options:
+        # ── Check if splitter actually found option content ──
+        splitter_has_content = bool(option_lines) and len(option_lines) >= 1
         return {
             "has_options": True,
             "has_options_reason": "structured_option_patterns_detected",
-            "confidence": 0.9 if len(option_lines) >= 2 else 0.7,
+            "question_type": QT_SINGLE_CHOICE,
+            "confidence": 0.9 if splitter_has_content else 0.7,
         }
 
-    # ── Fallback: splitter found content but text is ambiguous ──
+    # ── Priority 3: Fallback — splitter found content but text is ambiguous ──
     # This is a conservative path — we trust the splitter's output
     # even though we couldn't confirm from raw text patterns.
+    splitter_has_content = bool(option_lines) and len(option_lines) >= 1
     if splitter_has_content:
         logger.info(
             "[CLASSIFY] has_options=True via splitter (structured detection failed, "
