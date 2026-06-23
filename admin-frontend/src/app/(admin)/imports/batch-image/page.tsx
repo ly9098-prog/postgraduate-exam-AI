@@ -388,34 +388,34 @@ export default function BatchImagePage() {
   const renderStatusBadge = (task: ImageTask) => {
     if (task.status === "failed") {
       return (
-        <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+        <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700 transition-all duration-300">
           失败
         </span>
       );
     }
     if (task.status === "succeeded") {
       return (
-        <span className="shrink-0 rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700">
+        <span className="shrink-0 rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700 transition-all duration-300">
           成功 · {task.questionCount}题
         </span>
       );
     }
     if (task.status === "processing") {
       return (
-        <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+        <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 transition-all duration-300">
           识别中
         </span>
       );
     }
     if (task.status === "uploading") {
       return (
-        <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+        <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 transition-all duration-300">
           上传中
         </span>
       );
     }
     return (
-      <span className="shrink-0 rounded-full bg-[var(--color-bg-input)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-text-secondary)]">
+      <span className="shrink-0 rounded-full bg-[var(--color-bg-input)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-text-secondary)] transition-all duration-300">
         等待中
       </span>
     );
@@ -436,7 +436,7 @@ export default function BatchImagePage() {
     <div className="space-y-6">
       {message ? (
         <div
-          className={`flex items-center gap-2.5 rounded-2xl border px-4 py-3 text-sm shadow-[var(--shadow-crisp)] ${
+          className={`animate-rise-in flex items-center gap-2.5 rounded-2xl border px-4 py-3 text-sm shadow-[var(--shadow-crisp)] ${
             message.type === "error"
               ? "border-amber-200 bg-amber-50/80 text-amber-800"
               : message.type === "success"
@@ -704,20 +704,20 @@ export default function BatchImagePage() {
                 {/* Status badge */}
                 <div className="flex flex-wrap items-center gap-2">
                   {queuePhase !== "done" ? (
-                    <span className="flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                    <span className="flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 transition-all duration-300">
                       <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
                       {queuePhase === "uploading" ? "上传中" : "识别中"}
                     </span>
                   ) : (
                     <span
-                      className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+                      className={`animate-rise-in flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-300 ${
                         failedCount > 0 && succeededCount === 0
                           ? "bg-red-50 text-red-700"
                           : "bg-green-50 text-green-700"
                       }`}
                     >
                       <span
-                        className={`inline-block h-2 w-2 rounded-full ${failedCount > 0 && succeededCount === 0 ? "bg-red-500" : "bg-green-500"}`}
+                        className={`inline-block h-2 w-2 rounded-full transition-all duration-300 ${failedCount > 0 && succeededCount === 0 ? "bg-red-500" : "bg-green-500"}`}
                       />
                       {failedCount > 0 && succeededCount === 0 ? "已结束（全部失败）" : "已完成"}
                     </span>
@@ -752,12 +752,13 @@ export default function BatchImagePage() {
                     ["成功", succeededCount, "text-green-600"],
                     ["失败", failedCount, "text-red-600"],
                     ["生成题目", totalQuestions, "text-[var(--color-primary-dark)]"],
-                  ].map(([label, value, tone]) => (
+                  ].map(([label, value, tone], idx) => (
                     <div
                       key={String(label)}
-                      className="rounded-xl border border-[var(--color-border)] bg-white/70 p-2.5 text-center"
+                      className="animate-rise-in rounded-xl border border-[var(--color-border)] bg-white/70 p-2.5 text-center"
+                      style={{ animationDelay: `${idx * 60}ms` }}
                     >
-                      <p className={`text-lg font-bold ${tone}`}>{Number(value ?? 0)}</p>
+                      <p className={`text-lg font-bold tabular-nums ${tone}`}>{Number(value ?? 0)}</p>
                       <p className="mt-0.5 text-[10px] text-[var(--color-text-hint)]">{label}</p>
                     </div>
                   ))}
@@ -769,11 +770,11 @@ export default function BatchImagePage() {
                     <span className="text-xs font-semibold text-[var(--color-text-secondary)]">明细</span>
                     <div className="space-y-1.5">
                       {imageTasks.map((task) => {
-                        const traces = task.jobStatus?.trace_events ?? [];
+                        const traces = task.traceEvents;
                         return (
                           <div
                             key={task.id}
-                            className={`rounded-xl border bg-white/70 text-xs ${
+                            className={`animate-rise-in rounded-xl border bg-white/70 text-xs transition-all duration-200 hover:border-[var(--color-primary)] hover:shadow-sm ${
                               task.status === "failed"
                                 ? "border-red-200"
                                 : "border-[var(--color-border)]"
@@ -797,7 +798,7 @@ export default function BatchImagePage() {
                             {traces.length > 0 ? (
                               <div className="border-t border-[var(--color-border)] px-3 py-2 space-y-0.5">
                                 {traces.map((e, i) => (
-                                  <div key={i} className="flex items-start gap-2 text-[10px] leading-relaxed min-w-0 overflow-hidden">
+                                  <div key={i} className="animate-rise-in flex items-start gap-2 text-[10px] leading-relaxed min-w-0 overflow-hidden">
                                     <span className="shrink-0 font-mono text-[var(--color-text-hint)] w-16">
                                       {fmtTime(new Date(e.created_at).getTime())}
                                     </span>
@@ -826,7 +827,7 @@ export default function BatchImagePage() {
 
                             {/* Error message for failed items */}
                             {task.status === "failed" && task.errorMessage ? (
-                              <div className="border-t border-red-100 bg-red-50/50 px-3 py-1.5 text-[10px] text-red-700">
+                              <div className="animate-rise-in border-t border-red-100 bg-red-50/50 px-3 py-1.5 text-[10px] text-red-700">
                                 {task.errorMessage}
                               </div>
                             ) : null}
@@ -869,9 +870,9 @@ export default function BatchImagePage() {
 
                 {/* Quick link to review queue */}
                 {queuePhase === "done" && succeededCount > 0 ? (
-                  <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-3">
+                  <div className="animate-rise-in flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-3">
                     <a
-                      className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white/70 px-3 text-[10px] font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white/70 px-3 text-[10px] font-semibold text-[var(--color-text-secondary)] transition-all duration-200 hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] active:scale-95"
                       href="/imports/review"
                     >
                       <ClipboardCheck className="h-3 w-3" />
