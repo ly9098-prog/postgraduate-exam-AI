@@ -1,306 +1,318 @@
-## 🎯 任务名称
+## 🧩 任务名称
 
-OCR Pipeline v3 — Anti-Mutation DAG Architecture (ZERO TRUST OCR SYSTEM)
-
-------
-
-# 🚨 一、核心目标（必须理解）
-
-当前系统的根本问题不是：
-
-- ❌ OCR 精度
-- ❌ code detection 规则
-- ❌ clean text 逻辑
-
-而是：
-
-# 🚨 数据在 pipeline 中“被允许随意变形（mutation）”
+**OCR Pipeline：新增 Structure Freeze Layer（选项结构冻结层）**
 
 ------
 
-## ✔ 本次升级目标：
+## 🎯 背景问题（必须理解）
 
-建立一个系统：
+当前 OCR pipeline 存在一个结构性设计缺陷：
 
-> ✔ 任意 stage 不能修改不属于它的 region
-> ✔ code 永远不可被 mutation
-> ✔ 每一步输入输出必须可验证
-> ✔ pipeline 必须 DAG 化（不可串行污染）
+> options（A/B/C/D 或 ①②③④）在多个 stage 被重复解析 + 反复修正
+
+导致：
+
+- VL OCR 输出不稳定
+- normalize_schema 会“误修 options”
+- AI repair 会再次改写 options
+- 最终出现：
+  - ❌ 选项丢失
+  - ❌ 选项错位
+  - ❌ A/B/C/D 不完整
+  - ❌ 不同 stage 结果不一致
 
 ------
 
-# 🧱 二、系统架构（必须实现）
+## ❗根本问题
+
+当前 pipeline：
+
+```text
+OCR → clean → split → normalize_schema → ai_repair
+```
+
+问题是：
+
+> ❌ “options extraction 是分散在多个 stage 中的”
 
 ------
 
-## 🔷 1. DAG Pipeline（核心结构）
+## ✅ 正确设计目标
 
-📄 新增：
+必须改成：
 
-```id="dag_core"
-app/pipeline/ocr_dag.py
+> ✔ options 只能在一个 deterministic stage 中生成
+> ✔ 后续所有 stage 只能读取，不能修改
+
+------
+
+## 🧱 新增核心模块（必须实现）
+
+### 📌 新文件
+
+```
+features/pipeline_stages/structure_freeze_stage.py
 ```
 
 ------
 
-### ✔ Pipeline 定义（必须实现）
+## 🧠 Stage 职责定义（非常重要）
+
+### ✔ 输入
 
 ```python
-PIPELINE = DAG(
-    nodes=[
-        "OCR_RAW",
-        "NOISE_FILTER",
-        "CODE_LOCK_DETECTION",
-        "REGION_SPLIT",
-        "TEXT_CLEAN",
-        "CODE_VERIFY",
-        "OPTION_EXTRACT",
-        "TEXT_REPAIR",
-        "SCHEMA_BUILD"
-    ],
-    edges=[
-        ("OCR_RAW", "NOISE_FILTER"),
-        ("NOISE_FILTER", "CODE_LOCK_DETECTION"),
-        ("CODE_LOCK_DETECTION", "REGION_SPLIT"),
-        ("REGION_SPLIT", "TEXT_CLEAN"),
-        ("REGION_SPLIT", "CODE_VERIFY"),
-        ("TEXT_CLEAN", "TEXT_REPAIR"),
-        ("TEXT_REPAIR", "SCHEMA_BUILD"),
-        ("CODE_VERIFY", "SCHEMA_BUILD"),
-        ("OPTION_EXTRACT", "SCHEMA_BUILD")
-    ]
-)
+raw_ocr_blocks: List[OCRBlock]
 ```
 
-------
-
-# 🔒 三、Zero Mutation Core（核心机制）
+（OCR + clean 之后的文本块）
 
 ------
 
-## 🚨 2. 全局不可变数据结构（必须实现）
-
-📄 新增：
-
-```id="immutable1"
-app/core/immutable_regions.py
-```
-
-------
-
-### ✔ Region 定义
+### ✔ 输出（核心结构锁定）
 
 ```python
-@dataclass(frozen=True)
-class Region:
-    id: str
-    type: Literal["code", "text", "option"]
-    content: str
-    hash: str
+FrozenQuestionStructure:
+{
+    "question_id": str,
+    "stem": str,
+    "options": {
+        "A": str,
+        "B": str,
+        "C": str,
+        "D": str
+    },
+    "option_style": "abcd | circled | roman",
+    "confidence": float,
+    "source_span": list[span]
+}
 ```
 
 ------
 
-### ❗关键原则：
+## 🔥 核心逻辑（必须实现）
 
-> 一旦 region 创建，**绝不允许修改 content**
+### Step 1：option detection（规则优先）
+
+必须支持：
+
+- `A. / B. / C. / D.`
+- `A)` / `B)`
+- `①②③④`
+- `(A)(B)(C)(D)`
+- OCR断行（如 B 单独一行）
 
 ------
 
-# 🚨 四、Mutation Guard（核心防线）
+### Step 2：option normalization（强制统一）
 
-------
+统一输出：
 
-## 🔥 3. runtime mutation blocker
-
-📄 新增：
-
-```id="guard1"
-app/core/mutation_guard.py
+```text
+A / B / C / D
 ```
 
 ------
 
-### ✔ 强制校验：
+### Step 3：option completeness check
+
+必须检测：
+
+- A 是否存在
+- B 是否存在
+- C 是否存在
+- D 是否存在
+
+如果缺失：
 
 ```python
-def assert_no_mutation(before: Region, after: Region):
-    if before.hash != after.hash:
-        raise RuntimeError(
-            f"MUTATION DETECTED: {before.id}"
-        )
+confidence -= 0.3
+flag = "INCOMPLETE_OPTIONS"
 ```
 
 ------
 
-## ✔ 所有 stage 必须通过 guard
+### Step 4：structure freeze（关键）
+
+输出结构必须：
 
 ```python
-def run_stage(stage_fn, input_regions):
-    output = stage_fn(input_regions)
-
-    for b, a in zip(input_regions, output):
-        if b.type == "code":
-            assert_no_mutation(b, a)
-
-    return output
+FrozenQuestionStructure
 ```
 
-------
-
-# 🧠 五、Code Lock（升级版）
-
-------
-
-## 🔷 4. Code region 必须进入 LOCKED state
+并标记：
 
 ```python
-@dataclass(frozen=True)
-class CodeRegion(Region):
-    locked: bool = True
+is_frozen = True
 ```
 
 ------
 
-## ❌ 所有 stage 禁止：
+## ❗必须修改的 pipeline DAG
 
-- replace
-- normalize
-- regex rewrite
-- whitespace fix
-- brace fix
-- arrow fix
+### 修改 pipeline_orchestrator.py
+
+把流程改为：
+
+```text
+OCR
+↓
+clean_ocr_text
+↓
+structure_freeze_stage   ← ⭐新增
+↓
+question_splitter (light mode)
+↓
+normalize_schema (NO mutation allowed)
+↓
+ai_repair (stem only)
+↓
+review / persist
+```
 
 ------
 
-## ✔ 只允许：
+## 🚫 强约束（必须实现，否则会回归）
+
+### ❌ 1. 禁止 normalize_schema 修改 options
+
+在 normalize_schema 中加入：
 
 ```python
-READ ONLY ACCESS
+if "options" in diff and diff["options_changed"]:
+    raise RuntimeError("OPTIONS ARE FROZEN - mutation not allowed")
 ```
 
 ------
 
-# 🧹 六、Stage 责任分离（关键升级）
+### ❌ 2. 禁止 ai_repair 修改 options
 
-------
+在 ai_repair prompt 中加入：
 
-## ❌ 禁止“混合 stage”
+```
+You MUST NOT modify:
+- options field (A/B/C/D)
 
-------
-
-### TEXT_CLEAN
-
-✔ only text
-❌ cannot see code
-
-------
-
-### CODE_VERIFY
-
-✔ only validation
-❌ cannot modify
-
-------
-
-### OPTION_EXTRACT
-
-✔ independent from OCR pipeline
-✔ uses raw + text only
-
-------
-
-# 🧪 七、数据流约束（非常关键）
-
-------
-
-## 🚨 每个 stage 必须声明 contract
-
-```python
-class StageContract:
-    input_types: list
-    output_types: list
-    mutation_allowed: bool
+Only allowed to modify:
+- stem
+- explanation
+- formatting
 ```
 
 ------
 
-## ✔ example
+### ❌ 3. 禁止 question_splitter 做 option extraction
 
-```python
-TEXT_CLEAN = StageContract(
-    input_types=["text"],
-    output_types=["text"],
-    mutation_allowed=True
-)
+删除 / 禁用 fallback：
 
-CODE_VERIFY = StageContract(
-    input_types=["code"],
-    output_types=["report"],
-    mutation_allowed=False
-)
+- ❌ regex option extraction fallback
+- ❌ OCR-based re-detection of options
+
+split 只允许：
+
+```text
+question boundary detection
 ```
 
 ------
 
-# 🧪 八、强制测试（必须全部通过）
+## 🧠 数据流约束（非常关键）
+
+### ❗必须保证：
+
+```text
+OCR → clean → FREEZE → downstream ONLY READ
+```
+
+### frozen 数据必须：
+
+- 不可 mutate
+- 不可 re-parse
+- 不可重新 OCR
 
 ------
 
-## ✔ regression suite
+## 📊 验证标准（必须加 test）
 
-```bash
-pytest tests/ocr_regression/ -k "bugs"
+新增测试：
+
+### test_structure_freeze.py
+
+验证：
+
+#### 1️⃣ options 不丢失
+
+- OCR 输入含 A/B/C/D
+- freeze 输出必须完整
+
+------
+
+#### 2️⃣ options 不被修改
+
+- inject normalize_schema mutation
+- assert options unchanged
+
+------
+
+#### 3️⃣ AI repair 不影响 options
+
+- before/after diff
+- options must identical
+
+------
+
+#### 4️⃣ deterministic test
+
+同一 OCR 输入：
+
+```text
+must produce identical frozen structure
 ```
 
 ------
 
-## ✔ invariant checks
+## 🔥 成功标准
 
-必须验证：
+修复必须满足：
 
-### ✔ 1. code hash before == after
+### ✔ 结构稳定性
 
-### ✔ 2. no stage modifies code region
+- options extraction 只发生一次
 
-### ✔ 3. options extraction independent
+### ✔ 可预测性
 
-### ✔ 4. schema build never fallback
+- 同输入 = 同输出
 
-### ✔ 5. pipeline DAG has no cycles
+### ✔ 无二次污染
 
-------
-
-# 🚨 九、禁止行为（非常重要）
-
-Claude **必须禁止**：
-
-❌ patch rule addition
-❌ regex tuning
-❌ heuristic scoring
-❌ “improving detection accuracy”
-❌ modifying clean OCR logic for code
+- AI / normalize / split 不再改 options
 
 ------
 
-# 🧠 十、本质升级说明
+## 🚨 如果不修复会发生什么
+
+当前系统会持续出现：
+
+- OCR 正确 → options 被后处理破坏
+- VL 正确 → normalize 改错
+- AI 修复“修坏正确结构”
 
 ------
 
-## 这是一个系统级变化：
+## 🧩 本质升级目标
 
-| 旧系统                 | 新系统                |
-| ---------------------- | --------------------- |
-| linear pipeline        | DAG pipeline          |
-| mutable text           | immutable regions     |
-| heuristic rules        | contract enforcement  |
-| best-effort processing | zero-trust processing |
+从：
+
+> ❌ best-effort OCR pipeline
+
+升级为：
+
+> ✅ structure-first immutable DAG pipeline
 
 ------
 
-# 📌 一句话总结
+## 📌 一句话总结
 
-> 你现在不能再“修 OCR”，必须构建一个“不可变 + DAG + zero-mutation”的处理系统，否则 code contamination 永远无法根除。
+> 在 OCR pipeline 中新增 structure_freeze_stage，使 options 在 OCR 后立即结构化并冻结，后续所有 stage 仅允许读取不得修改，并强制移除 normalize_schema / ai_repair / splitter 中所有 option mutation 行为。
 
 ------
 

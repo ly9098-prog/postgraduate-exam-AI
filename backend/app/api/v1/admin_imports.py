@@ -671,6 +671,7 @@ async def batch_image_upload(
     concurrency: int | None = None,
     enable_ai_repair: bool = True,
     confidence_threshold: float = 0.6,
+    ocr_mode: str = Query("local", alias="ocr_mode"),
     # Idempotency / trace identifiers
     batch_id: str | None = Query(None, description="前端生成的 batch 标识"),
     image_id: str | None = Query(None, description="前端生成的 image 标识"),
@@ -749,6 +750,7 @@ async def batch_image_upload(
     options = {
         "enable_ai_repair": enable_ai_repair,
         "confidence_threshold": confidence_threshold,
+        "ocr_mode": ocr_mode,
     }
 
     job = await batch_svc.create_batch_job(
