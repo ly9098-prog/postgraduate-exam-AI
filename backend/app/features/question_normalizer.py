@@ -22,6 +22,29 @@ QT_FILL_BLANK = "fill_blank"
 QT_MULTI_BLANK_CHOICE = "multi_blank_choice"
 QT_SUBJECTIVE = "subjective"
 _OPTION_LINE_RE = re.compile(r"^(?:[?？]|[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])?\s*[A-Ha-h][.、:：)）\s]")
+# 增强选项检测模式：A. A) ①. (A) 等，用于从 raw_text 中二次检测选项
+_OPTION_PATTERN = re.compile(r"^\s*([A-D]|[①②③④]|\(\s*[A-D]\s*\))\s*[.、\)]")
+_STRUCTURAL_CODE_FENCE = re.compile(r"```")
+
+
+def _has_structural_markers(text: str) -> bool:
+    """检查文本是否包含结构化标记（选项行或代码围栏）。
+
+    用于 quality gate 决策：当文本含结构化标记时，即使 contamination
+    分数较高，也应保留 options / code_blocks，而非清空结构字段。
+    """
+    if not text:
+        return False
+    # 选项标记：每行以 A. B) ①. 等开头
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if _OPTION_PATTERN.match(stripped):
+            return True
+    # 代码围栏
+    if _STRUCTURAL_CODE_FENCE.search(text):
+        return True
+    return False
+
 
 # 单选题必须包含的标准选项集合
 REQUIRED_OPTION_KEYS = frozenset({"A", "B", "C", "D"})
@@ -500,6 +523,12 @@ def normalize_question(
     raw_text = raw_question.get("raw_question_text", "")
     option_lines = raw_question.get("option_lines", {})
 
+    # === Structure freeze: detect frozen questions ===
+    is_frozen = bool(raw_question.get("is_frozen", False))
+    if is_frozen:
+        logger.info("[FREEZE] normalize_question(q%s): frozen options=%s",
+                     raw_question.get("number", "?"), sorted(option_lines.keys()) if option_lines else "none")
+
     # === Normalize option order to A→B→C→D ===
     if option_lines and not raw_question.get("blank_option_groups"):
         option_lines = normalize_option_order(option_lines)
@@ -520,9 +549,16 @@ def normalize_question(
 
     # === OCR Quality Gate: 在解析前检测污染 ===
     quality_gate = tracer.run("ocr_quality_gate", "rule", "raw_ocr", None, _run_ocr_quality_gate, raw_text)
+    has_structural_markers = _has_structural_markers(raw_text)
+    logger.info(
+        "[OPTIONS-DETECT] quality_gate_passed=%s score=%.2f has_structural_markers=%s",
+        quality_gate["passed"], quality_gate["ocr_contamination_score"], has_structural_markers,
+    )
+    # 结构完整性优先：当文本含选项/代码围栏时，即使检测到污染也降低阻断等级
     ocr_critical_corruption = (
         not quality_gate["passed"]
         and quality_gate["ocr_contamination_score"] >= 0.50
+        and not has_structural_markers  # 有结构标记时不视为致命污染
     )
 
     stem = _extract_stem(raw_text, option_lines, blank_option_groups)
@@ -535,8 +571,37 @@ def normalize_question(
     stem = tracer.run("noise_filtering", "rule", "stem", "stem_extraction",
                       lambda s: filter_isolated_tokens(s, {"has_options": raw_question.get("has_options"), "option_lines": option_lines}),
                       stem)
+    # === Options extraction from upstream option_lines ===
     options = tracer.run("options_extraction", "rule", "raw_ocr", "stem_extraction",
                          _normalize_options, option_lines)
+    # === Options re-detection from raw_text when upstream missed them ===
+    if not options and raw_text and not is_frozen:
+        _detected_lines: dict[str, str] = {}
+        _PAREN_OPTION = re.compile(r"^\s*\(\s*([A-D])\s*\)\s*\S")
+        for line in raw_text.split("\n"):
+            stripped = line.strip()
+            # 主模式：A. A) ①. (A). 等
+            m = _OPTION_PATTERN.match(stripped)
+            if m:
+                key = m.group(1).upper()
+                key = key.replace("①", "A").replace("②", "B").replace("③", "C").replace("④", "D")
+                key = re.sub(r"[()]", "", key).strip()
+                text = _OPTION_PATTERN.sub("", stripped).strip()
+                if key in "ABCD":
+                    _detected_lines[key] = text
+                continue
+            # 次级模式：(A) text（不带句点）
+            m2 = _PAREN_OPTION.match(stripped)
+            if m2:
+                key = m2.group(1).upper()
+                text = _PAREN_OPTION.sub("", stripped).strip()
+                if key in "ABCD":
+                    _detected_lines[key] = text
+        if _detected_lines:
+            logger.info("[OPTIONS-DETECT] re-detected from raw_text: keys=%s", sorted(_detected_lines.keys()))
+            options = _normalize_options(_detected_lines)
+            option_lines = _detected_lines  # 同步更新，供 stem 提取和下游使用
+    logger.info("[OPTIONS-DETECT] options=%s", [o["key"] for o in options] if options else "none")
     # Track options recovery path
     if blank_option_groups:
         tracer.mark_options_recovery("options_extraction", "raw_scan", 0, 1.0)
@@ -600,11 +665,24 @@ def normalize_question(
         warnings.append("ocr_contamination_detected")
         for flag in quality_gate["ocr_quality_flags"]:
             warnings.append(f"ocr_quality:{flag}")
+        logger.info(
+            "[OPTIONS-DETECT] rejected_by_gate=%s has_structural_markers=%s",
+            quality_gate["passed"], has_structural_markers,
+        )
         if ocr_critical_corruption:
             errors.append("ocr_critical_corruption")
             failure_reasons.append("ocr_corruption_detected")
-            # 污染严重时强制降置信度
+            # 污染严重且无结构标记时强制降置信度
             confidence_score = min(confidence_score, 0.30)
+            if options:
+                if is_frozen:
+                    logger.info("[FREEZE] quality_gate: frozen options preserved despite corruption")
+                else:
+                    options = []
+                    logger.info("[OPTIONS-DETECT] quality_gate: options cleared (no structural markers)")
+        elif has_structural_markers:
+            # 有结构标记时降级为 warning，不阻断
+            logger.info("[OPTIONS-DETECT] quality_gate downgraded: has structural markers, preserving options")
 
     # --- 一致性校验阻断 (Goal 3) ---
     if not consistency["consistent"]:
@@ -704,6 +782,7 @@ def normalize_question(
         "warnings": warnings,
         "stem_hash": stem_hash,
         "confidence_score": confidence_score,
+        "is_frozen": is_frozen,
         # Goal 6: 失败追踪字段
         "validation_status": validation_status,
         "failure_reason": failure_reasons,
@@ -972,7 +1051,19 @@ def normalize_output(question: dict) -> dict:
     # Ensure options are in list[dict] format with A→D order
     raw_options = question.get("options", [])
     question_type = question.get("question_type", "")
-    if isinstance(raw_options, list):
+    is_frozen = bool(question.get("is_frozen", False))
+
+    if is_frozen:
+        # Frozen options: preserve exactly as-is, no padding, no mutation
+        if isinstance(raw_options, list):
+            options_list = list(raw_options)
+        elif isinstance(raw_options, dict):
+            ordered = normalize_option_order(raw_options)
+            options_list = [{"key": k, "text": ordered.get(k, "")}
+                            for k in sorted(ordered) if k in "ABCD"]
+        else:
+            options_list = []
+    elif isinstance(raw_options, list):
         opts_by_key: dict[str, str] = {}
         for opt in raw_options:
             if isinstance(opt, dict):
@@ -1014,6 +1105,7 @@ def normalize_output(question: dict) -> dict:
         "stem_hash", "confidence_score", "validation_status",
         "failure_reason", "retry_recommended", "ocr_quality_flags",
         "risk_flags", "decision_trace", "trace", "blank_option_groups",
+        "is_frozen",
         "vision_fallback_attempted", "vision_fallback_used",
         "vision_fallback_status", "vision_fallback_engine",
         "vision_fallback_reason",
