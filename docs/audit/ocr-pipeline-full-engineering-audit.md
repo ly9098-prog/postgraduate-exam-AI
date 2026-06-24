@@ -1,7 +1,7 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**→ **2026-06-24（VL confidence gate + VL_REBUILD 图片支持 + 双源 OCR 策略）**
+> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**→ **2026-06-24（VL confidence gate + VL_REBUILD 图片支持 + 双源 OCR 策略）**→ **2026-06-24（代码结构重建阶段 + 审核池泄漏修复）**
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
 
 **2026-06-23（本期新增）：**
@@ -25,6 +25,14 @@
 - **repair_option_structure()**：6 步修复管线 — HTML 清理、LaTeX 修复、裸选项恢复（无前缀行自动标记 A/B/C/D）、种子文本匹配
 - **全链路 TRACE 日志**：raw_input → text_detection → classifier_result → options_branch → final_options
 - **force_options_probe()**：debug 诊断函数，暴力扫描全部 7 种 option pattern 并报告
+
+**2026-06-24（后续-本期新增）：**
+- **代码结构重建阶段（code_structure_reconstruct）**：新增独立 pipeline 阶段，位于 `normalize_schema` → `classify_questions` 之间
+  - 仅处理含 `code_brace_unbalanced` / `code_block_incomplete` / `code_fence_unclosed` 标记的题目
+  - 专用 LLM prompt 允许修复 `{}` 闭合、`= =`→`==`、`- >`→`->`、缩进和断行（AI repair prompt 规则 10 禁止修改 `{}`）
+  - AI safety gate 验证修复结果，仅接受高置信度变更
+  - 修复 BUGS 案例三（while 循环缺 `}`）和案例四（for 循环断裂 `}`）
+- **审核池泄漏修复**：pipeline 前序阶段失败时（如 code_structure_reconstruct 异常），自动跳过 `review` 阶段，防止部分数据写入 `question_imports`
 
 ---
 
@@ -151,6 +159,17 @@
                                │
                                v
 ┌─────────────────────────────────────────────────────────────────────┐
+│               代码结构重建层 (Code Structure Reconstruct)              │
+│  pipeline_stages/code_structure_stage.py (312行)                    │
+│  ├─ 检测: code_brace_unbalanced / code_block_incomplete /            │
+│  │        code_fence_unclosed                                       │
+│  ├─ 修复: LLM 专用 prompt 闭合 {}、修复 `= =`→`==`、`- >`→`->`、    │
+│  │        拼接断裂语句、恢复缩进                                     │
+│  └─ 保护: AI safety gate 验证变更，拒绝高风险修改                    │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               v
+┌─────────────────────────────────────────────────────────────────────┐
 │                    AI 修复层 (AI Repair)                              │
 │  ai_repair.py (1116行) → Layer 4 两阶段修复: 罗马数字 + 标准批量（选项不可变门控）         │
 │  llm_text_structurer.py (451行) → LLM 结构化 (规则不足时触发)        │
@@ -190,8 +209,8 @@
 
 | 模块 | 行数 | 职责 | 单一职责 | 耦合度 |
 |---|---|---|---|---|
-| `pipeline_orchestrator.py` | ~4631 | 18 阶段编排（含 classify_questions）+ 性能 Profile | 🟡 仍有降低空间 | 🟡 中 |
-| `pipeline_stages/`（8 文件） | ~1140 | 8 独立 stage 实现（match/math_detect/table_detect/structure_freeze/...） | ✅ 各模块单一 | 🟢 低 |
+| `pipeline_orchestrator.py` | ~4650 | 19 阶段编排（含 classify_questions + code_structure_reconstruct）+ 性能 Profile | 🟡 仍有降低空间 | 🟡 中 |
+| `pipeline_stages/`（9 文件） | ~1380 | 9 独立 stage 实现（match/math_detect/table_detect/structure_freeze/code_structure...） | ✅ 各模块单一 | 🟢 低 |
 | `question_pipeline.py` | 2921 | `QuestionNormalizer` + 向后兼容重导出 | 🟡 保留入口 | 🟢 低 |
 | `question_ai_complete.py` | 741 | AI 补全 | ✅ 单一 | 🟢 低 |
 | `question_ai_enrich.py` | 323 | AI 丰富 | ✅ 单一 | 🟢 低 |
@@ -266,8 +285,8 @@
 | `page_spread_case` | 跨页题号+答案不连接 | ⚠️ 部分修复 |
 | `bugs_case1_stack` | VL confidence=0.0 被 gate 丢弃 | ✅ Fix A `0fed945` |
 | `bugs_case2_treerecursion` | VL_REBUILD 被 `source_type=="pdf"` 阻断 | ✅ Fix B `be03159` |
-| `bugs_case3_linkedlist` | VL 输出去掉了选项字母前缀 | ✅ 双源策略 `62f4870` |
-| `bugs_case4_forloop` | 基线通过（初始 OCR 已捕获选项） | ✅ 无操作 |
+| `bugs_case3_linkedlist` | VL 输出去掉了选项字母前缀 | ✅ 双源策略 `62f4870` + 代码结构重建 `e91a020` |
+| `bugs_case4_forloop` | 基线通过；`}` 断裂 + brace 告警残留 | ✅ 代码结构重建 `e91a020` |
 | `bugs_case5_listinsert` | VL 输出将选项转为 LaTeX 符号 | ✅ 双源策略 `62f4870` |
 
 ### 4.2 根因分类
@@ -338,6 +357,8 @@
 | **P0** | PaddleOCR-VL confidence=0.0 丢弃 VL 结果 | ✅ 0fed945（confidence gate override） |
 | **P0** | VL_REBUILD PDF-only 限制导致图片导入结构无法恢复 | ✅ be03159（图片文件支持） |
 | **P0** | VL 输出结构性损坏（缺前缀/LaTeX）→ 选项丢失 | ✅ 62f4870（双源策略 + repair） |
+| **P0** | AI repair prompt 规则 10 禁止修改 `{}`，导致代码 brace 无法修复 | ✅ e91a020（独立 code_structure_reconstruct 阶段 + 专用 prompt） |
+| **P1** | 管道前序阶段失败时 review 仍写入审核池，导致部分数据泄漏 | ✅ P5-3 skip review on prior failure |
 
 ### 6.2 改造路线图（压缩）
 
@@ -356,13 +377,15 @@
   - Layer 0/3 option engine 不重排、不填充
   - Layer 4 AI repair 选项不可变（3 规则）
   - 代码审查修复（关键词收紧、死代码清理、子串匹配修复）
-✅ **2026-06-24: BUGS 全 case 修复（0fed945 + be03159 + 62f4870）**
+✅ **2026-06-24: BUGS 全 case 修复（0fed945 + be03159 + 62f4870 + e91a020）**
   - Fix A: VL confidence gate override（conﬁdence=0.0 不再丢弃结果）
   - Fix B: VL_REBUILD 取消 PDF 限制 + 图片文件支持
   - 双源 OCR 策略：PP-OCRv6 = 结构主源，VL = 语义回退
   - repair_option_structure()：VL 输出结构修复（LaTeX/列表/缺前缀）
   - force_options_probe()：debug 诊断函数
   - 全链路 TRACE 日志（6 阶段）
+  - 代码结构重建阶段：修复 BUGS 案例三/四的 brace 不闭合 / 语句断裂问题
+  - 审核池泄漏修复：前序阶段失败时跳过 review 阶段
 
 ⏳ 待处理:
   - AI 补全并行化 (0.5d)
@@ -397,6 +420,10 @@
 	  ├─ Layer 0: 不重排、不填充
 	  ├─ Layer 1: question_type_classifier → has_options 严格门控
 	  └─ Layer 4: 3 规则选项不可变 (修改/删除→拒绝, 空+非冻结→允许恢复)
+	阶段 7B: 代码结构重建 → code_structure_reconstruct (e91a020)
+	  ├─ 检测: code_brace_unbalanced / code_block_incomplete / code_fence_unclosed
+	  ├─ 修复: LLM 专用 prompt 闭合 {}、修复 OCR 符号错误、拼接断裂语句
+	  └─ 保护: AI safety gate 验证变更，拒绝高风险修改
 	阶段 8: 去重 + 入库 (不改)
 ```
 
@@ -408,7 +435,7 @@
 
 | 文件 | 行数 | 用途 |
 |---|---|---|
-| `features/pipeline_orchestrator.py` | ~4631 | 主编排器（18 阶段，含 classify_questions） |
+| `features/pipeline_orchestrator.py` | ~4650 | 主编排器（19 阶段，含 classify_questions + code_structure_reconstruct） |
 | `features/question_pipeline.py` | 2921 | 标准化管道 + 向后兼容重导出 |
 | `features/batch_image_import_service.py` | ~1050 | 批量图片导入编排器（含 ocr_mode 路由） |
 | `services/ocr_service.py` | 637 | PaddleOCR 封装 |
@@ -418,6 +445,7 @@
 | `features/code_integrity.py` | 520 | 代码块完整性检测 |
 | `features/question_type_classifier.py` | 455 | Layer 1 题型分类门控 + force_options_probe() |
 | `features/pipeline_stages/structure_freeze_stage.py` | 230 | 选项结构冻结（纯正则，split 前锁定选项） |
+| `features/pipeline_stages/code_structure_stage.py` | 312 | 代码结构重建（LLM 修复 brace/indent/OCR 符号错误） |
 
 ### OCR 纠错
 

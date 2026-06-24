@@ -1,6 +1,6 @@
-# 代码题目题干/选项部分缺失（第四次修复）
+# 代码题目题干/选项部分缺失（第五次修复）
 
-###### |结果：仍然存在选项缺失的情况
+###### |结果：案例三/四已通过代码结构重建阶段修复
 
 ##### 案例一（✅ 已修复 — confidence gate override）
 
@@ -362,10 +362,11 @@ countLeaf(T->rchild);
 }
 ```
 
-##### 案例三（✅ 已修复 — 双源策略优先使用 PP-OCRv4）
+##### 案例三（✅ 已修复 — code structure reconstruction）
 
-> 修复提交：`62f4870` — VL_REBUILD 中先跑 PP-OCRv4，检测到选项时直接使用（跳过 VL）。
-> 验证结果：PP-OCRv6 输出 122 chars，detect_options=True，提取到完整 4 选项。
+> 修复提交：`e91a020` — 新增代码结构重建管道阶段（code_structure_reconstruct）。
+> LLM 专用 prompt 允许修复 `{}` 花括号闭合、断行拼接、OCR 符号错误（`= =`→`==`、`- >`→`->`），
+> 在 AI repair 之前修复代码完整性，解决 AI repair prompt 规则 10 "不得修改 {}" 导致的 brace 无法修复问题。
 
 ###### 原题
 
@@ -389,27 +390,39 @@ D. 逆置链表
 
 "/ocr_test/images/example/ocr_code_test_8.png"
 
-###### 导入后进入审核
+###### 导入后进入审核（选项被识别入题干区域，且题干代码内容不完整）
 
 ~~~tex
-```text
+18。在单链表中执行:
+(>C
 LNode * p = L;
 while (p != NULL && p − >next != NULL) {
 p = p − >next;
-```
+该代码的作用是：
+A.找到头结点
+B.找到尾结点
+C.删除所有节点
+D.逆置链表
 
-选项缺失
+A.找到头结点
+B.找到尾结点
+C.删除所有节点
+D.逆置链表
 ~~~
 
 ###### OCR 原文 / 导入原始信息
 
 ~~~tex
-C
-```text
+18。在单链表中执行:
+(>C
 LNode *p = L;
 while (p != NULL && p->next != NULL) {
 p = p->next;
-```
+该代码的作用是：
+A.找到头结点
+B.找到尾结点
+C.删除所有节点
+D.逆置链表
 ~~~
 
 ###### 解析数据
@@ -417,9 +430,14 @@ p = p->next;
 ```json
 {
   "parsed_content": {
-    "text": "```text\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n```"
+    "text": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表"
   },
-  "parsed_options": null,
+  "parsed_options": {
+    "A": "找到头结点",
+    "B": "找到尾结点",
+    "C": "删除所有节点",
+    "D": "逆置链表"
+  },
   "parsed_answer": null,
   "parsed_analysis": null
 }
@@ -430,33 +448,60 @@ p = p->next;
 ```json
 {
   "raw_data": {
-    "schema_version": "v1",
-    "subject": "",
-    "question_type": "subjective",
-    "stem": "```text\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n```",
-    "options": [],
-    "blank_option_groups": [],
+    "stem": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表",
+    "code_blocks": [],
+    "options": [
+      {
+        "key": "A",
+        "text": "找到头结点"
+      },
+      {
+        "key": "B",
+        "text": "找到尾结点"
+      },
+      {
+        "key": "C",
+        "text": "删除所有节点"
+      },
+      {
+        "key": "D",
+        "text": "逆置链表"
+      }
+    ],
     "answer": "",
     "analysis": "",
-    "raw_text": "C\n```text\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n```",
+    "subject": "",
+    "question_type": "single_choice",
+    "raw_text": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表",
     "knowledge_points": [],
     "difficulty": 3,
     "source": {
       "file": "ocr_code_test_8.png",
       "page": 1,
-      "type": "txt"
+      "type": "image"
     },
-    "is_valid": true,
-    "errors": [],
+    "is_valid": false,
+    "errors": [
+      "missing_answer"
+    ],
     "warnings": [
       "ocr_contamination_detected",
       "ocr_quality:code_brace_unbalanced",
-      "ocr_quality:watermark_noise_detected",
       "code_integrity:code_brace_unbalanced",
-      "low_confidence"
+      "low_confidence",
+      "missing_answer_for_objective_question"
     ],
-    "stem_hash": "18031c04",
-    "confidence_score": 0.3,
+    "stem_hash": "0cbddc8d",
+    "confidence_score": 0.35,
+    "validation_status": "failed",
+    "failure_reason": [
+      "missing_answer_for_objective_question",
+      "code_brace_unbalanced"
+    ],
+    "retry_recommended": true,
+    "ocr_quality_flags": [
+      "code_brace_unbalanced"
+    ],
     "risk_flags": [
       "fallback_low_confidence",
       "code_brace_unbalanced",
@@ -465,9 +510,24 @@ p = p->next;
     ],
     "decision_trace": [
       {
-        "stage": "ai_repair",
-        "result": "repaired",
-        "reason": "ai_repaired"
+        "stage": "ocr_quality_gate",
+        "result": "blocked",
+        "reason": "score=0.35 flags=['code_brace_unbalanced']"
+      },
+      {
+        "stage": "code_gate",
+        "result": "blocked",
+        "reason": "code_brace_unbalanced;code_block_incomplete"
+      },
+      {
+        "stage": "validation",
+        "result": "failed",
+        "reason": "missing_answer_for_objective_question;code_brace_unbalanced"
+      },
+      {
+        "stage": "ai_safety",
+        "result": "blocked",
+        "reason": "safety_rejected: options_dropped(4→0)"
       },
       {
         "stage": "review",
@@ -475,6 +535,572 @@ p = p->next;
         "reason": "written_to_review_queue"
       }
     ],
+    "trace": [
+      {
+        "stage": "ocr_raw_input",
+        "strategy": "passthrough",
+        "input_source": "raw_ocr",
+        "parent_stage": null,
+        "input_preview": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表",
+        "output_preview": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表",
+        "status": "observed",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": "raw_text length=122"
+      },
+      {
+        "stage": "ocr_quality_gate",
+        "strategy": "rule",
+        "input_source": "raw_ocr",
+        "parent_stage": null,
+        "input_preview": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表",
+        "output_preview": "{'passed': False, 'ocr_quality_flags': ['code_brace_unbalanced'], 'ocr_contamination_score': 0.35}",
+        "status": "success",
+        "duration_ms": 0.41,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [
+            {
+              "before": "18。在单链表中执行: (>C LNode *p = L; while (p != NULL && p->next != NULL) { p = p->next; 该代码的作用是： A.找到头结点 B.找到尾结点 C.删除所有节点 D.逆置链表",
+              "after": "{'passed': False, 'ocr_quality_flags': ['code_brace_unbalanced'], 'ocr_contamination_score': 0.35}"
+            }
+          ],
+          "has_changed": true
+        },
+        "notes": ""
+      },
+      {
+        "stage": "stem_extraction",
+        "strategy": "observation",
+        "input_source": "raw_ocr",
+        "parent_stage": "ocr_quality_gate",
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": "stem length=122"
+      },
+      {
+        "stage": "stem_extraction",
+        "strategy": "detection",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "corruption",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "corruption_type": "c_token_noise",
+        "origin_stage": "stem_extraction",
+        "propagation_path": [],
+        "resolved_at": null,
+        "resolved_by": null,
+        "notes": "Standalone 'C' token at pos 14"
+      },
+      {
+        "stage": "stem_extraction",
+        "strategy": "detection",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "corruption",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "corruption_type": "a_token_noise",
+        "origin_stage": "stem_extraction",
+        "propagation_path": [],
+        "resolved_at": null,
+        "resolved_by": null,
+        "notes": "Standalone 'A' token at pos 91"
+      },
+      {
+        "stage": "stem_extraction",
+        "strategy": "detection",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "corruption",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "corruption_type": "b_token_noise",
+        "origin_stage": "stem_extraction",
+        "propagation_path": [],
+        "resolved_at": null,
+        "resolved_by": null,
+        "notes": "Standalone 'B' token at pos 99"
+      },
+      {
+        "stage": "stem_extraction",
+        "strategy": "detection",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "corruption",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "corruption_type": "c_token_noise",
+        "origin_stage": "stem_extraction",
+        "propagation_path": [
+          "stem_extraction"
+        ],
+        "resolved_at": null,
+        "resolved_by": null,
+        "notes": "Standalone 'C' token at pos 107"
+      },
+      {
+        "stage": "stem_extraction",
+        "strategy": "detection",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "corruption",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "corruption_type": "d_token_noise",
+        "origin_stage": "stem_extraction",
+        "propagation_path": [],
+        "resolved_at": null,
+        "resolved_by": null,
+        "notes": "Standalone 'D' token at pos 116"
+      },
+      {
+        "stage": "noise_filtering",
+        "strategy": "rule",
+        "input_source": "stem",
+        "parent_stage": "stem_extraction",
+        "input_preview": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表",
+        "output_preview": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表",
+        "status": "success",
+        "duration_ms": 0.01,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": ""
+      },
+      {
+        "stage": "options_extraction",
+        "strategy": "options_trace",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "options_found_in": "fallback_from_raw_text",
+        "options_origin": "fallback_from_raw_text",
+        "options_confidence": 0.8,
+        "options_failure_reason": null,
+        "note": "option_count=4"
+      },
+      {
+        "stage": "options_extraction",
+        "strategy": "options_trace",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "options_found_in": "classifier_gate",
+        "options_origin": "classifier_gate",
+        "options_confidence": 1,
+        "options_failure_reason": null,
+        "note": "option_count=4"
+      },
+      {
+        "stage": "question_type_detection",
+        "strategy": "observation",
+        "input_source": "intermediate",
+        "parent_stage": "options_extraction",
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": "type=single_choice"
+      },
+      {
+        "stage": "consistency_check",
+        "strategy": "observation",
+        "input_source": "intermediate",
+        "parent_stage": "question_type_detection",
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": "consistent=True"
+      },
+      {
+        "stage": "code_detection",
+        "strategy": "rule",
+        "input_source": "stem",
+        "parent_stage": "noise_filtering",
+        "input_preview": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表",
+        "output_preview": "True",
+        "status": "success",
+        "duration_ms": 0.04,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [
+            {
+              "before": "18。在单链表中执行: (>C LNode *p = L; while (p != NULL && p->next != NULL) { p = p->next; 该代码的作用是： A.找到头结点 B.找到尾结点 C.删除所有节点 D.逆置链表",
+              "after": "True"
+            }
+          ],
+          "has_changed": true
+        },
+        "notes": ""
+      },
+      {
+        "stage": "code_integrity_check",
+        "strategy": "observation",
+        "input_source": "stem",
+        "parent_stage": "code_detection",
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": "flags=['code_brace_unbalanced'] score=0.35"
+      },
+      {
+        "stage": "code_integrity_check",
+        "strategy": "detection",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "corruption",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "corruption_type": "code_brace_unbalanced",
+        "origin_stage": "code_integrity_check",
+        "propagation_path": [],
+        "resolved_at": null,
+        "resolved_by": null,
+        "notes": "Code integrity issue: code_brace_unbalanced"
+      },
+      {
+        "stage": "code_regression_check",
+        "strategy": "observation",
+        "input_source": "intermediate",
+        "parent_stage": "code_integrity_check",
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": "has_regression=False flags=[]"
+      },
+      {
+        "stage": "vision_fallback",
+        "strategy": "observation",
+        "input_source": "fallback",
+        "parent_stage": "code_integrity_check",
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": "attempted=True status=unavailable"
+      },
+      {
+        "stage": "output_normalization",
+        "strategy": "pipeline",
+        "input_source": "final",
+        "parent_stage": "vision_fallback",
+        "input_preview": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC....[+10147]",
+        "output_preview": "{'stem': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表', 'code_blocks': [], 'options': [{'key': 'A', 'text': '找到头...[+10166]",
+        "status": "success",
+        "duration_ms": 1.45,
+        "delta": {
+          "added_tokens": [
+            "'code_blocks':",
+            "[],",
+            "'subject':",
+            "'',",
+            "'question_type':",
+            "'single_choice',",
+            "'decision_trace':",
+            "[{'stage':",
+            "'ocr_quality_gate',",
+            "'result':",
+            "'blocked',",
+            "'reason':",
+            "\"score=0.35",
+            "flags=['code_brace_unbalanced']\"},",
+            "{'stage':",
+            "'code_gate',",
+            "'code_brace_unbalanced;code_block_incomplete'},",
+            "'validation',",
+            "'failed',",
+            "'missing_answer_for_objective_question;code_brace_unbalanced'}],",
+            "'trace':",
+            "'ocr_raw_input',",
+            "'strategy':",
+            "'passthrough',",
+            "'input_source':",
+            "'raw_ocr',",
+            "'parent_stage':",
+            "None,",
+            "'input_preview':",
+            "'18。在单链表中执行:\\n(>C\\nLNode",
+            "*p",
+            "=",
+            "L;\\nwhile",
+            "(p",
+            "!=",
+            "NULL",
+            "&&",
+            "p->next",
+            "NULL)",
+            "{\\np",
+            "p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表',",
+            "'output_preview':",
+            "'status':",
+            "'observed',",
+            "'duration_ms':",
+            "0,",
+            "'delta':",
+            "{'added_tokens':",
+            "'removed_tokens':",
+            "'modified_regions':",
+            "'has_changed':",
+            "False},",
+            "'notes':",
+            "'raw_text",
+            "length=122'},",
+            "'rule',",
+            "\"{'passed':",
+            "False,",
+            "'ocr_quality_flags':",
+            "['code_brace_unbalanced'],",
+            "'ocr_contamination_score':",
+            "0.35}\",",
+            "'success',",
+            "0.41,",
+            "[{'before':",
+            "'18。在单链表中执行:",
+            "(>C",
+            "LNode",
+            "L;",
+            "while",
+            "{",
+            "p",
+            "p->next;",
+            "该代码的作用是：",
+            "A.找到头结点",
+            "B.找到尾结点",
+            "C.删除所有节点",
+            "D.逆置链表',",
+            "'after':",
+            "0.35}\"}],",
+            "True},",
+            "''},",
+            "'stem_extraction',",
+            "'observation',",
+            "'info',",
+            "'stem",
+            "'detection',",
+            "'intermediate',",
+            "'corruption',",
+            "'corruption_type':",
+            "'c_token_noise',",
+            "'origin_stage':",
+            "'propagation_path':",
+            "'resolved_at':",
+            "'resolved_by':",
+            "\"Standalone",
+            "'C'",
+            "token",
+            "at",
+            "pos",
+            "14\"},",
+            "'a_token_noise',",
+            "'A'",
+            "91\"},",
+            "'b_token_noise',",
+            "'B'",
+            "99\"},",
+            "['stem_extraction'],",
+            "107\"},",
+            "'d_token_noise',",
+            "'D'",
+            "116\"},",
+            "'noise_filtering',",
+            "'stem',",
+            "0.01,",
+            "'options_extraction',",
+            "'options_trace',",
+            "'options_found_in':",
+            "'fallback_from_raw_text',",
+            "'options_origin':",
+            "'options_confidence':",
+            "0.8,",
+            "'options_failure_reason':",
+            "'note':",
+            "'option_count=4'},",
+            "'classifier_gate',",
+            "1.0,",
+            "'question_type_detection',",
+            "'type=single_choice'},",
+            "'consistency_check',",
+            "'consistent=True'},",
+            "'code_detection',",
+            "'True',",
+            "0.04,",
+            "'True'}],",
+            "'code_integrity_check',",
+            "\"flags=['code_brace_unbalanced']",
+            "score=0.35\"},",
+            "'code_brace_unbalanced',",
+            "'Code",
+            "integrity",
+            "issue:",
+            "code_brace_unbalanced'},",
+            "'code_regression_check',",
+            "'has_regression=False",
+            "flags=[]'},",
+            "'vision_fallback',",
+            "'fallback',",
+            "'attempted=True",
+            "status=unavailable'}],",
+            "'is_frozen':",
+            "'options_classified':",
+            "True,",
+            "'options_classify_reason':",
+            "'structured_option_patterns_detected',"
+          ],
+          "removed_tokens": [
+            "'is_frozen':",
+            "False,",
+            "'options_classified':",
+            "True,",
+            "'options_classify_reason':",
+            "'structured_option_patterns_detected',"
+          ],
+          "modified_regions": [
+            {
+              "before": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem':",
+              "after": "{'stem':"
+            },
+            {
+              "before": "'decision_trace': [{'stage': 'ocr_quality_gate', 'result': 'blocked', 'reason': \"score=0.35 flags=['code_brace_unbalanced']\"}, {'stage': 'code_gate', 'result': 'blocked', 'reason': 'code_brace_unbalanced;code_block_incomplete'}, {'stage': 'validation', 'result': 'failed', 'reason': 'missing_answer_for_objective_question;code_brace_unbalanced'}], 'trace': [{'stage': 'ocr_raw_input', 'strategy': 'passthrough', 'input_source': 'raw_ocr', 'parent_stage': None, 'input_preview': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表', 'output_preview': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表', 'status': 'observed', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'raw_text length=122'}, {'stage': 'ocr_quality_gate', 'strategy': 'rule', 'input_source': 'raw_ocr', 'parent_stage': None, 'input_preview': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表', 'output_preview': \"{'passed': False, 'ocr_quality_flags': ['code_brace_unbalanced'], 'ocr_contamination_score': 0.35}\", 'status': 'success', 'duration_ms': 0.41, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [{'before': '18。在单链表中执行: (>C LNode *p = L; while (p != NULL && p->next != NULL) { p = p->next; 该代码的作用是： A.找到头结点 B.找到尾结点 C.删除所有节点 D.逆置链表', 'after': \"{'passed': False, 'ocr_quality_flags': ['code_brace_unbalanced'], 'ocr_contamination_score': 0.35}\"}], 'has_changed': True}, 'notes': ''}, {'stage': 'stem_extraction', 'strategy': 'observation', 'input_source': 'raw_ocr', 'parent_stage': 'ocr_quality_gate', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'stem length=122'}, {'stage': 'stem_extraction', 'strategy': 'detection', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'corruption', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'corruption_type': 'c_token_noise', 'origin_stage': 'stem_extraction', 'propagation_path': [], 'resolved_at': None, 'resolved_by': None, 'notes': \"Standalone 'C' token at pos 14\"}, {'stage': 'stem_extraction', 'strategy': 'detection', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'corruption', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'corruption_type': 'a_token_noise', 'origin_stage': 'stem_extraction', 'propagation_path': [], 'resolved_at': None, 'resolved_by': None, 'notes': \"Standalone 'A' token at pos 91\"}, {'stage': 'stem_extraction', 'strategy': 'detection', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'corruption', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'corruption_type': 'b_token_noise', 'origin_stage': 'stem_extraction', 'propagation_path': [], 'resolved_at': None, 'resolved_by': None, 'notes': \"Standalone 'B' token at pos 99\"}, {'stage': 'stem_extraction', 'strategy': 'detection', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'corruption', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'corruption_type': 'c_token_noise', 'origin_stage': 'stem_extraction', 'propagation_path': ['stem_extraction'], 'resolved_at': None, 'resolved_by': None, 'notes': \"Standalone 'C' token at pos 107\"}, {'stage': 'stem_extraction', 'strategy': 'detection', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'corruption', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'corruption_type': 'd_token_noise', 'origin_stage': 'stem_extraction', 'propagation_path': [], 'resolved_at': None, 'resolved_by': None, 'notes': \"Standalone 'D' token at pos 116\"}, {'stage': 'noise_filtering', 'strategy': 'rule', 'input_source': 'stem', 'parent_stage': 'stem_extraction', 'input_preview': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表', 'output_preview': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表', 'status': 'success', 'duration_ms': 0.01, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': ''}, {'stage': 'options_extraction', 'strategy': 'options_trace', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'options_found_in': 'fallback_from_raw_text', 'options_origin': 'fallback_from_raw_text', 'options_confidence': 0.8, 'options_failure_reason': None, 'note': 'option_count=4'}, {'stage': 'options_extraction', 'strategy': 'options_trace', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'options_found_in': 'classifier_gate', 'options_origin': 'classifier_gate', 'options_confidence': 1.0, 'options_failure_reason': None, 'note': 'option_count=4'}, {'stage': 'question_type_detection', 'strategy': 'observation', 'input_source': 'intermediate', 'parent_stage': 'options_extraction', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'type=single_choice'}, {'stage': 'consistency_check', 'strategy': 'observation', 'input_source': 'intermediate', 'parent_stage': 'question_type_detection', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'consistent=True'}, {'stage': 'code_detection', 'strategy': 'rule', 'input_source': 'stem', 'parent_stage': 'noise_filtering', 'input_preview': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表', 'output_preview': 'True', 'status': 'success', 'duration_ms': 0.04, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [{'before': '18。在单链表中执行: (>C LNode *p = L; while (p != NULL && p->next != NULL) { p = p->next; 该代码的作用是： A.找到头结点 B.找到尾结点 C.删除所有节点 D.逆置链表', 'after': 'True'}], 'has_changed': True}, 'notes': ''}, {'stage': 'code_integrity_check', 'strategy': 'observation', 'input_source': 'stem', 'parent_stage': 'code_detection', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': \"flags=['code_brace_unbalanced'] score=0.35\"}, {'stage': 'code_integrity_check', 'strategy': 'detection', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'corruption', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'corruption_type': 'code_brace_unbalanced', 'origin_stage': 'code_integrity_check', 'propagation_path': [], 'resolved_at': None, 'resolved_by': None, 'notes': 'Code integrity issue: code_brace_unbalanced'}, {'stage': 'code_regression_check', 'strategy': 'observation', 'input_source': 'intermediate', 'parent_stage': 'code_integrity_check', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'has_regression=False flags=[]'}, {'stage': 'vision_fallback', 'strategy': 'observation', 'input_source': 'fallback', 'parent_stage': 'code_integrity_check', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'attempted=True status=unavailable'}]}",
+              "after": "'schema_version': 'v1'}"
+            }
+          ],
+          "has_changed": true
+        },
+        "notes": ""
+      }
+    ],
+    "is_frozen": false,
+    "options_classified": true,
+    "options_classify_reason": "structured_option_patterns_detected",
+    "vision_fallback_attempted": true,
+    "vision_fallback_used": false,
+    "vision_fallback_status": "unavailable",
+    "vision_fallback_reason": [
+      "code_brace_unbalanced",
+      "code_block_incomplete"
+    ],
+    "pre_fallback_code_flags": [
+      "code_brace_unbalanced",
+      "code_block_incomplete"
+    ],
+    "post_fallback_code_flags": [
+      "code_brace_unbalanced",
+      "code_block_incomplete"
+    ],
+    "schema_version": "v1",
     "ai_validation": {
       "is_valid": false,
       "issues": [
@@ -484,28 +1110,592 @@ p = p->next;
     }
   },
   "ai_metadata": {
-    "is_valid": true,
-    "errors": [],
+    "is_valid": false,
+    "errors": [
+      "missing_answer"
+    ],
     "warnings": [
       "ocr_contamination_detected",
       "ocr_quality:code_brace_unbalanced",
-      "ocr_quality:watermark_noise_detected",
       "code_integrity:code_brace_unbalanced",
-      "low_confidence"
+      "low_confidence",
+      "missing_answer_for_objective_question"
     ],
     "knowledge_points": [],
     "difficulty": 3,
-    "stem_hash": "18031c04",
+    "stem_hash": "0cbddc8d",
     "decision_trace": [
       {
-        "stage": "ai_repair",
-        "result": "repaired",
-        "reason": "ai_repaired"
+        "stage": "ocr_quality_gate",
+        "result": "blocked",
+        "reason": "score=0.35 flags=['code_brace_unbalanced']"
+      },
+      {
+        "stage": "code_gate",
+        "result": "blocked",
+        "reason": "code_brace_unbalanced;code_block_incomplete"
+      },
+      {
+        "stage": "validation",
+        "result": "failed",
+        "reason": "missing_answer_for_objective_question;code_brace_unbalanced"
+      },
+      {
+        "stage": "ai_safety",
+        "result": "blocked",
+        "reason": "safety_rejected: options_dropped(4→0)"
       },
       {
         "stage": "review",
         "result": "pending",
         "reason": "written_to_review_queue"
+      }
+    ],
+    "trace": [
+      {
+        "stage": "ocr_raw_input",
+        "strategy": "passthrough",
+        "input_source": "raw_ocr",
+        "parent_stage": null,
+        "input_preview": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表",
+        "output_preview": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表",
+        "status": "observed",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": "raw_text length=122"
+      },
+      {
+        "stage": "ocr_quality_gate",
+        "strategy": "rule",
+        "input_source": "raw_ocr",
+        "parent_stage": null,
+        "input_preview": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表",
+        "output_preview": "{'passed': False, 'ocr_quality_flags': ['code_brace_unbalanced'], 'ocr_contamination_score': 0.35}",
+        "status": "success",
+        "duration_ms": 0.41,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [
+            {
+              "before": "18。在单链表中执行: (>C LNode *p = L; while (p != NULL && p->next != NULL) { p = p->next; 该代码的作用是： A.找到头结点 B.找到尾结点 C.删除所有节点 D.逆置链表",
+              "after": "{'passed': False, 'ocr_quality_flags': ['code_brace_unbalanced'], 'ocr_contamination_score': 0.35}"
+            }
+          ],
+          "has_changed": true
+        },
+        "notes": ""
+      },
+      {
+        "stage": "stem_extraction",
+        "strategy": "observation",
+        "input_source": "raw_ocr",
+        "parent_stage": "ocr_quality_gate",
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": "stem length=122"
+      },
+      {
+        "stage": "stem_extraction",
+        "strategy": "detection",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "corruption",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "corruption_type": "c_token_noise",
+        "origin_stage": "stem_extraction",
+        "propagation_path": [],
+        "resolved_at": null,
+        "resolved_by": null,
+        "notes": "Standalone 'C' token at pos 14"
+      },
+      {
+        "stage": "stem_extraction",
+        "strategy": "detection",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "corruption",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "corruption_type": "a_token_noise",
+        "origin_stage": "stem_extraction",
+        "propagation_path": [],
+        "resolved_at": null,
+        "resolved_by": null,
+        "notes": "Standalone 'A' token at pos 91"
+      },
+      {
+        "stage": "stem_extraction",
+        "strategy": "detection",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "corruption",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "corruption_type": "b_token_noise",
+        "origin_stage": "stem_extraction",
+        "propagation_path": [],
+        "resolved_at": null,
+        "resolved_by": null,
+        "notes": "Standalone 'B' token at pos 99"
+      },
+      {
+        "stage": "stem_extraction",
+        "strategy": "detection",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "corruption",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "corruption_type": "c_token_noise",
+        "origin_stage": "stem_extraction",
+        "propagation_path": [
+          "stem_extraction"
+        ],
+        "resolved_at": null,
+        "resolved_by": null,
+        "notes": "Standalone 'C' token at pos 107"
+      },
+      {
+        "stage": "stem_extraction",
+        "strategy": "detection",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "corruption",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "corruption_type": "d_token_noise",
+        "origin_stage": "stem_extraction",
+        "propagation_path": [],
+        "resolved_at": null,
+        "resolved_by": null,
+        "notes": "Standalone 'D' token at pos 116"
+      },
+      {
+        "stage": "noise_filtering",
+        "strategy": "rule",
+        "input_source": "stem",
+        "parent_stage": "stem_extraction",
+        "input_preview": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表",
+        "output_preview": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表",
+        "status": "success",
+        "duration_ms": 0.01,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": ""
+      },
+      {
+        "stage": "options_extraction",
+        "strategy": "options_trace",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "options_found_in": "fallback_from_raw_text",
+        "options_origin": "fallback_from_raw_text",
+        "options_confidence": 0.8,
+        "options_failure_reason": null,
+        "note": "option_count=4"
+      },
+      {
+        "stage": "options_extraction",
+        "strategy": "options_trace",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "options_found_in": "classifier_gate",
+        "options_origin": "classifier_gate",
+        "options_confidence": 1,
+        "options_failure_reason": null,
+        "note": "option_count=4"
+      },
+      {
+        "stage": "question_type_detection",
+        "strategy": "observation",
+        "input_source": "intermediate",
+        "parent_stage": "options_extraction",
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": "type=single_choice"
+      },
+      {
+        "stage": "consistency_check",
+        "strategy": "observation",
+        "input_source": "intermediate",
+        "parent_stage": "question_type_detection",
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": "consistent=True"
+      },
+      {
+        "stage": "code_detection",
+        "strategy": "rule",
+        "input_source": "stem",
+        "parent_stage": "noise_filtering",
+        "input_preview": "18。在单链表中执行:\n(>C\nLNode *p = L;\nwhile (p != NULL && p->next != NULL) {\np = p->next;\n该代码的作用是：\nA.找到头结点\nB.找到尾结点\nC.删除所有节点\nD.逆置链表",
+        "output_preview": "True",
+        "status": "success",
+        "duration_ms": 0.04,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [
+            {
+              "before": "18。在单链表中执行: (>C LNode *p = L; while (p != NULL && p->next != NULL) { p = p->next; 该代码的作用是： A.找到头结点 B.找到尾结点 C.删除所有节点 D.逆置链表",
+              "after": "True"
+            }
+          ],
+          "has_changed": true
+        },
+        "notes": ""
+      },
+      {
+        "stage": "code_integrity_check",
+        "strategy": "observation",
+        "input_source": "stem",
+        "parent_stage": "code_detection",
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": "flags=['code_brace_unbalanced'] score=0.35"
+      },
+      {
+        "stage": "code_integrity_check",
+        "strategy": "detection",
+        "input_source": "intermediate",
+        "parent_stage": null,
+        "input_preview": "",
+        "output_preview": "",
+        "status": "corruption",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "corruption_type": "code_brace_unbalanced",
+        "origin_stage": "code_integrity_check",
+        "propagation_path": [],
+        "resolved_at": null,
+        "resolved_by": null,
+        "notes": "Code integrity issue: code_brace_unbalanced"
+      },
+      {
+        "stage": "code_regression_check",
+        "strategy": "observation",
+        "input_source": "intermediate",
+        "parent_stage": "code_integrity_check",
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": "has_regression=False flags=[]"
+      },
+      {
+        "stage": "vision_fallback",
+        "strategy": "observation",
+        "input_source": "fallback",
+        "parent_stage": "code_integrity_check",
+        "input_preview": "",
+        "output_preview": "",
+        "status": "info",
+        "duration_ms": 0,
+        "delta": {
+          "added_tokens": [],
+          "removed_tokens": [],
+          "modified_regions": [],
+          "has_changed": false
+        },
+        "notes": "attempted=True status=unavailable"
+      },
+      {
+        "stage": "output_normalization",
+        "strategy": "pipeline",
+        "input_source": "final",
+        "parent_stage": "vision_fallback",
+        "input_preview": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC....[+10147]",
+        "output_preview": "{'stem': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表', 'code_blocks': [], 'options': [{'key': 'A', 'text': '找到头...[+10166]",
+        "status": "success",
+        "duration_ms": 1.45,
+        "delta": {
+          "added_tokens": [
+            "'code_blocks':",
+            "[],",
+            "'subject':",
+            "'',",
+            "'question_type':",
+            "'single_choice',",
+            "'decision_trace':",
+            "[{'stage':",
+            "'ocr_quality_gate',",
+            "'result':",
+            "'blocked',",
+            "'reason':",
+            "\"score=0.35",
+            "flags=['code_brace_unbalanced']\"},",
+            "{'stage':",
+            "'code_gate',",
+            "'code_brace_unbalanced;code_block_incomplete'},",
+            "'validation',",
+            "'failed',",
+            "'missing_answer_for_objective_question;code_brace_unbalanced'}],",
+            "'trace':",
+            "'ocr_raw_input',",
+            "'strategy':",
+            "'passthrough',",
+            "'input_source':",
+            "'raw_ocr',",
+            "'parent_stage':",
+            "None,",
+            "'input_preview':",
+            "'18。在单链表中执行:\\n(>C\\nLNode",
+            "*p",
+            "=",
+            "L;\\nwhile",
+            "(p",
+            "!=",
+            "NULL",
+            "&&",
+            "p->next",
+            "NULL)",
+            "{\\np",
+            "p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表',",
+            "'output_preview':",
+            "'status':",
+            "'observed',",
+            "'duration_ms':",
+            "0,",
+            "'delta':",
+            "{'added_tokens':",
+            "'removed_tokens':",
+            "'modified_regions':",
+            "'has_changed':",
+            "False},",
+            "'notes':",
+            "'raw_text",
+            "length=122'},",
+            "'rule',",
+            "\"{'passed':",
+            "False,",
+            "'ocr_quality_flags':",
+            "['code_brace_unbalanced'],",
+            "'ocr_contamination_score':",
+            "0.35}\",",
+            "'success',",
+            "0.41,",
+            "[{'before':",
+            "'18。在单链表中执行:",
+            "(>C",
+            "LNode",
+            "L;",
+            "while",
+            "{",
+            "p",
+            "p->next;",
+            "该代码的作用是：",
+            "A.找到头结点",
+            "B.找到尾结点",
+            "C.删除所有节点",
+            "D.逆置链表',",
+            "'after':",
+            "0.35}\"}],",
+            "True},",
+            "''},",
+            "'stem_extraction',",
+            "'observation',",
+            "'info',",
+            "'stem",
+            "'detection',",
+            "'intermediate',",
+            "'corruption',",
+            "'corruption_type':",
+            "'c_token_noise',",
+            "'origin_stage':",
+            "'propagation_path':",
+            "'resolved_at':",
+            "'resolved_by':",
+            "\"Standalone",
+            "'C'",
+            "token",
+            "at",
+            "pos",
+            "14\"},",
+            "'a_token_noise',",
+            "'A'",
+            "91\"},",
+            "'b_token_noise',",
+            "'B'",
+            "99\"},",
+            "['stem_extraction'],",
+            "107\"},",
+            "'d_token_noise',",
+            "'D'",
+            "116\"},",
+            "'noise_filtering',",
+            "'stem',",
+            "0.01,",
+            "'options_extraction',",
+            "'options_trace',",
+            "'options_found_in':",
+            "'fallback_from_raw_text',",
+            "'options_origin':",
+            "'options_confidence':",
+            "0.8,",
+            "'options_failure_reason':",
+            "'note':",
+            "'option_count=4'},",
+            "'classifier_gate',",
+            "1.0,",
+            "'question_type_detection',",
+            "'type=single_choice'},",
+            "'consistency_check',",
+            "'consistent=True'},",
+            "'code_detection',",
+            "'True',",
+            "0.04,",
+            "'True'}],",
+            "'code_integrity_check',",
+            "\"flags=['code_brace_unbalanced']",
+            "score=0.35\"},",
+            "'code_brace_unbalanced',",
+            "'Code",
+            "integrity",
+            "issue:",
+            "code_brace_unbalanced'},",
+            "'code_regression_check',",
+            "'has_regression=False",
+            "flags=[]'},",
+            "'vision_fallback',",
+            "'fallback',",
+            "'attempted=True",
+            "status=unavailable'}],",
+            "'is_frozen':",
+            "'options_classified':",
+            "True,",
+            "'options_classify_reason':",
+            "'structured_option_patterns_detected',"
+          ],
+          "removed_tokens": [
+            "'is_frozen':",
+            "False,",
+            "'options_classified':",
+            "True,",
+            "'options_classify_reason':",
+            "'structured_option_patterns_detected',"
+          ],
+          "modified_regions": [
+            {
+              "before": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem':",
+              "after": "{'stem':"
+            },
+            {
+              "before": "'decision_trace': [{'stage': 'ocr_quality_gate', 'result': 'blocked', 'reason': \"score=0.35 flags=['code_brace_unbalanced']\"}, {'stage': 'code_gate', 'result': 'blocked', 'reason': 'code_brace_unbalanced;code_block_incomplete'}, {'stage': 'validation', 'result': 'failed', 'reason': 'missing_answer_for_objective_question;code_brace_unbalanced'}], 'trace': [{'stage': 'ocr_raw_input', 'strategy': 'passthrough', 'input_source': 'raw_ocr', 'parent_stage': None, 'input_preview': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表', 'output_preview': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表', 'status': 'observed', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'raw_text length=122'}, {'stage': 'ocr_quality_gate', 'strategy': 'rule', 'input_source': 'raw_ocr', 'parent_stage': None, 'input_preview': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表', 'output_preview': \"{'passed': False, 'ocr_quality_flags': ['code_brace_unbalanced'], 'ocr_contamination_score': 0.35}\", 'status': 'success', 'duration_ms': 0.41, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [{'before': '18。在单链表中执行: (>C LNode *p = L; while (p != NULL && p->next != NULL) { p = p->next; 该代码的作用是： A.找到头结点 B.找到尾结点 C.删除所有节点 D.逆置链表', 'after': \"{'passed': False, 'ocr_quality_flags': ['code_brace_unbalanced'], 'ocr_contamination_score': 0.35}\"}], 'has_changed': True}, 'notes': ''}, {'stage': 'stem_extraction', 'strategy': 'observation', 'input_source': 'raw_ocr', 'parent_stage': 'ocr_quality_gate', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'stem length=122'}, {'stage': 'stem_extraction', 'strategy': 'detection', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'corruption', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'corruption_type': 'c_token_noise', 'origin_stage': 'stem_extraction', 'propagation_path': [], 'resolved_at': None, 'resolved_by': None, 'notes': \"Standalone 'C' token at pos 14\"}, {'stage': 'stem_extraction', 'strategy': 'detection', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'corruption', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'corruption_type': 'a_token_noise', 'origin_stage': 'stem_extraction', 'propagation_path': [], 'resolved_at': None, 'resolved_by': None, 'notes': \"Standalone 'A' token at pos 91\"}, {'stage': 'stem_extraction', 'strategy': 'detection', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'corruption', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'corruption_type': 'b_token_noise', 'origin_stage': 'stem_extraction', 'propagation_path': [], 'resolved_at': None, 'resolved_by': None, 'notes': \"Standalone 'B' token at pos 99\"}, {'stage': 'stem_extraction', 'strategy': 'detection', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'corruption', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'corruption_type': 'c_token_noise', 'origin_stage': 'stem_extraction', 'propagation_path': ['stem_extraction'], 'resolved_at': None, 'resolved_by': None, 'notes': \"Standalone 'C' token at pos 107\"}, {'stage': 'stem_extraction', 'strategy': 'detection', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'corruption', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'corruption_type': 'd_token_noise', 'origin_stage': 'stem_extraction', 'propagation_path': [], 'resolved_at': None, 'resolved_by': None, 'notes': \"Standalone 'D' token at pos 116\"}, {'stage': 'noise_filtering', 'strategy': 'rule', 'input_source': 'stem', 'parent_stage': 'stem_extraction', 'input_preview': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表', 'output_preview': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表', 'status': 'success', 'duration_ms': 0.01, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': ''}, {'stage': 'options_extraction', 'strategy': 'options_trace', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'options_found_in': 'fallback_from_raw_text', 'options_origin': 'fallback_from_raw_text', 'options_confidence': 0.8, 'options_failure_reason': None, 'note': 'option_count=4'}, {'stage': 'options_extraction', 'strategy': 'options_trace', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'options_found_in': 'classifier_gate', 'options_origin': 'classifier_gate', 'options_confidence': 1.0, 'options_failure_reason': None, 'note': 'option_count=4'}, {'stage': 'question_type_detection', 'strategy': 'observation', 'input_source': 'intermediate', 'parent_stage': 'options_extraction', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'type=single_choice'}, {'stage': 'consistency_check', 'strategy': 'observation', 'input_source': 'intermediate', 'parent_stage': 'question_type_detection', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'consistent=True'}, {'stage': 'code_detection', 'strategy': 'rule', 'input_source': 'stem', 'parent_stage': 'noise_filtering', 'input_preview': '18。在单链表中执行:\\n(>C\\nLNode *p = L;\\nwhile (p != NULL && p->next != NULL) {\\np = p->next;\\n该代码的作用是：\\nA.找到头结点\\nB.找到尾结点\\nC.删除所有节点\\nD.逆置链表', 'output_preview': 'True', 'status': 'success', 'duration_ms': 0.04, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [{'before': '18。在单链表中执行: (>C LNode *p = L; while (p != NULL && p->next != NULL) { p = p->next; 该代码的作用是： A.找到头结点 B.找到尾结点 C.删除所有节点 D.逆置链表', 'after': 'True'}], 'has_changed': True}, 'notes': ''}, {'stage': 'code_integrity_check', 'strategy': 'observation', 'input_source': 'stem', 'parent_stage': 'code_detection', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': \"flags=['code_brace_unbalanced'] score=0.35\"}, {'stage': 'code_integrity_check', 'strategy': 'detection', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'corruption', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'corruption_type': 'code_brace_unbalanced', 'origin_stage': 'code_integrity_check', 'propagation_path': [], 'resolved_at': None, 'resolved_by': None, 'notes': 'Code integrity issue: code_brace_unbalanced'}, {'stage': 'code_regression_check', 'strategy': 'observation', 'input_source': 'intermediate', 'parent_stage': 'code_integrity_check', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'has_regression=False flags=[]'}, {'stage': 'vision_fallback', 'strategy': 'observation', 'input_source': 'fallback', 'parent_stage': 'code_integrity_check', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'attempted=True status=unavailable'}]}",
+              "after": "'schema_version': 'v1'}"
+            }
+          ],
+          "has_changed": true
+        },
+        "notes": ""
       }
     ],
     "risk_flags": [
@@ -518,7 +1708,11 @@ p = p->next;
 }
 ```
 
-##### 案例四（失败）
+##### 案例四（✅ 已修复 — code structure reconstruction）
+
+> 修复提交：`e91a020` — 与案例三同一修复。
+> `code_structure_reconstruct` 阶段将 OCR 断裂的 `i++) {`、`sum += a[i];}` 等语句拼接闭合，
+> 恢复 `}` 闭合和缩进，使题干代码结构完整可读。
 
 ###### 原题
 
@@ -543,15 +1737,15 @@ D. 查找最大值
 
 "/ocr_test/images/example/ocr_code_test_7.png"
 
-###### 导入后进入审核
+###### 导入后进入审核（题干代码内容不完整）
 
 ~~~tex
-执行如下代码:
-```text
+执行如下代码：
+(1>
+（
 for (int i = 0; i < n; i + +) {
-if (a[i] > 0) {
+if (a[i] >0) {
 sum + = a[i];
-```
 该代码的功能是:
 
 A. 计算所有元素和
@@ -563,15 +1757,16 @@ D. 查找最大值
 ###### OCR 原文 / 导入原始信息
 
 ~~~tex
-17. 执行如下代码:
-```text
+17.执行如下代码：
+(1>
+（
 for (int i = 0; i < n; i++) {
-if (a[i] > 0) {
+if (a[i] >0) {
 sum += a[i];
-``` 该代码的功能是:
+该代码的功能是:
 A.计算所有元素和
-B. 计算负数和
-C. 计算正数元素之和
+B.计算负数和
+C.计算正数元素之和
 D.查找最大值
 ~~~
 
@@ -580,7 +1775,7 @@ D.查找最大值
 ```json
 {
   "parsed_content": {
-    "text": "执行如下代码:\n```text\nfor (int i = 0; i < n; i++) {\nif (a[i] > 0) {\nsum += a[i];\n```\n该代码的功能是:"
+    "text": "执行如下代码：\n(1>\n（\nfor (int i = 0; i < n; i++) {\nif (a[i] >0) {\nsum += a[i];\n该代码的功能是:"
   },
   "parsed_options": {
     "A": "计算所有元素和",
@@ -601,7 +1796,7 @@ D.查找最大值
     "schema_version": "v1",
     "subject": "",
     "question_type": "single_choice",
-    "stem": "执行如下代码:\n```text\nfor (int i = 0; i < n; i++) {\nif (a[i] > 0) {\nsum += a[i];\n```\n该代码的功能是:",
+    "stem": "执行如下代码：\n(1>\n（\nfor (int i = 0; i < n; i++) {\nif (a[i] >0) {\nsum += a[i];\n该代码的功能是:",
     "options": [
       {
         "key": "A",
@@ -620,16 +1815,18 @@ D.查找最大值
         "text": "查找最大值"
       }
     ],
+    "frozen_options_restored": false,
+    "options_preserved": true,
     "blank_option_groups": [],
     "answer": "",
     "analysis": "",
-    "raw_text": "17. 执行如下代码:\n```text\nfor (int i = 0; i < n; i++) {\nif (a[i] > 0) {\nsum += a[i];\n``` 该代码的功能是:\nA.计算所有元素和\nB. 计算负数和\nC. 计算正数元素之和\nD.查找最大值",
+    "raw_text": "17.执行如下代码：\n(1>\n（\nfor (int i = 0; i < n; i++) {\nif (a[i] >0) {\nsum += a[i];\n该代码的功能是:\nA.计算所有元素和\nB.计算负数和\nC.计算正数元素之和\nD.查找最大值",
     "knowledge_points": [],
     "difficulty": 3,
     "source": {
       "file": "ocr_code_test_7.png",
       "page": 1,
-      "type": "txt"
+      "type": "image"
     },
     "is_valid": true,
     "errors": [],
@@ -640,8 +1837,8 @@ D.查找最大值
       "low_confidence",
       "missing_answer_for_objective_question"
     ],
-    "stem_hash": "56d96d25",
-    "confidence_score": 0.8,
+    "stem_hash": "3cd01b8f",
+    "confidence_score": 0.95,
     "risk_flags": [
       "code_brace_unbalanced",
       "code_block_incomplete",
@@ -679,7 +1876,7 @@ D.查找最大值
     ],
     "knowledge_points": [],
     "difficulty": 3,
-    "stem_hash": "56d96d25",
+    "stem_hash": "3cd01b8f",
     "decision_trace": [
       {
         "stage": "ai_repair",
@@ -692,6 +1889,7 @@ D.查找最大值
         "reason": "written_to_review_queue"
       }
     ],
+    "trace": [],
     "risk_flags": [
       "code_brace_unbalanced",
       "code_block_incomplete",
@@ -910,8 +2108,8 @@ D. s = p; p->next = NULL
 |------|-------------|------|----------|
 | 案例一（栈定义+while循环） | `021_bugs_case1_stack` | `backend/tests/ocr_regression/cases/021_bugs_case1_stack/` | `#define` 外无序触发代码完整性告警 |
 | 案例二（BiTree树递归） | `022_bugs_case2_treerecursion` | `backend/tests/ocr_regression/cases/022_bugs_case2_treerecursion/` | VL_REBUILD PDF gate（Fix B `be03159`） |
-| 案例三（单链表while循环） | `023_bugs_case3_linkedlist` | `backend/tests/ocr_regression/cases/023_bugs_case3_linkedlist/` | VL 输出质量→双源策略（`62f4870`） |
-| 案例四（for循环·成功） | `024_bugs_case4_forloop` | `backend/tests/ocr_regression/cases/024_bugs_case4_forloop/` | 管道正常通过基线 |
+| 案例三（单链表while循环） | `023_bugs_case3_linkedlist` | `backend/tests/ocr_regression/cases/023_bugs_case3_linkedlist/` | VL 输出质量→双源策略（`62f4870`）；brace 不闭合→代码结构重建（`e91a020`） |
+| 案例四（for循环） | `024_bugs_case4_forloop` | `backend/tests/ocr_regression/cases/024_bugs_case4_forloop/` | 管道通过基线；`}` 断裂+brace 告警→代码结构重建（`e91a020`） |
 | 案例五（链表插入+typedef） | `025_bugs_case5_listinsert` | `backend/tests/ocr_regression/cases/025_bugs_case5_listinsert/` | VL/PP-OCRv6 B行损坏但≥2 key（双源策略 `62f4870`） |
 
 运行方式：

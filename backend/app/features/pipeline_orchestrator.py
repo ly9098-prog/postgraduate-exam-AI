@@ -3797,6 +3797,19 @@ class ImportPipeline:
                     completed_stages.append(name)
                 continue
 
+            # P5-3: skip review if pipeline already failed (prevent partial
+            # data leaking into review pool when a prior stage failed but
+            # execution continued past the break-only-for-extract/normalize gate)
+            if name == "review" and overall_status == "failed":
+                logger.warning(
+                    "Skipping 'review' stage: pipeline already failed at "
+                    "prior stage (errors=%s)",
+                    pipeline_errors,
+                )
+                stage.status = "skipped"
+                stage.duration_ms = 0
+                continue
+
             if progress_callback:
                 try:
                     await progress_callback(
