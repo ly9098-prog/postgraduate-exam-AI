@@ -1,67 +1,80 @@
-### 🎯 目标
+## 🎯 目标
 
-修复 PaddleOCR-VL 输出被错误 confidence gate 丢弃的问题，导致选项文本在进入 classifier 前丢失。
+当前 pipeline 已稳定（Fix A + Fix B + SSOT完成），但 PaddleOCR-VL 输出存在结构性损坏：
 
-------
+- A/B/C/D 前缀丢失
+- list 化输出
+- LaTeX污染
 
-## 🧩 Step 1：修复 OCR-VL confidence gate（必须优先）
-
-在 `pipeline_orchestrator.py:2443`：
-
-### 当前问题：
-
-- PaddleOCR-VL 返回 confidence=0.0
-- 被当作 invalid result 丢弃
-- 导致完整 237 chars 被忽略
-
-### 修复要求：
-
-- VL OCR 结果必须默认接受
-- confidence 不得作为丢弃条件
-
-### 推荐实现：
-
-```
-if is_vl_result:
-    accept_result = True
-```
-
-或：
-
-```
-confidence=0.0 → treat as valid (VL override)
-```
+需要在不修改 classifier / SSOT 的前提下，解决 OCR 输出不稳定问题。
 
 ------
 
-## 🧩 Step 2：保留现有 fallback（不改）
+## 🧩 Step 1：引入 OCR 双源策略（关键）
 
-- 不修改 classifier
-- 不修改 detect_options_from_text
-- 不修改 splitter
+建立 OCR routing：
 
-------
+```
+PP-OCRv6 = structure primary
+PaddleOCR-VL = semantic fallback
+```
 
-## 🧩 Step 3：验证目标
+### 决策规则：
 
-修复后必须满足：
-
-- VL OCR 237 chars 进入 classifier
-- force_options_probe(237 chars) → detect=True
-- options = {A, B, C, D}
+- 如果 PP-OCRv6 检测到 A/B/C/D → 使用 PP-OCRv6
+- 否则才使用 VL
 
 ------
 
-## ⚠️ 禁止事项
+## 🧩 Step 2：增加 option structure repair layer（必须）
 
-- ❌ 不允许先改 VL_REBUILD PDF 限制
-- ❌ 不允许动 classifier logic
-- ❌ 不允许增加新 OCR path
-- ❌ 不允许删除 confidence 字段（只调整使用方式）
+在 VL 输出后增加：
+
+```
+repair_option_structure(text)
+```
+
+功能：
+
+- 检测 list / latex / missing prefix
+- 自动恢复：
+  - A.
+  - B.
+  - C.
+  - D.
+
+------
+
+## 🧩 Step 3：禁止 VL 覆盖结构信息
+
+VL 输出只能：
+
+- 提供 content enrichment
+- ❌ 不能作为结构 source of truth
+
+------
+
+## 🧩 Step 4：重新跑 Case3 / Case5
+
+验证：
+
+- options 是否恢复 A/B/C/D
+- detect_options 是否 True
+- extract 是否完整
 
 ------
 
 ## 🎯 最终目标
 
-> VL OCR 结果不能因为 confidence=0.0 被丢弃
+> ✔ structure source = PP-OCRv6
+>  ✔ VL = enhancement layer（不能破坏结构）
+>  ✔ pipeline 不再依赖 VL 输出结构完整性
+
+------
+
+## ⚠️ 禁止事项
+
+- ❌ 不允许修改 classifier / SSOT
+- ❌ 不允许继续调 confidence gate
+- ❌ 不允许让 VL 成为 primary structure source
 
