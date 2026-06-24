@@ -19,13 +19,13 @@ def upgrade() -> None:
     # Add the new features JSON column
     op.add_column("admin_ai_model_configs", sa.Column("features", sa.JSON(), nullable=True))
 
-    # Migrate existing data: feature="ocr" → features='["ocr"]', feature=NULL → features=NULL
+    # Migrate existing data: feature="ocr" -> features='["ocr"]', feature=NULL -> features=NULL
     conn = op.get_bind()
-    # Use string concat for portability
+    # Use string concat for portability; cast to json for PostgreSQL compat
     conn.exec_driver_sql(
         "UPDATE admin_ai_model_configs "
         "SET features = CASE "
-        "  WHEN feature IS NOT NULL THEN '[\"' || feature || '\"]' "
+        "  WHEN feature IS NOT NULL THEN CAST('[\"' || feature || '\"]' AS json) "
         "  ELSE NULL "
         "END"
     )

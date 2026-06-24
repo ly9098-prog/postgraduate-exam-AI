@@ -1,5 +1,6 @@
 import time
 from datetime import datetime
+from urllib.parse import urljoin
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -714,31 +715,52 @@ async def _test_paddleocr_vl_connection(
     api_base_url: str,
     api_key: str,
 ) -> dict:
-    """测试 PaddleOCR-VL 连接：检查服务端是否可达。
+    """测试 PaddleOCR-VL 连接：验证服务端可达性与 API Key 有效性。
 
-    注意：PaddleOCR-VL API 没有轻量的健康检查端点，真正的 OCR 调用开销很大
-    （提交作业→轮询→下载结果）。因此这里只做网络连通性+基本响应检查，
-    API Token 的完整验证在实际 pipeline 处理时进行。
+    轻量检测方案：向 ``/api/v2/ocr/jobs`` 发送带有认证头的 GET 请求。
+    该端点在 PaddleOCR-VL API 中通常返回 405/404（GET 方法不支持），
+    但能验证：
+      - 服务端是否可达（非 ConnectError/Timeout）
+      - API Key 是否有效（401/403 → auth_error）
+      - 响应速度（latency_ms）
+
+    注意：真正的 OCR 调用开销很大（提交作业→轮询→下载结果），因此不做
+    完整的 OCR 调用验证。
     """
     import time
 
     import httpx
 
+    # Use same path logic as PaddleOCRVLClient._submit_job — urljoin with
+    # an absolute path (leading /) handles base URLs with or without
+    # /api/v2/ocr/jobs already included.
     base = api_base_url.rstrip("/")
+    url = urljoin(base + "/", "/api/v2/ocr/jobs")
 
     start = time.time()
     try:
+        headers = {"Authorization": f"Bearer {api_key}"}
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(base, follow_redirects=True)
+            resp = await client.get(url, headers=headers, follow_redirects=True)
         elapsed = int((time.time() - start) * 1000)
 
-        # 任意 HTTP 响应（包括 404/400）都说明服务可达
-        status = resp.status_code
+        # 401/403 → API Key 无效
+        if resp.status_code in (401, 403):
+            body = resp.text[:300]
+            return {
+                "success": False,
+                "status": "auth_error",
+                "message": f"API Key 无效或无权限访问 (HTTP {resp.status_code}): {body}",
+                "latency_ms": elapsed,
+            }
+
+        # 任意其他 HTTP 响应都说明服务可达、API Key 通过基本校验
         return {
             "success": True,
             "status": "ok",
             "message": (
-                f"服务端可达（HTTP {status}），API Token 将在实际导入时验证"
+                f"连接成功（HTTP {resp.status_code}），API Key 有效，"
+                f"服务端响应时延 {elapsed}ms"
             ),
             "latency_ms": elapsed,
         }
@@ -756,7 +778,10 @@ async def _test_paddleocr_vl_connection(
         return {
             "success": False,
             "status": "timeout",
-            "message": f"连接 {base} 超时（15s），请检查网络或 API 地址是否可达",
+            "message": (
+                f"连接 {base} 超时（15s），请检查网络或 API 地址是否可达，"
+                f"或确认 PaddleOCR-VL 服务是否正常运行"
+            ),
             "latency_ms": elapsed,
         }
     except Exception as exc:
