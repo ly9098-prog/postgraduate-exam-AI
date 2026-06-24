@@ -56,6 +56,9 @@ from app.features.pipeline_stages.repair_stage import (
     run_ai_validation_stage,
     run_repair_stage,
 )
+from app.features.pipeline_stages.code_language_noise_layer import (
+    run_code_language_noise_clean_stage,
+)
 from app.features.pipeline_stages.code_structure_stage import run_code_structure_stage
 from app.features.pipeline_stages.review_stage import run_review_stage
 from app.features.pipeline_stages.structure_freeze_stage import run_structure_freeze_stage
@@ -1059,6 +1062,7 @@ def _build_diagnostics(data: dict, stages: dict | None = None) -> dict:
             "ocr_correction": _summarize_ocr_diffs(
                 data.get("ocr_correction_diagnostics", {}).get("corrections", [])
             ),
+            "code_language_noise": data.get("code_language_noise_fix_actions", []),
             "code_structure": data.get("fix_actions", []),
             "ai_repair": data.get("repair_diffs", []),
             "ai_repair_stats": data.get("repair_stats", {}),
@@ -1149,6 +1153,10 @@ def _update_stage_metrics(stage, data: dict, result: dict) -> None:
         stage.output_count = len(result.get("matched") or []) + len(result.get("unmatched") or [])
     # ── normalize_schema ──
     elif name == "normalize_schema":
+        stage.input_count = len(data.get("questions") or [])
+        stage.output_count = len(result.get("questions") or [])
+    # ── code_language_noise_clean ──
+    elif name == "code_language_noise_clean":
         stage.input_count = len(data.get("questions") or [])
         stage.output_count = len(result.get("questions") or [])
     # ── code_structure_reconstruct ──
@@ -1532,6 +1540,7 @@ class PipelineStage:
             "split": "parse",
             "match": "parse",
             "normalize_schema": "parse",
+            "code_language_noise_clean": "parse",
             "code_structure_reconstruct": "parse",
             "batch_validation": "parse",
             "batch_dedup": "parse",
@@ -1713,13 +1722,15 @@ def _restore_from_artifacts(
                              "layout_reconstruction", "layout_router",
                              "analyze_structure", "classify_pages",
                              "structure_freeze", "split",
-                             "match", "normalize_schema"}
+                             "match", "normalize_schema",
+                             "code_language_noise_clean"}
             elif stage_name == "repair":
                 preceding = {"extract", "normalize_text", "ocr_correction",
                              "layout_reconstruction", "layout_router",
                              "analyze_structure", "classify_pages",
                              "structure_freeze", "split",
                              "match", "normalize_schema",
+                             "code_language_noise_clean",
                              "code_structure_reconstruct",
                              "classify_questions",
                              "batch_validation", "batch_dedup",
@@ -1730,6 +1741,7 @@ def _restore_from_artifacts(
                              "analyze_structure", "classify_pages",
                              "structure_freeze", "split",
                              "match", "normalize_schema",
+                             "code_language_noise_clean",
                              "code_structure_reconstruct",
                              "classify_questions",
                              "batch_validation", "batch_dedup",
@@ -1741,6 +1753,7 @@ def _restore_from_artifacts(
                              "analyze_structure", "classify_pages",
                              "structure_freeze", "split",
                              "match", "normalize_schema",
+                             "code_language_noise_clean",
                              "code_structure_reconstruct",
                              "classify_questions",
                              "batch_validation", "batch_dedup",
@@ -1812,6 +1825,9 @@ class ImportPipeline:
             ("match", self._run_match),
             ("normalize_schema", self._run_normalize_schema),
         ])
+        # Code language noise clean: remove OCR language identifier noise before structure repair
+        if self.options.get("enable_code_language_noise_clean", True):
+            stage_specs.append(("code_language_noise_clean", self._run_code_language_noise_clean))
         # Code structure reconstruction stage: fix code integrity issues before AI repair
         if self.options.get("enable_code_structure_reconstruct", True):
             stage_specs.append(("code_structure_reconstruct", self._run_code_structure_reconstruct))
@@ -3253,6 +3269,14 @@ class ImportPipeline:
             result["warnings"] = existing_warnings
 
         return result
+
+    async def _run_code_language_noise_clean(self, questions: list[dict], options: dict, **_kw) -> dict:
+        """Stage 5.3: clean OCR code language identifier noise from question stems.
+
+        Lightweight rule-based stage — no AI calls. Removes lines like ``(1>``,
+        ``(>C``, ``C>`` that appear at natural-language-to-code transitions.
+        """
+        return run_code_language_noise_clean_stage(questions, options)
 
     async def _run_code_structure_reconstruct(self, questions: list[dict], options: dict, **_kw) -> dict:
         """Stage 5.5: reconstruct code structure for questions with code integrity issues.
