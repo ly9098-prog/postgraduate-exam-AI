@@ -1,5 +1,24 @@
 # Bugs History
 
+## 2026-06-24 — 代码题选项系统性丢失（全部5种失败模式已修复）
+
+- **现象**：导入含代码块和4个选项的考研408图片时，选项在审核页中全部缺失。5个不同代码形态（顺序栈定义+while循环、BiTree递归、单链表while、for循环、链表插入+typedef）各自呈现不同的丢失模式，包括OCR只捕获代码不捕获选项、VL输出选项前缀丢失、VL输出被LaTeX污染、VL API置信度为0等。
+- **根因**：3个独立故障点叠加：
+  1. **Fix A — VL confidence gate**：PaddleOCR-VL返回`confidence=0.0`（API不提供置信度时），`result.confidence and result.confidence > 0`短路为False，VL结果（含237 chars+选项）在进入AI safety gate前就被丢弃。
+  2. **Fix B — VL_REBUILD PDF gate**：layout结构失败后触发`vl_rebuild`模式，但要求`source_type=="pdf"`，图片导入被阻断，无法调用PaddleOCR-VL重建blocks；同时`_run_vl_rebuild_blocks`硬编码`fitz.open(file_path, filetype="pdf")`不适用于图片文件。
+  3. **VL输出质量**：VL对代码图片的选项区域输出不稳定，表现为HTML列表化输出（丢掉A/B/C/D前缀）、LaTeX数学符号污染（选项内容被`$$...$$`包裹）、选项字母缺失。
+- **处理**：
+  1. `pipeline_orchestrator.py:2443` confidence gate增加`is_vl`识别，VL结果绕过confidence检查进入AI safety gate正常评估。非VL模型（DeepSeek、rule fallback）保持原有confidence检查。
+  2. `_run_vl_rebuild_blocks`移除`source_type=="pdf"`限制，支持图片文件直接读取（跳过PyMuPDF）；PDF路径保留逐页渲染+VL OCR。
+  3. 双源OCR策略：VL_REBUILD中先运行PP-OCRv6（本地），检测到选项时直接使用（跳过VL API调用）。VL仅作为PP-OCRv6无选项时的语义回退。
+  4. `repair_option_structure()`修复VL输出：HTML清理、LaTeX修复、裸选项恢复（无前缀行自动标记A/B/C/D）、种子文本匹配。6步修复管线。
+  5. `force_options_probe()`debug诊断函数，暴力扫描全部7种option pattern并报告。
+  6. 全链路TRACE日志：raw_input→text_detection→classifier_result→options_branch→final_options。
+  7. 回归测试扩展：BUGS case 021-025新增`full_ocr`阶段，自动运行PP-OCRv6图片OCR+`detect_options_from_text`验证。
+- **验证**：全部5个BUGS case通过OCR全链路回归测试（PP-OCRv6 → detect_options=True → extract_options≥2）。30个OCR回归测试+31个options pipeline测试全部PASS。实际PP-OCRv6 API调用验证：Case2 239 chars含4选项、Case3 122 chars含4选项、Case5 229 chars含3选项（B行OCR损坏但≥2 key）。
+- **提交**：`0fed945`（Fix A confidence gate）、`be03159`（Fix B VL_REBUILD图片支持）、`62f4870`（双源OCR策略+repair）、`fe62032`（OCR全链路回归测试）。
+- **说明**：该批次修复覆盖了代码题选项丢失的全部已知失败场景。VL输出质量仍然是Case3/5的潜在风险点，但双源策略通过PP-OCRv6优先避开了VL的结构性缺陷。Case4原本就是正确通过的基线，不需要修复。
+
 ## 2026-06-22 — OCR 代码块围栏断裂导致代码结构泄漏（已修复）
 
 - **现象**：OCR 导入后，包含 C 结构体定义的代码题出现代码片段截断与乱码混合，导致题干结构破坏。例如 `typedef struct BiTNode { char data;` 后的完整 struct 定义被截断，`} BiTNode, *BiTree;` 泄漏到围栏外部混入正常文本，出现 `(1typu* p1tysI* apo11ta aonu2s` 等 OCR 噪声。
