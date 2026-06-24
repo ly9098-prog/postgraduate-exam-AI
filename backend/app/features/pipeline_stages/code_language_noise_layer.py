@@ -22,6 +22,15 @@ import logging
 import re
 from typing import Any
 
+from app.features.pipeline_stages.code_language_noise_metrics import (
+    NoiseMetrics,
+    NoiseMetricsCollector,
+    format_metrics_summary,
+)
+from app.features.code_integrity import contains_code
+from app.features.pipeline_stages.noise_drift_detector import detect_drift
+from app.features.pipeline_stages.noise_rule_governor import evaluate_policy as evaluate_noise_policy
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -282,7 +291,11 @@ def _should_remove(
 # Main cleaning function
 # ---------------------------------------------------------------------------
 
-def clean_code_language_noise(text: str, safe_mode: bool = False) -> str:
+def clean_code_language_noise(
+    text: str,
+    safe_mode: bool = False,
+    _collector: NoiseMetricsCollector | None = None,
+) -> str:
     """Remove OCR code language identifier noise from ``text``.
 
     Three-phase pipeline:
@@ -294,6 +307,7 @@ def clean_code_language_noise(text: str, safe_mode: bool = False) -> str:
         text: Input text (potentially containing code blocks).
         safe_mode: When True, use stricter guards and higher
                    confidence threshold.
+        _collector: Optional metrics collector for observability.
 
     Returns:
         Cleaned text with noise lines removed.
@@ -303,6 +317,10 @@ def clean_code_language_noise(text: str, safe_mode: bool = False) -> str:
 
     lines = text.split("\n")
     zones = detect_transition_zones(text)
+
+    if _collector:
+        _collector.record_total_lines(len(lines))
+        _collector.record_zones(zones)
 
     # Build a set of line numbers (1-based) that are in transition zones
     zone_lines: set[int] = set()
@@ -319,13 +337,22 @@ def clean_code_language_noise(text: str, safe_mode: bool = False) -> str:
         # Only evaluate lines inside transition zones
         if line_num in zone_lines:
             noise_type, confidence = classify_noise(line)
+
+            if _collector:
+                _collector.record_classification(noise_type, confidence)
+
             if _should_remove(line, noise_type, confidence, safe_mode=safe_mode):
                 removed_lines.append(line_num)
+                if _collector:
+                    _collector.record_removal(line_num, noise_type)
                 logger.debug(
                     "Removed noise line %d: type=%s conf=%.2f line=%r",
                     line_num, noise_type, confidence, line,
                 )
                 continue  # skip this line entirely
+            elif noise_type and _collector:
+                # Classified as noise but kept by a safety guard
+                _collector.record_protected(noise_type)
 
         result_lines.append(line)
 
@@ -342,28 +369,35 @@ def clean_code_language_noise(text: str, safe_mode: bool = False) -> str:
 # Clean questions (pipeline stage entry)
 # ---------------------------------------------------------------------------
 
-def _scan_stems_for_noise(questions: list[dict],
-                          safe_mode: bool = False,
-                          ) -> list[tuple[int, dict, str, str]]:
-    """Return (index, question, stem, cleaned_stem) pairs where noise was found.
+def _scan_stems_for_noise(
+    questions: list[dict],
+    safe_mode: bool = False,
+) -> tuple[list[tuple[int, dict, str, str]], list[NoiseMetrics]]:
+    """Scan question stems for code language noise.
 
-    Only processes questions that contain code (detected via ``contains_code``).
+    Returns:
+        (candidates, metrics_list):
+            candidates: (index, question, stem, cleaned_stem) pairs where
+                noise was found and removed.
+            metrics_list: Per-question NoiseMetrics (same order as questions).
     """
-    from app.features.code_integrity import contains_code
-
     candidates: list[tuple[int, dict, str, str]] = []
+    metrics_list: list[NoiseMetrics] = []
+
     for i, q in enumerate(questions):
         stem = q.get("stem", "")
-        if not stem:
-            continue
-        if not contains_code(stem):
+        if not stem or not contains_code(stem):
+            metrics_list.append(NoiseMetrics(doc_id=str(i)))
             continue
 
-        cleaned = clean_code_language_noise(stem, safe_mode=safe_mode)
+        collector = NoiseMetricsCollector(doc_id=str(i))
+        cleaned = clean_code_language_noise(stem, safe_mode=safe_mode, _collector=collector)
+        metrics_list.append(collector.metrics)
+
         if cleaned != stem:
             candidates.append((i, q, stem, cleaned))
 
-    return candidates
+    return candidates, metrics_list
 
 
 def run_code_language_noise_clean_stage(
@@ -389,18 +423,18 @@ def run_code_language_noise_clean_stage(
             "questions": questions,
             "cleaned_count": 0,
             "warnings": [],
-            "fix_actions": [],
+            "code_language_noise_fix_actions": [],
         }
 
     safe_mode = opts.get("noise_clean_safe_mode", False)
 
-    candidates = _scan_stems_for_noise(questions, safe_mode=safe_mode)
+    candidates, metrics_list = _scan_stems_for_noise(questions, safe_mode=safe_mode)
     if not candidates:
         return {
             "questions": questions,
             "cleaned_count": 0,
             "warnings": [],
-            "fix_actions": [],
+            "code_language_noise_fix_actions": [],
         }
 
     cleaned_count = 0
@@ -444,10 +478,42 @@ def run_code_language_noise_clean_stage(
             f"removed {total_removed_lines} line(s)"
         )
 
+    # ── v2 metrics observability ──
+    metrics_summary = format_metrics_summary(metrics_list) if metrics_list else {}
+
+    # ── v2 drift detection ──
+    noise_type_counts = metrics_summary.get("noise_type_distribution", {})
+    drift_result = detect_drift(noise_type_counts)
+
+    if drift_result.get("drift_detected"):
+        warnings.append(
+            f"noise_drift: score={drift_result['drift_score']:.3f}, "
+            f"top_change={drift_result['top_changed_noise']}"
+        )
+
+    # ── v2 adaptive governance ──
+    governor_result = evaluate_noise_policy(
+        false_positive_suspected_count=metrics_summary.get("total_false_positive_suspected", 0),
+        total_protected_count=metrics_summary.get("total_protected_lines", 0),
+        total_removed_count=total_removed_lines,
+        current_policy={"safe_mode": safe_mode},
+    )
+
+    if governor_result.get("changes"):
+        for change in governor_result["changes"]:
+            if change != "no_change_needed":
+                logger.info("Noise governor: %s", change)
+                warnings.append(f"noise_governor: {change}")
+
     return {
         "questions": questions,
         "cleaned_count": cleaned_count,
         "warnings": warnings,
         "code_language_noise_fix_actions": fix_actions,
         "total_removed_lines": total_removed_lines,
+        # v2 observability
+        "noise_metrics_summary": metrics_summary,
+        "noise_metrics_list": [m.to_dict() for m in metrics_list],
+        "noise_drift": drift_result,
+        "noise_governor": governor_result,
     }

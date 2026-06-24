@@ -1080,6 +1080,20 @@ class TestImportPipelineRun:
             "questions": _make_questions(3),
             "normalized_count": 3,
         })
+        pipeline._run_code_language_noise_clean = MagicMock(return_value={
+            "questions": _make_questions(3),
+            "cleaned_count": 0,
+            "warnings": [],
+            "code_language_noise_fix_actions": [],
+            "total_removed_lines": 0,
+        })
+        pipeline._run_code_structure_reconstruct = AsyncMock(return_value={
+            "questions": _make_questions(3),
+            "reconstructed_count": 0,
+            "failed_count": 0,
+            "warnings": [],
+            "fix_actions": [],
+        })
         pipeline._run_repair = MagicMock(return_value={
             "questions": _make_questions(3),
             "repaired_count": 1,
@@ -1127,7 +1141,7 @@ class TestImportPipelineRun:
 
         # Verify stage ordering
         stage_names = list(result["stages"].keys())
-        assert stage_names == ["extract", "normalize_text", "ocr_correction", "layout_reconstruction", "layout_router", "analyze_structure", "classify_pages", "structure_freeze", "split", "match", "normalize_schema", "classify_questions", "batch_validation", "batch_dedup", "repair", "ai_validation", "similarity_match", "math_detect", "table_detect", "review"]
+        assert stage_names == ["extract", "normalize_text", "ocr_correction", "layout_reconstruction", "layout_router", "analyze_structure", "classify_pages", "structure_freeze", "split", "match", "normalize_schema", "code_language_noise_clean", "code_structure_reconstruct", "classify_questions", "batch_validation", "batch_dedup", "repair", "ai_validation", "similarity_match", "math_detect", "table_detect", "review"]
         for s in result["stages"].values():
             assert s["status"] == "completed"
 
