@@ -362,9 +362,9 @@ countLeaf(T->rchild);
 }
 ```
 
-##### 案例三（✅ 已修复 — 双源策略优先使用 PP-OCRv6）
+##### 案例三（✅ 已修复 — 双源策略优先使用 PP-OCRv4）
 
-> 修复提交：`62f4870` — VL_REBUILD 中先跑 PP-OCRv6，检测到选项时直接使用（跳过 VL）。
+> 修复提交：`62f4870` — VL_REBUILD 中先跑 PP-OCRv4，检测到选项时直接使用（跳过 VL）。
 > 验证结果：PP-OCRv6 输出 122 chars，detect_options=True，提取到完整 4 选项。
 
 ###### 原题

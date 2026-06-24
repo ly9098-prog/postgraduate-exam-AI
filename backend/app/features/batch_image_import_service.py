@@ -586,10 +586,25 @@ async def _run_single_image(
         # API 模式：VL 已产出高质量文本，跳过 pipeline 的 ocr_correction 阶段
         pipeline_opts = {**options, "skip_ocr_correction": skip_ocr_correction}
 
+        # Save image to temp file for VL_REBUILD fallback (needs disk path)
+        import tempfile
+        import os
+        _tmp_img_path: str | None = None
+        if content:
+            try:
+                ext = os.path.splitext(source_file)[1] or ".png"
+                tmpf = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+                tmpf.write(content)
+                _tmp_img_path = tmpf.name
+                tmpf.close()
+            except Exception as exc:
+                logger.warning("Failed to save temp image for VL_REBUILD: %s", exc)
+
         pipeline_start = _now()
         result = await run_import_pipeline(
             file_content=cleaned_text.encode("utf-8"),
-            source_type="txt",
+            file_path=_tmp_img_path,
+            source_type="image",
             source_file=source_file,
             subject=subject,
             options=pipeline_opts,
@@ -597,6 +612,13 @@ async def _run_single_image(
             page_images={1: content},
         )
         pipeline_duration = int((_now() - pipeline_start).total_seconds() * 1000)
+
+        # Clean up temp image file
+        if _tmp_img_path:
+            try:
+                os.unlink(_tmp_img_path)
+            except Exception:
+                pass
 
     batch_id = result.get("batch_id")
     qcount = (result.get("stats") or {}).get("to_review", 0)
