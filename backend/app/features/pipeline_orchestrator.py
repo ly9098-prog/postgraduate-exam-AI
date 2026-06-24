@@ -2907,9 +2907,10 @@ class ImportPipeline:
                 rebuilt = self._run_vl_rebuild_blocks(file_path, normalized_blocks, vl_config)
                 if rebuilt:
                     split_blocks = rebuilt
-                    # 重建后 layout 不再适用，重置为标准模式
+                    # 重建后 layout + frozen 不再适用，重置为手动提取
                     split_mode = "standard"
                     layout_result = {}
+                    frozen_option_registry = None
                     warnings.append(
                         f"vl_rebuild: restructured {len(rebuilt)} blocks via PaddleOCR-VL"
                     )
