@@ -588,7 +588,6 @@ async def _run_single_image(
 
         # Save image to temp file for VL_REBUILD fallback (needs disk path)
         import tempfile
-        import os
         _tmp_img_path: str | None = None
         if content:
             try:
@@ -601,24 +600,25 @@ async def _run_single_image(
                 logger.warning("Failed to save temp image for VL_REBUILD: %s", exc)
 
         pipeline_start = _now()
-        result = await run_import_pipeline(
-            file_content=cleaned_text.encode("utf-8"),
-            file_path=_tmp_img_path,
-            source_type="image",
-            source_file=source_file,
-            subject=subject,
-            options=pipeline_opts,
-            db=pdb,
-            page_images={1: content},
-        )
+        try:
+            result = await run_import_pipeline(
+                file_content=cleaned_text.encode("utf-8"),
+                file_path=_tmp_img_path,
+                source_type="image",
+                source_file=source_file,
+                subject=subject,
+                options=pipeline_opts,
+                db=pdb,
+                page_images={1: content},
+            )
+        finally:
+            # Clean up temp image file
+            if _tmp_img_path:
+                try:
+                    os.unlink(_tmp_img_path)
+                except Exception:
+                    pass
         pipeline_duration = int((_now() - pipeline_start).total_seconds() * 1000)
-
-        # Clean up temp image file
-        if _tmp_img_path:
-            try:
-                os.unlink(_tmp_img_path)
-            except Exception:
-                pass
 
     batch_id = result.get("batch_id")
     qcount = (result.get("stats") or {}).get("to_review", 0)
