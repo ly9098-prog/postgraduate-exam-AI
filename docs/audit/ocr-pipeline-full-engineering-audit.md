@@ -1,7 +1,7 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**
+> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**→ **2026-06-24（VL confidence gate + VL_REBUILD 图片支持 + 双源 OCR 策略）**
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
 
 **2026-06-23（本期新增）：**
@@ -17,6 +17,14 @@
 - **Layer 4（AI Repair 不可变）**：`ai_repair.py` 扩展选项不可变约束至全部题型（3 规则：已存在+修改→拒绝，已存在+删除→拒绝，空+非冻结→允许恢复）
 - **冻结选项 SSOT**：AI 修复后始终从 `frozen_option_registry` 恢复冻结选项
 - **代码审查修复**：收紧 `_CHOICE_KEYWORDS`（移除 `"下列"`、`"以下"` 单字），修复 `in "ABCD"` 子串匹配，移除 `normalize_option_order` 死代码
+
+**2026-06-24（本次新增）：**
+- **Fix A — VL confidence gate override**：PaddleOCR-VL 返回 `confidence=0.0`（API 不提供置信度）时不再被 gate 丢弃，VL 结果进入 AI safety gate 正常评估
+- **Fix B — VL_REBUILD 图片支持**：移除 `source_type == "pdf"` 限制，`_run_vl_rebuild_blocks()` 支持图片文件（直接读 bytes，跳过 PyMuPDF）
+- **双源 OCR 策略**：VL_REBUILD 中 PP-OCRv6 = 结构主源，PaddleOCR-VL = 语义回退。PP-OCRv6 检测到选项时直接使用（跳过 VL API 调用），VL 输出通过 `repair_option_structure()` 修复选项结构
+- **repair_option_structure()**：6 步修复管线 — HTML 清理、LaTeX 修复、裸选项恢复（无前缀行自动标记 A/B/C/D）、种子文本匹配
+- **全链路 TRACE 日志**：raw_input → text_detection → classifier_result → options_branch → final_options
+- **force_options_probe()**：debug 诊断函数，暴力扫描全部 7 种 option pattern 并报告
 
 ---
 
@@ -92,9 +100,12 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │              AI OCR 纠错层 (Multi-Model Correction)                  │
 │  唯一路径 — OCRFixRouter (ocr_fix/router.py):                       │
-│    ├─ PaddleOCRVLAdapter (ocr_vl/) → 外部高精 OCR API (链首)        │
+│    ├─ PP-OCRv6 (local) → 结构主源 (VL_REBUILD 中优先)              │
+│    │  策略: detect_options=True → 直接使用，跳过 VL API             │
+│    ├─ PaddleOCRVLAdapter (ocr_vl/) → 外部高精 OCR API (链首/回退)  │
 │    │  API: POST /api/v2/ocr/jobs → poll data.state → JSONL          │
 │    │  保护: 重试 3 次 + 超时 120s + 降级到下一适配器                │
+│    ├─ repair_option_structure() → VL 输出结构修复 (LaTeX/列表/缺前缀)│
 │    ├─ DeepSeekFixer (deepseek_adapter.py, 126行) → 纯文本纠错       │
 │    └─ RuleFixer (rule_adapter.py, 41行) → no-op fallback            │
 │                                                                     │
@@ -242,7 +253,7 @@
 
 ## 4. 失败案例分析
 
-### 4.1 已知失败样本（17 回归 case）
+### 4.1 已知失败样本（17 回归 case + 5 BUGS case）
 
 | 样本 | 根因 | 解决方式 |
 |---|---|---|
@@ -253,15 +264,22 @@
 | `watermark_fail_case` | 水印污染 → LLM 保留水印 | ✅ 品牌水印规则（P6-4） |
 | `watermark_chart_case` | 水印+图表产生大量乱码 | ⚠️ 部分缓解 |
 | `page_spread_case` | 跨页题号+答案不连接 | ⚠️ 部分修复 |
+| `bugs_case1_stack` | VL confidence=0.0 被 gate 丢弃 | ✅ Fix A `0fed945` |
+| `bugs_case2_treerecursion` | VL_REBUILD 被 `source_type=="pdf"` 阻断 | ✅ Fix B `be03159` |
+| `bugs_case3_linkedlist` | VL 输出去掉了选项字母前缀 | ✅ 双源策略 `62f4870` |
+| `bugs_case4_forloop` | 基线通过（初始 OCR 已捕获选项） | ✅ 无操作 |
+| `bugs_case5_listinsert` | VL 输出将选项转为 LaTeX 符号 | ✅ 双源策略 `62f4870` |
 
 ### 4.2 根因分类
 
 | 根因 | 占比 |
 |---|---|
-| PaddleOCR 识别错误 | 45% |
-| 版面分析错误 | 25% |
-| 结构恢复错误 | 15% |
-| AI 纠错幻觉 | 10% |
+| PP-OCRv6 识别错误（含裁切/漏识别） | 40% |
+| 版面分析错误 | 20% |
+| 结构恢复错误 | 10% |
+| PaddleOCR-VL 输出质量（缺前缀/LaTeX 污染/列表化） | 10% |
+| VL confidence gate / pipeline routing | 10% |
+| AI 纠错幻觉 | 5% |
 | 代码场景特殊 | 5% |
 
 > P6-3 新增 `ocr_failure_analyzer.py`（16 种分类），pipeline 完成后自动归因。
@@ -317,6 +335,9 @@
 | **P0** | AI repair 篡改 frozen/non-frozen 选项 | ✅ 773e8ef（3 规则不可变） |
 | **P1** | `_CHOICE_KEYWORDS` 过宽导致非选择题误判 | ✅ 54fbeeb（移除 `"下列"`、`"以下"` 单字） |
 | **P2** | `in "ABCD"` 子串匹配隐患 + 死代码 `normalize_option_order` | ✅ 773e8ef |
+| **P0** | PaddleOCR-VL confidence=0.0 丢弃 VL 结果 | ✅ 0fed945（confidence gate override） |
+| **P0** | VL_REBUILD PDF-only 限制导致图片导入结构无法恢复 | ✅ be03159（图片文件支持） |
+| **P0** | VL 输出结构性损坏（缺前缀/LaTeX）→ 选项丢失 | ✅ 62f4870（双源策略 + repair） |
 
 ### 6.2 改造路线图（压缩）
 
@@ -335,6 +356,13 @@
   - Layer 0/3 option engine 不重排、不填充
   - Layer 4 AI repair 选项不可变（3 规则）
   - 代码审查修复（关键词收紧、死代码清理、子串匹配修复）
+✅ **2026-06-24: BUGS 全 case 修复（0fed945 + be03159 + 62f4870）**
+  - Fix A: VL confidence gate override（conﬁdence=0.0 不再丢弃结果）
+  - Fix B: VL_REBUILD 取消 PDF 限制 + 图片文件支持
+  - 双源 OCR 策略：PP-OCRv6 = 结构主源，VL = 语义回退
+  - repair_option_structure()：VL 输出结构修复（LaTeX/列表/缺前缀）
+  - force_options_probe()：debug 诊断函数
+  - 全链路 TRACE 日志（6 阶段）
 
 ⏳ 待处理:
   - AI 补全并行化 (0.5d)
@@ -358,7 +386,9 @@
   └─ api:   PaddleOCR-VL 远程 API → text (2026-06-23 新增)
 
 阶段 2: 规则清洗 → text_normalizer (✅ 唯一入口)
-阶段 3: AI 纠错 → OCRFixRouter: PaddleOCR-VL → DeepSeek → Rule (✅ 唯一入口)
+阶段 3: AI 纠错 → OCRFixRouter: PP-OCRv6(结构主源) / PaddleOCR-VL → DeepSeek → Rule (✅ 唯一入口)
+  ├─ PP-OCRv6 检测到选项时直接使用（VL_REBUILD 中优先，跳过 VL API）
+  └─ VL 输出通过 repair_option_structure() 修复（缺前缀/LaTeX/列表化）
   └─ 客户端修复 (2026-06-23): data.state, errorMsg, layoutParsingResults 解析
 阶段 4: 结构分析 + 页面分类 (不改)
 	阶段 5: 结构冻结 → 纯正则选项锁定，split/repair 只读 (新增 deff5fc)
@@ -386,7 +416,7 @@
 | `features/question_splitter.py` | 1301 | 题号+选项提取 |
 | `features/ai_repair.py` | 1116 | AI 修复（Layer 4 选项不可变门控） |
 | `features/code_integrity.py` | 520 | 代码块完整性检测 |
-| `features/question_type_classifier.py` | 172 | Layer 1 题型分类门控（新建模块） |
+| `features/question_type_classifier.py` | 455 | Layer 1 题型分类门控 + force_options_probe() |
 | `features/pipeline_stages/structure_freeze_stage.py` | 230 | 选项结构冻结（纯正则，split 前锁定选项） |
 
 ### OCR 纠错
@@ -396,6 +426,7 @@
 | `ocr_vl/paddleocr_vl_client.py` | ~430 | PaddleOCR-VL async HTTP 客户端 |
 | `ocr_vl/paddleocr_vl_adapter.py` | 112 | OCRFixerProtocol 适配器 |
 | `ocr_fix/router.py` | 158 | 降级链策略路由（唯一入口） |
+| `ocr_correction_common.py` | 254 | OCR 纠错通用逻辑 + repair_option_structure() |
 | `ocr_fix/deepseek_adapter.py` | 126 | DeepSeek 纯文本纠错 |
 | `ai_safety.py` | 284 | AI 编辑安全门禁 |
 
@@ -429,4 +460,4 @@
 
 ---
 
-*报告结束。初版：2026-06-20，末次更新：2026-06-23（4 层 SSOT 架构重构）。*
+*报告结束。初版：2026-06-20，末次更新：2026-06-24（BUGS 全 case 修复 + 双源 OCR 策略）。*

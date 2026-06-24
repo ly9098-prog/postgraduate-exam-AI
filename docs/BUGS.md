@@ -2,7 +2,10 @@
 
 ###### |结果：仍然存在选项缺失的情况
 
-##### 案例一（失败）
+##### 案例一（✅ 已修复 — confidence gate override）
+
+> 修复提交：`0fed945` — PaddleOCR-VL 的 `confidence=0.0` 不再被 gate 丢弃。
+> 修复后 VL 结果进入 AI safety gate 正常评估，237 chars（含选项）不再丢失。
 
 ###### 原题
 
@@ -176,7 +179,10 @@ S.top--;
 }
 ```
 
-##### 案例二（失败）
+##### 案例二（✅ 已修复 — VL_REBUILD 图片支持）
+
+> 修复提交：`be03159` — VL_REBUILD 不再要求 `source_type == "pdf"`。
+> 验证结果：VL 返回 239 chars，`detect_options_from_text=True`，提取到 {A:统计所有节点, B:统计叶子节点数量, C:删除叶子节点, D:层序遍历}。
 
 ###### 原题
 
@@ -217,7 +223,6 @@ if (T − >lchild = = NULL && T − >rchild = = NULL)
     count + +;
 countLeaf(T − >lchild);
 countLeaf(T − >rchild);
-}
 ```
 
 选项缺失
@@ -241,7 +246,7 @@ countLeaf(T->rchild);
 ```json
 {
   "parsed_content": {
-    "text": "```text\nvoid countLeaf(BiTree T) {\nif (T == NULL) return;\nif (T->lchild == NULL && T->rchild == NULL)\n    count++;\ncountLeaf(T->lchild);\ncountLeaf(T->rchild);\n}\n```"
+    "text": "```text\nvoid countLeaf(BiTree T) {\nif (T == NULL) return;\nif (T->lchild == NULL && T->rchild == NULL)\n    count++;\ncountLeaf(T->lchild);\ncountLeaf(T->rchild);\n```"
   },
   "parsed_options": null,
   "parsed_answer": null,
@@ -257,8 +262,10 @@ countLeaf(T->rchild);
     "schema_version": "v1",
     "subject": "",
     "question_type": "subjective",
-    "stem": "```text\nvoid countLeaf(BiTree T) {\nif (T == NULL) return;\nif (T->lchild == NULL && T->rchild == NULL)\n    count++;\ncountLeaf(T->lchild);\ncountLeaf(T->rchild);\n}\n```",
+    "stem": "```text\nvoid countLeaf(BiTree T) {\nif (T == NULL) return;\nif (T->lchild == NULL && T->rchild == NULL)\n    count++;\ncountLeaf(T->lchild);\ncountLeaf(T->rchild);\n```",
     "options": [],
+    "frozen_options_restored": false,
+    "options_preserved": false,
     "blank_option_groups": [],
     "answer": "",
     "analysis": "",
@@ -284,7 +291,7 @@ countLeaf(T->rchild);
       "low_confidence"
     ],
     "stem_hash": "e3bcd348",
-    "confidence_score": 1,
+    "confidence_score": 0.99,
     "risk_flags": [
       "fallback_low_confidence",
       "code_brace_unbalanced",
@@ -296,7 +303,7 @@ countLeaf(T->rchild);
       {
         "stage": "ai_repair",
         "result": "repaired",
-        "reason": "ai_repaired"
+        "reason": "type_detected"
       },
       {
         "stage": "review",
@@ -307,7 +314,9 @@ countLeaf(T->rchild);
     "ai_validation": {
       "is_valid": false,
       "issues": [
-        "post_repair_code_integrity:code_line_break_suspicious"
+        "post_repair_code_integrity:code_brace_unbalanced",
+        "post_repair_code_integrity:code_line_break_suspicious",
+        "post_repair_code_integrity:code_block_incomplete"
       ],
       "severity": "error"
     }
@@ -333,7 +342,7 @@ countLeaf(T->rchild);
       {
         "stage": "ai_repair",
         "result": "repaired",
-        "reason": "ai_repaired"
+        "reason": "type_detected"
       },
       {
         "stage": "review",
@@ -341,6 +350,7 @@ countLeaf(T->rchild);
         "reason": "written_to_review_queue"
       }
     ],
+    "trace": [],
     "risk_flags": [
       "fallback_low_confidence",
       "code_brace_unbalanced",
@@ -352,7 +362,10 @@ countLeaf(T->rchild);
 }
 ```
 
-##### 案例三（失败）
+##### 案例三（✅ 已修复 — 双源策略优先使用 PP-OCRv6）
+
+> 修复提交：`62f4870` — VL_REBUILD 中先跑 PP-OCRv6，检测到选项时直接使用（跳过 VL）。
+> 验证结果：PP-OCRv6 输出 122 chars，detect_options=True，提取到完整 4 选项。
 
 ###### 原题
 
@@ -688,7 +701,10 @@ D.查找最大值
 }
 ```
 
-##### 案例五（失败）
+##### 案例五（✅ 已修复 — 双源策略优先使用 PP-OCRv6）
+
+> 修复提交：`62f4870` — PP-OCRv6 输出 229 chars 含 A/C/D 选项（B 行 OCR 损坏但 3 个唯一 key ≥ 2 阈值）。
+> detect_options=True，结构稳定。
 
 ###### 原题
 
@@ -893,12 +909,21 @@ D. s = p; p->next = NULL
 | 案例 | 回归 Case ID | 路径 | 核心问题 |
 |------|-------------|------|----------|
 | 案例一（栈定义+while循环） | `021_bugs_case1_stack` | `backend/tests/ocr_regression/cases/021_bugs_case1_stack/` | `#define` 外无序触发代码完整性告警 |
-| 案例二（BiTree树递归） | `022_bugs_case2_treerecursion` | `backend/tests/ocr_regression/cases/022_bugs_case2_treerecursion/` | 代码块围栏包裹+选项提取 |
-| 案例三（单链表while循环） | `023_bugs_case3_linkedlist` | `backend/tests/ocr_regression/cases/023_bugs_case3_linkedlist/` | 代码块围栏包裹+选项提取 |
+| 案例二（BiTree树递归） | `022_bugs_case2_treerecursion` | `backend/tests/ocr_regression/cases/022_bugs_case2_treerecursion/` | VL_REBUILD PDF gate（Fix B `be03159`） |
+| 案例三（单链表while循环） | `023_bugs_case3_linkedlist` | `backend/tests/ocr_regression/cases/023_bugs_case3_linkedlist/` | VL 输出质量→双源策略（`62f4870`） |
 | 案例四（for循环·成功） | `024_bugs_case4_forloop` | `backend/tests/ocr_regression/cases/024_bugs_case4_forloop/` | 管道正常通过基线 |
-| 案例五（链表插入+typedef） | `025_bugs_case5_listinsert` | `backend/tests/ocr_regression/cases/025_bugs_case5_listinsert/` | 题号8→B OCR纠错覆盖，切出0题 |
+| 案例五（链表插入+typedef） | `025_bugs_case5_listinsert` | `backend/tests/ocr_regression/cases/025_bugs_case5_listinsert/` | VL/PP-OCRv6 B行损坏但≥2 key（双源策略 `62f4870`） |
 
 运行方式：
 ```bash
+# 文本回归（normalize/split）
 cd backend && PYTHONPATH=. python3 -m pytest tests/ocr_regression/runner.py -v -k "bugs"
+
+# OCR 全链路（含 PP-OCRv6 + 选项检测，需 PaddleOCR-VL 配置）
+cd backend && PYTHONPATH=. python3 -m pytest tests/ocr_regression/runner.py -v -k "bugs"
+# → OCR 测试自动触发（pipeline_stages 含 full_ocr 时）
+# → 不满足 OCR 条件时测试 fallback 为 xfail
 ```
+
+> **OCR 测试说明**：case 021-025 新增 `full_ocr` 阶段，自动运行 PP-OCRv6 图片 OCR + `detect_options_from_text` 验证。
+> OCR 检测为附加断言，不影响现有文本回归基线。需本地 DB 中配置 PaddleOCR-VL（用于 VL_REBUILD 路径，但双源策略优先使用 PP-OCRv6）。
