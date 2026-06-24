@@ -1,7 +1,7 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**→ **2026-06-24（VL confidence gate + VL_REBUILD 图片支持 + 双源 OCR 策略）**→ **2026-06-24（代码结构重建阶段 + 审核池泄漏修复）**
+> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**→ **2026-06-24（VL confidence gate + VL_REBUILD 图片支持 + 双源 OCR 策略）**→ **2026-06-24（代码结构重建阶段 + 审核池泄漏修复）**→ **2026-06-24（噪声治理 v2 + 案例三修复补完）**
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
 
 **2026-06-23（本期新增）：**
@@ -33,6 +33,13 @@
   - AI safety gate 验证修复结果，仅接受高置信度变更
   - 修复 BUGS 案例三（while 循环缺 `}`）和案例四（for 循环断裂 `}`）
 - **审核池泄漏修复**：pipeline 前序阶段失败时（如 code_structure_reconstruct 异常），自动跳过 `review` 阶段，防止部分数据写入 `question_imports`
+
+**2026-06-24（第二次更新-本期新增）：**
+- **噪声治理 v2**：新增 `NoiseMetrics` 数据类 + `NoiseMetricsCollector` 逐题指标收集 + 批量聚合 `NoiseMetricsSummary`。`clean_code_language_noise()` 通过 `_collector` 参数集成指标采集。下游新增 `noise_drift_detector.py`（KL 散度 drift 检测 + 拉普拉斯平滑，阈值 0.15）和 `noise_rule_governor.py`（基于 FP-rate 的 `safe_mode` 自适应切换，带迟滞）。stage 输出新增 `noise_metrics_summary` / `noise_drift` / `noise_governor` 三个观测字段。新增 49 个单元测试覆盖所有模块。清理死代码：移除 `confidence_threshold` 字段（实际控制由 `safe_mode` boolean 承担）、统一 key 命名 `fix_actions`→`code_language_noise_fix_actions`。
+- **案例三修复补完（`ad33620`）**：案例三经双源 OCR 策略 + 代码结构重建修复后，仍有三个残留问题：
+  1. **Transition 模式扩展**：`code_language_noise_layer._TRANSITION_PATTERNS` 新增 `r"在\w+中执行[：：]"` 模式，使"在单链表中执行:"能触发过渡区检测，将 `(>C` 噪声纳入清洗范围
+  2. **题干选项重剥离**：`question_normalizer.py` 新增 stem re-strip 守卫 —— 当 splitter 返回空 `option_lines`（VL_REBUILD 路径）但 `normalize_schema` 独立检测到 ≥2 个选项时，回调 `_extract_stem` 从题干剥离选项文本
+  3. **VL_REBUILD 冻结注册表清理**：`pipeline_orchestrator.py` 在 VL_REBUILD 替换 blocks 后将 `frozen_option_registry = None`，防止冻结门控阻止基于正则的选项提取
 
 ---
 
@@ -285,7 +292,7 @@
 | `page_spread_case` | 跨页题号+答案不连接 | ⚠️ 部分修复 |
 | `bugs_case1_stack` | VL confidence=0.0 被 gate 丢弃 | ✅ Fix A `0fed945` |
 | `bugs_case2_treerecursion` | VL_REBUILD 被 `source_type=="pdf"` 阻断 | ✅ Fix B `be03159` |
-| `bugs_case3_linkedlist` | VL 输出去掉了选项字母前缀 | ✅ 双源策略 `62f4870` + 代码结构重建 `e91a020` |
+| `bugs_case3_linkedlist` | VL 输出去掉了选项字母前缀 + `(>C` 代码类型噪声残留 + frozen 注册表阻塞题干重建 | ✅ 双源策略 `62f4870` + 代码结构重建 `e91a020` + transition 模式扩展/题干重剥离/冻结清理 `ad33620` |
 | `bugs_case4_forloop` | 基线通过；`}` 断裂 + brace 告警残留 | ✅ 代码结构重建 `e91a020` |
 | `bugs_case5_listinsert` | VL 输出将选项转为 LaTeX 符号 | ✅ 双源策略 `62f4870` |
 
@@ -359,6 +366,10 @@
 | **P0** | VL 输出结构性损坏（缺前缀/LaTeX）→ 选项丢失 | ✅ 62f4870（双源策略 + repair） |
 | **P0** | AI repair prompt 规则 10 禁止修改 `{}`，导致代码 brace 无法修复 | ✅ e91a020（独立 code_structure_reconstruct 阶段 + 专用 prompt） |
 | **P1** | 管道前序阶段失败时 review 仍写入审核池，导致部分数据泄漏 | ✅ P5-3 skip review on prior failure |
+| **P0** | 案例三残留：`(>C` 代码类型噪声因 transition 模式缺失未被清洗 | ✅ ad33620（新增 `在\w+中执行[：：]` 模式扩展 transition 检测） |
+| **P0** | 案例三残留：VL_REBUILD 路径 splitter 空 option_lines 导致选项无法从题干剥离 | ✅ ad33620（normalize_schema 独立检测选项后回调 _extract_stem 重剥离） |
+| **P0** | 案例三残留：VL_REBUILD 替换 blocks 后 frozen_option_registry 阻塞正则选项提取 | ✅ ad33620（VL_REBUILD 后将 frozen_option_registry 置 None） |
+| **P2** | 代码类型噪声清洗无可观测性（无指标/无 drift 检测/无策略自适应） | ✅ cb33729（NoiseMetrics + KL drift 检测 + 自适应 safe_mode 切换，49 测试） |
 
 ### 6.2 改造路线图（压缩）
 
@@ -386,6 +397,8 @@
   - 全链路 TRACE 日志（6 阶段）
   - 代码结构重建阶段：修复 BUGS 案例三/四的 brace 不闭合 / 语句断裂问题
   - 审核池泄漏修复：前序阶段失败时跳过 review 阶段
+  - **噪声治理 v2：NoiseMetrics + KL drift 检测 + 自适应 safe_mode 切换 (cb33729)**
+  - **案例三修复补完：transition 模式扩展 / 题干重剥离 / VL_REBUILD 冻结清理 (ad33620)**
 
 ⏳ 待处理:
   - AI 补全并行化 (0.5d)
