@@ -2235,7 +2235,7 @@ class ImportPipeline:
                     ph = b0.get("page_height") or ph
                 page_batches.append((1, image_bytes, pw, ph))
 
-            # ── Dual-source strategy: PP-OCRv6 primary, VL fallback ──
+            # ── Dual-source strategy: PP-OCRv4 primary, VL fallback ──
             from app.features.ocr_correction_common import repair_option_structure
             from app.features.question_type_classifier import detect_options_from_text
 
@@ -2262,13 +2262,13 @@ class ImportPipeline:
                     if detect_options_from_text(pp_text):
                         best_text = pp_text
                         logger.info(
-                            "VL_REBUILD page %d: using PP-OCRv6 (%d chars, options detected)",
+                            "VL_REBUILD page %d: using PP-OCRv4 (%d chars, options detected)",
                             page_idx, len(pp_text),
                         )
                 except Exception as exc:
-                    logger.warning("VL_REBUILD PP-OCRv6 failed page %d: %s", page_idx, exc)
+                    logger.warning("VL_REBUILD PP-OCRv4 failed page %d: %s", page_idx, exc)
 
-                # Phase 2: If PP-OCRv6 didn't detect options, call VL as fallback
+                # Phase 2: If PP-OCRv4 didn't detect options, call VL as fallback
                 if not best_text:
                     ctx = {"page_num": page_idx, "filename": f"page_{page_idx}.png", "entry_point": "vl_rebuild"}
                     result = _run_coro_in_loop(
