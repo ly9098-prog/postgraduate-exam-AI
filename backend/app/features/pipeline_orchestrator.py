@@ -2149,10 +2149,10 @@ class ImportPipeline:
         """用 PaddleOCR-VL 重建 blocks（VL_REBUILD 路径）。
 
         当 layout 结构失败时，通过 OCRFixRouter 调用 PaddleOCR-VL 从原始
-        PDF 页面重新识别文字，输出与 normalized_blocks 兼容的格式。
+        页面（PDF 或图片）重新识别文字，输出与 normalized_blocks 兼容的格式。
 
         Args:
-            file_path: PDF 文件路径。
+            file_path: PDF 或图片文件路径。
             original_blocks: 当前 normalized_blocks（用于获取 page_width/page_height）。
             vl_config: PaddleOCR-VL 配置（含 api_key, api_base_url, model_name）。
 
@@ -2163,11 +2163,12 @@ class ImportPipeline:
             logger.warning("VL_REBUILD: no vision config available")
             return None
 
-        try:
-            import fitz
-            doc = fitz.open(file_path, filetype="pdf")
-        except Exception as exc:
-            logger.warning("VL_REBUILD: failed to open PDF for re-render: %s", exc)
+        file_lower = file_path.lower()
+        is_pdf = file_lower.endswith(".pdf")
+        is_image = any(file_lower.endswith(ext) for ext in (".png", ".jpg", ".jpeg"))
+
+        if not is_pdf and not is_image:
+            logger.warning("VL_REBUILD: unsupported file type: %s", file_path)
             return None
 
         try:
@@ -2192,33 +2193,81 @@ class ImportPipeline:
             })
 
             new_blocks: list[dict] = []
-            total_pages = len(doc)
 
-            # Derive page dimensions from original_blocks
-            page_dim: dict[int, tuple[int, int]] = {}
-            for b in original_blocks:
-                p = b.get("page") or b.get("page_index") or 0
-                pw = b.get("page_width") or 800
-                ph = b.get("page_height") or 1200
-                if p not in page_dim:
-                    page_dim[p] = (pw, ph)
+            if is_pdf:
+                # ── PDF path: render each page to image and OCR ──
+                import fitz
+                doc = fitz.open(file_path, filetype="pdf")
+                try:
+                    total_pages = len(doc)
 
-            for page_num in range(total_pages):
-                page_idx = page_num + 1
-                pix = doc[page_num].get_pixmap(dpi=150)
-                png_bytes = pix.tobytes("png")
-                pw, ph = page_dim.get(page_idx, (pix.width, pix.height))
+                    # Derive page dimensions from original_blocks
+                    page_dim: dict[int, tuple[int, int]] = {}
+                    for b in original_blocks:
+                        p = b.get("page") or b.get("page_index") or 0
+                        pw = b.get("page_width") or 800
+                        ph = b.get("page_height") or 1200
+                        if p not in page_dim:
+                            page_dim[p] = (pw, ph)
 
-                ctx = {"page_num": page_idx, "filename": f"page_{page_idx}.png", "entry_point": "vl_rebuild"}
+                    for page_num in range(total_pages):
+                        page_idx = page_num + 1
+                        pix = doc[page_num].get_pixmap(dpi=150)
+                        png_bytes = pix.tobytes("png")
+                        pw, ph = page_dim.get(page_idx, (pix.width, pix.height))
+
+                        ctx = {"page_num": page_idx, "filename": f"page_{page_idx}.png", "entry_point": "vl_rebuild"}
+                        result = _run_coro_in_loop(
+                            router.fix(image=png_bytes, ocr_text="", context=ctx)
+                        )
+
+                        if result.fixed_text:
+                            new_blocks.append({
+                                "page": page_idx,
+                                "page_index": page_idx,
+                                "block_index": len(new_blocks),
+                                "text": result.fixed_text.strip(),
+                                "normalized_text": result.fixed_text.strip(),
+                                "boxes": [],
+                                "page_width": pw,
+                                "page_height": ph,
+                                "source": "vl_rebuild",
+                                "has_boxes": False,
+                            })
+                            logger.info(
+                                "VL_REBUILD page %d: text_len=%d",
+                                page_idx, len(result.fixed_text),
+                            )
+                finally:
+                    doc.close()
+            else:
+                # ── Image path: read file directly and OCR ──
+                import os
+                if not os.path.isfile(file_path):
+                    logger.warning("VL_REBUILD: image file not found: %s", file_path)
+                    return None
+
+                with open(file_path, "rb") as f:
+                    image_bytes = f.read()
+
+                # Use first original block dimensions or sensible defaults
+                pw = 800
+                ph = 1200
+                if original_blocks:
+                    b0 = original_blocks[0]
+                    pw = b0.get("page_width") or pw
+                    ph = b0.get("page_height") or ph
+
+                ctx = {"page_num": 1, "filename": os.path.basename(file_path), "entry_point": "vl_rebuild"}
                 result = _run_coro_in_loop(
-                    router.fix(image=png_bytes, ocr_text="", context=ctx)
+                    router.fix(image=image_bytes, ocr_text="", context=ctx)
                 )
 
                 if result.fixed_text:
                     new_blocks.append({
-                        "page": page_idx,
-                        "page_index": page_idx,
-                        "block_index": len(new_blocks),
+                        "page": 1,
+                        "page_index": 1,
+                        "block_index": 0,
                         "text": result.fixed_text.strip(),
                         "normalized_text": result.fixed_text.strip(),
                         "boxes": [],
@@ -2228,8 +2277,8 @@ class ImportPipeline:
                         "has_boxes": False,
                     })
                     logger.info(
-                        "VL_REBUILD page %d: text_len=%d",
-                        page_idx, len(result.fixed_text),
+                        "VL_REBUILD image: text_len=%d",
+                        len(result.fixed_text),
                     )
 
             if not new_blocks:
@@ -2237,16 +2286,14 @@ class ImportPipeline:
                 return None
 
             logger.info(
-                "VL_REBUILD: %d pages → %d blocks",
-                total_pages, len(new_blocks),
+                "VL_REBUILD: %d blocks from %s",
+                len(new_blocks), "PDF" if is_pdf else "image",
             )
             return new_blocks
 
         except Exception as exc:
             logger.warning("VL_REBUILD failed: %s", exc)
             return None
-        finally:
-            doc.close()
 
     async def _load_ocr_strategies(self, db) -> set[str] | None:
         """从 DB 读取 ocr_strategy_* 配置，返回启用的策略名称集合。
@@ -2800,10 +2847,11 @@ class ImportPipeline:
         if split_mode == "vl_rebuild":
             file_path = _kw.get("file_path")
             vl_config = _kw.get("vision_config")
-            if file_path and vl_config and str(_kw.get("source_type") or "").lower() == "pdf":
+            if file_path and vl_config:
                 logger.info(
                     "VL_REBUILD: restructuring blocks via PaddleOCR-VL "
-                    "(confidence=%.2f, opt_failed=%s)",
+                    "(source=%s, confidence=%.2f, opt_failed=%s)",
+                    _kw.get("source_type", "unknown"),
                     layout_result.get("layout_confidence", 1.0),
                     layout_result.get("option_detection_failed", False),
                 )
@@ -2825,7 +2873,7 @@ class ImportPipeline:
             else:
                 split_mode = "layout_enhanced"
                 warnings.append(
-                    "vl_rebuild: PDF/page_images unavailable, "
+                    "vl_rebuild: file_path or vl_config missing, "
                     "falling back to layout_enhanced"
                 )
 
