@@ -4,6 +4,7 @@
   "description": "BUGS.md 案例一：顺序栈定义+#define+typedef struct+while循环+4个选项。代码块包含#define外无序，触发代码完整性标记。",
   "subject": "408",
   "pipeline_stages": [
+    "full_ocr",
     "normalize",
     "split"
   ],
@@ -20,8 +21,12 @@
   "ground_truth_source": "bugs_doc",
   "tags": [
     "code_integrity",
-    "options"
+    "options",
+    "ocr_pipeline"
   ],
   "last_reviewed": "2026-06-22",
-  "auto_generated_date": "2026-06-22"
+  "auto_generated_date": "2026-06-22",
+  "image_file": "ocr_code_test_10.png",
+  "expected_detect": true,
+  "expected_options_count": 4
 }
