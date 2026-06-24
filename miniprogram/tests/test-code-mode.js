@@ -7,9 +7,13 @@
  *   1. CODE mode routing in buildRenderModel()
  *   2. Raw text preservation (no HTML entities, no escaping)
  *   3. No reconstructCode in render pipeline (code passes through unchanged)
- *   4. Edge cases: code + inline math, mixed content
+ *   4. Render Trace System
+ *   5. Render Invariant Guard
+ *   6. Auto Self-Healing (SAFE_MODE)
+ *   7. Render Regression Diff
+ *   8. Edge cases: code + inline math, mixed content
  */
-var { RENDER_MODE, buildRenderModel, buildRichTextNodes } = require('../utils/stem-render')
+var { RENDER_MODE, buildRenderModel, buildRichTextNodes, renderDiff } = require('../utils/stem-render')
 
 var passed = 0
 var failed = 0
@@ -151,6 +155,136 @@ group('No reconstructCode — broken operators preserved as-is', function () {
   assertEq(result.rawText, code, 'broken operators preserved as-is')
   assert(result.rawText.indexOf('< =') >= 0, '< = not merged to <=')
   assert(result.rawText.indexOf('+ +') >= 0, '+ + not merged to ++')
+})
+
+// ==========================================================================
+// 3.5 Render Trace System
+// ==========================================================================
+
+group('Render Trace — CODE mode trace fields', function () {
+  var code = 'void f() {\n  int x = 1;\n}'
+  var q = { id: 2451, content: { text: code } }
+  var result = buildRenderModel(q, null, mockConfig)
+  var trace = result.renderTrace
+  assert(trace && typeof trace === 'object', 'renderTrace exists on model')
+  assertEq(trace.questionId, 2451, 'trace.questionId matches')
+  assertEq(trace.renderType, RENDER_MODE.CODE, 'trace.renderType is CODE')
+  assert(Array.isArray(trace.pipeline), 'trace.pipeline is array')
+  assertEq(trace.pipeline.join(','), 'detect,route,render', 'pipeline steps correct')
+  assert(typeof trace.codeHashBefore === 'number', 'codeHashBefore is number')
+  assert(typeof trace.codeHashAfter === 'number', 'codeHashAfter is number')
+  assertEq(trace.newlineCountBefore, 2, 'newlineCountBefore = 2')
+  assertEq(trace.stemLengthBefore, code.length, 'stemLengthBefore matches original')
+})
+
+group('Render Trace — non-CODE mode has no code fields', function () {
+  var q = { id: 2452, content: { text: '设 $f(x)=x^2$，求零点' } }
+  var result = buildRenderModel(q, null, mockConfig)
+  var trace = result.renderTrace
+  assert(trace && typeof trace === 'object', 'renderTrace exists on model')
+  assertEq(trace.renderType, RENDER_MODE.RICH_TEXT, 'trace.renderType is RICH_TEXT')
+  assertEq(trace.codeHashBefore, undefined, 'no codeHashBefore for non-CODE')
+  assertEq(trace.newlineCountBefore, undefined, 'no newlineCountBefore for non-CODE')
+})
+
+// ==========================================================================
+// 3.6 Render Invariant Guard — CODE integrity
+// ==========================================================================
+
+group('Invariant Guard — CODE mode has empty html and richTextNodes', function () {
+  var code = 'void f() { int x; }'
+  var q = { id: 2461, content: { text: code } }
+  var result = buildRenderModel(q, null, mockConfig)
+  assertEq(result.mode, RENDER_MODE.CODE, 'is CODE mode')
+  assertEq(result.html, '', 'html is empty')
+  assertEq(result.richTextNodes.length, 0, 'richTextNodes is empty')
+  assert(result.rawText.length > 0, 'rawText is populated')
+})
+
+group('Invariant Guard — CODE rawText has no HTML entities', function () {
+  var code = 'void f() {\n  if (x < 10 && x > 0) x++;\n}'
+  var q = { id: 2462, content: { text: code } }
+  var result = buildRenderModel(q, null, mockConfig)
+  assertEq(result.mode, RENDER_MODE.CODE, 'is CODE mode')
+  assertEq(result.rawText.indexOf('&amp;'), -1, 'no &amp;')
+  assertEq(result.rawText.indexOf('&lt;'), -1, 'no &lt;')
+  assertEq(result.rawText.indexOf('&gt;'), -1, 'no &gt;')
+  assertEq(result.rawText.indexOf('&nbsp;'), -1, 'no &nbsp;')
+  assert(result.rawText.indexOf('<') >= 0, 'raw < is preserved')
+  assert(result.rawText.indexOf('>') >= 0, 'raw > is preserved')
+})
+
+// ==========================================================================
+// 3.7 Auto Self-Healing — SAFE_MODE
+// ==========================================================================
+
+group('SAFE_MODE — code + LaTeX bypass → CODE', function () {
+  var cfg = Object.assign({}, mockConfig, { SAFE_MODE: true })
+  var q = { id: 2471, content: { text: 'int main() { return \\frac{1}{2}; }' } }
+  var result = buildRenderModel(q, null, cfg)
+  assertEq(result.mode, RENDER_MODE.CODE, 'SAFE_MODE bypasses LATEX for code+frac → CODE')
+  assert(result.rawText.length > 0, 'rawText populated')
+  assertEq(result.html, '', 'html is empty')
+})
+
+group('SAFE_MODE — pure code unchanged → CODE', function () {
+  var cfg = Object.assign({}, mockConfig, { SAFE_MODE: true })
+  var q = { id: 2472, content: { text: 'void f() { int x; }' } }
+  var result = buildRenderModel(q, null, cfg)
+  assertEq(result.mode, RENDER_MODE.CODE, 'pure code → CODE even in SAFE_MODE')
+  assertEq(result.html, '', 'html is empty')
+})
+
+group('SAFE_MODE — plain text unchanged → RICH_TEXT', function () {
+  var cfg = Object.assign({}, mockConfig, { SAFE_MODE: true })
+  var q = { id: 2473, content: { text: '设 $f(x)=x^2$，求零点' } }
+  var result = buildRenderModel(q, null, cfg)
+  assertEq(result.mode, RENDER_MODE.RICH_TEXT, 'non-code plain text → RICH_TEXT in SAFE_MODE')
+})
+
+// ==========================================================================
+// 3.8 Render Regression Diff
+// ==========================================================================
+
+group('renderDiff — identical text → no issues', function () {
+  var code = 'void f() {\n  int x = 1;\n}'
+  var issues = renderDiff(code, code)
+  assertEq(issues.length, 0, 'identical text → 0 issues')
+})
+
+group('renderDiff — indent mismatch detected', function () {
+  var orig = 'void f() {\n  int x = 1;\n}'
+  var rend = 'void f() {\n    int x = 1;\n}'
+  var issues = renderDiff(orig, rend)
+  var indentIssues = issues.filter(function (i) { return i.type === 'INDENT_MISMATCH' })
+  assert(indentIssues.length >= 1, 'indent mismatch caught (got ' + indentIssues.length + ')')
+})
+
+group('renderDiff — newline mismatch detected', function () {
+  var orig = 'line1\nline2\nline3'
+  var rend = 'line1\nline2'
+  var issues = renderDiff(orig, rend)
+  var newlineIssues = issues.filter(function (i) { return i.type === 'NEWLINE_MISMATCH' })
+  assert(newlineIssues.length >= 1, 'newline mismatch caught')
+})
+
+group('renderDiff — content mismatch detected', function () {
+  var orig = 'int x = 1;'
+  var rend = 'int y = 2;'
+  var issues = renderDiff(orig, rend)
+  var contentIssues = issues.filter(function (i) { return i.type === 'CONTENT_MISMATCH' })
+  assert(contentIssues.length >= 1, 'content mismatch caught')
+})
+
+group('renderDiff — internal space diff allowed (ignored)', function () {
+  // Space differences within content are allowed, but indent is not
+  var orig = 'int  x  =  1;'
+  var rend = 'int x = 1;'
+  var issues = renderDiff(orig, rend)
+  var contentIssues = issues.filter(function (i) { return i.type === 'CONTENT_MISMATCH' })
+  var indentIssues = issues.filter(function (i) { return i.type === 'INDENT_MISMATCH' })
+  assertEq(contentIssues.length, 0, 'internal space diff allowed: content normalized')
+  assertEq(indentIssues.length, 0, 'no indent change')
 })
 
 // ==========================================================================
