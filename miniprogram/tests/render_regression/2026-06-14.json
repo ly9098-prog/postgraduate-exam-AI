@@ -17,8 +17,9 @@
     "answer": "A"
   },
   "expected": {
-    "mode": "RICH_TEXT",
-    "hasHtml": false,
-    "hasRichTextNodes": true
+    "_bug": "2026-06-14 — originally RICH_TEXT, now CODE since CODE mode preserves whitespace via mp-html",
+    "mode": "CODE",
+    "hasHtml": true,
+    "hasRichTextNodes": false
   }
 }

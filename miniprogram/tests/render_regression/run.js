@@ -57,7 +57,8 @@ files.forEach(function (file) {
   var activeCount = [
     result.mode === RENDER_MODE.RICH_TEXT && result.richTextNodes.length > 0,
     result.mode === RENDER_MODE.LATEX && result.html.length > 0,
-    result.mode === RENDER_MODE.SEGMENTS && result.segments.length > 0
+    result.mode === RENDER_MODE.SEGMENTS && result.segments.length > 0,
+    result.mode === RENDER_MODE.CODE && result.html.length > 0
   ].filter(Boolean).length
   assertEq(activeCount, 1, 'exactly one render root active')
 })

@@ -43,7 +43,8 @@ var { reconstructCode, containsCode } = require('./code-reconstructor')
 var RENDER_MODE = {
   RICH_TEXT: 'RICH_TEXT',
   LATEX: 'LATEX',
-  SEGMENTS: 'SEGMENTS'
+  SEGMENTS: 'SEGMENTS',
+  CODE: 'CODE',
 }
 
 // ---- render guard ----
@@ -329,6 +330,21 @@ function _buildRichTextNodes(text) {
   return [{ name: 'p', attrs: {}, children: children }]
 }
 
+/**
+ * Build HTML with whitespace preserved for code content.
+ * Uses &nbsp; for leading spaces and consecutive spaces to prevent
+ * rich-text whitespace collapse. Output is safe for mp-html renderer.
+ */
+function _buildCodeHtml(text) {
+  var lines = String(text || '').split('\n')
+  var html = lines.map(function (line) {
+    var escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    if (/(```|[{};=]|\/\/)/.test(line)) return escaped.replace(/\t/g, '    ').replace(/ /g, '&nbsp;')
+    return escaped.replace(/^(\s+)/, function (ws) { return '&nbsp;'.repeat(ws.length) })
+  }).join('<br>')
+  return html
+}
+
 // ---- hash ----
 
 function _hashStem(text) {
@@ -348,7 +364,8 @@ function _devAssertSinglePath(cleanedStem, content, resultMode) {
   if (appConfig.enableMathImage && content && content.render_mode === 'segments') modeFlags.push('SEGMENTS')
   var hasLatex = /\\[a-zA-Z]+/.test(cleanedStem) || /\$\$[\s\S]*?\$\$/.test(cleanedStem)
   if (hasLatex) modeFlags.push('LATEX')
-  if (!hasLatex && _needsRichRender(cleanedStem)) modeFlags.push('RICH_TEXT')
+  // CODE mode is explicit — don't flag it as competing with RICH_TEXT
+  if (!hasLatex && !containsCode(cleanedStem) && _needsRichRender(cleanedStem)) modeFlags.push('RICH_TEXT')
   // Note: TEXT_PLAIN is intentionally excluded — it's folded into RICH_TEXT path
 
   if (modeFlags.length > 1) {
@@ -379,10 +396,18 @@ function buildRenderModel(q, options, cfg) {
   var stemText = (content && (content.text || content.stem)) || ''
   var sourceStemText = stemText || (content && _segmentsToText(content.segments)) || ''
   var cleanedStem = _cleanStemText(sourceStemText, options, optionKeys)
-  // Code structure reconstruction: fix OCR-damaged code before rendering
-  // (operator repair, structure recovery, indentation)
+  // Code structure reconstruction: fix OCR-damaged code before rendering.
+  // Only run full reconstruction on clearly compressed code (no newlines,
+  // broken operators, or merged statements). Well-formatted code from the
+  // database must NOT be restructured — its indentation is already correct.
   if (containsCode(cleanedStem)) {
-    cleanedStem = reconstructCode(cleanedStem)
+    var isCompressed = cleanedStem.indexOf('\n') === -1
+    var hasBrokenOps = /(?<!\w)[*!=<>]+\s+[=*]/.test(cleanedStem)
+    if (isCompressed || hasBrokenOps) {
+      cleanedStem = reconstructCode(cleanedStem)
+    }
+    // If isCompressed is false AND hasBrokenOps is false, the code is
+    // already well-formatted — skip reconstruction entirely.
   }
   var stemHash = _hashStem(cleanedStem)
 
@@ -405,8 +430,14 @@ function buildRenderModel(q, options, cfg) {
       html = _textToHtml(cleanedStem)
       richTextNodes = []
       segments = []
+    } else if (containsCode(cleanedStem)) {
+      // Priority 3: CODE (mp-html with whitespace-preserved HTML)
+      mode = RENDER_MODE.CODE
+      html = _buildCodeHtml(cleanedStem)
+      richTextNodes = []
+      segments = []
     } else {
-      // Priority 3: RICH_TEXT (native <rich-text>) — all non-LaTeX, non-segments
+      // Priority 4: RICH_TEXT (native <rich-text>) — all non-LaTeX, non-code, non-segments
       mode = RENDER_MODE.RICH_TEXT
       richTextNodes = _buildRichTextNodes(plainStem || cleanedStem)
       html = ''
@@ -477,6 +508,7 @@ module.exports = {
   cleanStemText: _cleanStemText,
   textToHtml: _textToHtml,
   buildRichTextNodes: _buildRichTextNodes,
+  buildCodeHtml: _buildCodeHtml,
   segmentsToText: _segmentsToText,
   textToSegments: _textToSegments
 }
