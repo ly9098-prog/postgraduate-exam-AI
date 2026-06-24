@@ -679,6 +679,7 @@ Page({
     let activePaths = 0
     if (renderModel.mode === 'SEGMENTS') activePaths++
     if (renderModel.mode === 'RICH_TEXT') activePaths++
+    if (renderModel.mode === 'CODE') activePaths++
     if (renderModel.mode === 'LATEX') activePaths++
     if (activePaths !== 1) {
       console.error('[RENDER_INVARIANT] _renderModel.mode="' + renderModel.mode + '" yields ' + activePaths + ' active paths (expected 1)')

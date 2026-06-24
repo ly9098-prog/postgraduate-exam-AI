@@ -41,7 +41,7 @@ var _CODE_SIGNALS = [
   'struct', 'typedef', 'enum', 'union',
   'int ', 'void ', 'char ', 'float ', 'double ',
   'bool', 'const', 'static', 'sizeof',
-  '->', '::', '{', '}',
+  '->', '::', '{', '}', ';',
 ]
 
 // ---- Keywords specific to 408 DS ----

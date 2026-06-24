@@ -1359,3 +1359,13 @@
     transform: none !important;
   }
 }
+
+/* ==================== Code block (CODE render mode) ==================== */
+.code-block {
+  white-space: pre-wrap;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 28rpx;
+  line-height: 1.7;
+  word-break: break-all;
+  overflow-x: auto;
+}
