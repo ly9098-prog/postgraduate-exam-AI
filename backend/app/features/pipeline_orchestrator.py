@@ -56,6 +56,7 @@ from app.features.pipeline_stages.repair_stage import (
     run_ai_validation_stage,
     run_repair_stage,
 )
+from app.features.pipeline_stages.code_structure_stage import run_code_structure_stage
 from app.features.pipeline_stages.review_stage import run_review_stage
 from app.features.pipeline_stages.structure_freeze_stage import run_structure_freeze_stage
 from app.features.pipeline_stages.table_detect_stage import run_table_detect_stage
@@ -1058,6 +1059,7 @@ def _build_diagnostics(data: dict, stages: dict | None = None) -> dict:
             "ocr_correction": _summarize_ocr_diffs(
                 data.get("ocr_correction_diagnostics", {}).get("corrections", [])
             ),
+            "code_structure": data.get("fix_actions", []),
             "ai_repair": data.get("repair_diffs", []),
             "ai_repair_stats": data.get("repair_stats", {}),
         },
@@ -1149,6 +1151,11 @@ def _update_stage_metrics(stage, data: dict, result: dict) -> None:
     elif name == "normalize_schema":
         stage.input_count = len(data.get("questions") or [])
         stage.output_count = len(result.get("questions") or [])
+    # ── code_structure_reconstruct ──
+    elif name == "code_structure_reconstruct":
+        stage.input_count = len(data.get("questions") or [])
+        stage.output_count = len(result.get("questions") or [])
+        stage.ai_calls = result.get("reconstructed_count", 0)
     # ── batch_validation ──
     elif name == "batch_validation":
         stage.input_count = len(data.get("questions") or [])
@@ -1525,6 +1532,7 @@ class PipelineStage:
             "split": "parse",
             "match": "parse",
             "normalize_schema": "parse",
+            "code_structure_reconstruct": "parse",
             "batch_validation": "parse",
             "batch_dedup": "parse",
             "repair": "ai_correct",
@@ -1712,6 +1720,7 @@ def _restore_from_artifacts(
                              "analyze_structure", "classify_pages",
                              "structure_freeze", "split",
                              "match", "normalize_schema",
+                             "code_structure_reconstruct",
                              "classify_questions",
                              "batch_validation", "batch_dedup",
                              "repair", "ai_validation", "similarity_match"}
@@ -1721,6 +1730,7 @@ def _restore_from_artifacts(
                              "analyze_structure", "classify_pages",
                              "structure_freeze", "split",
                              "match", "normalize_schema",
+                             "code_structure_reconstruct",
                              "classify_questions",
                              "batch_validation", "batch_dedup",
                              "repair", "ai_validation", "similarity_match",
@@ -1731,6 +1741,7 @@ def _restore_from_artifacts(
                              "analyze_structure", "classify_pages",
                              "structure_freeze", "split",
                              "match", "normalize_schema",
+                             "code_structure_reconstruct",
                              "classify_questions",
                              "batch_validation", "batch_dedup",
                              "repair", "ai_validation", "similarity_match",
@@ -1801,6 +1812,9 @@ class ImportPipeline:
             ("match", self._run_match),
             ("normalize_schema", self._run_normalize_schema),
         ])
+        # Code structure reconstruction stage: fix code integrity issues before AI repair
+        if self.options.get("enable_code_structure_reconstruct", True):
+            stage_specs.append(("code_structure_reconstruct", self._run_code_structure_reconstruct))
         # Layer 1 Gate: enforce question type classification (strict has_options)
         stage_specs.append(("classify_questions", self._run_classify_questions))
         stage_specs.append(("batch_validation", self._run_batch_validation))
@@ -3239,6 +3253,17 @@ class ImportPipeline:
             result["warnings"] = existing_warnings
 
         return result
+
+    async def _run_code_structure_reconstruct(self, questions: list[dict], options: dict, **_kw) -> dict:
+        """Stage 5.5: reconstruct code structure for questions with code integrity issues.
+
+        Runs between normalize_schema and classify_questions. Only processes
+        questions with code integrity flags (code_brace_unbalanced, etc.).
+        """
+        return await run_code_structure_stage(
+            questions, options,
+            db=_kw.get("db"),
+        )
 
     def _run_classify_questions(self, questions: list[dict], **_kw) -> dict:
         """Layer 1 Gate: enforce question type classification on all questions.
