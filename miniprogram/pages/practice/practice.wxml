@@ -177,7 +177,7 @@
       bindtouchend="onTouchEnd"
     >
       <!-- 题目卡片 -->
-      <view class="q-wrap {{animClass}}" wx:if="{{currentQuestion}}">
+      <view class="q-wrap {{animClass}}" wx:if="{{currentQuestion}}" wx:key="{{currentIndex}}-{{_renderKey}}">
         <view class="q-card-head">
           <view>
             <text class="q-badge">{{currentQuestion.question_type === 'multi_blank_choice' || currentQuestion._hasBlankOptionGroups ? '多空选择题' : currentQuestion.question_type === 'multiple_choice' ? '多选题' : currentQuestion.question_type === 'true_false' || currentQuestion.question_type === 'judgement' ? '判断题' : '单选题'}}</text>
@@ -185,11 +185,11 @@
           </view>
           <text class="q-card-index">{{currentIndex + 1}}</text>
         </view>
-        <block wx:if="{{currentQuestion._renderModel.mode === 'SEGMENTS'}}">
+        <block wx:if="{{currentQuestion._renderModel.mode === 'SEGMENTS'}}" wx:key="segments">
           <math-question segments="{{currentQuestion._renderModel.segments}}" />
         </block>
-        <rich-text wx:elif="{{currentQuestion._renderModel.mode === 'RICH_TEXT'}}" class="q-content" nodes="{{currentQuestion._renderModel.richTextNodes}}"></rich-text>
-        <mp-html wx:elif="{{currentQuestion._renderModel.mode === 'LATEX'}}" class="q-content" content="{{currentQuestion._renderModel.html}}" lazy-load></mp-html>
+        <rich-text wx:elif="{{currentQuestion._renderModel.mode === 'RICH_TEXT'}}" wx:key="rich-text" class="q-content" nodes="{{currentQuestion._renderModel.richTextNodes}}"></rich-text>
+        <mp-html wx:elif="{{currentQuestion._renderModel.mode === 'LATEX'}}" wx:key="latex" class="q-content" content="{{currentQuestion._renderModel.html}}" lazy-load></mp-html>
 
         <!-- 多空选择题选项 -->
         <view class="blank-options" wx:if="{{currentQuestion._hasBlankOptionGroups}}">
