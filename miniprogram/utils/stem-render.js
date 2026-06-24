@@ -38,7 +38,7 @@
 
 var appConfig = require('../config')
 var { formatInlineMathText, replaceSimpleLatexCommands } = require('./math-format')
-var { reconstructCode, containsCode } = require('./code-reconstructor')
+var { containsCode } = require('./code-reconstructor')
 
 var RENDER_MODE = {
   RICH_TEXT: 'RICH_TEXT',
@@ -330,21 +330,6 @@ function _buildRichTextNodes(text) {
   return [{ name: 'p', attrs: {}, children: children }]
 }
 
-/**
- * Build HTML with whitespace preserved for code content.
- * Uses &nbsp; for leading spaces and consecutive spaces to prevent
- * rich-text whitespace collapse. Output is safe for mp-html renderer.
- */
-function _buildCodeHtml(text) {
-  var lines = String(text || '').split('\n')
-  var html = lines.map(function (line) {
-    var escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    if (/(```|[{};=]|\/\/)/.test(line)) return escaped.replace(/\t/g, '    ').replace(/ /g, '&nbsp;')
-    return escaped.replace(/^(\s+)/, function (ws) { return '&nbsp;'.repeat(ws.length) })
-  }).join('<br>')
-  return html
-}
-
 // ---- hash ----
 
 function _hashStem(text) {
@@ -396,22 +381,9 @@ function buildRenderModel(q, options, cfg) {
   var stemText = (content && (content.text || content.stem)) || ''
   var sourceStemText = stemText || (content && _segmentsToText(content.segments)) || ''
   var cleanedStem = _cleanStemText(sourceStemText, options, optionKeys)
-  // Code structure reconstruction: fix OCR-damaged code before rendering.
-  // Only run full reconstruction on clearly compressed code (no newlines,
-  // broken operators, or merged statements). Well-formatted code from the
-  // database must NOT be restructured — its indentation is already correct.
-  if (containsCode(cleanedStem)) {
-    var isCompressed = cleanedStem.indexOf('\n') === -1
-    var hasBrokenOps = /(?<!\w)[*!=<>]+\s+[=*]/.test(cleanedStem)
-    if (isCompressed || hasBrokenOps) {
-      cleanedStem = reconstructCode(cleanedStem)
-    }
-    // If isCompressed is false AND hasBrokenOps is false, the code is
-    // already well-formatted — skip reconstruction entirely.
-  }
   var stemHash = _hashStem(cleanedStem)
 
-  var mode, richTextNodes, html, segments
+  var mode, richTextNodes, html, segments, rawText
 
   // Priority 1: SEGMENTS (math-question with pre-rendered formula images)
   if (effectiveConfig.enableMathImage && content && content.render_mode === 'segments') {
@@ -431,9 +403,10 @@ function buildRenderModel(q, options, cfg) {
       richTextNodes = []
       segments = []
     } else if (containsCode(cleanedStem)) {
-      // Priority 3: CODE (mp-html with whitespace-preserved HTML)
+      // Priority 3: CODE (zero-HTML raw text with white-space: pre)
       mode = RENDER_MODE.CODE
-      html = _buildCodeHtml(cleanedStem)
+      rawText = cleanedStem
+      html = ''
       richTextNodes = []
       segments = []
     } else {
@@ -452,7 +425,8 @@ function buildRenderModel(q, options, cfg) {
     mode: mode,
     richTextNodes: richTextNodes || [],
     html: html || '',
-    segments: segments || []
+    segments: segments || [],
+    rawText: rawText || ''
   }
 
   if (effectiveConfig.DEV) {
@@ -508,7 +482,6 @@ module.exports = {
   cleanStemText: _cleanStemText,
   textToHtml: _textToHtml,
   buildRichTextNodes: _buildRichTextNodes,
-  buildCodeHtml: _buildCodeHtml,
   segmentsToText: _segmentsToText,
   textToSegments: _textToSegments
 }

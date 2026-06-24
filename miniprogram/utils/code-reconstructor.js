@@ -182,45 +182,6 @@ function _splitSemicolons(text) {
 }
 
 /**
- * Phase 3: Apply brace-depth-based indentation (4 spaces).
- */
-function _indentCode(text) {
-  if (!text || !text.trim()) return text
-
-  var lines = text.split('\n')
-  var result = []
-  var depth = 0
-  var indent = '    '
-
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i]
-    var stripped = line.trim()
-    if (!stripped) {
-      result.push('')
-      continue
-    }
-
-    // Count braces
-    var openCount = (stripped.match(/\{/g) || []).length
-    var closeCount = (stripped.match(/\}/g) || []).length
-
-    // Closing braces: dedent before producing the line
-    var actualDepth = depth
-    if (closeCount > 0 && stripped.charAt(0) === '}') {
-      actualDepth = Math.max(0, depth - closeCount)
-    }
-
-    var indentedLine = indent.repeat(actualDepth) + stripped
-    result.push(indentedLine)
-
-    // Update depth for subsequent lines
-    depth = Math.max(0, depth + openCount - closeCount)
-  }
-
-  return result.join('\n')
-}
-
-/**
  * Full pipeline: reconstruct damaged code text.
  *
  * @param {string} text - The damaged code text
@@ -252,11 +213,6 @@ function reconstructCode(text, opts) {
   if (fixStructure) {
     result = _recoverCompressedStructure(result)
     result = _splitSemicolons(result)
-  }
-
-  // Phase 3: Apply indentation
-  if (fixIndent) {
-    result = _indentCode(result)
   }
 
   return result

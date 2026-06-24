@@ -47,6 +47,12 @@ files.forEach(function (file) {
     assertEq(result.html, '', 'html is empty')
   }
 
+  if (fixture.expected.hasRawText) {
+    assert(result.rawText.length > 0, 'rawText is populated')
+  } else {
+    assertEq(result.rawText, '', 'rawText is empty')
+  }
+
   if (fixture.expected.hasRichTextNodes) {
     assert(result.richTextNodes.length > 0, 'richTextNodes is populated')
   } else {
@@ -58,7 +64,7 @@ files.forEach(function (file) {
     result.mode === RENDER_MODE.RICH_TEXT && result.richTextNodes.length > 0,
     result.mode === RENDER_MODE.LATEX && result.html.length > 0,
     result.mode === RENDER_MODE.SEGMENTS && result.segments.length > 0,
-    result.mode === RENDER_MODE.CODE && result.html.length > 0
+    result.mode === RENDER_MODE.CODE && result.rawText.length > 0
   ].filter(Boolean).length
   assertEq(activeCount, 1, 'exactly one render root active')
 })
