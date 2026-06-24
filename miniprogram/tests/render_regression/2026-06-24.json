@@ -17,9 +17,10 @@
     "answer": "B"
   },
   "expected": {
-    "_bug": "2026-06-24 — CODE mode preserves indentation; html contains &nbsp; for spaces",
+    "_bug": "2026-06-24, updated — CODE mode now uses zero-HTML raw text (no more mp-html + &nbsp;)",
     "mode": "CODE",
-    "hasHtml": true,
+    "hasHtml": false,
+    "hasRawText": true,
     "hasRichTextNodes": false
   }
 }

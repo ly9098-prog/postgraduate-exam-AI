@@ -1261,12 +1261,18 @@
   }
 }
 
-/* ==================== Code block (CODE render mode) ==================== */
-.code-block {
-  white-space: pre-wrap;
+/* ==================== Code block (CODE render mode — zero HTML) ==================== */
+.code-wrapper {
+  background: #F5F6FA;
+  border-radius: 12rpx;
+  padding: 24rpx 20rpx;
+  overflow-x: auto;
+  margin: 16rpx 0;
+}
+.code-text {
+  white-space: pre;
   font-family: 'Courier New', Courier, monospace;
   font-size: 28rpx;
   line-height: 1.7;
-  word-break: break-all;
-  overflow-x: auto;
+  color: #1A1A2E;
 }
