@@ -332,13 +332,71 @@ function _buildRichTextNodes(text) {
 
 // ---- hash ----
 
-function _hashStem(text) {
+function _hashString(str) {
   var h = 0
-  var s = String(text || '')
+  var s = String(str || '')
   for (var i = 0; i < s.length; i++) {
     h = ((h << 5) - h + s.charCodeAt(i)) | 0
   }
   return h
+}
+
+function _hashStem(text) { return _hashString(text) }
+
+// ---- render regression diff ----
+
+function _renderDiff(original, rendered) {
+  var issues = []
+  if (!original && !rendered) return issues
+  var origLines = String(original || '').split('\n')
+  var rendLines = String(rendered || '').split('\n')
+
+  if (origLines.length !== rendLines.length) {
+    issues.push({
+      type: 'NEWLINE_MISMATCH',
+      detail: 'Line count: ' + origLines.length + ' → ' + rendLines.length,
+    })
+  }
+
+  var maxLines = Math.min(origLines.length, rendLines.length)
+  for (var i = 0; i < maxLines; i++) {
+    var orig = origLines[i]
+    var rend = rendLines[i]
+
+    // Check indent (leading whitespace)
+    var origIndent = orig.match(/^(\s*)/)[1]
+    var rendIndent = rend.match(/^(\s*)/)[1]
+    if (origIndent !== rendIndent) {
+      issues.push({
+        type: 'INDENT_MISMATCH',
+        line: i + 1,
+        detail: 'indent ' + JSON.stringify(origIndent) + ' → ' + JSON.stringify(rendIndent),
+      })
+    }
+
+    // Check content (after stripping indent and normalizing internal whitespace)
+    var origContent = orig.slice(origIndent.length).replace(/\s+$/, '').replace(/\s+/g, ' ')
+    var rendContent = rend.slice(rendIndent.length).replace(/\s+$/, '').replace(/\s+/g, ' ')
+    if (origContent !== rendContent) {
+      issues.push({
+        type: 'CONTENT_MISMATCH',
+        line: i + 1,
+        detail: JSON.stringify(origContent) + ' → ' + JSON.stringify(rendContent),
+      })
+    }
+  }
+
+  return issues
+}
+
+function _reportDiff(diffIssues, questionId) {
+  if (!appConfig.DEV || diffIssues.length === 0) return
+  console.warn(
+    '[RENDER_REGRESSION] CODE diff found ' + diffIssues.length + ' issue(s) for q' + questionId + '\n' +
+    diffIssues.map(function (d) {
+      return '  [' + d.type + '] line=' + (d.line || '-') + ' ' + d.detail
+    }).join('\n')
+  )
 }
 
 // ---- DEV assertion ----
@@ -360,6 +418,55 @@ function _devAssertSinglePath(cleanedStem, content, resultMode) {
       '  source tail: ' + cleanedStem.slice(-80)
     )
   }
+}
+
+// ---- render invariant assert ----
+
+function _assertCodeRenderIntegrity(mode, rawText, html, richTextNodes) {
+  if (!appConfig.DEV) return
+  if (mode !== RENDER_MODE.CODE) return
+
+  // CODE_RENDER_VIOLATION: CODE mode must NOT populate html or richTextNodes
+  if (html.length > 0 || richTextNodes.length > 0) {
+    console.error(
+      '[CODE_RENDER_VIOLATION] CODE mode has non-empty html or richTextNodes\n' +
+      '  html.length: ' + html.length + '\n' +
+      '  richTextNodes.length: ' + richTextNodes.length + '\n' +
+      '  CODE must render via <text> only (zero-HTML path)'
+    )
+  }
+
+  // CODE_HTML_LEAK: rawText must not contain HTML entities
+  var text = String(rawText || '')
+  if (/&(?:nbsp|amp|lt|gt|#\d+);/.test(text)) {
+    console.error(
+      '[CODE_HTML_LEAK] CODE rawText contains HTML entities\n' +
+      '  rawText tail: ' + text.slice(-80) + '\n' +
+      '  CODE must preserve raw characters, not HTML-encoded forms'
+    )
+  }
+}
+
+// ---- render trace ----
+
+function _buildRenderTrace(questionId, sourceStem, mode, cleanedStem) {
+  var trace = {
+    questionId: questionId,
+    timestamp: Date.now(),
+    renderType: mode,
+    pipeline: ['detect', 'route', 'render'],
+  }
+  if (mode === RENDER_MODE.CODE) {
+    var before = String(sourceStem || '')
+    var after = String(cleanedStem || '')
+    trace.codeHashBefore = _hashString(before)
+    trace.codeHashAfter = _hashString(after)
+    trace.newlineCountBefore = (before.match(/\n/g) || []).length
+    trace.newlineCountAfter = (after.match(/\n/g) || []).length
+    trace.stemLengthBefore = before.length
+    trace.stemLengthAfter = after.length
+  }
+  return trace
 }
 
 // ---- public API ----
@@ -396,7 +503,10 @@ function buildRenderModel(q, options, cfg) {
     var plainStem = _toPlainInlineMathText(cleanedStem) || _toPlainSimpleInlineMathText(cleanedStem)
     var hasLatex = /\\[a-zA-Z]+/.test(cleanedStem) || /\$\$[\s\S]*?\$\$/.test(cleanedStem)
 
-    if (hasLatex) {
+    // SAFE_MODE: bypass LATEX for code stems to prevent HTML contamination
+    var selfHealCode = effectiveConfig.SAFE_MODE && containsCode(cleanedStem)
+
+    if (hasLatex && !selfHealCode) {
       // Priority 2: LATEX (mp-html + KaTeX) — complex LaTeX
       mode = RENDER_MODE.LATEX
       html = _textToHtml(cleanedStem)
@@ -409,6 +519,11 @@ function buildRenderModel(q, options, cfg) {
       html = ''
       richTextNodes = []
       segments = []
+      // Render regression diff: verify cleanedStem against sourceStemText
+      var diffIssues = _renderDiff(sourceStemText, cleanedStem)
+      if (diffIssues.length > 0) {
+        _reportDiff(diffIssues, q && q.id)
+      }
     } else {
       // Priority 4: RICH_TEXT (native <rich-text>) — all non-LaTeX, non-code, non-segments
       mode = RENDER_MODE.RICH_TEXT
@@ -419,14 +534,29 @@ function buildRenderModel(q, options, cfg) {
   }
 
   _devAssertSinglePath(cleanedStem, content, mode)
+  _assertCodeRenderIntegrity(mode, cleanedStem, html, richTextNodes)
   _renderGuardCheck(q && q.id, stemHash, mode)
+
+  var renderTrace = _buildRenderTrace(q && q.id, sourceStemText, mode, cleanedStem)
 
   var model = {
     mode: mode,
     richTextNodes: richTextNodes || [],
     html: html || '',
     segments: segments || [],
-    rawText: rawText || ''
+    rawText: rawText || '',
+    renderTrace: renderTrace,
+  }
+
+  if (effectiveConfig.DEV && mode === RENDER_MODE.CODE) {
+    if (renderTrace.codeHashBefore !== renderTrace.codeHashAfter) {
+      console.warn(
+        '[RENDER_TRACE] CODE hash changed for q' + (q && q.id) + '\n' +
+        '  hashBefore: ' + renderTrace.codeHashBefore + '\n' +
+        '  hashAfter:  ' + renderTrace.codeHashAfter + '\n' +
+        '  newlines:   ' + renderTrace.newlineCountBefore + ' → ' + renderTrace.newlineCountAfter
+      )
+    }
   }
 
   if (effectiveConfig.DEV) {
@@ -477,6 +607,12 @@ module.exports = {
   // Shared text processing helpers
   needsRichRender: _needsRichRender,
   stripLeadingOptionLabel: _stripLeadingOptionLabel,
+
+  // Hash utility for trace comparison
+  computeCodeHash: _hashString,
+
+  // Render regression diff
+  renderDiff: _renderDiff,
 
   // Exported for tests and page-level use
   cleanStemText: _cleanStemText,
