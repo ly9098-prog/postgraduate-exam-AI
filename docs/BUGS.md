@@ -362,11 +362,12 @@ countLeaf(T->rchild);
 }
 ```
 
-##### 案例三（✅ 已修复 — code structure reconstruction）
+##### 案例三（✅ 已修复 — 补充过渡区模式 + 选项重剥离 + VL_REBUILD 冻结注册表清除）
 
-> 修复提交：`e91a020` — 新增代码结构重建管道阶段（code_structure_reconstruct）。
-> LLM 专用 prompt 允许修复 `{}` 花括号闭合、断行拼接、OCR 符号错误（`= =`→`==`、`- >`→`->`），
-> 在 AI repair 之前修复代码完整性，解决 AI repair prompt 规则 10 "不得修改 {}" 导致的 brace 无法修复问题。
+> 修复内容：
+> - `code_language_noise_layer.py`: `_TRANSITION_PATTERNS` 新增 `在\w+中执行[：:]` 模式，使"在单链表中执行:"能触发过渡区检测，`(>C` 噪声行不再被遗漏。
+> - `question_normalizer.py`: 当 splitter 因 VL_REBUILD 路径未提供 `option_lines` 但 normalize_schema 独立检测到选项时，重新剥离题干中的选项文字。
+> - `pipeline_orchestrator.py`: VL_REBUILD 替换 blocks 后清除 `frozen_option_registry`，防止冻结注册表阻塞 splitter 从重建文本中提取选项。
 
 ###### 原题
 
@@ -2108,7 +2109,7 @@ D. s = p; p->next = NULL
 |------|-------------|------|----------|
 | 案例一（栈定义+while循环） | `021_bugs_case1_stack` | `backend/tests/ocr_regression/cases/021_bugs_case1_stack/` | `#define` 外无序触发代码完整性告警 |
 | 案例二（BiTree树递归） | `022_bugs_case2_treerecursion` | `backend/tests/ocr_regression/cases/022_bugs_case2_treerecursion/` | VL_REBUILD PDF gate（Fix B `be03159`） |
-| 案例三（单链表while循环） | `023_bugs_case3_linkedlist` | `backend/tests/ocr_regression/cases/023_bugs_case3_linkedlist/` | VL 输出质量→双源策略（`62f4870`）；brace 不闭合→代码结构重建（`e91a020`） |
+| 案例三（单链表while循环） | `023_bugs_case3_linkedlist` | `backend/tests/ocr_regression/cases/023_bugs_case3_linkedlist/` | VL 输出质量→双源策略（`62f4870`）；brace 不闭合→代码结构重建（`e91a020`）；`(>C` 噪声+选项残留+VL_REBUILD 冻结注册表（本阶段三联合修复） |
 | 案例四（for循环） | `024_bugs_case4_forloop` | `backend/tests/ocr_regression/cases/024_bugs_case4_forloop/` | 管道通过基线；`}` 断裂+brace 告警→代码结构重建（`e91a020`） |
 | 案例五（链表插入+typedef） | `025_bugs_case5_listinsert` | `backend/tests/ocr_regression/cases/025_bugs_case5_listinsert/` | VL/PP-OCRv6 B行损坏但≥2 key（双源策略 `62f4870`） |
 

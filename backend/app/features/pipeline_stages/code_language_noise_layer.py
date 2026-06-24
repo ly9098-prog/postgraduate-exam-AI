@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 # Keywords that signal a transition from natural language into code.
 _TRANSITION_PATTERNS = re.compile(
     r"(?:"
+    r"在\w+中执行[：:]|"      # 在单链表中执行：/在循环中执行:
     r"执行如下\w*代码|"       # 执行如下Java代码 / 执行如下C代码
     r"下列\w*程序|"           # 下列C程序 / 下列Java程序
     r"代码如下|"

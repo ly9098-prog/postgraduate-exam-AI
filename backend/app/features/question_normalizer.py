@@ -678,6 +678,23 @@ def normalize_question(
         tracer.mark_options_recovery("options_extraction", "blank_groups", len(options), 1.0)
     elif _has_options_classified and options:
         tracer.mark_options_recovery("options_extraction", "classifier_gate", len(options), 1.0)
+
+    # ── Stem re-strip guard ────────────────────────────────────────────
+    # When the splitter didn't extract option_lines (e.g. VL_REBUILD path)
+    # but normalize_schema independently detected options, go back and
+    # strip the option text from the stem. Without this, options like
+    # "A.找到头结点" remain embedded in the stem text.
+    if not option_lines and options and len(options) >= 2:
+        fake_option_lines = {o["key"]: o["text"] for o in options}
+        clean_stem = _extract_stem(raw_text, fake_option_lines, blank_option_groups)
+        if clean_stem and len(clean_stem) < len(stem):
+            logger.info(
+                "[OPTIONS-STRIP] q%s: re-stripped stem (option_lines was empty, "
+                "fallback found %d options), removed %d chars",
+                qnum, len(options), len(stem) - len(clean_stem),
+            )
+            stem = clean_stem
+
     answer_raw = matched.get("answer")
     explanation_raw = matched.get("explanation", "")
     section_type = raw_question.get("section_type")
