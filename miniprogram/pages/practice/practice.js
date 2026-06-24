@@ -204,6 +204,7 @@ Page({
     // Debug
     traceId: '',
     renderCount: 0,
+    _renderKey: 0,
   },
 
   onLoad() {
@@ -353,11 +354,14 @@ Page({
 
     // 统一渲染模型 — 题干渲染的唯一入口
     const renderModel = buildRenderModel(q, opts)
-    q._renderModel = renderModel
-    q._opts = opts
-    q._optionList = buildOptionList(opts, optionKeys, selectedFlags)
-    q._blankOptionGroups = blankOptionGroups
-    q._hasBlankOptionGroups = blankOptionGroups.length > 0
+    // 不直接突变 q，创建新对象避免 _renderModel 引用持久化
+    const currentQuestion = Object.assign({}, q, {
+      _renderModel: renderModel,
+      _opts: opts,
+      _optionList: buildOptionList(opts, optionKeys, selectedFlags),
+      _blankOptionGroups: blankOptionGroups,
+      _hasBlankOptionGroups: blankOptionGroups.length > 0,
+    })
     const renderCount = (this.data.renderCount || 0) + 1
 
     if (shouldDebugQuestion(q.id)) {
@@ -381,12 +385,18 @@ Page({
     }
     this.setData({
       currentIndex: index,
-      currentQuestion: q,
+      currentQuestion: currentQuestion,
       optionKeys,
       selectedFlags,
       blankSelectedFlags,
       renderCount,
+      _renderKey: (this.data._renderKey || 0) + 1,
     })
+
+    // Render invariant: verify only one render mode is active
+    this._checkRenderInvariant(currentQuestion._renderModel)
+    // Detect duplicate DOM nodes (防复发)
+    this._detectDuplicateDom()
   },
 
   goQuestion(e) {
@@ -527,7 +537,8 @@ Page({
         : newAnswer === k
     }
     const optionList = buildOptionList(q._opts, optionKeys, selectedFlags)
-    this.setData({ questions, answerMap, answeredFlags, answeredCount, selectedFlags, 'currentQuestion._optionList': optionList })
+    const cq = Object.assign({}, this.data.currentQuestion, { _optionList: optionList })
+    this.setData({ questions, answerMap, answeredFlags, answeredCount, selectedFlags, currentQuestion: cq })
     this._showAnswerFeedback(q, newAnswer)
   },
 
@@ -658,6 +669,37 @@ Page({
       this.setData({ feedbackVisible: false })
       this._feedbackTimer = null
     }, feedbackComboText ? 2000 : 1200)
+  },
+
+  /* ==================== Render Invariant ==================== */
+
+  _checkRenderInvariant(renderModel) {
+    if (!renderModel) return
+    // Count how many render paths would activate
+    let activePaths = 0
+    if (renderModel.mode === 'SEGMENTS') activePaths++
+    if (renderModel.mode === 'RICH_TEXT') activePaths++
+    if (renderModel.mode === 'LATEX') activePaths++
+    if (activePaths !== 1) {
+      console.error('[RENDER_INVARIANT] _renderModel.mode="' + renderModel.mode + '" yields ' + activePaths + ' active paths (expected 1)')
+    }
+  },
+
+  _detectDuplicateDom() {
+    if (!config.DEV) return
+    // Post-render check: uses selector query to detect duplicate rich-text/mp-html
+    var self = this
+    setTimeout(function() {
+      wx.createSelectorQuery().selectAll('.q-content').fields({
+        node: false,
+        dataset: false,
+        id: false,
+      }, function(res) {
+        if (res && res.length > 1) {
+          console.error('[RENDER_INVARIANT] Found ' + res.length + ' .q-content elements (expected 1)', res)
+        }
+      }).exec()
+    }, 100)
   },
 
   goNext() {
