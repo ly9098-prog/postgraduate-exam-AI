@@ -2193,15 +2193,15 @@ class ImportPipeline:
             })
 
             new_blocks: list[dict] = []
+            page_batches: list[tuple[int, bytes, int, int]] = []  # (page_idx, png_bytes, pw, ph)
 
             if is_pdf:
-                # ── PDF path: render each page to image and OCR ──
+                # ── PDF path: render each page to image ──
                 import fitz
                 doc = fitz.open(file_path, filetype="pdf")
                 try:
                     total_pages = len(doc)
 
-                    # Derive page dimensions from original_blocks
                     page_dim: dict[int, tuple[int, int]] = {}
                     for b in original_blocks:
                         p = b.get("page") or b.get("page_index") or 0
@@ -2215,33 +2215,11 @@ class ImportPipeline:
                         pix = doc[page_num].get_pixmap(dpi=150)
                         png_bytes = pix.tobytes("png")
                         pw, ph = page_dim.get(page_idx, (pix.width, pix.height))
-
-                        ctx = {"page_num": page_idx, "filename": f"page_{page_idx}.png", "entry_point": "vl_rebuild"}
-                        result = _run_coro_in_loop(
-                            router.fix(image=png_bytes, ocr_text="", context=ctx)
-                        )
-
-                        if result.fixed_text:
-                            new_blocks.append({
-                                "page": page_idx,
-                                "page_index": page_idx,
-                                "block_index": len(new_blocks),
-                                "text": result.fixed_text.strip(),
-                                "normalized_text": result.fixed_text.strip(),
-                                "boxes": [],
-                                "page_width": pw,
-                                "page_height": ph,
-                                "source": "vl_rebuild",
-                                "has_boxes": False,
-                            })
-                            logger.info(
-                                "VL_REBUILD page %d: text_len=%d",
-                                page_idx, len(result.fixed_text),
-                            )
+                        page_batches.append((page_idx, png_bytes, pw, ph))
                 finally:
                     doc.close()
             else:
-                # ── Image path: read file directly and OCR ──
+                # ── Image path: read file directly ──
                 import os
                 if not os.path.isfile(file_path):
                     logger.warning("VL_REBUILD: image file not found: %s", file_path)
@@ -2250,36 +2228,77 @@ class ImportPipeline:
                 with open(file_path, "rb") as f:
                     image_bytes = f.read()
 
-                # Use first original block dimensions or sensible defaults
-                pw = 800
-                ph = 1200
+                pw, ph = 800, 1200
                 if original_blocks:
                     b0 = original_blocks[0]
                     pw = b0.get("page_width") or pw
                     ph = b0.get("page_height") or ph
+                page_batches.append((1, image_bytes, pw, ph))
 
-                ctx = {"page_num": 1, "filename": os.path.basename(file_path), "entry_point": "vl_rebuild"}
-                result = _run_coro_in_loop(
-                    router.fix(image=image_bytes, ocr_text="", context=ctx)
-                )
+            # ── Dual-source strategy: PP-OCRv6 primary, VL fallback ──
+            from app.features.ocr_correction_common import repair_option_structure
+            from app.features.question_type_classifier import detect_options_from_text
 
-                if result.fixed_text:
+            for page_idx, png_bytes, pw, ph in page_batches:
+                best_text = ""
+
+                # Phase 1: Run PP-OCRv6 locally (structure primary)
+                try:
+                    from app.services.ocr_service import _get_ocr
+                    from PIL import Image
+                    import io, numpy as np
+
+                    pil_img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+                    img_array = np.array(pil_img)
+                    ocr = _get_ocr()
+                    raw_results = ocr.ocr(img_array, cls=True)
+
+                    pp_lines = []
+                    for line_group in raw_results:
+                        for line_info in line_group:
+                            pp_lines.append(line_info[1][0])
+                    pp_text = "\n".join(pp_lines)
+
+                    if detect_options_from_text(pp_text):
+                        best_text = pp_text
+                        logger.info(
+                            "VL_REBUILD page %d: using PP-OCRv6 (%d chars, options detected)",
+                            page_idx, len(pp_text),
+                        )
+                except Exception as exc:
+                    logger.warning("VL_REBUILD PP-OCRv6 failed page %d: %s", page_idx, exc)
+
+                # Phase 2: If PP-OCRv6 didn't detect options, call VL as fallback
+                if not best_text:
+                    ctx = {"page_num": page_idx, "filename": f"page_{page_idx}.png", "entry_point": "vl_rebuild"}
+                    result = _run_coro_in_loop(
+                        router.fix(image=png_bytes, ocr_text="", context=ctx)
+                    )
+
+                    if result and result.fixed_text:
+                        vl_text = result.fixed_text.strip()
+                        # Apply structure repair to VL output
+                        repaired = repair_option_structure(vl_text)
+                        best_text = repaired if detect_options_from_text(repaired) else vl_text
+                        logger.info(
+                            "VL_REBUILD page %d: using VL (%d chars, options=%s)",
+                            page_idx, len(best_text),
+                            detect_options_from_text(best_text),
+                        )
+
+                if best_text:
                     new_blocks.append({
-                        "page": 1,
-                        "page_index": 1,
-                        "block_index": 0,
-                        "text": result.fixed_text.strip(),
-                        "normalized_text": result.fixed_text.strip(),
+                        "page": page_idx,
+                        "page_index": page_idx,
+                        "block_index": len(new_blocks),
+                        "text": best_text,
+                        "normalized_text": best_text,
                         "boxes": [],
                         "page_width": pw,
                         "page_height": ph,
                         "source": "vl_rebuild",
                         "has_boxes": False,
                     })
-                    logger.info(
-                        "VL_REBUILD image: text_len=%d",
-                        len(result.fixed_text),
-                    )
 
             if not new_blocks:
                 logger.warning("VL_REBUILD: no blocks produced")
