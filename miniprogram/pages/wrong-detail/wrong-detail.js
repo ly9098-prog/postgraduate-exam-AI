@@ -1,4 +1,5 @@
 const api = require('../../utils/api')
+const config = require('../../config')
 const {
   buildRenderModel, resetRenderGuard, setRenderGuardPage,
   toPlainInlineMathText, needsRichRender, stripLeadingOptionLabel,
@@ -39,10 +40,12 @@ function _errorTypeLabel(t) {
   return map[t] || t
 }
 
-function _processWqData(wq) {
+function _processWqData(wq, safeMode) {
   const opts = wq.options || null
   const optionKeys = opts ? Object.keys(opts) : []
-  const _renderModel = buildRenderModel(wq, opts)
+  var renderCfg = { enableMathImage: false, DEV: config.DEV }
+  if (safeMode) renderCfg.SAFE_MODE = true
+  const _renderModel = buildRenderModel(wq, opts, renderCfg)
   const blankOptionGroups = _enrichBlankOptionGroups(wq.content && wq.content.blank_option_groups, wq.answer, wq.wrong_answer)
   const optionItems = optionKeys.map((key) => {
     const rawText = (opts && opts[key]) || ''
@@ -122,6 +125,8 @@ Page({
     swiperEnabled: false,
     contentState: '',
     showSwipeHint: false,
+    safeModeActive: false,
+    renderTraces: [],
   },
 
   onLoad(options) {
@@ -153,11 +158,16 @@ Page({
     try {
       const wq = await api.get(`/wrong-questions/${wqId}`)
       if (!wq) throw new Error('not found')
-      const data = _processWqData(wq)
+      const data = _processWqData(wq, this.data.safeModeActive)
       data.aiResult = null
       data.aiFallback = false
       this.setData(data)
       this.setData({ loading: false })
+      // Render invariant check + trace
+      if (data._renderModel) {
+        this._checkRenderInvariant(data._renderModel)
+        this._recordRenderTrace(data._renderModel.renderTrace)
+      }
       this.loadAiAnalysis(wqId)
     } catch (e) {
       console.error('加载错题详情失败', e)
@@ -187,6 +197,47 @@ Page({
     } catch (e) {
       console.error('加载 AI 分析失败', e)
       this.setData({ aiLoading: false, aiFallback: true })
+    }
+  },
+
+  // ---- Render Invariant + Trace ----
+
+  _checkRenderInvariant(renderModel) {
+    if (!renderModel) return
+    if (renderModel.mode === 'CODE' && renderModel.rawText) {
+      var hasHtmlLeak = /&(?:nbsp|amp|lt|gt|#\d+);/.test(renderModel.rawText)
+      if (hasHtmlLeak) {
+        console.error('[CODE_HTML_LEAK] wrong-detail CODE rawText contains HTML entities')
+      }
+      var hasRenderViolation = renderModel.html.length > 0 || renderModel.richTextNodes.length > 0
+      if (hasRenderViolation) {
+        console.error('[CODE_RENDER_VIOLATION] wrong-detail CODE mode leaked into html/richTextNodes')
+      }
+      if ((hasHtmlLeak || hasRenderViolation) && !this.data.safeModeActive) {
+        this._enterSafeMode()
+      }
+    }
+  },
+
+  _recordRenderTrace(trace) {
+    if (!trace) return
+    var traces = this.data.renderTraces
+    traces = traces.concat([trace])
+    if (traces.length > 200) traces = traces.slice(-200)
+    this.setData({ renderTraces: traces })
+  },
+
+  _enterSafeMode() {
+    console.warn('[SELF_HEAL] wrong-detail CODE render violation — entering SAFE_MODE')
+    this.setData({ safeModeActive: true })
+    if (this.data.wq) {
+      var data = _processWqData(this.data.wq, true)
+      if (data._renderModel) {
+        data.aiResult = this.data.aiResult
+        data.aiFallback = this.data.aiFallback
+        this.setData(data)
+        console.warn('[SELF_HEAL] wrong-detail re-rendered in SAFE_MODE, mode=' + data._renderModel.mode)
+      }
     }
   },
 

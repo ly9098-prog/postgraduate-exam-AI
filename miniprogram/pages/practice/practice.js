@@ -205,6 +205,12 @@ Page({
     traceId: '',
     renderCount: 0,
     _renderKey: 0,
+
+    // Render traces (diagnostic, reset each practice session)
+    renderTraces: [],
+
+    // Self-healing
+    safeModeActive: false,
   },
 
   onLoad() {
@@ -248,6 +254,8 @@ Page({
     this.setData({
       traceId,
       renderCount: 0,
+      renderTraces: [],
+      safeModeActive: false,
       started: true,
       currentIndex: 0,
       answerMap: {},
@@ -353,7 +361,9 @@ Page({
     const blankSelectedFlags = _buildBlankSelectedFlags(blankOptionGroups, answer)
 
     // 统一渲染模型 — 题干渲染的唯一入口
-    const renderModel = buildRenderModel(q, opts)
+    var renderCfg = { enableMathImage: config.enableMathImage || false, DEV: config.DEV }
+    if (this.data.safeModeActive) renderCfg.SAFE_MODE = true
+    const renderModel = buildRenderModel(q, opts, renderCfg)
     // 不直接突变 q，创建新对象避免 _renderModel 引用持久化
     const currentQuestion = Object.assign({}, q, {
       _renderModel: renderModel,
@@ -397,6 +407,8 @@ Page({
     this._checkRenderInvariant(currentQuestion._renderModel)
     // Detect duplicate DOM nodes (防复发)
     this._detectDuplicateDom()
+    // Record render trace
+    this._recordRenderTrace(currentQuestion._renderModel.renderTrace)
   },
 
   goQuestion(e) {
@@ -684,6 +696,47 @@ Page({
     if (activePaths !== 1) {
       console.error('[RENDER_INVARIANT] _renderModel.mode="' + renderModel.mode + '" yields ' + activePaths + ' active paths (expected 1)')
     }
+    // CODE_HTML_LEAK: code rawText must not contain HTML entities
+    if (renderModel.mode === 'CODE' && renderModel.rawText) {
+      var hasHtmlLeak = /&(?:nbsp|amp|lt|gt|#\d+);/.test(renderModel.rawText)
+      if (hasHtmlLeak) {
+        console.error(
+          '[CODE_HTML_LEAK] CODE rawText contains HTML entities\n' +
+          '  tail: ' + renderModel.rawText.slice(-60)
+        )
+      }
+      // CODE_RENDER_VIOLATION: html or richTextNodes must be empty
+      var hasRenderViolation = renderModel.html.length > 0 || renderModel.richTextNodes.length > 0
+      if (hasRenderViolation) {
+        console.error(
+          '[CODE_RENDER_VIOLATION] CODE mode leaked into html/richTextNodes ' +
+          '(html=' + renderModel.html.length + ', nodes=' + renderModel.richTextNodes.length + ')'
+        )
+      }
+      // Auto self-heal: enter safe mode on any violation
+      if ((hasHtmlLeak || hasRenderViolation) && !this.data.safeModeActive) {
+        this._enterSafeMode()
+      }
+    }
+  },
+
+  _enterSafeMode() {
+    console.warn('[SELF_HEAL] CODE render violation detected — entering SAFE_MODE')
+    this.setData({ safeModeActive: true })
+    // Re-render current question in safe mode
+    this._reRenderCurrentQuestion()
+  },
+
+  _reRenderCurrentQuestion() {
+    const q = this.data.questions[this.data.currentIndex]
+    if (!q) return
+    var renderCfg = { enableMathImage: config.enableMathImage || false, DEV: config.DEV, SAFE_MODE: true }
+    const renderModel = buildRenderModel(q, q.options && Object.keys(q.options).length > 0 ? q.options : null, renderCfg)
+    const currentQuestion = Object.assign({}, this.data.currentQuestion, {
+      _renderModel: renderModel,
+    })
+    this.setData({ currentQuestion, _renderKey: (this.data._renderKey || 0) + 1 })
+    console.warn('[SELF_HEAL] Re-rendered q' + q.id + ' in SAFE_MODE, mode=' + renderModel.mode)
   },
 
   _detectDuplicateDom() {
@@ -701,6 +754,15 @@ Page({
         }
       }).exec()
     }, 100)
+  },
+
+  _recordRenderTrace(trace) {
+    if (!trace) return
+    var traces = this.data.renderTraces
+    traces = traces.concat([trace])
+    // Keep last 200 traces to avoid memory leak
+    if (traces.length > 200) traces = traces.slice(-200)
+    this.setData({ renderTraces: traces })
   },
 
   goNext() {

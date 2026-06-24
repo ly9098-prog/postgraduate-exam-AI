@@ -1,4 +1,5 @@
 const api = require('../../utils/api')
+const config = require('../../config')
 const {
   buildRenderModel, resetRenderGuard, setRenderGuardPage,
   toPlainInlineMathText, needsRichRender, stripLeadingOptionLabel,
@@ -72,6 +73,9 @@ Page({
     growthLevelPct: 0,
     growthBadgeCount: 0,
     growthDesc: '',
+
+    safeModeActive: false,
+    renderTraces: [],
   },
 
   onLoad() {
@@ -183,6 +187,8 @@ Page({
         allGroupResults: [],
         totalCorrect: 0,
         totalWrong: 0,
+        safeModeActive: false,
+        renderTraces: [],
         practiceLoading: false,
       })
       this._showQuestion(0)
@@ -217,7 +223,9 @@ Page({
       optionKeys = ['A', 'B']
     }
 
-    const _renderModel = buildRenderModel(q, opts)
+    var renderCfg = { enableMathImage: false, DEV: config.DEV }
+    if (this.data.safeModeActive) renderCfg.SAFE_MODE = true
+    const _renderModel = buildRenderModel(q, opts, renderCfg)
 
     const optText = {}
     const optNeedsRich = {}
@@ -244,6 +252,44 @@ Page({
     }
   },
 
+  // ---- Render Invariant + Trace ----
+
+  _checkRenderInvariant(renderModel) {
+    if (!renderModel) return
+    if (renderModel.mode === 'CODE' && renderModel.rawText) {
+      var hasHtmlLeak = /&(?:nbsp|amp|lt|gt|#\d+);/.test(renderModel.rawText)
+      if (hasHtmlLeak) {
+        console.error('[CODE_HTML_LEAK] review-today CODE rawText contains HTML entities')
+      }
+      var hasRenderViolation = renderModel.html.length > 0 || renderModel.richTextNodes.length > 0
+      if (hasRenderViolation) {
+        console.error('[CODE_RENDER_VIOLATION] review-today CODE mode leaked into html/richTextNodes')
+      }
+      if ((hasHtmlLeak || hasRenderViolation) && !this.data.safeModeActive) {
+        this._enterSafeMode()
+      }
+    }
+  },
+
+  _recordRenderTrace(trace) {
+    if (!trace) return
+    var traces = this.data.renderTraces
+    traces = traces.concat([trace])
+    if (traces.length > 200) traces = traces.slice(-200)
+    this.setData({ renderTraces: traces })
+  },
+
+  _enterSafeMode() {
+    console.warn('[SELF_HEAL] review-today CODE render violation — entering SAFE_MODE')
+    this.setData({ safeModeActive: true })
+    if (this.data.currentQuestion) {
+      const idx = this.data.currentIndex
+      const q = this.data.groupQuestions[idx]
+      if (q) this._showQuestion(idx)
+      console.warn('[SELF_HEAL] review-today re-rendered at index ' + idx + ' in SAFE_MODE')
+    }
+  },
+
   _showQuestion(index) {
     const q = this.data.groupQuestions[index]
     if (!q) return
@@ -254,6 +300,8 @@ Page({
       optionKeys: q._optionKeys,
       _answeredCount: answeredCount,
     })
+    this._checkRenderInvariant(q._renderModel)
+    this._recordRenderTrace(q._renderModel && q._renderModel.renderTrace)
   },
 
   /* ==================== 选择答案 ==================== */

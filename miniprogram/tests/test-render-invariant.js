@@ -127,6 +127,15 @@ group('RenderModel is frozen in DEV', function () {
   assertEq(result.mode, originalMode, 'mode unchanged after mutation attempt (frozen)')
 })
 
+group('RenderModel has renderTrace with correct structure', function () {
+  var q = { id: 101, content: { text: 'void f() { int x; }' } }
+  var result = buildRenderModel(q, null, mockConfig)
+  assert(result.renderTrace, 'renderTrace is present')
+  assertEq(result.renderTrace.questionId, 101, 'trace has questionId')
+  assert(typeof result.renderTrace.timestamp === 'number', 'trace has timestamp')
+  assertEq(result.renderTrace.pipeline.length, 3, 'trace has 3 pipeline steps')
+})
+
 // ── Render Invariant: consistency ──
 
 group('Render invariant: same input → same mode', function () {
