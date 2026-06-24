@@ -17,9 +17,10 @@
     "answer": "A"
   },
   "expected": {
-    "_bug": "2026-06-14 — originally RICH_TEXT, now CODE since CODE mode preserves whitespace via mp-html",
+    "_bug": "2026-06-14, updated 2026-06-24 — CODE mode now uses zero-HTML raw text (no more mp-html + &nbsp;)",
     "mode": "CODE",
-    "hasHtml": true,
+    "hasHtml": false,
+    "hasRawText": true,
     "hasRichTextNodes": false
   }
 }
