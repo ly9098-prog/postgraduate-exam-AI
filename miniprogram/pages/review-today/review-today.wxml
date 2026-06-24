@@ -156,6 +156,7 @@
           <math-question segments="{{currentQuestion._renderModel.segments}}" />
         </block>
         <rich-text wx:elif="{{currentQuestion._renderModel.mode === 'RICH_TEXT'}}" nodes="{{currentQuestion._renderModel.richTextNodes}}"></rich-text>
+        <mp-html wx:elif="{{currentQuestion._renderModel.mode === 'CODE'}}" class="code-block" content="{{currentQuestion._renderModel.html}}" lazy-load></mp-html>
         <mp-html wx:elif="{{currentQuestion._renderModel.mode === 'LATEX'}}" content="{{currentQuestion._renderModel.html}}" lazy-load></mp-html>
       </view>
 
@@ -248,6 +249,7 @@
               <math-question segments="{{item._renderModel.segments}}" />
             </block>
             <rich-text wx:elif="{{item._renderModel.mode === 'RICH_TEXT'}}" nodes="{{item._renderModel.richTextNodes}}"></rich-text>
+            <mp-html wx:elif="{{item._renderModel.mode === 'CODE'}}" class="code-block" content="{{item._renderModel.html}}" lazy-load></mp-html>
             <mp-html wx:elif="{{item._renderModel.mode === 'LATEX'}}" content="{{item._renderModel.html}}" lazy-load></mp-html>
           </view>
           <text class="ga-answer" wx:if="{{!item.isCorrect}}">

@@ -25,6 +25,7 @@
         <math-question segments="{{_renderModel.segments}}" />
       </block>
       <rich-text wx:elif="{{_renderModel.mode === 'RICH_TEXT'}}" nodes="{{_renderModel.richTextNodes}}"></rich-text>
+      <mp-html wx:elif="{{_renderModel.mode === 'CODE'}}" class="code-block" content="{{_renderModel.html}}" lazy-load></mp-html>
       <mp-html wx:elif="{{_renderModel.mode === 'LATEX'}}" content="{{_renderModel.html}}" lazy-load></mp-html>
     </view>
 

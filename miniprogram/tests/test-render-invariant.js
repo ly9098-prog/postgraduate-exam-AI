@@ -54,12 +54,12 @@ group('Plain text with simple inline math → RICH_TEXT', function () {
 
 // ── Multi-line stems → RICH_TEXT ──
 
-group('Multi-line code stem → RICH_TEXT', function () {
+group('Multi-line code stem → CODE', function () {
   var q = { id: 3, content: { text: 'void main() {\n  printf("hello");\n}' } }
   var result = buildRenderModel(q, null, mockConfig)
-  assertEq(result.mode, RENDER_MODE.RICH_TEXT, 'code → RICH_TEXT')
-  assert(result.richTextNodes.length > 0, 'richTextNodes populated')
-  assertEq(result.html, '', 'html is empty for code stem')
+  assertEq(result.mode, RENDER_MODE.CODE, 'code → CODE')
+  assert(result.html.length > 0, 'html is populated for code stem')
+  assertEq(result.richTextNodes.length, 0, 'richTextNodes is empty for code stem')
 })
 
 group('Multi-line plain text → RICH_TEXT', function () {
@@ -143,7 +143,8 @@ function checkSingleRoot(result) {
   var active = [
     result.mode === RENDER_MODE.RICH_TEXT && result.richTextNodes.length > 0,
     result.mode === RENDER_MODE.LATEX && result.html.length > 0,
-    result.mode === RENDER_MODE.SEGMENTS && result.segments.length > 0
+    result.mode === RENDER_MODE.SEGMENTS && result.segments.length > 0,
+    result.mode === RENDER_MODE.CODE && result.html.length > 0
   ]
   var count = active.filter(Boolean).length
   return count === 1
