@@ -131,6 +131,119 @@ def detect_options_from_text(raw_text: str) -> bool:
     return False
 
 
+def force_options_probe(raw_text: str) -> dict:
+    """Debug‑only: brute‑force scan ALL known option patterns and report why
+    detection passed or failed.
+
+    Independent of ``classify()`` / ``detect_options_from_text()`` — runs
+    every pattern directly and returns detailed diagnostics so you can
+    pinpoint exactly which gate is blocking option detection at runtime.
+
+    Returns:
+        dict with:
+        - ``detected`` (bool): whether any pattern found ≥2 unique keys
+        - ``patterns`` (dict): per‑pattern match results
+        - ``extracted`` (dict): result of ``extract_options_from_text()``
+        - ``summary`` (str): human‑readable explanation
+    """
+    if not raw_text:
+        return {"detected": False, "patterns": {}, "extracted": {}, "summary": "empty_text"}
+
+    patterns: dict[str, dict] = {}
+
+    # Pattern 1: strict line‑start A./B./C./D.
+    abcd_matches = _STRICT_OPTION_LINE.findall(raw_text)
+    abcd_keys = set(k.upper() for k in abcd_matches)
+    patterns["strict_line_abcd"] = {
+        "matched": len(abcd_keys) >= 2,
+        "unique_keys": sorted(abcd_keys),
+        "match_count": len(abcd_matches),
+        "detail": f"{chr(10).join(abcd_matches)}" if abcd_matches else "",
+    }
+
+    # Pattern 2: inline A.xxx B.xxx
+    inline_matches = _STRICT_INLINE_OPTION.findall(raw_text)
+    inline_keys = set(k.upper() for k in inline_matches)
+    patterns["inline_abcd"] = {
+        "matched": len(inline_keys) >= 2,
+        "unique_keys": sorted(inline_keys),
+        "match_count": len(inline_matches),
+    }
+
+    # Pattern 3: numbered (1)(2)(3)(4)
+    numbered_matches = _STRICT_NUMBERED_CHOICE.findall(raw_text)
+    patterns["numbered_choice"] = {
+        "matched": len(numbered_matches) >= 2,
+        "match_count": len(numbered_matches),
+    }
+
+    # Pattern 4: circled ①②③④
+    circled_matches = _CIRCLED_CHOICE.findall(raw_text)
+    patterns["circled"] = {
+        "matched": len(circled_matches) >= 2,
+        "match_count": len(circled_matches),
+        "unique_keys": sorted(set(circled_matches)),
+    }
+
+    # Pattern 5: keywords
+    keyword_matches = [kw for kw in _CHOICE_KEYWORDS if kw in raw_text]
+    patterns["choice_keywords"] = {
+        "matched": len(keyword_matches) > 0,
+        "keywords_found": keyword_matches,
+    }
+
+    # Pattern 6: fragmented OCR
+    frag_matches = _STRICT_FRAGMENTED_OPTION.findall(raw_text)
+    frag_keys = set(k.upper() for k in frag_matches)
+    patterns["fragmented_ocr"] = {
+        "matched": len(frag_keys) >= 2,
+        "unique_keys": sorted(frag_keys),
+        "match_count": len(frag_matches),
+    }
+
+    # Pattern 7: broad format "A  xxx"
+    broad_matches = _STRICT_BROAD_OPTION.findall(raw_text)
+    broad_keys = set(k.upper() for k in broad_matches)
+    patterns["broad_format"] = {
+        "matched": len(broad_keys) >= 2,
+        "unique_keys": sorted(broad_keys),
+        "match_count": len(broad_matches),
+    }
+
+    # Overall detection
+    any_pattern_matched = any(p["matched"] for p in patterns.values())
+    total_unique_keys: set[str] = set()
+    total_unique_keys.update(abcd_keys, inline_keys, frag_keys, broad_keys)
+
+    # Extraction probe
+    extracted = extract_options_from_text(raw_text)
+
+    # Build summary
+    matched_patterns = [k for k, v in patterns.items() if v["matched"]]
+    failed_patterns = [k for k, v in patterns.items() if not v["matched"]]
+    summary_parts: list[str] = []
+    if any_pattern_matched:
+        summary_parts.append(f"matched:{','.join(matched_patterns)}")
+    else:
+        summary_parts.append("ALL_PATTERNS_FAILED")
+    if failed_patterns:
+        summary_parts.append(f"failed:{','.join(failed_patterns)}")
+    summary_parts.append(f"unique_ABCD_keys={sorted(total_unique_keys)}")
+    summary_parts.append(f"extracted_count={len(extracted)}")
+    summary_parts.append(f"extracted_keys={sorted(extracted.keys()) if extracted else 'none'}")
+
+    return {
+        "detected": any_pattern_matched,
+        "extract_ok": len(extracted) >= 2,
+        "patterns": patterns,
+        "extracted": extracted,
+        "total_unique_abcd_keys": sorted(total_unique_keys),
+        "summary": " | ".join(summary_parts),
+        "raw_text_preview": raw_text[:200],
+        "raw_text_len": len(raw_text),
+    }
+
+
 def has_structured_options(raw_text: str) -> bool:
     """Check if raw_text contains structured option patterns.
 
@@ -269,6 +382,11 @@ def classify(
 
     # ── Priority 1: Frozen questions always have options ──
     if is_frozen:
+        logger.info(
+            "[TRACE] stage=classify_decision is_frozen=True → has_options=True "
+            "raw_text_len=%d option_lines=%s",
+            len(raw_text), sorted(option_lines.keys()) if option_lines else "none",
+        )
         return {
             "has_options": True,
             "has_options_reason": "frozen_options_present",
@@ -280,10 +398,24 @@ def classify(
     # upstream classification. If the raw text contains A/B/C/D patterns,
     # we force has_options=True regardless of other signals.
     text_has_options = detect_options_from_text(raw_text)
+    logger.info(
+        "[TRACE] stage=classify_text_detect "
+        "detect_options_from_text=%s splitter_has_options=%s "
+        "splitter_option_lines=%s raw_text_len=%d",
+        text_has_options, splitter_has_options,
+        sorted(option_lines.keys()) if option_lines else "none",
+        len(raw_text),
+    )
 
     if text_has_options:
         # ── Check if splitter actually found option content ──
         splitter_has_content = bool(option_lines) and len(option_lines) >= 1
+        logger.info(
+            "[TRACE] stage=classify_decision priority=2 "
+            "detect_options_from_text=True → has_options=True "
+            "splitter_has_content=%s",
+            splitter_has_content,
+        )
         return {
             "has_options": True,
             "has_options_reason": "structured_option_patterns_detected",
@@ -297,9 +429,10 @@ def classify(
     splitter_has_content = bool(option_lines) and len(option_lines) >= 1
     if splitter_has_content:
         logger.info(
-            "[CLASSIFY] has_options=True via splitter (structured detection failed, "
-            "splitter found %d option_lines)",
-            len(option_lines),
+            "[TRACE] stage=classify_decision priority=3 "
+            "detect_options_from_text=False but splitter_has_content=%s "
+            "→ has_options=True (option_lines=%s)",
+            splitter_has_content, sorted(option_lines.keys()),
         )
         return {
             "has_options": True,
@@ -308,6 +441,12 @@ def classify(
         }
 
     # ── No evidence of options ──
+    logger.info(
+        "[TRACE] stage=classify_decision priority=4 "
+        "detect_options_from_text=False splitter_has_options=%s "
+        "option_lines=%s → has_options=False",
+        splitter_has_options, sorted(option_lines.keys()) if option_lines else "none",
+    )
     return {
         "has_options": False,
         "has_options_reason": "no_option_patterns_detected",

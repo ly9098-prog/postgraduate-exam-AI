@@ -515,11 +515,21 @@ def normalize_question(
     raw_text = raw_question.get("raw_question_text", "")
     option_lines = raw_question.get("option_lines", {})
 
+    qnum = raw_question.get("number", "?")
+    logger.info(
+        "[TRACE] stage=raw_input qnum=%s raw_text_len=%d has_option_lines=%s "
+        "has_blank_groups=%s upstream_has_options=%s raw_text_preview=%.120s",
+        qnum, len(raw_text), bool(option_lines),
+        bool(raw_question.get("blank_option_groups")),
+        raw_question.get("has_options", False),
+        raw_text.replace("\n", "\\n")[:120],
+    )
+
     # === Structure freeze: detect frozen questions ===
     is_frozen = bool(raw_question.get("is_frozen", False))
     if is_frozen:
         logger.info("[FREEZE] normalize_question(q%s): frozen options=%s",
-                     raw_question.get("number", "?"), sorted(option_lines.keys()) if option_lines else "none")
+                     qnum, sorted(option_lines.keys()) if option_lines else "none")
 
     # NOTE: Layer 0 — Input Clean only. Option order is preserved as-is from
     # the upstream (freeze stage or splitter). No reordering, no padding,
@@ -566,6 +576,16 @@ def normalize_question(
         and not has_structural_markers  # 有结构标记时不视为致命污染
     )
 
+    # Pre-classifier text detection probe
+    _text_detect_before = _detect_options_from_text(raw_text)
+    logger.info(
+        "[TRACE] stage=text_detection qnum=%s detect_result=%s "
+        "quality_gate_passed=%s quality_score=%.2f has_structural_markers=%s",
+        qnum, _text_detect_before,
+        quality_gate["passed"], quality_gate["ocr_contamination_score"],
+        has_structural_markers,
+    )
+
     stem = _extract_stem(raw_text, option_lines, blank_option_groups)
     tracer.add_note("stem_extraction", f"stem length={len(stem)}", "raw_ocr", "ocr_quality_gate")
     # Scan stem for corruption patterns
@@ -592,10 +612,12 @@ def normalize_question(
     _classify_reason = classification["has_options_reason"]
     _classify_question_type = classification.get("question_type")
     logger.info(
-        "[CLASSIFY] q%s: has_options=%s reason=%s%s",
-        raw_question.get("number", "?"),
-        _has_options_classified, _classify_reason,
-        f" type_override={_classify_question_type}" if _classify_question_type else "",
+        "[TRACE] stage=classifier_result qnum=%s has_options=%s reason=%s "
+        "detect_before=%s type_override=%s confidence=%.1f",
+        qnum, _has_options_classified, _classify_reason,
+        _text_detect_before,
+        _classify_question_type or "none",
+        classification.get("confidence", 0),
     )
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -604,6 +626,18 @@ def normalize_question(
     # Standardizes options_raw into [{key: "A", text: "..."}].
     # No AI generation, no padding, no guessing. Options order from upstream
     # (freeze stage or splitter) is preserved as-is.
+    _options_branch = (
+        "blank_groups" if blank_option_groups and _has_options_classified else
+        "option_lines" if option_lines and _has_options_classified else
+        "fallback_extract" if _has_options_classified else
+        "no_options_classified"
+    )
+    logger.info(
+        "[TRACE] stage=options_branch qnum=%s branch=%s "
+        "has_options_classified=%s blank_groups=%s option_lines=%s",
+        qnum, _options_branch, _has_options_classified,
+        bool(blank_option_groups), bool(option_lines),
+    )
     if _has_options_classified:
         if blank_option_groups:
             # Grouped options (multi_blank_choice) are stored in blank_option_groups,
@@ -629,7 +663,14 @@ def normalize_question(
                 options = []
     else:
         options = []
-    logger.info("[OPTIONS-DETECT] options=%s", [o["key"] for o in options] if options else "none")
+    logger.info(
+        "[TRACE] stage=final_options qnum=%s options_count=%d options_keys=%s "
+        "branch=%s question_type=%s fallback_used=%s",
+        qnum, len(options), [o["key"] for o in options] if options else "none",
+        _options_branch,
+        blank_option_groups and "multi_blank_choice" or "pending",
+        bool(option_lines) is False and bool(options) is True,
+    )
     # Track options source for observability
     # Layer 1/3: options come from the classifier gate (has_options) and
     # the option engine (normalization). No re-detection/recovery is performed.
