@@ -38,6 +38,7 @@
 
 var appConfig = require('../config')
 var { formatInlineMathText, replaceSimpleLatexCommands } = require('./math-format')
+var { reconstructCode, containsCode } = require('./code-reconstructor')
 
 var RENDER_MODE = {
   RICH_TEXT: 'RICH_TEXT',
@@ -378,6 +379,11 @@ function buildRenderModel(q, options, cfg) {
   var stemText = (content && (content.text || content.stem)) || ''
   var sourceStemText = stemText || (content && _segmentsToText(content.segments)) || ''
   var cleanedStem = _cleanStemText(sourceStemText, options, optionKeys)
+  // Code structure reconstruction: fix OCR-damaged code before rendering
+  // (operator repair, structure recovery, indentation)
+  if (containsCode(cleanedStem)) {
+    cleanedStem = reconstructCode(cleanedStem)
+  }
   var stemHash = _hashStem(cleanedStem)
 
   var mode, richTextNodes, html, segments
