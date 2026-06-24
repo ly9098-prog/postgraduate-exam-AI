@@ -19,12 +19,16 @@ import json
 import logging
 from typing import Any
 
-from app.features.ai_safety import evaluate_and_trace, safe_accept_ai_result
+from app.features.ai_safety import evaluate_and_trace
 from app.features.code_integrity import contains_code, detect_code_block_integrity
 from app.features.pipeline_stages._helpers import _count_risk_flags
 from app.features.token_budget import estimate_tokens, check_token_limit, record_token_usage
 
 logger = logging.getLogger(__name__)
+
+# Confidence boost applied to reconstructed questions
+_CONFIDENCE_BUMP = 0.2
+_CONFIDENCE_CAP = 0.6
 
 # Code integrity flags that trigger reconstruction
 _CODE_STRUCTURE_FLAGS = frozenset({
@@ -134,8 +138,14 @@ async def _call_llm_for_structure_reconstruct(
             start = content.find("{")
             end = content.rfind("}")
             if start >= 0 and end > start:
+                candidate = content[start:end + 1]
+                # Quick sanity check: must start with {"stem" to avoid
+                # picking up unrelated braces (e.g. from C code in output)
+                stripped = candidate.lstrip()
+                if not stripped.startswith('{"stem"'):
+                    return None
                 try:
-                    parsed = json.loads(content[start:end + 1])
+                    parsed = json.loads(candidate)
                 except json.JSONDecodeError:
                     return None
             else:
@@ -222,34 +232,32 @@ async def run_code_structure_stage(
             })
             continue
 
-        # Apply safety gate
-        safety = evaluate_and_trace(
+        # Apply safety gate (evaluate_and_trace internally calls safe_accept_ai_result)
+        trace, final_stem = evaluate_and_trace(
+            "code_structure_reconstruct",
+            "deepseek",
             stem_before,
             result["repaired_stem"],
             context={"is_code_context": True},
-        )
-        safety_check = safe_accept_ai_result(
-            stem_before,
-            result["repaired_stem"],
-            context={"is_code_context": True},
+            tokens_used=result.get("token_used", 0),
         )
 
-        if not safety_check.get("accepted", True):
+        if not trace.accepted:
             failed_count += 1
             logger.info(
                 "Code structure safety gate rejected question %s: %s",
                 q.get("number", idx),
-                safety_check.get("rollback_reason", "unknown"),
+                trace.rollback_reason or "unknown",
             )
             fix_actions.append({
                 "question_index": idx,
                 "success": False,
-                "reason": f"safety_rejected: {safety_check.get('rollback_reason', 'unknown')}",
+                "reason": f"safety_rejected: {trace.rollback_reason or 'unknown'}",
             })
             continue
 
-        # Apply the fix: update stem
-        q["stem"] = result["repaired_stem"]
+        # Apply the fix: update stem (final_stem is after if accepted, before if rolled back)
+        q["stem"] = final_stem
         reconstructed_count += 1
 
         # Remove resolved code integrity flags from risk_flags
@@ -264,17 +272,17 @@ async def run_code_structure_stage(
 
         # Update confidence_score if it was very low due to code issues
         current_conf = q.get("confidence_score", 0)
-        if current_conf < 0.6:
-            q["confidence_score"] = min(current_conf + 0.2, 0.6)
+        if current_conf < _CONFIDENCE_CAP:
+            q["confidence_score"] = min(current_conf + _CONFIDENCE_BUMP, _CONFIDENCE_CAP)
 
         # Add decision trace
-        trace = list(q.get("decision_trace") or [])
-        trace.append({
+        dt = list(q.get("decision_trace") or [])
+        dt.append({
             "stage": "code_structure_reconstruct",
             "result": "repaired",
             "reason": ";".join(result.get("fix_actions", ["structure_fixed"])),
         })
-        q["decision_trace"] = trace
+        q["decision_trace"] = dt
 
         fix_actions.append({
             "question_index": idx,
