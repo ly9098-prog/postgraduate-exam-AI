@@ -4,6 +4,7 @@
   "description": "BUGS.md 案例五：typedef struct LNode + 链表插入操作 + 4个选项。题号8在normalize时被OCR纠错转换为B，导致splitter识别为选项行而非题号，切出0题。",
   "subject": "408",
   "pipeline_stages": [
+    "full_ocr",
     "normalize",
     "split"
   ],
@@ -17,9 +18,13 @@
   "ground_truth_source": "bugs_doc",
   "tags": [
     "ocr_correction",
-    "question_number",
-    "regression"
+    "ocr_pipeline",
+    "regression",
+    "question_number"
   ],
   "last_reviewed": "2026-06-22",
-  "auto_generated_date": "2026-06-22"
+  "auto_generated_date": "2026-06-22",
+  "image_file": "ocr_code_test_6.png",
+  "expected_detect": true,
+  "expected_options_count": 3
 }

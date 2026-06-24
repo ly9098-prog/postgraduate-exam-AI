@@ -4,6 +4,7 @@
   "description": "BUGS.md 案例四（成功）：for循环+代码块+4个选项。验证成功的管道处理，选项应完整保留。",
   "subject": "408",
   "pipeline_stages": [
+    "full_ocr",
     "normalize",
     "split"
   ],
@@ -22,8 +23,12 @@
   "ground_truth_source": "bugs_doc",
   "tags": [
     "code_integrity",
+    "ocr_pipeline",
     "success_case"
   ],
   "last_reviewed": "2026-06-22",
-  "auto_generated_date": "2026-06-22"
+  "auto_generated_date": "2026-06-22",
+  "image_file": "ocr_code_test_7.png",
+  "expected_detect": true,
+  "expected_options_count": 4
 }

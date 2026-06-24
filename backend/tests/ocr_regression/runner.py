@@ -107,6 +107,113 @@ def run_pipeline(input_text: str, import_mode: str | None = None) -> dict:
     }
 
 
+def run_ocr_case(meta: dict, case_dir: Path) -> dict:
+    """对图片运行 OCR 全链路测试（PP-OCRv6 + VL_REBUILD + 选项检测）。
+
+    meta 需要:
+        - image_file: 相对于 case_dir 的图片文件名
+        - expected_options_count: 期望选项数量（默认 4）
+        - expected_detect: 期望 detect_options_from_text 结果（默认 true）
+
+    Returns:
+        {
+            "detect_options": bool,
+            "extract_options": dict,
+            "options_count": int,
+            "source": str,           # "ppocrv6" / "vl" / "failed"
+            "text_length": int,
+            "text_preview": str,
+        }
+    """
+    meta.setdefault("expected_options_count", 4)
+    meta.setdefault("expected_detect", True)
+
+    image_file = meta.get("image_file")
+    if not image_file:
+        return {"error": "meta.json missing image_file field"}
+
+    image_path = case_dir / image_file
+    if not image_path.exists():
+        return {"error": f"image not found: {image_path}"}
+
+    # Build VL config from DB (needed for VL_REBUILD, even though dual-source prefers PP-OCRv6)
+    vl_config = _load_vl_config_from_db()
+    if vl_config is None:
+        return {"error": "PaddleOCR-VL not configured in DB — needed for VL_REBUILD path"}
+
+    from app.features.pipeline_orchestrator import ImportPipeline
+
+    pipeline = ImportPipeline(options={
+        "enable_ai_repair": True,
+        "enable_ocr_correction": True,
+    })
+    original_blocks = [{"page": 1, "page_index": 1, "page_width": 800, "page_height": 1200}]
+
+    try:
+        blocks = pipeline._run_vl_rebuild_blocks(
+            file_path=str(image_path),
+            original_blocks=original_blocks,
+            vl_config=vl_config,
+        )
+    except Exception as exc:
+        return {"error": f"VL_REBUILD failed: {exc}"}
+
+    if not blocks:
+        return {"error": "VL_REBUILD returned no blocks"}
+
+    # Collect all text from VL_REBUILD blocks
+    full_text = "\n".join(
+        b.get("normalized_text") or b.get("text", "") for b in blocks
+    )
+
+    # Run option detection
+    from app.features.question_type_classifier import detect_options_from_text, extract_options_from_text
+
+    detected = detect_options_from_text(full_text)
+    extracted = extract_options_from_text(full_text)
+    options_count = len(extracted)
+
+    return {
+        "detect_options": detected,
+        "extract_options": extracted,
+        "options_count": options_count,
+        "source": blocks[0].get("source", "unknown"),
+        "text_length": len(full_text),
+        "text_preview": full_text[:300],
+    }
+
+
+def _load_vl_config_from_db() -> dict | None:
+    """从 SQLite DB 加载 PaddleOCR-VL 配置（同步读取）。"""
+    import os
+    import sqlite3
+    import dotenv
+
+    # Load .env if DATABASE_URL not already set (e.g. in pytest)
+    dotenv.load_dotenv()
+
+    db_url = os.environ.get("DATABASE_URL", "")
+    db_path = db_url.replace("sqlite+aiosqlite:///", "")
+    if not db_path or not os.path.isfile(db_path):
+        return None
+
+    try:
+        conn = sqlite3.connect(db_path)
+        row = conn.execute(
+            "SELECT name, api_base_url, api_key_encrypted FROM admin_ai_model_configs WHERE name = 'PaddleOCR-VL-1.6'"
+        ).fetchone()
+        conn.close()
+        if not row:
+            return None
+        return {
+            "model_name": row[0],
+            "api_base_url": row[1],
+            "paddleocr_vl_api_token": row[2],
+        }
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # expected.txt 解析与生成
 # ---------------------------------------------------------------------------
@@ -478,13 +585,60 @@ def evaluate_case(case_dir: Path) -> dict:
     assertion_failures = _check_assertions(meta, result, case_dir.name)
     assertion_passed = len(assertion_failures) == 0
 
+    # ── OCR 全链路检测（当 pipeline_stages 含 "full_ocr" 时触发） ──
+    ocr_assertions: list[dict] = []
+    stages = meta.get("pipeline_stages", [])
+    if "full_ocr" in stages:
+        ocr_result = run_ocr_case(meta, case_dir)
+        if "error" in ocr_result:
+            ocr_assertions.append({
+                "field": "ocr_pipeline",
+                "expected": "successful OCR run",
+                "actual": ocr_result["error"],
+                "message": f"[{case_dir.name}] OCR pipeline error: {ocr_result['error']}",
+            })
+        else:
+            # Check detect_options
+            expected_detect = meta.get("expected_detect", True)
+            if ocr_result.get("detect_options") != expected_detect:
+                ocr_assertions.append({
+                    "field": "ocr_detect_options",
+                    "expected": expected_detect,
+                    "actual": ocr_result.get("detect_options"),
+                    "message": (
+                        f"[{case_dir.name}] detect_options_from_text mismatch\n"
+                        f"  expected: {expected_detect}\n"
+                        f"  actual:   {ocr_result.get('detect_options')}\n"
+                        f"  source:   {ocr_result.get('source', '?')}\n"
+                        f"  text_len: {ocr_result.get('text_length', 0)}\n"
+                        f"  options:  {ocr_result.get('extract_options', {})}"
+                    ),
+                })
+
+            # Check options count
+            expected_opts = meta.get("expected_options_count", 4)
+            actual_opts = ocr_result.get("options_count", 0)
+            if actual_opts < expected_opts:
+                ocr_assertions.append({
+                    "field": "ocr_options_count",
+                    "expected": f">= {expected_opts}",
+                    "actual": actual_opts,
+                    "message": (
+                        f"[{case_dir.name}] Option count below threshold\n"
+                        f"  expected >= {expected_opts}\n"
+                        f"  actual:    {actual_opts}\n"
+                        f"  extracted: {ocr_result.get('extract_options', {})}"
+                    ),
+                })
+
     return {
         "case": case_dir.name,
         **comparison,
         "meta": meta,
         "review_status": review_status,
-        "assertion_failures": assertion_failures,
-        "assertion_passed": assertion_passed,
+        "assertion_failures": assertion_failures + ocr_assertions,
+        "assertion_passed": assertion_passed and len(ocr_assertions) == 0,
+        "ocr_result": ocr_result if stages and "full_ocr" in stages else None,
     }
 
 
