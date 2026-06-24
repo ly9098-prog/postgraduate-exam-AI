@@ -4,6 +4,7 @@
   "description": "BUGS.md 案例二：BiTree 树递归 countLeaf + T->lchild/rchild 条件 + 4个选项。验证代码块围栏包裹和选项提取。",
   "subject": "408",
   "pipeline_stages": [
+    "full_ocr",
     "normalize",
     "split"
   ],
@@ -22,8 +23,12 @@
   "ground_truth_source": "bugs_doc",
   "tags": [
     "code_integrity",
-    "tree_recursion"
+    "tree_recursion",
+    "ocr_pipeline"
   ],
   "last_reviewed": "2026-06-22",
-  "auto_generated_date": "2026-06-22"
+  "auto_generated_date": "2026-06-22",
+  "image_file": "ocr_code_test_9.png",
+  "expected_detect": true,
+  "expected_options_count": 4
 }
