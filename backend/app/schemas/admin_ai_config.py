@@ -59,6 +59,7 @@ class ModelTestConnectionRequest(BaseModel):
     model_id: int | None = None
     provider: str | None = None
     feature: str | None = None
+    features: list[str] | None = None
 
 
 class ModelTestConnectionResponse(BaseModel):
