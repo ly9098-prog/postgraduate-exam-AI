@@ -1,89 +1,67 @@
 ### 🎯 目标
 
-定位为什么 options detection 未触发（runtime级）
+修复 PaddleOCR-VL 输出被错误 confidence gate 丢弃的问题，导致选项文本在进入 classifier 前丢失。
 
 ------
 
-## 🧪 Step 1：增加全链路 trace log
+## 🧩 Step 1：修复 OCR-VL confidence gate（必须优先）
 
-在以下节点加 log：
+在 `pipeline_orchestrator.py:2443`：
 
-- raw input
-- after normalize
-- after text-detection
-- classifier result
-- selected pipeline branch
-- final extracted options
+### 当前问题：
 
-输出格式：
+- PaddleOCR-VL 返回 confidence=0.0
+- 被当作 invalid result 丢弃
+- 导致完整 237 chars 被忽略
 
-```
-[TRACE] stage=xxx value=xxx reason=xxx
-```
+### 修复要求：
 
-------
+- VL OCR 结果必须默认接受
+- confidence 不得作为丢弃条件
 
-## 🧪 Step 2：验证关键触发条件
-
-重点检查：
-
-### ① classifier 输入
+### 推荐实现：
 
 ```
-question_type_classifier(input_text)
+if is_vl_result:
+    accept_result = True
 ```
 
-确认：
-
-- 是否真的包含 option pattern
-- 是否被 pre-normalize 改写
-
-------
-
-### ② text-detection gate
-
-检查：
-
-- is_question == True 的判定条件
-- 是否误判为 “paragraph / instruction / OCR noise”
-
-------
-
-## 🧪 Step 3：对 10 条失败样本做反推
-
-要求：
-
-- 把“没有识别选项”的真实输入贴出来
-- 标注失败原因分类：
+或：
 
 ```
-A. 未识别为 single_choice
-B. options pattern 未命中
-C. normalize 清洗掉选项
-D. splitter 未执行
+confidence=0.0 → treat as valid (VL override)
 ```
 
 ------
 
-## 🧪 Step 4：做一个“强制探测模式”（debug only）
+## 🧩 Step 2：保留现有 fallback（不改）
 
-新增：
-
-```
-force_options_probe(input_text)
-```
-
-规则：
-
-> 不依赖 classifier，直接扫描所有 option pattern
-
-用于验证：
-
-- 是 classifier 问题
-- 还是 extractor 问题
+- 不修改 classifier
+- 不修改 detect_options_from_text
+- 不修改 splitter
 
 ------
 
-# 🧠 最关键的一句话（你现在的核心问题）
+## 🧩 Step 3：验证目标
 
-> ❗ pipeline 是好的，但 runtime 输入“没有被归类为 options”
+修复后必须满足：
+
+- VL OCR 237 chars 进入 classifier
+- force_options_probe(237 chars) → detect=True
+- options = {A, B, C, D}
+
+------
+
+## ⚠️ 禁止事项
+
+- ❌ 不允许先改 VL_REBUILD PDF 限制
+- ❌ 不允许动 classifier logic
+- ❌ 不允许增加新 OCR path
+- ❌ 不允许删除 confidence 字段（只调整使用方式）
+
+------
+
+## 🎯 最终目标
+
+> VL OCR 结果不能因为 confidence=0.0 被丢弃
+

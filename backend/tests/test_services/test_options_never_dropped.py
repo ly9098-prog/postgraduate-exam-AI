@@ -15,6 +15,7 @@ pytestmark = pytest.mark.options_pipeline
 from app.features.question_type_classifier import (
     detect_options_from_text,
     extract_options_from_text,
+    force_options_probe,
 )
 from app.features.question_normalizer import normalize_question as _normalize_question
 
@@ -415,3 +416,86 @@ class TestOptionsEnforcement:
         assert not flags, f"断裂 OCR 不应触发 enforce: {flags}"
         # 至少提取到部分选项
         assert len(result.get("options", [])) >= 1, "断裂 OCR 应提取至少 1 个选项"
+
+
+# =========================================================================
+# Force Options Probe (debug-only diagnostic)
+# =========================================================================
+
+class TestForceOptionsProbe:
+    """验证 force_options_probe 在各种输入下的行为。"""
+
+    def test_standard_abcd_detected(self):
+        """标准 A/B/C/D → detected=True。"""
+        text = "下列正确的是？\nA. 甲\nB. 乙\nC. 丙\nD. 丁"
+        result = force_options_probe(text)
+        assert result["detected"] is True
+        assert result["extract_ok"] is True
+        assert "strict_line_abcd" in result["patterns"]
+
+    def test_no_options_not_detected(self):
+        """纯代码题（无选项）→ detected=False。"""
+        text = "请写出以下代码的输出结果：\n```c\nint main() { return 0; }\n```"
+        result = force_options_probe(text)
+        assert result["detected"] is False
+        assert result["extract_ok"] is False
+        assert len(result["total_unique_abcd_keys"]) == 0
+
+    def test_fragmented_ocr_detected(self):
+        """断裂 OCR 选项 → 至少一个 pattern 匹配。"""
+        text = "下列正确的是？\nA．．值1\nB．．值2\nC．．值3\nD．．值4"
+        result = force_options_probe(text)
+        assert result["detected"] is True
+
+    def test_circled_digits_detected(self):
+        """圈号选项 → detected=True。"""
+        text = "下列正确的是？\n① 甲\n② 乙\n③ 丙\n④ 丁"
+        result = force_options_probe(text)
+        assert result["detected"] is True
+        assert result["patterns"]["circled"]["matched"] is True
+
+    def test_code_and_options_detected(self):
+        """BUGS 案例：代码块+选项 → detected=True。"""
+        text = ("设栈初始为空，出栈序列不可能的是？\n```\nint stack[10];\n```\n"
+                "A. 1,2,3,4,5\nB. 5,4,3,2,1\nC. 4,3,2,1,5\nD. 3,2,1,5,4")
+        result = force_options_probe(text)
+        assert result["detected"] is True
+        assert result["extract_ok"] is True
+        assert len(result["extracted"]) == 4
+
+    def test_probe_versus_detect_agreement(self):
+        """force_options_probe.detected 应与 detect_options_from_text 一致。"""
+        cases = [
+            "下列正确的是？\nA. 甲\nB. 乙\nC. 丙\nD. 丁",
+            "纯代码题",
+            "下列正确的是？\n① 甲\n② 乙\n③ 丙\n④ 丁",
+            ("设栈初始为空\n```\nint x;\n```\n"
+             "A. 1\nB. 2\nC. 3\nD. 4"),
+        ]
+        for text in cases:
+            probe = force_options_probe(text)
+            detect = detect_options_from_text(text)
+            assert probe["detected"] == detect, (
+                f"不一致: text={text[:50]}, probe={probe['detected']}, detect={detect}"
+            )
+
+    def test_probe_all_patterns_reported(self):
+        """force_options_probe 应报告所有 7 种 pattern 的结果。"""
+        text = "测试文本"
+        result = force_options_probe(text)
+        expected_patterns = {
+            "strict_line_abcd", "inline_abcd", "numbered_choice",
+            "circled", "choice_keywords", "fragmented_ocr", "broad_format",
+        }
+        assert expected_patterns.issubset(result["patterns"].keys()), (
+            f"缺少 pattern: {expected_patterns - set(result['patterns'].keys())}"
+        )
+        assert "summary" in result
+        assert "extracted" in result
+
+    def test_empty_text(self):
+        """空文本 → detected=False。"""
+        result = force_options_probe("")
+        assert result["detected"] is False
+        assert result["summary"] == "empty_text"
+
