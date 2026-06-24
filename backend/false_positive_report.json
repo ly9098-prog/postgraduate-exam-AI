@@ -1,0 +1,185 @@
+{
+  "phase": "C",
+  "title": "False Positive Analysis Report",
+  "timestamp": "2026-06-24",
+  "test_cases": [
+    {
+      "name": "C_1p_noise",
+      "category": "TP",
+      "description": "",
+      "lines_removed": 1,
+      "expected_removed": 1,
+      "classification": "TP",
+      "correct": true
+    },
+    {
+      "name": "C_dense_noise",
+      "category": "TP",
+      "description": "",
+      "lines_removed": 2,
+      "expected_removed": 2,
+      "classification": "TP",
+      "correct": true
+    },
+    {
+      "name": "C_C_noise",
+      "category": "TP",
+      "description": "",
+      "lines_removed": 1,
+      "expected_removed": 1,
+      "classification": "TP",
+      "correct": true
+    },
+    {
+      "name": "Python_prompt",
+      "category": "TP",
+      "description": "",
+      "lines_removed": 1,
+      "expected_removed": 1,
+      "classification": "TP",
+      "correct": true
+    },
+    {
+      "name": "Fullwidth",
+      "category": "TP",
+      "description": "",
+      "lines_removed": 1,
+      "expected_removed": 1,
+      "classification": "TP",
+      "correct": true
+    },
+    {
+      "name": "Lang_label",
+      "category": "TP",
+      "description": "",
+      "lines_removed": 1,
+      "expected_removed": 1,
+      "classification": "TP",
+      "correct": true
+    },
+    {
+      "name": "Mixed_noise",
+      "category": "TP",
+      "description": "",
+      "lines_removed": 3,
+      "expected_removed": 3,
+      "classification": "TP",
+      "correct": true
+    },
+    {
+      "name": "HTML_noise",
+      "category": "TP",
+      "description": "",
+      "lines_removed": 1,
+      "expected_removed": 1,
+      "classification": "TP",
+      "correct": true
+    },
+    {
+      "name": "For_loop",
+      "category": "TP",
+      "description": "",
+      "lines_removed": 1,
+      "expected_removed": 1,
+      "classification": "TP",
+      "correct": true
+    },
+    {
+      "name": "Java_phone",
+      "category": "TP",
+      "description": "",
+      "lines_removed": 2,
+      "expected_removed": 2,
+      "classification": "TP",
+      "correct": true
+    },
+    {
+      "name": "Prose_C_transition",
+      "category": "TP",
+      "description": "",
+      "lines_removed": 1,
+      "expected_removed": 1,
+      "classification": "TP",
+      "correct": true
+    },
+    {
+      "name": "Multi_transition",
+      "category": "TP",
+      "description": "",
+      "lines_removed": 1,
+      "expected_removed": 1,
+      "classification": "TP",
+      "correct": true
+    },
+    {
+      "name": "Code_blank_line",
+      "category": "TP",
+      "description": "",
+      "lines_removed": 1,
+      "expected_removed": 1,
+      "classification": "TP",
+      "correct": true
+    },
+    {
+      "name": "Plain_text",
+      "category": "TN",
+      "description": "",
+      "lines_removed": 0,
+      "expected_removed": 0,
+      "classification": "TN",
+      "correct": true
+    },
+    {
+      "name": "C_ternary",
+      "category": "TN",
+      "description": "",
+      "lines_removed": 0,
+      "expected_removed": 0,
+      "classification": "TN",
+      "correct": true
+    },
+    {
+      "name": "Cpp_prose",
+      "category": "TN",
+      "description": "",
+      "lines_removed": 0,
+      "expected_removed": 0,
+      "classification": "TN",
+      "correct": true
+    },
+    {
+      "name": "Math_expr",
+      "category": "TN",
+      "description": "",
+      "lines_removed": 0,
+      "expected_removed": 0,
+      "classification": "TN",
+      "correct": true
+    },
+    {
+      "name": "Prose_code",
+      "category": "TN",
+      "description": "",
+      "lines_removed": 0,
+      "expected_removed": 0,
+      "classification": "TN",
+      "correct": true
+    }
+  ],
+  "summary": {
+    "TP": 13,
+    "TN": 5,
+    "FP": 0,
+    "FN": 0,
+    "total": 18
+  },
+  "metrics": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0,
+    "true_positives": 13,
+    "true_negatives": 5,
+    "false_positives": 0,
+    "false_negatives": 0
+  }
+}

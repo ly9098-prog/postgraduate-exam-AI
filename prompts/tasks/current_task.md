@@ -1,205 +1,317 @@
-# 🧠 Code Structure Reconstruction Prompt
+# 📌 Production Governance Upgrade
+
+## 🎯 任务名称
+
+**Code Language Noise Layer v2：生产可观测性 + 漂移检测 + 治理体系升级**
+
+------
+
+## 🧠 背景说明
+
+你已经完成 `code_language_noise_layer.py` v1 版本，实现了：
+
+- C/C++/Java/Python/HTML/JS 语言标识噪声清洗
+- transition zone detection
+- safe removal rules
+- cross-pipeline consistency validation
+- stress test 15/15 passed
+- false positive = 0
+- production integration completed
+
+当前模块已经是：
+
+> ✅ Production Stable Component（生产稳定可用）
+
+------
+
+## 🚨 现在的问题（v1 已完成，但系统不完整）
+
+当前系统缺少“生产级能力”：
+
+### ❗1. 无运行时可观测性
+
+无法回答：
+
+- C/C++ 噪声发生率是多少？
+- 哪类OCR最容易产生语言标识污染？
+- 是否出现新噪声模式？
+
+------
+
+### ❗2. 无噪声分布漂移检测
+
+无法检测：
+
+- PaddleOCR-VL版本变化导致的噪声变化
+- 新语言/新模式出现（Go / Rust / Kotlin）
+- C/C++噪声比例上升
+
+------
+
+### ❗3. 无治理与回滚机制
+
+无法控制：
+
+- 某类规则误伤扩大时自动降级
+- safe_mode / normal_mode 自动切换
+- A/B策略验证不同规则效果
+
+------
+
+## 🎯 本阶段目标
+
+将当前 v1 模块升级为：
+
+> 🚀 **Production-grade OCR Code Language Noise Governance System**
+
+不是改算法，而是构建：
+
+✔ 可观测性
+✔ 漂移检测
+✔ 规则治理
+✔ 运行时控制
+
+------
+
+# 🧩 任务拆解
+
+------
+
+## 🟦 Phase 1：Noise Metrics Observability Layer（可观测性层）
+
+在 `code_language_noise_layer.py` 外新增：
+
+### 📌 文件：
+
+```
+code_language_noise_metrics.py
+```
+
+### 📊 必须统计以下指标：
+
+#### 1. 噪声发生统计
+
+- total_noise_detected
+- c_cpp_noise_count
+- html_noise_count
+- python_noise_count
+- generic_noise_count
+
+------
+
+#### 2. transition zone 统计
+
+- total_transition_zones
+- noise_density_per_zone
+
+------
+
+#### 3. removal stats
+
+- removed_lines_count
+- protected_lines_count
+- false_positive_suspected_count
+
+------
+
+#### 4. per-document profiling
+
+输出：
+
+```json
+{
+  "doc_id": "...",
+  "noise_ratio": 0.12,
+  "c_cpp_noise_ratio": 0.08,
+  "risk_level": "low|medium|high"
+}
+```
+
+------
+
+## 🟨 Phase 2：Noise Drift Detection（漂移检测）
+
+新增模块：
+
+```
+noise_drift_detector.py
+```
+
+### 🎯 功能：
+
+检测 OCR 噪声分布是否发生变化
+
+------
+
+### 📌 必须支持：
+
+#### 1. baseline distribution
+
+```json
+{
+  "c_cpp_noise_ratio": 0.15,
+  "html_noise_ratio": 0.05
+}
+```
+
+------
+
+#### 2. runtime distribution
+
+实时统计
+
+------
+
+#### 3. drift score
+
+计算：
+
+```
+drift_score = KL_divergence(baseline, runtime)
+```
+
+------
+
+#### 4. 输出：
+
+```json
+{
+  "drift_detected": true,
+  "drift_score": 0.32,
+  "top_changed_noise": "c_cpp_noise"
+}
+```
+
+------
+
+## 🟩 Phase 3：Adaptive Rule Governance（自适应治理）
+
+新增：
+
+```
+noise_rule_governor.py
+```
+
+------
+
+### 🎯 功能：
+
+根据 noise stats 自动调整策略
+
+------
+
+### 📌 必须支持：
+
+#### 1. 自动降级 safe_mode
 
 ```text
-你是一个“代码结构恢复与OCR后处理专家系统”，用于修复OCR识别后严重错乱的编程题目。
-
-你的目标不是解释代码，而是：
-👉 将OCR输出恢复为“结构完整 + 语义正确 + 可阅读 + 可判题”的标准代码题。
-
-你必须严格遵守规则，不得编造题目内容。
-
---------------------------------
-【输入数据】
-
-OCR原始文本（可能包含噪声/乱码/断行）：
-{raw_text}
-
-OCR清洗文本（基础清洗结果）：
-{clean_text}
-
---------------------------------
-【任务总目标】
-
-将输入恢复为：
-
-1. 结构完整的题干
-2. 正确缩进的代码块
-3. 完整选项（如存在）
-4. 可用于后续判题 / embedding / 分类的标准格式
-
---------------------------------
-# 🧩 Step 1：代码区域识别（Code Region Detection）
-
-你必须先识别文本中哪些部分属于“代码”，规则如下：
-
-## 判定为代码的特征：
-- 出现关键字：for / while / if / return / struct / typedef / int / void
-- 出现符号：{ } ( ) [ ] -> * &
-- 出现变量赋值：=, ==, !=, ++, --
-- 出现函数结构或循环结构
-- 出现指针 / 链表 / 树结构访问
-
-## 非代码部分：
-- 题干说明
-- 选项 A/B/C/D
-- 注释性文字
-
-👉 输出中必须分离：
-code_blocks[]
-text_blocks[]
-options_blocks[]
-
---------------------------------
-# 🔧 Step 2：代码结构恢复（核心步骤）
-
-对每个 code_block 执行“结构重建”，必须执行以下修复：
-
-## 🚨 2.1 强制修复 OCR 错误
-
-必须自动修复以下错误：
-
-| OCR错误 | 修复 |
-|--------|------|
-| `= =` | `==` |
-| `! =` | `!=` |
-| `- >` | `->` |
-| `< >` | `<>`或按语义修复 |
-| `f` / `F` 独立符号 | 判断是否为 `{` |
-| 断行导致语句破碎 | 合并为完整语句 |
-
----
-
-## 🧱 2.2 结构补全规则
-
-必须恢复：
-
-- `{}` 花括号闭合
-- `if/for/while` 块结构
-- 函数体完整性
-- 缩进层级（4空格逻辑）
-- 连续语句断裂（OCR换行导致）
-
-示例修复：
-
-❌ OCR输出：
-```
-
-for (int i = 0; i < n; i++)
-if (a[i] > 0)
-sum += a[i];
-
-```
-✅ 修复后：
-```c
-for (int i = 0; i < n; i++) {
-    if (a[i] > 0) {
-        sum += a[i];
-    }
-}
+if false_positive_rate > threshold:
+    enable safe_mode
 ```
 
 ------
 
-## 🧠 2.3 语义一致性约束（非常重要）
+#### 2. 自动调节 removal threshold
 
-修复时必须遵守：
-
-- ❌ 不允许新增逻辑
-- ❌ 不允许删除原有逻辑
-- ❌ 不允许改变变量语义
-- ✅ 只允许“结构补全 + 断裂修复”
+- normal_mode → threshold 0.6
+- safe_mode → threshold 0.9
 
 ------
 
-# 📘 Step 3：题目结构重建
+#### 3. per-language weighting
 
-恢复完整题目结构：
-
-## 标准输出结构：
-
-### 题干（stem）
-
-包含完整题目描述 + 修复后的代码块
-
-### 代码块（code）
-
-必须是独立 code block
-
-### 选项（options）
-
-如果存在 A/B/C/D：
-
-必须结构化输出：
-
-A. ...
-B. ...
-C. ...
-D. ...
-
-如果选项缺失：
-→ 标记 missing_options = true
+```text
+C/C++ noise weight ↑
+HTML noise weight ↓
+Python noise medium
+```
 
 ------
 
-# 🧪 Step 4：质量检测（必须执行）
+## 🟪 Phase 4：Pipeline Integration Hook（接入层）
 
-你必须对结果进行检查：
+必须集成到：
 
-## 检查清单：
+```
+pipeline_orchestrator.py
+```
 
--  所有 `{` 是否闭合
--  所有 `if/for/while` 是否完整
--  是否存在断裂语句
--  是否存在乱码残留
--  选项是否完整
--  是否存在无法解析语句
+### 📌 要求：
 
-------
+在以下位置插入：
 
-## 如果发现问题：
+```text
+normalize_schema → code_language_noise_layer → structure_freeze
+```
 
-必须执行：
-→ 二次修复（auto-repair pass）
-→ 如果仍失败 → 标记 needs_review = true
+并确保：
 
-------
-
-# 🚨 Step 5：输出格式（严格 JSON）
-
-必须严格输出以下结构：
-
-{
-"stem": "...完整题干...",
-"code": "`c\n...\n`",
-"options": {
-"A": "",
-"B": "",
-"C": "",
-"D": ""
-},
-"missing_options": false,
-"needs_review": false,
-"confidence": 0.0 - 1.0,
-"code_language": "c/cpp/java/python/unknown",
-"flags": [
-"ocr_noise_detected",
-"structure_repaired"
-]
-}
+- metrics 自动记录
+- drift detector 每 batch run
+- governor 每 batch update policy
 
 ------
 
-# 🎯 关键目标总结
+## 🟥 Phase 5：Safety Guarantees（必须）
 
-你不是 OCR 解释器，你是：
+必须保证：
 
-👉 “代码结构重建引擎（Code Structure Reconstruction Engine）”
+### ❌ 禁止误删：
 
-你的输出必须满足：
+- C / C++ code logic
+- operators: ++ -- -> == <= >=
+- HTML tags (, )
+- Java class structure
 
-- 可读
-- 可编译（尽可能）
-- 结构完整
-- 无 OCR 噪声残留
-- 适用于自动判题系统
+------
+
+### ✔ 必须保护：
+
+- code blocks `{ }`
+- expressions inside loops
+- function signatures
+
+------
+
+## 📤 最终交付物
+
+必须输出：
+
+```
+code_language_noise_metrics.py
+noise_drift_detector.py
+noise_rule_governor.py
+updated_pipeline_integration.patch
+```
+
+------
+
+## 🧠 成功标准
+
+### ✔ 系统级要求：
+
+- 可以统计噪声分布
+- 可以检测 OCR model drift
+- 可以自动调整策略
+- 可以安全回滚规则
+- 不影响 existing pipeline correctness
+
+------
+
+## 🔥 核心原则
+
+> v1 解决“怎么清噪声”
+> v2 解决“如何治理噪声系统”
+
+------
+
+## 🚀 一句话总结任务
+
+把现有 OCR code language noise layer 从：
+
+> **rule-based cleaning system**
+
+升级为：
+
+> **self-observing + self-adjusting production governance system**
 
