@@ -1,5 +1,7 @@
 """Prompt 模板管理。每个场景一个函数，返回 messages list。"""
 
+import json
+
 SYSTEM_PROMPTS = {
     "error_analysis": (
         "你是一个考研解题技巧专家，擅长总结数学二、408计算机、英语的快速解题方法。"
@@ -269,6 +271,42 @@ SYSTEM_PROMPTS = {
         '"answer_uncertain": false, '
         '"confidence": 0.6, '
         '"reason": "推理依据"}'
+    ),
+    "code_structure_reconstruct": (
+        "你是代码结构修复引擎。你的唯一任务是将 OCR 识别后的代码恢复为"
+        "具有正确缩进、换行和基本结构完整性的可读代码。\n"
+        "你只能恢复结构，不能理解题目含义，不能改写逻辑。\n\n"
+        "【输入】\n"
+        "包含代码的题目题干文本。\n\n"
+        "【输出要求】\n"
+        "输出严格 JSON 格式：\n"
+        '{"stem": "修复后的完整题干（代码部分经过结构修复）",\n'
+        '"code_fixed": true/false,\n'
+        '"fix_actions": ["修复动作1", "修复动作2"],\n'
+        '"confidence": 0.0-1.0}\n\n'
+        "【必须修复的结构问题】\n"
+        "1. {} 花括号闭合：补全缺失的闭合花括号\n"
+        "2. 缩进层级：基于 {} 和控制流语句恢复 4 空格缩进\n"
+        "3. 断行修复：将 OCR 导致断裂的语句合并为完整语句\n"
+        "   - if/for/while 前后需要合理换行\n"
+        "   - 语句后的 { 保持在同一行或换行均可\n"
+        "4. OCR 符号错误修复（仅限代码内的语法层符号）：\n"
+        "   - `= =` → `==`\n"
+        "   - `! =` → `!=`\n"
+        "   - `- >` → `->`\n"
+        "   - `+ +` → `++`\n"
+        "   - `< =` → `<=`\n"
+        "   - `> =` → `>=`\n"
+        "5. 代码区域识别：题干中的非代码文本（题目描述、选项等）保留原样\n\n"
+        "【严格禁止】\n"
+        "- 不得修改代码逻辑\n"
+        "- 不得改变量名\n"
+        "- 不得补充不存在的语句\n"
+        "- 不得改变代码的语义含义\n"
+        "- 不得修改选项（A. B. C. D. 部分）\n"
+        "- 不得修改答案\n"
+        "- 不得删除任何原始代码行\n"
+        "- 只能修复结构，不能改变内容"
     ),
 }
 
@@ -609,6 +647,27 @@ def build_roman_decision_prompt(
                 f"【题目选项】\n{options_text}\n"
                 + "\n---\n".join(anomaly_blocks)
                 + "\n\n请对每个异常选择一个候选修复方案，输出 JSON。"
+            ),
+        },
+    ]
+
+
+def build_code_structure_reconstruct(stem: str) -> list:
+    """构建代码结构重建 prompt。
+
+    Args:
+        stem: 待修复的题干文本（包含代码）。
+
+    Returns:
+        messages list。
+    """
+    return [
+        {"role": "system", "content": SYSTEM_PROMPTS["code_structure_reconstruct"]},
+        {
+            "role": "user",
+            "content": (
+                "请修复以下文本中的代码结构问题，输出标准 JSON：\n\n"
+                f"{stem}"
             ),
         },
     ]
