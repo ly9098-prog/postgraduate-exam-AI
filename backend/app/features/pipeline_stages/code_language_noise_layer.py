@@ -41,7 +41,12 @@ logger = logging.getLogger(__name__)
 _TRANSITION_PATTERNS = re.compile(
     r"(?:"
     r"在\w+中执行[：:]|"      # 在单链表中执行：/在循环中执行:
+    r"在\w+中进行如下\w*[：:]|"  # 在单链表中进行如下操作：
+    r"执行如下\w*[：:]|"      # 执行如下操作：/执行如下计算：
     r"执行如下\w*代码|"       # 执行如下Java代码 / 执行如下C代码
+    r"进行如下\w*[：:]|"      # 进行如下操作：/进行如下计算：
+    r"已知\s+\w+\s*指向|"     # 已知 p 指向某节点/已知指针指向
+    r"对\w+执行\w+操作|"      # 对链表执行插入操作/对栈执行删除操作
     r"下列\w*程序|"           # 下列C程序 / 下列Java程序
     r"代码如下|"
     r"如下\w*代码|"           # 如下Java代码 / 如下HTML代码
@@ -72,6 +77,7 @@ _CODE_PRECURSOR_PATTERNS = re.compile(
     r"^\s*(?:"
     r"#\s*(?:include|define|pragma|import|typedef)|"  # preprocessor
     r"using\s+(?:namespace|System)|"  # C# / C++ using
+    r"typedef\s|"                      # typedef without # prefix
     r"public|private|protected|static|class|struct|void|int\s+\w+\s*\(|"  # declarations
     r"int\s+main|"
     r"for\s*\(|while\s*\(|if\s*\(|switch\s*\(|"
@@ -132,6 +138,7 @@ _C_CPP_NOISE_RE = re.compile(
     r"|（>\s*C\s*"  # （>C
     r"|\(\s*>\s*"  # (> standalone
     r"|（\s*>\s*"  # （> standalone
+    r"|<\s*\d+\s*>"  # <1> <12> etc (OCR page/order markers)
     r")\s*$",
 )
 
@@ -154,6 +161,14 @@ _LANG_LABEL_RE = re.compile(
 # Generic OCR noise (isolated brackets/angle brackets)
 _GENERIC_OCR_NOISE_RE = re.compile(r"^\s*[（(\)）]+\s*$")
 _GENERIC_ANGLE_NOISE_RE = re.compile(r"^\s*[<>]+\s*$")
+
+# OCR hallucination in option areas — non-ASCII garbage that looks like code.
+# Lines like "S = μxau<-d :μxau<-d = μxau<-s'g" (OCR corruption of a code
+# option) contain = and ; so _is_code_keyword_line would mark them as code.
+# Checked before the code keyword guard to catch these false positives.
+_OCR_HALLUCINATION_RE = re.compile(
+    r"^\s*[A-Za-df-z]\s*=\s*\S*[^\x00-\x7f]"
+)
 
 
 def _is_code_keyword_line(line: str) -> bool:
@@ -195,6 +210,12 @@ def classify_noise(line: str) -> tuple[str, float]:
     if not stripped:
         return ("", 0.0)
 
+    # Pre-check: OCR hallucination (non-ASCII garbage in option areas).
+    # Must be checked before _is_code_keyword_line since garbage lines contain
+    # = and ; characters that would bypass the code keyword guard.
+    if _OCR_HALLUCINATION_RE.match(line):
+        return ("ocr_hallucination", 0.85)
+
     # Real code guard: if the line looks like valid code, never classify as noise
     if _is_code_keyword_line(line):
         return ("", 0.0)
@@ -226,6 +247,7 @@ _REMOVABLE_NOISE = frozenset({
     "tag_noise",
     "lang_label",
     "generic_ocr_noise",
+    "ocr_hallucination",
 })
 
 # Minimum confidence threshold for removal.

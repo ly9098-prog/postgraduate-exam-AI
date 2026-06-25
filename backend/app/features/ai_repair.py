@@ -216,6 +216,16 @@ def _should_repair(
     if qt in ("single_choice", "multiple_choice") and not options:
         return True, "missing_options"
 
+    # 3b. options 不完整 — 有选项但中间缺失（如 A, C, D 缺少 B）
+    #     触发 AI 从 raw_text 中恢复缺失选项
+    if qt == "single_choice" and options:
+        if isinstance(options, list):
+            found_keys = {o.get("key", "") for o in options if isinstance(o, dict)}
+            expected_sequence = ["A", "B", "C", "D"]
+            for i, key in enumerate(expected_sequence[:-1]):
+                if key not in found_keys and expected_sequence[i + 1] in found_keys:
+                    return True, "incomplete_options"
+
     # 4. answer 为空
     if qt in ("single_choice", "multiple_choice", "true_false") and not (question.get("answer") or "").strip():
         return True, "missing_answer"
@@ -883,6 +893,17 @@ async def repair_questions(
             })
         else:
             raw_text = q.get("raw_text", "") or q.get("raw_question_text", "")
+            if reason == "incomplete_options":
+                # Strip options so AI recovers all 4 from raw_text.
+                # The post-ai repair immutable-options check handles superset
+                # recovery (4 > 3) in the validation loop below.
+                q = dict(q)
+                q.pop("options", None)
+                raw_text = (
+                    "【注意】本题选项不完整（中间缺失），"
+                    "请根据原始文本中的完整选项内容补充所有选项。\n\n"
+                    + raw_text
+                )
             candidates.append((i, q, raw_text))
 
     # 批量修复（一次 LLM 调用修复多题），超长自动分批
@@ -963,23 +984,42 @@ async def repair_questions(
         ai_options = _normalize_ai_options(result_data.get("options"))
 
         # Rule 1: Existing options are IMMUTABLE
-        # AI must not modify existing options. This covers:
-        #   - Frozen questions (options from freeze stage)
-        #   - Non-frozen questions with successfully parsed options
+        # AI must not modify or delete existing options.
+        #
+        # Exception: AI may ADD missing option keys (recovery) when the AI's
+        # result is a strict superset of the original. This handles OCR cases
+        # where the parser missed options due to corruption (e.g. garbled
+        # option B text between A and C).
+        #
+        # Three outcomes:
+        #   1. ai_keys > original_keys  → allow (superset recovery)
+        #   2. ai_keys == original_keys → reject (modification without addition)
+        #   3. ai_keys < original_keys  → reject (deletion)
         if original_opts and ai_options and ai_options != original_opts:
-            logger.warning(
-                "[IMMUTABLE] ai_repair REJECTED for q%d: AI tried to modify options "
-                "(frozen=%s, ai_opts=%d, original_opts=%d)",
-                i, is_frozen, len(ai_options), len(original_opts),
-            )
-            _append_decision_trace(questions[i], "ai_repair", "rejected",
-                                   "options_modified_by_ai")
-            unrepaired.append({
-                "question_index": i,
-                "reason": "options_modified_by_ai",
-            })
-            total_tokens += token_used
-            continue
+            original_keys = {o["key"] for o in original_opts}
+            ai_keys = {o["key"] for o in ai_options}
+
+            if ai_keys > original_keys:
+                logger.info(
+                    "[IMMUTABLE] ai_repair ALLOWED for q%d: AI recovered missing "
+                    "options (original=%d, ai=%d, added=[%s])",
+                    i, len(original_opts), len(ai_options),
+                    ",".join(sorted(ai_keys - original_keys)),
+                )
+            else:
+                logger.warning(
+                    "[IMMUTABLE] ai_repair REJECTED for q%d: AI tried to modify options "
+                    "(frozen=%s, ai_opts=%d, original_opts=%d)",
+                    i, is_frozen, len(ai_options), len(original_opts),
+                )
+                _append_decision_trace(questions[i], "ai_repair", "rejected",
+                                       "options_modified_by_ai")
+                unrepaired.append({
+                    "question_index": i,
+                    "reason": "options_modified_by_ai",
+                })
+                total_tokens += token_used
+                continue
 
         # Rule 2: Existing options must not be deleted
         if original_opts and not ai_options:
@@ -1005,9 +1045,17 @@ async def repair_questions(
             # Allow AI to populate options from raw_text (repair behavior)
             pass
 
-        # ── Restore original options when they already existed ──
+        # ── Preserve original options when they already existed ──
+        # Only skip restore when AI added missing keys (superset recovery
+        # passed Rule 1). In that case, use AI's options directly since they
+        # include the recovered keys.
         if original_opts:
-            ai_options = list(original_opts)
+            _superset = (
+                ai_options
+                and {o["key"] for o in ai_options} > {o["key"] for o in original_opts}
+            )
+            if not _superset:
+                ai_options = list(original_opts)
 
         after = {
             "schema_version": q.get("schema_version", "v1"),
