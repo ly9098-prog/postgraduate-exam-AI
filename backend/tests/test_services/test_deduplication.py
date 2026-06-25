@@ -209,13 +209,13 @@ class TestPracticeResponseSanitizer:
         assert all("\n" not in v for v in result.values())
         assert result is not options
 
-    def test_practice_options_adjacent_duplicate_values_preserved(self):
-        """Option values skip dedup to avoid roman-split — acceptable for short display text."""
+    def test_practice_options_newlines_collapsed(self):
+        """Option values have embedded newlines collapsed to space (OCR artifact cleanup)."""
         options = {"A": "1\n1", "B": "2\n2", "C": "正常选项"}
 
         result = _sanitize_question_options(options)
 
-        assert result == {"A": "1\n1", "B": "2\n2", "C": "正常选项"}
+        assert result == {"A": "1 1", "B": "2 2", "C": "正常选项"}
         assert options["A"] == "1\n1"
         assert result is not options
 

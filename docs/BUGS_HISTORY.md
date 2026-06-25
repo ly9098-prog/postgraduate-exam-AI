@@ -1,5 +1,20 @@
 # Bugs History
 
+## 2026-06-25 — 刷题页选项内容重复渲染 + 题干单行重复 + 选项 LaTeX 未渲染（已修复）
+
+- **现象**：三个独立问题：① 含 `$...$` LaTeX 的选项渲染为两行（key 一行、mp-html 下一行），无 `$` 的选项正常；② 单行题干文本（如 "在线性表 a0, a1,.., a100，删除元素 a50 需要移动()个元素。"）连续显示两次；③ 选项中的数学公式以原始 LaTeX 文本显示，未转换。
+- **根因**：
+  1. 选项重复：`buildOptionList` 引入 `hasDollarLatex` 将含 `$...$` 的选项路由到 `<mp-html>`，但 mp-html 自定义组件在 `option-item` flex 布局中无法内联，`<p>` 内容被推到下一行。无 `$` 的选项走 `<text>` 路径正常。
+  2. 题干单行重复：`_deduplicateRepeatedText` 半幅切分点不对齐句末边界，`lines.length===1` 时逐行去重循环不执行，导致两个完全相同副本漏判。后端 `deduplicate_repeated_text` 同样漏判。
+  3. 选项 LaTeX 未渲染：`buildOptionList` 的 `_toPlainInlineMathText` 在 `needsRich` 前将 `$x^2$` 转为 Unicode 文本 `x²`（非空），`needsRich` 为 `false`，选项走 `<text>` 路径，未进入 mp-html KaTeX。
+- **处理**：
+  1. 选项恢复 `<text>` 渲染路径：移除 `hasDollarLatex` 逻辑，选项值使用 `_toPlainInlineMathText` 做 Unicode 数学转换（与原始行为一致）。选项中的 `$...$` LaTeX 通过 Unicode 近似呈现，不依赖 mp-html。
+  2. 单行题干去重增强：`_deduplicateRepeatedText` 新增句末边界切分（`[。！？；\n]` 中点附近匹配），后端 `deduplicate_repeated_text` 相同增强。
+  3. 选项值换行符清洗（前后端同步）：后端 `_sanitize_option_value` 正则化 `\r\n`→`\n`→`\r`→`\n`，`_fix_code_operator_splits` 后折叠 `\n+` 为空格。前端 `buildOptionList` / `_enrichBlankOptionGroups` 对选项文本做 `replace(/[\r\n]+/g, ' ')` 安全网。
+  4. 注意：`deduplicate_repeated_text` 不应用于选项值——内部调用 `_split_inline_roman_subitems` 会破坏罗马数字选项（`"I、II、III"`→`"I、II"`）。
+- **验证**：1041 个后端测试通过（含 22 个 dedup 专项测试）；三张实图截图确认选项单行显示、题干无重复。
+- **说明**：选项 LaTeX 渲染的原始需求（含 `$` 公式的选项显示为渲染后的数学公式）因 mp-html 在 flex 布局中的兼容性问题暂无法实现。当前方案：选项中的 LaTeX 公式通过 `formatInlineMathText` 转为 Unicode 近似（`x^2`→`x²`、`\sqrt`→`√`），视觉上可读。如后续需要完整 KaTeX 渲染，需调整选项布局为独立行或改用 math-question 组件。
+
 ## 2026-06-25 — 代码题题干/选项部分缺失（第五次修复）——5种失败模式全部解决
 
 - **现象**：5种含C代码块和4个选项的考研408图片在导入后出现不同形态的题干/选项损坏。案例一到五的根因各不相同，经过5轮迭代修复后全部通过。
