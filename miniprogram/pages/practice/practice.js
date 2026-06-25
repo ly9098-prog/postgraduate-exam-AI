@@ -34,8 +34,10 @@ function _enrichBlankOptionGroups(groups, answer) {
         const key = String((opt && opt.key) || '').trim().toUpperCase()
         const text = String((opt && opt.text) || '').trim()
         const optionText = stripLeadingOptionLabel(key, text)
-        const plain = toPlainInlineMathText(optionText)
-        const needsRich = !plain && needsRichRender(optionText)
+        // Clean embedded newlines (OCR artifact) to prevent visual doubling
+        const cleanedText = optionText.replace(/[\r\n]+/g, ' ')
+        const plain = toPlainInlineMathText(cleanedText)
+        const needsRich = !plain && needsRichRender(cleanedText)
         return Object.assign({}, opt, {
           key,
           _text: plain || optionText,
