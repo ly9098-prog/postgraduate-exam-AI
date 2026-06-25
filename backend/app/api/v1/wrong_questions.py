@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,15 +16,38 @@ from app.schemas.wrong_question import (
     WrongQuestionUpdate,
 )
 from app.services import wrong_question_service as svc
+from app.features.text_normalizer import _split_inline_roman_subitems
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 
+# Regex: lines ending with a trailing operator (OCR-split code expressions)
+_CODE_OP_SPLIT_RE = re.compile(
+    r'(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$'
+)
+
 router = APIRouter(prefix="/api/v1/wrong-questions")
+
+
+def _fix_code_operator_splits(text: str) -> str:
+    """Merge lines where a trailing operator was split across newlines by OCR."""
+    if not isinstance(text, str) or "\n" not in text:
+        return text
+    lines = text.split("\n")
+    merged = [lines[0]]
+    for line in lines[1:]:
+        if _CODE_OP_SPLIT_RE.search(merged[-1]):
+            merged[-1] += line.lstrip()
+        else:
+            merged.append(line)
+    return "\n".join(merged)
 
 
 def _sanitize_text_field(value: str | None) -> str | None:
     if not isinstance(value, str):
         return value
-    return deduplicate_repeated_text(value)
+    value = deduplicate_repeated_text(value)
+    value = _split_inline_roman_subitems(value)
+    value = _fix_code_operator_splits(value)
+    return value
 
 
 def _sanitize_content(content: dict | None) -> dict | None:
@@ -32,6 +57,11 @@ def _sanitize_content(content: dict | None) -> dict | None:
     for field in ("text", "stem"):
         if field in sanitized:
             sanitized[field] = _sanitize_text_field(sanitized[field])
+
+    # Prefer stem over text when both exist — stem has better code formatting
+    if "text" in sanitized and "stem" in sanitized and sanitized.get("stem"):
+        sanitized["text"] = sanitized["stem"]
+
     return sanitized
 
 

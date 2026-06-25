@@ -382,7 +382,7 @@ Page({
         optionKeys,
         blankGroupCount: blankOptionGroups.length,
         renderMode: renderModel.mode,
-        sourceLen: ((q.content && (q.content.text || q.content.stem)) || '').length,
+        sourceLen: ((q.content && (q.content.stem || q.content.text)) || '').length,
       })
       saveDebugSnapshot(this.data.traceId || q.trace_id, 'render', {
         questionId: q.id,

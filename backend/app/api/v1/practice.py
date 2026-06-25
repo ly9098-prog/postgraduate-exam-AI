@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import re
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,11 @@ from app.schemas.practice import (
 from app.services import practice_service as svc
 from app.features.text_normalizer import _split_inline_roman_subitems
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
+
+# Regex: lines ending with a trailing operator (OCR-split code expressions)
+_CODE_OP_SPLIT_RE = re.compile(
+    r'(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$'
+)
 from app.utils.trace.debug import create_trace_id, debug_log, save_debug_snapshot
 
 _TRUE_FALSE_OPTIONS = {"A": "正确", "B": "错误"}
@@ -36,11 +42,32 @@ def _ensure_true_false_options(question_type: str, options: dict | None) -> dict
     return options
 
 
+def _fix_code_operator_splits(text: str) -> str:
+    """Merge lines where a trailing operator was split across newlines by OCR.
+
+    Handles common OCR artifacts like:
+      ``i*=\n2)`` → ``i*=2)``   (operator then integer)
+      ``n==\n1)`` → ``n==1)``
+      ``k +=\n2)`` → ``k +=2)``
+    """
+    if not isinstance(text, str) or "\n" not in text:
+        return text
+    lines = text.split("\n")
+    merged = [lines[0]]
+    for line in lines[1:]:
+        if _CODE_OP_SPLIT_RE.search(merged[-1]):
+            merged[-1] += line.lstrip()
+        else:
+            merged.append(line)
+    return "\n".join(merged)
+
+
 def _sanitize_text_field(value: str | None) -> str | None:
     if not isinstance(value, str):
         return value
     value = deduplicate_repeated_text(value)
     value = _split_inline_roman_subitems(value)
+    value = _fix_code_operator_splits(value)
     return value
 
 
@@ -52,6 +79,11 @@ def _sanitize_question_content(content: dict | None) -> dict | None:
     for field in ("text", "stem"):
         if field in sanitized:
             sanitized[field] = _sanitize_text_field(sanitized[field])
+
+    # Prefer stem over text when both exist — stem has better code formatting
+    if "text" in sanitized and "stem" in sanitized and sanitized.get("stem"):
+        sanitized["text"] = sanitized["stem"]
+
     return sanitized
 
 
