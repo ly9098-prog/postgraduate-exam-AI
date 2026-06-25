@@ -148,7 +148,7 @@
               <image class="ctrl-icon ctrl-icon--stop" src="/assets/images/terminate.png" mode="aspectFit"></image>
             </view>
             <view class="ctrl-btn ctrl-primary" catchtap="togglePause">
-              <image class="ctrl-icon ctrl-icon--pause" src="/assets/images/pulse.png" mode="aspectFit"></image>
+              <image class="ctrl-icon ctrl-icon--pause" src="{{isPaused ? '/assets/images/continue.png' : '/assets/images/pulse.png'}}" mode="aspectFit"></image>
             </view>
           </view>
           <!-- Controls: break -->
