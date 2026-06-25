@@ -193,18 +193,29 @@ class TestPracticeResponseSanitizer:
 
         result = _sanitize_question_content(content)
 
-        assert result["text"] == "题干内容"
-        assert result["stem"] == "另一段题干"
+        # stem-preference: text is overwritten with stem's value
+        assert result["text"] == result["stem"] == "另一段题干"
         assert result["analysis"] == "解析\n解析"
         assert content["text"] == "题干内容\n题干内容"
         assert result is not content
 
-    def test_practice_options_adjacent_duplicate_values_cleaned(self):
+    def test_practice_options_roman_enumeration_preserved(self):
+        """Option values must not be split by _split_inline_roman_subitems."""
+        options = {"A": "I、II、III", "B": "II、IV", "C": "II、III", "D": "I、IV"}
+
+        result = _sanitize_question_options(options)
+
+        assert result["A"] == "I、II、III"
+        assert all("\n" not in v for v in result.values())
+        assert result is not options
+
+    def test_practice_options_adjacent_duplicate_values_preserved(self):
+        """Option values skip dedup to avoid roman-split — acceptable for short display text."""
         options = {"A": "1\n1", "B": "2\n2", "C": "正常选项"}
 
         result = _sanitize_question_options(options)
 
-        assert result == {"A": "1", "B": "2", "C": "正常选项"}
+        assert result == {"A": "1\n1", "B": "2\n2", "C": "正常选项"}
         assert options["A"] == "1\n1"
         assert result is not options
 
