@@ -14,8 +14,34 @@ from app.schemas.wrong_question import (
     WrongQuestionUpdate,
 )
 from app.services import wrong_question_service as svc
+from app.services.pdf_text_normalizer import deduplicate_repeated_text
 
 router = APIRouter(prefix="/api/v1/wrong-questions")
+
+
+def _sanitize_text_field(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return value
+    return deduplicate_repeated_text(value)
+
+
+def _sanitize_content(content: dict | None) -> dict | None:
+    if not isinstance(content, dict):
+        return content
+    sanitized = dict(content)
+    for field in ("text", "stem"):
+        if field in sanitized:
+            sanitized[field] = _sanitize_text_field(sanitized[field])
+    return sanitized
+
+
+def _sanitize_options(options: dict | None) -> dict | None:
+    if not isinstance(options, dict):
+        return options
+    sanitized = dict(options)
+    for key, value in sanitized.items():
+        sanitized[key] = _sanitize_text_field(value)
+    return sanitized
 
 
 def enrich_wq(wq, question):
@@ -33,8 +59,8 @@ def enrich_wq(wq, question):
         next_review_date=wq.next_review_date,
         quality=wq.quality,
         subject=question.subject if question else None,
-        content=question.content if question else None,
-        options=question.options if question else None,
+        content=_sanitize_content(question.content) if question else None,
+        options=_sanitize_options(question.options) if question else None,
         answer=question.answer if question else None,
         analysis=question.analysis if question else None,
         knowledge_points=question.knowledge_points if question else None,

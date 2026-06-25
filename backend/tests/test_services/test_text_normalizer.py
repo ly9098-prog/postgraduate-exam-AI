@@ -105,6 +105,40 @@ class TestNewlineCleaning:
         assert "\nA" not in normalized
         assert "\nB" not in normalized
 
+    def test_inline_roman_enum_split(self, normalizer):
+        """行内罗马序号 I. II. III. IV. 应拆分成独立行。"""
+        text = "下列关于静态链表的说法，正确的是( )。I. 第一项II. 第二项III. 第三项IV. 第四项"
+        result = normalizer.normalize(_make_blocks(text))
+        normalized = result[0]["normalized_text"]
+        assert "\nI." in normalized, "I. should be on its own line"
+        assert "\nII." in normalized, "II. should be on its own line"
+        assert "\nIII." in normalized, "III. should be on its own line"
+        assert "\nIV." in normalized, "IV. should be on its own line"
+        assert "I. 第一项" in normalized
+        assert "IV. 第四项" in normalized
+
+    def test_inline_roman_not_split_english_pronoun(self, normalizer):
+        """英文 I 代词不应被误拆。"""
+        text = "I think this algorithm is correct. We know that I can be a pronoun."
+        result = normalizer.normalize(_make_blocks(text))
+        normalized = result[0]["normalized_text"]
+        assert "\nI " not in normalized, "English I should not be split"
+        assert normalized.count("I") >= 2
+
+    def test_inline_roman_not_split_single_marker(self, normalizer):
+        """只有一个罗马标记时不拆分。"""
+        text = "下列关于I. 的说法正确的是"
+        result = normalizer.normalize(_make_blocks(text))
+        normalized = result[0]["normalized_text"]
+        assert normalized.count("I.") == 1
+
+    def test_roman_with_cjk_context_not_misdetected(self, normalizer):
+        """CJK 文中的 I 变量名不应误拆。"""
+        text = "变量 I 的初始值为 0。"
+        result = normalizer.normalize(_make_blocks(text))
+        normalized = result[0]["normalized_text"]
+        assert "\nI " not in normalized
+
     def test_option_continuation_not_merged_into_previous_option(self, normalizer):
         text = "D. 管程是被进程调用的，管程是语法范围，无法创建和撤销\n对信号量 S 执行 P 操作后，使该进程进入资源等待队列的条件是（ ）。"
         result = normalizer.normalize(_make_blocks(text))
@@ -200,6 +234,18 @@ class TestOcrCorrection:
         result = normalizer.normalize(_make_blocks(text))
         normalized = result[0]["normalized_text"]
         assert normalized.startswith("B.")
+
+    def test_question_number_8_not_converted(self, normalizer):
+        """题号 8.在单链表中进行如下操作：不应被转换为 B.。
+
+        BUGS.md 案例五：题干首行 ``8.在单链表中进行如下操作：``
+        含有 8 个以上的中文字符，应被 `_is_question_number_line` 识别
+        为题号而跳过 8→B 转换。修复后题号 8 保持为 ``8.``。
+        """
+        text = "8.在单链表中进行如下操作："
+        result = normalizer.normalize(_make_blocks(text))
+        normalized = result[0]["normalized_text"]
+        assert normalized.startswith("8.")
 
     def test_option_0_to_D(self, normalizer):
         """选项 0. → D. 纠正。"""

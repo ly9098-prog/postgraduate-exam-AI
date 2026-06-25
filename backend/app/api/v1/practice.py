@@ -23,6 +23,7 @@ from app.schemas.practice import (
     PracticeStatsResponse,
 )
 from app.services import practice_service as svc
+from app.features.text_normalizer import _split_inline_roman_subitems
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 from app.utils.trace.debug import create_trace_id, debug_log, save_debug_snapshot
 
@@ -38,7 +39,9 @@ def _ensure_true_false_options(question_type: str, options: dict | None) -> dict
 def _sanitize_text_field(value: str | None) -> str | None:
     if not isinstance(value, str):
         return value
-    return deduplicate_repeated_text(value)
+    value = deduplicate_repeated_text(value)
+    value = _split_inline_roman_subitems(value)
+    return value
 
 
 def _sanitize_question_content(content: dict | None) -> dict | None:

@@ -141,17 +141,57 @@ function _deduplicateRepeatedText(text) {
   var stripped = String(text).trim()
   var half = Math.floor(stripped.length / 2)
   if (half > 0) {
-    if (stripped.slice(0, half) === stripped.slice(half)) return stripped.slice(0, half).replace(/\n+$/, '')
+    if (stripped.slice(0, half) === stripped.slice(half)) return stripped.slice(0, half).replace(/\n+$/, '').trim()
     var candidate = stripped.slice(0, half).trim()
     if (candidate && stripped.slice(half).trim() === candidate) return candidate
+
+    // Fuzzy half-string match: compare with normalized content (handles OCR punctuation drift)
+    var leftNorm = String(stripped.slice(0, half)).replace(/\s+/g, '').replace(/[，。、；：！？,.;:!?…—·"''""（）()【】《》<>]/g, '').trim()
+    var rightNorm = String(stripped.slice(half)).replace(/\s+/g, '').replace(/[，。、；：！？,.;:!?…—·"''""（）()【】《》<>]/g, '').trim()
+    if (leftNorm && leftNorm === rightNorm) {
+      return stripped.slice(0, half).replace(/\n+$/, '').trim()
+    }
   }
 
   var lines = stripped.split('\n')
+  // Line-level dedup with exact normalized comparison
   for (var split = 1; split < lines.length; split++) {
     var left = _trimEmptyLines(lines.slice(0, split))
     var right = _trimEmptyLines(lines.slice(split))
     if (_sameNormalizedLines(left, right)) return left.join('\n').trim()
   }
+
+  // Line-level dedup with fuzzy comparison (handles minor punctuation drift between copies)
+  for (var split2 = 2; split2 < lines.length; split2++) {
+    var left2 = _trimEmptyLines(lines.slice(0, split2))
+    var right2 = _trimEmptyLines(lines.slice(split2))
+    if (left2.length === right2.length && left2.length > 0) {
+      var allMatch = true
+      for (var li = 0; li < left2.length; li++) {
+        var ln = String(left2[li]).trim().replace(/\s+/g, '').replace(/[，。、；：！？,.;:!?…—·"''""（）()【】《》<>]/g, '')
+        var rn = String(right2[li]).trim().replace(/\s+/g, '').replace(/[，。、；：！？,.;:!?…—·"''""（）()【】《》<>]/g, '')
+        if (ln !== rn) { allMatch = false; break }
+      }
+      if (allMatch) return left2.join('\n').trim()
+    }
+  }
+
+  // Paragraph-level dedup: if content splits into paragraphs and the first
+  // matches the last (by normalized content), keep only unique paragraphs.
+  if (lines.length >= 4) {
+    var paragraphs = stripped.split(/\n\n+/)
+    if (paragraphs.length >= 2) {
+      var firstPara = paragraphs[0].trim()
+      var lastPara = paragraphs[paragraphs.length - 1].trim()
+      var firstNorm = firstPara.replace(/\s+/g, '')
+      var lastNorm = lastPara.replace(/\s+/g, '')
+      if (firstNorm && firstNorm === lastNorm) {
+        paragraphs.pop()
+        return paragraphs.join('\n\n').trim()
+      }
+    }
+  }
+
   return stripped
 }
 

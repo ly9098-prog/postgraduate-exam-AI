@@ -22,9 +22,10 @@ from app.features.roman_schema import (
 
 class TestConstants:
     def test_roman_to_value_all_keys(self):
-        expected = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5,
-                    "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10}
-        assert _ROMAN_TO_VALUE == expected
+        # ASCII keys must be present (dict may also include Unicode + mixed variants)
+        for k, v in {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5,
+                     "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10}.items():
+            assert _ROMAN_TO_VALUE.get(k) == v, f"missing or wrong value for {k}"
 
     def test_value_to_roman_all_keys(self):
         assert _VALUE_TO_ROMAN[1] == "I"
@@ -49,6 +50,27 @@ class TestConstants:
     def test_regex_rejects_word_boundary(self):
         assert not _RE_ROMAN_SUBITEM_MARKER.search("PIVOT table")
         assert not _RE_ROMAN_SUBITEM_MARKER.search("LIVID response")
+
+    def test_regex_matches_unicode_roman(self):
+        assert _RE_ROMAN_SUBITEM_MARKER.search("Ⅰ. Unicode I")
+        assert _RE_ROMAN_SUBITEM_MARKER.search("Ⅱ. Unicode II")
+        assert _RE_ROMAN_SUBITEM_MARKER.search("Ⅲ. Unicode III")
+        assert _RE_ROMAN_SUBITEM_MARKER.search("Ⅳ. Unicode IV")
+        assert _RE_ROMAN_SUBITEM_MARKER.search("Ⅴ. Unicode V")
+
+    def test_regex_matches_mixed_roman(self):
+        assert _RE_ROMAN_SUBITEM_MARKER.search("IⅡ. Mixed I+II")
+        assert _RE_ROMAN_SUBITEM_MARKER.search("IⅢ. Mixed I+III")
+        assert _RE_ROMAN_SUBITEM_MARKER.search("IⅣ. Mixed I+IV")
+
+    def test_unicode_roman_value_mapping(self):
+        assert _ROMAN_TO_VALUE["Ⅰ"] == 1
+        assert _ROMAN_TO_VALUE["Ⅱ"] == 2
+        assert _ROMAN_TO_VALUE["Ⅲ"] == 3
+        assert _ROMAN_TO_VALUE["Ⅳ"] == 4
+        assert _ROMAN_TO_VALUE["Ⅴ"] == 5
+        assert _ROMAN_TO_VALUE["IⅡ"] == 2
+        assert _ROMAN_TO_VALUE["IⅢ"] == 3
 
 
 class TestHasRomanSubitemList:
