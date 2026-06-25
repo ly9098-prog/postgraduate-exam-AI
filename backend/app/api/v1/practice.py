@@ -93,11 +93,17 @@ def _sanitize_option_value(value: str | None) -> str | None:
     Option values are short display text (e.g. \"I、II、III\", \"O(n)\").
     Applying _split_inline_roman_subitems here corrupts enumeration values
     by inserting newlines inside short option text. Only apply code-operator
-    split (for code options) and skip dedup/roman-split entirely.
+    split (for code options) and collapse embedded newlines (OCR artifacts).
     """
     if not isinstance(value, str):
         return value
+    # Normalize line endings (PDF/OCR can produce \r\n)
+    value = re.sub(r"\r\n", "\n", value)
+    value = re.sub(r"\r", "\n", value)
     value = _fix_code_operator_splits(value)
+    # Collapse remaining newlines to space — prevents option content from
+    # rendering as two lines (newline in option → mp-html <br> → visual doubling)
+    value = re.sub(r"\n+", " ", value).strip()
     return value
 
 

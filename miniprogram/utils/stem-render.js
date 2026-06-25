@@ -151,6 +151,26 @@ function _deduplicateRepeatedText(text) {
     if (leftNorm && leftNorm === rightNorm) {
       return stripped.slice(0, half).replace(/\n+$/, '').trim()
     }
+
+    // Sentence-boundary fuzzy dedup: try splitting at sentence endings near the midpoint
+    // Handles single-line duplicates where half-string cut doesn't align with sentence boundary
+    var _normPuncRe = /[，。、；：！？,.;:!?…—·"''""（）()【】《》<>]/g
+    var _sentenceEndRe = /[。！？；\n]/g
+    var _sMatch
+    while ((_sMatch = _sentenceEndRe.exec(stripped)) !== null) {
+      var _sPos = _sMatch.index + 1  // position after the sentence-ending char
+      if (Math.abs(_sPos - half) <= Math.floor(half * 0.35)) {
+        var _sLeft = stripped.slice(0, _sPos).trim()
+        var _sRight = stripped.slice(_sPos).trim()
+        if (_sLeft && _sRight) {
+          var _sLeftNorm = _sLeft.replace(/\s+/g, '').replace(_normPuncRe, '')
+          var _sRightNorm = _sRight.replace(/\s+/g, '').replace(_normPuncRe, '')
+          if (_sLeftNorm && _sLeftNorm === _sRightNorm) {
+            return _sLeft
+          }
+        }
+      }
+    }
   }
 
   var lines = stripped.split('\n')
@@ -619,14 +639,16 @@ function _optionTextToHtml(key, value) {
 function buildOptionList(opts, optionKeys, selectedFlags) {
   return (optionKeys || []).map(function (key) {
     var optionText = _stripLeadingOptionLabel(key, (opts && opts[key]) || '')
-    var plainOptionText = _toPlainInlineMathText(optionText)
-    var needsRich = !plainOptionText && _needsRichRender(optionText)
+    // Clean embedded newlines (OCR artifact) to prevent visual doubling
+    var cleanedOptionText = optionText.replace(/[\r\n]+/g, ' ')
+    var plainOptionText = _toPlainInlineMathText(cleanedOptionText)
+    var needsRich = !plainOptionText && _needsRichRender(cleanedOptionText)
     return {
       key: key,
       _selected: !!(selectedFlags || {})[key],
-      _text: plainOptionText || optionText,
+      _text: plainOptionText || cleanedOptionText,
       _needsRich: needsRich,
-      _html: needsRich ? _textToHtml(optionText) : ''
+      _html: needsRich ? _textToHtml(cleanedOptionText) : ''
     }
   })
 }

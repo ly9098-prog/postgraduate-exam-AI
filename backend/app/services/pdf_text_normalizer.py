@@ -150,6 +150,23 @@ def deduplicate_repeated_text(text: str) -> str:
         if candidate and stripped[half:].strip() == candidate:
             return candidate
 
+        # 句末边界折叠：在中点附近按句末标点（。！？；）切分，处理单行重复
+        # 解决 half 切分点不对齐语句边界导致的漏判
+        for sep_match in re.finditer(r"[。！？；]", stripped):
+            sep_pos = sep_match.end()
+            if half * 0.4 <= sep_pos <= half * 1.6:
+                left = stripped[:sep_pos].strip()
+                right = stripped[sep_pos:].strip()
+                if left and right:
+                    # 归一化比较（去空白、去标点）
+                    left_norm = re.sub(r"\s+", "", left)
+                    right_norm = re.sub(r"\s+", "", right)
+                    for ch in "，。、；：！？,.;:!?…—·\"''\"\"（）()【】《》<>":
+                        left_norm = left_norm.replace(ch, "")
+                        right_norm = right_norm.replace(ch, "")
+                    if left_norm and left_norm == right_norm:
+                        return left
+
     # —— 逐行折叠：去除相邻完全相同的行（保留顺序） ——
     deduped: list[str] = []
     for line in lines:
