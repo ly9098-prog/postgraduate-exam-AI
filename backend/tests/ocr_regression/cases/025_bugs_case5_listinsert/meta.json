@@ -1,7 +1,7 @@
 {
   "id": "025",
   "name": "bugs_case5_listinsert",
-  "description": "BUGS.md 案例五：typedef struct LNode + 链表插入操作 + 4个选项。题号8在normalize时被OCR纠错转换为B，导致splitter识别为选项行而非题号，切出0题。",
+  "description": "BUGS.md 案例五：typedef struct LNode + 链表插入操作 + 4个选项。题号8→B转换已修复。VL_REBUILD now prefers VL result when PP-OCR has <4 options. AI repair incomplete_options trigger recovers garbled B option from raw_text.",
   "subject": "408",
   "pipeline_stages": [
     "full_ocr",
@@ -10,7 +10,7 @@
   ],
   "expected_questions": 0,
   "known_failure_types": [
-    "题号被OCR纠错覆盖（8→B）"
+    "vl_unavailable_option_count_mismatch"
   ],
   "assertions": {},
   "date_added": "2026-06-22",
@@ -20,11 +20,12 @@
     "ocr_correction",
     "ocr_pipeline",
     "regression",
-    "question_number"
+    "question_number",
+    "8_to_B_fixed"
   ],
-  "last_reviewed": "2026-06-22",
+  "last_reviewed": "2026-06-24",
   "auto_generated_date": "2026-06-22",
   "image_file": "ocr_code_test_6.png",
   "expected_detect": true,
-  "expected_options_count": 3
+  "expected_options_count": 4
 }

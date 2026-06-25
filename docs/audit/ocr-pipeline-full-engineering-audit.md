@@ -1,7 +1,7 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**→ **2026-06-24（VL confidence gate + VL_REBUILD 图片支持 + 双源 OCR 策略）**→ **2026-06-24（代码结构重建阶段 + 审核池泄漏修复）**→ **2026-06-24（噪声治理 v2 + 案例三修复补完）**
+> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**→ **2026-06-24（VL confidence gate + VL_REBUILD 图片支持 + 双源 OCR 策略）**→ **2026-06-24（代码结构重建阶段 + 审核池泄漏修复）**→ **2026-06-24（噪声治理 v2 + 案例三修复补完）**→ **2026-06-25（案例五 Phase 3 original_raw_text merge + AI repair incomplete_options 兜底）**
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
 
 **2026-06-23（本期新增）：**
@@ -294,7 +294,7 @@
 | `bugs_case2_treerecursion` | VL_REBUILD 被 `source_type=="pdf"` 阻断 | ✅ Fix B `be03159` |
 | `bugs_case3_linkedlist` | VL 输出去掉了选项字母前缀 + `(>C` 代码类型噪声残留 + frozen 注册表阻塞题干重建 | ✅ 双源策略 `62f4870` + 代码结构重建 `e91a020` + transition 模式扩展/题干重剥离/冻结清理 `ad33620` |
 | `bugs_case4_forloop` | 基线通过；`}` 断裂 + brace 告警残留 | ✅ 代码结构重建 `e91a020` |
-| `bugs_case5_listinsert` | VL 输出将选项转为 LaTeX 符号 | ✅ 双源策略 `62f4870` |
+| `bugs_case5_listinsert` | VL 输出将选项转为 LaTeX 符号 → 双源策略修复；PP-OCR 重跑文本与原始文本各有不同选项损坏（重跑：A 正确 B 乱码，原始：B 正确 A 乱码）| ✅ 双源策略 `62f4870` + Phase 3 original_raw_text merge + noise layer hallucination 清洗 + AI repair incomplete_options 兜底 |
 
 ### 4.2 根因分类
 
@@ -370,6 +370,7 @@
 | **P0** | 案例三残留：VL_REBUILD 路径 splitter 空 option_lines 导致选项无法从题干剥离 | ✅ ad33620（normalize_schema 独立检测选项后回调 _extract_stem 重剥离） |
 | **P0** | 案例三残留：VL_REBUILD 替换 blocks 后 frozen_option_registry 阻塞正则选项提取 | ✅ ad33620（VL_REBUILD 后将 frozen_option_registry 置 None） |
 | **P2** | 代码类型噪声清洗无可观测性（无指标/无 drift 检测/无策略自适应） | ✅ cb33729（NoiseMetrics + KL drift 检测 + 自适应 safe_mode 切换，49 测试） |
+| **P0** | 案例五残留：PP-OCR 重跑文本与原始文本各有不同选项损坏，VL_REBUILD 合并后仍缺选项 B；AI repair 因 system prompt 禁止修改 options 无法恢复 | ✅ Phase 3 original_raw_text merge（重跑文本 A 正确 B 乱码 + 原始文本 B 正确 A 乱码 → 合并得 4 选项）+ ai_repair incomplete_options trigger（兜底恢复） |
 
 ### 6.2 改造路线图（压缩）
 
@@ -399,6 +400,7 @@
   - 审核池泄漏修复：前序阶段失败时跳过 review 阶段
   - **噪声治理 v2：NoiseMetrics + KL drift 检测 + 自适应 safe_mode 切换 (cb33729)**
   - **案例三修复补完：transition 模式扩展 / 题干重剥离 / VL_REBUILD 冻结清理 (ad33620)**
+  - **案例五修复补完：Phase 3 original_raw_text merge + noise layer hallucination 清洗 + AI repair incomplete_options 兜底**
 
 ⏳ 待处理:
   - AI 补全并行化 (0.5d)
@@ -501,4 +503,4 @@
 
 ---
 
-*报告结束。初版：2026-06-20，末次更新：2026-06-24（BUGS 全 case 修复 + 双源 OCR 策略）。*
+*报告结束。初版：2026-06-20，末次更新：2026-06-25（案例五 Phase 3 original_raw_text merge + AI repair incomplete_options 兜底，5 种 BUGS 失败模式全部修复）。*

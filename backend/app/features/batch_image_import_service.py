@@ -584,7 +584,7 @@ async def _run_single_image(
         from app.features.pipeline_orchestrator import run_import_pipeline
 
         # API 模式：VL 已产出高质量文本，跳过 pipeline 的 ocr_correction 阶段
-        pipeline_opts = {**options, "skip_ocr_correction": skip_ocr_correction}
+        pipeline_opts = {**options, "skip_ocr_correction": skip_ocr_correction, "_original_raw_text": raw_ocr_text}
 
         # Save image to temp file for VL_REBUILD fallback (needs disk path)
         import tempfile

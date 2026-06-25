@@ -1,5 +1,26 @@
 # Bugs History
 
+## 2026-06-25 — 代码题题干/选项部分缺失（第五次修复）——5种失败模式全部解决
+
+- **现象**：5种含C代码块和4个选项的考研408图片在导入后出现不同形态的题干/选项损坏。案例一到五的根因各不相同，经过5轮迭代修复后全部通过。
+- **案例一（栈定义+while循环）**：`#define` 外无序触发代码完整性告警，导致 `confidence=0.7` 的 VL 结果被 gate 丢弃。
+  - **处理**：confidence gate 增加 `is_vl` 识别，VL 结果绕过 confidence 检查进入 AI safety gate。
+- **案例二（BiTree树递归）**：VL_REBUILD 要求 `source_type=="pdf"`，图片导入被阻断。
+  - **处理**：`_run_vl_rebuild_blocks` 移除 source_type 限制，支持图片文件；PDF 路径保留逐页渲染+VL OCR。
+- **案例三（单链表while循环）**：`(>C` 噪声行未被识别为过渡区噪声，选项残留导致题干污染，VL_REBUILD 冻结注册表阻塞 splitter。
+  - **处理**：`code_language_noise_layer` 新增 `在\w+中执行[：:]` 过渡区模式；`question_normalizer` 在 VL_REBUILD 路径下重新剥离题干选项文字；VL_REBUILD 替换 blocks 后清除 `frozen_option_registry`。
+- **案例四（for循环）**：`}` 断裂+brace 告警。
+  - **处理**：`code_structure_reconstruct` 阶段将 OCR 断裂的 `i++) {`、`sum += a[i];}` 等语句拼接闭合。
+- **案例五（链表插入+typedef）**：`8→B` false conversion + `<1>` noise + 选项A垃圾污染 + 选项B丢失，根本原因是 PP-OCR 重跑文本和原始文本各有不同选项损坏（重跑：A正确B乱码；原始：B正确A乱码）。
+  - **处理（5层修复）**：
+    1. 题号 `8→B` 智能启发式修复 + `<1>` 提前清洗
+    2. VL_REBUILD option count comparison + noise layer hallucination 清洗
+    3. `_OCR_HALLUCINATION_RE` 防止代码关键字守卫误放过垃圾行
+    4. **Phase 3 `original_raw_text` merge**：从首次 PP-OCR 原始结果中提取缺失选项，与重跑文本合并，得到完整 4 选项
+    5. **AI repair `incomplete_options` trigger**：兜底检测选项中间缺失，触发 AI 恢复
+- **涉及的代码文件**：`pipeline_orchestrator.py`、`code_language_noise_layer.py`、`ai_repair.py`、`batch_image_import_service.py`、`question_normalizer.py`
+- **验证**：5 个 BUGS case 全部可通过 PP-OCRv6 图片 OCR + detect_options_from_text 验证。案例五经实图导入确认正确输出 4 个选项（A. `p->next = s->next; s->next = p`, B. `s->next = p->next; p->next = s`, C. `p->next = s; s = p->next`, D. `s = p; p->next = NULL`）。
+
 ## 2026-06-24 — 代码题选项系统性丢失（全部5种失败模式已修复）
 
 - **现象**：导入含代码块和4个选项的考研408图片时，选项在审核页中全部缺失。5个不同代码形态（顺序栈定义+while循环、BiTree递归、单链表while、for循环、链表插入+typedef）各自呈现不同的丢失模式，包括OCR只捕获代码不捕获选项、VL输出选项前缀丢失、VL输出被LaTeX污染、VL API置信度为0等。

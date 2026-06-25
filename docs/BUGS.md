@@ -1900,10 +1900,15 @@ D.查找最大值
 }
 ```
 
-##### 案例五（✅ 已修复 — 双源策略优先使用 PP-OCRv6）
+##### 案例五（✅ 已修复 — VL_REBUILD option count comparison + noise layer + Phase 3 original_raw_text merge + incomplete_options AI repair）
 
-> 修复提交：`62f4870` — PP-OCRv6 输出 229 chars 含 A/C/D 选项（B 行 OCR 损坏但 3 个唯一 key ≥ 2 阈值）。
-> detect_options=True，结构稳定。
+> 修复内容：
+> - `pipeline_orchestrator.py` (`_run_vl_rebuild_blocks`): Phase 2 触发条件改为 `pp_opt_count < 4`，VL 选项数多于 PP-OCR 时切换为 VL 文本；新增 `<N>` 噪声行提前清洗。
+> - `code_language_noise_layer.py`: 新增 `_OCR_HALLUCINATION_RE`，在 `_is_code_keyword_line` 前检测含非 ASCII 字符的垃圾行（如 `S = μxau<-d :μxau<-d = μxau<-s'g`），防止代码关键字守卫误放过。
+> - `pipeline_orchestrator.py` (`_run_vl_rebuild_blocks`): 新增 Phase 3 — 当 PP-OCR 重跑（Phase 1）和 VL（Phase 2）的选项数均不足 4 时，从 `original_raw_text`（首次 PP-OCR 原始结果）中提取缺失选项并合并。解决重跑文本和原始文本各有不同选项损坏的问题（重跑文本 A 正确 B 乱码，原始文本 B 正确 A 乱码，合并后得到完整 4 选项）。
+> - `batch_image_import_service.py` (`_run_single_image`): 将 `raw_ocr_text` 作为 `_original_raw_text` 传入 pipeline 选项，确保 VL_REBUILD Phase 3 能访问首次 PP-OCR 的原始结果。
+> - `pipeline_orchestrator.py` (`_run_extract`): 将 `_original_raw_text` 从 options 写入 pipeline data 字典，跨阶段透传。
+> - `ai_repair.py` (`_should_repair`): 新增 `incomplete_options` 触发条件 — 检测单选题选项中间缺失（如 A, C, D 缺少 B），触发 AI 从 raw_text 恢复缺失选项；同时剥离现有 options 并添加补充指令，让 AI 正确推断选项B为 `s->next = p->next; p->next = s`。
 
 ###### 原题
 
@@ -1927,32 +1932,32 @@ D. s = p; p->next = NULL
 
 "/ocr_test/images/example/ocr_code_test_6.png"
 
-###### 导入后进入审核（无选项）
+###### 导入后进入审核（选项丢失，噪声未去除）
 
 ~~~tex
-B.在单链表中进行如下操作:
-```text
+在单链表中进行如下操作：
 typedef struct LNode {
 int data;
 struct LNode * next;
 } LNode, * LinkList;
-```已知 p 指向某节点，执行插入操作: d = − >s : − >s = jxau − >d '
-B. s − >next = p − >next; p − >next = s
-C. p − >next = s; s = p − >next
-D. s = p; p − >next = NULL
+已知 p指向某节点，执行插入操作:
+A. p->next = s->next; s->next = p
+B. S = μxau<-d :μxau<-d = μxau<-s'g
+C. p->next = s; s = p->next
+D. s = p; p->next = NULL
 ~~~
 
 ###### OCR 原文 / 导入原始信息
 
 ~~~tex
-B.在单链表中进行如下操作:
-```text
+8．在单链表中进行如下操作：
 typedef struct LNode {
 int data;
 struct LNode *next;
 } LNode, *LinkList;
-``` 已知 p 指向某节点，执行插入操作: d = ->s :->s = jxau->d '
-B. s->next = p->next; p->next = s
+已知 p指向某节点，执行插入操作:
+A. p->next = s->next; s->next = p
+S = μxau<-d :μxau<-d = μxau<-s'g
 C. p->next = s; s = p->next
 D. s = p; p->next = NULL
 ~~~
@@ -1962,9 +1967,14 @@ D. s = p; p->next = NULL
 ```json
 {
   "parsed_content": {
-    "text": "B.在单链表中进行如下操作:\n```text\ntypedef struct LNode {\nint data;\nstruct LNode *next;\n} LNode, *LinkList;\n```已知 p 指向某节点，执行插入操作: d = ->s :->s = jxau->d '\nB. s->next = p->next; p->next = s\nC. p->next = s; s = p->next\nD. s = p; p->next = NULL"
+    "text": "在单链表中进行如下操作：\ntypedef struct LNode {\nint data;\nstruct LNode *next;\n} LNode, *LinkList;\n已知 p指向某节点，执行插入操作:"
   },
-  "parsed_options": null,
+  "parsed_options": {
+    "A": "p->next = s->next; s->next = p",
+    "B": "S = μxau<-d :μxau<-d = μxau<-s'g",
+    "C": "p->next = s; s = p->next",
+    "D": "s = p; p->next = NULL"
+  },
   "parsed_answer": null,
   "parsed_analysis": null
 }
@@ -1975,67 +1985,64 @@ D. s = p; p->next = NULL
 ```json
 {
   "raw_data": {
-    "stem": "B.在单链表中进行如下操作:\n```text\ntypedef struct LNode {\nint data;\nstruct LNode *next;\n} LNode, *LinkList;\n```已知 p 指向某节点，执行插入操作: d = ->s :->s = jxau->d '\nB. s->next = p->next; p->next = s\nC. p->next = s; s = p->next\nD. s = p; p->next = NULL",
-    "code_blocks": [
-      "typedef struct LNode {\nint data;\nstruct LNode *next;\n} LNode, *LinkList;"
+    "schema_version": "v1",
+    "subject": "",
+    "question_type": "single_choice",
+    "stem": "在单链表中进行如下操作：\ntypedef struct LNode {\nint data;\nstruct LNode *next;\n} LNode, *LinkList;\n已知 p指向某节点，执行插入操作:",
+    "options": [
+      {
+        "key": "A",
+        "text": "p->next = s->next; s->next = p"
+      },
+      {
+        "key": "B",
+        "text": "S = μxau<-d :μxau<-d = μxau<-s'g"
+      },
+      {
+        "key": "C",
+        "text": "p->next = s; s = p->next"
+      },
+      {
+        "key": "D",
+        "text": "s = p; p->next = NULL"
+      }
     ],
-    "options": [],
+    "frozen_options_restored": false,
+    "options_preserved": true,
+    "blank_option_groups": [],
     "answer": "",
     "analysis": "",
-    "subject": "",
-    "question_type": "subjective",
-    "raw_text": "B.在单链表中进行如下操作:\n```text\ntypedef struct LNode {\nint data;\nstruct LNode *next;\n} LNode, *LinkList;\n``` 已知 p 指向某节点，执行插入操作: d = ->s :->s = jxau->d '\nB. s->next = p->next; p->next = s\nC. p->next = s; s = p->next\nD. s = p; p->next = NULL",
+    "raw_text": "8．在单链表中进行如下操作：\ntypedef struct LNode {\nint data;\nstruct LNode *next;\n} LNode, *LinkList;\n已知 p指向某节点，执行插入操作:\nA. p->next = s->next; s->next = p\nS = μxau<-d :μxau<-d = μxau<-s'g\nC. p->next = s; s = p->next\nD. s = p; p->next = NULL",
     "knowledge_points": [],
     "difficulty": 3,
     "source": {
       "file": "ocr_code_test_6.png",
       "page": 1,
-      "type": "txt"
+      "type": "image"
     },
-    "is_valid": false,
+    "is_valid": true,
     "errors": [],
     "warnings": [
       "ocr_contamination_detected",
       "ocr_quality:code_line_break_suspicious",
+      "ocr_quality:code_block_truncated",
+      "ocr_quality:option_structure_corrupted",
       "code_integrity:code_line_break_suspicious",
-      "low_confidence"
+      "low_confidence",
+      "incomplete_options: missing B",
+      "missing_answer_for_objective_question"
     ],
-    "stem_hash": "790a2d87",
-    "confidence_score": 0.35,
-    "validation_status": "failed",
-    "failure_reason": [
-      "code_line_break_suspicious"
-    ],
-    "retry_recommended": true,
-    "ocr_quality_flags": [
-      "code_line_break_suspicious"
-    ],
+    "stem_hash": "86b25e99",
+    "confidence_score": 0.8,
     "risk_flags": [
-      "fallback_low_confidence",
       "code_line_break_suspicious",
-      "code_block_incomplete",
       "low_confidence"
     ],
     "decision_trace": [
       {
-        "stage": "ocr_quality_gate",
-        "result": "blocked",
-        "reason": "score=0.30 flags=['code_line_break_suspicious']"
-      },
-      {
-        "stage": "code_gate",
-        "result": "blocked",
-        "reason": "code_line_break_suspicious;code_block_incomplete"
-      },
-      {
-        "stage": "validation",
-        "result": "failed",
-        "reason": "code_line_break_suspicious"
-      },
-      {
-        "stage": "ai_safety",
-        "result": "blocked",
-        "reason": "safety_rejected: code_symbol_lost:->"
+        "stage": "ai_repair",
+        "result": "repaired",
+        "reason": "stem_cleaned;options_structured"
       },
       {
         "stage": "review",
@@ -2043,9 +2050,6 @@ D. s = p; p->next = NULL
         "reason": "written_to_review_queue"
       }
     ],
-    "vision_fallback_attempted": true,
-    "vision_fallback_used": false,
-    "schema_version": "v1",
     "ai_validation": {
       "is_valid": false,
       "issues": [
@@ -2055,37 +2059,26 @@ D. s = p; p->next = NULL
     }
   },
   "ai_metadata": {
-    "is_valid": false,
+    "is_valid": true,
     "errors": [],
     "warnings": [
       "ocr_contamination_detected",
       "ocr_quality:code_line_break_suspicious",
+      "ocr_quality:code_block_truncated",
+      "ocr_quality:option_structure_corrupted",
       "code_integrity:code_line_break_suspicious",
-      "low_confidence"
+      "low_confidence",
+      "incomplete_options: missing B",
+      "missing_answer_for_objective_question"
     ],
     "knowledge_points": [],
     "difficulty": 3,
-    "stem_hash": "790a2d87",
+    "stem_hash": "86b25e99",
     "decision_trace": [
       {
-        "stage": "ocr_quality_gate",
-        "result": "blocked",
-        "reason": "score=0.30 flags=['code_line_break_suspicious']"
-      },
-      {
-        "stage": "code_gate",
-        "result": "blocked",
-        "reason": "code_line_break_suspicious;code_block_incomplete"
-      },
-      {
-        "stage": "validation",
-        "result": "failed",
-        "reason": "code_line_break_suspicious"
-      },
-      {
-        "stage": "ai_safety",
-        "result": "blocked",
-        "reason": "safety_rejected: code_symbol_lost:->"
+        "stage": "ai_repair",
+        "result": "repaired",
+        "reason": "stem_cleaned;options_structured"
       },
       {
         "stage": "review",
@@ -2093,10 +2086,9 @@ D. s = p; p->next = NULL
         "reason": "written_to_review_queue"
       }
     ],
+    "trace": [],
     "risk_flags": [
-      "fallback_low_confidence",
       "code_line_break_suspicious",
-      "code_block_incomplete",
       "low_confidence"
     ]
   }
@@ -2111,7 +2103,7 @@ D. s = p; p->next = NULL
 | 案例二（BiTree树递归） | `022_bugs_case2_treerecursion` | `backend/tests/ocr_regression/cases/022_bugs_case2_treerecursion/` | VL_REBUILD PDF gate（Fix B `be03159`） |
 | 案例三（单链表while循环） | `023_bugs_case3_linkedlist` | `backend/tests/ocr_regression/cases/023_bugs_case3_linkedlist/` | VL 输出质量→双源策略（`62f4870`）；brace 不闭合→代码结构重建（`e91a020`）；`(>C` 噪声+选项残留+VL_REBUILD 冻结注册表（本阶段三联合修复） |
 | 案例四（for循环） | `024_bugs_case4_forloop` | `backend/tests/ocr_regression/cases/024_bugs_case4_forloop/` | 管道通过基线；`}` 断裂+brace 告警→代码结构重建（`e91a020`） |
-| 案例五（链表插入+typedef） | `025_bugs_case5_listinsert` | `backend/tests/ocr_regression/cases/025_bugs_case5_listinsert/` | VL/PP-OCRv6 B行损坏但≥2 key（双源策略 `62f4870`） |
+| 案例五（链表插入+typedef） | `025_bugs_case5_listinsert` | `backend/tests/ocr_regression/cases/025_bugs_case5_listinsert/` | `8→B` false conversion（智能启发式） + `<1>` noise + 选项A垃圾污染 + 选项B丢失 → ✅ VL_REBUILD option count comparison + hallucination noise + `<N>` 提前清洗 + AI repair incomplete_options 恢复 |
 
 运行方式：
 ```bash
