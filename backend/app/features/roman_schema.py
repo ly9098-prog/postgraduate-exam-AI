@@ -11,18 +11,26 @@ import re
 # Constants (single source of truth)
 # ---------------------------------------------------------------------------
 
-_ROMAN_SUBITEM_TOKEN = r"(?:VIII|VII|III|VI|IV|IX|II|V|X|I)"
+_ROMAN_SUBITEM_TOKEN = (
+    r"(?:Ⅹ|Ⅸ|Ⅷ|Ⅶ|Ⅵ|Ⅴ|Ⅳ|Ⅲ|Ⅱ|Ⅰ"
+    r"|IⅩ|IⅧ|IⅦ|IⅥ|IⅤ|IⅣ|IⅢ|IⅡ"
+    r"|VIII|VII|III|VI|IV|IX|II|V|X|I)"
+)
 
 _RE_ROMAN_SUBITEM_MARKER = re.compile(
     r"(?<![A-Za-z])" + _ROMAN_SUBITEM_TOKEN + r"(?![A-Za-z])\s*[.、)）]"
 )
 
 _ROMAN_TO_VALUE: dict[str, int] = {
+    "Ⅰ": 1, "Ⅱ": 2, "Ⅲ": 3, "Ⅳ": 4, "Ⅴ": 5,
+    "Ⅵ": 6, "Ⅶ": 7, "Ⅷ": 8, "Ⅸ": 9, "Ⅹ": 10,
+    "IⅡ": 2, "IⅢ": 3, "IⅣ": 4, "IⅤ": 5,
+    "IⅥ": 6, "IⅦ": 7, "IⅧ": 8, "IⅨ": 9, "IⅩ": 10,
     "VIII": 8, "VII": 7, "III": 3, "VI": 6, "IV": 4, "IX": 9,
     "II": 2, "V": 5, "X": 10, "I": 1,
 }
 
-_VALUE_TO_ROMAN: dict[int, str] = {v: k for k, v in _ROMAN_TO_VALUE.items()}
+_VALUE_TO_ROMAN: dict[int, str] = {v: k for k, v in _ROMAN_TO_VALUE.items() if k.isascii()}
 
 # ---------------------------------------------------------------------------
 # Anomaly type constants

@@ -618,6 +618,20 @@ class QuestionNormalizer:
         # Don't merge when a colon-ended intro line meets a code line
         if prev.rstrip().endswith(":") and re.search(r"[{};=]", curr):
             return False
+        # Generic code line protection: don't merge lines with strong code signals
+        # into or out of each other (protects unfenced code from line merging)
+        _CODE_LINE_RE = re.compile(
+            r"^\s*(?:for|while|if|else|switch|case|return|int|float|double|char|void|"
+            r"struct|typedef|const|static|sizeof|printf|scanf|malloc|free"
+            r"|def|class|import|from|public|private|protected|function|var|let|const"
+            r"|ListNode|BiTree|LNode|TNode|LinkList|SqList|Stack|Queue|ElemType|Status"
+            r")\b"
+        )
+        if _CODE_LINE_RE.match(curr) or _CODE_LINE_RE.match(prev):
+            return False
+        # Protect lines ending with code operators (; or closing brace)
+        if re.search(r"[;}]$", curr.rstrip()):
+            return False
         return True
 
     # Patterns: code lines that end mid-expression because the next line

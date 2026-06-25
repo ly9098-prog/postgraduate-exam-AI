@@ -277,7 +277,6 @@ group('renderDiff — content mismatch detected', function () {
 })
 
 group('renderDiff — internal space diff allowed (ignored)', function () {
-  // Space differences within content are allowed, but indent is not
   var orig = 'int  x  =  1;'
   var rend = 'int x = 1;'
   var issues = renderDiff(orig, rend)
@@ -285,6 +284,44 @@ group('renderDiff — internal space diff allowed (ignored)', function () {
   var indentIssues = issues.filter(function (i) { return i.type === 'INDENT_MISMATCH' })
   assertEq(contentIssues.length, 0, 'internal space diff allowed: content normalized')
   assertEq(indentIssues.length, 0, 'no indent change')
+})
+
+// ==========================================================================
+// 3.9 Duplicate Content Protection
+// ==========================================================================
+
+group('Dedup — paragraph-level duplicate detected', function () {
+  // Simulate content where stem + code is repeated as paragraphs.
+  // In RICH_TEXT mode, $...$ is converted by formatInlineMathText, so
+  // the plain text check uses the converted form.
+  var content = '第一段文字。\n\n分析：计算。\n\n第一段文字。'
+  var q = { id: 2481, content: { text: content } }
+  var result = buildRenderModel(q, null, mockConfig)
+  assertEq(result.mode, RENDER_MODE.RICH_TEXT, 'dedup content → RICH_TEXT')
+  var first = '第一段文字。'
+  assertEq(result.richTextNodes[0].children.filter(function(c) { return c.text === first }).length, 1,
+    'duplicate paragraph removed')
+})
+
+group('Dedup — full-stem CODE content duplicate detected', function () {
+  // Simulate old data where the full stem + code block is stored twice
+  var code = 'int sum = 0;\nfor(int i = 1; i < n; i *= 2)\n    sum++;'
+  var duplicated = code + '\n\n' + code
+  var q = { id: 2482, content: { text: duplicated } }
+  var result = buildRenderModel(q, null, mockConfig)
+  assertEq(result.mode, RENDER_MODE.CODE, 'deduped code → CODE')
+  var newlines = result.rawText.split('\n').length
+  assertEq(newlines, 3, 'exactly 3 lines after dedup (got ' + newlines + ')')
+})
+
+group('Dedup — no false positive on unique content', function () {
+  var content = '第一段\n\n第二段\n\n第三段'
+  var q = { id: 2483, content: { text: content } }
+  var result = buildRenderModel(q, null, mockConfig)
+  assertEq(result.mode, RENDER_MODE.RICH_TEXT, 'unique content → RICH_TEXT')
+  var children = result.richTextNodes[0].children
+  var textCount = children.filter(function(c) { return c.text }).length
+  assertEq(textCount, 3, 'all 3 paragraphs preserved')
 })
 
 // ==========================================================================

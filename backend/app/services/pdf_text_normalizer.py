@@ -6,6 +6,7 @@
 import re
 
 from app.features.roman_schema import _ROMAN_SUBITEM_TOKEN
+from app.features.text_normalizer import _split_inline_roman_subitems
 
 # 行首结构标记正则（这些行不能被合并到上一行）
 _STRUCTURE_LINE_RE = re.compile(
@@ -113,6 +114,7 @@ def deduplicate_repeated_text(text: str) -> str:
     if not text or not text.strip():
         return text
 
+    text = _split_inline_roman_subitems(text)
     stripped = text.strip()
 
     # —— 行级折叠：前半行 == 后半行 ——
