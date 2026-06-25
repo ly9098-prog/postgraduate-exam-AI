@@ -50,6 +50,12 @@ Page({
   },
 
   onLoad() {
+    this._alive = true
+    this._isVisible = false
+    this._requestId = 0
+    this._viewReady = false
+    this._hasData = false
+    this._finalDrawn = false
     wx.setNavigationBarColor({
       frontColor: '#ffffff',
       backgroundColor: '#0B1121',
@@ -63,14 +69,27 @@ Page({
   },
 
   onShow() {
+    this._isVisible = true
+    if (!this._viewReady) return
+    this._requestId++
     this.loadData()
-    setTimeout(() => {
-      this.setData({ pageEntered: true })
-    }, 50)
+  },
+
+  onReady() {
+    this._viewReady = true
+    this._isVisible = true
+    this._requestId++
+    this.loadData()
+  },
+
+  onHide() {
+    this._isVisible = false
   },
 
   onUnload() {
-    this._stopAnimation()
+    this._alive = false
+    this._isVisible = false
+    this._cancelPendingWork()
   },
 
   /* ==================== Color Helpers ==================== */
@@ -82,6 +101,7 @@ Page({
   /* ==================== Data Loading ==================== */
 
   async loadData() {
+    const reqId = this._requestId
     this.setData({ loading: true })
     try {
       const [stats, trends, subjects, hist] = await Promise.all([
@@ -90,12 +110,16 @@ Page({
         api.get('/pomodoro/subjects'),
         api.get('/pomodoro/history', { page: 1, page_size: 20, date: this.data.selectedDate }),
       ])
+      if (!this._alive || reqId !== this._requestId) return
       const subjArr = subjects || []
       const totalDur = Math.max(1, subjArr.reduce((sum, s) => sum + (s.duration_sec || 0), 0))
       this._rawTodayDur = stats.today_duration_sec || 0
       this._rawWeekDur = stats.week_duration_sec || 0
       this._pieSectors = null
       this._shadeCache = null
+
+      const willAnimate = !this._hasData
+      this._hasData = true
 
       this.setData({
         todaySessions: stats.today_sessions || 0,
@@ -123,29 +147,32 @@ Page({
         history: (hist.items || []).map(this._formatSession),
         historyTotal: hist.total || 0,
         loading: false,
+        pageEntered: true,
         _dispTodaySessions: 0,
         _dispTodayDurationText: '0分钟',
         _dispWeekSessions: 0,
         _dispWeekDurationText: '0分钟',
       }, () => {
-        // setData has committed; view layer is mounting. Init canvases inside the
-        // callback so #pie-canvas / #trend-bars-canvas are guaranteed in the tree.
+        if (!this._alive || !this._isVisible || reqId !== this._requestId) return
         this._initCanvases(() => {
-          // Pre-warm: build _pieSectors cache and paint frame 0 of both charts so
-          // the first animation frame doesn't pay the cache-construction tax.
-          this._renderPieChart(0)
-          this._renderTrendBars(0)
-          // Defer 2 vsync ticks so initial page paint (history list, cards, legend)
-          // completes before the heavy 60fps render loop starts. Avoids contention
-          // on the first few frames that produced the visible entry stutter.
-          const node = this._pieCanvasNode
-          const raf = node && node.requestAnimationFrame
-            ? cb => node.requestAnimationFrame(cb)
-            : cb => setTimeout(cb, 16)
-          raf(() => raf(() => this._startAnimations()))
+          if (!this._alive || !this._isVisible) return
+          if (willAnimate) {
+            this._renderPieChart(0)
+            this._renderTrendBars(0)
+            const node = this._pieCanvasNode
+            const raf = node && node.requestAnimationFrame
+              ? cb => node.requestAnimationFrame(cb)
+              : cb => setTimeout(cb, 16)
+            const animReqId = this._requestId
+            raf(() => raf(() => this._startAnimations(animReqId)))
+          } else {
+            this._renderPieChart(1)
+            this._renderTrendBars(1)
+          }
         })
       })
     } catch (e) {
+      if (!this._alive || reqId !== this._requestId) return
       console.error('加载统计失败', e)
       this.setData({ loading: false })
       wx.showToast({ title: '加载失败', icon: 'none' })
@@ -188,21 +215,27 @@ Page({
   },
 
   async loadHistory(date) {
+    const reqId = this._requestId
     try {
       const hist = await api.get('/pomodoro/history', { page: 1, page_size: 20, date })
+      if (!this._alive || !this._isVisible || reqId !== this._requestId) return
       const formatted = (hist.items || []).map(this._formatSession)
       this.setData({
         history: formatted,
         historyTotal: hist.total || 0,
       })
     } catch (e) {
+      if (!this._alive || !this._isVisible) return
       console.error('加载历史记录失败', e)
     }
   },
 
   /* ==================== Animation Control ==================== */
 
-  _stopAnimation() {
+  _cancelPendingWork() {
+    this._animActive = false
+    this._finalDrawn = false
+    this._requestId++
     if (this._rafId && this._pieCanvasNode && this._pieCanvasNode.cancelAnimationFrame) {
       this._pieCanvasNode.cancelAnimationFrame(this._rafId)
     }
@@ -211,7 +244,6 @@ Page({
       clearTimeout(this._animTimer)
       this._animTimer = null
     }
-    this._animActive = false
   },
 
   _initCanvases(callback) {
@@ -254,68 +286,59 @@ Page({
     return v
   },
 
-  _startAnimations() {
+  _startAnimations(reqId) {
+    if (!this._alive || !this._isVisible || reqId !== this._requestId) return
     this._animActive = true
+    this._finalDrawn = false
     const animDuration = 700
     const startTime = Date.now()
+
+    // Number animation — independent timer (~12 updates), no setData in Canvas RAF
     const tSessions = this.data.todaySessions
     const wSessions = this.data.weekSessions
-    let prevTodaySess = -1
-    let prevWeekSess = -1
-    let prevTodayDur = -1
-    let prevWeekDur = -1
+    const totalSteps = 12
+    let step = 0
+    const numTick = () => {
+      if (!this._animActive || !this._alive || !this._isVisible || reqId !== this._requestId) return
+      step++
+      const p = Math.min(1, step / totalSteps)
+      const e = this._easeOutCubic(p)
+      this.setData({
+        _dispTodaySessions: Math.round(tSessions * e),
+        _dispTodayDurationText: this._fmtMin(Math.round(this._rawTodayDur * e)),
+        _dispWeekSessions: Math.round(wSessions * e),
+        _dispWeekDurationText: this._fmtMin(Math.round(this._rawWeekDur * e)),
+      })
+      if (step < totalSteps) {
+        this._animTimer = setTimeout(numTick, Math.round(animDuration / totalSteps))
+      }
+    }
+    numTick()
 
+    // Canvas animation — RAF only, no setData
     const node = this._pieCanvasNode
     const raf = node && node.requestAnimationFrame
       ? cb => node.requestAnimationFrame(cb)
       : cb => setTimeout(cb, 16)
 
-    let frameCount = 0
-
     const tick = () => {
-      if (!this._animActive) return
+      if (!this._animActive || !this._alive || !this._isVisible || reqId !== this._requestId) return
       const elapsed = Date.now() - startTime
       const rawP = Math.min(1, elapsed / animDuration)
       const eased = this._easeOutCubic(rawP)
-      frameCount++
 
-      // Throttle setData to ~3-frame intervals (~48ms) to reduce cross-bridge cost
-      if (frameCount % 3 === 1 || rawP >= 1) {
-        const curTodaySess = Math.round(tSessions * eased)
-        const curWeekSess = Math.round(wSessions * eased)
-        const curTodayDur = Math.round(this._rawTodayDur * eased)
-        const curWeekDur = Math.round(this._rawWeekDur * eased)
-
-        if (curTodaySess !== prevTodaySess ||
-            curWeekSess !== prevWeekSess ||
-            curTodayDur !== prevTodayDur ||
-            curWeekDur !== prevWeekDur) {
-          prevTodaySess = curTodaySess
-          prevWeekSess = curWeekSess
-          prevTodayDur = curTodayDur
-          prevWeekDur = curWeekDur
-          this.setData({
-            _dispTodaySessions: curTodaySess,
-            _dispTodayDurationText: this._fmtMin(curTodayDur),
-            _dispWeekSessions: curWeekSess,
-            _dispWeekDurationText: this._fmtMin(curWeekDur),
-          })
-        }
-      }
-
-      // Throttle canvas renders to alternating frames (~30fps) — final frame always renders
-      if (frameCount % 2 === 1 || rawP >= 1) {
-        this._renderPieChart(eased)
+      this._renderPieChart(eased)
+      if (Math.round(elapsed / 16) % 2 === 0 || rawP >= 1) {
         this._renderTrendBars(eased)
       }
 
       if (rawP < 1) {
         this._rafId = raf(tick)
-      } else {
+      } else if (!this._finalDrawn) {
+        this._finalDrawn = true
         this._animActive = false
         this._rafId = null
-        this._renderPieChart(1)
-        this._renderTrendBars(1)
+        // Final frame already drawn in the render calls above (rawP>=1 triggers both)
       }
     }
     this._rafId = raf(tick)
@@ -525,8 +548,10 @@ Page({
     ctx.moveTo(0, 0)
     ctx.arc(0, 0, radius, startA, endA)
     ctx.closePath()
-    ctx.fillStyle = fillStyle
-    ctx.fill()
+    if (fillStyle) {
+      ctx.fillStyle = fillStyle
+      ctx.fill()
+    }
     if (strokeStyle) {
       ctx.strokeStyle = strokeStyle
       ctx.lineWidth = lineW || 1
@@ -546,13 +571,9 @@ Page({
     const centerX = w / 2
     const centerY = h * 0.44
     const radius = size * 0.39
-    const tilt = 0.58
-    const depth = size * 0.16
-    // Phase final-quality effects (full depth, shadow, gloss, specular) across
-    // the tail of animation. Staggered start times (0.82→0.92) spread the
-    // clip + gradient draw-call cost frame-to-frame instead of spiking at once.
+    const tilt = 0.72
+    const depth = radius * 0.08
     const isFinal = progress >= 1
-    const fadeIn = (start) => Math.max(0, Math.min(1, (progress - start) / (1 - start)))
 
     ctx.clearRect(0, 0, w, h)
 
@@ -583,193 +604,147 @@ Page({
         angle = endA
       })
       this._pieSectors = sectors
-      const sideStepsFull = Math.max(8, Math.round(depth / 3))
-      this._pieSideSteps = sideStepsFull
-      // Pre-compute per-layer shade amounts (sector color + layer index) for ALL
-      // layers up to full quality. During animation we use a subset; final frame
-      // uses every entry.
+      const wallStepsFull = Math.max(6, Math.round(depth * 1.5))
+      this._pieWallSteps = wallStepsFull
       sectors.forEach(sec => {
-        sec._shades = []
-        for (let layer = 1; layer <= sideStepsFull; layer++) {
-          sec._shades[layer] = this._shadeColorCached(sec.color, -30 + Math.round(layer / sideStepsFull * 20))
+        sec._wallShades = []
+        for (let layer = 1; layer <= wallStepsFull; layer++) {
+          const ratio = layer / wallStepsFull
+          // Progressive darkening: -55 at bottom, -15 at top
+          const darken = Math.round(-55 + ratio * 40)
+          sec._wallShades.push(this._shadeColorCached(sec.color, darken))
         }
       })
     }
 
     const sectors = this._pieSectors
-    const sideStepsFull = this._pieSideSteps
-    const motionSteps = Math.min(12, sideStepsFull)
-    const sideSteps = isFinal
-      ? sideStepsFull
-      : Math.round(motionSteps + (sideStepsFull - motionSteps) * fadeIn(0.82))
-    // When using a reduced layer count, sample shades evenly from the full cache so
-    // gradient feels the same — just coarser steps.
-    const shadeStride = sideStepsFull / sideSteps
-
-    // Drop shadow — fade in during the quality-transition tail so its gradient
-    // build + ellipse fill cost is amortized across frames.
-    if (fadeIn(0.82) > 0) {
-      ctx.save()
-      ctx.globalAlpha = fadeIn(0.82)
-      ctx.translate(centerX, centerY + depth * 1.02)
-      ctx.scale(1, tilt)
-      const shadow = ctx.createLinearGradient(0, -radius * 0.4, 0, radius * 1.2)
-      shadow.addColorStop(0, 'rgba(0,0,0,0.34)')
-      shadow.addColorStop(0.55, 'rgba(0,0,0,0.22)')
-      shadow.addColorStop(1, 'rgba(0,0,0,0)')
-      ctx.fillStyle = shadow
-      ctx.beginPath()
-      ctx.arc(0, 0, radius * 1.18, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.restore()
-    }
+    const wallStepsFull = this._pieWallSteps
+    const wallSteps = isFinal ? wallStepsFull : Math.min(3, wallStepsFull)
 
     const selectedSubject = this.data._selectedSubject
 
-    // Side depth layers
-    for (let layer = sideSteps; layer >= 1; layer--) {
-      const layerOffset = depth * layer / sideSteps * progress
-      // Map reduced-count layer index back into full-cache index for the shade
-      const shadeIdx = Math.max(1, Math.min(sideStepsFull, Math.round(layer * shadeStride)))
-      sectors.forEach(sec => {
-        const curEnd = sec.startA + (sec.endA - sec.startA) * progress
-        if (curEnd - sec.startA < 0.002) return
-        const isSelected = selectedSubject && sec.subject.subject === selectedSubject
-        const mid = (sec.startA + curEnd) / 2
-        const pull = isSelected ? 14 : 0
-        const cx = centerX + Math.cos(mid) * pull
-        const cy = centerY + Math.sin(mid) * pull * tilt + layerOffset
-        this._drawEllipticSector(ctx, cx, cy, radius, tilt, sec.startA, curEnd, sec._shades[shadeIdx], 'rgba(0,0,0,0.12)', 0.5)
-      })
-    }
-
-    // Top sectors
-    sectors.forEach(sec => {
-      const curEnd = sec.startA + (sec.endA - sec.startA) * progress
-      if (curEnd - sec.startA < 0.002) return
-      const isSelected = selectedSubject && sec.subject.subject === selectedSubject
-      const mid = (sec.startA + curEnd) / 2
-      const pull = isSelected ? 14 : 0
-      const cx = centerX + Math.cos(mid) * pull
-      const cy = centerY + Math.sin(mid) * pull * tilt
-      this._drawEllipticSector(
-        ctx,
-        cx,
-        cy,
-        radius * (isSelected ? 1.03 : 1),
-        tilt,
-        sec.startA,
-        curEnd,
-        sec.color,
-        isSelected ? 'rgba(200,230,255,0.95)' : 'rgba(200,230,255,0.65)',
-        isSelected ? 3 : 2.5
-      )
-    })
-
-    // Center light burst — ice glows from center, radiates through all sectors
-    if (fadeIn(0.84) > 0) {
+    // === 1. Drop shadow (final only) — soft, offset to bottom-right ===
+    if (isFinal) {
       ctx.save()
-      ctx.globalAlpha = fadeIn(0.84) * 0.5
-      ctx.translate(centerX, centerY)
+      ctx.translate(centerX + 4, centerY + depth * 1.3)
       ctx.scale(1, tilt)
+      const shadowGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 1.05)
+      shadowGrad.addColorStop(0, 'rgba(0,0,0,0.25)')
+      shadowGrad.addColorStop(0.5, 'rgba(0,0,0,0.10)')
+      shadowGrad.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.fillStyle = shadowGrad
       ctx.beginPath()
-      ctx.arc(0, 0, radius, 0, Math.PI * 2)
-      ctx.clip()
-      const centerLight = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 0.7)
-      centerLight.addColorStop(0, 'rgba(220,235,255,0.6)')
-      centerLight.addColorStop(0.25, 'rgba(220,235,255,0.18)')
-      centerLight.addColorStop(0.55, 'rgba(220,235,255,0.05)')
-      centerLight.addColorStop(1, 'rgba(220,235,255,0)')
-      ctx.fillStyle = centerLight
-      ctx.beginPath()
-      ctx.arc(0, 0, radius, 0, Math.PI * 2)
+      ctx.arc(0, 0, radius * 1.05, 0, Math.PI * 2)
       ctx.fill()
       ctx.restore()
     }
 
-    // Outer rim glow — ice edge catches light
-    if (fadeIn(0.86) > 0) {
+    // Sort: selected sector drawn last for correct overlap
+    const sortedSectors = [...sectors]
+    if (selectedSubject) {
+      sortedSectors.sort((a, b) => {
+        const aSel = a.subject.subject === selectedSubject ? 1 : 0
+        const bSel = b.subject.subject === selectedSubject ? 1 : 0
+        return aSel - bSel
+      })
+    }
+
+    // === 2. Side walls — stacked elliptic layers with progressive darkening ===
+    for (let layer = wallSteps; layer >= 1; layer--) {
+      const layerOffset = depth * layer / wallSteps * progress
+      const shadeIdx = Math.min(wallStepsFull - 1, Math.round((layer - 1) * wallStepsFull / wallSteps))
+      sortedSectors.forEach(sec => {
+        const curEnd = sec.startA + (sec.endA - sec.startA) * progress
+        if (curEnd - sec.startA < 0.002) return
+        const mid = (sec.startA + curEnd) / 2
+        const isSelected = selectedSubject && sec.subject.subject === selectedSubject
+        const pull = isSelected ? 6 : 0
+        const cx = centerX + Math.cos(mid) * pull
+        const cy = centerY + Math.sin(mid) * pull * tilt + layerOffset
+        this._drawEllipticSector(ctx, cx, cy, radius, tilt, sec.startA, curEnd, sec._wallShades[shadeIdx])
+      })
+    }
+
+    // === 3. Top sectors — clean color fills, no per-sector strokes ===
+    sortedSectors.forEach(sec => {
+      const curEnd = sec.startA + (sec.endA - sec.startA) * progress
+      if (curEnd - sec.startA < 0.002) return
+      const mid = (sec.startA + curEnd) / 2
+      const isSelected = selectedSubject && sec.subject.subject === selectedSubject
+      const pull = isSelected ? 6 : 0
+      const cx = centerX + Math.cos(mid) * pull
+      const cy = centerY + Math.sin(mid) * pull * tilt
+      const fillColor = isSelected ? this._shadeColorCached(sec.color, 12) : sec.color
+      this._drawEllipticSector(ctx, cx, cy, radius, tilt, sec.startA, curEnd, fillColor)
+    })
+
+    // === 4. Sector separators — thin, low-opacity dark lines ===
+    if (isFinal && sectors.length > 1) {
       ctx.save()
-      ctx.globalAlpha = fadeIn(0.86) * 0.45
       ctx.translate(centerX, centerY)
       ctx.scale(1, tilt)
+      ctx.strokeStyle = 'rgba(0,0,0,0.12)'
+      ctx.lineWidth = 1
+      sectors.forEach(sec => {
+        ctx.beginPath()
+        ctx.moveTo(0, 0)
+        ctx.lineTo(Math.cos(sec.startA) * radius, Math.sin(sec.startA) * radius)
+        ctx.stroke()
+      })
+      // Close the ring — draw separator at last sector's end angle
+      const last = sectors[sectors.length - 1]
       ctx.beginPath()
-      ctx.arc(0, 0, radius * 1.02, -1.2, 0.2)
-      ctx.strokeStyle = 'rgba(200,230,255,0.6)'
-      ctx.lineWidth = 6
+      ctx.moveTo(0, 0)
+      ctx.lineTo(Math.cos(last.endA) * radius, Math.sin(last.endA) * radius)
       ctx.stroke()
       ctx.restore()
     }
 
-    // Frost overlay — icy sheen across top facets
-    if (fadeIn(0.88) > 0) {
+    // === 5. Unified lighting — single radial gradient from top-left ===
+    if (isFinal) {
       ctx.save()
-      ctx.globalAlpha = fadeIn(0.88) * 0.25
       ctx.translate(centerX, centerY)
       ctx.scale(1, tilt)
       ctx.beginPath()
       ctx.arc(0, 0, radius, 0, Math.PI * 2)
       ctx.clip()
-      const frost = ctx.createLinearGradient(-radius, -radius * 0.5, radius, radius * 0.5)
-      frost.addColorStop(0, 'rgba(200,230,255,0.5)')
-      frost.addColorStop(0.25, 'rgba(240,248,255,0.1)')
-      frost.addColorStop(0.65, 'rgba(200,230,255,0.05)')
-      frost.addColorStop(1, 'rgba(180,215,250,0.15)')
-      ctx.fillStyle = frost
+      const lightGrad = ctx.createRadialGradient(
+        -radius * 0.2, -radius * 0.2, 0,
+        -radius * 0.2, -radius * 0.2, radius
+      )
+      lightGrad.addColorStop(0, 'rgba(255,255,255,0.14)')
+      lightGrad.addColorStop(0.35, 'rgba(255,255,255,0.04)')
+      lightGrad.addColorStop(0.7, 'rgba(0,0,0,0.04)')
+      lightGrad.addColorStop(1, 'rgba(0,0,0,0.10)')
+      ctx.fillStyle = lightGrad
       ctx.beginPath()
       ctx.arc(0, 0, radius, 0, Math.PI * 2)
       ctx.fill()
       ctx.restore()
     }
 
-    // Gloss sheen — most expensive clip+gradient pass, starts late
-    if (fadeIn(0.90) > 0) {
-      ctx.save()
-      ctx.globalAlpha = fadeIn(0.90)
-      ctx.translate(centerX, centerY)
-      ctx.scale(1, tilt)
-      ctx.beginPath()
-      ctx.arc(0, 0, radius, 0, Math.PI * 2)
-      ctx.clip()
-      const gloss = ctx.createLinearGradient(-radius, -radius, radius, radius)
-      gloss.addColorStop(0, 'rgba(220,240,255,0.55)')
-      gloss.addColorStop(0.2, 'rgba(220,240,255,0.2)')
-      gloss.addColorStop(0.45, 'rgba(255,255,255,0)')
-      gloss.addColorStop(0.75, 'rgba(200,225,255,0.08)')
-      gloss.addColorStop(1, 'rgba(140,175,215,0.4)')
-      ctx.fillStyle = gloss
-      ctx.beginPath()
-      ctx.arc(0, 0, radius, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.restore()
-    }
-
-    // Specular highlight — last to fade, no clip, cheap radial gradient
-    if (fadeIn(0.92) > 0) {
-      ctx.save()
-      ctx.globalAlpha = fadeIn(0.92)
-      ctx.translate(centerX - radius * 0.17, centerY - radius * 0.09)
-      ctx.scale(1, tilt)
-      ctx.beginPath()
-      ctx.arc(0, 0, radius * 0.28, 0, Math.PI * 2)
-      const specGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 0.28)
-      specGrad.addColorStop(0, 'rgba(230,245,255,0.85)')
-      specGrad.addColorStop(0.25, 'rgba(220,240,255,0.2)')
-      specGrad.addColorStop(1, 'rgba(200,230,255,0)')
-      ctx.fillStyle = specGrad
-      ctx.fill()
-      ctx.restore()
-    }
-
-    // Selected sector ring
-    if (selectedSubject) {
+    // === 6. Selected state: dim non-selected + highlight selected ===
+    if (selectedSubject && isFinal) {
+      // Dim non-selected sectors
+      sectors.forEach(sec => {
+        if (sec.subject.subject === selectedSubject) return
+        const curEnd = sec.startA + (sec.endA - sec.startA) * progress
+        if (curEnd - sec.startA < 0.002) return
+        ctx.save()
+        ctx.globalAlpha = 0.12
+        ctx.fillStyle = 'rgba(0,0,0,0.7)'
+        this._drawEllipticSector(ctx, centerX, centerY, radius, tilt, sec.startA, curEnd)
+        ctx.restore()
+      })
+      // Highlight selected — thin bright border
       sectors.forEach(sec => {
         if (sec.subject.subject !== selectedSubject) return
         const curEnd = sec.startA + (sec.endA - sec.startA) * progress
+        if (curEnd - sec.startA < 0.002) return
         const mid = (sec.startA + curEnd) / 2
-        const cx = centerX + Math.cos(mid) * 14
-        const cy = centerY + Math.sin(mid) * 14 * tilt
-        this._drawEllipticSector(ctx, cx, cy, radius * 1.08, tilt, sec.startA, curEnd, 'rgba(200,230,255,0.08)', 'rgba(200,230,255,0.3)', 7)
+        const cx = centerX + Math.cos(mid) * 6
+        const cy = centerY + Math.sin(mid) * 6 * tilt
+        this._drawEllipticSector(ctx, cx, cy, radius * 1.03, tilt, sec.startA, curEnd, null, 'rgba(255,255,255,0.2)', 1.5)
       })
     }
   },
@@ -790,7 +765,7 @@ Page({
       const centerX = rect.width / 2
       const centerY = rect.height * 0.44
       const radius = Math.min(rect.width, rect.height) * 0.39
-      const tilt = 0.58
+      const tilt = 0.72
 
       const dx = x - centerX
       const dy = (y - centerY) / tilt
@@ -802,7 +777,7 @@ Page({
           this.setData({
             selectedSubjectDetail: null,
             _selectedSubject: null,
-          }, () => this._renderPieChart(1))
+          }, () => { if (this._alive) this._renderPieChart(1) })
         }
         return
       }
@@ -822,8 +797,9 @@ Page({
             _selectedSubject: s.subject,
             pieTapped: true,
           }, () => {
+            if (!this._alive) return
             this._renderPieChart(1)
-            setTimeout(() => this.setData({ pieTapped: false }), 350)
+            setTimeout(() => { if (this._alive) this.setData({ pieTapped: false }) }, 350)
           })
           return
         }
@@ -836,7 +812,7 @@ Page({
     this.setData({
       selectedSubjectDetail: null,
       _selectedSubject: null,
-    }, () => this._renderPieChart(1))
+    }, () => { if (this._alive) this._renderPieChart(1) })
   },
 
   noop() {},

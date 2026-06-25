@@ -472,13 +472,13 @@
   content: '';
   position: absolute;
   left: 50%;
-  bottom: 78rpx;
-  width: 420rpx;
-  height: 110rpx;
+  bottom: 38rpx;
+  width: 380rpx;
+  height: 80rpx;
   transform: translateX(-50%);
   border-radius: 50%;
-  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.34) 0%, rgba(0, 0, 0, 0.18) 46%, rgba(0, 0, 0, 0) 72%);
-  filter: blur(16rpx);
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.15) 0%, rgba(0, 0, 0, 0.06) 50%, rgba(0, 0, 0, 0) 72%);
+  filter: blur(8rpx);
 }
 
 .pie-canvas {
