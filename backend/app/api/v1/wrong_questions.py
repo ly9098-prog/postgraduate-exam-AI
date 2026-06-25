@@ -65,12 +65,26 @@ def _sanitize_content(content: dict | None) -> dict | None:
     return sanitized
 
 
+def _sanitize_option_value(value: str | None) -> str | None:
+    """Sanitize a single option value — skip roman-subitem splitting.
+
+    Option values are short display text (e.g. \"I、II、III\", \"O(n)\").
+    Applying _split_inline_roman_subitems here corrupts enumeration values
+    by inserting newlines inside short option text. Only apply code-operator
+    split (for code options) and skip dedup/roman-split entirely.
+    """
+    if not isinstance(value, str):
+        return value
+    value = _fix_code_operator_splits(value)
+    return value
+
+
 def _sanitize_options(options: dict | None) -> dict | None:
     if not isinstance(options, dict):
         return options
     sanitized = dict(options)
     for key, value in sanitized.items():
-        sanitized[key] = _sanitize_text_field(value)
+        sanitized[key] = _sanitize_option_value(value)
     return sanitized
 
 
