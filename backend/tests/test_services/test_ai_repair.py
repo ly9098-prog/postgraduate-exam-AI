@@ -155,6 +155,38 @@ class TestShouldRepair:
         assert do
         assert reason == "missing_options"
 
+    def test_incomplete_options_triggers(self):
+        """A, C, D → missing B (gap) should trigger incomplete_options."""
+        q = {
+            "confidence_score": 0.8, "is_valid": True,
+            "question_type": "single_choice",
+            "options": [
+                {"key": "A", "text": "p->next = s->next; s->next = p"},
+                {"key": "C", "text": "p->next = s; s = p->next"},
+                {"key": "D", "text": "s = p; p->next = NULL"},
+            ],
+            "answer": "", "stem": "在单链表中执行:",
+        }
+        do, reason = _should_repair(q, 0.6)
+        assert do
+        assert reason == "incomplete_options"
+
+    def test_complete_options_not_triggered(self):
+        """A, B, C, D → complete, should NOT trigger incomplete_options."""
+        q = {
+            "confidence_score": 0.9, "is_valid": True,
+            "question_type": "single_choice",
+            "options": [
+                {"key": "A", "text": "x"},
+                {"key": "B", "text": "x"},
+                {"key": "C", "text": "x"},
+                {"key": "D", "text": "x"},
+            ],
+            "answer": "A", "stem": "long enough stem for the test case",
+        }
+        do, _ = _should_repair(q, 0.6)
+        assert not do  # above_threshold
+
     @pytest.mark.xfail(reason="AI API key not configured in CI")
     def test_missing_answer_triggers(self):
         q = {"confidence_score": 0.8, "is_valid": True, "question_type": "subjective", "options": [], "answer": "", "stem": "long enough stem"}

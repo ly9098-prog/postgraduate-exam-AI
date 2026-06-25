@@ -2006,6 +2006,7 @@ class ImportPipeline:
         return {
             "raw_blocks": raw_blocks,
             "extracted": len(raw_blocks),
+            "_original_raw_text": (_kw.get("options") or {}).get("_original_raw_text", ""),
             "exercise_regions": exercise_regions_result,
             "exercise_regions_missing": exercise_regions_missing,
             "ocr_boxes_failed_pages": sorted({
@@ -2175,6 +2176,7 @@ class ImportPipeline:
         file_path: str,
         original_blocks: list[dict],
         vl_config: dict | None = None,
+        original_raw_text: str = "",
     ) -> list[dict] | None:
         """用 PaddleOCR-VL 重建 blocks（VL_REBUILD 路径）。
 
@@ -2267,10 +2269,13 @@ class ImportPipeline:
 
             # ── Dual-source strategy: PP-OCRv4 primary, VL fallback ──
             from app.features.ocr_correction_common import repair_option_structure
-            from app.features.question_type_classifier import detect_options_from_text
+            from app.features.question_type_classifier import (
+                detect_options_from_text, extract_options_from_text,
+            )
 
             for page_idx, png_bytes, pw, ph in page_batches:
                 best_text = ""
+                pp_opt_count = 0
 
                 # Phase 1: Run PP-OCRv6 locally (structure primary)
                 try:
@@ -2291,32 +2296,73 @@ class ImportPipeline:
 
                     if detect_options_from_text(pp_text):
                         best_text = pp_text
+                        pp_opt_count = len(extract_options_from_text(pp_text))
                         logger.info(
-                            "VL_REBUILD page %d: using PP-OCRv4 (%d chars, options detected)",
-                            page_idx, len(pp_text),
+                            "VL_REBUILD page %d: PP-OCRv4 (%d chars, %d options detected)",
+                            page_idx, len(pp_text), pp_opt_count,
                         )
                 except Exception as exc:
                     logger.warning("VL_REBUILD PP-OCRv4 failed page %d: %s", page_idx, exc)
 
-                # Phase 2: If PP-OCRv4 didn't detect options, call VL as fallback
-                if not best_text:
+                # Phase 2: Call VL when PP-OCR has fewer than 4 options
+                # (PP-OCR re-run on raw image can miss options that VL recovers)
+                if pp_opt_count < 4:
                     ctx = {"page_num": page_idx, "filename": f"page_{page_idx}.png", "entry_point": "vl_rebuild"}
                     result = _run_coro_in_loop(
                         router.fix(image=png_bytes, ocr_text="", context=ctx)
                     )
 
                     if result and result.fixed_text:
-                        vl_text = result.fixed_text.strip()
-                        # Apply structure repair to VL output
-                        repaired = repair_option_structure(vl_text)
-                        best_text = repaired if detect_options_from_text(repaired) else vl_text
-                        logger.info(
-                            "VL_REBUILD page %d: using VL (%d chars, options=%s)",
-                            page_idx, len(best_text),
-                            detect_options_from_text(best_text),
-                        )
+                        vl_raw = result.fixed_text.strip()
+                        repaired = repair_option_structure(vl_raw)
+                        vl_has_opts = detect_options_from_text(repaired)
+                        vl_text = repaired if vl_has_opts else vl_raw
+                        vl_opt_count = len(extract_options_from_text(vl_text)) if vl_has_opts else 0
+
+                        if vl_opt_count > pp_opt_count:
+                            best_text = vl_text
+                            logger.info(
+                                "VL_REBUILD page %d: switching to VL (%d chars, %d options "
+                                "vs PP-OCR's %d)",
+                                page_idx, len(best_text), vl_opt_count, pp_opt_count,
+                            )
+                        elif not best_text:
+                            best_text = vl_text
+                            logger.info(
+                                "VL_REBUILD page %d: using VL (%d chars, options=%s)",
+                                page_idx, len(best_text), vl_has_opts,
+                            )
+
+                # Phase 3: Check original_raw_text for missing options.
+                # PP-OCR re-run and VL may each miss different options (e.g.
+                # re-run has A correct but B garbled, original has B correct
+                # but A garbled). Extract from original and merge.
+                if best_text and original_raw_text:
+                    current_opts = extract_options_from_text(best_text)
+                    original_opts = extract_options_from_text(original_raw_text)
+                    if original_opts:
+                        missing = set(original_opts.keys()) - set(current_opts.keys())
+                        if missing:
+                            for line in original_raw_text.split("\n"):
+                                for key in list(missing):
+                                    prefix = f"{key}."
+                                    if line.strip().startswith(prefix):
+                                        best_text = best_text + "\n" + line
+                                        current_opts[key] = original_opts[key]
+                                        missing.remove(key)
+                                        logger.info(
+                                            "VL_REBUILD page %d: merged option %s from "
+                                            "original_raw_text (now %d options)",
+                                            page_idx, key, len(current_opts),
+                                        )
+                                        break
 
                 if best_text:
+                    # Clean standalone page/order markers (<1>, <2>, <>, etc.)
+                    # that OCR introduces as transition noise
+                    best_text = re.sub(
+                        r"(?:^|\n)\s*<\d*>\s*(?:\n|$)", r"\n", best_text
+                    ).strip()
                     new_blocks.append({
                         "page": page_idx,
                         "page_index": page_idx,
@@ -2904,7 +2950,10 @@ class ImportPipeline:
                     layout_result.get("layout_confidence", 1.0),
                     layout_result.get("option_detection_failed", False),
                 )
-                rebuilt = self._run_vl_rebuild_blocks(file_path, normalized_blocks, vl_config)
+                rebuilt = self._run_vl_rebuild_blocks(
+                    file_path, normalized_blocks, vl_config,
+                    original_raw_text=_kw.get("_original_raw_text", ""),
+                )
                 if rebuilt:
                     split_blocks = rebuilt
                     # 重建后 layout + frozen 不再适用，重置为手动提取
