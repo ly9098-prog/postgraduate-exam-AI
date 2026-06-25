@@ -342,19 +342,35 @@ Page({
   },
 
   _resumeSession() {
+    // Guard: refuse to resume if no valid sessionStartTime
+    if (typeof this.data.sessionStartTime !== 'number' || this.data.sessionStartTime <= 0) {
+      console.warn('resume aborted: invalid sessionStartTime', this.data.sessionStartTime)
+      this._resetToIdle()
+      return
+    }
     const pausedDuration = Date.now() - (this.data.pauseStartTime || Date.now())
-    const totalPausedMs = (this.data.totalPausedMs || 0) + pausedDuration
+    const totalPausedMs = (this.data.totalPausedMs || 0) + Math.max(0, pausedDuration)
     this.setData({
       isPaused: false,
       totalPausedMs: totalPausedMs,
       pauseStartTime: null,
+    })
+    // Immediately recalculate and display remaining time so the UI doesn't
+    // flash a stale value before the first timer tick.
+    const totalSec = this.data.selectedPreset === 'debug' ? 10 : (this.data.workDuration || 25) * 60
+    const elapsed = Math.floor((Date.now() - this.data.sessionStartTime - totalPausedMs) / 1000)
+    const remainingSec = Math.max(0, totalSec - elapsed)
+    this.setData({
+      remainingSec: remainingSec,
+      displayMin: String(Math.floor(remainingSec / 60)).padStart(2, '0'),
+      displaySec: String(remainingSec % 60).padStart(2, '0'),
+      progress: totalSec > 0 ? remainingSec / totalSec : 0,
     })
     wx.removeStorageSync('pomodoro_pause')
     // 通知后端恢复（按暂停时长延后通知推送时刻）；失败不阻断本地继续
     if (this.data.sessionId) {
       api.post(`/pomodoro/${this.data.sessionId}/resume`, {}).catch(() => {})
     }
-    const totalSec = this.data.workDuration * 60
     this._startTimer(totalSec)
   },
 
