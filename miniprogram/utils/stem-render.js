@@ -111,10 +111,21 @@ function _textToHtml(text) {
 function _deduplicateLines(text) {
   if (!text) return text
   var lines = text.split('\n')
+  var isCode = containsCode(text)
   var out = []
   for (var i = 0; i < lines.length; i++) {
-    if (i === 0 || lines[i].trim() !== lines[i - 1].trim()) {
+    if (i === 0) {
       out.push(lines[i])
+    } else if (isCode) {
+      // Code: only dedup when lines are EXACTLY identical (preserve
+      // indentation, don't collapse same-content lines at different depths)
+      if (lines[i] !== lines[i - 1]) {
+        out.push(lines[i])
+      }
+    } else {
+      if (lines[i].trim() !== lines[i - 1].trim()) {
+        out.push(lines[i])
+      }
     }
   }
   return out.join('\n')
@@ -138,6 +149,9 @@ function _sameNormalizedLines(left, right) {
 
 function _deduplicateRepeatedText(text) {
   if (!text) return text
+  // Code content: skip aggressive dedup (half-string, sentence-boundary,
+  // fuzzy matching all corrupt code structure). Only basic trim.
+  if (containsCode(text)) return String(text).trim()
   var stripped = String(text).trim()
   var half = Math.floor(stripped.length / 2)
   if (half > 0) {
