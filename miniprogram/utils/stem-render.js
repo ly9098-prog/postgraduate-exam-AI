@@ -9,42 +9,38 @@
  *   SEGMENTS  — Uses <math-question> component with pre-rendered formula images.
  *               Applicable only when config.enableMathImage=true AND
  *               content.render_mode === 'segments'.
+ *   MIXED     — Multiple block types within a single stem (text + code, etc.).
+ *               Each block renders independently via its own path.
+ *   LATEX     — Uses <mp-html> with KaTeX plugin. Applicable when stem contains
+ *               display math ($$...$$) or complex LaTeX commands (\frac, \sqrt, etc.).
+ *   CODE      — Uses scroll-view + <text> (zero-HTML). For pure code stems.
+ *               Compressed single-line code is conservatively reconstructed.
  *   RICH_TEXT — Uses native <rich-text> with programmatic nodes. Applicable when
  *               stem has newlines or HTML tags but NO LaTeX (no $$, no \commands).
  *               Also handles plain single-line text (Unicode math conversion).
- *   LATEX     — Uses <mp-html> with KaTeX plugin. Applicable when stem contains
- *               display math ($$...$$) or complex LaTeX commands (\frac, \sqrt, etc.).
- *
- * THIRD-PARTY COMPONENT ADMISSION RULES:
- *   When introducing a new render component (e.g., markdown, table-render):
- *   1. DECLARE input format: What string format does the component consume?
- *   2. DECLARE applicability scope: Which question types/subjects use it?
- *   3. DECLARE fallback path: What happens if the component fails to render?
- *   4. CANNOT be the default fallback renderer. RICH_TEXT is always the
- *      universal fallback. New components must have a specific, narrow scope.
- *   5. Add a new RENDER_MODE constant and a priority-check branch in
- *      buildRenderModel() BEFORE the RICH_TEXT fallback.
- *   6. Must update ALL pages' WXML templates in the same commit (see docs/render-invariant.md).
  *
  * RENDER INVARIANT:
  *   For a given cleaned stem text, exactly ONE render mode must be selected.
+ *   MIXED is one mode — its internal blocks do not count as separate render paths.
  *   If the same stem hash produces different modes across renders, RenderGuard
  *   emits a console.error in DEV mode.
  *
- * RenderModel is IMMUTABLE. Pages must not modify mode, richTextNodes, html, or segments.
- * New rendering capabilities must be added here, never patched at the page layer.
+ * RenderModel is IMMUTABLE in DEV. Pages must not modify mode, richTextNodes,
+ * html, blocks, or segments. New rendering capabilities must be added here,
+ * never patched at the page layer.
  * =============================================================================
  */
 
 var appConfig = require('../config')
 var { formatInlineMathText, replaceSimpleLatexCommands } = require('./math-format')
-var { containsCode } = require('./code-reconstructor')
+var { containsCode, shouldReconstructCode, reconstructCode, sanitizeImportedCodeArtifacts } = require('./code-reconstructor')
 
 var RENDER_MODE = {
   RICH_TEXT: 'RICH_TEXT',
   LATEX: 'LATEX',
   SEGMENTS: 'SEGMENTS',
   CODE: 'CODE',
+  MIXED: 'MIXED',
 }
 
 // ---- render guard ----
@@ -108,27 +104,30 @@ function _textToHtml(text) {
   return '<p>' + out.join('') + '</p>'
 }
 
-function _deduplicateLines(text) {
-  if (!text) return text
-  var lines = text.split('\n')
-  var isCode = containsCode(text)
-  var out = []
-  for (var i = 0; i < lines.length; i++) {
-    if (i === 0) {
-      out.push(lines[i])
-    } else if (isCode) {
-      // Code: only dedup when lines are EXACTLY identical (preserve
-      // indentation, don't collapse same-content lines at different depths)
-      if (lines[i] !== lines[i - 1]) {
-        out.push(lines[i])
-      }
-    } else {
-      if (lines[i].trim() !== lines[i - 1].trim()) {
-        out.push(lines[i])
-      }
-    }
-  }
-  return out.join('\n')
+// ---- canonical form for dedup ----
+
+function _toCanonicalForm(text) {
+  if (!text) return ''
+  var s = String(text)
+    .replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&[#a-zA-Z0-9]+;/g, ' ')
+    .replace(/\$([^$\n]+?)\$/g, function(_, inner) {
+      var plain = formatInlineMathText(inner)
+      return /\\[a-zA-Z]+/.test(plain) ? '' : plain
+    })
+    .replace(/\s+/g, ' ')
+    .replace(/[，。、；：！？…—·"''""（）()【】《》<>]/g, function(ch) {
+      if ('，。、；：！？'.indexOf(ch) >= 0) return ' '
+      return ch
+    })
+    .trim()
+  return s
 }
 
 function _trimEmptyLines(lines) {
@@ -139,91 +138,55 @@ function _trimEmptyLines(lines) {
   return lines.slice(start, end)
 }
 
-function _sameNormalizedLines(left, right) {
-  if (left.length !== right.length || left.length === 0) return false
-  for (var i = 0; i < left.length; i++) {
-    if (String(left[i]).trim() !== String(right[i]).trim()) return false
-  }
-  return true
-}
-
 function _deduplicateRepeatedText(text) {
   if (!text) return text
-  // Code content: skip aggressive dedup (half-string, sentence-boundary,
-  // fuzzy matching all corrupt code structure). Only basic trim.
-  if (containsCode(text)) return String(text).trim()
-  var stripped = String(text).trim()
+
+  var normalized = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
+  // Full-text half dedup: compare canonical forms of left/right halves
+  var stripped = normalized.trim()
   var half = Math.floor(stripped.length / 2)
   if (half > 0) {
-    if (stripped.slice(0, half) === stripped.slice(half)) return stripped.slice(0, half).replace(/\n+$/, '').trim()
-    var candidate = stripped.slice(0, half).trim()
-    if (candidate && stripped.slice(half).trim() === candidate) return candidate
+    var leftHalf = stripped.slice(0, half)
+    var rightHalf = stripped.slice(half)
+    if (_toCanonicalForm(leftHalf) === _toCanonicalForm(rightHalf) && _toCanonicalForm(leftHalf).trim()) {
+      return leftHalf.replace(/\n+$/, '').trim()
+    }
+  }
 
-    // Fuzzy half-string match: compare with normalized content (handles OCR punctuation drift)
-    var leftNorm = String(stripped.slice(0, half)).replace(/\s+/g, '').replace(/[，。、；：！？,.;:!?…—·"''""（）()【】《》<>]/g, '').trim()
-    var rightNorm = String(stripped.slice(half)).replace(/\s+/g, '').replace(/[，。、；：！？,.;:!?…—·"''""（）()【】《》<>]/g, '').trim()
-    if (leftNorm && leftNorm === rightNorm) {
-      return stripped.slice(0, half).replace(/\n+$/, '').trim()
+  // Paragraph-level dedup: compare adjacent paragraphs by canonical form
+  var paragraphs = stripped.split(/\n\n+/)
+  if (paragraphs.length >= 2) {
+    var result = []
+    for (var i = 0; i < paragraphs.length; i++) {
+      var current = paragraphs[i]
+      if (i > 0) {
+        var prev = paragraphs[i - 1]
+        var isCodeBlock = containsCode(current) || containsCode(prev)
+
+        if (isCodeBlock) {
+          // Code paragraphs: dedup only when exactly identical
+          if (current.trim() === prev.trim()) continue
+        } else {
+          // Text paragraphs: dedup when canonical forms match
+          if (_toCanonicalForm(current) === _toCanonicalForm(prev)) continue
+        }
+      }
+      result.push(current)
     }
 
-    // Sentence-boundary fuzzy dedup: try splitting at sentence endings near the midpoint
-    // Handles single-line duplicates where half-string cut doesn't align with sentence boundary
-    var _normPuncRe = /[，。、；：！？,.;:!?…—·"''""（）()【】《》<>]/g
-    var _sentenceEndRe = /[。！？；\n]/g
-    var _sMatch
-    while ((_sMatch = _sentenceEndRe.exec(stripped)) !== null) {
-      var _sPos = _sMatch.index + 1  // position after the sentence-ending char
-      if (Math.abs(_sPos - half) <= Math.floor(half * 0.35)) {
-        var _sLeft = stripped.slice(0, _sPos).trim()
-        var _sRight = stripped.slice(_sPos).trim()
-        if (_sLeft && _sRight) {
-          var _sLeftNorm = _sLeft.replace(/\s+/g, '').replace(_normPuncRe, '')
-          var _sRightNorm = _sRight.replace(/\s+/g, '').replace(_normPuncRe, '')
-          if (_sLeftNorm && _sLeftNorm === _sRightNorm) {
-            return _sLeft
-          }
+    // Also check first vs last paragraph (non-adjacent duplicate)
+    if (result.length >= 3) {
+      var firstPara = result[0].trim()
+      var lastPara = result[result.length - 1].trim()
+      if (!containsCode(firstPara) && !containsCode(lastPara)) {
+        if (_toCanonicalForm(firstPara) === _toCanonicalForm(lastPara) && _toCanonicalForm(firstPara)) {
+          result.pop()
         }
       }
     }
-  }
 
-  var lines = stripped.split('\n')
-  // Line-level dedup with exact normalized comparison
-  for (var split = 1; split < lines.length; split++) {
-    var left = _trimEmptyLines(lines.slice(0, split))
-    var right = _trimEmptyLines(lines.slice(split))
-    if (_sameNormalizedLines(left, right)) return left.join('\n').trim()
-  }
-
-  // Line-level dedup with fuzzy comparison (handles minor punctuation drift between copies)
-  for (var split2 = 2; split2 < lines.length; split2++) {
-    var left2 = _trimEmptyLines(lines.slice(0, split2))
-    var right2 = _trimEmptyLines(lines.slice(split2))
-    if (left2.length === right2.length && left2.length > 0) {
-      var allMatch = true
-      for (var li = 0; li < left2.length; li++) {
-        var ln = String(left2[li]).trim().replace(/\s+/g, '').replace(/[，。、；：！？,.;:!?…—·"''""（）()【】《》<>]/g, '')
-        var rn = String(right2[li]).trim().replace(/\s+/g, '').replace(/[，。、；：！？,.;:!?…—·"''""（）()【】《》<>]/g, '')
-        if (ln !== rn) { allMatch = false; break }
-      }
-      if (allMatch) return left2.join('\n').trim()
-    }
-  }
-
-  // Paragraph-level dedup: if content splits into paragraphs and the first
-  // matches the last (by normalized content), keep only unique paragraphs.
-  if (lines.length >= 4) {
-    var paragraphs = stripped.split(/\n\n+/)
-    if (paragraphs.length >= 2) {
-      var firstPara = paragraphs[0].trim()
-      var lastPara = paragraphs[paragraphs.length - 1].trim()
-      var firstNorm = firstPara.replace(/\s+/g, '')
-      var lastNorm = lastPara.replace(/\s+/g, '')
-      if (firstNorm && firstNorm === lastNorm) {
-        paragraphs.pop()
-        return paragraphs.join('\n\n').trim()
-      }
-    }
+    return result.join('\n\n').trim()
   }
 
   return stripped
@@ -366,7 +329,9 @@ function _removeTrailingOptionKeys(text, optionKeys) {
 }
 
 function _cleanStemText(stemText, options, optionKeys) {
-  var dedupedStem = _deduplicateRepeatedText(_deduplicateLines(stemText))
+  // Normalize line endings, then dedup (canonical comparison — no line-level dedup)
+  var normalized = String(stemText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  var dedupedStem = _deduplicateRepeatedText(normalized)
   var withoutExactOptions = _stripEmbeddedOptionBlock(dedupedStem, options)
   var withoutLabelOptions = _stripTrailingOptionBlockByLabels(withoutExactOptions, optionKeys)
   return _removeTrailingOptionKeys(withoutLabelOptions, optionKeys)
@@ -402,6 +367,265 @@ function _buildRichTextNodes(text) {
     children.push({ type: 'text', text: lines[i] })
   }
   return [{ name: 'p', attrs: {}, children: children }]
+}
+
+// ---- split stem into blocks for MIXED mode ----
+
+/**
+ * Determine if a single block of text should be classified as CODE.
+ * Uses a stricter per-block heuristic than containsCode() to avoid
+ * false-positive on natural language containing code-like tokens.
+ */
+function _isCodeBlock(text) {
+  if (!text || !text.trim()) return false
+  // Markdown fenced code block
+  if (/^```/.test(text.trim())) return true
+
+  // Quick containsCode check — score >= 3 signals code
+  if (!containsCode(text)) return false
+
+  // Additional guard: require at least one structural code element
+  // ({, }, ; at end of line, control flow keywords)
+  var lines = text.split('\n')
+  var structuralCount = 0
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim()
+    if (/[{}\s]/.test(line) && /[{]/.test(line)) structuralCount++
+    if (/;$/.test(line)) structuralCount++
+    if (/^\s*(if|else|for|while|do|switch|case|return|struct|class)\b/.test(line)) structuralCount++
+    if (structuralCount >= 2) return true
+  }
+
+  return structuralCount >= 1
+}
+
+/**
+ * Score the code-likeness of text after a potential code start position.
+ * Returns a score >= 4 to be considered credible code.
+ */
+function _scoreCodeContent(text) {
+  if (!text) return 0
+  var score = 0
+
+  // Type keyword at start (strong signal)
+  if (/^(int|void|char|float|double|long|boolean|String|unsigned|short)\b/.test(text)) score += 2
+  // Control flow with parens
+  if (/\b(for|while|if|switch|do|catch)\s*\(/.test(text)) score += 2
+  // return / printf / scanf / malloc / free / sizeof / typedef
+  if (/\b(return|printf|scanf|malloc|free|sizeof|typedef)\b/.test(text)) score += 2
+  // Function call with parens
+  if (/\([^)]*\)/.test(text)) score += 1
+  // Semicolons
+  if (/;/.test(text)) score += 1
+  // Braces
+  if (/[{}]/.test(text)) score += 1
+  // Increment / decrement
+  if (/\+\+|--/.test(text)) score += 1
+  // Assignment operators (but not ==)
+  if (/[+\-*/%&|^]?=(?!=)/.test(text)) score += 1
+  // Pointer / reference
+  if (/->|::/.test(text)) score += 1
+
+  return score
+}
+
+/**
+ * Check if text ends with sentence-ending punctuation suitable as a
+ * natural-language-to-code transition point.
+ */
+function _hasSentenceEnding(text) {
+  // ASCII semicolon ; is excluded — it appears in code, not in natural-language
+  // sentence endings. Only Chinese fullwidth ； and other sentence-final
+  // punctuation (。！？：！？：\n.!?:) are recognized.
+  return /[。！？：；\n.!?:]\s*$/.test(text)
+}
+
+/**
+ * Find the first credible position where natural language transitions to
+ * inline code on the same line.
+ *
+ * Algorithm:
+ *   1. Scan for type keywords (int, void, …) and control flow (for, while, …)
+ *      that could mark the start of inline code.
+ *   2. For each candidate, verify the text BEFORE ends with sentence-ending
+ *      punctuation and the text AFTER has sufficient code characteristics
+ *      (score >= 4 via _scoreCodeContent).
+ *
+ * Returns the character index of the code start, or -1 if no credible
+ * transition is found.
+ */
+function _findCredibleCodeStart(text) {
+  // Type keyword followed by identifier
+  var kwType = /\b(int|void|char|float|double|long|boolean|String|unsigned|short)\s+\w+/g
+  // Control flow with parens
+  var kwControl = /\b(for|while|if|switch|do)\s*\(/g
+  // return / printf / scanf / malloc / free with paren or semicolon
+  var kwReturn = /\b(return|printf|scanf|malloc|free)\s*[;(]/g
+
+  var match
+
+  // Try type keywords first (strongest signal)
+  while ((match = kwType.exec(text)) !== null) {
+    var pos = match.index
+    var before = text.slice(0, pos).trim()
+    if (!before) continue
+
+    var after = text.slice(pos)
+    if (_hasSentenceEnding(before) && _scoreCodeContent(after) >= 4) {
+      return pos
+    }
+  }
+
+  // Try control flow keywords
+  while ((match = kwControl.exec(text)) !== null) {
+    var pos2 = match.index
+    var before2 = text.slice(0, pos2).trim()
+    if (!before2) continue
+
+    var after2 = text.slice(pos2)
+    if (_hasSentenceEnding(before2) && _scoreCodeContent(after2) >= 4) {
+      return pos2
+    }
+  }
+
+  // Try return / printf / scanf / malloc / free
+  while ((match = kwReturn.exec(text)) !== null) {
+    var pos3 = match.index
+    var before3 = text.slice(0, pos3).trim()
+    if (!before3) continue
+
+    var after3 = text.slice(pos3)
+    if (_hasSentenceEnding(before3) && _scoreCodeContent(after3) >= 4) {
+      return pos3
+    }
+  }
+
+  return -1
+}
+
+/**
+ * Split a single block of text that has inline natural language followed
+ * by code on the same line.
+ *
+ * Example:
+ *   "下列程序的时间复杂度是（ ）。 int m=0; for(i=0;i<n;i++) m++;"
+ *   → [{ type: 'RICH_TEXT', text: '下列程序的时间复杂度是（ ）。' },
+ *       { type: 'CODE', text: 'int m=0; for(i=0;i<n;i++) m++;' }]
+ *
+ * When no credible split is found, returns a single RICH_TEXT block.
+ *
+ * @param {string} text - A single paragraph of text
+ * @returns {Array<{type: string, text: string}>} blocks
+ */
+function splitInlineTextAndCode(text) {
+  if (!text || !text.trim()) return [{ type: 'RICH_TEXT', text: text || '' }]
+
+  var trimmed = text.trim()
+
+  var codeStart = _findCredibleCodeStart(trimmed)
+  if (codeStart === -1) {
+    return [{ type: 'RICH_TEXT', text: trimmed }]
+  }
+
+  var before = trimmed.slice(0, codeStart).trim()
+  var after = trimmed.slice(codeStart).trim()
+
+  var blocks = []
+  if (before) blocks.push({ type: 'RICH_TEXT', text: before })
+  if (after) blocks.push({ type: 'CODE', text: after })
+
+  return blocks
+}
+
+/**
+ * Split a stem text into blocks for MIXED rendering.
+ *
+ * Algorithm:
+ *   1. Split paragraphs by blank lines (double newlines).
+ *   2. For each paragraph, try inline text+code splitting first.
+ *   3. Classify each resulting block (or whole paragraph) as CODE, LATEX, or RICH_TEXT.
+ *   4. Merge adjacent same-type blocks.
+ *
+ * @param {string} text - cleaned stem text (already deduplicated)
+ * @returns {Array<{type: string, text: string}>} blocks
+ */
+function splitStemBlocks(text) {
+  if (!text || !text.trim()) return [{ type: 'RICH_TEXT', text: text || '' }]
+
+  var source = String(text)
+
+  // Separate into raw paragraphs
+  var rawParas = source.split(/\n\n+/)
+
+  // Step 1: For each paragraph, try inline splitting, then classify
+  var classified = []
+  for (var p = 0; p < rawParas.length; p++) {
+    var para = rawParas[p].trim()
+    if (!para) continue
+
+    // Try inline text+code splitting for same-line mixing
+    var inlineBlocks = splitInlineTextAndCode(para)
+    if (inlineBlocks.length > 1) {
+      // Successfully split inline — add each block with pre-assigned type
+      for (var ib = 0; ib < inlineBlocks.length; ib++) {
+        classified.push(inlineBlocks[ib])
+      }
+    } else {
+      // No inline split — classify the whole paragraph
+      var type = _classifyParagraph(para)
+      classified.push({ type: type, text: para })
+    }
+  }
+
+  if (classified.length === 0) return [{ type: 'RICH_TEXT', text: '' }]
+
+  // Merge adjacent same-type blocks
+  var merged = []
+  for (var k = 0; k < classified.length; k++) {
+    if (merged.length > 0 && merged[merged.length - 1].type === classified[k].type) {
+      merged[merged.length - 1].text += '\n\n' + classified[k].text
+    } else {
+      merged.push({ type: classified[k].type, text: classified[k].text })
+    }
+  }
+
+  return merged
+}
+
+function containsUnresolvedLatex(text) {
+  var value = String(text || '')
+  var complexCmds = 'frac|sqrt|sum|prod|int|iint|iiint|oint|begin|end|left|right|'
+    + 'matrix|pmatrix|vmatrix|bmatrix|cases|align|array|displaystyle|'
+    + 'text|mbox|lim|log|ln|lg|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan'
+  return (
+    /\$\$[\s\S]*?\$\$/.test(value) ||
+    /\$[^$\n]+?\$/.test(value) ||
+    new RegExp('\\\\(' + complexCmds + ')\\b').test(value)
+  )
+}
+
+function _classifyParagraph(text) {
+  if (!text) return 'RICH_TEXT'
+
+  // Check for fenced code
+  if (/^```/.test(text.trim())) return 'CODE'
+
+  // CODE check
+  var isCode = _isCodeBlock(text)
+  if (isCode) return 'CODE'
+
+  // Try plain text conversion first — if simple inline LaTeX can be converted
+  // to Unicode, prefer RICH_TEXT over LATEX
+  var plain = _toPlainInlineMathText(text) || _toPlainSimpleInlineMathText(text)
+  if (typeof plain === 'string' && plain.length > 0 && !containsUnresolvedLatex(plain)) {
+    return 'RICH_TEXT'
+  }
+
+  // LATEX check — display math or complex LaTeX commands (exclude C escapes \n \t \r)
+  if (/\$\$[\s\S]*?\$\$/.test(text)) return 'LATEX'
+  if (/\\[a-zA-Z]+/.test(text) && !/\\[nrt]/.test(text)) return 'LATEX'
+
+  return 'RICH_TEXT'
 }
 
 // ---- hash ----
@@ -479,13 +703,24 @@ function _devAssertSinglePath(cleanedStem, content, resultMode) {
   if (!appConfig.DEV) return
   var modeFlags = []
   if (appConfig.enableMathImage && content && content.render_mode === 'segments') modeFlags.push('SEGMENTS')
-  var hasLatex = /\\[a-zA-Z]+/.test(cleanedStem) || /\$\$[\s\S]*?\$\$/.test(cleanedStem)
+  var hasLatex = (function() {
+    var t = cleanedStem
+    if (/\$\$[\s\S]*?\$\$/.test(t)) return true
+    var matches = t.match(/\\[a-zA-Z]+/g)
+    if (!matches) return false
+    var cEscapes = { n: true, t: true, r: true }
+    for (var i = 0; i < matches.length; i++) {
+      var c = matches[i].slice(1)
+      if (c.length > 2 || !cEscapes[c]) return true
+    }
+    return false
+  })()
   if (hasLatex) modeFlags.push('LATEX')
-  // CODE mode is explicit — don't flag it as competing with RICH_TEXT
+  // CODE mode or MIXED mode is explicit — don't flag it as competing with RICH_TEXT
   if (!hasLatex && !containsCode(cleanedStem) && _needsRichRender(cleanedStem)) modeFlags.push('RICH_TEXT')
-  // Note: TEXT_PLAIN is intentionally excluded — it's folded into RICH_TEXT path
 
-  if (modeFlags.length > 1) {
+  var isCodePath = resultMode === RENDER_MODE.CODE || resultMode === RENDER_MODE.MIXED
+  if (!isCodePath && modeFlags.length > 1) {
     console.error(
       '[RENDER_INVARIANT_VIOLATION] Stem satisfies multiple render conditions: ' + modeFlags.join(', ') + '\n' +
       '  selected mode: ' + resultMode + '\n' +
@@ -496,8 +731,31 @@ function _devAssertSinglePath(cleanedStem, content, resultMode) {
 
 // ---- render invariant assert ----
 
-function _assertCodeRenderIntegrity(mode, rawText, html, richTextNodes) {
+function _assertCodeRenderIntegrity(mode, rawText, html, richTextNodes, blocks) {
   if (!appConfig.DEV) return
+
+  if (mode === RENDER_MODE.MIXED) {
+    // MIXED mode: validate each CODE block
+    if (!blocks || blocks.length === 0) {
+      console.error(
+        '[MIXED_RENDER_VIOLATION] MIXED mode has empty blocks array'
+      )
+      return
+    }
+    for (var i = 0; i < blocks.length; i++) {
+      var block = blocks[i]
+      if (block.type === 'CODE') {
+        if (/&(?:nbsp|amp|lt|gt|#\d+);/.test(String(block.rawText || ''))) {
+          console.error(
+            '[CODE_HTML_LEAK] MIXED CODE block #' + i + ' contains HTML entities\n' +
+            '  rawText tail: ' + String(block.rawText).slice(-80)
+          )
+        }
+      }
+    }
+    return
+  }
+
   if (mode !== RENDER_MODE.CODE) return
 
   // CODE_RENDER_VIOLATION: CODE mode must NOT populate html or richTextNodes
@@ -521,9 +779,66 @@ function _assertCodeRenderIntegrity(mode, rawText, html, richTextNodes) {
   }
 }
 
+// ---- render payload assertions ----
+
+function _assertExclusiveRenderPayload(model) {
+  if (!appConfig.DEV) return
+  var m = model || {}
+  var mode = m.mode
+  var active = 0
+
+  if (mode === RENDER_MODE.RICH_TEXT) {
+    active += m.richTextNodes && m.richTextNodes.length ? 1 : 0
+    if (m.html || m.rawText || (m.blocks && m.blocks.length)) {
+      console.error('[RENDER_PAYLOAD_CONFLICT] RICH_TEXT has extra payload')
+    }
+  }
+
+  if (mode === RENDER_MODE.LATEX) {
+    active += m.html ? 1 : 0
+    if ((m.richTextNodes && m.richTextNodes.length) || m.rawText || (m.blocks && m.blocks.length)) {
+      console.error('[RENDER_PAYLOAD_CONFLICT] LATEX has extra payload')
+    }
+  }
+
+  if (mode === RENDER_MODE.CODE) {
+    active += m.rawText ? 1 : 0
+    if (m.html || (m.richTextNodes && m.richTextNodes.length) || (m.blocks && m.blocks.length)) {
+      console.error('[RENDER_PAYLOAD_CONFLICT] CODE has extra payload')
+    }
+  }
+
+  if (mode === RENDER_MODE.MIXED) {
+    active += m.blocks && m.blocks.length ? 1 : 0
+    if (m.html || m.rawText || (m.richTextNodes && m.richTextNodes.length)) {
+      console.error('[RENDER_PAYLOAD_CONFLICT] MIXED has top-level payload')
+    }
+  }
+
+  if (active !== 1) {
+    console.error('[RENDER_PAYLOAD_CONFLICT] expected exactly one active payload for mode=' + mode)
+  }
+}
+
+function _assertBlockPayloadIntegrity(blocks) {
+  if (!appConfig.DEV || !Array.isArray(blocks)) return
+  for (var i = 0; i < blocks.length; i++) {
+    var b = blocks[i]
+    if (b.type === 'RICH_TEXT' && !(b.richTextNodes && b.richTextNodes.length)) {
+      console.error('[BLOCK_PAYLOAD] RICH_TEXT block #' + i + ' missing richTextNodes')
+    }
+    if (b.type === 'LATEX' && !b.html) {
+      console.error('[BLOCK_PAYLOAD] LATEX block #' + i + ' missing html')
+    }
+    if (b.type === 'CODE' && !b.rawText) {
+      console.error('[BLOCK_PAYLOAD] CODE block #' + i + ' missing rawText')
+    }
+  }
+}
+
 // ---- render trace ----
 
-function _buildRenderTrace(questionId, sourceStem, mode, cleanedStem) {
+function _buildRenderTrace(questionId, sourceStem, mode, cleanedStem, blocks) {
   var trace = {
     questionId: questionId,
     timestamp: Date.now(),
@@ -540,7 +855,42 @@ function _buildRenderTrace(questionId, sourceStem, mode, cleanedStem) {
     trace.stemLengthBefore = before.length
     trace.stemLengthAfter = after.length
   }
+  if (mode === RENDER_MODE.MIXED && Array.isArray(blocks)) {
+    trace.blockTypes = blocks.map(function (b) { return b.type })
+  }
   return trace
+}
+
+// ---- block rendering helpers ----
+
+function _renderRichTextBlock(text) {
+  var plain = _toPlainInlineMathText(text) || _toPlainSimpleInlineMathText(text) || text
+  return {
+    type: 'RICH_TEXT',
+    richTextNodes: _buildRichTextNodes(plain),
+  }
+}
+
+function _renderLatexBlock(text) {
+  return {
+    type: 'LATEX',
+    html: _textToHtml(text),
+  }
+}
+
+function _renderCodeBlock(text, cfg) {
+  // First: sanitize imported code artifacts (dollar sign pollution)
+  var sanitized = sanitizeImportedCodeArtifacts(text)
+  var rawText = sanitized
+  if (!cfg || !cfg.DISABLE_CODE_RECONSTRUCT) {
+    if (shouldReconstructCode(sanitized)) {
+      rawText = reconstructCode(sanitized, { fixOperators: false, fixStructure: true, fixIndent: false })
+    }
+  }
+  return {
+    type: 'CODE',
+    rawText: rawText,
+  }
 }
 
 // ---- public API ----
@@ -551,7 +901,7 @@ function _buildRenderTrace(questionId, sourceStem, mode, cleanedStem) {
  * @param {Object} q - question object with .id, .content
  * @param {Object} [options] - question options {A: '...', B: '...'}
  * @param {Object} [cfg] - config override (defaults to appConfig)
- * @returns {Object} frozen RenderModel { mode, richTextNodes, html, segments }
+ * @returns {Object} frozen RenderModel { mode, richTextNodes, html, segments, blocks }
  */
 function buildRenderModel(q, options, cfg) {
   var effectiveConfig = cfg || appConfig
@@ -564,7 +914,7 @@ function buildRenderModel(q, options, cfg) {
   var cleanedStem = _cleanStemText(sourceStemText, options, optionKeys)
   var stemHash = _hashStem(cleanedStem)
 
-  var mode, richTextNodes, html, segments, rawText
+  var mode, richTextNodes, html, segments, rawText, blocks
 
   // Priority 1: SEGMENTS (math-question with pre-rendered formula images)
   if (effectiveConfig.enableMathImage && content && content.render_mode === 'segments') {
@@ -572,46 +922,108 @@ function buildRenderModel(q, options, cfg) {
     segments = _textToSegments(cleanedStem)
     richTextNodes = []
     html = ''
+    blocks = []
   } else {
-    // Try plain text conversion
-    var plainStem = _toPlainInlineMathText(cleanedStem) || _toPlainSimpleInlineMathText(cleanedStem)
-    var hasLatex = /\\[a-zA-Z]+/.test(cleanedStem) || /\$\$[\s\S]*?\$\$/.test(cleanedStem)
+    // Try splitting into blocks for MIXED detection
+    var stemBlocks = splitStemBlocks(cleanedStem)
+    var blockTypes = []
+    for (var bi = 0; bi < stemBlocks.length; bi++) {
+      var bt = stemBlocks[bi].type
+      if (blockTypes.indexOf(bt) === -1) blockTypes.push(bt)
+    }
 
-    // SAFE_MODE: bypass LATEX for code stems to prevent HTML contamination
-    var selfHealCode = effectiveConfig.SAFE_MODE && containsCode(cleanedStem)
-
-    if (hasLatex && !selfHealCode) {
-      // Priority 2: LATEX (mp-html + KaTeX) — complex LaTeX
-      mode = RENDER_MODE.LATEX
-      html = _textToHtml(cleanedStem)
-      richTextNodes = []
-      segments = []
-    } else if (containsCode(cleanedStem)) {
-      // Priority 3: CODE (zero-HTML raw text with white-space: pre)
-      mode = RENDER_MODE.CODE
-      rawText = cleanedStem
-      html = ''
-      richTextNodes = []
-      segments = []
-      // Render regression diff: verify cleanedStem against sourceStemText
-      var diffIssues = _renderDiff(sourceStemText, cleanedStem)
-      if (diffIssues.length > 0) {
-        _reportDiff(diffIssues, q && q.id)
+    if (blockTypes.length > 1) {
+      // MIXED: different block types present
+      mode = RENDER_MODE.MIXED
+      blocks = []
+      for (var bj = 0; bj < stemBlocks.length; bj++) {
+        var sb = stemBlocks[bj]
+        if (sb.type === 'CODE') {
+          blocks.push(_renderCodeBlock(sb.text, effectiveConfig))
+        } else if (sb.type === 'LATEX') {
+          blocks.push(_renderLatexBlock(sb.text))
+        } else {
+          blocks.push(_renderRichTextBlock(sb.text))
+        }
       }
-    } else {
-      // Priority 4: RICH_TEXT (native <rich-text>) — all non-LaTeX, non-code, non-segments
-      mode = RENDER_MODE.RICH_TEXT
-      richTextNodes = _buildRichTextNodes(plainStem || cleanedStem)
+      richTextNodes = []
       html = ''
+      rawText = ''
       segments = []
+    } else {
+      // Single block type — use existing priority logic
+      // Check for LaTeX commands excluding C escape sequences (\n, \t, \r, \0, \\)
+      var hasLatex = (function() {
+        if (/\$\$[\s\S]*?\$\$/.test(cleanedStem)) return true
+        var latexMatches = cleanedStem.match(/\\[a-zA-Z]+/g)
+        if (!latexMatches) return false
+        var cEscapes = { n: true, t: true, r: true }
+        for (var mi = 0; mi < latexMatches.length; mi++) {
+          var cmd = latexMatches[mi].slice(1)
+          if (cmd.length > 2 || !cEscapes[cmd]) return true
+        }
+        return false
+      })()
+      var selfHealCode = effectiveConfig.SAFE_MODE && containsCode(cleanedStem)
+
+      // Priority 2a: Try plain text conversion first (simple inline LaTeX → Unicode)
+      // Only if conversion succeeds with no unresolved LaTeX and no code present
+      var plainStem = _toPlainInlineMathText(cleanedStem) || _toPlainSimpleInlineMathText(cleanedStem)
+      var plainConversionSucceeded = typeof plainStem === 'string' && plainStem.length > 0 && !containsUnresolvedLatex(plainStem)
+
+      if (plainConversionSucceeded && !containsCode(cleanedStem)) {
+        // Simple inline LaTeX fully converted to plain text → RICH_TEXT
+        mode = RENDER_MODE.RICH_TEXT
+        richTextNodes = _buildRichTextNodes(plainStem)
+        html = ''
+        segments = []
+        blocks = []
+        rawText = ''
+      } else if (hasLatex && !selfHealCode) {
+        // Priority 2: LATEX (mp-html + KaTeX) — complex LaTeX
+        mode = RENDER_MODE.LATEX
+        html = _textToHtml(cleanedStem)
+        richTextNodes = []
+        segments = []
+        blocks = []
+      } else if (containsCode(cleanedStem)) {
+        // Priority 3: CODE (zero-HTML raw text with white-space: pre)
+        mode = RENDER_MODE.CODE
+        // Sanitize imported code artifacts, then reconstruct if compressed
+        var sanitizedCode = sanitizeImportedCodeArtifacts(cleanedStem)
+        var codeText = sanitizedCode
+        if (!effectiveConfig.DISABLE_CODE_RECONSTRUCT && shouldReconstructCode(sanitizedCode)) {
+          codeText = reconstructCode(sanitizedCode, { fixOperators: false, fixStructure: true, fixIndent: false })
+        }
+        rawText = codeText
+        html = ''
+        richTextNodes = []
+        segments = []
+        blocks = []
+        // Render regression diff: verify cleanedStem against sourceStemText
+        var diffIssues = _renderDiff(sourceStemText, cleanedStem)
+        if (diffIssues.length > 0) {
+          _reportDiff(diffIssues, q && q.id)
+        }
+      } else {
+        // Priority 4: RICH_TEXT (native <rich-text>) — all non-LaTeX, non-code, non-segments
+        mode = RENDER_MODE.RICH_TEXT
+        var plainStemFallback = _toPlainInlineMathText(cleanedStem) || _toPlainSimpleInlineMathText(cleanedStem) || cleanedStem
+        richTextNodes = _buildRichTextNodes(plainStemFallback)
+        html = ''
+        segments = []
+        blocks = []
+        rawText = ''
+      }
     }
   }
 
   _devAssertSinglePath(cleanedStem, content, mode)
-  _assertCodeRenderIntegrity(mode, cleanedStem, html, richTextNodes)
+  _assertCodeRenderIntegrity(mode, cleanedStem, html, richTextNodes, blocks)
+  _assertBlockPayloadIntegrity(blocks)
   _renderGuardCheck(q && q.id, stemHash, mode)
 
-  var renderTrace = _buildRenderTrace(q && q.id, sourceStemText, mode, cleanedStem)
+  var renderTrace = _buildRenderTrace(q && q.id, sourceStemText, mode, cleanedStem, blocks)
 
   var model = {
     mode: mode,
@@ -619,8 +1031,11 @@ function buildRenderModel(q, options, cfg) {
     html: html || '',
     segments: segments || [],
     rawText: rawText || '',
+    blocks: blocks || [],
     renderTrace: renderTrace,
   }
+
+  _assertExclusiveRenderPayload(model)
 
   if (effectiveConfig.DEV && mode === RENDER_MODE.CODE) {
     if (renderTrace.codeHashBefore !== renderTrace.codeHashAfter) {
@@ -695,5 +1110,9 @@ module.exports = {
   textToHtml: _textToHtml,
   buildRichTextNodes: _buildRichTextNodes,
   segmentsToText: _segmentsToText,
-  textToSegments: _textToSegments
+  textToSegments: _textToSegments,
+
+  // MIXED mode support
+  splitStemBlocks: splitStemBlocks,
+  splitInlineTextAndCode: splitInlineTextAndCode,
 }
