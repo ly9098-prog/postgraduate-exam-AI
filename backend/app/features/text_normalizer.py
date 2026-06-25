@@ -252,10 +252,13 @@ def _clean_text_regions(
         )
         content = re.sub(r"\n((?:参考|正确)?)\n(答案\s*[：:])", r"\n\1\2", content)
 
-        # ---- Step 5: 换行合并 ----
+        # ---- Step 5: 换行合并 + 罗马序号拆分 ----
         if _strategy_on("space_newline"):
             content = _merge_ocr_newlines(content)
             content = re.sub(r"\n{3,}", "\n\n", content)
+        else:
+            # Even without merge, split inline roman subitems if present
+            content = _split_inline_roman_subitems(content)
 
         # ---- Step 6: 空格规范化 ----
         if _strategy_on("space_newline"):
@@ -269,8 +272,8 @@ def _clean_text_regions(
             lines = content.split("\n")
             has_roman = _has_roman_subitem_list(content)
             corrected: list[str] = []
-            for line in lines:
-                line = _fix_option_line(line)
+            for line_idx, line in enumerate(lines):
+                line = _fix_option_line(line, line_index=line_idx)
                 line = _fix_question_number_line(line, has_roman)
                 line = _fix_option_roman_digit_confusion(line, has_roman)
                 corrected.append(line)
@@ -463,10 +466,61 @@ def _split_inline_option_sequence(text: str) -> str:
     return "\n".join(split_line(line) for line in text.split("\n"))
 
 
+def _split_inline_roman_subitems(text: str) -> str:
+    """拆分行内罗马序号子项（I./II./III./IV.）到独立行。
+
+    仅当一行内包含≥2个罗马枚举标记且至少一对连续值时拆分。
+    不拆分已独立成行的标记，不影响英文正文中普通 I。
+    """
+    if not text:
+        return text
+
+    _roman_marker = _RE_ROMAN_SUBITEM_MARKER
+
+    def split_line(line: str) -> str:
+        matches = list(_roman_marker.finditer(line))
+        if len(matches) < 2:
+            return line
+        # Extract tokens and check sequential pattern
+        tokens = []
+        for m in matches:
+            tm = re.match(_ROMAN_SUBITEM_TOKEN, m.group(0))
+            if tm:
+                tokens.append(tm.group(0))
+        if len(tokens) < 2:
+            return line
+        values = [_ROMAN_TO_VALUE.get(t, 0) for t in tokens]
+        # At least one adjacent pair must be increasing
+        has_sequential = any(values[i + 1] > values[i] for i in range(len(values) - 1))
+        if not has_sequential:
+            return line
+        # Split before each marker (reversed to preserve positions)
+        for match in reversed(matches):
+            start = match.start()
+            if start > 0 and line[start - 1] != "\n":
+                line = line[:start] + "\n" + line[start:]
+        return line
+
+    return "\n".join(split_line(line) for line in text.split("\n"))
+
+
 def _merge_ocr_newlines(text: str) -> str:
-    """合并 OCR 断行，但保留结构行边界（题号/选项/答案/解析/罗马子项等）。"""
+    """合并 OCR 断行，保留结构行与代码行边界（题号/选项/答案/解析/罗马子项/代码行）。"""
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = _split_inline_option_sequence(text)
+    text = _split_inline_roman_subitems(text)
+
+    # Code-like line detection
+    _CODE_LINE_RE = re.compile(
+        r"^\s*(?:for|while|if|else|switch|case|return|int|float|double|char|void|"
+        r"struct|typedef|const|static|sizeof|printf|scanf|malloc|free"
+        r"|def|class|import|from|public|private|protected|function|var|let|const"
+        r")\b"
+    )
+    # Lines ending with a trailing operator (OCR-split expression)
+    _TRAILING_OP_RE = re.compile(
+        r'(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$'
+    )
 
     def _merge_sep(prev: str, curr: str) -> str:
         if not prev:
@@ -495,11 +549,24 @@ def _merge_ocr_newlines(text: str) -> str:
             continue
         if not result or result[-1] == "":
             result.append(stripped)
+        # Code continuation: prev line ends with trailing operator → merge operator-split code
+        # before checking structure/option markers (which would otherwise match continuation
+        # fragments like `2)` as question numbers or option markers)
+        elif _TRAILING_OP_RE.search(result[-1].rstrip()):
+            sep = _merge_sep(result[-1], stripped)
+            result[-1] += sep + stripped
         elif _RE_STRUCTURE_LINE.match(stripped):
             result.append(stripped)
         elif _RE_PREV_STRUCTURE_LINE.match(result[-1]):
             result.append(stripped)
         elif result[-1][-1] in _SENTENCE_END:
+            result.append(stripped)
+        # Code-like statement boundary protection (new statement starts)
+        elif _CODE_LINE_RE.match(stripped):
+            result.append(stripped)
+        elif re.search(r"[;}]$", stripped.rstrip()):
+            result.append(stripped)
+        elif re.search(r"[{};]\s*$", result[-1].rstrip()):
             result.append(stripped)
         else:
             sep = _merge_sep(result[-1], stripped)
@@ -562,11 +629,38 @@ def _has_roman_subitem_list(text: str) -> bool:
     return len(distinct) >= 2
 
 
-def _fix_option_line(line: str) -> str:
-    """修复选项行 OCR 错误：8/６→B, 0/O/o/Ｏ→D。"""
-    m = re.match(r"^([8６6])\s*([.、:：）])", line)
-    if m:
-        return "B" + m.group(2) + line[m.end():]
+def _is_question_number_line(line: str) -> bool:
+    """Check if a line starting with a number is a question number, not option B.
+
+    Question numbers are followed by Chinese stem text (long, descriptive),
+    while option B misread as ``8.`` has short content (code or brief text).
+    """
+    m = re.match(r"^\d+\s*[.、:：）]", line)
+    if not m:
+        return False
+    after = line[m.end():]
+    cn_count = sum(1 for c in after if '一' <= c <= '鿿')
+    if cn_count >= 8:
+        return True
+    stem_keywords = {"在", "下列", "以下", "已知", "设", "若", "对于", "关于", "阅读", "执行"}
+    for kw in stem_keywords:
+        if after.startswith(kw):
+            return True
+    return False
+
+
+def _fix_option_line(line: str, line_index: int = -1) -> str:
+    """修复选项行 OCR 错误：8/６→B, 0/O/o/Ｏ→D。
+
+    Line-level OCR fix for option prefixes. ``_is_question_number_line``
+    prevents false conversion of question number ``8`` to option ``B``
+    when the first line reads as a question stem.
+    """
+    # 8/6 → B: skip when the line is clearly a question number (stem text)
+    if not (line_index == 0 and _is_question_number_line(line)):
+        m = re.match(r"^([8６6])\s*([.、:：）])", line)
+        if m:
+            return "B" + m.group(2) + line[m.end():]
     m = re.match(r"^([0OoＯ])\s*([.、:：）])(?!.*[A-Ha-h]\s*[.、:：）])", line)
     if m:
         return "D" + m.group(2) + line[m.end():]

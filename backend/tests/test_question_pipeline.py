@@ -127,6 +127,17 @@ def test_text_cleaning() -> None:
     check("代码换行保留", "\nP1() {                     P2() {\n" in code_out, repr(code_out))
     check("代码缩进保留", "\n x = 1;      // A1          x = -3;" in code_out, repr(code_out))
 
+    # Unfenced code protection: code-like lines should not be merged
+    unfenced_code = normalizer.clean_text(
+        "int sum = 0;\n"
+        "for(int i = 1; i < n; i *= 2)\n"
+        "    for(int j = 0; j < i; j++)\n"
+        "        sum++;"
+    )
+    check("unfenced code lines not merged", unfenced_code.count("\n") >= 3, repr(unfenced_code))
+    check("unfenced for loop preserved", "for(int i = 1" in unfenced_code, repr(unfenced_code))
+    check("unfenced indent preserved", "    for(int j = 0" in unfenced_code, repr(unfenced_code))
+
 
 def test_dedup_helpers() -> None:
     print("\n[6] 去重辅助")
