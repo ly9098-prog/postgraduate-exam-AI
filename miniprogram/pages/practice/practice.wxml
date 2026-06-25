@@ -189,7 +189,7 @@
           <math-question segments="{{currentQuestion._renderModel.segments}}" />
         </block>
         <rich-text wx:elif="{{currentQuestion._renderModel.mode === 'RICH_TEXT'}}" wx:key="rich-text" class="q-content" nodes="{{currentQuestion._renderModel.richTextNodes}}"></rich-text>
-        <view wx:elif="{{currentQuestion._renderModel.mode === 'CODE'}}" wx:key="code" class="code-wrapper"><text decode="false" class="code-text">{{currentQuestion._renderModel.rawText}}</text></view>
+        <view wx:elif="{{currentQuestion._renderModel.mode === 'CODE'}}" wx:key="code" class="code-wrapper"><text decode="false" space="preserve" class="code-text">{{currentQuestion._renderModel.rawText}}</text></view>
         <mp-html wx:elif="{{currentQuestion._renderModel.mode === 'LATEX'}}" wx:key="latex" class="q-content" content="{{currentQuestion._renderModel.html}}" lazy-load></mp-html>
 
         <!-- 多空选择题选项 -->

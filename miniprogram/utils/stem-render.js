@@ -524,8 +524,8 @@ function buildRenderModel(q, options, cfg) {
   var content = q && q.content
   var optionKeys = options ? Object.keys(options) : []
 
-  // Extract raw stem text
-  var stemText = (content && (content.text || content.stem)) || ''
+  // Extract raw stem text — prefer stem over text (stem has better code formatting)
+  var stemText = (content && (content.stem || content.text)) || ''
   var sourceStemText = stemText || (content && _segmentsToText(content.segments)) || ''
   var cleanedStem = _cleanStemText(sourceStemText, options, optionKeys)
   var stemHash = _hashStem(cleanedStem)
