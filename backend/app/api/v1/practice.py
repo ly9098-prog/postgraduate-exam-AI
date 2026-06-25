@@ -31,6 +31,42 @@ from app.services.pdf_text_normalizer import deduplicate_repeated_text
 _CODE_OP_SPLIT_RE = re.compile(
     r'(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$'
 )
+
+# Code detection signals (mirrors frontend containsCode logic)
+_CODE_SIGNALS = [
+    'return', 'printf', 'scanf', 'malloc', 'free', 'NULL',
+    'struct', 'typedef', 'enum', 'union',
+    'int ', 'void ', 'char ', 'float ', 'double ',
+    'bool', 'const', 'static', 'sizeof',
+    '->', '::', '{', '}', ';',
+    '++', '--', '+=', '-=', '*=', '/=',
+    '#include', '#define',
+]
+_CONTROL_KW = [
+    'for', 'while', 'if', 'else if', 'else', 'switch',
+    'return', 'break', 'continue', 'case', 'do',
+]
+_DS_KW = [
+    'LNode', 'TNode', 'BiTNode', 'BiTree', 'BSTNode', 'LinkList',
+    'SqList', 'Stack', 'Queue', 'SqStack', 'ElemType', 'Status',
+]
+
+
+def _contains_code(text: str) -> bool:
+    """Heuristic: does text contain enough signals to be code?"""
+    if not isinstance(text, str) or not text:
+        return False
+    score = 0
+    for sig in _CODE_SIGNALS:
+        if sig in text:
+            score += 1
+    for kw in _DS_KW:
+        if kw in text:
+            score += 2
+    for kw in _CONTROL_KW:
+        if re.search(r'\b' + re.escape(kw) + r'\b', text):
+            score += 1
+    return score >= 3
 from app.utils.trace.debug import create_trace_id, debug_log, save_debug_snapshot
 
 _TRUE_FALSE_OPTIONS = {"A": "正确", "B": "错误"}
@@ -65,6 +101,18 @@ def _fix_code_operator_splits(text: str) -> str:
 def _sanitize_text_field(value: str | None) -> str | None:
     if not isinstance(value, str):
         return value
+
+    # Normalize line endings before any processing
+    value = re.sub(r"\r\n", "\n", value)
+    value = re.sub(r"\r", "\n", value)
+
+    # Code content must bypass dedup and roman-split to preserve
+    # indentation, repeated lines, and control-statement structure.
+    # Only apply normalize operators across newlines (OCR artifact fix).
+    if _contains_code(value):
+        value = _fix_code_operator_splits(value)
+        return value
+
     value = deduplicate_repeated_text(value)
     value = _split_inline_roman_subitems(value)
     value = _fix_code_operator_splits(value)

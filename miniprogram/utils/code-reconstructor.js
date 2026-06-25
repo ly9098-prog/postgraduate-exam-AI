@@ -42,6 +42,8 @@ var _CODE_SIGNALS = [
   'int ', 'void ', 'char ', 'float ', 'double ',
   'bool', 'const', 'static', 'sizeof',
   '->', '::', '{', '}', ';',
+  '++', '--', '+=', '-=', '*=', '/=',
+  '#include', '#define', 'main(',
 ]
 
 // ---- Keywords specific to 408 DS ----
