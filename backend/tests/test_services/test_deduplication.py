@@ -110,7 +110,7 @@ class TestMergeBrokenLines:
 
 # ─── _parse_pdf 双层 PDF 模拟 ─────────────────────────────────────────────────
 
-@pytest.mark.xfail(reason="PDF fixture not available in CI")
+@pytest.mark.xfail(strict=True, reason="PDF fixture not available in CI")
 class TestParsePdfDuplication:
     """模拟 _extract_pdf_text 返回双层 PDF 重复文本的场景。"""
 

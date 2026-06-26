@@ -695,6 +695,12 @@ Page({
     if (renderModel.mode === 'RICH_TEXT') activePaths++
     if (renderModel.mode === 'CODE') activePaths++
     if (renderModel.mode === 'LATEX') activePaths++
+    if (renderModel.mode === 'MIXED') {
+      activePaths++
+      if (!renderModel.blocks || renderModel.blocks.length === 0) {
+        console.error('[MIXED_RENDER_VIOLATION] MIXED mode but blocks is empty')
+      }
+    }
     if (activePaths !== 1) {
       console.error('[RENDER_INVARIANT] _renderModel.mode="' + renderModel.mode + '" yields ' + activePaths + ' active paths (expected 1)')
     }
@@ -718,6 +724,17 @@ Page({
       // Auto self-heal: enter safe mode on any violation
       if ((hasHtmlLeak || hasRenderViolation) && !this.data.safeModeActive) {
         this._enterSafeMode()
+      }
+    }
+    // MIXED mode: check each CODE block for HTML entity leaks
+    if (renderModel.mode === 'MIXED' && renderModel.blocks) {
+      for (var mi = 0; mi < renderModel.blocks.length; mi++) {
+        var mBlock = renderModel.blocks[mi]
+        if (mBlock.type === 'CODE' && mBlock.rawText) {
+          if (/&(?:nbsp|amp|lt|gt|#\d+);/.test(mBlock.rawText)) {
+            console.error('[CODE_HTML_LEAK] MIXED CODE block #' + mi + ' contains HTML entities')
+          }
+        }
       }
     }
   },

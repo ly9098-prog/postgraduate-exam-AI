@@ -1,6 +1,7 @@
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import utcnow
 from app.core.admin_security import AdminPrincipal
 from app.models.admin import AuditLog
 
@@ -37,7 +38,7 @@ async def write_admin_audit(
 def _normalize_audit_range(created_from, created_to):
     from datetime import datetime, timedelta
 
-    now = datetime.utcnow()
+    now = utcnow()
     start = created_from or now - timedelta(days=183)
     end = created_to or now
     if start > end:

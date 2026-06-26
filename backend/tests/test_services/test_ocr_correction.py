@@ -158,7 +158,7 @@ class TestCorrectOcrBlocks:
         assert result["stats"]["corrected_blocks"] == 0
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Stale mock compatibility — test infra debt")
+    @pytest.mark.xfail(strict=True, reason="Test ordering dependency: ai.client.deepseek global state not isolated across tests")
     async def test_noisy_block_corrected(self):
         noisy_text = "1.\n下列\n关于\n数据\n结构\n的\n说法\n正确\n的是"
         corrected_text = "1. 下列关于数据结构的说法正确的是"

@@ -6,6 +6,7 @@ from fastapi import Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import utcnow
 from app.core.admin_security import AdminPrincipal
 from app.models.admin import Permission, QuestionVersion, RolePermission
 from app.models.question import Question
@@ -236,7 +237,7 @@ async def _sync_import_review(
     reject_reason: str | None = None,
 ) -> None:
     result = await db.execute(select(QuestionImport).where(QuestionImport.question_id == question.id))
-    now = datetime.utcnow()
+    now = utcnow()
     for item in result.scalars().all():
         item.status = status
         item.reject_reason = reject_reason

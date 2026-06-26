@@ -167,10 +167,9 @@ class TestBatchApproveNoRaiseOnAllSkipped:
         for qid, missing in skipped.items():
             assert "options_empty" in missing
 
-    @pytest.mark.xfail(reason="Stale mock compatibility — test infra debt")
     def test_partial_pass(self):
         qis = [
-            _make_qi(1),  # 有效
+            _make_qi(1, parsed_options={"A": "2x", "B": "x", "C": "x^2", "D": "0"}),  # 有效
             _make_qi(2, parsed_options=None),  # 缺 options
         ]
         db = _make_db_with_pending(qis)

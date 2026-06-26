@@ -27,6 +27,16 @@ function assertEq(actual, expected, msg) {
   console.error('    actual:', JSON.stringify(actual))
 }
 
+function extractRichTextText(nodes) {
+  if (!Array.isArray(nodes)) return ''
+  var r = ''
+  for (var i = 0; i < nodes.length; i++) {
+    if (nodes[i].type === 'text') r += nodes[i].text
+    if (nodes[i].children) r += extractRichTextText(nodes[i].children)
+  }
+  return r
+}
+
 function group(name, fn) {
   console.log('\n' + name)
   fn()
@@ -90,9 +100,14 @@ group('Display math $$...$$ → LATEX', function () {
 })
 
 group('Complex LaTeX commands → LATEX', function () {
+  // frac inside $...$ is convertible to plain text by formatInlineMathText
   var q = { id: 7, content: { text: '设 $\\frac{a}{b}$ 为有理数' } }
   var result = buildRenderModel(q, null, mockConfig)
-  assertEq(result.mode, RENDER_MODE.LATEX, '\\frac → LATEX')
+  // formatInlineMathText converts $\frac{a}{b}$ → a / b, so RICH_TEXT is correct
+  assertEq(result.mode, RENDER_MODE.RICH_TEXT, '\\frac inside $ → RICH_TEXT when convertible')
+  assert(result.richTextNodes.length > 0, 'richTextNodes populated')
+  var text = extractRichTextText(result.richTextNodes)
+  assert(text.indexOf('a / b') >= 0, 'frac converted to a / b')
 })
 
 group('OCR imported display LaTeX → LATEX', function () {
@@ -154,7 +169,8 @@ function checkSingleRoot(result) {
     result.mode === RENDER_MODE.RICH_TEXT && result.richTextNodes.length > 0,
     result.mode === RENDER_MODE.LATEX && result.html.length > 0,
     result.mode === RENDER_MODE.SEGMENTS && result.segments.length > 0,
-    result.mode === RENDER_MODE.CODE && result.rawText.length > 0
+    result.mode === RENDER_MODE.CODE && result.rawText.length > 0,
+    result.mode === RENDER_MODE.MIXED && result.blocks.length > 0
   ]
   var count = active.filter(Boolean).length
   return count === 1
@@ -170,6 +186,18 @@ group('Single render root invariant', function () {
     var r = buildRenderModel(c, null, mockConfig)
     assert(checkSingleRoot(r), 'exactly one render root active for: ' + JSON.stringify(c.content.text).slice(0, 40))
   })
+})
+
+group('Single render root invariant — MIXED', function () {
+  var q = { id: 18, content: { text: '说明。\n\nint x = 1;' } }
+  var r = buildRenderModel(q, null, mockConfig)
+  assert(checkSingleRoot(r), 'MIXED mode has exactly one render root')
+  if (r.mode === RENDER_MODE.MIXED) {
+    assert(r.blocks.length > 0, 'MIXED blocks non-empty')
+    assertEq(r.html, '', 'MIXED html empty at top level')
+    assertEq(r.richTextNodes.length, 0, 'MIXED richTextNodes empty at top level')
+    assertEq(r.rawText, '', 'MIXED rawText empty at top level')
+  }
 })
 
 // ── Edge cases ──

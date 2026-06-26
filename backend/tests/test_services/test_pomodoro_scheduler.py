@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
-from datetime import datetime, timedelta
+from datetime import timezone, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -77,6 +77,24 @@ async def isolated_db(monkeypatch_module):
         pass
 
 
+@pytest.fixture(scope="module", autouse=True)
+def patch_async_session(isolated_db):
+    """Patch async_session in modules used by PomodoroScheduler to use the isolated DB."""
+    from app.core import database
+    import app.services.pomodoro_scheduler_service as ssvc
+
+    orig_db = database.async_session
+    orig_ssvc = ssvc.async_session
+
+    try:
+        database.async_session = isolated_db.async_session
+        ssvc.async_session = isolated_db.async_session
+        yield
+    finally:
+        database.async_session = orig_db
+        ssvc.async_session = orig_ssvc
+
+
 @pytest.fixture(scope="module")
 def monkeypatch_module():
     from _pytest.monkeypatch import MonkeyPatch
@@ -116,7 +134,7 @@ async def _insert(db, *, user_id: int, openid: str, due_offset_sec: int,
                  status: str = "running", work: int = 25,
                  paused_at: datetime | None = None):
     from app.models.pomodoro import PomodoroSession
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     s = PomodoroSession(
         user_id=user_id, subject="math", chapter_id=None, preset="standard",
         work_duration=work, break_duration=5,
@@ -137,7 +155,6 @@ async def _insert(db, *, user_id: int, openid: str, due_offset_sec: int,
 # 测试用例
 # ============================================================
 
-@pytest.mark.xfail(reason="Test fixture isolation issue — DB table not created with module-scoped fixture")
 class TestSchedulerClaiming:
     @pytest.mark.asyncio
     async def test_due_session_is_claimed_and_sent(self, isolated_db, monkeypatch):
@@ -296,7 +313,7 @@ class TestSchedulerClaiming:
             uid = await _make_user(db, "u_paused")
             sid = await _insert(
                 db, user_id=uid, openid="u_paused",
-                due_offset_sec=-30, paused_at=datetime.utcnow() - timedelta(seconds=60),
+                due_offset_sec=-30, paused_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=60),
             )
             await db.commit()
 
@@ -414,7 +431,7 @@ class TestServiceLayer:
             await db.execute(
                 update(PomodoroSession)
                 .where(PomodoroSession.id == sid)
-                .values(paused_at=datetime.utcnow() - timedelta(seconds=90))
+                .values(paused_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=90))
             )
             await db.commit()
 
@@ -532,3 +549,52 @@ class TestWechatTokenRetry:
         assert result["errcode"] == 0
         assert send_calls == ["tok-1", "tok-2"]
         assert token_calls["n"] == 2  # 第二次是 force_refresh
+
+
+class TestAsyncSessionIsolation:
+    """Regression: verify patch_async_session fixture isolates the scheduler."""
+
+    @pytest.mark.asyncio
+    async def test_async_session_patched_to_isolated_db(self, isolated_db):
+        """patch_async_session must point ssvc.async_session to isolated_db."""
+        import app.services.pomodoro_scheduler_service as ssvc
+        from app.core import database
+
+        assert ssvc.async_session is isolated_db.async_session, (
+            "ssvc.async_session must be isolated_db.async_session"
+        )
+        assert database.async_session is isolated_db.async_session, (
+            "database.async_session must be isolated_db.async_session"
+        )
+
+    @pytest.mark.asyncio
+    async def test_scheduler_tick_finds_data_in_isolated_db(self, isolated_db, monkeypatch):
+        """Tick must find sessions in the isolated DB (not the global test DB)."""
+        from app.services import pomodoro_scheduler_service as ssvc
+        from app.core.config import settings as s
+
+        sent: list[dict] = []
+
+        async def _fake_send(**kwargs):
+            sent.append(kwargs)
+            return {"errcode": 0}
+
+        monkeypatch.setattr(ssvc.wechat, "send_subscribe_message", _fake_send)
+        monkeypatch.setattr(s, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_ISO")
+
+        async with isolated_db.async_session() as db:
+            uid = await _make_user(db, "u_iso_check")
+            await _insert(db, user_id=uid, openid="u_iso_check", due_offset_sec=-30)
+            await db.commit()
+
+        await ssvc.PomodoroScheduler().tick()
+
+        async with isolated_db.async_session() as db:
+            from sqlalchemy import select
+            from app.models.pomodoro import PomodoroSession
+            rows = (await db.execute(select(PomodoroSession))).scalars().all()
+
+        assert len(rows) == 1
+        assert rows[0].notification_sent is True, (
+            "Scheduler must claim the session via patched async_session"
+        )

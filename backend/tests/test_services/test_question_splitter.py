@@ -5,6 +5,8 @@ from app.features.question_splitter import (
     split_questions,
     _detect_question_number,
     _detect_option_line,
+    _extract_options,
+    _is_ocr_garbage_line,
 )
 from app.features.question_normalizer import normalize_question
 
@@ -992,3 +994,54 @@ class TestSplitterImmutability:
         result[0]["raw_question_text"] = "MODIFIED"
         result[0]["option_lines"] = {}
         assert blocks[0]["normalized_text"] == original_text
+
+
+class TestOcrGarbageContinuation:
+    """_extract_options 不应将 OCR 垃圾行追加到前一个选项。
+
+    BUGS.md 案例五：选项 A 和 C 之间的 OCR 垃圾行
+    ``S = μxau<-d :μxau<-d = μxau<-s'g`` 含有希腊字母 μ，是强烈
+    的 OCR 损坏信号，不应被 _extract_options 的多行延续逻辑追加到选项 A。
+    """
+
+    def test_ocr_garbage_line_detected(self):
+        """含希腊字母 μ 的行应被 _is_ocr_garbage_line 识别。"""
+        assert _is_ocr_garbage_line("S = μxau<-d :μxau<-d = μxau<-s'g")
+
+    def test_ascii_option_text_not_garbage(self):
+        """普通 ASCII 选项文本不应被视为垃圾。"""
+        assert not _is_ocr_garbage_line("p->next = s->next; s->next = p")
+
+    def test_chinese_text_not_garbage(self):
+        """中文文本不应被视为垃圾。"""
+        assert not _is_ocr_garbage_line("在单链表中进行如下操作")
+
+    def test_empty_line_not_garbage(self):
+        assert not _is_ocr_garbage_line("")
+
+    def test_garbage_not_appended_to_option(self):
+        """_extract_options 不应将 OCR 垃圾追加到选项 A。"""
+        text = (
+            "A. p->next = s->next; s->next = p\n"
+            "S = μxau<-d :μxau<-d = μxau<-s'g\n"
+            "C. p->next = s; s = p->next\n"
+            "D. s = p; p->next = NULL"
+        )
+        options = _extract_options(text)
+        assert "A" in options
+        assert "C" in options
+        assert "D" in options
+        # Option A 文本不应包含垃圾行
+        assert "μxau" not in options["A"]
+        assert options["A"].strip() == "p->next = s->next; s->next = p"
+
+    def test_legitimate_multi_line_not_broken(self):
+        """合法的多行选项不应被阻断。"""
+        text = (
+            "A. 这是一个很长的选项\n"
+            "    延续行（缩进）\n"
+            "B. 短选项"
+        )
+        options = _extract_options(text)
+        assert "A" in options
+        assert "B" in options

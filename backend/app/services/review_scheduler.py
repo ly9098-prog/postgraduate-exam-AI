@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.question import Question
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.services.sm2_service import calc_sm2
+from app.core.time_utils import utcnow
 
 
 async def get_today_review(
@@ -14,7 +15,7 @@ async def get_today_review(
     subject: str | None = None,
     limit: int = 20,
 ) -> dict:
-    now = datetime.utcnow()
+    now = utcnow()
     conditions = [
         ReviewSchedule.user_id == user_id,
         ReviewSchedule.next_review_at <= now,
@@ -115,7 +116,7 @@ async def submit_review(
     schedule.next_review_at = datetime.combine(
         sm2_result["next_review_date"], datetime.min.time()
     )
-    schedule.last_reviewed_at = datetime.utcnow()
+    schedule.last_reviewed_at = utcnow()
 
     record = ReviewRecord(
         user_id=user_id,
@@ -126,7 +127,7 @@ async def submit_review(
         interval_after=sm2_result["interval"],
         ease_factor_before=ef_before,
         ease_factor_after=sm2_result["efactor"],
-        reviewed_at=datetime.utcnow(),
+        reviewed_at=utcnow(),
     )
     db.add(record)
     await db.commit()
@@ -171,7 +172,7 @@ async def get_review_stats(
     user_id: int,
     days: int = 7,
 ) -> dict:
-    now = datetime.utcnow()
+    now = utcnow()
     today_start = datetime.combine(date.today(), datetime.min.time())
     since = today_start - timedelta(days=days - 1)
 
@@ -332,7 +333,7 @@ async def auto_schedule_wrong_question(
         schedule.interval = 1
         schedule.ease_factor = 2.5
         schedule.repetitions = 0
-        schedule.next_review_at = datetime.utcnow()
+        schedule.next_review_at = utcnow()
         schedule.last_reviewed_at = None
     else:
         # 获取题目科目
@@ -349,7 +350,7 @@ async def auto_schedule_wrong_question(
             interval=1,
             ease_factor=2.5,
             repetitions=0,
-            next_review_at=datetime.utcnow(),
+            next_review_at=utcnow(),
         )
         db.add(schedule)
 

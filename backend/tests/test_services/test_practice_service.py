@@ -1,6 +1,6 @@
 """Stage 11 刷题系统 — 单元测试（mock DB session）。"""
 import asyncio
-from datetime import date, datetime, timedelta
+from datetime import timezone, date, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -416,7 +416,6 @@ class TestStreak:
 # --- get_wrong_questions ---
 
 class TestGetWrongQuestions:
-    @pytest.mark.xfail(reason="Stale mock compatibility — test infra debt")
     def test_with_questions(self):
         from app.services.practice_service import get_wrong_questions
 
@@ -428,7 +427,7 @@ class TestGetWrongQuestions:
         wq.wrong_answer = "B"
         wq.review_count = 2
         wq.mastered = False
-        wq.last_review_at = datetime.utcnow()
+        wq.last_review_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         q = _make_question(10, answer="A")
         db.execute.side_effect = [

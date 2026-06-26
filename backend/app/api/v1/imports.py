@@ -109,6 +109,8 @@ async def _set_image_pipeline_status(image_pipeline_id: str, **updates) -> dict:
         )
     except Exception:
         logger.warning("image pipeline status cache write failed: pipeline_id=%s", image_pipeline_id)
+    # 不主动 evict 终态条目——SSE 轮询需要持续读取结果。
+    # 内存由 _prune_image_pipeline_store 上限控制。
     return status
 
 
@@ -637,6 +639,7 @@ async def start_import_pipeline_from_upload(
     if is_image:
         if file.content_type and file.content_type not in _IMAGE_CONTENT_TYPES:
             raise HTTPException(status_code=400, detail="图片 Content-Type 不支持")
+        # P0-3: use centralized OCR mode validation (pipeline_upload always uses local)
         if not settings.OCR_ENABLED:
             raise HTTPException(status_code=400, detail="图片 OCR 功能未启用")
         if importlib.util.find_spec("paddleocr") is None:

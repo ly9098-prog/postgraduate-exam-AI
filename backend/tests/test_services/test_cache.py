@@ -155,24 +155,30 @@ async def test_cached_decorator():
         call_count += 1
         return {"value": x * 2}
 
-    with patch("redis.asyncio.from_url", return_value=mock_redis):
-        with patch("app.core.cache.settings") as mock_settings:
-            mock_settings.REDIS_URL = "redis://localhost:6379"
-            # Reset global cache state to pick up patched redis
-            _global_cache._client = None
-            _global_cache._enabled = True
+    saved_client = _global_cache._client
+    saved_enabled = _global_cache._enabled
+    try:
+        with patch("redis.asyncio.from_url", return_value=mock_redis):
+            with patch("app.core.cache.settings") as mock_settings:
+                mock_settings.REDIS_URL = "redis://localhost:6379"
+                # Reset global cache state to pick up patched redis
+                _global_cache._client = None
+                _global_cache._enabled = True
 
-            # First call — should execute
-            result = await my_func(5)
-            assert result == {"value": 10}
-            assert call_count == 1
+                # First call — should execute
+                result = await my_func(5)
+                assert result == {"value": 10}
+                assert call_count == 1
 
-            # Second call — should hit cache
-            import json
-            mock_redis.get.return_value = json.dumps({"value": 10})
-            result = await my_func(5)
-            assert result == {"value": 10}
-            assert call_count == 1  # Not incremented
+                # Second call — should hit cache
+                import json
+                mock_redis.get.return_value = json.dumps({"value": 10})
+                result = await my_func(5)
+                assert result == {"value": 10}
+                assert call_count == 1  # Not incremented
+    finally:
+        _global_cache._client = saved_client
+        _global_cache._enabled = saved_enabled
 
 
 def test_jitter_ttl_in_expected_range():

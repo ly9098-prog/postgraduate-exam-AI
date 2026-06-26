@@ -17,10 +17,10 @@
     "answer": "B"
   },
   "expected": {
-    "_bug": "2026-06-24, updated — CODE mode now uses zero-HTML raw text (no more mp-html + &nbsp;)",
-    "mode": "CODE",
+    "_bug": "2026-06-25, updated — MIXED mode with RICH_TEXT + CODE blocks",
+    "mode": "MIXED",
     "hasHtml": false,
-    "hasRawText": true,
+    "hasRawText": false,
     "hasRichTextNodes": false
   }
 }

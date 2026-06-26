@@ -674,8 +674,9 @@ async def batch_image_upload(
     ocr_mode: str = Query("local", alias="ocr_mode"),
     # Idempotency / trace identifiers
     batch_id: str | None = Query(None, description="前端生成的 batch 标识"),
-    image_id: str | None = Query(None, description="前端生成的 image 标识"),
-    request_id: str | None = Query(None, description="前端生成的 request 标识"),
+    image_id: str | None = Query(None, description="前端生成的 image 标识（单图）。对多图，传 image_ids[] 或自动生成派生 ID"),
+    image_ids: list[str] = Query([], alias="image_ids", description="各图片 image_import_id（可选，长度与 files 一致）"),
+    request_id: str | None = Query(None, description="前端生成的 request 标识（幂等键）"),
     current_admin=Depends(require_permissions("import:write")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -684,7 +685,8 @@ async def batch_image_upload(
     - 并发 2~4（默认取 settings.BATCH_IMAGE_DEFAULT_CONCURRENCY），其余排队；
     - 单张失败只记录、不终止整批；
     - 返回 job_id，通过 GET /imports/batch-image/{job_id} 查询进度。
-    - 支持 idempotency：batch_id + image_id 重复时返回已有 job_id。
+    - 支持 idempotency：request_id 重复时返回已有 job_id。
+    - image_id: 向后兼容的单图模式。多图时传 image_ids[]。
     """
     from app.features import batch_image_import_service as batch_svc
 
@@ -696,16 +698,40 @@ async def batch_image_upload(
             detail=f"单次最多上传 {settings.BATCH_IMAGE_MAX_FILES} 张图片",
         )
 
-    if not settings.OCR_ENABLED:
-        raise HTTPException(status_code=400, detail="图片 OCR 功能未启用")
-    if importlib.util.find_spec("paddleocr") is None:
-        raise HTTPException(status_code=400, detail="OCR 依赖未安装：paddleocr")
+    # P0-3: only validate dependencies matching the requested ocr_mode
+    from app.features.ocr_mode import resolve_ocr_mode, validate_ocr_mode_dependencies
+    try:
+        resolved_mode = resolve_ocr_mode(ocr_mode)
+        validate_ocr_mode_dependencies(resolved_mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    # P0-4: resolve per-image IDs
+    if image_ids and len(image_ids) != len(files):
+        raise HTTPException(
+            status_code=422,
+            detail=f"image_ids 长度 ({len(image_ids)}) 与 files 长度 ({len(files)}) 不一致",
+        )
+    use_image_ids = bool(image_ids)
+    # Warn about deprecated single-image_id with multiple files
+    if image_id and len(files) > 1 and not use_image_ids:
+        logger.warning(
+            "Deprecated: single image_id=%s used for %d files. "
+            "Each file will get a derived ID (image_id:seq). "
+            "Use image_ids[] for per-file IDs.",
+            image_id, len(files),
+        )
+
+    import hashlib as _hashlib
 
     sources: list[batch_svc.BatchImageSource] = []
+    sources_with_sha: list[tuple[batch_svc.BatchImageSource, str, str]] = []
     rejected_files: list[str] = []
     seq = 0
     try:
-        for upload in files:
+        for idx, upload in enumerate(files):
             filename = upload.filename or f"image_{seq + 1}"
             content = await upload.read()
             reason = _validate_batch_image(upload.filename or "", content, upload.content_type)
@@ -714,6 +740,9 @@ async def batch_image_upload(
                 continue
 
             seq += 1
+            # Compute source_sha256 for content-level dedup
+            source_sha256 = _hashlib.sha256(content).hexdigest()
+
             suffix = os.path.splitext(filename)[1] or ".png"
             fd, tmp_path = tempfile.mkstemp(prefix="batch_img_", suffix=suffix)
             try:
@@ -726,11 +755,25 @@ async def batch_image_upload(
                     pass
                 raise
             del content
-            sources.append(
-                batch_svc.BatchImageSource(seq=seq, source_file=filename, temp_path=tmp_path)
+
+            # Resolve per-image image_import_id
+            if use_image_ids:
+                per_image_id = image_ids[idx]
+            elif image_id and len(files) == 1:
+                per_image_id = image_id
+            elif image_id:
+                # Multi-file with single image_id: derive stable ID
+                per_image_id = f"{image_id}:{seq}"
+            else:
+                per_image_id = f"auto_{seq}"
+
+            source_obj = batch_svc.BatchImageSource(
+                seq=seq, source_file=filename, temp_path=tmp_path,
             )
+            sources.append(source_obj)
+            sources_with_sha.append((source_obj, source_sha256, per_image_id))
     except Exception:
-        # 任意一步异常都要清理已落盘的临时文件，避免泄漏。
+        # Clean up temp files on error
         for src in sources:
             if os.path.exists(src.temp_path):
                 try:
@@ -753,6 +796,9 @@ async def batch_image_upload(
         "ocr_mode": ocr_mode,
     }
 
+    # P0-4: pass per-file image_import_id + source_sha256
+    per_file_image_ids = [sid[2] for sid in sources_with_sha]
+    per_file_sha256 = [sid[1] for sid in sources_with_sha]
     job = await batch_svc.create_batch_job(
         db,
         job_id=job_id,
@@ -763,6 +809,8 @@ async def batch_image_upload(
         batch_import_id=batch_id,
         image_import_id=image_id,
         request_id=request_id,
+        per_file_image_ids=per_file_image_ids,
+        per_file_sha256=per_file_sha256,
     )
 
     # Idempotency: duplicate submission returns existing job_id
