@@ -33,8 +33,12 @@ from app.core.database import Base
 
 class ImportBatchJob(Base):
     __tablename__ = "import_batch_jobs"
+    __table_args__ = (
+        Index("ix_import_batch_jobs_request_id", "request_id", unique=True),
+    )
 
     job_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_type: Mapped[str] = mapped_column(String(16), nullable=False, default="image")
     subject: Mapped[str | None] = mapped_column(String(32), nullable=True)
     total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
