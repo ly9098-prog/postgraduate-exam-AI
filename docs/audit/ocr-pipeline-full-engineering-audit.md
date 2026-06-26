@@ -1,7 +1,7 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**→ **2026-06-24（VL confidence gate + VL_REBUILD 图片支持 + 双源 OCR 策略）**→ **2026-06-24（代码结构重建阶段 + 审核池泄漏修复）**→ **2026-06-24（噪声治理 v2 + 案例三修复补完）**→ **2026-06-25（案例五 Phase 3 original_raw_text merge + AI repair incomplete_options 兜底）**→ **2026-06-26（Phase 5 发布工程化收口）**
+> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**→ **2026-06-24（VL confidence gate + VL_REBUILD 图片支持 + 双源 OCR 策略）**→ **2026-06-24（代码结构重建阶段 + 审核池泄漏修复）**→ **2026-06-24（噪声治理 v2 + 案例三修复补完）**→ **2026-06-25（案例五 Phase 3 original_raw_text merge + AI repair incomplete_options 兜底）**→ **2026-06-26（Phase 5 发布工程化收口）**→ **2026-06-26（Phase 5 二次补丁：request_id 幂等 + merge_status 守卫 + dedup key 修正）**
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
 
 **2026-06-23（本期新增）：**
@@ -43,6 +43,12 @@
 - **`time_utils.py` 新建**：统一 UTC 时间工具（`utcnow()` naive/`utcnow_aware()` aware），替代全局 `datetime.utcnow()` 散乱调用
 - **`batch_image_import_service.py` 重构**：state machine 强化 + trace events + idempotency + ocr_mode 路由整合（~1050→1305 行）
 - **`ocr_fix/router.py` 增强**（158→361 行）：路由逻辑扩展，候选结果评估与安全门禁集成
+
+**2026-06-26（Phase 5 二次补丁 — request_id 幂等 + merge_status 守卫 + dedup key 修正）：**
+- **request_id 并发幂等**（Task 2）：`ImportBatchJob` 新增 `request_id` 列 + 唯一索引；`create_batch_job` IntegrityError 捕获 → rollback → 查询已有 job → 返回 duplicate 存根；`_find_job_by_request_id` 优先查 `ImportBatchJob.request_id`（唯一索引），回退查 `ImportBatchJobItem.request_id`（遗留兼容）
+- **merge_status running 守卫**（Task 1）：`_merge_image_texts` 入口检测 `merge_status == "running"`，并发 merge 请求直接返回 `reason="merge already running"`，不重复执行
+- **同批去重 key 修正**（Task 3）：`review_service.py` 同批 duplicates 跟踪从 `question_hash` → `(subject, question_hash)` 元组，防止跨科目假阳 dup；新增 `DuplicateKey` 类型别名和 `_dup_key()` 工厂函数
+- **Trace event 文档修正**（Task 4）：`_append_trace_event` docstring 明确 item-level trace 不需要 FOR UPDATE 锁，增量读取使用 `id`（auto-increment PK），`seq` 为向后兼容字段
 
 **2026-06-24（第二次更新-本期新增）：**
 - **噪声治理 v2**：新增 `NoiseMetrics` 数据类 + `NoiseMetricsCollector` 逐题指标收集 + 批量聚合 `NoiseMetricsSummary`。`clean_code_language_noise()` 通过 `_collector` 参数集成指标采集。下游新增 `noise_drift_detector.py`（KL 散度 drift 检测 + 拉普拉斯平滑，阈值 0.15）和 `noise_rule_governor.py`（基于 FP-rate 的 `safe_mode` 自适应切换，带迟滞）。stage 输出新增 `noise_metrics_summary` / `noise_drift` / `noise_governor` 三个观测字段。新增 49 个单元测试覆盖所有模块。清理死代码：移除 `confidence_threshold` 字段（实际控制由 `safe_mode` boolean 承担）、统一 key 命名 `fix_actions`→`code_language_noise_fix_actions`。
@@ -244,7 +250,7 @@
 | `ai_repair.py` | 1164 | AI 修复 + Layer 4 选项不可变门控（含 code integrity gate） | ✅ 较好 | 🟢 低 |
 | `code_integrity.py` | 520 | 代码块完整性检测 | ✅ 单一 | 🟢 低 |
 | `question_type_classifier.py` | 454 | Layer 1 严格 has_options 门控 + force_options_probe() | ✅ 单一 | 🟢 低 |
-| `batch_image_import_service.py` | ~1305 | 批量图片导入编排器（state machine + trace events + idempotency + ocr_mode 路由 + 断点恢复） | 🟡 职责增长中 | 🟢 低 |
+| `batch_image_import_service.py` | ~1391 | 批量图片导入编排器（state machine + trace events + idempotency + request_id 幂等 + merge_status 守卫 + ocr_mode 路由 + 断点恢复） | 🟡 职责增长中 | 🟢 低 |
 | `pipeline_artifacts.py` | 559 | Pipeline artifact 持久化、兼容性检查、断点恢复 | ✅ 单一 | 🟢 低 |
 | `ocr_fix/router.py` | 361 | OCR 纠错降级链路由 + 候选结果评估安全门禁 | ✅ 良好 | 🟢 低 |
 | `ocr_mode.py` | 89 | OCR 模式解析（local/api）+ 依赖校验 | ✅ 单一 | 🟢 低 |
@@ -392,6 +398,10 @@
 | **P2** | OCR 模式解析分散在各路由，无统一校验入口 | ✅ Phase 5：`ocr_mode.py` 集中式 mode 解析 + 依赖校验 |
 | **P2** | Pipeline 状态值在模块间硬编码漂移 | ✅ Phase 5：`pipeline_enums.py` 枚举 SSOT + 状态转换守卫 |
 | **P2** | `datetime.utcnow()` 弃用警告（~112 处）| ✅ Phase 5：统一替换为 `time_utils.utcnow()`，零项目自身弃用警告 |
+| **P1** | 并发 merge 请求重复执行 `_merge_image_texts` | ✅ Phase 5 补丁：`merge_status == "running"` guard 在入口检查并发 |
+| **P1** | `create_batch_job` 并发相同 request_id 产生重复 job | ✅ Phase 5 补丁：`ImportBatchJob.request_id` 唯一索引 + IntegrityError 捕获返回已有 job |
+| **P2** | 同批去重 key `question_hash` 跨科目假阳（不同科目相同哈希误判为 dup） | ✅ Phase 5 补丁：去重 key 改为 `(subject, question_hash)` 元组 |
+| **P3** | Trace event docstring 过时（声称 item-level 需要 FOR UPDATE 锁）| ✅ Phase 5 补丁：更新 docstring，明确 `id` 为增量读取依据 |
 
 ### 6.2 改造路线图（压缩）
 
@@ -430,6 +440,11 @@
   - batch_image_import_service.py 重构（state machine + trace events + idempotency）
   - datetime.utcnow() 全面消除（18 个生产文件）
   - Migration SQLite 兼容 + 故障注入测试（6 cases）
+✅ **2026-06-26: Phase 5 二次补丁 — request_id 幂等 + merge_status 守卫 + dedup key (26b8d5b)**
+  - ImportBatchJob.request_id 唯一索引 + IntegrityError 并发幂等
+  - _merge_image_texts merge_status running 守卫
+  - review_service 同批去重 key 改为 (subject, question_hash)
+  - Trace event docstring 修正（id 为增量读取依据）
 
 ⏳ 待处理:
   - AI 补全并行化 (0.5d)
@@ -481,7 +496,7 @@
 |---|---|---|
 | `features/pipeline_orchestrator.py` | ~4871 | 主编排器（19 阶段，含 classify_questions + code_structure_reconstruct）+ artifact 断点恢复 |
 | `features/question_pipeline.py` | 2921 | 标准化管道 + 向后兼容重导出 |
-| `features/batch_image_import_service.py` | ~1305 | 批量图片导入编排器（state machine + trace events + idempotency + ocr_mode 路由 + 断点恢复） |
+| `features/batch_image_import_service.py` | ~1391 | 批量图片导入编排器（state machine + trace events + idempotency + request_id 幂等 + merge_status 守卫 + ocr_mode 路由 + 断点恢复） |
 | `features/pipeline_artifacts.py` | 559 | Pipeline artifact 持久化、兼容性检查、断点恢复 |
 | `services/ocr_service.py` | 637 | PaddleOCR 封装 |
 | `features/text_normalizer.py` | 1400 | 统一 OCR 文本规范化（13 步） |
@@ -537,4 +552,4 @@
 
 ---
 
-*报告结束。初版：2026-06-20，末次更新：2026-06-26（Phase 5 发布工程化收口：pipeline store 生命周期 + artifact 断点恢复 + OCR fix 安全门禁增强 + ocr_mode/pipeline_enums/time_utils 新模块 + datetime 时区统一 + 故障注入验证）。*
+*报告结束。初版：2026-06-20，末次更新：2026-06-26（Phase 5 发布工程化收口：pipeline store 生命周期 + artifact 断点恢复 + OCR fix 安全门禁增强 + ocr_mode/pipeline_enums/time_utils 新模块 + datetime 时区统一 + 故障注入验证；Phase 5 二次补丁：request_id 并发幂等 + merge_status 守卫 + dedup key 科目感知修正 + trace event 文档校正）。*
