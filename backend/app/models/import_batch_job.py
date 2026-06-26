@@ -19,7 +19,6 @@ from datetime import datetime
 from sqlalchemy import (
     DateTime,
     ForeignKey,
-    Index,
     Integer,
     String,
     Text,
@@ -33,12 +32,8 @@ from app.core.database import Base
 
 class ImportBatchJob(Base):
     __tablename__ = "import_batch_jobs"
-    __table_args__ = (
-        Index("ix_import_batch_jobs_request_id", "request_id", unique=True),
-    )
 
     job_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_type: Mapped[str] = mapped_column(String(16), nullable=False, default="image")
     subject: Mapped[str | None] = mapped_column(String(32), nullable=True)
     total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -70,7 +65,6 @@ class ImportBatchJobItem(Base):
     __table_args__ = (
         UniqueConstraint("job_id", "seq", name="uq_batch_job_items_job_seq"),
         UniqueConstraint("batch_import_id", "image_import_id", name="uq_batch_import_id_image"),
-        Index("ix_batch_job_items_job_id_status", "job_id", "status"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -118,7 +112,8 @@ class BatchJobTraceEvent(Base):
 
     __tablename__ = "batch_job_trace_events"
     __table_args__ = (
-        Index("ix_batch_trace_events_job_id_id", "job_id", "id"),
+        # Unique constraint on (job_id, seq) removed: id is now the primary
+        # ordering mechanism for trace events; seq is kept for backward compat.
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

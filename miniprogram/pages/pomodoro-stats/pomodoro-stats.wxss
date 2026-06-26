@@ -28,7 +28,7 @@
 }
 
 .animation-entrance.entered {
-  animation: page-enter 0.24s ease-out forwards;
+  animation: page-enter 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 @keyframes page-enter {
@@ -208,18 +208,6 @@
   height: 280rpx;
 }
 
-/* 图表不做逐帧 canvas 动画，只在最终态绘制完成后轻量淡入 */
-.chart-draw-area {
-  opacity: 0;
-  transform: translateY(8rpx);
-  transition: opacity 0.22s ease-out, transform 0.22s ease-out;
-}
-
-.chart-draw-area.chart-ready {
-  opacity: 1;
-  transform: translateY(0);
-}
-
 .chart-legend {
   display: flex;
   justify-content: center;
@@ -376,8 +364,8 @@
   position: relative;
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
-  animation: hist-item-in 0.22s ease-out both;
-  animation-delay: calc(var(--idx, 0) * 12ms);
+  animation: hist-item-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--idx, 0) * 40ms);
 }
 
 @keyframes hist-item-in {

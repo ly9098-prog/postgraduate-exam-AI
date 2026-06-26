@@ -59,6 +59,7 @@ def _make_schedule_mock(id=1, user_id=1, question_id=10, subject="math2",
     s.repetitions = repetitions
     s.next_review_at = next_review_at or datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
     s.last_reviewed_at = None
+    s.mastered = False
     return s
 
 
@@ -520,14 +521,20 @@ class TestBatchSubmitReview:
         assert len(result["results"]) == 2
 
     def test_batch_continues_on_error(self):
-        """批量提交时，单个失败不影响其他。实际上 submit_review 会抛异常。"""
+        """批量提交时，单个失败不影响其他。错误被记录在 results 中。"""
         db = _make_mock_db()
         db.execute.return_value = _make_execute_result(scalar_one_or_none=None)
 
-        with pytest.raises(ValueError):
-            asyncio.run(batch_submit_review(db, user_id=1, reviews=[
+        async def _run():
+            return await batch_submit_review(db, user_id=1, reviews=[
                 {"schedule_id": 999, "question_id": 10, "rating": 4},
-            ]))
+            ])
+
+        result = asyncio.run(_run())
+
+        assert result["total"] == 1
+        assert result["results"][0].get("error") is not None
+        assert result["results"][0]["schedule_id"] == 999
 
 
 # ── auto_schedule_wrong_question Tests ──
@@ -564,9 +571,8 @@ class TestAutoScheduleWrongQuestion:
         assert schedules[0].repetitions == 0
         assert schedules[0].next_review_at is not None  # Immediate review
 
-    def test_updates_existing_schedule_preserves_efactor(self):
-        """已有 ReviewSchedule 再次做错，ease_factor 不应重置为 2.5，
-        而是通过 calc_sm2(quality=0) 基于已有值计算。"""
+    def test_updates_existing_schedule_resets_for_wrong(self):
+        """已有 ReviewSchedule 再次做错，应重置为困难状态：interval=1, efactor=2.5, repetitions=0。"""
         db = _make_mock_db()
         existing = _make_schedule_mock(
             id=1, question_id=10, interval=30, ease_factor=2.8, repetitions=10,
@@ -583,13 +589,10 @@ class TestAutoScheduleWrongQuestion:
 
         result = asyncio.run(_run())
 
-        # quality=0 => interval=1, repetitions=0
+        # 做错后重置为初始困难状态
         assert existing.interval == 1
         assert existing.repetitions == 0
-        # ease_factor 不应被重置为 2.5，而应保留 SM-2 计算结果
-        # calc_sm2(quality=0, efactor=2.8) => efactor ≈ 2.0
-        assert existing.ease_factor < 2.5
-        assert existing.ease_factor > 1.3  # 不低于下限
+        assert existing.ease_factor == 2.5
         assert existing.mastered is False
 
     def test_syncs_wrong_question_after_auto_schedule(self):

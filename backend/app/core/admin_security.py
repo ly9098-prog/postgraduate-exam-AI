@@ -18,6 +18,9 @@ from app.models.admin import AdminUser, Permission, Role, RolePermission
 admin_security = HTTPBearer()
 password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# bcrypt 协议硬限制：超过 72 bytes 会抛异常或被截断
+BCRYPT_MAX_BYTES = 72
+
 
 class AdminPrincipal:
     def __init__(self, user: AdminUser, token_payload: dict[str, Any]):
@@ -38,10 +41,14 @@ class AdminPrincipal:
 
 
 def hash_admin_password(password: str) -> str:
+    if len(password.encode("utf-8")) > BCRYPT_MAX_BYTES:
+        raise ValueError(f"密码长度不能超过 {BCRYPT_MAX_BYTES} 字节")
     return password_context.hash(password)
 
 
 def verify_admin_password(password: str, password_hash: str) -> bool:
+    if len(password.encode("utf-8")) > BCRYPT_MAX_BYTES:
+        raise ValueError(f"密码长度不能超过 {BCRYPT_MAX_BYTES} 字节")
     return password_context.verify(password, password_hash)
 
 

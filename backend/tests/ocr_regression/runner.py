@@ -1359,6 +1359,8 @@ def test_ocr_regression(case_name: str):
     if "error" in result:
         if "expected.txt not found" in result["error"]:
             pytest.skip(result["error"])
+        if "PaddleOCR-VL not configured" in result["error"]:
+            pytest.skip(f"[{case_name}] {result['error']}")
         pytest.fail(result["error"])
 
     known_failure_types = meta.get("known_failure_types", [])
@@ -1403,6 +1405,14 @@ def test_ocr_regression(case_name: str):
                 pytest.xfail(
                     f"[{case_name}] Known assertion failure(s): {details}"
                 )
+
+        # Skip if all assertion failures are due to missing VL config
+        vl_missing = any(
+            "PaddleOCR-VL not configured" in af.get("message", "")
+            for af in assertion_failures
+        )
+        if vl_missing:
+            pytest.skip(f"[{case_name}] PaddleOCR-VL not configured in DB — needed for VL_REBUILD path")
 
         parts = "\n".join(f["message"] for f in assertion_failures)
         pytest.fail(

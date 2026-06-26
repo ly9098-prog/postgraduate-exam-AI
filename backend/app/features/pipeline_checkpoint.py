@@ -154,6 +154,8 @@ async def create_chunk_records(
     ]
     db.add_all(chunks)
     await db.commit()
+    for chunk in chunks:
+        await db.refresh(chunk)
     return chunks
 
 

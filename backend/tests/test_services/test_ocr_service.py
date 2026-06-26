@@ -6,6 +6,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+# numpy is required by image preparation functions in ocr_service.
+# It is listed in requirements-ocr.txt; skip affected tests if absent.
+try:
+    import numpy  # noqa: F401
+    _HAS_NUMPY = True
+except ImportError:
+    _HAS_NUMPY = False
+
 
 # ============================================================
 # ocr_image / dependency handling
@@ -44,6 +52,7 @@ class TestServiceOcrImageDependencyHandling:
 # ============================================================
 
 
+@pytest.mark.skipif(not _HAS_NUMPY, reason="numpy not installed (requirements-ocr.txt)")
 class TestPrepareOcrImage:
     def test_prepare_ocr_image_applies_exif_transpose_and_returns_rgb(self):
         from PIL import Image
@@ -100,6 +109,7 @@ class TestPrepareOcrImage:
         assert cropped.size[1] > 400
 
 
+@pytest.mark.skipif(not _HAS_NUMPY, reason="numpy not installed (requirements-ocr.txt)")
 class TestOcrRotationAndOrdering:
     @staticmethod
     def _ocr_line(text: str, bbox: list[list[int]], conf: float = 0.9):

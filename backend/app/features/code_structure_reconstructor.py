@@ -45,32 +45,30 @@ _OPERATOR_FIXES: Final[list[tuple[str, str]]] = [
     # Note: the above regex handles the general case
 ]
 
-# Simpler: just apply direct replacements for known broken patterns
-# These survive the context-sensitive checks above and are safe
+# Direct regex patterns for broken operators.
+# These handle OCR spacing damage without requiring specific surrounding context.
+# Ordered: longer/more-specific patterns first to avoid partial matches.
 _BROKEN_OP_PATTERNS: Final[list[tuple[re.Pattern, str]]] = [
-    # Compound assignments (+= -= *= /= %=)
-    (re.compile(r"([+*/%-])\s+=(?!=)"), r"\1="),
-    # Increment/decrement
-    (re.compile(r"(?<!\w)\+\s+\+(?!\w)"), "++"),
-    (re.compile(r"(?<!\w)-\s+-(?!\w)"), "--"),
-    # Arrow operator
-    (re.compile(r"(?<!\w)-\s*>(?!>)"), "->"),
-    # Equality
-    (re.compile(r"(?<![<>=!])=\s+=(?!=)"), "=="),
-    # Not-equal
-    (re.compile(r"!\s+=(?!=)"), "!="),
-    # Comparison
-    (re.compile(r"<\s+=(?!=)"), "<="),
-    (re.compile(r">\s+=(?!=)"), ">="),
-    # Logical
+    # --- Increment / decrement: + + → ++, - - → -- ---
+    (re.compile(r"\+\s+\+"), "++"),
+    (re.compile(r"-\s+-"), "--"),
+    # --- Arrow: - > → -> (but not -->) ---
+    (re.compile(r"-\s+>(?!\s*>)"), "->"),
+    # --- Compound assignment with space: * = → *=, + = → +=, etc. ---
+    # Negative lookahead (?!\s*=) prevents matching **= or ===
+    (re.compile(r"\*\s+=(?!\s*=)"), "*="),
+    (re.compile(r"\+\s+="), "+="),
+    (re.compile(r"(?<!-)-\s+=(?!=)"), "-="),
+    (re.compile(r"/\s+="), "/="),
+    (re.compile(r"%\s+="), "%="),
+    # --- Equality / comparison ---
+    (re.compile(r"(?<![<>!=])=\s+=(?!=)"), "=="),
+    (re.compile(r"!\s+="), "!="),
+    (re.compile(r"<\s+="), "<="),
+    (re.compile(r">\s+="), ">="),
+    # --- Logical ---
     (re.compile(r"\|\s+\|"), "||"),
     (re.compile(r"&\s+&"), "&&"),
-    # Null coalescing
-    (re.compile(r"\?\s+\?"), "??"),
-    # Comment operators
-    (re.compile(r"/\s+/"), "//"),
-    (re.compile(r"\*\s+/"), "*/"),
-    (re.compile(r"/\s+\*"), "/*"),
 ]
 
 
@@ -169,19 +167,6 @@ def _split_semicolons(text: str) -> str:
                 paren_depth += 1
             elif ch == ")":
                 paren_depth -= 1
-                # When ) brings us back to depth 0 following a for/while/if
-                # header, flush so the body statement starts on its own line.
-                # e.g. "for(...)sum++;" → "for(...)" then "sum++;"
-                if paren_depth == 0:
-                    following = text[i + 1:].lstrip()
-                    first_char = following[:1] if following else ""
-                    if first_char and first_char not in ("{", ";", "}", ")", "\n"):
-                        if any(kw in current for kw in ("for(", "while(", "if(")):
-                            current += ch
-                            lines.append(current)
-                            current = ""
-                            i += 1
-                            continue
             elif ch == "{":
                 brace_depth += 1
                 current += ch
@@ -207,14 +192,6 @@ def _split_semicolons(text: str) -> str:
                 if next_ch and next_ch not in ("}", "\n"):
                     lines.append(current)
                     current = ""
-                i += 1
-                continue
-
-            # Newline handling: flush current line to preserve existing structure
-            if ch == "\n" and not in_string:
-                if current.strip():
-                    lines.append(current)
-                current = ""
                 i += 1
                 continue
 
@@ -312,30 +289,30 @@ def _reconstruct_compressed_code(text: str) -> str:
 
     # Phase 2a: Insert newlines before control-flow keywords when they're
     # not already at line start.
+    # (?<=\S) ensures the keyword follows some non-whitespace character
+    # (e.g. closing paren of a previous loop).
+    # (?=\s*\bkeyword\b) uses lookahead so \b is checked at the keyword's
+    # actual position, not after \s* has consumed whitespace.
     text = re.sub(
-        r"(?<=\S)\s*(?=\b(for|while|if|else if|else|switch|case |"
+        r"(?<=\S)(?=\s*\b(for|while|if|else if|else|switch|case |"
         r"return|break|continue|struct|class|typedef|enum)\b)",
         r"\n",
         text,
     )
 
-    # Phase 2b: Ensure closing brace followed by a keyword gets a newline
+    # Phase 2b: After a for/while/if header's closing paren, if immediately
+    # followed by a word character (the loop body), insert a newline.
+    # Handles: `for(...)stmt;` → `for(...)\nstmt;`
+    # The negative lookahead (?!\n) avoids double-newlines.
+    text = re.sub(r"\)(?=\w)(?!\n)", ")\n", text)
+
+    # Phase 2c: Ensure closing brace followed by a keyword gets a newline
     text = re.sub(r"\}(\s*)(?=\b(else|catch|finally|while)\b)", r"}\n\1", text)
 
     # Phase 2c: Split after ; when followed by a keyword with no newline
     text = re.sub(
         r";\s*(?=\b(for|while|if|struct|class|typedef|return)\b)",
         r";\n",
-        text,
-    )
-
-    # Phase 2d: Split brace-less body from control-flow header.
-    # e.g. "for(...)sum++;" → "for(...)\nsum++;"
-    # Note: \( [^)]* \) does NOT handle nested parens inside the condition;
-    # complex cases still go to LLM.
-    text = re.sub(
-        r"(\b(?:for|while|if)\s*\([^)]*\))\s*(?=[a-zA-Z_])",
-        r"\1\n",
         text,
     )
 
