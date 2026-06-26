@@ -152,14 +152,12 @@ async def _update_item_with_trace(
     fields: dict,
     trace: _TraceData,
 ) -> None:
-    """原子：item 字段更新 + trace event 追加。同事务、同行锁。"""
-    async with async_session() as db:
-        # 1. Lock job → 原子 seq + 防并发
-        job = await db.get(ImportBatchJob, job_id, with_for_update=True)
-        seq = job.next_event_seq
-        job.next_event_seq += 1
+    """原子：item 字段更新 + trace event 追加。
 
-        # 2. Update item + state guard
+    v2 优化：不再锁 job 行，trace event 顺序由自增 id 保证。
+    """
+    async with async_session() as db:
+        # 1. Update item + state guard（不锁 job，减少行锁竞争）
         item = await db.get(ImportBatchJobItem, item_id)
         if item is None:
             await db.rollback()
@@ -178,10 +176,10 @@ async def _update_item_with_trace(
             setattr(item, key, value)
         item.updated_at = _now()
 
-        # 3. Append trace event（同一 txn）
+        # 2. Append trace event（同一 txn，不传 seq，由自增 id 排序）
         await _append_trace_event(
             job_id,
-            seq=seq,
+            seq=0,
             step=trace.step,
             status=trace.status,
             message=trace.message,
@@ -206,6 +204,8 @@ async def _batch_merge_commit(
 ) -> int:
     """原子：items 切换 batch + supersede 旧批次 + job 终态 + trace events。
     调用方负责 session.begin/commit，本函数只做 DB 操作。
+
+    v2 优化：批量 update 代替 N+1 逐条 db.get + 逐 old_batch_id update。
     """
     from app.models.question_import import QuestionImport as QI
 
@@ -213,14 +213,20 @@ async def _batch_merge_commit(
     if job is None:
         return 0
 
-    superseded_count = 0
-    for r in items:
-        item = await db.get(ImportBatchJobItem, r.id)
-        if item:
-            item.review_batch_id = merged_batch_id
-            item.question_count = 0
-            item.updated_at = now
-
+    # v2: 批量 update items（跳过已从 session 中 expired 的对象，直接用 bulk update）
+    item_ids = [r.id for r in items]
+    if item_ids:
+        await db.execute(
+            update(ImportBatchJobItem)
+            .where(ImportBatchJobItem.id.in_(item_ids))
+            .values(
+                review_batch_id=merged_batch_id,
+                question_count=0,
+                updated_at=now,
+            )
+        )
+        # 逐条写 trace event（数量可控，merge 通常只有 2-N 条）
+        for r in items:
             seq = job.next_event_seq
             job.next_event_seq += 1
             await _append_trace_event(
@@ -229,26 +235,26 @@ async def _batch_merge_commit(
                 step="merge",
                 status="success",
                 message=f"合并至批次 {merged_batch_id}",
-                item_seq=item.seq,
+                item_seq=r.seq,
                 db=db,
             )
 
-    for old_id in old_batch_ids:
-        if old_id and old_id != merged_batch_id:
-            await db.execute(
-                update(QI)
-                .where(QI.batch_id == old_id)
-                .values(
-                    superseded_by_batch_id=merged_batch_id,
-                    superseded_at=now,
-                )
+    # v2: 单条批量 update supersede 所有旧 batch，替代逐 old_id 循环
+    valid_old = [oid for oid in old_batch_ids if oid and oid != merged_batch_id]
+    if valid_old:
+        await db.execute(
+            update(QI)
+            .where(QI.batch_id.in_(valid_old))
+            .values(
+                superseded_by_batch_id=merged_batch_id,
+                superseded_at=now,
             )
-            superseded_count += 1
+        )
 
     job.merge_status = "completed"
     job.merged_batch_id = merged_batch_id
     job.merge_finished_at = now
-    return superseded_count
+    return len(valid_old)
 
 
 async def _set_job_status_with_trace(
@@ -328,7 +334,7 @@ async def _find_job_by_request_id(
         return None
     row = (
         await db.execute(
-            select(ImportBatchJob.job_id).where(
+            select(ImportBatchJobItem.job_id).where(
                 ImportBatchJobItem.request_id == request_id,
             ).limit(1)
         )
@@ -601,17 +607,21 @@ async def _merge_image_texts(
         return {"merged": False, "reason": "exception during merge pipeline"}
 
 
-async def _run_vl_ocr(content: bytes, source_file: str) -> str:
+async def _run_vl_ocr(content: bytes, source_file: str,
+                       model_config: dict | None = None) -> str:
     """使用 PaddleOCR-VL 远程 API 识别图片，返回原始文本。
 
     从 DB 模型配置中读取 api_key/api_base_url/model_name，
     通过 PaddleOCRVLClient 异步提交+轮询获取结果。
-    """
-    from app.services.model_config_resolver import resolve_active_model
 
-    # 解析 DB 中的 PaddleOCR-VL 模型配置
-    async with async_session() as db:
-        resolved = await resolve_active_model(db, feature="ocr")
+    v2 优化：接受已解析的 model_config 参数，避免每张图片重复查询 DB。
+    """
+    if model_config is None:
+        from app.services.model_config_resolver import resolve_active_model
+
+        async with async_session() as db:
+            model_config = await resolve_active_model(db, feature="ocr")
+    resolved = model_config
     if not resolved or not resolved.get("api_key"):
         raise ValueError(
             "PaddleOCR-VL 未配置：请在 AI 设置页面配置 paddleocr-vl 模型的 API Key"
@@ -646,6 +656,7 @@ async def _run_single_image(
     item_id: int, source_file: str, content: bytes,
     subject: str | None, options: dict,
     job_id: str, seq: int,
+    model_config: dict | None = None,
 ) -> dict:
     """OCR → 清洗 → 现有 TXT 导入流水线。返回结果 dict（含 raw/cleaned 文本）。
 
@@ -658,8 +669,8 @@ async def _run_single_image(
     ocr_mode = options.get("ocr_mode", "local")
 
     if ocr_mode == "api":
-        # ── API 模式：使用 PaddleOCR-VL 替代本地 OCR ──
-        raw_ocr_text = await _run_vl_ocr(content, source_file)
+        # ── API 模式：使用 PaddleOCR-VL 替代本地 OCR（复用已解析的 model_config）──
+        raw_ocr_text = await _run_vl_ocr(content, source_file, model_config=model_config)
         skip_ocr_correction = True
     else:
         # ── 本地模式：本地 PaddleOCR ──
@@ -783,6 +794,7 @@ async def _process_source(
     subject: str | None,
     options: dict,
     job_id: str,
+    model_config: dict | None = None,
 ) -> None:
     """单张图片 worker：失败隔离，绝不向上抛异常。"""
     async with sem:
@@ -805,6 +817,7 @@ async def _process_source(
             result = await _run_single_image(
                 item_id, src.source_file, content, subject, options,
                 job_id=job_id, seq=src.seq,
+                model_config=model_config,
             )
             del content
 
@@ -908,6 +921,14 @@ async def run_batch_job(
         "batch image job started: job_id=%s total=%d concurrency=%d",
         job_id, len(sources), concurrency,
     )
+
+    # ── P0-4: API 模式预取 OCR 模型配置，避免每张图片重复查询 ──
+    api_model_config: dict | None = None
+    if options.get("ocr_mode") == "api":
+        from app.services.model_config_resolver import resolve_active_model
+        async with async_session() as _cfg_db:
+            api_model_config = await resolve_active_model(_cfg_db, feature="ocr")
+
     try:
         await _set_job_status_with_trace(
             job_id, "running",
@@ -934,6 +955,7 @@ async def run_batch_job(
                 subject=subject,
                 options=options,
                 job_id=job_id,
+                model_config=api_model_config,
             )
             for src in sources
             if src.seq in seq_to_item
@@ -1083,17 +1105,17 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
     done = counts["succeeded"] + counts["failed"]
     partial_failure = counts["succeeded"] > 0 and counts["failed"] > 0
 
-    # 读取 trace events
+    # 读取 trace events（按自增 id 排序，不再依赖 next_event_seq）
     events = (
         await db.execute(
             select(BatchJobTraceEvent)
             .where(BatchJobTraceEvent.job_id == job_id)
-            .order_by(BatchJobTraceEvent.seq)
+            .order_by(BatchJobTraceEvent.id)
         )
     ).scalars().all()
     trace_events = [
         {
-            "seq": e.seq,
+            "seq": e.id,
             "item_seq": e.item_seq or 0,
             "request_id": e.request_id,
             "image_import_id": e.image_import_id,
@@ -1139,22 +1161,22 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
 
 
 async def poll_trace_events(
-    db: AsyncSession, job_id: str, since_seq: int = 0
+    db: AsyncSession, job_id: str, since_id: int = 0
 ) -> list[dict]:
-    """返回 seq > since_seq 的增量 trace events。"""
+    """返回 id > since_id 的增量 trace events（使用自增 id 而非 seq 保证顺序）。"""
     rows = (
         await db.execute(
             select(BatchJobTraceEvent)
             .where(
                 BatchJobTraceEvent.job_id == job_id,
-                BatchJobTraceEvent.seq > since_seq,
+                BatchJobTraceEvent.id > since_id,
             )
-            .order_by(BatchJobTraceEvent.seq)
+            .order_by(BatchJobTraceEvent.id)
         )
     ).scalars().all()
     return [
         {
-            "seq": e.seq,
+            "seq": e.id,
             "item_seq": e.item_seq or 0,
             "step": e.step,
             "status": e.status,
@@ -1169,25 +1191,39 @@ async def poll_trace_events(
 async def poll_job_summary(
     db: AsyncSession, job_id: str,
 ) -> dict | None:
-    """简化的 job 终态摘要（用于 SSE done event）。"""
+    """简化的 job 终态摘要（用于 SSE done event）。
+
+    v2 优化：使用 SQL GROUP BY 聚合统计，不再全量读取所有 item。
+    """
     job = await db.get(ImportBatchJob, job_id)
     if job is None:
         return None
-    rows = (
-        await db.execute(
-            select(ImportBatchJobItem)
+    # 聚合查询：减少全量读取
+    status_counts = dict(
+        (
+            await db.execute(
+                select(ImportBatchJobItem.status, func.count(ImportBatchJobItem.id))
+                .where(ImportBatchJobItem.job_id == job_id)
+                .group_by(ImportBatchJobItem.status)
+            )
+        ).all()
+    )
+    succeeded = status_counts.get("succeeded", 0)
+    failed = status_counts.get("failed", 0)
+
+    # 题数用独立聚合（避免 JOIN 影响性能）
+    total_questions = (
+        await db.scalar(
+            select(func.coalesce(func.sum(ImportBatchJobItem.question_count), 0))
             .where(ImportBatchJobItem.job_id == job_id)
         )
-    ).scalars().all()
-    total_questions = sum(item.question_count or 0 for item in rows)
-    succeeded = sum(1 for item in rows if item.status == "succeeded")
-    failed = sum(1 for item in rows if item.status == "failed")
+    ) or 0
     return {
         "status": job.status,
         "total_questions": total_questions,
         "error_message": job.error_message,
-        "succeeded": succeeded,
-        "failed": failed,
+        "succeeded": succeeded or 0,
+        "failed": failed or 0,
     }
 
 

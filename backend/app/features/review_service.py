@@ -263,7 +263,12 @@ async def submit_to_review(
 
     # 隐患② 修复：分批 commit 失去原子性，中途崩溃会留下孤儿 batch_id 记录。
     # 用 try/except 包住整段写入逻辑，失败时按 batch_id 清理已 commit 的部分。
+    #
+    # v2 优化：使用批量 add + 批量 flush，代替每题单独 flush 的 N+1 写放大。
     try:
+        # flush_batch 暂存同一批的 (qi, question_hash, q, stem)，在批量 flush 后统一构建 items。
+        flush_batch: list[tuple[QuestionImport, str | None, dict, str]] = []
+
         for q, stem, parsed_options, qi_subject, question_hash in prepared:
             if not stem:
                 continue
@@ -360,48 +365,62 @@ async def submit_to_review(
                 },
             )
             db.add(qi)
-            await db.flush()
+            flush_batch.append((qi, question_hash, q, stem))
             pending_qis.append(qi)
-
-            if question_hash:
-                seen_hashes.setdefault(question_hash, qi.id)
-
-            _log_multi_blank_review_item(
-                batch_id=batch_id,
-                qi=qi,
-                source_question=q,
-                stem=stem,
-            )
-
-            stem_preview = stem[:50] + "..." if len(stem) > 50 else stem
-            items.append({
-                "id": qi.id,
-                "status": "pending",
-                "confidence_score": q.get("confidence_score", 0),
-                "stem_preview": stem_preview,
-                "has_issues": not q.get("is_valid", True) or bool(q.get("errors")),
-                "question_hash": qi.question_hash,
-                "duplicate_status": qi.duplicate_status,
-                "duplicate_of_question_id": qi.duplicate_of_question_id,
-                "duplicate_of_import_id": qi.duplicate_of_import_id,
-            })
             written += 1
             pending_in_batch += 1
 
-            # P1-B: 每 N 道 commit + 精确 expunge，让 ORM 对象脱离 session
-            # identity map，GC 才能回收 raw_data / parsed_content 等 dict
-            # （一道题约 5~30 KB，400 道累积可达 12 MB）。
-            # 隐患③：只 expunge 本批刚写入的 qi，不影响调用方在同 session
-            # 持有的其他 ORM 实例。
+            # P1-B: 每 N 道 flush + commit。v2 优化：批量 flush 代替每题 flush。
             if pending_in_batch >= _REVIEW_COMMIT_BATCH_SIZE:
+                await db.flush()
+                for _qi, _qhash, _q, _stem in flush_batch:
+                    if _qhash:
+                        seen_hashes.setdefault(_qhash, _qi.id)
+                    _log_multi_blank_review_item(
+                        batch_id=batch_id, qi=_qi, source_question=_q, stem=_stem,
+                    )
+                    _preview = _stem[:50] + "..." if len(_stem) > 50 else _stem
+                    items.append({
+                        "id": _qi.id,
+                        "status": "pending",
+                        "confidence_score": _q.get("confidence_score", 0),
+                        "stem_preview": _preview,
+                        "has_issues": not _q.get("is_valid", True) or bool(_q.get("errors")),
+                        "question_hash": _qi.question_hash,
+                        "duplicate_status": _qi.duplicate_status,
+                        "duplicate_of_question_id": _qi.duplicate_of_question_id,
+                        "duplicate_of_import_id": _qi.duplicate_of_import_id,
+                    })
+                flush_batch.clear()
                 await db.commit()
                 for _qi in pending_qis:
                     db.expunge(_qi)
                 pending_qis.clear()
                 pending_in_batch = 0
 
-        # 收尾：把未达 batch size 的尾部 commit；如果上一轮刚 commit 过这里
-        # 就是空 commit，对 SQLAlchemy 是 no-op，仅保证函数返回前事务关闭。
+        # 收尾：flush 末批 + commit
+        if flush_batch:
+            await db.flush()
+            for _qi, _qhash, _q, _stem in flush_batch:
+                if _qhash:
+                    seen_hashes.setdefault(_qhash, _qi.id)
+                _log_multi_blank_review_item(
+                    batch_id=batch_id, qi=_qi, source_question=_q, stem=_stem,
+                )
+                _preview = _stem[:50] + "..." if len(_stem) > 50 else _stem
+                items.append({
+                    "id": _qi.id,
+                    "status": "pending",
+                    "confidence_score": _q.get("confidence_score", 0),
+                    "stem_preview": _preview,
+                    "has_issues": not _q.get("is_valid", True) or bool(_q.get("errors")),
+                    "question_hash": _qi.question_hash,
+                    "duplicate_status": _qi.duplicate_status,
+                    "duplicate_of_question_id": _qi.duplicate_of_question_id,
+                    "duplicate_of_import_id": _qi.duplicate_of_import_id,
+                })
+            flush_batch.clear()
+
         if pending_in_batch > 0:
             await db.commit()
             for _qi in pending_qis:
