@@ -233,8 +233,11 @@ class BatchImageJobItem(BaseModel):
 class TraceEventItem(BaseModel):
     """Single trace event in the append-only event log.
 
-    seq is per-job monotonic. item_seq=None means job-level event.
+    seq is a backward-compat alias for id (auto-increment PK).
+    Sorting and incremental reads use id, NOT the DB seq column.
+    item_seq=None means job-level event.
     """
+    id: int | None = None
     seq: int
     item_seq: int
     step: str

@@ -19,6 +19,7 @@ from datetime import datetime
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -65,6 +66,7 @@ class ImportBatchJobItem(Base):
     __table_args__ = (
         UniqueConstraint("job_id", "seq", name="uq_batch_job_items_job_seq"),
         UniqueConstraint("batch_import_id", "image_import_id", name="uq_batch_import_id_image"),
+        Index("ix_batch_job_items_job_id_status", "job_id", "status"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -111,7 +113,9 @@ class BatchJobTraceEvent(Base):
     """
 
     __tablename__ = "batch_job_trace_events"
-    __table_args__ = ()
+    __table_args__ = (
+        Index("ix_batch_trace_events_job_id_id", "job_id", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(
