@@ -1,7 +1,7 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**→ **2026-06-24（VL confidence gate + VL_REBUILD 图片支持 + 双源 OCR 策略）**→ **2026-06-24（代码结构重建阶段 + 审核池泄漏修复）**→ **2026-06-24（噪声治理 v2 + 案例三修复补完）**→ **2026-06-25（案例五 Phase 3 original_raw_text merge + AI repair incomplete_options 兜底）**
+> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**→ **2026-06-24（VL confidence gate + VL_REBUILD 图片支持 + 双源 OCR 策略）**→ **2026-06-24（代码结构重建阶段 + 审核池泄漏修复）**→ **2026-06-24（噪声治理 v2 + 案例三修复补完）**→ **2026-06-25（案例五 Phase 3 original_raw_text merge + AI repair incomplete_options 兜底）**→ **2026-06-26（Phase 5 发布工程化收口）**
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
 
 **2026-06-23（本期新增）：**
@@ -33,6 +33,16 @@
   - AI safety gate 验证修复结果，仅接受高置信度变更
   - 修复 BUGS 案例三（while 循环缺 `}`）和案例四（for 循环断裂 `}`）
 - **审核池泄漏修复**：pipeline 前序阶段失败时（如 code_structure_reconstruct 异常），自动跳过 `review` 阶段，防止部分数据写入 `question_imports`
+
+**2026-06-26（Phase 5 发布工程化收口 — 本期新增）：**
+- **Pipeline store 生命周期修复**：`_set_pipeline_store` 不再主动 evict 终态条目（completed/failed），SSE 轮询可继续读取结果；新增 `_evict_pipeline_store` 供显式清理场景使用；内存由 `_prune_store` LRU 上限控制
+- **Pipeline artifact 断点恢复**：`pipeline_artifacts.py` 新增 `check_artifact_compatibility()` 版本兼容性检查 + `stages_before()` 规范阶段排序；`_restore_from_artifacts` 基于规范排序自动跳过已完成阶段
+- **OCR fix 安全门禁增强**：`interfaces.py` 新增 `CandidateDecision` 枚举（ACCEPT/REJECT_CONTINUE/REJECT_STOP）和 `CandidateEvaluation` dataclass；`OCRFixResult` 新增 `risk_flags` + `safety` 字段
+- **`ocr_mode.py` 新建**：集中式 OCR 模式解析（`local`/`api`）+ 依赖校验，替代路由中分散的逻辑
+- **`pipeline_enums.py` 新建**：BatchJobStatus/BatchItemStatus/TraceEventStatus/TraceStep 枚举 + 状态转换守卫 + trace mapping，消除各模块间状态值漂移
+- **`time_utils.py` 新建**：统一 UTC 时间工具（`utcnow()` naive/`utcnow_aware()` aware），替代全局 `datetime.utcnow()` 散乱调用
+- **`batch_image_import_service.py` 重构**：state machine 强化 + trace events + idempotency + ocr_mode 路由整合（~1050→1305 行）
+- **`ocr_fix/router.py` 增强**（158→361 行）：路由逻辑扩展，候选结果评估与安全门禁集成
 
 **2026-06-24（第二次更新-本期新增）：**
 - **噪声治理 v2**：新增 `NoiseMetrics` 数据类 + `NoiseMetricsCollector` 逐题指标收集 + 批量聚合 `NoiseMetricsSummary`。`clean_code_language_noise()` 通过 `_collector` 参数集成指标采集。下游新增 `noise_drift_detector.py`（KL 散度 drift 检测 + 拉普拉斯平滑，阈值 0.15）和 `noise_rule_governor.py`（基于 FP-rate 的 `safe_mode` 自适应切换，带迟滞）。stage 输出新增 `noise_metrics_summary` / `noise_drift` / `noise_governor` 三个观测字段。新增 49 个单元测试覆盖所有模块。清理死代码：移除 `confidence_threshold` 字段（实际控制由 `safe_mode` boolean 承担）、统一 key 命名 `fix_actions`→`code_language_noise_fix_actions`。
@@ -216,7 +226,7 @@
 
 | 模块 | 行数 | 职责 | 单一职责 | 耦合度 |
 |---|---|---|---|---|
-| `pipeline_orchestrator.py` | ~4650 | 19 阶段编排（含 classify_questions + code_structure_reconstruct）+ 性能 Profile | 🟡 仍有降低空间 | 🟡 中 |
+| `pipeline_orchestrator.py` | ~4871 | 19 阶段编排（含 classify_questions + code_structure_reconstruct）+ 性能 Profile + artifact 断点恢复 | 🟡 仍有降低空间 | 🟡 中 |
 | `pipeline_stages/`（9 文件） | ~1380 | 9 独立 stage 实现（match/math_detect/table_detect/structure_freeze/code_structure...） | ✅ 各模块单一 | 🟢 低 |
 | `question_pipeline.py` | 2921 | `QuestionNormalizer` + 向后兼容重导出 | 🟡 保留入口 | 🟢 低 |
 | `question_ai_complete.py` | 741 | AI 补全 | ✅ 单一 | 🟢 低 |
@@ -224,17 +234,22 @@
 | `question_draft_generator.py` | 134 | AI 生成草稿 | ✅ 单一 | 🟢 低 |
 | `question_import_writer.py` | 749 | Excel/PDF 导入 + 审核操作 | ✅ 单一 | 🟢 低 |
 | `services/ocr_service.py` | 637 | PaddleOCR 封装 | ✅ 较好 | 🟡 中 |
-| `text_normalizer.py` | 1115 | 规则清洗 + 统一 OCR 规范化入口 | ✅ 良好 | 🟢 低 |
+| `text_normalizer.py` | 1400 | 规则清洗 + 统一 OCR 规范化入口 | ✅ 良好 | 🟢 低 |
 | `ocr_fix/`（6 文件） | ~750 | 多模型 OCR 纠错路由（唯一路径） | ✅ 清晰 | 🟢 低 |
 | `ocr_vl/paddleocr_vl_client.py` | ~430 | PaddleOCR-VL async HTTP 客户端 | ✅ 单一 | 🟢 低 |
 | `ocr_vl/paddleocr_vl_adapter.py` | 112 | OCRFixerProtocol 适配器 | ✅ 清晰 | 🟢 低 |
 | `ai_safety.py` | 284 | AI 编辑安全门禁 | ✅ 优秀 | 🟢 低 |
-| `question_splitter.py` | 1301 | 题号+选项提取 | ✅ 良好 | 🟢 低 |
-| `question_normalizer.py` | 1165 | Layer 0/1/3 集成：题干清洗 + 分类器门控 + 选项标准化 + OCR 质量门控 | ✅ 单一（职责合理增长） | 🟢 低 |
-| `ai_repair.py` | 1116 | AI 修复 + Layer 4 选项不可变门控（含 code integrity gate） | ✅ 较好 | 🟢 低 |
+| `question_splitter.py` | 1437 | 题号+选项提取 | ✅ 良好 | 🟢 低 |
+| `question_normalizer.py` | 1273 | Layer 0/1/3 集成：题干清洗 + 分类器门控 + 选项标准化 + OCR 质量门控 | ✅ 单一（职责合理增长） | 🟢 低 |
+| `ai_repair.py` | 1164 | AI 修复 + Layer 4 选项不可变门控（含 code integrity gate） | ✅ 较好 | 🟢 低 |
 | `code_integrity.py` | 520 | 代码块完整性检测 | ✅ 单一 | 🟢 低 |
-| `question_type_classifier.py` | 172 | Layer 1 严格 has_options 门控（新建模块，纯规则） | ✅ 单一 | 🟢 低 |
-| `batch_image_import_service.py` | ~1050 | 批量图片导入编排器（state machine + trace events + idempotency + ocr_mode 路由） | ✅ 良好 | 🟢 低 |
+| `question_type_classifier.py` | 454 | Layer 1 严格 has_options 门控 + force_options_probe() | ✅ 单一 | 🟢 低 |
+| `batch_image_import_service.py` | ~1305 | 批量图片导入编排器（state machine + trace events + idempotency + ocr_mode 路由 + 断点恢复） | 🟡 职责增长中 | 🟢 低 |
+| `pipeline_artifacts.py` | 559 | Pipeline artifact 持久化、兼容性检查、断点恢复 | ✅ 单一 | 🟢 低 |
+| `ocr_fix/router.py` | 361 | OCR 纠错降级链路由 + 候选结果评估安全门禁 | ✅ 良好 | 🟢 低 |
+| `ocr_mode.py` | 89 | OCR 模式解析（local/api）+ 依赖校验 | ✅ 单一 | 🟢 低 |
+| `pipeline_enums.py` | 139 | Pipeline 状态枚举 + 状态转换守卫 + trace mapping（SSOT） | ✅ 单一 | 🟢 低 |
+| `time_utils.py` | 24 | 统一 UTC 时间工具 | ✅ 单一 | 🟢 低 |
 | `layout_router.py` | 76 | 生产固化路由决策（pure confidence-based） | ✅ 纯函数 | 🟢 低 |
 | `evaluation/routing_metrics.py` | 217 | 路由决策指标收集 | ✅ 单一 | 🟢 低 |
 | `evaluation/split_quality.py` | 111 | 分割质量加权评估 | ✅ 单一 | 🟢 低 |
@@ -371,6 +386,12 @@
 | **P0** | 案例三残留：VL_REBUILD 替换 blocks 后 frozen_option_registry 阻塞正则选项提取 | ✅ ad33620（VL_REBUILD 后将 frozen_option_registry 置 None） |
 | **P2** | 代码类型噪声清洗无可观测性（无指标/无 drift 检测/无策略自适应） | ✅ cb33729（NoiseMetrics + KL drift 检测 + 自适应 safe_mode 切换，49 测试） |
 | **P0** | 案例五残留：PP-OCR 重跑文本与原始文本各有不同选项损坏，VL_REBUILD 合并后仍缺选项 B；AI repair 因 system prompt 禁止修改 options 无法恢复 | ✅ Phase 3 original_raw_text merge（重跑文本 A 正确 B 乱码 + 原始文本 B 正确 A 乱码 → 合并得 4 选项）+ ai_repair incomplete_options trigger（兜底恢复） |
+| **P1** | Pipeline store 终态条目未清理，内存持续增长 | ✅ Phase 5：移除 auto-eviction，改为 LRU prune 上限控制，终态条目保留供 SSE 轮询 |
+| **P1** | Pipeline 断点恢复无可兼容性检查，版本不匹配时静默失败 | ✅ Phase 5：`check_artifact_compatibility()` + `stages_before()` 规范排序 |
+| **P2** | OCR fix 路由缺少适配器候选评估安全门禁 | ✅ Phase 5：`CandidateDecision`/`CandidateEvaluation` + `risk_flags` + `safety` 字段 |
+| **P2** | OCR 模式解析分散在各路由，无统一校验入口 | ✅ Phase 5：`ocr_mode.py` 集中式 mode 解析 + 依赖校验 |
+| **P2** | Pipeline 状态值在模块间硬编码漂移 | ✅ Phase 5：`pipeline_enums.py` 枚举 SSOT + 状态转换守卫 |
+| **P2** | `datetime.utcnow()` 弃用警告（~112 处）| ✅ Phase 5：统一替换为 `time_utils.utcnow()`，零项目自身弃用警告 |
 
 ### 6.2 改造路线图（压缩）
 
@@ -401,6 +422,14 @@
   - **噪声治理 v2：NoiseMetrics + KL drift 检测 + 自适应 safe_mode 切换 (cb33729)**
   - **案例三修复补完：transition 模式扩展 / 题干重剥离 / VL_REBUILD 冻结清理 (ad33620)**
   - **案例五修复补完：Phase 3 original_raw_text merge + noise layer hallucination 清洗 + AI repair incomplete_options 兜底**
+✅ **2026-06-26: Phase 5 发布工程化收口 (f55748c)**
+  - Pipeline store 生命周期：移除终态 auto-eviction，LRU prune 控制内存，SSE 轮询可读终态
+  - Pipeline artifact 断点恢复：兼容性检查 + 规范阶段排序
+  - OCR fix 安全门禁增强：CandidateDecision/CandidateEvaluation + risk_flags
+  - 新模块：ocr_mode.py（模式解析）、pipeline_enums.py（枚举 SSOT）、time_utils.py（UTC 时间）
+  - batch_image_import_service.py 重构（state machine + trace events + idempotency）
+  - datetime.utcnow() 全面消除（18 个生产文件）
+  - Migration SQLite 兼容 + 故障注入测试（6 cases）
 
 ⏳ 待处理:
   - AI 补全并行化 (0.5d)
@@ -450,17 +479,21 @@
 
 | 文件 | 行数 | 用途 |
 |---|---|---|
-| `features/pipeline_orchestrator.py` | ~4650 | 主编排器（19 阶段，含 classify_questions + code_structure_reconstruct） |
+| `features/pipeline_orchestrator.py` | ~4871 | 主编排器（19 阶段，含 classify_questions + code_structure_reconstruct）+ artifact 断点恢复 |
 | `features/question_pipeline.py` | 2921 | 标准化管道 + 向后兼容重导出 |
-| `features/batch_image_import_service.py` | ~1050 | 批量图片导入编排器（含 ocr_mode 路由） |
+| `features/batch_image_import_service.py` | ~1305 | 批量图片导入编排器（state machine + trace events + idempotency + ocr_mode 路由 + 断点恢复） |
+| `features/pipeline_artifacts.py` | 559 | Pipeline artifact 持久化、兼容性检查、断点恢复 |
 | `services/ocr_service.py` | 637 | PaddleOCR 封装 |
-| `features/text_normalizer.py` | 1115 | 统一 OCR 文本规范化（13 步） |
-| `features/question_splitter.py` | 1301 | 题号+选项提取 |
-| `features/ai_repair.py` | 1116 | AI 修复（Layer 4 选项不可变门控） |
+| `features/text_normalizer.py` | 1400 | 统一 OCR 文本规范化（13 步） |
+| `features/question_splitter.py` | 1437 | 题号+选项提取 |
+| `features/ai_repair.py` | 1164 | AI 修复（Layer 4 选项不可变门控） |
 | `features/code_integrity.py` | 520 | 代码块完整性检测 |
-| `features/question_type_classifier.py` | 455 | Layer 1 题型分类门控 + force_options_probe() |
+| `features/question_type_classifier.py` | 454 | Layer 1 题型分类门控 + force_options_probe() |
 | `features/pipeline_stages/structure_freeze_stage.py` | 230 | 选项结构冻结（纯正则，split 前锁定选项） |
-| `features/pipeline_stages/code_structure_stage.py` | 312 | 代码结构重建（LLM 修复 brace/indent/OCR 符号错误） |
+| `features/pipeline_stages/code_structure_stage.py` | 319 | 代码结构重建（LLM 修复 brace/indent/OCR 符号错误） |
+| `features/ocr_mode.py` | 89 | OCR 模式解析（local/api）+ 依赖校验 |
+| `models/pipeline_enums.py` | 139 | Pipeline 状态枚举 + 状态转换守卫 + trace mapping（SSOT） |
+| `core/time_utils.py` | 24 | 统一 UTC 时间工具 |
 
 ### OCR 纠错
 
@@ -468,7 +501,8 @@
 |---|---|---|
 | `ocr_vl/paddleocr_vl_client.py` | ~430 | PaddleOCR-VL async HTTP 客户端 |
 | `ocr_vl/paddleocr_vl_adapter.py` | 112 | OCRFixerProtocol 适配器 |
-| `ocr_fix/router.py` | 158 | 降级链策略路由（唯一入口） |
+| `ocr_fix/router.py` | 361 | 降级链策略路由（唯一入口）+ 候选结果评估安全门禁 |
+| `ocr_fix/interfaces.py` | 68 | OCRFixResult + CandidateDecision + CandidateEvaluation 接口定义 |
 | `ocr_correction_common.py` | 254 | OCR 纠错通用逻辑 + repair_option_structure() |
 | `ocr_fix/deepseek_adapter.py` | 126 | DeepSeek 纯文本纠错 |
 | `ai_safety.py` | 284 | AI 编辑安全门禁 |
@@ -503,4 +537,4 @@
 
 ---
 
-*报告结束。初版：2026-06-20，末次更新：2026-06-25（案例五 Phase 3 original_raw_text merge + AI repair incomplete_options 兜底，5 种 BUGS 失败模式全部修复）。*
+*报告结束。初版：2026-06-20，末次更新：2026-06-26（Phase 5 发布工程化收口：pipeline store 生命周期 + artifact 断点恢复 + OCR fix 安全门禁增强 + ocr_mode/pipeline_enums/time_utils 新模块 + datetime 时区统一 + 故障注入验证）。*
