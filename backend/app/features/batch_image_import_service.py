@@ -32,6 +32,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -122,7 +123,10 @@ async def _append_trace_event(
 ) -> BatchJobTraceEvent:
     """追加 trace event 到已开启的事务中（不 commit，由调用方控制）。
 
-    调用方必须确保 job 行已被 FOR UPDATE 锁定（next_event_seq 已递增）。
+    Note: item-level trace events do NOT require the job row FOR UPDATE lock.
+    Only job-level events that increment next_event_seq (legacy compat) need it.
+    Incremental reads use BatchJobTraceEvent.id, not seq.
+    seq is a backward-compat field; new code should not depend on it.
     """
     event = BatchJobTraceEvent(
         job_id=job_id,
@@ -329,9 +333,24 @@ async def find_existing_job(
 async def _find_job_by_request_id(
     db: AsyncSession, request_id: str,
 ) -> str | None:
-    """查找 request_id 对应的已有 job（job 级幂等）。"""
+    """查找 request_id 对应的已有 job（job 级幂等）。
+
+    Priority: ImportBatchJob.request_id (unique-indexed).
+    Fallback: ImportBatchJobItem.request_id (legacy compat).
+    """
     if not request_id:
         return None
+    # Primary: unique-indexed ImportBatchJob.request_id
+    row = (
+        await db.execute(
+            select(ImportBatchJob.job_id).where(
+                ImportBatchJob.request_id == request_id,
+            ).limit(1)
+        )
+    ).scalar_one_or_none()
+    if row:
+        return row
+    # Fallback: ImportBatchJobItem.request_id (legacy data without job-level request_id)
     row = (
         await db.execute(
             select(ImportBatchJobItem.job_id).where(
@@ -406,6 +425,7 @@ async def create_batch_job(
     now = _now()
     job = ImportBatchJob(
         job_id=job_id,
+        request_id=request_id,
         source_type=source_type,
         subject=subject,
         total=len(sources),
@@ -445,7 +465,25 @@ async def create_batch_job(
         )
 
     # Append trace event for upload (need to flush to get seq)
-    await db.flush()
+    # Catch IntegrityError for concurrent duplicate request_id protection.
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        existing = await _find_job_by_request_id(db, request_id)
+        if existing:
+            logger.info(
+                "Concurrent duplicate request_id=%s -> existing job=%s",
+                request_id, existing,
+            )
+            return ImportBatchJob(
+                job_id=existing,
+                status="duplicate",
+                total=0,
+                concurrency=clamp_concurrency(concurrency),
+            )
+        raise
+
     await _append_trace_event(
         job_id,
         seq=job.next_event_seq,
@@ -498,6 +536,16 @@ async def _merge_image_texts(
                 "merged": True,
                 "batch_id": job.merged_batch_id,
                 "reason": "already_merged",
+            }
+        if job.merge_status == "running":
+            logger.info(
+                "Batch image merge already running for job=%s, skipping",
+                job_id,
+            )
+            return {
+                "merged": False,
+                "reason": "merge already running",
+                "review_batch_id": job.merged_batch_id,
             }
         job.merge_status = "running"
         job.merge_started_at = now
