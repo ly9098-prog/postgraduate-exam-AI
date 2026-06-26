@@ -148,14 +148,14 @@ PDF → pdf_classifier (逐页判断)
 - **时区统一**：复习日期统一使用 `utcnow().date()`，避免服务器本地时区导致日期偏移。
 - **Rating 0 是合法值**：SM-2 quality 评分范围 0-5，0 表示完全不会，会重置连续正确计数（repetitions=0）并缩短间隔。
 
-**当前技术债**：
+**历史技术债（已全部清理）**：
 
-| 问题 | 说明 | 状态 |
-|------|------|------|
-| 旧接口未迁移 | `/review/due`、`/review/submit`、`/review/stats` 仍基于 WrongQuestion 兼容字段，未读取 ReviewSchedule | ✅ P1-1 已修复 |
-| 旧 SM-2 路径残留 | `wrong_question_service.update_quality()` 在 WQ 上独立执行 `calc_sm2()`，绕开 ReviewSchedule | ✅ P0-1 已修复 |
-| 双表维护 | WrongQuestion 的 SM-2 字段实际冗余，后续应废弃只读 ReviewSchedule | ⏳ P2 待处理 |
-| 时区混用 | 旧路径使用 `date.today()`（本地时区），新路径使用 `utcnow().date()`（UTC） | ✅ P1-3/4 已修复 |
+| 问题 | 修复 |
+|------|------|
+| 旧接口未迁移 | ✅ P1-1 已修复（数据源切换 RS） → P2-1 已移除旧接口 |
+| 旧 SM-2 路径残留 | ✅ P0-1 已修复（`update_quality()` 路由到 RS） |
+| 双表维护 | ✅ P2-2 已移除 WQ SM-2 兼容字段（efactor/interval/repetitions/next_review_date/quality） |
+| 时区混用 | ✅ P1-3/4 已修复（全部路径统一为 `utcnow()`） |
 
 > 完整设计与技术债清单详见 [REVIEW_SYSTEM_DESIGN.md](REVIEW_SYSTEM_DESIGN.md)。
 

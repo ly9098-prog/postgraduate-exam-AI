@@ -23,7 +23,7 @@
 | questions | 正式题目库 | subject, content(JSON), options(JSON), question_hash |
 | question_versions | 题目编辑历史版本 | question_id + version 唯一约束 |
 | question_imports | 导入暂存区 | batch_id, status(pending/approved/rejected), question_hash, duplicate_status, AI 辅助导题字段 |
-| wrong_questions | 错题记录 + SM-2 调度字段 | efactor, interval, repetitions, next_review_date |
+| wrong_questions | 错题记录（不含 SM-2 字段，P2-2 已移除） | review_count, mastered |
 | review_schedules | 复习调度（SM-2 独立表） | ease_factor, interval, next_review_at |
 | review_records | 复习历史记录 | rating, interval_before/after |
 | practice_records | 练习记录（每题一条） | user_answer, is_correct, used_time |
@@ -565,13 +565,7 @@ class WrongQuestion(Base):
     ai_analysis: dict?      # JSON: AI 分析结果缓存
     review_count: int       # 总复习次数
     last_review_at: datetime?
-    mastered: bool          # 是否已掌握，默认 False
-    # SM-2 字段
-    efactor: float          # 难度因子，默认 2.5
-    interval: int           # 当前间隔（天），默认 0
-    repetitions: int        # 连续正确次数，默认 0
-    next_review_date: date? # 下次复习日期
-    quality: int?           # 最近质量评分 0-5
+    mastered: bool          # 是否已掌握
     created_at: datetime
     updated_at: datetime
 ```
@@ -587,30 +581,19 @@ class WrongQuestion(Base):
 | review_count | SmallInteger | default=0 |
 | last_review_at | DateTime | NULLABLE |
 | mastered | Boolean | default=False |
-| efactor | Float | default=2.5 |
-| interval | Integer | default=0 |
-| repetitions | Integer | default=0 |
-| next_review_date | Date | NULLABLE |
-| quality | SmallInteger | NULLABLE |
 | created_at | DateTime | server_default=now() |
 | updated_at | DateTime | server_default=now(), onupdate |
 
-### SM-2 字段说明
+### 变更记录
 
-> **注意**：WrongQuestion 上的 SM-2 字段为**历史兼容字段**，主调度已迁移至 `review_schedules` 表。
-> 每次 ReviewSchedule 更新后通过 `_sync_schedule_to_wq()` 自动回写以下字段，业务代码不应直接修改。
-
-- `efactor`：SuperMemo EF，下限 1.3（兼容字段，主来源为 ReviewSchedule.ease_factor）
-- `interval`：距下次复习天数（兼容字段，主来源为 ReviewSchedule.interval）
-- `repetitions`：连续回答正确次数（兼容字段，主来源为 ReviewSchedule.repetitions），quality >= 3 时递增，< 3 时归零
-- `next_review_date`：通过 `calc_sm2()` 计算的下次复习日期（兼容字段，主来源为 ReviewSchedule.next_review_at）
-- `mastered`：是否已掌握（兼容字段，主来源为 ReviewSchedule.mastered）
+> P2-2 已移除 SM-2 兼容字段（efactor / interval / repetitions / next_review_date / quality）。
+> 复习调度参数仅由 ReviewSchedule 持有，不再冗余存储于 WrongQuestion。
 
 ---
 
 ## review_schedules / review_records
 
-独立的复习调度表。**当前复习调度的主数据源**，WrongQuestion 上的 SM-2 字段仅为历史兼容字段。
+独立的复习调度表。**复习调度的唯一主数据源**。WrongQuestion 不再持有 SM-2 字段（P2-2 已移除）。
 
 ### review_schedules
 
