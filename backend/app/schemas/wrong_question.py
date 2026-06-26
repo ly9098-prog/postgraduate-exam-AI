@@ -25,12 +25,6 @@ class WrongQuestionResponse(BaseModel):
     review_count: int
     created_at: datetime
     updated_at: datetime
-    # SM-2 字段
-    efactor: float = 2.5
-    interval: int = 0
-    repetitions: int = 0
-    next_review_date: date | None = None
-    quality: int | None = None
     # 关联的题目信息
     subject: str | None = None
     content: dict | None = None
