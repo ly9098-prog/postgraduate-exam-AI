@@ -7,14 +7,6 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.question import Question
-from app.schemas.common import paginated_response
-from app.schemas.review import (
-    ReviewDueItem,
-    ReviewStatsResponse,
-    ReviewSubmitRequest,
-    ReviewSubmitResponse,
-    ReviewSubmitResult,
-)
 from app.schemas.review_scheduler import (
     BatchGradeRequest,
     BatchGradeResponse,
@@ -27,68 +19,9 @@ from app.schemas.review_scheduler import (
     ReviewSubmitResponse as ScheduleSubmitResponse,
     TodayReviewResponse,
 )
-from app.services import review_scheduler, review_service as svc
+from app.services import review_scheduler
 
 router = APIRouter(prefix="/api/v1/review")
-
-
-@router.get("/due")
-async def list_due_reviews(
-    subject: str | None = Query(None),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    items, total = await svc.get_due_reviews(
-        db, current_user.id, subject, page, page_size
-    )
-    return paginated_response(
-        items=[ReviewDueItem(**item) for item in items],
-        total=total,
-        page=page,
-        page_size=page_size,
-    )
-
-
-@router.post("/submit", response_model=ReviewSubmitResponse)
-async def submit_review(
-    data: ReviewSubmitRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    items = [d.model_dump() for d in data.items]
-    results = await svc.submit_batch_review(db, current_user.id, items)
-
-    processed = len(results)
-    if processed == 0:
-        raise HTTPException(status_code=404, detail="没有找到有效的错题记录")
-
-    await cache.delete(f"review:*:{current_user.id}*")
-    await cache.delete(f"stats:*:{current_user.id}*")
-
-    return ReviewSubmitResponse(
-        results=[ReviewSubmitResult(**r) for r in results],
-        processed=processed,
-    )
-
-
-@router.get("/stats", response_model=ReviewStatsResponse)
-async def get_stats(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    cache_key = f"review:stats:{current_user.id}"
-    cached_data = await cache.get(cache_key)
-    if cached_data is not None:
-        return cached_data
-    stats = await svc.get_review_stats(db, current_user.id)
-    result = ReviewStatsResponse(**stats)
-    await cache.set(cache_key, result.model_dump(), ttl=300)
-    return result
-
-
-# ── Stage 12: SM-2 复习调度端点 ──
 
 
 @router.get("/today", response_model=TodayReviewResponse)
