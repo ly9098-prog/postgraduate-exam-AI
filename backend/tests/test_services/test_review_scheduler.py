@@ -83,18 +83,20 @@ class TestSM2Algorithm:
 
     def test_rating_5_max_growth(self):
         result = calc_sm2(quality=5, efactor=2.5, interval=10, repetitions=3)
-        assert result["interval"] == round(10 * 2.5)  # 25
+        # 稳定四舍五入: floor(10 * 2.5 + 0.5) = floor(25.5) = 25
+        assert result["interval"] == 25
         assert result["efactor"] >= 2.5  # EF should increase for quality=5
         assert result["repetitions"] == 4
 
     def test_rating_4(self):
         result = calc_sm2(quality=4, efactor=2.5, interval=6, repetitions=2)
-        assert result["interval"] == round(6 * 2.5)
+        # floor(6 * 2.5 + 0.5) = floor(15.5) = 15
+        assert result["interval"] == 15
         assert result["repetitions"] == 3
 
     def test_rating_3_pass_threshold(self):
         result = calc_sm2(quality=3, interval=6, repetitions=2)
-        assert result["interval"] == round(6 * 2.5)
+        assert result["interval"] == 15  # floor(6*2.5 + 0.5)
         assert result["repetitions"] == 3
 
     def test_rating_2_wrong(self):
@@ -110,7 +112,6 @@ class TestSM2Algorithm:
 
     def test_ef_minimum_1_3(self):
         """EF 不应低于 1.3。"""
-        # Repeatedly apply low quality to drive EF down
         ef = 2.5
         for _ in range(50):
             result = calc_sm2(quality=0, efactor=ef, interval=1, repetitions=0)
@@ -129,7 +130,7 @@ class TestSM2Algorithm:
 
     def test_third_review_depends_on_ef(self):
         result = calc_sm2(quality=4, interval=6, repetitions=2)
-        assert result["interval"] == round(6 * 2.5)
+        assert result["interval"] == 15  # floor(6 * 2.5 + 0.5)
         assert result["repetitions"] == 3
 
     def test_repetitions_reset_on_wrong(self):
@@ -152,6 +153,26 @@ class TestSM2Algorithm:
     def test_next_review_date_is_future(self):
         result = calc_sm2(quality=4, interval=6, repetitions=2)
         assert result["next_review_date"] >= date.today()
+
+    def test_stable_rounding_bankers_case(self):
+        """验证使用 math.floor(x+0.5) 而非 round()（银行家舍入）。
+        round(22.5) == 22（银行家舍入），而 floor(22.5 + 0.5) == 23（期望）。"""
+        result = calc_sm2(quality=4, efactor=2.5, interval=9, repetitions=2)
+        # interval * efactor = 22.5
+        assert result["interval"] == 23  # 稳定四舍五入
+
+    def test_interval_min_1(self):
+        """即使计算结果为 0，interval 也不应低于 1。"""
+        result = calc_sm2(quality=4, efactor=1.3, interval=0, repetitions=2)
+        assert result["interval"] >= 1
+
+    def test_rating_5_ef_2_7_interval_6_repetitions_2(self):
+        """特定边界: quality=5, efactor=2.7, interval=6, repetitions=2
+        => interval=floor(6*2.7+0.5)=16, repetitions=3, efactor=2.8"""
+        result = calc_sm2(quality=5, efactor=2.7, interval=6, repetitions=2)
+        assert result["interval"] == 16  # floor(6*2.7+0.5) = 16
+        assert result["repetitions"] == 3
+        assert result["efactor"] == 2.8  # 2.7 + 0.1
 
 
 # ── get_today_review Tests ──
@@ -199,25 +220,49 @@ class TestGetTodayReview:
         assert result["questions"] == []
 
     def test_subject_filter(self):
+        """subject 筛选在 SQL 层完成，返回仅包含目标 subject 的复习题。"""
         db = _make_mock_db()
         now = datetime.now(timezone.utc).replace(tzinfo=None)
-        schedules = [
-            _make_schedule_mock(id=1, question_id=10, subject="math2", next_review_at=now - timedelta(days=1)),
-            _make_schedule_mock(id=2, question_id=11, subject="english", next_review_at=now - timedelta(days=1)),
-        ]
+        # SQL 层已按 subject 过滤，只返回 math2 的记录
+        math_schedule = _make_schedule_mock(id=1, question_id=10, subject="math2", next_review_at=now - timedelta(days=1))
         math_q = _make_question_mock(id=10, subject="math2")
-        eng_q = _make_question_mock(id=11, subject="english")
         _mock_execute_sequence(
             db,
-            {"scalar": 2},
-            {"scalars": schedules},
-            {"scalars": [math_q, eng_q]},
+            {"scalar": 1},          # count 已按 subject 过滤
+            {"scalars": [math_schedule]},  # schedules 已按 subject 过滤
+            {"scalars": [math_q]},
         )
 
         result = asyncio.run(get_today_review(db, user_id=1, subject="math2"))
 
         assert result["total_today"] == 1
+        assert len(result["questions"]) == 1
         assert result["questions"][0]["subject"] == "math2"
+
+    def test_subject_filter_with_limit_does_not_leak(self):
+        """验证 subject 筛选在 SQL limit 之前执行，不会因 limit 先截断而漏题。"""
+        db = _make_mock_db()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        # 即使总共有 5 条待复习且 limit=3，SQL 层只返回 2 条 math2 的
+        math_schedules = [
+            _make_schedule_mock(id=i, question_id=10 + i, subject="math2",
+                                next_review_at=now - timedelta(days=2 - i))
+            for i in range(2)
+        ]
+        math_questions = [_make_question_mock(id=10 + i, subject="math2") for i in range(2)]
+        _mock_execute_sequence(
+            db,
+            {"scalar": 2},          # SQL count 只统计 math2
+            {"scalars": math_schedules},  # 只返回 math2 的 schedules
+            {"scalars": math_questions},
+        )
+
+        result = asyncio.run(get_today_review(db, user_id=1, subject="math2", limit=3))
+
+        assert result["total_today"] == 2
+        assert len(result["questions"]) == 2
+        for q in result["questions"]:
+            assert q["subject"] == "math2"
 
     def test_limit(self):
         db = _make_mock_db()
@@ -265,9 +310,11 @@ class TestSubmitReview:
             id=1, question_id=10, interval=5, ease_factor=2.5, repetitions=2,
             next_review_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1),
         )
-        # First execute: get schedule
-        # commit/refresh don't need execute results
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=schedule)
+        # schedule query + WQ sync query
+        db.execute.side_effect = [
+            _make_execute_result(scalar_one_or_none=schedule),
+            _make_execute_result(scalar_one_or_none=None),
+        ]
 
         async def _run():
             return await submit_review(db, user_id=1, schedule_id=1, question_id=10, rating=4)
@@ -301,7 +348,10 @@ class TestSubmitReview:
             id=1, question_id=10, interval=30, ease_factor=2.5, repetitions=5,
             next_review_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1),
         )
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=schedule)
+        db.execute.side_effect = [
+            _make_execute_result(scalar_one_or_none=schedule),
+            _make_execute_result(scalar_one_or_none=None),
+        ]
 
         async def _run():
             return await submit_review(db, user_id=1, schedule_id=1, question_id=10, rating=1)
@@ -323,7 +373,10 @@ class TestSubmitReview:
             id=1, question_id=10, interval=5, ease_factor=2.5, repetitions=2,
             next_review_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1),
         )
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=schedule)
+        db.execute.side_effect = [
+            _make_execute_result(scalar_one_or_none=schedule),
+            _make_execute_result(scalar_one_or_none=None),
+        ]
 
         asyncio.run(submit_review(db, user_id=1, schedule_id=1, question_id=10, rating=4))
 
@@ -334,6 +387,104 @@ class TestSubmitReview:
         assert records[0].rating == 4
         assert records[0].user_id == 1
         assert records[0].question_id == 10
+
+    def test_auto_grade_correct_rating_4_behavior(self):
+        """自动批改答对时 rating=4（非 5），验证 SM-2 行为。"""
+        db = _make_mock_db()
+        schedule = _make_schedule_mock(
+            id=1, question_id=10, interval=5, ease_factor=2.5, repetitions=2,
+            next_review_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1),
+        )
+        db.execute.side_effect = [
+            _make_execute_result(scalar_one_or_none=schedule),
+            _make_execute_result(scalar_one_or_none=None),
+        ]
+
+        # 模拟 grade-submit 使用 rating=4（答对时的新映射值）
+        result = asyncio.run(submit_review(db, user_id=1, schedule_id=1, question_id=10, rating=4))
+
+        assert result["is_correct"] is True
+        # rating=4 时 SM-2 应有适度增长（不是 max growth 的 5）
+        calc_4 = calc_sm2(quality=4, efactor=2.5, interval=5, repetitions=2)
+        calc_5 = calc_sm2(quality=5, efactor=2.5, interval=5, repetitions=2)
+        assert calc_4["efactor"] < calc_5["efactor"]  # 4 的增幅小于 5
+
+    def test_auto_grade_wrong_rating_1_behavior(self):
+        """自动批改答错时 rating=1（非 0），验证 SM-2 行为。"""
+        db = _make_mock_db()
+        schedule = _make_schedule_mock(
+            id=1, question_id=10, interval=5, ease_factor=2.5, repetitions=2,
+            next_review_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1),
+        )
+        db.execute.side_effect = [
+            _make_execute_result(scalar_one_or_none=schedule),
+            _make_execute_result(scalar_one_or_none=None),
+        ]
+
+        # 模拟 grade-submit 使用 rating=1（答错时的新映射值）
+        result = asyncio.run(submit_review(db, user_id=1, schedule_id=1, question_id=10, rating=1))
+
+        assert result["is_correct"] is False
+        assert result["interval_after"] == 1  # 重置为 1 天
+        # rating=1 时 SM-2 的 ease_factor 下降幅度应小于 rating=0
+        calc_1 = calc_sm2(quality=1, efactor=2.5, interval=5, repetitions=2)
+        calc_0 = calc_sm2(quality=0, efactor=2.5, interval=5, repetitions=2)
+        assert calc_1["efactor"] > calc_0["efactor"]  # 1 的下降幅度小于 0
+
+    def test_invalid_rating_rejected(self):
+        """评分超出 0-5 范围应被拒绝。"""
+        db = _make_mock_db()
+        with pytest.raises(ValueError):
+            asyncio.run(submit_review(db, user_id=1, schedule_id=1, question_id=10, rating=6))
+        with pytest.raises(ValueError):
+            asyncio.run(submit_review(db, user_id=1, schedule_id=1, question_id=10, rating=-1))
+
+    def test_rating_0_accepted_as_valid(self):
+        """rating=0 是合法 SM-2 评分（完全不会），不应被拒绝。"""
+        db = _make_mock_db()
+        schedule = _make_schedule_mock(
+            id=1, question_id=10, interval=30, ease_factor=2.5, repetitions=5,
+            next_review_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1),
+        )
+        db.execute.side_effect = [
+            _make_execute_result(scalar_one_or_none=schedule),   # schedule query
+            _make_execute_result(scalar_one_or_none=None),       # WQ sync (no record)
+        ]
+
+        result = asyncio.run(submit_review(db, user_id=1, schedule_id=1, question_id=10, rating=0))
+
+        assert result["is_correct"] is False  # rating < 3
+        assert result["interval_after"] == 1  # reset to 1 day
+        assert result["rating"] == 0
+
+    def test_syncs_wrong_question_after_submit_review(self):
+        """submit_review 后 WrongQuestion 的 SM-2 字段应与 ReviewSchedule 同步。"""
+        db = _make_mock_db()
+        schedule = _make_schedule_mock(
+            id=1, question_id=10, interval=5, ease_factor=2.5, repetitions=2,
+            next_review_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1),
+        )
+        from app.models.wrong_question import WrongQuestion
+        wq_mock = MagicMock(spec=WrongQuestion)
+        wq_mock.efactor = 2.5
+        wq_mock.interval = 0
+        wq_mock.repetitions = 0
+        wq_mock.next_review_date = None
+        wq_mock.mastered = False
+
+        db.execute.side_effect = [
+            _make_execute_result(scalar_one_or_none=schedule),   # schedule query
+            _make_execute_result(scalar_one_or_none=wq_mock),    # WQ found → sync
+        ]
+
+        asyncio.run(submit_review(db, user_id=1, schedule_id=1, question_id=10, rating=4))
+
+        # WrongQuestion 字段应与更新后的 ReviewSchedule 一致
+        assert wq_mock.efactor == schedule.ease_factor
+        assert wq_mock.interval == schedule.interval
+        assert wq_mock.repetitions == schedule.repetitions
+        assert wq_mock.mastered == schedule.mastered
+        assert wq_mock.next_review_date == schedule.next_review_at.date()
 
 
 # ── batch_submit_review Tests ──
@@ -347,14 +498,19 @@ class TestBatchSubmitReview:
             _make_schedule_mock(id=2, question_id=11),
         ]
 
+        # 2 reviews × 2 executes each (schedule query + WQ sync)
+        execute_results = [
+            schedule_mocks[0], None,  # submit_review #1: schedule, WQ
+            schedule_mocks[1], None,  # submit_review #2: schedule, WQ
+        ]
         call_index = 0
 
         def _execute_side_effect(*args, **kwargs):
             nonlocal call_index
             idx = call_index
             call_index += 1
-            if idx < len(schedule_mocks):
-                return _make_execute_result(scalar_one_or_none=schedule_mocks[idx])
+            if idx < len(execute_results):
+                return _make_execute_result(scalar_one_or_none=execute_results[idx])
             return _make_execute_result(scalar_one_or_none=None)
 
         db.execute.side_effect = _execute_side_effect
@@ -393,7 +549,12 @@ class TestAutoScheduleWrongQuestion:
             added_objects.append(obj)
 
         db.add.side_effect = _add
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=None)
+        _mock_execute_sequence(
+            db,
+            {"scalar_one_or_none": None},         # ReviewSchedule query
+            {"scalar_one_or_none": None},         # Question query (for subject — new schedule)
+            {"scalar_one_or_none": None},         # WrongQuestion sync (no existing WrongQuestion)
+        )
 
         async def _run():
             return await auto_schedule_wrong_question(db, user_id=1, question_id=10)
@@ -410,23 +571,61 @@ class TestAutoScheduleWrongQuestion:
         assert schedules[0].repetitions == 0
         assert schedules[0].next_review_at is not None  # Immediate review
 
-    def test_updates_existing_schedule(self):
+    def test_updates_existing_schedule_preserves_efactor(self):
+        """已有 ReviewSchedule 再次做错，ease_factor 不应重置为 2.5，
+        而是通过 calc_sm2(quality=0) 基于已有值计算。"""
         db = _make_mock_db()
         existing = _make_schedule_mock(
             id=1, question_id=10, interval=30, ease_factor=2.8, repetitions=10,
             next_review_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30),
         )
-        db.execute.return_value = _make_execute_result(scalar_one_or_none=existing)
+        _mock_execute_sequence(
+            db,
+            {"scalar_one_or_none": existing},         # ReviewSchedule query
+            {"scalar_one_or_none": None},             # WrongQuestion sync (no record)
+        )
 
         async def _run():
             return await auto_schedule_wrong_question(db, user_id=1, question_id=10)
 
         result = asyncio.run(_run())
 
-        # Should reset to difficult state
+        # quality=0 => interval=1, repetitions=0
         assert existing.interval == 1
-        assert existing.ease_factor == 2.5
         assert existing.repetitions == 0
+        # ease_factor 不应被重置为 2.5，而应保留 SM-2 计算结果
+        # calc_sm2(quality=0, efactor=2.8) => efactor ≈ 2.0
+        assert existing.ease_factor < 2.5
+        assert existing.ease_factor > 1.3  # 不低于下限
+        assert existing.mastered is False
+
+    def test_syncs_wrong_question_sm2_fields(self):
+        """auto_schedule_wrong_question 后，WrongQuestion 的 SM-2 字段应与 ReviewSchedule 同步。"""
+        db = _make_mock_db()
+        existing = _make_schedule_mock(
+            id=1, question_id=10, interval=30, ease_factor=2.8, repetitions=10,
+            next_review_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30),
+        )
+        from app.models.wrong_question import WrongQuestion
+        wq_mock = MagicMock(spec=WrongQuestion)
+        wq_mock.efactor = 2.5
+        wq_mock.interval = 0
+        wq_mock.repetitions = 0
+        wq_mock.mastered = False
+
+        _mock_execute_sequence(
+            db,
+            {"scalar_one_or_none": existing},         # ReviewSchedule query
+            {"scalar_one_or_none": wq_mock},          # WrongQuestion found
+        )
+
+        asyncio.run(auto_schedule_wrong_question(db, user_id=1, question_id=10))
+
+        # WrongQuestion SM-2 应与 ReviewSchedule 一致
+        assert wq_mock.efactor == existing.ease_factor
+        assert wq_mock.interval == existing.interval
+        assert wq_mock.repetitions == existing.repetitions
+        assert wq_mock.mastered == existing.mastered
 
 
 # ── get_review_stats Tests ──
