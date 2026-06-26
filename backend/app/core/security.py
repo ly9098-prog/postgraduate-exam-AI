@@ -6,6 +6,7 @@ import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import utcnow
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.admin import AdminUser, Permission, RolePermission
@@ -15,7 +16,7 @@ security = HTTPBearer()
 
 
 def create_token(user_id: int) -> tuple[str, int]:
-    expire_dt = datetime.utcnow() + timedelta(days=settings.JWT_EXPIRE_DAYS)
+    expire_dt = utcnow() + timedelta(days=settings.JWT_EXPIRE_DAYS)
     return (
         jwt.encode(
             {"sub": str(user_id), "exp": expire_dt},

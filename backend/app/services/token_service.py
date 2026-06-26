@@ -6,6 +6,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.refresh_token import RefreshToken
+from app.core.time_utils import utcnow
 
 
 REFRESH_TOKEN_DAYS = 90
@@ -24,7 +25,7 @@ async def create_refresh_token(db: AsyncSession, user_id: int) -> str:
     """Create a new refresh token for user. Returns the raw token (only time it's available)."""
     raw = _generate_raw_token()
     token_hash = _hash_token(raw)
-    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_DAYS)
+    expires_at = utcnow() + timedelta(days=REFRESH_TOKEN_DAYS)
     token = RefreshToken(user_id=user_id, token_hash=token_hash, expires_at=expires_at)
     db.add(token)
     await db.commit()
@@ -45,7 +46,7 @@ async def verify_refresh_token(db: AsyncSession, raw_token: str) -> RefreshToken
     if not token:
         return None
 
-    now = datetime.utcnow()
+    now = utcnow()
 
     # Check expiry
     if token.expires_at < now:
@@ -67,21 +68,21 @@ async def rotate_refresh_token(db: AsyncSession, current_token: RefreshToken) ->
     """
     raw = _generate_raw_token()
     token_hash = _hash_token(raw)
-    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_DAYS)
+    expires_at = utcnow() + timedelta(days=REFRESH_TOKEN_DAYS)
     new_token = RefreshToken(
         user_id=current_token.user_id,
         token_hash=token_hash,
         expires_at=expires_at,
     )
     db.add(new_token)
-    current_token.revoked_at = datetime.utcnow()
+    current_token.revoked_at = utcnow()
     await db.commit()
     return raw
 
 
 async def revoke_all_user_tokens(db: AsyncSession, user_id: int) -> None:
     """Revoke all active refresh tokens for a user."""
-    now = datetime.utcnow()
+    now = utcnow()
     await db.execute(
         update(RefreshToken)
         .where(
@@ -95,7 +96,7 @@ async def revoke_all_user_tokens(db: AsyncSession, user_id: int) -> None:
 
 async def cleanup_expired_tokens(db: AsyncSession) -> int:
     """Delete expired or long-revoked refresh tokens. Returns count of deleted rows."""
-    now = datetime.utcnow()
+    now = utcnow()
     result = await db.execute(
         delete(RefreshToken).where(
             (RefreshToken.expires_at < now)

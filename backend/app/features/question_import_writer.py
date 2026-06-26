@@ -17,6 +17,7 @@ from openpyxl import Workbook, load_workbook
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import utcnow
 from app.core.config import settings
 from app.features.question_pipeline import (
     _QI_PARSED_FIELDS,
@@ -580,7 +581,7 @@ async def approve_question(
 
     qi.review_note = data.get("review_note")
     if qi.ai_generated:
-        qi.ai_reviewed_at = datetime.utcnow()
+        qi.ai_reviewed_at = utcnow()
     await db.commit()
     return {"qi": qi, "is_duplicate": is_duplicate, "question_id": qi.question_id}
 
@@ -665,7 +666,7 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int,
                 qi.id, q.id, q.subject,
             )
         if qi.ai_generated:
-            qi.ai_reviewed_at = datetime.utcnow()
+            qi.ai_reviewed_at = utcnow()
         count += 1
 
     await db.commit()

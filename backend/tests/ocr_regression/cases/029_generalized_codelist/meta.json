@@ -1,0 +1,26 @@
+{
+  "id": "029",
+  "name": "generalized_codelist",
+  "description": "Generalized variant of 025_bugs_case5_listinsert — different struct name, different operation (delete instead of insert), different variable names. Proves the fix is not case-specific.",
+  "subject": "408",
+  "pipeline_stages": [
+    "normalize",
+    "split"
+  ],
+  "expected_questions": 1,
+  "known_failure_types": [],
+  "assertions": {},
+  "date_added": "2026-06-25",
+  "review_status": "pending",
+  "ground_truth_source": "auto_generated",
+  "tags": [
+    "ocr_correction",
+    "regression",
+    "generalized",
+    "c_code",
+    "list_operation"
+  ],
+  "auto_generated_date": "2026-06-25",
+  "expected_detect": true,
+  "expected_options_count": 4
+}

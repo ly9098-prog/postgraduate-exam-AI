@@ -17,8 +17,8 @@
     "answer": "C"
   },
   "expected": {
-    "mode": "LATEX",
-    "hasHtml": true,
-    "hasRichTextNodes": false
+    "mode": "RICH_TEXT",
+    "hasHtml": false,
+    "hasRichTextNodes": true
   }
 }

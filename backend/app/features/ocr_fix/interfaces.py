@@ -2,8 +2,31 @@
 
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
+
+
+class CandidateDecision(str, enum.Enum):
+    """Validator decision for a single adapter candidate.
+
+    ``ACCEPT`` — candidate passed all checks, use it.
+    ``REJECT_CONTINUE`` — candidate failed checks, try next adapter.
+    ``REJECT_STOP`` — candidate is dangerously bad, stop the chain
+    and return original/rule text instead.
+    """
+    ACCEPT = "accept"
+    REJECT_CONTINUE = "reject_continue"
+    REJECT_STOP = "reject_stop"
+
+
+@dataclass(frozen=True)
+class CandidateEvaluation:
+    """Result of evaluating a single adapter candidate through the safety gate."""
+    decision: CandidateDecision
+    reason: str
+    risk_flags: tuple[str, ...] = ()
+    score: float | None = None
 
 
 @dataclass
@@ -16,6 +39,8 @@ class OCRFixResult:
     raw_response: str | None = None
     tokens_used: int | None = None
     duration_ms: int | None = None
+    risk_flags: list[str] = field(default_factory=list)
+    safety: dict | None = None
 
 
 @runtime_checkable

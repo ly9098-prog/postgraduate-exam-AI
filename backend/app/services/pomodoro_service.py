@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.pomodoro import PomodoroSession
 from app.models.user import User
+from app.core.time_utils import utcnow
 
 
 async def start_session(
@@ -22,7 +23,7 @@ async def start_session(
     user_row = await db.execute(select(User.openid).where(User.id == user_id))
     openid_snapshot = user_row.scalar_one_or_none()
 
-    start = datetime.utcnow()
+    start = utcnow()
     expected_end = start + timedelta(minutes=max(0, work_duration)) if work_duration > 0 else None
 
     session = PomodoroSession(
@@ -56,7 +57,7 @@ async def complete_session(db: AsyncSession, session_id: int, user_id: int, tota
     session = result.scalar_one_or_none()
     if not session:
         return None
-    now = datetime.utcnow()
+    now = utcnow()
     session.end_time = now
     if actual_duration_sec is not None:
         session.actual_duration = actual_duration_sec
@@ -86,7 +87,7 @@ async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, tot
     session = result.scalar_one_or_none()
     if not session:
         return None
-    now = datetime.utcnow()
+    now = utcnow()
     session.end_time = now
     if actual_duration_sec is not None:
         session.actual_duration = actual_duration_sec
@@ -121,7 +122,7 @@ async def pause_session(db: AsyncSession, session_id: int, user_id: int) -> Pomo
     if not session:
         return None
     if session.paused_at is None:
-        session.paused_at = datetime.utcnow()
+        session.paused_at = utcnow()
         await db.flush()
     await db.refresh(session)
     return session
@@ -140,7 +141,7 @@ async def resume_session(db: AsyncSession, session_id: int, user_id: int) -> Pom
     if not session:
         return None
     if session.paused_at is not None:
-        now = datetime.utcnow()
+        now = utcnow()
         paused_for = now - session.paused_at
         if session.expected_end_time is not None and paused_for.total_seconds() > 0:
             session.expected_end_time = session.expected_end_time + paused_for
@@ -173,7 +174,7 @@ async def _cancel_running(db: AsyncSession, user_id: int) -> None:
         .with_for_update()
     )
     for session in result.scalars().all():
-        now = datetime.utcnow()
+        now = utcnow()
         session.end_time = now
         session.actual_duration = int((now - session.start_time).total_seconds())
         session.status = "interrupted"
@@ -185,7 +186,7 @@ async def _cancel_running(db: AsyncSession, user_id: int) -> None:
 
 
 async def get_stats(db: AsyncSession, user_id: int) -> dict:
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=today_start.weekday())
 
     _status_cond = PomodoroSession.status.in_(["completed", "interrupted"])
@@ -222,7 +223,7 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
 
 
 async def get_trends(db: AsyncSession, user_id: int, days: int = 7) -> list[dict]:
-    since = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    since = utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
 
     result = await db.execute(
         select(
@@ -253,7 +254,7 @@ async def get_trends(db: AsyncSession, user_id: int, days: int = 7) -> list[dict
 
 
 async def get_subject_breakdown(db: AsyncSession, user_id: int) -> list[dict]:
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
     result = await db.execute(
         select(

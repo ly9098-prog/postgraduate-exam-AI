@@ -1,18 +1,17 @@
-"""批量导题任务模型（多图片 / 未来 PDF 拆页复用）。
+"""
+Batch image import job models.
 
-设计目标：在不改动现有单图 OCR → AI 解析 → 待审核流水线的前提下，
-把「一次批量任务」整体状态（ImportBatchJob）和「每张图片」的执行结果
-（ImportBatchJobItem）落到 DB，用于：
+Design goals:
+- Track overall job status (ImportBatchJob) and per-image results (ImportBatchJobItem).
+- Support queue-mode progress queries (total / completed / processing / pending).
+- Per-image failure isolation and logging.
+- Cache OCR raw text for reparse without re-OCR.
+- Process restart survivable query.
 
-1. 队列模式下的进度查询（总数 / 已完成 / 处理中 / 等待中）；
-2. 单张图片失败隔离与日志记录，不影响整批继续；
-3. 缓存 OCR 原始文本（ocr_raw_text），AI 解析失败 / Prompt 调整后可
-   直接基于缓存文本重新解析，无需再次 OCR；
-4. 进程重启后仍可查询历史任务。
+Each image gets its own import pipeline -> its own review batch,
+so cleanup per batch_id never affects other images in the same job.
 
-每张图片走「自己独立的导入流水线 → 自己独立的 review batch」，因此
-review_service.submit_to_review 的失败清理（按 batch_id 删除）天然只影响
-单张图片，绝不会误删同批其它图片已写入的待审核题目。
+Status values defined in app.models.pipeline_enums — use the enum, not raw strings.
 """
 
 from datetime import datetime
@@ -35,17 +34,15 @@ class ImportBatchJob(Base):
     __tablename__ = "import_batch_jobs"
 
     job_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    # "image" 现已支持；预留 "pdf"（PDF 拆页后复用同一批量流水线）。
     source_type: Mapped[str] = mapped_column(String(16), nullable=False, default="image")
     subject: Mapped[str | None] = mapped_column(String(32), nullable=True)
     total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
-    # queued / running / completed / failed
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="queued", index=True
-    )
+    # Status values defined in pipeline_enums.BatchJobStatus
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued", index=True)
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     started_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -53,8 +50,14 @@ class ImportBatchJob(Base):
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # 原子事件序号计数器（FOR UPDATE 保护，用于 trace_events 的 seq 生成）
     next_event_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    # P0-5: merge tracking fields
+    merge_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    merged_batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    merge_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    merge_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    merge_finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ImportBatchJobItem(Base):
@@ -66,25 +69,18 @@ class ImportBatchJobItem(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(
-        String(64),
-        ForeignKey("import_batch_jobs.job_id"),
-        nullable=False,
-        index=True,
+        String(64), ForeignKey("import_batch_jobs.job_id"), nullable=False, index=True
     )
     seq: Mapped[int] = mapped_column(Integer, nullable=False)
     source_file: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    # Idempotency / trace identifiers
+    source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     batch_import_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     image_import_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # pending / processing / succeeded / failed
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="pending", index=True
-    )
-    # OCR 原始文本缓存：后续 AI 解析失败 / Prompt 调整可直接复用，免重复 OCR。
+    # Status values defined in pipeline_enums.BatchItemStatus
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
     ocr_raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     ocr_cleaned_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # 单张图片对应的 review batch（review_service 内部生成的 REVIEW_xxx）。
     review_batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     pipeline_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     question_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -98,14 +94,20 @@ class ImportBatchJobItem(Base):
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
+    # P0-2: reparse tracking — preserved across reparse attempts
+    previous_review_batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reparse_attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    reparse_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reparse_finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reparse_config_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
 
 class BatchJobTraceEvent(Base):
-    """Append-only trace event log for batch image import jobs.
+    """
+    Append-only trace event log for batch image import jobs.
 
-    Each event represents one processing step (upload, ocr, pipeline, done/error).
-    Events are written atomically with the corresponding state update (same DB txn).
-    seq is per-job monotonic, protected by FOR UPDATE on ImportBatchJob.next_event_seq.
-    item_seq=None means job-level event; item_seq=N means N-th image event.
+    Status values defined in pipeline_enums.TraceEventStatus (running|success|failed only).
+    Step values defined in pipeline_enums.TraceStep.
     """
 
     __tablename__ = "batch_job_trace_events"
@@ -115,18 +117,15 @@ class BatchJobTraceEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(
-        String(64),
-        ForeignKey("import_batch_jobs.job_id"),
-        nullable=False,
-        index=True,
+        String(64), ForeignKey("import_batch_jobs.job_id"), nullable=False, index=True
     )
-    item_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None = job-level
+    item_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     image_import_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     batch_import_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    seq: Mapped[int] = mapped_column(Integer, nullable=False)  # per-job monotonic
-    step: Mapped[str] = mapped_column(String(32), nullable=False)  # upload|ocr|pipeline|merge|done|error
-    status: Mapped[str] = mapped_column(String(16), nullable=False)  # running|success|failed
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    step: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
     message: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

@@ -1,6 +1,6 @@
 """Stage 7 审核系统 — 单元测试（mock DB session）。"""
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -141,7 +141,7 @@ class TestSubmitToReview:
         assert qi.ai_confidence == 0.85
         assert qi.created_at == qi.updated_at
         assert isinstance(qi.created_at, datetime)
-        assert datetime.now().astimezone().replace(tzinfo=None) - qi.created_at < timedelta(seconds=5)
+        assert datetime.now(timezone.utc).replace(tzinfo=None) - qi.created_at < timedelta(seconds=5)
         assert qi.ai_metadata["is_valid"] is True
         assert qi.ai_metadata["stem_hash"] == "abc12345"
         db.commit.assert_awaited_once()

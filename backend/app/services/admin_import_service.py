@@ -7,6 +7,7 @@ from fastapi import Request
 from sqlalchemy import case, delete, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import utcnow
 from app.core.admin_security import AdminPrincipal
 from app.core.cache import cache
 from app.features import question_pipeline
@@ -294,7 +295,7 @@ async def approve_import_question(db: AsyncSession, import_id: int, operator_id:
     qi.status = "approved"
     qi.reject_reason = None
     qi.reviewed_by = operator_id
-    qi.reviewed_at = datetime.utcnow()
+    qi.reviewed_at = utcnow()
 
     # 审核即发布：写入 questions 正式题库
     from app.features.question_publish_service import publish_single_question
@@ -368,7 +369,7 @@ async def reject_import_question(db: AsyncSession, import_id: int, operator_id: 
     qi.reject_reason = reason
     qi.review_note = reason or qi.review_note
     qi.reviewed_by = operator_id
-    qi.reviewed_at = datetime.utcnow()
+    qi.reviewed_at = utcnow()
     await db.flush()
     await db.refresh(qi)
     return AdminImportQuestionItem.model_validate(qi)
@@ -376,7 +377,7 @@ async def reject_import_question(db: AsyncSession, import_id: int, operator_id: 
 
 async def approve_import_batch(db: AsyncSession, batch_id: str, operator_id: int) -> int:
     records = await _get_batch_records(db, batch_id, statuses={"pending", "rejected"})
-    now = datetime.utcnow()
+    now = utcnow()
     from app.features.question_publish_service import publish_single_question
 
     count = 0
@@ -424,7 +425,7 @@ async def approve_low_risk_questions(db: AsyncSession, batch_id: str, operator_i
     from app.features.question_publish_service import publish_single_question
 
     records = await _get_batch_records(db, batch_id, statuses={"pending"})
-    now = datetime.utcnow()
+    now = utcnow()
 
     affected = 0
     skipped = 0
@@ -515,7 +516,7 @@ async def approve_low_risk_questions(db: AsyncSession, batch_id: str, operator_i
 
 async def reject_import_batch(db: AsyncSession, batch_id: str, operator_id: int, reason: str | None = None) -> int:
     records = await _get_batch_records(db, batch_id, statuses={"pending", "approved"})
-    now = datetime.utcnow()
+    now = utcnow()
     for qi in records:
         if qi.question_id is None:
             qi.status = "rejected"
@@ -596,7 +597,7 @@ async def create_enrich_task(
     await ensure_ai_parse_allowed(db, operator, request)
 
     task_id = f"admin-ai-{uuid4().hex}"
-    now = datetime.utcnow()
+    now = utcnow()
     payload = {
         "task_id": task_id,
         "batch_id": batch_id,

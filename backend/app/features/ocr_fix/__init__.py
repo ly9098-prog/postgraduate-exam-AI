@@ -14,13 +14,20 @@ from app.features.ocr_fix.canonical_output import (
     canonicalize,
 )
 from app.features.ocr_fix.deepseek_adapter import DeepSeekFixer
-from app.features.ocr_fix.interfaces import OCRFixResult, OCRFixerProtocol
+from app.features.ocr_fix.interfaces import (
+    OCRFixResult,
+    OCRFixerProtocol,
+    CandidateDecision,
+    CandidateEvaluation,
+)
 from app.features.ocr_fix.router import OCRFixRouter, STRATEGY_AUTO, STRATEGY_MANUAL
 from app.features.ocr_fix.rule_adapter import RuleFixer
 
 __all__ = [
     "OCRFixResult",
     "OCRFixerProtocol",
+    "CandidateDecision",
+    "CandidateEvaluation",
     "RuleFixer",
     "DeepSeekFixer",
     "OCRFixRouter",

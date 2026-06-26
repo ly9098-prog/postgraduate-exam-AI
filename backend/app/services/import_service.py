@@ -12,6 +12,7 @@ from openpyxl import Workbook, load_workbook
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import utcnow
 from app.core.config import settings
 from app.models.question import Question
 from app.models.question_import import QuestionImport
@@ -533,7 +534,7 @@ async def approve_question(db: AsyncSession, import_id: int, data: dict) -> Ques
     qi.question_id = q.id
     qi.review_note = data.get("review_note")
     if qi.ai_generated:
-        qi.ai_reviewed_at = datetime.utcnow()
+        qi.ai_reviewed_at = utcnow()
 
     await db.commit()
     return q
@@ -609,7 +610,7 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, int]:
         qi.status = "approved"
         qi.question_id = q.id
         if qi.ai_generated:
-            qi.ai_reviewed_at = datetime.utcnow()
+            qi.ai_reviewed_at = utcnow()
         count += 1
 
     await db.commit()

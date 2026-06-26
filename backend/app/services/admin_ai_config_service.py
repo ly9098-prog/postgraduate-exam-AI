@@ -5,6 +5,7 @@ from urllib.parse import urljoin
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import utcnow
 from app.core.admin_security import AdminPrincipal
 from app.core.config import settings
 from app.models.admin_ai_config import AdminAiConfig, AdminAiModelConfig, decrypt_api_key, encrypt_api_key
@@ -260,7 +261,7 @@ async def patch_model(
         )
         for other in old_defaults.scalars().all():
             other.is_default = False
-            other.updated_at = datetime.utcnow()
+            other.updated_at = utcnow()
 
     if data.is_enabled is not None:
         model.is_enabled = data.is_enabled
@@ -315,7 +316,7 @@ async def patch_model(
             model.features = None
         changes["features"] = model.features
 
-    model.updated_at = datetime.utcnow()
+    model.updated_at = utcnow()
     await db.flush()
 
     await write_admin_audit(
@@ -451,7 +452,7 @@ async def patch_configs(
         else:
             existing.config_value = serialized
             existing.updated_by = operator.id
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = utcnow()
         changed_keys.append(key)
 
     if changed_keys:

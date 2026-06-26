@@ -484,6 +484,9 @@ async def _set_pipeline_store(pipeline_id: str, data: dict) -> None:
     P0-3: data 中如果含 diagnostics，会被剥离到独立 KV；主 store 仅保留
     _PIPELINE_STORE_FIELDS 字段。前端通过 get_pipeline_status 拿到的
     视图与改造前一致（diagnostics 合并回去）。
+
+    当 pipeline 进入终态 (completed/failed) 时，自动从 in-memory store 中
+    移除以控制内存增长。Redis 中的状态仍保留 24h，SSE 轮询可通过 Redis 读取。
     """
     diagnostics = data.get("diagnostics")
     slim = _slim_pipeline_payload(data)
@@ -498,6 +501,18 @@ async def _set_pipeline_store(pipeline_id: str, data: dict) -> None:
         pass
     if diagnostics:
         await _set_pipeline_diagnostics(pipeline_id, diagnostics)
+    # 不主动 evict 终态条目——SSE 轮询需要持续读取结果。
+    # 内存由 _prune_store 的 LRU 上限控制，终态条目自然老化后被淘汰。
+
+
+def _evict_pipeline_store(pipeline_id: str) -> None:
+    """从 in-memory 存储中移除 pipeline 条目。
+
+    幂等操作；Redis 中的缓存不会被删除，SSE/轮询可通过 Redis 继续读取。
+    """
+    _pipeline_store.pop(pipeline_id, None)
+    _pipeline_diagnostics_store.pop(pipeline_id, None)
+    _ocr_progress.pop(pipeline_id, None)
 
 
 async def _get_pipeline_store(pipeline_id: str) -> dict | None:
@@ -1658,16 +1673,20 @@ def _restore_from_artifacts(
 ) -> tuple[str | None, set[str]]:
     """Try to restore stage outputs from saved artifacts.
 
-    Looks for the most advanced resumable artifact and populates ``data``
-    accordingly.  Also marks all preceding stages as completed.
+    P0-1: Uses canonical stage ordering from pipeline_artifacts.stages_before()
+    to compute which stages can be skipped.  No more hardcoded ``preceding``
+    sets that drift from the actual pipeline.
 
     Returns:
         (restored_stage, skipped_stages_set) where restored_stage is the
-        resume point (e.g. "match", "repair") and skipped_stages_set contains
-        the stage names that can be skipped.  Both are empty if nothing was
-        restored (full re-run).
+        resume point and skipped_stages_set contains the stage names that
+        can be skipped.  Both are empty if nothing was restored (full re-run).
     """
-    from app.features.pipeline_artifacts import artifact_exists as _artifact_exists
+    from app.features.pipeline_artifacts import (
+        artifact_exists as _artifact_exists,
+        check_artifact_compatibility,
+        stages_before,
+    )
 
     # Priority order: most advanced first
     resume_artifacts = [
@@ -1681,6 +1700,15 @@ def _restore_from_artifacts(
     for stage_name in resume_artifacts:
         if not _artifact_exists(pipeline_id, stage_name):
             continue
+        # Check compatibility (reject version mismatches)
+        compatible, reason = check_artifact_compatibility(pipeline_id, stage_name)
+        if not compatible:
+            logger.warning(
+                "Cannot resume from %s artifact: %s",
+                stage_name, reason,
+            )
+            continue
+
         saved = _load_artifact(pipeline_id, stage_name)
         if saved is None:
             continue
@@ -1695,19 +1723,16 @@ def _restore_from_artifacts(
             data["source_file"] = saved.get("source_file", data.get("source_file", ""))
             data["source_type"] = saved.get("source_type", data.get("source_type", ""))
             data["subject"] = saved.get("subject", data.get("subject"))
-            # Mark preceding stages as completed
-            preceding = {"extract", "normalize_text", "ocr_correction",
-                         "layout_reconstruction", "layout_router",
-                         "analyze_structure", "classify_pages",
-                         "structure_freeze", "split"}
-            for s in preceding:
+            # Derive preceding stages from canonical order (dynamic, no hardcoded sets)
+            preceding_set = set(stages_before(stage_name))
+            for s in preceding_set - {"split"}:
                 if s not in completed_stages:
                     completed_stages.append(s)
             logger.info(
                 "Resume from split artifact: %d raw_questions restored",
                 len(raw_questions),
             )
-            return "split", preceding
+            return stage_name, preceding_set
 
         elif stage_name in ("normalize_schema", "repair", "math_detect", "table_detect"):
             questions = saved.get("questions", [])
@@ -1715,58 +1740,22 @@ def _restore_from_artifacts(
                 continue
             data["questions"] = questions
             data["normalized_count"] = len(questions)
-            # Determine stages to skip — only up to the restored artifact.
-            # Stages AFTER the restored point still run normally.
-            if stage_name == "normalize_schema":
-                preceding = {"extract", "normalize_text", "ocr_correction",
-                             "layout_reconstruction", "layout_router",
-                             "analyze_structure", "classify_pages",
-                             "structure_freeze", "split",
-                             "match", "normalize_schema",
-                             "code_language_noise_clean"}
-            elif stage_name == "repair":
-                preceding = {"extract", "normalize_text", "ocr_correction",
-                             "layout_reconstruction", "layout_router",
-                             "analyze_structure", "classify_pages",
-                             "structure_freeze", "split",
-                             "match", "normalize_schema",
-                             "code_language_noise_clean",
-                             "code_structure_reconstruct",
-                             "classify_questions",
-                             "batch_validation", "batch_dedup",
-                             "repair", "ai_validation", "similarity_match"}
-            elif stage_name == "math_detect":
-                preceding = {"extract", "normalize_text", "ocr_correction",
-                             "layout_reconstruction", "layout_router",
-                             "analyze_structure", "classify_pages",
-                             "structure_freeze", "split",
-                             "match", "normalize_schema",
-                             "code_language_noise_clean",
-                             "code_structure_reconstruct",
-                             "classify_questions",
-                             "batch_validation", "batch_dedup",
-                             "repair", "ai_validation", "similarity_match",
-                             "math_detect"}
-            else:  # table_detect
-                preceding = {"extract", "normalize_text", "ocr_correction",
-                             "layout_reconstruction", "layout_router",
-                             "analyze_structure", "classify_pages",
-                             "structure_freeze", "split",
-                             "match", "normalize_schema",
-                             "code_language_noise_clean",
-                             "code_structure_reconstruct",
-                             "classify_questions",
-                             "batch_validation", "batch_dedup",
-                             "repair", "ai_validation", "similarity_match",
-                             "math_detect", "table_detect"}
-            for s in preceding:
+            # Derive preceding stages from canonical order — stages_before gives
+            # ALL stages at or before the artifact stage. We also need to include
+            # stages like "match" that come before "normalize_schema".
+            # The key insight: stages_before(stage) returns all stages that are
+            # strictly before stage. We want to include the stage itself too
+            # (since its output IS the artifact), so we add it.
+            preceding_set = set(stages_before(stage_name))
+            preceding_set.add(stage_name)
+            for s in preceding_set:
                 if s not in completed_stages:
                     completed_stages.append(s)
             logger.info(
-                "Resume from %s artifact: %d questions restored",
-                stage_name, len(questions),
+                "Resume from %s artifact: %d questions restored (derived %d preceding stages)",
+                stage_name, len(questions), len(preceding_set),
             )
-            return stage_name, preceding
+            return stage_name, preceding_set
 
     return None, set()
 

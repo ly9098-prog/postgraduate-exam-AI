@@ -59,7 +59,7 @@ def _make_mock_db():
 
     db.refresh = _refresh
     db.commit = AsyncMock()
-    db.execute = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock())
     db.rollback = AsyncMock()
     return db
 
@@ -155,7 +155,6 @@ class TestMigrateOldApproved:
 # --- publish_single_question ---
 
 class TestPublishSingleQuestion:
-    @pytest.mark.xfail(reason="DB test environment issue — test infra debt")
     def test_publish_success(self):
         db = _make_mock_db()
         qi = _make_qi_mock()
@@ -165,6 +164,9 @@ class TestPublishSingleQuestion:
             return_value=_make_pipeline_result(),
         ), patch(
             "app.features.question_publish_service._find_duplicate_by_hash",
+            return_value=None,
+        ), patch(
+            "app.features.question_publish_service._find_duplicate_by_stem_similarity",
             return_value=None,
         ):
             result = asyncio.run(publish_single_question(db, qi))
@@ -232,7 +234,6 @@ class TestPublishSingleQuestion:
 # --- publish_questions ---
 
 class TestPublishQuestions:
-    @pytest.mark.xfail(reason="DB test environment issue — test infra debt")
     def test_publish_by_ids(self):
         db = _make_mock_db()
         qis = [
@@ -251,6 +252,9 @@ class TestPublishQuestions:
         ), patch(
             "app.features.question_publish_service._find_duplicate_by_hash",
             return_value=None,
+        ), patch(
+            "app.features.question_publish_service._find_duplicate_by_stem_similarity",
+            return_value=None,
         ):
             result = asyncio.run(publish_questions(db, question_ids=[1, 2]))
 
@@ -260,7 +264,6 @@ class TestPublishQuestions:
         assert result.failed == 0
         db.commit.assert_awaited_once()
 
-    @pytest.mark.xfail(reason="DB test environment issue — test infra debt")
     def test_publish_by_batch_id(self):
         db = _make_mock_db()
         qis = [_make_qi_mock(qi_id=1, batch_id="BATCH_X")]
@@ -276,13 +279,15 @@ class TestPublishQuestions:
         ), patch(
             "app.features.question_publish_service._find_duplicate_by_hash",
             return_value=None,
+        ), patch(
+            "app.features.question_publish_service._find_duplicate_by_stem_similarity",
+            return_value=None,
         ):
             result = asyncio.run(publish_questions(db, batch_id="BATCH_X"))
 
         assert result.total == 1
         assert result.published == 1
 
-    @pytest.mark.xfail(reason="DB test environment issue — test infra debt")
     def test_partial_duplicates(self):
         db = _make_mock_db()
         qis = [
@@ -313,6 +318,9 @@ class TestPublishQuestions:
         ), patch(
             "app.features.question_publish_service._find_duplicate_by_hash",
             side_effect=mock_find_dup,
+        ), patch(
+            "app.features.question_publish_service._find_duplicate_by_stem_similarity",
+            return_value=None,
         ):
             result = asyncio.run(publish_questions(db, question_ids=[1, 2]))
 
@@ -333,7 +341,6 @@ class TestPublishQuestions:
 
         assert result.total == 0
 
-    @pytest.mark.xfail(reason="DB test environment issue — test infra debt")
     def test_skips_non_approved_in_batch(self):
         db = _make_mock_db()
         qis = [_make_qi_mock(qi_id=1, status="approved")]
@@ -351,6 +358,9 @@ class TestPublishQuestions:
         ), patch(
             "app.features.question_publish_service._find_duplicate_by_hash",
             return_value=None,
+        ), patch(
+            "app.features.question_publish_service._find_duplicate_by_stem_similarity",
+            return_value=None,
         ):
             result = asyncio.run(publish_questions(db, question_ids=[1, 2, 3]))
 
@@ -362,7 +372,6 @@ class TestPublishQuestions:
 # --- approve_and_publish ---
 
 class TestApproveAndPublish:
-    @pytest.mark.xfail(reason="DB test environment issue — test infra debt")
     def test_approve_and_publish_pending(self):
         db = _make_mock_db()
         qi = _make_qi_mock(qi_id=1, status="pending")
@@ -378,6 +387,9 @@ class TestApproveAndPublish:
         ), patch(
             "app.features.question_publish_service._find_duplicate_by_hash",
             return_value=None,
+        ), patch(
+            "app.features.question_publish_service._find_duplicate_by_stem_similarity",
+            return_value=None,
         ):
             result = asyncio.run(approve_and_publish(db, question_ids=[1]))
 
@@ -386,7 +398,6 @@ class TestApproveAndPublish:
         assert result.published == 1
         assert qi.status == "published"
 
-    @pytest.mark.xfail(reason="DB test environment issue — test infra debt")
     def test_approve_and_publish_already_approved(self):
         db = _make_mock_db()
         qi = _make_qi_mock(qi_id=1, status="approved")
@@ -401,6 +412,9 @@ class TestApproveAndPublish:
             return_value=_make_pipeline_result(),
         ), patch(
             "app.features.question_publish_service._find_duplicate_by_hash",
+            return_value=None,
+        ), patch(
+            "app.features.question_publish_service._find_duplicate_by_stem_similarity",
             return_value=None,
         ):
             result = asyncio.run(approve_and_publish(db, question_ids=[1]))
@@ -465,7 +479,6 @@ class TestApproveAndPublish:
 
         assert result.total == 0
 
-    @pytest.mark.xfail(reason="DB test environment issue — test infra debt")
     def test_approve_and_publish_mixed(self):
         db = _make_mock_db()
         qis = [
@@ -504,6 +517,9 @@ class TestApproveAndPublish:
         ), patch(
             "app.features.question_publish_service._find_duplicate_by_hash",
             side_effect=mock_find_dup,
+        ), patch(
+            "app.features.question_publish_service._find_duplicate_by_stem_similarity",
+            return_value=None,
         ):
             result = asyncio.run(approve_and_publish(db, question_ids=[1, 2, 3]))
 

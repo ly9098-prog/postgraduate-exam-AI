@@ -11,6 +11,7 @@ from app.models.wrong_question import WrongQuestion
 from app.services.behavior_service import record_answer_behavior
 from app.services.review_scheduler import auto_schedule_wrong_question
 from app.services.wrong_question_service import record_wrong
+from app.core.time_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +121,7 @@ async def submit_answer(
         user_answer=user_answer.strip(),
         is_correct=is_correct,
         used_time=used_time,
-        answered_at=datetime.utcnow(),
+        answered_at=utcnow(),
     )
     db.add(record)
     await db.commit()
@@ -305,7 +306,7 @@ async def get_wrong_questions(
     from app.services.wrong_question_service import list_wrong
 
     items, total = await list_wrong(
-        db, user_id, subject=subject, mastered=False, page=page, page_size=page_size
+        db, user_id, subject=subject, page=page, page_size=page_size
     )
 
     question_ids = [wq.question_id for wq in items]
@@ -389,7 +390,7 @@ async def review_wrong_question(
         wq.interval = sm2_result["interval"]
         wq.repetitions = sm2_result["repetitions"]
         wq.next_review_date = sm2_result["next_review_date"]
-        wq.last_review_at = datetime.utcnow()
+        wq.last_review_at = utcnow()
         wq.review_count = (wq.review_count or 0) + 1
 
         if quality >= 4 and wq.repetitions >= 3:

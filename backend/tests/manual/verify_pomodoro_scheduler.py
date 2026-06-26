@@ -22,7 +22,7 @@ import asyncio
 import os
 import sys
 import tempfile
-from datetime import datetime, timedelta
+from datetime import timezone, datetime, timedelta
 
 # 切到 backend 目录确保 import 路径正确
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -92,7 +92,7 @@ async def insert_session(
         preset="standard",
         work_duration=work_duration,
         break_duration=5,
-        start_time=datetime.utcnow() - timedelta(minutes=work_duration),
+        start_time=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=work_duration),
         expected_end_time=expected_end_time,
         status=status,
         notification_enabled=notification_enabled,
@@ -122,7 +122,7 @@ async def run() -> None:
         u_id = await make_user(db, "openid_e2e")
         await db.commit()
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # 用例 1：到期 + 启用 + 未发送 → 应该认领并发送
     async with async_session() as db:

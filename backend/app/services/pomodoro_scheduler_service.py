@@ -27,6 +27,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select, update
 from sqlalchemy.exc import OperationalError
 
+from app.core.time_utils import utcnow
 from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import async_session
@@ -68,7 +69,7 @@ class PomodoroScheduler:
             id="pomodoro_tick",
             max_instances=1,
             coalesce=True,
-            next_run_time=datetime.utcnow(),  # 启动后立即跑一次，吸收停机期间的漏发
+            next_run_time=utcnow(),  # 启动后立即跑一次，吸收停机期间的漏发
         )
         self._scheduler.start()
         self._running = True
@@ -103,7 +104,7 @@ class PomodoroScheduler:
                 await cache.release_lock(_TICK_LOCK_KEY, lock_value)
 
     async def _do_tick(self) -> None:
-        now = datetime.utcnow()
+        now = utcnow()
         async with async_session() as db:
             sessions = await self._claim_due_sessions(db, now)
             if not sessions:

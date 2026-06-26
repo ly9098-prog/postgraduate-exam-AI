@@ -6,7 +6,7 @@
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import asc, delete, func, select, nulls_last
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,7 +40,8 @@ def _options_to_dict(options: list[dict]) -> dict | None:
 
 
 def _review_now() -> datetime:
-    return datetime.now().astimezone().replace(tzinfo=None)
+    """Return naive UTC datetime for DB storage."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _get_blank_option_groups(data: dict | None) -> list[dict]:

@@ -25,6 +25,8 @@ def _has_table(name: str) -> bool:
 def _has_column(table: str, column: str) -> bool:
     from sqlalchemy import inspect
     conn = op.get_bind()
+    if not conn.dialect.has_table(conn, table):
+        return False
     inspector = inspect(conn)
     columns = [c["name"] for c in inspector.get_columns(table)]
     return column in columns
@@ -33,6 +35,8 @@ def _has_column(table: str, column: str) -> bool:
 def _has_index(table: str, index: str) -> bool:
     from sqlalchemy import inspect
     conn = op.get_bind()
+    if not conn.dialect.has_table(conn, table):
+        return False
     inspector = inspect(conn)
     indexes = [i["name"] for i in inspector.get_indexes(table)]
     return index in indexes
@@ -40,29 +44,30 @@ def _has_index(table: str, index: str) -> bool:
 
 def upgrade() -> None:
     # --- ImportBatchJob: next_event_seq counter ---
-    if not _has_column("import_batch_jobs", "next_event_seq"):
+    if _has_table("import_batch_jobs") and not _has_column("import_batch_jobs", "next_event_seq"):
         op.add_column(
             "import_batch_jobs",
             sa.Column("next_event_seq", sa.Integer(), nullable=False, server_default=sa.text("1")),
         )
 
     # --- ImportBatchJobItem: idempotency columns ---
-    for col in ("batch_import_id", "image_import_id", "request_id"):
-        if not _has_column("import_batch_job_items", col):
-            op.add_column(
-                "import_batch_job_items",
-                sa.Column(col, sa.String(64), nullable=True),
-            )
+    if _has_table("import_batch_job_items"):
+        for col in ("batch_import_id", "image_import_id", "request_id"):
+            if not _has_column("import_batch_job_items", col):
+                op.add_column(
+                    "import_batch_job_items",
+                    sa.Column(col, sa.String(64), nullable=True),
+                )
 
-    # Unique constraint on (batch_import_id, image_import_id)
-    try:
-        op.create_unique_constraint(
-            "uq_batch_import_id_image",
-            "import_batch_job_items",
-            ["batch_import_id", "image_import_id"],
-        )
-    except NotImplementedError:
-        pass  # SQLite may not support named unique constraints via ALTER
+        # Unique constraint on (batch_import_id, image_import_id)
+        try:
+            op.create_unique_constraint(
+                "uq_batch_import_id_image",
+                "import_batch_job_items",
+                ["batch_import_id", "image_import_id"],
+            )
+        except NotImplementedError:
+            pass  # SQLite may not support named unique constraints via ALTER
 
     # --- BatchJobTraceEvent table ---
     if not _has_table("batch_job_trace_events"):

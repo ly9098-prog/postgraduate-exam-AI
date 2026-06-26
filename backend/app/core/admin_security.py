@@ -9,6 +9,7 @@ from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import utcnow
 from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import get_db
@@ -45,12 +46,12 @@ def verify_admin_password(password: str, password_hash: str) -> bool:
 
 
 async def blacklist_admin_token(jti: str, exp: int) -> None:
-    ttl = max(exp - int(datetime.utcnow().timestamp()), 1)
+    ttl = max(exp - int(utcnow().timestamp()), 1)
     await cache.set(f"admin:jwt:blacklist:{jti}", 1, ttl=ttl)
 
 
 async def set_admin_user_nbf(user_id: int, timestamp: int | None = None) -> None:
-    await cache.set(f"admin:user:nbf:{user_id}", timestamp or int(datetime.utcnow().timestamp()), ttl=60 * 60 * 24 * 30)
+    await cache.set(f"admin:user:nbf:{user_id}", timestamp or int(utcnow().timestamp()), ttl=60 * 60 * 24 * 30)
 
 
 def create_admin_token(admin_user: AdminUser) -> str:
