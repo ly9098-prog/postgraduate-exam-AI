@@ -597,17 +597,20 @@ class WrongQuestion(Base):
 
 ### SM-2 字段说明
 
-- `efactor`：SuperMemo EF，下限 1.3
-- `interval`：距下次复习天数
-- `repetitions`：连续回答正确次数（quality >= 3 时递增，< 3 时归零）
-- `next_review_date`：通过 `calc_sm2()` 计算的下次复习日期
-- `mastered`：当 `quality >= 4` 且 `repetitions >= 3` 时自动标记
+> **注意**：WrongQuestion 上的 SM-2 字段为**历史兼容字段**，主调度已迁移至 `review_schedules` 表。
+> 每次 ReviewSchedule 更新后通过 `_sync_schedule_to_wq()` 自动回写以下字段，业务代码不应直接修改。
+
+- `efactor`：SuperMemo EF，下限 1.3（兼容字段，主来源为 ReviewSchedule.ease_factor）
+- `interval`：距下次复习天数（兼容字段，主来源为 ReviewSchedule.interval）
+- `repetitions`：连续回答正确次数（兼容字段，主来源为 ReviewSchedule.repetitions），quality >= 3 时递增，< 3 时归零
+- `next_review_date`：通过 `calc_sm2()` 计算的下次复习日期（兼容字段，主来源为 ReviewSchedule.next_review_at）
+- `mastered`：是否已掌握（兼容字段，主来源为 ReviewSchedule.mastered）
 
 ---
 
 ## review_schedules / review_records
 
-独立的复习调度表（与 WrongQuestion 上的 SM-2 字段并存，用于新版复习算法）。
+独立的复习调度表。**当前复习调度的主数据源**，WrongQuestion 上的 SM-2 字段仅为历史兼容字段。
 
 ### review_schedules
 
@@ -654,7 +657,7 @@ class ReviewRecord(Base):
     user_id: int            # FK → users.id（索引）
     question_id: int        # FK → questions.id
     schedule_id: int?       # FK → review_schedules.id
-    rating: int             # 用户评分 0-5
+    rating: int             # 用户评分 0-5（0=完全不会，5=完美回忆）
     interval_before: int?   # 复习前间隔
     interval_after: int?    # 复习后间隔
     ease_factor_before: float?
@@ -1207,7 +1210,12 @@ class AppUserAdminBinding(Base):
 - Level 1 题库去重使用 `question_hash`：导入阶段只标记 `question_imports.duplicate_status`，发布/审核通过阶段按 `subject + question_hash` 完全匹配拦截，不自动删除历史题目
 - AI 辅助导题/补全只写入 `question_imports` 的 AI 元数据字段，仍必须经过人工审核，不直接进入 `questions`
 - `raw_content` 保留导入原始文本
-- SM-2 字段挂在 `WrongQuestion` 表上，同时存在独立的 `review_schedules` 表（新版复习算法）
+- SM-2 复习调度以 `review_schedules` 为主数据源，WrongQuestion 上的 efactor/interval/repetitions/next_review_date/mastered 字段仅为历史兼容字段，不参与新版调度计算
+- 每次 ReviewSchedule 更新后通过 `_sync_schedule_to_wq()` 自动回写 WrongQuestion 兼容字段
+- SM-2 rating 合法范围是 0-5，其中 0 是合法评分（完全不会，重置 repetitions=0），不应抛出异常
+- 自动批改未提供用户自评 rating 时默认映射：is_correct=True → rating=4，is_correct=False → rating=1
+- 复习日期统一使用 `utcnow().date()`，避免服务器本地时区导致日期偏移
+- 当前技术债：/review/due、/review/submit、/review/stats 等旧接口仍基于 WrongQuestion 兼容字段；后续建议迁移为统一读取 ReviewSchedule
 - 每次答题一条记录（`practice_records`），每题一条，支持多次作答
 - `session_type` 区分 AI 对话场景
 - **RBAC 权限系统**：`admin_users` → `roles` ↔ `permissions`（多对多），所有管理操作记入 `audit_logs`
@@ -1215,4 +1223,4 @@ class AppUserAdminBinding(Base):
 - **番茄钟**：`pomodoro_sessions` 单表记录完整生命周期，支持微信订阅通知
 - **增量同步**：`questions.sync_uuid/sync_version`、`tags.sync_uuid` 支持本地-云端增量同步
 
-> 上次更新：2026-06-26 — import_batch_jobs 新增 request_id 唯一索引（并发重复保护）；batch_job_trace_events 明确 id 为增量读取依据，seq 为向后兼容字段
+> 上次更新：2026-06-26 — review_schedules 明确为主调度数据源；补充同步机制、rating 规范、自动批改映射默认值、时区策略、技术债说明
