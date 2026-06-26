@@ -4,6 +4,7 @@ from fastapi import Request
 from sqlalchemy import Date, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import utcnow
 from app.core.admin_security import AdminPrincipal
 from app.models.admin import AdminAISettings, AdminAIUsageMonthly, Role
 from app.models.ai_generation_log import AiGenerationLog
@@ -14,7 +15,7 @@ DEFAULT_MONTHLY_CALL_LIMIT = 1000
 
 
 def current_year_month() -> str:
-    return datetime.utcnow().strftime("%Y-%m")
+    return utcnow().strftime("%Y-%m")
 
 
 async def get_or_create_ai_settings(db: AsyncSession) -> AdminAISettings:
@@ -86,12 +87,12 @@ async def update_ai_settings(
     if data.monthly_call_limit is not None:
         settings.monthly_call_limit = data.monthly_call_limit
     settings.updated_by = operator.id
-    settings.updated_at = datetime.utcnow()
+    settings.updated_at = utcnow()
 
     usage = await get_or_create_monthly_usage(db, limit_snapshot=settings.monthly_call_limit)
     if usage.limit_snapshot is None:
         usage.limit_snapshot = settings.monthly_call_limit
-    usage.updated_at = datetime.utcnow()
+    usage.updated_at = utcnow()
 
     after = {
         "ai_parse_enabled": settings.ai_parse_enabled,
@@ -172,7 +173,7 @@ async def ensure_ai_parse_allowed(
 
 async def get_ai_stats(db: AsyncSession, days: int = 7) -> AdminAIStatsResponse:
     """从 AiGenerationLog 聚合统计数据和趋势。"""
-    now = datetime.utcnow()
+    now = utcnow()
     today_start = datetime.combine(now.date(), time.min)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     trend_start = today_start - timedelta(days=days - 1)

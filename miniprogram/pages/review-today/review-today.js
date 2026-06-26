@@ -269,6 +269,21 @@ Page({
         this._enterSafeMode()
       }
     }
+    // MIXED mode validation
+    if (renderModel.mode === 'MIXED') {
+      if (!renderModel.blocks || renderModel.blocks.length === 0) {
+        console.error('[MIXED_RENDER_VIOLATION] review-today MIXED mode but blocks is empty')
+        return
+      }
+      for (var mi = 0; mi < renderModel.blocks.length; mi++) {
+        var mBlock = renderModel.blocks[mi]
+        if (mBlock.type === 'CODE' && mBlock.rawText) {
+          if (/&(?:nbsp|amp|lt|gt|#\d+);/.test(mBlock.rawText)) {
+            console.error('[CODE_HTML_LEAK] review-today MIXED CODE block #' + mi + ' contains HTML entities')
+          }
+        }
+      }
+    }
   },
 
   _recordRenderTrace(trace) {

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
 from app.services.sm2_service import calc_sm2
+from app.core.time_utils import utcnow
 
 
 async def record_wrong(
@@ -24,7 +25,7 @@ async def record_wrong(
     if wq:
         wq.wrong_answer = wrong_answer
         wq.review_count = (wq.review_count or 0) + 1
-        wq.last_review_at = datetime.utcnow()
+        wq.last_review_at = utcnow()
         wq.mastered = False
         # 旧数据没有 SM-2 字段时初始化
         if wq.efactor is None or wq.efactor == 0:
@@ -39,7 +40,7 @@ async def record_wrong(
             question_id=question_id,
             wrong_answer=wrong_answer,
             review_count=1,
-            last_review_at=datetime.utcnow(),
+            last_review_at=utcnow(),
             efactor=2.5,
             interval=1,
             repetitions=0,
@@ -175,7 +176,7 @@ async def update_quality(
     wq.interval = sm2_result["interval"]
     wq.repetitions = sm2_result["repetitions"]
     wq.next_review_date = sm2_result["next_review_date"]
-    wq.last_review_at = datetime.utcnow()
+    wq.last_review_at = utcnow()
 
     # 连续 3 次以上高质量评分标记为掌握
     if quality >= 4 and wq.repetitions >= 3:

@@ -311,6 +311,10 @@ def _line_is_option_like(line: str) -> bool:
     first_word = stripped.split()[0] if stripped.split() else ""
     if first_word in code_keywords or stripped.startswith("#"):
         return False
+    # 包含中文（题干/说明行）→ 不算 bare option
+    import unicodedata
+    if any("一" <= c <= "鿿" or "　" <= c <= "〿" for c in stripped):
+        return False
     # 看起来像自然语言选项
     return True
 

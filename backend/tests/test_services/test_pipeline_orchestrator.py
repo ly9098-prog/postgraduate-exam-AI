@@ -11,6 +11,7 @@ from app.features.pipeline_orchestrator import (
     _extract_pdf_blocks,
     _extract_text_blocks,
     _ocr_scanned_pdf,
+    _pipeline_diagnostics_store,
     _pipeline_store,
     get_pipeline_status,
     run_import_pipeline,
@@ -1484,7 +1485,6 @@ class TestBackgroundPipeline:
         assert status["status"] == "failed"
         assert "catastrophic failure" in status["errors"][0]
 
-    @pytest.mark.xfail(reason="Stale mock compatibility — asyncio.run with coroutine in test")
     def test_status_not_found(self):
         assert asyncio.run(get_pipeline_status("nonexistent")) is None
 
@@ -1526,15 +1526,15 @@ class TestBackgroundPipeline:
 class TestPipelineStoreSlim:
     """主 _pipeline_store 不应再持有 diagnostics（P0-3 内存瘦身）。"""
 
-    def test_set_strips_diagnostics_into_separate_store(self):
-        from app.features.pipeline_orchestrator import (
-            _pipeline_diagnostics_store,
-            _set_pipeline_store,
-        )
-
-        pid = "pl_slim_001"
+    def _pop_cleanup(self, pid: str):
         _pipeline_store.pop(pid, None)
         _pipeline_diagnostics_store.pop(pid, None)
+
+    def test_set_strips_diagnostics_into_separate_store(self):
+        from app.features.pipeline_orchestrator import _set_pipeline_store
+
+        pid = "pl_slim_001"
+        self._pop_cleanup(pid)
 
         diagnostics = {
             "split": {"raw_questions_preview": [{"raw_question_text": "x" * 5000}] * 20},
@@ -1542,7 +1542,7 @@ class TestPipelineStoreSlim:
         }
         full_payload = {
             "pipeline_id": pid,
-            "status": "completed",
+            "status": "running",  # non-terminal so entry stays in-memory for inspection
             "source_type": "pdf",
             "stages": {"extract": {"status": "completed"}},
             "stats": {"total": 100},
@@ -1561,20 +1561,51 @@ class TestPipelineStoreSlim:
         assert pid in _pipeline_diagnostics_store
         assert _pipeline_diagnostics_store[pid] == diagnostics
 
+    def test_terminal_entry_stays_in_store(self):
+        """Pipeline 进入终态后应保留在 store 中供 SSE 轮询读取。"""
+        from app.features.pipeline_orchestrator import _set_pipeline_store
+
+        pid = "pl_term_001"
+        self._pop_cleanup(pid)
+
+        asyncio.run(_set_pipeline_store(pid, {
+            "pipeline_id": pid,
+            "status": "completed",
+            "source_type": "pdf",
+            "stages": {},
+            "stats": {},
+            "errors": [],
+            "started_at": "2026-06-05T00:00:00",
+        }))
+        # 终态不 evict — SSE 轮询需要读取
+        assert pid in _pipeline_store
+        assert _pipeline_store[pid]["status"] == "completed"
+
+        # failed 同样保留
+        pid2 = "pl_term_002"
+        self._pop_cleanup(pid2)
+        asyncio.run(_set_pipeline_store(pid2, {
+            "pipeline_id": pid2,
+            "status": "failed",
+            "source_type": "pdf",
+            "stages": {},
+            "stats": {},
+            "errors": [],
+            "started_at": "2026-06-05T00:00:00",
+        }))
+        assert pid2 in _pipeline_store
+        assert _pipeline_store[pid2]["status"] == "failed"
+
     def test_status_query_merges_diagnostics_back(self):
-        from app.features.pipeline_orchestrator import (
-            _pipeline_diagnostics_store,
-            _set_pipeline_store,
-        )
+        from app.features.pipeline_orchestrator import _set_pipeline_store
 
         pid = "pl_slim_002"
-        _pipeline_store.pop(pid, None)
-        _pipeline_diagnostics_store.pop(pid, None)
+        self._pop_cleanup(pid)
 
         diagnostics = {"split": {"failure_reason": None}, "structure": {"mode": "exam"}, "exercise_regions_missing": True}
         asyncio.run(_set_pipeline_store(pid, {
             "pipeline_id": pid,
-            "status": "completed",
+            "status": "running",  # non-terminal so entry stays in-memory
             "source_type": "pdf",
             "stages": {},
             "stats": {},
@@ -1586,7 +1617,7 @@ class TestPipelineStoreSlim:
         status = asyncio.run(get_pipeline_status(pid))
         assert status is not None
         assert status["diagnostics"] == diagnostics
-        assert status["status"] == "completed"
+        assert status["status"] == "running"
 
     def test_prune_removes_diagnostics_alongside_store(self):
         from app.features.pipeline_orchestrator import (

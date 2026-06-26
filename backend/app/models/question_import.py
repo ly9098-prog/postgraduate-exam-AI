@@ -43,5 +43,10 @@ class QuestionImport(Base):
     # 数学公式图片化（Stage 3）
     math_regions: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # Merge supersede tracking (P0-4): when an old batch is superseded by a merge,
+    # these fields record which batch superseded it and when.
+    superseded_by_batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

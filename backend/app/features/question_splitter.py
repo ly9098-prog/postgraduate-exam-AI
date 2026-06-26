@@ -725,6 +725,32 @@ def scan_entire_block_including_surrounding_lines(text: str) -> dict[str, str]:
     return extract_options_from_text(text)
 
 
+def _is_ocr_garbage_line(line: str) -> bool:
+    """Check if a non-option line between options is likely OCR corruption.
+
+    Detects lines with non-ASCII characters outside CJK ranges
+    (Greek, Cyrillic, etc.), which are strong signals of OCR corruption
+    in code or Chinese exam option text. Legitimate continuation lines
+    contain only ASCII (code) or CJK characters (Chinese text).
+
+    Returns:
+        True if the line appears to be OCR garbage.
+    """
+    for ch in line:
+        cp = ord(ch)
+        if cp > 127:
+            # Allow common CJK ranges
+            if 0x3000 <= cp <= 0x303F:   # CJK symbols and punctuation
+                continue
+            if 0x4E00 <= cp <= 0x9FFF:   # CJK unified ideographs
+                continue
+            if 0xFF00 <= cp <= 0xFFEF:   # Fullwidth forms
+                continue
+            # Any other non-ASCII (Greek, Cyrillic, arrows, etc.) → signal
+            return True
+    return False
+
+
 def _extract_options(text: str) -> dict[str, str]:
     """从题目文本中提取选项行。
 
@@ -763,6 +789,7 @@ def _extract_options(text: str) -> dict[str, str]:
             and not _detect_option_line(stripped)
             and not _ANSWER_EXPLANATION_LINE.match(stripped)
             and last_key in options
+            and not _is_ocr_garbage_line(stripped)
         ):
             options[last_key] = f"{options[last_key]} {stripped}"
 

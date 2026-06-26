@@ -9,9 +9,7 @@
     "split"
   ],
   "expected_questions": 0,
-  "known_failure_types": [
-    "vl_unavailable_option_count_mismatch"
-  ],
+  "known_failure_types": [],
   "assertions": {},
   "date_added": "2026-06-22",
   "review_status": "verified",

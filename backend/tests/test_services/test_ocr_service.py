@@ -1,5 +1,6 @@
 """Stage 9 OCR 增强服务 — 单元测试。AI 调用和 PyMuPDF 全部 mock。"""
 import sys
+from contextlib import ExitStack
 from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -419,329 +420,266 @@ class TestPdfToImages:
 # ============================================================
 
 
-@pytest.mark.ocr_deprecated
-@pytest.mark.ocr_dependency
-class TestCallOcrApi:
-    @staticmethod
-    def _run_async(coro):
-        """Run async coroutine in sync test."""
-        import asyncio
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(coro)
-        # If there's a running loop, create a new one
-        new_loop = asyncio.new_event_loop()
-        try:
-            return new_loop.run_until_complete(coro)
-        finally:
-            new_loop.close()
+# ============================================================
+# OCRFixRouter adapter chaining tests (replaces old _call_ocr_api / ocr_fallback tests)
+# ============================================================
 
-    def test_successful_ocr_call(self):
-        """PaddleOCR-VL 成功返回 OCR 文本。"""
-        mock_result = MagicMock()
-        mock_result.fixed_text = "识别出的题目文字内容"
-        mock_result.confidence = 0.92
 
-        mock_adapter = AsyncMock()
-        mock_adapter.fix.return_value = mock_result
+@pytest.fixture
+def mock_vl_adapter():
+    """Fixture: mock PaddleOCRVLAdapter that always succeeds."""
+    adapter = AsyncMock()
+    result = MagicMock()
+    result.fixed_text = "识别出的题目文字内容 A. 选项1 B. 选项2 C. 选项3 D. 选项4"
+    result.confidence = 0.92
+    result.model_used = "paddleocr-vl"
+    result.risk_flags = []
+    result.safety = None
+    adapter.fix.return_value = result
+    return adapter
 
-        vl_config = {"paddleocr_vl_api_token": "test-token"}
 
-        with patch(
-            "app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter",
-            return_value=mock_adapter,
-        ):
-            from app.features.ocr_service import _call_ocr_api
-            result = self._run_async(_call_ocr_api(b"fake-image-data", page_num=1, config=vl_config))
+@pytest.fixture
+def mock_deepseek_adapter():
+    """Fixture: mock DeepSeek adapter that always succeeds."""
+    adapter = AsyncMock()
+    result = MagicMock()
+    result.fixed_text = "DeepSeek 修正的文字 A. 选项1 B. 选项2 C. 选项3 D. 选项4"
+    result.confidence = 0.85
+    result.model_used = "deepseek"
+    result.risk_flags = []
+    result.safety = None
+    adapter.fix.return_value = result
+    return adapter
+
+
+@pytest.fixture
+def mock_vl_unsafe_adapter():
+    """Fixture: mock PaddleOCRVLAdapter returning collapsed text rejected by safety gate.
+
+    The output is dramatically shorter than the input, which triggers the
+    ``length_collapse`` check in ``safe_accept_ai_result``.
+    Used to verify the router rejects unsafe candidates.
+    """
+    adapter = AsyncMock()
+    result = MagicMock()
+    result.fixed_text = "短"
+    result.confidence = 0.95
+    result.model_used = "paddleocr-vl"
+    result.risk_flags = ["length_collapse"]
+    result.safety = None
+    adapter.fix.return_value = result
+    return adapter
+
+
+@pytest.fixture
+def mock_empty_adapter():
+    """Fixture: mock adapter returning empty result."""
+    adapter = AsyncMock()
+    result = MagicMock()
+    result.fixed_text = ""
+    result.confidence = 0.0
+    result.model_used = "paddleocr-vl"
+    adapter.fix.return_value = result
+    return adapter
+
+
+@pytest.fixture
+def mock_failing_adapter():
+    """Fixture: mock adapter that raises an exception."""
+    adapter = AsyncMock()
+    adapter.fix.side_effect = Exception("API connection failed")
+    return adapter
+
+
+class TestOCRFixRouter:
+    """Test OCRFixRouter adapter chaining — replaces old _call_ocr_api / ocr_fallback tests.
+
+    Adapters are injected directly via OCRFixRouter(adapters={...}) so the
+    lazy _get_adapter path is bypassed and we can test chaining logic in isolation.
+    """
+
+    @pytest.mark.asyncio
+    async def test_vl_success_routes_to_no_deepseek(self, mock_vl_adapter):
+        """VL adapter succeeds → validator accepts → no further adapters called."""
+        mock_deepseek = AsyncMock()
+        from app.features.ocr_fix.router import OCRFixRouter
+
+        router = OCRFixRouter(adapters={
+            "paddleocr-vl": mock_vl_adapter,
+            "deepseek": mock_deepseek,
+        })
+        router.configure({"ocr_fix_strategy": "auto"})
+        result = await router.fix(
+            image=b"fake-image",
+            ocr_text="some text",
+            context={"page_num": 1, "filename": "test.png"},
+        )
 
         assert result is not None
-        assert result["page"] == 1
-        assert "识别出的题目文字内容" in result["text"]
-        assert result["tokens_used"] == 0
+        assert result.fixed_text is not None
+        assert "题目文字内容" in result.fixed_text
+        assert result.model_used == "paddleocr-vl"
+        mock_vl_adapter.fix.assert_awaited_once()
+        mock_deepseek.fix.assert_not_awaited()
 
-    def test_api_unavailable(self):
-        """PaddleOCR-VL 未配置（无 config）→ 返回 None。"""
-        from app.features.ocr_service import _call_ocr_api
-        result = self._run_async(_call_ocr_api(b"fake-image", page_num=1, config=None))
+    @pytest.mark.asyncio
+    async def test_vl_exception_falls_through_to_deepseek(self, mock_failing_adapter, mock_deepseek_adapter):
+        """VL adapter raises → router continues to DeepSeek adapter."""
+        from app.features.ocr_fix.router import OCRFixRouter
 
-        assert result is None
-
-    def test_api_empty_result(self):
-        """PaddleOCR-VL 返回空文本 → 返回 None。"""
-        mock_result = MagicMock()
-        mock_result.fixed_text = ""
-        mock_result.confidence = 0.0
-
-        mock_adapter = AsyncMock()
-        mock_adapter.fix.return_value = mock_result
-
-        vl_config = {"paddleocr_vl_api_token": "test-token"}
-
-        with patch(
-            "app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter",
-            return_value=mock_adapter,
-        ):
-            from app.features.ocr_service import _call_ocr_api
-            result = self._run_async(_call_ocr_api(b"fake-image", page_num=2, config=vl_config))
-
-        assert result is None
-
-    def test_api_exception(self):
-        """PaddleOCR-VL 抛异常 → 返回 None。"""
-        mock_adapter = AsyncMock()
-        mock_adapter.fix.side_effect = Exception("API connection failed")
-
-        vl_config = {"paddleocr_vl_api_token": "test-token"}
-
-        with patch(
-            "app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter",
-            return_value=mock_adapter,
-        ):
-            from app.features.ocr_service import _call_ocr_api
-            result = self._run_async(_call_ocr_api(b"fake-image", page_num=3, config=vl_config))
-
-        assert result is None
-
-
-# ============================================================
-# ocr_fallback (main entry)
-# ============================================================
-
-
-@pytest.mark.ocr_deprecated
-@pytest.mark.ocr_dependency
-class TestOcrFallback:
-    def _setup_mocks(self, page_count=2, ocr_texts=None):
-        """设置完整的 mock 链：fitz + PaddleOCRVLAdapter。"""
-        if ocr_texts is None:
-            ocr_texts = ["第一页识别的题目内容", "第二页识别的题目内容"]
-
-        # mock fitz for _pdf_to_images
-        mock_fitz = MagicMock()
-        mock_doc = MagicMock()
-        pages = []
-        for _ in range(page_count):
-            p = MagicMock()
-            pix = MagicMock()
-            pix.tobytes.return_value = b"png-data"
-            p.get_pixmap.return_value = pix
-            pages.append(p)
-        mock_doc.__iter__.return_value = pages
-        mock_doc.__enter__ = MagicMock(return_value=mock_doc)
-        mock_doc.__exit__ = MagicMock(return_value=False)
-        mock_fitz.open.return_value = mock_doc
-
-        mock_adapter_cls = MagicMock()
-        mock_adapter_instance = AsyncMock()
-        call_count = [0]
-
-        async def _side_effect(image, ocr_text, context):
-            idx = min(call_count[0], len(ocr_texts) - 1)
-            call_count[0] += 1
-            result = MagicMock()
-            result.fixed_text = ocr_texts[idx]
-            result.confidence = 0.92
-            return result
-
-        mock_adapter_instance.fix = _side_effect
-        mock_adapter_cls.return_value = mock_adapter_instance
-
-        vl_config = {"paddleocr_vl_api_token": "test-token"}
-
-        return mock_fitz, mock_adapter_cls, vl_config
-
-
-    def test_successful_ocr_two_pages(self):
-        """两页 PDF OCR 成功。"""
-        mock_fitz, mock_adapter_cls, vl_config = self._setup_mocks(
-            page_count=2,
-            ocr_texts=[
-                "第一页：题目 1\n\n题目 1 的选项",
-                "第二页：题目 2\n\n题目 2 的选项",
-            ],
+        router = OCRFixRouter(adapters={
+            "paddleocr-vl": mock_failing_adapter,
+            "deepseek": mock_deepseek_adapter,
+        })
+        # Use auto strategy to enable full chain
+        router.configure({"ocr_fix_strategy": "auto"})
+        result = await router.fix(
+            image=b"fake-image",
+            ocr_text="some text",
+            context={"page_num": 1, "filename": "test.png"},
         )
 
-        with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter", mock_adapter_cls), \
-             patch("app.features.ocr_service.settings") as mock_settings:
-            mock_settings.OCR_ENABLED = True
-            from app.features.ocr_service import ocr_fallback
-            blocks = ocr_fallback(b"fake pdf", config=vl_config)
+        assert result is not None
+        assert result.fixed_text is not None
+        assert "DeepSeek" in result.fixed_text
+        mock_failing_adapter.fix.assert_awaited_once()
+        mock_deepseek_adapter.fix.assert_awaited_once()
 
-        assert len(blocks) >= 2  # at least one block per page
+    @pytest.mark.asyncio
+    async def test_vl_empty_result_falls_through_to_deepseek(self, mock_empty_adapter, mock_deepseek_adapter):
+        """VL adapter returns empty → router continues to DeepSeek adapter."""
+        from app.features.ocr_fix.router import OCRFixRouter
 
-    def test_blocks_format(self):
-        """验证返回的 blocks 格式与 pipeline 兼容。"""
-        mock_fitz, mock_adapter_cls, vl_config = self._setup_mocks(
-            page_count=1,
-            ocr_texts=["题目文字内容"],
+        router = OCRFixRouter(adapters={
+            "paddleocr-vl": mock_empty_adapter,
+            "deepseek": mock_deepseek_adapter,
+        })
+        router.configure({"ocr_fix_strategy": "auto"})
+        result = await router.fix(
+            image=b"fake-image",
+            ocr_text="some text",
+            context={"page_num": 1, "filename": "test.png"},
         )
 
-        with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter", mock_adapter_cls), \
-             patch("app.features.ocr_service.settings") as mock_settings:
-            mock_settings.OCR_ENABLED = True
-            from app.features.ocr_service import ocr_fallback
-            blocks = ocr_fallback(b"fake", config=vl_config)
+        assert result is not None
+        assert result.fixed_text is not None
+        assert "DeepSeek" in result.fixed_text
 
-        assert isinstance(blocks, list)
-        assert len(blocks) > 0
-        for b in blocks:
-            assert "page" in b
-            assert "block_index" in b
-            assert "text" in b
-            assert isinstance(b["page"], int)
-            assert isinstance(b["text"], str)
-            assert len(b["text"]) > 0
+    @pytest.mark.asyncio
+    async def test_vl_unsafe_rejected_falls_through_to_deepseek(
+        self, mock_vl_unsafe_adapter, mock_deepseek_adapter,
+    ):
+        """VL returns collapsed text → safety gate rejects → falls through to DeepSeek."""
+        from app.features.ocr_fix.router import OCRFixRouter
 
-    def test_ocr_disabled_raises(self):
-        """OCR_ENABLED=False → 抛 RuntimeError。"""
-        mock_fitz, mock_adapter_cls, _ = self._setup_mocks(page_count=1, ocr_texts=["text"])
-
-        with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter", mock_adapter_cls), \
-             patch("app.features.ocr_service.settings") as mock_settings:
-            mock_settings.OCR_ENABLED = False
-            from app.features.ocr_service import ocr_fallback
-            with pytest.raises(RuntimeError, match="未启用"):
-                ocr_fallback(b"fake")
-
-    def test_paragraph_splitting(self):
-        """双换行按段落切分 block。"""
-        mock_fitz, mock_adapter_cls, vl_config = self._setup_mocks(
-            page_count=1,
-            ocr_texts=["段落一\n\n段落二\n\n段落三"],
+        router = OCRFixRouter(adapters={
+            "paddleocr-vl": mock_vl_unsafe_adapter,
+            "deepseek": mock_deepseek_adapter,
+        })
+        router.configure({"ocr_fix_strategy": "auto"})
+        result = await router.fix(
+            image=b"fake-image",
+            ocr_text="这是一段较长的OCR识别文本包含选项A选项B选项C选项D需要校验完整内容",
+            context={"page_num": 1, "filename": "test.png"},
         )
 
-        with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter", mock_adapter_cls), \
-             patch("app.features.ocr_service.settings") as mock_settings:
-            mock_settings.OCR_ENABLED = True
-            from app.features.ocr_service import ocr_fallback
-            blocks = ocr_fallback(b"fake", config=vl_config)
+        assert result is not None
+        assert result.fixed_text is not None
+        # DeepSeek should be the accepted source
+        assert "DeepSeek" in result.fixed_text or "修正" in result.fixed_text
+        mock_vl_unsafe_adapter.fix.assert_awaited_once()
+        mock_deepseek_adapter.fix.assert_awaited_once()
 
-        assert len(blocks) == 3
-        assert blocks[0]["text"] == "段落一"
-        assert blocks[1]["text"] == "段落二"
-        assert blocks[2]["text"] == "段落三"
+    @pytest.mark.asyncio
+    async def test_vl_and_deepseek_both_rejected_rule_fallback(
+        self, mock_vl_unsafe_adapter,
+    ):
+        """VL and DeepSeek both unsafe → rule fallback or original returned."""
+        mock_deepseek_unsafe = AsyncMock()
+        ds_result = MagicMock()
+        ds_result.fixed_text = "短"
+        ds_result.confidence = 0.85
+        ds_result.model_used = "deepseek"
+        ds_result.risk_flags = ["length_collapse"]
+        ds_result.safety = None
+        mock_deepseek_unsafe.fix.return_value = ds_result
 
-    def test_all_pages_fail_raises(self):
-        """所有页面 OCR 失败 → 抛 RuntimeError。"""
-        mock_fitz = MagicMock()
-        mock_doc = MagicMock()
-        mock_page = MagicMock()
-        mock_pix = MagicMock()
-        mock_pix.tobytes.return_value = b"png"
-        mock_page.get_pixmap.return_value = mock_pix
-        mock_doc.__iter__.return_value = [mock_page]
-        mock_doc.__enter__ = MagicMock(return_value=mock_doc)
-        mock_doc.__exit__ = MagicMock(return_value=False)
-        mock_fitz.open.return_value = mock_doc
+        mock_rule = AsyncMock()
+        rule_result = MagicMock()
+        rule_result.fixed_text = "Rule fallback text A. 选项1 B. 选项2"
+        rule_result.confidence = 0.6
+        rule_result.model_used = "rule_fallback"
+        rule_result.risk_flags = []
+        rule_result.safety = None
+        mock_rule.fix.return_value = rule_result
 
-        # PaddleOCRVLAdapter returns empty for all pages
-        async def _fail_fix(image, ocr_text, context):
-            result = MagicMock()
-            result.fixed_text = ""
-            result.confidence = 0.0
-            return result
+        from app.features.ocr_fix.router import OCRFixRouter
 
-        mock_adapter_instance = AsyncMock()
-        mock_adapter_instance.fix = _fail_fix
-        mock_adapter_cls = MagicMock()
-        mock_adapter_cls.return_value = mock_adapter_instance
+        router = OCRFixRouter(adapters={
+            "paddleocr-vl": mock_vl_unsafe_adapter,
+            "deepseek": mock_deepseek_unsafe,
+            "rule_fallback": mock_rule,
+        })
+        router.configure({"ocr_fix_strategy": "auto"})
+        result = await router.fix(
+            image=b"fake-image",
+            ocr_text="这是一段较长的OCR识别文本包含选项A选项B选项C选项D需要校验完整内容",
+            context={"page_num": 1, "filename": "test.png"},
+        )
 
-        vl_config = {"paddleocr_vl_api_token": "test-token"}
+        assert result is not None
+        # Rule fallback should be used (or original if rule also rejected)
+        assert result.fixed_text is not None
+        mock_rule.fix.assert_awaited_once()
 
-        with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter", mock_adapter_cls), \
-             patch("app.features.ocr_service.settings") as mock_settings:
-            mock_settings.OCR_ENABLED = True
-            from app.features.ocr_service import ocr_fallback
-            with pytest.raises(RuntimeError, match="均失败"):
-                ocr_fallback(b"fake", config=vl_config)
+    @pytest.mark.asyncio
+    async def test_all_adapters_fail_rule_fallback(self, mock_failing_adapter):
+        """VL and DeepSeek both fail → Rule fallback produces result."""
+        mock_rule = AsyncMock()
+        rule_result = MagicMock()
+        rule_result.fixed_text = "Rule fallback text A. 选项1 B. 选项2 C. 选项3 D. 选项4"
+        rule_result.confidence = 0.6
+        rule_result.model_used = "rule_fallback"
+        mock_rule.fix.return_value = rule_result
 
-    def test_partial_page_failure(self):
-        """部分页面 OCR 失败，成功的页面正常返回。"""
-        mock_fitz = MagicMock()
-        mock_doc = MagicMock()
-        pages = []
-        for _ in range(2):
-            p = MagicMock()
-            pix = MagicMock()
-            pix.tobytes.return_value = b"png"
-            p.get_pixmap.return_value = pix
-            pages.append(p)
-        mock_doc.__iter__.return_value = pages
-        mock_doc.__enter__ = MagicMock(return_value=mock_doc)
-        mock_doc.__exit__ = MagicMock(return_value=False)
-        mock_fitz.open.return_value = mock_doc
+        from app.features.ocr_fix.router import OCRFixRouter
 
-        _call_count = [0]
+        router = OCRFixRouter(adapters={
+            "paddleocr-vl": mock_failing_adapter,
+            "deepseek": mock_failing_adapter,
+            "rule_fallback": mock_rule,
+        })
+        router.configure({"ocr_fix_strategy": "auto"})
+        result = await router.fix(
+            image=b"fake-image",
+            ocr_text="some text",
+            context={"page_num": 1, "filename": "test.png"},
+        )
 
-        async def _alternating_fix(image, ocr_text, context):
-            cnt = _call_count[0]
-            _call_count[0] += 1
-            result = MagicMock()
-            if cnt == 0:  # First call succeeds
-                result.fixed_text = "成功识别的文字"
-                result.confidence = 0.92
-            else:  # Second call fails
-                result.fixed_text = ""
-                result.confidence = 0.0
-            return result
+        assert result is not None
+        assert result.fixed_text is not None
+        assert "Rule" in result.fixed_text or result.model_used == "rule_fallback"
 
-        mock_adapter_instance = AsyncMock()
-        mock_adapter_instance.fix = _alternating_fix
-        mock_adapter_cls = MagicMock()
-        mock_adapter_cls.return_value = mock_adapter_instance
+    @pytest.mark.asyncio
+    async def test_vl_success_no_deepseek_called(self, mock_vl_adapter, mock_deepseek_adapter):
+        """Validator accepts VL → DeepSeek is NOT called (performance safeguard)."""
+        from app.features.ocr_fix.router import OCRFixRouter
 
-        vl_config = {"paddleocr_vl_api_token": "test-token"}
+        router = OCRFixRouter(adapters={
+            "paddleocr-vl": mock_vl_adapter,
+            "deepseek": mock_deepseek_adapter,
+        })
+        router.configure({"ocr_fix_strategy": "auto"})
+        result = await router.fix(
+            image=b"fake-image",
+            ocr_text="some text",
+            context={"page_num": 1, "filename": "test.png"},
+        )
 
-        with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter", mock_adapter_cls), \
-             patch("app.features.ocr_service.settings") as mock_settings:
-            mock_settings.OCR_ENABLED = True
-            from app.features.ocr_service import ocr_fallback
-            blocks = ocr_fallback(b"fake", config=vl_config)
-
-        # Should have blocks from the successful page
-        assert len(blocks) > 0
-        assert any("成功识别" in b["text"] for b in blocks)
-
-    def test_empty_ocr_result_skipped(self):
-        """OCR 返回空文本 → 该页跳过。"""
-        mock_fitz = MagicMock()
-        mock_doc = MagicMock()
-        mock_page = MagicMock()
-        mock_pix = MagicMock()
-        mock_pix.tobytes.return_value = b"png"
-        mock_page.get_pixmap.return_value = mock_pix
-        mock_doc.__iter__.return_value = [mock_page]
-        mock_doc.__enter__ = MagicMock(return_value=mock_doc)
-        mock_doc.__exit__ = MagicMock(return_value=False)
-        mock_fitz.open.return_value = mock_doc
-
-        async def _empty_fix(image, ocr_text, context):
-            result = MagicMock()
-            result.fixed_text = "   "  # 仅空白
-            result.confidence = 0.0
-            return result
-
-        mock_adapter_instance = AsyncMock()
-        mock_adapter_instance.fix = _empty_fix
-        mock_adapter_cls = MagicMock()
-        mock_adapter_cls.return_value = mock_adapter_instance
-
-        vl_config = {"paddleocr_vl_api_token": "test-token"}
-
-        with patch.dict(sys.modules, {"fitz": mock_fitz}), \
-             patch("app.features.ocr_vl.paddleocr_vl_adapter.PaddleOCRVLAdapter", mock_adapter_cls), \
-             patch("app.features.ocr_service.settings") as mock_settings:
-            mock_settings.OCR_ENABLED = True
-            from app.features.ocr_service import ocr_fallback
-            with pytest.raises(RuntimeError, match="均失败"):
-                ocr_fallback(b"fake", config=vl_config)
+        assert result is not None
+        mock_vl_adapter.fix.assert_awaited_once()
+        mock_deepseek_adapter.fix.assert_not_awaited()
 
 
 # ============================================================

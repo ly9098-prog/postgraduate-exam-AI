@@ -4,6 +4,7 @@ from fastapi import Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import utcnow
 from app.core.admin_security import AdminPrincipal
 from app.models.admin import AdminUser, Role
 from app.models.app_user_admin_binding import AppUserAdminBinding
@@ -133,7 +134,7 @@ async def ban_app_user(
     }
     user.is_banned = True
     user.banned_reason = data.reason
-    user.banned_at = datetime.utcnow()
+    user.banned_at = utcnow()
     user.banned_by = operator.id
     after = {
         "is_banned": user.is_banned,

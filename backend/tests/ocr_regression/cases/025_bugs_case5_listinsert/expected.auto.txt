@@ -1,5 +1,5 @@
 [normalized_full_text]
-B. 在单链表中进行如下操作:
+8. 在单链表中进行如下操作:
 
 ```text
 

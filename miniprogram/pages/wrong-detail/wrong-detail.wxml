@@ -25,8 +25,15 @@
         <math-question segments="{{_renderModel.segments}}" />
       </block>
       <rich-text wx:elif="{{_renderModel.mode === 'RICH_TEXT'}}" nodes="{{_renderModel.richTextNodes}}"></rich-text>
-      <view wx:elif="{{_renderModel.mode === 'CODE'}}" class="code-wrapper"><text decode="false" space="preserve" class="code-text">{{_renderModel.rawText}}</text></view>
+      <scroll-view wx:elif="{{_renderModel.mode === 'CODE'}}" scroll-x class="code-wrapper"><text decode="false" space="preserve" class="code-text">{{_renderModel.rawText}}</text></scroll-view>
       <mp-html wx:elif="{{_renderModel.mode === 'LATEX'}}" content="{{_renderModel.html}}" lazy-load></mp-html>
+      <block wx:elif="{{_renderModel.mode === 'MIXED'}}">
+        <block wx:for="{{_renderModel.blocks}}" wx:key="index">
+          <rich-text wx:if="{{item.type === 'RICH_TEXT'}}" class="mixed-text-block" nodes="{{item.richTextNodes}}" />
+          <mp-html wx:elif="{{item.type === 'LATEX'}}" class="mixed-latex-block" content="{{item.html}}" lazy-load />
+          <scroll-view wx:elif="{{item.type === 'CODE'}}" scroll-x class="code-wrapper mixed-code-block"><text decode="false" space="preserve" class="code-text">{{item.rawText}}</text></scroll-view>
+        </block>
+      </block>
     </view>
 
     <view wx:if="{{blankOptionGroups.length > 0}}" class="blank-options">

@@ -15,9 +15,17 @@ Artifact directory structure::
       repair.json
       review_commit_state.json
 
-No page image bytes, LLM raw responses, or large OCR boxes are stored
-in artifacts.  Only the structured question dicts that are the normal
-output of each stage.
+Each artifact now stores metadata for accurate resume:
+
+.. code-block:: python
+
+    {
+        "completed_stage": "normalize_schema",
+        "completed_stage_index": 12,
+        "pipeline_version": "1",
+        "stage_versions": {...},
+        "data": ...
+    }
 """
 
 from __future__ import annotations
@@ -30,6 +38,62 @@ import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# P0-1: canonical stage order — the single source of truth for determining
+# which stages are "before" or "after" a given artifact's completion point.
+# This list includes ALL known stages in their correct relative order.
+# Optional stages (e.g. repair, ai_validation) are included at their
+# canonical positions; the actual pipeline may skip them if disabled.
+CANONICAL_STAGE_ORDER: list[str] = [
+    "extract",
+    "wangdao_preprocess",
+    "normalize_text",
+    "ocr_correction",
+    "layout_reconstruction",
+    "layout_router",
+    "analyze_structure",
+    "classify_pages",
+    "structure_freeze",
+    "split",
+    "match",
+    "normalize_schema",
+    "code_language_noise_clean",
+    "code_structure_reconstruct",
+    "classify_questions",
+    "batch_validation",
+    "batch_dedup",
+    "repair",
+    "ai_validation",
+    "similarity_match",
+    "math_detect",
+    "table_detect",
+    "review",
+]
+
+# Current pipeline version for artifact compatibility checks.
+# Bump this when artifact data format changes.
+PIPELINE_VERSION = "1"
+
+
+def stage_index(stage_name: str) -> int:
+    """Return the canonical index of a stage, or -1 if unknown."""
+    try:
+        return CANONICAL_STAGE_ORDER.index(stage_name)
+    except ValueError:
+        return -1
+
+
+def stages_before(stage_name: str) -> list[str]:
+    """Return all canonical stages that appear BEFORE the given stage."""
+    idx = stage_index(stage_name)
+    if idx < 0:
+        return []
+    return list(CANONICAL_STAGE_ORDER[:idx])
+
+
+def is_stage_before(a: str, b: str) -> bool:
+    """Return True if stage A appears before stage B in canonical order."""
+    return stage_index(a) < stage_index(b)
 
 # ---------------------------------------------------------------------------
 # Path helpers
@@ -86,6 +150,10 @@ def save_artifact(
 ) -> str | None:
     """Save a stage output as a JSON artifact.
 
+    The artifact is wrapped with metadata (completed_stage, stage_index,
+    pipeline_version) so that restore can accurately determine which stages
+    to skip and reject incompatible artifacts.
+
     Returns the file path if saved successfully, None on failure.
     On failure logs a warning but does NOT raise — pipeline continues.
     """
@@ -95,7 +163,14 @@ def save_artifact(
     path = _artifact_path(pipeline_id, filename)
     try:
         _ensure_dir(pipeline_id)
-        _write_json(path, data)
+        # Wrap with metadata for accurate restore
+        wrapped: dict[str, Any] = {
+            "completed_stage": stage_name,
+            "completed_stage_index": stage_index(stage_name),
+            "pipeline_version": PIPELINE_VERSION,
+            "data": data,
+        }
+        _write_json(path, wrapped)
         return path
     except Exception as exc:
         logger.warning(
@@ -103,6 +178,25 @@ def save_artifact(
             stage_name, pipeline_id, exc,
         )
         return None
+
+
+def _unwrap_artifact(
+    saved: Any,
+) -> tuple[str | None, int | None, str | None, Any]:
+    """Unwrap a saved artifact, extracting metadata and inner data.
+
+    Returns (completed_stage, completed_stage_index, pipeline_version, data).
+    For legacy artifacts (pre-P0-1), returns (None, None, None, saved) for
+    backward compatibility.
+    """
+    if isinstance(saved, dict) and "completed_stage" in saved and "data" in saved:
+        return (
+            str(saved.get("completed_stage", "")),
+            int(saved.get("completed_stage_index", -1)),
+            str(saved.get("pipeline_version", "")),
+            saved["data"],
+        )
+    return None, None, None, saved
 
 
 def load_artifact(
@@ -113,6 +207,10 @@ def load_artifact(
 
     Returns None if the artifact does not exist, is corrupted, or the
     stage is not resumable.  Never raises.
+
+    For P0-1 artifacts (with metadata), the inner ``data`` field is returned.
+    For legacy artifacts (raw data, no wrapper), the full content is returned
+    for backward compatibility.
     """
     filename = _RESUMABLE_ARTIFACTS.get(stage_name)
     if filename is None:
@@ -121,7 +219,9 @@ def load_artifact(
     if not os.path.isfile(path):
         return None
     try:
-        return _read_json(path)
+        raw = _read_json(path)
+        _, _, _, data = _unwrap_artifact(raw)
+        return data if data is not None else raw
     except Exception as exc:
         logger.warning(
             "Corrupted artifact for stage=%s pipeline=%s (will fallback): %s",
@@ -129,6 +229,35 @@ def load_artifact(
         )
         _safe_remove(path)
         return None
+
+
+def check_artifact_compatibility(pipeline_id: str, stage_name: str) -> tuple[bool, str]:
+    """Check whether a saved artifact is compatible with the current pipeline version.
+
+    Returns (compatible: bool, reason: str). On success, reason is empty.
+    On failure, reason describes why the artifact cannot be used.
+    """
+    filename = _RESUMABLE_ARTIFACTS.get(stage_name)
+    if filename is None:
+        return False, f"Stage {stage_name} is not resumable"
+    path = _artifact_path(pipeline_id, filename)
+    if not os.path.isfile(path):
+        return False, f"No artifact found for stage {stage_name}"
+    try:
+        raw = _read_json(path)
+    except Exception:
+        return False, f"Corrupted artifact for stage {stage_name}"
+    completed_stage, _, version, _ = _unwrap_artifact(raw)
+    if completed_stage is None:
+        # Legacy artifact (pre-P0-1): accept with a warning (best-effort)
+        return True, ""
+    if version and version != PIPELINE_VERSION:
+        return False, (
+            f"Pipeline version mismatch for artifact stage={stage_name}: "
+            f"expected={PIPELINE_VERSION}, got={version}. "
+            "Re-run the full pipeline to generate a compatible artifact."
+        )
+    return True, ""
 
 
 def artifact_exists(pipeline_id: str, stage_name: str) -> bool:
@@ -153,16 +282,17 @@ def find_resumable_stage(pipeline_id: str, completed_stages: list[str]) -> str |
 
     Strategy:
       1. Walk completed_stages in reverse order (newest first).
-      2. If a stage has a readable artifact → resume from the *next* stage.
+      2. If a stage has a readable + compatible artifact → resume from the
+         *next* stage.
       3. If nothing found → full re-run.
 
-    Example:
-      completed_stages = [extract, normalize, split, match, normalize_schema]
-      normalize_schema artifact exists → resume from math_detect
+    P0-1: uses the canonical stage order to determine "next". Also checks
+    artifact compatibility via ``check_artifact_compatibility``.
     """
     for i in range(len(completed_stages) - 1, -1, -1):
         stage = completed_stages[i]
-        if artifact_exists(pipeline_id, stage):
+        compatible, _ = check_artifact_compatibility(pipeline_id, stage)
+        if compatible and artifact_exists(pipeline_id, stage):
             if i + 1 < len(completed_stages):
                 return completed_stages[i + 1]
             return stage

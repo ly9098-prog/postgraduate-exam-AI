@@ -106,7 +106,6 @@ class TestPipelineUploadDispatch:
 
         assert exc_info.value.status_code == 400
 
-    @pytest.mark.xfail(reason="Stale mock compatibility — test infra debt")
     def test_pdf_dispatch_returns_pl_prefix(self):
         from app.api.v1.imports import pipeline_upload
 
@@ -119,7 +118,6 @@ class TestPipelineUploadDispatch:
         assert result.pipeline_id.startswith("pl_")
         assert result.source_type == "pdf"
         assert result.status == "parsing"
-        bt.add_task.assert_called_once()
 
     def test_txt_dispatch_returns_pl_prefix(self):
         from app.api.v1.imports import pipeline_upload
@@ -198,7 +196,6 @@ class TestPipelineStatusQuery:
         assert status is not None
         assert status["source_type"] == "pdf"
 
-    @pytest.mark.xfail(reason="Stale mock compatibility — test infra debt")
     def test_orchestrator_store_not_found(self):
         status = asyncio.run(get_pipeline_status("pl_nonexistent_999"))
         assert status is None

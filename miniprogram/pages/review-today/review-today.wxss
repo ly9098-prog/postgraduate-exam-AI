@@ -1261,18 +1261,38 @@
   }
 }
 
-/* ==================== Code block (CODE render mode — zero HTML) ==================== */
+/* ==================== Code block ==================== */
 .code-wrapper {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   background: #F5F6FA;
   border-radius: 12rpx;
   padding: 24rpx 20rpx;
-  overflow-x: auto;
-  margin: 16rpx 0;
+  margin: 16rpx 0 28rpx;
+  overflow: hidden;
 }
 .code-text {
+  display: inline-block;
+  min-width: 100%;
+  box-sizing: border-box;
   white-space: pre;
   font-family: 'Courier New', Courier, monospace;
   font-size: 28rpx;
   line-height: 1.7;
   color: #1A1A2E;
+}
+
+/* Mixed mode blocks */
+.mixed-text-block {
+  display: block;
+  margin-bottom: 18rpx;
+}
+.mixed-latex-block {
+  display: block;
+  margin-bottom: 18rpx;
+}
+.mixed-code-block {
+  margin: 16rpx 0 28rpx;
 }

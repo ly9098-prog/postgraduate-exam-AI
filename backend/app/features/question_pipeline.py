@@ -35,6 +35,7 @@ from app.ai.prompts import (
     build_generate_questions,
     build_repair_question,
 )
+from app.core.time_utils import utcnow
 from app.core.config import settings
 from app.models.ai_generation_log import AiGenerationLog
 from app.models.question import Question
@@ -1429,7 +1430,7 @@ async def approve_question(
 
     qi.review_note = data.get("review_note")
     if qi.ai_generated:
-        qi.ai_reviewed_at = datetime.utcnow()
+        qi.ai_reviewed_at = utcnow()
     await db.commit()
     return {"qi": qi, "is_duplicate": is_duplicate, "question_id": qi.question_id}
 
@@ -1515,7 +1516,7 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int,
                 qi.id, q.id, q.subject,
             )
         if qi.ai_generated:
-            qi.ai_reviewed_at = datetime.utcnow()
+            qi.ai_reviewed_at = utcnow()
         count += 1
 
     await db.commit()

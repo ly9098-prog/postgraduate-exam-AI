@@ -1,0 +1,13 @@
+3. 在单链表中删除节点，正确的操作是：
+
+typedef struct Node {
+    int value;
+    struct Node *next;
+} Node;
+
+设有指针 cur 指向待删除节点的前驱：
+
+A. cur->next = cur->next->next
+B. free(cur->next); cur->next = cur->next->next
+C. cur = cur->next->next
+D. cur->next->next = cur->next
