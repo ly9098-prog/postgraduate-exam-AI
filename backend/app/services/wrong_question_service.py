@@ -4,8 +4,8 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.question import Question
+from app.models.review_scheduler import ReviewSchedule
 from app.models.wrong_question import WrongQuestion
-from app.services.sm2_service import calc_sm2
 from app.core.time_utils import utcnow
 
 
@@ -20,7 +20,7 @@ async def record_wrong(
     )
     wq = result.scalars().first()
 
-    today = date.today()
+    today = utcnow().date()
 
     if wq:
         wq.wrong_answer = wrong_answer
@@ -158,28 +158,50 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
 async def update_quality(
     db: AsyncSession, user_id: int, wq_id: int, quality: int
 ) -> WrongQuestion | None:
-    """评分错题并触发 SM-2 更新"""
+    """评分错题并触发 SM-2 更新（通过 ReviewSchedule 路径）。"""
     wq = await get_by_id(db, user_id, wq_id)
     if not wq:
         return None
 
-    sm2_result = calc_sm2(
-        quality=quality,
-        efactor=wq.efactor or 2.5,
-        interval=wq.interval or 0,
-        repetitions=wq.repetitions or 0,
-        review_date=date.today(),
-    )
+    from app.services.review_scheduler import submit_review, mark_mastered
 
+    # 查找或创建 ReviewSchedule（题首次做错时可能尚未创建）
+    result = await db.execute(
+        select(ReviewSchedule).where(
+            ReviewSchedule.user_id == user_id,
+            ReviewSchedule.question_id == wq.question_id,
+        )
+    )
+    schedule = result.scalar_one_or_none()
+
+    if not schedule:
+        q_result = await db.execute(
+            select(Question).where(Question.id == wq.question_id)
+        )
+        question = q_result.scalar_one_or_none()
+        schedule = ReviewSchedule(
+            user_id=user_id,
+            question_id=wq.question_id,
+            subject=question.subject if question else None,
+            interval=1,
+            ease_factor=2.5,
+            repetitions=0,
+            next_review_at=utcnow(),
+        )
+        db.add(schedule)
+        await db.commit()
+        await db.refresh(schedule)
+
+    # 通过 ReviewSchedule 路径提交评审（calc_sm2 → RS 更新 → _sync_schedule_to_wq → ReviewRecord）
+    await submit_review(db, user_id, schedule.id, wq.question_id, quality)
+
+    # WQ 独有字段，不在 RS 同步范围内
     wq.quality = quality
-    wq.efactor = sm2_result["efactor"]
-    wq.interval = sm2_result["interval"]
-    wq.repetitions = sm2_result["repetitions"]
-    wq.next_review_date = sm2_result["next_review_date"]
     wq.last_review_at = utcnow()
 
-    # 连续 3 次以上高质量评分标记为掌握
-    if quality >= 4 and wq.repetitions >= 3:
+    # 保留旧版已掌握启发式：quality >= 4 且连续正确 >= 3 次
+    if quality >= 4 and schedule.repetitions >= 3:
+        schedule.mastered = True
         wq.mastered = True
 
     await db.commit()
