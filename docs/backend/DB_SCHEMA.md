@@ -33,7 +33,7 @@
 | tags | 知识点标签 | name, subject, parent_id |
 | import_pipelines | PDF/图片导入 Pipeline | status, chunk_size, watermark_snapshot |
 | import_pipeline_chunks | Pipeline 分片执行结果 | chunk_index, page_start/end, status |
-| import_batch_jobs | 批量图片导入任务 | job_id, status, concurrency |
+| import_batch_jobs | 批量图片导入任务 | job_id, request_id(唯一索引), status |
 | import_batch_job_items | 批量导入单图执行结果 | seq, ocr_raw_text, review_batch_id |
 | batch_job_trace_events | 批量导入追踪事件日志 | seq (per-job monotonic), step, status |
 | pomodoro_sessions | 番茄钟会话 | preset, work_duration, status, notification 字段 |
@@ -967,8 +967,12 @@ class ImportPipelineChunk(Base):
 ```python
 class ImportBatchJob(Base):
     __tablename__ = "import_batch_jobs"
+    __table_args__ = (
+        Index("ix_import_batch_jobs_request_id", "request_id", unique=True),
+    )
 
     job_id: str           # PK
+    request_id: str?      # 请求幂等 ID（唯一索引，并发重复保护）
     source_type: str      # image（预留 pdf）
     subject: str?
     total: int            # 图片总数
@@ -985,6 +989,7 @@ class ImportBatchJob(Base):
 | 字段 | 类型 | 约束 |
 |------|------|------|
 | job_id | String(64) | PK |
+| request_id | String(64) | NULLABLE, UNIQUE INDEX（ix_import_batch_jobs_request_id） |
 | source_type | String(16) | NOT NULL, default="image" |
 | subject | String(32) | NULLABLE |
 | total | Integer | NOT NULL, default=0 |
@@ -1048,17 +1053,20 @@ class ImportBatchJobItem(Base):
 
 ### batch_job_trace_events
 
+Append-only trace event log。增量读取使用 `id`（auto-increment PK），
+`seq` 是向后兼容字段（job 级事件仍依赖 `next_event_seq` 递增）。
+
 ```python
 class BatchJobTraceEvent(Base):
     __tablename__ = "batch_job_trace_events"
 
-    id: int               # PK
+    id: int               # PK（增量读取依据）
     job_id: str           # FK → import_batch_jobs.job_id（索引）
     item_seq: int?        # None = job 级事件
     request_id: str?
     image_import_id: str?
     batch_import_id: str?
-    seq: int              # per-job 单调递增序号
+    seq: int              # 向后兼容字段（job 级事件使用）
     step: str             # upload / ocr / pipeline / merge / done / error
     status: str           # running / success / failed
     message: str
@@ -1068,13 +1076,13 @@ class BatchJobTraceEvent(Base):
 
 | 字段 | 类型 | 约束 |
 |------|------|------|
-| id | Integer | PK, autoincrement |
+| id | Integer | PK, autoincrement（增量读取依据） |
 | job_id | String(64) | FK(import_batch_jobs.job_id), NOT NULL, INDEX |
 | item_seq | Integer | NULLABLE |
 | request_id | String(64) | NULLABLE |
 | image_import_id | String(64) | NULLABLE |
 | batch_import_id | String(64) | NULLABLE |
-| seq | Integer | NOT NULL |
+| seq | Integer | NOT NULL（向后兼容字段；job 级事件使用） |
 | step | String(32) | NOT NULL |
 | status | String(16) | NOT NULL |
 | message | String(512) | NOT NULL, default="" |
@@ -1207,4 +1215,4 @@ class AppUserAdminBinding(Base):
 - **番茄钟**：`pomodoro_sessions` 单表记录完整生命周期，支持微信订阅通知
 - **增量同步**：`questions.sync_uuid/sync_version`、`tags.sync_uuid` 支持本地-云端增量同步
 
-> 上次更新：2026-06-25 — 补充 10 个未文档化模型文件（RBAC 权限、AI 配置、批量导入 PDF/图片 Pipeline、番茄钟、水印规则、复习调度、刷新令牌、管理员绑定、AI 生成日志）；补充 users 封禁字段、questions/tags 同步字段、调整 subject/question_type 字段长度
+> 上次更新：2026-06-26 — import_batch_jobs 新增 request_id 唯一索引（并发重复保护）；batch_job_trace_events 明确 id 为增量读取依据，seq 为向后兼容字段

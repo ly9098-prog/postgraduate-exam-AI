@@ -22,7 +22,9 @@ class WrongQuestion(Base):
     review_count: Mapped[int] = mapped_column(SmallInteger, default=0)
     last_review_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     mastered: Mapped[bool] = mapped_column(Boolean, default=False)
-    # SM-2 字段
+    # SM-2 字段（兼容/历史字段，主调度来源为 ReviewSchedule）
+    # 这些字段通过 review_scheduler.auto_schedule_wrong_question()
+    # 从 ReviewSchedule 同步回写，不应直接修改
     efactor: Mapped[float] = mapped_column(Float, default=2.5)
     interval: Mapped[int] = mapped_column(Integer, default=0)
     repetitions: Mapped[int] = mapped_column(Integer, default=0)

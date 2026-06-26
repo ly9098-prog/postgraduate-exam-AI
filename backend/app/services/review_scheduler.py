@@ -5,8 +5,37 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.question import Question
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
+from app.models.wrong_question import WrongQuestion
 from app.services.sm2_service import calc_sm2
 from app.core.time_utils import utcnow
+
+
+async def _sync_schedule_to_wq(
+    db: AsyncSession, schedule: ReviewSchedule
+) -> None:
+    """同步 ReviewSchedule 的 SM-2 字段到 WrongQuestion 兼容字段。
+
+    WrongQuestion 的 efactor/interval/repetitions/next_review_date/mastered
+    仅为兼容/历史字段，主调度来源为 ReviewSchedule。
+    每次更新 ReviewSchedule 后调用本函数确保两表一致。
+    """
+    wq_result = await db.execute(
+        select(WrongQuestion).where(
+            WrongQuestion.user_id == schedule.user_id,
+            WrongQuestion.question_id == schedule.question_id,
+        )
+    )
+    wq = wq_result.scalar_one_or_none()
+    if wq:
+        wq.efactor = schedule.ease_factor
+        wq.interval = schedule.interval
+        wq.repetitions = schedule.repetitions
+        wq.next_review_date = (
+            schedule.next_review_at.date()
+            if schedule.next_review_at else date.today()
+        )
+        wq.mastered = schedule.mastered
+        await db.commit()
 
 
 async def get_today_review(
@@ -22,15 +51,33 @@ async def get_today_review(
         ReviewSchedule.mastered == False,
     ]
 
-    count_q = select(func.count(ReviewSchedule.id)).where(and_(*conditions))
-    total = (await db.execute(count_q)).scalar()
+    if subject:
+        # subject 筛选在 SQL 层完成，避免 limit 后过滤漏题
+        count_q = (
+            select(func.count(ReviewSchedule.id))
+            .join(Question, ReviewSchedule.question_id == Question.id)
+            .where(and_(*conditions, Question.subject == subject))
+        )
+        total = (await db.execute(count_q)).scalar()
 
-    q = (
-        select(ReviewSchedule)
-        .where(and_(*conditions))
-        .order_by(ReviewSchedule.next_review_at.asc())
-        .limit(limit)
-    )
+        q = (
+            select(ReviewSchedule)
+            .join(Question, ReviewSchedule.question_id == Question.id)
+            .where(and_(*conditions, Question.subject == subject))
+            .order_by(ReviewSchedule.next_review_at.asc())
+            .limit(limit)
+        )
+    else:
+        count_q = select(func.count(ReviewSchedule.id)).where(and_(*conditions))
+        total = (await db.execute(count_q)).scalar()
+
+        q = (
+            select(ReviewSchedule)
+            .where(and_(*conditions))
+            .order_by(ReviewSchedule.next_review_at.asc())
+            .limit(limit)
+        )
+
     result = await db.execute(q)
     schedules = list(result.scalars().all())
 
@@ -40,13 +87,7 @@ async def get_today_review(
         q_result = await db.execute(
             select(Question).where(Question.id.in_(question_ids))
         )
-        # Apply subject filter in Python if specified (avoids join complexity)
-        all_questions = list(q_result.scalars().all())
-        if subject:
-            all_questions = [q for q in all_questions if q.subject == subject]
-            schedules = [s for s in schedules if s.question_id in {q.id for q in all_questions}]
-            total = len(schedules)
-        questions_map = {q.id: q for q in all_questions}
+        questions_map = {q.id: q for q in q_result.scalars().all()}
 
     questions = []
     for s in schedules:
@@ -104,7 +145,7 @@ async def submit_review(
         efactor=schedule.ease_factor,
         interval=schedule.interval,
         repetitions=schedule.repetitions,
-        review_date=date.today(),
+        review_date=utcnow().date(),
     )
 
     interval_before = schedule.interval
@@ -117,6 +158,8 @@ async def submit_review(
         sm2_result["next_review_date"], datetime.min.time()
     )
     schedule.last_reviewed_at = utcnow()
+
+    await _sync_schedule_to_wq(db, schedule)
 
     record = ReviewRecord(
         user_id=user_id,
@@ -173,7 +216,7 @@ async def get_review_stats(
     days: int = 7,
 ) -> dict:
     now = utcnow()
-    today_start = datetime.combine(date.today(), datetime.min.time())
+    today_start = datetime.combine(now.date(), datetime.min.time())
     since = today_start - timedelta(days=days - 1)
 
     # Total scheduled
@@ -329,12 +372,21 @@ async def auto_schedule_wrong_question(
     schedule = result.scalar_one_or_none()
 
     if schedule:
-        # 已有 schedule → 重置为困难状态
-        schedule.interval = 1
-        schedule.ease_factor = 2.5
-        schedule.repetitions = 0
+        # 已有 schedule → 使用 SM-2 算法处理做错，保留已有 ease_factor
+        # 以 quality=0（完全不会）调用 calc_sm2，使用当前调度参数作为输入
+        sm2_result = calc_sm2(
+            quality=0,
+            efactor=schedule.ease_factor or 2.5,
+            interval=schedule.interval or 1,
+            repetitions=schedule.repetitions or 0,
+            review_date=utcnow().date(),
+        )
+        schedule.interval = sm2_result["interval"]
+        schedule.ease_factor = sm2_result["efactor"]
+        schedule.repetitions = sm2_result["repetitions"]
         schedule.next_review_at = utcnow()
         schedule.last_reviewed_at = None
+        schedule.mastered = False
     else:
         # 获取题目科目
         q_result = await db.execute(
@@ -356,6 +408,9 @@ async def auto_schedule_wrong_question(
 
     await db.commit()
     await db.refresh(schedule)
+
+    await _sync_schedule_to_wq(db, schedule)
+
     return schedule
 
 
@@ -375,6 +430,7 @@ async def mark_mastered(
     schedule.mastered = True
     await db.commit()
     await db.refresh(schedule)
+    await _sync_schedule_to_wq(db, schedule)
     return schedule
 
 
@@ -394,4 +450,5 @@ async def unmark_mastered(
     schedule.mastered = False
     await db.commit()
     await db.refresh(schedule)
+    await _sync_schedule_to_wq(db, schedule)
     return schedule

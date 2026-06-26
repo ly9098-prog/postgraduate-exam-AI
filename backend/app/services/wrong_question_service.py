@@ -27,7 +27,7 @@ async def record_wrong(
         wq.review_count = (wq.review_count or 0) + 1
         wq.last_review_at = utcnow()
         wq.mastered = False
-        # 旧数据没有 SM-2 字段时初始化
+        # SM-2 字段（兼容/历史字段，主调度来源为 ReviewSchedule）
         if wq.efactor is None or wq.efactor == 0:
             wq.efactor = 2.5
         if wq.next_review_date is None:

@@ -174,8 +174,9 @@ async def grade_submit(
     correct_answer = (question.answer or "").strip().upper()
     is_correct = user_answer == correct_answer
 
-    # 根据对错决定评分
-    rating = 5 if is_correct else 0
+    # 根据对错决定评分：答对 4 分（正确但稍有犹豫），答错 1 分（错误但能回想）
+    # 而非极端值 5/0，避免 SM-2 评分过于激进
+    rating = 4 if is_correct else 1
 
     try:
         review_result = await review_scheduler.submit_review(
@@ -269,8 +270,8 @@ async def grade_batch(
         correct_answer = (question.answer or "").strip().upper()
         is_correct = user_answer == correct_answer
 
-        # 根据对错决定评分
-        rating = 5 if is_correct else 0
+        # 根据对错决定评分：答对 4 分，答错 1 分
+        rating = 4 if is_correct else 1
 
         try:
             review_result = await review_scheduler.submit_review(
