@@ -27,14 +27,6 @@ async def _sync_schedule_to_wq(
     )
     wq = wq_result.scalar_one_or_none()
     if wq:
-        wq.efactor = schedule.ease_factor
-        wq.interval = schedule.interval
-        wq.repetitions = schedule.repetitions
-        wq.next_review_date = (
-            schedule.next_review_at.date()
-            if schedule.next_review_at else utcnow().date()
-        )
-        wq.mastered = schedule.mastered
         wq.last_review_at = schedule.last_reviewed_at
         await db.commit()
 

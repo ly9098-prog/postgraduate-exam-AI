@@ -1,5 +1,3 @@
-from datetime import date, datetime, timedelta
-
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,20 +18,11 @@ async def record_wrong(
     )
     wq = result.scalars().first()
 
-    today = utcnow().date()
-
     if wq:
         wq.wrong_answer = wrong_answer
         wq.review_count = (wq.review_count or 0) + 1
         wq.last_review_at = utcnow()
         wq.mastered = False
-        # SM-2 字段（兼容/历史字段，主调度来源为 ReviewSchedule）
-        if wq.efactor is None or wq.efactor == 0:
-            wq.efactor = 2.5
-        if wq.next_review_date is None:
-            wq.next_review_date = today + timedelta(days=1)
-            wq.interval = 1
-            wq.repetitions = 0
     else:
         wq = WrongQuestion(
             user_id=user_id,
@@ -41,10 +30,6 @@ async def record_wrong(
             wrong_answer=wrong_answer,
             review_count=1,
             last_review_at=utcnow(),
-            efactor=2.5,
-            interval=1,
-            repetitions=0,
-            next_review_date=today + timedelta(days=1),
         )
         db.add(wq)
 
@@ -141,9 +126,9 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
 
     by_subject = [{"subject": r[0], "count": r[1]} for r in result3.all()]
 
-    unmastered_q = select(func.count(WrongQuestion.id)).where(
-        WrongQuestion.user_id == user_id,
-        WrongQuestion.mastered == False,
+    unmastered_q = select(func.count(ReviewSchedule.id)).where(
+        ReviewSchedule.user_id == user_id,
+        ReviewSchedule.mastered == False,
     )
     unmastered = (await db.execute(unmastered_q)).scalar() or 0
 
@@ -195,8 +180,6 @@ async def update_quality(
     # 通过 ReviewSchedule 路径提交评审（calc_sm2 → RS 更新 → _sync_schedule_to_wq → ReviewRecord）
     await submit_review(db, user_id, schedule.id, wq.question_id, quality)
 
-    # WQ 独有字段，不在 RS 同步范围内
-    wq.quality = quality
     wq.last_review_at = utcnow()
 
     # 保留旧版已掌握启发式：quality >= 4 且连续正确 >= 3 次
