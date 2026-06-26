@@ -1,12 +1,14 @@
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer_behavior import AnswerBehavior
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
+from app.models.review_scheduler import ReviewSchedule
 from app.models.wrong_question import WrongQuestion
+from app.core.time_utils import utcnow
 
 
 async def get_overview(db: AsyncSession, user_id: int) -> dict:
@@ -238,8 +240,9 @@ async def get_behavior_stats(db: AsyncSession, user_id: int) -> dict:
 
 
 async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
-    """遗忘趋势分析（基于 SM-2 数据）"""
-    today = date.today()
+    """遗忘趋势分析（基于 ReviewSchedule SM-2 数据）。"""
+    now = utcnow()
+    today = now.date()
 
     stuck = await db.execute(
         select(func.count(WrongQuestion.id)).where(
@@ -250,36 +253,43 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
     )
 
     pseudo = await db.execute(
-        select(WrongQuestion)
-        .where(
-            WrongQuestion.user_id == user_id,
-            WrongQuestion.mastered == True,
-            WrongQuestion.review_count >= 1,
-            WrongQuestion.next_review_date <= today + timedelta(days=3),
+        select(ReviewSchedule)
+        .join(
+            WrongQuestion,
+            and_(
+                WrongQuestion.user_id == ReviewSchedule.user_id,
+                WrongQuestion.question_id == ReviewSchedule.question_id,
+            ),
         )
-        .order_by(WrongQuestion.next_review_date)
+        .where(
+            ReviewSchedule.user_id == user_id,
+            ReviewSchedule.mastered == True,
+            WrongQuestion.review_count >= 1,
+            ReviewSchedule.next_review_at <= now + timedelta(days=3),
+        )
+        .order_by(ReviewSchedule.next_review_at)
         .limit(10)
     )
     pseudo_items = []
-    for wq in pseudo.scalars().all():
+    for s in pseudo.scalars().all():
         pseudo_items.append(
             {
-                "id": wq.id,
-                "question_id": wq.question_id,
-                "review_count": wq.review_count,
-                "interval": wq.interval,
-                "efactor": wq.efactor,
-                "next_review_date": str(wq.next_review_date)
-                if wq.next_review_date
+                "id": s.id,
+                "question_id": s.question_id,
+                "review_count": 0,
+                "interval": s.interval,
+                "efactor": s.ease_factor,
+                "next_review_date": str(s.next_review_at.date())
+                if s.next_review_at
                 else "",
             }
         )
 
     long_unmastered = await db.execute(
-        select(func.count(WrongQuestion.id)).where(
-            WrongQuestion.user_id == user_id,
-            WrongQuestion.mastered == False,
-            WrongQuestion.next_review_date <= today - timedelta(days=7),
+        select(func.count(ReviewSchedule.id)).where(
+            ReviewSchedule.user_id == user_id,
+            ReviewSchedule.mastered == False,
+            ReviewSchedule.next_review_at <= now - timedelta(days=7),
         )
     )
 

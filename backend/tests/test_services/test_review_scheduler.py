@@ -458,19 +458,17 @@ class TestSubmitReview:
         assert result["rating"] == 0
 
     def test_syncs_wrong_question_after_submit_review(self):
-        """submit_review 后 WrongQuestion 的 SM-2 字段应与 ReviewSchedule 同步。"""
+        """submit_review 后 WrongQuestion.last_review_at 应与 ReviewSchedule 同步。"""
         db = _make_mock_db()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         schedule = _make_schedule_mock(
             id=1, question_id=10, interval=5, ease_factor=2.5, repetitions=2,
-            next_review_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1),
+            next_review_at=now - timedelta(days=1),
         )
+        schedule.last_reviewed_at = now
         from app.models.wrong_question import WrongQuestion
         wq_mock = MagicMock(spec=WrongQuestion)
-        wq_mock.efactor = 2.5
-        wq_mock.interval = 0
-        wq_mock.repetitions = 0
-        wq_mock.next_review_date = None
-        wq_mock.mastered = False
+        wq_mock.last_review_at = None
 
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=schedule),   # schedule query
@@ -479,12 +477,7 @@ class TestSubmitReview:
 
         asyncio.run(submit_review(db, user_id=1, schedule_id=1, question_id=10, rating=4))
 
-        # WrongQuestion 字段应与更新后的 ReviewSchedule 一致
-        assert wq_mock.efactor == schedule.ease_factor
-        assert wq_mock.interval == schedule.interval
-        assert wq_mock.repetitions == schedule.repetitions
-        assert wq_mock.mastered == schedule.mastered
-        assert wq_mock.next_review_date == schedule.next_review_at.date()
+        assert wq_mock.last_review_at == schedule.last_reviewed_at
 
 
 # ── batch_submit_review Tests ──
@@ -599,19 +592,18 @@ class TestAutoScheduleWrongQuestion:
         assert existing.ease_factor > 1.3  # 不低于下限
         assert existing.mastered is False
 
-    def test_syncs_wrong_question_sm2_fields(self):
-        """auto_schedule_wrong_question 后，WrongQuestion 的 SM-2 字段应与 ReviewSchedule 同步。"""
+    def test_syncs_wrong_question_after_auto_schedule(self):
+        """auto_schedule_wrong_question 后 WrongQuestion.last_review_at 应与 ReviewSchedule 同步。"""
         db = _make_mock_db()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         existing = _make_schedule_mock(
             id=1, question_id=10, interval=30, ease_factor=2.8, repetitions=10,
-            next_review_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30),
+            next_review_at=now + timedelta(days=30),
         )
+        existing.last_reviewed_at = now
         from app.models.wrong_question import WrongQuestion
         wq_mock = MagicMock(spec=WrongQuestion)
-        wq_mock.efactor = 2.5
-        wq_mock.interval = 0
-        wq_mock.repetitions = 0
-        wq_mock.mastered = False
+        wq_mock.last_review_at = None
 
         _mock_execute_sequence(
             db,
@@ -621,11 +613,7 @@ class TestAutoScheduleWrongQuestion:
 
         asyncio.run(auto_schedule_wrong_question(db, user_id=1, question_id=10))
 
-        # WrongQuestion SM-2 应与 ReviewSchedule 一致
-        assert wq_mock.efactor == existing.ease_factor
-        assert wq_mock.interval == existing.interval
-        assert wq_mock.repetitions == existing.repetitions
-        assert wq_mock.mastered == existing.mastered
+        assert wq_mock.last_review_at == existing.last_reviewed_at
 
 
 # ── get_review_stats Tests ──
