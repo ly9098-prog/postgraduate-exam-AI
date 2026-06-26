@@ -1,6 +1,6 @@
 # 2240AI 系统架构
 
-> 基于代码真实状态，不含未来设计。最后更新：2026-06-23
+> 基于代码真实状态，不含未来设计。最后更新：2026-06-26
 
 ---
 
@@ -114,6 +114,50 @@ PDF → pdf_classifier (逐页判断)
 ```
 上传 → 文本提取 → 结构分析 → 题目切分 → 答案匹配 → 标准化 → 暂存区 → 人工审核 → 题库
 ```
+
+### SM-2 复习调度架构
+
+```
+做错题 → auto_schedule_wrong_question()
+  ├─ 创建/更新 ReviewSchedule（主调度数据源）
+  │   ├─ interval / ease_factor / repetitions
+  │   ├─ next_review_at (datetime, utcnow 校准)
+  │   └─ mastered
+  └─ _sync_schedule_to_wq()
+      └─ 回写 WrongQuestion 兼容字段
+          (efactor / interval / repetitions / next_review_date / mastered)
+
+复习 → review_scheduler.submit_review()
+  ├─ 校验 rating 0-5（0=完全不会，5=完美回忆）
+  ├─ calc_sm2() 计算新间隔/难度
+  ├─ 更新 ReviewSchedule
+  ├─ _sync_schedule_to_wq() 回写 WQ
+  └─ 创建 ReviewRecord（历史记录）
+
+自动批改 → grade_submit / grade_batch
+  ├─ 未提供用户自评 rating 时:
+  │   is_correct=True  → rating=4
+  │   is_correct=False → rating=1
+  └─ 同上调用 submit_review
+```
+
+**关键设计决策**：
+
+- **ReviewSchedule 是主数据源**。WrongQuestion 上的 SM-2 字段（efactor/interval/repetitions/next_review_date/mastered）仅为历史兼容字段，不参与新版复习调度。
+- **同步机制**：每次 ReviewSchedule 更新后，`_sync_schedule_to_wq()` 自动回写 WrongQuestion 对应字段，确保两表一致。
+- **时区统一**：复习日期统一使用 `utcnow().date()`，避免服务器本地时区导致日期偏移。
+- **Rating 0 是合法值**：SM-2 quality 评分范围 0-5，0 表示完全不会，会重置连续正确计数（repetitions=0）并缩短间隔。
+
+**当前技术债**：
+
+| 问题 | 说明 | 状态 |
+|------|------|------|
+| 旧接口未迁移 | `/review/due`、`/review/submit`、`/review/stats` 仍基于 WrongQuestion 兼容字段，未读取 ReviewSchedule | ✅ P1-1 已修复 |
+| 旧 SM-2 路径残留 | `wrong_question_service.update_quality()` 在 WQ 上独立执行 `calc_sm2()`，绕开 ReviewSchedule | ✅ P0-1 已修复 |
+| 双表维护 | WrongQuestion 的 SM-2 字段实际冗余，后续应废弃只读 ReviewSchedule | ⏳ P2 待处理 |
+| 时区混用 | 旧路径使用 `date.today()`（本地时区），新路径使用 `utcnow().date()`（UTC） | ✅ P1-3/4 已修复 |
+
+> 完整设计与技术债清单详见 [REVIEW_SYSTEM_DESIGN.md](REVIEW_SYSTEM_DESIGN.md)。
 
 ### 批量图片导入 + SSE 流式追踪
 
