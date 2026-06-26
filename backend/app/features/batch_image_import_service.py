@@ -501,7 +501,7 @@ async def _merge_image_texts(
             }
         job.merge_status = "running"
         job.merge_started_at = now
-        await db.flush()
+        await db.commit()
 
         rows = (
             await db.execute(
@@ -1115,6 +1115,7 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
     ).scalars().all()
     trace_events = [
         {
+            "id": e.id,
             "seq": e.id,
             "item_seq": e.item_seq or 0,
             "request_id": e.request_id,
@@ -1176,6 +1177,7 @@ async def poll_trace_events(
     ).scalars().all()
     return [
         {
+            "id": e.id,
             "seq": e.id,
             "item_seq": e.item_seq or 0,
             "step": e.step,

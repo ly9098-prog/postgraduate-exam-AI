@@ -721,3 +721,361 @@ class TestBatchMergeBulkUpdate:
                     assert q.superseded_by_batch_id is None
 
         _run(_go())
+
+
+# =========================================================================
+# 7. Same-batch duplicate detection in submit_to_review
+# =========================================================================
+
+
+class TestSubmitToReviewSameBatchDuplicates:
+    """submit_to_review should detect duplicates within the same flush batch."""
+
+    def test_same_batch_duplicate_detected(self):
+        """Two questions with same hash in same flush batch → second marked duplicate."""
+        from app.features.review_service import submit_to_review
+        from unittest.mock import MagicMock, AsyncMock
+
+        db = MagicMock()
+        added = []
+        def _add(obj):
+            obj.id = len(added) + 1
+            added.append(obj)
+
+        db.add = MagicMock(side_effect=_add)
+        db.flush = AsyncMock()
+        db.commit = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(
+            scalar_one_or_none=MagicMock(return_value=None),
+            scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))),
+        ))
+        db.expunge = MagicMock()
+        db.rollback = AsyncMock()
+
+        # Two questions with identical content → same question_hash
+        qs = [
+            {
+                "stem": "What is 1+1?",
+                "options": [{"key": "A", "text": "1"}, {"key": "B", "text": "2"}],
+                "answer": "B",
+                "question_type": "single_choice",
+                "subject": "math2",
+                "confidence_score": 0.9,
+                "is_valid": True,
+                "errors": [],
+                "warnings": [],
+                "stem_hash": "hash_dup_000",
+            },
+            {
+                "stem": "What is 1+1?",
+                "options": [{"key": "A", "text": "1"}, {"key": "B", "text": "2"}],
+                "answer": "B",
+                "question_type": "single_choice",
+                "subject": "math2",
+                "confidence_score": 0.9,
+                "is_valid": True,
+                "errors": [],
+                "warnings": [],
+                "stem_hash": "hash_dup_000",
+            },
+        ]
+
+        result = asyncio.run(submit_to_review(db, qs))
+
+        assert result["written"] == 2
+        items = result["items"]
+        # First item should be normal
+        assert items[0]["duplicate_status"] == "normal"
+        assert items[0]["duplicate_of_import_id"] is None
+        # Second item should be duplicate of first
+        assert items[1]["duplicate_status"] == "possible_duplicate"
+        assert items[1]["duplicate_of_import_id"] == items[0]["id"], (
+            f"Second item should point to first item's id ({items[0]['id']}), "
+            f"got {items[1]['duplicate_of_import_id']}"
+        )
+
+    def test_cross_batch_duplicate_detected(self):
+        """Questions with same hash across flush batches → second batch marked duplicate."""
+        from app.features.review_service import submit_to_review, _REVIEW_COMMIT_BATCH_SIZE
+        from unittest.mock import MagicMock, AsyncMock
+
+        db = MagicMock()
+        added = []
+        def _add(obj):
+            obj.id = len(added) + 1
+            added.append(obj)
+
+        db.add = MagicMock(side_effect=_add)
+        db.flush = AsyncMock()
+        db.commit = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(
+            scalar_one_or_none=MagicMock(return_value=None),
+            scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))),
+        ))
+        db.expunge = MagicMock()
+        db.rollback = AsyncMock()
+
+        # Create exactly _REVIEW_COMMIT_BATCH_SIZE unique questions + 1 duplicate of the first
+        qs = []
+        for i in range(_REVIEW_COMMIT_BATCH_SIZE):
+            qs.append({
+                "stem": f"Unique question {i}",
+                "options": [{"key": "A", "text": "opt"}],
+                "answer": "A",
+                "question_type": "single_choice",
+                "subject": "math2",
+                "confidence_score": 0.8,
+                "is_valid": True,
+                "errors": [],
+                "warnings": [],
+                "stem_hash": f"hash_unique_{i:04d}",
+            })
+        # Add a duplicate of the first question (different flush batch)
+        qs.append({
+            "stem": "Unique question 0",
+            "options": [{"key": "A", "text": "opt"}],
+            "answer": "A",
+            "question_type": "single_choice",
+            "subject": "math2",
+            "confidence_score": 0.8,
+            "is_valid": True,
+            "errors": [],
+            "warnings": [],
+            "stem_hash": "hash_unique_0000",
+        })
+
+        result = asyncio.run(submit_to_review(db, qs))
+
+        assert result["written"] == _REVIEW_COMMIT_BATCH_SIZE + 1
+        items = result["items"]
+        # First item should be normal
+        assert items[0]["duplicate_status"] == "normal"
+        # Last item (duplicate) should point to first
+        last = items[-1]
+        assert last["duplicate_status"] == "possible_duplicate"
+        assert last["duplicate_of_import_id"] == items[0]["id"]
+
+    def test_duplicate_batch_flush_still_batched(self):
+        """Same-batch duplicate detection does not degrade flush batching."""
+        from app.features.review_service import submit_to_review
+        from unittest.mock import MagicMock, AsyncMock
+
+        db = MagicMock()
+        added = []
+        def _add(obj):
+            obj.id = len(added) + 1
+            added.append(obj)
+
+        db.add = MagicMock(side_effect=_add)
+        db.flush = AsyncMock()
+        db.commit = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(
+            scalar_one_or_none=MagicMock(return_value=None),
+            scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))),
+        ))
+        db.expunge = MagicMock()
+        db.rollback = AsyncMock()
+
+        # 100 items with 50 duplicates → still only 3 flushes (2 batch + 1 tail)
+        qs = []
+        for i in range(100):
+            qs.append({
+                "stem": f"Question {i % 50}",
+                "options": [{"key": "A", "text": "opt"}],
+                "answer": "A",
+                "question_type": "single_choice",
+                "subject": "math2",
+                "confidence_score": 0.8,
+                "is_valid": True,
+                "errors": [],
+                "warnings": [],
+                "stem_hash": f"hash_{i % 50:04d}",
+            })
+
+        db.flush.reset_mock()
+        db.commit.reset_mock()
+        asyncio.run(submit_to_review(db, qs))
+
+        # 100 items: 2 full batch flushes (50 each) + 0 tail = 2 flushes
+        assert db.flush.call_count == 2, (
+            f"Expected 2 flushes, got {db.flush.call_count}"
+        )
+
+
+# =========================================================================
+# 8. Temp file cleanup on duplicate request_id
+# =========================================================================
+
+
+class TestTempFileCleanupOnDuplicate:
+    """Temp files should be cleaned up when request_id is a duplicate."""
+
+    def test_cleanup_temp_sources_removes_files(self, tmp_path):
+        """_cleanup_temp_sources should delete existing temp files."""
+        from app.api.v1.admin_imports import _cleanup_temp_sources
+
+        # Create actual temp files
+        tf1 = tempfile.NamedTemporaryFile(prefix="batch_img_", suffix=".png", delete=False)
+        tf1_path = tf1.name
+        tf1.close()
+
+        tf2 = tempfile.NamedTemporaryFile(prefix="batch_img_", suffix=".jpg", delete=False)
+        tf2_path = tf2.name
+        tf2.close()
+
+        assert os.path.exists(tf1_path)
+        assert os.path.exists(tf2_path)
+
+        class FakeSource:
+            def __init__(self, path):
+                self.temp_path = path
+
+        sources = [FakeSource(tf1_path), FakeSource(tf2_path)]
+        _cleanup_temp_sources(sources)
+
+        assert not os.path.exists(tf1_path), f"Temp file {tf1_path} should be deleted"
+        assert not os.path.exists(tf2_path), f"Temp file {tf2_path} should be deleted"
+
+    def test_cleanup_temp_sources_missing_file_does_not_raise(self, tmp_path):
+        """_cleanup_temp_sources should not raise if file is already gone."""
+        from app.api.v1.admin_imports import _cleanup_temp_sources
+
+        class FakeSource:
+            def __init__(self, path):
+                self.temp_path = path
+
+        sources = [FakeSource("/tmp/nonexistent_file_xyz.png")]
+        # Should not raise
+        _cleanup_temp_sources(sources)
+
+    def test_cleanup_temp_sources_no_temp_path_does_not_raise(self):
+        """_cleanup_temp_sources should handle source without temp_path."""
+        from app.api.v1.admin_imports import _cleanup_temp_sources
+
+        class FakeSourceNoPath:
+            pass
+
+        sources = [FakeSourceNoPath()]
+        _cleanup_temp_sources(sources)
+
+
+# =========================================================================
+# 9. Trace event id/seq compatibility
+# =========================================================================
+
+
+class TestTraceEventIdSeqCompat:
+    """Trace event API responses must include both id and seq (seq == id)."""
+
+    def test_poll_trace_events_returns_id_and_seq(self, tmp_path):
+        """poll_trace_events returns both id and seq, with seq == id."""
+        from app.features.batch_image_import_service import poll_trace_events
+        from app.models.import_batch_job import BatchJobTraceEvent
+
+        async def _go():
+            sm, _ = await _make_session(tmp_path)
+            job_id = "id_seq_001"
+            async with sm() as db:
+                db.add(BatchJobTraceEvent(
+                    job_id=job_id, seq=0,
+                    step="test", status="success", message="ev1",
+                ))
+                db.add(BatchJobTraceEvent(
+                    job_id=job_id, seq=0,
+                    step="test", status="success", message="ev2",
+                ))
+                await db.commit()
+
+            async with sm() as db:
+                events = await poll_trace_events(db, job_id)
+
+            assert len(events) == 2
+            for ev in events:
+                assert "id" in ev, f"Event missing 'id' field: {ev}"
+                assert "seq" in ev, f"Event missing 'seq' field: {ev}"
+                assert ev["id"] == ev["seq"], (
+                    f"id ({ev['id']}) should equal seq ({ev['seq']})"
+                )
+            # Events ordered by auto-increment id
+            assert events[0]["id"] == 1
+            assert events[1]["id"] == 2
+
+        _run(_go())
+
+    def test_poll_trace_events_since_id_not_seq(self, tmp_path):
+        """Incremental query uses id, not DB seq. Even with seq=0, since_id works."""
+        from app.features.batch_image_import_service import poll_trace_events
+        from app.models.import_batch_job import BatchJobTraceEvent
+
+        async def _go():
+            sm, _ = await _make_session(tmp_path)
+            job_id = "id_seq_since"
+            async with sm() as db:
+                db.add(BatchJobTraceEvent(
+                    job_id=job_id, seq=0,
+                    step="test", status="success", message="ev1",
+                ))
+                db.add(BatchJobTraceEvent(
+                    job_id=job_id, seq=0,
+                    step="test", status="success", message="ev2",
+                ))
+                db.add(BatchJobTraceEvent(
+                    job_id=job_id, seq=0,
+                    step="test", status="success", message="ev3",
+                ))
+                await db.commit()
+
+            async with sm() as db:
+                # since_id=1 → should return events with id > 1 (ids 2,3)
+                events = await poll_trace_events(db, job_id, since_id=1)
+            assert len(events) == 2
+            assert events[0]["id"] == 2
+            assert events[1]["id"] == 3
+
+        _run(_go())
+
+
+# =========================================================================
+# 10. merge_status persistence in _merge_image_texts
+# =========================================================================
+
+
+class TestMergeStatusPersistence:
+    """_merge_image_texts must commit merge_status='running', not just flush."""
+
+    def test_merge_status_skip_when_insufficient_items(self, tmp_path):
+        """_merge_image_texts sets merge_status='skipped' when < 2 items."""
+        from app.features.batch_image_import_service import _merge_image_texts
+        from app.models.import_batch_job import ImportBatchJob, ImportBatchJobItem
+
+        async def _go():
+            sm, _ = await _make_session(tmp_path)
+            job_id = "merge_skip_001"
+
+            async with sm() as db:
+                db.add(ImportBatchJob(**_make_job(
+                    job_id, status="running",
+                )))
+                # Only 1 succeeded item → merge should be skipped
+                db.add(ImportBatchJobItem(**_make_item(
+                    job_id, seq=1, status="succeeded",
+                    ocr_cleaned_text="Question 1",
+                    review_batch_id="OLD_BATCH",
+                )))
+                await db.commit()
+
+            result = await _merge_image_texts(
+                job_id=job_id, subject="math2", options={},
+            )
+            assert not result.get("merged")
+            assert "only 1 succeeded" in result.get("reason", "").lower()
+
+            # merge_status should be "skipped" (not stuck at "running")
+            async with sm() as db:
+                job = await db.get(ImportBatchJob, job_id)
+                assert job is not None
+                assert job.merge_status == "skipped", (
+                    f"Expected 'skipped', got {job.merge_status}"
+                )
+
+        _run(_go())
