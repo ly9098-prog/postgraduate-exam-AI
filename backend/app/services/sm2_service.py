@@ -1,5 +1,5 @@
-import math
 from datetime import date, timedelta
+import math
 
 
 def calc_sm2(
@@ -33,7 +33,7 @@ def calc_sm2(
         elif repetitions == 1:
             new_interval = 6
         else:
-            new_interval = max(1, int(math.floor(interval * efactor + 0.5)))
+            new_interval = max(1, math.floor(interval * efactor + 0.5))
         new_repetitions = repetitions + 1
 
     new_efactor = efactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))

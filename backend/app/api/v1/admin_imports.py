@@ -6,7 +6,7 @@ import tempfile
 
 import json
 
-from fastapi import BackgroundTasks, APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile, status
+from fastapi import BackgroundTasks, APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -663,21 +663,6 @@ def _validate_batch_image(filename: str, content: bytes, content_type: str | Non
     return None
 
 
-def _cleanup_temp_sources(sources: list) -> None:
-    """Best-effort cleanup of temp files for duplicate request.
-
-    Only cleans files created during this request; never touches existing job files.
-    Failure is logged but not raised.
-    """
-    for src in sources:
-        temp_path = src.temp_path if hasattr(src, "temp_path") else None
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.unlink(temp_path)
-            except OSError as exc:
-                logger.warning("Failed to cleanup temp file %s: %s", temp_path, exc)
-
-
 @router.post("/batch-image/upload", response_model=BatchImageUploadResponse)
 async def batch_image_upload(
     files: list[UploadFile],
@@ -832,8 +817,6 @@ async def batch_image_upload(
     is_duplicate = job.status == "duplicate"
     if is_duplicate:
         logger.info("Duplicate batch image upload, returning existing job_id=%s", job.job_id)
-        # Cleanup temp files created during THIS request (not consumed by background task)
-        _cleanup_temp_sources(sources)
         return BatchImageUploadResponse(
             job_id=job.job_id,
             status="queued",
@@ -882,50 +865,28 @@ async def get_batch_image_job(
 @router.get("/batch-image/{job_id}/stream")
 async def stream_batch_image_job(
     job_id: str,
-    last_event_id_query: int = Query(0, alias="lastEventId"),
-    since_seq: int = Query(0, alias="since_seq"),
-    last_event_id_header: str | None = Header(None, alias="Last-Event-ID"),
+    since_seq: int = Query(0, alias="lastEventId"),
     _=Depends(require_permissions("import:read")),
 ):
-    """SSE 流：增量推送 trace events（基于自增 id），job 终态时发送 done event 后关闭。
-
-    参数解析优先级：lastEventId query > since_seq query > Last-Event-ID header > 0
-    """
+    """SSE 流：增量推送 trace events，job 终态时发送 done event 后关闭。"""
     from app.core.database import async_session
     from app.features import batch_image_import_service as batch_svc
 
-    # Parse last_event_id with priority
-    since_id = last_event_id_query
-    if since_id == 0 and since_seq > 0:
-        since_id = since_seq
-    if since_id == 0 and last_event_id_header:
-        try:
-            since_id = int(last_event_id_header)
-        except (ValueError, TypeError):
-            since_id = 0
-
     async def event_generator():
-        last_id = since_id
-        summary_last_refreshed = 0.0
-        import time as _time
+        last_seq = since_seq
         while True:
             async with async_session() as db:
                 events = await batch_svc.poll_trace_events(
-                    db, job_id, since_id=last_id
+                    db, job_id, since_seq=last_seq
                 )
                 for ev in events:
-                    last_id = ev["seq"]
+                    last_seq = ev["seq"]
                     yield f"id: {ev['seq']}\nevent: trace\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
 
-                # ── 节流：summary 最多每 5 秒刷新一次 ──
-                now_s = _time.time()
-                if events or (now_s - summary_last_refreshed) >= 5.0:
-                    summary_last_refreshed = now_s
-                    summary = await batch_svc.poll_job_summary(db, job_id)
-                    # Treat completed_with_warnings as terminal state too
-                    if summary and summary["status"] in ("completed", "completed_with_warnings", "failed"):
-                        yield f"event: done\ndata: {json.dumps(summary, ensure_ascii=False)}\n\n"
-                        return
+                summary = await batch_svc.poll_job_summary(db, job_id)
+                if summary and summary["status"] in ("completed", "failed"):
+                    yield f"event: done\ndata: {json.dumps(summary, ensure_ascii=False)}\n\n"
+                    return
 
             if not events:
                 yield ": heartbeat\n\n"
@@ -1260,3 +1221,22 @@ async def admin_export_batch_failure_cases(
         "exported": len(cases),
         "cases": cases,
     }
+
+
+def _cleanup_temp_sources(sources: list) -> None:
+    """Delete temporary source files left on disk after duplicate-request cleanup.
+
+    Safely ignores:
+    - Sources without a temp_path attribute
+    - Files that have already been deleted
+    """
+    for src in sources:
+        temp_path = getattr(src, "temp_path", None)
+        if not temp_path:
+            continue
+        try:
+            os.unlink(temp_path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            logger.warning("Failed to remove temp source: %s", temp_path)

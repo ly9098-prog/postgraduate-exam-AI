@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer_behavior import AnswerBehavior
@@ -8,7 +8,6 @@ from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.review_scheduler import ReviewSchedule
 from app.models.wrong_question import WrongQuestion
-from app.core.time_utils import utcnow
 
 
 async def get_overview(db: AsyncSession, user_id: int) -> dict:
@@ -58,10 +57,10 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
     total_wq, mastered_count = wq_result.one()
 
     due_count = await db.execute(
-        select(func.count(WrongQuestion.id)).where(
-            WrongQuestion.user_id == user_id,
-            WrongQuestion.mastered == False,
-            WrongQuestion.next_review_date <= today,
+        select(func.count(ReviewSchedule.id)).where(
+            ReviewSchedule.user_id == user_id,
+            ReviewSchedule.mastered == False,
+            ReviewSchedule.next_review_at <= datetime.now(),
         )
     )
 
@@ -240,9 +239,8 @@ async def get_behavior_stats(db: AsyncSession, user_id: int) -> dict:
 
 
 async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
-    """遗忘趋势分析（基于 ReviewSchedule SM-2 数据）。"""
-    now = utcnow()
-    today = now.date()
+    """遗忘趋势分析（基于 SM-2 数据，SM-2 状态源为 ReviewSchedule）"""
+    today = date.today()
 
     stuck = await db.execute(
         select(func.count(WrongQuestion.id)).where(
@@ -252,36 +250,42 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
         )
     )
 
+    # Pseudo-mastered: mastered with upcoming review in next 3 days
     pseudo = await db.execute(
-        select(ReviewSchedule)
+        select(
+            WrongQuestion.id,
+            WrongQuestion.question_id,
+            WrongQuestion.review_count,
+            ReviewSchedule.interval,
+            ReviewSchedule.ease_factor,
+            ReviewSchedule.next_review_at,
+        )
         .join(
-            WrongQuestion,
-            and_(
-                WrongQuestion.user_id == ReviewSchedule.user_id,
-                WrongQuestion.question_id == ReviewSchedule.question_id,
-            ),
+            ReviewSchedule,
+            (ReviewSchedule.user_id == WrongQuestion.user_id)
+            & (ReviewSchedule.question_id == WrongQuestion.question_id),
         )
         .where(
-            ReviewSchedule.user_id == user_id,
-            ReviewSchedule.mastered == True,
+            WrongQuestion.user_id == user_id,
+            WrongQuestion.mastered == True,
             WrongQuestion.review_count >= 1,
-            ReviewSchedule.next_review_at <= now + timedelta(days=3),
+            ReviewSchedule.next_review_at <= datetime.combine(
+                today + timedelta(days=3), datetime.min.time()
+            ),
         )
         .order_by(ReviewSchedule.next_review_at)
         .limit(10)
     )
     pseudo_items = []
-    for s in pseudo.scalars().all():
+    for row in pseudo.all():
         pseudo_items.append(
             {
-                "id": s.id,
-                "question_id": s.question_id,
-                "review_count": 0,
-                "interval": s.interval,
-                "efactor": s.ease_factor,
-                "next_review_date": str(s.next_review_at.date())
-                if s.next_review_at
-                else "",
+                "id": row[0],
+                "question_id": row[1],
+                "review_count": row[2],
+                "interval": row[3],
+                "efactor": row[4],
+                "next_review_date": str(row[5].date()) if row[5] else "",
             }
         )
 
@@ -289,7 +293,9 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
         select(func.count(ReviewSchedule.id)).where(
             ReviewSchedule.user_id == user_id,
             ReviewSchedule.mastered == False,
-            ReviewSchedule.next_review_at <= now - timedelta(days=7),
+            ReviewSchedule.next_review_at <= datetime.combine(
+                today - timedelta(days=7), datetime.min.time()
+            ),
         )
     )
 

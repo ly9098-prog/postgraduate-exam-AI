@@ -22,7 +22,10 @@ async def login(data: AdminLoginRequest, request: Request, response: Response, d
         admin_user.last_login_ip = request.client.host if request.client else None
         await db.commit()
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc))
+        msg = str(exc)
+        if "72字节" in msg:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=msg)
 
     response.set_cookie(
         "admin_refresh_token",
@@ -71,5 +74,8 @@ async def update_password(
     try:
         await change_admin_password(db, current_admin.user, data)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc))
+        msg = str(exc)
+        if "72字节" in msg:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=msg)
     return {"status": "ok"}

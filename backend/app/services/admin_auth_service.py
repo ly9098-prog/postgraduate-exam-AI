@@ -15,7 +15,11 @@ async def authenticate_admin(db: AsyncSession, data: AdminLoginRequest) -> Admin
     admin_user = result.scalar_one_or_none()
     if not admin_user:
         raise ValueError("用户名或密码错误")
-    if not verify_admin_password(data.password, admin_user.password_hash):
+    try:
+        password_ok = verify_admin_password(data.password, admin_user.password_hash)
+    except ValueError:
+        raise ValueError("密码长度不能超过72字节")
+    if not password_ok:
         raise ValueError("用户名或密码错误")
     return admin_user
 
@@ -85,8 +89,13 @@ async def change_admin_password(
     admin_user: AdminUser,
     data: AdminChangePasswordRequest,
 ) -> None:
-    if not verify_admin_password(data.old_password, admin_user.password_hash):
+    try:
+        old_ok = verify_admin_password(data.old_password, admin_user.password_hash)
+    except ValueError:
+        raise ValueError("密码长度不能超过72字节")
+    if not old_ok:
         raise ValueError("用户名或密码错误")
+    # hash_admin_password 内部已有字节长度校验，超长会抛 ValueError
     admin_user.password_hash = hash_admin_password(data.new_password)
     await set_admin_user_nbf(admin_user.id)
     await db.commit()

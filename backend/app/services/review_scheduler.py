@@ -10,25 +10,19 @@ from app.services.sm2_service import calc_sm2
 from app.core.time_utils import utcnow
 
 
-async def _sync_schedule_to_wq(
-    db: AsyncSession, schedule: ReviewSchedule
-) -> None:
-    """同步 ReviewSchedule 的 SM-2 字段到 WrongQuestion 兼容字段。
-
-    WrongQuestion 的 efactor/interval/repetitions/next_review_date/mastered
-    仅为兼容/历史字段，主调度来源为 ReviewSchedule。
-    每次更新 ReviewSchedule 后调用本函数确保两表一致。
-    """
-    wq_result = await db.execute(
+async def _sync_schedule_to_wq(db: AsyncSession, schedule: ReviewSchedule) -> None:
+    """单向同步 ReviewSchedule → WrongQuestion（仅同步 last_review_at / mastered）。
+    不写 SM-2 字段，不单独 commit。"""
+    result = await db.execute(
         select(WrongQuestion).where(
             WrongQuestion.user_id == schedule.user_id,
             WrongQuestion.question_id == schedule.question_id,
         )
     )
-    wq = wq_result.scalar_one_or_none()
+    wq = result.scalar_one_or_none()
     if wq:
         wq.last_review_at = schedule.last_reviewed_at
-        await db.commit()
+        wq.mastered = schedule.mastered
 
 
 async def get_today_review(
@@ -43,34 +37,18 @@ async def get_today_review(
         ReviewSchedule.next_review_at <= now,
         ReviewSchedule.mastered == False,
     ]
-
     if subject:
-        # subject 筛选在 SQL 层完成，避免 limit 后过滤漏题
-        count_q = (
-            select(func.count(ReviewSchedule.id))
-            .join(Question, ReviewSchedule.question_id == Question.id)
-            .where(and_(*conditions, Question.subject == subject))
-        )
-        total = (await db.execute(count_q)).scalar()
+        conditions.append(ReviewSchedule.subject == subject)
 
-        q = (
-            select(ReviewSchedule)
-            .join(Question, ReviewSchedule.question_id == Question.id)
-            .where(and_(*conditions, Question.subject == subject))
-            .order_by(ReviewSchedule.next_review_at.asc())
-            .limit(limit)
-        )
-    else:
-        count_q = select(func.count(ReviewSchedule.id)).where(and_(*conditions))
-        total = (await db.execute(count_q)).scalar()
+    count_q = select(func.count(ReviewSchedule.id)).where(and_(*conditions))
+    total = (await db.execute(count_q)).scalar()
 
-        q = (
-            select(ReviewSchedule)
-            .where(and_(*conditions))
-            .order_by(ReviewSchedule.next_review_at.asc())
-            .limit(limit)
-        )
-
+    q = (
+        select(ReviewSchedule)
+        .where(and_(*conditions))
+        .order_by(ReviewSchedule.next_review_at.asc())
+        .limit(limit)
+    )
     result = await db.execute(q)
     schedules = list(result.scalars().all())
 
@@ -80,7 +58,8 @@ async def get_today_review(
         q_result = await db.execute(
             select(Question).where(Question.id.in_(question_ids))
         )
-        questions_map = {q.id: q for q in q_result.scalars().all()}
+        all_questions = list(q_result.scalars().all())
+        questions_map = {q.id: q for q in all_questions}
 
     questions = []
     for s in schedules:
@@ -117,6 +96,8 @@ async def submit_review(
     schedule_id: int,
     question_id: int,
     rating: int,
+    *,
+    auto_commit: bool = True,
 ) -> dict:
     if rating < 0 or rating > 5:
         raise ValueError(f"评分必须在 0-5 之间，收到: {rating}")
@@ -152,6 +133,7 @@ async def submit_review(
     )
     schedule.last_reviewed_at = utcnow()
 
+    # 同步 last_review_at / mastered 到 WrongQuestion
     await _sync_schedule_to_wq(db, schedule)
 
     record = ReviewRecord(
@@ -166,8 +148,10 @@ async def submit_review(
         reviewed_at=utcnow(),
     )
     db.add(record)
-    await db.commit()
-    await db.refresh(schedule)
+
+    if auto_commit:
+        await db.commit()
+        await db.refresh(schedule)
 
     return {
         "schedule_id": schedule.id,
@@ -187,19 +171,32 @@ async def batch_submit_review(
 ) -> dict:
     results = []
     for item in reviews:
-        r = await submit_review(
-            db=db,
-            user_id=user_id,
-            schedule_id=item["schedule_id"],
-            question_id=item["question_id"],
-            rating=item["rating"],
-        )
-        results.append({
-            "schedule_id": r["schedule_id"],
-            "question_id": r["question_id"],
-            "next_review_at": r["next_review_at"],
-            "is_correct": r["is_correct"],
-        })
+        try:
+            r = await submit_review(
+                db=db,
+                user_id=user_id,
+                schedule_id=item["schedule_id"],
+                question_id=item["question_id"],
+                rating=item["rating"],
+                auto_commit=False,
+            )
+            results.append({
+                "schedule_id": r["schedule_id"],
+                "question_id": r["question_id"],
+                "next_review_at": r["next_review_at"],
+                "is_correct": r["is_correct"],
+            })
+        except ValueError as e:
+            # 单题失败不影响其他题目，记录错误并继续
+            results.append({
+                "schedule_id": item.get("schedule_id"),
+                "question_id": item.get("question_id"),
+                "next_review_at": None,
+                "is_correct": False,
+                "error": str(e),
+            })
+    # 单事务批量提交
+    await db.commit()
     return {"results": results, "total": len(results)}
 
 
@@ -365,21 +362,12 @@ async def auto_schedule_wrong_question(
     schedule = result.scalar_one_or_none()
 
     if schedule:
-        # 已有 schedule → 使用 SM-2 算法处理做错，保留已有 ease_factor
-        # 以 quality=0（完全不会）调用 calc_sm2，使用当前调度参数作为输入
-        sm2_result = calc_sm2(
-            quality=0,
-            efactor=schedule.ease_factor or 2.5,
-            interval=schedule.interval or 1,
-            repetitions=schedule.repetitions or 0,
-            review_date=utcnow().date(),
-        )
-        schedule.interval = sm2_result["interval"]
-        schedule.ease_factor = sm2_result["efactor"]
-        schedule.repetitions = sm2_result["repetitions"]
+        # 已有 schedule → 重置为困难状态
+        schedule.interval = 1
+        schedule.ease_factor = 2.5
+        schedule.repetitions = 0
         schedule.next_review_at = utcnow()
         schedule.last_reviewed_at = None
-        schedule.mastered = False
     else:
         # 获取题目科目
         q_result = await db.execute(
@@ -399,11 +387,9 @@ async def auto_schedule_wrong_question(
         )
         db.add(schedule)
 
+    await _sync_schedule_to_wq(db, schedule)
     await db.commit()
     await db.refresh(schedule)
-
-    await _sync_schedule_to_wq(db, schedule)
-
     return schedule
 
 
@@ -421,9 +407,9 @@ async def mark_mastered(
     if not schedule:
         return None
     schedule.mastered = True
+    await _sync_schedule_to_wq(db, schedule)
     await db.commit()
     await db.refresh(schedule)
-    await _sync_schedule_to_wq(db, schedule)
     return schedule
 
 
@@ -441,7 +427,7 @@ async def unmark_mastered(
     if not schedule:
         return None
     schedule.mastered = False
+    await _sync_schedule_to_wq(db, schedule)
     await db.commit()
     await db.refresh(schedule)
-    await _sync_schedule_to_wq(db, schedule)
     return schedule

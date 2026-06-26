@@ -193,6 +193,8 @@ Page({
     elapsedSec: 0,
     elapsedText: '00:00',
     _timer: null,
+    questionTimeMap: {},
+    currentQuestionStartedAt: 0,
 
     // 答题卡弹窗
     showSheet: false,
@@ -276,6 +278,8 @@ Page({
       feedbackComboText: '',
       elapsedSec: 0,
       startTime: Date.now(),
+      questionTimeMap: {},
+      currentQuestionStartedAt: 0,
     })
     this._startTimer()
     await this._loadQuestions()
@@ -344,7 +348,22 @@ Page({
     }
   },
 
+  _settleQuestionTime() {
+    const { currentIndex, questions, currentQuestionStartedAt, questionTimeMap } = this.data
+    if (!currentQuestionStartedAt || !questions.length) return
+    const q = questions[currentIndex]
+    if (!q) return
+    const elapsed = Math.floor((Date.now() - currentQuestionStartedAt) / 1000)
+    const key = String(q.id)
+    const map = { ...questionTimeMap }
+    map[key] = (map[key] || 0) + elapsed
+    this.setData({ questionTimeMap: map })
+  },
+
   _showQuestion(index) {
+    // 结算上一题的用时
+    this._settleQuestionTime()
+
     const q = this.data.questions[index]
     if (!q) return
     const isBlankChoice = _isMultiBlankChoice(q)
@@ -403,6 +422,7 @@ Page({
       blankSelectedFlags,
       renderCount,
       _renderKey: (this.data._renderKey || 0) + 1,
+      currentQuestionStartedAt: Date.now(),
     })
 
     // Render invariant: verify only one render mode is active
@@ -848,13 +868,16 @@ Page({
     }
 
     this._clearTimer()
+    // 结算最后一题的用时
+    this._settleQuestionTime()
     this.setData({ submitting: true })
 
+    const questionTimeMap = this.data.questionTimeMap
     try {
       const answers = completedQuestions.map(q => ({
         question_id: q.id,
         user_answer: answerMap[String(q.id)] || '',
-        used_time: Math.floor((Date.now() - startTime) / 1000),
+        used_time: questionTimeMap[String(q.id)] || 0,
       }))
 
       debugLog(this.data.traceId, 'SUBMIT', {
