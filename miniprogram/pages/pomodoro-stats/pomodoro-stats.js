@@ -47,6 +47,7 @@ Page({
     _dispTodayDurationText: '0分钟',
     _dispWeekSessions: 0,
     _dispWeekDurationText: '0分钟',
+    _chartsReady: false,
   },
 
   onLoad() {
@@ -65,7 +66,7 @@ Page({
     const m = String(now.getMonth() + 1).padStart(2, '0')
     const d = String(now.getDate()).padStart(2, '0')
     const today = `${y}-${m}-${d}`
-    this.setData({ selectedDate: today, _todayDate: today })
+    this.setData({ selectedDate: today, _todayDate: today, pageEntered: true })
   },
 
   onShow() {
@@ -101,8 +102,11 @@ Page({
   /* ==================== Data Loading ==================== */
 
   async loadData() {
+    // 性能优先：停止上一次可能残留的动画/定时器；首次加载才显示 loading，避免刷新时反复销毁页面 DOM。
+    this._cancelPendingWork()
     const reqId = this._requestId
-    this.setData({ loading: true })
+    const isInitialLoad = !this._hasData
+    this.setData({ loading: isInitialLoad })
     try {
       const [stats, trends, subjects, hist] = await Promise.all([
         api.get('/pomodoro/stats'),
@@ -118,7 +122,7 @@ Page({
       this._pieSectors = null
       this._shadeCache = null
 
-      const willAnimate = !this._hasData
+      const isInitialRender = !this._hasData
       this._hasData = true
 
       this.setData({
@@ -148,28 +152,15 @@ Page({
         historyTotal: hist.total || 0,
         loading: false,
         pageEntered: true,
-        _dispTodaySessions: 0,
-        _dispTodayDurationText: '0分钟',
-        _dispWeekSessions: 0,
-        _dispWeekDurationText: '0分钟',
+        // 首次进入保留轻量 0→1 动态加载；非首次刷新直接保持最终值，避免重复闪动。
+        _dispTodaySessions: isInitialRender ? 0 : (stats.today_sessions || 0),
+        _dispTodayDurationText: isInitialRender ? '0分钟' : this._fmtMin(stats.today_duration_sec || 0),
+        _dispWeekSessions: isInitialRender ? 0 : (stats.week_sessions || 0),
+        _dispWeekDurationText: isInitialRender ? '0分钟' : this._fmtMin(stats.week_duration_sec || 0),
+        // 图表先挂载，再由轻量动画从 0 绘制到最终 3D 状态。
+        _chartsReady: isInitialRender ? false : this.data._chartsReady,
       }, () => {
-        if (!this._alive || !this._isVisible || reqId !== this._requestId) return
-        this._initCanvases(() => {
-          if (!this._alive || !this._isVisible) return
-          if (willAnimate) {
-            this._renderPieChart(0)
-            this._renderTrendBars(0)
-            const node = this._pieCanvasNode
-            const raf = node && node.requestAnimationFrame
-              ? cb => node.requestAnimationFrame(cb)
-              : cb => setTimeout(cb, 16)
-            const animReqId = this._requestId
-            raf(() => raf(() => this._startAnimations(animReqId)))
-          } else {
-            this._renderPieChart(1)
-            this._renderTrendBars(1)
-          }
-        })
+        this._drawChartsWithSmoothAnimation(reqId, isInitialRender)
       })
     } catch (e) {
       if (!this._alive || reqId !== this._requestId) return
@@ -235,11 +226,20 @@ Page({
   _cancelPendingWork() {
     this._animActive = false
     this._finalDrawn = false
+    if (this._finalDrawTimers && this._finalDrawTimers.length) {
+      this._finalDrawTimers.forEach(id => clearTimeout(id))
+      this._finalDrawTimers = []
+    }
     this._requestId++
-    if (this._rafId && this._pieCanvasNode && this._pieCanvasNode.cancelAnimationFrame) {
-      this._pieCanvasNode.cancelAnimationFrame(this._rafId)
+    if (this._rafId) {
+      if (this._rafIsTimer) {
+        clearTimeout(this._rafId)
+      } else if (this._pieCanvasNode && this._pieCanvasNode.cancelAnimationFrame) {
+        this._pieCanvasNode.cancelAnimationFrame(this._rafId)
+      }
     }
     this._rafId = null
+    this._rafIsTimer = false
     if (this._animTimer) {
       clearTimeout(this._animTimer)
       this._animTimer = null
@@ -286,28 +286,65 @@ Page({
     return v
   },
 
+  _drawChartsWithSmoothAnimation(reqId, isInitialRender) {
+    const draw = () => {
+      if (!this._alive || !this._isVisible || reqId !== this._requestId) return
+      this._initCanvases(() => {
+        if (!this._alive || !this._isVisible || reqId !== this._requestId) return
+
+        if (isInitialRender) {
+          // 先画 0 帧并显示画布，再启动轻量 0→1 动画。
+          this._renderPieChart(0, true)
+          this._renderTrendBars(0, true)
+          this.setData({ _chartsReady: true }, () => {
+            this._startAnimations(reqId)
+          })
+        } else {
+          // 非首次刷新不重新跑入场动画，避免页面回退/切换时闪动。
+          this._renderPieChart(1, false)
+          this._renderTrendBars(1, false)
+          if (!this.data._chartsReady) this.setData({ _chartsReady: true })
+        }
+      })
+    }
+
+    // loading 隐藏后先让页面完成一次布局，再初始化 canvas。
+    // 这样保留动态加载感，同时避免 DOM 挂载、canvas 初始化、重 3D 绘制挤在同一帧。
+    if (typeof wx.nextTick === 'function') {
+      wx.nextTick(() => {
+        setTimeout(draw, 32)
+      })
+    } else {
+      setTimeout(draw, 32)
+    }
+  },
+
   _startAnimations(reqId) {
     if (!this._alive || !this._isVisible || reqId !== this._requestId) return
     this._animActive = true
     this._finalDrawn = false
-    const animDuration = 700
+
+    // 控制在较短时长内完成，减少用户等待；canvas 低频刷新。
+    // 注意：动画结束时不在同一帧绘制完整重细节，而是先停在轻量 3D 终态，再分帧精修。
+    const animDuration = 520
     const startTime = Date.now()
 
-    // Number animation — independent timer (~12 updates), no setData in Canvas RAF
+    // Number animation：只更新 10 次，避免频繁 setData 抢主线程。
     const tSessions = this.data.todaySessions
     const wSessions = this.data.weekSessions
-    const totalSteps = 12
+    const totalSteps = 10
     let step = 0
     const numTick = () => {
       if (!this._animActive || !this._alive || !this._isVisible || reqId !== this._requestId) return
       step++
       const p = Math.min(1, step / totalSteps)
       const e = this._easeOutCubic(p)
+      const isLast = p >= 1
       this.setData({
-        _dispTodaySessions: Math.round(tSessions * e),
-        _dispTodayDurationText: this._fmtMin(Math.round(this._rawTodayDur * e)),
-        _dispWeekSessions: Math.round(wSessions * e),
-        _dispWeekDurationText: this._fmtMin(Math.round(this._rawWeekDur * e)),
+        _dispTodaySessions: isLast ? tSessions : Math.round(tSessions * e),
+        _dispTodayDurationText: this._fmtMin(isLast ? this._rawTodayDur : Math.round(this._rawTodayDur * e)),
+        _dispWeekSessions: isLast ? wSessions : Math.round(wSessions * e),
+        _dispWeekDurationText: this._fmtMin(isLast ? this._rawWeekDur : Math.round(this._rawWeekDur * e)),
       })
       if (step < totalSteps) {
         this._animTimer = setTimeout(numTick, Math.round(animDuration / totalSteps))
@@ -315,21 +352,35 @@ Page({
     }
     numTick()
 
-    // Canvas animation — RAF only, no setData
+    // Canvas animation：约 20–25fps 的轻量绘制，避免每 16ms 都重建复杂渐变。
+    // 3D 几何结构在动画过程中就同步存在，最终只做质感增强，不做末帧突变。
     const node = this._pieCanvasNode
     const raf = node && node.requestAnimationFrame
-      ? cb => node.requestAnimationFrame(cb)
-      : cb => setTimeout(cb, 16)
+      ? cb => {
+          this._rafIsTimer = false
+          return node.requestAnimationFrame(cb)
+        }
+      : cb => {
+          this._rafIsTimer = true
+          return setTimeout(cb, 16)
+        }
+    let lastPaint = 0
+    const minFrameGap = 40
 
     const tick = () => {
       if (!this._animActive || !this._alive || !this._isVisible || reqId !== this._requestId) return
       const elapsed = Date.now() - startTime
       const rawP = Math.min(1, elapsed / animDuration)
       const eased = this._easeOutCubic(rawP)
+      const now = Date.now()
+      const shouldPaint = rawP >= 1 || now - lastPaint >= minFrameGap
 
-      this._renderPieChart(eased)
-      if (Math.round(elapsed / 16) % 2 === 0 || rawP >= 1) {
-        this._renderTrendBars(eased)
+      if (shouldPaint) {
+        lastPaint = now
+        // 动画帧始终使用轻量 3D 画法；即使 rawP 已到 1，也先画轻量终态。
+        // 这样不会在动画最后一帧突然创建大量渐变/阴影导致掉帧。
+        this._renderPieChart(eased, true)
+        this._renderTrendBars(eased, true)
       }
 
       if (rawP < 1) {
@@ -338,15 +389,51 @@ Page({
         this._finalDrawn = true
         this._animActive = false
         this._rafId = null
-        // Final frame already drawn in the render calls above (rawP>=1 triggers both)
+        // 数字先到最终值；canvas 仍保持轻量 3D 终态。
+        this.setData({
+          _dispTodaySessions: tSessions,
+          _dispTodayDurationText: this._fmtMin(this._rawTodayDur),
+          _dispWeekSessions: wSessions,
+          _dispWeekDurationText: this._fmtMin(this._rawWeekDur),
+        })
+        // 完整质感不要挤在最后一帧，而是拆成后续不同帧逐步补齐。
+        this._scheduleProgressiveFinalDraw(reqId)
       }
     }
     this._rafId = raf(tick)
   },
 
+  _scheduleProgressiveFinalDraw(reqId) {
+    if (!this._alive || !this._isVisible || reqId !== this._requestId) return
+    if (this._finalDrawTimers && this._finalDrawTimers.length) {
+      this._finalDrawTimers.forEach(id => clearTimeout(id))
+    }
+    this._finalDrawTimers = []
+
+    const queue = (delay, fn) => {
+      const id = setTimeout(() => {
+        this._finalDrawTimers = (this._finalDrawTimers || []).filter(tid => tid !== id)
+        if (!this._alive || !this._isVisible || reqId !== this._requestId) return
+        fn()
+      }, delay)
+      this._finalDrawTimers.push(id)
+    }
+
+    // 第 1 帧：先补柱状图质感。柱状图面积小，先完成不会明显影响饼图展开结束观感。
+    queue(32, () => {
+      this._renderTrendBars(1, false)
+    })
+
+    // 第 2 帧：再补饼图统一光照和阴影。与柱状图错帧，避免两个 canvas 同帧重绘。
+    queue(80, () => {
+      this._renderPieChart(1, false)
+    })
+  },
+
   /* ==================== Trend Bars ==================== */
 
-  _renderTrendBars(progress) {
+  _renderTrendBars(progress, fastMode) {
+    fastMode = !!fastMode
     const TREND_COLORS = ['#22C55E', '#06B6D4', '#3B82F6', '#818CF8', '#A78BFA', '#D946EF']
     const trends = this.data.trends
     if (!trends || !trends.length) return
@@ -368,9 +455,10 @@ Page({
     const depth = Math.min(7, barW * 0.28)
     const topTilt = 0.45
 
-    const isFinal = progress >= 1
+    const isFinal = progress >= 1 && !fastMode
     const fadeIn = (start) => Math.max(0, Math.min(1, (progress - start) / (1 - start)))
-    const finalFade = fadeIn(0.82)
+    // 即便将来重新启用动画，也让 3D 效果随柱体同步出现，避免末帧突然补 3D。
+    const finalFade = progress
 
     ctx.clearRect(0, 0, w, h)
 
@@ -399,22 +487,18 @@ Page({
       const barH = Math.max(0, finalBarH * progress)
       const baseY = padT + chartH
       const topY = baseY - barH
-      const show3D = finalFade > 0.01 && barH > depth * topTilt * 2
+      const show3D = barH > Math.max(4, depth * topTilt * 2)
 
       if (t.duration_sec > 0 && barH > 0) {
-        // Ground shadow — soft ellipse at base, fades in with finalFade
-        if (finalFade > 0) {
+        // Ground shadow — 最终精修时用纯色椭圆，不再为每根柱子创建 radialGradient。
+        if (!fastMode && finalFade > 0) {
           ctx.save()
-          ctx.globalAlpha = finalFade * 0.45
+          ctx.globalAlpha = finalFade * 0.18
           ctx.translate(x + barW / 2, baseY + 2)
-          ctx.scale(1, 0.28)
-          const shGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, barW * 0.75)
-          shGrad.addColorStop(0, 'rgba(0,0,0,0.32)')
-          shGrad.addColorStop(0.5, 'rgba(0,0,0,0.14)')
-          shGrad.addColorStop(1, 'rgba(0,0,0,0)')
-          ctx.fillStyle = shGrad
+          ctx.scale(1, 0.24)
+          ctx.fillStyle = 'rgba(0,0,0,0.34)'
           ctx.beginPath()
-          ctx.arc(0, 0, barW * 0.75, 0, Math.PI * 2)
+          ctx.arc(0, 0, barW * 0.7, 0, Math.PI * 2)
           ctx.fill()
           ctx.restore()
         }
@@ -441,21 +525,28 @@ Page({
         }
 
         // Left edge glow — light escaping crystal facet
-        ctx.fillStyle = `rgba(${Math.min(255,rc+110)},${Math.min(255,gc+110)},${Math.min(255,bc+110)},0.3)`
-        ctx.fillRect(x, topY + 2, 1.5, barH - 4)
+        if (!fastMode && barH > 6) {
+          ctx.fillStyle = `rgba(${Math.min(255,rc+110)},${Math.min(255,gc+110)},${Math.min(255,bc+110)},0.3)`
+          ctx.fillRect(x, topY + 2, 1.5, Math.max(0, barH - 4))
+        }
 
-        // Front face — translucent crystal gradient
-        const barGrad = ctx.createLinearGradient(0, topY, 0, baseY)
-        barGrad.addColorStop(0, 'rgba(255,255,255,0.12)')
-        barGrad.addColorStop(0.1, `rgba(${rc},${gc},${bc},0.6)`)
-        barGrad.addColorStop(0.42, `rgba(${rc},${gc},${bc},0.92)`)
-        barGrad.addColorStop(0.82, `rgba(${Math.round(rc*0.7)},${Math.round(gc*0.7)},${Math.round(bc*0.7)},0.72)`)
-        barGrad.addColorStop(1, `rgba(${Math.round(rc*0.4)},${Math.round(gc*0.4)},${Math.round(bc*0.4)},0.5)`)
-        ctx.fillStyle = barGrad
-        ctx.fillRect(x, topY, barW, barH)
+        // Front face — 动画中用纯色，最终帧再使用渐变，减少中间帧开销。
+        if (fastMode) {
+          ctx.fillStyle = `rgba(${rc},${gc},${bc},0.86)`
+          ctx.fillRect(x, topY, barW, barH)
+        } else {
+          const barGrad = ctx.createLinearGradient(0, topY, 0, baseY)
+          barGrad.addColorStop(0, 'rgba(255,255,255,0.12)')
+          barGrad.addColorStop(0.1, `rgba(${rc},${gc},${bc},0.6)`)
+          barGrad.addColorStop(0.42, `rgba(${rc},${gc},${bc},0.92)`)
+          barGrad.addColorStop(0.82, `rgba(${Math.round(rc*0.7)},${Math.round(gc*0.7)},${Math.round(bc*0.7)},0.72)`)
+          barGrad.addColorStop(1, `rgba(${Math.round(rc*0.4)},${Math.round(gc*0.4)},${Math.round(bc*0.4)},0.5)`)
+          ctx.fillStyle = barGrad
+          ctx.fillRect(x, topY, barW, barH)
+        }
 
         // Center light channel — light pipe through crystal
-        if (barH > 8) {
+        if (!fastMode && barH > 8) {
           const lcW = Math.max(2, barW * 0.28)
           const lcX = x + (barW - lcW) / 2
           const lcGrad = ctx.createLinearGradient(0, topY, 0, topY + barH * 0.7)
@@ -467,7 +558,7 @@ Page({
         }
 
         // Front top-edge highlight — sharp crystal rim
-        if (barH > 4) {
+        if (!fastMode && barH > 4) {
           ctx.fillStyle = 'rgba(255,255,255,0.35)'
           ctx.fillRect(x, topY, barW, Math.min(2.5, barH / 5))
           ctx.fillStyle = 'rgba(255,255,255,0.15)'
@@ -475,9 +566,9 @@ Page({
         }
 
         // Front gloss sweep — refined light wash on upper portion
-        if (show3D && barH > 20) {
+        if (!fastMode && show3D && barH > 20) {
           ctx.save()
-          ctx.globalAlpha = fadeIn(0.84) * 0.28
+          ctx.globalAlpha = finalFade * 0.18
           const fg = ctx.createLinearGradient(x, topY, x + barW, topY)
           fg.addColorStop(0, 'rgba(255,255,255,0)')
           fg.addColorStop(0.2, 'rgba(255,255,255,0.5)')
@@ -488,10 +579,10 @@ Page({
           ctx.restore()
         }
 
-        // Top face — bright crystal facet
+        // Top face — bright crystal facet；动画中保留基础顶面，最终帧补细节。
         if (show3D) {
           ctx.save()
-          ctx.globalAlpha = fadeIn(0.83)
+          ctx.globalAlpha = finalFade
           ctx.fillStyle = `rgba(${Math.min(255,rc+100)},${Math.min(255,gc+100)},${Math.min(255,bc+100)},0.6)`
           ctx.beginPath()
           ctx.moveTo(x, topY)
@@ -501,15 +592,17 @@ Page({
           ctx.closePath()
           ctx.fill()
 
-          // Crystal ridge — bright seam along front-top edge
-          ctx.fillStyle = 'rgba(255,255,255,0.4)'
-          ctx.fillRect(x + depth * 0.15, topY - depth * topTilt * 0.3, barW * 0.7, depth * topTilt * 0.3)
+          if (!fastMode) {
+            // Crystal ridge — bright seam along front-top edge
+            ctx.fillStyle = 'rgba(255,255,255,0.4)'
+            ctx.fillRect(x + depth * 0.15, topY - depth * topTilt * 0.3, barW * 0.7, depth * topTilt * 0.3)
 
-          // Top facet highlight spot
-          ctx.fillStyle = 'rgba(255,255,255,0.18)'
-          const spotW = barW * 0.3
-          const spotX = x + barW * 0.5
-          ctx.fillRect(spotX, topY - depth * topTilt * 0.65, spotW, depth * topTilt * 0.35)
+            // Top facet highlight spot
+            ctx.fillStyle = 'rgba(255,255,255,0.18)'
+            const spotW = barW * 0.3
+            const spotX = x + barW * 0.5
+            ctx.fillRect(spotX, topY - depth * topTilt * 0.65, spotW, depth * topTilt * 0.35)
+          }
           ctx.restore()
         }
       } else if (t.duration_sec > 0) {
@@ -560,7 +653,8 @@ Page({
     ctx.restore()
   },
 
-  _renderPieChart(progress) {
+  _renderPieChart(progress, fastMode) {
+    fastMode = !!fastMode
     const subjects = this.data.subjects
     const ctx = this._pieCtx
     const rect = this._pieRect
@@ -573,7 +667,7 @@ Page({
     const radius = size * 0.39
     const tilt = 0.72
     const depth = radius * 0.08
-    const isFinal = progress >= 1
+    const isFinal = progress >= 1 && !fastMode
 
     ctx.clearRect(0, 0, w, h)
 
@@ -619,7 +713,7 @@ Page({
 
     const sectors = this._pieSectors
     const wallStepsFull = this._pieWallSteps
-    const wallSteps = isFinal ? wallStepsFull : Math.min(3, wallStepsFull)
+    const wallSteps = fastMode ? Math.min(3, wallStepsFull) : (isFinal ? wallStepsFull : Math.min(3, wallStepsFull))
 
     const selectedSubject = this.data._selectedSubject
 
