@@ -1,629 +1,211 @@
-# 小程序渲染修复任务
+你现在是一名资深后端工程师，请基于我上传的项目代码，检查并修复 SM-2 间隔重复算法及其调度集成问题。
+
+项目背景：
+这是一个考研 AI 错题与复习系统。项目中已经实现了 SM-2 算法和复习调度逻辑，相关文件重点包括：
+
+1. backend/app/services/sm2_service.py
+2. backend/app/services/review_scheduler.py
+3. backend/app/services/wrong_question_service.py
+4. backend/app/api/v1/review.py
+5. 与 ReviewSchedule、WrongQuestion、Question 相关的模型文件
+6. 相关测试文件，例如 tests 中 review、wrong_question、scheduler 相关测试
+
+请你不要只做表面修改，要完整阅读相关调用链，确保数据库字段、API、服务层、测试之间逻辑一致。
+
+需要修复的问题如下：
 
-你是一名资深微信小程序前端工程师。请直接检查并修改当前项目中的题干渲染代码，解决 practice 页面及其他共用题干渲染页面的重复题干、文字与代码混排异常、行内公式原样显示、压缩代码不换行、长代码被截断等问题。
-
-不要只给出分析或修改建议，请直接完成代码修改、测试更新和回归验证。
-
-一、项目中已经确认的问题
-
-主要相关文件：
-
-- utils/stem-render.js
-- utils/code-reconstructor.js
-- pages/practice/practice.js
-- pages/practice/practice.wxml
-- pages/practice/practice.wxss
-- pages/review-today/review-today.wxml
-- pages/review-today/review-today.wxss
-- pages/wrong-detail/wrong-detail.wxml
-- pages/wrong-detail/wrong-detail.wxss
-- tests/test-code-mode.js
-- tests/test-render-invariant.js
-- tests/render_regression/*.json
-- tests/render_regression/run.js
-
-当前问题如下。
-
-1. 题干重复
-
-例如接口题干可能为：
-
-在线性表 $a_0,a_1,\ldots,a_{100}$ 中，删除元素 a50 需要移动多少个元素。
-在线性表 a₀,a₁,…,a₁₀₀ 中，删除元素 a50 需要移动多少个元素。
-
-两段原始字符串可能因为 LaTeX、HTML、空格、标点或实体不同而无法被现有去重函数识别，但最终渲染后肉眼看起来完全相同。
-
-当前 `_cleanStemText()` 中：
-
-```js
-_deduplicateRepeatedText(_deduplicateLines(stemText))
-```
-
-存在两个问题：
-
-- 去重发生在 HTML、LaTeX、空格和标点规范化之前。
-- `_deduplicateLines()` 使用 `trim()` 比较相邻行，会错误删除代码中的合法重复行。
-
-例如下面两行不能被删除任何一行：
-
-```c
-  }
-}
-```
-
-1. 整道题被误判为 CODE
-
-当前 `buildRenderModel()` 对整个题干调用 `containsCode(cleanedStem)`。
-
-对于以下混合题干：
-
-```text
-下列算法中加下划线语句的执行次数为（ ）。
-
-int m = 0, i, j;
-for (i = 1; i <= n; i++)
-    for (j = 1; j <= 2 * i; j++)
-        m++;
-```
-
-只要后面的代码达到 CODE 阈值，整道题都会进入 CODE 模式，造成：
-
-- 普通题目说明进入灰色代码框。
-- 字体全部变成等宽字体。
-- 行内公式不再转换。
-- 题目说明和程序代码无法使用不同的渲染方式。
-
-1. 行内公式原样显示
-
-例如：
-
-```text
-两个进程 $P_{0}$、$P_{1}$ 互斥的 Peterson 算法如下
-```
-
-当前整题进入 CODE 模式后使用：
-
-```js
-rawText = cleanedStem
-```
-
-所以页面直接显示 `$P_{0}$`、`$P_{1}$`，而不是 `P₀`、`P₁` 或正确的公式效果。
-
-1. 压缩代码全部显示在一行
-
-项目中已经有 `reconstructCode()`，但当前渲染流程完全不调用它，测试甚至强制要求压缩代码保持一行。
-
-例如：
-
-```c
-void f(){int sum=0;for(int i=0;i<n;i++)sum++;}
-```
-
-会一直显示为单行。
-
-需要改成：仅对明确属于代码块、且明显是 OCR 或导入压缩结果的代码进行保守换行恢复；已经有合理换行和缩进的代码必须保持原样。
-
-1. 长代码横向截断
-
-当前 WXML 使用：
-
-```xml
-<view class="code-wrapper">
-  <text class="code-text">{{rawText}}</text>
-</view>
-```
-
-WXSS 使用：
-
-```css
-.code-wrapper {
-  overflow-x: auto;
-}
-
-.code-text {
-  white-space: pre;
-}
-```
-
-普通 `view` 的横向滚动在微信小程序中不可靠，长代码容易超出容器或被截断。应使用原生 `scroll-view scroll-x`。
-
-二、总体修改目标
-
-请重构题干渲染流程，支持：
-
-1. 纯文字题干。
-2. 纯 LaTeX 题干。
-3. 纯代码题干。
-4. 文字、行内公式、复杂 LaTeX 和代码混合的题干。
-5. OCR 或导入导致的重复题干。
-6. OCR 或导入导致的单行压缩代码。
-7. 长代码在手机屏幕中完整横向滚动查看。
-8. 保留现有选项剥离、数学符号转换、SEGMENTS 模式和 Render Guard 功能。
-
-三、必须实现的架构修改
-
-1. 新增 MIXED 渲染模式
-
-在 `utils/stem-render.js` 的 `RENDER_MODE` 中新增：
-
-```js
-MIXED: 'MIXED'
-```
-
-RenderModel 增加：
-
-```js
-blocks: []
-```
-
-MIXED 模式的数据结构建议如下：
-
-```js
-{
-  mode: 'MIXED',
-  blocks: [
-    {
-      type: 'RICH_TEXT',
-      richTextNodes: [...]
-    },
-    {
-      type: 'LATEX',
-      html: '...'
-    },
-    {
-      type: 'CODE',
-      rawText: '...'
-    }
-  ]
-}
-```
-
-可以根据项目实际情况调整字段，但必须满足：
-
-- 题目说明和代码分别渲染。
-- 简单行内公式在普通文字块中转换。
-- 复杂 LaTeX 使用现有 mp-html 渲染。
-- 代码块走零 HTML 的 `<text>` 路径。
-- 纯代码题仍然可以保留 CODE 模式。
-- 纯文本、纯 LaTeX、SEGMENTS 的现有行为不能被破坏。
-- 整个题目仍然只有一个顶层 render mode，MIXED 内部允许多个 block。
-
-1. 增加混合题干分块逻辑
-
-请实现独立、可测试的分块函数，例如：
-
-```js
-splitStemBlocks(text)
-```
-
-不要简单地根据整段文本是否包含 `for`、`int` 或分号就判定整道题为代码。
-
-分块规则必须保守并至少支持：
-
-- Markdown 围栏代码：
-
-~~~text
-题目说明
-
-```c
-int x = 0;
-- 普通多行代码，没有围栏。
-- 题目说明后接代码块。
-- OCR 把题目说明和代码压在同一行的情况。
-- 连续代码行应合并为一个代码块。
-- 空行应作为文字块和代码块的自然边界。
-- 自然语言中偶尔出现 `P_0`、`for`、`int` 等单词时不能轻易误判为代码。
-- 代码中的注释、字符串、括号、花括号、分号、缩进应尽量保留。
-
-对于同一行文字后出现明显代码起点的情况，例如：
-
-```text
-下列程序的时间复杂度是（ ）。 int m=0; for(i=0;i<n;i++) m++;
-~~~
-
-应尽量分为：
-
-- 普通文字块：`下列程序的时间复杂度是（ ）。`
-- 代码块：`int m=0; for(i=0;i<n;i++) m++;`
-
-不要把整行全部放进 CODE。
-
-1. 修复题干去重
-
-请重新设计 `_cleanStemText()` 中的去重流程。
-
-要求：
-
-- 统一 `\r\n`、`\r` 为 `\n`。
-- 只删除题干整体重复或相邻完整段落重复。
-- 禁止继续对全部相邻行执行 `trim()` 后去重。
-- 代码块不能参与普通文本逐行去重。
-- 不能删除代码中的重复 `}`、`else`、空行或其他合法结构。
-- 去重比较前，需要生成仅用于比较的 canonical 文本，但最终输出应尽量保留原始格式。
-
-canonical 比较至少规范化：
-
-- HTML 标签。
-- `<br>`。
-- ` `、`&`、`<`、`>` 等基础实体。
-- 简单行内 LaTeX，例如 `$P_{0}$`、`$a_1$`。
-- Unicode 下标和对应简单 LaTeX。
-- 连续空白。
-- 全角与半角的常见逗号、句号。
-- 段落首尾空白。
-
-只允许删除 canonical 内容一致的完整重复段落或完整重复题干，不能因某一行相同就删除该行。
-
-例如以下内容最终只能显示一次：
-
-```text
-在线性表 $a_0,a_1,\ldots,a_{100}$ 中，删除元素 a50 需要移动多少个元素。
-
-在线性表 a₀,a₁,…,a₁₀₀ 中，删除元素 a50 需要移动多少个元素。
-```
-
-以下代码必须完整保留：
-
-```c
-if (x) {
-  if (y) {
-    run();
-  }
-}
-```
-
-1. 保守恢复压缩代码
-
-允许复用和改进 `utils/code-reconstructor.js`，但必须采用保守策略。
-
-增加类似：
-
-```js
-shouldReconstructCode(text)
-```
-
-仅在以下情况同时满足时恢复结构：
-
-- 当前 block 已经明确被识别为代码。
-- 换行数量很少，例如 0 或 1。
-- 存在多个语句、分号、控制流或花括号。
-- 明显属于压缩代码，而不是普通文字。
-
-要求：
-
-- 已经正确换行和缩进的多行代码原样保留。
-- 不要默认修改运算符语义。
-- 默认不要自动把 `< =` 改成 `<=`、`+ +` 改成 `++`，除非有非常确定的规则和对应测试。
-- 恢复换行时不能拆开 `for(init; condition; step)` 内部的分号。
-- 不能拆开字符串中的分号、花括号或关键字。
-- 尽量保留原有代码内容，只恢复必要的换行。
-- 检查微信小程序 JavaScript 运行环境兼容性，不要让实际运行路径依赖不兼容的正则 lookbehind。若现有 `code-reconstructor.js` 使用 lookbehind，请改写成兼容实现。
-
-示例：
-
-输入：
-
-```c
-void f(){int sum=0;for(int i=0;i<n;i++)sum++;}
-```
-
-输出应类似：
-
-```c
-void f(){
-int sum=0;
-for(int i=0;i<n;i++)
-sum++;
-}
-```
-
-是否增加缩进可以保守处理，重点是不能全部挤在一行，也不能改变代码语义。
-
-1. 修改 WXML
-
-以下所有页面都使用了统一的 `buildRenderModel()`，必须同步支持 MIXED：
-
-- pages/practice/practice.wxml
-- pages/review-today/review-today.wxml
-- pages/wrong-detail/wrong-detail.wxml
-
-MIXED 分支参考结构：
-
-```xml
-<block wx:elif="{{renderModel.mode === 'MIXED'}}">
-  <block wx:for="{{renderModel.blocks}}" wx:key="index">
-    <rich-text
-      wx:if="{{item.type === 'RICH_TEXT'}}"
-      class="q-content mixed-text-block"
-      nodes="{{item.richTextNodes}}"
-    />
-
-    <mp-html
-      wx:elif="{{item.type === 'LATEX'}}"
-      class="q-content mixed-latex-block"
-      content="{{item.html}}"
-      lazy-load
-    />
-
-    <scroll-view
-      wx:elif="{{item.type === 'CODE'}}"
-      scroll-x
-      class="code-wrapper mixed-code-block"
-    >
-      <text decode="false" class="code-text">{{item.rawText}}</text>
-    </scroll-view>
-  </block>
-</block>
-```
-
-请根据每个页面实际变量名修改，不能直接机械复制错误变量。
-
-纯 CODE 分支也要从普通 `view` 改为：
-
-```xml
-<scroll-view scroll-x class="code-wrapper">
-  <text decode="false" class="code-text">{{...}}</text>
-</scroll-view>
-```
-
-1. 修改 WXSS
-
-在 practice、review-today、wrong-detail 中同步修复代码样式。
-
-要求：
-
-- `scroll-view` 宽度不能超出父容器。
-- 必须能够横向滚动。
-- 保留缩进和换行。
-- 长代码不能被裁剪。
-- 普通题目文字不能使用等宽字体或灰色代码背景。
-- 混合模式中不同 block 之间间距自然。
-- 避免每一个普通文字 block 都产生过大的 `margin-bottom`。
-
-参考：
-
-```css
-.code-wrapper {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  background: #F5F6FA;
-  border-radius: 12rpx;
-  padding: 24rpx 20rpx;
-  margin: 16rpx 0 28rpx;
-  overflow: hidden;
-}
-
-.code-text {
-  display: inline-block;
-  min-width: 100%;
-  box-sizing: border-box;
-  white-space: pre;
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 28rpx;
-  line-height: 1.7;
-  color: #1A1A2E;
-}
-```
-
-如果微信小程序对某些 CSS 属性支持有限，请使用兼容写法。
-
-1. 更新 Render Guard 和 trace
-
-需要同步修改：
-
-- `utils/stem-render.js` 中的模式断言。
-- `pages/practice/practice.js` 中 `_checkRenderInvariant()`。
-- 其他存在类似单路径断言的代码。
-- 测试中的 `checkSingleRoot()`。
-
-要求：
-
-- MIXED 算一个顶层 render path。
-- MIXED 的 `blocks` 必须非空。
-- 每个 block 只能激活自己的一个渲染字段。
-- CODE block 不得包含 HTML 实体编码。
-- MIXED 中的 CODE block 也要执行 CODE 完整性检查。
-- renderTrace 最好增加 block 类型信息，例如：
-
-```js
-blockTypes: ['RICH_TEXT', 'CODE']
-```
-
-四、必须新增或修改的测试
-
-不要为了让旧测试通过而保留错误行为。旧测试如果明确要求错误行为，应修改预期。
-
-至少新增以下回归测试。
-
-1. 重复题干：完全相同
-
-输入：
-
-```text
-测试题干
-测试题干
-```
-
-结果只保留一次。
-
-1. 重复题干：LaTeX 与 Unicode 等价
-
-输入：
-
-```text
-两个进程 $P_{0}$、$P_{1}$ 互斥。
-两个进程 P₀、P₁ 互斥。
-```
-
-结果只保留一次。
-
-1. 重复题干：HTML 与普通文本等价
-
-输入：
-
-```text
-<p>在线性表&nbsp;a₀ 中删除元素。</p>
-在线性表 a₀ 中删除元素。
-```
-
-结果只保留一次。
-
-1. 代码合法重复行不能删除
-
-输入：
-
-```c
-if (x) {
-  if (y) {
-    run();
-  }
-}
-```
-
-结果中的两个 `}` 都必须保留。
-
-1. 文字加代码应进入 MIXED
-
-输入：
-
-```text
-下列程序段的时间复杂度是（ ）。
-
-int sum = 0;
-for(int i = 1; i < n; i *= 2)
-    sum++;
-```
-
-期望：
-
-```js
-mode === RENDER_MODE.MIXED
-blocks[0].type === 'RICH_TEXT'
-blocks[1].type === 'CODE'
-```
-
-题目说明不能进入 CODE block。
-
-1. Peterson 题干
-
-输入：
-
-```text
-两个进程 $P_{0}$、$P_{1}$ 互斥的 Peterson 算法如下：
-
-while (true) {
-  flag[i] = true;
-}
-```
-
-要求：
-
-- mode 为 MIXED。
-- 普通文字 block 中不能残留 `$P_{0}$`、`$P_{1}$`。
-- 应显示为 `P₀`、`P₁`，或进入正确公式渲染。
-- `while` 及其代码只存在于 CODE block。
-
-1. 纯代码仍为 CODE
-
-输入：
-
-```c
-void f() {
-  int x = 1;
-  while (x < 10) {
-    x++;
-  }
-}
-```
-
-要求：
-
-- mode 仍为 CODE。
-- 原始换行、Tab 和缩进保持不变。
-- 不进入 MIXED。
-
-1. 压缩纯代码恢复换行
-
-输入：
-
-```c
-void f(){int sum=0;for(int i=0;i<n;i++)sum++;}
-```
-
-要求：
-
-- mode 为 CODE。
-- 输出包含换行。
-- `for` 头部三个部分不能被错误拆分。
-- 代码语义字符不能丢失。
-
-修改现有测试：
-
-当前 `tests/test-code-mode.js` 中以下测试的预期是错误的：
-
-```text
-No reconstructCode — compressed code stays compressed
-```
-
-需要改为验证：
-
-- 已格式化多行代码保持不变。
-- 明显压缩的单行代码才恢复换行。
-
-当前部分测试要求“文字加代码整题进入 CODE”，也需要改为 MIXED。
-
-1. 单顶层路径
-
-更新 `checkSingleRoot()`：
-
-- RICH_TEXT、LATEX、SEGMENTS、CODE、MIXED 中只能有一个顶层模式。
-- MIXED 通过 `blocks.length > 0` 判断。
-- MIXED 内部不同 block 不违反顶层 single root invariant。
-
-五、测试执行要求
-
-修改完成后，请实际运行：
-
-```bash
-node tests/test-code-mode.js
-node tests/test-render-invariant.js
-node tests/test-latex-symbols.js
-node tests/render_regression/run.js
-```
-
-如果项目内还有其他 Node 测试，也一并运行。
-
-不能只说“理论上通过”，必须给出真实测试输出摘要。
-
-六、验收标准
-
-最终必须满足：
-
-1. 重复题干只显示一次。
-2. 不会因去重删除代码中的合法重复行或花括号。
-3. 普通题目说明不再进入灰色代码框。
-4. 文字和程序代码可以在同一道题中分别渲染。
-5. `$P_{0}$`、`$P_{1}$` 不再原样显示在普通题目说明中。
-6. 已格式化代码的换行和缩进不被修改。
-7. 明显压缩的单行代码能够保守恢复换行。
-8. 长代码可以在微信小程序中横向滚动，不能被截断。
-9. practice、review-today、wrong-detail 三个页面行为一致。
-10. 现有普通文字、数学公式、选项、SEGMENTS 功能不回归。
-11. 所有测试通过。
-
-七、输出格式
-
-完成后请按以下格式汇报：
-
-1. 根因确认。
-2. 修改过的文件列表。
-3. 核心实现说明。
-4. 关键代码差异。
-5. 新增或修改的测试用例。
-6. 实际测试命令及结果。
-7. 仍然存在的边界情况或风险。
-
-请先阅读相关文件和现有测试，再直接开始修改，不要停留在方案讨论阶段。
-
+一、修复已有复习记录再次做错时 ease_factor 被重置的问题
+
+当前问题：
+在 backend/app/services/review_scheduler.py 的 auto_schedule_wrong_question() 中，如果某道题已经有 ReviewSchedule，再次做错时，代码会直接执行类似逻辑：
+
+schedule.interval = 1
+schedule.ease_factor = 2.5
+schedule.repetitions = 0
+schedule.next_review_at = utcnow()
+
+这会导致一个严重问题：反复做错的题原本 ease_factor 已经下降，但再次做错后又被重置为默认 2.5，相当于把难题重新变成“普通题”。
+
+修复要求：
+1. 如果 schedule 已存在，不要把 ease_factor 重置为 2.5。
+2. 应调用 SM-2 算法，把这次做错视为一次 quality=0 或较低评分的复习。
+3. 保留已有 schedule.ease_factor、schedule.interval、schedule.repetitions 作为输入。
+4. 更新后的 interval、ease_factor、repetitions 应来自 calc_sm2()。
+5. next_review_at 可以设为当前时间，表示立即进入复习队列；如果项目现有逻辑更适合明天复习，也可以使用 calc_sm2 返回的 next_review_date，但请保持接口行为一致并说明理由。
+6. mastered 应重置为 False。
+
+参考逻辑：
+
+sm2_result = calc_sm2(
+    quality=0,
+    efactor=schedule.ease_factor or 2.5,
+    interval=schedule.interval or 1,
+    repetitions=schedule.repetitions or 0,
+    review_date=date.today(),
+)
+
+schedule.interval = sm2_result["interval"]
+schedule.ease_factor = sm2_result["efactor"]
+schedule.repetitions = sm2_result["repetitions"]
+schedule.next_review_at = utcnow()
+schedule.mastered = False
+
+但请你根据项目实际字段名称和时间工具函数调整。
+
+二、检查并统一 WrongQuestion 与 ReviewSchedule 的调度逻辑
+
+当前风险：
+项目里同时存在两套 SM-2 调度数据：
+
+WrongQuestion 中可能有：
+- efactor
+- interval
+- repetitions
+- next_review_date
+
+ReviewSchedule 中可能有：
+- ease_factor
+- interval
+- repetitions
+- next_review_at
+
+这会导致两个入口的复习结果不同步：
+- /review/due 可能基于 WrongQuestion
+- /review/today、/review/schedule-submit、/review/grade-batch 可能基于 ReviewSchedule
+
+修复要求：
+1. 阅读完整调用链，确认哪些接口使用 WrongQuestion 调度，哪些接口使用 ReviewSchedule 调度。
+2. 优先以 ReviewSchedule 作为统一复习调度来源。
+3. WrongQuestion 应主要记录错题属性，例如 wrong_answer、error_type、ai_analysis、mastered、created_at 等。
+4. 如果暂时不能彻底移除 WrongQuestion 中的 SM-2 字段，请至少保证两个表在更新时不会产生明显矛盾。
+5. 对外接口行为不能破坏现有前端调用。
+6. 如果需要保留兼容逻辑，请在代码注释中说明：ReviewSchedule 是主调度来源，WrongQuestion 的调度字段仅为兼容或历史字段。
+7. 检查 /review/due、/review/submit、/wrong-questions/{id}/quality 等接口是否仍然使用旧调度字段。如果是，请重构为调用 ReviewSchedule 或统一服务层。
+
+三、优化自动批改评分映射
+
+当前问题：
+review.py 中自动批改可能使用：
+
+rating = 5 if is_correct else 0
+
+这会导致 SM-2 评分过于极端：
+- 答对直接按最熟悉处理
+- 答错直接按完全不会处理
+
+修复要求：
+1. 检查 /review/grade-submit 和 /review/grade-batch 等接口。
+2. 如果接口没有用户自评 rating，只能根据 is_correct 自动生成 rating，则建议改为：
+   - is_correct=True  => rating=4
+   - is_correct=False => rating=1
+3. 如果前端已经传入 rating，则优先使用用户传入的 rating。
+4. rating 必须限制在 0 到 5。
+5. 对主观题、AI 批改题、客观题保持兼容。
+6. 不要破坏现有 API 返回结构。
+
+四、修复 SM-2 中 round() 的不稳定舍入问题
+
+当前问题：
+sm2_service.py 中可能有：
+
+new_interval = round(interval * efactor)
+
+Python 的 round() 是银行家舍入，例如 round(22.5) == 22，这可能导致复习间隔不符合预期。
+
+修复要求：
+1. 改为稳定的四舍五入：
+   import math
+   new_interval = max(1, math.floor(interval * efactor + 0.5))
+2. 保证 interval 最小为 1。
+3. 保持 SM-2 核心公式不变：
+   EF' = EF + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))
+   EF 最低不低于 1.3。
+4. quality < 3 时 repetitions 归零，interval 设为 1。
+5. quality >= 3 时：
+   - repetitions == 0 => interval = 1
+   - repetitions == 1 => interval = 6
+   - repetitions >= 2 => interval = interval * ease_factor 后四舍五入
+
+五、修复 /review/today 的 subject 筛选顺序问题
+
+当前问题：
+review_scheduler.py 中 get_today_review_questions() 可能先查询 ReviewSchedule 并 limit，然后再用 Python 根据 Question.subject 过滤。这样会导致 subject 筛选漏题。
+
+错误模式大致是：
+先查 due schedules limit 20
+再加载 questions
+再 if subject 过滤
+这样如果前 20 条都不是目标 subject，就会返回空，即使后面还有目标 subject 的待复习题。
+
+修复要求：
+1. subject 筛选必须在 SQL 查询阶段完成，而不是 limit 之后再过滤。
+2. 如果传入 subject，应 join Question 表并 where Question.subject == subject。
+3. limit 应在 subject 筛选之后生效。
+4. 保证 total 统计与返回列表一致。
+5. 保持不传 subject 时行为不变。
+6. 注意 SQLAlchemy async 写法和已有项目风格。
+
+六、增加或修改测试
+
+请新增或修改测试，至少覆盖以下场景：
+
+1. calc_sm2 基础行为：
+   - quality=5, repetitions=0 => interval=1, repetitions=1
+   - quality=5, repetitions=1 => interval=6, repetitions=2
+   - quality=5, repetitions=2, interval=6, efactor=2.7 => interval 约为 16
+   - quality<3 => repetitions=0, interval=1
+   - efactor 不低于 1.3
+
+2. 已有 ReviewSchedule 再次做错：
+   - 原 ease_factor 低于 2.5，例如 1.6
+   - 调用 auto_schedule_wrong_question()
+   - 修复后 ease_factor 不应重置为 2.5
+   - repetitions 应根据 SM-2 失败逻辑归零
+   - interval 应为 1
+   - mastered 应为 False
+
+3. 自动批改 rating 映射：
+   - is_correct=True 且未传 rating 时，默认 rating 应为 4
+   - is_correct=False 且未传 rating 时，默认 rating 应为 1
+   - 如果传入 rating，应优先使用传入值
+   - rating 超出 0-5 时应被拒绝或裁剪，按项目现有风格处理
+
+4. /review/today subject 筛选：
+   - 创建多个不同 subject 的待复习题
+   - 设置 limit 小于总数
+   - 请求某个 subject
+   - 返回结果必须只包含该 subject
+   - 不应因为 limit 先截断而漏掉该 subject 的题
+
+七、代码质量要求
+
+1. 不要大面积重写无关代码。
+2. 保持现有接口返回格式。
+3. 保持异步 SQLAlchemy 风格一致。
+4. 修改后运行项目现有测试。
+5. 如果测试环境缺少依赖，请说明缺少哪些依赖，并尽量运行能够运行的单元测试。
+6. 修复完成后，请输出：
+   - 修改了哪些文件
+   - 每个文件改了什么
+   - 修复了哪些 bug
+   - 新增/修改了哪些测试
+   - 测试运行结果
+   - 是否有兼容性风险
+
+八、最终交付格式
+
+请按以下格式汇报：
+
+## 修复摘要
+
+## 修改文件清单
+
+## 关键代码变更说明
+
+## 测试覆盖情况
+
+## 测试结果
+
+## 仍需注意的问题
+
+请直接修改代码，不要只给建议。
