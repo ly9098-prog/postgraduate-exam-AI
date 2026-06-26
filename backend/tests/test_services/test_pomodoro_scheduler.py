@@ -41,6 +41,12 @@ async def isolated_db(monkeypatch_module):
     from app.core import config as config_mod
     importlib.reload(config_mod)
 
+    # 重新加载 pomodoro 调度服务模块，确保引用最新的 settings 单例。
+    # 若此前其他测试已导入该模块，其 settings 引用仍指向旧单例，
+    # 导致后续 test function 的 monkeypatch 无法生效。
+    import app.services.pomodoro_scheduler_service as _ssvc_for_reload
+    importlib.reload(_ssvc_for_reload)
+
     # 使用全局 Base — 导入所有模型让其注册到 Base.metadata
     from app.core.database import Base
     import app.models  # noqa: F401 — registers all models on Base
