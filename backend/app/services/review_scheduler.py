@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,9 +32,10 @@ async def _sync_schedule_to_wq(
         wq.repetitions = schedule.repetitions
         wq.next_review_date = (
             schedule.next_review_at.date()
-            if schedule.next_review_at else date.today()
+            if schedule.next_review_at else utcnow().date()
         )
         wq.mastered = schedule.mastered
+        wq.last_review_at = schedule.last_reviewed_at
         await db.commit()
 
 
