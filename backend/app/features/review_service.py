@@ -216,6 +216,9 @@ async def submit_to_review(
     # 隐患③ 修复：跟踪本批刚写入的 ORM，commit 后只精确 expunge 这些条目，
     # 不动 session 里其他 attach 的对象。
     pending_qis: list[QuestionImport] = []
+    # 暂存每道题的元数据 (q_dict, stem, question_hash)，flush 后用于构建 items。
+    # 这样避免在 flush 前读取 qi.id（此时 id 为 None）。
+    pending_meta: list[tuple[dict, str, str | None]] = []
 
     # Pre-compute hashes and batch duplicate lookups (2 queries instead of 2N)
     prepared: list[tuple[dict, str, dict | None, str | None, str | None]] = []
@@ -257,25 +260,16 @@ async def submit_to_review(
     dup_questions = await _batch_find_duplicate_questions(db, subject_hash_pairs)
     dup_imports = await _batch_find_duplicate_imports(db, subject_hash_pairs)
 
-    # Track same-batch duplicates (keyed by (subject, question_hash))
-    DuplicateKey = tuple[str | None, str]
-
-    def _dup_key(subject: str | None, qhash: str | None) -> DuplicateKey | None:
-        return (subject, qhash) if qhash else None
-
-    seen_hashes: dict[DuplicateKey, int] = {}
+    # Track same-batch duplicates
+    # seen_hash_set: 循环中即时检测同批次重复（只需判断 hash 是否存在）
+    seen_hash_set: set[str] = set()
+    # seen_hashes: flush 后填充 hash→id 映射（用于返回 duplicate_of_import_id）
+    seen_hashes: dict[str, int] = {}
     pending_in_batch = 0
-    pending_first_qi_by_hash: dict[DuplicateKey, QuestionImport] = {}
-    pending_duplicate_links: list[tuple[QuestionImport, QuestionImport]] = []
 
     # 隐患② 修复：分批 commit 失去原子性，中途崩溃会留下孤儿 batch_id 记录。
     # 用 try/except 包住整段写入逻辑，失败时按 batch_id 清理已 commit 的部分。
-    #
-    # v2 优化：使用批量 add + 批量 flush，代替每题单独 flush 的 N+1 写放大。
     try:
-        # flush_batch 暂存同一批的 (qi, question_hash, q, stem)，在批量 flush 后统一构建 items。
-        flush_batch: list[tuple[QuestionImport, str | None, dict, str]] = []
-
         for q, stem, parsed_options, qi_subject, question_hash in prepared:
             if not stem:
                 continue
@@ -302,7 +296,6 @@ async def submit_to_review(
                 continue
 
             # Build duplicate fields from pre-fetched maps
-            _same_batch_dup = False
             duplicate_fields = {
                 "question_hash": question_hash or None,
                 "duplicate_status": "normal",
@@ -315,12 +308,13 @@ async def submit_to_review(
             elif dup_key and dup_key in dup_imports:
                 duplicate_fields["duplicate_status"] = "possible_duplicate"
                 duplicate_fields["duplicate_of_import_id"] = dup_imports[dup_key]
-            elif (key := _dup_key(qi_subject, question_hash)) and key in seen_hashes:
+            elif question_hash and question_hash in seen_hash_set:
                 duplicate_fields["duplicate_status"] = "possible_duplicate"
-                duplicate_fields["duplicate_of_import_id"] = seen_hashes[key]
-            elif key and key in pending_first_qi_by_hash:
-                duplicate_fields["duplicate_status"] = "possible_duplicate"
-                _same_batch_dup = True
+                duplicate_fields["duplicate_of_import_id"] = seen_hashes.get(question_hash)
+
+            # 即时加入 seen_hash_set，后续同批次重复可立即检测到
+            if question_hash:
+                seen_hash_set.add(question_hash)
 
             question_type = q.get("question_type", "")
             parsed_answer = (q.get("answer") or "").strip() or None
@@ -376,83 +370,108 @@ async def submit_to_review(
                 },
             )
             db.add(qi)
-            flush_batch.append((qi, question_hash, q, stem))
             pending_qis.append(qi)
+            # 暂存元数据，flush 后与 pending_qis 一起用于构建 items。
+            # 必须在 batch commit 判断之前 append，否则 zip(pending_qis, pending_meta)
+            # 长度不一致会丢最后一项。
+            pending_meta.append((q, stem, question_hash))
             written += 1
             pending_in_batch += 1
-            # Same-batch duplicate tracking (keyed by (subject, question_hash))
-            sb_key = _dup_key(qi_subject, question_hash)
-            if sb_key and not _same_batch_dup:
-                pending_first_qi_by_hash.setdefault(sb_key, qi)
-            elif _same_batch_dup and sb_key:
-                pending_duplicate_links.append((qi, pending_first_qi_by_hash[sb_key]))
 
-            # P1-B: 每 N 道 flush + commit。v2 优化：批量 flush 代替每题 flush。
+            # P1-B: 每 N 道 flush+commit + 精确 expunge，让 ORM 对象脱离
+            # session identity map，GC 才能回收 raw_data / parsed_content 等
+            # dict（一道题约 5~30 KB，400 道累积可达 12 MB）。
+            # 隐患③：只 expunge 本批刚写入的 qi，不影响调用方在同 session
+            # 持有的其他 ORM 实例。
             if pending_in_batch >= _REVIEW_COMMIT_BATCH_SIZE:
+                # flush 先分配自增 ID，之后的 ID 依赖操作才安全。
                 await db.flush()
-                # Backfill same-batch duplicate links (ids now available after flush)
-                for dup_qi, first_qi in pending_duplicate_links:
-                    dup_qi.duplicate_of_import_id = first_qi.id
-                pending_duplicate_links.clear()
-                pending_first_qi_by_hash.clear()
-                for _qi, _qhash, _q, _stem in flush_batch:
-                    if _qhash:
-                        seen_hashes.setdefault(_dup_key(_qi.subject, _qhash), _qi.id)
-                    _log_multi_blank_review_item(
-                        batch_id=batch_id, qi=_qi, source_question=_q, stem=_stem,
-                    )
-                    _preview = _stem[:50] + "..." if len(_stem) > 50 else _stem
+                await db.commit()
+
+                # flush 后、expunge 前：填充 seen_hashes 并构建 items。
+                # pending_qis 中对象的列属性已在构造时设置，expunge 后仍可访问。
+                for _qi, (_q, _stem, _qh) in zip(
+                    pending_qis,
+                    pending_meta,
+                ):
+                    if _qh:
+                        seen_hashes.setdefault(_qh, _qi.id)
+                    _stem_preview = _stem[:50] + "..." if len(_stem) > 50 else _stem
                     items.append({
                         "id": _qi.id,
                         "status": "pending",
                         "confidence_score": _q.get("confidence_score", 0),
-                        "stem_preview": _preview,
+                        "stem_preview": _stem_preview,
                         "has_issues": not _q.get("is_valid", True) or bool(_q.get("errors")),
                         "question_hash": _qi.question_hash,
                         "duplicate_status": _qi.duplicate_status,
                         "duplicate_of_question_id": _qi.duplicate_of_question_id,
                         "duplicate_of_import_id": _qi.duplicate_of_import_id,
                     })
-                flush_batch.clear()
-                await db.commit()
+                    _log_multi_blank_review_item(
+                        batch_id=batch_id, qi=_qi,
+                        source_question=_q, stem=_stem,
+                    )
+
+                # 回填同批次重复的 duplicate_of_import_id：
+                # flush 前 seen_hashes 为空，duplicate_of_import_id 暂为 None；
+                # flush 后 seen_hashes 已填充，此时回填第一个同 hash 题目的 ID。
+                for _item in items[-len(pending_qis):]:
+                    if (
+                        _item["duplicate_status"] == "possible_duplicate"
+                        and _item["duplicate_of_import_id"] is None
+                        and _item["question_hash"]
+                        and _item["question_hash"] in seen_hashes
+                    ):
+                        _item["duplicate_of_import_id"] = seen_hashes[_item["question_hash"]]
+
                 for _qi in pending_qis:
                     db.expunge(_qi)
                 pending_qis.clear()
+                pending_meta.clear()
                 pending_in_batch = 0
 
-        # 收尾：flush 末批 + commit
-        if flush_batch:
+        # 收尾：把未达 batch size 的尾部 flush+commit
+        if pending_in_batch > 0:
             await db.flush()
-            # Backfill same-batch duplicate links (ids now available after flush)
-            for dup_qi, first_qi in pending_duplicate_links:
-                dup_qi.duplicate_of_import_id = first_qi.id
-            pending_duplicate_links.clear()
-            pending_first_qi_by_hash.clear()
-            for _qi, _qhash, _q, _stem in flush_batch:
-                if _qhash:
-                    seen_hashes.setdefault(_dup_key(_qi.subject, _qhash), _qi.id)
-                _log_multi_blank_review_item(
-                    batch_id=batch_id, qi=_qi, source_question=_q, stem=_stem,
-                )
-                _preview = _stem[:50] + "..." if len(_stem) > 50 else _stem
+            await db.commit()
+
+            # flush 后、expunge 前：填充 seen_hashes 并构建 items
+            for _qi, (_q, _stem, _qh) in zip(pending_qis, pending_meta):
+                if _qh:
+                    seen_hashes.setdefault(_qh, _qi.id)
+                _stem_preview = _stem[:50] + "..." if len(_stem) > 50 else _stem
                 items.append({
                     "id": _qi.id,
                     "status": "pending",
                     "confidence_score": _q.get("confidence_score", 0),
-                    "stem_preview": _preview,
+                    "stem_preview": _stem_preview,
                     "has_issues": not _q.get("is_valid", True) or bool(_q.get("errors")),
                     "question_hash": _qi.question_hash,
                     "duplicate_status": _qi.duplicate_status,
                     "duplicate_of_question_id": _qi.duplicate_of_question_id,
                     "duplicate_of_import_id": _qi.duplicate_of_import_id,
                 })
-            flush_batch.clear()
+                _log_multi_blank_review_item(
+                    batch_id=batch_id, qi=_qi,
+                    source_question=_q, stem=_stem,
+                )
 
-        if pending_in_batch > 0:
-            await db.commit()
+            # 回填同批次重复的 duplicate_of_import_id（同 batch commit 块逻辑）
+            _tail_count = len(pending_qis)
+            for _item in items[-_tail_count:]:
+                if (
+                    _item["duplicate_status"] == "possible_duplicate"
+                    and _item["duplicate_of_import_id"] is None
+                    and _item["question_hash"]
+                    and _item["question_hash"] in seen_hashes
+                ):
+                    _item["duplicate_of_import_id"] = seen_hashes[_item["question_hash"]]
+
             for _qi in pending_qis:
                 db.expunge(_qi)
             pending_qis.clear()
+            pending_meta.clear()
         else:
             await db.commit()
     except Exception as exc:

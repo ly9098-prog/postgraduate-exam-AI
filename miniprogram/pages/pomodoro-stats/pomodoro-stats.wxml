@@ -1,12 +1,14 @@
 <view class="page">
   <view class="page-inner animation-entrance {{pageEntered ? 'entered' : ''}}">
 
-    <view class="loading-wrap" hidden="{{!loading}}">
-      <view class="loading-spinner"></view>
-      <text class="loading-text">加载中...</text>
-    </view>
+    <block wx:if="{{loading}}">
+      <view class="loading-wrap">
+        <loading-lottie text="加载中..." size="large" />
+      </view>
+    </block>
 
-    <view class="stats-content" hidden="{{loading}}">
+    <block wx:if="{{!loading}}">
+      <view class="stats-content">
         <!-- ===== OVERVIEW ===== -->
         <view class="overview-section">
           <view class="ov-row">
@@ -34,7 +36,7 @@
         <!-- ===== TREND CHART ===== -->
         <view class="card-section">
           <text class="section-title">最近 7 天趋势</text>
-          <view class="chart-wrap chart-draw-area {{_chartsReady ? 'chart-ready' : ''}}">
+          <view class="chart-wrap">
             <canvas class="trend-canvas" type="2d" id="trend-bars-canvas" hidden="{{!!selectedSubjectDetail}}"></canvas>
           </view>
           <view class="chart-legend">
@@ -47,7 +49,7 @@
         <view class="card-section" wx:if="{{subjects.length > 0}}">
           <text class="section-title">今日科目分布</text>
           <!-- Pie Chart -->
-          <view class="pie-wrap chart-draw-area {{_chartsReady ? 'chart-ready' : ''}} {{pieTapped ? 'pie-tapped' : ''}}" id="pie-chart-wrap">
+          <view class="pie-wrap {{pieTapped ? 'pie-tapped' : ''}}" id="pie-chart-wrap">
             <canvas class="pie-canvas" type="2d" id="pie-canvas" catchtap="onPieTap" hidden="{{!!selectedSubjectDetail}}"></canvas>
           </view>
           <view class="subject-legend" aria-label="学科图例">
@@ -98,7 +100,9 @@
         <!-- bottom spacer -->
         <view class="bottom-spacer"></view>
       </view>
-    </view>
+    </block>
+
+  </view>
 
   <!-- ===== DETAIL POPUP ===== -->
   <view class="detail-overlay {{selectedSubjectDetail ? 'visible' : ''}}" catchtap="closeDetail"

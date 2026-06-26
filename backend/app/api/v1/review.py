@@ -24,6 +24,9 @@ from app.services import review_scheduler
 router = APIRouter(prefix="/api/v1/review")
 
 
+# ── Stage 12: SM-2 复习调度端点 ──
+
+
 @router.get("/today", response_model=TodayReviewResponse)
 async def get_today_review(
     subject: str | None = Query(None),
@@ -107,8 +110,7 @@ async def grade_submit(
     correct_answer = (question.answer or "").strip().upper()
     is_correct = user_answer == correct_answer
 
-    # 根据对错决定评分：答对 4 分（正确但稍有犹豫），答错 1 分（错误但能回想）
-    # 而非极端值 5/0，避免 SM-2 评分过于激进
+    # 根据对错决定评分（答对=4 正确稍有犹豫，答错=1 错误但想起）
     rating = 4 if is_correct else 1
 
     try:
@@ -174,16 +176,19 @@ async def grade_batch(
     if not data.reviews:
         raise HTTPException(status_code=400, detail="复习列表不能为空")
 
+    # 一次性加载所有题目，避免 N+1 查询
+    question_ids = [item.question_id for item in data.reviews]
+    q_result = await db.execute(
+        select(Question).where(Question.id.in_(question_ids))
+    )
+    questions_map = {q.id: q for q in q_result.scalars().all()}
+
     results = []
     correct_count = 0
     wrong_count = 0
 
     for item in data.reviews:
-        # 获取正确答案
-        result = await db.execute(
-            select(Question).where(Question.id == item.question_id)
-        )
-        question = result.scalar_one_or_none()
+        question = questions_map.get(item.question_id)
         if not question:
             results.append({
                 "schedule_id": item.schedule_id,
@@ -203,7 +208,7 @@ async def grade_batch(
         correct_answer = (question.answer or "").strip().upper()
         is_correct = user_answer == correct_answer
 
-        # 根据对错决定评分：答对 4 分，答错 1 分
+        # 根据对错决定评分（答对=4 正确稍有犹豫，答错=1 错误但想起）
         rating = 4 if is_correct else 1
 
         try:

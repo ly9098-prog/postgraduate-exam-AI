@@ -500,26 +500,51 @@ Page({
     const { groupQuestions, answers, submittingGroup } = this.data
     if (submittingGroup) return
 
-    try {
-      const confirmed = await new Promise(resolve => {
-        wx.showModal({
-          title: '确认提交',
-          content: `共 ${groupQuestions.length} 题，已作答 ${Object.keys(answers).length} 题。确认提交并复盘？`,
-          success: (r) => resolve(r.confirm),
-          fail: () => resolve(false),
-        })
-      })
-      if (!confirmed) return
-    } catch (_) { return }
+    const answeredCount = Object.keys(answers).filter(k => answers[k]).length
+    const totalCount = groupQuestions.length
+    const unansweredCount = totalCount - answeredCount
 
-    const unanswered = groupQuestions.filter(q => !answers[q.schedule_id])
+    // 存在未作答题目时，提示用户选择处理方式
+    let treatUnansweredAsWrong = false
+    if (unansweredCount > 0) {
+      try {
+        const choice = await new Promise(resolve => {
+          wx.showModal({
+            title: '还有未作答题目',
+            content: `共 ${totalCount} 题，已作答 ${answeredCount} 题，还有 ${unansweredCount} 题未作答。\n\n选择"按不会处理"将把未答题判为错误并进入复习。`,
+            confirmText: '按不会处理',
+            cancelText: '仅提交已答',
+            success: (r) => resolve(r.confirm ? 'wrong' : 'skip'),
+            fail: () => resolve('cancel'),
+          })
+        })
+        if (choice === 'cancel') return
+        if (choice === 'wrong') treatUnansweredAsWrong = true
+        // choice === 'skip': 只提交已作答的
+      } catch (_) { return }
+    } else {
+      // 全部已作答，正常确认
+      try {
+        const confirmed = await new Promise(resolve => {
+          wx.showModal({
+            title: '确认提交',
+            content: `共 ${totalCount} 题，已全部作答。确认提交并复盘？`,
+            success: (r) => resolve(r.confirm),
+            fail: () => resolve(false),
+          })
+        })
+        if (!confirmed) return
+      } catch (_) { return }
+    }
 
     this.setData({ submittingGroup: true })
 
-    // Build payload — only submit answered questions
+    // Build payload
     const reviews = []
     for (const q of groupQuestions) {
       const answer = answers[q.schedule_id]
+      // 跳过未作答的题目（除非用户选择按不会处理）
+      if (!answer && !treatUnansweredAsWrong) continue
       reviews.push({
         schedule_id: q.schedule_id,
         question_id: q.question_id,
@@ -531,31 +556,37 @@ Page({
       const res = await api.post('/review/grade-batch', { reviews })
       const groupResults = groupQuestions.map(q => {
         const r = res.results.find(rr => rr.question_id === q.question_id)
+        const wasAnswered = !!answers[q.schedule_id]
+        const wasSubmitted = !!r
         return {
           ...q,
           isCorrect: r ? r.is_correct : false,
           correctAnswer: r ? r.correct_answer : '',
           userAnswer: answers[q.schedule_id] || '',
-          wasAnswered: !!answers[q.schedule_id],
+          wasAnswered,
+          wasSubmitted,
+          wasSkipped: wasAnswered === false && wasSubmitted === false,
         }
       })
       const groupCorrect = groupResults.filter(r => r.isCorrect && r.wasAnswered).length
-      const groupWrong = groupResults.filter(r => !r.isCorrect || !r.wasAnswered).length
+      const groupWrong = groupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
+      const groupSkipped = groupResults.filter(r => r.wasSkipped).length
 
       const allGroupResults = [...this.data.allGroupResults, ...groupResults]
       const totalCorrect = allGroupResults.filter(r => r.isCorrect && r.wasAnswered).length
-      const totalWrong = allGroupResults.filter(r => !r.isCorrect || !r.wasAnswered).length
+      const totalWrong = allGroupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
 
       this.setData({
         phase: 'group-result',
         groupResults,
         groupCorrect,
         groupWrong,
+        groupSkipped,
         submittingGroup: false,
         allGroupResults,
         totalCorrect,
         totalWrong,
-        unansweredCount: unanswered.length,
+        unansweredCount: groupSkipped,
         _groupProgressStyle: this._calcGroupProgressStyle(this.data.currentGroupIdx + 1, this.data.groups.length),
       })
       this._showGroupCelebration(groupCorrect, groupQuestions.length)
