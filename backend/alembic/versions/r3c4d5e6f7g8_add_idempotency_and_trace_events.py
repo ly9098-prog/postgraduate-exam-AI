@@ -87,7 +87,6 @@ def upgrade() -> None:
             sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
             sa.ForeignKeyConstraint(["job_id"], ["import_batch_jobs.job_id"],),
             sa.PrimaryKeyConstraint("id"),
-            sa.UniqueConstraint("job_id", "seq", name="uq_trace_events_job_seq"),
         )
 
     # Indexes

@@ -865,28 +865,34 @@ async def get_batch_image_job(
 @router.get("/batch-image/{job_id}/stream")
 async def stream_batch_image_job(
     job_id: str,
-    since_seq: int = Query(0, alias="lastEventId"),
+    since_id: int = Query(0, alias="lastEventId"),
     _=Depends(require_permissions("import:read")),
 ):
-    """SSE 流：增量推送 trace events，job 终态时发送 done event 后关闭。"""
+    """SSE 流：增量推送 trace events（基于自增 id），job 终态时发送 done event 后关闭。"""
     from app.core.database import async_session
     from app.features import batch_image_import_service as batch_svc
 
     async def event_generator():
-        last_seq = since_seq
+        last_id = since_id
+        summary_last_refreshed = 0.0
+        import time as _time
         while True:
             async with async_session() as db:
                 events = await batch_svc.poll_trace_events(
-                    db, job_id, since_seq=last_seq
+                    db, job_id, since_id=last_id
                 )
                 for ev in events:
-                    last_seq = ev["seq"]
+                    last_id = ev["seq"]
                     yield f"id: {ev['seq']}\nevent: trace\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
 
-                summary = await batch_svc.poll_job_summary(db, job_id)
-                if summary and summary["status"] in ("completed", "failed"):
-                    yield f"event: done\ndata: {json.dumps(summary, ensure_ascii=False)}\n\n"
-                    return
+                # ── 节流：summary 最多每 5 秒刷新一次 ──
+                now_s = _time.time()
+                if events or (now_s - summary_last_refreshed) >= 5.0:
+                    summary_last_refreshed = now_s
+                    summary = await batch_svc.poll_job_summary(db, job_id)
+                    if summary and summary["status"] in ("completed", "failed"):
+                        yield f"event: done\ndata: {json.dumps(summary, ensure_ascii=False)}\n\n"
+                        return
 
             if not events:
                 yield ": heartbeat\n\n"

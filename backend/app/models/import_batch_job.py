@@ -111,9 +111,7 @@ class BatchJobTraceEvent(Base):
     """
 
     __tablename__ = "batch_job_trace_events"
-    __table_args__ = (
-        UniqueConstraint("job_id", "seq", name="uq_trace_events_job_seq"),
-    )
+    __table_args__ = ()
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(
