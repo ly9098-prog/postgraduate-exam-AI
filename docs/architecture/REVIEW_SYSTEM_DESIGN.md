@@ -1,7 +1,7 @@
 # SM-2 复习调度系统设计
 
 > 基于代码真实状态的架构设计文档。描述当前系统边界、数据职责、同步策略与技术债。
-> 最后更新：2026-06-26（P0、P1 已修复）
+> 最后更新：2026-06-26（P0、P1 已修复，P2 已完成）
 
 ---
 
@@ -21,52 +21,54 @@
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                  API 层 (review.py)                  │
-│  ┌──────────┐  ┌──────────┐  ┌───────────────────┐  │
-│  │ 旧接口   │  │ 新接口   │  │ 错题本接口         │  │
-│  │ /due     │  │ /today   │  │ /wrong_questions   │  │
-│  │ /submit  │  │ /schedule│  │ /{id}/quality      │  │
-│  │ /stats   │  │ -submit  │  │ (旧 SM-2 评分)     │  │
-│  │          │  │ /grade-  │  │                    │  │
-│  │          │  │ submit   │  │                    │  │
-│  │          │  │ /grade-  │  │                    │  │
-│  │          │  │ batch    │  │                    │  │
-│  └────┬─────┘  └────┬─────┘  └────────┬──────────┘  │
-└───────┼──────────────┼─────────────────┼────────────┘
-        │              │                 │
-        ▼              ▼                 ▼
+│               API 层 (review.py + wrong_q.py)        │
+│  ┌─────────────────────┐  ┌───────────────────────┐ │
+│  │ 复习接口 (RS 基座)   │  │ 错题本接口            │ │
+│  │ /today               │  │ /wrong_questions      │ │
+│  │ /schedule-submit     │  │ /{id}/quality         │ │
+│  │ /batch-submit        │  │ (路由到 RS 路径)      │ │
+│  │ /grade-submit        │  │                       │ │
+│  │ /grade-batch         │  │                       │ │
+│  │ /schedule-stats      │  │                       │ │
+│  │ /history             │  │                       │ │
+│  │ /{id}/master         │  │                       │ │
+│  │ /{id}/unmaster       │  │                       │ │
+│  └──────────┬──────────┘  └───────────┬───────────┘ │
+└─────────────┼──────────────────────────┼────────────┘
+              │                          │
+              ▼                          ▼
 ┌─────────────────────────────────────────────────────┐
 │                Service 层                            │
 │                                                      │
-│  ┌──────────────────┐   ┌────────────────────────┐  │
-│  │ review_service   │   │ review_scheduler       │  │
-│  │ (旧: WQ 直操作)  │   │ (新: RS 主调度)        │  │
-│  │                  │   │                        │  │
-│  │ get_due_reviews() │   │ get_today_review()    │  │
-│  │ submit_review()  │   │ submit_review()        │  │
-│  │ get_review_stats()│  │ batch_submit_review()  │  │
-│  └────────┬─────────┘   │ get_review_stats()     │  │
-│           │             │ get_review_history()   │  │
-│           │             │ auto_schedule_wq()     │  │
-│           │             │ mark/unmark_mastered()  │  │
-│           │             └───────────┬────────────┘  │
-│           │                         │               │
-│           ▼                         ▼               │
+│  ┌────────────────────────────────────────────┐     │
+│  │         review_scheduler                   │     │
+│  │  (RS 主调度，唯一 SM-2 计算入口)            │     │
+│  │                                            │     │
+│  │  get_today_review()                        │     │
+│  │  submit_review()                           │     │
+│  │  batch_submit_review()                     │     │
+│  │  get_review_stats()                        │     │
+│  │  get_review_history()                      │     │
+│  │  auto_schedule_wq()                        │     │
+│  │  mark/unmark_mastered()                    │     │
+│  └───────────────────┬────────────────────────┘     │
+│                      │                              │
+│                      ▼                              │
 │  ┌──────────────────────────────────────────┐       │
 │  │          SM-2 Engine (唯一计算来源)       │       │
 │  │          calc_sm2(quality, efactor,       │       │
 │  │          interval, repetitions, date)     │       │
 │  └──────────────────────────────────────────┘       │
 │                                                      │
-│  ┌──────────────────────────────┐                   │
-│  │ wrong_question_service       │                   │
-│  │ (错题 CRUD + 历史 SM-2 路径) │                   │
-│  │ record_wrong()               │                   │
-│  │ update_quality() ← 遗留风险   │                   │
-│  └──────────────────────────────┘                   │
+│  ┌──────────────────────────────────────┐           │
+│  │ wrong_question_service               │           │
+│  │ (错题 CRUD，不含 SM-2 逻辑)          │           │
+│  │ record_wrong()                       │           │
+│  │ update_quality() → RS 路由           │           │
+│  └──────────────────────────────────────┘           │
 └─────────────────────────────────────────────────────┘
-        │              │
-        ▼              ▼
+        │
+        ▼
 ┌─────────────────────────────────────────────────────┐
 │               数据层 (ORM Model)                     │
 │                                                      │
@@ -78,20 +80,19 @@
 │  │  mastered                                     │   │
 │  │  created_at | updated_at                      │   │
 │  └────────────────────┬─────────────────────────┘   │
-│                       │ 单向同步                      │
+│                       │ 单向同步 (仅 last_review_at) │
 │                       ▼                              │
 │  ┌──────────────────────────────────────────────┐   │
-│  │         WrongQuestion (历史兼容层)             │   │
+│  │         WrongQuestion (错题分析层)             │   │
 │  │  id | user_id | question_id                   │   │
 │  │  wrong_answer | error_type | ai_analysis      │   │
 │  │  review_count | last_review_at                │   │
-│  │  ═══════════════════════════════════════════  │   │
-│  │  efactor ← RS.ease_factor (兼容字段)          │   │
-│  │  interval ← RS.interval (兼容字段)            │   │
-│  │  repetitions ← RS.repetitions (兼容字段)      │   │
-│  │  next_review_date ← RS.next_review_at.date()  │   │
-│  │  mastered ← RS.mastered (兼容字段)            │   │
-│  │  quality (独立字段，旧路径使用)                │   │
+│  │  mastered (状态位)                            │   │
+│  │  created_at | updated_at                      │   │
+│  │                                               │   │
+│  │  ⚠ SM-2 兼容字段已于 P2-2 移除               │   │
+│  │  (efactor/interval/repetitions/               │   │
+│  │   next_review_date/quality)                   │   │
 │  └──────────────────────────────────────────────┘   │
 │                                                      │
 │  ┌──────────────────────────────────────────────┐   │
@@ -110,7 +111,7 @@
 |----|------|------|
 | **ReviewSchedule** | 主系统 | 所有复习调度状态（interval / ease_factor / repetitions / next_review_at / mastered）的唯一主数据源 |
 | **SM-2 Engine** | 唯一计算来源 | `calc_sm2()` 是系统中唯一的 SM-2 算法实现，所有路径共享同一个函数 |
-| **WrongQuestion** | 历史兼容层 | 错题分析、AI 分析缓存、review_count 统计；SM-2 字段为同步副本，不参与调度决策 |
+| **WrongQuestion** | 错题分析层 | 错题答案、错误类型、AI 分析、复习次数统计；不含 SM-2 调度参数（P2-2 已移除） |
 | **ReviewRecord** | 历史记录层 | 每次复习提交的完整快照（评分、间隔变化、难度变化），仅追加不修改 |
 
 ---
@@ -147,23 +148,21 @@ question_id     int           题目 FK
 wrong_answer    str?          错误答案
 error_type      str           错题类型：concept / calculation / careless / other
 ai_analysis     dict?         AI 分析结果缓存
-review_count    int           总复习次数（含旧路径）
-last_review_at  datetime?     最近一次复习时间
-─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
-efactor         float         ← 兼容：ReviewSchedule.ease_factor
-interval        int           ← 兼容：ReviewSchedule.interval
-repetitions     int           ← 兼容：ReviewSchedule.repetitions
-next_review_date date?        ← 兼容：ReviewSchedule.next_review_at.date()
-mastered        bool          ← 兼容：ReviewSchedule.mastered
-quality         int?          （独立字段，旧路径 `update_quality()` 写入）
+review_count    int           总复习次数
+last_review_at  datetime?     最近一次复习时间（从 RS.last_reviewed_at 同步）
+mastered        bool          是否已掌握（状态位，与 RS.mastered 保持最终一致）
+created_at      datetime      创建时间
+updated_at      datetime      最后更新时间
+
+移除于 P2-2：efactor / interval / repetitions / next_review_date / quality
 ```
 
 ### 职责分离原则
 
-- **SM-2 参数**（interval / efactor / repetitions）→ 调度核心，仅由 ReviewSchedule 持有权威值
+- **SM-2 参数**（interval / efactor / repetitions）→ 调度核心，仅由 ReviewSchedule 持有（P2-2 已从 WQ 移除）
 - **错题分析**（wrong_answer / error_type / ai_analysis）→ 错题分析，仅由 WrongQuestion 持有
 - **复习历史**（rating / interval_before/after / ease_factor_before/after）→ 历史审计，仅由 ReviewRecord 持有
-- **复习计数** → ReviewSchedule 无此字段，WrongQuestion.review_count 独立统计（含新旧路径）
+- **复习计数** → ReviewSchedule 无此字段，WrongQuestion.review_count 独立统计
 
 ---
 
@@ -177,11 +176,7 @@ ReviewSchedule 更新
        ▼
 _sync_schedule_to_wq(db, schedule)
        │
-       ├─ wq.efactor          = schedule.ease_factor
-       ├─ wq.interval         = schedule.interval
-       ├─ wq.repetitions      = schedule.repetitions
-       ├─ wq.next_review_date = schedule.next_review_at.date()
-       ├─ wq.mastered         = schedule.mastered
+       ├─ wq.last_review_at = schedule.last_reviewed_at
        └─ db.commit()
 ```
 
@@ -197,12 +192,8 @@ _sync_schedule_to_wq(db, schedule)
 ### 核心约束
 
 - **绝不反向同步**：WrongQuestion → ReviewSchedule 的路径不存在且不应存在
-- **绝不直接修改 WrongQuestion SM-2 字段**：业务代码不应直接赋值 `wq.efactor` 等字段，应通过 ReviewSchedule 修改后由 `_sync_schedule_to_wq()` 回写
-- **同步是最终一致性的**：短窗口内（同一请求处理过程中）可能存在 RS 已更新但 WQ 未同步的状态，但在请求结束（`db.commit()`）后应一致
-
-### 例外：`record_wrong()` 中的初始化
-
-`wrong_question_service.record_wrong()` 在创建新 `WrongQuestion` 记录时会初始化 SM-2 字段（efactor=2.5, interval=1, repetitions=0, next_review_date=today+1）。这是合理的——此时 ReviewSchedule 尚未创建，`auto_schedule_wrong_question()` 随后会覆盖这些值。
+- **同步范围已缩减**：P2-2 后 `_sync_schedule_to_wq()` 仅同步 `last_review_at`（原 SM-2 字段已从 WQ 模型移除）
+- **同步是最终一致性的**：短窗口内可能存在 RS 已更新但 WQ 未同步的状态，但在请求结束（`db.commit()`）后应一致
 
 ---
 
@@ -279,52 +270,39 @@ efactor' = max(1.3, efactor')
 
 ---
 
-## 5. 双接口体系说明
+## 5. 接口体系（单一路径）
 
-### 当前状态
+### 当前接口清单
 
 ```
 ┌────────────────────────────────────────────────────┐
-│                  双接口并存                          │
+│                  复习接口（RS 基座）                 │
 │                                                     │
-│  旧接口（WrongQuestion 基座）  新接口（RS 基座）    │
-│  ───────────────────────────  ───────────────────  │
-│  GET  /review/due             GET  /review/today    │
-│  POST /review/submit          POST /review/schedule-│
-│  GET  /review/stats             submit              │
-│  PUT  /wrong_q/{id}/quality   POST /review/batch-   │
-│                                  submit             │
-│                                POST /review/grade-  │
-│                                  submit              │
-│                                POST /review/grade-  │
-│                                  batch               │
-│                                GET  /review/schedule-│
-│                                  stats               │
-│                                GET  /review/history  │
-│                                POST /review/{id}/   │
-│                                  master/unmaster     │
+│  GET    /review/today         今日待复习列表         │
+│  POST   /review/schedule-submit  提交单题评分       │
+│  POST   /review/batch-submit  批量提交评分          │
+│  POST   /review/grade-submit  自动批改 + 提交       │
+│  POST   /review/grade-batch   批量自动批改          │
+│  GET    /review/schedule-stats  复习统计            │
+│  GET    /review/history       复习历史              │
+│  POST   /review/{id}/master   标记已掌握            │
+│  POST   /review/{id}/unmaster 取消已掌握            │
+│                                                     │
+│  错题本接口（WQ 基座，不含 SM-2 参数）              │
+│  GET    /wrong-questions       错题列表             │
+│  GET    /wrong-questions/stats 错题统计             │
+│  GET    /wrong-questions/{id}  单题详情             │
+│  PUT    /wrong-questions/{id}  更新错题类型         │
+│  PUT    /wrong-questions/{id}/quality  评分（RS路由）│
 └────────────────────────────────────────────────────┘
 ```
 
-### 共存原因
+### 设计说明
 
-1. **渐进迁移**：新接口（Stage 12）开发时，旧接口（早期 Stage）已被小程序使用，无法一次性切换
-2. **功能差异**：旧接口返回 `wrong_answer`/`error_type`/`answer` 等分析字段；新接口设计为纯复习用途，不暴露答案
-3. **统计维度不同**：旧 `/review/stats` 基于 WQ 的 `total_wrong`/`due_today`/`reviewed_today`；新 `/review/schedule-stats` 基于 RS 的 `total_scheduled`/`remaining_today`/`accuracy_last_7d`
-
-### 已知风险
-
-| 风险 | 影响 |
-|------|------|
-| 旧路径 `update_quality()` 在 WQ 上独立执行 SM-2 计算 | RS 与 WQ 的 SM-2 参数在此路径下不会同步，产生数据不一致 |
-| 旧路径使用 `date.today()`（本地时区） | 新路径使用 `utcnow().date()`，时区偏移可能导致同一天判定不一致 |
-| WQ.quality 字段仅由旧路径写入 | 新路径不写入此字段，前端若展示 `quality` 可能看到过时值 |
-| 小程序未直接调用旧接口 | `grep` 确认 miniprogram 未引用旧端点，风险主要来自 API 直接调用或第三方集成 |
-
-### 迁移计划
-
-> **P1（后续优化）**：旧接口切换为 RS 数据源
-> **P2（长期重构）**：废弃旧接口，前端统一切换到新接口
+- 旧接口（`/review/due`、`/review/submit`、`/review/stats`）已于 P2-1 移除
+- 所有复习操作统一使用 ReviewSchedule 作为数据源
+- `PUT /wrong-questions/{id}/quality` 底层路由到 `review_scheduler.submit_review()`，不走独立 SM-2 计算
+- WrongQuestion 响应中不含 SM-2 参数（P2-2 移除）
 
 ---
 
@@ -334,22 +312,20 @@ efactor' = max(1.3, efactor')
 
 基于 2026-06-26 代码快照，逐条检查以下风险点。**只分析，不改代码。**
 
-### 6.1 ReviewSchedule → WrongQuestion 未同步字段
+### 6.1 ReviewSchedule → WrongQuestion 已移除字段
 
-| RS 字段 | 是否有 WQ 对应 | 是否被同步 | 风险 |
-|---------|---------------|-----------|------|
-| id | 无对应 | N/A | 无风险（各自独立） |
-| user_id | user_id | 否（但两表同值） | **低**：创建时相同，不会偏 |
-| question_id | question_id | 否（但两表同值） | **低**：创建时相同，不会偏 |
-| subject | 无对应 | N/A | **无**：WQ 无此字段，无需同步 |
-| interval | interval | 是 | 无风险 |
-| ease_factor | efactor | 是 | 无风险 |
-| repetitions | repetitions | 是 | 无风险 |
-| next_review_at | next_review_date | 是（`date()` 截断） | **低**：datetime→date 精度损失不影响日级别调度 |
-| last_reviewed_at | last_review_at | **否** | **中**：新路径提交后 WQ.last_review_at 可能过时 |
-| mastered | mastered | 是 | 无风险 |
+P2-2 后 WQ 不持有 SM-2 字段（efactor/interval/repetitions/next_review_date/quality），同步范围缩减为仅 `last_review_at`：
 
-**结论**：`last_reviewed_at` 未同步，但影响有限（WQ.last_review_at 主要用于旧 `/review/stats` 的 `reviewed_today` 计数）。
+| RS 字段 | WQ 对应字段 | 同步状态 | 说明 |
+|---------|------------|---------|------|
+| last_reviewed_at | last_review_at | ✅ P1-2 已修复 | `_sync_schedule_to_wq()` 唯一保留的同步 |
+| mastered | mastered | WQ 独立维护 | P2-2 保留 mastered 状态位，由业务代码主动同步 |
+| ease_factor | 无 | P2-2 已移除 | WQ 不再持有 SM-2 参数 |
+| interval | 无 | P2-2 已移除 | WQ 不再持有 SM-2 参数 |
+| repetitions | 无 | P2-2 已移除 | WQ 不再持有 SM-2 参数 |
+| next_review_at | 无 | P2-2 已移除 | WQ 不再持有 SM-2 参数 |
+
+**结论**：无残留风险。
 
 ### 6.2 WrongQuestion 被用于计算 SM-2 的路径
 
@@ -428,22 +404,22 @@ async def update_quality(db, user_id, wq_id, quality):
 | P1-4 | **`record_wrong()` 中 `date.today()`** | `wrong_question_service.py:23,47` | 替换为 `utcnow().date()` | ✅ 已修复 |
 | P1-5 | **`quality` 字段废弃计划** | `wrong_question.py` | WQ.quality 仅由旧路径写入；待 P2 废弃 | 📋 待处理 |
 
-### P2 — 长期重构
+### P2 — 已完成
 
-| ID | 问题 | 说明 |
-|----|------|------|
-| P2-1 | **废弃旧接口端点** | 前端全量切换到新接口后，移除 `GET /review/due`、`POST /review/submit`、`GET /review/stats`。 |
-| P2-2 | **废弃 WrongQuestion SM-2 兼容字段** | 前端无依赖后，移除 WQ 的 efactor/interval/repetitions/next_review_date/mastered 字段，仅保留错题分析字段。 |
-| P2-3 | **统一复习视图** | 将 `/review/today` 与 `/review/due` 合并为单一复习列表端点，消除双接口的数据源歧义。 |
-| P2-4 | **复习统计接口合并** | `/review/stats` 和 `/review/schedule-stats` 合并为统一统计端点，前端按需选择维度。 |
-| P2-5 | **ReviewSchedule.subject 去冗余** | subject 在 ReviewSchedule 中冗余存储（来自 Question.subject），可通过 join 消除。当前为性能优化（避免高频 join），长期可评估是否需要。 |
+| ID | 问题 | 处理 | 状态 |
+|----|------|------|------|
+| P2-1 | **废弃旧接口端点** | 移除 `GET /review/due`、`POST /review/submit`、`GET /review/stats` | ✅ 已移除 |
+| P2-2 | **废弃 WrongQuestion SM-2 兼容字段** | 移除 efactor/interval/repetitions/next_review_date/quality；保留 mastered 状态位 | ✅ 已移除 |
+| P2-3 | **统一复习视图** | 旧接口已移除，`/review/today` 为唯一复习列表端点 | ✅ 已完成 |
+| P2-4 | **复习统计接口合并** | 旧接口已移除，`/review/schedule-stats` 为唯一统计端点 | ✅ 已完成 |
+| P2-5 | **ReviewSchedule.subject 去冗余** | subject 为性能优化（避免高频 join），当前维持现状 | ⏸️ 已跳过 |
 
 ---
 
 > 本文档基于代码真实状态，不包含未实现的设计。相关代码路径：
 > - 调度服务：`backend/app/services/review_scheduler.py`
 > - SM-2 算法：`backend/app/services/sm2_service.py`
-> - 旧接口服务：`backend/app/services/review_service.py`
 > - 错题服务：`backend/app/services/wrong_question_service.py`
+> - 学习统计：`backend/app/services/stats_service.py`
 > - ORM 模型：`backend/app/models/review_scheduler.py`, `wrong_question.py`
 > - API 路由：`backend/app/api/v1/review.py`, `wrong_questions.py`
