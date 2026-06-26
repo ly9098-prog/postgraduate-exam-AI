@@ -257,10 +257,15 @@ async def submit_to_review(
     dup_questions = await _batch_find_duplicate_questions(db, subject_hash_pairs)
     dup_imports = await _batch_find_duplicate_imports(db, subject_hash_pairs)
 
-    # Track same-batch duplicates
-    seen_hashes: dict[str, int] = {}
+    # Track same-batch duplicates (keyed by (subject, question_hash))
+    DuplicateKey = tuple[str | None, str]
+
+    def _dup_key(subject: str | None, qhash: str | None) -> DuplicateKey | None:
+        return (subject, qhash) if qhash else None
+
+    seen_hashes: dict[DuplicateKey, int] = {}
     pending_in_batch = 0
-    pending_first_qi_by_hash: dict[str, QuestionImport] = {}
+    pending_first_qi_by_hash: dict[DuplicateKey, QuestionImport] = {}
     pending_duplicate_links: list[tuple[QuestionImport, QuestionImport]] = []
 
     # 隐患② 修复：分批 commit 失去原子性，中途崩溃会留下孤儿 batch_id 记录。
@@ -310,10 +315,10 @@ async def submit_to_review(
             elif dup_key and dup_key in dup_imports:
                 duplicate_fields["duplicate_status"] = "possible_duplicate"
                 duplicate_fields["duplicate_of_import_id"] = dup_imports[dup_key]
-            elif question_hash and question_hash in seen_hashes:
+            elif (key := _dup_key(qi_subject, question_hash)) and key in seen_hashes:
                 duplicate_fields["duplicate_status"] = "possible_duplicate"
-                duplicate_fields["duplicate_of_import_id"] = seen_hashes[question_hash]
-            elif question_hash and question_hash in pending_first_qi_by_hash:
+                duplicate_fields["duplicate_of_import_id"] = seen_hashes[key]
+            elif key and key in pending_first_qi_by_hash:
                 duplicate_fields["duplicate_status"] = "possible_duplicate"
                 _same_batch_dup = True
 
@@ -375,11 +380,12 @@ async def submit_to_review(
             pending_qis.append(qi)
             written += 1
             pending_in_batch += 1
-            # Same-batch duplicate tracking
-            if question_hash and not _same_batch_dup:
-                pending_first_qi_by_hash.setdefault(question_hash, qi)
-            elif _same_batch_dup:
-                pending_duplicate_links.append((qi, pending_first_qi_by_hash[question_hash]))
+            # Same-batch duplicate tracking (keyed by (subject, question_hash))
+            sb_key = _dup_key(qi_subject, question_hash)
+            if sb_key and not _same_batch_dup:
+                pending_first_qi_by_hash.setdefault(sb_key, qi)
+            elif _same_batch_dup and sb_key:
+                pending_duplicate_links.append((qi, pending_first_qi_by_hash[sb_key]))
 
             # P1-B: 每 N 道 flush + commit。v2 优化：批量 flush 代替每题 flush。
             if pending_in_batch >= _REVIEW_COMMIT_BATCH_SIZE:
@@ -391,7 +397,7 @@ async def submit_to_review(
                 pending_first_qi_by_hash.clear()
                 for _qi, _qhash, _q, _stem in flush_batch:
                     if _qhash:
-                        seen_hashes.setdefault(_qhash, _qi.id)
+                        seen_hashes.setdefault(_dup_key(_qi.subject, _qhash), _qi.id)
                     _log_multi_blank_review_item(
                         batch_id=batch_id, qi=_qi, source_question=_q, stem=_stem,
                     )
@@ -424,7 +430,7 @@ async def submit_to_review(
             pending_first_qi_by_hash.clear()
             for _qi, _qhash, _q, _stem in flush_batch:
                 if _qhash:
-                    seen_hashes.setdefault(_qhash, _qi.id)
+                    seen_hashes.setdefault(_dup_key(_qi.subject, _qhash), _qi.id)
                 _log_multi_blank_review_item(
                     batch_id=batch_id, qi=_qi, source_question=_q, stem=_stem,
                 )
