@@ -21,13 +21,24 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def _has_constraint(table_name: str, constraint_name: str) -> bool:
-    """Check if a named constraint exists (SQLite-compatible via sqlite_master)."""
+    """Check if a named constraint exists (SQLite + PostgreSQL compatible)."""
     conn = op.get_bind()
+    dialect = conn.dialect.name
+    if dialect == "sqlite":
+        row = conn.execute(
+            sa.text("SELECT sql FROM sqlite_master WHERE type='table' AND name=:name"),
+            {"name": table_name},
+        ).scalar()
+        return row is not None and constraint_name in row
+    # PostgreSQL
     row = conn.execute(
-        sa.text("SELECT sql FROM sqlite_master WHERE type='table' AND name=:name"),
-        {"name": table_name},
+        sa.text(
+            "SELECT 1 FROM information_schema.table_constraints "
+            "WHERE table_name=:table_name AND constraint_name=:constraint_name"
+        ),
+        {"table_name": table_name, "constraint_name": constraint_name},
     ).scalar()
-    return row is not None and constraint_name in row
+    return row is not None
 
 
 def upgrade() -> None:
