@@ -17,6 +17,44 @@ class AdminImportBatchListItem(BaseModel):
     updated_at: datetime | None = None
 
 
+class AdminImportQuestionItemBrief(BaseModel):
+    """摘要版导入题目，不包含 raw_data / parsed_content / parsed_options 等大字段。
+
+    列表页使用此 schema，详情页使用完整的 AdminImportQuestionItem。
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    batch_id: str
+    source_type: str
+    source_file: str | None = None
+    subject: str | None = None
+    question_type: str | None = None
+    parsed_answer: str | None = None
+    question_hash: str | None = None
+    duplicate_status: str | None = "normal"
+    duplicate_of_question_id: int | None = None
+    duplicate_of_import_id: int | None = None
+    status: str
+    review_note: str | None = None
+    question_id: int | None = None
+    reject_reason: str | None = None
+    reviewed_by: int | None = None
+    reviewed_at: datetime | None = None
+    ai_generated: bool
+    ai_source: str | None = None
+    ai_confidence: float | None = None
+    ai_metadata: dict | None = None
+    ai_reviewed_at: datetime | None = None
+    ai_answer_flag: bool
+    content_preview: str = ""
+    risk_flags: list[str] = []
+    risk_level: str = "low"
+    risk_reasons: list[str] = []
+    created_at: datetime
+    updated_at: datetime
+
+
 class AdminImportQuestionItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -55,7 +93,7 @@ class AdminImportQuestionItem(BaseModel):
 
 
 class AdminImportBatchDetail(AdminImportBatchListItem):
-    items: list[AdminImportQuestionItem]
+    items: list[AdminImportQuestionItemBrief]
     page: int
     page_size: int
     total_pages: int

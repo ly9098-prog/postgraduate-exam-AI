@@ -1,5 +1,18 @@
 # Bugs History
 
+## 2026-06-27 — SQLAlchemy 全量日志刷屏 + question_imports 列表查询拉取大字段（已修复）
+
+- **现象**：① 开发环境每次请求都输出完整 SQL 语句（`sqlalchemy.engine` INFO），淹没有价值的 OCR/import pipeline 日志；② 审核池/导入列表页每页 50 条 SELECT 包含 `raw_data`、`parsed_content`（JSON）、`parsed_options`、`parsed_analysis`、`ai_raw_response`、`math_regions` 等大字段。
+- **根因**：① `create_async_engine(echo=True)` 在开发环境开启全量 SQL 日志，`logging_config.py` 未约束 `sqlalchemy.engine` 日志级别；② `list_review_queue` 和 `get_import_batch_detail` 使用 `select(QuestionImport)` 加载 ORM 全量实体。
+- **处理**：
+  1. engine 改用 `echo=settings.SQL_ECHO`（默认 False）+ `hide_parameters=True`；`logging_config.py` 新增 `sqlalchemy.engine`/`pool`/`dialects` logger 默认 WARNING
+  2. 新增慢查询日志：`before_cursor_execute`/`after_cursor_execute` 监听器，超 `SLOW_QUERY_MS`（默认 500ms）才输出，SQL 压缩空白 + 截断 1200 字符
+  3. `list_review_queue` 改为选择性列查询（`_LIST_COLUMNS`），排除 `raw_data`、`parsed_content`（仅 substr 前 160 字符为 `content_preview`）、`parsed_options`、`parsed_analysis`
+  4. 新增 `GET /imports/questions/{import_id}` 详情端点返回完整字段
+  5. 新增复合索引 `ix_question_imports_status_created_id` 和 `ix_question_imports_batch_status_created_id`
+  6. 前端列表改用 `content_preview`，打开详情时调用 detail endpoint
+- **验证**：10 个专项测试 + 全量 2220 个测试通过，0 回归。新增配置 `SQL_ECHO=false`、`SQL_LOG_LEVEL=WARNING`、`SLOW_QUERY_MS=500`。
+
 ## 2026-06-25 — 刷题页选项内容重复渲染 + 题干单行重复 + 选项 LaTeX 未渲染（已修复）
 
 - **现象**：三个独立问题：① 含 `$...$` LaTeX 的选项渲染为两行（key 一行、mp-html 下一行），无 `$` 的选项正常；② 单行题干文本（如 "在线性表 a0, a1,.., a100，删除元素 a50 需要移动()个元素。"）连续显示两次；③ 选项中的数学公式以原始 LaTeX 文本显示，未转换。

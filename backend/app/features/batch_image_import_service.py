@@ -329,7 +329,7 @@ async def _find_job_by_request_id(
     row = (
         await db.execute(
             select(ImportBatchJob.job_id).where(
-                ImportBatchJobItem.request_id == request_id,
+                ImportBatchJob.request_id == request_id,
             ).limit(1)
         )
     ).scalar_one_or_none()
@@ -452,6 +452,24 @@ async def create_batch_job(
         db=db,
     )
     job.next_event_seq += 1
+
+    # Lightweight AI model config pre-check — warn once per job, don't block
+    try:
+        from app.services.health_check_service import check_ai_model_config
+        ai_check = await check_ai_model_config(db)
+        if ai_check.severity in ("error", "warning"):
+            await _append_trace_event(
+                job_id,
+                seq=job.next_event_seq,
+                step=TraceStep.CONFIG.value,
+                status=TraceEventStatus.WARNING.value,
+                message=ai_check.message[:512],
+                request_id=request_id,
+                db=db,
+            )
+            job.next_event_seq += 1
+    except Exception:
+        logger.warning("AI model config pre-check failed (non-fatal)", exc_info=True)
 
     await db.commit()
     return job

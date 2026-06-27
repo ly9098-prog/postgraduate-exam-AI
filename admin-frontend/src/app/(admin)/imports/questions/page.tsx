@@ -270,7 +270,16 @@ export default function ImportQuestionsPage() {
   });
 
   const items = questions.data?.items ?? [];
-  const previewItem = items.find((item) => item.id === previewId) ?? null;
+
+  // Fetch full detail when modal opens
+  const detail = useQuery({
+    queryKey: ["import-question-detail", previewId],
+    queryFn: () => apiRequest<ImportQuestionItem>(`/imports/questions/${previewId}`),
+    enabled: previewId !== null,
+    retry: false,
+  });
+
+  const previewItem = detail.data ?? (items.find((item) => item.id === previewId) ?? null);
 
   const updateFilter = (key: keyof typeof filters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -356,9 +365,9 @@ export default function ImportQuestionsPage() {
                         </span>
                       </div>
 
-                      {/* Stem */}
+                      {/* Stem preview */}
                       <p className="line-clamp-2 whitespace-pre-wrap text-sm leading-relaxed text-[var(--ink)]">
-                        {textFromImport(item) || `导入题目 #${item.id}`}
+                        {item.content_preview || textFromImport(item) || `导入题目 #${item.id}`}
                       </p>
                     </div>
 

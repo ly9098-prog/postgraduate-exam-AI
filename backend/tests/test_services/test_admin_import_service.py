@@ -36,6 +36,18 @@ class _Result:
     def scalars(self):
         return _Scalars(self.values)
 
+    def _row_to_mapping(self, row):
+        """Convert an ORM model to a SimpleNamespace with extra fields."""
+        if hasattr(row, "__table__"):
+            data = {c.name: getattr(row, c.name, None) for c in row.__table__.columns}
+            data["content_preview"] = ""
+            return SimpleNamespace(**data)
+        return row
+
+    def mappings(self):
+        combined = list(self.rows) + list(self.values)
+        return _Result(rows=[self._row_to_mapping(r) for r in combined])
+
 
 class _Db:
     def __init__(self, imports=None):

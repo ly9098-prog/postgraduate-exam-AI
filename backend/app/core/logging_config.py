@@ -40,6 +40,9 @@ LOGGING_CONFIG: dict = {
     "loggers": {
         "uvicorn": {"level": LOG_LEVEL, "handlers": ["console"], "propagate": False},
         "uvicorn.access": {"level": LOG_LEVEL, "handlers": ["console"], "propagate": False},
+        "sqlalchemy.engine": {"level": "WARNING", "handlers": ["console"], "propagate": False},
+        "sqlalchemy.pool": {"level": "WARNING", "handlers": ["console"], "propagate": False},
+        "sqlalchemy.dialects": {"level": "WARNING", "handlers": ["console"], "propagate": False},
     },
 }
 
