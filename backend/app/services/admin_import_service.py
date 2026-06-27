@@ -4,7 +4,7 @@ from math import ceil
 from uuid import uuid4
 
 from fastapi import Request
-from sqlalchemy import case, delete, desc, func, or_, select
+from sqlalchemy import String, case, delete, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow
@@ -240,7 +240,12 @@ _LIST_COLUMNS = (
     QuestionImport.ai_answer_flag,
     QuestionImport.created_at,
     QuestionImport.updated_at,
-    func.substr(QuestionImport.parsed_content.cast(str), 1, 160).label("content_preview"),
+    func.substr(
+        func.coalesce(
+            QuestionImport.parsed_content['text'].as_string(),
+            QuestionImport.parsed_content.cast(String),
+        ), 1, 160
+    ).label("content_preview"),
 )
 
 
@@ -799,3 +804,14 @@ def _task_key(task_id: str) -> str:
 
 def _batch_task_key(batch_id: str) -> str:
     return f"admin:ai:batch:{batch_id}:task"
+
+
+async def list_subject_options(db: AsyncSession) -> list[dict]:
+    """返回活跃科目列表 [{code, name}]，供下拉框使用。"""
+    from app.models.admin import Subject
+    result = await db.execute(
+        select(Subject.code, Subject.name)
+        .where(Subject.is_active.is_(True))
+        .order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
+    )
+    return [{"code": row.code, "name": row.name} for row in result.all()]
