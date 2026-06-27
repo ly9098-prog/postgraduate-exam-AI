@@ -1,10 +1,11 @@
 """OCR service：基于 PaddleOCR 的扫描版 PDF 识别。
 
 设计原则：
-- OCR 实例单例化，避免重复初始化
-- 并发处理多页，max_workers 可通过配置控制
-- OCR 失败的页面跳过，不崩溃整体流程
-- 提供 clean_ocr_text() 清洗乱码/断行
+- OCR 实例单例化，使用双重检查锁避免并发初始化
+- PaddleOCR 初始化以及推理调用串行化（threading.Lock）
+- CPU 推理禁用 MKLDNN、单线程（防止 C++ 多线程冲突导致 SIGSEGV）
+- 启动自检：初始化后立即执行健康检查，失败则标记引擎不可用
+- 失败降级：OCR 引擎初始化失败时返回清晰错误，不静默崩溃
 """
 import logging
 import os
@@ -25,9 +26,12 @@ from app.core.ocr_profile import get_ocr_profile
 
 logger = logging.getLogger(__name__)
 
+# ── 全局状态 ──────────────────────────────────────────────────────────────
 _ocr_instance = None
-_ocr_lock = threading.Lock()  # serialize GPU inference calls
-
+_ocr_init_lock = threading.Lock()       # 保护 PaddleOCR 初始化（只初始化一次）
+_ocr_inference_lock = threading.Lock()  # 串行化推理调用（单线程 paddle inference）
+_ocr_init_error: str | None = None      # 初始化失败时记录错误消息，后续不再重试
+_ocr_initialized: bool = False
 
 _OCR_MAX_SIDE = 3000
 _OCR_DEPENDENCY_ERROR = "OCR 依赖未安装：paddleocr，请先安装 requirements-ocr.txt"
@@ -53,26 +57,93 @@ class OcrCandidateResult:
 
 
 def _get_ocr():
-    """懒加载 PaddleOCR 单例，避免重复初始化的高成本。"""
-    global _ocr_instance
-    if _ocr_instance is None:
+    """懒加载 PaddleOCR 单例，使用双重检查锁避免并发初始化。
+
+    初始化失败时会记录到 _ocr_init_error，后续所有调用直接抛出，
+    不再重试，避免重复 SIGSEGV。
+    """
+    global _ocr_instance, _ocr_init_error, _ocr_initialized
+
+    if _ocr_init_error:
+        raise RuntimeError(f"OCR 引擎初始化失败: {_ocr_init_error}")
+
+    if _ocr_initialized:
+        return _ocr_instance
+
+    with _ocr_init_lock:
+        if _ocr_initialized:
+            return _ocr_instance
+
         try:
             from paddleocr import PaddleOCR  # 延迟导入，不影响未开启 OCR 的启动速度
         except ImportError as exc:
+            _ocr_init_error = _OCR_DEPENDENCY_ERROR
             raise RuntimeError(_OCR_DEPENDENCY_ERROR) from exc
 
         profile = get_ocr_profile()
-        _ocr_instance = PaddleOCR(
-            use_angle_cls=True,
-            lang=settings.OCR_LANGUAGE,
-            use_gpu=profile.use_gpu,
-            show_log=False,
-            det_db_thresh=settings.OCR_DET_DB_THRESH,
-            det_db_box_thresh=settings.OCR_DET_DB_BOX_THRESH,
-            det_db_unclip_ratio=settings.OCR_DET_DB_UNCLIP_RATIO,
-            drop_score=settings.OCR_DROP_SCORE,
-        )
+        try:
+            _ocr_instance = PaddleOCR(
+                use_angle_cls=True,
+                lang=settings.OCR_LANGUAGE,
+                use_gpu=profile.use_gpu,
+                show_log=False,
+                det_db_thresh=settings.OCR_DET_DB_THRESH,
+                det_db_box_thresh=settings.OCR_DET_DB_BOX_THRESH,
+                det_db_unclip_ratio=settings.OCR_DET_DB_UNCLIP_RATIO,
+                drop_score=settings.OCR_DROP_SCORE,
+                # 稳定性：关闭 MKLDNN + 单 CPU 线程，防止 C++ 多线程冲突
+                use_mkldnn=False,
+                cpu_threads=1,
+            )
+        except Exception as exc:
+            _ocr_init_error = str(exc)
+            logger.critical("PaddleOCR 初始化失败: %s", _ocr_init_error)
+            raise RuntimeError(f"OCR 引擎初始化失败: {_ocr_init_error}") from exc
+
+        # 启动自检：用一张纯白图片测试推理是否能正常完成
+        _run_ocr_health_check(_ocr_instance)
+
+        _ocr_initialized = True
+        logger.info("PaddleOCR 初始化完成（use_gpu=%s, lang=%s, mkldnn=off, cpu_threads=1）",
+                     profile.use_gpu, settings.OCR_LANGUAGE)
+
     return _ocr_instance
+
+
+_HEALTH_CHECK_IMAGE: bytes | None = None
+
+
+def _get_health_check_image() -> bytes:
+    """生成一张 100×100 的纯白 PNG 用于 OCR 健康检查。
+
+    缓存 PNG 字节以避免重复编码。
+    """
+    global _HEALTH_CHECK_IMAGE
+    if _HEALTH_CHECK_IMAGE is not None:
+        return _HEALTH_CHECK_IMAGE
+    from io import BytesIO
+    from PIL import Image
+    buf = BytesIO()
+    Image.new("RGB", (100, 100), "white").save(buf, format="PNG")
+    _HEALTH_CHECK_IMAGE = buf.getvalue()
+    return _HEALTH_CHECK_IMAGE
+
+
+def _run_ocr_health_check(ocr_instance) -> None:
+    """用一张空白图片测试 PaddleOCR 推理，验证引擎初始化正常。
+
+    如果推理抛出任何异常（含 SIGSEGV），则标记 _ocr_init_error 并
+    阻止后续所有 OCR 调用。
+    """
+    global _ocr_init_error
+    try:
+        import numpy as np
+        _ = ocr_instance.ocr(np.zeros((100, 100, 3), dtype=np.uint8), cls=True)
+        logger.info("PaddleOCR 健康检查通过")
+    except Exception as exc:
+        _ocr_init_error = f"健康检查失败: {exc}"
+        logger.critical("PaddleOCR 健康检查失败: %s", _ocr_init_error)
+        raise RuntimeError(f"OCR 引擎初始化失败: {_ocr_init_error}") from exc
 
 
 def _load_ocr_image(image_bytes: bytes):
@@ -319,7 +390,8 @@ def _rotate_image_for_ocr(img, degrees: int):
 
 
 def _ocr_prepared_image(ocr, img) -> Any:
-    with _ocr_lock:
+    """执行 OCR 推理，使用全局串行锁确保 C++ 推理不并发。"""
+    with _ocr_inference_lock:
         return ocr.ocr(_image_to_array(img), cls=True)
 
 
@@ -460,6 +532,7 @@ def _ocr_one_page(page_png: bytes, page_index: int) -> tuple[int, str]:
         logger.info("OCR 第 %d 页识别到 %d 行文本", page_index, len(text_lines))
         return page_index, "\n".join(text_lines)
     except RuntimeError:
+        # 初始化失败（_get_ocr 抛出）直接透传，不静默吞掉
         raise
     except Exception as e:
         logger.warning("OCR 第 %d 页失败：%s", page_index, e)
@@ -556,6 +629,10 @@ def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
     if not page_images:
         return {}
 
+    # 提前检查 OCR 可用性，避免线程池提交后全部失败
+    if not ocr_is_available():
+        _get_ocr()  # 触发初始化，失败会抛 RuntimeError（含 _ocr_init_error）
+
     results: dict[int, str] = {}
     max_workers = get_ocr_profile().max_workers
 
@@ -588,6 +665,10 @@ def ocr_pages_with_boxes(
     """
     if not page_images:
         return {}
+
+    # 提前检查 OCR 可用性，避免线程池提交后全部失败
+    if not ocr_is_available():
+        _get_ocr()  # 触发初始化，失败会抛 RuntimeError（含 _ocr_init_error）
 
     results: dict[int, OcrPageResult] = {}
     max_workers = get_ocr_profile().max_workers
@@ -622,6 +703,33 @@ def clean_ocr_text(text: str, *, trace_id: str = "") -> str:
     """
     from app.features.text_normalizer import normalize_ocr_text
     return normalize_ocr_text(text, trace_id=trace_id)
+
+
+def ocr_is_available() -> bool:
+    """返回 OCR 引擎是否已成功初始化且可用。
+
+    调用方（pipeline_orchestrator、batch_image_import_service）
+    在启动 OCR 前应检查此标记，不可用时直接降级而非调用 _get_ocr()。
+    """
+    return _ocr_initialized and _ocr_init_error is None
+
+
+def get_ocr_init_error() -> str | None:
+    """返回初始化错误消息（如有），用于前端/日志显示。"""
+    return _ocr_init_error
+
+
+def reset_ocr_engine() -> None:
+    """重置 OCR 引擎状态（仅供管理员 API 或恢复脚本使用）。
+
+    调用后下一次 _get_ocr() 会重新初始化 PaddleOCR。
+    """
+    global _ocr_instance, _ocr_initialized, _ocr_init_error
+    with _ocr_init_lock:
+        _ocr_instance = None
+        _ocr_initialized = False
+        _ocr_init_error = None
+    logger.info("OCR 引擎已重置，下次调用将重新初始化")
 
 
 def get_ocr_cache_stats() -> dict:

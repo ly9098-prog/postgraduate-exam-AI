@@ -37,6 +37,7 @@ from app.api.v1.admin_subjects import router as admin_subjects_router
 from app.api.v1.admin_users import router as admin_users_router
 from app.api.v1.admin_watermark_rules import router as admin_watermark_rules_router
 from app.api.v1.admin_ai_config import router as admin_ai_config_router
+from app.api.v1.admin_system_health import router as admin_system_health_router
 from app.api.v1.sync import router as sync_router
 from app.core.config import settings
 from app.core.database import init_db
@@ -89,6 +90,34 @@ async def lifespan(app: FastAPI):
                 logger.info("Development super admin initialized")
     except Exception as e:
         logger.warning("Development super admin init failed (non-fatal): %s", e)
+
+    # --- AI 模型配置启动自检 ---
+    try:
+        from app.core.database import async_session
+        from app.services.health_check_service import check_ai_model_config
+
+        async with async_session() as db:
+            ai_check = await check_ai_model_config(db)
+            if ai_check.severity == "error":
+                logger.error(
+                    "AI_MODEL_NOT_CONFIGURED: admin_ai_model_configs has no enabled model; "
+                    "OCR AI repair / VL fallback may be unavailable"
+                )
+            elif ai_check.severity == "warning":
+                logger.warning(
+                    "AI_MODEL_DEFAULT_MISSING: enabled AI models exist (%d) but no default model is configured; "
+                    "providers=%s features=%s",
+                    ai_check.enabled_count, ai_check.providers, ai_check.features,
+                )
+            else:
+                logger.info(
+                    "AI model config healthy: enabled_count=%d default_count=%d providers=%s features=%s",
+                    ai_check.enabled_count, ai_check.default_count,
+                    ai_check.providers, ai_check.features,
+                )
+    except Exception as e:
+        logger.warning("AI model config self-check failed (non-fatal, DB may not be ready): %s", e)
+
     cleanup_task = asyncio.create_task(_periodic_token_cleanup(), name="token-cleanup")
 
     try:
@@ -187,6 +216,7 @@ app.include_router(admin_subjects_router)
 app.include_router(admin_users_router)
 app.include_router(admin_watermark_rules_router)
 app.include_router(admin_ai_config_router)
+app.include_router(admin_system_health_router)
 app.include_router(sync_router)
 app.include_router(pomodoro_router)
 

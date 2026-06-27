@@ -34,7 +34,7 @@ class DeepSeekClient:
         self,
         messages: list,
         temperature: float = 0.3,
-        model: str = "deepseek-v4-flash",
+        model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
     ) -> dict:
@@ -43,6 +43,9 @@ class DeepSeekClient:
 
         if not _api_key or _api_key == "sk-your-key-here":
             raise RuntimeError("DEEPSEEK_API_KEY 未配置")
+
+        # 兜底：显式传 None 不会覆盖默认值，确保 payload["model"] 永远是字符串
+        model = model or getattr(settings, "DEEPSEEK_MODEL", None) or "deepseek-v4-flash"
 
         payload = {
             "model": model,

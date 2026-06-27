@@ -19,7 +19,7 @@ export type ImportQuestionItem = {
   source_file?: string | null;
   subject?: string | null;
   question_type?: string | null;
-  raw_data: Record<string, unknown>;
+  raw_data?: Record<string, unknown> | null;
   parsed_content?: Record<string, unknown> | null;
   parsed_options?: Record<string, unknown> | null;
   parsed_answer?: string | null;
@@ -40,6 +40,7 @@ export type ImportQuestionItem = {
   ai_metadata?: Record<string, unknown> | null;
   ai_reviewed_at?: string | null;
   ai_answer_flag: boolean;
+  content_preview?: string;
   risk_flags: string[];
   risk_level: string;
   risk_reasons: string[];
@@ -594,4 +595,22 @@ export type ModelTestConnectionResponse = {
   message: string;
   latency_ms: number | null;
   model_returned?: string | null;
+};
+
+// ── System health types ─────────────────────────────────────
+
+export type HealthCheckItem = {
+  ok: boolean;
+  severity: "ok" | "warning" | "error";
+  code?: string;
+  message: string;
+  enabled_count?: number;
+  default_count?: number;
+  providers?: string[];
+  features?: string[];
+};
+
+export type SystemHealthResponse = {
+  ok: boolean;
+  checks: Record<string, HealthCheckItem>;
 };

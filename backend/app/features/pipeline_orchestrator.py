@@ -854,16 +854,47 @@ def _extract_page_texts_from_blocks(blocks: list[dict]) -> dict[int, str]:
     return page_texts
 
 
+_BINARY_MAGIC_BYTES: list[tuple[bytes, str]] = [
+    (b"\x89PNG\r\n\x1a\n", "PNG"),
+    (b"\xff\xd8\xff", "JPEG"),
+    (b"GIF87a", "GIF"),
+    (b"GIF89a", "GIF"),
+    (b"RIFF", "WebP"),  # RIFF + "WEBP" at offset 8
+    (b"%PDF", "PDF"),
+]
+
+
+def _detect_binary_header(data: bytes) -> str | None:
+    """Check if *data* starts with a known image/document magic number.
+
+    Returns the format name (e.g. "PNG", "JPEG") or None if no match.
+    """
+    for magic, fmt in _BINARY_MAGIC_BYTES:
+        if data.startswith(magic):
+            return fmt
+    # WebP specific: check offset 8
+    if data.startswith(b"RIFF") and len(data) > 12 and data[8:12] == b"WEBP":
+        return "WebP"
+    return None
+
+
 def _extract_text_blocks(content_or_path: bytes | str) -> list[dict]:
     """Extract text blocks from plain text content.
 
     P0-1: 接受 bytes 或文件路径。
+    防御：自动检测 PNG/JPEG/GIF/WebP/PDF 等二进制文件头，避免静默污染。
     """
     if isinstance(content_or_path, (str, os.PathLike)):
         with open(content_or_path, "rb") as f:
             content = f.read()
     else:
         content = content_or_path
+    fmt = _detect_binary_header(content)
+    if fmt:
+        raise ValueError(
+            f"不是文本文件：检测到 {fmt} 格式内容（file_path={content_or_path})。"
+            "图片导入应使用 OCR 后的 file_content，而非原始图片文件路径。"
+        )
     text = content.decode("utf-8", errors="replace").strip()
     if not text:
         raise ValueError("文本内容为空")
@@ -1860,12 +1891,15 @@ class ImportPipeline:
         detection (when enabled) reuses the same OCR text — no separate
         lightweight scan (Task 2: 消除双 OCR).
 
-        P0-1: 优先使用 file_path（mmap），bytes 仅在调用方未提供 path 时使用。
+        file_path 优先仅适用于 PDF（fitz mmap 优化）。
+        image / txt 优先使用 file_content（OCR 后的 cleaned_text），
+        避免把 PNG/JPEG 图片文件当文本 decode。
         """
-        # 路径优先：底层 fitz.open 走 mmap，避免把 100~400 MB 拷到 heap
-        pdf_source: bytes | str = file_path if file_path else file_content
-        if pdf_source is None:
-            raise ValueError("either file_path or file_content must be provided")
+        if source_type == "pdf":
+            # 路径优先：底层 fitz.open 走 mmap，避免把 100~400 MB 拷到 heap
+            pdf_source: bytes | str = file_path if file_path else file_content
+            if pdf_source is None:
+                raise ValueError("either file_path or file_content must be provided")
 
         if source_type == "pdf":
             opts = _kw.get("options") or {}
@@ -1988,7 +2022,10 @@ class ImportPipeline:
                     "PDF 中未提取到文本内容（文本层为空且 OCR 未启用或失败）"
                 )
         else:
-            raw_blocks = _extract_text_blocks(pdf_source)
+            text_source = file_content if file_content is not None else file_path
+            if text_source is None:
+                raise ValueError("either file_content or file_path must be provided")
+            raw_blocks = _extract_text_blocks(text_source)
             exercise_regions_result = []
             exercise_regions_missing = False
 
@@ -4376,7 +4413,7 @@ async def run_import_pipeline(
     Args:
         file_content: 文件原始字节（无 file_path 时使用）
         file_path: 已落盘的临时文件路径（PDF 优先走此分支以走 mmap）
-        source_type: "pdf" | "txt"
+        source_type: "pdf" | "txt" | "image"
         source_file: 原始文件名
         subject: 科目提示（可选）
         options: {"enable_ai_repair": bool, "confidence_threshold": float}

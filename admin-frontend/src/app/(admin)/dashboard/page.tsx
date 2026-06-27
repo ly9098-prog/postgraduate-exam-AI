@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import type { DashboardDailyPoint, DashboardOverview, DashboardQuestionStats } from "@/lib/api/types";
+import { AiModelConfigBanner } from "@/components/ai-model-config-banner";
 import { DashboardTrendChart } from "./components/dashboard-trend-chart";
 import { ReviewStatusChart } from "./components/review-status-chart";
 
@@ -74,6 +75,8 @@ export default function DashboardPage() {
         </div>
         <StatusBadge tone={overview.isError ? "danger" : "success"}>{overview.isError ? "接口待联调" : "实时 API"}</StatusBadge>
       </div>
+
+      <AiModelConfigBanner />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {cards.map((item) => {

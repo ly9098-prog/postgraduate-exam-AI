@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { apiRequest, getApiAccessToken, toQuery } from "@/lib/api/client";
 import { connectSSE } from "@/lib/api/sse";
 import type { BatchImageJobStatusResponse, BatchImageUploadResponse, BatchImageReparseResponse, TraceEvent } from "@/lib/api/types";
+import { AiModelConfigBanner } from "@/components/ai-model-config-banner";
 import { useImportConfig } from "../hooks/useImportConfig";
 import { OcrModeSelector } from "../components/ocr-mode-selector";
 
@@ -438,6 +439,8 @@ export default function BatchImagePage() {
 
   return (
     <div className="space-y-6">
+      <AiModelConfigBanner />
+
       {message ? (
         <div
           className={`animate-rise-in flex items-center gap-2.5 rounded-2xl border px-4 py-3 text-sm shadow-[var(--shadow-crisp)] ${

@@ -1,4 +1,7 @@
-from sqlalchemy import inspect, text
+import logging
+import time
+
+from sqlalchemy import event, inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -6,7 +9,8 @@ from app.core.config import settings
 
 _connect_args = {}
 _engine_kwargs: dict = {
-    "echo": settings.APP_ENV == "development",
+    "echo": settings.SQL_ECHO,
+    "hide_parameters": True,
     "pool_recycle": settings.DB_POOL_RECYCLE,
 }
 
@@ -21,6 +25,34 @@ engine = create_async_engine(
     connect_args=_connect_args,
     **_engine_kwargs,
 )
+
+# ── Slow query logging ─────────────────────────────────────
+
+_slow_query_logger = logging.getLogger("app.db.slow_query")
+
+if settings.SLOW_QUERY_MS > 0:
+
+    @event.listens_for(engine.sync_engine, "before_cursor_execute")
+    def _before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        context._query_start_time = time.perf_counter()
+
+    @event.listens_for(engine.sync_engine, "after_cursor_execute")
+    def _after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        start = getattr(context, "_query_start_time", None)
+        if start is None:
+            return
+        duration_ms = (time.perf_counter() - start) * 1000
+        if duration_ms >= settings.SLOW_QUERY_MS:
+            compact_sql = " ".join(statement.split())
+            if len(compact_sql) > 1200:
+                compact_sql = compact_sql[:1200] + "..."
+            _slow_query_logger.warning(
+                "slow query duration_ms=%.1f rowcount=%s executemany=%s sql=%s",
+                duration_ms,
+                getattr(cursor, "rowcount", None),
+                executemany,
+                compact_sql,
+            )
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

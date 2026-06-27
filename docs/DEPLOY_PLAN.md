@@ -1,6 +1,6 @@
 # 部署方案
 
-> 更新时间：2026-06-03
+> 更新时间：2026-06-27
 > 生产入口：`deploy/docker-compose.prod.yml` + `deploy/scripts/deploy.sh`
 
 ---
@@ -138,6 +138,9 @@ POSTGRES_USER=postgraduate
 POSTGRES_PASSWORD=...
 POSTGRES_DB=postgraduate
 CODE_DETECTOR_ENABLED=true   # 灰度开启
+SQL_ECHO=false               # 默认关闭 SQL 全量日志
+SQL_LOG_LEVEL=WARNING        # sqlalchemy.engine 日志级别
+SLOW_QUERY_MS=500            # 慢查询阈值（毫秒）
 ```
 
 > 番茄钟通知调度器在 `lifespan` 中通过 `AsyncIOScheduler` 启动，Redis 锁 `pomodoro:scheduler:tick` 防多实例重叠。详见 `docs/architecture/POMODORO_NOTIFICATION.md`。

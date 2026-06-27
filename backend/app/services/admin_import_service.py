@@ -16,6 +16,7 @@ from app.schemas.admin_imports import (
     AdminImportBatchDetail,
     AdminImportEnrichResponse,
     AdminImportQuestionItem,
+    AdminImportQuestionItemBrief,
     AdminImportQuestionUpdateRequest,
 )
 from app.services.admin_ai_settings_service import ensure_ai_parse_allowed
@@ -181,15 +182,14 @@ async def get_import_batch_detail(
         item_conditions.append(QuestionImport.status == status)
     total = await db.scalar(select(func.count()).select_from(QuestionImport).where(*item_conditions))
     item_result = await db.execute(
-        select(QuestionImport)
+        select(*_LIST_COLUMNS)
         .where(*item_conditions)
         .order_by(QuestionImport.id.asc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    items = [AdminImportQuestionItem.model_validate(item) for item in item_result.scalars().all()]
-    for item in items:
-        _apply_risk_to_item(item)
+    item_rows = item_result.mappings().all()
+    items = [_brief_from_row(row) for row in item_rows]
     summary = _batch_row_to_dict(summary_row)
     return AdminImportBatchDetail(
         **summary,
@@ -214,6 +214,50 @@ def _apply_risk_to_item(item: AdminImportQuestionItem) -> AdminImportQuestionIte
     return item
 
 
+_LIST_COLUMNS = (
+    QuestionImport.id,
+    QuestionImport.batch_id,
+    QuestionImport.source_type,
+    QuestionImport.source_file,
+    QuestionImport.subject,
+    QuestionImport.question_type,
+    QuestionImport.parsed_answer,
+    QuestionImport.question_hash,
+    QuestionImport.duplicate_status,
+    QuestionImport.duplicate_of_question_id,
+    QuestionImport.duplicate_of_import_id,
+    QuestionImport.status,
+    QuestionImport.review_note,
+    QuestionImport.question_id,
+    QuestionImport.reject_reason,
+    QuestionImport.reviewed_by,
+    QuestionImport.reviewed_at,
+    QuestionImport.ai_generated,
+    QuestionImport.ai_source,
+    QuestionImport.ai_confidence,
+    QuestionImport.ai_metadata,
+    QuestionImport.ai_reviewed_at,
+    QuestionImport.ai_answer_flag,
+    QuestionImport.created_at,
+    QuestionImport.updated_at,
+    func.substr(QuestionImport.parsed_content.cast(str), 1, 160).label("content_preview"),
+)
+
+
+def _brief_from_row(row) -> AdminImportQuestionItemBrief:
+    """Convert a row mapping to AdminImportQuestionItemBrief with risk fields."""
+    item = AdminImportQuestionItemBrief.model_validate(row)
+    risk = derive_import_risk(
+        item.ai_metadata,
+        ai_answer_flag=item.ai_answer_flag,
+        parsed_answer=item.parsed_answer,
+    )
+    item.risk_flags = risk["risk_flags"]
+    item.risk_level = risk["risk_level"]
+    item.risk_reasons = risk["risk_reasons"]
+    return item
+
+
 async def list_review_queue(
     db: AsyncSession,
     page: int,
@@ -224,21 +268,18 @@ async def list_review_queue(
     source_type: str | None = None,
     keyword: str | None = None,
     risk_level: str | None = None,
-) -> tuple[list[AdminImportQuestionItem], int]:
+) -> tuple[list[AdminImportQuestionItemBrief], int]:
     conditions = _question_conditions(status, batch_id, subject, source_type, keyword)
     total = await db.scalar(select(func.count()).select_from(QuestionImport).where(*conditions))
     result = await db.execute(
-        select(QuestionImport)
+        select(*_LIST_COLUMNS)
         .where(*conditions)
         .order_by(QuestionImport.created_at.desc(), QuestionImport.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    items = [AdminImportQuestionItem.model_validate(item) for item in result.scalars().all()]
-
-    # 对每项注入风险字段
-    for item in items:
-        _apply_risk_to_item(item)
+    rows = result.mappings().all()
+    items = [_brief_from_row(row) for row in rows]
 
     # 风险等级过滤（内存过滤，因为 risk_level 是动态计算的）
     if risk_level:
@@ -631,6 +672,17 @@ async def get_enrich_status(batch_id: str) -> dict:
     if not payload:
         raise ValueError("AI任务不存在")
     return payload
+
+
+async def get_import_question_detail(
+    db: AsyncSession,
+    import_id: int,
+) -> AdminImportQuestionItem:
+    """Get full detail for a single import question (includes large fields)."""
+    qi = await _get_import_question(db, import_id)
+    item = AdminImportQuestionItem.model_validate(qi)
+    _apply_risk_to_item(item)
+    return item
 
 
 def _question_conditions(

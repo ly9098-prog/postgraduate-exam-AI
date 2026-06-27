@@ -165,7 +165,7 @@ export default function ImportHistoryPage() {
                   <StatusBadge tone={item.status === "published" ? "primary" : item.status === "approved" ? "success" : item.status === "rejected" ? "danger" : "warning"}>{item.status}</StatusBadge>
                   <Link className="text-sm font-semibold text-[var(--color-primary-dark)] underline" href={`/imports/review?batch_id=${encodeURIComponent(item.batch_id)}`}>进入审核</Link>
                 </div>
-                <p className="mt-3 whitespace-pre-wrap text-sm font-semibold text-[var(--ink)]">{String(item.parsed_content?.text ?? item.parsed_content?.stem ?? item.raw_data?.text ?? `导入题目 #${item.id}`)}</p>
+                <p className="mt-3 whitespace-pre-wrap text-sm font-semibold text-[var(--ink)]">{item.content_preview || String(item.parsed_content?.text ?? item.parsed_content?.stem ?? item.raw_data?.text ?? `导入题目 #${item.id}`)}</p>
                 <p className="mt-2 text-xs text-[var(--color-text-secondary)]">{item.subject || "未分类"} · {item.question_type || "未标注题型"}</p>
               </article>
             ))}
