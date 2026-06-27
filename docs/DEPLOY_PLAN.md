@@ -105,6 +105,8 @@ cd /opt/2240ai-v2
 bash deploy/scripts/deploy.sh migrate
 ```
 
+> **注意**：生产环境 PostgreSQL 与本地 SQLite 有差异。部分旧 migration 包含 SQLite 专用代码（`sqlite_master` 查询、`DROP INDEX` 无 `IF EXISTS`、未捕获的约束已存在异常）。遇到此类失败时，使用 `docker compose exec -T app alembic upgrade <target>` 逐条迁移，对 SQLite-only 操作可 `alembic stamp` 跳过（已验证：`c07a8112c2f2`、`d1e2f3a4b5c6`、`f2e3a4b5c6d7` 均已修复）。
+
 ### 2.5 回滚
 
 若新 app 启动失败：
@@ -217,7 +219,7 @@ RUN pip install --no-cache-dir --user \
 
 ## 6. 数据库迁移审计
 
-> 审计日期：2026-06-03
+> 审计日期：2026-06-27
 > 目的：确认本地 SQLite（开发/OCR 导入）数据能否安全迁移到生产 PostgreSQL
 
 ### 6.1 环境对比
@@ -226,7 +228,7 @@ RUN pip install --no-cache-dir --user \
 |------|---------|-----------|
 | 数据库引擎 | SQLite | PostgreSQL 15 |
 | 数据库文件 | `backend/postgraduate.db` | `postgres` 容器持久卷 |
-| Alembic 版本 | `b4e3d2c1f0a9` | `k2a3b4c5d6e7` |
+| Alembic 版本 | `5edb3d7d7c1f` | `5edb3d7d7c1f` |
 | question_imports 行数 | 65 | 132 |
 | questions 行数 | 22 | 24 |
 | subjects 行数 | 5 | **0（未初始化）** |
