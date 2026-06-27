@@ -6,7 +6,7 @@ import tempfile
 
 import json
 
-from fastapi import BackgroundTasks, APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
+from fastapi import BackgroundTasks, APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,6 +40,7 @@ from app.schemas.admin_imports import (
     AdminImportCompleteResponse,
     AdminImportDeleteResponse,
     AdminImportEnrichResponse,
+    AdminImportQuestionItem,
     AdminImportQuestionUpdateRequest,
     AdminImportRejectRequest,
     AdminImportTaskStatusResponse,
@@ -303,6 +304,21 @@ async def get_import_review_queue(
         risk_level=risk_level,
     )
     return paginated_response(items, total, page, page_size)
+
+
+@router.get("/questions/{import_id}", response_model=AdminImportQuestionItem)
+async def get_import_question_item(
+    import_id: int,
+    _=Depends(require_permissions("import:read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get full detail for a single import question, including large fields."""
+    from app.services.admin_import_service import get_import_question_detail
+
+    try:
+        return await get_import_question_detail(db, import_id)
+    except ValueError as exc:
+        _raise_import_error(exc)
 
 
 @router.put("/questions/{import_id}")
@@ -865,28 +881,51 @@ async def get_batch_image_job(
 @router.get("/batch-image/{job_id}/stream")
 async def stream_batch_image_job(
     job_id: str,
-    since_seq: int = Query(0, alias="lastEventId"),
+    last_event_id_query: int = Query(0, alias="lastEventId"),
+    last_event_id_header: str | None = Header(None, alias="Last-Event-ID"),
     _=Depends(require_permissions("import:read")),
 ):
-    """SSE 流：增量推送 trace events，job 终态时发送 done event 后关闭。"""
+    """SSE 流：增量推送 trace events，job 终态时发送 done event 后关闭。
+
+    lastEventId query 参数与 Last-Event-ID header 均可指定增量游标。
+    Last-Event-ID header 仅在 query 未传值时生效（EventSource 自动重连行为）。
+    """
     from app.core.database import async_session
     from app.features import batch_image_import_service as batch_svc
 
-    async def event_generator():
-        last_seq = since_seq
-        while True:
-            async with async_session() as db:
-                events = await batch_svc.poll_trace_events(
-                    db, job_id, since_seq=last_seq
-                )
-                for ev in events:
-                    last_seq = ev["seq"]
-                    yield f"id: {ev['seq']}\nevent: trace\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
+    def _resolve_last_event_id() -> int:
+        if last_event_id_query:
+            return last_event_id_query
+        if last_event_id_header is not None:
+            try:
+                return int(last_event_id_header)
+            except (ValueError, TypeError):
+                pass
+        return 0
 
-                summary = await batch_svc.poll_job_summary(db, job_id)
-                if summary and summary["status"] in ("completed", "failed"):
-                    yield f"event: done\ndata: {json.dumps(summary, ensure_ascii=False)}\n\n"
-                    return
+    async def event_generator():
+        last_event_id = _resolve_last_event_id()
+        while True:
+            try:
+                async with async_session() as db:
+                    events = await batch_svc.poll_trace_events(
+                        db, job_id, since_id=last_event_id
+                    )
+                    for ev in events:
+                        last_event_id = ev["id"]
+                        yield f"id: {ev['id']}\nevent: trace\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
+
+                    summary = await batch_svc.poll_job_summary(db, job_id)
+                    if summary and summary["status"] in ("completed", "failed"):
+                        yield f"event: done\ndata: {json.dumps(summary, ensure_ascii=False)}\n\n"
+                        return
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception("batch image SSE stream error: job_id=%s", job_id)
+                payload = {"message": str(exc), "job_id": job_id}
+                yield f"event: error\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                return
 
             if not events:
                 yield ": heartbeat\n\n"
@@ -894,7 +933,15 @@ async def stream_batch_image_job(
             else:
                 await asyncio.sleep(0.5)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/batch-image/items/{item_id}/reparse", response_model=BatchImageReparseResponse)

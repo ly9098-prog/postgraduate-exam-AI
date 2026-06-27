@@ -42,6 +42,7 @@ class ImportBatchJob(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued", index=True)
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     queued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     started_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

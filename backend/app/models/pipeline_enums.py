@@ -33,11 +33,12 @@ class BatchItemStatus(str, enum.Enum):
 class TraceEventStatus(str, enum.Enum):
     """BatchJobTraceEvent.status — NOT the same as job/item status.
 
-    Only these three values are valid in trace events.
+    Only these values are valid in trace events.
     """
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
+    WARNING = "warning"
 
 
 class TraceStep(str, enum.Enum):
@@ -49,6 +50,7 @@ class TraceStep(str, enum.Enum):
     MERGE = "merge"
     DONE = "done"
     ERROR = "error"
+    CONFIG = "config"
 
 
 # ================================================================

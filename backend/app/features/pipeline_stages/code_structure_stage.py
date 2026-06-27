@@ -106,14 +106,11 @@ async def _call_llm_for_structure_reconstruct(
         logger.warning("Token limit exceeded for code structure reconstruction")
         return None
 
+    kwargs = dict(messages=messages, temperature=0.2, api_key=api_key, base_url=base_url)
+    if model_name:
+        kwargs["model"] = model_name
     try:
-        result = await deepseek.chat(
-            messages,
-            temperature=0.2,
-            model=model_name,
-            api_key=api_key,
-            base_url=base_url,
-        )
+        result = await deepseek.chat(**kwargs)
     except Exception as e:
         logger.warning("Code structure LLM call failed: %s", e)
         return None

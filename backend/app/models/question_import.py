@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, JSON, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, Index, Integer, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -8,6 +8,11 @@ from app.core.database import Base
 
 class QuestionImport(Base):
     __tablename__ = "question_imports"
+
+    __table_args__ = (
+        Index("ix_question_imports_status_created_id", "status", "created_at", "id"),
+        Index("ix_question_imports_batch_status_created_id", "batch_id", "status", "created_at", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     batch_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)

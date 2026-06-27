@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # DeepSeek
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
     AI_TIMEOUT: int = 60
     AI_DAILY_TOKEN_LIMIT: int = 50000
     AI_MONTHLY_TOKEN_LIMIT: int = 500000
@@ -81,6 +82,11 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
     DB_POOL_RECYCLE: int = 3600
+
+    # SQLAlchemy logging
+    SQL_ECHO: bool = False
+    SQL_LOG_LEVEL: str = "WARNING"
+    SLOW_QUERY_MS: int = 500
 
     # Gunicorn
     GUNICORN_WORKERS: int = 4

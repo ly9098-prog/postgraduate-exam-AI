@@ -249,8 +249,17 @@ export default function ImportReviewPage() {
   });
 
   const items = queue.data?.items ?? [];
+
+  // Fetch full detail when drawer opens
+  const detail = useQuery({
+    queryKey: ["import-question-detail", previewId],
+    queryFn: () => apiRequest<ImportQuestionItem>(`/imports/questions/${previewId}`),
+    enabled: previewId !== null,
+    retry: false,
+  });
+
   const queuedPreviewItem = items.find((item) => item.id === previewId) ?? null;
-  const previewItem = completedItem?.id === previewId ? completedItem : queuedPreviewItem;
+  const previewItem = detail.data ?? (completedItem?.id === previewId ? completedItem : queuedPreviewItem);
   const completeSuggestion = completeSuggestionFromItem(previewItem);
   const answerSuggestion = stringSuggestion(completeSuggestion?.answer);
   const allChecked = items.length > 0 && items.every((item) => selectedIds.has(item.id));
@@ -705,9 +714,9 @@ export default function ImportReviewPage() {
                     </div>
                   ) : null}
 
-                  {/* Stem */}
+                  {/* Stem preview */}
                   <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-[var(--ink)] line-clamp-2">
-                    {textFromImport(item) || <span className="italic text-[var(--color-text-hint)]">导入题目 #{item.id}</span>}
+                    {item.content_preview || textFromImport(item) || <span className="italic text-[var(--color-text-hint)]">导入题目 #{item.id}</span>}
                   </p>
 
                   {/* Action bar */}
