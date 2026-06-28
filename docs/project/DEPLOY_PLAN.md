@@ -233,7 +233,7 @@ RUN pip install --no-cache-dir --user \
 
 ## 6. 数据库迁移审计
 
-> 审计日期：2026-06-27
+> 审计日期：2026-06-28
 > 目的：确认本地 SQLite（开发/OCR 导入）数据能否安全迁移到生产 PostgreSQL
 
 ### 6.1 环境对比
@@ -242,7 +242,7 @@ RUN pip install --no-cache-dir --user \
 |------|---------|-----------|
 | 数据库引擎 | SQLite | PostgreSQL 15 |
 | 数据库文件 | `backend/postgraduate.db` | `postgres` 容器持久卷 |
-| Alembic 版本 | `t4c5d6e7f8g9` | `t4c5d6e7f8g9` |
+| Alembic 版本 | `u9v8w7x6y5z4` | `u9v8w7x6y5z4` |
 | question_imports 行数 | 65 | 132 |
 | questions 行数 | 22 | 24 |
 | subjects 行数 | 5 | **0（未初始化）** |
