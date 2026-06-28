@@ -1,8 +1,9 @@
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import utcnow
 from app.models.answer_behavior import AnswerBehavior
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
@@ -10,10 +11,15 @@ from app.models.review_scheduler import ReviewSchedule
 from app.models.wrong_question import WrongQuestion
 
 
+def _today_utc() -> datetime:
+    """返回 UTC 今日零点，与 PracticeRecord.answered_at（utcnow）时区一致。"""
+    now = utcnow()
+    return datetime(now.year, now.month, now.day)
+
+
 async def get_overview(db: AsyncSession, user_id: int) -> dict:
     """学习总览统计"""
-    today = date.today()
-    today_start = datetime(today.year, today.month, today.day)
+    today_start = _today_utc()
 
     pr_result = await db.execute(
         select(
@@ -80,7 +86,7 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
 
 
 async def _calc_consecutive_days(db: AsyncSession, user_id: int) -> int:
-    today = date.today()
+    today = utcnow().date()
 
     result = await db.execute(
         select(func.date(PracticeRecord.answered_at))
@@ -141,7 +147,7 @@ async def get_trends(
 ) -> list[dict]:
     """学习趋势（按天聚合）"""
     since = datetime.combine(
-        date.today() - timedelta(days=days - 1), datetime.min.time()
+        utcnow().date() - timedelta(days=days - 1), datetime.min.time()
     )
 
     result = await db.execute(
@@ -169,7 +175,7 @@ async def get_trends(
 
     points = []
     for i in range(days):
-        d = (date.today() - timedelta(days=days - 1 - i)).isoformat()
+        d = (utcnow().date() - timedelta(days=days - 1 - i)).isoformat()
         entry = data.get(d, {"count": 0, "correct": 0, "wrong": 0})
         total = entry["count"]
         points.append(
@@ -240,7 +246,7 @@ async def get_behavior_stats(db: AsyncSession, user_id: int) -> dict:
 
 async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
     """遗忘趋势分析（基于 SM-2 数据，SM-2 状态源为 ReviewSchedule）"""
-    today = date.today()
+    today = utcnow().date()
 
     stuck = await db.execute(
         select(func.count(WrongQuestion.id)).where(
@@ -411,7 +417,7 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
     from app.ai.client import deepseek
     from app.ai.prompts_learning import build_report_prompt
 
-    today = date.today()
+    today = utcnow().date()
     since = today - timedelta(days=60)
 
     result = await db.execute(
