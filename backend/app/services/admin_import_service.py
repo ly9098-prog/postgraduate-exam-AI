@@ -313,6 +313,7 @@ async def update_import_question(
         qi.parsed_options = {str(item.get("key") or item.get("label")): item.get("text") or item.get("value") for item in options if isinstance(item, dict)} if isinstance(options, list) else options
     if "answer" in payload:
         qi.parsed_answer = payload.pop("answer")
+        qi.ai_answer_flag = False
     if "analysis" in payload:
         qi.parsed_analysis = payload.pop("analysis")
 
@@ -384,8 +385,10 @@ async def batch_complete_import_questions(
         raise ValueError("strategy 仅支持 fill_empty 或 force_overwrite")
 
     await ensure_ai_parse_allowed(db, operator, request)
+    from app.services.admin_ai_settings_service import is_super_admin
+    _skip_budget = await is_super_admin(db, operator)
     result = await question_pipeline.batch_complete_questions(
-        db, operator.id, import_ids, fields, strategy,
+        db, operator.id, import_ids, fields, strategy, skip_budget_check=_skip_budget,
     )
 
     await write_admin_audit(
@@ -814,4 +817,16 @@ async def list_subject_options(db: AsyncSession) -> list[dict]:
         .where(Subject.is_active.is_(True))
         .order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
     )
-    return [{"code": row.code, "name": row.name} for row in result.all()]
+    rows = result.all()
+    if rows:
+        return [{"code": row.code, "name": row.name} for row in rows]
+
+    # Fallback: extract distinct subjects from existing import data
+    from app.models.question_import import QuestionImport
+    fb = await db.execute(
+        select(QuestionImport.subject)
+        .where(QuestionImport.subject.is_not(None), QuestionImport.subject != "")
+        .distinct()
+        .order_by(QuestionImport.subject.asc())
+    )
+    return [{"code": row[0], "name": row[0]} for row in fb.all()]
