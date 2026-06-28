@@ -215,15 +215,18 @@ Component({
       if (!this._canUseLottie || !this.data.visible) return
       var self = this
       var query = this.createSelectorQuery()
+      // Query the canvas-layer for reliable dimensions, and the canvas for the node
+      query.select('.canvas-layer').fields({ size: true })
       query.select('#animated-view-canvas')
-        .fields({ node: true, size: true })
+        .fields({ node: true })
         .exec(function (res) {
           try {
-            if (!res || !res[0] || !res[0].node) {
+            if (!res || !res[1] || !res[1].node) {
               self._fallbackFromLottie()
               return
             }
-            var canvas = res[0].node
+            var layerSize = res[0] || {}
+            var canvas = res[1].node
             var ctx = canvas.getContext && canvas.getContext('2d')
             if (!ctx) {
               self._fallbackFromLottie()
@@ -231,10 +234,10 @@ Component({
             }
             var dpr = 1
             try { dpr = wx.getSystemInfoSync().pixelRatio || 1 } catch (_) {}
-            var width = res[0].width || 1
-            var height = res[0].height || 1
-            canvas.width = Math.round(width * dpr)
-            canvas.height = Math.round(height * dpr)
+            var cssW = layerSize.width || 300
+            var cssH = layerSize.height || 300
+            canvas.width = Math.round(cssW * dpr)
+            canvas.height = Math.round(cssH * dpr)
             ctx.scale(dpr, dpr)
             self._canvas = canvas
             self._ctx = ctx
