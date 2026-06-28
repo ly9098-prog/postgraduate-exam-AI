@@ -17,6 +17,7 @@ def _make_mock_db():
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
     db.execute = AsyncMock()
+    db.rollback = AsyncMock()
     return db
 
 
