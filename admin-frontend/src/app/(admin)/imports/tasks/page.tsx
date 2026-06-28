@@ -2,7 +2,7 @@
 
 import { useId, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, FileBox, FileText, FileUp, History, RefreshCw } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileBox, FileText, FileUp, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,22 +112,22 @@ export default function ImportTasksPage() {
               <p className="text-sm text-[var(--color-text-secondary)]">上传 PDF、图片、TXT 或 Excel，导入结果会进入待审核区。</p>
             </div>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-4">
             {/* File & Subject */}
             <div>
-              <div className="mb-3 flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded bg-[var(--color-primary-light)] text-[9px] font-bold text-[var(--color-primary-dark)]">1</span>
-                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-hint)]">文件与科目</span>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="flex h-4 w-4 items-center justify-center rounded bg-[var(--color-primary-light)] text-[8px] font-bold text-[var(--color-primary-dark)]">1</span>
+                <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--color-text-hint)]">文件与科目</span>
               </div>
               <label htmlFor={fileInputId}>
-                <div className={`relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-5 transition ${
+                <div className={`relative flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-4 transition ${
                   isPipelineRunning
                     ? "border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-50"
                     : file
                       ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]"
                       : "border-[var(--color-border)] bg-white/50 hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)]"
                 }`}>
-                  <FileBox className={`mb-2 h-7 w-7 ${file ? "text-[var(--color-primary-dark)]" : "text-[var(--color-text-hint)]"}`} />
+                  <FileBox className={`mb-1.5 h-6 w-6 ${file ? "text-[var(--color-primary-dark)]" : "text-[var(--color-text-hint)]"}`} />
                   {file ? (
                     <div className="text-center">
                       <p className="text-sm font-semibold text-[var(--ink)]">{file.name}</p>
@@ -142,14 +142,14 @@ export default function ImportTasksPage() {
                   <input id={fileInputId} type="file" accept=".pdf,.txt,.xlsx,.xls,.jpg,.jpeg,.png,.webp" disabled={isPipelineRunning} className="absolute inset-0 cursor-pointer opacity-0" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
                 </div>
               </label>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 <label className="space-y-1">
-                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</span>
+                  <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">科目</span>
                   <Input placeholder="如 math2 / exam408" value={subject} onChange={(event) => setSubject(event.target.value)} />
                 </label>
                 <label className="space-y-1">
-                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">导入模式</span>
-                  <select className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]" value={importMode} onChange={(event) => setImportMode(event.target.value)}>
+                  <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">导入模式</span>
+                  <select className="h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]" value={importMode} onChange={(event) => setImportMode(event.target.value)}>
                     <option value="auto">auto（自动检测）</option>
                     <option value="book">book（教辅）</option>
                     <option value="exam">exam（试卷）</option>
@@ -158,57 +158,52 @@ export default function ImportTasksPage() {
               </div>
             </div>
 
-            <hr className="border-[var(--color-border)]" />
-
-            {/* Page Range */}
-            <div>
-              <div className="mb-3 flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded bg-[var(--color-primary-light)] text-[9px] font-bold text-[var(--color-primary-dark)]">2</span>
-                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-hint)]">页面范围</span>
+            {/* Page Range + AI Options in a single row */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="flex h-4 w-4 items-center justify-center rounded bg-[var(--color-primary-light)] text-[8px] font-bold text-[var(--color-primary-dark)]">2</span>
+                  <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--color-text-hint)]">页码范围</span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">起始页</span>
+                    <Input type="number" min="1" placeholder="留空从第1页" value={pageStart} onChange={(event) => setPageStart(event.target.value)} />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">结束页</span>
+                    <Input type="number" min="1" placeholder="留空到最后" value={pageEnd} onChange={(event) => setPageEnd(event.target.value)} />
+                  </label>
+                </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1">
-                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">起始页</span>
-                  <Input type="number" min="1" placeholder="留空从第1页开始" value={pageStart} onChange={(event) => setPageStart(event.target.value)} />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">结束页</span>
-                  <Input type="number" min="1" placeholder="留空到最后一页" value={pageEnd} onChange={(event) => setPageEnd(event.target.value)} />
-                </label>
-              </div>
-            </div>
-
-            <hr className="border-[var(--color-border)]" />
-
-            {/* AI Options */}
-            <div>
-              <div className="mb-3 flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded bg-[var(--color-primary-light)] text-[9px] font-bold text-[var(--color-primary-dark)]">3</span>
-                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-hint)]">AI 选项</span>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1">
-                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">置信度阈值</span>
-                  <Input type="number" step="0.1" min="0" max="1" value={confidenceThreshold} onChange={(event) => setConfidenceThreshold(event.target.value)} />
-                </label>
-                <label className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] ${
-                  enableAiRepair ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]" : "border-[var(--color-border)] bg-white/50"
-                }`}>
-                  <input type="checkbox" checked={enableAiRepair} onChange={(event) => setEnableAiRepair(event.target.checked)} disabled={isPipelineRunning} className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary)] accent-[var(--color-primary)]" />
-                  <div>
-                    <span className="font-semibold text-[var(--ink)]">AI 修复</span>
-                    <p className="text-[10px] text-[var(--color-text-hint)]">自动校正 OCR 偏差</p>
-                  </div>
-                </label>
-              </div>
-              <div className="mt-4 border-t border-[var(--color-border)] pt-4">
-                <OcrModeSelector value={ocrMode} onChange={setOcrMode} disabled={isPipelineRunning} />
+              <div>
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="flex h-4 w-4 items-center justify-center rounded bg-[var(--color-primary-light)] text-[8px] font-bold text-[var(--color-primary-dark)]">3</span>
+                  <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--color-text-hint)]">AI 选项</span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">置信度阈值</span>
+                    <Input type="number" step="0.1" min="0" max="1" value={confidenceThreshold} onChange={(event) => setConfidenceThreshold(event.target.value)} />
+                  </label>
+                  <label className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2 text-sm text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] ${
+                    enableAiRepair ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]" : "border-[var(--color-border)] bg-white/50"
+                  }`}>
+                    <input type="checkbox" checked={enableAiRepair} onChange={(event) => setEnableAiRepair(event.target.checked)} disabled={isPipelineRunning} className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary)] accent-[var(--color-primary)]" />
+                    <div>
+                      <span className="text-xs font-semibold text-[var(--ink)]">AI 修复</span>
+                      <p className="text-[10px] text-[var(--color-text-hint)]">自动校正 OCR 偏差</p>
+                    </div>
+                  </label>
+                </div>
               </div>
             </div>
+
+            <OcrModeSelector value={ocrMode} onChange={setOcrMode} disabled={isPipelineRunning} />
 
             {/* Submit */}
-            <div className="flex items-center justify-end gap-4 border-t border-[var(--color-border)] pt-5">
-              <Button disabled={!file || uploadMutation.isPending || isPipelineRunning} onClick={() => uploadMutation.mutate()} className="h-11 px-5">
+            <div className="flex items-center justify-end gap-4 border-t border-[var(--color-border)] pt-3">
+              <Button disabled={!file || uploadMutation.isPending || isPipelineRunning} onClick={() => uploadMutation.mutate()} className="h-10 px-5 text-sm">
                 <FileUp className="h-4 w-4" />
                 {uploadMutation.isPending ? "上传中..." : isPipelineRunning ? "解析中..." : "开始导入"}
               </Button>
@@ -332,10 +327,6 @@ export default function ImportTasksPage() {
                 {/* Quick actions */}
                 {status.batch_id ? (
                   <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-3">
-                    <a className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white/70 px-3 text-[10px] font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]" href={`/imports/history?batch_id=${encodeURIComponent(status.batch_id)}`}>
-                      <History className="h-3 w-3" />
-                      导入记录
-                    </a>
                     <a className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white/70 px-3 text-[10px] font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]" href={`/imports/review?batch_id=${encodeURIComponent(status.batch_id)}`}>
                       <FileText className="h-3 w-3" />
                       待审核

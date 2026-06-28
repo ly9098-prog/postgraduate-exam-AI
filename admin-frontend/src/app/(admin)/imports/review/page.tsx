@@ -356,7 +356,7 @@ export default function ImportReviewPage() {
         );
         return res;
       }
-      // no other actions handled here (publish is on the history page)
+      // no other batch actions handled here
       throw new Error("未知操作");
     },
     onSuccess: (result, variables) => {

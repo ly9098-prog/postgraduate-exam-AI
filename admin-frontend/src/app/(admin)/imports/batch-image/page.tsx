@@ -709,7 +709,8 @@ export default function BatchImagePage() {
               </div>
             ) : null}
 
-            {/* Compact aggregate progress + inline stats */}
+            {/* Compact aggregate progress + inline stats — only when active */}
+            {imageTasks.length > 0 ? (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
               {queuePhase !== "done" ? (
                 <span className="flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700 transition-all duration-300">
@@ -731,7 +732,6 @@ export default function BatchImagePage() {
                 </span>
               )}
 
-              {/* Inline stats: only show non-zero dynamic counts */}
               <span className="flex flex-wrap items-center gap-x-2.5 gap-y-0 text-[10px] text-[var(--color-text-secondary)]">
                 <span>总数 <strong className="text-[var(--ink)] tabular-nums">{totalImages}</strong></span>
                 {uploadingCount > 0 && (
@@ -753,14 +753,17 @@ export default function BatchImagePage() {
 
               <span className="text-[10px] tabular-nums text-[var(--color-text-hint)] ml-auto">{progressPct}%</span>
             </div>
+            ) : null}
 
-            {/* Progress bar — thin */}
-            <div className="overflow-hidden rounded-full bg-[var(--color-bg-input)]">
-              <div
-                className="h-1.5 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[#7b9bbb] transition-all duration-700"
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
+            {/* Progress bar — only when there are active tasks */}
+            {imageTasks.length > 0 ? (
+              <div className="overflow-hidden rounded-full bg-[var(--color-bg-input)]">
+                <div
+                  className="h-1.5 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[#7b9bbb] transition-all duration-700"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+            ) : null}
 
                 {/* Per-image log list */}
                 {imageTasks.length > 0 ? (

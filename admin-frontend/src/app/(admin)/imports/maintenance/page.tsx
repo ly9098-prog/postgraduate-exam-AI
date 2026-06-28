@@ -1,40 +1,43 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, RefreshCw, Trash2, Wrench } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  AlertCircle, AlertTriangle, CheckCircle2, Database, HardDrive,
+  Info, RefreshCw, ShieldAlert, Trash2, Wrench,
+} from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/api/client";
-import type { ImportPipelineSummaryItem, PipelinesListResponse, CleanupResponse, AlertItem } from "@/lib/api/types";
+import type { PipelinesListResponse, CleanupResponse, AlertItem } from "@/lib/api/types";
 
-function alertTone(level: string) {
-  if (level === "error") return "red";
-  if (level === "warning") return "amber";
-  return "blue";
+function alertIcon(level: string) {
+  if (level === "error") return <ShieldAlert className="h-4 w-4 shrink-0 text-red-600" />;
+  if (level === "warning") return <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />;
+  return <Info className="h-4 w-4 shrink-0 text-blue-500" />;
 }
 
-function alertBg(level: string) {
-  if (level === "error") return "bg-red-50 text-red-700 border-red-200";
-  if (level === "warning") return "bg-amber-50 text-amber-700 border-amber-200";
-  return "bg-blue-50 text-blue-700 border-blue-200";
+function alertBorder(level: string) {
+  if (level === "error") return "border-l-red-500 bg-red-50/60";
+  if (level === "warning") return "border-l-amber-400 bg-amber-50/60";
+  return "border-l-blue-400 bg-blue-50/60";
 }
 
 export default function ImportMaintenancePage() {
-  const queryClient = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
   const [cleanupResult, setCleanupResult] = useState<CleanupResponse | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [isDryRunning, setIsDryRunning] = useState(false);
   const [isCleaningUp, setIsCleaningUp] = useState(false);
 
-  // Fetch recent pipelines for health summary
+  // Fetch recent pipelines for alerts
   const pipelines = useQuery({
     queryKey: ["import-pipelines", "recent"],
     queryFn: () => apiRequest<PipelinesListResponse>("/imports/pipelines?page=1&page_size=20&sort_by=started_at"),
     retry: false,
   });
 
-  // Fetch a recent completed pipeline for alerts (if any)
+  // Collect alerts from recent pipelines
   const completedPipelines = useMemo(() => {
     const items = pipelines.data?.items ?? [];
     return items.filter((p) =>
@@ -42,7 +45,6 @@ export default function ImportMaintenancePage() {
     );
   }, [pipelines.data]);
 
-  // Collect alerts from recent pipelines
   const recentAlerts = useMemo(() => {
     const all: Array<AlertItem & { pipeline_id: string }> = [];
     for (const p of completedPipelines.slice(0, 5)) {
@@ -52,53 +54,14 @@ export default function ImportMaintenancePage() {
         }
       }
     }
-    return all.slice(0, 20); // cap at 20
-  }, [completedPipelines]);
-
-  // Health calculations from last 10 completed pipelines
-  const healthStats = useMemo(() => {
-    const completed = completedPipelines.slice(0, 10);
-    const total = completed.length;
-    if (total === 0) return null;
-
-    const succeeded = completed.filter((p) => p.status === "completed" || p.status === "success" || p.status === "finished").length;
-    const failed = completed.filter((p) => p.status === "failed" || p.status === "error").length;
-    const successRate = total > 0 ? (succeeded / total) * 100 : 0;
-
-    let totalDuration = 0;
-    let durationCount = 0;
-    let totalQuestions = 0;
-    let questionCount = 0;
-
-    for (const p of completed) {
-      const qr = p.quality_report;
-      if (qr) {
-        if (qr.total_questions) {
-          totalQuestions += qr.total_questions;
-          questionCount += 1;
-        }
-        if (qr.performance_summary?.total_duration_ms) {
-          totalDuration += qr.performance_summary.total_duration_ms;
-          durationCount += 1;
-        }
-      }
-    }
-
-    return {
-      total,
-      succeeded,
-      failed,
-      successRate: Math.round(successRate * 10) / 10,
-      avgDuration: durationCount > 0 ? Math.round(totalDuration / durationCount / 1000) : null,
-      totalQuestions,
-    };
+    return all.slice(0, 20);
   }, [completedPipelines]);
 
   // Dry-run cleanup
   const runDryRun = async () => {
     setMessage(null);
-    setCleanupResult(null);
     setShowConfirm(false);
+    setIsDryRunning(true);
     try {
       const result = await apiRequest<CleanupResponse>("/imports/maintenance/cleanup", {
         method: "POST",
@@ -108,6 +71,8 @@ export default function ImportMaintenancePage() {
       setCleanupResult(result);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Dry-run 请求失败");
+    } finally {
+      setIsDryRunning(false);
     }
   };
 
@@ -132,96 +97,104 @@ export default function ImportMaintenancePage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <Wrench className="h-5 w-5 text-[var(--color-text-hint)]" />
-        <h3 className="font-display text-xl font-bold text-[var(--ink)]">导入系统运维</h3>
+    <div className="space-y-8">
+      {/* ===== Page Header ===== */}
+      <div className="flex items-start justify-between">
+        <div className="flex items-start gap-4">
+          <div className="rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 p-3.5 shadow-sm ring-1 ring-slate-200">
+            <Wrench className="h-6 w-6 text-slate-700" />
+          </div>
+          <div>
+            <h2 className="font-display text-2xl font-bold tracking-tight text-[var(--ink)]">运维中心</h2>
+            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+              导入系统运行状态与存储清理
+            </p>
+          </div>
+        </div>
+        <Button
+          variant="secondary"
+          disabled={pipelines.isFetching}
+          onClick={() => pipelines.refetch()}
+          className="h-9 px-3.5 text-xs"
+        >
+          <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${pipelines.isFetching ? "animate-spin" : ""}`} />
+          刷新
+        </Button>
       </div>
 
-      {/* Message banner */}
+      {/* ===== Message Banner ===== */}
       {message ? (
-        <div className="flex items-center gap-2.5 rounded-2xl border border-[var(--color-border)] bg-white/80 px-4 py-3 text-sm">
+        <div className="flex items-center gap-2.5 rounded-2xl border border-[var(--color-border)] bg-white/80 px-5 py-3.5 text-sm shadow-sm">
           {message.includes("失败") || message.includes("error") ? (
             <AlertCircle className="h-4 w-4 shrink-0 text-red-500" />
           ) : (
             <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
           )}
-          {message}
+          <span className="text-[var(--ink)]">{message}</span>
         </div>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        {/* ===== Health Summary ===== */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <h4 className="font-display text-base font-bold text-[var(--ink)]">导入健康摘要</h4>
-              <Button variant="secondary" disabled={pipelines.isFetching} onClick={() => pipelines.refetch()} className="h-8 px-3 text-[10px]">
-                <RefreshCw className={`h-3 w-3 ${pipelines.isFetching ? "animate-spin" : ""}`} />
-                刷新
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {pipelines.isLoading ? (
-              <p className="text-sm text-[var(--color-text-hint)]">加载中...</p>
-            ) : !healthStats ? (
-              <p className="text-sm text-[var(--color-text-hint)]">暂无已完成导入记录</p>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 text-[11px]">
-                <div className="rounded-lg bg-white/70 p-3">
-                  <span className="text-[9px] uppercase tracking-wider text-[var(--color-text-hint)]">最近导入</span>
-                  <p className="mt-1 text-lg font-bold text-[var(--ink)]">{healthStats.total}</p>
+      {/* ===== Alerts Section ===== */}
+      <section>
+        <div className="mb-4 flex items-center gap-2">
+          <ShieldAlert className="h-5 w-5 text-[var(--color-text-hint)]" />
+          <h3 className="font-display text-lg font-bold text-[var(--ink)]">最近告警</h3>
+          {recentAlerts.length > 0 ? (
+            <span className="ml-auto rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+              {recentAlerts.length} 条
+            </span>
+          ) : null}
+        </div>
+        <Card className="overflow-hidden">
+          <CardContent className="p-0">
+            {recentAlerts.length === 0 ? (
+              <div className="flex flex-col items-center py-12 text-center">
+                <div className="mb-3 rounded-full bg-green-100 p-3">
+                  <CheckCircle2 className="h-7 w-7 text-green-500" />
                 </div>
-                <div className="rounded-lg bg-green-50/70 p-3">
-                  <span className="text-[9px] uppercase tracking-wider text-green-600">成功率</span>
-                  <p className="mt-1 text-lg font-bold text-green-700">{healthStats.successRate}%</p>
-                  <p className="text-[9px] text-green-600">成功 {healthStats.succeeded} / 失败 {healthStats.failed}</p>
-                </div>
-                {healthStats.avgDuration !== null ? (
-                  <div className="rounded-lg bg-blue-50/70 p-3">
-                    <span className="text-[9px] uppercase tracking-wider text-blue-600">平均耗时</span>
-                    <p className="mt-1 text-lg font-bold text-blue-700">{healthStats.avgDuration}s</p>
-                  </div>
-                ) : null}
-                {healthStats.totalQuestions > 0 ? (
-                  <div className="rounded-lg bg-purple-50/70 p-3">
-                    <span className="text-[9px] uppercase tracking-wider text-purple-600">总导入题数</span>
-                    <p className="mt-1 text-lg font-bold text-purple-700">{healthStats.totalQuestions}</p>
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* ===== Recent Alerts ===== */}
-        <Card>
-          <CardHeader>
-            <h4 className="font-display text-base font-bold text-[var(--ink)]">最近告警</h4>
-          </CardHeader>
-          <CardContent>
-            {pipelines.isLoading ? (
-              <p className="text-sm text-[var(--color-text-hint)]">加载中...</p>
-            ) : recentAlerts.length === 0 ? (
-              <div className="flex flex-col items-center py-6 text-center">
-                <CheckCircle2 className="mb-2 h-6 w-6 text-green-400" />
                 <p className="text-sm font-semibold text-[var(--color-text-secondary)]">暂无告警</p>
-                <p className="mt-1 text-[10px] text-[var(--color-text-hint)]">最近 5 条已完成导入均未触发告警规则</p>
+                <p className="mt-1 text-xs text-[var(--color-text-hint)]">最近 5 条已完成导入均未触发告警规则</p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="divide-y divide-gray-100">
                 {recentAlerts.map((alert, i) => (
-                  <div key={`${alert.pipeline_id}-${i}`} className={`rounded-lg border px-3 py-2.5 text-[11px] ${alertBg(alert.level)}`}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-semibold uppercase">{alert.level}</span>
-                      <span className="font-semibold">{alert.message}</span>
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] opacity-80">
-                      {alert.value !== undefined ? <span>当前值: {String(alert.value)}</span> : null}
-                      {alert.threshold !== undefined ? <span>阈值: {String(alert.threshold)}</span> : null}
-                      {alert.suggested_action ? <span>建议: {alert.suggested_action}</span> : null}
-                      <span className="text-[9px] text-[var(--color-text-hint)]">{alert.pipeline_id.slice(0, 8)}...</span>
+                  <div
+                    key={`${alert.pipeline_id}-${i}`}
+                    className={`border-l-4 px-5 py-3.5 transition-colors hover:bg-white/80 ${alertBorder(alert.level)}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {alertIcon(alert.level)}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-hint)]">
+                            {alert.level}
+                          </span>
+                          <span className="text-sm font-semibold text-[var(--ink)]">{alert.message}</span>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-text-secondary)]">
+                          {alert.value !== undefined ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="text-[10px] text-[var(--color-text-hint)]">当前值:</span>
+                              <span className="font-medium">{String(alert.value)}</span>
+                            </span>
+                          ) : null}
+                          {alert.threshold !== undefined ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="text-[10px] text-[var(--color-text-hint)]">阈值:</span>
+                              <span className="font-medium">{String(alert.threshold)}</span>
+                            </span>
+                          ) : null}
+                          {alert.suggested_action ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="text-[10px] text-[var(--color-text-hint)]">建议:</span>
+                              <span>{alert.suggested_action}</span>
+                            </span>
+                          ) : null}
+                          <span className="ml-auto font-mono text-[10px] text-[var(--color-text-hint)]">
+                            {alert.pipeline_id.slice(0, 8)}...
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -229,108 +202,155 @@ export default function ImportMaintenancePage() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </section>
 
-      {/* ===== Cleanup Section ===== */}
-      <Card>
-        <CardHeader>
-          <h4 className="font-display text-base font-bold text-[var(--ink)]">存储清理</h4>
-          <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
-            清理过期 pipeline artifact 和 OCR 缓存。先运行 Dry-Run 查看可清理量，确认后再执行。
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Action buttons */}
-          <div className="flex items-center gap-3">
-            <Button onClick={runDryRun} disabled={pipelines.isFetching} className="h-10 px-4">
-              <RefreshCw className="h-4 w-4" />
-              {cleanupResult ? "重新 Dry-Run" : "运行 Dry-Run"}
-            </Button>
-            {cleanupResult && !cleanupResult.dry_run ? (
-              <div className="flex items-center gap-2 text-sm text-green-700">
-                <CheckCircle2 className="h-4 w-4" />
-                清理完成
-              </div>
-            ) : null}
-            {cleanupResult?.dry_run ? (
-              !showConfirm ? (
-                <Button variant="secondary" onClick={() => setShowConfirm(true)} className="h-10 px-4">
-                  <Trash2 className="h-4 w-4" />
-                  确认清理
-                </Button>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <Button variant="secondary" onClick={() => setShowConfirm(false)} className="h-10 px-4">
-                    取消
-                  </Button>
-                  <Button onClick={runCleanup} disabled={isCleaningUp} className="h-10 px-4">
-                    {isCleaningUp ? "清理中..." : "确认并执行清理"}
-                  </Button>
+      {/* ===== Storage Cleanup Section ===== */}
+      <section>
+        <div className="mb-4 flex items-center gap-2">
+          <HardDrive className="h-5 w-5 text-[var(--color-text-hint)]" />
+          <h3 className="font-display text-lg font-bold text-[var(--ink)]">存储清理</h3>
+        </div>
+        <Card>
+          <CardHeader>
+            <p className="text-sm text-[var(--color-text-secondary)]">
+              清理过期 pipeline artifact 和 OCR 缓存文件，释放磁盘空间。建议先运行 Dry-Run 预览可清理量，确认后再执行。
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {/* Workflow steps */}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Step 1: Dry-Run */}
+              <div className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-white/60 px-4 py-3">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-600">1</div>
+                <div>
+                  <p className="text-xs font-semibold text-[var(--ink)]">扫描分析</p>
+                  <p className="text-[10px] text-[var(--color-text-hint)]">预估可清理空间</p>
                 </div>
-              )
-            ) : null}
-          </div>
-
-          {/* Dry-run / Cleanup results table */}
-          {cleanupResult ? (
-            <div className="space-y-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-hint)]">
-                {cleanupResult.dry_run ? "Dry-Run 结果（未删除任何文件）" : "清理结果"}
-              </p>
-              <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
-                <table className="w-full text-[11px]">
-                  <thead>
-                    <tr className="bg-[var(--color-bg-input)] text-[10px] font-semibold text-[var(--color-text-secondary)]">
-                      <th className="px-3 py-2 text-left">目标</th>
-                      <th className="px-3 py-2 text-right">扫描数</th>
-                      <th className="px-3 py-2 text-right">可清理/已清理</th>
-                      <th className="px-3 py-2 text-right">释放空间</th>
-                      <th className="px-3 py-2 text-right">跳过</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--color-border)]">
-                    {Object.entries(cleanupResult.targets || {}).map(([target, data]) => {
-                      const d = data as Record<string, unknown>;
-                      return (
-                        <tr key={target} className="bg-white/50">
-                          <td className="px-3 py-2 font-medium text-[var(--ink)]">{target}</td>
-                          <td className="px-3 py-2 text-right text-[var(--color-text-secondary)]">
-                            {typeof d.scanned_count === "number" ? d.scanned_count : String(d.status || "—")}
-                          </td>
-                          <td className="px-3 py-2 text-right text-[var(--color-text-secondary)]">
-                            {typeof d.deleted_count === "number" ? d.deleted_count : "—"}
-                          </td>
-                          <td className="px-3 py-2 text-right text-[var(--color-text-secondary)]">
-                            {typeof d.freed_bytes === "number"
-                              ? d.freed_bytes > 1048576
-                                ? `${(d.freed_bytes / 1048576).toFixed(1)} MB`
-                                : d.freed_bytes > 1024
-                                  ? `${(d.freed_bytes / 1024).toFixed(1)} KB`
-                                  : `${d.freed_bytes} B`
-                              : "—"}
-                          </td>
-                          <td className="px-3 py-2 text-right text-[var(--color-text-secondary)]">
-                            {typeof d.skipped_running_count === "number"
-                              ? d.skipped_running_count
-                              : typeof d.skipped_count === "number"
-                                ? d.skipped_count
-                                : "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
               </div>
-              {cleanupResult.dry_run ? (
-                <p className="text-[10px] text-amber-600">
-                  ⚠️ Dry-Run 仅扫描不删除。确认清理前请检查以上结果。
-                </p>
+              <div className="hidden h-px w-8 border-t border-dashed border-[var(--color-border)] sm:block" />
+              {/* Step 2: Review */}
+              <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${cleanupResult ? "border-[var(--color-border)] bg-white/60" : "border-dashed border-[var(--color-border)] bg-white/30"}`}>
+                <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold ${cleanupResult ? "bg-slate-100 text-slate-600" : "bg-gray-100 text-gray-400"}`}>2</div>
+                <div>
+                  <p className="text-xs font-semibold text-[var(--ink)]">确认结果</p>
+                  <p className="text-[10px] text-[var(--color-text-hint)]">{cleanupResult ? "检查扫描结果" : "等待上一步"}</p>
+                </div>
+              </div>
+              <div className="hidden h-px w-8 border-t border-dashed border-[var(--color-border)] sm:block" />
+              {/* Step 3: Execute */}
+              <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${cleanupResult?.dry_run ? "border-[var(--color-border)] bg-white/60" : "border-dashed border-[var(--color-border)] bg-white/30"}`}>
+                <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold ${cleanupResult?.dry_run ? "bg-slate-100 text-slate-600" : "bg-gray-100 text-gray-400"}`}>3</div>
+                <div>
+                  <p className="text-xs font-semibold text-[var(--ink)]">执行清理</p>
+                  <p className="text-[10px] text-[var(--color-text-hint)]">{cleanupResult?.dry_run ? "确认后删除" : "等待上一步"}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={runDryRun} disabled={isDryRunning} className="h-10 gap-2 px-5">
+                <RefreshCw className={`h-4 w-4 ${isDryRunning ? "animate-spin" : ""}`} />
+                {isDryRunning ? "扫描中..." : cleanupResult ? "重新 Dry-Run" : "运行 Dry-Run"}
+              </Button>
+              {cleanupResult && !cleanupResult.dry_run ? (
+                <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50/80 px-4 py-2 text-sm text-green-700">
+                  <CheckCircle2 className="h-4 w-4" />
+                  清理完成
+                </div>
+              ) : null}
+              {cleanupResult?.dry_run ? (
+                !showConfirm ? (
+                  <Button variant="secondary" onClick={() => setShowConfirm(true)} className="h-10 gap-2 px-5">
+                    <Trash2 className="h-4 w-4" />
+                    确认清理
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Button variant="secondary" onClick={() => setShowConfirm(false)} className="h-10 px-5">
+                      取消
+                    </Button>
+                    <Button onClick={runCleanup} disabled={isCleaningUp} className="h-10 gap-2 px-5">
+                      {isCleaningUp ? "清理中..." : "确认并执行清理"}
+                    </Button>
+                  </div>
+                )
               ) : null}
             </div>
-          ) : null}
-        </CardContent>
-      </Card>
+
+            {/* Results table */}
+            {(cleanupResult || isDryRunning) ? (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-hint)]">
+                  {isDryRunning ? "正在扫描..." : cleanupResult?.dry_run ? "Dry-Run 结果（未删除任何文件）" : "清理结果"}
+                </p>
+                <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-[var(--color-bg-input)] text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">
+                        <th className="px-4 py-2.5 text-left">目标</th>
+                        <th className="px-4 py-2.5 text-right">扫描数</th>
+                        <th className="px-4 py-2.5 text-right">可清理</th>
+                        <th className="px-4 py-2.5 text-right">释放空间</th>
+                        <th className="px-4 py-2.5 text-right">跳过</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--color-border)]">
+                      {isDryRunning && !cleanupResult ? (
+                        <tr>
+                          <td className="px-4 py-8 text-center text-[var(--color-text-hint)]" colSpan={5}>扫描中...</td>
+                        </tr>
+                      ) : (
+                        Object.entries(cleanupResult?.targets || {}).map(([target, data]) => {
+                        const d = data as Record<string, unknown>;
+                        return (
+                          <tr key={target} className="bg-white/50 transition-colors hover:bg-white/80">
+                            <td className="px-4 py-2.5 font-medium text-[var(--ink)]">
+                              <span className="inline-flex items-center gap-1.5">
+                                <Database className="h-3.5 w-3.5 text-[var(--color-text-hint)]" />
+                                {target}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-[var(--color-text-secondary)]">
+                              {typeof d.scanned_count === "number" ? d.scanned_count.toLocaleString() : String(d.status || "—")}
+                            </td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-[var(--color-text-secondary)]">
+                              {typeof d.deleted_count === "number" ? d.deleted_count.toLocaleString() : "—"}
+                            </td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-[var(--color-text-secondary)]">
+                              {typeof d.freed_bytes === "number"
+                                ? d.freed_bytes > 1048576
+                                  ? `${(d.freed_bytes / 1048576).toFixed(1)} MB`
+                                  : d.freed_bytes > 1024
+                                    ? `${(d.freed_bytes / 1024).toFixed(1)} KB`
+                                    : `${d.freed_bytes} B`
+                                : "—"}
+                            </td>
+                            <td className="px-4 py-2.5 text-right tabular-nums text-[var(--color-text-secondary)]">
+                              {typeof d.skipped_running_count === "number"
+                                ? d.skipped_running_count.toLocaleString()
+                                : typeof d.skipped_count === "number"
+                                  ? d.skipped_count.toLocaleString()
+                                  : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {cleanupResult?.dry_run ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs text-amber-700">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    Dry-Run 仅扫描不删除。请检查以上结果，确认后执行清理。
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      </section>
     </div>
   );
 }

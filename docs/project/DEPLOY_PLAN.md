@@ -1,6 +1,6 @@
 # 部署方案
 
-> 更新时间：2026-06-27
+> 更新时间：2026-06-28
 > 生产入口：`deploy/docker-compose.prod.yml` + `deploy/scripts/deploy.sh`
 
 ---
@@ -73,18 +73,32 @@ rsync -az --exclude-from=".deployignore" \
 
 排除范围：`.git/`、`.claude/`、`.venv/`、`node_modules/`、`__pycache__/`、`*.db`、`.env`、`*.pem`、`*.key`、`docs/`、`prompts/`、测试文件、日志、上传目录等。
 
-### 2.2 日常更新（app-only）
+> 当本地删除了前端页面文件时，需加 `--delete` 参数同步删除服务器上的对应文件，否则 Next.js build 会因死代码引用报错。示例：
+> ```bash
+> rsync -az --delete --exclude-from=".deployignore" \
+>   -e "ssh -i loginkey.pem -o BatchMode=yes" \
+>   ./ root@8.163.56.109:/opt/2240ai-v2/
+> ```
 
-构建并替换 app 服务，不重启 postgres/redis/nginx：
+### 2.2 日常更新（app + admin）
 
+构建并替换服务，不重启 postgres/redis/nginx。
+
+**更新 app 后端：**
 ```bash
 cd /opt/2240ai-v2
 bash deploy/scripts/deploy.sh update
 ```
 
+**更新 admin 前端：**
+```bash
+cd /opt/2240ai-v2
+bash deploy/scripts/deploy.sh update-admin
+```
+
 内部执行：
-1. `docker compose build app`（保留 Docker layer cache）
-2. `docker compose up -d --no-deps app`（只替换 app）
+1. `docker compose build <service>`（保留 Docker layer cache）
+2. `docker compose up -d --no-deps <service>`（只替换目标服务）
 3. 健康检查：app 容器内 `/health` + nginx HTTPS `/health`
 
 ### 2.3 查看状态
@@ -228,7 +242,7 @@ RUN pip install --no-cache-dir --user \
 |------|---------|-----------|
 | 数据库引擎 | SQLite | PostgreSQL 15 |
 | 数据库文件 | `backend/postgraduate.db` | `postgres` 容器持久卷 |
-| Alembic 版本 | `5edb3d7d7c1f` | `5edb3d7d7c1f` |
+| Alembic 版本 | `t4c5d6e7f8g9` | `t4c5d6e7f8g9` |
 | question_imports 行数 | 65 | 132 |
 | questions 行数 | 22 | 24 |
 | subjects 行数 | 5 | **0（未初始化）** |

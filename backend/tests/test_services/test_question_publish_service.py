@@ -8,7 +8,6 @@ import pytest
 from app.features.question_publish_service import (
     _migrate_old_approved,
     approve_and_publish,
-    get_publish_history,
     publish_questions,
     publish_single_question,
 )
@@ -530,67 +529,3 @@ class TestApproveAndPublish:
         assert result.failed == 1  # qi 3 rejected
 
 
-# --- get_publish_history ---
-
-class TestGetPublishHistory:
-    def test_history_with_items(self):
-        db = _make_mock_db()
-        from datetime import datetime
-
-        now = datetime(2025, 5, 24, 10, 0, 0)
-        batch_rows = [
-            SimpleNamespace(batch_id="BATCH_1", published_at=now, total=3),
-        ]
-        stats_rows = [
-            ("published", 2),
-            ("duplicate", 1),
-        ]
-
-        db.execute.side_effect = [
-            _make_execute_result(scalar=1),       # count
-            _make_execute_result(all=batch_rows),  # batch query
-            _make_execute_result(all=stats_rows),  # stats query
-        ]
-
-        result = asyncio.run(get_publish_history(db))
-
-        assert result.total == 1
-        assert len(result.items) == 1
-        assert result.items[0].batch_id == "BATCH_1"
-        assert result.items[0].published == 2
-        assert result.items[0].duplicates == 1
-        assert result.page == 1
-        assert result.page_size == 20
-
-    def test_history_empty(self):
-        db = _make_mock_db()
-        db.execute.side_effect = [
-            _make_execute_result(scalar=0),   # count
-            _make_execute_result(all=[]),     # batch query
-        ]
-
-        result = asyncio.run(get_publish_history(db))
-
-        assert result.total == 0
-        assert result.items == []
-
-    def test_history_pagination(self):
-        db = _make_mock_db()
-        from datetime import datetime
-
-        now = datetime(2025, 5, 24, 10, 0, 0)
-        batch_rows = [SimpleNamespace(batch_id="BATCH_2", published_at=now, total=1)]
-        stats_rows = [("published", 1)]
-
-        db.execute.side_effect = [
-            _make_execute_result(scalar=5),       # count
-            _make_execute_result(all=batch_rows),  # batch query
-            _make_execute_result(all=stats_rows),  # stats query
-        ]
-
-        result = asyncio.run(get_publish_history(db, page=2, page_size=1))
-
-        assert result.total == 5
-        assert result.page == 2
-        assert result.page_size == 1
-        assert len(result.items) == 1

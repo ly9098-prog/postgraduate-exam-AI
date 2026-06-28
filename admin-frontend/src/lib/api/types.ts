@@ -1,17 +1,3 @@
-export type ImportBatchListItem = {
-  batch_id: string;
-  source_type: string;
-  source_file?: string | null;
-  total_count: number;
-  pending_count: number;
-  approved_count: number;
-  rejected_count: number;
-  published_count: number;
-  ai_count: number;
-  created_at?: string | null;
-  updated_at?: string | null;
-};
-
 export type ImportQuestionItem = {
   id: number;
   batch_id: string;
@@ -46,13 +32,6 @@ export type ImportQuestionItem = {
   risk_reasons: string[];
   created_at: string;
   updated_at: string;
-};
-
-export type ImportBatchDetail = ImportBatchListItem & {
-  items: ImportQuestionItem[];
-  page: number;
-  page_size: number;
-  total_pages: number;
 };
 
 export type ImportPipelineUploadResponse = {
@@ -118,20 +97,6 @@ export type AdminImportCompleteResponse = {
   tokens_used: number;
   duration_ms: number;
   item: ImportQuestionItem;
-};
-
-export type ImportPublishResponse = {
-  batch_id: string;
-  total: number;
-  published: number;
-  failed: number;
-  items: Array<Record<string, unknown>>;
-};
-
-export type ImportDeleteResponse = {
-  batch_id?: string | null;
-  id?: number | null;
-  deleted_count: number;
 };
 
 export type BatchImageUploadResponse = {

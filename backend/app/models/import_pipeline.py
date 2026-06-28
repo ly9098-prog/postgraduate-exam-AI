@@ -59,6 +59,9 @@ class ImportPipeline(Base):
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # P7-4: persistent quality_report and alerts — survives server restarts
+    quality_report: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    alerts: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
 
 class ImportPipelineChunk(Base):
