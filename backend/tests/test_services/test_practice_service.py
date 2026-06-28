@@ -288,20 +288,23 @@ class TestBatchSubmit:
         db.execute.side_effect = [
             # Batch question load
             _make_execute_result(scalars=[q1, q2]),
-            # submit_answer q1 (correct → 1 execute: get question)
+            # submit_answer q1 (correct → get question)
             _make_execute_result(scalar_one_or_none=q1),
-            # submit_answer q2 (wrong → 5 executes: get question + record_wrong + auto_schedule×2 + behavior)
+            # submit_answer q2 (wrong → get question + record_wrong + auto_schedule×2)
             _make_execute_result(scalar_one_or_none=q2),
             _make_execute_result(scalar_one_or_none=None),  # no existing wrong question
             _make_execute_result(scalar_one_or_none=None),  # no existing review schedule
             _make_execute_result(scalar_one_or_none=q2),    # get question for subject
-            _make_execute_result(scalar_one_or_none=None),  # no existing behavior
         ]
 
-        result = _run(batch_submit_answers(db, user_id=1, answers=[
-            {"question_id": 1, "user_answer": "A"},
-            {"question_id": 2, "user_answer": "C"},
-        ]))
+        with patch("app.services.practice_service.record_answer_behavior", new_callable=AsyncMock), \
+             patch("app.services.practice_service.record_wrong", new_callable=AsyncMock), \
+             patch("app.services.mastery_service.update_user_knowledge_state_after_answer", new_callable=AsyncMock, return_value={"updated": 0, "created": 0}), \
+             patch("app.services.recommendation_log_service.mark_recommendation_answered", new_callable=AsyncMock, return_value=False):
+            result = _run(batch_submit_answers(db, user_id=1, answers=[
+                {"question_id": 1, "user_answer": "A"},
+                {"question_id": 2, "user_answer": "C"},
+            ]))
         assert result["total_correct"] == 1
         assert result["total_wrong"] == 1
         assert len(result["results"]) == 2

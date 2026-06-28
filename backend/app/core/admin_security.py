@@ -135,6 +135,14 @@ async def get_current_admin(
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
+    # Bind admin identity to log context for trace correlation
+    try:
+        from app.core.log_context import bind_log_context
+        bind_log_context(admin_id=str(user.id))
+    except Exception:
+        pass
+
     return AdminPrincipal(user, payload)
 
 

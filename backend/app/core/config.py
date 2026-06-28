@@ -105,6 +105,21 @@ class Settings(BaseSettings):
     WORKERS: int = 4
     MAX_CONNECTIONS: int = 100
 
+    # ── Vector Search (pgvector) ──
+    VECTOR_ENABLED: bool = False
+    VECTOR_CACHE_TTL_SEC: int = 300
+    VECTOR_TOP_K: int = 100
+    VECTOR_SIMILARITY_THRESHOLD: float = 0.15
+
+    # ── Embedding ──
+    EMBEDDING_PROVIDER: str = "openai_compatible"
+    EMBEDDING_API_KEY: str = ""
+    EMBEDDING_BASE_URL: str = ""
+    EMBEDDING_MODEL: str = "BAAI/bge-m3"
+    EMBEDDING_DIM: int = 1024
+    EMBEDDING_TIMEOUT: int = 30
+    EMBEDDING_BATCH_SIZE: int = 16
+
     class Config:
         env_file = ".env"
 

@@ -1,0 +1,372 @@
+"""向量召回服务 — 单元测试。"""
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from app.models.question import Question
+
+_SENTINEL = object()
+
+# --- helpers ---
+
+def _make_mock_db(dialect_name="sqlite"):
+    db = MagicMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+    db.execute = AsyncMock()
+    db.bind = MagicMock()
+    db.bind.dialect.name = dialect_name
+    return db
+
+
+def _make_question(id=1, subject="exam408-ds", question_type="choice",
+                   answer="A", analysis="解析内容", knowledge_points=_SENTINEL,
+                   difficulty=3, is_active=True):
+    q = MagicMock(spec=Question)
+    q.id = id
+    q.subject = subject
+    q.question_type = question_type
+    q.content = {"text": "测试题干内容", "stem": "测试题干内容"}
+    q.options = {"A": "选项A", "B": "选项B", "C": "选项C", "D": "选项D"}
+    q.answer = answer
+    q.analysis = analysis
+    q.knowledge_points = ["数据结构", "链表"] if knowledge_points is _SENTINEL else knowledge_points
+    q.difficulty = difficulty
+    q.is_active = is_active
+    return q
+
+
+# --- build_question_embedding_text 测试 ---
+
+
+class TestBuildQuestionEmbeddingText:
+
+    def test_basic_structure(self):
+        """测试基本文本组装结构。"""
+        from app.services.embedding_service import build_question_embedding_text
+        q = _make_question()
+        text = build_question_embedding_text(q)
+        assert "科目：exam408-ds" in text
+        assert "题型：choice" in text
+        assert "难度：3" in text
+        assert "知识点：数据结构、链表" in text
+        assert "题干：测试题干内容" in text
+
+    def test_excludes_answer(self):
+        """测试 embedding 文本不包含答案。"""
+        from app.services.embedding_service import build_question_embedding_text
+        q = _make_question(answer="A", analysis="这是解析")
+        text = build_question_embedding_text(q)
+        # 答案 "A" 不应独立出现（解析摘要可以包含）
+        assert "选项：\nA. 选项A" in text  # 选项内容可以
+        # 但不能出现 answer 字段值作为答案标记
+        assert f"答案：{q.answer}" not in text
+
+    def test_options_sorted_by_key(self):
+        """测试选项按 key 排序。"""
+        from app.services.embedding_service import build_question_embedding_text
+        q = _make_question()
+        q.options = {"D": "选项D", "B": "选项B", "A": "选项A", "C": "选项C"}
+        text = build_question_embedding_text(q)
+        idx_a = text.index("A. 选项A")
+        idx_b = text.index("B. 选项B")
+        idx_c = text.index("C. 选项C")
+        idx_d = text.index("D. 选项D")
+        assert idx_a < idx_b < idx_c < idx_d
+
+    def test_no_options(self):
+        """测试无选项的题目。"""
+        from app.services.embedding_service import build_question_embedding_text
+        q = _make_question()
+        q.options = None
+        text = build_question_embedding_text(q)
+        assert "选项：" not in text
+
+    def test_no_knowledge_points(self):
+        """测试无知识点的题目。"""
+        from app.services.embedding_service import build_question_embedding_text
+        q = _make_question(knowledge_points=None)
+        text = build_question_embedding_text(q)
+        assert "知识点：" not in text
+
+    def test_no_analysis(self):
+        """测试无解析的题目。"""
+        from app.services.embedding_service import build_question_embedding_text
+        q = _make_question(analysis=None)
+        text = build_question_embedding_text(q)
+        assert "解析摘要" not in text
+
+
+# --- compute_content_hash 测试 ---
+
+
+class TestComputeContentHash:
+
+    def test_deterministic(self):
+        """相同输入产生相同 hash。"""
+        from app.services.embedding_service import compute_content_hash
+        h1 = compute_content_hash("test text")
+        h2 = compute_content_hash("test text")
+        assert h1 == h2
+
+    def test_different_input_different_hash(self):
+        """不同输入产生不同 hash。"""
+        from app.services.embedding_service import compute_content_hash
+        h1 = compute_content_hash("text A")
+        h2 = compute_content_hash("text B")
+        assert h1 != h2
+
+    def test_hash_length(self):
+        """hash 应为 64 位 hex。"""
+        from app.services.embedding_service import compute_content_hash
+        h = compute_content_hash("anything")
+        assert len(h) == 64
+        assert all(c in "0123456789abcdef" for c in h)
+
+
+# --- vector_to_pg_literal 测试 ---
+
+
+class TestVectorToPgLiteral:
+
+    def test_basic(self):
+        """测试基本转换。"""
+        from app.services.embedding_service import vector_to_pg_literal
+        result = vector_to_pg_literal([0.1, 0.2, 0.3])
+        assert result == "[0.1,0.2,0.3]"
+
+    def test_single_element(self):
+        """测试单元素向量。"""
+        from app.services.embedding_service import vector_to_pg_literal
+        result = vector_to_pg_literal([1.5])
+        assert result == "[1.5]"
+
+    def test_empty(self):
+        """测试空向量。"""
+        from app.services.embedding_service import vector_to_pg_literal
+        result = vector_to_pg_literal([])
+        assert result == "[]"
+
+
+# --- get_embedding 测试 ---
+
+
+class TestGetEmbedding:
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_config_missing(self):
+        """配置缺失时返回 None。"""
+        from app.services.embedding_service import get_embedding
+        with patch("app.services.embedding_service.settings") as mock_settings:
+            mock_settings.EMBEDDING_API_KEY = ""
+            mock_settings.EMBEDDING_BASE_URL = ""
+            mock_settings.EMBEDDING_MODEL = ""
+            result = await get_embedding("test text")
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_empty_text(self):
+        """空文本返回 None。"""
+        from app.services.embedding_service import get_embedding
+        result = await get_embedding("")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_dimension_mismatch(self):
+        """维度不匹配时返回 None。"""
+        from app.services.embedding_service import get_embedding
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "data": [{"embedding": [0.1, 0.2, 0.3]}]  # dim=3
+        }
+        mock_response.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.services.embedding_service.settings") as mock_settings, \
+             patch("app.services.embedding_service.httpx.AsyncClient", return_value=mock_client):
+            mock_settings.EMBEDDING_API_KEY = "test-key"
+            mock_settings.EMBEDDING_BASE_URL = "http://test.api"
+            mock_settings.EMBEDDING_MODEL = "test-model"
+            mock_settings.EMBEDDING_DIM = 1024  # 期望 1024 维
+            mock_settings.EMBEDDING_TIMEOUT = 30
+            result = await get_embedding("test text")
+            assert result is None
+
+
+# --- is_vector_enabled 测试 ---
+
+
+class TestIsVectorEnabled:
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_disabled(self):
+        """VECTOR_ENABLED=False 时返回 False。"""
+        from app.services.vector_retrieval_service import is_vector_enabled, _reset_vector_enabled_cache
+        _reset_vector_enabled_cache()
+        db = _make_mock_db("postgresql")
+        with patch("app.services.vector_retrieval_service.settings") as mock_settings:
+            mock_settings.VECTOR_ENABLED = False
+            result = await is_vector_enabled(db)
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_for_sqlite(self):
+        """SQLite 数据库返回 False。"""
+        from app.services.vector_retrieval_service import is_vector_enabled, _reset_vector_enabled_cache
+        _reset_vector_enabled_cache()
+        db = _make_mock_db("sqlite")
+        with patch("app.services.vector_retrieval_service.settings") as mock_settings:
+            mock_settings.VECTOR_ENABLED = True
+            mock_settings.EMBEDDING_API_KEY = "key"
+            mock_settings.EMBEDDING_BASE_URL = "http://api"
+            mock_settings.EMBEDDING_MODEL = "model"
+            result = await is_vector_enabled(db)
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_config_missing(self):
+        """配置不完整时返回 False。"""
+        from app.services.vector_retrieval_service import is_vector_enabled, _reset_vector_enabled_cache
+        _reset_vector_enabled_cache()
+        db = _make_mock_db("postgresql")
+        with patch("app.services.vector_retrieval_service.settings") as mock_settings:
+            mock_settings.VECTOR_ENABLED = True
+            mock_settings.EMBEDDING_API_KEY = ""
+            mock_settings.EMBEDDING_BASE_URL = ""
+            mock_settings.EMBEDDING_MODEL = ""
+            result = await is_vector_enabled(db)
+            assert result is False
+
+
+# --- search_similar_questions 测试 ---
+
+
+class TestSearchSimilarQuestions:
+
+    @pytest.mark.asyncio
+    async def test_fallback_when_disabled(self):
+        """向量不可用时返回 enabled=False。"""
+        from app.services.vector_retrieval_service import search_similar_questions, _reset_vector_enabled_cache
+        _reset_vector_enabled_cache()
+        db = _make_mock_db("sqlite")
+        with patch("app.services.vector_retrieval_service.settings") as mock_settings:
+            mock_settings.VECTOR_ENABLED = False
+            result = await search_similar_questions(db, 1, 100, count=5)
+            assert result["enabled"] is False
+            assert result["strategy"] == "fallback"
+            assert result["recommendations"] == []
+
+
+# --- smart 模式降级测试 ---
+
+
+class TestSmartModeFallback:
+    """测试 smart 模式在向量不可用时的降级行为。"""
+
+    @pytest.mark.asyncio
+    async def test_smart_fallback_to_random_when_no_records(self):
+        """无做题记录时 smart 模式退化为 random。"""
+        from app.services.practice_service import _compute_weak_knowledge_points
+        db = _make_mock_db("sqlite")
+        # 模拟无做题记录
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        db.execute = AsyncMock(return_value=mock_result)
+        result = await _compute_weak_knowledge_points(db, user_id=1, subject="exam408")
+        assert result == []
+
+
+# --- schema 兼容性测试 ---
+
+
+class TestSchemaCompatibility:
+    """测试 schema 扩展后向后兼容。"""
+
+    def test_recommendation_with_new_fields(self):
+        """Recommendation 支持新字段。"""
+        from app.schemas.ai_learning import Recommendation
+        rec = Recommendation(
+            question_id=1,
+            subject="exam408-ds",
+            question_type="choice",
+            stem="测试题干",
+            knowledge_points=["链表"],
+            match_reason="语义相似",
+            difficulty=3,
+            similarity=0.87,
+            recommend_score=0.82,
+        )
+        assert rec.difficulty == 3
+        assert rec.similarity == 0.87
+        assert rec.recommend_score == 0.82
+
+    def test_recommendation_without_new_fields(self):
+        """Recommendation 不含新字段时向后兼容。"""
+        from app.schemas.ai_learning import Recommendation
+        rec = Recommendation(
+            question_id=1,
+            subject="exam408-ds",
+            question_type="choice",
+            stem="测试题干",
+        )
+        assert rec.difficulty is None
+        assert rec.similarity is None
+        assert rec.recommend_score is None
+
+    def test_practice_question_with_new_fields(self):
+        """PracticeQuestion 支持新字段。"""
+        from app.schemas.practice import PracticeQuestion
+        pq = PracticeQuestion(
+            id=1,
+            subject="exam408-ds",
+            question_type="choice",
+            content={"text": "test"},
+            recommend_reason="薄弱知识点推荐",
+            recommend_score=0.85,
+            strategy="smart_vector",
+            similarity=0.9,
+        )
+        assert pq.recommend_reason == "薄弱知识点推荐"
+        assert pq.strategy == "smart_vector"
+
+    def test_practice_question_without_new_fields(self):
+        """PracticeQuestion 不含新字段时向后兼容。"""
+        from app.schemas.practice import PracticeQuestion
+        pq = PracticeQuestion(
+            id=1,
+            subject="exam408-ds",
+            question_type="choice",
+            content={"text": "test"},
+        )
+        assert pq.recommend_reason is None
+        assert pq.recommend_score is None
+        assert pq.strategy is None
+        assert pq.similarity is None
+
+    def test_vector_schemas(self):
+        """向量相关 schema 正常工作。"""
+        from app.schemas.vector import (
+            EmbeddingBackfillRequest,
+            EmbeddingBackfillResponse,
+            EmbeddingStatusResponse,
+        )
+        req = EmbeddingBackfillRequest(subject="exam408-ds", limit=50, force=False)
+        assert req.subject == "exam408-ds"
+        assert req.limit == 50
+
+        resp = EmbeddingBackfillResponse(
+            enabled=True, total=50, created=40, updated=5, skipped=3, failed=2, errors=["err1"]
+        )
+        assert resp.created == 40
+
+        status = EmbeddingStatusResponse(
+            vector_enabled=True, db_dialect="postgresql",
+            embedding_model="BAAI/bge-m3", embedding_dim=1024,
+            total_embeddings=1000, total_questions=1200,
+        )
+        assert status.total_embeddings == 1000

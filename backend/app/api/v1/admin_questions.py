@@ -16,6 +16,7 @@ from app.schemas.admin_questions import (
     AdminQuestionVersionListItem,
 )
 from app.schemas.common import paginated_response
+from app.schemas.vector import EmbeddingBackfillRequest
 from app.services.admin_question_service import (
     approve_admin_question,
     batch_approve_admin_questions,
@@ -103,6 +104,35 @@ async def batch_reject_questions(
     result = await batch_reject_admin_questions(db, data, current_admin, request)
     await db.commit()
     return result
+
+
+@router.post("/embeddings/backfill")
+async def backfill_embeddings(
+    data: EmbeddingBackfillRequest,
+    _=Depends(require_permissions("question:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    """批量回填题目 embedding 向量。"""
+    from app.schemas.vector import EmbeddingBackfillResponse
+    from app.services import vector_retrieval_service
+
+    result = await vector_retrieval_service.backfill_question_embeddings(
+        db=db, subject=data.subject, limit=data.limit, force=data.force
+    )
+    return EmbeddingBackfillResponse(**result)
+
+
+@router.get("/embeddings/status")
+async def embedding_status(
+    _=Depends(require_permissions("question:read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """查看向量功能状态和 embedding 统计。"""
+    from app.schemas.vector import EmbeddingStatusResponse
+    from app.services import vector_retrieval_service
+
+    result = await vector_retrieval_service.get_embedding_status(db)
+    return EmbeddingStatusResponse(**result)
 
 
 @router.get("/{question_id}", response_model=AdminQuestionDetail)

@@ -313,7 +313,30 @@ async def recommend_similar_questions(
     question_id: int,
     count: int = 5,
 ) -> dict:
-    """推荐相似题目（基于规则）。"""
+    """推荐相似题目（向量优先 + 规则兜底）。"""
+
+    # ── 向量优先 ──
+    try:
+        from app.services import vector_retrieval_service
+
+        vector_result = await vector_retrieval_service.search_similar_questions(
+            db=db,
+            user_id=user_id,
+            question_id=question_id,
+            count=count,
+            exclude_answered=True,
+        )
+        if vector_result.get("enabled") and vector_result.get("recommendations"):
+            return {
+                "source_question_id": question_id,
+                "recommendations": vector_result["recommendations"],
+                "strategy": "vector_plus_rule",
+                "tokens_used": 0,
+            }
+    except Exception:
+        logger.warning("向量推荐异常，回退到规则推荐", exc_info=True)
+
+    # ── 规则推荐（原有逻辑） ──
 
     q = await db.execute(
         select(Question).where(Question.id == question_id, Question.is_active == True)

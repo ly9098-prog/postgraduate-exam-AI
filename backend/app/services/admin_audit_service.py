@@ -1,9 +1,19 @@
+import logging
+
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow
 from app.core.admin_security import AdminPrincipal
 from app.models.admin import AuditLog
+
+logger = logging.getLogger(__name__)
+
+try:
+    from app.core.log_context import log_event
+except ImportError:  # pragma: no cover
+    def log_event(_lg, _ev, **_kw):  # type: ignore[misc]
+        pass
 
 
 async def write_admin_audit(
@@ -32,6 +42,21 @@ async def write_admin_audit(
         error_message=error_message,
     )
     db.add(audit_log)
+
+    try:
+        log_event(
+            logger, "admin.audit.write", "info",
+            operator_id=operator.id if operator else None,
+            operator_name=operator.username if operator else None,
+            action=action,
+            resource_type=resource_type,
+            resource_id=str(resource_id) if resource_id is not None else None,
+            severity=severity,
+            status=status,
+        )
+    except Exception:
+        pass  # Never let logging failure crash audit write
+
     return audit_log
 
 

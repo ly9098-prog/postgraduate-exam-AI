@@ -53,6 +53,9 @@ class Recommendation(BaseModel):
     stem: str
     knowledge_points: list[str] = []
     match_reason: str = ""
+    difficulty: int | None = None
+    similarity: float | None = None
+    recommend_score: float | None = None
 
     class Config:
         from_attributes = True
