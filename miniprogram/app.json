@@ -1,0 +1,35 @@
+{
+  "pages": [
+    "pages/login/login",
+    "pages/agreement/user",
+    "pages/agreement/privacy",
+    "pages/agreement/ai",
+    "pages/home/home",
+    "pages/practice/practice",
+    "pages/practice-result/practice-result",
+    "pages/wrong-book/wrong-book",
+    "pages/wrong-detail/wrong-detail",
+    "pages/review-today/review-today",
+    "pages/import/import",
+    "pages/dashboard/dashboard",
+    "pages/pomodoro/pomodoro",
+    "pages/pomodoro-stats/pomodoro-stats"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#4F7FFF",
+    "navigationBarTitleText": "MemoGrad",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#EEF5FF"
+  },
+  "subPackages": [
+    {
+      "root": "subpackages/animation",
+      "name": "animation",
+      "independent": false,
+      "pages": ["animation-index/animation-index"]
+    }
+  ],
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

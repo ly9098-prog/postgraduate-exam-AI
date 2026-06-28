@@ -1,0 +1,9 @@
+{
+  "navigationBarTitleText": "番茄钟",
+  "navigationBarBackgroundColor": "#0B1121",
+  "navigationBarTextStyle": "white",
+  "backgroundColor": "#0B1121",
+  "usingComponents": {
+    "animated-view": "/components/AnimatedView/AnimatedView"
+  }
+}

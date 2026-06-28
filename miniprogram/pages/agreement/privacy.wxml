@@ -1,0 +1,32 @@
+<view class="agreement-page">
+  <view class="agreement-hero">
+    <text class="agreement-kicker">数据保护</text>
+    <text class="agreement-title">隐私政策</text>
+    <text class="agreement-desc">我们只在学习记录、错题复习、题库导入与服务安全所需范围内处理数据。</text>
+  </view>
+
+  <view class="agreement-card">
+    <view class="agreement-body">
+      <view class="agreement-item">
+        <text class="item-index">1</text>
+        <text class="agreement-paragraph">本小程序可能收集微信登录标识、学习记录、错题记录、练习结果、导入题目内容等必要数据。</text>
+      </view>
+      <view class="agreement-item">
+        <text class="item-index">2</text>
+        <text class="agreement-paragraph">收集数据用于账号识别、学习进度保存、错题复习、智能刷题与服务安全。</text>
+      </view>
+      <view class="agreement-item">
+        <text class="item-index">3</text>
+        <text class="agreement-paragraph">数据会根据服务需要存储在本地或服务器中，并采取合理措施保护数据安全。</text>
+      </view>
+      <view class="agreement-item">
+        <text class="item-index">4</text>
+        <text class="agreement-paragraph">为完成登录、同步、导入或智能分析功能，相关数据可能上传至服务器处理。</text>
+      </view>
+      <view class="agreement-item">
+        <text class="item-index">5</text>
+        <text class="agreement-paragraph">当使用 AI 解析、OCR 识别等功能时，题目图片、文本或解析内容可能调用第三方 AI/OCR 服务完成处理。</text>
+      </view>
+    </view>
+  </view>
+</view>

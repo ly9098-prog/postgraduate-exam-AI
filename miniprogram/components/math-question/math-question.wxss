@@ -1,0 +1,34 @@
+.seg-text {
+  display: inline;
+  font-size: 28rpx;
+  color: #2D3E50;
+  line-height: 1.8;
+}
+.seg-math-inline-wrap {
+  display: inline-block;
+  vertical-align: middle;
+}
+.seg-math-inline {
+  height: 44rpx;
+  max-width: 400rpx;
+  margin: 0 4rpx;
+}
+.seg-math-display-wrap {
+  display: block;
+  text-align: center;
+  margin: 16rpx 0;
+}
+.seg-math-display {
+  max-width: 100%;
+}
+.seg-math-fallback {
+  color: #C47A7A;
+  font-size: 24rpx;
+}
+.seg-math-fallback-inline {
+  display: inline;
+}
+.seg-newline {
+  display: block;
+  height: 16rpx;
+}

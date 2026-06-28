@@ -1,0 +1,344 @@
+<animated-view
+  show="{{showCelebration}}"
+  type="{{celebrationType}}"
+  title="{{celebrationTitle}}"
+  detail="{{celebrationDetail}}"
+  motto="{{celebrationMotto}}"
+  reward-text="{{celebrationRewardText}}"
+  progress-text="{{celebrationProgressText}}"
+  growth-level="{{growthLevel}}"
+  growth-level-pct="{{growthLevelPct}}"
+  growth-desc="{{growthDesc}}"
+  duration="{{celebrationDuration}}"
+  gif-src="/assets/animation/celebration.gif"
+  png-src="/assets/animation/celebration-static.png"
+  bind:done="dismissCelebration"
+/>
+
+<!-- ==================== 入口页 ==================== -->
+<view class="page review-entry" wx:if="{{phase === 'entry'}}">
+  <view wx:if="{{entryLoading}}" class="loading-wrap">
+    <loading-lottie text="正在读取今日复习任务..." size="large" />
+  </view>
+
+  <view wx:else class="entry-wrap">
+    <view class="review-hero animation-fade-in motion-card-enter">
+      <view class="hero-orbit hero-orbit-one"></view>
+      <view class="hero-orbit hero-orbit-two"></view>
+      <view class="hero-copy">
+        <text class="eyebrow">今日复习 · {{_dateStr}}</text>
+        <text class="hero-title">把遗忘曲线拉回掌控</text>
+        <text class="hero-desc">按组复习到期错题，完成后系统会更新你的复习计划</text>
+      </view>
+      <view class="ring-section" wx:if="{{stats}}">
+        <view class="ring-container">
+          <view class="ring-bg"></view>
+          <view class="ring-fg" style="{{_ringStyle}}"></view>
+          <view class="ring-center">
+            <text class="ring-num">{{stats.total_scheduled - stats.remaining_today}}</text>
+            <text class="ring-label">已完成</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view class="mission-card animation-fade-in" wx:if="{{stats}}">
+      <view class="mission-head">
+        <view>
+          <text class="mission-kicker">今日待复习</text>
+          <text class="mission-title">{{stats.remaining_today}} 题</text>
+        </view>
+        <view class="mission-badge">{{entryDone ? '全部完成' : '记忆加固'}}</view>
+      </view>
+      <text class="motivation-text">{{_motivationMsg}}</text>
+      <view class="glass-card">
+        <view class="glass-item">
+          <text class="glass-num warning">{{stats.remaining_today}}</text>
+          <text class="glass-label">待攻克</text>
+        </view>
+        <view class="glass-divider"></view>
+        <view class="glass-item">
+          <text class="glass-num">{{stats.total_scheduled}}</text>
+          <text class="glass-label">总排期</text>
+        </view>
+        <view class="glass-divider"></view>
+        <view class="glass-item">
+          <text class="glass-num success">{{_accuracyLast7dText}}</text>
+          <text class="glass-label">近7天正确率</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="group-size-section animation-fade-in" wx:if="{{stats && stats.remaining_today > 0}}">
+      <view class="section-head">
+        <view>
+          <text class="section-title">选择复习节奏</text>
+          <text class="section-subtitle">短组适合碎片时间，大组适合沉浸攻克</text>
+        </view>
+        <text class="section-chip">{{groupSize}}题/组</text>
+      </view>
+      <view class="size-options">
+        <view
+          wx:for="{{[5, 10, 20]}}" wx:key="*this"
+          class="size-chip {{groupSize === item ? 'active' : ''}}"
+          hover-class="tap-scale"
+          catchtap="selectGroupSize"
+          data-size="{{item}}"
+        >{{item}}题</view>
+      </view>
+      <text class="size-hint" wx:if="{{stats.remaining_today > groupSize}}">
+        预计分为 {{_reviewGroupCountText}} 组完成
+      </text>
+    </view>
+
+    <button class="gradient-btn" wx:if="{{stats && stats.remaining_today > 0}}" bindtap="startReview">
+      开始今日复习
+    </button>
+    <view wx:elif="{{stats && stats.remaining_today === 0 && stats.total_scheduled > 0}}" class="done-wrap animation-fade-in">
+      <view class="done-check"><text class="line-icon icon-check done-check-icon"></text></view>
+      <text class="done-title">今日复习已完成</text>
+      <text class="done-desc">记忆曲线已更新，明天继续保持</text>
+    </view>
+    <view wx:elif="{{stats && stats.total_scheduled === 0}}" class="done-wrap animation-fade-in">
+      <view class="done-check mute">记</view>
+      <text class="done-title">暂无复习安排</text>
+      <text class="done-desc">刷题后系统会自动安排复习</text>
+    </view>
+  </view>
+</view>
+
+<!-- ==================== 练习页 ==================== -->
+<view
+  class="page review-practice"
+  wx:if="{{phase === 'practice'}}"
+  bindtouchstart="onTouchStart"
+  bindtouchend="onTouchEnd"
+>
+  <view wx:if="{{practiceLoading}}" class="loading-wrap">
+    <loading-lottie text="正在准备复习题目..." size="large" />
+  </view>
+
+  <view wx:else class="practice-wrap">
+    <view class="group-header">
+      <view>
+        <text class="group-title">第 {{currentGroupIdx + 1}} / {{groups.length}} 组</text>
+        <text class="group-subtitle">已选 {{_answeredCount}} / {{groupQuestions.length}} 题</text>
+      </view>
+      <text class="group-meta">{{groupQuestions.length}} 题</text>
+    </view>
+
+    <view class="review-progress">
+      <view class="question-dots">
+        <view
+          wx:for="{{groupQuestions}}" wx:key="schedule_id"
+          class="q-dot {{answers[item.schedule_id] ? 'answered' : ''}} {{currentIndex === index ? 'current' : ''}}"
+          catchtap="goQuestion"
+          data-index="{{index}}"
+        >
+          <text>{{index + 1}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="question-card {{animClass}}" wx:if="{{currentQuestion}}">
+      <view class="q-top-bar">
+        <view>
+          <text class="subject-badge">{{currentQuestion._subjectLabel}}</text>
+          <text class="q-kicker">先回忆，再选择</text>
+        </view>
+        <view class="master-btn" catchtap="tapMaster" data-sid="{{currentQuestion.schedule_id}}">
+          <text class="master-icon line-icon icon-check master-icon-check"></text>
+        </view>
+      </view>
+
+      <view class="q-stem">
+        <block wx:if="{{currentQuestion._renderModel.mode === 'SEGMENTS'}}">
+          <math-question segments="{{currentQuestion._renderModel.segments}}" />
+        </block>
+        <rich-text wx:elif="{{currentQuestion._renderModel.mode === 'RICH_TEXT'}}" nodes="{{currentQuestion._renderModel.richTextNodes}}"></rich-text>
+        <scroll-view wx:elif="{{currentQuestion._renderModel.mode === 'CODE'}}" scroll-x class="code-wrapper"><text decode="false" space="preserve" class="code-text">{{currentQuestion._renderModel.rawText}}</text></scroll-view>
+        <mp-html wx:elif="{{currentQuestion._renderModel.mode === 'LATEX'}}" content="{{currentQuestion._renderModel.html}}" lazy-load></mp-html>
+        <block wx:elif="{{currentQuestion._renderModel.mode === 'MIXED'}}">
+          <block wx:for="{{currentQuestion._renderModel.blocks}}" wx:key="index">
+            <rich-text wx:if="{{item.type === 'RICH_TEXT'}}" class="mixed-text-block" nodes="{{item.richTextNodes}}" />
+            <mp-html wx:elif="{{item.type === 'LATEX'}}" class="mixed-latex-block" content="{{item.html}}" lazy-load />
+            <scroll-view wx:elif="{{item.type === 'CODE'}}" scroll-x class="code-wrapper mixed-code-block"><text decode="false" space="preserve" class="code-text">{{item.rawText}}</text></scroll-view>
+          </block>
+        </block>
+      </view>
+
+      <view class="q-options">
+        <view
+          wx:for="{{optionKeys}}"
+          wx:key="*this"
+          class="option-item {{answers[currentQuestion.schedule_id] === item ? 'opt-selected' : ''}}"
+          hover-class="option-pressed"
+          bindtap="selectOption"
+          data-option="{{item}}"
+        >
+          <view class="opt-key">{{item}}.</view>
+          <mp-html
+            wx:if="{{currentQuestion._optNeedsRich[item]}}"
+            content="{{currentQuestion._optHtml[item]}}"
+            class="opt-val"
+          ></mp-html>
+          <text wx:else class="opt-val">{{currentQuestion._optText[item]}}</text>
+        </view>
+      </view>
+
+    </view>
+
+    <button
+      class="submit-group-btn"
+      wx:if="{{currentQuestion && currentIndex === groupQuestions.length - 1}}"
+      bindtap="submitGroup"
+      loading="{{submittingGroup}}"
+    >
+      提交本组复盘
+    </button>
+  </view>
+</view>
+
+<!-- ==================== 组结果页 ==================== -->
+<view class="page result-page" wx:if="{{phase === 'group-result'}}">
+  <view class="result-wrap animation-fade-in">
+    <view class="result-medal">
+      <text class="result-medal-main">{{groupCorrect >= groupWrong ? '优' : '练'}}</text>
+      <text class="result-medal-sub">本组完成</text>
+    </view>
+    <text class="result-title">第 {{currentGroupIdx + 1}} 组复盘完成</text>
+    <text class="result-desc">继续下一组，把短期记忆变成长期掌握</text>
+
+    <view class="group-reward-strip">
+      <view class="group-reward-main">
+        <view class="group-reward-icon">
+          <text wx:if="{{groupCorrect >= groupWrong}}" class="line-icon icon-check" style="width:40rpx;height:40rpx;color:#FFFFFF;"></text>
+          <text wx:else class="line-icon icon-trend" style="width:40rpx;height:40rpx;color:#FFFFFF;"></text>
+        </view>
+        <view class="group-reward-copy">
+          <text class="group-reward-title">{{groupCorrect >= groupWrong ? '本组记忆稳定' : '本组已完成诊断'}}</text>
+          <text class="group-reward-desc">{{groupCorrect >= groupWrong ? '获得专注星光 +1，继续保持节奏' : '获得复盘能量 +1，错题会进入巩固计划'}}</text>
+        </view>
+      </view>
+      <view class="group-progress-track">
+        <view class="group-progress-fill" style="{{_groupProgressStyle}}"></view>
+      </view>
+      <text class="group-progress-text">今日组进度 {{currentGroupIdx + 1}} / {{groups.length}}</text>
+    </view>
+
+    <view class="result-stats">
+      <view class="result-stat-item">
+        <text class="result-stat-val">{{groupQuestions.length}}</text>
+        <text class="result-stat-lbl">本组题数</text>
+      </view>
+      <view class="result-stat-item">
+        <text class="result-stat-val success">{{groupCorrect}}</text>
+        <text class="result-stat-lbl">正确</text>
+      </view>
+      <view class="result-stat-item">
+        <text class="result-stat-val danger">{{groupWrong}}</text>
+        <text class="result-stat-lbl">需巩固</text>
+      </view>
+    </view>
+
+    <view class="group-answers">
+      <view
+        wx:for="{{groupResults}}" wx:key="schedule_id"
+        class="ga-item {{item.isCorrect ? 'ga-correct' : 'ga-wrong'}}"
+      >
+        <view class="ga-status">
+          <text wx:if="{{item.isCorrect}}" class="line-icon icon-check" style="width:22rpx;height:22rpx;color:#FFFFFF;"></text>
+          <text wx:else class="line-icon icon-exclamation" style="width:22rpx;height:22rpx;color:#FFFFFF;"></text>
+        </view>
+        <view class="ga-body">
+          <view class="ga-stem">
+            <block wx:if="{{item._renderModel.mode === 'SEGMENTS'}}">
+              <math-question segments="{{item._renderModel.segments}}" />
+            </block>
+            <rich-text wx:elif="{{item._renderModel.mode === 'RICH_TEXT'}}" nodes="{{item._renderModel.richTextNodes}}"></rich-text>
+            <scroll-view wx:elif="{{item._renderModel.mode === 'CODE'}}" scroll-x class="code-wrapper"><text decode="false" space="preserve" class="code-text">{{item._renderModel.rawText}}</text></scroll-view>
+            <mp-html wx:elif="{{item._renderModel.mode === 'LATEX'}}" content="{{item._renderModel.html}}" lazy-load></mp-html>
+            <block wx:elif="{{item._renderModel.mode === 'MIXED'}}">
+              <block wx:for="{{item._renderModel.blocks}}" wx:key="index">
+                <rich-text wx:if="{{item.type === 'RICH_TEXT'}}" class="mixed-text-block" nodes="{{item.richTextNodes}}" />
+                <mp-html wx:elif="{{item.type === 'LATEX'}}" class="mixed-latex-block" content="{{item.html}}" lazy-load />
+                <scroll-view wx:elif="{{item.type === 'CODE'}}" scroll-x class="code-wrapper mixed-code-block"><text decode="false" space="preserve" class="code-text">{{item.rawText}}</text></scroll-view>
+              </block>
+            </block>
+          </view>
+          <text class="ga-answer" wx:if="{{!item.isCorrect}}">
+            你的：{{item.userAnswer || '未作答'}}　正确：{{item.correctAnswer}}
+          </text>
+        </view>
+      </view>
+    </view>
+
+    <button class="gradient-btn result-btn" bindtap="nextGroup">
+      {{currentGroupIdx + 1 >= groups.length ? '查看总体结果' : '进入下一组'}}
+    </button>
+  </view>
+</view>
+
+<!-- ==================== 最终结果页 ==================== -->
+<view class="page result-page" wx:if="{{phase === 'final-result'}}">
+  <view class="result-wrap final-wrap animation-fade-in">
+    <view class="celebrate-bg celebrate-one"></view>
+    <view class="celebrate-bg celebrate-two"></view>
+    <view class="result-medal final-medal">
+      <text class="result-medal-main">章</text>
+      <text class="result-medal-sub">今日复习</text>
+    </view>
+    <text class="result-title">今日复习完成</text>
+    <text class="result-desc">系统已根据你的作答结果更新复习计划</text>
+
+    <view class="result-stats">
+      <view class="result-stat-item">
+        <text class="result-stat-val">{{allGroupResults.length}}</text>
+        <text class="result-stat-lbl">复习题数</text>
+      </view>
+      <view class="result-stat-item">
+        <text class="result-stat-val success">{{totalCorrect}}</text>
+        <text class="result-stat-lbl">正确</text>
+      </view>
+      <view class="result-stat-item">
+        <text class="result-stat-val danger">{{totalWrong}}</text>
+        <text class="result-stat-lbl">需巩固</text>
+      </view>
+    </view>
+
+    <view class="accuracy-section">
+      <view class="accuracy-ring">
+        <view class="accuracy-bg"></view>
+        <view class="accuracy-fg" style="{{_accuracyStyle}}"></view>
+        <view class="accuracy-center">
+          <text class="accuracy-num">{{_accuracyText}}</text>
+          <text class="accuracy-lbl">正确率</text>
+        </view>
+      </view>
+      <view class="final-growth-card">
+        <text class="final-growth-kicker">成长结算</text>
+        <text class="final-growth-title">复习经验 +{{allGroupResults.length}}</text>
+        <text class="final-growth-desc">完成 {{groups.length}} 组复习，明日记忆计划已刷新</text>
+      </view>
+    </view>
+
+    <view class="reward-card">
+      <text class="reward-title">已获得</text>
+      <text class="reward-desc">复习完成徽章 · 记忆曲线更新 · 明日计划刷新</text>
+    </view>
+
+    <button class="finish-btn" bindtap="finishReview">完成</button>
+  </view>
+</view>
+
+<!-- ==================== 已掌握确认弹窗 ==================== -->
+<view class="master-overlay" wx:if="{{masterConfirmId}}" catchtap="cancelMaster">
+  <view class="master-dialog" catchtap="noop">
+    <text class="master-dialog-title">标记为已掌握</text>
+    <text class="master-dialog-desc">该题将从复习池中移除，不再出现在今日复习中</text>
+    <view class="master-dialog-actions">
+      <button class="master-btn-cancel" bindtap="cancelMaster">取消</button>
+      <button class="master-btn-confirm" bindtap="confirmMaster">确认掌握</button>
+    </view>
+  </view>
+</view>
