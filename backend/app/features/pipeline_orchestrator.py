@@ -43,6 +43,7 @@ from app.features.similarity_matcher import match_similar_questions
 from app.features.structure_analyzer import analyze_structure
 from app.features.text_normalizer import ImportTextNormalizer
 from app.utils.sentry_utils import capture_exception, set_tag, start_span
+from app.core.log_context import bind_log_context, log_event
 
 # P5-2: extracted stage implementations
 from app.features.pipeline_stages.match_stage import run_match_stage
@@ -1573,6 +1574,8 @@ class PipelineStage:
         self.status = "running"
         start = time.monotonic()
 
+        _pipe_logger = logging.getLogger("app.pipeline")
+
         # Stage → 业务阶段映射（用于 Sentry 导题链路埋点）
         _STAGE_BUSINESS_MAP = {
             "extract": "ocr",
@@ -1597,6 +1600,12 @@ class PipelineStage:
         }
         set_tag("stage", _STAGE_BUSINESS_MAP.get(self.name, "unknown"))
         set_tag("pipeline.stage", self.name)
+        bind_log_context(stage=self.name)
+
+        log_event(
+            _pipe_logger, "pipeline.stage.start",
+            stage=self.name,
+        )
 
         with start_span(op=f"pipeline.{self.name}", description=f"stage={self.name}"):
             try:
@@ -1608,6 +1617,19 @@ class PipelineStage:
                 self.duration_ms = round((time.monotonic() - start) * 1000)
                 set_tag("pipeline.stage_status", "completed")
                 set_tag("pipeline.stage_duration_ms", self.duration_ms)
+
+                log_event(
+                    _pipe_logger, "pipeline.stage.finish",
+                    stage=self.name,
+                    duration_ms=self.duration_ms,
+                    status="completed",
+                    input_count=self.input_count,
+                    output_count=self.output_count,
+                    cache_hit=self.cache_hit,
+                    cache_miss=self.cache_miss,
+                    ai_calls=self.ai_calls,
+                    tokens_used=self.tokens_used,
+                )
                 return result
             except Exception as exc:
                 self.status = "failed"
@@ -1617,6 +1639,16 @@ class PipelineStage:
                 capture_exception(
                     exc,
                     tags={"pipeline.stage": self.name, "stage": _STAGE_BUSINESS_MAP.get(self.name, "unknown")},
+                )
+
+                log_event(
+                    _pipe_logger, "pipeline.stage.error",
+                    level="error",
+                    stage=self.name,
+                    duration_ms=self.duration_ms,
+                    status="failed",
+                    error_type=type(exc).__name__,
+                    error_message=str(exc)[:300],
                 )
                 raise
 
@@ -3627,6 +3659,15 @@ class ImportPipeline:
             "watermark_patterns": watermark_patterns,
         }
 
+        _pipe_logger = logging.getLogger("app.pipeline")
+        log_event(
+            _pipe_logger, "pipeline.plan.start",
+            pipeline_id=self.pipeline_id, source_type=source_type,
+            source_file=source_file, import_mode=mode_str,
+            ocr_enabled=opts.get("enable_ocr_correction", True),
+            enable_ai_repair=opts.get("enable_ai_repair", True),
+        )
+
         # Decide chunked vs single-pass
         chunk_ranges = self._plan_chunks(
             file_content=file_content,
@@ -3658,6 +3699,13 @@ class ImportPipeline:
             page_image_refs = _render_page_image_refs(
                 file_path, page_image_tempdir, source_type=source_type,
             )
+
+        log_event(
+            _pipe_logger, "pipeline.plan.finish",
+            pipeline_id=self.pipeline_id, source_type=source_type,
+            source_file=source_file, import_mode=mode_str,
+            chunk_count=len(chunk_ranges) if chunk_ranges else 1,
+        )
 
         try:
             if len(chunk_ranges) <= 1:
@@ -3786,6 +3834,14 @@ class ImportPipeline:
         # Each pass gets its own stage instances so per-stage status doesn't
         # leak between chunks.
         self._build_pipeline()
+
+        _sp_logger = logging.getLogger("app.pipeline")
+        _sp_start = time.monotonic()
+        log_event(
+            _sp_logger, "pipeline.single_pass.start",
+            pipeline_id=self.pipeline_id, source_type=source_type,
+            page_start=page_start, page_end=page_end,
+        )
 
         # When called from the chunk loop, override the page range in opts
         # without mutating the caller's dict.
@@ -4062,6 +4118,15 @@ class ImportPipeline:
         # P4-2: artifact list for resume diagnostics
         artifacts_list = _list_artifacts(self.pipeline_id)
 
+        log_event(
+            _sp_logger, "pipeline.single_pass.finish",
+            pipeline_id=self.pipeline_id, source_type=source_type,
+            page_start=page_start, page_end=page_end,
+            status=overall_status,
+            duration_ms=round((time.monotonic() - _sp_start) * 1000),
+            question_count=data.get("stats", {}).get("to_review", 0) if isinstance(data.get("stats"), dict) else 0,
+        )
+
         return {
             "pipeline_id": self.pipeline_id,
             "status": overall_status,
@@ -4117,6 +4182,17 @@ class ImportPipeline:
 
         await ckpt.mark_chunk_running(db, self.pipeline_id, chunk_index)
         await ckpt.invalidate_progress_cache(self.pipeline_id)
+
+        _chunk_logger = logging.getLogger("app.pipeline")
+        _chunk_start = time.monotonic()
+        bind_log_context(chunk_index=chunk_index)
+        log_event(
+            _chunk_logger, "pipeline.chunk.start",
+            pipeline_id=self.pipeline_id,
+            chunk_index=chunk_index,
+            page_start=page_start,
+            page_end=logical_end,
+        )
 
         # P2-3: extend page_end by overlap so the splitter can finish the
         # last question whose tail crosses the chunk boundary. Cap at
@@ -4186,6 +4262,23 @@ class ImportPipeline:
             error_message=chunk_error,
         )
         await ckpt.invalidate_progress_cache(self.pipeline_id)
+
+        _chunk_event = "pipeline.chunk.finish" if chunk_status == "completed" else "pipeline.chunk.error"
+        _chunk_level = "info" if chunk_status == "completed" else "error"
+        log_event(
+            _chunk_logger, _chunk_event,
+            level=_chunk_level,
+            pipeline_id=self.pipeline_id,
+            chunk_index=chunk_index,
+            page_start=page_start,
+            page_end=logical_end,
+            effective_page_end=effective_end,
+            status=chunk_status,
+            duration_ms=round((time.monotonic() - _chunk_start) * 1000),
+            batch_id=batch_id or "-",
+            question_count=written,
+            error_message=(chunk_error or "")[:300],
+        )
 
         return {
             "chunk_index": chunk_index,
@@ -4287,6 +4380,17 @@ class ImportPipeline:
         # P2-3 / P1-3: shared across all chunks so dedup sees what siblings already wrote
         seen_hashes: set[str] = set()
 
+        _chunked_logger = logging.getLogger("app.pipeline")
+        _chunked_start = time.monotonic()
+        log_event(
+            _chunked_logger, "pipeline.chunked.start",
+            pipeline_id=self.pipeline_id,
+            total_pages=total_pages,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            total_chunks=len(chunk_ranges),
+        )
+
         try:
             for chunk_index, (page_start, logical_end) in enumerate(chunk_ranges):
                 is_last_chunk = chunk_index == len(chunk_ranges) - 1
@@ -4359,6 +4463,22 @@ class ImportPipeline:
         first_batch_id = next(
             (c["batch_id"] for c in chunk_results if c["batch_id"]),
             "",
+        )
+
+        _chunked_event = "pipeline.chunked.finish" if overall_status == "completed" else "pipeline.chunked.paused"
+        _chunked_level = "info" if overall_status == "completed" else "warning"
+        log_event(
+            _chunked_logger, _chunked_event,
+            level=_chunked_level,
+            pipeline_id=self.pipeline_id,
+            total_pages=total_pages,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            total_chunks=len(chunk_ranges),
+            completed_chunks=agg_stats["completed_chunks"],
+            failed_chunks=agg_stats["failed_chunks"],
+            status=overall_status,
+            duration_ms=round((time.monotonic() - _chunked_start) * 1000),
         )
 
         return {
@@ -4455,20 +4575,50 @@ async def run_import_pipeline(
     pipeline.created_by = created_by
     pipeline.source_sha256 = source_sha256
 
-    result = await pipeline.run(
-        file_content=file_content,
-        file_path=file_path,
-        source_type=source_type,
-        source_file=source_file,
-        subject=subject,
-        options=opts,
-        db=db,
-        progress_callback=progress_callback,
-        page_images=page_images,
-        resume_from_checkpoint=resume_from_checkpoint,
+    _pipe_logger = logging.getLogger("app.pipeline")
+    _run_start = time.monotonic()
+    bind_log_context(pipeline_id=pipeline_id, source_type=source_type, source_file=source_file)
+
+    log_event(
+        _pipe_logger, "pipeline.run.start",
+        pipeline_id=pipeline_id, source_type=source_type,
+        source_file=source_file, subject=subject or "-",
     )
-    result["pipeline_id"] = pipeline_id
-    return result
+
+    try:
+        result = await pipeline.run(
+            file_content=file_content,
+            file_path=file_path,
+            source_type=source_type,
+            source_file=source_file,
+            subject=subject,
+            options=opts,
+            db=db,
+            progress_callback=progress_callback,
+            page_images=page_images,
+            resume_from_checkpoint=resume_from_checkpoint,
+        )
+        result["pipeline_id"] = pipeline_id
+
+        log_event(
+            _pipe_logger, "pipeline.run.finish",
+            pipeline_id=pipeline_id, source_type=source_type,
+            source_file=source_file,
+            status=result.get("status", "unknown"),
+            duration_ms=round((time.monotonic() - _run_start) * 1000),
+        )
+        return result
+    except Exception as exc:
+        log_event(
+            _pipe_logger, "pipeline.run.error",
+            level="error",
+            pipeline_id=pipeline_id, source_type=source_type,
+            source_file=source_file,
+            duration_ms=round((time.monotonic() - _run_start) * 1000),
+            error_type=type(exc).__name__,
+            error_message=str(exc)[:300],
+        )
+        raise
 
 
 async def run_pipeline_background(

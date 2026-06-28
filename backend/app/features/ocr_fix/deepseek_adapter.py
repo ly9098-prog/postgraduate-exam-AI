@@ -11,6 +11,12 @@ from app.features.ocr_fix.interfaces import OCRFixResult
 
 logger = logging.getLogger(__name__)
 
+try:
+    from app.core.log_context import log_event
+except ImportError:  # pragma: no cover
+    def log_event(_lg, _ev, **_kw):  # type: ignore[misc]
+        pass
+
 
 class DeepSeekFixer:
     """DeepSeek 文本模型 OCR 纠错适配器。
@@ -63,6 +69,10 @@ class DeepSeekFixer:
         messages = build_ocr_correction(ocr_text)
 
         start = time.monotonic()
+        log_event(
+            logger, "ocr.fix.adapter.start", "info",
+            adapter="deepseek", ocr_text_chars=len(ocr_text),
+        )
         try:
             result = await self._deepseek.chat(
                 messages,
@@ -109,6 +119,12 @@ class DeepSeekFixer:
                     raw_response="stem lost in correction",
                 )
 
+            log_event(
+                logger, "ocr.fix.adapter.finish", "info",
+                adapter="deepseek", duration_ms=duration_ms,
+                tokens_used=result.get("tokens_used"),
+                corrected_chars=len(corrected),
+            )
             return OCRFixResult(
                 fixed_text=corrected,
                 confidence=0.85,
@@ -119,6 +135,11 @@ class DeepSeekFixer:
             )
         except Exception as exc:
             logger.warning("DeepSeek OCR fix failed: %s", exc)
+            log_event(
+                logger, "ocr.fix.adapter.error", "error",
+                adapter="deepseek", error_type=type(exc).__name__,
+                error_message=str(exc)[:200],
+            )
             return OCRFixResult(
                 fixed_text=ocr_text,
                 model_used=self.model_name,

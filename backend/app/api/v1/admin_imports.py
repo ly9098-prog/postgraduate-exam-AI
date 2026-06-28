@@ -27,7 +27,6 @@ from app.services.admin_import_service import (
     get_import_batch_detail,
     list_import_batches,
     list_review_queue,
-    list_subject_options,
     reject_import_batch,
     reject_import_question,
     update_import_question,
@@ -305,15 +304,6 @@ async def get_import_review_queue(
         risk_level=risk_level,
     )
     return paginated_response(items, total, page, page_size)
-
-
-@router.get("/subject-options")
-async def get_subject_options(
-    _=Depends(require_permissions("import:read")),
-    db: AsyncSession = Depends(get_db),
-):
-    """返回活跃科目列表，供编辑页面下拉框使用。"""
-    return await list_subject_options(db)
 
 
 @router.get("/questions/{import_id}", response_model=AdminImportQuestionItem)

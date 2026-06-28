@@ -44,6 +44,7 @@ from app.features.pipeline_orchestrator import (
     run_pipeline_background,
 )
 from app.utils.sentry_utils import capture_exception, set_tag
+from app.core.log_context import bind_log_context, get_log_context, log_event
 from app.schemas.import_review import (
     FixQuestionRequest,
     FixQuestionResponse,
@@ -476,6 +477,21 @@ async def _run_image_pipeline_with_db(
     options: dict,
 ) -> None:
     """图片后台任务：OCR → TXT bytes → 现有导入流水线。"""
+    # Re-bind log context from propagated options
+    bind_log_context(
+        trace_id=options.get("_trace_id"),
+        request_id=options.get("_request_id"),
+        pipeline_id=pipeline_id,
+        source_type="image",
+        source_file=source_file,
+    )
+
+    log_event(
+        logger, "import.background.start",
+        pipeline_id=pipeline_id, source_type="image",
+        source_file=source_file,
+    )
+
     set_tag("stage", "upload")
     set_tag("upload.filename", source_file)
     set_tag("upload.type", "image")
@@ -582,8 +598,21 @@ async def _run_image_pipeline_with_db(
         current = await _get_image_pipeline_status(pipeline_id) or {}
         result.setdefault("started_at", current.get("started_at", datetime.now().isoformat()))
         await _set_image_pipeline_status(pipeline_id, **result)
+        log_event(
+            logger, "import.background.finish",
+            pipeline_id=pipeline_id, source_type="image",
+            source_file=source_file, status=status,
+        )
     except Exception as exc:
         logger.exception("image pipeline failed: pipeline_id=%s file=%s", pipeline_id, source_file)
+        log_event(
+            logger, "import.background.error",
+            level="error",
+            pipeline_id=pipeline_id, source_type="image",
+            source_file=source_file,
+            error_type=type(exc).__name__,
+            error_message=str(exc)[:300],
+        )
         capture_exception(exc, tags={"pipeline_id": pipeline_id, "source_file": source_file, "stage": "ocr"})
         await _fail_image_pipeline(pipeline_id, str(exc))
 
@@ -654,6 +683,11 @@ async def start_import_pipeline_from_upload(
             "image_hash": image_hash,
         }
 
+        # Propagate trace context to background task
+        _ctx = get_log_context()
+        options["_trace_id"] = _ctx.get("trace_id")
+        options["_request_id"] = _ctx.get("request_id")
+
         await _set_image_pipeline_status(
             pipeline_id,
             status="queued",
@@ -675,6 +709,12 @@ async def start_import_pipeline_from_upload(
             options=options,
         )
 
+        log_event(
+            logger, "import.upload.accepted",
+            pipeline_id=pipeline_id, source_type="image",
+            source_file=filename, file_size=len(content),
+            content_type=file.content_type or "-",
+        )
         return PipelineUploadResponse(pipeline_id=pipeline_id, status="queued", source_type="image")
 
     if is_excel:
@@ -722,6 +762,11 @@ async def start_import_pipeline_from_upload(
         "page_end": page_end,
     }
 
+    # Propagate trace context to background task
+    ctx = get_log_context()
+    options["_trace_id"] = ctx.get("trace_id")
+    options["_request_id"] = ctx.get("request_id")
+
     await _set_pipeline_store(pipeline_id, {
         "pipeline_id": pipeline_id,
         "status": "processing",
@@ -746,6 +791,12 @@ async def start_import_pipeline_from_upload(
         )
     )
 
+    log_event(
+        logger, "import.upload.accepted",
+        pipeline_id=pipeline_id, source_type=source_type,
+        source_file=filename, file_size=len(content),
+        content_type=file.content_type or "-",
+    )
     return PipelineUploadResponse(pipeline_id=pipeline_id, status="parsing", source_type=source_type)
 
 
@@ -808,8 +859,22 @@ async def _run_pipeline_with_db(
     ``import_pipelines`` 表，让 resume endpoint 能做创建者 + 文件身份校验。
     """
     import traceback
+
+    # Re-bind log context from propagated options
+    bind_log_context(
+        trace_id=options.get("_trace_id"),
+        request_id=options.get("_request_id"),
+        pipeline_id=pipeline_id,
+        source_type=source_type,
+        source_file=source_file,
+    )
+
     logger = logging.getLogger("postgraduate-ai")
-    logger.info("Background task started for pipeline %s", pipeline_id)
+    log_event(
+        logger, "import.background.start",
+        pipeline_id=pipeline_id, source_type=source_type,
+        source_file=source_file,
+    )
 
     tmp_path: str | None = None
     try:
@@ -856,10 +921,23 @@ async def _run_pipeline_with_db(
                 created_by=created_by,
                 source_sha256=source_sha256,
             )
+        log_event(
+            logger, "import.background.finish",
+            pipeline_id=pipeline_id, source_type=source_type,
+            source_file=source_file,
+        )
     except Exception as exc:
         logger.error(
             "Background task for pipeline %s crashed: %s\n%s",
             pipeline_id, exc, traceback.format_exc(),
+        )
+        log_event(
+            logger, "import.background.error",
+            level="error",
+            pipeline_id=pipeline_id, source_type=source_type,
+            source_file=source_file,
+            error_type=type(exc).__name__,
+            error_message=str(exc)[:300],
         )
         capture_exception(exc, tags={"pipeline_id": pipeline_id, "stage": "pipeline_background"})
         await _set_pipeline_store(pipeline_id, {
@@ -906,6 +984,12 @@ async def _run_resume_with_db(
     options: dict,
 ) -> None:
     """Background wrapper：单独 DB 会话跑 resume，结束后无条件清理 tmp 文件。"""
+    # Re-bind log context from propagated options
+    bind_log_context(
+        trace_id=options.get("_trace_id"),
+        request_id=options.get("_request_id"),
+        pipeline_id=pipeline_id,
+    )
     try:
         async with async_session() as db:
             await resume_pipeline_background(
@@ -1084,6 +1168,17 @@ async def resume_pipeline(
         "enable_ai_repair": enable_ai_repair,
         "confidence_threshold": confidence_threshold,
     }
+
+    # Propagate trace context to background task
+    _resume_ctx = get_log_context()
+    options["_trace_id"] = _resume_ctx.get("trace_id")
+    options["_request_id"] = _resume_ctx.get("request_id")
+
+    log_event(
+        logger, "import.resume.accepted",
+        pipeline_id=pipeline_id,
+        resumed_chunks=resumed_chunks,
+    )
 
     asyncio.create_task(
         _run_resume_with_db(

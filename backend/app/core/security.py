@@ -52,6 +52,14 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
+
+    # Bind user identity to log context for trace correlation
+    try:
+        from app.core.log_context import bind_log_context
+        bind_log_context(user_id=str(user.id))
+    except Exception:
+        pass
+
     return user
 
 

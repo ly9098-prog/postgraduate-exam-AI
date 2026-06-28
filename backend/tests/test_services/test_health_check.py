@@ -163,7 +163,9 @@ async def test_ai_model_health_multiple_models():
 _APP = FastAPI()
 _APP.include_router(system_health_router)
 
-# --- Override auth + DB dependencies for all API tests ---
+# --- Override auth + DB dependencies for API tests in THIS file only ---
+# IMPORTANT: All overrides are applied via an autouse fixture with cleanup
+# to prevent cross-test contamination of app.dependency_overrides.
 from app.core import admin_security as _admin_sec_mod
 from app.core import database as _db_mod
 from types import SimpleNamespace as _SN
@@ -171,30 +173,36 @@ from types import SimpleNamespace as _SN
 # Mutable holder for per-test DB model data — _fake_get_db reads from this.
 _db_models: list = []
 
-
-async def _fake_get_db():
-    """Override get_db to return a fake session whose execute returns _db_models."""
-    yield _fake_db(_db_models)
+_original_get_permission_names = _admin_sec_mod._get_permission_names
 
 
-_APP.dependency_overrides[_db_mod.get_db] = _fake_get_db
-
-
-async def _fake_get_current_admin():
-    """Override get_current_admin to bypass real auth."""
-    from app.core.admin_security import AdminPrincipal
-    fake_user = _SN(id=1, role_id=1, username="test", display_name="Test", is_active=True)
-    return AdminPrincipal(user=fake_user, token_payload={})
-
-
-_APP.dependency_overrides[_admin_sec_mod.get_current_admin] = _fake_get_current_admin
-
-# Also patch _get_permission_names to return all required permissions
 async def _fake_get_permission_names(db, role_id):
     return {"import:read", "import:write", "admin:*"}
 
 
-_admin_sec_mod._get_permission_names = _fake_get_permission_names
+@pytest.fixture(autouse=True)
+def _isolate_api_overrides():
+    """Apply dependency overrides for API tests and clean up afterwards.
+
+    This prevents contamination of other test files that also use ``app``.
+    """
+    async def _fake_get_db():
+        yield _fake_db(_db_models)
+
+    async def _fake_get_current_admin():
+        from app.core.admin_security import AdminPrincipal
+        fake_user = _SN(id=1, role_id=1, username="test", display_name="Test", is_active=True)
+        return AdminPrincipal(user=fake_user, token_payload={})
+
+    _APP.dependency_overrides[_db_mod.get_db] = _fake_get_db
+    _APP.dependency_overrides[_admin_sec_mod.get_current_admin] = _fake_get_current_admin
+    _admin_sec_mod._get_permission_names = _fake_get_permission_names
+
+    yield
+
+    _APP.dependency_overrides.pop(_db_mod.get_db, None)
+    _APP.dependency_overrides.pop(_admin_sec_mod.get_current_admin, None)
+    _admin_sec_mod._get_permission_names = _original_get_permission_names
 # ------------------------------------------------------------
 
 

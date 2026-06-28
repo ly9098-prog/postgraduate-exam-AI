@@ -100,14 +100,15 @@ class TestRequestIdIdempotency:
     """_find_job_by_request_id must correctly find existing job by item.request_id."""
 
     def test_find_job_by_request_id_returns_existing(self, tmp_path):
-        """Given items with request_id, _find_job_by_request_id returns the job_id."""
+        """Given job with request_id, _find_job_by_request_id returns the job_id."""
         from app.features.batch_image_import_service import _find_job_by_request_id
         from app.models.import_batch_job import ImportBatchJob, ImportBatchJobItem
 
         async def _go():
             sm, _ = await _make_session(tmp_path)
             async with sm() as db:
-                db.add(ImportBatchJob(**_make_job("job_req_001")))
+                # request_id must be on the job itself for _find_job_by_request_id
+                db.add(ImportBatchJob(**_make_job("job_req_001", request_id="req_abc")))
                 db.add(ImportBatchJobItem(
                     **_make_item("job_req_001", seq=1, request_id="req_abc"),
                 ))

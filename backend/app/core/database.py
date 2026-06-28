@@ -7,6 +7,8 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
 
+logger = logging.getLogger("postgraduate-ai.database")
+
 _connect_args = {}
 _engine_kwargs: dict = {
     "echo": settings.SQL_ECHO,
@@ -30,6 +32,11 @@ engine = create_async_engine(
 
 _slow_query_logger = logging.getLogger("app.db.slow_query")
 
+try:
+    from app.core.log_context import log_event as _log_event
+except ImportError:  # pragma: no cover
+    _log_event = None
+
 if settings.SLOW_QUERY_MS > 0:
 
     @event.listens_for(engine.sync_engine, "before_cursor_execute")
@@ -46,13 +53,22 @@ if settings.SLOW_QUERY_MS > 0:
             compact_sql = " ".join(statement.split())
             if len(compact_sql) > 1200:
                 compact_sql = compact_sql[:1200] + "..."
-            _slow_query_logger.warning(
-                "slow query duration_ms=%.1f rowcount=%s executemany=%s sql=%s",
-                duration_ms,
-                getattr(cursor, "rowcount", None),
-                executemany,
-                compact_sql,
-            )
+            if _log_event is not None:
+                _log_event(
+                    _slow_query_logger, "db.slow_query", "warning",
+                    duration_ms=round(duration_ms, 1),
+                    rowcount=getattr(cursor, "rowcount", None),
+                    executemany=executemany,
+                    sql_preview=compact_sql,
+                )
+            else:
+                _slow_query_logger.warning(
+                    "slow query duration_ms=%.1f rowcount=%s executemany=%s sql=%s",
+                    duration_ms,
+                    getattr(cursor, "rowcount", None),
+                    executemany,
+                    compact_sql,
+                )
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -239,6 +255,54 @@ async def _ensure_batch_job_tables(conn):
     await conn.run_sync(repair)
 
 
+async def _ensure_vector_schema(conn):
+    """PostgreSQL-only: create pgvector extension + question_embeddings table."""
+    def repair(sync_conn):
+        if sync_conn.dialect.name != "postgresql":
+            return
+
+        dim = int(settings.EMBEDDING_DIM)
+
+        try:
+            sync_conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        except Exception:
+            logger.warning("pgvector extension unavailable; skipping vector schema", exc_info=True)
+            return
+
+        sync_conn.execute(text(f'''
+        CREATE TABLE IF NOT EXISTS question_embeddings (
+            id BIGSERIAL PRIMARY KEY,
+            question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+            subject VARCHAR(32) NOT NULL,
+            question_type VARCHAR(32) NOT NULL,
+            embedding_model VARCHAR(128) NOT NULL,
+            embedding_dim INTEGER NOT NULL,
+            content_hash VARCHAR(64) NOT NULL,
+            content_text TEXT NOT NULL,
+            embedding vector({dim}) NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            embedded_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            UNIQUE(question_id, embedding_model)
+        )
+        '''))
+
+        sync_conn.execute(text('CREATE INDEX IF NOT EXISTS ix_question_embeddings_question_id ON question_embeddings(question_id)'))
+        sync_conn.execute(text('CREATE INDEX IF NOT EXISTS ix_question_embeddings_subject ON question_embeddings(subject)'))
+        sync_conn.execute(text('CREATE INDEX IF NOT EXISTS ix_question_embeddings_content_hash ON question_embeddings(content_hash)'))
+
+        try:
+            sync_conn.execute(text('''
+            CREATE INDEX IF NOT EXISTS ix_question_embeddings_embedding_hnsw
+            ON question_embeddings
+            USING hnsw (embedding vector_cosine_ops)
+            '''))
+        except Exception:
+            logger.warning("pgvector hnsw index unavailable; continue without vector index", exc_info=True)
+
+    await conn.run_sync(repair)
+
+
 async def _repair_postgres_sequences(conn):
     """Sync PG sequences for tables that may have explicit-ID inserts (bootstrap, etc)."""
     def repair(sync_conn):
@@ -261,6 +325,15 @@ async def init_db():
         return
 
     from app.models.refresh_token import RefreshToken  # noqa: F401 — register model for create_all
+    from app.models.knowledge_point import KnowledgePoint  # noqa: F401
+    from app.models.question_knowledge_point import QuestionKnowledgePoint  # noqa: F401
+    from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
+    from app.models.recommendation_log import RecommendationLog  # noqa: F401
+    from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401 — Phase 3
+    from app.models.recommendation_strategy_config import RecommendationStrategyConfig  # noqa: F401 — Phase 4
+    from app.models.recommendation_experiment import RecommendationExperiment  # noqa: F401 — Phase 4
+    from app.models.recommendation_experiment_assignment import RecommendationExperimentAssignment  # noqa: F401 — Phase 4
+    from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401 — Phase 4
 
     async with engine.begin() as conn:
         await _repair_sqlite_admin_bigint_pk(conn)
@@ -272,3 +345,4 @@ async def init_db():
         await _ensure_sync_columns(conn)
         await _ensure_pomodoro_table(conn)
         await _ensure_batch_job_tables(conn)
+        await _ensure_vector_schema(conn)

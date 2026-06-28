@@ -27,17 +27,19 @@
 
 | 分区 | 用途 | 典型维护时机 |
 |------|------|--------------|
-| `docs/project/` | 项目规则、路线图、MVP、变更日志 | 阶段完成、范围调整、规则变化 |
-| `docs/backend/` | API、数据库、存储设计 | 后端接口、模型、迁移、存储链路变化 |
-| `docs/frontend/` | UI 规则、组件规范、设计系统 | 小程序页面、组件、交互规则变化 |
+| `docs/project/` | 项目规则、路线图、MVP、变更日志、Bug 追踪、发布检查、测试策略、部署计划 | 阶段完成、范围调整、规则变化 |
+| `docs/backend/` | API、数据库、存储设计、同步策略、API 合约 | 后端接口、模型、迁移、存储链路变化 |
+| `docs/frontend/` | UI 规则、组件规范、设计系统、渲染不变性 | 小程序页面、组件、交互规则变化 |
 | `docs/architecture/` | 系统架构、OCR（流程/策略/使用说明/双环境）、记忆系统、复习算法 | 跨模块流程、架构约束、核心算法变化 |
-| `docs/ai/` | AI 管线、OCR 策略、标准化流程 | AI 标准化、Prompt、OCR/PDF 导入链路变化 |
+| `docs/ai/` | AI 管线、AI 调试规则、OCR 策略、标准化流程 | AI 标准化、Prompt、OCR/PDF 导入链路变化 |
 | `docs/admin/` | 后台管理系统设计与实施文档 | Admin 后台 API、RBAC、审计日志、审核流变化 |
-| `docs/debug/` | 调试体系与排查规则 | 形成稳定调试方法或复盘结论 |
+| `docs/debug/` | 调试体系与排查规则、调试历史 | 形成稳定调试方法或复盘结论 |
+| `docs/audit/` | OCR/导入/安全审计报告 | 审计完成或修复后沉淀结论 |
+| `docs/planning/` | 功能规划、任务计划、设计分析 | 新功能设计阶段 |
 | `docs/achieve/` | 已完成阶段归档 | 阶段完成后归档 |
 | 根目录兼容入口 | 历史兼容入口，仅保留短入口，不重复维护正文 | 仅在仍被引用或用户要求时同步 |
 
-> 2026-06-21 更新原因：新增 docs/ocr/ 运维文档索引；同步 P5-P8 文档更新。
+> 2026-06-28 更新原因：docs/ 目录整理，将散落根目录的文档移入对应子目录并统一为兼容入口。
 
 ---
 
@@ -51,6 +53,13 @@
 | `docs/project/MVP_SCOPE.md` | MVP 范围 |
 | `docs/project/ROADMAP.md` | 路线图 |
 | `docs/project/CHANGELOG.md` | 项目变更记录 |
+| `docs/project/BUGS.md` | Bug 完整记录 |
+| `docs/project/BUGS_HISTORY.md` | Bug 历史归档 |
+| `docs/project/DEPLOY_PLAN.md` | 部署方案与计划 |
+| `docs/project/TESTING_POLICY.md` | 测试分级策略 |
+| `docs/project/SMOKE_TEST_CHECKLIST.md` | 冒烟测试清单 |
+| `docs/project/RC_RELEASE_CHECKLIST.md` | 发布检查清单 |
+| `docs/project/FILE_CHANGE_MAP.json` | 文件变更映射 |
 | `docs/achieve/README.md` | 历史阶段归档入口 |
 
 ### 后端
@@ -60,12 +69,16 @@
 | `docs/backend/API_SPEC.md` | App API 规范 |
 | `docs/backend/DB_SCHEMA.md` | App 数据库 schema |
 | `docs/backend/STORAGE_DESIGN.md` | 文件 / 图片 / 存储设计 |
+| `docs/backend/SYNC_LOCAL_TO_CLOUD.md` | 本地到云端同步方案 |
+| `docs/backend/REVIEW_API_CONTRACT.md` | 复习模块 API 合约 |
+| `docs/backend/SM2_MIGRATION_CHECKLIST.md` | SM-2 复习算法迁移检查清单 |
 
 ### AI / OCR / 导入
 
 | 文档 | 作用 |
 |------|------|
 | `docs/ai/AI_PIPELINE.md` | AI 管线 |
+| `docs/ai/AI_DEBUG_RULES.md` | AI 调试规则 |
 | `docs/ai/OCR_STRATEGY.md` | OCR 策略 |
 | `docs/ai/STANDARDIZATION_FLOW.md` | AI 标准化流程 |
 | `docs/architecture/OCR_FLOW.md` | OCR 导入架构流程 |
@@ -82,6 +95,7 @@
 | `docs/frontend/UI_RULES.md` | 小程序 UI 规则 |
 | `docs/frontend/COMPONENT_RULES.md` | 组件规范 |
 | `docs/frontend/DESIGN_SYSTEM.md` | 设计系统 |
+| `docs/frontend/render-invariant.md` | 题干渲染不变性架构 |
 
 ### Admin 后台
 
@@ -97,7 +111,61 @@
 | `docs/admin/REVIEW_FLOW.md` | 题目审核流程 |
 | `docs/admin/DEEPSEEK_DEV_RULES.md` | DeepSeek 开发强制约束 |
 
+### 调试 / 审计 / 规划
+
+| 文档 | 作用 |
+|------|------|
+| `docs/debug/DEBUG_SYSTEM.md` | 调试体系 |
+| `docs/debug/DEBUG_HISTORY.md` | 调试历史记录 |
+| `docs/audit/AUDIT_INDEX.md` | 审计报告索引 |
+| `docs/planning/TASK_PLAN.md` | 当前任务计划 |
+| `docs/planning/image-import-analysis.md` | 图片导入分析 |
+| `docs/planning/image-import-architecture.md` | 图片导入架构设计 |
+| `docs/planning/image-import-risk-review.md` | 图片导入风险审查 |
+| `docs/planning/image-import-roadmap.md` | 图片导入路线图 |
+
+### 架构
+
+| 文档 | 作用 |
+|------|------|
+| `docs/architecture/SYSTEM_ARCHITECTURE.md` | 系统总体架构 |
+| `docs/architecture/PRODUCTION_ARCH.md` | 生产环境架构 |
+| `docs/architecture/REVIEW_SYSTEM_DESIGN.md` | 复习系统设计 |
+| `docs/architecture/REVIEW_ALGORITHM.md` | SM-2 复习算法 |
+| `docs/architecture/MEMORY_SYSTEM.md` | 记忆系统设计 |
+| `docs/architecture/MATH_IMAGE_ARCHITECTURE.md` | 数学公式图片架构 |
+| `docs/architecture/refresh_token_architecture.md` | Refresh Token 架构 |
+| `docs/architecture/POMODORO_NOTIFICATION.md` | 番茄钟通知设计 |
+
 ### 一级目录兼容入口
+
+> 2026-06-28 目录整理：以下兼容入口由 `git mv` 搬移后保留为短入口 stub，权威正文在目标路径。
+
+| 文档 | 权威正文 |
+|------|----------|
+| `docs/API_SPEC.md` | `docs/backend/API_SPEC.md` |
+| `docs/DB_SCHEMA.md` | `docs/backend/DB_SCHEMA.md` |
+| `docs/OCR_FLOW.md` | `docs/architecture/OCR_FLOW.md` |
+| `docs/OCR_USAGE.md` | `docs/architecture/OCR_USAGE.md` |
+| `docs/DUAL_ENV_OCR.md` | `docs/architecture/DUAL_ENV_OCR.md` |
+| `docs/AI_PIPELINE.md` | `docs/ai/AI_PIPELINE.md` |
+| `docs/AI_DEBUG_RULES.md` | `docs/ai/AI_DEBUG_RULES.md` |
+| `docs/PROJECT_RULES.md` | `docs/project/PROJECT_RULES.md` |
+| `docs/UI_RULES.md` | `docs/frontend/UI_RULES.md` |
+| `docs/CHANGELOG.md` | 调试变更日志；项目级变更以 `docs/project/CHANGELOG.md` 为准 |
+| `docs/BUGS.md` | `docs/project/BUGS.md` |
+| `docs/BUGS_HISTORY.md` | `docs/project/BUGS_HISTORY.md` |
+| `docs/DEPLOY_PLAN.md` | `docs/project/DEPLOY_PLAN.md` |
+| `docs/FILE_CHANGE_MAP.json` | `docs/project/FILE_CHANGE_MAP.json` |
+| `docs/DEBUG_HISTORY.md` | `docs/debug/DEBUG_HISTORY.md` |
+| `docs/AUDIT_INDEX.md` | `docs/audit/AUDIT_INDEX.md` |
+| `docs/TASK_PLAN.md` | `docs/planning/TASK_PLAN.md` |
+| `docs/render-invariant.md` | `docs/frontend/render-invariant.md` |
+| `docs/MEMORY_SYSTEM.md` | `docs/architecture/MEMORY_SYSTEM.md` |
+| `docs/REVIEW_ALGORITHM.md` | `docs/architecture/REVIEW_ALGORITHM.md` |
+| `docs/SYNC_LOCAL_TO_CLOUD.md` | `docs/backend/SYNC_LOCAL_TO_CLOUD.md` |
+
+> 以下文件（曾出现在根目录）未纳入 git 追踪，Zone.Identifier 清理时意外丢失：`SMOKE_TEST_CHECKLIST.md`、`RC_RELEASE_CHECKLIST.md`、`REVIEW_API_CONTRACT.md`、`SM2_MIGRATION_CHECKLIST.md`、`TESTING_POLICY.md`。如需要需重新创建。
 
 | 文档 | 权威正文 |
 |------|----------|

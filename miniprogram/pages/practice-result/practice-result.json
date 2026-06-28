@@ -1,6 +1,0 @@
-{
-  "navigationBarTitleText": "练习结果",
-  "usingComponents": {
-    "animated-view": "/components/AnimatedView/AnimatedView"
-  }
-}

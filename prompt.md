@@ -45,15 +45,15 @@
 
 | 文档 | 内容 |
 |------|------|
-| `/docs/API_SPEC.md` | 全部 API 接口定义 |
-| `/docs/DB_SCHEMA.md` | 数据库设计 + ER 图 |
-| `/docs/PROJECT_RULES.md` | 开发规范补充 |
-| `/docs/AI_PIPELINE.md` | AI 模块架构 |
-| `/docs/OCR_FLOW.md` | OCR 处理流程 |
-| `/docs/REVIEW_ALGORITHM.md` | SM-2 复习算法 |
-| `/docs/UI_RULES.md` | 小程序 UI 规范 |
-| `/docs/MEMORY_SYSTEM.md` | 记忆系统设计 |
-| `/docs/ARCHIVE/README.md` | 历史阶段归档索引 |
+| `docs/backend/API_SPEC.md` | 全部 API 接口定义 |
+| `docs/backend/DB_SCHEMA.md` | 数据库设计 + ER 图 |
+| `docs/project/PROJECT_RULES.md` | 开发规范补充 |
+| `docs/ai/AI_PIPELINE.md` | AI 模块架构 |
+| `docs/architecture/OCR_FLOW.md` | OCR 处理流程 |
+| `docs/architecture/REVIEW_ALGORITHM.md` | SM-2 复习算法 |
+| `docs/frontend/UI_RULES.md` | 小程序 UI 规范 |
+| `docs/architecture/MEMORY_SYSTEM.md` | 记忆系统设计 |
+| `docs/achieve/README.md` | 历史阶段归档索引 |
 
 ---
 
