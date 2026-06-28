@@ -3,6 +3,7 @@
 import { useMemo, useState, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Check,
   CheckCircle2,
   FileQuestion,
   Search,
@@ -97,6 +98,18 @@ function duplicateStatusTone(status: string | null | undefined) {
   if (status === "possible_duplicate") return "warning";
   if (status === "normal") return "success";
   return "neutral";
+}
+
+function isMultiChoice(questionType: string): boolean {
+  return /多选|多空|多项/i.test(questionType);
+}
+
+function optionsToKeyValueList(options: Record<string, unknown> | null | undefined): Array<{ key: string; text: string }> {
+  if (!options) return [];
+  return Object.entries(options).map(([key, value]) => ({
+    key,
+    text: typeof value === "string" ? value : JSON.stringify(value),
+  }));
 }
 
 function renderDuplicateInfo(importRecord: AdminQuestionImportSummary | null | undefined) {
@@ -641,40 +654,97 @@ export default function QuestionsPage() {
                     />
                   </div>
 
+                  {/* Options inline editor */}
+                  {(() => {
+                    const optList = optionsToKeyValueList(editForm.options);
+                    return (
+                      <section className="rounded-xl border border-[var(--color-border)]/60 bg-white/80 p-4 shadow-sm">
+                        <p className="mb-3 text-xs font-semibold text-[var(--color-text-secondary)]">选项</p>
+                        {optList.length === 0 ? (
+                          <p className="text-sm text-[var(--color-text-hint)]">暂无可编辑选项</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {optList.map((opt, index) => (
+                              <div key={index} className="flex items-center gap-2">
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-light)] text-[10px] font-bold text-[var(--color-primary-dark)]">{opt.key}</span>
+                                <input
+                                  className="h-9 flex-1 rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15"
+                                  value={opt.text}
+                                  onChange={(e) => {
+                                    const next = { ...editForm.options } as Record<string, string>;
+                                    next[opt.key] = e.target.value;
+                                    setEditForm({ ...editForm, options: next });
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })()}
+
+                  {/* Answer quick-select */}
+                  {optionsToKeyValueList(editForm.options).length > 0 ? (
+                    <section className="rounded-xl border border-[var(--color-border)]/60 bg-white/80 p-4 shadow-sm">
+                      <p className="mb-2 text-xs font-semibold text-[var(--color-text-secondary)]">快速选择答案</p>
+                      {editForm.question_type && isMultiChoice(editForm.question_type) ? (
+                        <p className="mb-2 text-[10px] text-[var(--color-text-hint)]">多选：单击切换各选项，以逗号分隔</p>
+                      ) : null}
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        {optionsToKeyValueList(editForm.options).map((opt) => {
+                          const selected = isMultiChoice(editForm.question_type ?? "")
+                            ? (editForm.answer ?? "").split(/[,，\s]+/).includes(opt.key)
+                            : editForm.answer === opt.key;
+                          return (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3.5 text-sm font-medium transition ${
+                                selected
+                                  ? "border-[var(--color-success)] bg-[var(--color-success)] text-white shadow-sm"
+                                  : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-success)] hover:text-[var(--color-success)]"
+                              }`}
+                              onClick={() => {
+                                if (isMultiChoice(editForm.question_type ?? "")) {
+                                  const keys = (editForm.answer ?? "").split(/[,，\s]+/).filter(Boolean);
+                                  const next = keys.includes(opt.key) ? keys.filter((k) => k !== opt.key) : [...keys, opt.key];
+                                  setEditForm({ ...editForm, answer: next.join(",") });
+                                } else {
+                                  setEditForm({ ...editForm, answer: editForm.answer === opt.key ? "" : opt.key });
+                                }
+                              }}
+                            >
+                              {opt.key}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</p>
+                        <Input value={editForm.answer ?? ""} onChange={(e) => setEditForm({ ...editForm, answer: e.target.value })} />
+                      </div>
+                    </section>
+                  ) : (
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</p>
+                      <Input value={editForm.answer ?? ""} onChange={(e) => setEditForm({ ...editForm, answer: e.target.value })} />
+                    </div>
+                  )}
+
                   <div className="space-y-1">
-                    <p className="text-xs font-semibold text-[var(--color-text-secondary)]">选项 (JSON)</p>
-                    <textarea
-                      className="min-h-24 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 font-mono text-xs"
-                      value={editForm.options ? JSON.stringify(editForm.options, null, 2) : ""}
+                    <p className="text-xs font-semibold text-[var(--color-text-secondary)]">知识点 (JSON)</p>
+                    <input
+                      className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 font-mono text-xs"
+                      value={editForm.knowledge_points ? JSON.stringify(editForm.knowledge_points) : ""}
                       onChange={(e) => {
                         try {
-                          setEditForm({ ...editForm, options: JSON.parse(e.target.value) });
+                          setEditForm({ ...editForm, knowledge_points: JSON.parse(e.target.value) });
                         } catch {
                           // Allow invalid JSON while typing
                         }
                       }}
                     />
-                  </div>
-
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</p>
-                      <Input value={editForm.answer ?? ""} onChange={(e) => setEditForm({ ...editForm, answer: e.target.value })} />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">知识点 (JSON)</p>
-                      <input
-                        className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 font-mono text-xs"
-                        value={editForm.knowledge_points ? JSON.stringify(editForm.knowledge_points) : ""}
-                        onChange={(e) => {
-                          try {
-                            setEditForm({ ...editForm, knowledge_points: JSON.parse(e.target.value) });
-                          } catch {
-                            // Allow invalid JSON while typing
-                          }
-                        }}
-                      />
-                    </div>
                   </div>
 
                   <div className="space-y-1">
