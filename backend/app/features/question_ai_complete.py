@@ -530,6 +530,7 @@ async def batch_complete_questions(
     target_fields: list[str],
     strategy: str,
     max_concurrency: int = 3,
+    skip_budget_check: bool = False,
 ) -> dict:
     """批量 AI 补全。外部需自行 commit。"""
     _start_time = datetime.now()
@@ -596,17 +597,18 @@ async def batch_complete_questions(
                 item["parsed_raw"] = item["fallback_value"]
                 item["error"] = "DEEPSEEK_API_KEY 未配置"
                 return item
-            from app.features.token_budget import check_token_limit, estimate_tokens
-            from app.core.config import settings
-            _estimated = estimate_tokens(json.dumps(item["messages"], ensure_ascii=False)) * 3
-            if not await check_token_limit(_estimated, {
-                "daily_token_limit": settings.AI_DAILY_TOKEN_LIMIT,
-                "monthly_token_limit": settings.AI_MONTHLY_TOKEN_LIMIT,
-            }):
-                item["resp_raw"] = None
-                item["parsed_raw"] = item["fallback_value"]
-                item["error"] = "token_budget_exhausted"
-                return item
+            if not skip_budget_check:
+                from app.features.token_budget import check_token_limit, estimate_tokens
+                from app.core.config import settings
+                _estimated = estimate_tokens(json.dumps(item["messages"], ensure_ascii=False)) * 3
+                if not await check_token_limit(_estimated, {
+                    "daily_token_limit": settings.AI_DAILY_TOKEN_LIMIT,
+                    "monthly_token_limit": settings.AI_MONTHLY_TOKEN_LIMIT,
+                }):
+                    item["resp_raw"] = None
+                    item["parsed_raw"] = item["fallback_value"]
+                    item["error"] = "token_budget_exhausted"
+                    return item
             try:
                 resp = await deepseek.chat(
                     item["messages"], model=_model_name,
