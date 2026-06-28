@@ -9,31 +9,27 @@
 }
 
 .loading-lottie-canvas-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative;
   overflow: hidden;
 }
 
 .loading-lottie-canvas {
+  display: block;
   width: 100%;
   height: 100%;
 }
 
-.loading-lottie-small .loading-lottie-canvas-wrap,
-.loading-lottie-small .loading-lottie-canvas {
+.loading-lottie-small .loading-lottie-canvas-wrap {
   width: 96rpx;
   height: 72rpx;
 }
 
-.loading-lottie-medium .loading-lottie-canvas-wrap,
-.loading-lottie-medium .loading-lottie-canvas {
+.loading-lottie-medium .loading-lottie-canvas-wrap {
   width: 180rpx;
   height: 136rpx;
 }
 
-.loading-lottie-large .loading-lottie-canvas-wrap,
-.loading-lottie-large .loading-lottie-canvas {
+.loading-lottie-large .loading-lottie-canvas-wrap {
   width: 240rpx;
   height: 180rpx;
 }
