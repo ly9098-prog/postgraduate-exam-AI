@@ -21,8 +21,6 @@ from app.models.question_import import QuestionImport
 from app.schemas.question_publish import (
     ApproveAndPublishResponse,
     PublishDetailItem,
-    PublishHistoryItem,
-    PublishHistoryResponse,
     PublishResponse,
 )
 
@@ -277,69 +275,6 @@ async def publish_questions(
         duplicates=stats["duplicate"],
         failed=stats["failed"],
         details=[PublishDetailItem(**d) for d in details],
-    )
-
-
-async def get_publish_history(
-    db: AsyncSession,
-    page: int = 1,
-    page_size: int = 20,
-    status: str | None = None,
-) -> PublishHistoryResponse:
-    """查询发布历史（按 batch_id 聚合）。"""
-    conditions = [QuestionImport.status == "published"]
-    if status:
-        conditions.append(QuestionImport.status == status)
-
-    count_stmt = select(func.count(func.distinct(QuestionImport.batch_id))).where(
-        *conditions
-    )
-    total_result = await db.execute(count_stmt)
-    total = total_result.scalar() or 0
-
-    batch_stmt = (
-        select(
-            QuestionImport.batch_id,
-            func.max(QuestionImport.updated_at).label("published_at"),
-            func.count(QuestionImport.id).label("total"),
-        )
-        .where(*conditions)
-        .group_by(QuestionImport.batch_id)
-        .order_by(func.max(QuestionImport.updated_at).desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    )
-    batch_result = await db.execute(batch_stmt)
-    batch_rows = batch_result.all()
-
-    items: list[PublishHistoryItem] = []
-    for row in batch_rows:
-        stats_stmt = select(
-            QuestionImport.status,
-            func.count(QuestionImport.id),
-        ).where(
-            QuestionImport.batch_id == row.batch_id,
-            QuestionImport.status.in_(["published", "duplicate"]),
-        ).group_by(QuestionImport.status)
-        stats_result = await db.execute(stats_stmt)
-        stats_map = {r[0]: r[1] for r in stats_result.all()}
-
-        items.append(
-            PublishHistoryItem(
-                batch_id=row.batch_id,
-                published_at=row.published_at,
-                total=row.total,
-                published=stats_map.get("published", 0),
-                duplicates=stats_map.get("duplicate", 0),
-                failed=0,
-            )
-        )
-
-    return PublishHistoryResponse(
-        items=items,
-        total=total,
-        page=page,
-        page_size=page_size,
     )
 
 

@@ -26,7 +26,6 @@ from app.schemas.question_import import (
 from app.schemas.question_publish import (
     ApproveAndPublishRequest,
     ApproveAndPublishResponse,
-    PublishHistoryResponse,
     PublishRequest,
     PublishResponse,
 )
@@ -1209,20 +1208,6 @@ async def publish_questions(
 ):
     """小程序端不再开放发布能力。"""
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="请在 Admin 后台发布导入题目")
-
-
-@router.get("/review/publish-history", response_model=PublishHistoryResponse)
-async def publish_history(
-    page: int = 1,
-    page_size: int = 20,
-    status: str | None = None,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_app_permission("import:read")),
-):
-    """查询发布历史（按 batch_id 聚合）。"""
-    return await publish_svc.get_publish_history(
-        db, page=page, page_size=page_size, status=status
-    )
 
 
 @router.post("/review/approve-and-publish", response_model=ApproveAndPublishResponse)

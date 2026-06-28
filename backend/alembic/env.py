@@ -22,6 +22,7 @@ from app.models.admin import AdminUser, AuditLog, Permission, QuestionVersion, R
 from app.models.watermark_rule import WatermarkRule
 from app.models.admin_ai_config import AdminAiModelConfig, AdminAiConfig
 from app.models.import_batch_job import ImportBatchJob, ImportBatchJobItem
+from app.models.import_pipeline import ImportPipeline, ImportPipelineChunk
 from app.models.refresh_token import RefreshToken
 
 config = context.config
