@@ -1,0 +1,242 @@
+<view class="page">
+  <!-- 顶部 Hero -->
+  <view class="hero-card">
+    <view class="hero-glow"></view>
+    <view class="hero-content">
+      <view class="hero-kicker">错题本</view>
+      <view class="hero-title">{{primaryStatLabel}}</view>
+      <view class="hero-number-row">
+        <text class="hero-number">{{primaryStatCount}}</text>
+        <text class="hero-unit">题</text>
+      </view>
+      <view class="hero-desc">把每一次错误变成下一次提分线索</view>
+    </view>
+    <view class="hero-filter-btn" bindtap="toggleFilter">
+      <text class="filter-btn-text">筛选</text>
+    </view>
+  </view>
+
+  <view class="insight-grid" wx:if="{{analysis.summaryCards.length > 0}}">
+    <view wx:for="{{analysis.summaryCards}}" wx:key="key" class="insight-card tone-{{item.tone}}">
+      <text class="insight-value">{{item.value}}</text>
+      <text class="insight-label">{{item.label}}</text>
+    </view>
+  </view>
+
+  <!-- 筛选面板 -->
+  <view class="filter-panel {{showFilter ? 'filter-open' : ''}}">
+    <view class="filter-section">
+      <text class="filter-section-title">学科</text>
+      <view class="filter-chips">
+        <view
+          wx:for="{{subjects}}"
+          wx:key="value"
+          class="chip {{selectedSubject === item.value ? 'chip-active' : ''}}"
+          bindtap="selectSubject"
+          data-value="{{item.value}}"
+        >{{item.label}}</view>
+      </view>
+    </view>
+    <view class="filter-section">
+      <text class="filter-section-title">错因</text>
+      <view class="filter-chips">
+        <view
+          wx:for="{{errorTypes}}"
+          wx:key="value"
+          class="chip {{selectedErrorType === item.value ? 'chip-active' : ''}}"
+          bindtap="selectErrorType"
+          data-value="{{item.value}}"
+        >{{item.label}}</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 知识漏洞分析 -->
+  <view class="analysis-card">
+    <view class="section-head">
+      <view>
+        <text class="section-title">知识漏洞分析</text>
+        <text class="section-subtitle">{{analysis.sourceLabel}}，用于定位优先复盘方向</text>
+      </view>
+    </view>
+
+    <view wx:if="{{analysis.weaknessTags.length > 0}}" class="weakness-tags">
+      <view wx:for="{{analysis.weaknessTags}}" wx:key="key" class="weakness-tag">
+        <text class="weakness-label">{{item.label}}</text>
+        <text class="weakness-count">{{item.count}}题</text>
+      </view>
+    </view>
+    <view wx:else class="analysis-pending">错题数据积累后，将按错因生成弱项标签</view>
+
+    <text class="sr-summary">复盘建议：<text wx:for="{{analysis.actionPlan}}" wx:key="key">{{item.title}}——{{item.desc}}。 </text></text>
+    <view class="action-plan" wx:if="{{analysis.actionPlan.length > 0}}">
+      <view wx:for="{{analysis.actionPlan}}" wx:key="key" class="plan-item">
+        <text class="plan-dot"></text>
+        <view class="plan-copy">
+          <text class="plan-title">{{item.title}}</text>
+          <text class="plan-desc">{{item.desc}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="focus-diagnosis" wx:if="{{analysis.radarItems.length > 0}}">
+      <view class="focus-copy">
+        <text class="focus-kicker">AI 复盘优先级</text>
+        <text class="focus-title">{{analysis.focusInsight}}</text>
+        <text class="focus-desc">{{analysis.radarAxisText}}</text>
+      </view>
+      <view class="focus-score">{{analysis.radarItems[0].percent}}</view>
+    </view>
+
+    <!-- AI 深度诊断 -->
+    <view class="ai-diagnosis-card" wx:if="{{aiDiagnosis}}">
+      <view class="ai-diag-head">
+        <text class="ai-diag-kicker">AI 深度诊断</text>
+        <text class="ai-diag-badge" wx:if="{{aiDiagnosis.generated}}">DeepSeek</text>
+        <text class="ai-diag-badge local" wx:else>本地分析</text>
+      </view>
+      <text class="ai-diag-summary">{{aiDiagnosis.summary}}</text>
+      <view class="ai-diag-columns" wx:if="{{aiDiagnosis.weak_points.length > 0 || aiDiagnosis.strong_points.length > 0}}">
+        <view class="ai-diag-col" wx:if="{{aiDiagnosis.weak_points.length > 0}}">
+          <text class="ai-diag-col-title weak">薄弱环节</text>
+          <view class="ai-diag-item" wx:for="{{aiDiagnosis.weak_points}}" wx:key="knowledge_point">
+            <text class="ai-diag-kp">{{item.knowledge_point}}</text>
+            <text class="ai-diag-acc">{{item._accuracyPercent}}%</text>
+            <text class="ai-diag-tip">{{item.suggestion}}</text>
+          </view>
+        </view>
+        <view class="ai-diag-col" wx:if="{{aiDiagnosis.strong_points.length > 0}}">
+          <text class="ai-diag-col-title strong">优势领域</text>
+          <view class="ai-diag-item" wx:for="{{aiDiagnosis.strong_points}}" wx:key="knowledge_point">
+            <text class="ai-diag-kp">{{item.knowledge_point}}</text>
+            <text class="ai-diag-acc good">{{item._accuracyPercent}}%</text>
+            <text class="ai-diag-tip">{{item.suggestion}}</text>
+          </view>
+        </view>
+      </view>
+      <view class="ai-diag-suggestions" wx:if="{{aiDiagnosis.learning_suggestions.length > 0}}">
+        <text class="ai-diag-sug-title">学习建议</text>
+        <text class="ai-diag-sug-item" wx:for="{{aiDiagnosis.learning_suggestions}}" wx:key="*this">{{index + 1}}. {{item}}</text>
+      </view>
+      <text class="sr-summary">{{aiDiagnosis.summary}} 薄弱环节：<text wx:for="{{aiDiagnosis.weak_points}}" wx:key="knowledge_point">{{item.knowledge_point}}掌握率{{item._accuracyPercent}}%。 </text>学习建议：<text wx:for="{{aiDiagnosis.learning_suggestions}}" wx:key="*this">{{item}}。 </text></text>
+    </view>
+    <view class="ai-diagnosis-loading" wx:elif="{{aiDiagnosisLoading}}">
+      <view class="ai-loading-pulse"></view>
+      <text class="ai-loading-text">AI 正在分析错题数据...</text>
+    </view>
+
+    <view class="map-grid">
+      <view class="map-block radar-block">
+        <text class="map-title">能力雷达</text>
+        <view wx:if="{{analysis.radarItems.length > 0}}" class="radar-panel">
+          <text class="sr-summary">能力雷达：{{analysis.radarAxisText}}</text>
+          <view class="radar-chart">
+            <view class="radar-ring radar-ring-one"></view>
+            <view class="radar-ring radar-ring-two"></view>
+            <view class="radar-cross radar-cross-x"></view>
+            <view class="radar-cross radar-cross-y"></view>
+            <view class="radar-shape" style="{{analysis.radarPolygonStyle}}"></view>
+            <text class="radar-axis radar-axis-top">{{analysis.radarItems[0].label}}</text>
+            <text class="radar-axis radar-axis-right">{{analysis.radarItems[1] ? analysis.radarItems[1].label : '巩固'}}</text>
+            <text class="radar-axis radar-axis-bottom">{{analysis.radarItems[2] ? analysis.radarItems[2].label : '复盘'}}</text>
+            <text class="radar-axis radar-axis-left">{{analysis.radarItems[3] ? analysis.radarItems[3].label : '掌握'}}</text>
+          </view>
+          <view class="radar-legend">
+            <view wx:for="{{analysis.radarItems}}" wx:key="key" class="radar-legend-item">
+              <text class="legend-dot"></text>
+              <text class="legend-label">{{item.label}}</text>
+              <text class="legend-count">{{item.count}}题</text>
+            </view>
+          </view>
+        </view>
+        <view wx:else class="mini-pending">待积累</view>
+      </view>
+
+      <view class="map-block">
+        <text class="map-title">学科分布</text>
+        <text class="sr-summary">学科分布：<text wx:for="{{analysis.subjectItems}}" wx:key="key">{{item.label}}{{item.count}}题 </text></text>
+        <view wx:if="{{analysis.subjectItems.length > 0}}" class="subject-map">
+          <view wx:for="{{analysis.subjectItems}}" wx:key="key" class="subject-dot" style="height: {{item.height}}rpx;">
+            <text class="subject-count">{{item.count}}</text>
+          </view>
+        </view>
+        <view wx:if="{{analysis.subjectItems.length > 0}}" class="subject-labels">
+          <text wx:for="{{analysis.subjectItems}}" wx:key="key" class="subject-label">{{item.label}}</text>
+        </view>
+        <view wx:else class="mini-pending">待积累</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 加载态 -->
+  <view wx:if="{{loading && list.length === 0}}" class="loading-wrap">
+    <loading-lottie text="正在加载错题..." size="large" />
+  </view>
+
+  <!-- 空态 -->
+  <view wx:if="{{!loading && list.length === 0}}" class="empty-state">
+    <view class="empty-icon">
+      <text class="empty-icon-text line-icon icon-check" style="width:44rpx;height:44rpx;color:#22C55E;"></text>
+    </view>
+    <text class="empty-title">没有错题</text>
+    <text class="empty-desc">刷题中产生的错题会自动出现在这里</text>
+  </view>
+
+  <!-- 错题卡片列表 -->
+  <view class="card-list" wx:if="{{list.length > 0}}">
+    <view class="list-title-row">
+      <text class="list-title">错题清单</text>
+      <text class="list-subtitle">点击卡片进入复盘</text>
+    </view>
+    <view
+      wx:for="{{list}}"
+      wx:key="id"
+      class="wrong-card"
+      bindtap="goDetail"
+      data-id="{{item.id}}"
+    >
+      <view class="card-top">
+        <view class="tag-group">
+          <text class="subject-tag">{{item._subjectLabel}}</text>
+          <text class="error-tag type-{{item.error_type}}">{{item._errorTypeLabel}}</text>
+        </view>
+        <text class="card-arrow line-icon icon-chevron-right"></text>
+      </view>
+      <view class="card-body">
+        <block wx:if="{{enableMathImage && item.content && item.content.render_mode === 'segments'}}">
+          <math-question segments="{{item.content.segments}}" />
+        </block>
+        <block wx:else>
+          <text class="card-question">{{item._cleanText}}</text>
+        </block>
+      </view>
+
+      <view class="metric-row">
+        <view class="metric-pill danger">
+          <text class="metric-value">{{item._wrongCount}}</text>
+          <text class="metric-label">记录次数</text>
+        </view>
+        <view class="metric-pill blue">
+          <text class="metric-value">{{item._reviewCount}}</text>
+          <text class="metric-label">复习次数</text>
+        </view>
+        <view class="metric-pill soft">
+          <text class="metric-value small">{{item._lastErrorLabel}}</text>
+          <text class="metric-label">最近错误</text>
+        </view>
+      </view>
+
+      <view class="mastery-block">
+        <view class="mastery-head">
+          <text class="mastery-title">掌握进度</text>
+          <text class="mastery-percent">{{item._masteryPercent}}% · {{item._masteryLabel}}</text>
+        </view>
+        <view class="mastery-track">
+          <view class="mastery-fill" style="width: {{item._masteryPercent}}%;"></view>
+        </view>
+      </view>
+    </view>
+
+    <view class="load-more" wx:if="{{hasMore}}" bindtap="loadMore">加载更多</view>
+  </view>
+</view>

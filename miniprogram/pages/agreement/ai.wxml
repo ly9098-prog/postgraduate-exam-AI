@@ -1,0 +1,28 @@
+<view class="agreement-page">
+  <view class="agreement-hero">
+    <text class="agreement-kicker">AI 辅助说明</text>
+    <text class="agreement-title">AI 免责声明</text>
+    <text class="agreement-desc">AI 与 OCR 用于辅助学习，不替代教材、课程、官方答案和个人判断。</text>
+  </view>
+
+  <view class="agreement-card">
+    <view class="agreement-body">
+      <view class="agreement-item">
+        <text class="item-index">1</text>
+        <text class="agreement-paragraph">AI 解析结果仅供学习参考，不构成标准答案或唯一解法。</text>
+      </view>
+      <view class="agreement-item">
+        <text class="item-index">2</text>
+        <text class="agreement-paragraph">OCR 识别可能存在文字、公式、选项或图片内容误差。</text>
+      </view>
+      <view class="agreement-item">
+        <text class="item-index">3</text>
+        <text class="agreement-paragraph">AI 生成内容不保证 100% 准确、完整或适用于所有考试场景。</text>
+      </view>
+      <view class="agreement-item">
+        <text class="item-index">4</text>
+        <text class="agreement-paragraph">用户应结合教材、课程、官方答案和个人判断核对内容正确性。</text>
+      </view>
+    </view>
+  </view>
+</view>
