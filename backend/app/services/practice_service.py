@@ -701,26 +701,36 @@ async def submit_answer(
     await db.commit()
     await db.refresh(record)
 
+    # ── Phase 2: 最佳效果后置操作（不影响答题主流程）──
+    # 以下全部在 db.commit() 之后执行，失败不影响核心数据
     is_wrong_added = False
-    if not is_correct:
-        await record_wrong(db, user_id, question_id, user_answer.strip())
-        is_wrong_added = True
+    try:
+        if not is_correct:
+            await record_wrong(db, user_id, question_id, user_answer.strip())
+            is_wrong_added = True
+    except Exception:
+        logger.warning("错题记录失败（不影响答题）qid=%d uid=%d", question_id, user_id, exc_info=True)
+        await db.rollback()
 
-    await record_answer_behavior(
-        db=db,
-        user_id=user_id,
-        question_id=question_id,
-        practice_record_id=record.id,
-        time_spent_sec=used_time or 0,
-        is_first_correct=is_correct,
-        is_final_correct=is_correct,
-        user_answer=user_answer.strip(),
-        correct_answer=question.answer,
-        subject=question.subject,
-        session_type="practice",
-    )
+    try:
+        await record_answer_behavior(
+            db=db,
+            user_id=user_id,
+            question_id=question_id,
+            practice_record_id=record.id,
+            time_spent_sec=used_time or 0,
+            is_first_correct=is_correct,
+            is_final_correct=is_correct,
+            user_answer=user_answer.strip(),
+            correct_answer=question.answer,
+            subject=question.subject,
+            session_type="practice",
+        )
+    except Exception:
+        logger.warning("答题行为记录失败（不影响答题）qid=%d uid=%d", question_id, user_id, exc_info=True)
+        await db.rollback()
 
-    # ── Phase 2: 掌握度更新 + 推荐反馈（best-effort）──
+    # ── Phase 3: 掌握度更新 + 推荐反馈（best-effort）──
     try:
         from app.services import mastery_service
         await mastery_service.update_user_knowledge_state_after_answer(
@@ -728,6 +738,7 @@ async def submit_answer(
         )
     except Exception:
         logger.warning("掌握度更新失败（不影响答题）qid=%d uid=%d", question_id, user_id, exc_info=True)
+        await db.rollback()
 
     try:
         from app.services import recommendation_log_service
@@ -736,6 +747,7 @@ async def submit_answer(
         )
     except Exception:
         logger.warning("推荐日志标记失败（不影响答题）qid=%d uid=%d", question_id, user_id, exc_info=True)
+        await db.rollback()
 
     return {
         "record_id": record.id,

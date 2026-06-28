@@ -146,32 +146,41 @@ Component({
     _initCanvas: function () {
       var self = this
       var query = this.createSelectorQuery()
-      query.select('#loading-lottie-canvas')
-        .fields({ node: true, size: true })
-        .exec(function (res) {
-          try {
-            if (!res || !res[0] || !res[0].node) {
-              self._fallback()
-              return
-            }
-            var canvas = res[0].node
-            var ctx = canvas.getContext && canvas.getContext('2d')
-            if (!ctx) {
-              self._fallback()
-              return
-            }
-            var width = res[0].width || 1
-            var height = res[0].height || 1
-            canvas.width = width
-            canvas.height = height
-            self._canvas = canvas
-            self._ctx = ctx
-            self._lottieModule.setup(canvas)
-            self._startLottie()
-          } catch (_) {
+      // Query the wrap for reliable dimensions, and the canvas for the node
+      query.select('.loading-lottie-canvas-wrap').fields({ size: true })
+      query.select('#loading-lottie-canvas').fields({ node: true })
+      query.exec(function (res) {
+        try {
+          if (!res || !res[1] || !res[1].node) {
             self._fallback()
+            return
           }
-        })
+          var wrapSize = res[0] || {}
+          var canvasNode = res[1].node
+          var ctx = canvasNode.getContext && canvasNode.getContext('2d')
+          if (!ctx) {
+            self._fallback()
+            return
+          }
+
+          var cssW = wrapSize.width || 240
+          var cssH = wrapSize.height || 180
+          var dpr = 1
+          try { dpr = wx.getSystemInfoSync().pixelRatio || 1 } catch (_) {}
+
+          // Set canvas internal buffer at device resolution (× DPR) for sharp rendering
+          // lottie-web internally reads window.devicePixelRatio and scales ctx accordingly
+          canvasNode.width = Math.round(cssW * dpr)
+          canvasNode.height = Math.round(cssH * dpr)
+
+          self._canvas = canvasNode
+          self._ctx = ctx
+          self._lottieModule.setup(canvasNode)
+          self._startLottie()
+        } catch (_) {
+          self._fallback()
+        }
+      })
     },
 
     _startLottie: function () {
