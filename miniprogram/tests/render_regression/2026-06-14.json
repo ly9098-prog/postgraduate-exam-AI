@@ -1,0 +1,26 @@
+{
+  "_bug": "2026-06-14 — Multi-line code + inline math ($P_1$, $z$) caused whole-stem duplication through mp-html",
+  "_fix": "Route non-LaTeX stems through native <rich-text>; deduplicate repeated stem blocks",
+  "question": {
+    "id": 61401,
+    "question_type": "single_choice",
+    "content": {
+      "text": "void main() {\n  int $P_1$ = 0;\n  while ($z$ > 0) {\n    $P_1$++;\n  }\n  printf(\"%d\", $P_1$);\n}",
+      "stem": "void main() {\n  int $P_1$ = 0;\n  while ($z$ > 0) {\n    $P_1$++;\n  }\n  printf(\"%d\", $P_1$);\n}"
+    },
+    "options": {
+      "A": "编译错误",
+      "B": "运行时报错",
+      "C": "死循环",
+      "D": "正常输出"
+    },
+    "answer": "A"
+  },
+  "expected": {
+    "_bug": "2026-06-14, updated 2026-06-24 — CODE mode now uses zero-HTML raw text (no more mp-html + &nbsp;)",
+    "mode": "CODE",
+    "hasHtml": false,
+    "hasRawText": true,
+    "hasRichTextNodes": false
+  }
+}
