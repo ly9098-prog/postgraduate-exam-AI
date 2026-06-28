@@ -4693,6 +4693,29 @@ async def run_pipeline_background(
                 await _set_pipeline_store(pipeline_id, result)
         except Exception as alert_exc:
             logger.warning("Alert evaluation failed for pipeline %s: %s", pipeline_id, alert_exc)
+
+        # P7-4: persist quality_report + alerts to DB so they survive restarts
+        if db is not None:
+            try:
+                qr = result.get("quality_report")
+                al = result.get("alerts")
+                if qr or al:
+                    from app.models.import_pipeline import ImportPipeline as ImportPipelineRow
+                    from sqlalchemy import update
+                    await db.execute(
+                        update(ImportPipelineRow)
+                        .where(ImportPipelineRow.pipeline_id == pipeline_id)
+                        .values(
+                            quality_report=qr if qr else None,
+                            alerts=al if al else None,
+                        )
+                    )
+                    await db.commit()
+            except Exception as persist_exc:
+                logger.warning(
+                    "Failed to persist quality_report/alerts for pipeline %s: %s",
+                    pipeline_id, persist_exc,
+                )
     except Exception as exc:
         logger.exception("Pipeline %s failed", pipeline_id)
         await _set_pipeline_store(pipeline_id, {

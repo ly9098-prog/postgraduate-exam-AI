@@ -1085,7 +1085,7 @@ async def list_pipelines(
             "started_at": row.started_at.isoformat() if row.started_at else None,
             "finished_at": row.finished_at.isoformat() if row.finished_at else None,
         }
-        # Merge quality_report from in-memory store if available
+        # Merge quality_report from in-memory store if available, else DB
         store_data = _pipeline_store.get(row.pipeline_id)
         if store_data:
             qr = store_data.get("quality_report")
@@ -1094,6 +1094,12 @@ async def list_pipelines(
             alerts = store_data.get("alerts")
             if alerts:
                 item["alerts"] = alerts
+        else:
+            # P7-4: fallback to DB columns for historical pipelines
+            if row.quality_report:
+                item["quality_report"] = row.quality_report
+            if row.alerts:
+                item["alerts"] = row.alerts
         items.append(item)
 
     return {
