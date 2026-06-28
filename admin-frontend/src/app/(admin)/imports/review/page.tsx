@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, Code2, Eye, FileText, Save, Search, Sparkles, X, XCircle } from "lucide-react";
@@ -194,6 +195,20 @@ export default function ImportReviewPage() {
   const [draftRestored, setDraftRestored] = useState(false);
   const [autoSaveHint, setAutoSaveHint] = useState<string | null>(null);
 
+  const syncedDetailRef = useRef<Set<number>>(new Set());
+
+  // Close subject dropdown on outside click (portal bypasses drawer's onBlur chain)
+  useEffect(() => {
+    if (!subjectDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (subjectBtnRef.current && !subjectBtnRef.current.contains(e.target as Node)) {
+        setSubjectDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [subjectDropdownOpen]);
+
   const DRAFT_KEY = "batch-complete-draft";
 
   const saveDraft = (fields: string[], strategy: string) => {
@@ -264,15 +279,15 @@ export default function ImportReviewPage() {
   const queuedPreviewItem = items.find((item) => item.id === previewId) ?? null;
   const previewItem = detail.data ?? (completedItem?.id === previewId ? completedItem : queuedPreviewItem);
 
-  // When full detail loads, sync editState if stem is still empty (brief item lacks parsed_content)
+  // When full detail loads for the first time after drawer open, sync editState
   useEffect(() => {
     if (detail.data && previewId === detail.data.id) {
-      setEditState((prev) => {
-        if (!prev?.stem) return editStateFromItem(detail.data);
-        return prev;
-      });
+      if (!syncedDetailRef.current.has(previewId)) {
+        syncedDetailRef.current.add(previewId);
+        setEditState(editStateFromItem(detail.data));
+      }
     }
-  }, [detail.data]);
+  }, [detail.data, previewId]);
 
   const subjectsQuery = useQuery({
     queryKey: ["import-subject-options"],
@@ -347,8 +362,10 @@ export default function ImportReviewPage() {
     onSuccess: (result, variables) => {
       if (variables.action === "approve") {
         setMessage(`导入题目 #${variables.id} 已通过审核。`);
+        closeDrawer();
       } else if (variables.action === "reject") {
         setMessage(`导入题目 #${variables.id} 已驳回。`);
+        closeDrawer();
       } else if (variables.action === "batch-approve") {
         const affected = "affected_count" in result ? result.affected_count : 0;
         const errors = "errors" in result ? (result as BatchActionResult).errors : undefined;
@@ -398,7 +415,12 @@ export default function ImportReviewPage() {
     },
     onSuccess: (result) => {
       setMessage(`导入题目 #${result.id} 已保存。`);
+      setEditState(editStateFromItem(result));
+      setCompletedItem(result);
+      syncedDetailRef.current.delete(result.id);
       queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["import-question-detail", previewId] });
+      setEditing(false);
     },
     onError: (error) => {
       setMessage(error instanceof Error ? error.message : "保存失败，请稍后重试。");
@@ -504,6 +526,7 @@ export default function ImportReviewPage() {
     setCompletedItem(null);
     setEditState(null);
     setEditing(false);
+    syncedDetailRef.current.clear();
   };
 
   const startEditing = () => {
@@ -557,6 +580,8 @@ export default function ImportReviewPage() {
 .card-hover { transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
 .card-hover:hover { animation: cardLift 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; border-color: rgba(91, 123, 154, 0.25); }
 .card-linen { background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='l'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.5' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23l)' opacity='0.03'/%3E%3C/svg%3E"); background-size: 100px 100px; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
 .card-risk-border { position: relative; overflow: hidden; }
 .card-risk-border::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; border-radius: 2px 0 0 2px; }
 .card-risk-high::before { background: linear-gradient(180deg, #b03a3a, #c47a7a); }
@@ -1251,7 +1276,9 @@ export default function ImportReviewPage() {
                             setSubjectDropdownOpen(next);
                             if (next && subjectBtnRef.current) {
                               const r = subjectBtnRef.current.getBoundingClientRect();
-                              setSubjectDropdownStyle({ top: r.bottom + 4, left: r.left, width: r.width });
+                              const maxRight = window.innerWidth - 16;
+                              const w = Math.min(r.width, maxRight - 16);
+                              setSubjectDropdownStyle({ top: r.bottom + 4, left: Math.min(r.left, maxRight - w), width: w });
                             }
                           }}
                           onBlur={() => setTimeout(() => setSubjectDropdownOpen(false), 150)}
@@ -1267,8 +1294,8 @@ export default function ImportReviewPage() {
                             <ChevronDown className={`h-4 w-4 text-[var(--color-text-hint)] transition-transform ${subjectDropdownOpen ? "rotate-180" : ""}`} />
                           )}
                         </button>
-                        {subjectDropdownOpen ? (
-                          <div className="fixed z-[100] max-h-56 overflow-y-auto rounded-xl border border-[var(--color-border)] bg-white py-1 shadow-lg" style={subjectDropdownStyle}>
+                        {subjectDropdownOpen ? createPortal(
+                          <div className="fixed z-[200] max-h-56 overflow-y-auto scrollbar-hide rounded-xl border border-[var(--color-border)] bg-white py-1 shadow-lg" style={subjectDropdownStyle}>
                             <button
                               type="button"
                               className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-[var(--color-primary-light)]/40 ${
@@ -1297,7 +1324,8 @@ export default function ImportReviewPage() {
                                 <span className="ml-auto text-[10px] text-[var(--color-text-hint)]">{s.code}</span>
                               </button>
                             ))}
-                          </div>
+                          </div>,
+                          document.body
                         ) : null}
                       </div>
                     </div>
