@@ -24,6 +24,12 @@ from app.models.admin_ai_config import AdminAiModelConfig, decrypt_api_key
 
 logger = logging.getLogger(__name__)
 
+try:
+    from app.core.log_context import log_event
+except ImportError:  # pragma: no cover
+    def log_event(_lg, _ev, **_kw):  # type: ignore[misc]
+        pass
+
 
 def _get_model_features(model: AdminAiModelConfig) -> list[str]:
     """从模型获取 features 列表，兼容新旧数据。"""
@@ -80,22 +86,23 @@ async def resolve_active_model(db: AsyncSession, feature: str | None = None) -> 
 
     # Last resort: any enabled model
     for model in all_enabled:
-        logger.info(
-            "No feature='%s' or untagged model found — using '%s' as last resort",
-            feature, model.name,
+        log_event(
+            logger, "ai.model.resolve.fallback", "info",
+            feature=feature, model_name=model.name, provider=model.provider,
         )
         return _decrypt_model(model)
 
-    logger.info("No enabled AI model found in DB — will fall back to env vars")
+    log_event(logger, "ai.model.resolve.fallback", "info", feature=feature, reason="no_enabled_model")
     return None
 
 
 def _decrypt_model(model: AdminAiModelConfig) -> dict | None:
     api_key = decrypt_api_key(model.api_key_encrypted) if model.api_key_encrypted else ""
     if not api_key:
-        logger.warning(
-            "Enabled model '%s' has no decryptable API key — falling back to env vars",
-            model.name,
+        log_event(
+            logger, "ai.model.resolve.error", "warning",
+            model_name=model.name, provider=model.provider,
+            reason="no_decryptable_api_key",
         )
         return None
     return {
@@ -122,11 +129,14 @@ async def ensure_db_model_configured(
     """
     config = await resolve_active_model(db, feature=feature)
     if config:
-        logger.info(
-            "Resolved DB model credentials (feature=%s, model=%s, base_url=%s)",
-            feature, config["model_name"], config["api_base_url"],
+        log_event(
+            logger, "ai.model.resolve.finish", "info",
+            feature=feature, model_name=config["model_name"],
+            display_name=config.get("display_name", ""),
+            provider=config.get("provider", ""),
+            source="db",
         )
         return (config["api_key"], config["api_base_url"], config["model_name"])
 
-    logger.info("No DB model configured — will use env vars")
+    log_event(logger, "ai.model.resolve.fallback", "info", feature=feature, source="env_vars")
     return None

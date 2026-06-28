@@ -39,6 +39,10 @@ from app.api.v1.admin_watermark_rules import router as admin_watermark_rules_rou
 from app.api.v1.admin_ai_config import router as admin_ai_config_router
 from app.api.v1.admin_system_health import router as admin_system_health_router
 from app.api.v1.sync import router as sync_router
+from app.api.v1.knowledge_mastery import router as knowledge_mastery_router
+from app.api.v1.admin_knowledge import router as admin_knowledge_router
+from app.api.v1.admin_recommendation import router as admin_recommendation_router
+from app.api.v1.knowledge_path import router as knowledge_path_router
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.logging_config import setup_logging
@@ -154,17 +158,78 @@ app.add_middleware(
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    start = time.time()
-    response = await call_next(request)
-    elapsed = time.time() - start
-    logger.info(
-        "%s %s → %s (%.0fms)",
-        request.method,
-        request.url.path,
-        response.status_code,
-        elapsed * 1000,
+    from app.core.log_context import (
+        bind_log_context,
+        clear_log_context,
+        generate_request_id,
+        generate_trace_id,
+        log_event,
     )
-    return response
+
+    access_logger = logging.getLogger("app.access")
+
+    # Read or generate trace/request IDs
+    trace_id = request.headers.get("x-trace-id") or generate_trace_id()
+    request_id = request.headers.get("x-request-id") or generate_request_id()
+
+    start = time.time()
+    try:
+        bind_log_context(trace_id=trace_id, request_id=request_id)
+
+        # Extract safe request metadata (no Authorization, no full query values)
+        try:
+            query_keys = list(request.query_params.keys()) if request.query_params else []
+        except Exception:
+            query_keys = []
+        client_ip = request.client.host if request.client else "-"
+        user_agent = request.headers.get("user-agent", "-")[:200]
+        content_type = request.headers.get("content-type", "-")
+        content_length = request.headers.get("content-length", "-")
+
+        log_event(
+            access_logger,
+            "http.request.start",
+            method=request.method,
+            path=request.url.path,
+            query_keys=query_keys,
+            client_ip=client_ip,
+            user_agent=user_agent,
+            content_type=content_type,
+            content_length=content_length,
+        )
+
+        response = await call_next(request)
+        elapsed_ms = round((time.time() - start) * 1000)
+
+        # Set trace headers on the response (covers both success and exception-handler responses)
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Trace-ID"] = trace_id
+
+        log_event(
+            access_logger,
+            "http.request.finish",
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            duration_ms=elapsed_ms,
+            response_content_length=response.headers.get("content-length", "-"),
+        )
+        return response
+    except Exception as exc:
+        elapsed_ms = round((time.time() - start) * 1000)
+        log_event(
+            access_logger,
+            "http.request.error",
+            level="error",
+            method=request.method,
+            path=request.url.path,
+            duration_ms=elapsed_ms,
+            error_type=type(exc).__name__,
+            error_message=str(exc)[:300],
+        )
+        raise
+    finally:
+        clear_log_context()
 
 
 @app.exception_handler(Exception)
@@ -173,10 +238,36 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     # 否则前端 wx.uploadFile 拿到的是 "Internal Server Error" 纯文本，
     # JSON.parse 直接抛 "Unexpected token I in JSON at position 0"，错误信息全丢。
     logger.exception("Unhandled error on %s %s", request.method, request.url.path)
-    return JSONResponse(
+
+    # Recover trace context (may have been cleared by middleware finally block)
+    trace_id = request.headers.get("x-trace-id", "")
+    request_id = request.headers.get("x-request-id", "")
+
+    try:
+        from app.core.log_context import bind_log_context, log_event
+        if trace_id or request_id:
+            bind_log_context(trace_id=trace_id, request_id=request_id)
+        log_event(
+            logging.getLogger("app.access"),
+            "http.request.error",
+            level="error",
+            method=request.method,
+            path=request.url.path,
+            error_type=type(exc).__name__,
+            error_message=str(exc)[:300],
+        )
+    except Exception:
+        pass  # Never let logging crash the exception handler
+
+    response = JSONResponse(
         status_code=500,
         content={"detail": f"{type(exc).__name__}: {exc}"},
     )
+    if trace_id:
+        response.headers["X-Trace-ID"] = trace_id
+    if request_id:
+        response.headers["X-Request-ID"] = request_id
+    return response
 
 
 # --- 健康检查 ---
@@ -219,6 +310,10 @@ app.include_router(admin_ai_config_router)
 app.include_router(admin_system_health_router)
 app.include_router(sync_router)
 app.include_router(pomodoro_router)
+app.include_router(knowledge_mastery_router)
+app.include_router(admin_knowledge_router)
+app.include_router(admin_recommendation_router)
+app.include_router(knowledge_path_router)
 
 # 静态文件服务（开发用公式图片）
 os.makedirs("static/formulas", exist_ok=True)

@@ -50,6 +50,12 @@ from app.models.pipeline_enums import (
 
 logger = logging.getLogger(__name__)
 
+try:
+    from app.core.log_context import bind_log_context, log_event
+except ImportError:  # pragma: no cover
+    def bind_log_context(**_kw): return []  # type: ignore[misc]
+    def log_event(_lg, _ev, **_kw): pass  # type: ignore[misc]
+
 _MIN_CONCURRENCY = 1
 _MAX_CONCURRENCY = 4
 
@@ -406,6 +412,7 @@ async def create_batch_job(
         concurrency=clamp_concurrency(concurrency),
         status="queued",
         created_by=created_by,
+        request_id=request_id,
         started_at=now,
         queued_at=now,
         updated_at=now,
@@ -546,6 +553,10 @@ async def _merge_image_texts(
         "【MERGE-1】合并 %d 张图片 OCR 文本 | job=%s total_chars=%d",
         len(rows), job_id, len(merged_text),
     )
+    log_event(
+        logger, "batch_image.job.merge.start", "info",
+        job_id=job_id, source_count=len(rows), total_chars=len(merged_text),
+    )
 
     try:
         async with async_session() as pdb:
@@ -599,6 +610,11 @@ async def _merge_image_texts(
         logger.info(
             "【MERGE-3】清理完成 | job=%s superseded_batches=%d",
             job_id, superseded_count,
+        )
+        log_event(
+            logger, "batch_image.job.merge.finish", "info",
+            job_id=job_id, merged_batch_id=merged_batch_id,
+            question_count=qcount, superseded_batches=superseded_count,
         )
         return {
             "merged": True,
@@ -813,6 +829,10 @@ async def _process_source(
                 item_seq=src.seq,
             ),
         )
+        log_event(
+            logger, "batch_image.item.start", "info",
+            item_id=item_id, source_file=src.source_file, seq=src.seq,
+        )
 
         proc_start = _now()
 
@@ -852,6 +872,12 @@ async def _process_source(
                     "batch image item succeeded: item_id=%s file=%s batch_id=%s questions=%s",
                     item_id, src.source_file, review_batch_id, question_count,
                 )
+                log_event(
+                    logger, "batch_image.item.finish", "info",
+                    item_id=item_id, source_file=src.source_file,
+                    review_batch_id=review_batch_id, question_count=question_count,
+                    duration_ms=int((_now() - proc_start).total_seconds() * 1000),
+                )
             else:
                 errors = result.get("errors") or []
                 reason = errors[0] if errors else "OCR 文本未生成待审核批次"
@@ -877,6 +903,12 @@ async def _process_source(
         except Exception as exc:
             logger.exception(
                 "batch image item failed: item_id=%s file=%s", item_id, src.source_file
+            )
+            log_event(
+                logger, "batch_image.item.error", "error",
+                item_id=item_id, source_file=src.source_file,
+                error_type=type(exc).__name__,
+                error_message=str(exc)[:500],
             )
             await _update_item_with_trace(
                 item_id, job_id,
@@ -925,6 +957,21 @@ async def run_batch_job(
     logger.info(
         "batch image job started: job_id=%s total=%d concurrency=%d",
         job_id, len(sources), concurrency,
+    )
+
+    # Bind trace context for the entire batch job lifetime
+    _trace_id = (options or {}).get("_trace_id")
+    _request_id = (options or {}).get("_request_id")
+    bind_ctx: dict = {"job_id": job_id}
+    if _trace_id:
+        bind_ctx["trace_id"] = _trace_id
+    if _request_id:
+        bind_ctx["request_id"] = _request_id
+    bind_log_context(**bind_ctx)
+    log_event(
+        logger, "batch_image.job.start", "info",
+        total=len(sources), concurrency=concurrency,
+        subject=subject, ocr_mode=(options or {}).get("ocr_mode", "local"),
     )
 
     # Pre-resolve OCR model config once for the entire job (api mode only).
@@ -1030,8 +1077,19 @@ async def run_batch_job(
             )
 
         logger.info("batch image job completed: job_id=%s", job_id)
+        _was_merged = "merge_result" in locals() and merge_result.get("merged", False)
+        log_event(
+            logger, "batch_image.job.finish", "info",
+            job_id=job_id, succeeded=succeeded, failed=failed, total=total,
+            merged=_was_merged,
+        )
     except Exception as exc:
         logger.exception("batch image job crashed: job_id=%s", job_id)
+        log_event(
+            logger, "batch_image.job.error", "error",
+            job_id=job_id, error_type=type(exc).__name__,
+            error_message=str(exc)[:500],
+        )
         await _set_job_status_with_trace(
             job_id, "failed",
             error_message=str(exc),

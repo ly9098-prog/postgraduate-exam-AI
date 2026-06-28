@@ -1,1437 +1,996 @@
 {
   "version": 1,
-  "exported_at": "2026-06-15T15:54:25.135073+00:00",
+  "exported_at": "2026-06-28T05:34:10.216126+00:00",
   "source_env": "local",
   "questions": [
     {
-      "sync_uuid": "e7be8b48-5acc-42e2-9c5c-b997481bfd22",
+      "sync_uuid": "84bc027f-7ed0-4503-8368-7fda699a322a",
       "sync_version": 0,
       "subject": "exam408-ds",
       "question_type": "single_choice",
       "content": {
-        "text": "若非空线性表中的元素既没有直接前驱，又没有直接后继，则该表中有（）个元素。"
+        "text": "若栈的输入序列是1,2,3,...,n,输出序列的第一个元素是n,则第i个输出元素是()。"
+      },
+      "options": {
+        "A": "不确定",
+        "B": "n-i",
+        "C": "n-i-1",
+        "D": "n-i+1"
+      },
+      "answer": "D",
+      "question_hash": "bb537e6eee9e79f70dacec1295ead0ae",
+      "analysis": null,
+      "knowledge_points": [
+        "栈的后进先出特性",
+        "入栈序列与出栈序列的关系"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-33.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-33.png",
+      "import_batch_id": "REVIEW_20260628_041251_30f8de",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '若栈的输入序列是1,2,3,...,n,输出序列的第一个元素是n,则第i个输出元素是()。', 'options': [{'key': 'A', 'text': '不确定'}, {'key': 'B', 'text': 'n-i'}, {'key': 'C', 'text': 'n-i-1'}, {'key': 'D', 'text': 'n-i+1'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '17.若栈的输入序列是1,2,3,\",n,输出序列的第一个元素是n,则第i个输出元素是()。\\nD. n-i+1\\nC. n-i-1\\nB.n-i\\nA.不确定', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-33.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '037751b6', 'confidence_score': 0.85, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected;answer_uncertain'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T04:30:28",
+      "updated_at": "2026-06-28T04:30:28"
+    },
+    {
+      "sync_uuid": "aa898728-cbe6-4ccf-ade2-1d40d1c8fb59",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "用S表示入栈操作，用X表示出栈操作，若元素的入栈顺序是1234,为了得到1342的出栈顺序，相应的 S 和X的操作序列为( )。"
+      },
+      "options": {
+        "A": "SXSXSSXX",
+        "B": "SSSXXSXX",
+        "C": "SXSSXXSX",
+        "D": "SXSSXSXX"
+      },
+      "answer": "D",
+      "question_hash": "3323c3d40364cb1e57fc2626b7d4aaa6",
+      "analysis": null,
+      "knowledge_points": [
+        "栈的入栈出栈操作序列",
+        "模拟栈操作"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-33.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-33.png",
+      "import_batch_id": "REVIEW_20260628_041251_30f8de",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '用S表示入栈操作，用X表示出栈操作，若元素的入栈顺序是1234,为了得到1342的出栈顺序，相应的 S 和X的操作序列为( )。', 'options': [{'key': 'A', 'text': 'SXSXSSXX'}, {'key': 'B', 'text': 'SSSXXSXX'}, {'key': 'C', 'text': 'SXSSXXSX'}, {'key': 'D', 'text': 'SXSSXSXX'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '16.用S表示入栈操作，用X表示出栈操作，若元素的入栈顺序是1234,为了得到1342的出栈顺序，相应的 S 和X的操作序列为( )。\\nD. SXSSXSXX\\nA. SXSXSSXX < B. SSSXXSXX\\nC. SXSSXXSX', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-33.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['incomplete_options: missing B', 'missing_answer_for_objective_question'], 'stem_hash': 'f6542c10', 'confidence_score': 0.85, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected;missing_option_B_added;answer_uncertain'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T04:30:57",
+      "updated_at": "2026-06-28T04:30:57"
+    },
+    {
+      "sync_uuid": "78ca5b21-744e-4113-b3b6-d66466186bc9",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "3个不同元素依次入栈，能得到()种不同的出栈序列。"
+      },
+      "options": {
+        "A": "4",
+        "B": "5",
+        "C": "6",
+        "D": "7"
+      },
+      "answer": "B",
+      "question_hash": "ee0080f922657a3ca336d838e790ebc4",
+      "analysis": null,
+      "knowledge_points": [
+        "栈",
+        "出栈序列",
+        "卡特兰数"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-33-20.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-33-20.png",
+      "import_batch_id": "REVIEW_20260628_043355_5a9c0e",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '3个不同元素依次入栈，能得到()种不同的出栈序列。', 'options': [{'key': 'A', 'text': '4'}, {'key': 'B', 'text': '5'}, {'key': 'C', 'text': '6'}, {'key': 'D', 'text': '7'}], 'frozen_options_restored': True, 'options_preserved': False, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '13.3个不同元素依次入栈，能得到()种不同的出栈序列。\\nA.4\\nB.5\\nC. 6\\nD. 7', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-33-20.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '9a093fdf', 'confidence_score': 0.9, 'risk_flags': ['fallback_low_confidence'], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T04:46:23",
+      "updated_at": "2026-06-28T04:46:23"
+    },
+    {
+      "sync_uuid": "fa8c3427-1c1a-46e0-9600-49209a64a790",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "设a, b, c, d, e, f以所给的次序入栈，若在入栈操作时，允许出栈操作，则下面不会出现的出栈序列为()。"
+      },
+      "options": {
+        "A": "fedcba",
+        "B": "bcafed",
+        "C": "dcefba",
+        "D": "cabdef"
+      },
+      "answer": "D",
+      "question_hash": "d584af59f7e0d01f133081aafcf13a08",
+      "analysis": null,
+      "knowledge_points": [
+        "栈",
+        "入栈出栈序列",
+        "卡特兰数"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-33-28.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-33-28.png",
+      "import_batch_id": "REVIEW_20260628_043357_2b05c1",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '设a, b, c, d, e, f以所给的次序入栈，若在入栈操作时，允许出栈操作，则下面不会出现的出栈序列为()。', 'options': [{'key': 'A', 'text': 'fedcba'}, {'key': 'B', 'text': 'bcafed'}, {'key': 'C', 'text': 'dcefba'}, {'key': 'D', 'text': 'cabdef'}], 'frozen_options_restored': True, 'options_preserved': False, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '14.设a, b,c,d,,f以所给的次序入栈，若在入栈操作时，允许出栈操作，则下面不会出现的出栈序列为()。\\nA.fedcba\\nB.bcafed\\nC.dcefba\\nD.cabdef', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-33-28.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '69516905', 'confidence_score': 0.9, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T04:46:23",
+      "updated_at": "2026-06-28T04:46:23"
+    },
+    {
+      "sync_uuid": "4c30725f-ae6a-470c-bcd8-6b6a61a2f74e",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "经过以下栈的操作后，变量x的值为( )。\nInitStack(st); Push(st,a); Push(st,b); Pop(st, x); GetTop(st, x) ;"
+      },
+      "options": {
+        "A": "a",
+        "B": "b",
+        "C": "NULL",
+        "D": "false"
+      },
+      "answer": "A",
+      "question_hash": "1eff9878ef338ba7567d17bdd688250b",
+      "analysis": null,
+      "knowledge_points": [
+        "栈的基本操作",
+        "Push",
+        "Pop",
+        "GetTop"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-46-57.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-46-57.png",
+      "import_batch_id": "REVIEW_20260628_044723_0156ba",
+      "raw_content": "{'stem': '经过以下栈的操作后，变量x的值为( )。\\nInitStack(st); Push(st,', 'code_blocks': [], 'options': [{'key': 'A', 'text': '; Push(st,'}, {'key': 'B', 'text': '; Pop(st, x); GetTop(st, x) ;'}, {'key': 'C', 'text': 'NULL'}, {'key': 'D', 'text': 'false'}], 'answer': '', 'analysis': '', 'subject': '', 'question_type': 'single_choice', 'raw_text': '12.经过以下栈的操作后，变量x的值为( )。\\nInitStack(st); Push(st,\\na); Push(st,\\nb); Pop(st, x); GetTop(st, x) ;\\nD.false\\nC.NULL\\nB.b\\nA.a', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-46-57.png', 'page': 1, 'type': 'image'}, 'is_valid': False, 'errors': ['missing_answer'], 'warnings': ['ocr_contamination_detected', 'ocr_quality:code_line_break_suspicious', 'ocr_quality:watermark_noise_detected', 'missing_answer_for_objective_question'], 'stem_hash': '871d8b6e', 'confidence_score': 0.7, 'validation_status': 'passed', 'failure_reason': ['missing_answer_for_objective_question'], 'retry_recommended': False, 'ocr_quality_flags': ['code_line_break_suspicious', 'watermark_noise_detected'], 'risk_flags': [], 'decision_trace': [{'stage': 'ocr_quality_gate', 'result': 'blocked', 'reason': \"score=0.55 flags=['code_line_break_suspicious', 'watermark_noise_detected']\"}, {'stage': 'validation', 'result': 'pass', 'reason': 'missing_answer_for_objective_question'}, {'stage': 'ai_repair', 'result': 'rejected', 'reason': 'options_modified_by_ai'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'trace': [{'stage': 'ocr_raw_input', 'strategy': 'passthrough', 'input_source': 'raw_ocr', 'parent_stage': None, 'input_preview': '12.经过以下栈的操作后，变量x的值为( )。\\nInitStack(st); Push(st,\\na); Push(st,\\nb); Pop(st, x); GetTop(st, x) ;\\nD.false\\nC.NULL\\nB.b\\nA.a', 'output_preview': '12.经过以下栈的操作后，变量x的值为( )。\\nInitStack(st); Push(st,\\na); Push(st,\\nb); Pop(st, x); GetTop(st, x) ;\\nD.false\\nC.NULL\\nB.b\\nA.a', 'status': 'observed', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'raw_text length=115'}, {'stage': 'ocr_quality_gate', 'strategy': 'rule', 'input_source': 'raw_ocr', 'parent_stage': None, 'input_preview': '12.经过以下栈的操作后，变量x的值为( )。\\nInitStack(st); Push(st,\\na); Push(st,\\nb); Pop(st, x); GetTop(st, x) ;\\nD.false\\nC.NULL\\nB.b\\nA.a', 'output_preview': \"{'passed': False, 'ocr_quality_flags': ['code_line_break_suspicious', 'watermark_noise_detected'], 'ocr_contamination_score': 0.55}\", 'status': 'success', 'duration_ms': 0.44, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [{'before': '12.经过以下栈的操作后，变量x的值为( )。 InitStack(st); Push(st, a); Push(st, b); Pop(st, x); GetTop(st, x) ; D.false C.NULL B.b A.a', 'after': \"{'passed': False, 'ocr_quality_flags': ['code_line_break_suspicious', 'watermark_noise_detected'], 'ocr_contamination_score': 0.55}\"}], 'has_changed': True}, 'notes': ''}, {'stage': 'stem_extraction', 'strategy': 'observation', 'input_source': 'raw_ocr', 'parent_stage': 'ocr_quality_gate', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'stem length=44'}, {'stage': 'noise_filtering', 'strategy': 'rule', 'input_source': 'stem', 'parent_stage': 'stem_extraction', 'input_preview': '经过以下栈的操作后，变量x的值为( )。\\nInitStack(st); Push(st,', 'output_preview': '经过以下栈的操作后，变量x的值为( )。\\nInitStack(st); Push(st,', 'status': 'success', 'duration_ms': 0.0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': ''}, {'stage': 'options_extraction', 'strategy': 'rule', 'input_source': 'raw_ocr', 'parent_stage': 'stem_extraction', 'input_preview': \"{'A': '; Push(st,', 'B': '; Pop(st, x); GetTop(st, x) ;', 'D': 'false', 'C': 'NULL'}\", 'output_preview': \"[{'key': 'A', 'text': '; Push(st,'}, {'key': 'B', 'text': '; Pop(st, x); GetTop(st, x) ;'}, {'key': 'C', 'text': 'NULL'}, {'key': 'D', 'text': 'false'}]\", 'status': 'success', 'duration_ms': 0.07, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [{'before': \"{'A':\", 'after': \"[{'key': 'A', 'text':\"}, {'before': \"Push(st,', 'B':\", 'after': \"Push(st,'}, {'key': 'B', 'text':\"}, {'before': \";', 'D': 'false', 'C': 'NULL'}\", 'after': \";'}, {'key': 'C', 'text': 'NULL'}, {'key': 'D', 'text': 'false'}]\"}], 'has_changed': True}, 'notes': ''}, {'stage': 'options_extraction', 'strategy': 'options_trace', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'options_found_in': 'classifier_gate', 'options_origin': 'classifier_gate', 'options_confidence': 1.0, 'options_failure_reason': None, 'note': 'option_count=4'}, {'stage': 'question_type_detection', 'strategy': 'observation', 'input_source': 'intermediate', 'parent_stage': 'options_extraction', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'type=single_choice'}, {'stage': 'consistency_check', 'strategy': 'observation', 'input_source': 'intermediate', 'parent_stage': 'question_type_detection', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'consistent=True'}, {'stage': 'code_detection', 'strategy': 'rule', 'input_source': 'stem', 'parent_stage': 'noise_filtering', 'input_preview': '经过以下栈的操作后，变量x的值为( )。\\nInitStack(st); Push(st,', 'output_preview': 'False', 'status': 'success', 'duration_ms': 0.19, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [{'before': '经过以下栈的操作后，变量x的值为( )。 InitStack(st); Push(st,', 'after': 'False'}], 'has_changed': True}, 'notes': ''}, {'stage': 'vision_fallback', 'strategy': 'observation', 'input_source': 'fallback', 'parent_stage': 'code_integrity_check', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'attempted=None status=None'}, {'stage': 'output_normalization', 'strategy': 'pipeline', 'input_source': 'final', 'parent_stage': 'vision_fallback', 'input_preview': \"{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '经过以下栈的操作后，变量x的值为( )。\\\\nInitStack(st); Push(st,', 'options': [{'key': 'A', 'text': '; Push(st,'}, {'key': 'B', 'text': ...[+6012]\", 'output_preview': \"{'stem': '经过以下栈的操作后，变量x的值为( )。\\\\nInitStack(st); Push(st,', 'code_blocks': [], 'options': [{'key': 'A', 'text': '; Push(st,'}, {'key': 'B', 'text': '; Pop(st, x); GetTop(st, x) ;'}, {'key': 'C', 'text':...[+6031]\", 'status': 'success', 'duration_ms': 0.92, 'delta': {'added_tokens': [\"'code_blocks':\", '[],', \"'subject':\", \"'',\", \"'question_type':\", \"'single_choice',\"], 'removed_tokens': [\"'is_frozen':\", 'True,', \"'options_classified':\", \"'options_classify_reason':\", \"'frozen_options_present',\"], 'modified_regions': [{'before': \"{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem':\", 'after': \"{'stem':\"}, {'before': \"status=None'}]}\", 'after': \"status=None'}], 'is_frozen': True, 'options_classified': True, 'options_classify_reason': 'frozen_options_present', 'schema_version': 'v1'}\"}], 'has_changed': True}, 'notes': ''}], 'is_frozen': True, 'options_classified': True, 'options_classify_reason': 'frozen_options_present', 'schema_version': 'v1', 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T04:50:59",
+      "updated_at": "2026-06-28T04:50:59"
+    },
+    {
+      "sync_uuid": "b0b71cd9-f210-4ff9-97b6-21a42661ecd6",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "链栈(不带头结点)执行Pop 操作，并将出栈的元素存在x中，应该执行()。"
+      },
+      "options": {
+        "A": "x=top; top=top->next",
+        "B": "x=top->data",
+        "C": "top=top->next; x=top->data",
+        "D": "x=top->data; top=top->next"
+      },
+      "answer": "D",
+      "question_hash": "df890be2abdb50a3ed97dc742eee83fd",
+      "analysis": null,
+      "knowledge_points": [
+        "链栈",
+        "Pop操作"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-33.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-33.png",
+      "import_batch_id": "REVIEW_20260628_041251_30f8de",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '链栈(不带头结点)执行Pop 操作，并将出栈的元素存在x中，应该执行()。', 'options': [{'key': 'A', 'text': 'x=top; top=top->next'}, {'key': 'B', 'text': 'x=top->data'}, {'key': 'C', 'text': 'top=top->next; x=top->data'}, {'key': 'D', 'text': 'x=top->data; top=top->next'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '11.链栈(不带头结点)执行Pop 操作，并将出栈的元素存在x中，应该执行()。\\nA. x=top; top=top->next\\nB. x=top->data\\nC. top=top->next; x=top->data\\nD. x=top->data; top=top->next', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-33.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'c4edca41', 'confidence_score': 0.9, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected;answer_uncertain'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:06:50",
+      "updated_at": "2026-06-28T05:06:50"
+    },
+    {
+      "sync_uuid": "c5be99d1-011b-49ab-aacb-e9a376f9b5c9",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "【2022 统考真题】 给定有限符号集 S, in 和 out 均为 S 中所有元素的任意排列。对于初始为空的栈 ST,下列叙述中，正确的是()。"
+      },
+      "options": {
+        "A": "若 in 是 ST 的入栈序列，则不能判断 out 是否为其可能的出栈序列",
+        "B": "若 out 是 ST 的出栈序列，则不能判断 in 是否为其可能的入栈序列",
+        "C": "若 in 是 ST 的入栈序列,out 是对应 in 的出栈序列，则 in 与 out一定不同",
+        "D": "若 in 是 ST 的入栈序列,out 是对应 in 的出栈序列，则 in 与 out 可能互为倒序"
+      },
+      "answer": "D",
+      "question_hash": "e91eb807f7781673d6e9cc6a20ab15fc",
+      "analysis": null,
+      "knowledge_points": [
+        "栈的入栈和出栈序列",
+        "栈的先进后出特性"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-11-04.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-11-04.png",
+      "import_batch_id": "REVIEW_20260628_041240_54f60a",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '【2022 统考真题】 给定有限符号集 S, in 和 out 均为 S 中所有元素的任意排列。对于初始为空的栈 ST,下列叙述中，正确的是()。', 'options': [{'key': 'A', 'text': '若 in 是 ST 的入栈序列，则不能判断 out 是否为其可能的出栈序列'}, {'key': 'B', 'text': '若 out 是 ST 的出栈序列，则不能判断 in 是否为其可能的入栈序列'}, {'key': 'C', 'text': '若 in 是 ST 的入栈序列,out 是对应 in 的出栈序列，则 in 与 out一定不同'}, {'key': 'D', 'text': '若 in 是 ST 的入栈序列,out 是对应 in 的出栈序列，则 in 与 out 可能互为倒序'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '31. 【2022 统考真题】 给定有限符号集 S, in 和 out 均为 S 中所有元素的任意排列。对于初始为空的栈 ST,下列叙述中，正确的是()。\\nA.若 in 是 ST 的入栈序列，则不能判断 out 是否为其可能的出栈序列\\nB.若 out 是 ST 的出栈序列，则不能判断 in 是否为其可能的入栈序列\\nC.若 in 是 ST 的入栈序列,out 是对应 in 的出栈序列，则 in 与 out一定不同\\nD. 若 in 是 ST 的入栈序列,out 是对应 in 的出栈序列，则 in 与 out 可能互为倒序', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-11-04.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'dd1cfa0f', 'confidence_score': 0.9, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:07:07",
+      "updated_at": "2026-06-28T05:07:07"
+    },
+    {
+      "sync_uuid": "10aa4756-846c-42c6-9558-2d6f1ccb4e84",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "【2020 统考真题】对空栈 S 进行 Push 和 Pop 操作，入栈序列为 a, b,c, d,e, 经过 Push、Push、Pop、Push、Pop、Push、Push、Pop 操作后得到的出栈序列是()。"
+      },
+      "options": {
+        "A": "b,a, c",
+        "B": "b,a,e",
+        "C": "b,c,a",
+        "D": "b,c,e"
+      },
+      "answer": "D",
+      "question_hash": "30e240a6f0ae14963891d155574cc0ca",
+      "analysis": null,
+      "knowledge_points": [
+        "栈",
+        "入栈出栈序列"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-11-04.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-11-04.png",
+      "import_batch_id": "REVIEW_20260628_041240_54f60a",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '【2020 统考真题】对空栈 S 进行 Push 和 Pop 操作，入栈序列为 a, b,c, d,e, 经过 Push、Push、Pop、Push、Pop、Push、Push、Pop 操作后得到的出栈序列是()。', 'options': [{'key': 'A', 'text': 'b,a, c'}, {'key': 'B', 'text': 'b,a,e'}, {'key': 'C', 'text': 'b,c,a'}, {'key': 'D', 'text': 'b,c,e'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '30. 【2020 统考真题】对空栈 S 进行 Push 和 Pop 操作，入栈序列为 a, b,c, d,e, 经过 Push、 Push、Pop、Push、Pop、Push、Push、Pop 操作后得到的出栈序列是()。\\nD. b,c,e\\nC. b,c,a\\nB. b,a,e\\nA. b,a, c', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-11-04.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '5ec1746b', 'confidence_score': 0.9, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:07:28",
+      "updated_at": "2026-06-28T05:07:28"
+    },
+    {
+      "sync_uuid": "5525962e-8edd-4ce3-959f-006ed0b84b4c",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "【2013 统考真题】一个栈的入栈序列为 1,2,3,...,n,出栈序列是 P1,P2,P3,...,Pn。若 P2=3, 则P1可能取值的个数是()。"
+      },
+      "options": {
+        "A": "n-3",
+        "B": "n-2",
+        "C": "n-1",
+        "D": "无法确定"
+      },
+      "answer": "C",
+      "question_hash": "10f80c049cb3f922a91830ae884b1f3e",
+      "analysis": null,
+      "knowledge_points": [],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-11-04.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-11-04.png",
+      "import_batch_id": "REVIEW_20260628_041240_54f60a",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '【2013 统考真题】一个栈的入栈序列为 1,2,3,...,n,出栈序列是 P1,P2,P3,...,Pn。若 P2=3, 则P1可能取值的个数是()。', 'options': [{'key': 'A', 'text': 'n-3'}, {'key': 'B', 'text': 'n-2'}, {'key': 'C', 'text': 'n-1'}, {'key': 'D', 'text': '无法确定'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '29.【2013 统考真题】一个栈的入栈序列为 1,2,3,\",n,出栈序列是 P1,P^{2},P^{3},\",Pn。若 P^{2}=3, 则P;可能取值的个数是()。\\nD.无法确定\\nC. n-1\\nB. n-2\\nA.n-3', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-11-04.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'c3a34d18', 'confidence_score': 0.9, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:08:06",
+      "updated_at": "2026-06-28T05:08:06"
+    },
+    {
+      "sync_uuid": "ff1117f8-fda0-4048-bc90-c65aae625300",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "【2011 统考真题】 元素a,b, c,d,e 依次进入初始为空的栈中，若元素入栈后可停留、可出栈，直到所有元素都出栈，则在所有可能的出栈序列中，以元素d开头的序列个数是()"
+      },
+      "options": {
+        "A": "3",
+        "B": "4",
+        "C": "5",
+        "D": "6"
+      },
+      "answer": "B",
+      "question_hash": "84e13976c78281398d18a7b694d397eb",
+      "analysis": null,
+      "knowledge_points": [
+        "栈的出栈序列",
+        "卡特兰数"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-11-04.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-11-04.png",
+      "import_batch_id": "REVIEW_20260628_041240_54f60a",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '【2011 统考真题】 元素a,b, c,d,e 依次进入初始为空的栈中，若元素入栈后可停留、可出栈，直到所有元素都出栈，则在所有可能的出栈序列中，以元素d开头的序列个数是()', 'options': [{'key': 'A', 'text': '3'}, {'key': 'B', 'text': '4'}, {'key': 'C', 'text': '5'}, {'key': 'D', 'text': '6'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '28. 【2011 统考真题】 元素a,b, c,d,e 依次进入初始为空的栈中，若元素入栈后可停留、可出栈，直到所有元素都出栈，则在所有可能的出栈序列中，以元素d开头的序列个数是() 口:\\nD. 6\\nC. 5\\nB.4\\nA.3', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-11-04.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '253c7ec3', 'confidence_score': 0.9, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:08:51",
+      "updated_at": "2026-06-28T05:08:51"
+    },
+    {
+      "sync_uuid": "67255cd9-a888-468a-8ae9-f0cae16622ae",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "向一个栈顶指针为top的链栈(不带头结点)中插入一个x结点，则执行()。"
+      },
+      "options": {
+        "A": "top->next=x",
+        "B": "x->next=top->next; top->next=x",
+        "C": "x->next=top;top=x",
+        "D": "x->next=top;top=top->next"
+      },
+      "answer": "C",
+      "question_hash": "72362b8c4477b325472482fa2902351b",
+      "analysis": null,
+      "knowledge_points": [],
+      "difficulty": 3,
+      "source": "false_2.png",
+      "source_type": "image",
+      "source_file": "false_2.png",
+      "import_batch_id": "REVIEW_20260628_050951_c5d92c",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '向一个栈顶指针为top的链栈(不带头结点)中插入一个x结点，则执行()。', 'options': [{'key': 'A', 'text': 'top->next=x'}, {'key': 'B', 'text': 'x->next=top->next; top->next=x'}, {'key': 'C', 'text': 'x->next=top;top=x'}, {'key': 'D', 'text': 'x->next=top;top=top->next'}], 'frozen_options_restored': True, 'options_preserved': False, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '10.向一个栈顶指针为top的链栈(不带头结点)中插入一个x结点，则执行()。\\nB.x->next=top->next; top->next=x\\nA. top->next=x\\nD.x->next=top;top=top->next\\nC. x->next=top;top=x', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'false_2.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '17b803f7', 'confidence_score': 0.7, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:10:39",
+      "updated_at": "2026-06-28T05:10:39"
+    },
+    {
+      "sync_uuid": "4db8fc58-8701-41d0-9b57-a745b4351bca",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "设链表不带头结点且所有操作均在表头进行，则下列最不适合作为链栈的是()。"
+      },
+      "options": {
+        "A": "只有表头结点指针，没有表尾指针的双向循环链表",
+        "B": "只有表尾结点指针，没有表头指针的双向循环链表",
+        "C": "只有表头结点指针，没有表尾指针的单向循环链表",
+        "D": "只有表尾结点指针，没有表头指针的单向循环链表"
+      },
+      "answer": "C",
+      "question_hash": "b41e673c9e4a6a062cdac1b090985662",
+      "analysis": null,
+      "knowledge_points": [
+        "链栈",
+        "循环链表操作",
+        "时间复杂度"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-15.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-15.png",
+      "import_batch_id": "REVIEW_20260628_041240_670d4c",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '设链表不带头结点且所有操作均在表头进行，则下列最不适合作为链栈的是()。', 'options': [{'key': 'A', 'text': '只有表头结点指针，没有表尾指针的双向循环链表'}, {'key': 'B', 'text': '只有表尾结点指针，没有表头指针的双向循环链表'}, {'key': 'C', 'text': '只有表头结点指针，没有表尾指针的单向循环链表'}, {'key': 'D', 'text': '只有表尾结点指针，没有表头指针的单向循环链表'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '09.设链表不带头结点且所有操作均在表头进行，则下列最不适合作为链栈的是()。\\nA.只有表头结点指针，没有表尾指针的双向循环链表\\nB.只有表尾结点指针，没有表头指针的双向循环链表\\nC. 只有表头结点指针，没有表尾指针的单向循环链表\\nD.只有表尾结点指针，没有表头指针的单向循环链表', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-15.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '47d4356c', 'confidence_score': 0.9, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected;answer_normalized'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:11:00",
+      "updated_at": "2026-06-28T05:11:00"
+    },
+    {
+      "sync_uuid": "33422f50-8033-4163-b38f-15846dff5d18",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "和顺序栈相比，链栈有一个比较明显的优势，即()。"
+      },
+      "options": {
+        "A": "通常不会出现栈满的情况",
+        "B": "通常不会出现栈空的情况",
+        "C": "插入操作更容易实现",
+        "D": "删除操作更容易实现"
+      },
+      "answer": "A",
+      "question_hash": "c99906ffaf6aec0d124b3d70b26460fc",
+      "analysis": null,
+      "knowledge_points": [
+        "栈的存储结构",
+        "顺序栈与链栈比较"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-15.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-15.png",
+      "import_batch_id": "REVIEW_20260628_041240_670d4c",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '和顺序栈相比，链栈有一个比较明显的优势，即()。', 'options': [{'key': 'A', 'text': '通常不会出现栈满的情况'}, {'key': 'B', 'text': '通常不会出现栈空的情况'}, {'key': 'C', 'text': '插入操作更容易实现'}, {'key': 'D', 'text': '删除操作更容易实现'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '08.和顺序栈相比，链栈有一个比较明显的优势，即()。\\nA.通常不会出现栈满的情况\\nB.通常不会出现栈空的情况\\nC. 插入操作更容易实现\\nD. 删除操作更容易实现', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-15.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '18c21e10', 'confidence_score': 0.9, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected;answer_normalized'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:11:14",
+      "updated_at": "2026-06-28T05:11:14"
+    },
+    {
+      "sync_uuid": "dda4718f-c069-4295-9c0c-0524cf3d4a56",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "subjective",
+      "content": {
+        "text": "设有一个空栈，栈顶指针为 1000H,栈向高地址方向增长，每个元素占一个存储单元， 执行 Push、Push、Pop、Push、Pop、Push、Pop、Push 操作后，栈顶指针为()。"
+      },
+      "options": {
+        "A": "1002H",
+        "B": "1003H",
+        "C": "1004H",
+        "D": "1005H"
+      },
+      "answer": "A",
+      "question_hash": "7c2698be9d7ce802c859c4a1b2bdd845",
+      "analysis": null,
+      "knowledge_points": [
+        "栈的基本操作",
+        "栈顶指针变化"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-15.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-15.png",
+      "import_batch_id": "REVIEW_20260628_041240_670d4c",
+      "raw_content": "{'stem': '设有一个空栈，栈顶指针为 1000H,栈向高地址方向增长，每个元素占一个存储单元， 执行 Push、Push、Pop、Push、Pop、Push、Pop、Push 操作后，栈顶指针为()。\\nA. 1002H', 'code_blocks': [], 'options': [], 'answer': '', 'analysis': '', 'subject': '', 'question_type': 'subjective', 'raw_text': '07.设有一个空栈，栈顶指针为 1000H,栈向高地址方向增长，每个元素占一个存储单元， 执行 Push、Push、Pop、Push、Pop、Push、Pop、Push 操作后，栈顶指针为()。\\nA. 1002H', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-15.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': [], 'stem_hash': 'e953a9ea', 'confidence_score': 0.7, 'validation_status': 'passed', 'failure_reason': [], 'retry_recommended': False, 'ocr_quality_flags': ['option_structure_corrupted'], 'risk_flags': [], 'decision_trace': [{'stage': 'ocr_quality_gate', 'result': 'pass', 'reason': 'score=0.20'}, {'stage': 'validation', 'result': 'pass', 'reason': 'all_checks_passed'}, {'stage': 'ai_repair', 'result': 'skipped', 'reason': 'above_threshold'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'trace': [{'stage': 'ocr_raw_input', 'strategy': 'passthrough', 'input_source': 'raw_ocr', 'parent_stage': None, 'input_preview': '07.设有一个空栈，栈顶指针为 1000H,栈向高地址方向增长，每个元素占一个存储单元， 执行 Push、Push、Pop、Push、Pop、Push、Pop、Push 操作后，栈顶指针为()。\\nA. 1002H', 'output_preview': '07.设有一个空栈，栈顶指针为 1000H,栈向高地址方向增长，每个元素占一个存储单元， 执行 Push、Push、Pop、Push、Pop、Push、Pop、Push 操作后，栈顶指针为()。\\nA. 1002H', 'status': 'observed', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'raw_text length=106'}, {'stage': 'ocr_quality_gate', 'strategy': 'rule', 'input_source': 'raw_ocr', 'parent_stage': None, 'input_preview': '07.设有一个空栈，栈顶指针为 1000H,栈向高地址方向增长，每个元素占一个存储单元， 执行 Push、Push、Pop、Push、Pop、Push、Pop、Push 操作后，栈顶指针为()。\\nA. 1002H', 'output_preview': \"{'passed': True, 'ocr_quality_flags': ['option_structure_corrupted'], 'ocr_contamination_score': 0.2}\", 'status': 'success', 'duration_ms': 0.21, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [{'before': '07.设有一个空栈，栈顶指针为 1000H,栈向高地址方向增长，每个元素占一个存储单元， 执行 Push、Push、Pop、Push、Pop、Push、Pop、Push 操作后，栈顶指针为()。 A. 1002H', 'after': \"{'passed': True, 'ocr_quality_flags': ['option_structure_corrupted'], 'ocr_contamination_score': 0.2}\"}], 'has_changed': True}, 'notes': ''}, {'stage': 'stem_extraction', 'strategy': 'observation', 'input_source': 'raw_ocr', 'parent_stage': 'ocr_quality_gate', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'stem length=103'}, {'stage': 'stem_extraction', 'strategy': 'detection', 'input_source': 'intermediate', 'parent_stage': None, 'input_preview': '', 'output_preview': '', 'status': 'corruption', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'corruption_type': 'a_token_noise', 'origin_stage': 'stem_extraction', 'propagation_path': [], 'resolved_at': None, 'resolved_by': None, 'notes': \"Standalone 'A' token at pos 95\"}, {'stage': 'noise_filtering', 'strategy': 'rule', 'input_source': 'stem', 'parent_stage': 'stem_extraction', 'input_preview': '设有一个空栈，栈顶指针为 1000H,栈向高地址方向增长，每个元素占一个存储单元， 执行 Push、Push、Pop、Push、Pop、Push、Pop、Push 操作后，栈顶指针为()。\\nA. 1002H', 'output_preview': '设有一个空栈，栈顶指针为 1000H,栈向高地址方向增长，每个元素占一个存储单元， 执行 Push、Push、Pop、Push、Pop、Push、Pop、Push 操作后，栈顶指针为()。\\nA. 1002H', 'status': 'success', 'duration_ms': 0.01, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': ''}, {'stage': 'question_type_detection', 'strategy': 'observation', 'input_source': 'intermediate', 'parent_stage': 'options_extraction', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'type=subjective'}, {'stage': 'consistency_check', 'strategy': 'observation', 'input_source': 'intermediate', 'parent_stage': 'question_type_detection', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'consistent=True'}, {'stage': 'code_detection', 'strategy': 'rule', 'input_source': 'stem', 'parent_stage': 'noise_filtering', 'input_preview': '设有一个空栈，栈顶指针为 1000H,栈向高地址方向增长，每个元素占一个存储单元， 执行 Push、Push、Pop、Push、Pop、Push、Pop、Push 操作后，栈顶指针为()。\\nA. 1002H', 'output_preview': 'False', 'status': 'success', 'duration_ms': 0.17, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [{'before': '设有一个空栈，栈顶指针为 1000H,栈向高地址方向增长，每个元素占一个存储单元， 执行 Push、Push、Pop、Push、Pop、Push、Pop、Push 操作后，栈顶指针为()。 A. 1002H', 'after': 'False'}], 'has_changed': True}, 'notes': ''}, {'stage': 'vision_fallback', 'strategy': 'observation', 'input_source': 'fallback', 'parent_stage': 'code_integrity_check', 'input_preview': '', 'output_preview': '', 'status': 'info', 'duration_ms': 0, 'delta': {'added_tokens': [], 'removed_tokens': [], 'modified_regions': [], 'has_changed': False}, 'notes': 'attempted=None status=None'}, {'stage': 'output_normalization', 'strategy': 'pipeline', 'input_source': 'final', 'parent_stage': 'vision_fallback', 'input_preview': \"{'schema_version': 'v1', 'subject': '', 'question_type': 'subjective', 'stem': '设有一个空栈，栈顶指针为 1000H,栈向高地址方向增长，每个元素占一个存储单元， 执行 Push、Push、Pop、Push、Pop、Push、Pop、Push 操作后，栈顶指针为()。\\\\nA. 1002H', 'options': []...[+4968]\", 'output_preview': \"{'stem': '设有一个空栈，栈顶指针为 1000H,栈向高地址方向增长，每个元素占一个存储单元， 执行 Push、Push、Pop、Push、Pop、Push、Pop、Push 操作后，栈顶指针为()。\\\\nA. 1002H', 'code_blocks': [], 'options': [], 'answer': '', 'analysis': '', 'subject': '', 'que...[+4987]\", 'status': 'success', 'duration_ms': 0.55, 'delta': {'added_tokens': [], 'removed_tokens': [\"'stem':\", \"'设有一个空栈，栈顶指针为\", '1000H,栈向高地址方向增长，每个元素占一个存储单元，', '执行', 'Push、Push、Pop、Push、Pop、Push、Pop、Push', '操作后，栈顶指针为()。\\\\nA.', \"1002H',\", \"'options':\", '[],', \"'answer':\", \"'',\", \"'analysis':\", \"'is_frozen':\", 'False,', \"'options_classified':\", \"'options_classify_reason':\", \"'no_option_patterns_detected',\"], 'modified_regions': [{'before': \"{'schema_version': 'v1',\", 'after': \"{'stem': '设有一个空栈，栈顶指针为 1000H,栈向高地址方向增长，每个元素占一个存储单元， 执行 Push、Push、Pop、Push、Pop、Push、Pop、Push 操作后，栈顶指针为()。\\\\nA. 1002H', 'code_blocks': [], 'options': [], 'answer': '', 'analysis': '',\"}, {'before': \"status=None'}]}\", 'after': \"status=None'}], 'is_frozen': False, 'options_classified': False, 'options_classify_reason': 'no_option_patterns_detected', 'schema_version': 'v1'}\"}], 'has_changed': True}, 'notes': ''}], 'is_frozen': False, 'options_classified': False, 'options_classify_reason': 'no_option_patterns_detected', 'schema_version': 'v1', 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:11:24",
+      "updated_at": "2026-06-28T05:11:24"
+    },
+    {
+      "sync_uuid": "1377afe6-1486-4209-8323-d6ba395c843f",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "设用数组 data [1...n]存储一个栈，初始栈顶指针 top=n+1,则元素 x入栈的操作是( )。",
+        "stem": "设用数组 data [1...n]存储一个栈，初始栈顶指针 top=n+1,则元素 x入栈的操作是( )。"
+      },
+      "options": {
+        "A": "data[--top]=x",
+        "B": "data[top++]=x",
+        "C": "data[top--]=x",
+        "D": "data[++top]=x"
+      },
+      "answer": "A",
+      "question_hash": "60acd442508e325e437f134245584bbc",
+      "analysis": "",
+      "knowledge_points": [
+        "栈的顺序存储",
+        "栈顶指针初始化与入栈操作"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-15.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-15.png",
+      "import_batch_id": "REVIEW_20260628_041240_670d4c",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '设用数组 data [1...n]存储一个栈，初始栈顶指针 top=n+1,则元素 x入栈的操作是( )。', 'options': [{'key': 'A', 'text': 'data[--top]=x'}, {'key': 'B', 'text': 'data[top++]=x'}, {'key': 'C', 'text': 'data[top--]=x'}, {'key': 'D', 'text': 'data[++top]=x'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '06.设用数组 data [1...n]存储一个栈，初始栈顶指针 top=n+1,则元素 x入栈的操作是( )。\\nA. data[--top]=x\\nB. data[top++]=x\\nC. data[top--]=x\\nD. data[++top]=x', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-15.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '6e4d6934', 'confidence_score': 0.9, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected;answer_normalized'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:13:47",
+      "updated_at": "2026-06-28T05:14:31"
+    },
+    {
+      "sync_uuid": "a5e52011-97b2-4473-b15a-e408694124c1",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "设用数组a[n]存储一个栈，初始栈顶指针top=-1,则元素x入栈的操作是( )。"
+      },
+      "options": {
+        "A": "a[--top]=x",
+        "B": "a[top--]=x",
+        "C": "a[++top]=x",
+        "D": "a[top++]=x"
+      },
+      "answer": "C",
+      "question_hash": "f723a471f9ef81ed6b08f66924fc31d6",
+      "analysis": null,
+      "knowledge_points": [
+        "栈的数组实现",
+        "入栈操作"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-15.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-15.png",
+      "import_batch_id": "REVIEW_20260628_041240_670d4c",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '设用数组a[n]存储一个栈，初始栈顶指针top=-1,则元素x入栈的操作是( )。', 'options': [{'key': 'A', 'text': 'a[--top]=x'}, {'key': 'B', 'text': 'a[top--]=x'}, {'key': 'C', 'text': 'a[++top]=x'}, {'key': 'D', 'text': 'a[top++]=x'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '04.设用数组a[n]存储一个栈，初始栈顶指针top=-1,则元素x入栈的操作是( )。\\nA. a[--top]=x\\nB. a[top--]=x\\nC. a[++top]=x\\nD. a[top++]=x', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-15.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '42570fa8', 'confidence_score': 0.9, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected;answer_normalized'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:16:14",
+      "updated_at": "2026-06-28T05:16:14"
+    },
+    {
+      "sync_uuid": "d5c63ba5-7c24-4c43-829b-0c8a3a70994b",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "下列选项中,()不是栈的基本操作。"
+      },
+      "options": {
+        "A": "删除栈顶元素",
+        "B": "删除栈底元素",
+        "C": "判断栈是否为空",
+        "D": "将栈置为空栈"
+      },
+      "answer": "B",
+      "question_hash": "f2717ef9db9fa0b9af5c724c27995edc",
+      "analysis": null,
+      "knowledge_points": [
+        "栈的基本操作"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-15.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-15.png",
+      "import_batch_id": "REVIEW_20260628_041240_670d4c",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '下列选项中,()不是栈的基本操作。', 'options': [{'key': 'A', 'text': '删除栈顶元素'}, {'key': 'B', 'text': '删除栈底元素'}, {'key': 'C', 'text': '判断栈是否为空'}, {'key': 'D', 'text': '将栈置为空栈'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '03.下列选项中,()不是栈的基本操作。\\nA. 删除栈顶元素\\nB. 删除栈底元素\\nC. 判断栈是否为空\\nD. 将栈置为空栈', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-15.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'c5f999fa', 'confidence_score': 0.9, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected;answer_normalized'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:16:22",
+      "updated_at": "2026-06-28T05:16:22"
+    },
+    {
+      "sync_uuid": "bfdb20ea-a114-4e29-9a62-bd2b397b4b03",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "栈是一种()。"
+      },
+      "options": {
+        "A": "顺序存储的线性结构",
+        "B": "链式存储的非线性结构",
+        "C": "限制存取点的线性结构",
+        "D": "限制存取点的非线性结构"
+      },
+      "answer": "C",
+      "question_hash": "a7fc3d74f5eaf0b9fd3b72dbe909df71",
+      "analysis": null,
+      "knowledge_points": [
+        "栈的定义",
+        "线性结构",
+        "限制存取点"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-15.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-15.png",
+      "import_batch_id": "REVIEW_20260628_041240_670d4c",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '栈是一种()。', 'options': [{'key': 'A', 'text': '顺序存储的线性结构'}, {'key': 'B', 'text': '链式存储的非线性结构'}, {'key': 'C', 'text': '限制存取点的线性结构'}, {'key': 'D', 'text': '限制存取点的非线性结构'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '02.栈是一种()。\\nA.顺序存储的线性结构\\nB.链式存储的非线性结构\\nC.限制存取点的线性结构\\nD.限制存取点的非线性结构', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-15.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '544c7dc7', 'confidence_score': 0.9, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected;answer_normalized'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': ['stem_too_short'], 'severity': 'warning'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:16:28",
+      "updated_at": "2026-06-28T05:16:28"
+    },
+    {
+      "sync_uuid": "76a1e900-68be-4633-bb38-ec169b707e81",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "栈和队列具有相同的()。"
+      },
+      "options": {
+        "A": "抽象数据类型",
+        "B": "逻辑结构",
+        "C": "存储结构",
+        "D": "运算"
+      },
+      "answer": "B",
+      "question_hash": "5cc501efb91f2c7aa61f5a3db0c6254f",
+      "analysis": null,
+      "knowledge_points": [
+        "栈",
+        "队列",
+        "逻辑结构"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-15.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-15.png",
+      "import_batch_id": "REVIEW_20260628_041240_670d4c",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '栈和队列具有相同的()。', 'options': [{'key': 'A', 'text': '抽象数据类型'}, {'key': 'B', 'text': '逻辑结构'}, {'key': 'C', 'text': '存储结构'}, {'key': 'D', 'text': '运算'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '01.栈和队列具有相同的()。\\nA. 抽象数据类型\\nB. 逻辑结构\\nC.存储结构\\nD. 运算', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-15.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'fcd29174', 'confidence_score': 0.9, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected;answer_normalized'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:16:37",
+      "updated_at": "2026-06-28T05:16:37"
+    },
+    {
+      "sync_uuid": "5cd94111-1f07-4d3b-95b0-f0de38ab3b90",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "【2010 统考真题】 若元素 a,b, c, d,e,f依次入栈， 允许入栈、出栈操作交替进行，但不允许连续3次进行出栈操作，不可能得到的出栈序列是()。"
+      },
+      "options": {
+        "A": "dcebfa",
+        "B": "cbdaef",
+        "C": "bcaefd",
+        "D": "afedcb"
+      },
+      "answer": "D",
+      "question_hash": "e2f473c421935283a71584d8cea38a02",
+      "analysis": null,
+      "knowledge_points": [
+        "栈的入栈出栈序列",
+        "出栈操作的连续性限制"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-44.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-44.png",
+      "import_batch_id": "REVIEW_20260628_041235_b7a6c5",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '【2010 统考真题】 若元素 a,b, c, d,e,f依次入栈， 允许入栈、出栈操作交替进行，但不允许连续3次进行出栈操作，不可能得到的出栈序列是()。', 'options': [{'key': 'A', 'text': 'dcebfa'}, {'key': 'B', 'text': 'cbdaef'}, {'key': 'C', 'text': 'bcaefd'}, {'key': 'D', 'text': 'afedcb'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '27. 【2010 统考真题】 若元素 a,b, c, d,e,f依次入栈， 允许入栈、出栈操作交替进行，但不允许连续3次进行出栈操作，不可能得到的出栈序列是()。\\nD. afedcb\\nC. bcaefd\\nB. cbdaef\\nA. dcebfa', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-44.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'd234737f', 'confidence_score': 0.8, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:16:54",
+      "updated_at": "2026-06-28T05:16:54"
+    },
+    {
+      "sync_uuid": "c5696c84-66e5-45ef-a0c5-228447eb9dcd",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "【2009 统考真题】设栈 S 和队列 Q 的初始状态均为空，元素 abcdefg 依次入栈 S。若每个元素出栈后立即进入队列 Q,且 7 个元素出队的顺序是 bdcfeag,则栈S 的容量至少是( )。"
       },
       "options": {
         "A": "1",
         "B": "2",
         "C": "3",
-        "D": "n"
+        "D": "4"
+      },
+      "answer": "C",
+      "question_hash": "50a1bdea0f520c809063d11b033e1a55",
+      "analysis": null,
+      "knowledge_points": [
+        "栈",
+        "队列",
+        "出入栈序列",
+        "数据结构模拟"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-44.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-44.png",
+      "import_batch_id": "REVIEW_20260628_041235_b7a6c5",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '【2009 统考真题】设栈 S 和队列 Q 的初始状态均为空，元素 abcdefg 依次入栈 S。若每个元素出栈后立即进入队列 Q,且 7 个元素出队的顺序是 bdcfeag,则栈S 的容量至少是( )。', 'options': [{'key': 'A', 'text': '1'}, {'key': 'B', 'text': '2'}, {'key': 'C', 'text': '3'}, {'key': 'D', 'text': '4'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '26.【2009 统考真题】设栈 S 和队列 Q 的初始状态均为空，元素 abcdefg 依次入栈 S。若每个元素出栈后立即进入队列 Q,且 7 个元素出队的顺序是 bdcfeag,则栈S 的容量至少是( )。\\nD. 4\\nC. 3\\nB. 2\\nA.1', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-44.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '32e11a5a', 'confidence_score': 0.8, 'risk_flags': ['ocr_garbled_code'], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:17:09",
+      "updated_at": "2026-06-28T05:17:09"
+    },
+    {
+      "sync_uuid": "a02e9065-d672-4e10-ab03-20987ad2a9ae",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "设有一个顺序共享栈 Share[0:n-1],其中第一个栈顶指针top1 的初值为-1,第二个栈顶指针 top2 的初值为 n,则判断共享栈满的条件是( )。"
+      },
+      "options": {
+        "A": "top2-top1==1",
+        "B": "top1-top2==1",
+        "C": "top1==top2",
+        "D": "都不对"
       },
       "answer": "A",
-      "question_hash": "2f366ff0648c8527b1d9c2560d6197f2",
-      "analysis": "线性表中，除最后一个（或第一个）元素外，每个元素都只有一个后继（或前驱）元素。线性表中的第一个元素没有直接前驱，最后一个元素没有直接后继：当线性表中仅有一个元素时，该元素既没有直接前驱，又没有直接后继。",
+      "question_hash": "17759c2bece7a0be5680edd6e2b65133",
+      "analysis": null,
       "knowledge_points": [
-        "线性表",
-        "直接前驱",
-        "直接后继"
+        "共享栈",
+        "栈满条件"
       ],
       "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-40-57.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-40-57.png",
-      "import_batch_id": "REVIEW_20260615_225915_0cc90b",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '若非空线性表中的元素既没有直接前驱，又没有直接后继，则该表中有（）个元素。', 'options': [{'key': 'A', 'text': '1'}, {'key': 'B', 'text': '2'}, {'key': 'C', 'text': '3'}, {'key': 'D', 'text': 'n'}], 'blank_option_groups': [], 'answer': 'A', 'analysis': '线性表中，除最后一个（或第一个）元素外，每个元素都只有一个后继（或前驱）元素。线性表中的第一个元素没有直接前驱，最后一个元素没有直接后继：当线性表中仅有一个元素时，该元素既没有直接前驱，又没有直接后继。', 'raw_text': '04.若非空线性表中的元素既没有直接前驱，又没有直接后继，则该表中有（）个元素。\\nD.n\\nC. 3\\nB.2\\nA.1\\n2.1.4答案与解析单项选择题线性表是由具有相同数据类型的有限数据元素组成的，数据元素是由数据项组成的。口第2章线性表口线性表定义的要求为：相同数据类型、有限序列。选项C的元素个数是无穷个，错误：选项A集合中的元素没有前后驱关系，错误：选项D属于一种存储结构，本题要求选出的是一个具体的线性表，不要将二者混为一谈。只有选项B符合线性表定义的要求。\\n线性表中，除最后一个（或第一个）元素外，每个元素都只有一个后继（或前驱）元素。\\n线性表中的第一个元素没有直接前驱，最后一个元素没有直接后继：当线性表中仅有一个元素时，该元素既没有直接前驱，又没有直接后继。', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-40-57.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'db68c73e', 'confidence_score': 0.95, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': ['stem_too_short'], 'severity': 'warning'}}",
+      "source": "Snipaste_2026-06-28_12-10-44.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-44.png",
+      "import_batch_id": "REVIEW_20260628_041235_b7a6c5",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '设有一个顺序共享栈 Share[0:n-1],其中第一个栈顶指针top1 的初值为-1,第二个栈顶指针 top2 的初值为 n,则判断共享栈满的条件是( )。', 'options': [{'key': 'A', 'text': 'top2-top1==1'}, {'key': 'B', 'text': 'top1-top2==1'}, {'key': 'C', 'text': 'top1==top2'}, {'key': 'D', 'text': '都不对'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '25.设有一个顺序共享栈 Share[0:n-1],其中第一个栈顶指针top1 的初值为-1,第二个栈顶指针 top2 的初值为 n,则判断共享栈满的条件是( )。\\nB. top1-top2==1\\nA. top2-top1==1\\nD.都不对\\nC. top1==top2', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-44.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'db9c1de7', 'confidence_score': 0.8, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
       "image_url": null,
       "year": null,
       "review_status": "approved",
       "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
+      "created_at": "2026-06-28T05:18:41",
+      "updated_at": "2026-06-28T05:18:41"
     },
     {
-      "sync_uuid": "10d0867d-2c46-43fb-8f26-aab1f224730c",
+      "sync_uuid": "dc3bd9ed-d93c-47cc-89af-cc8126d5f749",
       "sync_version": 0,
       "subject": "exam408-ds",
       "question_type": "single_choice",
       "content": {
-        "text": "下列几种描述中，（）是一个线性表。"
+        "text": "采用共享栈的好处是()。"
       },
       "options": {
-        "A": "由n个实数组成的集合",
-        "B": "由100个字符组成的序列",
-        "C": "所有整数组成的序列",
-        "D": "邻接表"
+        "A": "减少存取时间，降低发生上溢的可能",
+        "B": "节省存储空间，降低发生上溢的可能",
+        "C": "减少存取时间，降低发生下溢的可能",
+        "D": "节省存储空间，降低发生下溢的可能"
       },
       "answer": "B",
-      "question_hash": "66ec3768403538355f7e8f33f86ed92e",
-      "analysis": "线性表是由n个数据元素组成的有限序列。选项B中100个字符组成的序列符合有限序列的定义；选项A是集合，元素无序；选项C是无限序列；选项D是图的一种存储结构。因此B正确。",
+      "question_hash": "cf40d44ea3e5a169606396255e50dfff",
+      "analysis": null,
       "knowledge_points": [
-        "线性表的定义"
+        "共享栈",
+        "栈的存储结构"
       ],
       "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-40-57.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-40-57.png",
-      "import_batch_id": "REVIEW_20260615_225915_0cc90b",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '下列几种描述中，（）是一个线性表。', 'options': [{'key': 'A', 'text': '由n个实数组成的集合'}, {'key': 'B', 'text': '由100个字符组成的序列'}, {'key': 'C', 'text': '所有整数组成的序列'}, {'key': 'D', 'text': '邻接表'}], 'blank_option_groups': [], 'answer': 'B', 'analysis': '', 'raw_text': '02.下列儿种描述中，（）是一个线性表。\\nB. 由 100 个字符组成的序列\\nA.由n个实数组成的集合\\nD.邻接表\\nC.所有整数组成的序列', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-40-57.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '74acbbbf', 'confidence_score': 0.8, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "source": "Snipaste_2026-06-28_12-10-44.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-44.png",
+      "import_batch_id": "REVIEW_20260628_041235_b7a6c5",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '采用共享栈的好处是()。', 'options': [{'key': 'A', 'text': '减少存取时间，降低发生上溢的可能'}, {'key': 'B', 'text': '节省存储空间，降低发生上溢的可能'}, {'key': 'C', 'text': '减少存取时间，降低发生下溢的可能'}, {'key': 'D', 'text': '节省存储空间，降低发生下溢的可能'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '24.采用共享栈的好处是()。\\nA.减少存取时间，降低发生上溢的可能\\nB.节省存储空间，降低发生上溢的可能\\nC.减少存取时间，降低发生下溢的可能\\nD.节省存储空间，降低发生下溢的可能', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-44.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '4d177474', 'confidence_score': 0.8, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': ['stem_too_short'], 'severity': 'warning'}}",
       "image_url": null,
       "year": null,
       "review_status": "approved",
       "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
+      "created_at": "2026-06-28T05:18:50",
+      "updated_at": "2026-06-28T05:18:50"
     },
     {
-      "sync_uuid": "86d727f3-fc46-409b-aea5-502d10bd3b28",
+      "sync_uuid": "3bc68b5a-d370-42a8-9171-9a18799fea80",
       "sync_version": 0,
       "subject": "exam408-ds",
       "question_type": "single_choice",
       "content": {
-        "text": "线性表是具有n个（ ）的有限序列。"
+        "text": "设栈的初始状态为空，当字符序列nl_作为栈的输入时，输出长度为3,且可用作C 语言标识符的序列有()个。"
       },
       "options": {
-        "A": "数据表",
-        "B": "字符",
-        "C": "数据元素",
-        "D": "数据项"
+        "A": "4",
+        "B": "5",
+        "C": "3",
+        "D": "6"
       },
       "answer": "C",
-      "question_hash": "fd0e1fe1f054c011615df3ed6db6f640",
-      "analysis": "线性表的定义：由n（n≥0）个相同类型的数据元素构成的有限序列，因此括号内应填“数据元素”。",
+      "question_hash": "5e025b656ae179d8e5dcd202a1f6e424",
+      "analysis": null,
       "knowledge_points": [
-        "线性表"
+        "栈",
+        "出栈序列",
+        "Catalan数",
+        "C语言标识符"
       ],
       "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-40-57.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-40-57.png",
-      "import_batch_id": "REVIEW_20260615_225915_0cc90b",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '线性表是具有n个（ ）的有限序列。', 'options': [{'key': 'A', 'text': '数据表'}, {'key': 'B', 'text': '字符'}, {'key': 'C', 'text': '数据元素'}, {'key': 'D', 'text': '数据项'}], 'blank_option_groups': [], 'answer': 'C', 'analysis': '', 'raw_text': '01.线性表是具有n个（ ）的有限序列。\\nD.数据项\\nC. 数据元素\\nB. 字符\\nA. 数据表', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-40-57.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '042957e3', 'confidence_score': 0.7, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "source": "Snipaste_2026-06-28_12-10-44.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-44.png",
+      "import_batch_id": "REVIEW_20260628_041235_b7a6c5",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '设栈的初始状态为空，当字符序列nl_作为栈的输入时，输出长度为3,且可用作C 语言标识符的序列有()个。', 'options': [{'key': 'A', 'text': '4'}, {'key': 'B', 'text': '5'}, {'key': 'C', 'text': '3'}, {'key': 'D', 'text': '6'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '23.设栈的初始状态为空，当字符序列nl_作为栈的输入时，输出长度为3,且可用作C 语言标识符的序列有()个。\\nD.6\\nC.3\\nB.5\\nA.4', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-44.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '74ba4755', 'confidence_score': 0.8, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
       "image_url": null,
       "year": null,
       "review_status": "approved",
       "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
+      "created_at": "2026-06-28T05:19:40",
+      "updated_at": "2026-06-28T05:19:40"
     },
     {
-      "sync_uuid": "f03f5781-a129-4599-870e-97ff524f3da3",
+      "sync_uuid": "8346dcb7-d4d6-4e39-95b4-1c28e493934a",
       "sync_version": 0,
       "subject": "exam408-ds",
       "question_type": "single_choice",
       "content": {
-        "text": "一个线性表最常用的操作是存取任意一个指定序号的元素并在最后进行插入、删除操作，则利用（ ）存储方式可以节省时间。"
+        "text": "已知栈的入栈序列是(1,2,3,4)，其出栈序列为$P_{1},P_{2},P_{3},P_{4}$，则$P_{1},P_{2}$不可能是"
       },
       "options": {
-        "A": "顺序表",
-        "B": "双链表",
-        "C": "带头结点的循环双链表",
-        "D": "循环单链表"
+        "A": "2,4",
+        "B": "2,1",
+        "C": "4,3",
+        "D": "3,4"
+      },
+      "answer": "C",
+      "question_hash": "7ca3b1ef8cb1b4e1f8fe6a875eab0e7b",
+      "analysis": null,
+      "knowledge_points": [],
+      "difficulty": 3,
+      "source": "false_3.png",
+      "source_type": "image",
+      "source_file": "false_3.png",
+      "import_batch_id": "REVIEW_20260628_052201_a0e6c7",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '已知栈的入栈序列是(2,3,4)，其出栈序列为P1,P2,P3,P4，则P1,P2不可能是', 'options': [{'key': 'A', 'text': '2,4'}, {'key': 'B', 'text': '2、'}, {'key': 'C', 'text': '4,3'}, {'key': 'D', 'text': '3,'}], 'frozen_options_restored': True, 'options_preserved': False, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '已知栈的入栈序列是(2,3,4,其出栈序列为P、P、P、P、则P、P不可\\n\\nA. 2,4\\nB. 2、\\nC. 4,3\\nD. 3,', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'false_3.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '4f6ce390', 'confidence_score': 0.4, 'risk_flags': ['fallback_low_confidence'], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:25:02",
+      "updated_at": "2026-06-28T05:25:02"
+    },
+    {
+      "sync_uuid": "775e6c47-3eb5-4444-a54b-c0c28410fbd6",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "某栈的输入序列为 a,b,c,d, 下面的 4 个序列中，不可能为其输出序列的是( )。"
+      },
+      "options": {
+        "A": "a, b,c,d",
+        "B": "c, b,d,a",
+        "C": "d, c,a, b",
+        "D": "a,c,b,d"
+      },
+      "answer": "C",
+      "question_hash": "0415050a2cb1f37212d1a74158f8a300",
+      "analysis": null,
+      "knowledge_points": [
+        "栈的入栈出栈序列",
+        "栈的性质"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-44.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-44.png",
+      "import_batch_id": "REVIEW_20260628_041235_b7a6c5",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '某栈的输入序列为 a,b,c,d, 下面的 4 个序列中，不可能为其输出序列的是( )。', 'options': [{'key': 'A', 'text': 'a, b,c,d'}, {'key': 'B', 'text': 'c, b,d,a'}, {'key': 'C', 'text': 'd, c,a, b'}, {'key': 'D', 'text': 'a,c,b,d'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '19. 某栈的输入序列为 a,b,c,d, 下面的 4 个序列中，不可能为其输出序列的是( )。\\nD. a,c,b,d\\nC. d, c,a, b\\nB. c, b,d,a\\nA. a, b,c,d', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-44.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '5f217f46', 'confidence_score': 0.8, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:25:57",
+      "updated_at": "2026-06-28T05:25:57"
+    },
+    {
+      "sync_uuid": "4e4c9a71-fa91-4027-9f9f-dd903557abde",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "若栈的输入序列是1,2,3,$\\dots,n,$输出序列的第一个元素是i,则第j 个输出元素是()。"
+      },
+      "options": {
+        "A": "i-j-1",
+        "B": "i-j",
+        "C": "j-i+l",
+        "D": "不确定"
+      },
+      "answer": "D",
+      "question_hash": "8917a190c90ff6213e4c9e7b56837ecd",
+      "analysis": null,
+      "knowledge_points": [
+        "栈",
+        "输出序列"
+      ],
+      "difficulty": 3,
+      "source": "Snipaste_2026-06-28_12-10-44.png",
+      "source_type": "image",
+      "source_file": "Snipaste_2026-06-28_12-10-44.png",
+      "import_batch_id": "REVIEW_20260628_041235_b7a6c5",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '若栈的输入序列是1,2,3,\"\",n,输出序列的第一个元素是i,则第j 个输出元素是()。', 'options': [{'key': 'A', 'text': 'i-j-1'}, {'key': 'B', 'text': 'i-j'}, {'key': 'C', 'text': 'j-i+l'}, {'key': 'D', 'text': '不确定'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '18.若栈的输入序列是1,2,3,\"\",n,输出序列的第一个元素是i,则第j 个输出元素是()。\\nD.不确定\\nC. j-i+l\\nB.i-j\\nA. i-j-1', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-28_12-10-44.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'cf4494b9', 'confidence_score': 0.8, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;options_structured;type_detected'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "image_url": null,
+      "year": null,
+      "review_status": "approved",
+      "is_active": true,
+      "created_at": "2026-06-28T05:25:59",
+      "updated_at": "2026-06-28T05:25:59"
+    },
+    {
+      "sync_uuid": "5b70ee7d-8cca-41e1-9394-979fe7bedb46",
+      "sync_version": 0,
+      "subject": "exam408-ds",
+      "question_type": "single_choice",
+      "content": {
+        "text": "若栈的输入序列是 $ P_{1}, P_{2}, \\cdots, P_{n} $，输出序列是 $ 1, 2, 3, \\cdots, n $，若 $ P_{3}=1 $，则$ P_{i}=1 $的值（ ）",
+        "stem": "若栈的输入序列是 $ P_{1}, P_{2}, \\cdots, P_{n} $，输出序列是 $ 1, 2, 3, \\cdots, n $，若 $ P_{3}=1 $，则$ P_{i}=1 $的值（ ）"
+      },
+      "options": {
+        "A": "可能是2",
+        "B": "一定是2",
+        "C": "不可能是2",
+        "D": "不可能是3"
       },
       "answer": "A",
-      "question_hash": "060a1e793c46c2242694e2d83a6c4374",
-      "analysis": "顺序表支持随机存取，可以快速存取任意指定序号的元素，在表尾进行插入、删除操作时无需移动大量元素，因此可以节省时间。而链表存取指定序号需要遍历，效率较低。",
-      "knowledge_points": [
-        "顺序表",
-        "随机存取",
-        "线性表操作"
-      ],
+      "question_hash": "f4a91c9b9f2a16b6a6239e93affd0c47",
+      "analysis": "",
+      "knowledge_points": [],
       "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-55-41.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-55-41.png",
-      "import_batch_id": "REVIEW_20260615_225852_64e9ba",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '一个线性表最常用的操作是存取任意一个指定序号的元素并在最后进行插入、删除操作，则利用（ ）存储方式可以节省时间。', 'options': [{'key': 'A', 'text': '顺序表'}, {'key': 'B', 'text': '双链表'}, {'key': 'C', 'text': '带头结点的循环双链表'}, {'key': 'D', 'text': '循环单链表'}], 'blank_option_groups': [], 'answer': 'A', 'analysis': '', 'raw_text': '06.一个线性表最常用的操作是存取任意一个指定序号的元素并在最后进行插入、删除操作，则利用（ ）存储方式可以节省时间。\\nB. 双链表\\nA.顺序表\\nD.循环单链表\\nC. 带头结点的循环双链表', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-55-41.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '742ac875', 'confidence_score': 0.7, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
+      "source": "false_4.png",
+      "source_type": "image",
+      "source_file": "false_4.png",
+      "import_batch_id": "REVIEW_20260628_052729_c17848",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '若栈的输入序列是 $ P_{1}, P_{2}, \\\\cdots, P_{n} $，输出序列是 $ 1, 2, 3, \\\\cdots, n $，若 $ P_{i}=3 $，则', 'options': [{'key': 'A', 'text': '可能是2'}, {'key': 'B', 'text': '不可能是('}, {'key': 'C', 'text': '一定是1'}, {'key': 'D', 'text': '一定'}], 'frozen_options_restored': False, 'options_preserved': True, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '若栈的输入序列是 $ P_{1}, P_{2}, \\\\cdots, P_{n} $，输出序列是 $ 1, 2, 3, \\\\cdots, n $，若 $ P_{i}=3 $，则A. 可能是2 B. 不可能是( C. 一定是1 D. 一定', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'false_4.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '94669c71', 'confidence_score': 0.8, 'risk_flags': ['fallback_low_confidence'], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
       "image_url": null,
       "year": null,
       "review_status": "approved",
       "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
+      "created_at": "2026-06-28T05:30:25",
+      "updated_at": "2026-06-28T05:31:01"
     },
     {
-      "sync_uuid": "a5cc0b19-8fcd-43bf-9601-a11563590362",
+      "sync_uuid": "75787d1c-cd2c-4dbc-baef-c0390dbc9dd7",
       "sync_version": 0,
       "subject": "exam408-ds",
       "question_type": "single_choice",
       "content": {
-        "text": "若线性表最常用的操作是存取第1个元素及其前驱和后继元素的值，为了提高效率，应采用（）的存储方式。"
+        "text": "若栈的输入序列是 $P_1, P_2, \\dots, P_n$，输出序列是 $1,2,3,\\dots,n$，若 $P_3=1$，则 $P_1$ 的值( )。"
       },
       "options": {
-        "A": "单链表",
-        "B": "双链表",
-        "C": "循环单链表",
-        "D": "顺序表"
-      },
-      "answer": "D",
-      "question_hash": "7c45ffd930aeb196b8240a05e690465f",
-      "analysis": "顺序表支持随机存取，通过下标可直接获取第i个元素及其前驱和后继，时间复杂度均为O(1)；而链表需要从头遍历至第i个元素才能访问前驱和后继，效率较低。",
-      "knowledge_points": [
-        "线性表",
-        "顺序表",
-        "随机存取"
-      ],
-      "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-55-41.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-55-41.png",
-      "import_batch_id": "REVIEW_20260615_225852_64e9ba",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '若线性表最常用的操作是存取第1个元素及其前驱和后继元素的值，为了提高效率，应采用（）的存储方式。', 'options': [{'key': 'A', 'text': '单链表'}, {'key': 'B', 'text': '双链表'}, {'key': 'C', 'text': '循环单链表'}, {'key': 'D', 'text': '顺序表'}], 'blank_option_groups': [], 'answer': 'D', 'analysis': '顺序表支持随机存取，通过下标可直接获取第i个元素及其前驱和后继，时间复杂度均为O(1)；而链表需要从头遍历至第i个元素才能访问前驱和后继，效率较低。', 'raw_text': '05.若线性表最常用的操作是存取第1 个元素及其前驱和后继元素的值，为了提高效率，应采用（）的存储方式。\\nC. 循环单链表\\nD.顺序表\\nB.双链表\\nA.单链表', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-55-41.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'b705e128', 'confidence_score': 0.85, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
-    },
-    {
-      "sync_uuid": "c059fb5a-1b2c-4c72-9d00-2076fb9520bd",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "在线性表中，除开始元素外，每个元素（）。"
-      },
-      "options": {
-        "A": "只有唯一的前驱元素",
-        "B": "只有唯一的后继元素",
-        "C": "有多个前驱元素",
-        "D": "有多个后继元素"
-      },
-      "answer": "A",
-      "question_hash": "920ff6360019b356a2436d53a25ba491",
-      "analysis": "在线性表中，每个元素（除第一个外）有且仅有一个直接前驱元素，即唯一的前驱。",
-      "knowledge_points": [
-        "线性表",
-        "前驱",
-        "后继"
-      ],
-      "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-40-57.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-40-57.png",
-      "import_batch_id": "REVIEW_20260615_225915_0cc90b",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '在线性表中，除开始元素外，每个元素（）。', 'options': [{'key': 'A', 'text': '只有唯一的前驱元素'}, {'key': 'B', 'text': '只有唯一的后继元素'}, {'key': 'C', 'text': '有多个前驱元素'}, {'key': 'D', 'text': '有多个后继元素'}], 'blank_option_groups': [], 'answer': 'A', 'analysis': '在线性表中，每个元素（除第一个外）有且仅有一个直接前驱元素，即唯一的前驱。', 'raw_text': '03.在线性表中，除开始元素外，每个元素（）。\\nB.只有唯一的后继元素\\nA.只有唯一的前驱元素\\nD.有多个后继元素\\nC. 有多个前驱元素', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-40-57.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '34aa7d4e', 'confidence_score': 0.95, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
-    },
-    {
-      "sync_uuid": "0ec131fe-19fb-4da0-9b33-307972106895",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "一个顺序表所占用的存储空间大小与（）无关，"
-      },
-      "options": {
-        "A": "表的长度",
-        "B": "元素的存放顺序",
-        "C": "元素的类型",
-        "D": "元素中各字段的类型"
-      },
-      "answer": "B",
-      "question_hash": "9cd6aa29890e9f3c9d51218e5f33c93a",
-      "analysis": "顺序表的存储空间大小取决于表长（元素个数）和每个元素所占用的存储空间，而每个元素的存储空间由其类型（如 int、float）以及元素中各字段的类型（若为结构体）决定。元素的存放顺序仅影响逻辑次序，并不改变每个元素的存储大小或总空间。因此，空间大小与元素的存放顺序无关，故选 B。",
-      "knowledge_points": [
-        "顺序表的存储结构",
-        "存储空间计算"
-      ],
-      "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-55-41.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-55-41.png",
-      "import_batch_id": "REVIEW_20260615_225852_64e9ba",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '一个顺序表所占用的存储空间大小与（）无关，', 'options': [{'key': 'A', 'text': '表的长度'}, {'key': 'B', 'text': '元素的存放顺序'}, {'key': 'C', 'text': '元素的类型'}, {'key': 'D', 'text': '元素中各字段的类型'}], 'blank_option_groups': [], 'answer': 'B', 'analysis': '', 'raw_text': '04.一个顺序表所占用的存储空间大小与（）无关，\\nB. 元素的存放顺序\\nA. 表的长度\\nD.元素中各字段的类型\\nC. 元素的类型', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-55-41.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '6d4fa6ea', 'confidence_score': 0.9, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
-    },
-    {
-      "sync_uuid": "5321f0a8-29f6-47d9-844d-19f90856daf0",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "通常说顺序表具有随机存取的特性，指的是（）。"
-      },
-      "options": {
-        "A": "查找值为x的元素的时间与顺序表中元素个数n无关",
-        "B": "查找值为x的元素的时间与顺序表中元素个数n有关",
-        "C": "查找序号为i的元素的时间与顺序表中元素个数n无关",
-        "D": "查找序号为i的元素的时间与顺序表中元素个数n有关"
+        "A": "可能是 2",
+        "B": "一定是 2",
+        "C": "不可能是 2",
+        "D": "不可能是 3"
       },
       "answer": "C",
-      "question_hash": "b63b8df8217c2d471f4277976c343c29",
-      "analysis": "顺序表采用连续存储结构，可以通过首地址和下标直接计算元素地址，因此查找序号为i的元素的时间复杂度为O(1)，与顺序表中元素个数n无关。而查找值为x的元素需要遍历，时间复杂度为O(n)。随机存取特指按序号直接访问。",
-      "knowledge_points": [
-        "顺序表",
-        "随机存取",
-        "时间复杂度"
-      ],
+      "question_hash": "bc61d63d81e6656a54173a96a6251253",
+      "analysis": null,
+      "knowledge_points": [],
       "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-55-41.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-55-41.png",
-      "import_batch_id": "REVIEW_20260615_225852_64e9ba",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '通常说顺序表具有随机存取的特性，指的是（）。', 'options': [{'key': 'A', 'text': '查找值为x的元素的时间与顺序表中元素个数n无关'}, {'key': 'B', 'text': '查找值为x的元素的时间与顺序表中元素个数n有关'}, {'key': 'C', 'text': '查找序号为i的元素的时间与顺序表中元素个数n无关'}, {'key': 'D', 'text': '查找序号为i的元素的时间与顺序表中元素个数n有关'}], 'blank_option_groups': [], 'answer': 'C', 'analysis': '', 'raw_text': '03.通常说顺序表具有随机存取的特性，指的是（）. 回第 2 章 线 性 表回:\\nA.查找值为x的元素的时间与顺序表中元素个数n无关\\nB.查找值为 x的元素的时间与顺序表中元素个数n有关\\nC.查找序号为i的元素的时间与顺序表中元素个数n无关\\nD.查找序号为i的元素的时间与顺序表中元素个数n有关', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-55-41.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'b7053c0e', 'confidence_score': 0.95, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': ['stem_too_short'], 'severity': 'warning'}}",
+      "source": "false_5.png",
+      "source_type": "image",
+      "source_file": "false_5.png",
+      "import_batch_id": "REVIEW_20260628_052709_78c25e",
+      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '若栈的输入序列是 $P_1, P_2, \\\\dots, P_n$，输出序列是 $1,2,3,\\\\dots,n$，若 $P_1=1$，则 $P_2$ 的值( )。', 'options': [{'key': 'A', 'text': '可能是 2'}, {'key': 'B', 'text': '一定是 2'}, {'key': 'C', 'text': '不可能是 2'}, {'key': 'D', 'text': '不可能是 3'}], 'frozen_options_restored': True, 'options_preserved': False, 'blank_option_groups': [], 'answer': '', 'analysis': '', 'raw_text': '20.若栈的输入序列是P,P^{2},\",Pn,输出序列是1,2,3,\"\",n,若Ps=1,则 P的值()。\\nA.可能是 2\\nB.一定是 2\\nC.不可能是 2\\nD.不可能是 3', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'false_5.png', 'page': 1, 'type': 'image'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '21ccfd8f', 'confidence_score': 0.8, 'risk_flags': [], 'decision_trace': [{'stage': 'ai_repair', 'result': 'repaired', 'reason': 'stem_cleaned;formula_corrected'}, {'stage': 'review', 'result': 'pending', 'reason': 'written_to_review_queue'}], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
       "image_url": null,
       "year": null,
       "review_status": "approved",
       "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
-    },
-    {
-      "sync_uuid": "9e01010b-aa4f-4ddc-b5f3-f1e3703f4b1d",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "下列关于顺序表的叙述中，正确的是()。"
-      },
-      "options": {
-        "A": "顺序表可以利用一维数组表示，因此顺序表与一维数组在逻辑结构上是相同的",
-        "B": "在顺序表中，逻辑上相邻的元素物理位置上不一定相邻",
-        "C": "顺序表和一维数组一样，都可以进行随机存取",
-        "D": "在顺序表中，每个元素的类型不必相同"
-      },
-      "answer": "C",
-      "question_hash": "ef64189289839ea5b1396d49cabccb28",
-      "analysis": "顺序表采用顺序存储结构，逻辑上相邻的元素在物理位置上也相邻，且每个元素类型必须相同。顺序表基于一维数组实现，支持随机存取。选项A错误，因为逻辑结构不同（顺序表是线性表，一维数组是存储结构）；选项B错误，顺序表物理位置一定相邻；选项D错误，元素类型必须相同。",
-      "knowledge_points": [
-        "顺序表",
-        "顺序存储结构",
-        "随机存取",
-        "线性表"
-      ],
-      "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-55-41.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-55-41.png",
-      "import_batch_id": "REVIEW_20260615_225852_64e9ba",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '下列关于顺序表的叙述中，正确的是()。', 'options': [{'key': 'A', 'text': '顺序表可以利用一维数组表示，因此顺序表与一维数组在逻辑结构上是相同的'}, {'key': 'B', 'text': '在顺序表中，逻辑上相邻的元素物理位置上不一定相邻'}, {'key': 'C', 'text': '顺序表和一维数组一样，都可以进行随机存取'}, {'key': 'D', 'text': '在顺序表中，每个元素的类型不必相同'}], 'blank_option_groups': [], 'answer': 'C', 'analysis': '顺序表采用顺序存储结构，逻辑上相邻的元素在物理位置上也相邻，且每个元素类型必须相同。顺序表基于一维数组实现，支持随机存取。选项A错误，因为逻辑结构不同（顺序表是线性表，一维数组是存储结构）；选项B错误，顺序表物理位置一定相邻；选项D错误，元素类型必须相同。', 'raw_text': '02.下列关于顺序表的叙述中，正确的是（）。\\nA.顺序表可以利用一维数组表示，因此顺序表与一维数组在逻辑结构上是相同的\\nB.在顺序表中，逻辑上相邻的元素物理位置上不一定相邻\\nC.顺序表和一维数组一样，都可以进行随机存取\\nD.在顺序表中，每个元素的类型不必相同', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-55-41.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'ab67f050', 'confidence_score': 0.9, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': ['stem_too_short'], 'severity': 'warning'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
-    },
-    {
-      "sync_uuid": "24f3096c-ed37-493f-9c3e-9205eeca58a5",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "下列叙述中，()是顺序存储结构的优点。"
-      },
-      "options": {
-        "A": "存储密度大",
-        "B": "插入运算方便",
-        "C": "删除运算方便",
-        "D": "方便地运用于各种逻辑结构的存储表示"
-      },
-      "answer": "A",
-      "question_hash": "5e5b6baaa707e676e8ca14332d23ae83",
-      "analysis": "顺序存储结构用一组连续的存储单元依次存储数据元素，每个元素占用固定大小的存储空间，无需额外存储指针等信息，因此存储密度大。而插入和删除运算需要移动大量元素，不高效；且对于非线性的逻辑结构（如树、图），顺序存储通常不够灵活，需要额外处理。因此选项A正确。",
-      "knowledge_points": [
-        "顺序存储结构",
-        "存储密度",
-        "顺序存储的优缺点"
-      ],
-      "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-55-41.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-55-41.png",
-      "import_batch_id": "REVIEW_20260615_225852_64e9ba",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '下列叙述中，()是顺序存储结构的优点。', 'options': [{'key': 'A', 'text': '存储密度大'}, {'key': 'B', 'text': '插入运算方便'}, {'key': 'C', 'text': '删除运算方便'}, {'key': 'D', 'text': '方便地运用于各种逻辑结构的存储表示'}], 'blank_option_groups': [], 'answer': 'A', 'analysis': '', 'raw_text': '01.下列叙述中，（）是顺序存储结构的优点。\\nB.插入运算方便\\nA.存储密度大\\nD.方便地运用于各种逻辑结构的存储表示\\nC.删除运算方便', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-55-41.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '12120037', 'confidence_score': 0.8, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
-    },
-    {
-      "sync_uuid": "a546a168-e2ed-4b3e-9c58-b39e95176fda",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "在下列对顺序存储的有序表（长度为 n）实现给定操作的算法中，平均时间复杂度为 O(1)的是（ ）。"
-      },
-      "options": {
-        "A": "查找包含指定值元素的算法",
-        "B": "插入包含指定值元素的算法",
-        "C": "删除第 i (1≤i≤n) 个元素的算法",
-        "D": "获取第 i (1≤i≤n) 个元素的算法"
-      },
-      "answer": "D",
-      "question_hash": "59f9ae0823d05dbb20346ea4027169dd",
-      "analysis": "顺序存储的有序表支持随机访问，获取第 i 个元素只需计算地址，时间复杂度为 O(1)；而查找、插入、删除操作平均需要 O(log n) 或 O(n) 时间。",
-      "knowledge_points": [
-        "顺序存储",
-        "有序表",
-        "时间复杂度",
-        "随机访问"
-      ],
-      "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-55-55.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-55-55.png",
-      "import_batch_id": "REVIEW_20260615_225838_08413a",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '在下列对顺序存储的有序表（长度为 n）实现给定操作的算法中，平均时间复杂度为 O(1)的是（ ）。', 'options': [{'key': 'A', 'text': '查找包含指定值元素的算法'}, {'key': 'B', 'text': '插入包含指定值元素的算法'}, {'key': 'C', 'text': '删除第 i (1≤i≤n) 个元素的算法'}, {'key': 'D', 'text': '获取第 i (1≤i≤n) 个元素的算法'}], 'blank_option_groups': [], 'answer': 'D', 'analysis': '顺序存储的有序表支持随机访问，获取第 i 个元素只需计算地址，时间复杂度为 O(1)；而查找、插入、删除操作平均需要 O(log n) 或 O(n) 时间。', 'raw_text': '13.【2023 统考真题】在下列对顺序存储的有序表（长度为 n）实现给定操作的算法中，平均时间复杂度为 O(1)的是（~）。口2027 年数据结构考研复习指导\\nB.插入包含指定值元素的算法\\nA.查找包含指定值元素的算法\\nC.删除第i （1≤i≤n）个元素的算法\\nD.获取第i （1≤i≤n）个元素的算法', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-55-55.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '09bd54ab', 'confidence_score': 0.85, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
-    },
-    {
-      "sync_uuid": "1e0f8aa2-00a5-441a-94fe-b643bb0d2dda",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "顺序表的插入算法中，当n个空间已满时，可再中请增加分配m个空间，若中请失败，则说明系统没有( ）可分配的存储空间。"
-      },
-      "options": {
-        "A": "m个",
-        "B": "m个连续",
-        "C": "n+m个",
-        "D": "nn+m个连续"
-      },
-      "answer": "D",
-      "question_hash": "daa3bdab80612fd1919621122d787866",
-      "analysis": "顺序表基于数组实现，要求存储空间必须连续。当原空间已满（容量为n）时，若需再增加m个空间，则新空间总大小为n+m。系统必须能分配一块连续的、大小为n+m的存储区域才能成功。若分配失败，说明系统中没有n+m个连续的空闲存储单元。A选项\"m个\"未考虑原有空间，B选项\"m个连续\"同样未考虑原有空间，C选项\"n+m个\"未强调连续性。只有D选项\"n+m个连续\"准确描述了失败原因。",
-      "knowledge_points": [
-        "顺序表动态扩容",
-        "连续存储分配"
-      ],
-      "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-55-55.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-55-55.png",
-      "import_batch_id": "REVIEW_20260615_225838_08413a",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '顺序表的插入算法中，当n个空间已满时，可再中请增加分配m个空间，若中请失败，则说明系统没有( ）可分配的存储空间。', 'options': [{'key': 'A', 'text': 'm个'}, {'key': 'B', 'text': 'm个连续'}, {'key': 'C', 'text': 'n+m个'}, {'key': 'D', 'text': 'nn+m个连续'}], 'blank_option_groups': [], 'answer': 'D', 'analysis': '', 'raw_text': '12.顺序表的插入算法中，当n个空间已满时，可再中请增加分配m个空间，若中请失败，则说明系统没有( ）可分配的存储空间。\\nB. m 个连续\\nA.m个\\nD.nn+m个连续\\nC.n+m个', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-55-55.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '859043d4', 'confidence_score': 0.7, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
-    },
-    {
-      "sync_uuid": "d651398d-682e-4161-883b-e233c3dd09ae",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "对于顺序存储的线性表，其算法时间复杂度为 $O(1)$ 的运算应该是 ( ) ."
-      },
-      "options": {
-        "A": "将 $n$ 个元素从小到大排序",
-        "B": "删除第 $i$ （$1 \\le i \\le n$）个元素",
-        "C": "改变第 $i$ （$1 \\le i \\le n$）个元素的值",
-        "D": "在第 $i$ （$1 \\le i \\le n$）个元素后插入一个新元素"
-      },
-      "answer": "C",
-      "question_hash": "7c12107f0e68ab9f5ba45105af140175",
-      "analysis": "顺序存储的线性表（顺序表）支持随机访问，通过下标可直接存取任意位置的元素，因此改变第 $i$ 个元素的值只需一次赋值操作，时间复杂度为 $O(1)$。而排序（A）至少需要 $O(n\\log n)$；删除第 $i$ 个元素（B）需移动后续 $n-i$ 个元素，时间复杂度 $O(n)$；在第 $i$ 个元素后插入新元素（D）需移动 $n-i$ 个元素，也为 $O(n)$。故选择 C。",
-      "knowledge_points": [
-        "顺序表",
-        "时间复杂度分析",
-        "随机访问"
-      ],
-      "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-55-55.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-55-55.png",
-      "import_batch_id": "REVIEW_20260615_225838_08413a",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '对于顺序存储的线性表，其算法时间复杂度为 $O(1)$ 的运算应该是 ( ) .', 'options': [{'key': 'A', 'text': '将 $n$ 个元素从小到大排序'}, {'key': 'B', 'text': '删除第 $i$ （$1 \\\\le i \\\\le n$）个元素'}, {'key': 'C', 'text': '改变第 $i$ （$1 \\\\le i \\\\le n$）个元素的值'}, {'key': 'D', 'text': '在第 $i$ （$1 \\\\le i \\\\le n$）个元素后插入一个新元素'}], 'blank_option_groups': [], 'answer': 'C', 'analysis': '', 'raw_text': '11. 对于顺序存储的线性表，其算法时间复杂度为 O(1)的运算应该是 ( ) .\\nA. 将n 个元素从小到大排序\\nB.删除第i （1≤i≤n）个元素\\nC.改变第i（1≤i≤n）个元素的值\\nD.在第i（1≤i≤n）个元素后插入一个新元素', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-55-55.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '7dc6fbda', 'confidence_score': 0.9, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
-    },
-    {
-      "sync_uuid": "41d520e6-6bbc-43cb-82a6-9f582289f220",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "对于顺序表，访问第 $i$ 个位置的元素和在 $i$ 个位置插入一个元素的时间复杂度为（ ）。"
-      },
-      "options": {
-        "A": "$O(n), O(n)$",
-        "B": "$O(n), O(1)$",
-        "C": "$O(1), O(n)$",
-        "D": "$O(1), O(1)$"
-      },
-      "answer": "C",
-      "question_hash": "616db545df88df7047671f6adf28bc75",
-      "analysis": "顺序表的存储结构支持随机访问，访问第 $i$ 个元素的时间复杂度为 $O(1)$；插入元素时，需要将第 $i$ 个位置及其后的所有元素向后移动，平均时间复杂度为 $O(n)$。因此，访问和插入的时间复杂度分别为 $O(1)$ 和 $O(n)$，对应选项 C。",
-      "knowledge_points": [
-        "顺序表",
-        "时间复杂度"
-      ],
-      "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-55-55.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-55-55.png",
-      "import_batch_id": "REVIEW_20260615_225838_08413a",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '对于顺序表，访问第 $i$ 个位置的元素和在 $i$ 个位置插入一个元素的时间复杂度为（ ）。', 'options': [{'key': 'A', 'text': '$O(n), O(n)$'}, {'key': 'B', 'text': '$O(n), O(1)$'}, {'key': 'C', 'text': '$O(1), O(n)$'}, {'key': 'D', 'text': '$O(1), O(1)$'}], 'blank_option_groups': [], 'answer': 'C', 'analysis': '', 'raw_text': '10. 对于顺序表,访问第 i 个位置的元素和在第 i 个位置插入一个元素的时间复杂度为（ ）。\\n)\\nC. 0(1), O(n)\\nD. 0(1), 0(1)\\nA. O(n),O(n)\\nB. O(n), O(1)', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-55-55.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '0b666c40', 'confidence_score': 0.95, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
-    },
-    {
-      "sync_uuid": "8c926091-3e7c-47f4-a5f4-9b07ebb0ca85",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "subjective",
-      "content": {
-        "text": "设线性表有个元素严格说来，以下狭作中B在顺序表上实现要比在链表上实现的效率高。"
-      },
-      "options": {
-        "A": "插入一个元素",
-        "B": "按序号访问元素",
-        "C": "删除一个元素",
-        "D": "按值查找"
-      },
-      "answer": "B",
-      "question_hash": "2b2922cd29c408f82e27cc24bf13cbe5",
-      "analysis": "顺序表支持随机存取，按序号访问元素的时间复杂度为O(1)，而链表需要从头遍历，时间复杂度为O(n)，因此在顺序表上按序号访问的效率更高。",
-      "knowledge_points": [
-        "顺序表与链表的比较",
-        "时间复杂度分析"
-      ],
-      "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-55-55.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-55-55.png",
-      "import_batch_id": "REVIEW_20260615_225838_08413a",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'subjective', 'stem': '设线性表有个元素严格说来，以下狭作中B在顺序表上实现要比在链表上实现的效率高。', 'options': [], 'answer': '', 'analysis': '', 'raw_text': '08.设线性表有个元素严格说来，以下狭作中B在顺序表上实现要比在链表上实现的效率高。', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-55-55.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': [], 'stem_hash': '7e36c514', 'confidence_score': 0.7, 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
-    },
-    {
-      "sync_uuid": "f2752ee1-cf27-4877-abef-e0fc1fa1166f",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "的时间访问下标为7的元素，所需时间与顺序表中的元素个数n无关。顺序表所占的存储空间=表长xsizeof（元素的类型），表长和元素的类型显然会影响存储空间的大小。若元素为结构体类型，则元素中各字段的类型也会影响存储空间的大小。题干实际要求能最快存取第i-1、i和/+1个元素值。选项"
-      },
-      "options": {
-        "B": "C都只能从头结点依次顺序查找，时间复杂度为 O(n);只有顺序表可以按序号随机存取，时间复杂度为O(1)。只有顺序表可以按序号随机存取，且在最后进行插入和删除操作时不需要移动任何元素。对说法1，解析略：对说法I，在最后位置插入新结点不需要移动元素，时间复杂度为O(1): 对说法 IIl，被删结点后的结点需要要依次前移，时间复杂度为 O(n);对说法IV，需要后移n-i个对说法I，顺序表只需3次交换操作；链表需要分别找到两个结点前驱，第4个结点断链后再插入到第2个结点后，效率较低。对说法III，需要依次顺序访问每个元素，时间复杂度相同。需要将元素am~a,依次前移一位，共移动n-(i+1)+1=n-i个元素。在第；个位置插入一个元素，需要移动n-i+1个元素，时间复杂度为O（n)。"
-      },
-      "answer": "A",
-      "question_hash": "ab326af21eb9620abf5b6c813786bfc0",
-      "analysis": "顺序表采用顺序存储结构，支持随机存取，访问任意位置元素的时间复杂度为O(1)，与表长无关。因此访问下标为7的元素所需时间恒定。而链表需要从头结点开始顺序查找，时间复杂度为O(n)。对于要求快速存取第i-1、i、i+1个元素，顺序表可直接通过下标访问，效率最高。",
-      "knowledge_points": [
-        "顺序表的随机存取特性",
-        "时间复杂度分析"
-      ],
-      "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-56-20.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-56-20.png",
-      "import_batch_id": "REVIEW_20260615_225828_f2ccb0",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '的时间访问下标为7的元素，所需时间与顺序表中的元素个数n无关。顺序表所占的存储空间=表长xsizeof（元素的类型），表长和元素的类型显然会影响存储空间的大小。若元素为结构体类型，则元素中各字段的类型也会影响存储空间的大小。题干实际要求能最快存取第i-1、i和/+1个元素值。选项', 'options': [{'key': 'B', 'text': 'C都只能从头结点依次顺序查找，时间复杂度为 O(n);只有顺序表可以按序号随机存取，时间复杂度为O(1)。只有顺序表可以按序号随机存取，且在最后进行插入和删除操作时不需要移动任何元素。对说法1，解析略：对说法I，在最后位置插入新结点不需要移动元素，时间复杂度为O(1): 对说法 IIl，被删结点后的结点需要要依次前移，时间复杂度为 O(n);对说法IV，需要后移n-i个对说法I，顺序表只需3次交换操作；链表需要分别找到两个结点前驱，第4个结点断链后再插入到第2个结点后，效率较低。对说法III，需要依次顺序访问每个元素，时间复杂度相同。需要将元素am~a,依次前移一位，共移动n-(i+1)+1=n-i个元素。在第；个位置插入一个元素，需要移动n-i+1个元素，时间复杂度为O（n)。'}], 'answer': '', 'analysis': '', 'raw_text': '1)的时间访问下标为7的元素，所需时间与顺序表中的元素个数n无关。顺序表所占的存储空间=表长xsizeof（元素的类型），表长和元素的类型显然会影响存储空间的大小。若元素为结构体类型，则元素中各字段的类型也会影响存储空间的大小。题干实际要求能最快存取第i-1、i和/+1个元素值。选项\\nA、\\nB、C都只能从头结点依次顺序查找，时间复杂度为 O(n);只有顺序表可以按序号随机存取，时间复杂度为O(1)。只有顺序表可以按序号随机存取，且在最后进行插入和删除操作时不需要移动任何元素。对说法1，解析略：对说法I，在最后位置插入新结点不需要移动元素，时间复杂度为O(1):\\n对说法 IIl，被删结点后的结点需要要依次前移，时间复杂度为 O(n);对说法IV，需要后移n-i个对说法I，顺序表只需3次交换操作；链表需要分别找到两个结点前驱，第4个结点断链后再插入到第2个结点后，效率较低。对说法III，需要依次顺序访问每个元素，时间复杂度相同。需要将元素am~a,依次前移一位，共移动n-(i+1)+1=n-i个元素。在第；个位置插入一个元素，需要移动n-i+1个元素，时间复杂度为O（n)。', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-56-20.png', 'page': 1, 'type': 'txt'}, 'is_valid': False, 'errors': ['missing_answer'], 'warnings': ['incomplete_options: missing A,C,D', 'missing_answer_for_objective_question'], 'stem_hash': '5cbc620e', 'confidence_score': 0.55, 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
-    },
-    {
-      "sync_uuid": "20278095-c30f-4148-97dd-a3a225db1dad",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "访问第i（1≤i≤n）个结点和求第i（2≤i≤n）个结点的直接前驱I.在最后一个结点后插入一个新的结点III.删除第1个结点V.在"
-      },
-      "options": {
-        "A": "1",
-        "B": "1I、1!I",
-        "C": "n",
-        "D": "11、III"
-      },
-      "answer": "B",
-      "question_hash": "3b81f1bfc69b0b9dbc2ef19a42b2e8b4",
-      "analysis": "根据典型单链表操作的时间复杂度，访问第i个结点和求前驱需要O(n)，在最后一个结点后插入若没有尾指针则O(n)，删除第一个结点O(1)。结合选项B表示I和II（可能为某些操作），具体需根据完整题干判断。",
-      "knowledge_points": [
-        "单链表操作的时间复杂度"
-      ],
-      "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-55-55.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-55-55.png",
-      "import_batch_id": "REVIEW_20260615_225838_08413a",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '访问第i（1≤i≤n）个结点和求第i（2≤i≤n）个结点的直接前驱I.在最后一个结点后插入一个新的结点III.删除第1个结点V.在', 'options': [{'key': 'A', 'text': '1'}, {'key': 'B', 'text': '1I、1!I'}, {'key': 'C', 'text': '91. n'}, {'key': 'D', 'text': '1、11、III'}], 'blank_option_groups': [], 'answer': 'B', 'analysis': '', 'raw_text': '1. 访问第i（1≤i≤n）个结点和求第i（2≤i≤n）个结点的直接前驱I1.在最后一个结点后插入一个新的结点IIIL删除第1个结点V.在（公号[研大] C\\nc.91. n\\nD. 1、11、III\\nB. 1I、1!I\\nA.1', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-55-55.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'f032d98a', 'confidence_score': 0.3, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
-    },
-    {
-      "sync_uuid": "07e6f288-eb67-46a1-b205-7b812aba7f46",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "subjective",
-      "content": {
-        "text": "在n 个元素的线性表的数组表示中，时间复杂度为 O(1)的操作是()。"
-      },
-      "options": {
-        "A": "访问第i个元素（1≤i≤n）",
-        "B": "在第i个元素之后插入一个新元素",
-        "C": "删除第i个元素",
-        "D": "对元素进行排序"
-      },
-      "answer": "A",
-      "question_hash": "b532f2ac6c1613022b1f8dd6bc6c9213",
-      "analysis": "在n个元素的线性表的数组表示（顺序表）中，可以通过下标直接访问任意元素，即随机存取，时间复杂度为O(1)。而插入、删除等操作平均需要移动元素，时间复杂度为O(n)。因此只有访问第i个元素的操作时间复杂度为O(1)。",
-      "knowledge_points": [
-        "顺序表",
-        "时间复杂度"
-      ],
-      "difficulty": 3,
-      "source": "Snipaste_2026-06-15_22-55-55.png",
-      "source_type": "txt",
-      "source_file": "Snipaste_2026-06-15_22-55-55.png",
-      "import_batch_id": "REVIEW_20260615_225838_08413a",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'subjective', 'stem': '在n 个元素的线性表的数组表示中，时间复杂度为 O(1)的操作是()。', 'options': [], 'answer': '', 'analysis': '', 'raw_text': '07. 在n 个元素的线性表的数组表示中，时间复杂度为 O(1)的操作是（ ）。', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': 'Snipaste_2026-06-15_22-55-55.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': [], 'stem_hash': '54c82878', 'confidence_score': 0.7, 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:06:01",
-      "updated_at": "2026-06-15T15:06:01"
-    },
-    {
-      "sync_uuid": "955c361e-e6b6-4ad9-af55-c0627e0cb3c9",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "在一个长度为 $n$ 的带头结点的单链表 $h$ 上，设有尾指针 $r$，则执行（ ）操作与链表的表长有关。"
-      },
-      "options": {
-        "A": "删除单链表中的第一个元素",
-        "B": "删除单链表中的最后一个元素",
-        "C": "在单链表第一个元素前插入一个新元素",
-        "D": "在单链表最后一个元素后插入一个新元素"
-      },
-      "answer": "B",
-      "question_hash": "30f32fcadc3487b9837cb8f41398f872",
-      "analysis": "删除最后一个元素需要找到倒数第二个节点，而尾指针 $r$ 只能直接访问最后一个节点，无法直接获取其前驱节点，故需要遍历链表，时间复杂度为 $O(n)$，与表长有关；其他操作均可通过头指针或尾指针在 $O(1)$ 时间内完成。",
-      "knowledge_points": [
-        "单链表",
-        "尾指针",
-        "删除操作",
-        "时间复杂度"
-      ],
-      "difficulty": 3,
-      "source": "2.png",
-      "source_type": "txt",
-      "source_file": "2.png",
-      "import_batch_id": "REVIEW_20260615_232500_9ba461",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '在一个长度为 $n$ 的带头结点的单链表 $h$ 上，设有尾指针 $r$，则执行（ ）操作与链表的表长有关。', 'options': [{'key': 'A', 'text': '删除单链表中的第一个元素'}, {'key': 'B', 'text': '删除单链表中的最后一个元素'}, {'key': 'C', 'text': '在单链表第一个元素前插入一个新元素'}, {'key': 'D', 'text': '在单链表最后一个元素后插入一个新元素'}], 'blank_option_groups': [], 'answer': 'B', 'analysis': '删除最后一个元素需要找到倒数第二个节点，而尾指针 $r$ 只能直接访问最后一个节点，无法直接获取其前驱节点，故需要遍历链表，时间复杂度为 $O(n)$，与表长有关；其他操作均可通过头指针或尾指针在 $O(1)$ 时间内完成。', 'raw_text': '10．在一个长度为 n 的带头结点的单链表 h 上，设有尾指针 r，则执行（）操作与链表的表长有关。\\nA.删除单链表中的第一个元素\\nB. 删除单链表中的最后一个元素\\nC．在单链表第一个元素前插入一个新元素\\nD.在单链表最后一个元素后插入一个新元素', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '2.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'e5b95300', 'confidence_score': 0.9, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "0ef1ba22-4fe2-4d5b-b1b6-c438489024d9",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "给定有 $n$ 个元素的一维数组,建立一个有序单链表的最低时间复杂度是（ ）。"
-      },
-      "options": {
-        "A": "$O(1)$",
-        "B": "$O(n)$",
-        "C": "$O(n^2)$",
-        "D": "$O(n\\log_2 n)$"
-      },
-      "answer": "D",
-      "question_hash": "3084c1ae708d11776325d53a9dffaf8f",
-      "analysis": "建立有序单链表，最有效率的方法是先将数组排序（时间复杂度最低为 $O(n\\log_2 n)$），再依次插入链表（$O(n)$），总时间复杂度为 $O(n\\log_2 n)$。若直接插入排序，每次插入需 $O(n)$，总时间复杂度为 $O(n^2)$。因此最低时间复杂度是 $O(n\\log_2 n)$。",
-      "knowledge_points": [
-        "排序算法的时间复杂度",
-        "链表构建"
-      ],
-      "difficulty": 3,
-      "source": "2.png",
-      "source_type": "txt",
-      "source_file": "2.png",
-      "import_batch_id": "REVIEW_20260615_232500_9ba461",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '给定有 $n$ 个元素的一维数组,建立一个有序单链表的最低时间复杂度是（ ）。', 'options': [{'key': 'A', 'text': '$O(1)$'}, {'key': 'B', 'text': '$O(n)$'}, {'key': 'C', 'text': '$O(n^2)$'}, {'key': 'D', 'text': '$O(n\\\\log_2 n)$'}], 'blank_option_groups': [], 'answer': 'D', 'analysis': '', 'raw_text': '07. 给定有 n 个元素的一维数组,建立一个有序单链表的最低时间复杂度是（ ）。\\nA. 0(1)\\nB. 0m)言9C 0)7888D. 0(nlog2n)', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '2.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['incomplete_options: missing C,D', 'missing_answer_for_objective_question'], 'stem_hash': 'd207aa71', 'confidence_score': 0.8, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "1b47dcdf-02bc-43ec-b31b-2a288d0ff356",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "下面关于线性表的一些说法中，正确的是（）。"
-      },
-      "options": {
-        "A": "对一个设有头指针和尾指针的单链表执行删除最后一个元素的操作与链表长度无关",
-        "B": "线性表中每个元素都有一个直接前驱和一个直接后继",
-        "C": "为了方便插入和删除数据，可以使用双链表存放数据",
-        "D": "取线性表第i个元素的时间与i的大小有关"
-      },
-      "answer": "C",
-      "question_hash": "7e5270b8c212171b010e230ceb2f9b8a",
-      "analysis": "选项A：在单链表中，即使有头尾指针，删除最后一个元素仍需遍历找到倒数第二个节点，时间复杂度为O(n)，与长度有关，故错误。选项B：线性表中第一个元素无前驱，最后一个元素无后继，故错误。选项C：双链表具有前驱和后继指针，插入和删除操作方便，故正确。选项D：对于顺序表，取第i个元素的时间为O(1)，与i无关；对于链表，则与i有关。该说法不全面，故错误。因此正确答案为C。",
-      "knowledge_points": [
-        "线性表",
-        "链表",
-        "双链表",
-        "基本操作"
-      ],
-      "difficulty": 3,
-      "source": "3.png",
-      "source_type": "txt",
-      "source_file": "3.png",
-      "import_batch_id": "REVIEW_20260615_232449_89c8b8",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '下面关于线性表的一些说法中，正确的是（）。', 'options': [{'key': 'A', 'text': '对一个设有头指针和尾指针的单链表执行删除最后一个元素的操作与链表长度无关'}, {'key': 'B', 'text': '线性表中每个元素都有一个直接前驱和一个直接后继'}, {'key': 'C', 'text': '为了方便插入和删除数据，可以使用双链表存放数据'}, {'key': 'D', 'text': '取线性表第i个元素的时间与i的大小有关'}], 'blank_option_groups': [], 'answer': 'C', 'analysis': '', 'raw_text': '14．下面关于线性表的一些说法中，正确的是（）。\\nA．对一个设有头指针和尾指针的单链表执行删除最后一个元素的操作与链表长度无关\\nB.线性表中每个元素都有一个直接前驱和一个直接后继\\nC.为了方便插入和删除数据，可以使用双链表存放数据\\nD.取线性表第i个元素的时间与i的大小有关', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '3.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '0c7d2f9e', 'confidence_score': 0.9, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': ['stem_too_short'], 'severity': 'warning'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "6a62d46a-671b-4d83-b7bc-e5bdd6320dbd",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "链式存储设计时，结点内的存储单元地址（）。"
-      },
-      "options": {
-        "A": "一定连续",
-        "B": "一定不连续",
-        "C": "不一定连续",
-        "D": "部分连续，部分不连续"
-      },
-      "answer": "A",
-      "question_hash": "09e57acff34cd933dba65a98d114f761",
-      "analysis": "在链式存储结构中，每个结点通常是一个结构体或对象，在内存中分配一块连续的存储空间来存放结点内的所有成员（如数据域和指针域）。因此，结点内的存储单元地址一定是连续的。",
-      "knowledge_points": [
-        "链式存储",
-        "结点结构",
-        "内存分配"
-      ],
-      "difficulty": 3,
-      "source": "1.png",
-      "source_type": "txt",
-      "source_file": "1.png",
-      "import_batch_id": "REVIEW_20260615_232458_13f6d2",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '链式存储设计时，结点内的存储单元地址（）。', 'options': [{'key': 'A', 'text': '一定连续'}, {'key': 'B', 'text': '一定不连续'}, {'key': 'C', 'text': '不一定连续'}, {'key': 'D', 'text': '部分连续，部分不连续'}], 'blank_option_groups': [], 'answer': 'A', 'analysis': '', 'raw_text': '03.链式存储设计时，结点内的存储单元地址（）。口2027 年数据结构考研复习指导口:\\nB. 一定不连续\\nA.一定连续\\nD．部分连续，部分不连续\\nC. 不一定连续', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '1.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '3f24ee44', 'confidence_score': 0.7, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "ee0e5be5-dbea-4aba-a744-0d163d361e3f",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "对于一个线性表，既要求能进行较快速地插入和删除，又要求存储结构能反映数据之间的逻辑关系，则应该用（）。"
-      },
-      "options": {
-        "A": "顺序存储方式",
-        "B": "链式存储方式",
-        "C": "散列存储方式",
-        "D": "以上均可以"
-      },
-      "answer": "B",
-      "question_hash": "c6b9497984309c4a7ff6db8d81662071",
-      "analysis": "链式存储结构通过指针反映数据元素之间的逻辑关系，且在插入和删除操作时只需修改指针，无需移动大量元素，因此较快速地实现插入和删除。顺序存储结构插入和删除需要移动大量元素，速度慢；散列存储结构不能直接反映逻辑关系，且插入删除可能涉及冲突处理。故应选链式存储方式。",
-      "knowledge_points": [
-        "线性表的存储结构",
-        "链式存储",
-        "顺序存储",
-        "散列存储"
-      ],
-      "difficulty": 3,
-      "source": "1.png",
-      "source_type": "txt",
-      "source_file": "1.png",
-      "import_batch_id": "REVIEW_20260615_232458_13f6d2",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '对于一个线性表，既要求能进行较快速地插入和删除，又要求存储结构能反映数据之间的逻辑关系，则应该用（）。', 'options': [{'key': 'A', 'text': '顺序存储方式'}, {'key': 'B', 'text': '链式存储方式'}, {'key': 'C', 'text': '散列存储方式'}, {'key': 'D', 'text': '以上均可以'}], 'blank_option_groups': [], 'answer': 'B', 'analysis': '', 'raw_text': '02．对于一个线性表，既要求能进行较快速地插入和删除，又要求存储结构能反映数据之间的逻辑关系，则应该用（）。\\nA. 顺序存储方式\\nB. 链式存储方式\\nC. 散列存储方式\\nD. 以上均可以', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '1.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'd92c8cf2', 'confidence_score': 0.85, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "b64a78fc-41c6-4e93-a871-45708e9a7496",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "对于一个头指针为head的带头结点的单链表，判定该表为空表的条件是（）；对于不带头结点的单链表，判定空表的条件为（）。"
-      },
-      "options": {
-        "A": "head==NULL",
-        "B": "head->next==NULL",
-        "C": "head->next==head",
-        "D": "head!=NULL"
-      },
-      "answer": "B,A",
-      "question_hash": "ca14885cd5623775e4b9873f1092fcac",
-      "analysis": "带头结点的单链表，头指针head指向头结点，空表时头结点的next域为空，即head->next==NULL（选项B）。不带头结点的单链表，空表时头指针直接为NULL，即head==NULL（选项A）。",
-      "knowledge_points": [
-        "带头结点的单链表",
-        "不带头结点的单链表",
-        "空表判定"
-      ],
-      "difficulty": 3,
-      "source": "3.png",
-      "source_type": "txt",
-      "source_file": "3.png",
-      "import_batch_id": "REVIEW_20260615_232449_89c8b8",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '对于一个头指针为head的带头结点的单链表，判定该表为空表的条件是（）；对于不带头结点的单链表，判定空表的条件为（）。', 'options': [{'key': 'A', 'text': 'head==NULL'}, {'key': 'B', 'text': 'head->next==NULL'}, {'key': 'C', 'text': 'head->next==head'}, {'key': 'D', 'text': 'head!=NULL'}], 'blank_option_groups': [], 'answer': 'B,A', 'analysis': '', 'raw_text': '11．对于一个头指针为head的带头结点的单链表，判定该表为空表的条件是（）；对于不带头结点的单链表，判定空表的条件为（）。\\nB. head->next==NULL\\nA.head==NULL\\nD. head!=NULL\\nC. head->next==head', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '3.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '13004a1f', 'confidence_score': 0.6, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "dcd37b2b-1f77-4b54-a607-133e0ab76933",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "通过含有 $n (n > 1)$ 个元素的数组 $a$，采用头插法建立单链表 $L$，则 $L$ 中的元素次序（"
-      },
-      "options": {
-        "A": "与数组 $a$ 的元素次序相同",
-        "B": "与数组 $a$ 的元素次序相反",
-        "C": "与数组 $a$ 的元素次序无关",
-        "D": "以上都错误"
-      },
-      "answer": "B",
-      "question_hash": "d0d695f4ebe1c798a0fae895c1b180a2",
-      "analysis": "头插法每次将新节点插入链表头部，因此第一个插入的元素在链表末尾，最后一个插入的作为头节点，所以链表顺序与数组顺序相反。",
-      "knowledge_points": [
-        "单链表",
-        "头插法"
-      ],
-      "difficulty": 3,
-      "source": "3.png",
-      "source_type": "txt",
-      "source_file": "3.png",
-      "import_batch_id": "REVIEW_20260615_232449_89c8b8",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '通过含有 $n (n > 1)$ 个元素的数组 $a$，采用头插法建立单链表 $L$，则 $L$ 中的元素次序（', 'options': [{'key': 'A', 'text': '与数组 $a$ 的元素次序相同'}, {'key': 'B', 'text': '与数组 $a$ 的元素次序相反'}, {'key': 'C', 'text': '与数组 $a$ 的元素次序无关'}, {'key': 'D', 'text': '以上都错误'}], 'blank_option_groups': [], 'answer': 'B', 'analysis': '', 'raw_text': '13. 通过含有 n( n> 1)个元素的数组a, 采用头插法建立单链表 L,则 L 中的元素次序(\\nB.与数组α的元素次序相反\\nA.与数组α的元素次序相同第2章线性表\\nD．以上都错误\\nC.与数组α 的元素次序无关', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '3.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'cf1ba99c', 'confidence_score': 0.9, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "6b6e0ba4-bf5d-4af2-bc33-bcebb755165c",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "对于一个带头结点的循环双链表L，判断该表为空表的条件是（ ）。"
-      },
-      "options": {
-        "A": "L->prior==L&&L->next==NULL",
-        "B": "L->prior==NULL&&L->next==NULL",
-        "C": "L->prior==NULL&L->next==L",
-        "D": "L->prior==L&&L->next==L"
-      },
-      "answer": "D",
-      "question_hash": "5776da1ba7dd4967e56e1bc7539fcc63",
-      "analysis": "带头结点的循环双链表中，头结点 L 的 prior 和 next 均指向自身（L->prior == L && L->next == L）时，表示链表中除了头结点外没有其他结点，即为空表。选项 A 中 next 为 NULL 错误；选项 B 中 prior 和 next 均为 NULL 不符合循环结构特点；选项 C 中 prior 为 NULL 错误。因此只有 D 正确。",
-      "knowledge_points": [
-        "循环双链表",
-        "带头结点的链表判空"
-      ],
-      "difficulty": 3,
-      "source": "4.png",
-      "source_type": "txt",
-      "source_file": "4.png",
-      "import_batch_id": "REVIEW_20260615_232422_f7dea4",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '对于一个带头结点的循环双链表L，判断该表为空表的条件是（ ）。', 'options': [{'key': 'A', 'text': 'L->prior==L&&L->next==NULL'}, {'key': 'B', 'text': 'L->prior==NULL&&L->next==NULL'}, {'key': 'C', 'text': 'L->prior==NULL&L->next==L'}, {'key': 'D', 'text': 'L->prior==L&&L->next==L'}], 'blank_option_groups': [], 'answer': 'D', 'analysis': '', 'raw_text': '22.对于一个带头结点的循环双链表L，判断该表为空表的条件是（ ）。\\nA. L->prior==L&&L->next==NULL\\nB.L->prior==NULL&&L->next==NULL\\nC. L->prior==NULL&L->next==L\\nD.L->prior==L&&L->next==L', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '4.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '42093d57', 'confidence_score': 0.9, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "88c7224c-9100-4699-beec-82b3713fbd0b",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "与单链表相比，双链表的优点之一是（）。"
-      },
-      "options": {
-        "A": "插入、删除操作更方便",
-        "B": "可以进行随机访问",
-        "C": "可以省略表头指针或表尾指针",
-        "D": "访问前后相邻结点更灵活"
-      },
-      "answer": "D",
-      "question_hash": "a6a52463dbb2d1096e89963062091343",
-      "analysis": "双链表每个结点包含指向前驱和后继的指针，因此访问前后相邻结点更加灵活（D正确）。插入和删除操作虽然可能比单链表少一次遍历，但两者都需修改指针，选项A表述不准确；双链表仍不支持随机访问（B错误）；双链表同样需要表头指针，且表尾指针有时仍需维护（C错误）。",
-      "knowledge_points": [
-        "双链表",
-        "单链表与双链表比较",
-        "链表基本操作"
-      ],
-      "difficulty": 3,
-      "source": "4.png",
-      "source_type": "txt",
-      "source_file": "4.png",
-      "import_batch_id": "REVIEW_20260615_232422_f7dea4",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '与单链表相比，双链表的优点之一是（）。', 'options': [{'key': 'A', 'text': '插入、删除操作更方便'}, {'key': 'B', 'text': '可以进行随机访问'}, {'key': 'C', 'text': '可以省略表头指针或表尾指针'}, {'key': 'D', 'text': '访问前后相邻结点更灵活'}], 'blank_option_groups': [], 'answer': 'D', 'analysis': '', 'raw_text': '20．与单链表相比，双链表的优点之一是（）。\\nA.插入、删除操作更方便\\nB.可以进行随机访问\\nC.可以省略表头指针或表尾指针\\nD.访问前后相邻结点更灵活', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '4.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'e9ab1d5b', 'confidence_score': 0.85, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "61401809-bd71-4563-a330-ccb1ff1e1303",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "在长度为$n$的有序单链表中插入一个新结点，并仍然保持有序的时间复杂度是（）。"
-      },
-      "options": {
-        "A": "$0(1)$",
-        "B": "$O(n)$",
-        "C": "$O(n)$",
-        "D": "$O(n\\log_2 n)$"
-      },
-      "answer": "B",
-      "question_hash": "358ed636ce9dde348f40f9d7054daeb1",
-      "analysis": "注意：选项B和C内容重复（均为$O(n)$），可能是原题印刷错误。根据算法分析，有序单链表插入需要先查找插入位置，时间复杂度为$O(n)$，因此正确答案为$O(n)$。",
-      "knowledge_points": [
-        "有序单链表",
-        "插入操作",
-        "时间复杂度"
-      ],
-      "difficulty": 3,
-      "source": "4.png",
-      "source_type": "txt",
-      "source_file": "4.png",
-      "import_batch_id": "REVIEW_20260615_232422_f7dea4",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '在长度为$n$的有序单链表中插入一个新结点，并仍然保持有序的时间复杂度是（）。', 'options': [{'key': 'A', 'text': '$0(1)$'}, {'key': 'B', 'text': '$O(n)$'}, {'key': 'C', 'text': '$O(n)$'}, {'key': 'D', 'text': '$O(n\\\\log_2 n)$'}], 'blank_option_groups': [], 'answer': 'B', 'analysis': '注意：选项B和C内容重复（均为$O(n)$），可能是原题印刷错误。根据算法分析，有序单链表插入需要先查找插入位置，时间复杂度为$O(n)$，因此正确答案为$O(n)$。', 'raw_text': '19.在长度为n的有序单链表中插入一个新结点，并仍然保持有序的时间复杂度是（）。\\nA. 0(1)\\nB. O(n)\\nC. O(n)\\nD. O(nlog2n)', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '4.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '6ed63f5b', 'confidence_score': 0.7, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "aca6defa-c86e-4e33-9902-c202c9a2e6f0",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "在双链表的两个结点之间插入一个新结点，需要修改（）个指针域。"
-      },
-      "options": {
-        "A": "1",
-        "B": "3",
-        "C": "4",
-        "D": "2"
-      },
-      "answer": "C",
-      "question_hash": "d828699bb4ad8de7dd8b899a16682485",
-      "analysis": "在双链表中，在结点p和q之间插入新结点s，需要修改s的前驱指针指向前驱结点（s->prev = p），s的后继指针指向后继结点（s->next = q），p的后继指针指向s（p->next = s），q的前驱指针指向s（q->prev = s），共4个指针域。",
-      "knowledge_points": [
-        "双链表插入操作",
-        "指针域修改"
-      ],
-      "difficulty": 3,
-      "source": "4.png",
-      "source_type": "txt",
-      "source_file": "4.png",
-      "import_batch_id": "REVIEW_20260615_232422_f7dea4",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '在双链表的两个结点之间插入一个新结点，需要修改（）个指针域。', 'options': [{'key': 'A', 'text': '1'}, {'key': 'B', 'text': '3'}, {'key': 'C', 'text': '4'}, {'key': 'D', 'text': '2'}], 'blank_option_groups': [], 'answer': 'C', 'analysis': '', 'raw_text': '18．在双链表的两个结点之间插入一个新结点，需要修改（）个指针域。\\nA.1\\nB.3\\nC.4\\nD.2', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '4.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '884e9df0', 'confidence_score': 0.95, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "d7285bdc-00be-4a84-803d-a0e07a3c5bce",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "有一个长度为 n 的循环单链表，若从表中删除首元结点的时间复杂度达到 O(n)，则此时采用的循环单链表的结构可能是( )。"
-      },
-      "options": {
-        "A": "只有表头指针，没有头结点",
-        "B": "只有表尾指针，没有头结点",
-        "C": "只有表尾指针，带头结点",
-        "D": "只有表头指针，带头结点"
-      },
-      "answer": "A",
-      "question_hash": "ebf79cb5add18746fbde5c9fbd643899",
-      "analysis": "删除首元结点需要找到其前驱结点。若只有表头指针且没有头结点，则需遍历整个链表找到表尾（即首元结点的前驱），时间复杂度为 O(n)；若有表尾指针，则可直接通过尾指针找到前驱，时间复杂度 O(1)；若带头结点，则可通过头结点直接修改指针，时间复杂度 O(1)。因此，要使时间复杂度达到 O(n)，应选“只有表头指针，没有头结点”。",
-      "knowledge_points": [
-        "循环单链表",
-        "删除操作",
-        "时间复杂度",
-        "头指针",
-        "尾指针",
-        "头结点"
-      ],
-      "difficulty": 3,
-      "source": "5.png",
-      "source_type": "txt",
-      "source_file": "5.png",
-      "import_batch_id": "REVIEW_20260615_232414_c786e1",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '有一个长度为 n 的循环单链表，若从表中删除首元结点的时间复杂度达到 O(n)，则此时采用的循环单链表的结构可能是( )。', 'options': [{'key': 'A', 'text': '只有表头指针，没有头结点'}, {'key': 'B', 'text': '只有表尾指针，没有头结点'}, {'key': 'C', 'text': '只有表尾指针，带头结点'}, {'key': 'D', 'text': '只有表头指针，带头结点'}], 'blank_option_groups': [], 'answer': 'A', 'analysis': '删除首元结点需要找到其前驱结点。若只有表头指针且没有头结点，则需遍历整个链表找到表尾（即首元结点的前驱），时间复杂度为 O(n)；若有表尾指针，则可直接通过尾指针找到前驱，时间复杂度 O(1)；若带头结点，则可通过头结点直接修改指针，时间复杂度 O(1)。因此，要使时间复杂度达到 O(n)，应选“只有表头指针，没有头结点”。', 'raw_text': '26.有一个长度为 n 的循环单链表，若从表中删除首元结点的时间复杂度达到 O(n)，则此时采用的循环单链表的结构可能是（）。\\nB.只有表尾指针，没有头结点\\nA.只有表头指针，没有头结点\\nD.只有表头指针，带头结点\\nC.只有表尾指针，带头结点', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '5.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '703afaef', 'confidence_score': 0.9, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "386db8ae-4a5b-47fc-a4fa-69b4a8a6fb10",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "有两个长度为 n 的循环单链表, 若要求两个循环单链表头尾相接的时间复杂度为 O(1), 则对应两个循环单链表各设置一个指针，分别指向（）。"
-      },
-      "options": {
-        "A": "各自的头结点",
-        "B": "各自的尾结点",
-        "C": "各自的首结点",
-        "D": "一个表的头结点，另一个表的尾结点"
-      },
-      "answer": "B",
-      "question_hash": "eca57c60efa8896da12abe77f696e5ac",
-      "analysis": "因为循环单链表的尾结点指向头结点，若知道尾结点，则可以在 O(1) 时间内完成头尾相接：只需将一个表的尾结点指向另一个表的头结点，再调整另一个表的尾结点指向原头结点即可。",
-      "knowledge_points": [
-        "循环单链表",
-        "链表操作时间复杂度"
-      ],
-      "difficulty": 3,
-      "source": "5.png",
-      "source_type": "txt",
-      "source_file": "5.png",
-      "import_batch_id": "REVIEW_20260615_232414_c786e1",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '有两个长度为 n 的循环单链表, 若要求两个循环单链表头尾相接的时间复杂度为 O(1), 则对应两个循环单链表各设置一个指针，分别指向（）。', 'options': [{'key': 'A', 'text': '各自的头结点'}, {'key': 'B', 'text': '各自的尾结点'}, {'key': 'C', 'text': '各自的首结点'}, {'key': 'D', 'text': '一个表的头结点，另一个表的尾结点'}], 'blank_option_groups': [], 'answer': 'B', 'analysis': '因为循环单链表的尾结点指向头结点，若知道尾结点，则可以在 O(1) 时间内完成头尾相接：只需将一个表的尾结点指向另一个表的头结点，再调整另一个表的尾结点指向原头结点即可。', 'raw_text': '25. 有两个长度为 n 的循环单链表, 若要求两个循环单链表头尾相接的时间复杂度为 O(1), 则对应两个循环单链表各设置一个指针，分别指向（）。\\nB.各自的尾结点\\nA.各自的头结点\\nD.一个表的头结点，另一个表的尾结点\\nC. 各自的首结点', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '5.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '75848b60', 'confidence_score': 0.8, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "76deb272-a63d-4584-bcb5-c7bc680d55aa",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "设对 $n$（$n > 1$）个元素的线性表的运算只有 4 种：删除第一个元素；删除最后一个元素；在第一个元素之前插入新元素；在最后一个元素之后插入新元素，则最好使用（）"
-      },
-      "options": {
-        "A": "只有尾结点指针没有头结点指针的循环单链表",
-        "B": "只有尾结点指针没有头结点指针的非循环双链表",
-        "C": "只有头结点指针没有尾结点指针的循环双链表",
-        "D": "既有头结点指针又有尾结点指针的循环单链表"
-      },
-      "answer": "C",
-      "question_hash": "c8619878ee7e4c6a4665f157f3df2de6",
-      "analysis": "对于循环双链表，仅有头结点指针即可通过头结点的前驱找到尾结点，从而支持所有操作的 $O(1)$ 时间：删除第一个元素（修改头指针）、删除最后一个元素（通过尾结点前驱）、在第一个元素之前插入（新结点成为头结点）、在最后一个元素之后插入（通过尾结点）。其他选项均无法同时高效支持这四种操作。",
-      "knowledge_points": [
-        "循环双链表",
-        "链表操作时间复杂度",
-        "头结点指针",
-        "尾结点指针"
-      ],
-      "difficulty": 3,
-      "source": "5.png",
-      "source_type": "txt",
-      "source_file": "5.png",
-      "import_batch_id": "REVIEW_20260615_232414_c786e1",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '设对 $n$（$n > 1$）个元素的线性表的运算只有 4 种：删除第一个元素；删除最后一个元素；在第一个元素之前插入新元素；在最后一个元素之后插入新元素，则最好使用（）', 'options': [{'key': 'A', 'text': '只有尾结点指针没有头结点指针的循环单链表'}, {'key': 'B', 'text': '只有尾结点指针没有头结点指针的非循环双链表'}, {'key': 'C', 'text': '只有头结点指针没有尾结点指针的循环双链表'}, {'key': 'D', 'text': '既有头结点指针又有尾结点指针的循环单链表'}], 'blank_option_groups': [], 'answer': 'C', 'analysis': '对于循环双链表，仅有头结点指针即可通过头结点的前驱找到尾结点，从而支持所有操作的 $O(1)$ 时间：删除第一个元素（修改头指针）、删除最后一个元素（通过尾结点前驱）、在第一个元素之前插入（新结点成为头结点）、在最后一个元素之后插入（通过尾结点）。其他选项均无法同时高效支持这四种操作。', 'raw_text': '24. 设对 n（n>1)个元素的线性表的运算只有 4种：删除第一个元素；删除最后一个元素; 在第一个元素之前插入新元素；在最后一个元素之后插入新元素，则最好使用（） 2027年数据结构考研复习指导FE\\nA.只有尾结点指针没有头结点指针的循环单链表\\nB.只有尾结点指针没有头结点指针的非循环双链表\\nC.只有头结点指针没有尾结点指针的循环双链表\\nD.既有头结点指针又有尾结点指针的循环单链表', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '5.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'adb28d28', 'confidence_score': 0.95, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "4175e8cc-9679-4ebf-81b5-349c60939137",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "设线性表中有 $2n$ 个元素，（）在单链表上实现要比在顺序表上实现效率更高。"
-      },
-      "options": {
-        "A": "删除所有值为 $x$ 的元素",
-        "B": "在最后一个元素的后面插入一个新元素",
-        "C": "顺序输出前 $k$ 个元素",
-        "D": "交换第 $i$ 个元素和第 $2n-i-1$ 个元素的值（$i=0,\\dots,n-1$）"
-      },
-      "answer": "A",
-      "question_hash": "7aa5dbf881e23a0c75b12402b5ca9c36",
-      "analysis": "删除所有值为x的元素，在顺序表上需要移动大量元素，时间复杂度为O(n)；在单链表上只需遍历找到节点并修改指针，无需移动元素，时间复杂度也为O(n)但常数因子更小且无大量数据搬移，因此效率更高。其他选项：在最后一个元素后面插入，顺序表若容量足够则O(1)，单链表需遍历到尾节点O(n)；顺序输出前k个元素，顺序表随机访问更快；交换第i个和第2n-i-1个元素，顺序表直接下标交换O(1)，单链表需查找两个节点O(n)。故只有A选项在单链表上实现效率更高。",
-      "knowledge_points": [
-        "线性表",
-        "顺序表",
-        "单链表",
-        "时间复杂度分析",
-        "插入与删除操作效率比较"
-      ],
-      "difficulty": 3,
-      "source": "2.png",
-      "source_type": "txt",
-      "source_file": "2.png",
-      "import_batch_id": "REVIEW_20260615_232500_9ba461",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '设线性表中有 $2n$ 个元素，（）在单链表上实现要比在顺序表上实现效率更高。', 'options': [{'key': 'A', 'text': '删除所有值为 $x$ 的元素'}, {'key': 'B', 'text': '在最后一个元素的后面插入一个新元素'}, {'key': 'C', 'text': '顺序输出前 $k$ 个元素'}, {'key': 'D', 'text': '交换第 $i$ 个元素和第 $2n-i-1$ 个元素的值（$i=0,\\\\dots,n-1$）'}], 'blank_option_groups': [], 'answer': 'A', 'analysis': '', 'raw_text': '05.设线性表中有 2n 个元素， （）在单链表上实现要比在顺序表上实现效率更高。\\nA. 删除所有值为x 的元素\\nB.在最后一个元素的后面插入一个新元素\\nC.顺序输出前k个元素\\nD.交换第i个元素和第2n-i-1个元素的值（i=0,\"\":,n-1)', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '2.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '5e3590e5', 'confidence_score': 0.7, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "47a7451c-83bb-47ae-bed4-9479fc3c9bc0",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "需要分配较大连续空间，插入和删除不需要移动元素的线性表，其存储结构为（ ）。"
-      },
-      "options": {
-        "A": "单链表",
-        "B": "静态链表",
-        "C": "顺序表",
-        "D": "双链表"
-      },
-      "answer": "B",
-      "question_hash": "da37fd22db6cac7502896da63ff7cde7",
-      "analysis": "静态链表用数组实现，预先分配一块连续的存储空间，通过游标（指针）链接元素。插入和删除操作只需修改游标，不需要移动元素，满足题干要求。单链表和双链表通常动态分配，不要求连续空间；顺序表虽连续但插入删除需移动大量元素。",
-      "knowledge_points": [
-        "静态链表",
-        "线性表的存储结构"
-      ],
-      "difficulty": 3,
-      "source": "6.png",
-      "source_type": "txt",
-      "source_file": "6.png",
-      "import_batch_id": "REVIEW_20260615_232356_85bc32",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '需要分配较大连续空间，插入和删除不需要移动元素的线性表，其存储结构为（ ）。', 'options': [{'key': 'A', 'text': '单链表'}, {'key': 'B', 'text': '静态链表'}, {'key': 'C', 'text': '顺序表'}, {'key': 'D', 'text': '双链表'}], 'blank_option_groups': [], 'answer': 'B', 'analysis': '', 'raw_text': '30．需要分配较大连续空间，插入和删除不需要移动元素的线性表，其存储结构为（）。\\nD.双链表\\nB.静态链表\\nC.顺序表\\nA.单链表', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '6.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'e9090895', 'confidence_score': 0.9, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "90e0f068-2c2c-4e46-a4e9-100a35281d51",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "有两个长度都为n的双链表，若以h为头指针的双链表是非循环的，以h2为头指针的双链表是循环的，则下列叙述中正确的是（ ）。"
-      },
-      "options": {
-        "A": "对于双链表h，删除首结点的时间复杂度是O(n)",
-        "B": "对于双链表h2，删除首结点的时间复杂度是O(n)",
-        "C": "对于双链表h，删除尾结点的时间复杂度是O(1)",
-        "D": "对于双链表h2，删除尾结点的时间复杂度是O(1)"
-      },
-      "answer": "D",
-      "question_hash": "4746ed6d6ff996b51ce869ff3df7c604",
-      "analysis": "对于非循环双链表h，删除首结点只需修改头指针，时间复杂度O(1)，故A错误。对于循环双链表h2，删除首结点也只需修改头指针和尾结点的后继，时间复杂度O(1)，故B错误。对于非循环双链表h，删除尾结点需要遍历到尾结点，时间复杂度O(n)，故C错误。对于循环双链表h2，由于头指针指向首结点，且双链表循环，首结点的前驱即为尾结点，因此可通过h2->prior直接访问尾结点并删除，时间复杂度O(1)，故D正确。",
-      "knowledge_points": [
-        "双链表",
-        "循环链表",
-        "时间复杂度分析"
-      ],
-      "difficulty": 3,
-      "source": "6.png",
-      "source_type": "txt",
-      "source_file": "6.png",
-      "import_batch_id": "REVIEW_20260615_232356_85bc32",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '有两个长度都为n的双链表，若以h为头指针的双链表是非循环的，以h2为头指针的双链表是循环的，则下列叙述中正确的是（ ）。', 'options': [{'key': 'A', 'text': '对于双链表h，删除首结点的时间复杂度是O(n)'}, {'key': 'B', 'text': '对于双链表h2，删除首结点的时间复杂度是O(n)'}, {'key': 'C', 'text': '对于双链表h，删除尾结点的时间复杂度是O(1)'}, {'key': 'D', 'text': '对于双链表h2，删除尾结点的时间复杂度是O(1)'}], 'blank_option_groups': [], 'answer': 'D', 'analysis': '', 'raw_text': '28.有两个长度都为n的双链表，若以h为头指针的双链表是非循环的，以h为头指针的双链表是循环的，则下列叙述中正确的是（）。\\nA. 对于双链表 h， 删除首结点的时间复杂度是 O(n)\\nB.对于双链表 h2, 删除首结点的时间复杂度是 O(n)\\nC.对于双链表删除尾结点的时间复杂度是1大]\\nD. 对于双链表 h2，删除尾结点的时间复杂度是 O(1)', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '6.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'eab8f0c6', 'confidence_score': 0.7, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "9d9930bd-861a-4979-aefe-38a19153dd3b",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "一个链表最常用的操作是在最后三个元素后插入一个元素和删除第一个元素，则选用（ ）最节省时间。"
-      },
-      "options": {
-        "A": "不带头结点的循环单链表",
-        "B": "双链表",
-        "C": "单链表",
-        "D": "不带头结点且有尾指针的循环单链表"
-      },
-      "answer": "D",
-      "question_hash": "5b84f515f2845defd2a05999a06f62e6",
-      "analysis": "对于不带头结点且有尾指针的循环单链表，尾指针指向最后一个节点。删除第一个节点时，由于是循环链表，头节点为尾指针的next，只需修改尾指针的next指向原头节点的next，时间复杂度为O(1)。在最后三个元素后插入（通常理解为在链表尾部插入），通过尾指针可直接在最后一个节点后插入新节点，并更新尾指针，时间复杂度也为O(1)。其他选项：A（不带头结点的循环单链表）无尾指针，尾部插入需遍历；B（双链表）删除第一个节点需O(1)，但尾部插入需遍历；C（单链表）两操作均需遍历。因此D最节省时间。",
-      "knowledge_points": [
-        "链表的基本操作",
-        "循环单链表",
-        "尾指针",
-        "时间复杂度分析"
-      ],
-      "difficulty": 3,
-      "source": "6.png",
-      "source_type": "txt",
-      "source_file": "6.png",
-      "import_batch_id": "REVIEW_20260615_232356_85bc32",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '一个链表最常用的操作是在最后三个元素后插入一个元素和删除第一个元素，则选用（ ）最节省时间。', 'options': [{'key': 'A', 'text': '不带头结点的循环单链表'}, {'key': 'B', 'text': '双链表'}, {'key': 'C', 'text': '单链表'}, {'key': 'D', 'text': '不带头结点且有尾指针的循环单链表'}], 'blank_option_groups': [], 'answer': 'D', 'analysis': '', 'raw_text': '29. 一个链表最常用的操作是在最后三个元素后插入一个元素和删除第一个元素，则选用（ ） 最节省时间。\\nB.双链表\\nA.不带头结点的循环单链表\\nD.不带头结点且有尾指针的循环单链表\\nC.单链表', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '6.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'f7e7e801', 'confidence_score': 0.7, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "47c60363-b014-4add-9ee6-fb1ab2a3e868",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "将长度为 $n$ 的单链表链接在长度为 $m$ 的单链表后面，其算法的时间复杂度采用大 $O$ 形式表示应该是（ ）。"
-      },
-      "options": {
-        "A": "$O(1)$",
-        "B": "$O(n)$",
-        "C": "$O(m)$",
-        "D": "$O(n + m)$"
-      },
-      "answer": "C",
-      "question_hash": "3fcd226d43603bcacc614ef10a077685",
-      "analysis": "将长度为 $n$ 的单链表链接到长度为 $m$ 的单链表后面，需要先找到第一个链表（长度为 $m$）的尾结点，这需要遍历整个链表，时间复杂度为 $O(m)$，然后进行指针链接，时间复杂度为 $O(1)$，因此总时间复杂度为 $O(m)$。选项 C 正确。",
-      "knowledge_points": [
-        "单链表",
-        "时间复杂度分析"
-      ],
-      "difficulty": 3,
-      "source": "2.png",
-      "source_type": "txt",
-      "source_file": "2.png",
-      "import_batch_id": "REVIEW_20260615_232500_9ba461",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '将长度为 $n$ 的单链表链接在长度为 $m$ 的单链表后面，其算法的时间复杂度采用大 $O$ 形式表示应该是（ ）。', 'options': [{'key': 'A', 'text': '$O(1)$'}, {'key': 'B', 'text': '$O(n)$'}, {'key': 'C', 'text': '$O(m)$'}, {'key': 'D', 'text': '$O(n + m)$'}], 'blank_option_groups': [], 'answer': 'C', 'analysis': '', 'raw_text': '08. 将长度为 n 的单链表链接在长度为 m 的单链表后面，其算法的时间复杂度采用大 O 形式表示应该是（）。\\nD. O(n + m)\\nC. O(m)\\nB. O(n)\\nA. O(1)', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '2.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '71fe0590', 'confidence_score': 0.9, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "addc55fa-652d-49cc-b50f-993af5251728",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "【2021 统考真题】已知头指针 h 指向一个带头结点的非空循环单链表，结点结构为 $data, next$，其中 next 是指向直接后继结点的指针，p 是尾指针，q 是临时指针。现要删除该链表的第一个元素，正确的语句序列是（ ）。"
-      },
-      "options": {
-        "A": "h->next = h->next->next; g = h->next; free(g);",
-        "B": "q = h->next; h->next = h->next->next; free(q);",
-        "C": "q = h->next; h->next = q->next; if (p != q) p = h; free(q);",
-        "D": "q = h->next; h->next = q->next; if (p == q) p = h; free(q);"
-      },
-      "answer": "D",
-      "question_hash": "6a051008971ac315b7f26edfc1e375f6",
-      "analysis": "删除带头结点的非空循环单链表的第一个元素，即删除头结点后的第一个结点。由于是循环单链表且存在尾指针p，若被删除的结点恰好是p指向的结点（即链表中仅有一个元素除头结点外），则删除后尾指针应指回头结点h。选项D中先用q保存待删结点，再调整h->next指向q->next（即删除q），然后判断p==q（即q是尾结点），若是则将p指向h，最后释放q。选项A中先修改h->next再取q，顺序错误且未处理尾指针；选项B未处理尾指针；选项C的条件if(p!=q)错误，应为if(p==q)。因此D正确。",
-      "knowledge_points": [
-        "循环单链表",
-        "删除操作",
-        "尾指针处理"
-      ],
-      "difficulty": 3,
-      "source": "7.png",
-      "source_type": "txt",
-      "source_file": "7.png",
-      "import_batch_id": "REVIEW_20260615_232350_87844c",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '【2021 统考真题】已知头指针 h 指向一个带头结点的非空循环单链表，结点结构为 $data, next$，其中 next 是指向直接后继结点的指针，p 是尾指针，q 是临时指针。现要删除该链表的第一个元素，正确的语句序列是（ ）。', 'options': [{'key': 'A', 'text': 'h->next = h->next->next; g = h->next; free(g);'}, {'key': 'B', 'text': 'q = h->next; h->next = h->next->next; free(q);'}, {'key': 'C', 'text': 'q = h->next; h->next = q->next; if (p != q) p = h; free(q);'}, {'key': 'D', 'text': 'q = h->next; h->next = q->next; if (p == q) p = h; free(q);'}], 'blank_option_groups': [], 'answer': 'D', 'analysis': '', 'raw_text': '34． 【2021 统考真题】已知头指针 h 指向一个带头结点的非空循环单链表，结点结构为datanext]，其中 next 是指向直接后继结点的指针，p 是尾指针，α是临时指针。现要删除该链表的第一个元素，正确的语句序列是（）。\\nA.h->next=h->next->next;g=h->next;free(g);\\nB. q=h->next;h->next=h->next->next;free(q) ;\\nq=h->next;h->next=q->next;if(p!=q) p=h;free (q) ;\\nC.\\nD. q=h->next;h->next=q->next;if(p==q) p=h; free(q) ;', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '7.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['incomplete_options: missing C', 'missing_answer_for_objective_question'], 'stem_hash': 'e056ce48', 'confidence_score': 0.95, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "806d70da-9413-4c9c-8d20-05bf2d61f55d",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "某线性表用带头结点的循环单链表存储，头指针为 head，当 head->next->next== head 成立时，线性表的长度可能是（ ）。"
-      },
-      "options": {
-        "A": "0",
-        "B": "1",
-        "C": "2",
-        "D": "可能为 0 或 1"
-      },
-      "answer": "D",
-      "question_hash": "b81c40ace459e5a1ef3bc4d355a6fc83",
-      "analysis": "循环单链表带头结点，头指针head指向头结点。当链表长度为0时，head->next = head，此时head->next->next = head->next = head，条件成立；当链表长度为1时，头结点后只有一个数据结点，该结点next指向head，此时head->next->next = head，条件成立；当链表长度为2时，head->next指向第一个数据结点，head->next->next指向第二个数据结点，第二个数据结点next指向head，但head->next->next指向的是第二个数据结点本身（地址），不等于head，条件不成立。因此线性表长度可能为0或1，选D。",
-      "knowledge_points": [
-        "循环单链表",
-        "带头结点的链表操作",
-        "空表判断"
-      ],
-      "difficulty": 3,
-      "source": "5.png",
-      "source_type": "txt",
-      "source_file": "5.png",
-      "import_batch_id": "REVIEW_20260615_232414_c786e1",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '某线性表用带头结点的循环单链表存储，头指针为 head，当 head->next->next== head 成立时，线性表的长度可能是（ ）。', 'options': [{'key': 'A', 'text': '0'}, {'key': 'B', 'text': '1'}, {'key': 'C', 'text': '2'}, {'key': 'D', 'text': '可能为 0 或 1'}], 'blank_option_groups': [], 'answer': 'D', 'analysis': '', 'raw_text': '27.某线性表用带头结点的循环单链表存储，头指针为 head，当 head->next->next== head成立时，线性表的长度可能是（）。\\nD．可能为 0或 1\\nC. 2\\nB. 1\\nA. 0', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '5.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'e3440a4f', 'confidence_score': 0.95, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "88c1c85d-eb60-46f5-afed-279c29db0d4e",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "已知带头结点的非空单链表L的头指针为 h，结点结构为[data|next] 其中next是指向直接后继结点的指针。现有指针p和q，若p指向L中非首且非尾的任意一个结点，则执行语句序列 q=p->next； p->next=q->next; q->next= h->next; h->next=q; 的结果是（ ）。"
-      },
-      "options": {
-        "A": "在 p 所指结点后插入 q 所指结点",
-        "B": "在 q 所指结点后插入 p 所指结点",
-        "C": "将p所指结点移至L的头结点之后",
-        "D": "将q所指结点移动到L的头结点之后"
-      },
-      "answer": "D",
-      "question_hash": "4824490820132af9584acc66f7d0d618",
-      "analysis": "执行语句序列：q = p->next 使 q 指向 p 的后继结点；p->next = q->next 将 p 的后继改为 q 的后继，即从链表中移除 q；q->next = h->next 使 q 指向原第一个数据结点；h->next = q 将 q 插入到头结点之后。最终 q 成为新的第一个数据结点，即移动到链表头部。因此选项 D 正确。",
-      "knowledge_points": [
-        "单链表",
-        "结点插入与删除",
-        "指针操作"
-      ],
-      "difficulty": 3,
-      "source": "7.png",
-      "source_type": "txt",
-      "source_file": "7.png",
-      "import_batch_id": "REVIEW_20260615_232350_87844c",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '已知带头结点的非空单链表L的头指针为 h，结点结构为[data|next] 其中next是指向直接后继结点的指针。现有指针p和q，若p指向L中非首且非尾的任意一个结点，则执行语句序列 q=p->next； p->next=q->next; q->next= h->next; h->next=q; 的结果是（ ）。', 'options': [{'key': 'A', 'text': '在 p 所指结点后插入 q 所指结点'}, {'key': 'B', 'text': '在 q 所指结点后插入 p 所指结点'}, {'key': 'C', 'text': '将p所指结点移至L的头结点之后'}, {'key': 'D', 'text': '将q所指结点移动到L的头结点之后'}], 'blank_option_groups': [], 'answer': 'D', 'analysis': '', 'raw_text': '36.【2024 统考真题】已知带头结点的非空单链表L的头指针为 h，结点结构为[data|next] 其中next是指向直接后继结点的指针。现有指针p和q，若p指向L中非首且非尾的任意一个结点，则执行语句序列 q=p->next； p->next=q->next; q->next= h->next; h->next=q; 的结果是（ ）。\\nA.在 p 所指结点后插入 q 所指结点\\nB.在 α所指结点后插入 p 所指结点\\nC.将p所指结点移至L的头结点之后\\nD.将α所指结点移动到L的头结点之后', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '7.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': '74c2e873', 'confidence_score': 0.85, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
-    },
-    {
-      "sync_uuid": "6f81e798-2328-44f0-8e5d-6cc6d13e8ca5",
-      "sync_version": 0,
-      "subject": "exam408-ds",
-      "question_type": "single_choice",
-      "content": {
-        "text": "单链表中，增加一个头结点的目的是（）。"
-      },
-      "options": {
-        "A": "使单链表至少有一个结点",
-        "B": "标识表结点中首结点的位置",
-        "C": "方便运算的实现",
-        "D": "说明单链表是线性表的链式存储"
-      },
-      "answer": "C",
-      "question_hash": "e839661d730c367dddefbf782430ec1c",
-      "analysis": "单链表中的头结点不存储实际数据，其目的是使插入和删除第一个结点的操作与其他结点一致，从而简化算法的实现，因此选项 C 正确。选项 A 错误，因为即使没有头结点，单链表也可以至少有一个结点；选项 B 错误，头结点并不标识首结点的位置，首结点是头结点后的第一个结点；选项 D 错误，该描述是单链表的定义，而非增加头结点的目的。",
-      "knowledge_points": [
-        "单链表",
-        "头结点的作用"
-      ],
-      "difficulty": 3,
-      "source": "2.png",
-      "source_type": "txt",
-      "source_file": "2.png",
-      "import_batch_id": "REVIEW_20260615_232500_9ba461",
-      "raw_content": "{'schema_version': 'v1', 'subject': '', 'question_type': 'single_choice', 'stem': '单链表中，增加一个头结点的目的是（）。', 'options': [{'key': 'A', 'text': '使单链表至少有一个结点'}, {'key': 'B', 'text': '标识表结点中首结点的位置'}, {'key': 'C', 'text': '方便运算的实现'}, {'key': 'D', 'text': '说明单链表是线性表的链式存储'}], 'blank_option_groups': [], 'answer': 'C', 'analysis': '', 'raw_text': '09.单链表中，增加一个头结点的目的是（）。\\nB. 标识表结点中首结点的位置\\nA.使单链表至少有一个结点\\nD.说明单链表是线性表的链式存储\\nC.方便运算的实现', 'knowledge_points': [], 'difficulty': 3, 'source': {'file': '2.png', 'page': 1, 'type': 'txt'}, 'is_valid': True, 'errors': [], 'warnings': ['missing_answer_for_objective_question'], 'stem_hash': 'dc2c5c57', 'confidence_score': 0.8, 'risk_flags': [], 'ai_validation': {'is_valid': True, 'issues': [], 'severity': 'none'}}",
-      "image_url": null,
-      "year": null,
-      "review_status": "approved",
-      "is_active": true,
-      "created_at": "2026-06-15T15:50:18",
-      "updated_at": "2026-06-15T15:50:18"
+      "created_at": "2026-06-28T05:32:19",
+      "updated_at": "2026-06-28T05:32:19"
     }
   ],
   "tags": [],
   "manifest": {
-    "question_count": 41,
+    "question_count": 29,
     "tag_count": 0,
-    "checksum": "79796dd7b0eb8ee7d63edd10c1cb07351d46280e5638f56cc81d743f936fe165"
+    "checksum": "a0d9224b6ae158d18a98a469a101d4b34c1a2c56eccc3a18fddaa0fe69dbef8b"
   }
 }

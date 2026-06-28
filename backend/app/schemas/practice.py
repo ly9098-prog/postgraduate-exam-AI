@@ -15,6 +15,10 @@ class PracticeQuestion(BaseModel):
     knowledge_points: list | None = None
     difficulty: int = 3
     trace_id: str | None = None
+    recommend_reason: str | None = None
+    recommend_score: float | None = None
+    strategy: str | None = None
+    similarity: float | None = None
 
 
 class PracticeQuestionsResponse(BaseModel):
@@ -22,6 +26,7 @@ class PracticeQuestionsResponse(BaseModel):
     total: int
     mode: str
     trace_id: str | None = None
+    request_id: str | None = None
 
 
 # --- POST /practice/submit ---
@@ -30,6 +35,7 @@ class AnswerSubmit(BaseModel):
     question_id: int
     user_answer: str
     used_time: int | None = None
+    request_id: str | None = None
 
 
 class AnswerResult(BaseModel):

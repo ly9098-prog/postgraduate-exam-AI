@@ -26,6 +26,12 @@ from app.core.ocr_profile import get_ocr_profile
 
 logger = logging.getLogger(__name__)
 
+try:
+    from app.core.log_context import log_event
+except ImportError:  # pragma: no cover
+    def log_event(_lg, _ev, **_kw):  # type: ignore[misc]
+        pass
+
 # ── 全局状态 ──────────────────────────────────────────────────────────────
 _ocr_instance = None
 _ocr_init_lock = threading.Lock()       # 保护 PaddleOCR 初始化（只初始化一次）
@@ -106,6 +112,10 @@ def _get_ocr():
         _ocr_initialized = True
         logger.info("PaddleOCR 初始化完成（use_gpu=%s, lang=%s, mkldnn=off, cpu_threads=1）",
                      profile.use_gpu, settings.OCR_LANGUAGE)
+        log_event(
+            logger, "ocr.engine.init", "info",
+            use_gpu=profile.use_gpu, lang=settings.OCR_LANGUAGE,
+        )
 
     return _ocr_instance
 

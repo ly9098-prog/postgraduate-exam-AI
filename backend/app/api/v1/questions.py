@@ -68,6 +68,26 @@ async def random_question(
     return q
 
 
+@router.get("/{question_id}/similar")
+async def get_similar_questions(
+    question_id: int,
+    count: int = Query(5, ge=1, le=20),
+    exclude_answered: bool = Query(True),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取相似题目推荐。向量优先 + 规则兜底，统一由 ai_learning_service 处理。"""
+    from app.services import ai_learning_service
+
+    result = await ai_learning_service.recommend_similar_questions(
+        db=db,
+        user_id=current_user.id,
+        question_id=question_id,
+        count=count,
+    )
+    return result
+
+
 @router.get("/{question_id}/detail")
 async def get_question_detail(
     question_id: int,

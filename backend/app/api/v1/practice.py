@@ -175,6 +175,8 @@ async def get_practice_questions(
     mode: str = Query("random"),
     knowledge_point: str | None = Query(None),
     exclude_answered: bool = Query(False),
+    source_question_id: int | None = Query(None),
+    smart_strategy: str = Query("weakness_vector"),
     x_trace_id: str | None = Header(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -185,15 +187,67 @@ async def get_practice_questions(
         if knowledge_point
         else None
     )
-    questions = await svc.get_practice_questions(
-        db=db,
-        user_id=current_user.id,
-        subject=subject,
-        count=count,
-        mode=mode,
-        knowledge_points=kps,
-        exclude_answered=exclude_answered,
-    )
+
+    # metadata: 题目推荐元数据（仅 smart/similar 模式使用）
+    question_metadata: dict[int, dict] = {}
+    request_id: str | None = None
+
+    if mode == "similar":
+        if not source_question_id:
+            # 缺少 source_question_id，回退到 random
+            logger.warning("similar 模式缺少 source_question_id，回退到 random")
+            mode = "random"
+            questions = await svc.get_practice_questions(
+                db=db, user_id=current_user.id, subject=subject,
+                count=count, mode="random", knowledge_points=kps,
+                exclude_answered=exclude_answered,
+            )
+        else:
+            import uuid
+            request_id = str(uuid.uuid4())
+            questions, question_metadata = await svc.get_similar_practice_questions(
+                db=db, user_id=current_user.id, subject=subject,
+                source_question_id=source_question_id, count=count,
+                exclude_answered=exclude_answered,
+            )
+            # 记录推荐日志
+            try:
+                from app.services import recommendation_log_service
+                recs = [
+                    {
+                        "question_id": qid,
+                        "subject": meta.get("subject", subject),
+                        "recommend_score": meta.get("recommend_score"),
+                        "similarity": meta.get("similarity"),
+                        "reason": meta.get("recommend_reason"),
+                    }
+                    for qid, meta in question_metadata.items()
+                ]
+                if recs:
+                    await recommendation_log_service.create_recommendation_logs(
+                        db=db, user_id=current_user.id, recommendations=recs,
+                        scene="similar", strategy="vector_plus_rule",
+                        request_id=request_id, source_question_id=source_question_id,
+                    )
+            except Exception:
+                logger.warning("similar 推荐日志写入失败", exc_info=True)
+
+    elif mode == "smart":
+        import uuid
+        request_id = str(uuid.uuid4())
+        questions, question_metadata = await svc.get_smart_practice_questions(
+            db=db, user_id=current_user.id, subject=subject,
+            count=count, exclude_answered=exclude_answered,
+            request_id=request_id, smart_strategy=smart_strategy,
+        )
+
+    else:
+        # random / sequential — 原有逻辑
+        questions = await svc.get_practice_questions(
+            db=db, user_id=current_user.id, subject=subject,
+            count=count, mode=mode, knowledge_points=kps,
+            exclude_answered=exclude_answered,
+        )
     # ── Layer 1 诊断：API 响应 stem 数据 ──
     for q in questions:
         content = _sanitize_question_content(q.content)
@@ -218,12 +272,17 @@ async def get_practice_questions(
                 knowledge_points=q.knowledge_points,
                 difficulty=q.difficulty,
                 trace_id=trace_id,
+                recommend_reason=(question_metadata.get(q.id) or {}).get("recommend_reason"),
+                recommend_score=(question_metadata.get(q.id) or {}).get("recommend_score"),
+                strategy=(question_metadata.get(q.id) or {}).get("strategy"),
+                similarity=(question_metadata.get(q.id) or {}).get("similarity"),
             )
             for q in questions
         ],
         total=len(questions),
         mode=mode,
         trace_id=trace_id,
+        request_id=request_id,
     )
     debug_log(
         trace_id,
@@ -256,6 +315,7 @@ async def submit_answer(
             question_id=data.question_id,
             user_answer=data.user_answer,
             used_time=data.used_time,
+            request_id=data.request_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

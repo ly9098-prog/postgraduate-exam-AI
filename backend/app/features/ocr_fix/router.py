@@ -23,6 +23,12 @@ from app.features.ocr_fix.interfaces import (
 
 logger = logging.getLogger(__name__)
 
+try:
+    from app.core.log_context import log_event
+except ImportError:  # pragma: no cover
+    def log_event(_lg, _ev, **_kw):  # type: ignore[misc]
+        pass
+
 # Default fallback chain for "auto" strategy
 _AUTO_CHAIN = ["paddleocr-vl", "deepseek", "rule_fallback"]
 
@@ -248,6 +254,13 @@ class OCRFixRouter:
                             list(evaluation.risk_flags),
                             evaluation.reason,
                         )
+                        log_event(
+                            logger, "ocr.fix.router.accept", "info",
+                            adapter=model_name,
+                            confidence=result.confidence or 0,
+                            risk_flags=list(evaluation.risk_flags),
+                            latency_ms=attempt.latency_ms,
+                        )
                         # Attach evaluation metadata to result
                         result.risk_flags = list(evaluation.risk_flags)
                         result.safety = {
@@ -263,6 +276,13 @@ class OCRFixRouter:
                             "OCR fix REJECT_STOP from '%s': %s (flags=%s) — "
                             "returning original text",
                             model_name, evaluation.reason, list(evaluation.risk_flags),
+                        )
+                        log_event(
+                            logger, "ocr.fix.router.reject", "warning",
+                            adapter=model_name,
+                            decision="reject_stop",
+                            reason=evaluation.reason[:200],
+                            risk_flags=list(evaluation.risk_flags),
                         )
                         attempts.append(attempt)
                         self._log_audit_trail(attempts, final_decision="reject_stop")
@@ -310,6 +330,12 @@ class OCRFixRouter:
         logger.warning(
             "All OCR fix models failed (%s), returning original text",
             " -> ".join(chain),
+        )
+        log_event(
+            logger, "ocr.fix.router.all_failed", "warning",
+            chain=" -> ".join(chain),
+            attempt_count=len(attempts),
+            last_error=last_error[:200] if last_error else None,
         )
         return OCRFixResult(
             fixed_text=ocr_text,
