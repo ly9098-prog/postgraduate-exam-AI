@@ -2,106 +2,109 @@
   <view class="celeb-overlay-bg"></view>
   <view wx:if="{{mode !== 'hidden'}}" class="celeb-orb orb-a"></view>
   <view wx:if="{{mode !== 'hidden'}}" class="celeb-orb orb-b"></view>
-  <view wx:if="{{mode !== 'hidden'}}" class="celeb-glass-card">
+  <view class="celeb-glass-card">
     <view class="glass-rim"></view>
     <view class="glass-shine"></view>
-    <view class="glass-stage"></view>
-  </view>
 
-  <view class="canvas-layer" wx:if="{{mode === 'lottie' && canvasReady && !fallbackActive}}">
-    <canvas
-      type="2d"
-      id="animated-view-canvas"
-      class="celebration-canvas"
-    ></canvas>
-  </view>
+    <view class="celeb-inner">
+      <!-- Canvas / Media / Fallback layer (top section) -->
+      <view class="canvas-layer" wx:if="{{mode === 'lottie' && canvasReady && !fallbackActive}}">
+        <canvas
+          type="2d"
+          id="animated-view-canvas"
+          class="celebration-canvas"
+        ></canvas>
+      </view>
 
-  <view class="media-layer" wx:if="{{fallbackActive && mode === 'gif'}}">
-    <image class="fallback-media" src="{{gifSrc}}" mode="aspectFit" show-menu-by-longpress="false" />
-  </view>
+      <view class="media-layer" wx:if="{{fallbackActive && mode === 'gif'}}">
+        <image class="fallback-media" src="{{gifSrc}}" mode="aspectFit" show-menu-by-longpress="false" />
+      </view>
 
-  <view class="media-layer" wx:if="{{fallbackActive && mode === 'png'}}">
-    <image class="fallback-media static-media" src="{{pngSrc}}" mode="aspectFit" show-menu-by-longpress="false" />
-  </view>
+      <view class="media-layer" wx:if="{{fallbackActive && mode === 'png'}}">
+        <image class="fallback-media static-media" src="{{pngSrc}}" mode="aspectFit" show-menu-by-longpress="false" />
+      </view>
 
-  <view class="fallback-layer" wx:if="{{fallbackActive && mode === 'static'}}">
-    <view class="fallback-bg"></view>
-    <view class="fallback-fireworks">
-      <view class="fw fw-1"></view>
-      <view class="fw fw-2"></view>
-      <view class="fw fw-3"></view>
-      <view class="fw fw-4"></view>
-      <view class="fw fw-5"></view>
-      <view class="fw fw-6"></view>
-    </view>
-    <view class="fallback-particles">
-      <view class="fp fp-1"></view>
-      <view class="fp fp-2"></view>
-      <view class="fp fp-3"></view>
-      <view class="fp fp-4"></view>
-      <view class="fp fp-5"></view>
-      <view class="fp fp-6"></view>
-      <view class="fp fp-7"></view>
-      <view class="fp fp-8"></view>
-    </view>
-    <view class="fallback-content">
-      <view class="fb-badge {{type}}">
-        <view class="fb-ring"></view>
-        <view class="fb-core">
-          <view wx:if="{{fallbackGlyph === 'check'}}" class="fb-check">
-            <view class="fb-check-stem"></view>
-            <view class="fb-check-tail"></view>
+      <view class="fallback-layer" wx:if="{{fallbackActive && mode === 'static'}}">
+        <view class="fallback-bg"></view>
+        <view class="fallback-fireworks">
+          <view class="fw fw-1"></view>
+          <view class="fw fw-2"></view>
+          <view class="fw fw-3"></view>
+          <view class="fw fw-4"></view>
+          <view class="fw fw-5"></view>
+          <view class="fw fw-6"></view>
+        </view>
+        <view class="fallback-particles">
+          <view class="fp fp-1"></view>
+          <view class="fp fp-2"></view>
+          <view class="fp fp-3"></view>
+          <view class="fp fp-4"></view>
+          <view class="fp fp-5"></view>
+          <view class="fp fp-6"></view>
+          <view class="fp fp-7"></view>
+          <view class="fp fp-8"></view>
+        </view>
+        <view class="fallback-content">
+          <view class="fb-badge {{type}}">
+            <view class="fb-ring"></view>
+            <view class="fb-core">
+              <view wx:if="{{fallbackGlyph === 'check'}}" class="fb-check">
+                <view class="fb-check-stem"></view>
+                <view class="fb-check-tail"></view>
+              </view>
+              <text wx:elif="{{fallbackGlyph === 'star'}}">★</text>
+              <text wx:elif="{{fallbackGlyph === 'fire'}}">!</text>
+              <text wx:elif="{{fallbackGlyph === 'focus'}}">!</text>
+              <text wx:else>✓</text>
+            </view>
           </view>
-          <text wx:elif="{{fallbackGlyph === 'star'}}">★</text>
-          <text wx:elif="{{fallbackGlyph === 'fire'}}">!</text>
-          <text wx:elif="{{fallbackGlyph === 'focus'}}">!</text>
-          <text wx:else>✓</text>
         </view>
       </view>
-    </view>
-  </view>
 
-  <cover-view wx:if="{{mode === 'lottie' && useLottie}}" class="celeb-text-cover {{showContent ? 'content-in-cover' : ''}}">
-    <cover-view class="celeb-progress-cover" wx:if="{{progressText}}">{{progressText}}</cover-view>
-    <cover-view class="celeb-title-cover" wx:if="{{title}}">{{title}}</cover-view>
-    <cover-view class="celeb-detail-cover" wx:if="{{detail}}">{{detail}}</cover-view>
-    <cover-view class="celeb-reward-cover" wx:if="{{rewardText}}">
-      <cover-view class="reward-spark-cover">★</cover-view>
-      <cover-view class="reward-text-cover">{{rewardText}}</cover-view>
-    </cover-view>
-    <cover-view class="celeb-growth-cover" wx:if="{{growthLevel}}">
-      <cover-view class="celeb-growth-head-cover">
-        <cover-view class="celeb-growth-level-cover">{{growthLevel}}</cover-view>
-        <cover-view class="celeb-growth-pct-cover">{{growthLevelPct}}%</cover-view>
+      <!-- Text content (bottom section) -->
+      <cover-view wx:if="{{mode === 'lottie' && useLottie}}" class="celeb-text-cover {{showContent ? 'content-in' : ''}}">
+        <cover-view class="celeb-progress-cover" wx:if="{{progressText}}">{{progressText}}</cover-view>
+        <cover-view class="celeb-title-cover" wx:if="{{title}}">{{title}}</cover-view>
+        <cover-view class="celeb-detail-cover" wx:if="{{detail}}">{{detail}}</cover-view>
+        <cover-view class="celeb-reward-cover" wx:if="{{rewardText}}">
+          <cover-view class="reward-spark-cover">★</cover-view>
+          <cover-view class="reward-text-cover">{{rewardText}}</cover-view>
+        </cover-view>
+        <cover-view class="celeb-growth-cover" wx:if="{{growthLevel}}">
+          <cover-view class="celeb-growth-head-cover">
+            <cover-view class="celeb-growth-level-cover">{{growthLevel}}</cover-view>
+            <cover-view class="celeb-growth-pct-cover">{{growthLevelPct}}%</cover-view>
+          </cover-view>
+          <cover-view class="celeb-growth-track-cover">
+            <cover-view class="celeb-growth-fill-cover" style="width:{{growthLevelPct}}%"></cover-view>
+          </cover-view>
+          <cover-view class="celeb-growth-desc-cover">{{growthDesc}}</cover-view>
+        </cover-view>
+        <cover-view class="celeb-motto-cover" wx:if="{{motto}}">{{motto}}</cover-view>
+        <cover-view class="celeb-tap-cover">点击继续</cover-view>
       </cover-view>
-      <cover-view class="celeb-growth-track-cover">
-        <cover-view class="celeb-growth-fill-cover" style="width:{{growthLevelPct}}%"></cover-view>
-      </cover-view>
-      <cover-view class="celeb-growth-desc-cover">{{growthDesc}}</cover-view>
-    </cover-view>
-    <cover-view class="celeb-motto-cover" wx:if="{{motto}}">{{motto}}</cover-view>
-    <cover-view class="celeb-tap-cover">点击继续</cover-view>
-  </cover-view>
 
-  <view wx:elif="{{mode !== 'hidden'}}" class="celeb-text-overlay {{showContent ? 'content-in' : ''}}">
-    <text class="celeb-progress-text" wx:if="{{progressText}}">{{progressText}}</text>
-    <text class="celeb-title" wx:if="{{title}}">{{title}}</text>
-    <text class="celeb-detail" wx:if="{{detail}}">{{detail}}</text>
-    <view class="celeb-reward" wx:if="{{rewardText}}">
-      <text class="reward-spark">★</text>
-      <text>{{rewardText}}</text>
-    </view>
-    <view class="celeb-growth" wx:if="{{growthLevel}}">
-      <view class="celeb-growth-head">
-        <text class="celeb-growth-level">{{growthLevel}}</text>
-        <text class="celeb-growth-pct">{{growthLevelPct}}%</text>
+      <view wx:elif="{{mode !== 'hidden'}}" class="celeb-text-overlay {{showContent ? 'content-in' : ''}}">
+        <text class="celeb-progress-text" wx:if="{{progressText}}">{{progressText}}</text>
+        <text class="celeb-title" wx:if="{{title}}">{{title}}</text>
+        <text class="celeb-detail" wx:if="{{detail}}">{{detail}}</text>
+        <view class="celeb-reward" wx:if="{{rewardText}}">
+          <text class="reward-spark">★</text>
+          <text>{{rewardText}}</text>
+        </view>
+        <view class="celeb-growth" wx:if="{{growthLevel}}">
+          <view class="celeb-growth-head">
+            <text class="celeb-growth-level">{{growthLevel}}</text>
+            <text class="celeb-growth-pct">{{growthLevelPct}}%</text>
+          </view>
+          <view class="celeb-growth-track">
+            <view class="celeb-growth-fill" style="width:{{growthLevelPct}}%"></view>
+          </view>
+          <text class="celeb-growth-desc">{{growthDesc}}</text>
+        </view>
+        <text class="celeb-motto" wx:if="{{motto}}">{{motto}}</text>
+        <text class="celeb-tap-hint">点击继续</text>
       </view>
-      <view class="celeb-growth-track">
-        <view class="celeb-growth-fill" style="width:{{growthLevelPct}}%"></view>
-      </view>
-      <text class="celeb-growth-desc">{{growthDesc}}</text>
     </view>
-    <text class="celeb-motto" wx:if="{{motto}}">{{motto}}</text>
-    <text class="celeb-tap-hint">点击继续</text>
   </view>
 </view>
