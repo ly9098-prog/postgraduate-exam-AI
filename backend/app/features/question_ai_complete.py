@@ -36,6 +36,21 @@ from app.models.question_import import QuestionImport
 logger = logging.getLogger(__name__)
 
 
+async def _get_active_subjects(db: AsyncSession) -> list[dict]:
+    """Load active subjects for AI prompt context."""
+    from app.models.admin import Subject
+    from sqlalchemy import select
+    try:
+        result = await db.execute(
+            select(Subject.id, Subject.code, Subject.name)
+            .where(Subject.is_active.is_(True))
+            .order_by(Subject.level.asc(), Subject.sort_order.asc())
+        )
+        return [{"id": r.id, "code": r.code, "name": r.name} for r in result.all()]
+    except Exception:
+        return []
+
+
 def _coerce_confidence(value: Any) -> float | None:
     if isinstance(value, (int, float)):
         return max(0.0, min(1.0, float(value)))
@@ -101,9 +116,11 @@ def _apply_complete_suggestion(
     qi: QuestionImport, parsed: dict, missing: list[str]
 ) -> dict:
     suggestion: dict = {}
-    if "subject" in missing and parsed.get("subject") in SUBJECT_VALUES:
-        qi.subject = parsed["subject"]
-        suggestion["subject"] = parsed["subject"]
+    if "subject" in missing or "subject_id" in missing:
+        sid = parsed.get("subject_id")
+        if isinstance(sid, int) and sid > 0:
+            qi.subject_id = sid
+            suggestion["subject_id"] = sid
     if "question_type" in missing and parsed.get("question_type") in TYPE_VALUES:
         qi.question_type = parsed["question_type"]
         suggestion["question_type"] = parsed["question_type"]
@@ -248,7 +265,8 @@ async def complete_import(
     if not missing:
         return {"missing": [], "from_fallback": False, "ai_metadata": {}}
 
-    messages = build_complete_question(_qi_to_dict(qi), missing, system_prompt=system_prompt)
+    subject_list = await _get_active_subjects(db)
+    messages = build_complete_question(_qi_to_dict(qi), missing, system_prompt=system_prompt, subject_list=subject_list)
     prompt_text = json.dumps(messages, ensure_ascii=False)
     resp, raw, _ = await _call_or_fallback(
         messages, fallback.get_fallback_complete(missing), db
@@ -339,8 +357,8 @@ def _detect_fields_to_complete(
     for field in target_fields:
         if disabled_fields and field in disabled_fields:
             continue
-        if field == "subject" and not qi.subject:
-            need.append("subject")
+        if field in ("subject", "subject_id") and not qi.subject_id:
+            need.append("subject_id")
         elif field == "question_type" and not qi.question_type:
             need.append("question_type")
         elif field == "stem" and not (qi.parsed_content and qi.parsed_content.get("text")):
@@ -374,9 +392,15 @@ def _apply_batch_complete_result(
     def _should_apply(field: str) -> bool:
         return strategy == "force_overwrite" or field in fields
 
-    if "subject" in fields and parsed.get("subject") in SUBJECT_VALUES:
-        qi.subject = parsed["subject"]
-        completed.append("subject")
+    if "subject_id" in fields or "subject" in fields:
+        sid = parsed.get("subject_id")
+        if isinstance(sid, int) and sid > 0:
+            qi.subject_id = sid
+            completed.append("subject_id")
+        elif parsed.get("subject") in SUBJECT_VALUES:
+            # Backward compat: AI returned old-style subject string
+            qi.subject = parsed["subject"]
+            completed.append("subject")
 
     if "question_type" in fields and parsed.get("question_type") in TYPE_VALUES:
         qi.question_type = parsed["question_type"]
@@ -463,7 +487,8 @@ async def complete_import_with_strategy(
     if not to_complete:
         return {"completed": [], "from_fallback": False, "ai_metadata": {}}
 
-    messages = build_batch_complete_question(_qi_to_dict(qi), to_complete, strategy, system_prompt=system_prompt)
+    subject_list = await _get_active_subjects(db)
+    messages = build_batch_complete_question(_qi_to_dict(qi), to_complete, strategy, system_prompt=system_prompt, subject_list=subject_list)
     prompt_text = json.dumps(messages, ensure_ascii=False)
     resp, raw, _ = await _call_or_fallback(
         messages, fallback.get_fallback_complete(to_complete), db
@@ -551,6 +576,7 @@ async def batch_complete_questions(
     _model_name = creds[2] if creds else None
 
     # Step 1: 顺序预读取所有 QI
+    subject_list = await _get_active_subjects(db)
     prepared: list[dict] = []
     for import_id in import_ids:
         try:
@@ -572,6 +598,7 @@ async def batch_complete_questions(
 
             messages = build_batch_complete_question(
                 _qi_to_dict(qi), to_complete, strategy, system_prompt=system_prompt,
+                subject_list=subject_list,
             )
             prompt_text = json.dumps(messages, ensure_ascii=False)
             prepared.append(dict(

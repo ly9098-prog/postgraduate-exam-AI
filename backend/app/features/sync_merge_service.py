@@ -125,7 +125,7 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
         for i in range(0, len(all_hashes), 500):
             batch = all_hashes[i:i + 500]
             result = await db.execute(
-                select(Question.subject, Question.question_hash, Question.sync_uuid).where(
+                select(Question.subject_id, Question.question_hash, Question.sync_uuid).where(
                     Question.question_hash.in_(batch),
                     Question.is_active == True,  # noqa: E712
                 )

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
+from app.services.admin_subject_service import resolve_subject_ids
 from app.services.behavior_service import record_answer_behavior
 from app.services.wrong_question_service import record_wrong
 from app.core.time_utils import utcnow
@@ -52,10 +53,8 @@ async def get_practice_questions(
     exclude_answered: bool = False,
 ) -> list[Question]:
     # 精确匹配子科目，或前缀匹配父科目（exam408 → exam408、exam408-ds、exam408-os …）
-    subject_cond = or_(
-        Question.subject == subject,
-        Question.subject.like(f"{subject}-%"),
-    )
+    ids = await resolve_subject_ids(db, subject)
+    subject_cond = Question.subject_id.in_(ids)
     conditions = [Question.is_active == True, subject_cond]
 
     if knowledge_points:
@@ -142,10 +141,8 @@ async def get_similar_practice_questions(
     existing_ids = {q.id for q in vector_questions}
     existing_ids.add(source_question_id)
 
-    subject_cond = or_(
-        Question.subject == subject,
-        Question.subject.like(f"{subject}-%"),
-    )
+    ids = await resolve_subject_ids(db, subject)
+    subject_cond = Question.subject_id.in_(ids)
     conditions = [
         Question.is_active == True,
         subject_cond,
@@ -367,10 +364,8 @@ async def get_smart_practice_questions(
 
     # 3. 补齐：按薄弱知识点过滤 + 随机
     existing_ids = {q.id for q in vector_questions}
-    subject_cond = or_(
-        Question.subject == subject,
-        Question.subject.like(f"{subject}-%"),
-    )
+    ids = await resolve_subject_ids(db, subject)
+    subject_cond = Question.subject_id.in_(ids)
     conditions = [
         Question.is_active == True,
         subject_cond,
@@ -566,10 +561,8 @@ async def _smart_weakness_vector(
 
     # 随机补齐
     existing_ids = {q.id for q in result_questions} | exclude_ids
-    subject_cond = or_(
-        Question.subject == subject,
-        Question.subject.like(f"{subject}-%"),
-    )
+    ids = await resolve_subject_ids(db, subject)
+    subject_cond = Question.subject_id.in_(ids)
     conditions = [
         Question.is_active == True,
         subject_cond,
@@ -690,7 +683,7 @@ async def submit_answer(
     record = PracticeRecord(
         user_id=user_id,
         question_id=question_id,
-        subject=question.subject,
+        subject=question.subject_ref.code if question.subject_ref else "",
         question_type=question.question_type,
         user_answer=user_answer.strip(),
         is_correct=is_correct,
@@ -730,7 +723,7 @@ async def submit_answer(
             is_final_correct=is_correct,
             user_answer=user_answer.strip(),
             correct_answer=question.answer,
-            subject=question.subject,
+            subject=question.subject_ref.code if question.subject_ref else "",
             session_type="practice",
         )
     except Exception:
@@ -940,7 +933,7 @@ async def get_wrong_questions(
             "last_review_at": str(wq.last_review_at) if wq.last_review_at else None,
             "question": {
                 "id": q.id,
-                "subject": q.subject,
+                "subject": q.subject_ref.code if q.subject_ref else "",
                 "question_type": q.question_type,
                 "content": q.content,
                 "options": q.options,

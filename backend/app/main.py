@@ -37,6 +37,7 @@ from app.api.v1.admin_subjects import router as admin_subjects_router
 from app.api.v1.admin_users import router as admin_users_router
 from app.api.v1.admin_watermark_rules import router as admin_watermark_rules_router
 from app.api.v1.admin_ai_config import router as admin_ai_config_router
+from app.api.v1.admin_vector_config import router as admin_vector_config_router
 from app.api.v1.admin_system_health import router as admin_system_health_router
 from app.api.v1.sync import router as sync_router
 from app.api.v1.knowledge_mastery import router as knowledge_mastery_router
@@ -307,6 +308,7 @@ app.include_router(admin_subjects_router)
 app.include_router(admin_users_router)
 app.include_router(admin_watermark_rules_router)
 app.include_router(admin_ai_config_router)
+app.include_router(admin_vector_config_router)
 app.include_router(admin_system_health_router)
 app.include_router(sync_router)
 app.include_router(pomodoro_router)

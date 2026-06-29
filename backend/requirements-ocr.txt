@@ -19,8 +19,7 @@
 #
 # WARNING: opencv-contrib-python 和 opencv-python 与 opencv-python-headless 冲突
 # 故 paddleocr 用 --no-deps 安装，其依赖在此显式声明（替换 opencv 为 headless）
-# 2026-06 稳定版：3.3.1 已在本地验证，锁定次大版本避免自动升级 break
-paddlepaddle>=3.3.1,<4.0
+paddlepaddle>=2.6.2
 Pillow>=10.3.0
 numpy>=1.26,<2.0
 stringzilla<4.6.2

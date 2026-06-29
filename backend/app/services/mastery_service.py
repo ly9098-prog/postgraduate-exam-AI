@@ -7,6 +7,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow
+from app.models.admin import Subject
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
@@ -104,7 +105,9 @@ async def update_user_knowledge_state_after_answer(
 
     # 获取题目 subject
     subject_result = await db.execute(
-        select(Question.subject).where(Question.id == question_id)
+        select(Subject.code).select_from(Question)
+        .join(Subject, Question.subject_id == Subject.id)
+        .where(Question.id == question_id)
     )
     subject = subject_result.scalar_one_or_none()
     if not subject:

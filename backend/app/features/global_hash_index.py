@@ -122,7 +122,7 @@ class GlobalHashIndex:
           已成功 chunk 互查）。``batch_ids`` 优先于 ``batch_id``。
         """
         from app.models.question import Question
-        from app.models.question_import import QuestionImport
+        from app.models.admin import Subject
 
         self._recent_days = _resolve_recent_days(recent_days)
         self._max_size = _resolve_max_size()
@@ -155,7 +155,9 @@ class GlobalHashIndex:
 
         rows = (
             await db.execute(
-                select(Question.subject, Question.question_hash, Question.id).where(*question_filter)
+                select(Subject.code, Question.question_hash, Question.id)
+                .where(*question_filter)
+                .join(Subject, Question.subject_id == Subject.id)
             )
         ).all()
         for subject, qhash, qid in rows:
@@ -171,17 +173,20 @@ class GlobalHashIndex:
             ids = []
 
         if ids:
+            from app.models.question_import import QuestionImport
             import_rows = (
                 await db.execute(
                     select(
-                        QuestionImport.subject,
+                        Subject.code,
                         QuestionImport.question_hash,
                         QuestionImport.id,
-                    ).where(
+                    )
+                    .where(
                         QuestionImport.batch_id.in_(ids),
                         QuestionImport.question_hash.isnot(None),
                         QuestionImport.status != "rejected",
                     )
+                    .join(Subject, QuestionImport.subject_id == Subject.id)
                 )
             ).all()
             for subject, qhash, iid in import_rows:
@@ -205,11 +210,15 @@ class GlobalHashIndex:
             return self._question_index.get((subject, question_hash))
 
         from app.models.question import Question
+        from app.services.admin_subject_service import resolve_subject_id
 
+        resolved = await resolve_subject_id(db, subject)
+        if resolved is None:
+            return None
         row = (
             await db.execute(
                 select(Question.id).where(
-                    Question.subject == subject,
+                    Question.subject_id == resolved,
                     Question.question_hash == question_hash,
                     Question.is_active == True,  # noqa: E712
                 )
@@ -231,11 +240,15 @@ class GlobalHashIndex:
             return self._import_index.get((subject, question_hash))
 
         from app.models.question_import import QuestionImport
+        from app.services.admin_subject_service import resolve_subject_id
 
+        resolved = await resolve_subject_id(db, subject)
+        if resolved is None:
+            return None
         row = (
             await db.execute(
                 select(QuestionImport.id).where(
-                    QuestionImport.subject == subject,
+                    QuestionImport.subject_id == resolved,
                     QuestionImport.question_hash == question_hash,
                     QuestionImport.status != "rejected",
                 )

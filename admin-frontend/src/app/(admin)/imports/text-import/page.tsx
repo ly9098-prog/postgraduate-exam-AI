@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -20,6 +20,7 @@ type ParsedOption = { key: string; text: string };
 
 type ParsedQuestion = {
   subject: string | null;
+  subject_id?: number | null;
   question_type: string | null;
   stem: string;
   options: ParsedOption[];
@@ -59,18 +60,6 @@ type ImportResponse = {
   duplicates_filtered: number;
 };
 
-const SUBJECTS = [
-  { value: "math2", label: "数学二" },
-  { value: "math2-calculus", label: "数学二 - 高等数学" },
-  { value: "math2-linalg", label: "数学二 - 线性代数" },
-  { value: "exam408", label: "408 计算机" },
-  { value: "exam408-ds", label: "408 - 数据结构" },
-  { value: "exam408-os", label: "408 - 操作系统" },
-  { value: "exam408-co", label: "408 - 计算机组成" },
-  { value: "exam408-cn", label: "408 - 计算机网络" },
-  { value: "english", label: "英语" },
-];
-
 function renderAnswer(answer: string | string[] | boolean | null) {
   if (answer === null || answer === undefined || answer === "") return "—";
   if (typeof answer === "boolean") return answer ? "正确" : "错误";
@@ -93,6 +82,12 @@ function typeLabel(t: string | null) {
 export default function TextImportPage() {
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
+  const [subjectOptions, setSubjectOptions] = useState<Array<{id: number; code: string; name: string}>>([]);
+  useEffect(() => {
+    apiRequest<Array<{id: number; code: string; name: string; path: string; level: number}>>("/imports/subject-options")
+      .then(setSubjectOptions)
+      .catch(() => {});
+  }, []);
   const [parseResult, setParseResult] = useState<ParseResponse | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<ParsedQuestion | null>(null);
@@ -105,7 +100,7 @@ export default function TextImportPage() {
     mutationFn: () =>
       apiRequest<ParseResponse>("/imports/text-parse", {
         method: "POST",
-        body: JSON.stringify({ text, subject: "" }),
+        body: JSON.stringify({ text, subject_id: null }),
       }),
     onSuccess: (data) => {
       setParseResult(data);
@@ -122,7 +117,7 @@ export default function TextImportPage() {
       apiRequest<ImportResponse>("/imports/text-import", {
         method: "POST",
         body: JSON.stringify({
-          subject: "",
+          subject_id: null,
           questions: parseResult?.questions.filter((q) => q.is_valid) ?? [],
         }),
       }),
@@ -371,7 +366,7 @@ C
                               </span>
                               {q.subject ? (
                                 <span className="rounded-full bg-[var(--color-primary-light)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-primary-dark)]">
-                                  {q.subject}
+                                  {q.subject_id ? (subjectOptions.find((s) => s.id === q.subject_id)?.name || q.subject) : q.subject}
                                 </span>
                               ) : null}
                             </div>
@@ -454,10 +449,10 @@ C
                         <div className="grid gap-3 sm:grid-cols-2">
                           <label className="block space-y-1">
                             <span className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</span>
-                            <select className="h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)]" value={editForm.subject ?? ""} onChange={(e) => setEditForm({ ...editForm, subject: e.target.value || null })}>
+                            <select className="h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)]" value={editForm.subject_id ?? ""} onChange={(e) => setEditForm({ ...editForm, subject_id: e.target.value ? Number(e.target.value) : null })}>
                               <option value="">未指定</option>
-                              {SUBJECTS.map((s) => (
-                                <option key={s.value} value={s.value}>{s.label}</option>
+                              {subjectOptions.map((s) => (
+                                <option key={s.id} value={String(s.id)}>{s.name}</option>
                               ))}
                             </select>
                           </label>

@@ -21,9 +21,9 @@ from app.features.question_pipeline import (
     _call_or_fallback,
     _extract_json,
     _get_qi,
-    _has_complete_answer_risk,
     _qi_to_dict,
 )
+from app.features.question_ai_complete import _has_complete_answer_risk
 
 logger = logging.getLogger(__name__)
 

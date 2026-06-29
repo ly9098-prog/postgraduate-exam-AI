@@ -37,7 +37,7 @@ SYSTEM_PROMPTS = {
     "enrich_question": (
         "你是考研题库整理助手。根据题目内容，分析其学科、章节、知识点、难度和题型。"
         "所有结果都将进入人工审核流程，请只输出客观判断。\n"
-        "学科取值：math2 / exam408 / english。\n"
+        "学科使用 subject_id（整数），从给定科目列表中选择。\n"
         "题型取值：choice / fill / subjective。\n"
         "难度 1-5（1 最易，5 最难）。\n"
         "数学公式输出规则（必须遵守）：\n"
@@ -45,7 +45,7 @@ SYSTEM_PROMPTS = {
         "- 禁止使用 Unicode 数学符号（如 ² ∑ √），改用 LaTeX 命令（^2 \\sum \\sqrt{}）\n"
         "- 示例：错误 'x²+y²=z²'，正确 '$x^2+y^2=z^2$'\n"
         "请用中文回答，严格 JSON 格式输出：\n"
-        '{"subject": "math2", '
+        '{"subject_id": 3, '
         '"chapter": "高等数学/一元函数微分学", '
         '"knowledge_points": ["导数定义", "求导公式"], '
         '"difficulty": 3, '
@@ -57,7 +57,7 @@ SYSTEM_PROMPTS = {
     "generate_questions": (
         "你是考研出题专家。根据指定的学科、知识点、难度和数量生成练习题。"
         "生成的题目仅作为草稿，必须进入人工审核后才能入库。\n"
-        "学科：math2 / exam408 / english。题型：choice / fill / subjective。\n"
+        "学科使用 subject_id（整数）。题型：choice / fill / subjective。\n"
         "数学公式输出规则（必须遵守）：\n"
         "- 所有数学内容必须使用 LaTeX 格式，行内公式用 $...$，块级公式用 $$...$$\n"
         "- 禁止使用 Unicode 数学符号（如 ² ∑ √ π），改用 LaTeX（^2 \\sum \\sqrt{} \\pi）\n"
@@ -65,7 +65,7 @@ SYSTEM_PROMPTS = {
         "- 示例：错误 '∫₀¹x dx'，正确 '$\\int_0^1 x\\,dx$'\n"
         "请严格使用 JSON 格式输出，结构如下：\n"
         '{"questions": [{'
-        '"subject": "math2", '
+        '"subject_id": 3, '
         '"question_type": "choice", '
         '"stem": "题干内容（数学公式用 $...$）", '
         '"options": {"A": "选项A", "B": "选项B", "C": "选项C", "D": "选项D"}, '
@@ -236,16 +236,9 @@ SYSTEM_PROMPTS = {
         "数学公式输出规则：所有数学内容用 LaTeX（行内 $...$，块级 $$...$$），"
         "禁止使用 Unicode 数学符号。\n"
         "请用中文回答，严格 JSON 格式输出。\n\n"
-        "有效学科（subject）值：\n"
-        "- math2（数学二通用，无法确定子类时使用）\n"
-        "- math2-calculus（数学二-微积分）\n"
-        "- math2-linalg（数学二-线性代数）\n"
-        "- exam408（408 统考通用，无法确定子类时使用）\n"
-        "- exam408-ds（408-数据结构）\n"
-        "- exam408-os（408-操作系统）\n"
-        "- exam408-co（408-计算机组成原理）\n"
-        "- exam408-cn（408-计算机网络）\n"
-        "- english（英语）\n\n"
+        "学科（subject_id）说明：\n"
+        "你必须从给定的科目列表中选择一个 subject_id（整数），不要输出自由文本 subject。\n"
+        "如果无法判断科目，将 subject_id 设为 null。\n\n"
         "有效题型（question_type）值：\n"
         "- single_choice（单选题）\n"
         "- multiple_choice（多选题）\n"
@@ -262,7 +255,7 @@ SYSTEM_PROMPTS = {
         "- 408 题干出现 CPU/指令/流水线/Cache/总线 → exam408-co\n"
         "- 408 题干出现 TCP/IP/HTTP/DNS/路由/子网 → exam408-cn\n\n"
         "输出 JSON 格式：\n"
-        '{"subject": "math2-calculus", '
+        '{"subject_id": 3, '
         '"question_type": "single_choice", '
         '"answer": "A", '
         '"analysis": "解析（若不确定可留空）", '
@@ -467,12 +460,13 @@ def build_batch_repair_prompt(candidates: list[tuple[int, dict, str]]) -> list:
     ]
 
 
-def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: str, system_prompt: str | None = None) -> list:
+def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: str, system_prompt: str | None = None, subject_list: list[dict] | None = None) -> list:
     """对一条 question_imports 记录批量补全指定字段。
 
     strategy: fill_empty | force_overwrite
     target_fields: 需补全的字段列表
     system_prompt: 来自 DB admin_ai_configs 的自定义 prompt，为 None 时使用默认值。
+    subject_list: 可用科目列表，注入到 user message 供 AI 选择 subject_id。
     """
     stem = (qi.get("parsed_content") or {}).get("text") or qi.get("raw_text") or ""
     options = qi.get("parsed_options") or {}
@@ -499,11 +493,15 @@ def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: 
         if strategy == "fill_empty"
         else "请重新生成以下字段的内容，覆盖原有值。"
     )
+    subject_list_text = ""
+    if subject_list:
+        subject_list_text = "\n【可用科目列表】" + json.dumps(subject_list, ensure_ascii=False) + "\n"
     return [
         {"role": "system", "content": system_prompt or SYSTEM_PROMPTS["complete_question"]},
         {
             "role": "user",
             "content": (
+                f"{subject_list_text}"
                 f"【已有题干】{stem}\n"
                 f"【已有选项】{options}\n"
                 f"【已有答案】{answer}\n"
@@ -519,17 +517,21 @@ def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: 
     ]
 
 
-def build_complete_question(qi: dict, missing_fields: list[str], system_prompt: str | None = None) -> list:
+def build_complete_question(qi: dict, missing_fields: list[str], system_prompt: str | None = None, subject_list: list[dict] | None = None) -> list:
     stem = (qi.get("parsed_content") or {}).get("text") or qi.get("raw_text") or ""
     options = qi.get("parsed_options") or {}
     answer = qi.get("parsed_answer") or ""
     analysis = qi.get("parsed_analysis") or ""
     subject = qi.get("subject") or ""
+    subject_list_text = ""
+    if subject_list:
+        subject_list_text = "\n【可用科目列表】" + json.dumps(subject_list, ensure_ascii=False) + "\n"
     return [
         {"role": "system", "content": system_prompt or SYSTEM_PROMPTS["complete_question"]},
         {
             "role": "user",
             "content": (
+                f"{subject_list_text}"
                 f"【已有题干】{stem}\n"
                 f"【已有选项】{options}\n"
                 f"【已有答案】{answer}\n"

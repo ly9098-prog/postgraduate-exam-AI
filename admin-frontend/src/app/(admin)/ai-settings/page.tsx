@@ -15,6 +15,7 @@ import { TrendChart } from "./components/trend-chart";
 import { ModelCards } from "./components/model-cards";
 import { OcrAccordion } from "./components/ocr-accordion";
 import { AiCompletionPreview } from "./components/ai-completion";
+import { VectorConfigSection } from "./components/vector-config-section";
 
 export default function AISettingsPage() {
   const role = useAuthStore((s) => s.role);
@@ -175,6 +176,9 @@ export default function AISettingsPage() {
       <p className="mt-1 text-xs text-[var(--color-text-hint)]">
         配置已保存，将在后续版本中生效
       </p>
+
+      {/* ===== Part 6: Vector & Embedding Config ===== */}
+      <VectorConfigSection />
 
       {/* ===== System Configuration ===== */}
       <div className="rounded-2xl border border-[var(--color-border)]/80 bg-white/80 p-5 shadow-sm">

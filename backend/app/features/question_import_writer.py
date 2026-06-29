@@ -305,8 +305,9 @@ async def _build_import_duplicate_fields(
     db: AsyncSession,
     *,
     import_id: int | None,
-    subject: str | None,
+    subject: str | None = None,
     question_hash: str | None,
+    subject_id: int | None = None,
 ) -> dict:
     duplicate_fields = {
         "question_hash": question_hash or None,
@@ -317,7 +318,7 @@ async def _build_import_duplicate_fields(
     result_label = "normal"
     matched_id = None
 
-    duplicate_question = await _find_duplicate_by_hash(db, subject, question_hash)
+    duplicate_question = await _find_duplicate_by_hash(db, subject, question_hash, subject_id=subject_id)
     if duplicate_question and not hasattr(duplicate_question, "id"):
         duplicate_question = None
     if duplicate_question:
@@ -326,7 +327,7 @@ async def _build_import_duplicate_fields(
         result_label = "matched_question"
         matched_id = duplicate_question.id
     else:
-        duplicate_import = await _find_import_duplicate_by_hash(db, subject, question_hash)
+        duplicate_import = await _find_import_duplicate_by_hash(db, subject, question_hash, subject_id=subject_id)
         if duplicate_import and not hasattr(duplicate_import, "id"):
             duplicate_import = None
         if duplicate_import and duplicate_import.id != import_id:
@@ -361,7 +362,7 @@ async def _refresh_import_duplicate_status(
     duplicate_fields = await _build_import_duplicate_fields(
         db,
         import_id=qi.id,
-        subject=qi.subject,
+        subject_id=qi.subject_id,
         question_hash=question_hash,
     )
     _apply_duplicate_fields(qi, duplicate_fields)
@@ -379,23 +380,23 @@ async def _create_question_import(
     skip_existing: bool = False,
 ) -> QuestionImport | None:
     question_hash = result["normalized"].get("question_hash")
-    subject = result["import_fields"].get("subject")
+    subject_id_val = result["import_fields"].get("subject_id")
 
-    if skip_existing and question_hash and subject:
-        existing = await _find_duplicate_by_hash(db, subject, question_hash)
+    if skip_existing and question_hash and subject_id_val:
+        existing = await _find_duplicate_by_hash(db, None, question_hash, subject_id=subject_id_val)
         if existing:
             logger.info(
-                "[DuplicateFilter] 跳过已存在的题目 subject=%s hash=%s existing_id=%s",
-                subject,
+                "[DuplicateFilter] 跳过已存在的题目 subject_id=%s hash=%s existing_id=%s",
+                subject_id_val,
                 question_hash,
                 existing.id,
             )
             return None
-        existing_import = await _find_import_duplicate_by_hash(db, subject, question_hash)
+        existing_import = await _find_import_duplicate_by_hash(db, None, question_hash, subject_id=subject_id_val)
         if existing_import:
             logger.info(
-                "[DuplicateFilter] 跳过审核池中已存在的题目 subject=%s hash=%s existing_import_id=%s",
-                subject,
+                "[DuplicateFilter] 跳过审核池中已存在的题目 subject_id=%s hash=%s existing_import_id=%s",
+                subject_id_val,
                 question_hash,
                 existing_import.id,
             )
@@ -519,8 +520,9 @@ async def approve_question(
         if isinstance(ai_diff, int) and 1 <= ai_diff <= 5:
             difficulty = ai_diff
 
+    subject_code = qi.subject_ref.code if qi.subject_ref else str(qi.subject_id)
     raw = {
-        "subject": data.get("subject", qi.subject),
+        "subject": data.get("subject", subject_code),
         "question_type": data.get("question_type", qi.question_type),
         "parsed_content": data.get("parsed_content", qi.parsed_content),
         "parsed_options": data.get("parsed_options", qi.parsed_options),
@@ -535,8 +537,6 @@ async def approve_question(
     if not result["is_valid"]:
         raise ValueError(f"题目标准化失败：{', '.join(result['errors'])}")
 
-    if data.get("subject"):
-        qi.subject = data["subject"]
     if data.get("parsed_answer"):
         qi.parsed_answer = data["parsed_answer"]
 
@@ -544,7 +544,7 @@ async def approve_question(
         db, qi, result["normalized"].get("question_hash")
     )
     duplicate = await _find_duplicate_by_hash(
-        db, result["normalized"]["subject"], result["normalized"]["question_hash"]
+        db, None, result["normalized"]["question_hash"], subject_id=qi.subject_id
     )
     is_duplicate = False
     if duplicate:
@@ -575,8 +575,8 @@ async def approve_question(
         qi.status = "published"
         qi.question_id = q.id
         logger.info(
-            "[Review Pass] import_id=%s → question_id=%s subject=%s",
-            qi.id, q.id, q.subject,
+            "[Review Pass] import_id=%s → question_id=%s subject_id=%s",
+            qi.id, q.id, q.subject_id,
         )
 
     qi.review_note = data.get("review_note")
@@ -611,9 +611,10 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int,
         ai_meta = qi.ai_metadata or {}
         kps = ai_meta.get("knowledge_points") if isinstance(ai_meta, dict) else None
         diff = ai_meta.get("difficulty") if isinstance(ai_meta, dict) else None
+        subject_code = qi.subject_ref.code if qi.subject_ref else str(qi.subject_id)
         result = process_question_pipeline(
             {
-                "subject": qi.subject,
+                "subject": subject_code,
                 "question_type": qi.question_type,
                 "parsed_content": qi.parsed_content,
                 "parsed_options": qi.parsed_options,
@@ -633,7 +634,7 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int,
             db, qi, result["normalized"].get("question_hash")
         )
         duplicate = await _find_duplicate_by_hash(
-            db, result["normalized"]["subject"], result["normalized"]["question_hash"]
+            db, None, result["normalized"]["question_hash"], subject_id=qi.subject_id
         )
         if duplicate:
             qi.status = "published"
@@ -662,8 +663,8 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int,
             qi.status = "published"
             qi.question_id = q.id
             logger.info(
-                "[Batch Approve] import_id=%s → question_id=%s subject=%s",
-                qi.id, q.id, q.subject,
+                "[Batch Approve] import_id=%s → question_id=%s subject_id=%s",
+                qi.id, q.id, q.subject_id,
             )
         if qi.ai_generated:
             qi.ai_reviewed_at = utcnow()

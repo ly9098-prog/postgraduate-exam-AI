@@ -74,7 +74,13 @@ function fmtTime(ts?: number) {
 
 export default function BatchImagePage() {
   const [files, setFiles] = useState<File[]>([]);
-  const [subject, setSubject] = useState("");
+  const [subjectId, setSubjectId] = useState("");
+  const [subjectOptions, setSubjectOptions] = useState<Array<{id: number; code: string; name: string}>>([]);
+  useEffect(() => {
+    apiRequest<Array<{id: number; code: string; name: string; path: string; level: number}>>("/imports/subject-options")
+      .then(setSubjectOptions)
+      .catch(() => {});
+  }, []);
   const [concurrency, setConcurrency] = useState(DEFAULT_CONCURRENCY);
   const [message, setMessage] = useState<MessageInfo | null>(null);
   const { ocrMode, setOcrMode } = useImportConfig();
@@ -184,7 +190,7 @@ export default function BatchImagePage() {
               const formData = new FormData();
               formData.append("files", filesToProcess[fileIdx]);
               const qs = toQuery({
-                subject: subject || undefined,
+                subject_id: subjectId || undefined,
                 concurrency: 1,
                 enable_ai_repair: true,
                 confidence_threshold: "0.6",
@@ -277,7 +283,7 @@ export default function BatchImagePage() {
     } catch {
       // Abort or unexpected error
     }
-  }, [files, subject, concurrency, ocrMode]);
+  }, [files, subjectId, concurrency, ocrMode]);
 
   const resetQueue = useCallback(() => {
     abortRef.current?.abort();
@@ -560,12 +566,17 @@ export default function BatchImagePage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-1">
                 <span className="text-xs font-semibold text-[var(--color-text-secondary)]">科目（可选）</span>
-                <Input
-                  placeholder="如 math2 / exam408"
-                  value={subject}
+                <select
+                  className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)]"
+                  value={subjectId}
                   disabled={isJobActive}
-                  onChange={(event) => setSubject(event.target.value)}
-                />
+                  onChange={(e) => setSubjectId(e.target.value)}
+                >
+                  <option value="">选择科目（可选）</option>
+                  {subjectOptions.map((s) => (
+                    <option key={s.id} value={String(s.id)}>{s.name}</option>
+                  ))}
+                </select>
               </label>
               <div className="space-y-1">
                 <span className="text-xs font-semibold text-[var(--color-text-secondary)]">并发数</span>

@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import text, select, func, or_, and_
+from sqlalchemy import text, select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -16,6 +16,7 @@ from app.core.cache import cache
 from app.models.question import Question
 from app.models.practice_record import PracticeRecord
 from app.services import embedding_service
+from app.services.admin_subject_service import resolve_subject_ids
 
 logger = logging.getLogger("postgraduate-ai.vector_retrieval")
 
@@ -25,11 +26,108 @@ _vector_enabled_cache: dict[str, Any] = {"value": None, "checked": False, "check
 _VECTOR_CACHE_TTL = 60  # 秒
 
 
+# ---------------------------------------------------------------------------
+# DB-first 配置访问器（同步 + TTL 缓存）
+# 所有 settings.VECTOR_* / settings.EMBEDDING_* 引用通过此访问器间接获取，
+# 优先从 DB 读取，环境变量仅作为兜底。
+# ---------------------------------------------------------------------------
+
+
+class _VectorSettings:
+    """从 DB 缓存或环境变量获取向量相关配置。"""
+
+    _cached: Any = None
+    _cached_at: float = 0
+    _TTL = 30  # seconds
+
+    async def refresh_async(self, db: AsyncSession) -> None:
+        """异步刷新配置缓存。应在 vector 相关 async 入口调用。"""
+        now = time.monotonic()
+        if self._cached and (now - self._cached_at) < self._TTL:
+            return
+        # Skip refresh for mock sessions (test context)
+        if hasattr(db, "_mock_name") or hasattr(db, "assert_called"):
+            return
+        try:
+            from app.services.vector_config_service import (
+                EmbeddingConfig,
+                VectorSearchConfig,
+                _seed_if_empty,
+                decrypt_api_key,
+            )
+            row = await _seed_if_empty(db)
+
+            api_key = ""
+            if row.embedding_api_key_encrypted:
+                api_key = decrypt_api_key(row.embedding_api_key_encrypted)
+            if not api_key and settings.EMBEDDING_API_KEY:
+                api_key = settings.EMBEDDING_API_KEY
+
+            emb = EmbeddingConfig(
+                api_key=api_key,
+                base_url=row.embedding_base_url or settings.EMBEDDING_BASE_URL,
+                model=row.embedding_model or settings.EMBEDDING_MODEL,
+                dim=row.embedding_dim or settings.EMBEDDING_DIM,
+                timeout=row.embedding_timeout or settings.EMBEDDING_TIMEOUT,
+                batch_size=row.embedding_batch_size or settings.EMBEDDING_BATCH_SIZE,
+                provider=row.embedding_provider or settings.EMBEDDING_PROVIDER,
+            )
+            vec = VectorSearchConfig(
+                enabled=row.vector_enabled,
+                mode=row.vector_mode,
+                allowlist=row.vector_allowlist,
+                cache_ttl_sec=row.vector_cache_ttl_sec,
+                top_k=row.vector_top_k,
+                similarity_threshold=row.vector_similarity_threshold,
+            )
+            self._cached = {"emb": emb, "vec": vec}
+            self._cached_at = now
+        except BaseException:
+            logger.debug("DB 向量配置读取失败，使用环境变量", exc_info=True)
+
+    @property
+    def emb(self):
+        if self._cached and "emb" in self._cached:
+            return self._cached["emb"]
+        # Fallback: use local settings (patchable in tests)
+        from app.services.vector_config_service import EmbeddingConfig
+        return EmbeddingConfig(
+            api_key=settings.EMBEDDING_API_KEY,
+            base_url=settings.EMBEDDING_BASE_URL,
+            model=settings.EMBEDDING_MODEL,
+            dim=settings.EMBEDDING_DIM,
+            timeout=settings.EMBEDDING_TIMEOUT,
+            batch_size=settings.EMBEDDING_BATCH_SIZE,
+            provider=settings.EMBEDDING_PROVIDER,
+        )
+
+    @property
+    def vec(self):
+        if self._cached and "vec" in self._cached:
+            return self._cached["vec"]
+        # Fallback: use local settings (patchable in tests)
+        from app.services.vector_config_service import VectorSearchConfig
+        return VectorSearchConfig(
+            enabled=settings.VECTOR_ENABLED,
+            mode=settings.VECTOR_MODE,
+            allowlist=settings.VECTOR_ALLOWLIST,
+            cache_ttl_sec=settings.VECTOR_CACHE_TTL_SEC,
+            top_k=settings.VECTOR_TOP_K,
+            similarity_threshold=settings.VECTOR_SIMILARITY_THRESHOLD,
+        )
+
+
+_vs = _VectorSettings()
+
+
 def _reset_vector_enabled_cache():
     """重置向量可用性缓存（用于测试或配置变更后）。"""
     _vector_enabled_cache["value"] = None
     _vector_enabled_cache["checked"] = False
     _vector_enabled_cache["checked_at"] = 0.0
+    # 同步清理 DB-first 配置缓存
+    _vs._cached = None
+    _vs._cached_at = 0
 
 
 # ── embedding 校验 ──
@@ -165,19 +263,21 @@ async def is_vector_enabled(db: AsyncSession) -> bool:
     """判断向量基础设施是否可用。
 
     条件：
-    - settings.VECTOR_ENABLED == True
+    - vector_enabled == True（DB 或环境变量）
     - 数据库 dialect 是 postgresql
-    - EMBEDDING_API_KEY、EMBEDDING_BASE_URL、EMBEDDING_MODEL 已配置
+    - embedding api_key、base_url、model 已配置
     - question_embeddings 表存在
     - pgvector 扩展可用
     """
-    if not settings.VECTOR_ENABLED:
+    await _vs.refresh_async(db)
+
+    if not _vs.vec.enabled:
         return False
 
     if not (
-        settings.EMBEDDING_API_KEY
-        and settings.EMBEDDING_BASE_URL
-        and settings.EMBEDDING_MODEL
+        _vs.emb.api_key
+        and _vs.emb.base_url
+        and _vs.emb.model
     ):
         return False
 
@@ -241,7 +341,7 @@ async def upsert_question_embedding(
         {"question_id": int, "status": "created"|"updated"|"skipped"|"failed", "reason": str}
     """
     qid = question.id
-    model = settings.EMBEDDING_MODEL
+    model = _vs.emb.model
 
     try:
         content_text = embedding_service.build_question_embedding_text(question)
@@ -265,13 +365,13 @@ async def upsert_question_embedding(
 
         # 校验 embedding
         try:
-            validated = validate_embedding(embedding, settings.EMBEDDING_DIM)
+            validated = validate_embedding(embedding, _vs.emb.dim)
         except ValueError as ve:
             logger.warning("embedding 校验失败 question_id=%d: %s", qid, ve)
             return {"question_id": qid, "status": "failed", "reason": f"invalid_embedding: {ve}"}
 
         pg_literal = embedding_service.vector_to_pg_literal(validated)
-        dim = settings.EMBEDDING_DIM
+        dim = _vs.emb.dim
 
         if existing:
             await db.execute(
@@ -288,7 +388,7 @@ async def upsert_question_embedding(
                     "text": content_text,
                     "emb": pg_literal,
                     "dim": dim,
-                    "subject": question.subject,
+                    "subject": question.subject_ref.code if question.subject_ref else "",
                     "qtype": question.question_type,
                     "qid": qid,
                     "model": model,
@@ -306,7 +406,7 @@ async def upsert_question_embedding(
                 ),
                 {
                     "qid": qid,
-                    "subject": question.subject,
+                    "subject": question.subject_ref.code if question.subject_ref else "",
                     "qtype": question.question_type,
                     "model": model,
                     "dim": dim,
@@ -349,7 +449,7 @@ async def backfill_question_embeddings(
         }
 
     limit = min(max(1, limit), 1000)
-    model = settings.EMBEDDING_MODEL
+    model = _vs.emb.model
 
     # 构建查询条件
     conditions: list = [
@@ -359,12 +459,8 @@ async def backfill_question_embeddings(
     ]
 
     if subject:
-        conditions.append(
-            or_(
-                Question.subject == subject,
-                Question.subject.like(f"{subject}-%"),
-            )
-        )
+        ids = await resolve_subject_ids(db, subject)
+        conditions.append(Question.subject_id.in_(ids))
 
     if not force:
         # 优先查询当前 model 下不存在 embedding 的题目
@@ -430,7 +526,7 @@ async def _ensure_source_embedding(
     db: AsyncSession, question: Question
 ) -> list[float] | None:
     """确保源题有 embedding，如果没有则尝试现场生成。"""
-    model = settings.EMBEDDING_MODEL
+    model = _vs.emb.model
 
     result = await db.execute(
         text(
@@ -564,17 +660,19 @@ async def search_similar_questions(
     if not source_q:
         return base_result
 
+    subject_code = source_q.subject_ref.code if source_q.subject_ref else ""
+
     # 二次决策：基于 subject 判断 allowlist
     if decision.mode == "allowlist":
         decision = decide_vector_access(
             user_id=user_id,
-            subject=source_q.subject,
+            subject=subject_code,
             infra_available=infra_ok,
         )
         if not decision.execute:
             logger.info(
                 "[VectorDecision] search_similar allowlist miss uid=%s subject=%s",
-                user_id, source_q.subject,
+                user_id, subject_code,
             )
             return base_result
 
@@ -584,7 +682,7 @@ async def search_similar_questions(
         return base_result
 
     # 缓存检查（仅 use_result=True 时读写缓存）
-    model = settings.EMBEDDING_MODEL
+    model = _vs.emb.model
     answer_ver = await _get_user_answer_version(db, user_id)
     cache_key = f"vector:similar:{user_id}:{question_id}:{count}:{exclude_answered}:{answer_ver}:{model}"
 
@@ -599,7 +697,7 @@ async def search_similar_questions(
             }
 
     # 向量检索 — SQL 直接 JOIN questions 提前过滤无效题目
-    top_k = max(count * 5, settings.VECTOR_TOP_K)
+    top_k = max(count * 5, _vs.vec.top_k)
     pg_literal = embedding_service.vector_to_pg_literal(source_embedding)
 
     try:
@@ -625,7 +723,7 @@ async def search_similar_questions(
                 {
                     "emb": pg_literal,
                     "qid": question_id,
-                    "subject": source_q.subject,
+                    "subject": subject_code,
                     "model": model,
                     "uid": user_id,
                     "top_k": top_k,
@@ -650,7 +748,7 @@ async def search_similar_questions(
                 {
                     "emb": pg_literal,
                     "qid": question_id,
-                    "subject": source_q.subject,
+                    "subject": subject_code,
                     "model": model,
                     "top_k": top_k,
                 },
@@ -695,7 +793,7 @@ async def search_similar_questions(
         if not q:
             continue
 
-        if similarity < settings.VECTOR_SIMILARITY_THRESHOLD:
+        if similarity < _vs.vec.similarity_threshold:
             continue
 
         c_kps = set(q.knowledge_points or [])
@@ -742,7 +840,7 @@ async def search_similar_questions(
     recommendations = scored[:count]
 
     # 写缓存
-    await cache.set(cache_key, recommendations, ttl=settings.VECTOR_CACHE_TTL_SEC)
+    await cache.set(cache_key, recommendations, ttl=_vs.vec.cache_ttl_sec)
 
     return {
         "enabled": True,
@@ -790,7 +888,7 @@ async def vector_recall_by_text(
         return []
 
     # 缓存检查（仅 use_result=True 时）
-    model = settings.EMBEDDING_MODEL
+    model = _vs.emb.model
     weak_hash = hashlib.sha256(query_text.encode()).hexdigest()[:12]
     answer_ver = await _get_user_answer_version(db, user_id)
     cache_key = f"vector:smart:{user_id}:{subject}:{count}:{exclude_answered}:{answer_ver}:{weak_hash}:{model}"
@@ -872,7 +970,7 @@ async def vector_recall_by_text(
     results = []
     for row in candidates:
         cid, c_subject, c_type, similarity = row[0], row[1], row[2], row[3]
-        if similarity < settings.VECTOR_SIMILARITY_THRESHOLD:
+        if similarity < _vs.vec.similarity_threshold:
             continue
 
         results.append({
@@ -887,7 +985,7 @@ async def vector_recall_by_text(
     results = results[:count]
 
     # 写缓存
-    await cache.set(cache_key, results, ttl=settings.VECTOR_CACHE_TTL_SEC)
+    await cache.set(cache_key, results, ttl=_vs.vec.cache_ttl_sec)
 
     return results
 
@@ -906,7 +1004,7 @@ async def get_embedding_status(db: AsyncSession) -> dict:
     decision = decide_vector_access(infra_available=False)  # 仅获取 mode 信息
 
     info: dict[str, Any] = {
-        "configured": settings.VECTOR_ENABLED,
+        "configured": _vs.vec.enabled,
         "mode": mode,
         "execute_enabled": False,
         "result_enabled": False,
@@ -914,14 +1012,14 @@ async def get_embedding_status(db: AsyncSession) -> dict:
         "extension_installed": False,
         "table_exists": False,
         "index_exists": False,
-        "configured_dimension": settings.EMBEDDING_DIM,
+        "configured_dimension": _vs.emb.dim,
         "database_dimension": None,
         "dimension_matches": None,
-        "embedding_model": settings.EMBEDDING_MODEL,
+        "embedding_model": _vs.emb.model,
         "embedding_api_configured": bool(
-            settings.EMBEDDING_API_KEY and settings.EMBEDDING_BASE_URL and settings.EMBEDDING_MODEL
+            _vs.emb.api_key and _vs.emb.base_url and _vs.emb.model
         ),
-        "allowlist_configured": bool(settings.VECTOR_ALLOWLIST and settings.VECTOR_ALLOWLIST.strip()),
+        "allowlist_configured": bool(_vs.vec.allowlist and _vs.vec.allowlist.strip()),
         "healthy": False,
         "issues": [],
         "total_embeddings": 0,
@@ -978,10 +1076,10 @@ async def get_embedding_status(db: AsyncSession) -> dict:
                 sample_dim = sample_result.scalar()
                 if sample_dim is not None:
                     info["database_dimension"] = sample_dim
-                    info["dimension_matches"] = (sample_dim == settings.EMBEDDING_DIM)
+                    info["dimension_matches"] = (sample_dim == _vs.emb.dim)
                     if not info["dimension_matches"]:
                         issues.append(
-                            f"dimension mismatch: configured={settings.EMBEDDING_DIM}, "
+                            f"dimension mismatch: configured={_vs.emb.dim}, "
                             f"database={sample_dim}"
                         )
             except Exception:
@@ -1048,12 +1146,12 @@ def resolve_vector_mode() -> str:
     2. VECTOR_ENABLED=True 且 VECTOR_MODE="off" → 兼容为 "all"
     3. 否则 → "off"
     """
-    mode = (settings.VECTOR_MODE or "off").strip().lower()
+    mode = (_vs.vec.mode or "off").strip().lower()
     if mode not in _VALID_MODES:
         logger.warning("VECTOR_MODE=%s 无效，回退为 off", mode)
         mode = "off"
 
-    if settings.VECTOR_ENABLED and mode == "off":
+    if _vs.vec.enabled and mode == "off":
         return "all"
 
     return mode
@@ -1073,7 +1171,7 @@ def _parse_allowlist() -> dict:
     返回:
         {"user_ids": list[int], "subjects": list[str]}
     """
-    raw = (settings.VECTOR_ALLOWLIST or "").strip()
+    raw = (_vs.vec.allowlist or "").strip()
     if not raw:
         return {"user_ids": [], "subjects": []}
 

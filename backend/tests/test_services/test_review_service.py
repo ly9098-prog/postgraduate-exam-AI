@@ -5,6 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+# Ensure Subject model is registered before Question/QuestionImport mapper init
+import app.models.admin  # noqa: F401
+
 from app.features.review_service import (
     _options_to_dict,
     submit_to_review,

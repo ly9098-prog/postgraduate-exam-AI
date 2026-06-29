@@ -81,6 +81,7 @@ async def upload_import_file(
     file: UploadFile,
     background_tasks: BackgroundTasks,
     subject: str | None = None,
+    subject_id: int | None = None,
     import_mode: ImportMode = ImportMode.AUTO,
     enable_ai_repair: bool = True,
     confidence_threshold: float = 0.6,
@@ -92,6 +93,7 @@ async def upload_import_file(
         file=file,
         background_tasks=background_tasks,
         subject=subject,
+        subject_id=subject_id,
         import_mode=import_mode,
         enable_ai_repair=enable_ai_repair,
         confidence_threshold=confidence_threshold,
@@ -204,6 +206,7 @@ async def admin_resume_pipeline(
     if confidence_threshold is not None:
         opts["confidence_threshold"] = confidence_threshold
     subject = ckpt.get("subject") if ckpt else None
+    subject_id = ckpt.get("subject_id") if ckpt else None
     source_type = ckpt.get("source_type") or "pdf"
     source_file = ckpt.get("source_file") or file.filename or ""
 
@@ -246,6 +249,7 @@ async def admin_resume_pipeline(
                     source_type=source_type,
                     source_file=source_file,
                     subject=subject,
+                    subject_id=subject_id,
                     options=opts,
                     db=resume_db,
                     progress_callback=_progress,
@@ -294,6 +298,7 @@ async def get_import_review_queue(
     status: str | None = "pending",
     batch_id: str | None = None,
     subject: str | None = None,
+    subject_id: int | None = None,
     source_type: str | None = None,
     keyword: str | None = None,
     risk_level: str | None = Query(None, pattern="^(high|medium|low)$"),
@@ -302,7 +307,7 @@ async def get_import_review_queue(
 ):
     items, total = await list_review_queue(
         db, page, page_size, status, batch_id, subject, source_type, keyword,
-        risk_level=risk_level,
+        risk_level=risk_level, subject_id=subject_id,
     )
     return paginated_response(items, total, page, page_size)
 
@@ -559,7 +564,7 @@ async def parse_text_questions(
     """解析用户粘贴的文本，返回结构化题目预览。"""
     from app.features.text_question_parser import parse_text_questions_async
 
-    result = await parse_text_questions_async(data.text, data.subject, db=db)
+    result = await parse_text_questions_async(data.text, data.subject, db=db, subject_id=data.subject_id)
     return TextParseResponse(**result)
 
 
@@ -584,6 +589,7 @@ async def import_text_questions(
         try:
             q_input = {
                 "subject": q.subject or data.subject,
+                "subject_id": q.subject_id or data.subject_id,
                 "stem": q.stem,
                 "options": q.options,
                 "answer": q.answer or "",
@@ -694,6 +700,7 @@ async def batch_image_upload(
     files: list[UploadFile],
     background_tasks: BackgroundTasks,
     subject: str | None = None,
+    subject_id: int | None = None,
     concurrency: int | None = None,
     enable_ai_repair: bool = True,
     confidence_threshold: float = 0.6,
@@ -830,6 +837,7 @@ async def batch_image_upload(
         job_id=job_id,
         sources=sources,
         subject=subject,
+        subject_id=subject_id,
         concurrency=concurrency,
         created_by=f"admin:{current_admin.id}",
         batch_import_id=batch_id,
@@ -858,6 +866,7 @@ async def batch_image_upload(
         job_id=job_id,
         sources=sources,
         subject=subject,
+        subject_id=subject_id,
         options=options,
         concurrency=concurrency,
     )
@@ -958,6 +967,7 @@ async def stream_batch_image_job(
 async def reparse_batch_image_item(
     item_id: int,
     subject: str | None = None,
+    subject_id: int | None = None,
     _=Depends(require_permissions("import:write")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -965,7 +975,7 @@ async def reparse_batch_image_item(
     from app.features import batch_image_import_service as batch_svc
 
     try:
-        return await batch_svc.reparse_item_from_cache(db, item_id, subject)
+        return await batch_svc.reparse_item_from_cache(db, item_id, subject, subject_id=subject_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
@@ -1214,6 +1224,7 @@ async def admin_export_failure_case(
         "source_file": row.source_file,
         "source_page": None,
         "subject": row.subject,
+        "subject_id": row.subject_id,
         "question_type": row.question_type,
         "raw_data": row.raw_data or {},
         "stem": None,
@@ -1267,6 +1278,7 @@ async def admin_export_batch_failure_cases(
             "source_file": row.source_file,
             "source_page": None,
             "subject": row.subject,
+            "subject_id": row.subject_id,
             "question_type": row.question_type,
             "raw_data": row.raw_data or {},
             "stem": pc.get("stem"),
