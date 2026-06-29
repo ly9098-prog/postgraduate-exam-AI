@@ -31,7 +31,13 @@ function isTerminalStatus(status?: string) {
 
 export default function ImportTasksPage() {
   const [file, setFile] = useState<File | null>(null);
-  const [subject, setSubject] = useState("");
+  const [subjectId, setSubjectId] = useState("");
+  const [subjectOptions, setSubjectOptions] = useState<Array<{id: number; code: string; name: string}>>([]);
+  useEffect(() => {
+    apiRequest<Array<{id: number; code: string; name: string; path: string; level: number}>>("/imports/subject-options")
+      .then(setSubjectOptions)
+      .catch(() => {});
+  }, []);
   const [importMode, setImportMode] = useState("auto");
   const [enableAiRepair, setEnableAiRepair] = useState(true);
   const [confidenceThreshold, setConfidenceThreshold] = useState("0.6");
@@ -57,7 +63,7 @@ export default function ImportTasksPage() {
       if (!file) throw new Error("请选择要导入的文件");
       const formData = new FormData();
       formData.set("file", file);
-      if (subject) formData.set("subject", subject);
+      if (subjectId) formData.set("subject_id", subjectId);
       formData.set("import_mode", importMode);
       formData.set("enable_ai_repair", String(enableAiRepair));
       formData.set("confidence_threshold", confidenceThreshold || "0.6");
@@ -145,7 +151,16 @@ export default function ImportTasksPage() {
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 <label className="space-y-1">
                   <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">科目</span>
-                  <Input placeholder="如 math2 / exam408" value={subject} onChange={(event) => setSubject(event.target.value)} />
+                  <select
+                    className="h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]"
+                    value={subjectId}
+                    onChange={(event) => setSubjectId(event.target.value)}
+                  >
+                    <option value="">选择科目（可选）</option>
+                    {subjectOptions.map((s) => (
+                      <option key={s.id} value={String(s.id)}>{s.name}</option>
+                    ))}
+                  </select>
                 </label>
                 <label className="space-y-1">
                   <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">导入模式</span>

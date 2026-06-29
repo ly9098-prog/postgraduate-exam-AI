@@ -263,7 +263,7 @@ async def get_practice_questions(
         questions=[
             PracticeQuestion(
                 id=q.id,
-                subject=q.subject,
+                subject=q.subject_ref.code if q.subject_ref else "",
                 question_type=q.question_type,
                 content=_sanitize_question_content(q.content),
                 options=_sanitize_question_options(

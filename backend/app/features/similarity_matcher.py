@@ -64,10 +64,14 @@ def _compute_question_hash(question: dict) -> str:
 
 async def _load_subject_questions(db: AsyncSession, subject: str) -> list[dict]:
     from app.models.question import Question
+    from app.services.admin_subject_service import resolve_subject_id
 
+    subject_id = await resolve_subject_id(db, subject)
+    if subject_id is None:
+        return []
     result = await db.execute(
         select(Question.id, Question.content, Question.options, Question.answer)
-        .where(Question.subject == subject, Question.is_active == True)  # noqa: E712
+        .where(Question.subject_id == subject_id, Question.is_active == True)  # noqa: E712
     )
     rows = result.all()
     return [

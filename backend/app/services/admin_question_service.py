@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 _EDIT_FIELDS = (
-    "subject",
+    "subject_id",
     "question_type",
     "content",
     "options",
@@ -51,6 +51,7 @@ async def list_admin_questions(
     page: int,
     page_size: int,
     subject: str | None = None,
+    subject_id: int | None = None,
     review_status: str | None = None,
     is_active: bool | None = None,
     question_type: str | None = None,
@@ -59,8 +60,8 @@ async def list_admin_questions(
     import_batch_id: str | None = None,
 ) -> tuple[list[Question], int]:
     conditions = []
-    if subject:
-        conditions.append(Question.subject == subject)
+    if subject_id is not None:
+        conditions.append(Question.subject_id == subject_id)
     if review_status:
         conditions.append(Question.review_status == review_status)
     if is_active is not None:
@@ -82,8 +83,10 @@ async def list_admin_questions(
         count_query = count_query.where(condition)
 
     total = await db.scalar(count_query)
+    from sqlalchemy.orm import selectinload
     result = await db.execute(
-        query.order_by(Question.updated_at.desc(), Question.id.desc())
+        query.options(selectinload(Question.subject_ref))
+        .order_by(Question.updated_at.desc(), Question.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
@@ -257,7 +260,7 @@ async def _find_duplicate_question_by_hash(db: AsyncSession, question: Question)
         question.question_hash = question_hash
     result = await db.execute(
         select(Question).where(
-            Question.subject == question.subject,
+            Question.subject_id == question.subject_id,
             Question.question_hash == question_hash,
             Question.id != question.id,
             Question.is_active == True,

@@ -28,7 +28,7 @@ type BatchActionResult = {
 };
 
 type EditState = {
-  subject: string;
+  subject_id: number | null;
   question_type: string;
   stem: string;
   options: Array<{ key: string; text: string }>;
@@ -124,7 +124,7 @@ function stringSuggestion(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
-const ALL_BATCH_FIELDS = ["answer", "analysis", "knowledge_points", "difficulty", "subject", "question_type", "stem", "options", "tips", "tags"];
+const ALL_BATCH_FIELDS = ["answer", "analysis", "knowledge_points", "difficulty", "subject_id", "question_type", "stem", "options", "tips", "tags"];
 
 const STATUS_OPTIONS = [
   { value: "pending", label: "待审核" },
@@ -143,7 +143,7 @@ function statusTone(status: string) {
 
 function editStateFromItem(item: ImportQuestionItem): EditState {
   return {
-    subject: item.subject || "",
+    subject_id: item.subject_id ?? null,
     question_type: item.question_type || "",
     stem: textFromImport(item),
     options: parseOptionsToEditable(item),
@@ -166,7 +166,7 @@ export default function ImportReviewPage() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const batchIdParam = searchParams.get("batch_id") || "";
-  const [filters, setFilters] = useState({ batch_id: "", status: "pending", subject: "", source_type: "", keyword: "", risk_level: "" });
+  const [filters, setFilters] = useState({ batch_id: "", status: "pending", subject_id: "", source_type: "", keyword: "", risk_level: "" });
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [subjectDropdownOpen, setSubjectDropdownOpen] = useState(false);
   const subjectBtnRef = useRef<HTMLButtonElement>(null);
@@ -256,7 +256,7 @@ export default function ImportReviewPage() {
   }, [autoSaveHint]);
 
   const queryParams = useMemo(
-    () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject: filters.subject, source_type: filters.source_type, keyword: filters.keyword, risk_level: filters.risk_level || undefined }),
+    () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject_id: filters.subject_id, source_type: filters.source_type, keyword: filters.keyword, risk_level: filters.risk_level || undefined }),
     [batchIdParam, filters],
   );
 
@@ -291,7 +291,7 @@ export default function ImportReviewPage() {
 
   const subjectsQuery = useQuery({
     queryKey: ["import-subject-options"],
-    queryFn: () => apiRequest<Array<{ code: string; name: string }>>("/imports/subject-options"),
+    queryFn: () => apiRequest<Array<{id: number; code: string; name: string; path: string; level: number}>>("/imports/subject-options"),
     staleTime: 5 * 60 * 1000,
   });
   const subjectOptions = subjectsQuery.data ?? [];
@@ -664,7 +664,16 @@ export default function ImportReviewPage() {
             </label>
             <label className="space-y-1.5">
               <span className="block text-xs font-medium text-[var(--color-text-secondary)]">科目</span>
-              <Input placeholder="输入科目" value={filters.subject} onChange={(event) => updateFilter("subject", event.target.value)} />
+              <select
+                className="flex h-11 w-full items-center rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+                value={filters.subject_id}
+                onChange={(event) => updateFilter("subject_id", event.target.value)}
+              >
+                <option value="">全部科目</option>
+                {subjectOptions.map((s) => (
+                  <option key={s.id} value={String(s.id)}>{s.name}</option>
+                ))}
+              </select>
             </label>
             <label className="space-y-1.5">
               <span className="block text-xs font-medium text-[var(--color-text-secondary)]">风险等级</span>
@@ -782,8 +791,8 @@ export default function ImportReviewPage() {
                         <span className="text-current opacity-60">◉</span> 答案缺失
                       </span>
                     ) : null}
-                    {item.subject ? (
-                      <span className="rounded-md bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-dark)]">{item.subject}</span>
+                    {item.subject_name || item.subject_code ? (
+                      <span className="rounded-md bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-dark)]">{item.subject_name || item.subject_code}</span>
                     ) : (
                       <span className="text-xs text-[var(--color-text-hint)]">未分类</span>
                     )}
@@ -871,8 +880,8 @@ export default function ImportReviewPage() {
                   ) : previewItem.risk_level === "low" ? (
                     <span className="risk-seal risk-seal-low !py-0 !text-[10px]"><span className="text-current opacity-60">◉</span> 低风险</span>
                   ) : null}
-                  {editState.subject ? (
-                    <span className="hidden sm:inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-primary-light)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-primary-dark)]">{editState.subject}</span>
+                  {editState.subject_id ? (
+                    <span className="hidden sm:inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-primary-light)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-primary-dark)]">{subjectOptions.find((s) => s.id === editState.subject_id)?.name || `#${editState.subject_id}`}</span>
                   ) : null}
                   {previewItem.risk_reasons && previewItem.risk_reasons.length > 0 ? (
                     <span className="hidden md:inline-block max-w-[200px] truncate text-[10px] text-red-600" title={previewItem.risk_reasons.join("；")}>
@@ -1235,7 +1244,7 @@ export default function ImportReviewPage() {
                 /* ── JSON View ── */
                 <div className="space-y-3">
                   {[
-                    { title: "基础信息", accent: "#5b7b9a", data: { id: previewItem.id, batch_id: previewItem.batch_id, source_type: previewItem.source_type, subject: previewItem.subject, question_type: previewItem.question_type, status: previewItem.status, ai_generated: previewItem.ai_generated, ai_answer_flag: previewItem.ai_answer_flag, created_at: previewItem.created_at, updated_at: previewItem.updated_at } },
+                    { title: "基础信息", accent: "#5b7b9a", data: { id: previewItem.id, batch_id: previewItem.batch_id, source_type: previewItem.source_type, subject_id: previewItem.subject_id, subject_code: previewItem.subject_code, subject_name: previewItem.subject_name, question_type: previewItem.question_type, status: previewItem.status, ai_generated: previewItem.ai_generated, ai_answer_flag: previewItem.ai_answer_flag, created_at: previewItem.created_at, updated_at: previewItem.updated_at } },
                     { title: "解析数据", accent: "#6b9b6b", data: { parsed_content: previewItem.parsed_content, parsed_options: previewItem.parsed_options, parsed_answer: previewItem.parsed_answer, parsed_analysis: previewItem.parsed_analysis } },
                     { title: "重复检测", accent: "#c49a6b", data: { duplicate_status: previewItem.duplicate_status, duplicate_of_question_id: previewItem.duplicate_of_question_id, duplicate_of_import_id: previewItem.duplicate_of_import_id, question_hash: previewItem.question_hash } },
                     { title: "OCR / AI 原始数据", accent: "#9a7aba", data: { raw_data: previewItem.raw_data, ai_metadata: previewItem.ai_metadata } },
@@ -1283,9 +1292,9 @@ export default function ImportReviewPage() {
                           }}
                           onBlur={() => setTimeout(() => setSubjectDropdownOpen(false), 150)}
                         >
-                          <span className={`flex-1 text-left ${editState.subject ? "" : "text-[var(--color-text-hint)]"}`}>
-                            {editState.subject
-                              ? (subjectOptions.find((s) => s.code === editState.subject)?.name || editState.subject)
+                          <span className={`flex-1 text-left ${editState.subject_id ? "" : "text-[var(--color-text-hint)]"}`}>
+                            {editState.subject_id
+                              ? (subjectOptions.find((s) => s.id === editState.subject_id)?.name || `#${editState.subject_id}`)
                               : "选择科目"}
                           </span>
                           {subjectsQuery.isLoading ? (
@@ -1299,27 +1308,27 @@ export default function ImportReviewPage() {
                             <button
                               type="button"
                               className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-[var(--color-primary-light)]/40 ${
-                                !editState.subject
+                                !editState.subject_id
                                   ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold"
                                   : "text-[var(--color-text-hint)]"
                               }`}
-                              onMouseDown={(e) => { e.preventDefault(); setEditState({ ...editState, subject: "" }); setSubjectDropdownOpen(false); }}
+                              onMouseDown={(e) => { e.preventDefault(); setEditState({ ...editState, subject_id: null }); setSubjectDropdownOpen(false); }}
                             >
-                              {!editState.subject ? <Check className="h-4 w-4 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-4 shrink-0" />}
+                              {!editState.subject_id ? <Check className="h-4 w-4 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-4 shrink-0" />}
                               不设置
                             </button>
                             {subjectOptions.map((s) => (
                               <button
-                                key={s.code}
+                                key={s.id}
                                 type="button"
                                 className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-[var(--color-primary-light)]/40 ${
-                                  editState.subject === s.code
+                                  editState.subject_id === s.id
                                     ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold"
                                     : "text-[var(--color-text-primary)]"
                                 }`}
-                                onMouseDown={(e) => { e.preventDefault(); setEditState({ ...editState, subject: s.code }); setSubjectDropdownOpen(false); }}
+                                onMouseDown={(e) => { e.preventDefault(); setEditState({ ...editState, subject_id: s.id }); setSubjectDropdownOpen(false); }}
                               >
-                                {editState.subject === s.code ? <Check className="h-4 w-4 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-4 shrink-0" />}
+                                {editState.subject_id === s.id ? <Check className="h-4 w-4 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-4 shrink-0" />}
                                 {s.name}
                                 <span className="ml-auto text-[10px] text-[var(--color-text-hint)]">{s.code}</span>
                               </button>
@@ -1636,7 +1645,7 @@ export default function ImportReviewPage() {
                       {ALL_BATCH_FIELDS.map((value) => {
                         const labels: Record<string, string> = {
                           answer: "题目答案", analysis: "题目解析", knowledge_points: "知识点",
-                          difficulty: "难度等级", subject: "科目", question_type: "题型",
+                          difficulty: "难度等级", subject_id: "科目", question_type: "题型",
                           stem: "题干修复", options: "选项格式化", tips: "解题技巧", tags: "题目标签",
                         };
                         return (

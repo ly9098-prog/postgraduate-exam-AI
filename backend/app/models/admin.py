@@ -128,6 +128,8 @@ class Subject(Base):
 
     parent: Mapped["Subject | None"] = relationship(remote_side=[id], back_populates="children")
     children: Mapped[list["Subject"]] = relationship(back_populates="parent")
+    questions = relationship("Question", back_populates="subject_ref", lazy="noload")
+    question_imports = relationship("QuestionImport", back_populates="subject_ref", lazy="noload")
 
 
 class AdminAISettings(Base):

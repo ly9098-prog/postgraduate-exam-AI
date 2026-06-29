@@ -116,7 +116,8 @@ async def get_question_detail(
 
     return {
         "id": q.id,
-        "subject": q.subject,
+        "subject": q.subject_ref.code if q.subject_ref else None,
+        "subject_id": q.subject_id,
         "question_type": q.question_type,
         "content": q.content,
         "options": q.options,

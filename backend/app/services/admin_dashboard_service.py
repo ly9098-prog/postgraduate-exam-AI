@@ -107,7 +107,7 @@ async def get_dashboard_question_stats(db: AsyncSession) -> dict:
         return [{"name": row[0] if row[0] is not None else "unknown", "count": int(row[1])} for row in result.all()]
 
     return {
-        "by_subject": await grouped(Question.subject),
+        "by_subject": await grouped(Question.subject_id),
         "by_review_status": await grouped(Question.review_status),
         "by_difficulty": await grouped(Question.difficulty),
     }

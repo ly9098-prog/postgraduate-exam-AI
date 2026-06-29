@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class AdminImportBatchListItem(BaseModel):
@@ -24,11 +24,26 @@ class AdminImportQuestionItemBrief(BaseModel):
     """
     model_config = ConfigDict(from_attributes=True)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _fill_subject_display(cls, data):
+        if hasattr(data, "subject_ref"):
+            ref = data.subject_ref
+            if ref:
+                if isinstance(data, dict):
+                    data.setdefault("subject_code", ref.code)
+                    data.setdefault("subject_name", ref.name)
+                else:
+                    pass  # ORM object — from_attributes picks up labeled columns
+        return data
+
     id: int
     batch_id: str
     source_type: str
     source_file: str | None = None
-    subject: str | None = None
+    subject_id: int | None = None
+    subject_code: str | None = None
+    subject_name: str | None = None
     question_type: str | None = None
     parsed_answer: str | None = None
     question_hash: str | None = None
@@ -58,11 +73,26 @@ class AdminImportQuestionItemBrief(BaseModel):
 class AdminImportQuestionItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _fill_subject_display(cls, data):
+        if hasattr(data, "subject_ref"):
+            ref = data.subject_ref
+            if ref:
+                if isinstance(data, dict):
+                    data.setdefault("subject_code", ref.code)
+                    data.setdefault("subject_name", ref.name)
+                else:
+                    pass  # ORM object — from_attributes picks up labeled columns
+        return data
+
     id: int
     batch_id: str
     source_type: str
     source_file: str | None = None
-    subject: str | None = None
+    subject_id: int | None = None
+    subject_code: str | None = None
+    subject_name: str | None = None
     question_type: str | None = None
     raw_data: dict
     parsed_content: dict | None = None
@@ -117,6 +147,7 @@ class AdminImportCompleteResponse(BaseModel):
 
 class AdminImportQuestionUpdateRequest(BaseModel):
     subject: str | None = None
+    subject_id: int | None = None
     question_type: str | None = None
     stem: str | None = None
     options: list[dict] | dict | None = None
@@ -182,6 +213,7 @@ class AdminImportBatchCompleteResponse(BaseModel):
 class TextParseRequest(BaseModel):
     text: str = Field(..., max_length=100_000)  # ~100KB
     subject: str = ""  # 可选，为空时自动检测
+    subject_id: int | None = None
 
 
 class TextParseQuestion(BaseModel):
@@ -211,6 +243,7 @@ class TextParseResponse(BaseModel):
 
 class TextImportQuestion(BaseModel):
     subject: str = ""
+    subject_id: int | None = None
     stem: str
     options: list[dict] = []
     answer: str | list[str] | bool | None = None
@@ -222,6 +255,7 @@ class TextImportQuestion(BaseModel):
 
 class TextImportRequest(BaseModel):
     subject: str = ""
+    subject_id: int | None = None
     questions: list[TextImportQuestion]
 
 
@@ -290,6 +324,7 @@ class BatchImageJobStatusResponse(BaseModel):
     status: str  # queued | running | completed | failed
     source_type: str = "image"
     subject: str | None = None
+    subject_id: int | None = None
     concurrency: int = 2
     total: int = 0
     completed: int = 0

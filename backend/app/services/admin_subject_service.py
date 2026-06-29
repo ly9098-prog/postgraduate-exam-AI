@@ -92,8 +92,6 @@ async def update_subject(
 
     if new_code != subject.code:
         await _ensure_unique_code(db, new_code, subject.id)
-        if await _question_count_for_subject(db, subject.code):
-            raise SubjectBusinessRuleError("已有题目使用该科目，不能修改编码")
 
     all_subjects = await _list_all_subjects(db)
     parent_changed = "parent_id" in update_data and update_data["parent_id"] != subject.parent_id
@@ -147,7 +145,7 @@ async def delete_subject(
     child_count = await db.scalar(select(func.count()).select_from(Subject).where(Subject.parent_id == subject.id))
     if child_count:
         raise SubjectBusinessRuleError("存在子科目，不能删除")
-    question_count = await _question_count_for_subject(db, subject.code)
+    question_count = await _question_count_for_subject(db, subject.id)
     if question_count:
         raise SubjectBusinessRuleError("已有题目使用该科目，不能删除")
 
@@ -208,9 +206,15 @@ async def _ensure_unique_code(db: AsyncSession, code: str, exclude_id: int | Non
         raise SubjectConflictError("科目编码已存在")
 
 
-async def _question_count_for_subject(db: AsyncSession, code: str) -> int:
-    count = await db.scalar(select(func.count()).select_from(Question).where(Question.subject == code))
-    return int(count or 0)
+async def _question_count_for_subject(db: AsyncSession, subject_id: int) -> int:
+    from app.models.question_import import QuestionImport
+    q_count = await db.scalar(
+        select(func.count()).select_from(Question).where(Question.subject_id == subject_id)
+    )
+    qi_count = await db.scalar(
+        select(func.count()).select_from(QuestionImport).where(QuestionImport.subject_id == subject_id)
+    )
+    return int((q_count or 0) + (qi_count or 0))
 
 
 async def _list_all_subjects(db: AsyncSession) -> list[Subject]:
@@ -256,3 +260,75 @@ def _sync_descendant_paths(subjects: list[Subject], root: Subject) -> None:
             walk(child)
 
     walk(root)
+
+
+# ---------------------------------------------------------------------------
+# Subject resolver: legacy string → subject_id (for backward compatibility)
+# ---------------------------------------------------------------------------
+
+_SUBJECT_CODE_MAP: dict[str, int] | None = None
+
+
+async def resolve_subject_id(
+    db: AsyncSession, subject: str | int | None
+) -> int | None:
+    """Resolve a legacy subject string or subject_id to a valid subject_id.
+
+    Accepts:
+    - int: used directly as subject_id (validated to exist)
+    - str: matched against subjects.code (exact), then suffix after last '-'
+
+    Returns None if the subject cannot be resolved.
+    Raises ValueError if the subject is explicitly invalid.
+    """
+    if subject is None:
+        return None
+    if isinstance(subject, int):
+        subj = await db.get(Subject, subject)
+        if subj:
+            return subject
+        return None
+
+    # Build code → id map (cached per call)
+    rows = (await db.execute(select(Subject.id, Subject.code))).all()
+    code_map = {row.code.lower(): row.id for row in rows}
+
+    key = subject.lower().strip()
+    if key in code_map:
+        return code_map[key]
+    if "-" in key:
+        suffix = key.rsplit("-", 1)[1]
+        if suffix in code_map:
+            return code_map[suffix]
+    return None
+
+
+async def resolve_subject_ids(
+    db: AsyncSession, subject: str | int | None
+) -> list[int]:
+    """Resolve to all subject_ids matching the given subject identifier.
+
+    For simple matches behaves like resolve_subject_id (returns 0-1 items).
+    This replaces the old ``Question.subject.like(f"{subject}-%")`` pattern
+    by resolving the subject tree: if subject maps to a parent, all descendant
+    subject_ids are included.
+    """
+    sid = await resolve_subject_id(db, subject)
+    if sid is None:
+        return []
+
+    # Check if this subject has children → include them all
+    all_subjs = (await db.execute(
+        select(Subject).order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
+    )).scalars().all()
+    subjects_list = list(all_subjs)
+
+    descendant_ids = {sid}
+    children = _children_by_parent(subjects_list)
+    stack = list(children.get(sid, []))
+    while stack:
+        node = stack.pop()
+        descendant_ids.add(node.id)
+        stack.extend(children.get(node.id, []))
+
+    return list(descendant_ids)

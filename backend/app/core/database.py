@@ -361,6 +361,7 @@ async def init_db():
     from app.models.recommendation_experiment import RecommendationExperiment  # noqa: F401 — Phase 4
     from app.models.recommendation_experiment_assignment import RecommendationExperimentAssignment  # noqa: F401 — Phase 4
     from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401 — Phase 4
+    from app.models.admin_vector_config import AdminVectorConfig  # noqa: F401 — Phase 5 vector config
 
     async with engine.begin() as conn:
         await _repair_sqlite_admin_bigint_pk(conn)

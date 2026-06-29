@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
@@ -194,7 +194,13 @@ function TypeBadge({ type: t }: { type: string | null | undefined }) {
 export default function QuestionsPage() {
   const queryClient = useQueryClient();
   const permissions = useAuthStore((state) => state.permissions);
-  const [filters, setFilters] = useState({ subject: "", review_status: "", is_active: "", question_type: "", keyword: "", year: "" });
+  const [filters, setFilters] = useState({ subject_id: "", review_status: "", is_active: "", question_type: "", keyword: "", year: "" });
+  const [subjectOptions, setSubjectOptions] = useState<Array<{id: number; code: string; name: string}>>([]);
+  useEffect(() => {
+    apiRequest<Array<{id: number; code: string; name: string; path: string; level: number}>>("/imports/subject-options")
+      .then(setSubjectOptions)
+      .catch(() => {});
+  }, []);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(1);
   const [selectedQuestionId, setSelectedQuestionId] = useState<number | null>(null);
@@ -211,7 +217,7 @@ export default function QuestionsPage() {
     () => ({
       page,
       page_size: 20,
-      subject: filters.subject,
+      subject_id: filters.subject_id,
       review_status: filters.review_status,
       is_active: filters.is_active,
       question_type: filters.question_type,
@@ -337,7 +343,7 @@ export default function QuestionsPage() {
     const content = selectedQuestion.content;
     const stem = textFromContent(content);
     setEditForm({
-      subject: selectedQuestion.subject || "",
+      subject_id: selectedQuestion.subject_id ?? null,
       question_type: selectedQuestion.question_type || "",
       difficulty: selectedQuestion.difficulty,
       answer: selectedQuestion.answer || "",
@@ -402,7 +408,12 @@ export default function QuestionsPage() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
               <Input className="pl-9" placeholder="搜索题干 / 科目" value={filters.keyword} onChange={(event) => updateFilter("keyword", event.target.value)} />
             </label>
-            <Input placeholder="科目" value={filters.subject} onChange={(event) => updateFilter("subject", event.target.value)} />
+            <select className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm" value={filters.subject_id} onChange={(e) => updateFilter("subject_id", e.target.value)}>
+              <option value="">全部科目</option>
+              {subjectOptions.map((s) => (
+                <option key={s.id} value={String(s.id)}>{s.name}</option>
+              ))}
+            </select>
             <Input placeholder="题型" value={filters.question_type} onChange={(event) => updateFilter("question_type", event.target.value)} />
             <Input placeholder="年份" value={filters.year} onChange={(event) => updateFilter("year", event.target.value)} />
             <select className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm" value={filters.review_status} onChange={(event) => updateFilter("review_status", event.target.value)}>
@@ -479,10 +490,10 @@ export default function QuestionsPage() {
                           停用
                         </span>
                       )}
-                      {question.subject && (
+                      {question.subject_name && (
                         <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-primary-light)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-primary-dark)]">
                           <BookOpen className="h-3 w-3" />
-                          {question.subject}
+                          {question.subject_name}
                         </span>
                       )}
                       <TypeBadge type={question.question_type} />
@@ -625,7 +636,16 @@ export default function QuestionsPage() {
                   <div className="grid gap-3 md:grid-cols-3">
                     <div className="space-y-1">
                       <p className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</p>
-                      <Input value={editForm.subject ?? ""} onChange={(e) => setEditForm({ ...editForm, subject: e.target.value })} />
+                      <select
+                        className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
+                        value={editForm.subject_id ?? ""}
+                        onChange={(e) => setEditForm({ ...editForm, subject_id: e.target.value ? Number(e.target.value) : null })}
+                      >
+                        <option value="">未设置</option>
+                        {subjectOptions.map((s) => (
+                          <option key={s.id} value={String(s.id)}>{s.name}</option>
+                        ))}
+                      </select>
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs font-semibold text-[var(--color-text-secondary)]">题型</p>

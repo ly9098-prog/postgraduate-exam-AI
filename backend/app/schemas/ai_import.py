@@ -17,7 +17,7 @@ class EnrichBatchResponse(BaseModel):
 
 
 class GenerateRequest(BaseModel):
-    subject: str
+    subject_id: int | None = None
     knowledge_points: list[str] = Field(default_factory=list)
     difficulty: int = 3
     count: int = 3

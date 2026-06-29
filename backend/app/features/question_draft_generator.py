@@ -32,16 +32,27 @@ async def generate_drafts(
     db: AsyncSession,
     user_id: int,
     *,
-    subject: str,
+    subject: str = "",
     knowledge_points: list[str],
     difficulty: int = 3,
     count: int = 3,
     question_type: str = "single_choice",
     extra_hint: str | None = None,
+    subject_id: int | None = None,
 ) -> dict:
     """AI 批量生成草稿题目，进入暂存区。绝不直接进入正式题库。"""
-    if subject not in SUBJECT_VALUES:
-        raise ValueError("subject 仅支持 math2 / exam408 / english")
+    # Resolve subject: prefer subject_id (DB lookup), fall back to subject string
+    if subject_id:
+        from app.models.admin import Subject
+        subj = await db.get(Subject, subject_id)
+        if not subj:
+            raise ValueError(f"subject_id={subject_id} 不存在")
+        subject = subj.code
+    elif subject:
+        if subject not in SUBJECT_VALUES:
+            raise ValueError("subject 仅支持 math2 / exam408 / english")
+    else:
+        raise ValueError("必须提供 subject 或 subject_id")
     question_type = normalizer.normalize_type(question_type)
     if question_type not in TYPE_VALUES:
         raise ValueError(
@@ -95,6 +106,7 @@ async def generate_drafts(
             extra_fields={
                 "ai_generated": True,
                 "ai_source": "generate",
+                "subject_id": subject_id,
                 "ai_metadata": {
                     "knowledge_points": norm["knowledge_points"],
                     "difficulty": norm["difficulty"],

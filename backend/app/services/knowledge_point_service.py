@@ -3,12 +3,13 @@ import logging
 import re
 import unicodedata
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.knowledge_point import KnowledgePoint
 from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
+from app.services.admin_subject_service import resolve_subject_ids
 
 logger = logging.getLogger(__name__)
 
@@ -136,12 +137,8 @@ async def backfill_question_knowledge_points(
     """
     conditions = [Question.is_active == True]
     if subject:
-        conditions.append(
-            or_(
-                Question.subject == subject,
-                Question.subject.like(f"{subject}-%"),
-            )
-        )
+        ids = await resolve_subject_ids(db, subject)
+        conditions.append(Question.subject_id.in_(ids))
 
     result = await db.execute(
         select(Question)

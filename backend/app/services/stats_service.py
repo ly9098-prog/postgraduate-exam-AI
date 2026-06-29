@@ -420,20 +420,22 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
     today = utcnow().date()
     since = today - timedelta(days=60)
 
+    from app.models.admin import Subject
     result = await db.execute(
         select(
-            Question.subject,
+            Subject.code,
             func.count(WrongQuestion.id),
             func.coalesce(
                 func.sum(case((WrongQuestion.mastered == True, 1), else_=0)), 0
             ),
         )
         .join(Question, WrongQuestion.question_id == Question.id)
+        .join(Subject, Question.subject_id == Subject.id)
         .where(
             WrongQuestion.user_id == user_id,
             WrongQuestion.created_at >= since,
         )
-        .group_by(Question.subject)
+        .group_by(Subject.id, Subject.code)
     )
     subject_rows = result.all()
     if not subject_rows:

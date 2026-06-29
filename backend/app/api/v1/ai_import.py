@@ -61,6 +61,7 @@ async def generate(
             count=data.count,
             question_type=data.question_type,
             extra_hint=data.extra_hint,
+            subject_id=data.subject_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
