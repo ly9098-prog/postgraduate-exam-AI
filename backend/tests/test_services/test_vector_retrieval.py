@@ -355,18 +355,30 @@ class TestSchemaCompatibility:
             EmbeddingBackfillResponse,
             EmbeddingStatusResponse,
         )
-        req = EmbeddingBackfillRequest(subject="exam408-ds", limit=50, force=False)
+        req = EmbeddingBackfillRequest(subject="exam408-ds", limit=50, force=False, after_id=10)
         assert req.subject == "exam408-ds"
         assert req.limit == 50
+        assert req.after_id == 10
 
         resp = EmbeddingBackfillResponse(
-            enabled=True, total=50, created=40, updated=5, skipped=3, failed=2, errors=["err1"]
+            enabled=True, total=50, created=40, updated=5, skipped=3, failed=2,
+            errors=["err1"], next_cursor=100, has_more=True,
         )
         assert resp.created == 40
+        assert resp.has_more is True
+        assert resp.next_cursor == 100
 
         status = EmbeddingStatusResponse(
-            vector_enabled=True, db_dialect="postgresql",
-            embedding_model="BAAI/bge-m3", embedding_dim=1024,
+            configured=True, mode="all",
+            execute_enabled=True, result_enabled=True,
+            database="postgresql",
+            extension_installed=True, table_exists=True, index_exists=True,
+            configured_dimension=1024, database_dimension=1024, dimension_matches=True,
+            embedding_model="BAAI/bge-m3",
+            embedding_api_configured=True, allowlist_configured=False,
+            healthy=True, issues=[],
             total_embeddings=1000, total_questions=1200,
         )
         assert status.total_embeddings == 1000
+        assert status.dimension_matches is True
+        assert status.mode == "all"

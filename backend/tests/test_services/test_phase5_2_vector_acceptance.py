@@ -253,7 +253,7 @@ class TestVectorModeShadow:
         from app.services.vector_retrieval_service import is_vector_enabled
         with patch("app.services.vector_retrieval_service.settings") as s:
             s.VECTOR_MODE = "shadow"
-            s.VECTOR_ENABLED = False
+            s.VECTOR_ENABLED = True  # 基础设施必须启用
             s.EMBEDDING_API_KEY = "test-key"
             s.EMBEDDING_BASE_URL = "http://test"
             s.EMBEDDING_MODEL = "test-model"
@@ -367,15 +367,15 @@ class TestVectorModeAllowlist:
             s.VECTOR_ALLOWLIST = '[1, 2, 3]'
             assert is_vector_allowed_for(user_id=999) is False
 
-    def test_empty_allowlist_allows_all(self):
-        """空 allowlist 允许所有（灰度初期）。"""
+    def test_empty_allowlist_denies_all(self):
+        """空 allowlist 拒绝所有（安全默认）。"""
         from app.services.vector_retrieval_service import is_vector_allowed_for
         with patch("app.services.vector_retrieval_service.settings") as s:
             s.VECTOR_MODE = "allowlist"
             s.VECTOR_ENABLED = False
             s.VECTOR_ALLOWLIST = ""
-            assert is_vector_allowed_for(subject="anything") is True
-            assert is_vector_allowed_for(user_id=999) is True
+            assert is_vector_allowed_for(subject="anything") is False
+            assert is_vector_allowed_for(user_id=999) is False
 
     def test_non_allowlist_mode_unrestricted(self):
         """非 allowlist 模式不受 allowlist 限制。"""
@@ -403,7 +403,7 @@ class TestVectorModeAll:
         from app.services.vector_retrieval_service import is_vector_enabled
         with patch("app.services.vector_retrieval_service.settings") as s:
             s.VECTOR_MODE = "all"
-            s.VECTOR_ENABLED = False
+            s.VECTOR_ENABLED = True  # 基础设施必须启用
             s.EMBEDDING_API_KEY = "test-key"
             s.EMBEDDING_BASE_URL = "http://test"
             s.EMBEDDING_MODEL = "test-model"
@@ -621,17 +621,21 @@ class TestFaultInjection:
         # embedding 查询返回空
         mock_emb_row = MagicMock()
         mock_emb_row.first.return_value = ("[0.1,0.2,0.3]",)
+        # _get_user_answer_version → count = 0
+        mock_answer_count = MagicMock()
+        mock_answer_count.scalar.return_value = 0
         # 向量查询返回空候选
         mock_query = MagicMock()
         mock_query.fetchall.return_value = []
 
         db.execute = AsyncMock(side_effect=[
-            mock_ext, mock_table, mock_source, mock_emb_row, mock_query
+            mock_ext, mock_table, mock_source, mock_emb_row,
+            mock_answer_count, mock_query,
         ])
 
         with patch("app.services.vector_retrieval_service.settings") as s:
             s.VECTOR_MODE = "all"
-            s.VECTOR_ENABLED = False
+            s.VECTOR_ENABLED = True  # 基础设施必须启用
             s.EMBEDDING_API_KEY = "test"
             s.EMBEDDING_BASE_URL = "http://test"
             s.EMBEDDING_MODEL = "test-model"
@@ -700,12 +704,16 @@ class TestMainChainIntegrity:
         # 确认无向量调用
         assert "vector_retrieval" not in source
 
-    def test_submit_no_vector_dependency(self):
-        """submit_answer 不依赖向量服务。"""
+    def test_submit_vector_cache_invalidation_is_best_effort(self):
+        """submit_answer 答题后清理向量缓存，但失败不影响核心流程。"""
         from app.services import practice_service
         import inspect
         source = inspect.getsource(practice_service.submit_answer)
-        assert "vector_retrieval" not in source
+        # 确认有缓存清理调用
+        assert "invalidate_vector_cache" in source
+        # 确认是 best-effort（在 try/except 中）
+        assert "try:" in source
+        assert "向量缓存清理失败" in source
 
     def test_submit_answer_writes_practice_record(self):
         """submit_answer 正常写入 PracticeRecord。"""
@@ -788,6 +796,7 @@ class TestMainChainIntegrity:
 
         q = _make_question(id=1, answer="A")
         db = _make_mock_db("sqlite")
+        db.rollback = AsyncMock()  # mastery error handler calls await db.rollback()
         mock_result = _make_execute_result()
         mock_result.scalar_one_or_none.return_value = q
         db.execute = AsyncMock(return_value=mock_result)
@@ -799,6 +808,8 @@ class TestMainChainIntegrity:
              patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
                    new_callable=AsyncMock, side_effect=Exception("mastery error")), \
              patch("app.services.recommendation_log_service.mark_recommendation_answered",
+                   new_callable=AsyncMock), \
+             patch("app.services.vector_retrieval_service.invalidate_vector_cache",
                    new_callable=AsyncMock):
             # 不应抛出异常
             result = _run(practice_service.submit_answer(

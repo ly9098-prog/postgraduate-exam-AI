@@ -17,7 +17,9 @@ def _make_mock_db():
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
     db.execute = AsyncMock()
+    db.flush = AsyncMock()
     db.rollback = AsyncMock()
+    db.begin_nested = MagicMock()
     return db
 
 
@@ -141,6 +143,17 @@ class TestMultiBlankAnswerHelpers:
 # --- submit_answer ---
 
 class TestSubmitAnswer:
+    def setup_method(self):
+        """Mock 向量缓存清理，避免测试与真实 cache 交互。"""
+        self._cache_patcher = patch(
+            "app.services.vector_retrieval_service.invalidate_vector_cache",
+            new_callable=AsyncMock,
+        )
+        self._cache_patcher.start()
+
+    def teardown_method(self):
+        self._cache_patcher.stop()
+
     def test_correct_answer(self):
         from app.services.practice_service import submit_answer
 

@@ -108,3 +108,30 @@ Phase 4.5 新增代码导致 Phase 4 既有测试失败：
 3. **MagicMock 属性默认值**：使用 `isinstance` 检查而非 `getattr(obj, attr, default)`，因为 MagicMock 会自动创建属性
 4. **可选依赖测试**：使用 `patch.object(module, "is_available", return_value=True/False)` 控制依赖可用性
 5. **测试文件间独立性**：每个测试文件应可独立运行，不依赖其他文件的副作用
+
+---
+
+## 6. get_publish_history ImportError（Phase 4.7 记录 → Phase 5.0 已修复）
+
+### 状态：已修复 ✅
+
+Phase 5.0 中实现了 `get_publish_history` 函数，ImportError 已消除。
+`test_question_publish_service.py` 可重新纳入常规测试范围，不再需要 `--ignore`。
+
+### 实现摘要
+
+- **函数位置**：`app/features/question_publish_service.py`
+- **函数签名**：`async def get_publish_history(db, page=1, page_size=20) -> PublishHistoryResponse`
+- **数据来源**：从 `question_imports` 表按 `batch_id` 聚合统计（published/duplicate/failed 计数）
+- **Schema**：`PublishHistoryItem` + `PublishHistoryResponse`（`app/schemas/question_publish.py`）
+- **Stage 10 后续增强**：可替换为专用 audit_log / publish_log 表，当前实现为最小兼容版本
+
+### 原始问题记录（供参考）
+
+`tests/test_services/test_question_publish_service.py` 在 import 阶段失败：
+
+```
+ImportError: cannot import name 'get_publish_history' from 'app.features.question_publish_service'
+```
+
+根因是 `get_publish_history` 为未完成的 Stage 10 功能，测试先行但实现被搁置。
