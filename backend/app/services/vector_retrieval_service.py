@@ -1,6 +1,7 @@
 """向量召回服务：向量检索、相似题推荐、智能刷题召回。"""
 
 import hashlib
+import json as _json
 import logging
 import time
 from typing import Any
@@ -635,3 +636,87 @@ async def get_embedding_status(db: AsyncSession) -> dict:
         "total_embeddings": total_embeddings,
         "total_questions": total_questions,
     }
+
+
+# ── VECTOR_MODE 解析 ──
+
+_VALID_MODES = {"off", "shadow", "allowlist", "all"}
+
+
+def resolve_vector_mode() -> str:
+    """解析当前 VECTOR_MODE。
+
+    优先级：
+    1. VECTOR_MODE 显式设置（非默认 "off"）→ 使用 VECTOR_MODE
+    2. VECTOR_ENABLED=True 且 VECTOR_MODE="off" → 兼容为 "all"
+    3. 否则 → "off"
+
+    返回: "off" | "shadow" | "allowlist" | "all"
+    """
+    mode = (settings.VECTOR_MODE or "off").strip().lower()
+    if mode not in _VALID_MODES:
+        logger.warning("VECTOR_MODE=%s 无效，回退为 off", mode)
+        mode = "off"
+
+    # 向后兼容：VECTOR_ENABLED=True 但 VECTOR_MODE 仍为默认 "off"
+    if settings.VECTOR_ENABLED and mode == "off":
+        return "all"
+
+    return mode
+
+
+def is_shadow_mode() -> bool:
+    """判断当前是否为 shadow 模式。"""
+    return resolve_vector_mode() == "shadow"
+
+
+def _parse_allowlist() -> dict:
+    """解析 VECTOR_ALLOWLIST JSON 配置。
+
+    返回:
+        {"user_ids": list[int], "subjects": list[str]}
+    """
+    raw = (settings.VECTOR_ALLOWLIST or "").strip()
+    if not raw:
+        return {"user_ids": [], "subjects": []}
+
+    try:
+        parsed = _json.loads(raw)
+        if not isinstance(parsed, list):
+            return {"user_ids": [], "subjects": []}
+
+        user_ids: list[int] = []
+        subjects: list[str] = []
+        for item in parsed:
+            if isinstance(item, int):
+                user_ids.append(item)
+            elif isinstance(item, str):
+                subjects.append(item)
+        return {"user_ids": user_ids, "subjects": subjects}
+    except (_json.JSONDecodeError, ValueError):
+        logger.warning("VECTOR_ALLOWLIST 解析失败: %s", raw)
+        return {"user_ids": [], "subjects": []}
+
+
+def is_vector_allowed_for(user_id: int | None = None, subject: str | None = None) -> bool:
+    """检查指定用户或科目是否被允许使用向量检索。
+
+    非 allowlist 模式（all/shadow/off）总是返回 True。
+    allowlist 模式：空 allowlist 全部允许；否则按 user_ids / subjects 过滤。
+    """
+    mode = resolve_vector_mode()
+    if mode != "allowlist":
+        return True
+
+    allowlist = _parse_allowlist()
+
+    # 空 allowlist = 全部允许
+    if not allowlist["user_ids"] and not allowlist["subjects"]:
+        return True
+
+    if user_id is not None and user_id in allowlist["user_ids"]:
+        return True
+    if subject is not None and subject in allowlist["subjects"]:
+        return True
+
+    return False
