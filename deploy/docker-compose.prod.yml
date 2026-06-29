@@ -5,7 +5,7 @@
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-pguser}
@@ -62,6 +62,18 @@ services:
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
       CORS_ORIGINS: ${CORS_ORIGINS:-["https://your-domain.com"]}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Phase 5.2.1: pgvector / Embedding
+      VECTOR_ENABLED: ${VECTOR_ENABLED:-false}
+      VECTOR_MODE: ${VECTOR_MODE:-off}
+      VECTOR_ALLOWLIST: ${VECTOR_ALLOWLIST:-}
+      VECTOR_CACHE_TTL_SEC: ${VECTOR_CACHE_TTL_SEC:-300}
+      VECTOR_TOP_K: ${VECTOR_TOP_K:-100}
+      VECTOR_SIMILARITY_THRESHOLD: ${VECTOR_SIMILARITY_THRESHOLD:-0.15}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
+      EMBEDDING_TIMEOUT: ${EMBEDDING_TIMEOUT:-30}
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
