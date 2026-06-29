@@ -1,11 +1,12 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Ban, Save, SlidersHorizontal, Power, Sparkles } from "lucide-react";
+import { AlertTriangle, Ban, Power, Save, Sparkles, SlidersHorizontal } from "lucide-react";
 import { useMemo, useState } from "react";
-import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Toggle } from "@/components/ui/toggle";
+import { cn } from "@/lib/utils";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
 import { useAuthStore } from "@/lib/auth/auth-store";
@@ -17,6 +18,17 @@ import { OcrAccordion } from "./components/ocr-accordion";
 import { AiCompletionPreview } from "./components/ai-completion";
 import { VectorConfigSection } from "./components/vector-config-section";
 
+type Tab = "overview" | "models" | "ocr" | "completion" | "vector" | "system";
+
+const TABS: { key: Tab; label: string; icon: string; color: string }[] = [
+  { key: "overview", label: "总览", icon: "📊", color: "#5b7b9a" },
+  { key: "models", label: "模型", icon: "🤖", color: "#6b9b6b" },
+  { key: "ocr", label: "OCR", icon: "📝", color: "#c49a6b" },
+  { key: "completion", label: "补全", icon: "✨", color: "#9a7aba" },
+  { key: "vector", label: "向量", icon: "🔍", color: "#5b7b9a" },
+  { key: "system", label: "系统", icon: "⚙️", color: "#c47a7a" },
+];
+
 export default function AISettingsPage() {
   const role = useAuthStore((s) => s.role);
   const isSuperAdmin = role?.name === "super_admin";
@@ -25,6 +37,7 @@ export default function AISettingsPage() {
   const [enabled, setEnabled] = useState(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
 
   const settings = useQuery({
     queryKey: ["ai-settings"],
@@ -55,40 +68,25 @@ export default function AISettingsPage() {
   const resolvedModels = useMemo(() => {
     const list = models.data ?? [];
     const resolve = (feature: string): string | null => {
-      const featured = list.find(
-        (m) => m.is_enabled && (m.features ?? []).includes(feature),
-      );
+      const featured = list.find((m) => m.is_enabled && (m.features ?? []).includes(feature));
       if (featured) return featured.display_name;
-      const untagged = list.find(
-        (m) => m.is_enabled && (!m.features || m.features.length === 0),
-      );
+      const untagged = list.find((m) => m.is_enabled && (!m.features || m.features.length === 0));
       if (untagged) return untagged.display_name;
       const any = list.find((m) => m.is_enabled);
       return any?.display_name ?? null;
     };
-    return {
-      ocr: resolve("ocr"),
-      completion: resolve("completion"),
-      analysis: resolve("analysis"),
-      vision: resolve("vision"),
-    };
+    return { ocr: resolve("ocr"), completion: resolve("completion"), analysis: resolve("analysis"), vision: resolve("vision") };
   }, [models.data]);
 
   const current = settings.data;
   const usageRate = useMemo(() => {
     if (!current || current.monthly_call_limit <= 0) return 0;
-    return Math.min(
-      Math.round((current.current_usage.call_count / current.monthly_call_limit) * 100),
-      100,
-    );
+    return Math.min(Math.round((current.current_usage.call_count / current.monthly_call_limit) * 100), 100);
   }, [current]);
 
   const updateMutation = useMutation({
     mutationFn: (payload: AISettingsPatchRequest) =>
-      apiRequest<AISettings>("/ai-settings", {
-        method: "PATCH",
-        body: JSON.stringify(payload),
-      }),
+      apiRequest<AISettings>("/ai-settings", { method: "PATCH", body: JSON.stringify(payload) }),
     onSuccess: (data) => {
       setMessage("AI 解析设置已更新");
       setConfirmOpen(false);
@@ -103,18 +101,11 @@ export default function AISettingsPage() {
   const hasChanges = current
     ? enabled !== current.ai_parse_enabled || parsedLimit !== current.monthly_call_limit
     : false;
-  const canSave =
-    hasChanges &&
-    Number.isInteger(parsedLimit) &&
-    parsedLimit >= 0 &&
-    !updateMutation.isPending;
+  const canSave = hasChanges && Number.isInteger(parsedLimit) && parsedLimit >= 0 && !updateMutation.isPending;
 
   const save = () => {
     if (!current || !canSave) return;
-    updateMutation.mutate({
-      ai_parse_enabled: enabled,
-      monthly_call_limit: parsedLimit,
-    });
+    updateMutation.mutate({ ai_parse_enabled: enabled, monthly_call_limit: parsedLimit });
   };
 
   if (!isSuperAdmin) {
@@ -124,185 +115,219 @@ export default function AISettingsPage() {
           <Ban className="h-8 w-8 text-[var(--color-danger)]" />
         </div>
         <h3 className="text-xl font-semibold text-[var(--ink)]">权限不足</h3>
-        <p className="max-w-sm text-sm text-[var(--color-text-secondary)]">
-          仅超级管理员可访问 AI 解析设置页面
-        </p>
+        <p className="max-w-sm text-sm text-[var(--color-text-secondary)]">仅超级管理员可访问 AI 解析设置页面</p>
       </div>
     );
   }
 
+  const activeTabMeta = TABS.find((t) => t.key === activeTab)!;
+
   return (
-    <div className="space-y-6 animate-rise-in">
-      {/* ===== Header ===== */}
-      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+    <div className="overflow-hidden rounded-2xl border border-[var(--color-border)]/80 bg-white/80 shadow-[var(--shadow-card)] animate-rise-in">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between border-b border-[var(--color-border)]/60 px-5 py-4">
         <div>
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--color-text-hint)]">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.25em] text-[var(--color-text-hint)]">
             AI Operations Center
           </p>
-          <h2 className="mt-2 font-display text-4xl font-bold text-[var(--ink)]">AI 解析设置</h2>
-          <p className="mt-3 text-sm text-[var(--color-text-secondary)]">
+          <h2 className="mt-1 font-display text-xl font-bold text-[var(--ink)]">AI 解析设置</h2>
+          <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">
             管理 OCR 纠错、题目补全、AI 解析生成等能力
           </p>
         </div>
-        <StatusBadge tone={current?.ai_parse_enabled ? "success" : "danger"}>
-          {current?.ai_parse_enabled ? "解析开启" : "全局关闭"}
-        </StatusBadge>
+        <span
+          className={cn(
+            "rounded-full px-3 py-1 text-[11px] font-semibold",
+            current?.ai_parse_enabled
+              ? "bg-[var(--color-success-light)] text-[var(--color-success)]"
+              : "bg-[var(--color-danger-light)] text-[var(--color-danger)]",
+          )}
+        >
+          {current?.ai_parse_enabled ? "● 解析开启" : "● 全局关闭"}
+        </span>
       </div>
 
-      {/* ===== Part 1: Data Overview ===== */}
-      {stats.isError ? (
-        <p className="rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
-          {getErrorMessage(stats.error)}
-        </p>
-      ) : (
-        <StatCards stats={stats.data} loading={stats.isLoading} />
-      )}
+      {/* ── Tab bar ── */}
+      <div className="flex border-b border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/30">
+        {TABS.map((t) => {
+          const active = activeTab === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setActiveTab(t.key)}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1.5 py-3 text-xs transition-all",
+                active ? "font-semibold" : "font-medium text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]",
+              )}
+              style={{
+                color: active ? t.color : undefined,
+                borderBottom: active ? `2px solid ${t.color}` : "2px solid transparent",
+              }}
+            >
+              <span className="text-sm">{t.icon}</span>
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
 
-      {/* ===== Part 2: AI Call Trend ===== */}
-      <TrendChart trends={stats.data?.daily_trends} loading={stats.isLoading} />
+      {/* ── Tab content ── */}
+      <div className="p-5">
+        {/* ═══ 总览 ═══ */}
+        {activeTab === "overview" && (
+          <div className="space-y-5 animate-rise-in">
+            {stats.isError ? (
+              <p className="rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
+                {getErrorMessage(stats.error)}
+              </p>
+            ) : (
+              <StatCards stats={stats.data} loading={stats.isLoading} />
+            )}
+            <TrendChart trends={stats.data?.daily_trends} loading={stats.isLoading} />
+          </div>
+        )}
 
-      {/* ===== Part 3: Model Configuration ===== */}
-      <ModelCards />
+        {/* ═══ 模型 ═══ */}
+        {activeTab === "models" && (
+          <div className="animate-rise-in">
+            <ModelCards />
+          </div>
+        )}
 
-      {configs.isError && (
-        <p className="rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
-          {getErrorMessage(configs.error)}
-        </p>
-      )}
-      {/* ===== Part 4: OCR Correction Config ===== */}
-      <OcrAccordion configs={configs.data} loading={configs.isLoading} modelName={resolvedModels.ocr} />
-      {/* ===== Part 5: AI Completion Config ===== */}
-      <AiCompletionPreview configs={configs.data} loading={configs.isLoading} modelName={resolvedModels.completion} />
-      <p className="mt-1 text-xs text-[var(--color-text-hint)]">
-        配置已保存，将在后续版本中生效
-      </p>
+        {/* ═══ OCR ═══ */}
+        {activeTab === "ocr" && (
+          <div className="animate-rise-in">
+            {configs.isError && (
+              <p className="mb-4 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
+                {getErrorMessage(configs.error)}
+              </p>
+            )}
+            <OcrAccordion configs={configs.data} loading={configs.isLoading} modelName={resolvedModels.ocr} />
+          </div>
+        )}
 
-      {/* ===== Part 6: Vector & Embedding Config ===== */}
-      <VectorConfigSection />
+        {/* ═══ 补全 ═══ */}
+        {activeTab === "completion" && (
+          <div className="animate-rise-in">
+            {configs.isError && (
+              <p className="mb-4 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
+                {getErrorMessage(configs.error)}
+              </p>
+            )}
+            <AiCompletionPreview configs={configs.data} loading={configs.isLoading} modelName={resolvedModels.completion} />
+          </div>
+        )}
 
-      {/* ===== System Configuration ===== */}
-      <div className="rounded-2xl border border-[var(--color-border)]/80 bg-white/80 p-5 shadow-sm">
-        <div className="mb-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-xl border border-[var(--color-border)]/60 bg-white/60 shadow-sm">
-                <SlidersHorizontal className="h-5 w-5 text-[var(--color-primary)]" />
+        {/* ═══ 向量 ═══ */}
+        {activeTab === "vector" && (
+          <div className="animate-rise-in">
+            <VectorConfigSection />
+          </div>
+        )}
+
+        {/* ═══ 系统 ═══ */}
+        {activeTab === "system" && (
+          <div className="space-y-4 animate-rise-in">
+            {/* Section header */}
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="h-4 w-4" style={{ color: activeTabMeta.color }} />
+              <span className="text-sm font-semibold" style={{ color: activeTabMeta.color }}>
+                全局 AI 解析开关与月度调用额度
+              </span>
+            </div>
+
+            {/* Messages */}
+            {message && (
+              <p className="rounded-lg border border-[var(--color-border)] bg-white/70 px-3 py-2 text-sm text-[var(--color-text-secondary)]">
+                {message}
+              </p>
+            )}
+            {settings.isError && (
+              <p className="rounded-lg border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-3 py-2 text-sm text-[var(--color-danger)]">
+                {getErrorMessage(settings.error)}
+              </p>
+            )}
+
+            {/* Warning */}
+            <div className="flex items-start gap-2.5 rounded-lg border border-[var(--color-warning)]/25 bg-[var(--color-warning-light)] px-3 py-2.5">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-warning)]" />
+              <p className="text-[11px] leading-5 text-[var(--color-text-secondary)]">
+                全局关闭后所有管理员都不能新建 AI 解析任务，super_admin 也受影响；月度额度为全局 API
+                调用量，super_admin 不受额度限制。
+              </p>
+            </div>
+
+            {/* Toggle + limit */}
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] p-4">
+                <div className="flex items-start gap-2.5">
+                  <Power
+                    className="mt-0.5 h-4 w-4"
+                    style={{ color: enabled ? "var(--color-success)" : "var(--color-text-hint)" }}
+                  />
+                  <div>
+                    <span className="text-sm font-semibold text-[var(--ink)]">全局 AI 解析</span>
+                    <p className="mt-0.5 text-[11px] text-[var(--color-text-hint)]">关闭后拒绝创建新任务</p>
+                  </div>
+                </div>
+                <Toggle
+                  checked={enabled}
+                  onChange={() => setEnabled(!enabled)}
+                  disabled={!current || updateMutation.isPending}
+                />
               </div>
-              <div>
-                <h3 className="font-display text-xl font-bold text-[var(--ink)]">系统配置</h3>
-                <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">
-                  全局 AI 解析开关与月度调用额度管理
-                </p>
+
+              <div className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] p-4">
+                <span className="text-sm font-semibold text-[var(--ink)]">月度 API 调用额度</span>
+                <p className="mt-0.5 text-[11px] text-[var(--color-text-hint)]">0 = 不限制；仅限制非 super_admin</p>
+                <div className="relative mt-2">
+                  <input
+                    className="h-9 w-full rounded-lg border border-[var(--color-border)] bg-white pl-3 pr-10 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
+                    min={0}
+                    step={1}
+                    type="number"
+                    value={monthlyLimit}
+                    onChange={(e) => setMonthlyLimit(e.target.value)}
+                    disabled={!current || updateMutation.isPending}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-hint)]">次</span>
+                </div>
               </div>
             </div>
+
+            {/* Usage progress */}
+            <div className="rounded-xl border border-[var(--color-border)]/60 bg-white/70 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-[var(--color-primary)]" />
+                  <span className="text-sm font-semibold text-[var(--ink)]">本月使用进度</span>
+                </div>
+                <span className="text-sm tabular-nums text-[var(--color-text-secondary)]">
+                  <span className="font-semibold text-[var(--ink)]">
+                    {current?.current_usage.call_count.toLocaleString("zh-CN") ?? 0}
+                  </span>
+                  {" / "}
+                  {current?.monthly_call_limit
+                    ? current.monthly_call_limit.toLocaleString("zh-CN")
+                    : "不限"}
+                  <span className="ml-2">{usageRate}%</span>
+                </span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--color-primary-light)]">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-primary-dark)] transition-all duration-700"
+                  style={{ width: `${usageRate}%` }}
+                />
+              </div>
+            </div>
+
             <Button disabled={!canSave} onClick={() => setConfirmOpen(true)}>
               <Save className="h-4 w-4" />
               保存设置
             </Button>
           </div>
-        </div>
-
-        {/* Messages */}
-        {message ? (
-          <p className="mb-4 rounded-xl border border-[var(--color-border)] bg-white/70 px-4 py-3 text-sm text-[var(--color-text-secondary)]">
-            {message}
-          </p>
-        ) : null}
-        {settings.isError ? (
-          <p className="mb-4 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
-            {getErrorMessage(settings.error)}
-          </p>
-        ) : null}
-
-        {/* Rules info */}
-        <div className="mb-5 flex items-start gap-3 rounded-xl border border-[var(--color-warning)]/30 bg-[var(--color-warning-light)] px-4 py-3">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-warning)]" />
-          <p className="text-xs leading-6 text-[var(--color-text-secondary)]">
-            全局关闭后所有管理员都不能新建 AI 解析任务，super_admin 也受影响；月度额度为全局 API
-            调用量，super_admin 不受额度限制。
-          </p>
-        </div>
-
-        <div className="grid gap-5 md:grid-cols-2">
-          {/* Toggle */}
-          <label className="flex items-center justify-between gap-4 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] p-4">
-            <div className="flex items-start gap-3">
-              <Power
-                className="mt-0.5 h-5 w-5"
-                style={{ color: enabled ? "var(--color-success)" : "var(--color-text-hint)" }}
-              />
-              <div>
-                <span className="text-sm font-semibold text-[var(--ink)]">全局 AI 解析</span>
-                <p className="mt-0.5 text-xs text-[var(--color-text-hint)]">
-                  关闭后拒绝创建新的 AI 解析任务
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setEnabled(!enabled)}
-              disabled={!current || updateMutation.isPending}
-              className="relative h-6 w-11 rounded-full border border-[var(--color-border)] transition-colors"
-              style={{
-                backgroundColor: enabled
-                  ? "var(--color-success)"
-                  : "var(--color-bg-input)",
-              }}
-            >
-              <span
-                className="absolute left-0.5 top-0.5 h-[calc(100%-4px)] w-[calc(50%-2px)] rounded-full bg-white shadow-sm transition-transform"
-                style={{ transform: enabled ? "translateX(100%)" : "translateX(0)" }}
-              />
-            </button>
-          </label>
-
-          {/* Monthly limit */}
-          <label className="block rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] p-4">
-            <span className="text-sm font-semibold text-[var(--ink)]">月度 API 调用额度</span>
-            <p className="mt-0.5 text-xs text-[var(--color-text-hint)]">
-              填写 0 表示不限额度；额度只限制非 super_admin 的新解析任务
-            </p>
-            <div className="relative mt-2">
-              <input
-                className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-white pl-3 pr-12 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
-                min={0}
-                step={1}
-                type="number"
-                value={monthlyLimit}
-                onChange={(event) => setMonthlyLimit(event.target.value)}
-                disabled={!current || updateMutation.isPending}
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-hint)]">
-                次
-              </span>
-            </div>
-          </label>
-        </div>
-
-        {/* Usage progress */}
-        <div className="mt-5 rounded-xl border border-[var(--color-border)]/60 bg-white/70 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-[var(--color-primary)]" />
-              <span className="text-sm font-semibold text-[var(--ink)]">本月使用进度</span>
-            </div>
-            <span className="text-sm tabular-nums text-[var(--color-text-secondary)]">
-              <span className="font-semibold text-[var(--ink)]">
-                {current?.current_usage.call_count.toLocaleString("zh-CN") ?? 0}
-              </span>
-              {" / "}
-              {current?.monthly_call_limit
-                ? current.monthly_call_limit.toLocaleString("zh-CN")
-                : "不限"}
-              <span className="ml-2">{usageRate}%</span>
-            </span>
-          </div>
-          <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[var(--color-primary-light)]">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-primary-dark)] transition-all duration-700"
-              style={{ width: `${usageRate}%` }}
-            />
-          </div>
-        </div>
+        )}
       </div>
 
       <ConfirmDialog
