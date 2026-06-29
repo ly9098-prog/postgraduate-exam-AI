@@ -2,62 +2,49 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { ChevronDown, FileText, Braces, Filter, Rows3, Save, Brain, WandSparkles } from "lucide-react";
+import { FileText, Braces, Filter, Rows3, Save, Brain, WandSparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
 import { Toggle } from "@/components/ui/toggle";
 import type { AdminAiConfigsPatchRequest, AdminAiConfigsResponse } from "@/lib/api/types";
 
-interface AccordionItem {
+interface TabItem {
   id: string;
-  title: string;
-  description: string;
+  label: string;
   icon: React.ElementType;
   color: string;
   content: (configs: Record<string, string | number | boolean>) => React.ReactNode;
 }
 
-const items: AccordionItem[] = [
+const items: TabItem[] = [
   {
     id: "prompt",
-    title: "Prompt 配置",
-    description: "定制 OCR 纠错和题目补全的提示词模板",
+    label: "Prompt",
     icon: FileText,
     color: "#5b7b9a",
-    content: (configs) => (
-      <PromptPanel configs={configs} />
-    ),
+    content: (configs) => <PromptPanel configs={configs} />,
   },
   {
     id: "strategy",
-    title: "OCR 纠错策略",
-    description: "配置 OCR 文本的校对和修复规则",
+    label: "纠错策略",
     icon: Braces,
     color: "#6b9b6b",
-    content: (configs) => (
-      <StrategyPanel configs={configs} />
-    ),
+    content: (configs) => <StrategyPanel configs={configs} />,
   },
   {
     id: "structure",
-    title: "题目结构修复",
-    description: "修复 OCR 识别后的题目结构错乱和格式问题",
+    label: "结构修复",
     icon: Rows3,
     color: "#c49a6b",
-    content: (configs) => (
-      <StructurePanel configs={configs} />
-    ),
+    content: (configs) => <StructurePanel configs={configs} />,
   },
   {
     id: "filter",
-    title: "长文本过滤",
-    description: "配置文本长度限制和内容过滤规则",
+    label: "文本过滤",
     icon: Filter,
     color: "#9a7aba",
-    content: (configs) => (
-      <FilterPanel configs={configs} />
-    ),
+    content: (configs) => <FilterPanel configs={configs} />,
   },
 ];
 
@@ -66,29 +53,24 @@ function PromptPanel({ configs }: { configs: Record<string, string | number | bo
   const savedPrompt = String(configs["ocr_correction_prompt"] ?? "");
   const [prompt, setPrompt] = useState(savedPrompt);
 
-  useEffect(() => {
-    setPrompt(savedPrompt);
-  }, [savedPrompt]);
+  useEffect(() => { setPrompt(savedPrompt); }, [savedPrompt]);
 
   const mutation = useMutation({
     mutationFn: (data: AdminAiConfigsPatchRequest) =>
-      apiRequest<AdminAiConfigsResponse>("/ai-configs", {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      }),
+      apiRequest<AdminAiConfigsResponse>("/ai-configs", { method: "PATCH", body: JSON.stringify(data) }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-configs"] }),
   });
 
   const hasChanges = prompt !== savedPrompt;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-rise-in">
       <div>
         <label className="block text-sm font-semibold text-[var(--ink)]">OCR 纠错 Prompt</label>
         <p className="mt-0.5 text-xs text-[var(--color-text-hint)]">自定义 OCR 纠错提示词，修改后需要点击保存</p>
         <div className="relative mt-2">
           <textarea
-            className="h-28 w-full resize-none rounded-xl border border-[var(--color-border)] bg-white p-3 pr-12 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
+            className="h-32 w-full resize-none rounded-xl border border-[var(--color-border)] bg-white p-3 pr-12 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
           />
@@ -125,10 +107,7 @@ function StrategyPanel({ configs }: { configs: Record<string, string | number | 
 
   const mutation = useMutation({
     mutationFn: (data: AdminAiConfigsPatchRequest) =>
-      apiRequest<AdminAiConfigsResponse>("/ai-configs", {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      }),
+      apiRequest<AdminAiConfigsResponse>("/ai-configs", { method: "PATCH", body: JSON.stringify(data) }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-configs"] }),
   });
 
@@ -144,24 +123,30 @@ function StrategyPanel({ configs }: { configs: Record<string, string | number | 
   ];
 
   return (
-    <div className="space-y-4">
-      {/* 纠错策略开关 */}
-      <div className="border-t border-[var(--color-border)]/40 pt-3">
-        <p className="text-xs font-semibold text-[var(--color-text-secondary)] mb-2">纠错策略开关</p>
-        {toggles.map((item) => (
-          <label
-            key={item.key}
-            className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] px-4 py-3"
-          >
+    <div className="space-y-2 animate-rise-in">
+      {toggles.map((item) => (
+        <label
+          key={item.key}
+          className={cn(
+            "flex items-center justify-between gap-3 rounded-xl border px-4 py-3 transition-colors",
+            Boolean(configs[item.key])
+              ? "border-[var(--color-success)]/25 bg-[var(--color-success-light)]"
+              : "border-[var(--color-border)]/60 bg-white/60",
+          )}
+        >
+          <div className="flex items-center gap-3">
+            <span
+              className="inline-block h-1.5 w-1.5 rounded-full"
+              style={{ background: Boolean(configs[item.key]) ? "var(--color-success)" : "var(--color-border)" }}
+            />
             <div>
               <span className="text-sm font-medium text-[var(--ink)]">{item.label}</span>
               <p className="text-xs text-[var(--color-text-hint)]">{item.desc}</p>
             </div>
-            <Toggle checked={Boolean(configs[item.key])} onChange={() => toggle(item.key)} disabled={mutation.isPending} />
-          </label>
-        ))}
-      </div>
-
+          </div>
+          <Toggle checked={Boolean(configs[item.key])} onChange={() => toggle(item.key)} disabled={mutation.isPending} />
+        </label>
+      ))}
       {mutation.isError && (
         <p className="text-xs text-[var(--color-danger)]">{getErrorMessage(mutation.error)}</p>
       )}
@@ -176,10 +161,7 @@ function FilterPanel({ configs }: { configs: Record<string, string | number | bo
 
   const mutation = useMutation({
     mutationFn: (data: AdminAiConfigsPatchRequest) =>
-      apiRequest<AdminAiConfigsResponse>("/ai-configs", {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      }),
+      apiRequest<AdminAiConfigsResponse>("/ai-configs", { method: "PATCH", body: JSON.stringify(data) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ai-configs"] });
       setDirty(false);
@@ -196,9 +178,7 @@ function FilterPanel({ configs }: { configs: Record<string, string | number | bo
     setDirty(true);
   };
 
-  const saveFilter = () => {
-    mutation.mutate({ configs: { ...local } });
-  };
+  const saveFilter = () => { mutation.mutate({ configs: { ...local } }); };
 
   const getValue = (key: string) => {
     if (dirty && key in local) return local[key];
@@ -206,8 +186,8 @@ function FilterPanel({ configs }: { configs: Record<string, string | number | bo
   };
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
+    <div className="space-y-4 animate-rise-in">
+      <div className="grid gap-3 sm:grid-cols-2">
         {fields.map((f) => (
           <label key={f.key} className="block rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] p-4">
             <span className="text-sm font-semibold text-[var(--ink)]">{f.label}</span>
@@ -222,7 +202,12 @@ function FilterPanel({ configs }: { configs: Record<string, string | number | bo
           </label>
         ))}
       </div>
-      <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] px-4 py-3">
+      <label className={cn(
+        "flex items-center justify-between gap-3 rounded-xl border px-4 py-3 transition-colors",
+        Boolean(configs["ocr_filter_sensitive"])
+          ? "border-[#9a7aba]/25 bg-[#9a7aba]08"
+          : "border-[var(--color-border)]/60 bg-white/60",
+      )}>
         <div>
           <span className="text-sm font-medium text-[var(--ink)]">启用敏感内容过滤</span>
           <p className="text-xs text-[var(--color-text-hint)]">自动过滤 OCR 结果中的敏感内容</p>
@@ -231,6 +216,7 @@ function FilterPanel({ configs }: { configs: Record<string, string | number | bo
           checked={Boolean(configs["ocr_filter_sensitive"])}
           onChange={() => mutation.mutate({ configs: { ocr_filter_sensitive: !configs["ocr_filter_sensitive"] } })}
           disabled={mutation.isPending}
+          color="#9a7aba"
         />
       </label>
       {dirty && (
@@ -262,14 +248,11 @@ function StructurePanel({ configs }: { configs: Record<string, string | number |
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: (data: AdminAiConfigsPatchRequest) =>
-      apiRequest<AdminAiConfigsResponse>("/ai-configs", {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      }),
+      apiRequest<AdminAiConfigsResponse>("/ai-configs", { method: "PATCH", body: JSON.stringify(data) }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-configs"] }),
   });
 
-  const items = [
+  const structureItems = [
     { key: "ocr_structure_question_type", label: "题型识别", value: "单选题 / 多选题 / 判断题 / 填空题", color: "#5b7b9a" },
     { key: "ocr_structure_options", label: "选项提取", value: "A. B. C. D. 格式识别", color: "#6b9b6b" },
     { key: "ocr_structure_answer", label: "答案匹配", value: "答案关键字定位", color: "#c49a6b" },
@@ -277,15 +260,21 @@ function StructurePanel({ configs }: { configs: Record<string, string | number |
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-rise-in">
       <p className="text-sm text-[var(--color-text-secondary)]">
         当 OCR 识别结果出现结构错乱时，以下规则将被应用来自动修复题目格式。
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
-        {items.map((item) => (
+        {structureItems.map((item) => (
           <label
             key={item.key}
-            className="flex cursor-pointer items-center justify-between gap-2 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)] p-3 transition hover:border-[var(--color-primary)]/40"
+            className={cn(
+              "flex cursor-pointer items-center justify-between gap-2 rounded-xl border p-3 transition-colors",
+              Boolean(configs[item.key])
+                ? "border-current/20"
+                : "border-[var(--color-border)]/60 bg-white/60",
+            )}
+            style={Boolean(configs[item.key]) ? { borderColor: `${item.color}30`, backgroundColor: `${item.color}08` } : undefined}
           >
             <div>
               <p className="text-xs font-semibold" style={{ color: item.color }}>{item.label}</p>
@@ -296,6 +285,7 @@ function StructurePanel({ configs }: { configs: Record<string, string | number |
               onChange={() => mutation.mutate({ configs: { [item.key]: !configs[item.key] } })}
               disabled={mutation.isPending}
               size="sm"
+              color={item.color}
             />
           </label>
         ))}
@@ -312,85 +302,63 @@ export function OcrAccordion({ configs, loading, modelName }: {
   loading?: boolean;
   modelName?: string | null;
 }) {
-  const [openId, setOpenId] = useState<string | null>("prompt");
-
-  const toggle = (id: string) => {
-    setOpenId((prev) => (prev === id ? null : id));
-  };
-
+  const [activeTab, setActiveTab] = useState<string>("prompt");
   const data = configs ?? {};
+  const activeItem = items.find((i) => i.id === activeTab)!;
 
   return (
-    <div className="rounded-2xl border border-[var(--color-border)]/80 bg-white/80 p-5 shadow-sm">
-      <div className="mb-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-display text-xl font-bold text-[var(--ink)]">OCR 纠错配置</h3>
-            <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">管理 OCR 识别结果的纠错策略和处理规则</p>
-          </div>
-          {modelName && (
-            <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)]/60 bg-white/60 px-3 py-1.5 text-xs text-[var(--color-text-secondary)]">
-              <Brain className="h-3.5 w-3.5" />
-              模型: {modelName}
-            </span>
-          )}
+    <div className="overflow-hidden rounded-2xl border border-[var(--color-border)]/80 bg-white/80 shadow-[var(--shadow-card)]">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-[var(--color-border)]/60 px-5 py-4">
+        <div>
+          <h3 className="font-display text-xl font-bold text-[var(--ink)]">OCR 纠错配置</h3>
+          <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">管理 OCR 识别结果的纠错策略和处理规则</p>
         </div>
+        {modelName && (
+          <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)]/60 bg-white/60 px-3 py-1.5 text-xs text-[var(--color-text-secondary)]">
+            <Brain className="h-3.5 w-3.5" />
+            {modelName}
+          </span>
+        )}
       </div>
-      <div className="space-y-2">
+
+      {/* Tab bar */}
+      <div className="flex border-b border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/30">
         {items.map((item) => {
           const Icon = item.icon;
-          const isOpen = openId === item.id;
+          const active = activeTab === item.id;
           return (
-            <div
+            <button
               key={item.id}
+              onClick={() => setActiveTab(item.id)}
               className={cn(
-                "overflow-hidden rounded-xl border transition-all duration-300",
-                isOpen
-                  ? "border-[var(--color-border)] shadow-sm"
-                  : "border-[var(--color-border)]/60",
+                "flex flex-1 items-center justify-center gap-2 py-3 text-xs font-medium transition-all",
+                active
+                  ? "font-semibold"
+                  : "text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]",
               )}
+              style={{
+                color: active ? item.color : undefined,
+                borderBottom: active ? `2px solid ${item.color}` : "2px solid transparent",
+              }}
             >
-              <button
-                onClick={() => toggle(item.id)}
-                className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-[var(--color-bg-input)]/50"
-              >
-                <div
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg"
-                  style={{ backgroundColor: `${item.color}14`, color: item.color }}
-                >
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-[var(--ink)]">{item.title}</p>
-                  <p className="truncate text-xs text-[var(--color-text-hint)]">{item.description}</p>
-                </div>
-                <ChevronDown
-                  className={cn(
-                    "h-4 w-4 shrink-0 text-[var(--color-text-hint)] transition-transform duration-300",
-                    isOpen && "rotate-180",
-                  )}
-                />
-              </button>
-              <div
-                className={cn(
-                  "overflow-hidden transition-all duration-300",
-                  isOpen ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0",
-                )}
-              >
-                <div className="border-t border-[var(--color-border)]/60 px-5 py-4">
-                  {loading ? (
-                    <div className="space-y-3 animate-pulse">
-                      <div className="h-20 w-full rounded bg-[var(--color-border)]" />
-                      <div className="h-10 w-2/3 rounded bg-[var(--color-border)]" />
-                    </div>
-                  ) : (
-                    item.content(data)
-                  )}
-                </div>
-              </div>
-            </div>
+              <Icon className="h-3.5 w-3.5" />
+              {item.label}
+            </button>
           );
         })}
+      </div>
+
+      {/* Tab content */}
+      <div className="p-5">
+        {loading ? (
+          <div className="space-y-3 animate-pulse">
+            <div className="h-20 w-full rounded bg-[var(--color-border)]" />
+            <div className="h-10 w-2/3 rounded bg-[var(--color-border)]" />
+          </div>
+        ) : (
+          activeItem.content(data)
+        )}
       </div>
     </div>
   );

@@ -1,12 +1,12 @@
 "use client";
 
+import React, { useState } from "react";
 import { createPortal } from "react-dom";
-import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Brain, Cpu, Globe, Key, ToggleLeft, ToggleRight,
-  CheckCircle2, Info, X, Trash2, Plus, Tag, ScanEye,
-  Loader2, AlertTriangle, Wifi,
+  Brain, Cpu, Globe, Key,
+  CheckCircle2, X, Trash2, Plus, Tag, ScanEye,
+  Loader2, AlertTriangle, Wifi, ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
@@ -20,32 +20,23 @@ import type {
 import { getErrorMessage } from "@/lib/api/errors";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
 
 const PROVIDER_ICONS: Record<string, React.ElementType> = {
-  deepseek: Brain,
-  openai: Globe,
-  anthropic: Cpu,
-  "qwen-vl": ScanEye,
-  qwen: ScanEye,
+  deepseek: Brain, openai: Globe, anthropic: Cpu,
+  "qwen-vl": ScanEye, qwen: ScanEye,
 };
 
 const PROVIDER_COLORS: Record<string, string> = {
-  deepseek: "#5b7b9a",
-  openai: "#6b9b6b",
-  anthropic: "#c49a6b",
-  "qwen-vl": "#7c5ce7",
-  qwen: "#7c5ce7",
-  paddleocr: "#e67e22",
-  paddleocr_vl: "#e67e22",
-  "paddleocr-vl": "#e67e22",
+  deepseek: "#5b7b9a", openai: "#6b9b6b", anthropic: "#c49a6b",
+  "qwen-vl": "#7c5ce7", qwen: "#7c5ce7",
+  paddleocr: "#e67e22", paddleocr_vl: "#e67e22", "paddleocr-vl": "#e67e22",
 };
 
 const FEATURE_LABELS: Record<string, { label: string; color: string }> = {
-  ocr: { label: "OCR 纠错", color: "#5b7b9a" },
-  completion: { label: "AI 补全", color: "#6b9b6b" },
-  analysis: { label: "AI 解析", color: "#c49a6b" },
-  vision: { label: "视觉层", color: "#e67e22" },
+  ocr: { label: "OCR", color: "#5b7b9a" },
+  completion: { label: "补全", color: "#6b9b6b" },
+  analysis: { label: "解析", color: "#c49a6b" },
+  vision: { label: "视觉", color: "#e67e22" },
 };
 
 const FEATURE_OPTIONS = [
@@ -56,30 +47,14 @@ const FEATURE_OPTIONS = [
   { value: "vision", label: "视觉层" },
 ];
 
-function getProviderIcon(provider: string) {
-  return PROVIDER_ICONS[provider] || Brain;
-}
+function getProviderIcon(p: string) { return PROVIDER_ICONS[p] || Brain; }
+function getProviderColor(p: string) { return PROVIDER_COLORS[p] || "#5b7b9a"; }
 
-function getProviderColor(provider: string) {
-  return PROVIDER_COLORS[provider] || "#5b7b9a";
-}
-
-function resolveFeatureModel(
-  models: AdminAiModelConfig[], feature: string,
-): AdminAiModelConfig | null {
-  const featured = models.find(
-    (m) => m.is_enabled && (m.features ?? []).includes(feature),
-  );
-  if (featured) return featured;
-  const untagged = models.find(
-    (m) => m.is_enabled && (!m.features || m.features.length === 0),
-  );
-  if (untagged) return untagged;
-  return models.find((m) => m.is_enabled) ?? null;
-}
+const inputCls =
+  "h-9 w-full rounded-lg border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]";
 
 // ---------------------------------------------------------------------------
-// Add Model Dialog
+// Add Model Dialog (unchanged logic, tightened UI)
 // ---------------------------------------------------------------------------
 
 function AddModelDialog({
@@ -112,18 +87,13 @@ function AddModelDialog({
           api_base_url: apiBaseUrl.trim(),
           api_key: apiKey.trim(),
           model_name: name.trim(),
-          provider: provider,
-          features: features,
+          provider,
+          features,
         } satisfies ModelTestConnectionRequest),
       });
       setTestResult(result);
     } catch (err) {
-      setTestResult({
-        success: false,
-        status: "network_error",
-        message: getErrorMessage(err),
-        latency_ms: null,
-      });
+      setTestResult({ success: false, status: "network_error", message: getErrorMessage(err), latency_ms: null });
     } finally {
       setTesting(false);
     }
@@ -131,16 +101,13 @@ function AddModelDialog({
 
   const reset = () => {
     setName(""); setDisplayName(""); setProvider("openai");
-    setApiBaseUrl(""); setApiKey(""); setFeatures([]);
-    setTestResult(null);
+    setApiBaseUrl(""); setApiKey(""); setFeatures([]); setTestResult(null);
   };
 
   const handleSave = () => {
     if (!name.trim() || !displayName.trim() || !provider.trim()) return;
     onSave({
-      name: name.trim(),
-      display_name: displayName.trim(),
-      provider: provider.trim(),
+      name: name.trim(), display_name: displayName.trim(), provider: provider.trim(),
       api_base_url: apiBaseUrl.trim() || undefined,
       api_key: apiKey.trim() || undefined,
       features: features.length > 0 ? features : null,
@@ -151,89 +118,60 @@ function AddModelDialog({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(16,24,40,0.42)] px-4">
-      <div className="w-full max-w-md rounded-3xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-floating)]">
+      <div className="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-card)]">
         <div className="mb-5 flex items-center justify-between">
-          <h3 className="font-display text-2xl font-bold text-[var(--ink)]">添加模型</h3>
+          <h3 className="font-display text-xl font-bold text-[var(--ink)]">添加模型</h3>
           <button onClick={handleClose} className="text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]">
             <X className="h-5 w-5" />
           </button>
         </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">
-              模型标识 <span className="text-[var(--color-danger)]">*</span>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-[11px] font-medium text-[var(--color-text-hint)]">模型标识 *</span>
+              <input value={name} onChange={(e) => setName(e.target.value)} className={cn(inputCls, "mt-1")} placeholder="gpt-4o" />
             </label>
-            <input value={name} onChange={(e) => setName(e.target.value)}
-              className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
-              placeholder="gpt-4o" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">
-              显示名称 <span className="text-[var(--color-danger)]">*</span>
+            <label className="block">
+              <span className="text-[11px] font-medium text-[var(--color-text-hint)]">显示名称 *</span>
+              <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className={cn(inputCls, "mt-1")} placeholder="GPT-4o" />
             </label>
-            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)}
-              className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
-              placeholder="GPT-4o" />
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">
-              提供商 <span className="text-[var(--color-danger)]">*</span>
-            </label>
-            <input value={provider} onChange={(e) => setProvider(e.target.value)}
-              className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
-              placeholder="openai" />
-            <p className="mt-1 text-xs text-[var(--color-text-hint)]">常用值: deepseek / openai / anthropic / qwen-vl / google</p>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">API Base URL <span className="text-[var(--color-text-hint)]">（可选）</span></label>
-            <input value={apiBaseUrl} onChange={(e) => setApiBaseUrl(e.target.value)}
-              className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
-              placeholder="https://api.openai.com/v1" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">API Key <span className="text-[var(--color-text-hint)]">（可选）</span></label>
-            <div className="flex gap-2">
-              <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
-                className="h-10 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
-                placeholder="sk-..." />
-              <button
-                type="button"
-                onClick={handleTestConnection}
+          <label className="block">
+            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">提供商 *</span>
+            <input value={provider} onChange={(e) => setProvider(e.target.value)} className={cn(inputCls, "mt-1")} placeholder="openai" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API Base URL</span>
+            <input value={apiBaseUrl} onChange={(e) => setApiBaseUrl(e.target.value)} className={cn(inputCls, "mt-1")} placeholder="https://api.openai.com/v1" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API Key</span>
+            <div className="mt-1 flex gap-2">
+              <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} className={cn(inputCls, "flex-1")} placeholder="sk-..." />
+              <button type="button" onClick={handleTestConnection}
                 disabled={testing || !apiKey.trim() || !apiBaseUrl.trim() || !name.trim()}
-                className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-40"
-              >
+                className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-40">
                 {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
                 测试
               </button>
             </div>
-          </div>
-            <div>
-            <label className="mb-1 block text-xs font-semibold text-[var(--color-text-secondary)]">用途 <span className="text-[var(--color-text-hint)]">（可多选）</span></label>
-            <div className="flex flex-wrap gap-2">
+          </label>
+          <div>
+            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">用途（可多选）</span>
+            <div className="mt-1.5 flex flex-wrap gap-2">
               {FEATURE_OPTIONS.filter((o) => o.value).map((opt) => {
                 const selected = features.includes(opt.value);
                 return (
                   <label key={opt.value}
                     className={cn(
                       "flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                      selected
-                        ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary)]"
+                      selected ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary)]"
                         : "border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/40",
                     )}>
-                    <input type="checkbox" className="sr-only"
-                      checked={selected}
-                      onChange={() => {
-                        setFeatures((prev) =>
-                          prev.includes(opt.value)
-                            ? prev.filter((f) => f !== opt.value)
-                            : [...prev, opt.value],
-                        );
-                      }} />
-                    <div className={cn(
-                      "flex h-3.5 w-3.5 items-center justify-center rounded border transition-colors",
-                      selected ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white" : "border-[var(--color-border)]",
-                    )}>
+                    <input type="checkbox" className="sr-only" checked={selected}
+                      onChange={() => setFeatures((prev) => prev.includes(opt.value) ? prev.filter((f) => f !== opt.value) : [...prev, opt.value])} />
+                    <div className={cn("flex h-3.5 w-3.5 items-center justify-center rounded border transition-colors",
+                      selected ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white" : "border-[var(--color-border)]")}>
                       {selected && <CheckCircle2 className="h-2.5 w-2.5" />}
                     </div>
                     {opt.label}
@@ -241,27 +179,18 @@ function AddModelDialog({
                 );
               })}
             </div>
-            <p className="mt-1 text-xs text-[var(--color-text-hint)]">一个模型可用于多个功能层</p>
           </div>
         </div>
 
         {testResult && (
-          <div className={cn(
-            "mt-3 rounded-lg px-3 py-2 text-xs",
-            testResult.success
-              ? "border border-[var(--color-success)] bg-[var(--color-success-light)] text-[var(--color-success)]"
-              : "border border-[var(--color-danger)] bg-[var(--color-danger-light)] text-[var(--color-danger)]",
-          )}>
+          <div className={cn("mt-3 rounded-lg px-3 py-2 text-xs",
+            testResult.success ? "border border-[var(--color-success)] bg-[var(--color-success-light)] text-[var(--color-success)]"
+              : "border border-[var(--color-danger)] bg-[var(--color-danger-light)] text-[var(--color-danger)]")}>
             <div className="flex items-start gap-1.5">
-              {testResult.success
-                ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+              {testResult.success ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
               <div className="min-w-0">
                 <p className="font-semibold">{testResult.success ? "连接成功" : "连接失败"}</p>
                 <p className="mt-0.5 break-words">{testResult.message}</p>
-                {testResult.latency_ms != null && (
-                  <p className="mt-0.5 opacity-70">耗时 {testResult.latency_ms}ms</p>
-                )}
               </div>
             </div>
           </div>
@@ -280,50 +209,28 @@ function AddModelDialog({
 }
 
 // ---------------------------------------------------------------------------
-// Model Card
+// Detail Panel (expanded below table on row click)
 // ---------------------------------------------------------------------------
 
-function ModelCard({
-  model, onToggle, onSetDefault, onSaveApiConfig, onDelete, disabled,
+function DetailPanel({
+  model, onSaveApiConfig, onSetDefault, onDelete, disabled,
 }: {
   model: AdminAiModelConfig;
-  onToggle: () => void;
-  onSetDefault: () => void;
   onSaveApiConfig: (id: number, data: AdminAiModelConfigPatchRequest) => void;
+  onSetDefault: () => void;
   onDelete: () => void;
   disabled: boolean;
 }) {
-  const [isEditingApi, setIsEditingApi] = useState(false);
-  const [nameInput, setNameInput] = useState("");
+  const [nameInput, setNameInput] = useState(model.name);
   const [apiKeyInput, setApiKeyInput] = useState("");
-  const [apiBaseUrlInput, setApiBaseUrlInput] = useState("");
-  const [featuresInput, setFeaturesInput] = useState<string[]>([]);
+  const [apiBaseUrlInput, setApiBaseUrlInput] = useState(model.api_base_url ?? "");
+  const [featuresInput, setFeaturesInput] = useState<string[]>(model.features ?? []);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ModelTestConnectionResponse | null>(null);
-
-  const openApiEdit = () => {
-    setNameInput(model.name);
-    setApiKeyInput(model.api_configured ? (model.api_key_masked ?? "****") : "");
-    setApiBaseUrlInput(model.api_base_url ?? "");
-    setFeaturesInput(model.features ?? []);
-    setTestResult(null);
-    setIsEditingApi(true);
-  };
-
-  const saveApiConfig = () => {
-    const payload: AdminAiModelConfigPatchRequest = {};
-    if (nameInput.trim() && nameInput.trim() !== model.name) payload.name = nameInput.trim();
-    if (apiKeyInput && apiKeyInput !== model.api_key_masked) payload.api_key = apiKeyInput;
-    if (apiBaseUrlInput !== model.api_base_url) payload.api_base_url = apiBaseUrlInput;
-    if (JSON.stringify(featuresInput) !== JSON.stringify(model.features ?? [])) {
-      payload.features = featuresInput.length > 0 ? featuresInput : null;
-    }
-    onSaveApiConfig(model.id, payload);
-    setIsEditingApi(false);
-  };
+  const [keyEditing, setKeyEditing] = useState(false);
 
   const handleTestConnection = async () => {
-    if (!apiBaseUrlInput.trim() || !apiKeyInput.trim() || !nameInput.trim()) return;
+    if (!apiBaseUrlInput.trim() || !nameInput.trim()) return;
     setTesting(true);
     setTestResult(null);
     try {
@@ -335,382 +242,148 @@ function ModelCard({
           model_name: nameInput.trim(),
           model_id: model.id,
           provider: model.provider,
-          features: model.features ?? undefined,
+          features: featuresInput,
         } satisfies ModelTestConnectionRequest),
       });
       setTestResult(result);
     } catch (err) {
-      setTestResult({
-        success: false,
-        status: "network_error",
-        message: getErrorMessage(err),
-        latency_ms: null,
-      });
+      setTestResult({ success: false, status: "network_error", message: getErrorMessage(err), latency_ms: null });
     } finally {
       setTesting(false);
     }
   };
 
-  const Icon = getProviderIcon(model.provider);
+  const save = () => {
+    const payload: AdminAiModelConfigPatchRequest = {};
+    if (nameInput.trim() && nameInput.trim() !== model.name) payload.name = nameInput.trim();
+    if (apiKeyInput) payload.api_key = apiKeyInput;
+    if (apiBaseUrlInput !== model.api_base_url) payload.api_base_url = apiBaseUrlInput;
+    if (JSON.stringify(featuresInput) !== JSON.stringify(model.features ?? [])) {
+      payload.features = featuresInput.length > 0 ? featuresInput : null;
+    }
+    onSaveApiConfig(model.id, payload);
+    setApiKeyInput("");
+    setKeyEditing(false);
+  };
+
   const color = getProviderColor(model.provider);
-  const featureList = model.features && model.features.length > 0
-    ? model.features.map((f) => FEATURE_LABELS[f]).filter(Boolean)
-    : [];
-  const hasFeatures = featureList.length > 0;
 
   return (
-    <div
-      className={cn(
-        "group relative rounded-xl border p-5 transition-all duration-300",
-        model.is_enabled
-          ? "border-[var(--color-border)]/80 hover:border-[var(--color-border)] hover:shadow-md"
-          : "border-dashed border-[var(--color-border)] opacity-60 hover:opacity-80",
-      )}
-      style={{
-        background: model.is_enabled
-          ? "linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,255,255,0.7))"
-          : "rgba(247,245,240,0.5)",
-      }}
-    >
-      <div
-        className="absolute left-0 right-0 top-0 h-0.5 rounded-t-xl transition-opacity"
-        style={{ backgroundColor: color, opacity: model.is_enabled ? 1 : 0.3 }}
-      />
-
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div
-            className="grid h-10 w-10 place-items-center rounded-xl border border-[var(--color-border)]/60 bg-white/60 shadow-sm"
-            style={{ color }}
-          >
-            <Icon className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="font-semibold text-[var(--ink)]">{model.display_name}</p>
-            <p className="text-xs text-[var(--color-text-hint)] capitalize">{model.provider}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <button onClick={onDelete} disabled={disabled}
-            className="rounded-lg p-1.5 text-[var(--color-text-hint)] opacity-0 transition-all hover:bg-[var(--color-danger-light)] hover:text-[var(--color-danger)] group-hover:opacity-100 disabled:opacity-30"
-            title="删除模型">
-            <Trash2 className="h-4 w-4" />
-          </button>
-          <button onClick={onToggle} disabled={disabled}
-            className="transition-transform hover:scale-110 disabled:opacity-50"
-            title={model.is_enabled ? "禁用" : "启用"}>
-            {model.is_enabled
-              ? <ToggleRight className="h-6 w-6" style={{ color }} />
-              : <ToggleLeft className="h-6 w-6 text-[var(--color-text-hint)]" />}
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        {model.api_configured ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-success-light)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-success)]">
-            <CheckCircle2 className="h-3 w-3" />
-            API 已配置
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-warning-light)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-warning)]">
-            未配置 API
-          </span>
-        )}
-        {model.is_default && (
-          <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-white"
-            style={{ backgroundColor: color }}>
-            默认模型
-          </span>
-        )}
-        {hasFeatures ? (
-          <div className="flex flex-wrap gap-1">
-            {featureList.map((fi) => (
-              <span key={fi.label}
-                className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-white"
-                style={{ backgroundColor: fi.color }}>
-                <Tag className="h-3 w-3" />
-                {fi.label}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-bg-input)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-hint)]">
-            通用
-          </span>
-        )}
-      </div>
-
-      {isEditingApi ? (
-        <div className="mt-4 space-y-3 rounded-xl border border-[var(--color-border)]/60 bg-white p-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-secondary)]">
-              <Key className="h-3 w-3" />
+    <tr>
+      <td colSpan={5} className="border-b border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/30 px-5 py-4">
+        <div className="flex gap-6">
+          {/* Left: API config */}
+          <div className="flex-1 space-y-3">
+            <h4 className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-secondary)]">
+              <Key className="h-3.5 w-3.5" />
               API 配置
+            </h4>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-[11px] font-medium text-[var(--color-text-hint)]">模型标识</span>
+                <input type="text" value={nameInput} onChange={(e) => setNameInput(e.target.value)}
+                  className={cn(inputCls, "mt-1")} />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API Base URL</span>
+                <input type="text" value={apiBaseUrlInput} onChange={(e) => setApiBaseUrlInput(e.target.value)}
+                  className={cn(inputCls, "mt-1")} placeholder="https://api.openai.com/v1" />
+              </label>
             </div>
-            <button onClick={() => { setIsEditingApi(false); setTestResult(null); }}
-              className="text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">模型标识</label>
-            <input type="text" value={nameInput} onChange={(e) => setNameInput(e.target.value)}
-              className="h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
-              placeholder="deepseek-v4-flash" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">API Key</label>
-            <div className="flex gap-2">
-              <input type="password" value={apiKeyInput} onChange={(e) => setApiKeyInput(e.target.value)}
-                className="h-9 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
-                placeholder={model.api_configured ? "输入新 API Key 以替换" : "sk-..."} />
-              <button
-                type="button"
-                onClick={handleTestConnection}
-                disabled={testing || !apiKeyInput.trim() || !apiBaseUrlInput.trim() || !nameInput.trim()}
-                className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-40"
-                title="测试连接"
-              >
-                {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
-                测试
-              </button>
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">API Base URL <span className="text-[var(--color-text-hint)]">（可选）</span></label>
-            <input type="text" value={apiBaseUrlInput} onChange={(e) => setApiBaseUrlInput(e.target.value)}
-              className="h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
-              placeholder="https://api.deepseek.com" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">用途 <span className="text-[var(--color-text-hint)]">（可多选）</span></label>
-            <div className="flex flex-wrap gap-2">
-              {FEATURE_OPTIONS.filter((o) => o.value).map((opt) => {
-                const selected = featuresInput.includes(opt.value);
-                return (
-                  <label key={opt.value}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                      selected
-                        ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary)]"
-                        : "border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/40",
-                    )}>
-                    <input type="checkbox" className="sr-only"
-                      checked={selected}
-                      onChange={() => {
-                        setFeaturesInput((prev) =>
-                          prev.includes(opt.value)
-                            ? prev.filter((f) => f !== opt.value)
-                            : [...prev, opt.value],
-                        );
-                      }} />
-                    <div className={cn(
-                      "flex h-3.5 w-3.5 items-center justify-center rounded border transition-colors",
-                      selected ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white" : "border-[var(--color-border)]",
-                    )}>
-                      {selected && <CheckCircle2 className="h-2.5 w-2.5" />}
-                    </div>
-                    {opt.label}
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={saveApiConfig} disabled={disabled}
-              className="flex-1 rounded-lg bg-[var(--color-primary)] py-2 text-xs font-semibold text-white transition-colors hover:bg-[var(--color-primary-dark)] disabled:opacity-50">
-              保存
-            </button>
-            <button onClick={() => { setIsEditingApi(false); setTestResult(null); }}
-              className="flex-1 rounded-lg border border-[var(--color-border)] py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-input)]">
-              取消
-            </button>
-          </div>
+            <label className="block">
+              <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API Key</span>
+              <div className="mt-1 flex gap-2">
+                <input type="password"
+                  value={
+                    apiKeyInput ||
+                    (keyEditing ? "" : model.api_configured ? "••••••••••••••••••••••••••••••" : "")
+                  }
+                  onChange={(e) => {
+                    if (!keyEditing) setKeyEditing(true);
+                    setApiKeyInput(e.target.value);
+                  }}
+                  onFocus={() => {
+                    if (!keyEditing && model.api_configured) {
+                      setKeyEditing(true);
+                      setApiKeyInput("");
+                    }
+                  }}
+                  onBlur={() => {
+                    if (keyEditing && !apiKeyInput) {
+                      setKeyEditing(false);
+                    }
+                  }}
+                  className={cn(inputCls, "flex-1")}
+                  placeholder="sk-..." />
+                <button type="button" onClick={handleTestConnection}
+                  disabled={testing || !apiBaseUrlInput.trim() || !nameInput.trim()}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-white px-3 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-40">
+                  {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
+                  测试
+                </button>
+              </div>
+            </label>
 
-          {testResult && (
-            <div className={cn(
-              "rounded-lg px-3 py-2 text-xs",
-              testResult.success
-                ? "border border-[var(--color-success)] bg-[var(--color-success-light)] text-[var(--color-success)]"
-                : "border border-[var(--color-danger)] bg-[var(--color-danger-light)] text-[var(--color-danger)]",
-            )}>
-              <div className="flex items-start gap-1.5">
-                {testResult.success
-                  ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
-                <div className="min-w-0">
-                  <p className="font-semibold">{testResult.success ? "连接成功" : "连接失败"}</p>
-                  <p className="mt-0.5 break-words">{testResult.message}</p>
-                  {testResult.latency_ms != null && (
-                    <p className="mt-0.5 opacity-70">耗时 {testResult.latency_ms}ms</p>
-                  )}
-                </div>
+            {/* Feature multi-select */}
+            <div>
+              <span className="text-[11px] font-medium text-[var(--color-text-hint)]">用途（可多选）</span>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {FEATURE_OPTIONS.filter((o) => o.value).map((opt) => {
+                  const selected = featuresInput.includes(opt.value);
+                  return (
+                    <label key={opt.value}
+                      className={cn(
+                        "flex cursor-pointer items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
+                        selected ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary)]"
+                          : "border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/40",
+                      )}>
+                      <input type="checkbox" className="sr-only" checked={selected}
+                        onChange={() => setFeaturesInput((prev) => prev.includes(opt.value) ? prev.filter((f) => f !== opt.value) : [...prev, opt.value])} />
+                      <div className={cn("flex h-3 w-3 items-center justify-center rounded-sm border transition-colors",
+                        selected ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white" : "border-[var(--color-border)]")}>
+                        {selected && <CheckCircle2 className="h-2 w-2" />}
+                      </div>
+                      {opt.label}
+                    </label>
+                  );
+                })}
               </div>
             </div>
-          )}
-        </div>
-      ) : (
-        <button onClick={openApiEdit}
-          className="mt-3 w-full rounded-lg border border-dashed border-[var(--color-border)] py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-solid hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]">
-          <Key className="mr-1 inline-block h-3 w-3" />
-          {model.api_configured ? "编辑 API 配置" : "配置 API Key"}
-        </button>
-      )}
 
-      {model.is_enabled && !model.is_default && (
-        <button onClick={onSetDefault} disabled={disabled}
-          className="mt-3 w-full rounded-lg border border-[var(--color-border)] py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:opacity-50">
-          设为默认模型
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Feature Mapping Section
-// ---------------------------------------------------------------------------
-
-function FeatureMapping({
-  models, onAssign, onRemove, disabled,
-}: {
-  models: AdminAiModelConfig[];
-  onAssign: (modelId: number, feature: string) => void;
-  onRemove: (feature: string) => void;
-  disabled: boolean;
-}) {
-  const features = [
-    { key: "ocr", label: "OCR 纠错", desc: "OCR 识别结果纠错与结构化", color: "#5b7b9a" },
-    { key: "completion", label: "AI 补全", desc: "导入题目字段补全与生成", color: "#6b9b6b" },
-    { key: "analysis", label: "AI 解析", desc: "错题分析与学习建议生成", color: "#c49a6b" },
-    { key: "vision", label: "视觉层", desc: "扫描 PDF / 图片 OCR 识别", color: "#e67e22" },
-  ];
-
-  const enabledModels = models.filter((m) => m.is_enabled);
-  const untaggedModel = models.find(
-    (m) => m.is_enabled && (!m.features || m.features.length === 0),
-  );
-
-  return (
-    <div className="mb-6 rounded-xl border border-[var(--color-border)]/60 bg-gradient-to-b from-[var(--color-bg-input)]/40 to-white/40 p-5">
-      <div className="mb-4">
-        <h4 className="font-display text-base font-bold text-[var(--ink)]">功能模型映射</h4>
-        <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-text-hint)]">
-          为每个 AI 功能指定专用模型。同一模型可用于多个功能层。
-          {untaggedModel ? (
-            <>未指定的功能将使用 <span className="font-medium text-[var(--color-text-secondary)]">{untaggedModel.display_name}</span> 兜底。</>
-          ) : enabledModels.length > 0 ? (
-            <>需为各功能单独指定，可在多个功能层复用同一模型配置。</>
-          ) : (
-            <>请先添加并启用至少一个模型。</>
-          )}
-        </p>
-      </div>
-      <div className="space-y-2.5">
-        {features.map((feat) => {
-          const assigned = resolveFeatureModel(models, feat.key);
-          const hasDedicated = (assigned?.features ?? []).includes(feat.key);
-          return (
-            <div
-              key={feat.key}
-              className="group relative rounded-xl border bg-white transition-all duration-200 hover:shadow-sm"
-              style={{
-                borderColor: hasDedicated
-                  ? `${feat.color}30`
-                  : "var(--color-border)",
-              }}
-            >
-              {/* Left accent bar */}
-              <div
-                className="absolute left-0 top-0 w-1 rounded-l-xl transition-all duration-300"
-                style={{
-                  height: hasDedicated ? "100%" : "0%",
-                  backgroundColor: feat.color,
-                  opacity: hasDedicated ? 1 : 0,
-                }}
-              />
-
-              <div className="flex flex-wrap items-center gap-2 pl-5 pr-4 py-3">
-                {/* Feature info */}
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset"
-                    style={{
-                      backgroundColor: `${feat.color}0d`,
-                      "--tw-ring-color": `${feat.color}20`,
-                    } as React.CSSProperties}
-                  >
-                    <div className="h-2 w-2 rounded-full" style={{ backgroundColor: feat.color }} />
-                  </div>
+            {testResult && (
+              <div className={cn("rounded-lg px-3 py-2 text-xs",
+                testResult.success ? "border border-[var(--color-success)] bg-[var(--color-success-light)] text-[var(--color-success)]"
+                  : "border border-[var(--color-danger)] bg-[var(--color-danger-light)] text-[var(--color-danger)]")}>
+                <div className="flex items-start gap-1.5">
+                  {testResult.success ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-[var(--ink)]">{feat.label}</span>
-                      {hasDedicated && (
-                        <span
-                          className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm"
-                          style={{ backgroundColor: feat.color }}
-                        >
-                          专用
-                        </span>
-                      )}
-                      {assigned && !hasDedicated && assigned.is_enabled && (
-                        <span className="inline-flex items-center rounded-md border border-[var(--color-border)]/60 bg-white/80 px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-hint)]">
-                          兜底
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-[var(--color-text-hint)]">{feat.desc}</p>
+                    <p className="font-semibold">{testResult.success ? "连接成功" : "连接失败"}</p>
+                    <p className="mt-0.5 break-words">{testResult.message}</p>
+                    {testResult.latency_ms != null && <p className="mt-0.5 opacity-70">耗时 {testResult.latency_ms}ms</p>}
                   </div>
                 </div>
-
-                {/* Model selector */}
-                <div className="flex items-center gap-2.5 shrink-0">
-                  {assigned ? (
-                    <span className={cn(
-                      "text-xs font-medium transition-colors",
-                      hasDedicated ? "text-[var(--ink)]" : "text-[var(--color-text-hint)]",
-                    )}>
-                      <span className="hidden sm:inline">{assigned.display_name}</span>
-                      <span className="sm:hidden">
-                        {assigned.display_name.length > 12
-                          ? assigned.display_name.slice(0, 10) + "…"
-                          : assigned.display_name}
-                      </span>
-                    </span>
-                  ) : (
-                    <span className="text-xs italic text-[var(--color-text-hint)]">未配置</span>
-                  )}
-                  {enabledModels.length > 0 && (
-                    <Select
-                      value={assigned ? String(assigned.id) : ""}
-                      onChange={(val) => {
-                        if (!val) {
-                          onRemove(feat.key);
-                          return;
-                        }
-                        onAssign(Number(val), feat.key);
-                      }}
-                      disabled={disabled}
-                      color={hasDedicated ? feat.color : undefined}
-                      placeholder="选择模型"
-                      options={[
-                        { value: "", label: "取消指定" },
-                        ...enabledModels.map((m) => ({
-                          value: String(m.id),
-                          label: m.display_name,
-                          suffix: (m.features ?? []).includes(feat.key) ? "已分配" : undefined,
-                        })),
-                      ]}
-                    />
-                  )}
-                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+            )}
+          </div>
+
+          {/* Right: Actions */}
+          <div className="flex w-32 shrink-0 flex-col gap-2 pt-6">
+            <Button onClick={save} disabled={disabled}>保存</Button>
+            {model.is_enabled && !model.is_default && (
+              <button onClick={onSetDefault} disabled={disabled}
+                className="h-9 rounded-xl border border-[var(--color-border)] bg-white text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:opacity-50">
+                设为默认
+              </button>
+            )}
+            <button onClick={onDelete} disabled={disabled}
+              className="h-9 rounded-xl border border-[var(--color-danger)]/30 bg-white text-xs font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger-light)] disabled:opacity-50">
+              <Trash2 className="mr-1 inline-block h-3 w-3" />
+              删除
+            </button>
+          </div>
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -722,6 +395,7 @@ export function ModelCards() {
   const queryClient = useQueryClient();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AdminAiModelConfig | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const models = useQuery({
     queryKey: ["ai-models"],
@@ -730,35 +404,29 @@ export function ModelCards() {
 
   const patchMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: AdminAiModelConfigPatchRequest }) =>
-      apiRequest<AdminAiModelConfig>(`/ai-models/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      }),
+      apiRequest<AdminAiModelConfig>(`/ai-models/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     onSuccess: (result) => {
-      // 用 API 响应结果更新缓存
       queryClient.setQueryData<AdminAiModelConfig[]>(["ai-models"], (old) => {
         if (!old) return [result];
         return old.map((m) => (m.id === result.id ? { ...result } : m));
       });
+      setSelectedId(null);
     },
-    onError: () => {
-      queryClient.invalidateQueries({ queryKey: ["ai-models"] });
-    },
+    onError: () => queryClient.invalidateQueries({ queryKey: ["ai-models"] }),
   });
 
   const createMutation = useMutation({
     mutationFn: (data: AdminAiModelConfigCreateRequest) =>
-      apiRequest<AdminAiModelConfig>("/ai-models", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
+      apiRequest<AdminAiModelConfig>("/ai-models", { method: "POST", body: JSON.stringify(data) }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-models"] }),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) =>
-      apiRequest<void>(`/ai-models/${id}`, { method: "DELETE" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-models"] }),
+    mutationFn: (id: number) => apiRequest<void>(`/ai-models/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-models"] });
+      setSelectedId(null);
+    },
   });
 
   const toggleModel = (model: AdminAiModelConfig) => {
@@ -773,39 +441,6 @@ export function ModelCards() {
     patchMutation.mutate({ id: model.id, data: { is_default: true } });
   };
 
-  const handleRemoveFeature = (feat: string) => {
-    // 从当前拥有该 feature 的模型中移除
-    const holder = modelList.find((m) => (m.features ?? []).includes(feat));
-    if (holder) {
-      const updated = (holder.features ?? []).filter((f) => f !== feat);
-      patchMutation.mutate({
-        id: holder.id,
-        data: { features: updated.length > 0 ? updated : null },
-      });
-    }
-  };
-
-  const handleAssignFeature = async (modelId: number, feat: string) => {
-    // feat = 要移交给该模型的 feature 名称
-    // 先串行移除旧模型上的该 feature，再添加到目标模型，避免并发竞态
-    const currentHolder = modelList.find(
-      (m) => m.id !== modelId && (m.features ?? []).includes(feat),
-    );
-    if (currentHolder) {
-      const updated = (currentHolder.features ?? []).filter((f) => f !== feat);
-      await patchMutation.mutateAsync({
-        id: currentHolder.id,
-        data: { features: updated.length > 0 ? updated : null },
-      });
-    }
-    const target = modelList.find((m) => m.id === modelId);
-    if (target) {
-      const existing = target.features ?? [];
-      const merged = existing.includes(feat) ? existing : [...existing, feat];
-      await patchMutation.mutateAsync({ id: modelId, data: { features: merged } });
-    }
-  };
-
   const handleDelete = () => {
     if (!deleteTarget) return;
     deleteMutation.mutate(deleteTarget.id);
@@ -815,75 +450,193 @@ export function ModelCards() {
   const modelList = models.data ?? [];
 
   return (
-    <div className="rounded-2xl border border-[var(--color-border)]/80 bg-white/80 p-5 shadow-sm">
-      <div className="mb-5">
-        <h3 className="font-display text-xl font-bold text-[var(--ink)]">模型配置</h3>
-        <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">管理接入的 AI 模型及其功能映射</p>
+    <div className="overflow-hidden rounded-2xl border border-[var(--color-border)]/80 bg-white/80 shadow-[var(--shadow-card)]">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-[var(--color-border)]/60 px-5 py-4">
+        <div>
+          <h3 className="font-display text-xl font-bold text-[var(--ink)]">模型配置</h3>
+          <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">管理接入的 AI 模型及其功能映射</p>
+        </div>
+        <Button onClick={() => setShowAddDialog(true)}>
+          <Plus className="h-4 w-4" />
+          添加模型
+        </Button>
       </div>
 
-      {patchMutation.isError && (
-        <p className="mb-4 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
-          {getErrorMessage(patchMutation.error)}
-        </p>
-      )}
-      {createMutation.isError && (
-        <p className="mb-4 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
-          {getErrorMessage(createMutation.error)}
-        </p>
-      )}
-      {deleteMutation.isError && (
-        <p className="mb-4 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
-          {getErrorMessage(deleteMutation.error)}
-        </p>
-      )}
-      {models.isError && (
-        <p className="mb-4 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
-          {getErrorMessage(models.error)}
-        </p>
+      {/* Errors */}
+      {[patchMutation, createMutation, deleteMutation, models].map((q, i) =>
+        q.isError ? (
+          <p key={i} className="mx-5 mt-3 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
+            {getErrorMessage(q.error)}
+          </p>
+        ) : null,
       )}
 
-      {/* Feature Mapping */}
-      {!models.isLoading && modelList.length > 0 && (
-        <FeatureMapping
-          models={modelList}
-          onAssign={handleAssignFeature}
-          onRemove={handleRemoveFeature}
-          disabled={patchMutation.isPending}
-        />
-      )}
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b border-[var(--color-border)]/60">
+              <th className="px-5 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-hint)]">模型</th>
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-hint)]">提供商</th>
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-hint)]">功能映射</th>
+              <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-hint)]">状态</th>
+              <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-hint)]">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {models.isLoading
+              ? Array.from({ length: 3 }).map((_, i) => (
+                  <tr key={i} className="border-b border-[var(--color-border)]/40">
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--color-border)]" />
+                        <div className="space-y-1.5">
+                          <div className="h-3.5 w-24 animate-pulse rounded bg-[var(--color-border)]" />
+                          <div className="h-2.5 w-16 animate-pulse rounded bg-[var(--color-border)]" />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4"><div className="h-3 w-14 animate-pulse rounded bg-[var(--color-border)]" /></td>
+                    <td className="px-4 py-4"><div className="h-5 w-20 animate-pulse rounded bg-[var(--color-border)]" /></td>
+                    <td className="px-4 py-4"><div className="h-5 w-12 animate-pulse rounded bg-[var(--color-border)]" /></td>
+                    <td className="px-4 py-4"><div className="ml-auto h-7 w-14 animate-pulse rounded bg-[var(--color-border)]" /></td>
+                  </tr>
+                ))
+              : modelList.map((model) => {
+                  const Icon = getProviderIcon(model.provider);
+                  const color = getProviderColor(model.provider);
+                  const featureList = model.features?.length
+                    ? model.features.map((f) => FEATURE_LABELS[f]).filter(Boolean)
+                    : [];
+                  const isSelected = selectedId === model.id;
 
-      {/* Model Grid */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-        {models.isLoading
-          ? Array.from({ length: 2 }).map((_, i) => (
-              <div key={i} className="animate-pulse rounded-xl border border-[var(--color-border)]/80 p-5">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-[var(--color-border)]" />
-                  <div className="space-y-2">
-                    <div className="h-4 w-24 rounded bg-[var(--color-border)]" />
-                    <div className="h-3 w-16 rounded bg-[var(--color-border)]" />
-                  </div>
-                </div>
-              </div>
-            ))
-          : modelList.map((model) => (
-              <ModelCard
-                key={model.id}
-                model={model}
-                onToggle={() => toggleModel(model)}
-                onSetDefault={() => setDefault(model)}
-                onSaveApiConfig={handleSaveApiConfig}
-                onDelete={() => setDeleteTarget(model)}
-                disabled={patchMutation.isPending || deleteMutation.isPending}
-              />
-            ))}
+                  return (
+                    <React.Fragment key={model.id}>
+                      <tr
+                        onClick={() => setSelectedId(isSelected ? null : model.id)}
+                        className={cn(
+                          "cursor-pointer border-b border-[var(--color-border)]/40 transition-colors",
+                          isSelected
+                            ? "bg-[var(--color-primary-light)]"
+                            : "hover:bg-[var(--color-bg-input)]/40",
+                          !model.is_enabled && "opacity-50",
+                        )}
+                      >
+                        {/* Model name */}
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <div
+                              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border"
+                              style={{ background: `${color}08`, borderColor: `${color}25` }}
+                            >
+                              <Icon className="h-4 w-4" style={{ color }} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[13px] font-semibold text-[var(--ink)]">{model.display_name}</span>
+                                {model.is_default && (
+                                  <span
+                                    className="rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white"
+                                    style={{ backgroundColor: color }}
+                                  >
+                                    默认
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-[var(--color-text-hint)] font-mono">{model.name}</span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Provider */}
+                        <td className="px-4 py-3 text-xs capitalize text-[var(--color-text-secondary)]">
+                          {model.provider}
+                        </td>
+
+                        {/* Feature badges */}
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {featureList.length > 0
+                              ? featureList.map((fi) => (
+                                  <span
+                                    key={fi.label}
+                                    className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                                    style={{ background: `${fi.color}15`, color: fi.color }}
+                                  >
+                                    <Tag className="h-2.5 w-2.5" />
+                                    {fi.label}
+                                  </span>
+                                ))
+                              : model.is_enabled && (
+                                  <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-hint)] bg-[var(--color-bg-input)]">
+                                    通用
+                                  </span>
+                                )}
+                          </div>
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className="inline-block h-1.5 w-1.5 rounded-full"
+                              style={{ background: model.is_enabled ? "var(--color-success)" : "var(--color-border)" }}
+                            />
+                            <span
+                              className={cn(
+                                "text-[11px] font-semibold",
+                                model.is_enabled ? "text-[var(--color-success)]" : "text-[var(--color-text-hint)]",
+                              )}
+                            >
+                              {model.is_enabled ? "运行中" : "已禁用"}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleModel(model); }}
+                              disabled={patchMutation.isPending}
+                              className="rounded-md border border-[var(--color-border)] bg-white px-2.5 py-1 text-[11px] font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-40"
+                            >
+                              {model.is_enabled ? "禁用" : "启用"}
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setDeleteTarget(model); }}
+                              disabled={deleteMutation.isPending}
+                              className="rounded-md p-1 text-[var(--color-text-hint)] transition-colors hover:bg-[var(--color-danger-light)] hover:text-[var(--color-danger)] disabled:opacity-30"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                            <ChevronDown
+                              className={cn(
+                                "h-4 w-4 text-[var(--color-text-hint)] transition-transform",
+                                isSelected && "rotate-180",
+                              )}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Detail panel */}
+                      {isSelected && (
+                        <DetailPanel
+                          model={model}
+                          onSaveApiConfig={handleSaveApiConfig}
+                          onSetDefault={() => setDefault(model)}
+                          onDelete={() => setDeleteTarget(model)}
+                          disabled={patchMutation.isPending}
+                        />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+          </tbody>
+        </table>
       </div>
-
-      <button onClick={() => setShowAddDialog(true)}
-        className="mt-4 w-full rounded-xl border-2 border-dashed border-[var(--color-border)] py-4 text-sm font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-solid hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]">
-        <Plus className="mr-1.5 inline-block h-4 w-4" />
-        添加模型
-      </button>
 
       <AddModelDialog
         open={showAddDialog}

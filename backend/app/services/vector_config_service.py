@@ -75,6 +75,9 @@ async def _seed_if_empty(db: AsyncSession) -> AdminVectorConfig:
     )
     db.add(row)
     await db.flush()
+    # flush 后属性过期，必须在 async 上下文中 refresh，
+    # 否则后续 _to_response 访问属性时触发同步 lazy load → MissingGreenlet
+    await db.refresh(row)
     return row
 
 
@@ -133,6 +136,10 @@ async def patch_vector_config(
         request=request,
     )
 
+    # flush + audit 写入触发 autoflush，导致 row 属性过期；
+    # 必须在 async 上下文中 refresh，否则 _to_response 访问属性时
+    # 会触发同步 lazy load → MissingGreenlet (aiosqlite)
+    await db.refresh(row)
     return _to_response(row)
 
 
