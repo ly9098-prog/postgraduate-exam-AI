@@ -701,6 +701,13 @@ async def submit_answer(
     await db.commit()
     await db.refresh(record)
 
+    # 答题后清理向量推荐缓存（best-effort，失败不影响核心流程）
+    try:
+        from app.services.vector_retrieval_service import invalidate_vector_cache
+        await invalidate_vector_cache(user_id)
+    except Exception:
+        logger.debug("向量缓存清理失败（不影响答题）uid=%d", user_id, exc_info=True)
+
     # ── Phase 2: 最佳效果后置操作（不影响答题主流程）──
     # 以下全部在 db.commit() 之后执行，失败不影响核心数据
     is_wrong_added = False

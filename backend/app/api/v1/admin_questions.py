@@ -112,13 +112,26 @@ async def backfill_embeddings(
     _=Depends(require_permissions("question:write")),
     db: AsyncSession = Depends(get_db),
 ):
-    """批量回填题目 embedding 向量。"""
+    """批量回填题目 embedding 向量。
+
+    支持游标分页：传入 after_id 从上次停止的位置继续。
+    事务边界：API 层负责批次级提交，单条失败通过 savepoint 隔离。
+    """
     from app.schemas.vector import EmbeddingBackfillResponse
     from app.services import vector_retrieval_service
 
-    result = await vector_retrieval_service.backfill_question_embeddings(
-        db=db, subject=data.subject, limit=data.limit, force=data.force
-    )
+    try:
+        result = await vector_retrieval_service.backfill_question_embeddings(
+            db=db,
+            subject=data.subject,
+            limit=data.limit,
+            force=data.force,
+            after_id=data.after_id,
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     return EmbeddingBackfillResponse(**result)
 
 

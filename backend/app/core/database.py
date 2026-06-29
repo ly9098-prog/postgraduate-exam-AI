@@ -256,47 +256,74 @@ async def _ensure_batch_job_tables(conn):
 
 
 async def _ensure_vector_schema(conn):
-    """PostgreSQL-only: create pgvector extension + question_embeddings table."""
+    """PostgreSQL-only: create pgvector extension + question_embeddings table.
+
+    生产环境应使用 Alembic migration 管理 schema。
+    此函数仅用于本地开发环境，且每个 DDL 使用独立 SAVEPOINT，
+    避免 PostgreSQL 单条失败后事务进入 aborted 状态。
+    """
     def repair(sync_conn):
         if sync_conn.dialect.name != "postgresql":
             return
 
+        # 生产环境不做 runtime DDL，应使用 Alembic migration
+        if settings.APP_ENV == "production":
+            return
+
         dim = int(settings.EMBEDDING_DIM)
 
+        # 1. pgvector extension（独立 savepoint）
         try:
-            sync_conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            with sync_conn.begin_nested():
+                sync_conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         except Exception:
             logger.warning("pgvector extension unavailable; skipping vector schema", exc_info=True)
             return
 
-        sync_conn.execute(text(f'''
-        CREATE TABLE IF NOT EXISTS question_embeddings (
-            id BIGSERIAL PRIMARY KEY,
-            question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
-            subject VARCHAR(32) NOT NULL,
-            question_type VARCHAR(32) NOT NULL,
-            embedding_model VARCHAR(128) NOT NULL,
-            embedding_dim INTEGER NOT NULL,
-            content_hash VARCHAR(64) NOT NULL,
-            content_text TEXT NOT NULL,
-            embedding vector({dim}) NOT NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-            embedded_at TIMESTAMP NOT NULL DEFAULT NOW(),
-            UNIQUE(question_id, embedding_model)
-        )
-        '''))
-
-        sync_conn.execute(text('CREATE INDEX IF NOT EXISTS ix_question_embeddings_question_id ON question_embeddings(question_id)'))
-        sync_conn.execute(text('CREATE INDEX IF NOT EXISTS ix_question_embeddings_subject ON question_embeddings(subject)'))
-        sync_conn.execute(text('CREATE INDEX IF NOT EXISTS ix_question_embeddings_content_hash ON question_embeddings(content_hash)'))
-
+        # 2. question_embeddings 表
         try:
-            sync_conn.execute(text('''
-            CREATE INDEX IF NOT EXISTS ix_question_embeddings_embedding_hnsw
-            ON question_embeddings
-            USING hnsw (embedding vector_cosine_ops)
-            '''))
+            with sync_conn.begin_nested():
+                sync_conn.execute(text(f'''
+                CREATE TABLE IF NOT EXISTS question_embeddings (
+                    id BIGSERIAL PRIMARY KEY,
+                    question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+                    subject VARCHAR(32) NOT NULL,
+                    question_type VARCHAR(32) NOT NULL,
+                    embedding_model VARCHAR(128) NOT NULL,
+                    embedding_dim INTEGER NOT NULL,
+                    content_hash VARCHAR(64) NOT NULL,
+                    content_text TEXT NOT NULL,
+                    embedding vector({dim}) NOT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    embedded_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    UNIQUE(question_id, embedding_model)
+                )
+                '''))
+        except Exception:
+            logger.warning("question_embeddings table creation failed", exc_info=True)
+            return
+
+        # 3. B-tree 索引
+        for idx_sql in [
+            'CREATE INDEX IF NOT EXISTS ix_question_embeddings_question_id ON question_embeddings(question_id)',
+            'CREATE INDEX IF NOT EXISTS ix_question_embeddings_subject ON question_embeddings(subject)',
+            'CREATE INDEX IF NOT EXISTS ix_question_embeddings_content_hash ON question_embeddings(content_hash)',
+        ]:
+            try:
+                with sync_conn.begin_nested():
+                    sync_conn.execute(text(idx_sql))
+            except Exception:
+                logger.warning("vector index creation failed: %s", idx_sql[:80], exc_info=True)
+
+        # 4. HNSW 索引（可选，独立 savepoint）
+        try:
+            with sync_conn.begin_nested():
+                sync_conn.execute(text('''
+                CREATE INDEX IF NOT EXISTS ix_question_embeddings_embedding_hnsw
+                ON question_embeddings
+                USING hnsw (embedding vector_cosine_ops)
+                '''))
         except Exception:
             logger.warning("pgvector hnsw index unavailable; continue without vector index", exc_info=True)
 

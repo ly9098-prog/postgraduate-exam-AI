@@ -475,14 +475,14 @@ class TestTask7Allowlist:
             assert 2 in result["user_ids"]
 
     def test_allowlist_empty_allows_all(self):
-        """测试空 allowlist 全部允许。"""
+        """测试空 allowlist 全部拒绝（安全默认）。"""
         from app.services.vector_retrieval_service import is_vector_allowed_for, _parse_allowlist
 
         with patch("app.services.vector_retrieval_service.settings") as mock_s:
             mock_s.VECTOR_MODE = "allowlist"
             mock_s.VECTOR_ALLOWLIST = ""
-            assert is_vector_allowed_for(subject="exam408-ds", user_id=1)
-            assert is_vector_allowed_for(subject="anything", user_id=999)
+            assert not is_vector_allowed_for(subject="exam408-ds", user_id=1)
+            assert not is_vector_allowed_for(subject="anything", user_id=999)
 
     def test_allowlist_user_filtering(self):
         """测试 allowlist 用户过滤。"""

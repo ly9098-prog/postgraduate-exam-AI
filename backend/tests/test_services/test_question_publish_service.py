@@ -8,6 +8,7 @@ import pytest
 from app.features.question_publish_service import (
     _migrate_old_approved,
     approve_and_publish,
+    get_publish_history,
     publish_questions,
     publish_single_question,
 )
@@ -529,3 +530,109 @@ class TestApproveAndPublish:
         assert result.failed == 1  # qi 3 rejected
 
 
+# --- get_publish_history ---
+
+class TestGetPublishHistory:
+    def test_history_with_items(self):
+        db = _make_mock_db()
+        from datetime import datetime
+
+        now = datetime(2025, 5, 24, 10, 0, 0)
+        batch_rows = [
+            SimpleNamespace(batch_id="BATCH_1", published_at=now, total=3),
+        ]
+        # Production SQL returns 3-element tuples: (batch_id, status, count)
+        stats_rows = [
+            ("BATCH_1", "published", 2),
+            ("BATCH_1", "duplicate", 1),
+        ]
+
+        db.execute.side_effect = [
+            _make_execute_result(scalar=1),       # count
+            _make_execute_result(all=batch_rows),  # batch query
+            _make_execute_result(all=stats_rows),  # stats query
+        ]
+
+        result = asyncio.run(get_publish_history(db))
+
+        assert result.total == 1
+        assert len(result.items) == 1
+        assert result.items[0].batch_id == "BATCH_1"
+        assert result.items[0].published == 2
+        assert result.items[0].duplicates == 1
+        assert result.page == 1
+        assert result.page_size == 20
+
+    def test_history_empty(self):
+        db = _make_mock_db()
+        db.execute.side_effect = [
+            _make_execute_result(scalar=0),   # count
+            _make_execute_result(all=[]),     # batch query
+        ]
+
+        result = asyncio.run(get_publish_history(db))
+
+        assert result.total == 0
+        assert result.items == []
+
+    def test_history_pagination(self):
+        db = _make_mock_db()
+        from datetime import datetime
+
+        now = datetime(2025, 5, 24, 10, 0, 0)
+        batch_rows = [SimpleNamespace(batch_id="BATCH_2", published_at=now, total=1)]
+        # Production SQL returns 3-element tuples: (batch_id, status, count)
+        stats_rows = [("BATCH_2", "published", 1)]
+
+        db.execute.side_effect = [
+            _make_execute_result(scalar=5),       # count
+            _make_execute_result(all=batch_rows),  # batch query
+            _make_execute_result(all=stats_rows),  # stats query
+        ]
+
+        result = asyncio.run(get_publish_history(db, page=2, page_size=1))
+
+        assert result.total == 5
+        assert result.page == 2
+        assert result.page_size == 1
+        assert len(result.items) == 1
+
+    def test_history_multi_batch(self):
+        """Multi-batch: verify per-batch stats are correctly aggregated (P0 regression)."""
+        db = _make_mock_db()
+        from datetime import datetime
+
+        now1 = datetime(2025, 5, 24, 10, 0, 0)
+        now2 = datetime(2025, 5, 25, 11, 0, 0)
+        batch_rows = [
+            SimpleNamespace(batch_id="BATCH_A", published_at=now2, total=5),
+            SimpleNamespace(batch_id="BATCH_B", published_at=now1, total=3),
+        ]
+        # Each batch has its own stats — must not cross-contaminate
+        stats_rows = [
+            ("BATCH_A", "published", 4),
+            ("BATCH_A", "duplicate", 1),
+            ("BATCH_B", "published", 2),
+            ("BATCH_B", "failed", 1),
+        ]
+
+        db.execute.side_effect = [
+            _make_execute_result(scalar=2),       # count
+            _make_execute_result(all=batch_rows),  # batch query
+            _make_execute_result(all=stats_rows),  # stats query
+        ]
+
+        result = asyncio.run(get_publish_history(db, page=1, page_size=10))
+
+        assert result.total == 2
+        assert len(result.items) == 2
+        # BATCH_A: 4 published, 1 duplicate
+        assert result.items[0].batch_id == "BATCH_A"
+        assert result.items[0].published == 4
+        assert result.items[0].duplicates == 1
+        assert result.items[0].failed == 0
+        # BATCH_B: 2 published, 1 failed — NOT contaminated by BATCH_A's stats
+        assert result.items[1].batch_id == "BATCH_B"
+        assert result.items[1].published == 2
+        assert result.items[1].duplicates == 0
+        assert result.items[1].failed == 1
