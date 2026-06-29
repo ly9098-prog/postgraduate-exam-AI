@@ -109,54 +109,98 @@ def _log_multi_blank_review_item(
 
 async def _batch_find_duplicate_questions(
     db: AsyncSession,
-    subject_hash_pairs: list[tuple[str | None, str | None]],
-) -> dict[tuple[str, str], int]:
-    """Batch lookup: (subject, hash) → question.id for active questions."""
+    subject_hash_pairs: list[tuple[int | str | None, str | None]],
+) -> dict[tuple[int | str, str], int]:
+    """Batch lookup: (subject_id_or_subject, hash) → question.id for active questions.
+
+    Accepts int (subject_id) or str (legacy subject) as first tuple element.
+    """
     valid = [(s, h) for s, h in subject_hash_pairs if s and h]
     if not valid:
         return {}
 
-    unique_pairs: list[tuple[str, str]] = list({(s, h) for s, h in valid})
-    result_map: dict[tuple[str, str], int] = {}
+    unique_pairs: list[tuple[int | str, str]] = list({(s, h) for s, h in valid})
+    result_map: dict[tuple[int | str, str], int] = {}
+
+    # Resolve legacy string subjects to IDs (batch)
+    str_subjects = list({s for s, _ in unique_pairs if isinstance(s, str)})
+    from app.services.admin_subject_service import resolve_subject_id
+    subject_code_map: dict[str, int] = {}
+    for code in str_subjects:
+        resolved = await resolve_subject_id(db, code)
+        if resolved is not None:
+            subject_code_map[code] = resolved
 
     for i in range(0, len(unique_pairs), 500):
         chunk = unique_pairs[i:i + 500]
-        conditions = [
-            (Question.subject == s) & (Question.question_hash == h)
-            for s, h in chunk
-        ]
+        conditions = []
+        for s, h in chunk:
+            if isinstance(s, int):
+                conditions.append(
+                    (Question.subject_id == s) & (Question.question_hash == h)
+                )
+            else:
+                sid = subject_code_map.get(s)
+                if sid is not None:
+                    conditions.append(
+                        (Question.subject_id == sid) & (Question.question_hash == h)
+                    )
         from sqlalchemy import or_
-        stmt = select(Question.subject, Question.question_hash, Question.id).where(
+        select_cols = [Question.question_hash, Question.id]
+        stmt = select(*select_cols).where(
             or_(*conditions),
             Question.is_active == True,  # noqa: E712
         )
         rows = (await db.execute(stmt)).all()
-        for row in rows:
-            result_map[(row.subject, row.question_hash)] = row.id
+        # Build result using the original pair key format
+        matched_hashes: dict[str, int] = {row.question_hash: row.id for row in rows}
+        for s, h in chunk:
+            if h in matched_hashes:
+                result_map[(s, h)] = matched_hashes[h]
     return result_map
 
 
 async def _batch_find_duplicate_imports(
     db: AsyncSession,
-    subject_hash_pairs: list[tuple[str | None, str | None]],
-) -> dict[tuple[str, str], int]:
-    """Batch lookup: (subject, hash) → import.id for non-rejected imports
-    whose approved question (if any) is still active."""
+    subject_hash_pairs: list[tuple[int | str | None, str | None]],
+) -> dict[tuple[int | str, str], int]:
+    """Batch lookup: (subject_id_or_subject, hash) → import.id for non-rejected imports
+    whose approved question (if any) is still active.
+
+    Accepts int (subject_id) or str (legacy subject) as first tuple element.
+    """
     valid = [(s, h) for s, h in subject_hash_pairs if s and h]
     if not valid:
         return {}
 
-    unique_pairs: list[tuple[str, str]] = list({(s, h) for s, h in valid})
-    result_map: dict[tuple[str, str], int] = {}
+    unique_pairs: list[tuple[int | str, str]] = list({(s, h) for s, h in valid})
+    result_map: dict[tuple[int | str, str], int] = {}
+
+    # Resolve legacy string subjects to IDs (batch)
+    str_subjects = list({s for s, _ in unique_pairs if isinstance(s, str)})
+    from app.services.admin_subject_service import resolve_subject_id
+    subject_code_map: dict[str, int] = {}
+    for code in str_subjects:
+        resolved = await resolve_subject_id(db, code)
+        if resolved is not None:
+            subject_code_map[code] = resolved
 
     for i in range(0, len(unique_pairs), 500):
         chunk = unique_pairs[i:i + 500]
-        conditions = [
-            (QuestionImport.subject == s) & (QuestionImport.question_hash == h)
-            for s, h in chunk
-        ]
+        conditions = []
+        for s, h in chunk:
+            if isinstance(s, int):
+                conditions.append(
+                    (QuestionImport.subject_id == s) & (QuestionImport.question_hash == h)
+                )
+            else:
+                sid = subject_code_map.get(s)
+                if sid is not None:
+                    conditions.append(
+                        (QuestionImport.subject_id == sid) & (QuestionImport.question_hash == h)
+                    )
         from sqlalchemy import or_
-        stmt = select(QuestionImport.subject, QuestionImport.question_hash, QuestionImport.id, QuestionImport.question_id).where(
+        stmt = select(QuestionImport.question_hash, QuestionImport.id, QuestionImport.question_id).where(
             or_(*conditions),
             QuestionImport.status != "rejected",
         )
@@ -174,14 +218,21 @@ async def _batch_find_duplicate_imports(
             )
             active_qids = {qid for qid, in q_result.all()}
 
+        # Build hash→row mapping for quick lookup
+        hash_to_rows: dict[str, list] = {}
         for row in rows:
-            key = (row.subject, row.question_hash)
-            if key in result_map:
+            hash_to_rows.setdefault(row.question_hash, []).append(row)
+
+        for s, h in chunk:
+            if (s, h) in result_map:
                 continue
-            # Skip imports whose approved question was soft-deleted
-            if row.question_id is not None and row.question_id not in active_qids:
-                continue
-            result_map[key] = row.id
+            matched_rows = hash_to_rows.get(h, [])
+            for row in matched_rows:
+                # Skip imports whose approved question was soft-deleted
+                if row.question_id is not None and row.question_id not in active_qids:
+                    continue
+                result_map[(s, h)] = row.id
+                break
     return result_map
 
 
@@ -208,6 +259,7 @@ async def submit_to_review(
     source_type = batch_meta.get("source_type", "pdf")
     source_file = batch_meta.get("source_file", "")
     subject = batch_meta.get("subject", "")
+    subject_id = batch_meta.get("subject_id")
 
     items: list[dict] = []
     written = 0
@@ -221,13 +273,13 @@ async def submit_to_review(
     pending_meta: list[tuple[dict, str, str | None]] = []
 
     # Pre-compute hashes and batch duplicate lookups (2 queries instead of 2N)
-    prepared: list[tuple[dict, str, dict | None, str | None, str | None]] = []
-    subject_hash_pairs: list[tuple[str | None, str | None]] = []
+    prepared: list[tuple[dict, str, dict | None, str | None, int | None, str | None]] = []
+    subject_hash_pairs: list[tuple[int | str | None, str | None]] = []
 
     for q in questions:
         if not isinstance(q, dict):
             skipped += 1
-            prepared.append((q, "", None, None, None))  # type: ignore
+            prepared.append((q, "", None, None, None, None))  # type: ignore
             continue
 
         stem = (q.get("stem") or "").strip()
@@ -235,7 +287,7 @@ async def submit_to_review(
             raw_text = (q.get("raw_text") or q.get("raw_question_text") or "").strip()
             if not raw_text:
                 skipped += 1
-                prepared.append((q, "", None, None, None))
+                prepared.append((q, "", None, None, None, None))
                 continue
             stem = raw_text
             q = {
@@ -251,10 +303,13 @@ async def submit_to_review(
         parsed_options = _options_to_dict(options)
         parsed_answer = (q.get("answer") or "").strip() or None
         qi_subject = subject or q.get("subject") or None
+        qi_subject_id = subject_id or q.get("subject_id") or None
         question_hash = normalizer.build_question_hash(stem, parsed_options, parsed_answer)
 
-        prepared.append((q, stem, parsed_options, qi_subject, question_hash))
-        subject_hash_pairs.append((qi_subject, question_hash))
+        prepared.append((q, stem, parsed_options, qi_subject, qi_subject_id, question_hash))
+        # Prefer subject_id (int) for duplicate matching; fall back to subject string
+        dup_key = qi_subject_id if qi_subject_id else qi_subject
+        subject_hash_pairs.append((dup_key, question_hash))
 
     # Batch duplicate detection: 2 queries total
     dup_questions = await _batch_find_duplicate_questions(db, subject_hash_pairs)
@@ -270,12 +325,13 @@ async def submit_to_review(
     # 隐患② 修复：分批 commit 失去原子性，中途崩溃会留下孤儿 batch_id 记录。
     # 用 try/except 包住整段写入逻辑，失败时按 batch_id 清理已 commit 的部分。
     try:
-        for q, stem, parsed_options, qi_subject, question_hash in prepared:
+        for q, stem, parsed_options, qi_subject, qi_subject_id, question_hash in prepared:
             if not stem:
                 continue
 
             # Skip existing questions in the published bank or review pool
-            dup_key = (qi_subject, question_hash) if (qi_subject and question_hash) else None
+            dup_subject = qi_subject_id if qi_subject_id else qi_subject
+            dup_key = (dup_subject, question_hash) if (dup_subject and question_hash) else None
             if skip_existing and dup_key and dup_key in dup_questions:
                 skipped += 1
                 duplicates_filtered += 1
@@ -341,6 +397,7 @@ async def submit_to_review(
                 source_type=source_type,
                 source_file=source_file or None,
                 subject=qi_subject,
+                subject_id=qi_subject_id,
                 question_type=question_type or None,
                 raw_data=q,
                 parsed_content=parsed_content,

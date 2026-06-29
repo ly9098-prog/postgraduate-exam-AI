@@ -1,8 +1,8 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Integer, JSON, SmallInteger, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, SmallInteger, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
@@ -11,7 +11,11 @@ class Question(Base):
     __tablename__ = "questions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    subject: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    subject_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("subjects.id"), nullable=False, index=True
+    )
+
+    subject_ref = relationship("Subject", back_populates="questions", lazy="noload")
     question_type: Mapped[str] = mapped_column(
         String(32), nullable=False, default="choice"
     )

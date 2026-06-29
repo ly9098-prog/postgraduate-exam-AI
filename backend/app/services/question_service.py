@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.question_pipeline import normalizer
 from app.models.question import Question
+from app.services.admin_subject_service import resolve_subject_ids
 
 
 async def create(
@@ -59,7 +60,7 @@ async def list_questions(
 ) -> tuple[list[Question], int]:
     conditions = [Question.is_active == True]
     if subject:
-        conditions.append(Question.subject == subject)
+        conditions.append(Question.subject_id.in_(await resolve_subject_ids(db, subject)))
     if question_type:
         conditions.extend(_type_conditions(question_type))
 
@@ -85,7 +86,7 @@ async def get_random(
 ) -> Question | None:
     conditions = [Question.is_active == True]
     if subject:
-        conditions.append(Question.subject == subject)
+        conditions.append(Question.subject_id.in_(await resolve_subject_ids(db, subject)))
     if question_type:
         conditions.extend(_type_conditions(question_type))
     if exclude_ids:

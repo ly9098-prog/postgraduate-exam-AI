@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, Index, Integer, JSON, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
@@ -18,7 +18,11 @@ class QuestionImport(Base):
     batch_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     source_type: Mapped[str] = mapped_column(String(16), nullable=False)
     source_file: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    subject: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    subject_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("subjects.id"), nullable=True, index=True
+    )
+
+    subject_ref = relationship("Subject", back_populates="question_imports", lazy="selectin")
     question_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     raw_data: Mapped[dict] = mapped_column(JSON, nullable=False)
     parsed_content: Mapped[dict | None] = mapped_column(JSON, nullable=True)

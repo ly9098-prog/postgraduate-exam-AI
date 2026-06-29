@@ -234,7 +234,7 @@ function DetailModal({ item, onClose }: { item: ImportQuestionItem; onClose: () 
           ) : (
             <div className="space-y-3">
               {[
-                { title: "基础信息", data: { id: item.id, batch_id: item.batch_id, source_type: item.source_type, subject: item.subject, question_type: item.question_type, status: item.status, ai_generated: item.ai_generated, ai_answer_flag: item.ai_answer_flag, created_at: item.created_at, updated_at: item.updated_at } },
+                { title: "基础信息", data: { id: item.id, batch_id: item.batch_id, source_type: item.source_type, subject_id: item.subject_id, subject_name: item.subject_name, question_type: item.question_type, status: item.status, ai_generated: item.ai_generated, ai_answer_flag: item.ai_answer_flag, created_at: item.created_at, updated_at: item.updated_at } },
                 { title: "解析数据", data: { parsed_content: item.parsed_content, parsed_options: item.parsed_options, parsed_answer: item.parsed_answer, parsed_analysis: item.parsed_analysis } },
                 { title: "重复检测", data: { duplicate_status: item.duplicate_status, duplicate_of_question_id: item.duplicate_of_question_id, duplicate_of_import_id: item.duplicate_of_import_id, question_hash: item.question_hash } },
                 { title: "OCR / AI 原始数据", data: { raw_data: item.raw_data, ai_metadata: item.ai_metadata } },
@@ -255,11 +255,11 @@ function DetailModal({ item, onClose }: { item: ImportQuestionItem; onClose: () 
 export default function ImportQuestionsPage() {
   const searchParams = useSearchParams();
   const batchIdParam = searchParams.get("batch_id") || "";
-  const [filters, setFilters] = useState({ batch_id: "", status: "", subject: "", source_type: "", keyword: "" });
+  const [filters, setFilters] = useState({ batch_id: "", status: "", subject_id: "", source_type: "", keyword: "" });
   const [previewId, setPreviewId] = useState<number | null>(null);
 
   const queryParams = useMemo(
-    () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject: filters.subject, source_type: filters.source_type, keyword: filters.keyword }),
+    () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject_id: filters.subject_id, source_type: filters.source_type, keyword: filters.keyword }),
     [batchIdParam, filters],
   );
 
@@ -305,7 +305,7 @@ export default function ImportQuestionsPage() {
               <Input className="pl-9" placeholder="搜索题干 / OCR 原文" value={filters.keyword} onChange={(event) => updateFilter("keyword", event.target.value)} />
             </label>
             <Input placeholder="批次 ID" value={filters.batch_id || batchIdParam} onChange={(event) => updateFilter("batch_id", event.target.value)} />
-            <Input placeholder="科目" value={filters.subject} onChange={(event) => updateFilter("subject", event.target.value)} />
+            <Input placeholder="科目 ID" value={filters.subject_id} onChange={(event) => updateFilter("subject_id", event.target.value)} />
             <select className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm" value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
               <option value="">全部状态</option>
               <option value="pending">pending</option>
@@ -350,9 +350,9 @@ export default function ImportQuestionsPage() {
                         <span className="hidden h-3 w-px bg-[var(--color-border)] sm:block" />
 
                         {/* Subject + type pills */}
-                        {item.subject ? (
+                        {item.subject_name ? (
                           <span className="rounded-md bg-[var(--color-primary-light)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-primary-dark)]">
-                            {item.subject}
+                            {item.subject_name}
                           </span>
                         ) : null}
                         <span className="text-[11px] text-[var(--color-text-hint)]">

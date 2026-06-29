@@ -3,7 +3,9 @@ export type ImportQuestionItem = {
   batch_id: string;
   source_type: string;
   source_file?: string | null;
-  subject?: string | null;
+  subject_id?: number | null;
+  subject_code?: string | null;
+  subject_name?: string | null;
   question_type?: string | null;
   raw_data?: Record<string, unknown> | null;
   parsed_content?: Record<string, unknown> | null;
@@ -127,7 +129,7 @@ export type BatchImageJobStatusResponse = {
   job_id: string;
   status: string; // queued | running | completed | failed
   source_type: string;
-  subject: string | null;
+  subject_id?: number | null;
   concurrency: number;
   total: number;
   completed: number;
@@ -284,7 +286,7 @@ export type AppUserDetail = AppUser & {
 };
 
 export type QuestionEditRequest = {
-  subject?: string;
+  subject_id?: number | null;
   question_type?: string;
   content?: Record<string, unknown>;
   options?: Record<string, unknown>;
@@ -298,7 +300,10 @@ export type QuestionEditRequest = {
 
 export type AdminQuestion = {
   id: number;
-  subject: string;
+  subject_id?: number | null;
+  subject_code?: string | null;
+  subject_name?: string | null;
+  subject_path?: string | null;
   question_type: string;
   content: Record<string, unknown>;
   options?: Record<string, unknown> | null;
@@ -405,7 +410,7 @@ export type ExportCaseResponse = {
   case_id: string;
   source_file: string;
   source_page?: number | null;
-  subject?: string | null;
+  subject_id?: number | null;
   question_type?: string | null;
   import_id: number;
   raw_data: Record<string, unknown>;
@@ -578,4 +583,83 @@ export type HealthCheckItem = {
 export type SystemHealthResponse = {
   ok: boolean;
   checks: Record<string, HealthCheckItem>;
+};
+
+// ── Vector / Embedding Config ──
+
+export type VectorConfig = {
+  vector_enabled: boolean;
+  vector_mode: string;
+  vector_allowlist: string;
+  vector_cache_ttl_sec: number;
+  vector_top_k: number;
+  vector_similarity_threshold: number;
+  embedding_provider: string;
+  embedding_api_key_configured: boolean;
+  embedding_api_key_masked: string;
+  embedding_base_url: string;
+  embedding_model: string;
+  embedding_dim: number;
+  embedding_timeout: number;
+  embedding_batch_size: number;
+  updated_at: string | null;
+};
+
+export type VectorConfigPatchRequest = {
+  vector_enabled?: boolean;
+  vector_mode?: string;
+  vector_allowlist?: string;
+  vector_cache_ttl_sec?: number;
+  vector_top_k?: number;
+  vector_similarity_threshold?: number;
+  embedding_provider?: string;
+  embedding_api_key?: string;
+  embedding_base_url?: string;
+  embedding_model?: string;
+  embedding_dim?: number;
+  embedding_timeout?: number;
+  embedding_batch_size?: number;
+};
+
+export type EmbeddingTestRequest = {
+  api_base_url: string;
+  api_key: string;
+  model: string;
+  dim?: number;
+  timeout?: number;
+};
+
+export type EmbeddingTestResponse = {
+  success: boolean;
+  status: string;
+  message: string;
+  latency_ms: number;
+  returned_dim: number | null;
+};
+
+// ── Import History (batch management) ──
+
+export type ImportBatchListItem = {
+  batch_id: string;
+  source_type: string;
+  source_file: string | null;
+  total_count: number;
+  pending_count: number;
+  approved_count: number;
+  rejected_count: number;
+  published_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ImportBatchDetail = ImportBatchListItem & {
+  items: ImportQuestionItem[];
+};
+
+export type ImportPublishResponse = {
+  published: number;
+};
+
+export type ImportDeleteResponse = {
+  deleted_count: number;
 };

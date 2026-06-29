@@ -219,7 +219,7 @@ _LIST_COLUMNS = (
     QuestionImport.batch_id,
     QuestionImport.source_type,
     QuestionImport.source_file,
-    QuestionImport.subject,
+    QuestionImport.subject_id,
     QuestionImport.question_type,
     QuestionImport.parsed_answer,
     QuestionImport.question_hash,
@@ -273,11 +273,24 @@ async def list_review_queue(
     source_type: str | None = None,
     keyword: str | None = None,
     risk_level: str | None = None,
+    subject_id: int | None = None,
 ) -> tuple[list[AdminImportQuestionItemBrief], int]:
-    conditions = _question_conditions(status, batch_id, subject, source_type, keyword)
+    from app.models.admin import Subject
+    from app.services.admin_subject_service import resolve_subject_id
+
+    if subject and subject_id is None:
+        resolved = await resolve_subject_id(db, subject)
+        if resolved is not None:
+            subject_id = resolved
+    conditions = _question_conditions(status, batch_id, source_type, keyword, subject_id=subject_id)
     total = await db.scalar(select(func.count()).select_from(QuestionImport).where(*conditions))
     result = await db.execute(
-        select(*_LIST_COLUMNS)
+        select(
+            *_LIST_COLUMNS,
+            Subject.code.label("subject_code"),
+            Subject.name.label("subject_name"),
+        )
+        .outerjoin(Subject, QuestionImport.subject_id == Subject.id)
         .where(*conditions)
         .order_by(QuestionImport.created_at.desc(), QuestionImport.id.desc())
         .offset((page - 1) * page_size)
@@ -318,7 +331,7 @@ async def update_import_question(
         qi.parsed_analysis = payload.pop("analysis")
 
     for field in (
-        "subject",
+        "subject_id",
         "question_type",
         "raw_data",
         "parsed_content",
@@ -696,17 +709,17 @@ async def get_import_question_detail(
 def _question_conditions(
     status: str | None,
     batch_id: str | None,
-    subject: str | None,
     source_type: str | None,
     keyword: str | None,
+    subject_id: int | None = None,
 ) -> list:
     conditions = []
     if status:
         conditions.append(QuestionImport.status == status)
     if batch_id:
         conditions.append(QuestionImport.batch_id == batch_id)
-    if subject:
-        conditions.append(QuestionImport.subject == subject)
+    if subject_id is not None:
+        conditions.append(QuestionImport.subject_id == subject_id)
     if source_type:
         conditions.append(QuestionImport.source_type == source_type)
     if keyword:
@@ -810,23 +823,28 @@ def _batch_task_key(batch_id: str) -> str:
 
 
 async def list_subject_options(db: AsyncSession) -> list[dict]:
-    """返回活跃科目列表 [{code, name}]，供下拉框使用。"""
+    """返回活跃科目列表 [{id, code, name, path, level}]，供下拉框使用。"""
     from app.models.admin import Subject
     result = await db.execute(
-        select(Subject.code, Subject.name)
+        select(Subject.id, Subject.code, Subject.name, Subject.path, Subject.level)
         .where(Subject.is_active.is_(True))
         .order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
     )
     rows = result.all()
     if rows:
-        return [{"code": row.code, "name": row.name} for row in rows]
+        return [
+            {"id": row.id, "code": row.code, "name": row.name, "path": row.path, "level": row.level}
+            for row in rows
+        ]
 
-    # Fallback: extract distinct subjects from existing import data
+    # Fallback: extract distinct subject_ids from existing import data
     from app.models.question_import import QuestionImport
+    from app.models.admin import Subject
     fb = await db.execute(
-        select(QuestionImport.subject)
-        .where(QuestionImport.subject.is_not(None), QuestionImport.subject != "")
+        select(Subject.id, Subject.code, Subject.name)
+        .join(QuestionImport, QuestionImport.subject_id == Subject.id)
+        .where(QuestionImport.subject_id.is_not(None))
         .distinct()
-        .order_by(QuestionImport.subject.asc())
+        .order_by(Subject.code.asc())
     )
-    return [{"code": row[0], "name": row[0]} for row in fb.all()]
+    return [{"id": row[0], "code": row[1], "name": row[2], "path": row[1], "level": 1} for row in fb.all()]

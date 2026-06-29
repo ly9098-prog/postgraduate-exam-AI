@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.client import deepseek
+from app.services.admin_subject_service import resolve_subject_ids
 from app.ai.fallback import (
     get_fallback_analysis,
     get_fallback_explain,
@@ -357,7 +358,7 @@ async def recommend_similar_questions(
     # 同 subject 候选
     candidates_result = await db.execute(
         select(Question).where(
-            Question.subject == q.subject,
+            Question.subject_id.in_(await resolve_subject_ids(db, q.subject_ref.code if q.subject_ref else "")),
             Question.is_active == True,
             Question.review_status == "approved",
         )
@@ -398,7 +399,7 @@ async def recommend_similar_questions(
 
         recommendations.append({
             "question_id": c.id,
-            "subject": c.subject,
+            "subject": c.subject_ref.code if c.subject_ref else "",
             "question_type": c.question_type,
             "stem": stem[:200],
             "knowledge_points": kps,

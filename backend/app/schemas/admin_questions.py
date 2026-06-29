@@ -12,6 +12,7 @@ class AdminQuestionImportSummary(BaseModel):
     source_type: str
     source_file: str | None = None
     subject: str | None = None
+    subject_id: int | None = None
     question_type: str | None = None
     raw_data: dict[str, Any]
     parsed_content: dict[str, Any] | None = None
@@ -36,7 +37,10 @@ class AdminQuestionListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    subject: str
+    subject_id: int | None = None
+    subject_code: str | None = None
+    subject_name: str | None = None
+    subject_path: str | None = None
     question_type: str
     content: dict[str, Any]
     options: dict[str, Any] | None = None
@@ -56,13 +60,28 @@ class AdminQuestionListItem(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @model_validator(mode="before")
+    @classmethod
+    def _fill_subject_display(cls, data):
+        if hasattr(data, "subject_ref"):
+            ref = data.subject_ref
+            if ref:
+                if isinstance(data, dict):
+                    data.setdefault("subject_code", ref.code)
+                    data.setdefault("subject_name", ref.name)
+                    data.setdefault("subject_path", ref.path)
+                else:
+                    # ORM object — Pydantic from_attributes will pick up computed fields
+                    pass
+        return data
+
 
 class AdminQuestionDetail(AdminQuestionListItem):
     import_record: AdminQuestionImportSummary | None = None
 
 
 class AdminQuestionPatchRequest(BaseModel):
-    subject: str | None = Field(default=None, max_length=32)
+    subject_id: int | None = None
     question_type: str | None = Field(default=None, max_length=32)
     content: dict[str, Any] | None = None
     options: dict[str, Any] | None = None

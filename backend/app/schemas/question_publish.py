@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -32,3 +34,19 @@ class ApproveAndPublishResponse(BaseModel):
     duplicates: int
     failed: int
     details: list[PublishDetailItem]
+
+
+class PublishHistoryItem(BaseModel):
+    batch_id: str
+    published_at: datetime | None = None
+    total: int = 0
+    published: int = 0
+    duplicates: int = 0
+    failed: int = 0
+
+
+class PublishHistoryResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    items: list[PublishHistoryItem]

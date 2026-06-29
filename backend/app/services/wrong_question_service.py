@@ -3,10 +3,12 @@ from datetime import datetime, timedelta
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.admin import Subject
 from app.models.question import Question
 from app.models.review_scheduler import ReviewSchedule
 from app.models.wrong_question import WrongQuestion
 from app.core.time_utils import utcnow
+from app.services.admin_subject_service import resolve_subject_ids
 
 
 async def record_wrong(
@@ -61,14 +63,14 @@ async def list_wrong(
         count_q = (
             select(func.count(WrongQuestion.id))
             .join(Question, WrongQuestion.question_id == Question.id)
-            .where(and_(*conditions, Question.subject == subject))
+            .where(and_(*conditions, Question.subject_id.in_(await resolve_subject_ids(db, subject))))
         )
         total = (await db.execute(count_q)).scalar()
 
         q = (
             select(WrongQuestion)
             .join(Question, WrongQuestion.question_id == Question.id)
-            .where(and_(*conditions, Question.subject == subject))
+            .where(and_(*conditions, Question.subject_id.in_(await resolve_subject_ids(db, subject))))
             .order_by(WrongQuestion.updated_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
@@ -124,10 +126,11 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
 
     # Count by subject from joined questions
     result3 = await db.execute(
-        select(Question.subject, func.count(WrongQuestion.id).label("cnt"))
+        select(Subject.code.label("subject"), func.count(WrongQuestion.id).label("cnt"))
         .join(Question, WrongQuestion.question_id == Question.id)
+        .join(Subject, Question.subject_id == Subject.id)
         .where(and_(*conditions))
-        .group_by(Question.subject)
+        .group_by(Question.subject_id, Subject.code)
     )
 
     by_subject = [{"subject": r[0], "count": r[1]} for r in result3.all()]
