@@ -48,6 +48,9 @@ async def update_vector_config(
     except ValueError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception:
+        await db.rollback()
+        raise
 
 
 @router.post("/vector-config/test-embedding", response_model=EmbeddingTestResponse)
