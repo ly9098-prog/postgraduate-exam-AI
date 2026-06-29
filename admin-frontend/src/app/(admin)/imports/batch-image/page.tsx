@@ -6,6 +6,7 @@ import { AlertCircle, Check, CheckCircle2, ChevronDown, ClipboardCheck, Images, 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { apiRequest, getApiAccessToken, toQuery } from "@/lib/api/client";
 import { connectSSE } from "@/lib/api/sse";
 import type { BatchImageJobStatusResponse, BatchImageUploadResponse, BatchImageReparseResponse, TraceEvent } from "@/lib/api/types";
@@ -93,6 +94,8 @@ export default function BatchImagePage() {
   const [queuePhase, setQueuePhase] = useState<QueuePhase>("idle");
   const [selectOpen, setSelectOpen] = useState(false);
   const selectRef = useRef<HTMLDivElement>(null);
+  const [subjectSelectOpen, setSubjectSelectOpen] = useState(false);
+  const subjectSelectRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const imageTasksRef = useRef<ImageTask[]>([]);
 
@@ -324,6 +327,9 @@ export default function BatchImagePage() {
       if (selectRef.current && !selectRef.current.contains(e.target as Node)) {
         setSelectOpen(false);
       }
+      if (subjectSelectRef.current && !subjectSelectRef.current.contains(e.target as Node)) {
+        setSubjectSelectOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -468,45 +474,57 @@ export default function BatchImagePage() {
         </div>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        {/* ===== Left: 选择图片 + 上传 ===== */}
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col gap-1">
-              <h3 className="font-display text-2xl font-bold text-[var(--ink)]">批量导题</h3>
-              <p className="text-sm text-[var(--color-text-secondary)]">
-                一次选择多张题目图片，自动逐张 OCR → AI 解析 → 进入待审核区。
-              </p>
+      <Card className="overflow-hidden">
+        <CardHeader className="!pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-display text-xl font-bold text-[var(--ink)]">批量导题</h3>
+              <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">OCR → AI 解析 → 待审核</p>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {/* Dropzone */}
+            {queuePhase !== "idle" && imageTasks.length > 0 && (
+              <span className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold",
+                queuePhase === "done"
+                  ? failedCount > 0 && succeededCount === 0 ? "bg-[var(--color-danger-light)] text-[var(--color-danger)]" : "bg-[var(--color-success-light)] text-[var(--color-success)]"
+                  : "bg-[var(--color-warning-light)] text-[var(--color-warning)]",
+              )}>
+                <span className={cn(
+                  "inline-block h-1.5 w-1.5 rounded-full",
+                  queuePhase === "done"
+                    ? failedCount > 0 && succeededCount === 0 ? "bg-[var(--color-danger)]" : "bg-[var(--color-success)]"
+                    : "animate-pulse bg-[var(--color-warning)]",
+                )} />
+                {queuePhase === "done" ? (failedCount > 0 && succeededCount === 0 ? "全部失败" : "已完成") : queuePhase === "uploading" ? "上传中" : "识别中"}
+              </span>
+            )}
+          </div>
+        </CardHeader>
+
+        <div className="flex min-h-[460px]">
+          {/* ── Left Sidebar: Config ── */}
+          <div className="flex w-[240px] shrink-0 flex-col gap-3 border-r border-[var(--color-border)] bg-[var(--color-bg-input)]/30 p-3.5">
+            {/* Compact dropzone */}
             <label htmlFor={fileInputId}>
               <div
                 onDragOver={onDragOver}
                 onDragLeave={onDragLeave}
                 onDrop={onDrop}
-                className={`relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 transition ${
+                className={cn(
+                  "relative flex cursor-pointer flex-col items-center rounded-xl border-2 border-dashed p-4 text-center transition",
                   isJobActive
                     ? "border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-50"
-                    : dragActive
+                    : dragActive || files.length > 0
                       ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]"
-                      : files.length > 0
-                        ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]"
-                        : "border-[var(--color-border)] bg-white/50 hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)]"
-                }`}
-              >
-                <Images
-                  className={`mb-2 h-8 w-8 ${files.length > 0 ? "text-[var(--color-primary-dark)]" : "text-[var(--color-text-hint)]"}`}
-                />
-                {files.length > 0 ? (
-                  <p className="text-sm font-semibold text-[var(--ink)]">已选择 {files.length} 张图片</p>
-                ) : (
-                  <p className="text-sm font-semibold text-[var(--ink)]">点击选择 · 拖拽 · 粘贴图片</p>
+                      : "border-[var(--color-border)] bg-white/50 hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)]",
                 )}
-                <p className="mt-0.5 text-xs text-[var(--color-text-hint)]">
-                  JPG、PNG、WebP，单次最多 {MAX_FILES} 张
-                </p>
+              >
+                <Images className={cn("mb-1 h-6 w-6", files.length > 0 ? "text-[var(--color-primary-dark)]" : "text-[var(--color-text-hint)]")} />
+                {files.length > 0 ? (
+                  <p className="text-xs font-semibold text-[var(--ink)]">{files.length} 张图片</p>
+                ) : (
+                  <p className="text-xs font-semibold text-[var(--ink)]">选择图片</p>
+                )}
+                <p className="mt-0.5 text-[10px] text-[var(--color-text-hint)]">拖拽 · 粘贴 · 点击</p>
                 <input
                   id={fileInputId}
                   type="file"
@@ -514,137 +532,127 @@ export default function BatchImagePage() {
                   accept={ACCEPT}
                   disabled={isJobActive}
                   className="absolute inset-0 cursor-pointer opacity-0"
-                  onChange={(event) => {
-                    addFiles(event.target.files);
-                    event.target.value = "";
-                  }}
+                  onChange={(event) => { addFiles(event.target.files); event.target.value = ""; }}
                 />
               </div>
             </label>
 
-            {/* Selected file chips — only show before queue starts */}
-            {files.length > 0 && queuePhase === "idle" ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                    待上传（{files.length}）
-                  </span>
-                  <button
-                    type="button"
-                    disabled={isJobActive}
-                    onClick={clearFiles}
-                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--color-text-hint)] transition hover:text-[var(--color-danger)] disabled:opacity-40"
-                  >
-                    <Trash2 className="h-3 w-3" />
+            {/* File list (compact) */}
+            {files.length > 0 && queuePhase === "idle" && (
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-hint)]">待上传</span>
+                  <button type="button" disabled={isJobActive} onClick={clearFiles}
+                    className="text-[10px] font-semibold text-[var(--color-text-hint)] transition hover:text-[var(--color-danger)] disabled:opacity-40">
                     清空
                   </button>
                 </div>
-                <div className="flex max-h-40 flex-wrap gap-1.5 overflow-auto rounded-2xl border border-[var(--color-border)] bg-white/60 p-2.5">
+                <div className="flex max-h-[100px] flex-col gap-0.5 overflow-auto">
                   {files.map((file, index) => (
-                    <span
-                      key={`${file.name}_${file.size}_${index}`}
-                      className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-2 py-1 text-[11px] text-[var(--color-text-secondary)]"
-                    >
-                      <span className="max-w-[140px] truncate" title={file.name}>
-                        {file.name}
-                      </span>
-                      <button
-                        type="button"
-                        disabled={isJobActive}
-                        onClick={() => removeFile(index)}
-                        className="shrink-0 text-[var(--color-text-hint)] transition hover:text-[var(--color-danger)] disabled:opacity-40"
-                      >
-                        <X className="h-3 w-3" />
+                    <div key={`${file.name}_${file.size}_${index}`} className="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[10px] text-[var(--color-text-secondary)] hover:bg-white/60">
+                      <span className="max-w-[150px] truncate" title={file.name}>{file.name}</span>
+                      <button type="button" disabled={isJobActive} onClick={() => removeFile(index)}
+                        className="ml-auto shrink-0 text-[var(--color-text-hint)] transition hover:text-[var(--color-danger)] disabled:opacity-40">
+                        <X className="h-2.5 w-2.5" />
                       </button>
-                    </span>
+                    </div>
                   ))}
                 </div>
               </div>
-            ) : null}
+            )}
 
-            {/* Subject + concurrency */}
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-xs font-semibold text-[var(--color-text-secondary)]">科目（可选）</span>
-                <select
-                  className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)]"
-                  value={subjectId}
-                  disabled={isJobActive}
-                  onChange={(e) => setSubjectId(e.target.value)}
-                >
-                  <option value="">选择科目（可选）</option>
-                  {subjectOptions.map((s) => (
-                    <option key={s.id} value={String(s.id)}>{s.name}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="space-y-1">
-                <span className="text-xs font-semibold text-[var(--color-text-secondary)]">并发数</span>
+            {/* Config fields */}
+            <div className="flex flex-col gap-2">
+              <div className="space-y-0.5">
+                <span className="text-[10px] font-semibold text-[var(--color-text-hint)]">科目</span>
+                <div className="relative" ref={subjectSelectRef}>
+                  <button
+                    type="button"
+                    disabled={isJobActive}
+                    onClick={() => setSubjectSelectOpen((prev) => !prev)}
+                    className={cn(
+                      "flex h-8 w-full items-center justify-between gap-2 rounded-lg border px-2 text-[11px] outline-none transition-all",
+                      isJobActive ? "border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-50 cursor-not-allowed"
+                        : subjectSelectOpen ? "border-[var(--color-primary)] bg-white ring-2 ring-[rgba(91,123,154,0.14)]"
+                          : "border-[var(--color-border)] bg-white hover:border-[var(--color-primary)]",
+                    )}
+                  >
+                    <span className={cn("truncate", subjectId ? "font-semibold text-[var(--ink)]" : "text-[var(--color-text-hint)]")}>
+                      {subjectId ? (subjectOptions.find((s) => String(s.id) === subjectId)?.name || subjectId) : "选择科目（可选）"}
+                    </span>
+                    <ChevronDown className={cn("h-3 w-3 shrink-0 text-[var(--color-text-hint)] transition-transform", subjectSelectOpen && "rotate-180")} />
+                  </button>
+                  {subjectSelectOpen && (
+                    <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-[200px] overflow-y-auto surface-card rounded-lg p-0.5 animate-drop-in">
+                      <button
+                        type="button"
+                        onClick={() => { setSubjectId(""); setSubjectSelectOpen(false); }}
+                        className={cn(
+                          "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] transition-all",
+                          !subjectId ? "bg-[var(--color-primary-light)] text-[var(--color-primary-dark)] font-semibold" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]",
+                        )}
+                      >
+                        选择科目（可选）
+                        {!subjectId && <Check className="h-3 w-3 text-[var(--color-primary-dark)]" />}
+                      </button>
+                      {subjectOptions.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => { setSubjectId(String(s.id)); setSubjectSelectOpen(false); }}
+                          className={cn(
+                            "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] transition-all",
+                            subjectId === String(s.id) ? "bg-[var(--color-primary-light)] text-[var(--color-primary-dark)] font-semibold" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]",
+                          )}
+                        >
+                          {s.name}
+                          {subjectId === String(s.id) && <Check className="h-3 w-3 text-[var(--color-primary-dark)]" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-[10px] font-semibold text-[var(--color-text-hint)]">并发数</span>
                 <div className="relative" ref={selectRef}>
                   <button
                     type="button"
                     disabled={isJobActive}
                     onClick={() => setSelectOpen((prev) => !prev)}
-                    className={`h-11 w-full rounded-xl border px-3 text-sm outline-none transition-all duration-200 flex items-center justify-between gap-2 ${
-                      isJobActive
-                        ? "border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-50 cursor-not-allowed"
-                        : selectOpen
-                          ? "border-[var(--color-primary)] bg-white ring-4 ring-[rgba(91,123,154,0.14)]"
-                          : "border-[var(--color-border)] bg-[var(--color-bg-input)] hover:border-[var(--color-primary)] hover:bg-white"
-                    }`}
+                    className={cn(
+                      "flex h-8 w-full items-center justify-between gap-2 rounded-lg border px-2 text-[11px] outline-none transition-all",
+                      isJobActive ? "border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-50 cursor-not-allowed"
+                        : selectOpen ? "border-[var(--color-primary)] bg-white ring-2 ring-[rgba(91,123,154,0.14)]"
+                          : "border-[var(--color-border)] bg-white hover:border-[var(--color-primary)]",
+                    )}
                   >
-                    <span className="flex items-center gap-2">
+                    <span className="flex items-center gap-1.5">
                       <span className="font-semibold text-[var(--ink)]">{concurrency}</span>
                       {(() => {
                         const opt = concurrencyOptions.find((o) => o.value === concurrency);
                         return opt?.tag ? (
-                          <span className={`text-[10px] font-semibold leading-none px-1.5 py-0.5 rounded ${opt.tagClass}`}>
-                            {opt.tag}
-                          </span>
+                          <span className={cn("text-[9px] font-semibold leading-none rounded px-1 py-0.5", opt.tagClass)}>{opt.tag}</span>
                         ) : null;
                       })()}
                     </span>
-                    <ChevronDown
-                      className={`h-4 w-4 text-[var(--color-text-hint)] transition-transform duration-200 ${selectOpen ? "rotate-180" : ""}`}
-                    />
+                    <ChevronDown className={cn("h-3 w-3 text-[var(--color-text-hint)] transition-transform", selectOpen && "rotate-180")} />
                   </button>
-
                   {selectOpen && (
-                    <div
-                      className="absolute top-full left-0 right-0 z-50 mt-1.5 surface-card rounded-xl overflow-hidden p-1 animate-drop-in"
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") setSelectOpen(false);
-                      }}
-                    >
+                    <div className="absolute left-0 right-0 top-full z-50 mt-1 surface-card overflow-hidden rounded-lg p-0.5 animate-drop-in">
                       {concurrencyOptions.map((opt) => (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => {
-                            setConcurrency(opt.value);
-                            setSelectOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-sm transition-all duration-150 ${
-                            concurrency === opt.value
-                              ? "bg-[var(--color-primary-light)] text-[var(--color-primary-dark)]"
-                              : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)]"
-                          }`}
-                        >
-                          <span className="flex items-center gap-2">
-                            <span
-                              className={`font-semibold ${concurrency === opt.value ? "text-[var(--color-primary-dark)]" : "text-[var(--ink)]"}`}
-                            >
-                              {opt.label}
-                            </span>
-                            {opt.tag && (
-                              <span className={`text-[10px] font-semibold leading-none px-1.5 py-0.5 rounded ${opt.tagClass}`}>
-                                {opt.tag}
-                              </span>
-                            )}
-                          </span>
-                          {concurrency === opt.value && (
-                            <Check className="h-3.5 w-3.5 text-[var(--color-primary-dark)]" />
+                        <button key={opt.value} type="button"
+                          onClick={() => { setConcurrency(opt.value); setSelectOpen(false); }}
+                          className={cn(
+                            "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] transition-all",
+                            concurrency === opt.value ? "bg-[var(--color-primary-light)] text-[var(--color-primary-dark)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]",
                           )}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <span className={cn("font-semibold", concurrency === opt.value ? "text-[var(--color-primary-dark)]" : "text-[var(--ink)]")}>{opt.label}</span>
+                            {opt.tag && <span className={cn("text-[9px] font-semibold leading-none rounded px-1 py-0.5", opt.tagClass)}>{opt.tag}</span>}
+                          </span>
+                          {concurrency === opt.value && <Check className="h-3 w-3 text-[var(--color-primary-dark)]" />}
                         </button>
                       ))}
                     </div>
@@ -653,248 +661,113 @@ export default function BatchImagePage() {
               </div>
             </div>
 
-            <div className="border-t border-[var(--color-border)] pt-4">
+            <div className="border-t border-[var(--color-border)]/60 pt-2">
               <OcrModeSelector value={ocrMode} onChange={setOcrMode} disabled={isJobActive} />
             </div>
 
             {/* Submit / Reset */}
-            <div className="flex items-center justify-end gap-3 border-t border-[var(--color-border)] pt-4">
+            <div className="mt-auto border-t border-[var(--color-border)]/60 pt-3">
               {queuePhase === "done" ? (
-                <Button onClick={resetQueue} className="h-11 px-5" variant="secondary">
-                  <RefreshCw className="h-4 w-4" />
+                <Button onClick={resetQueue} className="h-9 w-full text-xs" variant="secondary">
+                  <RefreshCw className="h-3.5 w-3.5" />
                   重新导入
                 </Button>
               ) : (
-                <>
-                  {queuePhase === "polling" ? (
-                    <Button onClick={resetQueue} variant="secondary" className="h-11 px-5">
-                      <X className="h-4 w-4" />
-                      取消
+                <div className="flex gap-2">
+                  {queuePhase === "polling" && (
+                    <Button onClick={resetQueue} variant="secondary" className="h-9 px-3 text-xs">
+                      <X className="h-3.5 w-3.5" />
                     </Button>
-                  ) : null}
+                  )}
                   <Button
                     disabled={files.length === 0 || queuePhase !== "idle"}
-                    onClick={() => {
-                      if (queuePhase === "idle") startQueue();
-                    }}
-                    className="h-11 px-5"
+                    onClick={() => { if (queuePhase === "idle") startQueue(); }}
+                    className="h-9 flex-1 text-xs"
                   >
-                    <UploadCloud className="h-4 w-4" />
-                    {queuePhase === "uploading"
-                      ? "上传中..."
-                      : queuePhase === "polling"
-                        ? "识别中..."
-                        : `开始导入${files.length > 0 ? `（${files.length}）` : ""}`}
+                    <UploadCloud className="h-3.5 w-3.5" />
+                    {queuePhase === "uploading" ? "上传中..." : queuePhase === "polling" ? "识别中..." : `开始导入${files.length > 0 ? `（${files.length}）` : ""}`}
                   </Button>
-                </>
+                </div>
               )}
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* ===== Right: 任务进度 + 日志面板 ===== */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <h3 className="font-display text-xl font-bold text-[var(--ink)]">
-                {queuePhase === "idle" ? "准备就绪" : "任务进度"}
-              </h3>
-              <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
-                {queuePhase === "idle"
-                  ? "选择图片后点击「开始导入」"
-                  : queuePhase === "done"
-                    ? "全部处理完成"
-                    : "实时追踪每张图片的识别状态"}
-              </p>
-            </div>
-          </CardHeader>
-          <CardContent>
+          {/* ── Right: Progress Dashboard ── */}
+          <div className="flex-1 p-5">
             {/* Empty state */}
             {queuePhase === "idle" && imageTasks.length === 0 ? (
-              <div className="flex flex-col items-center py-8 text-center">
-                <Images className="mb-3 h-9 w-9 text-[var(--color-text-hint)]" />
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <Images className="mb-3 h-10 w-10 text-[var(--color-text-hint)]" />
                 <p className="text-sm font-semibold text-[var(--color-text-secondary)]">等待任务提交</p>
                 <p className="mt-1 max-w-xs text-xs leading-relaxed text-[var(--color-text-hint)]">
-                  提交后将在此处显示每张图片的识别进度和日志。
+                  选择图片并点击「开始导入」，此处将显示实时进度
                 </p>
               </div>
-            ) : null}
-
-            {/* Compact aggregate progress + inline stats — only when active */}
-            {imageTasks.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-              {queuePhase !== "done" ? (
-                <span className="flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700 transition-all duration-300">
-                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-                  {queuePhase === "uploading" ? "上传中" : "识别中"}
-                </span>
-              ) : (
-                <span
-                  className={`animate-rise-in flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition-all duration-300 ${
-                    failedCount > 0 && succeededCount === 0
-                      ? "bg-red-50 text-red-700"
-                      : "bg-green-50 text-green-700"
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-1.5 w-1.5 rounded-full transition-all duration-300 ${failedCount > 0 && succeededCount === 0 ? "bg-red-500" : "bg-green-500"}`}
-                  />
-                  {failedCount > 0 && succeededCount === 0 ? "全部失败" : "已完成"}
-                </span>
-              )}
-
-              <span className="flex flex-wrap items-center gap-x-2.5 gap-y-0 text-[10px] text-[var(--color-text-secondary)]">
-                <span>总数 <strong className="text-[var(--ink)] tabular-nums">{totalImages}</strong></span>
-                {uploadingCount > 0 && (
-                  <span>上传 <strong className="text-blue-600 tabular-nums">{uploadingCount}</strong></span>
-                )}
-                {processingCount > 0 && (
-                  <span>识别 <strong className="text-amber-600 tabular-nums">{processingCount}</strong></span>
-                )}
-                {succeededCount > 0 && (
-                  <span>成功 <strong className="text-green-600 tabular-nums">{succeededCount}</strong></span>
-                )}
-                {failedCount > 0 && (
-                  <span>失败 <strong className="text-red-600 tabular-nums">{failedCount}</strong></span>
-                )}
-                {totalQuestions > 0 && (
-                  <span>题目 <strong className="text-[var(--color-primary-dark)] tabular-nums">{totalQuestions}</strong></span>
-                )}
-              </span>
-
-              <span className="text-[10px] tabular-nums text-[var(--color-text-hint)] ml-auto">{progressPct}%</span>
-            </div>
-            ) : null}
-
-            {/* Progress bar — only when there are active tasks */}
-            {imageTasks.length > 0 ? (
-              <div className="overflow-hidden rounded-full bg-[var(--color-bg-input)]">
-                <div
-                  className="h-1.5 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[#7b9bbb] transition-all duration-700"
-                  style={{ width: `${progressPct}%` }}
-                />
-              </div>
-            ) : null}
-
-                {/* Per-image log list */}
-                {imageTasks.length > 0 ? (
-                  <div className="space-y-1.5">
-                    <span className="text-xs font-semibold text-[var(--color-text-secondary)]">明细</span>
-                    <div className="space-y-1.5">
-                      {imageTasks.map((task) => {
-                        const traces = task.traceEvents;
-                        return (
-                          <div
-                            key={task.id}
-                            className={`animate-rise-in rounded-xl border bg-white/70 text-xs transition-all duration-200 hover:border-[var(--color-primary)] hover:shadow-sm ${
-                              task.status === "failed"
-                                ? "border-red-200"
-                                : "border-[var(--color-border)]"
-                            }`}
-                          >
-                            {/* Header */}
-                            <div className="flex items-center gap-2 px-3 py-2">
-                              <span className="w-6 shrink-0 font-mono text-[10px] text-[var(--color-text-hint)]">
-                                #{task.seq}
-                              </span>
-                              <span
-                                className="min-w-0 flex-1 truncate text-[var(--color-text-secondary)]"
-                                title={task.file.name}
-                              >
-                                {task.file.name}
-                              </span>
-                              {renderStatusBadge(task)}
-                            </div>
-
-                            {/* Trace events log */}
-                            {traces.length > 0 ? (
-                              <div className="border-t border-[var(--color-border)] px-3 py-2 space-y-0.5">
-                                {traces.map((e, i) => (
-                                  <div key={i} className="animate-rise-in flex items-start gap-2 text-[10px] leading-relaxed min-w-0 overflow-hidden">
-                                    <span className="shrink-0 font-mono text-[var(--color-text-hint)] w-16">
-                                      {fmtTime(new Date(e.created_at).getTime())}
-                                    </span>
-                                    <span
-                                      className={`shrink-0 rounded px-1.5 py-0.5 font-semibold ${
-                                        e.status === "success"
-                                          ? "bg-green-50 text-green-700"
-                                          : e.status === "failed"
-                                            ? "bg-red-50 text-red-700"
-                                            : e.step === "upload"
-                                              ? "bg-blue-50 text-blue-700"
-                                              : e.step === "ocr"
-                                                ? "bg-amber-50 text-amber-700"
-                                                : "bg-gray-50 text-gray-500"
-                                      }`}
-                                    >
-                                      {e.step === "upload" ? "上传" : e.step === "ocr" ? "OCR" : e.step === "pipeline" ? "解析" : e.step === "done" ? "完成" : e.step === "error" ? "错误" : e.step}
-                                    </span>
-                                    <span className="min-w-0 break-words text-[var(--color-text-secondary)] leading-relaxed">
-                                      {e.message}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : null}
-
-                            {/* Error message for failed items */}
-                            {task.status === "failed" && task.errorMessage ? (
-                              <div className="animate-rise-in border-t border-red-100 bg-red-50/50 px-3 py-1.5 text-[10px] text-red-700">
-                                {task.errorMessage}
-                              </div>
-                            ) : null}
-
-                            {/* Reparse button for failed items with OCR cache */}
-                            {task.status === "failed" && task.jobStatus
-                              && (task.jobStatus.items ?? []).some(
-                                (item) => item.status === "failed" && item.has_ocr_cache,
-                              ) ? (
-                              <div className="border-t border-[var(--color-border)] px-3 py-1.5">
-                                {(() => {
-                                  const reparseItem = (task.jobStatus.items ?? []).find(
-                                    (item) => item.status === "failed" && item.has_ocr_cache,
-                                  );
-                                  if (!reparseItem) return null;
-                                  return (
-                                    <button
-                                      key={reparseItem.id}
-                                      type="button"
-                                      disabled={reparseMutation.isPending}
-                                      onClick={() => reparseMutation.mutate(reparseItem.id)}
-                                      className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary-dark)] disabled:opacity-40"
-                                      title="基于缓存的 OCR 文本重新解析，不重复识别"
-                                    >
-                                      <RefreshCw
-                                        className={`h-3 w-3 ${reparseMutation.isPending && reparseMutation.variables === reparseItem.id ? "animate-spin" : ""}`}
-                                      />
-                                      重解析
-                                    </button>
-                                  );
-                                })()}
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
+            ) : (
+              <div className="space-y-4">
+                {/* Stats row */}
+                <div className="grid grid-cols-5 gap-2">
+                  {[
+                    { label: "总数", value: totalImages, color: "var(--ink)" },
+                    { label: "上传", value: uploadingCount, color: "#3a6a9a", show: uploadingCount > 0 },
+                    { label: "识别", value: processingCount, color: "#b87a30", show: processingCount > 0 },
+                    { label: "成功", value: succeededCount, color: "#3a7a5a", show: succeededCount > 0 },
+                    { label: "题目", value: totalQuestions, color: "var(--color-primary-dark)", show: totalQuestions > 0 },
+                  ].filter(s => s.show !== false).map((s) => (
+                    <div key={s.label} className="rounded-lg border border-[var(--color-border)] bg-white p-2.5 text-center">
+                      <span className="font-display text-xl font-bold tabular-nums" style={{ color: s.color }}>{s.value}</span>
+                      <p className="mt-0.5 text-[9px] text-[var(--color-text-hint)]">{s.label}</p>
                     </div>
-                  </div>
-                ) : null}
+                  ))}
+                  {failedCount > 0 && (
+                    <div className="rounded-lg border border-[var(--color-danger)]/20 bg-[var(--color-danger-light)] p-2.5 text-center">
+                      <span className="font-display text-xl font-bold tabular-nums text-[var(--color-danger)]">{failedCount}</span>
+                      <p className="mt-0.5 text-[9px] text-[var(--color-text-hint)]">失败</p>
+                    </div>
+                  )}
+                </div>
 
-                {/* Quick link to review queue */}
-                {queuePhase === "done" && succeededCount > 0 ? (
-                  <div className="animate-rise-in flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-3">
-                    <a
-                      className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white/70 px-3 text-[10px] font-semibold text-[var(--color-text-secondary)] transition-all duration-200 hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] active:scale-95"
-                      href="/imports/review"
-                    >
-                      <ClipboardCheck className="h-3 w-3" />
-                      前往待审核
-                    </a>
+                {/* Progress bar */}
+                <div>
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-[11px] text-[var(--color-text-secondary)]">总体进度</span>
+                    <span className="text-[11px] font-semibold tabular-nums text-[var(--ink)]">{progressPct}%</span>
                   </div>
-                ) : null}
-          </CardContent>
-        </Card>
-      </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-[var(--color-bg-input)]">
+                    <div className="h-full rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[#7b9bbb] transition-all duration-700" style={{ width: `${progressPct}%` }} />
+                  </div>
+                </div>
+
+                {/* Task list */}
+                <div>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-hint)]">任务明细</span>
+                  <div className="mt-2 space-y-1">
+                    {imageTasks.map((task) => (
+                      <div key={task.id} className={cn(
+                        "flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs transition-all hover:border-[var(--color-primary)]/30 hover:shadow-sm",
+                        task.status === "failed" ? "border-[var(--color-danger)]/20" : "border-[var(--color-border)]",
+                      )}>
+                        <span className="w-6 shrink-0 font-mono text-[10px] text-[var(--color-text-hint)]">#{task.seq}</span>
+                        <span className="min-w-0 flex-1 truncate text-[var(--ink)]" title={task.file.name}>{task.file.name}</span>
+                        {renderStatusBadge(task)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quick link to review */}
+                {queuePhase === "done" && succeededCount > 0 && (
+                  <a className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white/70 px-3 text-[11px] font-semibold text-[var(--color-text-secondary)] transition-all hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] active:scale-95"
+                    href="/imports/review">
+                    <ClipboardCheck className="h-3.5 w-3.5" />
+                    前往待审核
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { MathFormula } from "@/components/ui/math-formula";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
+import { cn } from "@/lib/utils";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import type { AdminImportCompleteResponse, BatchCompleteResponse, ImportActionResponse, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 
@@ -183,6 +184,11 @@ export default function ImportReviewPage() {
     const t = setTimeout(() => setMessage(null), 5000);
     return () => clearTimeout(t);
   }, [message]);
+  const [debouncedKeyword, setDebouncedKeyword] = useState(filters.keyword);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedKeyword(filters.keyword), 300);
+    return () => clearTimeout(timer);
+  }, [filters.keyword]);
   const [detailView, setDetailView] = useState<"formatted" | "json">("formatted");
   const [editing, setEditing] = useState(false);
   const editSnapshotRef = useRef("");
@@ -256,14 +262,15 @@ export default function ImportReviewPage() {
   }, [autoSaveHint]);
 
   const queryParams = useMemo(
-    () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject_id: filters.subject_id, source_type: filters.source_type, keyword: filters.keyword, risk_level: filters.risk_level || undefined }),
-    [batchIdParam, filters],
+    () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject_id: filters.subject_id, source_type: filters.source_type, keyword: debouncedKeyword, risk_level: filters.risk_level || undefined }),
+    [batchIdParam, filters.batch_id, filters.status, filters.subject_id, filters.source_type, filters.risk_level, debouncedKeyword],
   );
 
   const queue = useQuery({
     queryKey: ["import-review-queue", queryParams],
     queryFn: () => apiRequest<PaginatedResponse<ImportQuestionItem>>(`/imports/review-queue${toQuery(queryParams)}`),
     retry: false,
+    keepPreviousData: true,
   });
 
   const items = queue.data?.items ?? [];
@@ -618,11 +625,11 @@ export default function ImportReviewPage() {
         </div>
       ) : null}
       <Card className="!border-[var(--color-border)]/80 !shadow-[0_24px_60px_rgba(45,62,80,0.06)]">
-        <CardHeader className="space-y-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <CardHeader className="space-y-2">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h3 className="font-display text-2xl font-bold text-[var(--ink)]">待审核题目</h3>
-              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">审核 question_imports 暂存题目，通过后再发布到正式题库。</p>
+              <h3 className="font-display text-lg font-bold text-[var(--ink)]">待审核题目</h3>
+              <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">审核导入题目，通过后发布到正式题库</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <div className="flex items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white/60 p-1">
@@ -650,88 +657,135 @@ export default function ImportReviewPage() {
               </div>
             </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-            <label className="relative xl:col-span-2">
-              <span className="mb-1.5 block text-xs font-medium text-[var(--color-text-secondary)]">关键词搜索</span>
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
-                <Input className="pl-9" placeholder="搜索题干 / OCR 原文" value={filters.keyword} onChange={(event) => updateFilter("keyword", event.target.value)} />
-              </div>
-            </label>
-            <label className="space-y-1.5">
-              <span className="block text-xs font-medium text-[var(--color-text-secondary)]">批次 ID</span>
-              <Input placeholder="输入批次 ID" value={filters.batch_id || batchIdParam} onChange={(event) => updateFilter("batch_id", event.target.value)} />
-            </label>
-            <label className="space-y-1.5">
-              <span className="block text-xs font-medium text-[var(--color-text-secondary)]">科目</span>
-              <select
-                className="flex h-11 w-full items-center rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-                value={filters.subject_id}
-                onChange={(event) => updateFilter("subject_id", event.target.value)}
+          {/* ── Inline filter bar ── */}
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/30 px-3 py-2">
+            {/* Search */}
+            <div className="relative min-w-[180px] flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-hint)]" />
+              <input
+                className="h-8 w-full rounded-lg border border-[var(--color-border)] bg-white pl-8 pr-3 text-xs outline-none transition-colors focus:border-[var(--color-primary)]"
+                placeholder="搜索题干 / OCR 原文..."
+                value={filters.keyword}
+                onChange={(event) => setFilters((current) => ({ ...current, keyword: event.target.value }))}
+              />
+            </div>
+
+            {/* Risk pills */}
+            <div className="flex items-center gap-1">
+              {([
+                { value: "", label: "全部", color: "" },
+                { value: "high", label: "高", color: "#b03a3a" },
+                { value: "medium", label: "中", color: "#b87a30" },
+                { value: "low", label: "低", color: "#3a7a5a" },
+              ] as const).map((opt) => {
+                const active = filters.risk_level === opt.value;
+                return (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onClick={() => updateFilter("risk_level", opt.value)}
+                    className={cn(
+                      "rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                      active
+                        ? "text-white shadow-sm"
+                        : "border border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/40",
+                    )}
+                    style={active ? { backgroundColor: opt.color || "var(--color-primary)" } : undefined}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Subject dropdown */}
+            <div className="relative">
+              <button
+                ref={subjectBtnRef}
+                type="button"
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-2.5 text-xs text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
+                onClick={() => setSubjectDropdownOpen((v) => !v)}
               >
-                <option value="">全部科目</option>
-                {subjectOptions.map((s) => (
-                  <option key={s.id} value={String(s.id)}>{s.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1.5">
-              <span className="block text-xs font-medium text-[var(--color-text-secondary)]">风险等级</span>
-              <div className="relative">
-                <select
-                  className="flex h-11 w-full items-center rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-                  value={filters.risk_level}
-                  onChange={(event) => updateFilter("risk_level", event.target.value)}
-                >
-                  <option value="">全部</option>
-                  <option value="high">高风险</option>
-                  <option value="medium">需检查</option>
-                  <option value="low">低风险</option>
-                </select>
-              </div>
-            </label>
-            <label className="space-y-1.5">
-              <span className="block text-xs font-medium text-[var(--color-text-secondary)]">审核状态</span>
-              <div className="relative">
-                <button
-                  type="button"
-                  className="flex h-11 w-full items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-                  onClick={() => setStatusDropdownOpen((v) => !v)}
-                  onBlur={() => setTimeout(() => setStatusDropdownOpen(false), 150)}
-                >
-                  <span className="flex-1 text-left">{STATUS_OPTIONS.find((o) => o.value === filters.status)?.label}</span>
-                  <ChevronDown className={`h-4 w-4 text-[var(--color-text-hint)] transition-transform ${statusDropdownOpen ? "rotate-180" : ""}`} />
-                </button>
-                {statusDropdownOpen ? (
-                  <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-[var(--color-border)] bg-white py-1 shadow-lg">
-                    {STATUS_OPTIONS.map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-[var(--color-primary-light)]/40 ${
-                          filters.status === opt.value
-                            ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold"
-                            : "text-[var(--color-text-primary)]"
-                        }`}
-                        onMouseDown={(e) => { e.preventDefault(); updateFilter("status", opt.value); setStatusDropdownOpen(false); }}
-                      >
-                        {filters.status === opt.value ? (
-                          <Check className="h-4 w-4 shrink-0 text-[var(--color-primary)]" />
-                        ) : (
-                          <span className="inline-block w-4 shrink-0" />
-                        )}
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </label>
+                <span>{filters.subject_id ? (subjectOptions.find((s) => String(s.id) === filters.subject_id)?.name || filters.subject_id) : "全部科目"}</span>
+                <ChevronDown className={`h-3 w-3 text-[var(--color-text-hint)] transition-transform ${subjectDropdownOpen ? "rotate-180" : ""}`} />
+              </button>
+              {subjectDropdownOpen ? (
+                <div className="absolute left-0 top-full z-20 mt-1 min-w-[140px] max-h-[240px] overflow-y-auto scrollbar-hide rounded-lg border border-[var(--color-border)] bg-white py-1 shadow-lg">
+                  <button
+                    type="button"
+                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-[var(--color-primary-light)]/40 ${
+                      !filters.subject_id ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold" : "text-[var(--color-text-primary)]"
+                    }`}
+                    onMouseDown={(e) => { e.preventDefault(); updateFilter("subject_id", ""); setSubjectDropdownOpen(false); }}
+                  >
+                    {!filters.subject_id ? <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-3.5 shrink-0" />}
+                    全部科目
+                  </button>
+                  {subjectOptions.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-[var(--color-primary-light)]/40 ${
+                        filters.subject_id === String(s.id) ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold" : "text-[var(--color-text-primary)]"
+                      }`}
+                      onMouseDown={(e) => { e.preventDefault(); updateFilter("subject_id", String(s.id)); setSubjectDropdownOpen(false); }}
+                    >
+                      {filters.subject_id === String(s.id) ? <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-3.5 shrink-0" />}
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            {/* Batch ID */}
+            <input
+              className="h-8 w-28 rounded-lg border border-[var(--color-border)] bg-white px-2.5 text-xs outline-none transition-colors focus:border-[var(--color-primary)]"
+              placeholder="批次 ID"
+              value={filters.batch_id || batchIdParam}
+              onChange={(event) => updateFilter("batch_id", event.target.value)}
+            />
+
+            {/* Status dropdown */}
+            <div className="relative">
+              <button
+                type="button"
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-2.5 text-xs text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
+                onClick={() => setStatusDropdownOpen((v) => !v)}
+                onBlur={() => setTimeout(() => setStatusDropdownOpen(false), 150)}
+              >
+                <span>{STATUS_OPTIONS.find((o) => o.value === filters.status)?.label}</span>
+                <ChevronDown className={`h-3 w-3 text-[var(--color-text-hint)] transition-transform ${statusDropdownOpen ? "rotate-180" : ""}`} />
+              </button>
+              {statusDropdownOpen ? (
+                <div className="absolute right-0 top-full z-20 mt-1 min-w-[120px] overflow-hidden rounded-lg border border-[var(--color-border)] bg-white py-1 shadow-lg">
+                  {STATUS_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-[var(--color-primary-light)]/40 ${
+                        filters.status === opt.value
+                          ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold"
+                          : "text-[var(--color-text-primary)]"
+                      }`}
+                      onMouseDown={(e) => { e.preventDefault(); updateFilter("status", opt.value); setStatusDropdownOpen(false); }}
+                    >
+                      {filters.status === opt.value ? (
+                        <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" />
+                      ) : (
+                        <span className="inline-block w-3.5 shrink-0" />
+                      )}
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <section className="space-y-3">
-              <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-[var(--color-border)] bg-white/60 px-4 py-2.5 text-sm text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)]/30 hover:bg-white/90 select-none group">
+        <CardContent className="space-y-1.5">
+          <section className="space-y-1">
+              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--color-border)]/40 bg-white/40 px-3 py-1.5 text-xs text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)]/30 hover:bg-white/90 select-none group">
                 <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-[var(--color-border)] bg-white transition-all group-hover:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
                   <input type="checkbox" checked={allChecked} onChange={toggleAll} className="peer absolute inset-0 cursor-pointer opacity-0" />
                   <Check className="h-3.5 w-3.5 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
@@ -739,109 +793,112 @@ export default function ImportReviewPage() {
                 全选当前结果
                 {selectedIds.size > 0 ? <span className="ml-auto rounded-full bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary-dark)]">已选 {selectedIds.size} 题</span> : null}
               </label>
-              {items.map((item, index) => (
-                <article
-                  key={item.id}
-                  className={`card-hover card-linen card-risk-border relative rounded-2xl border border-[var(--color-border)] bg-white/90 p-4 ${item.risk_level === "high" ? "card-risk-high" : item.risk_level === "medium" ? "card-risk-medium" : item.risk_level === "low" ? "card-risk-low" : "card-risk-none"}`}
-                  style={{ animationDelay: `${(index % 20) * 30}ms` }}
-                >
-                  {/* Top bar: checkbox + ID + status badges */}
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <label className="group relative flex shrink-0 cursor-pointer items-center gap-2">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-md border-2 border-[var(--color-border)] bg-white transition-all group-hover:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.has(item.id)}
-                            onChange={() => toggleOne(item.id)}
-                            className="peer absolute inset-0 cursor-pointer opacity-0"
-                          />
-                          <Check className="h-3.5 w-3.5 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
-                        </span>
-                      </label>
-                      <span className="shrink-0 font-mono text-xs text-[var(--color-text-hint)]">#{item.id}</span>
-                      <StatusBadge tone={statusTone(item.status)}>{item.status}</StatusBadge>
-                      {item.duplicate_status ? (
-                        <StatusBadge tone={item.duplicate_status === "possible_duplicate" ? "warning" : "neutral"}>
-                          {item.duplicate_status === "possible_duplicate" ? "疑似重复" : item.duplicate_status}
-                        </StatusBadge>
-                      ) : null}
-                    </div>
-                  </div>
+              {items.length > 0 ? (
+              <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white">
+                {items.map((item, index) => {
+                  const riskColor = item.risk_level === "high" ? "#b03a3a" : item.risk_level === "medium" ? "#b87a30" : item.risk_level === "low" ? "#3a7a5a" : "var(--color-border)";
+                  const hasAnswerMissing = (!item.parsed_answer || item.parsed_answer.trim() === "") && item.risk_level !== "low";
+                  const reasonCount = item.risk_reasons?.length ?? 0;
+                  return (
+                    <div key={item.id}>
+                      {index > 0 && <div className="h-px bg-[var(--color-border)]/50" />}
+                      <div
+                        className="group flex items-center gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-[var(--color-bg-input)]/40"
+                      >
+                        {/* Risk dot */}
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: riskColor }} />
 
-                  {/* Risk badges + Metadata pills */}
-                  <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                    {/* Risk level badge */}
-                    {item.risk_level === "high" ? (
-                      <span className="risk-seal risk-seal-high"><span className="text-current opacity-60">◉</span> 高风险</span>
-                    ) : item.risk_level === "medium" ? (
-                      <span className="risk-seal risk-seal-medium"><span className="text-current opacity-60">◉</span> 需检查</span>
-                    ) : item.risk_level === "low" ? (
-                      <span className="risk-seal risk-seal-low"><span className="text-current opacity-60">◉</span> 低风险</span>
-                    ) : null}
-                    {/* AI answer flag */}
-                    {item.ai_answer_flag ? (
-                      <span className="risk-seal" style={{ color: "#c46a3a", borderColor: "#c46a3a", background: "linear-gradient(135deg, #fef7f0, #fde8d8)" }}>
-                        <span className="text-current opacity-60">◉</span> AI 答案
-                      </span>
-                    ) : null}
-                    {/* Answer missing flag */}
-                    {(!item.parsed_answer || item.parsed_answer.trim() === "") && item.risk_level !== "low" ? (
-                      <span className="risk-seal" style={{ color: "#b03a3a", borderColor: "#b03a3a", background: "linear-gradient(135deg, #fef2f2, #fde8e8)" }}>
-                        <span className="text-current opacity-60">◉</span> 答案缺失
-                      </span>
-                    ) : null}
-                    {item.subject_name || item.subject_code ? (
-                      <span className="rounded-md bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-dark)]">{item.subject_name || item.subject_code}</span>
-                    ) : (
-                      <span className="text-xs text-[var(--color-text-hint)]">未分类</span>
-                    )}
-                    <span className="text-xs text-[var(--color-text-secondary)]">{item.question_type || "未标注题型"}</span>
-                    <span className="max-w-[160px] truncate font-mono text-[10px] text-[var(--color-text-hint)]" title={item.batch_id}>{item.batch_id}</span>
-                  </div>
-                  {/* Risk reasons */}
-                  {item.risk_reasons && item.risk_reasons.length > 0 ? (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {item.risk_reasons.slice(0, 3).map((reason, ri) => (
-                        <span key={ri} className="rounded bg-red-50/80 px-1.5 py-0.5 text-[10px] text-red-600">{reason}</span>
-                      ))}
-                      {item.risk_reasons.length > 3 ? (
-                        <span className="rounded bg-gray-50 px-1.5 py-0.5 text-[10px] text-gray-400">+{item.risk_reasons.length - 3}</span>
-                      ) : null}
-                    </div>
-                  ) : null}
+                        {/* Checkbox */}
+                        <label className="group/cb relative flex shrink-0 cursor-pointer items-center justify-center">
+                          <span className="flex h-[18px] w-[18px] items-center justify-center rounded border-2 border-[var(--color-border)] bg-white transition-all group-hover/cb:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(item.id)}
+                              onChange={() => toggleOne(item.id)}
+                              className="peer absolute inset-0 cursor-pointer opacity-0"
+                            />
+                            <Check className="h-3 w-3 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
+                          </span>
+                        </label>
 
-                  {/* Stem preview */}
-                  <p className="mt-3 text-sm leading-relaxed text-[var(--ink)] line-clamp-2 stem-text">
-                    {item.content_preview || textFromImport(item) || <span className="italic text-[var(--color-text-hint)] text-xs">导入题目 #{item.id}</span>}
-                  </p>
+                        {/* ID */}
+                        <span className="w-[38px] shrink-0 font-mono text-[11px] text-[var(--color-text-hint)]">#{item.id}</span>
 
-                  {/* Action bar */}
-                  <div className="mt-3 flex items-center gap-1.5 border-t border-[var(--color-border)]/50 pt-3">
-                    <Button variant="ghost" className="h-8 px-2.5 text-xs" onClick={() => openPreview(item)}>
-                      <Eye className="h-3.5 w-3.5" />
-                      预览详情
-                    </Button>
-                    <div className="ml-auto flex items-center gap-1.5">
-                      <Button variant="ghost" className="h-8 w-8 p-0" disabled={item.status !== "pending" || completeMutation.isPending} onClick={() => completeMutation.mutate(item.id)} title="AI 补全">
-                        {completeMutation.isPending ? (
-                          <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-primary)]" />
+                        {/* Subject */}
+                        {item.subject_name || item.subject_code ? (
+                          <span className="shrink-0 rounded bg-[var(--color-primary-light)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-primary-dark)]">
+                            {item.subject_name || item.subject_code}
+                          </span>
                         ) : (
-                          <Sparkles className="h-3.5 w-3.5" />
+                          <span className="w-9 shrink-0 text-center text-[10px] text-[var(--color-text-hint)]">未分类</span>
                         )}
-                      </Button>
-                      <Button variant="secondary" className="h-8 px-3 text-xs" disabled={item.status === "published"} onClick={() => setConfirmState({ action: "approve", id: item.id })}>
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        通过
-                      </Button>
-                      <Button variant="danger" className="h-8 px-3 text-xs" disabled={item.status === "published"} onClick={() => setConfirmState({ action: "reject", id: item.id })}>
-                        <XCircle className="h-3.5 w-3.5" />
-                        驳回
-                      </Button>
+
+                        {/* Type */}
+                        <span className="w-6 shrink-0 text-center text-[10px] text-[var(--color-text-hint)]">
+                          {item.question_type === "single_choice" ? "单选" : item.question_type === "multi_choice" ? "多选" : item.question_type === "fill_blank" || item.question_type === "multi_blank_choice" ? "填空" : item.question_type === "judge" ? "判断" : "—"}
+                        </span>
+
+                        {/* Stem (truncated single line) */}
+                        <p className="min-w-0 flex-1 cursor-pointer truncate text-[13px] leading-snug text-[var(--ink)]" onClick={() => openPreview(item)}>
+                          {item.content_preview || textFromImport(item) || <span className="italic text-xs text-[var(--color-text-hint)]">导入题目 #{item.id}</span>}
+                        </p>
+
+                        {/* Flags */}
+                        <div className="flex shrink-0 items-center gap-1">
+                          {item.risk_level === "high" && (
+                            <span className="rounded bg-[#fef2f2] px-1.5 py-0.5 text-[9px] font-semibold text-[#b03a3a]">高风险</span>
+                          )}
+                          {item.risk_level === "medium" && (
+                            <span className="rounded bg-[#fffbeb] px-1.5 py-0.5 text-[9px] font-semibold text-[#b87a30]">需检查</span>
+                          )}
+                          {hasAnswerMissing && (
+                            <span className="rounded bg-[#fef2f2] px-1.5 py-0.5 text-[9px] font-semibold text-[#b03a3a]">无答案</span>
+                          )}
+                          {item.ai_answer_flag && (
+                            <span className="rounded bg-[#fef7f0] px-1.5 py-0.5 text-[9px] font-semibold text-[#c46a3a]">AI</span>
+                          )}
+                          {item.duplicate_status === "possible_duplicate" && (
+                            <span className="rounded bg-[#fffbeb] px-1.5 py-0.5 text-[9px] font-semibold text-[#b87a30]">疑似重复</span>
+                          )}
+                          {reasonCount > 0 && (
+                            <span className="rounded bg-[var(--color-bg-input)] px-1.5 py-0.5 text-[9px] text-[var(--color-text-hint)]" title={item.risk_reasons?.join("；")}>
+                              ⚠ {reasonCount}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            className="grid h-7 w-7 place-items-center rounded-md border border-[var(--color-border)] bg-white text-[11px] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+                            onClick={() => openPreview(item)}
+                            title="预览详情"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            className="flex h-7 items-center gap-1 rounded-md border border-[var(--color-success)] bg-[var(--color-success-light)] px-2.5 text-[10px] font-semibold text-[var(--color-success)] transition-colors hover:bg-[var(--color-success)] hover:text-white disabled:opacity-30"
+                            disabled={item.status === "published"}
+                            onClick={() => setConfirmState({ action: "approve", id: item.id })}
+                          >
+                            <CheckCircle2 className="h-3 w-3" />
+                            通过
+                          </button>
+                          <button
+                            className="flex h-7 items-center gap-1 rounded-md border border-[var(--color-danger)] bg-white px-2.5 text-[10px] font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)] hover:text-white disabled:opacity-30"
+                            disabled={item.status === "published"}
+                            onClick={() => setConfirmState({ action: "reject", id: item.id })}
+                          >
+                            <XCircle className="h-3 w-3" />
+                            驳回
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </article>
-              ))}
+                  );
+                })}
+              </div>
+              ) : null}
               {!queue.isLoading && items.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-14 text-center">
                   <div className="empty-ink-drop mb-4" />
