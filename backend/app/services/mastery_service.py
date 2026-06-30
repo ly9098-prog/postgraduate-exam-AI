@@ -5,6 +5,7 @@ from math import log1p
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.time_utils import utcnow
 from app.models.admin import Subject
@@ -81,7 +82,7 @@ async def update_user_knowledge_state_after_answer(
     # 2. 如果没有映射，尝试从 question.knowledge_points JSON 临时同步
     if not mappings:
         q_result = await db.execute(
-            select(Question).where(Question.id == question_id)
+            select(Question).options(selectinload(Question.subject_ref)).where(Question.id == question_id)
         )
         question = q_result.scalar_one_or_none()
         if question and question.knowledge_points:
