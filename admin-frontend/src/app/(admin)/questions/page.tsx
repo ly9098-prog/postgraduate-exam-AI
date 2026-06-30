@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Check,
+  ChevronDown,
   FileQuestion,
   Search,
   BookOpen,
@@ -241,6 +243,89 @@ function TypeBadge({ type: t }: { type: string | null | undefined }) {
       <Layers className="h-3 w-3" />
       {label}
     </span>
+  );
+}
+
+function CustomSelect({
+  options,
+  value,
+  onChange,
+  className = "",
+}: {
+  options: { label: string; value: string }[];
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <div ref={ref} className={`relative ${className}`}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex h-11 w-full items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
+      >
+        <span className="truncate">{selected?.label ?? "—"}</span>
+        <ChevronDown className={`ml-2 h-4 w-4 shrink-0 text-[var(--color-text-hint)] transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute z-[100] mt-1 w-full rounded-xl border border-[var(--color-border)] bg-white py-1 shadow-lg">
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              className={`flex w-full items-center px-3 py-2 text-left text-sm transition-colors ${
+                opt.value === value
+                  ? "bg-[var(--color-bg-input)] font-medium text-[var(--ink)]"
+                  : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]/50"
+              }`}
+            >
+              {opt.value === value && <Check className="mr-2 h-3.5 w-3.5 shrink-0" />}
+              <span className={opt.value === value ? "" : "pl-5.5"}>{opt.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomCheckbox({
+  checked,
+  onChange,
+  className = "",
+}: {
+  checked: boolean;
+  onChange: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      onClick={onChange}
+      className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
+        checked
+          ? "border-[var(--color-primary)] bg-[var(--color-primary)]"
+          : "border-[var(--color-border)] bg-white hover:border-[var(--color-text-hint)]"
+      } ${className}`}
+    >
+      {checked && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
+    </button>
   );
 }
 
@@ -491,7 +576,7 @@ export default function QuestionsPage() {
             )}
           </div>
 
-          <div className="rounded-3xl border border-[var(--color-border)] bg-white/65 p-3 shadow-sm backdrop-blur">
+          <div className="relative z-10 rounded-3xl border border-[var(--color-border)] bg-white/65 p-3 shadow-sm backdrop-blur">
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_150px_120px_130px]">
               <label className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
@@ -504,18 +589,11 @@ export default function QuestionsPage() {
                   }
                 />
               </label>
-              <select
-                className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
+              <CustomSelect
                 value={filters.subject_id}
-                onChange={(e) => updateFilter("subject_id", e.target.value)}
-              >
-                <option value="">全部科目</option>
-                {subjectOptions.map((s) => (
-                  <option key={s.id} value={String(s.id)}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => updateFilter("subject_id", v)}
+                options={[{ label: "全部科目", value: "" }, ...subjectOptions.map((s) => ({ label: s.name, value: String(s.id) }))]}
+              />
               <Input
                 placeholder="题型"
                 value={filters.question_type}
@@ -528,19 +606,11 @@ export default function QuestionsPage() {
                 value={filters.year}
                 onChange={(event) => updateFilter("year", event.target.value)}
               />
-              <select
-                className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
+              <CustomSelect
                 value={filters.is_active}
-                onChange={(event) =>
-                  updateFilter("is_active", event.target.value)
-                }
-              >
-                {activeOptions.map((option) => (
-                  <option key={option.value || "all"} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => updateFilter("is_active", v)}
+                options={activeOptions}
+              />
             </div>
           </div>
         </CardHeader>
@@ -565,12 +635,7 @@ export default function QuestionsPage() {
                 </span>
               </div>
               <label className="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white/80 px-3 py-2 text-sm text-[var(--color-text-secondary)] transition hover:bg-white">
-                <input
-                  type="checkbox"
-                  checked={allChecked}
-                  onChange={toggleAll}
-                  className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary)]"
-                />
+                <CustomCheckbox checked={allChecked} onChange={toggleAll} className="mt-0.5" />
                 <span className="font-medium">选择当前页</span>
                 {selectedIds.size > 0 && (
                   <span className="rounded-md bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-dark)]">
@@ -612,12 +677,10 @@ export default function QuestionsPage() {
                       aria-hidden="true"
                     />
                     <div className="flex items-start gap-3 p-4 pl-5">
-                      <input
-                        aria-label={`选择题目 #${question.id}`}
-                        type="checkbox"
+                      <CustomCheckbox
                         checked={selectedIds.has(question.id)}
                         onChange={() => toggleOne(question.id)}
-                        className="mt-1 h-4 w-4 shrink-0 rounded border-[var(--color-border)] text-[var(--color-primary)]"
+                        className="mt-0.5"
                       />
 
                       <button
@@ -942,14 +1005,14 @@ export default function QuestionsPage() {
       </Card>
 
       {selectedIds.size > 0 ? (
-        <div className="fixed bottom-6 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-2xl border border-[var(--blueprint-line)] bg-[var(--ink)] px-5 py-3 text-white shadow-[var(--shadow-floating)]">
+        <div className="fixed bottom-6 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-5 py-3 text-[var(--ink)] shadow-lg">
           <span className="text-sm font-semibold">
             已选择 {selectedIds.size} 道题
           </span>
           <button
             type="button"
             onClick={() => setSelectedIds(new Set())}
-            className="min-h-10 rounded-xl px-3 py-2 text-xs font-semibold text-white/70 transition hover:bg-white/10 hover:text-white"
+            className="min-h-10 rounded-xl px-3 py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition hover:bg-[var(--color-bg-input)]"
           >
             清空
           </button>
@@ -1023,25 +1086,11 @@ export default function QuestionsPage() {
                       <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
                         科目
                       </p>
-                      <select
-                        className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
-                        value={editForm.subject_id ?? ""}
-                        onChange={(e) =>
-                          setEditForm({
-                            ...editForm,
-                            subject_id: e.target.value
-                              ? Number(e.target.value)
-                              : null,
-                          })
-                        }
-                      >
-                        <option value="">未设置</option>
-                        {subjectOptions.map((s) => (
-                          <option key={s.id} value={String(s.id)}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </select>
+                      <CustomSelect
+                        value={String(editForm.subject_id ?? "")}
+                        onChange={(v) => setEditForm({ ...editForm, subject_id: v ? Number(v) : null })}
+                        options={[{ label: "未设置", value: "" }, ...subjectOptions.map((s) => ({ label: s.name, value: String(s.id) }))]}
+                      />
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
@@ -1061,23 +1110,11 @@ export default function QuestionsPage() {
                       <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
                         难度
                       </p>
-                      <select
-                        className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
-                        value={editForm.difficulty ?? 3}
-                        onChange={(e) =>
-                          setEditForm({
-                            ...editForm,
-                            difficulty: Number(e.target.value),
-                          })
-                        }
-                      >
-                        {[1, 2, 3, 4, 5].map((d) => (
-                          <option key={d} value={d}>
-                            {d} -{" "}
-                            {["简单", "较易", "中等", "较难", "困难"][d - 1]}
-                          </option>
-                        ))}
-                      </select>
+                      <CustomSelect
+                        value={String(editForm.difficulty ?? 3)}
+                        onChange={(v) => setEditForm({ ...editForm, difficulty: Number(v) })}
+                        options={[1, 2, 3, 4, 5].map((d) => ({ label: `${d} - ${["简单", "较易", "中等", "较难", "困难"][d - 1]}`, value: String(d) }))}
+                      />
                     </div>
                   </div>
 
