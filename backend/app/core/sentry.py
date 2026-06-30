@@ -3,7 +3,7 @@
 支持 environment-aware 配置：
 - production: 低采样率 (0.1 trace, 0.05 profile)
 - test/staging: 中等采样率 (0.5 trace, 0.1 profile)
-- development: 全采样 (1.0 trace, 不开启 profile)
+- development: 禁用 Sentry，不初始化，不上报
 """
 
 import logging
@@ -14,6 +14,10 @@ logger = logging.getLogger("postgraduate-ai.sentry")
 
 
 def init_sentry():
+    if settings.APP_ENV == "development":
+        logger.info("Sentry disabled: APP_ENV=development")
+        return
+
     dsn = settings.SENTRY_DSN
     if not dsn:
         logger.info("Sentry disabled: SENTRY_DSN not configured")

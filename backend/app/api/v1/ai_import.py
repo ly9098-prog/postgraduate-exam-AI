@@ -55,7 +55,6 @@ async def generate(
         result = await svc.generate_drafts(
             db,
             current_user.id,
-            subject=data.subject,
             knowledge_points=data.knowledge_points,
             difficulty=data.difficulty,
             count=data.count,

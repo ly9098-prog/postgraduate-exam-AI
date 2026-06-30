@@ -62,7 +62,7 @@ class _Db:
 def _question(question_id=1, question_hash=None, content=None, options=None, answer="A"):
     return Question(
         id=question_id,
-        subject="math2",
+        subject_id=1,
         question_type="single_choice",
         content={"text": "题干"} if content is None else content,
         options={"A": "1", "B": "2"} if options is None else options,
@@ -197,7 +197,7 @@ async def test_backfill_question_hash_does_not_overwrite_existing_hash_on_fetche
 async def test_backfill_question_hash_checks_hash_again_before_assignment(monkeypatch):
     question = _QuestionWithConcurrentHash(
         id=1,
-        subject="math2",
+        subject_id=1,
         question_type="single_choice",
         content={"text": "题干"},
         options={"A": "1", "B": "2"},

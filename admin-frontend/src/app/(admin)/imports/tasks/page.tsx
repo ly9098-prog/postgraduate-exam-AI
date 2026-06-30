@@ -36,8 +36,22 @@ function getStageStatuses(status?: ImportPipelineStatusResponse, isRunning?: boo
   const st = status?.status || "";
   const term = isTerminalStatus(st);
   const fail = ["failed", "error"].includes(st);
-  const ocrDone = term || stage.includes("ai") || stage.includes("parse") || stage.includes("question") || stage.includes("quality");
-  const aiDone = term || stage.includes("quality") || stage.includes("check");
+  /* Backend pipeline stages → visual stage mapping:
+   *   extract / normalize_text / split           → OCR 识别
+   *   match / normalize_schema                    → AI 解析
+   *   review                                      → 质量检查
+   * "normalize" (without "schema") = text normalization (OCR phase)
+   * "normalize" + "schema"         = schema normalization (AI phase)
+   */
+  const ocrDone = term
+    || stage.includes("normalize")  /* normalize_text / normalize_schema */
+    || stage.includes("split")
+    || stage.includes("match")
+    || stage.includes("review");
+  const aiDone = term
+    || stage.includes("match")
+    || (stage.includes("normalize") && stage.includes("schema"))
+    || stage.includes("review");
   const qualDone = term && !fail;
   return [
     { name: "上传文件", s: "done" as const },
@@ -416,16 +430,24 @@ export default function ImportTasksPage() {
                 <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)]/50 p-5">
                   <div className="flex items-start">
                     {stages.map((stg, i) => (
-                      <div key={stg.name} className="flex flex-1 flex-col items-center gap-2">
-                        <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-all ${
-                          stg.s === "done" ? "bg-[var(--color-success)] text-white"
-                            : stg.s === "active" ? "bg-[var(--color-warning)] text-white shadow-[0_0_0_4px_var(--color-warning-light)]"
+                      <div key={stg.name} className={`flex flex-1 flex-col items-center gap-2 ${i < stages.length - 1 ? "relative" : ""}`}>
+                        {/* Connector line to next stage */}
+                        {i < stages.length - 1 && (
+                          <div className="absolute left-[calc(50%+18px)] right-[calc(-50%+18px)] top-4 h-[2px]">
+                            <div className={`h-full rounded-full transition-all duration-700 ease-out ${
+                              stg.s === "done" ? "bg-[var(--color-success)]" : "bg-[var(--color-border)]"
+                            }`} />
+                          </div>
+                        )}
+                        <div className={`relative flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-all duration-500 ease-out ${
+                          stg.s === "done" ? "bg-[var(--color-success)] text-white stage-circle-done"
+                            : stg.s === "active" ? "bg-[var(--color-warning)] text-white stage-circle-active"
                               : stg.s === "failed" ? "bg-[var(--color-danger)] text-white"
                                 : "bg-white text-[var(--color-text-hint)] border border-[var(--color-border)]"
                         }`}>
                           {stg.s === "done" ? "✓" : stg.s === "failed" ? "✕" : i + 1}
                         </div>
-                        <span className={`text-[11px] font-semibold text-center leading-tight ${
+                        <span className={`text-[11px] font-semibold text-center leading-tight transition-colors duration-300 ${
                           stg.s === "active" ? "text-[var(--color-warning)]"
                             : stg.s === "done" ? "text-[var(--color-success)]"
                               : stg.s === "failed" ? "text-[var(--color-danger)]"
@@ -439,21 +461,21 @@ export default function ImportTasksPage() {
                 {/* Status + Progress */}
                 <div className="flex flex-wrap items-center gap-3">
                   {isPipelineRunning ? (
-                    <span className="flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                    <span className="animate-rise-in flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 transition-all duration-300">
                       <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
                       处理中
                     </span>
                   ) : (
-                    <span className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+                    <span className={`animate-rise-in flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-300 ${
                       ["failed", "error"].includes(status.status) ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"
                     }`}>
-                      <span className={`inline-block h-2 w-2 rounded-full ${
+                      <span className={`inline-block h-2 w-2 rounded-full transition-colors duration-300 ${
                         ["failed", "error"].includes(status.status) ? "bg-red-500" : "bg-green-500"
                       }`} />
                       {status.status === "completed" || status.status === "success" || status.status === "finished" ? "已完成" : "失败"}
                     </span>
                   )}
-                  {status.current_stage ? <span className="rounded-full bg-[var(--color-bg-input)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--color-text-secondary)]">{status.current_stage}</span> : null}
+                  {status.current_stage ? <span className="animate-rise-in rounded-full bg-[var(--color-bg-input)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--color-text-secondary)] transition-all duration-300">{status.current_stage}</span> : null}
                   {pipelineId ? <span className="ml-auto font-mono text-[10px] text-[var(--color-text-hint)]">{pipelineId}</span> : null}
                 </div>
 

@@ -403,36 +403,26 @@ export default function BatchImagePage() {
   // ── Render ───────────────────────────────────────────────────
 
   const renderStatusBadge = (task: ImageTask) => {
+    const base = "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-all duration-300 animate-rise-in";
     if (task.status === "failed") {
-      return (
-        <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700 transition-all duration-300">
-          失败
-        </span>
-      );
+      return <span className={`${base} bg-red-50 text-red-700`}>失败</span>;
     }
     if (task.status === "succeeded") {
-      return (
-        <span className="shrink-0 rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700 transition-all duration-300">
-          成功 · {task.questionCount}题
-        </span>
-      );
+      return <span className={`${base} bg-green-50 text-green-700`}>成功 · {task.questionCount}题</span>;
     }
     if (task.status === "processing") {
       return (
-        <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 transition-all duration-300">
+        <span className={`${base} bg-amber-50 text-amber-700`}>
+          <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500 align-middle" />
           识别中
         </span>
       );
     }
     if (task.status === "uploading") {
-      return (
-        <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 transition-all duration-300">
-          上传中
-        </span>
-      );
+      return <span className={`${base} bg-blue-50 text-blue-700`}>上传中</span>;
     }
     return (
-      <span className="shrink-0 rounded-full bg-[var(--color-bg-input)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-text-secondary)] transition-all duration-300">
+      <span className={`${base} bg-[var(--color-bg-input)] text-[var(--color-text-secondary)]`}>
         等待中
       </span>
     );
@@ -744,12 +734,44 @@ export default function BatchImagePage() {
                   <div className="mt-2 space-y-1">
                     {imageTasks.map((task) => (
                       <div key={task.id} className={cn(
-                        "flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs transition-all hover:border-[var(--color-primary)]/30 hover:shadow-sm",
+                        "rounded-lg border bg-white transition-all hover:border-[var(--color-primary)]/30 hover:shadow-sm",
                         task.status === "failed" ? "border-[var(--color-danger)]/20" : "border-[var(--color-border)]",
                       )}>
-                        <span className="w-6 shrink-0 font-mono text-[10px] text-[var(--color-text-hint)]">#{task.seq}</span>
-                        <span className="min-w-0 flex-1 truncate text-[var(--ink)]" title={task.file.name}>{task.file.name}</span>
-                        {renderStatusBadge(task)}
+                        <div className="flex items-center gap-2 px-3 py-2 text-xs">
+                          <span className="w-6 shrink-0 font-mono text-[10px] text-[var(--color-text-hint)]">#{task.seq}</span>
+                          <span className="min-w-0 flex-1 truncate text-[var(--ink)]" title={task.file.name}>{task.file.name}</span>
+                          {renderStatusBadge(task)}
+                        </div>
+                        {/* Trace event log — visible when events exist */}
+                        {task.traceEvents.length > 0 && (
+                          <div className="animate-rise-in border-t border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/30 px-3 py-1.5">
+                            <div className="space-y-0.5">
+                              {task.traceEvents.map((ev, idx) => (
+                                <div key={idx} className="trace-enter flex items-center gap-1.5 text-[10px] leading-relaxed" style={{ animationDelay: `${idx * 60}ms` }}>
+                                  <span className={cn(
+                                    "shrink-0 rounded px-1 py-px font-medium transition-colors duration-200",
+                                    ev.step === "ocr" ? "bg-blue-50 text-blue-600"
+                                      : ev.step === "pipeline" ? "bg-purple-50 text-purple-600"
+                                        : ev.step === "done" ? "bg-green-50 text-green-600"
+                                          : ev.step === "error" ? "bg-red-50 text-red-600"
+                                            : ev.step === "config" ? "bg-amber-50 text-amber-600"
+                                              : "bg-[var(--color-bg-input)] text-[var(--color-text-hint)]",
+                                  )}>{ev.step}</span>
+                                  <span className={cn(
+                                    "shrink-0 transition-colors duration-200",
+                                    ev.status === "success" ? "text-green-500" : ev.status === "failed" ? "text-red-500" : ev.status === "running" ? "text-amber-500" : "text-[var(--color-text-hint)]",
+                                  )}>
+                                    {ev.status === "success" ? "✓" : ev.status === "failed" ? "✕" : ev.status === "running" ? "…" : "·"}
+                                  </span>
+                                  <span className="min-w-0 truncate text-[var(--color-text-secondary)]" title={ev.message}>{ev.message}</span>
+                                  {ev.duration_ms != null && ev.duration_ms > 0 && (
+                                    <span className="shrink-0 tabular-nums text-[var(--color-text-hint)]">{ev.duration_ms}ms</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
