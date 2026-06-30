@@ -19,6 +19,7 @@ async def run_review_stage(
     source_file: str = "",
     source_type: str = "",
     subject: str | None = None,
+    subject_id: int | None = None,
     pipeline_id: str = "",
     db=None,
 ) -> dict:
@@ -41,6 +42,7 @@ async def run_review_stage(
         "source_type": source_type,
         "source_file": source_file,
         "subject": subject or "",
+        "subject_id": subject_id,
         "pipeline_id": pipeline_id,
     }
     _log_multi_blank_stage("review_input", questions, source_type=source_type, source_file=source_file)

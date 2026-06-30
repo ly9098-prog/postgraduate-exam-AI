@@ -353,6 +353,7 @@ async def create_batch_job(
     job_id: str,
     sources: list[BatchImageSource],
     subject: str | None,
+    subject_id: int | None = None,
     concurrency: int,
     created_by: str | None,
     source_type: str = "image",
@@ -407,7 +408,7 @@ async def create_batch_job(
     job = ImportBatchJob(
         job_id=job_id,
         source_type=source_type,
-        subject=subject,
+        subject_id=subject_id,
         total=len(sources),
         concurrency=clamp_concurrency(concurrency),
         status="queued",
@@ -491,6 +492,7 @@ async def _merge_image_texts(
     job_id: str,
     subject: str | None,
     options: dict,
+    subject_id: int | None = None,
 ) -> dict:
     """Post-OCR merge: 将同批多张图片的 OCR 文本合并为连续文档再走一次导入流水线。
 
@@ -570,6 +572,7 @@ async def _merge_image_texts(
                 source_type="txt",
                 source_file=f"batch_merged_{job_id}",
                 subject=subject,
+                subject_id=subject_id,
                 options=merge_opts,
                 db=pdb,
             )
@@ -678,7 +681,7 @@ async def _run_vl_ocr(content: bytes, source_file: str) -> str:
 
 async def _run_single_image(
     item_id: int, source_file: str, content: bytes,
-    subject: str | None, options: dict,
+    subject: str | None, subject_id: int | None, options: dict,
     job_id: str, seq: int,
 ) -> dict:
     """OCR → 清洗 → 现有 TXT 导入流水线。返回结果 dict（含 raw/cleaned 文本）。
@@ -770,6 +773,7 @@ async def _run_single_image(
                 source_type="image",
                 source_file=source_file,
                 subject=subject,
+                subject_id=subject_id,
                 options=pipeline_opts,
                 db=pdb,
                 page_images={1: content},
@@ -816,6 +820,7 @@ async def _process_source(
     item_id: int,
     src: BatchImageSource,
     subject: str | None,
+    subject_id: int | None,
     options: dict,
     job_id: str,
 ) -> None:
@@ -842,7 +847,7 @@ async def _process_source(
                 content = fh.read()
 
             result = await _run_single_image(
-                item_id, src.source_file, content, subject, options,
+                item_id, src.source_file, content, subject, subject_id, options,
                 job_id=job_id, seq=src.seq,
             )
             del content
@@ -942,6 +947,7 @@ async def run_batch_job(
     job_id: str,
     sources: list[BatchImageSource],
     subject: str | None,
+    subject_id: int | None = None,
     options: dict,
     concurrency: int,
 ) -> None:
@@ -1006,6 +1012,7 @@ async def run_batch_job(
                 item_id=seq_to_item[src.seq],
                 src=src,
                 subject=subject,
+                subject_id=subject_id,
                 options=options,
                 job_id=job_id,
             )
@@ -1036,7 +1043,7 @@ async def run_batch_job(
                 trace_message="图片全部处理完成，开始合并",
             )
             merge_result = await _merge_image_texts(
-                job_id=job_id, subject=subject, options=options,
+                job_id=job_id, subject=subject, options=options, subject_id=subject_id,
             )
             if merge_result.get("merged"):
                 logger.info(
@@ -1196,7 +1203,7 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
         "job_id": job.job_id,
         "status": job.status,
         "source_type": job.source_type,
-        "subject": job.subject,
+        "subject": job.subject_ref.code if job.subject_ref else None,
         "concurrency": job.concurrency,
         "total": job.total,
         "completed": done,
@@ -1282,7 +1289,7 @@ async def poll_job_summary(
 # ================================================================
 
 
-async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str | None = None) -> dict:
+async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str | None = None, subject_id: int | None = None) -> dict:
     """基于缓存的 OCR 文本重新跑导入流水线（不重复 OCR）。
 
     用于 AI 解析失败 / Prompt 调整后重新解析。复用 ocr_cleaned_text；
@@ -1318,7 +1325,19 @@ async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str |
         raise ValueError("该条目没有可复用的 OCR 缓存文本")
 
     job = await db.get(ImportBatchJob, item.job_id)
-    effective_subject = subject or (job.subject if job else None)
+    # subject_id priority: explicit param > job.subject_id
+    effective_subject_id = subject_id or (job.subject_id if job else None)
+    effective_subject = subject
+    if not effective_subject and job and job.subject_ref:
+        effective_subject = job.subject_ref.code
+
+    # If still no subject_id, try resolving legacy subject string
+    if not effective_subject_id and effective_subject:
+        try:
+            from app.services.admin_subject_service import resolve_subject_id
+            effective_subject_id = await resolve_subject_id(db, effective_subject)
+        except Exception:
+            logger.warning("reparse: failed to resolve legacy subject=%s to subject_id", effective_subject)
 
     # ── Run pipeline ──
     async with async_session() as pdb:
@@ -1328,6 +1347,7 @@ async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str |
             source_type="txt",
             source_file=item.source_file or "reparse",
             subject=effective_subject,
+            subject_id=effective_subject_id,
             options={"enable_ai_repair": True, "confidence_threshold": 0.6},
             db=pdb,
         )

@@ -483,14 +483,18 @@ async def approve_question(db: AsyncSession, import_id: int, data: dict) -> Ques
     if qi.status != "pending":
         raise ValueError("该记录已审核")
 
-    subject = data.get("subject", qi.subject)
+    subject_id = data.get("subject_id") or qi.subject_id
+    if not subject_id and data.get("subject"):
+        # Legacy subject string → resolve to subject_id
+        from app.services.admin_subject_service import resolve_subject_id
+        subject_id = await resolve_subject_id(db, data["subject"])
     question_type = data.get("question_type", qi.question_type)
     content = data.get("parsed_content", qi.parsed_content)
     options = data.get("parsed_options", qi.parsed_options)
     answer = data.get("parsed_answer", qi.parsed_answer)
     analysis = data.get("parsed_analysis", qi.parsed_analysis)
 
-    if not subject or not question_type or not content or not answer:
+    if not subject_id or not question_type or not content or not answer:
         raise ValueError("科目、题型、题目内容、答案为必填")
 
     # 从 AI 元数据中提取 knowledge_points / difficulty 作为兜底
@@ -507,7 +511,7 @@ async def approve_question(db: AsyncSession, import_id: int, data: dict) -> Ques
         difficulty = ai_diff
 
     q = Question(
-        subject=subject,
+        subject_id=subject_id,
         question_type=question_type,
         content=content or {},
         options=options,
@@ -569,7 +573,7 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, int]:
     skipped = {}  # {id: [缺失字段]}
     for qi in records:
         missing = []
-        if not qi.subject:
+        if not qi.subject_id:
             missing.append("科目")
         if not qi.question_type:
             missing.append("题型")
@@ -581,7 +585,7 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, int]:
             skipped[qi.id] = missing
             continue
         q = Question(
-            subject=qi.subject,
+            subject_id=qi.subject_id,
             question_type=qi.question_type,
             content=qi.parsed_content or {},
             options=qi.parsed_options,

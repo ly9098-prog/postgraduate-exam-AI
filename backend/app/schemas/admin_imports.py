@@ -146,7 +146,7 @@ class AdminImportCompleteResponse(BaseModel):
 
 
 class AdminImportQuestionUpdateRequest(BaseModel):
-    subject: str | None = None
+    subject: str | None = Field(None, deprecated=True, description="Deprecated alias of subject_id. Legacy subject string will be resolved to subject_id internally.")
     subject_id: int | None = None
     question_type: str | None = None
     stem: str | None = None
@@ -191,7 +191,7 @@ class AdminImportTaskStatusResponse(BaseModel):
 
 class AdminImportBatchCompleteRequest(BaseModel):
     import_ids: list[int] = Field(..., description="要补全的导入题目 ID 列表，最多 50 条")
-    fields: list[str] = Field(..., description="补全字段列表: answer, analysis, knowledge_points, difficulty, subject, question_type, stem, options, tips, tags")
+    fields: list[str] = Field(..., description="补全字段列表: answer, analysis, knowledge_points, difficulty, subject_id, question_type, stem, options, tips, tags")
     strategy: str = Field("fill_empty", description="fill_empty | force_overwrite")
 
 
@@ -212,12 +212,13 @@ class AdminImportBatchCompleteResponse(BaseModel):
 
 class TextParseRequest(BaseModel):
     text: str = Field(..., max_length=100_000)  # ~100KB
-    subject: str = ""  # 可选，为空时自动检测
+    subject: str = Field("", deprecated=True, description="Deprecated alias of subject_id")
     subject_id: int | None = None
 
 
 class TextParseQuestion(BaseModel):
-    subject: str | None = None
+    subject: str | None = Field(None, deprecated=True, description="Deprecated alias of subject_id")
+    subject_id: int | None = None
     question_type: str | None = None
     stem: str = ""
     options: list[dict] = []
@@ -242,7 +243,7 @@ class TextParseResponse(BaseModel):
 
 
 class TextImportQuestion(BaseModel):
-    subject: str = ""
+    subject: str = Field("", deprecated=True, description="Deprecated alias of subject_id")
     subject_id: int | None = None
     stem: str
     options: list[dict] = []
@@ -254,7 +255,7 @@ class TextImportQuestion(BaseModel):
 
 
 class TextImportRequest(BaseModel):
-    subject: str = ""
+    subject: str = Field("", deprecated=True, description="Deprecated alias of subject_id")
     subject_id: int | None = None
     questions: list[TextImportQuestion]
 
@@ -323,7 +324,7 @@ class BatchImageJobStatusResponse(BaseModel):
     job_id: str
     status: str  # queued | running | completed | failed
     source_type: str = "image"
-    subject: str | None = None
+    subject: str | None = Field(None, deprecated=True, description="Deprecated alias of subject_id")
     subject_id: int | None = None
     concurrency: int = 2
     total: int = 0

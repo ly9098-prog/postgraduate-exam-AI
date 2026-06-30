@@ -176,7 +176,8 @@ class TestAICompleteSubjectId:
         suggestion = _apply_complete_suggestion(qi, parsed, missing)
         assert qi.subject_id is None
 
-    def test_batch_complete_accepts_subject_id(self):
+    @pytest.mark.asyncio
+    async def test_batch_complete_accepts_subject_id(self):
         from app.features.question_ai_complete import _apply_batch_complete_result
 
         qi = QuestionImport(
@@ -188,11 +189,62 @@ class TestAICompleteSubjectId:
         parsed = {"subject_id": 3}
         fields = ["subject_id"]
 
-        completed = _apply_batch_complete_result(qi, parsed, fields, "fill_empty")
+        completed = await _apply_batch_complete_result(qi, parsed, fields, "fill_empty")
         assert qi.subject_id == 3
         assert "subject_id" in completed
 
-    def test_detect_fields_to_complete_uses_subject_id(self):
+    @pytest.mark.asyncio
+    async def test_batch_complete_legacy_subject_resolved_to_subject_id(self):
+        """AI returns old-style subject string → should resolve to subject_id via db."""
+        from app.features.question_ai_complete import _apply_batch_complete_result
+
+        qi = QuestionImport(
+            id=1, batch_id="b1", source_type="text", raw_data={},
+            status="pending", duplicate_status="normal",
+            ai_generated=False, ai_answer_flag=False,
+            created_at=datetime(2026, 1, 1), updated_at=datetime(2026, 1, 1),
+        )
+        parsed = {"subject": "math2"}
+        fields = ["subject_id"]
+
+        mock_db = AsyncMock()
+        with patch(
+            "app.services.admin_subject_service.resolve_subject_id",
+            AsyncMock(return_value=7),
+        ):
+            completed = await _apply_batch_complete_result(
+                qi, parsed, fields, "fill_empty", db=mock_db,
+            )
+        assert qi.subject_id == 7
+        assert "subject_id" in completed
+
+    @pytest.mark.asyncio
+    async def test_batch_complete_legacy_subject_unresolved_skipped(self):
+        """AI returns unknown subject string → should not write anything."""
+        from app.features.question_ai_complete import _apply_batch_complete_result
+
+        qi = QuestionImport(
+            id=1, batch_id="b1", source_type="text", raw_data={},
+            status="pending", duplicate_status="normal",
+            ai_generated=False, ai_answer_flag=False,
+            created_at=datetime(2026, 1, 1), updated_at=datetime(2026, 1, 1),
+        )
+        parsed = {"subject": "unknown_subject"}
+        fields = ["subject_id"]
+
+        mock_db = AsyncMock()
+        with patch(
+            "app.services.admin_subject_service.resolve_subject_id",
+            AsyncMock(return_value=None),
+        ):
+            completed = await _apply_batch_complete_result(
+                qi, parsed, fields, "fill_empty", db=mock_db,
+            )
+        assert qi.subject_id is None
+        assert "subject_id" not in completed
+
+    def test_detect_fields_to_complete_normalizes_subject_to_subject_id(self):
+        """target_fields=['subject'] should be treated as subject_id."""
         from app.features.question_ai_complete import _detect_fields_to_complete
 
         qi = QuestionImport(
@@ -201,14 +253,13 @@ class TestAICompleteSubjectId:
             ai_generated=False, ai_answer_flag=False,
             created_at=datetime(2026, 1, 1), updated_at=datetime(2026, 1, 1),
         )
-        # subject_id is None → should detect "subject_id" as needed
-        result = _detect_fields_to_complete(qi, ["subject_id"], "fill_empty")
+        # subject_id is None → "subject" in target_fields should trigger "subject_id"
+        result = _detect_fields_to_complete(qi, ["subject"], "fill_empty")
         assert "subject_id" in result
 
-        # Set subject_id → should not need it
-        qi.subject_id = 3
-        result = _detect_fields_to_complete(qi, ["subject_id"], "fill_empty")
-        assert "subject_id" not in result
+        # force_overwrite should also normalize
+        result = _detect_fields_to_complete(qi, ["subject"], "force_overwrite")
+        assert "subject_id" in result
 
 
 # ---------------------------------------------------------------------------
@@ -424,3 +475,62 @@ class TestModelLayer:
 
     def test_subject_has_question_imports_backref(self):
         assert hasattr(Subject, "question_imports")
+
+
+# ---------------------------------------------------------------------------
+# 8. AI enrich: subject_id handling
+# ---------------------------------------------------------------------------
+
+class TestEnrichSubjectId:
+    def test_normalize_enrich_prefers_subject_id(self):
+        from app.features.question_ai_enrich import _normalize_enrich
+
+        parsed = {"subject_id": 5, "question_type": "single_choice"}
+        result = _normalize_enrich(parsed)
+        assert result.get("subject_id") == 5
+        assert "subject" not in result
+
+    def test_normalize_enrich_fallback_to_legacy_subject(self):
+        from app.features.question_ai_enrich import _normalize_enrich
+
+        parsed = {"subject": "math2", "question_type": "single_choice"}
+        result = _normalize_enrich(parsed)
+        assert result.get("subject") == "math2"
+        assert "subject_id" not in result
+
+    def test_normalize_enrich_ignores_invalid_subject(self):
+        from app.features.question_ai_enrich import _normalize_enrich
+
+        parsed = {"subject": "nonexistent_subject"}
+        result = _normalize_enrich(parsed)
+        assert "subject" not in result
+        assert "subject_id" not in result
+
+
+# ---------------------------------------------------------------------------
+# 9. Schema deprecated annotations
+# ---------------------------------------------------------------------------
+
+class TestSchemaDeprecated:
+    def test_update_request_subject_is_deprecated(self):
+        from app.schemas.admin_imports import AdminImportQuestionUpdateRequest
+        field = AdminImportQuestionUpdateRequest.model_fields.get("subject")
+        assert field is not None
+        assert field.deprecated is True
+
+    def test_text_parse_request_subject_is_deprecated(self):
+        from app.schemas.admin_imports import TextParseRequest
+        field = TextParseRequest.model_fields.get("subject")
+        assert field is not None
+        assert field.deprecated is True
+
+    def test_text_import_request_subject_is_deprecated(self):
+        from app.schemas.admin_imports import TextImportRequest
+        field = TextImportRequest.model_fields.get("subject")
+        assert field is not None
+        assert field.deprecated is True
+
+    def test_batch_complete_request_fields_mentions_subject_id(self):
+        from app.schemas.admin_imports import AdminImportBatchCompleteRequest
+        field = AdminImportBatchCompleteRequest.model_fields.get("fields")
+        assert "subject_id" in field.description

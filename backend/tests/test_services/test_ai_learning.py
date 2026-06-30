@@ -59,6 +59,11 @@ def _make_question(id=1, subject="math2", question_type="single_choice",
     q = MagicMock(spec=Question)
     q.id = id
     q.subject = subject
+    q.subject_id = 1
+    # subject_ref must return an object with .code attribute
+    q.subject_ref = MagicMock()
+    q.subject_ref.code = subject
+    q.subject_ref.name = subject
     q.question_type = question_type
     q.content = {"text": "f(x)=x^2, f'(x)=?"}
     q.options = {"A": "2x", "B": "x", "C": "x^2", "D": "2"}
@@ -345,18 +350,20 @@ class TestRecommend:
         q_similar = _make_question(10, knowledge_points=["导数"])
         q_diff = _make_question(20, knowledge_points=["积分"])
 
-        # 第一次 execute: get the source question
-        # 第二次 execute: get answered question_ids (returns empty)
-        # 第三次 execute: get candidates (returns all 3 including self, but self filtered by SQL)
-        # Actually the filter logic: answered_ids includes question_id=1 (self) + user answered (none in mock)
-        # So candidates should only include questions != 1
+        # Rule-based path: 3 db.execute calls
+        # 1. fetch source question
+        # 2. fetch answered question_ids
+        # 3. fetch candidates
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q_self),
             _make_execute_result(all=[]),  # no answered questions
             _make_execute_result(scalars=[q_similar, q_diff]),
         ]
 
-        result = _run(recommend_similar_questions(db, user_id=1, question_id=1, count=5))
+        with patch("app.services.vector_retrieval_service.search_similar_questions", new_callable=lambda: AsyncMock(side_effect=Exception("disabled"))):
+            with patch("app.services.ai_learning_service.resolve_subject_ids", new_callable=lambda: AsyncMock(return_value=[1])):
+                result = _run(recommend_similar_questions(db, user_id=1, question_id=1, count=5))
+
         assert result["source_question_id"] == 1
         assert result["strategy"] == "rule_based"
         # q_diff has no overlapping kp, so only q_similar should match
@@ -377,7 +384,9 @@ class TestRecommend:
             _make_execute_result(scalars=[]),
         ]
 
-        result = _run(recommend_similar_questions(db, user_id=1, question_id=1))
+        with patch("app.services.vector_retrieval_service.search_similar_questions", new_callable=lambda: AsyncMock(side_effect=Exception("disabled"))):
+            with patch("app.services.ai_learning_service.resolve_subject_ids", new_callable=lambda: AsyncMock(return_value=[1])):
+                result = _run(recommend_similar_questions(db, user_id=1, question_id=1))
         assert result["recommendations"] == []
 
     def test_recommend_exclude_answered(self):
@@ -395,7 +404,9 @@ class TestRecommend:
             _make_execute_result(scalars=[q_answered]),  # candidate
         ]
 
-        result = _run(recommend_similar_questions(db, user_id=1, question_id=1))
+        with patch("app.services.vector_retrieval_service.search_similar_questions", new_callable=lambda: AsyncMock(side_effect=Exception("disabled"))):
+            with patch("app.services.ai_learning_service.resolve_subject_ids", new_callable=lambda: AsyncMock(return_value=[1])):
+                result = _run(recommend_similar_questions(db, user_id=1, question_id=1))
         qids = [r["question_id"] for r in result["recommendations"]]
         assert 10 not in qids
 

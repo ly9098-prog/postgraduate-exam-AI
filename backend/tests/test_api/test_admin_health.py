@@ -78,4 +78,4 @@ def test_admin_ready_health_degrades_when_db_unavailable(monkeypatch):
 def test_admin_ready_health_requires_auth():
     """Phase 4.6: /ready endpoint now requires admin auth."""
     resp = client.get("/api/admin/v1/health/ready")
-    assert resp.status_code == 401
+    assert resp.status_code == 403

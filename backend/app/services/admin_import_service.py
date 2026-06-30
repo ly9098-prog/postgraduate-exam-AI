@@ -330,6 +330,15 @@ async def update_import_question(
     if "analysis" in payload:
         qi.parsed_analysis = payload.pop("analysis")
 
+    # Legacy subject → subject_id conversion
+    if "subject" in payload and "subject_id" not in payload:
+        from app.services.admin_subject_service import resolve_subject_id
+        resolved = await resolve_subject_id(db, payload.pop("subject"))
+        if resolved is not None:
+            payload["subject_id"] = resolved
+    elif "subject" in payload:
+        payload.pop("subject")  # discard legacy alias when subject_id also provided
+
     for field in (
         "subject_id",
         "question_type",

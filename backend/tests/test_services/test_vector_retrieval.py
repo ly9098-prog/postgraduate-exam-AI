@@ -26,7 +26,11 @@ def _make_question(id=1, subject="exam408-ds", question_type="choice",
                    difficulty=3, is_active=True):
     q = MagicMock(spec=Question)
     q.id = id
-    q.subject = subject
+    q.subject_id = 1
+    # subject_ref mock: return code for embedding text builder
+    subj_ref_mock = MagicMock()
+    subj_ref_mock.code = subject
+    q.subject_ref = subj_ref_mock
     q.question_type = question_type
     q.content = {"text": "测试题干内容", "stem": "测试题干内容"}
     q.options = {"A": "选项A", "B": "选项B", "C": "选项C", "D": "选项D"}
@@ -323,7 +327,9 @@ class TestSchemaCompatibility:
         from app.schemas.practice import PracticeQuestion
         pq = PracticeQuestion(
             id=1,
-            subject="exam408-ds",
+            subject_id=7,
+            subject_code="exam408-ds",
+            subject_name="数据结构",
             question_type="choice",
             content={"text": "test"},
             recommend_reason="薄弱知识点推荐",
@@ -331,6 +337,9 @@ class TestSchemaCompatibility:
             strategy="smart_vector",
             similarity=0.9,
         )
+        assert pq.subject_id == 7
+        assert pq.subject_code == "exam408-ds"
+        assert pq.subject_name == "数据结构"
         assert pq.recommend_reason == "薄弱知识点推荐"
         assert pq.strategy == "smart_vector"
 
@@ -339,10 +348,13 @@ class TestSchemaCompatibility:
         from app.schemas.practice import PracticeQuestion
         pq = PracticeQuestion(
             id=1,
-            subject="exam408-ds",
+            subject_id=7,
             question_type="choice",
             content={"text": "test"},
         )
+        assert pq.subject_id == 7
+        assert pq.subject_code == ""
+        assert pq.subject_name == ""
         assert pq.recommend_reason is None
         assert pq.recommend_score is None
         assert pq.strategy is None
