@@ -93,6 +93,7 @@ async def upload_import_file(
         file=file,
         background_tasks=background_tasks,
         subject=subject,
+        subject_id=subject_id,
         import_mode=import_mode,
         enable_ai_repair=enable_ai_repair,
         confidence_threshold=confidence_threshold,
@@ -248,6 +249,7 @@ async def admin_resume_pipeline(
                     source_type=source_type,
                     source_file=source_file,
                     subject=subject,
+                    subject_id=subject_id,
                     options=opts,
                     db=resume_db,
                     progress_callback=_progress,
@@ -835,6 +837,7 @@ async def batch_image_upload(
         job_id=job_id,
         sources=sources,
         subject=subject,
+        subject_id=subject_id,
         concurrency=concurrency,
         created_by=f"admin:{current_admin.id}",
         batch_import_id=batch_id,
@@ -863,6 +866,7 @@ async def batch_image_upload(
         job_id=job_id,
         sources=sources,
         subject=subject,
+        subject_id=subject_id,
         options=options,
         concurrency=concurrency,
     )
@@ -971,7 +975,7 @@ async def reparse_batch_image_item(
     from app.features import batch_image_import_service as batch_svc
 
     try:
-        return await batch_svc.reparse_item_from_cache(db, item_id, subject)
+        return await batch_svc.reparse_item_from_cache(db, item_id, subject=subject, subject_id=subject_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
@@ -1219,8 +1223,8 @@ async def admin_export_failure_case(
         "id": row.id,
         "source_file": row.source_file,
         "source_page": None,
-        "subject": row.subject,
         "subject_id": row.subject_id,
+        "subject": row.subject_ref.code if row.subject_ref else None,
         "question_type": row.question_type,
         "raw_data": row.raw_data or {},
         "stem": None,
@@ -1273,8 +1277,8 @@ async def admin_export_batch_failure_cases(
             "id": row.id,
             "source_file": row.source_file,
             "source_page": None,
-            "subject": row.subject,
             "subject_id": row.subject_id,
+            "subject": row.subject_ref.code if row.subject_ref else None,
             "question_type": row.question_type,
             "raw_data": row.raw_data or {},
             "stem": pc.get("stem"),

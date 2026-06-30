@@ -29,7 +29,6 @@ from app.features.question_pipeline import (
     _extract_json,
     _get_qi,
     _qi_to_dict,
-    normalizer,
 )
 from app.models.question_import import QuestionImport
 
@@ -202,9 +201,10 @@ async def _complete_import_repair(
         return {"missing": [], "from_fallback": True, "ai_metadata": {}, "repair_mode": True}
 
     parsed_raw = _extract_json(raw) or {}
-    repair_fields = [f for f in ("stem", "options", "answer", "analysis", "subject", "question_type")
-                     if f in parsed_raw or f in existing]
-    completed = _apply_batch_complete_result(qi, parsed_raw, repair_fields, "force_overwrite")
+    repair_fields = [f for f in ("stem", "options", "answer", "analysis", "subject_id", "question_type")
+                     if f in parsed_raw or f in existing or
+                     (f == "subject_id" and ("subject" in parsed_raw or "subject_id" in parsed_raw))]
+    completed = await _apply_batch_complete_result(qi, parsed_raw, repair_fields, "force_overwrite", db=db)
     confidence = _coerce_confidence(parsed_raw.get("confidence"))
 
     qi.ai_generated = True
@@ -348,16 +348,19 @@ def _detect_fields_to_complete(
     qi: QuestionImport, target_fields: list[str], strategy: str,
     disabled_fields: set[str] | None = None,
 ) -> list[str]:
+    # Normalize legacy "subject" → "subject_id" regardless of strategy
+    normalized_fields = ["subject_id" if f == "subject" else f for f in target_fields]
     if strategy == "force_overwrite":
         if disabled_fields:
-            return [f for f in target_fields if f not in disabled_fields]
-        return list(target_fields)
+            return [f for f in normalized_fields if f not in disabled_fields]
+        return list(normalized_fields)
 
     need: list[str] = []
     for field in target_fields:
-        if disabled_fields and field in disabled_fields:
+        norm_field = "subject_id" if field == "subject" else field
+        if disabled_fields and norm_field in disabled_fields:
             continue
-        if field in ("subject", "subject_id") and not qi.subject_id:
+        if norm_field == "subject_id" and not qi.subject_id:
             need.append("subject_id")
         elif field == "question_type" and not qi.question_type:
             need.append("question_type")
@@ -384,8 +387,9 @@ def _detect_fields_to_complete(
     return need
 
 
-def _apply_batch_complete_result(
-    qi: QuestionImport, parsed: dict, fields: list[str], strategy: str
+async def _apply_batch_complete_result(
+    qi: QuestionImport, parsed: dict, fields: list[str], strategy: str,
+    db: AsyncSession | None = None,
 ) -> list[str]:
     completed: list[str] = []
 
@@ -397,10 +401,18 @@ def _apply_batch_complete_result(
         if isinstance(sid, int) and sid > 0:
             qi.subject_id = sid
             completed.append("subject_id")
-        elif parsed.get("subject") in SUBJECT_VALUES:
-            # Backward compat: AI returned old-style subject string
-            qi.subject = parsed["subject"]
-            completed.append("subject")
+        elif parsed.get("subject") in SUBJECT_VALUES and db is not None:
+            # Backward compat: AI returned old-style subject string → resolve to subject_id
+            from app.services.admin_subject_service import resolve_subject_id
+            resolved = await resolve_subject_id(db, parsed["subject"])
+            if resolved is not None:
+                qi.subject_id = resolved
+                completed.append("subject_id")
+            else:
+                logger.debug(
+                    "AI complete: legacy subject=%r cannot be resolved, skipping",
+                    parsed["subject"],
+                )
 
     if "question_type" in fields and parsed.get("question_type") in TYPE_VALUES:
         qi.question_type = parsed["question_type"]
@@ -508,7 +520,7 @@ async def complete_import_with_strategy(
     parsed_raw = _extract_json(raw) or {}
 
     before_snapshot = _capture_qi_snapshot(qi)
-    completed = _apply_batch_complete_result(qi, parsed_raw, to_complete, strategy)
+    completed = await _apply_batch_complete_result(qi, parsed_raw, to_complete, strategy, db=db)
 
     complete_risk_flags = _diff_complete_risk(before_snapshot, qi)
     if complete_risk_flags:
@@ -708,7 +720,7 @@ async def batch_complete_questions(
         to_complete = item["to_complete"]
 
         before_snapshot = _capture_qi_snapshot(qi)
-        completed = _apply_batch_complete_result(qi, parsed_raw, to_complete, strategy)
+        completed = await _apply_batch_complete_result(qi, parsed_raw, to_complete, strategy, db=db)
 
         complete_risk_flags = _diff_complete_risk(before_snapshot, qi)
         if complete_risk_flags:

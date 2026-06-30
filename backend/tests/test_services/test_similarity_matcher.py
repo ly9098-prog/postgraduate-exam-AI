@@ -123,11 +123,18 @@ class TestMatchSimilarQuestions:
         mock_row.options = {"A": "集合", "B": "关系", "C": "两者", "D": "都不对"}
         mock_row.answer = "C"
 
-        mock_result = MagicMock()
-        mock_result.all.return_value = [mock_row]
+        # resolve_subject_id needs a Subject row first
+        subject_row = MagicMock()
+        subject_row.id = 1
+        subject_row.code = "exam408"
+        subject_result = MagicMock()
+        subject_result.all.return_value = [subject_row]
+
+        question_result = MagicMock()
+        question_result.all.return_value = [mock_row]
 
         mock_db = AsyncMock()
-        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.execute = AsyncMock(side_effect=[subject_result, question_result])
 
         result = await match_similar_questions(questions, db=mock_db, config={
             "enabled": True,
@@ -218,11 +225,18 @@ class TestMatchSimilarQuestions:
         mock_row.options = {"A": "a", "B": "b"}
         mock_row.answer = "A"
 
-        mock_result = MagicMock()
-        mock_result.all.return_value = [mock_row]
+        # resolve_subject_id needs a Subject row first
+        subject_row = MagicMock()
+        subject_row.id = 1
+        subject_row.code = "exam408"
+        subject_result = MagicMock()
+        subject_result.all.return_value = [subject_row]
+
+        question_result = MagicMock()
+        question_result.all.return_value = [mock_row]
 
         mock_db = AsyncMock()
-        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.execute = AsyncMock(side_effect=[subject_result, question_result])
 
         result = await match_similar_questions(questions, db=mock_db, config={
             "enabled": True,
@@ -335,11 +349,18 @@ class TestHashIndexInjection:
         mock_row.options = {"A": "x"}
         mock_row.answer = "A"
 
-        mock_result = MagicMock()
-        mock_result.all.return_value = [mock_row]
+        # resolve_subject_id needs a Subject row first
+        subject_row = MagicMock()
+        subject_row.id = 1
+        subject_row.code = "exam408"
+        subject_result = MagicMock()
+        subject_result.all.return_value = [subject_row]
+
+        question_result = MagicMock()
+        question_result.all.return_value = [mock_row]
 
         mock_db = AsyncMock()
-        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.execute = AsyncMock(side_effect=[subject_result, question_result])
 
         result = await match_similar_questions(
             questions,

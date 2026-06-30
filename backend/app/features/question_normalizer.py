@@ -852,6 +852,7 @@ def normalize_question(
 
     result = {
         "schema_version": "v1",
+        "subject_id": source_info.get("subject_id"),
         "subject": source_info.get("subject", ""),
         "question_type": question_type,
         "stem": stem,
@@ -1192,7 +1193,7 @@ def normalize_output(question: dict) -> dict:
 
     # Preserve other useful keys
     preserve_keys = [
-        "subject", "question_type", "raw_text", "knowledge_points",
+        "subject", "subject_id", "question_type", "raw_text", "knowledge_points",
         "difficulty", "source", "is_valid", "errors", "warnings",
         "stem_hash", "confidence_score", "validation_status",
         "failure_reason", "retry_recommended", "ocr_quality_flags",

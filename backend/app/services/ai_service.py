@@ -152,9 +152,11 @@ async def generate_advice(db: AsyncSession, user_id: int, subject: str | None = 
         if q:
             if q.knowledge_points:
                 weak_points.update(q.knowledge_points)
-            subject_stats[q.subject] = subject_stats.get(q.subject, 0) + 1
+            # Use subject_id as label (subject_ref is noload, always None without selectinload)
+            subj_label = str(q.subject_id)
+            subject_stats[subj_label] = subject_stats.get(subj_label, 0) + 1
             recent_wrong.append({
-                "subject": q.subject,
+                "subject": subj_label,
                 "error_type": w.error_type,
                 "wrong_answer": w.wrong_answer,
                 "correct_answer": q.answer,

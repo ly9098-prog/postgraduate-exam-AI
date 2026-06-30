@@ -4,15 +4,67 @@ import re
 import logging
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
+from app.models.question_import import QuestionImport  # noqa: F401 — ensures Subject mapper resolves
 from app.services.admin_subject_service import resolve_subject_ids
 from app.services.behavior_service import record_answer_behavior
 from app.services.wrong_question_service import record_wrong
 from app.core.time_utils import utcnow
 
 logger = logging.getLogger(__name__)
+
+
+async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
+    """返回刷题页可用科目树。
+
+    数据来源：subjects 表中 is_active=true 的记录。
+    使用 parent_id 构建树，按 sort_order, id 排序。
+    不硬编码任何 subject_id。
+    """
+    from app.models.admin import Subject
+
+    result = await db.execute(
+        select(Subject)
+        .where(Subject.is_active.is_(True))
+        .order_by(Subject.sort_order.asc(), Subject.id.asc())
+    )
+    subjects = list(result.scalars().all())
+
+    def _to_node(s: Subject) -> dict:
+        return {
+            "subject_id": s.id,
+            "subject_code": s.code,
+            "subject_name": s.name,
+            "display_name": s.name,
+            "level": s.level,
+            "sort_order": s.sort_order,
+            "children": [],
+        }
+
+    nodes: dict[int, dict] = {s.id: _to_node(s) for s in subjects}
+    roots: list[dict] = []
+    for s in subjects:
+        node = nodes[s.id]
+        parent = nodes.get(s.parent_id) if s.parent_id else None
+        if parent:
+            parent["children"].append(node)
+        else:
+            roots.append(node)
+    return roots
+
+
+async def resolve_subject_id_to_code(db: AsyncSession, subject_id: int) -> tuple[str, str] | None:
+    """将 subject_id 解析为 (subject_code, subject_name)。不存在返回 None。"""
+    from app.models.admin import Subject
+
+    subj = await db.get(Subject, subject_id)
+    if subj is None:
+        return None
+    return (subj.code, subj.name)
+
 
 _TRUE_FALSE_TRUE = {"a", "true", "对", "是", "正确", "t", "yes", "1"}
 _TRUE_FALSE_FALSE = {"b", "false", "错", "否", "错误", "f", "no", "0"}
@@ -69,7 +121,7 @@ async def get_practice_questions(
         )
         conditions.append(Question.id.notin_(answered_sub))
 
-    q = select(Question).where(and_(*conditions))
+    q = select(Question).where(and_(*conditions)).options(selectinload(Question.subject_ref))
 
     if mode == "random":
         q = q.order_by(func.random())
@@ -118,7 +170,7 @@ async def get_similar_practice_questions(
             rec_ids = [r["question_id"] for r in result["recommendations"]]
             if rec_ids:
                 q_result = await db.execute(
-                    select(Question).where(Question.id.in_(rec_ids), Question.is_active == True)
+                    select(Question).where(Question.id.in_(rec_ids), Question.is_active == True).options(selectinload(Question.subject_ref))
                 )
                 q_map = {q.id: q for q in q_result.scalars().all()}
                 for rec in result["recommendations"]:
@@ -157,7 +209,7 @@ async def get_similar_practice_questions(
         conditions.append(Question.id.notin_(answered_sub))
 
     need = count - len(vector_questions)
-    q = select(Question).where(and_(*conditions)).order_by(func.random()).limit(need)
+    q = select(Question).where(and_(*conditions)).options(selectinload(Question.subject_ref)).order_by(func.random()).limit(need)
     result = await db.execute(q)
     fill_questions = list(result.scalars().all())
 
@@ -230,7 +282,7 @@ async def get_smart_practice_questions(
                     select(Question).where(
                         Question.id.in_(path_qids[:count]),
                         Question.is_active == True,
-                    )
+                    ).options(selectinload(Question.subject_ref))
                 )
                 q_map = {q.id: q for q in q_result.scalars().all()}
                 # 保持 path_qids 的顺序（按优先级排序）
@@ -340,7 +392,7 @@ async def get_smart_practice_questions(
         if recalls:
             rec_ids = [r["question_id"] for r in recalls]
             q_result = await db.execute(
-                select(Question).where(Question.id.in_(rec_ids), Question.is_active == True)
+                select(Question).where(Question.id.in_(rec_ids), Question.is_active == True).options(selectinload(Question.subject_ref))
             )
             q_map = {q.id: q for q in q_result.scalars().all()}
             for rec in recalls:
@@ -385,7 +437,7 @@ async def get_smart_practice_questions(
         for kp in kp_names:
             kp_conditions.append(Question.knowledge_points.like(f'%"{kp}"%'))
         kp_cond = or_(*kp_conditions)
-        kp_q = select(Question).where(and_(*conditions, kp_cond)).order_by(func.random())
+        kp_q = select(Question).where(and_(*conditions, kp_cond)).options(selectinload(Question.subject_ref)).order_by(func.random())
         result = await db.execute(kp_q)
         kp_fill = list(result.scalars().all())
 
@@ -408,6 +460,7 @@ async def get_smart_practice_questions(
         fill_q = (
             select(Question)
             .where(and_(*conditions, Question.id.notin_(existing_ids)))
+            .options(selectinload(Question.subject_ref))
             .order_by(func.random())
             .limit(remaining)
         )
@@ -540,7 +593,7 @@ async def _smart_weakness_vector(
             rec_ids = [r["question_id"] for r in recalls if r["question_id"] not in exclude_ids]
             if rec_ids:
                 q_result = await db.execute(
-                    select(Question).where(Question.id.in_(rec_ids), Question.is_active == True)
+                    select(Question).where(Question.id.in_(rec_ids), Question.is_active == True).options(selectinload(Question.subject_ref))
                 )
                 q_map = {q.id: q for q in q_result.scalars().all()}
                 for rec in recalls:
@@ -580,6 +633,7 @@ async def _smart_weakness_vector(
     fill_q = (
         select(Question)
         .where(and_(*conditions))
+        .options(selectinload(Question.subject_ref))
         .order_by(func.random())
         .limit(remaining)
     )

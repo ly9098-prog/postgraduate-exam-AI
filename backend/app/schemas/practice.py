@@ -8,7 +8,9 @@ from pydantic import BaseModel
 class PracticeQuestion(BaseModel):
     """刷题用题目（不含答案）"""
     id: int
-    subject: str
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     question_type: str
     content: dict
     options: dict | None = None

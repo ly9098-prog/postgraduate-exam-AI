@@ -21,7 +21,7 @@ MAX_QUESTIONS_PER_SYNC = 5000
 MAX_TAGS_PER_SYNC = 1000
 
 _QUESTION_FIELDS = (
-    "subject", "question_type", "content", "options", "answer",
+    "subject_id", "question_type", "content", "options", "answer",
     "question_hash", "analysis", "knowledge_points", "difficulty",
     "source", "source_type", "source_file", "import_batch_id",
     "raw_content", "image_url", "year", "review_status", "is_active",
@@ -111,14 +111,14 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
             for q in result.scalars().all():
                 existing_questions[q.sync_uuid] = q
 
-    # Build (subject, question_hash) → sync_uuid index from ALL active questions
+    # Build (subject_id, question_hash) → sync_uuid index from ALL active questions
     # whose hash matches any incoming question, to catch content duplicates
     # that have different sync_uuids (e.g. re-imported locally).
-    hash_index: dict[tuple[str, str], str] = {}
+    hash_index: dict[tuple[int, str], str] = {}
     incoming_hashes = [
-        (q.get("subject"), q.get("question_hash"))
+        (q.get("subject_id"), q.get("question_hash"))
         for q in questions_data
-        if q.get("subject") and q.get("question_hash")
+        if q.get("subject_id") and q.get("question_hash")
     ]
     if incoming_hashes:
         all_hashes = list({h for _, h in incoming_hashes})
@@ -130,9 +130,9 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
                     Question.is_active == True,  # noqa: E712
                 )
             )
-            for subject, qhash, suuid in result.all():
-                if subject and qhash and suuid:
-                    hash_index[(subject, qhash)] = suuid
+            for subject_id, qhash, suuid in result.all():
+                if subject_id and qhash and suuid:
+                    hash_index[(subject_id, qhash)] = suuid
 
     # --- Tags (先于 questions，保证引用关系) ---
     for tag_data in tags_data:
@@ -156,10 +156,10 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
         existing = existing_questions.get(sync_uuid)
 
         if existing is None:
-            subject = q_data.get("subject")
+            subject_id = q_data.get("subject_id")
             q_hash = q_data.get("question_hash")
-            if subject and q_hash and (subject, q_hash) in hash_index:
-                existing_suuid = hash_index[(subject, q_hash)]
+            if subject_id and q_hash and (subject_id, q_hash) in hash_index:
+                existing_suuid = hash_index[(subject_id, q_hash)]
                 if existing_suuid != sync_uuid:
                     report.questions_deduped += 1
                     continue

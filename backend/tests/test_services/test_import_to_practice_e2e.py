@@ -111,7 +111,11 @@ def _make_qi(qi_id, status="pending", subject="math2", parsed_content=None,
     qi.id = qi_id
     qi.batch_id = "B1"
     qi.status = status
-    qi.subject = subject
+    qi.subject_id = 1  # mock subject_id
+    # subject_ref mock for code resolution
+    subj_ref = MagicMock()
+    subj_ref.code = subject
+    qi.subject_ref = subj_ref
     qi.question_type = "single_choice"
     qi.parsed_content = parsed_content or {"text": "求 f(x)=x^2 的导数"}
     qi.parsed_options = (
@@ -149,6 +153,14 @@ def _make_db_with_pending(qis):
         return empty_result
 
     db.execute = AsyncMock(side_effect=fake_execute)
+
+    # db.get for Subject lookup in batch_approve
+    async def fake_get(model, item_id):
+        subj_mock = MagicMock()
+        subj_mock.code = "math2"
+        return subj_mock
+
+    db.get = AsyncMock(side_effect=fake_get)
     return db
 
 
@@ -183,28 +195,58 @@ class TestBatchApproveNoRaiseOnAllSkipped:
 
 class TestPracticeSubjectPrefixMatch:
     def test_parent_subject_matches_children(self):
+        """传入父科目 subject_id（int），应展开包含子科目的 IN 查询。"""
         from app.services.practice_service import get_practice_questions
+        from app.models.admin import Subject
         from app.models.question import Question
 
         db = MagicMock()
         db.commit = AsyncMock()
         db.refresh = AsyncMock()
 
-        # 模拟 db.execute 返回 questions
+        # 模拟 db.execute 的不同返回
         q1 = MagicMock(spec=Question)
         q1.id = 1
-        q1.subject = "math2-calculus"
+        q1.subject_id = 2
         q1.is_active = True
 
-        result = MagicMock()
-        result.scalars.return_value.all.return_value = [q1]
-        db.execute = AsyncMock(return_value=result)
+        # Subject records for resolve_subject_ids tree expansion
+        parent_subj = MagicMock(spec=Subject)
+        parent_subj.id = 1
+        parent_subj.parent_id = None
+
+        child_subj = MagicMock(spec=Subject)
+        child_subj.id = 2
+        child_subj.parent_id = 1
+
+        # db.get 返回 Subject 记录（用于 resolve_subject_id(int)）
+        async def mock_get(model, id_val):
+            if id_val == 1:
+                return parent_subj
+            return None
+        db.get = mock_get
+
+        # db.execute 按调用顺序返回不同结果
+        call_count = 0
+        async def mock_execute(stmt, *args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            result = MagicMock()
+            if call_count == 1:
+                # resolve_subject_ids: select(Subject) for tree
+                result.scalars.return_value.all.return_value = [parent_subj, child_subj]
+            else:
+                # get_practice_questions: select(Question)
+                result.scalars.return_value.all.return_value = [q1]
+            return result
+
+        db.execute = AsyncMock(side_effect=mock_execute)
 
         questions = asyncio.run(
-            get_practice_questions(db, user_id=1, subject="math2", count=5, mode="random")
+            get_practice_questions(db, user_id=1, subject=1, count=5, mode="random")
         )
         assert len(questions) == 1
-        # 验证 SQL 用了 OR / LIKE
+        # 验证 SQL 用了 IN 包含子科目 ID
         called_stmt = db.execute.call_args[0][0]
         sql_text = str(called_stmt.compile(compile_kwargs={"literal_binds": True}))
-        assert "math2-%" in sql_text or "math2-" in sql_text
+        assert "subject_id" in sql_text

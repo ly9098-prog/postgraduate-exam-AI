@@ -1,8 +1,11 @@
 """AI 学习引擎核心服务。"""
 
 import json
+import logging
 import random
 from datetime import datetime, timedelta, timezone
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession

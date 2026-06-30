@@ -9,19 +9,24 @@ from app.services.admin_subject_service import resolve_subject_ids
 
 async def create(
     db: AsyncSession,
-    subject: str,
     question_type: str,
     content: dict,
     answer: str,
+    subject: str | None = None,
     options: dict | None = None,
     analysis: str | None = None,
     knowledge_points: list[str] | None = None,
     difficulty: int = 3,
     source: str | None = None,
     year: int | None = None,
+    subject_id: int | None = None,
 ) -> Question:
+    # Resolve subject_id: prefer explicit subject_id, fall back to legacy subject string
+    if subject_id is None and subject:
+        from app.services.admin_subject_service import resolve_subject_id as _resolve_sid
+        subject_id = await _resolve_sid(db, subject)
     q = Question(
-        subject=subject,
+        subject_id=subject_id,
         question_type=question_type,
         content=content,
         options=options,

@@ -462,6 +462,7 @@ async def image_upload(
         image_content=content,
         source_file=filename,
         subject=subject,
+        subject_id=None,
         options=options,
     )
 
@@ -473,6 +474,7 @@ async def _run_image_pipeline_with_db(
     image_content: bytes,
     source_file: str,
     subject: str | None,
+    subject_id: int | None,
     options: dict,
 ) -> None:
     """图片后台任务：OCR → TXT bytes → 现有导入流水线。"""
@@ -556,6 +558,7 @@ async def _run_image_pipeline_with_db(
                 source_type="txt",
                 source_file=source_file,
                 subject=subject,
+                subject_id=subject_id,
                 options=options,
                 db=db,
                 page_images={1: image_content},
@@ -621,6 +624,7 @@ async def start_import_pipeline_from_upload(
     file: UploadFile,
     background_tasks: BackgroundTasks,
     subject: str | None = None,
+    subject_id: int | None = None,
     import_mode: ImportMode = ImportMode.AUTO,
     enable_ai_repair: bool = True,
     confidence_threshold: float = 0.6,
@@ -705,6 +709,7 @@ async def start_import_pipeline_from_upload(
             image_content=content,
             source_file=filename,
             subject=subject,
+            subject_id=subject_id,
             options=options,
         )
 
@@ -785,6 +790,7 @@ async def start_import_pipeline_from_upload(
             source_type=source_type,
             source_file=filename,
             subject=subject,
+            subject_id=subject_id,
             options=options,
             created_by=created_by,
         )
@@ -804,6 +810,7 @@ async def pipeline_upload(
     file: UploadFile,
     background_tasks: BackgroundTasks,
     subject: str | None = None,
+    subject_id: int | None = None,
     import_mode: ImportMode = ImportMode.AUTO,
     enable_ai_repair: bool = True,
     confidence_threshold: float = 0.6,
@@ -820,6 +827,7 @@ async def pipeline_upload(
         file=file,
         background_tasks=background_tasks,
         subject=subject,
+        subject_id=subject_id,
         import_mode=import_mode,
         enable_ai_repair=enable_ai_repair,
         confidence_threshold=confidence_threshold,
@@ -844,6 +852,7 @@ async def _run_pipeline_with_db(
     source_type: str,
     source_file: str,
     subject: str | None,
+    subject_id: int | None,
     options: dict,
     created_by: str | None = None,
 ) -> None:
@@ -915,6 +924,7 @@ async def _run_pipeline_with_db(
                 source_type=source_type,
                 source_file=source_file,
                 subject=subject,
+                subject_id=subject_id,
                 options=options,
                 db=db,
                 created_by=created_by,
@@ -980,6 +990,7 @@ async def _run_resume_with_db(
     pipeline_id: str,
     file_path: str,
     subject: str | None,
+    subject_id: int | None,
     options: dict,
 ) -> None:
     """Background wrapper：单独 DB 会话跑 resume，结束后无条件清理 tmp 文件。"""
@@ -995,6 +1006,7 @@ async def _run_resume_with_db(
                 pipeline_id=pipeline_id,
                 file_path=file_path,
                 subject=subject,
+                subject_id=subject_id,
                 options=options,
                 db=db,
             )
@@ -1184,6 +1196,7 @@ async def resume_pipeline(
             pipeline_id=pipeline_id,
             file_path=tmp_path,
             subject=subject,
+            subject_id=None,  # resume reads subject_id from checkpoint inside resume_pipeline_background
             options=options,
         )
     )
