@@ -89,7 +89,7 @@ def _import_record(record_id, batch_id="batch-1", status="pending", ai_generated
         batch_id=batch_id,
         source_type="manual",
         source_file="file.xlsx",
-        subject="math",
+        subject_id=1,
         question_type="choice",
         raw_data={"text": "raw"},
         parsed_content={"text": "题干"},

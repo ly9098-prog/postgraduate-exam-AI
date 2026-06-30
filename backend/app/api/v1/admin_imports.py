@@ -93,7 +93,6 @@ async def upload_import_file(
         file=file,
         background_tasks=background_tasks,
         subject=subject,
-        subject_id=subject_id,
         import_mode=import_mode,
         enable_ai_repair=enable_ai_repair,
         confidence_threshold=confidence_threshold,
@@ -249,7 +248,6 @@ async def admin_resume_pipeline(
                     source_type=source_type,
                     source_file=source_file,
                     subject=subject,
-                    subject_id=subject_id,
                     options=opts,
                     db=resume_db,
                     progress_callback=_progress,
@@ -564,7 +562,7 @@ async def parse_text_questions(
     """解析用户粘贴的文本，返回结构化题目预览。"""
     from app.features.text_question_parser import parse_text_questions_async
 
-    result = await parse_text_questions_async(data.text, data.subject, db=db, subject_id=data.subject_id)
+    result = await parse_text_questions_async(data.text, data.subject, db=db)
     return TextParseResponse(**result)
 
 
@@ -837,7 +835,6 @@ async def batch_image_upload(
         job_id=job_id,
         sources=sources,
         subject=subject,
-        subject_id=subject_id,
         concurrency=concurrency,
         created_by=f"admin:{current_admin.id}",
         batch_import_id=batch_id,
@@ -866,7 +863,6 @@ async def batch_image_upload(
         job_id=job_id,
         sources=sources,
         subject=subject,
-        subject_id=subject_id,
         options=options,
         concurrency=concurrency,
     )
@@ -975,7 +971,7 @@ async def reparse_batch_image_item(
     from app.features import batch_image_import_service as batch_svc
 
     try:
-        return await batch_svc.reparse_item_from_cache(db, item_id, subject, subject_id=subject_id)
+        return await batch_svc.reparse_item_from_cache(db, item_id, subject)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 

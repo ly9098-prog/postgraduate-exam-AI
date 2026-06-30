@@ -396,7 +396,6 @@ async def submit_to_review(
                 batch_id=batch_id,
                 source_type=source_type,
                 source_file=source_file or None,
-                subject=qi_subject,
                 subject_id=qi_subject_id,
                 question_type=question_type or None,
                 raw_data=q,
