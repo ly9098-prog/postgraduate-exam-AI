@@ -96,7 +96,7 @@ async def sync_question_knowledge_points(
 
     for kp_name in kp_names:
         try:
-            kp = await get_or_create_knowledge_point(db, question.subject, kp_name)
+            kp = await get_or_create_knowledge_point(db, question.subject_ref.code if question.subject_ref else None, kp_name)
         except ValueError:
             skipped += 1
             continue
