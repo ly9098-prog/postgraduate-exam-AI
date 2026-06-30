@@ -54,8 +54,8 @@ Page({
       duration,
       durationText: this._fmt(duration),
       passRate,
-      subject: options.subject || '',
-      subjectDisplay: this.subjectLabel(options.subject || '') || '练习',
+      subject: options.subject_id || '',
+      subjectDisplay: decodeURIComponent(options.subject_name || '') || '练习',
       results,
       ...this._celebrationCopy(passRate, correct, wrong, total),
     })
@@ -150,11 +150,6 @@ Page({
       clearTimeout(this._celebrationTimer)
       this._celebrationTimer = null
     }
-  },
-
-  subjectLabel(s) {
-    const map = { math2: '数学二', exam408: '408', english: '英语' }
-    return map[s] || s || ''
   },
 
   toggleDetail() {

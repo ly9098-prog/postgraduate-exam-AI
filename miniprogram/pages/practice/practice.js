@@ -152,8 +152,9 @@ function _isAnswerCorrect(q, answer) {
 Page({
   data: {
     // 设置
-    selectedSubject: '',
-    selectedSubjectLabel: '',
+    subjectTree: [],
+    selectedSubjectId: null,
+    selectedSubjectName: '',
     selectedMode: 'random',
     count: 5,
     started: false,
@@ -222,6 +223,7 @@ Page({
     this.setData({ enableMathImage: config.enableMathImage || false })
     setRenderGuardPage('practice')
     resetRenderGuard()
+    this.loadPracticeSubjects()
   },
 
   onUnload() {
@@ -238,11 +240,30 @@ Page({
 
   /* ==================== 设置阶段 ==================== */
 
+  async loadPracticeSubjects() {
+    try {
+      const res = await api.get('/practice/subjects')
+      const subjectTree = res || []
+      this.setData({ subjectTree })
+      // 默认选中第一个一级科目
+      if (subjectTree.length > 0) {
+        this.setData({
+          selectedSubjectId: subjectTree[0].subject_id,
+          selectedSubjectName: subjectTree[0].display_name,
+        })
+      }
+    } catch (e) {
+      console.error('加载科目树失败', e)
+      wx.showToast({ title: '加载科目失败', icon: 'none' })
+    }
+  },
+
   chooseSubject(e) {
-    const selectedSubject = e.currentTarget.dataset.subject
+    const subjectId = Number(e.currentTarget.dataset.subjectId)
+    const subjectName = e.currentTarget.dataset.subjectName
     this.setData({
-      selectedSubject,
-      selectedSubjectLabel: this.subjectLabel(selectedSubject),
+      selectedSubjectId: subjectId,
+      selectedSubjectName: subjectName,
     })
   },
 
@@ -311,8 +332,15 @@ Page({
   async _loadQuestions() {
     this.setData({ loading: true })
     try {
+      const subjectId = this.data.selectedSubjectId
+      if (!subjectId) {
+        wx.showToast({ title: '请选择科目', icon: 'none' })
+        this.setData({ loading: false })
+        return
+      }
       const params = {
-        subject: this.data.selectedSubject,
+        subject_id: subjectId,
+        include_children: true,
         count: this.data.count || 5,
         mode: this.data.selectedMode || 'random',
         _traceId: this.data.traceId,
@@ -335,10 +363,10 @@ Page({
       if (questions.length > 0) {
         this._showQuestion(0)
       } else {
-        const label = this.subjectLabel(this.data.selectedSubject) || this.data.selectedSubject
+        const name = this.data.selectedSubjectName || String(subjectId)
         wx.showModal({
           title: '该科目暂无题目',
-          content: `「${label}」目前没有已发布的题目。\n请确认：\n1. 导入批次已审核通过\n2. 题目科目分类是否正确（导入时混合 PDF 可能被错分）\n3. 试试其他科目分类`,
+          content: `「${name}」目前没有已发布的题目。\n请确认：\n1. 导入批次已审核通过\n2. 题目科目分类是否正确（导入时混合 PDF 可能被错分）\n3. 试试其他科目分类`,
           showCancel: true,
           confirmText: '返回',
           cancelText: '继续等待',
@@ -846,7 +874,7 @@ Page({
 
   async doSubmit(skipConfirm) {
     if (this.data.submitting) return
-    const { answerMap, questions, startTime, selectedSubject, comboCount } = this.data
+    const { answerMap, questions, startTime, selectedSubjectId, selectedSubjectName, comboCount } = this.data
     const total = questions.length || 0
     const answeredFlags = _buildAnsweredFlags(questions, answerMap)
     const answeredCount = _countAnswered(answeredFlags)
@@ -905,7 +933,8 @@ Page({
         correct: result.total_correct || 0,
         wrong: result.total_wrong || 0,
         total,
-        subject: selectedSubject,
+        subject_id: selectedSubjectId,
+        subject_name: selectedSubjectName,
         duration,
         traceId: result.trace_id || this.data.traceId,
         results: result.results || [],
@@ -918,7 +947,8 @@ Page({
           `?correct=${result.total_correct || 0}`,
           `&wrong=${result.total_wrong || 0}`,
           `&total=${total}`,
-          `&subject=${selectedSubject}`,
+          `&subject_id=${selectedSubjectId}`,
+          `&subject_name=${encodeURIComponent(selectedSubjectName || '')}`,
           `&duration=${duration}`,
         ].join(''),
       })
@@ -943,24 +973,14 @@ Page({
 
   /* ==================== 工具 ==================== */
 
-  subjectLabel(s) {
-    const map = {
-      math2: '数学二', 'math2-calculus': '数学二·高数', 'math2-linalg': '数学二·线代',
-      exam408: '408', 'exam408-ds': '408·DS', 'exam408-os': '408·OS',
-      'exam408-co': '408·CO', 'exam408-cn': '408·CN',
-      english: '英语',
-    }
-    return map[s] || s || ''
-  },
-
   modeLabel(m) {
     const map = { random: '随机', sequential: '顺序', smart: '智能推荐' }
     return map[m] || m || ''
   },
 
   goPomodoro() {
-    const subj = this.data.selectedSubject || ''
-    wx.navigateTo({ url: `/pages/pomodoro/pomodoro?subject=${subj}` })
+    const subjectId = this.data.selectedSubjectId || ''
+    wx.navigateTo({ url: `/pages/pomodoro/pomodoro?subject_id=${subjectId}` })
   },
 
   onUnload() {

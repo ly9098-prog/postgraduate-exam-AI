@@ -67,7 +67,10 @@ def _make_question_mock(id=10, subject="math2", question_type="single_choice",
                         content=None, options=None, answer="A", analysis="test"):
     q = MagicMock()
     q.id = id
-    q.subject = subject
+    q.subject_id = 1
+    subj_ref = MagicMock()
+    subj_ref.code = subject
+    q.subject_ref = subj_ref
     q.question_type = question_type
     q.content = content or {"text": "Test question stem"}
     q.options = options or {"A": "option a", "B": "option b"}
