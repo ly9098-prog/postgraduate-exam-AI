@@ -8,7 +8,6 @@ class AdminDashboardOverview(BaseModel):
     users_new_today: int
     questions_total: int
     questions_pending_review: int
-    questions_approved: int
     imports_total: int
     imports_pending: int
     audit_critical_today: int

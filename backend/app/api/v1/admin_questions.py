@@ -4,13 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
 from app.schemas.admin_questions import (
-    AdminQuestionBatchRejectRequest,
     AdminQuestionBatchRequest,
     AdminQuestionBatchResult,
     AdminQuestionDetail,
     AdminQuestionListItem,
     AdminQuestionPatchRequest,
-    AdminQuestionRejectRequest,
     AdminQuestionToggleActiveRequest,
     AdminQuestionVersionDetail,
     AdminQuestionVersionListItem,
@@ -18,15 +16,11 @@ from app.schemas.admin_questions import (
 from app.schemas.common import paginated_response
 from app.schemas.vector import EmbeddingBackfillRequest
 from app.services.admin_question_service import (
-    approve_admin_question,
-    batch_approve_admin_questions,
     batch_delete_admin_questions,
-    batch_reject_admin_questions,
     get_admin_question_detail,
     get_question_version_detail,
     list_admin_questions,
     list_question_versions,
-    reject_admin_question,
     soft_delete_admin_question,
     toggle_active_admin_question,
     update_admin_question,
@@ -80,30 +74,6 @@ async def batch_delete_questions(
     db: AsyncSession = Depends(get_db),
 ):
     result = await batch_delete_admin_questions(db, data.ids, current_admin, request)
-    await db.commit()
-    return result
-
-
-@router.post("/batch-approve", response_model=AdminQuestionBatchResult)
-async def batch_approve_questions(
-    data: AdminQuestionBatchRequest,
-    request: Request,
-    current_admin=Depends(require_permissions("question:batch_review")),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await batch_approve_admin_questions(db, data, current_admin, request)
-    await db.commit()
-    return result
-
-
-@router.post("/batch-reject", response_model=AdminQuestionBatchResult)
-async def batch_reject_questions(
-    data: AdminQuestionBatchRejectRequest,
-    request: Request,
-    current_admin=Depends(require_permissions("question:batch_review")),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await batch_reject_admin_questions(db, data, current_admin, request)
     await db.commit()
     return result
 
@@ -194,41 +164,6 @@ async def delete_question(
         await soft_delete_admin_question(db, question_id, current_admin, request)
         await db.commit()
         return {"status": "ok"}
-    except ValueError as exc:
-        await db.rollback()
-        _raise_question_error(exc)
-
-
-@router.post("/{question_id}/approve", response_model=AdminQuestionListItem)
-async def approve_question(
-    question_id: int,
-    request: Request,
-    current_admin=Depends(require_permissions("question:review")),
-    db: AsyncSession = Depends(get_db),
-):
-    try:
-        question = await approve_admin_question(db, question_id, current_admin, request)
-        await db.commit()
-        await db.refresh(question)
-        return question
-    except ValueError as exc:
-        await db.rollback()
-        _raise_question_error(exc)
-
-
-@router.post("/{question_id}/reject", response_model=AdminQuestionListItem)
-async def reject_question(
-    question_id: int,
-    data: AdminQuestionRejectRequest,
-    request: Request,
-    current_admin=Depends(require_permissions("question:review")),
-    db: AsyncSession = Depends(get_db),
-):
-    try:
-        question = await reject_admin_question(db, question_id, data, current_admin, request)
-        await db.commit()
-        await db.refresh(question)
-        return question
     except ValueError as exc:
         await db.rollback()
         _raise_question_error(exc)

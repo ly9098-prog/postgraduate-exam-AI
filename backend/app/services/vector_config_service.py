@@ -232,12 +232,19 @@ def get_embedding_config_sync() -> EmbeddingConfig:
 
 async def test_embedding_connection(
     api_base_url: str,
-    api_key: str,
+    api_key: str | None,
     model: str,
     dim: int = 1024,
     timeout: int = 30,
 ) -> EmbeddingTestResponse:
     """对给定 Embedding 配置发起一次最小连通性测试。"""
+    if not api_key:
+        return EmbeddingTestResponse(
+            success=False, status="auth_error",
+            message="未配置 API Key，请先在上方输入并保存",
+            latency_ms=0,
+        )
+
     import time as _time
 
     url = f"{api_base_url.rstrip('/')}/v1/embeddings"

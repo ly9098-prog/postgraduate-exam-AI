@@ -54,10 +54,10 @@ class VectorConfigPatchRequest(BaseModel):
 
 
 class EmbeddingTestRequest(BaseModel):
-    """测试 Embedding API 连通性。"""
+    """测试 Embedding API 连通性。api_key 为空时从 DB 读取已存储的 key。"""
 
     api_base_url: str
-    api_key: str
+    api_key: str | None = None
     model: str
     dim: int = 1024
     timeout: int = 30

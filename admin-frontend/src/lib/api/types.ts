@@ -426,7 +426,6 @@ export type DashboardOverview = {
   users_new_today: number;
   questions_total: number;
   questions_pending_review: number;
-  questions_approved: number;
   imports_total: number;
   imports_pending: number;
   audit_critical_today: number;

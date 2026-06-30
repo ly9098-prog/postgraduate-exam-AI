@@ -82,7 +82,8 @@ export function VectorConfigSection() {
         method: "POST",
         body: JSON.stringify({
           api_base_url: form.embedding_base_url ?? config.data?.embedding_base_url ?? "",
-          api_key: form.embedding_api_key ?? "",
+          // 用户未在表单中输入新 key 时不传 api_key，后端自动使用 DB 中已存储的 key
+          ...(form.embedding_api_key ? { api_key: form.embedding_api_key } : {}),
           model: form.embedding_model ?? config.data?.embedding_model ?? "",
           dim: form.embedding_dim ?? config.data?.embedding_dim ?? 1024,
           timeout: form.embedding_timeout ?? config.data?.embedding_timeout ?? 30,
@@ -360,7 +361,7 @@ export function VectorConfigSection() {
                     className={inputCls}
                     value={
                       form.embedding_api_key ??
-                      (keyEditing ? "" : c.embedding_api_key_configured ? "••••••••••" : "")
+                      (keyEditing ? "" : c.embedding_api_key_configured ? "••••••••••••••••••••••••••••••" : "")
                     }
                     onChange={(e) => {
                       if (!keyEditing) setKeyEditing(true);

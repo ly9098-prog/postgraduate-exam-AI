@@ -1,24 +1,18 @@
 import logging
-from datetime import datetime
 from typing import Any
 
 from fastapi import Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow
 from app.core.admin_security import AdminPrincipal
-from app.models.admin import Permission, QuestionVersion, RolePermission
+from app.models.admin import QuestionVersion
 from app.models.question import Question
 from app.models.question_import import QuestionImport
-from app.features.question_pipeline import normalizer
 from app.schemas.admin_questions import (
     AdminQuestionBatchFailure,
-    AdminQuestionBatchRejectRequest,
-    AdminQuestionBatchRequest,
     AdminQuestionBatchResult,
     AdminQuestionPatchRequest,
-    AdminQuestionRejectRequest,
     AdminQuestionToggleActiveRequest,
 )
 from app.services.admin_audit_service import write_admin_audit
@@ -116,15 +110,6 @@ async def get_admin_question_detail(db: AsyncSession, question_id: int) -> dict[
     return data
 
 
-async def admin_has_permission(db: AsyncSession, operator: AdminPrincipal, permission_name: str) -> bool:
-    result = await db.execute(
-        select(Permission.name)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .where(RolePermission.role_id == operator.role_id, Permission.name == permission_name)
-    )
-    return result.scalar_one_or_none() == permission_name
-
-
 async def _next_question_version(db: AsyncSession, question_id: int) -> int:
     version = await db.scalar(select(func.max(QuestionVersion.version)).where(QuestionVersion.question_id == question_id))
     return int(version or 0) + 1
@@ -174,10 +159,6 @@ async def update_admin_question(
     for field in _EDIT_FIELDS:
         if field in update_data:
             setattr(question, field, update_data[field])
-
-    if not await admin_has_permission(db, operator, "question:review"):
-        question.review_status = "re_pending"
-        question.is_active = False
 
     await db.flush()
     await write_admin_audit(
@@ -232,109 +213,6 @@ async def batch_delete_admin_questions(
     return AdminQuestionBatchResult(success_ids=success_ids, failed_items=failed_items)
 
 
-async def _sync_import_review(
-    db: AsyncSession,
-    question: Question,
-    operator: AdminPrincipal,
-    status: str,
-    reject_reason: str | None = None,
-) -> None:
-    result = await db.execute(select(QuestionImport).where(QuestionImport.question_id == question.id))
-    now = utcnow()
-    for item in result.scalars().all():
-        item.status = status
-        item.reject_reason = reject_reason
-        item.reviewed_by = operator.id
-        item.reviewed_at = now
-
-
-async def _find_duplicate_question_by_hash(db: AsyncSession, question: Question) -> Question | None:
-    question_hash = question.question_hash or normalizer.build_question_hash(
-        (question.content or {}).get("text", ""),
-        question.options,
-        question.answer,
-    )
-    if not question_hash:
-        return None
-    if question.question_hash != question_hash:
-        question.question_hash = question_hash
-    result = await db.execute(
-        select(Question).where(
-            Question.subject_id == question.subject_id,
-            Question.question_hash == question_hash,
-            Question.id != question.id,
-            Question.is_active == True,
-            Question.review_status == "approved",
-        )
-    )
-    duplicate = result.scalars().first()
-    logger.info(
-        "[DuplicateCheck] questionId=%s importId=%s hash=%s result=%s matchedId=%s",
-        question.id,
-        None,
-        question_hash,
-        "matched_question" if duplicate else "normal",
-        duplicate.id if duplicate else None,
-    )
-    return duplicate
-
-
-async def _ensure_no_admin_duplicate(db: AsyncSession, question: Question) -> None:
-    duplicate = await _find_duplicate_question_by_hash(db, question)
-    if duplicate:
-        raise ValueError(f"发现重复题目，重复题ID：{duplicate.id}")
-
-
-async def approve_admin_question(
-    db: AsyncSession,
-    question_id: int,
-    operator: AdminPrincipal,
-    request: Request | None = None,
-) -> Question:
-    question = await get_admin_question(db, question_id)
-    await _ensure_no_admin_duplicate(db, question)
-    before = {"review_status": question.review_status, "is_active": question.is_active}
-    question.review_status = "approved"
-    question.is_active = True
-    await _sync_import_review(db, question, operator, "approved")
-    await write_admin_audit(
-        db,
-        operator,
-        "question.approve",
-        "question",
-        question.id,
-        severity="important",
-        detail={"before": before, "after": {"review_status": question.review_status, "is_active": question.is_active}},
-        request=request,
-    )
-    return question
-
-
-async def reject_admin_question(
-    db: AsyncSession,
-    question_id: int,
-    data: AdminQuestionRejectRequest,
-    operator: AdminPrincipal,
-    request: Request | None = None,
-) -> Question:
-    question = await get_admin_question(db, question_id)
-    before = {"review_status": question.review_status, "is_active": question.is_active}
-    question.review_status = "rejected"
-    question.is_active = False
-    await _sync_import_review(db, question, operator, "rejected", data.reason)
-    await write_admin_audit(
-        db,
-        operator,
-        "question.reject",
-        "question",
-        question.id,
-        severity="important",
-        detail={"before": before, "after": {"review_status": question.review_status, "is_active": question.is_active, "reject_reason": data.reason}},
-        request=request,
-    )
-    return question
-
-
 async def toggle_active_admin_question(
     db: AsyncSession,
     question_id: int,
@@ -381,62 +259,3 @@ async def get_question_version_detail(db: AsyncSession, question_id: int, versio
     if not question_version:
         raise ValueError("版本不存在")
     return question_version
-
-
-async def batch_approve_admin_questions(
-    db: AsyncSession,
-    data: AdminQuestionBatchRequest,
-    operator: AdminPrincipal,
-    request: Request | None = None,
-) -> AdminQuestionBatchResult:
-    success_ids = []
-    failed_items = []
-    for question_id in data.ids:
-        try:
-            await approve_admin_question(db, question_id, operator, request)
-            await db.commit()
-            success_ids.append(question_id)
-        except ValueError as exc:
-            await db.rollback()
-            failed_items.append({"id": question_id, "error": str(exc)})
-    await write_admin_audit(
-        db,
-        operator,
-        "question.batch_approve",
-        "question",
-        None,
-        severity="critical",
-        detail={"success_ids": success_ids, "failed_items": failed_items},
-        request=request,
-    )
-    return AdminQuestionBatchResult(success_ids=success_ids, failed_items=failed_items)
-
-
-async def batch_reject_admin_questions(
-    db: AsyncSession,
-    data: AdminQuestionBatchRejectRequest,
-    operator: AdminPrincipal,
-    request: Request | None = None,
-) -> AdminQuestionBatchResult:
-    success_ids = []
-    failed_items = []
-    reject_data = AdminQuestionRejectRequest(reason=data.reason)
-    for question_id in data.ids:
-        try:
-            await reject_admin_question(db, question_id, reject_data, operator, request)
-            await db.commit()
-            success_ids.append(question_id)
-        except ValueError as exc:
-            await db.rollback()
-            failed_items.append({"id": question_id, "error": str(exc)})
-    await write_admin_audit(
-        db,
-        operator,
-        "question.batch_reject",
-        "question",
-        None,
-        severity="critical",
-        detail={"success_ids": success_ids, "failed_items": failed_items, "reason": data.reason},
-        request=request,
-    )
-    return AdminQuestionBatchResult(success_ids=success_ids, failed_items=failed_items)
