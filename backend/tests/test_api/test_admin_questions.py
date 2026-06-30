@@ -49,7 +49,7 @@ def _question(question_id=1, review_status="approved", is_active=True):
     now = datetime(2026, 5, 29)
     return Question(
         id=question_id,
-        subject="math",
+        subject_id=1,
         question_type="choice",
         content={"text": "题干"},
         options={"A": "1"},

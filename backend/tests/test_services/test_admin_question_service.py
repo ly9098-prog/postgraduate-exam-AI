@@ -4,9 +4,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core.admin_security import AdminPrincipal
-from app.models.admin import AdminUser, Permission, QuestionVersion
+from app.models.admin import AdminUser, QuestionVersion
 from app.models.question import Question
-from app.models.question_import import QuestionImport
 from app.schemas.admin_questions import (
     AdminQuestionPatchRequest,
     AdminQuestionToggleActiveRequest,
@@ -43,10 +42,8 @@ class _Result:
 
 
 class _Db:
-    def __init__(self, question=None, imports=None, permission_names=None, max_version=None):
+    def __init__(self, question=None, max_version=None):
         self.question = question
-        self.imports = imports or []
-        self.permission_names = permission_names or []
         self.max_version = max_version
         self.added = []
         self.commits = 0
@@ -67,16 +64,8 @@ class _Db:
     async def rollback(self):
         self.rollbacks += 1
 
-    async def execute(self, statement):
-        text = str(statement)
-        if "permissions" in text:
-            name = self.permission_names[0] if self.permission_names else None
-            return _Result(name)
-        if "question_imports" in text:
-            return _Result(values=self.imports)
-        if "questions" in text and "question_hash" in text:
-            return _Result(values=[])
-        if "question_versions" in text:
+    async def execute(self, _statement):
+        if "question_versions" in str(_statement):
             return _Result()
         return _Result(self.question)
 
@@ -93,7 +82,7 @@ def _question(review_status="approved", is_active=True):
     now = datetime(2026, 5, 29)
     return Question(
         id=1,
-        subject="math",
+        subject_id=1,
         question_type="choice",
         content={"text": "题干"},
         options={"A": "1"},
@@ -106,19 +95,6 @@ def _question(review_status="approved", is_active=True):
         is_active=is_active,
         created_at=now,
         updated_at=now,
-    )
-
-
-def _import_record():
-    return QuestionImport(
-        id=1,
-        batch_id="batch-1",
-        source_type="manual",
-        raw_data={"text": "raw"},
-        status="pending",
-        question_id=1,
-        created_at=datetime(2026, 5, 29),
-        updated_at=datetime(2026, 5, 29),
     )
 
 

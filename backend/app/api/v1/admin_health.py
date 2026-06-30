@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sqlalchemy import text
 
+from app.core.admin_security import require_permissions
 from app.core.cache import cache
 from app.core.database import async_session
 
@@ -13,7 +14,7 @@ async def live_health():
 
 
 @router.get("/ready")
-async def ready_health():
+async def ready_health(_=Depends(require_permissions("dashboard:read"))):
     db_status = "ok"
     redis_status = "degraded"
 
