@@ -24,7 +24,7 @@
     <view class="mission-strip learning-card motion-card-enter motion-delay-1">
       <view class="mission-strip-item">
         <text class="mission-strip-num">{{selectedSubjectName || '待选择'}}</text>
-        <text class="mission-strip-label">挑战科目</text>
+        <text class="mission-strip-label">当前科目</text>
       </view>
       <view class="mission-strip-divider"></view>
       <view class="mission-strip-item">
@@ -38,47 +38,84 @@
       </view>
     </view>
 
-    <view class="card learning-card challenge-card">
-      <view class="section-head">
+    <view class="card learning-card subject-panel">
+      <view class="subject-header">
         <view>
-          <text class="section-title">选择今天的战场</text>
-          <text class="section-subtitle">用一组短挑战快速校准状态</text>
+          <text class="subject-title">选择科目</text>
+          <text class="subject-desc">点击父级展开子级，再选择练习范围</text>
         </view>
-        <text class="section-chip">科目</text>
+        <text class="subject-badge">科目</text>
       </view>
-      <!-- 动态科目树渲染 -->
-      <view class="subject-grid">
+
+      <view class="selected-subject-bar">
+        <text class="selected-label">当前选择</text>
+        <text class="selected-name">{{selectedSubjectName || '请选择科目'}}</text>
+      </view>
+
+      <!-- 空状态 -->
+      <view class="subject-empty" wx:if="{{!subjectTree || subjectTree.length === 0}}">
+        <text class="subject-empty-text">暂无可练习科目</text>
+        <text class="subject-empty-hint">请先在后台添加并启用科目</text>
+      </view>
+
+      <!-- 纵向父级折叠列表 -->
+      <view class="subject-tree" wx:else>
         <view
           wx:for="{{subjectTree}}"
           wx:key="subject_id"
-          class="subject-item {{selectedSubjectId === item.subject_id ? 'active' : ''}}"
-          hover-class="tap-scale"
-          bindtap="chooseSubject"
-          data-subject-id="{{item.subject_id}}"
-          data-subject-name="{{item.display_name}}"
+          class="subject-parent-block {{expandedSubjectId === item.subject_id ? 'expanded' : ''}} {{selectedSubjectId === item.subject_id && (!item.children || item.children.length === 0) ? 'selected' : ''}}"
         >
-          <text class="subject-icon subject-icon-text">{{item.display_name[0]}}</text>
-          <text class="subject-name">{{item.display_name}}</text>
-          <text class="subject-desc" wx:if="{{item.children && item.children.length > 0}}">{{item.children.length}} 个子科目</text>
-          <text class="subject-desc" wx:else>全部题目</text>
+          <!-- 父级行：点击展开/收起 -->
+          <view
+            class="subject-parent-row {{expandedSubjectId === item.subject_id ? 'expanded' : ''}} {{selectedSubjectId === item.subject_id && (!item.children || item.children.length === 0) ? 'selected' : ''}}"
+            hover-class="tap-scale"
+            bindtap="toggleParentSubject"
+            data-subject-id="{{item.subject_id}}"
+            data-subject-name="{{item.display_name}}"
+            data-has-children="{{item.children && item.children.length > 0}}"
+          >
+            <view class="parent-main">
+              <text class="parent-name">{{item.display_name}}</text>
+              <text class="parent-meta" wx:if="{{item.children && item.children.length > 0}}">
+                {{item.children.length}} 个子科目
+              </text>
+              <text class="parent-meta parent-meta-leaf" wx:else>可直接选择</text>
+            </view>
+            <view class="parent-right">
+              <text
+                class="parent-check line-icon icon-check"
+                wx:if="{{selectedSubjectId === item.subject_id && (!item.children || item.children.length === 0)}}"
+              ></text>
+              <text
+                class="parent-arrow line-icon icon-chevron-down {{expandedSubjectId === item.subject_id ? 'up' : ''}}"
+                wx:if="{{item.children && item.children.length > 0}}"
+              ></text>
+            </view>
+          </view>
+
+          <!-- 子级 chip 网格：嵌套在父级内部，仅该父级展开时渲染 -->
+          <view
+            class="child-subject-wrap"
+            wx:if="{{expandedSubjectId === item.subject_id && item.children && item.children.length > 0}}"
+          >
+            <view
+              wx:for="{{item.children}}"
+              wx:key="subject_id"
+              class="child-subject-chip {{selectedSubjectId === item.subject_id ? 'active' : ''}}"
+              hover-class="tap-scale"
+              catchtap="chooseChildSubject"
+              data-subject-id="{{item.subject_id}}"
+              data-subject-name="{{item.display_name}}"
+            >
+              <text class="child-subject-name">{{item.display_name}}</text>
+              <text
+                class="child-subject-check line-icon icon-check"
+                wx:if="{{selectedSubjectId === item.subject_id}}"
+              ></text>
+            </view>
+          </view>
         </view>
       </view>
-
-      <!-- 子科目选择（当选中科目有子科目时显示） -->
-      <block wx:for="{{subjectTree}}" wx:key="subject_id">
-        <view wx:if="{{selectedSubjectId === item.subject_id && item.children && item.children.length > 0}}" class="sub-tab-row">
-          <view class="sub-tab {{selectedSubjectId === item.subject_id ? 'active' : ''}}" bindtap="chooseSubject" data-subject-id="{{item.subject_id}}" data-subject-name="{{item.display_name}}">全部</view>
-          <view
-            wx:for="{{item.children}}"
-            wx:for-item="child"
-            wx:key="subject_id"
-            class="sub-tab {{selectedSubjectId === child.subject_id ? 'active' : ''}}"
-            bindtap="chooseSubject"
-            data-subject-id="{{child.subject_id}}"
-            data-subject-name="{{child.display_name}}"
-          >{{child.display_name}}</view>
-        </view>
-      </block>
     </view>
 
     <view class="card learning-card" wx:if="{{selectedSubjectId}}">
