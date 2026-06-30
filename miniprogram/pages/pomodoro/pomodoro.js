@@ -102,8 +102,12 @@ Page({
     })
 
     if (opts.subject) {
+      // 兼容旧版：直接传 subject code
       const mapped = this._mapPracticeSubject(opts.subject)
       this.setData({ fromSubject: mapped, selectedSubject: mapped })
+    } else if (opts.subject_id) {
+      // 新版：传 subject_id，从 API 获取 code 后映射
+      this._resolveAndMapSubjectId(opts.subject_id)
     }
     if (opts.chapterId) this.setData({ fromChapterId: opts.chapterId })
     if (opts.chapterName) this.setData({ fromChapterName: decodeURIComponent(opts.chapterName) })
@@ -836,5 +840,36 @@ Page({
       'english': 'english',
     }
     return map[raw] || raw
+  },
+
+  async _resolveAndMapSubjectId(subjectId) {
+    try {
+      const tree = await api.get('/practice/subjects')
+      if (!tree || !Array.isArray(tree)) return
+      // 在树中查找 subject_id 对应的 subject_code
+      const idNum = Number(subjectId)
+      let code = ''
+      for (const node of tree) {
+        if (node.subject_id === idNum) {
+          code = node.subject_code
+          break
+        }
+        if (node.children && node.children.length) {
+          for (const child of node.children) {
+            if (child.subject_id === idNum) {
+              code = child.subject_code
+              break
+            }
+          }
+        }
+        if (code) break
+      }
+      if (code) {
+        const mapped = this._mapPracticeSubject(code)
+        this.setData({ fromSubject: mapped, selectedSubject: mapped })
+      }
+    } catch (e) {
+      console.warn('解析科目ID失败', e)
+    }
   },
 })

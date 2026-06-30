@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.question import Question
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
@@ -56,7 +57,7 @@ async def get_today_review(
     questions_map = {}
     if question_ids:
         q_result = await db.execute(
-            select(Question).where(Question.id.in_(question_ids))
+            select(Question).options(selectinload(Question.subject_ref)).where(Question.id.in_(question_ids))
         )
         all_questions = list(q_result.scalars().all())
         questions_map = {q.id: q for q in all_questions}
@@ -74,7 +75,7 @@ async def get_today_review(
         questions.append({
             "schedule_id": s.id,
             "question_id": s.question_id,
-            "subject": q.subject,
+            "subject": q.subject_ref.code if q.subject_ref else None,
             "question_type": q.question_type,
             "stem": stem,
             "options": q.options or {},
@@ -371,10 +372,12 @@ async def auto_schedule_wrong_question(
     else:
         # 获取题目科目
         q_result = await db.execute(
-            select(Question).where(Question.id == question_id)
+            select(Question)
+            .options(selectinload(Question.subject_ref))
+            .where(Question.id == question_id)
         )
         question = q_result.scalar_one_or_none()
-        subject = question.subject if question else None
+        subject = question.subject_ref.code if question and question.subject_ref else None
 
         schedule = ReviewSchedule(
             user_id=user_id,

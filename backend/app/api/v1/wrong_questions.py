@@ -3,6 +3,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -97,7 +98,7 @@ def enrich_wq(wq, question):
         review_count=wq.review_count,
         created_at=wq.created_at,
         updated_at=wq.updated_at,
-        subject=question.subject if question else None,
+        subject=question.subject_ref.code if question and question.subject_ref else None,
         content=_sanitize_content(question.content) if question else None,
         options=_sanitize_options(question.options) if question else None,
         answer=question.answer if question else None,
@@ -122,7 +123,7 @@ async def list_wrong(
     question_ids = [w.question_id for w in items]
     if question_ids:
         result = await db.execute(
-            select(Question).where(Question.id.in_(question_ids))
+            select(Question).options(selectinload(Question.subject_ref)).where(Question.id.in_(question_ids))
         )
         questions = {q.id: q for q in result.scalars().all()}
     else:
@@ -156,7 +157,9 @@ async def get_wrong(
     if not wq:
         raise HTTPException(status_code=404, detail="错题记录不存在")
 
-    result = await db.execute(select(Question).where(Question.id == wq.question_id))
+    result = await db.execute(
+        select(Question).options(selectinload(Question.subject_ref)).where(Question.id == wq.question_id)
+    )
     question = result.scalar_one_or_none()
     return enrich_wq(wq, question)
 
@@ -175,7 +178,7 @@ async def update_wrong(
         raise HTTPException(status_code=404, detail="错题记录不存在")
 
     result = await db.execute(
-        select(Question).where(Question.id == wq.question_id)
+        select(Question).options(selectinload(Question.subject_ref)).where(Question.id == wq.question_id)
     )
     question = result.scalar_one_or_none()
     return enrich_wq(wq, question)
@@ -193,7 +196,7 @@ async def rate_quality(
         raise HTTPException(status_code=404, detail="错题记录不存在")
 
     result = await db.execute(
-        select(Question).where(Question.id == wq.question_id)
+        select(Question).options(selectinload(Question.subject_ref)).where(Question.id == wq.question_id)
     )
     question = result.scalar_one_or_none()
     return enrich_wq(wq, question)
