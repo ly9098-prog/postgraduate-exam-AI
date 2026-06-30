@@ -91,12 +91,21 @@ async def sync_question_knowledge_points(
     if not kp_names:
         return {"created": 0, "skipped": 0, "total": 0}
 
+    # subject_ref 是 lazy="noload" 需要显式加载；若无有效 subject 则跳过
+    subject = question.subject_ref.code if question.subject_ref else None
+    if not subject:
+        logger.warning(
+            "sync_question_knowledge_points: qid=%d has no valid subject, skipping %d kps",
+            question.id, len(kp_names),
+        )
+        return {"created": 0, "skipped": len(kp_names), "total": len(kp_names)}
+
     created = 0
     skipped = 0
 
     for kp_name in kp_names:
         try:
-            kp = await get_or_create_knowledge_point(db, question.subject_ref.code if question.subject_ref else None, kp_name)
+            kp = await get_or_create_knowledge_point(db, subject, kp_name)
         except ValueError:
             skipped += 1
             continue
