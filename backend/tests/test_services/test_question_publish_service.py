@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+# Import Subject to ensure SQLAlchemy can resolve the relationship
+from app.models.admin import Subject  # noqa: F401
 from app.features.question_publish_service import (
     _migrate_old_approved,
     approve_and_publish,
@@ -95,7 +97,7 @@ def _make_pipeline_result(is_valid=True, subject="math2", stem="设函数 f(x)=x
         "warnings": warnings or [],
         "stem_hash": stem_hash,
         "question_fields": question_fields or {
-            "subject": subject,
+            "subject_id": 1,
             "question_type": "single_choice",
             "content": {"text": stem},
             "options": [{"key": "A", "text": "2x"}],

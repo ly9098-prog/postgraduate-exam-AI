@@ -114,7 +114,7 @@ class TestListSubjectOptions:
                     # First call: subjects query returns empty
                     return _Result(values=[])
                 # Second call: fallback returns legacy subject strings
-                return _Result(all_rows=[("math2",)])
+                return _Result(all_rows=[(None, "math2", "数学二")])
 
         db = Db()
         result = await list_subject_options(db)
@@ -230,7 +230,6 @@ class TestPublishPropagatesSubjectId:
             parsed_options={"A": "3", "B": "4", "C": "5", "D": "6"},
             parsed_answer="B",
             parsed_analysis="Simple addition",
-            subject="math2",
             subject_id=5,
             created_at=datetime(2026, 1, 1), updated_at=datetime(2026, 1, 1),
         )

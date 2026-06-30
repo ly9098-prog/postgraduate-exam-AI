@@ -690,6 +690,7 @@ async def _run_single_image(
     from app.services.ocr_service import clean_ocr_text, ocr_image
 
     ocr_mode = options.get("ocr_mode", "local")
+    ocr_start = _now()
 
     if ocr_mode == "api":
         # ── API 模式：使用 PaddleOCR-VL 替代本地 OCR ──
@@ -697,28 +698,16 @@ async def _run_single_image(
         skip_ocr_correction = True
     else:
         # ── 本地模式：本地 PaddleOCR ──
-        ocr_start = _now()
         raw_ocr_text = await asyncio.to_thread(ocr_image, content)
-        ocr_duration = int((_now() - ocr_start).total_seconds() * 1000)
-
-        logger.info(
-            "【OCR-1】PaddleOCR 原始结果 | file=%s chars=%d lines=%d\n%s",
-            source_file, len(raw_ocr_text), raw_ocr_text.count("\n") + 1,
-            raw_ocr_text[:2000],
-        )
-
-        # Trace: OCR done
-        await _update_item_with_trace(
-            item_id, job_id,
-            fields={},
-            trace=_TraceData(
-                step="ocr", status="success",
-                message=f"OCR 识别完成 ({ocr_duration}ms)",
-                duration_ms=ocr_duration,
-                item_seq=seq,
-            ),
-        )
         skip_ocr_correction = False
+
+    ocr_duration = int((_now() - ocr_start).total_seconds() * 1000)
+
+    logger.info(
+        "【OCR-1】OCR 原始结果 | file=%s mode=%s chars=%d lines=%d\n%s",
+        source_file, ocr_mode, len(raw_ocr_text), raw_ocr_text.count("\n") + 1,
+        raw_ocr_text[:2000],
+    )
 
     cleaned_text = clean_ocr_text(raw_ocr_text)
     logger.info(
@@ -728,19 +717,31 @@ async def _run_single_image(
         cleaned_text[:2000],
     )
 
-    # 先缓存 OCR 文本（即便后续解析失败，也能支持不重复 OCR 的重新解析）
+    # 空文本检查 —— 在写入 trace 之前，避免误报 success
+    if not cleaned_text.strip():
+        await _update_item_with_trace(
+            item_id, job_id,
+            fields={"ocr_raw_text": raw_ocr_text, "ocr_cleaned_text": cleaned_text},
+            trace=_TraceData(
+                step="ocr", status="failed",
+                message=f"OCR 未识别到可导入文本 ({ocr_duration}ms)",
+                duration_ms=ocr_duration,
+                item_seq=seq,
+            ),
+        )
+        raise ValueError("图片 OCR 未识别到可导入文本")
+
+    # 单一 OCR 成功 trace event：缓存文本 + 记录耗时（local/api 统一）
     await _update_item_with_trace(
         item_id, job_id,
         fields={"ocr_raw_text": raw_ocr_text, "ocr_cleaned_text": cleaned_text},
         trace=_TraceData(
             step="ocr", status="success",
-            message="OCR 文本已缓存",
+            message=f"OCR 识别完成 ({ocr_duration}ms, {len(cleaned_text)}字)",
+            duration_ms=ocr_duration,
             item_seq=seq,
         ),
     )
-
-    if not cleaned_text.strip():
-        raise ValueError("图片 OCR 未识别到可导入文本")
 
     async with async_session() as pdb:
         from app.features.pipeline_orchestrator import run_import_pipeline

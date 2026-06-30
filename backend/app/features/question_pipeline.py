@@ -514,7 +514,6 @@ class QuestionNormalizer:
     def to_question_fields(self, question: dict) -> dict:
         fields = self.to_import_fields(question)
         return {
-            "subject": fields["subject"],
             "subject_id": fields.get("subject_id"),
             "question_type": fields["question_type"],
             "content": fields["parsed_content"],
