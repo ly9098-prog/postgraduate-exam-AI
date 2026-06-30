@@ -11,8 +11,6 @@ export type PermissionKey =
   | "admin-user:reset-password"
   | "question:read"
   | "question:write"
-  | "question:review"
-  | "question:batch_review"
   | "question:delete"
   | "role:read"
   | "role:write"

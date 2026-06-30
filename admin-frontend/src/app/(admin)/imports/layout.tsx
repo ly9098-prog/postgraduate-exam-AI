@@ -19,10 +19,6 @@ export default function ImportsLayout({ children }: { children: React.ReactNode 
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="font-mono text-xs uppercase tracking-[0.3em] text-[var(--color-text-hint)]">Import Center</p>
-        <h2 className="mt-2 font-display text-4xl font-bold text-[var(--ink)]">题目导入管理</h2>
-      </div>
       <nav className="flex flex-wrap gap-2 rounded-3xl border border-[var(--color-border)] bg-white/70 p-2 shadow-[var(--shadow-crisp)]">
         {importTabs.map((tab) => {
           const Icon = tab.icon;
