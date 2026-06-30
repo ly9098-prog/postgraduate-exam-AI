@@ -155,6 +155,7 @@ Page({
     subjectTree: [],
     selectedSubjectId: null,
     selectedSubjectName: '',
+    expandedSubjectId: null,
     selectedMode: 'random',
     count: 5,
     started: false,
@@ -229,6 +230,10 @@ Page({
   onUnload() {
     resetRenderGuard()
     this._clearTimer()
+    if (this._feedbackTimer) {
+      clearTimeout(this._feedbackTimer)
+      this._feedbackTimer = null
+    }
   },
 
   onShow() {
@@ -243,21 +248,166 @@ Page({
   async loadPracticeSubjects() {
     try {
       const res = await api.get('/practice/subjects')
-      const subjectTree = res || []
+      const subjectTree = this.normalizeSubjectTree(res || [])
       this.setData({ subjectTree })
-      // 默认选中第一个一级科目
-      if (subjectTree.length > 0) {
-        this.setData({
-          selectedSubjectId: subjectTree[0].subject_id,
-          selectedSubjectName: subjectTree[0].display_name,
-        })
-      }
+      this.initDefaultSubject(subjectTree)
     } catch (e) {
       console.error('加载科目树失败', e)
       wx.showToast({ title: '加载科目失败', icon: 'none' })
     }
   },
 
+  /**
+   * 规范化科目树。保留后端返回的已有树结构，不做展平-重建。
+   * - 如果节点已带 children，递归归一化每个子节点
+   * - 如果原始是平铺列表（含 parent_id），按 parent_id 组装树
+   * - 顶层只保留 level=1 或 parent_id 为空的节点
+   * - 过滤 is_active=false
+   * - 父级与子级均按 sort_order 升序
+   */
+  normalizeSubjectTree(raw) {
+    if (!Array.isArray(raw) || raw.length === 0) return []
+
+    const toId = (n) => (n.subject_id != null ? n.subject_id : n.id)
+    const toName = (n) => (n.display_name != null ? n.display_name : (n.name != null ? n.name : ''))
+    const toCode = (n) => (n.subject_code != null ? n.subject_code : (n.code != null ? n.code : ''))
+    const bySort = (a, b) => (a.sort_order - b.sort_order) || (a.subject_id - b.subject_id)
+
+    const normalize = (n) => {
+      if (!n) return null
+      if (n.is_active === false) return null
+      return {
+        subject_id: Number(toId(n)),
+        display_name: toName(n),
+        subject_code: toCode(n),
+        parent_id: n.parent_id != null ? Number(n.parent_id) : null,
+        level: n.level != null ? Number(n.level) : null,
+        path: n.path || '',
+        sort_order: n.sort_order != null ? Number(n.sort_order) : 0,
+        is_active: true,
+        children: Array.isArray(n.children)
+          ? n.children.map(normalize).filter(Boolean).sort(bySort)
+          : [],
+      }
+    }
+
+    // 先递归归一化（保留已有 children 结构）
+    const items = raw.map(normalize).filter(Boolean)
+    if (items.length === 0) return []
+
+    // 拆分父级与子级
+    const parentItems = []
+    const childItems = []
+    const nodes = {}
+
+    items.forEach((n) => {
+      nodes[n.subject_id] = n
+      const isParent = n.level === 1 || n.parent_id == null
+      if (isParent) parentItems.push(n)
+      else childItems.push(n)
+    })
+
+    // 将无父级 children 的子级挂到对应父级
+    childItems.forEach((child) => {
+      const parent = child.parent_id != null ? nodes[child.parent_id] : null
+      if (parent) {
+        if (!parent.children.some((c) => c.subject_id === child.subject_id)) {
+          parent.children.push(child)
+        }
+        parent.children.sort(bySort)
+      } else {
+        // 找不到父级，升级为根节点
+        parentItems.push(child)
+      }
+    })
+
+    parentItems.sort(bySort)
+    return parentItems
+  },
+
+  /**
+   * 初始化默认选中（方案 2：默认展开第一个父级并选中第一个子级）
+   * 保证 expandedSubjectId / selectedSubjectId / selectedSubjectName 同时被正确设置，
+   * 避免出现 selectedSubjectId 为空但页面看起来已选择的不一致状态。
+   */
+  initDefaultSubject(subjectTree) {
+    if (!subjectTree || subjectTree.length === 0) {
+      this.setData({
+        selectedSubjectId: null,
+        selectedSubjectName: '',
+        expandedSubjectId: null,
+      })
+      return
+    }
+    const first = subjectTree[0]
+    const children = Array.isArray(first.children) ? first.children : []
+    if (children.length > 0) {
+      const firstChild = children[0]
+      this.setData({
+        expandedSubjectId: first.subject_id,
+        selectedSubjectId: firstChild.subject_id,
+        selectedSubjectName: firstChild.display_name,
+      })
+    } else {
+      this.setData({
+        expandedSubjectId: first.subject_id,
+        selectedSubjectId: first.subject_id,
+        selectedSubjectName: first.display_name,
+      })
+    }
+  },
+
+  /**
+   * 点击父级科目行（纵向折叠列表）：
+   * - 有 children：纯 toggle expandedSubjectId（点击已展开的父级会收起；不修改 selectedSubjectId）
+   * - 无 children：该父级本身作为可选科目，更新 selectedSubjectId / selectedSubjectName
+   */
+  toggleParentSubject(e) {
+    const ds = e.currentTarget.dataset || {}
+    const subjectId = Number(ds.subjectId)
+    const subjectName = ds.subjectName
+    const hasChildren = ds.hasChildren === true || ds.hasChildren === 'true'
+    if (!subjectId) return
+
+    if (hasChildren) {
+      // 纯 toggle：已展开则收起，未展开则展开；不动 selectedSubjectId
+      const next = this.data.expandedSubjectId === subjectId ? null : subjectId
+      this.setData({ expandedSubjectId: next })
+    } else {
+      // 叶子父级：直接选中；展开态也指向它，让行显示 selected 视觉
+      if (
+        this.data.selectedSubjectId === subjectId &&
+        this.data.expandedSubjectId === subjectId
+      ) return
+      this.setData({
+        expandedSubjectId: subjectId,
+        selectedSubjectId: subjectId,
+        selectedSubjectName: subjectName,
+      })
+    }
+  },
+
+  /**
+   * 点击子级科目 chip：真正更新当前选中科目。
+   * 不自动开始练习，只更新选择；保持当前展开态不变。
+   */
+  chooseChildSubject(e) {
+    const ds = e.currentTarget.dataset || {}
+    const subjectId = Number(ds.subjectId)
+    const subjectName = ds.subjectName
+    if (!subjectId) return
+    // 已是当前选中项则跳过，避免无意义的 setData
+    if (this.data.selectedSubjectId === subjectId) return
+    this.setData({
+      selectedSubjectId: subjectId,
+      selectedSubjectName: subjectName,
+    })
+  },
+
+  /**
+   * 保留向后兼容：仅做纯粹选中（避免与父级展开逻辑混合）。
+   * 新流程中由 toggleParentSubject / chooseChildSubject 接管。
+   */
   chooseSubject(e) {
     const subjectId = Number(e.currentTarget.dataset.subjectId)
     const subjectName = e.currentTarget.dataset.subjectName
@@ -981,13 +1131,5 @@ Page({
   goPomodoro() {
     const subjectId = this.data.selectedSubjectId || ''
     wx.navigateTo({ url: `/pages/pomodoro/pomodoro?subject_id=${subjectId}` })
-  },
-
-  onUnload() {
-    this._clearTimer()
-    if (this._feedbackTimer) {
-      clearTimeout(this._feedbackTimer)
-      this._feedbackTimer = null
-    }
   },
 })

@@ -39,7 +39,9 @@ async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
             "subject_code": s.code,
             "subject_name": s.name,
             "display_name": s.name,
+            "parent_id": s.parent_id,
             "level": s.level,
+            "path": s.path,
             "sort_order": s.sort_order,
             "children": [],
         }
