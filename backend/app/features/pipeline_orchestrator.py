@@ -3319,6 +3319,7 @@ class ImportPipeline:
         source_file: str,
         source_type: str,
         subject: str | None = None,
+        subject_id: int | None = None,
         **_kw,
     ) -> dict:
         """Stage 5: normalize questions to standard schema (P5-2: delegated).
@@ -3335,6 +3336,7 @@ class ImportPipeline:
             source_file=source_file,
             source_type=source_type,
             subject=subject,
+            subject_id=subject_id,
             import_mode=_kw.get("import_mode"),
             exercise_regions_missing=bool(_kw.get("exercise_regions_missing")),
         )
@@ -3568,6 +3570,7 @@ class ImportPipeline:
         source_file: str,
         source_type: str,
         subject: str | None = None,
+        subject_id: int | None = None,
         db=None,
         **_kw,
     ) -> dict:
@@ -3577,6 +3580,7 @@ class ImportPipeline:
             source_file=source_file,
             source_type=source_type,
             subject=subject,
+            subject_id=subject_id,
             pipeline_id=self.pipeline_id,
             db=db,
         )
@@ -3591,6 +3595,7 @@ class ImportPipeline:
         source_type: str = "pdf",
         source_file: str = "",
         subject: str | None = None,
+        subject_id: int | None = None,
         options: dict | None = None,
         db=None,
         progress_callback=None,
@@ -3715,6 +3720,7 @@ class ImportPipeline:
                     source_type=source_type,
                     source_file=source_file,
                     subject=subject,
+                    subject_id=subject_id,
                     opts=opts,
                     db=db,
                     shared=shared,
@@ -3731,6 +3737,7 @@ class ImportPipeline:
                     source_type=source_type,
                     source_file=source_file,
                     subject=subject,
+                    subject_id=subject_id,
                     opts=opts,
                     db=db,
                     shared=shared,
@@ -3800,6 +3807,7 @@ class ImportPipeline:
         source_type: str,
         source_file: str,
         subject: str | None,
+        subject_id: int | None = None,
         opts: dict,
         db,
         shared: dict,
@@ -3871,6 +3879,7 @@ class ImportPipeline:
             "source_type": source_type,
             "source_file": source_file,
             "subject": subject,
+            "subject_id": subject_id,
             "options": opts,
             "db": db,
             "vision_config": vision_config,
@@ -4158,6 +4167,7 @@ class ImportPipeline:
         source_type: str,
         source_file: str,
         subject: str | None,
+        subject_id: int | None = None,
         opts: dict,
         db,
         shared: dict,
@@ -4214,6 +4224,7 @@ class ImportPipeline:
                 source_type=source_type,
                 source_file=source_file,
                 subject=subject,
+                subject_id=subject_id,
                 opts=opts,
                 db=db,
                 shared=shared,
@@ -4301,6 +4312,7 @@ class ImportPipeline:
         source_type: str,
         source_file: str,
         subject: str | None,
+        subject_id: int | None = None,
         opts: dict,
         db,
         shared: dict,
@@ -4408,6 +4420,7 @@ class ImportPipeline:
                         source_type=source_type,
                         source_file=source_file,
                         subject=subject,
+                        subject_id=subject_id,
                         opts=opts,
                         db=chunk_db,
                         shared=shared,
@@ -4514,6 +4527,7 @@ async def run_import_pipeline(
     source_type: str = "pdf",
     source_file: str = "",
     subject: str | None = None,
+    subject_id: int | None = None,
     options: dict | None = None,
     db=None,
     progress_callback=None,
@@ -4592,6 +4606,7 @@ async def run_import_pipeline(
             source_type=source_type,
             source_file=source_file,
             subject=subject,
+            subject_id=subject_id,
             options=opts,
             db=db,
             progress_callback=progress_callback,
@@ -4628,6 +4643,7 @@ async def run_pipeline_background(
     file_content: bytes | None = None,
     file_path: str | None = None,
     subject: str | None = None,
+    subject_id: int | None = None,
     options: dict | None = None,
     db=None,
     created_by: str | None = None,
@@ -4672,6 +4688,7 @@ async def run_pipeline_background(
             source_type=source_type,
             source_file=source_file,
             subject=subject,
+            subject_id=subject_id,
             options=options,
             db=db,
             progress_callback=_progress,
@@ -4773,6 +4790,7 @@ async def resume_pipeline_background(
     pipeline_id: str,
     file_path: str,
     subject: str | None = None,
+    subject_id: int | None = None,
     options: dict | None = None,
     db,
 ) -> None:
@@ -4826,6 +4844,17 @@ async def resume_pipeline_background(
     if pipeline_row is None:
         logger.warning("resume_pipeline_background: pipeline %s missing, abort", pipeline_id)
         return
+
+    # Recover subject_id from checkpoint if caller didn't pass it
+    if subject_id is None:
+        try:
+            ckpt_data = await ckpt.get_stage_checkpoint(pipeline_id)
+            if ckpt_data:
+                subject_id = ckpt_data.get("subject_id")
+                if not subject and ckpt_data.get("subject"):
+                    subject = ckpt_data["subject"]
+        except Exception:
+            logger.debug("resume: could not read checkpoint for subject_id recovery")
 
     pending = await ckpt.get_pending_chunks(db, pipeline_id)
     if not pending:
@@ -4950,6 +4979,7 @@ async def resume_pipeline_background(
                     source_type=pipeline_row.source_type or "pdf",
                     source_file=pipeline_row.source_file or "",
                     subject=subject,
+                    subject_id=subject_id,
                     opts=opts,
                     db=chunk_db,
                     shared=shared,

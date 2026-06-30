@@ -35,7 +35,8 @@ class ImportBatchJob(Base):
 
     job_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     source_type: Mapped[str] = mapped_column(String(16), nullable=False, default="image")
-    subject: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    subject_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True)
+    subject_ref = relationship("Subject", foreign_keys=[subject_id], lazy="selectin")
     total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     # Status values defined in pipeline_enums.BatchJobStatus

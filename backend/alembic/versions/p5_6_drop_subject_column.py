@@ -1,7 +1,7 @@
 """Drop questions.subject column — subject_id is now the only identifier.
 
 Revision ID: p5_6_drop_subject_column
-Revises: p5_5_vector_config
+Revises: p5_5_1_fix_subjects
 Create Date: 2026-06-29
 
 Prerequisites:
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 
 revision = "p5_6_drop_subject_column"
-down_revision = "p5_5_vector_config"
+down_revision = "p5_5_1_fix_subjects"
 branch_labels = None
 depends_on = None
 

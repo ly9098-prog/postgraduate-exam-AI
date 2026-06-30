@@ -168,9 +168,19 @@ def _sanitize_question_options(options: dict | None) -> dict | None:
 router = APIRouter(prefix="/api/v1/practice")
 
 
+@router.get("/subjects")
+async def get_practice_subjects(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """返回刷题页可用科目树（动态，不硬编码）。"""
+    return await svc.get_practice_subject_tree(db)
+
+
 @router.get("/questions")
 async def get_practice_questions(
-    subject: str = Query(...),
+    subject_id: int = Query(...),
+    include_children: bool = Query(True),
     count: int = Query(20, ge=1, le=50),
     mode: str = Query("random"),
     knowledge_point: str | None = Query(None),
@@ -181,6 +191,16 @@ async def get_practice_questions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # 解析 subject_id → (subject_code, subject_name)
+    resolved = await svc.resolve_subject_id_to_code(db, subject_id)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail=f"科目不存在: subject_id={subject_id}")
+    subject_code, subject_name = resolved
+
+    # 如果 include_children=false，只用当前 subject_id；否则展开子科目
+    # resolve_subject_ids 已支持 int 输入并自动展开子节点
+    subject_for_query: str | int = subject_id if include_children else subject_code
+
     trace_id = x_trace_id or create_trace_id()
     kps = (
         [kp.strip() for kp in knowledge_point.split(",") if kp.strip()]
@@ -198,7 +218,7 @@ async def get_practice_questions(
             logger.warning("similar 模式缺少 source_question_id，回退到 random")
             mode = "random"
             questions = await svc.get_practice_questions(
-                db=db, user_id=current_user.id, subject=subject,
+                db=db, user_id=current_user.id, subject=subject_for_query,
                 count=count, mode="random", knowledge_points=kps,
                 exclude_answered=exclude_answered,
             )
@@ -206,7 +226,7 @@ async def get_practice_questions(
             import uuid
             request_id = str(uuid.uuid4())
             questions, question_metadata = await svc.get_similar_practice_questions(
-                db=db, user_id=current_user.id, subject=subject,
+                db=db, user_id=current_user.id, subject=subject_for_query,
                 source_question_id=source_question_id, count=count,
                 exclude_answered=exclude_answered,
             )
@@ -216,7 +236,7 @@ async def get_practice_questions(
                 recs = [
                     {
                         "question_id": qid,
-                        "subject": meta.get("subject", subject),
+                        "subject": meta.get("subject", subject_code),
                         "recommend_score": meta.get("recommend_score"),
                         "similarity": meta.get("similarity"),
                         "reason": meta.get("recommend_reason"),
@@ -236,7 +256,7 @@ async def get_practice_questions(
         import uuid
         request_id = str(uuid.uuid4())
         questions, question_metadata = await svc.get_smart_practice_questions(
-            db=db, user_id=current_user.id, subject=subject,
+            db=db, user_id=current_user.id, subject=subject_for_query,
             count=count, exclude_answered=exclude_answered,
             request_id=request_id, smart_strategy=smart_strategy,
         )
@@ -244,7 +264,7 @@ async def get_practice_questions(
     else:
         # random / sequential — 原有逻辑
         questions = await svc.get_practice_questions(
-            db=db, user_id=current_user.id, subject=subject,
+            db=db, user_id=current_user.id, subject=subject_for_query,
             count=count, mode=mode, knowledge_points=kps,
             exclude_answered=exclude_answered,
         )
@@ -263,7 +283,9 @@ async def get_practice_questions(
         questions=[
             PracticeQuestion(
                 id=q.id,
-                subject=q.subject_ref.code if q.subject_ref else "",
+                subject_id=q.subject_id,
+                subject_code=q.subject_ref.code if q.subject_ref else "",
+                subject_name=q.subject_ref.name if q.subject_ref else "",
                 question_type=q.question_type,
                 content=_sanitize_question_content(q.content),
                 options=_sanitize_question_options(
@@ -287,14 +309,14 @@ async def get_practice_questions(
     debug_log(
         trace_id,
         "API_RESPONSE",
-        {"endpoint": "practice/questions", "subject": subject, "count": len(questions)},
+        {"endpoint": "practice/questions", "subject_id": subject_id, "count": len(questions)},
     )
     save_debug_snapshot(
         trace_id,
         "api_response",
         {
             "endpoint": "practice/questions",
-            "subject": subject,
+            "subject_id": subject_id,
             "question_ids": [q.id for q in questions],
             "total": len(questions),
         },

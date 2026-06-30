@@ -559,8 +559,11 @@ async def approve_question(
         qi.question_id = duplicate.id
         is_duplicate = True
     else:
+        q_fields = dict(result["question_fields"])
+        # Ensure subject_id comes from the import record (authoritative source)
+        q_fields["subject_id"] = qi.subject_id
         q = Question(
-            **result["question_fields"],
+            **q_fields,
             source=qi.source_file,
             source_type=qi.source_type,
             source_file=qi.source_file,
@@ -647,8 +650,10 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int,
                 duplicate.id,
             )
         else:
+            q_fields = dict(result["question_fields"])
+            q_fields["subject_id"] = qi.subject_id
             q = Question(
-                **result["question_fields"],
+                **q_fields,
                 source=qi.source_file,
                 source_type=qi.source_type,
                 source_file=qi.source_file,

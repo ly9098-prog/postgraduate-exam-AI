@@ -31,3 +31,16 @@ class PracticeRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
+
+    # ── Legacy session columns (prevent autogenerate DROP COLUMN) ──
+    # These columns were in the original practice_records table before the
+    # per-question schema refactor.  Keep them in the ORM so Alembic
+    # autogenerate does not emit DROP COLUMN for them.
+    mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    question_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answers: Mapped[str | None] = mapped_column(Text, nullable=True)
+    correct_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    wrong_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -31,9 +31,15 @@ logger = logging.getLogger(__name__)
 def _normalize_enrich(parsed: dict) -> dict:
     """Normalize AI enrich response into structured metadata."""
     out: dict = {}
-    subject = parsed.get("subject")
-    if subject in SUBJECT_VALUES:
-        out["subject"] = subject
+    # Prefer subject_id (int) from AI; fall back to legacy subject string
+    sid = parsed.get("subject_id")
+    if isinstance(sid, int) and sid > 0:
+        out["subject_id"] = sid
+    else:
+        subject = parsed.get("subject")
+        if subject in SUBJECT_VALUES:
+            # Keep legacy string for caller to resolve to subject_id
+            out["subject"] = subject
     qtype = parsed.get("question_type")
     from app.features.question_pipeline import normalizer
     normalized_type = normalizer.normalize_type(qtype)
@@ -107,8 +113,22 @@ async def enrich_import(
         return {"from_fallback": True, "ai_metadata": parsed}
 
     normalized = _normalize_enrich(_extract_json(raw) or {})
-    if normalized.get("subject") and not qi.subject:
-        qi.subject = normalized["subject"]
+    # Apply subject_id (direct or resolve legacy subject string)
+    if not qi.subject_id:
+        if normalized.get("subject_id"):
+            qi.subject_id = normalized["subject_id"]
+        elif normalized.get("subject"):
+            from app.services.admin_subject_service import resolve_subject_id
+            resolved = await resolve_subject_id(db, normalized["subject"])
+            if resolved is not None:
+                qi.subject_id = resolved
+                normalized["subject_id"] = resolved
+                normalized.pop("subject", None)
+            else:
+                logger.warning(
+                    "enrich: resolve_subject_id failed for subject=%r, import_id=%d",
+                    normalized["subject"], qi.id,
+                )
     if normalized.get("question_type") and not qi.question_type:
         qi.question_type = normalized["question_type"]
     qi.ai_generated = True
@@ -262,8 +282,22 @@ async def enrich_batch(
         resp = item["resp"]
         raw = item["raw"]
         normalized = _normalize_enrich(_extract_json(raw) or {})
-        if normalized.get("subject") and not qi.subject:
-            qi.subject = normalized["subject"]
+        # Apply subject_id (direct or resolve legacy subject string)
+        if not qi.subject_id:
+            if normalized.get("subject_id"):
+                qi.subject_id = normalized["subject_id"]
+            elif normalized.get("subject"):
+                from app.services.admin_subject_service import resolve_subject_id
+                resolved = await resolve_subject_id(db, normalized["subject"])
+                if resolved is not None:
+                    qi.subject_id = resolved
+                    normalized["subject_id"] = resolved
+                    normalized.pop("subject", None)
+                else:
+                    logger.warning(
+                        "enrich_batch: resolve_subject_id failed for subject=%r, import_id=%d",
+                        normalized["subject"], qi.id,
+                    )
         if normalized.get("question_type") and not qi.question_type:
             qi.question_type = normalized["question_type"]
         qi.ai_generated = True

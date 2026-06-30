@@ -37,6 +37,7 @@ def run_normalize_schema_stage(
     source_file: str = "",
     source_type: str = "",
     subject: str | None = None,
+    subject_id: int | None = None,
     import_mode: Any = None,
     exercise_regions_missing: bool = False,
 ) -> dict:
@@ -50,6 +51,7 @@ def run_normalize_schema_stage(
         "file": source_file,
         "type": source_type,
         "subject": subject or "",
+        "subject_id": subject_id,
     }
     result = normalize_questions(raw_questions, matched, source_info)
 

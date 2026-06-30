@@ -261,6 +261,18 @@ async def submit_to_review(
     subject = batch_meta.get("subject", "")
     subject_id = batch_meta.get("subject_id")
 
+    # Resolve legacy subject string to subject_id if needed (once per batch)
+    if not subject_id and subject:
+        try:
+            from app.services.admin_subject_service import resolve_subject_id
+            resolved = await resolve_subject_id(db, subject)
+            if resolved is not None:
+                subject_id = resolved
+            else:
+                logger.warning("submit_to_review: could not resolve subject=%r to subject_id", subject)
+        except Exception:
+            logger.warning("submit_to_review: failed to resolve subject=%r", subject, exc_info=True)
+
     items: list[dict] = []
     written = 0
     skipped = 0
@@ -611,7 +623,9 @@ async def get_review_queue(
             "batch_id": qi.batch_id,
             "source_type": qi.source_type,
             "source_file": qi.source_file,
-            "subject": qi.subject,
+            "subject_id": qi.subject_id,
+            "subject": qi.subject_ref.code if qi.subject_ref else None,
+            "subject_name": qi.subject_ref.name if qi.subject_ref else None,
             "question_type": qi.question_type,
             "parsed_content": qi.parsed_content,
             "parsed_options": qi.parsed_options,
