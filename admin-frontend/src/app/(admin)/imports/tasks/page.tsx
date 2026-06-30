@@ -7,8 +7,6 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
-import { Select } from "@/components/ui/select";
-import type { SelectOption } from "@/components/ui/select";
 import { apiRequest } from "@/lib/api/client";
 import type { ImportPipelineStatusResponse, ImportPipelineUploadResponse } from "@/lib/api/types";
 import { useImportConfig } from "../hooks/useImportConfig";
@@ -50,6 +48,91 @@ function getStageStatuses(status?: ImportPipelineStatusResponse, isRunning?: boo
 }
 
 type TabKey = "upload" | "progress" | "quality";
+
+
+type CustomSelectOption = {
+  value: string;
+  label: string;
+};
+
+type CustomSelectProps = {
+  value: string;
+  onChange: (value: string) => void;
+  options: CustomSelectOption[];
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+};
+
+function CustomSelect({ value, onChange, options, placeholder = "请选择", disabled = false, className = "" }: CustomSelectProps) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const selectedOption = options.find((option) => option.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative w-full">
+      <button
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`${className} inline-flex items-center outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)] disabled:cursor-not-allowed disabled:opacity-60`}
+        onClick={() => {
+          if (!disabled) setOpen((current) => !current);
+        }}
+      >
+        <span className={`min-w-0 flex-1 truncate text-left ${selectedOption ? "text-[var(--ink)]" : "text-[var(--color-text-hint)]"}`}>
+          {selectedOption?.label || placeholder}
+        </span>
+        <span className={`ml-2 text-[10px] text-[var(--color-text-hint)] transition ${open ? "rotate-180" : ""}`}>▼</span>
+      </button>
+
+      {open ? (
+        <div
+          role="listbox"
+          className="absolute left-0 right-0 top-full z-50 mt-1 max-h-40 overflow-auto rounded-xl border border-[var(--color-border)] bg-white py-1 text-sm shadow-[var(--shadow-floating)]"
+        >
+          {options.map((option) => {
+            const active = option.value === value;
+            return (
+              <button
+                key={option.value || "__empty__"}
+                type="button"
+                role="option"
+                aria-selected={active}
+                className={`flex w-full items-center px-3 py-2 text-left text-sm transition ${
+                  active
+                    ? "bg-[var(--color-primary-light)] font-semibold text-[var(--color-primary-dark)]"
+                    : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)]"
+                }`}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+              >
+                <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                {active ? <span className="ml-2 text-xs text-[var(--color-primary)]">✓</span> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export default function ImportTasksPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("upload");
@@ -207,16 +290,16 @@ export default function ImportTasksPage() {
               </label>
               <div className="space-y-1">
                 <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">科目</span>
-                <Select
+                <CustomSelect
                   value={subjectId}
                   onChange={setSubjectId}
                   placeholder="选择科目（可选）"
                   disabled={isPipelineRunning}
                   options={[
                     { value: "", label: "选择科目（可选）" },
-                    ...subjectOptions.map((s) => ({ value: String(s.id), label: s.name })),
+                    ...subjectOptions.map((subject) => ({ value: String(subject.id), label: subject.name })),
                   ]}
-                  className="h-10 w-full justify-between rounded-xl border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
+                  className="h-10 w-full justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
                 />
               </div>
             </CardContent>
@@ -234,11 +317,17 @@ export default function ImportTasksPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="space-y-1">
                   <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">导入模式</span>
-                  <select className="h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]" value={importMode} onChange={(event) => setImportMode(event.target.value)}>
-                    <option value="auto">auto（自动检测）</option>
-                    <option value="book">book（教辅）</option>
-                    <option value="exam">exam（试卷）</option>
-                  </select>
+                  <CustomSelect
+                    value={importMode}
+                    onChange={setImportMode}
+                    disabled={isPipelineRunning}
+                    options={[
+                      { value: "auto", label: "auto（自动检测）" },
+                      { value: "book", label: "book（教辅）" },
+                      { value: "exam", label: "exam（试卷）" },
+                    ]}
+                    className="h-10 w-full justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
+                  />
                 </label>
                 <label className="space-y-1">
                   <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">置信度阈值</span>
