@@ -197,9 +197,8 @@ async def get_practice_questions(
         raise HTTPException(status_code=404, detail=f"科目不存在: subject_id={subject_id}")
     subject_code, subject_name = resolved
 
-    # 如果 include_children=false，只用当前 subject_id；否则展开子科目
-    # resolve_subject_ids 已支持 int 输入并自动展开子节点
-    subject_for_query: str | int = subject_id if include_children else subject_code
+    # 始终使用 subject_code（字符串）作查询参数，避免与 VARCHAR 列比较时类型不匹配
+    subject_for_query: str = subject_code
 
     trace_id = x_trace_id or create_trace_id()
     kps = (
