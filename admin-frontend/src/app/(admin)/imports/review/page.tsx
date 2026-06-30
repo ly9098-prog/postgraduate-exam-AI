@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, Code2, Eye, FileText, Save, Search, Sparkles, X, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -270,7 +270,7 @@ export default function ImportReviewPage() {
     queryKey: ["import-review-queue", queryParams],
     queryFn: () => apiRequest<PaginatedResponse<ImportQuestionItem>>(`/imports/review-queue${toQuery(queryParams)}`),
     retry: false,
-    placeholderData: keepPreviousData(),
+    placeholderData: (prev: PaginatedResponse<ImportQuestionItem> | undefined) => prev,
   });
 
   const items = queue.data?.items ?? [];
