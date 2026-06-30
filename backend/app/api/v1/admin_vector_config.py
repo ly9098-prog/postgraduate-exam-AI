@@ -18,6 +18,7 @@ from app.schemas.admin_vector_config import (
 from app.services.vector_config_service import (
     get_vector_config,
     patch_vector_config,
+    resolve_embedding_config,
     test_embedding_connection,
 )
 
@@ -57,11 +58,17 @@ async def update_vector_config(
 async def test_embedding(
     data: EmbeddingTestRequest,
     _=Depends(require_roles("super_admin")),
+    db: AsyncSession = Depends(get_db),
 ):
     """对给定 Embedding 配置发起一次最小连通性测试，不保存任何状态。"""
+    api_key = data.api_key
+    # 前端未传 key 时（用户刷新页面后未重新输入），从 DB 读取已存储的 key
+    if not api_key:
+        stored = await resolve_embedding_config(db)
+        api_key = stored.api_key
     return await test_embedding_connection(
         api_base_url=data.api_base_url,
-        api_key=data.api_key,
+        api_key=api_key,
         model=data.model,
         dim=data.dim,
         timeout=data.timeout,

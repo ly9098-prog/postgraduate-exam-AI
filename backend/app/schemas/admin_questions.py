@@ -106,20 +106,12 @@ class AdminQuestionPatchRequest(BaseModel):
         return self
 
 
-class AdminQuestionRejectRequest(BaseModel):
-    reason: str = Field(min_length=1, max_length=512)
-
-
 class AdminQuestionToggleActiveRequest(BaseModel):
     is_active: bool
 
 
 class AdminQuestionBatchRequest(BaseModel):
     ids: list[int] = Field(min_length=1, max_length=50)
-
-
-class AdminQuestionBatchRejectRequest(AdminQuestionBatchRequest):
-    reason: str = Field(min_length=1, max_length=512)
 
 
 class AdminQuestionBatchFailure(BaseModel):
