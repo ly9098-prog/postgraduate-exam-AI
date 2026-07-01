@@ -493,11 +493,14 @@ Page({
         include_children: true,
         count: this.data.count || 5,
         mode: this.data.selectedMode || 'random',
+        exclude_answered: true,
+        no_repeat_days: 30,
+        use_leitner: true,
         _traceId: this.data.traceId,
       }
-      // Phase 3: smart 模式默认使用知识路径策略
+      // V4: smart 模式默认使用综合打分策略
       if (params.mode === 'smart') {
-        params.smart_strategy = 'path'
+        params.smart_strategy = 'scored'
       }
       const res = await api.get('/practice/questions', params)
       const questions = _applyAnsweredFlags(res.questions || [], {})

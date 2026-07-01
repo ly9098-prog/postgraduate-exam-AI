@@ -18,6 +18,7 @@ Page({
     yearlyHeatmapMeta: null,
     badgeWall: [],
     learningProfile: null,
+    adaptiveOverview: null,
   },
 
   onShow() {
@@ -27,18 +28,22 @@ Page({
   async loadData() {
     this.setData({ loading: true })
     try {
-      const [res, yearlyTrends, growthRes] = await Promise.all([
+      const [res, yearlyTrends, growthRes, adaptiveRes] = await Promise.all([
         api.get('/stats/dashboard'),
         api.get('/stats/trends?days=365').catch(() => []),
         api.get('/stats/growth').catch(() => null),
+        api.get('/adaptive-learning/overview').catch(() => null),
       ])
       this._cachedDashboard = res
       this._cachedYearlyTrends = yearlyTrends
       this._cachedGrowth = growthRes
+      this._cachedAdaptive = adaptiveRes
       const processed = this._process(res, yearlyTrends, growthRes)
       // Phase 1: render core sections only, defer canvas draws
       const { yearlyHeatmap, yearlyHeatmapWeeks, yearlyHeatmapMeta, badgeWall, ...coreData } = processed
-      this.setData(coreData, () => {
+      // Process adaptive overview for display
+      const adaptiveData = this._processAdaptive(adaptiveRes)
+      this.setData({ ...coreData, adaptiveOverview: adaptiveData }, () => {
         // Stagger canvas draws to spread JS thread cost on low-end devices
         setTimeout(() => this.drawScoreRing(), 80)
         setTimeout(() => this.drawSubjectDonut(), 180)
@@ -140,6 +145,46 @@ Page({
       learningProfile,
       pageEntered: true,
       loading: false,
+    }
+  },
+
+  _processAdaptive(res) {
+    if (!res) return null
+
+    // 间隔状态中文映射
+    const statusMap = {
+      fast_forgetting: '遗忘较快',
+      slightly_fast_forgetting: '略偏快遗忘',
+      normal: '节奏正常',
+      stable_memory: '记忆稳定',
+    }
+
+    // 建议文案
+    const suggestionMap = {
+      fast_forgetting: '系统已自动缩短复习间隔，帮助巩固记忆',
+      slightly_fast_forgetting: '系统已略微缩短复习间隔',
+      normal: '复习节奏合理，继续保持',
+      stable_memory: '记忆保持良好，间隔适当拉长',
+    }
+
+    const status = res.interval_status || 'normal'
+    const recallPct = Math.round((res.recent_due_recall_rate || 0) * 100)
+
+    return {
+      intervalFactor: res.interval_factor || 1.0,
+      intervalStatus: statusMap[status] || '节奏正常',
+      intervalSuggestion: suggestionMap[status] || '',
+      targetRecallPct: Math.round((res.target_recall_rate || 0.8) * 100),
+      recentRecallPct: recallPct,
+      hardQuestionCount: res.hard_question_count || 0,
+      fastForgettingKPCount: res.fast_forgetting_knowledge_count || 0,
+      pathBlockedKPCount: res.path_blocked_knowledge_count || 0,
+      weightsAdjusted: res.weights_adjusted || false,
+      weightSummary: res.weight_summary || '',
+      _hasData: (res.interval_factor !== undefined && res.interval_factor !== 1.0)
+        || (res.hard_question_count > 0)
+        || (res.fast_forgetting_knowledge_count > 0)
+        || (res.path_blocked_knowledge_count > 0),
     }
   },
 

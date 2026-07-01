@@ -1334,3 +1334,111 @@
     font-size: 30rpx;
   }
 }
+
+/* ── TIER 3.5: 个性化调度分析 (V6.5) ── */
+
+.adaptive-rhythm-card {
+  background: var(--bg-card, #fff);
+  border-radius: 24rpx;
+  padding: 28rpx 32rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0,0,0,0.04);
+}
+
+.arc-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16rpx;
+}
+
+.arc-label {
+  font-size: 26rpx;
+  color: var(--text-secondary, #8a8a8a);
+}
+
+.arc-status {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--primary, #4f6ef7);
+  background: rgba(79,110,247,0.08);
+  padding: 4rpx 16rpx;
+  border-radius: 20rpx;
+}
+
+.arc-bar-wrap {
+  height: 12rpx;
+  background: var(--bg-page, #f5f5f5);
+  border-radius: 6rpx;
+  overflow: hidden;
+  margin-bottom: 12rpx;
+}
+
+.arc-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary, #4f6ef7), #7c9cff);
+  border-radius: 6rpx;
+  transition: width 0.6s ease;
+  max-width: 100%;
+}
+
+.arc-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.arc-meta-text {
+  font-size: 22rpx;
+  color: var(--text-secondary, #8a8a8a);
+}
+
+.arc-suggestion {
+  font-size: 24rpx;
+  color: var(--text-tertiary, #aaa);
+  line-height: 1.5;
+}
+
+.adaptive-stats-row {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+}
+
+.adaptive-stat-card {
+  flex: 1;
+  background: var(--bg-card, #fff);
+  border-radius: 20rpx;
+  padding: 20rpx 16rpx;
+  text-align: center;
+  box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.03);
+}
+
+.asc-num {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--text-primary, #1a1a1a);
+  line-height: 1.2;
+  margin-bottom: 6rpx;
+}
+
+.asc-label {
+  display: block;
+  font-size: 22rpx;
+  color: var(--text-secondary, #8a8a8a);
+}
+
+.adaptive-weight-hint {
+  display: flex;
+  align-items: center;
+  background: rgba(79,110,247,0.06);
+  border-radius: 16rpx;
+  padding: 16rpx 24rpx;
+}
+
+.awh-text {
+  font-size: 24rpx;
+  color: var(--primary, #4f6ef7);
+  line-height: 1.4;
+}

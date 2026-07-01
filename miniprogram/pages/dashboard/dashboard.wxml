@@ -251,6 +251,56 @@
     </view>
 
     <!-- ════════════════════════════════════════════
+         TIER 3.5 · 个性化调度分析 (V6.5)
+         ════════════════════════════════════════════ -->
+    <view class="section" wx:if="{{adaptiveOverview && adaptiveOverview._hasData}}">
+      <view class="section-head">
+        <view class="sh-left">
+          <text class="sh-title">个性化调度</text>
+          <text class="sh-desc">系统根据你的表现自动优化复习节奏</text>
+        </view>
+      </view>
+
+      <!-- 复习节奏状态卡片 -->
+      <view class="adaptive-rhythm-card">
+        <view class="arc-top">
+          <text class="arc-label">当前复习节奏</text>
+          <text class="arc-status">{{adaptiveOverview.intervalStatus}}</text>
+        </view>
+        <view class="arc-bar-wrap">
+          <view class="arc-bar" style="width: {{adaptiveOverview.recentRecallPct}}%"></view>
+        </view>
+        <view class="arc-meta">
+          <text class="arc-meta-text">到期复习正确率 {{adaptiveOverview.recentRecallPct}}%</text>
+          <text class="arc-meta-text">目标 {{adaptiveOverview.targetRecallPct}}%</text>
+        </view>
+        <text class="arc-suggestion">{{adaptiveOverview.intervalSuggestion}}</text>
+      </view>
+
+      <!-- 统计卡片组 -->
+      <view class="adaptive-stats-row">
+        <view class="adaptive-stat-card">
+          <text class="asc-num">{{adaptiveOverview.hardQuestionCount}}</text>
+          <text class="asc-label">个人难题</text>
+        </view>
+        <view class="adaptive-stat-card">
+          <text class="asc-num">{{adaptiveOverview.fastForgettingKPCount}}</text>
+          <text class="asc-label">遗忘较快知识点</text>
+        </view>
+        <view class="adaptive-stat-card">
+          <text class="asc-num">{{adaptiveOverview.pathBlockedKPCount}}</text>
+          <text class="asc-label">路径阻塞</text>
+        </view>
+      </view>
+
+      <!-- 权重调节提示 -->
+      <view class="adaptive-weight-hint" wx:if="{{adaptiveOverview.weightsAdjusted && adaptiveOverview.weightSummary}}">
+        <text class="line-icon icon-settings" style="margin-right:8rpx;font-size:28rpx;"></text>
+        <text class="awh-text">推荐权重已个性化调节：{{adaptiveOverview.weightSummary}}</text>
+      </view>
+    </view>
+
+    <!-- ════════════════════════════════════════════
          TIER 4 · 掌握与成就
          ════════════════════════════════════════════ -->
     <view class="section">
