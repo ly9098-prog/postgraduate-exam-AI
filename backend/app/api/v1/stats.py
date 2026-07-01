@@ -6,6 +6,9 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.ai_diagnosis import AiDiagnosis
+from app.schemas.dashboard_insights import DashboardInsightsResponse
+from app.schemas.dashboard_llm import DashboardLlmAnalysisRequest, DashboardLlmAnalysisResponse
+from app.schemas.stats_v2 import DashboardV2Response
 from app.schemas.growth import GrowthProfile
 from app.schemas.stats import (
     BehaviorStats,
@@ -130,6 +133,26 @@ async def get_growth(
     return GrowthProfile(**data)
 
 
+@router.get("/dashboard-v2", response_model=DashboardV2Response)
+async def get_dashboard_v2(
+    trend_days: int = Query(7, ge=1, le=90),
+    include_yearly_summary: bool = Query(True),
+    include_growth: bool = Query(True),
+    include_adaptive: bool = Query(True),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """聚合学习看板 V2 — 一次请求包含总览、推荐、趋势、学科、遗忘、成长、自适应、年度摘要。"""
+    data = await svc.get_dashboard_v2(
+        db, current_user.id,
+        trend_days=trend_days,
+        include_yearly_summary=include_yearly_summary,
+        include_growth=include_growth,
+        include_adaptive=include_adaptive,
+    )
+    return DashboardV2Response(**data)
+
+
 @router.get("/ai-diagnosis", response_model=AiDiagnosis)
 async def get_ai_diagnosis(
     db: AsyncSession = Depends(get_db),
@@ -142,3 +165,38 @@ async def get_ai_diagnosis(
     data = await svc.get_ai_diagnosis(db, current_user.id)
     await cache.set(cache_key, data, ttl=600)
     return AiDiagnosis(**data)
+
+
+@router.post("/dashboard-llm-analysis", response_model=DashboardLlmAnalysisResponse)
+async def post_dashboard_llm_analysis(
+    body: DashboardLlmAnalysisRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """手动触发 LLM 学习诊断 — 不自动调用，需用户点击按钮。"""
+    data = await svc.get_dashboard_llm_analysis(
+        db, current_user.id, trend_days=body.trend_days
+    )
+    return DashboardLlmAnalysisResponse(**data)
+
+
+@router.get("/dashboard-insights", response_model=DashboardInsightsResponse)
+async def get_dashboard_insights(
+    days: int = Query(7, ge=1, le=90),
+    include_subjects: bool = Query(True),
+    include_topics: bool = Query(True),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """刷题诊断数据 — 今日学习质量、稳定性、薄弱知识点、错题复发等。"""
+
+    from app.services.dashboard_insights_service import get_dashboard_insights as get_di
+
+    data = await get_di(
+        db,
+        current_user.id,
+        days=days,
+        include_subjects=include_subjects,
+        include_topics=include_topics,
+    )
+    return DashboardInsightsResponse(**data)

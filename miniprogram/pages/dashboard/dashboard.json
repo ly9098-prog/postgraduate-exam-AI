@@ -1,1 +1,5 @@
-{ "navigationBarTitleText": "学习统计" }
+{
+  "navigationBarTitleText": "学习报告",
+  "enablePullDownRefresh": true,
+  "backgroundColor": "#F8FAFF"
+}

@@ -15,6 +15,7 @@ class OverviewStats(BaseModel):
     today_duration_sec: int = 0
     mastered_count: int = 0
     due_review_count: int = 0
+    wrong_question_count: int = 0
 
 
 class SubjectStats(BaseModel):
