@@ -4,11 +4,22 @@ const { toPlainInlineMathText } = require('../../utils/stem-render')
 
 const SUBJECTS = [
   { value: '', label: '全部' },
-  { value: 'math2', label: '数学二' },
-  { value: 'math2-calculus', label: '高数' },
-  { value: 'math2-linalg', label: '线代' },
-  { value: 'exam408', label: '408' },
+  // 新树形科目
+  { value: 'math', label: '数学' },
+  { value: 'advanced_math', label: '高数' },
+  { value: 'linear_algebra', label: '线性代数' },
+  { value: 'computer', label: '计算机' },
+  { value: 'ds', label: '数据结构' },
+  { value: 'os', label: '操作系统' },
+  { value: 'co', label: '计组' },
+  { value: 'cn', label: '网络' },
   { value: 'english', label: '英语' },
+  { value: 'politics', label: '政治' },
+  // 旧兼容科目
+  { value: 'math2', label: '数学二' },
+  { value: 'math2-calculus', label: '高数(旧)' },
+  { value: 'math2-linalg', label: '线代(旧)' },
+  { value: 'exam408', label: '408' },
 ]
 
 const ERROR_TYPES = [
@@ -52,8 +63,13 @@ Page({
 
   _ready: false,
 
-  onLoad() {
+  onLoad(options) {
     this.setData({ enableMathImage: config.enableMathImage || false })
+    // 从 dashboard 学科跳转携带 subject 参数
+    const subject = options.subject ? decodeURIComponent(options.subject) : ''
+    if (subject) {
+      this.setData({ selectedSubject: subject })
+    }
   },
 
   onReady() {
