@@ -18,7 +18,7 @@ import asyncio
 import os
 import sys
 import tempfile
-from datetime import timezone, datetime, timedelta
+from datetime import datetime, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -91,7 +91,7 @@ async def main():
                 await db.execute(
                     update(PomodoroSession)
                     .where(PomodoroSession.id == sid)
-                    .values(expected_end_time=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=1))
+                    .values(expected_end_time=datetime.utcnow() - timedelta(seconds=1))
                 )
                 await db.commit()
 

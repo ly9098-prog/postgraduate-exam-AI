@@ -92,6 +92,9 @@ async def update_subject(
 
     if new_code != subject.code:
         await _ensure_unique_code(db, new_code, subject.id)
+        q_count = await _question_count_for_subject(db, subject.id)
+        if q_count > 0:
+            raise ValueError("已有题目使用该科目，不能修改编码")
 
     all_subjects = await _list_all_subjects(db)
     parent_changed = "parent_id" in update_data and update_data["parent_id"] != subject.parent_id

@@ -77,7 +77,7 @@ def test_app_ai_import_generate_remains_available(monkeypatch):
     try:
         response = client.post(
             "/api/v1/ai-import/generate",
-            json={"subject_id": 1, "knowledge_points": ["函数"], "count": 1},
+            json={"subject": "math", "knowledge_points": ["函数"], "count": 1},
         )
     finally:
         app.dependency_overrides.clear()
