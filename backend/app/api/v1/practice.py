@@ -185,6 +185,8 @@ async def get_practice_questions(
     mode: str = Query("random"),
     knowledge_point: str | None = Query(None),
     exclude_answered: bool = Query(False),
+    no_repeat_days: int | None = Query(None, ge=1, le=365),
+    use_leitner: bool = Query(True),
     source_question_id: int | None = Query(None),
     smart_strategy: str = Query("weakness_vector"),
     x_trace_id: str | None = Header(None),
@@ -220,6 +222,8 @@ async def get_practice_questions(
                 db=db, user_id=current_user.id, subject=subject_for_query,
                 count=count, mode="random", knowledge_points=kps,
                 exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+                use_leitner=use_leitner,
             )
         else:
             import uuid
@@ -228,6 +232,8 @@ async def get_practice_questions(
                 db=db, user_id=current_user.id, subject=subject_for_query,
                 source_question_id=source_question_id, count=count,
                 exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+                use_leitner=use_leitner,
             )
             # 记录推荐日志
             try:
@@ -257,6 +263,8 @@ async def get_practice_questions(
         questions, question_metadata = await svc.get_smart_practice_questions(
             db=db, user_id=current_user.id, subject=subject_for_query,
             count=count, exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
+            use_leitner=use_leitner,
             request_id=request_id, smart_strategy=smart_strategy,
         )
 
@@ -266,6 +274,8 @@ async def get_practice_questions(
             db=db, user_id=current_user.id, subject=subject_for_query,
             count=count, mode=mode, knowledge_points=kps,
             exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
+            use_leitner=use_leitner,
         )
     # ── Layer 1 诊断：API 响应 stem 数据 ──
     for q in questions:
@@ -447,3 +457,128 @@ async def list_records(
         page=page,
         page_size=page_size,
     )
+
+
+# ── V3: 知识点掌握度查询接口 ──
+
+
+@router.get("/knowledge-states")
+async def get_knowledge_states(
+    status: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """查询当前用户所有知识点掌握状态。
+
+    可选 status 过滤：weak / normal / good / mastered / observing / possible_weak / possible_mastered。
+    """
+    from app.services import mastery_service
+
+    # 获取所有科目的状态（跨科目汇总）
+    # 先获取用户有记录的科目列表
+    from app.models.user_knowledge_state import UserKnowledgeState
+    from sqlalchemy import select as sa_select
+
+    subjects_result = await db.execute(
+        sa_select(UserKnowledgeState.subject)
+        .where(UserKnowledgeState.user_id == current_user.id)
+        .distinct()
+    )
+    subjects = [row[0] for row in subjects_result.all()]
+
+    all_items = []
+    for subject in subjects:
+        states = await mastery_service.get_user_knowledge_states(
+            db, current_user.id, subject,
+        )
+        all_items.extend(states)
+
+    # status 过滤
+    if status:
+        all_items = [item for item in all_items if item.get("weakness_level") == status]
+
+    # 按 mastery_score 升序
+    all_items.sort(key=lambda x: x.get("mastery_score", 50))
+
+    # 限制数量
+    all_items = all_items[:limit]
+
+    # 转换为 Schema
+    from app.schemas.mastery import KnowledgeStateItem, KnowledgeStateListResponse
+    items = [
+        KnowledgeStateItem(
+            knowledge_point_id=item.get("knowledge_point_id"),
+            knowledge_point=item.get("name", ""),
+            mastery_score=item.get("mastery_score", 50.0),
+            confidence=item.get("confidence", 0.0),
+            label=item.get("weakness_level", "observing"),
+            answer_count=item.get("attempt_count", 0),
+            correct_count=item.get("correct_count", 0),
+            wrong_count=item.get("wrong_count", 0),
+            recent_wrong_count=item.get("recent_wrong_count", 0),
+            last_practiced_at=item.get("last_practiced_at"),
+        )
+        for item in all_items
+    ]
+
+    return KnowledgeStateListResponse(items=items, total=len(items))
+
+
+@router.get("/weak-knowledge-points")
+async def get_weak_knowledge_points(
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """查询用户明确薄弱的知识点（mastery_score < 40 且 confidence >= 0.3）。
+
+    主要为 V4 智能推荐提供数据基础。
+    """
+    from app.services import mastery_service
+    from app.models.user_knowledge_state import UserKnowledgeState
+    from app.models.knowledge_point import KnowledgePoint
+    from sqlalchemy import select as sa_select, or_
+
+    # 获取用户有记录的科目
+    subjects_result = await db.execute(
+        sa_select(UserKnowledgeState.subject)
+        .where(UserKnowledgeState.user_id == current_user.id)
+        .distinct()
+    )
+    subjects = [row[0] for row in subjects_result.all()]
+
+    all_weak = []
+    for subject in subjects:
+        weak = await mastery_service.get_user_weak_knowledge_points(
+            db, current_user.id, subject, limit=limit,
+        )
+        all_weak.extend(weak)
+
+    # 过滤：只保留 mastery_score < 40 且 confidence >= 0.3
+    all_weak = [
+        item for item in all_weak
+        if item.get("mastery_score", 50) < 40 and item.get("confidence", 0) >= 0.3
+    ]
+
+    # 排序：mastery_score ASC, recent_wrong_count DESC
+    all_weak.sort(key=lambda x: (x.get("mastery_score", 50), -x.get("attempt_count", 0)))
+    all_weak = all_weak[:limit]
+
+    from app.schemas.mastery import KnowledgeStateItem, KnowledgeStateListResponse
+    items = [
+        KnowledgeStateItem(
+            knowledge_point_id=item.get("knowledge_point_id"),
+            knowledge_point=item.get("name", ""),
+            mastery_score=item.get("mastery_score", 50.0),
+            confidence=item.get("confidence", 0.0),
+            label=item.get("weakness_level", "weak"),
+            answer_count=item.get("attempt_count", 0),
+            correct_count=item.get("correct_count", 0) if isinstance(item.get("correct_count"), int) else round(item.get("accuracy", 0) * item.get("attempt_count", 0)),
+            wrong_count=item.get("wrong_count", 0) if isinstance(item.get("wrong_count"), int) else item.get("attempt_count", 0) - round(item.get("accuracy", 0) * item.get("attempt_count", 0)),
+            recent_wrong_count=item.get("recent_wrong_count", 0),
+        )
+        for item in all_weak
+    ]
+
+    return KnowledgeStateListResponse(items=items, total=len(items))

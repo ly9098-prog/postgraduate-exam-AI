@@ -26,9 +26,9 @@ from app.features.global_hash_index import (
     _resolve_max_size,
     _resolve_recent_days,
 )
+from app.models.admin import Subject
 from app.models.question import Question
 from app.models.question_import import QuestionImport
-from app.models.admin import Subject
 
 
 # ---------------------------------------------------------------------------
@@ -42,6 +42,19 @@ async def _make_session(tmp_path: Path):
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Seed Subject records — load() JOINs Question/QuestionImport with Subject
+    async with engine.begin() as conn:
+        await conn.execute(
+            Subject.__table__.insert(),
+            [
+                {"id": 1, "code": "exam408", "name": "Exam 408", "level": 1,
+                 "path": "exam408", "sort_order": 0, "is_active": True,
+                 "created_at": datetime(2026, 1, 1), "updated_at": datetime(2026, 1, 1)},
+                {"id": 2, "code": "math2", "name": "Math 2", "level": 1,
+                 "path": "math2", "sort_order": 1, "is_active": True,
+                 "created_at": datetime(2026, 1, 1), "updated_at": datetime(2026, 1, 1)},
+            ],
+        )
     return async_sessionmaker(engine, expire_on_commit=False), engine
 
 
@@ -52,7 +65,7 @@ def _run(coro):
 def _make_question(
     *,
     qid: int,
-    subject_id: int = 1,
+    subject_id: int,
     qhash: str,
     is_active: bool = True,
     created_at: datetime | None = None,
@@ -74,7 +87,7 @@ def _make_import(
     *,
     iid: int,
     batch_id: str,
-    subject_id: int = 1,
+    subject_id: int,
     qhash: str,
     status: str = "pending",
 ) -> QuestionImport:
@@ -92,18 +105,6 @@ def _make_import(
         status=status,
         duplicate_status="normal",
     )
-
-
-async def _ensure_subject(db):
-    """Ensure a Subject record exists with id=1 for tests."""
-    from sqlalchemy import select
-    result = await db.execute(select(Subject).where(Subject.id == 1))
-    subject = result.scalar_one_or_none()
-    if not subject:
-        subject = Subject(id=1, code="exam408", name="Exam 408", path="exam408", level=1)
-        db.add(subject)
-        await db.flush()
-    return subject
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +165,6 @@ class TestLoadRecentDays:
             sm, _ = await _make_session(tmp_path)
             now = datetime.now(timezone.utc)
             async with sm() as db:
-                await _ensure_subject(db)
                 # 60 条最近 30 天（hash hh000..hh059）
                 for i in range(60):
                     db.add(_make_question(
@@ -206,13 +206,12 @@ class TestLoadRecentDays:
             sm, _ = await _make_session(tmp_path)
             now = datetime.now(timezone.utc)
             async with sm() as db:
-                await _ensure_subject(db)
                 db.add(_make_question(
-                    qid=1, subject_id=1, qhash="recent",
+                    qid=1, subject_id=2, qhash="recent",
                     created_at=now - timedelta(days=3),
                 ))
                 db.add(_make_question(
-                    qid=2, subject_id=1, qhash="ancient",
+                    qid=2, subject_id=2, qhash="ancient",
                     created_at=now - timedelta(days=999),
                 ))
                 await db.commit()
@@ -221,7 +220,7 @@ class TestLoadRecentDays:
                 index = GlobalHashIndex()
                 await index.load(db, recent_days=0)
                 assert index.stats["question_count"] == 2
-                assert (await index.lookup_question(db, "exam408", "ancient")) == 2
+                assert (await index.lookup_question(db, "math2", "ancient")) == 2
 
         _run(_go())
 
@@ -232,13 +231,12 @@ class TestInactiveExcluded:
             sm, _ = await _make_session(tmp_path)
             now = datetime.now(timezone.utc)
             async with sm() as db:
-                await _ensure_subject(db)
                 db.add(_make_question(
-                    qid=1, subject_id=1, qhash="active",
+                    qid=1, subject_id=2, qhash="active",
                     is_active=True, created_at=now,
                 ))
                 db.add(_make_question(
-                    qid=2, subject_id=1, qhash="inactive",
+                    qid=2, subject_id=2, qhash="inactive",
                     is_active=False, created_at=now,
                 ))
                 await db.commit()
@@ -247,8 +245,8 @@ class TestInactiveExcluded:
                 index = GlobalHashIndex()
                 await index.load(db, recent_days=30)
                 assert index.stats["question_count"] == 1
-                assert (await index.lookup_question(db, "exam408", "active")) == 1
-                assert (await index.lookup_question(db, "exam408", "inactive")) is None
+                assert (await index.lookup_question(db, "math2", "active")) == 1
+                assert (await index.lookup_question(db, "math2", "inactive")) is None
 
         _run(_go())
 
@@ -260,7 +258,6 @@ class TestBatchImportLoad:
         async def _go():
             sm, _ = await _make_session(tmp_path)
             async with sm() as db:
-                await _ensure_subject(db)
                 db.add(_make_import(
                     iid=11, batch_id="REVIEW_B1",
                     subject_id=1, qhash="imp001",
@@ -302,7 +299,6 @@ class TestFallbackToSql:
             sm, _ = await _make_session(tmp_path)
             now = datetime.now(timezone.utc)
             async with sm() as db:
-                await _ensure_subject(db)
                 # 5 条 active
                 for i in range(5):
                     db.add(_make_question(
@@ -394,12 +390,12 @@ class TestNullSafety:
                 await index.load(db, recent_days=30)
 
                 assert (await index.lookup_question(db, None, "h")) is None
-                assert (await index.lookup_question(db, "exam408", None)) is None
+                assert (await index.lookup_question(db, "math2", None)) is None
                 assert (await index.lookup_question(db, "", "h")) is None
 
                 index.add_import("", "h", 1)
-                index.add_import("exam408", "", 1)
-                index.add_import("exam408", "h", 0)  # falsy id ignored
+                index.add_import("math2", "", 1)
+                index.add_import("math2", "h", 0)  # falsy id ignored
                 assert len(index._import_index) == 0
 
         _run(_go())

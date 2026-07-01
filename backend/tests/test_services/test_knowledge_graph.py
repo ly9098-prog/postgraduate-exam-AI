@@ -663,6 +663,18 @@ class TestSmartStrategyPath:
 
 
 class TestExistingModesUnaffected:
+    @staticmethod
+    def _side_effect_once(questions):
+        first = _make_execute_result(scalars=questions)
+        empty = _make_execute_result(scalars=[])
+        called = [False]
+        def _side_effect(*a, **kw):
+            if not called[0]:
+                called[0] = True
+                return first
+            return empty
+        return _side_effect
+
     def test_random_mode_unchanged(self):
         """random 模式不受影响。"""
         from app.services.practice_service import get_practice_questions
@@ -670,9 +682,10 @@ class TestExistingModesUnaffected:
         db = _make_mock_db()
         q1 = _make_question(1)
         q2 = _make_question(2)
-        db.execute.return_value = _make_execute_result(scalars=[q1, q2])
+        db.execute.side_effect = self._side_effect_once([q1, q2])
 
-        result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5, mode="random"))
+        with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
+            result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5, mode="random"))
         assert len(result) == 2
         assert result[0].id == 1
 
@@ -682,9 +695,10 @@ class TestExistingModesUnaffected:
 
         db = _make_mock_db()
         q1 = _make_question(1)
-        db.execute.return_value = _make_execute_result(scalars=[q1])
+        db.execute.side_effect = self._side_effect_once([q1])
 
-        result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5, mode="sequential"))
+        with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
+            result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5, mode="sequential"))
         assert len(result) == 1
 
 

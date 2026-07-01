@@ -21,6 +21,7 @@ def _make_mock_db():
     db.flush = AsyncMock()
     db.refresh = AsyncMock()
     db.execute = AsyncMock()
+    db.rollback = AsyncMock()
     return db
 
 
@@ -277,8 +278,8 @@ class TestUpdateUserKnowledgeState:
                 # QKP join KP query
                 return _make_execute_result(all=[(qkp, kp)])
             elif call_count[0] == 2:
-                # Question.subject lookup
-                return _make_execute_result(scalar_one_or_none="math2")
+                # Subject+Question query → one_or_none returns (subject_code, difficulty)
+                return _make_execute_result(one_or_none=("math2", 2))
             elif call_count[0] == 3:
                 # UserKnowledgeState lookup — no existing state
                 return _make_execute_result(scalar_one_or_none=None)
@@ -406,6 +407,18 @@ class TestRecommendationLogService:
 # ── 8. smart mode integration ──
 
 class TestSmartModeIntegration:
+    @staticmethod
+    def _side_effect_once(questions):
+        first = _make_execute_result(scalars=questions)
+        empty = _make_execute_result(scalars=[])
+        called = [False]
+        def _side_effect(*a, **kw):
+            if not called[0]:
+                called[0] = True
+                return first
+            return empty
+        return _side_effect
+
     @patch("app.services.practice_service.vector_retrieval_service", create=True)
     def test_smart_mode_uses_mastery_service(self, mock_vrs):
         """smart mode should try mastery_service first, fallback to _compute_weak_knowledge_points."""
@@ -451,9 +464,11 @@ class TestSmartModeIntegration:
 
         db = _make_mock_db()
         q1 = _make_question(1)
-        db.execute = AsyncMock(return_value=_make_execute_result(scalars=[q1]))
+        db.execute.side_effect = self._side_effect_once([q1])
 
-        result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5, mode="random"))
+        with patch("app.services.practice_service.resolve_subject_ids",
+                   new_callable=AsyncMock, return_value=[1]):
+            result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5, mode="random"))
         assert len(result) == 1
         assert result[0].id == 1
 
@@ -463,9 +478,11 @@ class TestSmartModeIntegration:
 
         db = _make_mock_db()
         q1, q2 = _make_question(1), _make_question(2)
-        db.execute = AsyncMock(return_value=_make_execute_result(scalars=[q1, q2]))
+        db.execute.side_effect = self._side_effect_once([q1, q2])
 
-        result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5, mode="sequential"))
+        with patch("app.services.practice_service.resolve_subject_ids",
+                   new_callable=AsyncMock, return_value=[1]):
+            result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5, mode="sequential"))
         assert len(result) == 2
 
 
@@ -483,7 +500,13 @@ class TestSubmitAnswerFeedbackLoop:
         db.execute = AsyncMock(return_value=_make_execute_result(scalar_one_or_none=q))
 
         with patch("app.services.practice_service.record_wrong", new_callable=AsyncMock) as mock_wrong, \
-             patch("app.services.practice_service.record_answer_behavior", new_callable=AsyncMock) as mock_behavior:
+             patch("app.services.practice_service.record_answer_behavior", new_callable=AsyncMock) as mock_behavior, \
+             patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
+                   new_callable=AsyncMock) as mock_mastery, \
+             patch("app.services.recommendation_log_service.mark_recommendation_answered",
+                   new_callable=AsyncMock) as mock_rec_log, \
+             patch("app.services.question_review_service.update_user_question_state_after_answer",
+                   new_callable=AsyncMock):
             result = _run(submit_answer(db, user_id=1, question_id=1, user_answer="B", request_id="test-req"))
 
         assert result["is_correct"] is False

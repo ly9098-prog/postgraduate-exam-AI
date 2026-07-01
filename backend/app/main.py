@@ -44,6 +44,8 @@ from app.api.v1.knowledge_mastery import router as knowledge_mastery_router
 from app.api.v1.admin_knowledge import router as admin_knowledge_router
 from app.api.v1.admin_recommendation import router as admin_recommendation_router
 from app.api.v1.knowledge_path import router as knowledge_path_router
+from app.api.v1.study_report import router as study_report_router
+from app.api.v1.adaptive_learning import router as adaptive_learning_router
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.logging_config import setup_logging
@@ -316,6 +318,8 @@ app.include_router(knowledge_mastery_router)
 app.include_router(admin_knowledge_router)
 app.include_router(admin_recommendation_router)
 app.include_router(knowledge_path_router)
+app.include_router(study_report_router)
+app.include_router(adaptive_learning_router)
 
 # 静态文件服务（开发用公式图片）
 os.makedirs("static/formulas", exist_ok=True)

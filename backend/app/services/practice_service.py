@@ -97,6 +97,36 @@ def _is_multi_blank_answer_correct(user_answer: str, correct_answer: str) -> boo
     return _normalize_blank_choice_answer(user_answer) == correct_map
 
 
+def _build_excluded_question_subquery(
+    user_id: int,
+    exclude_answered: bool = False,
+    no_repeat_days: int | None = None,
+) -> "select | None":
+    """构建需要排除的题目 ID 子查询。
+
+    V1: 支持按时间窗口排除最近 N 天已答题目。
+
+    规则：
+    1. exclude_answered=False 且 no_repeat_days=None：不排除，返回 None。
+    2. exclude_answered=True 且 no_repeat_days=None：排除所有历史已答题（旧语义兼容）。
+    3. no_repeat_days=N：排除最近 N 天内已答题。
+    4. no_repeat_days 有值时，即使 exclude_answered=False，也启用周期排除。
+    """
+    if not exclude_answered and not no_repeat_days:
+        return None
+
+    sub = (
+        select(PracticeRecord.question_id)
+        .where(PracticeRecord.user_id == user_id)
+    )
+
+    if no_repeat_days:
+        cutoff = utcnow() - timedelta(days=no_repeat_days)
+        sub = sub.where(PracticeRecord.answered_at >= cutoff)
+
+    return sub.distinct()
+
+
 async def get_practice_questions(
     db: AsyncSession,
     user_id: int,
@@ -105,40 +135,222 @@ async def get_practice_questions(
     mode: str = "random",
     knowledge_points: list[str] | None = None,
     exclude_answered: bool = False,
+    no_repeat_days: int | None = None,
+    use_leitner: bool = True,
 ) -> list[Question]:
     # 精确匹配子科目，或前缀匹配父科目（exam408 → exam408、exam408-ds、exam408-os …）
     ids = await resolve_subject_ids(db, subject)
     subject_cond = Question.subject_id.in_(ids)
-    conditions = [Question.is_active == True, subject_cond]
+    base_conditions = [Question.is_active == True, subject_cond]
 
     if knowledge_points:
         for kp in knowledge_points:
-            conditions.append(Question.knowledge_points.like(f'%"{kp}"%'))
+            base_conditions.append(Question.knowledge_points.like(f'%"{kp}"%'))
 
-    if exclude_answered:
-        answered_sub = (
-            select(PracticeRecord.question_id)
-            .where(PracticeRecord.user_id == user_id)
-            .distinct()
+    # ── V2 Leitner 模式 ──
+    if use_leitner:
+        return await _get_questions_with_leitner(
+            db, user_id, base_conditions, mode, count,
+            exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
         )
-        conditions.append(Question.id.notin_(answered_sub))
 
-    q = select(Question).where(and_(*conditions)).options(selectinload(Question.subject_ref))
+    # ── V1 兼容模式：use_leitner=False ──
+    return await _get_questions_v1_fallback(
+        db, base_conditions, mode, count,
+        user_id=user_id,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+    )
 
-    if mode == "random":
-        q = q.order_by(func.random())
-    else:
-        q = q.order_by(Question.id.asc())
 
-    q = q.limit(count)
-    result = await db.execute(q)
-    questions = list(result.scalars().all())
+async def _get_questions_with_leitner(
+    db: AsyncSession,
+    user_id: int,
+    base_conditions: list,
+    mode: str,
+    count: int,
+    exclude_answered: bool = False,
+    no_repeat_days: int | None = None,
+) -> list[Question]:
+    """V2 Leitner 取题：新题 + 到期复习题优先，逐步 fallback。"""
+    from app.models.user_question_state import UserQuestionState
+
+    now = utcnow()
+
+    async def _leitner_query(
+        due_condition,
+        exclude_ids: set[int] | None = None,
+        limit: int | None = None,
+        extra_order=None,
+    ) -> list[Question]:
+        """Leitner 内部查询：outer join UserQuestionState + 到期条件。"""
+        conds = list(base_conditions)
+        if exclude_ids:
+            conds.append(Question.id.notin_(exclude_ids))
+
+        q = (
+            select(Question)
+            .outerjoin(
+                UserQuestionState,
+                and_(
+                    UserQuestionState.question_id == Question.id,
+                    UserQuestionState.user_id == user_id,
+                ),
+            )
+            .where(and_(*conds, due_condition))
+            .options(selectinload(Question.subject_ref))
+        )
+        if extra_order is not None:
+            q = q.order_by(extra_order)
+        elif mode == "random":
+            q = q.order_by(func.random())
+        else:
+            q = q.order_by(Question.id.asc())
+
+        q = q.limit(limit if limit is not None else count)
+        result = await db.execute(q)
+        return list(result.scalars().all())
+
+    # 第一层：新题 + 已到期复习题
+    due_cond = or_(
+        UserQuestionState.id.is_(None),
+        UserQuestionState.next_review_at.is_(None),
+        UserQuestionState.next_review_at <= now,
+    )
+    questions = await _leitner_query(due_cond)
+
+    if len(questions) >= count:
+        logger.info(
+            "[Leitner Query] mode=%s count=%d resultCount=%d (layer: new+due)",
+            mode, count, len(questions),
+        )
+        return questions[:count]
+
+    existing_ids = {q.id for q in questions}
+
+    # 第二层：快到期题（next_review_at <= now + 1 天）
+    soon = now + timedelta(days=1)
+    due_soon_cond = or_(
+        UserQuestionState.id.is_(None),
+        UserQuestionState.next_review_at.is_(None),
+        UserQuestionState.next_review_at <= soon,
+    )
+    more = await _leitner_query(due_soon_cond, exclude_ids=existing_ids, limit=count - len(questions))
+    questions.extend(more)
+    existing_ids.update(q.id for q in more)
+
+    if len(questions) >= count:
+        logger.info(
+            "[Leitner Query] mode=%s count=%d resultCount=%d (layer: due+1d)",
+            mode, count, len(questions),
+        )
+        return questions[:count]
+
+    # 第三层：最久未做的题（last_answered_at ASC NULLS FIRST）
+    all_cond = or_(
+        UserQuestionState.id.is_(None),
+        UserQuestionState.next_review_at.is_(None),
+        UserQuestionState.next_review_at <= soon + timedelta(days=30),
+    )
+    more = await _leitner_query(
+        all_cond, exclude_ids=existing_ids, limit=count - len(questions),
+        extra_order=UserQuestionState.last_answered_at.asc().nulls_first(),
+    )
+    questions.extend(more)
+    existing_ids.update(q.id for q in more)
+
+    if len(questions) >= count:
+        logger.info(
+            "[Leitner Query] mode=%s count=%d resultCount=%d (layer: oldest)",
+            mode, count, len(questions),
+        )
+        return questions[:count]
+
+    # 第四层：回退到 V1 no_repeat_days fallback
+    v1_results = await _get_questions_v1_fallback(
+        db, base_conditions, mode, count - len(questions),
+        user_id=user_id,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+        exclude_ids=existing_ids,
+    )
+    questions.extend(v1_results)
 
     logger.info(
-        "[Practice Query] subject=%s mode=%s count=%d resultCount=%d",
-        subject, mode, count, len(questions),
+        "[Leitner Query] mode=%s count=%d resultCount=%d (layer: v1-fallback)",
+        mode, count, len(questions),
     )
-    return questions
+    return questions[:count]
+
+
+async def _get_questions_v1_fallback(
+    db: AsyncSession,
+    base_conditions: list,
+    mode: str,
+    count: int,
+    user_id: int,
+    exclude_answered: bool = False,
+    no_repeat_days: int | None = None,
+    exclude_ids: set[int] | None = None,
+) -> list[Question]:
+    """V1 fallback 取题：N天 → 7天 → 1天 → 不排除。"""
+    async def _query(
+        excl_answered: bool,
+        excl_days: int | None,
+        extra_exclude_ids: set[int] | None = None,
+        limit: int | None = None,
+    ) -> list[Question]:
+        conds = list(base_conditions)
+        sub = _build_excluded_question_subquery(
+            user_id=user_id,
+            exclude_answered=excl_answered,
+            no_repeat_days=excl_days,
+        )
+        if sub is not None:
+            conds.append(Question.id.notin_(sub))
+        all_excl = set()
+        if exclude_ids:
+            all_excl.update(exclude_ids)
+        if extra_exclude_ids:
+            all_excl.update(extra_exclude_ids)
+        if all_excl:
+            conds.append(Question.id.notin_(all_excl))
+
+        q = select(Question).where(and_(*conds)).options(selectinload(Question.subject_ref))
+        if mode == "random":
+            q = q.order_by(func.random())
+        else:
+            q = q.order_by(Question.id.asc())
+        q = q.limit(limit if limit is not None else count)
+        result = await db.execute(q)
+        return list(result.scalars().all())
+
+    questions = await _query(exclude_answered, no_repeat_days)
+    if len(questions) >= count or not no_repeat_days:
+        return questions
+
+    existing = set(q.id for q in questions)
+    if exclude_ids:
+        existing.update(exclude_ids)
+
+    if no_repeat_days > 7:
+        more = await _query(True, 7, extra_exclude_ids=existing, limit=count - len(questions))
+        questions.extend(more)
+        existing.update(q.id for q in more)
+    if len(questions) >= count:
+        return questions[:count]
+
+    if no_repeat_days > 1:
+        more = await _query(True, 1, extra_exclude_ids=existing, limit=count - len(questions))
+        questions.extend(more)
+        existing.update(q.id for q in more)
+    if len(questions) >= count:
+        return questions[:count]
+
+    more = await _query(False, None, extra_exclude_ids=existing, limit=count - len(questions))
+    questions.extend(more)
+    return questions[:count]
 
 
 async def get_similar_practice_questions(
@@ -148,12 +360,17 @@ async def get_similar_practice_questions(
     source_question_id: int,
     count: int = 20,
     exclude_answered: bool = False,
+    no_repeat_days: int | None = None,
+    use_leitner: bool = True,
 ) -> tuple[list[Question], dict[int, dict]]:
     """similar 模式：基于源题的向量相似题召回，不足时用规则 + 随机补齐。
 
     返回: (questions_list, metadata_dict)
         metadata_dict: {question_id: {"recommend_reason": ..., "recommend_score": ..., "strategy": ..., "similarity": ...}}
     """
+    # TODO(V3): use_leitner 参数当前未使用。向量召回后应通过
+    # question_review_service.get_due_question_ids() 做二次过滤，
+    # 过滤掉 next_review_at > now 的题目，不足时用 Leitner fallback 补齐。
     metadata: dict[int, dict] = {}
 
     # 1. 向量召回
@@ -167,6 +384,7 @@ async def get_similar_practice_questions(
             question_id=source_question_id,
             count=count,
             exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
         )
         if result.get("enabled") and result.get("recommendations"):
             rec_ids = [r["question_id"] for r in result["recommendations"]]
@@ -202,13 +420,14 @@ async def get_similar_practice_questions(
         subject_cond,
         Question.id.notin_(existing_ids),
     ]
-    if exclude_answered:
-        answered_sub = (
-            select(PracticeRecord.question_id)
-            .where(PracticeRecord.user_id == user_id)
-            .distinct()
-        )
-        conditions.append(Question.id.notin_(answered_sub))
+    # V1: 使用公共排除函数，支持 no_repeat_days 时间窗口
+    excluded_sub = _build_excluded_question_subquery(
+        user_id=user_id,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+    )
+    if excluded_sub is not None:
+        conditions.append(Question.id.notin_(excluded_sub))
 
     need = count - len(vector_questions)
     q = select(Question).where(and_(*conditions)).options(selectinload(Question.subject_ref)).order_by(func.random()).limit(need)
@@ -232,6 +451,8 @@ async def get_smart_practice_questions(
     subject: str,
     count: int = 20,
     exclude_answered: bool = False,
+    no_repeat_days: int | None = None,
+    use_leitner: bool = True,
     request_id: str | None = None,
     smart_strategy: str = "weakness_vector",
 ) -> tuple[list[Question], dict[int, dict]]:
@@ -241,6 +462,9 @@ async def get_smart_practice_questions(
     Phase 2: 优先使用 UserKnowledgeState 画像，fallback 到近 30 天 PracticeRecord 统计。
     返回: (questions_list, metadata_dict)
     """
+    # TODO(V3): use_leitner 参数当前未使用。向量召回和 path 推荐结果应通过
+    # question_review_service.get_due_question_ids() 做二次过滤，
+    # 过滤掉 next_review_at > now 的题目，不足时用 Leitner fallback 补齐。
     metadata: dict[int, dict] = {}
 
     # Phase 4: 实验策略解析（best-effort）
@@ -264,6 +488,28 @@ async def get_smart_practice_questions(
             experiment_info["variant_key"] = resolved.get("variant_key")
     except Exception:
         logger.warning("实验策略解析失败，使用默认策略", exc_info=True)
+
+    # V4: 综合打分策略
+    if smart_strategy == "scored":
+        try:
+            scored_qs, scored_meta = await get_smart_scored_questions(
+                db=db, user_id=user_id, subject=subject, count=count,
+                exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+                request_id=request_id,
+            )
+            if len(scored_qs) >= count:
+                return await _finalize_smart(
+                    scored_qs[:count], scored_meta, db, user_id, subject,
+                    request_id=request_id,
+                    experiment_id=experiment_info.get("experiment_id"),
+                    variant_key=experiment_info.get("variant_key"),
+                )
+            # 不足时 fallback 到 path / weakness_vector
+            logger.info("scored 策略题量不足 (%d/%d)，fallback",
+                        len(scored_qs), count)
+        except Exception:
+            logger.warning("scored 策略失败，fallback", exc_info=True)
 
     # Phase 3: 知识路径策略
     if smart_strategy == "path":
@@ -320,6 +566,7 @@ async def get_smart_practice_questions(
                 fallback_questions, fallback_meta = await _smart_weakness_vector(
                     db, user_id, subject, count=remaining,
                     exclude_answered=exclude_answered,
+                    no_repeat_days=no_repeat_days,
                     exclude_ids={q.id for q in path_questions},
                 )
                 path_questions.extend(fallback_questions)
@@ -359,6 +606,7 @@ async def get_smart_practice_questions(
         questions = await get_practice_questions(
             db=db, user_id=user_id, subject=subject, count=count,
             mode="random", exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
         )
         for q in questions:
             metadata[q.id] = {
@@ -390,6 +638,7 @@ async def get_smart_practice_questions(
             query_text=query_text,
             count=count,
             exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
         )
         if recalls:
             rec_ids = [r["question_id"] for r in recalls]
@@ -425,13 +674,14 @@ async def get_smart_practice_questions(
         subject_cond,
         Question.id.notin_(existing_ids),
     ]
-    if exclude_answered:
-        answered_sub = (
-            select(PracticeRecord.question_id)
-            .where(PracticeRecord.user_id == user_id)
-            .distinct()
-        )
-        conditions.append(Question.id.notin_(answered_sub))
+    # V1: 使用公共排除函数，支持 no_repeat_days 时间窗口
+    excluded_sub = _build_excluded_question_subquery(
+        user_id=user_id,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+    )
+    if excluded_sub is not None:
+        conditions.append(Question.id.notin_(excluded_sub))
 
     # 优先按薄弱知识点过滤
     if kp_names:
@@ -538,6 +788,8 @@ async def _smart_weakness_vector(
     subject: str,
     count: int = 20,
     exclude_answered: bool = False,
+    no_repeat_days: int | None = None,
+    use_leitner: bool = True,
     exclude_ids: set[int] | None = None,
 ) -> tuple[list[Question], dict[int, dict]]:
     """Phase 2 weakness_vector 策略：薄弱知识点 → 向量召回 → KP 补齐 → 随机补齐。
@@ -566,6 +818,7 @@ async def _smart_weakness_vector(
         questions = await get_practice_questions(
             db=db, user_id=user_id, subject=subject, count=count,
             mode="random", exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
         )
         for q in questions:
             if q.id not in exclude_ids:
@@ -590,6 +843,7 @@ async def _smart_weakness_vector(
             db=db, user_id=user_id, subject=subject,
             query_text=query_text, count=count,
             exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
         )
         if recalls:
             rec_ids = [r["question_id"] for r in recalls if r["question_id"] not in exclude_ids]
@@ -623,13 +877,14 @@ async def _smart_weakness_vector(
         subject_cond,
         Question.id.notin_(existing_ids),
     ]
-    if exclude_answered:
-        answered_sub = (
-            select(PracticeRecord.question_id)
-            .where(PracticeRecord.user_id == user_id)
-            .distinct()
-        )
-        conditions.append(Question.id.notin_(answered_sub))
+    # V1: 使用公共排除函数，支持 no_repeat_days 时间窗口
+    excluded_sub = _build_excluded_question_subquery(
+        user_id=user_id,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+    )
+    if excluded_sub is not None:
+        conditions.append(Question.id.notin_(excluded_sub))
 
     remaining = count - len(result_questions)
     fill_q = (
@@ -651,6 +906,415 @@ async def _smart_weakness_vector(
     result_questions.extend(fill_questions)
 
     return result_questions[:count], metadata
+
+
+# ── V4: 智能推荐综合打分 ─────────────────────────────────────────
+
+
+def calculate_smart_score(
+    question: Question,
+    q_state,          # UserQuestionState | None
+    kp_ids: list[int],
+    kp_mastery: dict[int, tuple],   # kp_id -> (mastery_score, confidence)
+    recent_kp_ids: set[int],
+    now: datetime,
+    blocked_kps: dict[int, list[dict]] | None = None,  # V6.3: kp_id -> [weak prereqs]
+    weights: dict[str, float] | None = None,  # V6.4: 个性化权重
+) -> tuple[float, list[str]]:
+    """V4 综合打分 + V6.3 路径感知 + V6.4 权重个性化。
+
+    维度:
+      1. due_score        — 复习到期 (+40)         × due_weight
+      2. overdue_score    — 逾期天数 (+2/天, max 20) × due_weight
+      3. weakness_score   — 知识点薄弱              × weakness_weight
+      4. wrong_history    — 错题历史 (+8/次, max 30) × wrong_weight
+      5. new_question     — 新题 (+20)              × new_question_weight
+      6. long_unpracticed — 长期未练                × diversity_weight
+      7. diversity        — 知识点多样性 (+10)       × diversity_weight
+      8. path_blocked     — 前置知识点薄弱 (-25)     × path_weight
+      9. path_unlock      — 前置已掌握可推进 (+15)   × path_weight
+    """
+    reasons: list[str] = []
+
+    # 分组计分
+    due_total = 0.0
+    weakness_total = 0.0
+    wrong_total = 0.0
+    new_total = 0.0
+    diversity_total = 0.0
+    path_total = 0.0
+
+    # ── 1 & 2: 到期复习 + 逾期 ──
+    if q_state and q_state.next_review_at and q_state.next_review_at <= now:
+        due_total += 40
+        reasons.append("due_review")
+        overdue_days = (now - q_state.next_review_at).days
+        overdue_score = min(overdue_days * 2, 20)
+        due_total += overdue_score
+        if overdue_score > 0:
+            reasons.append(f"overdue_{overdue_days}d")
+
+    # ── 3: 知识点薄弱 ──
+    if kp_ids:
+        total_ws = 0.0
+        cnt = 0
+        for kid in kp_ids:
+            ms, conf = kp_mastery.get(kid, (50.0, 0.0))
+            total_ws += (100 - ms) * conf * 0.4
+            cnt += 1
+        if cnt:
+            ws = total_ws / cnt
+            weakness_total += ws
+            if ws >= 15:
+                reasons.append("weak_kp")
+
+    # ── 4: 错题历史 ──
+    if q_state:
+        ws = min(q_state.wrong_count * 8, 30)
+        wrong_total += ws
+        if q_state.wrong_count > 0:
+            reasons.append("wrong_history")
+
+    # ── 5: 新题 ──
+    if not q_state or q_state.answer_count == 0:
+        new_total += 20
+        reasons.append("new_question")
+
+    # ── 6: 长期未练 ──
+    if q_state and q_state.last_answered_at:
+        days_since = (now - q_state.last_answered_at).days
+        if days_since >= 30:
+            ls = min(days_since * 0.5, 15)
+            diversity_total += ls
+            reasons.append("long_unpracticed")
+
+    # ── 7: 知识点多样性 ──
+    if kp_ids and not set(kp_ids) & recent_kp_ids:
+        diversity_total += 10
+        reasons.append("diversity")
+
+    # ── 8 & 9: 知识点路径感知 (V6.3) ──
+    if blocked_kps is not None and kp_ids:
+        has_blocked = False
+        has_unlock = False
+        for kid in kp_ids:
+            if kid in blocked_kps:
+                has_blocked = True
+            else:
+                ms, conf = kp_mastery.get(kid, (50.0, 0.0))
+                if conf >= 0.3 and ms < 60:
+                    has_unlock = True
+        if has_blocked:
+            path_total -= 25
+            reasons.append("weak_prerequisite")
+        if has_unlock and not has_blocked:
+            path_total += 15
+            reasons.append("path_unlock")
+
+    # ── V6.4: 应用个性化权重 ──
+    if weights:
+        score = (
+            due_total * weights.get("due_weight", 1.0)
+            + weakness_total * weights.get("weakness_weight", 1.0)
+            + wrong_total * weights.get("wrong_weight", 1.0)
+            + new_total * weights.get("new_question_weight", 1.0)
+            + diversity_total * weights.get("diversity_weight", 1.0)
+            + path_total * weights.get("path_weight", 1.0)
+        )
+    else:
+        score = due_total + weakness_total + wrong_total + new_total + diversity_total + path_total
+
+    return score, reasons
+
+
+async def get_smart_scored_questions(
+    db: AsyncSession,
+    user_id: int,
+    subject: str,
+    count: int = 20,
+    exclude_answered: bool = False,
+    no_repeat_days: int | None = None,
+    request_id: str | None = None,
+) -> tuple[list[Question], dict[int, dict]]:
+    """V4 综合打分推荐。
+
+    流程:
+      1. 构建候选题池 (candidate_limit)
+      2. 批量加载 UserQuestionState / UserKnowledgeState
+      3. 查询最近练习知识点 (diversity)
+      4. 批量加载 QuestionKnowledgePoint 映射
+      5. 逐题打分 → 降序排列
+      6. 知识点多样性控制 (同一 KP <= 50%)
+      7. 不足时 5 层降级
+
+    降级链:
+      高分候选 → 放宽多样性 → 随机补齐(含24h内) → 放弃24h限制重查 → 最终随机
+    """
+    from app.models.user_question_state import UserQuestionState
+    from app.models.user_knowledge_state import UserKnowledgeState
+    from app.models.question_knowledge_point import QuestionKnowledgePoint
+
+    now = utcnow()
+    metadata: dict[int, dict] = {}
+    fallback_level = 0
+
+    # ── 1. 候选题池 ──
+    candidate_limit = max(count * 5, 50)
+    ids = await resolve_subject_ids(db, subject)
+    subject_cond = Question.subject_id.in_(ids)
+    conditions: list = [Question.is_active == True, subject_cond]
+
+    excluded_sub = _build_excluded_question_subquery(
+        user_id=user_id,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+    )
+    if excluded_sub is not None:
+        conditions.append(Question.id.notin_(excluded_sub))
+
+    # 硬性排除 24 h 内做过的题
+    recent_cutoff = now - timedelta(hours=24)
+    recent_q_sub = select(PracticeRecord.question_id).where(
+        PracticeRecord.user_id == user_id,
+        PracticeRecord.answered_at >= recent_cutoff,
+    ).distinct()
+    conditions.append(Question.id.notin_(recent_q_sub))
+
+    cand_query = (
+        select(Question)
+        .where(and_(*conditions))
+        .options(selectinload(Question.subject_ref))
+        .limit(candidate_limit)
+    )
+    cand_result = await db.execute(cand_query)
+    candidates: list[Question] = list(cand_result.scalars().all())
+
+    # 24h 过滤后不足 → 放宽（降级 1）
+    if len(candidates) < count:
+        fallback_level = 1
+        relaxed = [c for c in conditions if c is not conditions[-1]]
+        relaxed_query = (
+            select(Question)
+            .where(and_(*relaxed))
+            .options(selectinload(Question.subject_ref))
+            .limit(candidate_limit)
+        )
+        relaxed_result = await db.execute(relaxed_query)
+        candidates = list(relaxed_result.scalars().all())
+
+    if not candidates:
+        logger.warning("[smart_scored] 候选题池为空 uid=%s subject=%s", user_id, subject)
+        return [], metadata
+
+    cand_ids = {q.id for q in candidates}
+
+    # ── 2. 批量加载状态 ──
+    qs_result = await db.execute(
+        select(UserQuestionState).where(
+            UserQuestionState.user_id == user_id,
+            UserQuestionState.question_id.in_(cand_ids),
+        )
+    )
+    q_state_map: dict[int, object] = {
+        s.question_id: s for s in qs_result.scalars().all()
+    }
+
+    ks_result = await db.execute(
+        select(UserKnowledgeState).where(
+            UserKnowledgeState.user_id == user_id,
+            UserKnowledgeState.subject == subject,
+        )
+    )
+    kp_mastery: dict[int, tuple] = {
+        s.knowledge_point_id: (s.mastery_score, s.confidence)
+        for s in ks_result.scalars().all()
+    }
+
+    # ── 3. 最近练习知识点 (diversity) ──
+    recent_kp_result = await db.execute(
+        select(QuestionKnowledgePoint.knowledge_point_id)
+        .join(PracticeRecord, PracticeRecord.question_id == QuestionKnowledgePoint.question_id)
+        .where(
+            PracticeRecord.user_id == user_id,
+            or_(
+                PracticeRecord.subject == subject,
+                PracticeRecord.subject.like(f"{subject}-%"),
+            ),
+        )
+        .order_by(PracticeRecord.answered_at.desc())
+        .limit(20)
+    )
+    recent_kp_ids: set[int] = {r[0] for r in recent_kp_result.all()}
+
+    # ── 4. 批量加载 QKP 映射 ──
+    qkp_result = await db.execute(
+        select(
+            QuestionKnowledgePoint.question_id,
+            QuestionKnowledgePoint.knowledge_point_id,
+        ).where(QuestionKnowledgePoint.question_id.in_(cand_ids))
+    )
+    q_kp_map: dict[int, list[int]] = {}
+    for qid, kid in qkp_result.all():
+        q_kp_map.setdefault(qid, []).append(kid)
+
+    # ── 4.5 批量加载前置知识点阻塞信息 (V6.3) ──
+    blocked_kps: dict[int, list[dict]] = {}
+    try:
+        from app.core.config import settings as _settings
+        if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_PATH_ENABLED:
+            all_kp_ids = list({kid for kids in q_kp_map.values() for kid in kids})
+            if all_kp_ids:
+                from app.services import adaptive_learning_service
+                blocked_kps = await adaptive_learning_service.get_blocked_knowledge_points(
+                    db, user_id, all_kp_ids, subject,
+                )
+    except Exception:
+        logger.debug("V6.3 前置知识点加载失败（不影响推荐）uid=%s", user_id, exc_info=True)
+
+    # ── 4.6 加载用户推荐权重 (V6.4) ──
+    rec_weights: dict[str, float] | None = None
+    try:
+        from app.core.config import settings as _settings
+        if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_WEIGHT_ENABLED:
+            from app.services import adaptive_learning_service
+            rec_weights = await adaptive_learning_service.get_recommend_weights(db, user_id)
+    except Exception:
+        logger.debug("V6.4 权重加载失败（不影响推荐）uid=%s", user_id, exc_info=True)
+
+    # ── 5. 逐题打分 ──
+    scored: list[tuple[Question, float, list[str]]] = []
+    for q in candidates:
+        kp_ids = q_kp_map.get(q.id, [])
+        qs = q_state_map.get(q.id)
+        sc, reasons = calculate_smart_score(
+            q, qs, kp_ids, kp_mastery, recent_kp_ids, now,
+            blocked_kps=blocked_kps, weights=rec_weights,
+        )
+        scored.append((q, sc, reasons))
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    # 调试日志
+    if scored:
+        top = scored[:5]
+        logger.info(
+            "[smart_scored] top5 uid=%s: %s",
+            user_id,
+            [(q.id, round(s, 1), r) for q, s, r in top],
+        )
+
+    # ── 6. 知识点多样性控制 ──
+    max_per_kp = max(1, int(count * 0.5))
+    selected: list[Question] = []
+    selected_ids: set[int] = set()
+    kp_counter: dict[int, int] = {}
+
+    for q, sc, reasons in scored:
+        kp_ids = q_kp_map.get(q.id, [])
+        if kp_ids:
+            min_count = min(kp_counter.get(k, 0) for k in kp_ids)
+            if min_count >= max_per_kp:
+                continue
+
+        selected.append(q)
+        selected_ids.add(q.id)
+        for k in kp_ids:
+            kp_counter[k] = kp_counter.get(k, 0) + 1
+        metadata[q.id] = {
+            "recommend_score": round(sc, 2),
+            "recommend_reason": ",".join(reasons),
+            "strategy": "smart_scored",
+            "similarity": None,
+        }
+        if len(selected) >= count:
+            break
+
+    # ── 降级 2: 放宽多样性 ──
+    if len(selected) < count:
+        fallback_level = max(fallback_level, 2)
+        for q, sc, reasons in scored:
+            if q.id in selected_ids:
+                continue
+            selected.append(q)
+            selected_ids.add(q.id)
+            metadata[q.id] = {
+                "recommend_score": round(sc, 2),
+                "recommend_reason": ",".join(reasons),
+                "strategy": "smart_scored",
+                "similarity": None,
+            }
+            if len(selected) >= count:
+                break
+
+    # ── 降级 3: 随机补齐 (排除候选题) ──
+    if len(selected) < count:
+        fallback_level = max(fallback_level, 3)
+        remaining = count - len(selected)
+        fill_cond = [
+            Question.is_active == True,
+            subject_cond,
+            Question.id.notin_(cand_ids | selected_ids),
+        ]
+        fill_q = (
+            select(Question)
+            .where(and_(*fill_cond))
+            .options(selectinload(Question.subject_ref))
+            .order_by(func.random())
+            .limit(remaining)
+        )
+        fill_result = await db.execute(fill_q)
+        for fq in fill_result.scalars().all():
+            selected.append(fq)
+            selected_ids.add(fq.id)
+            metadata[fq.id] = {
+                "recommend_score": None,
+                "recommend_reason": "随机补齐",
+                "strategy": "random_fallback",
+                "similarity": None,
+            }
+
+    # ── 降级 4: 放弃 24h 限制重查 ──
+    if len(selected) < count:
+        fallback_level = max(fallback_level, 4)
+        remaining = count - len(selected)
+        fill_cond2 = [
+            Question.is_active == True,
+            subject_cond,
+            Question.id.notin_(selected_ids),
+        ]
+        if excluded_sub is not None:
+            fill_cond2.append(Question.id.notin_(excluded_sub))
+        fill_q2 = (
+            select(Question)
+            .where(and_(*fill_cond2))
+            .options(selectinload(Question.subject_ref))
+            .order_by(func.random())
+            .limit(remaining)
+        )
+        fill_result2 = await db.execute(fill_q2)
+        for fq in fill_result2.scalars().all():
+            selected.append(fq)
+            selected_ids.add(fq.id)
+            metadata[fq.id] = {
+                "recommend_score": None,
+                "recommend_reason": "放弃24h限制补齐",
+                "strategy": "no_24h_fallback",
+                "similarity": None,
+            }
+
+    logger.info(
+        "[smart_recommend] user_id=%s subject_id=%s candidates=%s selected=%s fallback=%s",
+        user_id,
+        subject,
+        len(candidates),
+        len(selected),
+        fallback_level,
+    )
+
+    return await _finalize_smart(
+        selected[:count], metadata, db, user_id, subject,
+        request_id=request_id,
+    )
 
 
 async def _compute_weak_knowledge_points(
@@ -790,7 +1454,7 @@ async def submit_answer(
     try:
         from app.services import mastery_service
         await mastery_service.update_user_knowledge_state_after_answer(
-            db, user_id, question_id, is_correct,
+            db, user_id, question_id, is_correct, used_time=used_time,
         )
     except Exception:
         logger.warning("掌握度更新失败（不影响答题）qid=%d uid=%d", question_id, user_id, exc_info=True)
@@ -804,6 +1468,33 @@ async def submit_answer(
     except Exception:
         logger.warning("推荐日志标记失败（不影响答题）qid=%d uid=%d", question_id, user_id, exc_info=True)
         await db.rollback()
+
+    # ── V2: Leitner 盒子状态更新（best-effort）──
+    try:
+        from app.services import question_review_service
+        await question_review_service.update_user_question_state_after_answer(
+            db, user_id, question_id, is_correct, used_time=used_time,
+        )
+    except Exception:
+        logger.warning(
+            "Leitner 状态更新失败（不影响答题）qid=%d uid=%d",
+            question_id, user_id, exc_info=True,
+        )
+        await db.rollback()
+
+    # ── V6: 个性化调度状态更新（best-effort）──
+    try:
+        from app.services import adaptive_learning_service
+        await adaptive_learning_service.update_adaptive_state_after_answer(
+            db, user_id=user_id, question_id=question_id,
+            is_correct=is_correct, answer_time_seconds=used_time,
+            answered_at=record.answered_at,
+        )
+    except Exception:
+        logger.warning(
+            "V6 自适应更新失败（不影响答题）qid=%d uid=%d",
+            question_id, user_id, exc_info=True,
+        )
 
     return {
         "record_id": record.id,

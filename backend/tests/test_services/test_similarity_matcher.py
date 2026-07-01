@@ -117,29 +117,24 @@ class TestMatchSimilarQuestions:
             "subject": "exam408",
         }]
 
-        mock_row = MagicMock()
-        mock_row.id = 42
-        mock_row.content = {"text": "下列关于数据结构的说法正确的是"}
-        mock_row.options = {"A": "集合", "B": "关系", "C": "两者", "D": "都不对"}
-        mock_row.answer = "C"
-
-        # resolve_subject_id needs a Subject row first
-        subject_row = MagicMock()
-        subject_row.id = 1
-        subject_row.code = "exam408"
-        subject_result = MagicMock()
-        subject_result.all.return_value = [subject_row]
-
-        question_result = MagicMock()
-        question_result.all.return_value = [mock_row]
+        bank = [{
+            "id": 42,
+            "stem": "下列关于数据结构的说法正确的是",
+            "options": {"A": "集合", "B": "关系", "C": "两者", "D": "都不对"},
+            "answer": "C",
+        }]
 
         mock_db = AsyncMock()
-        mock_db.execute = AsyncMock(side_effect=[subject_result, question_result])
 
-        result = await match_similar_questions(questions, db=mock_db, config={
-            "enabled": True,
-            "similarity_threshold": 0.85,
-        })
+        with patch(
+            "app.features.similarity_matcher._load_subject_questions",
+            new_callable=AsyncMock,
+            return_value=bank,
+        ):
+            result = await match_similar_questions(questions, db=mock_db, config={
+                "enabled": True,
+                "similarity_threshold": 0.85,
+            })
 
         assert result["stats"]["matched_count"] == 1
         assert result["questions"][0]["similarity_suggestion"]["matched_question_id"] == 42
@@ -219,29 +214,24 @@ class TestMatchSimilarQuestions:
             "subject": "exam408",
         }]
 
-        mock_row = MagicMock()
-        mock_row.id = 99
-        mock_row.content = {"text": "下列关于数据结构的说法正确的是"}
-        mock_row.options = {"A": "a", "B": "b"}
-        mock_row.answer = "A"
-
-        # resolve_subject_id needs a Subject row first
-        subject_row = MagicMock()
-        subject_row.id = 1
-        subject_row.code = "exam408"
-        subject_result = MagicMock()
-        subject_result.all.return_value = [subject_row]
-
-        question_result = MagicMock()
-        question_result.all.return_value = [mock_row]
+        bank = [{
+            "id": 99,
+            "stem": "下列关于数据结构的说法正确的是",
+            "options": {"A": "a", "B": "b"},
+            "answer": "A",
+        }]
 
         mock_db = AsyncMock()
-        mock_db.execute = AsyncMock(side_effect=[subject_result, question_result])
 
-        result = await match_similar_questions(questions, db=mock_db, config={
-            "enabled": True,
-            "similarity_threshold": 0.85,
-        })
+        with patch(
+            "app.features.similarity_matcher._load_subject_questions",
+            new_callable=AsyncMock,
+            return_value=bank,
+        ):
+            result = await match_similar_questions(questions, db=mock_db, config={
+                "enabled": True,
+                "similarity_threshold": 0.85,
+            })
 
         assert result["stats"]["matched_count"] == 1
         suggestion = result["questions"][0]["similarity_suggestion"]
@@ -343,31 +333,26 @@ class TestHashIndexInjection:
             "subject": "exam408",
         }]
 
-        mock_row = MagicMock()
-        mock_row.id = 7
-        mock_row.content = {"text": "OCR 题干内容大致相同"}
-        mock_row.options = {"A": "x"}
-        mock_row.answer = "A"
-
-        # resolve_subject_id needs a Subject row first
-        subject_row = MagicMock()
-        subject_row.id = 1
-        subject_row.code = "exam408"
-        subject_result = MagicMock()
-        subject_result.all.return_value = [subject_row]
-
-        question_result = MagicMock()
-        question_result.all.return_value = [mock_row]
+        bank = [{
+            "id": 7,
+            "stem": "OCR 题干内容大致相同",
+            "options": {"A": "x"},
+            "answer": "A",
+        }]
 
         mock_db = AsyncMock()
-        mock_db.execute = AsyncMock(side_effect=[subject_result, question_result])
 
-        result = await match_similar_questions(
-            questions,
-            db=mock_db,
-            config={"enabled": True, "similarity_threshold": 0.85},
-            hash_index=None,
-        )
+        with patch(
+            "app.features.similarity_matcher._load_subject_questions",
+            new_callable=AsyncMock,
+            return_value=bank,
+        ):
+            result = await match_similar_questions(
+                questions,
+                db=mock_db,
+                config={"enabled": True, "similarity_threshold": 0.85},
+                hash_index=None,
+            )
 
         assert result["stats"]["hash_hit_count"] == 0
         assert result["stats"]["matched_count"] == 1

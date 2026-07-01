@@ -53,8 +53,8 @@ def patch_async_session(tmp_path):
 
 def _make_stub_job(job_id: str) -> dict:
     """Return a minimal seed dict for a batch import job row."""
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    from datetime import datetime
+    now = datetime.now().astimezone().replace(tzinfo=None)
     return {
         "job_id": job_id,
         "source_type": "image",
@@ -70,8 +70,8 @@ def _make_stub_job(job_id: str) -> dict:
 def _make_stub_item(
     job_id: str, seq: int, review_batch_id: str,
 ) -> dict:
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    from datetime import datetime
+    now = datetime.now().astimezone().replace(tzinfo=None)
     return {
         "job_id": job_id,
         "seq": seq,

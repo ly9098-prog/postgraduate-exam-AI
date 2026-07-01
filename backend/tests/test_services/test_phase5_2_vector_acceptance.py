@@ -36,6 +36,7 @@ def _make_mock_db(dialect_name="sqlite"):
     db.refresh = AsyncMock()
     db.execute = AsyncMock()
     db.flush = AsyncMock()
+    db.rollback = AsyncMock()
     db.bind = MagicMock()
     db.bind.dialect.name = dialect_name
     return db
@@ -734,7 +735,9 @@ class TestMainChainIntegrity:
              patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
                    new_callable=AsyncMock) as mock_mastery, \
              patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock) as mock_rec_log:
+                   new_callable=AsyncMock) as mock_rec_log, \
+             patch("app.services.question_review_service.update_user_question_state_after_answer",
+                   new_callable=AsyncMock):
             result = _run(practice_service.submit_answer(
                 db=db, user_id=1, question_id=42, user_answer="A",
             ))
@@ -760,6 +763,8 @@ class TestMainChainIntegrity:
              patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
                    new_callable=AsyncMock), \
              patch("app.services.recommendation_log_service.mark_recommendation_answered",
+                   new_callable=AsyncMock), \
+             patch("app.services.question_review_service.update_user_question_state_after_answer",
                    new_callable=AsyncMock):
             result = _run(practice_service.submit_answer(
                 db=db, user_id=1, question_id=1, user_answer="B",
@@ -783,6 +788,8 @@ class TestMainChainIntegrity:
              patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
                    new_callable=AsyncMock), \
              patch("app.services.recommendation_log_service.mark_recommendation_answered",
+                   new_callable=AsyncMock), \
+             patch("app.services.question_review_service.update_user_question_state_after_answer",
                    new_callable=AsyncMock):
             result = _run(practice_service.submit_answer(
                 db=db, user_id=1, question_id=1, user_answer="B",
@@ -808,6 +815,8 @@ class TestMainChainIntegrity:
              patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
                    new_callable=AsyncMock, side_effect=Exception("mastery error")), \
              patch("app.services.recommendation_log_service.mark_recommendation_answered",
+                   new_callable=AsyncMock), \
+             patch("app.services.question_review_service.update_user_question_state_after_answer",
                    new_callable=AsyncMock), \
              patch("app.services.vector_retrieval_service.invalidate_vector_cache",
                    new_callable=AsyncMock):

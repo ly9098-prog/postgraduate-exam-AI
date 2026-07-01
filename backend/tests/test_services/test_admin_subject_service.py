@@ -155,16 +155,11 @@ async def test_update_subject_moves_subtree_and_rejects_cycle(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_update_subject_allows_code_change_when_referenced_by_id(monkeypatch):
-    """Since questions now reference subjects by subject_id (not code),
-    changing a subject's code should be allowed even when questions exist."""
-    monkeypatch.setattr(admin_subject_service, "write_admin_audit", AsyncMock())
-    subj = _subject(1, "math", "数学")
-    db = _Db([subj], question_count=1)
+async def test_update_subject_rejects_referenced_code_change():
+    db = _Db([_subject(1, "math", "数学")], question_count=1)
 
-    # Should NOT raise — code change is safe because references use subject_id
-    result = await update_subject(db, 1, AdminSubjectUpdateRequest(code="new-math"), _principal())
-    assert result.code == "new-math"
+    with pytest.raises(ValueError, match="已有题目使用该科目，不能修改编码"):
+        await update_subject(db, 1, AdminSubjectUpdateRequest(code="new-math"), _principal())
 
 
 @pytest.mark.asyncio
