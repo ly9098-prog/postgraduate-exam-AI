@@ -52,8 +52,8 @@ def patch_async_session(tmp_path):
 
 
 def _make_stub_job(job_id: str, **overrides) -> dict:
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    from datetime import datetime
+    now = datetime.now().astimezone().replace(tzinfo=None)
     defaults = {
         "job_id": job_id,
         "source_type": "image",
@@ -69,8 +69,8 @@ def _make_stub_job(job_id: str, **overrides) -> dict:
 
 
 def _make_stub_item(job_id: str, seq: int, review_batch_id: str, **overrides) -> dict:
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    from datetime import datetime
+    now = datetime.now().astimezone().replace(tzinfo=None)
     defaults = {
         "job_id": job_id,
         "seq": seq,

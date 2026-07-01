@@ -618,6 +618,7 @@ async def search_similar_questions(
     question_id: int,
     count: int = 5,
     exclude_answered: bool = True,
+    no_repeat_days: int | None = None,
 ) -> dict:
     """向量相似题检索 + 二次排序。
 
@@ -684,7 +685,7 @@ async def search_similar_questions(
     # 缓存检查（仅 use_result=True 时读写缓存）
     model = _vs.emb.model
     answer_ver = await _get_user_answer_version(db, user_id)
-    cache_key = f"vector:similar:{user_id}:{question_id}:{count}:{exclude_answered}:{answer_ver}:{model}"
+    cache_key = f"vector:similar:{user_id}:{question_id}:{count}:{exclude_answered}:{no_repeat_days}:{answer_ver}:{model}"
 
     if decision.use_result:
         cached = await cache.get(cache_key)
@@ -701,34 +702,70 @@ async def search_similar_questions(
     pg_literal = embedding_service.vector_to_pg_literal(source_embedding)
 
     try:
-        if exclude_answered:
-            sql = text("""
-                SELECT qe.question_id, qe.subject, qe.question_type, qe.content_hash,
-                       1 - (qe.embedding <=> CAST(:emb AS vector)) AS similarity
-                FROM question_embeddings qe
-                JOIN questions q ON q.id = qe.question_id
-                WHERE qe.question_id != :qid
-                  AND q.is_active = true
-                  AND q.review_status = 'approved'
-                  AND qe.subject = :subject
-                  AND qe.embedding_model = :model
-                  AND qe.question_id NOT IN (
-                      SELECT pr.question_id FROM practice_records pr WHERE pr.user_id = :uid
-                  )
-                ORDER BY qe.embedding <=> CAST(:emb AS vector)
-                LIMIT :top_k
-            """)
-            result = await db.execute(
-                sql,
-                {
-                    "emb": pg_literal,
-                    "qid": question_id,
-                    "subject": subject_code,
-                    "model": model,
-                    "uid": user_id,
-                    "top_k": top_k,
-                },
-            )
+        # V1: 构建排除子查询，支持 no_repeat_days 时间窗口
+        exclude_answered_active = exclude_answered or no_repeat_days
+        if exclude_answered_active:
+            if no_repeat_days:
+                from datetime import timedelta
+                from app.core.time_utils import utcnow
+                cutoff = utcnow() - timedelta(days=no_repeat_days)
+                sql = text("""
+                    SELECT qe.question_id, qe.subject, qe.question_type, qe.content_hash,
+                           1 - (qe.embedding <=> CAST(:emb AS vector)) AS similarity
+                    FROM question_embeddings qe
+                    JOIN questions q ON q.id = qe.question_id
+                    WHERE qe.question_id != :qid
+                      AND q.is_active = true
+                      AND q.review_status = 'approved'
+                      AND qe.subject = :subject
+                      AND qe.embedding_model = :model
+                      AND qe.question_id NOT IN (
+                          SELECT pr.question_id FROM practice_records pr
+                          WHERE pr.user_id = :uid AND pr.answered_at >= :cutoff
+                      )
+                    ORDER BY qe.embedding <=> CAST(:emb AS vector)
+                    LIMIT :top_k
+                """)
+                result = await db.execute(
+                    sql,
+                    {
+                        "emb": pg_literal,
+                        "qid": question_id,
+                        "subject": subject_code,
+                        "model": model,
+                        "uid": user_id,
+                        "cutoff": cutoff,
+                        "top_k": top_k,
+                    },
+                )
+            else:
+                sql = text("""
+                    SELECT qe.question_id, qe.subject, qe.question_type, qe.content_hash,
+                           1 - (qe.embedding <=> CAST(:emb AS vector)) AS similarity
+                    FROM question_embeddings qe
+                    JOIN questions q ON q.id = qe.question_id
+                    WHERE qe.question_id != :qid
+                      AND q.is_active = true
+                      AND q.review_status = 'approved'
+                      AND qe.subject = :subject
+                      AND qe.embedding_model = :model
+                      AND qe.question_id NOT IN (
+                          SELECT pr.question_id FROM practice_records pr WHERE pr.user_id = :uid
+                      )
+                    ORDER BY qe.embedding <=> CAST(:emb AS vector)
+                    LIMIT :top_k
+                """)
+                result = await db.execute(
+                    sql,
+                    {
+                        "emb": pg_literal,
+                        "qid": question_id,
+                        "subject": subject_code,
+                        "model": model,
+                        "uid": user_id,
+                        "top_k": top_k,
+                    },
+                )
         else:
             sql = text("""
                 SELECT qe.question_id, qe.subject, qe.question_type, qe.content_hash,
@@ -860,6 +897,7 @@ async def vector_recall_by_text(
     query_text: str,
     count: int = 20,
     exclude_answered: bool = False,
+    no_repeat_days: int | None = None,
 ) -> list[dict]:
     """基于文本的向量召回，用于 smart 模式。
 
@@ -891,7 +929,7 @@ async def vector_recall_by_text(
     model = _vs.emb.model
     weak_hash = hashlib.sha256(query_text.encode()).hexdigest()[:12]
     answer_ver = await _get_user_answer_version(db, user_id)
-    cache_key = f"vector:smart:{user_id}:{subject}:{count}:{exclude_answered}:{answer_ver}:{weak_hash}:{model}"
+    cache_key = f"vector:smart:{user_id}:{subject}:{count}:{exclude_answered}:{no_repeat_days}:{answer_ver}:{weak_hash}:{model}"
 
     if decision.use_result:
         cached = await cache.get(cache_key)
@@ -902,33 +940,68 @@ async def vector_recall_by_text(
     top_k = max(count * 3, 50)
 
     try:
-        if exclude_answered:
-            sql = text("""
-                SELECT qe.question_id, qe.subject, qe.question_type,
-                       1 - (qe.embedding <=> CAST(:emb AS vector)) AS similarity
-                FROM question_embeddings qe
-                JOIN questions q ON q.id = qe.question_id
-                WHERE q.is_active = true
-                  AND q.review_status = 'approved'
-                  AND (qe.subject = :subject OR qe.subject LIKE :subject_prefix)
-                  AND qe.embedding_model = :model
-                  AND qe.question_id NOT IN (
-                      SELECT pr.question_id FROM practice_records pr WHERE pr.user_id = :uid
-                  )
-                ORDER BY qe.embedding <=> CAST(:emb AS vector)
-                LIMIT :top_k
-            """)
-            result = await db.execute(
-                sql,
-                {
-                    "emb": pg_literal,
-                    "subject": subject,
-                    "subject_prefix": f"{subject}-%",
-                    "model": model,
-                    "uid": user_id,
-                    "top_k": top_k,
-                },
-            )
+        # V1: 构建排除子查询，支持 no_repeat_days 时间窗口
+        exclude_answered_active = exclude_answered or no_repeat_days
+        if exclude_answered_active:
+            if no_repeat_days:
+                from datetime import timedelta
+                from app.core.time_utils import utcnow
+                cutoff = utcnow() - timedelta(days=no_repeat_days)
+                sql = text("""
+                    SELECT qe.question_id, qe.subject, qe.question_type,
+                           1 - (qe.embedding <=> CAST(:emb AS vector)) AS similarity
+                    FROM question_embeddings qe
+                    JOIN questions q ON q.id = qe.question_id
+                    WHERE q.is_active = true
+                      AND q.review_status = 'approved'
+                      AND (qe.subject = :subject OR qe.subject LIKE :subject_prefix)
+                      AND qe.embedding_model = :model
+                      AND qe.question_id NOT IN (
+                          SELECT pr.question_id FROM practice_records pr
+                          WHERE pr.user_id = :uid AND pr.answered_at >= :cutoff
+                      )
+                    ORDER BY qe.embedding <=> CAST(:emb AS vector)
+                    LIMIT :top_k
+                """)
+                result = await db.execute(
+                    sql,
+                    {
+                        "emb": pg_literal,
+                        "subject": subject,
+                        "subject_prefix": f"{subject}-%",
+                        "model": model,
+                        "uid": user_id,
+                        "cutoff": cutoff,
+                        "top_k": top_k,
+                    },
+                )
+            else:
+                sql = text("""
+                    SELECT qe.question_id, qe.subject, qe.question_type,
+                           1 - (qe.embedding <=> CAST(:emb AS vector)) AS similarity
+                    FROM question_embeddings qe
+                    JOIN questions q ON q.id = qe.question_id
+                    WHERE q.is_active = true
+                      AND q.review_status = 'approved'
+                      AND (qe.subject = :subject OR qe.subject LIKE :subject_prefix)
+                      AND qe.embedding_model = :model
+                      AND qe.question_id NOT IN (
+                          SELECT pr.question_id FROM practice_records pr WHERE pr.user_id = :uid
+                      )
+                    ORDER BY qe.embedding <=> CAST(:emb AS vector)
+                    LIMIT :top_k
+                """)
+                result = await db.execute(
+                    sql,
+                    {
+                        "emb": pg_literal,
+                        "subject": subject,
+                        "subject_prefix": f"{subject}-%",
+                        "model": model,
+                        "uid": user_id,
+                        "top_k": top_k,
+                    },
+                )
         else:
             sql = text("""
                 SELECT qe.question_id, qe.subject, qe.question_type,

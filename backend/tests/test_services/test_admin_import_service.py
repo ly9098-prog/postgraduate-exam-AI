@@ -36,17 +36,8 @@ class _Result:
     def scalars(self):
         return _Scalars(self.values)
 
-    def _row_to_mapping(self, row):
-        """Convert an ORM model to a SimpleNamespace with extra fields."""
-        if hasattr(row, "__table__"):
-            data = {c.name: getattr(row, c.name, None) for c in row.__table__.columns}
-            data["content_preview"] = ""
-            return SimpleNamespace(**data)
-        return row
-
     def mappings(self):
-        combined = list(self.rows) + list(self.values)
-        return _Result(rows=[self._row_to_mapping(r) for r in combined])
+        return self
 
 
 class _Db:
@@ -74,6 +65,10 @@ class _Db:
                 batch_items = [item for item in self.imports if item.batch_id == batch_id]
                 rows.append(_summary_row(batch_items))
             return _Result(rows=rows)
+        # Item query uses func.substr for content_preview → mappings().all()
+        if "substr" in text:
+            return _Result(rows=self.imports)
+        # Full-model select by _get_import_question → scalar_one_or_none
         return _Result(values=self.imports)
 
 

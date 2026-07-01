@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     DEEPSEEK_MODEL: str = "deepseek-v4-flash"
-    AI_TIMEOUT: int = 60
+    AI_TIMEOUT: int = 150
     AI_DAILY_TOKEN_LIMIT: int = 50000
     AI_MONTHLY_TOKEN_LIMIT: int = 500000
     AI_SINGLE_MAX_TOKENS: int = 2000
@@ -121,6 +121,14 @@ class Settings(BaseSettings):
     EMBEDDING_DIM: int = 1024
     EMBEDDING_TIMEOUT: int = 30
     EMBEDDING_BATCH_SIZE: int = 16
+
+    # ── V6 Adaptive Learning ──
+    ADAPTIVE_LEARNING_ENABLED: bool = True
+    ADAPTIVE_INTERVAL_ENABLED: bool = True
+    ADAPTIVE_DIFFICULTY_ENABLED: bool = True
+    ADAPTIVE_PATH_ENABLED: bool = True
+    ADAPTIVE_WEIGHT_ENABLED: bool = True
+    ADAPTIVE_DRY_RUN: bool = False
 
     class Config:
         env_file = ".env"

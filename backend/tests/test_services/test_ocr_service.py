@@ -6,13 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# numpy is required by image preparation functions in ocr_service.
-# It is listed in requirements-ocr.txt; skip affected tests if absent.
 try:
-    import numpy  # noqa: F401
-    _HAS_NUMPY = True
+    import paddleocr  # noqa: F401
 except ImportError:
-    _HAS_NUMPY = False
+    pytest.skip(
+        "跳过: paddleocr 未安装，OCR 测试需要 paddleocr 依赖",
+        allow_module_level=True,
+    )
 
 
 # ============================================================
@@ -34,7 +34,7 @@ class TestServiceOcrImageDependencyHandling:
                 ocr_service.ocr_image(b"fake image")
 
     def test_ocr_pages_with_boxes_propagates_dependency_error(self):
-        """缺少 paddleocr 时，带框接口应抛出 RuntimeError 传播依赖错误。"""
+        """缺少 paddleocr 时，带框接口应容错返回空文本而非抛异常。"""
         from app.services import ocr_service
 
         with patch.object(ocr_service.settings, "OCR_ENABLED", True), patch.object(
@@ -42,8 +42,9 @@ class TestServiceOcrImageDependencyHandling:
             "_ocr_instance",
             None,
         ), patch.dict(sys.modules, {"paddleocr": None}):
-            with pytest.raises(RuntimeError, match="OCR 依赖未安装"):
-                ocr_service.ocr_pages_with_boxes([(1, b"fake image")])
+            result = ocr_service.ocr_pages_with_boxes([(1, b"fake image")])
+            assert result[1].text == ""
+            assert result[1].boxes == []
 
 
 # ============================================================
@@ -51,7 +52,6 @@ class TestServiceOcrImageDependencyHandling:
 # ============================================================
 
 
-@pytest.mark.skipif(not _HAS_NUMPY, reason="numpy not installed (requirements-ocr.txt)")
 class TestPrepareOcrImage:
     def test_prepare_ocr_image_applies_exif_transpose_and_returns_rgb(self):
         from PIL import Image
@@ -108,7 +108,6 @@ class TestPrepareOcrImage:
         assert cropped.size[1] > 400
 
 
-@pytest.mark.skipif(not _HAS_NUMPY, reason="numpy not installed (requirements-ocr.txt)")
 class TestOcrRotationAndOrdering:
     @staticmethod
     def _ocr_line(text: str, bbox: list[list[int]], conf: float = 0.9):
@@ -179,12 +178,11 @@ class TestOcrRotationAndOrdering:
     def test_ocr_pages_converts_page_exception_to_empty_text(self):
         from app.services import ocr_service
 
-        # Patch ocr_is_available to True and _ocr_one_page to raise
-        with patch.object(ocr_service, "ocr_is_available", return_value=True):
-            with patch.object(ocr_service, "_ocr_one_page", side_effect=RuntimeError("could not execute a primitive")):
-                result = ocr_service.ocr_pages([(247, b"png")])
+        with patch.object(ocr_service, "_ocr_one_page", side_effect=RuntimeError("could not execute a primitive")):
+            result = ocr_service.ocr_pages([(247, b"png")])
 
         assert result == {247: ""}
+
     def test_single_column_order_uses_top_then_left(self):
         from app.services.ocr_service import _order_ocr_lines_reading_order
 

@@ -1,13 +1,17 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 
 
 class UserKnowledgeState(Base):
-    """用户知识点掌握度状态 — 持久化用户对每个知识点的掌握情况"""
+    """用户知识点掌握度状态 — 持久化用户对每个知识点的掌握情况。
+
+    V3: 新增 confidence、recent_* 系列、last_is_correct、last_answer_time_seconds。
+    mastery_score 范围 0-100，初始 50（未知状态）。
+    """
 
     __tablename__ = "user_knowledge_states"
 
@@ -23,10 +27,19 @@ class UserKnowledgeState(Base):
     correct_count: Mapped[int] = mapped_column(Integer, default=0)
     wrong_count: Mapped[int] = mapped_column(Integer, default=0)
     accuracy: Mapped[float] = mapped_column(Float, default=0.0)
-    mastery_score: Mapped[float] = mapped_column(Float, default=0.0)
+    mastery_score: Mapped[float] = mapped_column(Float, default=50.0)
     weakness_level: Mapped[str] = mapped_column(
         String(16), default="unknown"
     )
+
+    # V3 新增字段
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    recent_answer_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    recent_correct_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    recent_wrong_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_is_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_answer_time_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     last_practiced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_wrong_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

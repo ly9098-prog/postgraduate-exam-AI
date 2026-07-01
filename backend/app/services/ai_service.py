@@ -68,7 +68,7 @@ async def analyze_error(
 
     try:
         result = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
-    except RuntimeError:
+    except Exception:
         fallback = get_fallback_analysis()
         return {
             "content": fallback,
@@ -170,7 +170,7 @@ async def generate_advice(db: AsyncSession, user_id: int, subject: str | None = 
 
     try:
         result = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
-    except RuntimeError:
+    except Exception:
         fallback = get_fallback_advice()
         return {
             "content": fallback,
