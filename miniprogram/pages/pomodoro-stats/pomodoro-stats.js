@@ -112,7 +112,7 @@ Page({
 
   async loadData() {
     const reqId = this._requestId
-    this.setData({ loading: true })
+    this.setData({ loading: true, errorText: '' })
     try {
       const [stats, trends, subjects, hist] = await Promise.all([
         api.get('/pomodoro/stats'),
@@ -157,6 +157,7 @@ Page({
         history: (hist.items || []).map(this._formatSession),
         historyTotal: hist.total || 0,
         loading: false,
+        errorText: '',
         pageEntered: true,
         _dispTodaySessions: 0,
         _dispTodayDurationText: '0分钟',

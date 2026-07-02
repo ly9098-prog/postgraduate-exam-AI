@@ -58,14 +58,15 @@ Page({
     }
 
     let lastErr
+    const config = require('../../config')
     for (let i = 0; i < 2; i++) {
       if (i > 0) await new Promise(r => setTimeout(r, 600))
       try {
-        console.log('[AUTH] Phase 2 attempt ' + (i + 1) + ': wx.login')
+        if (config.DEV) console.log('[AUTH] Phase 2 attempt ' + (i + 1) + ': wx.login')
         const { code } = await wx.login()
-        console.log('[AUTH] Phase 2: code received, calling POST /auth/login')
+        if (config.DEV) console.log('[AUTH] Phase 2: code received, calling POST /auth/login')
         const data = await api.post('/auth/login', { code })
-        console.log('[AUTH] Phase 2: login succeeded, storing token')
+        if (config.DEV) console.log('[AUTH] Phase 2: login succeeded, storing token')
         auth.loginDirect(data.access_token, data.user, data.expires_at, data.refresh_token)
         api.resetRedirecting()
 
@@ -78,12 +79,11 @@ Page({
       } catch (e) {
         lastErr = e
         const msg = (e && (e.errMsg || e.message || JSON.stringify(e))) || ''
-        console.warn('[AUTH] Phase 2 attempt ' + (i + 1) + ' FAILED:', msg)
+        if (config.DEV) console.warn('[AUTH] Phase 2 attempt ' + (i + 1) + ' FAILED:', msg)
       }
     }
 
     const errMsg = (lastErr && (lastErr.errMsg || lastErr.message || JSON.stringify(lastErr))) || '自动登录失败'
-    const config = require('../../config')
     this.setData({
       error: '[auto] ' + errMsg,
       showDevLogin: !!config.DEV,

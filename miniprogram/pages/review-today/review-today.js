@@ -795,8 +795,15 @@ Page({
       const totalWrong = allGroupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
       const totalCompleted = allGroupResults.filter(r => r.wasSubmitted).length
 
+      // Re-queue skipped questions as a new group
+      const skippedQuestions = groupQuestions.filter(q => !_isQuestionAnswered(q, answers) && !treatUnansweredAsWrong)
+      const groups = skippedQuestions.length > 0
+        ? [...this.data.groups, skippedQuestions]
+        : this.data.groups
+
       this.setData({
         phase: 'group-result',
+        groups,
         groupResults,
         groupCorrect,
         groupWrong,
@@ -807,7 +814,7 @@ Page({
         totalWrong,
         totalCompleted,
         unansweredCount: groupSkipped,
-        _groupProgressStyle: this._calcGroupProgressStyle(this.data.currentGroupIdx + 1, this.data.groups.length),
+        _groupProgressStyle: this._calcGroupProgressStyle(this.data.currentGroupIdx + 1, groups.length),
       })
       this._showGroupCelebration(groupCorrect, groupQuestions.length)
     } catch (e) {
