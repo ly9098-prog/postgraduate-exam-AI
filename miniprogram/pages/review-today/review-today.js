@@ -847,7 +847,7 @@ Page({
     this._showCelebration({
       celebrationType: 'final',
       celebrationTitle: '今日复习完成',
-      celebrationDetail: `完成 ${total} 题 · 答对 ${correct} 题`,
+      celebrationDetail: `完成 ${denom} 题 · 答对 ${correct} 题`,
       celebrationMotto: '记忆曲线已更新，今天的积累会在明天生效',
       celebrationProgressText: `今日正确率 ${accuracy}%`,
       celebrationRewardText: '解锁今日复习徽章',

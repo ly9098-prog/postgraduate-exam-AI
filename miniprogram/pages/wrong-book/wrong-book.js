@@ -55,6 +55,7 @@ Page({
     // filters
     selectedSubject: '',
     selectedErrorType: '',
+    selectedTopic: '',
     showFilter: false,
 
     subjects: SUBJECTS,
@@ -65,10 +66,14 @@ Page({
 
   onLoad(options) {
     this.setData({ enableMathImage: config.enableMathImage || false })
-    // 从 dashboard 学科跳转携带 subject 参数
+    // 从 dashboard 跳转携带 subject 或 topic 参数
     const subject = options.subject ? decodeURIComponent(options.subject) : ''
+    const topic = options.topic ? decodeURIComponent(options.topic) : ''
     if (subject) {
       this.setData({ selectedSubject: subject })
+    }
+    if (topic) {
+      this.setData({ selectedTopic: topic })
     }
   },
 
@@ -138,6 +143,7 @@ Page({
       const params = { page, page_size: 20 }
       if (this.data.selectedSubject) params.subject = this.data.selectedSubject
       if (this.data.selectedErrorType) params.error_type = this.data.selectedErrorType
+      if (this.data.selectedTopic) params.topic = this.data.selectedTopic
 
       const data = await api.get('/wrong-questions', params)
 
@@ -145,7 +151,7 @@ Page({
       const nextList = reset ? items : [...this.data.list, ...items]
 
       // When filter is active, build analysis from current list only (not global stats)
-      const hasFilter = this.data.selectedSubject || this.data.selectedErrorType
+      const hasFilter = this.data.selectedSubject || this.data.selectedErrorType || this.data.selectedTopic
       const statsForAnalysis = hasFilter ? null : this.data.stats
       this.setData({
         list: nextList,
@@ -173,6 +179,11 @@ Page({
   selectErrorType(e) {
     const val = e.currentTarget.dataset.value
     this.setData({ selectedErrorType: val, list: [], page: 1 })
+    this.loadList(true)
+  },
+
+  clearTopic() {
+    this.setData({ selectedTopic: '', list: [], page: 1 })
     this.loadList(true)
   },
 

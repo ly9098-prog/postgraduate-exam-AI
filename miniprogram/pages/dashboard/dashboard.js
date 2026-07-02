@@ -172,6 +172,8 @@ Page({
 
   async loadInsights(retryCount = 0) {
     if (!this._alive) return
+    this._insightSeq = (this._insightSeq || 0) + 1
+    const seq = this._insightSeq
     if (retryCount === 0) this.setData({ insightsLoading: true })
     try {
       const res = await api.get('/stats/dashboard-insights', {
@@ -179,7 +181,7 @@ Page({
         include_subjects: true,
         include_topics: true,
       })
-      if (!this._alive) return
+      if (!this._alive || seq !== this._insightSeq) return
       const insights = model.buildInsights(res)
       // Enrich subjects with input_output data
       const enrichedMap = {}

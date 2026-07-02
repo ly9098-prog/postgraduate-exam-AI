@@ -80,7 +80,7 @@ Page({
     const config = require('../../config')
     this.setData({
       error: '[auto] ' + errMsg,
-      showDevLogin: config.DEV || true,
+      showDevLogin: !!config.DEV,
       loading: false,
     })
   },

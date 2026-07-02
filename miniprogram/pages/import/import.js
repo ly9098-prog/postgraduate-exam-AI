@@ -51,7 +51,12 @@ Page({
 
   onLoad() {},
 
-  onShow() {},
+  onShow() {
+    const task = this.data.pipelineTask
+    if (task && task.pipeline_id && this.data.pipelinePolling) {
+      this.pollPipeline(task.pipeline_id)
+    }
+  },
 
   onUnload() {
     if (this.pollTimer) clearTimeout(this.pollTimer)
@@ -302,10 +307,15 @@ Page({
       // Elapsed time
       let elapsed = ''
       if (status.started_at) {
-        const diffSec = Math.floor((Date.now() - new Date(status.started_at).getTime()) / 1000)
-        const min = Math.floor(diffSec / 60)
-        const sec = diffSec % 60
-        elapsed = min > 0 ? `${min}分${sec}秒` : `${sec}秒`
+        const startedMs = new Date(status.started_at).getTime()
+        if (Number.isFinite(startedMs)) {
+          const diffSec = Math.max(0, Math.floor((Date.now() - startedMs) / 1000))
+          const min = Math.floor(diffSec / 60)
+          const sec = diffSec % 60
+          elapsed = min > 0 ? `${min}分${sec}秒` : `${sec}秒`
+        } else {
+          elapsed = '--'
+        }
       }
 
       const isPaused = status.status === 'paused'
