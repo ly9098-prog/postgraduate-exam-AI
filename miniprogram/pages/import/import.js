@@ -45,6 +45,8 @@ Page({
     pipelineTask: null,
     pipelinePolling: false,
     pipelinePollError: '',
+    uploading: false,
+    importStatus: '',
     showPageRange: false,
     pageStart: '',
     pageEnd: '',
@@ -356,7 +358,8 @@ Page({
       if (isPaused) {
         wx.showModal({
           title: '导入中断',
-          content: '部分内容处理失败，请重新上传文件',
+          content: '导入中断，可选择原 PDF 恢复导入，或重新上传开始新的导入。',
+          confirmText: '我知道了',
           showCancel: false,
         })
         return
@@ -373,6 +376,65 @@ Page({
         this.setData({ pipelinePolling: false, pipelinePollError: '网络异常，进度查询已暂停' })
       }
     }
+  },
+
+  resumePipeline() {
+    const pipelineId = this.data.pipelineTask && this.data.pipelineTask.pipeline_id
+    if (!pipelineId) {
+      wx.showToast({ title: '缺少导入任务ID', icon: 'none' })
+      return
+    }
+    wx.chooseMessageFile({
+      count: 1,
+      type: 'file',
+      extension: ['pdf'],
+      success: (res) => {
+        const file = res.tempFiles && res.tempFiles[0]
+        if (!file || !file.path) {
+          wx.showToast({ title: '未选择文件', icon: 'none' })
+          return
+        }
+        this.uploadResumeFile(pipelineId, file.path)
+      },
+      fail: () => {},
+    })
+  },
+
+  uploadResumeFile(pipelineId, filePath) {
+    const token = wx.getStorageSync('token')
+    this.setData({ uploading: true, importStatus: 'resuming' })
+    wx.uploadFile({
+      url: `${config.BASE_URL}/import/pipelines/${pipelineId}/resume`,
+      filePath,
+      name: 'file',
+      header: { Authorization: `Bearer ${token}` },
+      success: (res) => {
+        let data = {}
+        try { data = JSON.parse(res.data || '{}') } catch (_) {}
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          wx.showToast({ title: '已恢复导入', icon: 'success' })
+          this.setData({
+            uploading: false,
+            pipelineId,
+            importStatus: data.status || 'processing',
+          })
+          this.startPolling(pipelineId)
+        } else {
+          wx.showToast({ title: data.detail || data.message || '恢复失败', icon: 'none' })
+          this.setData({ uploading: false })
+        }
+      },
+      fail: () => {
+        wx.showToast({ title: '网络异常，恢复失败', icon: 'none' })
+        this.setData({ uploading: false })
+      },
+    })
+  },
+
+  startPolling(pipelineId) {
+    this._pollRetries = 0
+    this.setData({ pipelinePolling: true, pipelinePollError: '' })
+    this.pollPipeline(pipelineId)
   },
 
   resumePipelinePolling() {

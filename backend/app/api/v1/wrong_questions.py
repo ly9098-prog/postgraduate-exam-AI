@@ -112,13 +112,14 @@ def enrich_wq(wq, question):
 async def list_wrong(
     subject: str | None = Query(None),
     error_type: str | None = Query(None),
+    topic: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     items, total = await svc.list_wrong(
-        db, current_user.id, subject, error_type, page, page_size
+        db, current_user.id, subject, error_type, topic, page, page_size
     )
 
     question_ids = [w.question_id for w in items]

@@ -316,6 +316,45 @@ page {
   border: none;
 }
 
+/* ===== Resume Area ===== */
+.pipeline-resume-area {
+  margin-top: 20rpx;
+  padding: 20rpx;
+  border-radius: 18rpx;
+  background: #FFFBEB;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.pipeline-resume-desc {
+  font-size: 24rpx;
+  color: #92400E;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.pipeline-resume-btn {
+  min-height: 68rpx;
+  line-height: 68rpx;
+  padding: 0 32rpx;
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #FFFFFF;
+  background: #F59E0B;
+  border-radius: 999rpx;
+  border: none;
+}
+
+.pipeline-resume-btn::after {
+  border: none;
+}
+
+.pipeline-uploading {
+  padding: 16rpx 0;
+}
+
 /* ===== Stage List ===== */
 .pipeline-stages {
   display: flex;
