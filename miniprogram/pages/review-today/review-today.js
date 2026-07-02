@@ -95,6 +95,24 @@ function _isQuestionAnswered(q, answers) {
   return !!answer
 }
 
+function _enrichQuestionsAnswered(groupQuestions, answers) {
+  return (groupQuestions || []).map(function(q) {
+    var answer = (answers || {})[q.schedule_id] || ''
+    var isAnswered = false
+    if (isMultiBlankType(q.question_type)) {
+      var blankAnswers = _normalizeBlankAnswer(answer)
+      var groups = _getBlankOptionGroups(q)
+      isAnswered = groups.length
+        ? groups.every(function(group) { return !!blankAnswers[String((group && group.id) || '').trim()] })
+        : !!answer
+    } else {
+      isAnswered = !!answer
+    }
+    q._answered = isAnswered
+    return q
+  })
+}
+
 function _computeAnsweredCount(groupQuestions, answers) {
   return (groupQuestions || []).filter(function(q) {
     var answer = (answers || {})[q.schedule_id] || ''
@@ -309,6 +327,7 @@ Page({
         practiceLoading: false,
       })
       this._showQuestion(0)
+      this._syncAnsweredFlags()
     } catch (e) {
       console.error('加载复习题目失败', e)
       this.setData({ practiceLoading: false, phase: 'entry' })
@@ -436,6 +455,11 @@ Page({
     }
   },
 
+  _syncAnsweredFlags() {
+    const enriched = _enrichQuestionsAnswered(this.data.groupQuestions, this.data.answers)
+    this.setData({ groupQuestions: enriched })
+  },
+
   _showQuestion(index) {
     const q = this.data.groupQuestions[index]
     if (!q) return
@@ -484,6 +508,7 @@ Page({
     const currentQuestion = Object.assign({}, q, { _optionList: optionList })
     const answeredCount = _computeAnsweredCount(this.data.groupQuestions, answers)
     this.setData({ answers, currentQuestion, _answeredCount: answeredCount })
+    this._syncAnsweredFlags()
   },
 
   selectBlankOption(e) {
@@ -516,6 +541,7 @@ Page({
 
     const answeredCount = _computeAnsweredCount(this.data.groupQuestions, answers)
     this.setData({ answers, currentQuestion, _answeredCount: answeredCount })
+    this._syncAnsweredFlags()
   },
 
   /* ==================== 题目导航 ==================== */
@@ -630,6 +656,7 @@ Page({
           currentIndex: 0,
           _answeredCount: _computeAnsweredCount(newGroupQuestions, answers),
         })
+        this._syncAnsweredFlags()
         if (groups[currentGroupIdx] && groups[currentGroupIdx].length > 0) {
           this._showQuestion(0)
         } else {
@@ -656,6 +683,7 @@ Page({
           currentIndex,
           _answeredCount: _computeAnsweredCount(groupQuestions, answers),
         })
+        this._syncAnsweredFlags()
         // All questions mastered → go to final result
         if (groups.length === 0 || groups.every(g => g.length === 0)) {
           const denom = this.data.totalCompleted || this.data.allGroupResults.length
@@ -815,6 +843,7 @@ Page({
       groupCorrect: 0,
       groupWrong: 0,
     })
+    this._syncAnsweredFlags()
     this._showQuestion(0)
   },
 

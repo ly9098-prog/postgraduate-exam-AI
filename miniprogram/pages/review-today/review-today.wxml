@@ -131,7 +131,7 @@
       <view class="question-dots">
         <view
           wx:for="{{groupQuestions}}" wx:key="schedule_id"
-          class="q-dot {{answers[item.schedule_id] ? 'answered' : ''}} {{currentIndex === index ? 'current' : ''}}"
+          class="q-dot {{item._answered ? 'answered' : ''}} {{currentIndex === index ? 'current' : ''}}"
           catchtap="goQuestion"
           data-index="{{index}}"
         >

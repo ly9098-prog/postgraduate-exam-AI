@@ -176,6 +176,17 @@
   border: 2rpx solid #4F7FFF;
 }
 
+.blank-option-item.both {
+  background: #ECFDF3;
+  border: 2rpx solid #22C55E;
+}
+
+.blank-option-item.both .option-key,
+.blank-option-item.both .option-value {
+  color: #22C55E;
+  font-weight: 800;
+}
+
 .blank-option-item.user-answer .option-key {
   color: #4F7FFF;
 }
