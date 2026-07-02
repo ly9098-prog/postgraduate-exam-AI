@@ -287,9 +287,17 @@ Page({
     wx.navigateTo({ url: '/pages/import/import' })
   },
 
-  onUnload() {
+  _clearAnimTimers() {
     ['_animTimer_animStreakDays', '_animTimer_animGoalDone', '_animTimer_animLevelProgress'].forEach(function(key) {
       if (this[key]) clearTimeout(this[key])
     }, this)
+  },
+
+  onHide() {
+    this._clearAnimTimers()
+  },
+
+  onUnload() {
+    this._clearAnimTimers()
   },
 })

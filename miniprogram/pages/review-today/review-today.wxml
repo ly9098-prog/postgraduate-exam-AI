@@ -278,7 +278,7 @@
     <view class="group-answers">
       <view
         wx:for="{{groupResults}}" wx:key="schedule_id"
-        class="ga-item {{item.isCorrect ? 'ga-correct' : 'ga-wrong'}}"
+        class="ga-item {{item.wasSkipped ? 'ga-skipped' : (item.isCorrect ? 'ga-correct' : 'ga-wrong')}}"
       >
         <view class="ga-status">
           <text wx:if="{{item.isCorrect}}" class="line-icon icon-check" style="width:22rpx;height:22rpx;color:#FFFFFF;"></text>
@@ -338,6 +338,9 @@
         <text class="result-stat-val danger">{{totalWrong}}</text>
         <text class="result-stat-lbl">需巩固</text>
       </view>
+    </view>
+    <view wx:if="{{totalCompleted < allGroupResults.length}}" class="result-meta">
+      <text class="result-meta-text">已答 {{totalCompleted}} 题 · 跳过 {{allGroupResults.length - totalCompleted}} 题</text>
     </view>
 
     <view class="accuracy-section">

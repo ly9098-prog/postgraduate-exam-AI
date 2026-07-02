@@ -1077,6 +1077,17 @@
   margin-top: 8rpx;
 }
 
+.result-meta {
+  margin-top: 16rpx;
+  text-align: center;
+}
+
+.result-meta-text {
+  font-size: 22rpx;
+  color: #8EA0BA;
+  line-height: 1.45;
+}
+
 .accuracy-section {
   width: 100%;
   margin: 36rpx 0 22rpx;
@@ -1243,6 +1254,11 @@
   border-color: rgba(239, 68, 68, 0.16);
 }
 
+.ga-item.ga-skipped {
+  background: #F6F9FF;
+  border-color: rgba(142, 160, 186, 0.16);
+}
+
 .ga-status {
   width: 38rpx;
   height: 38rpx;
@@ -1261,6 +1277,11 @@
 
 .ga-wrong .ga-status {
   background: #EF4444;
+  color: #FFFFFF;
+}
+
+.ga-skipped .ga-status {
+  background: #8EA0BA;
   color: #FFFFFF;
 }
 

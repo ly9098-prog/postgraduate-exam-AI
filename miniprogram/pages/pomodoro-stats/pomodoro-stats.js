@@ -225,10 +225,11 @@ Page({
   },
 
   async loadHistory(date) {
-    const reqId = this._requestId
+    this._historySeq = (this._historySeq || 0) + 1
+    const seq = this._historySeq
     try {
       const hist = await api.get('/pomodoro/history', { page: 1, page_size: 20, date })
-      if (!this._alive || !this._isVisible || reqId !== this._requestId) return
+      if (!this._alive || !this._isVisible || seq !== this._historySeq) return
       const formatted = (hist.items || []).map(this._formatSession)
       this.setData({
         history: formatted,
