@@ -125,7 +125,7 @@ async def grade_submit(
 
         return {
             "is_correct": is_correct,
-            "correct_answer": correct_answer,
+            "correct_answer": question.answer or "",
             "rating": rating,
             "schedule_id": review_result["schedule_id"],
             "interval_after": review_result["interval_after"],
@@ -220,7 +220,7 @@ async def grade_batch(
                 "schedule_id": review_result["schedule_id"],
                 "question_id": item.question_id,
                 "is_correct": is_correct,
-                "correct_answer": correct_answer,
+                "correct_answer": question.answer or "",
                 "rating": rating,
                 "interval_after": review_result["interval_after"],
                 "ease_factor_after": review_result["ease_factor_after"],

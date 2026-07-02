@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from sqlalchemy import select
@@ -10,6 +11,8 @@ from app.ai.prompts import build_error_analysis, build_study_advice
 from app.models.ai_chat import AiChat
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
+
+ERROR_ANALYSIS_TIMEOUT_SECONDS = 25
 
 
 async def analyze_error(
@@ -67,7 +70,8 @@ async def analyze_error(
     )
 
     try:
-        result = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
+        async with asyncio.timeout(ERROR_ANALYSIS_TIMEOUT_SECONDS):
+            result = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
     except Exception:
         fallback = get_fallback_analysis()
         return {
@@ -76,7 +80,7 @@ async def analyze_error(
             "from_fallback": True,
             "tokens_used": 0,
             "model": "fallback",
-            "duration_ms": 0,
+            "duration_ms": ERROR_ANALYSIS_TIMEOUT_SECONDS * 1000,
         }
 
     try:

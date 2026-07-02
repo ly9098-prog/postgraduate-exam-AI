@@ -128,6 +128,29 @@ function _computeAnsweredCount(groupQuestions, answers) {
   }).length
 }
 
+function _mergeResultsByScheduleId(oldResults, newResults) {
+  var order = []
+  var map = {}
+
+  ;(oldResults || []).forEach(function(item) {
+    var sid = String(item && item.schedule_id || '')
+    if (!sid) return
+    if (!map[sid]) order.push(sid)
+    map[sid] = item
+  })
+
+  ;(newResults || []).forEach(function(item) {
+    var sid = String(item && item.schedule_id || '')
+    if (!sid) return
+    if (!map[sid]) order.push(sid)
+    map[sid] = item
+  })
+
+  return order.map(function(sid) {
+    return map[sid]
+  })
+}
+
 function _buildBlankSelectedFlags(groups, answer) {
   var blankAnswers = _normalizeBlankAnswer(answer)
   var flags = {}
@@ -170,6 +193,7 @@ Page({
 
     // 提交中
     submittingGroup: false,
+    resultTransitioning: false,
 
     // 组结果
     groupResults: [],
@@ -214,6 +238,7 @@ Page({
   },
 
   onLoad() {
+    this._finalCelebrationShown = false
     setRenderGuardPage('review-today')
     this._setDateStr()
     this._loadEntry()
@@ -299,7 +324,9 @@ Page({
   },
 
   async startReview() {
-    this.setData({ practiceLoading: true, phase: 'practice' })
+    this._clearCelebrationTimer()
+    this._finalCelebrationShown = false
+    this.setData({ practiceLoading: true, phase: 'practice', showCelebration: false })
     try {
       const res = await api.get('/review/today', { limit: 100 })
       const allQuestions = (res.questions || []).map(q => this._enrichQuestion(q))
@@ -318,10 +345,26 @@ Page({
         groupQuestions: groups[0] || [],
         answers: {},
         currentIndex: 0,
+        currentQuestion: null,
+        optionKeys: [],
         _answeredCount: 0,
+
+        groupResults: [],
+        groupCorrect: 0,
+        groupWrong: 0,
+        groupSkipped: 0,
+        unansweredCount: 0,
+
         allGroupResults: [],
         totalCorrect: 0,
         totalWrong: 0,
+        totalCompleted: 0,
+
+        masterConfirmId: null,
+        submittingGroup: false,
+        resultTransitioning: false,
+        animClass: '',
+
         safeModeActive: false,
         renderTraces: [],
         practiceLoading: false,
@@ -667,7 +710,7 @@ Page({
             _accuracyStyle: this._calcAccuracyStyle(this.data.totalCorrect, denom),
             _accuracyText: denom > 0 ? `${Math.round(this.data.totalCorrect / denom * 100)}%` : '0%',
           })
-          this._showFinalCelebration()
+          this._showFinalCelebrationOnce()
         }
       } else {
         // Adjust current index if needed
@@ -692,7 +735,7 @@ Page({
             _accuracyStyle: this._calcAccuracyStyle(this.data.totalCorrect, denom),
             _accuracyText: denom > 0 ? `${Math.round(this.data.totalCorrect / denom * 100)}%` : '0%',
           })
-          this._showFinalCelebration()
+          this._showFinalCelebrationOnce()
           return
         }
         if (groupQuestions.length > 0) {
@@ -772,26 +815,44 @@ Page({
 
     try {
       const res = await api.post('/review/grade-batch', { reviews })
+      const results = Array.isArray(res && res.results) ? res.results : []
+
+      if (results.length < reviews.length) {
+        wx.showToast({
+          title: results.length ? '部分题目批改失败' : '批改结果为空，请重试',
+          icon: 'none'
+        })
+        if (!results.length) {
+          this.setData({ submittingGroup: false })
+          return
+        }
+      }
+
       const groupResults = groupQuestions.map(q => {
-        const r = res.results.find(rr => rr.question_id === q.question_id)
+        const r = results.find(rr => {
+          if (rr.schedule_id !== undefined && rr.schedule_id !== null) {
+            return String(rr.schedule_id) === String(q.schedule_id)
+          }
+          return String(rr.question_id) === String(q.question_id)
+        })
         const isAnswered = _isQuestionAnswered(q, answers)
         const wasSubmitted = !!r
         return {
           ...q,
-          isCorrect: r ? r.is_correct : false,
-          correctAnswer: r ? r.correct_answer : '',
+          isCorrect: r ? !!r.is_correct : false,
+          correctAnswer: r ? (r.correct_answer || '') : '',
           userAnswer: answers[q.schedule_id] || '',
           wasAnswered: isAnswered,
           wasSubmitted,
           wasSkipped: !isAnswered && !wasSubmitted,
         }
       })
-      const groupCorrect = groupResults.filter(r => r.isCorrect && r.wasAnswered).length
+      const groupCorrect = groupResults.filter(r => r.isCorrect && r.wasSubmitted).length
       const groupWrong = groupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
       const groupSkipped = groupResults.filter(r => r.wasSkipped).length
 
-      const allGroupResults = [...this.data.allGroupResults, ...groupResults]
-      const totalCorrect = allGroupResults.filter(r => r.isCorrect && r.wasAnswered).length
+      const allGroupResults = _mergeResultsByScheduleId(this.data.allGroupResults, groupResults)
+      const totalCorrect = allGroupResults.filter(r => r.isCorrect && r.wasSubmitted).length
       const totalWrong = allGroupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
       const totalCompleted = allGroupResults.filter(r => r.wasSubmitted).length
 
@@ -800,6 +861,8 @@ Page({
       const groups = skippedQuestions.length > 0
         ? [...this.data.groups, skippedQuestions]
         : this.data.groups
+
+      const isLastGroup = this.data.currentGroupIdx + 1 >= groups.length
 
       this.setData({
         phase: 'group-result',
@@ -816,7 +879,12 @@ Page({
         unansweredCount: groupSkipped,
         _groupProgressStyle: this._calcGroupProgressStyle(this.data.currentGroupIdx + 1, groups.length),
       })
-      this._showGroupCelebration(groupCorrect, groupQuestions.length)
+
+      if (isLastGroup) {
+        this._showFinalCelebrationOnce()
+      } else {
+        this._showGroupCelebration(groupCorrect, groupQuestions.length)
+      }
     } catch (e) {
       console.error('提交失败', e)
       wx.showToast({ title: '提交失败，请重试', icon: 'none' })
@@ -827,17 +895,20 @@ Page({
   /* ==================== 下一组 / 最终结果 ==================== */
 
   nextGroup() {
+    if (this.data.resultTransitioning) return
+    this.setData({ resultTransitioning: true })
+
     const nextGroupIdx = this.data.currentGroupIdx + 1
     if (nextGroupIdx >= this.data.groups.length) {
-      // All groups done
+      // All groups done — just show the final-result view, no animation
       const { totalCorrect, totalCompleted, allGroupResults } = this.data
       const denom = totalCompleted || allGroupResults.length
       this.setData({
         phase: 'final-result',
+        resultTransitioning: false,
         _accuracyStyle: this._calcAccuracyStyle(totalCorrect, denom),
         _accuracyText: denom > 0 ? `${Math.round(totalCorrect / denom * 100)}%` : '0%',
       })
-      this._showFinalCelebration()
       return
     }
     this.setData({
@@ -849,6 +920,9 @@ Page({
       groupResults: [],
       groupCorrect: 0,
       groupWrong: 0,
+      groupSkipped: 0,
+      unansweredCount: 0,
+      resultTransitioning: false,
     })
     this._syncAnsweredFlags()
     this._showQuestion(0)
@@ -873,6 +947,12 @@ Page({
       celebrationProgressText: `今日进度 ${groupIndex}/${groupTotal} 组`,
       celebrationRewardText: correct >= total ? '获得专注星光 +1' : '获得复盘能量 +1',
     }, 2400)
+  },
+
+  _showFinalCelebrationOnce() {
+    if (this._finalCelebrationShown) return
+    this._finalCelebrationShown = true
+    return this._showFinalCelebration()
   },
 
   async _showFinalCelebration() {

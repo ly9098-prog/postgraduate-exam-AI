@@ -307,7 +307,7 @@
       </view>
     </view>
 
-    <button class="gradient-btn result-btn" bindtap="nextGroup">
+    <button class="gradient-btn result-btn" bindtap="nextGroup" disabled="{{resultTransitioning}}" loading="{{resultTransitioning}}">
       {{currentGroupIdx + 1 >= groups.length ? '查看总体结果' : '进入下一组'}}
     </button>
   </view>
