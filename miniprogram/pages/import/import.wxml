@@ -74,6 +74,15 @@
       <button class="pipeline-poll-retry-btn" bindtap="resumePipelinePolling">继续查询</button>
     </view>
 
+    <!-- 暂停/失败 恢复导入 -->
+    <view class="pipeline-resume-area" wx:if="{{pipelineTask && (pipelineTask.status === 'paused' || pipelineTask.status === 'failed')}}">
+      <text class="pipeline-resume-desc">导入中断，可选择原 PDF 恢复导入，或重新上传开始新的导入。</text>
+      <button class="pipeline-resume-btn" bindtap="resumePipeline" wx:if="{{!uploading}}">选择原 PDF 并恢复导入</button>
+      <view class="pipeline-uploading" wx:if="{{uploading}}">
+        <loading-lottie text="正在恢复导入..." size="small" />
+      </view>
+    </view>
+
     <!-- 阶段步骤列表 -->
     <view class="pipeline-stages" wx:if="{{pipelineTask.stageList.length > 0 && pipelinePolling}}">
       <view class="pipeline-stage-item {{item.status}}" wx:for="{{pipelineTask.stageList}}" wx:key="key">
