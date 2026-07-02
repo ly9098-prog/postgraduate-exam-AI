@@ -446,9 +446,9 @@
   font-size: 24rpx;
   line-height: 1.45;
   color: #18233A;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow: visible;
+  word-break: break-word;
 }
 
 .detail-head {

@@ -26,6 +26,15 @@ const PRESETS = [
 
 const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'ceremony' }
 
+function parseServerTime(value) {
+  if (!value) return NaN
+  if (typeof value === 'number') return value
+  const s = String(value).trim()
+  if (!s) return NaN
+  const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(s)
+  return new Date(hasTimezone ? s : s + '+00:00').getTime()
+}
+
 const MOTTOES = [
   '击败了昨天的自己',
   '每一步都算数',
@@ -81,6 +90,9 @@ Page({
     celebrationType: 'excellent',
     pageEntered: false,
     debugMode: false,
+    selectedSubjectLabel: '',
+    selectedSubjectEmoji: '📚',
+    selectedPresetLabel: '',
   },
 
   _timer: null,
@@ -105,6 +117,7 @@ Page({
       // 兼容旧版：直接传 subject code
       const mapped = this._mapPracticeSubject(opts.subject)
       this.setData({ fromSubject: mapped, selectedSubject: mapped })
+      this._updateComputedFields()
     } else if (opts.subject_id) {
       // 新版：传 subject_id，从 API 获取 code 后映射
       this._resolveAndMapSubjectId(opts.subject_id)
@@ -177,6 +190,7 @@ Page({
 
   selectSubject(e) {
     this.setData({ selectedSubject: e.currentTarget.dataset.key })
+    this._updateComputedFields()
   },
 
   onExamTap() {
@@ -209,6 +223,7 @@ Page({
       workDuration: preset ? preset.work : 25,
       breakDuration: preset ? preset.break : 5,
     })
+    this._updateComputedFields()
   },
 
   onWorkChange(e) {
@@ -303,7 +318,7 @@ Page({
   /* ==================== Countdown Timer ==================== */
 
   _beginCountdown(session) {
-    const startTime = new Date(session.start_time + '+00:00').getTime()
+    const startTime = parseServerTime(session.start_time)
     const totalSec = this.data.selectedPreset === 'debug' ? 10 : this.data.workDuration * 60
     this.setData({
       phase: PHASE.RUNNING,
@@ -316,6 +331,7 @@ Page({
       pauseStartTime: null,
     })
     this._startTimer(totalSec)
+    this._updateComputedFields()
     setTimeout(() => this.drawRing(totalSec, false), 200)
   },
 
@@ -519,8 +535,17 @@ Page({
   },
 
   _restoreSession(session) {
-    const startTime = new Date(session.start_time + '+00:00').getTime()
+    const startTime = parseServerTime(session.start_time)
     const totalSec = session.work_duration * 60
+
+    // Guard: invalid time or duration — reset to idle
+    if (!Number.isFinite(startTime) || !Number.isFinite(totalSec) || totalSec <= 0) {
+      wx.removeStorageSync('pomodoro_pause')
+      wx.removeStorageSync('pomodoro_running_state')
+      this._resetToIdle()
+      wx.showToast({ title: '番茄钟状态异常，已重置', icon: 'none' })
+      return
+    }
 
     // Recover paused state from storage (survives page unload)
     const savedPause = wx.getStorageSync('pomodoro_pause')
@@ -531,7 +556,7 @@ Page({
       isPaused = true
     } else if (session.paused_at) {
       // 后端有暂停标记但本地没存（清缓存/换设备）；按后端 paused_at 重建本地状态
-      const pausedAtMs = new Date(session.paused_at + '+00:00').getTime()
+      const pausedAtMs = parseServerTime(session.paused_at)
       totalPausedMs = Math.max(0, Date.now() - pausedAtMs)
       isPaused = true
     }
@@ -588,6 +613,7 @@ Page({
       isPaused: isPaused,
       totalPausedMs: totalPausedMs,
       pauseStartTime: isPaused ? Date.now() : null,
+      progress: totalSec > 0 ? remaining / totalSec : 0,
     })
 
     if (isPaused) {
@@ -600,6 +626,7 @@ Page({
     } else {
       this._startTimer(totalSec)
     }
+    this._updateComputedFields()
   },
 
   _restoreBreak() {
@@ -737,6 +764,7 @@ Page({
       totalPausedMs: 0,
       pauseStartTime: null,
     })
+    this._updateComputedFields()
   },
 
   /* ==================== Stats ==================== */
@@ -766,6 +794,14 @@ Page({
     const next = levels[(idx + 1) % levels.length]
     this.setData({ fontSizeLevel: next })
     wx.setStorageSync('pomodoro_font_size', next)
+  },
+
+  _updateComputedFields() {
+    this.setData({
+      selectedSubjectLabel: this.subjectLabel(this.data.selectedSubject),
+      selectedSubjectEmoji: this.subjectEmoji(this.data.selectedSubject),
+      selectedPresetLabel: this.presetLabel(this.data.selectedPreset),
+    })
   },
 
   /* ==================== Utility ==================== */
@@ -867,6 +903,7 @@ Page({
       if (code) {
         const mapped = this._mapPracticeSubject(code)
         this.setData({ fromSubject: mapped, selectedSubject: mapped })
+        this._updateComputedFields()
       }
     } catch (e) {
       console.warn('解析科目ID失败', e)

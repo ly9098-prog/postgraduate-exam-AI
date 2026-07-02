@@ -41,6 +41,13 @@ function _errorTypeLabel(t) {
   return map[t] || t
 }
 
+function _getBlankOptionGroups(q) {
+  if (!q) return []
+  if (q.content && Array.isArray(q.content.blank_option_groups)) return q.content.blank_option_groups
+  if (Array.isArray(q.blank_option_groups)) return q.blank_option_groups
+  return []
+}
+
 function _processWqData(wq, safeMode) {
   // Judgement fallback
   let opts = wq.options || null
@@ -51,7 +58,7 @@ function _processWqData(wq, safeMode) {
   var renderCfg = { enableMathImage: false, DEV: config.DEV }
   if (safeMode) renderCfg.SAFE_MODE = true
   const _renderModel = buildRenderModel(wq, opts, renderCfg)
-  const blankOptionGroups = _enrichBlankOptionGroups(wq.content && wq.content.blank_option_groups, wq.answer, wq.wrong_answer)
+  const blankOptionGroups = _enrichBlankOptionGroups(_getBlankOptionGroups(wq), wq.answer, wq.wrong_answer)
 
   // Multi-choice: use set-based comparison
   const correctSet = isMultipleChoiceType(wq.question_type) ? normalizeAnswerSet(wq.answer) : null
@@ -115,11 +122,13 @@ function _enrichBlankOptionGroups(groups, answer, wrongAnswer) {
       const plain = toPlainInlineMathText(optionText)
       const needsRich = !plain && needsRichRender(optionText)
       const isCorrect = blankAnswers[groupId] === key
+      const isUser = wrongAnswers[groupId] === key
       return Object.assign({}, opt, {
         key,
         _text: plain || optionText,
         _isCorrect: isCorrect,
-        _isUserAnswer: !isCorrect && wrongAnswers[groupId] === key,
+        _isUserAnswer: isUser,
+        _isBoth: isCorrect && isUser,
         _needsRich: needsRich,
         _html: needsRich ? textToHtml(optionText) : '',
       })
@@ -367,7 +376,9 @@ Page({
   },
 
   goBack() {
-    wx.navigateBack()
+    const pages = getCurrentPages()
+    if (pages.length > 1) wx.navigateBack()
+    else wx.redirectTo({ url: '/pages/wrong-book/wrong-book' })
   },
 
   async _navigateTo(idx, animMs) {
