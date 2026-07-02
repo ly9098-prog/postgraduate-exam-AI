@@ -79,7 +79,7 @@
       </view>
       <view class="size-options">
         <view
-          wx:for="{{[5, 10, 20]}}" wx:key="*this"
+          wx:for="{{groupSizeOptions}}" wx:key="*this"
           class="size-chip {{groupSize === item ? 'active' : ''}}"
           hover-class="tap-scale"
           catchtap="selectGroupSize"
@@ -144,7 +144,7 @@
       <view class="q-top-bar">
         <view>
           <text class="subject-badge">{{currentQuestion._subjectLabel}}</text>
-          <text class="q-kicker">先回忆，再选择</text>
+          <text class="q-kicker">{{currentQuestion.question_type === 'multiple_choice' ? '多选题，可多选' : currentQuestion.question_type === 'multi_blank_choice' ? '多空选择题' : '先回忆，再选择'}}</text>
         </view>
         <view class="master-btn" catchtap="tapMaster" data-sid="{{currentQuestion.schedule_id}}">
           <text class="master-icon line-icon icon-check master-icon-check"></text>
@@ -167,35 +167,69 @@
         </block>
       </view>
 
-      <view class="q-options">
+      <!-- Multi-blank choice: render blank option groups -->
+      <view class="blank-options" wx:if="{{currentQuestion._hasBlankGroups}}">
+        <view class="blank-group" wx:for="{{currentQuestion._blankOptionGroups}}" wx:for-item="group" wx:key="id">
+          <view class="blank-group-head">
+            <text class="blank-group-title">{{group.id}}</text>
+          </view>
+          <view class="blank-group-options">
+            <view
+              wx:for="{{group.options}}"
+              wx:for-item="opt"
+              wx:key="key"
+              class="option-item blank-option-item {{opt._selected ? 'selected' : ''}}"
+              hover-class="option-pressed"
+              catchtap="selectBlankOption"
+              data-blank-id="{{group.id}}"
+              data-option="{{opt.key}}"
+            >
+              <view class="option-indicator {{opt._selected ? 'checked' : ''}}">
+                <text wx:if="{{opt._selected}}" class="check-mark line-icon icon-dot"></text>
+              </view>
+              <view class="option-body">
+                <text class="option-key">{{opt.key}}.</text>
+                <mp-html wx:if="{{opt._needsRich}}" content="{{opt._html}}" style="display:inline-block"></mp-html>
+                <text wx:else class="option-text">{{opt._text}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- Regular options (single / multiple / true_false) -->
+      <view class="q-options" wx:elif="{{currentQuestion._optionList.length > 0}}">
         <view
-          wx:for="{{optionKeys}}"
-          wx:key="*this"
-          class="option-item {{answers[currentQuestion.schedule_id] === item ? 'opt-selected' : ''}}"
+          wx:for="{{currentQuestion._optionList}}"
+          wx:key="key"
+          class="option-item {{item._selected ? 'opt-selected' : ''}}"
           hover-class="option-pressed"
-          bindtap="selectOption"
-          data-option="{{item}}"
+          catchtap="selectOption"
+          data-option="{{item.key}}"
         >
-          <view class="opt-key">{{item}}.</view>
-          <mp-html
-            wx:if="{{currentQuestion._optNeedsRich[item]}}"
-            content="{{currentQuestion._optHtml[item]}}"
-            class="opt-val"
-          ></mp-html>
-          <text wx:else class="opt-val">{{currentQuestion._optText[item]}}</text>
+          <view class="option-indicator {{item._selected ? 'checked' : ''}}">
+            <text wx:if="{{item._icon === 'check'}}" class="check-mark line-icon icon-check"></text>
+            <text wx:elif="{{item._icon === 'dot'}}" class="check-mark line-icon icon-dot"></text>
+          </view>
+          <view class="option-body">
+            <view class="opt-key">{{item.key}}.</view>
+            <mp-html
+              wx:if="{{currentQuestion._optNeedsRich[item.key]}}"
+              content="{{currentQuestion._optHtml[item.key]}}"
+              class="opt-val"
+            ></mp-html>
+            <text wx:else class="opt-val">{{currentQuestion._optText[item.key]}}</text>
+          </view>
         </view>
       </view>
 
     </view>
 
-    <button
-      class="submit-group-btn"
-      wx:if="{{currentQuestion && currentIndex === groupQuestions.length - 1}}"
-      bindtap="submitGroup"
-      loading="{{submittingGroup}}"
-    >
-      提交本组复盘
-    </button>
+    <view class="nav-row" wx:if="{{currentQuestion}}">
+      <button class="nav-btn" disabled="{{currentIndex <= 0}}" bindtap="goPrev">上一题</button>
+      <button class="nav-btn" wx:if="{{currentIndex < groupQuestions.length - 1}}" bindtap="goNext">下一题</button>
+      <button class="submit-group-btn nav-submit" wx:elif="{{currentIndex === groupQuestions.length - 1}}" bindtap="submitGroup" loading="{{submittingGroup}}">提交本组复盘</button>
+    </view>
   </view>
 </view>
 

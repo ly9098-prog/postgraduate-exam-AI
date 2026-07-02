@@ -203,6 +203,7 @@
 .stat-item.primary { background: #EEF4FF; }
 .stat-item.success { background: #ECFDF3; }
 .stat-item.danger { background: #FEF2F2; }
+.stat-item.warning { background: #FFFBEB; }
 
 .stat-num {
   max-width: 100%;
@@ -218,6 +219,7 @@
 
 .stat-item.success .stat-num { color: #22C55E; }
 .stat-item.danger .stat-num { color: #EF4444; }
+.stat-item.warning .stat-num { color: #F59E0B; }
 
 .stat-label {
   margin-top: 8rpx;
@@ -447,6 +449,38 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-bottom: 6rpx;
+}
+
+.detail-stem {
+  display: block;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: #617089;
+  margin-bottom: 6rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-answers {
+  display: flex;
+  gap: 16rpx;
+  flex-wrap: wrap;
+}
+
+.detail-answer.wrong-answer {
+  color: #EF4444;
+}
+
+.detail-answer.right-answer {
+  color: #22C55E;
 }
 
 /* 操作按钮 */

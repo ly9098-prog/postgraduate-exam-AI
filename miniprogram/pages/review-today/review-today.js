@@ -5,8 +5,123 @@ const {
   toPlainInlineMathText, needsRichRender, stripLeadingOptionLabel,
   textToHtml
 } = require('../../utils/stem-render')
+const {
+  isMultipleChoiceType, isMultiBlankType, isTrueFalseType,
+  normalizeChoiceAnswer, serializeChoiceAnswer, serializeBlankAnswer,
+} = require('../../utils/answer')
 
 const GROUP_SIZES = [5, 10, 20]
+
+/* ---- Blank answer helpers (ported from practice.js) ---- */
+
+function _normalizeBlankAnswer(answer) {
+  if (!answer) return {}
+  if (typeof answer === 'object') return answer
+  var result = {}
+  String(answer).split(/[;；,，\n]+/).forEach(function(part) {
+    var m = part.trim().match(/^(.+?)\s*[:：=]\s*([A-Za-z])$/)
+    if (m) result[m[1].trim()] = m[2].trim().toUpperCase()
+  })
+  return result
+}
+
+function _normalizeBlankOptionList(options) {
+  if (Array.isArray(options)) return options
+  if (options && typeof options === 'object') {
+    return Object.keys(options).map(function(key) {
+      return { key: key, text: options[key] }
+    })
+  }
+  return []
+}
+
+function _getBlankOptionGroups(q) {
+  if (!q) return []
+  if (q.content && Array.isArray(q.content.blank_option_groups)) return q.content.blank_option_groups
+  if (Array.isArray(q.blank_option_groups)) return q.blank_option_groups
+  return []
+}
+
+function _enrichBlankOptionGroups(groups, answer) {
+  var blankAnswers = _normalizeBlankAnswer(answer)
+  return (groups || []).map(function(group) {
+    var groupId = String((group && group.id) || '').trim()
+    return {
+      id: groupId,
+      options: _normalizeBlankOptionList(group && group.options).map(function(opt) {
+        var key = String((opt && opt.key) || '').trim().toUpperCase()
+        var text = String((opt && opt.text) || '').trim()
+        var optionText = stripLeadingOptionLabel(key, text)
+        var cleanedText = optionText.replace(/[\r\n]+/g, ' ')
+        var plain = toPlainInlineMathText(cleanedText)
+        var needsRich = !plain && needsRichRender(cleanedText)
+        return Object.assign({}, opt, {
+          key: key,
+          _text: plain || optionText,
+          _selected: blankAnswers[groupId] === key,
+          _needsRich: needsRich,
+          _html: needsRich ? textToHtml(optionText) : '',
+        })
+      }).filter(function(opt) { return opt.key }),
+    }
+  }).filter(function(group) {
+    return group.id && group.options.length > 0
+  })
+}
+
+function _buildOptionList(q, optionKeys, answers) {
+  var answer = (answers && answers[q.schedule_id]) || ''
+  var isMulti = isMultipleChoiceType(q.question_type)
+  return (optionKeys || []).map(function(key) {
+    var selected = isMulti ? normalizeChoiceAnswer(answer).indexOf(key) >= 0 : String(answer).trim().toUpperCase() === key
+    return {
+      key: key,
+      _selected: selected,
+      _icon: selected ? (isMulti ? 'check' : 'dot') : '',
+    }
+  })
+}
+
+function _isQuestionAnswered(q, answers) {
+  var answer = (answers || {})[q.schedule_id] || ''
+  if (isMultiBlankType(q.question_type)) {
+    var blankAnswers = _normalizeBlankAnswer(answer)
+    var groups = _getBlankOptionGroups(q)
+    if (!groups.length) return !!answer
+    return groups.every(function(group) {
+      return !!blankAnswers[String((group && group.id) || '').trim()]
+    })
+  }
+  return !!answer
+}
+
+function _computeAnsweredCount(groupQuestions, answers) {
+  return (groupQuestions || []).filter(function(q) {
+    var answer = (answers || {})[q.schedule_id] || ''
+    if (isMultiBlankType(q.question_type)) {
+      var blankAnswers = _normalizeBlankAnswer(answer)
+      var groups = _getBlankOptionGroups(q)
+      if (!groups.length) return !!answer
+      return groups.every(function(group) {
+        return !!blankAnswers[String((group && group.id) || '').trim()]
+      })
+    }
+    return !!answer
+  }).length
+}
+
+function _buildBlankSelectedFlags(groups, answer) {
+  var blankAnswers = _normalizeBlankAnswer(answer)
+  var flags = {}
+  ;(groups || []).forEach(function(group) {
+    var groupId = String((group && group.id) || '').trim()
+    flags[groupId] = {}
+    ;(group.options || []).forEach(function(opt) {
+      flags[groupId][opt.key] = blankAnswers[groupId] === opt.key
+    })
+  })
+  return flags
+}
 
 Page({
   data: {
@@ -17,6 +132,7 @@ Page({
     stats: null,
     entryLoading: true,
     groupSize: 10,
+    groupSizeOptions: GROUP_SIZES,
 
     // 练习
     allQuestions: [],
@@ -218,10 +334,14 @@ Page({
       opts = q.options
       optionKeys = Object.keys(opts)
     }
-    if (q.question_type === 'true_false' || q.question_type === 'judgement') {
+    if (isTrueFalseType(q.question_type)) {
       opts = { A: '正确', B: '错误' }
       optionKeys = ['A', 'B']
     }
+
+    // Blank option groups for multi_blank_choice
+    const hasBlankGroups = isMultiBlankType(q.question_type) && _getBlankOptionGroups(q).length > 0
+    const blankOptionGroups = hasBlankGroups ? _enrichBlankOptionGroups(_getBlankOptionGroups(q), '') : []
 
     var renderCfg = { enableMathImage: false, DEV: config.DEV }
     if (this.data.safeModeActive) renderCfg.SAFE_MODE = true
@@ -246,6 +366,9 @@ Page({
       _optText: optText,
       _optNeedsRich: optNeedsRich,
       _optHtml: optHtml,
+      _blankOptionGroups: blankOptionGroups,
+      _hasBlankGroups: blankOptionGroups.length > 0,
+      _optionList: [],
       _renderModel,
       _stemPreview: stemText.length > 60 ? `${stemText.slice(0, 60)}...` : stemText,
       _subjectLabel: this.subjectLabel(q.subject),
@@ -300,7 +423,14 @@ Page({
     if (this.data.currentQuestion) {
       const idx = this.data.currentIndex
       const q = this.data.groupQuestions[idx]
-      if (q) this._showQuestion(idx)
+      if (q) {
+        // Re-enrich current question with safe mode
+        const enriched = this._enrichQuestion(q)
+        const groupQuestions = [...this.data.groupQuestions]
+        groupQuestions[idx] = enriched
+        this.setData({ groupQuestions })
+        this._showQuestion(idx)
+      }
       console.warn('[SELF_HEAL] review-today re-rendered at index ' + idx + ' in SAFE_MODE')
     }
   },
@@ -308,10 +438,12 @@ Page({
   _showQuestion(index) {
     const q = this.data.groupQuestions[index]
     if (!q) return
-    const answeredCount = Object.keys(this.data.answers || {}).length
+    const answeredCount = _computeAnsweredCount(this.data.groupQuestions, this.data.answers)
+    const optionList = _buildOptionList(q, q._optionKeys, this.data.answers)
+    const currentQuestion = Object.assign({}, q, { _optionList: optionList })
     this.setData({
       currentIndex: index,
-      currentQuestion: q,
+      currentQuestion: currentQuestion,
       optionKeys: q._optionKeys,
       _answeredCount: answeredCount,
     })
@@ -327,15 +459,62 @@ Page({
     if (!opt) return
     const q = this.data.currentQuestion
     const answers = { ...this.data.answers }
-    // Toggle: tap same option to deselect (allow skipping)
-    if (answers[q.schedule_id] === opt) {
-      delete answers[q.schedule_id]
-    } else {
-      answers[q.schedule_id] = opt
-    }
-    this.setData({ answers, _answeredCount: Object.keys(answers).length })
 
-    // (the WXML template reads answers directly from data)
+    if (isMultipleChoiceType(q.question_type)) {
+      // Multiple choice: toggle in sorted set
+      const prev = answers[q.schedule_id] || ''
+      const sel = normalizeChoiceAnswer(prev)
+      const idx = sel.indexOf(opt)
+      if (idx >= 0) sel.splice(idx, 1)
+      else sel.push(opt)
+      sel.sort()
+      const newAnswer = serializeChoiceAnswer(sel.join(','))
+      if (newAnswer) answers[q.schedule_id] = newAnswer
+      else delete answers[q.schedule_id]
+    } else {
+      // Single choice / true_false: toggle
+      if (answers[q.schedule_id] === opt) {
+        delete answers[q.schedule_id]
+      } else {
+        answers[q.schedule_id] = opt
+      }
+    }
+    const optionList = _buildOptionList(q, q._optionKeys, answers)
+    const currentQuestion = Object.assign({}, q, { _optionList: optionList })
+    const answeredCount = _computeAnsweredCount(this.data.groupQuestions, answers)
+    this.setData({ answers, currentQuestion, _answeredCount: answeredCount })
+  },
+
+  selectBlankOption(e) {
+    if (this.data.submittingGroup) return
+    const blankId = String(e.currentTarget.dataset.blankId || '').trim()
+    const opt = String(e.currentTarget.dataset.option || '').trim().toUpperCase()
+    const q = this.data.currentQuestion
+    if (!q || !blankId || !opt) return
+
+    const answer = this.data.answers[q.schedule_id] || ''
+    const blankAnswers = _normalizeBlankAnswer(answer)
+    if (blankAnswers[blankId] === opt) {
+      delete blankAnswers[blankId]
+    } else {
+      blankAnswers[blankId] = opt
+    }
+
+    const groups = q._blankOptionGroups || _enrichBlankOptionGroups(_getBlankOptionGroups(q), answer)
+    const newAnswer = serializeBlankAnswer(groups, blankAnswers)
+    const answers = { ...this.data.answers }
+    if (newAnswer) answers[q.schedule_id] = newAnswer
+    else delete answers[q.schedule_id]
+
+    // Re-enrich blank groups with updated selection
+    const enrichedGroups = _enrichBlankOptionGroups(_getBlankOptionGroups(q), newAnswer)
+    const currentQuestion = Object.assign({}, q, {
+      _blankOptionGroups: enrichedGroups,
+      _hasBlankGroups: enrichedGroups.length > 0,
+    })
+
+    const answeredCount = _computeAnsweredCount(this.data.groupQuestions, answers)
+    this.setData({ answers, currentQuestion, _answeredCount: answeredCount })
   },
 
   /* ==================== 题目导航 ==================== */
@@ -440,14 +619,15 @@ Page({
       if (groupQuestions.length === 0 && groups.length > 0) {
         // All questions in current group mastered, move to next group
         currentGroupIdx = Math.min(currentGroupIdx, groups.length - 1)
+        const newGroupQuestions = groups[currentGroupIdx] || []
         this.setData({
           allQuestions,
           groups,
           currentGroupIdx,
-          groupQuestions: groups[currentGroupIdx] || [],
+          groupQuestions: newGroupQuestions,
           answers,
           currentIndex: 0,
-          _answeredCount: Object.keys(answers).length,
+          _answeredCount: _computeAnsweredCount(newGroupQuestions, answers),
         })
         if (groups[currentGroupIdx] && groups[currentGroupIdx].length > 0) {
           this._showQuestion(0)
@@ -472,7 +652,7 @@ Page({
           groupQuestions: groupQuestions.length > 0 ? groupQuestions : groups[currentGroupIdx] || [],
           answers,
           currentIndex,
-          _answeredCount: Object.keys(answers).length,
+          _answeredCount: _computeAnsweredCount(groupQuestions, answers),
         })
         // All questions mastered → go to final result
         if (groups.length === 0 || groups.every(g => g.length === 0)) {
@@ -500,7 +680,7 @@ Page({
     const { groupQuestions, answers, submittingGroup } = this.data
     if (submittingGroup) return
 
-    const answeredCount = Object.keys(answers).filter(k => answers[k]).length
+    const answeredCount = _computeAnsweredCount(groupQuestions, answers)
     const totalCount = groupQuestions.length
     const unansweredCount = totalCount - answeredCount
 
@@ -542,14 +722,21 @@ Page({
     // Build payload
     const reviews = []
     for (const q of groupQuestions) {
-      const answer = answers[q.schedule_id]
+      const isAnswered = _isQuestionAnswered(q, answers)
       // 跳过未作答的题目（除非用户选择按不会处理）
-      if (!answer && !treatUnansweredAsWrong) continue
+      if (!isAnswered && !treatUnansweredAsWrong) continue
       reviews.push({
         schedule_id: q.schedule_id,
         question_id: q.question_id,
-        user_answer: answer || '',
+        user_answer: isAnswered ? (answers[q.schedule_id] || '') : '',
       })
+    }
+
+    // Guard: empty submit
+    if (reviews.length === 0) {
+      wx.showToast({ title: '请至少作答 1 题，或选择按不会处理', icon: 'none' })
+      this.setData({ submittingGroup: false })
+      return
     }
 
     try {
