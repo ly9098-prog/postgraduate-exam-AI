@@ -2,6 +2,13 @@
 
 import json
 
+
+def _clip_text(value, limit=1200):
+    if value is None:
+        return ""
+    text = str(value)
+    return text if len(text) <= limit else text[:limit] + "..."
+
 SYSTEM_PROMPTS = {
     "error_analysis": (
         "你是一个考研解题技巧专家，擅长总结数学二、408计算机、英语的快速解题方法。"
@@ -305,13 +312,15 @@ SYSTEM_PROMPTS = {
 
 
 def build_error_analysis(question: dict, user_answer: str, correct_answer: str) -> list:
+    stem = _clip_text(question.get('content', {}).get('text', ''), 1200)
+    options_text = _clip_text(question.get('options', {}), 800)
     return [
         {"role": "system", "content": SYSTEM_PROMPTS["error_analysis"]},
         {
             "role": "user",
             "content": (
-                f"【题目】{question.get('content', {}).get('text', '')}\n"
-                f"【选项】{question.get('options', {})}\n"
+                f"【题目】{stem}\n"
+                f"【选项】{options_text}\n"
                 f"【正确答案】{correct_answer}\n"
                 f"【我的答案】{user_answer}\n"
                 f"【知识点】{question.get('knowledge_points', [])}\n"

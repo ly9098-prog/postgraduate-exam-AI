@@ -17,6 +17,9 @@
 
 <view class="page" wx:elif="{{!loading && wq}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
   <view class="swiper-content {{contentState}}">
+    <view wx:if="{{switching}}" class="switch-loading">
+      <loading-lottie text="正在切换错题..." size="small" />
+    </view>
     <view wx:if="{{swiperEnabled}}" class="progress-area">
       <text class="progress-text">{{currentIdx + 1}} / {{totalQuestions}}</text>
       <view class="progress-track">
@@ -38,13 +41,13 @@
         <math-question segments="{{_renderModel.segments}}" />
       </block>
       <rich-text wx:elif="{{_renderModel.mode === 'RICH_TEXT'}}" nodes="{{_renderModel.richTextNodes}}"></rich-text>
-      <scroll-view wx:elif="{{_renderModel.mode === 'CODE'}}" scroll-x class="code-wrapper"><text decode="false" space="preserve" class="code-text">{{_renderModel.rawText}}</text></scroll-view>
+      <scroll-view wx:elif="{{_renderModel.mode === 'CODE'}}" scroll-x class="code-wrapper" catchtouchstart="onInnerHorizontalTouch" catchtouchend="onInnerHorizontalTouchEnd"><text decode="false" space="preserve" class="code-text">{{_renderModel.rawText}}</text></scroll-view>
       <mp-html wx:elif="{{_renderModel.mode === 'LATEX'}}" content="{{_renderModel.html}}" lazy-load></mp-html>
       <block wx:elif="{{_renderModel.mode === 'MIXED'}}">
         <block wx:for="{{_renderModel.blocks}}" wx:key="index">
           <rich-text wx:if="{{item.type === 'RICH_TEXT'}}" class="mixed-text-block" nodes="{{item.richTextNodes}}" />
           <mp-html wx:elif="{{item.type === 'LATEX'}}" class="mixed-latex-block" content="{{item.html}}" lazy-load />
-          <scroll-view wx:elif="{{item.type === 'CODE'}}" scroll-x class="code-wrapper mixed-code-block"><text decode="false" space="preserve" class="code-text">{{item.rawText}}</text></scroll-view>
+          <scroll-view wx:elif="{{item.type === 'CODE'}}" scroll-x class="code-wrapper mixed-code-block" catchtouchstart="onInnerHorizontalTouch" catchtouchend="onInnerHorizontalTouchEnd"><text decode="false" space="preserve" class="code-text">{{item.rawText}}</text></scroll-view>
         </block>
       </block>
     </view>
@@ -88,62 +91,92 @@
 
   </view>
 
-  <!-- AI 分析 -->
-  <view class="ai-card" wx:if="{{!aiLoading && aiResult}}">
+  <!-- 答案与解析 -->
+  <view class="answer-card">
+    <view class="section-head compact">
+      <view>
+        <text class="section-title">答案与解析</text>
+        <text class="section-subtitle">先查看标准答案，再决定是否生成 AI 技巧</text>
+      </view>
+    </view>
+    <view class="answer-row">
+      <text class="answer-label">我的答案</text>
+      <text class="answer-value user">{{wq.wrong_answer || '未记录'}}</text>
+    </view>
+    <view class="answer-row">
+      <text class="answer-label">正确答案</text>
+      <text class="answer-value correct">{{wq.answer || '暂无答案'}}</text>
+    </view>
+    <view class="analysis-block" wx:if="{{wq.analysis}}">
+      <text class="answer-label">题目解析</text>
+      <text class="analysis-text">{{wq.analysis}}</text>
+    </view>
+  </view>
+
+  <!-- AI 分析：手动触发 -->
+  <view class="ai-card">
     <view class="section-head">
       <view>
-        <text class="section-title">解题技巧</text>
-        <text class="section-subtitle">提供解题思路与核心考点</text>
+        <text class="section-title">AI 解题技巧</text>
+        <text class="section-subtitle">{{aiRequested ? '根据当前错题生成解题思路与核心考点' : '点击后生成，不再自动请求'}}</text>
       </view>
       <text class="section-chip">AI</text>
     </view>
 
-    <view class="ai-section">
-      <text class="ai-label">解题思路</text>
-      <text class="ai-text">{{aiResult.error_analysis}}</text>
+    <!-- 未请求状态 -->
+    <view wx:if="{{!aiRequested && !aiLoading && !aiResult && !aiFallback}}" class="ai-idle">
+      <text class="ai-idle-title">需要 AI 帮你分析这道题吗？</text>
+      <text class="ai-idle-desc">点击后将生成解题思路、核心考点和快速方法。</text>
+      <button class="ai-action-btn" bindtap="onTapAiAnalysis">生成 AI 解题技巧</button>
     </view>
 
-    <view class="ai-section">
-      <text class="ai-label">核心考点</text>
-      <text class="ai-text">{{aiResult.knowledge_weakness}}</text>
-    </view>
-
-    <text class="ai-hint">内容由 AI 生成，仅供参考</text>
-  </view>
-
-  <!-- AI 加载 -->
-  <view class="ai-card" wx:if="{{aiLoading}}">
-    <view class="section-head compact">
-      <view>
-        <text class="section-title">解题技巧</text>
-        <text class="section-subtitle">正在分析题目和整理解题方法</text>
+    <!-- 加载状态 -->
+    <view wx:elif="{{aiLoading}}" class="ai-loading-state">
+      <view class="section-head compact">
+        <view>
+          <text class="section-title small">正在生成</text>
+          <text class="section-subtitle">AI 正在分析题目，请稍候</text>
+        </view>
+        <view class="chip-loading">
+          <view class="loading-spinner mini"></view>
+          <text class="chip-loading-text">生成中</text>
+        </view>
       </view>
-      <view class="chip-loading">
-        <view class="loading-spinner mini"></view>
-        <text class="chip-loading-text">生成中</text>
+      <view class="ai-loading-skeleton">
+        <view class="skeleton-block" style="width:35%;height:20rpx;margin-bottom:12rpx;"></view>
+        <view class="skeleton-block" style="width:85%;height:16rpx;margin-bottom:8rpx;"></view>
+        <view class="skeleton-block" style="width:70%;height:16rpx;margin-bottom:8rpx;"></view>
+        <view class="skeleton-block" style="width:55%;height:16rpx;"></view>
       </view>
+      <text class="ai-hint">生成时间较长时，可以稍后重试</text>
     </view>
-    <view class="ai-loading-skeleton">
-      <view class="skeleton-block" style="width:35%;height:20rpx;margin-bottom:12rpx;"></view>
-      <view class="skeleton-block" style="width:85%;height:16rpx;margin-bottom:8rpx;"></view>
-      <view class="skeleton-block" style="width:70%;height:16rpx;margin-bottom:8rpx;"></view>
-      <view class="skeleton-block" style="width:55%;height:16rpx;"></view>
-    </view>
-    <view class="ai-loading-skeleton" style="margin-top:12rpx;">
-      <view class="skeleton-block" style="width:30%;height:20rpx;margin-bottom:12rpx;"></view>
-      <view class="skeleton-block" style="width:78%;height:16rpx;margin-bottom:8rpx;"></view>
-      <view class="skeleton-block" style="width:60%;height:16rpx;"></view>
-    </view>
-  </view>
 
-  <!-- AI 降级 -->
-  <view class="ai-card" wx:if="{{!aiLoading && aiFallback}}">
-    <view class="ai-fallback">
+    <!-- 成功状态 -->
+    <view wx:elif="{{aiResult && !aiFallback}}" class="ai-result-state">
+      <view class="ai-section" wx:if="{{aiResult.error_analysis}}">
+        <text class="ai-label">解题思路</text>
+        <text class="ai-text">{{aiResult.error_analysis}}</text>
+      </view>
+      <view class="ai-section" wx:if="{{aiResult.knowledge_weakness}}">
+        <text class="ai-label">核心考点</text>
+        <text class="ai-text">{{aiResult.knowledge_weakness}}</text>
+      </view>
+      <view class="ai-section" wx:if="{{aiResult.suggestion}}">
+        <text class="ai-label">快速方法</text>
+        <text class="ai-text">{{aiResult.suggestion}}</text>
+      </view>
+      <text class="ai-hint">{{aiFromCache ? '来自历史缓存，仅供参考' : '内容由 AI 生成，仅供参考'}}</text>
+      <button class="ai-secondary-btn" bindtap="onTapAiAnalysis">重新生成</button>
+    </view>
+
+    <!-- 失败 / 降级状态 -->
+    <view wx:elif="{{aiFallback}}" class="ai-fallback">
       <view class="fallback-mark">
         <view class="line-icon icon-exclamation"></view>
       </view>
-      <text class="fallback-title">解题技巧暂时不可用</text>
-      <text class="fallback-desc">建议先查看题目解析，稍后再试</text>
+      <text class="fallback-title">AI 解题技巧暂时不可用</text>
+      <text class="fallback-desc">{{aiErrorText || '建议先查看题目解析，稍后再试'}}</text>
+      <button class="ai-action-btn retry" bindtap="onTapAiAnalysis">重新生成</button>
     </view>
   </view>
   </view>

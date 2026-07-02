@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.question_import import QuestionImport  # noqa: F401 — ensures Subject mapper resolves
+from app.utils.answer_normalizer import is_answer_correct
 from app.services.admin_subject_service import resolve_subject_ids
 from app.services.behavior_service import record_answer_behavior
 from app.services.wrong_question_service import record_wrong
@@ -1393,12 +1394,7 @@ async def submit_answer(
     if not question:
         raise ValueError(f"题目不存在: {question_id}")
 
-    if question.question_type == "multi_blank_choice":
-        is_correct = _is_multi_blank_answer_correct(user_answer, question.answer)
-    elif question.question_type in ("true_false", "judgement"):
-        is_correct = _normalize_true_false_answer(user_answer) == _normalize_true_false_answer(question.answer)
-    else:
-        is_correct = user_answer.strip().lower() == question.answer.strip().lower()
+    is_correct = is_answer_correct(user_answer, question.answer or "", question.question_type or "")
 
     record = PracticeRecord(
         user_id=user_id,

@@ -201,8 +201,8 @@ Page({
     const id = e.currentTarget.dataset.id
     const ids = this.data.list.map(item => item.id)
     const idx = ids.indexOf(id)
-    wx.setStorageSync('wrong_detail_ids', ids)
-    wx.navigateTo({ url: `/pages/wrong-detail/wrong-detail?id=${id}&idx=${idx}` })
+    wx.setStorageSync('wrong_detail_nav', { ids, ts: Date.now() })
+    wx.navigateTo({ url: `/pages/wrong-detail/wrong-detail?id=${id}&idx=${idx}&source=wrong-book` })
   },
 
   _decorateItem(item) {
