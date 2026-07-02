@@ -259,7 +259,10 @@ Page({
 
   _buildSummaryCards(stats = {}, list = [], weaknessTags = []) {
     stats = stats || {}
-    const unmastered = this._positiveNumber(stats.unmastered, this.data.primaryStatCount || stats.total || list.length || 0)
+    const hasStats = Object.keys(stats).length > 0
+    const unmastered = hasStats
+      ? this._positiveNumber(stats.unmastered, stats.total || list.length || 0)
+      : list.length
     const reviewed = list.filter(item => this._positiveNumber(item._reviewCount, 0) > 0).length
     const avgMastery = list.length
       ? Math.round(list.reduce((sum, item) => sum + this._positiveNumber(item._masteryPercent, 0), 0) / list.length)

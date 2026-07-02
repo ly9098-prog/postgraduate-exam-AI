@@ -6,6 +6,7 @@ Page({
     wrong: 0,
     skipped: 0,
     total: 0,
+    answeredCount: 0,
     passRate: 0,
     subject: '',
     duration: 0,
@@ -33,6 +34,7 @@ Page({
     const total = parseInt(options.total, 10) || 0
     const duration = parseInt(options.duration, 10) || 0
     const passRate = total > 0 ? Math.round(correct / total * 100) : 0
+    const answeredCount = correct + wrong
 
     // 从 storage 读取详细结果
     let results = []
@@ -64,13 +66,14 @@ Page({
       wrong,
       skipped,
       total,
+      answeredCount,
       duration,
       durationText: this._fmt(duration),
       passRate,
       subject: options.subject_id || '',
       subjectDisplay: decodeURIComponent(options.subject_name || '') || '练习',
       results,
-      ...this._celebrationCopy(passRate, correct, wrong, total),
+      ...this._celebrationCopy(passRate, correct, wrong, total, answeredCount),
     })
     this._showCelebration()
     this._loadGrowth()
@@ -101,11 +104,20 @@ Page({
     return `${m} 分 ${ss} 秒`
   },
 
-  _celebrationCopy(passRate, correct, wrong, total) {
+  _celebrationCopy(passRate, correct, wrong, total, answeredCount) {
+    answeredCount = answeredCount || (correct + wrong)
+    const completedPct = total > 0 ? Math.round(answeredCount / total * 100) : 0
+    const answeredAccuracy = answeredCount > 0 ? Math.round(correct / answeredCount * 100) : 0
+    const detailLines = [`答对 ${correct}/${total} 题`]
+    if (answeredCount < total) {
+      detailLines.push(`完成率 ${completedPct}%`)
+    }
+    detailLines.push(answeredCount > 0 ? `已答正确率 ${answeredAccuracy}%` : `正确率 ${passRate}%`)
+    const celebrationDetail = detailLines.join(' · ')
     if (passRate >= 80) {
       return {
         celebrationTitle: '高质量挑战完成',
-        celebrationDetail: `答对 ${correct}/${total} 题 · 正确率 ${passRate}%`,
+        celebrationDetail,
         celebrationMotto: '这组表现很稳，继续把优势变成习惯',
         celebrationRewardText: `专注星光 +${Math.max(1, correct)}`,
         celebrationType: 'practice',
@@ -116,7 +128,7 @@ Page({
     if (passRate >= 50) {
       return {
         celebrationTitle: '完成一次有效练习',
-        celebrationDetail: `答对 ${correct}/${total} 题 · 正确率 ${passRate}%`,
+        celebrationDetail,
         celebrationMotto: '复盘后再来一组，薄弱点会越来越少',
         celebrationRewardText: `复盘能量 +${Math.max(1, correct)}`,
         celebrationType: 'practice',
@@ -126,7 +138,7 @@ Page({
     }
     return {
       celebrationTitle: '薄弱点已暴露',
-      celebrationDetail: `答对 ${correct}/${total} 题 · 正确率 ${passRate}%`,
+      celebrationDetail,
       celebrationMotto: '先把错题吃透，这次练习就很有价值',
       celebrationRewardText: '错题诊断 +1',
       celebrationType: 'practice',

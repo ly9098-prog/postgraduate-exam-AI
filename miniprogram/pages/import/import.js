@@ -44,6 +44,7 @@ Page({
     error: '',
     pipelineTask: null,
     pipelinePolling: false,
+    pipelinePollError: '',
     showPageRange: false,
     pageStart: '',
     pageEnd: '',
@@ -369,9 +370,17 @@ Page({
         this.pollTimer = setTimeout(() => this.pollPipeline(pipelineId), 3000)
       } else {
         this._pollRetries = 0
-        this.setData({ pipelinePolling: false })
+        this.setData({ pipelinePolling: false, pipelinePollError: '网络异常，进度查询已暂停' })
       }
     }
+  },
+
+  resumePipelinePolling() {
+    const id = this.data.pipelineTask && this.data.pipelineTask.pipeline_id
+    if (!id) return
+    this._pollRetries = 0
+    this.setData({ pipelinePolling: true, pipelinePollError: '' })
+    this.pollPipeline(id)
   },
 
   async downloadTemplate() {

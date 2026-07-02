@@ -281,6 +281,41 @@ page {
   color: #8FA3B3;
 }
 
+/* ===== Poll Error ===== */
+.pipeline-poll-error {
+  margin-top: 20rpx;
+  padding: 20rpx;
+  border-radius: 18rpx;
+  background: #FFFBEB;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.pipeline-poll-error-text {
+  font-size: 24rpx;
+  color: #D97706;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.pipeline-poll-retry-btn {
+  min-height: 64rpx;
+  line-height: 64rpx;
+  padding: 0 32rpx;
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #FFFFFF;
+  background: #4F7FFF;
+  border-radius: 999rpx;
+  border: none;
+}
+
+.pipeline-poll-retry-btn::after {
+  border: none;
+}
+
 /* ===== Stage List ===== */
 .pipeline-stages {
   display: flex;
