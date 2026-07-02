@@ -51,6 +51,12 @@
     </view>
   </view>
 
+  <!-- 话题筛选标签 -->
+  <view wx:if="{{selectedTopic}}" class="topic-filter-bar">
+    <text class="topic-filter-label">知识点：{{selectedTopic}}</text>
+    <text class="topic-filter-clear" bindtap="clearTopic">清除</text>
+  </view>
+
   <!-- 知识漏洞分析 -->
   <view class="analysis-card">
     <view class="section-head">

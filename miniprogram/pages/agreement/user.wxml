@@ -2,7 +2,7 @@
   <view class="agreement-hero">
     <text class="agreement-kicker">服务条款</text>
     <text class="agreement-title">用户协议</text>
-    <text class="agreement-desc">请在使用 2240AI 学习、刷题、错题整理与导入服务前阅读以下说明。</text>
+    <text class="agreement-desc">请在使用 MemoGrad 学习、刷题、错题整理与导入服务前阅读以下说明。</text>
   </view>
 
   <view class="agreement-card">

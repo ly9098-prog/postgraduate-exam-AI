@@ -208,6 +208,43 @@
   line-height: 1.35;
 }
 
+/* ── 话题筛选标签 ── */
+.topic-filter-bar {
+  margin: 16rpx 24rpx 0;
+  padding: 16rpx 20rpx;
+  border-radius: 20rpx;
+  background: #EEF4FF;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.topic-filter-label {
+  font-size: 24rpx;
+  font-weight: 700;
+  color: #4F7FFF;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topic-filter-clear {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: #8EA0BA;
+  font-weight: 700;
+  padding: 6rpx 14rpx;
+  border-radius: 999rpx;
+  background: #FFFFFF;
+}
+
+.topic-filter-clear:active {
+  opacity: 0.7;
+}
+
 .filter-chips,
 .weakness-tags {
   display: flex;

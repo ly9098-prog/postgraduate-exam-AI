@@ -55,6 +55,7 @@ Page({
     selectedPreset: 'standard',
     workDuration: 25,
     breakDuration: 5,
+    breakStartTime: null,
     showCustom: false,
     isPaused: false,
     totalPausedMs: 0,
@@ -466,17 +467,20 @@ Page({
   /* ==================== Break Timer ==================== */
 
   _startBreak(totalSec) {
-    wx.setStorageSync('pomodoro_break', { startTime: Date.now(), totalSec })
+    const breakStartTime = Date.now()
+    wx.setStorageSync('pomodoro_break', { startTime: breakStartTime, totalSec })
     this.setData({
       phase: PHASE.BREAK,
       remainingSec: totalSec,
+      breakStartTime,
       progress: 1,
       displayMin: String(Math.floor(totalSec / 60)).padStart(2, '0'),
       displaySec: String(totalSec % 60).padStart(2, '0'),
     })
     this._clearTimer()
     const tick = () => {
-      const remaining = Math.max(0, this.data.remainingSec - 1)
+      const elapsed = Math.floor((Date.now() - breakStartTime) / 1000)
+      const remaining = Math.max(0, totalSec - elapsed)
       const m = Math.floor(remaining / 60)
       const s = remaining % 60
       this.setData({
@@ -495,7 +499,7 @@ Page({
     tick()
     this._initCanvas()
     setTimeout(() => this.drawRing(totalSec, true), 100)
-    this._timer = setInterval(tick, 500)
+    this._timer = setInterval(tick, 1000)
   },
 
   skipBreak() {
@@ -521,9 +525,14 @@ Page({
       // Network unreachable — fall through to local fallback
     }
     if (local && (Date.now() - local.savedAt < 7200000)) {
+      const cachedStartTime = Number(local.sessionStartTime)
+      if (!Number.isFinite(cachedStartTime) || cachedStartTime <= 0) {
+        wx.removeStorageSync('pomodoro_running_state')
+        return null
+      }
       return {
         id: local.sessionId,
-        start_time: new Date(local.sessionStartTime).toISOString(),
+        start_time: new Date(cachedStartTime).toISOString(),
         work_duration: local.workDuration,
         break_duration: local.breakDuration,
         preset: local.selectedPreset || 'standard',
@@ -756,6 +765,7 @@ Page({
       phase: PHASE.IDLE,
       sessionId: null,
       sessionStartTime: null,
+      breakStartTime: null,
       remainingSec: 0,
       displayMin: '00',
       displaySec: '00',
