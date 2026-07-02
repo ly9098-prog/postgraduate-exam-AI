@@ -49,9 +49,10 @@ function _getBlankOptionGroups(q) {
 }
 
 function _processWqData(wq, safeMode) {
+  const questionType = wq.question_type || wq.type || ''
   // Judgement fallback
   let opts = wq.options || null
-  if ((!opts || Object.keys(opts).length === 0) && isTrueFalseType(wq.question_type)) {
+  if ((!opts || Object.keys(opts).length === 0) && isTrueFalseType(questionType)) {
     opts = { A: '正确', B: '错误' }
   }
   const optionKeys = opts ? Object.keys(opts) : []
@@ -61,8 +62,8 @@ function _processWqData(wq, safeMode) {
   const blankOptionGroups = _enrichBlankOptionGroups(_getBlankOptionGroups(wq), wq.answer, wq.wrong_answer)
 
   // Multi-choice: use set-based comparison
-  const correctSet = isMultipleChoiceType(wq.question_type) ? normalizeAnswerSet(wq.answer) : null
-  const userSet = isMultipleChoiceType(wq.question_type) ? normalizeAnswerSet(wq.wrong_answer) : null
+  const correctSet = isMultipleChoiceType(questionType) ? normalizeAnswerSet(wq.answer) : null
+  const userSet = isMultipleChoiceType(questionType) ? normalizeAnswerSet(wq.wrong_answer) : null
 
   const optionItems = optionKeys.map((key) => {
     const rawText = (opts && opts[key]) || ''

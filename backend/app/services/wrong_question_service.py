@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import String, and_, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin import Subject
@@ -51,6 +51,7 @@ async def list_wrong(
     user_id: int,
     subject: str | None = None,
     error_type: str | None = None,
+    topic: str | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[WrongQuestion], int]:
@@ -58,27 +59,27 @@ async def list_wrong(
     if error_type:
         conditions.append(WrongQuestion.error_type == error_type)
 
-    # 如果指定了学科，需要 join Question 表
-    if subject:
-        count_q = (
-            select(func.count(WrongQuestion.id))
-            .join(Question, WrongQuestion.question_id == Question.id)
-            .where(and_(*conditions, Question.subject_id.in_(await resolve_subject_ids(db, subject))))
-        )
-        total = (await db.execute(count_q)).scalar()
+    # Determine whether we need to join Question table
+    needs_join = bool(subject) or bool(topic)
 
-        q = (
-            select(WrongQuestion)
-            .join(Question, WrongQuestion.question_id == Question.id)
-            .where(and_(*conditions, Question.subject_id.in_(await resolve_subject_ids(db, subject))))
-            .order_by(WrongQuestion.updated_at.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
-        )
+    if needs_join:
+        base_query = select(WrongQuestion).join(Question, WrongQuestion.question_id == Question.id)
+        count_query = select(func.count(WrongQuestion.id)).join(Question, WrongQuestion.question_id == Question.id)
+        if subject:
+            subject_ids = await resolve_subject_ids(db, subject)
+            base_query = base_query.where(Question.subject_id.in_(subject_ids))
+            count_query = count_query.where(Question.subject_id.in_(subject_ids))
+        if topic:
+            topic_filter = cast(Question.knowledge_points, String).contains(topic)
+            base_query = base_query.where(topic_filter)
+            count_query = count_query.where(topic_filter)
+        base_query = base_query.where(and_(*conditions))
+        count_query = count_query.where(and_(*conditions))
+        total = (await db.execute(count_query)).scalar()
+        q = base_query.order_by(WrongQuestion.updated_at.desc()).offset((page - 1) * page_size).limit(page_size)
     else:
         count_q = select(func.count(WrongQuestion.id)).where(and_(*conditions))
         total = (await db.execute(count_q)).scalar()
-
         q = (
             select(WrongQuestion)
             .where(and_(*conditions))
