@@ -1,6 +1,12 @@
 // API 基础配置
-// 本地调试用 true，上传正式版前改为 false
-const DEV = true
+//
+// 上传体验版/正式版前请通过以下方式切换：
+// 方案 A：将 __BUILD_ENV__ 替换为项目构建脚本注入的环境变量
+// 方案 B：直接在微信开发者工具中修改此处为 production
+//
+// 注意：DEV = true 时 BASE_URL 为 localhost，真机体验版/正式版
+// 会请求手机自己的 localhost 导致所有接口失败。
+const DEV = false
 
 const CONFIG = {
   development: {

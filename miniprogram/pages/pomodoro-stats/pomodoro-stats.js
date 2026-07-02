@@ -1,5 +1,14 @@
 const api = require('../../utils/api')
 
+function parseServerTime(value) {
+  if (!value) return NaN
+  if (typeof value === 'number') return value
+  const s = String(value).trim()
+  if (!s) return NaN
+  const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(s)
+  return new Date(hasTimezone ? s : s + '+00:00').getTime()
+}
+
 const SUBJECT_LABELS = {
   data_structure: '数据结构',
   computer_organization: '计算机组成原理',
@@ -23,6 +32,7 @@ const SUBJECT_COLORS = {
 Page({
   data: {
     loading: true,
+    errorText: '',
     pageEntered: false,
     todaySessions: 0,
     todayDurationText: '0分钟',
@@ -174,15 +184,15 @@ Page({
     } catch (e) {
       if (!this._alive || reqId !== this._requestId) return
       console.error('加载统计失败', e)
-      this.setData({ loading: false })
-      wx.showToast({ title: '加载失败', icon: 'none' })
+      this.setData({ loading: false, errorText: '加载失败，请检查网络后重试' })
     }
   },
 
   _formatSession(s) {
-    const start = new Date(s.start_time + '+00:00')
+    const startTime = parseServerTime(s.start_time)
+    const start = new Date(Number.isFinite(startTime) ? startTime : Date.now())
     const timeStr = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`
-    const durMin = Math.floor((s.actual_duration || 0) / 60)
+    const durMin = Math.floor((s.actual_duration ?? s.actual_duration_sec ?? s.duration_sec ?? 0) / 60)
     return {
       ...s,
       _time: timeStr,

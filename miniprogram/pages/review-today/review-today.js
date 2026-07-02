@@ -162,6 +162,7 @@ Page({
     allGroupResults: [],
     totalCorrect: 0,
     totalWrong: 0,
+    totalCompleted: 0,
 
     // UI 增强
     _dateStr: '',
@@ -633,10 +634,11 @@ Page({
           this._showQuestion(0)
         } else {
           // No groups left → all mastered
+          const denom = this.data.totalCompleted || this.data.allGroupResults.length
           this.setData({
             phase: 'final-result',
-            _accuracyStyle: this._calcAccuracyStyle(this.data.totalCorrect, this.data.allGroupResults.length),
-            _accuracyText: this.data.allGroupResults.length > 0 ? `${Math.round(this.data.totalCorrect / this.data.allGroupResults.length * 100)}%` : '0%',
+            _accuracyStyle: this._calcAccuracyStyle(this.data.totalCorrect, denom),
+            _accuracyText: denom > 0 ? `${Math.round(this.data.totalCorrect / denom * 100)}%` : '0%',
           })
           this._showFinalCelebration()
         }
@@ -656,10 +658,11 @@ Page({
         })
         // All questions mastered → go to final result
         if (groups.length === 0 || groups.every(g => g.length === 0)) {
+          const denom = this.data.totalCompleted || this.data.allGroupResults.length
           this.setData({
             phase: 'final-result',
-            _accuracyStyle: this._calcAccuracyStyle(this.data.totalCorrect, this.data.allGroupResults.length),
-            _accuracyText: this.data.allGroupResults.length > 0 ? `${Math.round(this.data.totalCorrect / this.data.allGroupResults.length * 100)}%` : '0%',
+            _accuracyStyle: this._calcAccuracyStyle(this.data.totalCorrect, denom),
+            _accuracyText: denom > 0 ? `${Math.round(this.data.totalCorrect / denom * 100)}%` : '0%',
           })
           this._showFinalCelebration()
           return
@@ -743,16 +746,16 @@ Page({
       const res = await api.post('/review/grade-batch', { reviews })
       const groupResults = groupQuestions.map(q => {
         const r = res.results.find(rr => rr.question_id === q.question_id)
-        const wasAnswered = !!answers[q.schedule_id]
+        const isAnswered = _isQuestionAnswered(q, answers)
         const wasSubmitted = !!r
         return {
           ...q,
           isCorrect: r ? r.is_correct : false,
           correctAnswer: r ? r.correct_answer : '',
           userAnswer: answers[q.schedule_id] || '',
-          wasAnswered,
+          wasAnswered: isAnswered,
           wasSubmitted,
-          wasSkipped: wasAnswered === false && wasSubmitted === false,
+          wasSkipped: !isAnswered && !wasSubmitted,
         }
       })
       const groupCorrect = groupResults.filter(r => r.isCorrect && r.wasAnswered).length
@@ -762,6 +765,7 @@ Page({
       const allGroupResults = [...this.data.allGroupResults, ...groupResults]
       const totalCorrect = allGroupResults.filter(r => r.isCorrect && r.wasAnswered).length
       const totalWrong = allGroupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
+      const totalCompleted = allGroupResults.filter(r => r.wasSubmitted).length
 
       this.setData({
         phase: 'group-result',
@@ -773,6 +777,7 @@ Page({
         allGroupResults,
         totalCorrect,
         totalWrong,
+        totalCompleted,
         unansweredCount: groupSkipped,
         _groupProgressStyle: this._calcGroupProgressStyle(this.data.currentGroupIdx + 1, this.data.groups.length),
       })
@@ -790,11 +795,12 @@ Page({
     const nextGroupIdx = this.data.currentGroupIdx + 1
     if (nextGroupIdx >= this.data.groups.length) {
       // All groups done
-      const { totalCorrect, allGroupResults } = this.data
+      const { totalCorrect, totalCompleted, allGroupResults } = this.data
+      const denom = totalCompleted || allGroupResults.length
       this.setData({
         phase: 'final-result',
-        _accuracyStyle: this._calcAccuracyStyle(totalCorrect, allGroupResults.length),
-        _accuracyText: allGroupResults.length > 0 ? `${Math.round(totalCorrect / allGroupResults.length * 100)}%` : '0%',
+        _accuracyStyle: this._calcAccuracyStyle(totalCorrect, denom),
+        _accuracyText: denom > 0 ? `${Math.round(totalCorrect / denom * 100)}%` : '0%',
       })
       this._showFinalCelebration()
       return
@@ -834,9 +840,9 @@ Page({
   },
 
   async _showFinalCelebration() {
-    const total = this.data.allGroupResults.length
+    const denom = this.data.totalCompleted || this.data.allGroupResults.length
     const correct = this.data.totalCorrect
-    const accuracy = total > 0 ? Math.round(correct / total * 100) : 0
+    const accuracy = denom > 0 ? Math.round(correct / denom * 100) : 0
     await this._loadGrowthForCelebration()
     this._showCelebration({
       celebrationType: 'final',
