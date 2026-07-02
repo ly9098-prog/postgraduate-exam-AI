@@ -96,7 +96,6 @@ Page({
         stats,
         primaryStatCount: typeof stats.unmastered === 'number' ? stats.unmastered : (stats.total || 0),
         primaryStatLabel: typeof stats.unmastered === 'number' ? '待攻克错题' : '错题总数',
-        analysis: this._buildAnalysis(stats, this.data.list),
       })
     } catch (e) {
       console.error('加载错题统计失败', e)

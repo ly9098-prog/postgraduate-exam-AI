@@ -99,7 +99,7 @@
 
           <!-- Context hint from practice page -->
           <view class="context-hint" wx:if="{{fromSubject && selectedSubject}}">
-            <text>从刷题进入 · {{subjectLabel(selectedSubject)}}</text>
+            <text>从刷题进入 · {{selectedSubjectLabel}}</text>
           </view>
 
 <!-- START BUTTON -->
@@ -112,11 +112,11 @@
       <!-- ===== CEREMONY STATE ===== -->
       <block wx:if="{{phase === 'ceremony'}}">
         <view class="ceremony-wrap">
-          <text class="ceremony-emoji">{{subjectEmoji(selectedSubject)}}</text>
-          <text class="ceremony-subject">{{subjectLabel(selectedSubject)}}</text>
+          <text class="ceremony-emoji">{{selectedSubjectEmoji}}</text>
+          <text class="ceremony-subject">{{selectedSubjectLabel}}</text>
           <view class="ceremony-divider"></view>
           <text class="ceremony-duration">{{selectedPreset === 'debug' ? '10 秒' : workDuration + ' 分钟'}}</text>
-          <text class="ceremony-preset">{{presetLabel(selectedPreset)}}</text>
+          <text class="ceremony-preset">{{selectedPresetLabel}}</text>
           <view class="ceremony-spinner">
             <view class="spinner-ring"></view>
           </view>
@@ -128,7 +128,7 @@
       <block wx:if="{{phase === 'running' || phase === 'break'}}">
         <view class="timer-wrap">
           <view class="timer-header">
-            <text class="timer-subject">{{subjectEmoji(selectedSubject)}} {{subjectLabel(selectedSubject)}}</text>
+            <text class="timer-subject">{{selectedSubjectEmoji}} {{selectedSubjectLabel}}</text>
             <text class="timer-hint">{{phase === 'break' ? '休息时间' : '专注中'}}</text>
           </view>
 

@@ -1078,6 +1078,11 @@ Page({
     })
     const unanswered = total - answeredCount
 
+    if (answeredCount === 0) {
+      wx.showToast({ title: '请至少作答 1 题再提交', icon: 'none' })
+      return
+    }
+
     if (unanswered > 0) {
       const { confirm } = await wx.showModal({
         title: '还有题目未作答',

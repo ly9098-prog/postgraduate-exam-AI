@@ -7,7 +7,19 @@
       </view>
     </block>
 
-    <block wx:if="{{!loading}}">
+    <block wx:elif="{{errorText}}">
+      <view class="error-state">
+        <view class="error-icon-wrap">
+          <text class="line-icon icon-exclamation" style="width:48rpx;height:48rpx;color:#EF4444;"></text>
+        </view>
+        <text class="error-title">{{errorText}}</text>
+        <view class="error-actions">
+          <button class="gradient-btn" bindtap="loadData">重新加载</button>
+        </view>
+      </view>
+    </block>
+
+    <block wx:elif="{{!loading}}">
       <view class="stats-content">
         <!-- ===== OVERVIEW ===== -->
         <view class="overview-section">
