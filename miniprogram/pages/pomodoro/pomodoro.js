@@ -561,17 +561,25 @@ Page({
     let totalPausedMs = 0
     let isPaused = false
     if (savedPause && savedPause.sessionId === session.id) {
-      totalPausedMs = (savedPause.totalPausedMs || 0) + (Date.now() - (savedPause.pauseStartTime || Date.now()))
-      isPaused = true
+      const savedTotal = Number(savedPause.totalPausedMs || 0)
+      const pauseStart = Number(savedPause.pauseStartTime || Date.now())
+      totalPausedMs = Number.isFinite(savedTotal) && Number.isFinite(pauseStart)
+        ? savedTotal + (Date.now() - pauseStart)
+        : 0
+      isPaused = totalPausedMs > 0
     } else if (session.paused_at) {
       // 后端有暂停标记但本地没存（清缓存/换设备）；按后端 paused_at 重建本地状态
       const pausedAtMs = parseServerTime(session.paused_at)
-      totalPausedMs = Math.max(0, Date.now() - pausedAtMs)
-      isPaused = true
+      totalPausedMs = Number.isFinite(pausedAtMs) ? Math.max(0, Date.now() - pausedAtMs) : 0
+      isPaused = Number.isFinite(pausedAtMs)
     }
 
+    // Final NaN guard for pause time
+    if (!Number.isFinite(totalPausedMs) || totalPausedMs < 0) totalPausedMs = 0
+
     const elapsed = Math.floor((Date.now() - startTime - totalPausedMs) / 1000)
-    const remaining = Math.max(0, totalSec - elapsed)
+    const remaining = Number.isFinite(totalSec) && Number.isFinite(elapsed)
+      ? Math.max(0, totalSec - elapsed) : 0
     if (remaining <= 0) {
       wx.removeStorageSync('pomodoro_pause')
       wx.removeStorageSync('pomodoro_running_state')

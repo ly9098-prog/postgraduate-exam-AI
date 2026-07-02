@@ -68,6 +68,12 @@
       </view>
     </view>
 
+    <!-- 轮询错误 & 恢复 -->
+    <view class="pipeline-poll-error" wx:if="{{pipelinePollError && pipelineTask && pipelineTask.status !== 'completed' && pipelineTask.status !== 'failed' && pipelineTask.status !== 'paused'}}">
+      <text class="pipeline-poll-error-text">{{pipelinePollError}}</text>
+      <button class="pipeline-poll-retry-btn" bindtap="resumePipelinePolling">继续查询</button>
+    </view>
+
     <!-- 阶段步骤列表 -->
     <view class="pipeline-stages" wx:if="{{pipelineTask.stageList.length > 0 && pipelinePolling}}">
       <view class="pipeline-stage-item {{item.status}}" wx:for="{{pipelineTask.stageList}}" wx:key="key">
