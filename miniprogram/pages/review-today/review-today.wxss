@@ -672,6 +672,55 @@
   box-shadow: 0 8rpx 22rpx rgba(79, 127, 255, 0.1);
 }
 
+.option-indicator {
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  border: 3rpx solid #CBD5E1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 3rpx;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.option-indicator.checked {
+  border-color: #4F7FFF;
+  background: #4F7FFF;
+}
+
+.check-mark {
+  width: 24rpx;
+  height: 24rpx;
+  color: #FFFFFF;
+  font-size: 22rpx;
+}
+
+.option-body {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  min-width: 0;
+}
+
+.option-key {
+  font-size: 28rpx;
+  font-weight: 900;
+  color: #4F7FFF;
+  flex-shrink: 0;
+  line-height: 1.6;
+}
+
+.option-text {
+  font-size: 28rpx;
+  color: #18233A;
+  line-height: 1.6;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
 .opt-key {
   font-size: 28rpx;
   font-weight: 900;
@@ -688,6 +737,79 @@
   word-break: break-word;
   min-width: 0;
   white-space: pre-wrap;
+}
+
+/* Blank option groups */
+.blank-options {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+  margin-top: 24rpx;
+}
+
+.blank-group {
+  background: #F7FAFF;
+  border-radius: 22rpx;
+  padding: 20rpx;
+  border: 2rpx solid transparent;
+}
+
+.blank-group-head {
+  margin-bottom: 14rpx;
+}
+
+.blank-group-title {
+  font-size: 26rpx;
+  font-weight: 900;
+  color: #4F7FFF;
+  background: #E8F0FF;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+}
+
+.blank-group-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.blank-option-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 18rpx 16rpx;
+  background: #FFFFFF;
+  border-radius: 18rpx;
+  border: 2rpx solid transparent;
+}
+
+.blank-option-item.selected {
+  border-color: #4F7FFF;
+  background: linear-gradient(180deg, #EEF5FF 0%, #F8FBFF 100%);
+}
+
+.blank-group-options .option-indicator {
+  width: 32rpx;
+  height: 32rpx;
+  border-radius: 50%;
+  border: 3rpx solid #CBD5E1;
+}
+
+.blank-group-options .option-indicator.checked {
+  border-color: #4F7FFF;
+  background: #4F7FFF;
+}
+
+.blank-group-options .option-body {
+  gap: 8rpx;
+}
+
+.blank-group-options .option-key {
+  font-size: 26rpx;
+}
+
+.blank-group-options .option-text {
+  font-size: 26rpx;
 }
 
 .nav-row {
@@ -730,6 +852,11 @@
 
 .submit-group-btn::after { border: none; }
 .submit-group-btn:active { opacity: 0.9; transform: scale(0.99); }
+
+.nav-submit {
+  margin: 0;
+  flex: 1;
+}
 
 /* ==================== 结果页 ==================== */
 .result-page {

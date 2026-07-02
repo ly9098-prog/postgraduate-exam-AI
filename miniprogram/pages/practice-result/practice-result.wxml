@@ -48,6 +48,10 @@
         <text class="stat-num">{{wrong || 0}}</text>
         <text class="stat-label">错误</text>
       </view>
+      <view class="stat-item warning" wx:if="{{skipped > 0}}">
+        <text class="stat-num">{{skipped || 0}}</text>
+        <text class="stat-label">跳过</text>
+      </view>
     </view>
     <view class="duration-row">
       <text class="duration-label">本次用时</text>
@@ -84,9 +88,15 @@
     </view>
     <view class="detail-list" wx:if="{{showDetail}}">
       <view class="detail-item {{item._cls}}" wx:for="{{results}}" wx:key="question_id">
-        <text class="detail-num">#{{index + 1}}</text>
-        <text class="detail-mark">{{item._label}}</text>
-        <text class="detail-answer">答案：{{item.correct_answer}}</text>
+        <view class="detail-head">
+          <text class="detail-num">#{{index + 1}}</text>
+          <text class="detail-mark">{{item._label}}</text>
+        </view>
+        <text class="detail-stem" wx:if="{{item._stemPreview}}">{{item._stemPreview}}</text>
+        <view class="detail-answers">
+          <text class="detail-answer wrong-answer" wx:if="{{item._userAnswer}}">我的：{{item._userAnswer}}</text>
+          <text class="detail-answer right-answer">正确：{{item.correct_answer}}</text>
+        </view>
       </view>
     </view>
   </view>

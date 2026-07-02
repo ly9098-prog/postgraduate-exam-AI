@@ -157,10 +157,16 @@ Page({
     selectedSubjectName: '',
     expandedSubjectId: null,
     selectedMode: 'random',
+    selectedModeLabel: '随机',
     count: 5,
     started: false,
     loading: false,
     submitting: false,
+    errorText: '',
+    canRetry: false,
+
+    // computed
+    progressPercent: 0,
 
     // 题目列表
     questions: [],
@@ -418,7 +424,9 @@ Page({
   },
 
   chooseMode(e) {
-    this.setData({ selectedMode: e.currentTarget.dataset.mode })
+    this.setData({ selectedMode: e.currentTarget.dataset.mode }, () => {
+      this._updateComputedFields()
+    })
   },
 
   setCount(e) {
@@ -517,20 +525,28 @@ Page({
         this._showQuestion(0)
       } else {
         const name = this.data.selectedSubjectName || String(subjectId)
+        this._clearTimer()
+        this.setData({ started: false, loading: false, questions: [], totalQuestions: 0, currentQuestion: null })
         wx.showModal({
           title: '该科目暂无题目',
           content: `「${name}」目前没有已发布的题目。\n请确认：\n1. 导入批次已审核通过\n2. 题目科目分类是否正确（导入时混合 PDF 可能被错分）\n3. 试试其他科目分类`,
-          showCancel: true,
-          confirmText: '返回',
-          cancelText: '继续等待',
-          success: (r) => {
-            if (r.confirm) this.setData({ started: false })
-          },
+          showCancel: false,
+          confirmText: '返回选择科目',
+          success: () => {},
         })
       }
     } catch (e) {
       console.error('加载题目失败', e)
-      this.setData({ loading: false })
+      this._clearTimer()
+      this.setData({
+        loading: false,
+        started: false,
+        questions: [],
+        totalQuestions: 0,
+        currentQuestion: null,
+        errorText: '加载题目失败，请重试或返回重新选择科目',
+        canRetry: true,
+      })
       wx.showToast({ title: '加载题目失败', icon: 'none' })
     }
   },
@@ -610,6 +626,8 @@ Page({
       renderCount,
       _renderKey: (this.data._renderKey || 0) + 1,
       currentQuestionStartedAt: Date.now(),
+    }, () => {
+      this._updateComputedFields()
     })
 
     // Render invariant: verify only one render mode is active
@@ -722,6 +740,7 @@ Page({
       const idx = sel.indexOf(opt)
       if (idx >= 0) sel.splice(idx, 1)
       else sel.push(opt)
+      sel.sort()
       newAnswer = sel.join(',')
     } else {
       newAnswer = prev === opt ? '' : opt
@@ -759,7 +778,9 @@ Page({
     }
     const optionList = buildOptionList(q._opts, optionKeys, selectedFlags)
     const cq = Object.assign({}, this.data.currentQuestion, { _optionList: optionList })
-    this.setData({ questions, answerMap, answeredFlags, answeredCount, selectedFlags, currentQuestion: cq })
+    this.setData({ questions, answerMap, answeredFlags, answeredCount, selectedFlags, currentQuestion: cq }, () => {
+      this._updateComputedFields()
+    })
     this._showAnswerFeedback(q, newAnswer)
   },
 
@@ -817,8 +838,29 @@ Page({
       })
     }
 
-    this.setData({ questions, answerMap, answeredFlags, answeredCount, blankSelectedFlags, currentQuestion })
+    this.setData({ questions, answerMap, answeredFlags, answeredCount, blankSelectedFlags, currentQuestion }, () => {
+      this._updateComputedFields()
+    })
     this._showAnswerFeedback(q, newAnswer)
+  },
+
+  /* ==================== computed fields ==================== */
+
+  _modeLabel: function(m) {
+    var map = { random: '随机', sequential: '顺序', smart: '智能推荐' }
+    return map[m] || m || ''
+  },
+
+  _updateComputedFields: function(extras) {
+    var data = {}
+    // selectedModeLabel
+    data.selectedModeLabel = this._modeLabel(this.data.selectedMode)
+    // progressPercent
+    var total = this.data.totalQuestions || 0
+    var answered = this.data.answeredCount || 0
+    data.progressPercent = total > 0 ? Math.round(answered / total * 100) : 0
+    if (extras) Object.assign(data, extras)
+    this.setData(data)
   },
 
   noop() {},
@@ -1082,15 +1124,22 @@ Page({
 
       const duration = Math.floor((Date.now() - startTime) / 1000)
       // 存储详细结果供 result 页使用
+      const storedResults = (result.results || []).map(function(rr) {
+        return Object.assign({}, rr, {
+          user_answer: answerMap[String(rr.question_id)] || '',
+        })
+      })
       wx.setStorageSync('lastPracticeResult', {
         correct: result.total_correct || 0,
         wrong: result.total_wrong || 0,
+        skipped: unanswered,
         total,
         subject_id: selectedSubjectId,
         subject_name: selectedSubjectName,
         duration,
         traceId: result.trace_id || this.data.traceId,
-        results: result.results || [],
+        results: storedResults,
+        questions: questions,
         comboCount,
       })
 
@@ -1126,9 +1175,14 @@ Page({
 
   /* ==================== 工具 ==================== */
 
-  modeLabel(m) {
-    const map = { random: '随机', sequential: '顺序', smart: '智能推荐' }
-    return map[m] || m || ''
+  retryLoad() {
+    this.setData({ errorText: '', canRetry: false })
+    this.startPractice()
+  },
+
+  goSetup() {
+    this._clearTimer()
+    this.setData({ started: false, loading: false, errorText: '', canRetry: false })
   },
 
   goPomodoro() {

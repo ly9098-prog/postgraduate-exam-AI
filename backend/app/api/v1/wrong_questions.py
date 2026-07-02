@@ -99,6 +99,7 @@ def enrich_wq(wq, question):
         created_at=wq.created_at,
         updated_at=wq.updated_at,
         subject=question.subject_ref.code if question and question.subject_ref else None,
+        question_type=question.question_type if question else None,
         content=_sanitize_content(question.content) if question else None,
         options=_sanitize_options(question.options) if question else None,
         answer=question.answer if question else None,

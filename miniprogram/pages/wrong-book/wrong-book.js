@@ -108,13 +108,16 @@ Page({
     try {
       const diagnosis = await api.get('/stats/ai-diagnosis')
       if (diagnosis) {
+        // Guard against null/missing array fields from backend
+        for (const listKey of ['weak_points', 'strong_points', 'learning_suggestions']) {
+          if (!Array.isArray(diagnosis[listKey])) diagnosis[listKey] = []
+        }
+        // Enrich accuracy percent for weak/strong points
         for (const listKey of ['weak_points', 'strong_points']) {
-          if (diagnosis[listKey]) {
-            diagnosis[listKey] = diagnosis[listKey].map(item => ({
-              ...item,
-              _accuracyPercent: Math.round((item.accuracy || 0) * 100),
-            }))
-          }
+          diagnosis[listKey] = diagnosis[listKey].map(item => ({
+            ...item,
+            _accuracyPercent: Math.round((item.accuracy || 0) * 100),
+          }))
         }
       }
       if (diagnosis && (diagnosis.weak_points.length > 0 || diagnosis.strong_points.length > 0 || diagnosis.learning_suggestions.length > 0 || diagnosis.summary)) {
@@ -142,9 +145,12 @@ Page({
       const items = (data.items || []).map(item => this._decorateItem(item))
       const nextList = reset ? items : [...this.data.list, ...items]
 
+      // When filter is active, build analysis from current list only (not global stats)
+      const hasFilter = this.data.selectedSubject || this.data.selectedErrorType
+      const statsForAnalysis = hasFilter ? null : this.data.stats
       this.setData({
         list: nextList,
-        analysis: this._buildAnalysis(this.data.stats, nextList),
+        analysis: this._buildAnalysis(statsForAnalysis, nextList),
         hasMore: page < data.total_pages,
         page: reset ? 2 : page + 1,
         loading: false,
@@ -172,13 +178,16 @@ Page({
   },
 
   loadMore() {
+    if (this.data.loading || !this.data.hasMore) return
     this.loadList()
   },
 
   goDetail(e) {
     const id = e.currentTarget.dataset.id
-    const ids = this.data.list.map(item => item.id).join(',')
-    wx.navigateTo({ url: `/pages/wrong-detail/wrong-detail?id=${id}&ids=${ids}` })
+    const ids = this.data.list.map(item => item.id)
+    const idx = ids.indexOf(id)
+    wx.setStorageSync('wrong_detail_ids', ids)
+    wx.navigateTo({ url: `/pages/wrong-detail/wrong-detail?id=${id}&idx=${idx}` })
   },
 
   _decorateItem(item) {
