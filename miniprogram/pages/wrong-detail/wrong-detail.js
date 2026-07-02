@@ -147,6 +147,9 @@ Page({
     aiResult: null,
     aiLoading: false,
     aiFallback: false,
+    aiErrorText: '',
+    aiRequested: false,
+    aiFromCache: false,
     loading: true,
     errorText: '',
     currentWqId: null,
@@ -155,6 +158,7 @@ Page({
     totalQuestions: 0,
     swiperEnabled: false,
     contentState: '',
+    switching: false,
     showSwipeHint: false,
     safeModeActive: false,
     renderTraces: [],
@@ -163,13 +167,18 @@ Page({
   onLoad(options) {
     setRenderGuardPage('wrong-detail')
     const currentId = Number(options.id)
-    // Prefer storage-based ids list (from wrong-book), fallback to single-question mode
+    if (!Number.isFinite(currentId) || currentId <= 0) {
+      this.setData({ loading: false, errorText: '错题ID无效', wq: null })
+      return
+    }
     let questionIds = []
     try {
-      const stored = wx.getStorageSync('wrong_detail_ids')
-      if (Array.isArray(stored) && stored.length > 0) {
-        const normalized = stored.map(Number).filter(Number.isFinite)
-        if (normalized.includes(currentId)) questionIds = normalized
+      if (options.source === 'wrong-book') {
+        const nav = wx.getStorageSync('wrong_detail_nav')
+        if (nav && Array.isArray(nav.ids) && Date.now() - Number(nav.ts || 0) < 30 * 60 * 1000) {
+          const normalized = nav.ids.map(Number).filter(Number.isFinite)
+          if (normalized.includes(currentId)) questionIds = normalized
+        }
       }
     } catch (_) {}
     const currentIdx = questionIds.indexOf(currentId)
@@ -192,13 +201,27 @@ Page({
   },
 
   async loadData(wqId) {
-    this.setData({ loading: true, errorText: '' })
+    this._aiToken = ''
+    this.setData({
+      loading: true,
+      errorText: '',
+      aiLoading: false,
+      aiResult: null,
+      aiFallback: false,
+      aiErrorText: '',
+      aiRequested: false,
+      aiFromCache: false,
+    })
     try {
       const wq = await api.get(`/wrong-questions/${wqId}`)
       if (!wq) throw new Error('not found')
       const data = _processWqData(wq, this.data.safeModeActive)
       data.aiResult = null
       data.aiFallback = false
+      data.aiLoading = false
+      data.aiErrorText = ''
+      data.aiRequested = false
+      data.aiFromCache = false
       data.errorText = ''
       this.setData(data)
       this.setData({ loading: false, currentWqId: wqId })
@@ -207,7 +230,7 @@ Page({
         this._checkRenderInvariant(data._renderModel)
         this._recordRenderTrace(data._renderModel.renderTrace)
       }
-      this.loadAiAnalysis(wqId)
+      // 不再自动调用 AI 分析，用户点击按钮后手动触发
     } catch (e) {
       console.error('加载错题详情失败', e)
       this.setData({
@@ -217,37 +240,91 @@ Page({
         optionItems: [],
         blankOptionGroups: [],
         aiResult: null,
+        aiLoading: false,
+        aiFallback: false,
+        aiErrorText: '',
+        aiRequested: false,
+        aiFromCache: false,
       })
     }
   },
 
+  onTapAiAnalysis() {
+    if (this.data.aiLoading) return
+    const wqId = this.data.currentWqId || (this.data.wq && this.data.wq.id)
+    if (!wqId) {
+      wx.showToast({ title: '缺少错题ID', icon: 'none' })
+      return
+    }
+    this.loadAiAnalysis(wqId)
+  },
+
   async loadAiAnalysis(wqId) {
-    const token = wqId + '-' + Date.now()
+    if (!wqId) return
+    if (this.data.aiLoading) return
+    const token = String(wqId) + '-' + Date.now()
     this._aiToken = token
-    this.setData({ aiLoading: true })
+    this.setData({
+      aiLoading: true,
+      aiRequested: true,
+      aiFallback: false,
+      aiErrorText: '',
+      aiResult: null,
+      aiFromCache: false,
+    })
     try {
       const result = await api.post('/ai/error-analysis', { wrong_question_id: wqId })
       // Stale response guard
-      if (this._aiToken !== token || !this.data.wq || this.data.wq.id !== wqId) return
-      const content = result.content
-      if (content) {
-        if (content.error_analysis) {
-          content.error_analysis = content.error_analysis.replace(/^切入点[：:]\s*/, '')
-        }
-        if (content.knowledge_weakness) {
-          content.knowledge_weakness = content.knowledge_weakness.replace(/^核心考点[：:]\s*/, '')
-        }
+      if (this._aiToken !== token || !this.data.wq || String(this.data.wq.id) !== String(wqId)) return
+      const content = result && result.content ? result.content : null
+      const fromFallback = !!(result && result.from_fallback)
+      const fromCache = !!(result && result.from_cache)
+      if (fromFallback) {
+        this.setData({
+          aiResult: null,
+          aiFallback: true,
+          aiFromCache: false,
+          aiErrorText: 'AI 服务暂时不可用，请稍后重试',
+          aiLoading: false,
+        })
+        return
+      }
+      if (!content) {
+        this.setData({
+          aiResult: null,
+          aiFallback: true,
+          aiFromCache: false,
+          aiErrorText: 'AI 分析结果为空，请稍后重试',
+          aiLoading: false,
+        })
+        return
+      }
+      if (content.error_analysis) {
+        content.error_analysis = String(content.error_analysis).replace(/^切入点[：:]\s*/, '')
+      }
+      if (content.knowledge_weakness) {
+        content.knowledge_weakness = String(content.knowledge_weakness).replace(/^核心考点[：:]\s*/, '')
       }
       this.setData({
         aiResult: content,
-        aiFallback: result.from_fallback,
+        aiFallback: false,
+        aiFromCache: fromCache,
+        aiErrorText: '',
         aiLoading: false,
       })
     } catch (e) {
       console.error('加载 AI 分析失败', e)
-      // Only update if still on the same question
-      if (this._aiToken === token && this.data.wq && this.data.wq.id === wqId) {
-        this.setData({ aiLoading: false, aiFallback: true })
+      if (this._aiToken === token && this.data.wq && String(this.data.wq.id) === String(wqId)) {
+        const msg = e && e.errMsg && String(e.errMsg).includes('timeout')
+          ? 'AI 分析生成超时，请稍后重试'
+          : 'AI 分析生成失败，请稍后重试'
+        this.setData({
+          aiLoading: false,
+          aiFallback: true,
+          aiResult: null,
+          aiFromCache: false,
+          aiErrorText: msg,
+        })
       }
     }
   },
@@ -308,8 +385,18 @@ Page({
     }
   },
 
+  // ---- 内嵌代码块横滑，阻止页面切题 ----
+  onInnerHorizontalTouch() {
+    this._innerTouching = true
+  },
+
+  onInnerHorizontalTouchEnd() {
+    setTimeout(() => { this._innerTouching = false }, 80)
+  },
+
   // ---- 左滑/右滑切换 ----
   onTouchStart(e) {
+    if (this._innerTouching) return
     if (this._animating || !this.data.swiperEnabled) return
     const t = e.touches[0]
     this._touchX = t.clientX
@@ -319,6 +406,7 @@ Page({
   },
 
   onTouchEnd(e) {
+    if (this._innerTouching) return
     if (this._animating || !this.data.swiperEnabled) return
     if (this._touchX === undefined) return
 
@@ -384,6 +472,8 @@ Page({
 
   async _navigateTo(idx, animMs) {
     const wqId = this.data.questionIds[idx]
+    this._aiToken = ''
+    this.setData({ switching: true })
     try {
       const wq = await api.get(`/wrong-questions/${wqId}`)
       if (!wq) throw new Error('not found')
@@ -392,6 +482,11 @@ Page({
       data.currentWqId = wqId
       data.aiResult = null
       data.aiFallback = false
+      data.aiLoading = false
+      data.aiErrorText = ''
+      data.aiRequested = false
+      data.aiFromCache = false
+      data.switching = false
       this._checkRenderInvariant(data._renderModel)
       this._recordRenderTrace(data._renderModel && data._renderModel.renderTrace)
 
@@ -405,11 +500,11 @@ Page({
         setTimeout(() => { this._animating = false }, animMs)
       }, 50)
 
-      this.loadAiAnalysis(wqId)
+      // 不再自动调用 AI 分析
     } catch (e) {
       console.error('切换题目失败', e)
       wx.showToast({ title: '加载失败', icon: 'none' })
-      this.setData({ contentState: '' })
+      this.setData({ contentState: '', switching: false })
       this._animating = false
     }
   },
