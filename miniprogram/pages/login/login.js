@@ -51,6 +51,12 @@ Page({
       }
     }
 
+    // Phase 2 requires agreement — don't silently login without user consent
+    if (!this.data.agreed) {
+      this.setData({ loading: false })
+      return
+    }
+
     let lastErr
     for (let i = 0; i < 2; i++) {
       if (i > 0) await new Promise(r => setTimeout(r, 600))

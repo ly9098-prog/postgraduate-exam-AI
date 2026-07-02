@@ -62,6 +62,7 @@ Page({
       ])
       const overview = (dashRes && dashRes.overview) || {}
       const growth = growthRes || null
+      this._lastGrowth = growth
       this.setData(this.buildGrowthSnapshot(overview, growth))
       this._animateNumbers()
     } catch (e) {
@@ -175,7 +176,7 @@ Page({
       _animStreakDays: 0,
       _animGoalDone: 0,
       _animLevelProgress: 0,
-      ...this.buildGrowthSnapshot(this._lastOverview || {}),
+      ...this.buildGrowthSnapshot(this._lastOverview || {}, this._lastGrowth),
       showGoalPicker: false,
     })
     this._animateNumbers()
