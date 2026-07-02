@@ -20,6 +20,7 @@ from app.schemas.review_scheduler import (
     TodayReviewResponse,
 )
 from app.services import review_scheduler
+from app.utils.answer_normalizer import is_answer_correct
 
 router = APIRouter(prefix="/api/v1/review")
 
@@ -106,9 +107,7 @@ async def grade_submit(
         raise HTTPException(status_code=404, detail="题目不存在")
 
     # 判对错
-    user_answer = (data.user_answer or "").strip().upper()
-    correct_answer = (question.answer or "").strip().upper()
-    is_correct = user_answer == correct_answer
+    is_correct = is_answer_correct(data.user_answer or "", question.answer or "", question.question_type or "")
 
     # 根据对错决定评分（答对=4 正确稍有犹豫，答错=1 错误但想起）
     rating = 4 if is_correct else 1
@@ -204,9 +203,7 @@ async def grade_batch(
             continue
 
         # 判对错
-        user_answer = (item.user_answer or "").strip().upper()
-        correct_answer = (question.answer or "").strip().upper()
-        is_correct = user_answer == correct_answer
+        is_correct = is_answer_correct(item.user_answer or "", question.answer or "", question.question_type or "")
 
         # 根据对错决定评分（答对=4 正确稍有犹豫，答错=1 错误但想起）
         rating = 4 if is_correct else 1

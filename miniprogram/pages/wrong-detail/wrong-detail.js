@@ -5,6 +5,7 @@ const {
   toPlainInlineMathText, needsRichRender, stripLeadingOptionLabel,
   textToHtml, RENDER_MODE
 } = require('../../utils/stem-render')
+const { normalizeAnswerSet, isTrueFalseType, isMultipleChoiceType } = require('../../utils/answer')
 
 function _normalizeBlankAnswer(answer) {
   if (!answer) return {}
@@ -41,23 +42,41 @@ function _errorTypeLabel(t) {
 }
 
 function _processWqData(wq, safeMode) {
-  const opts = wq.options || null
+  // Judgement fallback
+  let opts = wq.options || null
+  if ((!opts || Object.keys(opts).length === 0) && isTrueFalseType(wq.question_type)) {
+    opts = { A: '正确', B: '错误' }
+  }
   const optionKeys = opts ? Object.keys(opts) : []
   var renderCfg = { enableMathImage: false, DEV: config.DEV }
   if (safeMode) renderCfg.SAFE_MODE = true
   const _renderModel = buildRenderModel(wq, opts, renderCfg)
   const blankOptionGroups = _enrichBlankOptionGroups(wq.content && wq.content.blank_option_groups, wq.answer, wq.wrong_answer)
+
+  // Multi-choice: use set-based comparison
+  const correctSet = isMultipleChoiceType(wq.question_type) ? normalizeAnswerSet(wq.answer) : null
+  const userSet = isMultipleChoiceType(wq.question_type) ? normalizeAnswerSet(wq.wrong_answer) : null
+
   const optionItems = optionKeys.map((key) => {
     const rawText = (opts && opts[key]) || ''
     const stripped = stripLeadingOptionLabel(key, rawText)
     const plain = toPlainInlineMathText(stripped)
     const text = plain || stripped
     const needsRich = !plain && needsRichRender(stripped)
-    const isCorrect = key === wq.answer
-    const isUserAnswer = key === wq.wrong_answer
+    let isCorrect = key === wq.answer
+    let isUserAnswer = key === wq.wrong_answer
+    if (correctSet) {
+      isCorrect = !!correctSet[key]
+    }
+    if (userSet) {
+      isUserAnswer = !!userSet[key]
+    }
     let lineClass = ''
     let valueClass = 'option-value'
-    if (isCorrect) {
+    if (isCorrect && isUserAnswer) {
+      lineClass = 'both'
+      valueClass += ' both'
+    } else if (isCorrect) {
       lineClass = 'correct'
       valueClass += ' right'
     } else if (isUserAnswer) {
@@ -119,6 +138,8 @@ Page({
     aiLoading: false,
     aiFallback: false,
     loading: true,
+    errorText: '',
+    currentWqId: null,
     questionIds: [],
     currentIdx: 0,
     totalQuestions: 0,
@@ -131,9 +152,16 @@ Page({
 
   onLoad(options) {
     setRenderGuardPage('wrong-detail')
-    const { id, ids } = options
-    const questionIds = ids ? ids.split(',').map(Number).filter(Boolean) : []
-    const currentId = Number(id)
+    const currentId = Number(options.id)
+    // Prefer storage-based ids list (from wrong-book), fallback to single-question mode
+    let questionIds = []
+    try {
+      const stored = wx.getStorageSync('wrong_detail_ids')
+      if (Array.isArray(stored) && stored.length > 0) {
+        const normalized = stored.map(Number).filter(Number.isFinite)
+        if (normalized.includes(currentId)) questionIds = normalized
+      }
+    } catch (_) {}
     const currentIdx = questionIds.indexOf(currentId)
     const swiperEnabled = questionIds.length > 1
     this.setData({
@@ -154,15 +182,16 @@ Page({
   },
 
   async loadData(wqId) {
-    this.setData({ loading: true })
+    this.setData({ loading: true, errorText: '' })
     try {
       const wq = await api.get(`/wrong-questions/${wqId}`)
       if (!wq) throw new Error('not found')
       const data = _processWqData(wq, this.data.safeModeActive)
       data.aiResult = null
       data.aiFallback = false
+      data.errorText = ''
       this.setData(data)
-      this.setData({ loading: false })
+      this.setData({ loading: false, currentWqId: wqId })
       // Render invariant check + trace
       if (data._renderModel) {
         this._checkRenderInvariant(data._renderModel)
@@ -171,15 +200,25 @@ Page({
       this.loadAiAnalysis(wqId)
     } catch (e) {
       console.error('加载错题详情失败', e)
-      wx.showToast({ title: '加载失败', icon: 'none' })
-      this.setData({ loading: false })
+      this.setData({
+        loading: false,
+        errorText: '错题不存在或已被移除',
+        wq: null,
+        optionItems: [],
+        blankOptionGroups: [],
+        aiResult: null,
+      })
     }
   },
 
   async loadAiAnalysis(wqId) {
+    const token = wqId + '-' + Date.now()
+    this._aiToken = token
     this.setData({ aiLoading: true })
     try {
       const result = await api.post('/ai/error-analysis', { wrong_question_id: wqId })
+      // Stale response guard
+      if (this._aiToken !== token || !this.data.wq || this.data.wq.id !== wqId) return
       const content = result.content
       if (content) {
         if (content.error_analysis) {
@@ -196,7 +235,10 @@ Page({
       })
     } catch (e) {
       console.error('加载 AI 分析失败', e)
-      this.setData({ aiLoading: false, aiFallback: true })
+      // Only update if still on the same question
+      if (this._aiToken === token && this.data.wq && this.data.wq.id === wqId) {
+        this.setData({ aiLoading: false, aiFallback: true })
+      }
     }
   },
 
@@ -314,15 +356,32 @@ Page({
     }, animMs)
   },
 
+  reloadData() {
+    if (this.data.questionIds.length > 0) {
+      this.loadData(this.data.questionIds[this.data.currentIdx])
+    } else if (this.data.currentWqId) {
+      this.loadData(this.data.currentWqId)
+    } else {
+      this.goBack()
+    }
+  },
+
+  goBack() {
+    wx.navigateBack()
+  },
+
   async _navigateTo(idx, animMs) {
     const wqId = this.data.questionIds[idx]
     try {
       const wq = await api.get(`/wrong-questions/${wqId}`)
       if (!wq) throw new Error('not found')
-      const data = _processWqData(wq)
+      const data = _processWqData(wq, this.data.safeModeActive)
       data.currentIdx = idx
+      data.currentWqId = wqId
       data.aiResult = null
       data.aiFallback = false
+      this._checkRenderInvariant(data._renderModel)
+      this._recordRenderTrace(data._renderModel && data._renderModel.renderTrace)
 
       // 先瞬间定位到滑入起始位置（transition: none）
       const fromState = this._swipeDir === 'left' ? 'from-right' : 'from-left'

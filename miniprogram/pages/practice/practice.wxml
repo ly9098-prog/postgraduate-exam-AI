@@ -28,7 +28,7 @@
       </view>
       <view class="mission-strip-divider"></view>
       <view class="mission-strip-item">
-        <text class="mission-strip-num">{{modeLabel(selectedMode)}}</text>
+        <text class="mission-strip-num">{{selectedModeLabel}}</text>
         <text class="mission-strip-label">出题节奏</text>
       </view>
       <view class="mission-strip-divider"></view>
@@ -124,7 +124,7 @@
           <text class="section-title">挑战模式</text>
           <text class="section-subtitle">随机查漏，顺序巩固，把节奏交给今天的状态</text>
         </view>
-        <text class="section-chip">{{modeLabel(selectedMode)}}</text>
+        <text class="section-chip">{{selectedModeLabel}}</text>
       </view>
       <view class="mode-row">
         <view class="mode-card {{selectedMode==='random' ? 'active' : ''}}" bindtap="chooseMode" data-mode="random">
@@ -196,7 +196,7 @@
       <view class="progress-track">
         <view class="progress-fill" style="width:{{totalQuestions > 0 ? (answeredCount || 0) / totalQuestions * 100 : 0}}%"></view>
       </view>
-      <text class="progress-label">{{totalQuestions > 0 ? Math.round((answeredCount || 0) / totalQuestions * 100) : 0}}%</text>
+      <text class="progress-label">{{progressPercent}}%</text>
     </view>
 
     <!-- 滑动容器 -->

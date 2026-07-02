@@ -2,7 +2,20 @@
   <loading-lottie text="正在加载错题详情..." size="large" />
 </view>
 
-<view class="page" wx:if="{{!loading && wq}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
+<!-- 错误态 -->
+<view wx:elif="{{errorText}}" class="error-state">
+  <view class="error-icon-wrap">
+    <text class="line-icon icon-exclamation" style="width:48rpx;height:48rpx;color:#EF4444;"></text>
+  </view>
+  <text class="error-title">{{errorText}}</text>
+  <text class="error-desc">该错题记录可能已被移除或不存在</text>
+  <view class="error-actions">
+    <button class="error-btn primary" bindtap="reloadData">重新加载</button>
+    <button class="error-btn secondary" bindtap="goBack">返回错题本</button>
+  </view>
+</view>
+
+<view class="page" wx:elif="{{!loading && wq}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
   <view class="swiper-content {{contentState}}">
     <view wx:if="{{swiperEnabled}}" class="progress-area">
       <text class="progress-text">{{currentIdx + 1}} / {{totalQuestions}}</text>

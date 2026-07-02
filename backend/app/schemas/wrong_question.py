@@ -27,6 +27,7 @@ class WrongQuestionResponse(BaseModel):
     updated_at: datetime
     # 关联的题目信息
     subject: str | None = None
+    question_type: str | None = None
     content: dict | None = None
     options: dict | None = None
     answer: str | None = None

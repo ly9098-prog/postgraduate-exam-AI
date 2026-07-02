@@ -4,6 +4,7 @@ Page({
   data: {
     correct: 0,
     wrong: 0,
+    skipped: 0,
     total: 0,
     passRate: 0,
     subject: '',
@@ -35,21 +36,33 @@ Page({
 
     // 从 storage 读取详细结果
     let results = []
+    let stored = null
     try {
-      const stored = wx.getStorageSync('lastPracticeResult')
+      stored = wx.getStorageSync('lastPracticeResult')
       if (stored && stored.results) {
-        results = stored.results.map(r => ({
-          ...r,
-          correct_answer: formatInlineMathText(r.correct_answer),
-          _label: r.is_correct ? '✓' : '✗',
-          _cls: r.is_correct ? 'correct' : 'wrong',
-        }))
+        const questions = stored.questions || []
+        const questionById = {}
+        questions.forEach(function(q) { if (q && q.id) questionById[String(q.id)] = q })
+        results = stored.results.map(function(r) {
+          const q = questionById[String(r.question_id)] || {}
+          const stemText = (q.content && (q.content.stem || q.content.text || q.content.title || q.content.question)) || q.stem || q.title || q.question || q.text || ''
+          return {
+            ...r,
+            correct_answer: formatInlineMathText(r.correct_answer),
+            _label: r.is_correct ? '✓' : '✗',
+            _cls: r.is_correct ? 'correct' : 'wrong',
+            _stemPreview: stemText ? (stemText.length > 50 ? stemText.slice(0, 50) + '...' : stemText) : '',
+            _userAnswer: r.user_answer || '',
+          }
+        })
       }
     } catch (_) {}
 
+    const skipped = (stored && stored.skipped) || 0
     this.setData({
       correct,
       wrong,
+      skipped,
       total,
       duration,
       durationText: this._fmt(duration),
