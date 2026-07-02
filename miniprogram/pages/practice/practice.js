@@ -492,8 +492,15 @@ Page({
     try {
       const subjectId = this.data.selectedSubjectId
       if (!subjectId) {
+        this._clearTimer()
+        this.setData({
+          loading: false,
+          started: false,
+          questions: [],
+          totalQuestions: 0,
+          currentQuestion: null,
+        })
         wx.showToast({ title: '请选择科目', icon: 'none' })
-        this.setData({ loading: false })
         return
       }
       const params = {

@@ -102,6 +102,11 @@ Page({
         primaryStatCount: typeof stats.unmastered === 'number' ? stats.unmastered : (stats.total || 0),
         primaryStatLabel: typeof stats.unmastered === 'number' ? '待攻克错题' : '错题总数',
       })
+      // Rebuild analysis with fresh stats when no filter is active
+      const hasFilter = this.data.selectedSubject || this.data.selectedErrorType || this.data.selectedTopic
+      if (!hasFilter && this.data.list.length > 0) {
+        this.setData({ analysis: this._buildAnalysis(stats, this.data.list) })
+      }
     } catch (e) {
       console.error('加载错题统计失败', e)
     }
@@ -152,7 +157,7 @@ Page({
 
       // When filter is active, build analysis from current list only (not global stats)
       const hasFilter = this.data.selectedSubject || this.data.selectedErrorType || this.data.selectedTopic
-      const statsForAnalysis = hasFilter ? null : this.data.stats
+      const statsForAnalysis = hasFilter ? {} : (this.data.stats || {})
       this.setData({
         list: nextList,
         analysis: this._buildAnalysis(statsForAnalysis, nextList),
@@ -224,6 +229,7 @@ Page({
   },
 
   _buildAnalysis(stats = {}, list = []) {
+    stats = stats || {}
     const errorRows = this._rowsFromStats(stats, ['by_error_type', 'error_types', 'errors'])
     const subjectRows = this._rowsFromStats(stats, ['by_subject', 'subjects'])
     const errorCounts = errorRows.length ? errorRows : this._countsFromList(list, 'error_type')
@@ -252,6 +258,7 @@ Page({
   },
 
   _buildSummaryCards(stats = {}, list = [], weaknessTags = []) {
+    stats = stats || {}
     const unmastered = this._positiveNumber(stats.unmastered, this.data.primaryStatCount || stats.total || list.length || 0)
     const reviewed = list.filter(item => this._positiveNumber(item._reviewCount, 0) > 0).length
     const avgMastery = list.length
