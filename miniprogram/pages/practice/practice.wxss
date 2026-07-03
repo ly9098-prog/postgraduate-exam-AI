@@ -1,8 +1,17 @@
 @import '../../styles/tokens.wxss';
 
+/* 原生 page 节点负责覆盖滚动回弹、下拉等区域 */
+page {
+  min-height: 100vh;
+  background: #EEF5FF;
+  background-color: #EEF5FF;
+  overflow-x: hidden;
+}
+
 .page {
   min-height: 100vh;
   background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
+  background-color: #EEF5FF;
   padding-bottom: 48rpx;
   overflow-x: hidden;
 }
@@ -15,11 +24,11 @@
 /* ==================== 设置页 ==================== */
 
 .setup {
-  padding-bottom: 48rpx;
+  padding: 24rpx 0 48rpx;
 }
 
 .practice-hero {
-  margin: 24rpx 24rpx 16rpx;
+  margin: 0 24rpx 16rpx;
   padding: 36rpx 30rpx;
   display: flex;
   align-items: center;
@@ -642,6 +651,7 @@
   min-height: 100vh;
   overflow: hidden;
   background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
+  background-color: #EEF5FF;
 }
 
 /* 顶部状态栏 */

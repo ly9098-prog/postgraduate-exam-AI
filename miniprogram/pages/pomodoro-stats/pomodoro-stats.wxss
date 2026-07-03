@@ -3,6 +3,12 @@
    Dark immersive theme for focus analytics
    ============================================ */
 
+page {
+  min-height: 100vh;
+  background: #0B1121;
+  background-color: #0B1121;
+}
+
 .page {
   min-height: 100vh;
   background: linear-gradient(180deg, #0B1121 0%, #1A1F35 50%, #111827 100%);

@@ -4,6 +4,13 @@
    ============================================ */
 @import '../../styles/tokens.wxss';
 
+/* ── Native page (dark fallback for scroll bounce area) ── */
+page {
+  min-height: 100vh;
+  background: #0B1121;
+  background-color: #0B1121;
+}
+
 /* ── Page ── */
 .page {
   min-height: 100vh;
