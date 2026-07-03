@@ -148,6 +148,40 @@ async def analyze_error(
         _generating.discard(wq_pk)
 
 
+async def prewarm_wrong_question_analysis(
+    wrong_question_id: int, user_id: int,
+) -> None:
+    """后台预生成错题 AI 分析。独立 session，失败仅记录日志，不抛异常。"""
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        from app.core.database import async_session
+        async with async_session() as bg_db:
+            wq = await bg_db.execute(
+                select(WrongQuestion).where(
+                    WrongQuestion.id == wrong_question_id,
+                    WrongQuestion.user_id == user_id,
+                )
+            )
+            wq = wq.scalar_one_or_none()
+            if not wq:
+                logger.info("[prewarm] wrong_question not found id=%d uid=%d", wrong_question_id, user_id)
+                return
+            # 已有缓存则跳过
+            if wq.ai_analysis and isinstance(wq.ai_analysis, dict) and len(wq.ai_analysis) > 0:
+                logger.info("[prewarm] already cached id=%d uid=%d", wrong_question_id, user_id)
+                return
+            # 复用现有 analyze_error 逻辑
+            result = await analyze_error(bg_db, user_id, wrong_question_id)
+            logger.info(
+                "[prewarm] done id=%d uid=%d from_cache=%s from_fallback=%s",
+                wrong_question_id, user_id,
+                result.get("from_cache"), result.get("from_fallback"),
+            )
+    except Exception:
+        logger.exception("[prewarm] failed id=%d uid=%d", wrong_question_id, user_id)
+
+
 async def generate_advice(db: AsyncSession, user_id: int, subject: str | None = None) -> dict:
     from app.services.model_config_resolver import ensure_db_model_configured
     creds = await ensure_db_model_configured(db, feature="analysis")

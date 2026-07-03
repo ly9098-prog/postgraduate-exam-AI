@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
-from app.schemas.ai import AiChatRecord, AiResponse, ErrorAnalysisRequest, StudyAdviceRequest
+from app.schemas.ai import AiChatRecord, AiPrewarmRequest, AiPrewarmResponse, AiResponse, ErrorAnalysisRequest, StudyAdviceRequest
 from app.schemas.ai_learning import (
     AIExplainRequest,
     AIExplainResponse,
@@ -43,6 +43,41 @@ async def error_analysis(
         session_type="error_analysis",
         **result,
     )
+
+
+@router.post("/error-analysis/prewarm", response_model=AiPrewarmResponse)
+async def prewarm_analysis(
+    data: AiPrewarmRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """批量预生成错题 AI 分析。已缓存的跳过，未生成的后台任务处理。"""
+    import asyncio
+    from app.services.ai_service import prewarm_wrong_question_analysis
+    from app.models.wrong_question import WrongQuestion
+    from sqlalchemy import select
+
+    queued: list[int] = []
+    skipped: list[int] = []
+
+    for wq_id in data.wrong_question_ids:
+        result = await db.execute(
+            select(WrongQuestion).where(
+                WrongQuestion.id == wq_id,
+                WrongQuestion.user_id == current_user.id,
+            )
+        )
+        wq = result.scalar_one_or_none()
+        if not wq:
+            skipped.append(wq_id)
+            continue
+        if wq.ai_analysis and isinstance(wq.ai_analysis, dict) and len(wq.ai_analysis) > 0:
+            skipped.append(wq_id)
+            continue
+        queued.append(wq_id)
+        asyncio.create_task(prewarm_wrong_question_analysis(wq_id, current_user.id))
+
+    return AiPrewarmResponse(queued=queued, skipped=skipped)
 
 
 @router.post("/study-advice")
