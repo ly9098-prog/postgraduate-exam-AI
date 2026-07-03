@@ -57,10 +57,10 @@ async def analyze_error(
             "duration_ms": 0,
         }
 
-    # 并发保护：防止同一道题重复调用大模型
+    # 分布式锁：防止并发重复调用大模型（跨进程）
+    # 先用进程内集合做快速检测，再用 Redis 分布式锁
     wq_pk = wq.id
     if wq_pk in _generating:
-        # 已在生成中，返回临时状态，前端会展示 fallback 提示
         return {
             "content": {"mistake_diagnosis": "AI 分析正在生成中，请稍后刷新查看", "knowledge_patch": "", "review_task": ""},
             "from_cache": False,
@@ -70,7 +70,44 @@ async def analyze_error(
             "duration_ms": 0,
         }
     _generating.add(wq_pk)
+
+    from app.core.cache import cache
+    lock_key = f"ai:error_analysis:{wq_pk}"
+    lock_value = str(user_id)
+    have_lock = await cache.acquire_lock(lock_key, lock_value, ttl=60)
+    if not have_lock and cache._enabled:
+        # Redis 不可用时降级到进程内锁；Redis 可用但锁已被占则返回 generating
+        _generating.discard(wq_pk)
+        return {
+            "content": {"mistake_diagnosis": "AI 分析正在生成中，请稍后刷新查看", "knowledge_patch": "", "review_task": ""},
+            "from_cache": False,
+            "from_fallback": True,
+            "tokens_used": 0,
+            "model": "generating",
+            "duration_ms": 0,
+        }
+
     try:
+        # 获取锁后二次检查缓存（另一个进程可能刚写入）
+        await db.refresh(wq)
+        if wq.ai_analysis and isinstance(wq.ai_analysis, dict):
+            _generating.discard(wq_pk)
+            cached = wq.ai_analysis
+            if "mistake_diagnosis" not in cached:
+                cached = {
+                    "mistake_diagnosis": cached.get("error_analysis", ""),
+                    "knowledge_patch": cached.get("knowledge_weakness", ""),
+                    "review_task": cached.get("suggestion", ""),
+                }
+            return {
+                "content": cached,
+                "from_cache": True,
+                "from_fallback": False,
+                "tokens_used": 0,
+                "model": "cache",
+                "duration_ms": 0,
+            }
+
         from app.services.model_config_resolver import ensure_db_model_configured
         creds = await ensure_db_model_configured(db, feature="analysis")
 
@@ -146,6 +183,11 @@ async def analyze_error(
         }
     finally:
         _generating.discard(wq_pk)
+        if have_lock:
+            try:
+                await cache.release_lock(lock_key, lock_value)
+            except Exception:
+                pass
 
 
 async def prewarm_wrong_question_analysis(
