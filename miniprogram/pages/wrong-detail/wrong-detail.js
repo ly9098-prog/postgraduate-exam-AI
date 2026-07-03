@@ -216,12 +216,28 @@ Page({
       const wq = await api.get(`/wrong-questions/${wqId}`)
       if (!wq) throw new Error('not found')
       const data = _processWqData(wq, this.data.safeModeActive)
-      data.aiResult = null
-      data.aiFallback = false
+
+      // 如果后端已返回持久化的 AI 分析，直接展示
+      var cachedAi = wq && wq.ai_analysis && typeof wq.ai_analysis === 'object' && Object.keys(wq.ai_analysis).length > 0
+      if (cachedAi) {
+        var ca = wq.ai_analysis
+        data.aiResult = {
+          mistake_diagnosis: ca.mistake_diagnosis || ca.error_analysis || '',
+          knowledge_patch: ca.knowledge_patch || ca.knowledge_weakness || '',
+          review_task: ca.review_task || ca.suggestion || '',
+        }
+        data.aiRequested = true
+        data.aiFromCache = true
+        data.aiFallback = false
+        data.aiErrorText = ''
+      } else {
+        data.aiResult = null
+        data.aiRequested = false
+        data.aiFromCache = false
+        data.aiFallback = false
+        data.aiErrorText = ''
+      }
       data.aiLoading = false
-      data.aiErrorText = ''
-      data.aiRequested = false
-      data.aiFromCache = false
       data.errorText = ''
       this.setData(data)
       this.setData({ loading: false, currentWqId: wqId })
@@ -251,6 +267,11 @@ Page({
 
   onTapAiAnalysis() {
     if (this.data.aiLoading) return
+    // 已有缓存结果，不再重复请求
+    if (this.data.aiResult && this.data.aiFromCache) {
+      wx.showToast({ title: '已加载 AI 复盘分析', icon: 'none' })
+      return
+    }
     const wqId = this.data.currentWqId || (this.data.wq && this.data.wq.id)
     if (!wqId) {
       wx.showToast({ title: '缺少错题ID', icon: 'none' })
@@ -480,12 +501,27 @@ Page({
       const data = _processWqData(wq, this.data.safeModeActive)
       data.currentIdx = idx
       data.currentWqId = wqId
-      data.aiResult = null
-      data.aiFallback = false
+      // 检查切换后题目是否有已缓存 AI 分析
+      var cachedAi = wq && wq.ai_analysis && typeof wq.ai_analysis === 'object' && Object.keys(wq.ai_analysis).length > 0
+      if (cachedAi) {
+        var ca = wq.ai_analysis
+        data.aiResult = {
+          mistake_diagnosis: ca.mistake_diagnosis || ca.error_analysis || '',
+          knowledge_patch: ca.knowledge_patch || ca.knowledge_weakness || '',
+          review_task: ca.review_task || ca.suggestion || '',
+        }
+        data.aiRequested = true
+        data.aiFromCache = true
+        data.aiFallback = false
+        data.aiErrorText = ''
+      } else {
+        data.aiResult = null
+        data.aiRequested = false
+        data.aiFromCache = false
+        data.aiFallback = false
+        data.aiErrorText = ''
+      }
       data.aiLoading = false
-      data.aiErrorText = ''
-      data.aiRequested = false
-      data.aiFromCache = false
       data.switching = false
       this._checkRenderInvariant(data._renderModel)
       this._recordRenderTrace(data._renderModel && data._renderModel.renderTrace)

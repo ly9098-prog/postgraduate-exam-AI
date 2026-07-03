@@ -156,7 +156,7 @@
         <text class="ai-label">复练任务</text>
         <text class="ai-text">{{aiResult.review_task}}</text>
       </view>
-      <text class="ai-hint">{{aiFromCache ? '来自历史缓存，仅供参考' : '内容由 AI 生成，仅供参考'}}</text>
+      <text class="ai-hint">{{aiFromCache ? '已加载历史 AI 分析' : '内容由 AI 生成，仅供参考'}}</text>
       <button class="ai-secondary-btn" bindtap="onTapAiAnalysis">重新生成</button>
     </view>
 
