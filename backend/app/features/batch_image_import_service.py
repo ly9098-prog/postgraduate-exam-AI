@@ -856,6 +856,27 @@ async def _process_source(
             question_count = (result.get("stats") or {}).get("to_review", 0)
             pipeline_ok = result.get("status") == "completed"
 
+            # ── 回填 source_image_seq / source_image_name ──
+            if pipeline_ok and review_batch_id:
+                try:
+                    from app.models.question_import import QuestionImport as _QI
+                    from sqlalchemy import update as _sa_update
+                    async with async_session() as _db:
+                        await _db.execute(
+                            _sa_update(_QI)
+                            .where(_QI.batch_id == review_batch_id)
+                            .values(
+                                source_image_seq=src.seq,
+                                source_image_name=src.source_file,
+                            )
+                        )
+                        await _db.commit()
+                except Exception:
+                    logger.warning(
+                        "Failed to backfill source_image_seq for batch %s (non-fatal)",
+                        review_batch_id, exc_info=True,
+                    )
+
             if pipeline_ok and review_batch_id:
                 await _update_item_with_trace(
                     item_id, job_id,

@@ -404,6 +404,49 @@ async def submit_to_review(
             })
             q["decision_trace"] = q_decision_trace
 
+            # ── 推导 answer_status ──
+            _has_answer = bool(parsed_answer and parsed_answer.strip())
+            _answer_source = q.get("answer_source") or "unknown"
+            if _has_answer:
+                if q.get("ai_answer_flag") or _answer_source == "ai":
+                    _ans_status = "ai_filled"
+                    _ans_source = "ai"
+                elif _answer_source in ("ocr", "parser"):
+                    _ans_status = "imported"
+                    _ans_source = "parser"
+                else:
+                    _ans_status = "imported"
+                    _ans_source = "unknown"
+            else:
+                _ans_status = "missing"
+                _ans_source = "unknown"
+
+            _ans_confidence = q.get("answer_confidence") or q.get("confidence_score")
+
+            # ── review_priority: 缺失答案最高，AI 补全其次 ──
+            if _ans_status == "missing":
+                _priority = 10
+            elif _ans_status == "ai_filled":
+                _priority = 30
+            elif _ans_status == "imported":
+                _priority = 50
+            else:
+                _priority = 100
+
+            # ── 原题定位信息 ──
+            src = q.get("source", {}) or {}
+            source_question_no = q.get("source_question_no") or src.get("source_question_no")
+            source_question_label = q.get("source_question_label") or src.get("source_question_label")
+            source_image_seq = q.get("source_image_seq") or src.get("source_image_seq")
+            source_image_name = q.get("source_image_name") or src.get("source_image_name") or source_file
+            source_page_start = q.get("page_start") or src.get("page_start") or q.get("source_page_start")
+            source_page_end = q.get("page_end") or src.get("page_end") or q.get("source_page_end")
+            source_order_index = q.get("source_order_index") or src.get("source_order_index")
+            raw_text_preview = (
+                (q.get("raw_text") or q.get("raw_question_text") or "")[:200]
+                or (source_question_label or "") + (stem or "")[:180]
+            )
+
             qi = QuestionImport(
                 batch_id=batch_id,
                 source_type=source_type,
@@ -436,6 +479,19 @@ async def submit_to_review(
                     # 前端 import-batch 页据此渲染徽章；空列表写 None 减少 JSON 体积。
                     "risk_flags": list(dict.fromkeys(q.get("risk_flags") or [])) or None,
                 },
+                # ── 原题定位与答案状态 ──
+                source_question_no=source_question_no,
+                source_question_label=source_question_label,
+                source_image_seq=source_image_seq,
+                source_image_name=source_image_name,
+                source_page_start=source_page_start,
+                source_page_end=source_page_end,
+                source_order_index=source_order_index,
+                raw_text_preview=raw_text_preview,
+                answer_status=_ans_status,
+                answer_source=_ans_source,
+                answer_confidence=_ans_confidence,
+                review_priority=_priority,
             )
             db.add(qi)
             pending_qis.append(qi)
