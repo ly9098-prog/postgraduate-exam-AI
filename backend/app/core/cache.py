@@ -21,6 +21,10 @@ class CacheClient:
         self._enabled = bool(settings.REDIS_URL)
         self._stats: dict[str, int] = {"hits": 0, "misses": 0}
 
+    @property
+    def is_enabled(self) -> bool:
+        return self._enabled
+
     async def _ensure_client(self):
         if not self._enabled:
             return None
