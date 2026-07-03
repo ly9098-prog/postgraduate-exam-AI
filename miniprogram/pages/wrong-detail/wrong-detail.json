@@ -1,5 +1,8 @@
 {
   "navigationBarTitleText": "错题详情",
+  "backgroundColor": "#EEF5FF",
+  "backgroundColorTop": "#F8FAFF",
+  "backgroundColorBottom": "#EEF5FF",
   "usingComponents": {
     "mp-html": "/components/mp-html/index",
     "math-question": "/components/math-question/math-question",

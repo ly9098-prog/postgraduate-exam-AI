@@ -1,9 +1,17 @@
 /* wrong-detail — 错题详情专属样式（Modern Learning App 蓝色主题） */
 @import '../../styles/tokens.wxss';
 
+page {
+  min-height: 100vh;
+  background: #EEF5FF;
+  background-color: #EEF5FF;
+  overflow-x: hidden;
+}
+
 .page {
   min-height: 100vh;
   background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
+  background-color: #EEF5FF;
   padding-bottom: 48rpx;
   overflow-x: hidden;
 }

@@ -1,5 +1,11 @@
 @import '../../styles/tokens.wxss';
 
+page {
+  min-height: 100vh;
+  background: #EEF5FF;
+  background-color: #EEF5FF;
+}
+
 .home-page {
   min-height: 100vh;
   padding-bottom: 52rpx;

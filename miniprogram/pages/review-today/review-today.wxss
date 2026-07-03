@@ -1,11 +1,19 @@
 @import '../../styles/tokens.wxss';
 
+page {
+  min-height: 100vh;
+  background: #EEF5FF;
+  background-color: #EEF5FF;
+  overflow-x: hidden;
+}
+
 .page {
   min-height: 100vh;
   background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
-  padding-bottom: 48rpx;
+  background-color: #EEF5FF;
+  padding: 24rpx 0 48rpx;
   overflow-x: hidden;
-  animation: page-enter 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: none;
 }
 
 .review-hero { animation: card-enter 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
@@ -50,7 +58,7 @@
 }
 
 .review-hero {
-  margin: 24rpx 24rpx 16rpx;
+  margin: 0 24rpx 16rpx;
   padding: 36rpx 30rpx;
   border-radius: 36rpx;
   background: linear-gradient(145deg, #4F7FFF 0%, #6EC1FF 56%, #8AAFC8 100%);
