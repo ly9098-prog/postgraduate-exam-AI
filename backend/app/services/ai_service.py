@@ -35,10 +35,17 @@ async def analyze_error(
     if not q:
         raise ValueError("题目不存在")
 
-    # Check cache
+    # Check cache — convert old format to new field names
     if wq.ai_analysis and isinstance(wq.ai_analysis, dict):
+        cached = wq.ai_analysis
+        if "mistake_diagnosis" not in cached:
+            cached = {
+                "mistake_diagnosis": cached.get("error_analysis", ""),
+                "knowledge_patch": cached.get("knowledge_weakness", ""),
+                "review_task": cached.get("suggestion", ""),
+            }
         return {
-            "content": wq.ai_analysis,
+            "content": cached,
             "from_cache": True,
             "from_fallback": False,
             "tokens_used": 0,
