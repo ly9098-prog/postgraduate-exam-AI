@@ -1,5 +1,6 @@
 <view class="page">
   <animated-view
+    wx:if="{{showCelebration}}"
     show="{{showCelebration}}"
     type="{{celebrationType}}"
     title="{{celebrationTitle}}"
@@ -13,7 +14,7 @@
   />
 
   <!-- 结果头部 -->
-  <view class="result-hero {{passRate >= 60 ? 'pass' : 'fail'}} motion-card-enter">
+  <view class="result-hero {{passRate >= 60 ? 'pass' : 'fail'}}">
     <view class="hero-copy">
       <text class="eyebrow">练习结果</text>
       <text class="hero-title">{{passRate >= 60 ? '做得不错' : '继续加油'}}</text>
