@@ -53,7 +53,8 @@ def build_cached_error_analysis_response(wq) -> dict | None:
 
 
 async def analyze_error(
-    db: AsyncSession, user_id: int, wrong_question_id: int
+    db: AsyncSession, user_id: int, wrong_question_id: int,
+    force_regenerate: bool = False,
 ) -> dict:
     wq = await db.execute(
         select(WrongQuestion).where(
@@ -73,9 +74,15 @@ async def analyze_error(
         raise ValueError("题目不存在")
 
     # Check cache — 版本不匹配时跳过缓存以重新生成
-    cached = build_cached_error_analysis_response(wq)
-    if cached is not None:
-        return cached
+    if not force_regenerate:
+        cached = build_cached_error_analysis_response(wq)
+        if cached is not None:
+            return cached
+    else:
+        import logging
+        logging.getLogger(__name__).info(
+            "force regenerate error analysis wq_id=%d user_id=%d", wq.id, user_id,
+        )
 
     # 分布式锁：防止并发重复调用大模型（跨进程）
     # 先用进程内集合做快速检测，再用 Redis 分布式锁
@@ -110,17 +117,18 @@ async def analyze_error(
     try:
         # 获取锁后二次检查缓存（另一个进程可能刚写入）
         await db.refresh(wq)
-        cached = build_cached_error_analysis_response(wq)
-        if cached is not None:
-            _generating.discard(wq_pk)
-            return cached
+        if not force_regenerate:
+            cached = build_cached_error_analysis_response(wq)
+            if cached is not None:
+                _generating.discard(wq_pk)
+                return cached
 
         from app.services.model_config_resolver import ensure_db_model_configured
         creds = await ensure_db_model_configured(db, feature="analysis")
 
         if not creds:
             fallback = get_fallback_analysis()
-            return {
+            result = {
                 "content": fallback,
                 "from_cache": False,
                 "from_fallback": True,
@@ -128,6 +136,10 @@ async def analyze_error(
                 "model": "fallback",
                 "duration_ms": 0,
             }
+            if force_regenerate:
+                result["force_regenerated"] = False
+                result["cache_preserved"] = True
+            return result
 
         api_key, base_url, model_name = creds
 
@@ -141,7 +153,7 @@ async def analyze_error(
                 result = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
         except Exception:
             fallback = get_fallback_analysis()
-            return {
+            resp = {
                 "content": fallback,
                 "from_cache": False,
                 "from_fallback": True,
@@ -149,6 +161,10 @@ async def analyze_error(
                 "model": "fallback",
                 "duration_ms": ERROR_ANALYSIS_TIMEOUT_SECONDS * 1000,
             }
+            if force_regenerate:
+                resp["force_regenerated"] = False
+                resp["cache_preserved"] = True
+            return resp
 
         try:
             parsed = json.loads(result["content"])
@@ -161,6 +177,7 @@ async def analyze_error(
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "version": AI_ANALYSIS_PROMPT_VERSION,
             "from_fallback": False,
+            "force_regenerated": force_regenerate,
         }
 
         # 持久化到 wrong_questions.ai_analysis（非 fallback 才保存）
@@ -187,6 +204,7 @@ async def analyze_error(
             "tokens_used": result["tokens_used"],
             "model": result["model"],
             "duration_ms": result["duration_ms"],
+            "force_regenerated": True,
         }
     finally:
         _generating.discard(wq_pk)

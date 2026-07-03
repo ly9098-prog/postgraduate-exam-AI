@@ -35,7 +35,7 @@ async def error_analysis(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        result = await svc.analyze_error(db, current_user.id, data.wrong_question_id)
+        result = await svc.analyze_error(db, current_user.id, data.wrong_question_id, force_regenerate=data.force_regenerate)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

@@ -138,6 +138,32 @@ function _enrichBlankOptionGroups(groups, answer, wrongAnswer) {
   }).filter((group) => group.id && group.options.length > 0)
 }
 
+function _buildAiRichText(value) {
+  const raw = String(value || '').trim()
+  if (!raw) {
+    return { raw: '', text: '', html: '', needsRich: false }
+  }
+  const plain = toPlainInlineMathText(raw)
+  const needsRich = !plain && needsRichRender(raw)
+  return {
+    raw,
+    text: plain || raw,
+    html: needsRich ? textToHtml(raw) : '',
+    needsRich,
+  }
+}
+
+function _normalizeAiResult(content) {
+  const diagnosis = content.mistake_diagnosis || content.error_analysis || ''
+  const knowledge = content.knowledge_patch || content.knowledge_weakness || ''
+  const task = content.review_task || content.suggestion || ''
+  return {
+    mistakeDiagnosis: _buildAiRichText(String(diagnosis).replace(/^错因诊断[：:]\s*/, '')),
+    knowledgePatch: _buildAiRichText(String(knowledge).replace(/^补漏重点[：:]\s*/, '')),
+    reviewTask: _buildAiRichText(String(task).replace(/^复练任务[：:]\s*/, '')),
+  }
+}
+
 Page({
   data: {
     wq: null,
@@ -162,6 +188,8 @@ Page({
     showSwipeHint: false,
     safeModeActive: false,
     renderTraces: [],
+    aiCards: null,
+    aiRegenerating: false,
   },
 
   onLoad(options) {
@@ -226,12 +254,14 @@ Page({
           knowledge_patch: ca.knowledge_patch || ca.knowledge_weakness || '',
           review_task: ca.review_task || ca.suggestion || '',
         }
+        data.aiCards = _normalizeAiResult(data.aiResult)
         data.aiRequested = true
         data.aiFromCache = true
         data.aiFallback = false
         data.aiErrorText = ''
       } else {
         data.aiResult = null
+        data.aiCards = null
         data.aiRequested = false
         data.aiFromCache = false
         data.aiFallback = false
@@ -266,12 +296,7 @@ Page({
   },
 
   onTapAiAnalysis() {
-    if (this.data.aiLoading) return
-    // 已有缓存结果，不再重复请求
-    if (this.data.aiResult && this.data.aiFromCache) {
-      wx.showToast({ title: '已加载 AI 复盘分析', icon: 'none' })
-      return
-    }
+    if (this.data.aiLoading || this.data.aiRegenerating) return
     const wqId = this.data.currentWqId || (this.data.wq && this.data.wq.id)
     if (!wqId) {
       wx.showToast({ title: '缺少错题ID', icon: 'none' })
@@ -297,12 +322,13 @@ Page({
       const result = await api.post('/ai/error-analysis', { wrong_question_id: wqId })
       // Stale response guard
       if (this._aiToken !== token || !this.data.wq || String(this.data.wq.id) !== String(wqId)) return
-      const content = result && result.content ? result.content : null
+      let content = result && result.content ? result.content : null
       const fromFallback = !!(result && result.from_fallback)
       const fromCache = !!(result && result.from_cache)
       if (fromFallback) {
         this.setData({
           aiResult: null,
+          aiCards: null,
           aiFallback: true,
           aiFromCache: false,
           aiErrorText: 'AI 服务暂时不可用，请稍后重试',
@@ -313,6 +339,7 @@ Page({
       if (!content) {
         this.setData({
           aiResult: null,
+          aiCards: null,
           aiFallback: true,
           aiFromCache: false,
           aiErrorText: 'AI 分析结果为空，请稍后重试',
@@ -328,6 +355,7 @@ Page({
       }
       this.setData({
         aiResult: content,
+        aiCards: _normalizeAiResult(content),
         aiFallback: false,
         aiFromCache: fromCache,
         aiErrorText: '',
@@ -343,9 +371,63 @@ Page({
           aiLoading: false,
           aiFallback: true,
           aiResult: null,
+          aiCards: null,
           aiFromCache: false,
           aiErrorText: msg,
         })
+      }
+    }
+  },
+
+  async regenerateAiAnalysis() {
+    const wqId = this.data.currentWqId || (this.data.wq && this.data.wq.id)
+    if (!wqId || this.data.aiLoading || this.data.aiRegenerating) return
+    const token = String(wqId) + '-' + Date.now()
+    this._aiToken = token
+    this.setData({
+      aiRegenerating: true,
+      aiErrorText: '',
+      aiFallback: false,
+    })
+    try {
+      const result = await api.post('/ai/error-analysis', {
+        wrong_question_id: wqId,
+        force_regenerate: true,
+      })
+      // Stale response guard
+      if (this._aiToken !== token || !this.data.wq || String(this.data.wq.id) !== String(wqId)) return
+      const content = result && result.content ? result.content : null
+      const fromFallback = !!(result && result.from_fallback)
+      const cachePreserved = !!(result && result.cache_preserved)
+      if (fromFallback || !content) {
+        this.setData({
+          aiRegenerating: false,
+          aiErrorText: cachePreserved ? '重新生成失败，已保留历史分析' : 'AI 服务暂时不可用，请稍后重试',
+        })
+        if (cachePreserved) {
+          wx.showToast({ title: '重新生成失败，已保留历史分析', icon: 'none' })
+        }
+        return
+      }
+      const normalized = {
+        mistake_diagnosis: content.mistake_diagnosis || content.error_analysis || '',
+        knowledge_patch: content.knowledge_patch || content.knowledge_weakness || '',
+        review_task: content.review_task || content.suggestion || '',
+      }
+      this.setData({
+        aiResult: normalized,
+        aiCards: _normalizeAiResult(normalized),
+        aiRegenerating: false,
+        aiFromCache: false,
+        aiFallback: false,
+        aiErrorText: '',
+      })
+      wx.showToast({ title: '已重新生成', icon: 'success' })
+    } catch (e) {
+      console.error('重新生成 AI 分析失败', e)
+      if (this._aiToken === token && this.data.wq && String(this.data.wq.id) === String(wqId)) {
+        this.setData({ aiRegenerating: false, aiErrorText: '重新生成失败，请稍后重试' })
+        wx.showToast({ title: '重新生成失败', icon: 'none' })
       }
     }
   },
@@ -510,12 +592,14 @@ Page({
           knowledge_patch: ca.knowledge_patch || ca.knowledge_weakness || '',
           review_task: ca.review_task || ca.suggestion || '',
         }
+        data.aiCards = _normalizeAiResult(data.aiResult)
         data.aiRequested = true
         data.aiFromCache = true
         data.aiFallback = false
         data.aiErrorText = ''
       } else {
         data.aiResult = null
+        data.aiCards = null
         data.aiRequested = false
         data.aiFromCache = false
         data.aiFallback = false
