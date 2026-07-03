@@ -1497,9 +1497,13 @@ async def submit_answer(
     # ── Phase 4: 后台预生成 AI 错题分析（不阻塞答题流程）──
     if wq_id_for_prewarm is not None:
         try:
-            import asyncio
-            from app.services.ai_service import prewarm_wrong_question_analysis
-            asyncio.create_task(prewarm_wrong_question_analysis(wq_id_for_prewarm, user_id))
+            from app.services.ai_prewarm_worker import enqueue_prewarm
+            queued = await enqueue_prewarm(wq_id_for_prewarm, user_id)
+            if not queued:
+                # Redis 不可用时降级为 asyncio.create_task
+                import asyncio
+                from app.services.ai_service import prewarm_wrong_question_analysis
+                asyncio.create_task(prewarm_wrong_question_analysis(wq_id_for_prewarm, user_id))
         except Exception:
             logger.warning("AI 预生成调度失败（不影响答题）id=%d uid=%d", wq_id_for_prewarm, user_id, exc_info=True)
 

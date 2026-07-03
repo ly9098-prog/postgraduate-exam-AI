@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.client import deepseek
 from app.ai.context import build_error_context
 from app.ai.fallback import get_fallback_analysis, get_fallback_advice
-from app.ai.prompts import build_error_analysis, build_study_advice
+from app.ai.prompts import AI_ANALYSIS_PROMPT_VERSION, build_error_analysis, build_study_advice
 from app.models.ai_chat import AiChat
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
@@ -39,23 +39,25 @@ async def analyze_error(
     if not q:
         raise ValueError("题目不存在")
 
-    # Check cache — convert old format to new field names
+    # Check cache — 版本不匹配时跳过缓存以重新生成
     if wq.ai_analysis and isinstance(wq.ai_analysis, dict):
         cached = wq.ai_analysis
-        if "mistake_diagnosis" not in cached:
-            cached = {
-                "mistake_diagnosis": cached.get("error_analysis", ""),
-                "knowledge_patch": cached.get("knowledge_weakness", ""),
-                "review_task": cached.get("suggestion", ""),
+        cached_version = (cached.get("_meta") or {}).get("version", "")
+        if cached_version == AI_ANALYSIS_PROMPT_VERSION:
+            if "mistake_diagnosis" not in cached:
+                cached = {
+                    "mistake_diagnosis": cached.get("error_analysis", ""),
+                    "knowledge_patch": cached.get("knowledge_weakness", ""),
+                    "review_task": cached.get("suggestion", ""),
+                }
+            return {
+                "content": cached,
+                "from_cache": True,
+                "from_fallback": False,
+                "tokens_used": 0,
+                "model": "cache",
+                "duration_ms": 0,
             }
-        return {
-            "content": cached,
-            "from_cache": True,
-            "from_fallback": False,
-            "tokens_used": 0,
-            "model": "cache",
-            "duration_ms": 0,
-        }
 
     # 分布式锁：防止并发重复调用大模型（跨进程）
     # 先用进程内集合做快速检测，再用 Redis 分布式锁
@@ -91,22 +93,24 @@ async def analyze_error(
         # 获取锁后二次检查缓存（另一个进程可能刚写入）
         await db.refresh(wq)
         if wq.ai_analysis and isinstance(wq.ai_analysis, dict):
-            _generating.discard(wq_pk)
             cached = wq.ai_analysis
-            if "mistake_diagnosis" not in cached:
-                cached = {
-                    "mistake_diagnosis": cached.get("error_analysis", ""),
-                    "knowledge_patch": cached.get("knowledge_weakness", ""),
-                    "review_task": cached.get("suggestion", ""),
+            cached_version = (cached.get("_meta") or {}).get("version", "")
+            if cached_version == AI_ANALYSIS_PROMPT_VERSION:
+                _generating.discard(wq_pk)
+                if "mistake_diagnosis" not in cached:
+                    cached = {
+                        "mistake_diagnosis": cached.get("error_analysis", ""),
+                        "knowledge_patch": cached.get("knowledge_weakness", ""),
+                        "review_task": cached.get("suggestion", ""),
+                    }
+                return {
+                    "content": cached,
+                    "from_cache": True,
+                    "from_fallback": False,
+                    "tokens_used": 0,
+                    "model": "cache",
+                    "duration_ms": 0,
                 }
-            return {
-                "content": cached,
-                "from_cache": True,
-                "from_fallback": False,
-                "tokens_used": 0,
-                "model": "cache",
-                "duration_ms": 0,
-            }
 
         from app.services.model_config_resolver import ensure_db_model_configured
         creds = await ensure_db_model_configured(db, feature="analysis")
@@ -152,7 +156,7 @@ async def analyze_error(
         parsed["_meta"] = {
             "model": result.get("model", model_name or ""),
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "version": "v1",
+            "version": AI_ANALYSIS_PROMPT_VERSION,
             "from_fallback": False,
         }
 

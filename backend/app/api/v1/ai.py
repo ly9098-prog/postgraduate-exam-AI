@@ -52,7 +52,7 @@ async def prewarm_analysis(
     current_user: User = Depends(get_current_user),
 ):
     """批量预生成错题 AI 分析。已缓存的跳过，未生成的后台任务处理。"""
-    import asyncio
+    from app.services.ai_prewarm_worker import enqueue_prewarm
     from app.services.ai_service import prewarm_wrong_question_analysis
     from app.models.wrong_question import WrongQuestion
     from sqlalchemy import select
@@ -74,8 +74,12 @@ async def prewarm_analysis(
         if wq.ai_analysis and isinstance(wq.ai_analysis, dict) and len(wq.ai_analysis) > 0:
             skipped.append(wq_id)
             continue
+        # 优先使用 Redis 可靠队列，不可用时降级为 asyncio.create_task
+        queued_ok = await enqueue_prewarm(wq_id, current_user.id)
+        if not queued_ok:
+            import asyncio
+            asyncio.create_task(prewarm_wrong_question_analysis(wq_id, current_user.id))
         queued.append(wq_id)
-        asyncio.create_task(prewarm_wrong_question_analysis(wq_id, current_user.id))
 
     return AiPrewarmResponse(queued=queued, skipped=skipped)
 
