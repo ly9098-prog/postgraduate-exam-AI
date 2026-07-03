@@ -49,11 +49,7 @@ async def analyze_error(
     from app.services.model_config_resolver import ensure_db_model_configured
     creds = await ensure_db_model_configured(db, feature="analysis")
 
-    api_key = creds[0] if creds else None
-    base_url = creds[1] if creds else None
-    model_name = creds[2] if creds else None
-
-    if not (api_key or deepseek.is_available()):
+    if not creds:
         fallback = get_fallback_analysis()
         return {
             "content": fallback,
@@ -63,6 +59,8 @@ async def analyze_error(
             "model": "fallback",
             "duration_ms": 0,
         }
+
+    api_key, base_url, model_name = creds
 
     context = build_error_context(wq, q)
     messages = build_error_analysis(

@@ -89,28 +89,19 @@
       <text class="legend-label">我的选项</text>
     </view>
 
-  </view>
+    <view class="q-answer-line">
+      <text class="q-answer-label">我的答案</text>
+      <text class="q-answer-value user">{{wq.wrong_answer || '未记录'}}</text>
+    </view>
+    <view class="q-answer-line">
+      <text class="q-answer-label">正确答案</text>
+      <text class="q-answer-value correct">{{wq.answer || '暂无答案'}}</text>
+    </view>
+    <view wx:if="{{wq.analysis}}" class="q-answer-analysis">
+      <text class="q-answer-label">题目解析</text>
+      <text class="q-analysis-text">{{wq.analysis}}</text>
+    </view>
 
-  <!-- 答案与解析 -->
-  <view class="answer-card">
-    <view class="section-head compact">
-      <view>
-        <text class="section-title">答案与解析</text>
-        <text class="section-subtitle">先查看标准答案，再决定是否生成 AI 技巧</text>
-      </view>
-    </view>
-    <view class="answer-row">
-      <text class="answer-label">我的答案</text>
-      <text class="answer-value user">{{wq.wrong_answer || '未记录'}}</text>
-    </view>
-    <view class="answer-row">
-      <text class="answer-label">正确答案</text>
-      <text class="answer-value correct">{{wq.answer || '暂无答案'}}</text>
-    </view>
-    <view class="analysis-block" wx:if="{{wq.analysis}}">
-      <text class="answer-label">题目解析</text>
-      <text class="analysis-text">{{wq.analysis}}</text>
-    </view>
   </view>
 
   <!-- AI 分析：手动触发 -->
