@@ -1,9 +1,9 @@
 """AI 降级方案。API 不可用时返回预设内容，不阻塞用户操作。"""
 
 FALLBACK_ANALYSIS = {
-    "error_analysis": "暂无解题技巧，请检查网络连接或稍后重试。建议先查看题目解析。",
-    "suggestion": "建议回顾相关章节知识点，做更多同类题目巩固。",
-    "knowledge_weakness": "暂无数据",
+    "mistake_diagnosis": "AI 服务暂时不可用，无法生成错因诊断。建议先对照正确答案和解析分析错误原因。",
+    "knowledge_patch": "建议查看题目解析中涉及的知识点，回顾教材或笔记中相关内容。",
+    "review_task": "建议先将本题标记为待复习，24 小时后再次作答。如果仍不熟悉，建议做 2-3 道同类题。",
 }
 
 FALLBACK_ADVICE = {

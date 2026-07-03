@@ -299,11 +299,11 @@ Page({
         })
         return
       }
-      if (content.error_analysis) {
-        content.error_analysis = String(content.error_analysis).replace(/^切入点[：:]\s*/, '')
-      }
-      if (content.knowledge_weakness) {
-        content.knowledge_weakness = String(content.knowledge_weakness).replace(/^核心考点[：:]\s*/, '')
+      // Normalize to new field names with old field fallback
+      content = {
+        mistake_diagnosis: content.mistake_diagnosis || content.error_analysis || '',
+        knowledge_patch: content.knowledge_patch || content.knowledge_weakness || '',
+        review_task: content.review_task || content.suggestion || '',
       }
       this.setData({
         aiResult: content,
