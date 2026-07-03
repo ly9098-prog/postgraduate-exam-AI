@@ -90,6 +90,7 @@ def _sanitize_options(options: dict | None) -> dict | None:
 
 
 def enrich_wq(wq, question):
+    ai_status = "ready" if isinstance(wq.ai_analysis, dict) and wq.ai_analysis else "empty"
     return WrongQuestionResponse(
         id=wq.id,
         question_id=wq.question_id,
@@ -105,6 +106,8 @@ def enrich_wq(wq, question):
         answer=question.answer if question else None,
         analysis=question.analysis if question else None,
         knowledge_points=question.knowledge_points if question else None,
+        ai_analysis=wq.ai_analysis,
+        ai_analysis_status=ai_status,
     )
 
 
