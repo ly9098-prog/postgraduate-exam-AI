@@ -1420,10 +1420,12 @@ async def submit_answer(
     # ── Phase 2: 最佳效果后置操作（不影响答题主流程）──
     # 以下全部在 db.commit() 之后执行，失败不影响核心数据
     is_wrong_added = False
+    wq_id_for_prewarm = None
     try:
         if not is_correct:
-            await record_wrong(db, user_id, question_id, user_answer.strip())
+            wq_obj = await record_wrong(db, user_id, question_id, user_answer.strip())
             is_wrong_added = True
+            wq_id_for_prewarm = wq_obj.id
     except Exception:
         logger.warning("错题记录失败（不影响答题）qid=%d uid=%d", question_id, user_id, exc_info=True)
         await db.rollback()
@@ -1491,6 +1493,15 @@ async def submit_answer(
             "V6 自适应更新失败（不影响答题）qid=%d uid=%d",
             question_id, user_id, exc_info=True,
         )
+
+    # ── Phase 4: 后台预生成 AI 错题分析（不阻塞答题流程）──
+    if wq_id_for_prewarm is not None:
+        try:
+            import asyncio
+            from app.services.ai_service import prewarm_wrong_question_analysis
+            asyncio.create_task(prewarm_wrong_question_analysis(wq_id_for_prewarm, user_id))
+        except Exception:
+            logger.warning("AI 预生成调度失败（不影响答题）id=%d uid=%d", wq_id_for_prewarm, user_id, exc_info=True)
 
     return {
         "record_id": record.id,

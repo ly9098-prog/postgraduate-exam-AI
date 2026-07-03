@@ -19,6 +19,16 @@ class AiResponse(BaseModel):
     from_fallback: bool = False
 
 
+class AiPrewarmRequest(BaseModel):
+    wrong_question_ids: list[int]
+
+
+class AiPrewarmResponse(BaseModel):
+    queued: list[int]
+    skipped: list[int]
+    reason: str = "ok"
+
+
 class AiChatRecord(BaseModel):
     id: int
     session_type: str
