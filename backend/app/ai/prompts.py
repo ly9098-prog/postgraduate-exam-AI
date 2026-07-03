@@ -3,6 +3,11 @@
 import json
 
 
+# 当前 AI 错题分析 prompt 版本。
+# 修改 prompt 后递增此版本号，已缓存旧版本分析会在下次读取时触发重新生成。
+AI_ANALYSIS_PROMPT_VERSION = "v2"
+
+
 def _clip_text(value, limit=1200):
     if value is None:
         return ""

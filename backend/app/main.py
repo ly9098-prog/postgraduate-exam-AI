@@ -132,6 +132,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Pomodoro scheduler start failed (non-fatal): %s", e)
 
+    try:
+        from app.services.ai_prewarm_worker import start_worker
+        await start_worker()
+    except Exception as e:
+        logger.warning("AI prewarm worker start failed (non-fatal): %s", e)
+
     yield
 
     cleanup_task.cancel()
@@ -143,6 +149,11 @@ async def lifespan(app: FastAPI):
         await pomodoro_scheduler.stop()
     except Exception:
         logger.exception("Pomodoro scheduler stop failed")
+    try:
+        from app.services.ai_prewarm_worker import stop_worker
+        await stop_worker()
+    except Exception:
+        logger.exception("AI prewarm worker stop failed")
     logger.info("Shutting down 2240AI")
 
 
