@@ -121,8 +121,8 @@
       <button class="ai-action-btn" bindtap="onTapAiAnalysis">生成 AI 错题复盘</button>
     </view>
 
-    <!-- 加载状态 -->
-    <view wx:elif="{{aiLoading}}" class="ai-loading-state">
+    <!-- 加载状态 / 重新生成中 -->
+    <view wx:elif="{{aiLoading || aiRegenerating}}" class="ai-loading-state">
       <view class="section-head compact">
         <view>
           <text class="section-title small">正在生成</text>
@@ -142,22 +142,61 @@
       <text class="ai-hint">生成时间较长时，可以稍后重试</text>
     </view>
 
-    <!-- 成功状态 -->
-    <view wx:elif="{{aiResult && !aiFallback}}" class="ai-result-state">
-      <view class="ai-section" wx:if="{{aiResult.mistake_diagnosis}}">
-        <text class="ai-label">错因诊断</text>
-        <text class="ai-text">{{aiResult.mistake_diagnosis}}</text>
+    <!-- 成功状态：增强卡片布局，支持 LaTeX 渲染 -->
+    <view wx:elif="{{aiCards && !aiFallback}}" class="ai-result-state">
+      <view class="ai-section ai-section-diagnosis" wx:if="{{aiCards.mistakeDiagnosis.raw}}">
+        <view class="ai-label-row">
+          <view class="ai-index">1</view>
+          <view>
+            <text class="ai-label">错因诊断</text>
+            <text class="ai-label-desc">先定位这道题为什么错</text>
+          </view>
+        </view>
+        <mp-html
+          wx:if="{{aiCards.mistakeDiagnosis.needsRich}}"
+          content="{{aiCards.mistakeDiagnosis.html}}"
+          class="ai-rich-text"
+          lazy-load
+        />
+        <text wx:else class="ai-text">{{aiCards.mistakeDiagnosis.text}}</text>
       </view>
-      <view class="ai-section" wx:if="{{aiResult.knowledge_patch}}">
-        <text class="ai-label">补漏重点</text>
-        <text class="ai-text">{{aiResult.knowledge_patch}}</text>
+
+      <view class="ai-section ai-section-knowledge" wx:if="{{aiCards.knowledgePatch.raw}}">
+        <view class="ai-label-row">
+          <view class="ai-index">2</view>
+          <view>
+            <text class="ai-label">补漏重点</text>
+            <text class="ai-label-desc">明确这道题暴露的薄弱点</text>
+          </view>
+        </view>
+        <mp-html
+          wx:if="{{aiCards.knowledgePatch.needsRich}}"
+          content="{{aiCards.knowledgePatch.html}}"
+          class="ai-rich-text"
+          lazy-load
+        />
+        <text wx:else class="ai-text">{{aiCards.knowledgePatch.text}}</text>
       </view>
-      <view class="ai-section" wx:if="{{aiResult.review_task}}">
-        <text class="ai-label">复练任务</text>
-        <text class="ai-text">{{aiResult.review_task}}</text>
+
+      <view class="ai-section ai-section-task" wx:if="{{aiCards.reviewTask.raw}}">
+        <view class="ai-label-row">
+          <view class="ai-index">3</view>
+          <view>
+            <text class="ai-label">复练任务</text>
+            <text class="ai-label-desc">给出下一步可执行动作</text>
+          </view>
+        </view>
+        <mp-html
+          wx:if="{{aiCards.reviewTask.needsRich}}"
+          content="{{aiCards.reviewTask.html}}"
+          class="ai-rich-text"
+          lazy-load
+        />
+        <text wx:else class="ai-text">{{aiCards.reviewTask.text}}</text>
       </view>
-      <text class="ai-hint">{{aiFromCache ? '已加载历史 AI 分析' : '内容由 AI 生成，仅供参考'}}</text>
-      <button class="ai-secondary-btn" bindtap="onTapAiAnalysis">重新生成</button>
+
+      <text class="ai-hint">{{aiFromCache ? '来自历史缓存，仅供参考' : '内容由 AI 生成，仅供参考'}}</text>
+      <button class="ai-secondary-btn" bindtap="regenerateAiAnalysis">{{aiRegenerating ? '重新生成中...' : '重新生成'}}</button>
     </view>
 
     <!-- 失败 / 降级状态 -->
@@ -167,7 +206,7 @@
       </view>
       <text class="fallback-title">AI 错题复盘暂时不可用</text>
       <text class="fallback-desc">{{aiErrorText || '建议先查看题目解析并手动标记错因，稍后再试。'}}</text>
-      <button class="ai-action-btn retry" bindtap="onTapAiAnalysis">重新生成</button>
+      <button class="ai-action-btn retry" bindtap="regenerateAiAnalysis">{{aiRegenerating ? '重新生成中...' : '重新生成'}}</button>
     </view>
   </view>
   </view>

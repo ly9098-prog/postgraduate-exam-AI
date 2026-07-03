@@ -311,20 +311,6 @@
   line-height: 1;
 }
 
-.ai-section {
-  margin-top: 16rpx;
-  padding: 18rpx;
-  background: #F6F9FF;
-  border-radius: 20rpx;
-}
-
-.ai-label {
-  font-size: 25rpx;
-  font-weight: 800;
-  color: #4F7FFF;
-  display: block;
-  margin-bottom: 8rpx;
-}
 
 .ai-text {
   display: block;
@@ -408,8 +394,108 @@
   transform: scale(0.98);
 }
 
-.ai-loading-state,
 .ai-result-state {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.ai-section {
+  margin-top: 0;
+  padding: 22rpx;
+  background: linear-gradient(180deg, #F8FAFF 0%, #FFFFFF 100%);
+  border-radius: 22rpx;
+  border: 1rpx solid #E2EAF7;
+  box-shadow: 0 6rpx 18rpx rgba(42, 84, 160, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.ai-section::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 22rpx;
+  bottom: 22rpx;
+  width: 6rpx;
+  border-radius: 999rpx;
+  background: #4F7FFF;
+}
+
+.ai-label-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14rpx;
+  margin-bottom: 14rpx;
+}
+
+.ai-index {
+  width: 42rpx;
+  height: 42rpx;
+  border-radius: 999rpx;
+  background: #EEF4FF;
+  color: #4F7FFF;
+  font-size: 22rpx;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ai-label {
+  display: block;
+  font-size: 26rpx;
+  font-weight: 900;
+  color: #18233A;
+  line-height: 1.3;
+}
+
+.ai-label-desc {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 21rpx;
+  line-height: 1.4;
+  color: #8EA0BA;
+}
+
+.ai-text,
+.ai-rich-text {
+  display: block;
+  font-size: 27rpx;
+  color: #18233A;
+  line-height: 1.75;
+  word-break: break-word;
+}
+
+.ai-section-diagnosis .ai-index {
+  background: #FFF7E8;
+  color: #F59E0B;
+}
+
+.ai-section-diagnosis::before {
+  background: #F59E0B;
+}
+
+.ai-section-knowledge .ai-index {
+  background: #EEF4FF;
+  color: #4F7FFF;
+}
+
+.ai-section-knowledge::before {
+  background: #4F7FFF;
+}
+
+.ai-section-task .ai-index {
+  background: #ECFDF3;
+  color: #22C55E;
+}
+
+.ai-section-task::before {
+  background: #22C55E;
+}
+
+.ai-loading-state {
   display: block;
 }
 

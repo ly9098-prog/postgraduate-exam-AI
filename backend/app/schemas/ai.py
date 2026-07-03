@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 class ErrorAnalysisRequest(BaseModel):
     wrong_question_id: int
+    force_regenerate: bool = False
 
 
 class StudyAdviceRequest(BaseModel):
@@ -17,6 +18,8 @@ class AiResponse(BaseModel):
     duration_ms: int
     from_cache: bool = False
     from_fallback: bool = False
+    force_regenerated: bool = False
+    cache_preserved: bool = False
 
 
 class AiPrewarmRequest(BaseModel):
