@@ -34,10 +34,12 @@ page {
 
 .result-hero.pass {
   background: linear-gradient(135deg, #FFFFFF 0%, #F6FBFF 56%, #ECFDF3 100%);
+  background-color: #FFFFFF;
 }
 
 .result-hero.fail {
   background: linear-gradient(135deg, #FFFFFF 0%, #F6FBFF 56%, #FEF2F2 100%);
+  background-color: #FFFFFF;
 }
 
 .result-hero::before {

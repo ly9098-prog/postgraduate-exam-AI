@@ -7,7 +7,7 @@
 
   <!-- ==================== 设置页 ==================== -->
   <view class="setup" wx:if="{{!started}}">
-    <view class="practice-hero hero-panel motion-card-enter">
+    <view class="practice-hero hero-panel">
       <view class="hero-orbit hero-orbit-one"></view>
       <view class="hero-orbit hero-orbit-two"></view>
       <view class="hero-copy">
