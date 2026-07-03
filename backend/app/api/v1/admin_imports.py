@@ -302,12 +302,16 @@ async def get_import_review_queue(
     source_type: str | None = None,
     keyword: str | None = None,
     risk_level: str | None = Query(None, pattern="^(high|medium|low)$"),
+    answer_status: str | None = Query(None, pattern="^(missing|imported|ai_filled|manual_filled|manual_verified|abnormal)$"),
+    question_type: str | None = None,
+    sort: str | None = Query(None, pattern="^(source_order|created_desc|risk_desc|answer_priority)$"),
     _=Depends(require_permissions("import:read")),
     db: AsyncSession = Depends(get_db),
 ):
     items, total = await list_review_queue(
         db, page, page_size, status, batch_id, subject, source_type, keyword,
         risk_level=risk_level, subject_id=subject_id,
+        answer_status=answer_status, question_type=question_type, sort=sort,
     )
     return paginated_response(items, total, page, page_size)
 

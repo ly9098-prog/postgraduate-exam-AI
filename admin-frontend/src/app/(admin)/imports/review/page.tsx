@@ -167,11 +167,14 @@ export default function ImportReviewPage() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const batchIdParam = searchParams.get("batch_id") || "";
-  const [filters, setFilters] = useState({ batch_id: "", status: "pending", subject_id: "", source_type: "", keyword: "", risk_level: "" });
+  const [filters, setFilters] = useState({ batch_id: "", status: "pending", subject_id: "", source_type: "", keyword: "", risk_level: "", answer_status: "" });
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [subjectDropdownOpen, setSubjectDropdownOpen] = useState(false);
   const subjectBtnRef = useRef<HTMLButtonElement>(null);
   const [subjectDropdownStyle, setSubjectDropdownStyle] = useState<React.CSSProperties>({});
+  const [subjectEditDropdownOpen, setSubjectEditDropdownOpen] = useState(false);
+  const subjectEditBtnRef = useRef<HTMLButtonElement>(null);
+  const [subjectEditDropdownStyle, setSubjectEditDropdownStyle] = useState<React.CSSProperties>({});
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [completedItem, setCompletedItem] = useState<ImportQuestionItem | null>(null);
@@ -193,6 +196,7 @@ export default function ImportReviewPage() {
   const [editing, setEditing] = useState(false);
   const editSnapshotRef = useRef("");
 
+  const [viewMode, setViewMode] = useState<"list" | "table">("list");
   const [showBatchComplete, setShowBatchComplete] = useState(false);
   const [batchFields, setBatchFields] = useState<string[]>(["answer", "analysis", "knowledge_points", "difficulty"]);
   const [batchStrategy, setBatchStrategy] = useState<"fill_empty" | "force_overwrite">("fill_empty");
@@ -214,6 +218,18 @@ export default function ImportReviewPage() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [subjectDropdownOpen]);
+
+  // Close subject edit dropdown on outside click (portal bypasses drawer's onBlur chain)
+  useEffect(() => {
+    if (!subjectEditDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (subjectEditBtnRef.current && !subjectEditBtnRef.current.contains(e.target as Node)) {
+        setSubjectEditDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [subjectEditDropdownOpen]);
 
   const DRAFT_KEY = "batch-complete-draft";
 
@@ -262,8 +278,8 @@ export default function ImportReviewPage() {
   }, [autoSaveHint]);
 
   const queryParams = useMemo(
-    () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject_id: filters.subject_id, source_type: filters.source_type, keyword: debouncedKeyword, risk_level: filters.risk_level || undefined }),
-    [batchIdParam, filters.batch_id, filters.status, filters.subject_id, filters.source_type, filters.risk_level, debouncedKeyword],
+    () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject_id: filters.subject_id, source_type: filters.source_type, keyword: debouncedKeyword, risk_level: filters.risk_level || undefined, answer_status: filters.answer_status || undefined }),
+    [batchIdParam, filters.batch_id, filters.status, filters.subject_id, filters.source_type, filters.risk_level, filters.answer_status, debouncedKeyword],
   );
 
   const queue = useQuery({
@@ -654,6 +670,11 @@ export default function ImportReviewPage() {
                   <Sparkles className="h-3.5 w-3.5" />
                   AI 批量补全
                 </Button>
+                <div className="h-6 w-px bg-[var(--color-border)]" />
+                <div className="flex overflow-hidden rounded-md border border-[var(--color-border)] bg-white/70">
+                  <button type="button" className={`px-2.5 py-1.5 text-[10px] font-semibold transition ${viewMode === "list" ? "bg-[var(--color-primary)] text-white" : "text-[var(--color-text-secondary)] hover:text-[var(--color-primary-dark)]"}`} onClick={() => setViewMode("list")}>列表</button>
+                  <button type="button" className={`px-2.5 py-1.5 text-[10px] font-semibold transition ${viewMode === "table" ? "bg-[var(--color-primary)] text-white" : "text-[var(--color-text-secondary)] hover:text-[var(--color-primary-dark)]"}`} onClick={() => setViewMode("table")}>核答案</button>
+                </div>
               </div>
             </div>
           </div>
@@ -673,10 +694,10 @@ export default function ImportReviewPage() {
             {/* Risk pills */}
             <div className="flex items-center gap-1">
               {([
-                { value: "", label: "全部", color: "" },
-                { value: "high", label: "高", color: "#b03a3a" },
-                { value: "medium", label: "中", color: "#b87a30" },
-                { value: "low", label: "低", color: "#3a7a5a" },
+                { value: "", label: "全部风险", color: "" },
+                { value: "high", label: "高风险", color: "#b03a3a" },
+                { value: "medium", label: "中风险", color: "#b87a30" },
+                { value: "low", label: "低风险", color: "#3a7a5a" },
               ] as const).map((opt) => {
                 const active = filters.risk_level === opt.value;
                 return (
@@ -684,6 +705,36 @@ export default function ImportReviewPage() {
                     key={opt.label}
                     type="button"
                     onClick={() => updateFilter("risk_level", opt.value)}
+                    className={cn(
+                      "rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                      active
+                        ? "text-white shadow-sm"
+                        : "border border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/40",
+                    )}
+                    style={active ? { backgroundColor: opt.color || "var(--color-primary)" } : undefined}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Answer Status pills */}
+            <div className="flex items-center gap-1">
+              {([
+                { value: "", label: "全部答案", color: "" },
+                { value: "missing", label: "答案缺失", color: "#b03a3a" },
+                { value: "ai_filled", label: "AI补全", color: "#c46a3a" },
+                { value: "imported", label: "已导入", color: "#3a7a5a" },
+                { value: "manual_verified", label: "已验证", color: "#2a6a9a" },
+                { value: "abnormal", label: "答案异常", color: "#b03a3a" },
+              ] as const).map((opt) => {
+                const active = filters.answer_status === opt.value;
+                return (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onClick={() => updateFilter("answer_status", opt.value)}
                     className={cn(
                       "rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors",
                       active
@@ -793,12 +844,107 @@ export default function ImportReviewPage() {
                 全选当前结果
                 {selectedIds.size > 0 ? <span className="ml-auto rounded-full bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary-dark)]">已选 {selectedIds.size} 题</span> : null}
               </label>
-              {items.length > 0 ? (
+              {items.length > 0 && viewMode === "table" ? (
+                <div className="overflow-x-auto rounded-xl border border-[var(--color-border)] bg-white">
+                  <table className="w-full text-[11px]">
+                    <thead>
+                      <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-input)]/50">
+                        <th className="px-2.5 py-2 text-left font-semibold text-[var(--color-text-secondary)]">
+                          <label className="group/cb relative flex cursor-pointer items-center justify-center">
+                            <span className="flex h-[16px] w-[16px] items-center justify-center rounded border-2 border-[var(--color-border)] bg-white transition-all group-hover/cb:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
+                              <input type="checkbox" checked={allChecked} onChange={toggleAll} className="peer absolute inset-0 cursor-pointer opacity-0" />
+                              <Check className="h-2.5 w-2.5 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
+                            </span>
+                          </label>
+                        </th>
+                        <th className="whitespace-nowrap px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">原题号</th>
+                        <th className="whitespace-nowrap px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">来源</th>
+                        <th className="whitespace-nowrap px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">题干预览</th>
+                        <th className="whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">题型</th>
+                        <th className="whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">当前答案</th>
+                        <th className="whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">状态</th>
+                        <th className="whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">风险</th>
+                        <th className="whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item, index) => {
+                        const sourceLabel = item.source_image_seq != null
+                          ? `图${item.source_image_seq}`
+                          : (item.source_question_no ? "原文" : "—");
+                        const answerStatusLabel =
+                          item.answer_status === "missing" ? "答案缺失" :
+                          item.answer_status === "ai_filled" ? "AI补全" :
+                          item.answer_status === "imported" ? "已导入" :
+                          item.answer_status === "manual_filled" ? "已填写" :
+                          item.answer_status === "manual_verified" ? "已验证" :
+                          item.answer_status === "abnormal" ? "异常" : "—";
+                        const answerStatusStyle =
+                          item.answer_status === "missing" ? "color:#b03a3a;font-weight:700;" :
+                          item.answer_status === "ai_filled" ? "color:#c46a3a;font-weight:600;" :
+                          item.answer_status === "abnormal" ? "color:#b03a3a;font-weight:700;" : "";
+                        const riskLabel = item.risk_level === "high" ? "高" : item.risk_level === "medium" ? "中" : "低";
+                        const riskStyle = item.risk_level === "high" ? "color:#b03a3a;font-weight:700;" : item.risk_level === "medium" ? "color:#b87a30;font-weight:600;" : "color:#3a7a5a;";
+                        return (
+                          <tr key={item.id} className={`border-b border-[var(--color-border)]/40 transition-colors hover:bg-[var(--color-bg-input)]/30 ${index % 2 === 0 ? "bg-white" : "bg-[var(--color-bg-input)]/20"}`}>
+                            <td className="px-2.5 py-2">
+                              <label className="group/cb relative flex cursor-pointer items-center justify-center">
+                                <span className="flex h-[16px] w-[16px] items-center justify-center rounded border-2 border-[var(--color-border)] bg-white transition-all group-hover/cb:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
+                                  <input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => toggleOne(item.id)} className="peer absolute inset-0 cursor-pointer opacity-0" />
+                                  <Check className="h-2.5 w-2.5 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
+                                </span>
+                              </label>
+                            </td>
+                            <td className="whitespace-nowrap px-2 py-2 font-mono text-[11px] font-medium text-[var(--color-text-secondary)]">{item.source_question_no || "—"}</td>
+                            <td className="whitespace-nowrap px-2 py-2 text-[10px] text-[var(--color-text-hint)]">{sourceLabel}</td>
+                            <td className="max-w-[200px] truncate px-2 py-2 text-[11px] text-[var(--ink)]" title={item.content_preview || textFromImport(item)}>{item.content_preview || textFromImport(item) || "—"}</td>
+                            <td className="whitespace-nowrap px-2 py-2 text-center text-[10px] text-[var(--color-text-hint)]">
+                              {item.question_type === "single_choice" ? "单选" : item.question_type === "multi_choice" ? "多选" : item.question_type === "fill_blank" || item.question_type === "multi_blank_choice" ? "填空" : item.question_type === "judge" ? "判断" : "—"}
+                            </td>
+                            <td className="whitespace-nowrap px-2 py-2 text-center font-mono text-[11px] font-bold" style={{ color: item.parsed_answer ? "#3a7a5a" : "#b03a3a" }}>
+                              {item.parsed_answer || "空"}
+                            </td>
+                            <td className="whitespace-nowrap px-2 py-2 text-center text-[10px]" style={answerStatusStyle ? { ...Object.fromEntries(answerStatusStyle.split(";").filter(Boolean).map(s => s.split(":").map(x => x.trim()))) } : {}}>{answerStatusLabel}</td>
+                            <td className="whitespace-nowrap px-2 py-2 text-center text-[10px]" style={riskStyle ? { ...Object.fromEntries(riskStyle.split(";").filter(Boolean).map(s => s.split(":").map(x => x.trim()))) } : {}}>{riskLabel}</td>
+                            <td className="whitespace-nowrap px-2 py-2 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button className="rounded border border-[var(--color-border)] bg-white px-2 py-1 text-[9px] font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]" onClick={() => openPreview(item)}>查看</button>
+                                {item.answer_status === "missing" || item.answer_status === "ai_filled" ? (
+                                  <button className="rounded border border-[var(--color-primary)]/30 bg-[var(--color-primary-light)] px-2 py-1 text-[9px] font-semibold text-[var(--color-primary-dark)] transition hover:bg-[var(--color-primary)] hover:text-white" onClick={() => openPreview(item)}>修改</button>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+              {items.length > 0 && viewMode === "list" ? (
               <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white">
                 {items.map((item, index) => {
                   const riskColor = item.risk_level === "high" ? "#b03a3a" : item.risk_level === "medium" ? "#b87a30" : item.risk_level === "low" ? "#3a7a5a" : "var(--color-border)";
                   const hasAnswerMissing = (!item.parsed_answer || item.parsed_answer.trim() === "") && item.risk_level !== "low";
                   const reasonCount = item.risk_reasons?.length ?? 0;
+                  // ── 原题定位显示 ──
+                  const sourceLabel = item.source_image_seq != null
+                    ? `图${item.source_image_seq}${item.source_question_no ? ` · 原题${item.source_question_no}` : ""}`
+                    : (item.source_question_no ? `原题${item.source_question_no}` : null);
+                  // ── 答案状态标签 ──
+                  const answerStatusLabel =
+                    item.answer_status === "missing" ? "答案缺失" :
+                    item.answer_status === "ai_filled" ? "AI补全" :
+                    item.answer_status === "imported" ? "已导入" :
+                    item.answer_status === "manual_filled" ? "已填写" :
+                    item.answer_status === "manual_verified" ? "已验证" :
+                    item.answer_status === "abnormal" ? "答案异常" : null;
+                  const answerStatusColor =
+                    item.answer_status === "missing" ? "#b03a3a" :
+                    item.answer_status === "ai_filled" ? "#c46a3a" :
+                    item.answer_status === "abnormal" ? "#b03a3a" :
+                    "var(--color-text-hint)";
+
                   return (
                     <div key={item.id}>
                       {index > 0 && <div className="h-px bg-[var(--color-border)]/50" />}
@@ -838,6 +984,11 @@ export default function ImportReviewPage() {
                           {item.question_type === "single_choice" ? "单选" : item.question_type === "multi_choice" ? "多选" : item.question_type === "fill_blank" || item.question_type === "multi_blank_choice" ? "填空" : item.question_type === "judge" ? "判断" : "—"}
                         </span>
 
+                        {/* Source question badge */}
+                        {sourceLabel ? (
+                          <span className="shrink-0 rounded bg-[var(--color-bg-input)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-secondary)]">{sourceLabel}</span>
+                        ) : null}
+
                         {/* Stem (truncated single line) */}
                         <p className="min-w-0 flex-1 cursor-pointer truncate text-[13px] leading-snug text-[var(--ink)]" onClick={() => openPreview(item)}>
                           {item.content_preview || textFromImport(item) || <span className="italic text-xs text-[var(--color-text-hint)]">导入题目 #{item.id}</span>}
@@ -851,10 +1002,13 @@ export default function ImportReviewPage() {
                           {item.risk_level === "medium" && (
                             <span className="rounded bg-[#fffbeb] px-1.5 py-0.5 text-[9px] font-semibold text-[#b87a30]">需检查</span>
                           )}
-                          {hasAnswerMissing && (
+                          {answerStatusLabel ? (
+                            <span className="rounded bg-white px-1.5 py-0.5 text-[9px] font-semibold border" style={{ color: answerStatusColor, borderColor: answerStatusColor }}>{answerStatusLabel}</span>
+                          ) : null}
+                          {hasAnswerMissing && !answerStatusLabel && (
                             <span className="rounded bg-[#fef2f2] px-1.5 py-0.5 text-[9px] font-semibold text-[#b03a3a]">无答案</span>
                           )}
-                          {item.ai_answer_flag && (
+                          {item.ai_answer_flag && !answerStatusLabel && (
                             <span className="rounded bg-[#fef7f0] px-1.5 py-0.5 text-[9px] font-semibold text-[#c46a3a]">AI</span>
                           )}
                           {item.duplicate_status === "possible_duplicate" && (
@@ -939,6 +1093,16 @@ export default function ImportReviewPage() {
                   ) : null}
                   {editState.subject_id ? (
                     <span className="hidden sm:inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-primary-light)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-primary-dark)]">{subjectOptions.find((s) => s.id === editState.subject_id)?.name || `#${editState.subject_id}`}</span>
+                  ) : null}
+                  {/* ── 原题定位 ── */}
+                  {previewItem.source_question_no || previewItem.source_image_seq != null ? (
+                    <span className="hidden md:inline-flex items-center gap-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-input)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-secondary)]">
+                      {previewItem.source_image_seq != null ? `图${previewItem.source_image_seq}` : null}
+                      {previewItem.source_image_seq != null && previewItem.source_page_start != null ? " · " : null}
+                      {previewItem.source_page_start != null ? `第${previewItem.source_page_start}页` : null}
+                      {((previewItem.source_image_seq != null || previewItem.source_page_start != null) && previewItem.source_question_no) ? " · " : null}
+                      {previewItem.source_question_no ? `原题${previewItem.source_question_no}` : null}
+                    </span>
                   ) : null}
                   {previewItem.risk_reasons && previewItem.risk_reasons.length > 0 ? (
                     <span className="hidden md:inline-block max-w-[200px] truncate text-[10px] text-red-600" title={previewItem.risk_reasons.join("；")}>
@@ -1078,6 +1242,55 @@ export default function ImportReviewPage() {
                     );
                   })()}
 
+                  {/* ── 原文对照 ── */}
+                  {previewItem.raw_text_preview || previewItem.source_question_no || previewItem.raw_data?.raw_text || previewItem.raw_data?.raw_question_text ? (
+                    <section className="animate-fade-up drawer-section-delay-1 section-scroll section-scroll-warm rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
+                      <details
+                        className="group"
+                        open={
+                          previewItem.answer_status === "missing" ||
+                          previewItem.answer_status === "ai_filled" ||
+                          previewItem.risk_level === "high" ||
+                          previewItem.answer_confidence != null && previewItem.answer_confidence < 0.8
+                        }
+                      >
+                        <summary className="flex cursor-pointer items-center gap-2.5 mb-3 text-sm font-semibold text-[var(--color-text-secondary)] transition hover:text-[var(--ink)] [&::-webkit-details-marker]:hidden">
+                          <span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ backgroundColor: "rgba(196,154,107,0.12)" }}>
+                            <span className="text-xs font-bold" style={{ color: "#c49a6b", fontFamily: "'Georgia', serif" }}>原</span>
+                          </span>
+                          <span>原文对照</span>
+                          {previewItem.answer_status === "missing" ? (
+                            <span className="ml-auto rounded bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">默认展开</span>
+                          ) : previewItem.answer_status === "ai_filled" ? (
+                            <span className="ml-auto rounded bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700">默认展开</span>
+                          ) : null}
+                          <span className="ml-auto inline-block text-[10px] transition-transform group-open:rotate-90 opacity-50">▶</span>
+                        </summary>
+                        <div className="ml-9 space-y-3">
+                          {/* 左侧：清洗后题干 */}
+                          <div className="rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/70 p-3">
+                            <p className="mb-1.5 text-[10px] font-semibold text-[var(--color-text-hint)]">清洗后题干</p>
+                            <p className="text-sm leading-relaxed text-[var(--ink)]">
+                              <MathFormula text={editState.stem || "（空）"} />
+                            </p>
+                          </div>
+                          {/* 右侧：原始文本 */}
+                          <div className="rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/70 p-3">
+                            <p className="mb-1.5 text-[10px] font-semibold text-[var(--color-text-hint)]">
+                              原始文本{previewItem.source_question_label ? `（${previewItem.source_question_label}开头）` : null}
+                            </p>
+                            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)]">
+                              {previewItem.raw_text_preview
+                                || (previewItem.raw_data?.raw_text as string)
+                                || (previewItem.raw_data?.raw_question_text as string)
+                                || "（无原始文本）"}
+                            </pre>
+                          </div>
+                        </div>
+                      </details>
+                    </section>
+                  ) : null}
+
                   {/* ── Options Card ── */}
                   {editState.question_type === "multi_blank_choice" ? (
                     <section className="animate-fade-up drawer-section-delay-2 section-scroll section-scroll-warm rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
@@ -1143,17 +1356,32 @@ export default function ImportReviewPage() {
                         <span className="text-xs font-bold text-[var(--color-success)]" style={{ fontFamily: "'Georgia', serif" }}>答</span>
                       </span>
                       <span className="text-sm font-semibold text-[var(--ink)]">答案</span>
-                      {previewItem.ai_answer_flag ? (
+                      {previewItem.answer_status === "ai_filled" ? (
+                        <span className="rounded-md bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700 ml-auto">AI 补全</span>
+                      ) : previewItem.answer_status === "missing" ? (
+                        <span className="rounded-md bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 ml-auto">答案缺失</span>
+                      ) : previewItem.answer_status === "manual_filled" ? (
+                        <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700 ml-auto">人工填写</span>
+                      ) : previewItem.answer_status === "manual_verified" ? (
+                        <span className="rounded-md bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700 ml-auto">人工已核验</span>
+                      ) : previewItem.answer_status === "abnormal" ? (
+                        <span className="rounded-md bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 ml-auto">答案异常</span>
+                      ) : previewItem.ai_answer_flag ? (
                         <span className="rounded-md bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700 ml-auto">AI 补全</span>
                       ) : null}
                     </div>
                     <div className="ml-9">
-                      {(previewItem.ai_answer_flag && (!editState.answer || editState.answer === "（空）")) ? (
+                      {(previewItem.answer_status === "abnormal") ? (
                         <div className="mb-2 rounded-lg border border-red-200 bg-red-50/60 px-3 py-2 text-xs text-red-700">答案异常，需人工确认</div>
-                      ) : previewItem.ai_answer_flag ? (
-                        <div className="mb-2 rounded-lg border border-orange-200 bg-orange-50/60 px-3 py-2 text-xs text-orange-700">答案由 AI 补全，请核对原题</div>
-                      ) : (!editState.answer || editState.answer === "（空）") ? (
+                      ) : (previewItem.answer_status === "ai_filled" && (!editState.answer || editState.answer === "（空）")) ? (
+                        <div className="mb-2 rounded-lg border border-red-200 bg-red-50/60 px-3 py-2 text-xs text-red-700">AI 补全后答案仍为空，需人工确认</div>
+                      ) : previewItem.answer_status === "ai_filled" ? (
+                        <div className="mb-2 rounded-lg border border-orange-200 bg-orange-50/60 px-3 py-2 text-xs text-orange-700">答案由 AI 补全，请核对原题（置信度：{previewItem.answer_confidence != null ? (previewItem.answer_confidence * 100).toFixed(0) + "%" : "未提供"})</div>
+                      ) : (previewItem.answer_status === "missing" || !editState.answer || editState.answer === "（空）") ? (
                         <div className="mb-2 rounded-lg border border-red-200 bg-red-50/60 px-3 py-2 text-xs text-red-700">答案缺失，需人工确认</div>
+                      ) : null}
+                      {previewItem.answer_source ? (
+                        <p className="mb-2 text-[10px] text-[var(--color-text-hint)]">来源：{previewItem.answer_source === "ai" ? "AI 补全" : previewItem.answer_source === "ocr" ? "OCR 识别" : previewItem.answer_source === "parser" ? "解析器提取" : previewItem.answer_source === "manual" ? "人工填写" : previewItem.answer_source}</p>
                       ) : null}
                       <span className="answer-box">
                         {editState.answer || "（空）"}
@@ -1334,20 +1562,20 @@ export default function ImportReviewPage() {
                       </label>
                       <div className="relative">
                         <button
-                          ref={subjectBtnRef}
+                          ref={subjectEditBtnRef}
                           type="button"
                           className="flex h-11 w-full items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
                           onClick={() => {
-                            const next = !subjectDropdownOpen;
-                            setSubjectDropdownOpen(next);
-                            if (next && subjectBtnRef.current) {
-                              const r = subjectBtnRef.current.getBoundingClientRect();
+                            const next = !subjectEditDropdownOpen;
+                            setSubjectEditDropdownOpen(next);
+                            if (next && subjectEditBtnRef.current) {
+                              const r = subjectEditBtnRef.current.getBoundingClientRect();
                               const maxRight = window.innerWidth - 16;
                               const w = Math.min(r.width, maxRight - 16);
-                              setSubjectDropdownStyle({ top: r.bottom + 4, left: Math.min(r.left, maxRight - w), width: w });
+                              setSubjectEditDropdownStyle({ top: r.bottom + 4, left: Math.min(r.left, maxRight - w), width: w });
                             }
                           }}
-                          onBlur={() => setTimeout(() => setSubjectDropdownOpen(false), 150)}
+                          onBlur={() => setTimeout(() => setSubjectEditDropdownOpen(false), 150)}
                         >
                           <span className={`flex-1 text-left ${editState.subject_id ? "" : "text-[var(--color-text-hint)]"}`}>
                             {editState.subject_id
@@ -1357,11 +1585,11 @@ export default function ImportReviewPage() {
                           {subjectsQuery.isLoading ? (
                             <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-primary)]" />
                           ) : (
-                            <ChevronDown className={`h-4 w-4 text-[var(--color-text-hint)] transition-transform ${subjectDropdownOpen ? "rotate-180" : ""}`} />
+                            <ChevronDown className={`h-4 w-4 text-[var(--color-text-hint)] transition-transform ${subjectEditDropdownOpen ? "rotate-180" : ""}`} />
                           )}
                         </button>
-                        {subjectDropdownOpen ? createPortal(
-                          <div className="fixed z-[200] max-h-56 overflow-y-auto scrollbar-hide rounded-xl border border-[var(--color-border)] bg-white py-1 shadow-lg" style={subjectDropdownStyle}>
+                        {subjectEditDropdownOpen ? createPortal(
+                          <div className="fixed z-[200] max-h-56 overflow-y-auto scrollbar-hide rounded-xl border border-[var(--color-border)] bg-white py-1 shadow-lg" style={subjectEditDropdownStyle}>
                             <button
                               type="button"
                               className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-[var(--color-primary-light)]/40 ${
@@ -1369,7 +1597,7 @@ export default function ImportReviewPage() {
                                   ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold"
                                   : "text-[var(--color-text-hint)]"
                               }`}
-                              onMouseDown={(e) => { e.preventDefault(); setEditState({ ...editState, subject_id: null }); setSubjectDropdownOpen(false); }}
+                              onMouseDown={(e) => { e.preventDefault(); setEditState({ ...editState, subject_id: null }); setSubjectEditDropdownOpen(false); }}
                             >
                               {!editState.subject_id ? <Check className="h-4 w-4 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-4 shrink-0" />}
                               不设置
@@ -1383,7 +1611,7 @@ export default function ImportReviewPage() {
                                     ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold"
                                     : "text-[var(--color-text-primary)]"
                                 }`}
-                                onMouseDown={(e) => { e.preventDefault(); setEditState({ ...editState, subject_id: s.id }); setSubjectDropdownOpen(false); }}
+                                onMouseDown={(e) => { e.preventDefault(); setEditState({ ...editState, subject_id: s.id }); setSubjectEditDropdownOpen(false); }}
                               >
                                 {editState.subject_id === s.id ? <Check className="h-4 w-4 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-4 shrink-0" />}
                                 {s.name}

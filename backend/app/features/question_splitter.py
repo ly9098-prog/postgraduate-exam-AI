@@ -282,6 +282,24 @@ def _detect_question_number(line: str) -> tuple[int, int] | None:
     return None
 
 
+def _extract_first_line_label(text: str) -> str | None:
+    """从原始题目文本的首行提取完整题号标签（如 "12."、"第12题"）。
+
+    返回匹配到的完整前缀（包括标点），用于审核页展示。
+    若匹配不到则返回 None。
+    """
+    first_line = text.split("\n")[0] if text else ""
+    stripped = first_line.lstrip()
+    for pat, _group_idx in _QUESTION_PATTERNS:
+        m = pat.match(stripped)
+        if m:
+            return m.group(0).strip()
+    m = _OCR_Q_PATTERN.match(stripped)
+    if m:
+        return m.group(0).strip()
+    return None
+
+
 def _is_false_question_number(num: int, line: str) -> bool:
     """判断检测到的题号是否为选项 OCR 错误导致的假题号。"""
     # 0 永远不是有效题号
@@ -1042,6 +1060,10 @@ def split_questions(
                     section_type = marker_type
                     break
 
+        # ── 提取原题号信息（用于审核定位） ──
+        source_question_no = str(num) if num and num > 0 else None
+        source_question_label = _extract_first_line_label(raw_text)
+
         questions.append({
             "number": num,
             "raw_question_text": raw_text,
@@ -1053,6 +1075,9 @@ def split_questions(
             "has_grouped_options": has_grouped_options,
             "confidence": round(max(0.0, min(1.0, conf)), 2),
             "section_type": section_type,
+            # ── 原题定位信息 ──
+            "source_question_no": source_question_no,
+            "source_question_label": source_question_label,
         })
 
     questions = _recover_cross_page_options(questions)
