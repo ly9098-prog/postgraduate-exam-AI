@@ -230,6 +230,17 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ── Page Background Convention ── */
+/*
+  To prevent white blocks during scroll bounce/pull-to-refresh:
+  1. In page JSON:  "backgroundColor", "backgroundColorTop", "backgroundColorBottom"
+  2. In page WXSS:   page { background: <solid>; background-color: <solid>; }
+  3. In page WXSS:   .page { background: linear-gradient(...); background-color: <solid>; }
+  Light theme:  #F8FAFF (top) → #EEF5FF (bottom/solid)
+  Dark  theme:  #0B1121 (solid)
+  Import theme: #F7F5F0 (solid)
+*/
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
