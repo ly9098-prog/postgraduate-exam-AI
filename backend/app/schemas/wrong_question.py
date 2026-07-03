@@ -33,6 +33,9 @@ class WrongQuestionResponse(BaseModel):
     answer: str | None = None
     analysis: str | None = None
     knowledge_points: list | None = None
+    # AI 分析（已持久化的结果）
+    ai_analysis: dict | None = None
+    ai_analysis_status: str | None = None  # "ready" | "empty" | "fallback" | "generating"
 
 
 class WrongQuestionStats(BaseModel):

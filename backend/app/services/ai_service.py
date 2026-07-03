@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,9 @@ from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
 
 ERROR_ANALYSIS_TIMEOUT_SECONDS = 25
+
+# 同进程内生成中锁，防止并发重复调用大模型
+_generating: set[int] = set()
 
 
 async def analyze_error(
@@ -53,71 +57,95 @@ async def analyze_error(
             "duration_ms": 0,
         }
 
-    from app.services.model_config_resolver import ensure_db_model_configured
-    creds = await ensure_db_model_configured(db, feature="analysis")
-
-    if not creds:
-        fallback = get_fallback_analysis()
+    # 并发保护：防止同一道题重复调用大模型
+    wq_pk = wq.id
+    if wq_pk in _generating:
+        # 已在生成中，返回临时状态，前端会展示 fallback 提示
         return {
-            "content": fallback,
+            "content": {"mistake_diagnosis": "AI 分析正在生成中，请稍后刷新查看", "knowledge_patch": "", "review_task": ""},
             "from_cache": False,
             "from_fallback": True,
             "tokens_used": 0,
-            "model": "fallback",
+            "model": "generating",
             "duration_ms": 0,
         }
-
-    api_key, base_url, model_name = creds
-
-    context = build_error_context(wq, q)
-    messages = build_error_analysis(
-        context["question"], wq.wrong_answer, q.answer
-    )
-
+    _generating.add(wq_pk)
     try:
-        async with asyncio.timeout(ERROR_ANALYSIS_TIMEOUT_SECONDS):
-            result = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
-    except Exception:
-        fallback = get_fallback_analysis()
-        return {
-            "content": fallback,
-            "from_cache": False,
-            "from_fallback": True,
-            "tokens_used": 0,
-            "model": "fallback",
-            "duration_ms": ERROR_ANALYSIS_TIMEOUT_SECONDS * 1000,
+        from app.services.model_config_resolver import ensure_db_model_configured
+        creds = await ensure_db_model_configured(db, feature="analysis")
+
+        if not creds:
+            fallback = get_fallback_analysis()
+            return {
+                "content": fallback,
+                "from_cache": False,
+                "from_fallback": True,
+                "tokens_used": 0,
+                "model": "fallback",
+                "duration_ms": 0,
+            }
+
+        api_key, base_url, model_name = creds
+
+        context = build_error_context(wq, q)
+        messages = build_error_analysis(
+            context["question"], wq.wrong_answer, q.answer
+        )
+
+        try:
+            async with asyncio.timeout(ERROR_ANALYSIS_TIMEOUT_SECONDS):
+                result = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
+        except Exception:
+            fallback = get_fallback_analysis()
+            return {
+                "content": fallback,
+                "from_cache": False,
+                "from_fallback": True,
+                "tokens_used": 0,
+                "model": "fallback",
+                "duration_ms": ERROR_ANALYSIS_TIMEOUT_SECONDS * 1000,
+            }
+
+        try:
+            parsed = json.loads(result["content"])
+        except (json.JSONDecodeError, KeyError):
+            parsed = {"mistake_diagnosis": result["content"], "knowledge_patch": "", "review_task": ""}
+
+        # 附加元信息
+        parsed["_meta"] = {
+            "model": result.get("model", model_name or ""),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "version": "v1",
+            "from_fallback": False,
         }
 
-    try:
-        parsed = json.loads(result["content"])
-    except (json.JSONDecodeError, KeyError):
-        parsed = {"error_analysis": result["content"]}
+        # 持久化到 wrong_questions.ai_analysis（非 fallback 才保存）
+        wq.ai_analysis = parsed
+        await db.commit()
 
-    # Cache to wrong_question
-    wq.ai_analysis = parsed
-    await db.commit()
+        # Log chat
+        db.add(AiChat(
+            user_id=user_id,
+            session_type="error_analysis",
+            user_message=str(context["question"]),
+            ai_response=result["content"],
+            context_snapshot=context,
+            tokens_used=result["tokens_used"],
+            model=result["model"],
+            duration_ms=result["duration_ms"],
+        ))
+        await db.commit()
 
-    # Log chat
-    db.add(AiChat(
-        user_id=user_id,
-        session_type="error_analysis",
-        user_message=str(context["question"]),
-        ai_response=result["content"],
-        context_snapshot=context,
-        tokens_used=result["tokens_used"],
-        model=result["model"],
-        duration_ms=result["duration_ms"],
-    ))
-    await db.commit()
-
-    return {
-        "content": parsed,
-        "from_cache": False,
-        "from_fallback": False,
-        "tokens_used": result["tokens_used"],
-        "model": result["model"],
-        "duration_ms": result["duration_ms"],
-    }
+        return {
+            "content": parsed,
+            "from_cache": False,
+            "from_fallback": False,
+            "tokens_used": result["tokens_used"],
+            "model": result["model"],
+            "duration_ms": result["duration_ms"],
+        }
+    finally:
+        _generating.discard(wq_pk)
 
 
 async def generate_advice(db: AsyncSession, user_id: int, subject: str | None = None) -> dict:
