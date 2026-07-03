@@ -66,6 +66,19 @@ class AdminImportQuestionItemBrief(BaseModel):
     risk_flags: list[str] = []
     risk_level: str = "low"
     risk_reasons: list[str] = []
+    # ── 导入审核定位与答案状态 ──
+    source_question_no: str | None = None
+    source_question_label: str | None = None
+    source_image_seq: int | None = None
+    source_image_name: str | None = None
+    source_page_start: int | None = None
+    source_page_end: int | None = None
+    source_order_index: int | None = None
+    raw_text_preview: str | None = None
+    answer_status: str | None = None
+    answer_source: str | None = None
+    answer_confidence: float | None = None
+    review_priority: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -118,6 +131,19 @@ class AdminImportQuestionItem(BaseModel):
     risk_flags: list[str] = []
     risk_level: str = "low"
     risk_reasons: list[str] = []
+    # ── 导入审核定位与答案状态 ──
+    source_question_no: str | None = None
+    source_question_label: str | None = None
+    source_image_seq: int | None = None
+    source_image_name: str | None = None
+    source_page_start: int | None = None
+    source_page_end: int | None = None
+    source_order_index: int | None = None
+    raw_text_preview: str | None = None
+    answer_status: str | None = None
+    answer_source: str | None = None
+    answer_confidence: float | None = None
+    review_priority: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -159,6 +185,19 @@ class AdminImportQuestionUpdateRequest(BaseModel):
     parsed_analysis: str | None = None
     raw_data: dict | None = None
     review_note: str | None = None
+    # ── 导入审核定位与答案状态字段 ──
+    source_question_no: str | None = None
+    source_question_label: str | None = None
+    source_image_seq: int | None = None
+    source_image_name: str | None = None
+    source_page_start: int | None = None
+    source_page_end: int | None = None
+    source_order_index: int | None = None
+    raw_text_preview: str | None = None
+    answer_status: str | None = None
+    answer_source: str | None = None
+    answer_confidence: float | None = None
+    review_priority: int | None = None
 
 
 class AdminImportRejectRequest(BaseModel):

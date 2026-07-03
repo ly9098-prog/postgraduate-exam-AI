@@ -32,6 +32,19 @@ export type ImportQuestionItem = {
   risk_flags: string[];
   risk_level: string;
   risk_reasons: string[];
+  // ── 导入审核定位与答案状态增强 ──
+  source_question_no?: string | null;
+  source_question_label?: string | null;
+  source_image_seq?: number | null;
+  source_image_name?: string | null;
+  source_page_start?: number | null;
+  source_page_end?: number | null;
+  source_order_index?: number | null;
+  raw_text_preview?: string | null;
+  answer_status?: string | null;
+  answer_source?: string | null;
+  answer_confidence?: number | null;
+  review_priority?: number | null;
   created_at: string;
   updated_at: string;
 };

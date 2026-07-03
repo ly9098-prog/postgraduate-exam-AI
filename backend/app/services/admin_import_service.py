@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime
 from math import ceil
 from uuid import uuid4
@@ -26,12 +27,48 @@ logger = logging.getLogger(__name__)
 
 _TASK_TTL_SECONDS = 86400
 
+# ── 历史数据兜底：从 raw_data 中提取 source_question_no ──
+_SOURCE_NO_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"^\s*(\d+)\s*[.．、)）]"), r"\1"),
+    (re.compile(r"^\s*第\s*(\d+)\s*题"), r"\1"),
+    (re.compile(r"^\s*[（(]\s*(\d+)\s*[）)]"), r"\1"),
+]
+
+
+def _fallback_source_question_no(raw_data: dict | str | None) -> str | None:
+    """从 raw_data 中尝试提取原题号（用于历史数据兼容）。
+
+    先查 raw_data.raw_text，再查 raw_data.raw_question_text，再查 text/stem。
+    匹配成功返回题号字符串，失败返回 None。
+    """
+    if not raw_data:
+        return None
+    text = None
+    if isinstance(raw_data, dict):
+        text = (
+            raw_data.get("raw_text")
+            or raw_data.get("raw_question_text")
+            or raw_data.get("text")
+            or raw_data.get("stem")
+        )
+    elif isinstance(raw_data, str):
+        text = raw_data
+    if not text or not isinstance(text, str):
+        return None
+    first_line = text.split("\n")[0].strip()
+    for pat, repl in _SOURCE_NO_PATTERNS:
+        m = pat.match(first_line)
+        if m:
+            return m.group(1)
+    return None
+
 
 def derive_import_risk(
     ai_metadata: dict | None,
     *,
     ai_answer_flag: bool | None = None,
     parsed_answer: str | None = None,
+    answer_status: str | None = None,
 ) -> dict:
     """从导入题目元数据推导风险等级。
 
@@ -47,13 +84,21 @@ def derive_import_risk(
         risk_flags.extend(meta_risk_flags)
 
     # 2. 答案 AI 生成
-    if ai_answer_flag:
+    if ai_answer_flag and "answer_ai_generated" not in risk_flags:
         risk_flags.append("answer_ai_generated")
 
     # 3. 答案缺失（pending 状态且无答案）
     has_answer = bool(parsed_answer and parsed_answer.strip())
-    if not has_answer:
+    if not has_answer and "answer_missing" not in risk_flags:
         risk_flags.append("answer_missing")
+
+    # 3b. answer_status 补充判断（不会重复添加，因为上面已检查）
+    if answer_status == "missing" and "answer_missing" not in risk_flags:
+        risk_flags.append("answer_missing")
+    elif answer_status == "ai_filled" and "answer_ai_generated" not in risk_flags:
+        risk_flags.append("answer_ai_generated")
+    elif answer_status == "abnormal" and "options_anomaly" not in risk_flags:
+        risk_flags.append("options_anomaly")
 
     # 4. AI 修复/补全来源
     ai_source = meta.get("ai_source") or ""
@@ -206,6 +251,7 @@ def _apply_risk_to_item(item: AdminImportQuestionItem) -> AdminImportQuestionIte
         item.ai_metadata,
         ai_answer_flag=item.ai_answer_flag,
         parsed_answer=item.parsed_answer,
+        answer_status=item.answer_status,
     )
     # 用 model_config 允许额外字段
     item.risk_flags = risk["risk_flags"]
@@ -240,6 +286,21 @@ _LIST_COLUMNS = (
     QuestionImport.ai_answer_flag,
     QuestionImport.created_at,
     QuestionImport.updated_at,
+    # ── 导入审核定位与答案状态字段 ──
+    QuestionImport.source_question_no,
+    QuestionImport.source_question_label,
+    QuestionImport.source_image_seq,
+    QuestionImport.source_image_name,
+    QuestionImport.source_page_start,
+    QuestionImport.source_page_end,
+    QuestionImport.source_order_index,
+    QuestionImport.raw_text_preview,
+    QuestionImport.answer_status,
+    QuestionImport.answer_source,
+    QuestionImport.answer_confidence,
+    QuestionImport.review_priority,
+    # raw_data 用于历史数据兜底提取 source_question_no
+    QuestionImport.raw_data,
     func.substr(
         func.coalesce(
             QuestionImport.parsed_content['text'].as_string(),
@@ -256,10 +317,31 @@ def _brief_from_row(row) -> AdminImportQuestionItemBrief:
         item.ai_metadata,
         ai_answer_flag=item.ai_answer_flag,
         parsed_answer=item.parsed_answer,
+        answer_status=item.answer_status,
     )
     item.risk_flags = risk["risk_flags"]
     item.risk_level = risk["risk_level"]
     item.risk_reasons = risk["risk_reasons"]
+    # ── 历史数据兜底：从 raw_data 提取 source_question_no 和 raw_text_preview ──
+    if not item.source_question_no or not item.raw_text_preview:
+        _raw_data = None
+        if hasattr(row, "_mapping"):
+            _raw_data = row._mapping.get("raw_data")
+        if not _raw_data and isinstance(row, dict):
+            _raw_data = row.get("raw_data")
+        if _raw_data:
+            if not item.source_question_no:
+                fallback = _fallback_source_question_no(_raw_data)
+                if fallback:
+                    item.source_question_no = fallback
+            if not item.raw_text_preview:
+                _raw_text = (
+                    _raw_data.get("raw_text")
+                    or _raw_data.get("raw_question_text")
+                    or _raw_data.get("text")
+                )
+                if _raw_text:
+                    item.raw_text_preview = str(_raw_text)[:200]
     return item
 
 
@@ -274,6 +356,9 @@ async def list_review_queue(
     keyword: str | None = None,
     risk_level: str | None = None,
     subject_id: int | None = None,
+    answer_status: str | None = None,
+    question_type: str | None = None,
+    sort: str | None = None,
 ) -> tuple[list[AdminImportQuestionItemBrief], int]:
     from app.models.admin import Subject
     from app.services.admin_subject_service import resolve_subject_id
@@ -283,7 +368,39 @@ async def list_review_queue(
         if resolved is not None:
             subject_id = resolved
     conditions = _question_conditions(status, batch_id, source_type, keyword, subject_id=subject_id)
+
+    # answer_status 过滤
+    if answer_status:
+        conditions.append(QuestionImport.answer_status == answer_status)
+    # question_type 过滤
+    if question_type:
+        conditions.append(QuestionImport.question_type == question_type)
+
     total = await db.scalar(select(func.count()).select_from(QuestionImport).where(*conditions))
+
+    # 排序
+    if sort == "source_order" or (sort is None and batch_id):
+        # 按来源图片顺序 + 原题号排序
+        order_by = (
+            QuestionImport.source_image_seq.asc().nullslast(),
+            QuestionImport.source_page_start.asc().nullslast(),
+            QuestionImport.source_order_index.asc().nullslast(),
+            QuestionImport.id.asc(),
+        )
+    elif sort == "risk_desc":
+        order_by = (QuestionImport.review_priority.asc().nullslast(), QuestionImport.created_at.desc())
+    elif sort == "answer_priority":
+        # 答案缺失 / AI 补全优先
+        order_by = (
+            QuestionImport.review_priority.asc().nullslast(),
+            QuestionImport.source_image_seq.asc().nullslast(),
+            QuestionImport.source_order_index.asc().nullslast(),
+            QuestionImport.id.asc(),
+        )
+    else:
+        # 默认按创建时间倒序
+        order_by = (QuestionImport.created_at.desc(), QuestionImport.id.desc())
+
     result = await db.execute(
         select(
             *_LIST_COLUMNS,
@@ -292,7 +409,7 @@ async def list_review_queue(
         )
         .outerjoin(Subject, QuestionImport.subject_id == Subject.id)
         .where(*conditions)
-        .order_by(QuestionImport.created_at.desc(), QuestionImport.id.desc())
+        .order_by(*order_by)
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
@@ -326,7 +443,16 @@ async def update_import_question(
         qi.parsed_options = {str(item.get("key") or item.get("label")): item.get("text") or item.get("value") for item in options if isinstance(item, dict)} if isinstance(options, list) else options
     if "answer" in payload:
         qi.parsed_answer = payload.pop("answer")
+        # ── 自动更新 answer_status（需先保存原始 ai_answer_flag） ──
+        _was_ai_answer = qi.ai_answer_flag
         qi.ai_answer_flag = False
+        _new_ans = (qi.parsed_answer or "").strip()
+        if _new_ans:
+            # 人工保存答案 → 无论原状态如何，都设为 manual_filled
+            # （manual_verified 也降级为 manual_filled，因为答案被修改了）
+            qi.answer_status = "manual_filled"
+        else:
+            qi.answer_status = "missing"
     if "analysis" in payload:
         qi.parsed_analysis = payload.pop("analysis")
 
@@ -348,6 +474,19 @@ async def update_import_question(
         "parsed_answer",
         "parsed_analysis",
         "review_note",
+        # ── 导入审核定位与答案状态字段 ──
+        "source_question_no",
+        "source_question_label",
+        "source_image_seq",
+        "source_image_name",
+        "source_page_start",
+        "source_page_end",
+        "source_order_index",
+        "raw_text_preview",
+        "answer_status",
+        "answer_source",
+        "answer_confidence",
+        "review_priority",
     ):
         if field in payload:
             setattr(qi, field, payload[field])
@@ -712,6 +851,19 @@ async def get_import_question_detail(
     qi = await _get_import_question(db, import_id)
     item = AdminImportQuestionItem.model_validate(qi)
     _apply_risk_to_item(item)
+    # ── 历史数据兜底 ──
+    if not item.source_question_no and qi.raw_data:
+        fallback = _fallback_source_question_no(qi.raw_data)
+        if fallback:
+            item.source_question_no = fallback
+    if not item.raw_text_preview and qi.raw_data:
+        _raw_text = (
+            qi.raw_data.get("raw_text")
+            or qi.raw_data.get("raw_question_text")
+            or qi.raw_data.get("text")
+        )
+        if _raw_text:
+            item.raw_text_preview = str(_raw_text)[:200]
     return item
 
 

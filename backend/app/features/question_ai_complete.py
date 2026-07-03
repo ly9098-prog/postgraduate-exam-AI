@@ -133,6 +133,9 @@ def _apply_complete_suggestion(
         if isinstance(ans, str) and ans.strip():
             suggestion["answer"] = ans.strip()
             qi.ai_answer_flag = True
+            qi.answer_status = "ai_filled"
+            qi.answer_source = "ai"
+            qi.answer_confidence = _coerce_confidence(parsed.get("confidence"))
     if isinstance(parsed.get("knowledge_points"), list):
         suggestion["knowledge_points"] = [
             str(k).strip() for k in parsed["knowledge_points"] if str(k).strip()
@@ -429,6 +432,9 @@ async def _apply_batch_complete_result(
         if isinstance(ans, str) and ans.strip():
             qi.parsed_answer = ans
             qi.ai_answer_flag = True
+            qi.answer_status = "ai_filled"
+            qi.answer_source = "ai"
+            qi.answer_confidence = _coerce_confidence(parsed.get("confidence"))
             completed.append("answer")
 
     if "stem" in fields:

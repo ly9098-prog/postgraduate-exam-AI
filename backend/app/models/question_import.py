@@ -12,6 +12,8 @@ class QuestionImport(Base):
     __table_args__ = (
         Index("ix_question_imports_status_created_id", "status", "created_at", "id"),
         Index("ix_question_imports_batch_status_created_id", "batch_id", "status", "created_at", "id"),
+        Index("ix_question_imports_answer_status", "answer_status"),
+        Index("ix_question_imports_source_order", "batch_id", "source_image_seq", "source_order_index"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -56,6 +58,32 @@ class QuestionImport(Base):
     # these fields record which batch superseded it and when.
     superseded_by_batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # ── 导入审核定位与答案状态增强字段（2026-07） ──
+    # 原始题号（如 "12"、"12-1"、"三"）
+    source_question_no: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    # 原始题号完整标签（如 "12."、"12、"）
+    source_question_label: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # 批量图片导入时，该题来自第几张图片（从 1 开始）
+    source_image_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 来源图片文件名
+    source_image_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # PDF 或文档中的起始 / 结束页码
+    source_page_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_page_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 同一批次内的稳定顺序索引
+    source_order_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 原始题目文本预览（保留题号，如 "12.这是题干……"）
+    raw_text_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # 答案状态：missing / imported / ai_filled / manual_filled / manual_verified / abnormal
+    answer_status: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
+    # 答案来源：ocr / parser / ai / manual / unknown
+    answer_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # 答案识别或 AI 补全的置信度
+    answer_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # 审核优先级：越高越优先
+    review_priority: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
