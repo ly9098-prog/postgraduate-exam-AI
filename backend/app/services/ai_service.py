@@ -19,6 +19,39 @@ ERROR_ANALYSIS_TIMEOUT_SECONDS = 25
 _generating: set[int] = set()
 
 
+def _normalize_ai_analysis(cached: dict) -> dict:
+    """Convert old-field format to new-field names in-place."""
+    if "mistake_diagnosis" not in cached:
+        return {
+            "mistake_diagnosis": cached.get("error_analysis", ""),
+            "knowledge_patch": cached.get("knowledge_weakness", ""),
+            "review_task": cached.get("suggestion", ""),
+        }
+    return cached
+
+
+def is_ai_analysis_fresh(ai_analysis: dict | None) -> bool:
+    """Check whether the cached AI analysis is still valid for the current prompt version."""
+    if not isinstance(ai_analysis, dict) or len(ai_analysis) == 0:
+        return False
+    cached_version = (ai_analysis.get("_meta") or {}).get("version", "")
+    return cached_version == AI_ANALYSIS_PROMPT_VERSION
+
+
+def build_cached_error_analysis_response(wq) -> dict | None:
+    """If the wrong question has a fresh cached AI analysis, return it; otherwise None."""
+    if not is_ai_analysis_fresh(wq.ai_analysis):
+        return None
+    return {
+        "content": _normalize_ai_analysis(wq.ai_analysis),
+        "from_cache": True,
+        "from_fallback": False,
+        "tokens_used": 0,
+        "model": "cache",
+        "duration_ms": 0,
+    }
+
+
 async def analyze_error(
     db: AsyncSession, user_id: int, wrong_question_id: int
 ) -> dict:
@@ -40,24 +73,9 @@ async def analyze_error(
         raise ValueError("题目不存在")
 
     # Check cache — 版本不匹配时跳过缓存以重新生成
-    if wq.ai_analysis and isinstance(wq.ai_analysis, dict):
-        cached = wq.ai_analysis
-        cached_version = (cached.get("_meta") or {}).get("version", "")
-        if cached_version == AI_ANALYSIS_PROMPT_VERSION:
-            if "mistake_diagnosis" not in cached:
-                cached = {
-                    "mistake_diagnosis": cached.get("error_analysis", ""),
-                    "knowledge_patch": cached.get("knowledge_weakness", ""),
-                    "review_task": cached.get("suggestion", ""),
-                }
-            return {
-                "content": cached,
-                "from_cache": True,
-                "from_fallback": False,
-                "tokens_used": 0,
-                "model": "cache",
-                "duration_ms": 0,
-            }
+    cached = build_cached_error_analysis_response(wq)
+    if cached is not None:
+        return cached
 
     # 分布式锁：防止并发重复调用大模型（跨进程）
     # 先用进程内集合做快速检测，再用 Redis 分布式锁
@@ -77,7 +95,7 @@ async def analyze_error(
     lock_key = f"ai:error_analysis:{wq_pk}"
     lock_value = str(user_id)
     have_lock = await cache.acquire_lock(lock_key, lock_value, ttl=60)
-    if not have_lock and cache._enabled:
+    if not have_lock and cache.is_enabled:
         # Redis 不可用时降级到进程内锁；Redis 可用但锁已被占则返回 generating
         _generating.discard(wq_pk)
         return {
@@ -92,25 +110,10 @@ async def analyze_error(
     try:
         # 获取锁后二次检查缓存（另一个进程可能刚写入）
         await db.refresh(wq)
-        if wq.ai_analysis and isinstance(wq.ai_analysis, dict):
-            cached = wq.ai_analysis
-            cached_version = (cached.get("_meta") or {}).get("version", "")
-            if cached_version == AI_ANALYSIS_PROMPT_VERSION:
-                _generating.discard(wq_pk)
-                if "mistake_diagnosis" not in cached:
-                    cached = {
-                        "mistake_diagnosis": cached.get("error_analysis", ""),
-                        "knowledge_patch": cached.get("knowledge_weakness", ""),
-                        "review_task": cached.get("suggestion", ""),
-                    }
-                return {
-                    "content": cached,
-                    "from_cache": True,
-                    "from_fallback": False,
-                    "tokens_used": 0,
-                    "model": "cache",
-                    "duration_ms": 0,
-                }
+        cached = build_cached_error_analysis_response(wq)
+        if cached is not None:
+            _generating.discard(wq_pk)
+            return cached
 
         from app.services.model_config_resolver import ensure_db_model_configured
         creds = await ensure_db_model_configured(db, feature="analysis")
@@ -213,10 +216,12 @@ async def prewarm_wrong_question_analysis(
             if not wq:
                 logger.info("[prewarm] wrong_question not found id=%d uid=%d", wrong_question_id, user_id)
                 return
-            # 已有缓存则跳过
-            if wq.ai_analysis and isinstance(wq.ai_analysis, dict) and len(wq.ai_analysis) > 0:
-                logger.info("[prewarm] already cached id=%d uid=%d", wrong_question_id, user_id)
+            # 已有 fresh 缓存则跳过（版本不匹配时触发重新生成）
+            if is_ai_analysis_fresh(wq.ai_analysis):
+                logger.info("[prewarm] fresh cache exists id=%d uid=%d", wrong_question_id, user_id)
                 return
+            if wq.ai_analysis and not is_ai_analysis_fresh(wq.ai_analysis):
+                logger.info("[prewarm] stale cache (version mismatch) id=%d uid=%d", wrong_question_id, user_id)
             # 复用现有 analyze_error 逻辑
             result = await analyze_error(bg_db, user_id, wrong_question_id)
             logger.info(
