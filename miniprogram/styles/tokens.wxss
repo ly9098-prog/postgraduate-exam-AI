@@ -143,6 +143,7 @@
 
 .hero-panel {
   background: linear-gradient(145deg, #4F7FFF 0%, #6EC1FF 56%, #8AAFC8 100%);
+  background-color: #4F7FFF;
   border-radius: 36rpx;
   box-shadow: 0 18rpx 46rpx rgba(79, 127, 255, 0.22);
   overflow: hidden;
