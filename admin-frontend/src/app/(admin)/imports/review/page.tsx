@@ -927,11 +927,13 @@ export default function ImportReviewPage() {
                 className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-2.5 text-xs text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-primary)]"
                 onClick={() => setSubjectDropdownOpen((v) => !v)}
               >
-                <span>{filters.subject_id ? (subjectOptions.find((s) => String(s.id) === filters.subject_id)?.name || filters.subject_id) : "全部科目"}</span>
-                <ChevronDown className={`h-3 w-3 text-[var(--color-text-hint)] transition-transform ${subjectDropdownOpen ? "rotate-180" : ""}`} />
+                <span className="max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap" title={filters.subject_id ? (subjectOptions.find((s) => String(s.id) === filters.subject_id)?.name || filters.subject_id) : ""}>
+                  {filters.subject_id ? (subjectOptions.find((s) => String(s.id) === filters.subject_id)?.name || filters.subject_id) : "全部科目"}
+                </span>
+                <ChevronDown className={`h-3 w-3 shrink-0 text-[var(--color-text-hint)] transition-transform ${subjectDropdownOpen ? "rotate-180" : ""}`} />
               </button>
               {subjectDropdownOpen ? (
-                <div className="absolute left-0 top-full z-20 mt-1 min-w-[140px] max-h-[240px] overflow-y-auto scrollbar-hide rounded-lg border border-[var(--color-border)] bg-white py-1 shadow-lg">
+                <div className="absolute left-0 top-full z-20 mt-1 min-w-[220px] max-w-[320px] max-h-72 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-white py-1 shadow-lg">
                   <button
                     type="button"
                     className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-[var(--color-primary-light)]/40 ${
@@ -940,7 +942,7 @@ export default function ImportReviewPage() {
                     onMouseDown={(e) => { e.preventDefault(); updateFilter("subject_id", ""); setSubjectDropdownOpen(false); }}
                   >
                     {!filters.subject_id ? <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-3.5 shrink-0" />}
-                    全部科目
+                    <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">全部科目</span>
                   </button>
                   {leafSubjectOptions.map((s) => (
                     <button
@@ -952,7 +954,7 @@ export default function ImportReviewPage() {
                       onMouseDown={(e) => { e.preventDefault(); updateFilter("subject_id", String(s.id)); setSubjectDropdownOpen(false); }}
                     >
                       {filters.subject_id === String(s.id) ? <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-3.5 shrink-0" />}
-                      {s.name}
+                      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title={s.name}>{s.name}</span>
                     </button>
                   ))}
                 </div>
@@ -1749,7 +1751,7 @@ export default function ImportReviewPage() {
                           }}
                           onBlur={() => setTimeout(() => setSubjectEditDropdownOpen(false), 150)}
                         >
-                          <span className={`flex-1 text-left ${editState.subject_id ? "" : "text-[var(--color-text-hint)]"}`}>
+                          <span className={`min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left ${editState.subject_id ? "" : "text-[var(--color-text-hint)]"}`} title={editState.subject_id ? (subjectOptions.find((s) => s.id === editState.subject_id)?.name || "") : ""}>
                             {editState.subject_id
                               ? (subjectOptions.find((s) => s.id === editState.subject_id)?.name || `#${editState.subject_id}`)
                               : "选择科目"}
@@ -1786,8 +1788,8 @@ export default function ImportReviewPage() {
                                 onMouseDown={(e) => { e.preventDefault(); setEditState({ ...editState, subject_id: s.id }); setSubjectEditDropdownOpen(false); }}
                               >
                                 {editState.subject_id === s.id ? <Check className="h-4 w-4 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-4 shrink-0" />}
-                                {s.name}
-                                <span className="ml-auto text-[10px] text-[var(--color-text-hint)]">{s.code}</span>
+                                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title={s.name}>{s.name}</span>
+                                <span className="ml-auto shrink-0 text-[10px] text-[var(--color-text-hint)]">{s.code}</span>
                               </button>
                             ))}
                           </div>,
