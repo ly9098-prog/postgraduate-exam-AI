@@ -1038,19 +1038,42 @@ def _batch_task_key(batch_id: str) -> str:
 
 
 async def list_subject_options(db: AsyncSession) -> list[dict]:
-    """返回活跃科目列表 [{id, code, name, path, level}]，供下拉框使用。"""
+    """返回活跃科目列表 [{id, code, name, path, level, parent_id, has_children, is_leaf}]，供下拉框使用。"""
     from app.models.admin import Subject
     result = await db.execute(
-        select(Subject.id, Subject.code, Subject.name, Subject.path, Subject.level)
+        select(Subject.id, Subject.code, Subject.name, Subject.path, Subject.level, Subject.parent_id)
         .where(Subject.is_active.is_(True))
         .order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
     )
     rows = result.all()
     if rows:
-        return [
-            {"id": row.id, "code": row.code, "name": row.name, "path": row.path, "level": row.level}
-            for row in rows
-        ]
+        # 计算 parent_ids 集合（基于 parent_id 字段）
+        parent_ids = {row.parent_id for row in rows if row.parent_id is not None}
+
+        def _has_children_by_path(current_id: int) -> bool:
+            current = str(current_id)
+            for row in rows:
+                if not row.path:
+                    continue
+                parts = [p for p in str(row.path).split("/") if p]
+                if current in parts[:-1]:
+                    return True
+            return False
+
+        result_list = []
+        for row in rows:
+            has_children = row.id in parent_ids or _has_children_by_path(row.id)
+            result_list.append({
+                "id": row.id,
+                "code": row.code,
+                "name": row.name,
+                "path": row.path,
+                "level": row.level,
+                "parent_id": row.parent_id,
+                "has_children": has_children,
+                "is_leaf": not has_children,
+            })
+        return result_list
 
     # Fallback: extract distinct subject_ids from existing import data
     from app.models.question_import import QuestionImport
