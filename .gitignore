@@ -25,8 +25,16 @@ backend/*.sqlite
 backend/*.sqlite3
 backend/*.db.backup-*
 
+# Production backup dumps
+backups/*
+!backups/.gitkeep
+*.dump
+*.backup
+*.sql.gz
+
 # Generated runtime data
-logs/
+logs/*
+!logs/.gitkeep
 logs.txt
 logs_*.txt
 *.log
