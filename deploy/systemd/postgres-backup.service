@@ -1,0 +1,28 @@
+[Unit]
+Description=Postgraduate PostgreSQL Database Backup
+Documentation=https://github.com/ly9098-prog/postgraduate-ai
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/2240ai-v2
+EnvironmentFile=/opt/2240ai-v2/.env
+ExecStart=/opt/2240ai-v2/.venv/bin/python scripts/postgres_backup.py
+
+User=deploy
+Group=deploy
+
+# 安全加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/backups/postgraduate /opt/2240ai-v2/logs /opt/2240ai-v2/backups
+
+# 失败后不自动重启（由 systemd timer 控制下次触发）
+Restart=no
+
+# 标准日志也写入 systemd journal
+StandardOutput=journal+console
+StandardError=journal+console

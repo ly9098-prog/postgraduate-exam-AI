@@ -1,0 +1,18 @@
+[Unit]
+Description=Run PostgreSQL database backup daily at 03:00
+Documentation=https://github.com/ly9098-prog/postgraduate-ai
+
+[Timer]
+# 每天凌晨 3:00 执行备份
+OnCalendar=*-*-* 03:00:00
+
+# 服务器关机错过任务后，开机时补跑
+Persistent=true
+
+# 如果任务执行超时（超过 1 小时未完成），下次准时再跑
+AccuracySec=1min
+
+Unit=postgres-backup.service
+
+[Install]
+WantedBy=timers.target
