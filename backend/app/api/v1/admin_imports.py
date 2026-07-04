@@ -57,7 +57,8 @@ from app.schemas.admin_imports import (
 from app.schemas.import_review import PipelineStatusResponse, PipelineUploadResponse
 from app.schemas.question_publish import PublishResponse
 from app.features.import_mode import ImportMode
-from app.api.v1.imports import get_import_pipeline_status, start_import_pipeline_from_upload
+from app.services.import_pipeline_service import get_pipeline_status as svc_get_pipeline_status
+from app.services.import_pipeline_service import start_import_pipeline as svc_start_import_pipeline
 from app.features.pipeline_orchestrator import (
     _get_stage_checkpoint,
     _set_pipeline_store,
@@ -89,18 +90,23 @@ async def upload_import_file(
     page_end: int | None = None,
     current_admin=Depends(require_permissions("import:write")),
 ):
-    return await start_import_pipeline_from_upload(
-        file=file,
-        background_tasks=background_tasks,
-        subject=subject,
-        subject_id=subject_id,
-        import_mode=import_mode,
-        enable_ai_repair=enable_ai_repair,
-        confidence_threshold=confidence_threshold,
-        page_start=page_start,
-        page_end=page_end,
-        created_by=f"admin:{current_admin.id}",
-    )
+    content = await file.read()
+    try:
+        return await svc_start_import_pipeline(
+            file_content=content,
+            filename=file.filename or "",
+            content_type=file.content_type,
+            subject=subject,
+            subject_id=subject_id,
+            import_mode=import_mode.value if isinstance(import_mode, ImportMode) else import_mode,
+            enable_ai_repair=enable_ai_repair,
+            confidence_threshold=confidence_threshold,
+            page_start=page_start,
+            page_end=page_end,
+            created_by=f"admin:{current_admin.id}",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/pipelines/{pipeline_id}", response_model=PipelineStatusResponse)
@@ -109,7 +115,10 @@ async def get_admin_pipeline_status(
     _=Depends(require_permissions("import:read")),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_import_pipeline_status(pipeline_id, db)
+    try:
+        return await svc_get_pipeline_status(pipeline_id, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 _RESUMABLE_STATUSES = {"failed", "paused", "interrupted"}
@@ -143,7 +152,7 @@ async def admin_resume_pipeline(
     status_data = await _get_ps(pipeline_id)
     if status_data is None:
         # check image pipeline store
-        from app.api.v1.imports import _get_image_pipeline_status
+        from app.services.import_pipeline_service import _get_image_pipeline_status
         status_data = await _get_image_pipeline_status(pipeline_id)
 
     if status_data is None:
