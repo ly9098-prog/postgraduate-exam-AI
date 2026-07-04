@@ -849,7 +849,7 @@ export default function ImportReviewPage() {
         </div>
       ) : null}
       <Card className="!border-[var(--color-border)]/80 !shadow-[0_24px_60px_rgba(45,62,80,0.06)]">
-        <CardHeader className="space-y-2">
+        <CardHeader className="space-y-2 pb-3">
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h3 className="font-display text-lg font-bold text-[var(--ink)]">待审核题目</h3>
@@ -1006,7 +1006,7 @@ export default function ImportReviewPage() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-1.5">
+        <CardContent className="space-y-1.5 pt-0">
           <section className="space-y-1">
               {selectedIds.size > 0 ? (
                 <div className="flex items-center gap-2 rounded-lg border border-[var(--color-border)]/40 bg-[var(--color-primary-light)]/10 px-3 py-1.5">
@@ -1026,11 +1026,11 @@ export default function ImportReviewPage() {
                             </span>
                           </label>
                         </th>
-                        <th className="w-[68px] px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">题号</th>
-                        <th className="w-[110px] px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">来源</th>
+                        <th className="w-[56px] px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">题号</th>
+                        <th className="w-[100px] px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">来源</th>
                         <th className="px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">题干</th>
                         <th className="w-[60px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">题型</th>
-                        <th className="w-[120px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">答案</th>
+                        <th className="w-[132px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">答案</th>
                         <th className="w-[72px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">状态</th>
                         <th className="w-[52px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">风险</th>
                         <th className="w-[136px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">操作</th>
@@ -1078,10 +1078,10 @@ export default function ImportReviewPage() {
                                 </span>
                               </label>
                             </td>
-                            <td className="w-[68px] px-2 py-2">
+                            <td className="w-[56px] px-2 py-2">
                               <span className="block min-w-0 truncate font-mono text-[11px] font-medium text-[var(--color-text-secondary)]" title={srcNo || ""}>{srcNo || "—"}</span>
                             </td>
-                            <td className="w-[110px] px-2 py-2">
+                            <td className="w-[100px] px-2 py-2">
                               <span className="block min-w-0 truncate text-[10px] text-[var(--color-text-hint)]" title={sourceLocator}>{sourceLocator || "—"}</span>
                             </td>
                             <td className="px-2 py-2">
@@ -1090,14 +1090,14 @@ export default function ImportReviewPage() {
                             <td className="w-[60px] px-2 py-2 text-center">
                               <span className="block min-w-0 truncate text-[10px] text-[var(--color-text-hint)]" title={typeLabel}>{typeLabel}</span>
                             </td>
-                            <td className="w-[120px] px-2 py-2 text-center">
+                            <td className="w-[132px] px-2 py-2 text-center">
                               {isSingleChoice ? (
-                                <div className="flex items-center justify-center gap-0.5 overflow-hidden">
+                                <div className="grid w-full grid-cols-4 gap-1">
                                   {["A","B","C","D"].map((opt) => (
                                     <button
                                       key={opt}
                                       onClick={() => setQuickAnswerDrafts((prev) => ({ ...prev, [item.id]: draftAnswer === opt ? "" : opt }))}
-                                      className={`h-6 w-7 shrink-0 rounded text-[10px] font-bold transition border ${
+                                      className={`h-6 min-w-0 rounded text-[10px] font-bold transition border ${
                                         draftAnswer === opt
                                           ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]"
                                           : "bg-white text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-primary)]"
@@ -1108,7 +1108,7 @@ export default function ImportReviewPage() {
                                   ))}
                                 </div>
                               ) : isTrueFalse ? (
-                                <div className="flex items-center justify-center gap-0.5 overflow-hidden">
+                                <div className="flex items-center justify-center gap-1">
                                   {["T","F"].map((opt) => (
                                     <button
                                       key={opt}
