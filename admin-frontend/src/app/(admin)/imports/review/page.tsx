@@ -115,6 +115,48 @@ function renderJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
+/** 从导入题目中提取原题号（多级兜底） */
+function getSourceQuestionNo(item: ImportQuestionItem): string {
+  if (item.source_question_no) return String(item.source_question_no);
+  if (item.source_question_label) {
+    const m = String(item.source_question_label).match(/\d+/);
+    if (m) return m[0];
+  }
+  const rawText =
+    item.raw_text_preview ||
+    (item.raw_data?.raw_text as string | undefined) ||
+    (item.raw_data?.raw_question_text as string | undefined) ||
+    (item.raw_data?.text as string | undefined) ||
+    "";
+  const m =
+    rawText.match(/^\s*(\d+)\s*[.．、)）]/) ||
+    rawText.match(/^\s*第\s*(\d+)\s*题/) ||
+    rawText.match(/^\s*[（(]\s*(\d+)\s*[）)]/);
+  return m ? m[1] : "";
+}
+
+/** 从导入题目中生成来源定位字符串（多级兜底） */
+function getSourceLocator(item: ImportQuestionItem): string {
+  if (item.source_locator) return String(item.source_locator);
+  const raw = item.raw_data || {};
+  const imageSeq = item.source_image_seq ?? (raw.source_image_seq as number | undefined);
+  const imageName = item.source_image_name || item.source_file || (raw.source_image_name as string | undefined) || (raw.source_file as string | undefined) || (raw.file_name as string | undefined);
+  const pageStart = item.source_page_start ?? (raw.page_start as number | undefined) ?? (raw.source_page as number | undefined) ?? (raw.page as number | undefined);
+  const pageEnd = item.source_page_end ?? (raw.page_end as number | undefined);
+  const parts: string[] = [];
+  if (imageSeq != null) parts.push(`图${imageSeq}`);
+  if (imageName) parts.push(String(imageName));
+  if (pageStart != null && pageEnd != null && pageEnd !== pageStart) {
+    parts.push(`第${pageStart}-${pageEnd}页`);
+  } else if (pageStart != null) {
+    parts.push(`第${pageStart}页`);
+  }
+  if (parts.length > 0) return parts.join(" · ");
+  if (item.source_type) return String(item.source_type);
+  if (item.batch_id) return `批次${item.batch_id}`;
+  return `#${item.id}`;
+}
+
 function completeSuggestionFromItem(item: ImportQuestionItem | null | undefined) {
   const suggestion = item?.ai_metadata?.complete_suggestion;
   if (suggestion && typeof suggestion === "object" && !Array.isArray(suggestion)) return suggestion as Record<string, unknown>;
@@ -204,6 +246,7 @@ export default function ImportReviewPage() {
   const [executing, setExecuting] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
   const [autoSaveHint, setAutoSaveHint] = useState<string | null>(null);
+  const [quickAnswerDrafts, setQuickAnswerDrafts] = useState<Record<number, string>>({});
 
   const syncedDetailRef = useRef<Set<number>>(new Set());
 
@@ -472,6 +515,47 @@ export default function ImportReviewPage() {
     },
     onError: (error) => {
       setMessage(error instanceof Error ? error.message : "AI 补全失败，请稍后重试。");
+    },
+  });
+
+  const quickAnswerMutation = useMutation({
+    mutationFn: async ({ id, answer }: { id: number; answer: string }) => {
+      return apiRequest<ImportQuestionItem>(`/imports/questions/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ answer }),
+      });
+    },
+    onSuccess: (result) => {
+      const srcNo = getSourceQuestionNo(result);
+      setMessage(srcNo ? `原题${srcNo} 答案已保存` : `导入题目 #${result.id} 答案已保存`);
+      setQuickAnswerDrafts((prev) => {
+        const next = { ...prev };
+        delete next[result.id];
+        return next;
+      });
+      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["import-question-detail", result.id] });
+    },
+    onError: (error) => {
+      setMessage(error instanceof Error ? error.message : "保存失败，请稍后重试。");
+    },
+  });
+
+  const verifyAnswerMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest<ImportQuestionItem>(`/imports/questions/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ answer_status: "manual_verified" }),
+      });
+    },
+    onSuccess: (result) => {
+      const srcNo = getSourceQuestionNo(result);
+      setMessage(srcNo ? `原题${srcNo} 答案已确认为正确` : `导入题目 #${result.id} 答案已确认为正确`);
+      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["import-question-detail", result.id] });
+    },
+    onError: (error) => {
+      setMessage(error instanceof Error ? error.message : "确认失败，请稍后重试。");
     },
   });
 
@@ -869,9 +953,6 @@ export default function ImportReviewPage() {
                     </thead>
                     <tbody>
                       {items.map((item, index) => {
-                        const sourceLabel = item.source_image_seq != null
-                          ? `图${item.source_image_seq}`
-                          : (item.source_question_no ? "原文" : "—");
                         const answerStatusLabel =
                           item.answer_status === "missing" ? "答案缺失" :
                           item.answer_status === "ai_filled" ? "AI补全" :
@@ -889,6 +970,11 @@ export default function ImportReviewPage() {
                           item.risk_level === "high" ? { color: "#b03a3a", fontWeight: 700 } :
                           item.risk_level === "medium" ? { color: "#b87a30", fontWeight: 600 } :
                           { color: "#3a7a5a" };
+                        const srcNo = getSourceQuestionNo(item);
+                        const isSingleChoice = item.question_type === "single_choice";
+                        const isMultiChoice = item.question_type === "multi_choice" || item.question_type === "multiple_choice";
+                        const isTrueFalse = item.question_type === "true_false" || item.question_type === "judge";
+                        const draftAnswer = quickAnswerDrafts[item.id] ?? item.parsed_answer ?? "";
                         return (
                           <tr key={item.id} className={`border-b border-[var(--color-border)]/40 transition-colors hover:bg-[var(--color-bg-input)]/30 ${index % 2 === 0 ? "bg-white" : "bg-[var(--color-bg-input)]/20"}`}>
                             <td className="px-2.5 py-2">
@@ -899,22 +985,75 @@ export default function ImportReviewPage() {
                                 </span>
                               </label>
                             </td>
-                            <td className="whitespace-nowrap px-2 py-2 font-mono text-[11px] font-medium text-[var(--color-text-secondary)]">{item.source_question_no || "—"}</td>
-                            <td className="whitespace-nowrap px-2 py-2 text-[10px] text-[var(--color-text-hint)]">{sourceLabel}</td>
-                            <td className="max-w-[200px] truncate px-2 py-2 text-[11px] text-[var(--ink)]" title={item.content_preview || textFromImport(item)}>{item.content_preview || textFromImport(item) || "—"}</td>
+                            <td className="whitespace-nowrap px-2 py-2 font-mono text-[11px] font-medium text-[var(--color-text-secondary)]">{srcNo ? `原题${srcNo}` : "—"}</td>
+                            <td className="whitespace-nowrap max-w-[120px] truncate px-2 py-2 text-[10px] text-[var(--color-text-hint)]" title={getSourceLocator(item)}>{getSourceLocator(item)}</td>
+                            <td className="max-w-[180px] truncate px-2 py-2 text-[11px] text-[var(--ink)]" title={item.content_preview || textFromImport(item)}>{item.content_preview || textFromImport(item) || "—"}</td>
                             <td className="whitespace-nowrap px-2 py-2 text-center text-[10px] text-[var(--color-text-hint)]">
-                              {item.question_type === "single_choice" ? "单选" : item.question_type === "multi_choice" ? "多选" : item.question_type === "fill_blank" || item.question_type === "multi_blank_choice" ? "填空" : item.question_type === "judge" ? "判断" : "—"}
+                              {item.question_type === "single_choice" ? "单选" : item.question_type === "multi_choice" || item.question_type === "multiple_choice" ? "多选" : item.question_type === "fill_blank" || item.question_type === "multi_blank_choice" ? "填空" : item.question_type === "judge" || item.question_type === "true_false" ? "判断" : "—"}
                             </td>
-                            <td className="whitespace-nowrap px-2 py-2 text-center font-mono text-[11px] font-bold" style={{ color: item.parsed_answer ? "#3a7a5a" : "#b03a3a" }}>
-                              {item.parsed_answer || "空"}
+                            <td className="whitespace-nowrap px-2 py-2 text-center">
+                              {isSingleChoice ? (
+                                <div className="flex items-center justify-center gap-0.5">
+                                  {["A","B","C","D"].map((opt) => (
+                                    <button
+                                      key={opt}
+                                      onClick={() => setQuickAnswerDrafts((prev) => ({ ...prev, [item.id]: draftAnswer === opt ? "" : opt }))}
+                                      className={`h-6 w-6 rounded text-[10px] font-bold transition border ${
+                                        draftAnswer === opt
+                                          ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]"
+                                          : "bg-white text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-primary)]"
+                                      }`}
+                                    >
+                                      {opt}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : isTrueFalse ? (
+                                <div className="flex items-center justify-center gap-0.5">
+                                  {["T","F"].map((opt) => (
+                                    <button
+                                      key={opt}
+                                      onClick={() => setQuickAnswerDrafts((prev) => ({ ...prev, [item.id]: draftAnswer === opt ? "" : opt }))}
+                                      className={`h-6 rounded px-2 text-[10px] font-bold transition border ${
+                                        draftAnswer === opt
+                                          ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]"
+                                          : "bg-white text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-primary)]"
+                                      }`}
+                                    >
+                                      {opt === "T" ? "正确" : "错误"}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <input
+                                  className="h-6 w-16 rounded border border-[var(--color-border)] bg-white px-1.5 text-center text-[10px] font-mono font-bold outline-none transition focus:border-[var(--color-primary)]"
+                                  value={draftAnswer}
+                                  onChange={(e) => setQuickAnswerDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                                  placeholder={isMultiChoice ? "如 AC" : "答案"}
+                                />
+                              )}
                             </td>
                             <td className="whitespace-nowrap px-2 py-2 text-center text-[10px]" style={answerStatusStyle}>{answerStatusLabel}</td>
                             <td className="whitespace-nowrap px-2 py-2 text-center text-[10px]" style={riskStyle}>{riskLabel}</td>
                             <td className="whitespace-nowrap px-2 py-2 text-center">
                               <div className="flex items-center justify-center gap-1">
                                 <button className="rounded border border-[var(--color-border)] bg-white px-2 py-1 text-[9px] font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]" onClick={() => openPreview(item)}>查看</button>
-                                {item.answer_status === "missing" || item.answer_status === "ai_filled" ? (
-                                  <button className="rounded border border-[var(--color-primary)]/30 bg-[var(--color-primary-light)] px-2 py-1 text-[9px] font-semibold text-[var(--color-primary-dark)] transition hover:bg-[var(--color-primary)] hover:text-white" onClick={() => openPreview(item)}>修改</button>
+                                {draftAnswer !== (item.parsed_answer ?? "") ? (
+                                  <button
+                                    onClick={() => quickAnswerMutation.mutate({ id: item.id, answer: draftAnswer })}
+                                    disabled={quickAnswerMutation.isPending}
+                                    className="rounded border border-[var(--color-primary)] bg-[var(--color-primary)] px-2 py-1 text-[9px] font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+                                  >
+                                    {quickAnswerMutation.isPending ? "..." : "保存"}
+                                  </button>
+                                ) : item.parsed_answer ? (
+                                  <button
+                                    onClick={() => verifyAnswerMutation.mutate(item.id)}
+                                    disabled={verifyAnswerMutation.isPending}
+                                    className="rounded border border-[var(--color-success)] bg-[var(--color-success-light)] px-2 py-1 text-[9px] font-semibold text-[var(--color-success)] transition hover:bg-[var(--color-success)] hover:text-white disabled:opacity-40"
+                                  >
+                                    确认
+                                  </button>
                                 ) : null}
                               </div>
                             </td>
@@ -1245,55 +1384,6 @@ export default function ImportReviewPage() {
                       </section>
                     );
                   })()}
-
-                  {/* ── 原文对照 ── */}
-                  {previewItem.raw_text_preview || previewItem.source_question_no || previewItem.raw_data?.raw_text || previewItem.raw_data?.raw_question_text ? (
-                    <section className="animate-fade-up drawer-section-delay-1 section-scroll section-scroll-warm rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
-                      <details
-                        className="group"
-                        open={
-                          previewItem.answer_status === "missing" ||
-                          previewItem.answer_status === "ai_filled" ||
-                          previewItem.risk_level === "high" ||
-                          previewItem.answer_confidence != null && previewItem.answer_confidence < 0.8
-                        }
-                      >
-                        <summary className="flex cursor-pointer items-center gap-2.5 mb-3 text-sm font-semibold text-[var(--color-text-secondary)] transition hover:text-[var(--ink)] [&::-webkit-details-marker]:hidden">
-                          <span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ backgroundColor: "rgba(196,154,107,0.12)" }}>
-                            <span className="text-xs font-bold" style={{ color: "#c49a6b", fontFamily: "'Georgia', serif" }}>原</span>
-                          </span>
-                          <span>原文对照</span>
-                          {previewItem.answer_status === "missing" ? (
-                            <span className="ml-auto rounded bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">默认展开</span>
-                          ) : previewItem.answer_status === "ai_filled" ? (
-                            <span className="ml-auto rounded bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700">默认展开</span>
-                          ) : null}
-                          <span className="ml-auto inline-block text-[10px] transition-transform group-open:rotate-90 opacity-50">▶</span>
-                        </summary>
-                        <div className="ml-9 space-y-3">
-                          {/* 左侧：清洗后题干 */}
-                          <div className="rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/70 p-3">
-                            <p className="mb-1.5 text-[10px] font-semibold text-[var(--color-text-hint)]">清洗后题干</p>
-                            <p className="text-sm leading-relaxed text-[var(--ink)]">
-                              <MathFormula text={editState.stem || "（空）"} />
-                            </p>
-                          </div>
-                          {/* 右侧：原始文本 */}
-                          <div className="rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/70 p-3">
-                            <p className="mb-1.5 text-[10px] font-semibold text-[var(--color-text-hint)]">
-                              原始文本{previewItem.source_question_label ? `（${previewItem.source_question_label}开头）` : null}
-                            </p>
-                            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)]">
-                              {previewItem.raw_text_preview
-                                || (previewItem.raw_data?.raw_text as string)
-                                || (previewItem.raw_data?.raw_question_text as string)
-                                || "（无原始文本）"}
-                            </pre>
-                          </div>
-                        </div>
-                      </details>
-                    </section>
-                  ) : null}
 
                   {/* ── Options Card ── */}
                   {editState.question_type === "multi_blank_choice" ? (
