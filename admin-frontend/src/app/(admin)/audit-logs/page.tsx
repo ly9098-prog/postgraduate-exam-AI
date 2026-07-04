@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { apiRequest, toQuery } from "@/lib/api/client";
-import type { AuditLogDetail, AuditLogListItem, PaginatedResponse } from "@/lib/api/types";
+import type { AuditLogDetail, AuditLogListItem, PaginatedResponse, QuestionAuditDetail } from "@/lib/api/types";
 
 // ── Constants ──
 
@@ -98,22 +98,6 @@ function formatLocalDateTime(isoString: string | null | undefined): string {
   }
 }
 
-function formatLocalShort(isoString: string | null | undefined): string {
-  if (!isoString) return "";
-  try {
-    const d = new Date(isoString);
-    if (isNaN(d.getTime())) return "";
-    const fmt = new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    return fmt.format(d);
-  } catch {
-    return "";
-  }
-}
-
 /** Convert a local date string (YYYY-MM-DD) to a UTC ISO string at local midnight. */
 function localDateToUtcIso(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -147,6 +131,77 @@ function renderValue(value: unknown, indent = 0): string {
   } catch {
     return "[序列化异常]";
   }
+}
+
+// ── Options renderer ──
+
+function renderOptions(options: unknown): string {
+  if (!options) return "—";
+  if (typeof options === "string") return options;
+  if (Array.isArray(options)) {
+    return options.map((opt, i) => {
+      if (typeof opt === "string") return `${String.fromCharCode(65 + i)}. ${opt}`;
+      if (typeof opt === "object" && opt !== null) {
+        const key = opt.key || String.fromCharCode(65 + i);
+        const text = opt.text || opt.value || opt.label || JSON.stringify(opt);
+        return `${key}. ${text}`;
+      }
+      return `${String.fromCharCode(65 + i)}. ${String(opt)}`;
+    }).join("\n");
+  }
+  if (typeof options === "object" && options !== null) {
+    const obj = options as Record<string, unknown>;
+    return Object.entries(obj)
+      .map(([key, val]) => `${key}. ${typeof val === "string" ? val : JSON.stringify(val)}`)
+      .join("\n");
+  }
+  return JSON.stringify(options);
+}
+
+// ── Question detail resolver ──
+
+const DATA_SOURCE_LABELS: Record<string, string> = {
+  audit_snapshot: "操作时快照",
+  audit_before: "操作前快照",
+  audit_after: "操作后快照",
+  audit_summary: "日志摘要",
+  current_database: "当前数据库内容，仅用于兼容历史日志",
+};
+
+function renderQuestionDetail(qd: QuestionAuditDetail) {
+  const isCurrentDb = qd.data_source === "current_database";
+  const fields: Array<{ label: string; value: unknown }> = [
+    { label: "题目 ID", value: qd.id },
+    { label: "数据来源", value: DATA_SOURCE_LABELS[qd.data_source ?? ""] ?? qd.data_source },
+    { label: "科目", value: qd.subject_name ?? qd.subject_code },
+    { label: "题型", value: qd.question_type },
+    { label: "题干", value: qd.content_text ?? qd.content_preview ?? renderValue(qd.content) },
+    { label: "选项", value: renderOptions(qd.options) },
+    { label: "答案", value: qd.answer },
+    { label: "解析", value: qd.analysis },
+    { label: "知识点", value: qd.knowledge_points },
+    { label: "难度", value: qd.difficulty },
+    { label: "年份", value: qd.year },
+    { label: "审核状态", value: qd.review_status },
+    { label: "启用状态", value: qd.is_active === null ? "—" : qd.is_active ? "启用" : "停用" },
+  ];
+
+  return (
+    <div className="space-y-2">
+      <h4 className="font-semibold text-[var(--ink)]">题目详情</h4>
+      {isCurrentDb && (
+        <p className="rounded-2xl bg-[var(--color-warning-light)] px-3 py-2 text-xs text-[var(--color-warning)]">
+          该内容是当前题目数据，可能与日志发生时的内容不同。
+        </p>
+      )}
+      {fields.map(({ label, value }) => (
+        <section key={label} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3">
+          <p className="text-xs font-medium text-[var(--color-text-hint)]">{label}</p>
+          <pre className="mt-1 whitespace-pre-wrap font-sans text-sm text-[var(--color-text-secondary)]">{renderValue(value)}</pre>
+        </section>
+      ))}
+    </div>
+  );
 }
 
 // ============================================================================
@@ -312,8 +367,26 @@ export default function AuditLogsPage() {
           </section>
         ))}
 
-        {/* Structured detail fields */}
+        {/* Question detail section (from enriched API data) */}
+        {data.question_detail && renderQuestionDetail(data.question_detail)}
+        {/* Fallback when no question data and this is a question log */}
+        {!data.question_detail && (data.resource_type === "question" || data.action.startsWith("question.")) && (
+          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
+            <p className="font-semibold text-[var(--ink)]">题目详情</p>
+            <p className="mt-2 text-sm text-[var(--color-text-hint)]">
+              该历史日志未保存题目快照，当前数据库中也未找到对应题目。
+            </p>
+          </section>
+        )}
+
+        {/* Structured detail fields (before/after/changed_fields etc.) */}
         {data.detail && renderStructuredDetail(data)}
+
+        {/* Raw JSON detail (collapsible, for debugging) */}
+        <details className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3">
+          <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-hint)]">原始 JSON</summary>
+          <pre className="mt-2 whitespace-pre-wrap font-sans text-xs text-[var(--color-text-secondary)]">{renderValue(data.detail)}</pre>
+        </details>
       </>
     );
   }, []);
@@ -343,17 +416,8 @@ export default function AuditLogsPage() {
       const fails = detail.failed_items as Array<{ id: number; error: string }>;
       items.push({ label: "失败项", value: fails.length ? fails.map((f) => `#${f.id}: ${f.error}`).join("\n") : "无" });
     }
-    if ("question" in detail && typeof detail.question === "object") {
-      const q = detail.question as Record<string, unknown>;
-      items.push({ label: "题目 ID", value: q.id });
-      if (q.subject_name) items.push({ label: "科目", value: q.subject_name });
-      if (q.question_type) items.push({ label: "题型", value: q.question_type });
-      if (q.content_preview) items.push({ label: "题干摘要", value: q.content_preview as string });
-      if (q.answer) items.push({ label: "答案", value: q.answer });
-      if (q.analysis) items.push({ label: "解析", value: q.analysis as string });
-      if (q.difficulty !== undefined) items.push({ label: "难度", value: q.difficulty });
-      if (q.review_status) items.push({ label: "审核状态", value: q.review_status });
-    }
+
+    if (items.length === 0) return null;
 
     return (
       <div className="space-y-2">
@@ -364,12 +428,6 @@ export default function AuditLogsPage() {
             <pre className="mt-1 whitespace-pre-wrap font-sans text-sm text-[var(--color-text-secondary)]">{renderValue(value)}</pre>
           </section>
         ))}
-
-        {/* Raw JSON (collapsible) */}
-        <details className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3">
-          <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-hint)]">原始 JSON</summary>
-          <pre className="mt-2 whitespace-pre-wrap font-sans text-xs text-[var(--color-text-secondary)]">{renderValue(detail)}</pre>
-        </details>
       </div>
     );
   }, []);
