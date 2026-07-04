@@ -80,7 +80,6 @@ def _raise_import_error(exc: ValueError) -> None:
 @router.post("/upload", response_model=PipelineUploadResponse)
 async def upload_import_file(
     file: UploadFile,
-    background_tasks: BackgroundTasks,
     subject: str | None = None,
     subject_id: int | None = None,
     import_mode: ImportMode = ImportMode.AUTO,
