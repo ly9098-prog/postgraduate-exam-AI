@@ -8,7 +8,7 @@ from app.core.database import get_db
 from app.core.admin_security import require_permissions
 from app.services import watermark_service
 
-router = APIRouter(prefix="/api/v1/admin/watermark-rules")
+router = APIRouter(prefix="/api/admin/v1/watermark-rules")
 
 
 class WatermarkRuleCreate(BaseModel):
@@ -84,3 +84,5 @@ async def delete_rule(
     if not deleted:
         raise HTTPException(status_code=404, detail="规则不存在")
     return {"ok": True}
+
+

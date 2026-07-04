@@ -9,43 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.v1.auth import router as auth_router
-from app.api.v1.questions import router as questions_router
-from app.api.v1.practice import router as practice_router
-from app.api.v1.wrong_questions import router as wrong_questions_router
-from app.api.v1.ai import router as ai_router
-from app.api.v1.rag import router as rag_router
-from app.api.v1.imports import router as imports_router
-from app.api.v1.behavior import router as behavior_router
-from app.api.v1.review import router as review_router
-from app.api.v1.stats import router as stats_router
-from app.api.v1.knowledge_points import router as knowledge_points_router
-from app.api.v1.ai_import import router as ai_import_router
-from app.api.v1.cache import router as cache_router
-from app.api.v1.health import router as health_router
-from app.api.v1.pomodoro import router as pomodoro_router
-from app.api.v1.admin_ai_settings import router as admin_ai_settings_router
-from app.api.v1.admin_audit_logs import router as admin_audit_logs_router
-from app.api.v1.admin_auth import router as admin_auth_router
-from app.api.v1.admin_app_users import router as admin_app_users_router
-from app.api.v1.admin_dashboard import router as admin_dashboard_router
-from app.api.v1.admin_health import router as admin_health_router
-from app.api.v1.admin_imports import router as admin_imports_router
-from app.api.v1.admin_questions import router as admin_questions_router
-from app.api.v1.admin_rbac import router as admin_rbac_router
-from app.api.v1.admin_subjects import router as admin_subjects_router
-from app.api.v1.admin_users import router as admin_users_router
-from app.api.v1.admin_watermark_rules import router as admin_watermark_rules_router
-from app.api.v1.admin_ai_config import router as admin_ai_config_router
-from app.api.v1.admin_vector_config import router as admin_vector_config_router
-from app.api.v1.admin_system_health import router as admin_system_health_router
-from app.api.v1.sync import router as sync_router
-from app.api.v1.knowledge_mastery import router as knowledge_mastery_router
-from app.api.v1.admin_knowledge import router as admin_knowledge_router
-from app.api.v1.admin_recommendation import router as admin_recommendation_router
-from app.api.v1.knowledge_path import router as knowledge_path_router
-from app.api.v1.study_report import router as study_report_router
-from app.api.v1.adaptive_learning import router as adaptive_learning_router
+from app.api.router import api_router
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.logging_config import setup_logging
@@ -292,45 +256,9 @@ async def health():
     return {"status": "ok", "env": settings.APP_ENV}
 
 
-# --- 路由 ---
+# --- 路由（聚合 Router） ---
 
-app.include_router(auth_router)
-app.include_router(questions_router)
-app.include_router(practice_router)
-app.include_router(wrong_questions_router)
-app.include_router(ai_router)
-app.include_router(rag_router)
-app.include_router(imports_router)
-app.include_router(behavior_router)
-app.include_router(review_router)
-app.include_router(stats_router)
-app.include_router(knowledge_points_router)
-app.include_router(ai_import_router)
-app.include_router(cache_router)
-app.include_router(health_router)
-app.include_router(admin_auth_router)
-app.include_router(admin_ai_settings_router)
-app.include_router(admin_app_users_router)
-app.include_router(admin_audit_logs_router)
-app.include_router(admin_dashboard_router)
-app.include_router(admin_health_router)
-app.include_router(admin_imports_router)
-app.include_router(admin_questions_router)
-app.include_router(admin_rbac_router)
-app.include_router(admin_subjects_router)
-app.include_router(admin_users_router)
-app.include_router(admin_watermark_rules_router)
-app.include_router(admin_ai_config_router)
-app.include_router(admin_vector_config_router)
-app.include_router(admin_system_health_router)
-app.include_router(sync_router)
-app.include_router(pomodoro_router)
-app.include_router(knowledge_mastery_router)
-app.include_router(admin_knowledge_router)
-app.include_router(admin_recommendation_router)
-app.include_router(knowledge_path_router)
-app.include_router(study_report_router)
-app.include_router(adaptive_learning_router)
+app.include_router(api_router)
 
 # 静态文件服务（开发用公式图片）
 os.makedirs("static/formulas", exist_ok=True)
