@@ -75,6 +75,7 @@ class AdminImportQuestionItemBrief(BaseModel):
     source_page_end: int | None = None
     source_order_index: int | None = None
     raw_text_preview: str | None = None
+    source_locator: str | None = None
     answer_status: str | None = None
     answer_source: str | None = None
     answer_confidence: float | None = None
@@ -140,6 +141,7 @@ class AdminImportQuestionItem(BaseModel):
     source_page_end: int | None = None
     source_order_index: int | None = None
     raw_text_preview: str | None = None
+    source_locator: str | None = None
     answer_status: str | None = None
     answer_source: str | None = None
     answer_confidence: float | None = None
