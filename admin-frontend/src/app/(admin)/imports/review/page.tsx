@@ -135,7 +135,18 @@ function getSourceQuestionNo(item: ImportQuestionItem): string {
   return m ? m[1] : "";
 }
 
-/** 从导入题目中生成来源定位字符串（多级兜底） */
+/** 判断字符串是否为有意义的展示内容（不为空、unknown、null 等） */
+function isMeaningfulText(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  const text = String(value).trim();
+  if (!text) return false;
+  const invalidValues = new Set([
+    "unknown", "UNKNOWN", "Unknown", "未知", "-", "—", "null", "undefined",
+  ]);
+  return !invalidValues.has(text);
+}
+
+/** 从导入题目中生成来源定位字符串（多级兜底，无有效来源时返回空字符串） */
 function getSourceLocator(item: ImportQuestionItem): string {
   if (item.source_locator) return String(item.source_locator);
   const raw = item.raw_data || {};
@@ -152,9 +163,8 @@ function getSourceLocator(item: ImportQuestionItem): string {
     parts.push(`第${pageStart}页`);
   }
   if (parts.length > 0) return parts.join(" · ");
-  if (item.source_type) return String(item.source_type);
-  if (item.batch_id) return `批次${item.batch_id}`;
-  return `#${item.id}`;
+  if (item.source_type && isMeaningfulText(item.source_type)) return String(item.source_type);
+  return "";
 }
 
 function completeSuggestionFromItem(item: ImportQuestionItem | null | undefined) {
@@ -920,14 +930,11 @@ export default function ImportReviewPage() {
         </CardHeader>
         <CardContent className="space-y-1.5">
           <section className="space-y-1">
-              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--color-border)]/40 bg-white/40 px-3 py-1.5 text-xs text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)]/30 hover:bg-white/90 select-none group">
-                <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-[var(--color-border)] bg-white transition-all group-hover:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
-                  <input type="checkbox" checked={allChecked} onChange={toggleAll} className="peer absolute inset-0 cursor-pointer opacity-0" />
-                  <Check className="h-3.5 w-3.5 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
-                </span>
-                全选当前结果
-                {selectedIds.size > 0 ? <span className="ml-auto rounded-full bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary-dark)]">已选 {selectedIds.size} 题</span> : null}
-              </label>
+              {selectedIds.size > 0 ? (
+                <div className="flex items-center gap-2 rounded-lg border border-[var(--color-border)]/40 bg-[var(--color-primary-light)]/10 px-3 py-1.5">
+                  <span className="text-xs font-medium text-[var(--color-primary-dark)]">已选 {selectedIds.size} 题</span>
+                </div>
+              ) : null}
               {items.length > 0 && viewMode === "table" ? (
                 <div className="overflow-x-auto rounded-xl border border-[var(--color-border)] bg-white">
                   <table className="w-full text-[11px]">
@@ -1450,35 +1457,30 @@ export default function ImportReviewPage() {
                         <span className="text-xs font-bold text-[var(--color-success)]" style={{ fontFamily: "'Georgia', serif" }}>答</span>
                       </span>
                       <span className="text-sm font-semibold text-[var(--ink)]">答案</span>
-                      {previewItem.answer_status === "ai_filled" ? (
-                        <span className="rounded-md bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700 ml-auto">AI 补全</span>
-                      ) : previewItem.answer_status === "missing" ? (
-                        <span className="rounded-md bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 ml-auto">答案缺失</span>
+                      {/* 答案状态标签 — 紧凑展示 */}
+                      {(previewItem.answer_status === "missing" || (!editState.answer && previewItem.answer_status !== "imported")) ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700 ring-1 ring-red-200">需人工确认</span>
+                      ) : previewItem.answer_status === "ai_filled" ? (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700">
+                          AI 补全
+                          {previewItem.answer_confidence != null ? <span className="font-normal opacity-70">({(previewItem.answer_confidence * 100).toFixed(0)}%)</span> : null}
+                        </span>
                       ) : previewItem.answer_status === "manual_filled" ? (
-                        <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700 ml-auto">人工填写</span>
+                        <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">人工填写</span>
                       ) : previewItem.answer_status === "manual_verified" ? (
-                        <span className="rounded-md bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700 ml-auto">人工已核验</span>
+                        <span className="rounded-md bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">人工已核验</span>
                       ) : previewItem.answer_status === "abnormal" ? (
-                        <span className="rounded-md bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 ml-auto">答案异常</span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700 ring-1 ring-red-200">答案异常</span>
                       ) : previewItem.ai_answer_flag ? (
-                        <span className="rounded-md bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700 ml-auto">AI 补全</span>
+                        <span className="rounded-md bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-700">AI 补全</span>
                       ) : null}
                     </div>
                     <div className="ml-9">
-                      {(previewItem.answer_status === "abnormal") ? (
-                        <div className="mb-2 rounded-lg border border-red-200 bg-red-50/60 px-3 py-2 text-xs text-red-700">答案异常，需人工确认</div>
-                      ) : (previewItem.answer_status === "ai_filled" && (!editState.answer || editState.answer === "（空）")) ? (
-                        <div className="mb-2 rounded-lg border border-red-200 bg-red-50/60 px-3 py-2 text-xs text-red-700">AI 补全后答案仍为空，需人工确认</div>
-                      ) : previewItem.answer_status === "ai_filled" ? (
-                        <div className="mb-2 rounded-lg border border-orange-200 bg-orange-50/60 px-3 py-2 text-xs text-orange-700">答案由 AI 补全，请核对原题（置信度：{previewItem.answer_confidence != null ? (previewItem.answer_confidence * 100).toFixed(0) + "%" : "未提供"})</div>
-                      ) : (previewItem.answer_status === "missing" || !editState.answer || editState.answer === "（空）") ? (
-                        <div className="mb-2 rounded-lg border border-red-200 bg-red-50/60 px-3 py-2 text-xs text-red-700">答案缺失，需人工确认</div>
-                      ) : null}
-                      {previewItem.answer_source ? (
+                      {previewItem.answer_source && isMeaningfulText(previewItem.answer_source) && !["unknown"].includes(String(previewItem.answer_source).toLowerCase()) ? (
                         <p className="mb-2 text-[10px] text-[var(--color-text-hint)]">来源：{previewItem.answer_source === "ai" ? "AI 补全" : previewItem.answer_source === "ocr" ? "OCR 识别" : previewItem.answer_source === "parser" ? "解析器提取" : previewItem.answer_source === "manual" ? "人工填写" : previewItem.answer_source}</p>
                       ) : null}
                       <span className="answer-box">
-                        {editState.answer || "（空）"}
+                        {editState.answer || "—"}
                       </span>
                     </div>
                   </section>
