@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import os
@@ -19,11 +20,9 @@ from app.schemas.question_import import (
 from app.features import question_pipeline as svc
 from app.features.import_mode import ImportMode
 from app.services.upload_validator import get_upload_validator
-from app.features.pipeline_orchestrator import (
-    resume_pipeline_background,
-)
 from app.services.import_pipeline_service import (
     get_pipeline_status as svc_get_pipeline_status,
+    run_resume_background as svc_run_resume_background,
     start_import_pipeline as svc_start_import_pipeline,
 )
 from app.schemas.import_review import (
@@ -131,44 +130,6 @@ async def pipeline_status(
 _RESUMABLE_PIPELINE_STATUSES = {"paused", "failed"}
 
 
-async def _run_resume_with_db(
-    pipeline_id: str,
-    file_path: str,
-    subject: str | None,
-    subject_id: int | None,
-    options: dict,
-) -> None:
-    """Background wrapper：单独 DB 会话跑 resume，结束后无条件清理 tmp 文件。"""
-    from app.core.log_context import bind_log_context
-    from app.core.database import async_session
-
-    bind_log_context(
-        trace_id=options.get("_trace_id"),
-        request_id=options.get("_request_id"),
-        pipeline_id=pipeline_id,
-    )
-    try:
-        async with async_session() as db:
-            await resume_pipeline_background(
-                pipeline_id=pipeline_id,
-                file_path=file_path,
-                subject=subject,
-                subject_id=subject_id,
-                options=options,
-                db=db,
-            )
-    except Exception:
-        logger.exception("resume pipeline %s failed", pipeline_id)
-    finally:
-        if file_path and os.path.exists(file_path):
-            try:
-                os.unlink(file_path)
-            except OSError as e:
-                logger.warning(
-                    "Failed to delete resume tmp file %s: %s", file_path, e
-                )
-
-
 @router.post(
     "/pipelines/{pipeline_id}/resume",
     response_model=PipelineResumeResponse,
@@ -223,15 +184,18 @@ async def resume_pipeline(
         raise HTTPException(status_code=400, detail="文件内容为空")
 
     validator = get_upload_validator()
-    validator.validate_file(file.filename, len(content), file.content_type)
+    try:
+        validator.validate_file(file.filename, len(content), file.content_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     try:
         import fitz
         with fitz.open(stream=content, filetype="pdf") as doc:
             uploaded_pages = len(doc)
             validator.validate_pdf_pages(uploaded_pages)
-    except HTTPException:
-        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"PDF 解析失败：{exc}")
 
@@ -294,9 +258,8 @@ async def resume_pipeline(
 
     log_event(logger, "import.resume.accepted", pipeline_id=pipeline_id, resumed_chunks=resumed_chunks)
 
-    import asyncio
     asyncio.create_task(
-        _run_resume_with_db(
+        svc_run_resume_background(
             pipeline_id=pipeline_id,
             file_path=tmp_path,
             subject=subject,
