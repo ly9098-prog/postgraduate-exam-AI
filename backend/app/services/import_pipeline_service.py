@@ -23,7 +23,7 @@ from app.features import question_pipeline as pipeline_svc
 from app.features.import_mode import ImportMode
 from app.features.pipeline_orchestrator import (
     _set_pipeline_store,
-    get_pipeline_status,
+    get_pipeline_status as _orchestrator_get_pipeline_status,
     resume_pipeline_background,
     run_excel_pipeline_background,
     run_import_pipeline,
@@ -625,7 +625,7 @@ async def start_import_pipeline(
 
 async def get_pipeline_status(pipeline_id: str, db: AsyncSession) -> PipelineStatusResponse:
     """查询流水线执行状态。"""
-    status = await get_pipeline_status(pipeline_id, db=db)
+    status = await _orchestrator_get_pipeline_status(pipeline_id, db=db)
     if status is None:
         status = await _get_image_pipeline_status(pipeline_id)
     if status is None:
