@@ -1014,7 +1014,7 @@ export default function ImportReviewPage() {
                 </div>
               ) : null}
               {items.length > 0 && viewMode === "table" ? (
-                <div className="overflow-x-auto rounded-xl border border-[var(--color-border)] bg-white">
+                <div className="w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-white">
                   <table className="w-full table-fixed text-[11px]">
                     <thead>
                       <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-input)]/50">
@@ -1026,24 +1026,24 @@ export default function ImportReviewPage() {
                             </span>
                           </label>
                         </th>
-                        <th className="w-14 whitespace-nowrap px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">原题号</th>
-                        <th className="w-[130px] whitespace-nowrap px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">来源</th>
-                        <th className="whitespace-nowrap px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">题干预览</th>
-                        <th className="w-12 whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">题型</th>
-                        <th className="w-[130px] whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">当前答案</th>
-                        <th className="w-16 whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">状态</th>
-                        <th className="w-12 whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">风险</th>
-                        <th className="w-[170px] whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">操作</th>
+                        <th className="w-[68px] px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">题号</th>
+                        <th className="w-[110px] px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">来源</th>
+                        <th className="px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">题干</th>
+                        <th className="w-[60px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">题型</th>
+                        <th className="w-[120px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">答案</th>
+                        <th className="w-[72px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">状态</th>
+                        <th className="w-[52px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">风险</th>
+                        <th className="w-[136px] px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">操作</th>
                       </tr>
                     </thead>
                     <tbody>
                       {items.map((item, index) => {
                         const answerStatusLabel =
-                          item.answer_status === "missing" ? "答案缺失" :
-                          item.answer_status === "ai_filled" ? "AI补全" :
-                          item.answer_status === "imported" ? "已导入" :
-                          item.answer_status === "manual_filled" ? "已填写" :
-                          item.answer_status === "manual_verified" ? "已验证" :
+                          item.answer_status === "missing" ? "缺失" :
+                          item.answer_status === "ai_filled" ? "AI" :
+                          item.answer_status === "imported" ? "导入" :
+                          item.answer_status === "manual_filled" ? "已填" :
+                          item.answer_status === "manual_verified" ? "已验" :
                           item.answer_status === "abnormal" ? "异常" : "—";
                         const answerStatusStyle: React.CSSProperties =
                           item.answer_status === "missing" ? { color: "#b03a3a", fontWeight: 700 } :
@@ -1060,6 +1060,14 @@ export default function ImportReviewPage() {
                         const isMultiChoice = item.question_type === "multi_choice" || item.question_type === "multiple_choice";
                         const isTrueFalse = item.question_type === "true_false" || item.question_type === "judge";
                         const draftAnswer = quickAnswerDrafts[item.id] ?? item.parsed_answer ?? "";
+                        const hasDraftChanged = draftAnswer !== (item.parsed_answer ?? "");
+                        const sourceLocator = getSourceLocator(item);
+                        const stemText = item.content_preview || textFromImport(item) || "—";
+                        const typeLabel =
+                          item.question_type === "single_choice" ? "单选" :
+                          item.question_type === "multi_choice" || item.question_type === "multiple_choice" ? "多选" :
+                          item.question_type === "fill_blank" || item.question_type === "multi_blank_choice" ? "填空" :
+                          item.question_type === "judge" || item.question_type === "true_false" ? "判断" : "—";
                         return (
                           <tr key={item.id} className={`border-b border-[var(--color-border)]/40 transition-colors hover:bg-[var(--color-bg-input)]/30 ${index % 2 === 0 ? "bg-white" : "bg-[var(--color-bg-input)]/20"}`}>
                             <td className="px-2.5 py-2">
@@ -1070,13 +1078,19 @@ export default function ImportReviewPage() {
                                 </span>
                               </label>
                             </td>
-                            <td className="whitespace-nowrap px-2 py-2 font-mono text-[11px] font-medium text-[var(--color-text-secondary)]">{srcNo ? `原题${srcNo}` : "—"}</td>
-                            <td className="whitespace-nowrap max-w-[120px] truncate px-2 py-2 text-[10px] text-[var(--color-text-hint)]" title={getSourceLocator(item)}>{getSourceLocator(item)}</td>
-                            <td className="max-w-[180px] truncate px-2 py-2 text-[11px] text-[var(--ink)]" title={item.content_preview || textFromImport(item)}>{item.content_preview || textFromImport(item) || "—"}</td>
-                            <td className="whitespace-nowrap px-2 py-2 text-center text-[10px] text-[var(--color-text-hint)]">
-                              {item.question_type === "single_choice" ? "单选" : item.question_type === "multi_choice" || item.question_type === "multiple_choice" ? "多选" : item.question_type === "fill_blank" || item.question_type === "multi_blank_choice" ? "填空" : item.question_type === "judge" || item.question_type === "true_false" ? "判断" : "—"}
+                            <td className="w-[68px] px-2 py-2">
+                              <span className="block min-w-0 truncate font-mono text-[11px] font-medium text-[var(--color-text-secondary)]" title={srcNo || ""}>{srcNo || "—"}</span>
                             </td>
-                            <td className="w-[130px] whitespace-nowrap px-2 py-2 text-center">
+                            <td className="w-[110px] px-2 py-2">
+                              <span className="block min-w-0 truncate text-[10px] text-[var(--color-text-hint)]" title={sourceLocator}>{sourceLocator || "—"}</span>
+                            </td>
+                            <td className="px-2 py-2">
+                              <span className="block min-w-0 truncate text-[11px] text-[var(--ink)]" title={stemText}>{stemText}</span>
+                            </td>
+                            <td className="w-[60px] px-2 py-2 text-center">
+                              <span className="block min-w-0 truncate text-[10px] text-[var(--color-text-hint)]" title={typeLabel}>{typeLabel}</span>
+                            </td>
+                            <td className="w-[120px] px-2 py-2 text-center">
                               {isSingleChoice ? (
                                 <div className="flex items-center justify-center gap-0.5 overflow-hidden">
                                   {["A","B","C","D"].map((opt) => (
@@ -1118,25 +1132,30 @@ export default function ImportReviewPage() {
                                 />
                               )}
                             </td>
-                            <td className="w-16 whitespace-nowrap px-2 py-2 text-center text-[10px]" style={answerStatusStyle}>{answerStatusLabel}</td>
-                            <td className="w-12 whitespace-nowrap px-2 py-2 text-center text-[10px]" style={riskStyle}>{riskLabel}</td>
-                            <td className="w-[170px] whitespace-nowrap px-2 py-2 text-center">
-                              <div className="inline-flex items-center justify-center gap-1 min-w-[160px]">
-                                <button className="rounded border border-[var(--color-border)] bg-white px-2 py-1 text-[9px] font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]" onClick={() => openPreview(item)}>查看</button>
+                            <td className="w-[72px] px-2 py-2 text-center">
+                              <span className="block min-w-0 truncate text-[10px]" style={answerStatusStyle} title={answerStatusLabel}>{answerStatusLabel}</span>
+                            </td>
+                            <td className="w-[52px] px-2 py-2 text-center">
+                              <span className="block min-w-0 truncate text-[10px]" style={riskStyle}>{riskLabel}</span>
+                            </td>
+                            <td className="w-[136px] px-2 py-2 text-center">
+                              <div className="inline-flex w-[124px] items-center justify-end gap-1">
+                                <button className="w-9 rounded border border-[var(--color-border)] bg-white px-1 py-1 text-[9px] font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]" onClick={() => openPreview(item)} title="查看详情">查</button>
                                 <button
                                   onClick={() => quickAnswerMutation.mutate({ id: item.id, answer: draftAnswer })}
-                                  disabled={quickAnswerMutation.isPending || draftAnswer === (item.parsed_answer ?? "")}
-                                  className={`w-11 rounded border px-2 py-1 text-[9px] font-semibold transition-opacity duration-150 ${
-                                    draftAnswer !== (item.parsed_answer ?? "")
+                                  disabled={quickAnswerMutation.isPending || !hasDraftChanged}
+                                  className={`w-9 rounded border px-1 py-1 text-[9px] font-semibold transition-opacity duration-150 ${
+                                    hasDraftChanged
                                       ? "visible opacity-100 border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
                                       : "invisible opacity-0 border-transparent"
                                   }`}
+                                  title="保存答案"
                                 >
-                                  保存
+                                  存
                                 </button>
                                 <button
-                                  className={`w-11 rounded border px-2 py-1 text-[9px] font-semibold transition-opacity duration-150 ${
-                                    draftAnswer !== (item.parsed_answer ?? "")
+                                  className={`w-9 rounded border px-1 py-1 text-[9px] font-semibold transition-opacity duration-150 ${
+                                    hasDraftChanged
                                       ? "visible opacity-100 border-[var(--color-border)] bg-white text-[var(--color-text-secondary)]"
                                       : "invisible opacity-0 border-transparent"
                                   }`}
@@ -1147,19 +1166,21 @@ export default function ImportReviewPage() {
                                       return next;
                                     });
                                   }}
+                                  title="取消编辑"
                                 >
-                                  取消
+                                  消
                                 </button>
                                 <button
                                   onClick={() => verifyAnswerMutation.mutate(item.id)}
                                   disabled={verifyAnswerMutation.isPending || !item.parsed_answer}
-                                  className={`w-11 rounded border px-2 py-1 text-[9px] font-semibold transition-opacity duration-150 ${
+                                  className={`w-9 rounded border px-1 py-1 text-[9px] font-semibold transition-opacity duration-150 ${
                                     item.parsed_answer
                                       ? "visible opacity-100 border-[var(--color-success)] bg-[var(--color-success-light)] text-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white"
                                       : "invisible opacity-0 border-transparent"
                                   }`}
+                                  title="确认答案"
                                 >
-                                  确认
+                                  确
                                 </button>
                               </div>
                             </td>
