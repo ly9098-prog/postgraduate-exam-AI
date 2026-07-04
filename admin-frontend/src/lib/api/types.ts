@@ -527,9 +527,33 @@ export type AuditLogListItem = {
   error_message: string | null;
 };
 
+export type QuestionAuditDetail = {
+  id: number | null;
+  subject_id: number | null;
+  subject_code: string | null;
+  subject_name: string | null;
+  question_type: string | null;
+  content: unknown;
+  content_text: string | null;
+  content_preview: string | null;
+  options: unknown;
+  answer: unknown;
+  analysis: unknown;
+  knowledge_points: unknown;
+  difficulty: number | null;
+  source: string | null;
+  source_type: string | null;
+  source_file: string | null;
+  year: number | null;
+  review_status: string | null;
+  is_active: boolean | null;
+  data_source: "audit_snapshot" | "audit_before" | "audit_after" | "audit_summary" | "current_database" | null;
+};
+
 export type AuditLogDetail = AuditLogListItem & {
   detail: Record<string, unknown> | null;
   user_agent: string | null;
+  question_detail: QuestionAuditDetail | null;
 };
 
 export type AdminAiModelConfig = {

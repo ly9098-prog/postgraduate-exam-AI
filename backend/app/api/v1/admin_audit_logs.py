@@ -99,6 +99,18 @@ async def get_audit_log(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        return await get_admin_audit_log(db, audit_log_id)
+        log = await get_admin_audit_log(db, audit_log_id)
+        result = AdminAuditLogDetail.model_validate(log)
+
+        from app.services.audit_question_resolver import resolve_question_audit_detail
+
+        result.question_detail = await resolve_question_audit_detail(
+            db,
+            audit_log_action=log.action,
+            audit_log_resource_type=log.resource_type,
+            audit_log_resource_id=log.resource_id,
+            detail=log.detail,
+        )
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
