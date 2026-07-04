@@ -879,12 +879,16 @@ export default function ImportReviewPage() {
                           item.answer_status === "manual_filled" ? "已填写" :
                           item.answer_status === "manual_verified" ? "已验证" :
                           item.answer_status === "abnormal" ? "异常" : "—";
-                        const answerStatusStyle =
-                          item.answer_status === "missing" ? "color:#b03a3a;font-weight:700;" :
-                          item.answer_status === "ai_filled" ? "color:#c46a3a;font-weight:600;" :
-                          item.answer_status === "abnormal" ? "color:#b03a3a;font-weight:700;" : "";
+                        const answerStatusStyle: React.CSSProperties =
+                          item.answer_status === "missing" ? { color: "#b03a3a", fontWeight: 700 } :
+                          item.answer_status === "ai_filled" ? { color: "#c46a3a", fontWeight: 600 } :
+                          item.answer_status === "abnormal" ? { color: "#b03a3a", fontWeight: 700 } :
+                          {};
                         const riskLabel = item.risk_level === "high" ? "高" : item.risk_level === "medium" ? "中" : "低";
-                        const riskStyle = item.risk_level === "high" ? "color:#b03a3a;font-weight:700;" : item.risk_level === "medium" ? "color:#b87a30;font-weight:600;" : "color:#3a7a5a;";
+                        const riskStyle: React.CSSProperties =
+                          item.risk_level === "high" ? { color: "#b03a3a", fontWeight: 700 } :
+                          item.risk_level === "medium" ? { color: "#b87a30", fontWeight: 600 } :
+                          { color: "#3a7a5a" };
                         return (
                           <tr key={item.id} className={`border-b border-[var(--color-border)]/40 transition-colors hover:bg-[var(--color-bg-input)]/30 ${index % 2 === 0 ? "bg-white" : "bg-[var(--color-bg-input)]/20"}`}>
                             <td className="px-2.5 py-2">
@@ -904,8 +908,8 @@ export default function ImportReviewPage() {
                             <td className="whitespace-nowrap px-2 py-2 text-center font-mono text-[11px] font-bold" style={{ color: item.parsed_answer ? "#3a7a5a" : "#b03a3a" }}>
                               {item.parsed_answer || "空"}
                             </td>
-                            <td className="whitespace-nowrap px-2 py-2 text-center text-[10px]" style={answerStatusStyle ? { ...Object.fromEntries(answerStatusStyle.split(";").filter(Boolean).map(s => s.split(":").map(x => x.trim()))) } : {}}>{answerStatusLabel}</td>
-                            <td className="whitespace-nowrap px-2 py-2 text-center text-[10px]" style={riskStyle ? { ...Object.fromEntries(riskStyle.split(";").filter(Boolean).map(s => s.split(":").map(x => x.trim()))) } : {}}>{riskLabel}</td>
+                            <td className="whitespace-nowrap px-2 py-2 text-center text-[10px]" style={answerStatusStyle}>{answerStatusLabel}</td>
+                            <td className="whitespace-nowrap px-2 py-2 text-center text-[10px]" style={riskStyle}>{riskLabel}</td>
                             <td className="whitespace-nowrap px-2 py-2 text-center">
                               <div className="flex items-center justify-center gap-1">
                                 <button className="rounded border border-[var(--color-border)] bg-white px-2 py-1 text-[9px] font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]" onClick={() => openPreview(item)}>查看</button>
