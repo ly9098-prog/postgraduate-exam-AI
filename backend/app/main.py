@@ -97,6 +97,12 @@ async def lifespan(app: FastAPI):
         logger.warning("Pomodoro scheduler start failed (non-fatal): %s", e)
 
     try:
+        from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
+        await audit_log_cleanup_scheduler.start()
+    except Exception as e:
+        logger.warning("Audit log cleanup scheduler start failed (non-fatal): %s", e)
+
+    try:
         from app.services.ai_prewarm_worker import start_worker
         await start_worker()
     except Exception as e:
@@ -113,6 +119,11 @@ async def lifespan(app: FastAPI):
         await pomodoro_scheduler.stop()
     except Exception:
         logger.exception("Pomodoro scheduler stop failed")
+    try:
+        from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
+        await audit_log_cleanup_scheduler.stop()
+    except Exception:
+        logger.exception("Audit log cleanup scheduler stop failed")
     try:
         from app.services.ai_prewarm_worker import stop_worker
         await stop_worker()

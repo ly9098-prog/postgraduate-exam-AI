@@ -36,10 +36,15 @@ class _Result:
 class _Db:
     def __init__(self, result):
         self._results = list(result) if isinstance(result, list) else [result]
+        self.added = []
         self.commit = AsyncMock()
+        self.flush = AsyncMock()
 
     async def execute(self, _statement):
         return _Result(self._results.pop(0))
+
+    def add(self, item):
+        self.added.append(item)
 
 
 @pytest.mark.asyncio

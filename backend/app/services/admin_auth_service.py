@@ -1,9 +1,11 @@
+from fastapi import Request
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.admin_security import create_admin_refresh_token, create_admin_token, hash_admin_password, set_admin_user_nbf, verify_admin_password
+from app.core.admin_security import AdminPrincipal, create_admin_refresh_token, create_admin_token, hash_admin_password, set_admin_user_nbf, verify_admin_password
 from app.models.admin import AdminUser, Permission, Role, RolePermission
 from app.schemas.admin_auth import AdminChangePasswordRequest, AdminLoginRequest
+from app.services.admin_audit_service import write_admin_audit
 
 
 async def authenticate_admin(db: AsyncSession, data: AdminLoginRequest) -> AdminUser:
@@ -65,7 +67,14 @@ async def refresh_admin_access_token(db: AsyncSession, user_id: int) -> tuple[st
     return create_admin_token(admin_user), admin_user, role, permissions
 
 
-async def update_role_permissions(db: AsyncSession, role_id: int, permission_ids: list[int], operator_id: int | None = None) -> Role:
+async def update_role_permissions(
+    db: AsyncSession,
+    role_id: int,
+    permission_ids: list[int],
+    operator: AdminPrincipal | None = None,
+    operator_id: int | None = None,
+    request: Request | None = None,
+) -> Role:
     role = await db.get(Role, role_id)
     if not role:
         raise ValueError("角色不存在")
@@ -77,10 +86,39 @@ async def update_role_permissions(db: AsyncSession, role_id: int, permission_ids
     if len(valid_ids) != len(set(permission_ids)):
         raise ValueError("权限不存在")
 
+    # Fetch old permission names for audit detail
+    old_perms = await db.execute(
+        select(Permission.name)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .where(RolePermission.role_id == role_id)
+    )
+    old_permission_names = sorted(old_perms.scalars().all())
+
+    new_perms = await db.execute(
+        select(Permission.name).where(Permission.id.in_(sorted(valid_ids)))
+    )
+    new_permission_names = sorted(new_perms.scalars().all())
+
     await db.execute(delete(RolePermission).where(RolePermission.role_id == role_id))
     for permission_id in sorted(valid_ids):
         db.add(RolePermission(role_id=role_id, permission_id=permission_id, granted_by=operator_id))
     await db.flush()
+
+    await write_admin_audit(
+        db,
+        operator,
+        "role.update_permissions",
+        "role",
+        role_id,
+        severity="critical",
+        detail={
+            "role_name": role.name,
+            "role_display_name": role.display_name,
+            "old_permissions": old_permission_names,
+            "new_permissions": new_permission_names,
+        },
+        request=request,
+    )
     return role
 
 
@@ -88,6 +126,8 @@ async def change_admin_password(
     db: AsyncSession,
     admin_user: AdminUser,
     data: AdminChangePasswordRequest,
+    operator: AdminPrincipal | None = None,
+    request: Request | None = None,
 ) -> None:
     try:
         old_ok = verify_admin_password(data.old_password, admin_user.password_hash)
@@ -98,4 +138,9 @@ async def change_admin_password(
     # hash_admin_password 内部已有字节长度校验，超长会抛 ValueError
     admin_user.password_hash = hash_admin_password(data.new_password)
     await set_admin_user_nbf(admin_user.id)
+    await write_admin_audit(
+        db, operator, "admin_user.change_password", "admin_user", admin_user.id,
+        severity="critical", detail={"username": admin_user.username},
+        request=request,
+    )
     await db.commit()

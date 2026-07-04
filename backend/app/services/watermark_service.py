@@ -4,10 +4,13 @@ import re
 import time
 from typing import Optional
 
+from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.admin_security import AdminPrincipal
 from app.models.watermark_rule import WatermarkRule
+from app.services.admin_audit_service import write_admin_audit
 
 _cache: dict[str, list[re.Pattern]] = {}
 _cache_ts: float = 0.0
@@ -96,6 +99,8 @@ async def create_rule(
     pattern: str,
     rule_type: str = "regex",
     description: str = "",
+    operator: AdminPrincipal | None = None,
+    request: Request | None = None,
 ) -> dict:
     """创建新的水印规则。"""
     if rule_type == "regex":
@@ -108,8 +113,14 @@ async def create_rule(
         is_active=True,
     )
     db.add(rule)
-    await db.commit()
+    await db.flush()
     await db.refresh(rule)
+    await write_admin_audit(
+        db, operator, "watermark_rule.create", "watermark_rule", rule.id,
+        detail={"pattern": rule.pattern, "rule_type": rule.rule_type},
+        request=request,
+    )
+    await db.commit()
     invalidate_cache()
     return {"id": rule.id, "pattern": rule.pattern, "rule_type": rule.rule_type}
 
@@ -121,6 +132,8 @@ async def update_rule(
     rule_type: Optional[str] = None,
     description: Optional[str] = None,
     is_active: Optional[bool] = None,
+    operator: AdminPrincipal | None = None,
+    request: Request | None = None,
 ) -> dict | None:
     """更新水印规则。"""
     stmt = select(WatermarkRule).where(WatermarkRule.id == rule_id)
@@ -128,6 +141,8 @@ async def update_rule(
     rule = result.scalar_one_or_none()
     if not rule:
         return None
+
+    before = {"pattern": rule.pattern, "rule_type": rule.rule_type, "description": rule.description, "is_active": rule.is_active}
 
     if pattern is not None:
         if (rule_type or rule.rule_type) == "regex":
@@ -140,18 +155,36 @@ async def update_rule(
     if is_active is not None:
         rule.is_active = is_active
 
+    after = {"pattern": rule.pattern, "rule_type": rule.rule_type, "description": rule.description, "is_active": rule.is_active}
+
+    await write_admin_audit(
+        db, operator, "watermark_rule.update", "watermark_rule", rule.id,
+        detail={"before": before, "after": after},
+        request=request,
+    )
     await db.commit()
     invalidate_cache()
     return {"id": rule.id, "pattern": rule.pattern, "rule_type": rule.rule_type, "is_active": rule.is_active}
 
 
-async def delete_rule(db: AsyncSession, rule_id: int) -> bool:
+async def delete_rule(
+    db: AsyncSession,
+    rule_id: int,
+    operator: AdminPrincipal | None = None,
+    request: Request | None = None,
+) -> bool:
     """删除水印规则。"""
     stmt = select(WatermarkRule).where(WatermarkRule.id == rule_id)
     result = await db.execute(stmt)
     rule = result.scalar_one_or_none()
     if not rule:
         return False
+
+    await write_admin_audit(
+        db, operator, "watermark_rule.delete", "watermark_rule", rule.id,
+        detail={"pattern": rule.pattern, "rule_type": rule.rule_type},
+        request=request,
+    )
     await db.delete(rule)
     await db.commit()
     invalidate_cache()

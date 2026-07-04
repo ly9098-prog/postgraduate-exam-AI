@@ -122,6 +122,12 @@ class Settings(BaseSettings):
     EMBEDDING_TIMEOUT: int = 30
     EMBEDDING_BATCH_SIZE: int = 16
 
+    # ── Audit Log Cleanup ──
+    AUDIT_LOG_CLEANUP_ENABLED: bool = True
+    AUDIT_LOG_RETENTION_DAYS: int = 180
+    AUDIT_LOG_CLEANUP_HOUR_UTC: int = 3
+    AUDIT_LOG_CLEANUP_BATCH_SIZE: int = 1000
+
     # ── V6 Adaptive Learning ──
     ADAPTIVE_LEARNING_ENABLED: bool = True
     ADAPTIVE_INTERVAL_ENABLED: bool = True

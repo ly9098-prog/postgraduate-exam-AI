@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,11 +55,12 @@ async def list_permissions(
 async def replace_role_permissions(
     role_id: int,
     data: RolePermissionsUpdateRequest,
+    request: Request,
     current_admin=Depends(require_permissions("role:write")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        role = await update_role_permissions(db, role_id, data.permission_ids, current_admin.id)
+        role = await update_role_permissions(db, role_id, data.permission_ids, operator=current_admin, operator_id=current_admin.id, request=request)
         await db.commit()
         await db.refresh(role)
         return {"status": "ok"}
