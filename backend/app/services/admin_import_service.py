@@ -35,6 +35,28 @@ _SOURCE_NO_PATTERNS: list[tuple[re.Pattern, str]] = [
 ]
 
 
+def build_source_locator(
+    source_image_seq: int | None = None,
+    source_image_name: str | None = None,
+    source_file: str | None = None,
+    source_page_start: int | None = None,
+    source_page_end: int | None = None,
+) -> str | None:
+    """统一生成 source_locator 字符串。"""
+    parts: list[str] = []
+    if source_image_seq is not None:
+        parts.append(f"图{source_image_seq}")
+    if source_image_name:
+        parts.append(source_image_name)
+    elif source_file:
+        parts.append(source_file)
+    if source_page_start is not None and source_page_end is not None and source_page_end != source_page_start:
+        parts.append(f"第{source_page_start}-{source_page_end}页")
+    elif source_page_start is not None:
+        parts.append(f"第{source_page_start}页")
+    return " · ".join(parts) if parts else None
+
+
 def _fallback_source_question_no(raw_data: dict | str | None) -> str | None:
     """从 raw_data 中尝试提取原题号（用于历史数据兼容）。
 
@@ -323,7 +345,7 @@ def _brief_from_row(row) -> AdminImportQuestionItemBrief:
     item.risk_level = risk["risk_level"]
     item.risk_reasons = risk["risk_reasons"]
     # ── 历史数据兜底：从 raw_data 提取 source_question_no 和 raw_text_preview ──
-    if not item.source_question_no or not item.raw_text_preview:
+    if not item.source_question_no or not item.raw_text_preview or item.source_image_seq is None or not item.source_locator:
         _raw_data = None
         if hasattr(row, "_mapping"):
             _raw_data = row._mapping.get("raw_data")
@@ -342,6 +364,24 @@ def _brief_from_row(row) -> AdminImportQuestionItemBrief:
                 )
                 if _raw_text:
                     item.raw_text_preview = str(_raw_text)[:200]
+            if item.source_image_seq is None:
+                item.source_image_seq = _raw_data.get("source_image_seq") or _raw_data.get("seq")
+            if not item.source_image_name:
+                item.source_image_name = _raw_data.get("source_image_name") or _raw_data.get("source_file") or _raw_data.get("file_name")
+            if item.source_page_start is None:
+                item.source_page_start = _raw_data.get("page_start") or _raw_data.get("source_page") or _raw_data.get("page")
+            if item.source_page_end is None:
+                item.source_page_end = _raw_data.get("page_end")
+
+    # ── source_locator 动态生成（无数据库字段时也保证返回） ──
+    if not item.source_locator:
+        item.source_locator = build_source_locator(
+            source_image_seq=item.source_image_seq,
+            source_image_name=item.source_image_name,
+            source_file=getattr(item, "source_file", None),
+            source_page_start=item.source_page_start,
+            source_page_end=item.source_page_end,
+        )
     return item
 
 
@@ -443,9 +483,8 @@ async def update_import_question(
         qi.parsed_options = {str(item.get("key") or item.get("label")): item.get("text") or item.get("value") for item in options if isinstance(item, dict)} if isinstance(options, list) else options
     if "answer" in payload:
         qi.parsed_answer = payload.pop("answer")
-        # ── 自动更新 answer_status（需先保存原始 ai_answer_flag） ──
-        _was_ai_answer = qi.ai_answer_flag
         qi.ai_answer_flag = False
+        qi.answer_source = "manual"
         _new_ans = (qi.parsed_answer or "").strip()
         if _new_ans:
             # 人工保存答案 → 无论原状态如何，都设为 manual_filled
@@ -464,6 +503,12 @@ async def update_import_question(
             payload["subject_id"] = resolved
     elif "subject" in payload:
         payload.pop("subject")  # discard legacy alias when subject_id also provided
+
+    # ── 防误操作：答案为空时不可标记为已验证 ──
+    if payload.get("answer_status") == "manual_verified":
+        _current_answer = (qi.parsed_answer or "").strip()
+        if not _current_answer:
+            raise ValueError("答案为空，无法确认为正确")
 
     for field in (
         "subject_id",
@@ -864,6 +909,15 @@ async def get_import_question_detail(
         )
         if _raw_text:
             item.raw_text_preview = str(_raw_text)[:200]
+    # source_locator 动态生成
+    if not item.source_locator:
+        item.source_locator = build_source_locator(
+            source_image_seq=getattr(qi, "source_image_seq", None) or (qi.raw_data or {}).get("source_image_seq"),
+            source_image_name=getattr(qi, "source_image_name", None) or qi.source_file,
+            source_file=qi.source_file,
+            source_page_start=getattr(qi, "source_page_start", None) or (qi.raw_data or {}).get("page_start"),
+            source_page_end=getattr(qi, "source_page_end", None) or (qi.raw_data or {}).get("page_end"),
+        )
     return item
 
 

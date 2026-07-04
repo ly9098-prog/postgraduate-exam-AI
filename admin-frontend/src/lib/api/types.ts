@@ -41,6 +41,7 @@ export type ImportQuestionItem = {
   source_page_end?: number | null;
   source_order_index?: number | null;
   raw_text_preview?: string | null;
+  source_locator?: string | null;
   answer_status?: string | null;
   answer_source?: string | null;
   answer_confidence?: number | null;
