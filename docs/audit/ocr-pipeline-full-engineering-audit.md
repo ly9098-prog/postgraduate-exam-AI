@@ -1,7 +1,7 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**→ **2026-06-24（VL confidence gate + VL_REBUILD 图片支持 + 双源 OCR 策略）**→ **2026-06-24（代码结构重建阶段 + 审核池泄漏修复）**→ **2026-06-24（噪声治理 v2 + 案例三修复补完）**→ **2026-06-25（案例五 Phase 3 original_raw_text merge + AI repair incomplete_options 兜底）**→ **2026-06-26（Phase 5 发布工程化收口）**→ **2026-06-26（Phase 5 二次补丁：request_id 幂等 + merge_status 守卫 + dedup key 修正）**
+> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**→ **2026-06-24（VL confidence gate + VL_REBUILD 图片支持 + 双源 OCR 策略）**→ **2026-06-24（代码结构重建阶段 + 审核池泄漏修复）**→ **2026-06-24（噪声治理 v2 + 案例三修复补完）**→ **2026-06-25（案例五 Phase 3 original_raw_text merge + AI repair incomplete_options 兜底）**→ **2026-06-26（Phase 5 发布工程化收口）**→ **2026-06-26（Phase 5 二次补丁：request_id 幂等 + merge_status 守卫 + dedup key 修正）**→ **2026-07-04（API Router 入口层重构：Service 抽离 + 入口收敛 + Router 聚合）**
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
 
 **2026-06-23（本期新增）：**
@@ -50,6 +50,13 @@
 - **同批去重 key 修正**（Task 3）：`review_service.py` 同批 duplicates 跟踪从 `question_hash` → `(subject, question_hash)` 元组，防止跨科目假阳 dup；新增 `DuplicateKey` 类型别名和 `_dup_key()` 工厂函数
 - **Trace event 文档修正**（Task 4）：`_append_trace_event` docstring 明确 item-level trace 不需要 FOR UPDATE 锁，增量读取使用 `id`（auto-increment PK），`seq` 为向后兼容字段
 
+**2026-07-04（API Router 入口层重构：Service 抽离 + 入口收敛 + Router 聚合）：**
+- **Import Pipeline Service 抽离**：新建 `services/import_pipeline_service.py`，将 `imports.py` 中的 `start_import_pipeline_from_upload`、`get_import_pipeline_status`、`_run_image_pipeline_with_db`、`_run_pipeline_with_db` 及所有图片 pipeline 辅助函数迁移至 service 层，消除 API Router 间的业务函数交叉 import
+- **废弃导入/审核入口下线**：`/api/v1/import/upload`、`/api/v1/import/image/upload`、`/api/v1/import/submit-review`、`/api/v1/import/review-queue` 及全部 App 侧审核/AI 补全接口统一返回 410 Gone，`include_in_schema=False`，不再出现在 OpenAPI 中
+- **Admin 前缀统一**：`/api/v1/admin/watermark-rules` → `/api/admin/v1/watermark-rules`，旧路径保留为 410 过渡
+- **Router 聚合**：新建 `app/api/router.py`、`app/api/v1/router.py`、`app/api/admin/router.py`，`main.py` 从 37 个独立 `include_router` 降为 1 个 `include_router(api_router)`
+- **新增 12 项路由完整性测试**：唯一性、OpenAPI 清理、Admin 前缀统一、410 响应、跨模块 import 检测
+
 **2026-06-24（第二次更新-本期新增）：**
 - **噪声治理 v2**：新增 `NoiseMetrics` 数据类 + `NoiseMetricsCollector` 逐题指标收集 + 批量聚合 `NoiseMetricsSummary`。`clean_code_language_noise()` 通过 `_collector` 参数集成指标采集。下游新增 `noise_drift_detector.py`（KL 散度 drift 检测 + 拉普拉斯平滑，阈值 0.15）和 `noise_rule_governor.py`（基于 FP-rate 的 `safe_mode` 自适应切换，带迟滞）。stage 输出新增 `noise_metrics_summary` / `noise_drift` / `noise_governor` 三个观测字段。新增 49 个单元测试覆盖所有模块。清理死代码：移除 `confidence_threshold` 字段（实际控制由 `safe_mode` boolean 承担）、统一 key 命名 `fix_actions`→`code_language_noise_fix_actions`。
 - **案例三修复补完（`ad33620`）**：案例三经双源 OCR 策略 + 代码结构重建修复后，仍有三个残留问题：
@@ -83,12 +90,16 @@
                                v
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    入口路由层 (API Router)                            │
-│  /api/v1/import/pipeline/upload   → ImportPipeline.run()            │
-│  /api/v1/import/image/upload      → import_single_image()           │
-│  /api/v1/import/excel/upload      → process_question_pipeline()      │
-│  /api/v1/import/image/batch       → batch_image_import_service()     │
+│  app/api/router.py — 聚合入口                                        │
+│  ├─ app/api/v1/router.py (public API)                               │
+│  │   └─ /api/v1/import/pipeline/upload                              │
+│  │      → import_pipeline_service.start_import_pipeline()           │
+│  └─ app/api/admin/router.py (admin API)                             │
+│      └─ /api/admin/v1/imports/upload                                │
+│         → import_pipeline_service.start_import_pipeline()           │
 │                                                                     │
-│  ⚠ 问题: 入口点过多, 相同逻辑有 3 条路径并行存在                      │
+│  ✅ 双入口架构: App=小程序导入, Admin=后台导入, 共享 service 层       │
+│  ✅ 旧入口 410 Gone, OpenAPI 已清理, 无重复路径                      │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │
                                v
@@ -259,6 +270,8 @@
 | `layout_router.py` | 76 | 生产固化路由决策（pure confidence-based） | ✅ 纯函数 | 🟢 低 |
 | `evaluation/routing_metrics.py` | 217 | 路由决策指标收集 | ✅ 单一 | 🟢 低 |
 | `evaluation/split_quality.py` | 111 | 分割质量加权评估 | ✅ 单一 | 🟢 低 |
+| `services/import_pipeline_service.py` | ~370 | Import pipeline 公共逻辑（统一导入/Pipeline 状态/后台任务） | ✅ 单一 | 🟢 低 |
+| `api/router.py` / `api/v1/router.py` / `api/admin/router.py` | 3 files | 三层聚合 Router，main.py 仅 include_router(api_router) | ✅ 单一 | 🟢 低 |
 
 ### 2.2 关键结构问题（已修复摘要）
 
@@ -268,6 +281,7 @@
 - **旧版路径清理**: `ocr_correction.py` 精简为 171 行包装层，纠错统一由 OCRFixRouter 处理
 - **4 层 SSOT 架构（本期）**: 新建 `question_type_classifier.py` Layer 1 门控，`question_normalizer.py` 集成 Layer 0/1/3，`ai_repair.py` Layer 4 选项不可变扩展至全部题型，`pipeline_orchestrator.py` 新增 `classify_questions` enforcement 阶段
 - **死代码清理（本期）**: 移除 `normalize_option_order`（Layer 0 禁止重排），收紧 `_CHOICE_KEYWORDS`（移除 `"下列"`、`"以下"` 单字防误判）
+- **API Router 入口层重构（2026-07-04）**：`services/import_pipeline_service.py` 新建，导入公共逻辑从 `app.api.v1.imports` 抽离至 service 层；`app/api/router.py` / `app/api/v1/router.py` / `app/api/admin/router.py` 三层聚合，`main.py` include 从 37 降为 1；`admin_imports.py` 不再 import `app.api.v1.imports`，消除 API Router 间业务函数交叉引用；旧导入/审核/AI 补全接口（共 12 个）统一下线为 410 Gone；Admin 前缀统一 `/api/v1/admin/watermark-rules` → `/api/admin/v1/watermark-rules`
 
 ---
 
@@ -401,6 +415,7 @@
 | **P1** | 并发 merge 请求重复执行 `_merge_image_texts` | ✅ Phase 5 补丁：`merge_status == "running"` guard 在入口检查并发 |
 | **P1** | `create_batch_job` 并发相同 request_id 产生重复 job | ✅ Phase 5 补丁：`ImportBatchJob.request_id` 唯一索引 + IntegrityError 捕获返回已有 job |
 | **P2** | 同批去重 key `question_hash` 跨科目假阳（不同科目相同哈希误判为 dup） | ✅ Phase 5 补丁：去重 key 改为 `(subject, question_hash)` 元组 |
+| **P2** | API Router 入口点过多、相同导入逻辑多条路径并行、Admin 非标准前缀 | ✅ 2026-07-04：Service 抽离 + 12 个旧入口 410 + Router 聚合 + 前缀统一 |
 | **P3** | Trace event docstring 过时（声称 item-level 需要 FOR UPDATE 锁）| ✅ Phase 5 补丁：更新 docstring，明确 `id` 为增量读取依据 |
 
 ### 6.2 改造路线图（压缩）
@@ -444,6 +459,13 @@
   - ImportBatchJob.request_id 唯一索引 + IntegrityError 并发幂等
   - _merge_image_texts merge_status running 守卫
   - review_service 同批去重 key 改为 (subject, question_hash)
+✅ **2026-07-04: API Router 入口层重构 — Service 抽离 + 入口收敛 + Router 聚合**
+  - `services/import_pipeline_service.py` 新建，导入 pipeline 公共逻辑（`start_import_pipeline`、`get_pipeline_status`、后台任务）从 `app.api.v1.imports` 抽离至 service 层
+  - `app/api/router.py` / `app/api/v1/router.py` / `app/api/admin/router.py` 三层聚合，`main.py` include 从 37 降为 1
+  - `admin_imports.py` 不再 import `app.api.v1.imports`，消除 API Router 间业务函数交叉引用
+  - 12 个废弃接口统一下线为 410 Gone（旧导入/旧审核/旧 AI 补全），`include_in_schema=False`，OpenAPI 已清理
+  - Admin 前缀统一：`/api/v1/admin/watermark-rules` → `/api/admin/v1/watermark-rules`
+  - 12 项路由完整性测试（唯一性/OpenAPI/前缀/410 响应/跨模块 import），全部通过
   - Trace event docstring 修正（id 为增量读取依据）
 
 ⏳ 待处理:
@@ -498,6 +520,7 @@
 | `features/question_pipeline.py` | 2921 | 标准化管道 + 向后兼容重导出 |
 | `features/batch_image_import_service.py` | ~1391 | 批量图片导入编排器（state machine + trace events + idempotency + request_id 幂等 + merge_status 守卫 + ocr_mode 路由 + 断点恢复） |
 | `features/pipeline_artifacts.py` | 559 | Pipeline artifact 持久化、兼容性检查、断点恢复 |
+| `services/import_pipeline_service.py` | ~400 | Import pipeline 公共逻辑（统一导入/Pipeline 状态/后台任务） |
 | `services/ocr_service.py` | 637 | PaddleOCR 封装 |
 | `features/text_normalizer.py` | 1400 | 统一 OCR 文本规范化（13 步） |
 | `features/question_splitter.py` | 1437 | 题号+选项提取 |
