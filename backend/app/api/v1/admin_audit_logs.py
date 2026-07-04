@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
+from app.core.time_utils import normalize_to_naive_utc
+from app.models.admin import AuditLog
 from app.schemas.admin_audit import AdminAuditLogDetail, AdminAuditLogListItem
 from app.schemas.common import paginated_response
 from app.services.admin_audit_service import get_admin_audit_log, list_admin_audit_logs
@@ -12,7 +14,34 @@ from app.services.admin_audit_service import get_admin_audit_log, list_admin_aud
 router = APIRouter(prefix="/api/admin/v1/audit-logs", tags=["admin-audit-logs"])
 
 
-@router.get("")
+def _build_detail_summary(log: AuditLog) -> dict | None:
+    """Extract a safe display summary from the audit log."""
+    detail = getattr(log, "detail", None)
+    if not detail or not isinstance(detail, dict):
+        return None
+
+    summary = {}
+    if "question" in detail and isinstance(detail["question"], dict):
+        q = detail["question"]
+        for key in ("id", "content_preview", "subject_name", "question_type"):
+            if key in q:
+                summary[key] = q[key]
+    if "content_preview" in detail:
+        summary["content_preview"] = detail["content_preview"]
+    if "subject_name" in detail:
+        summary["subject_name"] = detail["subject_name"]
+    if "question_type" in detail:
+        summary["question_type"] = detail["question_type"]
+
+    resource_type = getattr(log, "resource_type", None)
+    resource_id = getattr(log, "resource_id", None)
+    if resource_type and resource_id and not summary:
+        summary["resource_label"] = f"{resource_type}#{resource_id}"
+
+    return summary if summary else None
+
+
+@router.get("", response_model=None)  # response_model handled by paginated_response
 async def list_audit_logs(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100, alias="pageSize"),
@@ -24,10 +53,21 @@ async def list_audit_logs(
     log_status: str | None = Query(default=None, alias="status", pattern="^(success|failed)$"),
     created_from: datetime | None = Query(default=None, alias="from"),
     created_to: datetime | None = Query(default=None, alias="to"),
+    keyword: str | None = Query(default=None),
     _=Depends(require_permissions("audit:read")),
     db: AsyncSession = Depends(get_db),
 ):
     try:
+        # Normalize input datetimes: treat any received datetime as UTC
+        norm_from = normalize_to_naive_utc(created_from) if created_from else None
+        norm_to = normalize_to_naive_utc(created_to) if created_to else None
+
+        # Sanitize keyword
+        safe_keyword = keyword.strip()[:200] if keyword else None
+        # Escape LIKE special chars
+        if safe_keyword:
+            safe_keyword = safe_keyword.replace("%", "\\%").replace("_", "\\_")
+
         logs, total = await list_admin_audit_logs(
             db,
             page,
@@ -38,12 +78,18 @@ async def list_audit_logs(
             resource_id=resource_id,
             severity=severity,
             log_status=log_status,
-            created_from=created_from,
-            created_to=created_to,
+            created_from=norm_from,
+            created_to=norm_to,
+            keyword=safe_keyword,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
-    return paginated_response([AdminAuditLogListItem.model_validate(log) for log in logs], total, page, page_size)
+    items = []
+    for log in logs:
+        item = AdminAuditLogListItem.model_validate(log)
+        item.detail_summary = _build_detail_summary(log)
+        items.append(item)
+    return paginated_response(items, total, page, page_size)
 
 
 @router.get("/{audit_log_id}", response_model=AdminAuditLogDetail)

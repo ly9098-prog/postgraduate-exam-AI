@@ -1,7 +1,7 @@
 """管理端知识点 backfill + 状态 + 知识图谱边 API。"""
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
@@ -17,6 +17,7 @@ from app.schemas.knowledge_path import (
     KnowledgeEdgeResponse,
     KnowledgeEdgeStatusResponse,
 )
+from app.services.admin_audit_service import write_admin_audit
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,8 @@ router = APIRouter(prefix="/api/admin/v1/knowledge", tags=["admin-knowledge"])
 @router.post("/backfill", response_model=KnowledgeBackfillResponse)
 async def backfill_knowledge_points(
     data: KnowledgeBackfillRequest,
-    _=Depends(require_permissions("question:write")),
+    request: Request,
+    current_admin=Depends(require_permissions("question:write")),
     db: AsyncSession = Depends(get_db),
 ):
     """扫描题目 knowledge_points JSON，写入 knowledge_points 和 question_knowledge_points。"""
@@ -34,6 +36,12 @@ async def backfill_knowledge_points(
 
     result = await knowledge_point_service.backfill_question_knowledge_points(
         db, subject=data.subject, limit=data.limit,
+    )
+    await write_admin_audit(
+        db, current_admin, "knowledge.backfill", "knowledge",
+        None, severity="normal",
+        detail={"subject": data.subject, "limit": data.limit, **result},
+        request=request,
     )
     await db.commit()
     return KnowledgeBackfillResponse(**result)
@@ -57,7 +65,8 @@ async def get_knowledge_status(
 @router.post("/edges", response_model=KnowledgeEdgeResponse)
 async def create_knowledge_edge(
     data: KnowledgeEdgeCreate,
-    _=Depends(require_permissions("question:write")),
+    request: Request,
+    current_admin=Depends(require_permissions("question:write")),
     db: AsyncSession = Depends(get_db),
 ):
     """人工创建知识点关系。"""
@@ -83,6 +92,12 @@ async def create_knowledge_edge(
         confidence=data.confidence,
         source=data.source,
     )
+    await write_admin_audit(
+        db, current_admin, "knowledge.create_edge", "knowledge_edge",
+        None, severity="normal",
+        detail={"source_kp_id": data.source_knowledge_point_id, "target_kp_id": data.target_knowledge_point_id, "relation_type": data.relation_type},
+        request=request,
+    )
     await db.commit()
 
     # 返回完整边信息
@@ -101,7 +116,8 @@ async def create_knowledge_edge(
 @router.post("/edges/infer")
 async def infer_knowledge_edges(
     data: KnowledgeEdgeBackfillRequest,
-    _=Depends(require_permissions("question:write")),
+    request: Request,
+    current_admin=Depends(require_permissions("question:write")),
     db: AsyncSession = Depends(get_db),
 ):
     """基于知识点名称推断低置信度关系。
@@ -116,6 +132,12 @@ async def infer_knowledge_edges(
         subject=data.subject,
         limit=data.limit,
         force_rebuild=data.force_rebuild,
+    )
+    await write_admin_audit(
+        db, current_admin, "knowledge.infer_edges", "knowledge_edge",
+        None, severity="normal",
+        detail={"subject": data.subject, "limit": data.limit, "force_rebuild": data.force_rebuild, **result},
+        request=request,
     )
     await db.commit()
     return result

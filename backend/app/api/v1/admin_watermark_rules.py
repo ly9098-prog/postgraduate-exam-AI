@@ -1,6 +1,6 @@
 """水印规则管理 API（管理后台）。"""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,13 +37,15 @@ async def list_rules(
 @router.post("")
 async def create_rule(
     data: WatermarkRuleCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permissions("import:write")),
+    current_admin=Depends(require_permissions("import:write")),
 ):
     """创建水印规则。"""
     try:
         rule = await watermark_service.create_rule(
             db, pattern=data.pattern, rule_type=data.rule_type, description=data.description,
+            operator=current_admin, request=request,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -54,8 +56,9 @@ async def create_rule(
 async def update_rule(
     rule_id: int,
     data: WatermarkRuleUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permissions("import:write")),
+    current_admin=Depends(require_permissions("import:write")),
 ):
     """更新水印规则。"""
     try:
@@ -65,6 +68,7 @@ async def update_rule(
             rule_type=data.rule_type,
             description=data.description,
             is_active=data.is_active,
+            operator=current_admin, request=request,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -76,11 +80,12 @@ async def update_rule(
 @router.delete("/{rule_id}")
 async def delete_rule(
     rule_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_permissions("import:write")),
+    current_admin=Depends(require_permissions("import:write")),
 ):
     """删除水印规则。"""
-    deleted = await watermark_service.delete_rule(db, rule_id)
+    deleted = await watermark_service.delete_rule(db, rule_id, operator=current_admin, request=request)
     if not deleted:
         raise HTTPException(status_code=404, detail="规则不存在")
     return {"ok": True}

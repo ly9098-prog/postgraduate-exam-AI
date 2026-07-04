@@ -81,7 +81,8 @@ async def batch_delete_questions(
 @router.post("/embeddings/backfill")
 async def backfill_embeddings(
     data: EmbeddingBackfillRequest,
-    _=Depends(require_permissions("question:write")),
+    request: Request,
+    current_admin=Depends(require_permissions("question:write")),
     db: AsyncSession = Depends(get_db),
 ):
     """批量回填题目 embedding 向量。
@@ -91,6 +92,7 @@ async def backfill_embeddings(
     """
     from app.schemas.vector import EmbeddingBackfillResponse
     from app.services import vector_retrieval_service
+    from app.services.admin_audit_service import write_admin_audit
 
     try:
         result = await vector_retrieval_service.backfill_question_embeddings(
@@ -99,6 +101,24 @@ async def backfill_embeddings(
             limit=data.limit,
             force=data.force,
             after_id=data.after_id,
+        )
+        await write_admin_audit(
+            db,
+            current_admin,
+            "question.backfill_embeddings",
+            "question",
+            None,
+            severity="normal",
+            detail={
+                "subject": data.subject,
+                "limit": data.limit,
+                "force": data.force,
+                "after_id": data.after_id or 0,
+                "processed": result.get("processed", 0),
+                "success_count": result.get("success_count", 0),
+                "failed_count": result.get("failed_count", 0),
+            },
+            request=request,
         )
         await db.commit()
     except Exception:
