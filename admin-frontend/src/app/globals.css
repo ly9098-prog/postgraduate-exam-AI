@@ -39,11 +39,13 @@
 html {
   min-height: 100%;
   background: var(--color-bg);
+  scrollbar-gutter: stable;
 }
 
 body {
-  min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at 16% 8%, rgba(91, 123, 154, 0.18), transparent 28rem),
     radial-gradient(circle at 84% 12%, rgba(196, 154, 107, 0.18), transparent 24rem),
@@ -169,4 +171,21 @@ a {
 
 .trace-enter {
   animation: trace-slide-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise-in,
+  .animate-drop-in,
+  .trace-enter,
+  .stage-circle-done,
+  .stage-circle-active::before {
+    animation: none !important;
+  }
+
+  *, *::before, *::after {
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0ms !important;
+  }
 }
