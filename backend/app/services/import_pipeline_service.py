@@ -631,3 +631,36 @@ async def get_pipeline_status(pipeline_id: str, db: AsyncSession) -> PipelineSta
     if status is None:
         raise ValueError("流水线不存在")
     return PipelineStatusResponse(**status)
+
+
+async def run_resume_background(
+    pipeline_id: str,
+    file_path: str,
+    subject: str | None,
+    subject_id: int | None,
+    options: dict,
+) -> None:
+    """Background wrapper：单独 DB 会话跑 resume，结束后无条件清理 tmp 文件。"""
+    bind_log_context(
+        trace_id=options.get("_trace_id"),
+        request_id=options.get("_request_id"),
+        pipeline_id=pipeline_id,
+    )
+    try:
+        async with async_session() as db:
+            await resume_pipeline_background(
+                pipeline_id=pipeline_id,
+                file_path=file_path,
+                subject=subject,
+                subject_id=subject_id,
+                options=options,
+                db=db,
+            )
+    except Exception:
+        logger.exception("resume pipeline %s failed", pipeline_id)
+    finally:
+        if file_path and os.path.exists(file_path):
+            try:
+                os.unlink(file_path)
+            except OSError as e:
+                logger.warning("Failed to delete resume tmp file %s: %s", file_path, e)
