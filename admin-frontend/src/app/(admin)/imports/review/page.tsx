@@ -15,6 +15,81 @@ import { cn } from "@/lib/utils";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import type { AdminImportCompleteResponse, BatchCompleteResponse, ImportActionResponse, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 
+type FilterDropdownOption = {
+  value: string;
+  label: string;
+  shortLabel?: string;
+};
+
+function FilterDropdown({
+  label,
+  value,
+  options,
+  open,
+  setOpen,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: FilterDropdownOption[];
+  open: boolean;
+  setOpen: (open: boolean | ((current: boolean) => boolean)) => void;
+  onChange: (value: string) => void;
+}) {
+  const activeOption = options.find((o) => o.value === value);
+  const buttonLabel = value
+    ? `${label}：${activeOption?.shortLabel || activeOption?.label || value}`
+    : label;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs outline-none transition ${
+          value
+            ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)]"
+            : "border-[var(--color-border)] bg-white text-[var(--color-text-primary)] hover:border-[var(--color-primary)]/50"
+        }`}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{buttonLabel}</span>
+        <ChevronDown className={`h-3 w-3 text-[var(--color-text-hint)] transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open ? (
+        <div className="absolute left-0 top-full z-30 mt-1 min-w-[120px] overflow-hidden rounded-lg border border-[var(--color-border)] bg-white py-1 shadow-lg">
+          {options.map((opt) => {
+            const active = value === opt.value;
+            return (
+              <button
+                key={opt.value || "all"}
+                type="button"
+                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-[var(--color-primary-light)]/40 ${
+                  active
+                    ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)] font-semibold"
+                    : "text-[var(--color-text-primary)]"
+                }`}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onChange(opt.value);
+                  setOpen(false);
+                }}
+              >
+                {active ? (
+                  <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" />
+                ) : (
+                  <span className="inline-block w-3.5 shrink-0" />
+                )}
+                <span>{opt.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 type ConfirmState =
   | { action: "approve"; id: number }
   | { action: "reject"; id: number }
@@ -187,6 +262,22 @@ const STATUS_OPTIONS = [
   { value: "", label: "全部状态" },
 ] as const;
 
+const RISK_FILTER_OPTIONS = [
+  { value: "", label: "全部", shortLabel: "全部" },
+  { value: "high", label: "高风险", shortLabel: "高" },
+  { value: "medium", label: "中风险", shortLabel: "中" },
+  { value: "low", label: "低风险", shortLabel: "低" },
+];
+
+const ANSWER_STATUS_FILTER_OPTIONS = [
+  { value: "", label: "全部", shortLabel: "全部" },
+  { value: "missing", label: "答案缺失", shortLabel: "缺失" },
+  { value: "ai_filled", label: "AI补全", shortLabel: "AI补全" },
+  { value: "imported", label: "已导入", shortLabel: "已导入" },
+  { value: "manual_verified", label: "已验证", shortLabel: "已验证" },
+  { value: "abnormal", label: "答案异常", shortLabel: "异常" },
+];
+
 function statusTone(status: string) {
   if (status === "approved") return "success";
   if (status === "rejected") return "danger";
@@ -227,6 +318,8 @@ export default function ImportReviewPage() {
   const [subjectEditDropdownOpen, setSubjectEditDropdownOpen] = useState(false);
   const subjectEditBtnRef = useRef<HTMLButtonElement>(null);
   const [subjectEditDropdownStyle, setSubjectEditDropdownStyle] = useState<React.CSSProperties>({});
+  const [riskDropdownOpen, setRiskDropdownOpen] = useState(false);
+  const [answerStatusDropdownOpen, setAnswerStatusDropdownOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [completedItem, setCompletedItem] = useState<ImportQuestionItem | null>(null);
@@ -785,63 +878,25 @@ export default function ImportReviewPage() {
               />
             </div>
 
-            {/* Risk pills */}
-            <div className="flex items-center gap-1">
-              {([
-                { value: "", label: "全部风险", color: "" },
-                { value: "high", label: "高风险", color: "#b03a3a" },
-                { value: "medium", label: "中风险", color: "#b87a30" },
-                { value: "low", label: "低风险", color: "#3a7a5a" },
-              ] as const).map((opt) => {
-                const active = filters.risk_level === opt.value;
-                return (
-                  <button
-                    key={opt.label}
-                    type="button"
-                    onClick={() => updateFilter("risk_level", opt.value)}
-                    className={cn(
-                      "rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors",
-                      active
-                        ? "text-white shadow-sm"
-                        : "border border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/40",
-                    )}
-                    style={active ? { backgroundColor: opt.color || "var(--color-primary)" } : undefined}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
+            {/* Risk dropdown */}
+            <FilterDropdown
+              label="风险"
+              value={filters.risk_level}
+              options={RISK_FILTER_OPTIONS}
+              open={riskDropdownOpen}
+              setOpen={(fn) => { setRiskDropdownOpen(fn); setAnswerStatusDropdownOpen(false); setSubjectDropdownOpen(false); setStatusDropdownOpen(false); }}
+              onChange={(value) => updateFilter("risk_level", value)}
+            />
 
-            {/* Answer Status pills */}
-            <div className="flex items-center gap-1">
-              {([
-                { value: "", label: "全部答案", color: "" },
-                { value: "missing", label: "答案缺失", color: "#b03a3a" },
-                { value: "ai_filled", label: "AI补全", color: "#c46a3a" },
-                { value: "imported", label: "已导入", color: "#3a7a5a" },
-                { value: "manual_verified", label: "已验证", color: "#2a6a9a" },
-                { value: "abnormal", label: "答案异常", color: "#b03a3a" },
-              ] as const).map((opt) => {
-                const active = filters.answer_status === opt.value;
-                return (
-                  <button
-                    key={opt.label}
-                    type="button"
-                    onClick={() => updateFilter("answer_status", opt.value)}
-                    className={cn(
-                      "rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors",
-                      active
-                        ? "text-white shadow-sm"
-                        : "border border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/40",
-                    )}
-                    style={active ? { backgroundColor: opt.color || "var(--color-primary)" } : undefined}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
+            {/* Answer Status dropdown */}
+            <FilterDropdown
+              label="答案"
+              value={filters.answer_status}
+              options={ANSWER_STATUS_FILTER_OPTIONS}
+              open={answerStatusDropdownOpen}
+              setOpen={(fn) => { setAnswerStatusDropdownOpen(fn); setRiskDropdownOpen(false); setSubjectDropdownOpen(false); setStatusDropdownOpen(false); }}
+              onChange={(value) => updateFilter("answer_status", value)}
+            />
 
             {/* Subject dropdown */}
             <div className="relative">
