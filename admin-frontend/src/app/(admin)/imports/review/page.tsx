@@ -933,7 +933,7 @@ export default function ImportReviewPage() {
                 <ChevronDown className={`h-3 w-3 shrink-0 text-[var(--color-text-hint)] transition-transform ${subjectDropdownOpen ? "rotate-180" : ""}`} />
               </button>
               {subjectDropdownOpen ? (
-                <div className="absolute left-0 top-full z-20 mt-1 min-w-[220px] max-w-[320px] max-h-72 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-white py-1 shadow-lg">
+                <div className="absolute left-0 top-full z-20 mt-1 min-w-[220px] max-w-[320px] max-h-72 overflow-y-auto scrollbar-hide rounded-lg border border-[var(--color-border)] bg-white py-1 shadow-lg">
                   <button
                     type="button"
                     className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-[var(--color-primary-light)]/40 ${
@@ -1015,10 +1015,10 @@ export default function ImportReviewPage() {
               ) : null}
               {items.length > 0 && viewMode === "table" ? (
                 <div className="overflow-x-auto rounded-xl border border-[var(--color-border)] bg-white">
-                  <table className="w-full text-[11px]">
+                  <table className="w-full table-fixed text-[11px]">
                     <thead>
                       <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg-input)]/50">
-                        <th className="px-2.5 py-2 text-left font-semibold text-[var(--color-text-secondary)]">
+                        <th className="w-9 px-2.5 py-2 text-left font-semibold text-[var(--color-text-secondary)]">
                           <label className="group/cb relative flex cursor-pointer items-center justify-center">
                             <span className="flex h-[16px] w-[16px] items-center justify-center rounded border-2 border-[var(--color-border)] bg-white transition-all group-hover/cb:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
                               <input type="checkbox" checked={allChecked} onChange={toggleAll} className="peer absolute inset-0 cursor-pointer opacity-0" />
@@ -1026,14 +1026,14 @@ export default function ImportReviewPage() {
                             </span>
                           </label>
                         </th>
-                        <th className="whitespace-nowrap px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">原题号</th>
-                        <th className="whitespace-nowrap px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">来源</th>
+                        <th className="w-14 whitespace-nowrap px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">原题号</th>
+                        <th className="w-[130px] whitespace-nowrap px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">来源</th>
                         <th className="whitespace-nowrap px-2 py-2 text-left font-semibold text-[var(--color-text-secondary)]">题干预览</th>
-                        <th className="whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">题型</th>
-                        <th className="whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">当前答案</th>
-                        <th className="whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">状态</th>
-                        <th className="whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">风险</th>
-                        <th className="whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">操作</th>
+                        <th className="w-12 whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">题型</th>
+                        <th className="w-[130px] whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">当前答案</th>
+                        <th className="w-16 whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">状态</th>
+                        <th className="w-12 whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">风险</th>
+                        <th className="w-[170px] whitespace-nowrap px-2 py-2 text-center font-semibold text-[var(--color-text-secondary)]">操作</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1076,14 +1076,14 @@ export default function ImportReviewPage() {
                             <td className="whitespace-nowrap px-2 py-2 text-center text-[10px] text-[var(--color-text-hint)]">
                               {item.question_type === "single_choice" ? "单选" : item.question_type === "multi_choice" || item.question_type === "multiple_choice" ? "多选" : item.question_type === "fill_blank" || item.question_type === "multi_blank_choice" ? "填空" : item.question_type === "judge" || item.question_type === "true_false" ? "判断" : "—"}
                             </td>
-                            <td className="whitespace-nowrap px-2 py-2 text-center">
+                            <td className="w-[130px] whitespace-nowrap px-2 py-2 text-center">
                               {isSingleChoice ? (
-                                <div className="flex items-center justify-center gap-0.5">
+                                <div className="flex items-center justify-center gap-0.5 overflow-hidden">
                                   {["A","B","C","D"].map((opt) => (
                                     <button
                                       key={opt}
                                       onClick={() => setQuickAnswerDrafts((prev) => ({ ...prev, [item.id]: draftAnswer === opt ? "" : opt }))}
-                                      className={`h-6 w-6 rounded text-[10px] font-bold transition border ${
+                                      className={`h-6 w-7 shrink-0 rounded text-[10px] font-bold transition border ${
                                         draftAnswer === opt
                                           ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]"
                                           : "bg-white text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-primary)]"
@@ -1094,12 +1094,12 @@ export default function ImportReviewPage() {
                                   ))}
                                 </div>
                               ) : isTrueFalse ? (
-                                <div className="flex items-center justify-center gap-0.5">
+                                <div className="flex items-center justify-center gap-0.5 overflow-hidden">
                                   {["T","F"].map((opt) => (
                                     <button
                                       key={opt}
                                       onClick={() => setQuickAnswerDrafts((prev) => ({ ...prev, [item.id]: draftAnswer === opt ? "" : opt }))}
-                                      className={`h-6 rounded px-2 text-[10px] font-bold transition border ${
+                                      className={`h-6 shrink-0 rounded px-2 text-[10px] font-bold transition border ${
                                         draftAnswer === opt
                                           ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]"
                                           : "bg-white text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-primary)]"
@@ -1111,35 +1111,56 @@ export default function ImportReviewPage() {
                                 </div>
                               ) : (
                                 <input
-                                  className="h-6 w-16 rounded border border-[var(--color-border)] bg-white px-1.5 text-center text-[10px] font-mono font-bold outline-none transition focus:border-[var(--color-primary)]"
+                                  className="h-6 w-full rounded border border-[var(--color-border)] bg-white px-1.5 text-center text-[10px] font-mono font-bold outline-none transition focus:border-[var(--color-primary)]"
                                   value={draftAnswer}
                                   onChange={(e) => setQuickAnswerDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
                                   placeholder={isMultiChoice ? "如 AC" : "答案"}
                                 />
                               )}
                             </td>
-                            <td className="whitespace-nowrap px-2 py-2 text-center text-[10px]" style={answerStatusStyle}>{answerStatusLabel}</td>
-                            <td className="whitespace-nowrap px-2 py-2 text-center text-[10px]" style={riskStyle}>{riskLabel}</td>
-                            <td className="whitespace-nowrap px-2 py-2 text-center">
-                              <div className="flex items-center justify-center gap-1">
+                            <td className="w-16 whitespace-nowrap px-2 py-2 text-center text-[10px]" style={answerStatusStyle}>{answerStatusLabel}</td>
+                            <td className="w-12 whitespace-nowrap px-2 py-2 text-center text-[10px]" style={riskStyle}>{riskLabel}</td>
+                            <td className="w-[170px] whitespace-nowrap px-2 py-2 text-center">
+                              <div className="inline-flex items-center justify-center gap-1 min-w-[160px]">
                                 <button className="rounded border border-[var(--color-border)] bg-white px-2 py-1 text-[9px] font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]" onClick={() => openPreview(item)}>查看</button>
-                                {draftAnswer !== (item.parsed_answer ?? "") ? (
-                                  <button
-                                    onClick={() => quickAnswerMutation.mutate({ id: item.id, answer: draftAnswer })}
-                                    disabled={quickAnswerMutation.isPending}
-                                    className="rounded border border-[var(--color-primary)] bg-[var(--color-primary)] px-2 py-1 text-[9px] font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
-                                  >
-                                    {quickAnswerMutation.isPending ? "..." : "保存"}
-                                  </button>
-                                ) : item.parsed_answer ? (
-                                  <button
-                                    onClick={() => verifyAnswerMutation.mutate(item.id)}
-                                    disabled={verifyAnswerMutation.isPending}
-                                    className="rounded border border-[var(--color-success)] bg-[var(--color-success-light)] px-2 py-1 text-[9px] font-semibold text-[var(--color-success)] transition hover:bg-[var(--color-success)] hover:text-white disabled:opacity-40"
-                                  >
-                                    确认
-                                  </button>
-                                ) : null}
+                                <button
+                                  onClick={() => quickAnswerMutation.mutate({ id: item.id, answer: draftAnswer })}
+                                  disabled={quickAnswerMutation.isPending || draftAnswer === (item.parsed_answer ?? "")}
+                                  className={`w-11 rounded border px-2 py-1 text-[9px] font-semibold transition-opacity duration-150 ${
+                                    draftAnswer !== (item.parsed_answer ?? "")
+                                      ? "visible opacity-100 border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+                                      : "invisible opacity-0 border-transparent"
+                                  }`}
+                                >
+                                  保存
+                                </button>
+                                <button
+                                  className={`w-11 rounded border px-2 py-1 text-[9px] font-semibold transition-opacity duration-150 ${
+                                    draftAnswer !== (item.parsed_answer ?? "")
+                                      ? "visible opacity-100 border-[var(--color-border)] bg-white text-[var(--color-text-secondary)]"
+                                      : "invisible opacity-0 border-transparent"
+                                  }`}
+                                  onClick={() => {
+                                    setQuickAnswerDrafts((prev) => {
+                                      const next = { ...prev };
+                                      delete next[item.id];
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  取消
+                                </button>
+                                <button
+                                  onClick={() => verifyAnswerMutation.mutate(item.id)}
+                                  disabled={verifyAnswerMutation.isPending || !item.parsed_answer}
+                                  className={`w-11 rounded border px-2 py-1 text-[9px] font-semibold transition-opacity duration-150 ${
+                                    item.parsed_answer
+                                      ? "visible opacity-100 border-[var(--color-success)] bg-[var(--color-success-light)] text-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white"
+                                      : "invisible opacity-0 border-transparent"
+                                  }`}
+                                >
+                                  确认
+                                </button>
                               </div>
                             </td>
                           </tr>
