@@ -460,10 +460,31 @@ export default function ImportReviewPage() {
 
   const subjectsQuery = useQuery({
     queryKey: ["import-subject-options"],
-    queryFn: () => apiRequest<Array<{id: number; code: string; name: string; path: string; level: number}>>("/imports/subject-options"),
+    queryFn: () => apiRequest<Array<{id: number; code: string; name: string; path: string; level: number; parent_id?: number | null; is_leaf?: boolean; has_children?: boolean}>>("/imports/subject-options"),
     staleTime: 5 * 60 * 1000,
   });
   const subjectOptions = subjectsQuery.data ?? [];
+
+  // ── 过滤出叶子科目（排除父级目录科目） ──
+  function isLeafByPath(subject: {id: number; path?: string | null}, allSubjects: Array<{id: number; path?: string | null}>): boolean {
+    const currentId = String(subject.id);
+    return !allSubjects.some((item) => {
+      if (!item.path) return false;
+      const parts = String(item.path).split("/").map((p) => p.trim()).filter(Boolean);
+      return parts.slice(0, -1).includes(currentId);
+    });
+  }
+  const leafSubjectOptions = useMemo(() => {
+    const all = subjectOptions ?? [];
+    if (!all.length) return [];
+    if (all.some((s) => typeof s.is_leaf === "boolean")) return all.filter((s) => s.is_leaf === true);
+    if (all.some((s) => s.parent_id !== undefined)) {
+      const parentIds = new Set(all.map((s) => s.parent_id).filter((id): id is number => id !== null && id !== undefined));
+      return all.filter((s) => !parentIds.has(s.id));
+    }
+    if (all.some((s) => s.path)) return all.filter((s) => isLeafByPath(s, all));
+    return all;
+  }, [subjectOptions]);
 
   const completeSuggestion = completeSuggestionFromItem(previewItem);
   const answerSuggestion = stringSuggestion(completeSuggestion?.answer);
@@ -921,7 +942,7 @@ export default function ImportReviewPage() {
                     {!filters.subject_id ? <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-3.5 shrink-0" />}
                     全部科目
                   </button>
-                  {subjectOptions.map((s) => (
+                  {leafSubjectOptions.map((s) => (
                     <button
                       key={s.id}
                       type="button"
@@ -1753,7 +1774,7 @@ export default function ImportReviewPage() {
                               {!editState.subject_id ? <Check className="h-4 w-4 shrink-0 text-[var(--color-primary)]" /> : <span className="inline-block w-4 shrink-0" />}
                               不设置
                             </button>
-                            {subjectOptions.map((s) => (
+                            {leafSubjectOptions.map((s) => (
                               <button
                                 key={s.id}
                                 type="button"
