@@ -501,20 +501,35 @@ export type AIStatsResponse = {
   daily_trends: DailyTrendPoint[];
 };
 
-export type AuditLog = {
+export type AuditSeverity = "critical" | "important" | "normal" | "low";
+export type AuditStatus = "success" | "failed";
+
+type DetailSummary = {
+  id?: number;
+  content_preview?: string | null;
+  subject_name?: string | null;
+  question_type?: string | null;
+  resource_label?: string;
+};
+
+export type AuditLogListItem = {
   id: number;
-  operator_id?: number | null;
-  operator_name?: string | null;
+  operator_id: number | null;
+  operator_name: string | null;
   action: string;
-  resource_type?: string | null;
-  resource_id?: string | null;
-  severity: "critical" | "important" | "normal" | "low";
-  status?: "success" | "failed";
-  detail?: Record<string, unknown> | null;
-  user_agent?: string | null;
-  ip?: string | null;
-  error_message?: string | null;
-  created_at?: string;
+  resource_type: string | null;
+  resource_id: string | null;
+  severity: AuditSeverity;
+  status: AuditStatus;
+  ip: string | null;
+  created_at: string;       // ISO 8601 with Z suffix
+  detail_summary: DetailSummary | null;
+  error_message: string | null;
+};
+
+export type AuditLogDetail = AuditLogListItem & {
+  detail: Record<string, unknown> | null;
+  user_agent: string | null;
 };
 
 export type AdminAiModelConfig = {

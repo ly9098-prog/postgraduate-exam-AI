@@ -8,6 +8,7 @@ from app.core.admin_security import blacklist_admin_token, decode_admin_refresh_
 from app.core.database import get_db
 from app.schemas.admin_auth import AdminChangePasswordRequest, AdminLoginRequest, AdminMeResponse, AdminTokenResponse
 from app.services.admin_auth_service import authenticate_admin, build_admin_login_response, change_admin_password, get_admin_me_response, refresh_admin_access_token
+from app.services.admin_audit_service import write_admin_audit
 
 router = APIRouter(prefix="/api/admin/v1/auth", tags=["admin-auth"])
 

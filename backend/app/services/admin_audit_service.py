@@ -1,6 +1,8 @@
 import logging
+from datetime import datetime, timedelta
 
 from fastapi import Request
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow
@@ -14,6 +16,17 @@ try:
 except ImportError:  # pragma: no cover
     def log_event(_lg, _ev, **_kw):  # type: ignore[misc]
         pass
+
+
+# ── Fields that are never written into audit detail ──
+_SENSITIVE_PARAM_KEYS = frozenset({"password", "password_hash", "api_key", "access_token", "refresh_token"})
+
+
+def _sanitize_detail(detail: dict | None) -> dict | None:
+    """Remove sensitive keys from audit detail recursively (one level deep)."""
+    if detail is None:
+        return None
+    return {k: ("[REDACTED]" if k.lower() in _SENSITIVE_PARAM_KEYS else v) for k, v in detail.items()}
 
 
 async def write_admin_audit(
@@ -35,11 +48,12 @@ async def write_admin_audit(
         resource_type=resource_type,
         resource_id=str(resource_id) if resource_id is not None else None,
         severity=severity,
-        detail=detail,
+        detail=_sanitize_detail(detail),
         ip=request.client.host if request and request.client else None,
         user_agent=request.headers.get("user-agent") if request else None,
         status=status,
         error_message=error_message,
+        created_at=utcnow(),
     )
     db.add(audit_log)
 
@@ -60,17 +74,75 @@ async def write_admin_audit(
     return audit_log
 
 
-def _normalize_audit_range(created_from, created_to):
-    from datetime import datetime, timedelta
+async def write_failed_admin_audit_safely(
+    operator: AdminPrincipal | None,
+    action: str,
+    resource_type: str,
+    resource_id: str | int | None,
+    severity: str = "normal",
+    detail: dict | None = None,
+    request: Request | None = None,
+    error_message: str | None = None,
+) -> AuditLog | None:
+    """Write a failed-operation audit log using an independent session.
 
+    This is intended for use inside exception handlers where the original
+    business DB session may have been rolled back or is in an unusable
+    state.  A *separate* session is created so the failed audit is
+    committed independently and is never affected by the outer transaction
+    rollback.
+
+    If the audit write itself fails, the exception is logged and
+    swallowed — it must never mask the original business exception.
+    """
+    from app.core.database import async_session
+
+    detail = _sanitize_detail(detail)
+
+    try:
+        async with async_session() as fail_db:
+            audit_log = AuditLog(
+                operator_id=operator.id if operator else None,
+                operator_name=operator.username if operator else None,
+                action=action,
+                resource_type=resource_type,
+                resource_id=str(resource_id) if resource_id is not None else None,
+                severity=severity,
+                detail=detail,
+                ip=request.client.host if request and request.client else None,
+                user_agent=request.headers.get("user-agent") if request else None,
+                status="failed",
+                error_message=error_message,
+                created_at=utcnow(),
+            )
+            fail_db.add(audit_log)
+            await fail_db.commit()
+            await fail_db.refresh(audit_log)
+            return audit_log
+    except Exception:
+        logger.exception("Failed to record failed audit log (non-fatal)")
+        return None
+
+
+def _normalize_audit_range(created_from, created_to):
+    """Normalize a date range to [start, end_exclusive) semi-open interval.
+
+    Returns (start, end_exclusive).
+    - *created_to* is used directly as the **exclusive** upper bound.
+      No midnight adjustment is performed — the caller is responsible
+      for passing the correct exclusive-end value.
+    - Default: last 183 days.
+    - Span must not exceed 365 days.
+    """
     now = utcnow()
     start = created_from or now - timedelta(days=183)
-    end = created_to or now
-    if start > end:
+    end_exclusive = created_to or now
+
+    if start >= end_exclusive:
         raise ValueError("开始时间不能晚于结束时间")
-    if end - start > timedelta(days=365):
+    if end_exclusive - start > timedelta(days=365):
         raise ValueError("审计日志查询跨度不能超过 1 年")
-    return start, end
+    return start, end_exclusive
 
 
 async def list_admin_audit_logs(
@@ -83,18 +155,20 @@ async def list_admin_audit_logs(
     resource_id: str | None = None,
     severity: str | None = None,
     log_status: str | None = None,
-    created_from=None,
-    created_to=None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    keyword: str | None = None,
 ) -> tuple[list[AuditLog], int]:
-    from sqlalchemy import func, select
-
-    start, end = _normalize_audit_range(created_from, created_to)
-    conditions = [AuditLog.created_at >= start, AuditLog.created_at <= end]
+    start, end_exclusive = _normalize_audit_range(created_from, created_to)
+    conditions = [AuditLog.created_at >= start, AuditLog.created_at < end_exclusive]
     if operator_id is not None:
         conditions.append(AuditLog.operator_id == operator_id)
     if action:
         pattern = action.replace("*", "%")
-        conditions.append(AuditLog.action.like(pattern) if "%" in pattern else AuditLog.action == action)
+        if "%" in pattern:
+            conditions.append(AuditLog.action.like(pattern, escape="\\"))
+        else:
+            conditions.append(AuditLog.action == action)
     if resource_type:
         conditions.append(AuditLog.resource_type == resource_type)
     if resource_id:
@@ -103,6 +177,16 @@ async def list_admin_audit_logs(
         conditions.append(AuditLog.severity == severity)
     if log_status:
         conditions.append(AuditLog.status == log_status)
+    if keyword:
+        pattern = f"%{keyword}%"
+        conditions.append(
+            or_(
+                AuditLog.action.ilike(pattern, escape="\\"),
+                AuditLog.resource_type.ilike(pattern, escape="\\"),
+                AuditLog.resource_id.ilike(pattern, escape="\\"),
+                AuditLog.operator_name.ilike(pattern, escape="\\"),
+            )
+        )
 
     query = select(AuditLog)
     count_query = select(func.count()).select_from(AuditLog)
@@ -124,3 +208,38 @@ async def get_admin_audit_log(db: AsyncSession, audit_log_id: int) -> AuditLog:
     if not audit_log:
         raise ValueError("审计日志不存在")
     return audit_log
+
+
+async def cleanup_expired_admin_audit_logs(
+    db: AsyncSession,
+    retention_days: int,
+    batch_size: int,
+) -> int:
+    """Delete audit logs older than *retention_days* in batches.
+
+    Returns total number of deleted rows.
+    """
+    from sqlalchemy import delete as sa_delete
+
+    cutoff = utcnow() - timedelta(days=retention_days)
+    total_deleted = 0
+
+    while True:
+        # Fetch batch of IDs to delete
+        batch_ids = (
+            await db.execute(
+                select(AuditLog.id)
+                .where(AuditLog.created_at < cutoff)
+                .order_by(AuditLog.id)
+                .limit(batch_size)
+            )
+        ).scalars().all()
+
+        if not batch_ids:
+            break
+
+        await db.execute(sa_delete(AuditLog).where(AuditLog.id.in_(batch_ids)))
+        await db.commit()
+        total_deleted += len(batch_ids)
+
+    return total_deleted
