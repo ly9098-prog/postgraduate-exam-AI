@@ -2,131 +2,17 @@ const api = require('../../utils/api')
 const config = require('../../config')
 const {
   buildRenderModel, resetRenderGuard, setRenderGuardPage,
-  toPlainInlineMathText, needsRichRender, stripLeadingOptionLabel,
+  stripLeadingOptionLabel, toPlainInlineMathText, needsRichRender,
   textToHtml
 } = require('../../utils/stem-render')
 const {
-  isMultipleChoiceType, isMultiBlankType, isTrueFalseType,
+  isMultipleChoiceType, isTrueFalseType,
   normalizeChoiceAnswer, serializeChoiceAnswer, serializeBlankAnswer,
 } = require('../../utils/answer')
+const adapter = require('../../utils/question-runner-adapter')
 
 const GROUP_SIZES = [5, 10, 20]
-
-/* ---- Blank answer helpers (ported from practice.js) ---- */
-
-function _normalizeBlankAnswer(answer) {
-  if (!answer) return {}
-  if (typeof answer === 'object') return answer
-  var result = {}
-  String(answer).split(/[;；,，\n]+/).forEach(function(part) {
-    var m = part.trim().match(/^(.+?)\s*[:：=]\s*([A-Za-z])$/)
-    if (m) result[m[1].trim()] = m[2].trim().toUpperCase()
-  })
-  return result
-}
-
-function _normalizeBlankOptionList(options) {
-  if (Array.isArray(options)) return options
-  if (options && typeof options === 'object') {
-    return Object.keys(options).map(function(key) {
-      return { key: key, text: options[key] }
-    })
-  }
-  return []
-}
-
-function _getBlankOptionGroups(q) {
-  if (!q) return []
-  if (q.content && Array.isArray(q.content.blank_option_groups)) return q.content.blank_option_groups
-  if (Array.isArray(q.blank_option_groups)) return q.blank_option_groups
-  return []
-}
-
-function _enrichBlankOptionGroups(groups, answer) {
-  var blankAnswers = _normalizeBlankAnswer(answer)
-  return (groups || []).map(function(group) {
-    var groupId = String((group && group.id) || '').trim()
-    return {
-      id: groupId,
-      options: _normalizeBlankOptionList(group && group.options).map(function(opt) {
-        var key = String((opt && opt.key) || '').trim().toUpperCase()
-        var text = String((opt && opt.text) || '').trim()
-        var optionText = stripLeadingOptionLabel(key, text)
-        var cleanedText = optionText.replace(/[\r\n]+/g, ' ')
-        var plain = toPlainInlineMathText(cleanedText)
-        var needsRich = !plain && needsRichRender(cleanedText)
-        return Object.assign({}, opt, {
-          key: key,
-          _text: plain || optionText,
-          _selected: blankAnswers[groupId] === key,
-          _needsRich: needsRich,
-          _html: needsRich ? textToHtml(optionText) : '',
-        })
-      }).filter(function(opt) { return opt.key }),
-    }
-  }).filter(function(group) {
-    return group.id && group.options.length > 0
-  })
-}
-
-function _buildOptionList(q, optionKeys, answers) {
-  var answer = (answers && answers[q.schedule_id]) || ''
-  var isMulti = isMultipleChoiceType(q.question_type)
-  return (optionKeys || []).map(function(key) {
-    var selected = isMulti ? normalizeChoiceAnswer(answer).indexOf(key) >= 0 : String(answer).trim().toUpperCase() === key
-    return {
-      key: key,
-      _selected: selected,
-      _icon: selected ? (isMulti ? 'check' : 'dot') : '',
-    }
-  })
-}
-
-function _isQuestionAnswered(q, answers) {
-  var answer = (answers || {})[q.schedule_id] || ''
-  if (isMultiBlankType(q.question_type)) {
-    var blankAnswers = _normalizeBlankAnswer(answer)
-    var groups = _getBlankOptionGroups(q)
-    if (!groups.length) return !!answer
-    return groups.every(function(group) {
-      return !!blankAnswers[String((group && group.id) || '').trim()]
-    })
-  }
-  return !!answer
-}
-
-function _enrichQuestionsAnswered(groupQuestions, answers) {
-  return (groupQuestions || []).map(function(q) {
-    var answer = (answers || {})[q.schedule_id] || ''
-    var isAnswered = false
-    if (isMultiBlankType(q.question_type)) {
-      var blankAnswers = _normalizeBlankAnswer(answer)
-      var groups = _getBlankOptionGroups(q)
-      isAnswered = groups.length
-        ? groups.every(function(group) { return !!blankAnswers[String((group && group.id) || '').trim()] })
-        : !!answer
-    } else {
-      isAnswered = !!answer
-    }
-    q._answered = isAnswered
-    return q
-  })
-}
-
-function _computeAnsweredCount(groupQuestions, answers) {
-  return (groupQuestions || []).filter(function(q) {
-    var answer = (answers || {})[q.schedule_id] || ''
-    if (isMultiBlankType(q.question_type)) {
-      var blankAnswers = _normalizeBlankAnswer(answer)
-      var groups = _getBlankOptionGroups(q)
-      if (!groups.length) return !!answer
-      return groups.every(function(group) {
-        return !!blankAnswers[String((group && group.id) || '').trim()]
-      })
-    }
-    return !!answer
-  }).length
-}
+var KF = 'schedule_id' // key field for review-today
 
 function _mergeResultsByScheduleId(oldResults, newResults) {
   var order = []
@@ -151,19 +37,6 @@ function _mergeResultsByScheduleId(oldResults, newResults) {
   })
 }
 
-function _buildBlankSelectedFlags(groups, answer) {
-  var blankAnswers = _normalizeBlankAnswer(answer)
-  var flags = {}
-  ;(groups || []).forEach(function(group) {
-    var groupId = String((group && group.id) || '').trim()
-    flags[groupId] = {}
-    ;(group.options || []).forEach(function(opt) {
-      flags[groupId][opt.key] = blankAnswers[groupId] === opt.key
-    })
-  })
-  return flags
-}
-
 Page({
   data: {
     // 页面阶段: entry / practice / group-result / final-result
@@ -183,13 +56,12 @@ Page({
     answers: {},         // {schedule_id: selectedOption}
     currentIndex: 0,
     currentQuestion: null,
-    optionKeys: [],
-
     // 已掌握确认
     masterConfirmId: null,
 
-    // 滑动动画
-    animClass: '',
+    runnerProgressPercent: 0,
+    runnerSubtitle: '',
+    runnerSubjectName: '',
 
     // 提交中
     submittingGroup: false,
@@ -217,8 +89,6 @@ Page({
     _groupProgressStyle: '',
 
     // 进度
-    groupProgress: 0,
-
     showCelebration: false,
     celebrationTitle: '',
     celebrationDetail: '',
@@ -228,9 +98,7 @@ Page({
     celebrationRewardText: '',
     celebrationDuration: 2600,
     growthLevel: '',
-    growthExpText: '',
     growthLevelPct: 0,
-    growthBadgeCount: 0,
     growthDesc: '',
 
     safeModeActive: false,
@@ -352,8 +220,6 @@ Page({
         groupResults: [],
         groupCorrect: 0,
         groupWrong: 0,
-        groupSkipped: 0,
-        unansweredCount: 0,
 
         allGroupResults: [],
         totalCorrect: 0,
@@ -363,7 +229,6 @@ Page({
         masterConfirmId: null,
         submittingGroup: false,
         resultTransitioning: false,
-        animClass: '',
 
         safeModeActive: false,
         renderTraces: [],
@@ -403,8 +268,8 @@ Page({
     }
 
     // Blank option groups for multi_blank_choice
-    const hasBlankGroups = isMultiBlankType(q.question_type) && _getBlankOptionGroups(q).length > 0
-    const blankOptionGroups = hasBlankGroups ? _enrichBlankOptionGroups(_getBlankOptionGroups(q), '') : []
+    const hasBlankGroups = adapter.isMultiBlankChoice(q) && adapter.getBlankOptionGroups(q).length > 0
+    const blankOptionGroups = hasBlankGroups ? adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), '') : []
 
     var renderCfg = { enableMathImage: false, DEV: config.DEV }
     if (this.data.safeModeActive) renderCfg.SAFE_MODE = true
@@ -499,15 +364,15 @@ Page({
   },
 
   _syncAnsweredFlags() {
-    const enriched = _enrichQuestionsAnswered(this.data.groupQuestions, this.data.answers)
+    const enriched = adapter.applyAnsweredFlags(this.data.groupQuestions, adapter.buildAnsweredFlags(this.data.groupQuestions, this.data.answers, KF), KF)
     this.setData({ groupQuestions: enriched })
   },
 
   _showQuestion(index) {
     const q = this.data.groupQuestions[index]
     if (!q) return
-    const answeredCount = _computeAnsweredCount(this.data.groupQuestions, this.data.answers)
-    const optionList = _buildOptionList(q, q._optionKeys, this.data.answers)
+    const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, this.data.answers, KF)
+    const optionList = adapter.buildOptionList(q, this.data.answers, KF)
     const currentQuestion = Object.assign({}, q, { _optionList: optionList })
     this.setData({
       currentIndex: index,
@@ -515,15 +380,29 @@ Page({
       optionKeys: q._optionKeys,
       _answeredCount: answeredCount,
     })
+    this._updateRunnerFields()
     this._checkRenderInvariant(q._renderModel)
     this._recordRenderTrace(q._renderModel && q._renderModel.renderTrace)
+  },
+
+  _updateRunnerFields() {
+    var grp = this.data.groupQuestions || []
+    var total = grp.length || 1
+    var answered = this.data._answeredCount || 0
+    this.setData({
+      runnerProgressPercent: Math.round(answered / total * 100),
+      runnerSubtitle: '第 ' + (this.data.currentGroupIdx + 1) + ' / ' + (this.data.groups.length) + ' 组',
+      runnerSubjectName: this.data.currentQuestion
+        ? (this.data.currentQuestion.subject_name || this.data.currentQuestion._subjectLabel || '')
+        : '',
+    })
   },
 
   /* ==================== 选择答案 ==================== */
 
   selectOption(e) {
     if (this.data.submittingGroup) return
-    const opt = e.currentTarget.dataset.option
+    const opt = e.detail.option
     if (!opt) return
     const q = this.data.currentQuestion
     const answers = { ...this.data.answers }
@@ -547,42 +426,42 @@ Page({
         answers[q.schedule_id] = opt
       }
     }
-    const optionList = _buildOptionList(q, q._optionKeys, answers)
+    const optionList = adapter.buildOptionList(q, answers, KF)
     const currentQuestion = Object.assign({}, q, { _optionList: optionList })
-    const answeredCount = _computeAnsweredCount(this.data.groupQuestions, answers)
+    const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, answers, KF)
     this.setData({ answers, currentQuestion, _answeredCount: answeredCount })
     this._syncAnsweredFlags()
   },
 
   selectBlankOption(e) {
     if (this.data.submittingGroup) return
-    const blankId = String(e.currentTarget.dataset.blankId || '').trim()
-    const opt = String(e.currentTarget.dataset.option || '').trim().toUpperCase()
+    const blankId = String(e.detail.blankId || '').trim()
+    const opt = String(e.detail.option || '').trim().toUpperCase()
     const q = this.data.currentQuestion
     if (!q || !blankId || !opt) return
 
     const answer = this.data.answers[q.schedule_id] || ''
-    const blankAnswers = _normalizeBlankAnswer(answer)
+    const blankAnswers = adapter.normalizeBlankAnswer(answer)
     if (blankAnswers[blankId] === opt) {
       delete blankAnswers[blankId]
     } else {
       blankAnswers[blankId] = opt
     }
 
-    const groups = q._blankOptionGroups || _enrichBlankOptionGroups(_getBlankOptionGroups(q), answer)
+    const groups = q._blankOptionGroups || adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), answer)
     const newAnswer = serializeBlankAnswer(groups, blankAnswers)
     const answers = { ...this.data.answers }
     if (newAnswer) answers[q.schedule_id] = newAnswer
     else delete answers[q.schedule_id]
 
     // Re-enrich blank groups with updated selection
-    const enrichedGroups = _enrichBlankOptionGroups(_getBlankOptionGroups(q), newAnswer)
+    const enrichedGroups = adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), newAnswer)
     const currentQuestion = Object.assign({}, q, {
       _blankOptionGroups: enrichedGroups,
       _hasBlankGroups: enrichedGroups.length > 0,
     })
 
-    const answeredCount = _computeAnsweredCount(this.data.groupQuestions, answers)
+    const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, answers, KF)
     this.setData({ answers, currentQuestion, _answeredCount: answeredCount })
     this._syncAnsweredFlags()
   },
@@ -590,77 +469,25 @@ Page({
   /* ==================== 题目导航 ==================== */
 
   goQuestion(e) {
-    if (this._animating) return
-    const index = Number(e.currentTarget.dataset.index)
-    if (!Number.isInteger(index) || index < 0 || index >= this.data.groupQuestions.length) return
+    var index = e.detail.index
     if (index === this.data.currentIndex) return
     this._showQuestion(index)
   },
 
-  goNext() {
-    if (this._animating) return
-    const next = this.data.currentIndex + 1
-    if (next >= this.data.groupQuestions.length) return
-    this._animating = true
-    this.setData({ animClass: 'slide-out-left' })
-    setTimeout(() => {
-      this._showQuestion(next)
-      this.setData({ animClass: 'slide-in' })
-      setTimeout(() => {
-        this.setData({ animClass: '' })
-        this._animating = false
-      }, 120)
-    }, 120)
+  goNext(e) {
+    this._showQuestion(e.detail.index)
   },
 
-  goPrev() {
-    if (this._animating) return
-    if (this.data.currentIndex <= 0) return
-    this._animating = true
-    this.setData({ animClass: 'slide-out-right' })
-    setTimeout(() => {
-      this._showQuestion(this.data.currentIndex - 1)
-      this.setData({ animClass: 'slide-in' })
-      setTimeout(() => {
-        this.setData({ animClass: '' })
-        this._animating = false
-      }, 120)
-    }, 120)
-  },
-
-  onTouchStart(e) {
-    if (this.data.submittingGroup || this._animating) return
-    const t = e.touches[0]
-    this._touchX = t.clientX
-    this._touchY = t.clientY
-  },
-
-  onTouchEnd(e) {
-    if (this.data.submittingGroup || this._animating) return
-    if (this._touchX === undefined) return
-
-    const t = e.changedTouches[0]
-    const dx = t.clientX - this._touchX
-    const dy = t.clientY - this._touchY
-
-    if (Math.abs(dy) > Math.abs(dx) * 1.5) {
-      this._touchX = undefined
-      return
-    }
-    if (Math.abs(dx) < 60) {
-      this._touchX = undefined
-      return
-    }
-
-    this._touchX = undefined
-    if (dx < 0) this.goNext()
-    else this.goPrev()
+  goPrev(e) {
+    this._showQuestion(e.detail.index)
   },
 
   /* ==================== 已掌握 ==================== */
 
   tapMaster(e) {
-    const scheduleId = parseInt(e.currentTarget.dataset.sid)
+    var q = e.detail && e.detail.question
+    var scheduleId = q && q.schedule_id
+    if (!scheduleId) return
     this.setData({ masterConfirmId: scheduleId })
   },
 
@@ -697,7 +524,7 @@ Page({
           groupQuestions: newGroupQuestions,
           answers,
           currentIndex: 0,
-          _answeredCount: _computeAnsweredCount(newGroupQuestions, answers),
+          _answeredCount: adapter.computeAnsweredCount(newGroupQuestions, answers, KF),
         })
         this._syncAnsweredFlags()
         if (groups[currentGroupIdx] && groups[currentGroupIdx].length > 0) {
@@ -724,7 +551,7 @@ Page({
           groupQuestions: groupQuestions.length > 0 ? groupQuestions : groups[currentGroupIdx] || [],
           answers,
           currentIndex,
-          _answeredCount: _computeAnsweredCount(groupQuestions, answers),
+          _answeredCount: adapter.computeAnsweredCount(groupQuestions, answers, KF),
         })
         this._syncAnsweredFlags()
         // All questions mastered → go to final result
@@ -754,7 +581,7 @@ Page({
     const { groupQuestions, answers, submittingGroup } = this.data
     if (submittingGroup) return
 
-    const answeredCount = _computeAnsweredCount(groupQuestions, answers)
+    const answeredCount = adapter.computeAnsweredCount(groupQuestions, answers, KF)
     const totalCount = groupQuestions.length
     const unansweredCount = totalCount - answeredCount
 
@@ -796,7 +623,7 @@ Page({
     // Build payload
     const reviews = []
     for (const q of groupQuestions) {
-      const isAnswered = _isQuestionAnswered(q, answers)
+      const isAnswered = adapter.isQuestionAnswered(q, answers, KF)
       // 跳过未作答的题目（除非用户选择按不会处理）
       if (!isAnswered && !treatUnansweredAsWrong) continue
       reviews.push({
@@ -835,7 +662,7 @@ Page({
           }
           return String(rr.question_id) === String(q.question_id)
         })
-        const isAnswered = _isQuestionAnswered(q, answers)
+        const isAnswered = adapter.isQuestionAnswered(q, answers, KF)
         const wasSubmitted = !!r
         return {
           ...q,
@@ -857,7 +684,7 @@ Page({
       const totalCompleted = allGroupResults.filter(r => r.wasSubmitted).length
 
       // Re-queue skipped questions as a new group
-      const skippedQuestions = groupQuestions.filter(q => !_isQuestionAnswered(q, answers) && !treatUnansweredAsWrong)
+      const skippedQuestions = groupQuestions.filter(q => !adapter.isQuestionAnswered(q, answers, KF) && !treatUnansweredAsWrong)
       const groups = skippedQuestions.length > 0
         ? [...this.data.groups, skippedQuestions]
         : this.data.groups
@@ -870,13 +697,11 @@ Page({
         groupResults,
         groupCorrect,
         groupWrong,
-        groupSkipped,
         submittingGroup: false,
         allGroupResults,
         totalCorrect,
         totalWrong,
         totalCompleted,
-        unansweredCount: groupSkipped,
         _groupProgressStyle: this._calcGroupProgressStyle(this.data.currentGroupIdx + 1, groups.length),
       })
 
@@ -920,8 +745,6 @@ Page({
       groupResults: [],
       groupCorrect: 0,
       groupWrong: 0,
-      groupSkipped: 0,
-      unansweredCount: 0,
       resultTransitioning: false,
     })
     this._syncAnsweredFlags()
@@ -977,9 +800,7 @@ Page({
       const unlockedCount = (growth.badges || []).filter(b => b.unlocked).length
       this.setData({
         growthLevel: growth.level_title || 'Lv1 起步',
-        growthExpText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
         growthLevelPct: growth.level_progress_pct || 0,
-        growthBadgeCount: unlockedCount,
         growthDesc: unlockedCount > 0
           ? `已点亮 ${unlockedCount} 个徽章 · ${growth.level_title || ''}`
           : `当前 ${growth.level_title || 'Lv1 起步'} · 继续保持`,
@@ -1033,7 +854,4 @@ Page({
     return map[s] || s || ''
   },
 
-  _stripTrailing(optKey) {
-    return optKey ? optKey.replace(/[.．、:：）)]\s*$/, '') : ''
-  },
 })
