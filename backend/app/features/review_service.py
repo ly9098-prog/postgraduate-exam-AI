@@ -478,6 +478,9 @@ async def submit_to_review(
                     # prompts/tasks/ocr_book_pdf_non_question_filter_plan.md §11.3）。
                     # 前端 import-batch 页据此渲染徽章；空列表写 None 减少 JSON 体积。
                     "risk_flags": list(dict.fromkeys(q.get("risk_flags") or [])) or None,
+                    # P0: Quality status monotonic preservation
+                    "quality_status": q.get("quality_status", "passed"),
+                    "quality_blockers": q.get("quality_blockers") or [],
                 },
                 # ── 原题定位与答案状态 ──
                 source_question_no=source_question_no,

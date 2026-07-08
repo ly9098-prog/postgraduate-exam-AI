@@ -204,7 +204,28 @@ def _extract_stem(raw_text: str, option_lines: dict[str, str], blank_option_grou
         if not in_options:
             stem_lines.append(line)
 
-    return _clean_stem("\n".join(stem_lines))
+    stem_text = "\n".join(stem_lines)
+
+    # P1-2: Strip inline options from stem when option_lines are embedded in
+    # the same line as stem text (e.g. "则A. 可能是2 B. 不可能是1").
+    # This handles the case where OCR outputs stem+options on one line and
+    # the line-by-line _OPTION_LINE_RE matching above can't separate them.
+    if option_lines and len(option_lines) >= 2:
+        # Remove inline option text from stem. Handles cases where options
+        # are on the same line as stem text (e.g. "则A.可能是2 B.不可能是1").
+        _option_keys = sorted(option_lines.keys(), key=len, reverse=True)
+        for _k in _option_keys:
+            _val = option_lines.get(_k, "")
+            if not _val:
+                continue
+            # Build regex for e.g. "A. 可能是2" with optional separator variations
+            _opt_pat = re.compile(
+                re.escape(_k) + r"\s*[.．、:：)）]\s*" + re.escape(_val) + r"\s*"
+            )
+            stem_text = _opt_pat.sub("", stem_text)
+        stem_text = stem_text.strip()
+
+    return _clean_stem(stem_text)
 
 
 def _normalize_options(raw_options: dict[str, str]) -> list[dict]:
@@ -833,6 +854,31 @@ def normalize_question(
         and no_code_integrity_issues
         and len([e for e in errors if e not in ("missing_answer", "missing_answer_for_objective_question")]) == 0
     )
+
+    # === Quality status derivation (P0: Problem E) ===
+    # quality_status tracks the overall health of the question across the pipeline.
+    # It is MONOTONIC: once set to a problematic state, downstream stages cannot
+    # silently upgrade it without evidence of repair.
+    quality_blockers: list[str] = []
+    # Fatal blockers - these prevent high-confidence pass-through
+    if "code_garbled_text" in code_risk_flags:
+        quality_blockers.append("ocr_garbled_code")
+    _answer_missing = not answer and question_type in (QT_SINGLE_CHOICE, QT_MULTIPLE_CHOICE, QT_TRUE_FALSE)
+    if _answer_missing:
+        quality_blockers.append("missing_answer_for_objective_question")
+    if confidence_score < 0.5:
+        quality_blockers.append("low_confidence")
+    if not stem_valid:
+        quality_blockers.append("empty_stem")
+    if not options_complete:
+        quality_blockers.append("incomplete_options")
+    if code_risk_flags:
+        quality_blockers.append("code_integrity_issue")
+
+    if quality_blockers:
+        quality_status = "needs_manual_review"
+    else:
+        quality_status = "passed"
     # missing_answer 本身不阻断 is_valid（答案可能在后续匹配），但与其他错误组合时阻断
 
     if not is_valid and not failure_reasons:
@@ -884,6 +930,9 @@ def normalize_question(
         "ocr_quality_flags": quality_gate["ocr_quality_flags"],
         # 代码完整性风险标记
         "risk_flags": code_risk_flags,
+        # P0: Quality status (monotonic - can't be upgraded without evidence)
+        "quality_status": quality_status,
+        "quality_blockers": quality_blockers,
     }
     if blank_option_groups:
         result["blank_option_groups"] = blank_option_groups
@@ -1205,6 +1254,7 @@ def normalize_output(question: dict) -> dict:
         "vision_fallback_reason",
         "pre_fallback_code_flags", "post_fallback_code_flags",
         "schema_version",
+        "quality_status", "quality_blockers",
     ]
     for key in preserve_keys:
         if key in question:
