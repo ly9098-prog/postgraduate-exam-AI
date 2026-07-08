@@ -1129,6 +1129,25 @@ def _pos_to_page(
     return last_page
 
 
+def _get_span_blocks(
+    start_pos: int,
+    end_pos: int,
+    page_map: list[tuple[int, int, int]],
+) -> set[tuple[int, int]]:
+    """Get set of (page, block_idx) that overlap with the given text span.
+
+    Used to match a question's text span to specific normalized blocks,
+    so frozen options can be bound at block granularity instead of page
+    granularity (preventing cross-contamination between blocks on the same page).
+    """
+    blocks: set[tuple[int, int]] = set()
+    for i, (pos, page, block_idx) in enumerate(page_map):
+        block_end = page_map[i + 1][0] if i + 1 < len(page_map) else float("inf")
+        if pos < end_pos and block_end > start_pos:
+            blocks.add((page, block_idx))
+    return blocks
+
+
 def split_questions(
     normalized_blocks: list[dict],
     structure: dict | None = None,
@@ -1298,20 +1317,21 @@ def split_questions(
 
         # P0 (Problem C): Strip frozen option text from raw_text when freeze data exists.
         # This prevents option text from appearing in the stem after _extract_stem().
+        # P0 (Cross-contamination): Collect frozen options at BLOCK granularity,
+        # not page granularity, so questions on the same page don't cross-contaminate.
         _q_frozen_opts: dict[str, str] = {}
         _original_raw: str | None = None
         if _freeze_has_page_data and frozen_option_registry:
-            # Collect frozen options for this question's pages
-            for _fp in range(page_start, page_end + 1):
-                for _fkey in frozen_option_registry:
-                    try:
-                        _fk_page = int(_fkey.split(":")[0])
-                    except (ValueError, IndexError):
-                        continue
-                    if _fk_page == _fp:
-                        _q_frozen_opts.update(
-                            dict(frozen_option_registry[_fkey])
-                        )
+            _span_blocks = _get_span_blocks(start_pos, end_pos, page_map)
+            for _fkey, _fopts in frozen_option_registry.items():
+                try:
+                    _fparts = _fkey.split(":")
+                    _fk_page = int(_fparts[0])
+                    _fk_block = int(_fparts[1]) if len(_fparts) > 1 else -1
+                except (ValueError, IndexError):
+                    continue
+                if (_fk_page, _fk_block) in _span_blocks:
+                    _q_frozen_opts.update(dict(_fopts))
             if _q_frozen_opts:
                 # Save original text before stripping so match_answers can
                 # extract explicit answers from it downstream.
@@ -1327,13 +1347,18 @@ def split_questions(
                     raw_text = _stripped_raw
 
         if _freeze_has_page_data:
-            # Directly assign frozen options instead of leaving them empty
-            # for _apply_frozen_options downstream. That function's text-substring
-            # matching (block_text in q_text) FAILS because split_questions
-            # stripped frozen option lines from raw_question_text above —
-            # the full block text (with options) is no longer a substring of
-            # the question text (without options).
-            options = dict(_q_frozen_opts) if _q_frozen_opts else {}
+            if _q_frozen_opts:
+                # Directly assign frozen options instead of leaving them empty
+                # for _apply_frozen_options downstream. That function's text-substring
+                # matching (block_text in q_text) FAILS because split_questions
+                # stripped frozen option lines from raw_question_text above —
+                # the full block text (with options) is no longer a substring of
+                # the question text (without options).
+                options = dict(_q_frozen_opts)
+            else:
+                # Frozen data exists on this page but no block-level match for
+                # this question — fall back to regex to avoid missing options.
+                options = _extract_options(raw_text)
         elif has_grouped_options:
             options = {}
         else:
@@ -1392,6 +1417,11 @@ def split_questions(
                     section_type = marker_type
                     break
 
+        # ── 风险标记 ──
+        _risk_flags: list[str] = []
+        if _freeze_has_page_data and frozen_option_registry and not _q_frozen_opts:
+            _risk_flags.append("frozen_options_unmatched")
+
         # ── 提取原题号信息（用于审核定位） ──
         source_question_no = str(num) if num and num > 0 else None
         source_question_label = _extract_first_line_label(raw_text)
@@ -1411,6 +1441,7 @@ def split_questions(
             "is_frozen": _freeze_has_page_data,
             "confidence": round(max(0.0, min(1.0, conf)), 2),
             "section_type": section_type,
+            "risk_flags": _risk_flags,
             # ── 原题定位信息 ──
             "source_question_no": source_question_no,
             "source_question_label": source_question_label,
