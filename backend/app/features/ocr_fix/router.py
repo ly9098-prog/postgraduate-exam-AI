@@ -95,6 +95,15 @@ def _evaluate_adapter_output(
             risk_flags=risk_flags,
         )
 
+    # P0: VL low-confidence + options_dropped → mark vl_low_confidence_rejected
+    # so downstream stages know to preserve raw OCR structure.
+    if (
+        "options_dropped" in reason
+        and result.confidence is not None
+        and result.confidence <= 0.2
+    ):
+        risk_flags = list(risk_flags) + ["vl_low_confidence_rejected"]
+
     # ── Determine REJECT_CONTINUE vs REJECT_STOP ──
     # Most safety rejections are REJECT_CONTINUE (try next adapter).
     # REJECT_STOP is reserved for catastrophic failures.

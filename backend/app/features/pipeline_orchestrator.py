@@ -2605,10 +2605,12 @@ class ImportPipeline:
                     _detect_noise(block), _detect_structure_abnormal(text),
                     text[:2000],
                 )
+                has_options = bool(re.search(r"[A-D][.、．）)\s]", text))
                 result = await router.fix(
                     image=page_image,
                     ocr_text=text,
-                    context={"block_index": idx, "page": page_num, "entry_point": "ocr_correction_router"},
+                    context={"block_index": idx, "page": page_num, "entry_point": "ocr_correction_router",
+                             "has_options": has_options},
                 )
 
                 if result.tokens_used:
