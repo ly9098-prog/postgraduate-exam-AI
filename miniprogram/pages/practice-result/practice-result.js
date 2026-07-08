@@ -2,6 +2,7 @@ const api = require('../../utils/api')
 const { formatInlineMathText } = require('../../utils/math-format')
 Page({
   data: {
+    /* 核心数据 */
     correct: 0,
     wrong: 0,
     skipped: 0,
@@ -9,23 +10,39 @@ Page({
     answeredCount: 0,
     passRate: 0,
     subject: '',
+    subjectDisplay: '练习',
     duration: 0,
     durationText: '',
+
+    /* 答题详情 */
     results: [],
     showDetail: false,
-    showCelebration: false,
-    celebrationTitle: '',
-    celebrationDetail: '',
-    celebrationMotto: '',
-    celebrationRewardText: '',
-    celebrationType: 'steady',
+
+    /* 视图模型 — 由 _buildResultViewModel 生成 */
+    resultLevelClass: '',
+    resultTitle: '',
+    resultDesc: '',
+    nextStepType: '',
+    nextStepTitle: '',
+    nextStepDesc: '',
+    nextStepTag: '',
+    shouldShowCelebration: false,
+
+    /* 成长数据 */
     growthTitle: '',
     growthDesc: '',
     growthLevel: '',
     growthExpText: '',
     growthLevelPct: 0,
     growthBadgeCount: 0,
-    subjectDisplay: '练习',
+
+    /* 庆祝动效 */
+    showCelebration: false,
+    celebrationTitle: '',
+    celebrationDetail: '',
+    celebrationMotto: '',
+    celebrationRewardText: '',
+    celebrationType: 'steady',
   },
 
   async onLoad(options) {
@@ -55,12 +72,16 @@ Page({
             _cls: r.is_correct ? 'correct' : 'wrong',
             _stemPreview: stemText ? (stemText.length > 50 ? stemText.slice(0, 50) + '...' : stemText) : '',
             _userAnswer: r.user_answer || '',
+            _isWrong: !r.is_correct,
           }
         })
       }
     } catch (_) {}
 
     const skipped = (stored && stored.skipped) || 0
+    const vm = this._buildResultViewModel(passRate, correct, wrong, total, skipped)
+    const celebrationCopy = vm.shouldShowCelebration ? this._celebrationCopy(passRate, correct, wrong, total, answeredCount) : {}
+
     this.setData({
       correct,
       wrong,
@@ -73,35 +94,86 @@ Page({
       subject: options.subject_id || '',
       subjectDisplay: decodeURIComponent(options.subject_name || '') || '练习',
       results,
-      ...this._celebrationCopy(passRate, correct, wrong, total, answeredCount),
+      ...vm,
+      ...celebrationCopy,
     })
-    this._showCelebration()
+
+    if (this.data.shouldShowCelebration) {
+      this._showCelebration()
+    }
     this._loadGrowth()
   },
 
-  async _loadGrowth() {
-    try {
-      const growth = await api.get('/stats/growth')
-      if (!growth) return
-      const unlockedBadges = (growth.badges || []).filter(b => b.unlocked).length
-      this.setData({
-        growthLevel: growth.level_title || 'Lv1 起步',
-        growthExpText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
-        growthLevelPct: growth.level_progress_pct || 0,
-        growthBadgeCount: unlockedBadges,
-        growthTitle: `练习经验 +${Math.max(1, this.data.total)}`,
-        growthDesc: unlockedBadges > 0
-          ? `已点亮 ${unlockedBadges} 个徽章 · ${growth.level_title || ''}`
-          : `当前 ${growth.level_title || 'Lv1 起步'} · 继续保持`,
-      })
-    } catch (_) {}
-  },
+  /* ── 视图模型 ── */
 
-  _fmt(sec) {
-    const s = Math.max(0, sec || 0)
-    const m = Math.floor(s / 60)
-    const ss = s % 60
-    return `${m} 分 ${ss} 秒`
+  _buildResultViewModel(passRate, correct, wrong, total, skipped) {
+    const vm = {
+      resultLevelClass: '',
+      resultTitle: '',
+      resultDesc: '',
+      nextStepType: '',
+      nextStepTitle: '',
+      nextStepDesc: '',
+      nextStepTag: '',
+      shouldShowCelebration: false,
+    }
+
+    if (total <= 0) {
+      vm.resultLevelClass = 'empty'
+      vm.resultTitle = '暂无练习结果'
+      vm.resultDesc = '本次没有可统计的答题数据'
+      vm.nextStepType = 'practice'
+      vm.nextStepTitle = '去练一组'
+      vm.nextStepDesc = '请完成一组练习后查看结果'
+      vm.nextStepTag = '开始'
+      return vm
+    }
+
+    // 庆祝动效触发条件：高正确率 或 全小测验满分
+    vm.shouldShowCelebration = passRate >= 80 || (total <= 5 && passRate === 100)
+
+    if (passRate >= 90) {
+      vm.resultLevelClass = 'excellent'
+      vm.resultTitle = '表现很稳'
+      vm.resultDesc = '这组正确率很高，可以继续保持节奏'
+      vm.nextStepType = 'continue'
+      vm.nextStepTitle = '建议继续挑战'
+      vm.nextStepDesc = '可以再来一组，扩大优势题型的熟练度'
+      vm.nextStepTag = '继续练习'
+    } else if (passRate >= 70) {
+      vm.resultLevelClass = 'good'
+      vm.resultTitle = '完成得不错'
+      vm.resultDesc = '整体掌握较好，建议复盘少量错题'
+      vm.nextStepType = 'review'
+      vm.nextStepTitle = '建议先复盘错题'
+      vm.nextStepDesc = wrong > 0
+        ? `本次 ${wrong} 道错题，处理掉再继续下一组`
+        : '本组没有错题，可以继续下一组练习'
+      vm.nextStepTag = '推荐'
+    } else if (passRate >= 50) {
+      vm.resultLevelClass = 'normal'
+      vm.resultTitle = '还有提升空间'
+      vm.resultDesc = '这组暴露了一些薄弱点，复盘价值较高'
+      vm.nextStepType = 'review'
+      vm.nextStepTitle = '优先处理薄弱点'
+      vm.nextStepDesc = `建议先看 ${wrong} 道错题，再开启下一组练习`
+      vm.nextStepTag = '复盘优先'
+    } else {
+      vm.resultLevelClass = 'weak'
+      vm.resultTitle = '先别急着下一组'
+      vm.resultDesc = `本组错题较多（${wrong}/${total}），建议先集中复盘`
+      vm.nextStepType = 'review'
+      vm.nextStepTitle = '建议立即复盘'
+      vm.nextStepDesc = '先把错题原因搞清楚，这次练习才真正有效'
+      vm.nextStepTag = '重点'
+    }
+
+    // 有 skipped 时补充提示
+    if (skipped > 0) {
+      vm.resultDesc += ` · ${skipped} 道未作答`
+    }
+
+    return vm
   },
 
   _celebrationCopy(passRate, correct, wrong, total, answeredCount) {
@@ -121,8 +193,6 @@ Page({
         celebrationMotto: '这组表现很稳，继续把优势变成习惯',
         celebrationRewardText: `专注星光 +${Math.max(1, correct)}`,
         celebrationType: 'practice',
-        growthTitle: `练习经验 +${Math.max(1, total)}`,
-        growthDesc: '高正确率完成挑战，今日成长能量已点亮',
       }
     }
     if (passRate >= 50) {
@@ -132,8 +202,6 @@ Page({
         celebrationMotto: '复盘后再来一组，薄弱点会越来越少',
         celebrationRewardText: `复盘能量 +${Math.max(1, correct)}`,
         celebrationType: 'practice',
-        growthTitle: `练习经验 +${Math.max(1, total)}`,
-        growthDesc: '本组薄弱点已记录，继续巩固会更稳',
       }
     }
     return {
@@ -142,10 +210,39 @@ Page({
       celebrationMotto: '先把错题吃透，这次练习就很有价值',
       celebrationRewardText: '错题诊断 +1',
       celebrationType: 'practice',
-      growthTitle: `复盘经验 +${Math.max(1, wrong || total)}`,
-      growthDesc: '错题已进入复盘路径，下一组会更有方向',
     }
   },
+
+  /* ── 成长数据 ── */
+
+  async _loadGrowth() {
+    try {
+      const growth = await api.get('/stats/growth')
+      if (!growth) return
+      const unlockedBadges = (growth.badges || []).filter(b => b.unlocked).length
+      this.setData({
+        growthLevel: growth.level_title || 'Lv1 起步',
+        growthExpText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
+        growthLevelPct: growth.level_progress_pct || 0,
+        growthBadgeCount: unlockedBadges,
+        growthTitle: `练习经验 +${Math.max(1, this.data.total)}`,
+        growthDesc: unlockedBadges > 0
+          ? `已点亮 ${unlockedBadges} 个徽章 · ${growth.level_title || ''}`
+          : `当前 ${growth.level_title || 'Lv1 起步'} · 继续保持`,
+      })
+    } catch (_) {}
+  },
+
+  /* ── 工具方法 ── */
+
+  _fmt(sec) {
+    const s = Math.max(0, sec || 0)
+    const m = Math.floor(s / 60)
+    const ss = s % 60
+    return `${m} 分 ${ss} 秒`
+  },
+
+  /* ── 庆祝动效 ── */
 
   _showCelebration() {
     this._clearCelebrationTimer()
@@ -176,6 +273,8 @@ Page({
       this._celebrationTimer = null
     }
   },
+
+  /* ── 交互 ── */
 
   toggleDetail() {
     this.setData({ showDetail: !this.data.showDetail })
