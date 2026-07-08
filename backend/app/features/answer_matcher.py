@@ -5,10 +5,96 @@
 不做内容清洗、不做题型判断、不调用 AI。
 """
 
+import logging
 import re
+from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 # OCR 答案字母纠正
 _OCR_ANSWER_MAP = {"8": "B", "6": "B", "0": "D"}
+
+# ── Explicit answer extraction (P0: Problem D from audit) ──
+_EXPLICIT_ANSWER_PATTERNS: list[tuple[re.Pattern, str | None]] = [
+    # 答案：A / 答案:A / 答案: A
+    (re.compile(r"(?:^|\s)(?:参考|正确)?答案\s*[:：]\s*([A-Da-d][、,，]?\s*[A-Da-d]?|[A-Da-d])\s*(?:\n|$)"), None),
+    # 答案：AB / 答案：A、C  (multi-choice)
+    (re.compile(r"(?:^|\s)(?:参考|正确)?答案\s*[:：]\s*([A-Da-d][、,，]\s*[A-Da-d]|[A-Da-d]{2,})\s*(?:\n|$)"), None),
+    # 参考答案：A
+    (re.compile(r"(?:^|\s)参考答案\s*[:：]\s*([A-Da-d])\s*(?:\n|$)"), None),
+    # 正确答案：A
+    (re.compile(r"(?:^|\s)正确答案\s*[:：]\s*([A-Da-d])\s*(?:\n|$)"), None),
+    # Answer: A / KEY: A
+    (re.compile(r"(?:^|\s)(?:Answer|KEY)\s*[:：]\s*([A-Da-d])\s*(?:\n|$)", re.IGNORECASE), None),
+    # 【答案】A
+    (re.compile(r"(?:^|\s)【(?:参考|正确)?答案】\s*([A-Da-d])\s*(?:\n|$)"), None),
+]
+
+
+@dataclass
+class ExplicitAnswerResult:
+    """Result of explicit answer extraction from raw text."""
+    answer: str | None
+    source_span: tuple[int, int] | None
+    pattern: str | None
+    confidence: float
+
+
+def extract_explicit_answer(raw_text: str) -> ExplicitAnswerResult:
+    """Extract explicit answer from raw OCR text.
+
+    Detects patterns like:
+        答案：A, 答案:A, 参考答案：A, 正确答案：A, Answer: A
+        答案：AB (multi-choice), 答案：A、C
+
+    Returns:
+        ExplicitAnswerResult with answer (uppercase, comma-separated for multi)
+        or answer=None if no explicit answer found.
+    """
+    if not raw_text:
+        return ExplicitAnswerResult(answer=None, source_span=None, pattern=None, confidence=0.0)
+
+    for pat, _ in _EXPLICIT_ANSWER_PATTERNS:
+        m = pat.search(raw_text)
+        if m:
+            raw_answer = m.group(1).strip()
+            # Normalize: remove punctuation separators, uppercase
+            cleaned = raw_answer.replace("、", ",").replace("，", ",").replace(" ", "")
+            cleaned = cleaned.upper()
+            # Validate: single letter (A-D) or multi-letter combo
+            if re.match(r"^[A-D](?:[,，]?\s*[A-D])*$", cleaned):
+                pattern_desc = pat.pattern[:60]
+                return ExplicitAnswerResult(
+                    answer=cleaned,
+                    source_span=(m.start(), m.end()),
+                    pattern=pattern_desc,
+                    confidence=0.95,
+                )
+            # Single letter fallback
+            if re.match(r"^[A-D]$", cleaned):
+                pattern_desc = pat.pattern[:60]
+                return ExplicitAnswerResult(
+                    answer=cleaned,
+                    source_span=(m.start(), m.end()),
+                    pattern=pattern_desc,
+                    confidence=0.95,
+                )
+
+    # OCR fuzzy: "答案:8" → "B"
+    fuzzy_pat = re.compile(r"(?:^|\n)\s*(?:参考|正确)?答案\s*[:：]\s*([068])\s*(?:\n|$)")
+    m = fuzzy_pat.search(raw_text)
+    if m:
+        ocr_digit = m.group(1)
+        mapped = _OCR_ANSWER_MAP.get(ocr_digit)
+        if mapped:
+            return ExplicitAnswerResult(
+                answer=mapped,
+                source_span=(m.start(), m.end()),
+                pattern="answer_ocr_fuzzy",
+                confidence=0.7,
+            )
+
+    return ExplicitAnswerResult(answer=None, source_span=None, pattern=None, confidence=0.0)
 
 # 答案字母字符集（含 OCR 容错、判断 T/F、多选逗号）
 _ANSWER_LETTERS = r"[A-Da-d068TFtf,，]"
@@ -194,6 +280,28 @@ def _extract_separated_explanation(
     return None
 
 
+def _extract_explicit_answer_from_raw(raw_text: str) -> dict | None:
+    """Extract explicit answer from raw OCR text via extract_explicit_answer().
+
+    Returns dict with answer/source/confidence/pattern suitable for merging
+    into matched result, or None if no explicit answer found.
+    """
+    result = extract_explicit_answer(raw_text)
+    if result.answer:
+        logger.info(
+            "Explicit answer extracted: answer=%s pattern=%.60s confidence=%.2f",
+            result.answer, result.pattern or "none", result.confidence,
+        )
+        return {
+            "answer": result.answer,
+            "answer_source": "explicit_text",
+            "pattern": result.pattern,
+            "confidence": result.confidence,
+            "source_span": result.source_span,
+        }
+    return None
+
+
 def match_answers(
     raw_questions: list[dict],
     normalized_blocks: list[dict],
@@ -230,14 +338,27 @@ def match_answers(
         raw_answer_text = ""
         raw_explanation_text = ""
         confidence = 0.0
+        trace_answer_source: str | None = None
 
-        # 1. INLINE 提取
-        inline_a = _extract_inline_answer(qtext)
-        if inline_a:
-            answer = inline_a["answer"]
-            answer_source = "inline"
-            raw_answer_text = inline_a["raw"]
-            confidence = max(confidence, 0.9)
+        # 0. Explicit answer extraction from raw text (P0: Problem D)
+        # Run BEFORE inline/separated extraction so explicit answers are
+        # always detected even when inline patterns fail.
+        explicit = _extract_explicit_answer_from_raw(qtext)
+        if explicit:
+            answer = explicit["answer"]
+            answer_source = explicit["answer_source"]
+            raw_answer_text = qtext[explicit["source_span"][0]:explicit["source_span"][1]] if explicit.get("source_span") else ""
+            confidence = max(confidence, explicit["confidence"])
+            trace_answer_source = f"explicit_{explicit.get('pattern', 'unknown')}"
+
+        # 1. INLINE 提取 (only if no explicit answer found yet)
+        if answer is None:
+            inline_a = _extract_inline_answer(qtext)
+            if inline_a:
+                answer = inline_a["answer"]
+                answer_source = "inline"
+                raw_answer_text = inline_a["raw"]
+                confidence = max(confidence, 0.9)
 
         inline_e = _extract_inline_explanation(qtext)
         if inline_e:
@@ -291,6 +412,7 @@ def match_answers(
             "confidence": round(confidence, 2),
             "raw_answer_text": raw_answer_text,
             "raw_explanation_text": raw_explanation_text,
+            "trace_answer_source": trace_answer_source,
         })
 
     return {"matched": matched, "unmatched": unmatched}

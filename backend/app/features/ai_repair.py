@@ -98,6 +98,134 @@ def _looks_like_non_question_text(question: dict) -> bool:
     return len(prose_markers) >= 2 and weak_question_signals <= 1
 
 
+# ── Math subscript safety gate (P1.3: Problem C from BUGS) ──
+# Pattern: P_1, P_2, P_3, P_n — core math subscripts in 408 stack questions
+_RE_SUBSCRIPT = re.compile(r"\b([A-Za-z])[_\^]\{?(\d+|[imn])\}?")
+# Pattern for raw subscripts without LaTeX: P_1, P1, P_{i} etc.
+_RE_SUBSCRIPT_RAW = re.compile(r"\b([A-Za-z])\s*[_\^]\s*[{]?\s*(\d+|[imn])\s*[}]?")
+
+
+def _detect_subscript_changes(before_stem: str, after_stem: str, raw_text: str) -> list[str]:
+    """Detect AI repair changes to math subscripts that lack evidence in raw text.
+
+    Compares subscript pairs (variable + index) between before and after stems.
+    If a subscript changed (e.g. P_3 → P_1, P_1 → P_2), checks raw_text for
+    evidence of the new subscript. Without evidence, the change is rejected.
+
+    Returns:
+        List of change descriptions, empty if all changes are safe.
+    """
+    if not before_stem or not after_stem:
+        return []
+    if before_stem == after_stem:
+        return []
+
+    # Extract subscript pairs from before/after
+    before_pairs = set()
+    for m in _RE_SUBSCRIPT.finditer(before_stem):
+        var, idx = m.group(1), m.group(2)
+        before_pairs.add((var, idx))
+
+    after_pairs = set()
+    for m in _RE_SUBSCRIPT.finditer(after_stem):
+        var, idx = m.group(1), m.group(2)
+        after_pairs.add((var, idx))
+
+    if not before_pairs and not after_pairs:
+        return []
+
+    changes: list[str] = []
+    # Method 1: Pairwise comparison — detect any change where a subscript
+    # value is replaced (e.g. P_3 changes to something else)
+    before_subscripts = list(_RE_SUBSCRIPT.finditer(before_stem))
+    after_subscripts = list(_RE_SUBSCRIPT.finditer(after_stem))
+
+    for bm in before_subscripts:
+        b_var = bm.group(1)
+        b_idx = bm.group(2)
+        # Find the corresponding subscript in after_stem at the same position
+        # by matching on nearby context (rough positional alignment)
+        b_pos = bm.start()
+        # Search for same variable with different index near this position in after
+        best_match = None
+        best_dist = float("inf")
+        for am in after_subscripts:
+            a_var = am.group(1)
+            a_idx = am.group(2)
+            if a_var == b_var and a_idx != b_idx:
+                dist = abs(am.start() - b_pos)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_match = (a_var, b_idx, a_idx)
+
+        if best_match:
+            var, old_idx, new_idx = best_match
+            if best_dist <= 20:  # same area in text
+                def _subscript_in_raw(sub: str) -> bool:
+                    return bool(
+                        re.search(rf"{var}\s*[_\^]\s*{sub}(?!\d)", raw_text) or
+                        re.search(rf"{var}\s*[_\^]\s*{{\s*{sub}\s*}}", raw_text) or
+                        re.search(rf"{var}{sub}(?!\d)", raw_text)
+                    )
+                raw_has_new = _subscript_in_raw(new_idx)
+                raw_has_old = _subscript_in_raw(old_idx)
+
+                if raw_has_new:
+                    continue
+                if raw_has_old:
+                    changes.append(
+                        f"{var}_{{{old_idx}}}→{var}_{{{new_idx}}}: "
+                        f"old subscript found in raw text, "
+                        f"new not supported by OCR evidence"
+                    )
+                elif old_idx.isdigit() and new_idx.isdigit():
+                    changes.append(
+                        f"{var}_{{{old_idx}}}→{var}_{{{new_idx}}}: "
+                        f"numeric subscript changed without OCR evidence"
+                    )
+
+    # Method 2 (legacy): check removed/added index sets for completeness
+    before_by_var: dict[str, set[str]] = {}
+    for var, idx in before_pairs:
+        before_by_var.setdefault(var, set()).add(idx)
+    after_by_var: dict[str, set[str]] = {}
+    for var, idx in after_pairs:
+        after_by_var.setdefault(var, set()).add(idx)
+
+    for var in before_by_var:
+        before_idxs = before_by_var[var]
+        after_idxs = after_by_var.get(var, set())
+        added_idxs = after_idxs - before_idxs
+        for new_idx in added_idxs:
+            # Check if any of the new subscripts are unsupported by raw text
+            def _subscript_in_raw2(sub: str) -> bool:
+                return bool(
+                    re.search(rf"{var}\s*[_\^]\s*{sub}(?!\d)", raw_text) or
+                    re.search(rf"{var}\s*[_\^]\s*{{\s*{sub}\s*}}", raw_text) or
+                    re.search(rf"{var}{sub}(?!\d)", raw_text)
+                )
+            if not _subscript_in_raw2(new_idx) and new_idx.isdigit():
+                changes.append(
+                    f"{var}_{{{new_idx}}}: "
+                    f"new subscript not found in OCR evidence"
+                )
+
+    # Also check for specificity loss: P_3 → P_i (generalizing a specific subscript)
+    for var in before_by_var:
+        before_idxs = before_by_var[var]
+        after_idxs = after_by_var.get(var, set())
+        numeric_before = {i for i in before_idxs if i.isdigit()}
+        symbolic_after = {i for i in after_idxs if not i.isdigit() and i in ("i", "j", "k", "m", "n")}
+        if numeric_before and symbolic_after:
+            for old_idx in numeric_before:
+                changes.append(
+                    f"{var}_{{{old_idx}}}→{var}_{{{list(symbolic_after)[0]}}}: "
+                    f"A specific subscript was generalized without evidence"
+                )
+
+    return changes
+
+
 def _stem_has_code(stem: str) -> bool:
     """快速判断题干是否包含代码（保守匹配，避免自然语言误触发）。"""
     if not stem:
@@ -1093,14 +1221,38 @@ async def repair_questions(
             if "roman_repair_applied" not in after["risk_flags"]:
                 after["risk_flags"] = ["roman_repair_applied", *after["risk_flags"]]
 
+        # ---- Math subscript safety gate (P1.3: Problem C from BUGS) ----
+        # Detect and reject AI repair that changes core math subscripts without
+        # evidence from OCR/VL raw text.
+        # Cases: P_3 → P_1, P_1 → P_2, P_i → P_3 (subscript identity changes)
+        _before_stem = str(questions[i].get("stem", "") or "")
+        _after_stem = str(after.get("stem", "") or "")
+        _raw_text = str(questions[i].get("raw_text") or questions[i].get("raw_question_text") or "")
+        _subscript_changes = _detect_subscript_changes(_before_stem, _after_stem, _raw_text)
+        if _subscript_changes:
+            logger.warning(
+                "[SUBSCRIPT-SAFETY] q%d: AI repair changed subscripts without evidence: %s",
+                i, _subscript_changes,
+            )
+            _append_decision_trace(
+                questions[i], "ai_repair", "rejected",
+                f"subscript_change_without_evidence: {_subscript_changes}",
+            )
+            unrepaired.append({
+                "question_index": i,
+                "reason": f"subscript_change_rejected: {_subscript_changes}",
+            })
+            total_tokens += token_used
+            continue
+
         # ---- AI safety gate: 评估 AI 修复是否可接受 ----
         from app.features.ai_safety import evaluate_and_trace
 
         before_q = questions[i]
-        before_stem = str(before_q.get("stem", "") or "")
+        before_stem = _before_stem
         before_opts = str(before_q.get("options", "") or "")
         before_answer = str(before_q.get("answer", "") or "")
-        after_stem = str(after.get("stem", "") or "")
+        after_stem = _after_stem
         after_opts = str(after.get("options", "") or "")
         after_answer = str(after.get("answer", "") or "")
 

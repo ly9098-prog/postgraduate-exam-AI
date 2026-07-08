@@ -87,6 +87,38 @@ def _detect_noise(block: dict) -> float:
         if "A" in found_options and len(found_options) < 3:
             score += 0.2
 
+    # 5. (P0: Problem A) Code garbled detection — detect if block contains
+    # C code with garbled tokens. When code_detector recognizes code but
+    # integrity check finds garbled content, raise noise score to trigger
+    # OCR correction (VL rebuild or AI repair).
+    _has_code_keywords = any(
+        kw in text for kw in ["struct", "typedef", "InitStack", "Push(", "Pop(", "GetTop", "BiTNode", "BiTree"]
+    )
+    if _has_code_keywords:
+        from app.features.code_integrity import detect_garbled_code_block
+        garbled_result = detect_garbled_code_block(text)
+        if garbled_result.is_garbled:
+            score += min(0.5, garbled_result.score)
+            # Also check for unbalanced braces in code blocks
+            open_b = text.count("{")
+            close_b = text.count("}")
+            if open_b > close_b:
+                score += 0.15
+
+    # 6. Fence mention without proper fencing (code indicated but not fenced)
+    code_start_patterns = [
+        r"\btypedef\s+struct\b",
+        r"\bstruct\s+\w+\s*\{",
+        r"InitStack\(st\)",
+        r"Push\(st,",
+        r"Pop\(st,",
+        r"GetTop\(st,",
+    ]
+    if not text.startswith("```"):
+        code_hits = sum(1 for p in code_start_patterns if re.search(p, text))
+        if code_hits >= 2:
+            score += 0.2  # Code-like but not fenced → may need correction
+
     return min(score, 1.0)
 
 

@@ -62,10 +62,10 @@ _OCR_OPTION_MAP = {"8": "B", "6": "B", "0": "D", "Ｏ": "D"}
 _INLINE_QUESTION_PATTERN = re.compile(r"(?<![\d（(])(\d{1,3})\s*[.、)）]\s*\S")
 _INLINE_OPTION_PATTERN = re.compile(
     r"(?<![A-Za-z0-9])" + _OPTION_MARKER +
-    r"\s*(.+?)(?=\s+" + _OPTION_MARKER + r"\s*|$)"
+    r"\s*(.+?)(?=[、，,，\s]+" + _OPTION_MARKER + r"\s*|$)"
 )
 _LEADING_SPACE_OPTION_PATTERN = re.compile(
-    r"^" + _OPTION_PREFIX_MARKER + r"([A-Da-d])\s+(.+?)(?=\s+" + _OPTION_MARKER + r"\s*|$)"
+    r"^" + _OPTION_PREFIX_MARKER + r"([A-Da-d])\s+(.+?)(?=[、，,，\s]+" + _OPTION_MARKER + r"\s*|$)"
 )
 _ANSWER_EXPLANATION_MARKER = re.compile(
     r"(?:答案|正确答案|参考答案|解析|解答|讲解|分析)\s*[：:]"
@@ -202,6 +202,93 @@ def _has_exam_section_before(pos: int, section_positions: set[int], full_text: s
         if search_start <= sp < pos:
             return True
     return False
+
+
+# ── Frozen option stem stripping (P0: Problem C from audit) ──
+_FROZEN_OPTION_LINE_RE = re.compile(
+    r"(?:^|\n)\s*([A-Da-d])\s*[.．、:：)）]\s*(?:\S+)?(?=\s*(?:\n|$|[A-Da-d]\s*[.．、:：)）]))"
+)
+_FROZEN_ANSWER_LINE_RE = re.compile(
+    r"(?:^|\n)\s*(?:参考|正确)?答案\s*[:：]\s*[A-Da-d]+\s*(?:\n|$)"
+)
+
+
+def strip_frozen_options_from_stem(stem: str, frozen_options: dict[str, str]) -> str:
+    """Remove frozen option text and answer lines from stem.
+
+    Detects patterns like:
+        A.ABDECF, B.ABDCEF, C.ABDFEC, D.ACBEDF
+        A. ABDECF, B. ABDCEF  (with space after dot)
+        A.ABDECF B.ABDCEF C.ABDFEC D.ACBEDF  (single line)
+        答案：A, 答案:A
+
+    Preserves traversal sequences like DBEAFC, DEBFCA that are part of the stem.
+
+    Args:
+        stem: The question stem text (may contain option text).
+        frozen_options: Dict of {key: value} from structure freeze stage.
+
+    Returns:
+        Cleaned stem with option and answer text removed.
+    """
+    if not stem or not frozen_options:
+        return stem
+
+    lines = stem.split("\n")
+    cleaned_lines: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            cleaned_lines.append(line)
+            continue
+
+        # Check if this line matches an option line exactly
+        is_option_line = False
+        for key, value in frozen_options.items():
+            # Match patterns like "A.ABDECF", "A. ABDECF", "A.ABDCEF"
+            # Also "A.ABDECF" without space (no space between dot and text)
+            for prefix_sep in [". ", "．", ".", "、", ": ", "：", ") ", ")", "） "]:
+                pattern_no_space = f"{key}{prefix_sep}{value}"
+                pattern_with_space = f"{key}{prefix_sep} {value}"
+                if stripped == pattern_no_space.strip() or stripped == pattern_with_space.strip():
+                    is_option_line = True
+                    break
+                # Also check if stripped equals just the option prefix + value
+                simple_pattern = f"{key}{prefix_sep}{value}"
+                if stripped == simple_pattern.strip():
+                    is_option_line = True
+                    break
+            if is_option_line:
+                break
+
+        if is_option_line:
+            continue
+
+        # Check for "答案：A" or "答案:A" lines
+        if _FROZEN_ANSWER_LINE_RE.match(stripped):
+            continue
+
+        # Check for inline option patterns on this line
+        # Remove inline option patterns like "A.ABDECF B.ABDCEF" within a line
+        remaining = stripped
+        for key, value in frozen_options.items():
+            for prefix_sep in [".", "．", "、", ":", "："]:
+                # Match "key.value" or "key. value" patterns
+                pat = re.compile(
+                    r"\s*" + re.escape(key) + re.escape(prefix_sep) + r"\s*" + re.escape(value) + r"\s*"
+                )
+                remaining = pat.sub(" ", remaining).strip()
+
+        # Only keep if remaining has meaningful content
+        if remaining and remaining != stripped:
+            # Check if remaining is just whitespace or empty
+            if remaining.strip():
+                cleaned_lines.append(remaining)
+            # If remaining is empty, skip line entirely
+        else:
+            cleaned_lines.append(line)
+
+    return "\n".join(cleaned_lines).strip()
 
 
 def _is_section_number(line: str, page: int | None = None, content_pages: set | None = None) -> bool:
@@ -486,7 +573,7 @@ def _parse_grouped_options_from_text(text: str) -> dict[str, str]:
     text = text.strip()
     options: dict[str, str] = {}
     token_pattern = re.compile(
-        r"(?<![A-Za-z0-9])([A-Da-d])\s*(?:[.．、:：)）]\s*|\s+)"
+        r"(?<![A-Za-z0-9])([A-Da-d])\s*(?:[.．、:：)）]\s*|[、，,，]|\s+)"
     )
     matches = list(token_pattern.finditer(text))
     if len(matches) < 2:
@@ -743,6 +830,204 @@ def scan_entire_block_including_surrounding_lines(text: str) -> dict[str, str]:
     return extract_options_from_text(text)
 
 
+# ── Code quarantine patterns (P1: Problems A/B from audit) ──
+# These patterns identify lines that are code, not options.
+# When a line matches, it's quarantined BEFORE option extraction so
+# code content like "a)" or "b)" doesn't get extracted as options.
+
+# Function call pattern: word(word) or word(word, word)
+_RE_CODE_FUNC_CALL = re.compile(
+    r"\b(?:InitStack|Push|Pop|GetTop|GetElem|ListInsert|ListDelete|"
+    r"EnQueue|DeQueue|malloc|free|printf|scanf|sort|swap)\s*\("
+)
+# C struct/typedef patterns
+_RE_CODE_STRUCT_DEF = re.compile(
+    r"\b(?:typedef|struct|union|enum)\b"
+)
+# C keyword lines
+_RE_CODE_C_KEYWORD = re.compile(
+    r"\b(?:int|char|void|float|double|long|short|unsigned|signed|"
+    r"const|static|extern|volatile|return|if|else|for|while|do|switch|case|break|continue|"
+    r"goto|sizeof|NULL|true|false|bool|Status|ElemType)\b"
+)
+# Pointer operator
+_RE_CODE_PTR_OP = re.compile(r"->")
+# Brace or semicolon lines (code structure)
+_RE_CODE_BRACE_SEMI = re.compile(r"[\{\};]")
+# Struct member declaration: type *name
+_RE_CODE_MEMBER_DECL = re.compile(
+    r"\b(struct\s+\w+\s*\*?\s*\w+|"
+    r"\w+\s+\*?\w+\s*(?:,\s*\*?\w+\s*)*;?)"
+)
+# C++ access specifiers
+_RE_CODE_ACCESS = re.compile(r"^\s*(public|private|protected)\s*:")
+# Data structure keywords
+_RE_CODE_DS_KW = re.compile(
+    r"\b(BiTNode|BiTree|LNode|LinkList|SqList|SqStack|BSTNode|TNode|"
+    r"ListNode|LinkedList|TreeNode|Stack|Queue|DeQueue)\b"
+)
+
+
+def _is_code_line(line: str) -> bool:
+    """Check if a line is code (not an option or natural language)."""
+    stripped = line.strip()
+    if not stripped:
+        return False
+
+    # CRITICAL: If the line matches an option pattern (A.xxx B.xxx etc.),
+    # it is NOT code, even if it contains code-like keywords (e.g. "D.false"
+    # is an option, not code). Check this FIRST.
+    # Use _detect_option_line for strict validation: requires that the
+    # option has a valid key (A-D), followed by separator, followed by
+    # text that does NOT look like code continuation.
+    _opt_match = _detect_option_line(stripped)
+    if _opt_match:
+        _key, _text = _opt_match
+        # Even if it matches option pattern, check if the content after
+        # the option marker looks like code (e.g. "a); Push(st," has "; Push(")
+        # In that case, it's likely code, not an option.
+        if _text and not _text.lstrip().startswith((";", "{", "}", ")", "->")):
+            return False
+
+    # Strong code signals (individually sufficient)
+    if _RE_CODE_FUNC_CALL.search(stripped):
+        return True
+    if _RE_CODE_DS_KW.search(stripped):
+        return True
+    if _RE_CODE_STRUCT_DEF.search(stripped):
+        return True
+    if _RE_CODE_ACCESS.match(stripped):
+        return True
+    # Member declaration pattern
+    if _RE_CODE_MEMBER_DECL.match(stripped):
+        return True
+
+    # Composite signal: needs at least 2 indicators
+    signals = 0
+    if _RE_CODE_C_KEYWORD.search(stripped):
+        signals += 1
+    if _RE_CODE_BRACE_SEMI.search(stripped):
+        signals += 1
+    if _RE_CODE_PTR_OP.search(stripped):
+        signals += 1
+    # Line starts with a closing paren (code continuation)
+    if stripped.startswith(")") or stripped.startswith("}"):
+        signals += 1
+
+    return signals >= 2
+
+
+def _reconstruct_code_lines(text: str) -> str:
+    """Reconstruct broken code lines that were split across lines.
+
+    Detects patterns like:
+        Push(st,
+        a); Push(st,
+        b); Pop(st, x);
+
+    And merges them into:
+        Push(st, a); Push(st, b); Pop(st, x);
+    """
+    if not text:
+        return text
+
+    lines = text.split("\n")
+    result: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.rstrip()
+
+        # Check if line ends with a comma or open paren (code continuation)
+        # e.g. "Push(st," or "InitStack(st); Push(st,"
+        if stripped and (stripped.rstrip().endswith(",") or
+                         stripped.rstrip().endswith("(") or
+                         re.search(r"\w+\([^)]*$", stripped.rstrip())):
+            # Look ahead: merge subsequent lines until we find closing paren
+            merged = stripped
+            j = i + 1
+            while j < len(lines):
+                next_line = lines[j].strip()
+                if not next_line:
+                    break
+                # Merge: remove leading spaces from continuation
+                merged += " " + next_line
+                j += 1
+                # Stop when we've closed all open parens
+                open_parens = merged.count("(") - merged.count(")")
+                if open_parens <= 0:
+                    break
+            result.append(merged)
+            i = j
+        else:
+            result.append(line)
+            i += 1
+
+    return "\n".join(result)
+
+
+def _quarantine_code_regions(text: str) -> tuple[str, list[tuple[int, int, str]]]:
+    """Identify and quarantine code regions in text before option extraction.
+
+    Scans text line by line. Lines identified as code are replaced with
+    placeholders. The original code lines are returned separately so they
+    can be restored as code_blocks after option extraction.
+
+    Args:
+        text: Full text (stem + possibly options + possibly code).
+
+    Returns:
+        (cleaned_text, code_regions) where cleaned_text has code lines
+        replaced with placeholders, and code_regions is a list of
+        (start_line, end_line, code_content) tuples.
+    """
+    lines = text.split("\n")
+    code_regions: list[tuple[int, int, str]] = []
+
+    # First pass: detect code regions (contiguous code lines)
+    in_code = False
+    region_start = 0
+    code_lines: list[str] = []
+
+    for i, line in enumerate(lines):
+        is_code = _is_code_line(line)
+        if is_code and not in_code:
+            in_code = True
+            region_start = i
+            code_lines = [line]
+        elif is_code and in_code:
+            code_lines.append(line)
+        elif not is_code and in_code:
+            in_code = False
+            # Quarantine code regions: multi-line (≥2) or single line with
+            # strong code signals (multiple function calls with semicolons)
+            if len(code_lines) >= 2:
+                code_regions.append((region_start, i - 1, "\n".join(code_lines)))
+            elif len(code_lines) == 1 and code_lines[0].count(";") >= 2:
+                # Single line with multiple statements (e.g. after code reconstruction)
+                code_regions.append((region_start, i - 1, code_lines[0]))
+            code_lines = []
+
+    # Handle trailing code region
+    trailing_code = code_lines
+    if in_code:
+        if len(trailing_code) >= 2:
+            code_regions.append((region_start, len(lines) - 1, "\n".join(trailing_code)))
+        elif len(trailing_code) == 1 and trailing_code[0].count(";") >= 2:
+            code_regions.append((region_start, len(lines) - 1, trailing_code[0]))
+
+    if not code_regions:
+        return text, []
+
+    # Second pass: replace code lines with placeholders
+    result_lines = list(lines)
+    for start, end, content in reversed(code_regions):
+        for li in range(start, end + 1):
+            result_lines[li] = f"__CODE_LINE_{li}__"
+
+    return "\n".join(result_lines), code_regions
+
+
 def _is_ocr_garbage_line(line: str) -> bool:
     """Check if a non-option line between options is likely OCR corruption.
 
@@ -773,13 +1058,24 @@ def _extract_options(text: str) -> dict[str, str]:
     """从题目文本中提取选项行。
 
     使用多级检测：
+    0. 代码隔离 — 识别代码区域并 quarantine，防止代码被误识别为选项
     1. 标准行内检测（_INLINE_OPTION_PATTERN）
     2. 逐行检测（_detect_option_line）
     3. SSOT 回退（extract_options_from_text）— 委托至 question_type_classifier 统一入口
+
+    P1.1 (Code quarantine): Before option extraction, reconstruct broken code lines
+    (e.g. Push(st,\\n a) -> Push(st, a)) and quarantine code regions to prevent
+    code content like "a)" or "b)" from being extracted as options.
     """
+    # Step 0a: Reconstruct broken code lines first (Case 4 from BUGS)
+    text = _reconstruct_code_lines(text)
+
+    # Step 0b: Quarantine code regions before option extraction
+    cleaned_text, code_regions = _quarantine_code_regions(text)
+
     options: dict[str, str] = {}
     last_key: str | None = None
-    for line in text.split("\n"):
+    for line in cleaned_text.split("\n"):
         stripped = line.strip()
         inline_matches = list(_INLINE_OPTION_PATTERN.finditer(stripped))
         if len(inline_matches) > 1:
@@ -815,7 +1111,7 @@ def _extract_options(text: str) -> dict[str, str]:
     # 覆盖代码片段、断裂 OCR 等导致行首匹配失败的情况
     if len(options) < 2:
         from app.features.question_type_classifier import extract_options_from_text as _ssot_extract
-        fallback_opts = _ssot_extract(text)
+        fallback_opts = _ssot_extract(cleaned_text)
         if len(fallback_opts) >= len(options):
             options = fallback_opts
     return options
@@ -999,6 +1295,32 @@ def split_questions(
         _freeze_has_page_data = bool(
             _frozen_pages and (page_start in _frozen_pages or page_end in _frozen_pages)
         )
+
+        # P0 (Problem C): Strip frozen option text from raw_text when freeze data exists.
+        # This prevents option text from appearing in the stem after _extract_stem().
+        if _freeze_has_page_data and frozen_option_registry:
+            # Collect frozen options for this question's pages
+            _q_frozen_opts: dict[str, str] = {}
+            for _fp in range(page_start, page_end + 1):
+                for _fkey in frozen_option_registry:
+                    try:
+                        _fk_page = int(_fkey.split(":")[0])
+                    except (ValueError, IndexError):
+                        continue
+                    if _fk_page == _fp:
+                        _q_frozen_opts.update(
+                            dict(frozen_option_registry[_fkey])
+                        )
+            if _q_frozen_opts:
+                _stripped_raw = strip_frozen_options_from_stem(raw_text, _q_frozen_opts)
+                if _stripped_raw and len(_stripped_raw) < len(raw_text):
+                    logger.info(
+                        "split: stripped frozen options from stem for q%d "
+                        "(removed %d chars, frozen_opts=%s)",
+                        num, len(raw_text) - len(_stripped_raw),
+                        sorted(_q_frozen_opts.keys()),
+                    )
+                    raw_text = _stripped_raw
 
         if _freeze_has_page_data:
             options = {}
