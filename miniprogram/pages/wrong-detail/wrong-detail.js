@@ -2,29 +2,10 @@ const api = require('../../utils/api')
 const config = require('../../config')
 const {
   buildRenderModel, resetRenderGuard, setRenderGuardPage,
-  toPlainInlineMathText, needsRichRender, stripLeadingOptionLabel,
-  textToHtml, RENDER_MODE
+  toPlainInlineMathText, needsRichRender, textToHtml
 } = require('../../utils/stem-render')
-const { normalizeAnswerSet, isTrueFalseType, isMultipleChoiceType } = require('../../utils/answer')
-
-function _normalizeBlankAnswer(answer) {
-  if (!answer) return {}
-  if (typeof answer === 'object') return answer
-  const result = {}
-  String(answer).split(/[;；,，\n]+/).forEach((part) => {
-    const match = part.trim().match(/^(.+?)\s*[:：=]\s*([A-Za-z])$/)
-    if (match) result[match[1].trim()] = match[2].trim().toUpperCase()
-  })
-  return result
-}
-
-function _normalizeBlankOptionList(options) {
-  if (Array.isArray(options)) return options
-  if (options && typeof options === 'object') {
-    return Object.keys(options).map((key) => ({ key, text: options[key] }))
-  }
-  return []
-}
+const { isTrueFalseType } = require('../../utils/answer')
+const adapter = require('../../utils/question-runner-adapter')
 
 function _subjectLabel(s) {
   var map = {
@@ -41,16 +22,8 @@ function _errorTypeLabel(t) {
   return map[t] || t
 }
 
-function _getBlankOptionGroups(q) {
-  if (!q) return []
-  if (q.content && Array.isArray(q.content.blank_option_groups)) return q.content.blank_option_groups
-  if (Array.isArray(q.blank_option_groups)) return q.blank_option_groups
-  return []
-}
-
 function _processWqData(wq, safeMode) {
   const questionType = wq.question_type || wq.type || ''
-  // Judgement fallback
   let opts = wq.options || null
   if ((!opts || Object.keys(opts).length === 0) && isTrueFalseType(questionType)) {
     opts = { A: '正确', B: '错误' }
@@ -59,83 +32,24 @@ function _processWqData(wq, safeMode) {
   var renderCfg = { enableMathImage: false, DEV: config.DEV }
   if (safeMode) renderCfg.SAFE_MODE = true
   const _renderModel = buildRenderModel(wq, opts, renderCfg)
-  const blankOptionGroups = _enrichBlankOptionGroups(_getBlankOptionGroups(wq), wq.answer, wq.wrong_answer)
 
-  // Multi-choice: use set-based comparison
-  const correctSet = isMultipleChoiceType(questionType) ? normalizeAnswerSet(wq.answer) : null
-  const userSet = isMultipleChoiceType(questionType) ? normalizeAnswerSet(wq.wrong_answer) : null
+  // Build readonly option list with correct/wrong highlighting
+  const _optionList = adapter.buildOptionListReadonly(wq, opts, optionKeys, wq.answer, wq.wrong_answer)
+  const blankOptionGroups = adapter.enrichBlankOptionGroupsReadonly(
+    adapter.getBlankOptionGroups(wq), wq.answer, wq.wrong_answer
+  )
 
-  const optionItems = optionKeys.map((key) => {
-    const rawText = (opts && opts[key]) || ''
-    const stripped = stripLeadingOptionLabel(key, rawText)
-    const plain = toPlainInlineMathText(stripped)
-    const text = plain || stripped
-    const needsRich = !plain && needsRichRender(stripped)
-    let isCorrect = key === wq.answer
-    let isUserAnswer = key === wq.wrong_answer
-    if (correctSet) {
-      isCorrect = !!correctSet[key]
-    }
-    if (userSet) {
-      isUserAnswer = !!userSet[key]
-    }
-    let lineClass = ''
-    let valueClass = 'option-value'
-    if (isCorrect && isUserAnswer) {
-      lineClass = 'both'
-      valueClass += ' both'
-    } else if (isCorrect) {
-      lineClass = 'correct'
-      valueClass += ' right'
-    } else if (isUserAnswer) {
-      lineClass = 'user-answer'
-      valueClass += ' wrong'
-    }
-    return {
-      key,
-      text,
-      html: needsRich ? textToHtml(stripped) : '',
-      needsRich,
-      className: valueClass,
-      lineClass,
-    }
-  })
   return {
     wq,
-    optionKeys,
-    optionItems,
-    blankOptionGroups,
+    _optionList,
+    _optionKeys: optionKeys,
+    _opts: opts,
+    _blankOptionGroups: blankOptionGroups,
+    _hasBlankOptionGroups: blankOptionGroups.length > 0,
     _renderModel,
     subjectLabelText: _subjectLabel(wq.subject),
     errorTypeLabelText: _errorTypeLabel(wq.error_type),
   }
-}
-
-function _enrichBlankOptionGroups(groups, answer, wrongAnswer) {
-  const blankAnswers = _normalizeBlankAnswer(answer)
-  const wrongAnswers = _normalizeBlankAnswer(wrongAnswer)
-  return (groups || []).map((group) => {
-    const groupId = String((group && group.id) || '').trim()
-    const options = _normalizeBlankOptionList(group && group.options).map((opt) => {
-      const key = String((opt && opt.key) || '').trim().toUpperCase()
-      const text = String((opt && opt.text) || '').trim()
-      const optionText = stripLeadingOptionLabel(key, text)
-      const plain = toPlainInlineMathText(optionText)
-      const needsRich = !plain && needsRichRender(optionText)
-      const isCorrect = blankAnswers[groupId] === key
-      const isUser = wrongAnswers[groupId] === key
-      return Object.assign({}, opt, {
-        key,
-        _text: plain || optionText,
-        _isCorrect: isCorrect,
-        _isUserAnswer: isUser,
-        _isBoth: isCorrect && isUser,
-        _needsRich: needsRich,
-        _html: needsRich ? textToHtml(optionText) : '',
-      })
-    }).filter((opt) => opt.key)
-    return { id: groupId, options }
-  }).filter((group) => group.id && group.options.length > 0)
 }
 
 function _buildAiRichText(value) {
@@ -167,9 +81,6 @@ function _normalizeAiResult(content) {
 Page({
   data: {
     wq: null,
-    optionKeys: [],
-    _renderModel: null,
-    optionItems: [],
     aiResult: null,
     aiLoading: false,
     aiFallback: false,
@@ -182,14 +93,15 @@ Page({
     questionIds: [],
     currentIdx: 0,
     totalQuestions: 0,
-    swiperEnabled: false,
-    contentState: '',
     switching: false,
-    showSwipeHint: false,
     safeModeActive: false,
-    renderTraces: [],
     aiCards: null,
     aiRegenerating: false,
+
+    // quiz-runner data
+    currentQuestion: null,
+    wrongQuestions: [],
+    runnerProgressPercent: 0,
   },
 
   onLoad(options) {
@@ -210,17 +122,11 @@ Page({
       }
     } catch (_) {}
     const currentIdx = questionIds.indexOf(currentId)
-    const swiperEnabled = questionIds.length > 1
     this.setData({
       questionIds,
       currentIdx: currentIdx >= 0 ? currentIdx : 0,
       totalQuestions: questionIds.length,
-      swiperEnabled,
-      showSwipeHint: swiperEnabled,
     })
-    if (swiperEnabled) {
-      setTimeout(() => { this.setData({ showSwipeHint: false }) }, 3000)
-    }
     this.loadData(currentId)
   },
 
@@ -243,7 +149,42 @@ Page({
     try {
       const wq = await api.get(`/wrong-questions/${wqId}`)
       if (!wq) throw new Error('not found')
-      const data = _processWqData(wq, this.data.safeModeActive)
+      const raw = _processWqData(wq, this.data.safeModeActive)
+
+      // Build quiz-runner compatible currentQuestion
+      const currentQuestion = Object.assign({}, wq, {
+        _optionList: raw._optionList,
+        _optionKeys: raw._optionKeys,
+        _opts: raw._opts,
+        _blankOptionGroups: raw._blankOptionGroups,
+        _hasBlankOptionGroups: raw._hasBlankOptionGroups,
+        _renderModel: raw._renderModel,
+      })
+      var totalQ = this.data.totalQuestions || 1
+      // Build wrongQuestions array for quiz-runner answer sheet
+      var wrongQuestions = []
+      for (var wi = 0; wi < totalQ; wi++) {
+        wrongQuestions.push({ _answered: true })
+      }
+
+      var data = {
+        wq,
+        currentQuestion,
+        wrongQuestions,
+        runnerProgressPercent: totalQ > 0 ? Math.round((this.data.currentIdx + 1) / totalQ * 100) : 0,
+        subjectLabelText: raw.subjectLabelText,
+        errorTypeLabelText: raw.errorTypeLabelText,
+        loading: false,
+        currentWqId: wqId,
+        aiLoading: false,
+        errorText: '',
+        aiResult: null,
+        aiCards: null,
+        aiRequested: false,
+        aiFromCache: false,
+        aiFallback: false,
+        aiErrorText: '',
+      }
 
       // 如果后端已返回持久化的 AI 分析，直接展示
       var cachedAi = wq && wq.ai_analysis && typeof wq.ai_analysis === 'object' && Object.keys(wq.ai_analysis).length > 0
@@ -259,18 +200,8 @@ Page({
         data.aiFromCache = true
         data.aiFallback = false
         data.aiErrorText = ''
-      } else {
-        data.aiResult = null
-        data.aiCards = null
-        data.aiRequested = false
-        data.aiFromCache = false
-        data.aiFallback = false
-        data.aiErrorText = ''
       }
-      data.aiLoading = false
-      data.errorText = ''
       this.setData(data)
-      this.setData({ loading: false, currentWqId: wqId })
       // Render invariant check + trace
       if (data._renderModel) {
         this._checkRenderInvariant(data._renderModel)
@@ -283,8 +214,6 @@ Page({
         loading: false,
         errorText: '错题不存在或已被移除',
         wq: null,
-        optionItems: [],
-        blankOptionGroups: [],
         aiResult: null,
         aiLoading: false,
         aiFallback: false,
@@ -478,83 +407,37 @@ Page({
     console.warn('[SELF_HEAL] wrong-detail CODE render violation — entering SAFE_MODE')
     this.setData({ safeModeActive: true })
     if (this.data.wq) {
-      var data = _processWqData(this.data.wq, true)
-      if (data._renderModel) {
-        data.aiResult = this.data.aiResult
-        data.aiFallback = this.data.aiFallback
-        this.setData(data)
-        console.warn('[SELF_HEAL] wrong-detail re-rendered in SAFE_MODE, mode=' + data._renderModel.mode)
+      var raw = _processWqData(this.data.wq, true)
+      if (raw._renderModel) {
+        var currentQuestion = Object.assign({}, this.data.wq, {
+          _optionList: raw._optionList,
+          _optionKeys: raw._optionKeys,
+          _opts: raw._opts,
+          _blankOptionGroups: raw._blankOptionGroups,
+          _hasBlankOptionGroups: raw._blankOptionGroups.length > 0,
+          _renderModel: raw._renderModel,
+        })
+        this.setData({
+          currentQuestion,
+          subjectLabelText: raw.subjectLabelText,
+          errorTypeLabelText: raw.errorTypeLabelText,
+        })
+        console.warn('[SELF_HEAL] wrong-detail re-rendered in SAFE_MODE, mode=' + raw._renderModel.mode)
       }
     }
   },
 
-  // ---- 内嵌代码块横滑，阻止页面切题 ----
-  onInnerHorizontalTouch() {
-    this._innerTouching = true
+  // ---- Quiz-runner navigation events ----
+  goPrevWrong(e) {
+    this._navigateTo(e.detail.index, 150)
   },
 
-  onInnerHorizontalTouchEnd() {
-    setTimeout(() => { this._innerTouching = false }, 80)
+  goNextWrong(e) {
+    this._navigateTo(e.detail.index, 150)
   },
 
-  // ---- 左滑/右滑切换 ----
-  onTouchStart(e) {
-    if (this._innerTouching) return
-    if (this._animating || !this.data.swiperEnabled) return
-    const t = e.touches[0]
-    this._touchX = t.clientX
-    this._touchY = t.clientY
-    this._touchTime = Date.now()
-    this._swiped = false
-  },
-
-  onTouchEnd(e) {
-    if (this._innerTouching) return
-    if (this._animating || !this.data.swiperEnabled) return
-    if (this._touchX === undefined) return
-
-    const t = e.changedTouches[0]
-    const dx = t.clientX - this._touchX
-    const dy = t.clientY - this._touchY
-    const dt = Date.now() - this._touchTime
-
-    if (Math.abs(dy) > Math.abs(dx) * 1.5) {
-      this._touchX = undefined
-      return
-    }
-
-    if (Math.abs(dx) < 60) {
-      this._touchX = undefined
-      return
-    }
-
-    this._swiped = true
-    this._touchX = undefined
-
-    const isLeft = dx < 0
-    const currentIdx = this.data.currentIdx
-    const total = this.data.totalQuestions
-    const canGo = isLeft ? currentIdx < total - 1 : currentIdx > 0
-
-    if (!canGo) {
-      this._animating = true
-      this.setData({ contentState: isLeft ? 'edge-left' : 'edge-right' })
-      setTimeout(() => {
-        this.setData({ contentState: '' })
-        this._animating = false
-      }, 250)
-      return
-    }
-
-    const animMs = Math.min(Math.max(dt * 0.5, 120), 200)
-    this._animating = true
-    this._swipeDir = isLeft ? 'left' : 'right'
-    this.setData({ contentState: isLeft ? 'slide-out-left' : 'slide-out-right' })
-
-    const nextIdx = currentIdx + (isLeft ? 1 : -1)
-    setTimeout(() => {
-      this._navigateTo(nextIdx, animMs)
-    }, animMs)
+  goWrongQuestion(e) {
+    this._navigateTo(e.detail.index, 150)
   },
 
   reloadData() {
@@ -580,52 +463,63 @@ Page({
     try {
       const wq = await api.get(`/wrong-questions/${wqId}`)
       if (!wq) throw new Error('not found')
-      const data = _processWqData(wq, this.data.safeModeActive)
-      data.currentIdx = idx
-      data.currentWqId = wqId
+      const raw = _processWqData(wq, this.data.safeModeActive)
+
+      // Build quiz-runner compatible currentQuestion
+      const currentQuestion = Object.assign({}, wq, {
+        _optionList: raw._optionList,
+        _optionKeys: raw._optionKeys,
+        _opts: raw._opts,
+        _blankOptionGroups: raw._blankOptionGroups,
+        _hasBlankOptionGroups: raw._blankOptionGroups.length > 0,
+        _renderModel: raw._renderModel,
+      })
+      var totalQ = this.data.totalQuestions || 1
+      var wrongQuestions = []
+      for (var wi = 0; wi < totalQ; wi++) {
+        wrongQuestions.push({ _answered: true })
+      }
+
+      var setData = {
+        wq,
+        currentIdx: idx,
+        currentWqId: wqId,
+        currentQuestion,
+        wrongQuestions,
+        runnerProgressPercent: totalQ > 0 ? Math.round((idx + 1) / totalQ * 100) : 0,
+        subjectLabelText: raw.subjectLabelText,
+        errorTypeLabelText: raw.errorTypeLabelText,
+        switching: false,
+        aiLoading: false,
+        aiResult: null,
+        aiCards: null,
+        aiRequested: false,
+        aiFromCache: false,
+        aiFallback: false,
+        aiErrorText: '',
+      }
+
       // 检查切换后题目是否有已缓存 AI 分析
       var cachedAi = wq && wq.ai_analysis && typeof wq.ai_analysis === 'object' && Object.keys(wq.ai_analysis).length > 0
       if (cachedAi) {
         var ca = wq.ai_analysis
-        data.aiResult = {
+        setData.aiResult = {
           mistake_diagnosis: ca.mistake_diagnosis || ca.error_analysis || '',
           knowledge_patch: ca.knowledge_patch || ca.knowledge_weakness || '',
           review_task: ca.review_task || ca.suggestion || '',
         }
-        data.aiCards = _normalizeAiResult(data.aiResult)
-        data.aiRequested = true
-        data.aiFromCache = true
-        data.aiFallback = false
-        data.aiErrorText = ''
-      } else {
-        data.aiResult = null
-        data.aiCards = null
-        data.aiRequested = false
-        data.aiFromCache = false
-        data.aiFallback = false
-        data.aiErrorText = ''
+        setData.aiCards = _normalizeAiResult(setData.aiResult)
+        setData.aiRequested = true
+        setData.aiFromCache = true
+        setData.aiFallback = false
+        setData.aiErrorText = ''
       }
-      data.aiLoading = false
-      data.switching = false
-      this._checkRenderInvariant(data._renderModel)
-      this._recordRenderTrace(data._renderModel && data._renderModel.renderTrace)
-
-      // 先瞬间定位到滑入起始位置（transition: none）
-      const fromState = this._swipeDir === 'left' ? 'from-right' : 'from-left'
-      this.setData(Object.assign({ contentState: fromState }, data))
-
-      // 下一帧启用过渡，滑入目标位置
-      setTimeout(() => {
-        this.setData({ contentState: '' })
-        setTimeout(() => { this._animating = false }, animMs)
-      }, 50)
-
-      // 不再自动调用 AI 分析
+      this._checkRenderInvariant(raw._renderModel)
+      this.setData(setData)
     } catch (e) {
       console.error('切换题目失败', e)
       wx.showToast({ title: '加载失败', icon: 'none' })
-      this.setData({ contentState: '', switching: false })
-      this._animating = false
+      this.setData({ switching: false })
     }
   },
 })

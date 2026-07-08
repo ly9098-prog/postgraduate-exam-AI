@@ -15,78 +15,38 @@
   </view>
 </view>
 
-<view class="page" wx:elif="{{!loading && wq}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
-  <view class="swiper-content {{contentState}}">
-    <view wx:if="{{switching}}" class="switch-loading">
-      <loading-lottie text="正在切换错题..." size="small" />
-    </view>
-    <view wx:if="{{swiperEnabled}}" class="progress-area">
-      <text class="progress-text">{{currentIdx + 1}} / {{totalQuestions}}</text>
-      <view class="progress-track">
-        <view class="progress-fill" style="width:{{totalQuestions > 0 ? (currentIdx + 1) / totalQuestions * 100 : 0}}%"></view>
-      </view>
-    </view>
-    <view class="swipe-hint" wx:if="{{swiperEnabled && showSwipeHint}}">
-      <text class="swipe-hint-text">← 左右滑动切换 →</text>
-    </view>
-  <!-- 题目信息 -->
-  <view class="detail-card">
+<view class="page" wx:elif="{{!loading && wq}}">
+  <view wx:if="{{switching}}" class="switch-loading">
+    <loading-lottie text="正在切换错题..." size="small" />
+  </view>
+
+  <quiz-runner
+    wx:if="{{!switching}}"
+    mode="wrong-detail"
+    title="错题复盘"
+    subtitle="{{currentIdx + 1}} / {{totalQuestions}}"
+    subjectName="{{subjectLabelText}}"
+    questions="{{wrongQuestions}}"
+    currentQuestion="{{currentQuestion}}"
+    currentIndex="{{currentIdx}}"
+    totalCount="{{totalQuestions}}"
+    answeredCount="{{totalQuestions}}"
+    progressPercent="{{runnerProgressPercent}}"
+    readonly="{{true}}"
+    showAnswer="{{true}}"
+    showFeedback="{{false}}"
+    submitDisabled="{{true}}"
+    submitText="继续复盘"
+    bind:prev="goPrevWrong"
+    bind:next="goNextWrong"
+    bind:jump="goWrongQuestion"
+  />
+
+  <!-- 答案行 -->
+  <view class="detail-card answer-card">
     <view class="detail-header">
       <text class="subject-tag">{{subjectLabelText}}</text>
       <text class="error-type-tag">{{errorTypeLabelText}}</text>
-    </view>
-
-    <view class="question-block">
-      <block wx:if="{{_renderModel.mode === 'SEGMENTS'}}">
-        <math-question segments="{{_renderModel.segments}}" />
-      </block>
-      <rich-text wx:elif="{{_renderModel.mode === 'RICH_TEXT'}}" nodes="{{_renderModel.richTextNodes}}"></rich-text>
-      <scroll-view wx:elif="{{_renderModel.mode === 'CODE'}}" scroll-x class="code-wrapper" catchtouchstart="onInnerHorizontalTouch" catchtouchend="onInnerHorizontalTouchEnd"><text decode="false" space="preserve" class="code-text">{{_renderModel.rawText}}</text></scroll-view>
-      <mp-html wx:elif="{{_renderModel.mode === 'LATEX'}}" content="{{_renderModel.html}}" lazy-load></mp-html>
-      <block wx:elif="{{_renderModel.mode === 'MIXED'}}">
-        <block wx:for="{{_renderModel.blocks}}" wx:key="index">
-          <rich-text wx:if="{{item.type === 'RICH_TEXT'}}" class="mixed-text-block" nodes="{{item.richTextNodes}}" />
-          <mp-html wx:elif="{{item.type === 'LATEX'}}" class="mixed-latex-block" content="{{item.html}}" lazy-load />
-          <scroll-view wx:elif="{{item.type === 'CODE'}}" scroll-x class="code-wrapper mixed-code-block" catchtouchstart="onInnerHorizontalTouch" catchtouchend="onInnerHorizontalTouchEnd"><text decode="false" space="preserve" class="code-text">{{item.rawText}}</text></scroll-view>
-        </block>
-      </block>
-    </view>
-
-    <view wx:if="{{blankOptionGroups.length > 0}}" class="blank-options">
-      <view class="blank-group" wx:for="{{blankOptionGroups}}" wx:for-item="group" wx:key="id">
-        <view class="blank-group-head">
-          <text class="blank-group-title">{{group.id}}</text>
-        </view>
-        <view class="blank-group-options">
-          <view class="option-item blank-option-item {{opt._isBoth ? 'both' : ''}} {{opt._isCorrect && !opt._isBoth ? 'correct' : ''}} {{opt._isUserAnswer && !opt._isBoth ? 'user-answer' : ''}}" wx:for="{{group.options}}" wx:for-item="opt" wx:key="key">
-            <view class="option-body">
-              <text class="option-key">{{opt.key}}.</text>
-              <mp-html wx:if="{{opt._needsRich}}" content="{{opt._html}}" style="display:inline-block"></mp-html>
-              <text wx:else class="option-text">{{opt._text}}</text>
-            </view>
-          </view>
-        </view>
-      </view>
-    </view>
-
-    <view wx:elif="{{optionItems.length > 0}}" class="options-list">
-      <view wx:for="{{optionItems}}" wx:key="key" class="option-line {{item.lineClass}}">
-        <text class="option-key">{{item.key}}.</text>
-        <mp-html
-          wx:if="{{item.needsRich}}"
-          content="{{item.html}}"
-          class="{{item.className}}"
-          style="display:inline-block"
-        ></mp-html>
-        <text wx:else class="{{item.className}}">{{item.text}}</text>
-      </view>
-    </view>
-
-    <view wx:if="{{optionItems.length > 0 || blankOptionGroups.length > 0}}" class="answer-legend">
-      <view class="legend-dot correct"></view>
-      <text class="legend-label">正确答案</text>
-      <view class="legend-dot user-answer"></view>
-      <text class="legend-label">我的选项</text>
     </view>
 
     <view class="q-answer-line">
@@ -101,7 +61,6 @@
       <text class="q-answer-label">题目解析</text>
       <text class="q-analysis-text">{{wq.analysis}}</text>
     </view>
-
   </view>
 
   <!-- AI 分析：手动触发 -->
@@ -208,6 +167,5 @@
       <text class="fallback-desc">{{aiErrorText || '建议先查看题目解析并手动标记错因，稍后再试。'}}</text>
       <button class="ai-action-btn retry" bindtap="regenerateAiAnalysis">{{aiRegenerating ? '重新生成中...' : '重新生成'}}</button>
     </view>
-  </view>
   </view>
 </view>

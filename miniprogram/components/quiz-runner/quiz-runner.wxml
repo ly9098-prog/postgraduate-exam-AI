@@ -1,0 +1,189 @@
+<view class="quiz-runner">
+  <!-- ==================== 顶部状态栏 ==================== -->
+  <view class="runner-top-bar">
+    <view class="runner-bar-left">
+      <text class="runner-bar-subject">{{subjectName}}</text>
+      <text class="runner-bar-counter">第 {{currentIndex + 1}} / {{totalCount || 0}} 题</text>
+      <text class="runner-bar-subtitle">已完成 {{answeredCount || 0}} 题</text>
+    </view>
+    <view class="runner-bar-right">
+      <text class="runner-bar-timer">{{elapsedText}}</text>
+      <view class="runner-bar-sheet-btn" bindtap="toggleSheet">
+        <text class="sheet-icon line-icon icon-list"></text>
+        <text class="sheet-badge" wx:if="{{answeredCount > 0}}">{{answeredCount}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ==================== 进度条 ==================== -->
+  <view class="runner-progress-shell">
+    <view class="runner-progress-track">
+      <view class="runner-progress-fill" style="width:{{progressPercent}}%"></view>
+    </view>
+    <text class="runner-progress-label">{{progressPercent}}%</text>
+  </view>
+
+  <!-- ==================== 滑动容器 ==================== -->
+  <view class="runner-question-area" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
+    <view class="runner-q-wrap {{animClass}}" wx:if="{{currentQuestion}}">
+      <view class="runner-q-card-head">
+        <view>
+          <text class="runner-q-badge">{{_qTypeLabel}}</text>
+          <text class="runner-q-card-kicker">{{mode === 'wrong-detail' ? '错题复盘' : '保持节奏，认真读题'}}</text>
+        </view>
+        <view class="runner-q-card-right">
+          <view class="runner-master-btn" wx:if="{{showMasterButton && !readonly}}" catchtap="onMaster">
+            <text class="runner-master-icon line-icon icon-check"></text>
+          </view>
+          <text class="runner-q-card-index">{{currentIndex + 1}}</text>
+        </view>
+      </view>
+
+      <!-- 推荐原因标签 -->
+      <view class="runner-recommend-bar" wx:if="{{currentQuestion.recommend_reason}}">
+        <text class="runner-recommend-text">{{currentQuestion.recommend_reason}}</text>
+      </view>
+
+      <!-- ===== 题干渲染 (5 render modes) ===== -->
+      <!-- SEGMENTS -->
+      <block wx:if="{{currentQuestion._renderModel.mode === 'SEGMENTS'}}" wx:key="segments">
+        <math-question segments="{{currentQuestion._renderModel.segments}}" />
+      </block>
+      <!-- RICH_TEXT -->
+      <rich-text wx:elif="{{currentQuestion._renderModel.mode === 'RICH_TEXT'}}" wx:key="rich-text" class="runner-q-content" nodes="{{currentQuestion._renderModel.richTextNodes}}"></rich-text>
+      <!-- CODE -->
+      <scroll-view wx:elif="{{currentQuestion._renderModel.mode === 'CODE'}}" wx:key="code" scroll-x class="runner-code-wrapper"><text decode="false" space="preserve" class="runner-code-text">{{currentQuestion._renderModel.rawText}}</text></scroll-view>
+      <!-- LATEX -->
+      <mp-html wx:elif="{{currentQuestion._renderModel.mode === 'LATEX'}}" wx:key="latex" class="runner-q-content" content="{{currentQuestion._renderModel.html}}" lazy-load></mp-html>
+      <!-- MIXED -->
+      <block wx:elif="{{currentQuestion._renderModel.mode === 'MIXED'}}" wx:key="mixed">
+        <block wx:for="{{currentQuestion._renderModel.blocks}}" wx:key="index">
+          <rich-text wx:if="{{item.type === 'RICH_TEXT'}}" class="runner-mixed-text-block" nodes="{{item.richTextNodes}}" />
+          <mp-html wx:elif="{{item.type === 'LATEX'}}" class="runner-mixed-latex-block" content="{{item.html}}" lazy-load />
+          <scroll-view wx:elif="{{item.type === 'CODE'}}" scroll-x class="runner-code-wrapper runner-mixed-code-block"><text decode="false" space="preserve" class="runner-code-text">{{item.rawText}}</text></scroll-view>
+        </block>
+      </block>
+
+      <!-- ===== 多空选择题选项 ===== -->
+      <view class="runner-blank-options" wx:if="{{currentQuestion._hasBlankOptionGroups}}">
+        <view class="runner-blank-group" wx:for="{{currentQuestion._blankOptionGroups}}" wx:for-item="group" wx:key="id">
+          <view class="runner-blank-group-head">
+            <text class="runner-blank-group-title">{{group.id}}</text>
+            <text class="runner-blank-group-hint" wx:if="{{!readonly}}">请选择该空答案</text>
+          </view>
+          <view class="runner-blank-group-options">
+            <view
+              wx:for="{{group.options}}"
+              wx:for-item="opt"
+              wx:key="key"
+              class="runner-option-item runner-blank-option-item
+                {{opt._selected ? 'runner-selected' : ''}}
+                {{readonly && opt._isBoth ? 'runner-both' : ''}}
+                {{readonly && opt._isCorrect && !opt._isBoth ? 'runner-correct' : ''}}
+                {{readonly && opt._isUserAnswer && !opt._isBoth ? 'runner-user-answer' : ''}}"
+              hover-class="{{readonly ? '' : 'runner-option-pressed'}}"
+              catchtap="{{readonly ? 'noop' : 'selectBlankOption'}}"
+              data-blank-id="{{group.id}}"
+              data-option="{{opt.key}}"
+            >
+              <view class="runner-option-indicator {{opt._selected ? 'runner-checked' : ''}}
+                {{readonly && opt._isCorrect ? 'runner-indicator-correct' : ''}}
+                {{readonly && opt._isUserAnswer && !opt._isCorrect ? 'runner-indicator-user' : ''}}">
+                <text wx:if="{{opt._selected && !readonly}}" class="runner-check-mark line-icon icon-dot"></text>
+                <text wx:elif="{{readonly && opt._isCorrect}}" class="runner-check-mark line-icon icon-check"></text>
+                <text wx:elif="{{readonly && opt._isUserAnswer && !opt._isCorrect}}" class="runner-check-mark line-icon icon-exclamation"></text>
+              </view>
+              <view class="runner-option-body">
+                <text class="runner-option-key">{{opt.key}}.</text>
+                <mp-html wx:if="{{opt._needsRich}}" content="{{opt._html}}" style="display:inline-block"></mp-html>
+                <text wx:else class="runner-option-text">{{opt._text}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- ===== 普通选项 ===== -->
+      <view class="runner-options" wx:elif="{{currentQuestion._optionList && currentQuestion._optionList.length > 0}}">
+        <view
+          wx:for="{{currentQuestion._optionList}}"
+          wx:key="key"
+          class="runner-option-item
+            {{item._selected ? 'runner-selected' : ''}}
+            {{readonly && item._isBoth ? 'runner-both' : ''}}
+            {{readonly && item._isCorrect && !item._isBoth ? 'runner-correct' : ''}}
+            {{readonly && item._isUserAnswer && !item._isBoth ? 'runner-user-answer' : ''}}"
+          hover-class="{{readonly ? '' : 'runner-option-pressed'}}"
+          catchtap="{{readonly ? 'noop' : 'selectOption'}}"
+          data-option="{{item.key}}"
+        >
+          <view class="runner-option-indicator
+            {{item._selected ? 'runner-checked' : ''}}
+            {{readonly && item._isCorrect ? 'runner-indicator-correct' : ''}}
+            {{readonly && item._isUserAnswer && !item._isCorrect ? 'runner-indicator-user' : ''}}">
+            <text wx:if="{{item._selected && !readonly && currentQuestion.question_type === 'multiple_choice'}}" class="runner-check-mark line-icon icon-check"></text>
+            <text wx:elif="{{item._selected && !readonly}}" class="runner-check-mark line-icon icon-dot"></text>
+            <text wx:elif="{{readonly && item._isCorrect}}" class="runner-check-mark line-icon icon-check"></text>
+            <text wx:elif="{{readonly && item._isUserAnswer && !item._isCorrect}}" class="runner-check-mark line-icon icon-exclamation"></text>
+          </view>
+          <view class="runner-option-body">
+            <text class="runner-option-key">{{item.key}}.</text>
+            <mp-html wx:if="{{item._needsRich}}" content="{{item._html}}" style="display:inline-block"></mp-html>
+            <text wx:else class="runner-option-text">{{item._text}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ==================== 底部操作栏 ==================== -->
+  <view class="runner-bottom-bar">
+    <view class="runner-bottom-inner">
+      <view class="runner-nav-btn runner-prev {{currentIndex <= 0 ? 'runner-disabled' : ''}}" bindtap="goPrev">
+        <text class="runner-nav-arrow line-icon icon-chevron-left"></text>
+        <text class="runner-nav-label">上一题</text>
+      </view>
+
+      <view class="runner-nav-center">
+        <view class="runner-dot {{item._answered ? 'runner-done' : ''}} {{index === currentIndex ? 'runner-active' : ''}}"
+          wx:for="{{questions}}" wx:key="index" data-index="{{index}}" bindtap="goQuestion"></view>
+      </view>
+
+      <view class="runner-nav-btn runner-next {{currentIndex >= totalCount - 1 ? 'runner-disabled' : ''}}" bindtap="goNext">
+        <text class="runner-nav-label">下一题</text>
+        <text class="runner-nav-arrow line-icon icon-chevron-right"></text>
+      </view>
+    </view>
+    <button class="runner-btn-submit" bindtap="onSubmit" disabled="{{submitting || submitDisabled}}">
+      {{submitText}}（{{answeredCount || 0}}/{{totalCount || 0}}）
+    </button>
+  </view>
+
+  <!-- ==================== 答题卡弹窗 ==================== -->
+  <view class="runner-sheet-overlay" wx:if="{{showSheet}}" bindtap="closeSheet">
+    <view class="runner-sheet-modal" catchtap="noop">
+      <view class="runner-sheet-head">
+        <view>
+          <text class="runner-sheet-title">答题进度</text>
+          <text class="runner-sheet-subtitle">点选题号快速跳转</text>
+        </view>
+        <text class="runner-sheet-close" bindtap="closeSheet">关闭</text>
+      </view>
+      <view class="runner-sheet-stats">
+        <text class="runner-sheet-stat">已完成 {{answeredCount || 0}} / {{totalCount || 0}} 题</text>
+      </view>
+      <view class="runner-sheet-grid">
+        <view
+          wx:for="{{questions}}"
+          wx:key="index"
+          class="runner-sheet-cell {{item._answered ? 'runner-done' : ''}} {{index === currentIndex ? 'runner-current' : ''}}"
+          data-index="{{index}}"
+          bindtap="goQuestion"
+        >{{index + 1}}</view>
+      </view>
+      <button class="runner-btn-submit runner-sheet-submit" bindtap="onSubmit" disabled="{{submitting || submitDisabled}}">
+        {{submitText}}
+      </button>
+    </view>
+  </view>
+</view>

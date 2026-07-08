@@ -108,129 +108,36 @@
 </view>
 
 <!-- ==================== 练习页 ==================== -->
-<view
-  class="page review-practice"
-  wx:if="{{phase === 'practice'}}"
-  bindtouchstart="onTouchStart"
-  bindtouchend="onTouchEnd"
->
+<view class="page review-practice" wx:if="{{phase === 'practice'}}">
   <view wx:if="{{practiceLoading}}" class="loading-wrap">
     <loading-lottie text="正在准备复习题目..." size="large" />
   </view>
 
-  <view wx:else class="practice-wrap">
-    <view class="group-header">
-      <view>
-        <text class="group-title">第 {{currentGroupIdx + 1}} / {{groups.length}} 组</text>
-        <text class="group-subtitle">已选 {{_answeredCount}} / {{groupQuestions.length}} 题</text>
-      </view>
-      <text class="group-meta">{{groupQuestions.length}} 题</text>
-    </view>
-
-    <view class="review-progress">
-      <view class="question-dots">
-        <view
-          wx:for="{{groupQuestions}}" wx:key="schedule_id"
-          class="q-dot {{item._answered ? 'answered' : ''}} {{currentIndex === index ? 'current' : ''}}"
-          catchtap="goQuestion"
-          data-index="{{index}}"
-        >
-          <text>{{index + 1}}</text>
-        </view>
-      </view>
-    </view>
-
-    <view class="question-card {{animClass}}" wx:if="{{currentQuestion}}">
-      <view class="q-top-bar">
-        <view>
-          <text class="subject-badge">{{currentQuestion._subjectLabel}}</text>
-          <text class="q-kicker">{{currentQuestion.question_type === 'multiple_choice' ? '多选题，可多选' : currentQuestion.question_type === 'multi_blank_choice' ? '多空选择题' : '先回忆，再选择'}}</text>
-        </view>
-        <view class="master-btn" catchtap="tapMaster" data-sid="{{currentQuestion.schedule_id}}">
-          <text class="master-icon line-icon icon-check master-icon-check"></text>
-        </view>
-      </view>
-
-      <view class="q-stem">
-        <block wx:if="{{currentQuestion._renderModel.mode === 'SEGMENTS'}}">
-          <math-question segments="{{currentQuestion._renderModel.segments}}" />
-        </block>
-        <rich-text wx:elif="{{currentQuestion._renderModel.mode === 'RICH_TEXT'}}" nodes="{{currentQuestion._renderModel.richTextNodes}}"></rich-text>
-        <scroll-view wx:elif="{{currentQuestion._renderModel.mode === 'CODE'}}" scroll-x class="code-wrapper"><text decode="false" space="preserve" class="code-text">{{currentQuestion._renderModel.rawText}}</text></scroll-view>
-        <mp-html wx:elif="{{currentQuestion._renderModel.mode === 'LATEX'}}" content="{{currentQuestion._renderModel.html}}" lazy-load></mp-html>
-        <block wx:elif="{{currentQuestion._renderModel.mode === 'MIXED'}}">
-          <block wx:for="{{currentQuestion._renderModel.blocks}}" wx:key="index">
-            <rich-text wx:if="{{item.type === 'RICH_TEXT'}}" class="mixed-text-block" nodes="{{item.richTextNodes}}" />
-            <mp-html wx:elif="{{item.type === 'LATEX'}}" class="mixed-latex-block" content="{{item.html}}" lazy-load />
-            <scroll-view wx:elif="{{item.type === 'CODE'}}" scroll-x class="code-wrapper mixed-code-block"><text decode="false" space="preserve" class="code-text">{{item.rawText}}</text></scroll-view>
-          </block>
-        </block>
-      </view>
-
-      <!-- Multi-blank choice: render blank option groups -->
-      <view class="blank-options" wx:if="{{currentQuestion._hasBlankGroups}}">
-        <view class="blank-group" wx:for="{{currentQuestion._blankOptionGroups}}" wx:for-item="group" wx:key="id">
-          <view class="blank-group-head">
-            <text class="blank-group-title">{{group.id}}</text>
-          </view>
-          <view class="blank-group-options">
-            <view
-              wx:for="{{group.options}}"
-              wx:for-item="opt"
-              wx:key="key"
-              class="option-item blank-option-item {{opt._selected ? 'selected' : ''}}"
-              hover-class="option-pressed"
-              catchtap="selectBlankOption"
-              data-blank-id="{{group.id}}"
-              data-option="{{opt.key}}"
-            >
-              <view class="option-indicator {{opt._selected ? 'checked' : ''}}">
-                <text wx:if="{{opt._selected}}" class="check-mark line-icon icon-dot"></text>
-              </view>
-              <view class="option-body">
-                <text class="option-key">{{opt.key}}.</text>
-                <mp-html wx:if="{{opt._needsRich}}" content="{{opt._html}}" style="display:inline-block"></mp-html>
-                <text wx:else class="option-text">{{opt._text}}</text>
-              </view>
-            </view>
-          </view>
-        </view>
-      </view>
-
-      <!-- Regular options (single / multiple / true_false) -->
-      <view class="q-options" wx:elif="{{currentQuestion._optionList.length > 0}}">
-        <view
-          wx:for="{{currentQuestion._optionList}}"
-          wx:key="key"
-          class="option-item {{item._selected ? 'opt-selected' : ''}}"
-          hover-class="option-pressed"
-          catchtap="selectOption"
-          data-option="{{item.key}}"
-        >
-          <view class="option-indicator {{item._selected ? 'checked' : ''}}">
-            <text wx:if="{{item._icon === 'check'}}" class="check-mark line-icon icon-check"></text>
-            <text wx:elif="{{item._icon === 'dot'}}" class="check-mark line-icon icon-dot"></text>
-          </view>
-          <view class="option-body">
-            <view class="opt-key">{{item.key}}.</view>
-            <mp-html
-              wx:if="{{currentQuestion._optNeedsRich[item.key]}}"
-              content="{{currentQuestion._optHtml[item.key]}}"
-              class="opt-val"
-            ></mp-html>
-            <text wx:else class="opt-val">{{currentQuestion._optText[item.key]}}</text>
-          </view>
-        </view>
-      </view>
-
-    </view>
-
-    <view class="nav-row" wx:if="{{currentQuestion}}">
-      <button class="nav-btn" disabled="{{currentIndex <= 0}}" bindtap="goPrev">上一题</button>
-      <button class="nav-btn" wx:if="{{currentIndex < groupQuestions.length - 1}}" bindtap="goNext">下一题</button>
-      <button class="submit-group-btn nav-submit" wx:elif="{{currentIndex === groupQuestions.length - 1}}" bindtap="submitGroup" loading="{{submittingGroup}}">提交本组复盘</button>
-    </view>
-  </view>
+  <quiz-runner
+    wx:else
+    mode="review"
+    title="今日复习"
+    subtitle="{{runnerSubtitle}}"
+    subjectName="{{runnerSubjectName}}"
+    questions="{{groupQuestions}}"
+    currentQuestion="{{currentQuestion}}"
+    currentIndex="{{currentIndex}}"
+    totalCount="{{groupQuestions.length}}"
+    answeredCount="{{_answeredCount}}"
+    progressPercent="{{runnerProgressPercent}}"
+    readonly="{{false}}"
+    submitting="{{submittingGroup}}"
+    showFeedback="{{false}}"
+    submitText="提交本组复盘"
+    showMasterButton="{{true}}"
+    bind:selectoption="selectOption"
+    bind:selectblankoption="selectBlankOption"
+    bind:prev="goPrev"
+    bind:next="goNext"
+    bind:jump="goQuestion"
+    bind:submit="submitGroup"
+    bind:master="tapMaster"
+  />
 </view>
 
 <!-- ==================== 组结果页 ==================== -->
