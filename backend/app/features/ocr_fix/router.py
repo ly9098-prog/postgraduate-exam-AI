@@ -63,6 +63,38 @@ def _evaluate_adapter_output(
 
     ctx = context or {}
 
+    # ── Garbled code persistence check (P0) ──
+    # Before the safety gate, check if garbled code in the original text
+    # persists in the fixed text. If so, reject — pure-text LLMs cannot
+    # reliably reconstruct garbled code, and accepting a slightly-different
+    # garbled result is worse than keeping the original.
+    try:
+        from app.features.code_integrity import detect_code_block_integrity
+        _orig_code = detect_code_block_integrity(original_text)
+        _fixed_code = detect_code_block_integrity(result.fixed_text)
+        if (
+            "code_garbled_text" in _orig_code.get("flags", [])
+            and "code_garbled_text" in _fixed_code.get("flags", [])
+        ):
+            # Garbled text persisted — reject. Don't trust model self-reported
+            # confidence; rule-based detection is authoritative.
+            _orig_score = _orig_code.get("score", 1.0)
+            _fixed_score = _fixed_code.get("score", 1.0)
+            if _fixed_score >= _orig_score * 0.8:
+                # Garbled score didn't significantly improve → reject
+                logger.info(
+                    "Garbled code persisted: score %.2f->%.2f, rejecting",
+                    _orig_score, _fixed_score,
+                )
+                return CandidateEvaluation(
+                    decision=CandidateDecision.REJECT_CONTINUE,
+                    reason="garbled_text_persists",
+                    risk_flags=("code_garbled_text",),
+                )
+    except Exception:
+        logger.warning("Garbled code persistence check failed", exc_info=True)
+    # ── End garbled code persistence check ──
+
     # Build quality_report from adapter confidence and existing risk_flags
     quality_report: dict[str, Any] = {}
     if result.confidence is not None and result.confidence < 0.3:

@@ -1159,9 +1159,15 @@ def normalize_questions(
     if source_info is None:
         source_info = {}
 
-    matched_by_num: dict[int, dict] = {}
+    matched_by_num: dict[int | str, dict] = {}
     for m in matched_pairs:
-        matched_by_num[m["question_number"]] = m
+        num = m["question_number"]
+        if not isinstance(num, int):
+            try:
+                num = int(num)
+            except (ValueError, TypeError):
+                pass
+        matched_by_num[num] = m
 
     questions: list[dict] = []
     errors: list[dict] = []
@@ -1169,6 +1175,11 @@ def normalize_questions(
 
     for raw_q in raw_questions:
         qnum = raw_q.get("number", 0)
+        if not isinstance(qnum, int):
+            try:
+                qnum = int(qnum)
+            except (ValueError, TypeError):
+                pass
         matched = matched_by_num.get(qnum)
 
         try:
