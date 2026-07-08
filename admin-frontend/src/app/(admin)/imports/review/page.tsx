@@ -1008,11 +1008,9 @@ export default function ImportReviewPage() {
         </CardHeader>
         <CardContent className="space-y-1.5 pt-0">
           <section className="space-y-1">
-              {selectedIds.size > 0 ? (
-                <div className="flex items-center gap-2 rounded-lg border border-[var(--color-border)]/40 bg-[var(--color-primary-light)]/10 px-3 py-1.5">
-                  <span className="text-xs font-medium text-[var(--color-primary-dark)]">已选 {selectedIds.size} 题</span>
-                </div>
-              ) : null}
+              <div className={`flex items-center gap-2 rounded-lg border border-[var(--color-border)]/40 bg-[var(--color-primary-light)]/10 px-3 py-1.5 ${selectedIds.size > 0 ? "" : "invisible"}`}>
+                <span className="text-xs font-medium text-[var(--color-primary-dark)]">已选 {selectedIds.size} 题</span>
+              </div>
               {items.length > 0 && viewMode === "table" ? (
                 <div className="w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-white">
                   <table className="w-full table-fixed text-[11px]">
@@ -1193,6 +1191,15 @@ export default function ImportReviewPage() {
               ) : null}
               {items.length > 0 && viewMode === "list" ? (
               <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white">
+                <div className="flex items-center gap-3 border-b border-[var(--color-border)]/50 px-3.5 py-2">
+                  <label className="group/cb relative flex cursor-pointer items-center gap-2">
+                    <span className="flex h-[16px] w-[16px] items-center justify-center rounded border-2 border-[var(--color-border)] bg-white transition-all group-hover/cb:border-[var(--color-primary)]/50 [&:has(input:checked)]:border-[var(--color-primary)] [&:has(input:checked)]:bg-[var(--color-primary)]">
+                      <input type="checkbox" checked={allChecked} onChange={toggleAll} className="peer absolute inset-0 cursor-pointer opacity-0" />
+                      <Check className="h-2.5 w-2.5 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
+                    </span>
+                    <span className="text-xs text-[var(--color-text-secondary)]">全选本页</span>
+                  </label>
+                </div>
                 {items.map((item, index) => {
                   const riskColor = item.risk_level === "high" ? "#b03a3a" : item.risk_level === "medium" ? "#b87a30" : item.risk_level === "low" ? "#3a7a5a" : "var(--color-border)";
                   const hasAnswerMissing = (!item.parsed_answer || item.parsed_answer.trim() === "") && item.risk_level !== "low";
