@@ -1298,9 +1298,10 @@ def split_questions(
 
         # P0 (Problem C): Strip frozen option text from raw_text when freeze data exists.
         # This prevents option text from appearing in the stem after _extract_stem().
+        _q_frozen_opts: dict[str, str] = {}
+        _original_raw: str | None = None
         if _freeze_has_page_data and frozen_option_registry:
             # Collect frozen options for this question's pages
-            _q_frozen_opts: dict[str, str] = {}
             for _fp in range(page_start, page_end + 1):
                 for _fkey in frozen_option_registry:
                     try:
@@ -1312,6 +1313,9 @@ def split_questions(
                             dict(frozen_option_registry[_fkey])
                         )
             if _q_frozen_opts:
+                # Save original text before stripping so match_answers can
+                # extract explicit answers from it downstream.
+                _original_raw = raw_text
                 _stripped_raw = strip_frozen_options_from_stem(raw_text, _q_frozen_opts)
                 if _stripped_raw and len(_stripped_raw) < len(raw_text):
                     logger.info(
@@ -1323,7 +1327,13 @@ def split_questions(
                     raw_text = _stripped_raw
 
         if _freeze_has_page_data:
-            options = {}
+            # Directly assign frozen options instead of leaving them empty
+            # for _apply_frozen_options downstream. That function's text-substring
+            # matching (block_text in q_text) FAILS because split_questions
+            # stripped frozen option lines from raw_question_text above —
+            # the full block text (with options) is no longer a substring of
+            # the question text (without options).
+            options = dict(_q_frozen_opts) if _q_frozen_opts else {}
         elif has_grouped_options:
             options = {}
         else:
@@ -1389,12 +1399,16 @@ def split_questions(
         questions.append({
             "number": num,
             "raw_question_text": raw_text,
+            # Preserve original text (before frozen-option stripping) so
+            # match_answers can extract explicit answers from it.
+            "_original_raw_text": _original_raw if _freeze_has_page_data and _q_frozen_opts else None,
             "page_start": page_start,
             "page_end": page_end,
             "has_options": len(options) > 0,
             "option_lines": options,
             "blank_option_groups": grouped_options if has_grouped_options else [],
             "has_grouped_options": has_grouped_options,
+            "is_frozen": _freeze_has_page_data,
             "confidence": round(max(0.0, min(1.0, conf)), 2),
             "section_type": section_type,
             # ── 原题定位信息 ──

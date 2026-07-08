@@ -344,6 +344,10 @@ def match_answers(
         # Run BEFORE inline/separated extraction so explicit answers are
         # always detected even when inline patterns fail.
         explicit = _extract_explicit_answer_from_raw(qtext)
+        # Fallback: if question has _original_raw_text (frozen options were
+        # stripped from raw_question_text), check that too.
+        if not explicit and q.get("_original_raw_text"):
+            explicit = _extract_explicit_answer_from_raw(q["_original_raw_text"])
         if explicit:
             answer = explicit["answer"]
             answer_source = explicit["answer_source"]
