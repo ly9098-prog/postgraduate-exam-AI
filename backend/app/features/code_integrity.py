@@ -767,3 +767,172 @@ def _get_unfenced_remaining_text(text: str, fenced_result: dict) -> str:
     for unclosed in fenced_result["unclosed"]:
         remaining = remaining.replace(f"```{unclosed}", "", 1)
     return remaining
+
+
+# ── Garbled code block detection (P0: Problem A from audit) ──
+from dataclasses import dataclass, field
+
+
+@dataclass
+class CodeGarbledResult:
+    """Result of garbled code block detection."""
+    is_garbled: bool
+    score: float
+    reasons: list[str]
+    expected_language: str | None
+
+
+# C struct field declaration pattern
+_RE_C_FIELD_DECL = re.compile(
+    r"\b(struct\s+\w+\s*\*?\s*\w+|"
+    r"char\s+\w+|int\s+\w+|float\s+\w+|double\s+\w+|"
+    r"void\s*\*?\s*\w+|"
+    r"\w+\s+\*?\w+\s*;|"
+    r"\w+\s+\*?\w+\s*,\s*\*?\w+)"  # multi-decl like "lchild, *rchild"
+)
+
+# C struct definition markers
+_RE_STRUCT_TYPEDEF = re.compile(r"typedef\s+struct")
+_RE_STRUCT_DEF_OPEN = re.compile(r"struct\s+\w+\s*\{")
+_RE_STRUCT_DEF_CLOSE = re.compile(r"\}\s*\w+\s*,\s*\*?\w+\s*;")
+
+# Garbled token patterns
+_RE_GARBLED_TOKEN = re.compile(
+    r"(?:"
+    r"\d+[a-zA-Z]{2,}\d*|"     # digits followed by letters: 1typu
+    r"[a-zA-Z]+\d+[a-zA-Z]+|"  # letters-digits-letters: p1tysI, apo11ta
+    r"[a-z]{5,}[A-Z]\w*|"       # lowercase-heavy with cap in middle
+    r"[A-Z][a-z]{0,2}\d{2,}"   # single cap + digits: P2s → but NOT P_2
+    r")"
+)
+
+# High-specificity known garbled patterns from production cases
+_RE_KNOWN_GARBLED_CODE = re.compile(
+    r"(?:"
+    r"1typu\s*\*|p1tysI|apo11ta|aonu2s"
+    r"|snexP|Apxt|ext=q"
+    r"|\(\s*\d+\s*typu|tysI"  # C field with embedded noise
+    r")",
+    re.IGNORECASE,
+)
+
+
+def detect_garbled_code_block(code: str) -> CodeGarbledResult:
+    """Detect garbled code in a code block.
+
+    Checks for:
+    1. C struct body validation — if typedef struct is present, verify
+       field declarations are semantically valid
+    2. Abnormal token density — mixed digit-letter tokens
+    3. Known garbled patterns from production cases
+
+    Args:
+        code: The code text (may include fenced block markers or just content).
+
+    Returns:
+        CodeGarbledResult with is_garbled flag, score (0-1), reasons, language.
+    """
+    if not code or not code.strip():
+        return CodeGarbledResult(
+            is_garbled=False, score=0.0, reasons=[], expected_language=None,
+        )
+
+    reasons: list[str] = []
+    score = 0.0
+    expected_language = None
+
+    # Remove fence markers for detection
+    clean_code = re.sub(r"```\w*\n?|```", "", code).strip()
+
+    # 1. C struct body validation
+    has_typedef = bool(_RE_STRUCT_TYPEDEF.search(clean_code))
+    has_struct_open = bool(_RE_STRUCT_DEF_OPEN.search(clean_code))
+    has_struct_close = bool(_RE_STRUCT_DEF_CLOSE.search(clean_code))
+
+    if has_typedef and has_struct_open:
+        expected_language = "c"
+        # Extract struct body lines (between { and })
+        struct_body = ""
+        in_body = False
+        for line in clean_code.split("\n"):
+            stripped = line.strip()
+            if "{" in stripped:
+                in_body = True
+                body_part = stripped[stripped.index("{")+1:]
+                if body_part:
+                    struct_body += body_part + "\n"
+                continue
+            if "}" in stripped:
+                in_body = False
+                body_part = stripped[:stripped.index("}")]
+                if body_part.strip():
+                    struct_body += body_part + "\n"
+                continue
+            if in_body:
+                struct_body += stripped + "\n"
+
+        if struct_body.strip():
+            # Count valid field declarations
+            valid_fields = _RE_C_FIELD_DECL.findall(struct_body)
+            # Check for garbled content
+            garbled_matches = _RE_GARBLED_TOKEN.findall(struct_body)
+            known_garbled = _RE_KNOWN_GARBLED_CODE.findall(struct_body)
+
+            if not valid_fields and garbled_matches:
+                reasons.append("c_struct_body_garbled")
+                score = max(score, 0.45)
+            if known_garbled:
+                reasons.append("known_garbled_pattern")
+                score = max(score, 0.50)
+
+            # Check if struct body lines look like field declarations
+            struct_lines = [l for l in struct_body.split("\n") if l.strip()]
+            garbled_line_count = 0
+            for sl in struct_lines:
+                # Valid C field: type name; or type name, *name;
+                if not re.match(
+                    r"^\s*(?:struct\s+\w+|char|int|float|double|void|short|long)"
+                    r"\s+\*?\w+(?:\s*,\s*\*?\w+)*\s*;?\s*$",
+                    sl,
+                ):
+                    # Count as garbled if it doesn't look like a valid field
+                    if len(sl.strip()) >= 5:  # only meaningful lines
+                        garbled_line_count += 1
+
+            if struct_lines and garbled_line_count / len(struct_lines) > 0.5:
+                if "c_struct_body_garbled" not in reasons:
+                    reasons.append("c_struct_body_garbled")
+                score = max(score, 0.55)
+
+    # 2. General garbled token detection (any code)
+    garbled_tokens = _RE_GARBLED_TOKEN.findall(clean_code)
+    if len(garbled_tokens) >= 2:
+        reasons.append("garbled_code_token_density_high")
+        score = max(score, 0.35)
+    known_garbled = _RE_KNOWN_GARBLED_CODE.findall(clean_code)
+    if known_garbled:
+        if "known_garbled_pattern" not in reasons:
+            reasons.append("known_garbled_pattern")
+        score = max(score, 0.40)
+
+    # 3. Check for unbalanced braces
+    open_braces = clean_code.count("{")
+    close_braces = clean_code.count("}")
+    if has_typedef and open_braces > close_braces:
+        reasons.append("c_struct_missing_close_brace")
+        score = max(score, 0.30)
+
+    # 4. Check for code that has struct keyword but no valid field declarations
+    if "struct" in clean_code.lower() and not has_struct_open and not has_struct_close:
+        reasons.append("c_struct_syntax_incomplete")
+        score = max(score, 0.35)
+
+    is_garbled = score >= 0.3
+    score = round(min(score, 1.0), 2)
+
+    return CodeGarbledResult(
+        is_garbled=is_garbled,
+        score=score,
+        reasons=list(dict.fromkeys(reasons)),  # deduplicate
+        expected_language=expected_language,
+    )
