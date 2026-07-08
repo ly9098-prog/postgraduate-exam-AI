@@ -175,139 +175,30 @@
 
   <!-- ==================== 答题页 ==================== -->
   <view class="practice" wx:if="{{started && !loading}}">
-    <!-- 顶部状态栏 -->
-    <view class="top-bar">
-      <view class="bar-left">
-        <text class="bar-subject">{{selectedSubjectName}}</text>
-        <text class="bar-counter">第 {{currentIndex + 1}} / {{totalQuestions || 0}} 题</text>
-        <text class="bar-subtitle">已完成 {{answeredCount || 0}} 题</text>
-      </view>
-      <view class="bar-right">
-        <text class="bar-timer">{{elapsedText}}</text>
-        <view class="bar-sheet-btn" bindtap="toggleSheet">
-          <text class="sheet-icon line-icon icon-list"></text>
-          <text class="sheet-badge" wx:if="{{answeredCount > 0}}">{{answeredCount}}</text>
-        </view>
-      </view>
-    </view>
-
-    <!-- 进度条 -->
-    <view class="progress-shell">
-      <view class="progress-track">
-        <view class="progress-fill" style="width:{{totalQuestions > 0 ? (answeredCount || 0) / totalQuestions * 100 : 0}}%"></view>
-      </view>
-      <text class="progress-label">{{progressPercent}}%</text>
-    </view>
-
-    <!-- 滑动容器 -->
-    <view
-      class="question-area"
-      bindtouchstart="onTouchStart"
-      bindtouchend="onTouchEnd"
-    >
-      <!-- 题目卡片 -->
-      <view class="q-wrap {{animClass}}" wx:if="{{currentQuestion}}" wx:key="{{currentIndex}}-{{_renderKey}}">
-        <view class="q-card-head">
-          <view>
-            <text class="q-badge">{{currentQuestion.question_type === 'multi_blank_choice' || currentQuestion._hasBlankOptionGroups ? '多空选择题' : currentQuestion.question_type === 'multiple_choice' ? '多选题' : currentQuestion.question_type === 'true_false' || currentQuestion.question_type === 'judgement' ? '判断题' : '单选题'}}</text>
-            <text class="q-card-kicker">保持节奏，认真读题</text>
-          </view>
-          <text class="q-card-index">{{currentIndex + 1}}</text>
-        </view>
-        <!-- Phase 2: 推荐原因标签 -->
-        <view class="recommend-reason-bar" wx:if="{{currentQuestion.recommend_reason}}">
-          <text class="recommend-reason-text">{{currentQuestion.recommend_reason}}</text>
-        </view>
-        <block wx:if="{{currentQuestion._renderModel.mode === 'SEGMENTS'}}" wx:key="segments">
-          <math-question segments="{{currentQuestion._renderModel.segments}}" />
-        </block>
-        <rich-text wx:elif="{{currentQuestion._renderModel.mode === 'RICH_TEXT'}}" wx:key="rich-text" class="q-content" nodes="{{currentQuestion._renderModel.richTextNodes}}"></rich-text>
-        <scroll-view wx:elif="{{currentQuestion._renderModel.mode === 'CODE'}}" wx:key="code" scroll-x class="code-wrapper"><text decode="false" space="preserve" class="code-text">{{currentQuestion._renderModel.rawText}}</text></scroll-view>
-        <mp-html wx:elif="{{currentQuestion._renderModel.mode === 'LATEX'}}" wx:key="latex" class="q-content" content="{{currentQuestion._renderModel.html}}" lazy-load></mp-html>
-        <block wx:elif="{{currentQuestion._renderModel.mode === 'MIXED'}}" wx:key="mixed">
-          <block wx:for="{{currentQuestion._renderModel.blocks}}" wx:key="index">
-            <rich-text wx:if="{{item.type === 'RICH_TEXT'}}" class="q-content mixed-text-block" nodes="{{item.richTextNodes}}" />
-            <mp-html wx:elif="{{item.type === 'LATEX'}}" class="q-content mixed-latex-block" content="{{item.html}}" lazy-load />
-            <scroll-view wx:elif="{{item.type === 'CODE'}}" scroll-x class="code-wrapper mixed-code-block"><text decode="false" space="preserve" class="code-text">{{item.rawText}}</text></scroll-view>
-          </block>
-        </block>
-
-        <!-- 多空选择题选项 -->
-        <view class="blank-options" wx:if="{{currentQuestion._hasBlankOptionGroups}}">
-          <view class="blank-group" wx:for="{{currentQuestion._blankOptionGroups}}" wx:for-item="group" wx:key="id">
-            <view class="blank-group-head">
-              <text class="blank-group-title">{{group.id}}</text>
-              <text class="blank-group-hint">请选择该空答案</text>
-            </view>
-            <view class="blank-group-options">
-              <view
-                wx:for="{{group.options}}"
-                wx:for-item="opt"
-                wx:key="key"
-                class="option-item blank-option-item {{opt._selected ? 'selected' : ''}}"
-                hover-class="option-pressed"
-                bindtap="selectBlankOption"
-                data-blank-id="{{group.id}}"
-                data-option="{{opt.key}}"
-              >
-                <view class="option-indicator {{opt._selected ? 'checked' : ''}}">
-                  <text wx:if="{{opt._selected}}" class="check-mark line-icon icon-dot"></text>
-                </view>
-                <view class="option-body">
-                  <text class="option-key">{{opt.key}}.</text>
-                  <mp-html wx:if="{{opt._needsRich}}" content="{{opt._html}}" style="display:inline-block"></mp-html>
-                  <text wx:else class="option-text">{{opt._text}}</text>
-                </view>
-              </view>
-            </view>
-          </view>
-        </view>
-
-        <!-- 选项 -->
-        <view class="options" wx:elif="{{currentQuestion._optionList.length > 0}}">
-          <view
-            wx:for="{{currentQuestion._optionList}}"
-            wx:key="key"
-            class="option-item {{item._selected ? 'selected' : ''}}"
-            hover-class="option-pressed"
-            bindtap="selectOption"
-            data-option="{{item.key}}"
-          >
-            <view class="option-indicator {{item._selected ? 'checked' : ''}}">
-              <text wx:if="{{item._selected && currentQuestion.question_type === 'multiple_choice'}}" class="check-mark line-icon icon-check"></text>
-              <text wx:elif="{{item._selected}}" class="check-mark line-icon icon-dot"></text>
-            </view>
-            <view class="option-body">
-              <text class="option-key">{{item.key}}.</text>
-              <mp-html wx:if="{{item._needsRich}}" content="{{item._html}}" style="display:inline-block"></mp-html>
-              <text wx:else class="option-text">{{item._text}}</text>
-            </view>
-          </view>
-        </view>
-      </view>
-    </view>
-
-    <!-- 底部操作栏 -->
-    <view class="bottom-bar">
-      <view class="bottom-inner">
-        <view class="nav-btn prev {{currentIndex <= 0 ? 'disabled' : ''}}" bindtap="goPrev">
-          <text class="nav-arrow line-icon icon-chevron-left"></text>
-          <text class="nav-label">上一题</text>
-        </view>
-
-        <view class="nav-center">
-          <view class="dot {{item._answered ? 'done' : ''}} {{index === currentIndex ? 'active' : ''}}" wx:for="{{questions}}" wx:key="index" data-index="{{index}}" bindtap="goQuestion"></view>
-        </view>
-
-        <view class="nav-btn next {{currentIndex >= totalQuestions - 1 ? 'disabled' : ''}}" bindtap="goNext">
-          <text class="nav-label">下一题</text>
-          <text class="nav-arrow line-icon icon-chevron-right"></text>
-        </view>
-      </view>
-      <button class="btn-submit" bindtap="doSubmit" disabled="{{submitting}}">
-        交卷复盘（{{answeredCount || 0}}/{{totalQuestions || 0}}）
-      </button>
-    </view>
+    <quiz-runner
+      mode="practice"
+      title="练习"
+      subjectName="{{selectedSubjectName}}"
+      questions="{{questions}}"
+      currentQuestion="{{currentQuestion}}"
+      currentIndex="{{currentIndex}}"
+      totalCount="{{totalQuestions}}"
+      answeredCount="{{answeredCount}}"
+      progressPercent="{{progressPercent}}"
+      elapsedText="{{elapsedText}}"
+      readonly="{{false}}"
+      submitted="{{submitted}}"
+      submitting="{{submitting}}"
+      showFeedback="{{true}}"
+      submitText="交卷复盘"
+      submitDisabled="{{submitted}}"
+      bind:selectoption="selectOption"
+      bind:selectblankoption="selectBlankOption"
+      bind:prev="goPrev"
+      bind:next="goNext"
+      bind:jump="goQuestion"
+      bind:submit="doSubmit"
+    />
 
     <view class="answer-feedback {{feedbackType}} combo-{{feedbackComboLevel}}" wx:if="{{feedbackVisible}}" catchtap="noop">
       <view class="feedback-card">
@@ -338,31 +229,4 @@
     <loading-lottie text="正在生成挑战题组..." size="large" />
   </view>
 
-  <!-- ==================== 答题卡弹窗 ==================== -->
-  <view class="sheet-overlay" wx:if="{{showSheet}}" bindtap="closeSheet">
-    <view class="sheet-modal" catchtap="noop">
-      <view class="sheet-head">
-        <view>
-          <text class="sheet-title">答题进度</text>
-          <text class="sheet-subtitle">点选题号快速跳转</text>
-        </view>
-        <text class="sheet-close" bindtap="closeSheet">关闭</text>
-      </view>
-      <view class="sheet-stats">
-        <text class="sheet-stat">已完成 {{answeredCount || 0}} / {{totalQuestions || 0}} 题</text>
-      </view>
-      <view class="sheet-grid">
-        <view
-          wx:for="{{questions}}"
-          wx:key="id"
-          class="sheet-cell {{item._answered ? 'done' : ''}} {{currentIndex === index ? 'current' : ''}}"
-          data-index="{{index}}"
-          bindtap="goQuestion"
-        >
-          {{index + 1}}
-        </view>
-      </view>
-      <button class="btn-submit sheet-submit" bindtap="doSubmit" disabled="{{submitting}}">交卷复盘</button>
-    </view>
-  </view>
 </view>
