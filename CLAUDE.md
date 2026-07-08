@@ -45,40 +45,6 @@ ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh update
 ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh migrate"
 ```
 
-## 环境变量
+## 代码查询
 
-```bash
-# 必填
-APP_SECRET=                    # 应用密钥
-DATABASE_URL=                  # sqlite+aiosqlite:///./postgraduate.db（开发） / postgresql+asyncpg://...（生产）
-DEEPSEEK_API_KEY=              # DeepSeek / 兼容模型 API Key
-WECHAT_APP_ID=                 # 微信小程序 AppID
-WECHAT_APP_SECRET=             # 微信小程序 AppSecret
-
-# 可选
-OCR_ENABLED=false              # 启用 OCR（需安装 requirements-ocr.txt）
-REDIS_URL=                     # 生产必需（缓存、番茄钟调度锁）
-AI_TIMEOUT=150                 # AI 调用超时（秒）
-CORS_ORIGINS=["http://localhost:3000"]
-
-# 生产常用
-GUNICORN_WORKERS=2
-POSTGRES_USER=pguser
-POSTGRES_PASSWORD=
-```
-
-> PaddleOCR-VL 等 AI / OCR 模型配置通过后台 AI 设置页面管理，非环境变量。详细环境变量列表见 `README.md`。
-
-## 文档索引
-
-| 位置 | 内容 |
-|------|------|
-| `/docs/architecture/` | 系统架构、OCR、记忆系统、复习算法 |
-| `/docs/backend/` | API 端点、DB schema、存储设计 |
-| `/docs/frontend/` | UI 规则、设计系统、组件规范 |
-| `/docs/project/` | 项目规则、路线图、MVP、变更日志 |
-| `/docs/ai/` | AI 管线、OCR 策略、标准化流程 |
-| `/docs/achieve/` | 历史开发阶段归档 |
-| `/docs/project/DEPLOY_PLAN.md` | 生产部署方案（服务器信息、Docker Compose、迁移） |
-| `/prompts/` | 当前开发任务和系统 Prompt |
-| `README.md` | 完整项目说明与技术文档 |
+优先使用 `codebase-memory` 知识图谱工具而非 grep/glob 进行代码搜索，减少文件读取次数。
