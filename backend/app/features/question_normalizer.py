@@ -10,6 +10,7 @@ import re
 import hashlib
 import logging
 import time
+from dataclasses import dataclass
 
 from app.features.question_type_classifier import (
     QT_SINGLE_CHOICE,
@@ -452,6 +453,93 @@ def check_option_completeness(
 _check_option_completeness = check_option_completeness  # 向后兼容
 
 
+@dataclass
+class OptionValidationResult:
+    """Result of option set validation."""
+    is_complete: bool
+    is_usable: bool
+    count: int
+    missing_keys: list[str]
+    suspicious_reasons: list[str]
+
+
+def validate_option_set(options: dict[str, str]) -> OptionValidationResult:
+    """Validate a parsed option set for suspicious patterns.
+
+    Detects cases like single A option containing B/C/D labels (split failure),
+    or options with embedded labels in their text.
+
+    Returns:
+        OptionValidationResult with is_usable=False if options are unreliable.
+    """
+    if not options:
+        return OptionValidationResult(
+            is_complete=False, is_usable=False, count=0,
+            missing_keys=[], suspicious_reasons=["empty_options"],
+        )
+
+    count = len(options)
+    missing = [k for k in ("A", "B", "C", "D") if k not in options]
+    suspicious: list[str] = []
+
+    # Single A option containing other option labels → split failure
+    if count == 1 and "A" in options:
+        text = options["A"]
+        if re.search(r"(?<![A-Za-z0-9_])[BCD]\s*[\.\．、:：]", text):
+            suspicious.append("inline_option_split_failed")
+
+    # Suspiciously long text with embedded option labels
+    for key, text in options.items():
+        if len(text) > 100 and re.search(r"[A-D]\s*[\.\．、:：]", text):
+            suspicious.append(f"option_{key}_may_contain_multiple_labels")
+            break
+
+    return OptionValidationResult(
+        is_complete=count >= 4,
+        is_usable=count >= 2 and len(suspicious) == 0,
+        count=count,
+        missing_keys=missing,
+        suspicious_reasons=suspicious,
+    )
+
+
+def has_objective_question_signals(
+    raw_text: str,
+    stem: str,
+    answer: str | None = None,
+) -> tuple[bool, list[str]]:
+    """Detect objective question signals in raw text.
+
+    Used to prevent false downgrade to subjective when objective
+    signals are present but options failed to parse.
+
+    Returns:
+        (has_signals, signal_list) describing the specific signals found.
+    """
+    signals: list[str] = []
+    text = raw_text or stem or ""
+
+    # Option label patterns (A./B./C./D.)
+    option_labels = re.findall(r"(?:^|\n)\s*[A-Da-d]\s*[.．、:：)）]", text)
+    if len(option_labels) >= 2:
+        signals.append(f"option_labels:{len(option_labels)}")
+
+    # Explicit answer markers
+    if re.search(r"(?:参考|正确)?答案\s*[：:]|【答案】", text):
+        signals.append("explicit_answer_marker")
+
+    # Answer is a choice letter(s)
+    if answer and re.match(r"^[A-D](?:[,\s]*[A-D])*$", answer.strip().upper()):
+        signals.append("explicit_choice_answer")
+
+    # Choice-related keywords
+    kw_matches = re.findall(r"下列|选项|单选|多选|选择|哪些|正确的是|错误的是|下列说法", text)
+    if kw_matches:
+        signals.append(f"choice_keywords:{len(kw_matches)}")
+
+    return bool(signals), signals
+
+
 def run_ocr_quality_gate(raw_text: str) -> dict:
     """在解析前运行 OCR 质量门控。
 
@@ -728,6 +816,18 @@ def normalize_question(
             "[CLASSIFY] q%s: question_type override: subjective→%s (detect_options_from_text=True)",
             raw_question.get("number", "?"), _classify_question_type,
         )
+    # P0: Objective signals guard — prevent false downgrade to subjective
+    # when raw text contains option labels, explicit answers, or choice keywords.
+    _has_obj_signals, _obj_signal_list = has_objective_question_signals(
+        raw_text or "", stem or "", answer_raw,
+    )
+    if _has_obj_signals and question_type == QT_SUBJECTIVE:
+        question_type = QT_SINGLE_CHOICE
+        logger.info(
+            "[OBJECTIVE-SIGNALS] q%s: subjective→single_choice override "
+            "(signals=%s)",
+            raw_question.get("number", "?"), _obj_signal_list,
+        )
     tracer.add_note("question_type_detection", f"type={question_type}", "intermediate", "options_extraction")
     # 多空选择题除外：在题号标记（①、（1）、1) 等）前插入换行
     if question_type != QT_MULTI_BLANK_CHOICE:
@@ -761,6 +861,21 @@ def normalize_question(
                 for e in opt_errors:
                     errors.append(e)
                 failure_reasons.extend(opt_errors)
+
+    # P0: Option set validation — detect suspicious patterns (e.g. single A
+    # containing BCD labels) even when option completeness passes.
+    _opt_validation = validate_option_set(option_lines)
+    if _opt_validation.suspicious_reasons:
+        for reason in _opt_validation.suspicious_reasons:
+            warnings.append(f"suspicious_options:{reason}")
+            failure_reasons.append(reason)
+
+    # P0: Objective signals risk — when objective signals exist but options
+    # are incomplete, propagate the risk flag so it shows in quality_blockers.
+    if _has_obj_signals and question_type in (QT_SINGLE_CHOICE, QT_MULTIPLE_CHOICE):
+        if not options or len(options) < 2:
+            warnings.append("objective_signals_but_options_incomplete")
+            failure_reasons.append("objective_signals_but_options_incomplete")
 
     if question_type == QT_MULTI_BLANK_CHOICE and not blank_option_groups:
         errors.append("missing_blank_option_groups")
@@ -872,6 +987,8 @@ def normalize_question(
         quality_blockers.append("empty_stem")
     if not options_complete:
         quality_blockers.append("incomplete_options")
+    if "objective_signals_but_options_incomplete" in failure_reasons:
+        quality_blockers.append("objective_signals_but_options_incomplete")
     if code_risk_flags:
         quality_blockers.append("code_integrity_issue")
 
@@ -929,7 +1046,9 @@ def normalize_question(
         # Goal 2: OCR 质量标记
         "ocr_quality_flags": quality_gate["ocr_quality_flags"],
         # 代码完整性风险标记
-        "risk_flags": code_risk_flags,
+        "risk_flags": (code_risk_flags[:] +
+                       [r for r in failure_reasons if r.startswith("objective_signals_") or r.startswith("suspicious_")] +
+                       [w[len("suspicious_options:"):] for w in warnings if w.startswith("suspicious_options:")]),
         # P0: Quality status (monotonic - can't be upgraded without evidence)
         "quality_status": quality_status,
         "quality_blockers": quality_blockers,

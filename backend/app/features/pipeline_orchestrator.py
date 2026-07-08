@@ -2648,14 +2648,14 @@ class ImportPipeline:
             # regardless of confidence value.
             is_vl = "paddleocr-vl" in (result.model_used or "")
             if result.fixed_text != text and (result.confidence and result.confidence > 0 or is_vl):
-                if is_vl and not result.confidence:
-                    logger.info(
-                        "VL confidence override: accepting VL result (conf=0.0, text_len=%d)",
-                        len(result.fixed_text),
-                    )
                 # ---- AI safety gate: 评估修改是否可接受 ----
                 from app.features.ai_safety import evaluate_and_trace
 
+                if is_vl and not result.confidence:
+                    logger.info(
+                        "VL result submitted to safety gate (conf=0.0, text_len=%d)",
+                        len(result.fixed_text),
+                    )
                 safety_trace, safe_text = evaluate_and_trace(
                     stage="ocr_fix",
                     model=result.model_used,
