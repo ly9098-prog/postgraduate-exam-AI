@@ -36,6 +36,8 @@ _CODE_STRUCTURE_FLAGS = frozenset({
     "code_block_incomplete",
     "code_block_truncated",
     "code_fence_unclosed",
+    "code_garbled_text",
+    "code_line_break_suspicious",
 })
 
 
@@ -218,6 +220,11 @@ async def run_code_structure_stage(
         stem = q.get("stem", "")
         stem_before = stem
 
+        # Capture pre-reconstruction code integrity flags (P0: prevent false success)
+        _pre_integrity = detect_code_block_integrity(stem)
+        _pre_flags = set(_pre_integrity.get("flags", []))
+        _pre_score = _pre_integrity.get("score", 0)
+
         result = await _call_llm_for_structure_reconstruct(stem, config, db)
 
         if result is None:
@@ -255,22 +262,61 @@ async def run_code_structure_stage(
 
         # Apply the fix: update stem (final_stem is after if accepted, before if rolled back)
         q["stem"] = final_stem
-        reconstructed_count += 1
 
-        # Remove resolved code integrity flags from risk_flags
+        # ── P0: Post-reconstruction integrity validation ──
+        # Run integrity check on the new stem to see which flags were actually resolved.
+        # Don't trust the LLM's self-reported confidence — rule-based detection is authoritative.
+        _post_integrity = detect_code_block_integrity(final_stem)
+        _post_flags = set(_post_integrity.get("flags", []))
+        _post_score = _post_integrity.get("score", 0)
+
+        # Compute resolved flags (present in pre but absent in post)
+        _resolved_flags = _pre_flags - _post_flags
+        # Compute flags that persist (present in both)
+        _persisted_flags = _pre_flags & _post_flags
+
+        # Only remove flags that were actually resolved
         existing_flags = list(q.get("risk_flags") or [])
-        for flag in _CODE_STRUCTURE_FLAGS:
-            if flag in existing_flags:
+        for flag in _resolved_flags:
+            while flag in existing_flags:
                 existing_flags.remove(flag)
+        # Re-add any persisted flags that might have been removed by mistake
+        for flag in _persisted_flags:
+            if flag not in existing_flags:
+                existing_flags.append(flag)
         if existing_flags:
             q["risk_flags"] = existing_flags
         else:
             q.pop("risk_flags", None)
 
-        # Update confidence_score if it was very low due to code issues
-        current_conf = q.get("confidence_score", 0)
-        if current_conf < _CONFIDENCE_CAP:
-            q["confidence_score"] = min(current_conf + _CONFIDENCE_BUMP, _CONFIDENCE_CAP)
+        # Only count as reconstructed if at least one flag was actually resolved
+        if _resolved_flags and _post_score < _pre_score:
+            reconstructed_count += 1
+        else:
+            failed_count += 1
+            logger.info(
+                "Code structure reconstruction had no measurable improvement for q%s: "
+                "pre_flags=%s post_flags=%s pre_score=%.2f post_score=%.2f",
+                q.get("number", idx),
+                sorted(_pre_flags), sorted(_post_flags),
+                _pre_score, _post_score,
+            )
+            fix_actions.append({
+                "question_index": idx,
+                "success": False,
+                "reason": "integrity_not_improved",
+                "pre_flags": sorted(_pre_flags),
+                "post_flags": sorted(_post_flags),
+                "pre_score": _pre_score,
+                "post_score": _post_score,
+            })
+            continue
+
+        # Only boost confidence if no garbled text persists
+        if "code_garbled_text" not in _persisted_flags:
+            current_conf = q.get("confidence_score", 0)
+            if current_conf < _CONFIDENCE_CAP:
+                q["confidence_score"] = min(current_conf + _CONFIDENCE_BUMP, _CONFIDENCE_CAP)
 
         # Add decision trace
         dt = list(q.get("decision_trace") or [])
@@ -284,17 +330,21 @@ async def run_code_structure_stage(
         fix_actions.append({
             "question_index": idx,
             "success": True,
-            "code_fixed": result.get("code_fixed", False),
+            "code_fixed": len(_resolved_flags) > 0,
             "confidence": result.get("confidence", 0.5),
             "tokens_used": result.get("token_used", 0),
             "actions": result.get("fix_actions", []),
+            "pre_flags": sorted(_pre_flags),
+            "post_flags": sorted(_post_flags),
+            "resolved_flags": sorted(_resolved_flags),
         })
 
         logger.info(
-            "Code structure reconstructed: q%s (code_fixed=%s, actions=%s)",
+            "Code structure reconstructed: q%s (resolved=%s, persisted=%s, pre_score=%.2f post_score=%.2f)",
             q.get("number", idx),
-            result.get("code_fixed"),
-            result.get("fix_actions"),
+            sorted(_resolved_flags),
+            sorted(_persisted_flags),
+            _pre_score, _post_score,
         )
 
     if reconstructed_count:

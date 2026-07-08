@@ -108,7 +108,7 @@ def run_normalize_schema_stage(
             q.get("is_valid", True), q.get("confidence_score", 0),
             str(q.get("stem") or q.get("parsed_content") or "")[:200],
             opt_summary[:200],
-            str(q.get("parsed_answer") or "❌"),
+            str(q.get("answer") or "❌"),
             q.get("risk_flags") or [],
         )
 

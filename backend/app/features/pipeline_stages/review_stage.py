@@ -85,7 +85,7 @@ async def run_review_stage(
             item.get("id", "?"), item.get("question_hash", "?")[:12],
             item.get("status", "?"), q.get("question_type", "?"),
             opt_count, q.get("confidence_score", 0),
-            q.get("parsed_answer") or "❌",
+            q.get("answer") or "❌",
         )
 
     return {
