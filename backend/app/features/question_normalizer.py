@@ -492,7 +492,7 @@ def validate_option_set(options: dict[str, str]) -> OptionValidationResult:
     for key, text in options.items():
         if len(text) > 100 and re.search(r"[A-D]\s*[\.\．、:：]", text):
             suspicious.append(f"option_{key}_may_contain_multiple_labels")
-            break
+            break  # one suspicious option is enough to flag the set
 
     return OptionValidationResult(
         is_complete=count >= 4,
@@ -520,7 +520,7 @@ def has_objective_question_signals(
     text = raw_text or stem or ""
 
     # Option label patterns (A./B./C./D.)
-    option_labels = re.findall(r"(?:^|\n)\s*[A-Da-d]\s*[.．、:：)）]", text)
+    option_labels = re.findall(r"^\s*[A-Da-d]\s*[.．、:：)）]", text, re.MULTILINE)
     if len(option_labels) >= 2:
         signals.append(f"option_labels:{len(option_labels)}")
 

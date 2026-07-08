@@ -70,6 +70,20 @@ class TestValidateOptionSet:
         assert "inline_option_split_failed" not in result.suspicious_reasons
         assert result.is_usable is False  # because count < 2
 
+    def test_long_option_with_embedded_labels(self):
+        """Option text >100 chars with embedded A-D labels → suspicious."""
+        text_long = "Long text with embedded B. option and C. option " + "x" * 80
+        opts = {"A": text_long, "B": "Normal"}
+        result = validate_option_set(opts)
+        assert "option_A_may_contain_multiple_labels" in result.suspicious_reasons
+
+    def test_long_option_without_embedded_labels(self):
+        """Option text >100 chars without A-D labels → not suspicious."""
+        text_long = "Just a very long text " + "x" * 100
+        opts = {"A": text_long, "B": "Normal"}
+        result = validate_option_set(opts)
+        assert "option_A_may_contain_multiple_labels" not in result.suspicious_reasons
+
 
 # =============================================================================
 # Test: has_objective_question_signals
@@ -113,6 +127,11 @@ class TestHasObjectiveQuestionSignals:
     def test_empty_text_no_signals(self):
         """Empty text → no signals."""
         has, signals = has_objective_question_signals("", "", None)
+        assert has is False
+
+    def test_single_option_label_not_enough(self):
+        """Single A. label → not enough for objective signal (needs >=2)."""
+        has, signals = has_objective_question_signals("A. just one option", "", "")
         assert has is False
 
 
@@ -159,6 +178,12 @@ class TestGetSpanBlocks:
         page_map = [(0, 1, 0), (100, 2, 0), (200, 2, 1)]
         blocks = _get_span_blocks(0, 250, page_map)
         assert blocks == {(1, 0), (2, 0), (2, 1)}
+
+    def test_span_up_to_last_block_boundary(self):
+        """Span ending exactly at last block's start boundary."""
+        page_map = [(0, 1, 0), (100, 1, 1)]
+        blocks = _get_span_blocks(50, 100, page_map)
+        assert blocks == {(1, 0)}  # does NOT include block 1 (span ends at its start)
 
 
 # =============================================================================
