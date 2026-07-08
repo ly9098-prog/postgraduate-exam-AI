@@ -101,6 +101,36 @@ class DeepSeekFixer:
                     raw_response="output length out of bounds",
                 )
 
+            # ── Garbled code persistence check (P0) ──
+            # Pure-text LLMs cannot reliably reconstruct garbled code.
+            # If the original text has code_garbled_text and the corrected
+            # output still has it without significant improvement, reject.
+            try:
+                from app.features.code_integrity import detect_code_block_integrity
+                _orig_code = detect_code_block_integrity(ocr_text)
+                _fixed_code = detect_code_block_integrity(corrected)
+                if (
+                    "code_garbled_text" in _orig_code.get("flags", [])
+                    and "code_garbled_text" in _fixed_code.get("flags", [])
+                ):
+                    _orig_score = _orig_code.get("score", 1.0)
+                    _fixed_score = _fixed_code.get("score", 1.0)
+                    if _fixed_score >= _orig_score * 0.8:
+                        logger.warning(
+                            "DeepSeek garbled code persisted: score %.2f->%.2f, "
+                            "reverting to original | original_preview=%.80s",
+                            _orig_score, _fixed_score, ocr_text[:80],
+                        )
+                        return OCRFixResult(
+                            fixed_text=ocr_text,
+                            model_used=self.model_name,
+                            duration_ms=duration_ms,
+                            raw_response="garbled_text_persists",
+                        )
+            except Exception:
+                logger.warning("DeepSeek garbled code check failed", exc_info=True)
+            # ── End garbled code persistence check ──
+
             # 检查是否丢失了题干：如果原文包含题号模式（如"06."或"1."）
             # 但校正后文本以选项字母开头，说明题干被丢弃了
             import re
