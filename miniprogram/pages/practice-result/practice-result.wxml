@@ -1,4 +1,4 @@
-<view class="page">
+<view class="page result-page">
   <animated-view
     wx:if="{{showCelebration && shouldShowCelebration}}"
     show="{{showCelebration}}"
@@ -13,134 +13,112 @@
     bind:done="dismissCelebration"
   />
 
-  <!-- 1. Result Hero -->
-  <view class="result-summary {{resultLevelClass}}">
-    <view class="summary-main">
-      <text class="summary-kicker">{{subjectDisplay}}</text>
-      <text class="summary-title">{{resultTitle || (passRate >= 60 ? '做得不错' : '继续加油')}}</text>
-      <text class="summary-desc">{{resultDesc || (passRate >= 60 ? '保持节奏，继续巩固薄弱题型' : '先复盘错题，再开启下一组练习')}}</text>
+  <!-- 1. Main Result Summary Card -->
+  <view class="result-summary-card {{resultLevelClass}} anim-card-1">
+    <view class="summary-top">
+      <view class="accuracy-block">
+        <view class="accuracy-number">
+          <text class="accuracy-value">{{passRate || 0}}</text>
+          <text class="accuracy-unit">%</text>
+        </view>
+        <view class="accuracy-track" wx:if="{{total > 0}}">
+          <view class="accuracy-fill" style="width:{{passRate}}%"></view>
+        </view>
+        <text class="accuracy-label">正确率</text>
+      </view>
+      <view class="summary-status">
+        <text class="status-text">{{statusText}}</text>
+        <text class="status-desc">{{statusDesc}}</text>
+      </view>
     </view>
-    <view class="score-block">
-      <text class="score-value">{{passRate || 0}}</text>
-      <text class="score-unit">%</text>
-      <text class="score-label">正确率</text>
+
+    <view class="summary-grid">
+      <view class="summary-item">
+        <text class="summary-value">{{correct || 0}}</text>
+        <text class="summary-label">答对</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-value">{{wrong || 0}}</text>
+        <text class="summary-label">错题</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-value">{{total || 0}}</text>
+        <text class="summary-label">总题</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-value">{{durationText}}</text>
+        <text class="summary-label">用时</text>
+      </view>
+    </view>
+
+    <view class="summary-extra" wx:if="{{skipped > 0 || subjectDisplay || growthExpText}}">
+      <text wx:if="{{subjectDisplay}}">{{subjectDisplay}}</text>
+      <text wx:if="{{subjectDisplay && skipped > 0}}"> · </text>
+      <text wx:if="{{skipped > 0}}">跳过 {{skipped}} 题</text>
+      <text wx:if="{{(subjectDisplay || skipped > 0) && growthExpText}}"> · </text>
+      <text wx:if="{{growthExpText}}">{{growthExpText}}</text>
+    </view>
+
+    <view class="growth-mini-line" wx:if="{{growthLevel && growthLevelPct >= 0}}">
+      <view class="growth-mini-texts">
+        <text class="growth-mini-title">{{growthTitle || '成长进度'}}</text>
+        <text class="growth-mini-level">{{growthLevel}}</text>
+      </view>
+      <view class="growth-mini-track" wx:if="{{growthLevelPct > 0}}">
+        <view class="growth-mini-fill" style="width:{{growthLevelPct}}%"></view>
+      </view>
     </view>
   </view>
 
-  <!-- 2. Core Stats -->
-  <view class="card metrics-card">
-    <view class="metrics-grid">
-      <view class="metric-item">
-        <text class="metric-value">{{correct || 0}}</text>
-        <text class="metric-label">答对</text>
-      </view>
-      <view class="metric-item">
-        <text class="metric-value wrong-color">{{wrong || 0}}</text>
-        <text class="metric-label">错题</text>
-      </view>
-      <view class="metric-item">
-        <text class="metric-value">{{total || 0}}</text>
-        <text class="metric-label">总题</text>
-      </view>
-      <view class="metric-item" wx:if="{{skipped > 0}}">
-        <text class="metric-value warn-color">{{skipped || 0}}</text>
-        <text class="metric-label">跳过</text>
-      </view>
-      <view class="metric-item" wx:else>
-        <text class="metric-value duration-text">{{durationText}}</text>
-        <text class="metric-label">用时</text>
-      </view>
+  <!-- 3. Advice Card -->
+  <view class="result-advice-card {{nextStepType}} anim-card-2" wx:if="{{nextStepTitle}}">
+    <view class="advice-head">
+      <text class="advice-title">{{nextStepTitle}}</text>
+      <text class="advice-tag" wx:if="{{nextStepTag}}">{{nextStepTag}}</text>
     </view>
-    <view class="metrics-row" wx:if="{{skipped > 0}}">
-      <text class="metrics-duration-label">用时</text>
-      <text class="metrics-duration-value">{{durationText}}</text>
-    </view>
+    <text class="advice-desc">{{nextStepDesc}}</text>
   </view>
 
-  <!-- 3. Smart Suggestion -->
-  <view class="card next-step-card {{nextStepType}}" wx:if="{{nextStepTitle}}">
-    <view class="next-step-head">
-      <text class="next-step-title">{{nextStepTitle}}</text>
-      <text class="next-step-tag" wx:if="{{nextStepTag}}">{{nextStepTag}}</text>
-    </view>
-    <text class="next-step-desc">{{nextStepDesc}}</text>
-  </view>
-
-  <!-- 4. Wrong / Perfect Summary -->
-  <view class="card wrong-summary-card" wx:if="{{wrong > 0}}">
-    <view class="wrong-summary-main">
-      <text class="wrong-summary-title">本次产生 {{wrong}} 道错题</text>
-      <text class="wrong-summary-desc">建议优先复盘错题，再继续下一组练习</text>
-    </view>
-    <button class="wrong-summary-btn" bindtap="goWrongBook">去复盘</button>
-  </view>
-
-  <view class="card perfect-card" wx:elif="{{total > 0 && wrong === 0}}">
-    <text class="perfect-title">本组没有错题</text>
-    <text class="perfect-desc">可以继续保持节奏，再来一组巩固手感</text>
-  </view>
-
-  <!-- 5. Growth (weak) -->
-  <view class="card growth-mini-card" wx:if="{{growthLevel}}">
-    <view class="growth-mini-head">
-      <view>
-        <text class="growth-mini-title">{{growthTitle}}</text>
-        <text class="growth-mini-desc">{{growthDesc}}</text>
-      </view>
-      <text class="growth-mini-level">{{growthLevel}}</text>
-    </view>
-    <view class="growth-mini-track" wx:if="{{growthLevelPct > 0}}">
-      <view class="growth-mini-fill" style="width:{{growthLevelPct}}%"></view>
-    </view>
-    <text class="growth-mini-text" wx:if="{{growthExpText}}">{{growthExpText}}</text>
-  </view>
-
-  <!-- 6. Detail List (collapsed) -->
-  <view class="card detail-card" wx:if="{{results.length > 0}}">
+  <!-- 4. Detail List (collapsed) -->
+  <view class="detail-card anim-card-4" wx:if="{{results.length > 0}}">
     <view class="detail-toggle" bindtap="toggleDetail">
       <view>
-        <text class="section-title">答题详情</text>
-        <text class="section-subtitle">查看每道题的正确 / 错误情况</text>
+        <text class="detail-title">答题详情</text>
+        <text class="detail-subtitle">查看每道题的对错情况</text>
       </view>
-      <text class="toggle-arrow">{{showDetail ? '收起' : '展开'}}</text>
+      <text class="detail-toggle-text">{{showDetail ? '收起' : '展开'}}</text>
     </view>
 
     <view class="detail-list" wx:if="{{showDetail}}">
       <view
         class="detail-row {{item._cls}}"
-        wx:for="{{results}}"
+        wx:for="{{compactResults}}"
         wx:key="question_id"
       >
         <view class="detail-row-left">
-          <text class="detail-index">{{index + 1}}</text>
+          <text class="detail-index">{{item._displayIndex}}</text>
           <text class="detail-status {{item._cls}}">{{item._label}}</text>
         </view>
         <view class="detail-row-body">
           <text class="detail-stem" wx:if="{{item._stemPreview}}">{{item._stemPreview}}</text>
           <view class="detail-answer-line">
-            <text class="detail-user-answer" wx:if="{{item._userAnswer}}">我的：{{item._userAnswer}}</text>
-            <text class="detail-right-answer">正确：{{item.correct_answer}}</text>
+            <text class="detail-user-answer {{item._cls}}" wx:if="{{item._userAnswer}}">我的：{{item._userAnswer}}</text>
+            <text class="detail-right-answer" wx:if="{{item.correct_answer}}">正确：{{item.correct_answer}}</text>
           </view>
         </view>
       </view>
     </view>
   </view>
 
-  <!-- 7. Bottom Actions -->
   <view class="bottom-safe-space"></view>
 
+  <!-- 6. Bottom Actions -->
   <view class="bottom-actions">
-    <block wx:if="{{wrong > 0}}">
-      <button class="action-primary" bindtap="goWrongBook">复盘错题</button>
-      <button class="action-secondary" bindtap="practiceAgain">继续练习</button>
-    </block>
-    <block wx:elif="{{total > 0}}">
-      <button class="action-primary" bindtap="practiceAgain">再来一组</button>
-      <button class="action-secondary" bindtap="goHome">返回首页</button>
-    </block>
-    <block wx:else>
-      <button class="action-primary" bindtap="practiceAgain">返回练习</button>
-      <button class="action-secondary" bindtap="goHome">返回首页</button>
-    </block>
+    <button class="action-primary" wx:if="{{wrong > 0}}" bindtap="goWrongBook">复盘错题</button>
+    <button class="action-primary" wx:elif="{{total > 0}}" bindtap="practiceAgain">再来一组</button>
+    <button class="action-primary" wx:else bindtap="practiceAgain">返回练习</button>
+
+    <button class="action-secondary" wx:if="{{wrong > 0}}" bindtap="practiceAgain">继续练习</button>
+    <button class="action-secondary" wx:else bindtap="goHome">返回首页</button>
   </view>
 </view>

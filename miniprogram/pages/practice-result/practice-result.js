@@ -79,6 +79,22 @@ Page({
     } catch (_) {}
 
     const skipped = (stored && stored.skipped) || 0
+
+    // Build compactResults: wrong items first, keep original index
+    const compactResults = []
+    const wrongItems = []
+    const correctItems = []
+    results.forEach(function(item, index) {
+      var compact = Object.assign({}, item, { _displayIndex: index + 1 })
+      if (compact._isWrong) {
+        wrongItems.push(compact)
+      } else {
+        correctItems.push(compact)
+      }
+    })
+    compactResults.push.apply(compactResults, wrongItems)
+    compactResults.push.apply(compactResults, correctItems)
+
     const vm = this._buildResultViewModel(passRate, correct, wrong, total, skipped)
     const celebrationCopy = vm.shouldShowCelebration ? this._celebrationCopy(passRate, correct, wrong, total, answeredCount) : {}
 
@@ -94,6 +110,7 @@ Page({
       subject: options.subject_id || '',
       subjectDisplay: decodeURIComponent(options.subject_name || '') || '练习',
       results,
+      compactResults,
       ...vm,
       ...celebrationCopy,
     })
@@ -111,6 +128,8 @@ Page({
       resultLevelClass: '',
       resultTitle: '',
       resultDesc: '',
+      statusText: '',
+      statusDesc: '',
       nextStepType: '',
       nextStepTitle: '',
       nextStepDesc: '',
@@ -122,49 +141,65 @@ Page({
       vm.resultLevelClass = 'empty'
       vm.resultTitle = '暂无练习结果'
       vm.resultDesc = '本次没有可统计的答题数据'
-      vm.nextStepType = 'practice'
-      vm.nextStepTitle = '去练一组'
-      vm.nextStepDesc = '请完成一组练习后查看结果'
-      vm.nextStepTag = '开始'
+      vm.statusText = '未完成'
+      vm.statusDesc = '返回练习后再试一次'
+      vm.nextStepType = 'start'
+      vm.nextStepTitle = '重新开始练习'
+      vm.nextStepDesc = '完成一组练习后，这里会生成正确率和答题情况'
+      vm.nextStepTag = '未开始'
+      vm.shouldShowCelebration = false
       return vm
     }
 
     // 庆祝动效触发条件：高正确率 或 全小测验满分
-    vm.shouldShowCelebration = passRate >= 80 || (total <= 5 && passRate === 100)
+    vm.shouldShowCelebration = passRate >= 90 || (total <= 5 && passRate === 100)
+    if (wrong > 0 && passRate < 90) {
+      vm.shouldShowCelebration = false
+    }
 
     if (passRate >= 90) {
       vm.resultLevelClass = 'excellent'
-      vm.resultTitle = '表现很稳'
-      vm.resultDesc = '这组正确率很高，可以继续保持节奏'
-      vm.nextStepType = 'continue'
-      vm.nextStepTitle = '建议继续挑战'
-      vm.nextStepDesc = '可以再来一组，扩大优势题型的熟练度'
-      vm.nextStepTag = '继续练习'
+      vm.resultTitle = '练习完成'
+      vm.resultDesc = '这组正确率很高，整体掌握不错'
+      vm.statusText = '表现很稳'
+      vm.statusDesc = '可以继续保持节奏'
+      vm.nextStepType = wrong > 0 ? 'review' : 'continue'
+      vm.nextStepTitle = wrong > 0 ? '先复盘少量错题' : '可以继续挑战'
+      vm.nextStepDesc = wrong > 0
+        ? '本组仍有少量错题，建议先处理后再继续练习'
+        : '本组没有明显薄弱点，可以再来一组巩固手感'
+      vm.nextStepTag = wrong > 0 ? '推荐' : '继续'
     } else if (passRate >= 70) {
       vm.resultLevelClass = 'good'
-      vm.resultTitle = '完成得不错'
-      vm.resultDesc = '整体掌握较好，建议复盘少量错题'
-      vm.nextStepType = 'review'
-      vm.nextStepTitle = '建议先复盘错题'
+      vm.resultTitle = '练习完成'
+      vm.resultDesc = '整体掌握较好，但还有可以优化的地方'
+      vm.statusText = '完成不错'
+      vm.statusDesc = '错题值得复盘'
+      vm.nextStepType = wrong > 0 ? 'review' : 'continue'
+      vm.nextStepTitle = wrong > 0 ? '建议先复盘错题' : '可以继续练习'
       vm.nextStepDesc = wrong > 0
-        ? `本次 ${wrong} 道错题，处理掉再继续下一组`
-        : '本组没有错题，可以继续下一组练习'
-      vm.nextStepTag = '推荐'
+        ? '把本组错题处理掉，再继续下一组练习'
+        : '本组完成情况不错，可以继续保持'
+      vm.nextStepTag = wrong > 0 ? '复盘优先' : '继续'
     } else if (passRate >= 50) {
       vm.resultLevelClass = 'normal'
-      vm.resultTitle = '还有提升空间'
-      vm.resultDesc = '这组暴露了一些薄弱点，复盘价值较高'
+      vm.resultTitle = '练习完成'
+      vm.resultDesc = '这组暴露了一些薄弱点'
+      vm.statusText = '需要复盘'
+      vm.statusDesc = '先看错题更有效'
       vm.nextStepType = 'review'
       vm.nextStepTitle = '优先处理薄弱点'
-      vm.nextStepDesc = `建议先看 ${wrong} 道错题，再开启下一组练习`
+      vm.nextStepDesc = '建议先查看错题，找出容易失误的知识点'
       vm.nextStepTag = '复盘优先'
     } else {
       vm.resultLevelClass = 'weak'
-      vm.resultTitle = '先别急着下一组'
-      vm.resultDesc = `本组错题较多（${wrong}/${total}），建议先集中复盘`
+      vm.resultTitle = '练习完成'
+      vm.resultDesc = '本组错题较多，不建议直接继续刷题'
+      vm.statusText = '错题较多'
+      vm.statusDesc = '先复盘比继续刷题更重要'
       vm.nextStepType = 'review'
       vm.nextStepTitle = '建议立即复盘'
-      vm.nextStepDesc = '先把错题原因搞清楚，这次练习才真正有效'
+      vm.nextStepDesc = '先把错误原因搞清楚，这次练习才真正有效'
       vm.nextStepTag = '重点'
     }
 
