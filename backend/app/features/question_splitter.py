@@ -1283,11 +1283,11 @@ def split_questions(
     questions: list[dict] = []
 
     # ── Structure Freeze: precompute which pages have frozen option data ──
-    _frozen_pages: set[int] = set()
+    frozen_pages: set[int] = set()
     if frozen_option_registry:
         for key in frozen_option_registry:
             try:
-                _frozen_pages.add(int(key.split(":")[0]))
+                frozen_pages.add(int(key.split(":")[0]))
             except (ValueError, IndexError):
                 pass
 
@@ -1311,50 +1311,56 @@ def split_questions(
         # has produced entries for any page in this question's range, skip ALL regex
         # option extraction (including _extract_options and layout injection).
         # Options will be injected by _apply_frozen_options downstream.
-        _freeze_has_page_data = bool(
-            _frozen_pages and (page_start in _frozen_pages or page_end in _frozen_pages)
+        freeze_has_page_data = bool(
+            frozen_pages and (page_start in frozen_pages or page_end in frozen_pages)
         )
 
         # P0 (Problem C): Strip frozen option text from raw_text when freeze data exists.
         # This prevents option text from appearing in the stem after _extract_stem().
         # P0 (Cross-contamination): Collect frozen options at BLOCK granularity,
         # not page granularity, so questions on the same page don't cross-contaminate.
-        _q_frozen_opts: dict[str, str] = {}
-        _original_raw: str | None = None
-        if _freeze_has_page_data and frozen_option_registry:
-            _span_blocks = _get_span_blocks(start_pos, end_pos, page_map)
-            for _fkey, _fopts in frozen_option_registry.items():
+        q_frozen_opts: dict[str, str] = {}
+        original_raw: str | None = None
+        if freeze_has_page_data and frozen_option_registry:
+            span_blocks = _get_span_blocks(start_pos, end_pos, page_map)
+            for fkey, fopts in frozen_option_registry.items():
                 try:
-                    _fparts = _fkey.split(":")
-                    _fk_page = int(_fparts[0])
-                    _fk_block = int(_fparts[1]) if len(_fparts) > 1 else -1
+                    fparts = fkey.split(":")
+                    fk_page = int(fparts[0])
+                    fk_block = int(fparts[1]) if len(fparts) > 1 else -1
+                    if len(fparts) == 1:
+                        logger.debug(
+                            "[FREEZE] key %r has no block index (old format), "
+                            "falling back to page-level matching",
+                            fkey,
+                        )
                 except (ValueError, IndexError):
                     continue
-                if (_fk_page, _fk_block) in _span_blocks:
-                    _q_frozen_opts.update(dict(_fopts))
-            if _q_frozen_opts:
+                if (fk_page, fk_block) in span_blocks:
+                    q_frozen_opts.update(dict(fopts))
+            if q_frozen_opts:
                 # Save original text before stripping so match_answers can
                 # extract explicit answers from it downstream.
-                _original_raw = raw_text
-                _stripped_raw = strip_frozen_options_from_stem(raw_text, _q_frozen_opts)
-                if _stripped_raw and len(_stripped_raw) < len(raw_text):
+                original_raw = raw_text
+                stripped_raw = strip_frozen_options_from_stem(raw_text, q_frozen_opts)
+                if stripped_raw and len(stripped_raw) < len(raw_text):
                     logger.info(
                         "split: stripped frozen options from stem for q%d "
                         "(removed %d chars, frozen_opts=%s)",
-                        num, len(raw_text) - len(_stripped_raw),
-                        sorted(_q_frozen_opts.keys()),
+                        num, len(raw_text) - len(stripped_raw),
+                        sorted(q_frozen_opts.keys()),
                     )
-                    raw_text = _stripped_raw
+                    raw_text = stripped_raw
 
-        if _freeze_has_page_data:
-            if _q_frozen_opts:
+        if freeze_has_page_data:
+            if q_frozen_opts:
                 # Directly assign frozen options instead of leaving them empty
                 # for _apply_frozen_options downstream. That function's text-substring
                 # matching (block_text in q_text) FAILS because split_questions
                 # stripped frozen option lines from raw_question_text above —
                 # the full block text (with options) is no longer a substring of
                 # the question text (without options).
-                options = dict(_q_frozen_opts)
+                options = dict(q_frozen_opts)
             else:
                 # Frozen data exists on this page but no block-level match for
                 # this question — fall back to regex to avoid missing options.
@@ -1367,7 +1373,7 @@ def split_questions(
         # Layout-aware option injection: use layout's spatial option_groups
         # when text-only extraction is insufficient.
         # NOTE: skipped entirely when frozen data exists (freeze is the sole source of truth).
-        if not _freeze_has_page_data and not has_grouped_options and layout_result:
+        if not freeze_has_page_data and not has_grouped_options and layout_result:
             page_key = str(page_start)
             layout_page_opts = layout_result.get("option_groups", {}).get(page_key, {})
 
@@ -1418,9 +1424,9 @@ def split_questions(
                     break
 
         # ── 风险标记 ──
-        _risk_flags: list[str] = []
-        if _freeze_has_page_data and frozen_option_registry and not _q_frozen_opts:
-            _risk_flags.append("frozen_options_unmatched")
+        risk_flags: list[str] = []
+        if freeze_has_page_data and frozen_option_registry and not q_frozen_opts:
+            risk_flags.append("frozen_options_unmatched")
 
         # ── 提取原题号信息（用于审核定位） ──
         source_question_no = str(num) if num and num > 0 else None
@@ -1431,17 +1437,17 @@ def split_questions(
             "raw_question_text": raw_text,
             # Preserve original text (before frozen-option stripping) so
             # match_answers can extract explicit answers from it.
-            "_original_raw_text": _original_raw if _freeze_has_page_data and _q_frozen_opts else None,
+            "_original_raw_text": original_raw if freeze_has_page_data and q_frozen_opts else None,
             "page_start": page_start,
             "page_end": page_end,
             "has_options": len(options) > 0,
             "option_lines": options,
             "blank_option_groups": grouped_options if has_grouped_options else [],
             "has_grouped_options": has_grouped_options,
-            "is_frozen": _freeze_has_page_data,
+            "is_frozen": freeze_has_page_data,
             "confidence": round(max(0.0, min(1.0, conf)), 2),
             "section_type": section_type,
-            "risk_flags": _risk_flags,
+            "risk_flags": risk_flags,
             # ── 原题定位信息 ──
             "source_question_no": source_question_no,
             "source_question_label": source_question_label,
