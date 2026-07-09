@@ -227,6 +227,13 @@ page {
   font-size: 24rpx;
   color: rgba(255, 255, 255, 0.45);
   font-weight: 500;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  padding: 0 8rpx;
+  box-sizing: border-box;
 }
 
 .subj-card.active .subj-name {

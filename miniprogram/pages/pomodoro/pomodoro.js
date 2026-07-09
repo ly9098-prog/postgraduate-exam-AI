@@ -532,6 +532,8 @@ Page({
   },
 
   _showEndFreeConfirm() {
+    this._clearFreeTimerInterval()
+    this._confirmOpenedAt = Date.now()
     const elapsed = Math.max(0, this.data.elapsedSec || 0)
     const fmt = formatElapsedSec(elapsed)
     this.setData({
@@ -540,9 +542,12 @@ Page({
     })
   },
 
-  _cancelEndFreeTimer() {
+  async _cancelEndFreeTimer() {
     this.setData({ showEndConfirm: false })
-    if (!this.data.isPaused) {
+    this._confirmOpenedAt = null
+    if (this.data.isPaused) {
+      await this._resumeFreeTimer()
+    } else {
       this._startFreeTimerInterval()
     }
   },
@@ -1003,6 +1008,8 @@ Page({
       progress: 1,
     })
     this._updateComputedFields()
+
+    setTimeout(() => { this._initCanvas(); this.drawRing(0, false) }, 200)
 
     if (!isPaused) {
       this._startFreeTimerInterval()

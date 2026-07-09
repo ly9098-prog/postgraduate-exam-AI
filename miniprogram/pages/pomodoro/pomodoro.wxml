@@ -153,7 +153,7 @@
           <!-- Progress Ring -->
           <view class="ring-wrapper">
             <view class="ring-glow"></view>
-            <canvas class="ring-canvas" type="2d" id="progress-ring"></canvas>
+            <canvas class="ring-canvas" type="2d" id="progress-ring" hidden="{{showEndConfirm}}"></canvas>
             <view class="ring-center">
               <block wx:if="{{isFreeTimer}}">
                 <text class="ring-time ring-time-free {{isPaused ? 'time-dim' : ''}}">{{freeDisplayTime}}</text>
