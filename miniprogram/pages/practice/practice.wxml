@@ -1,3 +1,17 @@
+<animated-view
+  wx:if="{{showPerfectCelebration}}"
+  show="{{showPerfectCelebration}}"
+  type="{{perfectCelebrationType}}"
+  title="{{perfectCelebrationTitle}}"
+  detail="{{perfectCelebrationDetail}}"
+  motto="{{perfectCelebrationMotto}}"
+  reward-text="{{perfectCelebrationRewardText}}"
+  duration="{{2600}}"
+  gif-src="/assets/animation/celebration.gif"
+  png-src="/assets/animation/celebration-static.png"
+  bind:done="goPracticeResultAfterCelebration"
+/>
+
 <view class="page">
   <view class="submit-loading-mask" wx:if="{{submitting}}" catchtap="noop">
     <view class="submit-loading-card">

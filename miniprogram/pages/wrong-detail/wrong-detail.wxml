@@ -16,12 +16,11 @@
 </view>
 
 <view class="page" wx:elif="{{!loading && wq}}">
-  <view wx:if="{{switching}}" class="switch-loading">
+  <view wx:if="{{switching}}" class="switch-loading-overlay">
     <loading-lottie text="正在切换错题..." size="small" />
   </view>
 
   <quiz-runner
-    wx:if="{{!switching}}"
     mode="wrong-detail"
     title="错题复盘"
     subtitle="{{currentIdx + 1}} / {{totalQuestions}}"
@@ -37,31 +36,13 @@
     showFeedback="{{false}}"
     submitDisabled="{{true}}"
     submitText="继续复盘"
+    showSubmitButton="{{false}}"
+    swipeEnabled="{{true}}"
+    allowSwipeInReadonly="{{true}}"
     bind:prev="goPrevWrong"
     bind:next="goNextWrong"
     bind:jump="goWrongQuestion"
   />
-
-  <!-- 答案行 -->
-  <view class="detail-card answer-card">
-    <view class="detail-header">
-      <text class="subject-tag">{{subjectLabelText}}</text>
-      <text class="error-type-tag">{{errorTypeLabelText}}</text>
-    </view>
-
-    <view class="q-answer-line">
-      <text class="q-answer-label">我的答案</text>
-      <text class="q-answer-value user">{{wq.wrong_answer || '未记录'}}</text>
-    </view>
-    <view class="q-answer-line">
-      <text class="q-answer-label">正确答案</text>
-      <text class="q-answer-value correct">{{wq.answer || '暂无答案'}}</text>
-    </view>
-    <view wx:if="{{wq.analysis}}" class="q-answer-analysis">
-      <text class="q-answer-label">题目解析</text>
-      <text class="q-analysis-text">{{wq.analysis}}</text>
-    </view>
-  </view>
 
   <!-- AI 分析：手动触发 -->
   <view class="ai-card">

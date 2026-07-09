@@ -140,59 +140,61 @@
   />
 </view>
 
-<!-- ==================== 组结果页 ==================== -->
-<view class="page result-page" wx:if="{{phase === 'group-result'}}">
-  <view class="result-wrap animation-fade-in">
-    <view class="result-medal">
-      <text class="result-medal-main">{{groupCorrect >= groupWrong ? '优' : '练'}}</text>
-      <text class="result-medal-sub">本组完成</text>
-    </view>
-    <text class="result-title">第 {{currentGroupIdx + 1}} 组复盘完成</text>
-    <text class="result-desc">继续下一组，把短期记忆变成长期掌握</text>
-
-    <view class="group-reward-strip">
-      <view class="group-reward-main">
-        <view class="group-reward-icon">
-          <text wx:if="{{groupCorrect >= groupWrong}}" class="line-icon icon-check" style="width:40rpx;height:40rpx;color:#FFFFFF;"></text>
-          <text wx:else class="line-icon icon-trend" style="width:40rpx;height:40rpx;color:#FFFFFF;"></text>
-        </view>
-        <view class="group-reward-copy">
-          <text class="group-reward-title">{{groupCorrect >= groupWrong ? '本组记忆稳定' : '本组已完成诊断'}}</text>
-          <text class="group-reward-desc">{{groupCorrect >= groupWrong ? '获得专注星光 +1，继续保持节奏' : '获得复盘能量 +1，错题会进入巩固计划'}}</text>
+<!-- ==================== 组结果页（数据优先） ==================== -->
+<view class="result-page" wx:if="{{phase === 'group-result'}}">
+  <view class="grp anim-grp-1">
+    <!-- 1. 紧凑摘要卡 -->
+    <view class="grp-summary-card">
+      <view class="grp-summary-top">
+        <text class="grp-group-tag">第 {{currentGroupIdx + 1}} / {{groups.length}} 组</text>
+        <view class="grp-accuracy">
+          <text class="grp-accuracy-value">{{groupQuestions.length > 0 ? Math.round(groupCorrect / groupQuestions.length * 100) : 0}}%</text>
+          <text class="grp-accuracy-label">正确率</text>
         </view>
       </view>
-      <view class="group-progress-track">
-        <view class="group-progress-fill" style="{{_groupProgressStyle}}"></view>
+      <view class="grp-summary-grid">
+        <view class="grp-summary-item">
+          <text class="grp-summary-val">{{groupQuestions.length}}</text>
+          <text class="grp-summary-lbl">本组题数</text>
+        </view>
+        <view class="grp-summary-item">
+          <text class="grp-summary-val success">{{groupCorrect}}</text>
+          <text class="grp-summary-lbl">正确</text>
+        </view>
+        <view class="grp-summary-item">
+          <text class="grp-summary-val danger">{{groupWrong}}</text>
+          <text class="grp-summary-lbl">需巩固</text>
+        </view>
+        <view class="grp-summary-item">
+          <text class="grp-summary-val muted">{{groupResults.filter(r => r.wasSkipped).length}}</text>
+          <text class="grp-summary-lbl">跳过</text>
+        </view>
       </view>
-      <text class="group-progress-text">今日组进度 {{currentGroupIdx + 1}} / {{groups.length}}</text>
     </view>
 
-    <view class="result-stats">
-      <view class="result-stat-item">
-        <text class="result-stat-val">{{groupQuestions.length}}</text>
-        <text class="result-stat-lbl">本组题数</text>
-      </view>
-      <view class="result-stat-item">
-        <text class="result-stat-val success">{{groupCorrect}}</text>
-        <text class="result-stat-lbl">正确</text>
-      </view>
-      <view class="result-stat-item">
-        <text class="result-stat-val danger">{{groupWrong}}</text>
-        <text class="result-stat-lbl">需巩固</text>
-      </view>
+    <!-- 2. 复习调度反馈 -->
+    <view class="grp-schedule-card" wx:if="{{groupResults.length > 0}}">
+      <text class="grp-schedule-title">复习调度</text>
+      <text class="grp-schedule-desc">已更新记忆曲线 · 本组错题将进入后续复习安排</text>
     </view>
 
-    <view class="group-answers">
+    <!-- 3. 答题详情 -->
+    <view class="grp-detail-section">
+      <text class="grp-detail-title">答题详情</text>
       <view
         wx:for="{{groupResults}}" wx:key="schedule_id"
-        class="ga-item {{item.wasSkipped ? 'ga-skipped' : (item.isCorrect ? 'ga-correct' : 'ga-wrong')}}"
+        class="grp-detail-item {{item.wasSkipped ? 'grp-skipped' : (item.isCorrect ? 'grp-correct' : 'grp-wrong')}}"
       >
-        <view class="ga-status">
-          <text wx:if="{{item.isCorrect}}" class="line-icon icon-check" style="width:22rpx;height:22rpx;color:#FFFFFF;"></text>
-          <text wx:else class="line-icon icon-exclamation" style="width:22rpx;height:22rpx;color:#FFFFFF;"></text>
+        <view class="grp-detail-left">
+          <text class="grp-detail-idx">{{index + 1}}</text>
+          <view class="grp-detail-status">
+            <text wx:if="{{item.isCorrect && !item.wasSkipped}}" class="grp-status-pill correct">正确</text>
+            <text wx:elif="{{!item.wasSkipped}}" class="grp-status-pill wrong">错误</text>
+            <text wx:else class="grp-status-pill skipped">跳过</text>
+          </view>
         </view>
-        <view class="ga-body">
-          <view class="ga-stem">
+        <view class="grp-detail-body">
+          <view class="grp-detail-stem">
             <block wx:if="{{item._renderModel.mode === 'SEGMENTS'}}">
               <math-question segments="{{item._renderModel.segments}}" />
             </block>
@@ -207,98 +209,121 @@
               </block>
             </block>
           </view>
-          <text class="ga-answer" wx:if="{{!item.isCorrect}}">
+          <text class="grp-detail-answer" wx:if="{{!item.wasSkipped && !item.isCorrect}}">
             你的：{{item.userAnswer || '未作答'}}　正确：{{item.correctAnswer}}
           </text>
         </view>
       </view>
     </view>
 
-    <button class="gradient-btn result-btn" bindtap="nextGroup" disabled="{{resultTransitioning}}" loading="{{resultTransitioning}}">
+    <button class="gradient-btn" bindtap="nextGroup" disabled="{{resultTransitioning}}" loading="{{resultTransitioning}}">
       {{currentGroupIdx + 1 >= groups.length ? '查看总体结果' : '进入下一组'}}
     </button>
+
+    <view class="grp-bottom-safe"></view>
   </view>
 </view>
 
-<!-- ==================== 最终结果页（紧凑版） ==================== -->
-<view class="review-result-page" wx:if="{{phase === 'final-result' && reviewResultVm}}">
-  <!-- 顶部简短标题 -->
-  <view class="result-header anim-s1">
-    <text class="result-title">{{reviewResultVm.resultTitle}}</text>
-    <text class="result-subtitle">{{reviewResultVm.resultDesc}}</text>
+<!-- ==================== 最终结果页（蓝白数据化） ==================== -->
+<view class="fr-page" wx:if="{{phase === 'final-result' && reviewResultVm}}">
+  <view class="fr-wrap anim-fr">
+    <!-- 1. 总览摘要卡 -->
+    <view class="fr-card fr-summary {{reviewResultVm.resultLevelClass}}">
+      <view class="fr-summary-row">
+        <view class="fr-accuracy-block">
+          <text class="fr-accuracy-val">{{reviewResultVm.accuracy}}<text class="fr-accuracy-unit">%</text></text>
+          <text class="fr-accuracy-lbl">已答正确率</text>
+        </view>
+        <view class="fr-status-block">
+          <text class="fr-status-tag {{reviewResultVm.resultLevelClass}}">{{reviewResultVm.statusText}}</text>
+          <text class="fr-status-desc">{{reviewResultVm.statusDesc}}</text>
+        </view>
+      </view>
+
+      <view class="fr-divider"></view>
+
+      <view class="fr-grid-2x3">
+        <view class="fr-cell">
+          <text class="fr-cell-val">{{reviewResultVm.submittedTotal || reviewResultVm.total}}</text>
+          <text class="fr-cell-lbl">已提交</text>
+        </view>
+        <view class="fr-cell">
+          <text class="fr-cell-val success">{{reviewResultVm.correct}}</text>
+          <text class="fr-cell-lbl">答对</text>
+        </view>
+        <view class="fr-cell">
+          <text class="fr-cell-val danger">{{reviewResultVm.wrong}}</text>
+          <text class="fr-cell-lbl">错题</text>
+        </view>
+        <view class="fr-cell">
+          <text class="fr-cell-val">{{reviewResultVm.skipped}}</text>
+          <text class="fr-cell-lbl">跳过</text>
+        </view>
+        <view class="fr-cell">
+          <text class="fr-cell-val">{{reviewResultVm.masteredCount}}</text>
+          <text class="fr-cell-lbl">已掌握</text>
+        </view>
+        <view class="fr-cell">
+          <text class="fr-cell-val">{{reviewResultVm.completedGroupCount}}/{{reviewResultVm.groupCount}}</text>
+          <text class="fr-cell-lbl">完成组</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 2. 完成度 + 正确率条 -->
+    <view class="fr-card fr-progress-card">
+      <view class="fr-progress-row">
+        <text class="fr-progress-title">完成度</text>
+        <text class="fr-progress-pct">{{reviewResultVm.completionRate}}%</text>
+      </view>
+      <view class="fr-bar-track">
+        <view class="fr-bar-fill" style="width:{{reviewResultVm.completionRate}}%"></view>
+      </view>
+      <view class="fr-progress-row" wx:if="{{reviewResultVm.hasSkipped}}">
+        <text class="fr-progress-sub">仍有 <text class="fr-progress-em">{{reviewResultVm.skipped}}</text> 题待处理，可返回继续完成</text>
+      </view>
+      <view class="fr-progress-row" wx:elif="{{reviewResultVm.isPerfect}}">
+        <text class="fr-progress-sub success">今日复习已完成，当前无待处理题目</text>
+      </view>
+      <view class="fr-progress-row" wx:else>
+        <text class="fr-progress-sub">今日错题已纳入复习计划</text>
+      </view>
+    </view>
+
+    <!-- 3. 薄弱点卡（仅错题 > 0 时展示） -->
+    <view class="fr-card fr-weak-card" wx:if="{{reviewResultVm.hasWrong}}">
+      <view class="fr-weak-head">
+        <text class="fr-weak-title">薄弱点</text>
+        <text class="fr-weak-count">{{reviewResultVm.wrong}} 题错</text>
+      </view>
+      <text class="fr-weak-desc">错题占比 {{reviewResultVm.wrongRate}}%，建议立即复盘巩固</text>
+      <!-- Subject stats -->
+      <view wx:if="{{reviewResultVm.subjectStats && reviewResultVm.subjectStats.length > 0}}" class="fr-weak-subjects">
+        <text class="fr-weak-subject-item" wx:for="{{reviewResultVm.subjectStats}}" wx:for-item="stat" wx:key="subject">
+          {{stat.stats.reviewed > 0 && stat.stats.wrong / stat.stats.reviewed * 100 > 50 ? '⚠ ' : ''}}{{stat.subject}} · 错{{stat.stats.wrong}}/{{stat.stats.reviewed}}
+        </text>
+      </view>
+    </view>
+
+    <!-- 4. 下一步建议 -->
+    <view class="fr-card fr-advice {{reviewResultVm.nextStepType}}">
+      <view class="fr-advice-head">
+        <text class="fr-advice-title">{{reviewResultVm.nextStepTitle}}</text>
+        <text class="fr-advice-tag {{reviewResultVm.nextStepType}}">{{reviewResultVm.nextStepTag}}</text>
+      </view>
+      <text class="fr-advice-desc">{{reviewResultVm.nextStepDesc}}</text>
+    </view>
+
+    <view class="fr-bottom-safe"></view>
   </view>
-
-  <!-- 集中式结果摘要卡 -->
-  <view class="result-summary-card {{reviewResultVm.resultLevelClass}} anim-s2">
-    <view class="card-accent {{reviewResultVm.resultLevelClass}}"></view>
-    <view class="summary-top">
-      <view class="accuracy-block">
-        <text class="accuracy-value">{{reviewResultVm.accuracy}}<text class="accuracy-unit">%</text></text>
-        <text class="accuracy-label">正确率</text>
-      </view>
-      <view class="summary-status">
-        <text class="status-text">{{reviewResultVm.statusText}}</text>
-        <text class="status-desc">{{reviewResultVm.statusDesc}}</text>
-      </view>
-    </view>
-
-    <view class="summary-divider"></view>
-
-    <view class="summary-grid">
-      <view class="summary-item">
-        <text class="summary-value">{{reviewResultVm.total}}</text>
-        <text class="summary-label">复习题数</text>
-      </view>
-      <view class="summary-item">
-        <text class="summary-value">{{reviewResultVm.correct}}</text>
-        <text class="summary-label">答对</text>
-      </view>
-      <view class="summary-item">
-        <text class="summary-value">{{reviewResultVm.wrong}}</text>
-        <text class="summary-label">错题</text>
-      </view>
-      <view class="summary-item">
-        <text class="summary-value">{{reviewResultVm.completedGroupCount}}/{{reviewResultVm.groupCount}}</text>
-        <text class="summary-label">完成组</text>
-      </view>
-    </view>
-
-    <view class="summary-extra" wx:if="{{reviewResultVm.hasSkipped || reviewResultVm.masteredCount > 0}}">
-      <text wx:if="{{reviewResultVm.hasSkipped}}">未完成 {{reviewResultVm.skipped}} 题</text>
-      <text wx:if="{{reviewResultVm.hasSkipped && reviewResultVm.masteredCount > 0}}"> · </text>
-      <text wx:if="{{reviewResultVm.masteredCount > 0}}">已掌握 {{reviewResultVm.masteredCount}} 题</text>
-    </view>
-  </view>
-
-  <!-- 建议与入口 -->
-  <view class="result-advice-card anim-s3">
-    <view class="advice-marker {{reviewResultVm.nextStepType}}"></view>
-    <view class="advice-body">
-      <view class="advice-head">
-        <text class="advice-title">{{reviewResultVm.nextStepTitle}}</text>
-        <text class="advice-tag {{reviewResultVm.nextStepType}}">{{reviewResultVm.nextStepTag}}</text>
-      </view>
-      <text class="advice-desc">{{reviewResultVm.nextStepDesc}}</text>
-    </view>
-  </view>
-
-  <view class="wrong-inline-tip anim-s3" wx:if="{{reviewResultVm.hasWrong}}" bindtap="goWrongBook">
-    <view class="wrong-marker"></view>
-    <view class="wrong-body">
-      <text class="wrong-tip-text">今日新增 <text class="wrong-count">{{reviewResultVm.wrong}}</text> 道错题，建议立即复盘</text>
-      <text class="wrong-tip-action">去复盘</text>
-    </view>
-  </view>
-
-  <view class="bottom-safe-space"></view>
 
   <!-- 底部固定按钮 -->
-  <view class="review-bottom-actions anim-s4">
-    <button class="action-primary" wx:if="{{reviewResultVm.total === 0}}" bindtap="startReview">开始复习</button>
-    <button class="action-primary" wx:elif="{{reviewResultVm.hasWrong}}" bindtap="goWrongBook">复盘错题</button>
-    <button class="action-primary" wx:else bindtap="goHome">完成</button>
-    <button class="action-secondary" wx:if="{{reviewResultVm.total === 0}}" bindtap="goHome">返回首页</button>
-    <button class="action-secondary" wx:else bindtap="goPractice">继续练习</button>
+  <view class="fr-bottom-actions">
+    <button class="fr-action-primary" wx:if="{{reviewResultVm.total === 0}}" bindtap="startReview">开始复习</button>
+    <button class="fr-action-primary" wx:elif="{{reviewResultVm.hasWrong}}" bindtap="goWrongBook">复盘错题</button>
+    <button class="fr-action-primary" wx:else bindtap="goHome">完成</button>
+    <button class="fr-action-secondary" wx:if="{{reviewResultVm.total === 0}}" bindtap="goHome">返回首页</button>
+    <button class="fr-action-secondary" wx:else bindtap="goPractice">继续练习</button>
   </view>
 </view>
 

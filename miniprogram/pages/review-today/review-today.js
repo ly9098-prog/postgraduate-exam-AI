@@ -298,7 +298,7 @@ Page({
       _optNeedsRich: optNeedsRich,
       _optHtml: optHtml,
       _blankOptionGroups: blankOptionGroups,
-      _hasBlankGroups: blankOptionGroups.length > 0,
+      _hasBlankOptionGroups: blankOptionGroups.length > 0,
       _optionList: [],
       _renderModel,
       _stemPreview: stemText.length > 60 ? `${stemText.slice(0, 60)}...` : stemText,
@@ -434,6 +434,7 @@ Page({
     const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, answers, KF)
     this.setData({ answers, currentQuestion, _answeredCount: answeredCount })
     this._syncAnsweredFlags()
+    this._updateRunnerFields()
   },
 
   selectBlankOption(e) {
@@ -461,12 +462,13 @@ Page({
     const enrichedGroups = adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), newAnswer)
     const currentQuestion = Object.assign({}, q, {
       _blankOptionGroups: enrichedGroups,
-      _hasBlankGroups: enrichedGroups.length > 0,
+      _hasBlankOptionGroups: enrichedGroups.length > 0,
     })
 
     const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, answers, KF)
     this.setData({ answers, currentQuestion, _answeredCount: answeredCount })
     this._syncAnsweredFlags()
+    this._updateRunnerFields()
   },
 
   /* ==================== 题目导航 ==================== */
@@ -838,22 +840,45 @@ Page({
   /* ==================== 最终结果视图模型 ==================== */
 
   _buildReviewResultViewModel() {
-    var total = this.data.totalCorrect + this.data.totalWrong
-    var answered = this.data.totalCompleted || total
-    var correct = this.data.totalCorrect
-    var wrong = this.data.totalWrong
-    var skipped = Math.max(0, total - answered)
-
-    var accuracy = answered > 0 ? Math.round(correct / answered * 100) : 0
+    var allResults = this.data.allGroupResults || []
+    var sessionTotal = allResults.length
+    var submittedTotal = allResults.filter(function(r) { return r.wasSubmitted }).length
+    var correct = allResults.filter(function(r) { return r.isCorrect && r.wasSubmitted }).length
+    var wrong = allResults.filter(function(r) { return r.wasSubmitted && !r.isCorrect }).length
+    var skipped = Math.max(0, sessionTotal - submittedTotal)
+    var accuracy = submittedTotal > 0 ? Math.round(correct / submittedTotal * 100) : 0
+    var completionRate = sessionTotal > 0 ? Math.round(submittedTotal / sessionTotal * 100) : 0
+    var wrongRate = submittedTotal > 0 ? Math.round(wrong / submittedTotal * 100) : 0
 
     var groupCount = this.data.groups.length
     var completedGroupCount = Math.min(this.data.currentGroupIdx + 1, groupCount)
     var masteredCount = this.data._masteredCount || 0
+    var isPerfect = wrong === 0 && submittedTotal > 0
+    var hasWrong = wrong > 0
+    var hasSkipped = skipped > 0
+
+    // Subject stats from allResults — build array for wx:for compatibility
+    var subjectMap = {}
+    allResults.forEach(function(r) {
+      if (!r.subject) return
+      if (!subjectMap[r.subject]) subjectMap[r.subject] = { reviewed: 0, correct: 0, wrong: 0, skipped: 0 }
+      var s = subjectMap[r.subject]
+      s.reviewed++
+      if (!r.wasSubmitted) { s.skipped++; return }
+      if (r.isCorrect) s.correct++
+      else s.wrong++
+    })
+    var subjectStatsArr = []
+    for (var subj in subjectMap) {
+      if (subjectMap.hasOwnProperty(subj)) {
+        subjectStatsArr.push({ subject: this.subjectLabel(subj), stats: subjectMap[subj] })
+      }
+    }
 
     var resultLevelClass, resultTitle, resultDesc, statusText, statusDesc
     var nextStepType, nextStepTitle, nextStepDesc, nextStepTag
 
-    if (total === 0) {
+    if (sessionTotal === 0) {
       resultLevelClass = 'empty'
       resultTitle = '暂无复习结果'
       resultDesc = '今天还没有完成可统计的复习题'
@@ -863,7 +888,7 @@ Page({
       nextStepTitle = '先开始一组复习'
       nextStepDesc = '完成今日复习后，系统会帮你整理正确率和错题情况'
       nextStepTag = '未开始'
-    } else if (accuracy >= 90 && wrong === 0) {
+    } else if (isPerfect) {
       resultLevelClass = 'excellent'
       resultTitle = '今日复习完成'
       resultDesc = '整体掌握很好，可以保持当前节奏'
@@ -873,7 +898,7 @@ Page({
       nextStepTitle = '可以结束今日复习'
       nextStepDesc = '如果还有精力，也可以继续练习新题巩固手感'
       nextStepTag = '完成'
-    } else if (accuracy >= 80 && wrong > 0) {
+    } else if (accuracy >= 80) {
       resultLevelClass = 'good'
       resultTitle = '今日复习完成'
       resultDesc = '整体表现不错，但仍有少量错题'
@@ -906,15 +931,20 @@ Page({
     }
 
     return {
-      total: total,
+      sessionTotal: sessionTotal,
+      submittedTotal: submittedTotal,
+      total: sessionTotal,
       correct: correct,
       wrong: wrong,
       skipped: skipped,
-      answered: answered,
+      answered: submittedTotal,
       accuracy: accuracy,
+      completionRate: completionRate,
+      wrongRate: wrongRate,
       groupCount: groupCount,
       completedGroupCount: completedGroupCount,
       masteredCount: masteredCount,
+      subjectStats: subjectStatsArr,
       resultLevelClass: resultLevelClass,
       resultTitle: resultTitle,
       resultDesc: resultDesc,
@@ -924,9 +954,9 @@ Page({
       nextStepTitle: nextStepTitle,
       nextStepDesc: nextStepDesc,
       nextStepTag: nextStepTag,
-      hasWrong: wrong > 0,
-      hasSkipped: skipped > 0,
-      isPerfect: wrong === 0 && accuracy >= 90,
+      hasWrong: hasWrong,
+      hasSkipped: hasSkipped,
+      isPerfect: isPerfect,
     }
   },
 

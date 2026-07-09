@@ -60,9 +60,18 @@ Page({
 
     // Self-healing
     safeModeActive: false,
+
+    // Perfect celebration
+    showPerfectCelebration: false,
+    perfectCelebrationType: 'practice',
+    perfectCelebrationTitle: '全对完成',
+    perfectCelebrationDetail: '',
+    perfectCelebrationMotto: '这组掌握很稳，继续保持',
+    perfectCelebrationRewardText: '',
   },
 
   onLoad() {
+    this._pendingResultUrl = ''
     this.setData({ enableMathImage: config.enableMathImage || false })
     setRenderGuardPage('practice')
     resetRenderGuard()
@@ -822,22 +831,43 @@ Page({
         comboCount,
       })
 
-      wx.redirectTo({
-        url: [
-          `/pages/practice-result/practice-result`,
-          `?correct=${result.total_correct || 0}`,
-          `&wrong=${result.total_wrong || 0}`,
-          `&total=${total}`,
-          `&subject_id=${selectedSubjectId}`,
-          `&subject_name=${encodeURIComponent(selectedSubjectName || '')}`,
-          `&duration=${duration}`,
-        ].join(''),
-      })
+      const resultUrl = [
+        `/pages/practice-result/practice-result`,
+        `?correct=${result.total_correct || 0}`,
+        `&wrong=${result.total_wrong || 0}`,
+        `&total=${total}`,
+        `&subject_id=${selectedSubjectId}`,
+        `&subject_name=${encodeURIComponent(selectedSubjectName || '')}`,
+        `&duration=${duration}`,
+      ].join('')
+
+      // 全对时展示庆祝动画再跳转
+      const isPerfect = result.total_wrong === 0 && result.total_correct > 0 && answeredCount === total
+      if (isPerfect) {
+        this._pendingResultUrl = resultUrl
+        this.setData({
+          submitting: false,
+          showPerfectCelebration: true,
+          perfectCelebrationDetail: `答对 ${result.total_correct}/${total} 题`,
+          perfectCelebrationMotto: '这组掌握很稳，继续保持',
+          perfectCelebrationRewardText: `专注星光 +${Math.max(1, result.total_correct)}`,
+        })
+      } else {
+        this.setData({ submitting: false })
+        wx.redirectTo({ url: resultUrl })
+      }
     } catch (e) {
       console.error('提交失败', e)
       this.setData({ submitting: false })
       wx.showToast({ title: '提交失败', icon: 'none' })
     }
+  },
+
+  goPracticeResultAfterCelebration() {
+    const url = this._pendingResultUrl
+    this._pendingResultUrl = ''
+    this.setData({ showPerfectCelebration: false, submitting: false })
+    if (url) wx.redirectTo({ url })
   },
 
   goPomodoro() {
