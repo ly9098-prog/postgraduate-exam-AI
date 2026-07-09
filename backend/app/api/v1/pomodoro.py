@@ -26,18 +26,22 @@ async def start_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    session = await svc.start_session(
-        db,
-        current_user.id,
-        req.subject,
-        req.chapter_id,
-        req.preset,
-        req.work_duration,
-        req.break_duration,
-        notification_enabled=req.notification_enabled,
-    )
+    try:
+        session = await svc.start_session(
+            db,
+            current_user.id,
+            req.subject_id,
+            req.chapter_id,
+            req.preset,
+            req.work_duration,
+            req.break_duration,
+            notification_enabled=req.notification_enabled,
+        )
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=str(e))
     await db.commit()
-    return session
+    return PomodoroSessionResponse.from_orm_with_subject(session)
 
 
 @router.post("/{session_id}/complete", response_model=PomodoroSessionResponse)
@@ -52,7 +56,7 @@ async def complete_session(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")
     await db.commit()
-    return session
+    return PomodoroSessionResponse.from_orm_with_subject(session)
 
 
 @router.post("/{session_id}/interrupt", response_model=PomodoroSessionResponse)
@@ -67,7 +71,7 @@ async def interrupt_session(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")
     await db.commit()
-    return session
+    return PomodoroSessionResponse.from_orm_with_subject(session)
 
 
 @router.post("/{session_id}/pause", response_model=PomodoroSessionResponse)
@@ -81,7 +85,7 @@ async def pause_session(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")
     await db.commit()
-    return session
+    return PomodoroSessionResponse.from_orm_with_subject(session)
 
 
 @router.post("/{session_id}/resume", response_model=PomodoroSessionResponse)
@@ -95,7 +99,7 @@ async def resume_session(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")
     await db.commit()
-    return session
+    return PomodoroSessionResponse.from_orm_with_subject(session)
 
 
 @router.get("/active", response_model=PomodoroSessionResponse | None)
@@ -104,7 +108,9 @@ async def get_active(
     current_user: User = Depends(get_current_user),
 ):
     session = await svc.get_active_session(db, current_user.id)
-    return session
+    if session is None:
+        return None
+    return PomodoroSessionResponse.from_orm_with_subject(session)
 
 
 @router.get("/stats", response_model=PomodoroStatsResponse)
@@ -147,7 +153,7 @@ async def get_history(
         filter_date = datetime.strptime(date, "%Y-%m-%d").date()
     sessions, total = await svc.get_history(db, current_user.id, page, page_size, filter_date)
     return {
-        "items": [PomodoroSessionResponse.model_validate(s) for s in sessions],
+        "items": [PomodoroSessionResponse.from_orm_with_subject(s) for s in sessions],
         "total": total,
         "page": page,
         "page_size": page_size,

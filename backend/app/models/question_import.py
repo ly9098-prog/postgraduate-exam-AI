@@ -77,7 +77,7 @@ class QuestionImport(Base):
     raw_text_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # 答案状态：missing / imported / ai_filled / manual_filled / manual_verified / abnormal
-    answer_status: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
+    answer_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
     # 答案来源：ocr / parser / ai / manual / unknown
     answer_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # 答案识别或 AI 补全的置信度

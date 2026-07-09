@@ -1,27 +1,23 @@
 const api = require('../../utils/api')
 const config = require('../../config')
 
-const SUBJECTS = [
-  { key: 'data_structure', label: '数据结构', emoji: '📃', color: '#5B7B9A' },
-  { key: 'computer_organization', label: '组成原理', emoji: '💻', color: '#C49A6B' },
-  { key: 'operating_system', label: '操作系统', emoji: '⚙️', color: '#6B9B6B' },
-  { key: 'computer_network', label: '计算机网络', emoji: '🌐', color: '#7B8DB3' },
-  { key: 'english', label: '英语', emoji: '📖', color: '#B38B6B' },
-  { key: 'math', label: '数学', emoji: '📐', color: '#8B9B7B' },
-  { key: 'politics', label: '政治', emoji: '📜', color: '#A08B8B' },
-]
-
-const SUBJECT_COLOR_MAP = {}
-const SUBJECT_EMOJI_MAP = {}
-SUBJECTS.forEach(s => {
-  SUBJECT_COLOR_MAP[s.key] = s.color
-  SUBJECT_EMOJI_MAP[s.key] = s.emoji
-})
+const SUBJECT_EMOJI = {
+  data_structure: '📃',
+  computer_organization: '💻',
+  operating_system: '⚙️',
+  computer_network: '🌐',
+  english: '📖',
+  math: '📐',
+  advanced_math: '📐',
+  linear_algebra: '📏',
+  politics: '📜',
+}
 
 const PRESETS = [
   { key: 'standard', label: '标准', work: 25, break: 5 },
   { key: 'long', label: '长时间', work: 50, break: 10 },
   { key: 'custom', label: '自定义', work: 25, break: 5 },
+  { key: 'free', label: '自由计时', work: 0, break: 0 },
 ]
 
 const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'ceremony' }
@@ -46,11 +42,54 @@ const MOTTOES = [
   '为梦想全力以赴',
 ]
 
+function flattenSubjectTree(tree) {
+  const result = []
+  function walk(nodes) {
+    for (const node of nodes) {
+      if (!node) continue
+      const activeChildren = (node.children || []).filter(c => c.is_active !== false)
+      if (activeChildren.length === 0) {
+        result.push({
+          id: node.subject_id,
+          code: node.subject_code || '',
+          name: node.subject_name || node.display_name || '',
+        })
+      } else {
+        walk(activeChildren)
+      }
+    }
+  }
+  walk(tree || [])
+  return result
+}
+
+function subjectEmojiByCode(code) {
+  return SUBJECT_EMOJI[code] || '📚'
+}
+
+function formatElapsedSec(sec) {
+  const s = Math.max(0, sec || 0)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const secs = s % 60
+  return {
+    display: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(secs).padStart(2, '0')}`,
+    friendly: h > 0
+      ? `${h}小时${String(m).padStart(2, '0')}分${String(secs).padStart(2, '0')}秒`
+      : m > 0
+        ? `${m}分${String(secs).padStart(2, '0')}秒`
+        : `${secs}秒`,
+  }
+}
+
 Page({
   data: {
     phase: PHASE.IDLE,
-    subjects: SUBJECTS,
-    selectedSubject: '',
+    subjects: [],
+    subjectsLoading: true,
+    subjectsError: '',
+    selectedSubjectId: null,
+    selectedSubject: null,
     presets: PRESETS,
     selectedPreset: 'standard',
     workDuration: 25,
@@ -65,6 +104,14 @@ Page({
     sessionId: null,
     sessionStartTime: null,
 
+    // free timer fields
+    isFreeTimer: false,
+    elapsedSec: 0,
+    freeDisplayTime: '00:00:00',
+    freeFriendlyText: '',
+    showEndConfirm: false,
+    endConfirmText: '',
+
     // timer display
     remainingSec: 0,
     displayMin: '00',
@@ -78,6 +125,7 @@ Page({
 
     // practice page context
     fromSubject: '',
+    fromSubjectId: null,
     fromChapterId: '',
     fromChapterName: '',
 
@@ -97,6 +145,7 @@ Page({
   },
 
   _timer: null,
+  _freeTimerId: null,
   _touchStartX: 0,
   _pageVisible: false,
   _debugTapCount: 0,
@@ -113,15 +162,13 @@ Page({
       examDays: this._getExamDays(),
       fontSizeLevel: wx.getStorageSync('pomodoro_font_size') || 'medium',
     })
+    this._loadSubjects()
 
     if (opts.subject) {
-      // 兼容旧版：直接传 subject code
       const mapped = this._mapPracticeSubject(opts.subject)
-      this.setData({ fromSubject: mapped, selectedSubject: mapped })
-      this._updateComputedFields()
+      this.setData({ fromSubject: mapped })
     } else if (opts.subject_id) {
-      // 新版：传 subject_id，从 API 获取 code 后映射
-      this._resolveAndMapSubjectId(opts.subject_id)
+      this.setData({ fromSubjectId: Number(opts.subject_id) })
     }
     if (opts.chapterId) this.setData({ fromChapterId: opts.chapterId })
     if (opts.chapterName) this.setData({ fromChapterName: decodeURIComponent(opts.chapterName) })
@@ -133,17 +180,13 @@ Page({
 
     const completionFlag = wx.getStorageSync('pomodoro_completion')
     if (completionFlag) {
-      // Drop stale/corrupt flags (missing sessionId from earlier buggy paths)
-      // so we never replay vibration for a session that was never synced.
       if (!completionFlag.sessionId) {
         wx.removeStorageSync('pomodoro_completion')
       } else if (!this.data.showCelebration) {
-        // Deferred celebration — timer completed while page was in background / locked
         wx.vibrateLong()
         this.setData({ showCelebration: true, celebrationMotto: completionFlag.motto, celebrationType: completionFlag.type || 'excellent' })
         return
       } else {
-        // Already showing celebration — clean up stale flag but don't replay
         wx.removeStorageSync('pomodoro_completion')
       }
     }
@@ -161,20 +204,27 @@ Page({
 
   onHide() {
     this._pageVisible = false
-    // Save running state for offline restore when app returns from background
     if (this.data.phase === PHASE.RUNNING && this.data.sessionId) {
       wx.setStorageSync('pomodoro_running_state', {
         sessionStartTime: this.data.sessionStartTime,
         workDuration: this.data.workDuration,
         breakDuration: this.data.breakDuration,
         selectedPreset: this.data.selectedPreset,
-        selectedSubject: this.data.selectedSubject,
+        selectedSubjectId: this.data.selectedSubjectId,
+        selectedSubjectCode: this.data.selectedSubject ? this.data.selectedSubject.code : '',
+        selectedSubjectName: this.data.selectedSubject ? this.data.selectedSubject.name : '',
         isPaused: this.data.isPaused,
         totalPausedMs: this.data.totalPausedMs,
         pauseStartTime: this.data.isPaused ? (this.data.pauseStartTime || Date.now()) : null,
         sessionId: this.data.sessionId,
+        isFreeTimer: this.data.isFreeTimer,
+        elapsedSec: this.data.elapsedSec,
         savedAt: Date.now(),
       })
+    }
+    if (this._freeTimerId) {
+      clearInterval(this._freeTimerId)
+      this._freeTimerId = null
     }
     this._clearTimer()
   },
@@ -187,11 +237,50 @@ Page({
     })
   },
 
+  /* ==================== Subject Loading ==================== */
+
+  async _loadSubjects() {
+    this.setData({ subjectsLoading: true, subjectsError: '' })
+    try {
+      const tree = await api.get('/practice/subjects')
+      if (!tree || !Array.isArray(tree)) {
+        throw new Error('科目数据格式错误')
+      }
+      const flat = flattenSubjectTree(tree).map(s => ({
+        ...s,
+        _emoji: subjectEmojiByCode(s.code),
+      }))
+      this.setData({ subjects: flat, subjectsLoading: false, subjectsError: '' })
+
+      // If coming from practice page with a subject_id, auto-select
+      if (this.data.fromSubjectId) {
+        const match = flat.find(s => s.id === this.data.fromSubjectId)
+        if (match) {
+          this.setData({ selectedSubjectId: match.id, selectedSubject: match })
+          this._updateComputedFields()
+        }
+      } else if (this.data.fromSubject) {
+        const match = flat.find(s => s.code === this.data.fromSubject)
+        if (match) {
+          this.setData({ selectedSubjectId: match.id, selectedSubject: match })
+          this._updateComputedFields()
+        }
+      }
+    } catch (e) {
+      console.error('加载科目失败', e)
+      this.setData({ subjectsLoading: false, subjectsError: '科目加载失败，请稍后重试' })
+    }
+  },
+
   /* ==================== UI Handlers ==================== */
 
   selectSubject(e) {
-    this.setData({ selectedSubject: e.currentTarget.dataset.key })
-    this._updateComputedFields()
+    const id = parseInt(e.currentTarget.dataset.id, 10) || null
+    const subject = id ? this.data.subjects.find(s => s.id === id) : null
+    if (subject) {
+      this.setData({ selectedSubjectId: id, selectedSubject: subject })
+      this._updateComputedFields()
+    }
   },
 
   onExamTap() {
@@ -215,6 +304,12 @@ Page({
     const key = e.currentTarget.dataset.key
     if (key === 'debug') {
       this.setData({ selectedPreset: 'debug', showCustom: false, workDuration: 0, breakDuration: 0 })
+      this._updateComputedFields()
+      return
+    }
+    if (key === 'free') {
+      this.setData({ selectedPreset: 'free', showCustom: false, workDuration: 0, breakDuration: 0 })
+      this._updateComputedFields()
       return
     }
     const preset = PRESETS.find(p => p.key === key)
@@ -228,12 +323,12 @@ Page({
   },
 
   onWorkChange(e) {
-    const v = Math.max(5, Math.min(120, parseInt(e.detail.value) || 25))
+    const v = Math.max(5, Math.min(120, parseInt(e.detail.value, 10) || 25))
     this.setData({ workDuration: v })
   },
 
   onBreakChange(e) {
-    const v = Math.max(5, Math.min(120, parseInt(e.detail.value) || 5))
+    const v = Math.max(5, Math.min(120, parseInt(e.detail.value, 10) || 5))
     this.setData({ breakDuration: v })
   },
 
@@ -253,11 +348,9 @@ Page({
     const keys = PRESETS.map(p => p.key)
     const idx = keys.indexOf(this.data.selectedPreset)
     if (diff < 0) {
-      // swipe left → next
       const next = (idx + 1) % keys.length
       this.selectPreset({ currentTarget: { dataset: { key: keys[next] } } })
     } else {
-      // swipe right → previous
       const prev = (idx - 1 + keys.length) % keys.length
       this.selectPreset({ currentTarget: { dataset: { key: keys[prev] } } })
     }
@@ -266,19 +359,27 @@ Page({
   /* ==================== Start Ceremony ==================== */
 
   async startSession() {
-    if (!this.data.selectedSubject) {
+    if (!this.data.selectedSubjectId || !this.data.selectedSubject) {
       wx.showToast({ title: '请选择学习科目', icon: 'none' })
+      return
+    }
+    if (this.data.subjectsError) {
+      wx.showToast({ title: '科目加载异常，请重试', icon: 'none' })
+      return
+    }
+
+    // Free timer: skip ceremony, start directly
+    if (this.data.selectedPreset === 'free') {
+      await this._startFreeSession()
       return
     }
 
     this.setData({ phase: PHASE.CEREMONY })
-
-    // ceremony duration: shorter for debug
     await new Promise(r => setTimeout(r, this.data.selectedPreset === 'debug' ? 1000 : 2500))
 
     try {
       const session = await api.post('/pomodoro/start', {
-        subject: this.data.selectedSubject,
+        subject_id: this.data.selectedSubjectId,
         chapter_id: this.data.fromChapterId || null,
         preset: this.data.selectedPreset,
         work_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.workDuration,
@@ -289,6 +390,156 @@ Page({
       wx.showToast({ title: '启动失败', icon: 'none' })
       this.setData({ phase: PHASE.IDLE })
     }
+  },
+
+  /* ==================== Free Timer ==================== */
+
+  async _startFreeSession() {
+    try {
+      const session = await api.post('/pomodoro/start', {
+        subject_id: this.data.selectedSubjectId,
+        chapter_id: this.data.fromChapterId || null,
+        preset: 'free',
+        work_duration: 0,
+        break_duration: 0,
+      })
+      this._beginFreeTimer(session)
+    } catch (e) {
+      const detail = (e && (e.detail || e.message || '')) || ''
+      if (detail.includes('active') || detail.includes('running')) {
+        wx.showToast({ title: '已有进行中的专注，请先结束', icon: 'none' })
+        // Try to restore
+        const active = await this._fetchActiveSession()
+        if (active) this._restoreSession(active)
+      } else {
+        wx.showToast({ title: '启动失败，请重试', icon: 'none' })
+      }
+    }
+  },
+
+  _beginFreeTimer(session) {
+    const startTime = parseServerTime(session.start_time)
+    const totalPausedSec = session.total_paused_sec || 0
+
+    this._clearTimer()
+    this.setData({
+      phase: PHASE.RUNNING,
+      isFreeTimer: true,
+      sessionId: session.id,
+      sessionStartTime: startTime,
+      isPaused: false,
+      totalPausedMs: totalPausedSec * 1000,
+      pauseStartTime: null,
+      elapsedSec: 0,
+      freeDisplayTime: '00:00:00',
+      freeFriendlyText: '',
+      showEndConfirm: false,
+      progress: 1,
+    })
+    this._updateComputedFields()
+    this._updateFreeElapsed()
+    this._freeTimerId = setInterval(() => this._updateFreeElapsed(), 500)
+  },
+
+  _updateFreeElapsed() {
+    if (!this.data.isFreeTimer) return
+    const startTime = this.data.sessionStartTime
+    if (typeof startTime !== 'number' || !Number.isFinite(startTime)) {
+      this.setData({ freeDisplayTime: '00:00:00' })
+      return
+    }
+    const now = Date.now()
+    const totalPausedMs = this.data.totalPausedMs || 0
+    let elapsed
+    if (this.data.isPaused) {
+      // Paused: freeze at pause-start value, don't increment
+      elapsed = this.data.elapsedSec
+    } else {
+      elapsed = Math.max(0, Math.floor((now - startTime) / 1000) - Math.floor(totalPausedMs / 1000))
+    }
+    const fmt = formatElapsedSec(elapsed)
+    this.setData({
+      elapsedSec: elapsed,
+      freeDisplayTime: fmt.display,
+    })
+  },
+
+  _pauseFreeTimer() {
+    this._clearTimer()
+    this.setData({
+      isPaused: true,
+      pauseStartTime: Date.now(),
+      freeFriendlyText: formatElapsedSec(this.data.elapsedSec).friendly,
+    })
+    wx.setStorageSync('pomodoro_free_pause', {
+      totalPausedMs: this.data.totalPausedMs,
+      pauseStartTime: Date.now(),
+      sessionId: this.data.sessionId,
+      elapsedSec: this.data.elapsedSec,
+    })
+    if (this.data.sessionId) {
+      api.post(`/pomodoro/${this.data.sessionId}/pause`, {}).catch(() => {
+        wx.showToast({ title: '暂停失败，请重试', icon: 'none' })
+      })
+    }
+  },
+
+  _resumeFreeTimer() {
+    const pausedDuration = Date.now() - (this.data.pauseStartTime || Date.now())
+    const totalPausedMs = (this.data.totalPausedMs || 0) + Math.max(0, pausedDuration)
+    this.setData({
+      isPaused: false,
+      totalPausedMs: totalPausedMs,
+      pauseStartTime: null,
+    })
+    wx.removeStorageSync('pomodoro_free_pause')
+    if (this.data.sessionId) {
+      api.post(`/pomodoro/${this.data.sessionId}/resume`, {}).catch(() => {
+        wx.showToast({ title: '继续失败，请重试', icon: 'none' })
+      })
+    }
+    this._updateFreeElapsed()
+    this._freeTimerId = setInterval(() => this._updateFreeElapsed(), 500)
+  },
+
+  _showEndFreeConfirm() {
+    const elapsed = Math.max(0, this.data.elapsedSec || 0)
+    const fmt = formatElapsedSec(elapsed)
+    this.setData({
+      showEndConfirm: true,
+      endConfirmText: elapsed >= 1 ? `本次已专注 ${fmt.friendly}，确认后将计入学习统计。` : '计时时长过短，确认后将计入学习统计。',
+    })
+  },
+
+  _cancelEndFreeTimer() {
+    this.setData({ showEndConfirm: false })
+    if (!this.data.isPaused) {
+      this._freeTimerId = setInterval(() => this._updateFreeElapsed(), 500)
+    }
+  },
+
+  async _confirmEndFreeTimer() {
+    this.setData({ showEndConfirm: false })
+    if (!this.data.sessionId) return
+    this._clearTimer()
+    const elapsedSec = Math.max(1, this.data.elapsedSec || 0)
+    const totalPausedSec = Math.floor((this.data.totalPausedMs || 0) / 1000)
+    try {
+      await api.post(`/pomodoro/${this.data.sessionId}/complete`, {
+        actual_duration_sec: elapsedSec,
+        total_paused_sec: totalPausedSec,
+      })
+      wx.showToast({ title: '已记录本次专注', icon: 'none', duration: 2000 })
+    } catch (e) {
+      wx.showToast({ title: '结束计时失败，请重试', icon: 'none' })
+      // Don't clear state on failure
+      if (!this.data.isPaused) {
+        this._freeTimerId = setInterval(() => this._updateFreeElapsed(), 500)
+      }
+      return
+    }
+    this._resetToIdle()
+    this.loadTodayStats()
   },
 
   async endSession() {
@@ -307,6 +558,11 @@ Page({
 
   async interruptSession() {
     if (!this.data.sessionId) return
+    // Free timer: show confirmation instead of immediate interrupt
+    if (this.data.isFreeTimer) {
+      this._showEndFreeConfirm()
+      return
+    }
     this._clearTimer()
     try {
       await api.post(`/pomodoro/${this.data.sessionId}/interrupt`, {
@@ -337,7 +593,13 @@ Page({
   },
 
   togglePause() {
-    if (this.data.isPaused) {
+    if (this.data.isFreeTimer) {
+      if (this.data.isPaused) {
+        this._resumeFreeTimer()
+      } else {
+        this._pauseFreeTimer()
+      }
+    } else if (this.data.isPaused) {
       this._resumeSession()
     } else {
       this._pauseSession()
@@ -350,20 +612,17 @@ Page({
       isPaused: true,
       pauseStartTime: Date.now(),
     })
-    // Persist pause state to survive page unload
     wx.setStorageSync('pomodoro_pause', {
       totalPausedMs: this.data.totalPausedMs,
       pauseStartTime: Date.now(),
       sessionId: this.data.sessionId,
     })
-    // 通知后端暂停（推迟通知推送时刻）；失败不阻断本地暂停
     if (this.data.sessionId) {
       api.post(`/pomodoro/${this.data.sessionId}/pause`, {}).catch(() => {})
     }
   },
 
   _resumeSession() {
-    // Guard: refuse to resume if no valid sessionStartTime
     if (typeof this.data.sessionStartTime !== 'number' || this.data.sessionStartTime <= 0) {
       console.warn('resume aborted: invalid sessionStartTime', this.data.sessionStartTime)
       this._resetToIdle()
@@ -376,9 +635,7 @@ Page({
       totalPausedMs: totalPausedMs,
       pauseStartTime: null,
     })
-    // Immediately recalculate and display remaining time so the UI doesn't
-    // flash a stale value before the first timer tick.
-    const totalSec = this.data.selectedPreset === 'debug' ? 10 : (this.data.workDuration || 25) * 60
+    const totalSec = this.data.selectedPreset === 'debug' ? 10 : (this.data.workDuration ?? 25) * 60
     const elapsed = Math.floor((Date.now() - this.data.sessionStartTime - totalPausedMs) / 1000)
     const remainingSec = Math.max(0, totalSec - elapsed)
     this.setData({
@@ -388,7 +645,6 @@ Page({
       progress: totalSec > 0 ? remainingSec / totalSec : 0,
     })
     wx.removeStorageSync('pomodoro_pause')
-    // 通知后端恢复（按暂停时长延后通知推送时刻）；失败不阻断本地继续
     if (this.data.sessionId) {
       api.post(`/pomodoro/${this.data.sessionId}/resume`, {}).catch(() => {})
     }
@@ -425,6 +681,10 @@ Page({
       clearInterval(this._timer)
       this._timer = null
     }
+    if (this._freeTimerId) {
+      clearInterval(this._freeTimerId)
+      this._freeTimerId = null
+    }
   },
 
   /* ==================== Work Complete ==================== */
@@ -444,7 +704,6 @@ Page({
     }
     this.loadTodayStats()
 
-    // Celebration — only show if page is in foreground; otherwise defer to onShow
     const motto = MOTTOES[Math.floor(Math.random() * MOTTOES.length)]
     const type = this._nextCelebrationType()
     wx.setStorageSync('pomodoro_completion', { motto, type: type, sessionId: this.data.sessionId })
@@ -518,11 +777,9 @@ Page({
         wx.removeStorageSync('pomodoro_running_state')
         return server
       }
-      // Server reachable but no active session — clear stale local state, don't fabricate
       wx.removeStorageSync('pomodoro_running_state')
       return null
     } catch (_) {
-      // Network unreachable — fall through to local fallback
     }
     if (local && (Date.now() - local.savedAt < 7200000)) {
       const cachedStartTime = Number(local.sessionStartTime)
@@ -536,7 +793,9 @@ Page({
         work_duration: local.workDuration,
         break_duration: local.breakDuration,
         preset: local.selectedPreset || 'standard',
-        subject: local.selectedSubject || this.data.selectedSubject,
+        subject_id: local.selectedSubjectId,
+        subject_code: local.selectedSubjectCode || '',
+        subject_name: local.selectedSubjectName || '',
       }
     }
     wx.removeStorageSync('pomodoro_running_state')
@@ -544,10 +803,15 @@ Page({
   },
 
   _restoreSession(session) {
+    // Free timer recovery
+    if (session.preset === 'free') {
+      this._restoreFreeSession(session)
+      return
+    }
+
     const startTime = parseServerTime(session.start_time)
     const totalSec = session.work_duration * 60
 
-    // Guard: invalid time or duration — reset to idle
     if (!Number.isFinite(startTime) || !Number.isFinite(totalSec) || totalSec <= 0) {
       wx.removeStorageSync('pomodoro_pause')
       wx.removeStorageSync('pomodoro_running_state')
@@ -556,7 +820,6 @@ Page({
       return
     }
 
-    // Recover paused state from storage (survives page unload)
     const savedPause = wx.getStorageSync('pomodoro_pause')
     let totalPausedMs = 0
     let isPaused = false
@@ -568,26 +831,25 @@ Page({
         : 0
       isPaused = totalPausedMs > 0
     } else if (session.paused_at) {
-      // 后端有暂停标记但本地没存（清缓存/换设备）；按后端 paused_at 重建本地状态
       const pausedAtMs = parseServerTime(session.paused_at)
       totalPausedMs = Number.isFinite(pausedAtMs) ? Math.max(0, Date.now() - pausedAtMs) : 0
       isPaused = Number.isFinite(pausedAtMs)
     }
 
-    // Final NaN guard for pause time
     if (!Number.isFinite(totalPausedMs) || totalPausedMs < 0) totalPausedMs = 0
 
     const elapsed = Math.floor((Date.now() - startTime - totalPausedMs) / 1000)
     const remaining = Number.isFinite(totalSec) && Number.isFinite(elapsed)
       ? Math.max(0, totalSec - elapsed) : 0
+
+    // Resolve subject from session
+    const subjectId = session.subject_id || null
+    const subjectCode = session.subject_code || ''
+    const subjectName = session.subject_name || '未分类'
+
     if (remaining <= 0) {
       wx.removeStorageSync('pomodoro_pause')
       wx.removeStorageSync('pomodoro_running_state')
-      // Session expired while page was hidden — complete it now and show
-      // deferred celebration so the user gets their earned break.
-      // Send the actual duration directly since the timer ran to completion.
-      // This prevents the server from computing inflated duration
-      // (now - start_time - paused) when the user returns hours later.
       api.post(`/pomodoro/${session.id}/complete`, {
         total_paused_ms: totalPausedMs || 0,
         actual_duration_sec: session.work_duration * 60,
@@ -597,9 +859,9 @@ Page({
           actual_duration_sec: session.work_duration * 60,
         }).catch(() => {})
       })
-      // Restore session config so dismissCelebration reads correct durations
       this.setData({
-        selectedSubject: session.subject,
+        selectedSubjectId: subjectId,
+        selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
         selectedPreset: session.preset || 'standard',
         workDuration: session.work_duration,
         breakDuration: session.break_duration,
@@ -607,6 +869,7 @@ Page({
         totalPausedMs: 0,
         pauseStartTime: null,
       })
+      this._updateComputedFields()
       this.loadTodayStats()
       wx.vibrateLong()
       const motto = MOTTOES[Math.floor(Math.random() * MOTTOES.length)]
@@ -620,7 +883,8 @@ Page({
       phase: PHASE.RUNNING,
       sessionId: session.id,
       sessionStartTime: startTime,
-      selectedSubject: session.subject,
+      selectedSubjectId: subjectId,
+      selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
       selectedPreset: session.preset || 'standard',
       workDuration: session.work_duration,
       breakDuration: session.break_duration,
@@ -634,7 +898,6 @@ Page({
     })
 
     if (isPaused) {
-      // Update stored pause start to now, with accumulated totalPausedMs
       wx.setStorageSync('pomodoro_pause', {
         totalPausedMs: totalPausedMs,
         pauseStartTime: Date.now(),
@@ -644,6 +907,77 @@ Page({
       this._startTimer(totalSec)
     }
     this._updateComputedFields()
+  },
+
+  _restoreFreeSession(session) {
+    const startTime = parseServerTime(session.start_time)
+    if (!Number.isFinite(startTime) || startTime <= 0) {
+      wx.removeStorageSync('pomodoro_free_pause')
+      wx.removeStorageSync('pomodoro_running_state')
+      this._resetToIdle()
+      return
+    }
+
+    const serverTotalPausedSec = session.total_paused_sec || 0
+    const savedPause = wx.getStorageSync('pomodoro_free_pause')
+    let totalPausedMs = serverTotalPausedSec * 1000
+    let isPaused = false
+    let savedElapsed = 0
+
+    if (savedPause && savedPause.sessionId === session.id) {
+      const savedTotal = Number(savedPause.totalPausedMs || 0)
+      const pauseStart = Number(savedPause.pauseStartTime || Date.now())
+      totalPausedMs = Number.isFinite(savedTotal) && Number.isFinite(pauseStart)
+        ? savedTotal + (Date.now() - pauseStart)
+        : totalPausedMs
+      isPaused = true
+      savedElapsed = Number(savedPause.elapsedSec || 0)
+    } else if (session.paused_at) {
+      const pausedAtMs = parseServerTime(session.paused_at)
+      if (Number.isFinite(pausedAtMs)) {
+        isPaused = true
+        totalPausedMs += Date.now() - pausedAtMs
+      }
+    }
+
+    if (!Number.isFinite(totalPausedMs) || totalPausedMs < 0) totalPausedMs = 0
+
+    const elapsed = isPaused
+      ? savedElapsed || Math.max(0, Math.floor((Date.now() - startTime - totalPausedMs) / 1000))
+      : Math.max(0, Math.floor((Date.now() - startTime - totalPausedMs) / 1000))
+
+    const fmt = formatElapsedSec(elapsed)
+
+    // Resolve subject
+    const subjectId = session.subject_id || null
+    const subjectCode = session.subject_code || ''
+    const subjectName = session.subject_name || '未分类'
+
+    this._clearTimer()
+    this.setData({
+      phase: PHASE.RUNNING,
+      isFreeTimer: true,
+      sessionId: session.id,
+      sessionStartTime: startTime,
+      selectedSubjectId: subjectId,
+      selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
+      selectedPreset: 'free',
+      workDuration: 0,
+      breakDuration: 0,
+      isPaused: isPaused,
+      totalPausedMs: totalPausedMs,
+      pauseStartTime: isPaused ? Date.now() : null,
+      elapsedSec: elapsed,
+      freeDisplayTime: fmt.display,
+      freeFriendlyText: '',
+      showEndConfirm: false,
+      progress: 1,
+    })
+    this._updateComputedFields()
+
+    if (!isPaused) {
+      this._freeTimerId = setInterval(() => this._updateFreeElapsed(), 500)
+    }
   },
 
   _restoreBreak() {
@@ -683,7 +1017,6 @@ Page({
         const dpr = wx.getSystemInfoSync().pixelRatio
         const width = res[0].width
         const height = res[0].height
-        // Super-sample at 2x device resolution for smooth anti-aliasing
         const scale = dpr * 2
         canvas.width = Math.round(width * scale)
         canvas.height = Math.round(height * scale)
@@ -716,7 +1049,6 @@ Page({
       ? { start: '#F43F5E', end: '#F97316', dot: '#F97316' }
       : { start: '#06B6D4', end: '#3B82F6', dot: '#3B82F6' }
 
-    // Glow layer
     if (progress > 0) {
       const glowGrad = ctx.createLinearGradient(0, 0, size, size)
       glowGrad.addColorStop(0, colors.start)
@@ -731,14 +1063,12 @@ Page({
       ctx.globalAlpha = 1
     }
 
-    // Background track
     ctx.beginPath()
     ctx.strokeStyle = 'rgba(255,255,255,0.06)'
     ctx.lineWidth = lineWidth
     ctx.arc(center, center, radius, 0, Math.PI * 2)
     ctx.stroke()
 
-    // Progress arc
     ctx.beginPath()
     const grad = ctx.createLinearGradient(0, 0, size, size)
     grad.addColorStop(0, colors.start)
@@ -749,7 +1079,6 @@ Page({
     ctx.arc(center, center, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress)
     ctx.stroke()
 
-    // End dot
     if (progress > 0 && progress < 1) {
       const endAngle = -Math.PI / 2 + Math.PI * 2 * progress
       const endX = center + radius * Math.cos(endAngle)
@@ -762,12 +1091,17 @@ Page({
   },
 
   _resetToIdle() {
+    if (this._freeTimerId) {
+      clearInterval(this._freeTimerId)
+      this._freeTimerId = null
+    }
     this._canvasReady = false
     this._ctx = null
     this._pendingDraw = null
     wx.removeStorageSync('pomodoro_break')
     wx.removeStorageSync('pomodoro_completion')
     wx.removeStorageSync('pomodoro_pause')
+    wx.removeStorageSync('pomodoro_free_pause')
     wx.removeStorageSync('pomodoro_running_state')
     this.setData({
       phase: PHASE.IDLE,
@@ -781,6 +1115,12 @@ Page({
       isPaused: false,
       totalPausedMs: 0,
       pauseStartTime: null,
+      isFreeTimer: false,
+      elapsedSec: 0,
+      freeDisplayTime: '00:00:00',
+      freeFriendlyText: '',
+      showEndConfirm: false,
+      endConfirmText: '',
     })
     this._updateComputedFields()
   },
@@ -815,9 +1155,10 @@ Page({
   },
 
   _updateComputedFields() {
+    const subj = this.data.selectedSubject
     this.setData({
-      selectedSubjectLabel: this.subjectLabel(this.data.selectedSubject),
-      selectedSubjectEmoji: this.subjectEmoji(this.data.selectedSubject),
+      selectedSubjectLabel: subj ? subj.name : '',
+      selectedSubjectEmoji: subj ? subjectEmojiByCode(subj.code) : '📚',
       selectedPresetLabel: this.presetLabel(this.data.selectedPreset),
     })
   },
@@ -825,16 +1166,16 @@ Page({
   /* ==================== Utility ==================== */
 
   subjectLabel(key) {
-    const s = SUBJECTS.find(s => s.key === key)
-    return s ? s.label : key
+    const s = this.data.subjects.find(s => s.code === key)
+    return s ? s.name : key
   },
 
   subjectColor(key) {
-    return SUBJECT_COLOR_MAP[key] || '#5B7B9A'
+    return '#3B82F6'
   },
 
   subjectEmoji(key) {
-    return SUBJECT_EMOJI_MAP[key] || '📚'
+    return subjectEmojiByCode(key)
   },
 
   presetLabel(key) {
@@ -856,75 +1197,37 @@ Page({
     return `${d.getMonth() + 1}月${d.getDate()}日 星期${week[d.getDay()]}`
   },
 
-  /**
-   * 获取距离最近一次考研初试（第一天）的剩余天数
-   * 考研时间规则：每年12月倒数第二个星期六（通常为初试第一天）
-   * 若当年考试已结束，则自动顺延至下一年
-   * @returns {number} 剩余天数（非负整数）
-   */
   _getExamDays() {
-    // 当前日期（当天0点，消除时间影响）
     const now = new Date()
     now.setHours(0, 0, 0, 0)
-
-    // 计算指定年份的考研日期（12月倒数第二个星期六）
     const getExamDate = (year) => {
       const dec31 = new Date(year, 11, 31)
-      const dayOfWeek = dec31.getDay()            // 周日0 ~ 周六6
+      const dayOfWeek = dec31.getDay()
       const lastSaturday = dec31.getDate() - ((dayOfWeek - 6 + 7) % 7)
-      const targetDay = lastSaturday - 7           // 倒数第二个周六
+      const targetDay = lastSaturday - 7
       return new Date(year, 11, targetDay)
     }
-
     let examDate = getExamDate(now.getFullYear())
     if (examDate < now) {
       examDate = getExamDate(now.getFullYear() + 1)
     }
-
     const diff = Math.ceil((examDate - now) / (1000 * 60 * 60 * 24))
     return Math.max(0, diff)
   },
 
   _mapPracticeSubject(raw) {
     const map = {
-      'math2': 'math', 'math2-calculus': 'math', 'math2-linalg': 'math',
-      'exam408': 'data_structure',
-      'exam408-ds': 'data_structure', 'exam408-os': 'operating_system',
-      'exam408-co': 'computer_organization', 'exam408-cn': 'computer_network',
+      'math2': 'math2',
+      'math2-calculus': 'advanced_math',
+      'math2-linalg': 'linear_algebra',
+      'exam408': 'exam408',
+      'exam408-ds': 'data_structure',
+      'exam408-os': 'operating_system',
+      'exam408-co': 'computer_organization',
+      'exam408-cn': 'computer_network',
       'english': 'english',
     }
     return map[raw] || raw
   },
 
-  async _resolveAndMapSubjectId(subjectId) {
-    try {
-      const tree = await api.get('/practice/subjects')
-      if (!tree || !Array.isArray(tree)) return
-      // 在树中查找 subject_id 对应的 subject_code
-      const idNum = Number(subjectId)
-      let code = ''
-      for (const node of tree) {
-        if (node.subject_id === idNum) {
-          code = node.subject_code
-          break
-        }
-        if (node.children && node.children.length) {
-          for (const child of node.children) {
-            if (child.subject_id === idNum) {
-              code = child.subject_code
-              break
-            }
-          }
-        }
-        if (code) break
-      }
-      if (code) {
-        const mapped = this._mapPracticeSubject(code)
-        this.setData({ fromSubject: mapped, selectedSubject: mapped })
-        this._updateComputedFields()
-      }
-    } catch (e) {
-      console.warn('解析科目ID失败', e)
-    }
-  },
 })

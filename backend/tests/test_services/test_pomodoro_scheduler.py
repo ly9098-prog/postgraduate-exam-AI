@@ -118,7 +118,7 @@ async def _insert(db, *, user_id: int, openid: str, due_offset_sec: int,
     from app.models.pomodoro import PomodoroSession
     now = datetime.utcnow()
     s = PomodoroSession(
-        user_id=user_id, subject="math", chapter_id=None, preset="standard",
+        user_id=user_id, chapter_id=None, preset="standard",
         work_duration=work, break_duration=5,
         start_time=now - timedelta(minutes=work),
         expected_end_time=now + timedelta(seconds=due_offset_sec),
@@ -131,6 +131,14 @@ async def _insert(db, *, user_id: int, openid: str, due_offset_sec: int,
     db.add(s)
     await db.flush()
     return s.id
+
+
+async def _make_subject(db) -> int:
+    from app.models.admin import Subject
+    subj = Subject(code="test_subject", name="测试科目", level=1, path="test", is_active=True, sort_order=0)
+    db.add(subj)
+    await db.flush()
+    return subj.id
 
 
 # ============================================================
@@ -321,8 +329,9 @@ class TestServiceLayer:
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_complete")
+            subj_id = await _make_subject(db)
             session = await svc.start_session(
-                db, uid, "math", None, "standard", 25, 5, notification_enabled=True
+                db, uid, subj_id, None, "standard", 25, 5, notification_enabled=True
             )
             sid = session.id
             await db.commit()
@@ -346,8 +355,9 @@ class TestServiceLayer:
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_interrupt")
+            subj_id = await _make_subject(db)
             session = await svc.start_session(
-                db, uid, "math", None, "standard", 25, 5, notification_enabled=True
+                db, uid, subj_id, None, "standard", 25, 5, notification_enabled=True
             )
             sid = session.id
             await db.commit()
@@ -371,8 +381,9 @@ class TestServiceLayer:
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_start")
+            subj_id = await _make_subject(db)
             session = await svc.start_session(
-                db, uid, "english", None, "standard", 25, 5, notification_enabled=True
+                db, uid, subj_id, None, "standard", 25, 5, notification_enabled=True
             )
             await db.commit()
 
@@ -394,8 +405,9 @@ class TestServiceLayer:
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_pause")
+            subj_id = await _make_subject(db)
             session = await svc.start_session(
-                db, uid, "math", None, "standard", 25, 5, notification_enabled=True
+                db, uid, subj_id, None, "standard", 25, 5, notification_enabled=True
             )
             sid = session.id
             await db.commit()
@@ -440,8 +452,9 @@ class TestServiceLayer:
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_pause_idem")
+            subj_id = await _make_subject(db)
             session = await svc.start_session(
-                db, uid, "math", None, "standard", 25, 5, notification_enabled=True
+                db, uid, subj_id, None, "standard", 25, 5, notification_enabled=True
             )
             sid = session.id
             await db.commit()
