@@ -211,7 +211,7 @@
       <text class="confirm-title">结束计时？</text>
       <text class="confirm-body">{{endConfirmText}}</text>
       <view class="confirm-actions">
-        <button class="confirm-btn confirm-cancel" catchtap="_cancelEndFreeTimer">继续计时</button>
+        <button class="confirm-btn confirm-cancel" catchtap="_cancelEndFreeTimer">返回</button>
         <button class="confirm-btn confirm-ok" catchtap="_confirmEndFreeTimer">确认结束</button>
       </view>
     </view>
