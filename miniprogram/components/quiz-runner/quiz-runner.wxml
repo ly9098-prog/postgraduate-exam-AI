@@ -154,7 +154,7 @@
         <text class="runner-nav-arrow line-icon icon-chevron-right"></text>
       </view>
     </view>
-    <button class="runner-btn-submit" bindtap="onSubmit" disabled="{{submitting || submitDisabled}}">
+    <button class="runner-btn-submit" wx:if="{{showSubmitButton}}" bindtap="onSubmit" disabled="{{submitting || submitDisabled}}">
       {{submitText}}（{{answeredCount || 0}}/{{totalCount || 0}}）
     </button>
   </view>
@@ -181,7 +181,7 @@
           bindtap="goQuestion"
         >{{index + 1}}</view>
       </view>
-      <button class="runner-btn-submit runner-sheet-submit" bindtap="onSubmit" disabled="{{submitting || submitDisabled}}">
+      <button class="runner-btn-submit runner-sheet-submit" wx:if="{{showSubmitButton}}" bindtap="onSubmit" disabled="{{submitting || submitDisabled}}">
         {{submitText}}
       </button>
     </view>

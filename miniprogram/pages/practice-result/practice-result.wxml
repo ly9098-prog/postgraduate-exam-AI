@@ -79,7 +79,7 @@
     <text class="advice-desc">{{nextStepDesc}}</text>
   </view>
 
-  <!-- 4. Detail List (collapsed) -->
+  <!-- 4. Detail List (default expanded) -->
   <view class="detail-card anim-card-4" wx:if="{{results.length > 0}}">
     <view class="detail-toggle" bindtap="toggleDetail">
       <view>
@@ -97,13 +97,22 @@
       >
         <view class="detail-row-left">
           <text class="detail-index">{{item._displayIndex}}</text>
-          <text class="detail-status {{item._cls}}">{{item._label}}</text>
+          <view class="detail-status-pill {{item._cls}}">{{item._statusText}}</view>
         </view>
         <view class="detail-row-body">
-          <text class="detail-stem" wx:if="{{item._stemPreview}}">{{item._stemPreview}}</text>
-          <view class="detail-answer-line">
-            <text class="detail-user-answer {{item._cls}}" wx:if="{{item._userAnswer}}">我的：{{item._userAnswer}}</text>
-            <text class="detail-right-answer" wx:if="{{item.correct_answer}}">正确：{{item.correct_answer}}</text>
+          <view class="detail-stem-wrap">
+            <text class="detail-stem" wx:if="{{item._stemPreview}}">{{item._stemPreview}}</text>
+          </view>
+          <view wx:if="{{item._isSkipped}}" class="detail-skipped-line">未作答，已跳过</view>
+          <view wx:elif="{{item._isWrong}}" class="detail-answer-block wrong">
+            <text class="detail-answer-label">我的答案</text>
+            <text class="detail-answer-value user">{{item._userAnswerText}}</text>
+            <text class="detail-answer-label correct">正确答案</text>
+            <text class="detail-answer-value right">{{item._correctAnswerText}}</text>
+          </view>
+          <view wx:else class="detail-answer-block correct">
+            <text class="detail-answer-label correct">答案</text>
+            <text class="detail-answer-value right">{{item._correctAnswerText}}</text>
           </view>
         </view>
       </view>

@@ -42,6 +42,10 @@ Component({
     nextDisabled: { type: Boolean, value: false },
 
     showMasterButton: { type: Boolean, value: false },
+
+    showSubmitButton: { type: Boolean, value: true },
+    swipeEnabled: { type: Boolean, value: true },
+    allowSwipeInReadonly: { type: Boolean, value: false },
   },
 
   data: {
@@ -133,7 +137,9 @@ Component({
     /* ==================== Swipe ==================== */
 
     onTouchStart(e) {
-      if (this.data.readonly || this.data.submitted || this.data._animating) return
+      if (!this.data.swipeEnabled || this.data._animating) return
+      if (this.data.submitted) return
+      if (this.data.readonly && !this.data.allowSwipeInReadonly) return
       var t = e.touches[0]
       this.data._touchX = t.clientX
       this.data._touchY = t.clientY
@@ -142,7 +148,9 @@ Component({
     },
 
     onTouchEnd(e) {
-      if (this.data.readonly || this.data.submitted || this.data._animating) return
+      if (!this.data.swipeEnabled || this.data._animating) return
+      if (this.data.submitted) return
+      if (this.data.readonly && !this.data.allowSwipeInReadonly) return
       if (this.data._touchX === undefined) return
 
       var t = e.changedTouches[0]

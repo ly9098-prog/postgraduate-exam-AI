@@ -16,7 +16,7 @@ Page({
 
     /* 答题详情 */
     results: [],
-    showDetail: false,
+    showDetail: true,
 
     /* 视图模型 — 由 _buildResultViewModel 生成 */
     resultLevelClass: '',
@@ -65,14 +65,19 @@ Page({
         results = stored.results.map(function(r) {
           const q = questionById[String(r.question_id)] || {}
           const stemText = (q.content && (q.content.stem || q.content.text || q.content.title || q.content.question)) || q.stem || q.title || q.question || q.text || ''
+          const isCorrect = r.is_correct === true
+          const isSkipped = !isCorrect && (!r.user_answer || r.user_answer === '')
           return {
             ...r,
             correct_answer: formatInlineMathText(r.correct_answer),
-            _label: r.is_correct ? '✓' : '✗',
-            _cls: r.is_correct ? 'correct' : 'wrong',
+            _cls: isSkipped ? 'skipped' : (isCorrect ? 'correct' : 'wrong'),
+            _statusText: isSkipped ? '跳过' : (isCorrect ? '正确' : '错误'),
+            _userAnswerText: (r.user_answer && String(r.user_answer).trim()) || '未作答',
+            _correctAnswerText: formatInlineMathText(r.correct_answer || ''),
             _stemPreview: stemText ? (stemText.length > 50 ? stemText.slice(0, 50) + '...' : stemText) : '',
             _userAnswer: r.user_answer || '',
-            _isWrong: !r.is_correct,
+            _isWrong: !isCorrect,
+            _isSkipped: isSkipped,
           }
         })
       }
@@ -80,19 +85,23 @@ Page({
 
     const skipped = (stored && stored.skipped) || 0
 
-    // Build compactResults: wrong items first, keep original index
+    // Build compactResults: wrong > skipped > correct, keep original _displayIndex
     const compactResults = []
     const wrongItems = []
+    const skippedItems = []
     const correctItems = []
     results.forEach(function(item, index) {
       var compact = Object.assign({}, item, { _displayIndex: index + 1 })
-      if (compact._isWrong) {
+      if (compact._isSkipped) {
+        skippedItems.push(compact)
+      } else if (compact._isWrong) {
         wrongItems.push(compact)
       } else {
         correctItems.push(compact)
       }
     })
     compactResults.push.apply(compactResults, wrongItems)
+    compactResults.push.apply(compactResults, skippedItems)
     compactResults.push.apply(compactResults, correctItems)
 
     const vm = this._buildResultViewModel(passRate, correct, wrong, total, skipped)

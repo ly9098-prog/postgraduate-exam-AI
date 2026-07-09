@@ -52,7 +52,6 @@ page {
   transition: transform 0.2s ease;
 }
 
-.detail-card,
 .ai-card {
   margin: 18rpx 24rpx 0;
   padding: 26rpx;
@@ -60,45 +59,6 @@ page {
   border-radius: 24rpx;
   box-shadow: 0 8rpx 24rpx rgba(42, 84, 160, 0.08);
   border: 1rpx solid rgba(226, 234, 247, 0.92);
-}
-
-.detail-header {
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-  margin-bottom: 18rpx;
-  flex-wrap: wrap;
-}
-
-.subject-tag,
-.error-type-tag,
-.tag {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  min-height: 42rpx;
-  padding: 0 12rpx;
-  border-radius: 999rpx;
-  font-size: 21rpx;
-  line-height: 1;
-  font-weight: 700;
-}
-
-.subject-tag {
-  background: #EEF4FF;
-  color: #4F7FFF;
-}
-
-.error-type-tag,
-.tag {
-  background: #FFF7E8;
-  color: #F59E0B;
-}
-
-.tag-success {
-  background: #ECFDF3;
-  color: #22C55E;
 }
 
 /* AI 分析 */
@@ -443,64 +403,18 @@ page {
   margin-top: 16rpx;
 }
 
-/* 题目区域答案行 */
-.q-answer-line {
+/* 切换加载态 — fixed overlay 不破坏布局流 */
+.switch-loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
   display: flex;
-  align-items: flex-start;
-  gap: 10rpx;
-  padding: 14rpx 0;
-  font-size: 28rpx;
-  line-height: 1.6;
-  border-top: 1rpx solid #E2EAF7;
-}
-
-.q-answer-label {
-  flex-shrink: 0;
-  font-size: 26rpx;
-  font-weight: 800;
-  color: #4F7FFF;
-  line-height: 1.6;
-}
-
-.q-answer-value {
-  flex: 1;
-  min-width: 0;
-  font-size: 28rpx;
-  line-height: 1.6;
-  word-break: break-word;
-  white-space: pre-wrap;
-}
-
-.q-answer-value.correct {
-  color: #22C55E;
-  font-weight: 800;
-}
-
-.q-answer-value.user {
-  color: #4F7FFF;
-  font-weight: 800;
-}
-
-.q-answer-analysis {
-  padding: 16rpx 0;
-  border-top: 1rpx solid #E2EAF7;
-}
-
-.q-analysis-text {
-  display: block;
-  margin-top: 8rpx;
-  font-size: 27rpx;
-  color: #18233A;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* 切换加载态 */
-.switch-loading {
-  padding: 40rpx 24rpx;
-  display: flex;
+  align-items: center;
   justify-content: center;
+  background: rgba(248, 250, 255, 0.7);
 }
 
 @media (prefers-reduced-motion: reduce) {
