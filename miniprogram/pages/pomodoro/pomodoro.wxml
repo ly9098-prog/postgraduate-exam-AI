@@ -205,15 +205,15 @@
     bind:done="dismissCelebration"
   />
 
-  <!-- ===== 结束计时确认弹窗（通用） ===== -->
-  <view class="confirm-overlay {{showEndConfirm ? 'visible' : ''}}" catchtap="cancelEndConfirm">
-    <view class="confirm-card" catchtap="noop">
-      <text class="confirm-title">{{endConfirmTitle}}</text>
-      <text class="confirm-body">{{endConfirmText}}</text>
-      <view class="confirm-actions">
-        <button class="confirm-btn confirm-cancel" catchtap="cancelEndConfirm">{{endConfirmCancelText}}</button>
-        <button class="confirm-btn confirm-ok" loading="{{actionLoading}}" disabled="{{actionLoading}}" catchtap="confirmEndTimer">{{endConfirmOkText}}</button>
-      </view>
-    </view>
-  </view>
+  <!-- ===== 结束计时确认弹窗（cover-view 覆盖 canvas） ===== -->
+  <cover-view wx:if="{{showEndConfirm}}" class="confirm-cover-overlay" catchtap="cancelEndConfirm">
+    <cover-view class="confirm-cover-card" catchtap="noop">
+      <cover-view class="confirm-cover-title">{{endConfirmTitle}}</cover-view>
+      <cover-view class="confirm-cover-body">{{endConfirmText}}</cover-view>
+      <cover-view class="confirm-cover-actions">
+        <cover-view class="confirm-cover-btn confirm-cover-cancel" catchtap="cancelEndConfirm">{{endConfirmCancelText}}</cover-view>
+        <cover-view class="confirm-cover-btn confirm-cover-ok {{actionLoading ? 'disabled' : ''}}" catchtap="confirmEndTimer">{{actionLoading ? '处理中...' : endConfirmOkText}}</cover-view>
+      </cover-view>
+    </cover-view>
+  </cover-view>
 </view>

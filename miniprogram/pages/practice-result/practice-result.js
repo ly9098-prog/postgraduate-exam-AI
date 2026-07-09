@@ -1,5 +1,27 @@
 const api = require('../../utils/api')
 const { formatInlineMathText } = require('../../utils/math-format')
+const {
+  toPlainInlineMathText,
+  needsRichRender,
+  textToHtml,
+  cleanStemText,
+} = require('../../utils/stem-render')
+
+function buildDetailRichText(value) {
+  const raw = String(value || '').trim()
+  if (!raw) {
+    return { raw: '', text: '', html: '', needsRich: false }
+  }
+  const plain = toPlainInlineMathText(raw)
+  const needsRich = !plain && needsRichRender(raw)
+  return {
+    raw,
+    text: plain || formatInlineMathText(raw),
+    html: needsRich ? textToHtml(raw) : '',
+    needsRich,
+  }
+}
+
 Page({
   data: {
     /* 核心数据 */
@@ -64,18 +86,29 @@ Page({
         questions.forEach(function(q) { if (q && q.id) questionById[String(q.id)] = q })
         results = stored.results.map(function(r) {
           const q = questionById[String(r.question_id)] || {}
-          const stemText = (q.content && (q.content.stem || q.content.text || q.content.title || q.content.question)) || q.stem || q.title || q.question || q.text || ''
+          const stemRaw = cleanStemText(
+            (q.content && (q.content.stem || q.content.text || q.content.title || q.content.question)) ||
+            q.stem || q.title || q.question || q.text || ''
+          )
           const isCorrect = r.is_correct === true
           const isSkipped = !isCorrect && (!r.user_answer || r.user_answer === '')
+
+          const stemRich = buildDetailRichText(stemRaw)
+          const userAnswerRich = buildDetailRichText(r.user_answer || '')
+          const correctAnswerRich = buildDetailRichText(r.correct_answer || '')
+
           return {
             ...r,
-            correct_answer: formatInlineMathText(r.correct_answer),
             _cls: isSkipped ? 'skipped' : (isCorrect ? 'correct' : 'wrong'),
             _statusText: isSkipped ? '跳过' : (isCorrect ? '正确' : '错误'),
-            _userAnswerText: (r.user_answer && String(r.user_answer).trim()) || '未作答',
-            _correctAnswerText: formatInlineMathText(r.correct_answer || ''),
-            _stemPreview: stemText ? (stemText.length > 50 ? stemText.slice(0, 50) + '...' : stemText) : '',
-            _userAnswer: r.user_answer || '',
+            _stemRaw: stemRaw,
+            _stemRich: stemRich,
+            _userAnswerRaw: r.user_answer || '',
+            _userAnswerText: userAnswerRich.text || '未作答',
+            _userAnswerRich: userAnswerRich,
+            _correctAnswerRaw: r.correct_answer || '',
+            _correctAnswerText: correctAnswerRich.text,
+            _correctAnswerRich: correctAnswerRich,
             _isWrong: !isCorrect,
             _isSkipped: isSkipped,
           }
