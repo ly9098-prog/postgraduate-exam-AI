@@ -53,6 +53,20 @@ async def main():
     from httpx import ASGITransport, AsyncClient
 
     async with app.router.lifespan_context(app):
+        # 插入测试科目（lifespan 已创建表）
+        from app.models.admin import Subject
+        from app.core.database import async_session as db_session
+        from sqlalchemy import insert
+
+        async with db_session() as db:
+            await db.execute(
+                insert(Subject).values(
+                    id=1, code="math", name="数学",
+                    level=1, path="math", sort_order=1, is_active=True
+                )
+            )
+            await db.commit()
+
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             # 登录 → token
             r = await client.post("/api/v1/auth/login", json={"code": "smoke_user_001"})
@@ -67,7 +81,7 @@ async def main():
                 "/api/v1/pomodoro/start",
                 headers=headers,
                 json={
-                    "subject": "math",
+                    "subject_id": 1,
                     "chapter_id": None,
                     "preset": "standard",
                     "work_duration": 1,

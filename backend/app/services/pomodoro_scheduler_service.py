@@ -26,6 +26,7 @@ from typing import Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select, update
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import joinedload
 
 from app.core.time_utils import utcnow
 from app.core.cache import cache
@@ -125,6 +126,7 @@ class PomodoroScheduler:
         """
         stmt = (
             select(PomodoroSession)
+            .options(joinedload(PomodoroSession.subject_ref))
             .where(
                 PomodoroSession.status == "running",
                 PomodoroSession.notification_enabled.is_(True),
@@ -174,7 +176,7 @@ class PomodoroScheduler:
             snapshots.append({
                 "id": s.id,
                 "user_id": s.user_id,
-                "subject": s.subject,
+                "subject": (s.subject_ref.code if s.subject_ref else "") or "",
                 "work_duration": s.work_duration,
                 "expected_end_time": s.expected_end_time,
                 "openid": s.openid_snapshot,

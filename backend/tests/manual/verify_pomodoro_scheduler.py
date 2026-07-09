@@ -87,7 +87,6 @@ async def insert_session(
 ) -> int:
     s = PomodoroSession(
         user_id=user_id,
-        subject="math",
         chapter_id=None,
         preset="standard",
         work_duration=work_duration,
