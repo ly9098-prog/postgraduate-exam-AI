@@ -277,7 +277,7 @@
         <text class="fr-progress-pct">{{reviewResultVm.completionRate}}%</text>
       </view>
       <view class="fr-bar-track">
-        <view class="fr-bar-fill" style="width:{{reviewResultVm.completionRate}}%"></view>
+        <view class="fr-bar-fill" style="width:{{_frCompletionBarStyle}}"></view>
       </view>
       <view class="fr-progress-row" wx:if="{{reviewResultVm.hasSkipped}}">
         <text class="fr-progress-sub">仍有 <text class="fr-progress-em">{{reviewResultVm.skipped}}</text> 题待处理，可返回继续完成</text>
