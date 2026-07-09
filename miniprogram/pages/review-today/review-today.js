@@ -683,6 +683,7 @@ Page({
       const groupCorrect = groupResults.filter(r => r.isCorrect && r.wasSubmitted).length
       const groupWrong = groupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
       const groupSkipped = groupResults.filter(r => r.wasSkipped).length
+      const _groupSkipped = groupSkipped
 
       const allGroupResults = _mergeResultsByScheduleId(this.data.allGroupResults, groupResults)
       const totalCorrect = allGroupResults.filter(r => r.isCorrect && r.wasSubmitted).length
@@ -703,6 +704,7 @@ Page({
         groupResults,
         groupCorrect,
         groupWrong,
+        _groupSkipped,
         submittingGroup: false,
         allGroupResults,
         totalCorrect,

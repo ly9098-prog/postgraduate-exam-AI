@@ -166,7 +166,7 @@
           <text class="grp-summary-lbl">需巩固</text>
         </view>
         <view class="grp-summary-item">
-          <text class="grp-summary-val muted">{{groupResults.filter(r => r.wasSkipped).length}}</text>
+          <text class="grp-summary-val muted">{{_groupSkipped}}</text>
           <text class="grp-summary-lbl">跳过</text>
         </view>
       </view>
