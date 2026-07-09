@@ -2,11 +2,22 @@ const api = require('../../utils/api')
 const config = require('../../config')
 
 const SUBJECT_EMOJI = {
+  // New codes
+  'exam408-ds': '📃',
+  'exam408-co': '💻',
+  'exam408-os': '⚙️',
+  'exam408-cn': '🌐',
+  'math2-calculus': '📐',
+  'math2-linalg': '📏',
+  english: '📖',
+  pol: '📜',
+  math2: '📐',
+  exam408: '📚',
+  // Legacy codes (backward compat)
   data_structure: '📃',
   computer_organization: '💻',
   operating_system: '⚙️',
   computer_network: '🌐',
-  english: '📖',
   math: '📐',
   advanced_math: '📐',
   linear_algebra: '📏',
@@ -177,8 +188,8 @@ Page({
 
   async onShow() {
     this._pageVisible = true
-    this.loadTodayStats()
 
+    // Completion flag — check before active fetch since it may short-circuit
     const completionFlag = wx.getStorageSync('pomodoro_completion')
     if (completionFlag) {
       if (!completionFlag.sessionId) {
@@ -194,13 +205,22 @@ Page({
 
     const active = await this._fetchActiveSession()
     if (active) {
-      this._restoreSession(active)
+      if (this._canLightSyncActive(active)) {
+        this._syncActiveSessionLight(active)
+      } else {
+        this._restoreSession(active)
+      }
     } else if (this.data.phase !== PHASE.RUNNING) {
       this._restoreBreak()
     }
-    setTimeout(() => {
-      this.setData({ pageEntered: true })
-    }, 50)
+
+    // Deferred: stats don't block active session recovery
+    setTimeout(() => this.loadTodayStats(), 200)
+
+    // Don't re-trigger entrance animation if already entered
+    if (!this.data.pageEntered) {
+      setTimeout(() => this.setData({ pageEntered: true }), 50)
+    }
   },
 
   onHide() {
@@ -223,7 +243,7 @@ Page({
         savedAt: Date.now(),
       })
     }
-    this._clearFreeTimerInterval()
+    // Single cleanup call — _clearTimer already clears free interval too
     this._clearTimer()
   },
 
@@ -451,11 +471,12 @@ Page({
     const totalPausedMs = this.data.totalPausedMs || 0
     let elapsed
     if (this.data.isPaused) {
-      // Paused: freeze at pause-start value, don't increment
       elapsed = this.data.elapsedSec
     } else {
       elapsed = Math.max(0, Math.floor((now - startTime) / 1000) - Math.floor(totalPausedMs / 1000))
     }
+    // Only setData when elapsed actually changes — reduces render
+    if (elapsed === this.data.elapsedSec) return
     const fmt = formatElapsedSec(elapsed)
     this.setData({
       elapsedSec: elapsed,
@@ -471,16 +492,21 @@ Page({
   },
 
   _startFreeTimerInterval() {
+    if (this._freeTimerId) return
+    this._freeTimerId = setInterval(() => this._updateFreeElapsed(), 1000)
+  },
+
+  _restartFreeTimerInterval() {
     this._clearFreeTimerInterval()
-    this._freeTimerId = setInterval(() => this._updateFreeElapsed(), 500)
+    this._startFreeTimerInterval()
   },
 
   async _pauseFreeTimer() {
     if (!this.data.sessionId || this.data.actionLoading) return
     this.setData({ actionLoading: true })
-    this._clearFreeTimerInterval()
     try {
       const server = await api.post(`/pomodoro/${this.data.sessionId}/pause`, {})
+      this._clearFreeTimerInterval()
       this.setData({
         isPaused: true,
         pauseStartTime: Date.now(),
@@ -496,8 +522,6 @@ Page({
       })
     } catch (e) {
       this.setData({ actionLoading: false })
-      // Restart interval on failure — don't lose counting time
-      if (!this.data.isPaused) this._startFreeTimerInterval()
       wx.showToast({ title: '暂停失败，请重试', icon: 'none' })
     }
   },
@@ -545,11 +569,10 @@ Page({
   async _cancelEndFreeTimer() {
     this.setData({ showEndConfirm: false })
     this._confirmOpenedAt = null
-    if (this.data.isPaused) {
-      await this._resumeFreeTimer()
-    } else {
+    if (!this.data.isPaused) {
       this._startFreeTimerInterval()
     }
+    // If paused: keep paused, do not auto-resume
   },
 
   async _confirmEndFreeTimer() {
@@ -643,49 +666,60 @@ Page({
     }
   },
 
-  _pauseSession() {
-    this._clearTimer()
-    this.setData({
-      isPaused: true,
-      pauseStartTime: Date.now(),
-    })
-    wx.setStorageSync('pomodoro_pause', {
-      totalPausedMs: this.data.totalPausedMs,
-      pauseStartTime: Date.now(),
-      sessionId: this.data.sessionId,
-    })
-    if (this.data.sessionId) {
-      api.post(`/pomodoro/${this.data.sessionId}/pause`, {}).catch(() => {})
+  async _pauseSession() {
+    if (!this.data.sessionId || this.data.actionLoading) return
+    this.setData({ actionLoading: true })
+    try {
+      const server = await api.post(`/pomodoro/${this.data.sessionId}/pause`, {})
+      this._clearTimer()
+      this.setData({
+        isPaused: true,
+        pauseStartTime: Date.now(),
+        totalPausedMs: (server.total_paused_sec || 0) * 1000,
+        actionLoading: false,
+      })
+      wx.setStorageSync('pomodoro_pause', {
+        totalPausedMs: (server.total_paused_sec || 0) * 1000,
+        pauseStartTime: Date.now(),
+        sessionId: this.data.sessionId,
+      })
+    } catch (e) {
+      this.setData({ actionLoading: false })
+      wx.showToast({ title: '暂停失败，请重试', icon: 'none' })
     }
   },
 
-  _resumeSession() {
+  async _resumeSession() {
     if (typeof this.data.sessionStartTime !== 'number' || this.data.sessionStartTime <= 0) {
       console.warn('resume aborted: invalid sessionStartTime', this.data.sessionStartTime)
       this._resetToIdle()
       return
     }
-    const pausedDuration = Date.now() - (this.data.pauseStartTime || Date.now())
-    const totalPausedMs = (this.data.totalPausedMs || 0) + Math.max(0, pausedDuration)
-    this.setData({
-      isPaused: false,
-      totalPausedMs: totalPausedMs,
-      pauseStartTime: null,
-    })
-    const totalSec = this.data.selectedPreset === 'debug' ? 10 : (this.data.workDuration ?? 25) * 60
-    const elapsed = Math.floor((Date.now() - this.data.sessionStartTime - totalPausedMs) / 1000)
-    const remainingSec = Math.max(0, totalSec - elapsed)
-    this.setData({
-      remainingSec: remainingSec,
-      displayMin: String(Math.floor(remainingSec / 60)).padStart(2, '0'),
-      displaySec: String(remainingSec % 60).padStart(2, '0'),
-      progress: totalSec > 0 ? remainingSec / totalSec : 0,
-    })
-    wx.removeStorageSync('pomodoro_pause')
-    if (this.data.sessionId) {
-      api.post(`/pomodoro/${this.data.sessionId}/resume`, {}).catch(() => {})
+    if (!this.data.sessionId || this.data.actionLoading) return
+    this.setData({ actionLoading: true })
+    try {
+      const server = await api.post(`/pomodoro/${this.data.sessionId}/resume`, {})
+      const startTime = parseServerTime(server.start_time)
+      const serverTotalPausedSec = server.total_paused_sec || 0
+      const totalSec = this.data.selectedPreset === 'debug' ? 10 : (this.data.workDuration ?? 25) * 60
+      const elapsed = Math.floor((Date.now() - startTime) / 1000) - serverTotalPausedSec
+      const remainingSec = Math.max(0, totalSec - elapsed)
+      this.setData({
+        isPaused: false,
+        totalPausedMs: serverTotalPausedSec * 1000,
+        pauseStartTime: null,
+        remainingSec: remainingSec,
+        displayMin: String(Math.floor(remainingSec / 60)).padStart(2, '0'),
+        displaySec: String(remainingSec % 60).padStart(2, '0'),
+        progress: totalSec > 0 ? remainingSec / totalSec : 0,
+        actionLoading: false,
+      })
+      wx.removeStorageSync('pomodoro_pause')
+      this._startTimer(totalSec)
+    } catch (e) {
+      this.setData({ actionLoading: false })
+      wx.showToast({ title: '继续失败，请重试', icon: 'none' })
     }
-    this._startTimer(totalSec)
   },
 
   _startTimer(totalSec) {
@@ -803,6 +837,51 @@ Page({
 
   /* ==================== Session Restore ==================== */
 
+  _canLightSyncActive(active) {
+    if (!this.data.sessionId) return false
+    if (active.id !== this.data.sessionId) return false
+    if (this.data.phase !== PHASE.RUNNING) return false
+    if ((active.status === 'paused') !== this.data.isPaused) return false
+    if ((active.preset === 'free') !== this.data.isFreeTimer) return false
+    if (typeof this.data.sessionStartTime !== 'number' || this.data.sessionStartTime <= 0) return false
+    return true
+  },
+
+  _syncActiveSessionLight(active) {
+    const now = Date.now()
+    const totalPausedMs = this.data.totalPausedMs || 0
+
+    if (this.data.isFreeTimer) {
+      if (!this.data.isPaused) {
+        const elapsed = Math.max(0, Math.floor((now - this.data.sessionStartTime) / 1000) - Math.floor(totalPausedMs / 1000))
+        if (elapsed !== this.data.elapsedSec) {
+          const fmt = formatElapsedSec(elapsed)
+          this.setData({ elapsedSec: elapsed, freeDisplayTime: fmt.display })
+        }
+      }
+      // Idempotent interval start — won't create duplicate
+      this._startFreeTimerInterval()
+    } else {
+      const totalSec = this.data.selectedPreset === 'debug' ? 10 : (this.data.workDuration ?? 25) * 60
+      if (this.data.isPaused) return
+      const elapsed = Math.floor((now - this.data.sessionStartTime - totalPausedMs) / 1000)
+      const remaining = Math.max(0, totalSec - elapsed)
+      if (remaining <= 0) {
+        // Timer expired while away — trigger completion
+        this._clearTimer()
+        this._onWorkComplete()
+        return
+      }
+      this.setData({
+        remainingSec: remaining,
+        displayMin: String(Math.floor(remaining / 60)).padStart(2, '0'),
+        displaySec: String(remaining % 60).padStart(2, '0'),
+        progress: totalSec > 0 ? remaining / totalSec : 0,
+      })
+      this.drawRing(totalSec, false)
+    }
+  },
+
   async _fetchActiveSession() {
     const local = wx.getStorageSync('pomodoro_running_state')
     try {
@@ -821,15 +900,22 @@ Page({
         wx.removeStorageSync('pomodoro_running_state')
         return null
       }
+      const isPaused = !!local.isPaused
       return {
         id: local.sessionId,
         start_time: new Date(cachedStartTime).toISOString(),
-        work_duration: local.workDuration,
-        break_duration: local.breakDuration,
+        work_duration: local.workDuration || 0,
+        break_duration: local.breakDuration || 0,
         preset: local.selectedPreset || 'standard',
+        status: isPaused ? 'paused' : 'running',
+        paused_at: isPaused && local.pauseStartTime
+          ? new Date(local.pauseStartTime).toISOString()
+          : null,
+        total_paused_sec: Math.floor((local.totalPausedMs || 0) / 1000),
         subject_id: local.selectedSubjectId,
         subject_code: local.selectedSubjectCode || '',
         subject_name: local.selectedSubjectName || '',
+        _local_elapsed_sec: local.isFreeTimer ? local.elapsedSec : undefined,
       }
     }
     wx.removeStorageSync('pomodoro_running_state')
@@ -1040,7 +1126,8 @@ Page({
 
   /* ==================== Progress Ring (Canvas 2D) ==================== */
 
-  _initCanvas() {
+  _initCanvas(force) {
+    if (!force && this._canvasReady && this._ctx) return
     this._canvasReady = false
     this._ctx = null
     const query = wx.createSelectorQuery().in(this)
@@ -1050,7 +1137,8 @@ Page({
         if (!res[0] || !res[0].node) return
         const canvas = res[0].node
         const ctx = canvas.getContext('2d')
-        const dpr = wx.getSystemInfoSync().pixelRatio
+        const dpr = this._dpr || wx.getSystemInfoSync().pixelRatio
+        this._dpr = dpr
         const width = res[0].width
         const height = res[0].height
         const scale = dpr * 2
@@ -1251,16 +1339,16 @@ Page({
   },
 
   _mapPracticeSubject(raw) {
+    // Only map legacy codes → new codes; keep new codes as-is
     const map = {
-      'math2': 'math2',
-      'math2-calculus': 'advanced_math',
-      'math2-linalg': 'linear_algebra',
-      'exam408': 'exam408',
-      'exam408-ds': 'data_structure',
-      'exam408-os': 'operating_system',
-      'exam408-co': 'computer_organization',
-      'exam408-cn': 'computer_network',
-      'english': 'english',
+      'data_structure': 'exam408-ds',
+      'operating_system': 'exam408-os',
+      'computer_organization': 'exam408-co',
+      'computer_network': 'exam408-cn',
+      'advanced_math': 'math2-calculus',
+      'linear_algebra': 'math2-linalg',
+      'politics': 'pol',
+      'math': 'math2',
     }
     return map[raw] || raw
   },
