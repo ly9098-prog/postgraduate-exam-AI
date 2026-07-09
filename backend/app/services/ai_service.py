@@ -101,7 +101,12 @@ async def analyze_error(
     from app.core.cache import cache
     lock_key = f"ai:error_analysis:{wq_pk}"
     lock_value = str(user_id)
-    have_lock = await cache.acquire_lock(lock_key, lock_value, ttl=60)
+    try:
+        have_lock = await cache.acquire_lock(lock_key, lock_value, ttl=60)
+    except Exception:
+        # acquire_lock 异常时清除进程内锁，防止泄漏
+        _generating.discard(wq_pk)
+        raise
     if not have_lock and cache.is_enabled:
         # Redis 不可用时降级到进程内锁；Redis 可用但锁已被占则返回 generating
         _generating.discard(wq_pk)
@@ -127,19 +132,23 @@ async def analyze_error(
         creds = await ensure_db_model_configured(db, feature="analysis")
 
         if not creds:
-            fallback = get_fallback_analysis()
-            result = {
-                "content": fallback,
+            # force_regenerate 失败时有旧缓存则返回旧缓存
+            old_cache = build_cached_error_analysis_response(wq)
+            if old_cache and force_regenerate:
+                _generating.discard(wq_pk)
+                old_cache["force_regenerated"] = False
+                old_cache["cache_preserved"] = True
+                return old_cache
+            # 无旧缓存时才返回 fallback
+            _generating.discard(wq_pk)
+            return {
+                "content": get_fallback_analysis(),
                 "from_cache": False,
                 "from_fallback": True,
                 "tokens_used": 0,
                 "model": "fallback",
                 "duration_ms": 0,
             }
-            if force_regenerate:
-                result["force_regenerated"] = False
-                result["cache_preserved"] = True
-            return result
 
         api_key, base_url, model_name = creds
 
@@ -152,6 +161,12 @@ async def analyze_error(
             async with asyncio.timeout(ERROR_ANALYSIS_TIMEOUT_SECONDS):
                 result = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
         except Exception:
+            old_cache = build_cached_error_analysis_response(wq)
+            if old_cache and force_regenerate:
+                _generating.discard(wq_pk)
+                old_cache["force_regenerated"] = False
+                old_cache["cache_preserved"] = True
+                return old_cache
             fallback = get_fallback_analysis()
             resp = {
                 "content": fallback,
@@ -169,7 +184,12 @@ async def analyze_error(
         try:
             parsed = json.loads(result["content"])
         except (json.JSONDecodeError, KeyError):
-            parsed = {"mistake_diagnosis": result["content"], "knowledge_patch": "", "review_task": ""}
+            # JSON 解析失败时保证核心字段完整
+            parsed = {
+                "mistake_diagnosis": result.get("content", "AI 分析返回格式异常，请稍后重试"),
+                "knowledge_patch": "",
+                "review_task": "",
+            }
 
         # 附加元信息
         parsed["_meta"] = {
@@ -201,10 +221,10 @@ async def analyze_error(
             "content": parsed,
             "from_cache": False,
             "from_fallback": False,
-            "tokens_used": result["tokens_used"],
-            "model": result["model"],
-            "duration_ms": result["duration_ms"],
-            "force_regenerated": True,
+            "tokens_used": result.get("tokens_used", 0),
+            "model": result.get("model", model_name or ""),
+            "duration_ms": result.get("duration_ms", 0),
+            "force_regenerated": force_regenerate,
         }
     finally:
         _generating.discard(wq_pk)

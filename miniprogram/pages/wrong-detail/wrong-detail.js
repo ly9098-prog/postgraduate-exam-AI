@@ -140,6 +140,7 @@ Page({
       loading: true,
       errorText: '',
       aiLoading: false,
+      aiRegenerating: false,
       aiResult: null,
       aiFallback: false,
       aiErrorText: '',
@@ -244,8 +245,6 @@ Page({
       aiRequested: true,
       aiFallback: false,
       aiErrorText: '',
-      aiResult: null,
-      aiFromCache: false,
     })
     try {
       const result = await api.post('/ai/error-analysis', { wrong_question_id: wqId })
@@ -254,10 +253,17 @@ Page({
       let content = result && result.content ? result.content : null
       const fromFallback = !!(result && result.from_fallback)
       const fromCache = !!(result && result.from_cache)
+      const model = result && result.model || ''
+      if (fromFallback && model === 'generating') {
+        this.setData({
+          aiFallback: true,
+          aiErrorText: 'AI 分析正在生成中，请稍后重试',
+          aiLoading: false,
+        })
+        return
+      }
       if (fromFallback) {
         this.setData({
-          aiResult: null,
-          aiCards: null,
           aiFallback: true,
           aiFromCache: false,
           aiErrorText: 'AI 服务暂时不可用，请稍后重试',
@@ -267,8 +273,6 @@ Page({
       }
       if (!content) {
         this.setData({
-          aiResult: null,
-          aiCards: null,
           aiFallback: true,
           aiFromCache: false,
           aiErrorText: 'AI 分析结果为空，请稍后重试',
@@ -311,12 +315,16 @@ Page({
   async regenerateAiAnalysis() {
     const wqId = this.data.currentWqId || (this.data.wq && this.data.wq.id)
     if (!wqId || this.data.aiLoading || this.data.aiRegenerating) return
+    // 保存旧内容，失败时恢复
+    const oldCards = this.data.aiCards
+    const oldResult = this.data.aiResult
     const token = String(wqId) + '-' + Date.now()
     this._aiToken = token
     this.setData({
       aiRegenerating: true,
       aiErrorText: '',
       aiFallback: false,
+      // 不清理 aiCards/aiResult — 重新生成期间保留旧内容展示
     })
     try {
       const result = await api.post('/ai/error-analysis', {
@@ -329,12 +337,22 @@ Page({
       const fromFallback = !!(result && result.from_fallback)
       const cachePreserved = !!(result && result.cache_preserved)
       if (fromFallback || !content) {
-        this.setData({
-          aiRegenerating: false,
-          aiErrorText: cachePreserved ? '重新生成失败，已保留历史分析' : 'AI 服务暂时不可用，请稍后重试',
-        })
-        if (cachePreserved) {
-          wx.showToast({ title: '重新生成失败，已保留历史分析', icon: 'none' })
+        if (cachePreserved && oldCards) {
+          wx.showToast({ title: '重新生成失败，已保留历史解析', icon: 'none' })
+          this.setData({ aiRegenerating: false, aiErrorText: '重新生成失败，已保留历史解析' })
+        } else if (oldCards) {
+          this.setData({
+            aiCards: oldCards,
+            aiResult: oldResult,
+            aiRegenerating: false,
+            aiErrorText: '重新生成失败，已保留历史解析',
+          })
+          wx.showToast({ title: '重新生成失败，已保留历史解析', icon: 'none' })
+        } else {
+          this.setData({
+            aiRegenerating: false,
+            aiErrorText: 'AI 服务暂时不可用，请稍后重试',
+          })
         }
         return
       }
@@ -355,8 +373,14 @@ Page({
     } catch (e) {
       console.error('重新生成 AI 分析失败', e)
       if (this._aiToken === token && this.data.wq && String(this.data.wq.id) === String(wqId)) {
-        this.setData({ aiRegenerating: false, aiErrorText: '重新生成失败，请稍后重试' })
-        wx.showToast({ title: '重新生成失败', icon: 'none' })
+        // 恢复旧内容
+        if (oldCards) {
+          this.setData({ aiCards: oldCards, aiResult: oldResult, aiRegenerating: false, aiErrorText: '重新生成失败，已保留历史解析' })
+          wx.showToast({ title: '重新生成失败，已保留历史解析', icon: 'none' })
+        } else {
+          this.setData({ aiRegenerating: false, aiErrorText: '重新生成失败，请稍后重试' })
+          wx.showToast({ title: '重新生成失败', icon: 'none' })
+        }
       }
     }
   },
@@ -458,7 +482,9 @@ Page({
 
   async _navigateTo(idx, animMs) {
     const wqId = this.data.questionIds[idx]
+    if (!wqId) return
     this._aiToken = ''
+    // 设置切换 loading overlay，不卸载 quiz-runner
     this.setData({ switching: true })
     try {
       const wq = await api.get(`/wrong-questions/${wqId}`)
@@ -480,7 +506,7 @@ Page({
         wrongQuestions.push({ _answered: true })
       }
 
-      var setData = {
+      var nextData = {
         wq,
         currentIdx: idx,
         currentWqId: wqId,
@@ -491,6 +517,7 @@ Page({
         errorTypeLabelText: raw.errorTypeLabelText,
         switching: false,
         aiLoading: false,
+        aiRegenerating: false,
         aiResult: null,
         aiCards: null,
         aiRequested: false,
@@ -503,23 +530,24 @@ Page({
       var cachedAi = wq && wq.ai_analysis && typeof wq.ai_analysis === 'object' && Object.keys(wq.ai_analysis).length > 0
       if (cachedAi) {
         var ca = wq.ai_analysis
-        setData.aiResult = {
+        nextData.aiResult = {
           mistake_diagnosis: ca.mistake_diagnosis || ca.error_analysis || '',
           knowledge_patch: ca.knowledge_patch || ca.knowledge_weakness || '',
           review_task: ca.review_task || ca.suggestion || '',
         }
-        setData.aiCards = _normalizeAiResult(setData.aiResult)
-        setData.aiRequested = true
-        setData.aiFromCache = true
-        setData.aiFallback = false
-        setData.aiErrorText = ''
+        nextData.aiCards = _normalizeAiResult(nextData.aiResult)
+        nextData.aiRequested = true
+        nextData.aiFromCache = true
+        nextData.aiFallback = false
+        nextData.aiErrorText = ''
       }
+      this.setData(nextData)
       this._checkRenderInvariant(raw._renderModel)
-      this.setData(setData)
     } catch (e) {
       console.error('切换题目失败', e)
       wx.showToast({ title: '加载失败', icon: 'none' })
-      this.setData({ switching: false })
+      // 切换失败时保持当前题不变，同时复位 AI 状态防止永久卡住
+      this.setData({ switching: false, aiRegenerating: false })
     }
   },
 })
