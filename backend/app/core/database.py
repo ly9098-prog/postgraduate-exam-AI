@@ -235,12 +235,27 @@ async def _ensure_sync_columns(conn):
 
 async def _ensure_pomodoro_table(conn):
     def repair(sync_conn):
-        inspector = inspect(sync_conn)
-        if "pomodoro_sessions" in set(inspector.get_table_names()):
-            return
         from app.models.pomodoro import PomodoroSession
 
-        PomodoroSession.__table__.create(sync_conn, checkfirst=True)
+        inspector = inspect(sync_conn)
+        if "pomodoro_sessions" not in set(inspector.get_table_names()):
+            PomodoroSession.__table__.create(sync_conn, checkfirst=True)
+            return
+
+        # Development-only: add missing columns for schema drift
+        import os
+        if os.environ.get("APP_ENV") == "production":
+            return
+
+        existing = {c["name"] for c in inspector.get_columns("pomodoro_sessions")}
+        migrations = {
+            "subject_id": "ALTER TABLE pomodoro_sessions ADD COLUMN subject_id INTEGER",
+            "paused_at": "ALTER TABLE pomodoro_sessions ADD COLUMN paused_at DATETIME",
+            "total_paused_sec": "ALTER TABLE pomodoro_sessions ADD COLUMN total_paused_sec INTEGER DEFAULT 0",
+        }
+        for col, ddl in migrations.items():
+            if col not in existing:
+                sync_conn.exec_driver_sql(ddl)
 
     await conn.run_sync(repair)
 
