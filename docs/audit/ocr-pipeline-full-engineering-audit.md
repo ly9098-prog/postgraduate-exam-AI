@@ -1,68 +1,8 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版）→ 2026-06-23（P9+Phase 2）→ 2026-06-23（PaddleOCR-VL 客户端修复 + ocr_mode=api 路由）→ **2026-06-23（4 层 SSOT 架构重构）**→ **2026-06-24（VL confidence gate + VL_REBUILD 图片支持 + 双源 OCR 策略）**→ **2026-06-24（代码结构重建阶段 + 审核池泄漏修复）**→ **2026-06-24（噪声治理 v2 + 案例三修复补完）**→ **2026-06-25（案例五 Phase 3 original_raw_text merge + AI repair incomplete_options 兜底）**→ **2026-06-26（Phase 5 发布工程化收口）**→ **2026-06-26（Phase 5 二次补丁：request_id 幂等 + merge_status 守卫 + dedup key 修正）**→ **2026-07-04（API Router 入口层重构：Service 抽离 + 入口收敛 + Router 聚合）**
+> 审计时间：2026-06-20（初版）→ 2026-07-08（末次更新：乱码代码持久检测 + code_structure 防假成功 + 答案透传修复）
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
-
-**2026-06-23（本期新增）：**
-- **PaddleOCR-VL 客户端 3 个 bug 修复**：轮询状态字段 `status`→`state`（官方 API 使用 `state`），失败消息 `errorMsg` 字段，JSONL 解析 `result.layoutParsingResults[].markdown.text`（原错解析顶层 `text`）
-- **`ocr_mode=api` 路由**：batch-image 导入新增 API 模式，跳过本地 PaddleOCR，直接调用 PaddleOCR-VL，pipeline 跳过纠错阶段
-- **轮询优化**：间隔 1.5s→5s + 首次轮询前延迟 5s，减少无用 DB 写入
-- **认证头修正**：`bearer`→`Bearer`
-
-**2026-06-23（后续-本期新增）：**
-- **4 层 SSOT 架构重构**：新建 `question_type_classifier.py` 作为 Layer 1 严格 has_options 门控，`normalize_question()` 集成分类器，新增 `classify_questions` 管道阶段做 enforcement 门控
-- **Layer 0（Input Clean）**：`question_normalizer.py` 仅做字符级清洗，不重排 A/B/C/D，不填充缺失选项
-- **Layer 3（Option Engine）**：条件执行，仅当 `has_options=True` 时标准化选项
-- **Layer 4（AI Repair 不可变）**：`ai_repair.py` 扩展选项不可变约束至全部题型（3 规则：已存在+修改→拒绝，已存在+删除→拒绝，空+非冻结→允许恢复）
-- **冻结选项 SSOT**：AI 修复后始终从 `frozen_option_registry` 恢复冻结选项
-- **代码审查修复**：收紧 `_CHOICE_KEYWORDS`（移除 `"下列"`、`"以下"` 单字），修复 `in "ABCD"` 子串匹配，移除 `normalize_option_order` 死代码
-
-**2026-06-24（本次新增）：**
-- **Fix A — VL confidence gate override**：PaddleOCR-VL 返回 `confidence=0.0`（API 不提供置信度）时不再被 gate 丢弃，VL 结果进入 AI safety gate 正常评估
-- **Fix B — VL_REBUILD 图片支持**：移除 `source_type == "pdf"` 限制，`_run_vl_rebuild_blocks()` 支持图片文件（直接读 bytes，跳过 PyMuPDF）
-- **双源 OCR 策略**：VL_REBUILD 中 PP-OCRv6 = 结构主源，PaddleOCR-VL = 语义回退。PP-OCRv6 检测到选项时直接使用（跳过 VL API 调用），VL 输出通过 `repair_option_structure()` 修复选项结构
-- **repair_option_structure()**：6 步修复管线 — HTML 清理、LaTeX 修复、裸选项恢复（无前缀行自动标记 A/B/C/D）、种子文本匹配
-- **全链路 TRACE 日志**：raw_input → text_detection → classifier_result → options_branch → final_options
-- **force_options_probe()**：debug 诊断函数，暴力扫描全部 7 种 option pattern 并报告
-
-**2026-06-24（后续-本期新增）：**
-- **代码结构重建阶段（code_structure_reconstruct）**：新增独立 pipeline 阶段，位于 `normalize_schema` → `classify_questions` 之间
-  - 仅处理含 `code_brace_unbalanced` / `code_block_incomplete` / `code_fence_unclosed` 标记的题目
-  - 专用 LLM prompt 允许修复 `{}` 闭合、`= =`→`==`、`- >`→`->`、缩进和断行（AI repair prompt 规则 10 禁止修改 `{}`）
-  - AI safety gate 验证修复结果，仅接受高置信度变更
-  - 修复 BUGS 案例三（while 循环缺 `}`）和案例四（for 循环断裂 `}`）
-- **审核池泄漏修复**：pipeline 前序阶段失败时（如 code_structure_reconstruct 异常），自动跳过 `review` 阶段，防止部分数据写入 `question_imports`
-
-**2026-06-26（Phase 5 发布工程化收口 — 本期新增）：**
-- **Pipeline store 生命周期修复**：`_set_pipeline_store` 不再主动 evict 终态条目（completed/failed），SSE 轮询可继续读取结果；新增 `_evict_pipeline_store` 供显式清理场景使用；内存由 `_prune_store` LRU 上限控制
-- **Pipeline artifact 断点恢复**：`pipeline_artifacts.py` 新增 `check_artifact_compatibility()` 版本兼容性检查 + `stages_before()` 规范阶段排序；`_restore_from_artifacts` 基于规范排序自动跳过已完成阶段
-- **OCR fix 安全门禁增强**：`interfaces.py` 新增 `CandidateDecision` 枚举（ACCEPT/REJECT_CONTINUE/REJECT_STOP）和 `CandidateEvaluation` dataclass；`OCRFixResult` 新增 `risk_flags` + `safety` 字段
-- **`ocr_mode.py` 新建**：集中式 OCR 模式解析（`local`/`api`）+ 依赖校验，替代路由中分散的逻辑
-- **`pipeline_enums.py` 新建**：BatchJobStatus/BatchItemStatus/TraceEventStatus/TraceStep 枚举 + 状态转换守卫 + trace mapping，消除各模块间状态值漂移
-- **`time_utils.py` 新建**：统一 UTC 时间工具（`utcnow()` naive/`utcnow_aware()` aware），替代全局 `datetime.utcnow()` 散乱调用
-- **`batch_image_import_service.py` 重构**：state machine 强化 + trace events + idempotency + ocr_mode 路由整合（~1050→1305 行）
-- **`ocr_fix/router.py` 增强**（158→361 行）：路由逻辑扩展，候选结果评估与安全门禁集成
-
-**2026-06-26（Phase 5 二次补丁 — request_id 幂等 + merge_status 守卫 + dedup key 修正）：**
-- **request_id 并发幂等**（Task 2）：`ImportBatchJob` 新增 `request_id` 列 + 唯一索引；`create_batch_job` IntegrityError 捕获 → rollback → 查询已有 job → 返回 duplicate 存根；`_find_job_by_request_id` 优先查 `ImportBatchJob.request_id`（唯一索引），回退查 `ImportBatchJobItem.request_id`（遗留兼容）
-- **merge_status running 守卫**（Task 1）：`_merge_image_texts` 入口检测 `merge_status == "running"`，并发 merge 请求直接返回 `reason="merge already running"`，不重复执行
-- **同批去重 key 修正**（Task 3）：`review_service.py` 同批 duplicates 跟踪从 `question_hash` → `(subject, question_hash)` 元组，防止跨科目假阳 dup；新增 `DuplicateKey` 类型别名和 `_dup_key()` 工厂函数
-- **Trace event 文档修正**（Task 4）：`_append_trace_event` docstring 明确 item-level trace 不需要 FOR UPDATE 锁，增量读取使用 `id`（auto-increment PK），`seq` 为向后兼容字段
-
-**2026-07-04（API Router 入口层重构：Service 抽离 + 入口收敛 + Router 聚合）：**
-- **Import Pipeline Service 抽离**：新建 `services/import_pipeline_service.py`，将 `imports.py` 中的 `start_import_pipeline_from_upload`、`get_import_pipeline_status`、`_run_image_pipeline_with_db`、`_run_pipeline_with_db` 及所有图片 pipeline 辅助函数迁移至 service 层，消除 API Router 间的业务函数交叉 import
-- **废弃导入/审核入口下线**：`/api/v1/import/upload`、`/api/v1/import/image/upload`、`/api/v1/import/submit-review`、`/api/v1/import/review-queue` 及全部 App 侧审核/AI 补全接口统一返回 410 Gone，`include_in_schema=False`，不再出现在 OpenAPI 中
-- **Admin 前缀统一**：`/api/v1/admin/watermark-rules` → `/api/admin/v1/watermark-rules`，旧路径保留为 410 过渡
-- **Router 聚合**：新建 `app/api/router.py`、`app/api/v1/router.py`、`app/api/admin/router.py`，`main.py` 从 37 个独立 `include_router` 降为 1 个 `include_router(api_router)`
-- **新增 12 项路由完整性测试**：唯一性、OpenAPI 清理、Admin 前缀统一、410 响应、跨模块 import 检测
-
-**2026-06-24（第二次更新-本期新增）：**
-- **噪声治理 v2**：新增 `NoiseMetrics` 数据类 + `NoiseMetricsCollector` 逐题指标收集 + 批量聚合 `NoiseMetricsSummary`。`clean_code_language_noise()` 通过 `_collector` 参数集成指标采集。下游新增 `noise_drift_detector.py`（KL 散度 drift 检测 + 拉普拉斯平滑，阈值 0.15）和 `noise_rule_governor.py`（基于 FP-rate 的 `safe_mode` 自适应切换，带迟滞）。stage 输出新增 `noise_metrics_summary` / `noise_drift` / `noise_governor` 三个观测字段。新增 49 个单元测试覆盖所有模块。清理死代码：移除 `confidence_threshold` 字段（实际控制由 `safe_mode` boolean 承担）、统一 key 命名 `fix_actions`→`code_language_noise_fix_actions`。
-- **案例三修复补完（`ad33620`）**：案例三经双源 OCR 策略 + 代码结构重建修复后，仍有三个残留问题：
-  1. **Transition 模式扩展**：`code_language_noise_layer._TRANSITION_PATTERNS` 新增 `r"在\w+中执行[：：]"` 模式，使"在单链表中执行:"能触发过渡区检测，将 `(>C` 噪声纳入清洗范围
-  2. **题干选项重剥离**：`question_normalizer.py` 新增 stem re-strip 守卫 —— 当 splitter 返回空 `option_lines`（VL_REBUILD 路径）但 `normalize_schema` 独立检测到 ≥2 个选项时，回调 `_extract_stem` 从题干剥离选项文本
-  3. **VL_REBUILD 冻结注册表清理**：`pipeline_orchestrator.py` 在 VL_REBUILD 替换 blocks 后将 `frozen_option_registry = None`，防止冻结门控阻止基于正则的选项提取
 
 ---
 
@@ -187,7 +127,7 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                   标准化层 (Normalize)                                │
 │  answer_matcher.py → 题号精确匹配 + 序列回退                         │
-│  question_normalizer.py (1165行) → Layer 0/1/3: 题干清洗 + 分类器门控 + 选项标准化  │
+│  question_normalizer.py (1454行) → Layer 0/1/3: 题干清洗 + 分类器门控 + 选项标准化 + 题号防御转换  │
 │  batch_validation.py → 跨题结构完整性验证 (保序/连续性/全局检查)     │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │
@@ -257,13 +197,13 @@
 | `ocr_vl/paddleocr_vl_adapter.py` | 112 | OCRFixerProtocol 适配器 | ✅ 清晰 | 🟢 低 |
 | `ai_safety.py` | 284 | AI 编辑安全门禁 | ✅ 优秀 | 🟢 低 |
 | `question_splitter.py` | 1437 | 题号+选项提取 | ✅ 良好 | 🟢 低 |
-| `question_normalizer.py` | 1273 | Layer 0/1/3 集成：题干清洗 + 分类器门控 + 选项标准化 + OCR 质量门控 | ✅ 单一（职责合理增长） | 🟢 低 |
+| `question_normalizer.py` | 1454 | Layer 0/1/3 集成：题干清洗 + 分类器门控 + 选项标准化 + OCR 质量门控 + 题号防御转换 | ✅ 单一（职责合理增长） | 🟢 低 |
 | `ai_repair.py` | 1164 | AI 修复 + Layer 4 选项不可变门控（含 code integrity gate） | ✅ 较好 | 🟢 低 |
-| `code_integrity.py` | 520 | 代码块完整性检测 | ✅ 单一 | 🟢 低 |
+| `code_integrity.py` | 938 | 代码块完整性检测 + 乱码代码块识别 + 代码区域隔离 | ✅ 单一 | 🟢 低 |
 | `question_type_classifier.py` | 454 | Layer 1 严格 has_options 门控 + force_options_probe() | ✅ 单一 | 🟢 低 |
 | `batch_image_import_service.py` | ~1391 | 批量图片导入编排器（state machine + trace events + idempotency + request_id 幂等 + merge_status 守卫 + ocr_mode 路由 + 断点恢复） | 🟡 职责增长中 | 🟢 低 |
 | `pipeline_artifacts.py` | 559 | Pipeline artifact 持久化、兼容性检查、断点恢复 | ✅ 单一 | 🟢 低 |
-| `ocr_fix/router.py` | 361 | OCR 纠错降级链路由 + 候选结果评估安全门禁 | ✅ 良好 | 🟢 低 |
+| `ocr_fix/router.py` | 428 | OCR 纠错降级链路由 + 候选结果评估安全门禁 + 乱码代码持久检测 | ✅ 良好 | 🟢 低 |
 | `ocr_mode.py` | 89 | OCR 模式解析（local/api）+ 依赖校验 | ✅ 单一 | 🟢 低 |
 | `pipeline_enums.py` | 139 | Pipeline 状态枚举 + 状态转换守卫 + trace mapping（SSOT） | ✅ 单一 | 🟢 低 |
 | `time_utils.py` | 24 | 统一 UTC 时间工具 | ✅ 单一 | 🟢 低 |
@@ -282,6 +222,9 @@
 - **4 层 SSOT 架构（本期）**: 新建 `question_type_classifier.py` Layer 1 门控，`question_normalizer.py` 集成 Layer 0/1/3，`ai_repair.py` Layer 4 选项不可变扩展至全部题型，`pipeline_orchestrator.py` 新增 `classify_questions` enforcement 阶段
 - **死代码清理（本期）**: 移除 `normalize_option_order`（Layer 0 禁止重排），收紧 `_CHOICE_KEYWORDS`（移除 `"下列"`、`"以下"` 单字防误判）
 - **API Router 入口层重构（2026-07-04）**：`services/import_pipeline_service.py` 新建，导入公共逻辑从 `app.api.v1.imports` 抽离至 service 层；`app/api/router.py` / `app/api/v1/router.py` / `app/api/admin/router.py` 三层聚合，`main.py` include 从 37 降为 1；`admin_imports.py` 不再 import `app.api.v1.imports`，消除 API Router 间业务函数交叉引用；旧导入/审核/AI 补全接口（共 12 个）统一下线为 410 Gone；Admin 前缀统一 `/api/v1/admin/watermark-rules` → `/api/admin/v1/watermark-rules`
+- **乱码代码持久检测（`ad0d237`）**：`ocr_fix/router.py` 和 `deepseek_adapter.py` 新增基于 `detect_code_block_integrity` 的乱码持久检查 —— 纯文本 LLM 无法可靠修复乱码代码，当修复前后 `code_garbled_text` flag 均存在且分数未显著改善（≥80%）时拒绝输出，退回原文
+- **code_structure_reconstruct 防假成功（`ad0d237`）**：`code_structure_stage.py` 修复 LLM 修复后盲目清除所有结构 flag 的问题 —— 新增 pre/post 完整性对比，仅移除已解决的 flag，持久 flag 重新追加；`code_fixed` 基于实际解决的 flag 数而非模型自我报告；confidence 仅在乱码被解决时提升；`code_garbled_text` 和 `code_line_break_suspicious` 加入 `_CODE_STRUCTURE_FLAGS`
+- **答案透传修复（`ad0d237`）**：`normalize_schema_stage.py` 和 `review_stage.py` 日志字段从 `parsed_answer` 修正为 `answer`；`question_normalizer.py` `normalize_questions()` 新增 `question_number` 和 `number` 的双向 int 防御转换，解决 string/int 类型不一致导致匹配失败的问题
 
 ---
 
@@ -417,65 +360,10 @@
 | **P2** | 同批去重 key `question_hash` 跨科目假阳（不同科目相同哈希误判为 dup） | ✅ Phase 5 补丁：去重 key 改为 `(subject, question_hash)` 元组 |
 | **P2** | API Router 入口点过多、相同导入逻辑多条路径并行、Admin 非标准前缀 | ✅ 2026-07-04：Service 抽离 + 12 个旧入口 410 + Router 聚合 + 前缀统一 |
 | **P3** | Trace event docstring 过时（声称 item-level 需要 FOR UPDATE 锁）| ✅ Phase 5 补丁：更新 docstring，明确 `id` 为增量读取依据 |
-
-### 6.2 改造路线图（压缩）
-
-```
-✅ 阶段一: P0 基础清理 + 回归基线 (b63df47)
-✅ 阶段一B: P1 公式截图 + 审核提效 (c82c464)
-✅ 阶段二B: P2 三项改造 (OCR 缓存/图片引用/跳过修复)
-✅ 阶段二: P5 超级类拆分 (pipeline_stages/ + 4 模块)
-✅ 阶段三: P6 验收+Profile+归因+精调+Dashboard+CI
-✅ 阶段四: P7 生产运维 (观测/告警/清理/导出/Preflight/文档)
-✅ 阶段五: P9 DAG + Batch-Image 并发 (ede71f9, dce5aa4)
-✅ Phase 2: 路由策略固化 + Evaluation (484d4e0)
-✅ 本轮: PaddleOCR-VL 客户端修复 + ocr_mode=api 路由
-✅ **本轮后续: 4 层 SSOT 架构重构（773e8ef）**
-  - Layer 1 question_type_classifier 严格 has_options 门控
-  - Layer 0/3 option engine 不重排、不填充
-  - Layer 4 AI repair 选项不可变（3 规则）
-  - 代码审查修复（关键词收紧、死代码清理、子串匹配修复）
-✅ **2026-06-24: BUGS 全 case 修复（0fed945 + be03159 + 62f4870 + e91a020）**
-  - Fix A: VL confidence gate override（conﬁdence=0.0 不再丢弃结果）
-  - Fix B: VL_REBUILD 取消 PDF 限制 + 图片文件支持
-  - 双源 OCR 策略：PP-OCRv6 = 结构主源，VL = 语义回退
-  - repair_option_structure()：VL 输出结构修复（LaTeX/列表/缺前缀）
-  - force_options_probe()：debug 诊断函数
-  - 全链路 TRACE 日志（6 阶段）
-  - 代码结构重建阶段：修复 BUGS 案例三/四的 brace 不闭合 / 语句断裂问题
-  - 审核池泄漏修复：前序阶段失败时跳过 review 阶段
-  - **噪声治理 v2：NoiseMetrics + KL drift 检测 + 自适应 safe_mode 切换 (cb33729)**
-  - **案例三修复补完：transition 模式扩展 / 题干重剥离 / VL_REBUILD 冻结清理 (ad33620)**
-  - **案例五修复补完：Phase 3 original_raw_text merge + noise layer hallucination 清洗 + AI repair incomplete_options 兜底**
-✅ **2026-06-26: Phase 5 发布工程化收口 (f55748c)**
-  - Pipeline store 生命周期：移除终态 auto-eviction，LRU prune 控制内存，SSE 轮询可读终态
-  - Pipeline artifact 断点恢复：兼容性检查 + 规范阶段排序
-  - OCR fix 安全门禁增强：CandidateDecision/CandidateEvaluation + risk_flags
-  - 新模块：ocr_mode.py（模式解析）、pipeline_enums.py（枚举 SSOT）、time_utils.py（UTC 时间）
-  - batch_image_import_service.py 重构（state machine + trace events + idempotency）
-  - datetime.utcnow() 全面消除（18 个生产文件）
-  - Migration SQLite 兼容 + 故障注入测试（6 cases）
-✅ **2026-06-26: Phase 5 二次补丁 — request_id 幂等 + merge_status 守卫 + dedup key (26b8d5b)**
-  - ImportBatchJob.request_id 唯一索引 + IntegrityError 并发幂等
-  - _merge_image_texts merge_status running 守卫
-  - review_service 同批去重 key 改为 (subject, question_hash)
-✅ **2026-07-04: API Router 入口层重构 — Service 抽离 + 入口收敛 + Router 聚合**
-  - `services/import_pipeline_service.py` 新建，导入 pipeline 公共逻辑（`start_import_pipeline`、`get_pipeline_status`、后台任务）从 `app.api.v1.imports` 抽离至 service 层
-  - `app/api/router.py` / `app/api/v1/router.py` / `app/api/admin/router.py` 三层聚合，`main.py` include 从 37 降为 1
-  - `admin_imports.py` 不再 import `app.api.v1.imports`，消除 API Router 间业务函数交叉引用
-  - 12 个废弃接口统一下线为 410 Gone（旧导入/旧审核/旧 AI 补全），`include_in_schema=False`，OpenAPI 已清理
-  - Admin 前缀统一：`/api/v1/admin/watermark-rules` → `/api/admin/v1/watermark-rules`
-  - 12 项路由完整性测试（唯一性/OpenAPI/前缀/410 响应/跨模块 import），全部通过
-  - Trace event docstring 修正（id 为增量读取依据）
-
-⏳ 待处理:
-  - AI 补全并行化 (0.5d)
-  - complete→enrich 版本回退 (1-2d)
-  - 断点恢复最小子集 (2-3d)
-  - 代码语义等价性检查 (1-2d)
-  - 合并 token budget (0.5d)
-  - raw_data 字段瘦身 (0.5d)
-```
+| **P0** | OCR fix 适配器输出乱码代码未经验证直接接受 | ✅ `ad0d237`：`router.py` + `deepseek_adapter.py` 新增基于 `detect_code_block_integrity` 的规则检测，乱码未显著改善时拒绝 |
+| **P0** | `code_structure_reconstruct` 标记 `code_fixed=True` 即使乱码未解决 | ✅ `ad0d237`：pre/post integrity flag 对比，仅移除已解决 flag，confidence 仅乱码解决后提升 |
+| **P1** | 审核日志字段名 `parsed_answer` 与实际字段 `answer` 不匹配 | ✅ `ad0d237`：`normalize_schema_stage.py` + `review_stage.py` 日志字段修正 |
+| **P1** | `normalize_questions` 中 `question_number` 类型不一致（str/int）导致匹配失败 | ✅ `ad0d237`：双向 int 防御转换 |
 
 ### 6.3 推荐新 Pipeline 结构
 
@@ -525,10 +413,10 @@
 | `features/text_normalizer.py` | 1400 | 统一 OCR 文本规范化（13 步） |
 | `features/question_splitter.py` | 1437 | 题号+选项提取 |
 | `features/ai_repair.py` | 1164 | AI 修复（Layer 4 选项不可变门控） |
-| `features/code_integrity.py` | 520 | 代码块完整性检测 |
+| `features/code_integrity.py` | 938 | 代码块完整性检测 + 乱码代码块识别 + 代码区域隔离 |
 | `features/question_type_classifier.py` | 454 | Layer 1 题型分类门控 + force_options_probe() |
 | `features/pipeline_stages/structure_freeze_stage.py` | 230 | 选项结构冻结（纯正则，split 前锁定选项） |
-| `features/pipeline_stages/code_structure_stage.py` | 319 | 代码结构重建（LLM 修复 brace/indent/OCR 符号错误） |
+| `features/pipeline_stages/code_structure_stage.py` | 366 | 代码结构重建（LLM 修复 brace/indent/OCR 符号错误）+ pre/post integrity 防假成功 |
 | `features/ocr_mode.py` | 89 | OCR 模式解析（local/api）+ 依赖校验 |
 | `models/pipeline_enums.py` | 139 | Pipeline 状态枚举 + 状态转换守卫 + trace mapping（SSOT） |
 | `core/time_utils.py` | 24 | 统一 UTC 时间工具 |
@@ -539,10 +427,10 @@
 |---|---|---|
 | `ocr_vl/paddleocr_vl_client.py` | ~430 | PaddleOCR-VL async HTTP 客户端 |
 | `ocr_vl/paddleocr_vl_adapter.py` | 112 | OCRFixerProtocol 适配器 |
-| `ocr_fix/router.py` | 361 | 降级链策略路由（唯一入口）+ 候选结果评估安全门禁 |
+| `ocr_fix/router.py` | 428 | 降级链策略路由（唯一入口）+ 候选结果评估安全门禁 + 乱码代码持久检测 |
 | `ocr_fix/interfaces.py` | 68 | OCRFixResult + CandidateDecision + CandidateEvaluation 接口定义 |
 | `ocr_correction_common.py` | 254 | OCR 纠错通用逻辑 + repair_option_structure() |
-| `ocr_fix/deepseek_adapter.py` | 126 | DeepSeek 纯文本纠错 |
+| `ocr_fix/deepseek_adapter.py` | 177 | DeepSeek 纯文本纠错 + 乱码持久检查 + 题干丢失保护 |
 | `ai_safety.py` | 284 | AI 编辑安全门禁 |
 
 ### Evaluation（Phase 2 新增）
@@ -563,6 +451,7 @@
 | `tests/ocr_acceptance/run_acceptance.py` | ✅ 验收测试 runner |
 | `tests/ocr_acceptance/cases/` | ✅ 10 类样本模板 |
 | `tests/test_evaluation/test_routing_metrics.py` | Phase 2 路由指标测试 |
+| `tests/test_ocr_code_question_repair.py` | 460 行，22 个测试：答案透传（4）、乱码拒绝（7）、防假成功（3）、VL+frozen 合并（4）、回归断言（4） |
 
 ### 文档
 
@@ -575,4 +464,4 @@
 
 ---
 
-*报告结束。初版：2026-06-20，末次更新：2026-06-26（Phase 5 发布工程化收口：pipeline store 生命周期 + artifact 断点恢复 + OCR fix 安全门禁增强 + ocr_mode/pipeline_enums/time_utils 新模块 + datetime 时区统一 + 故障注入验证；Phase 5 二次补丁：request_id 并发幂等 + merge_status 守卫 + dedup key 科目感知修正 + trace event 文档校正）。*
+*报告结束。初版：2026-06-20，末次更新：2026-07-04。*
