@@ -959,6 +959,7 @@ Page({
       hasWrong: hasWrong,
       hasSkipped: hasSkipped,
       isPerfect: isPerfect,
+      _frCompletionBarStyle: completionRate + '%',
     }
   },
 
