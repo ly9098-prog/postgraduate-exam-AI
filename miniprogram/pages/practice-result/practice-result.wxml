@@ -100,19 +100,55 @@
           <view class="detail-status-pill {{item._cls}}">{{item._statusText}}</view>
         </view>
         <view class="detail-row-body">
-          <view class="detail-stem-wrap">
-            <text class="detail-stem" wx:if="{{item._stemPreview}}">{{item._stemPreview}}</text>
+          <view class="detail-stem-wrap" wx:if="{{item._stemRich && item._stemRich.raw}}">
+            <mp-html
+              wx:if="{{item._stemRich.needsRich}}"
+              content="{{item._stemRich.html}}"
+              class="detail-rich-text detail-stem-rich"
+              lazy-load
+            />
+            <text wx:else class="detail-stem">{{item._stemRich.text}}</text>
           </view>
           <view wx:if="{{item._isSkipped}}" class="detail-skipped-line">未作答，已跳过</view>
           <view wx:elif="{{item._isWrong}}" class="detail-answer-block wrong">
-            <text class="detail-answer-label">我的答案</text>
-            <text class="detail-answer-value user">{{item._userAnswerText}}</text>
-            <text class="detail-answer-label correct">正确答案</text>
-            <text class="detail-answer-value right">{{item._correctAnswerText}}</text>
+            <view class="detail-answer-section">
+              <text class="detail-answer-label">我的答案</text>
+              <view class="detail-answer-box user">
+                <mp-html
+                  wx:if="{{item._userAnswerRich.needsRich}}"
+                  content="{{item._userAnswerRich.html}}"
+                  class="detail-rich-text"
+                  lazy-load
+                />
+                <text wx:else class="detail-answer-value user">{{item._userAnswerText}}</text>
+              </view>
+            </view>
+            <view class="detail-answer-section">
+              <text class="detail-answer-label correct">正确答案</text>
+              <view class="detail-answer-box right">
+                <mp-html
+                  wx:if="{{item._correctAnswerRich.needsRich}}"
+                  content="{{item._correctAnswerRich.html}}"
+                  class="detail-rich-text"
+                  lazy-load
+                />
+                <text wx:else class="detail-answer-value right">{{item._correctAnswerText}}</text>
+              </view>
+            </view>
           </view>
           <view wx:else class="detail-answer-block correct">
-            <text class="detail-answer-label correct">答案</text>
-            <text class="detail-answer-value right">{{item._correctAnswerText}}</text>
+            <view class="detail-answer-section">
+              <text class="detail-answer-label correct">答案</text>
+              <view class="detail-answer-box right">
+                <mp-html
+                  wx:if="{{item._correctAnswerRich.needsRich}}"
+                  content="{{item._correctAnswerRich.html}}"
+                  class="detail-rich-text"
+                  lazy-load
+                />
+                <text wx:else class="detail-answer-value right">{{item._correctAnswerText}}</text>
+              </view>
+            </view>
           </view>
         </view>
       </view>

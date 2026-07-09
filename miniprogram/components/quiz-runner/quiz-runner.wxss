@@ -744,3 +744,56 @@
     transform: none !important;
   }
 }
+
+/* ==================== compact review mode (wrong-detail) ==================== */
+
+.quiz-runner.runner-compact {
+  min-height: auto;
+  height: auto;
+  overflow: visible;
+  background: transparent;
+  display: block;
+}
+
+.runner-compact .runner-question-area {
+  flex: none;
+  overflow: visible;
+  padding: 18rpx 24rpx 0;
+}
+
+.runner-compact .runner-q-wrap {
+  padding: 28rpx;
+  border-radius: 28rpx;
+  box-shadow: 0 10rpx 28rpx rgba(43, 60, 80, 0.07);
+}
+
+.runner-compact .runner-q-card-head {
+  margin-bottom: 20rpx;
+}
+
+.runner-compact .runner-q-content {
+  margin-bottom: 24rpx;
+  font-size: 31rpx;
+  line-height: 1.75;
+}
+
+.runner-compact .runner-options {
+  gap: 14rpx;
+}
+
+.runner-compact .runner-option-item {
+  padding: 20rpx 18rpx;
+  border-radius: 20rpx;
+}
+
+.runner-compact .runner-bottom-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  margin-top: 18rpx;
+  padding-top: 12rpx;
+  background: rgba(255,255,255,0.96);
+  backdrop-filter: blur(14rpx);
+  -webkit-backdrop-filter: blur(14rpx);
+  box-shadow: 0 -4rpx 12rpx rgba(43, 60, 80, 0.04);
+}

@@ -166,6 +166,7 @@ Page({
   _pageVisible: false,
   _debugTapCount: 0,
   _debugTapTimer: null,
+  _confirmTimerSnapshot: null,
 
   /* ==================== Lifecycle ==================== */
 
@@ -576,14 +577,38 @@ Page({
     })
   },
 
-  _showCountdownInterruptConfirm() {
-    this._clearTimer()
-    this._confirmOpenedAt = Date.now()
-    const totalSec = this.data.selectedPreset === 'debug'
+  _getCurrentTotalSec() {
+    if (this.data.phase === 'break') {
+      return this.data.selectedPreset === 'debug'
+        ? 5
+        : Math.max(1, this.data.breakDuration * 60)
+    }
+    return this.data.selectedPreset === 'debug'
       ? 10
       : Math.max(1, this.data.workDuration * 60)
-    const elapsedSec = Math.max(0, totalSec - (this.data.remainingSec || 0))
+  },
+
+  _showCountdownInterruptConfirm() {
+    if (this.data.actionLoading) return
+
+    const openedAt = Date.now()
+    const totalSec = this._getCurrentTotalSec()
+    const remainingSec = Math.max(0, this.data.remainingSec || 0)
+    const elapsedSec = Math.max(0, totalSec - remainingSec)
     const fmt = formatElapsedSec(elapsedSec)
+
+    this._clearTimer()
+
+    this._confirmTimerSnapshot = {
+      mode: 'countdown-interrupt',
+      openedAt,
+      wasPaused: !!this.data.isPaused,
+      remainingSec,
+      progress: this.data.progress,
+      totalPausedMs: this.data.totalPausedMs || 0,
+      phase: this.data.phase,
+    }
+
     this.setData({
       showEndConfirm: true,
       endConfirmMode: 'countdown-interrupt',
@@ -597,28 +622,53 @@ Page({
   },
 
   cancelEndConfirm() {
-    const mode = this.data.endConfirmMode
-    this.setData({ showEndConfirm: false })
+    if (this.data.actionLoading) return
 
-    if (mode === 'free-complete') {
-      if (!this.data.isPaused) this._startFreeTimerInterval()
+    const mode = this.data.endConfirmMode
+    const snapshot = this._confirmTimerSnapshot
+    const now = Date.now()
+
+    if (mode === 'countdown-interrupt' && snapshot) {
+      const pauseDelta = Math.max(0, now - snapshot.openedAt)
+      const nextTotalPausedMs = Math.max(0, snapshot.totalPausedMs + pauseDelta)
+
+      this.setData({
+        showEndConfirm: false,
+        endConfirmMode: '',
+        endConfirmTitle: '',
+        endConfirmText: '',
+        totalPausedMs: nextTotalPausedMs,
+        remainingSec: snapshot.remainingSec,
+        progress: snapshot.progress,
+      })
+
+      if (!snapshot.wasPaused && snapshot.phase === 'running') {
+        this._startTimer(this._getCurrentTotalSec())
+      }
+
+      this._confirmTimerSnapshot = null
+      return
     }
 
-    if (mode === 'countdown-interrupt') {
-      if (!this.data.isPaused && this.data.phase === 'running') {
-        const totalSec = this.data.selectedPreset === 'debug'
-          ? 10
-          : Math.max(1, this.data.workDuration * 60)
-        this._startTimer(totalSec)
-      }
+    if (mode === 'free-complete') {
+      this.setData({
+        showEndConfirm: false,
+        endConfirmMode: '',
+        endConfirmTitle: '',
+        endConfirmText: '',
+      })
+      if (!this.data.isPaused) this._startFreeTimerInterval()
+      this._confirmTimerSnapshot = null
+      return
     }
 
     this.setData({
+      showEndConfirm: false,
       endConfirmMode: '',
       endConfirmTitle: '',
       endConfirmText: '',
     })
-    this._confirmOpenedAt = null
+    this._confirmTimerSnapshot = null
   },
 
   async confirmEndTimer() {
@@ -659,13 +709,23 @@ Page({
   },
 
   async _confirmInterruptCountdown() {
-    if (!this.data.sessionId) return
-    this.setData({ actionLoading: true })
+    if (!this.data.sessionId || this.data.actionLoading) return
+
+    const snapshot = this._confirmTimerSnapshot
+    let totalPausedMs = this.data.totalPausedMs || 0
+
+    if (snapshot && snapshot.openedAt) {
+      totalPausedMs = Math.max(0, snapshot.totalPausedMs + (Date.now() - snapshot.openedAt))
+    }
+
+    this.setData({ actionLoading: true, totalPausedMs })
+
     try {
       await api.post(`/pomodoro/${this.data.sessionId}/interrupt`, {
-        total_paused_ms: this.data.totalPausedMs || 0,
+        total_paused_ms: totalPausedMs,
       })
       wx.showToast({ title: '已结束本次专注', icon: 'none' })
+      this._confirmTimerSnapshot = null
       this.setData({ showEndConfirm: false, actionLoading: false })
       this._resetToIdle()
       this.loadTodayStats()
@@ -794,33 +854,69 @@ Page({
     }
   },
 
+  _formatCountdownDisplay(sec) {
+    const safe = Math.max(0, Number(sec) || 0)
+    const m = Math.floor(safe / 60)
+    const s = safe % 60
+    return {
+      min: String(m).padStart(2, '0'),
+      sec: String(s).padStart(2, '0'),
+    }
+  },
+
   _startTimer(totalSec) {
     this._clearTimer()
     this._initCanvas()
+
+    const totalMs = Math.max(1, totalSec * 1000)
+
     const tick = () => {
+      if (this.data.isPaused || this.data.showEndConfirm) return
+
       const now = Date.now()
-      const elapsed = Math.floor((now - this.data.sessionStartTime - (this.data.totalPausedMs || 0)) / 1000)
-      const remaining = Math.max(0, totalSec - elapsed)
-      const m = Math.floor(remaining / 60)
-      const s = remaining % 60
-      this.setData({
-        remainingSec: remaining,
-        displayMin: String(m).padStart(2, '0'),
-        displaySec: String(s).padStart(2, '0'),
-        progress: totalSec > 0 ? remaining / totalSec : 0,
-      })
-      this.drawRing(totalSec, this.data.phase === PHASE.BREAK)
-      if (remaining <= 0) {
+      const elapsedMs = Math.max(
+        0,
+        now - (this.data.sessionStartTime || now) - (this.data.totalPausedMs || 0)
+      )
+
+      const remainingMs = Math.max(0, totalMs - elapsedMs)
+
+      // 用 ceil 保证 20:00 后约 1 秒才变 19:59，避免一开始立刻少一秒
+      const displayRemainingSec = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 1000)
+      const progress = totalMs > 0 ? remainingMs / totalMs : 0
+      const fmt = this._formatCountdownDisplay(displayRemainingSec)
+
+      if (
+        displayRemainingSec !== this.data.remainingSec ||
+        Math.abs(progress - this.data.progress) > 0.002
+      ) {
+        this.setData({
+          remainingSec: displayRemainingSec,
+          displayMin: fmt.min,
+          displaySec: fmt.sec,
+          progress,
+        })
+      }
+
+      this.drawRing(totalSec, this.data.phase === 'break')
+
+      if (remainingMs <= 0) {
         this._clearTimer()
         this._onWorkComplete()
+        return
       }
+
+      // 对齐下一次刷新，避免 setInterval 漂移
+      const nextDelay = Math.max(80, Math.min(250, remainingMs % 1000 || 250))
+      this._timer = setTimeout(tick, nextDelay)
     }
+
     tick()
-    this._timer = setInterval(tick, 500)
   },
 
   _clearTimer() {
     if (this._timer) {
+      clearTimeout(this._timer)
       clearInterval(this._timer)
       this._timer = null
     }
@@ -867,6 +963,7 @@ Page({
 
   _startBreak(totalSec) {
     const breakStartTime = Date.now()
+    const totalMs = Math.max(1, totalSec * 1000)
     wx.setStorageSync('pomodoro_break', { startTime: breakStartTime, totalSec })
     this.setData({
       phase: PHASE.BREAK,
@@ -877,28 +974,41 @@ Page({
       displaySec: String(totalSec % 60).padStart(2, '0'),
     })
     this._clearTimer()
+    this._initCanvas()
+    setTimeout(() => this.drawRing(totalSec, true), 100)
+
     const tick = () => {
-      const elapsed = Math.floor((Date.now() - breakStartTime) / 1000)
-      const remaining = Math.max(0, totalSec - elapsed)
-      const m = Math.floor(remaining / 60)
-      const s = remaining % 60
-      this.setData({
-        remainingSec: remaining,
-        displayMin: String(m).padStart(2, '0'),
-        displaySec: String(s).padStart(2, '0'),
-        progress: totalSec > 0 ? remaining / totalSec : 0,
-      })
+      const now = Date.now()
+      const elapsedMs = Math.max(0, now - breakStartTime)
+      const remainingMs = Math.max(0, totalMs - elapsedMs)
+      const displayRemainingSec = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 1000)
+      const progress = totalMs > 0 ? remainingMs / totalMs : 0
+      const fmt = this._formatCountdownDisplay(displayRemainingSec)
+
+      if (
+        displayRemainingSec !== this.data.remainingSec ||
+        Math.abs(progress - this.data.progress) > 0.002
+      ) {
+        this.setData({
+          remainingSec: displayRemainingSec,
+          displayMin: fmt.min,
+          displaySec: fmt.sec,
+          progress,
+        })
+      }
       this.drawRing(totalSec, true)
-      if (remaining <= 0) {
+
+      if (remainingMs <= 0) {
         this._clearTimer()
         wx.removeStorageSync('pomodoro_break')
         this._resetToIdle()
+        return
       }
+
+      const nextDelay = Math.max(80, Math.min(250, remainingMs % 1000 || 250))
+      this._timer = setTimeout(tick, nextDelay)
     }
     tick()
-    this._initCanvas()
-    setTimeout(() => this.drawRing(totalSec, true), 100)
-    this._timer = setInterval(tick, 1000)
   },
 
   skipBreak() {
@@ -1289,6 +1399,7 @@ Page({
 
   _resetToIdle() {
     this._clearFreeTimerInterval()
+    this._confirmTimerSnapshot = null
     this._canvasReady = false
     this._ctx = null
     this._pendingDraw = null
