@@ -1,5 +1,7 @@
 import asyncio
 import json
+import logging
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -13,10 +15,85 @@ from app.models.ai_chat import AiChat
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
 
+logger = logging.getLogger(__name__)
+
 ERROR_ANALYSIS_TIMEOUT_SECONDS = 25
 
 # 同进程内生成中锁，防止并发重复调用大模型
 _generating: set[int] = set()
+
+
+def parse_error_analysis_content(raw: str) -> dict:
+    """
+    鲁棒解析 AI 返回内容，兼容：
+    1. 标准 JSON
+    2. ```json ... ``` 代码块
+    3. JSON 前后有解释文字
+    4. 字段名不完全一致
+    5. 非 JSON 但包含三段式中文文本
+    返回结构：{mistake_diagnosis, knowledge_patch, review_task}
+    """
+    text = (raw or '').strip()
+    if not text:
+        return {"mistake_diagnosis": "", "knowledge_patch": "", "review_task": ""}
+
+    # 去掉 markdown code fence
+    stripped = re.sub(r'^```(?:json)?\s*\n?', '', text)
+    stripped = re.sub(r'\n?```\s*$', '', stripped)
+
+    parsed = None
+    # 尝试直接 JSON 解析
+    try:
+        parsed = json.loads(stripped)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # 尝试提取第一个 {…}
+    if not parsed:
+        brace_start = stripped.find('{')
+        brace_end = stripped.rfind('}')
+        if brace_start >= 0 and brace_end > brace_start:
+            try:
+                parsed = json.loads(stripped[brace_start:brace_end + 1])
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+    if isinstance(parsed, dict):
+        return {
+            "mistake_diagnosis": (
+                parsed.get("mistake_diagnosis")
+                or parsed.get("error_analysis")
+                or parsed.get("diagnosis")
+                or parsed.get("错因诊断")
+                or ""
+            ),
+            "knowledge_patch": (
+                parsed.get("knowledge_patch")
+                or parsed.get("knowledge_weakness")
+                or parsed.get("knowledge")
+                or parsed.get("补漏重点")
+                or ""
+            ),
+            "review_task": (
+                parsed.get("review_task")
+                or parsed.get("suggestion")
+                or parsed.get("task")
+                or parsed.get("复练任务")
+                or ""
+            ),
+        }
+
+    # 非 JSON：尝试按中文标题切分
+    sections = re.split(r'(?:^|\n)(?:(?:错因诊断|补漏重点|复练任务)\s*[：:]\s*)', stripped)
+    return {
+        "mistake_diagnosis": sections[1].strip() if len(sections) > 1 else stripped,
+        "knowledge_patch": sections[2].strip() if len(sections) > 2 else "",
+        "review_task": sections[3].strip() if len(sections) > 3 else "",
+    }
+
+
+def is_valid_ai_analysis(content: dict) -> bool:
+    return any(str(content.get(k, "")).strip() for k in ["mistake_diagnosis", "knowledge_patch", "review_task"])
 
 
 def _normalize_ai_analysis(cached: dict) -> dict:
@@ -181,15 +258,35 @@ async def analyze_error(
                 resp["cache_preserved"] = True
             return resp
 
-        try:
-            parsed = json.loads(result["content"])
-        except (json.JSONDecodeError, KeyError):
-            # JSON 解析失败时保证核心字段完整
-            parsed = {
-                "mistake_diagnosis": result.get("content", "AI 分析返回格式异常，请稍后重试"),
-                "knowledge_patch": "",
-                "review_task": "",
+        raw_content = result.get("content", "")
+        parsed = parse_error_analysis_content(raw_content)
+        parsed_valid = is_valid_ai_analysis(parsed)
+
+        if not parsed_valid:
+            old_cache = build_cached_error_analysis_response(wq)
+            if old_cache and force_regenerate:
+                _generating.discard(wq_pk)
+                old_cache["force_regenerated"] = False
+                old_cache["cache_preserved"] = True
+                return old_cache
+            # 无有效内容且无旧缓存：返回 fallback，不保存
+            fallback = get_fallback_analysis()
+            resp = {
+                "content": fallback,
+                "from_cache": False,
+                "from_fallback": True,
+                "model": "parse_failed",
+                "tokens_used": 0,
+                "duration_ms": 0,
             }
+            if force_regenerate:
+                resp["force_regenerated"] = False
+                resp["cache_preserved"] = False
+            logger.info(
+                "ai.error_analysis.empty wq_id=%s force=%s model=parse_failed",
+                wq.id, force_regenerate,
+            )
+            return resp
 
         # 附加元信息
         parsed["_meta"] = {
@@ -200,7 +297,7 @@ async def analyze_error(
             "force_regenerated": force_regenerate,
         }
 
-        # 持久化到 wrong_questions.ai_analysis（非 fallback 才保存）
+        # 持久化到 wrong_questions.ai_analysis（仅有效非 fallback 才保存）
         wq.ai_analysis = parsed
         await db.commit()
 
@@ -216,6 +313,13 @@ async def analyze_error(
             duration_ms=result["duration_ms"],
         ))
         await db.commit()
+
+        logger.info(
+            "ai.error_analysis.result wq_id=%s force=%s model=%s from_fallback=%s parsed_valid=%s fields=%s duration_ms=%s",
+            wq.id, force_regenerate, result.get("model"), False, parsed_valid,
+            {k: bool(parsed.get(k)) for k in ["mistake_diagnosis", "knowledge_patch", "review_task"]},
+            result.get("duration_ms"),
+        )
 
         return {
             "content": parsed,

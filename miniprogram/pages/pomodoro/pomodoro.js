@@ -121,7 +121,11 @@ Page({
     freeDisplayTime: '00:00:00',
     freeFriendlyText: '',
     showEndConfirm: false,
+    endConfirmMode: '',
+    endConfirmTitle: '',
     endConfirmText: '',
+    endConfirmOkText: '确认结束',
+    endConfirmCancelText: '继续计时',
     actionLoading: false,
 
     // timer display
@@ -457,7 +461,9 @@ Page({
     this._updateComputedFields()
     this._updateFreeElapsed()
     this._startFreeTimerInterval()
-    setTimeout(() => { this._initCanvas(); this.drawRing(0, false) }, 200)
+    wx.nextTick(() => {
+      setTimeout(() => { this._initCanvas(); this.drawRing(0, false) }, 50)
+    })
   },
 
   _updateFreeElapsed() {
@@ -562,17 +568,69 @@ Page({
     const fmt = formatElapsedSec(elapsed)
     this.setData({
       showEndConfirm: true,
-      endConfirmText: elapsed >= 1 ? `本次已专注 ${fmt.friendly}，确认后将计入学习统计。` : '计时时长过短，确认后将计入学习统计。',
+      endConfirmMode: 'free-complete',
+      endConfirmTitle: '结束自由计时？',
+      endConfirmText: elapsed >= 1 ? `本次已专注 ${fmt.friendly}，确认后将计入学习统计。` : '当前计时时长较短，确认后仍会结束本次计时。',
+      endConfirmOkText: '确认结束',
+      endConfirmCancelText: '继续计时',
     })
   },
 
-  async _cancelEndFreeTimer() {
+  _showCountdownInterruptConfirm() {
+    this._clearTimer()
+    this._confirmOpenedAt = Date.now()
+    const totalSec = this.data.selectedPreset === 'debug'
+      ? 10
+      : Math.max(1, this.data.workDuration * 60)
+    const elapsedSec = Math.max(0, totalSec - (this.data.remainingSec || 0))
+    const fmt = formatElapsedSec(elapsedSec)
+    this.setData({
+      showEndConfirm: true,
+      endConfirmMode: 'countdown-interrupt',
+      endConfirmTitle: '结束本次专注？',
+      endConfirmText: elapsedSec > 0
+        ? `本次已专注 ${fmt.friendly}。确认后将结束当前番茄钟。`
+        : '确认后将结束当前番茄钟。',
+      endConfirmOkText: '结束',
+      endConfirmCancelText: '继续专注',
+    })
+  },
+
+  cancelEndConfirm() {
+    const mode = this.data.endConfirmMode
     this.setData({ showEndConfirm: false })
-    this._confirmOpenedAt = null
-    if (!this.data.isPaused) {
-      this._startFreeTimerInterval()
+
+    if (mode === 'free-complete') {
+      if (!this.data.isPaused) this._startFreeTimerInterval()
     }
-    // If paused: keep paused, do not auto-resume
+
+    if (mode === 'countdown-interrupt') {
+      if (!this.data.isPaused && this.data.phase === 'running') {
+        const totalSec = this.data.selectedPreset === 'debug'
+          ? 10
+          : Math.max(1, this.data.workDuration * 60)
+        this._startTimer(totalSec)
+      }
+    }
+
+    this.setData({
+      endConfirmMode: '',
+      endConfirmTitle: '',
+      endConfirmText: '',
+    })
+    this._confirmOpenedAt = null
+  },
+
+  async confirmEndTimer() {
+    const mode = this.data.endConfirmMode
+
+    if (mode === 'free-complete') {
+      return this._confirmEndFreeTimer()
+    }
+
+    if (mode === 'countdown-interrupt') {
+      return this._confirmInterruptCountdown()
+    }
   },
 
   async _confirmEndFreeTimer() {
@@ -600,6 +658,23 @@ Page({
     this.loadTodayStats()
   },
 
+  async _confirmInterruptCountdown() {
+    if (!this.data.sessionId) return
+    this.setData({ actionLoading: true })
+    try {
+      await api.post(`/pomodoro/${this.data.sessionId}/interrupt`, {
+        total_paused_ms: this.data.totalPausedMs || 0,
+      })
+      wx.showToast({ title: '已结束本次专注', icon: 'none' })
+      this.setData({ showEndConfirm: false, actionLoading: false })
+      this._resetToIdle()
+      this.loadTodayStats()
+    } catch (e) {
+      this.setData({ actionLoading: false })
+      wx.showToast({ title: '结束失败，请重试', icon: 'none' })
+    }
+  },
+
   async endSession() {
     if (!this.data.sessionId) return
     this._clearTimer()
@@ -618,18 +693,13 @@ Page({
 
   async interruptSession() {
     if (!this.data.sessionId) return
-    // Free timer: show confirmation instead of immediate interrupt
+
     if (this.data.isFreeTimer) {
       this._showEndFreeConfirm()
       return
     }
-    this._clearTimer()
-    try {
-      await api.post(`/pomodoro/${this.data.sessionId}/interrupt`, {
-        total_paused_ms: this.data.totalPausedMs || 0,
-      })
-    } catch (_) {}
-    this._resetToIdle()
+
+    this._showCountdownInterruptConfirm()
   },
 
   /* ==================== Countdown Timer ==================== */
@@ -649,7 +719,9 @@ Page({
     })
     this._startTimer(totalSec)
     this._updateComputedFields()
-    setTimeout(() => this.drawRing(totalSec, false), 200)
+    wx.nextTick(() => {
+      setTimeout(() => this.drawRing(totalSec, false), 50)
+    })
   },
 
   togglePause() {
@@ -1136,15 +1208,14 @@ Page({
       .exec((res) => {
         if (!res[0] || !res[0].node) return
         const canvas = res[0].node
-        const ctx = canvas.getContext('2d')
-        const dpr = this._dpr || wx.getSystemInfoSync().pixelRatio
+        const dpr = this._dpr || wx.getSystemInfoSync().pixelRatio || 1
         this._dpr = dpr
         const width = res[0].width
         const height = res[0].height
-        const scale = dpr * 2
-        canvas.width = Math.round(width * scale)
-        canvas.height = Math.round(height * scale)
-        ctx.scale(scale, scale)
+        canvas.width = Math.round(width * dpr)
+        canvas.height = Math.round(height * dpr)
+        const ctx = canvas.getContext('2d')
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
         this._ctx = ctx
         this._canvasSize = Math.min(width, height)
         this._canvasReady = true
@@ -1243,6 +1314,8 @@ Page({
       freeDisplayTime: '00:00:00',
       freeFriendlyText: '',
       showEndConfirm: false,
+      endConfirmMode: '',
+      endConfirmTitle: '',
       endConfirmText: '',
     })
     this._updateComputedFields()

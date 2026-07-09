@@ -16,8 +16,14 @@
 </view>
 
 <view class="page" wx:elif="{{!loading && wq}}">
-  <view wx:if="{{switching}}" class="switch-loading-overlay">
-    <loading-lottie text="正在切换错题..." size="small" />
+  <view wx:if="{{showSwitchMask}}" class="switch-mask">
+    <text class="switch-mask-text">切换中...</text>
+  </view>
+
+  <!-- 轻量复盘提示 -->
+  <view class="review-guide">
+    <text class="review-guide-title">错题复盘</text>
+    <text class="review-guide-desc">先看题目与答案高亮，再下滑查看 AI 诊断。</text>
   </view>
 
   <quiz-runner
@@ -39,13 +45,23 @@
     showSubmitButton="{{false}}"
     swipeEnabled="{{true}}"
     allowSwipeInReadonly="{{true}}"
+    compactReviewMode="{{true}}"
     bind:prev="goPrevWrong"
     bind:next="goNextWrong"
     bind:jump="goWrongQuestion"
   />
 
-  <!-- AI 分析：手动触发 -->
-  <view class="ai-card">
+  <!-- AI 复盘入口条 — 首屏可见 -->
+  <view class="ai-entry-strip" catchtap="scrollToAiCard">
+    <view class="ai-entry-left">
+      <text class="ai-entry-title">AI 错题复盘</text>
+      <text class="ai-entry-desc">{{aiCards ? '已生成，点击查看错因与复练任务' : (aiRequested ? '点击重新生成' : '点击生成错因诊断、补漏重点和复练任务')}}</text>
+    </view>
+    <view class="ai-entry-action">{{aiCards ? '查看' : (aiLoading ? '生成中' : '生成')}}</view>
+  </view>
+
+  <!-- AI 分析卡片 -->
+  <view class="ai-card" id="ai-card">
     <view class="section-head">
       <view>
         <text class="section-title">AI 错题复盘</text>
@@ -54,36 +70,14 @@
       <text class="section-chip">AI</text>
     </view>
 
-    <!-- 未请求状态 -->
-    <view wx:if="{{!aiRequested && !aiLoading && !aiResult && !aiFallback}}" class="ai-idle">
-      <text class="ai-idle-title">需要 AI 帮你复盘这道错题吗？</text>
-      <text class="ai-idle-desc">点击后将生成错因诊断、补漏重点和复练任务。</text>
-      <button class="ai-action-btn" bindtap="onTapAiAnalysis">生成 AI 错题复盘</button>
-    </view>
-
-    <!-- 加载状态 / 重新生成中 -->
-    <view wx:elif="{{aiLoading || aiRegenerating}}" class="ai-loading-state">
-      <view class="section-head compact">
-        <view>
-          <text class="section-title small">正在生成</text>
-          <text class="section-subtitle">AI 正在分析题目，请稍候</text>
-        </view>
-        <view class="chip-loading">
-          <view class="loading-spinner mini"></view>
-          <text class="chip-loading-text">生成中</text>
-        </view>
+    <!-- 1. 已有结果：优先展示（包括 re-generate 期间） -->
+    <view wx:if="{{aiCards && !aiFallback}}" class="ai-result-state {{aiRegenerating ? 'is-regenerating' : ''}}">
+      <!-- 重新生成中的提示条 -->
+      <view wx:if="{{aiRegenerating}}" class="ai-regenerating-banner">
+        <view class="loading-spinner mini"></view>
+        <text class="ai-regenerating-text">正在重新生成，当前先保留旧解析</text>
       </view>
-      <view class="ai-loading-skeleton">
-        <view class="skeleton-block" style="width:35%;height:20rpx;margin-bottom:12rpx;"></view>
-        <view class="skeleton-block" style="width:85%;height:16rpx;margin-bottom:8rpx;"></view>
-        <view class="skeleton-block" style="width:70%;height:16rpx;margin-bottom:8rpx;"></view>
-        <view class="skeleton-block" style="width:55%;height:16rpx;"></view>
-      </view>
-      <text class="ai-hint">生成时间较长时，可以稍后重试</text>
-    </view>
 
-    <!-- 成功状态：增强卡片布局，支持 LaTeX 渲染 -->
-    <view wx:elif="{{aiCards && !aiFallback}}" class="ai-result-state">
       <view class="ai-section ai-section-diagnosis" wx:if="{{aiCards.mistakeDiagnosis.raw}}">
         <view class="ai-label-row">
           <view class="ai-index">1</view>
@@ -135,18 +129,49 @@
         <text wx:else class="ai-text">{{aiCards.reviewTask.text}}</text>
       </view>
 
-      <text class="ai-hint">{{aiFromCache ? '来自历史缓存，仅供参考' : '内容由 AI 生成，仅供参考'}}</text>
-      <button class="ai-secondary-btn" bindtap="regenerateAiAnalysis">{{aiRegenerating ? '重新生成中...' : '重新生成'}}</button>
+      <text wx:if="{{aiInlineNotice}}" class="ai-inline-notice">{{aiInlineNotice}}</text>
+      <text wx:elif="{{!aiInlineNotice}}" class="ai-hint">{{aiFromCache ? '来自历史缓存，仅供参考' : '内容由 AI 生成，仅供参考'}}</text>
+      <button class="ai-secondary-btn {{aiRegenerating ? 'loading' : ''}}" disabled="{{aiRegenerating}}" bindtap="regenerateAiAnalysis">
+        {{aiRegenerating ? '重新生成中...' : '重新生成'}}
+      </button>
     </view>
 
-    <!-- 失败 / 降级状态 -->
-    <view wx:elif="{{aiFallback}}" class="ai-fallback">
+    <!-- 2. 首次生成（无旧内容）骨架屏 -->
+    <view wx:elif="{{aiLoading && !aiCards}}" class="ai-loading-state">
+      <view class="section-head compact">
+        <view>
+          <text class="section-title small">正在生成</text>
+          <text class="section-subtitle">AI 正在分析题目，请稍候</text>
+        </view>
+        <view class="chip-loading">
+          <view class="loading-spinner mini"></view>
+          <text class="chip-loading-text">生成中</text>
+        </view>
+      </view>
+      <view class="ai-loading-skeleton">
+        <view class="skeleton-block" style="width:35%;height:20rpx;margin-bottom:12rpx;"></view>
+        <view class="skeleton-block" style="width:85%;height:16rpx;margin-bottom:8rpx;"></view>
+        <view class="skeleton-block" style="width:70%;height:16rpx;margin-bottom:8rpx;"></view>
+        <view class="skeleton-block" style="width:55%;height:16rpx;"></view>
+      </view>
+      <text class="ai-hint">生成时间较长时，可以稍后重试</text>
+    </view>
+
+    <!-- 3. 失败空态（仅无旧内容时） -->
+    <view wx:elif="{{aiFallback && !aiCards}}" class="ai-fallback">
       <view class="fallback-mark">
         <view class="line-icon icon-exclamation"></view>
       </view>
       <text class="fallback-title">AI 错题复盘暂时不可用</text>
       <text class="fallback-desc">{{aiErrorText || '建议先查看题目解析并手动标记错因，稍后再试。'}}</text>
-      <button class="ai-action-btn retry" bindtap="regenerateAiAnalysis">{{aiRegenerating ? '重新生成中...' : '重新生成'}}</button>
+      <button class="ai-action-btn retry" bindtap="regenerateAiAnalysis">重新生成</button>
+    </view>
+
+    <!-- 4. 未请求态 -->
+    <view wx:elif="{{!aiRequested && !aiCards}}" class="ai-idle">
+      <text class="ai-idle-title">需要 AI 帮你复盘这道错题吗？</text>
+      <text class="ai-idle-desc">点击后将生成错因诊断、补漏重点和复练任务。</text>
+      <button class="ai-action-btn" bindtap="onTapAiAnalysis">生成 AI 错题复盘</button>
     </view>
   </view>
 </view>

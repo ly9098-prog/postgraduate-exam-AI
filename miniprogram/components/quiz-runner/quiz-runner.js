@@ -46,6 +46,7 @@ Component({
     showSubmitButton: { type: Boolean, value: true },
     swipeEnabled: { type: Boolean, value: true },
     allowSwipeInReadonly: { type: Boolean, value: false },
+    compactReviewMode: { type: Boolean, value: false },
   },
 
   data: {
