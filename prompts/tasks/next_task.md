@@ -1,1039 +1,884 @@
-# 任务：系统性修复 OCR 导题链路中的结构污染、选项冻结误判、低置信 VL 覆盖与 false pass 问题
-
-你需要基于当前项目 `app.zip` 中的 OCR 导题链路进行代码审计与修复。目标不是只修某一道题，而是修复 OCR 导题流水线中会导致“题干、代码块、选项、答案错位或丢失”的系统性问题。
-
-本次修复重点包括：
-
-1. 同页多题时 frozen options 串题污染；
-2. 横排英文/代码类选项被误冻结成单个 A 选项；
-3. `PaddleOCR-VL conf=0.00` 或低置信候选仍被 override 接受；
-4. AI/VL 候选丢失选项或答案后仍可能污染最终结构；
-5. 代码块乱码被包装为 code fence 后伪装成已修复；
-6. 有 A-D 选项的客观题被错误降级为 subjective 并 `passed`；
-7. 缺少覆盖上述问题的 OCR 回归测试。
-
----
-
-## 一、修复目标
-
-最终 OCR 导题链路必须满足：
-
-- 原始 OCR 中已经存在 A-D 选项时，后续 AI/VL 修复不得无理由删除或覆盖；
-- 原始 OCR 中已经存在显式答案，如 `答案：A`，最终 `answer` 不得为空；
-- 同一页有多道题时，选项冻结必须绑定到具体题块，不能按 page 全局注入；
-- 低置信 VL 候选不能通过 `confidence override` 覆盖可靠 raw OCR 结构；
-- 代码乱码可以进入人工审核，但不能因此丢失选项和答案；
-- 选项解析不完整时不能标记为 `quality_status=passed`；
-- 有 A-D 选项的题不能被错误降级成 `subjective`；
-- 必须新增回归测试，防止后续再次破坏。
-
----
-
-## 二、重点排查文件
-
-请优先排查以下模块，具体文件名以项目实际路径为准：
-
-```text
-backend/app/features/pipeline_orchestrator.py
-backend/app/features/structure_freeze_stage.py
-backend/app/features/ocr_fix/router.py
-backend/app/features/ocr_safety.py
-backend/app/features/code_detector.py
-backend/app/features/text_normalizer.py
-backend/app/features/question_splitter.py
-backend/app/features/output_normalization.py
-backend/app/features/import_pipeline/*
-```
-
-如果实际路径不同，请通过搜索以下关键词定位：
-
-```text
-frozen_option_registry
-structure_freeze
-options_dropped
-answer_dropped
-VL confidence override
-confidence override
-extract_explicit_answer
-strip_frozen_options
-normalize_schema
-question_type_detection
-code_garbled
-ocr_garbled_code
-```
-
-------
-
-# 三、P0 问题 1：同页多题 frozen options 串题污染
-
-## 现象
-
-当前 `_run_split` 或相关 split 阶段可能按 `page` 收集 `frozen_option_registry`，然后把同页所有 frozen options 注入到每一道题里。
-
-这会导致：
-
-```text
-第 1 题：
-1. 第一题题干？
-A. 一
-B. 二
-C. 三
-D. 四
-答案：A
-
-第 2 题：
-2. 第二题题干？
-A. 甲
-B. 乙
-C. 丙
-D. 丁
-答案：B
-```
-
-错误结果可能变成：
-
-```json
-{
-  "q1_stem": "第一题题干？",
-  "q1_options": {
-    "A": "甲",
-    "B": "乙",
-    "C": "丙",
-    "D": "丁"
-  },
-  "q1_answer": "A",
-  "is_valid": true
-}
-```
+任务名称：修复 Pomodoro 自由计时与 Alembic 迁移链路问题
 
-即第一题题干 + 第二题选项 + 第一题答案，被错误判定为有效。
+背景：
+当前项目已经完成 Pomodoro 科目体系改造和自由计时功能初步开发：
 
-## 修复要求
+1. pomodoro_sessions 已改为使用 subject_id 关联 subjects.id。
+2. pomodoro_sessions.subject 废弃字段已经准备删除。
+3. Pomodoro 页面已经支持“自由计时 / 正向计时”模式。
+4. Alembic 补充包中新增了以下 Pomodoro 相关迁移：
+   - r3g4h5i6j7k8_add_pomodoro_subject_id.py
+   - s4g5h6i7j8k9_drop_pomodoro_subject.py
+   - t5g6h7i8j9k0_add_pomodoro_total_paused_sec.py
 
-### 1. frozen options 必须绑定到题目 block/span
+但当前代码和迁移仍存在问题：
 
-不能只用 `page` 作为索引。
+1. Alembic 存在多 head 风险。
+2. Pomodoro 历史 subject 回填映射和当前 subjects 表实际 code 不完全匹配。
+3. env.py 没有导入 PomodoroSession。
+4. start_session 会自动中断已有 session，可能污染数据。
+5. pause / resume / complete 的暂停时长计算存在重复扣除或漏扣风险。
+6. 小程序自由计时暂停 / 继续存在前后端状态不同步风险。
+7. total_paused_ms / total_paused_sec 字段命名不统一。
 
-请将 frozen options 的绑定维度从：
+本任务目标：
+在不破坏现有标准番茄钟、长时番茄钟、自定义番茄钟、历史记录、统计页面、科目动态渲染的前提下，彻底修复 Pomodoro 自由计时和 Alembic 迁移问题，使数据库迁移、后端接口、前端计时逻辑、历史统计全部稳定可用。
 
-```python
-page -> options
-```
+一、先检查当前代码和迁移状态
 
-改为至少：
+请先执行以下检查：
 
-```python
-(page, block_id) -> options
-```
+1. 检查 Alembic heads：
 
-或更严谨：
+   alembic heads
 
-```python
-(page, question_index, start_line, end_line) -> options
-```
+当前补充包中大概率会出现两个 head：
 
-建议结构：
+- t5g6h7i8j9k0
+- v7_import_review_source_metadata
 
-```python
-@dataclass
-class FrozenQuestionStructure:
-    page: int
-    block_id: str | None
-    question_index: int | None
-    line_start: int
-    line_end: int
-    stem_span: tuple[int, int] | None
-    options: dict[str, str]
-    answer: str | None
-    source: str
-    confidence: float
-    risk_flags: list[str]
-```
+必须修复到最终只有一个 head。
 
-### 2. split 阶段只能注入当前题块对应的 frozen options
+1. 检查 Alembic history：
 
-禁止逻辑：
+   alembic history --verbose
 
-```python
-# 错误示例
-page_options = frozen_option_registry[page]
-for question in questions_on_page:
-    question.options = page_options
-```
+确认以下 Pomodoro 迁移链路：
 
-正确逻辑：
+- o0e1f2a3b4c5_add_pomodoro_sessions_table.py
+- q2g3h4i5j6k7_add_pomodoro_paused_at.py
+- r3g4h5i6j7k8_add_pomodoro_subject_id.py
+- s4g5h6i7j8k9_drop_pomodoro_subject.py
+- t5g6h7i8j9k0_add_pomodoro_total_paused_sec.py
 
-```python
-matched = find_frozen_structure_for_question(
-    question_span=question.span,
-    page=question.page,
-    registry=frozen_option_registry,
-)
+1. 全局搜索：
 
-if matched and span_overlap(question, matched) >= threshold:
-    question.options = matched.options
-```
+   PomodoroSession
+   pomodoro_sessions
+   total_paused_sec
+   total_paused_ms
+   paused_at
+   _cancel_running
+   status == "running"
+   preset == "free"
+   subject_id
+   subject
+   selectedSubject
+   SUBJECTS
+   SUBJECT_LABELS
 
-### 3. 如果无法精确匹配，不得强制注入
+2. 重点检查文件：
 
-如果当前题块无法与 frozen options 对齐：
+后端：
 
-```python
-if not matched:
-    do_not_inject_global_page_options()
-    mark_risk("frozen_options_unmatched")
-```
+- backend/app/models/pomodoro.py
+- backend/app/schemas/pomodoro.py
+- backend/app/services/pomodoro_service.py
+- backend/app/api/v1/pomodoro.py
+- backend/app/core/database.py
+- backend/alembic/env.py
+- backend/alembic/versions/
 
-------
+小程序：
 
-## 四、P0 问题 2：横排选项冻结器误把整行冻结成 A 选项
+- miniprogram/pages/pomodoro/pomodoro.js
+- miniprogram/pages/pomodoro/pomodoro.wxml
+- miniprogram/pages/pomodoro/pomodoro.wxss
+- miniprogram/pages/pomodoro-stats/
+- miniprogram/utils/
 
-## 现象
+二、修复 Alembic 多 head 问题
 
-当前 inline option 正则可能使用类似：
+当前补充的 Pomodoro 新迁移从较早的 q2g3h4i5j6k7 分支接出，而主线已经发展到 v7_import_review_source_metadata，导致可能出现双 head。
 
-```regex
-[^A-Da-d\n]+?
-```
+必须保证最终：
 
-这会导致选项文本中一旦出现字母 A/B/C/D/a/b/c/d，就提前截断或无法切分。
+alembic heads
 
-例如：
+只返回一个 head。
 
-```text
-A. Algorithm B. Binary tree C. Data structure D. Code
-```
+处理策略：
 
-错误结果：
+如果这些新增迁移还没有在任何共享环境、测试库、生产库执行过，推荐直接线性化：
 
-```json
-{
-  "A": "Algorithm B. Binary tree C. Data structure D. Code"
-}
-```
+1. 将 r3g4h5i6j7k8_add_pomodoro_subject_id.py 的 down_revision 从：
 
-最终可能被误判为：
+   q2g3h4i5j6k7
 
-```json
-{
-  "question_type": "subjective",
-  "options": {
-    "A": "Algorithm B. Binary tree C. Data structure D. Code"
-  },
-  "answer": "A",
-  "quality_status": "passed"
-}
-```
+   改为当前主线最新 head：
 
-这是严重 false pass。
+   v7_import_review_source_metadata
 
-## 修复要求
+2. 保持后续链路：
 
-### 1. 重写横排选项 splitter
+   r3g4h5i6j7k8 -> s4g5h6i7j8k9 -> t5g6h7i8j9k0
 
-不能通过排除字符 `A-D` 来切分。
+3. 最终 head 应为：
 
-必须通过“合法选项标签边界”切分。
+   t5g6h7i8j9k0
 
-建议正则：
+如果这些迁移已经在某个环境执行过，不要改历史 revision 的 down_revision。改用新增 merge migration：
 
-```python
-OPTION_LABEL_RE = re.compile(
-    r"(?<![A-Za-z0-9_])([A-Da-d])\s*[\.\．、:：]\s*"
-)
-```
+merge_pomodoro_timer_heads
 
-但需要注意：
+down_revision 设为：
 
-- `A.` 是选项标签；
-- `A．` 是选项标签；
-- `A、` 是选项标签；
-- `A:` / `A：` 可作为兼容；
-- 英文单词里的 `A` / `B` / `C` / `D` 不能被当成标签；
-- `Data` 里的 `D` 不能被当成选项 D；
-- 代码里的 `struct BiTNode` 不能被误拆。
+("v7_import_review_source_metadata", "t5g6h7i8j9k0")
 
-建议实现：
+merge migration 不做 DDL，只负责合并 heads。
 
-```python
-def parse_inline_options(text: str) -> dict[str, str]:
-    matches = list(OPTION_LABEL_RE.finditer(text))
-    options = {}
+验收要求：
 
-    for i, m in enumerate(matches):
-        key = m.group(1).upper()
-        start = m.end()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        value = text[start:end].strip()
+1. alembic heads 只剩一个 head。
+2. alembic upgrade head 可以正常执行。
+3. alembic downgrade -1 可以正常回退最近一次迁移。
+4. 不允许保留多个 head 让部署脚本自行处理。
 
-        if key in "ABCD" and value:
-            options[key] = value
+三、修复 env.py 模型导入
 
-    return options
-```
+当前 alembic/env.py 导入了很多模型，但需要确认是否导入了 PomodoroSession。
 
-### 2. 验证选项完整性
+如果没有，请新增：
 
-新增：
-
-```python
-def validate_option_set(options: dict[str, str]) -> OptionValidationResult:
-    ...
-```
-
-规则：
-
-```python
-@dataclass
-class OptionValidationResult:
-    is_complete: bool
-    is_usable: bool
-    count: int
-    missing_keys: list[str]
-    suspicious_reasons: list[str]
-```
+from app.models.pomodoro import PomodoroSession
 
 要求：
 
-- 单选题常规应至少有 2 个选项；
-- A-D 完整更优；
-- 只有一个 A 选项时，不得作为 authoritative frozen options；
-- 只有一个 A 选项且内容包含 `B.`、`C.`、`D.`，必须标记 `inline_option_split_failed`；
-- 选项文本超长且包含多个选项标签，也必须标记风险。
+1. target_metadata = Base.metadata 能包含 pomodoro_sessions。
+2. 后续 autogenerate 不会漏掉 PomodoroSession。
+3. 不要删除其他已有 model import。
 
-示例：
+四、修复 r3g4h5i6j7k8_add_pomodoro_subject_id.py
 
-```python
-if len(options) == 1 and "A" in options:
-    text = options["A"]
-    if re.search(r"(?<![A-Za-z0-9_])[BCD]\s*[\.\．、:：]", text):
-        return unusable("inline_option_split_failed")
-```
+当前迁移会为 pomodoro_sessions 新增 subject_id，并尝试从旧 subject 字符串回填。但当前回填映射不完全匹配实际 subjects 表。
 
-------
+当前 subjects 体系应以 p5_5_1_fix_subjects.py 中的实际种子为准：
 
-# 五、P0 问题 3：选项不完整时不能 subjective passed
+- math2：数学二
+- math2-calculus：高等数学
+- math2-linalg：线性代数
+- exam408：408计算机综合
+- exam408-ds：数据结构
+- exam408-os：操作系统
+- exam408-co：计算机组成原理
+- exam408-cn：计算机网络
+- english：英语
+- pol：政治
 
-## 现象
+请修改 Pomodoro subject 回填逻辑。
 
-当选项解析失败时，系统可能把题目降级为 `subjective`，同时 `quality_status=passed`。
+必须兼容旧值：
 
-这会掩盖严重结构错误。
+旧 subject 字符串到当前 subject code 的推荐映射：
 
-## 修复要求
+math -> math2
+数学 -> math2
+数学二 -> math2
 
-### 1. 有客观题信号时禁止降级 subjective
+computer -> exam408
+计算机 -> exam408
+408 -> exam408
+408计算机综合 -> exam408
 
-客观题信号包括：
+english -> english
+英语 -> english
 
-```text
-A.
-B.
-C.
-D.
-答案：A
-正确答案：B
-单选题
-多选题
-下列选项
-```
+politics -> pol
+political -> pol
+pol -> pol
+政治 -> pol
 
-新增函数：
+advanced_math -> math2-calculus
+calculus -> math2-calculus
+math2-calculus -> math2-calculus
+高数 -> math2-calculus
+高等数学 -> math2-calculus
 
-```python
-def has_objective_question_signals(raw_text: str, stem: str, answer: str | None) -> bool:
-    ...
-```
+linear_algebra -> math2-linalg
+linalg -> math2-linalg
+math2-linalg -> math2-linalg
+线代 -> math2-linalg
+线性代数 -> math2-linalg
 
-如果满足以下任一条件：
+data_structure -> exam408-ds
+ds -> exam408-ds
+exam408-ds -> exam408-ds
+数据结构 -> exam408-ds
 
-```python
-has_A_D_labels = detect_option_labels(raw_text) >= 2
-has_explicit_choice_answer = answer in {"A", "B", "C", "D", "AB", "AC", ...}
-has_choice_keywords = "下列" in raw_text or "选项" in raw_text
-```
+operating_system -> exam408-os
+os -> exam408-os
+exam408-os -> exam408-os
+操作系统 -> exam408-os
 
-则不得自动降级为 subjective。
+computer_organization -> exam408-co
+co -> exam408-co
+exam408-co -> exam408-co
+组成原理 -> exam408-co
+计算机组成原理 -> exam408-co
 
-### 2. 选项不完整时进入人工审核
+computer_network -> exam408-cn
+cn -> exam408-cn
+exam408-cn -> exam408-cn
+计网 -> exam408-cn
+计算机网络 -> exam408-cn
 
-正确结果：
+回填优先级：
 
-```json
-{
-  "question_type": "single_choice",
-  "options": {},
-  "answer": "A",
-  "quality_status": "needs_manual_review",
-  "risk_flags": [
-    "objective_signals_but_options_incomplete",
-    "inline_option_split_failed"
-  ],
-  "is_valid": false
-}
-```
+1. 先按上述旧值映射到目标 code。
+2. 再用目标 code 查询 subjects.id。
+3. 如果旧值本身就是 subjects.code，直接匹配。
+4. 如果旧值本身是 subjects.name，直接匹配。
+5. 如果仍无法匹配，记录 unmatched。
 
-禁止结果：
+迁移安全要求：
 
-```json
-{
-  "question_type": "subjective",
-  "options": {
-    "A": "Algorithm B. Binary tree C. Data structure D. Code"
-  },
-  "answer": "A",
-  "quality_status": "passed",
-  "is_valid": true
-}
-```
+1. r3 migration 添加 subject_id 前要检查 pomodoro_sessions 是否存在。
+2. 添加 subject_id 前要检查列是否已经存在。
+3. 创建 index 前要检查 index 是否已经存在。
+4. 创建 FK 前要检查 FK 是否已经存在。
+5. FK 推荐使用 ondelete="SET NULL"，因为 subject_id 允许为空。
+6. SQLite 下不要直接创建外键 constraint；保持当前跳过策略即可。
+7. 回填完成后，必须输出 matched / unmatched 数量。
+8. 如果存在 subject 非空但 subject_id 仍为空的记录，不要直接静默进入 drop subject 阶段。
 
-------
+五、修复 s4g5h6i7j8k9_drop_pomodoro_subject.py
 
-# 六、P1 问题 4：低置信 PaddleOCR-VL 候选不能 override raw OCR 结构
+当前 s4 migration 会直接 drop pomodoro_sessions.subject。这样如果 r3 回填遗漏，旧 subject 信息会永久丢失。
 
-## 现象
+请修改为更安全的删除策略：
 
-日志中出现过类似链路：
+删除 subject 前执行检查：
 
-```text
-PaddleOCR-VL succeeded conf=0.00
-OCR fix accepted ... low_confidence_source
-VL confidence override: accepting VL result
-AI safety REJECTED: options_dropped(4→0)
-```
+SELECT subject, COUNT(*)
+FROM pomodoro_sessions
+WHERE subject_id IS NULL
+AND subject IS NOT NULL
+AND subject != ''
+GROUP BY subject;
 
-问题是：
+处理要求：
 
-- VL 候选置信度极低；
-- 候选文本丢失 A-D 选项；
-- 候选文本丢失答案；
-- 仍被某个 override 逻辑接受；
-- AI safety 的拒绝结果没有成为唯一权威决策。
+1. 如果查询结果为空，可以删除 subject。
 
-## 修复要求
+2. 如果仍有非空 subject 未回填，必须中止迁移，并抛出清晰错误，例如：
 
-### 1. 删除或收紧 confidence override
+   Cannot drop pomodoro_sessions.subject: unmatched legacy subject values remain: ...
 
-搜索：
+3. 不允许在未匹配数据存在时直接删除 subject。
 
-```text
-VL confidence override
-confidence override
-accepting VL result
-accepted_with_risk_flags
-```
+4. 如果业务决定未匹配数据统一归为“未分类”，请先把这些记录 subject_id 保持 NULL，并在日志中明确列出 unmatched 值，然后再由人工确认是否允许删除。
 
-如果存在类似逻辑：
+5. 本任务推荐优先修正映射，尽量让旧数据都回填成功。
 
-```python
-if from_vl:
-    accept_candidate_even_if_low_confidence()
-```
+SQLite 兼容：
+如果 SQLite 环境 drop_column 不稳定，请使用 batch_alter_table：
 
-必须删除或加严格条件。
+with op.batch_alter_table("pomodoro_sessions") as batch_op:
+batch_op.drop_column("subject")
 
-### 2. AI safety 必须是最终权威门禁
+PostgreSQL 可以继续 op.drop_column。
 
-新增或加强：
+downgrade：
 
-```python
-def evaluate_candidate_structure_loss(raw_text: str, candidate_text: str) -> SafetyResult:
-    ...
-```
+1. downgrade 可以恢复 subject 字段结构。
+2. 不要求恢复历史 subject 值。
+3. subject 字段 nullable=True。
 
-必须检测：
+六、修复 t5g6h7i8j9k0_add_pomodoro_total_paused_sec.py
 
-```text
-options_dropped
-answer_dropped
-stem_shrink_too_much
-code_block_dropped
-choice_labels_dropped
-```
-
-建议规则：
-
-```python
-raw_options = extract_options(raw_text)
-candidate_options = extract_options(candidate_text)
-
-raw_answer = extract_explicit_answer(raw_text)
-candidate_answer = extract_explicit_answer(candidate_text)
-
-if len(raw_options) >= 2 and len(candidate_options) == 0:
-    reject("options_dropped")
-
-if raw_answer and not candidate_answer:
-    reject("answer_dropped")
-
-if len(candidate_text) < len(raw_text) * 0.45:
-    reject("stem_shrink_too_much")
-```
-
-### 3. 低置信候选触发硬拒绝
-
-```python
-if candidate.confidence <= 0.2:
-    if safety.has_any(["options_dropped", "answer_dropped", "stem_shrink_too_much"]):
-        reject_candidate()
-        fallback_to_raw_structure()
-        mark_risk("vl_low_confidence_rejected")
-```
-
-### 4. fallback 必须保留 raw OCR 中可靠结构
-
-当 VL/AI 候选被拒绝时：
-
-```python
-result.text = raw_text_or_rule_repaired_text
-result.options = raw_frozen_options
-result.answer = raw_explicit_answer
-result.risk_flags.append("ai_candidate_rejected_structure_loss")
-```
-
-禁止：
-
-```python
-result.options = {}
-result.answer = ""
-```
-
-------
-
-# 七、P1 问题 5：显式答案必须全链路保留
-
-## 修复要求
-
-新增或强化函数：
-
-```python
-def extract_explicit_answer(raw_text: str) -> str | None:
-    ...
-```
-
-必须支持：
-
-```text
-答案：A
-答案:A
-参考答案：A
-正确答案：A
-Answer: A
-答案：AB
-参考答案：ACD
-```
-
-建议正则：
-
-```python
-ANSWER_RE = re.compile(
-    r"(?:参考答案|正确答案|答案|Answer)\s*[:：]\s*([A-Da-d]{1,4})",
-    re.IGNORECASE
-)
-```
+当前 t5 migration 直接 add_column，没有检查表和列是否存在。为了兼容已有开发库、手动补过字段的库、或 create_all 先创建新模型后的场景，需要改成幂等安全写法。
 
 要求：
 
-- 显式答案优先于 AI 推理答案；
-- 显式答案从 stem 中剥离后必须写入 `answer` 字段；
-- 代码乱码、选项不完整、低置信 OCR 都不能清空显式答案；
-- 如果最终 answer 为空，但 raw_text 有显式答案，应视为 pipeline bug。
+1. 如果 pomodoro_sessions 表不存在，直接 return。
 
-验收：
+2. 如果 total_paused_sec 已存在，不重复添加。
 
-```python
-assert extract_explicit_answer("答案：A") == "A"
-assert extract_explicit_answer("答案:A") == "A"
-assert extract_explicit_answer("参考答案：B") == "B"
-assert extract_explicit_answer("正确答案：CD") == "CD"
-assert extract_explicit_answer("Answer: A") == "A"
-```
+3. 如果不存在，添加：
 
-------
+   total_paused_sec INTEGER NOT NULL DEFAULT 0
 
-# 八、P1 问题 6：代码块乱码不能伪装成已修复
+4. 对已有数据，默认值必须补齐为 0。
 
-## 背景样例
+5. PostgreSQL 下添加后可以移除 server_default。
 
-原 OCR：
+6. SQLite 下可以保留 server_default 或使用 batch_alter_table，避免迁移失败。
 
-```text
-typedef struct BiTNode {
-char data;
-(1typu*  p1tysI* apo11ta aonu2s
-} BiTNode, *BiTree;
-```
+7. downgrade 前检查列是否存在，再 drop。
 
-正确代码应接近：
+七、确认数据库最终结构
 
-```c
-typedef struct BiTNode {
-    char data;
-    struct BiTNode *lchild, *rchild;
-} BiTNode, *BiTree;
-```
+迁移完成后，pomodoro_sessions 应该至少包含：
 
-当前问题：
+- id
+- user_id
+- subject_id
+- chapter_id
+- preset
+- work_duration
+- break_duration
+- start_time
+- end_time
+- expected_end_time
+- actual_duration
+- status
+- paused_at
+- total_paused_sec
+- notification_enabled
+- notification_sent
+- notification_sent_at
+- notification_error
+- openid_snapshot
+- created_at
 
-- 系统把乱码代码包进 ```text；
-- 但没有真正修复；
-- 后续可能误以为 code block 已经稳定；
-- 或因 code block 乱码影响整题结构。
+最终不应再包含：
 
-## 修复要求
+- subject
 
-新增：
+执行检查：
 
-```python
-def detect_garbled_code_block(code: str) -> CodeGarbledResult:
-    ...
-```
+SELECT column_name
+FROM information_schema.columns
+WHERE table_name = 'pomodoro_sessions'
+ORDER BY ordinal_position;
 
-结构：
+确认：
 
-```python
-@dataclass
-class CodeGarbledResult:
-    is_garbled: bool
-    score: float
-    reasons: list[str]
-    expected_language: str | None
-```
+1. subject_id 存在。
+2. total_paused_sec 存在。
+3. subject 不存在。
+4. subject_id FK 存在。
+5. ix_pomodoro_sessions_subject_id 存在。
 
-检测规则：
+八、修复开发环境 runtime DDL 风险
 
-```python
-if "typedef struct" in code and re.search(r"}\s*\w+\s*,\s*\*\w+\s*;", code):
-    expected_language = "c"
+当前 app/core/database.py 中 _ensure_pomodoro_table 只在 pomodoro_sessions 不存在时创建表；如果本地旧 dev.db 已经存在旧表，它不会自动补 subject_id、paused_at、total_paused_sec。
 
-if expected_language == "c":
-    if contains_many_non_c_tokens(code):
-        reasons.append("c_struct_body_garbled")
+处理要求：
 
-    if not re.search(r"struct\s+\w+\s*\*\s*\w+", code):
-        reasons.append("c_struct_pointer_field_missing_or_garbled")
+1. 生产环境必须依赖 Alembic，不要在 runtime 自动改生产库。
+2. 开发环境可以二选一：
+   - 推荐：明确要求开发者删除旧 dev.db 或执行 Alembic upgrade head。
+   - 或者：在 _ensure_pomodoro_table 中仅对非 production 环境做轻量 repair，补 subject_id / paused_at / total_paused_sec 缺失列。
+3. 不要让生产环境使用 create_all 或 runtime DDL 替代 Alembic。
+4. README 或开发说明中补充：Pomodoro schema 变更后必须执行 alembic upgrade head。
 
-    if line_has_high_symbol_noise(code):
-        reasons.append("ocr_garbled_code")
-```
+九、修复后端 start_session 自动中断问题
 
-输出要求：
+当前 start_session 开头调用了：
 
-- 如果代码能可靠修复，可提升质量；
-- 如果无法可靠修复，不得丢选项和答案；
-- 应输出：
+await _cancel_running(db, user_id)
 
-```json
+这会导致用户重复点击开始时，旧 session 被静默标记为 interrupted，然后创建新 session。
+
+这是错误行为。
+
+请改为：
+
+1. start_session 开始时查询当前用户是否已有 active session。
+
+2. active session 包括：
+
+   - status = running
+   - 或 status = paused，如果你采用 paused 状态
+   - 或 paused_at is not null 的 running session，如果你保留当前设计
+
+3. 如果存在 active session，不要自动中断。
+
+4. 返回 409 或 400，提示：
+
+   当前已有进行中的专注，请先结束后再开始
+
+5. 只有用户主动点击“结束 / 放弃”时，才调用 interrupt。
+
+注意：
+不要删除 interrupt_session 接口，它仍然可以作为用户主动放弃本次专注的能力。
+
+十、统一暂停状态模型
+
+当前后端 pause_session 只设置 paused_at，不修改 status。这样接口返回 status 仍是 running，语义不清晰。
+
+请选择一种方案，不能混用。
+
+推荐方案 A：真正使用 status="paused"
+
+修改规则：
+
+pause_session：
+
+1. 查询 status="running" 的 session。
+2. 设置：
+   - status = "paused"
+   - paused_at = now
+
+resume_session：
+
+1. 查询 status="paused" 的 session。
+2. 根据 paused_at 计算 paused_sec。
+3. total_paused_sec += paused_sec。
+4. 如果 expected_end_time 存在，expected_end_time += paused_sec。
+5. 设置：
+   - status = "running"
+   - paused_at = None
+
+complete_session：
+
+1. 查询 status in ["running", "paused"]。
+2. 如果 status="paused" 且 paused_at 存在，补算当前暂停段。
+3. 设置 status="completed"。
+
+interrupt_session：
+
+1. 查询 status in ["running", "paused"]。
+2. 如果 paused_at 存在，补算当前暂停段。
+3. 设置 status="interrupted"。
+
+get_active_session：
+
+1. 查询 status in ["running", "paused"]。
+2. 返回最近一条 active session。
+
+history：
+
+1. 排除 status in ["running", "paused"]。
+2. 不要只写 status != "running"，否则 paused 可能进入历史。
+
+如果你不想引入 status="paused"，则方案 B 是继续使用 status="running" + paused_at 表示暂停。但必须：
+
+1. 所有地方都用 paused_at 判断暂停。
+2. 前端不要仅依赖 status。
+3. history 必须排除 paused_at 不为空且 status=running 的 session。
+4. 文档中明确该状态模型。
+
+本任务推荐方案 A。
+
+十一、修复暂停时长重复扣除问题
+
+当前 resume_session 已经将暂停时长累加到 total_paused_sec。
+
+因此 complete_session 不应再把前端 total_paused_ms 叠加进去。
+
+请把后端时长计算统一为“后端为准”。
+
+推荐新增工具函数：
+
+def _effective_paused_sec(session, now):
+paused = session.total_paused_sec or 0
+if session.paused_at is not None:
+paused += max(0, int((now - session.paused_at).total_seconds()))
+return paused
+
+普通倒计时完成：
+
+1. 如果没有 actual_duration_sec：
+   raw_seconds = now - start_time
+   paused = _effective_paused_sec(session, now)
+   actual_duration = max(0, raw_seconds - paused)
+2. 不要再叠加 total_paused_ms。
+
+自由计时完成：
+
+1. 如果前端传 actual_duration_sec：
+   可以优先使用它。
+2. 但后端必须校验：
+   - actual_duration_sec >= 0
+   - actual_duration_sec <= raw_seconds - paused + 合理容忍值
+3. 如果未传 actual_duration_sec：
+   用后端公式计算。
+4. 保存 actual_duration。
+
+interrupt_session 和 _cancel_running 也必须使用同一个 _effective_paused_sec，避免暂停中被中断时把暂停等待时间计入专注时长。
+
+十二、统一 complete 请求字段
+
+当前前端自由计时发送：
+
+actual_duration_sec
+total_paused_sec
+
+但后端 PomodoroCompleteRequest 接收：
+
+actual_duration_sec
+total_paused_ms
+
+需要统一。
+
+推荐方案：
+
+1. 后端 PomodoroCompleteRequest 新增 total_paused_sec，可选字段。
+2. 保留 total_paused_ms 一段时间作为兼容字段，但不作为主计算来源。
+3. 对普通番茄钟和自由计时，最终暂停累计以数据库 total_paused_sec 为准。
+4. 前端发送：
+   - actual_duration_sec
+   - total_paused_sec
+5. 后端可以把 total_paused_sec 用于校验或兼容，但不要重复扣除。
+
+Schema 建议：
+
+class PomodoroCompleteRequest(BaseModel):
+actual_duration_sec: int | None = Field(default=None, ge=0)
+total_paused_sec: int | None = Field(default=None, ge=0)
+total_paused_ms: int | None = Field(default=None, ge=0, description="legacy only")
+
+十三、修复统计口径
+
+当前统计把 completed 和 interrupted 都计入：
+
+PomodoroSession.status.in_(["completed", "interrupted"])
+
+这会导致被自动中断或主动放弃的 session 进入总专注时长。
+
+请明确产品口径：
+
+推荐口径：
+
+1. completed 计入统计。
+2. interrupted 默认不计入统计。
+3. 如果业务希望“放弃但保留时长”，需要单独字段或单独状态，例如 abandoned_recorded，不要混在 interrupted。
+4. 历史记录可以显示 interrupted，但统计总时长默认只统计 completed。
+
+请修改：
+
+- get_stats
+- get_trends
+- get_subject_breakdown
+
+默认只统计：
+
+status == "completed"
+
+history 可以返回 completed 和 interrupted，但 UI 应区分“已完成 / 已放弃”。
+
+十四、修复前端自由计时暂停 / 继续同步问题
+
+当前小程序自由计时暂停和继续是先改本地状态，再异步请求后端。如果网络失败，前后端状态会不一致。
+
+请改为：
+
+暂停：
+
+1. 点击暂停。
+2. 设置 loading，防止重复点击。
+3. await POST /pomodoro/{session_id}/pause。
+4. 请求成功后：
+   - 清理 interval。
+   - 使用后端返回的 paused_at、total_paused_sec 更新本地状态。
+   - isPaused=true。
+   - isRunning=false。
+5. 请求失败：
+   - 不改变本地运行状态。
+   - toast：暂停失败，请重试。
+
+继续：
+
+1. 点击继续。
+2. 设置 loading。
+3. await POST /pomodoro/{session_id}/resume。
+4. 请求成功后：
+   - 使用后端返回的 start_time、total_paused_sec 重新计算 elapsedSec。
+   - isPaused=false。
+   - isRunning=true。
+   - 重新启动 interval。
+5. 请求失败：
+   - 保持暂停状态。
+   - toast：继续失败，请重试。
+
+十五、修复取消结束弹窗重复 interval 问题
+
+当前取消“结束自由计时”时可能重复创建 interval。
+
+修复要求：
+
+1. 启动新 interval 前必须检查旧 interval 是否存在。
+
+2. 建议封装：
+
+   _startFreeTimerInterval()
+   _clearFreeTimerInterval()
+
+3. _startFreeTimerInterval 内部先判断：
+
+   if (this._freeTimerId) return
+
+4. onHide / onUnload 必须 clear interval。
+
+5. active session 恢复前也要先 clear interval，避免重复定时器。
+
+十六、修复 active session 恢复逻辑
+
+后端 active 接口必须返回：
+
+- id
+- preset
+- status
+- start_time
+- paused_at
+- total_paused_sec
+- actual_duration
+- subject_id
+- subject_code
+- subject_name
+- work_duration
+- break_duration
+- expected_end_time
+
+前端恢复规则：
+
+如果 preset="free"：
+
+1. status="running"：
+   elapsedSec = now - start_time - total_paused_sec
+   启动正向计时 interval。
+2. status="paused"：
+   elapsedSec = paused_at - start_time - total_paused_sec_before_current_pause
+   不启动 interval。
+3. 如果后端 total_paused_sec 不包含当前 paused_at 这段，前端暂停中不要额外扣当前 paused_at 后的时间。
+
+如果 preset!="free"：
+
+1. 保持原倒计时恢复逻辑。
+2. 但也必须使用 total_paused_sec。
+3. paused 状态下不要让剩余时间继续减少。
+4. resumed 后按 expected_end_time 或 start_time + work_duration + total_paused_sec 重新计算。
+
+十七、自由计时完成逻辑
+
+点击结束时：
+
+1. 不要立即 complete。
+2. 弹出确认框：
+
+标题：结束计时？
+内容：本次已专注 xx小时xx分xx秒，确认后将计入学习统计。
+取消按钮：继续计时
+确认按钮：确认结束
+
+确认后：
+
+1. 调用 POST /pomodoro/{session_id}/complete。
+2. 请求体：
+
 {
-  "quality_status": "needs_manual_review",
-  "risk_flags": [
-    "ocr_garbled_code",
-    "c_struct_body_garbled"
-  ]
+"actual_duration_sec": elapsedSec,
+"total_paused_sec": totalPausedSec
 }
-```
-
-------
-
-# 九、针对当前二叉树题的验收样例
-
-## 输入
-
-```python
-RAW_OCR_BINARY_TREE = """
-2. 已知二叉树的结点结构定义如下，若一棵二叉树的中序遍历序列为 DBEAFC，后序遍历序列为 DEBFCA
-则其前序遍历序列为:
-typedef struct BiTNode {
-char data;
-(1typu*  p1tysI* apo11ta aonu2s
-} BiTNode, *BiTree;
-A.ABDECF
-B.ABDCEF
-C.ABDFEC
-D. ACBEDF
-答案：A
-"""
-```
-
-## 最低合格输出
-
-```json
-{
-  "question_type": "single_choice",
-  "stem": "已知二叉树的结点结构定义如下，若一棵二叉树的中序遍历序列为 DBEAFC，后序遍历序列为 DEBFCA，则其前序遍历序列为：",
-  "code_blocks": [
-    "typedef struct BiTNode {\nchar data;\n(1typu*  p1tysI* apo11ta aonu2s\n} BiTNode, *BiTree;"
-  ],
-  "options": {
-    "A": "ABDECF",
-    "B": "ABDCEF",
-    "C": "ABDFEC",
-    "D": "ACBEDF"
-  },
-  "answer": "A",
-  "quality_status": "needs_manual_review",
-  "risk_flags": [
-    "ocr_garbled_code",
-    "c_struct_body_garbled"
-  ]
-}
-```
-
-## 理想输出
-
-```json
-{
-  "question_type": "single_choice",
-  "stem": "已知二叉树的结点结构定义如下，若一棵二叉树的中序遍历序列为 DBEAFC，后序遍历序列为 DEBFCA，则其前序遍历序列为：",
-  "code_blocks": [
-    "typedef struct BiTNode {\n    char data;\n    struct BiTNode *lchild, *rchild;\n} BiTNode, *BiTree;"
-  ],
-  "options": {
-    "A": "ABDECF",
-    "B": "ABDCEF",
-    "C": "ABDFEC",
-    "D": "ACBEDF"
-  },
-  "answer": "A",
-  "quality_status": "passed",
-  "risk_flags": []
-}
-```
-
-注意：如果没有足够证据可靠修复代码，不要强行把乱码修成 `lchild, rchild`，保留乱码代码并进入人工审核即可。重点是不能丢选项和答案。
-
-------
-
-# 十、必须新增回归测试
-
-新增测试目录：
-
-```text
-backend/tests/ocr_regression/
-```
-
-或项目现有测试目录下：
-
-```text
-tests/ocr_regression/
-```
-
-新增测试文件：
-
-```text
-test_ocr_pipeline_structure_safety.py
-test_ocr_binary_tree_code_case.py
-test_ocr_inline_options.py
-test_ocr_multi_question_page_isolation.py
-test_ocr_vl_low_confidence_rejection.py
-```
-
-------
-
-## 测试 1：当前二叉树题保留选项和答案
-
-```python
-def test_binary_tree_code_question_preserve_options_and_answer():
-    result = import_from_raw_ocr(RAW_OCR_BINARY_TREE)
-
-    assert result.question_type == "single_choice"
-    assert "中序遍历序列为 DBEAFC" in result.stem
-    assert "后序遍历序列为 DEBFCA" in result.stem
-    assert "前序遍历序列" in result.stem
-
-    assert result.options["A"] == "ABDECF"
-    assert result.options["B"] == "ABDCEF"
-    assert result.options["C"] == "ABDFEC"
-    assert result.options["D"] == "ACBEDF"
-
-    assert result.answer == "A"
-
-    assert "A.ABDECF" not in result.stem
-    assert "B.ABDCEF" not in result.stem
-    assert "C.ABDFEC" not in result.stem
-    assert "D. ACBEDF" not in result.stem
-    assert "答案" not in result.stem
-```
-
-------
-
-## 测试 2：乱码代码不能导致选项/答案丢失
-
-```python
-def test_garbled_code_does_not_drop_options_or_answer():
-    result = import_from_raw_ocr(RAW_OCR_BINARY_TREE)
-
-    assert len(result.options) == 4
-    assert result.answer == "A"
-
-    if "ocr_garbled_code" in result.risk_flags:
-        assert result.quality_status == "needs_manual_review"
-        assert result.is_valid is False or result.review_required is True
-```
-
-------
-
-## 测试 3：低置信 VL 候选丢选项必须拒绝
-
-~~~python
-def test_vl_low_confidence_candidate_dropping_options_is_rejected():
-    raw = RAW_OCR_BINARY_TREE
-
-    vl_candidate = """
-已知二叉树的结点结构定义如下，若一棵二叉树的中序遍历序列为 DBEAFC,后序遍历序列为 DEBFCA 则其前序遍历序列为:
-```text
-typedef struct BiTNode {
-char data;
-(1typu*  p1tysI* apo11ta aonu2s
-} BiTNode, *BiTree;
-~~~
-
-"""
-
-```
-result = run_ocr_fix_router(
-    raw_text=raw,
-    candidate_text=vl_candidate,
-    candidate_confidence=0.0
-)
-
-assert result.options["A"] == "ABDECF"
-assert result.options["B"] == "ABDCEF"
-assert result.options["C"] == "ABDFEC"
-assert result.options["D"] == "ACBEDF"
-assert result.answer == "A"
-
-assert "vl_low_confidence_rejected" in result.risk_flags
-assert "options_dropped" in result.risk_flags or "ai_candidate_rejected_structure_loss" in result.risk_flags
----
-
-## 测试 4：同页两题不能串选项
-
-```python
-RAW_OCR_TWO_QUESTIONS = """
-1. 第一题题干？
-A. 一
-B. 二
-C. 三
-D. 四
-答案：A
-
-2. 第二题题干？
-A. 甲
-B. 乙
-C. 丙
-D. 丁
-答案：B
-"""
-
-def test_two_questions_same_page_options_do_not_cross_contaminate():
-    results = import_from_raw_ocr_multi(RAW_OCR_TWO_QUESTIONS)
-
-    assert len(results) == 2
-
-    q1, q2 = results[0], results[1]
-
-    assert "第一题题干" in q1.stem
-    assert q1.options["A"] == "一"
-    assert q1.options["B"] == "二"
-    assert q1.options["C"] == "三"
-    assert q1.options["D"] == "四"
-    assert q1.answer == "A"
-
-    assert "第二题题干" in q2.stem
-    assert q2.options["A"] == "甲"
-    assert q2.options["B"] == "乙"
-    assert q2.options["C"] == "丙"
-    assert q2.options["D"] == "丁"
-    assert q2.answer == "B"
-
-    assert q1.options != q2.options
-```
-
-------
-
-## 测试 5：横排英文选项正确切分
-
-```python
-RAW_OCR_INLINE_ENGLISH = """
-1. Which term describes a tree traversal method?
-A. Algorithm B. Binary tree C. Data structure D. Code
-答案：B
-"""
-
-def test_inline_english_options_split_correctly():
-    result = import_from_raw_ocr(RAW_OCR_INLINE_ENGLISH)
-
-    assert result.question_type == "single_choice"
-    assert result.options["A"] == "Algorithm"
-    assert result.options["B"] == "Binary tree"
-    assert result.options["C"] == "Data structure"
-    assert result.options["D"] == "Code"
-    assert result.answer == "B"
-    assert result.quality_status != "passed" or len(result.options) == 4
-```
-
-------
-
-## 测试 6：横排选项误冻结成单 A 时不得 passed
-
-```python
-def test_single_a_option_containing_bcd_labels_is_not_authoritative():
-    bad_options = {
-        "A": "Algorithm B. Binary tree C. Data structure D. Code"
-    }
-
-    validation = validate_option_set(bad_options)
-
-    assert validation.is_usable is False
-    assert "inline_option_split_failed" in validation.suspicious_reasons
-```
-
-------
-
-## 测试 7：客观题信号存在时不得降级 subjective
-
-```python
-RAW_OCR_OBJECTIVE_BROKEN_OPTIONS = """
-1. 下列说法正确的是？
-A. Algorithm B. Binary tree C. Data structure D. Code
-答案：B
-"""
-
-def test_objective_signals_prevent_subjective_false_pass():
-    result = import_from_raw_ocr_with_broken_inline_parser(
-        RAW_OCR_OBJECTIVE_BROKEN_OPTIONS
-    )
-
-    assert result.question_type in {"single_choice", "multiple_choice"}
-    assert result.quality_status == "needs_manual_review"
-    assert result.is_valid is False or result.review_required is True
-    assert "objective_signals_but_options_incomplete" in result.risk_flags
-```
-
-------
-
-# 十一、最终链路决策要求
-
-修复后，每道题应输出调试 trace，至少包含：
-
-```json
-{
-  "raw_ocr": {
-    "has_option_labels": true,
-    "option_label_count": 4,
-    "has_explicit_answer": true,
-    "explicit_answer": "A"
-  },
-  "structure_freeze": {
-    "frozen_options_count": 4,
-    "frozen_options_keys": ["A", "B", "C", "D"],
-    "binding": {
-      "page": 1,
-      "block_id": "block_0",
-      "line_start": 8,
-      "line_end": 11
-    },
-    "is_authoritative": true
-  },
-  "ocr_correction": {
-    "vl_candidate_confidence": 0.0,
-    "candidate_dropped_options": true,
-    "candidate_dropped_answer": true,
-    "decision": "rejected"
-  },
-  "split": {
-    "question_count": 1,
-    "options_cross_contamination_guard": "passed"
-  },
-  "normalize_schema": {
-    "question_type": "single_choice",
-    "options_count": 4,
-    "answer": "A",
-    "quality_status": "needs_manual_review"
-  },
-  "risk_flags": [
-    "ocr_garbled_code"
-  ]
-}
-```
-
-------
-
-# 十二、禁止事项
-
-1. 禁止硬编码 `ocr_code_test_2.png` 文件名；
-2. 禁止硬编码二叉树题干；
-3. 禁止把所有 `typedef struct` 都强行修复成 `BiTNode`；
-4. 禁止关闭 OCR quality gate；
-5. 禁止关闭 AI safety gate；
-6. 禁止低置信 VL 候选覆盖 raw OCR 中已有的选项和答案；
-7. 禁止把同页 frozen options 全局注入每一道题；
-8. 禁止只有一个 A 选项时仍判定选择题通过；
-9. 禁止有 A-D 选项信号时降级为 subjective passed；
-10. 禁止最终输出 `answer=""` 且 `confidence_score=1.0`；
-11. 禁止只在前端展示层修复，必须修复后端结构化数据；
-12. 禁止只改 prompt，不加回归测试；
-13. 禁止删除风险标记来让测试通过；
-14. 禁止把 `needs_manual_review` 强行改为 `passed`。
-
-------
-
-# 十三、验收命令
-
-请在后端项目根目录执行：
-
-```bash
-pytest tests/ocr_regression/test_ocr_pipeline_structure_safety.py -q
-pytest tests/ocr_regression/test_ocr_binary_tree_code_case.py -q
-pytest tests/ocr_regression/test_ocr_inline_options.py -q
-pytest tests/ocr_regression/test_ocr_multi_question_page_isolation.py -q
-pytest tests/ocr_regression/test_ocr_vl_low_confidence_rejection.py -q
-pytest tests/ocr_regression -q
-pytest tests -q
-```
-
-如果项目测试目录是：
-
-```text
-backend/tests/
-```
-
-则执行：
-
-```bash
-cd backend
-pytest tests/ocr_regression -q
-pytest tests -q
-```
-
-------
-
-# 十四、最终交付内容
-
-请交付：
-
-1. 修改过的后端代码；
-2. 新增/修改的 OCR 回归测试；
-3. 一份修复说明，包含：
-   - 根因；
-   - 修改文件；
-   - 新增函数；
-   - 关键逻辑；
-   - 风险控制；
-   - 回归测试结果；
-4. 一份本题回放结果 JSON；
-5. 一份同页多题回放结果 JSON；
-6. 一份横排英文选项回放结果 JSON。
-
-最终验收标准：
-
-```text
-二叉树题：选项不丢，答案不丢，代码乱码进审核。
-低置信 VL：丢选项/答案则拒绝。
-同页多题：不串选项。
-横排英文选项：正确切分 A-D。
-选项解析失败：不得 subjective passed。
-显式答案：全链路保留。
-
-```
+
+1. 完成成功后：
+   - 清理 interval。
+   - activeSession = null。
+   - isRunning=false。
+   - isPaused=false。
+   - 刷新统计。
+   - toast：已记录本次专注。
+
+失败时：
+
+1. 不要清空 activeSession。
+2. 不要清空本地 elapsedSec。
+3. toast：结束计时失败，请重试。
+
+十八、普通番茄钟回归要求
+
+修复自由计时不能破坏普通番茄钟。
+
+必须验证：
+
+1. 标准番茄钟仍然倒计时。
+2. 长时番茄钟仍然倒计时。
+3. 自定义番茄钟仍然倒计时。
+4. 普通番茄钟暂停后剩余时间停止。
+5. 普通番茄钟继续后剩余时间继续。
+6. 普通番茄钟完成后仍按原逻辑记录。
+7. 如果原来有休息流程，不被自由计时影响。
+8. 自由计时完成后不进入休息流程。
+
+十九、接口错误码建议
+
+后端建议使用：
+
+1. 已有 active session：
+   HTTP 409
+   detail: 当前已有进行中的专注，请先结束后再开始
+2. 科目不存在：
+   HTTP 400
+   detail: 科目不存在
+3. 科目不可用：
+   HTTP 400
+   detail: 科目不可用
+4. 选择父级科目：
+   HTTP 400
+   detail: 请选择具体子科目
+5. pause/resume/complete 找不到 active session：
+   HTTP 404
+   detail: No active session found
+
+二十、迁移和测试命令
+
+完成修复后执行：
+
+后端语法检查：
+
+python -m py_compile app/models/pomodoro.py
+python -m py_compile app/schemas/pomodoro.py
+python -m py_compile app/services/pomodoro_service.py
+python -m py_compile app/api/v1/pomodoro.py
+
+Alembic 检查：
+
+alembic heads
+alembic history --verbose
+alembic upgrade head
+alembic downgrade -1
+alembic upgrade head
+
+数据库检查：
+
+SELECT COUNT(*) FROM pomodoro_sessions WHERE subject_id IS NULL;
+
+SELECT column_name
+FROM information_schema.columns
+WHERE table_name = 'pomodoro_sessions'
+ORDER BY ordinal_position;
+
+确认：
+
+1. subject_id 存在。
+2. total_paused_sec 存在。
+3. subject 不存在。
+4. alembic heads 只有一个。
+
+小程序检查：
+
+1. node --check miniprogram/pages/pomodoro/pomodoro.js
+2. node --check miniprogram/pages/pomodoro-stats/pomodoro-stats.js
+
+二十一、手动测试用例
+
+测试 1：Alembic 单 head
+
+- 执行 alembic heads。
+- 只能看到一个 head。
+- alembic upgrade head 成功。
+
+测试 2：旧 Pomodoro subject 回填
+
+- 准备旧数据 subject=data_structure。
+- 执行迁移。
+- subject_id 应回填为“数据结构”的 id，即 exam408-ds 对应 id。
+- 删除 subject 字段后 history 仍显示“数据结构”。
+
+测试 3：advanced_math 回填
+
+- 准备旧数据 subject=advanced_math 或 高数。
+- 执行迁移。
+- 应回填到“高等数学”对应 id，即 math2-calculus。
+
+测试 4：politics 回填
+
+- 准备旧数据 subject=politics。
+- 执行迁移。
+- 应回填到“政治”对应 id，即 pol。
+
+测试 5：已有 active session 防重复
+
+- 开始一个自由计时。
+- 不结束，再点击开始。
+- 不应创建第二条 session。
+- 后端返回 409 或 400。
+- 旧 session 不应被自动 interrupted。
+
+测试 6：自由计时基础流程
+
+- 选择“数据结构”。
+- 选择“自由计时”。
+- 开始计时。
+- 等待 10 秒。
+- 结束并确认。
+- history 显示自由计时约 10 秒。
+- stats 今日时长增加约 10 秒。
+
+测试 7：暂停不计时
+
+- 开始自由计时。
+- 运行 10 秒。
+- 暂停。
+- 等待 20 秒。
+- 继续。
+- 再运行 10 秒。
+- 结束。
+- 最终 actual_duration 约 20 秒，不应是 40 秒。
+
+测试 8：暂停中直接结束
+
+- 开始自由计时。
+- 运行 10 秒。
+- 暂停。
+- 等待 20 秒。
+- 不继续，直接结束。
+- 最终 actual_duration 约 10 秒。
+- 暂停等待的 20 秒不能计入。
+
+测试 9：后台恢复
+
+- 开始自由计时。
+- 运行 10 秒。
+- 切后台 30 秒。
+- 回到页面。
+- running 状态应显示约 40 秒。
+
+测试 10：暂停后台恢复
+
+- 开始自由计时。
+- 运行 10 秒。
+- 暂停。
+- 切后台 30 秒。
+- 回到页面。
+- 仍显示约 10 秒。
+
+测试 11：普通番茄钟回归
+
+- 标准番茄钟开始。
+- 暂停。
+- 继续。
+- 完成。
+- 记录正常。
+- 暂停时长不重复扣除。
+
+测试 12：统计口径
+
+- 完成一条自由计时。
+- 今日专注时长增加。
+- 科目统计增加。
+- interrupted 记录不计入统计，除非产品明确要求计入。
+
+二十二、最终输出要求
+
+完成后请输出：
+
+1. 修改过的文件列表。
+2. Alembic heads 修复方式：
+   - 是改 down_revision 线性化；
+   - 还是新增 merge migration。
+3. 最终 Alembic head revision。
+4. r3g4h5i6j7k8 的 subject 回填映射修复说明。
+5. s4g5h6i7j8k9 删除 subject 前的数据保护策略。
+6. t5g6h7i8j9k0 total_paused_sec 幂等修复说明。
+7. env.py 是否已导入 PomodoroSession。
+8. 后端 start / pause / resume / complete 的逻辑修复说明。
+9. total_paused_sec 的权威计算来源说明。
+10. total_paused_ms / total_paused_sec 兼容策略说明。
+11. 小程序自由计时暂停、继续、结束、恢复逻辑修复说明。
+12. 历史和统计页面适配说明。
+13. 手动测试结果。
+14. 是否还有遗留风险。
+
+不要做的事情：
+
+1. 不要重新引入 pomodoro_sessions.subject。
+2. 不要恢复前端硬编码科目数组。
+3. 不要新建独立 timer 表。
+4. 不要把自由计时记录写到其他表。
+5. 不要让 start_session 自动中断旧 session。
+6. 不要让 interrupted 默认进入统计总时长。
+7. 不要保留多个 Alembic head。
+8. 不要在生产环境依赖 runtime DDL 替代 Alembic。

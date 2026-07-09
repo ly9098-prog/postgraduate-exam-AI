@@ -220,58 +220,85 @@
   </view>
 </view>
 
-<!-- ==================== 最终结果页 ==================== -->
-<view class="page result-page" wx:if="{{phase === 'final-result'}}">
-  <view class="result-wrap final-wrap animation-fade-in">
-    <view class="celebrate-bg celebrate-one"></view>
-    <view class="celebrate-bg celebrate-two"></view>
-    <view class="result-medal final-medal">
-      <text class="result-medal-main">章</text>
-      <text class="result-medal-sub">今日复习</text>
-    </view>
-    <text class="result-title">今日复习完成</text>
-    <text class="result-desc">系统已根据你的作答结果更新复习计划</text>
+<!-- ==================== 最终结果页（紧凑版） ==================== -->
+<view class="review-result-page" wx:if="{{phase === 'final-result' && reviewResultVm}}">
+  <!-- 顶部简短标题 -->
+  <view class="result-header anim-s1">
+    <text class="result-title">{{reviewResultVm.resultTitle}}</text>
+    <text class="result-subtitle">{{reviewResultVm.resultDesc}}</text>
+  </view>
 
-    <view class="result-stats">
-      <view class="result-stat-item">
-        <text class="result-stat-val">{{allGroupResults.length}}</text>
-        <text class="result-stat-lbl">复习题数</text>
+  <!-- 集中式结果摘要卡 -->
+  <view class="result-summary-card {{reviewResultVm.resultLevelClass}} anim-s2">
+    <view class="card-accent {{reviewResultVm.resultLevelClass}}"></view>
+    <view class="summary-top">
+      <view class="accuracy-block">
+        <text class="accuracy-value">{{reviewResultVm.accuracy}}<text class="accuracy-unit">%</text></text>
+        <text class="accuracy-label">正确率</text>
       </view>
-      <view class="result-stat-item">
-        <text class="result-stat-val success">{{totalCorrect}}</text>
-        <text class="result-stat-lbl">正确</text>
-      </view>
-      <view class="result-stat-item">
-        <text class="result-stat-val danger">{{totalWrong}}</text>
-        <text class="result-stat-lbl">需巩固</text>
-      </view>
-    </view>
-    <view wx:if="{{totalCompleted < allGroupResults.length}}" class="result-meta">
-      <text class="result-meta-text">已答 {{totalCompleted}} 题 · 跳过 {{allGroupResults.length - totalCompleted}} 题</text>
-    </view>
-
-    <view class="accuracy-section">
-      <view class="accuracy-ring">
-        <view class="accuracy-bg"></view>
-        <view class="accuracy-fg" style="{{_accuracyStyle}}"></view>
-        <view class="accuracy-center">
-          <text class="accuracy-num">{{_accuracyText}}</text>
-          <text class="accuracy-lbl">正确率</text>
-        </view>
-      </view>
-      <view class="final-growth-card">
-        <text class="final-growth-kicker">成长结算</text>
-        <text class="final-growth-title">复习经验 +{{allGroupResults.length}}</text>
-        <text class="final-growth-desc">完成 {{groups.length}} 组复习，明日记忆计划已刷新</text>
+      <view class="summary-status">
+        <text class="status-text">{{reviewResultVm.statusText}}</text>
+        <text class="status-desc">{{reviewResultVm.statusDesc}}</text>
       </view>
     </view>
 
-    <view class="reward-card">
-      <text class="reward-title">已获得</text>
-      <text class="reward-desc">复习完成徽章 · 记忆曲线更新 · 明日计划刷新</text>
+    <view class="summary-divider"></view>
+
+    <view class="summary-grid">
+      <view class="summary-item">
+        <text class="summary-value">{{reviewResultVm.total}}</text>
+        <text class="summary-label">复习题数</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-value">{{reviewResultVm.correct}}</text>
+        <text class="summary-label">答对</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-value">{{reviewResultVm.wrong}}</text>
+        <text class="summary-label">错题</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-value">{{reviewResultVm.completedGroupCount}}/{{reviewResultVm.groupCount}}</text>
+        <text class="summary-label">完成组</text>
+      </view>
     </view>
 
-    <button class="finish-btn" bindtap="finishReview">完成</button>
+    <view class="summary-extra" wx:if="{{reviewResultVm.hasSkipped || reviewResultVm.masteredCount > 0}}">
+      <text wx:if="{{reviewResultVm.hasSkipped}}">未完成 {{reviewResultVm.skipped}} 题</text>
+      <text wx:if="{{reviewResultVm.hasSkipped && reviewResultVm.masteredCount > 0}}"> · </text>
+      <text wx:if="{{reviewResultVm.masteredCount > 0}}">已掌握 {{reviewResultVm.masteredCount}} 题</text>
+    </view>
+  </view>
+
+  <!-- 建议与入口 -->
+  <view class="result-advice-card anim-s3">
+    <view class="advice-marker {{reviewResultVm.nextStepType}}"></view>
+    <view class="advice-body">
+      <view class="advice-head">
+        <text class="advice-title">{{reviewResultVm.nextStepTitle}}</text>
+        <text class="advice-tag {{reviewResultVm.nextStepType}}">{{reviewResultVm.nextStepTag}}</text>
+      </view>
+      <text class="advice-desc">{{reviewResultVm.nextStepDesc}}</text>
+    </view>
+  </view>
+
+  <view class="wrong-inline-tip anim-s3" wx:if="{{reviewResultVm.hasWrong}}" bindtap="goWrongBook">
+    <view class="wrong-marker"></view>
+    <view class="wrong-body">
+      <text class="wrong-tip-text">今日新增 <text class="wrong-count">{{reviewResultVm.wrong}}</text> 道错题，建议立即复盘</text>
+      <text class="wrong-tip-action">去复盘</text>
+    </view>
+  </view>
+
+  <view class="bottom-safe-space"></view>
+
+  <!-- 底部固定按钮 -->
+  <view class="review-bottom-actions anim-s4">
+    <button class="action-primary" wx:if="{{reviewResultVm.total === 0}}" bindtap="startReview">开始复习</button>
+    <button class="action-primary" wx:elif="{{reviewResultVm.hasWrong}}" bindtap="goWrongBook">复盘错题</button>
+    <button class="action-primary" wx:else bindtap="goHome">完成</button>
+    <button class="action-secondary" wx:if="{{reviewResultVm.total === 0}}" bindtap="goHome">返回首页</button>
+    <button class="action-secondary" wx:else bindtap="goPractice">继续练习</button>
   </view>
 </view>
 
