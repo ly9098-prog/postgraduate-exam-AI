@@ -1,6 +1,6 @@
-<view class="quiz-runner">
+<view class="quiz-runner {{compactReviewMode ? 'runner-compact' : ''}}">
   <!-- ==================== 顶部状态栏 ==================== -->
-  <view class="runner-top-bar">
+  <view class="runner-top-bar" wx:if="{{!compactReviewMode}}">
     <view class="runner-bar-left">
       <text class="runner-bar-subject">{{subjectName}}</text>
       <text class="runner-bar-counter">第 {{currentIndex + 1}} / {{totalCount || 0}} 题</text>
@@ -16,7 +16,7 @@
   </view>
 
   <!-- ==================== 进度条 ==================== -->
-  <view class="runner-progress-shell">
+  <view class="runner-progress-shell" wx:if="{{!compactReviewMode}}">
     <view class="runner-progress-track">
       <view class="runner-progress-fill" style="width:{{progressPercent}}%"></view>
     </view>
@@ -160,7 +160,7 @@
   </view>
 
   <!-- ==================== 答题卡弹窗 ==================== -->
-  <view class="runner-sheet-overlay" wx:if="{{showSheet}}" bindtap="closeSheet">
+  <view class="runner-sheet-overlay" wx:if="{{showSheet && !compactReviewMode}}" bindtap="closeSheet">
     <view class="runner-sheet-modal" catchtap="noop">
       <view class="runner-sheet-head">
         <view>
