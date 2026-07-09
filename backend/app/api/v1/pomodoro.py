@@ -39,7 +39,9 @@ async def start_session(
         )
     except ValueError as e:
         from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail=str(e))
+        detail = str(e)
+        status_code = 409 if "已有进行中的专注" in detail else 400
+        raise HTTPException(status_code=status_code, detail=detail)
     await db.commit()
     return PomodoroSessionResponse.from_orm_with_subject(session)
 

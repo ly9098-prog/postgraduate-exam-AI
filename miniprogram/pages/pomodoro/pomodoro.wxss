@@ -827,37 +827,167 @@ page {
 .size-large .stats-link { font-size: 28rpx; }
 
 /* ============================================
-   FREE TIMER — Mode dot + count-up display
+   🔥 EMBER FLOW — Free timer design system
+   Warm emerald / teal palette for unbounded focus.
+   Contrasts with the cool cyan of countdown mode.
    ============================================ */
+
+/* ── Mode selector dot — emerald pulse ── */
 .dot-ring-free {
-  border-color: rgba(16, 185, 129, 0.4) !important;
+  border-color: rgba(16, 185, 129, 0.35) !important;
+  transition: all 0.4s ease !important;
 }
 
 .mode-dot.active .dot-ring-free {
-  border-color: rgba(16, 185, 129, 0.6) !important;
-  box-shadow: 0 0 20rpx rgba(16, 185, 129, 0.15) !important;
+  border-color: rgba(16, 185, 129, 0.7) !important;
+  box-shadow: 0 0 30rpx rgba(16, 185, 129, 0.25), inset 0 0 20rpx rgba(16, 185, 129, 0.08) !important;
+  animation: free-dot-glow 2.5s ease-in-out infinite !important;
+}
+
+@keyframes free-dot-glow {
+  0%, 100% { box-shadow: 0 0 20rpx rgba(16, 185, 129, 0.2), inset 0 0 20rpx rgba(16, 185, 129, 0.05); }
+  50% { box-shadow: 0 0 45rpx rgba(16, 185, 129, 0.35), inset 0 0 25rpx rgba(16, 185, 129, 0.1); }
 }
 
 .dot-fill-free {
-  background: rgba(16, 185, 129, 0.4) !important;
+  background: rgba(16, 185, 129, 0.35) !important;
+  transition: all 0.3s ease !important;
 }
 
 .mode-dot.active .dot-fill-free {
   background: #10B981 !important;
+  box-shadow: 0 0 16rpx rgba(16, 185, 129, 0.5);
 }
 
+/* ── Page-level shift — warm undertone ── */
+.page-free {
+  background: linear-gradient(180deg, #0B1121 0%, #0F1E1E 40%, #111827 100%) !important;
+}
+
+/* ── Ring glow — emerald breathing ── */
+.page-free .ring-glow {
+  box-shadow:
+    0 0 60rpx rgba(16, 185, 129, 0.25),
+    0 0 120rpx rgba(16, 185, 129, 0.1),
+    0 0 200rpx rgba(5, 150, 105, 0.06) !important;
+  animation: free-ring-breathe 3.5s ease-in-out infinite !important;
+}
+
+@keyframes free-ring-breathe {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+/* ── HH:MM:SS — gradient shimmer ── */
 .ring-time-free {
-  font-size: 72rpx;
-  font-weight: 300;
-  letter-spacing: 4rpx;
+  font-size: 80rpx;
+  font-weight: 200;
+  letter-spacing: 6rpx;
+  background: linear-gradient(90deg, #6EE7B7 0%, #34D399 25%, #10B981 50%, #059669 75%, #34D399 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: free-shimmer 4s linear infinite;
+  transition: opacity 0.4s ease, filter 0.4s ease;
 }
 
-.time-dim {
-  opacity: 0.55;
+@keyframes free-shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.ring-time-free.time-dim {
+  opacity: 0.45;
+  animation: none;
+  background: linear-gradient(135deg, rgba(110, 231, 183, 0.5), rgba(16, 185, 129, 0.35));
+  background-size: 100% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Status indicator — emerald breathing dot ── */
+.free-status-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  margin-top: 16rpx;
+}
+
+.free-status-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 16rpx rgba(16, 185, 129, 0.6);
+  animation: free-dot-breathe 1.8s ease-in-out infinite;
+}
+
+@keyframes free-dot-breathe {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.75);
+    box-shadow: 0 0 8rpx rgba(16, 185, 129, 0.3);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+    box-shadow: 0 0 24rpx rgba(16, 185, 129, 0.7);
+  }
+}
+
+.free-hint {
+  font-size: 24rpx;
+  color: rgba(16, 185, 129, 0.6) !important;
+  letter-spacing: 4rpx;
+  font-weight: 500;
+}
+
+/* ── Paused state — amber shift ── */
+.free-status-dot.dot-paused {
+  background: #F59E0B;
+  box-shadow: 0 0 16rpx rgba(245, 158, 11, 0.5);
+  animation: none;
+  opacity: 0.8;
+  transform: scale(1);
+}
+
+.hint-paused {
+  color: rgba(245, 158, 11, 0.5) !important;
+}
+
+/* ── Free timer control buttons ── */
+.page-free .ctrl-primary {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.18);
+}
+
+.page-free .ctrl-primary:active {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.3);
+  box-shadow: 0 0 36rpx rgba(16, 185, 129, 0.2);
+}
+
+.page-free .ctrl-secondary {
+  background: rgba(251, 146, 60, 0.05);
+  border-color: rgba(251, 146, 60, 0.1);
+}
+
+.page-free .ctrl-secondary:active {
+  background: rgba(251, 146, 60, 0.12);
+  border-color: rgba(251, 146, 60, 0.2);
 }
 
 /* ============================================
-   FREE TIMER — End confirmation modal
+   🌿 CONFIRMATION MODAL — Frosted emerald
    ============================================ */
 .confirm-overlay {
   position: fixed;
@@ -865,15 +995,16 @@ page {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(8rpx);
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(12rpx);
+  -webkit-backdrop-filter: blur(12rpx);
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.35s ease;
 }
 
 .confirm-overlay.visible {
@@ -883,34 +1014,45 @@ page {
 
 .confirm-card {
   width: 560rpx;
-  background: #1E293B;
+  background: rgba(30, 41, 59, 0.95);
+  border: 1rpx solid rgba(16, 185, 129, 0.12);
   border-radius: 32rpx;
-  padding: 48rpx 40rpx 32rpx;
-  box-shadow: 0 24rpx 80rpx rgba(0, 0, 0, 0.5);
-  animation: confirm-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  padding: 52rpx 40rpx 36rpx;
+  box-shadow: 0 32rpx 96rpx rgba(0, 0, 0, 0.6), 0 0 60rpx rgba(16, 185, 129, 0.06);
+  animation: confirm-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes confirm-in {
-  from { opacity: 0; transform: scale(0.92) translateY(20rpx); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.88) translateY(30rpx);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .confirm-title {
   display: block;
   font-size: 36rpx;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
   text-align: center;
   margin-bottom: 20rpx;
+  background: linear-gradient(135deg, #6EE7B7, #10B981);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .confirm-body {
   display: block;
   font-size: 28rpx;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.5);
   text-align: center;
-  line-height: 1.6;
-  margin-bottom: 40rpx;
+  line-height: 1.7;
+  margin-bottom: 44rpx;
+  padding: 0 8rpx;
 }
 
 .confirm-actions {
@@ -928,7 +1070,7 @@ page {
   align-items: center;
   justify-content: center;
   padding: 0;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .confirm-btn::after {
@@ -936,28 +1078,36 @@ page {
 }
 
 .confirm-cancel {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.5);
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
 }
 
 .confirm-cancel:active {
   background: rgba(255, 255, 255, 0.1);
-  transform: scale(0.97);
+  transform: scale(0.96);
 }
 
 .confirm-ok {
   background: linear-gradient(135deg, #10B981 0%, #059669 100%);
   color: #ffffff;
-  box-shadow: 0 8rpx 24rpx rgba(16, 185, 129, 0.3);
+  box-shadow: 0 8rpx 32rpx rgba(16, 185, 129, 0.35);
 }
 
 .confirm-ok:active {
   opacity: 0.85;
-  transform: scale(0.97);
+  transform: scale(0.96);
+  box-shadow: 0 4rpx 16rpx rgba(16, 185, 129, 0.25);
 }
 
+/* ── Large size overrides ── */
 .size-large .ring-time-free {
-  font-size: 84rpx;
+  font-size: 92rpx;
+  letter-spacing: 8rpx;
+}
+
+.size-large .free-hint {
+  font-size: 28rpx;
 }
 
 .size-large .confirm-title {

@@ -222,10 +222,7 @@ Page({
         savedAt: Date.now(),
       })
     }
-    if (this._freeTimerId) {
-      clearInterval(this._freeTimerId)
-      this._freeTimerId = null
-    }
+    this._clearFreeTimerInterval()
     this._clearTimer()
   },
 
@@ -438,7 +435,8 @@ Page({
     })
     this._updateComputedFields()
     this._updateFreeElapsed()
-    this._freeTimerId = setInterval(() => this._updateFreeElapsed(), 500)
+    this._startFreeTimerInterval()
+    setTimeout(() => { this._initCanvas(); this.drawRing(0, false) }, 200)
   },
 
   _updateFreeElapsed() {
@@ -464,42 +462,69 @@ Page({
     })
   },
 
-  _pauseFreeTimer() {
-    this._clearTimer()
-    this.setData({
-      isPaused: true,
-      pauseStartTime: Date.now(),
-      freeFriendlyText: formatElapsedSec(this.data.elapsedSec).friendly,
-    })
-    wx.setStorageSync('pomodoro_free_pause', {
-      totalPausedMs: this.data.totalPausedMs,
-      pauseStartTime: Date.now(),
-      sessionId: this.data.sessionId,
-      elapsedSec: this.data.elapsedSec,
-    })
-    if (this.data.sessionId) {
-      api.post(`/pomodoro/${this.data.sessionId}/pause`, {}).catch(() => {
-        wx.showToast({ title: '暂停失败，请重试', icon: 'none' })
-      })
+  _clearFreeTimerInterval() {
+    if (this._freeTimerId) {
+      clearInterval(this._freeTimerId)
+      this._freeTimerId = null
     }
   },
 
-  _resumeFreeTimer() {
-    const pausedDuration = Date.now() - (this.data.pauseStartTime || Date.now())
-    const totalPausedMs = (this.data.totalPausedMs || 0) + Math.max(0, pausedDuration)
-    this.setData({
-      isPaused: false,
-      totalPausedMs: totalPausedMs,
-      pauseStartTime: null,
-    })
-    wx.removeStorageSync('pomodoro_free_pause')
-    if (this.data.sessionId) {
-      api.post(`/pomodoro/${this.data.sessionId}/resume`, {}).catch(() => {
-        wx.showToast({ title: '继续失败，请重试', icon: 'none' })
-      })
-    }
-    this._updateFreeElapsed()
+  _startFreeTimerInterval() {
+    this._clearFreeTimerInterval()
     this._freeTimerId = setInterval(() => this._updateFreeElapsed(), 500)
+  },
+
+  async _pauseFreeTimer() {
+    if (!this.data.sessionId) return
+    this._clearFreeTimerInterval()
+    try {
+      const server = await api.post(`/pomodoro/${this.data.sessionId}/pause`, {})
+      // Use server response to set canonical state
+      const serverPausedMs = (server.total_paused_sec || 0) * 1000
+      this.setData({
+        isPaused: true,
+        pauseStartTime: Date.now(),
+        totalPausedMs: serverPausedMs,
+        freeFriendlyText: formatElapsedSec(this.data.elapsedSec).friendly,
+      })
+      wx.setStorageSync('pomodoro_free_pause', {
+        totalPausedMs: serverPausedMs,
+        pauseStartTime: Date.now(),
+        sessionId: this.data.sessionId,
+        elapsedSec: this.data.elapsedSec,
+      })
+    } catch (e) {
+      // Restart interval on failure — don't lose counting time
+      if (!this.data.isPaused) this._startFreeTimerInterval()
+      wx.showToast({ title: '暂停失败，请重试', icon: 'none' })
+    }
+  },
+
+  async _resumeFreeTimer() {
+    if (!this.data.sessionId) return
+    this._clearFreeTimerInterval()
+    try {
+      const server = await api.post(`/pomodoro/${this.data.sessionId}/resume`, {})
+      // Recalculate elapsed from canonical server state
+      const startTime = parseServerTime(server.start_time)
+      const serverTotalPausedSec = server.total_paused_sec || 0
+      const now = Date.now()
+      const elapsed = Math.max(0, Math.floor((now - startTime) / 1000) - serverTotalPausedSec)
+      const fmt = formatElapsedSec(elapsed)
+      this.setData({
+        isPaused: false,
+        sessionStartTime: startTime,
+        totalPausedMs: serverTotalPausedSec * 1000,
+        pauseStartTime: null,
+        elapsedSec: elapsed,
+        freeDisplayTime: fmt.display,
+      })
+      wx.removeStorageSync('pomodoro_free_pause')
+      this._startFreeTimerInterval()
+    } catch (e) {
+      wx.showToast({ title: '继续失败，请重试', icon: 'none' })
+      this._startFreeTimerInterval()
+    }
   },
 
   _showEndFreeConfirm() {
@@ -514,14 +539,14 @@ Page({
   _cancelEndFreeTimer() {
     this.setData({ showEndConfirm: false })
     if (!this.data.isPaused) {
-      this._freeTimerId = setInterval(() => this._updateFreeElapsed(), 500)
+      this._startFreeTimerInterval()
     }
   },
 
   async _confirmEndFreeTimer() {
     this.setData({ showEndConfirm: false })
     if (!this.data.sessionId) return
-    this._clearTimer()
+    this._clearFreeTimerInterval()
     const elapsedSec = Math.max(1, this.data.elapsedSec || 0)
     const totalPausedSec = Math.floor((this.data.totalPausedMs || 0) / 1000)
     try {
@@ -534,7 +559,7 @@ Page({
       wx.showToast({ title: '结束计时失败，请重试', icon: 'none' })
       // Don't clear state on failure
       if (!this.data.isPaused) {
-        this._freeTimerId = setInterval(() => this._updateFreeElapsed(), 500)
+        this._startFreeTimerInterval()
       }
       return
     }
@@ -681,10 +706,7 @@ Page({
       clearInterval(this._timer)
       this._timer = null
     }
-    if (this._freeTimerId) {
-      clearInterval(this._freeTimerId)
-      this._freeTimerId = null
-    }
+    this._clearFreeTimerInterval()
   },
 
   /* ==================== Work Complete ==================== */
@@ -976,7 +998,7 @@ Page({
     this._updateComputedFields()
 
     if (!isPaused) {
-      this._freeTimerId = setInterval(() => this._updateFreeElapsed(), 500)
+      this._startFreeTimerInterval()
     }
   },
 
@@ -1047,7 +1069,9 @@ Page({
 
     const colors = isBreak
       ? { start: '#F43F5E', end: '#F97316', dot: '#F97316' }
-      : { start: '#06B6D4', end: '#3B82F6', dot: '#3B82F6' }
+      : this.data.isFreeTimer
+        ? { start: '#34D399', end: '#059669', dot: '#10B981' }
+        : { start: '#06B6D4', end: '#3B82F6', dot: '#3B82F6' }
 
     if (progress > 0) {
       const glowGrad = ctx.createLinearGradient(0, 0, size, size)
@@ -1091,10 +1115,7 @@ Page({
   },
 
   _resetToIdle() {
-    if (this._freeTimerId) {
-      clearInterval(this._freeTimerId)
-      this._freeTimerId = null
-    }
+    this._clearFreeTimerInterval()
     this._canvasReady = false
     this._ctx = null
     this._pendingDraw = null

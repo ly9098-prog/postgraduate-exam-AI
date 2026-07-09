@@ -14,8 +14,9 @@ class PomodoroStartRequest(BaseModel):
 
 
 class PomodoroCompleteRequest(BaseModel):
-    total_paused_ms: int = Field(default=0, ge=0)
     actual_duration_sec: int | None = Field(default=None, ge=0, description="If provided, used directly instead of computing from timestamps")
+    total_paused_sec: int | None = Field(default=None, ge=0, description="Total paused seconds (informational, server uses DB value)")
+    total_paused_ms: int | None = Field(default=None, ge=0, description="legacy only, prefer total_paused_sec")
 
 
 class PomodoroSessionResponse(BaseModel):
