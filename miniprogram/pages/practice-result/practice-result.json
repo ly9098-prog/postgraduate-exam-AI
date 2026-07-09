@@ -4,6 +4,7 @@
   "backgroundColorTop": "#F8FAFF",
   "backgroundColorBottom": "#EEF5FF",
   "usingComponents": {
-    "animated-view": "/components/AnimatedView/AnimatedView"
+    "animated-view": "/components/AnimatedView/AnimatedView",
+    "mp-html": "/components/mp-html/index"
   }
 }

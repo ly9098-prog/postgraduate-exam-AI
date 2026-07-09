@@ -1002,117 +1002,74 @@ page {
 }
 
 /* ============================================
-   🌿 CONFIRMATION MODAL — Frosted emerald
+   🌿 CONFIRMATION OVERLAY — cover-view over canvas
    ============================================ */
-.confirm-overlay {
+.confirm-cover-overlay {
   position: fixed;
-  top: 0;
   left: 0;
   right: 0;
+  top: 0;
   bottom: 0;
+  z-index: 999999;
   background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(12rpx);
-  -webkit-backdrop-filter: blur(12rpx);
-  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.35s ease;
 }
 
-.confirm-overlay.visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.confirm-card {
+.confirm-cover-card {
   width: 560rpx;
-  background: rgba(30, 41, 59, 0.95);
-  border: 1rpx solid rgba(16, 185, 129, 0.12);
   border-radius: 32rpx;
   padding: 52rpx 40rpx 36rpx;
-  box-shadow: 0 32rpx 96rpx rgba(0, 0, 0, 0.6), 0 0 60rpx rgba(16, 185, 129, 0.06);
-  animation: confirm-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  background: rgba(30, 41, 59, 0.98);
+  box-sizing: border-box;
 }
 
-@keyframes confirm-in {
-  from {
-    opacity: 0;
-    transform: scale(0.88) translateY(30rpx);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
-
-.confirm-title {
+.confirm-cover-title {
   display: block;
+  text-align: center;
   font-size: 36rpx;
-  font-weight: 700;
-  text-align: center;
+  font-weight: 800;
+  color: #6EE7B7;
   margin-bottom: 20rpx;
-  background: linear-gradient(135deg, #6EE7B7, #10B981);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
-.confirm-body {
+.confirm-cover-body {
   display: block;
-  font-size: 28rpx;
-  color: rgba(255, 255, 255, 0.5);
   text-align: center;
+  font-size: 28rpx;
+  color: rgba(255,255,255,0.72);
   line-height: 1.7;
   margin-bottom: 44rpx;
-  padding: 0 8rpx;
 }
 
-.confirm-actions {
+.confirm-cover-actions {
   display: flex;
-  gap: 24rpx;
+  gap: 20rpx;
 }
 
-.confirm-btn {
+.confirm-cover-btn {
   flex: 1;
   height: 88rpx;
-  border-radius: 24rpx;
-  font-size: 30rpx;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  line-height: 88rpx;
+  text-align: center;
+  border-radius: 999rpx;
+  font-size: 28rpx;
+  font-weight: 700;
 }
 
-.confirm-btn::after {
-  border: none;
+.confirm-cover-cancel {
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.86);
 }
 
-.confirm-cancel {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.5);
-  border: 1rpx solid rgba(255, 255, 255, 0.06);
+.confirm-cover-ok {
+  background: #10B981;
+  color: #FFFFFF;
 }
 
-.confirm-cancel:active {
-  background: rgba(255, 255, 255, 0.1);
-  transform: scale(0.96);
-}
-
-.confirm-ok {
-  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
-  color: #ffffff;
-  box-shadow: 0 8rpx 32rpx rgba(16, 185, 129, 0.35);
-}
-
-.confirm-ok:active {
-  opacity: 0.85;
-  transform: scale(0.96);
-  box-shadow: 0 4rpx 16rpx rgba(16, 185, 129, 0.25);
+.confirm-cover-ok.disabled {
+  opacity: 0.55;
 }
 
 /* ── Large size overrides ── */
@@ -1125,16 +1082,17 @@ page {
   font-size: 28rpx;
 }
 
-.size-large .confirm-title {
+.size-large .confirm-cover-title {
   font-size: 40rpx;
 }
 
-.size-large .confirm-body {
+.size-large .confirm-cover-body {
   font-size: 32rpx;
 }
 
-.size-large .confirm-btn {
+.size-large .confirm-cover-btn {
   height: 96rpx;
+  line-height: 96rpx;
   font-size: 34rpx;
 }
 

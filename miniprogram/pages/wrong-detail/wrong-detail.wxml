@@ -20,12 +20,6 @@
     <text class="switch-mask-text">切换中...</text>
   </view>
 
-  <!-- 轻量复盘提示 -->
-  <view class="review-guide">
-    <text class="review-guide-title">错题复盘</text>
-    <text class="review-guide-desc">先看题目与答案高亮，再下滑查看 AI 诊断。</text>
-  </view>
-
   <quiz-runner
     mode="wrong-detail"
     title="错题复盘"
@@ -51,21 +45,12 @@
     bind:jump="goWrongQuestion"
   />
 
-  <!-- AI 复盘入口条 — 首屏可见 -->
-  <view class="ai-entry-strip" catchtap="scrollToAiCard">
-    <view class="ai-entry-left">
-      <text class="ai-entry-title">AI 错题复盘</text>
-      <text class="ai-entry-desc">{{aiCards ? '已生成，点击查看错因与复练任务' : (aiRequested ? '点击重新生成' : '点击生成错因诊断、补漏重点和复练任务')}}</text>
-    </view>
-    <view class="ai-entry-action">{{aiCards ? '查看' : (aiLoading ? '生成中' : '生成')}}</view>
-  </view>
-
   <!-- AI 分析卡片 -->
   <view class="ai-card" id="ai-card">
     <view class="section-head">
       <view>
         <text class="section-title">AI 错题复盘</text>
-        <text class="section-subtitle">{{aiRequested ? '定位错因、补齐考点、安排下一次复练' : '点击后生成，不再自动请求'}}</text>
+        <text class="section-subtitle" wx:if="{{aiRequested}}">定位错因、补齐考点、安排复练</text>
       </view>
       <text class="section-chip">AI</text>
     </view>
@@ -138,23 +123,33 @@
 
     <!-- 2. 首次生成（无旧内容）骨架屏 -->
     <view wx:elif="{{aiLoading && !aiCards}}" class="ai-loading-state">
-      <view class="section-head compact">
-        <view>
-          <text class="section-title small">正在生成</text>
-          <text class="section-subtitle">AI 正在分析题目，请稍候</text>
+      <view class="ai-skeleton-section">
+        <view class="skeleton-title-row">
+          <view class="skeleton-index"></view>
+          <view class="skeleton-title"></view>
         </view>
-        <view class="chip-loading">
-          <view class="loading-spinner mini"></view>
-          <text class="chip-loading-text">生成中</text>
+        <view class="skeleton-line long"></view>
+        <view class="skeleton-line medium"></view>
+        <view class="skeleton-line short"></view>
+      </view>
+
+      <view class="ai-skeleton-section">
+        <view class="skeleton-title-row">
+          <view class="skeleton-index"></view>
+          <view class="skeleton-title"></view>
         </view>
+        <view class="skeleton-line long"></view>
+        <view class="skeleton-line medium"></view>
       </view>
-      <view class="ai-loading-skeleton">
-        <view class="skeleton-block" style="width:35%;height:20rpx;margin-bottom:12rpx;"></view>
-        <view class="skeleton-block" style="width:85%;height:16rpx;margin-bottom:8rpx;"></view>
-        <view class="skeleton-block" style="width:70%;height:16rpx;margin-bottom:8rpx;"></view>
-        <view class="skeleton-block" style="width:55%;height:16rpx;"></view>
+
+      <view class="ai-skeleton-section">
+        <view class="skeleton-title-row">
+          <view class="skeleton-index"></view>
+          <view class="skeleton-title"></view>
+        </view>
+        <view class="skeleton-line medium"></view>
+        <view class="skeleton-line short"></view>
       </view>
-      <text class="ai-hint">生成时间较长时，可以稍后重试</text>
     </view>
 
     <!-- 3. 失败空态（仅无旧内容时） -->
@@ -167,11 +162,9 @@
       <button class="ai-action-btn retry" bindtap="regenerateAiAnalysis">重新生成</button>
     </view>
 
-    <!-- 4. 未请求态 -->
-    <view wx:elif="{{!aiRequested && !aiCards}}" class="ai-idle">
-      <text class="ai-idle-title">需要 AI 帮你复盘这道错题吗？</text>
-      <text class="ai-idle-desc">点击后将生成错因诊断、补漏重点和复练任务。</text>
-      <button class="ai-action-btn" bindtap="onTapAiAnalysis">生成 AI 错题复盘</button>
+    <!-- 4. 未请求态 — 仅保留生成按钮 -->
+    <view wx:elif="{{!aiRequested && !aiCards}}" class="ai-idle minimal">
+      <button class="ai-action-btn" bindtap="onTapAiAnalysis">生成 AI 解析</button>
     </view>
   </view>
 </view>

@@ -414,11 +414,11 @@
 
 .detail-answer-block {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6rpx 12rpx;
-  padding: 10rpx 12rpx;
-  border-radius: 12rpx;
-  background: rgba(255,255,255,0.8);
+  flex-direction: column;
+  gap: 18rpx;
+  padding: 16rpx;
+  border-radius: 16rpx;
+  background: rgba(255,255,255,0.86);
 }
 
 .detail-answer-block.wrong {
@@ -429,23 +429,46 @@
   background: rgba(255,255,255,0.7);
 }
 
+.detail-answer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
 .detail-answer-label {
   font-size: 22rpx;
-  font-weight: 700;
+  font-weight: 800;
   color: #617089;
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 .detail-answer-label.correct {
   color: #22C55E;
 }
 
+.detail-answer-box {
+  padding: 12rpx 14rpx;
+  border-radius: 12rpx;
+  background: #F8FAFF;
+  border: 1rpx solid #E2EAF7;
+}
+
+.detail-answer-box.user {
+  background: #FFF7F7;
+  border-color: #FECACA;
+}
+
+.detail-answer-box.right {
+  background: #F0FDF4;
+  border-color: #BBF7D0;
+}
+
 .detail-answer-value {
-  font-size: 22rpx;
-  line-height: 1.5;
+  display: block;
+  font-size: 24rpx;
+  line-height: 1.65;
   word-break: break-word;
   white-space: pre-wrap;
-  color: #18233A;
 }
 
 .detail-answer-value.user {
@@ -453,7 +476,13 @@
 }
 
 .detail-answer-value.right {
-  color: #22C55E;
+  color: #16A34A;
+}
+
+.detail-rich-text {
+  font-size: 24rpx;
+  line-height: 1.65;
+  color: inherit;
 }
 
 /* ── 6. Bottom Actions ── */
