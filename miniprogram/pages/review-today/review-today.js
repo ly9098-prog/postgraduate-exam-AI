@@ -101,6 +101,9 @@ Page({
     growthLevelPct: 0,
     growthDesc: '',
 
+    reviewResultVm: null,
+    _masteredCount: 0,
+
     safeModeActive: false,
     renderTraces: [],
   },
@@ -513,6 +516,9 @@ Page({
       delete answers[scheduleId]
       answers = { ...answers }
 
+      // Track mastered count
+      this.data._masteredCount = (this.data._masteredCount || 0) + 1
+
       if (groupQuestions.length === 0 && groups.length > 0) {
         // All questions in current group mastered, move to next group
         currentGroupIdx = Math.min(currentGroupIdx, groups.length - 1)
@@ -531,11 +537,10 @@ Page({
           this._showQuestion(0)
         } else {
           // No groups left → all mastered
-          const denom = this.data.totalCompleted || this.data.allGroupResults.length
+          const reviewResultVm = this._buildReviewResultViewModel()
           this.setData({
             phase: 'final-result',
-            _accuracyStyle: this._calcAccuracyStyle(this.data.totalCorrect, denom),
-            _accuracyText: denom > 0 ? `${Math.round(this.data.totalCorrect / denom * 100)}%` : '0%',
+            reviewResultVm,
           })
           this._showFinalCelebrationOnce()
         }
@@ -556,11 +561,10 @@ Page({
         this._syncAnsweredFlags()
         // All questions mastered → go to final result
         if (groups.length === 0 || groups.every(g => g.length === 0)) {
-          const denom = this.data.totalCompleted || this.data.allGroupResults.length
+          const reviewResultVm = this._buildReviewResultViewModel()
           this.setData({
             phase: 'final-result',
-            _accuracyStyle: this._calcAccuracyStyle(this.data.totalCorrect, denom),
-            _accuracyText: denom > 0 ? `${Math.round(this.data.totalCorrect / denom * 100)}%` : '0%',
+            reviewResultVm,
           })
           this._showFinalCelebrationOnce()
           return
@@ -725,14 +729,11 @@ Page({
 
     const nextGroupIdx = this.data.currentGroupIdx + 1
     if (nextGroupIdx >= this.data.groups.length) {
-      // All groups done — just show the final-result view, no animation
-      const { totalCorrect, totalCompleted, allGroupResults } = this.data
-      const denom = totalCompleted || allGroupResults.length
+      const reviewResultVm = this._buildReviewResultViewModel()
       this.setData({
         phase: 'final-result',
         resultTransitioning: false,
-        _accuracyStyle: this._calcAccuracyStyle(totalCorrect, denom),
-        _accuracyText: denom > 0 ? `${Math.round(totalCorrect / denom * 100)}%` : '0%',
+        reviewResultVm,
       })
       return
     }
@@ -834,10 +835,117 @@ Page({
     }
   },
 
+  /* ==================== 最终结果视图模型 ==================== */
+
+  _buildReviewResultViewModel() {
+    var total = this.data.totalCorrect + this.data.totalWrong
+    var answered = this.data.totalCompleted || total
+    var correct = this.data.totalCorrect
+    var wrong = this.data.totalWrong
+    var skipped = Math.max(0, total - answered)
+
+    var accuracy = answered > 0 ? Math.round(correct / answered * 100) : 0
+
+    var groupCount = this.data.groups.length
+    var completedGroupCount = Math.min(this.data.currentGroupIdx + 1, groupCount)
+    var masteredCount = this.data._masteredCount || 0
+
+    var resultLevelClass, resultTitle, resultDesc, statusText, statusDesc
+    var nextStepType, nextStepTitle, nextStepDesc, nextStepTag
+
+    if (total === 0) {
+      resultLevelClass = 'empty'
+      resultTitle = '暂无复习结果'
+      resultDesc = '今天还没有完成可统计的复习题'
+      statusText = '未开始'
+      statusDesc = '完成一组复习后，这里会生成结果'
+      nextStepType = 'start'
+      nextStepTitle = '先开始一组复习'
+      nextStepDesc = '完成今日复习后，系统会帮你整理正确率和错题情况'
+      nextStepTag = '未开始'
+    } else if (accuracy >= 90 && wrong === 0) {
+      resultLevelClass = 'excellent'
+      resultTitle = '今日复习完成'
+      resultDesc = '整体掌握很好，可以保持当前节奏'
+      statusText = '状态很好'
+      statusDesc = '今天没有明显薄弱点'
+      nextStepType = 'continue'
+      nextStepTitle = '可以结束今日复习'
+      nextStepDesc = '如果还有精力，也可以继续练习新题巩固手感'
+      nextStepTag = '完成'
+    } else if (accuracy >= 80 && wrong > 0) {
+      resultLevelClass = 'good'
+      resultTitle = '今日复习完成'
+      resultDesc = '整体表现不错，但仍有少量错题'
+      statusText = '少量错题'
+      statusDesc = '建议趁热复盘'
+      nextStepType = 'review'
+      nextStepTitle = '建议先复盘错题'
+      nextStepDesc = '先处理今天的错题，再继续下一组练习'
+      nextStepTag = '推荐'
+    } else if (accuracy >= 60) {
+      resultLevelClass = 'normal'
+      resultTitle = '今日复习完成'
+      resultDesc = '本次复习暴露了一些薄弱点'
+      statusText = '需要复盘'
+      statusDesc = '错题有较高复盘价值'
+      nextStepType = 'review'
+      nextStepTitle = '优先处理薄弱点'
+      nextStepDesc = '建议立即查看错题，找出今天容易失误的知识点'
+      nextStepTag = '复盘优先'
+    } else {
+      resultLevelClass = 'weak'
+      resultTitle = '今日复习完成'
+      resultDesc = '今天错题较多，不建议直接继续刷题'
+      statusText = '错题较多'
+      statusDesc = '先复盘比继续刷题更重要'
+      nextStepType = 'review'
+      nextStepTitle = '建议立即复盘'
+      nextStepDesc = '先把错误原因搞清楚，再继续练习，复习效果会更好'
+      nextStepTag = '重点'
+    }
+
+    return {
+      total: total,
+      correct: correct,
+      wrong: wrong,
+      skipped: skipped,
+      answered: answered,
+      accuracy: accuracy,
+      groupCount: groupCount,
+      completedGroupCount: completedGroupCount,
+      masteredCount: masteredCount,
+      resultLevelClass: resultLevelClass,
+      resultTitle: resultTitle,
+      resultDesc: resultDesc,
+      statusText: statusText,
+      statusDesc: statusDesc,
+      nextStepType: nextStepType,
+      nextStepTitle: nextStepTitle,
+      nextStepDesc: nextStepDesc,
+      nextStepTag: nextStepTag,
+      hasWrong: wrong > 0,
+      hasSkipped: skipped > 0,
+      isPerfect: wrong === 0 && accuracy >= 90,
+    }
+  },
+
   /* ==================== 完成复习 ==================== */
 
   finishReview() {
     wx.navigateBack()
+  },
+
+  goWrongBook() {
+    wx.navigateTo({ url: '/pages/wrong-book/wrong-book' })
+  },
+
+  goPractice() {
+    wx.navigateTo({ url: '/pages/practice/practice' })
+  },
+
+  goHome() {
+    wx.navigateTo({ url: '/pages/home/home' })
   },
 
   noop() {},
