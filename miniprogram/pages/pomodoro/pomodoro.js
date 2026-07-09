@@ -111,6 +111,7 @@ Page({
     freeFriendlyText: '',
     showEndConfirm: false,
     endConfirmText: '',
+    actionLoading: false,
 
     // timer display
     remainingSec: 0,
@@ -475,25 +476,26 @@ Page({
   },
 
   async _pauseFreeTimer() {
-    if (!this.data.sessionId) return
+    if (!this.data.sessionId || this.data.actionLoading) return
+    this.setData({ actionLoading: true })
     this._clearFreeTimerInterval()
     try {
       const server = await api.post(`/pomodoro/${this.data.sessionId}/pause`, {})
-      // Use server response to set canonical state
-      const serverPausedMs = (server.total_paused_sec || 0) * 1000
       this.setData({
         isPaused: true,
         pauseStartTime: Date.now(),
-        totalPausedMs: serverPausedMs,
+        totalPausedMs: (server.total_paused_sec || 0) * 1000,
         freeFriendlyText: formatElapsedSec(this.data.elapsedSec).friendly,
+        actionLoading: false,
       })
       wx.setStorageSync('pomodoro_free_pause', {
-        totalPausedMs: serverPausedMs,
+        totalPausedMs: (server.total_paused_sec || 0) * 1000,
         pauseStartTime: Date.now(),
         sessionId: this.data.sessionId,
         elapsedSec: this.data.elapsedSec,
       })
     } catch (e) {
+      this.setData({ actionLoading: false })
       // Restart interval on failure — don't lose counting time
       if (!this.data.isPaused) this._startFreeTimerInterval()
       wx.showToast({ title: '暂停失败，请重试', icon: 'none' })
@@ -501,11 +503,11 @@ Page({
   },
 
   async _resumeFreeTimer() {
-    if (!this.data.sessionId) return
+    if (!this.data.sessionId || this.data.actionLoading) return
+    this.setData({ actionLoading: true })
     this._clearFreeTimerInterval()
     try {
       const server = await api.post(`/pomodoro/${this.data.sessionId}/resume`, {})
-      // Recalculate elapsed from canonical server state
       const startTime = parseServerTime(server.start_time)
       const serverTotalPausedSec = server.total_paused_sec || 0
       const now = Date.now()
@@ -518,12 +520,14 @@ Page({
         pauseStartTime: null,
         elapsedSec: elapsed,
         freeDisplayTime: fmt.display,
+        actionLoading: false,
       })
       wx.removeStorageSync('pomodoro_free_pause')
       this._startFreeTimerInterval()
     } catch (e) {
+      this.setData({ actionLoading: false })
       wx.showToast({ title: '继续失败，请重试', icon: 'none' })
-      this._startFreeTimerInterval()
+      // Keep paused state — do NOT restart interval on failure
     }
   },
 
@@ -548,7 +552,8 @@ Page({
     if (!this.data.sessionId) return
     this._clearFreeTimerInterval()
     const elapsedSec = Math.max(1, this.data.elapsedSec || 0)
-    const totalPausedSec = Math.floor((this.data.totalPausedMs || 0) / 1000)
+    const totalPausedMs = this.data.totalPausedMs || 0
+    const totalPausedSec = Math.floor(totalPausedMs / 1000)
     try {
       await api.post(`/pomodoro/${this.data.sessionId}/complete`, {
         actual_duration_sec: elapsedSec,

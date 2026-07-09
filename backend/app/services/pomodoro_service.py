@@ -110,12 +110,19 @@ async def complete_session(db: AsyncSession, session_id: int, user_id: int, tota
     if actual_duration_sec is not None:
         if actual_duration_sec < 0:
             raise ValueError("actual_duration_sec must be >= 0")
+        # Cap at server-computed value + 5s tolerance
+        server_raw = int((now - session.start_time).total_seconds())
+        server_actual = max(0, server_raw - _effective_paused_sec(session, now))
+        if actual_duration_sec > server_actual + 5:
+            actual_duration_sec = server_actual
         session.actual_duration = actual_duration_sec
     else:
         paused = _effective_paused_sec(session, now)
         raw_seconds = int((now - session.start_time).total_seconds())
         session.actual_duration = max(0, raw_seconds - paused)
     session.status = "completed"
+    # Persist final paused total
+    session.total_paused_sec = _effective_paused_sec(session, now)
     if not session.notification_sent:
         session.notification_sent = True
         session.notification_sent_at = now
@@ -151,12 +158,17 @@ async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, tot
     if actual_duration_sec is not None:
         if actual_duration_sec < 0:
             raise ValueError("actual_duration_sec must be >= 0")
+        server_raw = int((now - session.start_time).total_seconds())
+        server_actual = max(0, server_raw - _effective_paused_sec(session, now))
+        if actual_duration_sec > server_actual + 5:
+            actual_duration_sec = server_actual
         session.actual_duration = actual_duration_sec
     else:
         paused = _effective_paused_sec(session, now)
         raw_seconds = int((now - session.start_time).total_seconds())
         session.actual_duration = max(0, raw_seconds - paused)
     session.status = "interrupted"
+    session.total_paused_sec = _effective_paused_sec(session, now)
     if not session.notification_sent:
         session.notification_sent = True
         session.notification_sent_at = now
