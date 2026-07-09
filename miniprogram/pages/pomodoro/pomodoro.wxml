@@ -1,4 +1,4 @@
-<view class="page page-{{phase === 'break' ? 'break' : 'focus'}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
+<view class="page page-{{phase === 'break' ? 'break' : 'focus'}} {{isFreeTimer ? 'page-free' : ''}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
   <view class="page-inner animation-entrance size-{{fontSizeLevel}} {{pageEntered ? 'entered' : ''}}">
 
     <!-- ===== TOP BAR ===== -->
@@ -139,7 +139,15 @@
         <view class="timer-wrap">
           <view class="timer-header">
             <text class="timer-subject">{{selectedSubjectEmoji}} {{selectedSubjectLabel}}</text>
-            <text class="timer-hint">{{phase === 'break' ? '休息时间' : isFreeTimer ? '自由计时中' : '专注中'}}</text>
+            <block wx:if="{{isFreeTimer}}">
+              <view class="free-status-wrap">
+                <view class="free-status-dot {{isPaused ? 'dot-paused' : ''}}"></view>
+                <text class="timer-hint free-hint {{isPaused ? 'hint-paused' : ''}}">{{isPaused ? '已暂停' : '自由计时中'}}</text>
+              </view>
+            </block>
+            <block wx:else>
+              <text class="timer-hint">{{phase === 'break' ? '休息时间' : '专注中'}}</text>
+            </block>
           </view>
 
           <!-- Progress Ring -->

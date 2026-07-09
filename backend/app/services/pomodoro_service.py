@@ -10,6 +10,14 @@ from app.models.user import User
 from app.core.time_utils import utcnow
 
 
+def _effective_paused_sec(session, now) -> int:
+    """Total paused seconds including any in-progress pause segment."""
+    paused = session.total_paused_sec or 0
+    if session.paused_at is not None:
+        paused += max(0, int((now - session.paused_at).total_seconds()))
+    return paused
+
+
 async def start_session(
     db: AsyncSession,
     user_id: int,
@@ -20,7 +28,10 @@ async def start_session(
     break_duration: int,
     notification_enabled: bool = False,
 ) -> PomodoroSession:
-    await _cancel_running(db, user_id)
+    # Check for active session first — don't auto-cancel
+    active = await get_active_session(db, user_id)
+    if active is not None:
+        raise ValueError("当前已有进行中的专注，请先结束后再开始")
 
     user_row = await db.execute(select(User.openid).where(User.id == user_id))
     openid_snapshot = user_row.scalar_one_or_none()
@@ -81,18 +92,27 @@ async def complete_session(db: AsyncSession, session_id: int, user_id: int, tota
         .where(
             PomodoroSession.id == session_id,
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status == "running",
+            PomodoroSession.status.in_(["running", "paused"]),
         )
     )
     session = result.scalar_one_or_none()
     if not session:
         return None
     now = utcnow()
+
+    # Capture any current paused segment before finalizing
+    if session.paused_at is not None:
+        paused_segment = max(0, int((now - session.paused_at).total_seconds()))
+        session.total_paused_sec = (session.total_paused_sec or 0) + paused_segment
+        session.paused_at = None
+
     session.end_time = now
     if actual_duration_sec is not None:
+        if actual_duration_sec < 0:
+            raise ValueError("actual_duration_sec must be >= 0")
         session.actual_duration = actual_duration_sec
     else:
-        paused = (session.total_paused_sec or 0) + int(total_paused_ms / 1000)
+        paused = _effective_paused_sec(session, now)
         raw_seconds = int((now - session.start_time).total_seconds())
         session.actual_duration = max(0, raw_seconds - paused)
     session.status = "completed"
@@ -113,18 +133,27 @@ async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, tot
         .where(
             PomodoroSession.id == session_id,
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status == "running",
+            PomodoroSession.status.in_(["running", "paused"]),
         )
     )
     session = result.scalar_one_or_none()
     if not session:
         return None
     now = utcnow()
+
+    # Capture any current paused segment before finalizing
+    if session.paused_at is not None:
+        paused_segment = max(0, int((now - session.paused_at).total_seconds()))
+        session.total_paused_sec = (session.total_paused_sec or 0) + paused_segment
+        session.paused_at = None
+
     session.end_time = now
     if actual_duration_sec is not None:
+        if actual_duration_sec < 0:
+            raise ValueError("actual_duration_sec must be >= 0")
         session.actual_duration = actual_duration_sec
     else:
-        paused = (session.total_paused_sec or 0) + int(total_paused_ms / 1000)
+        paused = _effective_paused_sec(session, now)
         raw_seconds = int((now - session.start_time).total_seconds())
         session.actual_duration = max(0, raw_seconds - paused)
     session.status = "interrupted"
@@ -153,6 +182,7 @@ async def pause_session(db: AsyncSession, session_id: int, user_id: int) -> Pomo
         return None
     if session.paused_at is None:
         session.paused_at = utcnow()
+        session.status = "paused"
         await db.flush()
     await db.refresh(session)
     return session
@@ -165,7 +195,7 @@ async def resume_session(db: AsyncSession, session_id: int, user_id: int) -> Pom
         .where(
             PomodoroSession.id == session_id,
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status == "running",
+            PomodoroSession.status == "paused",
         )
     )
     session = result.scalar_one_or_none()
@@ -179,6 +209,7 @@ async def resume_session(db: AsyncSession, session_id: int, user_id: int) -> Pom
         if session.expected_end_time is not None and paused_sec > 0:
             session.expected_end_time = session.expected_end_time + timedelta(seconds=paused_sec)
         session.paused_at = None
+        session.status = "running"
         await db.flush()
     await db.refresh(session)
     return session
@@ -190,7 +221,7 @@ async def get_active_session(db: AsyncSession, user_id: int) -> PomodoroSession 
         .options(joinedload(PomodoroSession.subject_ref))
         .where(
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status == "running",
+            PomodoroSession.status.in_(["running", "paused"]),
         )
         .order_by(PomodoroSession.start_time.desc())
         .limit(1)
@@ -203,15 +234,19 @@ async def _cancel_running(db: AsyncSession, user_id: int) -> None:
         select(PomodoroSession)
         .where(
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status == "running",
+            PomodoroSession.status.in_(["running", "paused"]),
         )
         .with_for_update()
     )
     for session in result.scalars().all():
         now = utcnow()
+        if session.paused_at is not None:
+            paused_segment = max(0, int((now - session.paused_at).total_seconds()))
+            session.total_paused_sec = (session.total_paused_sec or 0) + paused_segment
+            session.paused_at = None
         session.end_time = now
         raw_seconds = int((now - session.start_time).total_seconds())
-        paused = session.total_paused_sec or 0
+        paused = _effective_paused_sec(session, now)
         session.actual_duration = max(0, raw_seconds - paused)
         session.status = "interrupted"
         if not session.notification_sent:
@@ -225,7 +260,7 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
     today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=today_start.weekday())
 
-    _status_cond = PomodoroSession.status.in_(["completed", "interrupted"])
+    _status_cond = PomodoroSession.status == "completed"
     today_result = await db.execute(
         select(
             func.count(PomodoroSession.id),
@@ -269,7 +304,7 @@ async def get_trends(db: AsyncSession, user_id: int, days: int = 7) -> list[dict
         )
         .where(
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status.in_(["completed", "interrupted"]),
+            PomodoroSession.status == "completed",
             PomodoroSession.end_time >= since,
         )
         .group_by(func.date(PomodoroSession.end_time))
@@ -300,11 +335,10 @@ async def get_subject_breakdown(db: AsyncSession, user_id: int) -> list[dict]:
         )
         .where(
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status.in_(["completed", "interrupted"]),
+            PomodoroSession.status == "completed",
             PomodoroSession.end_time >= today_start,
         )
         .group_by(PomodoroSession.subject_id)
-        .order_by(func.sum(PomodoroSession.actual_duration).desc())
     )
 
     # Build a lookup for subject names from the subjects table
@@ -341,7 +375,7 @@ async def get_history(
 ) -> tuple[list[PomodoroSession], int]:
     where = [
         PomodoroSession.user_id == user_id,
-        PomodoroSession.status != "running",
+        ~PomodoroSession.status.in_(["running", "paused"]),
     ]
     if filter_date is not None:
         where.append(func.date(PomodoroSession.end_time) == filter_date)
