@@ -85,7 +85,7 @@ async def start_session(
     return session
 
 
-async def complete_session(db: AsyncSession, session_id: int, user_id: int, total_paused_ms: int = 0, actual_duration_sec: int | None = None) -> PomodoroSession | None:
+async def complete_session(db: AsyncSession, session_id: int, user_id: int, total_paused_ms: int | None = None, actual_duration_sec: int | None = None) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession)
         .options(joinedload(PomodoroSession.subject_ref))
@@ -107,22 +107,20 @@ async def complete_session(db: AsyncSession, session_id: int, user_id: int, tota
         session.paused_at = None
 
     session.end_time = now
+    effective_paused = _effective_paused_sec(session, now)
+    raw_seconds = int((now - session.start_time).total_seconds())
+    server_actual = max(0, raw_seconds - effective_paused)
     if actual_duration_sec is not None:
         if actual_duration_sec < 0:
             raise ValueError("actual_duration_sec must be >= 0")
         # Cap at server-computed value + 5s tolerance
-        server_raw = int((now - session.start_time).total_seconds())
-        server_actual = max(0, server_raw - _effective_paused_sec(session, now))
         if actual_duration_sec > server_actual + 5:
             actual_duration_sec = server_actual
         session.actual_duration = actual_duration_sec
     else:
-        paused = _effective_paused_sec(session, now)
-        raw_seconds = int((now - session.start_time).total_seconds())
-        session.actual_duration = max(0, raw_seconds - paused)
+        session.actual_duration = server_actual
     session.status = "completed"
-    # Persist final paused total
-    session.total_paused_sec = _effective_paused_sec(session, now)
+    session.total_paused_sec = effective_paused
     if not session.notification_sent:
         session.notification_sent = True
         session.notification_sent_at = now
@@ -133,7 +131,7 @@ async def complete_session(db: AsyncSession, session_id: int, user_id: int, tota
     return session
 
 
-async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, total_paused_ms: int = 0, actual_duration_sec: int | None = None) -> PomodoroSession | None:
+async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, total_paused_ms: int | None = None, actual_duration_sec: int | None = None) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession)
         .options(joinedload(PomodoroSession.subject_ref))
@@ -155,20 +153,19 @@ async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, tot
         session.paused_at = None
 
     session.end_time = now
+    effective_paused = _effective_paused_sec(session, now)
+    raw_seconds = int((now - session.start_time).total_seconds())
+    server_actual = max(0, raw_seconds - effective_paused)
     if actual_duration_sec is not None:
         if actual_duration_sec < 0:
             raise ValueError("actual_duration_sec must be >= 0")
-        server_raw = int((now - session.start_time).total_seconds())
-        server_actual = max(0, server_raw - _effective_paused_sec(session, now))
         if actual_duration_sec > server_actual + 5:
             actual_duration_sec = server_actual
         session.actual_duration = actual_duration_sec
     else:
-        paused = _effective_paused_sec(session, now)
-        raw_seconds = int((now - session.start_time).total_seconds())
-        session.actual_duration = max(0, raw_seconds - paused)
+        session.actual_duration = server_actual
     session.status = "interrupted"
-    session.total_paused_sec = _effective_paused_sec(session, now)
+    session.total_paused_sec = effective_paused
     if not session.notification_sent:
         session.notification_sent = True
         session.notification_sent_at = now

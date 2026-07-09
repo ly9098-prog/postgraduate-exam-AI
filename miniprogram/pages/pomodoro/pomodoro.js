@@ -580,7 +580,9 @@ Page({
         total_paused_ms: this.data.totalPausedMs || 0,
       })
     } catch (e) {
-      try { await api.post(`/pomodoro/${this.data.sessionId}/interrupt`) } catch (_) {}
+      try { await api.post(`/pomodoro/${this.data.sessionId}/interrupt`, {
+        total_paused_ms: this.data.totalPausedMs || 0,
+      }) } catch (_) {}
     }
     this._resetToIdle()
     this.loadTodayStats()
