@@ -155,6 +155,35 @@ page {
   margin-bottom: 48rpx;
 }
 
+.subj-loading,
+.subj-error,
+.subj-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+  padding: 40rpx 0;
+}
+
+.subj-loading-text,
+.subj-empty-text {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.subj-error-text {
+  font-size: 24rpx;
+  color: rgba(249, 115, 22, 0.5);
+}
+
+.subj-retry {
+  font-size: 22rpx;
+  color: #3B82F6;
+  padding: 8rpx 24rpx;
+  border: 1rpx solid rgba(59, 130, 246, 0.3);
+  border-radius: 999rpx;
+}
+
 .subj-grid {
   display: flex;
   flex-wrap: wrap;
@@ -796,6 +825,153 @@ page {
   height: 110rpx;
 }
 .size-large .stats-link { font-size: 28rpx; }
+
+/* ============================================
+   FREE TIMER — Mode dot + count-up display
+   ============================================ */
+.dot-ring-free {
+  border-color: rgba(16, 185, 129, 0.4) !important;
+}
+
+.mode-dot.active .dot-ring-free {
+  border-color: rgba(16, 185, 129, 0.6) !important;
+  box-shadow: 0 0 20rpx rgba(16, 185, 129, 0.15) !important;
+}
+
+.dot-fill-free {
+  background: rgba(16, 185, 129, 0.4) !important;
+}
+
+.mode-dot.active .dot-fill-free {
+  background: #10B981 !important;
+}
+
+.ring-time-free {
+  font-size: 72rpx;
+  font-weight: 300;
+  letter-spacing: 4rpx;
+}
+
+.time-dim {
+  opacity: 0.55;
+}
+
+/* ============================================
+   FREE TIMER — End confirmation modal
+   ============================================ */
+.confirm-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8rpx);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.confirm-overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.confirm-card {
+  width: 560rpx;
+  background: #1E293B;
+  border-radius: 32rpx;
+  padding: 48rpx 40rpx 32rpx;
+  box-shadow: 0 24rpx 80rpx rgba(0, 0, 0, 0.5);
+  animation: confirm-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes confirm-in {
+  from { opacity: 0; transform: scale(0.92) translateY(20rpx); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.confirm-title {
+  display: block;
+  font-size: 36rpx;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: center;
+  margin-bottom: 20rpx;
+}
+
+.confirm-body {
+  display: block;
+  font-size: 28rpx;
+  color: rgba(255, 255, 255, 0.55);
+  text-align: center;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 24rpx;
+}
+
+.confirm-btn {
+  flex: 1;
+  height: 88rpx;
+  border-radius: 24rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.2s ease;
+}
+
+.confirm-btn::after {
+  border: none;
+}
+
+.confirm-cancel {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.confirm-cancel:active {
+  background: rgba(255, 255, 255, 0.1);
+  transform: scale(0.97);
+}
+
+.confirm-ok {
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  color: #ffffff;
+  box-shadow: 0 8rpx 24rpx rgba(16, 185, 129, 0.3);
+}
+
+.confirm-ok:active {
+  opacity: 0.85;
+  transform: scale(0.97);
+}
+
+.size-large .ring-time-free {
+  font-size: 84rpx;
+}
+
+.size-large .confirm-title {
+  font-size: 40rpx;
+}
+
+.size-large .confirm-body {
+  font-size: 32rpx;
+}
+
+.size-large .confirm-btn {
+  height: 96rpx;
+  font-size: 34rpx;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .page,

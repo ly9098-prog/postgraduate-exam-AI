@@ -9,24 +9,14 @@ function parseServerTime(value) {
   return new Date(hasTimezone ? s : s + '+00:00').getTime()
 }
 
-const SUBJECT_LABELS = {
-  data_structure: '数据结构',
-  computer_organization: '计算机组成原理',
-  operating_system: '操作系统',
-  computer_network: '计算机网络',
-  english: '英语',
-  math: '数学',
-  politics: '政治',
-}
-
-const SUBJECT_COLORS = {
-  data_structure: '#3B82F6',
-  computer_organization: '#F59E0B',
-  operating_system: '#10B981',
-  computer_network: '#06B6D4',
-  english: '#F97316',
-  math: '#2DD4BF',
-  politics: '#EA580C',
+function getSubjectColor(subject) {
+  const COLORS = ['#3B82F6', '#F59E0B', '#10B981', '#06B6D4', '#F97316', '#2DD4BF', '#EA580C', '#8B5CF6', '#6366F1', '#EC4899']
+  let hash = 0
+  const str = subject || ''
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return COLORS[Math.abs(hash) % COLORS.length]
 }
 
 Page({
@@ -144,12 +134,16 @@ Page({
         subjects: subjArr.map(s => {
           const dur = s.duration_sec || 0
           const pct = dur / totalDur
+          const name = s.subject_name || '未分类'
+          const code = s.subject_code || ''
           return {
-            subject: s.subject,
+            subject: code,
+            subject_id: s.subject_id,
+            subject_code: code,
             duration_sec: dur,
             sessions: s.sessions || 0,
-            _label: SUBJECT_LABELS[s.subject] || s.subject || '未分类',
-            _color: SUBJECT_COLORS[s.subject] || '#3B82F6',
+            _label: name,
+            _color: getSubjectColor(code),
             _durationText: this._fmtMin(dur),
             _pctText: (pct * 100).toFixed(1) + '%',
           }
@@ -193,14 +187,26 @@ Page({
     const startTime = parseServerTime(s.start_time)
     const start = new Date(Number.isFinite(startTime) ? startTime : Date.now())
     const timeStr = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`
-    const durMin = Math.floor((s.actual_duration ?? s.actual_duration_sec ?? s.duration_sec ?? 0) / 60)
+    const durSec = s.actual_duration ?? s.actual_duration_sec ?? s.duration_sec ?? 0
+    const durMin = Math.floor(durSec / 60)
+    const subjectName = s.subject_name || '未分类'
+    const subjectKey = s.subject_code || ''
+    const isFree = s.preset === 'free'
+    // Free timer duration in seconds; countdown in minutes
+    const durationText = isFree
+      ? durSec >= 60
+        ? `${Math.floor(durSec / 60)}分${durSec % 60}秒`
+        : `${durSec}秒`
+      : durMin >= 60
+        ? `${Math.floor(durMin / 60)}时${durMin % 60}分`
+        : `${durMin}分钟`
     return {
       ...s,
       _time: timeStr,
       _date: `${start.getMonth() + 1}/${start.getDate()}`,
-      _duration: durMin >= 60 ? `${Math.floor(durMin / 60)}时${durMin % 60}分` : `${durMin}分钟`,
-      _subjectLabel: SUBJECT_LABELS[s.subject] || s.subject || '未分类',
-      _color: SUBJECT_COLORS[s.subject] || '#3B82F6',
+      _duration: durationText,
+      _subjectLabel: isFree ? '自由计时 · ' + subjectName : subjectName,
+      _color: getSubjectColor(subjectKey),
       _statusLabel: s.status === 'completed' ? '完成' : '中断',
       _statusClass: s.status === 'completed' ? 'status-done' : 'status-interrupt',
     }

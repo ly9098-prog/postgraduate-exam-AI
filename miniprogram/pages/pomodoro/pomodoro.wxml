@@ -33,15 +33,25 @@
           <!-- Subject Grid -->
           <view class="subj-section">
             <text class="section-label">选择科目</text>
-            <view class="subj-grid">
+            <view wx:if="{{subjectsLoading}}" class="subj-loading">
+              <text class="subj-loading-text">科目加载中...</text>
+            </view>
+            <view wx:elif="{{subjectsError}}" class="subj-error">
+              <text class="subj-error-text">{{subjectsError}}</text>
+              <text class="subj-retry" catchtap="_loadSubjects">重新加载</text>
+            </view>
+            <view wx:elif="{{subjects.length === 0}}" class="subj-empty">
+              <text class="subj-empty-text">暂无可用科目</text>
+            </view>
+            <view wx:else class="subj-grid">
               <view
-                class="subj-card {{selectedSubject === item.key ? 'active' : ''}}"
-                wx:for="{{subjects}}" wx:key="key"
+                class="subj-card {{selectedSubjectId === item.id ? 'active' : ''}}"
+                wx:for="{{subjects}}" wx:key="id"
                 catchtap="selectSubject"
-                data-key="{{item.key}}"
+                data-id="{{item.id}}"
               >
-                <text class="subj-emoji">{{item.emoji}}</text>
-                <text class="subj-name">{{item.label}}</text>
+                <text class="subj-emoji">{{item._emoji}}</text>
+                <text class="subj-name">{{item.name}}</text>
               </view>
             </view>
           </view>
@@ -56,8 +66,8 @@
                 catchtap="selectPreset"
                 data-key="{{item.key}}"
               >
-                <view class="dot-ring">
-                  <view class="dot-fill"></view>
+                <view class="dot-ring {{item.key === 'free' ? 'dot-ring-free' : ''}}">
+                  <view class="dot-fill {{item.key === 'free' ? 'dot-fill-free' : ''}}"></view>
                 </view>
                 <text class="dot-label">{{item.label}}</text>
               </view>
@@ -73,7 +83,7 @@
                 <text class="dot-label">10s测试</text>
               </view>
             </view>
-            <text class="mode-info">{{selectedPreset === 'debug' ? '10秒学习 · 5秒休息' : workDuration + ' 分钟学习 · ' + breakDuration + ' 分钟休息'}}</text>
+            <text class="mode-info">{{selectedPreset === 'debug' ? '10秒学习 · 5秒休息' : selectedPreset === 'free' ? '正向计时 · 无时长限制' : workDuration + ' 分钟学习 · ' + breakDuration + ' 分钟休息'}}</text>
             <!-- Custom sliders -->
             <view class="custom-area {{showCustom ? 'visible' : ''}}" catchtouchstart="onCustomAreaTouch" catchtouchend="onCustomAreaTouch">
               <view class="custom-row">
@@ -129,7 +139,7 @@
         <view class="timer-wrap">
           <view class="timer-header">
             <text class="timer-subject">{{selectedSubjectEmoji}} {{selectedSubjectLabel}}</text>
-            <text class="timer-hint">{{phase === 'break' ? '休息时间' : '专注中'}}</text>
+            <text class="timer-hint">{{phase === 'break' ? '休息时间' : isFreeTimer ? '自由计时中' : '专注中'}}</text>
           </view>
 
           <!-- Progress Ring -->
@@ -137,7 +147,12 @@
             <view class="ring-glow"></view>
             <canvas class="ring-canvas" type="2d" id="progress-ring"></canvas>
             <view class="ring-center">
-              <text class="ring-time {{phase === 'break' ? 'time-warm' : ''}}">{{displayMin}}:{{displaySec}}</text>
+              <block wx:if="{{isFreeTimer}}">
+                <text class="ring-time ring-time-free {{isPaused ? 'time-dim' : ''}}">{{freeDisplayTime}}</text>
+              </block>
+              <block wx:else>
+                <text class="ring-time {{phase === 'break' ? 'time-warm' : ''}}">{{displayMin}}:{{displaySec}}</text>
+              </block>
               <text class="ring-status" wx:if="{{isPaused}}">已暂停</text>
             </view>
           </view>
@@ -181,4 +196,16 @@
     duration="{{3500}}"
     bind:done="dismissCelebration"
   />
+
+  <!-- ===== FREE TIMER END CONFIRMATION ===== -->
+  <view class="confirm-overlay {{showEndConfirm ? 'visible' : ''}}" catchtap="_cancelEndFreeTimer">
+    <view class="confirm-card" catchtap="noop">
+      <text class="confirm-title">结束计时？</text>
+      <text class="confirm-body">{{endConfirmText}}</text>
+      <view class="confirm-actions">
+        <button class="confirm-btn confirm-cancel" catchtap="_cancelEndFreeTimer">继续计时</button>
+        <button class="confirm-btn confirm-ok" catchtap="_confirmEndFreeTimer">确认结束</button>
+      </view>
+    </view>
+  </view>
 </view>
