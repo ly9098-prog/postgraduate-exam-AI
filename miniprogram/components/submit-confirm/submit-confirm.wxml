@@ -1,0 +1,24 @@
+<view class="sc-overlay {{visible ? 'sc-visible' : ''}}" catchtap="onCancel">
+  <view class="sc-card" catchtap="noop">
+    <!-- Luminous icon badge -->
+    <view class="sc-icon-circle scenario-{{scenario}}">
+      <text class="sc-icon-line line-icon {{scenario === 'unanswered' ? 'icon-exclamation' : 'icon-check'}}"></text>
+    </view>
+
+    <!-- Title + message -->
+    <text class="sc-title">{{title}}</text>
+    <text class="sc-msg">{{message}}</text>
+
+    <!-- Button row -->
+    <view class="sc-actions">
+      <button class="sc-btn sc-btn-cancel" bindtap="onCancel">{{cancelText}}</button>
+      <button class="sc-btn sc-btn-confirm" bindtap="onConfirm">{{confirmText}}</button>
+    </view>
+
+    <!-- Decorative corner flourishes -->
+    <view class="sc-corner sc-corner-tl"></view>
+    <view class="sc-corner sc-corner-br"></view>
+    <view class="sc-corner-dot sc-corner-dot-tl"></view>
+    <view class="sc-corner-dot sc-corner-dot-br"></view>
+  </view>
+</view>

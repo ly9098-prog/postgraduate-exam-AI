@@ -128,4 +128,37 @@
       <text class="action-arrow line-icon icon-chevron-right"></text>
     </view>
   </view>
+
+  <!-- 设置区域 -->
+  <view class="settings-section">
+    <view class="section-header">
+      <text class="section-header-text">设置与支持</text>
+    </view>
+    <view class="settings-list">
+      <view class="settings-item" bindtap="openAgreement" data-type="user">
+        <text class="settings-item-label">用户协议</text>
+        <text class="line-icon icon-chevron-right settings-arrow"></text>
+      </view>
+      <view class="settings-item" bindtap="openAgreement" data-type="privacy">
+        <text class="settings-item-label">隐私政策</text>
+        <text class="line-icon icon-chevron-right settings-arrow"></text>
+      </view>
+      <view class="settings-item" bindtap="openAgreement" data-type="ai">
+        <text class="settings-item-label">AI 免责声明</text>
+        <text class="line-icon icon-chevron-right settings-arrow"></text>
+      </view>
+      <view class="settings-item" bindtap="clearLocalCache">
+        <text class="settings-item-label">清除本地缓存</text>
+        <text class="line-icon icon-chevron-right settings-arrow"></text>
+      </view>
+      <view class="settings-item" bindtap="contactSupport">
+        <text class="settings-item-label">联系与反馈</text>
+        <text class="line-icon icon-chevron-right settings-arrow"></text>
+      </view>
+      <view class="settings-item logout" bindtap="onLogout">
+        <text class="settings-item-label logout-text">退出登录</text>
+        <text class="line-icon icon-chevron-right settings-arrow"></text>
+      </view>
+    </view>
+  </view>
 </view>

@@ -1,0 +1,213 @@
+/* ==================== Overlay ==================== */
+
+.sc-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 160;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(23, 32, 51, 0.38);
+  backdrop-filter: blur(20rpx);
+  -webkit-backdrop-filter: blur(20rpx);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.28s ease;
+}
+
+.sc-overlay.sc-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ==================== Card ==================== */
+
+.sc-card {
+  position: relative;
+  width: 560rpx;
+  padding: 64rpx 40rpx 36rpx;
+  background: #FFFFFF;
+  border-radius: 36rpx;
+  border: 1rpx solid rgba(79, 127, 255, 0.08);
+  box-shadow:
+    0 24rpx 80rpx rgba(23, 32, 51, 0.20),
+    0 2rpx 8rpx rgba(79, 127, 255, 0.06);
+  transform: translateY(72rpx) scale(0.94);
+  opacity: 0;
+  transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sc-visible .sc-card {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+/* ==================== Icon badge ==================== */
+
+.sc-icon-circle {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 28rpx;
+  position: relative;
+}
+
+.sc-icon-circle::after {
+  content: '';
+  position: absolute;
+  inset: -8rpx;
+  border-radius: 50%;
+  border: 1.5rpx solid;
+  opacity: 0;
+  animation: scRingIn 0.5s ease 0.3s forwards;
+}
+
+/* Unanswered — warm amber */
+.sc-icon-circle.scenario-unanswered {
+  background: linear-gradient(145deg, #FBBF24 0%, #F59E0B 100%);
+  box-shadow: 0 8rpx 24rpx rgba(245, 158, 11, 0.32);
+}
+.sc-icon-circle.scenario-unanswered::after {
+  border-color: rgba(245, 158, 11, 0.30);
+}
+
+/* All-done — calm blue */
+.sc-icon-circle.scenario-all-done {
+  background: linear-gradient(145deg, #6B9AFF 0%, #4F7FFF 100%);
+  box-shadow: 0 8rpx 24rpx rgba(79, 127, 255, 0.30);
+}
+.sc-icon-circle.scenario-all-done::after {
+  border-color: rgba(79, 127, 255, 0.28);
+}
+
+.sc-icon-line {
+  color: #FFFFFF;
+  font-size: 40rpx;
+  font-weight: 700;
+}
+
+/* ==================== Title / Message ==================== */
+
+.sc-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #172033;
+  line-height: 1.4;
+  text-align: center;
+  margin-bottom: 16rpx;
+}
+
+.sc-msg {
+  font-size: 28rpx;
+  color: #5B6B8C;
+  line-height: 1.6;
+  text-align: center;
+  margin-bottom: 40rpx;
+}
+
+/* ==================== Buttons ==================== */
+
+.sc-actions {
+  display: flex;
+  gap: 20rpx;
+  width: 100%;
+}
+
+.sc-btn {
+  flex: 1;
+  height: 88rpx;
+  border-radius: 20rpx;
+  font-size: 28rpx;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.sc-btn::after { border: none; }
+.sc-btn:active { transform: scale(0.97); }
+
+/* Cancel — subtle outline */
+.sc-btn-cancel {
+  background: transparent;
+  color: #5B6B8C;
+  border: 1.5rpx solid rgba(79, 127, 255, 0.15);
+}
+
+/* Confirm — gradient filled */
+.sc-btn-confirm {
+  background: linear-gradient(135deg, #4F7FFF 0%, #3B82F6 100%);
+  color: #FFFFFF;
+  box-shadow: 0 8rpx 24rpx rgba(79, 127, 255, 0.28);
+}
+
+/* ==================== Decorative corners ==================== */
+
+.sc-corner {
+  position: absolute;
+  width: 24rpx;
+  height: 24rpx;
+  border-color: rgba(79, 127, 255, 0.12);
+  border-style: solid;
+}
+
+.sc-corner-tl {
+  top: 16rpx;
+  left: 16rpx;
+  border-width: 1.5rpx 0 0 1.5rpx;
+  border-radius: 4rpx 0 0 0;
+}
+
+.sc-corner-br {
+  bottom: 16rpx;
+  right: 16rpx;
+  border-width: 0 1.5rpx 1.5rpx 0;
+  border-radius: 0 0 4rpx 0;
+}
+
+/* Tiny dots at opposite corners for visual balance */
+.sc-corner-dot {
+  position: absolute;
+  width: 6rpx;
+  height: 6rpx;
+  border-radius: 50%;
+  background: rgba(79, 127, 255, 0.10);
+}
+
+.sc-corner-dot-tl {
+  top: 22rpx;
+  left: 52rpx;
+}
+
+.sc-corner-dot-br {
+  bottom: 22rpx;
+  right: 52rpx;
+}
+
+/* ==================== Animations ==================== */
+
+@keyframes scRingIn {
+  0%   { opacity: 0; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-overlay,
+  .sc-card,
+  .sc-icon-circle::after {
+    transition: none !important;
+    animation: none !important;
+  }
+  .sc-overlay { opacity: 0; }
+  .sc-visible { opacity: 1; }
+  .sc-card { transform: none; opacity: 1; }
+}

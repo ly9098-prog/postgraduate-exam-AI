@@ -288,6 +288,62 @@ Page({
     wx.navigateTo({ url: '/pages/import/import' })
   },
 
+  /* ==================== 设置与支持 ==================== */
+
+  openAgreement(e) {
+    const type = e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.type
+    const pathMap = {
+      user: '/pages/agreement/user',
+      privacy: '/pages/agreement/privacy',
+      ai: '/pages/agreement/ai',
+    }
+    wx.navigateTo({ url: pathMap[type] || pathMap.privacy })
+  },
+
+  clearLocalCache() {
+    wx.showModal({
+      title: '清除缓存',
+      content: '将清除本地学习缓存数据（不含登录信息），确定继续？',
+      success: (res) => {
+        if (!res.confirm) return
+        try {
+          // 只清除学习相关缓存，保留登录信息
+          var keys = wx.getStorageInfoSync().keys || []
+          var protectKeys = ['token', 'token_expires_at', 'refresh_token', 'user', 'privacy_acceptance']
+          for (var ki = 0; ki < keys.length; ki++) {
+            if (protectKeys.indexOf(keys[ki]) < 0) {
+              wx.removeStorageSync(keys[ki])
+            }
+          }
+          wx.showToast({ title: '缓存已清除', icon: 'success' })
+        } catch (_) {
+          wx.showToast({ title: '清除失败', icon: 'none' })
+        }
+      },
+    })
+  },
+
+  contactSupport() {
+    wx.showModal({
+      title: '联系与反馈',
+      content: '如需反馈问题或申请账号注销，请发送邮件至：support@xzshub.top',
+      showCancel: false,
+      confirmText: '我知道了',
+    })
+  },
+
+  onLogout() {
+    wx.showModal({
+      title: '退出登录',
+      content: '退出后需重新登录，确定退出？',
+      success: (res) => {
+        if (!res.confirm) return
+        auth.logout()
+        wx.reLaunch({ url: '/pages/login/login' })
+      },
+    })
+  },
+
   _clearAnimTimers() {
     ['_animTimer_animStreakDays', '_animTimer_animGoalDone', '_animTimer_animLevelProgress'].forEach(function(key) {
       if (this[key]) clearTimeout(this[key])

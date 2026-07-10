@@ -149,14 +149,29 @@ Page({
     const wrong = parseInt(options.wrong, 10) || 0
     const total = parseInt(options.total, 10) || 0
     const duration = parseInt(options.duration, 10) || 0
+    const cacheKey = options._ck || ''
     const passRate = total > 0 ? Math.round(correct / total * 100) : 0
     const answeredCount = correct + wrong
 
-    // 从 storage 读取详细结果
+    // 从 storage 读取详细结果，验证缓存匹配
     let results = []
     let stored = null
     try {
       stored = wx.getStorageSync('lastPracticeResult')
+      // 验证缓存键和用户 ID：防止跨练习/跨账号读取旧结果
+      if (stored) {
+        var storedUserId = stored._userId || ''
+        var currentUserId = ''
+        try {
+          var userInfo = wx.getStorageSync('user')
+          if (userInfo && userInfo.id) currentUserId = String(userInfo.id)
+        } catch (_) {}
+        var cacheMatch = cacheKey && stored._cacheKey === cacheKey
+        var userMatch = storedUserId && currentUserId && storedUserId === currentUserId
+        if (!cacheMatch || !userMatch) {
+          stored = null
+        }
+      }
       if (stored && stored.results) {
         const questions = stored.questions || []
         const questionById = {}
@@ -444,6 +459,6 @@ Page({
   },
 
   goHome() {
-    wx.redirectTo({ url: '/pages/home/home' })
+    wx.reLaunch({ url: '/pages/home/home' })
   },
 })
