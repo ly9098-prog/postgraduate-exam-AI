@@ -1,1379 +1,475 @@
-# `pages/wrong-book` AI 诊断缓存与按需刷新专项优化
+# 审计结论
 
-你是一名资深微信小程序前端工程师。请基于当前新版本代码，为：
+**当前版本建议判定为“有条件不通过”，不建议按现状直接上线。**
 
-```text
-pages/wrong-book
-```
+从静态代码看，项目整体结构比较完整，生产环境已经使用 HTTPS，接口封装、Token 并发刷新、分包与缓存校验等也有一定工程化基础。但仍发现：
 
-增加可靠的 AI 诊断缓存机制。
+- **4 项上线前必须修复或确认的问题**
+- **6 项中优先级优化**
+- 若干工程质量和性能改进项
 
-最终必须实现：
-
-```text
-首次进入：没有缓存才请求 AI 诊断
-再次进入：立即展示缓存，不重复请求
-缓存过期：保留旧结果并在后台更新
-错题数据改变：按需重新生成
-手动刷新：用户可以主动重新分析
-请求失败：保留旧缓存，不清空页面
-```
-
-本次优化不能只增加一个简单布尔值，必须同时处理：
-
-- 页面实例缓存。
-- 微信本地持久化缓存。
-- 缓存有效期。
-- 用户隔离。
-- 数据变化失效。
-- 并发请求去重。
-- 后台刷新体验。
-- 手动重新分析。
-- 旧缓存兼容和异常缓存清理。
+本次审计覆盖 JS、WXML、WXSS、JSON、项目配置、登录与 Token、文件导入、AI 内容、富文本和动画分包。所有 JSON 均可解析，非第三方 JS 未发现明显语法错误。由于没有后端源码、微信公众平台配置和真实设备环境，服务端鉴权、域名配置、隐私指引配置及实际运行表现仍需联调确认。
 
 ------
 
-## 一、当前问题
+## 一、上线前必须处理
 
-当前 `pages/wrong-book/wrong-book.js` 中：
+### 1. 隐私政策和账号注销机制不完整
 
-```js
-onShow() {
-  if (!this._ready) return
-  this._loadPage()
-}
+**涉及位置：**
+
+- `pages/agreement/privacy.wxml:12-28`
+- `pages/agreement/user.wxml`
+- `pages/agreement/ai.wxml`
+- `pages/home/home.js:326-332`
+- `app.js:59-64`
+- `utils/api.js:90-91`
+
+当前隐私政策只有几条概括性说明，主要缺少：
+
+- 运营者名称、联系方式；
+- 每类个人信息的收集目的、方式、范围；
+- 登录标识、学习记录、错题记录、导入文件、图片和 AI 输入分别如何处理；
+- 第三方 AI/OCR 服务商名称、接收信息类型、处理目的；
+- 信息保存期限；
+- 查询、复制、更正、删除、撤回同意的具体方式；
+- 账号注销入口、处理期限和注销后的数据删除规则；
+- 未成年人信息处理说明；
+- 生效日期、更新日期和版本记录。
+
+目前注销方式仅为：
+
+> 发送邮件至 [support@xzshub.top](mailto:support@xzshub.top)
+
+这不一定能够满足“便捷注销”的要求，至少应增加小程序内的注销入口、二次确认、身份验证、处理状态和完成通知。现行规则也要求在账号注销后依法删除相关个人信息；2026年网信部门通报中仍将小程序隐私规则、第三方信息披露和注销渠道问题作为重点治理事项。([国家市场监管总局](https://www.cac.gov.cn/2026-04/27/c_1779028107561553.htm?utm_source=chatgpt.com))
+
+此外，`app.js:59-64` 在用户尚未勾选协议时就调用 `wx.login()` 进行预热，而 `utils/api.js:90-91` 又明确注释“wx.login 只能在用户同意后调用”，代码与设计约束相互矛盾。
+
+**建议：**
+
+1. 补充完整隐私政策和第三方服务清单。
+2. 在“设置”中增加账号注销页面，而不只是邮箱。
+3. 在微信公众平台完成《小程序用户隐私保护指引》配置，并逐项对应实际接口。
+4. 删除启动阶段的 `_preWarmSession()`，或者调整为用户同意协议后执行。
+5. 协议版本更新时，强制用户重新确认，而不是仅依靠本地旧版本状态。
+
+------
+
+### 2. 登录态清理不彻底，存在串号和遗留数据风险
+
+**涉及位置：**
+
+- `utils/auth.js:39-76`
+- `utils/api.js:121-129`
+- `utils/storage.js:16-21`
+- `utils/auth.js:27-36`
+- `utils/auth.js:110-116`
+
+发现三个关联问题。
+
+#### 2.1 退出登录只清本地，不撤销服务端 Refresh Token
+
+`auth.logout()` 只是删除本地数据，没有调用服务端注销或 Token 撤销接口。Refresh Token 如果泄露，在过期前仍可能继续换取 Access Token。
+
+建议后端提供：
+
+```text
+POST /auth/logout
 ```
 
-每次页面重新显示都会调用：
+注销时撤销当前 Refresh Token；如果支持多设备登录，最好提供“退出当前设备”和“退出全部设备”。
 
-```js
-_loadPage() {
-  this.setData({ list: [], page: 1 })
-  this.loadStats()
-  this.loadList(true)
-  this.loadAiDiagnosis()
-}
-```
+#### 2.2 Token 失效和手动退出使用了两套清理逻辑
 
-而 `loadAiDiagnosis()` 每次都会：
+`utils/api.js` 的 `_clearAuthAndRedirect()` 只删除：
 
-```js
-this.setData({
-  aiDiagnosisLoading: true,
-  aiDiagnosis: null,
+- access token
+- refresh token
+- 过期时间
+- 用户信息
+
+但没有删除业务缓存，例如：
+
+- `lastPracticeResult`
+- `wrong_detail_nav`
+- 番茄钟运行状态
+- 今日目标
+- 导入任务状态
+- 其他没有按用户隔离的缓存
+
+在同一台设备切换账号后，可能遗留前一个用户的数据或状态。
+
+建议统一成一个方法：
+
+```javascript
+clearSession({
+  clearBusinessCache: true,
+  preservePrivacyAcceptance: true,
+  reason: 'logout'
 })
 ```
 
-然后请求：
+所有主动退出、Refresh Token 失效、401 重定向都调用同一方法。业务缓存最好使用用户 ID 作为命名空间，而不是全部使用全局键。
 
-```js
-api.get('/stats/ai-diagnosis')
-```
+#### 2.3 登录信息写入失败被静默吞掉
 
-造成以下问题：
+`storage.set()` 捕获异常后只打印日志，登录流程不会知道 Token 是否真正写入成功。因此可能出现：
 
-1. 每次进入错题本都重新请求 AI。
-2. 从 `wrong-detail` 返回也重新生成。
-3. 切换底部导航后再回来也重新生成。
-4. 已经显示的诊断会先被清空。
-5. 页面反复出现骨架屏或加载态。
-6. 请求失败时原有诊断也可能丢失。
-7. 多次快速进入页面可能产生重复并发请求。
-8. 用户切换筛选条件时，可能无意义地重新生成全局诊断。
-9. AI 接口如果调用大模型，会产生额外时间和成本。
+1. 服务端登录成功；
+2. Token 写入失败；
+3. 页面仍进入首页；
+4. 后续全部接口报未登录。
+
+Refresh Token 流程已经使用了 `setStrict()`，但首次登录没有使用，逻辑不一致。
+
+建议首次登录也采用严格、原子化写入：任何一个认证字段写入失败，就回滚全部认证信息并停留在登录页。
 
 ------
 
-# 二、修改文件
+### 3. 数学公式 KaTeX 集成疑似没有完成
 
-重点修改：
+**涉及位置：**
 
-```text
-pages/wrong-book/wrong-book.js
-pages/wrong-book/wrong-book.wxml
-pages/wrong-book/wrong-book.wxss
-```
+- `components/mp-html/latex/build.js`
+- `components/mp-html/index.wxss`
+- `components/mp-html/node/node.wxml`
+- `components/mp-html/latex/katex.css`
 
-复用当前项目已有工具：
+`build.js` 明确要求构建过程执行两项修改：
 
-```text
-utils/storage.js
-```
+1. 将 `katex.css` 引入 mp-html 样式；
+2. 在 `node.wxml` 的渲染条件中加入 `n.l`。
 
-必要时可以新增：
+但当前提交代码中：
 
-```text
-utils/ai-diagnosis-cache.js
-```
+- `components/mp-html/index.wxss` 没有引入 KaTeX 样式；
+- `components/mp-html/node/node.wxml` 中也没有看到 `n.l` 补丁。
 
-优先将缓存逻辑封装为独立工具，避免所有读写、校验逻辑堆积在页面文件中。
+这会导致公式虽然生成了 HTML，但可能出现：
 
-原则上不要修改：
+- 分数线、根号、上下标错位；
+- 矩阵和多行公式布局异常；
+- 行内公式被当成块级公式；
+- KaTeX 字体和间距失效；
+- Android、iOS 表现不一致。
 
-```text
-utils/api.js
-pages/wrong-detail/*
-pages/practice/*
-pages/review-today/*
-```
+而该小程序的题目、答案和解析大量使用 `mp-html`，属于核心功能风险。
 
-除非为了在练习完成后写入明确的“AI 诊断数据已变化”标记，才允许进行极少量修改。
+另外，`katex.css` 中的字体文件来自外部 BootCDN。即使补上 CSS，也会产生第三方域名依赖、字体加载失败和隐私披露问题。更稳妥的做法是使用本地或自有域名静态资源，并确认字体授权。
 
-------
+**上线前至少回归测试：**
 
-# 三、缓存总体策略
-
-采用：
-
-```text
-内存状态
-+
-wx 本地持久化缓存
-+
-有效期
-+
-数据指纹
-+
-按需后台刷新
-```
-
-不要采用以下简单但不可靠的方案：
-
-```text
-只判断 aiDiagnosis 是否存在
-只设置一个 hasLoaded 布尔值
-整个应用生命周期只请求一次
-每次 onShow 都后台请求
-只缓存结果，不记录时间
-所有用户共用同一个缓存 Key
-```
+- 分数、根式、积分、极限；
+- 上下标嵌套；
+- 矩阵和分段函数；
+- 中文、英文和公式混排；
+- 长公式横向溢出；
+- 公式与代码块混排；
+- iOS、Android 和不同微信基础库版本。
 
 ------
 
-# 四、缓存常量
+### 4. 管理员导入权限和文件安全必须由后端重新验证
 
-建议定义：
+**涉及位置：**
 
-```js
-const AI_DIAGNOSIS_CACHE_VERSION = 1
-const AI_DIAGNOSIS_CACHE_PREFIX = 'wrong_book_ai_diagnosis'
-const AI_DIAGNOSIS_CACHE_TTL = 6 * 60 * 60 * 1000
-const AI_DIAGNOSIS_MIN_REFRESH_INTERVAL = 5 * 60 * 1000
-```
+- `pages/import/import.js`
+- `utils/file-request.js:48-73`
 
-含义：
+前端根据本地保存的 `user.is_admin` 或权限字段决定是否展示导入页面。这只能用于界面控制，不能作为安全校验，因为本地用户信息可以被修改。
 
-```text
-缓存版本：1
-默认有效时间：6 小时
-最短重复刷新间隔：5 分钟
-```
+上线前必须确认服务端所有导入接口都重新验证：
 
-缓存时间可以配置，但必须集中定义，不要将毫秒值散落在多个方法中。
+- 当前用户身份；
+- 管理员权限；
+- 文件归属；
+- pipeline/task ID 是否属于当前用户；
+- 重试、取消、删除等操作权限。
 
-6 小时内，在错题数据没有发生明显变化的情况下，不应重复请求 AI 诊断。
+文件校验目前主要依赖扩展名和文件大小，不能阻止伪装文件。服务端还应校验：
+
+- MIME 类型和文件魔数；
+- PDF 页数；
+- Excel 工作表和单元格数量；
+- 图片像素及解压后大小；
+- ZIP/Office 解压炸弹；
+- 病毒或恶意载荷；
+- 单用户上传频率、并发量及总容量。
+
+这是后端确认项，但由于导入功能具有管理员属性，应作为上线阻断性验收内容。
 
 ------
 
-# 五、缓存数据结构
+## 二、中高优先级问题
 
-持久化缓存建议保存：
+### 5. 动画分包加载失败后不能再次尝试
 
-```js
-{
-  version: 1,
-  userKey: '当前用户唯一标识',
-  data: {
-    summary: '',
-    weak_points: [],
-    strong_points: [],
-    learning_suggestions: [],
-    generated: true
-  },
-  cachedAt: 0,
-  expiresAt: 0,
-  sourceSignature: '',
+**涉及位置：**
+
+- `app.js:15-38`
+- `components/loading-lottie/loading-lottie.js`
+- `components/AnimatedView/AnimatedView.js`
+
+`loadRewardAnimationPackage()` 第一次加载失败时会 `resolve()`，但不会清空 `_animLoadPromise`。之后再次调用时始终返回第一次已经完成的 Promise，不会重新加载，除非用户重启小程序。
+
+应在失败时执行：
+
+```javascript
+_animLoadPromise = null
+```
+
+或者在 `finally` 中根据 `_ANIM_LOADED` 状态重置。
+
+此外，`AnimatedView` 会先调用 `loadRewardAnimationPackage()`，但 `loading-lottie` 直接：
+
+```javascript
+require('../../subpackages/animation/lottie-loader.js')
+```
+
+没有保证动画分包已经加载。两套加载逻辑不一致，加载动画可能长期退化为静态状态。
+
+建议封装一个唯一的 `animationService`，所有组件都通过它加载分包和 Lottie 数据。
+
+------
+
+### 6. 导入任务初始数据结构不完整
+
+**涉及位置：**
+
+- `pages/import/import.js:239-255`
+- `pages/import/import.wxml:87`
+- `pages/import/import.wxml:95`
+
+新建任务时的 `pipelineTask` 没有初始化：
+
+- `stageList`
+- `failed_chunk_details`
+- `progressPercent`
+
+但 WXML 直接访问：
+
+```text
+pipelineTask.stageList.length
+pipelineTask.failed_chunk_details.length
+```
+
+在首次轮询返回前可能出现表达式警告、页面局部不渲染或不同基础库表现不一致。
+
+建议始终初始化完整结构：
+
+```javascript
+pipelineTask: {
+  status: 'pending',
+  stageList: [],
+  failed_chunk_details: [],
+  progressPercent: 0
 }
 ```
 
-字段说明：
-
-```text
-version
-缓存结构版本，用于将来升级后废弃旧缓存。
-
-userKey
-当前用户标识，防止退出登录后不同用户读取同一份诊断。
-
-data
-经过标准化、可以直接展示的 AI 诊断。
-
-cachedAt
-缓存写入时间。
-
-expiresAt
-缓存过期时间。
-
-sourceSignature
-生成该诊断时的错题数据指纹。
-```
-
-不得直接缓存：
-
-- Promise。
-- 页面实例。
-- 未标准化的后端响应。
-- loading 状态。
-- Error 对象。
-- 空诊断。
-- 请求失败结果。
+另外，导入页面和 `file-request.js` 中维护了两套支持格式列表，其中对 GIF、CSV 的定义不完全一致，应合并为一个配置源。
 
 ------
 
-# 六、用户隔离
+### 7. Token 过期时间和提前刷新策略过于脆弱
 
-缓存必须按用户隔离。
+**涉及位置：**
 
-使用现有：
+- `utils/api.js:25-26`
+- `utils/api.js:152-176`
 
-```js
-const storage = require('../../utils/storage')
-const { KEYS } = storage
+当前代码直接执行：
+
+```javascript
+const timeToExpiry = expiresAt - Math.floor(Date.now() / 1000)
 ```
 
-读取：
+默认后端返回 Unix 秒。如果以后后端返回：
 
-```js
-const user = storage.get(KEYS.USER)
-```
+- ISO 日期字符串；
+- Unix 毫秒；
+- 字符串形式的秒数；
+- `expires_in` 而不是 `expires_at`；
 
-用户标识优先级建议：
+就可能出现持续刷新或永不刷新的问题。
 
-```text
-user.id
-user.user_id
-user.openid
-user.username
-```
+同时提前刷新阈值固定为 24 小时。如果 Access Token 本身有效期就是 24 小时或更短，登录后的几乎每次请求都会尝试刷新。
 
-缓存 Key 示例：
+建议：
 
-```js
-wrong_book_ai_diagnosis_v1_12345
-```
-
-禁止：
-
-- 把完整 Token 拼入缓存 Key。
-- 把邮箱、手机号直接暴露在缓存 Key 中。
-- 所有用户共享固定 Key。
-
-当无法获取可靠用户标识时：
-
-```text
-只使用当前页面实例中的内存缓存
-不写入跨用户持久化缓存
-```
-
-不能使用固定的 `anonymous` 缓存让多个登录用户共用数据。
+- 明确接口契约，统一保存为 Unix 毫秒或 Unix 秒；
+- 写入存储前完成格式标准化；
+- 提前刷新改为 5～10 分钟，或者 Token 生命周期的 10%；
+- 为秒、毫秒、ISO 时间和缺失字段分别增加单元测试。
 
 ------
 
-# 七、缓存读取方法
+### 8. AI 标识仍不够统一，缺少便捷投诉或纠错入口
 
-新增类似：
+`wrong-detail.wxml:158` 已经显示：
 
-```js
-_restoreAiDiagnosisCache()
-```
+> 内容由 AI 生成，仅供参考
 
-职责：
+这一点处理得比较好。
 
-1. 获取当前用户对应缓存 Key。
-2. 调用 `storage.get()`。
-3. 校验缓存对象类型。
-4. 校验版本。
-5. 校验用户。
-6. 校验诊断结构。
-7. 判断是否过期。
-8. 将有效或可继续使用的旧缓存返回。
-9. 对损坏缓存执行清理。
-10. 不因为缓存读取异常导致页面报错。
+但 `dashboard` 和 `wrong-book` 主要只显示“AI 分析”“AI 诊断”，没有在每段结果附近明确提示其为 AI 生成内容、可能存在错误，也没有针对单条 AI 结果的“纠错/反馈”入口。
 
-缓存分为三种状态：
+《人工智能生成合成内容标识办法》及配套标准已于2025年9月1日实施，规定了显式和隐式标识机制；面向公众提供生成式人工智能服务时，还需结合具体服务模式评估投诉举报、内容安全和备案等要求。([国家市场监管总局](https://www.cac.gov.cn/2025-03/14/c_1743654685899683.htm?utm_source=chatgpt.com))
 
-```text
-fresh：未过期，可以直接使用，不请求接口
-stale：已过期，但内容有效，可以先展示并后台刷新
-invalid：结构损坏或用户不匹配，删除后重新请求
-```
+建议：
 
-建议返回：
-
-```js
-{
-  status: 'fresh' | 'stale' | 'miss',
-  data: null,
-  cachedAt: 0,
-  sourceSignature: '',
-}
-```
+- dashboard、wrong-book 每个 AI 结果卡片增加“AI 生成，仅供学习参考”；
+- 增加“结果有误”反馈按钮；
+- 记录题目 ID、分析版本、模型版本和生成时间；
+- 后台可以根据反馈停用或重新生成错误结果；
+- 由合规人员确认所接入 AI 服务是否涉及算法备案、生成式 AI 服务备案或登记。
 
 ------
 
-# 八、缓存写入方法
+### 9. 富文本组件默认能力过多
 
-新增：
+`mp-html` 当前默认启用了：
 
-```js
-_saveAiDiagnosisCache(diagnosis, sourceSignature)
-```
+- `setTitle: true`
+- `copyLink: true`
+- `previewImg: true`
+- `showImgMenu: true`
 
-写入前必须验证诊断至少包含以下任意一项：
+题目和 AI 返回内容属于外部输入。默认 `setTitle: true` 可能允许内容里的 `<title>` 修改小程序导航栏标题；远程图片和链接也可能触发第三方请求或引导用户访问外部内容。
 
-```text
-summary
-weak_points
-strong_points
-learning_suggestions
-```
-
-只有存在真实有效内容时才允许写入缓存。
-
-不得缓存：
-
-```js
-null
-undefined
-{}
-{
-  weak_points: [],
-  strong_points: [],
-  learning_suggestions: [],
-  summary: ''
-}
-```
-
-写入失败不能阻止页面展示接口结果。
-
-------
-
-# 九、AI 诊断标准化
-
-将当前 `loadAiDiagnosis()` 中的数据处理抽离为纯函数：
-
-```js
-_normalizeAiDiagnosis(raw)
-```
-
-需要完成：
-
-1. 复制原对象，不直接修改接口返回对象。
-2. 保证以下字段始终是数组：
-
-```text
-weak_points
-strong_points
-learning_suggestions
-```
-
-1. 为薄弱点和优势领域增加：
-
-```js
-_accuracyPercent
-```
-
-1. 对准确率进行范围保护：
-
-```text
-小于 0 → 0
-大于 1 → 100%
-0～1 → 乘以 100
-后端如果已经返回 0～100，需要兼容
-```
-
-1. 清理无效空条目。
-2. 确保知识点名称和建议是字符串。
-3. 返回一个适合 WXML 展示的稳定结构。
-
-缓存和接口结果必须共用同一标准化函数。
-
-------
-
-# 十、数据指纹
-
-仅使用 TTL 会导致用户刚完成大量练习后仍看到旧诊断，因此需要增加轻量数据指纹。
-
-新增：
-
-```js
-_buildAiDiagnosisSourceSignature()
-```
-
-只使用稳定的原始字段，例如：
-
-```js
-{
-  total: stats.total || 0,
-  unmastered: stats.unmastered,
-  masteredCount,
-  latestWrongId: firstItem.id,
-  latestWrongAt: firstItem.last_wrong_at
-    || firstItem.last_error_at
-    || firstItem.updated_at
-    || '',
-  firstPageWrongCount: list.reduce(...),
-  firstPageReviewCount: list.reduce(...),
-}
-```
-
-最后将对象稳定序列化为字符串。
-
-不得将以下内容加入指纹：
-
-- `_timeLabel`。
-- “刚刚”“3分钟前”等相对时间。
-- 当前筛选条件。
-- 当前分页页码。
-- 当前列表的展示样式。
-- 加载状态。
-- 数组随机顺序。
-
-指纹的目的不是对全部错题做完整哈希，而是判断学习数据是否发生了明显变化。
-
-------
-
-# 十一、筛选条件不得触发重新生成
-
-当前 AI 诊断接口：
-
-```text
-/stats/ai-diagnosis
-```
-
-没有携带：
-
-```text
-subject
-error_type
-topic
-```
-
-因此它属于全局错题诊断。
-
-以下操作不能触发 AI 重新生成：
-
-```text
-选择学科筛选
-选择错因筛选
-选择知识点筛选
-清除筛选
-加载更多
-展开或收起筛选面板
-进入错题详情后原样返回
-```
-
-筛选只能刷新错题列表和页面局部分析，不能使全局 AI 缓存失效。
-
-------
-
-# 十二、重构页面加载流程
-
-不要让 `_loadPage()` 无条件调用 `loadAiDiagnosis()`。
-
-建议调整为：
-
-```js
-async _loadPage() {
-  this.setData({
-    list: [],
-    page: 1,
-  })
-
-  await Promise.all([
-    this.loadStats(),
-    this.loadList(true),
-  ])
-
-  await this.ensureAiDiagnosis()
-}
-```
-
-但必须注意：
-
-- `loadStats()` 和 `loadList()` 当前都需要返回 Promise。
-- 原有错误处理不能删除。
-- 两个请求其中一个失败时，仍应尽可能恢复缓存。
-- 不允许因为 AI 请求阻塞错题列表展示。
-
-也可以分为：
-
-```text
-第一阶段：立即恢复 AI 缓存
-第二阶段：加载错题统计和列表
-第三阶段：根据缓存、TTL 和数据指纹决定是否请求 AI
-```
-
-推荐采用第二种，用户感知更快。
-
-------
-
-# 十三、页面生命周期
-
-## 13.1 onLoad
-
-在 `onLoad()` 中完成页面参数和配置初始化后，立即尝试恢复缓存：
-
-```js
-onLoad(options) {
-  // 原有参数处理
-  ...
-
-  this._restoreAiDiagnosisFromCache()
-}
-```
-
-这样页面首次渲染时，只要有缓存，就能直接显示 AI 诊断，而不必等待统计和列表请求完成。
-
-------
-
-## 13.2 onReady
-
-保留首次核心数据加载：
-
-```js
-onReady() {
-  this._ready = true
-  this._loadPage()
-}
-```
-
-首次没有缓存时，核心数据加载完成后再请求 AI。
-
-------
-
-## 13.3 onShow
-
-当前：
-
-```js
-onShow() {
-  if (!this._ready) return
-  this._loadPage()
-}
-```
-
-可以继续刷新统计和错题列表，但不得无条件重新请求 AI。
-
-调整为：
-
-```text
-刷新错题统计
-刷新第一页错题列表
-检查 AI 缓存状态
-只有满足失效条件时才更新 AI
-```
-
-从详情页返回时：
-
-- 已有缓存立即保留。
-- 不清空 `aiDiagnosis`。
-- 数据指纹没有改变时不请求 AI。
-- 数据指纹改变时允许后台刷新一次。
-
-------
-
-# 十四、核心方法 `ensureAiDiagnosis`
-
-新增统一入口：
-
-```js
-async ensureAiDiagnosis(options = {})
-```
-
-支持参数：
-
-```js
-{
-  force: false,
-  background: false,
-  reason: 'initial' | 'expired' | 'data-changed' | 'manual',
-}
-```
-
-判断顺序必须为：
-
-```text
-1. 当前没有任何错题 → 清理旧缓存，不请求
-2. 当前已有正在执行的 AI 请求 → 复用该请求
-3. force === true → 请求接口
-4. 存在新鲜缓存且数据指纹一致 → 直接使用，不请求
-5. 存在过期缓存 → 展示缓存，后台请求
-6. 缓存数据指纹变化 → 展示旧结果，后台请求
-7. 完全无缓存 → 显示骨架屏并请求
-```
-
-------
-
-# 十五、并发请求去重
-
-页面实例增加：
-
-```js
-_aiDiagnosisPromise: null
-```
-
-请求开始时：
-
-```js
-if (this._aiDiagnosisPromise) {
-  return this._aiDiagnosisPromise
-}
-```
-
-请求结束后，在 `finally` 中：
-
-```js
-this._aiDiagnosisPromise = null
-```
-
-必须避免以下情况造成重复请求：
-
-- `onReady` 与后续 `onShow` 接近触发。
-- 用户连续点击“重新分析”。
-- 数据请求完成时重复调用检查方法。
-- 页面快速隐藏和重新显示。
-- 多个异步回调同时判定缓存失效。
-
-不能只依赖：
-
-```js
-this.data.aiDiagnosisLoading
-```
-
-因为 `setData` 是异步更新，存在短时间竞态。
-
-------
-
-# 十六、不要在请求前清空旧诊断
-
-删除当前无条件行为：
-
-```js
-this.setData({
-  aiDiagnosisLoading: true,
-  aiDiagnosis: null,
-})
-```
-
-改为区分两种情况。
-
-## 没有旧诊断
-
-```js
-this.setData({
-  aiDiagnosisLoading: true,
-})
-```
-
-显示 AI 骨架屏。
-
-## 已有旧诊断
-
-```js
-this.setData({
-  aiDiagnosisRefreshing: true,
-})
-```
-
-保留已有内容，只显示轻量更新状态。
-
-请求完成前不得将：
-
-```text
-aiDiagnosis
-```
-
-设置为 `null`。
-
-------
-
-# 十七、页面新增状态
-
-在 `data` 中增加：
-
-```js
-aiDiagnosisRefreshing: false,
-aiDiagnosisCacheTimeLabel: '',
-aiDiagnosisCacheStale: false,
-aiDiagnosisError: false,
-```
-
-语义：
-
-```text
-aiDiagnosisLoading
-没有任何可展示内容，正在首次加载。
-
-aiDiagnosisRefreshing
-已有诊断仍然可见，后台正在更新。
-
-aiDiagnosisCacheTimeLabel
-显示诊断更新时间，例如“更新于 14:30”或“今天 14:30”。
-
-aiDiagnosisCacheStale
-当前正在展示已过期缓存。
-
-aiDiagnosisError
-没有缓存且首次请求失败。
-```
-
-不要同时让：
-
-```text
-aiDiagnosisLoading
-aiDiagnosisRefreshing
-```
-
-为 `true`。
-
-------
-
-# 十八、缓存状态下的 WXML
-
-AI 卡片头部建议调整为：
-
-```text
-AI 诊断
-DeepSeek / 本地分析
-更新于 14:30
-重新分析
-```
-
-其中：
-
-- 更新时间为辅助文字。
-- “重新分析”是轻量文字按钮。
-- 已经在更新时显示“正在更新…”。
-- 更新过程中禁用重复点击。
-- 不要添加过重的大按钮。
-
-示意结构：
+建议在所有题目和解析场景显式设置：
 
 ```xml
-<view class="ai-head">
-  <view class="ai-head-main">
-    <text class="ai-head-tag">AI 诊断</text>
-    <text class="ai-head-badge" wx:if="{{aiDiagnosis.generated}}">
-      DeepSeek
-    </text>
-    <text class="ai-head-badge local" wx:else>
-      本地分析
-    </text>
-  </view>
-
-  <view class="ai-head-actions">
-    <text class="ai-cache-time" wx:if="{{aiDiagnosisCacheTimeLabel}}">
-      {{aiDiagnosisRefreshing ? '正在更新…' : aiDiagnosisCacheTimeLabel}}
-    </text>
-
-    <text
-      class="ai-refresh-action {{aiDiagnosisRefreshing ? 'disabled' : ''}}"
-      bindtap="refreshAiDiagnosis"
-    >
-      重新分析
-    </text>
-  </view>
-</view>
+<mp-html
+  content="{{content}}"
+  set-title="{{false}}"
+  copy-link="{{false}}"
+/>
 ```
 
-刷新按钮必须绑定真实方法：
+同时在进入组件前过滤：
 
-```js
-refreshAiDiagnosis()
-```
+- 非 HTTPS 地址；
+- `javascript:`、`file:` 等协议；
+- 非白名单图片域名；
+- 不需要的音频、视频、表单和链接标签。
 
 ------
 
-# 十九、手动重新分析
+### 10. 发布环境配置不够可复现
 
-新增：
+发现：
 
-```js
-refreshAiDiagnosis()
-```
+- `project.config.json`：基础库 `3.3.4`
+- `project.private.config.json`：基础库 `3.6.6`
+- `urlCheck: false`
+- `scopeDataCheck: false`
+- `autoAudits: false`
 
-行为：
+开发人员本地实际运行的基础库可能是 3.6.6，但上传或其他电脑打开项目时可能使用 3.3.4，容易造成“本地没问题、上传后异常”。
 
-1. 如果已有请求正在进行，直接返回。
-2. 保留当前诊断。
-3. 设置 `aiDiagnosisRefreshing: true`。
-4. 强制请求接口。
-5. 成功后覆盖缓存。
-6. 更新缓存时间和数据指纹。
-7. 显示：
+建议：
 
-```text
-AI 诊断已更新
-```
-
-1. 失败后保留旧结果，并显示：
-
-```text
-更新失败，请稍后重试
-```
-
-手动刷新不受：
-
-```text
-TTL
-最短后台刷新时间
-数据指纹
-```
-
-限制，但仍必须受并发去重保护。
+1. 统一基础库版本。
+2. 发布分支将 `urlCheck`、`scopeDataCheck` 打开。
+3. 上线前执行开发者工具自动审计。
+4. 分别使用最低支持版本和当前稳定版本做回归测试。
+5. 确认微信后台已经配置：
+   - request 合法域名；
+   - uploadFile 合法域名；
+   - downloadFile 合法域名；
+   - 可能使用的图片或字体资源域名。
+6. 不要依赖 `urlCheck:false` 掩盖域名配置问题。
 
 ------
 
-# 二十、过期缓存体验
+## 三、工程与性能优化
 
-缓存过期时不要先隐藏旧结果。
+### 1. 包体还有明显压缩空间
 
-正确体验：
+静态统计约为：
 
-```text
-立即展示旧缓存
-→ 标记“正在更新…”
-→ 后台请求新诊断
-→ 成功后无闪烁替换
-```
+| 部分     | 未压缩体积  |
+| -------- | ----------- |
+| 主包     | 约 1.28 MiB |
+| 动画分包 | 约 0.91 MiB |
+| 合计     | 约 2.18 MiB |
 
-错误体验：
+体积目前不算失控，但动画目录中存在多组内容重复的 `.js` 和 `.json` 文件，KaTeX 和 Lottie vendor 文件也比较大。
 
-```text
-清空旧缓存
-→ 显示整张骨架屏
-→ 等待接口
-→ 再显示新内容
-```
+建议：
 
-如果后台刷新失败：
+- 每个动画只保留一种数据格式；
+- 对 Lottie JSON 做小数精度压缩和无用图层清理；
+- 按使用场景拆分动画分包；
+- 删除没有实际使用的动画；
+- 检查 `onAnimReady()` 等未使用代码；
+- 生成包体分析报告并纳入发布流程。
 
-- 保留旧诊断。
-- 标记时间仍显示上次更新时间。
-- 不删除缓存。
-- 后台自动刷新失败可以静默处理。
-- 用户手动刷新失败才显示 Toast。
+### 2. 大文件需要拆分
 
-------
+较大的业务文件包括：
 
-# 二十一、完全无缓存时的体验
+- `pages/pomodoro/pomodoro.js`
+- `pages/dashboard/dashboard.wxml`
+- `pages/dashboard/dashboard.wxss`
+- `pages/review-today/review-today.js`
+- 富文本渲染相关代码
 
-仅当以下条件同时满足时显示骨架屏：
+建议将番茄钟拆成：
 
-```text
-aiDiagnosisLoading === true
-aiDiagnosis === null
-```
+- timer state machine；
+- persistence service；
+- notification service；
+- 页面 view model。
 
-此时使用上一轮要求的结构化 AI 骨架屏。
+Dashboard 可拆成独立组件，降低单页更新的数据量和后续维护难度。
 
-若首次请求失败：
+### 3. 缺少自动化测试
 
-- 结束骨架屏。
-- 显示轻量错误状态。
-- 提供“重新分析”按钮。
-- 不显示大面积空白。
-- 不把失败结果写入缓存。
+`package.json` 中没有可执行测试脚本，项目虽然忽略了 `tests`、`*.test.js`，但没有发现完整测试体系。
 
-------
+至少应补充：
 
-# 二十二、无错题时的缓存处理
+- Token 刷新并发、刷新失败和存储失败；
+- 登录后切换账号的数据隔离；
+- 题目答案标准化；
+- KaTeX 公式固定样例；
+- 导入轮询、暂停、恢复和过期任务；
+- 番茄钟切后台、进程终止、重新进入；
+- AI 空结果、超时、重复生成；
+- 弱网、断网及接口 401/403/429/500。
 
-当全局错题总数为 0 时：
+### 4. 增加生产监控
 
-```text
-不请求 AI 诊断接口
-清除当前用户的 AI 诊断缓存
-将 aiDiagnosis 设置为 null
-关闭 loading 和 refreshing
-```
+目前主要依赖 `console.error` 和 `console.warn`。正式上线后难以定位特定机型或用户的异常。
 
-这里必须使用全局：
+建议接入统一错误上报，至少记录：
 
-```text
-stats.total
-```
+- 页面和操作阶段；
+- 接口路径和 HTTP 状态；
+- trace ID；
+- 基础库版本；
+- 设备平台；
+- 网络类型；
+- 错误代码。
 
-判断，不能使用筛选后的：
-
-```text
-list.length
-```
-
-否则筛选结果为空时会错误删除全局 AI 缓存。
+禁止上报 Token、完整题目图片、用户导入文件和未经脱敏的个人信息。
 
 ------
 
-# 二十三、数据变化时的刷新节流
-
-数据指纹变化时允许后台更新，但必须防止短时间连续生成。
-
-例如用户连续：
-
-```text
-完成一道题
-返回
-再进入详情
-再返回
-```
-
-可能多次产生轻微数据变化。
-
-增加最短自动刷新间隔：
-
-```text
-5 分钟
-```
-
-规则：
-
-```text
-指纹发生变化
-且距离上次成功生成超过 5 分钟
-→ 后台刷新
-```
-
-若不足 5 分钟：
-
-- 继续展示现有缓存。
-- 不立即请求。
-- 下次进入或缓存到期后再检查。
-
-手动“重新分析”不受该间隔限制。
-
-------
-
-# 二十四、缓存失效条件
-
-满足任一条件时缓存失效：
-
-1. 缓存版本不一致。
-2. 用户标识不一致。
-3. 缓存对象结构损坏。
-4. 缓存中没有有效诊断内容。
-5. 缓存超过 TTL。
-6. 错题数据指纹发生变化。
-7. 用户主动点击重新分析。
-8. 当前全局错题总数变为 0。
-9. 代码显式写入 AI 数据脏标记。
-
-但失效不等于立刻删除。
-
-对于仍然有内容的过期缓存：
-
-```text
-先展示
-再后台更新
-```
-
-只有以下情况应直接删除：
-
-- 用户不匹配。
-- 版本不匹配。
-- 结构损坏。
-- 当前错题总数为 0。
-
-------
-
-# 二十五、可选的全局脏标记
-
-为了更准确识别练习后数据变化，可以增加：
-
-```text
-wrong_book_ai_diagnosis_dirty
-```
-
-练习、复习或错题掌握状态发生变化后写入：
-
-```js
-storage.set('wrong_book_ai_diagnosis_dirty', {
-  userKey,
-  at: Date.now(),
-})
-```
-
-Wrong Book 读取后：
-
-```text
-标记当前缓存需要后台更新
-成功更新后清除 dirty 标记
-```
-
-适合写入脏标记的场景：
-
-- 完成一组普通练习。
-- 完成今日复习。
-- 在错题详情中改变掌握状态。
-- 删除错题。
-- 重新加入错题。
-- 更正错因分类。
-
-若当前业务没有这些明确操作，先使用：
-
-```text
-TTL + 数据指纹
-```
-
-不要为了缓存机制大范围修改其他页面。
-
-------
-
-# 二十六、推荐的核心流程
-
-```text
-进入 Wrong Book
-↓
-同步读取本地缓存
-↓
-存在缓存？
-├─ 是：立即显示
-└─ 否：准备显示骨架屏
-↓
-加载全局错题统计和第一页列表
-↓
-全局错题数是否为 0？
-├─ 是：清除缓存，不调用 AI
-└─ 否：继续
-↓
-计算数据指纹
-↓
-判断缓存状态
-├─ 新鲜且指纹一致：结束，不请求
-├─ 过期：保留内容，后台刷新
-├─ 指纹改变：保留内容，后台刷新
-└─ 无缓存：显示骨架并请求
-↓
-接口成功
-↓
-标准化结果
-↓
-更新页面
-↓
-写入当前用户缓存
-```
-
-------
-
-# 二十七、错误处理
-
-## 有缓存时请求失败
-
-```text
-保留缓存
-关闭正在更新状态
-不清空 AI 卡片
-自动后台刷新不弹 Toast
-手动刷新弹轻量 Toast
-```
-
-## 无缓存时请求失败
-
-```text
-关闭骨架屏
-显示轻量错误态
-提供重试入口
-不写缓存
-```
-
-## 缓存读写失败
-
-```text
-退化为当前页面实例内存缓存
-页面继续正常使用
-记录开发日志
-不向用户暴露存储错误
-```
-
-------
-
-# 二十八、页面隐藏与异步请求
-
-请求返回时需要确认页面仍然有效。
-
-可以增加：
-
-```js
-_alive: false
-```
-
-生命周期：
-
-```js
-onShow() {
-  this._alive = true
-}
-
-onHide() {
-  this._alive = false
-}
-
-onUnload() {
-  this._alive = false
-}
-```
-
-即使页面已经隐藏，成功响应仍可以写入持久化缓存，但不要对已销毁页面继续执行不安全的 `setData`。
-
-也可以通过请求序号控制：
-
-```js
-_aiDiagnosisRequestId
-```
-
-防止旧请求覆盖手动刷新后的新请求。
-
-------
-
-# 二十九、缓存时间显示
-
-增加格式化方法：
-
-```js
-_formatAiDiagnosisCacheTime(timestamp)
-```
-
-建议显示：
-
-```text
-刚刚更新
-10 分钟前更新
-今天 14:30 更新
-昨天 18:20 更新
-7月10日更新
-```
-
-不得在定时器中每分钟持续刷新文案。
-
-页面进入或缓存写入时计算一次即可。
-
-------
-
-# 三十、WXSS 要求
-
-新增轻量状态样式：
-
-```text
-ai-head-actions
-ai-cache-time
-ai-refresh-action
-ai-refresh-action.disabled
-ai-card.is-refreshing
-ai-inline-refresh
-ai-error-state
-ai-error-retry
-```
-
-刷新状态不要给整个 AI 卡片加大面积遮罩。
-
-可以在卡片顶部加入：
-
-- 小型旋转图标。
-- 三点加载。
-- “正在更新…”文字。
-
-但：
-
-- 旧内容保持正常可读。
-- 不降低整个卡片到无法阅读。
-- 不阻止页面滚动。
-- 不重复显示完整 Skeleton。
-
-------
-
-# 三十一、必须避免的实现
-
-禁止：
-
-```text
-每次 onShow 仍请求 AI，只是先展示缓存
-缓存存在也静默重复请求
-只用页面 data 缓存，不写本地缓存
-所有用户使用一个固定缓存 Key
-缓存永不过期
-缓存失败结果
-请求前清空 aiDiagnosis
-筛选变化使缓存失效
-loadMore 使缓存失效
-使用 setTimeout 模拟后台刷新
-快速点击产生多次 AI 请求
-通过隐藏加载动画掩盖重复生成
-```
-
-本次目标不仅是“不看到重复加载”，而是实质上不重复调用 AI 接口。
-
-------
-
-# 三十二、验收场景
-
-## 场景 1：首次进入且无缓存
-
-预期：
-
-```text
-显示 AI 骨架屏
-只请求一次 /stats/ai-diagnosis
-请求成功后显示结果
-写入本地缓存
-```
-
-## 场景 2：退出页面后立即返回
-
-预期：
-
-```text
-立即显示原诊断
-不显示骨架屏
-不请求 AI 接口
-```
-
-## 场景 3：进入错题详情后返回
-
-预期：
-
-```text
-错题列表可以刷新
-AI 诊断保持原样
-没有数据变化时不请求 AI
-```
-
-## 场景 4：切换筛选条件
-
-预期：
-
-```text
-列表和局部分析更新
-全局 AI 诊断不重新请求
-```
-
-## 场景 5：缓存过期
-
-预期：
-
-```text
-立即展示旧诊断
-显示“正在更新…”
-后台只请求一次
-成功后平滑更新
-```
-
-## 场景 6：错题数据变化
-
-预期：
-
-```text
-旧诊断继续展示
-超过最短刷新间隔后后台更新
-不会出现整卡消失
-```
-
-## 场景 7：后台刷新失败
-
-预期：
-
-```text
-旧诊断仍然存在
-缓存不被删除
-页面不切换为错误大卡
-```
-
-## 场景 8：手动重新分析
-
-预期：
-
-```text
-立即显示“正在更新…”
-旧结果保持可见
-连续点击不会发起多次请求
-成功后更新时间变化
-```
-
-## 场景 9：退出账号并登录另一用户
-
-预期：
-
-```text
-新用户不会看到旧用户的 AI 诊断
-使用新用户独立缓存
-```
-
-## 场景 10：没有任何错题
-
-预期：
-
-```text
-不请求 AI
-清除旧诊断缓存
-AI 卡片不显示
-```
-
-------
-
-# 三十三、接口请求检查
-
-在微信开发者工具 Network 中验证：
-
-```text
-首次无缓存进入：1 次 /stats/ai-diagnosis
-立刻再次进入：0 次
-进入详情并返回：0 次
-切换筛选：0 次
-加载更多：0 次
-手动重新分析：1 次
-缓存过期：1 次后台请求
-快速连续操作：最多 1 个并发请求
-```
-
-不能只通过 UI 判断缓存是否生效，必须检查真实网络请求数量。
-
-------
-
-# 三十四、最终输出要求
-
-请按以下顺序输出：
-
-```text
-1. 当前重复生成的根因
-2. 缓存设计说明
-3. 缓存状态流转说明
-4. pages/wrong-book/wrong-book.js 完整代码
-5. pages/wrong-book/wrong-book.wxml 完整代码
-6. pages/wrong-book/wrong-book.wxss 完整代码
-7. 如新增，utils/ai-diagnosis-cache.js 完整代码
-8. 如修改，utils/storage.js 变更内容
-9. 缓存验收测试结果
-10. Network 请求次数自检结果
-```
-
-代码必须：
-
-- 基于当前新版本修改。
-- 可直接复制覆盖。
-- 不省略原有代码。
-- 不改变错题筛选和分页逻辑。
-- 不破坏 AI 骨架屏。
-- 不清空已有诊断再刷新。
-- 不重复调用 AI 接口。
-- 正确隔离不同用户。
-- 缓存损坏时安全降级。
-- 支持手动重新分析。
-- 保证 WXML 和 WXSS 语法正确。
-
-------
-
-本次修改后的核心行为应是：
-
-```text
-进入页面不等于重新生成 AI；
-只有首次无缓存、缓存过期、错题数据明显变化或用户主动刷新时，才请求 AI 接口。
-```
+## 四、上线前最低验收清单
+
+建议满足以下条件后再提交审核：
+
+1. 完整更新隐私政策、用户协议、AI 说明和第三方服务清单。
+2. 实现小程序内账号注销和服务端 Refresh Token 撤销。
+3. 统一所有退出、401 和 Refresh 失败场景的数据清理。
+4. 修复 KaTeX CSS 和 WXML 补丁并完成真机公式回归。
+5. 修复动画分包失败后不能重试以及 `loading-lottie` 直接引用分包的问题。
+6. 初始化完整的导入任务数据结构，并确认后端文件与权限校验。
+7. 统一基础库版本，打开 URL、权限和自动审计检查。
+8. 完成 Android、iOS、弱网、冷启动、切账号、长时间后台恢复测试。
+9. 核对微信后台隐私指引、合法域名、备案信息和类目资质。
+10. 为 dashboard、wrong-book 的 AI 输出增加明确标识和反馈入口。
+
+**综合判断：**业务主体功能已接近上线状态，但隐私合规、认证清理、数学公式渲染和管理员导入安全这四个方面尚不适合带风险发布。完成上述高优先级整改并进行一次开发者工具编译和真机回归后，再进入灰度上线会更稳妥。

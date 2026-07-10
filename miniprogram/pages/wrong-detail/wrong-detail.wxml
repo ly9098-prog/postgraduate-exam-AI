@@ -116,6 +116,7 @@
           content="{{aiCards.mistakeDiagnosis.html}}"
           class="ai-rich-text"
           lazy-load
+          set-title="{{false}}" copy-link="{{false}}"
         />
         <text wx:else class="ai-text">{{aiCards.mistakeDiagnosis.text}}</text>
       </view>
@@ -133,6 +134,7 @@
           content="{{aiCards.knowledgePatch.html}}"
           class="ai-rich-text"
           lazy-load
+          set-title="{{false}}" copy-link="{{false}}"
         />
         <text wx:else class="ai-text">{{aiCards.knowledgePatch.text}}</text>
       </view>
@@ -150,6 +152,7 @@
           content="{{aiCards.reviewTask.html}}"
           class="ai-rich-text"
           lazy-load
+          set-title="{{false}}" copy-link="{{false}}"
         />
         <text wx:else class="ai-text">{{aiCards.reviewTask.text}}</text>
       </view>

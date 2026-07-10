@@ -3,27 +3,13 @@
  * Extracted from dashboard.js to keep page logic lean.
  */
 
-/** Subject code → display label (matches backend subject_resolver) */
-const SUBJECT_LABELS = {
-  math: '数学',
-  advanced_math: '高数',
-  linear_algebra: '线性代数',
-  computer: '计算机',
-  ds: '数据结构',
-  co: '计算机组成原理',
-  os: '操作系统',
-  cn: '计算机网络',
-  english: '英语',
-  politics: '政治',
-  math2: '数学二',
-  exam408: '408',
-}
+const { getSubjectName } = require('../../utils/subject-meta')
 
 /** Subject palette (stable per index hash) */
 const SUBJECT_COLORS = ['#4F7FFF', '#22C55E', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4']
 
 function subjectLabel(code) {
-  return SUBJECT_LABELS[code] || code || ''
+  return getSubjectName(code)
 }
 
 function fmtDuration(sec) {
