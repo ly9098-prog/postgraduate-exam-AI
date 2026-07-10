@@ -6,6 +6,7 @@ const {
 } = require('../../utils/stem-render')
 const { isTrueFalseType } = require('../../utils/answer')
 const adapter = require('../../utils/question-runner-adapter')
+const { normalizeAiAnalysisPayload, hasAiAnalysisContent } = require('../../utils/ai-analysis-normalizer')
 
 function _subjectLabel(s) {
   var map = {
@@ -75,92 +76,30 @@ function _normalizeAiResult(content) {
     mistakeDiagnosis: _buildAiRichText(String(diagnosis).replace(/^错因诊断[：:]\s*/, '')),
     knowledgePatch: _buildAiRichText(String(knowledge).replace(/^补漏重点[：:]\s*/, '')),
     reviewTask: _buildAiRichText(String(task).replace(/^复练任务[：:]\s*/, '')),
+    formatError: !!(content && content.formatError),
   }
 }
 
 function _normalizeAiPayload(result) {
-  var content = result && result.content ? result.content : result
-  if (!content) return null
-  return normalizeAiAnalysisPayload(content)
+  if (!result) return null
+  return normalizeAiAnalysisPayload(result)
 }
 
 function _hasAiContent(content) {
-  return !!(content && [content.mistake_diagnosis, content.knowledge_patch, content.review_task].some(function(v) { return String(v || '').trim() }))
+  return hasAiAnalysisContent(content)
 }
 
-function _unwrapJsonString(value) {
-  var trimmed = String(value || '').trim()
-  if (!trimmed) return ''
-  if ((trimmed.charAt(0) === '{' && trimmed.charAt(trimmed.length - 1) === '}') || (trimmed.charAt(0) === '[' && trimmed.charAt(trimmed.length - 1) === ']')) {
-    try {
-      var parsed = JSON.parse(trimmed)
-      if (parsed && typeof parsed === 'object') {
-        var keys = ['mistake_diagnosis', 'error_analysis', 'diagnosis', 'mistakeDiagnosis', 'mistakediagnosis', '错因诊断', 'knowledge_patch', 'knowledge', 'review_task', 'suggestion', 'text', 'content', 'mistakediagnosis']
-        for (var ki = 0; ki < keys.length; ki++) {
-          var val = parsed[keys[ki]]
-          if (val && typeof val === 'string' && val.trim()) return val.trim()
-        }
-        // Fallback: first non-empty string value
-        var vals = Object.values(parsed)
-        for (var vi = 0; vi < vals.length; vi++) {
-          if (vals[vi] && typeof vals[vi] === 'string' && vals[vi].trim()) return vals[vi].trim()
-        }
-      }
-    } catch (_) {}
+function _detectAiCache(wq) {
+  if (!wq || !wq.ai_analysis) return false
+  var raw = wq.ai_analysis
+  if (typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length > 0) return true
+  if (Array.isArray(raw) && raw.length > 0) return true
+  if (typeof raw === 'string') {
+    var t = raw.trim()
+    if (!t) return false
+    if (t.charAt(0) === '{' || t.charAt(0) === '[') return true
   }
-  return trimmed
-}
-
-function normalizeAiAnalysisPayload(input) {
-  if (!input) return { mistake_diagnosis: '', knowledge_patch: '', review_task: '' }
-  var obj = input
-  // String → try JSON parse, including markdown fenced JSON
-  if (typeof obj === 'string') {
-    var trimmed = obj.trim()
-    var fenced = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
-    var jsonStr = fenced ? fenced[1].trim() : trimmed
-    try {
-      obj = JSON.parse(jsonStr)
-    } catch (_) {
-      return { mistake_diagnosis: trimmed, knowledge_patch: '', review_task: '' }
-    }
-  }
-  // Unwrap content wrapper
-  if (obj && typeof obj === 'object' && obj.content && typeof obj.content === 'object' && !Array.isArray(obj.content)) {
-    obj = obj.content
-  }
-  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
-    return { mistake_diagnosis: '', knowledge_patch: '', review_task: '' }
-  }
-  // Field fallback chain: snake_case → camelCase → all-lowercase → Chinese → ''
-  var rawDiagnosis = ''
-  if (obj.mistake_diagnosis !== undefined && obj.mistake_diagnosis !== null) rawDiagnosis = obj.mistake_diagnosis
-  else if (obj.error_analysis !== undefined && obj.error_analysis !== null) rawDiagnosis = obj.error_analysis
-  else if (obj.diagnosis !== undefined && obj.diagnosis !== null) rawDiagnosis = obj.diagnosis
-  else if (obj.mistakeDiagnosis !== undefined && obj.mistakeDiagnosis !== null) rawDiagnosis = obj.mistakeDiagnosis
-  else if (obj.mistakediagnosis !== undefined && obj.mistakediagnosis !== null) rawDiagnosis = obj.mistakediagnosis
-  else rawDiagnosis = obj['错因诊断'] || ''
-  var rawKnowledge = ''
-  if (obj.knowledge_patch !== undefined && obj.knowledge_patch !== null) rawKnowledge = obj.knowledge_patch
-  else if (obj.knowledge_weakness !== undefined && obj.knowledge_weakness !== null) rawKnowledge = obj.knowledge_weakness
-  else if (obj.knowledge !== undefined && obj.knowledge !== null) rawKnowledge = obj.knowledge
-  else if (obj.knowledgePatch !== undefined && obj.knowledgePatch !== null) rawKnowledge = obj.knowledgePatch
-  else if (obj.knowledgepatch !== undefined && obj.knowledgepatch !== null) rawKnowledge = obj.knowledgepatch
-  else rawKnowledge = obj['补漏重点'] || ''
-  var rawTask = ''
-  if (obj.review_task !== undefined && obj.review_task !== null) rawTask = obj.review_task
-  else if (obj.suggestion !== undefined && obj.suggestion !== null) rawTask = obj.suggestion
-  else if (obj.task !== undefined && obj.task !== null) rawTask = obj.task
-  else if (obj.reviewTask !== undefined && obj.reviewTask !== null) rawTask = obj.reviewTask
-  else if (obj.reviewtask !== undefined && obj.reviewtask !== null) rawTask = obj.reviewtask
-  else if (obj.reviewask !== undefined && obj.reviewask !== null) rawTask = obj.reviewask
-  else rawTask = obj['复练任务'] || ''
-  // Unwrap JSON string values
-  return {
-    mistake_diagnosis: _unwrapJsonString(String(rawDiagnosis)),
-    knowledge_patch: _unwrapJsonString(String(rawKnowledge)),
-    review_task: _unwrapJsonString(String(rawTask)),
-  }
+  return false
 }
 
 
@@ -280,7 +219,7 @@ Page({
       }
 
       // 如果后端已返回持久化的 AI 分析，直接展示
-      var cachedAi = wq && wq.ai_analysis && typeof wq.ai_analysis === 'object' && Object.keys(wq.ai_analysis).length > 0
+      var cachedAi = _detectAiCache(wq)
       if (cachedAi) {
         data.aiResult = normalizeAiAnalysisPayload(wq.ai_analysis)
         data.aiCards = _normalizeAiResult(data.aiResult)
@@ -658,7 +597,7 @@ Page({
       }
 
       // 检查切换后题目是否有已缓存 AI 分析
-      var cachedAi = wq && wq.ai_analysis && typeof wq.ai_analysis === 'object' && Object.keys(wq.ai_analysis).length > 0
+      var cachedAi = _detectAiCache(wq)
       if (cachedAi) {
         nextData.aiResult = normalizeAiAnalysisPayload(wq.ai_analysis)
         nextData.aiCards = _normalizeAiResult(nextData.aiResult)
