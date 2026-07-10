@@ -598,15 +598,20 @@ Page({
     try {
       const server = await api.post(`/pomodoro/${this.data.sessionId}/resume`, {})
       const startTime = parseServerTime(server.start_time)
-      const serverTotalPausedSec = server.total_paused_sec || 0
+      let serverTotalPausedSec = server.total_paused_sec || 0
       const now = Date.now()
+
+      // Merge with local pause adjustment
+      const effectiveTotalPausedMs = this._mergeLocalPauseAdjustment(server.id, serverTotalPausedSec * 1000)
+      serverTotalPausedSec = Math.floor(effectiveTotalPausedMs / 1000)
+
       const elapsed = Math.max(0, Math.floor((now - startTime) / 1000) - serverTotalPausedSec)
       const fmt = formatElapsedSec(elapsed)
       this.setData({
         isPaused: false,
         ringCanvasVisible: true,
         sessionStartTime: startTime,
-        totalPausedMs: serverTotalPausedSec * 1000,
+        totalPausedMs: effectiveTotalPausedMs,
         pauseStartTime: null,
         elapsedSec: elapsed,
         freeDisplayTime: fmt.display,
@@ -642,12 +647,14 @@ Page({
       const totalPausedMs = totalPausedSec * 1000
       if (this.data.isFreeTimer) {
         const now = Date.now()
-        const elapsed = Math.max(0, Math.floor((now - startTime) / 1000) - totalPausedSec)
+        const effectiveTotalPausedMs = this._mergeLocalPauseAdjustment(active.id, totalPausedMs)
+        const effectiveTotalPausedSec = Math.floor(effectiveTotalPausedMs / 1000)
+        const elapsed = Math.max(0, Math.floor((now - startTime) / 1000) - effectiveTotalPausedSec)
         const fmt = formatElapsedSec(elapsed)
         this.setData({
           isPaused: false,
           sessionStartTime: startTime,
-          totalPausedMs,
+          totalPausedMs: effectiveTotalPausedMs,
           pauseStartTime: null,
           elapsedSec: elapsed,
           freeDisplayTime: fmt.display,
@@ -658,12 +665,16 @@ Page({
       } else {
         const now = Date.now()
         const totalSec = this._getCurrentTotalSec()
-        const elapsed = Math.floor((now - startTime - totalPausedMs) / 1000)
+
+        // Merge with local pause adjustment
+        const effectiveTotalPausedMs = this._mergeLocalPauseAdjustment(active.id, totalPausedMs)
+
+        const elapsed = Math.floor((now - startTime - effectiveTotalPausedMs) / 1000)
         const remainingSec = Math.max(0, totalSec - elapsed)
         this.setData({
           isPaused: false,
           sessionStartTime: startTime,
-          totalPausedMs,
+          totalPausedMs: effectiveTotalPausedMs,
           pauseStartTime: null,
           remainingSec,
           displayMin: String(Math.floor(remainingSec / 60)).padStart(2, '0'),
@@ -849,22 +860,20 @@ Page({
         return
       }
 
-      // Was running before confirm — resume after cancel
-      this.setData({ actionLoading: true })
+      // ===== Was running before confirm — resume after cancel =====
+      // 1. Calculate local adjustment immediately
+      const pauseDelta = Math.max(0, now - snapshot.openedAt)
+      const localTotalPausedMs = (snapshot.totalPausedMs || 0) + pauseDelta
 
-      let nextTotalPausedMs = snapshot.totalPausedMs || 0
-      try {
-        const server = await api.post('/pomodoro/' + snapshot.sessionId + '/resume', {})
-        nextTotalPausedMs = (server.total_paused_sec || 0) * 1000
-      } catch (e) {
-        console.warn('resume after cancel confirm failed', e)
-        // If backend pause succeeded, add pauseDelta locally
-        if (snapshot.backendPauseDone) {
-          const pauseDelta = Math.max(0, now - snapshot.openedAt)
-          nextTotalPausedMs = (snapshot.totalPausedMs || 0) + pauseDelta
-        }
-      }
+      // 2. Save local pause adjustment to storage (survives onShow/active-sync)
+      wx.setStorageSync('pomodoro_pause_adjustment', {
+        sessionId: snapshot.sessionId,
+        totalPausedMs: localTotalPausedMs,
+        savedAt: Date.now(),
+        source: 'cancel_end_confirm',
+      })
 
+      // 3. Restore UI immediately from snapshot — no await
       this.setData({
         showEndConfirm: false,
         ringCanvasVisible: true,
@@ -876,7 +885,7 @@ Page({
         displayMin: fmt.min,
         displaySec: fmt.sec,
         progress: snapshot.progress,
-        totalPausedMs: nextTotalPausedMs,
+        totalPausedMs: localTotalPausedMs,
         isPaused: false,
         pauseStartTime: null,
         actionLoading: false,
@@ -884,6 +893,7 @@ Page({
 
       wx.removeStorageSync('pomodoro_confirm_pause')
 
+      // 4. Start timer immediately from snapshot remainingMs
       this._countdownTotalSec = snapshot.totalSec
       this._startTimer(snapshot.totalSec, { remainingMs: snapshot.remainingMs, forceRunning: true })
 
@@ -893,6 +903,25 @@ Page({
       })
 
       this._confirmTimerSnapshot = null
+
+      // 5. Fire-and-forget backend resume — must not block UI
+      api.post('/pomodoro/' + snapshot.sessionId + '/resume', {
+        total_paused_ms: localTotalPausedMs,
+      }).then(server => {
+        const serverPausedMs = (server.total_paused_sec || 0) * 1000
+        const finalPausedMs = Math.max(serverPausedMs, localTotalPausedMs)
+        this.setData({ totalPausedMs: finalPausedMs })
+
+        wx.setStorageSync('pomodoro_pause_adjustment', {
+          sessionId: snapshot.sessionId,
+          totalPausedMs: finalPausedMs,
+          savedAt: Date.now(),
+          source: 'cancel_end_confirm',
+        })
+      }).catch(e => {
+        console.warn('resume after cancel confirm failed, keep local timer', e)
+      })
+
       return
     }
 
@@ -975,6 +1004,7 @@ Page({
         total_paused_ms: totalPausedMs,
       })
       wx.showToast({ title: '已结束本次专注', icon: 'none' })
+      wx.removeStorageSync('pomodoro_pause_adjustment')
       this._confirmTimerSnapshot = null
       this.setData({ showEndConfirm: false, actionLoading: false })
       this._resetToIdle()
@@ -1090,14 +1120,20 @@ Page({
     try {
       const server = await api.post(`/pomodoro/${this.data.sessionId}/resume`, {})
       const startTime = parseServerTime(server.start_time)
-      const serverTotalPausedSec = server.total_paused_sec || 0
+      let serverTotalPausedSec = server.total_paused_sec || 0
       const totalSec = this.data.selectedPreset === 'debug' ? 10 : (this.data.workDuration ?? 25) * 60
+
+      // Merge with local pause adjustment
+      const serverTotalPausedMs = serverTotalPausedSec * 1000
+      const effectiveTotalPausedMs = this._mergeLocalPauseAdjustment(server.id, serverTotalPausedMs)
+      serverTotalPausedSec = Math.floor(effectiveTotalPausedMs / 1000)
+
       const elapsed = Math.floor((Date.now() - startTime) / 1000) - serverTotalPausedSec
       const remainingSec = Math.max(0, totalSec - elapsed)
       this.setData({
         isPaused: false,
         ringCanvasVisible: true,
-        totalPausedMs: serverTotalPausedSec * 1000,
+        totalPausedMs: effectiveTotalPausedMs,
         pauseStartTime: null,
         remainingSec: remainingSec,
         displayMin: String(Math.floor(remainingSec / 60)).padStart(2, '0'),
@@ -1123,6 +1159,39 @@ Page({
     }
   },
 
+  /* ==================== Local Pause Adjustment ==================== */
+
+  _getLocalPauseAdjustment(sessionId) {
+    try {
+      const adjust = wx.getStorageSync('pomodoro_pause_adjustment')
+      if (!adjust || adjust.sessionId !== sessionId) return 0
+      if (Date.now() - adjust.savedAt > 2 * 60 * 60 * 1000) {
+        wx.removeStorageSync('pomodoro_pause_adjustment')
+        return 0
+      }
+      return Number(adjust.totalPausedMs || 0)
+    } catch (_) { return 0 }
+  },
+
+  _mergeLocalPauseAdjustment(sessionId, serverPausedMs) {
+    const localPausedMs = this._getLocalPauseAdjustment(sessionId)
+    return Math.max(Number(serverPausedMs || 0), Number(localPausedMs || 0))
+  },
+
+  _getEffectivePausedMsFromSession(session) {
+    const serverBaseMs = (session.total_paused_sec || 0) * 1000
+    let serverEffectiveMs = serverBaseMs
+
+    if (session.paused_at) {
+      const pausedAtMs = parseServerTime(session.paused_at)
+      if (Number.isFinite(pausedAtMs)) {
+        serverEffectiveMs += Math.max(0, Date.now() - pausedAtMs)
+      }
+    }
+
+    return this._mergeLocalPauseAdjustment(session.id, serverEffectiveMs)
+  },
+
   _startTimer(totalSec, options = {}) {
     this._clearTimer()
     this._initCanvas(true)
@@ -1138,6 +1207,8 @@ Page({
       remainMs = remainSec * 1000
     }
 
+    const totalMs = Math.max(1, totalSec * 1000)
+
     const displayRemainingSec = remainMs <= 0 ? 0 : Math.ceil(remainMs / 1000)
     const progress = totalMs > 0 ? remainMs / totalMs : 0
     const fmt = this._formatCountdownDisplay(displayRemainingSec)
@@ -1151,8 +1222,6 @@ Page({
       update.pauseStartTime = null
     }
     this.setData(update)
-
-    const totalMs = Math.max(1, totalSec * 1000)
 
     const tick = () => {
       if (this.data.isPaused || this.data.showEndConfirm) {
@@ -1213,6 +1282,7 @@ Page({
       await api.post(`/pomodoro/${this.data.sessionId}/complete`, {
         total_paused_ms: this.data.totalPausedMs || 0,
       })
+      wx.removeStorageSync('pomodoro_pause_adjustment')
     } catch (e) {
       console.error('同步失败', e)
     }
@@ -1310,7 +1380,8 @@ Page({
 
   _syncActiveSessionLight(active) {
     const now = Date.now()
-    const totalPausedMs = this.data.totalPausedMs || 0
+    let totalPausedMs = this.data.totalPausedMs || 0
+    totalPausedMs = this._mergeLocalPauseAdjustment(this.data.sessionId, totalPausedMs)
 
     if (this.data.isFreeTimer) {
       if (!this.data.isPaused) {
@@ -1408,23 +1479,31 @@ Page({
       return
     }
 
-    const savedPause = wx.getStorageSync('pomodoro_pause')
-    let totalPausedMs = 0
+    // Compute effective paused ms: server base + current segment + local adjustment
+    const serverBaseMs = (session.total_paused_sec || 0) * 1000
+    let totalPausedMs = serverBaseMs
     let isPaused = false
+
+    const savedPause = wx.getStorageSync('pomodoro_pause')
     if (savedPause && savedPause.sessionId === session.id) {
       const savedTotal = Number(savedPause.totalPausedMs || 0)
       const pauseStart = Number(savedPause.pauseStartTime || Date.now())
       totalPausedMs = Number.isFinite(savedTotal) && Number.isFinite(pauseStart)
         ? savedTotal + (Date.now() - pauseStart)
-        : 0
+        : serverBaseMs
       isPaused = totalPausedMs > 0
     } else if (session.paused_at) {
       const pausedAtMs = parseServerTime(session.paused_at)
-      totalPausedMs = Number.isFinite(pausedAtMs) ? Math.max(0, Date.now() - pausedAtMs) : 0
-      isPaused = Number.isFinite(pausedAtMs)
+      if (Number.isFinite(pausedAtMs)) {
+        totalPausedMs = serverBaseMs + Math.max(0, Date.now() - pausedAtMs)
+        isPaused = true
+      }
     }
 
     if (!Number.isFinite(totalPausedMs) || totalPausedMs < 0) totalPausedMs = 0
+
+    // Apply local pause adjustment (e.g. from cancelEndConfirm)
+    totalPausedMs = this._mergeLocalPauseAdjustment(session.id, totalPausedMs)
 
     const elapsed = Math.floor((Date.now() - startTime - totalPausedMs) / 1000)
     const remaining = Number.isFinite(totalSec) && Number.isFinite(elapsed)
@@ -1535,6 +1614,9 @@ Page({
     }
 
     if (!Number.isFinite(totalPausedMs) || totalPausedMs < 0) totalPausedMs = 0
+
+    // Apply local pause adjustment (e.g. from cancelEndConfirm)
+    totalPausedMs = this._mergeLocalPauseAdjustment(session.id, totalPausedMs)
 
     const elapsed = isPaused
       ? savedElapsed || Math.max(0, Math.floor((Date.now() - startTime - totalPausedMs) / 1000))
@@ -1702,6 +1784,7 @@ Page({
     wx.removeStorageSync('pomodoro_free_pause')
     wx.removeStorageSync('pomodoro_running_state')
     wx.removeStorageSync('pomodoro_confirm_pause')
+    wx.removeStorageSync('pomodoro_pause_adjustment')
     this.setData({
       phase: PHASE.IDLE,
       sessionId: null,
