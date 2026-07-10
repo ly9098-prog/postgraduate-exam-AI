@@ -9,6 +9,7 @@ from app.models.user import User
 from app.schemas.pomodoro import (
     PomodoroCompleteRequest,
     PomodoroHistoryResponse,
+    PomodoroResumeRequest,
     PomodoroSessionResponse,
     PomodoroStartRequest,
     PomodoroStatsResponse,
@@ -101,10 +102,15 @@ async def pause_session(
 @router.post("/{session_id}/resume", response_model=PomodoroSessionResponse)
 async def resume_session(
     session_id: int,
+    req: PomodoroResumeRequest = PomodoroResumeRequest(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    session = await svc.resume_session(db, session_id, current_user.id)
+    session = await svc.resume_session(
+        db, session_id, current_user.id,
+        client_total_paused_ms=req.total_paused_ms,
+        client_total_paused_sec=req.total_paused_sec,
+    )
     if not session:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")

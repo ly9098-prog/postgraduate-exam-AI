@@ -107,7 +107,15 @@ async def complete_session(db: AsyncSession, session_id: int, user_id: int, tota
         session.paused_at = None
 
     session.end_time = now
+
+    # Merge client-provided paused time into effective paused
     effective_paused = _effective_paused_sec(session, now)
+    client_paused_sec = None
+    if total_paused_ms is not None:
+        client_paused_sec = max(0, int((total_paused_ms + 999) / 1000))
+    if client_paused_sec is not None:
+        effective_paused = max(effective_paused, client_paused_sec)
+
     raw_seconds = int((now - session.start_time).total_seconds())
     server_actual = max(0, raw_seconds - effective_paused)
     if actual_duration_sec is not None:
@@ -153,7 +161,15 @@ async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, tot
         session.paused_at = None
 
     session.end_time = now
+
+    # Merge client-provided paused time into effective paused
     effective_paused = _effective_paused_sec(session, now)
+    client_paused_sec = None
+    if total_paused_ms is not None:
+        client_paused_sec = max(0, int((total_paused_ms + 999) / 1000))
+    if client_paused_sec is not None:
+        effective_paused = max(effective_paused, client_paused_sec)
+
     raw_seconds = int((now - session.start_time).total_seconds())
     server_actual = max(0, raw_seconds - effective_paused)
     if actual_duration_sec is not None:
@@ -201,7 +217,13 @@ async def pause_session(db: AsyncSession, session_id: int, user_id: int) -> Pomo
     return session
 
 
-async def resume_session(db: AsyncSession, session_id: int, user_id: int) -> PomodoroSession | None:
+async def resume_session(
+    db: AsyncSession,
+    session_id: int,
+    user_id: int,
+    client_total_paused_ms: int | None = None,
+    client_total_paused_sec: int | None = None,
+) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession)
         .options(joinedload(PomodoroSession.subject_ref))
@@ -214,20 +236,28 @@ async def resume_session(db: AsyncSession, session_id: int, user_id: int) -> Pom
     session = result.scalar_one_or_none()
     if not session:
         return None
-    # Idempotent: already running, just return current session
-    if session.status == "running":
-        await db.refresh(session)
-        return session
-    if session.paused_at is not None:
-        now = utcnow()
-        paused_for = now - session.paused_at
-        paused_sec = max(0, int(paused_for.total_seconds()))
+
+    now = utcnow()
+
+    if session.status == "paused" and session.paused_at is not None:
+        paused_sec = max(0, int((now - session.paused_at).total_seconds()))
         session.total_paused_sec = (session.total_paused_sec or 0) + paused_sec
         if session.expected_end_time is not None and paused_sec > 0:
             session.expected_end_time = session.expected_end_time + timedelta(seconds=paused_sec)
         session.paused_at = None
         session.status = "running"
-        await db.flush()
+
+    if session.status == "running":
+        client_sec = None
+        if client_total_paused_ms is not None:
+            client_sec = max(0, int((client_total_paused_ms + 999) / 1000))
+        elif client_total_paused_sec is not None:
+            client_sec = max(0, int(client_total_paused_sec))
+
+        if client_sec is not None:
+            session.total_paused_sec = max(session.total_paused_sec or 0, client_sec)
+
+    await db.flush()
     await db.refresh(session)
     return session
 
