@@ -62,6 +62,7 @@ Page({
   },
 
   _alive: false,
+  _forceRefreshOnNextShow: false,
   _dashboardSeq: 0,
   _trendSeq: 0,
   _yearlySeq: 0,
@@ -76,10 +77,23 @@ Page({
 
   onShow() {
     this._alive = true
-    const now = Date.now()
 
+    var forceRefresh = this._forceRefreshOnNextShow
+    this._forceRefreshOnNextShow = false
+
+    if (!this.data.pageReady) {
+      this.loadDashboard({ mode: 'initial' })
+      return
+    }
+
+    if (forceRefresh) {
+      this.loadDashboard({ mode: 'background' })
+      return
+    }
+
+    var now = Date.now()
     // 30s debounce: avoid rapid background refreshes
-    if (now - this._lastLoadAt < 30000 && this.data.pageReady) {
+    if (now - this._lastLoadAt < 30000) {
       // Redraw charts if they were cancelled by hide
       if (this._chartsCancelled) {
         this._chartsCancelled = false
@@ -88,11 +102,7 @@ Page({
       return
     }
 
-    if (!this.data.pageReady) {
-      this.loadDashboard({ mode: 'initial' })
-    } else {
-      this.loadDashboard({ mode: 'background' })
-    }
+    this.loadDashboard({ mode: 'background' })
   },
 
   onHide() {
@@ -541,21 +551,25 @@ Page({
   },
 
   // ── Navigation ──
-  goTo(url) {
+  goTo(url, opts) {
+    var self = this
     wx.navigateTo({
       url,
-      fail: () => {
+      fail: function() {
+        if (opts && opts.refreshOnReturn) self._forceRefreshOnNextShow = false
         wx.showToast({ title: '跳转失败', icon: 'none' })
       },
     })
   },
 
   goReview() {
-    this.goTo('/pages/review-today/review-today')
+    this._forceRefreshOnNextShow = true
+    this.goTo('/pages/review-today/review-today', { refreshOnReturn: true })
   },
 
   goPractice() {
-    this.goTo('/pages/practice/practice')
+    this._forceRefreshOnNextShow = true
+    this.goTo('/pages/practice/practice', { refreshOnReturn: true })
   },
 
   goWrongBook() {

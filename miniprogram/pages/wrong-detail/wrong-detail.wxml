@@ -94,7 +94,16 @@
         <text class="ai-regenerating-text">正在重新生成，当前先保留旧解析</text>
       </view>
 
-      <view class="ai-section ai-section-diagnosis" wx:if="{{aiCards.mistakeDiagnosis.raw}}">
+      <!-- 格式异常：AI 返回了无法解析的结构化数据 -->
+      <view wx:if="{{aiCards.formatError && !aiCards.mistakeDiagnosis.raw && !aiCards.knowledgePatch.raw && !aiCards.reviewTask.raw}}" class="ai-fallback inside">
+        <view class="fallback-mark">
+          <view class="line-icon icon-exclamation"></view>
+        </view>
+        <text class="fallback-title">AI 解析格式异常</text>
+        <text class="fallback-desc">返回数据格式无法识别，请重新生成</text>
+      </view>
+
+      <view wx:elif="{{aiCards.mistakeDiagnosis.raw}}" class="ai-section ai-section-diagnosis">
         <view class="ai-label-row">
           <view class="ai-index">1</view>
           <view>
