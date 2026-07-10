@@ -13,11 +13,15 @@ from app.schemas.review_scheduler import (
     BatchReviewRequest,
     BatchReviewResponse,
     GradeSubmit,
+    NextBatchRequest,
+    NextBatchResponse,
     ReviewHistoryResponse,
     ReviewStatsResponse as ScheduleStatsResponse,
     ReviewSubmit,
     ReviewSubmitResponse as ScheduleSubmitResponse,
+    TodayReviewOverviewResponse,
     TodayReviewResponse,
+    TodayReviewResultResponse,
 )
 from app.services import review_scheduler
 from app.utils.answer_normalizer import is_answer_correct
@@ -44,6 +48,44 @@ async def get_today_review(
         db, current_user.id, subject=subject, limit=limit
     )
     await cache.set(cache_key, result, ttl=60)
+    return result
+
+
+@router.get("/today/overview", response_model=TodayReviewOverviewResponse)
+async def get_today_review_overview(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取今日复习任务概览。"""
+    cache_key = f"review:today_overview:{current_user.id}"
+    cached_data = await cache.get(cache_key)
+    if cached_data is not None:
+        return cached_data
+    result = await review_scheduler.get_today_review_overview(db, current_user.id)
+    await cache.set(cache_key, result, ttl=60)
+    return result
+
+
+@router.post("/today/next-batch", response_model=NextBatchResponse)
+async def get_next_today_review_batch(
+    data: NextBatchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取今日下一组待复习题。"""
+    result = await review_scheduler.get_next_today_review_batch(
+        db, current_user.id, batch_size=data.batch_size,
+    )
+    return result
+
+
+@router.get("/today/result", response_model=TodayReviewResultResponse)
+async def get_today_review_result(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取今日复习最终结果。"""
+    result = await review_scheduler.get_today_review_result(db, current_user.id)
     return result
 
 
@@ -246,6 +288,7 @@ async def grade_batch(
 
     await cache.delete(f"review:*:{current_user.id}*")
     await cache.delete(f"stats:*:{current_user.id}*")
+    await cache.delete(f"review:today_overview:{current_user.id}")
 
     return {
         "results": results,
@@ -266,6 +309,7 @@ async def mark_mastered(
     if not schedule:
         raise HTTPException(status_code=404, detail="复习记录不存在")
     await cache.delete(f"review:*:{current_user.id}*")
+    await cache.delete(f"review:today_overview:{current_user.id}")
     return {"schedule_id": schedule_id, "mastered": True}
 
 
@@ -280,4 +324,5 @@ async def unmark_mastered(
     if not schedule:
         raise HTTPException(status_code=404, detail="复习记录不存在")
     await cache.delete(f"review:*:{current_user.id}*")
+    await cache.delete(f"review:today_overview:{current_user.id}")
     return {"schedule_id": schedule_id, "mastered": False}
