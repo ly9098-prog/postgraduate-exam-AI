@@ -5,6 +5,18 @@
    ══════════════════════════════════ */
 
 /* ── Page ── */
+page,
+.result-page,
+.detail-list,
+.detail-row,
+.detail-row-body,
+.detail-stem-wrap,
+.detail-answer-block,
+.detail-answer-box {
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
 .result-page {
   min-height: 100vh;
   padding: 32rpx 24rpx 0;
@@ -330,12 +342,15 @@
 
 .detail-row {
   position: relative;
+  width: 100%;
+  max-width: 100%;
   padding: 16rpx 16rpx 16rpx 24rpx;
   border-radius: 16rpx;
   background: #F7FAFF;
   display: flex;
   gap: 12rpx;
   align-items: flex-start;
+  box-sizing: border-box;
   overflow: hidden;
   border-left: 6rpx solid transparent;
 }
@@ -395,16 +410,18 @@
 
 .detail-stem {
   display: block;
+  max-width: 100%;
   font-size: 25rpx;
   line-height: 1.65;
   color: #18233A;
   word-break: break-word;
+  overflow-wrap: anywhere;
   white-space: normal;
 }
 
-.detail-row.correct .detail-stem { color: #166534; }
 
-.detail-row.wrong .detail-stem { color: #991B1B; }
+
+
 
 .detail-skipped-line {
   font-size: 22rpx;
@@ -472,11 +489,11 @@
 }
 
 .detail-answer-value.user {
-  color: #EF4444;
+  color: #18233A;
 }
 
 .detail-answer-value.right {
-  color: #16A34A;
+  color: #18233A;
 }
 
 .detail-rich-text {
@@ -549,6 +566,22 @@
 }
 
 /* ── Keyframes ── */
+
+/* ── Force black text for all detail content ── */
+.detail-stem,
+.detail-answer-value,
+.detail-rich-text,
+.detail-stem-rich {
+  color: #18233A !important;
+}
+
+.detail-answer-label {
+  color: #4B5563;
+}
+
+.detail-answer-label.correct {
+  color: #4B5563;
+}
 @keyframes fadeSlideUp {
   from { opacity: 0; transform: translateY(24rpx); }
   to { opacity: 1; transform: translateY(0); }

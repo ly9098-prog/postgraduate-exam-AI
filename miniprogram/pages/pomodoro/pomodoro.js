@@ -122,6 +122,7 @@ Page({
     freeFriendlyText: '',
     showEndConfirm: false,
     endConfirmMode: '',
+    endConfirmTheme: '',
     endConfirmTitle: '',
     endConfirmText: '',
     endConfirmOkText: '确认结束',
@@ -155,6 +156,7 @@ Page({
     celebrationType: 'excellent',
     pageEntered: false,
     debugMode: false,
+    ringCanvasVisible: true,
     selectedSubjectLabel: '',
     selectedSubjectEmoji: '📚',
     selectedPresetLabel: '',
@@ -166,6 +168,9 @@ Page({
   _pageVisible: false,
   _debugTapCount: 0,
   _debugTapTimer: null,
+  _countdownEndAt: 0,
+  _countdownTotalSec: 0,
+  _countdownRemainingSnapshot: null,
   _confirmTimerSnapshot: null,
 
   /* ==================== Lifecycle ==================== */
@@ -447,6 +452,7 @@ Page({
     this._clearTimer()
     this.setData({
       phase: PHASE.RUNNING,
+      ringCanvasVisible: true,
       isFreeTimer: true,
       sessionId: session.id,
       sessionStartTime: startTime,
@@ -546,6 +552,7 @@ Page({
       const fmt = formatElapsedSec(elapsed)
       this.setData({
         isPaused: false,
+        ringCanvasVisible: true,
         sessionStartTime: startTime,
         totalPausedMs: serverTotalPausedSec * 1000,
         pauseStartTime: null,
@@ -569,7 +576,9 @@ Page({
     const fmt = formatElapsedSec(elapsed)
     this.setData({
       showEndConfirm: true,
+      ringCanvasVisible: false,
       endConfirmMode: 'free-complete',
+      endConfirmTheme: 'free',
       endConfirmTitle: '结束自由计时？',
       endConfirmText: elapsed >= 1 ? `本次已专注 ${fmt.friendly}，确认后将计入学习统计。` : '当前计时时长较短，确认后仍会结束本次计时。',
       endConfirmOkText: '确认结束',
@@ -588,30 +597,55 @@ Page({
       : Math.max(1, this.data.workDuration * 60)
   },
 
-  _showCountdownInterruptConfirm() {
-    if (this.data.actionLoading) return
+  _pauseCountdownForEndConfirm() {
+    if (!this.data.sessionId || this.data.actionLoading) return
 
-    const openedAt = Date.now()
     const totalSec = this._getCurrentTotalSec()
     const remainingSec = Math.max(0, this.data.remainingSec || 0)
-    const elapsedSec = Math.max(0, totalSec - remainingSec)
-    const fmt = formatElapsedSec(elapsedSec)
+    const remainingMs = this._countdownEndAt
+      ? Math.max(0, this._countdownEndAt - Date.now())
+      : remainingSec * 1000
+
+    const safeRemainingSec = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 1000)
 
     this._clearTimer()
 
     this._confirmTimerSnapshot = {
       mode: 'countdown-interrupt',
-      openedAt,
+      openedAt: Date.now(),
       wasPaused: !!this.data.isPaused,
-      remainingSec,
+      phase: this.data.phase,
+      totalSec,
+      remainingSec: safeRemainingSec,
+      remainingMs,
       progress: this.data.progress,
       totalPausedMs: this.data.totalPausedMs || 0,
-      phase: this.data.phase,
     }
 
     this.setData({
+      isPaused: true,
+      pauseStartTime: Date.now(),
+      remainingSec: safeRemainingSec,
+    })
+  },
+
+  _showCountdownInterruptConfirm() {
+    if (this.data.actionLoading) return
+
+    this._pauseCountdownForEndConfirm()
+
+    const snapshot = this._confirmTimerSnapshot
+    if (!snapshot) return
+
+    const totalSec = snapshot.totalSec
+    const elapsedSec = Math.max(0, totalSec - snapshot.remainingSec)
+    const fmt = formatElapsedSec(elapsedSec)
+
+    this.setData({
       showEndConfirm: true,
+      ringCanvasVisible: false,
       endConfirmMode: 'countdown-interrupt',
+      endConfirmTheme: this.data.phase === 'break' ? 'break' : 'focus',
       endConfirmTitle: '结束本次专注？',
       endConfirmText: elapsedSec > 0
         ? `本次已专注 ${fmt.friendly}。确认后将结束当前番茄钟。`
@@ -653,7 +687,9 @@ Page({
     if (mode === 'free-complete') {
       this.setData({
         showEndConfirm: false,
+        ringCanvasVisible: true,
         endConfirmMode: '',
+        endConfirmTheme: '',
         endConfirmTitle: '',
         endConfirmText: '',
       })
@@ -665,6 +701,7 @@ Page({
     this.setData({
       showEndConfirm: false,
       endConfirmMode: '',
+      endConfirmTheme: '',
       endConfirmTitle: '',
       endConfirmText: '',
     })
@@ -698,6 +735,7 @@ Page({
       wx.showToast({ title: '已记录本次专注', icon: 'none', duration: 2000 })
     } catch (e) {
       wx.showToast({ title: '结束计时失败，请重试', icon: 'none' })
+      this.setData({ ringCanvasVisible: true })
       // Don't clear state on failure
       if (!this.data.isPaused) {
         this._startFreeTimerInterval()
@@ -730,7 +768,12 @@ Page({
       this._resetToIdle()
       this.loadTodayStats()
     } catch (e) {
-      this.setData({ actionLoading: false })
+      this.setData({ actionLoading: false, ringCanvasVisible: true }, () => {
+        wx.nextTick(() => {
+          this._initCanvas(true)
+          this.drawRing(this._getCurrentTotalSec(), this.data.phase === 'break')
+        })
+      })
       wx.showToast({ title: '结束失败，请重试', icon: 'none' })
     }
   },
@@ -769,6 +812,7 @@ Page({
     const totalSec = this.data.selectedPreset === 'debug' ? 10 : this.data.workDuration * 60
     this.setData({
       phase: PHASE.RUNNING,
+      ringCanvasVisible: true,
       sessionId: session.id,
       sessionStartTime: startTime,
       remainingSec: totalSec,
@@ -777,6 +821,8 @@ Page({
       totalPausedMs: 0,
       pauseStartTime: null,
     })
+    this._countdownTotalSec = totalSec
+    this._countdownEndAt = Date.now() + totalSec * 1000
     this._startTimer(totalSec)
     this._updateComputedFields()
     wx.nextTick(() => {
@@ -864,24 +910,23 @@ Page({
     }
   },
 
-  _startTimer(totalSec) {
+  _startTimer(totalSec, options = {}) {
     this._clearTimer()
-    this._initCanvas()
+    this._initCanvas(true)
+
+    const remainSec = Number.isFinite(options.remainingSec)
+      ? Math.max(0, options.remainingSec)
+      : Math.max(0, this.data.remainingSec || totalSec)
+
+    this._countdownTotalSec = totalSec
+    this._countdownEndAt = Date.now() + remainSec * 1000
 
     const totalMs = Math.max(1, totalSec * 1000)
 
     const tick = () => {
       if (this.data.isPaused || this.data.showEndConfirm) return
 
-      const now = Date.now()
-      const elapsedMs = Math.max(
-        0,
-        now - (this.data.sessionStartTime || now) - (this.data.totalPausedMs || 0)
-      )
-
-      const remainingMs = Math.max(0, totalMs - elapsedMs)
-
-      // 用 ceil 保证 20:00 后约 1 秒才变 19:59，避免一开始立刻少一秒
+      const remainingMs = Math.max(0, this._countdownEndAt - Date.now())
       const displayRemainingSec = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 1000)
       const progress = totalMs > 0 ? remainingMs / totalMs : 0
       const fmt = this._formatCountdownDisplay(displayRemainingSec)
@@ -906,7 +951,6 @@ Page({
         return
       }
 
-      // 对齐下一次刷新，避免 setInterval 漂移
       const nextDelay = Math.max(80, Math.min(250, remainingMs % 1000 || 250))
       this._timer = setTimeout(tick, nextDelay)
     }
@@ -967,6 +1011,7 @@ Page({
     wx.setStorageSync('pomodoro_break', { startTime: breakStartTime, totalSec })
     this.setData({
       phase: PHASE.BREAK,
+      ringCanvasVisible: true,
       remainingSec: totalSec,
       breakStartTime,
       progress: 1,
@@ -974,13 +1019,13 @@ Page({
       displaySec: String(totalSec % 60).padStart(2, '0'),
     })
     this._clearTimer()
-    this._initCanvas()
+    this._initCanvas(true)
+    this._countdownTotalSec = totalSec
+    this._countdownEndAt = Date.now() + totalSec * 1000
     setTimeout(() => this.drawRing(totalSec, true), 100)
 
     const tick = () => {
-      const now = Date.now()
-      const elapsedMs = Math.max(0, now - breakStartTime)
-      const remainingMs = Math.max(0, totalMs - elapsedMs)
+      const remainingMs = Math.max(0, this._countdownEndAt - Date.now())
       const displayRemainingSec = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 1000)
       const progress = totalMs > 0 ? remainingMs / totalMs : 0
       const fmt = this._formatCountdownDisplay(displayRemainingSec)
@@ -1056,6 +1101,7 @@ Page({
       }
       this.setData({
         remainingSec: remaining,
+        ringCanvasVisible: true,
         displayMin: String(Math.floor(remaining / 60)).padStart(2, '0'),
         displaySec: String(remaining % 60).padStart(2, '0'),
         progress: totalSec > 0 ? remaining / totalSec : 0,
@@ -1183,6 +1229,7 @@ Page({
 
     this.setData({
       phase: PHASE.RUNNING,
+      ringCanvasVisible: true,
       sessionId: session.id,
       sessionStartTime: startTime,
       selectedSubjectId: subjectId,
@@ -1258,6 +1305,7 @@ Page({
     this._clearTimer()
     this.setData({
       phase: PHASE.RUNNING,
+      ringCanvasVisible: true,
       isFreeTimer: true,
       sessionId: session.id,
       sessionStartTime: startTime,

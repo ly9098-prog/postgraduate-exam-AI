@@ -102,12 +102,15 @@
         <view class="detail-row-body">
           <view class="detail-stem-wrap" wx:if="{{item._stemRich && item._stemRich.raw}}">
             <mp-html
-              wx:if="{{item._stemRich.needsRich}}"
+              wx:if="{{item._stemRich.renderType === 'html'}}"
               content="{{item._stemRich.html}}"
               class="detail-rich-text detail-stem-rich"
+              container-style="{{detailHtmlContainerStyle}}"
+              tag-style="{{detailHtmlTagStyle}}"
+              scroll-table="{{false}}"
               lazy-load
             />
-            <text wx:else class="detail-stem">{{item._stemRich.text}}</text>
+            <text wx:elif="{{item._stemRich.renderType === 'text'}}" class="detail-stem">{{item._stemRich.text}}</text>
           </view>
           <view wx:if="{{item._isSkipped}}" class="detail-skipped-line">未作答，已跳过</view>
           <view wx:elif="{{item._isWrong}}" class="detail-answer-block wrong">
@@ -115,24 +118,30 @@
               <text class="detail-answer-label">我的答案</text>
               <view class="detail-answer-box user">
                 <mp-html
-                  wx:if="{{item._userAnswerRich.needsRich}}"
+                  wx:if="{{item._userAnswerRich.renderType === 'html'}}"
                   content="{{item._userAnswerRich.html}}"
                   class="detail-rich-text"
+                  container-style="{{detailHtmlContainerStyle}}"
+                  tag-style="{{detailHtmlTagStyle}}"
+                  scroll-table="{{false}}"
                   lazy-load
                 />
-                <text wx:else class="detail-answer-value user">{{item._userAnswerText}}</text>
+                <text wx:elif="{{item._userAnswerRich.renderType === 'text'}}" class="detail-answer-value user">{{item._userAnswerText}}</text>
               </view>
             </view>
             <view class="detail-answer-section">
               <text class="detail-answer-label correct">正确答案</text>
               <view class="detail-answer-box right">
                 <mp-html
-                  wx:if="{{item._correctAnswerRich.needsRich}}"
+                  wx:if="{{item._correctAnswerRich.renderType === 'html'}}"
                   content="{{item._correctAnswerRich.html}}"
                   class="detail-rich-text"
+                  container-style="{{detailHtmlContainerStyle}}"
+                  tag-style="{{detailHtmlTagStyle}}"
+                  scroll-table="{{false}}"
                   lazy-load
                 />
-                <text wx:else class="detail-answer-value right">{{item._correctAnswerText}}</text>
+                <text wx:elif="{{item._correctAnswerRich.renderType === 'text'}}" class="detail-answer-value right">{{item._correctAnswerText}}</text>
               </view>
             </view>
           </view>
@@ -141,12 +150,15 @@
               <text class="detail-answer-label correct">答案</text>
               <view class="detail-answer-box right">
                 <mp-html
-                  wx:if="{{item._correctAnswerRich.needsRich}}"
+                  wx:if="{{item._correctAnswerRich.renderType === 'html'}}"
                   content="{{item._correctAnswerRich.html}}"
                   class="detail-rich-text"
+                  container-style="{{detailHtmlContainerStyle}}"
+                  tag-style="{{detailHtmlTagStyle}}"
+                  scroll-table="{{false}}"
                   lazy-load
                 />
-                <text wx:else class="detail-answer-value right">{{item._correctAnswerText}}</text>
+                <text wx:elif="{{item._correctAnswerRich.renderType === 'text'}}" class="detail-answer-value right">{{item._correctAnswerText}}</text>
               </view>
             </view>
           </view>

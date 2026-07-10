@@ -45,14 +45,14 @@ function _summarizeResponseData(data) {
 }
 
 // Low-level request returning raw wx.request response (no 401 interception)
-function _rawRequest(method, url, data, header) {
+function _rawRequest(method, url, data, header, timeout) {
   return new Promise((resolve, reject) => {
     wx.request({
       url: `${config.BASE_URL}${url}`,
       method,
       data,
       header,
-      timeout: 30000,
+      timeout: timeout || 30000,
       success: resolve,
       fail: reject,
     })
@@ -150,9 +150,10 @@ function _buildHeader(traceId) {
   return header
 }
 
-async function request(method, url, data = {}) {
+async function request(method, url, data = {}, options = {}) {
   const traceId = _extractTraceId(data)
   const payload = _stripTraceId(data)
+  const timeout = options.timeout || 0
 
   // 主动续签：在发起请求前检查 token 是否需要刷新
   if (!_skipProactiveRefresh(url)) {
@@ -164,7 +165,7 @@ async function request(method, url, data = {}) {
   // First attempt
   let res
   try {
-    res = await _rawRequest(method, url, payload, header)
+    res = await _rawRequest(method, url, payload, header, timeout)
   } catch (err) {
     debugLog(traceId, 'API_ERROR', { method, url, message: err?.errMsg || '网络异常' })
     wx.showToast({ title: '网络异常', icon: 'none' })
@@ -199,7 +200,7 @@ async function request(method, url, data = {}) {
     // Retry original request with new token
     header['Authorization'] = `Bearer ${newToken}`
     try {
-      res = await _rawRequest(method, url, payload, header)
+      res = await _rawRequest(method, url, payload, header, timeout)
     } catch (err) {
       debugLog(traceId, 'API_ERROR', { method, url, message: err?.errMsg || '网络异常' })
       wx.showToast({ title: '网络异常', icon: 'none' })
@@ -223,10 +224,11 @@ async function request(method, url, data = {}) {
 }
 
 module.exports = {
-  get: (url, data) => request('GET', url, data),
-  post: (url, data) => request('POST', url, data),
-  put: (url, data) => request('PUT', url, data),
-  del: (url) => request('DELETE', url),
+  get: (url, data, options) => request('GET', url, data, options),
+  post: (url, data, options) => request('POST', url, data, options),
+  put: (url, data, options) => request('PUT', url, data, options),
+  del: (url, options) => request('DELETE', url, undefined, options),
   resetRedirecting,
   ensureValidToken,
+  request,
 }

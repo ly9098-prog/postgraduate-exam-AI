@@ -117,6 +117,7 @@ Page({
     safeModeActive: false,
     aiCards: null,
     aiRegenerating: false,
+    aiSkeletonVisible: false,
     aiInlineNotice: '',
     showSwitchMask: false,
 
@@ -270,7 +271,7 @@ Page({
       aiInlineNotice: '',
     })
     try {
-      const result = await api.post('/ai/error-analysis', { wrong_question_id: wqId })
+      const result = await api.post('/ai/error-analysis', { wrong_question_id: wqId }, { timeout: 60000 })
       // Stale response guard
       if (this._aiToken !== token || !this.data.wq || String(this.data.wq.id) !== String(wqId)) return
       const normalized = _normalizeAiPayload(result)
@@ -324,6 +325,7 @@ Page({
     this._aiToken = token
     this.setData({
       aiRegenerating: true,
+      aiSkeletonVisible: true,
       aiErrorText: '',
       aiFallback: false,
       aiInlineNotice: '',
@@ -332,7 +334,7 @@ Page({
       const result = await api.post('/ai/error-analysis', {
         wrong_question_id: wqId,
         force_regenerate: true,
-      })
+      }, { timeout: 60000 })
       // Stale response guard — 必须复位 aiRegenerating
       if (this._aiToken !== token || !this.data.wq || String(this.data.wq.id) !== String(wqId)) {
         this.setData({ aiRegenerating: false })
@@ -348,6 +350,7 @@ Page({
       if (model === 'generating') {
         this.setData({
           aiRegenerating: false,
+          aiSkeletonVisible: false,
           aiInlineNotice: 'AI 正在生成中，请稍后重试',
         })
         return
@@ -359,6 +362,7 @@ Page({
           aiResult: normalized,
           aiCards: _normalizeAiResult(normalized),
           aiRegenerating: false,
+          aiSkeletonVisible: false,
           aiFallback: false,
           aiFromCache: true,
           aiInlineNotice: '重新生成失败，已保留历史解析',
@@ -371,6 +375,7 @@ Page({
       if (fromFallback && oldCards) {
         this.setData({
           aiRegenerating: false,
+          aiSkeletonVisible: false,
           aiFallback: false,
           aiInlineNotice: '重新生成失败，已保留当前解析',
         })
@@ -383,6 +388,7 @@ Page({
         if (oldCards) {
           this.setData({
             aiRegenerating: false,
+            aiSkeletonVisible: false,
             aiFallback: false,
             aiInlineNotice: '返回内容为空，已保留当前解析',
           })
@@ -390,6 +396,7 @@ Page({
         } else {
           this.setData({
             aiRegenerating: false,
+            aiSkeletonVisible: false,
             aiFallback: true,
             aiErrorText: 'AI 返回内容为空，请稍后重试',
           })
@@ -402,6 +409,7 @@ Page({
         aiResult: normalized,
         aiCards: _normalizeAiResult(normalized),
         aiRegenerating: false,
+        aiSkeletonVisible: false,
         aiFallback: false,
         aiFromCache: !!(result && result.from_cache),
         aiInlineNotice: '',
@@ -414,12 +422,13 @@ Page({
         if (oldCards) {
           this.setData({
             aiRegenerating: false,
+            aiSkeletonVisible: false,
             aiFallback: false,
             aiInlineNotice: '重新生成失败，已保留历史解析',
           })
           wx.showToast({ title: '重新生成失败，已保留历史解析', icon: 'none' })
         } else {
-          this.setData({ aiRegenerating: false, aiErrorText: '重新生成失败，请稍后重试' })
+          this.setData({ aiRegenerating: false, aiSkeletonVisible: false, aiErrorText: '重新生成失败，请稍后重试' })
           wx.showToast({ title: '重新生成失败', icon: 'none' })
         }
       }
