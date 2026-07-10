@@ -763,6 +763,7 @@
 
 .runner-compact .runner-q-wrap {
   padding: 28rpx;
+  margin-bottom: 0;
   border-radius: 28rpx;
   box-shadow: 0 10rpx 28rpx rgba(43, 60, 80, 0.07);
 }
@@ -787,13 +788,40 @@
 }
 
 .runner-compact .runner-bottom-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 20;
-  margin-top: 18rpx;
-  padding-top: 12rpx;
-  background: rgba(255,255,255,0.96);
-  backdrop-filter: blur(14rpx);
-  -webkit-backdrop-filter: blur(14rpx);
-  box-shadow: 0 -4rpx 12rpx rgba(43, 60, 80, 0.04);
+  position: static;
+  margin: 10rpx 24rpx 0;
+  padding: 8rpx 0 6rpx;
+  padding-bottom: 6rpx;
+  background: transparent;
+  border-top: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.runner-compact .runner-bottom-inner {
+  min-height: 56rpx;
+  padding: 0;
+}
+
+.runner-compact .runner-nav-btn {
+  padding: 8rpx 0;
+}
+
+.runner-compact .runner-nav-label {
+  font-size: 24rpx;
+}
+
+.runner-compact .runner-nav-arrow {
+  width: 30rpx;
+  height: 30rpx;
+}
+
+.runner-compact .runner-nav-center {
+  gap: 7rpx;
+}
+
+.runner-compact .runner-dot {
+  width: 12rpx;
+  height: 12rpx;
 }

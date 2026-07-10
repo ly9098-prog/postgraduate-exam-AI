@@ -594,6 +594,15 @@ page {
 .ring-canvas--dim {
   opacity: 0.18;
 }
+.ring-canvas-placeholder {
+  position: absolute;
+  inset: 0;
+  width: 520rpx;
+  height: 520rpx;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
 
 .ring-center {
   position: absolute;
@@ -1095,6 +1104,61 @@ page {
   line-height: 96rpx;
   font-size: 34rpx;
 }
+
+/* ── Confirm Theme: focus (blue/cyan) ── */
+.confirm-theme-focus .confirm-cover-card {
+  background: rgba(15, 23, 42, 0.98);
+  border: 1rpx solid rgba(96, 165, 250, 0.24);
+  box-shadow:
+    0 0 50rpx rgba(59, 130, 246, 0.22),
+    0 0 120rpx rgba(6, 182, 212, 0.12);
+}
+
+.confirm-theme-focus .confirm-cover-title {
+  color: #93C5FD;
+}
+
+.confirm-theme-focus .confirm-cover-ok {
+  background: linear-gradient(135deg, #3B82F6, #06B6D4);
+  color: #FFFFFF;
+}
+
+/* ── Confirm Theme: break (amber/orange) ── */
+.confirm-theme-break .confirm-cover-card {
+  background: rgba(30, 23, 15, 0.98);
+  border: 1rpx solid rgba(251, 146, 60, 0.25);
+  box-shadow:
+    0 0 50rpx rgba(249, 115, 22, 0.22),
+    0 0 120rpx rgba(244, 63, 94, 0.12);
+}
+
+.confirm-theme-break .confirm-cover-title {
+  color: #FDBA74;
+}
+
+.confirm-theme-break .confirm-cover-ok {
+  background: linear-gradient(135deg, #F97316, #F43F5E);
+  color: #FFFFFF;
+}
+
+/* ── Confirm Theme: free (emerald/green) ── */
+.confirm-theme-free .confirm-cover-card {
+  background: rgba(15, 30, 30, 0.98);
+  border: 1rpx solid rgba(16, 185, 129, 0.24);
+  box-shadow:
+    0 0 50rpx rgba(16, 185, 129, 0.22),
+    0 0 120rpx rgba(5, 150, 105, 0.12);
+}
+
+.confirm-theme-free .confirm-cover-title {
+  color: #6EE7B7;
+}
+
+.confirm-theme-free .confirm-cover-ok {
+  background: linear-gradient(135deg, #10B981, #059669);
+  color: #FFFFFF;
+}
+
 
 @media (prefers-reduced-motion: reduce) {
   .page,

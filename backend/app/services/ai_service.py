@@ -18,6 +18,7 @@ from app.models.wrong_question import WrongQuestion
 logger = logging.getLogger(__name__)
 
 ERROR_ANALYSIS_TIMEOUT_SECONDS = 25
+ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS = 45
 
 # 同进程内生成中锁，防止并发重复调用大模型
 _generating: set[int] = set()
@@ -129,6 +130,29 @@ def build_cached_error_analysis_response(wq) -> dict | None:
     }
 
 
+def build_any_cached_error_analysis_response(wq) -> dict | None:
+    """
+    Return any cached AI analysis regardless of prompt version freshness.
+    Used as fallback when force_regenerate fails — preserves old content
+    even if the cache was generated with an older prompt version.
+    """
+    if not isinstance(wq.ai_analysis, dict) or not wq.ai_analysis:
+        return None
+    content = _normalize_ai_analysis(wq.ai_analysis)
+    if not is_valid_ai_analysis(content):
+        return None
+    return {
+        "content": content,
+        "from_cache": True,
+        "from_fallback": False,
+        "tokens_used": 0,
+        "model": "cache_preserved",
+        "duration_ms": 0,
+        "force_regenerated": False,
+        "cache_preserved": True,
+    }
+
+
 async def analyze_error(
     db: AsyncSession, user_id: int, wrong_question_id: int,
     force_regenerate: bool = False,
@@ -210,11 +234,9 @@ async def analyze_error(
 
         if not creds:
             # force_regenerate 失败时有旧缓存则返回旧缓存
-            old_cache = build_cached_error_analysis_response(wq)
+            old_cache = build_any_cached_error_analysis_response(wq)
             if old_cache and force_regenerate:
                 _generating.discard(wq_pk)
-                old_cache["force_regenerated"] = False
-                old_cache["cache_preserved"] = True
                 return old_cache
             # 无旧缓存时才返回 fallback
             _generating.discard(wq_pk)
@@ -225,6 +247,8 @@ async def analyze_error(
                 "tokens_used": 0,
                 "model": "fallback",
                 "duration_ms": 0,
+                "force_regenerated": False,
+                "cache_preserved": False,
             }
 
         api_key, base_url, model_name = creds
@@ -234,28 +258,49 @@ async def analyze_error(
             context["question"], wq.wrong_answer, q.answer
         )
 
+        timeout_sec = ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS if force_regenerate else ERROR_ANALYSIS_TIMEOUT_SECONDS
         try:
-            async with asyncio.timeout(ERROR_ANALYSIS_TIMEOUT_SECONDS):
+            async with asyncio.timeout(timeout_sec):
                 result = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
-        except Exception:
-            old_cache = build_cached_error_analysis_response(wq)
+        except asyncio.TimeoutError:
+            old_cache = build_any_cached_error_analysis_response(wq)
+            logger.warning(
+                "ai.error_analysis.timeout wq_id=%s force=%s timeout_sec=%s has_old_cache=%s",
+                wq.id, force_regenerate, timeout_sec, bool(old_cache),
+            )
             if old_cache and force_regenerate:
                 _generating.discard(wq_pk)
-                old_cache["force_regenerated"] = False
-                old_cache["cache_preserved"] = True
                 return old_cache
-            fallback = get_fallback_analysis()
             resp = {
-                "content": fallback,
+                "content": get_fallback_analysis(),
+                "from_cache": False,
+                "from_fallback": True,
+                "tokens_used": 0,
+                "model": "timeout",
+                "duration_ms": timeout_sec * 1000,
+                "force_regenerated": False,
+                "cache_preserved": False,
+            }
+            return resp
+        except Exception as e:
+            old_cache = build_any_cached_error_analysis_response(wq)
+            logger.exception(
+                "ai.error_analysis.exception wq_id=%s force=%s err=%s has_old_cache=%s",
+                wq.id, force_regenerate, repr(e), bool(old_cache),
+            )
+            if old_cache and force_regenerate:
+                _generating.discard(wq_pk)
+                return old_cache
+            resp = {
+                "content": get_fallback_analysis(),
                 "from_cache": False,
                 "from_fallback": True,
                 "tokens_used": 0,
                 "model": "fallback",
-                "duration_ms": ERROR_ANALYSIS_TIMEOUT_SECONDS * 1000,
+                "duration_ms": 25000,
+                "force_regenerated": False,
+                "cache_preserved": False,
             }
-            if force_regenerate:
-                resp["force_regenerated"] = False
-                resp["cache_preserved"] = True
             return resp
 
         raw_content = result.get("content", "")
@@ -263,11 +308,9 @@ async def analyze_error(
         parsed_valid = is_valid_ai_analysis(parsed)
 
         if not parsed_valid:
-            old_cache = build_cached_error_analysis_response(wq)
+            old_cache = build_any_cached_error_analysis_response(wq)
             if old_cache and force_regenerate:
                 _generating.discard(wq_pk)
-                old_cache["force_regenerated"] = False
-                old_cache["cache_preserved"] = True
                 return old_cache
             # 无有效内容且无旧缓存：返回 fallback，不保存
             fallback = get_fallback_analysis()
