@@ -53,6 +53,13 @@ async def get_current_user(
             detail="User not found",
         )
 
+    # Reject soft-deleted users
+    if user.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="账号已注销",
+        )
+
     # Bind user identity to log context for trace correlation
     try:
         from app.core.log_context import bind_log_context

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
-from app.schemas.ai import AiChatRecord, AiPrewarmRequest, AiPrewarmResponse, AiResponse, ErrorAnalysisRequest, StudyAdviceRequest
+from app.schemas.ai import AiChatRecord, AiFeedbackRequest, AiPrewarmRequest, AiPrewarmResponse, AiResponse, ErrorAnalysisRequest, StudyAdviceRequest
 from app.schemas.ai_learning import (
     AIExplainRequest,
     AIExplainResponse,
@@ -196,3 +196,28 @@ async def ai_analyze_mistake(
         raise HTTPException(status_code=404, detail=str(e))
 
     return AIMistakeAnalysisResponse(**result)
+
+
+@router.post("/feedback")
+async def ai_feedback(
+    data: AiFeedbackRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """AI 结果反馈：用户标记 AI 解析/建议不准确。
+
+    反馈内容记录到 ai_feedback_logs 表，用于后续模型改进和质量监控。
+    """
+    from app.models.ai_feedback_log import AiFeedbackLog
+
+    log = AiFeedbackLog(
+        user_id=current_user.id,
+        source=data.source,
+        feedback_type=data.feedback_type,
+        question_id=data.question_id,
+        detail=data.detail,
+    )
+    db.add(log)
+    await db.commit()
+
+    return {"message": "反馈已提交，感谢您的帮助"}

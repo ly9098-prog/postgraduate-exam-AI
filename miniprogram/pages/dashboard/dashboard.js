@@ -569,10 +569,20 @@ Page({
   },
 
   onLlmFeedback() {
+    var self = this
+    var types = ['内容有误', '建议不准确', '其他问题']
     wx.showActionSheet({
-      itemList: ['内容有误', '建议不准确', '其他问题'],
+      itemList: types,
       success: function (res) {
-        wx.showToast({ title: '感谢反馈，我们将持续优化', icon: 'none' })
+        var feedbackType = types[res.tapIndex] || '其他问题'
+        api.post('/ai/feedback', {
+          source: 'dashboard',
+          feedback_type: feedbackType,
+        }).then(function () {
+          wx.showToast({ title: '反馈已提交，感谢您的帮助', icon: 'success' })
+        }).catch(function () {
+          wx.showToast({ title: '反馈提交失败，请稍后重试', icon: 'none' })
+        })
       },
     })
   },

@@ -39,3 +39,10 @@ class AiChatRecord(BaseModel):
     ai_response: str
     tokens_used: int
     created_at: str
+
+
+class AiFeedbackRequest(BaseModel):
+    source: str  # 'dashboard' | 'wrong_book'
+    feedback_type: str
+    question_id: int | None = None
+    detail: str | None = None

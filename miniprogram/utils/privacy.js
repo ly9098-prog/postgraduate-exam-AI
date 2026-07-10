@@ -56,7 +56,7 @@ function hasAcceptedCurrentPrivacy() {
  */
 function savePrivacyAcceptance(items) {
   const accepted = items || AGREEMENT_ITEMS.slice()
-  storage.set(PRIVACY_KEY, {
+  storage.setStrict(PRIVACY_KEY, {
     privacy_version: CURRENT_PRIVACY_VERSION,
     accepted_at: Date.now(),
     accepted_items: accepted,

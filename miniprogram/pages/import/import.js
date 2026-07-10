@@ -3,7 +3,7 @@ const config = require('../../config')
 const auth = require('../../utils/auth')
 const fileReq = require('../../utils/file-request')
 
-const SUPPORTED_EXTENSIONS = ['xlsx', 'xls', 'pdf', 'txt', 'jpg', 'jpeg', 'png', 'webp']
+const SUPPORTED_EXTENSIONS = fileReq.SUPPORTED_EXTENSIONS.all
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']
 
 const STATUS_LABELS = {
