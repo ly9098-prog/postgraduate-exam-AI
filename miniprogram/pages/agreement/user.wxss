@@ -121,3 +121,10 @@ page {
   line-height: 1.72;
   color: #536577;
 }
+
+.inner-head {
+  display: block;
+  font-weight: 700;
+  color: #2D3E50;
+  margin-bottom: 6rpx;
+}

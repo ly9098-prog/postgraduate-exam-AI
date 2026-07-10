@@ -517,10 +517,19 @@ Page({
   },
 
   onAiFeedback() {
+    var types = ['分析不准确', '遗漏薄弱点', '建议不合理', '其他问题']
     wx.showActionSheet({
-      itemList: ['分析不准确', '遗漏薄弱点', '建议不合理', '其他问题'],
+      itemList: types,
       success: function (res) {
-        wx.showToast({ title: '感谢反馈，我们将持续优化', icon: 'none' })
+        var feedbackType = types[res.tapIndex] || '其他问题'
+        api.post('/ai/feedback', {
+          source: 'wrong_book',
+          feedback_type: feedbackType,
+        }).then(function () {
+          wx.showToast({ title: '反馈已提交，感谢您的帮助', icon: 'success' })
+        }).catch(function () {
+          wx.showToast({ title: '反馈提交失败，请稍后重试', icon: 'none' })
+        })
       },
     })
   },

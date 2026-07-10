@@ -30,3 +30,8 @@ class RefreshRequest(BaseModel):
 class UserUpdate(BaseModel):
     nickname: str | None = None
     avatar_url: str | None = None
+
+
+class DeletionResponse(BaseModel):
+    message: str
+    deleted_at: int  # Unix timestamp

@@ -36,7 +36,20 @@ const SUPPORTED_MIME_TYPES = {
 }
 
 /**
- * 校验文件
+ * 校验文件（前端基础校验）
+ *
+ * 注意：前端仅检查扩展名和大小，不能验证文件真实内容。
+ * 后端务必验证：
+ *   - 文件魔数（Magic Number）
+ *   - MIME 类型（Content-Type）
+ *   - Office/ZIP 解压后体积
+ *   - PDF 页数
+ *   - 图片像素
+ *   - Excel 单元格数量
+ *   - 病毒/恶意文件扫描
+ *
+ * SUPPORTED_MIME_TYPES 定义在此供后端参考，前端暂不使用。
+ *
  * @param {object} options
  * @param {string} options.path - 文件路径
  * @param {string} [options.name] - 文件名

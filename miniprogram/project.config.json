@@ -17,8 +17,8 @@
   "setting": {
     "bundle": false,
     "userConfirmedBundleSwitch": false,
-    "urlCheck": false,
-    "scopeDataCheck": false,
+    "urlCheck": true,
+    "scopeDataCheck": true,
     "coverView": true,
     "es6": true,
     "postcss": true,
@@ -26,7 +26,7 @@
     "lazyloadPlaceholderEnable": false,
     "preloadBackgroundData": false,
     "minified": true,
-    "autoAudits": false,
+    "autoAudits": true,
     "newFeature": false,
     "uglifyFileName": false,
     "uploadWithSourceMap": false,
@@ -50,7 +50,7 @@
     }
   },
   "compileType": "miniprogram",
-  "libVersion": "3.3.4",
+  "libVersion": "3.6.6",
   "appid": "wx013724bc2f592940",
   "projectname": "MemoGrad",
   "condition": {},
