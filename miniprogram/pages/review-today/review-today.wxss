@@ -1227,175 +1227,348 @@ page {
 }
 
 
-/* ==================== 概览页（蓝白任务式） ==================== */
+/* ==================== 概览页（与 empty 页统一蓝白风格） ==================== */
 
-.page-blue-white {
-  padding: 24rpx;
-}
-
-.today-review-card {
-  background: #FFFFFF;
-  border-radius: 28rpx;
-  padding: 32rpx 28rpx;
-  margin-bottom: 18rpx;
-  box-shadow: 0 8rpx 28rpx rgba(79, 127, 255, 0.10);
-  border: 1rpx solid #E2EAF7;
-}
-
-.today-review-main {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
-
-.today-review-label {
-  font-size: 24rpx;
-  font-weight: 700;
-  color: #4F7FFF;
-  line-height: 1.3;
-  letter-spacing: 2rpx;
-}
-
-.today-review-count-row {
-  display: flex;
-  align-items: baseline;
-  gap: 6rpx;
-  margin-top: 10rpx;
-}
-
-.today-review-count {
-  font-size: 72rpx;
-  font-weight: 900;
-  color: #18233A;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.today-review-unit {
-  font-size: 28rpx;
-  font-weight: 700;
-  color: #617089;
-}
-
-.today-review-sub {
-  display: block;
-  margin-top: 10rpx;
-  font-size: 24rpx;
-  color: #8EA0BA;
-  line-height: 1.4;
-}
-
-.today-progress-box {
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-  margin-top: 22rpx;
-}
-
-.today-progress-track {
-  flex: 1;
-  height: 10rpx;
-  border-radius: 999rpx;
-  background: #E2EAF7;
-  overflow: hidden;
-}
-
-.today-progress-fill {
-  height: 100%;
-  border-radius: 999rpx;
-  background: linear-gradient(90deg, #4F7FFF, #6EC1FF);
-  transition: width 0.5s ease;
-}
-
-.today-progress-text {
-  flex-shrink: 0;
-  font-size: 22rpx;
-  font-weight: 800;
-  color: #4F7FFF;
-  min-width: 48rpx;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.review-stat-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14rpx;
-  margin-bottom: 18rpx;
-}
-
-.review-stat-item {
-  background: #FFFFFF;
-  border-radius: 20rpx;
-  padding: 22rpx 14rpx;
-  text-align: center;
-  box-shadow: 0 4rpx 16rpx rgba(42, 84, 160, 0.05);
-  border: 1rpx solid #E2EAF7;
-}
-
-.review-stat-value {
-  display: block;
-  font-size: 36rpx;
-  font-weight: 900;
-  color: #4F7FFF;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
-
-.review-stat-label {
-  display: block;
-  margin-top: 6rpx;
-  font-size: 20rpx;
-  color: #8EA0BA;
-  line-height: 1.3;
-}
-
-.review-plan-card {
-  background: #F7FAFF;
-  border-radius: 20rpx;
-  padding: 22rpx 24rpx;
-  margin-bottom: 18rpx;
-  border-left: 6rpx solid #4F7FFF;
-}
-
-.review-plan-title {
-  display: block;
-  font-size: 26rpx;
-  font-weight: 800;
-  color: #18233A;
-  line-height: 1.3;
-}
-
-.review-plan-desc {
-  display: block;
-  margin-top: 6rpx;
-  font-size: 22rpx;
-  color: #617089;
-  line-height: 1.5;
-}
-
-.primary-review-btn {
+.review-overview {
+  position: relative;
+  min-height: 100vh;
+  padding: 72rpx 32rpx calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-sizing: border-box;
-  margin: 0;
-  min-height: 92rpx;
-  padding: 0 28rpx;
-  border-radius: 999rpx;
-  border: none;
-  background: linear-gradient(135deg, #4F7FFF 0%, #6EC1FF 100%);
-  color: #FFFFFF;
-  font-size: 30rpx;
-  font-weight: 900;
-  line-height: normal;
-  text-align: center;
-  box-shadow: 0 14rpx 30rpx rgba(79, 127, 255, 0.24);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 16%, rgba(111, 193, 255, 0.24), transparent 34%),
+    radial-gradient(circle at 84% 12%, rgba(132, 161, 255, 0.18), transparent 30%),
+    linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
 }
 
-.primary-review-btn::after { border: none; }
-.primary-review-btn:active { transform: scale(0.98); opacity: 0.92; }
+.overview-bg-deco {
+  position: absolute;
+  border-radius: 999rpx;
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+.overview-bg-deco-a {
+  width: 180rpx;
+  height: 180rpx;
+  left: -56rpx;
+  top: 128rpx;
+  background: rgba(111, 193, 255, 0.16);
+}
+
+.overview-bg-deco-b {
+  width: 240rpx;
+  height: 240rpx;
+  right: -90rpx;
+  top: 300rpx;
+  background: rgba(79, 127, 255, 0.12);
+}
+
+.overview-bg-deco-c {
+  width: 120rpx;
+  height: 120rpx;
+  left: 76rpx;
+  bottom: 170rpx;
+  background: rgba(95, 222, 171, 0.13);
+}
+
+.overview-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 650rpx;
+  padding: 46rpx 34rpx 36rpx;
+  box-sizing: border-box;
+  border-radius: 42rpx;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 22rpx 64rpx rgba(74, 101, 153, 0.14);
+  border: 1rpx solid rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(14rpx);
+  text-align: center;
+}
+
+.overview-visual {
+  position: relative;
+  width: 290rpx;
+  height: 220rpx;
+  margin: 0 auto 18rpx;
+}
+
+.overview-orbit {
+  position: absolute;
+  left: 42rpx;
+  top: 18rpx;
+  width: 210rpx;
+  height: 158rpx;
+  border-radius: 50%;
+  border: 2rpx dashed rgba(79, 127, 255, 0.18);
+  transform: rotate(-12deg);
+}
+
+.overview-main-badge {
+  position: absolute;
+  left: 78rpx;
+  top: 36rpx;
+  width: 132rpx;
+  height: 132rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4F7FFF 0%, #6EC1FF 100%);
+  box-shadow: 0 18rpx 36rpx rgba(79, 127, 255, 0.22);
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  color: #FFFFFF;
+}
+
+.overview-main-num {
+  font-size: 58rpx;
+  font-weight: 900;
+  line-height: 132rpx;
+}
+
+.overview-main-unit {
+  font-size: 24rpx;
+  font-weight: 800;
+  margin-left: 4rpx;
+}
+
+.overview-mini-card {
+  position: absolute;
+  width: 96rpx;
+  height: 72rpx;
+  border-radius: 22rpx;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10rpx 24rpx rgba(74, 101, 153, 0.12);
+  border: 1rpx solid rgba(221, 232, 255, 0.95);
+}
+
+.overview-mini-left {
+  left: 2rpx;
+  top: 98rpx;
+  transform: rotate(-9deg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.overview-mini-label {
+  font-size: 20rpx;
+  color: #8EA0BA;
+  font-weight: 700;
+}
+
+.overview-mini-value {
+  font-size: 26rpx;
+  color: #4F7FFF;
+  font-weight: 900;
+}
+
+.overview-mini-right {
+  right: 0;
+  top: 34rpx;
+  transform: rotate(8deg);
+}
+
+.overview-curve {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.curve-dot {
+  position: absolute;
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #4F7FFF;
+}
+
+.dot-a { left: 20rpx; bottom: 20rpx; }
+.dot-b { left: 44rpx; bottom: 36rpx; background: #6EC1FF; }
+.dot-c { right: 22rpx; top: 18rpx; background: #5FDEAB; }
+
+.curve-line {
+  position: absolute;
+  height: 4rpx;
+  border-radius: 999rpx;
+  background: rgba(79, 127, 255, 0.35);
+  transform-origin: left center;
+}
+
+.line-a {
+  width: 34rpx;
+  left: 28rpx;
+  bottom: 32rpx;
+  transform: rotate(-30deg);
+}
+
+.line-b {
+  width: 42rpx;
+  left: 52rpx;
+  bottom: 46rpx;
+  transform: rotate(-42deg);
+}
+
+.overview-spark {
+  position: absolute;
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #FFD66E;
+  box-shadow: 0 0 18rpx rgba(255, 214, 110, 0.55);
+}
+
+.overview-spark.spark-a { left: 52rpx; top: 30rpx; }
+.overview-spark.spark-b { right: 48rpx; top: 154rpx; background: #6EC1FF; }
+.overview-spark.spark-c { left: 140rpx; bottom: 6rpx; background: #5FDEAB; }
+
+.overview-title {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 900;
+  color: #18233A;
+  line-height: 1.28;
+  margin-bottom: 12rpx;
+}
+
+.overview-desc {
+  display: block;
+  font-size: 26rpx;
+  color: #617089;
+  line-height: 1.6;
+  margin: 0 auto 26rpx;
+  max-width: 520rpx;
+}
+
+.overview-progress-card {
+  padding: 22rpx 20rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(180deg, #F7FAFF 0%, #EEF5FF 100%);
+  border: 1rpx solid rgba(221, 232, 255, 0.95);
+  margin-bottom: 20rpx;
+}
+
+.overview-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14rpx;
+}
+
+.overview-progress-label {
+  font-size: 24rpx;
+  color: #8EA0BA;
+  font-weight: 700;
+}
+
+.overview-progress-count {
+  font-size: 24rpx;
+  color: #4F7FFF;
+  font-weight: 900;
+}
+
+.overview-progress-track {
+  height: 14rpx;
+  border-radius: 999rpx;
+  background: #DDE8FF;
+  overflow: hidden;
+}
+
+.overview-progress-fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, #4F7FFF, #5FDEAB);
+  transition: width 0.5s ease;
+}
+
+.overview-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14rpx;
+  margin-bottom: 22rpx;
+}
+
+.overview-stat {
+  padding: 18rpx 8rpx;
+  border-radius: 24rpx;
+  background: #FFFFFF;
+  border: 1rpx solid rgba(221, 232, 255, 0.9);
+}
+
+.overview-stat-num {
+  display: block;
+  font-size: 34rpx;
+  color: #18233A;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.overview-stat-label {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 21rpx;
+  color: #8EA0BA;
+  font-weight: 700;
+}
+
+.overview-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  padding: 18rpx 20rpx;
+  margin-bottom: 28rpx;
+  border-radius: 24rpx;
+  background: rgba(79, 127, 255, 0.07);
+  text-align: left;
+}
+
+.overview-tip-dot {
+  flex-shrink: 0;
+  width: 12rpx;
+  height: 12rpx;
+  margin-top: 12rpx;
+  border-radius: 50%;
+  background: #4F7FFF;
+}
+
+.overview-tip-text {
+  flex: 1;
+  font-size: 24rpx;
+  color: #617089;
+  line-height: 1.55;
+}
+
+.overview-start-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 90rpx;
+  border-radius: 999rpx;
+  font-size: 30rpx;
+  font-weight: 900;
+  color: #FFFFFF;
+  background: linear-gradient(135deg, #4F7FFF, #6EC1FF);
+  box-shadow: 0 16rpx 32rpx rgba(79, 127, 255, 0.24);
+  border: none;
+  line-height: normal;
+  width: 100%;
+}
+
+.overview-start-btn::after { border: none; }
+
+.overview-start-btn:active {
+  opacity: 0.9;
+  transform: scale(0.98);
+}
+
+.overview-start-btn[disabled] {
+  opacity: 0.55;
+  transform: none;
+}
 
 /* ==================== review-practice 紧凑布局 ==================== */
 

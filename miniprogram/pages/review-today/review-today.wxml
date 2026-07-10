@@ -19,57 +19,86 @@
 </view>
 
 <!-- ==================== 概览页 ==================== -->
-<view wx:elif="{{phase === 'overview'}}" class="page review-overview page-blue-white">
-  <view class="today-review-card">
-    <view class="today-review-main">
-      <text class="today-review-label">今日待复习</text>
-      <view class="today-review-count-row">
-        <text class="today-review-count">{{todayRemainingCount}}</text>
-        <text class="today-review-unit">道</text>
+<view wx:elif="{{phase === 'overview'}}" class="page review-overview">
+  <view class="overview-bg-deco overview-bg-deco-a"></view>
+  <view class="overview-bg-deco overview-bg-deco-b"></view>
+  <view class="overview-bg-deco overview-bg-deco-c"></view>
+
+  <view class="overview-card">
+    <view class="overview-visual">
+      <view class="overview-orbit"></view>
+
+      <view class="overview-main-badge">
+        <text class="overview-main-num">{{todayRemainingCount}}</text>
+        <text class="overview-main-unit">道</text>
       </view>
-      <text class="today-review-sub">
-        共 {{todayDueCount}} 道，已完成 {{todayCompletedCount}} 道
-      </text>
-    </view>
 
-    <view class="today-progress-box" wx:if="{{todayDueCount > 0}}">
-      <view class="today-progress-track">
-        <view class="today-progress-fill" style="width: {{todayProgressPercent}}%;"></view>
+      <view class="overview-mini-card overview-mini-left">
+        <text class="overview-mini-label">今日</text>
+        <text class="overview-mini-value">复习</text>
       </view>
-      <text class="today-progress-text">{{todayProgressPercent}}%</text>
-    </view>
-  </view>
 
-  <view class="review-stat-grid">
-    <view class="review-stat-item">
-      <text class="review-stat-value">{{todayOverdueCount}}</text>
-      <text class="review-stat-label">逾期复习</text>
-    </view>
-    <view class="review-stat-item">
-      <text class="review-stat-value">{{estimatedMinutes}}</text>
-      <text class="review-stat-label">预计分钟</text>
-    </view>
-    <view class="review-stat-item">
-      <text class="review-stat-value">{{reviewBatchSize}}</text>
-      <text class="review-stat-label">每组题数</text>
-    </view>
-  </view>
+      <view class="overview-mini-card overview-mini-right">
+        <view class="overview-curve">
+          <view class="curve-dot dot-a"></view>
+          <view class="curve-dot dot-b"></view>
+          <view class="curve-dot dot-c"></view>
+          <view class="curve-line line-a"></view>
+          <view class="curve-line line-b"></view>
+        </view>
+      </view>
 
-  <view class="review-plan-card">
-    <text class="review-plan-title">今日复习安排</text>
-    <text class="review-plan-desc">
-      系统已根据记忆曲线为你安排今日复习内容，完成后会自动更新下次复习时间。
-    </text>
-  </view>
+      <view class="overview-spark spark-a"></view>
+      <view class="overview-spark spark-b"></view>
+      <view class="overview-spark spark-c"></view>
+    </view>
 
-  <button
-    class="primary-review-btn"
-    loading="{{isStarting || isContinuing}}"
-    disabled="{{todayRemainingCount <= 0 || isStarting || isContinuing}}"
-    bindtap="startTodayReview"
-  >
-    {{todayCompletedCount > 0 ? '继续复习' : '开始复习'}}
-  </button>
+    <text class="overview-title">今日复习</text>
+    <text class="overview-desc">记忆曲线提醒你，该回来巩固一下啦</text>
+
+    <view class="overview-progress-card">
+      <view class="overview-progress-head">
+        <text class="overview-progress-label">
+          {{todayCompletedCount > 0 ? '今日进度' : '今日任务'}}
+        </text>
+        <text class="overview-progress-count">
+          已完成 {{todayCompletedCount}} / {{todayDueCount}} 道
+        </text>
+      </view>
+      <view class="overview-progress-track">
+        <view class="overview-progress-fill" style="width: {{todayProgressPercent}}%;"></view>
+      </view>
+    </view>
+
+    <view class="overview-stats">
+      <view class="overview-stat">
+        <text class="overview-stat-num">{{todayOverdueCount}}</text>
+        <text class="overview-stat-label">逾期</text>
+      </view>
+      <view class="overview-stat">
+        <text class="overview-stat-num">{{estimatedMinutes}}</text>
+        <text class="overview-stat-label">预计分钟</text>
+      </view>
+      <view class="overview-stat">
+        <text class="overview-stat-num">{{reviewBatchSize}}</text>
+        <text class="overview-stat-label">每组题数</text>
+      </view>
+    </view>
+
+    <view class="overview-tip">
+      <view class="overview-tip-dot"></view>
+      <text class="overview-tip-text">系统会自动按记忆曲线安排题目，你只需要一组一组完成。</text>
+    </view>
+
+    <button
+      class="overview-start-btn"
+      loading="{{isStarting || isContinuing}}"
+      disabled="{{todayRemainingCount <= 0 || isStarting || isContinuing}}"
+      bindtap="startTodayReview"
+    >
+      {{todayCompletedCount > 0 ? '继续复习' : '开始复习'}}
+    </button>
+  </view>
 </view>
 
 <!-- ==================== 练习页 ==================== -->
