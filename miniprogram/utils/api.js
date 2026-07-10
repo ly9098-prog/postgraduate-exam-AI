@@ -22,12 +22,36 @@ class ApiError extends Error {
 let _refreshing = null
 let _redirecting = false
 
-// 主动续签阈值：token 过期前 24 小时即触发续签
-const PROACTIVE_REFRESH_SEC = 24 * 60 * 60
+// 主动续签阈值：token 过期前 1 小时即触发续签
+// 避免因 24h 阈值适配短生命周期 token 时持续刷新
+const PROACTIVE_REFRESH_SEC = 3600
 
 // 重置重定向锁，供登录成功后调用
 function resetRedirecting() {
   _redirecting = false
+}
+
+/** 标准化 expires_at 为 Unix 秒。支持：Unix 秒、Unix 毫秒、ISO 日期字符串 */
+function _normalizeExpiresAt(value) {
+  if (value == null) return null
+  let seconds
+  if (typeof value === 'number') {
+    seconds = value
+  } else if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (!isNaN(parsed)) {
+      seconds = parsed
+    } else {
+      const d = new Date(value)
+      if (!isNaN(d.getTime())) seconds = Math.floor(d.getTime() / 1000)
+      else return null
+    }
+  } else {
+    return null
+  }
+  // 检测毫秒级时间戳（> 1e12）
+  if (seconds > 1e12) seconds = Math.floor(seconds / 1000)
+  return seconds
 }
 
 function _extractTraceId(data) {
@@ -102,7 +126,7 @@ async function _refreshToken() {
   if (res.statusCode === 200 && res.data && res.data.access_token) {
     try {
       storage.setStrict(KEYS.TOKEN, res.data.access_token)
-      storage.setStrict(KEYS.TOKEN_EXPIRES_AT, res.data.expires_at)
+      storage.setStrict(KEYS.TOKEN_EXPIRES_AT, _normalizeExpiresAt(res.data.expires_at))
       storage.setStrict(KEYS.REFRESH_TOKEN, res.data.refresh_token)
       if (res.data.user) {
         storage.setStrict(KEYS.USER, res.data.user)
@@ -261,4 +285,5 @@ module.exports = {
   forceRefreshToken,
   request,
   ApiError,
+  normalizeExpiresAt: _normalizeExpiresAt,
 }

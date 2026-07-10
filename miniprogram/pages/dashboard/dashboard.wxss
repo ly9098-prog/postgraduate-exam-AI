@@ -1547,6 +1547,29 @@
   color: var(--text-hint, #8EA0BA);
   text-align: right;
 }
+.llm-result-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 18rpx;
+  padding-top: 14rpx;
+  border-top: 1rpx solid rgba(79,127,255,.08);
+}
+.llm-disclaimer {
+  font-size: 20rpx;
+  color: var(--text-hint, #8EA0BA);
+  line-height: 1.4;
+  flex: 1;
+}
+.llm-feedback-btn {
+  flex-shrink: 0;
+  margin-left: 12rpx;
+  padding: 6rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  color: #4F7FFF;
+  background: rgba(79,127,255,.08);
+}
 
 /* ════════════════════════════════════════════
    YEARLY — info strip

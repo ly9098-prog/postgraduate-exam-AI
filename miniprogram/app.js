@@ -23,13 +23,13 @@ function loadRewardAnimationPackage() {
       wx.loadSubPackage({
         root: 'subpackages/animation',
         success: function () { _onAnimLoaded(); resolve() },
-        fail: function () { resolve() }, // 不影响主流程
+        fail: function () { _animLoadPromise = null; resolve() }, // 不影响主流程，同时允许后续重试
       })
     } else if (typeof wx.preloadSubPackage === 'function') {
       wx.preloadSubPackage({
         root: 'subpackages/animation',
         success: function () { _onAnimLoaded(); resolve() },
-        fail: function () { resolve() },
+        fail: function () { _animLoadPromise = null; resolve() }, // 不影响主流程，同时允许后续重试
       })
     } else {
       resolve()
@@ -47,20 +47,12 @@ function _onAnimLoaded() {
 App({
   onLaunch() {
     // 不在启动时加载动画分包，改为在首次播放时由 getApp().loadRewardAnimationPackage() 按需加载
-    this._preWarmSession()
   },
 
   loadRewardAnimationPackage: loadRewardAnimationPackage,
 
   onShow() {
     this._tryRestoreLogin()
-  },
-
-  /** 提前预热：无 token 时提前 wx.login，避免 login 页冷启动时首次调用失败 */
-  async _preWarmSession() {
-    const storage = require('./utils/storage')
-    if (storage.get(storage.KEYS.TOKEN)) return
-    try { await wx.login() } catch (_) {}
   },
 
   async _tryRestoreLogin() {

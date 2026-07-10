@@ -545,6 +545,29 @@ page {
 .ai-card.is-stale {
   border-color: rgba(245, 158, 11, 0.2);
 }
+.ai-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16rpx;
+  padding-top: 14rpx;
+  border-top: 1rpx solid rgba(79,127,255,.08);
+}
+.ai-disclaimer {
+  font-size: 20rpx;
+  color: var(--text-hint, #8EA0BA);
+  line-height: 1.4;
+  flex: 1;
+}
+.ai-feedback-btn {
+  flex-shrink: 0;
+  margin-left: 12rpx;
+  padding: 6rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  color: #4F7FFF;
+  background: rgba(79,127,255,.08);
+}
 
 /* AI 头部操作区 */
 .ai-head {

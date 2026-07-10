@@ -54,12 +54,12 @@
       <!-- CODE -->
       <scroll-view wx:elif="{{currentQuestion._renderModel.mode === 'CODE'}}" wx:key="code" scroll-x class="runner-code-wrapper"><text decode="false" space="preserve" class="runner-code-text">{{currentQuestion._renderModel.rawText}}</text></scroll-view>
       <!-- LATEX -->
-      <mp-html wx:elif="{{currentQuestion._renderModel.mode === 'LATEX'}}" wx:key="latex" class="runner-q-content" content="{{currentQuestion._renderModel.html}}" lazy-load></mp-html>
+      <mp-html wx:elif="{{currentQuestion._renderModel.mode === 'LATEX'}}" wx:key="latex" class="runner-q-content" content="{{currentQuestion._renderModel.html}}" lazy-load set-title="{{false}}" copy-link="{{false}}"></mp-html>
       <!-- MIXED -->
       <block wx:elif="{{currentQuestion._renderModel.mode === 'MIXED'}}" wx:key="mixed">
         <block wx:for="{{currentQuestion._renderModel.blocks}}" wx:key="index">
           <rich-text wx:if="{{item.type === 'RICH_TEXT'}}" class="runner-mixed-text-block" nodes="{{item.richTextNodes}}" />
-          <mp-html wx:elif="{{item.type === 'LATEX'}}" class="runner-mixed-latex-block" content="{{item.html}}" lazy-load />
+          <mp-html wx:elif="{{item.type === 'LATEX'}}" class="runner-mixed-latex-block" content="{{item.html}}" lazy-load set-title="{{false}}" copy-link="{{false}}" />
           <scroll-view wx:elif="{{item.type === 'CODE'}}" scroll-x class="runner-code-wrapper runner-mixed-code-block"><text decode="false" space="preserve" class="runner-code-text">{{item.rawText}}</text></scroll-view>
         </block>
       </block>
@@ -95,7 +95,7 @@
               </view>
               <view class="runner-option-body">
                 <text class="runner-option-key">{{opt.key}}.</text>
-                <mp-html wx:if="{{opt._needsRich}}" content="{{opt._html}}" style="display:inline-block"></mp-html>
+                <mp-html wx:if="{{opt._needsRich}}" content="{{opt._html}}" style="display:inline-block" set-title="{{false}}" copy-link="{{false}}"></mp-html>
                 <text wx:else class="runner-option-text">{{opt._text}}</text>
               </view>
             </view>
@@ -128,7 +128,7 @@
           </view>
           <view class="runner-option-body">
             <text class="runner-option-key">{{item.key}}.</text>
-            <mp-html wx:if="{{item._needsRich}}" content="{{item._html}}" style="display:inline-block"></mp-html>
+            <mp-html wx:if="{{item._needsRich}}" content="{{item._html}}" style="display:inline-block" set-title="{{false}}" copy-link="{{false}}"></mp-html>
             <text wx:else class="runner-option-text">{{item._text}}</text>
           </view>
         </view>

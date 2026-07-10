@@ -516,6 +516,15 @@ Page({
     this.ensureAiDiagnosis({ force: true })
   },
 
+  onAiFeedback() {
+    wx.showActionSheet({
+      itemList: ['分析不准确', '遗漏薄弱点', '建议不合理', '其他问题'],
+      success: function (res) {
+        wx.showToast({ title: '感谢反馈，我们将持续优化', icon: 'none' })
+      },
+    })
+  },
+
   // ════════════════════════════════════════════
   // Decorators & Analysis (unchanged)
   // ════════════════════════════════════════════

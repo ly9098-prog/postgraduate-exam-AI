@@ -200,11 +200,11 @@
             </block>
             <rich-text wx:elif="{{item._renderModel.mode === 'RICH_TEXT'}}" nodes="{{item._renderModel.richTextNodes}}"></rich-text>
             <scroll-view wx:elif="{{item._renderModel.mode === 'CODE'}}" scroll-x class="code-wrapper"><text decode="false" space="preserve" class="code-text">{{item._renderModel.rawText}}</text></scroll-view>
-            <mp-html wx:elif="{{item._renderModel.mode === 'LATEX'}}" content="{{item._renderModel.html}}" lazy-load></mp-html>
+            <mp-html wx:elif="{{item._renderModel.mode === 'LATEX'}}" content="{{item._renderModel.html}}" lazy-load set-title="{{false}}" copy-link="{{false}}"></mp-html>
             <block wx:elif="{{item._renderModel.mode === 'MIXED'}}">
               <block wx:for="{{item._renderModel.blocks}}" wx:key="index">
                 <rich-text wx:if="{{item.type === 'RICH_TEXT'}}" class="mixed-text-block" nodes="{{item.richTextNodes}}" />
-                <mp-html wx:elif="{{item.type === 'LATEX'}}" class="mixed-latex-block" content="{{item.html}}" lazy-load />
+                <mp-html wx:elif="{{item.type === 'LATEX'}}" class="mixed-latex-block" content="{{item.html}}" lazy-load set-title="{{false}}" copy-link="{{false}}" />
                 <scroll-view wx:elif="{{item.type === 'CODE'}}" scroll-x class="code-wrapper mixed-code-block"><text decode="false" space="preserve" class="code-text">{{item.rawText}}</text></scroll-view>
               </block>
             </block>

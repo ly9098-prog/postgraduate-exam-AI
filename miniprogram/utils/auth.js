@@ -30,7 +30,7 @@ async function wechatLogin() {
   const data = await api.post('/auth/login', { code })
   const user = normalizeUser(data.user)
   storage.set(KEYS.TOKEN, data.access_token)
-  storage.set(KEYS.TOKEN_EXPIRES_AT, data.expires_at)
+  storage.set(KEYS.TOKEN_EXPIRES_AT, api.normalizeExpiresAt(data.expires_at))
   storage.set(KEYS.REFRESH_TOKEN, data.refresh_token)
   storage.set(KEYS.USER, user)
   return user
@@ -110,7 +110,7 @@ function redirectToLogin() {
 // 开发模式：直接设置 token（不经过 wx.login）
 function loginDirect(token, user, expiresAt, refreshToken) {
   storage.set(KEYS.TOKEN, token)
-  if (expiresAt) storage.set(KEYS.TOKEN_EXPIRES_AT, expiresAt)
+  if (expiresAt) storage.set(KEYS.TOKEN_EXPIRES_AT, api.normalizeExpiresAt(expiresAt))
   if (refreshToken) storage.set(KEYS.REFRESH_TOKEN, refreshToken)
   storage.set(KEYS.USER, normalizeUser(user))
 }
