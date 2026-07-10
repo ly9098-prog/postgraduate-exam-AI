@@ -591,18 +591,6 @@ page {
   transition: opacity 0.3s ease;
 }
 
-.ring-canvas--dim {
-  opacity: 0.18;
-}
-.ring-canvas-placeholder {
-  position: absolute;
-  inset: 0;
-  width: 520rpx;
-  height: 520rpx;
-  border-radius: 50%;
-  opacity: 0;
-  pointer-events: none;
-}
 
 .ring-center {
   position: absolute;
