@@ -436,6 +436,7 @@ Page({
 
   /* ==================== Touch / Swipe ==================== */
 
+  noop() {},
   onCustomAreaTouch() {},
 
   onTouchStart(e) {
@@ -2022,8 +2023,9 @@ Page({
   /* ==================== Utility ==================== */
 
   subjectLabel(key) {
+    const { getSubjectName } = require('../../utils/subject-meta')
     const s = this.data.subjects.find(s => s.code === key)
-    return s ? s.name : key
+    return s ? s.name : getSubjectName(key)
   },
 
   subjectColor(key) {

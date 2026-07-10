@@ -1,8 +1,28 @@
 var _lottieLoader = null
+var _lottieLoading = false
+var _lottieCallbacks = []
 
 function _getLottieLoader() {
   if (_lottieLoader) return _lottieLoader
-  try { _lottieLoader = require('../../subpackages/animation/lottie-loader.js') } catch (_) {}
+  if (_lottieLoading) return null
+  // 触发动画分包按需加载
+  _lottieLoading = true
+  try {
+    var app = getApp()
+    if (app && app.loadRewardAnimationPackage) {
+      app.loadRewardAnimationPackage().then(function () {
+        try { _lottieLoader = require('../../subpackages/animation/lottie-loader.js') } catch (_) {}
+        _lottieLoading = false
+        _lottieCallbacks.forEach(function (cb) { try { cb() } catch (_) {} })
+        _lottieCallbacks = []
+      }).catch(function () { _lottieLoading = false })
+    } else {
+      try { _lottieLoader = require('../../subpackages/animation/lottie-loader.js') } catch (_) {}
+      _lottieLoading = false
+    }
+  } catch (_) {
+    _lottieLoading = false
+  }
   return _lottieLoader
 }
 

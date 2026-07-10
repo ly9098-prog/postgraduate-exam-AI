@@ -21,6 +21,11 @@ function set(key, value) {
   }
 }
 
+/** 严格写入：失败时抛出错误，用于认证信息和协议记录等关键数据 */
+function setStrict(key, value) {
+  wx.setStorageSync(key, value)
+}
+
 function remove(key) {
   try {
     wx.removeStorageSync(key)
@@ -29,4 +34,4 @@ function remove(key) {
   }
 }
 
-module.exports = { KEYS, get, set, remove }
+module.exports = { KEYS, get, set, setStrict, remove }

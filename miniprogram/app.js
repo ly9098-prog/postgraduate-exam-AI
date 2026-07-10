@@ -1,44 +1,41 @@
+// ═══════════════════════════════════════════════
+// 动画分包加载管理 — 按需加载，不在启动时主动下载
+// ═══════════════════════════════════════════════
+
 var _ANIM_LOADED = false
 var _ANIM_CALLBACKS = []
+var _animLoadPromise = null
 
 function onAnimReady(cb) {
   if (_ANIM_LOADED) return cb()
   _ANIM_CALLBACKS.push(cb)
 }
 
-function tryLoadAnimSubpkg() {
-  // 1) 优先 wx.loadSubPackage
-  if (typeof wx.loadSubPackage === 'function') {
-    wx.loadSubPackage({
-      root: 'subpackages/animation',
-      success: function () { _onAnimLoaded() },
-      fail: function () { _navFallback() },
-    })
-    return
+/** 按需加载动画分包，避免重复并发加载 */
+function loadRewardAnimationPackage() {
+  if (_animLoadPromise) return _animLoadPromise
+  if (_ANIM_LOADED) {
+    _animLoadPromise = Promise.resolve()
+    return _animLoadPromise
   }
-  // 2) 尝试 preloadSubPackage（新版 API 名可能有变）
-  if (typeof wx.preloadSubPackage === 'function') {
-    wx.preloadSubPackage({
-      root: 'subpackages/animation',
-      success: function () { _onAnimLoaded() },
-      fail: function () { _navFallback() },
-    })
-    return
-  }
-  // 3) 兜底：导航到分包页面强制加载
-  _navFallback()
-}
-
-function _navFallback() {
-  wx.navigateTo({
-    url: '/subpackages/animation/animation-index/animation-index',
-    complete: function () {
-      setTimeout(function () {
-        wx.navigateBack({ delta: 1 })
-        _onAnimLoaded()
-      }, 50)
-    },
+  _animLoadPromise = new Promise(function (resolve) {
+    if (typeof wx.loadSubPackage === 'function') {
+      wx.loadSubPackage({
+        root: 'subpackages/animation',
+        success: function () { _onAnimLoaded(); resolve() },
+        fail: function () { resolve() }, // 不影响主流程
+      })
+    } else if (typeof wx.preloadSubPackage === 'function') {
+      wx.preloadSubPackage({
+        root: 'subpackages/animation',
+        success: function () { _onAnimLoaded(); resolve() },
+        fail: function () { resolve() },
+      })
+    } else {
+      resolve()
+    }
   })
+  return _animLoadPromise
 }
 
 function _onAnimLoaded() {
@@ -49,10 +46,11 @@ function _onAnimLoaded() {
 
 App({
   onLaunch() {
-    tryLoadAnimSubpkg()
-    // 在 login 页面加载前尽可能提前建立 session
+    // 不在启动时加载动画分包，改为在首次播放时由 getApp().loadRewardAnimationPackage() 按需加载
     this._preWarmSession()
   },
+
+  loadRewardAnimationPackage: loadRewardAnimationPackage,
 
   onShow() {
     this._tryRestoreLogin()
@@ -62,7 +60,6 @@ App({
   async _preWarmSession() {
     const storage = require('./utils/storage')
     if (storage.get(storage.KEYS.TOKEN)) return
-    // 仅跑一次 wx.login 让 WeChat JSSDK 内部状态就绪
     try { await wx.login() } catch (_) {}
   },
 

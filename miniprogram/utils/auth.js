@@ -1,6 +1,7 @@
 const api = require('./api')
 const storage = require('./storage')
 const config = require('../config')
+const privacy = require('./privacy')
 const { KEYS } = storage
 
 function normalizeUser(user) {
@@ -36,10 +37,42 @@ async function wechatLogin() {
 }
 
 function logout() {
+  // 清除认证信息
   storage.remove(KEYS.TOKEN)
   storage.remove(KEYS.TOKEN_EXPIRES_AT)
   storage.remove(KEYS.REFRESH_TOKEN)
   storage.remove(KEYS.USER)
+
+  // 清除用户业务缓存，防止跨账号数据串用
+  var businessKeys = [
+    'lastPracticeResult',
+    'wrong_detail_nav',
+    'pomodoro_running_state',
+    'pomodoro_pause',
+    'pomodoro_free_pause',
+    'pomodoro_completion',
+    'pomodoro_break',
+    'pomodoro_confirm_pause',
+    'pomodoro_pause_adjustment',
+    'pomodoro_font_size',
+    'pomodoro_anim_idx',
+    'home_today_goal_total',
+  ]
+  for (var bi = 0; bi < businessKeys.length; bi++) {
+    try { wx.removeStorageSync(businessKeys[bi]) } catch (_) {}
+  }
+
+  // 清除调试快照
+  try {
+    var allKeys = wx.getStorageInfoSync().keys || []
+    for (var ki = 0; ki < allKeys.length; ki++) {
+      if (allKeys[ki].indexOf('debug_snapshot:') === 0) {
+        wx.removeStorageSync(allKeys[ki])
+      }
+    }
+  } catch (_) {}
+
+  privacy.clearPrivacyAcceptance()
 }
 
 function getToken() {
@@ -55,15 +88,23 @@ function getUser() {
 }
 
 function isAdmin() {
-  if (config.DEV === true) return true
   const user = getUser()
   return user.is_admin === true || user.role === 'admin' || user.role === 'super_admin' || user.role_name === 'admin' || user.role_name === 'super_admin'
 }
 
 function requireAdminAccess(message = '仅管理员可访问') {
+  if (!isLoggedIn()) {
+    wx.showToast({ title: '请先登录', icon: 'none' })
+    setTimeout(() => wx.reLaunch({ url: '/pages/login/login' }), 500)
+    return false
+  }
   if (isAdmin()) return true
   wx.showToast({ title: message, icon: 'none' })
   return false
+}
+
+function redirectToLogin() {
+  wx.reLaunch({ url: '/pages/login/login' })
 }
 
 // 开发模式：直接设置 token（不经过 wx.login）
@@ -87,4 +128,4 @@ async function checkAndRefreshToken() {
   }
 }
 
-module.exports = { wechatLogin, loginDirect, logout, getToken, isLoggedIn, getUser, isAdmin, requireAdminAccess, syncCurrentUser, normalizeUser, checkAndRefreshToken }
+module.exports = { wechatLogin, loginDirect, logout, getToken, isLoggedIn, getUser, isAdmin, requireAdminAccess, redirectToLogin, syncCurrentUser, normalizeUser, checkAndRefreshToken }

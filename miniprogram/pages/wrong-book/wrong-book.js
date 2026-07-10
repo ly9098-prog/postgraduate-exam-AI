@@ -3,6 +3,7 @@ const config = require('../../config')
 const { toPlainInlineMathText } = require('../../utils/stem-render')
 const storage = require('../../utils/storage')
 const aiCache = require('../../utils/ai-diagnosis-cache')
+const { getSubjectName, getSubjectShortName } = require('../../utils/subject-meta')
 
 const SUBJECTS = [
   { value: '', label: '全部' },
@@ -81,6 +82,7 @@ Page({
   _aiDiagnosisRequestId: 0,
   _aiDiagnosisCachedAt: 0,
   _aiStatsLoaded: false,
+  _listRequestSeq: 0,
 
   onLoad(options) {
     this.setData({ enableMathImage: config.enableMathImage || false })
@@ -179,6 +181,7 @@ Page({
 
   async loadList(reset = false) {
     const page = reset ? 1 : this.data.page
+    const seq = ++this._listRequestSeq
     this.setData({ loading: true })
 
     try {
@@ -189,12 +192,16 @@ Page({
 
       const data = await api.get('/wrong-questions', params)
 
+      // Stale response guard
+      if (seq !== this._listRequestSeq || !this._alive) return
+
       const items = (data.items || []).map(item => this._decorateItem(item))
       const nextList = reset ? items : [...this.data.list, ...items]
 
       // When filter is active, build analysis from current list only (not global stats)
       const hasFilter = this.data.selectedSubject || this.data.selectedErrorType || this.data.selectedTopic
       const statsForAnalysis = hasFilter ? {} : (this.data.stats || {})
+      if (seq !== this._listRequestSeq || !this._alive) return
       this.setData({
         list: nextList,
         analysis: this._buildAnalysis(statsForAnalysis, nextList),
@@ -204,7 +211,9 @@ Page({
       })
     } catch (e) {
       console.error('加载错题列表失败', e)
-      this.setData({ loading: false })
+      if (seq === this._listRequestSeq && this._alive) {
+        this.setData({ loading: false })
+      }
     }
   },
 
@@ -214,20 +223,23 @@ Page({
 
   selectSubject(e) {
     const val = e.currentTarget.dataset.value
-    this.setData({ selectedSubject: val, list: [], page: 1 })
+    this._listRequestSeq++
+    this.setData({ selectedSubject: val, list: [], page: 1, loading: true })
     this._updateFilterCount()
     this.loadList(true)
   },
 
   selectErrorType(e) {
     const val = e.currentTarget.dataset.value
-    this.setData({ selectedErrorType: val, list: [], page: 1 })
+    this._listRequestSeq++
+    this.setData({ selectedErrorType: val, list: [], page: 1, loading: true })
     this._updateFilterCount()
     this.loadList(true)
   },
 
   clearTopic() {
-    this.setData({ selectedTopic: '', list: [], page: 1 })
+    this._listRequestSeq++
+    this.setData({ selectedTopic: '', list: [], page: 1, loading: true })
     this._updateFilterCount()
     this.loadList(true)
   },
@@ -691,13 +703,7 @@ Page({
   },
 
   _subjectLabel(s) {
-    const map = {
-      math2: '数学二', 'math2-calculus': '数学二·高数', 'math2-linalg': '数学二·线代',
-      exam408: '408', 'exam408-ds': '408·DS', 'exam408-os': '408·OS',
-      'exam408-co': '408·CO', 'exam408-cn': '408·CN',
-      english: '英语',
-    }
-    return map[s] || s || '未知'
+    return getSubjectName(s)
   },
 
   _errorTypeLabel(t) {

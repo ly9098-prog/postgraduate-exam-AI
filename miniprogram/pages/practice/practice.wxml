@@ -13,6 +13,7 @@
 />
 
 <view class="page">
+  <submit-confirm id="submitConfirm" />
   <view class="submit-loading-mask" wx:if="{{submitting}}" catchtap="noop">
     <view class="submit-loading-card">
       <loading-lottie text="正在批改..." size="large" />

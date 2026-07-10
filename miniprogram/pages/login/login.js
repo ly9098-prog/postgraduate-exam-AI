@@ -1,6 +1,7 @@
 const auth = require('../../utils/auth')
 const api = require('../../utils/api')
 const storage = require('../../utils/storage')
+const privacy = require('../../utils/privacy')
 
 Page({
   data: {
@@ -11,16 +12,24 @@ Page({
   },
 
   onLoad() {
-    // 同步检查：token 有效时延迟跳转（setTimeout 确保冷启动 onLoad 后导航不被吞）
+    // 检查协议版本：如果已升级则标记未同意
+    if (!privacy.hasAcceptedCurrentPrivacy()) {
+      this.setData({ agreed: false })
+    }
+    // 同步检查：token 有效且协议已同意时延迟跳转
     if (this._tryDirectRedirect()) return
     this._autoLogin()
   },
 
-  /** 同步检查 storage 中的 token，有效则延迟跳转 */
+  /** 同步检查 storage 中的 token 和协议同意状态 */
   _tryDirectRedirect() {
     const token = storage.get(storage.KEYS.TOKEN)
     const expiresAt = storage.get(storage.KEYS.TOKEN_EXPIRES_AT)
     if (!token) return false
+    // 协议版本已升级或未同意 → 留在登录页
+    if (!privacy.hasAcceptedCurrentPrivacy()) {
+      return false
+    }
     if (!expiresAt) {
       setTimeout(() => wx.reLaunch({ url: '/pages/home/home' }), 100)
       return true
@@ -44,9 +53,9 @@ Page({
 
     if (auth.isLoggedIn()) {
       const ok = await auth.checkAndRefreshToken()
-      if (ok) {
+      if (ok && privacy.hasAcceptedCurrentPrivacy()) {
         this.setData({ loading: false })
-        wx.redirectTo({ url: '/pages/home/home' })
+        wx.reLaunch({ url: '/pages/home/home' })
         return
       }
     }
@@ -73,8 +82,9 @@ Page({
         const valid = await auth.checkAndRefreshToken()
         if (!valid) throw new Error('new token rejected by ensureValidToken')
 
+        privacy.savePrivacyAcceptance(['user_agreement', 'privacy_policy', 'ai_service'])
         this.setData({ loading: false })
-        wx.redirectTo({ url: '/pages/home/home' })
+        wx.reLaunch({ url: '/pages/home/home' })
         return
       } catch (e) {
         lastErr = e
@@ -92,7 +102,9 @@ Page({
   },
 
   onAgreementChange(e) {
-    this.setData({ agreed: e.detail.value.includes('agreed') })
+    const agreed = e.detail.value.includes('agreed')
+    this.setData({ agreed })
+    // 不在此处保存协议记录，仅在登录成功后保存
   },
 
   openAgreement(e) {
@@ -116,8 +128,10 @@ Page({
     this.setData({ loading: true, error: '' })
     try {
       await auth.wechatLogin()
+      // 登录成功后保存协议同意记录
+      privacy.savePrivacyAcceptance(['user_agreement', 'privacy_policy', 'ai_service'])
       api.resetRedirecting()
-      wx.redirectTo({ url: '/pages/home/home' })
+      wx.reLaunch({ url: '/pages/home/home' })
     } catch (e) {
       const msg = e.message || (typeof e === 'string' ? e : '登录失败')
       this.setData({ error: msg })

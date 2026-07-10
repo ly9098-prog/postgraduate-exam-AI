@@ -1,5 +1,7 @@
 const api = require('../../utils/api')
 const config = require('../../config')
+const auth = require('../../utils/auth')
+const fileReq = require('../../utils/file-request')
 
 const SUPPORTED_EXTENSIONS = ['xlsx', 'xls', 'pdf', 'txt', 'jpg', 'jpeg', 'png', 'webp']
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']
@@ -52,9 +54,35 @@ Page({
     pageEnd: '',
   },
 
-  onLoad() {},
+  onLoad() {
+    // 管理员权限校验
+    if (!auth.requireAdminAccess()) {
+      // 未登录时 requireAdminAccess 已触发跳转登录页；
+      // 非管理员用户则主动跳回首页
+      if (auth.isLoggedIn()) {
+        wx.reLaunch({ url: '/pages/home/home' })
+      }
+      return
+    }
+    this._adminChecked = true
+    this._alive = true
+    this._visible = true
+    this._pollGeneration = 0
+    this.initPage()
+  },
+
+  initPage() {
+    // 页面初始化逻辑（当前为空，保留扩展点）
+  },
 
   onShow() {
+    // 页面显示时重新校验管理员身份
+    if (this._adminChecked && !auth.isAdmin()) {
+      wx.showToast({ title: '权限不足', icon: 'none' })
+      setTimeout(() => wx.reLaunch({ url: '/pages/home/home' }), 500)
+      return
+    }
+    this._visible = true
     const task = this.data.pipelineTask
     if (task && task.pipeline_id && this.data.pipelinePolling) {
       this.pollPipeline(task.pipeline_id)
@@ -62,10 +90,15 @@ Page({
   },
 
   onUnload() {
+    this._alive = false
+    this._visible = false
+    this._pollGeneration++
     if (this.pollTimer) clearTimeout(this.pollTimer)
   },
 
   onHide() {
+    this._visible = false
+    this._pollGeneration++
     if (this.pollTimer) clearTimeout(this.pollTimer)
   },
 
@@ -109,9 +142,9 @@ Page({
         }
         this.setData({ showPageRange: ext === 'pdf' })
         if (ext === 'pdf') {
-          this.setData({ _pendingFile: { path: file.path, name: file.name || name } })
+          this.setData({ _pendingFile: { path: file.path, name: file.name || name, size: file.size } })
         } else {
-          this.unifiedUpload(file.path, file.name || name)
+          this.unifiedUpload({ path: file.path, name: file.name || name, size: file.size })
         }
       },
       fail: (err) => {
@@ -130,7 +163,7 @@ Page({
         success: (res) => {
           const file = res.tempFiles && res.tempFiles[0]
           if (!file) return
-          this.unifiedUpload(file.tempFilePath, 'photo.jpg')
+          this.unifiedUpload({ path: file.tempFilePath, name: 'photo.jpg', size: file.size })
         },
         fail: (err) => {
           if (err && err.errMsg && err.errMsg.includes('cancel')) return
@@ -153,7 +186,7 @@ Page({
       success: (res) => {
         const file = res.tempFiles[0]
         if (!file) return
-        this.unifiedUpload(file.path, file.name || 'image.jpg')
+        this.unifiedUpload({ path: file.path, name: file.name || 'image.jpg', size: file.size })
       },
       fail: (err) => {
         if (err && err.errMsg && err.errMsg.includes('cancel')) return
@@ -162,7 +195,12 @@ Page({
     })
   },
 
-  async unifiedUpload(path, name) {
+  async unifiedUpload(fileInfo) {
+    var path = fileInfo.path
+    var name = fileInfo.name || ''
+    var size = fileInfo.size
+    var mimeType = fileInfo.mimeType || ''
+
     const ps = parseInt(this.data.pageStart, 10)
     const pe = parseInt(this.data.pageEnd, 10)
     if (this.data.pageStart && (isNaN(ps) || ps < 1)) {
@@ -177,34 +215,25 @@ Page({
       wx.showToast({ title: '结束页不能小于起始页', icon: 'none' })
       return
     }
+
+    // 文件校验（传递 size 让 validateFile 检查文件大小）
+    const validation = fileReq.validateFile({ name, path, size })
+    if (!validation.valid) {
+      wx.showToast({ title: validation.error, icon: 'none' })
+      return
+    }
+
     wx.showLoading({ title: '上传中...' })
     try {
-      const token = wx.getStorageSync('token')
       let uploadUrl = `${config.BASE_URL}/import/pipeline/upload`
       const params = []
       if (this.data.pageStart) params.push(`page_start=${this.data.pageStart}`)
       if (this.data.pageEnd) params.push(`page_end=${this.data.pageEnd}`)
       if (params.length) uploadUrl += '?' + params.join('&')
-      const res = await new Promise((resolve, reject) => {
-        wx.uploadFile({
-          url: uploadUrl,
-          filePath: path,
-          name: 'file',
-          header: { Authorization: `Bearer ${token}` },
-          success: (r) => {
-            let body = null
-            try {
-              body = JSON.parse(r.data)
-            } catch (e) {
-              return reject(new Error(`服务器返回异常 (HTTP ${r.statusCode})`))
-            }
-            if (r.statusCode >= 400) {
-              return reject(new Error(body.detail || body.message || `HTTP ${r.statusCode}`))
-            }
-            resolve(body)
-          },
-          fail: reject,
-        })
+      const res = await fileReq.authUploadFile({
+        url: uploadUrl,
+        filePath: path,
+        name: 'file',
       })
       wx.hideLoading()
       this.setData({
@@ -245,14 +274,17 @@ Page({
   confirmUpload() {
     const f = this.data._pendingFile
     if (!f) return
-    this.unifiedUpload(f.path, f.name)
+    this.unifiedUpload({ path: f.path, name: f.name, size: f.size })
   },
 
   async pollPipeline(pipelineId) {
     if (!pipelineId) return
+    if (!this._alive || !this._visible) return
     if (this.pollTimer) clearTimeout(this.pollTimer)
+    const generation = ++this._pollGeneration
     try {
       const status = await api.get(`/import/pipelines/${pipelineId}`)
+      if (!this._alive || !this._visible || generation !== this._pollGeneration) return
       this._pollRetries = 0
       const currentTask = this.data.pipelineTask || {}
       if (currentTask.pipeline_id !== pipelineId) return
@@ -400,35 +432,25 @@ Page({
     })
   },
 
-  uploadResumeFile(pipelineId, filePath) {
-    const token = wx.getStorageSync('token')
+  async uploadResumeFile(pipelineId, filePath) {
     this.setData({ uploading: true, importStatus: 'resuming' })
-    wx.uploadFile({
-      url: `${config.BASE_URL}/import/pipelines/${pipelineId}/resume`,
-      filePath,
-      name: 'file',
-      header: { Authorization: `Bearer ${token}` },
-      success: (res) => {
-        let data = {}
-        try { data = JSON.parse(res.data || '{}') } catch (_) {}
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          wx.showToast({ title: '已恢复导入', icon: 'success' })
-          this.setData({
-            uploading: false,
-            pipelineId,
-            importStatus: data.status || 'processing',
-          })
-          this.startPolling(pipelineId)
-        } else {
-          wx.showToast({ title: data.detail || data.message || '恢复失败', icon: 'none' })
-          this.setData({ uploading: false })
-        }
-      },
-      fail: () => {
-        wx.showToast({ title: '网络异常，恢复失败', icon: 'none' })
-        this.setData({ uploading: false })
-      },
-    })
+    try {
+      const data = await fileReq.authUploadFile({
+        url: `${config.BASE_URL}/import/pipelines/${pipelineId}/resume`,
+        filePath,
+        name: 'file',
+      })
+      wx.showToast({ title: '已恢复导入', icon: 'success' })
+      this.setData({
+        uploading: false,
+        pipelineId,
+        importStatus: data.status || 'processing',
+      })
+      this.startPolling(pipelineId)
+    } catch (e) {
+      wx.showToast({ title: e.message || '恢复失败', icon: 'none' })
+      this.setData({ uploading: false })
+    }
   },
 
   startPolling(pipelineId) {
@@ -448,21 +470,15 @@ Page({
   async downloadTemplate() {
     wx.showLoading({ title: '下载模板中...' })
     try {
-      const token = wx.getStorageSync('token')
-      const res = await new Promise((resolve, reject) => {
-        wx.downloadFile({
-          url: `${config.BASE_URL}/import/template`,
-          header: { Authorization: `Bearer ${token}` },
-          success: resolve,
-          fail: reject,
-        })
+      const res = await fileReq.authDownloadFile({
+        url: `${config.BASE_URL}/import/template`,
       })
       if (res.statusCode !== 200) throw new Error('下载失败')
       await wx.openDocument({ filePath: res.tempFilePath, fileType: 'xlsx' })
       wx.hideLoading()
     } catch (err) {
       wx.hideLoading()
-      wx.showToast({ title: '下载失败', icon: 'none' })
+      wx.showToast({ title: err.message || '下载失败', icon: 'none' })
     }
   },
 })

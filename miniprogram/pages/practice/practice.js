@@ -750,6 +750,24 @@ Page({
 
   /* ==================== 交卷 ==================== */
 
+  _showSubmitConfirm(opts) {
+    var comp = this.selectComponent('#submitConfirm')
+    if (!comp || typeof comp.show !== 'function') {
+      // Fallback: native modal if component unavailable
+      return new Promise(function (resolve) {
+        wx.showModal({
+          title: opts.title || '',
+          content: opts.message || '',
+          confirmText: opts.confirmText || '确定',
+          cancelText: opts.cancelText || '取消',
+          success: function (r) { resolve(r.confirm) },
+          fail: function () { resolve(false) },
+        })
+      })
+    }
+    return comp.show(opts)
+  },
+
   async doSubmit(skipConfirm) {
     if (this.data.submitting) return
     const { answerMap, questions, startTime, selectedSubjectId, selectedSubjectName, comboCount } = this.data
@@ -766,23 +784,27 @@ Page({
       return
     }
 
+    var confirmed = false
     if (unanswered > 0) {
-      const { confirm } = await wx.showModal({
+      confirmed = await this._showSubmitConfirm({
+        scenario: 'unanswered',
         title: '还有题目未作答',
-        content: `还有 ${unanswered} 道题未作答，确定提交吗？`,
+        message: `还有 ${unanswered} 道题未作答，确定提交吗？`,
         confirmText: '确定提交',
         cancelText: '继续作答',
       })
-      if (!confirm) return
     } else if (skipConfirm !== true) {
-      const { confirm } = await wx.showModal({
+      confirmed = await this._showSubmitConfirm({
+        scenario: 'all-done',
         title: '确认交卷',
-        content: `共 ${total} 题，已全部作答。确认提交并复盘？`,
+        message: `共 ${total} 题，已全部作答。确认提交并复盘？`,
         confirmText: '确定提交',
         cancelText: '取消',
       })
-      if (!confirm) return
+    } else {
+      confirmed = true
     }
+    if (!confirmed) return
 
     this._clearTimer()
     // 结算最后一题的用时
@@ -790,76 +812,114 @@ Page({
     this.setData({ submitting: true })
 
     const questionTimeMap = this.data.questionTimeMap
-    try {
-      const answers = completedQuestions.map(q => ({
-        question_id: q.id,
-        user_answer: answerMap[String(q.id)] || '',
-        used_time: questionTimeMap[String(q.id)] || 0,
-        request_id: this.data.requestId || undefined,
-      }))
 
-      debugLog(this.data.traceId, 'SUBMIT', {
-        total: answers.length,
-        answeredCount,
-      })
-      saveDebugSnapshot(this.data.traceId, 'submit_before', {
-        answers: answers.map(item => ({ question_id: item.question_id, has_answer: !!item.user_answer })),
-      })
-      const result = await api.post('/practice/batch-submit', {
+    // ═══════════════════════════════════════════════════
+    // 阶段一：服务器提交 — 只有此步骤失败才提示"提交失败"
+    // ═══════════════════════════════════════════════════
+    var submitResult, storedResults, duration
+    const requestId = this.data.requestId || ('req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8))
+    // 持久化 requestId 供重试时复用
+    if (!this.data.requestId) {
+      this.data.requestId = requestId
+    }
+    const answers = completedQuestions.map(q => ({
+      question_id: q.id,
+      user_answer: answerMap[String(q.id)] || '',
+      used_time: questionTimeMap[String(q.id)] || 0,
+      request_id: requestId,
+    }))
+
+    try {
+      submitResult = await api.post('/practice/batch-submit', {
         answers,
         _traceId: this.data.traceId,
       })
+    } catch (e) {
+      console.error('提交失败', e)
+      // 恢复页面可操作状态和计时器
+      this._startTimer()
+      this.setData({ submitting: false })
+      wx.showToast({ title: '提交失败', icon: 'none' })
+      return
+    }
 
-      const duration = Math.floor((Date.now() - startTime) / 1000)
-      // 存储详细结果供 result 页使用
-      const storedResults = (result.results || []).map(function(rr) {
-        return Object.assign({}, rr, {
-          user_answer: answerMap[String(rr.question_id)] || '',
-        })
+    // ═══════════════════════════════════════════════════
+    // 阶段二：本地结果缓存 — 失败不阻断流程
+    // ═══════════════════════════════════════════════════
+    duration = Math.floor((Date.now() - startTime) / 1000)
+    storedResults = (submitResult.results || []).map(function(rr) {
+      return Object.assign({}, rr, {
+        user_answer: answerMap[String(rr.question_id)] || '',
       })
+    })
+    // 只保存结果页必需的最小数据，不缓存整套题目对象
+    // 但需要保留轻量题目数组（id + stem + options）供结果页渲染题干
+    var lightQuestions = []
+    for (var qi = 0; qi < questions.length; qi++) {
+      var qq = questions[qi]
+      if (qq && qq.id) {
+        lightQuestions.push({
+          id: qq.id,
+          stem: (qq.content && (qq.content.stem || qq.content.text)) || qq.stem || '',
+          options: qq.options || null,
+          question_type: qq.question_type || '',
+        })
+      }
+    }
+    var userId = ''
+    try {
+      var userInfo = wx.getStorageSync('user')
+      if (userInfo && userInfo.id) userId = String(userInfo.id)
+    } catch (_) {}
+    // 生成唯一缓存键，用于结果页验证
+    var cacheKey = 'pr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+    try {
       wx.setStorageSync('lastPracticeResult', {
-        correct: result.total_correct || 0,
-        wrong: result.total_wrong || 0,
+        correct: submitResult.total_correct || 0,
+        wrong: submitResult.total_wrong || 0,
         skipped: unanswered,
         total,
         subject_id: selectedSubjectId,
         subject_name: selectedSubjectName,
         duration,
-        traceId: result.trace_id || this.data.traceId,
+        traceId: submitResult.trace_id || this.data.traceId,
         results: storedResults,
-        questions: questions,
+        questions: lightQuestions,
         comboCount,
+        _cacheKey: cacheKey,
+        _userId: userId,
       })
+    } catch (storageError) {
+      console.warn('答题已提交成功，但本地结果缓存失败', storageError)
+    }
 
-      const resultUrl = [
-        `/pages/practice-result/practice-result`,
-        `?correct=${result.total_correct || 0}`,
-        `&wrong=${result.total_wrong || 0}`,
-        `&total=${total}`,
-        `&subject_id=${selectedSubjectId}`,
-        `&subject_name=${encodeURIComponent(selectedSubjectName || '')}`,
-        `&duration=${duration}`,
-      ].join('')
+    // ═══════════════════════════════════════════════════
+    // 阶段三：进入结果页
+    // ═══════════════════════════════════════════════════
+    const resultUrl = [
+      `/pages/practice-result/practice-result`,
+      `?correct=${submitResult.total_correct || 0}`,
+      `&wrong=${submitResult.total_wrong || 0}`,
+      `&total=${total}`,
+      `&subject_id=${selectedSubjectId}`,
+      `&subject_name=${encodeURIComponent(selectedSubjectName || '')}`,
+      `&duration=${duration}`,
+      `&_ck=${cacheKey}`,
+    ].join('')
 
-      // 全对时展示庆祝动画再跳转
-      const isPerfect = result.total_wrong === 0 && result.total_correct > 0 && answeredCount === total
-      if (isPerfect) {
-        this._pendingResultUrl = resultUrl
-        this.setData({
-          submitting: false,
-          showPerfectCelebration: true,
-          perfectCelebrationDetail: `答对 ${result.total_correct}/${total} 题`,
-          perfectCelebrationMotto: '这组掌握很稳，继续保持',
-          perfectCelebrationRewardText: `专注星光 +${Math.max(1, result.total_correct)}`,
-        })
-      } else {
-        this.setData({ submitting: false })
-        wx.redirectTo({ url: resultUrl })
-      }
-    } catch (e) {
-      console.error('提交失败', e)
-      this.setData({ submitting: false })
-      wx.showToast({ title: '提交失败', icon: 'none' })
+    // 全对时展示庆祝动画再跳转
+    const isPerfect = submitResult.total_wrong === 0 && submitResult.total_correct > 0 && answeredCount === total
+    this.setData({ submitting: false })
+    if (isPerfect) {
+      this._pendingResultUrl = resultUrl
+      this.setData({
+        showPerfectCelebration: true,
+        perfectCelebrationDetail: `答对 ${submitResult.total_correct}/${total} 题`,
+        perfectCelebrationMotto: '这组掌握很稳，继续保持',
+        perfectCelebrationRewardText: `专注星光 +${Math.max(1, submitResult.total_correct)}`,
+      })
+    } else {
+      wx.redirectTo({ url: resultUrl })
     }
   },
 
