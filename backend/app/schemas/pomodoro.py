@@ -19,6 +19,11 @@ class PomodoroCompleteRequest(BaseModel):
     total_paused_ms: int | None = Field(default=None, ge=0, description="legacy only, prefer total_paused_sec")
 
 
+class PomodoroResumeRequest(BaseModel):
+    total_paused_ms: int | None = Field(default=None, ge=0)
+    total_paused_sec: int | None = Field(default=None, ge=0)
+
+
 class PomodoroSessionResponse(BaseModel):
     id: int
     user_id: int
