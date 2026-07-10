@@ -12,7 +12,7 @@ page {
   min-height: 100vh;
   background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
   background-color: #EEF5FF;
-  padding-bottom: 48rpx;
+  padding-bottom: 32rpx;
   overflow-x: hidden;
 }
 
@@ -54,7 +54,7 @@ page {
 
 /* AI 分析卡片 */
 .ai-card {
-  margin: 18rpx 24rpx 0;
+  margin: 14rpx 24rpx 0;
   padding: 26rpx;
   background: #FFFFFF;
   border-radius: 24rpx;

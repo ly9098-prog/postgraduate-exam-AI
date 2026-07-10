@@ -7,23 +7,100 @@ const {
   cleanStemText,
 } = require('../../utils/stem-render')
 
+function canonicalForResultStem(text) {
+  return String(text || '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/[，。、；：！？,.!?;:]/g, ' ')
+    .trim()
+}
+
+function dedupeRepeatedResultStem(text) {
+  const raw = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+  if (!raw) return ''
+
+  // Handle completely duplicated paragraphs: A\nA
+  const lines = raw.split('\n').map(function(s) { return s.trim() }).filter(Boolean)
+  if (lines.length >= 2) {
+    const half = Math.floor(lines.length / 2)
+    const left = lines.slice(0, half).join('\n')
+    const right = lines.slice(half).join('\n')
+    if (half > 0 && canonicalForResultStem(left) === canonicalForResultStem(right)) {
+      return left
+    }
+  }
+
+  // Deduplicate adjacent repeated lines
+  const result = []
+  for (let i = 0; i < lines.length; i++) {
+    const cur = lines[i]
+    const prev = result[result.length - 1]
+    if (prev && canonicalForResultStem(prev) === canonicalForResultStem(cur)) {
+      continue
+    }
+    result.push(cur)
+  }
+
+  // Handle repeated full text: A + A
+  const joined = result.join('\n').trim()
+  const canon = canonicalForResultStem(joined)
+  const len = joined.length
+
+  for (let cut = Math.floor(len / 2) - 5; cut <= Math.floor(len / 2) + 5; cut++) {
+    if (cut <= 0 || cut >= len) continue
+    const left = joined.slice(0, cut).trim()
+    const right = joined.slice(cut).trim()
+    if (left && right && canonicalForResultStem(left) === canonicalForResultStem(right)) {
+      return left
+    }
+  }
+
+  return joined
+}
+
+function normalizeResultHtml(html) {
+  return String(html || '')
+    .replace(/white-space\s*:\s*nowrap;?/gi, 'white-space:normal;')
+    .replace(/overflow-x\s*:\s*auto;?/gi, 'overflow-x:hidden;')
+}
+
 function buildDetailRichText(value) {
-  const raw = String(value || '').trim()
+  const raw0 = String(value || '').trim()
+  const raw = dedupeRepeatedResultStem(raw0)
+
   if (!raw) {
-    return { raw: '', text: '', html: '', needsRich: false }
+    return { raw: '', renderType: 'empty', text: '', html: '' }
   }
+
   const plain = toPlainInlineMathText(raw)
-  const needsRich = !plain && needsRichRender(raw)
-  return {
-    raw,
-    text: plain || formatInlineMathText(raw),
-    html: needsRich ? textToHtml(raw) : '',
-    needsRich,
+
+  if (plain) {
+    return { raw, renderType: 'text', text: plain, html: '' }
   }
+
+  if (needsRichRender(raw)) {
+    return { raw, renderType: 'html', text: '', html: normalizeResultHtml(textToHtml(raw)) }
+  }
+
+  return { raw, renderType: 'text', text: formatInlineMathText(raw), html: '' }
 }
 
 Page({
   data: {
+    detailHtmlContainerStyle: 'max-width:100%;overflow-x:hidden;word-break:break-word;overflow-wrap:anywhere;white-space:normal;line-height:1.65;color:#18233A;',
+    detailHtmlTagStyle: {
+      p: 'color:#18233A;max-width:100%;white-space:normal;word-break:break-word;overflow-wrap:anywhere;line-height:1.65;margin:0;',
+      div: 'color:#18233A;max-width:100%;white-space:normal;word-break:break-word;overflow-wrap:anywhere;line-height:1.65;',
+      span: 'color:#18233A;max-width:100%;white-space:normal;word-break:break-word;overflow-wrap:anywhere;',
+      table: 'max-width:100%;width:100%;table-layout:fixed;word-break:break-word;',
+      td: 'word-break:break-word;overflow-wrap:anywhere;white-space:normal;',
+      th: 'word-break:break-word;overflow-wrap:anywhere;white-space:normal;',
+      pre: 'max-width:100%;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;',
+      code: 'white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;',
+      img: 'max-width:100%;height:auto;',
+    },
+
     /* 核心数据 */
     correct: 0,
     wrong: 0,
@@ -86,10 +163,11 @@ Page({
         questions.forEach(function(q) { if (q && q.id) questionById[String(q.id)] = q })
         results = stored.results.map(function(r) {
           const q = questionById[String(r.question_id)] || {}
-          const stemRaw = cleanStemText(
+          const stemSource = cleanStemText(
             (q.content && (q.content.stem || q.content.text || q.content.title || q.content.question)) ||
             q.stem || q.title || q.question || q.text || ''
           )
+          const stemRaw = dedupeRepeatedResultStem(stemSource)
           const isCorrect = r.is_correct === true
           const isSkipped = !isCorrect && (!r.user_answer || r.user_answer === '')
 

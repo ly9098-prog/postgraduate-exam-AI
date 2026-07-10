@@ -55,8 +55,39 @@
       <text class="section-chip">AI</text>
     </view>
 
+    <!-- 2. 骨架屏（优先于内容，re-generate 或首次加载时展示） -->
+    <view wx:if="{{aiSkeletonVisible || (aiLoading && !aiCards)}}" class="ai-loading-state">
+      <view class="ai-skeleton-section">
+        <view class="skeleton-title-row">
+          <view class="skeleton-index"></view>
+          <view class="skeleton-title"></view>
+        </view>
+        <view class="skeleton-line long"></view>
+        <view class="skeleton-line medium"></view>
+        <view class="skeleton-line short"></view>
+      </view>
+
+      <view class="ai-skeleton-section">
+        <view class="skeleton-title-row">
+          <view class="skeleton-index"></view>
+          <view class="skeleton-title"></view>
+        </view>
+        <view class="skeleton-line long"></view>
+        <view class="skeleton-line medium"></view>
+      </view>
+
+      <view class="ai-skeleton-section">
+        <view class="skeleton-title-row">
+          <view class="skeleton-index"></view>
+          <view class="skeleton-title"></view>
+        </view>
+        <view class="skeleton-line medium"></view>
+        <view class="skeleton-line short"></view>
+      </view>
+    </view>
+
     <!-- 1. 已有结果：优先展示（包括 re-generate 期间） -->
-    <view wx:if="{{aiCards && !aiFallback}}" class="ai-result-state {{aiRegenerating ? 'is-regenerating' : ''}}">
+    <view wx:elif="{{aiCards && !aiFallback}}" class="ai-result-state {{aiRegenerating ? 'is-regenerating' : ''}}">
       <!-- 重新生成中的提示条 -->
       <view wx:if="{{aiRegenerating}}" class="ai-regenerating-banner">
         <view class="loading-spinner mini"></view>
@@ -121,36 +152,7 @@
       </button>
     </view>
 
-    <!-- 2. 首次生成（无旧内容）骨架屏 -->
-    <view wx:elif="{{aiLoading && !aiCards}}" class="ai-loading-state">
-      <view class="ai-skeleton-section">
-        <view class="skeleton-title-row">
-          <view class="skeleton-index"></view>
-          <view class="skeleton-title"></view>
-        </view>
-        <view class="skeleton-line long"></view>
-        <view class="skeleton-line medium"></view>
-        <view class="skeleton-line short"></view>
-      </view>
 
-      <view class="ai-skeleton-section">
-        <view class="skeleton-title-row">
-          <view class="skeleton-index"></view>
-          <view class="skeleton-title"></view>
-        </view>
-        <view class="skeleton-line long"></view>
-        <view class="skeleton-line medium"></view>
-      </view>
-
-      <view class="ai-skeleton-section">
-        <view class="skeleton-title-row">
-          <view class="skeleton-index"></view>
-          <view class="skeleton-title"></view>
-        </view>
-        <view class="skeleton-line medium"></view>
-        <view class="skeleton-line short"></view>
-      </view>
-    </view>
 
     <!-- 3. 失败空态（仅无旧内容时） -->
     <view wx:elif="{{aiFallback && !aiCards}}" class="ai-fallback">
