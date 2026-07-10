@@ -109,6 +109,7 @@
               tag-style="{{detailHtmlTagStyle}}"
               scroll-table="{{false}}"
               lazy-load
+              set-title="{{false}}" copy-link="{{false}}"
             />
             <text wx:elif="{{item._stemRich.renderType === 'text'}}" class="detail-stem">{{item._stemRich.text}}</text>
           </view>
@@ -125,6 +126,7 @@
                   tag-style="{{detailHtmlTagStyle}}"
                   scroll-table="{{false}}"
                   lazy-load
+                  set-title="{{false}}" copy-link="{{false}}"
                 />
                 <text wx:elif="{{item._userAnswerRich.renderType === 'text'}}" class="detail-answer-value user">{{item._userAnswerText}}</text>
               </view>
@@ -140,6 +142,7 @@
                   tag-style="{{detailHtmlTagStyle}}"
                   scroll-table="{{false}}"
                   lazy-load
+                  set-title="{{false}}" copy-link="{{false}}"
                 />
                 <text wx:elif="{{item._correctAnswerRich.renderType === 'text'}}" class="detail-answer-value right">{{item._correctAnswerText}}</text>
               </view>
@@ -157,6 +160,7 @@
                   tag-style="{{detailHtmlTagStyle}}"
                   scroll-table="{{false}}"
                   lazy-load
+                  set-title="{{false}}" copy-link="{{false}}"
                 />
                 <text wx:elif="{{item._correctAnswerRich.renderType === 'text'}}" class="detail-answer-value right">{{item._correctAnswerText}}</text>
               </view>

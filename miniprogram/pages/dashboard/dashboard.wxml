@@ -544,6 +544,10 @@
         </view>
 
         <text class="llm-generated-at" wx:if="{{llmAnalysisGeneratedAt}}">生成时间: {{llmAnalysisGeneratedAt}}</text>
+        <view class="llm-result-footer">
+          <text class="llm-disclaimer">内容由 AI 生成，仅供学习参考，可能存在错误</text>
+          <text class="llm-feedback-btn" bindtap="onLlmFeedback">结果有误</text>
+        </view>
       </view>
     </view>
 

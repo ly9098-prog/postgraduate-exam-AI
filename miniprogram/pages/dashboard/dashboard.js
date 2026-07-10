@@ -568,6 +568,15 @@ Page({
     this.setData({ llmAnalysis: null, llmAnalysisError: null, llmAnalysisGeneratedAt: null })
   },
 
+  onLlmFeedback() {
+    wx.showActionSheet({
+      itemList: ['内容有误', '建议不准确', '其他问题'],
+      success: function (res) {
+        wx.showToast({ title: '感谢反馈，我们将持续优化', icon: 'none' })
+      },
+    })
+  },
+
   // ── Navigation ──
   goTo(url, opts) {
     var self = this
