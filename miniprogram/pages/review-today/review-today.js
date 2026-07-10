@@ -937,14 +937,11 @@ Page({
 
   _showGroupCelebration(correct, total) {
     const groupIndex = this.data.currentGroupIdx + 1
-    const groupTotal = this.data.groups.length || groupIndex
     this._showCelebration({
       celebrationType: 'group',
-      celebrationTitle: `第 ${groupIndex} 组复盘完成`,
+      celebrationTitle: `第 ${groupIndex} 组完成`,
       celebrationDetail: `答对 ${correct}/${total} 题`,
-      celebrationMotto: correct >= total ? '这组很稳，继续保持节奏' : '错题已暴露，复盘后会更牢固',
-      celebrationProgressText: `今日进度 ${groupIndex}/${groupTotal} 组`,
-      celebrationRewardText: correct >= total ? '获得专注星光 +1' : '获得复盘能量 +1',
+      celebrationMotto: correct >= total ? '这组很稳' : '复盘后会更牢固',
     }, 2400)
   },
 
@@ -954,41 +951,31 @@ Page({
     return this._showFinalCelebration()
   },
 
-  async _showFinalCelebration() {
-    const denom = this.data.totalCompleted || 0
-    const correct = this.data.totalCorrect
-    const accuracy = denom > 0 ? Math.round(correct / denom * 100) : 0
-    await this._loadGrowthForCelebration()
+  _showFinalCelebration() {
     this._showCelebration({
       celebrationType: 'final',
       celebrationTitle: '今日复习完成',
-      celebrationDetail: `完成 ${denom} 题 · 答对 ${correct} 题`,
-      celebrationMotto: '记忆曲线已更新，今天的积累会在明天生效',
-      celebrationProgressText: `今日正确率 ${accuracy}%`,
-      celebrationRewardText: '解锁今日复习徽章',
-    }, 3600)
-  },
-
-  async _loadGrowthForCelebration() {
-    try {
-      const growth = await api.get('/stats/growth')
-      if (!growth) return
-      const unlockedCount = (growth.badges || []).filter(b => b.unlocked).length
-      this.setData({
-        growthLevel: growth.level_title || 'Lv1 起步',
-        growthLevelPct: growth.level_progress_pct || 0,
-        growthDesc: unlockedCount > 0
-          ? `已点亮 ${unlockedCount} 个徽章 · ${growth.level_title || ''}`
-          : `当前 ${growth.level_title || 'Lv1 起步'} · 继续保持`,
-      })
-    } catch (_) {}
+      celebrationDetail: '已完成今日记忆任务',
+      celebrationMotto: '明天继续保持',
+    }, 3400)
   },
 
   _showCelebration(copy, duration) {
-    const displayDuration = duration || 2600
+    const displayDuration = duration || 3000
     this._clearCelebrationTimer()
     this.setData({
-      ...copy,
+      celebrationTitle: copy.celebrationTitle || '',
+      celebrationDetail: copy.celebrationDetail || '',
+      celebrationMotto: copy.celebrationMotto || '',
+      celebrationType: copy.celebrationType || 'final',
+
+      // 清空复杂内容，AnimatedView 只展示精简信息
+      celebrationProgressText: '',
+      celebrationRewardText: '',
+      growthLevel: '',
+      growthLevelPct: 0,
+      growthDesc: '',
+
       celebrationDuration: displayDuration,
       showCelebration: true,
     })
