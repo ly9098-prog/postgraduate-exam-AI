@@ -216,8 +216,11 @@ async function request(method, url, data = {}, options = {}) {
   // 主动续签：在发起请求前检查 token 是否需要刷新
   if (!_skipProactiveRefresh(url)) {
     const valid = await ensureValidToken()
-    // ensureValidToken 两次重试后仍然失败，token 已被清理 → 阻止本次请求
-    if (!valid && storage.get(KEYS.TOKEN)) {
+    // ensureValidToken 两次重试后仍然失败 → 阻止本次请求
+    // 注意：不检查 storage.get(KEYS.TOKEN)，因为 _refreshToken 失败时已调用
+    // _clearAuthAndRedirect 清除了本地 token。即使 token 一开始就不存在，
+    // 也应抛出错误避免发送无鉴权请求。
+    if (!valid) {
       throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401 })
     }
   }
