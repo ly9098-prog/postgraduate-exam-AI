@@ -774,14 +774,50 @@
    ══════════════════════════════════════════════ */
 
 .theme-blue .celeb-overlay-bg {
-  background: rgba(238, 245, 255, 0.72);
+  background:
+    radial-gradient(circle at 20% 16%, rgba(111, 193, 255, 0.28), transparent 34%),
+    radial-gradient(circle at 82% 12%, rgba(132, 161, 255, 0.20), transparent 32%),
+    linear-gradient(180deg, rgba(248, 250, 255, 0.92) 0%, rgba(238, 245, 255, 0.96) 100%);
+  backdrop-filter: blur(12rpx);
 }
 
 .theme-blue .celeb-glass-card {
-  background: linear-gradient(180deg, #FFFFFF 0%, #F4F8FF 100%);
-  border: 1rpx solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 24rpx 70rpx rgba(79, 127, 255, 0.16);
-  border-radius: 36rpx;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(111, 193, 255, 0.18), transparent 42%),
+    linear-gradient(180deg, #FFFFFF 0%, #F4F8FF 100%);
+  border: 1rpx solid rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 28rpx 80rpx rgba(79, 127, 255, 0.18),
+    0 8rpx 28rpx rgba(74, 101, 153, 0.10);
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-blue .celeb-glass-card::before {
+  content: '';
+  position: absolute;
+  width: 360rpx;
+  height: 360rpx;
+  left: 50%;
+  top: -180rpx;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(111, 193, 255, 0.24), transparent 68%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.theme-blue .celeb-glass-card::after {
+  content: '';
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  bottom: -90rpx;
+  height: 180rpx;
+  border-radius: 50% 50% 0 0;
+  background: linear-gradient(180deg, rgba(111, 193, 255, 0.10), rgba(79, 127, 255, 0.06));
+  pointer-events: none;
+  z-index: 1;
 }
 
 .theme-blue .glass-rim {
@@ -800,9 +836,124 @@
   background: radial-gradient(circle, rgba(79, 127, 255, 0.12), rgba(79, 127, 255, 0));
 }
 
+/* ── Blue decorative scene ── */
+
+.animated-blue-scene {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.blue-orbit {
+  position: absolute;
+  left: 50%;
+  top: 70rpx;
+  width: 280rpx;
+  height: 180rpx;
+  margin-left: -140rpx;
+  border-radius: 50%;
+  border: 2rpx dashed rgba(79, 127, 255, 0.20);
+  transform: rotate(-10deg);
+}
+
+.blue-orbit-small {
+  top: 94rpx;
+  width: 210rpx;
+  height: 130rpx;
+  margin-left: -105rpx;
+  border-color: rgba(95, 222, 171, 0.16);
+  transform: rotate(16deg);
+}
+
+.blue-spark {
+  position: absolute;
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #FFD66E;
+  box-shadow: 0 0 18rpx rgba(255, 214, 110, 0.55);
+  animation: blueFloat 2600ms ease-in-out infinite alternate;
+}
+
+.blue-spark.spark-a { left: 72rpx; top: 92rpx; }
+.blue-spark.spark-b {
+  right: 82rpx;
+  top: 138rpx;
+  background: #6EC1FF;
+  box-shadow: 0 0 18rpx rgba(110, 193, 255, 0.50);
+}
+.blue-spark.spark-c {
+  left: 112rpx;
+  bottom: 110rpx;
+  background: #5FDEAB;
+  box-shadow: 0 0 18rpx rgba(95, 222, 171, 0.50);
+}
+
+.blue-bubble {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(111, 193, 255, 0.16);
+  border: 1rpx solid rgba(255, 255, 255, 0.75);
+  animation: blueFloat 2600ms ease-in-out infinite alternate;
+}
+
+.blue-bubble.bubble-a {
+  width: 52rpx;
+  height: 52rpx;
+  left: 48rpx;
+  bottom: 150rpx;
+}
+
+.blue-bubble.bubble-b {
+  width: 34rpx;
+  height: 34rpx;
+  right: 58rpx;
+  bottom: 190rpx;
+  background: rgba(95, 222, 171, 0.14);
+  animation-delay: 300ms;
+}
+
+.blue-bubble.bubble-c {
+  width: 24rpx;
+  height: 24rpx;
+  right: 128rpx;
+  top: 84rpx;
+  background: rgba(255, 214, 110, 0.16);
+  animation-delay: 600ms;
+}
+
+@keyframes blueFloat {
+  from { transform: translateY(0) scale(1); opacity: 0.75; }
+  to { transform: translateY(-10rpx) scale(1.04); opacity: 1; }
+}
+
+/* ── Blue theme text and shared styles ── */
+
+.theme-blue .canvas-layer,
+.theme-blue .media-layer,
+.theme-blue .fallback-layer {
+  position: relative;
+  z-index: 3;
+}
+
+.theme-blue .celeb-text-cover,
+.theme-blue .celeb-text-overlay {
+  position: relative;
+  z-index: 3;
+}
+
 .theme-blue .celeb-title-cover { color: #18233A; }
 .theme-blue .celeb-detail-cover { color: #617089; }
-.theme-blue .celeb-motto-cover { color: #617089; }
+.theme-blue .celeb-motto-cover {
+  color: #4F7FFF;
+  background: rgba(79, 127, 255, 0.08);
+  border: 1rpx solid rgba(79, 127, 255, 0.12);
+  display: inline-block;
+  padding: 10rpx 24rpx;
+  border-radius: 999rpx;
+  margin-bottom: 16rpx;
+}
 .theme-blue .celeb-tap-cover { background: rgba(79, 127, 255, 0.08); color: #4F7FFF; }
 
 .theme-blue .celeb-progress-cover { color: #4F7FFF; }
@@ -819,7 +970,14 @@
 
 .theme-blue .celeb-title { color: #18233A; text-shadow: 0 2rpx 12rpx rgba(79, 127, 255, 0.08); }
 .theme-blue .celeb-detail { color: #617089; }
-.theme-blue .celeb-motto { color: #617089; }
+.theme-blue .celeb-motto {
+  color: #4F7FFF;
+  background: rgba(79, 127, 255, 0.08);
+  border: 1rpx solid rgba(79, 127, 255, 0.12);
+  padding: 10rpx 24rpx;
+  border-radius: 999rpx;
+  margin-bottom: 20rpx;
+}
 .theme-blue .celeb-tap-hint { background: rgba(79, 127, 255, 0.08); color: #4F7FFF; }
 
 .theme-blue .celeb-progress-text { color: #4F7FFF; }
@@ -837,6 +995,8 @@
 .theme-blue .fb-core {
   background: linear-gradient(135deg, #22C55E 0%, #7BD88F 100%);
   box-shadow: 0 22rpx 56rpx rgba(34, 197, 94, 0.34);
+  position: relative;
+  z-index: 3;
 }
 
 .theme-blue .fb-badge.group .fb-core {

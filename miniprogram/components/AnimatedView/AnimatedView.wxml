@@ -6,6 +6,17 @@
     <view class="glass-rim"></view>
     <view class="glass-shine"></view>
 
+    <view wx:if="{{theme === 'blue' && mode !== 'hidden'}}" class="animated-blue-scene">
+      <view class="blue-orbit"></view>
+      <view class="blue-orbit blue-orbit-small"></view>
+      <view class="blue-spark spark-a"></view>
+      <view class="blue-spark spark-b"></view>
+      <view class="blue-spark spark-c"></view>
+      <view class="blue-bubble bubble-a"></view>
+      <view class="blue-bubble bubble-b"></view>
+      <view class="blue-bubble bubble-c"></view>
+    </view>
+
     <view class="celeb-inner">
       <!-- Canvas / Media / Fallback layer (top section) -->
       <view class="canvas-layer" wx:if="{{mode === 'lottie' && canvasReady && !fallbackActive}}">
