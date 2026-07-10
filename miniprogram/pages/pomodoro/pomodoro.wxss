@@ -591,6 +591,16 @@ page {
   transition: opacity 0.3s ease;
 }
 
+.ring-wrapper-confirming .ring-glow {
+  opacity: 0;
+  animation: none;
+}
+
+.ring-wrapper-confirming .ring-canvas {
+  opacity: 0;
+  pointer-events: none;
+}
+
 
 .ring-center {
   position: absolute;
