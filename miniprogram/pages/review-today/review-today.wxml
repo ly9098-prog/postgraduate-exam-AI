@@ -15,101 +15,76 @@
   bind:done="dismissCelebration"
 />
 
-<!-- ==================== 入口页 ==================== -->
-<view class="page review-entry" wx:if="{{phase === 'entry'}}">
-  <view wx:if="{{entryLoading}}" class="loading-wrap">
+<!-- ==================== 加载 ==================== -->
+<view wx:if="{{phase === 'loading'}}" class="page review-entry">
+  <view class="loading-wrap">
     <loading-lottie text="正在读取今日复习任务..." size="large" />
-  </view>
-
-  <view wx:else class="entry-wrap">
-    <view class="review-hero animation-fade-in motion-card-enter">
-      <view class="hero-orbit hero-orbit-one"></view>
-      <view class="hero-orbit hero-orbit-two"></view>
-      <view class="hero-copy">
-        <text class="eyebrow">今日复习 · {{_dateStr}}</text>
-        <text class="hero-title">把遗忘曲线拉回掌控</text>
-        <text class="hero-desc">按组复习到期错题，完成后系统会更新你的复习计划</text>
-      </view>
-      <view class="ring-section" wx:if="{{stats}}">
-        <view class="ring-container">
-          <view class="ring-bg"></view>
-          <view class="ring-fg" style="{{_ringStyle}}"></view>
-          <view class="ring-center">
-            <text class="ring-num">{{stats.total_scheduled - stats.remaining_today}}</text>
-            <text class="ring-label">已完成</text>
-          </view>
-        </view>
-      </view>
-    </view>
-
-    <view class="mission-card animation-fade-in" wx:if="{{stats}}">
-      <view class="mission-head">
-        <view>
-          <text class="mission-kicker">今日待复习</text>
-          <text class="mission-title">{{stats.remaining_today}} 题</text>
-        </view>
-        <view class="mission-badge">{{entryDone ? '全部完成' : '记忆加固'}}</view>
-      </view>
-      <text class="motivation-text">{{_motivationMsg}}</text>
-      <view class="glass-card">
-        <view class="glass-item">
-          <text class="glass-num warning">{{stats.remaining_today}}</text>
-          <text class="glass-label">待攻克</text>
-        </view>
-        <view class="glass-divider"></view>
-        <view class="glass-item">
-          <text class="glass-num">{{stats.total_scheduled}}</text>
-          <text class="glass-label">总排期</text>
-        </view>
-        <view class="glass-divider"></view>
-        <view class="glass-item">
-          <text class="glass-num success">{{_accuracyLast7dText}}</text>
-          <text class="glass-label">近7天正确率</text>
-        </view>
-      </view>
-    </view>
-
-    <view class="group-size-section animation-fade-in" wx:if="{{stats && stats.remaining_today > 0}}">
-      <view class="section-head">
-        <view>
-          <text class="section-title">选择复习节奏</text>
-          <text class="section-subtitle">短组适合碎片时间，大组适合沉浸攻克</text>
-        </view>
-        <text class="section-chip">{{groupSize}}题/组</text>
-      </view>
-      <view class="size-options">
-        <view
-          wx:for="{{groupSizeOptions}}" wx:key="*this"
-          class="size-chip {{groupSize === item ? 'active' : ''}}"
-          hover-class="tap-scale"
-          catchtap="selectGroupSize"
-          data-size="{{item}}"
-        >{{item}}题</view>
-      </view>
-      <text class="size-hint" wx:if="{{stats.remaining_today > groupSize}}">
-        预计分为 {{_reviewGroupCountText}} 组完成
-      </text>
-    </view>
-
-    <button class="gradient-btn" wx:if="{{stats && stats.remaining_today > 0}}" bindtap="startReview">
-      开始今日复习
-    </button>
-    <view wx:elif="{{stats && stats.remaining_today === 0 && stats.total_scheduled > 0}}" class="done-wrap animation-fade-in">
-      <view class="done-check"><text class="line-icon icon-check done-check-icon"></text></view>
-      <text class="done-title">今日复习已完成</text>
-      <text class="done-desc">记忆曲线已更新，明天继续保持</text>
-    </view>
-    <view wx:elif="{{stats && stats.total_scheduled === 0}}" class="done-wrap animation-fade-in">
-      <view class="done-check mute">记</view>
-      <text class="done-title">暂无复习安排</text>
-      <text class="done-desc">刷题后系统会自动安排复习</text>
-    </view>
   </view>
 </view>
 
+<!-- ==================== 概览页 ==================== -->
+<view wx:elif="{{phase === 'overview'}}" class="page review-overview page-blue-white">
+  <view class="today-review-card">
+    <view class="today-review-main">
+      <text class="today-review-label">今日待复习</text>
+      <view class="today-review-count-row">
+        <text class="today-review-count">{{todayRemainingCount}}</text>
+        <text class="today-review-unit">道</text>
+      </view>
+      <text class="today-review-sub">
+        共 {{todayDueCount}} 道，已完成 {{todayCompletedCount}} 道
+      </text>
+    </view>
+
+    <view class="today-progress-box" wx:if="{{todayDueCount > 0}}">
+      <view class="today-progress-track">
+        <view class="today-progress-fill" style="width: {{todayProgressPercent}}%;"></view>
+      </view>
+      <text class="today-progress-text">{{todayProgressPercent}}%</text>
+    </view>
+  </view>
+
+  <view class="review-stat-grid">
+    <view class="review-stat-item">
+      <text class="review-stat-value">{{todayOverdueCount}}</text>
+      <text class="review-stat-label">逾期复习</text>
+    </view>
+    <view class="review-stat-item">
+      <text class="review-stat-value">{{estimatedMinutes}}</text>
+      <text class="review-stat-label">预计分钟</text>
+    </view>
+    <view class="review-stat-item">
+      <text class="review-stat-value">{{reviewBatchSize}}</text>
+      <text class="review-stat-label">每组题数</text>
+    </view>
+  </view>
+
+  <view class="review-plan-card">
+    <text class="review-plan-title">今日复习安排</text>
+    <text class="review-plan-desc">
+      系统已根据记忆曲线为你安排今日复习内容，完成后会自动更新下次复习时间。
+    </text>
+  </view>
+
+  <button
+    class="primary-review-btn"
+    loading="{{isStarting || isContinuing}}"
+    disabled="{{todayRemainingCount <= 0 || isStarting || isContinuing}}"
+    bindtap="startTodayReview"
+  >
+    {{todayCompletedCount > 0 ? '继续复习' : '开始复习'}}
+  </button>
+</view>
+
 <!-- ==================== 练习页 ==================== -->
-<view class="page review-practice" wx:if="{{phase === 'practice'}}">
-  <view wx:if="{{practiceLoading}}" class="loading-wrap">
+<view wx:elif="{{phase === 'reviewing'}}" class="page review-practice">
+  <!-- 今日进度条 -->
+  <view class="reviewing-progress-strip">
+    <text class="rps-group">第 {{currentBatchNo}} / {{totalBatchCount}} 组</text>
+    <text class="rps-progress">今日已完成 {{todayCompletedCount}} / {{todayDueCount}}</text>
+  </view>
+
+  <view wx:if="{{batchLoading}}" class="loading-wrap">
     <loading-lottie text="正在准备复习题目..." size="large" />
   </view>
 
@@ -140,10 +115,9 @@
   />
 </view>
 
-<!-- ==================== 组结果页（数据优先） ==================== -->
-<view class="result-page" wx:if="{{phase === 'group-result'}}">
+<!-- ==================== 组结果页 ==================== -->
+<view wx:elif="{{phase === 'group-result'}}" class="result-page">
   <view class="grp anim-grp-1">
-    <!-- 1. 紧凑摘要卡 -->
     <view class="grp-summary-card">
       <view class="grp-summary-top">
         <text class="grp-group-tag">第 {{currentGroupIdx + 1}} / {{groups.length}} 组</text>
@@ -172,13 +146,11 @@
       </view>
     </view>
 
-    <!-- 2. 复习调度反馈 -->
     <view class="grp-schedule-card" wx:if="{{groupResults.length > 0}}">
       <text class="grp-schedule-title">复习调度</text>
       <text class="grp-schedule-desc">已更新记忆曲线 · 本组错题将进入后续复习安排</text>
     </view>
 
-    <!-- 3. 答题详情 -->
     <view class="grp-detail-section">
       <text class="grp-detail-title">答题详情</text>
       <view
@@ -217,17 +189,16 @@
     </view>
 
     <button class="gradient-btn" bindtap="nextGroup" disabled="{{resultTransitioning}}" loading="{{resultTransitioning}}">
-      {{currentGroupIdx + 1 >= groups.length ? '查看总体结果' : '进入下一组'}}
+      {{todayRemainingCount > 0 ? '继续下一组' : '查看今日结果'}}
     </button>
 
     <view class="grp-bottom-safe"></view>
   </view>
 </view>
 
-<!-- ==================== 最终结果页（蓝白数据化） ==================== -->
-<view class="fr-page" wx:if="{{phase === 'final-result' && reviewResultVm}}">
+<!-- ==================== 最终结果页 ==================== -->
+<view wx:elif="{{phase === 'final-result' && reviewResultVm}}" class="fr-page">
   <view class="fr-wrap anim-fr">
-    <!-- 1. 总览摘要卡 -->
     <view class="fr-card fr-summary {{reviewResultVm.resultLevelClass}}">
       <view class="fr-summary-row">
         <view class="fr-accuracy-block">
@@ -270,7 +241,6 @@
       </view>
     </view>
 
-    <!-- 2. 完成度 + 正确率条 -->
     <view class="fr-card fr-progress-card">
       <view class="fr-progress-row">
         <text class="fr-progress-title">完成度</text>
@@ -290,14 +260,12 @@
       </view>
     </view>
 
-    <!-- 3. 薄弱点卡（仅错题 > 0 时展示） -->
     <view class="fr-card fr-weak-card" wx:if="{{reviewResultVm.hasWrong}}">
       <view class="fr-weak-head">
         <text class="fr-weak-title">薄弱点</text>
         <text class="fr-weak-count">{{reviewResultVm.wrong}} 题错</text>
       </view>
       <text class="fr-weak-desc">错题占比 {{reviewResultVm.wrongRate}}%，建议立即复盘巩固</text>
-      <!-- Subject stats -->
       <view wx:if="{{reviewResultVm.subjectStats && reviewResultVm.subjectStats.length > 0}}" class="fr-weak-subjects">
         <text class="fr-weak-subject-item" wx:for="{{reviewResultVm.subjectStats}}" wx:for-item="stat" wx:key="subject">
           {{stat.stats.reviewed > 0 && stat.stats.wrong / stat.stats.reviewed * 100 > 50 ? '⚠ ' : ''}}{{stat.subject}} · 错{{stat.stats.wrong}}/{{stat.stats.reviewed}}
@@ -305,7 +273,6 @@
       </view>
     </view>
 
-    <!-- 4. 下一步建议 -->
     <view class="fr-card fr-advice {{reviewResultVm.nextStepType}}">
       <view class="fr-advice-head">
         <text class="fr-advice-title">{{reviewResultVm.nextStepTitle}}</text>
@@ -317,13 +284,34 @@
     <view class="fr-bottom-safe"></view>
   </view>
 
-  <!-- 底部固定按钮 -->
   <view class="fr-bottom-actions">
-    <button class="fr-action-primary" wx:if="{{reviewResultVm.total === 0}}" bindtap="startReview">开始复习</button>
+    <button class="fr-action-primary" wx:if="{{reviewResultVm.total === 0}}" bindtap="startTodayReview">开始复习</button>
     <button class="fr-action-primary" wx:elif="{{reviewResultVm.hasWrong}}" bindtap="goWrongBook">复盘错题</button>
-    <button class="fr-action-primary" wx:else bindtap="goHome">完成</button>
+    <button class="fr-action-primary" wx:else bindtap="finishReview">完成</button>
     <button class="fr-action-secondary" wx:if="{{reviewResultVm.total === 0}}" bindtap="goHome">返回首页</button>
     <button class="fr-action-secondary" wx:else bindtap="goPractice">继续练习</button>
+  </view>
+</view>
+
+<!-- ==================== 今日无任务 ==================== -->
+<view wx:elif="{{phase === 'empty'}}" class="page review-empty">
+  <view class="empty-wrap">
+    <text class="empty-title">今天没有待复习题</text>
+    <text class="empty-desc">记忆曲线暂时没有安排新的复习任务，可以去练习新题或查看错题本。</text>
+    <view class="empty-actions">
+      <button class="empty-btn primary" bindtap="goPractice">去练习</button>
+      <button class="empty-btn secondary" bindtap="goWrongBook">查看错题本</button>
+    </view>
+  </view>
+</view>
+
+<!-- ==================== 加载失败 ==================== -->
+<view wx:elif="{{phase === 'error'}}" class="page review-error">
+  <view class="error-wrap">
+    <text class="error-icon">⚠</text>
+    <text class="error-title">加载失败</text>
+    <text class="error-desc">{{errorText}}</text>
+    <button class="error-retry" bindtap="retryLoad">重新加载</button>
   </view>
 </view>
 

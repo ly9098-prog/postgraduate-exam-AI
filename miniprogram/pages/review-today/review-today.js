@@ -11,8 +11,7 @@ const {
 } = require('../../utils/answer')
 const adapter = require('../../utils/question-runner-adapter')
 
-const GROUP_SIZES = [5, 10, 20]
-var KF = 'schedule_id' // key field for review-today
+var KF = 'schedule_id'
 
 function _mergeResultsByScheduleId(oldResults, newResults) {
   var order = []
@@ -39,56 +38,70 @@ function _mergeResultsByScheduleId(oldResults, newResults) {
 
 Page({
   data: {
-    // 页面阶段: entry / practice / group-result / final-result
-    phase: 'entry',
+    /* ====== Phase ====== */
+    // loading | overview | reviewing | group-result | final-result | empty | error
+    phase: 'loading',
 
-    // 入口
-    stats: null,
-    entryLoading: true,
-    groupSize: 10,
-    groupSizeOptions: GROUP_SIZES,
+    /* ====== 入口概览 ====== */
+    reviewOverview: null,
+    todayDueCount: 0,
+    todayCompletedCount: 0,
+    todayRemainingCount: 0,
+    todayOverdueCount: 0,
+    todayNewDueCount: 0,
+    estimatedMinutes: 0,
+    reviewBatchSize: 10,
+    currentBatchNo: 0,
+    totalBatchCount: 0,
+    remainingBatchCount: 0,
+    sessionId: '',
+    currentGroupId: '',
+    allTodayQuestionIds: [],
+    completedQuestionIds: [],
+    remainingQuestionIds: [],
+    todayProgressPercent: 0,
+    isStarting: false,
+    isContinuing: false,
+    overviewLoading: false,
+    batchLoading: false,
+    errorText: '',
 
-    // 练习
+    /* ====== 练习 ====== */
     allQuestions: [],
     groups: [],
     currentGroupIdx: 0,
     groupQuestions: [],
-    answers: {},         // {schedule_id: selectedOption}
+    answers: {},
     currentIndex: 0,
     currentQuestion: null,
-    // 已掌握确认
     masterConfirmId: null,
 
     runnerProgressPercent: 0,
     runnerSubtitle: '',
     runnerSubjectName: '',
 
-    // 提交中
     submittingGroup: false,
     resultTransitioning: false,
 
-    // 组结果
+    /* ====== 组结果 ====== */
     groupResults: [],
     groupCorrect: 0,
     groupWrong: 0,
+    _groupSkipped: 0,
 
-    // 最终
+    /* ====== 最终结果 ====== */
     allGroupResults: [],
     totalCorrect: 0,
     totalWrong: 0,
     totalCompleted: 0,
 
-    // UI 增强
+    /* ====== UI 增强 ====== */
     _dateStr: '',
-    _motivationMsg: '',
-    _ringStyle: '',
-    _accuracyStyle: '',
-    entryDone: false,
-    _accuracyText: '0%',
-    _reviewGroupCountText: '0',
+    reviewResultVm: null,
+    _masteredCount: 0,
     _groupProgressStyle: '',
 
-    // 进度
+    /* ====== 庆祝 ====== */
     showCelebration: false,
     celebrationTitle: '',
     celebrationDetail: '',
@@ -101,18 +114,25 @@ Page({
     growthLevelPct: 0,
     growthDesc: '',
 
-    reviewResultVm: null,
-    _masteredCount: 0,
-
     safeModeActive: false,
     renderTraces: [],
   },
+
+  /* ==================== 生命周期 ==================== */
 
   onLoad() {
     this._finalCelebrationShown = false
     setRenderGuardPage('review-today')
     this._setDateStr()
-    this._loadEntry()
+    this.loadTodayReviewOverview()
+  },
+
+  onShow() {
+    // 仅 overview / empty / final-result 阶段刷新，reviewing/group-result 不打断答题
+    const phase = this.data.phase
+    if (phase === 'overview' || phase === 'empty' || phase === 'final-result') {
+      this.loadTodayReviewOverview()
+    }
   },
 
   onHide() {
@@ -133,96 +153,114 @@ Page({
     })
   },
 
-  _calcRingStyle(stats) {
-    if (!stats || stats.total_scheduled === 0) return ''
-    const done = stats.total_scheduled - stats.remaining_today
-    const pct = Math.round(done / stats.total_scheduled * 360)
-    if (pct <= 0) return ''
-    const mid = Math.round(pct * 0.4)
-    return `background: conic-gradient(#4F7FFF 0deg, #6EC1FF ${mid}deg, #8BB8FF ${pct}deg, rgba(226, 234, 247, 0.4) 0deg)`
-  },
+  /* ==================== 今日复习概览 ==================== */
 
-  _calcAccuracyStyle(correctCount, totalQuestions) {
-    const pct = totalQuestions > 0 ? Math.round(correctCount / totalQuestions * 360) : 0
-    if (pct <= 0) return ''
-    const mid = Math.round(pct * 0.5)
-    return `background: conic-gradient(#22C55E 0deg, #4ADE80 ${mid}deg, #86EFAC ${pct}deg, #E2EAF7 0deg)`
-  },
-
-  _calcMotivationMsg(stats) {
-    if (!stats) return ''
-    if (stats.total_scheduled === 0) return '刷题后系统会自动安排复习'
-    if (stats.remaining_today === 0) return '太棒了！今日复习全部完成'
-    const done = stats.total_scheduled - stats.remaining_today
-    const pct = Math.round(done / stats.total_scheduled * 100)
-    if (pct === 0) return '开始今天的复习吧，每一步都算数'
-    if (pct < 30) return '好的开始是成功的一半，继续加油'
-    if (pct < 60) return '保持节奏，稳步前进'
-    if (pct < 90) return '快完成啦，再坚持一下'
-    return '就差一点点了！'
-  },
-
-  /* ==================== 入口 ==================== */
-
-  async _loadEntry() {
-    this.setData({ entryLoading: true })
+  async loadTodayReviewOverview() {
+    this.setData({ phase: 'loading', overviewLoading: true, isStarting: false, isContinuing: false })
     try {
-      const stats = await api.get('/review/schedule-stats')
-      const _motivationMsg = this._calcMotivationMsg(stats)
-      const entryDone = stats && stats.total_scheduled > 0 && stats.remaining_today === 0
+      const overview = await api.get('/review/today/overview')
+      const vm = this.buildReviewOverviewVM(overview)
+
+      let targetPhase = 'overview'
+      if (vm.todayRemainingCount <= 0) {
+        targetPhase = vm.todayDueCount > 0 ? 'final-result' : 'empty'
+      }
+
       this.setData({
-        stats,
-        entryLoading: false,
-        _ringStyle: this._calcRingStyle(stats),
-        _motivationMsg,
-        entryDone,
-        _accuracyLast7dText: `${Math.round((stats.accuracy_last_7d || 0) * 100)}%`,
-        _reviewGroupCountText: stats.remaining_today > 0 ? Math.ceil(stats.remaining_today / this.data.groupSize) : 0,
+        ...vm,
+        reviewOverview: overview,
+        phase: targetPhase,
+        overviewLoading: false,
       })
+
+      // 如果已完成，拉取 today/result
+      if (targetPhase === 'final-result') {
+        this._loadTodayResult()
+      }
     } catch (e) {
-      console.error('加载复习统计失败', e)
-      this.setData({ entryLoading: false })
+      console.error('加载复习概览失败', e)
+      this.setData({
+        phase: 'error',
+        overviewLoading: false,
+        errorText: '复习计划加载失败，请稍后重试',
+      })
     }
   },
 
-  selectGroupSize(e) {
-    const groupSize = parseInt(e.currentTarget.dataset.size) || 10
-    const stats = this.data.stats
-    this.setData({
-      groupSize,
-      _reviewGroupCountText: stats && stats.remaining_today > 0 ? Math.ceil(stats.remaining_today / groupSize) : 0,
-    })
+  buildReviewOverviewVM(overview) {
+    const due = Number(overview.today_due_count || 0)
+    const completed = Number(overview.today_completed_count || 0)
+    const remaining = Number(overview.today_remaining_count || 0)
+    const progress = due > 0 ? Math.round((completed / due) * 100) : 0
+
+    return {
+      todayDueCount: due,
+      todayCompletedCount: completed,
+      todayRemainingCount: remaining,
+      todayOverdueCount: Number(overview.today_overdue_count || 0),
+      todayNewDueCount: Number(overview.today_new_due_count || 0),
+      estimatedMinutes: Number(overview.estimated_minutes || Math.ceil(remaining * 0.5)),
+      reviewBatchSize: Number(overview.batch_size || 10),
+      currentBatchNo: Number(overview.current_batch_no || 0),
+      totalBatchCount: Number(overview.total_batch_count || 0),
+      remainingBatchCount: Number(overview.remaining_batch_count || 0),
+      allTodayQuestionIds: overview.all_question_ids || [],
+      completedQuestionIds: overview.completed_question_ids || [],
+      remainingQuestionIds: overview.remaining_question_ids || [],
+      todayProgressPercent: Math.min(100, Math.max(0, progress)),
+    }
   },
 
-  async startReview() {
+  /* ==================== 开始复习 ==================== */
+
+  async startTodayReview() {
+    if (this.data.todayRemainingCount <= 0) return
+    if (this.data.isStarting || this.data.isContinuing) return
+
     this._clearCelebrationTimer()
     this._finalCelebrationShown = false
-    this.setData({ practiceLoading: true, phase: 'practice', showCelebration: false })
+    this.setData({
+      isStarting: true,
+      batchLoading: true,
+      phase: 'reviewing',
+      showCelebration: false,
+    })
     try {
-      const res = await api.get('/review/today', { limit: 100 })
-      const allQuestions = (res.questions || []).map(q => this._enrichQuestion(q))
-      if (allQuestions.length === 0) {
+      const batch = await api.post('/review/today/next-batch', {
+        batch_size: this.data.reviewBatchSize,
+      })
+      const rawQuestions = batch.questions || []
+      if (!rawQuestions.length) {
         wx.showToast({ title: '今日没有待复习题目', icon: 'none' })
-        this.setData({ practiceLoading: false, phase: 'entry' })
-        this._loadEntry()
+        this.loadTodayReviewOverview()
         return
       }
 
-      const groups = this._splitGroups(allQuestions, this.data.groupSize)
+      const allQuestions = rawQuestions.map(q => this._enrichQuestion(q))
+      const groups = this._splitGroups(allQuestions, allQuestions.length)
+
       this.setData({
+        phase: 'reviewing',
         allQuestions,
         groups,
         currentGroupIdx: 0,
-        groupQuestions: groups[0] || [],
+        groupQuestions: allQuestions,
         answers: {},
         currentIndex: 0,
         currentQuestion: null,
-        optionKeys: [],
-        _answeredCount: 0,
+
+        sessionId: batch.session_id || '',
+        currentGroupId: batch.group_id || '',
+        currentBatchNo: batch.batch_no || 1,
+        totalBatchCount: batch.total_batch_count || this.data.totalBatchCount,
+        todayDueCount: batch.today_due_count || this.data.todayDueCount,
+        todayCompletedCount: batch.today_completed_count || this.data.todayCompletedCount,
+        todayRemainingCount: batch.today_remaining_count || 0,
 
         groupResults: [],
         groupCorrect: 0,
         groupWrong: 0,
+        _groupSkipped: 0,
 
         allGroupResults: [],
         totalCorrect: 0,
@@ -235,15 +273,22 @@ Page({
 
         safeModeActive: false,
         renderTraces: [],
-        practiceLoading: false,
+        batchLoading: false,
+        isStarting: false,
+        isContinuing: false,
       })
       this._showQuestion(0)
       this._syncAnsweredFlags()
     } catch (e) {
       console.error('加载复习题目失败', e)
-      this.setData({ practiceLoading: false, phase: 'entry' })
-      this._loadEntry()
-      wx.showToast({ title: '加载失败', icon: 'none' })
+      this.setData({
+        isStarting: false,
+        isContinuing: false,
+        batchLoading: false,
+        phase: 'overview',
+      })
+      this.loadTodayReviewOverview()
+      wx.showToast({ title: '获取复习题失败，请重试', icon: 'none' })
     }
   },
 
@@ -253,6 +298,129 @@ Page({
       groups.push(questions.slice(i, i + size))
     }
     return groups
+  },
+
+  /* ==================== 今日最终结果 ==================== */
+
+  async _loadTodayResult() {
+    try {
+      const result = await api.get('/review/today/result')
+      const vm = this.buildTodayReviewResultVM(result)
+      this.setData({ phase: 'final-result', reviewResultVm: vm })
+      this._showFinalCelebrationOnce()
+    } catch (e) {
+      console.error('加载今日复习结果失败', e)
+      // 兜底：使用本地累积结果
+      const vm = this._buildReviewResultViewModel()
+      this.setData({ phase: 'final-result', reviewResultVm: vm })
+    }
+  },
+
+  buildTodayReviewResultVM(result) {
+    const dueCount = Number(result.today_due_count || 0)
+    const completedCount = Number(result.today_completed_count || 0)
+    const correct = Number(result.correct_count || 0)
+    const wrong = Number(result.wrong_count || 0)
+    const skipped = Number(result.skipped_count || 0)
+    const masteredCount = Number(result.mastered_count || 0)
+    const accuracy = result.accuracy || 0
+    const accuracyPct = Math.round(accuracy * 100)
+    const completionRate = result.completion_rate || 0
+    const completionPct = Math.round(completionRate * 100)
+    const hasWrong = wrong > 0
+    const hasSkipped = skipped > 0
+    const isPerfect = wrong === 0 && completedCount > 0
+
+    // Level classification (same as before)
+    var resultLevelClass, resultTitle, resultDesc, statusText, statusDesc
+    var nextStepType, nextStepTitle, nextStepDesc, nextStepTag
+
+    if (completedCount === 0) {
+      resultLevelClass = 'empty'
+      resultTitle = '暂无复习结果'
+      resultDesc = '今天还没有完成可统计的复习题'
+      statusText = '未开始'
+      statusDesc = '完成一组复习后，这里会生成结果'
+      nextStepType = 'start'
+      nextStepTitle = '先开始一组复习'
+      nextStepDesc = '完成今日复习后，系统会帮你整理正确率和错题情况'
+      nextStepTag = '未开始'
+    } else if (isPerfect) {
+      resultLevelClass = 'excellent'
+      resultTitle = '今日复习完成'
+      resultDesc = '整体掌握很好，可以保持当前节奏'
+      statusText = '状态很好'
+      statusDesc = '今天没有明显薄弱点'
+      nextStepType = 'continue'
+      nextStepTitle = '可以结束今日复习'
+      nextStepDesc = '如果还有精力，也可以继续练习新题巩固手感'
+      nextStepTag = '完成'
+    } else if (accuracyPct >= 80) {
+      resultLevelClass = 'good'
+      resultTitle = '今日复习完成'
+      resultDesc = '整体表现不错，但仍有少量错题'
+      statusText = '少量错题'
+      statusDesc = '建议趁热复盘'
+      nextStepType = 'review'
+      nextStepTitle = '建议先复盘错题'
+      nextStepDesc = '先处理今天的错题，再继续下一组练习'
+      nextStepTag = '推荐'
+    } else if (accuracyPct >= 60) {
+      resultLevelClass = 'normal'
+      resultTitle = '今日复习完成'
+      resultDesc = '本次复习暴露了一些薄弱点'
+      statusText = '需要复盘'
+      statusDesc = '错题有较高复盘价值'
+      nextStepType = 'review'
+      nextStepTitle = '优先处理薄弱点'
+      nextStepDesc = '建议立即查看错题，找出今天容易失误的知识点'
+      nextStepTag = '复盘优先'
+    } else {
+      resultLevelClass = 'weak'
+      resultTitle = '今日复习完成'
+      resultDesc = '今天错题较多，不建议直接继续刷题'
+      statusText = '错题较多'
+      statusDesc = '先复盘比继续刷题更重要'
+      nextStepType = 'review'
+      nextStepTitle = '建议立即复盘'
+      nextStepDesc = '先把错误原因搞清楚，再继续练习，复习效果会更好'
+      nextStepTag = '重点'
+    }
+
+    // Subject stats
+    const subjectStats = (result.subject_stats || []).map(function(s) {
+      return { subject: this.subjectLabel(s.subject || ''), stats: s }
+    }, this)
+
+    return {
+      sessionTotal: completedCount,
+      submittedTotal: completedCount,
+      total: completedCount,
+      correct: correct,
+      wrong: wrong,
+      skipped: skipped,
+      answered: completedCount,
+      accuracy: accuracyPct,
+      completionRate: completionPct,
+      wrongRate: completedCount > 0 ? Math.round(wrong / completedCount * 100) : 0,
+      groupCount: this.data.totalBatchCount || 1,
+      completedGroupCount: this.data.currentBatchNo || 0,
+      masteredCount: masteredCount,
+      subjectStats: subjectStats,
+      resultLevelClass: resultLevelClass,
+      resultTitle: resultTitle,
+      resultDesc: resultDesc,
+      statusText: statusText,
+      statusDesc: statusDesc,
+      nextStepType: nextStepType,
+      nextStepTitle: nextStepTitle,
+      nextStepDesc: nextStepDesc,
+      nextStepTag: nextStepTag,
+      hasWrong: hasWrong,
+      hasSkipped: hasSkipped,
+      isPerfect: isPerfect,
+      _frCompletionBarStyle: completionPct + '%',
+    }
   },
 
   /* ==================== 题目渲染 ==================== */
@@ -270,7 +438,6 @@ Page({
       optionKeys = ['A', 'B']
     }
 
-    // Blank option groups for multi_blank_choice
     const hasBlankGroups = adapter.isMultiBlankChoice(q) && adapter.getBlankOptionGroups(q).length > 0
     const blankOptionGroups = hasBlankGroups ? adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), '') : []
 
@@ -323,7 +490,6 @@ Page({
         this._enterSafeMode()
       }
     }
-    // MIXED mode validation
     if (renderModel.mode === 'MIXED') {
       if (!renderModel.blocks || renderModel.blocks.length === 0) {
         console.error('[MIXED_RENDER_VIOLATION] review-today MIXED mode but blocks is empty')
@@ -355,7 +521,6 @@ Page({
       const idx = this.data.currentIndex
       const q = this.data.groupQuestions[idx]
       if (q) {
-        // Re-enrich current question with safe mode
         const enriched = this._enrichQuestion(q)
         const groupQuestions = [...this.data.groupQuestions]
         groupQuestions[idx] = enriched
@@ -394,7 +559,7 @@ Page({
     var answered = this.data._answeredCount || 0
     this.setData({
       runnerProgressPercent: Math.round(answered / total * 100),
-      runnerSubtitle: '第 ' + (this.data.currentGroupIdx + 1) + ' / ' + (this.data.groups.length) + ' 组',
+      runnerSubtitle: '第 ' + (this.data.currentBatchNo || this.data.currentGroupIdx + 1) + ' / ' + (this.data.totalBatchCount || 1) + ' 组',
       runnerSubjectName: this.data.currentQuestion
         ? (this.data.currentQuestion.subject_name || this.data.currentQuestion._subjectLabel || '')
         : '',
@@ -411,7 +576,6 @@ Page({
     const answers = { ...this.data.answers }
 
     if (isMultipleChoiceType(q.question_type)) {
-      // Multiple choice: toggle in sorted set
       const prev = answers[q.schedule_id] || ''
       const sel = normalizeChoiceAnswer(prev)
       const idx = sel.indexOf(opt)
@@ -422,7 +586,6 @@ Page({
       if (newAnswer) answers[q.schedule_id] = newAnswer
       else delete answers[q.schedule_id]
     } else {
-      // Single choice / true_false: toggle
       if (answers[q.schedule_id] === opt) {
         delete answers[q.schedule_id]
       } else {
@@ -458,7 +621,6 @@ Page({
     if (newAnswer) answers[q.schedule_id] = newAnswer
     else delete answers[q.schedule_id]
 
-    // Re-enrich blank groups with updated selection
     const enrichedGroups = adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), newAnswer)
     const currentQuestion = Object.assign({}, q, {
       _blankOptionGroups: enrichedGroups,
@@ -506,74 +668,52 @@ Page({
     try {
       await api.post(`/review/${scheduleId}/master`)
 
-      // Remove from current group and allQuestions
-      const allQuestions = this.data.allQuestions.filter(q => q.schedule_id !== scheduleId)
-      const groups = this._splitGroups(allQuestions, this.data.groupSize)
+      // 刷新 overview（fire-and-forget）
+      this.loadTodayReviewOverview()
 
-      // If current group is now empty or we're past it, adjust
+      // 从当前组移除
+      const allQuestions = this.data.allQuestions.filter(q => q.schedule_id !== scheduleId)
+      const groups = this._splitGroups(allQuestions, allQuestions.length)
+
       let { currentGroupIdx, currentIndex, answers } = this.data
       const groupQuestions = groups[currentGroupIdx] || []
 
-      // Clean answer entry
       delete answers[scheduleId]
       answers = { ...answers }
-
-      // Track mastered count
       this.data._masteredCount = (this.data._masteredCount || 0) + 1
 
-      if (groupQuestions.length === 0 && groups.length > 0) {
-        // All questions in current group mastered, move to next group
-        currentGroupIdx = Math.min(currentGroupIdx, groups.length - 1)
-        const newGroupQuestions = groups[currentGroupIdx] || []
-        this.setData({
-          allQuestions,
-          groups,
-          currentGroupIdx,
-          groupQuestions: newGroupQuestions,
-          answers,
-          currentIndex: 0,
-          _answeredCount: adapter.computeAnsweredCount(newGroupQuestions, answers, KF),
-        })
-        this._syncAnsweredFlags()
-        if (groups[currentGroupIdx] && groups[currentGroupIdx].length > 0) {
-          this._showQuestion(0)
-        } else {
-          // No groups left → all mastered
-          const reviewResultVm = this._buildReviewResultViewModel()
+      if (groupQuestions.length === 0) {
+        // 当前组被清空 → 尝试取下一组
+        if (groups.length > 0) {
+          currentGroupIdx = Math.min(currentGroupIdx, groups.length - 1)
+          const nextQuestions = groups[currentGroupIdx] || []
           this.setData({
-            phase: 'final-result',
-            reviewResultVm,
+            allQuestions, groups,
+            currentGroupIdx, groupQuestions: nextQuestions,
+            answers, currentIndex: 0,
           })
-          this._showFinalCelebrationOnce()
+          this._syncAnsweredFlags()
+          if (nextQuestions.length > 0) {
+            this._showQuestion(0)
+            return
+          }
         }
-      } else {
-        // Adjust current index if needed
-        if (currentIndex >= groupQuestions.length) {
-          currentIndex = Math.max(0, groupQuestions.length - 1)
-        }
-        this.setData({
-          allQuestions,
-          groups,
-          currentGroupIdx,
-          groupQuestions: groupQuestions.length > 0 ? groupQuestions : groups[currentGroupIdx] || [],
-          answers,
-          currentIndex,
-          _answeredCount: adapter.computeAnsweredCount(groupQuestions, answers, KF),
-        })
-        this._syncAnsweredFlags()
-        // All questions mastered → go to final result
-        if (groups.length === 0 || groups.every(g => g.length === 0)) {
-          const reviewResultVm = this._buildReviewResultViewModel()
-          this.setData({
-            phase: 'final-result',
-            reviewResultVm,
-          })
-          this._showFinalCelebrationOnce()
-          return
-        }
-        if (groupQuestions.length > 0) {
-          this._showQuestion(Math.min(currentIndex, groupQuestions.length - 1))
-        }
+        // 没有更多组了 → 进入 final-result
+        this._loadTodayResult()
+        return
+      }
+
+      if (currentIndex >= groupQuestions.length) {
+        currentIndex = Math.max(0, groupQuestions.length - 1)
+      }
+      this.setData({
+        allQuestions, groups,
+        currentGroupIdx, groupQuestions,
+        answers, currentIndex,
+      })
+      this._syncAnsweredFlags()
+      if (groupQuestions.length > 0) {
+        this._showQuestion(Math.min(currentIndex, groupQuestions.length - 1))
       }
       wx.showToast({ title: '已标记为已掌握', icon: 'none' })
     } catch (e) {
@@ -591,7 +731,6 @@ Page({
     const totalCount = groupQuestions.length
     const unansweredCount = totalCount - answeredCount
 
-    // 存在未作答题目时，提示用户选择处理方式
     let treatUnansweredAsWrong = false
     if (unansweredCount > 0) {
       try {
@@ -607,10 +746,8 @@ Page({
         })
         if (choice === 'cancel') return
         if (choice === 'wrong') treatUnansweredAsWrong = true
-        // choice === 'skip': 只提交已作答的
       } catch (_) { return }
     } else {
-      // 全部已作答，正常确认
       try {
         const confirmed = await new Promise(resolve => {
           wx.showModal({
@@ -626,11 +763,9 @@ Page({
 
     this.setData({ submittingGroup: true })
 
-    // Build payload
     const reviews = []
     for (const q of groupQuestions) {
       const isAnswered = adapter.isQuestionAnswered(q, answers, KF)
-      // 跳过未作答的题目（除非用户选择按不会处理）
       if (!isAnswered && !treatUnansweredAsWrong) continue
       reviews.push({
         schedule_id: q.schedule_id,
@@ -639,7 +774,6 @@ Page({
       })
     }
 
-    // Guard: empty submit
     if (reviews.length === 0) {
       wx.showToast({ title: '请至少作答 1 题，或选择按不会处理', icon: 'none' })
       this.setData({ submittingGroup: false })
@@ -683,37 +817,40 @@ Page({
       const groupCorrect = groupResults.filter(r => r.isCorrect && r.wasSubmitted).length
       const groupWrong = groupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
       const groupSkipped = groupResults.filter(r => r.wasSkipped).length
-      const _groupSkipped = groupSkipped
 
       const allGroupResults = _mergeResultsByScheduleId(this.data.allGroupResults, groupResults)
       const totalCorrect = allGroupResults.filter(r => r.isCorrect && r.wasSubmitted).length
       const totalWrong = allGroupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
       const totalCompleted = allGroupResults.filter(r => r.wasSubmitted).length
 
-      // Re-queue skipped questions as a new group
+      // 被跳过的题重新入队
       const skippedQuestions = groupQuestions.filter(q => !adapter.isQuestionAnswered(q, answers, KF) && !treatUnansweredAsWrong)
-      const groups = skippedQuestions.length > 0
+      const newGroups = skippedQuestions.length > 0
         ? [...this.data.groups, skippedQuestions]
         : this.data.groups
 
-      const isLastGroup = this.data.currentGroupIdx + 1 >= groups.length
+      const hasMore = skippedQuestions.length > 0 || this.data.currentGroupIdx + 1 < newGroups.length
+      // 或者用 today_remaining_count 判断
+
+      // 刷新 overview（fire-and-forget，不阻塞）
+      this.loadTodayReviewOverview()
 
       this.setData({
         phase: 'group-result',
-        groups,
+        groups: newGroups,
         groupResults,
         groupCorrect,
         groupWrong,
-        _groupSkipped,
+        _groupSkipped: groupSkipped,
         submittingGroup: false,
         allGroupResults,
         totalCorrect,
         totalWrong,
         totalCompleted,
-        _groupProgressStyle: this._calcGroupProgressStyle(this.data.currentGroupIdx + 1, groups.length),
+        _groupProgressStyle: 'width: ' + Math.round((this.data.currentGroupIdx + 1) / Math.max(1, newGroups.length) * 100) + '%',
       })
 
-      if (isLastGroup) {
+      if (!hasMore && skippedQuestions.length === 0) {
         this._showFinalCelebrationOnce()
       } else {
         this._showGroupCelebration(groupCorrect, groupQuestions.length)
@@ -727,42 +864,76 @@ Page({
 
   /* ==================== 下一组 / 最终结果 ==================== */
 
-  nextGroup() {
+  async nextGroup() {
     if (this.data.resultTransitioning) return
     this.setData({ resultTransitioning: true })
 
+    // 检查是否还有跳过的题在当前组的余量中
+    const currentGroups = this.data.groups
     const nextGroupIdx = this.data.currentGroupIdx + 1
-    if (nextGroupIdx >= this.data.groups.length) {
-      const reviewResultVm = this._buildReviewResultViewModel()
+
+    if (nextGroupIdx < currentGroups.length && currentGroups[nextGroupIdx] && currentGroups[nextGroupIdx].length > 0) {
+      // 有本地缓存的下一组（跳过题重排的情况）
       this.setData({
-        phase: 'final-result',
+        phase: 'reviewing',
+        currentGroupIdx: nextGroupIdx,
+        groupQuestions: currentGroups[nextGroupIdx],
+        answers: {},
+        currentIndex: 0,
+        groupResults: [],
+        groupCorrect: 0,
+        groupWrong: 0,
         resultTransitioning: false,
-        reviewResultVm,
       })
+      this._syncAnsweredFlags()
+      this._showQuestion(0)
       return
     }
-    this.setData({
-      phase: 'practice',
-      currentGroupIdx: nextGroupIdx,
-      groupQuestions: this.data.groups[nextGroupIdx],
-      answers: {},
-      currentIndex: 0,
-      groupResults: [],
-      groupCorrect: 0,
-      groupWrong: 0,
-      resultTransitioning: false,
-    })
-    this._syncAnsweredFlags()
-    this._showQuestion(0)
+
+    // 检查今天是否还有剩余题
+    if (this.data.todayRemainingCount > 0) {
+      try {
+        const batch = await api.post('/review/today/next-batch', {
+          batch_size: this.data.reviewBatchSize,
+        })
+        const rawQuestions = batch.questions || []
+        if (rawQuestions.length > 0) {
+          const questions = rawQuestions.map(q => this._enrichQuestion(q))
+          this.setData({
+            phase: 'reviewing',
+            allQuestions: questions,
+            groups: [questions],
+            currentGroupIdx: 0,
+            groupQuestions: questions,
+            answers: {},
+            currentIndex: 0,
+            currentBatchNo: batch.batch_no || this.data.currentBatchNo + 1,
+            totalBatchCount: batch.total_batch_count || this.data.totalBatchCount,
+            todayDueCount: batch.today_due_count || this.data.todayDueCount,
+            todayCompletedCount: batch.today_completed_count || this.data.todayCompletedCount,
+            todayRemainingCount: batch.today_remaining_count || 0,
+            groupResults: [],
+            groupCorrect: 0,
+            groupWrong: 0,
+            resultTransitioning: false,
+          })
+          this._syncAnsweredFlags()
+          this._showQuestion(0)
+          return
+        }
+      } catch (e) {
+        console.error('获取下一组失败', e)
+        wx.showToast({ title: '获取下一组失败', icon: 'none' })
+        this.setData({ resultTransitioning: false })
+        return
+      }
+    }
+
+    // 没有更多组了 → 最终结果
+    this._loadTodayResult()
   },
 
   /* ==================== 完成反馈 ==================== */
-
-  _calcGroupProgressStyle(doneGroups, totalGroups) {
-    const total = totalGroups || 1
-    const pct = Math.max(0, Math.min(100, Math.round(doneGroups * 100 / total)))
-    return `width: ${pct}%`
-  },
 
   _showGroupCelebration(correct, total) {
     const groupIndex = this.data.currentGroupIdx + 1
@@ -784,7 +955,7 @@ Page({
   },
 
   async _showFinalCelebration() {
-    const denom = this.data.totalCompleted || this.data.allGroupResults.length
+    const denom = this.data.totalCompleted || 0
     const correct = this.data.totalCorrect
     const accuracy = denom > 0 ? Math.round(correct / denom * 100) : 0
     await this._loadGrowthForCelebration()
@@ -839,7 +1010,7 @@ Page({
     }
   },
 
-  /* ==================== 最终结果视图模型 ==================== */
+  /* ==================== 最终结果视图模型（兜底） ==================== */
 
   _buildReviewResultViewModel() {
     var allResults = this.data.allGroupResults || []
@@ -859,7 +1030,6 @@ Page({
     var hasWrong = wrong > 0
     var hasSkipped = skipped > 0
 
-    // Subject stats from allResults — build array for wx:for compatibility
     var subjectMap = {}
     allResults.forEach(function(r) {
       if (!r.subject) return
@@ -933,37 +1103,20 @@ Page({
     }
 
     return {
-      sessionTotal: sessionTotal,
-      submittedTotal: submittedTotal,
-      total: sessionTotal,
-      correct: correct,
-      wrong: wrong,
-      skipped: skipped,
-      answered: submittedTotal,
-      accuracy: accuracy,
-      completionRate: completionRate,
-      wrongRate: wrongRate,
-      groupCount: groupCount,
-      completedGroupCount: completedGroupCount,
-      masteredCount: masteredCount,
+      sessionTotal, submittedTotal, total: sessionTotal,
+      correct, wrong, skipped, answered: submittedTotal,
+      accuracy, completionRate, wrongRate,
+      groupCount, completedGroupCount, masteredCount,
       subjectStats: subjectStatsArr,
-      resultLevelClass: resultLevelClass,
-      resultTitle: resultTitle,
-      resultDesc: resultDesc,
-      statusText: statusText,
-      statusDesc: statusDesc,
-      nextStepType: nextStepType,
-      nextStepTitle: nextStepTitle,
-      nextStepDesc: nextStepDesc,
-      nextStepTag: nextStepTag,
-      hasWrong: hasWrong,
-      hasSkipped: hasSkipped,
-      isPerfect: isPerfect,
+      resultLevelClass, resultTitle, resultDesc,
+      statusText, statusDesc,
+      nextStepType, nextStepTitle, nextStepDesc, nextStepTag,
+      hasWrong, hasSkipped, isPerfect,
       _frCompletionBarStyle: completionRate + '%',
     }
   },
 
-  /* ==================== 完成复习 ==================== */
+  /* ==================== 导航按钮 ==================== */
 
   finishReview() {
     wx.navigateBack()
@@ -979,6 +1132,10 @@ Page({
 
   goHome() {
     wx.navigateTo({ url: '/pages/home/home' })
+  },
+
+  retryLoad() {
+    this.loadTodayReviewOverview()
   },
 
   noop() {},

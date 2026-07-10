@@ -119,3 +119,57 @@ class BatchGradeResponse(BaseModel):
 class MasterUnmasterResponse(BaseModel):
     schedule_id: int
     mastered: bool
+
+
+# ── Today review task flow (overview / next-batch / result) ──
+
+
+class TodayReviewOverviewResponse(BaseModel):
+    date: str
+    today_due_count: int
+    today_completed_count: int
+    today_remaining_count: int
+    today_overdue_count: int
+    today_new_due_count: int
+    estimated_minutes: int
+    batch_size: int
+    current_batch_no: int
+    total_batch_count: int
+    remaining_batch_count: int
+    all_question_ids: list[int] = []
+    completed_question_ids: list[int] = []
+    remaining_question_ids: list[int] = []
+    has_due_review: bool = False
+    is_completed: bool = False
+
+
+class NextBatchRequest(BaseModel):
+    batch_size: int = Field(default=10, ge=1, le=40)
+
+
+class NextBatchResponse(BaseModel):
+    session_id: str = ""
+    group_id: str = ""
+    batch_no: int = 1
+    total_batch_count: int = 0
+    batch_size: int = 0
+    today_due_count: int = 0
+    today_completed_count: int = 0
+    today_remaining_count: int = 0
+    questions: list[ReviewQuestion] = []
+
+
+class TodayReviewResultResponse(BaseModel):
+    date: str
+    today_due_count: int
+    today_completed_count: int
+    correct_count: int
+    wrong_count: int
+    skipped_count: int = 0
+    mastered_count: int = 0
+    accuracy: float = 0.0
+    completion_rate: float = 0.0
+    updated_schedule_count: int = 0
+    tomorrow_due_count: int = 0
+    subject_stats: list[dict] = []
+    is_completed: bool = False
