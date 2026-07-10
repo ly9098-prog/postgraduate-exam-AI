@@ -5,7 +5,6 @@
   "backgroundColorBottom": "#EEF5FF",
   "usingComponents": {
     "mp-html": "/components/mp-html/index",
-    "math-question": "/components/math-question/math-question",
     "loading-lottie": "/components/loading-lottie/loading-lottie",
     "quiz-runner": "/components/quiz-runner/quiz-runner"
   }
