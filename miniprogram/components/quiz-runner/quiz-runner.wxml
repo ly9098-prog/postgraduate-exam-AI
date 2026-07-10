@@ -76,19 +76,13 @@
               wx:for="{{group.options}}"
               wx:for-item="opt"
               wx:key="key"
-              class="runner-option-item runner-blank-option-item
-                {{opt._selected ? 'runner-selected' : ''}}
-                {{readonly && opt._isBoth ? 'runner-both' : ''}}
-                {{readonly && opt._isCorrect && !opt._isBoth ? 'runner-correct' : ''}}
-                {{readonly && opt._isUserAnswer && !opt._isBoth ? 'runner-user-answer' : ''}}"
+              class="runner-option-item runner-blank-option-item {{opt._selected ? 'runner-selected' : ''}} {{readonly && opt._isBoth ? 'runner-both' : ''}} {{readonly && opt._isCorrect && !opt._isBoth ? 'runner-correct' : ''}} {{readonly && opt._isUserAnswer && !opt._isBoth ? 'runner-user-answer' : ''}}"
               hover-class="{{readonly ? '' : 'runner-option-pressed'}}"
               catchtap="{{readonly ? 'noop' : 'selectBlankOption'}}"
               data-blank-id="{{group.id}}"
               data-option="{{opt.key}}"
             >
-              <view class="runner-option-indicator {{opt._selected ? 'runner-checked' : ''}}
-                {{readonly && opt._isCorrect ? 'runner-indicator-correct' : ''}}
-                {{readonly && opt._isUserAnswer && !opt._isCorrect ? 'runner-indicator-user' : ''}}">
+              <view class="runner-option-indicator {{opt._selected ? 'runner-checked' : ''}} {{readonly && opt._isCorrect ? 'runner-indicator-correct' : ''}} {{readonly && opt._isUserAnswer && !opt._isCorrect ? 'runner-indicator-user' : ''}}">
                 <text wx:if="{{opt._selected && !readonly}}" class="runner-check-mark line-icon icon-dot"></text>
                 <text wx:elif="{{readonly && opt._isCorrect}}" class="runner-check-mark line-icon icon-check"></text>
                 <text wx:elif="{{readonly && opt._isUserAnswer && !opt._isCorrect}}" class="runner-check-mark line-icon icon-exclamation"></text>
@@ -108,19 +102,12 @@
         <view
           wx:for="{{currentQuestion._optionList}}"
           wx:key="key"
-          class="runner-option-item
-            {{item._selected ? 'runner-selected' : ''}}
-            {{readonly && item._isBoth ? 'runner-both' : ''}}
-            {{readonly && item._isCorrect && !item._isBoth ? 'runner-correct' : ''}}
-            {{readonly && item._isUserAnswer && !item._isBoth ? 'runner-user-answer' : ''}}"
+          class="runner-option-item {{item._selected ? 'runner-selected' : ''}} {{readonly && item._isBoth ? 'runner-both' : ''}} {{readonly && item._isCorrect && !item._isBoth ? 'runner-correct' : ''}} {{readonly && item._isUserAnswer && !item._isBoth ? 'runner-user-answer' : ''}}"
           hover-class="{{readonly ? '' : 'runner-option-pressed'}}"
           catchtap="{{readonly ? 'noop' : 'selectOption'}}"
           data-option="{{item.key}}"
         >
-          <view class="runner-option-indicator
-            {{item._selected ? 'runner-checked' : ''}}
-            {{readonly && item._isCorrect ? 'runner-indicator-correct' : ''}}
-            {{readonly && item._isUserAnswer && !item._isCorrect ? 'runner-indicator-user' : ''}}">
+          <view class="runner-option-indicator {{item._selected ? 'runner-checked' : ''}} {{readonly && item._isCorrect ? 'runner-indicator-correct' : ''}} {{readonly && item._isUserAnswer && !item._isCorrect ? 'runner-indicator-user' : ''}}">
             <text wx:if="{{item._selected && !readonly && currentQuestion.question_type === 'multiple_choice'}}" class="runner-check-mark line-icon icon-check"></text>
             <text wx:elif="{{item._selected && !readonly}}" class="runner-check-mark line-icon icon-dot"></text>
             <text wx:elif="{{readonly && item._isCorrect}}" class="runner-check-mark line-icon icon-check"></text>
