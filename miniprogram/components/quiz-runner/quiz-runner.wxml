@@ -1,4 +1,4 @@
-<view class="quiz-runner {{compactReviewMode ? 'runner-compact' : ''}}">
+<view class="quiz-runner {{compactReviewMode ? 'runner-compact' : ''}} {{flowLayout ? 'runner-flow' : ''}} {{compactBottom ? 'runner-bottom-compact' : ''}}">
   <!-- ==================== 顶部状态栏 ==================== -->
   <view class="runner-top-bar" wx:if="{{!compactReviewMode}}">
     <view class="runner-bar-left">

@@ -1397,6 +1397,26 @@ page {
 .primary-review-btn::after { border: none; }
 .primary-review-btn:active { transform: scale(0.98); opacity: 0.92; }
 
+/* ==================== review-practice 紧凑布局 ==================== */
+
+.review-practice {
+  min-height: 100vh;
+  padding: 0 0 calc(16rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
+}
+
+.review-practice .reviewing-progress-strip {
+  position: static;
+  flex-shrink: 0;
+  padding: 8rpx 24rpx 6rpx;
+  min-height: auto;
+  box-sizing: border-box;
+}
+
 /* ==================== 复习进度条 ==================== */
 
 .reviewing-progress-strip {
