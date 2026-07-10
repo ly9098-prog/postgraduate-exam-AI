@@ -10,6 +10,7 @@ const {
   normalizeChoiceAnswer, serializeChoiceAnswer, serializeBlankAnswer,
 } = require('../../utils/answer')
 const adapter = require('../../utils/question-runner-adapter')
+const { getSubjectName } = require('../../utils/subject-meta')
 
 var KF = 'schedule_id'
 
@@ -184,6 +185,20 @@ Page({
         overviewLoading: false,
         errorText: '复习计划加载失败，请稍后重试',
       })
+    }
+  },
+
+  /** 静默刷新概览数据（不修改 phase/group-result 等页面状态） */
+  async refreshOverviewStatsSilently() {
+    try {
+      const overview = await api.get('/review/today/overview')
+      const vm = this.buildReviewOverviewVM(overview)
+      this.setData({
+        ...vm,
+        reviewOverview: overview,
+      })
+    } catch (e) {
+      console.error('刷新复习概览失败', e)
     }
   },
 
@@ -668,8 +683,8 @@ Page({
     try {
       await api.post(`/review/${scheduleId}/master`)
 
-      // 刷新 overview（fire-and-forget）
-      this.loadTodayReviewOverview()
+      // 静默刷新概览（不修改 phase）
+      this.refreshOverviewStatsSilently()
 
       // 从当前组移除
       const allQuestions = this.data.allQuestions.filter(q => q.schedule_id !== scheduleId)
@@ -832,8 +847,8 @@ Page({
       const hasMore = skippedQuestions.length > 0 || this.data.currentGroupIdx + 1 < newGroups.length
       // 或者用 today_remaining_count 判断
 
-      // 刷新 overview（fire-and-forget，不阻塞）
-      this.loadTodayReviewOverview()
+      // 静默刷新概览数据（不修改 phase，避免覆盖 group-result）
+      this.refreshOverviewStatsSilently()
 
       this.setData({
         phase: 'group-result',
@@ -1118,7 +1133,7 @@ Page({
   },
 
   goHome() {
-    wx.navigateTo({ url: '/pages/home/home' })
+    wx.reLaunch({ url: '/pages/home/home' })
   },
 
   retryLoad() {
@@ -1130,13 +1145,7 @@ Page({
   /* ==================== 工具 ==================== */
 
   subjectLabel(s) {
-    const map = {
-      math2: '数学二', 'math2-calculus': '数学二·高数', 'math2-linalg': '数学二·线代',
-      exam408: '408', 'exam408-ds': '408·DS', 'exam408-os': '408·OS',
-      'exam408-co': '408·CO', 'exam408-cn': '408·CN',
-      english: '英语',
-    }
-    return map[s] || s || ''
+    return getSubjectName(s)
   },
 
 })

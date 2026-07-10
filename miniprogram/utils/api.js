@@ -4,6 +4,21 @@ const { debugLog, isDebugMode, saveDebugSnapshot } = require('./debug')
 
 const { KEYS } = storage
 
+// ═══════════════════════════════════════════════
+// 统一 API 错误对象
+// 页面统一使用：error.code / error.message / error.detail
+// ═══════════════════════════════════════════════
+class ApiError extends Error {
+  constructor(message, options = {}) {
+    super(message)
+    this.name = 'ApiError'
+    this.code = options.code
+    this.statusCode = options.statusCode
+    this.detail = options.detail
+    this.raw = options.raw
+  }
+}
+
 let _refreshing = null
 let _redirecting = false
 
@@ -72,39 +87,60 @@ function _wxLogin() {
   })
 }
 
-// Refresh JWT token: try refresh token first, fall back to wx.login
+// Refresh JWT token: only try refresh token, never auto-wx.login
+// wx.login must only happen in login.js after user consent
 async function _refreshToken() {
   const refreshToken = storage.get(KEYS.REFRESH_TOKEN)
-  if (refreshToken) {
-    const header = { 'Content-Type': 'application/json' }
-    const res = await _rawRequest('POST', '/auth/refresh', { refresh_token: refreshToken }, header)
-    if (res.statusCode === 200 && res.data && res.data.access_token) {
-      storage.set(KEYS.TOKEN, res.data.access_token)
-      storage.set(KEYS.TOKEN_EXPIRES_AT, res.data.expires_at)
-      storage.set(KEYS.REFRESH_TOKEN, res.data.refresh_token)
-      if (res.data.user) {
-        storage.set(KEYS.USER, res.data.user)
-      }
-      return res.data.access_token
-    }
-    // Refresh token invalid → clear it, fall through to wx.login
-    storage.remove(KEYS.REFRESH_TOKEN)
+  if (!refreshToken) {
+    // No refresh token → must re-login at login page
+    _clearAuthAndRedirect()
+    throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401 })
   }
 
-  // Fallback: full re-auth via wx.login
-  const code = await _wxLogin()
   const header = { 'Content-Type': 'application/json' }
-  const res = await _rawRequest('POST', '/auth/login', { code }, header)
-  if (res.statusCode !== 200 || !res.data || !res.data.access_token) {
-    throw new Error('刷新 token 失败')
+  const res = await _rawRequest('POST', '/auth/refresh', { refresh_token: refreshToken }, header)
+  if (res.statusCode === 200 && res.data && res.data.access_token) {
+    try {
+      storage.setStrict(KEYS.TOKEN, res.data.access_token)
+      storage.setStrict(KEYS.TOKEN_EXPIRES_AT, res.data.expires_at)
+      storage.setStrict(KEYS.REFRESH_TOKEN, res.data.refresh_token)
+      if (res.data.user) {
+        storage.setStrict(KEYS.USER, res.data.user)
+      }
+    } catch (e) {
+      throw new ApiError('写入认证信息失败', { code: 'STORAGE_ERROR' })
+    }
+    return res.data.access_token
   }
-  storage.set(KEYS.TOKEN, res.data.access_token)
-  storage.set(KEYS.TOKEN_EXPIRES_AT, res.data.expires_at)
-  storage.set(KEYS.REFRESH_TOKEN, res.data.refresh_token)
-  if (res.data.user) {
-    storage.set(KEYS.USER, res.data.user)
+
+  // Refresh token invalid → clear auth, redirect to login
+  _clearAuthAndRedirect()
+  throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401 })
+}
+
+function _clearAuthAndRedirect() {
+  storage.remove(KEYS.TOKEN)
+  storage.remove(KEYS.TOKEN_EXPIRES_AT)
+  storage.remove(KEYS.REFRESH_TOKEN)
+  storage.remove(KEYS.USER)
+  if (!_redirecting) {
+    _redirecting = true
+    wx.reLaunch({ url: '/pages/login/login' })
   }
-  return res.data.access_token
+}
+
+// Force refresh token: always makes an API call, ignores local expiry
+// Used by file-request.js when server returns 401 on a valid-looking token
+async function forceRefreshToken() {
+  if (_refreshing) {
+    try {
+      return await _refreshing
+    } catch (e) {
+      throw e
+    }
+  }
+  _refreshing = _refreshToken().finally(() => { _refreshing = null })
+  return _refreshing
 }
 
 // 主动续签：检查 token 过期时间，即将过期时提前刷新
@@ -169,32 +205,19 @@ async function request(method, url, data = {}, options = {}) {
   } catch (err) {
     debugLog(traceId, 'API_ERROR', { method, url, message: err?.errMsg || '网络异常' })
     wx.showToast({ title: '网络异常', icon: 'none' })
-    throw err
+    throw new ApiError(err?.errMsg || '网络异常', { code: 'NETWORK_ERROR', raw: err })
   }
 
   // Auto-refresh JWT on 401
   if (res.statusCode === 401) {
     debugLog(traceId, 'API_401_REFRESH', { method, url })
 
-    // Global refresh lock: only one refresh at a time
-    if (!_refreshing) {
-      _refreshing = _refreshToken().finally(() => { _refreshing = null })
-    }
-
     let newToken
     try {
-      newToken = await _refreshing
+      newToken = await forceRefreshToken()
     } catch (_e) {
-      // Refresh failed → clear auth, redirect to login
-      storage.remove(KEYS.TOKEN)
-      storage.remove(KEYS.TOKEN_EXPIRES_AT)
-      storage.remove(KEYS.REFRESH_TOKEN)
-      storage.remove(KEYS.USER)
-      if (!_redirecting) {
-        _redirecting = true
-        wx.redirectTo({ url: '/pages/login/login' })
-      }
-      throw { code: 401, message: '登录已过期，请重新登录' }
+      // _refreshToken already clears auth and redirects to login
+      throw new ApiError('登录已过期，请重新登录', { code: 401, statusCode: 401 })
     }
 
     // Retry original request with new token
@@ -204,7 +227,7 @@ async function request(method, url, data = {}, options = {}) {
     } catch (err) {
       debugLog(traceId, 'API_ERROR', { method, url, message: err?.errMsg || '网络异常' })
       wx.showToast({ title: '网络异常', icon: 'none' })
-      throw err
+      throw new ApiError(err?.errMsg || '网络异常', { code: 'NETWORK_ERROR', raw: err })
     }
   }
 
@@ -217,7 +240,12 @@ async function request(method, url, data = {}, options = {}) {
   })
 
   if (res.statusCode >= 400) {
-    throw { code: res.statusCode, message: res.data?.detail || '请求失败' }
+    throw new ApiError(res.data?.detail || '请求失败', {
+      code: res.data?.code || res.statusCode,
+      statusCode: res.statusCode,
+      detail: res.data?.detail,
+      raw: res.data,
+    })
   }
 
   return res.data
@@ -230,5 +258,7 @@ module.exports = {
   del: (url, options) => request('DELETE', url, undefined, options),
   resetRedirecting,
   ensureValidToken,
+  forceRefreshToken,
   request,
+  ApiError,
 }

@@ -601,3 +601,46 @@ page {
     transform: none !important;
   }
 }
+
+/* ── 设置区域 ── */
+.settings-section {
+  padding: 0 24rpx;
+  margin-top: 32rpx;
+  margin-bottom: 48rpx;
+}
+
+.settings-list {
+  background: #FFFFFF;
+  border-radius: 30rpx;
+  overflow: hidden;
+  box-shadow: 0 4rpx 24rpx rgba(43, 60, 80, 0.06);
+}
+
+.settings-item {
+  min-height: 96rpx;
+  padding: 0 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1rpx solid #F0F3F8;
+}
+
+.settings-item:last-child {
+  border-bottom: none;
+}
+
+.settings-item-label {
+  font-size: 28rpx;
+  color: #18233A;
+  font-weight: 700;
+}
+
+.settings-arrow {
+  width: 32rpx;
+  height: 32rpx;
+  color: #B0BECE;
+}
+
+.settings-item.logout .settings-item-label {
+  color: #EF4444;
+}

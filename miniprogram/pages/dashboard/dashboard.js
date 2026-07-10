@@ -62,6 +62,7 @@ Page({
   },
 
   _alive: false,
+  _visible: false,
   _forceRefreshOnNextShow: false,
   _dashboardSeq: 0,
   _trendSeq: 0,
@@ -77,6 +78,7 @@ Page({
 
   onShow() {
     this._alive = true
+    this._visible = true
 
     var forceRefresh = this._forceRefreshOnNextShow
     this._forceRefreshOnNextShow = false
@@ -106,21 +108,37 @@ Page({
   },
 
   onHide() {
+    this._visible = false
     this._chartsCancelled = true
+    this._dashboardSeq++
+    this._loadPromise = null  // 页面隐藏后使当前加载失效，允许下一次 onShow 发起新请求
     clearTimeout(this._ringTimer)
+    this._ringTimer = null
     clearTimeout(this._trendTimer)
+    this._trendTimer = null
     clearTimeout(this._gaugeTimer)
+    this._gaugeTimer = null
     clearTimeout(this._growthTimer)
+    this._growthTimer = null
     clearTimeout(this._adaptiveTimer)
+    this._adaptiveTimer = null
   },
 
   onUnload() {
     this._alive = false
+    this._visible = false
+    this._dashboardSeq++
+    this._loadPromise = null
     clearTimeout(this._ringTimer)
+    this._ringTimer = null
     clearTimeout(this._trendTimer)
+    this._trendTimer = null
     clearTimeout(this._gaugeTimer)
+    this._gaugeTimer = null
     clearTimeout(this._growthTimer)
+    this._growthTimer = null
     clearTimeout(this._adaptiveTimer)
+    this._adaptiveTimer = null
   },
 
   onPullDownRefresh() {
@@ -130,7 +148,7 @@ Page({
   },
 
   async loadDashboard({ mode = 'initial' } = {}) {
-    if (!this._alive) return null
+    if (!this._alive || !this._visible) return null
 
     // Dedup concurrent loads
     if (this._loadPromise) return this._loadPromise
@@ -255,7 +273,7 @@ Page({
   },
 
   _redrawAllCharts() {
-    if (!this._alive) return
+    if (!this._alive || !this._visible) return
     const h = this.data.hero
     if (!h) return
 
@@ -360,9 +378,9 @@ Page({
     }, () => {
       if (!this._alive) return
 
-      // Draw charts only when data changed
+      // Draw charts only when data changed and page is visible
       this._ringTimer = setTimeout(() => {
-        if (!this._alive) return
+        if (!this._alive || !this._visible) return
         if (canRedrawHero) {
           charts.drawScoreRing('score-ring', this, hero.totalAccuracy)
         }
@@ -373,14 +391,14 @@ Page({
 
       if (trend && canRedrawTrend) {
         this._trendTimer = setTimeout(() => {
-          if (!this._alive) return
+          if (!this._alive || !this._visible) return
           charts.drawTrendChart('trend-chart', this, trend.points)
         }, 200)
       }
 
       if (subjects && canRedrawSubject) {
         this._gaugeTimer = setTimeout(() => {
-          if (!this._alive) return
+          if (!this._alive || !this._visible) return
           charts.drawSubjectDonut('subject-donut', this, subjects.items)
         }, 120)
       }
@@ -388,7 +406,7 @@ Page({
       // Growth ring chart
       if (growth && canRedrawGrowth) {
         this._growthTimer = setTimeout(() => {
-          if (!this._alive) return
+          if (!this._alive || !this._visible) return
           charts.drawGrowthRing('growth-ring', this, growth.levelProgressPct)
         }, 140)
       }
@@ -396,7 +414,7 @@ Page({
       // Adaptive mini gauge
       if (adaptive && canRedrawAdaptive) {
         this._adaptiveTimer = setTimeout(() => {
-          if (!this._alive) return
+          if (!this._alive || !this._visible) return
           charts.drawAdaptiveGauge('adaptive-gauge', this, adaptive.recallPct)
         }, 160)
       }
@@ -533,7 +551,7 @@ Page({
     } catch (e) {
       console.error('[dashboard] LLM analysis failed', e)
       if (!this._alive) return
-      if (e.errMsg && e.errMsg.includes('LLM_NOT_CONFIGURED')) {
+      if (e.code === 'LLM_NOT_CONFIGURED' || (typeof e.detail === 'string' && e.detail.includes('LLM_NOT_CONFIGURED'))) {
         this.setData({ llmAnalysisLoading: false, llmAnalysisError: 'AI 分析暂不可用（未配置服务）' })
       } else {
         this.setData({ llmAnalysisLoading: false, llmAnalysisError: 'AI 分析生成失败' })

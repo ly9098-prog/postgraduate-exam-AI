@@ -1,7 +1,17 @@
 {
   "description": "MemoGrad 考研智能刷题助手",
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      { "type": "folder", "value": "__mocks__" },
+      { "type": "folder", "value": "tests" },
+      { "type": "suffix", "value": ".md" },
+      { "type": "suffix", "value": ".py" },
+      { "type": "suffix", "value": ".sh" },
+      { "type": "suffix", "value": ".yaml" },
+      { "type": "glob", "value": "**/*.test.js" },
+      { "type": "glob", "value": "**/*.spec.js" },
+      { "type": "glob", "value": "**/__snapshots__/**" }
+    ],
     "include": []
   },
   "setting": {
@@ -19,7 +29,7 @@
     "autoAudits": false,
     "newFeature": false,
     "uglifyFileName": false,
-    "uploadWithSourceMap": true,
+    "uploadWithSourceMap": false,
     "useIsolateContext": true,
     "nodeModules": true,
     "enhance": false,

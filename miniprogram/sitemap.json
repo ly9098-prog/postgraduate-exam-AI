@@ -1,6 +1,44 @@
 {
-  "rules": [{
-    "action": "allow",
-    "page": "*"
-  }]
+  "rules": [
+    {
+      "action": "disallow",
+      "page": "pages/login/*"
+    },
+    {
+      "action": "disallow",
+      "page": "pages/import/*"
+    },
+    {
+      "action": "disallow",
+      "page": "pages/agreement/*"
+    },
+    {
+      "action": "disallow",
+      "page": "pages/wrong-detail/*"
+    },
+    {
+      "action": "disallow",
+      "page": "pages/practice-result/*"
+    },
+    {
+      "action": "disallow",
+      "page": "pages/review-today/*"
+    },
+    {
+      "action": "disallow",
+      "page": "pages/pomodoro/*"
+    },
+    {
+      "action": "disallow",
+      "page": "pages/dashboard/*"
+    },
+    {
+      "action": "disallow",
+      "page": "pages/practice/*"
+    },
+    {
+      "action": "allow",
+      "page": "pages/home/*"
+    }
+  ]
 }
