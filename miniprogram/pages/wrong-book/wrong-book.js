@@ -1,6 +1,8 @@
 const api = require('../../utils/api')
 const config = require('../../config')
 const { toPlainInlineMathText } = require('../../utils/stem-render')
+const storage = require('../../utils/storage')
+const aiCache = require('../../utils/ai-diagnosis-cache')
 
 const SUBJECTS = [
   { value: '', label: '全部' },
@@ -37,6 +39,7 @@ Page({
     stats: { total: 0 },
     primaryStatCount: 0,
     primaryStatLabel: '错题总数',
+    masteredCount: 0,
     analysis: {
       sourceLabel: '待积累',
       weaknessTags: [],
@@ -47,6 +50,10 @@ Page({
     },
     aiDiagnosis: null,
     aiDiagnosisLoading: false,
+    aiDiagnosisRefreshing: false,
+    aiDiagnosisCacheTimeLabel: '',
+    aiDiagnosisCacheStale: false,
+    aiDiagnosisError: false,
     page: 1,
     hasMore: false,
     loading: false,
@@ -57,12 +64,23 @@ Page({
     selectedErrorType: '',
     selectedTopic: '',
     showFilter: false,
+    filterCount: 0,
 
     subjects: SUBJECTS,
     errorTypes: ERROR_TYPES,
   },
 
+  _updateFilterCount() {
+    const count = (this.data.selectedSubject ? 1 : 0) + (this.data.selectedErrorType ? 1 : 0) + (this.data.selectedTopic ? 1 : 0)
+    this.setData({ filterCount: count })
+  },
+
   _ready: false,
+  _alive: false,
+  _aiDiagnosisPromise: null,
+  _aiDiagnosisRequestId: 0,
+  _aiDiagnosisCachedAt: 0,
+  _aiStatsLoaded: false,
 
   onLoad(options) {
     this.setData({ enableMathImage: config.enableMathImage || false })
@@ -75,6 +93,10 @@ Page({
     if (topic) {
       this.setData({ selectedTopic: topic })
     }
+    this._updateFilterCount()
+
+    // 尽早恢复缓存，使页面首次渲染时直接显示已有诊断
+    this._restoreAiDiagnosisFromCache()
   },
 
   onReady() {
@@ -83,24 +105,67 @@ Page({
   },
 
   onShow() {
+    this._alive = true
     if (!this._ready) return
-    this._loadPage()
-  },
-
-  _loadPage() {
-    this.setData({ list: [], page: 1 })
+    // 刷新统计和列表，但不无条件刷新 AI
     this.loadStats()
     this.loadList(true)
-    this.loadAiDiagnosis()
+    // 已有诊断时检查是否需要后台更新
+    // 无诊断时由 _loadPage / _checkAiDiagnosis 处理
+    if (this.data.aiDiagnosis) {
+      this._checkAiDiagnosis()
+    }
+  },
+
+  onHide() {
+    this._alive = false
+  },
+
+  onUnload() {
+    this._alive = false
+  },
+
+  // ════════════════════════════════════════════
+  // Page loading
+  // ════════════════════════════════════════════
+
+  async _loadPage() {
+    this.setData({ list: [], page: 1 })
+    await Promise.all([
+      this.loadStats(),
+      this.loadList(true),
+    ])
+    // 首次加载完成后检查 AI 诊断
+    await this._checkAiDiagnosis()
+  },
+
+  _restoreAiDiagnosisFromCache() {
+    var user = this._getUser()
+    var userId = user && (user.id || user.user_id || user.openid || '')
+    var cache = aiCache.restore(userId)
+    if (cache.status !== 'miss' && cache.data) {
+      this._aiDiagnosisCachedAt = cache.cachedAt
+      this.setData({
+        aiDiagnosis: cache.data,
+        aiDiagnosisCacheTimeLabel: aiCache.formatCacheTime(cache.cachedAt),
+        aiDiagnosisCacheStale: cache.status === 'stale',
+        aiDiagnosisError: false,
+        aiDiagnosisLoading: false,
+        aiDiagnosisRefreshing: false,
+      })
+    }
   },
 
   async loadStats() {
     try {
       const stats = await api.get('/wrong-questions/stats')
+      this._aiStatsLoaded = true
+      const masteredCount = typeof stats.unmastered === 'number' ? Math.max(0, (stats.total || 0) - stats.unmastered) : 0
       this.setData({
         stats,
         primaryStatCount: typeof stats.unmastered === 'number' ? stats.unmastered : (stats.total || 0),
         primaryStatLabel: typeof stats.unmastered === 'number' ? '待攻克错题' : '错题总数',
+        masteredCount,
       })
       // Rebuild analysis with fresh stats when no filter is active
       const hasFilter = this.data.selectedSubject || this.data.selectedErrorType || this.data.selectedTopic
@@ -109,34 +174,6 @@ Page({
       }
     } catch (e) {
       console.error('加载错题统计失败', e)
-    }
-  },
-
-  async loadAiDiagnosis() {
-    this.setData({ aiDiagnosisLoading: true, aiDiagnosis: null })
-    try {
-      const diagnosis = await api.get('/stats/ai-diagnosis')
-      if (diagnosis) {
-        // Guard against null/missing array fields from backend
-        for (const listKey of ['weak_points', 'strong_points', 'learning_suggestions']) {
-          if (!Array.isArray(diagnosis[listKey])) diagnosis[listKey] = []
-        }
-        // Enrich accuracy percent for weak/strong points
-        for (const listKey of ['weak_points', 'strong_points']) {
-          diagnosis[listKey] = diagnosis[listKey].map(item => ({
-            ...item,
-            _accuracyPercent: Math.round((item.accuracy || 0) * 100),
-          }))
-        }
-      }
-      if (diagnosis && (diagnosis.weak_points.length > 0 || diagnosis.strong_points.length > 0 || diagnosis.learning_suggestions.length > 0 || diagnosis.summary)) {
-        this.setData({ aiDiagnosis: diagnosis, aiDiagnosisLoading: false })
-      } else {
-        this.setData({ aiDiagnosisLoading: false, aiDiagnosis: null })
-      }
-    } catch (e) {
-      console.error('加载AI诊断失败', e)
-      this.setData({ aiDiagnosisLoading: false })
     }
   },
 
@@ -178,17 +215,20 @@ Page({
   selectSubject(e) {
     const val = e.currentTarget.dataset.value
     this.setData({ selectedSubject: val, list: [], page: 1 })
+    this._updateFilterCount()
     this.loadList(true)
   },
 
   selectErrorType(e) {
     const val = e.currentTarget.dataset.value
     this.setData({ selectedErrorType: val, list: [], page: 1 })
+    this._updateFilterCount()
     this.loadList(true)
   },
 
   clearTopic() {
     this.setData({ selectedTopic: '', list: [], page: 1 })
+    this._updateFilterCount()
     this.loadList(true)
   },
 
@@ -204,6 +244,269 @@ Page({
     wx.setStorageSync('wrong_detail_nav', { ids, ts: Date.now() })
     wx.navigateTo({ url: `/pages/wrong-detail/wrong-detail?id=${id}&idx=${idx}&source=wrong-book` })
   },
+
+  // ════════════════════════════════════════════
+  // AI 诊断缓存管理
+  // ════════════════════════════════════════════
+
+  _getUser() {
+    try { return storage.get(storage.KEYS.USER) } catch (_) { return null }
+  },
+
+  _getUserId() {
+    var user = this._getUser()
+    return user && (user.id || user.user_id || user.openid || '')
+  },
+
+  /**
+   * 标准化 AI 诊断数据
+   */
+  _normalizeAiDiagnosis(raw) {
+    if (!raw) return null
+    var copy = JSON.parse(JSON.stringify(raw))
+    for (var listKey of ['weak_points', 'strong_points', 'learning_suggestions']) {
+      if (!Array.isArray(copy[listKey])) copy[listKey] = []
+    }
+    for (var key of ['weak_points', 'strong_points']) {
+      copy[key] = copy[key].map(function(item) {
+        if (!item || typeof item !== 'object') return null
+        var acc = item.accuracy
+        if (typeof acc !== 'number') acc = 0
+        if (acc > 1) acc = Math.min(acc, 100)
+        var pct = acc <= 1 ? Math.round(acc * 100) : Math.round(acc)
+        pct = Math.max(0, Math.min(100, pct))
+        return {
+          knowledge_point: String(item.knowledge_point || ''),
+          accuracy: acc,
+          _accuracyPercent: pct,
+          suggestion: String(item.suggestion || ''),
+        }
+      }).filter(function(item) { return item && item.knowledge_point })
+    }
+    copy.learning_suggestions = copy.learning_suggestions.filter(function(s) { return s && String(s).trim() })
+    return copy
+  },
+
+  /**
+   * 构建数据指纹
+   */
+  _buildAiDiagnosisSourceSignature() {
+    var stats = this.data.stats || {}
+    var list = this.data.list || []
+    var firstItem = list[0] || {}
+    return aiCache.buildSignature(stats, list)
+  },
+
+  /**
+   * 检查 AI 诊断状态，决定是否需要请求
+   * 安全：不因为 stats 未加载就清除已有诊断
+   */
+  async _checkAiDiagnosis() {
+    var stats = this.data.stats || {}
+    var total = stats.total
+    // stats 尚未加载成功时，不基于初始值 { total: 0 } 做任何判断
+    if (!this._aiStatsLoaded) {
+      return this.data.aiDiagnosis || null
+    }
+    // 明确知道 total = 0
+    if (total === 0) {
+      if (this.data.aiDiagnosis) {
+        var uid = this._getUserId()
+        aiCache.clear(uid)
+        this.setData({
+          aiDiagnosis: null,
+          aiDiagnosisLoading: false,
+          aiDiagnosisRefreshing: false,
+          aiDiagnosisCacheTimeLabel: '',
+          aiDiagnosisCacheStale: false,
+          aiDiagnosisError: false,
+        })
+      }
+      return null
+    }
+
+    return this.ensureAiDiagnosis({ background: true })
+  },
+
+  /**
+   * 统一 AI 诊断入口
+   * @param {object} options
+   *   force:     true = 忽略缓存和指纹，强制请求（手动刷新）
+   *   background: true = 后台刷新，失败时静默
+   */
+  async ensureAiDiagnosis(options) {
+    options = options || {}
+
+    // 无错题 → 不请求（仅在 stats 已明确加载时）
+    if (this._aiStatsLoaded) {
+      var total = (this.data.stats || {}).total
+      if (total === 0) return null
+    }
+
+    // 已有请求正在进行 → 复用
+    if (this._aiDiagnosisPromise) return this._aiDiagnosisPromise
+
+    // 强制刷新（手动）→ 直接请求
+    if (options.force) {
+      return this._requestAiDiagnosis({ force: true })
+    }
+
+    // 检查缓存状态
+    var hasData = !!this.data.aiDiagnosis
+
+    if (hasData && !options.background) {
+      // 已有诊断，非后台 → 直接使用，不请求
+      return this.data.aiDiagnosis
+    }
+
+    // 后台刷新场景：检查 TTL 和指纹
+    var needRefresh = false
+    if (!hasData) {
+      needRefresh = true
+    } else {
+      var isStale = this.data.aiDiagnosisCacheStale
+      var cachedAt = this._aiDiagnosisCachedAt
+      // 过期 → 刷新
+      if (isStale) {
+        needRefresh = true
+      } else {
+        // 检查指纹变化
+        var currentSig = this._buildAiDiagnosisSourceSignature()
+        // 从缓存读取上一次指纹
+        var uid = this._getUserId()
+        var cache = aiCache.restore(uid)
+        if (cache.signature && cache.signature !== currentSig && aiCache.canRefresh(cachedAt)) {
+          needRefresh = true
+        }
+      }
+    }
+
+    if (!needRefresh) {
+      return this.data.aiDiagnosis
+    }
+
+    return this._requestAiDiagnosis({ background: true })
+  },
+
+  /**
+   * 实际请求 AI 诊断
+   */
+  async _requestAiDiagnosis(opts) {
+    var self = this
+    opts = opts || {}
+    var hasData = !!this.data.aiDiagnosis
+    var requestId = ++this._aiDiagnosisRequestId
+
+    // 设置 loading 状态
+    if (!hasData) {
+      this.setData({ aiDiagnosisLoading: true, aiDiagnosisError: false })
+    } else {
+      this.setData({ aiDiagnosisRefreshing: true, aiDiagnosisError: false })
+    }
+
+    this._aiDiagnosisPromise = (async function() {
+      try {
+        var diagnosis = await api.get('/stats/ai-diagnosis')
+        // 过期响应保护
+        if (requestId !== self._aiDiagnosisRequestId || !self._alive) return self.data.aiDiagnosis
+
+        var normalized = self._normalizeAiDiagnosis(diagnosis)
+
+        var hasContent = normalized && !!(
+          (normalized.summary && String(normalized.summary).trim()) ||
+          normalized.weak_points.length > 0 ||
+          normalized.strong_points.length > 0 ||
+          normalized.learning_suggestions.length > 0
+        )
+
+        if (hasContent) {
+          var sig = self._buildAiDiagnosisSourceSignature()
+          var uid = self._getUserId()
+          var now = Date.now()
+          self._aiDiagnosisCachedAt = now
+          // 写入缓存
+          aiCache.save(uid, normalized, sig)
+          self.setData({
+            aiDiagnosis: normalized,
+            aiDiagnosisLoading: false,
+            aiDiagnosisRefreshing: false,
+            aiDiagnosisCacheTimeLabel: aiCache.formatCacheTime(now),
+            aiDiagnosisCacheStale: false,
+            aiDiagnosisError: false,
+          })
+          return normalized
+        }
+
+        // 接口返回空 — 有旧结果则保留
+        if (hasData) {
+          self.setData({
+            aiDiagnosisLoading: false,
+            aiDiagnosisRefreshing: false,
+          })
+          return self.data.aiDiagnosis
+        }
+
+        self.setData({
+          aiDiagnosis: null,
+          aiDiagnosisLoading: false,
+          aiDiagnosisRefreshing: false,
+          aiDiagnosisError: true,
+        })
+        return null
+      } catch (e) {
+        console.error('加载 AI 诊断失败', e)
+        if (requestId !== self._aiDiagnosisRequestId || !self._alive) return self.data.aiDiagnosis
+
+        // 有旧结果 → 保留
+        if (hasData) {
+          self.setData({
+            aiDiagnosisLoading: false,
+            aiDiagnosisRefreshing: false,
+          })
+          // 手动刷新才弹 Toast
+          if (opts.force) {
+            wx.showToast({ title: '更新失败，请稍后重试', icon: 'none' })
+          }
+          return self.data.aiDiagnosis
+        }
+
+        // 无旧结果 → 显示错误态
+        self.setData({
+          aiDiagnosis: null,
+          aiDiagnosisLoading: false,
+          aiDiagnosisRefreshing: false,
+          aiDiagnosisError: true,
+        })
+        return null
+      } finally {
+        self._aiDiagnosisPromise = null
+      }
+    })()
+
+    return this._aiDiagnosisPromise
+  },
+
+  /**
+   * 手动重新分析
+   */
+  refreshAiDiagnosis() {
+    if (this._aiDiagnosisPromise) {
+      wx.showToast({ title: '正在更新中...', icon: 'none' })
+      return
+    }
+    if (this._aiStatsLoaded) {
+      var total = (this.data.stats || {}).total
+      if (total === 0) {
+        wx.showToast({ title: '暂无错题数据', icon: 'none' })
+        return
+      }
+    }
+    this.ensureAiDiagnosis({ force: true })
+  },
+
+  // ════════════════════════════════════════════
+  // Decorators & Analysis (unchanged)
+  // ════════════════════════════════════════════
 
   _decorateItem(item) {
     const wrongCount = this._positiveNumber(

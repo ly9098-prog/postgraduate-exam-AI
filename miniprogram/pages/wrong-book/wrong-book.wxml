@@ -1,139 +1,144 @@
 <view class="page">
-  <!-- 顶部 Hero -->
-  <view class="hero-card">
-    <view class="hero-glow"></view>
-    <view class="hero-content">
-      <view class="hero-kicker">错题本</view>
-      <view class="hero-title">{{primaryStatLabel}}</view>
-      <view class="hero-number-row">
-        <text class="hero-number">{{primaryStatCount}}</text>
-        <text class="hero-unit">题</text>
+  <!-- ════════════════════════════════════════════
+       Header: title + filter
+       ════════════════════════════════════════════ -->
+  <view class="page-header">
+    <view class="header-left">
+      <view class="header-title-row">
+        <view class="header-dot-line">
+          <text class="header-dot"></text>
+          <text class="header-line"></text>
+        </view>
+        <text class="header-title">错题本</text>
       </view>
-      <view class="hero-desc">把每一次错误变成下一次提分线索</view>
+      <text class="header-desc">把容易重复出错的题目集中解决</text>
     </view>
-    <view class="hero-filter-btn" bindtap="toggleFilter">
-      <text class="filter-btn-text">筛选</text>
-    </view>
-  </view>
-
-  <view class="insight-grid" wx:if="{{analysis.summaryCards.length > 0}}">
-    <view wx:for="{{analysis.summaryCards}}" wx:key="key" class="insight-card tone-{{item.tone}}">
-      <text class="insight-value">{{item.value}}</text>
-      <text class="insight-label">{{item.label}}</text>
+    <view class="header-actions">
+      <view class="icon-btn {{showFilter || selectedSubject || selectedErrorType || selectedTopic ? 'icon-btn-active' : ''}}" bindtap="toggleFilter">
+        <text class="icon-btn-text">
+          <block wx:if="{{filterCount > 0}}">筛选 {{filterCount}}</block>
+          <block wx:else>筛选</block>
+        </text>
+      </view>
     </view>
   </view>
 
-  <!-- 筛选面板 -->
+  <!-- ════════════════════════════════════════════
+       Asymmetric overview card
+       ════════════════════════════════════════════ -->
+  <view class="overview-card">
+    <view class="overview-main">
+      <text class="overview-main-label">待复习</text>
+      <view class="overview-main-num">
+        <text class="overview-number">{{primaryStatCount}}</text>
+        <text class="overview-unit">道错题</text>
+      </view>
+    </view>
+    <view class="overview-divider"></view>
+    <view class="overview-aux">
+      <view class="overview-aux-item">
+        <text class="overview-aux-value">{{stats.total}}</text>
+        <text class="overview-aux-unit">道</text>
+        <text class="overview-aux-label">累计</text>
+      </view>
+      <view class="overview-aux-sep"></view>
+      <view class="overview-aux-item">
+        <text class="overview-aux-value primary">{{masteredCount}}</text>
+        <text class="overview-aux-unit">道</text>
+        <text class="overview-aux-label">已掌握</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ════════════════════════════════════════════
+       今日优先 — simplified suggestion
+       ════════════════════════════════════════════ -->
+  <view class="suggestion-card" wx:if="{{analysis.actionPlan.length > 0}}">
+    <text class="suggestion-tag">今日优先</text>
+    <text class="suggestion-title">{{analysis.actionPlan[0].title}}</text>
+    <text class="suggestion-meta">{{analysis.actionPlan[0].desc}}</text>
+  </view>
+  <view class="suggestion-card empty" wx:else>
+    <text class="suggestion-tag muted">今日优先</text>
+    <text class="suggestion-title muted">当前没有紧急复习任务</text>
+    <text class="suggestion-meta muted">完成新练习后会更新建议</text>
+  </view>
+
+  <!-- ════════════════════════════════════════════
+       Open stat band — 高频错因
+       ════════════════════════════════════════════ -->
+  <view class="stat-band" wx:if="{{analysis.summaryCards.length > 0}}">
+    <view wx:for="{{analysis.summaryCards}}" wx:key="key" class="stat-band-item">
+      <view class="stat-band-dot tone-{{item.tone}}"></view>
+      <text class="stat-band-value">{{item.value}}</text>
+      <text class="stat-band-label">{{item.label}}</text>
+    </view>
+  </view>
+
+  <!-- ════════════════════════════════════════════
+       Filter panel
+       ════════════════════════════════════════════ -->
   <view class="filter-panel {{showFilter ? 'filter-open' : ''}}">
     <view class="filter-section">
       <text class="filter-section-title">学科</text>
       <view class="filter-chips">
-        <view
-          wx:for="{{subjects}}"
-          wx:key="value"
-          class="chip {{selectedSubject === item.value ? 'chip-active' : ''}}"
-          bindtap="selectSubject"
-          data-value="{{item.value}}"
-        >{{item.label}}</view>
+        <view wx:for="{{subjects}}" wx:key="value" class="chip {{selectedSubject === item.value ? 'chip-active' : ''}}" bindtap="selectSubject" data-value="{{item.value}}">{{item.label}}</view>
       </view>
     </view>
     <view class="filter-section">
       <text class="filter-section-title">错因</text>
       <view class="filter-chips">
-        <view
-          wx:for="{{errorTypes}}"
-          wx:key="value"
-          class="chip {{selectedErrorType === item.value ? 'chip-active' : ''}}"
-          bindtap="selectErrorType"
-          data-value="{{item.value}}"
-        >{{item.label}}</view>
+        <view wx:for="{{errorTypes}}" wx:key="value" class="chip {{selectedErrorType === item.value ? 'chip-active' : ''}}" bindtap="selectErrorType" data-value="{{item.value}}">{{item.label}}</view>
       </view>
     </view>
   </view>
 
-  <!-- 话题筛选标签 -->
   <view wx:if="{{selectedTopic}}" class="topic-filter-bar">
     <text class="topic-filter-label">知识点：{{selectedTopic}}</text>
     <text class="topic-filter-clear" bindtap="clearTopic">清除</text>
   </view>
 
-  <!-- 知识漏洞分析 -->
+  <!-- ════════════════════════════════════════════
+       浅蓝分区：薄弱点 + 复习轨迹
+       ════════════════════════════════════════════ -->
+  <view class="section-zone">
+    <!-- 薄弱点 -->
+    <view class="zone-head">
+      <view class="zone-head-icon">
+        <text class="line-icon icon-target"></text>
+      </view>
+      <text class="zone-head-title">薄弱点</text>
+      <text class="zone-head-count">{{analysis.weaknessTags.length}} 项</text>
+    </view>
+    <view wx:if="{{analysis.weaknessTags.length > 0}}" class="weakness-list">
+      <view wx:for="{{analysis.weaknessTags}}" wx:key="key" class="weakness-row {{index === 0 ? 'top' : ''}}">
+        <text class="weakness-dot {{index === 0 ? 'danger' : 'blue'}}"></text>
+        <text class="weakness-row-label">{{item.label}}</text>
+        <text class="weakness-row-count">{{item.count}}道</text>
+      </view>
+    </view>
+    <view wx:else class="zone-pending">错题数据积累后将生成弱项分析</view>
+
+    <!-- 复习轨迹 -->
+    <view class="trajectory" wx:if="{{analysis.actionPlan.length > 0}}">
+      <view class="trajectory-line"></view>
+      <view wx:for="{{analysis.actionPlan}}" wx:key="key" class="trajectory-step">
+        <view class="trajectory-dot {{index === 0 ? 'active' : ''}}">{{index + 1}}</view>
+        <view class="trajectory-body">
+          <text class="trajectory-title">{{item.title}}</text>
+          <text class="trajectory-desc" wx:if="{{item.desc}}">{{item.desc}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ════════════════════════════════════════════
+       Analysis card — 能力雷达 + 学科
+       ════════════════════════════════════════════ -->
   <view class="analysis-card">
-    <view class="section-head">
-      <view>
-        <text class="section-title">知识漏洞分析</text>
-        <text class="section-subtitle">{{analysis.sourceLabel}}，用于定位优先复盘方向</text>
-      </view>
-    </view>
-
-    <view wx:if="{{analysis.weaknessTags.length > 0}}" class="weakness-tags">
-      <view wx:for="{{analysis.weaknessTags}}" wx:key="key" class="weakness-tag">
-        <text class="weakness-label">{{item.label}}</text>
-        <text class="weakness-count">{{item.count}}题</text>
-      </view>
-    </view>
-    <view wx:else class="analysis-pending">错题数据积累后，将按错因生成弱项标签</view>
-
-    <text class="sr-summary">复盘建议：<text wx:for="{{analysis.actionPlan}}" wx:key="key">{{item.title}}——{{item.desc}}。 </text></text>
-    <view class="action-plan" wx:if="{{analysis.actionPlan.length > 0}}">
-      <view wx:for="{{analysis.actionPlan}}" wx:key="key" class="plan-item">
-        <text class="plan-dot"></text>
-        <view class="plan-copy">
-          <text class="plan-title">{{item.title}}</text>
-          <text class="plan-desc">{{item.desc}}</text>
-        </view>
-      </view>
-    </view>
-
-    <view class="focus-diagnosis" wx:if="{{analysis.radarItems.length > 0}}">
-      <view class="focus-copy">
-        <text class="focus-kicker">AI 复盘优先级</text>
-        <text class="focus-title">{{analysis.focusInsight}}</text>
-        <text class="focus-desc">{{analysis.radarAxisText}}</text>
-      </view>
-      <view class="focus-score">{{analysis.radarItems[0].percent}}</view>
-    </view>
-
-    <!-- AI 深度诊断 -->
-    <view class="ai-diagnosis-card" wx:if="{{aiDiagnosis}}">
-      <view class="ai-diag-head">
-        <text class="ai-diag-kicker">AI 深度诊断</text>
-        <text class="ai-diag-badge" wx:if="{{aiDiagnosis.generated}}">DeepSeek</text>
-        <text class="ai-diag-badge local" wx:else>本地分析</text>
-      </view>
-      <text class="ai-diag-summary">{{aiDiagnosis.summary}}</text>
-      <view class="ai-diag-columns" wx:if="{{aiDiagnosis.weak_points.length > 0 || aiDiagnosis.strong_points.length > 0}}">
-        <view class="ai-diag-col" wx:if="{{aiDiagnosis.weak_points.length > 0}}">
-          <text class="ai-diag-col-title weak">薄弱环节</text>
-          <view class="ai-diag-item" wx:for="{{aiDiagnosis.weak_points}}" wx:key="knowledge_point">
-            <text class="ai-diag-kp">{{item.knowledge_point}}</text>
-            <text class="ai-diag-acc">{{item._accuracyPercent}}%</text>
-            <text class="ai-diag-tip">{{item.suggestion}}</text>
-          </view>
-        </view>
-        <view class="ai-diag-col" wx:if="{{aiDiagnosis.strong_points.length > 0}}">
-          <text class="ai-diag-col-title strong">优势领域</text>
-          <view class="ai-diag-item" wx:for="{{aiDiagnosis.strong_points}}" wx:key="knowledge_point">
-            <text class="ai-diag-kp">{{item.knowledge_point}}</text>
-            <text class="ai-diag-acc good">{{item._accuracyPercent}}%</text>
-            <text class="ai-diag-tip">{{item.suggestion}}</text>
-          </view>
-        </view>
-      </view>
-      <view class="ai-diag-suggestions" wx:if="{{aiDiagnosis.learning_suggestions.length > 0}}">
-        <text class="ai-diag-sug-title">学习建议</text>
-        <text class="ai-diag-sug-item" wx:for="{{aiDiagnosis.learning_suggestions}}" wx:key="*this">{{index + 1}}. {{item}}</text>
-      </view>
-      <text class="sr-summary">{{aiDiagnosis.summary}} 薄弱环节：<text wx:for="{{aiDiagnosis.weak_points}}" wx:key="knowledge_point">{{item.knowledge_point}}掌握率{{item._accuracyPercent}}%。 </text>学习建议：<text wx:for="{{aiDiagnosis.learning_suggestions}}" wx:key="*this">{{item}}。 </text></text>
-    </view>
-    <view class="ai-diagnosis-loading" wx:elif="{{aiDiagnosisLoading}}">
-      <view class="ai-loading-pulse"></view>
-      <text class="ai-loading-text">AI 正在分析错题数据...</text>
-    </view>
-
     <view class="map-grid">
       <view class="map-block radar-block">
-        <text class="map-title">能力雷达</text>
+        <text class="map-title">能力</text>
         <view wx:if="{{analysis.radarItems.length > 0}}" class="radar-panel">
           <text class="sr-summary">能力雷达：{{analysis.radarAxisText}}</text>
           <view class="radar-chart">
@@ -157,10 +162,8 @@
         </view>
         <view wx:else class="mini-pending">待积累</view>
       </view>
-
       <view class="map-block">
-        <text class="map-title">学科分布</text>
-        <text class="sr-summary">学科分布：<text wx:for="{{analysis.subjectItems}}" wx:key="key">{{item.label}}{{item.count}}题 </text></text>
+        <text class="map-title">学科</text>
         <view wx:if="{{analysis.subjectItems.length > 0}}" class="subject-map">
           <view wx:for="{{analysis.subjectItems}}" wx:key="key" class="subject-dot" style="height: {{item.height}}rpx;">
             <text class="subject-count">{{item.count}}</text>
@@ -174,12 +177,104 @@
     </view>
   </view>
 
-  <!-- 加载态 -->
+  <!-- ════════════════════════════════════════════
+       AI 诊断 — 错误态（首次加载失败，无缓存）
+       ════════════════════════════════════════════ -->
+  <view class="ai-error-state" wx:if="{{aiDiagnosisError && !aiDiagnosis}}">
+    <view class="ai-error-body">
+      <text class="ai-error-text">AI 诊断加载失败</text>
+      <text class="ai-error-action" bindtap="refreshAiDiagnosis">重新分析</text>
+    </view>
+  </view>
+
+  <!-- AI 诊断 — 骨架屏（首次加载，无旧结果时） -->
+  <view class="ai-skeleton-card" wx:elif="{{aiDiagnosisLoading && !aiDiagnosis}}">
+    <view class="ais-head">
+      <view class="ais-badge"></view>
+      <view class="ais-label"></view>
+    </view>
+    <view class="ais-summary">
+      <view class="ais-line long"></view>
+      <view class="ais-line medium"></view>
+      <view class="ais-line short"></view>
+    </view>
+    <view class="ais-columns">
+      <view class="ais-col">
+        <view class="ais-col-title"></view>
+        <view class="ais-item">
+          <view class="ais-item-line long"></view>
+          <view class="ais-item-line short"></view>
+        </view>
+        <view class="ais-item">
+          <view class="ais-item-line medium"></view>
+          <view class="ais-item-line short"></view>
+        </view>
+      </view>
+      <view class="ais-col">
+        <view class="ais-col-title"></view>
+        <view class="ais-item">
+          <view class="ais-item-line long"></view>
+          <view class="ais-item-line short"></view>
+        </view>
+      </view>
+    </view>
+    <view class="ais-suggestions">
+      <view class="ais-sug-title"></view>
+      <view class="ais-line long"></view>
+      <view class="ais-line medium"></view>
+      <view class="ais-line short"></view>
+    </view>
+  </view>
+
+  <!-- AI 诊断 — 结果内容 -->
+  <view class="ai-card {{aiDiagnosisRefreshing ? 'is-refreshing' : (aiDiagnosisCacheStale ? 'is-stale' : '')}}" wx:elif="{{aiDiagnosis}}">
+    <view class="ai-head">
+      <view class="ai-head-main">
+        <text class="ai-head-tag">AI 诊断</text>
+        <text class="ai-head-badge" wx:if="{{aiDiagnosis.generated}}">DeepSeek</text>
+        <text class="ai-head-badge local" wx:else>本地分析</text>
+      </view>
+      <view class="ai-head-actions">
+        <text class="ai-cache-time" wx:if="{{aiDiagnosisCacheTimeLabel}}">
+          {{aiDiagnosisRefreshing ? '正在更新…' : aiDiagnosisCacheTimeLabel}}
+        </text>
+        <text
+          class="ai-refresh-action {{aiDiagnosisRefreshing ? 'disabled' : ''}}"
+          bindtap="refreshAiDiagnosis"
+        >重新分析</text>
+      </view>
+    </view>
+    <text class="ai-summary">{{aiDiagnosis.summary}}</text>
+    <view class="ai-columns" wx:if="{{aiDiagnosis.weak_points.length > 0 || aiDiagnosis.strong_points.length > 0}}">
+      <view class="ai-col" wx:if="{{aiDiagnosis.weak_points.length > 0}}">
+        <text class="ai-col-title weak">薄弱环节</text>
+        <view wx:for="{{aiDiagnosis.weak_points}}" wx:key="knowledge_point" class="ai-item">
+          <text class="ai-item-kp">{{item.knowledge_point}}</text>
+          <text class="ai-item-acc">{{item._accuracyPercent}}%</text>
+          <text class="ai-item-tip">{{item.suggestion}}</text>
+        </view>
+      </view>
+      <view class="ai-col" wx:if="{{aiDiagnosis.strong_points.length > 0}}">
+        <text class="ai-col-title strong">优势领域</text>
+        <view wx:for="{{aiDiagnosis.strong_points}}" wx:key="knowledge_point" class="ai-item">
+          <text class="ai-item-kp">{{item.knowledge_point}}</text>
+          <text class="ai-item-acc good">{{item._accuracyPercent}}%</text>
+          <text class="ai-item-tip">{{item.suggestion}}</text>
+        </view>
+      </view>
+    </view>
+    <view class="ai-suggestions" wx:if="{{aiDiagnosis.learning_suggestions.length > 0}}">
+      <text class="ai-sug-title">学习建议</text>
+      <text wx:for="{{aiDiagnosis.learning_suggestions}}" wx:key="*this" class="ai-sug-item">{{index + 1}}. {{item}}</text>
+    </view>
+  </view>
+
+  <!-- ════════════════════════════════════════════
+       Loading / Empty
+       ════════════════════════════════════════════ -->
   <view wx:if="{{loading && list.length === 0}}" class="loading-wrap">
     <loading-lottie text="正在加载错题..." size="large" />
   </view>
-
-  <!-- 空态 -->
   <view wx:if="{{!loading && list.length === 0}}" class="empty-state">
     <view class="empty-icon">
       <text class="empty-icon-text line-icon icon-check" style="width:44rpx;height:44rpx;color:#22C55E;"></text>
@@ -188,61 +283,61 @@
     <text class="empty-desc">刷题中产生的错题会自动出现在这里</text>
   </view>
 
-  <!-- 错题卡片列表 -->
-  <view class="card-list" wx:if="{{list.length > 0}}">
-    <view class="list-title-row">
-      <text class="list-title">错题清单</text>
-      <text class="list-subtitle">点击卡片进入复盘</text>
+  <!-- ════════════════════════════════════════════
+       Wrong question list — unified shell
+       ════════════════════════════════════════════ -->
+  <view class="wrong-list-shell" wx:if="{{list.length > 0}}">
+    <view class="wl-header">
+      <text class="wl-header-text">全部错题 · {{stats.total}}</text>
+      <text class="wl-header-hint">点击题目进入复盘</text>
+      <text class="wl-header-count" wx:if="{{selectedSubject || selectedErrorType || selectedTopic}}">已找到 {{list.length}} 道</text>
     </view>
-    <view
-      wx:for="{{list}}"
-      wx:key="id"
-      class="wrong-card"
-      bindtap="goDetail"
-      data-id="{{item.id}}"
-    >
-      <view class="card-top">
-        <view class="tag-group">
-          <text class="subject-tag">{{item._subjectLabel}}</text>
-          <text class="error-tag type-{{item.error_type}}">{{item._errorTypeLabel}}</text>
+    <view wx:for="{{list}}" wx:key="id" class="wl-item" bindtap="goDetail" data-id="{{item.id}}">
+      <!-- 状态装饰线 -->
+      <view class="wl-status-line" style="background:{{item._masteryPercent >= 80 ? '#22C55E' : item._masteryPercent >= 40 ? '#4F7FFF' : '#EF4444'}};"></view>
+      <view class="wl-body">
+        <!-- 第一行：标签 + 时间 -->
+        <view class="wl-top">
+          <view class="wl-tags">
+            <text class="wl-subject-tag">{{item._subjectLabel}}</text>
+            <text class="wl-error-tag type-{{item.error_type}}">{{item._errorTypeLabel}}</text>
+          </view>
+          <view class="wl-meta-right">
+            <text class="wl-time">{{item._lastErrorLabel}}</text>
+            <text class="wl-arrow line-icon icon-chevron-right"></text>
+          </view>
         </view>
-        <text class="card-arrow line-icon icon-chevron-right"></text>
-      </view>
-      <view class="card-body">
-        <block wx:if="{{enableMathImage && item.content && item.content.render_mode === 'segments'}}">
-          <math-question segments="{{item.content.segments}}" />
-        </block>
-        <block wx:else>
-          <text class="card-question">{{item._cleanText}}</text>
-        </block>
-      </view>
-
-      <view class="metric-row">
-        <view class="metric-pill danger">
-          <text class="metric-value">{{item._wrongCount}}</text>
-          <text class="metric-label">记录次数</text>
+        <!-- 题干 -->
+        <view class="wl-stem">
+          <block wx:if="{{enableMathImage && item.content && item.content.render_mode === 'segments'}}">
+            <math-question segments="{{item.content.segments}}" />
+          </block>
+          <block wx:else>
+            <text class="wl-stem-text">{{item._cleanText}}</text>
+          </block>
         </view>
-        <view class="metric-pill blue">
-          <text class="metric-value">{{item._reviewCount}}</text>
-          <text class="metric-label">复习次数</text>
+        <!-- 元信息 -->
+        <view class="wl-meta">
+          <view class="wl-meta-left">
+            <text class="wl-meta-stat">错 <text class="wl-meta-num">{{item._wrongCount}}</text> 次</text>
+            <text class="wl-meta-sep">·</text>
+            <text class="wl-meta-stat">已复习 <text class="wl-meta-num">{{item._reviewCount}}</text> 次</text>
+          </view>
+          <text class="wl-mastery {{item._masteryPercent >= 80 ? 'high' : item._masteryPercent >= 40 ? 'mid' : 'low'}}">
+            <text class="wl-mastery-label">{{item._masteryPercent >= 80 ? '掌握较好' : item._masteryPercent >= 40 ? '巩固中' : '待攻克'}}</text>
+            <text class="wl-mastery-pct">{{item._masteryPercent}}%</text>
+          </text>
         </view>
-        <view class="metric-pill soft">
-          <text class="metric-value small">{{item._lastErrorLabel}}</text>
-          <text class="metric-label">最近错误</text>
-        </view>
-      </view>
-
-      <view class="mastery-block">
-        <view class="mastery-head">
-          <text class="mastery-title">掌握进度</text>
-          <text class="mastery-percent">{{item._masteryPercent}}% · {{item._masteryLabel}}</text>
-        </view>
-        <view class="mastery-track">
-          <view class="mastery-fill" style="width: {{item._masteryPercent}}%;"></view>
+        <!-- 进度条 -->
+        <view class="wl-bar-track">
+          <view class="wl-bar-fill" style="background:{{item._masteryPercent >= 80 ? '#22C55E' : item._masteryPercent >= 40 ? '#4F7FFF' : '#EF4444'}}; width:{{item._masteryPercent}}%;"></view>
         </view>
       </view>
+      <view class="wl-sep" wx:if="{{index < list.length - 1}}"></view>
     </view>
-
-    <view class="load-more" wx:if="{{hasMore}}" bindtap="loadMore">加载更多</view>
+    <view class="wl-load-more" wx:if="{{hasMore}}" bindtap="loadMore">
+      <text class="wl-load-more-text">加载更多错题</text>
+      <text class="wl-load-more-icon line-icon icon-chevron-down"></text>
+    </view>
   </view>
 </view>

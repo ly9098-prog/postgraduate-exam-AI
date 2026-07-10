@@ -113,33 +113,34 @@
     <loading-lottie text="正在准备复习题目..." size="large" />
   </view>
 
-  <quiz-runner
-    wx:else
-    mode="review"
-    title="今日复习"
-    subtitle="{{runnerSubtitle}}"
-    subjectName="{{runnerSubjectName}}"
-    questions="{{groupQuestions}}"
-    currentQuestion="{{currentQuestion}}"
-    currentIndex="{{currentIndex}}"
-    totalCount="{{groupQuestions.length}}"
-    answeredCount="{{_answeredCount}}"
-    progressPercent="{{runnerProgressPercent}}"
-    readonly="{{false}}"
-    submitting="{{submittingGroup}}"
-    showFeedback="{{false}}"
-    submitText="提交本组复盘"
-    showMasterButton="{{true}}"
-    flowLayout="{{true}}"
-    compactBottom="{{true}}"
-    bind:selectoption="selectOption"
-    bind:selectblankoption="selectBlankOption"
-    bind:prev="goPrev"
-    bind:next="goNext"
-    bind:jump="goQuestion"
-    bind:submit="submitGroup"
-    bind:master="tapMaster"
-  />
+  <view class="review-practice-content" wx:else>
+    <quiz-runner
+      mode="review"
+      title="今日复习"
+      subtitle="{{runnerSubtitle}}"
+      subjectName="{{runnerSubjectName}}"
+      questions="{{groupQuestions}}"
+      currentQuestion="{{currentQuestion}}"
+      currentIndex="{{currentIndex}}"
+      totalCount="{{groupQuestions.length}}"
+      answeredCount="{{_answeredCount}}"
+      progressPercent="{{runnerProgressPercent}}"
+      readonly="{{false}}"
+      submitting="{{submittingGroup}}"
+      showFeedback="{{false}}"
+      submitText="提交本组复盘"
+      showMasterButton="{{true}}"
+      flowLayout="{{true}}"
+      compactBottom="{{true}}"
+      bind:selectoption="selectOption"
+      bind:selectblankoption="selectBlankOption"
+      bind:prev="goPrev"
+      bind:next="goNext"
+      bind:jump="goQuestion"
+      bind:submit="submitGroup"
+      bind:master="tapMaster"
+    />
+  </view>
 </view>
 
 <!-- ==================== 组结果页 ==================== -->

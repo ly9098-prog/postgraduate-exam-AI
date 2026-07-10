@@ -386,6 +386,21 @@ page {
   text-align: center;
   padding: 28rpx 12rpx;
 }
+.ai-fallback.inside {
+  padding: 24rpx;
+  border-radius: 20rpx;
+  background: #FEF2F2;
+  border: 1rpx solid rgba(239, 68, 68, 0.12);
+}
+.ai-fallback.inside .fallback-mark {
+  background: #FEF2F2;
+}
+.ai-fallback.inside .fallback-title {
+  font-size: 26rpx;
+}
+.ai-fallback.inside .fallback-desc {
+  font-size: 22rpx;
+}
 
 .fallback-mark {
   width: 82rpx;

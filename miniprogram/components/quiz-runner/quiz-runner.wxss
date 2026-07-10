@@ -827,74 +827,86 @@
 }
 
 /* ==================== flow layout (review-today) ==================== */
+/* 流式模式：用于 review-today 答题阶段。
+   与全屏 Flex 模式不同，流式模式使用普通文档流，
+   让题目卡片、导航和提交按钮按 DOM 顺序自然排列，
+   不撑高到全屏，不将底部栏推到屏幕底部。 */
 
 .quiz-runner.runner-flow {
+  display: block;
   min-height: 0;
   height: auto;
   overflow: visible;
   background: transparent;
-  display: block;
 }
 
+/* 题目区域：不填充剩余高度，高度由内容决定 */
 .runner-flow .runner-question-area {
   flex: none;
   min-height: 0;
+  height: auto;
   overflow: visible;
-  padding: 10rpx 24rpx 8rpx;
-  box-sizing: border-box;
+  padding: 10rpx 24rpx 0;
 }
 
+/* 题目卡片：取消最小高度限制，由真实内容撑高 */
 .runner-flow .runner-q-wrap {
   margin-bottom: 0;
+  min-height: 200rpx;
 }
 
+/* 底部操作栏：普通文档流定位，不固定不绝对 */
 .runner-flow.runner-bottom-compact .runner-bottom-bar {
   position: static;
-  margin: 4rpx 24rpx 0;
-  padding: 6rpx 0 calc(8rpx + env(safe-area-inset-bottom));
+  margin: 20rpx 24rpx 0;
+  padding: 0 0 calc(12rpx + env(safe-area-inset-bottom));
   background: transparent;
   border-top: none;
   box-shadow: none;
   box-sizing: border-box;
 }
 
+/* 导航行：紧凑但不拥挤 */
 .runner-flow.runner-bottom-compact .runner-bottom-inner {
-  min-height: 52rpx;
-  gap: 12rpx;
+  min-height: 56rpx;
+  gap: 14rpx;
 }
 
 .runner-flow.runner-bottom-compact .runner-nav-btn {
-  padding: 8rpx 0;
+  padding: 10rpx 0;
+  /* 通过透明内边距保证触控面积 >= 72rpx */
 }
 
 .runner-flow.runner-bottom-compact .runner-nav-label {
   font-size: 25rpx;
+  font-weight: 800;
 }
 
 .runner-flow.runner-bottom-compact .runner-nav-arrow {
-  width: 30rpx;
-  height: 30rpx;
+  width: 32rpx;
+  height: 32rpx;
 }
 
 .runner-flow.runner-bottom-compact .runner-nav-center {
-  gap: 7rpx;
+  gap: 8rpx;
 }
 
 .runner-flow.runner-bottom-compact .runner-dot {
-  width: 13rpx;
-  height: 13rpx;
+  width: 14rpx;
+  height: 14rpx;
 }
 
 .runner-flow.runner-bottom-compact .runner-dot.runner-active {
-  width: 24rpx;
+  width: 26rpx;
 }
 
+/* 提交按钮：紧跟导航行，间距紧凑 */
 .runner-flow.runner-bottom-compact .runner-btn-submit {
   width: 100%;
-  margin-top: 6rpx;
-  padding: 18rpx 0;
-  border-radius: 18rpx;
-  font-size: 27rpx;
+  margin-top: 12rpx;
+  padding: 22rpx 0;
+  border-radius: 20rpx;
+  font-size: 28rpx;
   line-height: 1.35;
   box-shadow: 0 10rpx 24rpx rgba(23, 32, 51, 0.13);
 }

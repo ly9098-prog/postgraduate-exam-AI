@@ -1570,16 +1570,21 @@ page {
   transform: none;
 }
 
-/* ==================== review-practice 紧凑布局 ==================== */
+/* ==================== review-practice 流式布局 ==================== */
 
 .review-practice {
   min-height: 100vh;
-  padding: 0 0 calc(16rpx + env(safe-area-inset-bottom));
-  box-sizing: border-box;
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
+  height: auto;
+  overflow: visible;
   background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
+}
+
+/* 内容包装器：纯块级，不贡献额外高度 */
+.review-practice-content {
+  display: block;
+  min-height: 0;
+  height: auto;
+  overflow: visible;
 }
 
 .review-practice .reviewing-progress-strip {
