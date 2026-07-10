@@ -326,9 +326,46 @@ Page({
   contactSupport() {
     wx.showModal({
       title: '联系与反馈',
-      content: '如需反馈问题或申请账号注销，请发送邮件至：support@xzshub.top',
+      content: '如需反馈问题，请发送邮件至：support@xzshub.top',
       showCancel: false,
       confirmText: '我知道了',
+    })
+  },
+
+  onAccountDeletion() {
+    wx.showModal({
+      title: '账号注销',
+      content: '注销后，您的所有学习记录、错题本、练习结果和 AI 诊断数据将被永久删除，且无法恢复。确定要继续吗？',
+      confirmText: '确认注销',
+      confirmColor: '#EF4444',
+      cancelText: '再想想',
+      success: (res) => {
+        if (!res.confirm) return
+        // 二次确认
+        wx.showModal({
+          title: '再次确认',
+          content: '此操作不可撤销。注销后您将无法登录此账号，所有个人数据将按隐私政策处理。',
+          confirmText: '确认注销',
+          confirmColor: '#EF4444',
+          cancelText: '取消',
+          success: async (res2) => {
+            if (!res2.confirm) return
+            try {
+              await api.post('/users/me/deletion-request')
+              // 清除本地数据并跳转
+              await auth.logout()
+              wx.reLaunch({ url: '/pages/login/login' })
+              wx.showToast({ title: '账号已注销', icon: 'success' })
+            } catch (e) {
+              wx.showToast({
+                title: e && e.message ? e.message : '注销失败，请稍后重试',
+                icon: 'none',
+                duration: 3000,
+              })
+            }
+          },
+        })
+      },
     })
   },
 
@@ -336,9 +373,9 @@ Page({
     wx.showModal({
       title: '退出登录',
       content: '退出后需重新登录，确定退出？',
-      success: (res) => {
+      success: async (res) => {
         if (!res.confirm) return
-        auth.logout()
+        await auth.logout()
         wx.reLaunch({ url: '/pages/login/login' })
       },
     })

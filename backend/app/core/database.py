@@ -207,6 +207,18 @@ async def _ensure_user_ban_columns(conn):
     await conn.run_sync(repair)
 
 
+async def _ensure_user_deleted_column(conn):
+    def repair(sync_conn):
+        inspector = inspect(sync_conn)
+        if "users" not in set(inspector.get_table_names()):
+            return
+        existing_columns = {column["name"] for column in inspector.get_columns("users")}
+        if "deleted_at" not in existing_columns:
+            sync_conn.execute(text('ALTER TABLE "users" ADD COLUMN "deleted_at" TIMESTAMP'))
+
+    await conn.run_sync(repair)
+
+
 async def _ensure_sync_columns(conn):
     def repair(sync_conn):
         inspector = inspect(sync_conn)
@@ -372,6 +384,7 @@ async def init_db():
     from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
     from app.models.recommendation_log import RecommendationLog  # noqa: F401
     from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401 — Phase 3
+    from app.models.ai_feedback_log import AiFeedbackLog  # noqa: F401
     from app.models.recommendation_strategy_config import RecommendationStrategyConfig  # noqa: F401 — Phase 4
     from app.models.recommendation_experiment import RecommendationExperiment  # noqa: F401 — Phase 4
     from app.models.recommendation_experiment_assignment import RecommendationExperimentAssignment  # noqa: F401 — Phase 4
@@ -383,6 +396,7 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
         await _repair_postgres_sequences(conn)
         await _ensure_user_ban_columns(conn)
+        await _ensure_user_deleted_column(conn)
         await _ensure_app_user_admin_bindings_table(conn)
         await _ensure_duplicate_check_columns(conn)
         await _ensure_sync_columns(conn)

@@ -2,30 +2,115 @@
   <view class="agreement-hero">
     <text class="agreement-kicker">数据保护</text>
     <text class="agreement-title">隐私政策</text>
-    <text class="agreement-desc">我们只在学习记录、错题复习、题库导入与服务安全所需范围内处理数据。</text>
+    <text class="agreement-desc">最近更新：2026 年 7 月 · 版本 V1.0</text>
   </view>
 
   <view class="agreement-card">
     <view class="agreement-body">
       <view class="agreement-item">
         <text class="item-index">1</text>
-        <text class="agreement-paragraph">本小程序可能收集微信登录标识、学习记录、错题记录、练习结果、导入题目内容等必要数据。</text>
+        <text class="agreement-paragraph">
+          <text class="inner-head">运营者信息</text>
+          本小程序由个人开发者运营（联系方式：support@xzshub.top）。如您对本政策有任何疑问，可通过上述邮箱与我们联系。
+        </text>
       </view>
       <view class="agreement-item">
         <text class="item-index">2</text>
-        <text class="agreement-paragraph">收集数据用于账号识别、学习进度保存、错题复习、智能刷题与服务安全。</text>
+        <text class="agreement-paragraph">
+          <text class="inner-head">数据收集范围与目的</text>
+          我们仅在必要范围内收集以下数据：
+          · 微信登录标识（openid，仅用于账号识别与身份验证）；
+          · 学习记录与练习结果（用于学习进度保存、正确率统计、错题复习）；
+          · 错题记录与标记（用于记忆曲线复习安排）；
+          · 导入的题目图片与文件内容（用于 OCR 识别与题库导入）；
+          · AI 解析请求内容（用于生成题目解析与错因诊断）；
+          · 番茄钟计时数据（用于专注时长统计）。
+          我们不会收集您的微信好友列表、聊天记录、通讯录等与学习无关的数据。
+        </text>
       </view>
       <view class="agreement-item">
         <text class="item-index">3</text>
-        <text class="agreement-paragraph">数据会根据服务需要存储在本地或服务器中，并采取合理措施保护数据安全。</text>
+        <text class="agreement-paragraph">
+          <text class="inner-head">数据处理方式</text>
+          各类数据按以下方式处理：
+          · 微信登录标识：仅在您登录时通过微信官方 jscode2session 接口验证，不存储原始 code；
+          · 学习记录与练习结果：存储在服务器数据库中，用于统计与复习调度；
+          · 导入的题目图片和文件：上传至服务器进行 OCR 识别，处理完成后保留图片用于后续纠错；
+          · AI 解析内容：发送至第三方 AI 服务（DeepSeek API）生成分析和建议，处理结果返回后立即丢弃原始请求；
+          · 番茄钟数据：仅在本地设备处理，可选同步至服务器用于统计。
+        </text>
       </view>
       <view class="agreement-item">
         <text class="item-index">4</text>
-        <text class="agreement-paragraph">为完成登录、同步、导入或智能分析功能，相关数据可能上传至服务器处理。</text>
+        <text class="agreement-paragraph">
+          <text class="inner-head">第三方服务共享</text>
+          为实现特定功能，我们可能与以下第三方共享必要数据：
+          · DeepSeek API（北京深度求索）：接收题目文本与 AI 解析请求，用于生成学习建议和错因诊断；
+          · PaddleOCR 服务（百度飞桨）：接收题目图片，用于文字识别与结构化提取；
+          · 微信云托管（腾讯云）：存储用户学习数据和导入文件。
+          所有第三方均按各自隐私政策处理数据，我们已要求其采取合理安全措施。我们不会将您的数据用于广告、营销或用户画像分析。
+        </text>
       </view>
       <view class="agreement-item">
         <text class="item-index">5</text>
-        <text class="agreement-paragraph">当使用 AI 解析、OCR 识别等功能时，题目图片、文本或解析内容可能调用第三方 AI/OCR 服务完成处理。</text>
+        <text class="agreement-paragraph">
+          <text class="inner-head">信息保存期限</text>
+          您的数据将在账号活跃期间持续保存。具体保存期限如下：
+          · 微信登录标识：账号注销后立即删除，或账号连续 12 个月未登录后匿名化处理；
+          · 学习记录与练习结果：账号注销后删除，汇总统计可能匿名保留用于平台运营分析；
+          · 导入的题目图片：AI 标准化完成后保留 30 天，之后仅保留结构化文本；
+          · AI 解析结果：每次重新生成时覆盖旧结果，账号注销时删除；
+          · 番茄钟数据：本地存储，服务器端保留最近 6 个月。
+        </text>
+      </view>
+      <view class="agreement-item">
+        <text class="item-index">6</text>
+        <text class="agreement-paragraph">
+          <text class="inner-head">用户权利与数据管理</text>
+          您可以通过以下方式管理您的数据：
+          · 查询与更正：进入「学习统计」查看学习记录；昵称和头像可通过微信侧修改；
+          · 删除：进入「设置 → 清除本地缓存」删除设备上的缓存数据；
+          · 撤回同意：关闭本小程序即视为撤回数据处理同意，已处理的数据不受影响；
+          · 账号注销：进入「设置 → 账号注销」提交注销申请，我们将于 7 个工作日内处理（处理期间可申请撤销）。
+          您也可以通过邮箱 support@xzshub.top 提出数据查询、更正、删除请求，我们将在 15 个工作日内回复。
+        </text>
+      </view>
+      <view class="agreement-item">
+        <text class="item-index">7</text>
+        <text class="agreement-paragraph">
+          <text class="inner-head">账号注销后的数据处理</text>
+          注销账号后，我们将：
+          · 立即删除或匿名化微信登录标识，使其无法关联到您；
+          · 删除所有个人学习记录、错题本、练习结果和 AI 诊断缓存；
+          · 汇总统计数据（如总做题量、总复习次数）可能匿名保留用于平台分析；
+          · 根据法律法规要求必须保留的日志或交易记录，将在保留期满后自动删除。
+        </text>
+      </view>
+      <view class="agreement-item">
+        <text class="item-index">8</text>
+        <text class="agreement-paragraph">
+          <text class="inner-head">未成年人信息保护</text>
+          本小程序面向考研学生，适用于 14 周岁以上用户。如您是 14 周岁以下的未成年人，请在监护人指导下使用，且监护人应对您的学习活动负责。我们不会故意收集 14 周岁以下用户的个人数据。
+        </text>
+      </view>
+      <view class="agreement-item">
+        <text class="item-index">9</text>
+        <text class="agreement-paragraph">
+          <text class="inner-head">数据安全措施</text>
+          我们采取以下安全措施保护您的数据：
+          · 传输加密：所有 API 请求使用 HTTPS 加密传输；
+          · 存储加密：敏感字段（如微信 session_key）不在本地持久化存储；
+          · 访问控制：服务器端通过 JWT 认证限制数据访问权限；
+          · 日志脱敏：服务器日志中不记录完整的用户标识。
+        </text>
+      </view>
+      <view class="agreement-item">
+        <text class="item-index">10</text>
+        <text class="agreement-paragraph">
+          <text class="inner-head">政策更新</text>
+          本政策可能不时更新。重大变更时，我们将通过小程序内提示方式通知您。更新后的政策自发布之日起生效。如您不同意变更后的内容，您有权注销账号。历史版本可通过邮箱索取。
+          生效日期：2026 年 7 月 11 日
+        </text>
       </view>
     </view>
   </view>

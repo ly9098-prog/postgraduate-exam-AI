@@ -24,54 +24,48 @@ async function syncCurrentUser() {
   return user
 }
 
+/** 严格写入认证信息，失败时回滚并抛出异常 */
+function saveAuthSession(data, user) {
+  try {
+    storage.setStrict(KEYS.TOKEN, data.access_token)
+    storage.setStrict(
+      KEYS.TOKEN_EXPIRES_AT,
+      api.normalizeExpiresAt(data.expires_at)
+    )
+    storage.setStrict(KEYS.REFRESH_TOKEN, data.refresh_token)
+    storage.setStrict(KEYS.USER, user || {})
+  } catch (error) {
+    // 回滚已写入的认证信息
+    try { wx.removeStorageSync(KEYS.TOKEN) } catch (_) {}
+    try { wx.removeStorageSync(KEYS.TOKEN_EXPIRES_AT) } catch (_) {}
+    try { wx.removeStorageSync(KEYS.REFRESH_TOKEN) } catch (_) {}
+    try { wx.removeStorageSync(KEYS.USER) } catch (_) {}
+    throw new Error('登录信息保存失败，请清理存储空间后重试')
+  }
+}
+
 async function wechatLogin() {
   const { code } = await wx.login()
   if (!code) throw new Error('微信登录失败，请重试')
   const data = await api.post('/auth/login', { code })
   const user = normalizeUser(data.user)
-  storage.set(KEYS.TOKEN, data.access_token)
-  storage.set(KEYS.TOKEN_EXPIRES_AT, api.normalizeExpiresAt(data.expires_at))
-  storage.set(KEYS.REFRESH_TOKEN, data.refresh_token)
-  storage.set(KEYS.USER, user)
+  saveAuthSession(data, user)
   return user
 }
 
-function logout() {
-  // 清除认证信息
-  storage.remove(KEYS.TOKEN)
-  storage.remove(KEYS.TOKEN_EXPIRES_AT)
-  storage.remove(KEYS.REFRESH_TOKEN)
-  storage.remove(KEYS.USER)
-
-  // 清除用户业务缓存，防止跨账号数据串用
-  var businessKeys = [
-    'lastPracticeResult',
-    'wrong_detail_nav',
-    'pomodoro_running_state',
-    'pomodoro_pause',
-    'pomodoro_free_pause',
-    'pomodoro_completion',
-    'pomodoro_break',
-    'pomodoro_confirm_pause',
-    'pomodoro_pause_adjustment',
-    'pomodoro_font_size',
-    'pomodoro_anim_idx',
-    'home_today_goal_total',
-  ]
-  for (var bi = 0; bi < businessKeys.length; bi++) {
-    try { wx.removeStorageSync(businessKeys[bi]) } catch (_) {}
+/** 退出登录：撤销服务端 token + 清除本地所有会话数据 */
+async function logout() {
+  // 1. 优先尝试撤销服务端 Refresh Token（fire-and-forget，不阻塞本地清理）
+  try {
+    await api.post('/auth/logout')
+  } catch (_) {
+    // 服务端退出非必须（Token 自身过期后自动失效），静默忽略
   }
 
-  // 清除调试快照
-  try {
-    var allKeys = wx.getStorageInfoSync().keys || []
-    for (var ki = 0; ki < allKeys.length; ki++) {
-      if (allKeys[ki].indexOf('debug_snapshot:') === 0) {
-        wx.removeStorageSync(allKeys[ki])
-      }
-    }
-  } catch (_) {}
+  // 2. 清除本地所有会话数据
+  storage.clearSession({ preservePrivacyAcceptance: false, includeDebugSnapshots: true })
 
+  // 3. 清除协议同意记录，下次启动需重新同意
   privacy.clearPrivacyAcceptance()
 }
 
@@ -109,10 +103,14 @@ function redirectToLogin() {
 
 // 开发模式：直接设置 token（不经过 wx.login）
 function loginDirect(token, user, expiresAt, refreshToken) {
-  storage.set(KEYS.TOKEN, token)
-  if (expiresAt) storage.set(KEYS.TOKEN_EXPIRES_AT, api.normalizeExpiresAt(expiresAt))
-  if (refreshToken) storage.set(KEYS.REFRESH_TOKEN, refreshToken)
-  storage.set(KEYS.USER, normalizeUser(user))
+  saveAuthSession(
+    {
+      access_token: token,
+      expires_at: expiresAt,
+      refresh_token: refreshToken || '',
+    },
+    normalizeUser(user)
+  )
 }
 
 /**

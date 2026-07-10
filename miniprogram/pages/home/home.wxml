@@ -155,6 +155,10 @@
         <text class="settings-item-label">联系与反馈</text>
         <text class="line-icon icon-chevron-right settings-arrow"></text>
       </view>
+      <view class="settings-item logout" bindtap="onAccountDeletion">
+        <text class="settings-item-label logout-text">注销账号</text>
+        <text class="line-icon icon-chevron-right settings-arrow"></text>
+      </view>
       <view class="settings-item logout" bindtap="onLogout">
         <text class="settings-item-label logout-text">退出登录</text>
         <text class="line-icon icon-chevron-right settings-arrow"></text>
