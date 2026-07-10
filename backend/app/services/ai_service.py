@@ -24,14 +24,24 @@ ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS = 45
 _generating: set[int] = set()
 
 
+def _pick_field(d: dict, candidates: list[str]) -> str:
+    """Return the first non-empty string value from a list of candidate keys."""
+    for key in candidates:
+        val = d.get(key)
+        if val and isinstance(val, str) and val.strip():
+            return val.strip()
+    return ""
+
+
 def parse_error_analysis_content(raw: str) -> dict:
     """
     鲁棒解析 AI 返回内容，兼容：
     1. 标准 JSON
     2. ```json ... ``` 代码块
     3. JSON 前后有解释文字
-    4. 字段名不完全一致
-    5. 非 JSON 但包含三段式中文文本
+    4. 字段名不完全一致（snake_case / camelCase / 全小写 / 中文）
+    5. 字段值为 JSON 字符串（自动解包）
+    6. 非 JSON 但包含三段式中文文本
     返回结构：{mistake_diagnosis, knowledge_patch, review_task}
     """
     text = (raw or '').strip()
@@ -60,29 +70,22 @@ def parse_error_analysis_content(raw: str) -> dict:
                 pass
 
     if isinstance(parsed, dict):
-        return {
-            "mistake_diagnosis": (
-                parsed.get("mistake_diagnosis")
-                or parsed.get("error_analysis")
-                or parsed.get("diagnosis")
-                or parsed.get("错因诊断")
-                or ""
-            ),
-            "knowledge_patch": (
-                parsed.get("knowledge_patch")
-                or parsed.get("knowledge_weakness")
-                or parsed.get("knowledge")
-                or parsed.get("补漏重点")
-                or ""
-            ),
-            "review_task": (
-                parsed.get("review_task")
-                or parsed.get("suggestion")
-                or parsed.get("task")
-                or parsed.get("复练任务")
-                or ""
-            ),
+        result = {
+            "mistake_diagnosis": _pick_field(parsed, ["mistake_diagnosis", "error_analysis", "diagnosis", "mistakeDiagnosis", "mistakediagnosis", "错因诊断"]),
+            "knowledge_patch": _pick_field(parsed, ["knowledge_patch", "knowledge_weakness", "knowledge", "knowledgePatch", "knowledgepatch", "补漏重点"]),
+            "review_task": _pick_field(parsed, ["review_task", "suggestion", "task", "reviewTask", "reviewtask", "reviewask", "复练任务"]),
         }
+        # 字段值本身可能是 JSON 字符串，需要递归解包
+        for key in result:
+            val = result[key]
+            if isinstance(val, str) and val.strip().startswith("{"):
+                try:
+                    inner = json.loads(val)
+                    if isinstance(inner, dict):
+                        result[key] = _pick_field(inner, ["mistake_diagnosis", "error_analysis", "diagnosis", "mistakeDiagnosis", "mistakediagnosis", "错因诊断", "knowledge_patch", "knowledge", "review_task", "suggestion", "text", "content"])
+                except (json.JSONDecodeError, ValueError):
+                    pass
+        return result
 
     # 非 JSON：尝试按中文标题切分
     sections = re.split(r'(?:^|\n)(?:(?:错因诊断|补漏重点|复练任务)\s*[：:]\s*)', stripped)
@@ -98,14 +101,17 @@ def is_valid_ai_analysis(content: dict) -> bool:
 
 
 def _normalize_ai_analysis(cached: dict) -> dict:
-    """Convert old-field format to new-field names in-place."""
-    if "mistake_diagnosis" not in cached:
-        return {
-            "mistake_diagnosis": cached.get("error_analysis", ""),
-            "knowledge_patch": cached.get("knowledge_weakness", ""),
-            "review_task": cached.get("suggestion", ""),
-        }
-    return cached
+    """Convert any field-name format to canonical snake_case."""
+    if not cached:
+        return {"mistake_diagnosis": "", "knowledge_patch": "", "review_task": ""}
+    # If canonical fields already have content, return as-is
+    if str(cached.get("mistake_diagnosis", "")).strip() or str(cached.get("knowledge_patch", "")).strip() or str(cached.get("review_task", "")).strip():
+        return cached
+    return {
+        "mistake_diagnosis": _pick_field(cached, ["mistake_diagnosis", "error_analysis", "diagnosis", "mistakeDiagnosis", "mistakediagnosis", "错因诊断"]),
+        "knowledge_patch": _pick_field(cached, ["knowledge_patch", "knowledge_weakness", "knowledge", "knowledgePatch", "knowledgepatch", "补漏重点"]),
+        "review_task": _pick_field(cached, ["review_task", "suggestion", "task", "reviewTask", "reviewtask", "reviewask", "复练任务"]),
+    }
 
 
 def is_ai_analysis_fresh(ai_analysis: dict | None) -> bool:

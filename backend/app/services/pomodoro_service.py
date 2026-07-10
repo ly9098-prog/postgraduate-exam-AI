@@ -183,12 +183,16 @@ async def pause_session(db: AsyncSession, session_id: int, user_id: int) -> Pomo
         .where(
             PomodoroSession.id == session_id,
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status == "running",
+            PomodoroSession.status.in_(["running", "paused"]),
         )
     )
     session = result.scalar_one_or_none()
     if not session:
         return None
+    # Idempotent: already paused, just return current session
+    if session.status == "paused":
+        await db.refresh(session)
+        return session
     if session.paused_at is None:
         session.paused_at = utcnow()
         session.status = "paused"
@@ -204,12 +208,16 @@ async def resume_session(db: AsyncSession, session_id: int, user_id: int) -> Pom
         .where(
             PomodoroSession.id == session_id,
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status == "paused",
+            PomodoroSession.status.in_(["running", "paused"]),
         )
     )
     session = result.scalar_one_or_none()
     if not session:
         return None
+    # Idempotent: already running, just return current session
+    if session.status == "running":
+        await db.refresh(session)
+        return session
     if session.paused_at is not None:
         now = utcnow()
         paused_for = now - session.paused_at
