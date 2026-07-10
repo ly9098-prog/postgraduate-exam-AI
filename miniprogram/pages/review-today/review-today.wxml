@@ -1,7 +1,7 @@
 <animated-view
   show="{{showCelebration}}"
   type="{{celebrationType}}"
-  theme="dark"
+  theme="blue"
   title="{{celebrationTitle}}"
   detail="{{celebrationDetail}}"
   motto="{{celebrationMotto}}"
