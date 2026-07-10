@@ -1,4 +1,4 @@
-@import "./latex/katex.css";
+@import "./latex/katex.wxss";
 
 /* 根节点样式 */
 ._root {
