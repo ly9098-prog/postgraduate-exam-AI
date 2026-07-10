@@ -46,9 +46,11 @@ Page({
     if (!authed) return
     try {
       const syncedUser = await auth.syncCurrentUser()
+      if (!syncedUser) return
       this.setData({ user: syncedUser || {}, isAdmin: auth.isAdmin() })
     } catch (e) {
       console.error('同步用户权限失败', e)
+      return
     }
     await this.loadGrowthSnapshot()
   },
