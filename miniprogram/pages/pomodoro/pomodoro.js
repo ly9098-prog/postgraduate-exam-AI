@@ -217,6 +217,37 @@ Page({
     const confirmSnapshot = this._confirmTimerSnapshot || wx.getStorageSync('pomodoro_confirm_pause')
     if (confirmSnapshot && confirmSnapshot.sessionId) {
       this._confirmTimerSnapshot = confirmSnapshot
+
+      if (confirmSnapshot.mode === 'free-complete') {
+        const fmt = formatElapsedSec(confirmSnapshot.elapsedSec || 0)
+        this.setData({
+          phase: PHASE.RUNNING,
+          isFreeTimer: true,
+          sessionId: confirmSnapshot.sessionId,
+          sessionStartTime: confirmSnapshot.sessionStartTime || this.data.sessionStartTime,
+          isPaused: true,
+          showEndConfirm: true,
+          endConfirmMode: 'free-complete',
+          endConfirmTheme: 'free',
+          ringCanvasVisible: true,
+          elapsedSec: confirmSnapshot.elapsedSec || 0,
+          freeDisplayTime: fmt.display,
+          freeFriendlyText: fmt.friendly,
+          totalPausedMs: confirmSnapshot.totalPausedMs || 0,
+        })
+        if (confirmSnapshot.pausedByConfirm && !confirmSnapshot.backendPauseDone) {
+          api.post('/pomodoro/' + confirmSnapshot.sessionId + '/pause', {})
+            .then(server => {
+              confirmSnapshot.totalPausedMs = (server.total_paused_sec || 0) * 1000
+              confirmSnapshot.backendPauseDone = true
+              wx.setStorageSync('pomodoro_confirm_pause', confirmSnapshot)
+            })
+            .catch(() => {})
+        }
+        setTimeout(() => this.loadTodayStats(), 200)
+        return
+      }
+
       const fmt = this._formatCountdownDisplay(confirmSnapshot.remainingSec)
       this.setData({
         phase: confirmSnapshot.phase || PHASE.RUNNING,
@@ -239,12 +270,12 @@ Page({
       // If backend pause wasn't done, try now (fire-and-forget)
       if (confirmSnapshot.pausedByConfirm && !confirmSnapshot.backendPauseDone) {
         api.post('/pomodoro/' + confirmSnapshot.sessionId + '/pause', {})
-          .then(function(server) {
+          .then(server => {
             confirmSnapshot.totalPausedMs = (server.total_paused_sec || 0) * 1000
             confirmSnapshot.backendPauseDone = true
             wx.setStorageSync('pomodoro_confirm_pause', confirmSnapshot)
           })
-          .catch(function() {})
+          .catch(() => {})
       }
       setTimeout(() => this.loadTodayStats(), 200)
       return
@@ -518,20 +549,29 @@ Page({
 
   _updateFreeElapsed() {
     if (!this.data.isFreeTimer) return
+    if (this.data.showEndConfirm) return
+
     const startTime = this.data.sessionStartTime
     if (typeof startTime !== 'number' || !Number.isFinite(startTime)) {
       this.setData({ freeDisplayTime: '00:00:00' })
       return
     }
-    const now = Date.now()
-    const totalPausedMs = this.data.totalPausedMs || 0
-    let elapsed
+
     if (this.data.isPaused) {
-      elapsed = this.data.elapsedSec
-    } else {
-      elapsed = Math.max(0, Math.floor((now - startTime) / 1000) - Math.floor(totalPausedMs / 1000))
+      const fmt = formatElapsedSec(this.data.elapsedSec || 0)
+      this.setData({
+        freeDisplayTime: fmt.display,
+        freeFriendlyText: fmt.friendly,
+      })
+      return
     }
-    // Only setData when elapsed actually changes — reduces render
+
+    const now = Date.now()
+    let totalPausedMs = this.data.totalPausedMs || 0
+    totalPausedMs = this._mergeLocalPauseAdjustment(this.data.sessionId, totalPausedMs)
+
+    const elapsed = Math.max(0, Math.floor((now - startTime - totalPausedMs) / 1000))
+
     if (elapsed === this.data.elapsedSec) return
     const fmt = formatElapsedSec(elapsed)
     this.setData({
@@ -549,16 +589,23 @@ Page({
 
   _startFreeTimerInterval() {
     if (this._freeTimerId) return
+
     const tick = () => {
-      if (this.data.isPaused || this.data.showEndConfirm) return
+      if (this.data.isPaused || this.data.showEndConfirm) {
+        this._freeTimerId = null
+        return
+      }
+
       this._updateFreeElapsed()
-      // Align each tick to the next exact second boundary, self-correcting for drift
-      const delay = 1000 - (Date.now() % 1000)
-      this._freeTimerId = setTimeout(tick, Math.max(100, delay))
+
+      const elapsedMs = Date.now() - this.data.sessionStartTime - (this.data.totalPausedMs || 0)
+      const delay = 1000 - (elapsedMs % 1000)
+      this._freeTimerId = setTimeout(tick, Math.max(100, Math.min(delay, 1000)))
     }
-    // First tick aligns to next second boundary
-    const firstDelay = 1000 - (Date.now() % 1000)
-    this._freeTimerId = setTimeout(tick, Math.max(100, firstDelay))
+
+    const elapsedMs = Date.now() - this.data.sessionStartTime - (this.data.totalPausedMs || 0)
+    const firstDelay = 1000 - (elapsedMs % 1000)
+    this._freeTimerId = setTimeout(tick, Math.max(100, Math.min(firstDelay, 1000)))
   },
 
   _restartFreeTimerInterval() {
@@ -691,21 +738,66 @@ Page({
     }
   },
 
-  _showEndFreeConfirm() {
-    this._clearFreeTimerInterval()
-    this._confirmOpenedAt = Date.now()
+  async _showEndFreeConfirm() {
+    if (!this.data.sessionId || this.data.actionLoading) return
+
+    const now = Date.now()
+    const wasPaused = !!this.data.isPaused
     const elapsed = Math.max(0, this.data.elapsedSec || 0)
     const fmt = formatElapsedSec(elapsed)
+
+    this._clearFreeTimerInterval()
+
+    const snapshot = {
+      mode: 'free-complete',
+      sessionId: this.data.sessionId,
+      openedAt: now,
+      wasPaused,
+      pausedByConfirm: !wasPaused,
+      elapsedSec: elapsed,
+      totalPausedMs: this.data.totalPausedMs || 0,
+      pauseStartTime: this.data.pauseStartTime || null,
+      sessionStartTime: this.data.sessionStartTime,
+      backendPauseDone: false,
+    }
+
+    this._confirmTimerSnapshot = snapshot
+    wx.setStorageSync('pomodoro_confirm_pause', snapshot)
+
     this.setData({
       showEndConfirm: true,
-      ringCanvasVisible: false,
+      ringCanvasVisible: true,
       endConfirmMode: 'free-complete',
       endConfirmTheme: 'free',
       endConfirmTitle: '结束自由计时？',
-      endConfirmText: elapsed >= 1 ? `本次已专注 ${fmt.friendly}，确认后将计入学习统计。` : '当前计时时长较短，确认后仍会结束本次计时。',
+      endConfirmText: elapsed >= 1
+        ? `本次已专注 ${fmt.friendly}，确认后将计入学习统计。`
+        : '当前计时时长较短，确认后仍会结束本次计时。',
       endConfirmOkText: '确认结束',
       endConfirmCancelText: '继续计时',
+      elapsedSec: elapsed,
+      freeDisplayTime: fmt.display,
+      freeFriendlyText: fmt.friendly,
+      isPaused: true,
+      pauseStartTime: now,
     })
+
+    // Backend pause async — don't block UI
+    if (!wasPaused) {
+      api.post('/pomodoro/' + this.data.sessionId + '/pause', {})
+        .then(server => {
+          const serverPausedMs = (server.total_paused_sec || 0) * 1000
+          snapshot.totalPausedMs = Math.max(snapshot.totalPausedMs || 0, serverPausedMs)
+          snapshot.backendPauseDone = true
+          this._confirmTimerSnapshot = snapshot
+          wx.setStorageSync('pomodoro_confirm_pause', snapshot)
+          this.setData({
+            totalPausedMs: snapshot.totalPausedMs,
+            pauseStartTime: Date.now(),
+          })
+        })
+        .catch(e => console.warn('free confirm pause backend sync failed', e))
+    }
   },
 
   _getCurrentTotalSec() {
@@ -926,6 +1018,56 @@ Page({
     }
 
     if (mode === 'free-complete') {
+      const snapshot = this._confirmTimerSnapshot || wx.getStorageSync('pomodoro_confirm_pause')
+
+      if (!snapshot || snapshot.mode !== 'free-complete') {
+        this.setData({
+          showEndConfirm: false,
+          ringCanvasVisible: true,
+          endConfirmMode: '',
+          endConfirmTheme: '',
+          endConfirmTitle: '',
+          endConfirmText: '',
+        })
+        if (!this.data.isPaused) this._startFreeTimerInterval()
+        return
+      }
+
+      const fmt = formatElapsedSec(snapshot.elapsedSec || 0)
+
+      // Was paused before confirm — keep paused after cancel
+      if (snapshot.wasPaused) {
+        this.setData({
+          showEndConfirm: false,
+          ringCanvasVisible: true,
+          endConfirmMode: '',
+          endConfirmTheme: '',
+          endConfirmTitle: '',
+          endConfirmText: '',
+          isPaused: true,
+          pauseStartTime: snapshot.pauseStartTime || Date.now(),
+          totalPausedMs: snapshot.totalPausedMs || 0,
+          elapsedSec: snapshot.elapsedSec || 0,
+          freeDisplayTime: fmt.display,
+          freeFriendlyText: fmt.friendly,
+        })
+
+        wx.removeStorageSync('pomodoro_confirm_pause')
+        this._confirmTimerSnapshot = null
+        return
+      }
+
+      // Was running before confirm — resume from snapshot.elapsedSec
+      const pauseDelta = Math.max(0, Date.now() - snapshot.openedAt)
+      const localTotalPausedMs = (snapshot.totalPausedMs || 0) + pauseDelta
+
+      wx.setStorageSync('pomodoro_pause_adjustment', {
+        sessionId: snapshot.sessionId,
+        totalPausedMs: localTotalPausedMs,
+        savedAt: Date.now(),
+        source: 'cancel_free_end_confirm',
+      })
+
       this.setData({
         showEndConfirm: false,
         ringCanvasVisible: true,
@@ -933,10 +1075,38 @@ Page({
         endConfirmTheme: '',
         endConfirmTitle: '',
         endConfirmText: '',
+        isPaused: false,
+        pauseStartTime: null,
+        totalPausedMs: localTotalPausedMs,
+        elapsedSec: snapshot.elapsedSec || 0,
+        freeDisplayTime: fmt.display,
+        freeFriendlyText: '',
       })
-      this._clearFreeTimerInterval()
-      if (!this.data.isPaused) this._startFreeTimerInterval()
+
+      wx.removeStorageSync('pomodoro_confirm_pause')
       this._confirmTimerSnapshot = null
+
+      this._restartFreeTimerInterval()
+
+      // Backend resume async — must not block local recovery
+      api.post('/pomodoro/' + snapshot.sessionId + '/resume', {
+        total_paused_ms: localTotalPausedMs,
+      }).then(server => {
+        const serverPausedMs = (server.total_paused_sec || 0) * 1000
+        const finalPausedMs = Math.max(serverPausedMs, localTotalPausedMs)
+
+        this.setData({ totalPausedMs: finalPausedMs })
+
+        wx.setStorageSync('pomodoro_pause_adjustment', {
+          sessionId: snapshot.sessionId,
+          totalPausedMs: finalPausedMs,
+          savedAt: Date.now(),
+          source: 'cancel_free_end_confirm',
+        })
+      }).catch(e => {
+        console.warn('resume free timer after cancel confirm failed, keep local timer', e)
+      })
+
       return
     }
 
