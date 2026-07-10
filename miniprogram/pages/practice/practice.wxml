@@ -1,6 +1,7 @@
 <animated-view
   wx:if="{{showPerfectCelebration}}"
   show="{{showPerfectCelebration}}"
+  theme="blue"
   type="{{perfectCelebrationType}}"
   title="{{perfectCelebrationTitle}}"
   detail="{{perfectCelebrationDetail}}"
