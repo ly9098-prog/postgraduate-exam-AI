@@ -1,14 +1,10 @@
 <animated-view
   show="{{showCelebration}}"
   type="{{celebrationType}}"
+  theme="dark"
   title="{{celebrationTitle}}"
   detail="{{celebrationDetail}}"
   motto="{{celebrationMotto}}"
-  reward-text="{{celebrationRewardText}}"
-  progress-text="{{celebrationProgressText}}"
-  growth-level="{{growthLevel}}"
-  growth-level-pct="{{growthLevelPct}}"
-  growth-desc="{{growthDesc}}"
   duration="{{celebrationDuration}}"
   gif-src="/assets/animation/celebration.gif"
   png-src="/assets/animation/celebration-static.png"
@@ -297,11 +293,48 @@
 
 <!-- ==================== 今日无任务 ==================== -->
 <view wx:elif="{{phase === 'empty'}}" class="page review-empty">
-  <view class="empty-wrap">
-    <text class="empty-title">今天没有待复习题</text>
-    <text class="empty-desc">记忆曲线暂时没有安排新的复习任务，可以去练习新题或查看错题本。</text>
+  <view class="empty-bg-deco empty-bg-deco-a"></view>
+  <view class="empty-bg-deco empty-bg-deco-b"></view>
+  <view class="empty-bg-deco empty-bg-deco-c"></view>
+
+  <view class="empty-card">
+    <view class="empty-visual">
+      <view class="empty-orbit"></view>
+      <view class="empty-check-ring">
+        <view class="empty-check-line empty-check-line-a"></view>
+        <view class="empty-check-line empty-check-line-b"></view>
+      </view>
+      <view class="empty-mini-card card-left">
+        <view class="mini-card-line long"></view>
+        <view class="mini-card-line short"></view>
+      </view>
+      <view class="empty-mini-card card-right">
+        <view class="mini-dot"></view>
+        <view class="mini-dot active"></view>
+        <view class="mini-dot"></view>
+      </view>
+      <view class="empty-spark spark-a"></view>
+      <view class="empty-spark spark-b"></view>
+      <view class="empty-spark spark-c"></view>
+    </view>
+
+    <text class="empty-title">今天没有待复习的题目</text>
+    <text class="empty-desc">记忆曲线暂时清空啦，可以轻松一下，或者继续练几道新题。</text>
+
+    <view class="empty-status-card">
+      <view class="empty-status-item">
+        <text class="empty-status-label">今日复习</text>
+        <text class="empty-status-value">已清空</text>
+      </view>
+      <view class="empty-status-divider"></view>
+      <view class="empty-status-item">
+        <text class="empty-status-label">下一步</text>
+        <text class="empty-status-value">自由练习</text>
+      </view>
+    </view>
+
     <view class="empty-actions">
-      <button class="empty-btn primary" bindtap="goPractice">去练习</button>
+      <button class="empty-btn primary" bindtap="goPractice">去练习新题</button>
       <button class="empty-btn secondary" bindtap="goWrongBook">查看错题本</button>
     </view>
   </view>
