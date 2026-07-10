@@ -934,6 +934,7 @@ Page({
         endConfirmTitle: '',
         endConfirmText: '',
       })
+      this._clearFreeTimerInterval()
       if (!this.data.isPaused) this._startFreeTimerInterval()
       this._confirmTimerSnapshot = null
       return
@@ -962,6 +963,7 @@ Page({
   },
 
   async _confirmEndFreeTimer() {
+    if (this.data.actionLoading) return
     this.setData({ showEndConfirm: false })
     if (!this.data.sessionId) return
     this._clearFreeTimerInterval()
@@ -976,7 +978,7 @@ Page({
       wx.showToast({ title: '已记录本次专注', icon: 'none', duration: 2000 })
     } catch (e) {
       wx.showToast({ title: '结束计时失败，请重试', icon: 'none' })
-      this.setData({ ringCanvasVisible: true })
+      this.setData({ ringCanvasVisible: true, actionLoading: false })
       // Don't clear state on failure
       if (!this.data.isPaused) {
         this._startFreeTimerInterval()
