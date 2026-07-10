@@ -47,6 +47,9 @@ Component({
     swipeEnabled: { type: Boolean, value: true },
     allowSwipeInReadonly: { type: Boolean, value: false },
     compactReviewMode: { type: Boolean, value: false },
+
+    flowLayout: { type: Boolean, value: false },
+    compactBottom: { type: Boolean, value: false },
   },
 
   data: {

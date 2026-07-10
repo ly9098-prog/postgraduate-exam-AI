@@ -105,6 +105,8 @@
     showFeedback="{{false}}"
     submitText="提交本组复盘"
     showMasterButton="{{true}}"
+    flowLayout="{{true}}"
+    compactBottom="{{true}}"
     bind:selectoption="selectOption"
     bind:selectblankoption="selectBlankOption"
     bind:prev="goPrev"
