@@ -173,6 +173,7 @@ Page({
       remainingSec: 0,
       endConfirmMode: '',
       freeFriendlyText: '',
+      freeDisplayOffsetMs: 0,
       progress: 1,
       todayDurationSec: 0,
     }
@@ -238,6 +239,7 @@ Page({
         this._timerState.elapsedSec = confirmSnapshot.elapsedSec || 0
         this._timerState.freeFriendlyText = fmt.friendly
         this._timerState.totalPausedMs = confirmSnapshot.totalPausedMs || 0
+        this._timerState.freeDisplayOffsetMs = Number(confirmSnapshot.freeDisplayOffsetMs || 0)
         this.setData({
           ...this._buildEndConfirmViewModel('free-complete', confirmSnapshot),
           phase: PHASE.RUNNING,
@@ -341,6 +343,7 @@ Page({
         sessionId: this._timerState.sessionId,
         isFreeTimer: this.data.isFreeTimer,
         elapsedSec: this._timerState.elapsedSec,
+        freeDisplayOffsetMs: this._timerState.freeDisplayOffsetMs || 0,
         savedAt: Date.now(),
       })
     }
@@ -540,11 +543,14 @@ Page({
   _beginFreeTimer(session) {
     const startTime = parseServerTime(session.start_time)
     const totalPausedSec = session.total_paused_sec || 0
+    const now = Date.now()
+    const startupElapsedMs = Math.max(0, now - startTime - totalPausedSec * 1000)
 
     this._clearTimer()
     this._timerState.sessionId = session.id
     this._timerState.sessionStartTime = startTime
     this._timerState.totalPausedMs = totalPausedSec * 1000
+    this._timerState.freeDisplayOffsetMs = startupElapsedMs
     this._timerState.pauseStartTime = null
     this._timerState.elapsedSec = 0
     this._timerState.freeFriendlyText = ''
@@ -558,7 +564,6 @@ Page({
       showEndConfirm: false,
     })
     this._updateComputedFields()
-    this._updateFreeElapsed()
     this._startFreeTimerInterval()
     wx.nextTick(() => {
       setTimeout(() => { this._initCanvas(); this.drawRing(0, false) }, 50)
@@ -569,12 +574,6 @@ Page({
     if (!this.data.isFreeTimer) return
     if (this.data.showEndConfirm) return
 
-    const startTime = this._timerState.sessionStartTime
-    if (typeof startTime !== 'number' || !Number.isFinite(startTime)) {
-      this.setData({ freeDisplayTime: '00:00:00' })
-      return
-    }
-
     if (this.data.isPaused) {
       const fmt = formatElapsedSec(this._timerState.elapsedSec || 0)
       this.setData({
@@ -584,15 +583,13 @@ Page({
       return
     }
 
-    const now = Date.now()
-    let totalPausedMs = this._timerState.totalPausedMs || 0
-    totalPausedMs = this._mergeLocalPauseAdjustment(this._timerState.sessionId, totalPausedMs)
+    const elapsedMs = this._getEffectiveFreeElapsedMs()
+    const elapsedSec = Math.floor(elapsedMs / 1000)
 
-    const elapsed = Math.max(0, Math.floor((now - startTime - totalPausedMs) / 1000))
-
-    if (elapsed === this._timerState.elapsedSec) return
-    const fmt = formatElapsedSec(elapsed)
-    this._timerState.elapsedSec = elapsed
+    if (elapsedSec === this._timerState.elapsedSec) return
+    const fmt = formatElapsedSec(elapsedSec)
+    this._timerState.elapsedSec = elapsedSec
+    this._timerState.freeFriendlyText = fmt.friendly
     this.setData({
       freeDisplayTime: fmt.display,
     })
@@ -608,22 +605,21 @@ Page({
   _startFreeTimerInterval() {
     if (this._freeTimerId) return
 
-    const tick = () => {
-      if (this.data.isPaused || this.data.showEndConfirm) {
-        this._freeTimerId = null
-        return
-      }
-
-      this._updateFreeElapsed()
-
-      const elapsedMs = Date.now() - this._timerState.sessionStartTime - (this._timerState.totalPausedMs || 0)
-      const delay = 1000 - (elapsedMs % 1000)
+    const scheduleNext = () => {
+      const elapsedMs = this._getEffectiveFreeElapsedMs()
+      const remainder = elapsedMs % 1000
+      const delay = remainder === 0 ? 1000 : 1000 - remainder
       this._freeTimerId = setTimeout(tick, Math.max(100, Math.min(delay, 1000)))
     }
 
-    const elapsedMs = Date.now() - this._timerState.sessionStartTime - (this._timerState.totalPausedMs || 0)
-    const firstDelay = 1000 - (elapsedMs % 1000)
-    this._freeTimerId = setTimeout(tick, Math.max(100, Math.min(firstDelay, 1000)))
+    const tick = () => {
+      this._freeTimerId = null
+      if (this.data.isPaused || this.data.showEndConfirm) return
+      this._updateFreeElapsed()
+      scheduleNext()
+    }
+
+    scheduleNext()
   },
 
   _restartFreeTimerInterval() {
@@ -649,6 +645,7 @@ Page({
         pauseStartTime: Date.now(),
         sessionId: this._timerState.sessionId,
         elapsedSec: this._timerState.elapsedSec,
+        freeDisplayOffsetMs: this._timerState.freeDisplayOffsetMs || 0,
       })
     } catch (e) {
       this.setData({ actionLoading: false })
@@ -664,17 +661,19 @@ Page({
       const server = await api.post(`/pomodoro/${this._timerState.sessionId}/resume`, {})
       const startTime = parseServerTime(server.start_time)
       let serverTotalPausedSec = server.total_paused_sec || 0
-      const now = Date.now()
 
       // Merge with local pause adjustment
       const effectiveTotalPausedMs = this._mergeLocalPauseAdjustment(server.id, serverTotalPausedSec * 1000)
       serverTotalPausedSec = Math.floor(effectiveTotalPausedMs / 1000)
 
-      const elapsed = Math.max(0, Math.floor((now - startTime) / 1000) - serverTotalPausedSec)
-      const fmt = formatElapsedSec(elapsed)
       this._timerState.sessionStartTime = startTime
       this._timerState.totalPausedMs = effectiveTotalPausedMs
       this._timerState.pauseStartTime = null
+      // Preserve freeDisplayOffsetMs — already set in _timerState
+
+      const elapsedMs = this._getEffectiveFreeElapsedMs()
+      const elapsed = Math.floor(elapsedMs / 1000)
+      const fmt = formatElapsedSec(elapsed)
       this._timerState.elapsedSec = elapsed
       this.setData({
         isPaused: false,
@@ -711,14 +710,13 @@ Page({
       const totalPausedSec = active.total_paused_sec || 0
       const totalPausedMs = totalPausedSec * 1000
       if (this.data.isFreeTimer) {
-        const now = Date.now()
-        const effectiveTotalPausedMs = this._mergeLocalPauseAdjustment(active.id, totalPausedMs)
-        const effectiveTotalPausedSec = Math.floor(effectiveTotalPausedMs / 1000)
-        const elapsed = Math.max(0, Math.floor((now - startTime) / 1000) - effectiveTotalPausedSec)
-        const fmt = formatElapsedSec(elapsed)
         this._timerState.sessionStartTime = startTime
-        this._timerState.totalPausedMs = effectiveTotalPausedMs
+        this._timerState.totalPausedMs = this._mergeLocalPauseAdjustment(active.id, totalPausedMs)
         this._timerState.pauseStartTime = null
+
+        const elapsedMs = this._getEffectiveFreeElapsedMs()
+        const elapsed = Math.floor(elapsedMs / 1000)
+        const fmt = formatElapsedSec(elapsed)
         this._timerState.elapsedSec = elapsed
         this.setData({
           isPaused: false,
@@ -824,6 +822,7 @@ Page({
       sessionStartTime: this._timerState.sessionStartTime,
       backendPauseDone: false,
       confirmVisible: true,
+      freeDisplayOffsetMs: this._timerState.freeDisplayOffsetMs || 0,
     }
 
     this._confirmTimerSnapshot = snapshot
@@ -1092,6 +1091,7 @@ Page({
         this._timerState.elapsedSec = snapshot.elapsedSec || 0
         this._timerState.freeFriendlyText = fmt.friendly
         this._timerState.endConfirmMode = ''
+        this._timerState.freeDisplayOffsetMs = Number(snapshot.freeDisplayOffsetMs || 0)
         this.setData({
           showEndConfirm: false,
           ringCanvasVisible: true,
@@ -1123,6 +1123,7 @@ Page({
       this._timerState.elapsedSec = snapshot.elapsedSec || 0
       this._timerState.freeFriendlyText = ''
       this._timerState.endConfirmMode = ''
+      this._timerState.freeDisplayOffsetMs = Number(snapshot.freeDisplayOffsetMs || 0)
       this.setData({
         showEndConfirm: false,
         ringCanvasVisible: true,
@@ -1414,6 +1415,27 @@ Page({
     return Math.max(Number(serverPausedMs || 0), Number(localPausedMs || 0))
   },
 
+  /* ==================== Free Timer Display Offset ==================== */
+
+  _getFreeElapsedMs(now) {
+    if (typeof now !== 'number') now = Date.now()
+    const startTime = Number(this._timerState.sessionStartTime)
+    if (!Number.isFinite(startTime) || startTime <= 0) return 0
+    const totalPausedMs = Number(this._timerState.totalPausedMs || 0)
+    const displayOffsetMs = Number(this._timerState.freeDisplayOffsetMs || 0)
+    return Math.max(0, now - startTime - totalPausedMs - displayOffsetMs)
+  },
+
+  _getEffectiveFreeElapsedMs(now) {
+    if (typeof now !== 'number') now = Date.now()
+    const startTime = Number(this._timerState.sessionStartTime)
+    if (!Number.isFinite(startTime) || startTime <= 0) return 0
+    let totalPausedMs = Number(this._timerState.totalPausedMs || 0)
+    totalPausedMs = this._mergeLocalPauseAdjustment(this._timerState.sessionId, totalPausedMs)
+    const displayOffsetMs = Number(this._timerState.freeDisplayOffsetMs || 0)
+    return Math.max(0, now - startTime - totalPausedMs - displayOffsetMs)
+  },
+
   _getEffectivePausedMsFromSession(session) {
     const serverBaseMs = (session.total_paused_sec || 0) * 1000
     let serverEffectiveMs = serverBaseMs
@@ -1622,7 +1644,8 @@ Page({
 
     if (this.data.isFreeTimer) {
       if (!this.data.isPaused) {
-        const elapsed = Math.max(0, Math.floor((now - this._timerState.sessionStartTime) / 1000) - Math.floor(totalPausedMs / 1000))
+        const elapsedMs = this._getEffectiveFreeElapsedMs(now)
+        const elapsed = Math.floor(elapsedMs / 1000)
         if (elapsed !== this._timerState.elapsedSec) {
           const fmt = formatElapsedSec(elapsed)
           this._timerState.elapsedSec = elapsed
@@ -1658,6 +1681,11 @@ Page({
     try {
       const server = await api.get('/pomodoro/active')
       if (server) {
+        // Preserve local free display offset before clearing storage
+        if (local && local.sessionId === server.id && server.preset === 'free') {
+          server._localFreeDisplayOffsetMs = Number(local.freeDisplayOffsetMs || 0)
+          server._localElapsedSec = Number(local.elapsedSec || 0)
+        }
         wx.removeStorageSync('pomodoro_running_state')
         return server
       }
@@ -1687,6 +1715,7 @@ Page({
         subject_code: local.selectedSubjectCode || '',
         subject_name: local.selectedSubjectName || '',
         _local_elapsed_sec: local.isFreeTimer ? local.elapsedSec : undefined,
+        _localFreeDisplayOffsetMs: local.isFreeTimer ? Number(local.freeDisplayOffsetMs || 0) : 0,
       }
     }
     wx.removeStorageSync('pomodoro_running_state')
@@ -1829,11 +1858,16 @@ Page({
       return
     }
 
+    // Restore local display offset (from running_state or free_pause)
+    const localOffsetMs = Number(session._localFreeDisplayOffsetMs || 0)
+    const hasLocalOffset = Number.isFinite(localOffsetMs) && localOffsetMs >= 0 && session._localFreeDisplayOffsetMs !== undefined
+
     const serverTotalPausedSec = session.total_paused_sec || 0
     const savedPause = wx.getStorageSync('pomodoro_free_pause')
     let totalPausedMs = serverTotalPausedSec * 1000
     let isPaused = false
     let savedElapsed = 0
+    let savedOffsetMs = 0
 
     if (savedPause && savedPause.sessionId === session.id) {
       const savedTotal = Number(savedPause.totalPausedMs || 0)
@@ -1843,6 +1877,7 @@ Page({
         : totalPausedMs
       isPaused = true
       savedElapsed = Number(savedPause.elapsedSec || 0)
+      savedOffsetMs = Number(savedPause.freeDisplayOffsetMs || 0)
     } else if (session.paused_at) {
       const pausedAtMs = parseServerTime(session.paused_at)
       if (Number.isFinite(pausedAtMs)) {
@@ -1856,9 +1891,25 @@ Page({
     // Apply local pause adjustment (e.g. from cancelEndConfirm)
     totalPausedMs = this._mergeLocalPauseAdjustment(session.id, totalPausedMs)
 
-    const elapsed = isPaused
-      ? savedElapsed || Math.max(0, Math.floor((Date.now() - startTime - totalPausedMs) / 1000))
-      : Math.max(0, Math.floor((Date.now() - startTime - totalPausedMs) / 1000))
+    // Determine effective offset: from running_state, or from free_pause fallback
+    const effectiveOffset = hasLocalOffset ? localOffsetMs : savedOffsetMs
+    const hasEffectiveOffset = hasLocalOffset || (savedOffsetMs > 0)
+
+    // Use unified elapsed calculation with offset, or fallback to server elapsed
+    let elapsed
+    if (hasEffectiveOffset && !isPaused) {
+      this._timerState.freeDisplayOffsetMs = effectiveOffset
+      elapsed = Math.floor(this._getFreeElapsedMs() / 1000)
+    } else if (hasEffectiveOffset && isPaused) {
+      this._timerState.freeDisplayOffsetMs = effectiveOffset
+      elapsed = savedElapsed || Math.floor(this._getFreeElapsedMs() / 1000)
+    } else {
+      // No local offset — fallback to server elapsed (other device or cold restore)
+      this._timerState.freeDisplayOffsetMs = 0
+      elapsed = isPaused
+        ? savedElapsed || Math.max(0, Math.floor((Date.now() - startTime - totalPausedMs) / 1000))
+        : Math.max(0, Math.floor((Date.now() - startTime - totalPausedMs) / 1000))
+    }
 
     const fmt = formatElapsedSec(elapsed)
 
