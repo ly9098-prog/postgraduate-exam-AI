@@ -8,7 +8,7 @@
     </view>
     <view class="runner-bar-right">
       <text class="runner-bar-timer">{{elapsedText}}</text>
-      <view class="runner-bar-sheet-btn" bindtap="toggleSheet">
+      <view class="runner-bar-sheet-btn" hover-class="runner-bar-sheet-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="toggleSheet">
         <text class="sheet-icon line-icon icon-list"></text>
         <text class="sheet-badge" wx:if="{{answeredCount > 0}}">{{answeredCount}}</text>
       </view>
@@ -32,7 +32,7 @@
           <text class="runner-q-card-kicker">{{mode === 'wrong-detail' ? '错题复盘' : '保持节奏，认真读题'}}</text>
         </view>
         <view class="runner-q-card-right">
-          <view class="runner-master-btn" wx:if="{{showMasterButton && !readonly}}" catchtap="onMaster">
+          <view class="runner-master-btn" wx:if="{{showMasterButton && !readonly}}" hover-class="runner-master-btn-pressed" hover-start-time="20" hover-stay-time="80" catchtap="onMaster">
             <text class="runner-master-icon line-icon icon-check"></text>
           </view>
           <text class="runner-q-card-index">{{currentIndex + 1}}</text>
@@ -126,22 +126,23 @@
   <!-- ==================== 底部操作栏 ==================== -->
   <view class="runner-bottom-bar">
     <view class="runner-bottom-inner">
-      <view class="runner-nav-btn runner-prev {{currentIndex <= 0 ? 'runner-disabled' : ''}}" bindtap="goPrev">
+      <view class="runner-nav-btn runner-prev {{currentIndex <= 0 ? 'runner-disabled' : ''}}" hover-class="{{currentIndex <= 0 ? 'none' : 'runner-nav-pressed'}}" hover-start-time="20" hover-stay-time="80" bindtap="goPrev">
         <text class="runner-nav-arrow line-icon icon-chevron-left"></text>
         <text class="runner-nav-label">上一题</text>
       </view>
 
       <view class="runner-nav-center">
-        <view class="runner-dot {{item._answered ? 'runner-done' : ''}} {{index === currentIndex ? 'runner-active' : ''}}"
-          wx:for="{{questions}}" wx:key="index" data-index="{{index}}" bindtap="goQuestion"></view>
+        <view wx:for="{{questions}}" wx:key="index" class="runner-dot-hit" data-index="{{index}}" bindtap="goQuestion" hover-class="runner-dot-hit-pressed" hover-start-time="20" hover-stay-time="80">
+          <view class="runner-dot {{item._answered ? 'runner-done' : ''}} {{index === currentIndex ? 'runner-active' : ''}}"></view>
+        </view>
       </view>
 
-      <view class="runner-nav-btn runner-next {{currentIndex >= totalCount - 1 ? 'runner-disabled' : ''}}" bindtap="goNext">
+      <view class="runner-nav-btn runner-next {{currentIndex >= totalCount - 1 ? 'runner-disabled' : ''}}" hover-class="{{currentIndex >= totalCount - 1 ? 'none' : 'runner-nav-pressed'}}" hover-start-time="20" hover-stay-time="80" bindtap="goNext">
         <text class="runner-nav-label">下一题</text>
         <text class="runner-nav-arrow line-icon icon-chevron-right"></text>
       </view>
     </view>
-    <button class="runner-btn-submit" wx:if="{{showSubmitButton}}" bindtap="onSubmit" disabled="{{submitting || submitDisabled}}">
+    <button class="runner-btn-submit" wx:if="{{showSubmitButton}}" hover-class="runner-btn-submit-pressed" hover-start-time="20" hover-stay-time="80" bindtap="onSubmit" disabled="{{submitting || submitDisabled}}">
       {{submitText}}（{{answeredCount || 0}}/{{totalCount || 0}}）
     </button>
   </view>
@@ -154,7 +155,7 @@
           <text class="runner-sheet-title">答题进度</text>
           <text class="runner-sheet-subtitle">点选题号快速跳转</text>
         </view>
-        <text class="runner-sheet-close" bindtap="closeSheet">关闭</text>
+        <text class="runner-sheet-close" hover-class="runner-sheet-close-pressed" hover-start-time="20" hover-stay-time="80" bindtap="closeSheet">关闭</text>
       </view>
       <view class="runner-sheet-stats">
         <text class="runner-sheet-stat">已完成 {{answeredCount || 0}} / {{totalCount || 0}} 题</text>
@@ -165,10 +166,11 @@
           wx:key="index"
           class="runner-sheet-cell {{item._answered ? 'runner-done' : ''}} {{index === currentIndex ? 'runner-current' : ''}}"
           data-index="{{index}}"
+          hover-class="runner-sheet-cell-pressed" hover-start-time="20" hover-stay-time="80"
           bindtap="goQuestion"
         >{{index + 1}}</view>
       </view>
-      <button class="runner-btn-submit runner-sheet-submit" wx:if="{{showSubmitButton}}" bindtap="onSubmit" disabled="{{submitting || submitDisabled}}">
+      <button class="runner-btn-submit runner-sheet-submit" wx:if="{{showSubmitButton}}" hover-class="runner-btn-submit-pressed" hover-start-time="20" hover-stay-time="80" bindtap="onSubmit" disabled="{{submitting || submitDisabled}}">
         {{submitText}}
       </button>
     </view>

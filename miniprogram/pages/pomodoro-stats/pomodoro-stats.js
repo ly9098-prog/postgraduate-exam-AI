@@ -26,12 +26,8 @@ Page({
     pageEntered: false,
     todaySessions: 0,
     todayDurationText: '0分钟',
-    weekSessions: 0,
-    weekDurationText: '0分钟',
-    trends: [],
     subjects: [],
     history: [],
-    historyTotal: 0,
 
     // date picker
     selectedDate: '',
@@ -56,6 +52,7 @@ Page({
     this._viewReady = false
     this._hasData = false
     this._finalDrawn = false
+    this._statsCache = { weekSessions: 0, weekDurationText: '0分钟', trends: [], historyTotal: 0 }
     wx.setNavigationBarColor({
       frontColor: '#ffffff',
       backgroundColor: '#0B1121',
@@ -121,16 +118,17 @@ Page({
       const willAnimate = !this._hasData
       this._hasData = true
 
+      this._statsCache.weekSessions = stats.week_sessions || 0
+      this._statsCache.weekDurationText = this._fmtMin(stats.week_duration_sec || 0)
+      this._statsCache.trends = (trends || []).map(t => ({
+        date: t.date,
+        duration_sec: t.duration_sec,
+        _shortDate: (t.date || '').slice(5),
+      }))
+      this._statsCache.historyTotal = hist.total || 0
       this.setData({
         todaySessions: stats.today_sessions || 0,
         todayDurationText: this._fmtMin(stats.today_duration_sec || 0),
-        weekSessions: stats.week_sessions || 0,
-        weekDurationText: this._fmtMin(stats.week_duration_sec || 0),
-        trends: (trends || []).map(t => ({
-          date: t.date,
-          duration_sec: t.duration_sec,
-          _shortDate: (t.date || '').slice(5),
-        })),
         subjects: subjArr.map(s => {
           const dur = s.duration_sec || 0
           const pct = dur / totalDur
@@ -149,7 +147,6 @@ Page({
           }
         }),
         history: (hist.items || []).map(this._formatSession),
-        historyTotal: hist.total || 0,
         loading: false,
         errorText: '',
         pageEntered: true,
@@ -194,9 +191,11 @@ Page({
     const isFree = s.preset === 'free'
     // Free timer duration in seconds; countdown in minutes
     const durationText = isFree
-      ? durSec >= 60
-        ? `${Math.floor(durSec / 60)}分${durSec % 60}秒`
-        : `${durSec}秒`
+      ? durSec >= 3600
+        ? `${Math.floor(durSec / 3600)}时${Math.floor((durSec % 3600) / 60)}分`
+        : durSec >= 60
+          ? `${Math.floor(durSec / 60)}分${durSec % 60}秒`
+          : `${durSec}秒`
       : durMin >= 60
         ? `${Math.floor(durMin / 60)}时${durMin % 60}分`
         : `${durMin}分钟`
@@ -238,9 +237,9 @@ Page({
       const hist = await api.get('/pomodoro/history', { page: 1, page_size: 20, date })
       if (!this._alive || !this._isVisible || seq !== this._historySeq) return
       const formatted = (hist.items || []).map(this._formatSession)
+      this._statsCache.historyTotal = hist.total || 0
       this.setData({
         history: formatted,
-        historyTotal: hist.total || 0,
       })
     } catch (e) {
       if (!this._alive || !this._isVisible) return
@@ -313,7 +312,7 @@ Page({
 
     // Number animation — independent timer (~12 updates), no setData in Canvas RAF
     const tSessions = this.data.todaySessions
-    const wSessions = this.data.weekSessions
+    const wSessions = this._statsCache.weekSessions
     const totalSteps = 12
     let step = 0
     const numTick = () => {
@@ -366,7 +365,7 @@ Page({
 
   _renderTrendBars(progress) {
     const TREND_COLORS = ['#22C55E', '#06B6D4', '#3B82F6', '#818CF8', '#A78BFA', '#D946EF']
-    const trends = this.data.trends
+    const trends = this._statsCache.trends
     if (!trends || !trends.length) return
     const ctx = this._trendCtx
     const rect = this._trendBarsRect

@@ -44,35 +44,24 @@ Page({
     phase: 'loading',
 
     /* ====== 入口概览 ====== */
-    reviewOverview: null,
     todayDueCount: 0,
     todayCompletedCount: 0,
     todayRemainingCount: 0,
     todayOverdueCount: 0,
-    todayNewDueCount: 0,
     estimatedMinutes: 0,
     reviewBatchSize: 10,
     currentBatchNo: 0,
     totalBatchCount: 0,
-    remainingBatchCount: 0,
-    sessionId: '',
-    currentGroupId: '',
-    allTodayQuestionIds: [],
-    completedQuestionIds: [],
-    remainingQuestionIds: [],
     todayProgressPercent: 0,
     isStarting: false,
     isContinuing: false,
-    overviewLoading: false,
     batchLoading: false,
     errorText: '',
 
     /* ====== 练习 ====== */
-    allQuestions: [],
     groups: [],
     currentGroupIdx: 0,
     groupQuestions: [],
-    answers: {},
     currentIndex: 0,
     currentQuestion: null,
     masterConfirmId: null,
@@ -90,17 +79,10 @@ Page({
     groupWrong: 0,
     _groupSkipped: 0,
 
-    /* ====== 最终结果 ====== */
-    allGroupResults: [],
-    totalCorrect: 0,
-    totalWrong: 0,
-    totalCompleted: 0,
-
     /* ====== UI 增强 ====== */
     _dateStr: '',
     reviewResultVm: null,
     _masteredCount: 0,
-    _groupProgressStyle: '',
 
     /* ====== 庆祝 ====== */
     showCelebration: false,
@@ -108,15 +90,34 @@ Page({
     celebrationDetail: '',
     celebrationMotto: '',
     celebrationType: 'group',
-    celebrationProgressText: '',
     celebrationRewardText: '',
     celebrationDuration: 2600,
     growthLevel: '',
     growthLevelPct: 0,
     growthDesc: '',
+  },
 
+  _reviewSession: {
+    reviewOverview: null,
+    todayNewDueCount: 0,
+    remainingBatchCount: 0,
+    allTodayQuestionIds: [],
+    completedQuestionIds: [],
+    remainingQuestionIds: [],
+    overviewLoading: false,
+    allQuestions: [],
+    answers: {},
+    sessionId: '',
+    currentGroupId: '',
+    allGroupResults: [],
+    totalCorrect: 0,
+    totalWrong: 0,
+    totalCompleted: 0,
     safeModeActive: false,
     renderTraces: [],
+    optionKeys: [],
+    _groupProgressStyle: '',
+    celebrationProgressText: '',
   },
 
   /* ==================== 生命周期 ==================== */
@@ -157,7 +158,8 @@ Page({
   /* ==================== 今日复习概览 ==================== */
 
   async loadTodayReviewOverview() {
-    this.setData({ phase: 'loading', overviewLoading: true, isStarting: false, isContinuing: false })
+    this._reviewSession.overviewLoading = true
+    this.setData({ phase: 'loading', isStarting: false, isContinuing: false })
     try {
       const overview = await api.get('/review/today/overview')
       const vm = this.buildReviewOverviewVM(overview)
@@ -167,11 +169,21 @@ Page({
         targetPhase = vm.todayDueCount > 0 ? 'final-result' : 'empty'
       }
 
+      this._reviewSession.reviewOverview = overview
+      this._reviewSession.todayNewDueCount = vm.todayNewDueCount
+      this._reviewSession.remainingBatchCount = vm.remainingBatchCount
+      this._reviewSession.allTodayQuestionIds = vm.allTodayQuestionIds
+      this._reviewSession.completedQuestionIds = vm.completedQuestionIds
+      this._reviewSession.remainingQuestionIds = vm.remainingQuestionIds
+      this._reviewSession.overviewLoading = false
+      delete vm.todayNewDueCount
+      delete vm.remainingBatchCount
+      delete vm.allTodayQuestionIds
+      delete vm.completedQuestionIds
+      delete vm.remainingQuestionIds
       this.setData({
         ...vm,
-        reviewOverview: overview,
         phase: targetPhase,
-        overviewLoading: false,
       })
 
       // 如果已完成，拉取 today/result
@@ -180,9 +192,9 @@ Page({
       }
     } catch (e) {
       console.error('加载复习概览失败', e)
+      this._reviewSession.overviewLoading = false
       this.setData({
         phase: 'error',
-        overviewLoading: false,
         errorText: '复习计划加载失败，请稍后重试',
       })
     }
@@ -193,9 +205,19 @@ Page({
     try {
       const overview = await api.get('/review/today/overview')
       const vm = this.buildReviewOverviewVM(overview)
+      this._reviewSession.reviewOverview = overview
+      this._reviewSession.todayNewDueCount = vm.todayNewDueCount
+      this._reviewSession.remainingBatchCount = vm.remainingBatchCount
+      this._reviewSession.allTodayQuestionIds = vm.allTodayQuestionIds
+      this._reviewSession.completedQuestionIds = vm.completedQuestionIds
+      this._reviewSession.remainingQuestionIds = vm.remainingQuestionIds
+      delete vm.todayNewDueCount
+      delete vm.remainingBatchCount
+      delete vm.allTodayQuestionIds
+      delete vm.completedQuestionIds
+      delete vm.remainingQuestionIds
       this.setData({
         ...vm,
-        reviewOverview: overview,
       })
     } catch (e) {
       console.error('刷新复习概览失败', e)
@@ -254,18 +276,24 @@ Page({
       const allQuestions = rawQuestions.map(q => this._enrichQuestion(q))
       const groups = this._splitGroups(allQuestions, allQuestions.length)
 
+      this._reviewSession.allQuestions = allQuestions
+      this._reviewSession.answers = {}
+      this._reviewSession.sessionId = batch.session_id || ''
+      this._reviewSession.currentGroupId = batch.group_id || ''
+      this._reviewSession.allGroupResults = []
+      this._reviewSession.totalCorrect = 0
+      this._reviewSession.totalWrong = 0
+      this._reviewSession.totalCompleted = 0
+      this._reviewSession.safeModeActive = false
+      this._reviewSession.renderTraces = []
       this.setData({
         phase: 'reviewing',
-        allQuestions,
         groups,
         currentGroupIdx: 0,
         groupQuestions: allQuestions,
-        answers: {},
         currentIndex: 0,
         currentQuestion: null,
 
-        sessionId: batch.session_id || '',
-        currentGroupId: batch.group_id || '',
         currentBatchNo: batch.batch_no || 1,
         totalBatchCount: batch.total_batch_count || this.data.totalBatchCount,
         todayDueCount: batch.today_due_count || this.data.todayDueCount,
@@ -277,17 +305,10 @@ Page({
         groupWrong: 0,
         _groupSkipped: 0,
 
-        allGroupResults: [],
-        totalCorrect: 0,
-        totalWrong: 0,
-        totalCompleted: 0,
-
         masterConfirmId: null,
         submittingGroup: false,
         resultTransitioning: false,
 
-        safeModeActive: false,
-        renderTraces: [],
         batchLoading: false,
         isStarting: false,
         isContinuing: false,
@@ -457,7 +478,7 @@ Page({
     const blankOptionGroups = hasBlankGroups ? adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), '') : []
 
     var renderCfg = { enableMathImage: false, DEV: config.DEV }
-    if (this.data.safeModeActive) renderCfg.SAFE_MODE = true
+    if (this._reviewSession.safeModeActive) renderCfg.SAFE_MODE = true
     const _renderModel = buildRenderModel(q, opts, renderCfg)
 
     const optText = {}
@@ -501,7 +522,7 @@ Page({
       if (hasRenderViolation) {
         console.error('[CODE_RENDER_VIOLATION] review-today CODE mode leaked into html/richTextNodes')
       }
-      if ((hasHtmlLeak || hasRenderViolation) && !this.data.safeModeActive) {
+      if ((hasHtmlLeak || hasRenderViolation) && !this._reviewSession.safeModeActive) {
         this._enterSafeMode()
       }
     }
@@ -523,15 +544,15 @@ Page({
 
   _recordRenderTrace(trace) {
     if (!trace) return
-    var traces = this.data.renderTraces
+    var traces = this._reviewSession.renderTraces
     traces = traces.concat([trace])
     if (traces.length > 200) traces = traces.slice(-200)
-    this.setData({ renderTraces: traces })
+    this._reviewSession.renderTraces = traces
   },
 
   _enterSafeMode() {
     console.warn('[SELF_HEAL] review-today CODE render violation — entering SAFE_MODE')
-    this.setData({ safeModeActive: true })
+    this._reviewSession.safeModeActive = true
     if (this.data.currentQuestion) {
       const idx = this.data.currentIndex
       const q = this.data.groupQuestions[idx]
@@ -547,20 +568,20 @@ Page({
   },
 
   _syncAnsweredFlags() {
-    const enriched = adapter.applyAnsweredFlags(this.data.groupQuestions, adapter.buildAnsweredFlags(this.data.groupQuestions, this.data.answers, KF), KF)
+    const enriched = adapter.applyAnsweredFlags(this.data.groupQuestions, adapter.buildAnsweredFlags(this.data.groupQuestions, this._reviewSession.answers, KF), KF)
     this.setData({ groupQuestions: enriched })
   },
 
   _showQuestion(index) {
     const q = this.data.groupQuestions[index]
     if (!q) return
-    const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, this.data.answers, KF)
-    const optionList = adapter.buildOptionList(q, this.data.answers, KF)
+    const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, this._reviewSession.answers, KF)
+    const optionList = adapter.buildOptionList(q, this._reviewSession.answers, KF)
     const currentQuestion = Object.assign({}, q, { _optionList: optionList })
+    this._reviewSession.optionKeys = q._optionKeys
     this.setData({
       currentIndex: index,
       currentQuestion: currentQuestion,
-      optionKeys: q._optionKeys,
       _answeredCount: answeredCount,
     })
     this._updateRunnerFields()
@@ -588,7 +609,7 @@ Page({
     const opt = e.detail.option
     if (!opt) return
     const q = this.data.currentQuestion
-    const answers = { ...this.data.answers }
+    const answers = { ...this._reviewSession.answers }
 
     if (isMultipleChoiceType(q.question_type)) {
       const prev = answers[q.schedule_id] || ''
@@ -610,7 +631,8 @@ Page({
     const optionList = adapter.buildOptionList(q, answers, KF)
     const currentQuestion = Object.assign({}, q, { _optionList: optionList })
     const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, answers, KF)
-    this.setData({ answers, currentQuestion, _answeredCount: answeredCount })
+    this._reviewSession.answers = answers
+    this.setData({ currentQuestion, _answeredCount: answeredCount })
     this._syncAnsweredFlags()
     this._updateRunnerFields()
   },
@@ -622,7 +644,7 @@ Page({
     const q = this.data.currentQuestion
     if (!q || !blankId || !opt) return
 
-    const answer = this.data.answers[q.schedule_id] || ''
+    const answer = this._reviewSession.answers[q.schedule_id] || ''
     const blankAnswers = adapter.normalizeBlankAnswer(answer)
     if (blankAnswers[blankId] === opt) {
       delete blankAnswers[blankId]
@@ -632,7 +654,7 @@ Page({
 
     const groups = q._blankOptionGroups || adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), answer)
     const newAnswer = serializeBlankAnswer(groups, blankAnswers)
-    const answers = { ...this.data.answers }
+    const answers = { ...this._reviewSession.answers }
     if (newAnswer) answers[q.schedule_id] = newAnswer
     else delete answers[q.schedule_id]
 
@@ -643,7 +665,8 @@ Page({
     })
 
     const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, answers, KF)
-    this.setData({ answers, currentQuestion, _answeredCount: answeredCount })
+    this._reviewSession.answers = answers
+    this.setData({ currentQuestion, _answeredCount: answeredCount })
     this._syncAnsweredFlags()
     this._updateRunnerFields()
   },
@@ -687,14 +710,14 @@ Page({
       this.refreshOverviewStatsSilently()
 
       // 从当前组移除
-      const allQuestions = this.data.allQuestions.filter(q => q.schedule_id !== scheduleId)
+      const allQuestions = this._reviewSession.allQuestions.filter(q => q.schedule_id !== scheduleId)
       const groups = this._splitGroups(allQuestions, allQuestions.length)
 
-      let { currentGroupIdx, currentIndex, answers } = this.data
+      let { currentGroupIdx, currentIndex } = this.data
+      let answers = { ...this._reviewSession.answers }
       const groupQuestions = groups[currentGroupIdx] || []
 
       delete answers[scheduleId]
-      answers = { ...answers }
       this.data._masteredCount = (this.data._masteredCount || 0) + 1
 
       if (groupQuestions.length === 0) {
@@ -702,10 +725,12 @@ Page({
         if (groups.length > 0) {
           currentGroupIdx = Math.min(currentGroupIdx, groups.length - 1)
           const nextQuestions = groups[currentGroupIdx] || []
+          this._reviewSession.allQuestions = allQuestions
+          this._reviewSession.answers = answers
           this.setData({
-            allQuestions, groups,
+            groups,
             currentGroupIdx, groupQuestions: nextQuestions,
-            answers, currentIndex: 0,
+            currentIndex: 0,
           })
           this._syncAnsweredFlags()
           if (nextQuestions.length > 0) {
@@ -721,10 +746,12 @@ Page({
       if (currentIndex >= groupQuestions.length) {
         currentIndex = Math.max(0, groupQuestions.length - 1)
       }
+      this._reviewSession.allQuestions = allQuestions
+      this._reviewSession.answers = answers
       this.setData({
-        allQuestions, groups,
+        groups,
         currentGroupIdx, groupQuestions,
-        answers, currentIndex,
+        currentIndex,
       })
       this._syncAnsweredFlags()
       if (groupQuestions.length > 0) {
@@ -739,7 +766,8 @@ Page({
   /* ==================== 提交本组 ==================== */
 
   async submitGroup() {
-    const { groupQuestions, answers, submittingGroup } = this.data
+    const { groupQuestions, submittingGroup } = this.data
+    const answers = this._reviewSession.answers
     if (submittingGroup) return
 
     const answeredCount = adapter.computeAnsweredCount(groupQuestions, answers, KF)
@@ -833,7 +861,7 @@ Page({
       const groupWrong = groupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
       const groupSkipped = groupResults.filter(r => r.wasSkipped).length
 
-      const allGroupResults = _mergeResultsByScheduleId(this.data.allGroupResults, groupResults)
+      const allGroupResults = _mergeResultsByScheduleId(this._reviewSession.allGroupResults, groupResults)
       const totalCorrect = allGroupResults.filter(r => r.isCorrect && r.wasSubmitted).length
       const totalWrong = allGroupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
       const totalCompleted = allGroupResults.filter(r => r.wasSubmitted).length
@@ -850,6 +878,11 @@ Page({
       // 静默刷新概览数据（不修改 phase，避免覆盖 group-result）
       this.refreshOverviewStatsSilently()
 
+      this._reviewSession.allGroupResults = allGroupResults
+      this._reviewSession.totalCorrect = totalCorrect
+      this._reviewSession.totalWrong = totalWrong
+      this._reviewSession.totalCompleted = totalCompleted
+      this._reviewSession._groupProgressStyle = 'width: ' + Math.round((this.data.currentGroupIdx + 1) / Math.max(1, newGroups.length) * 100) + '%'
       this.setData({
         phase: 'group-result',
         groups: newGroups,
@@ -858,11 +891,6 @@ Page({
         groupWrong,
         _groupSkipped: groupSkipped,
         submittingGroup: false,
-        allGroupResults,
-        totalCorrect,
-        totalWrong,
-        totalCompleted,
-        _groupProgressStyle: 'width: ' + Math.round((this.data.currentGroupIdx + 1) / Math.max(1, newGroups.length) * 100) + '%',
       })
 
       if (!hasMore && skippedQuestions.length === 0) {
@@ -889,11 +917,11 @@ Page({
 
     if (nextGroupIdx < currentGroups.length && currentGroups[nextGroupIdx] && currentGroups[nextGroupIdx].length > 0) {
       // 有本地缓存的下一组（跳过题重排的情况）
+      this._reviewSession.answers = {}
       this.setData({
         phase: 'reviewing',
         currentGroupIdx: nextGroupIdx,
         groupQuestions: currentGroups[nextGroupIdx],
-        answers: {},
         currentIndex: 0,
         groupResults: [],
         groupCorrect: 0,
@@ -914,13 +942,13 @@ Page({
         const rawQuestions = batch.questions || []
         if (rawQuestions.length > 0) {
           const questions = rawQuestions.map(q => this._enrichQuestion(q))
+          this._reviewSession.allQuestions = questions
+          this._reviewSession.answers = {}
           this.setData({
             phase: 'reviewing',
-            allQuestions: questions,
             groups: [questions],
             currentGroupIdx: 0,
             groupQuestions: questions,
-            answers: {},
             currentIndex: 0,
             currentBatchNo: batch.batch_no || this.data.currentBatchNo + 1,
             totalBatchCount: batch.total_batch_count || this.data.totalBatchCount,
@@ -978,6 +1006,7 @@ Page({
   _showCelebration(copy, duration) {
     const displayDuration = duration || 3000
     this._clearCelebrationTimer()
+    this._reviewSession.celebrationProgressText = ''
     this.setData({
       celebrationTitle: copy.celebrationTitle || '',
       celebrationDetail: copy.celebrationDetail || '',
@@ -985,7 +1014,6 @@ Page({
       celebrationType: copy.celebrationType || 'final',
 
       // 清空复杂内容，AnimatedView 只展示精简信息
-      celebrationProgressText: '',
       celebrationRewardText: '',
       growthLevel: '',
       growthLevelPct: 0,
@@ -1015,7 +1043,7 @@ Page({
   /* ==================== 最终结果视图模型（兜底） ==================== */
 
   _buildReviewResultViewModel() {
-    var allResults = this.data.allGroupResults || []
+    var allResults = this._reviewSession.allGroupResults || []
     var sessionTotal = allResults.length
     var submittedTotal = allResults.filter(function(r) { return r.wasSubmitted }).length
     var correct = allResults.filter(function(r) { return r.isCorrect && r.wasSubmitted }).length
