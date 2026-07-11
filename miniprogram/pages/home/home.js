@@ -12,10 +12,14 @@ Page({
     greeting: '',
     dateStr: '',
     motto: '',
+    authed: false,
     isAdmin: false,
+    streakDays: 0,
     _animStreakDays: 0,
     studyLevel: 'Lv1 起步',
+    levelProgress: 0,
     _animLevelProgress: 0,
+    todayGoalDone: 0,
     _animGoalDone: 0,
     todayGoalTotal: TODAY_GOAL_TOTAL,
     goalOptions: GOAL_OPTIONS,
@@ -27,19 +31,19 @@ Page({
     badgeTitle: '今日待点亮',
     missionText: '完成一组练习，点亮今日目标',
   },
-  _growthTargets: { streakDays: 0, todayGoalDone: 0, levelProgress: 0 },
 
   async onShow() {
-    this._authed = auth.isLoggedIn()
+    const authed = auth.isLoggedIn()
     this.setData({
       user: auth.getUser() || {},
-      isAdmin: this._authed ? auth.isAdmin() : false,
+      authed,
+      isAdmin: authed ? auth.isAdmin() : false,
       greeting: this.getGreeting(),
       dateStr: this.getDateStr(),
       motto: this.getMotto(),
       ...this.getGrowthFallback(),
     })
-    if (!this._authed) return
+    if (!authed) return
     try {
       const syncedUser = await auth.syncCurrentUser()
       if (!syncedUser) return
@@ -52,76 +56,55 @@ Page({
   },
 
   async loadGrowthSnapshot() {
-    this._clearAnimTimers()
-    this._animSeq = (this._animSeq || 0) + 1
-    const seq = this._animSeq
     this.setData({ _animStreakDays: 0, _animGoalDone: 0, _animLevelProgress: 0 })
     try {
       const [dashRes, growthRes] = await Promise.all([
         api.get('/stats/dashboard'),
         api.get('/stats/growth').catch(() => null),
       ])
-      if (seq !== this._animSeq) return
       const overview = (dashRes && dashRes.overview) || {}
       const growth = growthRes || null
       this._lastGrowth = growth
-      const snapshot = this.buildGrowthSnapshot(overview, growth)
-      this._growthTargets.streakDays = snapshot.streakDays
-      this._growthTargets.todayGoalDone = snapshot.todayGoalDone
-      this._growthTargets.levelProgress = snapshot.levelProgress
-      const { streakDays, todayGoalDone, levelProgress, ...displayData } = snapshot
-      this.setData(displayData)
-      this._animateGrowth()
+      this.setData(this.buildGrowthSnapshot(overview, growth))
+      this._animateNumbers()
     } catch (e) {
       console.error('加载成长数据失败', e)
     }
   },
 
-  // 统一动画调度：一次计算三个字段，合并为一次 setData，间隔 100ms
-  _animateGrowth() {
-    this._clearAnimTimers()
-    const { streakDays, todayGoalDone, levelProgress } = this._growthTargets
-    const from = { sd: this.data._animStreakDays, gd: this.data._animGoalDone, lp: this.data._animLevelProgress }
-    const to = { sd: streakDays, gd: todayGoalDone, lp: levelProgress }
-    if (from.sd === to.sd && from.gd === to.gd && from.lp === to.lp) return
-    const durationMap = { sd: 600, gd: 600, lp: 500 }
-    const defaults = { sd: 0, gd: 0, lp: 0 }
+  _animateNumbers() {
+    this._animateNumber(this.data._animStreakDays, this.data.streakDays, 600, '_animStreakDays')
+    this._animateNumber(this.data._animGoalDone, this.data.todayGoalDone, 600, '_animGoalDone')
+    this._animateNumber(this.data._animLevelProgress, this.data.levelProgress, 500, '_animLevelProgress')
+  },
+
+  _animateNumber(from, to, duration, dataKey) {
+    const timerKey = '_animTimer' + dataKey
+    if (this[timerKey]) clearTimeout(this[timerKey])
+    if (from === to) return
     const startTime = Date.now()
-    // 最大动画时长取各字段最大值
-    const maxDur = Math.max(...Object.keys(durationMap).map(k => durationMap[k]))
-    const tick = () => {
-      if (this._animSeq !== this._lastAnimSeq) return
+    const diff = to - from
+    const animStep = () => {
       const elapsed = Date.now() - startTime
-      const p = Math.min(elapsed / maxDur, 1)
-      const eased = 1 - Math.pow(1 - p, 3)
-      const update = {}
-      ;['sd', 'gd', 'lp'].forEach(key => {
-        const dur = durationMap[key]
-        const localP = Math.min(elapsed / dur, 1)
-        const localEased = 1 - Math.pow(1 - localP, 3)
-        const fr = from[key]
-        const t = to[key]
-        const diff = t - fr
-        const current = Math.round(fr + diff * localEased)
-        const clamped = Math.min(t, Math.max(Math.min(fr, t), current))
-        const dataMap = { sd: '_animStreakDays', gd: '_animGoalDone', lp: '_animLevelProgress' }
-        update[dataMap[key]] = clamped
-      })
-      this.setData(update)
-      if (p < 1) {
-        this._animTimer = setTimeout(tick, 100)
+      const progress = Math.min(elapsed / duration, 1)
+      const eased = 1 - Math.pow(1 - progress, 3)
+      const current = Math.round(from + diff * eased)
+      this.setData({ [dataKey]: Math.min(to, Math.max(Math.min(from, to), current)) })
+      if (progress < 1) {
+        this[timerKey] = setTimeout(animStep, 16)
       }
     }
-    this._lastAnimSeq = this._animSeq
-    tick()
+    this[timerKey] = setTimeout(animStep, 16)
   },
 
   getGrowthFallback() {
     const todayGoalTotal = this.getStoredTodayGoal()
     const levelMeta = this.getLevelMeta(0)
-    this._growthTargets = { streakDays: 0, todayGoalDone: 0, levelProgress: 0 }
     return {
+      streakDays: 0,
       studyLevel: 'Lv1 起步',
+      levelProgress: 0,
+      todayGoalDone: 0,
       todayGoalTotal,
       expText: levelMeta.expText,
       nextLevelText: levelMeta.nextLevelText,
@@ -191,19 +174,14 @@ Page({
     const goal = Number(e.currentTarget.dataset.goal)
     if (!GOAL_OPTIONS.includes(goal)) return
     storage.set(TODAY_GOAL_KEY, goal)
-    const snapshot = this.buildGrowthSnapshot(this._lastOverview || {}, this._lastGrowth)
-    this._growthTargets.streakDays = snapshot.streakDays
-    this._growthTargets.todayGoalDone = snapshot.todayGoalDone
-    this._growthTargets.levelProgress = snapshot.levelProgress
-    const { streakDays, todayGoalDone, levelProgress, ...displayData } = snapshot
     this.setData({
       _animStreakDays: 0,
       _animGoalDone: 0,
       _animLevelProgress: 0,
-      ...displayData,
+      ...this.buildGrowthSnapshot(this._lastOverview || {}, this._lastGrowth),
       showGoalPicker: false,
     })
-    this._animateGrowth()
+    this._animateNumbers()
   },
 
   getLevelMeta(totalQuestions) {
@@ -309,11 +287,9 @@ Page({
   goDashboard() { wx.navigateTo({ url: '/pages/dashboard/dashboard' }) },
   goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
   _clearAnimTimers() {
-    this._animSeq = (this._animSeq || 0) + 1
-    if (this._animTimer) {
-      clearTimeout(this._animTimer)
-      this._animTimer = null
-    }
+    ['_animTimer_animStreakDays', '_animTimer_animGoalDone', '_animTimer_animLevelProgress'].forEach(function(key) {
+      if (this[key]) clearTimeout(this[key])
+    }, this)
   },
 
   onHide() {

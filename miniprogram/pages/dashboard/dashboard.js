@@ -6,12 +6,14 @@ Page({
   data: {
     // 三种独立加载状态
     initialLoading: true,
+    refreshing: false,
     backgroundRefreshing: false,
     error: null,
     pageReady: false,
 
     hero: null,
     subtitle: '',
+    insight: null,
     trend: null,
     trendError: null,
     subjects: null,
@@ -23,6 +25,7 @@ Page({
     // Mastery rate
     wrongQuestionCount: 0,
     masteredWrongCount: 0,
+    masteryRate: 0,
     masteryRatePct: 0,
     masteryStatusText: '',
 
@@ -42,10 +45,20 @@ Page({
     llmAnalysisError: null,
     llmAnalysisGeneratedAt: null,
 
+    // Chart hash keys (prevent redundant redraw)
+    _heroHash: '',
+    _trendHash: '',
+    _subjectHash: '',
+    _masteryHash: '',
+    _growthHash: '',
+    _adaptiveHash: '',
+
     _hasData: false,
 
     // Diagnosis insights
     insights: null,
+    insightsLoading: false,
+    insightsError: null,
   },
 
   _alive: false,
@@ -62,12 +75,6 @@ Page({
   _lastLoadAt: 0,
   _loadPromise: null,
   _chartsCancelled: false,
-  _chartHashes: {},
-  _insight: null,
-  _masteryRate: 0,
-  _refreshing: false,
-  _insightsLoading: false,
-  _insightsError: null,
 
   onShow() {
     this._alive = true
@@ -152,7 +159,7 @@ Page({
     if (mode === 'initial' && !hasExistingData) {
       this.setData({ initialLoading: true, error: null })
     } else if (mode === 'refresh') {
-      this._refreshing = true; this.setData({ error: null })
+      this.setData({ refreshing: true, error: null })
     } else if (mode === 'background') {
       this.setData({ backgroundRefreshing: true })
     }
@@ -179,7 +186,7 @@ Page({
           this.setData({ initialLoading: false, error: '学习数据加载失败' })
         } else {
           // Keep existing data, just show toast
-          this._refreshing = false; this.setData({ backgroundRefreshing: false })
+          this.setData({ backgroundRefreshing: false, refreshing: false })
           wx.showToast({ title: '刷新失败', icon: 'none' })
         }
         return null
@@ -195,7 +202,7 @@ Page({
     if (!this._alive) return
     this._insightSeq = (this._insightSeq || 0) + 1
     const seq = this._insightSeq
-    if (retryCount === 0) this._insightsLoading = true
+    if (retryCount === 0) this.setData({ insightsLoading: true })
     try {
       const res = await api.get('/stats/dashboard-insights', {
         days: this.data.trendDays,
@@ -236,8 +243,7 @@ Page({
         )
         this.setData({ subjects: enrichedSubjects })
       }
-      this._insightsLoading = false; this._insightsError = null
-      this.setData({ insights }, () => {
+      this.setData({ insights, insightsLoading: false, insightsError: null }, () => {
         // Draw diagnosis gauges after setData render
         if (!this._alive) return
         setTimeout(() => {
@@ -262,7 +268,7 @@ Page({
         await new Promise(r => setTimeout(r, 2000))
         return this.loadInsights(retryCount + 1)
       }
-      this._insightsLoading = false; this._insightsError = '诊断数据加载失败'
+      this.setData({ insightsLoading: false, insightsError: '诊断数据加载失败' })
     }
   },
 
@@ -272,7 +278,7 @@ Page({
     if (!h) return
 
     charts.drawScoreRing('score-ring', this, h.totalAccuracy)
-    if (this.data._hasData) charts.drawMasteryGauge('mastery-gauge', this, this._masteryRate)
+    if (this.data._hasData) charts.drawMasteryGauge('mastery-gauge', this, this.data.masteryRate)
 
     const tr = this.data.trend
     if (tr && tr.points && tr.points.length) charts.drawTrendChart('trend-chart', this, tr.points)
@@ -331,31 +337,21 @@ Page({
     const adaptiveHash = adaptive ? '' + (adaptive.recallPct || 0) : ''
 
     // Prevent canvas flicker: skip redraw if hash unchanged
-    const canRedrawHero = heroHash !== this._chartHashes._heroHash
-    const canRedrawTrend = trendHash !== this._chartHashes._trendHash
-    const canRedrawSubject = subjectHash !== this._chartHashes._subjectHash
-    const canRedrawMastery = masteryHash !== this._chartHashes._masteryHash
-    const canRedrawGrowth = growthHash !== this._chartHashes._growthHash
-    const canRedrawAdaptive = adaptiveHash !== this._chartHashes._adaptiveHash
+    const canRedrawHero = heroHash !== this.data._heroHash
+    const canRedrawTrend = trendHash !== this.data._trendHash
+    const canRedrawSubject = subjectHash !== this.data._subjectHash
+    const canRedrawMastery = masteryHash !== this.data._masteryHash
+    const canRedrawGrowth = growthHash !== this.data._growthHash
+    const canRedrawAdaptive = adaptiveHash !== this.data._adaptiveHash
 
     // Move motion-card-enter class: only on initial load
     const keepMotionClass = (mode === 'initial')
-
-    // Move unbound fields to instance variables
-    this._insight = rec
-    this._masteryRate = masteryRate
-    this._refreshing = false
-    this._chartHashes._heroHash = heroHash
-    this._chartHashes._trendHash = trendHash
-    this._chartHashes._subjectHash = subjectHash
-    this._chartHashes._masteryHash = masteryHash
-    this._chartHashes._growthHash = growthHash
-    this._chartHashes._adaptiveHash = adaptiveHash
 
     // When background/refresh, keep old data until setData
     this.setData({
       hero,
       subtitle,
+      insight: rec,
       trend,
       subjects,
       reviewRisk,
@@ -364,13 +360,21 @@ Page({
       yearly,
       wrongQuestionCount: wrongQ,
       masteredWrongCount: masteredW,
+      masteryRate,
       masteryRatePct,
       masteryStatusText,
       initialLoading: false,
+      refreshing: false,
       backgroundRefreshing: false,
       pageReady: true,
       error: null,
       _hasData: hasData,
+      _heroHash: heroHash,
+      _trendHash: trendHash,
+      _subjectHash: subjectHash,
+      _masteryHash: masteryHash,
+      _growthHash: growthHash,
+      _adaptiveHash: adaptiveHash,
     }, () => {
       if (!this._alive) return
 
@@ -439,7 +443,6 @@ Page({
       if (!this._alive || seq !== this._trendSeq) return
       const trend = model.buildTrends(res.trends)
       const trendHash = trend ? trend.points.map(p => p.date + p.questions + p.accuracy).join('|') : ''
-      this._chartHashes._trendHash = trendHash
       this.setData({
         trend,
         trendLoading: false,
@@ -447,6 +450,7 @@ Page({
         trendDays: days,
         pendingTrendDays: null,
         _activeTabDays: days,
+        _trendHash: trendHash,
       }, () => {
         if (trend && this._alive) {
           // Clear any pending draw timer
@@ -657,7 +661,7 @@ Page({
     else this.goPractice()
   },
   onInsightCta() {
-    const ctaType = this._insight && this._insight.cta_type
+    const ctaType = this.data.insight && this.data.insight.cta_type
     if (ctaType === 'review') this.goReview()
     else if (ctaType === 'wrong' || ctaType === 'subject') this.goWrongBook()
     else this.goPractice()

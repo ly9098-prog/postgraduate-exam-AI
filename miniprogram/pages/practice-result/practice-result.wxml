@@ -33,19 +33,19 @@
     </view>
 
     <view class="summary-grid">
-      <view class="summary-item" hover-class="summary-item-pressed" hover-start-time="20" hover-stay-time="80">
+      <view class="summary-item">
         <text class="summary-value">{{correct || 0}}</text>
         <text class="summary-label">答对</text>
       </view>
-      <view class="summary-item" hover-class="summary-item-pressed" hover-start-time="20" hover-stay-time="80">
+      <view class="summary-item">
         <text class="summary-value">{{wrong || 0}}</text>
         <text class="summary-label">错题</text>
       </view>
-      <view class="summary-item" hover-class="summary-item-pressed" hover-start-time="20" hover-stay-time="80">
+      <view class="summary-item">
         <text class="summary-value">{{total || 0}}</text>
         <text class="summary-label">总题</text>
       </view>
-      <view class="summary-item" hover-class="summary-item-pressed" hover-start-time="20" hover-stay-time="80">
+      <view class="summary-item">
         <text class="summary-value">{{durationText}}</text>
         <text class="summary-label">用时</text>
       </view>
@@ -71,7 +71,7 @@
   </view>
 
   <!-- 3. Advice Card -->
-  <view class="result-advice-card {{nextStepType}} anim-card-2" wx:if="{{nextStepTitle}}" hover-class="result-advice-card-pressed" hover-start-time="20" hover-stay-time="80">
+  <view class="result-advice-card {{nextStepType}} anim-card-2" wx:if="{{nextStepTitle}}">
     <view class="advice-head">
       <text class="advice-title">{{nextStepTitle}}</text>
       <text class="advice-tag" wx:if="{{nextStepTag}}">{{nextStepTag}}</text>
@@ -81,7 +81,7 @@
 
   <!-- 4. Detail List (default expanded) -->
   <view class="detail-card anim-card-4" wx:if="{{results.length > 0}}">
-    <view class="detail-toggle" bindtap="toggleDetail" hover-class="detail-toggle-pressed" hover-start-time="20" hover-stay-time="80">
+    <view class="detail-toggle" bindtap="toggleDetail">
       <view>
         <text class="detail-title">答题详情</text>
         <text class="detail-subtitle">查看每道题的对错情况</text>
@@ -175,11 +175,11 @@
 
   <!-- 6. Bottom Actions -->
   <view class="bottom-actions">
-    <button class="action-primary" hover-class="action-primary-pressed" hover-start-time="20" hover-stay-time="80" wx:if="{{wrong > 0}}" bindtap="goWrongBook">复盘错题</button>
-    <button class="action-primary" hover-class="action-primary-pressed" hover-start-time="20" hover-stay-time="80" wx:elif="{{total > 0}}" bindtap="practiceAgain">再来一组</button>
-    <button class="action-primary" hover-class="action-primary-pressed" hover-start-time="20" hover-stay-time="80" wx:else bindtap="practiceAgain">返回练习</button>
+    <button class="action-primary" wx:if="{{wrong > 0}}" bindtap="goWrongBook">复盘错题</button>
+    <button class="action-primary" wx:elif="{{total > 0}}" bindtap="practiceAgain">再来一组</button>
+    <button class="action-primary" wx:else bindtap="practiceAgain">返回练习</button>
 
-    <button class="action-secondary" hover-class="action-secondary-pressed" hover-start-time="20" hover-stay-time="80" wx:if="{{wrong > 0}}" bindtap="practiceAgain">继续练习</button>
-    <button class="action-secondary" hover-class="action-secondary-pressed" hover-start-time="20" hover-stay-time="80" wx:else bindtap="goHome">返回首页</button>
+    <button class="action-secondary" wx:if="{{wrong > 0}}" bindtap="practiceAgain">继续练习</button>
+    <button class="action-secondary" wx:else bindtap="goHome">返回首页</button>
   </view>
 </view>

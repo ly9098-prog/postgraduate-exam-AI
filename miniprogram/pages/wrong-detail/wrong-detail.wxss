@@ -173,8 +173,8 @@ page {
   border: none;
 }
 
-.ai-action-btn-pressed,
-.ai-secondary-btn-pressed {
+.ai-action-btn:active,
+.ai-secondary-btn:active {
   opacity: 0.9;
   transform: scale(0.98);
 }
@@ -578,7 +578,7 @@ page {
   color: #4F7FFF;
 }
 
-.error-btn-pressed {
+.error-btn:active {
   opacity: 0.9;
   transform: scale(0.97);
 }

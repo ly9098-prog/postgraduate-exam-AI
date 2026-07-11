@@ -371,7 +371,7 @@ page {
   transition: background 0.18s ease;
 }
 
-.subject-parent-row-pressed {
+.subject-parent-row:active {
   opacity: 0.92;
 }
 
@@ -474,7 +474,7 @@ page {
   transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.14s ease;
 }
 
-.child-subject-chip-pressed {
+.child-subject-chip:active {
   transform: scale(0.97);
 }
 
@@ -520,7 +520,7 @@ page {
   transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 
-.mode-card-pressed {
+.mode-card:active {
   transform: scale(0.98);
 }
 
@@ -570,7 +570,7 @@ page {
   transition: transform 0.15s ease, background 0.15s ease;
 }
 
-.count-btn-pressed {
+.count-btn:active {
   transform: scale(0.97);
 }
 
@@ -622,7 +622,7 @@ page {
 
 .btn-start::after { border: none; }
 
-.btn-start-pressed { transform: scale(0.98); opacity: 0.92; }
+.btn-start:active { transform: scale(0.98); opacity: 0.92; }
 
 .btn-start[disabled] {
   background: #D8E1EF;
@@ -638,7 +638,7 @@ page {
   font-weight: 700;
 }
 
-.pomodoro-link-pressed {
+.pomodoro-link:active {
   opacity: 0.76;
 }
 

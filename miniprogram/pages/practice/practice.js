@@ -26,11 +26,15 @@ Page({
     currentIndex: 0,
     totalQuestions: 0,
     currentQuestion: null,
+    optionKeys: [],
 
     // 答题卡
+    answerMap: {},
+    answeredFlags: {},
     answeredCount: 0,
     // 提交后
     submitted: false,
+    comboCount: 0,
     feedbackVisible: false,
     feedbackType: '',
     feedbackTitle: '',
@@ -40,11 +44,22 @@ Page({
     feedbackStarCount: 0,
 
     // 计时
+    startTime: 0,
+    elapsedSec: 0,
     elapsedText: '00:00',
     _timer: null,
+    questionTimeMap: {},
+    currentQuestionStartedAt: 0,
 
     // 公式图片化
     enableMathImage: false,
+
+    // Debug
+    traceId: '',
+    requestId: '',
+
+    // Self-healing
+    safeModeActive: false,
 
     // Perfect celebration
     showPerfectCelebration: false,
@@ -53,21 +68,6 @@ Page({
     perfectCelebrationDetail: '',
     perfectCelebrationMotto: '这组掌握很稳，继续保持',
     perfectCelebrationRewardText: '',
-  },
-
-  _practiceSession: {
-    traceId: '',
-    safeModeActive: false,
-    answerMap: {},
-    answeredFlags: {},
-    correctCount: 0,
-    comboCount: 0,
-    elapsedSec: 0,
-    startTime: 0,
-    questionTimeMap: {},
-    currentQuestionStartedAt: 0,
-    requestId: '',
-    optionKeys: [],
   },
 
   onLoad() {
@@ -267,31 +267,28 @@ Page({
 
   async startPractice() {
     const traceId = createTraceId()
-    const now = Date.now()
-    this._practiceSession.traceId = traceId
-    this._practiceSession.safeModeActive = false
-    this._practiceSession.answerMap = {}
-    this._practiceSession.answeredFlags = {}
-    this._practiceSession.correctCount = 0
-    this._practiceSession.comboCount = 0
-    this._practiceSession.elapsedSec = 0
-    this._practiceSession.startTime = now
-    this._practiceSession.questionTimeMap = {}
-    this._practiceSession.currentQuestionStartedAt = 0
-    this._practiceSession.requestId = ''
-    this._practiceSession.optionKeys = []
     this.setData({
+      traceId,
+      safeModeActive: false,
       started: true,
       currentIndex: 0,
+      answerMap: {},
+      answeredFlags: {},
       answeredCount: 0,
       results: [],
       submitted: false,
+      correctCount: 0,
       wrongCount: 0,
+      comboCount: 0,
       feedbackVisible: false,
       feedbackType: '',
       feedbackTitle: '',
       feedbackDetail: '',
       feedbackComboText: '',
+      elapsedSec: 0,
+      startTime: Date.now(),
+      questionTimeMap: {},
+      currentQuestionStartedAt: 0,
     })
     this._startTimer()
     await this._loadQuestions()
@@ -300,9 +297,8 @@ Page({
   _startTimer() {
     this._clearTimer()
     this._timer = setInterval(() => {
-      const sec = Math.floor((Date.now() - this._practiceSession.startTime) / 1000)
-      this._practiceSession.elapsedSec = sec
-      this.setData({ elapsedText: this._fmt(sec) })
+      const sec = Math.floor((Date.now() - this.data.startTime) / 1000)
+      this.setData({ elapsedSec: sec, elapsedText: this._fmt(sec) })
     }, 1000)
   },
 
@@ -344,7 +340,7 @@ Page({
         exclude_answered: true,
         no_repeat_days: 30,
         use_leitner: true,
-        _traceId: this._practiceSession.traceId,
+        _traceId: this.data.traceId,
       }
       // V4: smart 模式默认使用综合打分策略
       if (params.mode === 'smart') {
@@ -352,18 +348,15 @@ Page({
       }
       const res = await api.get('/practice/questions', params)
       const questions = adapter.applyAnsweredFlags(res.questions || [], {}, 'id')
-      debugLog(this._practiceSession.traceId, 'STATE_AFTER_API', {
+      debugLog(this.data.traceId, 'STATE_AFTER_API', {
         total: questions.length,
         responseTraceId: res.trace_id,
       })
-      saveDebugSnapshot(this._practiceSession.traceId, 'state_after_api', {
+      saveDebugSnapshot(this.data.traceId, 'state_after_api', {
         total: questions.length,
         questionIds: questions.map(q => q.id),
       })
-      this._practiceSession.answeredFlags = {}
-      this._practiceSession.comboCount = 0
-      this._practiceSession.requestId = res.request_id || ''
-      this.setData({ questions, totalQuestions: questions.length, loading: false })
+      this.setData({ questions, totalQuestions: questions.length, loading: false, answeredFlags: {}, comboCount: 0, requestId: res.request_id || '' })
       if (questions.length > 0) {
         this._showQuestion(0)
       } else {
@@ -394,9 +387,7 @@ Page({
   },
 
   _settleQuestionTime() {
-    const { currentIndex, questions } = this.data
-    const currentQuestionStartedAt = this._practiceSession.currentQuestionStartedAt
-    const questionTimeMap = this._practiceSession.questionTimeMap
+    const { currentIndex, questions, currentQuestionStartedAt, questionTimeMap } = this.data
     if (!currentQuestionStartedAt || !questions.length) return
     const q = questions[currentIndex]
     if (!q) return
@@ -404,7 +395,7 @@ Page({
     const key = String(q.id)
     const map = { ...questionTimeMap }
     map[key] = (map[key] || 0) + elapsed
-    this._practiceSession.questionTimeMap = map
+    this.setData({ questionTimeMap: map })
   },
 
   _showQuestion(index) {
@@ -414,7 +405,7 @@ Page({
     const q = this.data.questions[index]
     if (!q) return
     const isBlankChoice = adapter.isMultiBlankChoice(q)
-    const answer = this._practiceSession.answerMap[String(q.id)] || ''
+    const answer = this.data.answerMap[String(q.id)] || ''
     const blankOptionGroups = isBlankChoice ? adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), answer) : []
     const isTrueFalse = q.question_type === 'true_false' || q.question_type === 'judgement'
     const opts = !isBlankChoice && q.options && Object.keys(q.options).length > 0
@@ -428,7 +419,7 @@ Page({
     }
     // 统一渲染模型 — 题干渲染的唯一入口
     var renderCfg = { enableMathImage: config.enableMathImage || false, DEV: config.DEV }
-    if (this._practiceSession.safeModeActive) renderCfg.SAFE_MODE = true
+    if (this.data.safeModeActive) renderCfg.SAFE_MODE = true
     const renderModel = buildRenderModel(q, opts, renderCfg)
     // 不直接突变 q，创建新对象避免 _renderModel 引用持久化
     const currentQuestion = Object.assign({}, q, {
@@ -440,7 +431,7 @@ Page({
     })
 
     if (shouldDebugQuestion(q.id)) {
-      debugLog(this._practiceSession.traceId || q.trace_id, 'BEFORE_RENDER', {
+      debugLog(this.data.traceId || q.trace_id, 'BEFORE_RENDER', {
         questionId: q.id,
         index,
         optionKeys,
@@ -449,11 +440,11 @@ Page({
         sourceLen: ((q.content && (q.content.stem || q.content.text)) || '').length,
       })
     }
-    this._practiceSession.optionKeys = optionKeys
-    this._practiceSession.currentQuestionStartedAt = Date.now()
     this.setData({
       currentIndex: index,
       currentQuestion: currentQuestion,
+      optionKeys,
+      currentQuestionStartedAt: Date.now(),
     }, () => {
       this._updateComputedFields()
     })
@@ -487,7 +478,7 @@ Page({
 
     const isMulti = q.question_type === 'multiple_choice'
     const key = String(q.id)
-    const prev = this._practiceSession.answerMap[key] || ''
+    const prev = this.data.answerMap[key] || ''
 
     let newAnswer
     if (isMulti) {
@@ -501,7 +492,7 @@ Page({
       newAnswer = prev === opt ? '' : opt
     }
 
-    const answerMap = { ...this._practiceSession.answerMap }
+    const answerMap = { ...this.data.answerMap }
     if (newAnswer) {
       answerMap[key] = newAnswer
     } else {
@@ -511,20 +502,20 @@ Page({
     const answeredCount = adapter.countAnswered(answeredFlags)
     const questions = adapter.applyAnsweredFlags(this.data.questions, answeredFlags, 'id')
     if (shouldDebugQuestion(q.id)) {
-      debugLog(this._practiceSession.traceId || q.trace_id, 'STATE_CHANGE', {
+      debugLog(this.data.traceId || q.trace_id, 'STATE_CHANGE', {
         questionId: q.id,
         previousAnswer: prev,
         nextAnswer: newAnswer,
         answeredCount,
       })
-      saveDebugSnapshot(this._practiceSession.traceId || q.trace_id, 'state_change', {
+      saveDebugSnapshot(this.data.traceId || q.trace_id, 'state_change', {
         questionId: q.id,
         previousAnswer: prev,
         nextAnswer: newAnswer,
         answeredCount,
       })
     }
-    const optionKeys = this._practiceSession.optionKeys
+    const optionKeys = this.data.optionKeys
     const selectedFlags = {}
     for (const k of optionKeys) {
       selectedFlags[k] = isMulti
@@ -533,9 +524,7 @@ Page({
     }
     const optionList = adapter.buildOptionListFromFlags(q._opts, optionKeys, selectedFlags)
     const cq = Object.assign({}, this.data.currentQuestion, { _optionList: optionList })
-    this._practiceSession.answerMap = answerMap
-    this._practiceSession.answeredFlags = answeredFlags
-    this.setData({ questions, answeredCount, currentQuestion: cq }, () => {
+    this.setData({ questions, answerMap, answeredFlags, answeredCount, currentQuestion: cq }, () => {
       this._updateComputedFields()
     })
     this._showAnswerFeedback(q, newAnswer)
@@ -549,7 +538,7 @@ Page({
     if (!q || !adapter.isMultiBlankChoice(q) || !blankId || !opt) return
 
     const key = String(q.id)
-    const prev = this._practiceSession.answerMap[key] || ''
+    const prev = this.data.answerMap[key] || ''
     const blankAnswers = adapter.normalizeBlankAnswer(prev)
     if (blankAnswers[blankId] === opt) {
       delete blankAnswers[blankId]
@@ -559,7 +548,7 @@ Page({
 
     const groupsForAnswer = q._blankOptionGroups || adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), prev)
     const newAnswer = adapter.serializeBlankAnswer(groupsForAnswer, blankAnswers)
-    const answerMap = { ...this._practiceSession.answerMap }
+    const answerMap = { ...this.data.answerMap }
     if (newAnswer) {
       answerMap[key] = newAnswer
     } else {
@@ -575,13 +564,13 @@ Page({
     })
 
     if (shouldDebugQuestion(q.id)) {
-      debugLog(this._practiceSession.traceId || q.trace_id, 'STATE_CHANGE', {
+      debugLog(this.data.traceId || q.trace_id, 'STATE_CHANGE', {
         questionId: q.id,
         previousAnswer: prev,
         nextAnswer: newAnswer,
         answeredCount,
       })
-      saveDebugSnapshot(this._practiceSession.traceId || q.trace_id, 'state_change', {
+      saveDebugSnapshot(this.data.traceId || q.trace_id, 'state_change', {
         questionId: q.id,
         previousAnswer: prev,
         nextAnswer: newAnswer,
@@ -589,9 +578,7 @@ Page({
       })
     }
 
-    this._practiceSession.answerMap = answerMap
-    this._practiceSession.answeredFlags = answeredFlags
-    this.setData({ questions, answeredCount, currentQuestion }, () => {
+    this.setData({ questions, answerMap, answeredFlags, answeredCount, currentQuestion }, () => {
       this._updateComputedFields()
     })
     this._showAnswerFeedback(q, newAnswer)
@@ -621,16 +608,15 @@ Page({
   _showAnswerFeedback(q, answer) {
     const isCorrect = adapter.isAnswerCorrect(q, answer)
     const hasAnswer = !!answer
-    const nextCombo = isCorrect === true ? this._practiceSession.comboCount + 1 : (isCorrect === false ? 0 : this._practiceSession.comboCount)
+    const nextCombo = isCorrect === true ? this.data.comboCount + 1 : (isCorrect === false ? 0 : this.data.comboCount)
     if (!hasAnswer) {
-      this._practiceSession.comboCount = nextCombo
-      this.setData({ feedbackVisible: false })
+      this.setData({ comboCount: nextCombo, feedbackVisible: false })
       return
     }
 
     // 仅在明确判对/判错时弹出反馈，无法判定则不弹
     if (isCorrect !== true && isCorrect !== false) {
-      this._practiceSession.comboCount = nextCombo
+      this.setData({ comboCount: nextCombo })
       return
     }
 
@@ -672,8 +658,8 @@ Page({
     }
 
     if (this._feedbackTimer) clearTimeout(this._feedbackTimer)
-    this._practiceSession.comboCount = nextCombo
     this.setData({
+      comboCount: nextCombo,
       feedbackVisible: true,
       feedbackType,
       feedbackTitle,
@@ -725,7 +711,7 @@ Page({
         )
       }
       // Auto self-heal: enter safe mode on any violation
-      if ((hasHtmlLeak || hasRenderViolation) && !this._practiceSession.safeModeActive) {
+      if ((hasHtmlLeak || hasRenderViolation) && !this.data.safeModeActive) {
         this._enterSafeMode()
       }
     }
@@ -744,7 +730,7 @@ Page({
 
   _enterSafeMode() {
     console.warn('[SELF_HEAL] CODE render violation detected — entering SAFE_MODE')
-    this._practiceSession.safeModeActive = true
+    this.setData({ safeModeActive: true })
     // Re-render current question in safe mode
     this._reRenderCurrentQuestion()
   },
@@ -784,8 +770,7 @@ Page({
 
   async doSubmit(skipConfirm) {
     if (this.data.submitting) return
-    const { questions, selectedSubjectId, selectedSubjectName } = this.data
-    const { answerMap, startTime, comboCount } = this._practiceSession
+    const { answerMap, questions, startTime, selectedSubjectId, selectedSubjectName, comboCount } = this.data
     const total = questions.length || 0
     const answeredFlags = adapter.buildAnsweredFlags(questions, answerMap, 'id')
     const answeredCount = adapter.countAnswered(answeredFlags)
@@ -826,16 +811,16 @@ Page({
     this._settleQuestionTime()
     this.setData({ submitting: true })
 
-    const questionTimeMap = this._practiceSession.questionTimeMap
+    const questionTimeMap = this.data.questionTimeMap
 
     // ═══════════════════════════════════════════════════
     // 阶段一：服务器提交 — 只有此步骤失败才提示"提交失败"
     // ═══════════════════════════════════════════════════
     var submitResult, storedResults, duration
-    const requestId = this._practiceSession.requestId || ('req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8))
+    const requestId = this.data.requestId || ('req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8))
     // 持久化 requestId 供重试时复用
-    if (!this._practiceSession.requestId) {
-      this._practiceSession.requestId = requestId
+    if (!this.data.requestId) {
+      this.data.requestId = requestId
     }
     const answers = completedQuestions.map(q => ({
       question_id: q.id,
@@ -847,7 +832,7 @@ Page({
     try {
       submitResult = await api.post('/practice/batch-submit', {
         answers,
-        _traceId: this._practiceSession.traceId,
+        _traceId: this.data.traceId,
       })
     } catch (e) {
       console.error('提交失败', e)
@@ -897,7 +882,7 @@ Page({
         subject_id: selectedSubjectId,
         subject_name: selectedSubjectName,
         duration,
-        traceId: submitResult.trace_id || this._practiceSession.traceId,
+        traceId: submitResult.trace_id || this.data.traceId,
         results: storedResults,
         questions: lightQuestions,
         comboCount,
