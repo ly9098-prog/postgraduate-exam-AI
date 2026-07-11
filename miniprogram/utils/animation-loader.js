@@ -41,7 +41,8 @@ function loadAnimationPackage() {
 }
 
 function getLottieModule() {
-  return _lottieModule
+  if (!_lottieModule) return null
+  try { return _lottieModule.getModule() } catch (_) { return null }
 }
 
 function getRewardData() {

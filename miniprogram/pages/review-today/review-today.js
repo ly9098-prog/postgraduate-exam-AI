@@ -773,8 +773,7 @@ Page({
           confirmText: '按不会处理',
           cancelText: '仅提交已答',
         })
-        if (!choice) return
-        treatUnansweredAsWrong = true
+        treatUnansweredAsWrong = !!choice
       } catch (_) { return }
     } else {
       try {
@@ -1043,7 +1042,7 @@ Page({
 
     var groupCount = this.data.groups.length
     var completedGroupCount = Math.min(this.data.currentGroupIdx + 1, groupCount)
-    var masteredCount = this.data._masteredCount || 0
+    var masteredCount = this._masteredCount || 0
     var isPerfect = wrong === 0 && submittedTotal > 0
     var hasWrong = wrong > 0
     var hasSkipped = skipped > 0

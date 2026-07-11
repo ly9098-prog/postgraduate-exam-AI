@@ -224,6 +224,7 @@ Page({
       wx.removeStorageSync('pomodoro_confirm_pause')
       this._confirmTimerSnapshot = null
       this._timerState.endConfirmMode = ''
+      this.setData({ showEndConfirm: false })
     } else {
       // Validate and optionally restore confirm snapshot
       const confirmSnapshot = this._confirmTimerSnapshot || wx.getStorageSync('pomodoro_confirm_pause')
@@ -297,6 +298,7 @@ Page({
       wx.removeStorageSync('pomodoro_confirm_pause')
       this._confirmTimerSnapshot = null
       this._timerState.endConfirmMode = ''
+      this.setData({ showEndConfirm: false })
     }
     }
 
