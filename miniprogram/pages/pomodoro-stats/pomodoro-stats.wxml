@@ -14,7 +14,7 @@
         </view>
         <text class="error-title">{{errorText}}</text>
         <view class="error-actions">
-          <button class="gradient-btn" bindtap="loadData">重新加载</button>
+          <button class="gradient-btn" hover-class="gradient-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="loadData">重新加载</button>
         </view>
       </view>
     </block>
@@ -77,7 +77,7 @@
           <view class="section-header">
             <text class="section-title">最近记录</text>
             <view class="header-actions">
-              <view class="today-btn {{selectedDate === _todayDate ? 'active' : ''}}" wx:if="{{selectedDate !== _todayDate}}" catchtap="goToToday">
+              <view class="today-btn {{selectedDate === _todayDate ? 'active' : ''}}" wx:if="{{selectedDate !== _todayDate}}" hover-class="today-btn-pressed" hover-start-time="20" hover-stay-time="80" catchtap="goToToday">
                 <text class="today-btn-text">今天</text>
               </view>
               <picker mode="date" value="{{selectedDate}}" bindchange="onDateChange">

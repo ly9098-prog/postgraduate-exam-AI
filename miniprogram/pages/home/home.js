@@ -12,14 +12,11 @@ Page({
     greeting: '',
     dateStr: '',
     motto: '',
-    authed: false,
     isAdmin: false,
-    streakDays: 0,
     _animStreakDays: 0,
     studyLevel: 'Lv1 起步',
     levelProgress: 0,
     _animLevelProgress: 0,
-    todayGoalDone: 0,
     _animGoalDone: 0,
     todayGoalTotal: TODAY_GOAL_TOTAL,
     goalOptions: GOAL_OPTIONS,
@@ -32,18 +29,25 @@ Page({
     missionText: '完成一组练习，点亮今日目标',
   },
 
+  /* 实例状态 — 不通过 setData 写入 */
+  _authed: false,
+  _growthTargets: { streakDays: 0, todayGoalDone: 0, levelProgress: 0 },
+  _animTimer: null,
+
   async onShow() {
-    const authed = auth.isLoggedIn()
+    this._authed = auth.isLoggedIn()
     this.setData({
       user: auth.getUser() || {},
-      authed,
-      isAdmin: authed ? auth.isAdmin() : false,
+      isAdmin: this._authed ? auth.isAdmin() : false,
       greeting: this.getGreeting(),
       dateStr: this.getDateStr(),
       motto: this.getMotto(),
+      _animStreakDays: 0,
+      _animGoalDone: 0,
+      _animLevelProgress: 0,
       ...this.getGrowthFallback(),
     })
-    if (!authed) return
+    if (!this._authed) return
     try {
       const syncedUser = await auth.syncCurrentUser()
       if (!syncedUser) return
@@ -56,6 +60,8 @@ Page({
   },
 
   async loadGrowthSnapshot() {
+    this._clearAnimTimer()
+    this._growthTargets = { streakDays: 0, todayGoalDone: 0, levelProgress: 0 }
     this.setData({ _animStreakDays: 0, _animGoalDone: 0, _animLevelProgress: 0 })
     try {
       const [dashRes, growthRes] = await Promise.all([
@@ -65,46 +71,79 @@ Page({
       const overview = (dashRes && dashRes.overview) || {}
       const growth = growthRes || null
       this._lastGrowth = growth
-      this.setData(this.buildGrowthSnapshot(overview, growth))
+      const snapshot = this.buildGrowthSnapshot(overview, growth)
+      this.setData(snapshot)
       this._animateNumbers()
     } catch (e) {
       console.error('加载成长数据失败', e)
     }
   },
 
+  /* 统一数字动画调度：80ms 间隔，一次 setData 更新三个字段 */
   _animateNumbers() {
-    this._animateNumber(this.data._animStreakDays, this.data.streakDays, 600, '_animStreakDays')
-    this._animateNumber(this.data._animGoalDone, this.data.todayGoalDone, 600, '_animGoalDone')
-    this._animateNumber(this.data._animLevelProgress, this.data.levelProgress, 500, '_animLevelProgress')
-  },
+    this._clearAnimTimer()
+    const targets = this._growthTargets
+    const from = {
+      streakDays: this.data._animStreakDays,
+      goalDone: this.data._animGoalDone,
+      levelProgress: this.data._animLevelProgress,
+    }
+    const to = {
+      streakDays: targets.streakDays,
+      goalDone: targets.todayGoalDone,
+      levelProgress: targets.levelProgress,
+    }
+    // 全部已到位则跳过
+    if (from.streakDays === to.streakDays && from.goalDone === to.goalDone && from.levelProgress === to.levelProgress) return
 
-  _animateNumber(from, to, duration, dataKey) {
-    const timerKey = '_animTimer' + dataKey
-    if (this[timerKey]) clearTimeout(this[timerKey])
-    if (from === to) return
+    const durations = { streakDays: 600, goalDone: 600, levelProgress: 500 }
     const startTime = Date.now()
-    const diff = to - from
-    const animStep = () => {
+    const maxDuration = Math.max(durations.streakDays, durations.goalDone, durations.levelProgress)
+
+    const tick = () => {
       const elapsed = Date.now() - startTime
-      const progress = Math.min(elapsed / duration, 1)
-      const eased = 1 - Math.pow(1 - progress, 3)
-      const current = Math.round(from + diff * eased)
-      this.setData({ [dataKey]: Math.min(to, Math.max(Math.min(from, to), current)) })
-      if (progress < 1) {
-        this[timerKey] = setTimeout(animStep, 16)
+      const data = {}
+      let allDone = true
+
+      const updateField = (key, fromVal, toVal, duration) => {
+        if (fromVal === toVal) return
+        const p = Math.min(elapsed / duration, 1)
+        const eased = 1 - Math.pow(1 - p, 3)
+        const current = Math.round(fromVal + (toVal - fromVal) * eased)
+        data[key] = Math.min(toVal, Math.max(Math.min(fromVal, toVal), current))
+        if (p < 1) allDone = false
+      }
+
+      updateField('_animStreakDays', from.streakDays, to.streakDays, durations.streakDays)
+      updateField('_animGoalDone', from.goalDone, to.goalDone, durations.goalDone)
+      updateField('_animLevelProgress', from.levelProgress, to.levelProgress, durations.levelProgress)
+
+      if (Object.keys(data).length > 0) {
+        this.setData(data)
+      }
+
+      if (!allDone) {
+        this._animTimer = setTimeout(tick, 80)
+      } else {
+        // 确保最终值精确到位
+        this.setData({
+          _animStreakDays: to.streakDays,
+          _animGoalDone: to.goalDone,
+          _animLevelProgress: to.levelProgress,
+        })
+        this._animTimer = null
       }
     }
-    this[timerKey] = setTimeout(animStep, 16)
+
+    this._animTimer = setTimeout(tick, 80)
   },
 
   getGrowthFallback() {
     const todayGoalTotal = this.getStoredTodayGoal()
     const levelMeta = this.getLevelMeta(0)
     return {
-      streakDays: 0,
       studyLevel: 'Lv1 起步',
       levelProgress: 0,
-      todayGoalDone: 0,
       todayGoalTotal,
       expText: levelMeta.expText,
       nextLevelText: levelMeta.nextLevelText,
@@ -124,13 +163,14 @@ Page({
     const todayGoalTotal = this.getStoredTodayGoal()
     const levelProgress = Math.min(100, Math.round((todayGoalDone / todayGoalTotal) * 100))
 
+    // 存入实例目标值（不通过 setData 写入）
+    this._growthTargets = { streakDays, todayGoalDone, levelProgress }
+
     if (growth) {
       const topBadges = (growth.badges || []).slice(0, 3)
       return {
-        streakDays,
         studyLevel: growth.level_title || 'Lv1 起步',
         levelProgress,
-        todayGoalDone,
         todayGoalTotal,
         expText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
         nextLevelText: growth.level_progress_pct >= 100
@@ -147,10 +187,8 @@ Page({
 
     const levelMeta = this.getLevelMeta(totalQuestions)
     return {
-      streakDays,
       studyLevel: levelMeta.studyLevel,
       levelProgress,
-      todayGoalDone,
       todayGoalTotal,
       expText: levelMeta.expText,
       nextLevelText: levelMeta.nextLevelText,
@@ -286,17 +324,18 @@ Page({
   goReview() { wx.navigateTo({ url: '/pages/review-today/review-today' }) },
   goDashboard() { wx.navigateTo({ url: '/pages/dashboard/dashboard' }) },
   goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
-  _clearAnimTimers() {
-    ['_animTimer_animStreakDays', '_animTimer_animGoalDone', '_animTimer_animLevelProgress'].forEach(function(key) {
-      if (this[key]) clearTimeout(this[key])
-    }, this)
+  _clearAnimTimer() {
+    if (this._animTimer) {
+      clearTimeout(this._animTimer)
+      this._animTimer = null
+    }
   },
 
   onHide() {
-    this._clearAnimTimers()
+    this._clearAnimTimer()
   },
 
   onUnload() {
-    this._clearAnimTimers()
+    this._clearAnimTimer()
   },
 })

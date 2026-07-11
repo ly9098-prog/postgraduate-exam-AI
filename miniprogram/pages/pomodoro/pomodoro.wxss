@@ -206,7 +206,7 @@ page {
   -webkit-tap-highlight-color: transparent;
 }
 
-.subj-card:active {
+.subj-card-pressed {
   transform: scale(0.95);
   opacity: 0.6;
 }
@@ -265,7 +265,7 @@ page {
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
-.mode-dot:active {
+.mode-dot-pressed {
   transform: scale(0.92);
   opacity: 0.7;
 }
@@ -651,11 +651,6 @@ page {
   -webkit-tap-highlight-color: transparent;
 }
 
-.ctrl-btn:active {
-  transform: scale(0.92);
-  opacity: 0.7;
-}
-
 .ctrl-primary {
   width: 120rpx;
   height: 120rpx;
@@ -716,13 +711,13 @@ page {
   letter-spacing: 1rpx;
 }
 
-.ctrl-primary:active {
+.ctrl-primary-pressed {
   background: rgba(59, 130, 246, 0.18);
   border-color: rgba(59, 130, 246, 0.3);
   box-shadow: 0 0 32rpx rgba(59, 130, 246, 0.2);
 }
 
-.ctrl-secondary:active {
+.ctrl-secondary-pressed {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.12);
 }
@@ -760,7 +755,7 @@ page {
   -webkit-tap-highlight-color: transparent;
 }
 
-.stats-link:active {
+.stats-link-pressed {
   background: rgba(255, 255, 255, 0.06);
 }
 
@@ -789,7 +784,7 @@ page {
   -webkit-tap-highlight-color: transparent;
 }
 
-.font-size-btn:active {
+.font-size-btn-pressed {
   background: rgba(255, 255, 255, 0.1);
   transform: scale(0.92);
 }
@@ -992,7 +987,7 @@ page {
   border-color: rgba(16, 185, 129, 0.18);
 }
 
-.page-free .ctrl-primary:active {
+.page-free .ctrl-primary-pressed {
   background: rgba(16, 185, 129, 0.18);
   border-color: rgba(16, 185, 129, 0.3);
   box-shadow: 0 0 36rpx rgba(16, 185, 129, 0.2);
@@ -1003,7 +998,7 @@ page {
   border-color: rgba(251, 146, 60, 0.1);
 }
 
-.page-free .ctrl-secondary:active {
+.page-free .ctrl-secondary-pressed {
   background: rgba(251, 146, 60, 0.12);
   border-color: rgba(251, 146, 60, 0.2);
 }

@@ -39,7 +39,6 @@ Page({
     list: [],
     stats: { total: 0 },
     primaryStatCount: 0,
-    primaryStatLabel: '错题总数',
     masteredCount: 0,
     analysis: {
       sourceLabel: '待积累',
@@ -166,7 +165,6 @@ Page({
       this.setData({
         stats,
         primaryStatCount: typeof stats.unmastered === 'number' ? stats.unmastered : (stats.total || 0),
-        primaryStatLabel: typeof stats.unmastered === 'number' ? '待攻克错题' : '错题总数',
         masteredCount,
       })
       // Rebuild analysis with fresh stats when no filter is active

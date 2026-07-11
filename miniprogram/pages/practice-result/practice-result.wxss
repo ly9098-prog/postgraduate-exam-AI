@@ -138,7 +138,7 @@ page,
   text-align: center;
 }
 
-.summary-item:active {
+.summary-item-pressed {
   background: #EEF4FF;
 }
 
@@ -271,10 +271,6 @@ page,
 
 .result-advice-card.continue .advice-tag { background: #ECFDF3; color: #22C55E; }
 
-.result-advice-card:active {
-  opacity: 0.9;
-}
-
 .advice-desc {
   display: block;
   margin-top: 10rpx;
@@ -303,7 +299,7 @@ page,
   gap: 16rpx;
 }
 
-.detail-toggle:active {
+.detail-toggle-pressed {
   opacity: 0.75;
 }
 
@@ -555,12 +551,12 @@ page,
   border: none;
 }
 
-.action-primary:active {
+.action-primary-pressed {
   opacity: 0.9;
   transform: scale(0.97);
 }
 
-.action-secondary:active {
+.action-secondary-pressed {
   opacity: 0.85;
   transform: scale(0.97);
 }
@@ -610,12 +606,12 @@ page,
     transition: none;
   }
 
-  .action-primary:active,
-  .action-secondary:active {
+  .action-primary-pressed,
+  .action-secondary-pressed {
     transform: none;
   }
 
-  .wrong-inline-tip:active {
+  .wrong-inline-tip-pressed {
     transform: none;
   }
 }

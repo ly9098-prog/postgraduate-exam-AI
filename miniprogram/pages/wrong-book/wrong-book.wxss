@@ -70,7 +70,7 @@ page {
   display: flex; align-items: center; justify-content: center;
   transition: transform .15s, background .2s;
 }
-.icon-btn:active { transform: scale(.97); background: #F3F7FF; }
+.icon-btn-pressed { transform: scale(.97); background: #F3F7FF; }
 .icon-btn-active { background: #EDF3FF; border-color: #AFC5FF; }
 .icon-btn-text { font-size: 23rpx; font-weight: 700; color: #44536A; line-height: 1.35; }
 .icon-btn-active .icon-btn-text { color: #3157D5; }
@@ -210,12 +210,12 @@ page {
   display: block; font-size: 21rpx; font-weight: 800;
   color: #7B8AA8; margin-bottom: 10rpx; line-height: 1.35;
 }
-.filter-chips, .weakness-tags { display: flex; flex-wrap: wrap; gap: 10rpx; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 10rpx; }
 .chip {
   padding: 8rpx 20rpx; border-radius: 999rpx; font-size: 23rpx;
   font-weight: 700; line-height: 1.4; color: #5F6F90; background: #F1F6FF;
 }
-.chip:active { opacity: .82; }
+.chip-pressed { opacity: .82; }
 .chip-active {
   color: #FFFFFF;
   background: linear-gradient(135deg, #4F7FFF, #6EC1FF);
@@ -237,7 +237,7 @@ page {
   flex-shrink: 0; font-size: 21rpx; color: #8EA0BA; font-weight: 700;
   padding: 6rpx 14rpx; border-radius: 999rpx; background: #FFFFFF;
 }
-.topic-filter-clear:active { opacity: .7; }
+.topic-filter-clear-pressed { opacity: .7; }
 
 /* ════════════════════════════════════════════
    浅蓝分区: 薄弱点 + 复习轨迹
@@ -537,14 +537,7 @@ page {
   }
 }
 
-/* AI 卡片刷新态 — 轻量提示 */
-.ai-card.is-refreshing {
-  opacity: .82;
-  transition: opacity .25s;
-}
-.ai-card.is-stale {
-  border-color: rgba(245, 158, 11, 0.2);
-}
+/* AI 卡片 */
 .ai-footer {
   display: flex;
   align-items: center;
@@ -606,7 +599,7 @@ page {
   background: rgba(79,127,255,.1);
   white-space: nowrap;
 }
-.ai-refresh-action:active {
+.ai-refresh-action-pressed {
   opacity: .7;
 }
 .ai-refresh-action.disabled {
@@ -643,7 +636,7 @@ page {
   border-radius: 999rpx;
   background: rgba(239,68,68,.08);
 }
-.ai-error-action:active {
+.ai-error-action-pressed {
   opacity: .72;
 }
 
@@ -698,7 +691,7 @@ page {
   border-radius: 18rpx;
   position: relative;
 }
-.wl-item:active { background: rgba(238,244,255,.7); }
+.wl-item-pressed { background: rgba(238,244,255,.7); }
 
 .wl-status-line {
   width: 5rpx;
@@ -788,7 +781,7 @@ page {
   color: #3157D5;
   font-size: 23rpx; font-weight: 700;
 }
-.wl-load-more:active { opacity: .72; }
+.wl-load-more-pressed { opacity: .72; }
 .wl-load-more-text { color: #3157D5; }
 .wl-load-more-icon { width: 20rpx; height: 20rpx; color: #7BA3FF; }
 
@@ -800,7 +793,7 @@ page {
 
 @media (prefers-reduced-motion: reduce) {
   .page { opacity: 1 !important; }
-  .filter-panel, .loading-spinner, .wrong-card {
+  .filter-panel {
     animation: none !important; transition: none !important;
     transform: none !important; opacity: 1 !important;
   }
