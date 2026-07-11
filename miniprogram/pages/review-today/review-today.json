@@ -8,6 +8,7 @@
     "math-question": "/components/math-question/math-question",
     "animated-view": "/components/AnimatedView/AnimatedView",
     "loading-lottie": "/components/loading-lottie/loading-lottie",
-    "quiz-runner": "/components/quiz-runner/quiz-runner"
+    "quiz-runner": "/components/quiz-runner/quiz-runner",
+    "submit-confirm": "/components/submit-confirm/submit-confirm"
   }
 }
