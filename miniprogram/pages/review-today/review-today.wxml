@@ -92,6 +92,9 @@
 
     <button
       class="overview-start-btn"
+      hover-class="overview-start-btn-pressed"
+      hover-start-time="20"
+      hover-stay-time="80"
       loading="{{isStarting || isContinuing}}"
       disabled="{{todayRemainingCount <= 0 || isStarting || isContinuing}}"
       bindtap="startTodayReview"
@@ -216,7 +219,7 @@
       </view>
     </view>
 
-    <button class="gradient-btn" bindtap="nextGroup" disabled="{{resultTransitioning}}" loading="{{resultTransitioning}}">
+    <button class="gradient-btn" hover-class="gradient-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="nextGroup" disabled="{{resultTransitioning}}" loading="{{resultTransitioning}}">
       {{todayRemainingCount > 0 ? '继续下一组' : '查看今日结果'}}
     </button>
 
@@ -313,11 +316,11 @@
   </view>
 
   <view class="fr-bottom-actions">
-    <button class="fr-action-primary" wx:if="{{reviewResultVm.total === 0}}" bindtap="startTodayReview">开始复习</button>
-    <button class="fr-action-primary" wx:elif="{{reviewResultVm.hasWrong}}" bindtap="goWrongBook">复盘错题</button>
-    <button class="fr-action-primary" wx:else bindtap="finishReview">完成</button>
-    <button class="fr-action-secondary" wx:if="{{reviewResultVm.total === 0}}" bindtap="goHome">返回首页</button>
-    <button class="fr-action-secondary" wx:else bindtap="goPractice">继续练习</button>
+    <button class="fr-action-primary" wx:if="{{reviewResultVm.total === 0}}" hover-class="fr-action-primary-pressed" hover-start-time="20" hover-stay-time="80" bindtap="startTodayReview">开始复习</button>
+    <button class="fr-action-primary" wx:elif="{{reviewResultVm.hasWrong}}" hover-class="fr-action-primary-pressed" hover-start-time="20" hover-stay-time="80" bindtap="goWrongBook">复盘错题</button>
+    <button class="fr-action-primary" wx:else hover-class="fr-action-primary-pressed" hover-start-time="20" hover-stay-time="80" bindtap="finishReview">完成</button>
+    <button class="fr-action-secondary" wx:if="{{reviewResultVm.total === 0}}" hover-class="fr-action-secondary-pressed" hover-start-time="20" hover-stay-time="80" bindtap="goHome">返回首页</button>
+    <button class="fr-action-secondary" wx:else hover-class="fr-action-secondary-pressed" hover-start-time="20" hover-stay-time="80" bindtap="goPractice">继续练习</button>
   </view>
 </view>
 
@@ -364,8 +367,8 @@
     </view>
 
     <view class="empty-actions">
-      <button class="empty-btn primary" bindtap="goPractice">去练习新题</button>
-      <button class="empty-btn secondary" bindtap="goWrongBook">查看错题本</button>
+      <button class="empty-btn primary" hover-class="empty-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="goPractice">去练习新题</button>
+      <button class="empty-btn secondary" hover-class="empty-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="goWrongBook">查看错题本</button>
     </view>
   </view>
 </view>
@@ -376,7 +379,7 @@
     <text class="error-icon">⚠</text>
     <text class="error-title">加载失败</text>
     <text class="error-desc">{{errorText}}</text>
-    <button class="error-retry" bindtap="retryLoad">重新加载</button>
+    <button class="error-retry" hover-class="error-retry-pressed" hover-start-time="20" hover-stay-time="80" bindtap="retryLoad">重新加载</button>
   </view>
 </view>
 
@@ -386,8 +389,8 @@
     <text class="master-dialog-title">标记为已掌握</text>
     <text class="master-dialog-desc">该题将从复习池中移除，不再出现在今日复习中</text>
     <view class="master-dialog-actions">
-      <button class="master-btn-cancel" bindtap="cancelMaster">取消</button>
-      <button class="master-btn-confirm" bindtap="confirmMaster">确认掌握</button>
+      <button class="master-btn-cancel" hover-class="master-btn-cancel-pressed" hover-start-time="20" hover-stay-time="80" bindtap="cancelMaster">取消</button>
+      <button class="master-btn-confirm" hover-class="master-btn-confirm-pressed" hover-start-time="20" hover-stay-time="80" bindtap="confirmMaster">确认掌握</button>
     </view>
   </view>
 </view>
