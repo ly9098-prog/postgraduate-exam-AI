@@ -393,3 +393,58 @@ class BatchImageReparseResponse(BaseModel):
     review_batch_id: str | None = None
     question_count: int = 0
     error_message: str | None = None
+
+
+# ── 快速补充答案 ──
+
+
+class BatchAnswerPreviewRequest(BaseModel):
+    raw_text: str = Field(..., max_length=50_000, description="用户输入的原始答案串")
+    allow_partial_prefix: bool = True  # 允许只处理前 N 题
+
+
+class BatchAnswerPreviewItem(BaseModel):
+    import_id: int
+    source_order_index: int | None = None
+    source_question_no: str | None = None
+    stem_excerpt: str = ""
+    question_type: str | None = None
+    original_answer: str | None = None
+    input_answer: str | None = None
+    normalized_answer: str | None = None
+    status: str
+    status_message: str = ""
+    will_update: bool = False
+    validation_errors: list[str] = []
+
+
+class BatchAnswerPreviewSummary(BaseModel):
+    batch_total: int = 0
+    parsed_answer_count: int = 0
+    target_question_count: int = 0
+    remaining_question_count: int = 0
+    writable_count: int = 0
+    skipped_existing_count: int = 0
+    skipped_existing_same_count: int = 0
+    unsupported_count: int = 0
+    invalid_count: int = 0
+    warning_count: int = 0
+    order_anomaly_count: int = 0
+
+
+class BatchAnswerPreviewResponse(BaseModel):
+    batch_id: str
+    preview_token: str
+    summary: BatchAnswerPreviewSummary
+    items: list[BatchAnswerPreviewItem]
+    warnings: list[str] = []
+
+
+class BatchAnswerApplyRequest(BaseModel):
+    preview_token: str
+
+
+class BatchAnswerApplyResponse(BaseModel):
+    updated_count: int = 0
+    skipped_existing_count: int = 0
+    remaining_count: int = 0
