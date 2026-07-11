@@ -45,20 +45,10 @@ Page({
     llmAnalysisError: null,
     llmAnalysisGeneratedAt: null,
 
-    // Chart hash keys (prevent redundant redraw)
-    _heroHash: '',
-    _trendHash: '',
-    _subjectHash: '',
-    _masteryHash: '',
-    _growthHash: '',
-    _adaptiveHash: '',
-
     _hasData: false,
 
     // Diagnosis insights
     insights: null,
-    insightsLoading: false,
-    insightsError: null,
   },
 
   _alive: false,
@@ -75,6 +65,14 @@ Page({
   _lastLoadAt: 0,
   _loadPromise: null,
   _chartsCancelled: false,
+  _heroHash: '',
+  _trendHash: '',
+  _subjectHash: '',
+  _masteryHash: '',
+  _growthHash: '',
+  _adaptiveHash: '',
+  _insightsLoading: false,
+  _insightsError: null,
 
   onShow() {
     this._alive = true
@@ -158,8 +156,6 @@ Page({
 
     if (mode === 'initial' && !hasExistingData) {
       this.setData({ initialLoading: true, error: null })
-    } else if (mode === 'refresh') {
-      this.setData({ refreshing: true, error: null })
     } else if (mode === 'background') {
       this.setData({ backgroundRefreshing: true })
     }
@@ -186,7 +182,7 @@ Page({
           this.setData({ initialLoading: false, error: '学习数据加载失败' })
         } else {
           // Keep existing data, just show toast
-          this.setData({ backgroundRefreshing: false, refreshing: false })
+          this.setData({ backgroundRefreshing: false })
           wx.showToast({ title: '刷新失败', icon: 'none' })
         }
         return null
@@ -202,7 +198,7 @@ Page({
     if (!this._alive) return
     this._insightSeq = (this._insightSeq || 0) + 1
     const seq = this._insightSeq
-    if (retryCount === 0) this.setData({ insightsLoading: true })
+    if (retryCount === 0) this._insightsLoading = true
     try {
       const res = await api.get('/stats/dashboard-insights', {
         days: this.data.trendDays,
@@ -243,7 +239,9 @@ Page({
         )
         this.setData({ subjects: enrichedSubjects })
       }
-      this.setData({ insights, insightsLoading: false, insightsError: null }, () => {
+      this._insightsLoading = false
+      this._insightsError = null
+      this.setData({ insights }, () => {
         // Draw diagnosis gauges after setData render
         if (!this._alive) return
         setTimeout(() => {
@@ -268,7 +266,8 @@ Page({
         await new Promise(r => setTimeout(r, 2000))
         return this.loadInsights(retryCount + 1)
       }
-      this.setData({ insightsLoading: false, insightsError: '诊断数据加载失败' })
+      this._insightsLoading = false
+      this._insightsError = '诊断数据加载失败'
     }
   },
 
@@ -337,15 +336,20 @@ Page({
     const adaptiveHash = adaptive ? '' + (adaptive.recallPct || 0) : ''
 
     // Prevent canvas flicker: skip redraw if hash unchanged
-    const canRedrawHero = heroHash !== this.data._heroHash
-    const canRedrawTrend = trendHash !== this.data._trendHash
-    const canRedrawSubject = subjectHash !== this.data._subjectHash
-    const canRedrawMastery = masteryHash !== this.data._masteryHash
-    const canRedrawGrowth = growthHash !== this.data._growthHash
-    const canRedrawAdaptive = adaptiveHash !== this.data._adaptiveHash
+    const canRedrawHero = heroHash !== this._heroHash
+    const canRedrawTrend = trendHash !== this._trendHash
+    const canRedrawSubject = subjectHash !== this._subjectHash
+    const canRedrawMastery = masteryHash !== this._masteryHash
+    const canRedrawGrowth = growthHash !== this._growthHash
+    const canRedrawAdaptive = adaptiveHash !== this._adaptiveHash
 
-    // Move motion-card-enter class: only on initial load
-    const keepMotionClass = (mode === 'initial')
+    // Update instance hash keys
+    this._heroHash = heroHash
+    this._trendHash = trendHash
+    this._subjectHash = subjectHash
+    this._masteryHash = masteryHash
+    this._growthHash = growthHash
+    this._adaptiveHash = adaptiveHash
 
     // When background/refresh, keep old data until setData
     this.setData({
@@ -364,17 +368,10 @@ Page({
       masteryRatePct,
       masteryStatusText,
       initialLoading: false,
-      refreshing: false,
       backgroundRefreshing: false,
       pageReady: true,
       error: null,
       _hasData: hasData,
-      _heroHash: heroHash,
-      _trendHash: trendHash,
-      _subjectHash: subjectHash,
-      _masteryHash: masteryHash,
-      _growthHash: growthHash,
-      _adaptiveHash: adaptiveHash,
     }, () => {
       if (!this._alive) return
 
@@ -443,6 +440,7 @@ Page({
       if (!this._alive || seq !== this._trendSeq) return
       const trend = model.buildTrends(res.trends)
       const trendHash = trend ? trend.points.map(p => p.date + p.questions + p.accuracy).join('|') : ''
+      this._trendHash = trendHash
       this.setData({
         trend,
         trendLoading: false,
@@ -450,7 +448,6 @@ Page({
         trendDays: days,
         pendingTrendDays: null,
         _activeTabDays: days,
-        _trendHash: trendHash,
       }, () => {
         if (trend && this._alive) {
           // Clear any pending draw timer

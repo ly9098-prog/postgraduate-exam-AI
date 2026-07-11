@@ -415,7 +415,7 @@
   border: 1rpx solid #DDE8FF;
 }
 .dash-empty-btn::after { border: none; }
-.dash-empty-btn:active { opacity: .88; transform: scale(.98); }
+.dash-empty-btn-pressed { opacity: .88; transform: scale(.98); }
 
 /* ════════════════════════════════════════════
    DASHBOARD HEADER
@@ -615,7 +615,6 @@
   gap: 14rpx;
   transition: transform .15s;
 }
-.quick-action-primary:active { transform: scale(.98); }
 .quick-action-primary-icon {
   width: 48rpx; height: 48rpx; border-radius: 14rpx;
   background: #4F7FFF;
@@ -641,7 +640,6 @@
   display: flex; align-items: center; gap: 10rpx;
   transition: transform .15s;
 }
-.quick-action-aux:active { transform: scale(.97); }
 .quick-action-aux-icon {
   width: 36rpx; height: 36rpx; border-radius: 10rpx;
   background: #EEF4FF;
@@ -1610,8 +1608,16 @@
   display: block; margin-top: 2rpx; font-size: 20rpx; color: #8391A8;
 }
 .yearly-more {
-  flex-shrink: 0; font-size: 21rpx; font-weight: 600; color: #4F7FFF;
+  flex-shrink: 0;
+  min-height: 80rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 20rpx;
+  font-size: 21rpx;
+  font-weight: 600;
+  color: #4F7FFF;
 }
+.yearly-more-pressed { opacity: 0.7; }
 .yearly-heatmap {
   max-height: 0;
   overflow: hidden;
@@ -1660,7 +1666,7 @@
   transition: opacity 0.18s ease;
   z-index: 4;
 }
-.year-day:active .year-day-tip { opacity: 1; }
+.year-day-pressed .year-day-tip { opacity: 1; }
 .heat-legend {
   display: flex;
   align-items: center;
@@ -1869,7 +1875,7 @@
   padding: 18rpx 20rpx; gap: 12rpx;
   transition: background .15s;
 }
-.weak-item:active { background: #F8FAFF; }
+.weak-item-pressed { background: #F8FAFF; }
 .weak-item + .weak-item {
   border-top: 1rpx solid #EDF1F7;
 }

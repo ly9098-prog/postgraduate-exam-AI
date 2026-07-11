@@ -247,7 +247,7 @@ page {
   line-height: 48rpx;
 }
 
-.goal-config:active { opacity: 0.82; }
+.goal-config-pressed { opacity: 0.82; }
 
 .goal-picker {
   margin-top: 22rpx;

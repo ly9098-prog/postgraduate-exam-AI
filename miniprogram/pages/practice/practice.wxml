@@ -83,7 +83,7 @@
           <!-- 父级行：点击展开/收起 -->
           <view
             class="subject-parent-row {{expandedSubjectId === item.subject_id ? 'expanded' : ''}} {{selectedSubjectId === item.subject_id && (!item.children || item.children.length === 0) ? 'selected' : ''}}"
-            hover-class="tap-scale"
+            hover-class="tap-scale-pressed"
             bindtap="toggleParentSubject"
             data-subject-id="{{item.subject_id}}"
             data-subject-name="{{item.display_name}}"
@@ -117,7 +117,7 @@
               wx:for="{{item.children}}"
               wx:key="subject_id"
               class="child-subject-chip {{selectedSubjectId === item.subject_id ? 'active' : ''}}"
-              hover-class="tap-scale"
+              hover-class="tap-scale-pressed"
               catchtap="chooseChildSubject"
               data-subject-id="{{item.subject_id}}"
               data-subject-name="{{item.display_name}}"
@@ -142,15 +142,15 @@
         <text class="section-chip">{{selectedModeLabel}}</text>
       </view>
       <view class="mode-row">
-        <view class="mode-card {{selectedMode==='random' ? 'active' : ''}}" bindtap="chooseMode" data-mode="random">
+        <view class="mode-card {{selectedMode==='random' ? 'active' : ''}}" hover-class="mode-card-pressed" hover-start-time="20" hover-stay-time="80" bindtap="chooseMode" data-mode="random">
           <text class="mode-title">随机挑战</text>
           <text class="mode-desc">更适合查漏补缺</text>
         </view>
-        <view class="mode-card {{selectedMode==='sequential' ? 'active' : ''}}" bindtap="chooseMode" data-mode="sequential">
+        <view class="mode-card {{selectedMode==='sequential' ? 'active' : ''}}" hover-class="mode-card-pressed" hover-start-time="20" hover-stay-time="80" bindtap="chooseMode" data-mode="sequential">
           <text class="mode-title">顺序推进</text>
           <text class="mode-desc">更适合体系复习</text>
         </view>
-        <view class="mode-card {{selectedMode==='smart' ? 'active' : ''}}" bindtap="chooseMode" data-mode="smart">
+        <view class="mode-card {{selectedMode==='smart' ? 'active' : ''}}" hover-class="mode-card-pressed" hover-start-time="20" hover-stay-time="80" bindtap="chooseMode" data-mode="smart">
           <text class="mode-title">智能推荐</text>
           <text class="mode-desc">根据薄弱点推荐</text>
         </view>
@@ -166,9 +166,9 @@
         <text class="section-chip">+{{count * 6}}</text>
       </view>
       <view class="count-row">
-        <view class="count-btn {{count===5 ? 'active' : ''}}" bindtap="setCount" data-count="5">5 题</view>
-        <view class="count-btn {{count===10 ? 'active' : ''}}" bindtap="setCount" data-count="10">10 题</view>
-        <view class="count-btn {{count===20 ? 'active' : ''}}" bindtap="setCount" data-count="20">20 题</view>
+        <view class="count-btn {{count===5 ? 'active' : ''}}" hover-class="count-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="setCount" data-count="5">5 题</view>
+        <view class="count-btn {{count===10 ? 'active' : ''}}" hover-class="count-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="setCount" data-count="10">10 题</view>
+        <view class="count-btn {{count===20 ? 'active' : ''}}" hover-class="count-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="setCount" data-count="20">20 题</view>
       </view>
       <view class="reward-preview">
         <text class="reward-title">完成奖励</text>
@@ -179,11 +179,14 @@
     <button
       class="btn-start"
       disabled="{{!selectedSubjectId}}"
+      hover-class="{{!selectedSubjectId ? 'none' : 'btn-start-pressed'}}"
+      hover-start-time="20"
+      hover-stay-time="80"
       bindtap="startPractice"
     >
       {{selectedSubjectId ? '开始挑战' : '先选择科目'}}
     </button>
-    <view class="pomodoro-link" wx:if="{{selectedSubjectId}}" bindtap="goPomodoro">
+    <view class="pomodoro-link" wx:if="{{selectedSubjectId}}" hover-class="pomodoro-link-pressed" hover-start-time="20" hover-stay-time="80" bindtap="goPomodoro">
       <text>先用番茄钟锁定一段专注时间</text>
     </view>
   </view>

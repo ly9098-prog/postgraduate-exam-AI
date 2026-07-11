@@ -35,7 +35,7 @@
       </view>
       <view class="mission-side">
         <view class="mission-badge">{{badgeTitle}}</view>
-        <view class="goal-config" bindtap="toggleGoalPicker">调整目标</view>
+        <view class="goal-config" hover-class="goal-config-pressed" hover-start-time="20" hover-stay-time="80" bindtap="toggleGoalPicker">调整目标</view>
       </view>
     </view>
     <view class="goal-picker" wx:if="{{showGoalPicker}}">

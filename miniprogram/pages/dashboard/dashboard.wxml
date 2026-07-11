@@ -76,8 +76,8 @@
       </view>
 
       <view class="dash-empty-actions">
-        <button class="dash-empty-btn primary" bindtap="goPractice">开始练习</button>
-        <button class="dash-empty-btn secondary" bindtap="goWrongBook">查看错题本</button>
+        <button class="dash-empty-btn primary" hover-class="dash-empty-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="goPractice">开始练习</button>
+        <button class="dash-empty-btn secondary" hover-class="dash-empty-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="goWrongBook">查看错题本</button>
       </view>
     </view>
   </view>
@@ -567,7 +567,7 @@
           <text class="yearly-info-title">今年已学习 {{yearly.activeDays}} 天</text>
           <text class="yearly-info-sub">最长连续 {{yearly.bestDayText}}</text>
         </view>
-        <text class="yearly-more" bindtap="onToggleYearly">{{showYearlyHeatmap ? '收起' : '查看记录'}}</text>
+        <view class="yearly-more" hover-class="yearly-more-pressed" hover-start-time="20" hover-stay-time="80" bindtap="onToggleYearly"><text>{{showYearlyHeatmap ? '收起' : '查看记录'}}</text></view>
       </view>
 
       <!-- Collapsible heatmap -->
@@ -575,7 +575,7 @@
         <scroll-view class="yearly-heat-scroll" scroll-x enhanced show-scrollbar="false">
           <view class="yearly-heat-grid">
             <view class="year-week" wx:for="{{yearlyHeatmapWeeks}}" wx:for-item="week" wx:key="key">
-              <view class="year-day {{day.heatClass}}" wx:for="{{week.days}}" wx:for-item="day" wx:key="date">
+              <view class="year-day {{day.heatClass}}" wx:for="{{week.days}}" wx:for-item="day" wx:key="date" hover-class="year-day-pressed" hover-start-time="20" hover-stay-time="400">
                 <text class="year-day-tip">{{day.shortDate}} · {{day.questions}}题</text>
               </view>
             </view>
@@ -611,7 +611,7 @@
         <text class="weak-head-hint">按掌握度排序</text>
       </view>
       <view class="weak-list">
-        <view wx:for="{{insights.weakTopics.items}}" wx:for-item="t" wx:key="knowledgePointId" class="weak-item" bindtap="goTopicDetail" data-topic="{{t.name}}" data-subject="{{t.subject}}">
+        <view wx:for="{{insights.weakTopics.items}}" wx:for-item="t" wx:key="knowledgePointId" class="weak-item" hover-class="weak-item-pressed" hover-start-time="20" hover-stay-time="80" bindtap="goTopicDetail" data-topic="{{t.name}}" data-subject="{{t.subject}}">
           <text class="weak-rank" style="color:{{t.rankColor}}">{{t.rank}}</text>
           <view class="weak-info">
             <text class="weak-name">{{t.name}}</text>
