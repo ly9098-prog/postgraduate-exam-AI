@@ -383,6 +383,8 @@
   </view>
 </view>
 
+<submit-confirm id="submitConfirm" />
+
 <!-- ==================== 已掌握确认弹窗 ==================== -->
 <view class="master-overlay" wx:if="{{masterConfirmId}}" catchtap="cancelMaster">
   <view class="master-dialog" catchtap="noop">
