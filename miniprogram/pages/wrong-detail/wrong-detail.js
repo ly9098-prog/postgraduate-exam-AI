@@ -101,7 +101,6 @@ function _detectAiCache(wq) {
 Page({
   data: {
     wq: null,
-    aiResult: null,
     aiLoading: false,
     aiFallback: false,
     aiErrorText: '',
@@ -109,11 +108,9 @@ Page({
     aiFromCache: false,
     loading: true,
     errorText: '',
-    currentWqId: null,
     questionIds: [],
     currentIdx: 0,
     totalQuestions: 0,
-    switching: false,
     safeModeActive: false,
     aiCards: null,
     aiRegenerating: false,
@@ -136,6 +133,10 @@ Page({
     this._alive = true
     this._aiRequestId = 0
     // 页面实例级别的缓存（含 TTL），避免模块全局变量跨用户串用
+    this._errorTypeLabelText = ''
+    this._currentWqId = null
+    this._aiResult = null
+    this._switching = false
     this._wqCache = {}
     this._switchMaskTimer = null
     const currentId = Number(options.id)
@@ -177,10 +178,10 @@ Page({
   async loadData(wqId) {
     var loadSeq = ++this._aiRequestId
     this._resetAiLoadingState()
+    this._aiResult = null
     this.setData({
       loading: true,
       errorText: '',
-      aiResult: null,
       aiFallback: false,
       aiErrorText: '',
       aiRequested: false,
@@ -207,18 +208,18 @@ Page({
         wrongQuestions.push({ _answered: true })
       }
 
+      this._errorTypeLabelText = raw.errorTypeLabelText
+      this._currentWqId = wqId
+      this._aiResult = null
       var data = {
         wq,
         currentQuestion,
         wrongQuestions,
         runnerProgressPercent: totalQ > 0 ? Math.round((this.data.currentIdx + 1) / totalQ * 100) : 0,
         subjectLabelText: raw.subjectLabelText,
-        errorTypeLabelText: raw.errorTypeLabelText,
         loading: false,
-        currentWqId: wqId,
         aiLoading: false,
         errorText: '',
-        aiResult: null,
         aiCards: null,
         aiRequested: false,
         aiFromCache: false,
@@ -229,8 +230,8 @@ Page({
       // 如果后端已返回持久化的 AI 分析，直接展示
       var cachedAi = _detectAiCache(wq)
       if (cachedAi) {
-        data.aiResult = normalizeAiAnalysisPayload(wq.ai_analysis)
-        data.aiCards = _normalizeAiResult(data.aiResult)
+        this._aiResult = normalizeAiAnalysisPayload(wq.ai_analysis)
+        data.aiCards = _normalizeAiResult(this._aiResult)
         data.aiRequested = true
         data.aiFromCache = true
         data.aiFallback = false
@@ -248,11 +249,11 @@ Page({
       // 不再自动调用 AI 分析，用户点击按钮后手动触发
     } catch (e) {
       console.error('加载错题详情失败', e)
+      this._aiResult = null
       this.setData({
         loading: false,
         errorText: '错题不存在或已被移除',
         wq: null,
-        aiResult: null,
         aiLoading: false,
         aiFallback: false,
         aiErrorText: '',
@@ -274,7 +275,7 @@ Page({
 
   onTapAiAnalysis() {
     if (this.data.aiLoading || this.data.aiRegenerating) return
-    const wqId = this.data.currentWqId || (this.data.wq && this.data.wq.id)
+    const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
     if (!wqId) {
       wx.showToast({ title: '缺少错题ID', icon: 'none' })
       return
@@ -321,8 +322,8 @@ Page({
         return
       }
       this._resetAiLoadingState()
+      this._aiResult = normalized
       this.setData({
-        aiResult: normalized,
         aiCards: _normalizeAiResult(normalized),
         aiFallback: false,
         aiFromCache: !!(result && result.from_cache),
@@ -341,11 +342,11 @@ Page({
   },
 
   async regenerateAiAnalysis() {
-    const wqId = this.data.currentWqId || (this.data.wq && this.data.wq.id)
+    const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
     if (!wqId || this.data.aiLoading || this.data.aiRegenerating) return
     // 保存旧内容，失败时恢复
     const oldCards = this.data.aiCards
-    const oldResult = this.data.aiResult
+    const oldResult = this._aiResult
     const requestId = ++this._aiRequestId
     this.setData({
       aiRegenerating: true,
@@ -380,8 +381,8 @@ Page({
       // cache_preserved 且有内容 — 返回旧缓存
       if (cachePreserved && hasContent) {
         this._resetAiLoadingState()
+        this._aiResult = normalized
         this.setData({
-          aiResult: normalized,
           aiCards: _normalizeAiResult(normalized),
           aiFallback: false,
           aiFromCache: true,
@@ -420,8 +421,8 @@ Page({
 
       // 成功 — 更新为新内容
       this._resetAiLoadingState()
+      this._aiResult = normalized
       this.setData({
-        aiResult: normalized,
         aiCards: _normalizeAiResult(normalized),
         aiFallback: false,
         aiFromCache: !!(result && result.from_cache),
@@ -502,10 +503,10 @@ Page({
           _hasBlankOptionGroups: raw._blankOptionGroups.length > 0,
           _renderModel: raw._renderModel,
         })
+        this._errorTypeLabelText = raw.errorTypeLabelText
         this.setData({
           currentQuestion,
           subjectLabelText: raw.subjectLabelText,
-          errorTypeLabelText: raw.errorTypeLabelText,
         })
         console.warn('[SELF_HEAL] wrong-detail re-rendered in SAFE_MODE, mode=' + raw._renderModel.mode)
       }
@@ -528,8 +529,8 @@ Page({
   reloadData() {
     if (this.data.questionIds.length > 0) {
       this.loadData(this.data.questionIds[this.data.currentIdx])
-    } else if (this.data.currentWqId) {
-      this.loadData(this.data.currentWqId)
+    } else if (this._currentWqId) {
+      this.loadData(this._currentWqId)
     } else {
       this.goBack()
     }
@@ -545,13 +546,13 @@ Page({
     const wqId = this.data.questionIds[idx]
     if (!wqId) return
     // 并发保护
-    if (this.data.switching) return
+    if (this._switching) return
     if (idx < 0 || idx >= this.data.questionIds.length) return
     if (idx === this.data.currentIdx) return
 
     this._aiRequestId++
     this._resetAiLoadingState()
-    this.setData({ switching: true })
+    this._switching = true
     // 延迟显示轻量切换提示（>250ms 才展示）
     var self = this
     this._switchMaskTimer = setTimeout(function() {
@@ -590,19 +591,19 @@ Page({
         wrongQuestions.push({ _answered: true })
       }
 
+      this._errorTypeLabelText = raw.errorTypeLabelText
+      this._currentWqId = wqId
+      this._switching = false
+      this._aiResult = null
       var nextData = {
         wq,
         currentIdx: idx,
-        currentWqId: wqId,
         currentQuestion,
         wrongQuestions,
         runnerProgressPercent: totalQ > 0 ? Math.round((idx + 1) / totalQ * 100) : 0,
         subjectLabelText: raw.subjectLabelText,
-        errorTypeLabelText: raw.errorTypeLabelText,
-        switching: false,
         aiLoading: false,
         aiRegenerating: false,
-        aiResult: null,
         aiCards: null,
         aiRequested: false,
         aiFromCache: false,
@@ -613,15 +614,16 @@ Page({
       // 检查切换后题目是否有已缓存 AI 分析
       var cachedAi = _detectAiCache(wq)
       if (cachedAi) {
-        nextData.aiResult = normalizeAiAnalysisPayload(wq.ai_analysis)
-        nextData.aiCards = _normalizeAiResult(nextData.aiResult)
+        this._aiResult = normalizeAiAnalysisPayload(wq.ai_analysis)
+        nextData.aiCards = _normalizeAiResult(this._aiResult)
         nextData.aiRequested = true
         nextData.aiFromCache = true
         nextData.aiFallback = false
         nextData.aiErrorText = ''
       }
       clearTimeout(this._switchMaskTimer)
-      this.setData({ switching: false, showSwitchMask: false })
+      this._switching = false
+      this.setData({ showSwitchMask: false })
       this.setData(nextData)
       this._checkRenderInvariant(raw._renderModel)
     } catch (e) {
@@ -629,7 +631,8 @@ Page({
       wx.showToast({ title: '加载失败', icon: 'none' })
       clearTimeout(this._switchMaskTimer)
       // 切换失败时保持当前题不变，同时复位 AI 状态防止永久卡住
-      this.setData({ switching: false, showSwitchMask: false, aiRegenerating: false })
+      this._switching = false
+      this.setData({ showSwitchMask: false, aiRegenerating: false })
     }
   },
 

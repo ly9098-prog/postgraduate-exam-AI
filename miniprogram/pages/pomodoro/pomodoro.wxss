@@ -206,7 +206,7 @@ page {
   -webkit-tap-highlight-color: transparent;
 }
 
-.subj-card:active {
+.subj-card-pressed {
   transform: scale(0.95);
   opacity: 0.6;
 }
@@ -265,7 +265,7 @@ page {
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
-.mode-dot:active {
+.mode-dot-pressed {
   transform: scale(0.92);
   opacity: 0.7;
 }
@@ -651,9 +651,19 @@ page {
   -webkit-tap-highlight-color: transparent;
 }
 
-.ctrl-btn:active {
+.ctrl-primary-pressed {
   transform: scale(0.92);
   opacity: 0.7;
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 32rpx rgba(59, 130, 246, 0.2);
+}
+
+.ctrl-secondary-pressed {
+  transform: scale(0.92);
+  opacity: 0.7;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .ctrl-primary {
@@ -716,16 +726,6 @@ page {
   letter-spacing: 1rpx;
 }
 
-.ctrl-primary:active {
-  background: rgba(59, 130, 246, 0.18);
-  border-color: rgba(59, 130, 246, 0.3);
-  box-shadow: 0 0 32rpx rgba(59, 130, 246, 0.2);
-}
-
-.ctrl-secondary:active {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.12);
-}
 
 /* ── Skip Break (inside break timer-wrap) ── */
 .break-skip {
@@ -760,7 +760,7 @@ page {
   -webkit-tap-highlight-color: transparent;
 }
 
-.stats-link:active {
+.stats-link-pressed {
   background: rgba(255, 255, 255, 0.06);
 }
 
@@ -789,7 +789,7 @@ page {
   -webkit-tap-highlight-color: transparent;
 }
 
-.font-size-btn:active {
+.font-size-btn-pressed {
   background: rgba(255, 255, 255, 0.1);
   transform: scale(0.92);
 }
@@ -992,7 +992,7 @@ page {
   border-color: rgba(16, 185, 129, 0.18);
 }
 
-.page-free .ctrl-primary:active {
+.page-free .ctrl-primary-pressed {
   background: rgba(16, 185, 129, 0.18);
   border-color: rgba(16, 185, 129, 0.3);
   box-shadow: 0 0 36rpx rgba(16, 185, 129, 0.2);
@@ -1003,7 +1003,7 @@ page {
   border-color: rgba(251, 146, 60, 0.1);
 }
 
-.page-free .ctrl-secondary:active {
+.page-free .ctrl-secondary-pressed {
   background: rgba(251, 146, 60, 0.12);
   border-color: rgba(251, 146, 60, 0.2);
 }
@@ -1117,7 +1117,7 @@ page {
 }
 
 .confirm-theme-focus .confirm-cover-ok {
-  background: linear-gradient(135deg, #3B82F6, #06B6D4);
+  background: #3B82F6;
   color: #FFFFFF;
 }
 
@@ -1135,7 +1135,7 @@ page {
 }
 
 .confirm-theme-break .confirm-cover-ok {
-  background: linear-gradient(135deg, #F97316, #F43F5E);
+  background: #F97316;
   color: #FFFFFF;
 }
 
@@ -1153,7 +1153,7 @@ page {
 }
 
 .confirm-theme-free .confirm-cover-ok {
-  background: linear-gradient(135deg, #10B981, #059669);
+  background: #10B981;
   color: #FFFFFF;
 }
 
