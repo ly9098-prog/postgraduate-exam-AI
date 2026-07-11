@@ -251,7 +251,7 @@ Page({
             charts.drawScoreGauge('diag-quality', this, insights.todayQuality.score, 120)
           }
           if (insights && insights.weeklyConsistency) {
-            charts.drawScoreGauge('diag-consistency', this, insights.weeklyConsistency.score, 120)
+            charts.drawScoreGauge('diag-consistency', this, insights.weeklyConsistency.score, 120, String(Math.round(insights.weeklyConsistency.score)))
           }
           if (insights && insights.repeatWrong) {
             // Invert repeat rate for gauge: lower recurrence = better score
@@ -287,7 +287,7 @@ Page({
     if (subs && subs.items) charts.drawSubjectDonut('subject-donut', this, subs.items)
 
     const gr = this.data.growth
-    if (gr) charts.drawGrowthRing('growth-ring', this, gr.levelProgressPct)
+    if (gr) charts.drawGrowthRing('growth-ring', this, gr.levelProgressPct, (gr.levelProgressPct || 0) + '%')
 
     const ad = this.data.adaptive
     if (ad) charts.drawAdaptiveGauge('adaptive-gauge', this, ad.recallPct)
@@ -296,7 +296,7 @@ Page({
     const ins = this.data.insights
     if (ins) {
       if (ins.todayQuality) charts.drawScoreGauge('diag-quality', this, ins.todayQuality.score, 120)
-      if (ins.weeklyConsistency) charts.drawScoreGauge('diag-consistency', this, ins.weeklyConsistency.score, 120)
+      if (ins.weeklyConsistency) charts.drawScoreGauge('diag-consistency', this, ins.weeklyConsistency.score, 120, String(Math.round(ins.weeklyConsistency.score)))
       if (ins.repeatWrong) {
         const invScore = Math.max(0, 100 - (ins.repeatWrong.repeatRatePct || 0) * 2)
         charts.drawScoreGauge('diag-repeat', this, invScore, 120)
@@ -407,7 +407,7 @@ Page({
       if (growth && canRedrawGrowth) {
         this._growthTimer = setTimeout(() => {
           if (!this._alive || !this._visible) return
-          charts.drawGrowthRing('growth-ring', this, growth.levelProgressPct)
+          charts.drawGrowthRing('growth-ring', this, growth.levelProgressPct, (growth.levelProgressPct || 0) + '%')
         }, 140)
       }
 
