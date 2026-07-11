@@ -286,10 +286,6 @@ Page({
   goReview() { wx.navigateTo({ url: '/pages/review-today/review-today' }) },
   goDashboard() { wx.navigateTo({ url: '/pages/dashboard/dashboard' }) },
   goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
-  goImport() {
-    wx.navigateTo({ url: '/pages/import/import' })
-  },
-
   _clearAnimTimers() {
     ['_animTimer_animStreakDays', '_animTimer_animGoalDone', '_animTimer_animLevelProgress'].forEach(function(key) {
       if (this[key]) clearTimeout(this[key])

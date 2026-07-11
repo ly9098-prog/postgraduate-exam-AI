@@ -1575,8 +1575,11 @@ page {
 .review-practice {
   min-height: 100vh;
   height: auto;
-  overflow: visible;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   background: linear-gradient(180deg, #F8FAFF 0%, #EEF5FF 100%);
+  padding: 0;
 }
 
 /* 内容包装器：纯块级，不贡献额外高度 */

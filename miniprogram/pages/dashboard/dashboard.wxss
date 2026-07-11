@@ -548,6 +548,7 @@
   width: 130rpx;
   height: 130rpx;
   flex-shrink: 0;
+  overflow: hidden;
 }
 .overview-dash-canvas {
   width: 130rpx;
@@ -681,6 +682,7 @@
 }
 .kpi-primary-canvas {
   width: 110rpx; height: 110rpx; flex-shrink: 0;
+  overflow: hidden;
 }
 .kpi-primary-meta {
   display: flex; gap: 16rpx; margin-top: 14rpx; padding-top: 14rpx;
@@ -1107,18 +1109,26 @@
   font-weight: 600;
   color: var(--text-primary, #18233A);
 }
-.risk-topics { padding: 20rpx 24rpx; margin-bottom: 12rpx; }
+.risk-topics {
+  padding: 20rpx 24rpx;
+  margin-bottom: 12rpx;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
 .risk-topics-label {
-  display: block;
   font-size: 24rpx;
   font-weight: 600;
   color: var(--text-primary, #18233A);
-  margin-bottom: 12rpx;
+  flex-shrink: 0;
 }
 .risk-tag-list {
   display: flex;
   flex-wrap: wrap;
   gap: 10rpx;
+  flex: 1;
+  min-width: 0;
 }
 .risk-tag {
   padding: 8rpx 16rpx;
