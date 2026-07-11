@@ -833,10 +833,7 @@
   stroke-dashoffset: 0;
   stroke-opacity: 1;
 }
-.katex .katex-svg path {
-  stroke: none;
-}
-.katex img {
+.katex .katex-svg {
   border-style: none;
   min-width: 0;
   min-height: 0;

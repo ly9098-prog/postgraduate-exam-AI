@@ -801,8 +801,8 @@ page {
 
 .fr-summary.excellent .fr-accuracy-val { color: #22C55E; }
 .fr-summary.good .fr-accuracy-val { color: #4F7FFF; }
-.fr-summary.normal .fr-accuracy-val { color: #F59E0B; }
-.fr-summary.weak .fr-accuracy-val { color: #EF4444; }
+.fr-summary.normal .fr-accuracy-val { color: #8A4B08; }
+.fr-summary.weak .fr-accuracy-val { color: #9F1D1D; }
 
 .fr-accuracy-unit {
   font-size: 24rpx;
@@ -834,8 +834,8 @@ page {
 
 .fr-status-tag.excellent { background: #ECFDF3; color: #22C55E; }
 .fr-status-tag.good { background: #EEF4FF; color: #4F7FFF; }
-.fr-status-tag.normal { background: #FFF7E8; color: #F59E0B; }
-.fr-status-tag.weak { background: #FEF2F2; color: #EF4444; }
+.fr-status-tag.normal { background: #FFF7E8; color: #8A4B08; }
+.fr-status-tag.weak { background: #FEF2F2; color: #9F1D1D; }
 .fr-status-tag.empty { background: #F6F9FF; color: #8EA0BA; }
 
 .fr-status-desc {
@@ -875,7 +875,7 @@ page {
 }
 
 .fr-cell-val.success { color: #22C55E; }
-.fr-cell-val.danger { color: #EF4444; }
+.fr-cell-val.danger { color: #9F1D1D; }
 
 .fr-cell-lbl {
   display: block;
@@ -961,7 +961,7 @@ page {
 .fr-weak-count {
   font-size: 22rpx;
   font-weight: 700;
-  color: #EF4444;
+  color: #9F1D1D;
   padding: 4rpx 14rpx;
   border-radius: 999rpx;
   background: #FEF2F2;
@@ -1023,7 +1023,7 @@ page {
 }
 
 .fr-advice-tag.continue { background: #ECFDF3; color: #22C55E; }
-.fr-advice-tag.review { background: #FFF7E8; color: #F59E0B; }
+.fr-advice-tag.review { background: #FFF7E8; color: #8A4B08; }
 .fr-advice-tag.start { background: #EEF4FF; color: #4F7FFF; }
 
 .fr-advice-desc {

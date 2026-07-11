@@ -269,7 +269,9 @@ Page({
     const done = () => { if (--pending === 0) callback() }
     // Cap DPR at 2 — backbuffer cost grows quadratically and DPR=3 on iPhones
     // produces ~56% more pixel-fill work for negligible visual gain on a 250px pie.
-    const dpr = Math.min(2, wx.getSystemInfoSync().pixelRatio || 2)
+    const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : {}
+    const rawDpr = windowInfo.pixelRatio || 2
+    const dpr = Math.min(2, rawDpr)
 
     const setup = (selector, nodeKey, ctxKey, rectKey) => {
       wx.createSelectorQuery().in(this)

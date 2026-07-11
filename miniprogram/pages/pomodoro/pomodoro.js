@@ -217,9 +217,17 @@ Page({
       }
     }
 
-    // Check for persisted confirm snapshot — must restore before active session
-    const confirmSnapshot = this._confirmTimerSnapshot || wx.getStorageSync('pomodoro_confirm_pause')
-    if (confirmSnapshot && confirmSnapshot.sessionId) {
+    // Navigation guard: returning from pomodoro-stats — don't restore stale snapshot
+    if (this._navigatingToStats) {
+      this._navigatingToStats = false
+      wx.removeStorageSync('pomodoro_confirm_pause')
+      this._confirmTimerSnapshot = null
+      this._timerState.endConfirmMode = ''
+    } else {
+      // Validate and optionally restore confirm snapshot
+      const confirmSnapshot = this._confirmTimerSnapshot || wx.getStorageSync('pomodoro_confirm_pause')
+      if (confirmSnapshot && confirmSnapshot.sessionId) {
+        if (this._isValidConfirmSnapshot(confirmSnapshot)) {
       this._confirmTimerSnapshot = confirmSnapshot
 
       if (confirmSnapshot.mode === 'free-complete') {
@@ -231,11 +239,10 @@ Page({
         this._timerState.freeFriendlyText = fmt.friendly
         this._timerState.totalPausedMs = confirmSnapshot.totalPausedMs || 0
         this.setData({
+          ...this._buildEndConfirmViewModel('free-complete', confirmSnapshot),
           phase: PHASE.RUNNING,
           isFreeTimer: true,
           isPaused: true,
-          showEndConfirm: true,
-          endConfirmTheme: 'free',
           ringCanvasVisible: true,
           freeDisplayTime: fmt.display,
         })
@@ -260,9 +267,9 @@ Page({
       this._timerState.progress = confirmSnapshot.progress
       this._timerState.totalPausedMs = confirmSnapshot.totalPausedMs || 0
       this.setData({
+        ...this._buildEndConfirmViewModel('countdown-interrupt', confirmSnapshot),
         phase: confirmSnapshot.phase || PHASE.RUNNING,
         isPaused: true,
-        showEndConfirm: true,
         ringCanvasVisible: true,
         displayMin: fmt.min,
         displaySec: fmt.sec,
@@ -283,6 +290,12 @@ Page({
       }
       setTimeout(() => this.loadTodayStats(), 200)
       return
+    }
+      // Snapshot exists but is invalid — clean up stale data
+      wx.removeStorageSync('pomodoro_confirm_pause')
+      this._confirmTimerSnapshot = null
+      this._timerState.endConfirmMode = ''
+    }
     }
 
     const active = await this._fetchActiveSession()
@@ -744,6 +757,51 @@ Page({
     }
   },
 
+  _isValidConfirmSnapshot(snapshot) {
+    if (!snapshot || !snapshot.sessionId) return false
+    if (!snapshot.mode) return false
+    if (snapshot.confirmVisible === false) return false
+    if (!snapshot.openedAt) return false
+    // Snapshots older than 1 hour are stale
+    if (Date.now() - snapshot.openedAt > 3600000) return false
+    return true
+  },
+
+  _buildEndConfirmViewModel(mode, snapshot) {
+    if (mode === 'free-complete') {
+      const elapsed = Math.max(0, snapshot.elapsedSec || 0)
+      const fmt = formatElapsedSec(elapsed)
+      return {
+        showEndConfirm: true,
+        endConfirmTheme: 'free',
+        endConfirmTitle: '结束自由计时？',
+        endConfirmText: elapsed >= 1
+          ? `本次已专注 ${fmt.friendly}，确认后将计入学习统计。`
+          : '当前计时时长较短，确认后仍会结束本次计时。',
+        endConfirmOkText: '确认结束',
+        endConfirmCancelText: '继续计时',
+      }
+    }
+
+    if (mode === 'countdown-interrupt') {
+      const isBreak = snapshot.phase === 'break'
+      const elapsedSec = Math.max(0, (snapshot.totalSec || 0) - (snapshot.remainingSec || 0))
+      const fmt = formatElapsedSec(elapsedSec)
+      return {
+        showEndConfirm: true,
+        endConfirmTheme: isBreak ? 'break' : 'focus',
+        endConfirmTitle: isBreak ? '结束休息？' : '结束本次专注？',
+        endConfirmText: elapsedSec > 0
+          ? `本次已专注 ${fmt.friendly}。确认后将结束当前番茄钟。`
+          : '确认后将结束当前番茄钟。',
+        endConfirmOkText: '结束',
+        endConfirmCancelText: isBreak ? '继续休息' : '继续专注',
+      }
+    }
+
+    throw new Error('Unknown confirm mode: ' + mode)
+  },
+
   async _showEndFreeConfirm() {
     if (!this._timerState.sessionId || this.data.actionLoading) return
 
@@ -765,6 +823,7 @@ Page({
       pauseStartTime: this._timerState.pauseStartTime || null,
       sessionStartTime: this._timerState.sessionStartTime,
       backendPauseDone: false,
+      confirmVisible: true,
     }
 
     this._confirmTimerSnapshot = snapshot
@@ -775,15 +834,8 @@ Page({
     this._timerState.freeFriendlyText = fmt.friendly
     this._timerState.endConfirmMode = 'free-complete'
     this.setData({
-      showEndConfirm: true,
+      ...this._buildEndConfirmViewModel('free-complete', snapshot),
       ringCanvasVisible: true,
-      endConfirmTheme: 'free',
-      endConfirmTitle: '结束自由计时？',
-      endConfirmText: elapsed >= 1
-        ? `本次已专注 ${fmt.friendly}，确认后将计入学习统计。`
-        : '当前计时时长较短，确认后仍会结束本次计时。',
-      endConfirmOkText: '确认结束',
-      endConfirmCancelText: '继续计时',
       freeDisplayTime: fmt.display,
       isPaused: true,
     })
@@ -799,8 +851,7 @@ Page({
           wx.setStorageSync('pomodoro_confirm_pause', snapshot)
           this._timerState.totalPausedMs = snapshot.totalPausedMs
           this._timerState.pauseStartTime = Date.now()
-          this.setData({})
-        })
+})
         .catch(e => console.warn('free confirm pause backend sync failed', e))
     }
   },
@@ -850,6 +901,7 @@ Page({
       totalPausedMs: this._timerState.totalPausedMs || 0,
       pauseStartTime: this._timerState.pauseStartTime || null,
       backendPauseDone: false,
+      confirmVisible: true,
     }
 
     this._confirmTimerSnapshot = snapshot
@@ -870,6 +922,8 @@ Page({
 
     this.drawRing(totalSec, this.data.phase === 'break')
 
+    this._timerState.endConfirmMode = 'countdown-interrupt'
+
     // Sync backend pause (async, don't block UI)
     if (!wasPaused) {
       try {
@@ -881,7 +935,6 @@ Page({
         wx.setStorageSync('pomodoro_confirm_pause', snapshot)
         this._timerState.totalPausedMs = serverPausedMs
         this._timerState.pauseStartTime = Date.now()
-        this.setData({})
       } catch (e) {
         console.warn('confirm pause backend sync failed', e)
         // Keep frontend frozen; cancelEndConfirm handles recovery
@@ -898,19 +951,10 @@ Page({
     if (!ok || !this._confirmTimerSnapshot) return
 
     const snapshot = this._confirmTimerSnapshot
-    const elapsedSec = Math.max(0, snapshot.totalSec - snapshot.remainingSec)
-    const fmt = formatElapsedSec(elapsedSec)
 
     this.setData({
-      showEndConfirm: true,
+      ...this._buildEndConfirmViewModel('countdown-interrupt', snapshot),
       ringCanvasVisible: true,
-      endConfirmTheme: this.data.phase === 'break' ? 'break' : 'focus',
-      endConfirmTitle: '结束本次专注？',
-      endConfirmText: elapsedSec > 0
-        ? `本次已专注 ${fmt.friendly}。确认后将结束当前番茄钟。`
-        : '确认后将结束当前番茄钟。',
-      endConfirmOkText: '结束',
-      endConfirmCancelText: '继续专注',
     })
 
     wx.nextTick(() => {
@@ -1127,7 +1171,10 @@ Page({
   },
 
   async confirmEndTimer() {
+    if (this.data.actionLoading) return
+
     const mode = this._timerState.endConfirmMode
+    const snapshot = this._confirmTimerSnapshot
 
     if (mode === 'free-complete') {
       return this._confirmEndFreeTimer()
@@ -1136,6 +1183,16 @@ Page({
     if (mode === 'countdown-interrupt') {
       return this._confirmInterruptCountdown()
     }
+
+    console.warn('[pomodoro] invalid end confirm mode', {
+      mode,
+      sessionId: this._timerState.sessionId,
+      snapshotMode: snapshot && snapshot.mode,
+    })
+    wx.showToast({
+      title: '结束状态异常，请重新操作',
+      icon: 'none',
+    })
   },
 
   async _confirmEndFreeTimer() {
@@ -1868,28 +1925,39 @@ Page({
     if (!force && this._canvasReady && this._ctx) return
     this._canvasReady = false
     this._ctx = null
-    const query = wx.createSelectorQuery().in(this)
-    query.select('#progress-ring')
-      .fields({ node: true, size: true })
-      .exec((res) => {
-        if (!res[0] || !res[0].node) return
-        const canvas = res[0].node
-        const dpr = this._dpr || wx.getSystemInfoSync().pixelRatio || 1
-        this._dpr = dpr
-        const width = res[0].width
-        const height = res[0].height
-        canvas.width = Math.round(width * dpr)
-        canvas.height = Math.round(height * dpr)
-        const ctx = canvas.getContext('2d')
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-        this._ctx = ctx
-        this._canvasSize = Math.min(width, height)
-        this._canvasReady = true
-        if (this._pendingDraw) {
-          this.drawRing(this._pendingDraw.totalSec, this._pendingDraw.isBreak)
-          this._pendingDraw = null
-        }
-      })
+    this._scheduleCanvasInit(0)
+  },
+
+  _scheduleCanvasInit(retryCount) {
+    if (retryCount > 5) return
+    wx.nextTick(() => {
+      const query = wx.createSelectorQuery().in(this)
+      query.select('#progress-ring')
+        .fields({ node: true, size: true })
+        .exec((res) => {
+          if (!res || !res[0] || !res[0].node || !res[0].width || !res[0].height) {
+            this._scheduleCanvasInit(retryCount + 1)
+            return
+          }
+          const canvas = res[0].node
+          const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : {}
+          const dpr = windowInfo.pixelRatio || 1
+          this._dpr = dpr
+          const width = res[0].width
+          const height = res[0].height
+          this._canvasSize = Math.min(width, height)
+          canvas.width = Math.round(width * dpr)
+          canvas.height = Math.round(height * dpr)
+          const ctx = canvas.getContext('2d')
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+          this._ctx = ctx
+          this._canvasReady = true
+          if (this._pendingDraw) {
+            this.drawRing(this._pendingDraw.totalSec, this._pendingDraw.isBreak)
+            this._pendingDraw = null
+          }
+        })
+    })
   },
 
   drawRing(totalSec, isBreak) {
@@ -1997,6 +2065,7 @@ Page({
   },
 
   goStats() {
+    this._navigatingToStats = true
     wx.navigateTo({ url: '/pages/pomodoro-stats/pomodoro-stats' })
   },
 

@@ -152,18 +152,20 @@
             </block>
           </view>
 
-          <!-- Progress Ring -->
-          <view class="ring-wrapper {{showEndConfirm ? 'ring-wrapper-confirming' : ''}}">
-            <view class="ring-glow"></view>
-            <canvas hidden="{{showEndConfirm || !ringCanvasVisible}}" class="ring-canvas" type="2d" id="progress-ring"></canvas>
-            <view class="ring-center">
-              <block wx:if="{{isFreeTimer}}">
-                <text class="ring-time ring-time-free {{isPaused ? 'time-dim' : ''}}">{{freeDisplayTime}}</text>
-              </block>
-              <block wx:else>
-                <text class="ring-time {{phase === 'break' ? 'time-warm' : ''}}">{{displayMin}}:{{displaySec}}</text>
-              </block>
-              <text class="ring-status" wx:if="{{isPaused}}">已暂停</text>
+          <!-- Progress Ring (ring-stage is transform-free zone for Canvas) -->
+          <view class="ring-stage">
+            <view class="ring-wrapper {{showEndConfirm ? 'ring-wrapper-confirming' : ''}}">
+              <view class="ring-glow"></view>
+              <canvas hidden="{{showEndConfirm || !ringCanvasVisible}}" class="ring-canvas" type="2d" id="progress-ring"></canvas>
+              <view class="ring-center">
+                <block wx:if="{{isFreeTimer}}">
+                  <text class="ring-time ring-time-free {{isPaused ? 'time-dim' : ''}}">{{freeDisplayTime}}</text>
+                </block>
+                <block wx:else>
+                  <text class="ring-time {{phase === 'break' ? 'time-warm' : ''}}">{{displayMin}}:{{displaySec}}</text>
+                </block>
+                <text class="ring-status" wx:if="{{isPaused}}">已暂停</text>
+              </view>
             </view>
           </view>
 

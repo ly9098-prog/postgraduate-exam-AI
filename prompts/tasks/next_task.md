@@ -1,861 +1,932 @@
-你是一名资深微信小程序前端性能优化和样式架构工程师。请继续在当前项目上完成第四阶段修复。
+你是一名资深微信小程序前端架构、Canvas 渲染和状态机调试工程师。请基于当前最新源码，执行第五阶段修复。
 
-前三阶段已经完成：
+本阶段优先级：
 
-- 高频 `setData` 优化；
-- 页面运行态从 `data` 迁移至实例变量；
-- Wrong Detail AI 请求防串；
-- 大部分 `:active` 替换为 `hover-class`；
-- 点击热区、惯性滚动、颜色对比度修复；
-- 定时器与异步请求生命周期检查。
+P0：修复 Pomodoro 页面功能回归和环形计时器错位。
+P1：清理真实代码警告。
+P1：处理最新 audits(1).json 中仍然失败的审计项。
+P2：保留但暂不继续大规模清理 unused-css。
 
-本阶段只处理：
+不要只提出建议，请直接修改代码。
 
-1. `.year-day:active .year-day-tip`；
-2. 16 个 orphan pressed 样式；
-3. 未使用 WXSS 的安全清理；
-4. 全局样式和页面样式的职责调整；
-5. 样式引用完整性检查；
-6. 包体积和主包资源检查；
-7. 生成开发者工具最终审计所需的验证清单。
+==================================================
+一、修改边界
+==================================================
 
-不得进行无关业务重构，不得修改接口、路由、答题逻辑、计时逻辑或 AI 请求协议。
+1. 保留此前已经完成的：
+   - 高频 setData 优化；
+   - 运行态迁移；
+   - hover-class；
+   - 点击热区；
+   - Wrong Detail AI 防串；
+   - 已完成的 WXSS 清理。
 
-不要只输出建议，请直接修改源码。
+2. 禁止：
+   - git reset --hard；
+   - git checkout .；
+   - 批量删除 WXSS；
+   - 修改后端 API 路径和参数语义；
+   - 改变计时统计口径；
+   - 通过隐藏弹窗或删除结束按钮规避问题；
+   - 用 setData({}) 作为无意义刷新；
+   - 伪造微信开发者工具审计结果。
 
-# 一、修改前检查
+3. 本轮重点文件：
+   - pages/pomodoro/pomodoro.js
+   - pages/pomodoro/pomodoro.wxml
+   - pages/pomodoro/pomodoro.wxss
+   - pages/pomodoro-stats/pomodoro-stats.js
+   - components/quiz-runner/quiz-runner.wxss
+   - components/loading-lottie/loading-lottie.js
+   - components/AnimatedView/AnimatedView.js
+   - components/mp-html/latex/katex.wxss
+   - pages/dashboard/dashboard.wxml
+   - pages/dashboard/dashboard.charts.js
+   - pages/home/home.js
+   - pages/dashboard/dashboard.js
+   - pages/review-today/review-today.js
+   - pages/review-today/review-today.wxss
 
-开始前必须执行：
+==================================================
+二、P0：修复 Pomodoro 环形位置错位
+==================================================
 
-1. 查看当前 Git diff。
-2. 确认实际源码根目录为 `miniprogram/`。
-3. 确认 `project.config.json` 中的 `miniprogramRoot`。
-4. 记录当前所有未提交修改。
-5. 搜索以下内容：
+现象：
 
-```bash
-grep -RInE ":active|hover-class|-pressed|year-day-tip" \
-  miniprogram \
-  --include="*.wxss" \
-  --include="*.wxml"
-```
+1. Canvas 绘制的圆环位于上方。
+2. 科目、状态、计时时间和背景光晕位于下方。
+3. 标准计时和自由计时均可能出现。
+4. 圆环和 ring-center 没有共享同一视觉中心。
 
-1. 搜索所有 WXSS：
+重点检查当前结构：
 
-```bash
-find miniprogram -name "*.wxss" -type f
-```
+- .page-inner 使用 transform 进入动画；
+- .timer-wrap 使用 transform: scale(...) 的 timer-in 动画；
+- type="2d" Canvas 位于这些带 transform 的祖先元素中；
+- Canvas 是原生/同层渲染节点，祖先 transform、动画和重新布局可能造成坐标不同步。
 
-1. 记录重点 WXSS 文件修改前字节数。
+必须按以下原则修复：
 
-禁止执行：
+1. Canvas 的全部祖先节点不得长期保留 transform。
+2. 不允许在包含 Canvas 的：
+   - .page-inner
+   - .main-content
+   - .timer-wrap
+   - .ring-wrapper
+   上执行 translate、scale 或 animation-fill-mode: both 后留下 transform。
 
-```bash
-git reset --hard
-git checkout .
-git clean -fd
-```
+3. 将运行中页面的动画调整为：
+   - 仅 opacity 动画；
+   - 或只动画 timer-header、controls-row；
+   - ring-wrapper 和 Canvas 所在层保持 transform: none。
 
-不得覆盖前三阶段修改。
+4. 推荐将结构调整为：
 
-# 二、P0：彻底移除 `.year-day:active`
+   timer-wrap
+   ├── timer-header（允许淡入）
+   ├── ring-stage（禁止 transform）
+   │   ├── ring-glow
+   │   ├── canvas
+   │   └── ring-center
+   └── controls-row（允许淡入）
 
-当前项目仍存在：
+5. ring-stage/ring-wrapper 必须是唯一定位容器：
 
-```css
-.year-day:active .year-day-tip
-```
+   .ring-wrapper {
+     position: relative;
+     width: 520rpx;
+     height: 520rpx;
+     flex: none;
+     margin: 0 auto;
+     transform: none;
+   }
 
-虽然此前报告认为它属于 tooltip 显示，但它仍然使用 CSS `:active`，不能继续声称项目自有 WXSS 已经完全移除 `:active`。
+   .ring-canvas {
+     position: absolute;
+     left: 0;
+     top: 0;
+     width: 520rpx;
+     height: 520rpx;
+     z-index: 1;
+   }
 
-请检查：
+   .ring-center {
+     position: absolute;
+     inset: 0;
+     z-index: 2;
+     pointer-events: none;
+   }
 
-- `.year-day` 对应 WXML；
-- 是否存在 `bindtap`、`bindtouchstart`、`bindtouchend`；
-- tooltip 是短按显示、点击切换，还是仅桌面端 hover 行为；
-- tooltip 是否会被其他元素遮挡；
-- 滚动时是否会误触。
+   .ring-glow {
+     z-index: 0;
+   }
 
-## 2.1 推荐实现
+6. 不允许 Canvas 和时间文字分别放入两个尺寸不同的圆形容器。
 
-使用显式状态控制 tooltip，不使用 CSS `:active`。
+7. Canvas 初始化必须在布局稳定后进行：
+   - wx.nextTick；
+   - 再通过 SelectorQuery 获取 ring-wrapper 和 Canvas 的真实尺寸；
+   - 确认宽高大于 0；
+   - 再设置 canvas.width、canvas.height 和绘图上下文。
 
-WXML 示例：
+8. 不要依赖固定 setTimeout(50) 猜测布局已经完成。实现一个明确方法：
 
-```xml
-<view
-  class="year-day"
-  data-index="{{index}}"
-  bindtap="onToggleYearDayTip"
->
-  <view
-    wx:if="{{activeYearDayIndex === index}}"
-    class="year-day-tip"
-  >
-    {{item.tipText}}
-  </view>
-</view>
-```
+   _scheduleCanvasInit() {
+     wx.nextTick(() => {
+       // 查询 ring-wrapper 与 progress-ring 尺寸
+       // 尺寸有效后初始化
+       // 无效时最多有限次数重试
+     })
+   }
 
-JS 示例：
+9. 初始化完成后：
+   - this._canvasSize 使用 Canvas 实际 CSS 尺寸；
+   - DPR 使用 wx.getWindowInfo().pixelRatio；
+   - 重设 transform 前先 ctx.setTransform(1, 0, 0, 1, 0, 0)，避免重复缩放；
+   - 再执行 ctx.scale 或 ctx.setTransform。
 
-```js
-onToggleYearDayTip(event) {
-  const index = Number(event.currentTarget.dataset.index)
+10. 字体大小切换、计时模式切换、页面恢复后重新校验 Canvas 尺寸。
 
-  this.setData({
-    activeYearDayIndex:
-      this.data.activeYearDayIndex === index ? -1 : index
-  })
+11. 不得创建第二个 Canvas 作为临时补丁。
+
+验收：
+
+- 标准计时圆环、光晕、时间文字共用完全相同的中心。
+- 自由计时圆环、光晕、时间文字共用完全相同的中心。
+- 暂停、恢复后不偏移。
+- 从统计页返回后不偏移。
+- 切换大字体后不偏移。
+- 页面进入动画期间不闪到错误位置。
+- 不出现两个重叠圆环。
+
+==================================================
+三、P0：修复标准计时“确认结束无效”
+==================================================
+
+已发现的关键问题：
+
+_pauseCountdownForEndConfirm() 创建了 mode 为 countdown-interrupt 的 snapshot，
+但没有同步设置：
+
+this._timerState.endConfirmMode = 'countdown-interrupt'
+
+因此 confirmEndTimer() 读取到空字符串，既不会调用
+_confirmEndFreeTimer()，也不会调用 _confirmInterruptCountdown()。
+
+必须修复：
+
+1. 在打开标准计时确认弹窗前明确设置：
+
+   this._timerState.endConfirmMode = 'countdown-interrupt'
+
+2. 自由计时明确设置：
+
+   this._timerState.endConfirmMode = 'free-complete'
+
+3. 不允许通过当前页面颜色或 isFreeTimer 猜测弹窗模式。
+
+4. confirmEndTimer() 增加防御：
+
+   async confirmEndTimer() {
+     if (this.data.actionLoading) return
+
+     const mode = this._timerState.endConfirmMode
+     const snapshot = this._confirmTimerSnapshot
+
+     if (mode === 'countdown-interrupt') {
+       return this._confirmInterruptCountdown()
+     }
+
+     if (mode === 'free-complete') {
+       return this._confirmEndFreeTimer()
+     }
+
+     console.warn('[pomodoro] invalid end confirm mode', {
+       mode,
+       sessionId: this._timerState.sessionId,
+       snapshotMode: snapshot && snapshot.mode
+     })
+
+     // 不允许静默无响应
+     wx.showToast({
+       title: '结束状态异常，请重新操作',
+       icon: 'none'
+     })
+   }
+
+5. 标准计时确认结束成功后必须：
+
+   - 请求 interrupt 接口；
+   - 解除 actionLoading；
+   - 清理本地计时器；
+   - 清理：
+     pomodoro_confirm_pause
+     pomodoro_pause
+     pomodoro_pause_adjustment
+     pomodoro_running_state
+   - 清空 _confirmTimerSnapshot；
+   - 清空 endConfirmMode；
+   - reset 到 idle；
+   - 刷新今日统计。
+
+6. 请求失败时：
+
+   - 不得静默；
+   - 保留确认弹窗，允许再次点击；
+   - actionLoading 恢复 false；
+   - 不得错误地自动继续计时；
+   - 显示明确错误信息。
+
+7. 确认按钮 actionLoading 时必须禁用重复点击。
+
+8. 删除所有为了触发刷新而调用的：
+
+   this.setData({})
+
+直接修改实例变量即可。
+
+==================================================
+四、P0：修复打开结束弹窗时的错误自动暂停
+==================================================
+
+需要区分两个概念：
+
+1. “冻结前端显示，等待用户确认”；
+2. “用户主动点击暂停”。
+
+打开结束确认弹窗不应被永久记录成用户主动暂停状态。
+
+处理原则：
+
+1. 用户打开确认弹窗时，可以暂时停止本地 tick。
+2. 但必须保存：
+   - wasPaused；
+   - openedAt；
+   - remainingMs；
+   - remainingSec；
+   - totalPausedMs；
+   - sessionId；
+   - mode。
+
+3. 用户原本正在运行：
+   - 点击“继续专注”后必须自动恢复运行；
+   - 不得留在暂停态；
+   - 恢复时间必须扣除弹窗停留时长；
+   - 不得使倒计时凭空减少。
+
+4. 用户原本已经暂停：
+   - 取消结束后仍保持暂停；
+   - 不得自动恢复。
+
+5. 用户点击确认结束：
+   - 不需要先执行普通暂停流程再结束；
+   - 避免 pause 和 interrupt 两个接口竞争；
+   - 如果后端业务必须先暂停，则必须保证状态机串行且 mode 正确。
+
+6. 推荐将“弹窗冻结”从 isPaused 中分离：
+
+   this._confirmFrozen = true
+
+isPaused 只表示真实用户暂停状态。
+
+如果暂时无法分离，必须保证取消和确认两个出口都能完全恢复一致状态。
+
+==================================================
+五、P0：修复 Pomodoro Stats 返回后自动弹出结束确认
+==================================================
+
+现象：
+
+从 Pomodoro 页面进入 pomodoro-stats，再返回时，自动出现“是否结束计时”。
+
+根因方向：
+
+onShow() 当前优先读取：
+
+pomodoro_confirm_pause
+
+并在验证活动会话之前恢复弹窗。陈旧快照或模式不匹配时也会触发。
+
+必须修改：
+
+1. goStats() 设置明确导航标记：
+
+   this._navigatingToStats = true
+
+2. 正常跳转统计页不得：
+   - 打开结束弹窗；
+   - 写入新的 pomodoro_confirm_pause；
+   - 请求 pause 接口；
+   - 修改 endConfirmMode；
+   - 把正在运行的计时改成暂停。
+
+3. onHide() 只停止本地渲染 tick并保存运行状态，不要把“页面隐藏”当成“暂停”。
+
+4. onShow() 恢复顺序调整为：
+
+   A. 获取当前活动 session；
+   B. 校验本地 confirmation snapshot；
+   C. 仅在快照有效且确实是用户未处理的弹窗时恢复；
+   D. 否则删除陈旧快照；
+   E. 恢复正常计时。
+
+5. 快照有效条件至少包括：
+
+   - snapshot.sessionId === active.id；
+   - snapshot.mode 与 active.preset 一致：
+     - free-complete 只能对应 preset === 'free'
+     - countdown-interrupt 只能对应 preset !== 'free'
+   - snapshot.openedAt 合法；
+   - 快照未超时；
+   - 快照明确标记 confirmVisible === true；
+   - 不是从 pomodoro-stats 正常返回产生的状态。
+
+6. 任一条件不满足：
+
+   wx.removeStorageSync('pomodoro_confirm_pause')
+   this._confirmTimerSnapshot = null
+   this._timerState.endConfirmMode = ''
+
+7. 从统计页返回时：
+
+   - 不显示结束确认；
+   - 根据服务器 start_time、total_paused_sec 和本地时间恢复；
+   - 原本运行则继续运行；
+   - 原本暂停则保持暂停。
+
+8. 导航标记使用后立即清除：
+
+   this._navigatingToStats = false
+
+9. 不得简单地在 onShow 中无条件删除所有快照，因为用户真正打开弹窗后切后台仍需要恢复。
+
+==================================================
+六、P0：修复标准计时错误使用自由计时弹窗风格
+==================================================
+
+当前恢复 countdown snapshot 时，没有完整设置：
+
+- endConfirmTheme
+- endConfirmTitle
+- endConfirmText
+- endConfirmOkText
+- endConfirmCancelText
+
+可能继承上一次自由计时的绿色主题。
+
+必须建立唯一的弹窗 ViewModel 构造方法：
+
+_buildEndConfirmViewModel(mode, snapshot) {
+  if (mode === 'free-complete') {
+    return {
+      endConfirmTheme: 'free',
+      endConfirmTitle: '结束自由计时？',
+      endConfirmText: ...,
+      endConfirmOkText: '确认结束',
+      endConfirmCancelText: '继续计时'
+    }
+  }
+
+  if (mode === 'countdown-interrupt') {
+    const isBreak = snapshot.phase === 'break'
+    return {
+      endConfirmTheme: isBreak ? 'break' : 'focus',
+      endConfirmTitle: isBreak ? '结束休息？' : '结束本次专注？',
+      endConfirmText: ...,
+      endConfirmOkText: '结束',
+      endConfirmCancelText: isBreak ? '继续休息' : '继续专注'
+    }
+  }
+
+  throw new Error('Unknown confirm mode')
 }
-```
 
-如果只允许一次显示，可点击其他区域关闭。
+要求：
 
-如果 tooltip 只需在按压期间显示，也可以使用：
+1. 首次打开弹窗使用该方法。
+2. onShow 恢复弹窗也使用同一个方法。
+3. 不得在两个分支分别手写部分字段。
+4. 每次打开必须一次性覆盖全部弹窗字段。
+5. resetToIdle 时恢复默认值。
+6. 开始新 session 时主动清理上一个模式和主题。
+7. 标准计时绝不能显示绿色自由计时主题。
+8. 自由计时绝不能显示蓝色标准计时文案。
 
-```xml
-hover-class="year-day-pressed"
-```
+==================================================
+七、P1：处理控制台真实代码警告
+==================================================
 
-以及：
+最新日志存在以下真实代码警告。
 
-```css
-.year-day-pressed .year-day-tip {
-  opacity: 1;
-  visibility: visible;
+------------------------------------------
+7.1 wx.getSystemInfoSync 已废弃
+------------------------------------------
+
+涉及：
+
+- pages/pomodoro/pomodoro.js
+- pages/pomodoro-stats/pomodoro-stats.js
+- components/loading-lottie/loading-lottie.js
+- components/AnimatedView/AnimatedView.js
+
+替换规则：
+
+1. pixelRatio：
+
+   const windowInfo = wx.getWindowInfo
+     ? wx.getWindowInfo()
+     : {}
+
+   const dpr = windowInfo.pixelRatio || 1
+
+2. SDKVersion：
+
+   const appBaseInfo = wx.getAppBaseInfo
+     ? wx.getAppBaseInfo()
+     : {}
+
+3. platform：
+
+   const deviceInfo = wx.getDeviceInfo
+     ? wx.getDeviceInfo()
+     : {}
+
+4. 不要在现代基础库路径中继续调用 getSystemInfoSync。
+5. 如保留兼容 fallback，只有在新 API 不存在时才调用，并集中在一个兼容工具方法中。
+6. Pomodoro 和 Pomodoro Stats 不应再产生该警告。
+
+------------------------------------------
+7.2 跨分包同步 require 警告
+------------------------------------------
+
+日志大量出现：
+
+Requires "../../subpackages/animation/lottie-loader.js"
+without a callback may fail in production
+
+涉及：
+
+- components/loading-lottie/loading-lottie.js
+- components/AnimatedView/AnimatedView.js
+
+必须修复架构，而不是隐藏 console：
+
+1. 主包组件不得在分包尚未加载时同步 require 分包文件。
+2. 统一提供 Promise 型加载器：
+
+   loadAnimationLoader()
+
+3. 先调用 wx.loadSubpackage 或现有 app.loadRewardAnimationPackage()。
+4. 分包加载成功后，再使用微信支持的异步/callback require 形式。
+5. 多个组件同时请求时，只允许一个真实加载任务，其他复用同一 Promise。
+6. 缓存加载成功的 module。
+7. 加载失败时使用静态 fallback，不重复无限重试。
+8. detached 后异步回调不得继续操作组件。
+9. 不得把整个大型 lottie vendor 直接复制进主包，除非明确核算主包体积并说明原因。
+
+验收：
+
+- 控制台不再出现 without a callback may fail in production。
+- 真机首次进入仍能加载动画。
+- 分包失败时显示 fallback。
+- 不重复加载分包。
+
+------------------------------------------
+7.3 mp-html 组件 WXSS 非法选择器
+------------------------------------------
+
+日志定位：
+
+components/mp-html/latex/katex.wxss 约第 839 行：
+
+.katex img
+
+组件 WXSS 不允许标签选择器。
+
+同时检查：
+
+.katex .katex-svg path
+
+处理方法：
+
+1. KaTeX 生成的图片已有 class="katex-svg"。
+2. 将 .katex img 的属性合并到：
+
+   .katex .katex-svg
+
+3. 删除 .katex img。
+4. SVG 已经被转换成 data URI image，外部 WXSS 无法直接设置内部 path，因此删除无效的：
+
+   .katex .katex-svg path
+
+5. 全文件扫描标签、ID、属性选择器。
+6. 不得破坏公式、分数、根号、矩阵、上下标和行内公式。
+
+验收：
+
+- practice、practice-result、wrong-detail、review-today 不再提示非法组件选择器。
+- 数学公式仍正常显示。
+
+------------------------------------------
+7.4 Dashboard 旧 Canvas 接口
+------------------------------------------
+
+Dashboard 多个图表仍使用：
+
+canvas-id="..."
+但没有 type="2d"。
+
+请逐个评估迁移：
+
+- score-ring
+- diag-quality
+- diag-consistency
+- trend-chart
+- subject-donut
+- mastery-gauge
+- growth-ring
+- adaptive-gauge
+
+要求：
+
+1. 改为 type="2d" Canvas。
+2. 使用 SelectorQuery fields({node:true,size:true})。
+3. 使用 canvas.getContext('2d')。
+4. DPR 使用 wx.getWindowInfo().pixelRatio。
+5. 不要一次迁移后不测试全部图表。
+6. 若本轮风险过高，可先迁移一个公共绘图适配层，但最终不得混用两套互相覆盖的绘图逻辑。
+
+------------------------------------------
+7.5 需要分类而非修改的环境警告
+------------------------------------------
+
+以下通常不是业务代码问题：
+
+- SharedArrayBuffer 浏览器弃用提示；
+- WAWorker reportRealtimeAction:fail not support；
+- 开发者工具关闭合法域名检查的提示。
+
+处理方式：
+
+1. 不要修改业务代码试图屏蔽它们。
+2. 在最终报告中标记为“开发者工具/运行环境提示”。
+3. 发布前重新开启：
+   - 合法域名检查；
+   - TLS 检查；
+   - HTTPS 证书检查。
+
+------------------------------------------
+7.6 401 登录过期日志
+------------------------------------------
+
+日志中出现：
+
+- /users/me 401
+- /auth/refresh 401
+
+处理原则：
+
+1. 没有 access token 时，不要请求 /users/me。
+2. refresh token 不存在时，不要请求 refresh。
+3. 同一时间只允许一个 refresh 请求。
+4. refresh 失败后：
+   - 清除无效 token；
+   - 回到登录态；
+   - 不重复递归刷新；
+   - 不把预期登录过期打印为长堆栈错误。
+5. 不得吞掉真正的服务器 500 或网络异常。
+
+==================================================
+八、P1：处理最新 audits(1).json 剩余失败项
+==================================================
+
+当前审计：
+
+- 总分：91
+- 性能：100
+- 体验：69
+- 最佳实践：91
+
+------------------------------------------
+8.1 overflow-scroll
+------------------------------------------
+
+命中：
+
+components/quiz-runner/quiz-runner.wxss
+.runner-nav-center
+
+该区域已有：
+
+overflow-x: auto
+
+补充：
+
+.runner-nav-center {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
-```
 
-但必须确认 `hover-class` 能满足当前产品交互。
+如果 overscroll-behavior 在目标基础库不稳定，可以不使用，但
+-webkit-overflow-scrolling: touch 必须添加。
 
-## 2.2 状态要求
+验证页面：
 
-若新增 `activeYearDayIndex`：
+- practice
+- wrong-detail
+- review-today
 
-1. 必须绑定 WXML；
-2. 默认值设为 `-1`；
-3. 切换统计年份时重置；
-4. 页面隐藏时根据产品逻辑决定是否关闭；
-5. 不得新增未绑定 `setData` 字段；
-6. 不得使用模块级全局变量共享 tooltip 状态。
+------------------------------------------
+8.2 set-data-no-binding
+------------------------------------------
 
-## 2.3 验收
+审计剩余字段：
 
-完成后执行：
+Home：
+- isAdmin
 
-```bash
-grep -RIn ":active" \
-  miniprogram \
-  --include="*.wxss"
-```
+Dashboard：
+- insight
+- masteryRate
 
-目标：项目自有 WXSS 中结果为 0。
+Review Today：
+- todayNewDueCount
+- remainingBatchCount
+- _groupProgressStyle
+- celebrationProgressText
 
-如果第三方组件仍存在 `:active`，逐条列出，并说明是否位于实际打包路径。
+Pomodoro Stats：
+- weekSessions
+- weekDurationText
+- trends
+- historyTotal
 
-# 三、P0：清理 16 个 orphan pressed 样式
+逐项处理原则：
 
-此前报告发现 16 个没有直接 WXML 引用的 `*-pressed` 样式，分类为：
+1. 先检查 WXML、Canvas 绘图和 JS 使用。
+2. 仅供 JS、Canvas 或业务计算使用的字段移出 data。
+3. 迁移到实例状态，例如：
+   - this._isAdmin
+   - this._dashboardState
+   - this._reviewSession
+   - this._statsRawData
+4. 真正展示的数据保留最终 ViewModel。
+5. Canvas 绘图不得继续从未绑定 data 中读取，应从实例数据或方法参数读取。
+6. 禁止直接修改 this.data。
+7. 不得为了通过审计删除实际功能。
 
-- 共享组件样式；
-- 使用替代 hover-class 的样式；
-- 死样式；
-- picker 等边缘场景。
+特别注意：
 
-不要直接全部删除。请为每个样式建立引用证据表：
+- dashboard.masteryRate 被 Canvas 绘图使用，应迁移到实例变量或直接传给绘图函数，WXML 继续使用 masteryRatePct。
+- dashboard.insight 若只用于 onInsightTap，移到实例变量。
+- pomodoro-stats.trends 用于 Canvas 绘图，移到 this._statsRawData.trends。
+- weekSessions、weekDurationText 如果 WXML 使用的是其他展示字段，则删除重复 data 字段。
+- _groupProgressStyle 不应以下划线字段放入 data；如果 WXML需要，改成明确的 groupProgressStyle。
+- celebrationProgressText 如果完全未展示，移出 data 或删除。
 
-| 选择器 | 所在文件 | WXML 直接引用 | JS 动态引用 | externalClasses | 替代类 | 结论 |
-| ------ | -------- | ------------- | ----------- | --------------- | ------ | ---- |
-|        |          |               |             |                 |        |      |
+------------------------------------------
+8.3 color-contrast
+------------------------------------------
 
-## 3.1 判定规则
+仍命中 review-today 最终结果页：
 
-### 可以删除
+- .fr-card.fr-summary.weak
+- .fr-status-tag.weak
+- .fr-cell
+- .fr-card.fr-progress-card
+- .fr-weak-count
+- .fr-advice-tag.review
+- .fr-action-primary
+- .fr-action-secondary
 
-同时满足：
+要求：
 
-1. WXML 没有 `hover-class` 引用；
-2. WXML 没有普通 class 引用；
-3. JS 没有动态拼接；
-4. 组件没有 `externalClasses`；
-5. 不属于全局复用类；
-6. 没有被其他 WXSS 组合选择器依赖；
-7. 不属于 picker、button、navigator 等原生组件状态兼容样式；
-8. 不属于第三方组件；
-9. 没有未来配置项或条件渲染引用。
+1. 普通文字对比度目标至少 4.5:1。
+2. 大号粗体至少 3:1。
+3. 不得只加 font-weight 逃避颜色问题。
+4. 主按钮蓝色背景上的文字使用纯白或高对比白。
+5. 次按钮浅蓝背景使用深蓝文字。
+6. 弱项红色使用更深的红色：
+   - 文本建议 #9F1D1D 或更深；
+   - 背景可保留浅红。
+7. 重点标签橙色文字改为深棕橙：
+   - 例如 #8A4B08。
+8. fr-cell 普通辅助文字不得使用过浅灰。
+9. 修改后实际计算对比度，不要只凭肉眼。
 
-### 应保留
+------------------------------------------
+8.4 基础库版本
+------------------------------------------
 
-满足任意一项：
+项目使用 aria-label、rich-text、slider、cover-view。
 
-- 属于组件公开样式契约；
-- 通过 `externalClasses` 传入；
-- 被 JS 动态拼接；
-- 被多个页面复用；
-- 是设计系统通用 pressed token；
-- 由 picker、表单或原生组件结构间接使用；
-- 当前无法确定安全性。
+最终报告提示人工设置：
 
-### 应修复引用
+微信公众平台最低基础库版本不低于 2.5.0。
 
-如果样式本来应当使用，但 WXML 漏写 `hover-class`，则补齐 WXML，不要删除样式。
+不要为了兼容极旧版本删除无障碍属性或核心组件。
 
-## 3.2 删除后检查
+------------------------------------------
+8.5 unused-css
+------------------------------------------
 
-删除 orphan pressed 样式后再次搜索：
+本轮不继续批量清理。
 
-```bash
-grep -RInE "[A-Za-z0-9_-]+-pressed" \
-  miniprogram \
-  --include="*.wxss" \
-  --include="*.wxml"
-```
+原因：
 
-确保：
+当前首先修复功能回归和警告。
 
-1. 每个 WXSS pressed 类都有 WXML 引用；
-2. 每个 WXML hover-class 都有对应 WXSS 定义；
-3. 没有拼写不一致；
-4. 没有只定义未使用；
-5. 没有只使用未定义。
+仅允许删除因本轮修改明确废弃的少量样式，不得依据审计覆盖率大规模删除。
 
-# 四、P1：安全清理未使用 WXSS
+==================================================
+九、Pomodoro 状态机约束
+==================================================
 
-旧审计曾提示约可节省 161 KB，但该数据来自特定页面访问轨迹，可能把条件样式和第三方样式误判为未使用。
+请明确建立状态转换表：
 
-重点文件：
+IDLE
+→ RUNNING
+→ PAUSED
+→ END_CONFIRM
+→ RUNNING / PAUSED / IDLE
 
-- `miniprogram/app.wxss`
-- `miniprogram/pages/practice/practice.wxss`
-- `miniprogram/components/AnimatedView/AnimatedView.wxss`
-- `miniprogram/components/mp-html/index.wxss`
-- `miniprogram/components/quiz-runner/quiz-runner.wxss`
-- `miniprogram/pages/wrong-detail/wrong-detail.wxss`
-- `miniprogram/pages/wrong-book/wrong-book.wxss`
-- `miniprogram/pages/dashboard/dashboard.wxss`
-- `miniprogram/pages/pomodoro-stats/pomodoro-stats.wxss`
+自由计时和倒计时都必须满足：
 
-## 4.1 一次只处理一个文件
+1. 结束弹窗模式明确。
+2. 打开弹窗前记录原状态。
+3. 取消后恢复原状态。
+4. 确认后进入 IDLE。
+5. 返回统计页不是状态转换。
+6. 页面 hide 不是用户暂停。
+7. 页面 show 不是自动弹窗。
+8. 旧 storage 不得覆盖新 session。
+9. 不同 sessionId 的状态不能混用。
+10. free 与 standard 的 snapshot 不能混用。
 
-必须按以下顺序处理：
+建议增加开发态断言方法：
 
-1. `pomodoro-stats.wxss`
-2. `quiz-runner.wxss`
-3. `wrong-detail.wxss`
-4. `wrong-book.wxss`
-5. `dashboard.wxss`
-6. `practice.wxss`
-7. `AnimatedView.wxss`
-8. `app.wxss`
-9. `mp-html/index.wxss`
-
-每个文件处理完成并检查后，才能进入下一个。
-
-## 4.2 为每个选择器建立引用映射
+_assertTimerState(source)
 
 检查：
 
-- 当前页面 WXML；
-- 当前组件 WXML；
-- 所有 JS 动态 class；
-- `hover-class`；
-- `externalClasses`；
-- 父组件传入样式；
-- 插槽内容；
-- `wx:if` 条件分支；
-- 空状态；
-- 加载状态；
-- 请求失败状态；
-- 禁用状态；
-- 选中状态；
-- 正确、错误状态；
-- 动画进入和退出状态；
-- 模态框；
-- 管理员或开发状态；
-- 媒体查询；
-- 伪元素；
-- 组合选择器；
-- 全局样式继承。
-
-## 4.3 删除条件
-
-仅删除同时满足以下条件的选择器：
-
-1. 没有 WXML 静态引用；
-2. 没有 JS 动态引用；
-3. 没有 hover-class 引用；
-4. 没有 externalClasses 引用；
-5. 不属于插槽内容样式；
-6. 不属于条件渲染状态；
-7. 不属于动画状态；
-8. 不属于第三方组件基础样式；
-9. 不属于全局设计系统；
-10. 不被其他选择器依赖。
-
-## 4.4 动态类检查
-
-必须搜索类似代码：
-
-```js
-`class-a ${active ? 'active' : ''}`
-```
-
-以及：
-
-```js
-[className, stateClass].join(' ')
-```
-
-还要检查 WXML：
-
-```xml
-class="card {{selected ? 'selected' : ''}}"
-```
-
-不得因为不存在完整字符串 `.card.selected` 就判断未使用。
-
-# 五、各重点文件处理要求
-
-## 5.1 pomodoro-stats.wxss
-
-优先清理：
-
-- 已确认没有点击事件的 pressed 样式；
-- 已废弃历史卡片样式；
-- 重复布局类；
-- 页面已不存在的旧空状态样式。
-
-必须保留：
-
-- 图表；
-- 历史记录；
-- 周统计；
-- 空状态；
-- 加载状态；
-- 惯性滚动相关样式；
-- 底部安全区。
-
-## 5.2 quiz-runner.wxss
-
-必须保留：
-
-- 单选、多选、填空题状态；
-- 正确、错误、已提交状态；
-- 当前题和已答题圆点；
-- 80rpx 点击热区；
-- 上一题、下一题禁用状态；
-- hover-class pressed 状态；
-- 题目内容富文本样式；
-- 横向导航滚动。
-
-删除前检查组件 properties 和动态 class。
-
-## 5.3 wrong-detail.wxss
-
-必须保留：
-
-- 错误类型；
-- 正确答案；
-- 用户答案；
-- 知识点；
-- AI loading；
-- AI empty；
-- AI error；
-- AI cards；
-- 重新生成按钮；
-- 切题遮罩；
-- 上一题、下一题。
-
-不得删除当前测试中不容易触发的 AI 失败和降级样式。
-
-## 5.4 wrong-book.wxss
-
-必须保留：
-
-- 筛选项；
-- 错题列表；
-- 空状态；
-- 加载状态；
-- 科目标签；
-- 错误类型；
-- 分页或加载更多；
-- pressed 状态。
-
-## 5.5 dashboard.wxss
-
-必须保留：
-
-- 英雄统计区；
-- 趋势图；
-- 学科统计；
-- 掌握率；
-- 成长数据；
-- 自适应建议；
-- 加载状态；
-- 错误状态；
-- 年度记录 tooltip；
-- 弱项卡片；
-- 空状态。
-
-## 5.6 practice.wxss
-
-这是高风险文件。
-
-必须覆盖：
-
-- 单选；
-- 多选；
-- 填空；
-- 题目加载；
-- 安全模式；
-- 网络错误；
-- 提交状态；
-- 结果跳转；
-- 底部导航；
-- 键盘弹出；
-- 横屏或小屏适配；
-- pressed 状态。
-
-每次删除后必须确认 WXML 所有 class 仍有定义。
-
-## 5.7 AnimatedView.wxss
-
-检查组件：
-
-- properties；
-- observers；
-- JS 状态；
-- 动画方向；
-- 动画时间；
-- 延迟；
-- enter/leave；
-- fade/slide/scale；
-- disabled motion。
-
-如果无法完整证明某个动画类型未使用，则保留。
-
-## 5.8 app.wxss
-
-禁止大规模删除。
-
-优先识别：
-
-- 页面专属样式误放全局；
-- 重复工具类；
-- 已废弃调试类；
-- 从未引用的旧主题类。
-
-通用类应保留，包括：
-
-- 页面容器；
-- 安全区域；
-- 卡片；
-- 主按钮；
-- 次按钮；
-- 文本色；
-- 间距；
-- Flex 布局；
-- 加载和空状态；
-- pressed 通用类。
-
-如果某全局类只被单个页面使用，可迁移到页面 WXSS，但迁移前后视觉必须一致。
-
-## 5.9 mp-html/index.wxss
-
-默认不做核心样式裁剪。
-
-只能删除：
-
-- 项目自行添加且已经废弃的覆盖样式；
-- 能明确证明无任何引用的扩展样式。
-
-必须保留：
-
-- 文本；
-- 标题；
-- 图片；
-- 表格；
-- 列表；
-- 引用；
-- 链接；
-- 代码；
-- 数学公式；
-- 上下标；
-- 视频或媒体占位；
-- 长文本换行。
-
-无法完成富文本全场景测试时，不得大范围修改该文件。
-
-# 六、P1：重复与冲突样式检查
-
-检查以下问题：
-
-1. 同一选择器在同一文件重复定义；
-2. 同一组件状态存在多个 pressed 类；
-3. 页面 WXSS 与 `app.wxss` 定义相同类但值不同；
-4. 无效嵌套选择器；
-5. 永远无法匹配的选择器；
-6. 拼写错误；
-7. 不存在的父级 class；
-8. 已删除 WXML 元素对应的旧样式；
-9. 重复动画 keyframes；
-10. 无引用 CSS 变量；
-11. 重复安全区处理；
-12. 重复字体和颜色 token。
-
-对冲突样式：
-
-- 明确最终生效来源；
-- 保留语义最清晰的一处；
-- 不得通过增加 `!important` 掩盖问题。
-
-# 七、P1：资源与包体积检查
-
-检查 `miniprogram/` 内：
-
-- 未引用图片；
-- 重复图片；
-- 超大 PNG/JPG；
-- 临时截图；
-- 备份文件；
-- `.bak`；
-- `.old`；
-- `.copy`；
-- 编辑器临时文件；
-- 测试数据；
-- 日志文件；
-- 旧审计文件；
-- 开发专用文件。
-
-## 7.1 资源引用
-
-对每个候选图片搜索：
-
-- WXML；
-- WXSS；
-- JS；
-- JSON；
-- 动态路径；
-- 配置文件。
-
-只有确认没有动态路径引用后才允许删除。
-
-## 7.2 packOptions.ignore
-
-检查 `project.config.json` 是否适合忽略：
-
-- 文档；
-- 审计导出；
-- 临时文件；
-- 测试脚本；
-- 不参与运行的设计稿；
-- 本地开发说明。
-
-不得忽略运行所需文件。
-
-## 7.3 结果记录
-
-记录：
-
-- 修改前 WXSS 总字节数；
-- 修改后 WXSS 总字节数；
-- 删除资源数；
-- 删除资源总大小；
-- 是否修改 `packOptions.ignore`；
-- 是否能够获得真实主包体积。
-
-如果无法从 CLI 获得真实上传包体积，明确写“待微信开发者工具确认”，不得估算。
-
-# 八、静态完整性检查
-
-修改完成后执行以下检查。
-
-## 8.1 :active
-
-```bash
-grep -RIn ":active" \
-  miniprogram \
-  --include="*.wxss"
-```
-
-项目自有代码目标为 0。
-
-## 8.2 hover-class 定义与引用
-
-输出：
-
-- WXML 使用的 hover-class 集合；
-- WXSS 定义的 pressed 类集合；
-- 使用但未定义；
-- 定义但未使用。
-
-## 8.3 WXML class 与 WXSS
-
-检查所有页面和组件：
-
-- WXML class 是否有样式定义；
-- 动态 class 是否有定义；
-- 已删除样式是否仍被引用；
-- 同名类是否错误依赖全局。
-
-注意：不是所有 WXML class 都必须有样式，有些可能用于测试或数据定位。对此要注明，不得自动添加空样式。
-
-## 8.4 WXSS 语法
-
-检查：
-
-- 花括号闭合；
-- 注释闭合；
-- `@import` 路径；
-- `@keyframes`；
-- CSS 变量；
-- 无效属性；
-- 重复属性；
-- 错误选择器。
-
-## 8.5 JS 和 WXML
-
-确认样式清理未改坏：
-
-- WXML 标签闭合；
-- 动态表达式；
-- JS class 字符串；
-- hover-class 条件表达式；
-- 禁用状态。
-
-# 九、回归测试要求
-
-至少逐页验证：
-
-## Login
-
-- 微信登录按钮；
-- loading 禁用态；
-- 协议链接；
-- 开发入口。
-
-## Home
-
-- 数字动画；
-- 目标配置；
-- 功能入口；
-- 卡片点击态。
-
-## Practice
-
-- 单选；
-- 多选；
-- 填空；
-- 上下题；
-- 题号导航；
-- 提交；
-- 错误状态；
-- 安全模式。
-
-## Practice Result
-
-- 主按钮；
-- 次按钮；
-- 成长徽章；
-- 返回首页。
-
-## Wrong Book
-
-- 筛选；
-- 列表点击；
-- 空状态；
-- 加载更多。
-
-## Wrong Detail
-
-- 错误类型；
-- AI loading；
-- AI 成功；
-- AI 失败；
-- AI 重新生成；
-- 上下题；
-- 快速切题。
-
-## Dashboard
-
-- 全部统计区块；
-- 趋势切换；
-- 年度 tooltip；
-- 弱项卡片；
-- 空状态；
-- 错误状态。
-
-## Pomodoro
-
-- 模式选择；
-- 科目卡片；
-- 启动；
-- 暂停；
-- 恢复；
-- 结束；
-- 字体大小；
-- 统计入口。
-
-## Pomodoro Stats
-
-- 图表；
-- 历史记录；
-- 今日入口；
-- 空状态；
-- 页面滚动。
-
-## Review Today
-
-- 空状态；
-- 加载失败；
-- 开始复习；
-- 题组完成；
-- 最终结果；
-- 确认弹窗；
-- 取消按钮；
-- 主次操作按钮。
-
-## 富文本
-
-- 标题；
-- 正文；
-- 列表；
-- 图片；
-- 表格；
-- 代码；
-- 数学公式；
-- 长文本。
-
-# 十、微信开发者工具最终审计
-
-代码修改完成后，不得直接宣布最终通过。
-
-请输出人工操作要求：
-
-1. 清除缓存。
-2. 重新编译。
-3. 登录测试账号。
-4. 完整访问全部页面。
-5. 完成每个页面核心交互。
-6. 运行自动审计。
-7. 导出新的 `audits.json`。
-8. 将新审计结果与旧分数对比。
-
-重点确认：
-
-- `unused-css`
-- `ele-active-state`
-- `set-data-freq`
-- `set-data-no-binding`
-- `small-response-area`
-- `overflow-scroll`
-- `color-contrast`
-- `js-exception`
-- 首屏时间；
-- 包体积。
-
-如果当前环境不能运行 GUI，必须明确写：
-
-“未执行微信开发者工具 GUI 审计，本阶段仅完成代码和静态引用检查。”
-
-# 十一、最终输出格式
-
-严格按以下格式输出：
-
-## 1. 修改摘要
-
-说明本阶段真实完成内容。
-
-## 2. `.year-day:active` 处理
-
-说明：
-
-- 原交互；
-- 新交互；
-- 使用的状态；
-- 是否仍有 `:active`。
-
-## 3. Orphan pressed 样式
-
-提供完整表格：
-
-| 选择器 | 文件 | 原因 | 处理 |
-| ------ | ---- | ---- | ---- |
-|        |      |      |      |
-
-## 4. WXSS 清理结果
-
-逐文件提供：
-
-| 文件 | 修改前字节 | 修改后字节 | 删除选择器数 | 保留风险项 |
-| ---- | ---------- | ---------- | ------------ | ---------- |
-|      |            |            |              |            |
-
-## 5. 总体积变化
-
-提供：
-
-- WXSS 修改前总大小；
-- WXSS 修改后总大小；
-- 节省大小；
-- 删除资源大小；
-- 是否修改 `packOptions.ignore`；
-- 主包真实大小是否已获取。
-
-## 6. 样式引用完整性
-
-提供：
-
-- hover-class 使用但未定义数量；
-- pressed 定义但未使用数量；
-- WXML 引用已删除样式数量；
-- 剩余 `:active` 数量。
-
-## 7. 资源清理
-
-列出删除和保留资源。
-
-## 8. 回归测试
-
-逐项标注：
-
-- 通过；
-- 失败；
-- 未执行。
-
-静态检索不得写为功能测试通过。
-
-## 9. 审计结果
-
-如果执行了开发者工具审计，填写：
+- sessionId；
+- phase；
+- isFreeTimer；
+- isPaused；
+- endConfirmMode；
+- snapshot.mode；
+- snapshot.sessionId。
+
+只在 debugMode 下输出，不污染正式控制台。
+
+==================================================
+十、回归测试
+==================================================
+
+必须逐项测试并真实记录。
+
+A. 环形位置
+
+1. 标准计时首次启动。
+2. 自由计时首次启动。
+3. 暂停。
+4. 恢复。
+5. 切换字体大小。
+6. 切后台再返回。
+7. 进入统计页再返回。
+8. 标准模式与自由模式互相切换。
+9. 开发者工具和至少一台真机。
+
+B. 标准计时结束
+
+1. 运行中点击结束。
+2. 点击取消，应继续运行。
+3. 暂停中点击结束。
+4. 点击取消，应保持暂停。
+5. 点击确认，应立即结束。
+6. 连续点击确认，只发起一次请求。
+7. 结束接口失败，弹窗保留并可重试。
+8. 成功后回到 idle，统计刷新。
+
+C. 自由计时结束
+
+1. 运行中结束。
+2. 取消后继续。
+3. 暂停中结束。
+4. 取消后保持暂停。
+5. 确认结束。
+6. 文案和主题保持绿色自由计时风格。
+
+D. Stats 返回
+
+1. 运行中的标准计时进入统计再返回。
+2. 暂停中的标准计时进入统计再返回。
+3. 运行中的自由计时进入统计再返回。
+4. 暂停中的自由计时进入统计再返回。
+5. 四种情况均不得自动弹出结束确认。
+6. 时间状态必须正确恢复。
+
+E. 控制台
+
+确认不再出现：
+
+- getSystemInfoSync deprecated；
+- cross-subpackage require without callback；
+- component WXSS tag selector；
+- Pomodoro 相关 JavaScript 异常。
+
+环境提示单独记录，不作为代码失败。
+
+F. 审计
+
+重新访问全部相关页面后运行审计，记录：
 
 - 总分；
 - 性能；
 - 体验；
 - 最佳实践；
-- 剩余失败项。
+- overflow-scroll；
+- set-data-no-binding；
+- color-contrast；
+- js-exception。
 
-如果未执行，明确说明未执行。
+==================================================
+十一、最终输出格式
+==================================================
 
-## 10. 未完成事项
+## 1. 根因确认
 
-列出原因和下一步。
+逐项说明：
 
-# 十二、禁止事项
+- 环形错位根因；
+- 标准结束无效根因；
+- 自动暂停根因；
+- Stats 返回弹窗根因；
+- 标准弹窗继承自由主题根因。
 
-1. 不得回滚前三阶段修改。
-2. 不得批量正则删除 WXSS。
-3. 不得根据审计覆盖率直接删除样式。
-4. 不得大规模裁剪 `mp-html`。
-5. 不得删除条件状态样式。
-6. 不得删除错误、空状态和 loading 样式。
-7. 不得删除动画状态而保留 JS 引用。
-8. 不得删除动态路径资源。
-9. 不得伪造包体积。
-10. 不得伪造审计分数。
-11. 不得声称执行了未执行的测试。
-12. 不得使用 `:active` 实现点击态。
-13. 不得新增无引用 pressed 样式。
-14. 不得使用 `!important` 掩盖样式冲突。
-15. 不得修改接口、路由和业务逻辑。
+## 2. Pomodoro 修改文件
+
+列出文件、方法和修改内容。
+
+## 3. 状态机修改
+
+提供修改前后状态转换说明。
+
+## 4. Canvas 修复
+
+说明：
+
+- 哪些 transform 被移除；
+- Canvas 初始化时机；
+- DPR 获取方式；
+- 环形和文字如何保证同心。
+
+## 5. 弹窗修复
+
+说明：
+
+- endConfirmMode 设置位置；
+- ViewModel 构建；
+- 快照校验；
+- storage 清理；
+- 取消和确认行为。
+
+## 6. Stats 返回修复
+
+说明四种计时状态的恢复结果。
+
+## 7. 警告处理
+
+用表格列出：
+
+| 警告 | 文件 | 根因 | 修改 | 是否消失 |
+| ---- | ---- | ---- | ---- | -------- |
+
+## 8. 审计残项
+
+用表格列出：
+
+| 审计 ID | 原命中 | 修改 | 最新结果 |
+| ------- | ------ | ---- | -------- |
+
+## 9. 回归测试
+
+每项标注：
+
+- 通过；
+- 失败；
+- 未执行。
+
+静态检查不得写成功能测试通过。
+
+## 10. 最新审计
+
+填写真实分数。
+
+如未运行 GUI，明确写：
+
+“未执行微信开发者工具 GUI 审计，本结论仅为代码级检查结果。”
+
+## 11. 剩余问题
+
+列出仍需人工处理的配置和环境提示。
