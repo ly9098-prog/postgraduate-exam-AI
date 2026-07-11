@@ -134,7 +134,6 @@
 }
 
 .sc-btn::after { border: none; }
-.sc-btn:active { transform: scale(0.97); }
 
 /* Cancel — subtle outline */
 .sc-btn-cancel {

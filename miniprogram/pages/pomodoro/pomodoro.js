@@ -105,23 +105,13 @@ Page({
     selectedPreset: 'standard',
     workDuration: 25,
     breakDuration: 5,
-    breakStartTime: null,
     showCustom: false,
     isPaused: false,
-    totalPausedMs: 0,
-    pauseStartTime: null,
-
-    // session
-    sessionId: null,
-    sessionStartTime: null,
 
     // free timer fields
     isFreeTimer: false,
-    elapsedSec: 0,
     freeDisplayTime: '00:00:00',
-    freeFriendlyText: '',
     showEndConfirm: false,
-    endConfirmMode: '',
     endConfirmTheme: '',
     endConfirmTitle: '',
     endConfirmText: '',
@@ -130,14 +120,11 @@ Page({
     actionLoading: false,
 
     // timer display
-    remainingSec: 0,
     displayMin: '00',
     displaySec: '00',
-    progress: 1,
 
     // today stats
     todaySessions: 0,
-    todayDurationSec: 0,
     todayDurationText: '0分钟',
 
     // practice page context
@@ -175,7 +162,24 @@ Page({
 
   /* ==================== Lifecycle ==================== */
 
+  _createTimerState() {
+    return {
+      sessionId: null,
+      sessionStartTime: null,
+      breakStartTime: null,
+      totalPausedMs: 0,
+      pauseStartTime: null,
+      elapsedSec: 0,
+      remainingSec: 0,
+      endConfirmMode: '',
+      freeFriendlyText: '',
+      progress: 1,
+      todayDurationSec: 0,
+    }
+  },
+
   onLoad(opts) {
+    this._timerState = this._createTimerState()
     wx.setNavigationBarColor({
       frontColor: '#ffffff',
       backgroundColor: '#0B1121',
@@ -220,20 +224,20 @@ Page({
 
       if (confirmSnapshot.mode === 'free-complete') {
         const fmt = formatElapsedSec(confirmSnapshot.elapsedSec || 0)
+        this._timerState.sessionId = confirmSnapshot.sessionId
+        this._timerState.sessionStartTime = confirmSnapshot.sessionStartTime || this._timerState.sessionStartTime
+        this._timerState.endConfirmMode = 'free-complete'
+        this._timerState.elapsedSec = confirmSnapshot.elapsedSec || 0
+        this._timerState.freeFriendlyText = fmt.friendly
+        this._timerState.totalPausedMs = confirmSnapshot.totalPausedMs || 0
         this.setData({
           phase: PHASE.RUNNING,
           isFreeTimer: true,
-          sessionId: confirmSnapshot.sessionId,
-          sessionStartTime: confirmSnapshot.sessionStartTime || this.data.sessionStartTime,
           isPaused: true,
           showEndConfirm: true,
-          endConfirmMode: 'free-complete',
           endConfirmTheme: 'free',
           ringCanvasVisible: true,
-          elapsedSec: confirmSnapshot.elapsedSec || 0,
           freeDisplayTime: fmt.display,
-          freeFriendlyText: fmt.friendly,
-          totalPausedMs: confirmSnapshot.totalPausedMs || 0,
         })
         if (confirmSnapshot.pausedByConfirm && !confirmSnapshot.backendPauseDone) {
           api.post('/pomodoro/' + confirmSnapshot.sessionId + '/pause', {})
@@ -249,19 +253,19 @@ Page({
       }
 
       const fmt = this._formatCountdownDisplay(confirmSnapshot.remainingSec)
+      this._timerState.sessionId = confirmSnapshot.sessionId
+      this._timerState.sessionStartTime = confirmSnapshot.sessionStartTime || this._timerState.sessionStartTime
+      this._timerState.endConfirmMode = 'countdown-interrupt'
+      this._timerState.remainingSec = confirmSnapshot.remainingSec
+      this._timerState.progress = confirmSnapshot.progress
+      this._timerState.totalPausedMs = confirmSnapshot.totalPausedMs || 0
       this.setData({
         phase: confirmSnapshot.phase || PHASE.RUNNING,
-        sessionId: confirmSnapshot.sessionId,
-        sessionStartTime: confirmSnapshot.sessionStartTime || this.data.sessionStartTime,
         isPaused: true,
         showEndConfirm: true,
-        endConfirmMode: 'countdown-interrupt',
         ringCanvasVisible: true,
-        remainingSec: confirmSnapshot.remainingSec,
         displayMin: fmt.min,
         displaySec: fmt.sec,
-        progress: confirmSnapshot.progress,
-        totalPausedMs: confirmSnapshot.totalPausedMs || 0,
       })
       wx.nextTick(() => {
         this._initCanvas(true)
@@ -309,9 +313,9 @@ Page({
       wx.setStorageSync('pomodoro_confirm_pause', this._confirmTimerSnapshot)
     }
 
-    if (this.data.phase === PHASE.RUNNING && this.data.sessionId) {
+    if (this.data.phase === PHASE.RUNNING && this._timerState.sessionId) {
       wx.setStorageSync('pomodoro_running_state', {
-        sessionStartTime: this.data.sessionStartTime,
+        sessionStartTime: this._timerState.sessionStartTime,
         workDuration: this.data.workDuration,
         breakDuration: this.data.breakDuration,
         selectedPreset: this.data.selectedPreset,
@@ -319,11 +323,11 @@ Page({
         selectedSubjectCode: this.data.selectedSubject ? this.data.selectedSubject.code : '',
         selectedSubjectName: this.data.selectedSubject ? this.data.selectedSubject.name : '',
         isPaused: this.data.isPaused,
-        totalPausedMs: this.data.totalPausedMs,
-        pauseStartTime: this.data.isPaused ? (this.data.pauseStartTime || Date.now()) : null,
-        sessionId: this.data.sessionId,
+        totalPausedMs: this._timerState.totalPausedMs,
+        pauseStartTime: this.data.isPaused ? (this._timerState.pauseStartTime || Date.now()) : null,
+        sessionId: this._timerState.sessionId,
         isFreeTimer: this.data.isFreeTimer,
-        elapsedSec: this.data.elapsedSec,
+        elapsedSec: this._timerState.elapsedSec,
         savedAt: Date.now(),
       })
     }
@@ -525,20 +529,20 @@ Page({
     const totalPausedSec = session.total_paused_sec || 0
 
     this._clearTimer()
+    this._timerState.sessionId = session.id
+    this._timerState.sessionStartTime = startTime
+    this._timerState.totalPausedMs = totalPausedSec * 1000
+    this._timerState.pauseStartTime = null
+    this._timerState.elapsedSec = 0
+    this._timerState.freeFriendlyText = ''
+    this._timerState.progress = 1
     this.setData({
       phase: PHASE.RUNNING,
       ringCanvasVisible: true,
       isFreeTimer: true,
-      sessionId: session.id,
-      sessionStartTime: startTime,
       isPaused: false,
-      totalPausedMs: totalPausedSec * 1000,
-      pauseStartTime: null,
-      elapsedSec: 0,
       freeDisplayTime: '00:00:00',
-      freeFriendlyText: '',
       showEndConfirm: false,
-      progress: 1,
     })
     this._updateComputedFields()
     this._updateFreeElapsed()
@@ -552,31 +556,31 @@ Page({
     if (!this.data.isFreeTimer) return
     if (this.data.showEndConfirm) return
 
-    const startTime = this.data.sessionStartTime
+    const startTime = this._timerState.sessionStartTime
     if (typeof startTime !== 'number' || !Number.isFinite(startTime)) {
       this.setData({ freeDisplayTime: '00:00:00' })
       return
     }
 
     if (this.data.isPaused) {
-      const fmt = formatElapsedSec(this.data.elapsedSec || 0)
+      const fmt = formatElapsedSec(this._timerState.elapsedSec || 0)
       this.setData({
         freeDisplayTime: fmt.display,
-        freeFriendlyText: fmt.friendly,
       })
+      this._timerState.freeFriendlyText = fmt.friendly
       return
     }
 
     const now = Date.now()
-    let totalPausedMs = this.data.totalPausedMs || 0
-    totalPausedMs = this._mergeLocalPauseAdjustment(this.data.sessionId, totalPausedMs)
+    let totalPausedMs = this._timerState.totalPausedMs || 0
+    totalPausedMs = this._mergeLocalPauseAdjustment(this._timerState.sessionId, totalPausedMs)
 
     const elapsed = Math.max(0, Math.floor((now - startTime - totalPausedMs) / 1000))
 
-    if (elapsed === this.data.elapsedSec) return
+    if (elapsed === this._timerState.elapsedSec) return
     const fmt = formatElapsedSec(elapsed)
+    this._timerState.elapsedSec = elapsed
     this.setData({
-      elapsedSec: elapsed,
       freeDisplayTime: fmt.display,
     })
   },
@@ -599,12 +603,12 @@ Page({
 
       this._updateFreeElapsed()
 
-      const elapsedMs = Date.now() - this.data.sessionStartTime - (this.data.totalPausedMs || 0)
+      const elapsedMs = Date.now() - this._timerState.sessionStartTime - (this._timerState.totalPausedMs || 0)
       const delay = 1000 - (elapsedMs % 1000)
       this._freeTimerId = setTimeout(tick, Math.max(100, Math.min(delay, 1000)))
     }
 
-    const elapsedMs = Date.now() - this.data.sessionStartTime - (this.data.totalPausedMs || 0)
+    const elapsedMs = Date.now() - this._timerState.sessionStartTime - (this._timerState.totalPausedMs || 0)
     const firstDelay = 1000 - (elapsedMs % 1000)
     this._freeTimerId = setTimeout(tick, Math.max(100, Math.min(firstDelay, 1000)))
   },
@@ -615,23 +619,23 @@ Page({
   },
 
   async _pauseFreeTimer() {
-    if (!this.data.sessionId || this.data.actionLoading) return
+    if (!this._timerState.sessionId || this.data.actionLoading) return
     this.setData({ actionLoading: true })
     try {
-      const server = await api.post(`/pomodoro/${this.data.sessionId}/pause`, {})
+      const server = await api.post(`/pomodoro/${this._timerState.sessionId}/pause`, {})
       this._clearFreeTimerInterval()
+      this._timerState.pauseStartTime = Date.now()
+      this._timerState.totalPausedMs = (server.total_paused_sec || 0) * 1000
+      this._timerState.freeFriendlyText = formatElapsedSec(this._timerState.elapsedSec).friendly
       this.setData({
         isPaused: true,
-        pauseStartTime: Date.now(),
-        totalPausedMs: (server.total_paused_sec || 0) * 1000,
-        freeFriendlyText: formatElapsedSec(this.data.elapsedSec).friendly,
         actionLoading: false,
       })
       wx.setStorageSync('pomodoro_free_pause', {
         totalPausedMs: (server.total_paused_sec || 0) * 1000,
         pauseStartTime: Date.now(),
-        sessionId: this.data.sessionId,
-        elapsedSec: this.data.elapsedSec,
+        sessionId: this._timerState.sessionId,
+        elapsedSec: this._timerState.elapsedSec,
       })
     } catch (e) {
       this.setData({ actionLoading: false })
@@ -640,11 +644,11 @@ Page({
   },
 
   async _resumeFreeTimer() {
-    if (!this.data.sessionId || this.data.actionLoading) return
+    if (!this._timerState.sessionId || this.data.actionLoading) return
     this.setData({ actionLoading: true })
     this._clearFreeTimerInterval()
     try {
-      const server = await api.post(`/pomodoro/${this.data.sessionId}/resume`, {})
+      const server = await api.post(`/pomodoro/${this._timerState.sessionId}/resume`, {})
       const startTime = parseServerTime(server.start_time)
       let serverTotalPausedSec = server.total_paused_sec || 0
       const now = Date.now()
@@ -655,13 +659,13 @@ Page({
 
       const elapsed = Math.max(0, Math.floor((now - startTime) / 1000) - serverTotalPausedSec)
       const fmt = formatElapsedSec(elapsed)
+      this._timerState.sessionStartTime = startTime
+      this._timerState.totalPausedMs = effectiveTotalPausedMs
+      this._timerState.pauseStartTime = null
+      this._timerState.elapsedSec = elapsed
       this.setData({
         isPaused: false,
         ringCanvasVisible: true,
-        sessionStartTime: startTime,
-        totalPausedMs: effectiveTotalPausedMs,
-        pauseStartTime: null,
-        elapsedSec: elapsed,
         freeDisplayTime: fmt.display,
         actionLoading: false,
       })
@@ -669,7 +673,7 @@ Page({
       this._startFreeTimerInterval()
     } catch (e) {
       this.setData({ actionLoading: false })
-      await this._reconcileAfterResumeError(e, this.data.sessionId)
+      await this._reconcileAfterResumeError(e, this._timerState.sessionId)
     }
   },
 
@@ -699,12 +703,12 @@ Page({
         const effectiveTotalPausedSec = Math.floor(effectiveTotalPausedMs / 1000)
         const elapsed = Math.max(0, Math.floor((now - startTime) / 1000) - effectiveTotalPausedSec)
         const fmt = formatElapsedSec(elapsed)
+        this._timerState.sessionStartTime = startTime
+        this._timerState.totalPausedMs = effectiveTotalPausedMs
+        this._timerState.pauseStartTime = null
+        this._timerState.elapsedSec = elapsed
         this.setData({
           isPaused: false,
-          sessionStartTime: startTime,
-          totalPausedMs: effectiveTotalPausedMs,
-          pauseStartTime: null,
-          elapsedSec: elapsed,
           freeDisplayTime: fmt.display,
           ringCanvasVisible: true,
         })
@@ -719,15 +723,16 @@ Page({
 
         const elapsed = Math.floor((now - startTime - effectiveTotalPausedMs) / 1000)
         const remainingSec = Math.max(0, totalSec - elapsed)
+        this._timerState.sessionStartTime = startTime
+        this._timerState.totalPausedMs = effectiveTotalPausedMs
+        this._timerState.pauseStartTime = null
+        this._timerState.remainingSec = remainingSec
+        this._timerState.progress = totalSec > 0 ? remainingSec / totalSec : 0
         this.setData({
           isPaused: false,
-          sessionStartTime: startTime,
-          totalPausedMs: effectiveTotalPausedMs,
-          pauseStartTime: null,
           remainingSec,
           displayMin: String(Math.floor(remainingSec / 60)).padStart(2, '0'),
           displaySec: String(remainingSec % 60).padStart(2, '0'),
-          progress: totalSec > 0 ? remainingSec / totalSec : 0,
           ringCanvasVisible: true,
         })
         this._startTimer(totalSec)
@@ -740,35 +745,38 @@ Page({
   },
 
   async _showEndFreeConfirm() {
-    if (!this.data.sessionId || this.data.actionLoading) return
+    if (!this._timerState.sessionId || this.data.actionLoading) return
 
     const now = Date.now()
     const wasPaused = !!this.data.isPaused
-    const elapsed = Math.max(0, this.data.elapsedSec || 0)
+    const elapsed = Math.max(0, this._timerState.elapsedSec || 0)
     const fmt = formatElapsedSec(elapsed)
 
     this._clearFreeTimerInterval()
 
     const snapshot = {
       mode: 'free-complete',
-      sessionId: this.data.sessionId,
+      sessionId: this._timerState.sessionId,
       openedAt: now,
       wasPaused,
       pausedByConfirm: !wasPaused,
       elapsedSec: elapsed,
-      totalPausedMs: this.data.totalPausedMs || 0,
-      pauseStartTime: this.data.pauseStartTime || null,
-      sessionStartTime: this.data.sessionStartTime,
+      totalPausedMs: this._timerState.totalPausedMs || 0,
+      pauseStartTime: this._timerState.pauseStartTime || null,
+      sessionStartTime: this._timerState.sessionStartTime,
       backendPauseDone: false,
     }
 
     this._confirmTimerSnapshot = snapshot
     wx.setStorageSync('pomodoro_confirm_pause', snapshot)
 
+    this._timerState.elapsedSec = elapsed
+    this._timerState.pauseStartTime = now
+    this._timerState.freeFriendlyText = fmt.friendly
+    this._timerState.endConfirmMode = 'free-complete'
     this.setData({
       showEndConfirm: true,
       ringCanvasVisible: true,
-      endConfirmMode: 'free-complete',
       endConfirmTheme: 'free',
       endConfirmTitle: '结束自由计时？',
       endConfirmText: elapsed >= 1
@@ -776,26 +784,22 @@ Page({
         : '当前计时时长较短，确认后仍会结束本次计时。',
       endConfirmOkText: '确认结束',
       endConfirmCancelText: '继续计时',
-      elapsedSec: elapsed,
       freeDisplayTime: fmt.display,
-      freeFriendlyText: fmt.friendly,
       isPaused: true,
-      pauseStartTime: now,
     })
 
     // Backend pause async — don't block UI
     if (!wasPaused) {
-      api.post('/pomodoro/' + this.data.sessionId + '/pause', {})
+      api.post('/pomodoro/' + this._timerState.sessionId + '/pause', {})
         .then(server => {
           const serverPausedMs = (server.total_paused_sec || 0) * 1000
           snapshot.totalPausedMs = Math.max(snapshot.totalPausedMs || 0, serverPausedMs)
           snapshot.backendPauseDone = true
           this._confirmTimerSnapshot = snapshot
           wx.setStorageSync('pomodoro_confirm_pause', snapshot)
-          this.setData({
-            totalPausedMs: snapshot.totalPausedMs,
-            pauseStartTime: Date.now(),
-          })
+          this._timerState.totalPausedMs = snapshot.totalPausedMs
+          this._timerState.pauseStartTime = Date.now()
+          this.setData({})
         })
         .catch(e => console.warn('free confirm pause backend sync failed', e))
     }
@@ -813,7 +817,7 @@ Page({
   },
 
   async _pauseCountdownForEndConfirm() {
-    if (!this.data.sessionId || this.data.actionLoading) return false
+    if (!this._timerState.sessionId || this.data.actionLoading) return false
 
     const now = Date.now()
     const totalSec = this._getCurrentTotalSec()
@@ -821,7 +825,7 @@ Page({
 
     const remainingMs = this._countdownEndAt
       ? Math.max(0, this._countdownEndAt - now)
-      : Math.max(0, (this.data.remainingSec || 0) * 1000)
+      : Math.max(0, (this._timerState.remainingSec || 0) * 1000)
 
     const remainingSec = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 1000)
     const progress = totalMs > 0 ? remainingMs / totalMs : 0
@@ -831,7 +835,7 @@ Page({
 
     const snapshot = {
       mode: 'countdown-interrupt',
-      sessionId: this.data.sessionId,
+      sessionId: this._timerState.sessionId,
       openedAt: now,
       wasPaused: wasPaused,
       pausedByConfirm: !wasPaused,
@@ -841,10 +845,10 @@ Page({
       remainingMs: remainingMs,
       remainingSec: remainingSec,
       progress: progress,
-      sessionStartTime: this.data.sessionStartTime,
+      sessionStartTime: this._timerState.sessionStartTime,
       countdownEndAt: this._countdownEndAt,
-      totalPausedMs: this.data.totalPausedMs || 0,
-      pauseStartTime: this.data.pauseStartTime || null,
+      totalPausedMs: this._timerState.totalPausedMs || 0,
+      pauseStartTime: this._timerState.pauseStartTime || null,
       backendPauseDone: false,
     }
 
@@ -855,13 +859,13 @@ Page({
 
     const fmt = this._formatCountdownDisplay(remainingSec)
 
+    this._timerState.pauseStartTime = now
+    this._timerState.remainingSec = remainingSec
+    this._timerState.progress = progress
     this.setData({
       isPaused: true,
-      pauseStartTime: now,
-      remainingSec: remainingSec,
       displayMin: fmt.min,
       displaySec: fmt.sec,
-      progress: progress,
     })
 
     this.drawRing(totalSec, this.data.phase === 'break')
@@ -869,13 +873,15 @@ Page({
     // Sync backend pause (async, don't block UI)
     if (!wasPaused) {
       try {
-        const server = await api.post('/pomodoro/' + this.data.sessionId + '/pause', {})
+        const server = await api.post('/pomodoro/' + this._timerState.sessionId + '/pause', {})
         const serverPausedMs = (server.total_paused_sec || 0) * 1000
         snapshot.totalPausedMs = serverPausedMs
         snapshot.backendPauseDone = true
         this._confirmTimerSnapshot = snapshot
         wx.setStorageSync('pomodoro_confirm_pause', snapshot)
-        this.setData({ totalPausedMs: serverPausedMs, pauseStartTime: Date.now() })
+        this._timerState.totalPausedMs = serverPausedMs
+        this._timerState.pauseStartTime = Date.now()
+        this.setData({})
       } catch (e) {
         console.warn('confirm pause backend sync failed', e)
         // Keep frontend frozen; cancelEndConfirm handles recovery
@@ -898,7 +904,6 @@ Page({
     this.setData({
       showEndConfirm: true,
       ringCanvasVisible: true,
-      endConfirmMode: 'countdown-interrupt',
       endConfirmTheme: this.data.phase === 'break' ? 'break' : 'focus',
       endConfirmTitle: '结束本次专注？',
       endConfirmText: elapsedSec > 0
@@ -917,7 +922,7 @@ Page({
   async cancelEndConfirm() {
     if (this.data.actionLoading) return
 
-    const mode = this.data.endConfirmMode
+    const mode = this._timerState.endConfirmMode
     const snapshot = this._confirmTimerSnapshot || wx.getStorageSync('pomodoro_confirm_pause')
     const now = Date.now()
 
@@ -927,20 +932,20 @@ Page({
 
       if (snapshot.wasPaused) {
         // Was paused before confirm — keep paused after cancel
+        this._timerState.remainingSec = snapshot.remainingSec
+        this._timerState.progress = snapshot.progress
+        this._timerState.pauseStartTime = snapshot.pauseStartTime || Date.now()
+        this._timerState.totalPausedMs = snapshot.totalPausedMs || 0
+        this._timerState.endConfirmMode = ''
         this.setData({
           showEndConfirm: false,
           ringCanvasVisible: true,
-          endConfirmMode: '',
           endConfirmTheme: '',
           endConfirmTitle: '',
           endConfirmText: '',
-          remainingSec: snapshot.remainingSec,
           displayMin: fmt.min,
           displaySec: fmt.sec,
-          progress: snapshot.progress,
           isPaused: true,
-          pauseStartTime: snapshot.pauseStartTime || Date.now(),
-          totalPausedMs: snapshot.totalPausedMs || 0,
         })
 
         wx.removeStorageSync('pomodoro_confirm_pause')
@@ -967,20 +972,20 @@ Page({
       })
 
       // 3. Restore UI immediately from snapshot — no await
+      this._timerState.remainingSec = snapshot.remainingSec
+      this._timerState.progress = snapshot.progress
+      this._timerState.totalPausedMs = localTotalPausedMs
+      this._timerState.pauseStartTime = null
+      this._timerState.endConfirmMode = ''
       this.setData({
         showEndConfirm: false,
         ringCanvasVisible: true,
-        endConfirmMode: '',
         endConfirmTheme: '',
         endConfirmTitle: '',
         endConfirmText: '',
-        remainingSec: snapshot.remainingSec,
         displayMin: fmt.min,
         displaySec: fmt.sec,
-        progress: snapshot.progress,
-        totalPausedMs: localTotalPausedMs,
         isPaused: false,
-        pauseStartTime: null,
         actionLoading: false,
       })
 
@@ -1003,7 +1008,7 @@ Page({
       }).then(server => {
         const serverPausedMs = (server.total_paused_sec || 0) * 1000
         const finalPausedMs = Math.max(serverPausedMs, localTotalPausedMs)
-        this.setData({ totalPausedMs: finalPausedMs })
+        this._timerState.totalPausedMs = finalPausedMs
 
         wx.setStorageSync('pomodoro_pause_adjustment', {
           sessionId: snapshot.sessionId,
@@ -1022,10 +1027,10 @@ Page({
       const snapshot = this._confirmTimerSnapshot || wx.getStorageSync('pomodoro_confirm_pause')
 
       if (!snapshot || snapshot.mode !== 'free-complete') {
+        this._timerState.endConfirmMode = ''
         this.setData({
           showEndConfirm: false,
           ringCanvasVisible: true,
-          endConfirmMode: '',
           endConfirmTheme: '',
           endConfirmTitle: '',
           endConfirmText: '',
@@ -1038,19 +1043,19 @@ Page({
 
       // Was paused before confirm — keep paused after cancel
       if (snapshot.wasPaused) {
+        this._timerState.pauseStartTime = snapshot.pauseStartTime || Date.now()
+        this._timerState.totalPausedMs = snapshot.totalPausedMs || 0
+        this._timerState.elapsedSec = snapshot.elapsedSec || 0
+        this._timerState.freeFriendlyText = fmt.friendly
+        this._timerState.endConfirmMode = ''
         this.setData({
           showEndConfirm: false,
           ringCanvasVisible: true,
-          endConfirmMode: '',
           endConfirmTheme: '',
           endConfirmTitle: '',
           endConfirmText: '',
           isPaused: true,
-          pauseStartTime: snapshot.pauseStartTime || Date.now(),
-          totalPausedMs: snapshot.totalPausedMs || 0,
-          elapsedSec: snapshot.elapsedSec || 0,
           freeDisplayTime: fmt.display,
-          freeFriendlyText: fmt.friendly,
         })
 
         wx.removeStorageSync('pomodoro_confirm_pause')
@@ -1069,19 +1074,19 @@ Page({
         source: 'cancel_free_end_confirm',
       })
 
+      this._timerState.pauseStartTime = null
+      this._timerState.totalPausedMs = localTotalPausedMs
+      this._timerState.elapsedSec = snapshot.elapsedSec || 0
+      this._timerState.freeFriendlyText = ''
+      this._timerState.endConfirmMode = ''
       this.setData({
         showEndConfirm: false,
         ringCanvasVisible: true,
-        endConfirmMode: '',
         endConfirmTheme: '',
         endConfirmTitle: '',
         endConfirmText: '',
         isPaused: false,
-        pauseStartTime: null,
-        totalPausedMs: localTotalPausedMs,
-        elapsedSec: snapshot.elapsedSec || 0,
         freeDisplayTime: fmt.display,
-        freeFriendlyText: '',
       })
 
       wx.removeStorageSync('pomodoro_confirm_pause')
@@ -1096,7 +1101,7 @@ Page({
         const serverPausedMs = (server.total_paused_sec || 0) * 1000
         const finalPausedMs = Math.max(serverPausedMs, localTotalPausedMs)
 
-        this.setData({ totalPausedMs: finalPausedMs })
+        this._timerState.totalPausedMs = finalPausedMs
 
         wx.setStorageSync('pomodoro_pause_adjustment', {
           sessionId: snapshot.sessionId,
@@ -1111,9 +1116,9 @@ Page({
       return
     }
 
+    this._timerState.endConfirmMode = ''
     this.setData({
       showEndConfirm: false,
-      endConfirmMode: '',
       endConfirmTheme: '',
       endConfirmTitle: '',
       endConfirmText: '',
@@ -1122,7 +1127,7 @@ Page({
   },
 
   async confirmEndTimer() {
-    const mode = this.data.endConfirmMode
+    const mode = this._timerState.endConfirmMode
 
     if (mode === 'free-complete') {
       return this._confirmEndFreeTimer()
@@ -1136,13 +1141,13 @@ Page({
   async _confirmEndFreeTimer() {
     if (this.data.actionLoading) return
     this.setData({ showEndConfirm: false })
-    if (!this.data.sessionId) return
+    if (!this._timerState.sessionId) return
     this._clearFreeTimerInterval()
-    const elapsedSec = Math.max(1, this.data.elapsedSec || 0)
-    const totalPausedMs = this.data.totalPausedMs || 0
+    const elapsedSec = Math.max(1, this._timerState.elapsedSec || 0)
+    const totalPausedMs = this._timerState.totalPausedMs || 0
     const totalPausedSec = Math.floor(totalPausedMs / 1000)
     try {
-      await api.post(`/pomodoro/${this.data.sessionId}/complete`, {
+      await api.post(`/pomodoro/${this._timerState.sessionId}/complete`, {
         actual_duration_sec: elapsedSec,
         total_paused_sec: totalPausedSec,
       })
@@ -1161,19 +1166,20 @@ Page({
   },
 
   async _confirmInterruptCountdown() {
-    if (!this.data.sessionId || this.data.actionLoading) return
+    if (!this._timerState.sessionId || this.data.actionLoading) return
 
     const snapshot = this._confirmTimerSnapshot
-    let totalPausedMs = this.data.totalPausedMs || 0
+    let totalPausedMs = this._timerState.totalPausedMs || 0
 
     if (snapshot && snapshot.openedAt) {
       totalPausedMs = Math.max(0, snapshot.totalPausedMs + (Date.now() - snapshot.openedAt))
     }
 
-    this.setData({ actionLoading: true, totalPausedMs })
+    this._timerState.totalPausedMs = totalPausedMs
+    this.setData({ actionLoading: true })
 
     try {
-      await api.post(`/pomodoro/${this.data.sessionId}/interrupt`, {
+      await api.post(`/pomodoro/${this._timerState.sessionId}/interrupt`, {
         total_paused_ms: totalPausedMs,
       })
       wx.showToast({ title: '已结束本次专注', icon: 'none' })
@@ -1194,15 +1200,15 @@ Page({
   },
 
   async endSession() {
-    if (!this.data.sessionId) return
+    if (!this._timerState.sessionId) return
     this._clearTimer()
     try {
-      await api.post(`/pomodoro/${this.data.sessionId}/complete`, {
-        total_paused_ms: this.data.totalPausedMs || 0,
+      await api.post(`/pomodoro/${this._timerState.sessionId}/complete`, {
+        total_paused_ms: this._timerState.totalPausedMs || 0,
       })
     } catch (e) {
-      try { await api.post(`/pomodoro/${this.data.sessionId}/interrupt`, {
-        total_paused_ms: this.data.totalPausedMs || 0,
+      try { await api.post(`/pomodoro/${this._timerState.sessionId}/interrupt`, {
+        total_paused_ms: this._timerState.totalPausedMs || 0,
       }) } catch (_) {}
     }
     this._resetToIdle()
@@ -1210,7 +1216,7 @@ Page({
   },
 
   async interruptSession() {
-    if (!this.data.sessionId) return
+    if (!this._timerState.sessionId) return
 
     if (this.data.isFreeTimer) {
       this._showEndFreeConfirm()
@@ -1225,16 +1231,16 @@ Page({
   _beginCountdown(session) {
     const startTime = parseServerTime(session.start_time)
     const totalSec = this.data.selectedPreset === 'debug' ? 10 : this.data.workDuration * 60
+    this._timerState.sessionId = session.id
+    this._timerState.sessionStartTime = startTime
+    this._timerState.remainingSec = totalSec
+    this._timerState.progress = 1
+    this._timerState.totalPausedMs = 0
+    this._timerState.pauseStartTime = null
     this.setData({
       phase: PHASE.RUNNING,
       ringCanvasVisible: true,
-      sessionId: session.id,
-      sessionStartTime: startTime,
-      remainingSec: totalSec,
-      progress: 1,
       isPaused: false,
-      totalPausedMs: 0,
-      pauseStartTime: null,
     })
     this._countdownTotalSec = totalSec
     this._countdownEndAt = Date.now() + totalSec * 1000
@@ -1260,21 +1266,21 @@ Page({
   },
 
   async _pauseSession() {
-    if (!this.data.sessionId || this.data.actionLoading) return
+    if (!this._timerState.sessionId || this.data.actionLoading) return
     this.setData({ actionLoading: true })
     try {
-      const server = await api.post(`/pomodoro/${this.data.sessionId}/pause`, {})
+      const server = await api.post(`/pomodoro/${this._timerState.sessionId}/pause`, {})
       this._clearTimer()
+      this._timerState.pauseStartTime = Date.now()
+      this._timerState.totalPausedMs = (server.total_paused_sec || 0) * 1000
       this.setData({
         isPaused: true,
-        pauseStartTime: Date.now(),
-        totalPausedMs: (server.total_paused_sec || 0) * 1000,
         actionLoading: false,
       })
       wx.setStorageSync('pomodoro_pause', {
         totalPausedMs: (server.total_paused_sec || 0) * 1000,
         pauseStartTime: Date.now(),
-        sessionId: this.data.sessionId,
+        sessionId: this._timerState.sessionId,
       })
     } catch (e) {
       this.setData({ actionLoading: false })
@@ -1283,15 +1289,15 @@ Page({
   },
 
   async _resumeSession() {
-    if (typeof this.data.sessionStartTime !== 'number' || this.data.sessionStartTime <= 0) {
-      console.warn('resume aborted: invalid sessionStartTime', this.data.sessionStartTime)
+    if (typeof this._timerState.sessionStartTime !== 'number' || this._timerState.sessionStartTime <= 0) {
+      console.warn('resume aborted: invalid sessionStartTime', this._timerState.sessionStartTime)
       this._resetToIdle()
       return
     }
-    if (!this.data.sessionId || this.data.actionLoading) return
+    if (!this._timerState.sessionId || this.data.actionLoading) return
     this.setData({ actionLoading: true })
     try {
-      const server = await api.post(`/pomodoro/${this.data.sessionId}/resume`, {})
+      const server = await api.post(`/pomodoro/${this._timerState.sessionId}/resume`, {})
       const startTime = parseServerTime(server.start_time)
       let serverTotalPausedSec = server.total_paused_sec || 0
       const totalSec = this.data.selectedPreset === 'debug' ? 10 : (this.data.workDuration ?? 25) * 60
@@ -1303,22 +1309,22 @@ Page({
 
       const elapsed = Math.floor((Date.now() - startTime) / 1000) - serverTotalPausedSec
       const remainingSec = Math.max(0, totalSec - elapsed)
+      this._timerState.totalPausedMs = effectiveTotalPausedMs
+      this._timerState.pauseStartTime = null
+      this._timerState.remainingSec = remainingSec
+      this._timerState.progress = totalSec > 0 ? remainingSec / totalSec : 0
       this.setData({
         isPaused: false,
         ringCanvasVisible: true,
-        totalPausedMs: effectiveTotalPausedMs,
-        pauseStartTime: null,
-        remainingSec: remainingSec,
         displayMin: String(Math.floor(remainingSec / 60)).padStart(2, '0'),
         displaySec: String(remainingSec % 60).padStart(2, '0'),
-        progress: totalSec > 0 ? remainingSec / totalSec : 0,
         actionLoading: false,
       })
       wx.removeStorageSync('pomodoro_pause')
       this._startTimer(totalSec)
     } catch (e) {
       this.setData({ actionLoading: false })
-      await this._reconcileAfterResumeError(e, this.data.sessionId)
+      await this._reconcileAfterResumeError(e, this._timerState.sessionId)
     }
   },
 
@@ -1369,14 +1375,14 @@ Page({
     this._clearTimer()
     this._initCanvas(true)
 
-    // remainingMs has highest priority, then remainingSec, then this.data.remainingSec, then totalSec
+    // remainingMs has highest priority, then remainingSec, then this._timerState.remainingSec, then totalSec
     let remainMs
     if (Number.isFinite(options.remainingMs)) {
       remainMs = Math.max(0, options.remainingMs)
     } else {
       const remainSec = Number.isFinite(options.remainingSec)
         ? Math.max(0, options.remainingSec)
-        : Math.max(0, this.data.remainingSec || totalSec)
+        : Math.max(0, this._timerState.remainingSec || totalSec)
       remainMs = remainSec * 1000
     }
 
@@ -1389,10 +1395,11 @@ Page({
     this._countdownTotalSec = totalSec
     this._countdownEndAt = Date.now() + remainMs
 
-    const update = { remainingSec: displayRemainingSec, displayMin: fmt.min, displaySec: fmt.sec, progress, ringCanvasVisible: true }
+    this._timerState.remainingSec = displayRemainingSec
+    this._timerState.progress = progress
+    const update = { displayMin: fmt.min, displaySec: fmt.sec, ringCanvasVisible: true }
     if (options.forceRunning) {
       update.isPaused = false
-      update.pauseStartTime = null
     }
     this.setData(update)
 
@@ -1408,14 +1415,14 @@ Page({
       const fmt = this._formatCountdownDisplay(displayRemainingSec)
 
       if (
-        displayRemainingSec !== this.data.remainingSec ||
-        Math.abs(progress - this.data.progress) > 0.002
+        displayRemainingSec !== this._timerState.remainingSec ||
+        Math.abs(progress - this._timerState.progress) > 0.002
       ) {
+        this._timerState.remainingSec = displayRemainingSec
+        this._timerState.progress = progress
         this.setData({
-          remainingSec: displayRemainingSec,
           displayMin: fmt.min,
           displaySec: fmt.sec,
-          progress,
         })
       }
 
@@ -1446,14 +1453,14 @@ Page({
   /* ==================== Work Complete ==================== */
 
   async _onWorkComplete() {
-    if (!this.data.sessionId) {
+    if (!this._timerState.sessionId) {
       this._resetToIdle()
       return
     }
     wx.vibrateLong()
     try {
-      await api.post(`/pomodoro/${this.data.sessionId}/complete`, {
-        total_paused_ms: this.data.totalPausedMs || 0,
+      await api.post(`/pomodoro/${this._timerState.sessionId}/complete`, {
+        total_paused_ms: this._timerState.totalPausedMs || 0,
       })
       wx.removeStorageSync('pomodoro_pause_adjustment')
     } catch (e) {
@@ -1463,7 +1470,7 @@ Page({
 
     const motto = MOTTOES[Math.floor(Math.random() * MOTTOES.length)]
     const type = this._nextCelebrationType()
-    wx.setStorageSync('pomodoro_completion', { motto, type: type, sessionId: this.data.sessionId })
+    wx.setStorageSync('pomodoro_completion', { motto, type: type, sessionId: this._timerState.sessionId })
     if (this._pageVisible) {
       this.setData({ showCelebration: true, celebrationMotto: motto, celebrationType: type })
     }
@@ -1486,12 +1493,12 @@ Page({
     const breakStartTime = Date.now()
     const totalMs = Math.max(1, totalSec * 1000)
     wx.setStorageSync('pomodoro_break', { startTime: breakStartTime, totalSec })
+    this._timerState.breakStartTime = breakStartTime
+    this._timerState.remainingSec = totalSec
+    this._timerState.progress = 1
     this.setData({
       phase: PHASE.BREAK,
       ringCanvasVisible: true,
-      remainingSec: totalSec,
-      breakStartTime,
-      progress: 1,
       displayMin: String(Math.floor(totalSec / 60)).padStart(2, '0'),
       displaySec: String(totalSec % 60).padStart(2, '0'),
     })
@@ -1508,14 +1515,14 @@ Page({
       const fmt = this._formatCountdownDisplay(displayRemainingSec)
 
       if (
-        displayRemainingSec !== this.data.remainingSec ||
-        Math.abs(progress - this.data.progress) > 0.002
+        displayRemainingSec !== this._timerState.remainingSec ||
+        Math.abs(progress - this._timerState.progress) > 0.002
       ) {
+        this._timerState.remainingSec = displayRemainingSec
+        this._timerState.progress = progress
         this.setData({
-          remainingSec: displayRemainingSec,
           displayMin: fmt.min,
           displaySec: fmt.sec,
-          progress,
         })
       }
       this.drawRing(totalSec, true)
@@ -1542,26 +1549,27 @@ Page({
   /* ==================== Session Restore ==================== */
 
   _canLightSyncActive(active) {
-    if (!this.data.sessionId) return false
-    if (active.id !== this.data.sessionId) return false
+    if (!this._timerState.sessionId) return false
+    if (active.id !== this._timerState.sessionId) return false
     if (this.data.phase !== PHASE.RUNNING) return false
     if ((active.status === 'paused') !== this.data.isPaused) return false
     if ((active.preset === 'free') !== this.data.isFreeTimer) return false
-    if (typeof this.data.sessionStartTime !== 'number' || this.data.sessionStartTime <= 0) return false
+    if (typeof this._timerState.sessionStartTime !== 'number' || this._timerState.sessionStartTime <= 0) return false
     return true
   },
 
   _syncActiveSessionLight(active) {
     const now = Date.now()
-    let totalPausedMs = this.data.totalPausedMs || 0
-    totalPausedMs = this._mergeLocalPauseAdjustment(this.data.sessionId, totalPausedMs)
+    let totalPausedMs = this._timerState.totalPausedMs || 0
+    totalPausedMs = this._mergeLocalPauseAdjustment(this._timerState.sessionId, totalPausedMs)
 
     if (this.data.isFreeTimer) {
       if (!this.data.isPaused) {
-        const elapsed = Math.max(0, Math.floor((now - this.data.sessionStartTime) / 1000) - Math.floor(totalPausedMs / 1000))
-        if (elapsed !== this.data.elapsedSec) {
+        const elapsed = Math.max(0, Math.floor((now - this._timerState.sessionStartTime) / 1000) - Math.floor(totalPausedMs / 1000))
+        if (elapsed !== this._timerState.elapsedSec) {
           const fmt = formatElapsedSec(elapsed)
-          this.setData({ elapsedSec: elapsed, freeDisplayTime: fmt.display })
+          this._timerState.elapsedSec = elapsed
+          this.setData({ freeDisplayTime: fmt.display })
         }
       }
       // Idempotent interval start — won't create duplicate
@@ -1569,7 +1577,7 @@ Page({
     } else {
       const totalSec = this.data.selectedPreset === 'debug' ? 10 : (this.data.workDuration ?? 25) * 60
       if (this.data.isPaused) return
-      const elapsed = Math.floor((now - this.data.sessionStartTime - totalPausedMs) / 1000)
+      const elapsed = Math.floor((now - this._timerState.sessionStartTime - totalPausedMs) / 1000)
       const remaining = Math.max(0, totalSec - elapsed)
       if (remaining <= 0) {
         // Timer expired while away — trigger completion
@@ -1577,12 +1585,12 @@ Page({
         this._onWorkComplete()
         return
       }
+      this._timerState.remainingSec = remaining
+      this._timerState.progress = totalSec > 0 ? remaining / totalSec : 0
       this.setData({
-        remainingSec: remaining,
         ringCanvasVisible: true,
         displayMin: String(Math.floor(remaining / 60)).padStart(2, '0'),
         displaySec: String(remaining % 60).padStart(2, '0'),
-        progress: totalSec > 0 ? remaining / totalSec : 0,
       })
       this.drawRing(totalSec, false)
     }
@@ -1699,6 +1707,8 @@ Page({
           actual_duration_sec: session.work_duration * 60,
         }).catch(() => {})
       })
+      this._timerState.totalPausedMs = 0
+      this._timerState.pauseStartTime = null
       this.setData({
         selectedSubjectId: subjectId,
         selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
@@ -1706,8 +1716,6 @@ Page({
         workDuration: session.work_duration,
         breakDuration: session.break_duration,
         isPaused: false,
-        totalPausedMs: 0,
-        pauseStartTime: null,
       })
       this._updateComputedFields()
       this.loadTodayStats()
@@ -1719,23 +1727,23 @@ Page({
       return
     }
 
+    this._timerState.sessionId = session.id
+    this._timerState.sessionStartTime = startTime
+    this._timerState.remainingSec = remaining
+    this._timerState.totalPausedMs = totalPausedMs
+    this._timerState.pauseStartTime = isPaused ? Date.now() : null
+    this._timerState.progress = totalSec > 0 ? remaining / totalSec : 0
     this.setData({
       phase: PHASE.RUNNING,
       ringCanvasVisible: true,
-      sessionId: session.id,
-      sessionStartTime: startTime,
       selectedSubjectId: subjectId,
       selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
       selectedPreset: session.preset || 'standard',
       workDuration: session.work_duration,
       breakDuration: session.break_duration,
-      remainingSec: remaining,
       displayMin: String(Math.floor(remaining / 60)).padStart(2, '0'),
       displaySec: String(remaining % 60).padStart(2, '0'),
       isPaused: isPaused,
-      totalPausedMs: totalPausedMs,
-      pauseStartTime: isPaused ? Date.now() : null,
-      progress: totalSec > 0 ? remaining / totalSec : 0,
     })
 
     if (isPaused) {
@@ -1803,25 +1811,25 @@ Page({
     const subjectName = session.subject_name || '未分类'
 
     this._clearTimer()
+    this._timerState.sessionId = session.id
+    this._timerState.sessionStartTime = startTime
+    this._timerState.totalPausedMs = totalPausedMs
+    this._timerState.pauseStartTime = isPaused ? Date.now() : null
+    this._timerState.elapsedSec = elapsed
+    this._timerState.freeFriendlyText = ''
+    this._timerState.progress = 1
     this.setData({
       phase: PHASE.RUNNING,
       ringCanvasVisible: true,
       isFreeTimer: true,
-      sessionId: session.id,
-      sessionStartTime: startTime,
       selectedSubjectId: subjectId,
       selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
       selectedPreset: 'free',
       workDuration: 0,
       breakDuration: 0,
       isPaused: isPaused,
-      totalPausedMs: totalPausedMs,
-      pauseStartTime: isPaused ? Date.now() : null,
-      elapsedSec: elapsed,
       freeDisplayTime: fmt.display,
-      freeFriendlyText: '',
       showEndConfirm: false,
-      progress: 1,
     })
     this._updateComputedFields()
 
@@ -1843,12 +1851,12 @@ Page({
         this._resetToIdle()
         return
       }
+      this._timerState.remainingSec = remaining
+      this._timerState.progress = remaining / saved.totalSec
       this.setData({
         phase: PHASE.BREAK,
-        remainingSec: remaining,
         displayMin: String(Math.floor(remaining / 60)).padStart(2, '0'),
         displaySec: String(remaining % 60).padStart(2, '0'),
-        progress: remaining / saved.totalSec,
       })
       this._startBreak(remaining > 0 ? remaining : saved.totalSec)
     } catch (_) {}
@@ -1894,7 +1902,7 @@ Page({
     const center = size / 2
     const radius = center - 18
     const lineWidth = 12
-    const progress = this.data.progress
+    const progress = this._timerState.progress
 
     ctx.clearRect(0, 0, size, size)
 
@@ -1951,6 +1959,7 @@ Page({
     this._canvasReady = false
     this._ctx = null
     this._pendingDraw = null
+    this._timerState = this._createTimerState()
     wx.removeStorageSync('pomodoro_break')
     wx.removeStorageSync('pomodoro_completion')
     wx.removeStorageSync('pomodoro_pause')
@@ -1960,22 +1969,13 @@ Page({
     wx.removeStorageSync('pomodoro_pause_adjustment')
     this.setData({
       phase: PHASE.IDLE,
-      sessionId: null,
-      sessionStartTime: null,
-      breakStartTime: null,
-      remainingSec: 0,
       displayMin: '00',
       displaySec: '00',
-      progress: 1,
       isPaused: false,
-      totalPausedMs: 0,
-      pauseStartTime: null,
       isFreeTimer: false,
-      elapsedSec: 0,
       freeDisplayTime: '00:00:00',
-      freeFriendlyText: '',
       showEndConfirm: false,
-      endConfirmMode: '',
+      endConfirmTheme: '',
       endConfirmTitle: '',
       endConfirmText: '',
     })
@@ -1988,9 +1988,9 @@ Page({
     try {
       const stats = await api.get('/pomodoro/stats')
       const m = Math.floor((stats.today_duration_sec || 0) / 60)
+      this._timerState.todayDurationSec = stats.today_duration_sec || 0
       this.setData({
         todaySessions: stats.today_sessions || 0,
-        todayDurationSec: stats.today_duration_sec || 0,
         todayDurationText: m >= 60 ? `${Math.floor(m / 60)}时${m % 60}分` : `${m}分钟`,
       })
     } catch (_) {}

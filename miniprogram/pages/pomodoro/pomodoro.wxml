@@ -18,7 +18,7 @@
           <text class="stat-icon">⏱</text>
           <text class="stat-num">{{todayDurationText}}</text>
         </view>
-        <view class="font-size-btn" catchtap="cycleFontSize">
+        <view class="font-size-btn" hover-class="font-size-btn-pressed" hover-start-time="20" hover-stay-time="80" catchtap="cycleFontSize">
           <text class="font-size-icon {{fontSizeLevel === 'large' ? 'active' : ''}}">Aa</text>
         </view>
       </view>
@@ -47,6 +47,7 @@
               <view
                 class="subj-card {{selectedSubjectId === item.id ? 'active' : ''}}"
                 wx:for="{{subjects}}" wx:key="id"
+                hover-class="subj-card-pressed" hover-start-time="20" hover-stay-time="80"
                 catchtap="selectSubject"
                 data-id="{{item.id}}"
               >
@@ -63,6 +64,7 @@
               <view
                 class="mode-dot {{selectedPreset === item.key ? 'active' : ''}}"
                 wx:for="{{presets}}" wx:key="key"
+                hover-class="mode-dot-pressed" hover-start-time="20" hover-stay-time="80"
                 catchtap="selectPreset"
                 data-key="{{item.key}}"
               >
@@ -167,16 +169,16 @@
 
           <!-- Controls: running -->
           <view class="controls-row" wx:if="{{phase === 'running'}}">
-            <view class="ctrl-btn ctrl-secondary" catchtap="interruptSession">
+            <view class="ctrl-btn ctrl-secondary" hover-class="ctrl-secondary-pressed" hover-start-time="20" hover-stay-time="80" catchtap="interruptSession">
               <image class="ctrl-icon ctrl-icon--stop" src="/assets/images/terminate.png" mode="aspectFit"></image>
             </view>
-            <view class="ctrl-btn ctrl-primary" catchtap="togglePause">
+            <view class="ctrl-btn ctrl-primary" hover-class="ctrl-primary-pressed" hover-start-time="20" hover-stay-time="80" catchtap="togglePause">
               <image class="ctrl-icon ctrl-icon--pause" src="{{isPaused ? '/assets/images/continue.png' : '/assets/images/pulse.png'}}" mode="aspectFit"></image>
             </view>
           </view>
           <!-- Controls: break -->
           <view class="controls-row" wx:if="{{phase === 'break'}}">
-            <view class="ctrl-btn ctrl-primary" catchtap="skipBreak">
+            <view class="ctrl-btn ctrl-primary" hover-class="ctrl-primary-pressed" hover-start-time="20" hover-stay-time="80" catchtap="skipBreak">
               <image class="ctrl-icon ctrl-icon--skip" src="/assets/images/skip.png" mode="aspectFit"></image>
             </view>
           </view>
@@ -186,7 +188,7 @@
 
     <!-- ===== BOTTOM BAR ===== -->
     <view class="bottom-bar">
-      <view class="stats-link" catchtap="goStats">
+      <view class="stats-link" hover-class="stats-link-pressed" hover-start-time="20" hover-stay-time="80" catchtap="goStats">
         <text>学习统计</text>
         <view class="stats-arrow line-icon icon-chevron-right" style="color:#637394;"></view>
       </view>

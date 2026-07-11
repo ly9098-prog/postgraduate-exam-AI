@@ -1,817 +1,861 @@
-# 再次审计结论
+你是一名资深微信小程序前端性能优化和样式架构工程师。请继续在当前项目上完成第四阶段修复。
 
-**当前版本比上一版明显改善，但仍不建议直接提交正式上线。**
+前三阶段已经完成：
 
-本次静态审计结果：
+- 高频 `setData` 优化；
+- 页面运行态从 `data` 迁移至实例变量；
+- Wrong Detail AI 请求防串；
+- 大部分 `:active` 替换为 `hover-class`；
+- 点击热区、惯性滚动、颜色对比度修复；
+- 定时器与异步请求生命周期检查。
 
-- JS 文件语法检查全部通过；
-- JSON 文件全部可正常解析；
-- 页面、分包页面和组件引用未发现缺失；
-- 正式 API 已使用 HTTPS；
-- 上次提出的多项问题已修复；
-- 仍有 **6 项上线前高优先级问题**，以及若干中优先级问题。
+本阶段只处理：
 
-综合判定仍为：**有条件不通过**。
+1. `.year-day:active .year-day-tip`；
+2. 16 个 orphan pressed 样式；
+3. 未使用 WXSS 的安全清理；
+4. 全局样式和页面样式的职责调整；
+5. 样式引用完整性检查；
+6. 包体积和主包资源检查；
+7. 生成开发者工具最终审计所需的验证清单。
 
-------
+不得进行无关业务重构，不得修改接口、路由、答题逻辑、计时逻辑或 AI 请求协议。
 
-## 一、已经修复的问题
+不要只输出建议，请直接修改源码。
 
-### 1. 启动前调用 `wx.login()` 已删除
+# 一、修改前检查
 
-上一版 `app.js` 会在用户同意协议前预热微信登录。当前版本已经删除 `_preWarmSession()`，不再在启动阶段主动执行 `wx.login()`。
+开始前必须执行：
 
-**状态：已修复。**
+1. 查看当前 Git diff。
+2. 确认实际源码根目录为 `miniprogram/`。
+3. 确认 `project.config.json` 中的 `miniprogramRoot`。
+4. 记录当前所有未提交修改。
+5. 搜索以下内容：
 
-------
-
-### 2. 动画分包失败后可以重试
-
-`app.js:15-38` 中，分包加载失败时已经增加：
-
-```javascript
-_animLoadPromise = null
+```bash
+grep -RInE ":active|hover-class|-pressed|year-day-tip" \
+  miniprogram \
+  --include="*.wxss" \
+  --include="*.wxml"
 ```
 
-不会再永久缓存一次失败的 Promise。
+1. 搜索所有 WXSS：
 
-**状态：已修复，但加载动画组件本身仍有问题，见后文。**
-
-------
-
-### 3. KaTeX 基础集成已经补齐
-
-当前版本已完成：
-
-- `components/mp-html/index.wxss:1` 引入 `katex.css`；
-- `components/mp-html/node/node.wxml:85-101` 增加 `n.l` 条件；
-- 多处 `mp-html` 增加 `set-title="{{false}}"` 和 `copy-link="{{false}}"`。
-
-数学公式不能渲染的核心集成问题已经修复。
-
-**状态：基本修复，但字体 CDN 仍有风险。**
-
-------
-
-### 4. 导入任务初始字段已经补全
-
-`pages/import/import.js:240-251` 已初始化：
-
-```javascript
-stageList: [],
-failed_chunk_details: [],
-progressPercent: 0
+```bash
+find miniprogram -name "*.wxss" -type f
 ```
 
-WXML 直接访问 `.length` 的风险已经解除。
+1. 记录重点 WXSS 文件修改前字节数。
 
-**状态：已修复。**
+禁止执行：
 
-------
-
-### 5. Token 过期时间处理有所改进
-
-`utils/api.js:34-55` 新增时间标准化，支持：
-
-- Unix 秒；
-- Unix 毫秒；
-- 数字字符串；
-- ISO 日期字符串。
-
-主动刷新阈值也从 24 小时调整为 1 小时。
-
-**状态：已改善。**
-
-------
-
-### 6. AI 结果增加了提示信息
-
-Dashboard 和错题本新增了：
-
-> 内容由 AI 生成，仅供学习参考，可能存在错误
-
-相关页面也增加了“结果有误”入口。
-
-**状态：提示已补充，但反馈按钮目前并未真正提交反馈。**
-
-------
-
-# 二、上线前仍需处理的高优先级问题
-
-## 1. 隐私政策和账号注销仍未完成闭环
-
-### 涉及位置
-
-- `pages/agreement/privacy.wxml:12-28`
-- `pages/agreement/user.wxml:10-28`
-- `pages/agreement/ai.wxml:10-24`
-- `pages/home/home.js:326-332`
-
-当前隐私政策仍然只有 5 条概括性说明，例如：
-
-```text
-本小程序可能收集微信登录标识、学习记录、错题记录……
+```bash
+git reset --hard
+git checkout .
+git clean -fd
 ```
 
-仍缺少至少以下内容：
+不得覆盖前三阶段修改。
 
-- 运营者主体名称和联系方式；
-- 各类数据的具体收集目的、方式和范围；
-- 登录标识、学习记录、图片、文件、AI 输入分别如何处理；
-- 第三方 AI/OCR 服务商及其接收的数据类型；
-- 信息保存期限；
-- 用户查询、更正、删除、复制数据的具体路径；
-- 撤回同意后的处理方式；
-- 账号注销后的数据删除规则；
-- 未成年人信息处理说明；
-- 隐私政策生效日期、更新时间和版本号。
+# 二、P0：彻底移除 `.year-day:active`
 
-目前注销仍然只有：
+当前项目仍存在：
 
-```javascript
-content: '如需反馈问题或申请账号注销，请发送邮件至：support@xzshub.top'
+```css
+.year-day:active .year-day-tip
 ```
 
-前端没有真正的：
+虽然此前报告认为它属于 tooltip 显示，但它仍然使用 CSS `:active`，不能继续声称项目自有 WXSS 已经完全移除 `:active`。
 
-- 账号注销入口；
-- 注销二次确认；
-- 身份验证；
-- 注销请求 API；
-- 注销状态查询；
-- 注销完成通知。
+请检查：
 
-`utils/privacy.js` 增加了协议版本管理，这是好的，但它只能解决“协议是否重新同意”，无法代替完整隐私政策和账号注销流程。
+- `.year-day` 对应 WXML；
+- 是否存在 `bindtap`、`bindtouchstart`、`bindtouchend`；
+- tooltip 是短按显示、点击切换，还是仅桌面端 hover 行为；
+- tooltip 是否会被其他元素遮挡；
+- 滚动时是否会误触。
 
-### 建议
+## 2.1 推荐实现
 
-设置页增加“注销账号”，调用类似：
+使用显式状态控制 tooltip，不使用 CSS `:active`。
 
-```text
-POST /users/me/deletion-request
+WXML 示例：
+
+```xml
+<view
+  class="year-day"
+  data-index="{{index}}"
+  bindtap="onToggleYearDayTip"
+>
+  <view
+    wx:if="{{activeYearDayIndex === index}}"
+    class="year-day-tip"
+  >
+    {{item.tipText}}
+  </view>
+</view>
 ```
 
-或：
-
-```text
-DELETE /users/me
-```
-
-注销前明确说明将删除哪些数据、哪些数据依法需要保留，以及是否存在冷静期。
-
-**优先级：P0，上线阻断项。**
-
-------
-
-## 2. 首次登录凭证仍然使用非严格写入
-
-### 涉及位置
-
-- `utils/auth.js:27-36`
-- `utils/auth.js:110-115`
-- `utils/storage.js:16-21`
-
-首次微信登录仍然使用：
-
-```javascript
-storage.set(KEYS.TOKEN, data.access_token)
-storage.set(KEYS.TOKEN_EXPIRES_AT, ...)
-storage.set(KEYS.REFRESH_TOKEN, data.refresh_token)
-storage.set(KEYS.USER, user)
-```
-
-而 `storage.set()` 会吞掉写入异常：
-
-```javascript
-function set(key, value) {
-  try {
-    wx.setStorageSync(key, value)
-  } catch (e) {
-    console.error('Storage set error:', e)
-  }
-}
-```
-
-因此可能出现：
-
-1. 后端登录成功；
-2. Token 因本地存储异常没有写入；
-3. `wechatLogin()` 仍然返回成功；
-4. 页面进入首页；
-5. 随后的接口全部提示未登录。
-
-Refresh Token 流程已经使用 `setStrict()`，首次登录却没有使用，两处行为不一致。
-
-### 建议
-
-首次登录和 `loginDirect()` 都改成严格、可回滚写入：
-
-```javascript
-function saveAuthSession(data, user) {
-  try {
-    storage.setStrict(KEYS.TOKEN, data.access_token)
-    storage.setStrict(
-      KEYS.TOKEN_EXPIRES_AT,
-      api.normalizeExpiresAt(data.expires_at)
-    )
-    storage.setStrict(KEYS.REFRESH_TOKEN, data.refresh_token)
-    storage.setStrict(KEYS.USER, user)
-  } catch (error) {
-    storage.remove(KEYS.TOKEN)
-    storage.remove(KEYS.TOKEN_EXPIRES_AT)
-    storage.remove(KEYS.REFRESH_TOKEN)
-    storage.remove(KEYS.USER)
-    throw new Error('登录信息保存失败，请清理存储空间后重试')
-  }
-}
-```
-
-协议同意记录 `privacy.savePrivacyAcceptance()` 也建议使用严格写入。
-
-**优先级：P0，上线阻断项。**
-
-------
-
-## 3. Token 失效后的清理仍不完整，存在跨账号数据残留
-
-### 涉及位置
-
-- `utils/api.js:145-153`
-- `utils/auth.js:39-76`
-
-手动退出调用 `auth.logout()` 时，会清除部分业务缓存。
-
-但 Token 刷新失败或接口返回 401 时，调用的是：
-
-```javascript
-function _clearAuthAndRedirect() {
-  storage.remove(KEYS.TOKEN)
-  storage.remove(KEYS.TOKEN_EXPIRES_AT)
-  storage.remove(KEYS.REFRESH_TOKEN)
-  storage.remove(KEYS.USER)
-  wx.reLaunch({ url: '/pages/login/login' })
-}
-```
-
-它不会清除：
-
-- `lastPracticeResult`
-- `wrong_detail_nav`
-- 番茄钟运行状态；
-- 今日目标；
-- AI 诊断本地缓存；
-- 调试快照；
-- 其他业务缓存。
-
-因此可能出现：
-
-1. A 用户 Token 过期；
-2. 只清除身份信息；
-3. B 用户重新登录；
-4. B 用户读取到 A 用户的部分本地结果或页面导航数据。
-
-特别是 `utils/ai-diagnosis-cache.js` 使用了独立缓存键，但目前 `auth.logout()` 的固定业务键列表也没有明确清理所有 AI 缓存。
-
-### 建议
-
-抽取唯一的会话清理方法，例如：
-
-```javascript
-clearSession({
-  clearBusinessCache: true,
-  preservePrivacyAcceptance: true,
-  reason: 'token_expired'
-})
-```
-
-以下路径全部调用同一个方法：
-
-- 手动退出；
-- Refresh Token 失效；
-- 401；
-- 切换账号；
-- 账号注销。
-
-业务缓存最好使用用户 ID 命名空间，例如：
-
-```text
-user:123:lastPracticeResult
-user:123:aiDiagnosis
-```
-
-**优先级：P0，上线阻断项。**
-
-------
-
-## 4. 退出登录没有撤销服务端 Refresh Token
-
-### 涉及位置
-
-- `utils/auth.js:39-76`
-- `pages/home/home.js:335-343`
-
-当前退出只是删除本地 Token：
-
-```javascript
-auth.logout()
-wx.reLaunch({ url: '/pages/login/login' })
-```
-
-没有发现：
-
-```text
-POST /auth/logout
-```
-
-也没有设备会话撤销逻辑。
-
-如果 Refresh Token 曾被复制、泄漏或保存在其他环境，仅删除本地数据不能让服务端 Token 立即失效。
-
-### 建议流程
-
-```javascript
-async function logout() {
-  try {
-    await api.post('/auth/logout', {
-      refresh_token: storage.get(KEYS.REFRESH_TOKEN),
-    })
-  } finally {
-    clearSession(...)
-  }
-}
-```
-
-后端应做到：
-
-- 撤销当前 Refresh Token；
-- 支持 Refresh Token 轮换；
-- 支持退出当前设备；
-- 必要时支持退出全部设备。
-
-**优先级：P0，上线阻断项，需要后端配合。**
-
-------
-
-## 5. `loading-lottie` 仍未真正触发动画分包加载
-
-### 涉及位置
-
-- `components/loading-lottie/loading-lottie.js:3-6`
-- `components/loading-lottie/loading-lottie.js:116-131`
-- `app.js:15-38`
-
-`AnimatedView` 会调用：
-
-```javascript
-getApp().loadRewardAnimationPackage()
-```
-
-但 `loading-lottie` 仍然直接执行：
-
-```javascript
-require('../../subpackages/animation/lottie-loader.js')
-```
-
-它没有调用 `loadRewardAnimationPackage()`。
-
-在冷启动且动画分包尚未加载时：
-
-1. `require` 失败；
-2. 组件进入 fallback；
-3. 2 秒后再次 `require`；
-4. 但期间没有任何代码真正请求下载分包；
-5. 第二次大概率仍然失败。
-
-该组件使用范围较广，包括：
-
-- 错题详情；
-- 错题本；
-- 今日复习；
-- 练习提交；
-- 导入恢复；
-- 番茄钟统计。
-
-因此加载动画可能长期只显示降级样式，而不是 Lottie。
-
-### 建议
-
-`attached` 中显式加载分包：
-
-```javascript
-attached: function () {
-  this._initState()
-
-  var app = getApp()
-  if (app && app.loadRewardAnimationPackage) {
-    app.loadRewardAnimationPackage()
-      .then(() => {
-        this._detectSupport()
-        this._start()
-      })
-      .catch(() => this._fallback())
-  } else {
-    this._detectSupport()
-    this._start()
-  }
-}
-```
-
-同时避免 `_start()` 在分包请求完成前立即执行一次。
-
-**优先级：P1，核心功能体验问题。**
-
-------
-
-## 6. 发布配置仍然是开发检查关闭状态
-
-### 涉及位置
-
-- `project.config.json:20-21`
-- `project.config.json:29`
-- `project.config.json:53`
-- `project.private.config.json:2`
-
-当前配置：
-
-```json
-"urlCheck": false,
-"scopeDataCheck": false,
-"autoAudits": false
-```
-
-同时存在版本不一致：
-
-```json
-// project.config.json
-"libVersion": "3.3.4"
-
-// project.private.config.json
-"libVersion": "3.6.6"
-```
-
-这会导致不同开发人员、上传环境或 CI 使用不同基础库。
-
-同时关闭 URL 检查，会让本地开发时无法提前发现：
-
-- request 合法域名遗漏；
-- uploadFile 合法域名遗漏；
-- downloadFile 合法域名遗漏；
-- KaTeX 字体 CDN 域名遗漏；
-- 图片域名遗漏。
-
-### 建议发布前设置
-
-```json
-"urlCheck": true,
-"scopeDataCheck": true,
-"autoAudits": true
-```
-
-并统一基础库版本。
-
-正式上传前至少执行：
-
-- 微信开发者工具代码质量审计；
-- 真机预览；
-- 最低支持基础库测试；
-- Android 和 iOS 测试；
-- 关闭调试模式后的正式包测试。
-
-**优先级：P1，提审前必须处理。**
-
-------
-
-# 三、中优先级问题
-
-## 1. “结果有误”按钮实际没有提交任何反馈
-
-### 涉及位置
-
-- `pages/dashboard/dashboard.js:571-577`
-- `pages/wrong-book/wrong-book.js:519-525`
-
-当前逻辑只显示菜单和 Toast：
-
-```javascript
-success: function (res) {
-  wx.showToast({
-    title: '感谢反馈，我们将持续优化',
-    icon: 'none',
+JS 示例：
+
+```js
+onToggleYearDayTip(event) {
+  const index = Number(event.currentTarget.dataset.index)
+
+  this.setData({
+    activeYearDayIndex:
+      this.data.activeYearDayIndex === index ? -1 : index
   })
 }
 ```
 
-没有：
+如果只允许一次显示，可点击其他区域关闭。
 
-- API 请求；
-- 本地持久化；
-- 题目 ID；
-- AI 结果 ID；
-- 用户选择的错误类型；
-- 模型版本；
-- 反馈时间。
+如果 tooltip 只需在按压期间显示，也可以使用：
 
-这会让用户认为反馈已经提交，但后台实际上收不到任何内容。
-
-### 建议
-
-调用类似：
-
-```text
-POST /ai/feedback
+```xml
+hover-class="year-day-pressed"
 ```
 
-请求内容至少包括：
+以及：
 
-```javascript
-{
-  source: 'dashboard',
-  result_id: llmAnalysis.id,
-  feedback_type: selectedType,
-  generated_at: llmAnalysisGeneratedAt
+```css
+.year-day-pressed .year-day-tip {
+  opacity: 1;
+  visibility: visible;
 }
 ```
 
-接口成功后才能显示“反馈已提交”；失败时提示重新提交。
+但必须确认 `hover-class` 能满足当前产品交互。
 
-**优先级：P1。**
+## 2.2 状态要求
 
-------
+若新增 `activeYearDayIndex`：
 
-## 2. Refresh Token 可能被覆盖成空值
+1. 必须绑定 WXML；
+2. 默认值设为 `-1`；
+3. 切换统计年份时重置；
+4. 页面隐藏时根据产品逻辑决定是否关闭；
+5. 不得新增未绑定 `setData` 字段；
+6. 不得使用模块级全局变量共享 tooltip 状态。
 
-### 涉及位置
+## 2.3 验收
 
-```
-utils/api.js:126-133
-```
+完成后执行：
 
-当前刷新成功后直接执行：
-
-```javascript
-storage.setStrict(KEYS.REFRESH_TOKEN, res.data.refresh_token)
-```
-
-如果后端刷新接口只返回新的 Access Token，不返回新的 Refresh Token，当前代码会把原有 Refresh Token 覆盖为空值。
-
-下一次刷新时就会被强制退出。
-
-### 建议
-
-```javascript
-const nextRefreshToken =
-  res.data.refresh_token || refreshToken
-
-storage.setStrict(KEYS.REFRESH_TOKEN, nextRefreshToken)
+```bash
+grep -RIn ":active" \
+  miniprogram \
+  --include="*.wxss"
 ```
 
-同时明确后端接口契约：是否每次都轮换 Refresh Token。
+目标：项目自有 WXSS 中结果为 0。
 
-------
+如果第三方组件仍存在 `:active`，逐条列出，并说明是否位于实际打包路径。
 
-## 3. `ensureValidToken()` 返回失败后，请求仍可能继续发送
+# 三、P0：清理 16 个 orphan pressed 样式
 
-### 涉及位置
+此前报告发现 16 个没有直接 WXML 引用的 `*-pressed` 样式，分类为：
 
-```
-utils/api.js:218-221
-```
+- 共享组件样式；
+- 使用替代 hover-class 的样式；
+- 死样式；
+- picker 等边缘场景。
 
-当前代码：
+不要直接全部删除。请为每个样式建立引用证据表：
 
-```javascript
-if (!_skipProactiveRefresh(url)) {
-  await ensureValidToken()
-}
-```
+| 选择器 | 所在文件 | WXML 直接引用 | JS 动态引用 | externalClasses | 替代类 | 结论 |
+| ------ | -------- | ------------- | ----------- | --------------- | ------ | ---- |
+|        |          |               |             |                 |        |      |
 
-但 `ensureValidToken()` 在两次刷新失败后会返回 `false`，而不是一定抛出异常。
+## 3.1 判定规则
 
-`request()` 没有判断返回值，随后仍会构造 Header 并发送请求。此时本地 Token 可能已经被清理，导致一次多余的未认证请求。
+### 可以删除
 
-### 建议
+同时满足：
 
-```javascript
-if (!_skipProactiveRefresh(url)) {
-  const valid = await ensureValidToken()
-  if (!valid && storage.get(KEYS.TOKEN)) {
-    throw new ApiError('登录已过期，请重新登录', {
-      code: 'AUTH_REQUIRED',
-      statusCode: 401,
-    })
-  }
-}
-```
+1. WXML 没有 `hover-class` 引用；
+2. WXML 没有普通 class 引用；
+3. JS 没有动态拼接；
+4. 组件没有 `externalClasses`；
+5. 不属于全局复用类；
+6. 没有被其他 WXSS 组合选择器依赖；
+7. 不属于 picker、button、navigator 等原生组件状态兼容样式；
+8. 不属于第三方组件；
+9. 没有未来配置项或条件渲染引用。
 
-更简单的方式是让 `ensureValidToken()` 失败时统一抛出 `ApiError`，不要同时存在“返回 false”和“抛异常”两套失败语义。
+### 应保留
 
-------
+满足任意一项：
 
-## 4. KaTeX 已修复，但新增了外部字体 CDN 依赖
+- 属于组件公开样式契约；
+- 通过 `externalClasses` 传入；
+- 被 JS 动态拼接；
+- 被多个页面复用；
+- 是设计系统通用 pressed token；
+- 由 picker、表单或原生组件结构间接使用；
+- 当前无法确定安全性。
 
-### 涉及位置
+### 应修复引用
 
-```
-components/mp-html/latex/katex.css:1-118
-```
+如果样式本来应当使用，但 WXML 漏写 `hover-class`，则补齐 WXML，不要删除样式。
 
-当前所有 KaTeX 字体来自：
+## 3.2 删除后检查
 
-```text
-https://cdn.bootcdn.net/...
-```
+删除 orphan pressed 样式后再次搜索：
 
-这会带来：
-
-- CDN 故障时公式字体异常；
-- 首次公式页面需要加载大量字体；
-- 域名未配置时无法加载；
-- 第三方资源访问需要纳入隐私和第三方服务核对；
-- 不同网络环境下字体加载速度不稳定。
-
-### 建议
-
-优先将实际使用的 `.woff2` 字体：
-
-- 放到自有静态资源域名；
-- 或根据公式实际需求裁剪字体种类；
-- 配置长期缓存；
-- 真机验证弱网和 CDN 不可用时的降级效果。
-
-目前 CSS 定义了大量字体，每个字体又提供 woff2、woff、ttf 三种 URL，实际可能产生较多网络请求。
-
-------
-
-## 5. `package.json` 与 `package-lock.json` 不一致
-
-### 涉及位置
-
-`package.json`：
-
-```json
-{
-  "name": "MemoGrad-miniprogram",
-  "dependencies": {}
-}
+```bash
+grep -RInE "[A-Za-z0-9_-]+-pressed" \
+  miniprogram \
+  --include="*.wxss" \
+  --include="*.wxml"
 ```
 
-`package-lock.json`：
+确保：
 
-```json
-{
-  "name": "2240ai-miniprogram",
-  "dependencies": {
-    "lottie-miniprogram": "^1.0.12"
-  }
-}
+1. 每个 WXSS pressed 类都有 WXML 引用；
+2. 每个 WXML hover-class 都有对应 WXSS 定义；
+3. 没有拼写不一致；
+4. 没有只定义未使用；
+5. 没有只使用未定义。
+
+# 四、P1：安全清理未使用 WXSS
+
+旧审计曾提示约可节省 161 KB，但该数据来自特定页面访问轨迹，可能把条件样式和第三方样式误判为未使用。
+
+重点文件：
+
+- `miniprogram/app.wxss`
+- `miniprogram/pages/practice/practice.wxss`
+- `miniprogram/components/AnimatedView/AnimatedView.wxss`
+- `miniprogram/components/mp-html/index.wxss`
+- `miniprogram/components/quiz-runner/quiz-runner.wxss`
+- `miniprogram/pages/wrong-detail/wrong-detail.wxss`
+- `miniprogram/pages/wrong-book/wrong-book.wxss`
+- `miniprogram/pages/dashboard/dashboard.wxss`
+- `miniprogram/pages/pomodoro-stats/pomodoro-stats.wxss`
+
+## 4.1 一次只处理一个文件
+
+必须按以下顺序处理：
+
+1. `pomodoro-stats.wxss`
+2. `quiz-runner.wxss`
+3. `wrong-detail.wxss`
+4. `wrong-book.wxss`
+5. `dashboard.wxss`
+6. `practice.wxss`
+7. `AnimatedView.wxss`
+8. `app.wxss`
+9. `mp-html/index.wxss`
+
+每个文件处理完成并检查后，才能进入下一个。
+
+## 4.2 为每个选择器建立引用映射
+
+检查：
+
+- 当前页面 WXML；
+- 当前组件 WXML；
+- 所有 JS 动态 class；
+- `hover-class`；
+- `externalClasses`；
+- 父组件传入样式；
+- 插槽内容；
+- `wx:if` 条件分支；
+- 空状态；
+- 加载状态；
+- 请求失败状态；
+- 禁用状态；
+- 选中状态；
+- 正确、错误状态；
+- 动画进入和退出状态；
+- 模态框；
+- 管理员或开发状态；
+- 媒体查询；
+- 伪元素；
+- 组合选择器；
+- 全局样式继承。
+
+## 4.3 删除条件
+
+仅删除同时满足以下条件的选择器：
+
+1. 没有 WXML 静态引用；
+2. 没有 JS 动态引用；
+3. 没有 hover-class 引用；
+4. 没有 externalClasses 引用；
+5. 不属于插槽内容样式；
+6. 不属于条件渲染状态；
+7. 不属于动画状态；
+8. 不属于第三方组件基础样式；
+9. 不属于全局设计系统；
+10. 不被其他选择器依赖。
+
+## 4.4 动态类检查
+
+必须搜索类似代码：
+
+```js
+`class-a ${active ? 'active' : ''}`
 ```
 
-同时项目配置中：
+以及：
 
-```json
-"nodeModules": true,
-"packNpmManually": true
+```js
+[className, stateClass].join(' ')
 ```
 
-这会导致：
+还要检查 WXML：
 
-- 执行 `npm install` 后依赖结果不可预测；
-- 构建 npm 时可能与当前 vendor 文件不一致；
-- 项目名称和锁文件来源不一致；
-- 新环境不能可靠复现当前构建。
-
-### 建议
-
-选择一种方式：
-
-**方式一：使用 npm 包**
-
-在 `package.json` 中恢复：
-
-```json
-"dependencies": {
-  "lottie-miniprogram": "1.0.12"
-}
+```xml
+class="card {{selected ? 'selected' : ''}}"
 ```
 
-重新生成锁文件并执行“构建 npm”。
+不得因为不存在完整字符串 `.card.selected` 就判断未使用。
 
-**方式二：完全使用已复制的 vendor 文件**
+# 五、各重点文件处理要求
 
-删除无效依赖锁文件，并关闭不需要的 npm 构建配置。
+## 5.1 pomodoro-stats.wxss
 
-------
+优先清理：
 
-## 6. 文件校验仍然只检查扩展名和大小
+- 已确认没有点击事件的 pressed 样式；
+- 已废弃历史卡片样式；
+- 重复布局类；
+- 页面已不存在的旧空状态样式。
 
-### 涉及位置
+必须保留：
 
-- `utils/file-request.js:19-36`
-- `utils/file-request.js:48-74`
-- `pages/import/import.js:6-7`
+- 图表；
+- 历史记录；
+- 周统计；
+- 空状态；
+- 加载状态；
+- 惯性滚动相关样式；
+- 底部安全区。
 
-虽然定义了：
+## 5.2 quiz-runner.wxss
 
-```javascript
-SUPPORTED_MIME_TYPES
+必须保留：
+
+- 单选、多选、填空题状态；
+- 正确、错误、已提交状态；
+- 当前题和已答题圆点；
+- 80rpx 点击热区；
+- 上一题、下一题禁用状态；
+- hover-class pressed 状态；
+- 题目内容富文本样式；
+- 横向导航滚动。
+
+删除前检查组件 properties 和动态 class。
+
+## 5.3 wrong-detail.wxss
+
+必须保留：
+
+- 错误类型；
+- 正确答案；
+- 用户答案；
+- 知识点；
+- AI loading；
+- AI empty；
+- AI error；
+- AI cards；
+- 重新生成按钮；
+- 切题遮罩；
+- 上一题、下一题。
+
+不得删除当前测试中不容易触发的 AI 失败和降级样式。
+
+## 5.4 wrong-book.wxss
+
+必须保留：
+
+- 筛选项；
+- 错题列表；
+- 空状态；
+- 加载状态；
+- 科目标签；
+- 错误类型；
+- 分页或加载更多；
+- pressed 状态。
+
+## 5.5 dashboard.wxss
+
+必须保留：
+
+- 英雄统计区；
+- 趋势图；
+- 学科统计；
+- 掌握率；
+- 成长数据；
+- 自适应建议；
+- 加载状态；
+- 错误状态；
+- 年度记录 tooltip；
+- 弱项卡片；
+- 空状态。
+
+## 5.6 practice.wxss
+
+这是高风险文件。
+
+必须覆盖：
+
+- 单选；
+- 多选；
+- 填空；
+- 题目加载；
+- 安全模式；
+- 网络错误；
+- 提交状态；
+- 结果跳转；
+- 底部导航；
+- 键盘弹出；
+- 横屏或小屏适配；
+- pressed 状态。
+
+每次删除后必须确认 WXML 所有 class 仍有定义。
+
+## 5.7 AnimatedView.wxss
+
+检查组件：
+
+- properties；
+- observers；
+- JS 状态；
+- 动画方向；
+- 动画时间；
+- 延迟；
+- enter/leave；
+- fade/slide/scale；
+- disabled motion。
+
+如果无法完整证明某个动画类型未使用，则保留。
+
+## 5.8 app.wxss
+
+禁止大规模删除。
+
+优先识别：
+
+- 页面专属样式误放全局；
+- 重复工具类；
+- 已废弃调试类；
+- 从未引用的旧主题类。
+
+通用类应保留，包括：
+
+- 页面容器；
+- 安全区域；
+- 卡片；
+- 主按钮；
+- 次按钮；
+- 文本色；
+- 间距；
+- Flex 布局；
+- 加载和空状态；
+- pressed 通用类。
+
+如果某全局类只被单个页面使用，可迁移到页面 WXSS，但迁移前后视觉必须一致。
+
+## 5.9 mp-html/index.wxss
+
+默认不做核心样式裁剪。
+
+只能删除：
+
+- 项目自行添加且已经废弃的覆盖样式；
+- 能明确证明无任何引用的扩展样式。
+
+必须保留：
+
+- 文本；
+- 标题；
+- 图片；
+- 表格；
+- 列表；
+- 引用；
+- 链接；
+- 代码；
+- 数学公式；
+- 上下标；
+- 视频或媒体占位；
+- 长文本换行。
+
+无法完成富文本全场景测试时，不得大范围修改该文件。
+
+# 六、P1：重复与冲突样式检查
+
+检查以下问题：
+
+1. 同一选择器在同一文件重复定义；
+2. 同一组件状态存在多个 pressed 类；
+3. 页面 WXSS 与 `app.wxss` 定义相同类但值不同；
+4. 无效嵌套选择器；
+5. 永远无法匹配的选择器；
+6. 拼写错误；
+7. 不存在的父级 class；
+8. 已删除 WXML 元素对应的旧样式；
+9. 重复动画 keyframes；
+10. 无引用 CSS 变量；
+11. 重复安全区处理；
+12. 重复字体和颜色 token。
+
+对冲突样式：
+
+- 明确最终生效来源；
+- 保留语义最清晰的一处；
+- 不得通过增加 `!important` 掩盖问题。
+
+# 七、P1：资源与包体积检查
+
+检查 `miniprogram/` 内：
+
+- 未引用图片；
+- 重复图片；
+- 超大 PNG/JPG；
+- 临时截图；
+- 备份文件；
+- `.bak`；
+- `.old`；
+- `.copy`；
+- 编辑器临时文件；
+- 测试数据；
+- 日志文件；
+- 旧审计文件；
+- 开发专用文件。
+
+## 7.1 资源引用
+
+对每个候选图片搜索：
+
+- WXML；
+- WXSS；
+- JS；
+- JSON；
+- 动态路径；
+- 配置文件。
+
+只有确认没有动态路径引用后才允许删除。
+
+## 7.2 packOptions.ignore
+
+检查 `project.config.json` 是否适合忽略：
+
+- 文档；
+- 审计导出；
+- 临时文件；
+- 测试脚本；
+- 不参与运行的设计稿；
+- 本地开发说明。
+
+不得忽略运行所需文件。
+
+## 7.3 结果记录
+
+记录：
+
+- 修改前 WXSS 总字节数；
+- 修改后 WXSS 总字节数；
+- 删除资源数；
+- 删除资源总大小；
+- 是否修改 `packOptions.ignore`；
+- 是否能够获得真实主包体积。
+
+如果无法从 CLI 获得真实上传包体积，明确写“待微信开发者工具确认”，不得估算。
+
+# 八、静态完整性检查
+
+修改完成后执行以下检查。
+
+## 8.1 :active
+
+```bash
+grep -RIn ":active" \
+  miniprogram \
+  --include="*.wxss"
 ```
 
-但 `validateFile()` 完全没有使用它，只检查：
+项目自有代码目标为 0。
 
-- 文件扩展名；
-- 文件大小。
+## 8.2 hover-class 定义与引用
 
-另外两处格式列表仍不一致：
+输出：
 
-```javascript
-// import.js
-['xlsx', 'xls', 'pdf', 'txt', 'jpg', 'jpeg', 'png', 'webp']
+- WXML 使用的 hover-class 集合；
+- WXSS 定义的 pressed 类集合；
+- 使用但未定义；
+- 定义但未使用。
 
-// file-request.js
-包含 csv 和 gif
-```
+## 8.3 WXML class 与 WXSS
 
-需要统一配置源。
+检查所有页面和组件：
 
-前端无法可靠验证文件真实性，因此后端仍必须验证：
+- WXML class 是否有样式定义；
+- 动态 class 是否有定义；
+- 已删除样式是否仍被引用；
+- 同名类是否错误依赖全局。
 
-- 文件魔数；
-- MIME 类型；
-- Office/ZIP 解压后的体积；
-- PDF 页数；
-- 图片像素；
-- Excel 单元格数量；
-- 病毒或恶意文件；
-- 文件归属和管理员权限；
-- pipeline ID 是否属于当前用户。
+注意：不是所有 WXML class 都必须有样式，有些可能用于测试或数据定位。对此要注明，不得自动添加空样式。
 
-该项无法仅通过前端代码确认已经安全。
+## 8.4 WXSS 语法
 
-------
+检查：
 
-# 四、其他优化建议
+- 花括号闭合；
+- 注释闭合；
+- `@import` 路径；
+- `@keyframes`；
+- CSS 变量；
+- 无效属性；
+- 重复属性；
+- 错误选择器。
 
-## 1. 动画文件存在重复数据
+## 8.5 JS 和 WXML
 
-当前动画分包约 **0.91 MiB**，多个动画同时存在 `.js` 和 `.json` 两份，例如：
+确认样式清理未改坏：
 
-- `trophy.js` 与 `trophy.json`
-- `celebration.js` 与 `celebration.json`
-- `award.js` 与 `award.json`
-- `medal.js` 与 `medal.json`
-- `thumbs-up.js` 与 `thumbs-up.json`
+- WXML 标签闭合；
+- 动态表达式；
+- JS class 字符串；
+- hover-class 条件表达式；
+- 禁用状态。
 
-实际加载器只引用 `.js`，对应 `.json` 很可能是冗余文件。
+# 九、回归测试要求
 
-删除未使用副本可以显著缩小分包。
+至少逐页验证：
 
-当前静态体积约为：
+## Login
 
-| 范围     | 体积        |
-| -------- | ----------- |
-| 主包     | 约 1.28 MiB |
-| 动画分包 | 约 0.91 MiB |
-| 总计     | 约 2.19 MiB |
+- 微信登录按钮；
+- loading 禁用态；
+- 协议链接；
+- 开发入口。
 
-------
+## Home
 
-## 2. 缺少自动化测试脚本
+- 数字动画；
+- 目标配置；
+- 功能入口；
+- 卡片点击态。
 
-`package.json` 没有测试脚本，也没有可见的正式测试套件。
+## Practice
 
-建议至少覆盖：
+- 单选；
+- 多选；
+- 填空；
+- 上下题；
+- 题号导航；
+- 提交；
+- 错误状态；
+- 安全模式。
 
-- 首次登录存储失败；
-- 多请求并发刷新 Token；
-- 刷新接口不返回 Refresh Token；
-- Token 过期后切换账号；
-- KaTeX 分数、根号、矩阵和长公式；
-- 动画分包首次加载失败和再次加载；
-- AI 反馈接口失败；
-- 导入文件伪装扩展名；
-- 导入轮询切后台再恢复；
-- 番茄钟进程被终止后恢复。
+## Practice Result
 
-------
+- 主按钮；
+- 次按钮；
+- 成长徽章；
+- 返回首页。
 
-# 五、当前上线建议
+## Wrong Book
 
-## 必须先完成
+- 筛选；
+- 列表点击；
+- 空状态；
+- 加载更多。
 
-1. 完整隐私政策和小程序内账号注销；
-2. 首次登录认证信息改为严格、可回滚写入；
-3. 统一 401、Refresh 失败和主动退出的缓存清理；
-4. 增加服务端退出登录和 Refresh Token 撤销；
-5. 修复 `loading-lottie` 未触发分包加载；
-6. 打开发布检查并统一基础库版本。
+## Wrong Detail
 
-## 建议同时完成
+- 错误类型；
+- AI loading；
+- AI 成功；
+- AI 失败；
+- AI 重新生成；
+- 上下题；
+- 快速切题。
 
-1. 让 AI 反馈真正提交到后端；
-2. 防止 Refresh Token 被空值覆盖；
-3. 修正 `ensureValidToken()` 失败后仍继续请求；
-4. 将 KaTeX 字体迁移到自有域名；
-5. 统一 `package.json` 和锁文件；
-6. 统一文件格式配置并确认后端文件安全校验。
+## Dashboard
 
-**最终判断：当前版本已经从“存在多项明显问题”提升到“接近可上线”，但认证安全、隐私注销和发布配置仍未闭环。至少完成前六项后，再进行微信开发者工具正式编译、自动审计和真机回归，才适合提交审核。**
+- 全部统计区块；
+- 趋势切换；
+- 年度 tooltip；
+- 弱项卡片；
+- 空状态；
+- 错误状态。
+
+## Pomodoro
+
+- 模式选择；
+- 科目卡片；
+- 启动；
+- 暂停；
+- 恢复；
+- 结束；
+- 字体大小；
+- 统计入口。
+
+## Pomodoro Stats
+
+- 图表；
+- 历史记录；
+- 今日入口；
+- 空状态；
+- 页面滚动。
+
+## Review Today
+
+- 空状态；
+- 加载失败；
+- 开始复习；
+- 题组完成；
+- 最终结果；
+- 确认弹窗；
+- 取消按钮；
+- 主次操作按钮。
+
+## 富文本
+
+- 标题；
+- 正文；
+- 列表；
+- 图片；
+- 表格；
+- 代码；
+- 数学公式；
+- 长文本。
+
+# 十、微信开发者工具最终审计
+
+代码修改完成后，不得直接宣布最终通过。
+
+请输出人工操作要求：
+
+1. 清除缓存。
+2. 重新编译。
+3. 登录测试账号。
+4. 完整访问全部页面。
+5. 完成每个页面核心交互。
+6. 运行自动审计。
+7. 导出新的 `audits.json`。
+8. 将新审计结果与旧分数对比。
+
+重点确认：
+
+- `unused-css`
+- `ele-active-state`
+- `set-data-freq`
+- `set-data-no-binding`
+- `small-response-area`
+- `overflow-scroll`
+- `color-contrast`
+- `js-exception`
+- 首屏时间；
+- 包体积。
+
+如果当前环境不能运行 GUI，必须明确写：
+
+“未执行微信开发者工具 GUI 审计，本阶段仅完成代码和静态引用检查。”
+
+# 十一、最终输出格式
+
+严格按以下格式输出：
+
+## 1. 修改摘要
+
+说明本阶段真实完成内容。
+
+## 2. `.year-day:active` 处理
+
+说明：
+
+- 原交互；
+- 新交互；
+- 使用的状态；
+- 是否仍有 `:active`。
+
+## 3. Orphan pressed 样式
+
+提供完整表格：
+
+| 选择器 | 文件 | 原因 | 处理 |
+| ------ | ---- | ---- | ---- |
+|        |      |      |      |
+
+## 4. WXSS 清理结果
+
+逐文件提供：
+
+| 文件 | 修改前字节 | 修改后字节 | 删除选择器数 | 保留风险项 |
+| ---- | ---------- | ---------- | ------------ | ---------- |
+|      |            |            |              |            |
+
+## 5. 总体积变化
+
+提供：
+
+- WXSS 修改前总大小；
+- WXSS 修改后总大小；
+- 节省大小；
+- 删除资源大小；
+- 是否修改 `packOptions.ignore`；
+- 主包真实大小是否已获取。
+
+## 6. 样式引用完整性
+
+提供：
+
+- hover-class 使用但未定义数量；
+- pressed 定义但未使用数量；
+- WXML 引用已删除样式数量；
+- 剩余 `:active` 数量。
+
+## 7. 资源清理
+
+列出删除和保留资源。
+
+## 8. 回归测试
+
+逐项标注：
+
+- 通过；
+- 失败；
+- 未执行。
+
+静态检索不得写为功能测试通过。
+
+## 9. 审计结果
+
+如果执行了开发者工具审计，填写：
+
+- 总分；
+- 性能；
+- 体验；
+- 最佳实践；
+- 剩余失败项。
+
+如果未执行，明确说明未执行。
+
+## 10. 未完成事项
+
+列出原因和下一步。
+
+# 十二、禁止事项
+
+1. 不得回滚前三阶段修改。
+2. 不得批量正则删除 WXSS。
+3. 不得根据审计覆盖率直接删除样式。
+4. 不得大规模裁剪 `mp-html`。
+5. 不得删除条件状态样式。
+6. 不得删除错误、空状态和 loading 样式。
+7. 不得删除动画状态而保留 JS 引用。
+8. 不得删除动态路径资源。
+9. 不得伪造包体积。
+10. 不得伪造审计分数。
+11. 不得声称执行了未执行的测试。
+12. 不得使用 `:active` 实现点击态。
+13. 不得新增无引用 pressed 样式。
+14. 不得使用 `!important` 掩盖样式冲突。
+15. 不得修改接口、路由和业务逻辑。

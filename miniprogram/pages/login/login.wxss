@@ -417,13 +417,13 @@ page {
   border: none;
 }
 
-.wechat-login-btn:active {
+.wechat-login-btn-pressed {
   transform: scale(0.98);
   opacity: 0.9;
 }
 
-.dev-entry:active,
-.agreement-link:active {
+.dev-entry-pressed,
+.agreement-link-pressed {
   opacity: 0.82;
 }
 

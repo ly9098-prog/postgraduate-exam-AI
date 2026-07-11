@@ -67,7 +67,7 @@
         <text class="panel-desc">用微信身份保存错题、复习计划和连续学习记录</text>
       </view>
 
-      <button class="wechat-login-btn" bindtap="onWechatLogin" loading="{{loading}}" disabled="{{loading}}">
+      <button class="wechat-login-btn" hover-class="{{loading ? 'none' : 'wechat-login-btn-pressed'}}" hover-start-time="20" hover-stay-time="80" bindtap="onWechatLogin" loading="{{loading}}" disabled="{{loading}}">
         <text class="wechat-login-text">微信一键登录</text>
       </button>
 
@@ -79,13 +79,13 @@
           </label>
         </checkbox-group>
         <view class="agreement-links">
-          <text class="agreement-link" data-type="user" bindtap="openAgreement">《用户协议》</text>
-          <text class="agreement-link" data-type="privacy" bindtap="openAgreement">《隐私政策》</text>
-          <text class="agreement-link" data-type="ai" bindtap="openAgreement">《AI免责声明》</text>
+          <text class="agreement-link" data-type="user" hover-class="agreement-link-pressed" hover-start-time="20" hover-stay-time="80" bindtap="openAgreement">《用户协议》</text>
+          <text class="agreement-link" data-type="privacy" hover-class="agreement-link-pressed" hover-start-time="20" hover-stay-time="80" bindtap="openAgreement">《隐私政策》</text>
+          <text class="agreement-link" data-type="ai" hover-class="agreement-link-pressed" hover-start-time="20" hover-stay-time="80" bindtap="openAgreement">《AI免责声明》</text>
         </view>
       </view>
 
-      <view wx:if="{{showDevLogin}}" class="dev-entry" bindtap="onDevLogin">
+      <view wx:if="{{showDevLogin}}" class="dev-entry" hover-class="dev-entry-pressed" hover-start-time="20" hover-stay-time="80" bindtap="onDevLogin">
         <text class="dev-text">开发者模式</text>
         <text class="dev-arrow line-icon icon-chevron-right" style="width:28rpx;height:28rpx;color:#315CFF;"></text>
       </view>

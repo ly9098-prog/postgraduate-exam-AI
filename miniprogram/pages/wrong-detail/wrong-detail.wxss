@@ -16,42 +16,6 @@ page {
   overflow-x: hidden;
 }
 
-.swiper-content {
-  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.swiper-content.slide-out-left {
-  transform: translateX(-25%);
-  opacity: 0;
-}
-
-.swiper-content.slide-out-right {
-  transform: translateX(25%);
-  opacity: 0;
-}
-
-.swiper-content.from-left {
-  transform: translateX(-25%);
-  opacity: 0;
-  transition: none;
-}
-
-.swiper-content.from-right {
-  transform: translateX(25%);
-  opacity: 0;
-  transition: none;
-}
-
-.swiper-content.edge-left {
-  transform: translateX(-3%);
-  transition: transform 0.2s ease;
-}
-
-.swiper-content.edge-right {
-  transform: translateX(3%);
-  transition: transform 0.2s ease;
-}
-
 /* AI 分析卡片 */
 .ai-card {
   margin: 14rpx 24rpx 0;
@@ -69,10 +33,6 @@ page {
   justify-content: space-between;
   gap: 16rpx;
   margin-bottom: 22rpx;
-}
-
-.section-head.compact {
-  margin-bottom: 16rpx;
 }
 
 .section-title {
@@ -173,8 +133,8 @@ page {
   border: none;
 }
 
-.ai-action-btn:active,
-.ai-secondary-btn:active {
+.ai-action-btn-pressed,
+.ai-secondary-btn-pressed {
   opacity: 0.9;
   transform: scale(0.98);
 }
@@ -461,12 +421,6 @@ page {
   border-width: 2rpx;
 }
 
-.loading-text {
-  font-size: 26rpx;
-  color: #8EA0BA;
-  margin-top: 16rpx;
-}
-
 /* 切换加载态 — 轻量文字提示，不影响布局 */
 .switch-mask {
   position: fixed;
@@ -578,7 +532,7 @@ page {
   color: #4F7FFF;
 }
 
-.error-btn:active {
+.error-btn-pressed {
   opacity: 0.9;
   transform: scale(0.97);
 }

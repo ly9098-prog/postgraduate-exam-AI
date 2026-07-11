@@ -10,8 +10,8 @@
   <text class="error-title">{{errorText}}</text>
   <text class="error-desc">该错题记录可能已被移除或不存在</text>
   <view class="error-actions">
-    <button class="error-btn primary" bindtap="reloadData">重新加载</button>
-    <button class="error-btn secondary" bindtap="goBack">返回错题本</button>
+    <button class="error-btn primary" hover-class="error-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="reloadData">重新加载</button>
+    <button class="error-btn secondary" hover-class="error-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="goBack">返回错题本</button>
   </view>
 </view>
 
@@ -159,7 +159,7 @@
 
       <text wx:if="{{aiInlineNotice}}" class="ai-inline-notice">{{aiInlineNotice}}</text>
       <text wx:elif="{{!aiInlineNotice}}" class="ai-hint">{{aiFromCache ? '来自历史缓存，仅供参考' : '内容由 AI 生成，仅供参考'}}</text>
-      <button class="ai-secondary-btn {{aiRegenerating ? 'loading' : ''}}" disabled="{{aiRegenerating}}" bindtap="regenerateAiAnalysis">
+      <button class="ai-secondary-btn {{aiRegenerating ? 'loading' : ''}}" hover-class="{{aiRegenerating ? 'none' : 'ai-secondary-btn-pressed'}}" hover-start-time="20" hover-stay-time="80" disabled="{{aiRegenerating}}" bindtap="regenerateAiAnalysis">
         {{aiRegenerating ? '重新生成中...' : '重新生成'}}
       </button>
     </view>
@@ -173,12 +173,12 @@
       </view>
       <text class="fallback-title">AI 错题复盘暂时不可用</text>
       <text class="fallback-desc">{{aiErrorText || '建议先查看题目解析并手动标记错因，稍后再试。'}}</text>
-      <button class="ai-action-btn retry" bindtap="regenerateAiAnalysis">重新生成</button>
+      <button class="ai-action-btn retry" hover-class="ai-action-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="regenerateAiAnalysis">重新生成</button>
     </view>
 
     <!-- 4. 未请求态 — 仅保留生成按钮 -->
     <view wx:elif="{{!aiRequested && !aiCards}}" class="ai-idle minimal">
-      <button class="ai-action-btn" bindtap="onTapAiAnalysis">生成 AI 解析</button>
+      <button class="ai-action-btn" hover-class="ai-action-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="onTapAiAnalysis">生成 AI 解析</button>
     </view>
   </view>
 </view>
