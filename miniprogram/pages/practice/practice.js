@@ -62,10 +62,8 @@ Page({
     this._pageAlive = true
     this._resetSession()
     this._pendingResultUrl = ''
-    this.setData({ enableMathImage: config.enableMathImage || false })
     setRenderGuardPage('practice')
     resetRenderGuard()
-    this.loadPracticeSubjects()
   },
 
   onUnload() {
@@ -100,6 +98,8 @@ Page({
 
   onReady() {
     if (config.DEV) console.log('[LAYER6_ONREADY]', Date.now())
+    this.setData({ enableMathImage: config.enableMathImage || false })
+    this.loadPracticeSubjects()
   },
 
   /* ==================== 设置阶段 ==================== */
