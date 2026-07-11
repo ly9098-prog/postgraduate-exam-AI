@@ -715,3 +715,48 @@ export type ImportPublishResponse = {
 export type ImportDeleteResponse = {
   deleted_count: number;
 };
+
+// ── 批量答案补录 (Phase 1) ──
+
+export type BatchAnswerPreviewItem = {
+  import_id: number;
+  source_order_index: number | null;
+  source_question_no: string | null;
+  stem_excerpt: string;
+  question_type: string | null;
+  original_answer: string | null;
+  input_answer: string | null;
+  normalized_answer: string | null;
+  status: string;
+  status_message: string;
+  will_update: boolean;
+  validation_errors: string[];
+};
+
+export type BatchAnswerPreviewSummary = {
+  batch_total: number;
+  parsed_answer_count: number;
+  target_question_count: number;
+  remaining_question_count: number;
+  writable_count: number;
+  skipped_existing_count: number;
+  skipped_existing_same_count: number;
+  unsupported_count: number;
+  invalid_count: number;
+  warning_count: number;
+  order_anomaly_count: number;
+};
+
+export type BatchAnswerPreviewResponse = {
+  batch_id: string;
+  preview_token: string;
+  summary: BatchAnswerPreviewSummary;
+  items: BatchAnswerPreviewItem[];
+  warnings: string[];
+};
+
+export type BatchAnswerApplyResponse = {
+  updated_count: number;
+  skipped_existing_count: number;
+  remaining_count: number;
+};

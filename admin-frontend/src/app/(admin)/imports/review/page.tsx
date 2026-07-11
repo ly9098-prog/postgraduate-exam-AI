@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 import { apiRequest, toQuery } from "@/lib/api/client";
-import type { AdminImportCompleteResponse, BatchCompleteResponse, ImportActionResponse, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
+import type { AdminImportCompleteResponse, BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportActionResponse, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 
 type FilterDropdownOption = {
   value: string;
@@ -350,6 +350,13 @@ export default function ImportReviewPage() {
   const [draftRestored, setDraftRestored] = useState(false);
   const [autoSaveHint, setAutoSaveHint] = useState<string | null>(null);
   const [quickAnswerDrafts, setQuickAnswerDrafts] = useState<Record<number, string>>({});
+  const [showBatchAnswerFill, setShowBatchAnswerFill] = useState(false);
+  const [batchAnswerRawText, setBatchAnswerRawText] = useState("");
+  const [batchAnswerPreview, setBatchAnswerPreview] = useState<BatchAnswerPreviewResponse | null>(null);
+  const [batchAnswerApplyResult, setBatchAnswerApplyResult] = useState<BatchAnswerApplyResponse | null>(null);
+  const [batchAnswerExecuting, setBatchAnswerExecuting] = useState(false);
+  const [batchAnswerError, setBatchAnswerError] = useState<string | null>(null);
+  const currentBatchId = filters.batch_id || batchIdParam;
 
   const syncedDetailRef = useRef<Set<number>>(new Set());
 
@@ -665,6 +672,50 @@ export default function ImportReviewPage() {
     },
   });
 
+  const handleBatchAnswerPreview = useCallback(async () => {
+    if (!currentBatchId || !batchAnswerRawText.trim()) return;
+    setBatchAnswerExecuting(true);
+    setBatchAnswerError(null);
+    setBatchAnswerPreview(null);
+    setBatchAnswerApplyResult(null);
+    try {
+      const result = await apiRequest<BatchAnswerPreviewResponse>(`/imports/${currentBatchId}/answers/preview`, {
+        method: "POST",
+        body: JSON.stringify({ raw_text: batchAnswerRawText.trim(), allow_partial_prefix: true }),
+      });
+      setBatchAnswerPreview(result);
+    } catch (error) {
+      setBatchAnswerError(error instanceof Error ? error.message : "预览失败");
+    } finally {
+      setBatchAnswerExecuting(false);
+    }
+  }, [currentBatchId, batchAnswerRawText]);
+
+  const handleBatchAnswerApply = useCallback(async () => {
+    if (!batchAnswerPreview?.preview_token) return;
+    setBatchAnswerExecuting(true);
+    setBatchAnswerError(null);
+    try {
+      const result = await apiRequest<BatchAnswerApplyResponse>(`/imports/${currentBatchId}/answers/apply`, {
+        method: "POST",
+        body: JSON.stringify({ preview_token: batchAnswerPreview.preview_token }),
+      });
+      setBatchAnswerApplyResult(result);
+      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
+    } catch (error) {
+      setBatchAnswerError(error instanceof Error ? error.message : "写入失败");
+    } finally {
+      setBatchAnswerExecuting(false);
+    }
+  }, [currentBatchId, batchAnswerPreview, queryClient]);
+
+  const handleBatchAnswerReset = useCallback(() => {
+    setBatchAnswerRawText("");
+    setBatchAnswerPreview(null);
+    setBatchAnswerApplyResult(null);
+    setBatchAnswerError(null);
+  }, []);
+
   const verifyAnswerMutation = useMutation({
     mutationFn: async (id: number) => {
       return apiRequest<ImportQuestionItem>(`/imports/questions/${id}`, {
@@ -877,6 +928,15 @@ export default function ImportReviewPage() {
                 >
                   <Sparkles className="h-3.5 w-3.5" />
                   AI 批量补全
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="h-8 px-3 text-xs"
+                  disabled={!currentBatchId}
+                  onClick={() => { setShowBatchAnswerFill(true); handleBatchAnswerReset(); }}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  快速补充答案
                 </Button>
                 <div className="h-6 w-px bg-[var(--color-border)]" />
                 <div className="flex overflow-hidden rounded-md border border-[var(--color-border)] bg-white/70">
@@ -2260,6 +2320,223 @@ export default function ImportReviewPage() {
                   </>
                 )}
               </div>
+            </div>
+          </aside>
+        </div>
+      ) : null}
+
+      {showBatchAnswerFill ? (
+        <div className="fixed inset-0 z-40 flex justify-end bg-[rgba(16,24,40,0.28)]" role="presentation" onClick={() => { if (!batchAnswerExecuting) { setShowBatchAnswerFill(false); } }}>
+          <aside role="dialog" aria-modal="true" className="flex h-full w-full max-w-xl flex-col overflow-y-auto bg-white shadow-[var(--shadow-floating)]" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="sticky top-0 z-10 border-b border-[var(--color-border)] bg-white/95 px-6 py-4 backdrop-blur-xl">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h4 className="font-display text-xl font-bold text-[var(--ink)]">快速补充答案</h4>
+                  <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                    批次 <span className="font-mono text-xs font-semibold text-[var(--ink)]">{currentBatchId}</span>
+                    {batchAnswerApplyResult ? (
+                      <span className="ml-2">· 已更新 <span className="font-semibold text-emerald-600">{batchAnswerApplyResult.updated_count}</span> 题</span>
+                    ) : batchAnswerPreview ? (
+                      <span className="ml-2">· 预览 <span className="font-semibold text-[var(--ink)]">{batchAnswerPreview.summary.writable_count}</span> 题可写入</span>
+                    ) : null}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {batchAnswerApplyResult ? (
+                    <Button variant="ghost" className="h-7 px-2 text-[11px] text-[var(--color-text-hint)]" onClick={handleBatchAnswerReset}>
+                      清空
+                    </Button>
+                  ) : null}
+                  <button className="shrink-0 rounded-lg p-1.5 text-[var(--color-text-hint)] hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)] transition disabled:opacity-40" onClick={() => { if (!batchAnswerExecuting) setShowBatchAnswerFill(false); }} disabled={batchAnswerExecuting}>
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+              {batchAnswerExecuting ? (
+                <div className="absolute bottom-0 left-0 right-0 z-20 h-0.5 overflow-hidden bg-[var(--color-primary)]/10">
+                  <div className="h-full w-1/2 rounded-full bg-[var(--color-primary)]" style={{ animation: "loadingBar 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite" }} />
+                </div>
+              ) : null}
+            </div>
+
+            <div className="relative flex-1 px-6 py-5 space-y-6">
+              {batchAnswerExecuting ? (
+                <div className="absolute inset-0 z-10 rounded-xl bg-white/70 backdrop-blur-[1px] flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-2 rounded-xl bg-white/90 px-5 py-4 shadow-sm">
+                    <span className="inline-block h-6 w-6 animate-spin rounded-full border-[3px] border-[var(--color-border)] border-t-[var(--color-primary)]" />
+                    <span className="text-sm text-[var(--color-text-secondary)]">{batchAnswerPreview ? "正在写入答案…" : "正在解析答案…"}</span>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Error */}
+              {batchAnswerError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  <div className="flex items-start gap-2">
+                    <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+                    <span>{batchAnswerError}</span>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Step 1: Input */}
+              {!batchAnswerPreview && !batchAnswerApplyResult ? (
+                <div className="space-y-4">
+                  <div>
+                    <p className="mb-1 text-sm font-semibold text-[var(--ink)]">输入答案串</p>
+                    <p className="mb-3 text-xs text-[var(--color-text-secondary)]">
+                      输入连续的答案字母（如 abcda），或使用逗号/空格/换行分隔。也支持 AB/AC 等多选题格式。
+                    </p>
+                    <textarea
+                      className="w-full h-32 rounded-xl border border-[var(--color-border)] bg-white p-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)] resize-none font-mono"
+                      placeholder="示例：abcda&#10;或：A,B,C,D,A&#10;或：A&#10;B&#10;C&#10;D&#10;A&#10;或：AB, CD, A（多选题用分隔符）"
+                      value={batchAnswerRawText}
+                      onChange={(e) => setBatchAnswerRawText(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    className="h-9 w-full text-sm"
+                    disabled={!batchAnswerRawText.trim() || batchAnswerExecuting}
+                    onClick={handleBatchAnswerPreview}
+                  >
+                    <Eye className="mr-1.5 h-4 w-4" />
+                    预览解析结果
+                  </Button>
+                </div>
+              ) : null}
+
+              {/* Step 2: Preview table */}
+              {batchAnswerPreview && !batchAnswerApplyResult ? (
+                <div className="space-y-4">
+                  {/* Summary bar */}
+                  <div className="flex flex-wrap gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)]/30 px-4 py-3 text-xs">
+                    <span>共 <strong>{batchAnswerPreview.summary.parsed_answer_count}</strong> 个答案</span>
+                    <span className="text-[var(--color-text-hint)]">·</span>
+                    <span className="text-emerald-700">可写入 <strong>{batchAnswerPreview.summary.writable_count}</strong></span>
+                    {batchAnswerPreview.summary.skipped_existing_count > 0 ? (
+                      <>
+                        <span className="text-[var(--color-text-hint)]">·</span>
+                        <span className="text-amber-600">跳过已有 <strong>{batchAnswerPreview.summary.skipped_existing_count}</strong></span>
+                      </>
+                    ) : null}
+                    {batchAnswerPreview.summary.invalid_count > 0 ? (
+                      <>
+                        <span className="text-[var(--color-text-hint)]">·</span>
+                        <span className="text-red-600">无效 <strong>{batchAnswerPreview.summary.invalid_count}</strong></span>
+                      </>
+                    ) : null}
+                    {batchAnswerPreview.summary.unsupported_count > 0 ? (
+                      <>
+                        <span className="text-[var(--color-text-hint)]">·</span>
+                        <span className="text-gray-500">不支持 <strong>{batchAnswerPreview.summary.unsupported_count}</strong></span>
+                      </>
+                    ) : null}
+                  </div>
+
+                  {/* Preview items table */}
+                  <div className="max-h-[360px] overflow-y-auto rounded-xl border border-[var(--color-border)]">
+                    <table className="w-full text-left text-xs">
+                      <thead className="sticky top-0 bg-[var(--color-bg-input)]/80 backdrop-blur-sm">
+                        <tr className="border-b border-[var(--color-border)]">
+                          <th className="px-3 py-2 font-semibold text-[var(--color-text-secondary)]">#</th>
+                          <th className="px-3 py-2 font-semibold text-[var(--color-text-secondary)]">题干</th>
+                          <th className="px-3 py-2 font-semibold text-[var(--color-text-secondary)]">原答案</th>
+                          <th className="px-3 py-2 font-semibold text-[var(--color-text-secondary)]">新答案</th>
+                          <th className="px-3 py-2 font-semibold text-[var(--color-text-secondary)]">状态</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {batchAnswerPreview.items.map((item) => {
+                          const statusColor = item.will_update
+                            ? "text-emerald-600"
+                            : item.status === "skip_existing" || item.status === "skip_existing_same"
+                              ? "text-amber-600"
+                              : item.status === "invalid_answer"
+                                ? "text-red-600"
+                                : item.status === "unsupported_type"
+                                  ? "text-gray-400"
+                                  : "text-[var(--color-text-secondary)]";
+                          return (
+                            <tr key={item.import_id} className="border-b border-[var(--color-border)]/50 last:border-0 hover:bg-[var(--color-bg-input)]/30">
+                              <td className="px-3 py-2 align-top font-mono text-[var(--color-text-secondary)]">
+                                {item.source_question_no ?? item.source_order_index ?? "?"}
+                              </td>
+                              <td className="px-3 py-2 align-top max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap text-[var(--ink)]" title={item.stem_excerpt}>
+                                {item.stem_excerpt}
+                              </td>
+                              <td className="px-3 py-2 align-top font-mono text-[var(--color-text-secondary)]">
+                                {item.original_answer || <span className="text-[var(--color-text-hint)]">—</span>}
+                              </td>
+                              <td className="px-3 py-2 align-top font-mono font-semibold text-[var(--ink)]">
+                                {item.normalized_answer || <span className="text-[var(--color-text-hint)]">—</span>}
+                              </td>
+                              <td className={`px-3 py-2 align-top ${statusColor}`}>
+                                {item.will_update ? "将写入" : item.status === "skip_existing" ? "跳过" : item.status === "skip_existing_same" ? "相同" : item.status === "invalid_answer" ? "无效" : item.status === "unsupported_type" ? "不支持" : item.status === "order_anomaly" ? "异常" : item.status || "—"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Warnings */}
+                  {batchAnswerPreview.warnings.length > 0 ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+                      {batchAnswerPreview.warnings.map((w, i) => (
+                        <p key={i} className="flex items-start gap-1.5">
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          <span>{w}</span>
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {/* Apply button */}
+                  <Button
+                    className="h-9 w-full text-sm"
+                    disabled={batchAnswerPreview.summary.writable_count === 0 || batchAnswerExecuting}
+                    onClick={handleBatchAnswerApply}
+                  >
+                    <Check className="mr-1.5 h-4 w-4" />
+                    确认写入 {batchAnswerPreview.summary.writable_count} 题答案
+                  </Button>
+                </div>
+              ) : null}
+
+              {/* Step 3: Apply result */}
+              {batchAnswerApplyResult ? (
+                <div className="space-y-5">
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4">
+                    <div className="flex items-center gap-2 text-emerald-700">
+                      <CheckCircle2 className="h-5 w-5" />
+                      <span className="font-semibold">批量答案写入完成</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-3 text-center text-sm">
+                      <div className="rounded-lg bg-white/70 px-3 py-2">
+                        <p className="text-lg font-bold text-emerald-600">{batchAnswerApplyResult.updated_count}</p>
+                        <p className="text-xs text-emerald-700/70">已更新</p>
+                      </div>
+                      <div className="rounded-lg bg-white/70 px-3 py-2">
+                        <p className="text-lg font-bold text-amber-600">{batchAnswerApplyResult.skipped_existing_count}</p>
+                        <p className="text-xs text-amber-700/70">已跳过</p>
+                      </div>
+                      <div className="rounded-lg bg-white/70 px-3 py-2">
+                        <p className="text-lg font-bold text-[var(--color-text-secondary)]">{batchAnswerApplyResult.remaining_count}</p>
+                        <p className="text-xs text-[var(--color-text-hint)]">剩余</p>
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    className="h-9 w-full text-sm"
+                    onClick={() => { setShowBatchAnswerFill(false); }}
+                  >
+                    关闭
+                  </Button>
+                </div>
+              ) : null}
             </div>
           </aside>
         </div>

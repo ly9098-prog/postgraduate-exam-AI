@@ -45,6 +45,10 @@ from app.schemas.admin_imports import (
     AdminImportQuestionUpdateRequest,
     AdminImportRejectRequest,
     AdminImportTaskStatusResponse,
+    BatchAnswerApplyRequest,
+    BatchAnswerApplyResponse,
+    BatchAnswerPreviewRequest,
+    BatchAnswerPreviewResponse,
     BatchImageJobStatusResponse,
     BatchImageReparseResponse,
     BatchImageUploadResponse,
@@ -667,6 +671,58 @@ async def import_text_questions(
         failed=failed,
         duplicates_filtered=duplicates_filtered,
     )
+
+
+# ---------------------------------------------------------------------------
+# 快速补充答案（Phase 1 — 答案串补录）
+# ---------------------------------------------------------------------------
+
+_MAX_RAW_TEXT_LENGTH = 50_000
+
+
+@router.post("/{batch_id}/answers/preview", response_model=BatchAnswerPreviewResponse)
+async def batch_answer_preview(
+    batch_id: str,
+    data: BatchAnswerPreviewRequest,
+    current_admin=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    """解析答案串，生成预览（不写入数据库）。"""
+    from app.services.batch_answer_service import generate_preview
+
+    if len(data.raw_text) > _MAX_RAW_TEXT_LENGTH:
+        raise HTTPException(status_code=422, detail="答案文本过长")
+
+    try:
+        return await generate_preview(
+            db, batch_id, data.raw_text,
+            admin_id=current_admin.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.post("/{batch_id}/answers/apply", response_model=BatchAnswerApplyResponse)
+async def batch_answer_apply(
+    batch_id: str,
+    data: BatchAnswerApplyRequest,
+    request: Request,
+    current_admin=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    """确认预览结果，写入答案到数据库。"""
+    from app.services.batch_answer_service import apply_preview
+
+    try:
+        result = await apply_preview(db, batch_id, data.preview_token, current_admin, request=request)
+        return result
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Batch answer apply failed: %s", exc)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="写入失败，请稍后重试")
 
 
 @router.get("/{batch_id}/status", response_model=AdminImportTaskStatusResponse)
