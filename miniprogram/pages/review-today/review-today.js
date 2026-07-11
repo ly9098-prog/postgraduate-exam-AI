@@ -764,28 +764,28 @@ Page({
     let treatUnansweredAsWrong = false
     if (unansweredCount > 0) {
       try {
-        const choice = await new Promise(resolve => {
-          wx.showModal({
-            title: '还有未作答题目',
-            content: `共 ${totalCount} 题，已作答 ${answeredCount} 题，还有 ${unansweredCount} 题未作答。\n\n选择"按不会处理"将把未答题判为错误并进入复习。`,
-            confirmText: '按不会处理',
-            cancelText: '仅提交已答',
-            success: (r) => resolve(r.confirm ? 'wrong' : 'skip'),
-            fail: () => resolve('cancel'),
-          })
+        const confirm = this.selectComponent('#submitConfirm')
+        if (!confirm) return
+        const choice = await confirm.show({
+          scenario: 'unanswered',
+          title: '还有未作答题目',
+          message: `共 ${totalCount} 题，已作答 ${answeredCount} 题，还有 ${unansweredCount} 题未作答。选择「按不会处理」将把未答题判为错误并进入复习。`,
+          confirmText: '按不会处理',
+          cancelText: '仅提交已答',
         })
-        if (choice === 'cancel') return
-        if (choice === 'wrong') treatUnansweredAsWrong = true
+        if (!choice) return
+        treatUnansweredAsWrong = true
       } catch (_) { return }
     } else {
       try {
-        const confirmed = await new Promise(resolve => {
-          wx.showModal({
-            title: '确认提交',
-            content: `共 ${totalCount} 题，已全部作答。确认提交并复盘？`,
-            success: (r) => resolve(r.confirm),
-            fail: () => resolve(false),
-          })
+        const confirm = this.selectComponent('#submitConfirm')
+        if (!confirm) return
+        const confirmed = await confirm.show({
+          scenario: 'all-done',
+          title: '确认提交',
+          message: `共 ${totalCount} 题，已全部作答。确认提交并复盘？`,
+          confirmText: '确定提交',
+          cancelText: '继续检查',
         })
         if (!confirmed) return
       } catch (_) { return }
