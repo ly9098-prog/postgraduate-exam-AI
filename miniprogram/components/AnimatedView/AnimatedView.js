@@ -1,44 +1,4 @@
-var _lottieLoader = null
-var _lottieLoading = false
-var _lottieCallbacks = []
-
-function _getLottieLoader() {
-  if (_lottieLoader) return _lottieLoader
-  if (_lottieLoading) return null
-  // 触发动画分包按需加载
-  _lottieLoading = true
-  try {
-    var app = getApp()
-    if (app && app.loadRewardAnimationPackage) {
-      app.loadRewardAnimationPackage().then(function () {
-        try { _lottieLoader = require('../../subpackages/animation/lottie-loader.js') } catch (_) {}
-        _lottieLoading = false
-        _lottieCallbacks.forEach(function (cb) { try { cb() } catch (_) {} })
-        _lottieCallbacks = []
-      }).catch(function () { _lottieLoading = false })
-    } else {
-      try { _lottieLoader = require('../../subpackages/animation/lottie-loader.js') } catch (_) {}
-      _lottieLoading = false
-    }
-  } catch (_) {
-    _lottieLoading = false
-  }
-  return _lottieLoader
-}
-
-function loadLottieData() {
-  var loader = _getLottieLoader()
-  if (!loader) return false
-  try { return loader.getRewardData() } catch (_) {}
-  return false
-}
-
-function loadLottieModule() {
-  var loader = _getLottieLoader()
-  if (!loader) return null
-  try { return loader.getModule() } catch (_) {}
-  return null
-}
+var animationLoader = require('../../utils/animation-loader')
 
 function getSystemInfo() {
   try {
@@ -126,13 +86,13 @@ Component({
 
   lifetimes: {
     attached: function () {
+      this._alive = true
       this._lottieAnim = null
       this._canvas = null
       this._ctx = null
       this._timer = null
       this._contentTimer = null
       this._canvasTimer = null
-      this._retryTimer = null
       this._pausedByPage = false
       this._reducedMotion = isReducedMotionEnabled()
       this._canUseCanvas = false
@@ -141,6 +101,7 @@ Component({
       this._detectSupport()
     },
     detached: function () {
+      this._alive = false
       this._clearTimers()
       this._destroyLottie()
     },
@@ -165,33 +126,21 @@ Component({
     _detectSupport: function () {
       var info = getSystemInfo()
       var baseOk = compareVersion(info.SDKVersion, '2.9.0') >= 0
-      var lottieModule = null
-      var lottieData = null
 
-      if (this.data.enableLottie && baseOk) {
-        try { lottieModule = loadLottieModule() } catch (_) { lottieModule = null }
-        try { lottieData = loadLottieData() } catch (_) { lottieData = null }
-      }
-
-      this._lottieModule = lottieModule
-      this._lottieData = lottieData
+      this._lottieModule = animationLoader.getLottieModule()
+      this._lottieData = animationLoader.getRewardData()
       this._canUseCanvas = !!baseOk
-      this._canUseLottie = !!(this.data.enableLottie && baseOk && lottieModule && lottieData)
+      this._canUseLottie = !!(this.data.enableLottie && baseOk && this._lottieModule && this._lottieData)
 
-      // 分包可能尚未就绪，延迟重试一次
+      // 分包可能尚未就绪 — 触发加载并延迟重试
       if (!this._canUseLottie && this.data.enableLottie && baseOk) {
         var self = this
-        self._retryTimer = setTimeout(function () {
-          self._retryTimer = null
-          var m = null, d = null
-          try { m = loadLottieModule() } catch (_) {}
-          try { d = loadLottieData() } catch (_) {}
-          if (m && d) {
-            self._lottieModule = m
-            self._lottieData = d
-            self._canUseLottie = true
-          }
-        }, 2000)
+        animationLoader.loadAnimationPackage().then(function () {
+          if (!self._alive) return
+          self._lottieModule = animationLoader.getLottieModule()
+          self._lottieData = animationLoader.getRewardData()
+          self._canUseLottie = !!(self._lottieModule && self._lottieData)
+        })
       }
     },
 
@@ -232,15 +181,15 @@ Component({
     },
 
     _initCanvas: function () {
-      if (!this._canUseLottie || !this.data.visible) return
+      if (!this._canUseLottie || !this.data.visible || !this._alive) return
       var self = this
       var query = this.createSelectorQuery()
-      // Query the canvas-layer for reliable dimensions, and the canvas for the node
       query.select('.canvas-layer').fields({ size: true })
       query.select('#animated-view-canvas')
         .fields({ node: true })
         .exec(function (res) {
           try {
+            if (!self._alive) return
             if (!res || !res[1] || !res[1].node) {
               self._fallbackFromLottie()
               return
@@ -252,8 +201,8 @@ Component({
               self._fallbackFromLottie()
               return
             }
-            var dpr = 1
-            try { dpr = wx.getSystemInfoSync().pixelRatio || 1 } catch (_) {}
+            var windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : {}
+            var dpr = windowInfo.pixelRatio || 1
             var cssW = layerSize.width || 300
             var cssH = layerSize.height || 300
             canvas.width = Math.round(cssW * dpr)
@@ -265,7 +214,7 @@ Component({
             self.setData({ useLottie: true })
             self._startLottie()
           } catch (_) {
-            self._fallbackFromLottie()
+            if (self._alive) self._fallbackFromLottie()
           }
         })
     },
@@ -339,7 +288,6 @@ Component({
       if (this._timer) { clearTimeout(this._timer); this._timer = null }
       if (this._contentTimer) { clearTimeout(this._contentTimer); this._contentTimer = null }
       if (this._canvasTimer) { clearTimeout(this._canvasTimer); this._canvasTimer = null }
-      if (this._retryTimer) { clearTimeout(this._retryTimer); this._retryTimer = null }
     },
 
     _destroyLottie: function () {

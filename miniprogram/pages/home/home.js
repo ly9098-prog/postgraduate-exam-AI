@@ -12,7 +12,6 @@ Page({
     greeting: '',
     dateStr: '',
     motto: '',
-    isAdmin: false,
     _animStreakDays: 0,
     studyLevel: 'Lv1 起步',
     levelProgress: 0,
@@ -36,9 +35,9 @@ Page({
 
   async onShow() {
     this._authed = auth.isLoggedIn()
+    this._isAdmin = this._authed ? auth.isAdmin() : false
     this.setData({
       user: auth.getUser() || {},
-      isAdmin: this._authed ? auth.isAdmin() : false,
       greeting: this.getGreeting(),
       dateStr: this.getDateStr(),
       motto: this.getMotto(),
@@ -51,7 +50,8 @@ Page({
     try {
       const syncedUser = await auth.syncCurrentUser()
       if (!syncedUser) return
-      this.setData({ user: syncedUser || {}, isAdmin: auth.isAdmin() })
+      this._isAdmin = auth.isAdmin()
+      this.setData({ user: syncedUser || {} })
     } catch (e) {
       console.error('同步用户权限失败', e)
       return

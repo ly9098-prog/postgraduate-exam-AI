@@ -13,7 +13,6 @@ Page({
 
     hero: null,
     subtitle: '',
-    insight: null,
     trend: null,
     trendError: null,
     subjects: null,
@@ -25,7 +24,6 @@ Page({
     // Mastery rate
     wrongQuestionCount: 0,
     masteredWrongCount: 0,
-    masteryRate: 0,
     masteryRatePct: 0,
     masteryStatusText: '',
 
@@ -277,7 +275,7 @@ Page({
     if (!h) return
 
     charts.drawScoreRing('score-ring', this, h.totalAccuracy)
-    if (this.data._hasData) charts.drawMasteryGauge('mastery-gauge', this, this.data.masteryRate)
+    if (this.data._hasData) charts.drawMasteryGauge('mastery-gauge', this, this._masteryRate || 0)
 
     const tr = this.data.trend
     if (tr && tr.points && tr.points.length) charts.drawTrendChart('trend-chart', this, tr.points)
@@ -352,10 +350,11 @@ Page({
     this._adaptiveHash = adaptiveHash
 
     // When background/refresh, keep old data until setData
+    this._insight = rec
+    this._masteryRate = masteryRate
     this.setData({
       hero,
       subtitle,
-      insight: rec,
       trend,
       subjects,
       reviewRisk,
@@ -364,7 +363,6 @@ Page({
       yearly,
       wrongQuestionCount: wrongQ,
       masteredWrongCount: masteredW,
-      masteryRate,
       masteryRatePct,
       masteryStatusText,
       initialLoading: false,
@@ -658,7 +656,7 @@ Page({
     else this.goPractice()
   },
   onInsightCta() {
-    const ctaType = this.data.insight && this.data.insight.cta_type
+    const ctaType = this._insight && this._insight.cta_type
     if (ctaType === 'review') this.goReview()
     else if (ctaType === 'wrong' || ctaType === 'subject') this.goWrongBook()
     else this.goPractice()

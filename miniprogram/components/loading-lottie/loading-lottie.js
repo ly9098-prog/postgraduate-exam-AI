@@ -1,24 +1,4 @@
-var _lottieLoader = null
-
-function _getLottieLoader() {
-  if (_lottieLoader) return _lottieLoader
-  try { _lottieLoader = require('../../subpackages/animation/lottie-loader.js') } catch (_) {}
-  return _lottieLoader
-}
-
-function loadLottieData() {
-  var loader = _getLottieLoader()
-  if (!loader) return false
-  try { return loader.getLoadingData() } catch (_) {}
-  return false
-}
-
-function loadLottieModule() {
-  var loader = _getLottieLoader()
-  if (!loader) return null
-  try { return loader.getModule() } catch (_) {}
-  return null
-}
+var animationLoader = require('../../utils/animation-loader')
 
 function getSystemInfo() {
   try {
@@ -72,6 +52,7 @@ Component({
 
   lifetimes: {
     attached: function () {
+      this._alive = true
       this._canvas = null
       this._ctx = null
       this._lottieAnim = null
@@ -80,6 +61,7 @@ Component({
       this._start()
     },
     detached: function () {
+      this._alive = false
       this._destroyLottie()
     },
   },
@@ -101,34 +83,23 @@ Component({
     _detectSupport: function () {
       var info = getSystemInfo()
       var baseOk = compareVersion(info.SDKVersion, '2.9.0') >= 0
-      var module = null
-      var data = null
 
-      if (this.data.enableLottie && baseOk && !isReducedMotionEnabled()) {
-        try { module = loadLottieModule() } catch (_) { module = null }
-        try { data = loadLottieData() } catch (_) { data = null }
-      }
+      this._lottieModule = animationLoader.getLottieModule()
+      this._lottieData = animationLoader.getLoadingData()
+      this._canUseLottie = !!(this.data.enableLottie && baseOk && this._lottieModule && this._lottieData && !isReducedMotionEnabled())
 
-      this._lottieModule = module
-      this._lottieData = data
-      this._canUseLottie = !!(this.data.enableLottie && baseOk && module && data && !isReducedMotionEnabled())
-
-      // 分包可能尚未就绪，延迟重试一次
+      // 分包可能尚未就绪 — 触发加载并延迟重试一次
       if (!this._canUseLottie && this.data.enableLottie && baseOk && !isReducedMotionEnabled()) {
         var self = this
-        setTimeout(function () {
-          var m = null, d = null
-          try { m = loadLottieModule() } catch (_) {}
-          try { d = loadLottieData() } catch (_) {}
-          if (m && d) {
-            self._lottieModule = m
-            self._lottieData = d
-            self._canUseLottie = true
-            if (self.data.mode === 'fallback' && self.data.ready === false) {
-              self._start()
-            }
+        animationLoader.loadAnimationPackage().then(function () {
+          if (!self._alive) return
+          self._lottieModule = animationLoader.getLottieModule()
+          self._lottieData = animationLoader.getLoadingData()
+          self._canUseLottie = !!(self._lottieModule && self._lottieData)
+          if (self._canUseLottie && self.data.mode === 'fallback' && self.data.ready === false) {
+            self._start()
           }
-        }, 2000)
+        })
       }
     },
 
@@ -146,11 +117,11 @@ Component({
     _initCanvas: function () {
       var self = this
       var query = this.createSelectorQuery()
-      // Query the wrap for reliable dimensions, and the canvas for the node
       query.select('.loading-lottie-canvas-wrap').fields({ size: true })
       query.select('#loading-lottie-canvas').fields({ node: true })
       query.exec(function (res) {
         try {
+          if (!self._alive) return
           if (!res || !res[1] || !res[1].node) {
             self._fallback()
             return
@@ -165,11 +136,9 @@ Component({
 
           var cssW = wrapSize.width || 240
           var cssH = wrapSize.height || 180
-          var dpr = 1
-          try { dpr = wx.getSystemInfoSync().pixelRatio || 1 } catch (_) {}
+          var windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : {}
+          var dpr = windowInfo.pixelRatio || 1
 
-          // Set canvas internal buffer at device resolution (× DPR) for sharp rendering
-          // lottie-web internally reads window.devicePixelRatio and scales ctx accordingly
           canvasNode.width = Math.round(cssW * dpr)
           canvasNode.height = Math.round(cssH * dpr)
 
@@ -178,7 +147,7 @@ Component({
           self._lottieModule.setup(canvasNode)
           self._startLottie()
         } catch (_) {
-          self._fallback()
+          if (self._alive) self._fallback()
         }
       })
     },
