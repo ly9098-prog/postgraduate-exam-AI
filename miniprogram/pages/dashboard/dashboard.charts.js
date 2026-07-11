@@ -285,7 +285,7 @@ function drawTrendChart(canvasId, pageThis, points) {
 // ──────────────────────────────────────────────
 // Growth level ring (small ring with Lv in center)
 // ──────────────────────────────────────────────
-function drawGrowthRing(canvasId, pageThis, progressPct) {
+function drawGrowthRing(canvasId, pageThis, progressPct, label) {
   if (progressPct === undefined || progressPct === null) return
   getCanvasRect(canvasId, pageThis).then(rect => {
     if (!rect || !rect.width || !rect.height) return
@@ -319,6 +319,15 @@ function drawGrowthRing(canvasId, pageThis, progressPct) {
     ctx.setLineCap('round')
     ctx.arc(center, center, radius, start, end)
     ctx.stroke()
+
+    // Center text (drawn on canvas to avoid native canvas covering DOM text)
+    if (label !== undefined && label !== null) {
+      ctx.setFillStyle(COLORS.primary)
+      ctx.setFontSize(12)
+      ctx.setTextAlign('center')
+      ctx.setTextBaseline('middle')
+      ctx.fillText(String(label), center, center)
+    }
 
     ctx.draw()
   })
@@ -369,7 +378,7 @@ function drawAdaptiveGauge(canvasId, pageThis, recallPct) {
 // ──────────────────────────────────────────────
 // Score gauge (full ring, 0-100, color by tier)
 // ──────────────────────────────────────────────
-function drawScoreGauge(canvasId, pageThis, score, size) {
+function drawScoreGauge(canvasId, pageThis, score, size, label) {
   if (score === undefined || score === null) return
   getCanvasRect(canvasId, pageThis).then(rect => {
     if (!rect || !rect.width || !rect.height) return
@@ -402,6 +411,15 @@ function drawScoreGauge(canvasId, pageThis, score, size) {
     ctx.setLineCap('round')
     ctx.arc(center, center, radius, start, end)
     ctx.stroke()
+
+    // Center text (drawn on canvas to avoid native canvas covering DOM text)
+    if (label !== undefined && label !== null) {
+      ctx.setFillStyle(color)
+      ctx.setFontSize(Math.round(s * 0.28))
+      ctx.setTextAlign('center')
+      ctx.setTextBaseline('middle')
+      ctx.fillText(String(label), center, center)
+    }
 
     ctx.draw()
   })

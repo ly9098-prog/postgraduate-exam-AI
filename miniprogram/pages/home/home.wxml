@@ -119,14 +119,6 @@
       </view>
       <text class="action-arrow line-icon icon-chevron-right"></text>
     </view>
-    <view class="action-card learning-card" hover-class="active-surface" bindtap="goImport" wx:if="{{isAdmin}}">
-      <view class="icon-badge icon-success"><text class="line-icon icon-import"></text></view>
-      <view class="action-info">
-        <text class="action-title">题库导入</text>
-        <text class="action-desc">拍照 / 文件上传导题</text>
-      </view>
-      <text class="action-arrow line-icon icon-chevron-right"></text>
-    </view>
   </view>
 
 </view>
