@@ -133,6 +133,8 @@ Page({
     growthLevel: '',
     growthExpText: '',
     growthLevelPct: 0,
+    growthBadgeCount: 0,
+
     /* 庆祝动效 */
     showCelebration: false,
     celebrationTitle: '',
@@ -392,6 +394,7 @@ Page({
         growthLevel: growth.level_title || 'Lv1 起步',
         growthExpText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
         growthLevelPct: growth.level_progress_pct || 0,
+        growthBadgeCount: unlockedBadges,
         growthTitle: `练习经验 +${Math.max(1, this.data.total)}`,
         growthDesc: unlockedBadges > 0
           ? `已点亮 ${unlockedBadges} 个徽章 · ${growth.level_title || ''}`

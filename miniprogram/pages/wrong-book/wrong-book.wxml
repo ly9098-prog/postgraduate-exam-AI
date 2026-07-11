@@ -14,7 +14,7 @@
       <text class="header-desc">把容易重复出错的题目集中解决</text>
     </view>
     <view class="header-actions">
-      <view class="icon-btn {{showFilter || selectedSubject || selectedErrorType || selectedTopic ? 'icon-btn-active' : ''}}" bindtap="toggleFilter" hover-class="icon-btn-pressed" hover-start-time="20" hover-stay-time="80">
+      <view class="icon-btn {{showFilter || selectedSubject || selectedErrorType || selectedTopic ? 'icon-btn-active' : ''}}" bindtap="toggleFilter">
         <text class="icon-btn-text">
           <block wx:if="{{filterCount > 0}}">筛选 {{filterCount}}</block>
           <block wx:else>筛选</block>
@@ -82,20 +82,20 @@
     <view class="filter-section">
       <text class="filter-section-title">学科</text>
       <view class="filter-chips">
-        <view wx:for="{{subjects}}" wx:key="value" class="chip {{selectedSubject === item.value ? 'chip-active' : ''}}" bindtap="selectSubject" data-value="{{item.value}}" hover-class="chip-pressed" hover-start-time="20" hover-stay-time="80">{{item.label}}</view>
+        <view wx:for="{{subjects}}" wx:key="value" class="chip {{selectedSubject === item.value ? 'chip-active' : ''}}" bindtap="selectSubject" data-value="{{item.value}}">{{item.label}}</view>
       </view>
     </view>
     <view class="filter-section">
       <text class="filter-section-title">错因</text>
       <view class="filter-chips">
-        <view wx:for="{{errorTypes}}" wx:key="value" class="chip {{selectedErrorType === item.value ? 'chip-active' : ''}}" bindtap="selectErrorType" data-value="{{item.value}}" hover-class="chip-pressed" hover-start-time="20" hover-stay-time="80">{{item.label}}</view>
+        <view wx:for="{{errorTypes}}" wx:key="value" class="chip {{selectedErrorType === item.value ? 'chip-active' : ''}}" bindtap="selectErrorType" data-value="{{item.value}}">{{item.label}}</view>
       </view>
     </view>
   </view>
 
   <view wx:if="{{selectedTopic}}" class="topic-filter-bar">
     <text class="topic-filter-label">知识点：{{selectedTopic}}</text>
-    <text class="topic-filter-clear" bindtap="clearTopic" hover-class="topic-filter-clear-pressed" hover-start-time="20" hover-stay-time="80">清除</text>
+    <text class="topic-filter-clear" bindtap="clearTopic">清除</text>
   </view>
 
   <!-- ════════════════════════════════════════════
@@ -183,7 +183,7 @@
   <view class="ai-error-state" wx:if="{{aiDiagnosisError && !aiDiagnosis}}">
     <view class="ai-error-body">
       <text class="ai-error-text">AI 诊断加载失败</text>
-      <text class="ai-error-action" bindtap="refreshAiDiagnosis" hover-class="ai-error-action-pressed" hover-start-time="20" hover-stay-time="80">重新分析</text>
+      <text class="ai-error-action" bindtap="refreshAiDiagnosis">重新分析</text>
     </view>
   </view>
 
@@ -241,7 +241,6 @@
         <text
           class="ai-refresh-action {{aiDiagnosisRefreshing ? 'disabled' : ''}}"
           bindtap="refreshAiDiagnosis"
-          hover-class="ai-refresh-action-pressed" hover-start-time="20" hover-stay-time="80"
         >重新分析</text>
       </view>
     </view>
@@ -297,7 +296,7 @@
       <text class="wl-header-hint">点击题目进入复盘</text>
       <text class="wl-header-count" wx:if="{{selectedSubject || selectedErrorType || selectedTopic}}">已找到 {{list.length}} 道</text>
     </view>
-    <view wx:for="{{list}}" wx:key="id" class="wl-item" bindtap="goDetail" data-id="{{item.id}}" hover-class="wl-item-pressed" hover-start-time="20" hover-stay-time="80">
+    <view wx:for="{{list}}" wx:key="id" class="wl-item" bindtap="goDetail" data-id="{{item.id}}">
       <!-- 状态装饰线 -->
       <view class="wl-status-line" style="background:{{item._masteryPercent >= 80 ? '#22C55E' : item._masteryPercent >= 40 ? '#4F7FFF' : '#EF4444'}};"></view>
       <view class="wl-body">
@@ -340,7 +339,7 @@
       </view>
       <view class="wl-sep" wx:if="{{index < list.length - 1}}"></view>
     </view>
-    <view class="wl-load-more" wx:if="{{hasMore}}" bindtap="loadMore" hover-class="wl-load-more-pressed" hover-start-time="20" hover-stay-time="80">
+    <view class="wl-load-more" wx:if="{{hasMore}}" bindtap="loadMore">
       <text class="wl-load-more-text">加载更多错题</text>
       <text class="wl-load-more-icon line-icon icon-chevron-down"></text>
     </view>

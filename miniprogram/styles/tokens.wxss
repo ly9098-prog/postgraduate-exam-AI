@@ -129,9 +129,9 @@
 .shadow-card-hover { box-shadow: 0 14rpx 36rpx rgba(42, 84, 160, 0.12); }
 .shadow-glow { box-shadow: 0 16rpx 44rpx rgba(79, 127, 255, 0.22); }
 .border-soft { border: 1rpx solid rgba(226, 234, 247, 0.92); }
-.active-opacity { opacity: 0.86; }
-.active-surface { background: #EEF4FF; }
-.tap-scale { transform: scale(0.98); opacity: 0.9; }
+.active-opacity:active { opacity: 0.86; }
+.active-surface:active { background: #EEF4FF; }
+.tap-scale:active { transform: scale(0.98); opacity: 0.9; }
 
 /* ── Semantic UI Shells ── */
 .learning-card {
@@ -213,7 +213,7 @@
 .motion-delay-3 { animation-delay: 0.12s; }
 .motion-delay-4 { animation-delay: 0.16s; }
 .motion-press { transition: transform 0.16s ease, opacity 0.16s ease, box-shadow 0.16s ease; }
-.motion-press { transform: scale(0.98); opacity: 0.9; }
+.motion-press:active { transform: scale(0.98); opacity: 0.9; }
 
 @keyframes page-enter {
   from { opacity: 0; transform: translateY(24rpx); }
