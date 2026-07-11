@@ -33,10 +33,9 @@ page {
   box-sizing: border-box;
 }
 
-/* ── Entrance Animation ── */
+/* ── Entrance Animation (opacity only — no transform to protect Canvas) ── */
 .animation-entrance {
   opacity: 0;
-  transform: translateY(24rpx);
 }
 
 .animation-entrance.entered {
@@ -46,7 +45,6 @@ page {
 @keyframes page-enter {
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -500,17 +498,15 @@ page {
   display: flex;
   flex-direction: column;
   align-items: center;
-  animation: timer-in 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: timer-in 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 @keyframes timer-in {
   from {
     opacity: 0;
-    transform: scale(0.92);
   }
   to {
     opacity: 1;
-    transform: scale(1);
   }
 }
 
@@ -534,13 +530,20 @@ page {
   letter-spacing: 4rpx;
 }
 
-/* ── Ring Container ── */
-.ring-wrapper {
+/* ── Ring Stage (transform-free zone for Canvas) ── */
+.ring-stage {
   position: relative;
   width: 520rpx;
   height: 520rpx;
+  flex: none;
   margin: 0 auto;
-  flex-shrink: 0;
+  transform: none;
+}
+
+.ring-wrapper {
+  position: absolute;
+  inset: 0;
+  transform: none;
 }
 
 .ring-glow {
