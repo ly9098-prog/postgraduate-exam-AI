@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 import { apiRequest, toQuery } from "@/lib/api/client";
-import type { AdminImportCompleteResponse, BatchAnswerImageApplyResponse, BatchAnswerImagePreviewResponse, BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportActionResponse, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
+import type { AdminImportCompleteResponse, BatchAnswerImageApplyResponse, BatchAnswerImagePreviewResponse, BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportActionResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 
 type FilterDropdownOption = {
   value: string;
@@ -320,6 +320,7 @@ export default function ImportReviewPage() {
   const [subjectEditDropdownStyle, setSubjectEditDropdownStyle] = useState<React.CSSProperties>({});
   const [riskDropdownOpen, setRiskDropdownOpen] = useState(false);
   const [answerStatusDropdownOpen, setAnswerStatusDropdownOpen] = useState(false);
+  const [batchDropdownOpen, setBatchDropdownOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [completedItem, setCompletedItem] = useState<ImportQuestionItem | null>(null);
@@ -480,6 +481,14 @@ export default function ImportReviewPage() {
     staleTime: 5 * 60 * 1000,
   });
   const subjectOptions = subjectsQuery.data ?? [];
+
+  // ── 批次列表（供批次选择器使用）──
+  const batchesQuery = useQuery({
+    queryKey: ["import-batches-for-selector"],
+    queryFn: () => apiRequest<PaginatedResponse<ImportBatchListItem>>(`/imports${toQuery({ page: 1, page_size: 100 })}`),
+    staleTime: 30 * 1000,
+    enabled: batchDropdownOpen,
+  });
 
   // ── 过滤出叶子科目（排除父级目录科目） ──
   function isLeafByPath(subject: {id: number; path?: string | null}, allSubjects: Array<{id: number; path?: string | null}>): boolean {
@@ -697,6 +706,8 @@ export default function ImportReviewPage() {
       // 处理结构化错误（error_code + detail）和普通错误
       const msg = error instanceof Error ? error.message : "预览失败";
       setBatchAnswerError(msg);
+    } finally {
+      setBatchAnswerExecuting(false);
     }
   }, [currentBatchId, batchAnswerRawText]);
 
@@ -1032,7 +1043,7 @@ export default function ImportReviewPage() {
             </div>
           </div>
           {/* ── Inline filter bar ── */}
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/30 px-3 py-2">
+          <div className="filter-bar flex flex-wrap items-center gap-2 px-3 py-2">
             {/* Search */}
             <div className="relative min-w-[180px] flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-hint)]" />
@@ -1106,13 +1117,52 @@ export default function ImportReviewPage() {
               ) : null}
             </div>
 
-            {/* Batch ID */}
-            <input
-              className="h-8 w-28 rounded-lg border border-[var(--color-border)] bg-white px-2.5 text-xs outline-none transition-colors focus:border-[var(--color-primary)]"
-              placeholder="批次 ID"
-              value={filters.batch_id || batchIdParam}
-              onChange={(event) => updateFilter("batch_id", event.target.value)}
-            />
+            {/* Batch ID selector */}
+            <div className="relative">
+              <input
+                className="h-8 w-36 rounded-lg border border-[var(--color-border)] bg-white px-2.5 text-xs outline-none transition-colors focus:border-[var(--color-primary)]"
+                placeholder="批次 ID"
+                value={filters.batch_id || batchIdParam}
+                onChange={(event) => updateFilter("batch_id", event.target.value)}
+                onFocus={() => setBatchDropdownOpen(true)}
+              />
+              <button
+                type="button"
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-[var(--color-text-hint)] hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)] transition"
+                onClick={() => setBatchDropdownOpen((v) => !v)}
+              >
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${batchDropdownOpen ? "rotate-180" : ""}`} />
+              </button>
+              {batchDropdownOpen ? (
+                <div className="scholar-dropdown absolute left-0 top-full z-20 mt-1 min-w-[360px] max-h-60 overflow-y-auto">
+                  {batchesQuery.isLoading ? (
+                    <div className="px-4 py-5 text-center text-xs text-[var(--color-text-hint)]">加载中…</div>
+                  ) : batchesQuery.data?.items?.length ? (
+                    batchesQuery.data.items.map((b) => (
+                      <button
+                        key={b.batch_id}
+                        type="button"
+                        className={`scholar-dropdown-item w-full ${
+                          (filters.batch_id || batchIdParam) === b.batch_id ? "active" : ""
+                        }`}
+                        onMouseDown={(e) => { e.preventDefault(); updateFilter("batch_id", b.batch_id); setBatchDropdownOpen(false); }}
+                      >
+                        {(filters.batch_id || batchIdParam) === b.batch_id ? (
+                          <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" />
+                        ) : (
+                          <span className="inline-block w-3.5 shrink-0" />
+                        )}
+                        <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px]" title={b.batch_id}>{b.batch_id}</span>
+                        <span className="tag-chip shrink-0 bg-[var(--color-bg-input)] text-[var(--color-text-hint)]">{b.total_count}题</span>
+                        <span className="shrink-0 text-[10px] text-[var(--color-text-hint)]">{b.source_type}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-4 py-5 text-center text-xs text-[var(--color-text-hint)]">暂无可选批次</div>
+                  )}
+                </div>
+              ) : null}
+            </div>
 
             {/* Status dropdown */}
             <div className="relative">
@@ -2412,9 +2462,9 @@ export default function ImportReviewPage() {
 
       {showBatchAnswerFill ? (
         <div className="fixed inset-0 z-40 flex justify-end bg-[rgba(16,24,40,0.28)]" role="presentation" onClick={() => { if (!batchAnswerExecuting) { setShowBatchAnswerFill(false); } }}>
-          <aside role="dialog" aria-modal="true" className="flex h-full w-full max-w-xl flex-col overflow-y-auto bg-white shadow-[var(--shadow-floating)]" onClick={(e) => e.stopPropagation()}>
+          <aside role="dialog" aria-modal="true" className="scholar-panel flex h-full w-full max-w-xl flex-col overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
-            <div className="sticky top-0 z-10 border-b border-[var(--color-border)] bg-white/95 px-6 py-4 backdrop-blur-xl">
+            <div className="scholar-panel-header sticky top-0 z-10 px-6 py-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <h4 className="font-display text-xl font-bold text-[var(--ink)]">快速补充答案</h4>
@@ -2444,22 +2494,22 @@ export default function ImportReviewPage() {
               </div>
               {/* Tab switcher */}
               {!batchAnswerApplyResult && !imageApplyResult ? (
-                <div className="mt-3 flex gap-1 rounded-lg bg-[var(--color-bg-input)] p-0.5">
+                <div className="mt-3 flex gap-0.5 rounded-xl border border-[var(--color-border-light)] bg-[var(--color-bg)]/70 p-0.5">
                   <button
-                    className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-150 ${
                       batchAnswerFillTab === "text"
-                        ? "bg-white text-[var(--ink)] shadow-sm"
-                        : "text-[var(--color-text-secondary)] hover:text-[var(--ink)]"
+                        ? "bg-white text-[var(--ink)] shadow-sm border border-[var(--color-border-light)]"
+                        : "text-[var(--color-text-secondary)] hover:text-[var(--ink)] border border-transparent"
                     }`}
                     onClick={() => setBatchAnswerFillTab("text")}
                   >
                     文字输入
                   </button>
                   <button
-                    className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-150 ${
                       batchAnswerFillTab === "image"
-                        ? "bg-white text-[var(--ink)] shadow-sm"
-                        : "text-[var(--color-text-secondary)] hover:text-[var(--ink)]"
+                        ? "bg-white text-[var(--ink)] shadow-sm border border-[var(--color-border-light)]"
+                        : "text-[var(--color-text-secondary)] hover:text-[var(--ink)] border border-transparent"
                     }`}
                     onClick={() => setBatchAnswerFillTab("image")}
                   >

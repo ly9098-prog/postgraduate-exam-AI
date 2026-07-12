@@ -278,15 +278,15 @@ export default function ImportTasksPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <label htmlFor={fileInputId}>
-                <div className={`relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 transition ${
+                <div className={`paper-texture relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-10 transition-all duration-200 ${
                   isPipelineRunning
                     ? "border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-50"
                     : file
                       ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]"
-                      : "border-[var(--color-border)] bg-white/50 hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)]"
+                      : "border-[var(--color-border)] bg-white/60 hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)]"
                 }`}>
-                  <div className={`mb-3 flex h-14 w-14 items-center justify-center rounded-2xl transition ${file ? "bg-white shadow-sm" : "bg-[var(--color-primary-light)]"}`}>
-                    <FileBox className={`h-7 w-7 ${file ? "text-[var(--color-primary-dark)]" : "text-[var(--color-primary)]"}`} />
+                  <div className={`mb-4 flex h-16 w-16 items-center justify-center rounded-2xl transition-all duration-200 ${file ? "bg-white shadow-sm scale-105" : "bg-[var(--color-primary-light)]"}`}>
+                    <FileBox className={`h-8 w-8 ${file ? "text-[var(--color-primary-dark)]" : "text-[var(--color-primary)]"}`} />
                   </div>
                   {file ? (
                     <div className="text-center">
@@ -427,27 +427,31 @@ export default function ImportTasksPage() {
             {status ? (
               <div className="space-y-6">
                 {/* Stage Bar */}
-                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)]/50 p-5">
-                  <div className="flex items-start">
+                <div className="rounded-2xl border border-[var(--color-border-light)] bg-white/60 p-6 backdrop-blur-sm">
+                  <div className="flex items-start justify-between">
                     {stages.map((stg, i) => (
-                      <div key={stg.name} className={`flex flex-1 flex-col items-center gap-2 ${i < stages.length - 1 ? "relative" : ""}`}>
+                      <div key={stg.name} className="flex flex-1 flex-col items-center gap-3 relative">
                         {/* Connector line to next stage */}
                         {i < stages.length - 1 && (
-                          <div className="absolute left-[calc(50%+18px)] right-[calc(-50%+18px)] top-4 h-[2px]">
-                            <div className={`h-full rounded-full transition-all duration-700 ease-out ${
-                              stg.s === "done" ? "bg-[var(--color-success)]" : "bg-[var(--color-border)]"
-                            }`} />
+                          <div className="stage-connector">
+                            <div className={`fill ${stg.s === "done" ? "w-full bg-[var(--color-success)]" : stg.s === "active" ? "w-1/3 bg-[var(--color-warning)]" : "w-0 bg-[var(--color-border)]"}`} />
                           </div>
                         )}
-                        <div className={`relative flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-all duration-500 ease-out ${
-                          stg.s === "done" ? "bg-[var(--color-success)] text-white stage-circle-done"
-                            : stg.s === "active" ? "bg-[var(--color-warning)] text-white stage-circle-active"
+                        <div className={`relative flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-all duration-500 ease-out ${
+                          stg.s === "done" ? "bg-[var(--color-success)] text-white shadow-[0_0_0_4px_rgba(91,140,91,0.15)] stage-circle-done"
+                            : stg.s === "active" ? "bg-[var(--color-warning)] text-white shadow-[0_0_0_4px_rgba(196,154,107,0.2)] stage-circle-active"
                               : stg.s === "failed" ? "bg-[var(--color-danger)] text-white"
-                                : "bg-white text-[var(--color-text-hint)] border border-[var(--color-border)]"
+                                : "bg-white text-[var(--color-text-hint)] border-2 border-[var(--color-border)]"
                         }`}>
-                          {stg.s === "done" ? "✓" : stg.s === "failed" ? "✕" : i + 1}
+                          {stg.s === "done" ? (
+                            <CheckCircle2 className="h-5 w-5" />
+                          ) : stg.s === "failed" ? (
+                            <span className="text-lg font-bold">!</span>
+                          ) : (
+                            <span className="text-sm font-bold">{i + 1}</span>
+                          )}
                         </div>
-                        <span className={`text-[11px] font-semibold text-center leading-tight transition-colors duration-300 ${
+                        <span className={`text-[11px] font-semibold text-center leading-tight px-1 ${
                           stg.s === "active" ? "text-[var(--color-warning)]"
                             : stg.s === "done" ? "text-[var(--color-success)]"
                               : stg.s === "failed" ? "text-[var(--color-danger)]"
@@ -481,21 +485,21 @@ export default function ImportTasksPage() {
 
                 {/* Progress bar */}
                 {isPipelineRunning ? (
-                  <div className="space-y-1.5">
+                  <div className="metric-card space-y-2">
                     <div className="flex items-center justify-between text-xs text-[var(--color-text-hint)]">
                       <span>解析进度</span>
                       <span className="font-bold text-[var(--ink)]">{status.ocr_progress || "0%"}</span>
                     </div>
                     <div className="overflow-hidden rounded-full bg-[var(--color-bg-input)]">
-                      <div className="h-3 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[#7b9bbb] transition-all duration-700" style={{ width: status.ocr_progress || "0%" }} />
+                      <div className="h-2.5 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[#7b9bbb] transition-all duration-1000 ease-out" style={{ width: status.ocr_progress || "0%" }} />
                     </div>
                   </div>
                 ) : null}
 
                 {/* Pipeline summary cards */}
-                <div className="grid grid-cols-3 gap-3 lg:grid-cols-6">
+                <div className="stagger-enter grid grid-cols-3 gap-3 lg:grid-cols-6">
                   {progressItems.map(([label, value]) => (
-                    <div key={String(label)} className="rounded-xl border border-[var(--color-border)] bg-white/70 p-3">
+                    <div key={String(label)} className="metric-card !p-3">
                       <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-[var(--color-text-hint)]">{label}</p>
                       <div className="mt-1.5 truncate text-sm font-semibold text-[var(--ink)]">
                         {label === "当前状态" ? <StatusBadge tone={statusTone(String(value || ""))}>{String(value || "—")}</StatusBadge> : String(value || "—")}
@@ -595,24 +599,24 @@ export default function ImportTasksPage() {
               <div className="space-y-6">
                 {/* Main stats */}
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <div className="rounded-2xl border border-[var(--color-border)] bg-white/70 p-5 text-center">
+                  <div className="metric-card text-center">
                     <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--color-text-hint)]">总题数</p>
                     <p className="mt-2 font-display text-4xl font-bold text-[var(--ink)]">{status.quality_report.total_questions}</p>
                   </div>
                   {status.quality_report.low_risk !== undefined ? (
-                    <div className="rounded-2xl bg-green-50/80 p-5 text-center">
+                    <div className="metric-card text-center border-green-200/60 bg-green-50/50">
                       <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-green-600">低风险</p>
                       <p className="mt-2 font-display text-4xl font-bold text-green-700">{status.quality_report.low_risk}</p>
                     </div>
                   ) : null}
                   {status.quality_report.medium_risk !== undefined ? (
-                    <div className="rounded-2xl bg-amber-50/80 p-5 text-center">
+                    <div className="metric-card text-center border-amber-200/60 bg-amber-50/50">
                       <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-amber-600">需检查</p>
                       <p className="mt-2 font-display text-4xl font-bold text-amber-700">{status.quality_report.medium_risk}</p>
                     </div>
                   ) : null}
                   {status.quality_report.high_risk !== undefined ? (
-                    <div className="rounded-2xl bg-red-50/80 p-5 text-center">
+                    <div className="metric-card text-center border-red-200/60 bg-red-50/50">
                       <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-red-600">高风险</p>
                       <p className="mt-2 font-display text-4xl font-bold text-red-700">{status.quality_report.high_risk}</p>
                     </div>
