@@ -38,9 +38,13 @@ class TrendPointV2(BaseModel):
 class TrendsV2(BaseModel):
     days: int = 7
     points: list[TrendPointV2] = []
+    previous_points: list[TrendPointV2] = []
     total_questions: int = 0
     active_days: int = 0
     avg_accuracy: float = 0.0
+    previous_total_questions: int = 0
+    previous_active_days: int = 0
+    previous_avg_accuracy: float = 0.0
     summary: str = ""
 
 

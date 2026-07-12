@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import json
 
 from sqlalchemy import case, func, select
@@ -145,12 +145,18 @@ async def get_subject_stats(db: AsyncSession, user_id: int) -> list[dict]:
 
 
 async def get_trends(
-    db: AsyncSession, user_id: int, days: int = 7
+    db: AsyncSession, user_id: int, days: int = 7,
+    start_date: date | None = None,
 ) -> list[dict]:
-    """学习趋势（按天聚合）"""
-    since = datetime.combine(
-        utcnow().date() - timedelta(days=days - 1), datetime.min.time()
-    )
+    """学习趋势（按天聚合）
+
+    start_date: 起始日期（含），默认自动向前推 days 天。
+    """
+    today = utcnow().date()
+    if start_date is None:
+        start_date = today - timedelta(days=days - 1)
+
+    since = datetime.combine(start_date, datetime.min.time())
 
     result = await db.execute(
         select(
@@ -177,7 +183,7 @@ async def get_trends(
 
     points = []
     for i in range(days):
-        d = (utcnow().date() - timedelta(days=days - 1 - i)).isoformat()
+        d = (start_date + timedelta(days=i)).isoformat()
         entry = data.get(d, {"count": 0, "correct": 0, "wrong": 0})
         total = entry["count"]
         points.append(
@@ -458,18 +464,32 @@ async def get_dashboard_v2(
 
     rec = _build_recommendation(ov, forgetting_data, weak_subj)
 
-    # 3. Trends
+    # 3. Trends (current + previous period)
     trend_points = await get_trends(db, user_id, trend_days)
+    today = utcnow().date()
+    previous_start = today - timedelta(days=2 * trend_days - 1)
+    previous_points = await get_trends(db, user_id, trend_days, start_date=previous_start)
+
     trend_total = sum(t.get("questions", 0) for t in trend_points)
     trend_correct = sum(t.get("correct", 0) for t in trend_points)
     trend_active = sum(1 for t in trend_points if t.get("questions", 0) > 0)
     trend_avg_acc = round(trend_correct / trend_total, 4) if trend_total > 0 else 0.0
+
+    prev_total = sum(p.get("questions", 0) for p in previous_points)
+    prev_correct = sum(p.get("correct", 0) for p in previous_points)
+    prev_active = sum(1 for p in previous_points if p.get("questions", 0) > 0)
+    prev_avg_acc = round(prev_correct / prev_total, 4) if prev_total > 0 else 0.0
+
     tr = {
         "days": trend_days,
         "points": trend_points,
+        "previous_points": previous_points,
         "total_questions": trend_total,
         "active_days": trend_active,
         "avg_accuracy": trend_avg_acc,
+        "previous_total_questions": prev_total,
+        "previous_active_days": prev_active,
+        "previous_avg_accuracy": prev_avg_acc,
         "summary": f"近{trend_days}天累计做题{trend_total}题，平均正确率{round(trend_avg_acc * 100)}%，活跃{trend_active}天。",
     }
 
