@@ -700,8 +700,10 @@ async def batch_answer_preview(
             admin_id=current_admin.id,
         )
     except BusinessError as exc:
+        logger.warning("batch_answer_preview failed: batch_id=%s error_code=%s message=%s", batch_id, exc.code, exc.message)
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"error_code": exc.code, "detail": exc.message})
     except ValueError as exc:
+        logger.warning("batch_answer_preview invalid input: batch_id=%s error=%s", batch_id, str(exc))
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"error_code": "INVALID_INPUT", "detail": str(exc)})
 
 
@@ -722,6 +724,7 @@ async def batch_answer_apply(
     except HTTPException:
         raise
     except BusinessError as exc:
+        logger.warning("batch_answer_apply failed: batch_id=%s error_code=%s message=%s", batch_id, exc.code, exc.message)
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"error_code": exc.code, "detail": exc.message})
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"error_code": "INVALID_INPUT", "detail": str(exc)})
@@ -817,11 +820,13 @@ async def batch_answer_image_preview(
             result.setdefault("warnings", []).append(f"{len(rejected)} 张图片未通过校验: {'; '.join(rejected)}")
         return result
     except BusinessError as exc:
+        logger.warning("batch_answer_image_preview failed: batch_id=%s error_code=%s message=%s", batch_id, exc.code, exc.message)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"error_code": exc.code, "detail": exc.message},
         )
     except ValueError as exc:
+        logger.warning("batch_answer_image_preview invalid input: batch_id=%s error=%s", batch_id, str(exc))
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"error_code": "INVALID_INPUT", "detail": str(exc)},
@@ -847,6 +852,7 @@ async def batch_answer_image_apply(
     except HTTPException:
         raise
     except BusinessError as exc:
+        logger.warning("batch_answer_image_apply failed: batch_id=%s error_code=%s message=%s", batch_id, exc.code, exc.message)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"error_code": exc.code, "detail": exc.message},

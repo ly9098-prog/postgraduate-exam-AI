@@ -39,6 +39,13 @@ function readMessage(payload: unknown) {
   if (payload && typeof payload === "object" && "detail" in payload) {
     const detail = (payload as { detail?: unknown }).detail;
     if (typeof detail === "string") return detail;
+    if (typeof detail === "object" && detail !== null) {
+      // FastAPI nested error: {"detail": {"error_code": "...", "detail": "真实错误"}}
+      const innerDetail = (detail as { detail?: string }).detail;
+      if (typeof innerDetail === "string") return innerDetail;
+      const errorCode = (detail as { error_code?: string }).error_code;
+      if (typeof errorCode === "string") return `[${errorCode}]`;
+    }
   }
   if (payload && typeof payload === "object" && "error" in payload) {
     const error = (payload as { error?: { message?: unknown } }).error;
