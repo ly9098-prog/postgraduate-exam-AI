@@ -37,8 +37,8 @@ Page({
   async loadCard(formulaId) {
     this.setData({ loading: true })
     try {
-      const res = await api.request('GET', `/formulas/${formulaId}`)
-      const card = this.enrichCard(res.data || {})
+      const data = await api.request('GET', `/formulas/${formulaId}`)
+      const card = await this.enrichCard(data || {})
       this.setData({
         displayCards: [card],
         currentIndex: 0,
@@ -57,8 +57,12 @@ Page({
     this.setData({ loading: true })
     try {
       const params = { ...this.data.randomParams }
-      const res = await api.request('GET', '/formulas/random/next', params)
-      const card = this.enrichCard(res.data || {})
+      // Send exclude_ids if we've accumulated any
+      if (this.data._excludeIds && this.data._excludeIds.length > 0) {
+        params.exclude_ids = this.data._excludeIds.slice(-50).join(',')
+      }
+      const data = await api.request('GET', '/formulas/random/next', params)
+      const card = await this.enrichCard(data || {})
       // Track exclude ids for future random calls
       this.data._excludeIds = this.data._excludeIds || []
       if (card.id) this.data._excludeIds.push(card.id)
@@ -82,8 +86,8 @@ Page({
     // Check favorite status
     if (auth.isLoggedIn()) {
       try {
-        const res = await api.request('GET', '/formulas/favorites/list', { page: 1, page_size: 100 })
-        const favIds = (res.data?.items || []).map(f => f.id)
+        const data = await api.request('GET', '/formulas/favorites/list', { page: 1, page_size: 100 })
+        const favIds = (data?.items || []).map(f => f.id)
         card.isFavorited = favIds.includes(card.id)
       } catch (e) {
         card.isFavorited = false

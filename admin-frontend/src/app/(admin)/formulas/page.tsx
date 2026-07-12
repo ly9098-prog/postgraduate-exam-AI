@@ -1,19 +1,15 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Check,
-  ChevronDown,
   Search,
   Sigma,
   Clock,
   Tag,
-  FileQuestion,
   Plus,
   ExternalLink,
   Layers,
-  Hash,
   Trash2,
   Eye,
   EyeOff,
@@ -25,12 +21,14 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { CustomSelect } from "@/components/ui/custom-select";
+import { LatexRenderer } from "@/components/ui/latex-renderer";
+import { FormulaCategoryPicker } from "@/components/formulas/formula-category-picker";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import type { PaginatedResponse } from "@/lib/api/types";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 /* ── Types ── */
 
@@ -59,17 +57,6 @@ type FormulaCard = {
   source_title: string | null;
   rejection_reason: string | null;
 };
-
-type FormulaCategory = {
-  id: number;
-  parent_id: number | null;
-  code: string;
-  name: string;
-  node_type: string;
-  children: FormulaCategory[];
-};
-
-type TagOption = { id: number; code: string; name: string };
 
 /* ── Status helpers ── */
 
@@ -101,69 +88,9 @@ const STATUS_LABEL: Record<string, string> = {
   offline: "已下架",
 };
 
-/* ── Custom Select ── */
-
-function CustomSelect({
-  options, value, onChange, className = "",
-}: {
-  options: { label: string; value: string }[];
-  value: string;
-  onChange: (v: string) => void;
-  className?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const selected = options.find((o) => o.value === value);
-  return (
-    <div className={`relative ${className}`}>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex h-11 w-full items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
-      >
-        <span className="truncate">{selected?.label ?? "—"}</span>
-        <ChevronDown className={`ml-2 h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && (
-        <div className="absolute z-[100] mt-1 w-full rounded-xl border bg-white py-1 shadow-lg">
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => { onChange(opt.value); setOpen(false); }}
-              className={`flex w-full items-center px-3 py-2 text-left text-sm transition-colors ${
-                opt.value === value ? "bg-[var(--color-bg-input)] font-medium" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]/50"
-              }`}
-            >
-              {opt.value === value && <Check className="mr-2 h-3.5 w-3.5 shrink-0" />}
-              <span className={opt.value === value ? "" : "pl-5.5"}>{opt.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Category tree flat options ── */
-
-function flattenCategories(cats: FormulaCategory[], prefix = ""): Array<{ id: number; label: string }> {
-  const result: Array<{ id: number; label: string }> = [];
-  for (const cat of cats) {
-    const label = prefix ? `${prefix} / ${cat.name}` : cat.name;
-    if (cat.node_type === "group") {
-      result.push({ id: cat.id, label });
-    }
-    if (cat.children?.length) {
-      result.push(...flattenCategories(cat.children, label));
-    }
-  }
-  return result;
-}
-
 /* ── Main page ── */
 
 export default function FormulasPage() {
-  const router = useRouter();
   const queryClient = useQueryClient();
   const permissions = useAuthStore((state) => state.permissions);
 
@@ -181,24 +108,6 @@ export default function FormulasPage() {
   const canUpdate = hasPermission(permissions, "formula:update");
   const canReview = hasPermission(permissions, "formula:review");
   const canDelete = hasPermission(permissions, "formula:delete");
-
-  // Load categories
-  const categories = useQuery({
-    queryKey: ["admin-formula-categories"],
-    queryFn: () => apiRequest<{ items: FormulaCategory[] }>("/formulas/categories"),
-    staleTime: 60000,
-  });
-  const catOptions = useMemo(
-    () => flattenCategories(categories.data?.items ?? []),
-    [categories.data?.items],
-  );
-
-  // Load tags
-  const tags = useQuery({
-    queryKey: ["admin-formula-tags"],
-    queryFn: () => apiRequest<{ items: TagOption[] }>("/formulas/tags"),
-    staleTime: 60000,
-  });
 
   // Load list
   const queryParams = useMemo(() => ({
@@ -297,7 +206,7 @@ export default function FormulasPage() {
           </div>
 
           <div className="rounded-3xl border border-[var(--color-border)] bg-white/65 p-3 shadow-sm">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(200px,1fr)_180px_180px_auto]">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(200px,1fr)_180px_220px_auto]">
               <label className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
                 <Input
@@ -311,14 +220,14 @@ export default function FormulasPage() {
                 value={filters.status}
                 onChange={(v) => updateFilter("status", v)}
                 options={STATUS_OPTIONS}
+                placeholder="全部状态"
+                clearable={false}
               />
-              <CustomSelect
-                value={filters.category_id}
-                onChange={(v) => updateFilter("category_id", v)}
-                options={[
-                  { label: "全部分类", value: "" },
-                  ...catOptions.map((c) => ({ label: c.label, value: String(c.id) })),
-                ]}
+              <FormulaCategoryPicker
+                mode="filter"
+                value={filters.category_id ? parseInt(filters.category_id) : null}
+                onChange={(v) => updateFilter("category_id", v ? String(v) : "")}
+                placeholder="全部分类"
               />
               <Link href="/formulas/new">
                 <Button variant="secondary" className="w-full">
@@ -522,7 +431,7 @@ export default function FormulasPage() {
                     {selectedCard.formula_blocks?.map((block, i) => (
                       <div key={i} className="rounded-xl border border-[var(--color-border)] bg-white p-4">
                         {block.label && <p className="mb-1 text-xs font-semibold text-[var(--color-text-hint)]">{block.label}</p>}
-                        <pre className="overflow-x-auto font-mono text-sm text-[var(--ink)]">{block.latex}</pre>
+                        <LatexRenderer latex={block.latex} displayMode={true} />
                         {block.note && <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{block.note}</p>}
                       </div>
                     ))}

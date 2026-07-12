@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Search, X } from "lucide-react";
 
@@ -47,6 +47,7 @@ export function CustomSelect({
   const listRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const activeIndexRef = useRef(-1);
+  const [dropdownEl, setDropdownEl] = useState<HTMLDivElement | null>(null);
 
   const selected = options.find((o) => o.value === value);
   const filtered = searchable && search
@@ -57,15 +58,38 @@ export function CustomSelect({
       )
     : options;
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("click", handler);
-    return () => document.removeEventListener("click", handler);
+  const close = useCallback(() => {
+    setOpen(false);
   }, []);
+
+  useEffect(() => {
+    const handler = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (
+        ref.current?.contains(target) ||
+        dropdownEl?.contains(target)
+      ) {
+        return;
+      }
+      close();
+    };
+    // Use pointerdown capture so the handler fires before any click/selection logic
+    document.addEventListener("pointerdown", handler, { capture: true });
+    return () => document.removeEventListener("pointerdown", handler, { capture: true });
+  }, [close, dropdownEl]);
+
+  useEffect(() => {
+    if (open) {
+      const escHandler = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          close();
+          ref.current?.querySelector("button")?.focus();
+        }
+      };
+      document.addEventListener("keydown", escHandler);
+      return () => document.removeEventListener("keydown", escHandler);
+    }
+  }, [open, close]);
 
   useEffect(() => {
     if (!open) {
@@ -175,6 +199,7 @@ export function CustomSelect({
       {open && (
         <PortalDropdown
           triggerRef={ref}
+          setDropdownEl={setDropdownEl}
           searchable={searchable}
           search={search}
           onSearchChange={setSearch}
@@ -193,6 +218,7 @@ export function CustomSelect({
 
 function PortalDropdown({
   triggerRef,
+  setDropdownEl,
   searchable,
   search,
   onSearchChange,
@@ -205,6 +231,7 @@ function PortalDropdown({
   searchPlaceholder,
 }: {
   triggerRef: React.RefObject<HTMLDivElement | null>;
+  setDropdownEl: (el: HTMLDivElement | null) => void;
   searchable: boolean;
   search: string;
   onSearchChange: (v: string) => void;
@@ -269,6 +296,7 @@ function PortalDropdown({
 
   return createPortal(
     <div
+      ref={(el) => setDropdownEl(el)}
       role="listbox"
       className={cn(
         "rounded-xl border border-[var(--color-border)]/80 bg-white shadow-lg transition-all duration-150",

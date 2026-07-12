@@ -66,8 +66,22 @@
     </view>
   </view>
 
+  <!-- Initial Loading State -->
+  <view class="fl-loading" wx:if="{{initialLoading}}">
+    <text>加载中...</text>
+  </view>
+
+  <!-- Error State -->
+  <view class="fl-empty" wx:if="{{!initialLoading && loadError}}">
+    <text class="fl-empty-icon">⚠️</text>
+    <text class="fl-empty-text">{{loadErrorMessage || '加载失败'}}</text>
+    <view class="fl-reload-btn" bindtap="reload">
+      <text>重新加载</text>
+    </view>
+  </view>
+
   <!-- Formula List -->
-  <view class="fl-list" wx:if="{{formulas.length > 0}}">
+  <view class="fl-list" wx:if="{{!loadError && formulas.length > 0}}">
     <view class="fl-card" wx:for="{{formulas}}" wx:key="id"
       data-id="{{item.id}}" bindtap="goToReader"
       hover-class="fl-card-pressed">
@@ -78,20 +92,20 @@
       </view>
       <text class="fl-card-summary" wx:if="{{item.summary}}">{{item.summary}}</text>
       <view class="fl-card-formula">
-        <text wx:for="{{item.formula_blocks}}" wx:for-item="b" wx:key="*this">{{b.latex}}</text>
+        <text wx:for="{{item.formula_blocks.slice(0, 2)}}" wx:for-item="b" wx:key="*this"
+          class="fl-card-latex">{{b.latex}}</text>
       </view>
       <text class="fl-card-arrow">→</text>
     </view>
+    <!-- Loading More -->
+    <view class="fl-loading-more" wx:if="{{loadingMore}}">
+      <text>加载更多...</text>
+    </view>
   </view>
 
-  <!-- Empty State -->
-  <view class="fl-empty" wx:if="{{!loading && formulas.length === 0}}">
+  <!-- Empty State (not loading, no error) -->
+  <view class="fl-empty" wx:if="{{!initialLoading && !loadError && formulas.length === 0}}">
     <text class="fl-empty-icon">📝</text>
     <text class="fl-empty-text">{{searchValue ? '没有找到匹配的公式' : '暂无公式数据'}}</text>
-  </view>
-
-  <!-- Loading -->
-  <view class="fl-loading" wx:if="{{loading}}">
-    <text>加载中...</text>
   </view>
 </view>
