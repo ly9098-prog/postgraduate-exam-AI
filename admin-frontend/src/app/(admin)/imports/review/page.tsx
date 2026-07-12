@@ -321,6 +321,7 @@ export default function ImportReviewPage() {
   const [riskDropdownOpen, setRiskDropdownOpen] = useState(false);
   const [answerStatusDropdownOpen, setAnswerStatusDropdownOpen] = useState(false);
   const [batchDropdownOpen, setBatchDropdownOpen] = useState(false);
+  const batchDropdownRef = useRef<HTMLDivElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [completedItem, setCompletedItem] = useState<ImportQuestionItem | null>(null);
@@ -369,6 +370,18 @@ export default function ImportReviewPage() {
   const currentBatchId = filters.batch_id || batchIdParam;
 
   const syncedDetailRef = useRef<Set<number>>(new Set());
+
+  // Close batch dropdown on outside click
+  useEffect(() => {
+    if (!batchDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (batchDropdownRef.current && !batchDropdownRef.current.contains(e.target as Node)) {
+        setBatchDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [batchDropdownOpen]);
 
   // Close subject dropdown on outside click (portal bypasses drawer's onBlur chain)
   useEffect(() => {
@@ -1118,27 +1131,41 @@ export default function ImportReviewPage() {
             </div>
 
             {/* Batch ID selector */}
-            <div className="relative">
-              <input
-                className="h-8 w-36 rounded-lg border border-[var(--color-border)] bg-white px-2.5 text-xs outline-none transition-colors focus:border-[var(--color-primary)]"
-                placeholder="批次 ID"
-                value={filters.batch_id || batchIdParam}
-                onChange={(event) => updateFilter("batch_id", event.target.value)}
-                onFocus={() => setBatchDropdownOpen(true)}
-              />
-              <button
-                type="button"
-                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-[var(--color-text-hint)] hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)] transition"
-                onClick={() => setBatchDropdownOpen((v) => !v)}
-              >
-                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${batchDropdownOpen ? "rotate-180" : ""}`} />
-              </button>
+            <div className="relative" ref={batchDropdownRef}>
+              <div className="relative">
+                <input
+                  className="h-8 w-44 rounded-lg border border-[var(--color-border)] bg-white px-2.5 pr-14 text-xs outline-none transition-colors focus:border-[var(--color-primary)]"
+                  placeholder="批次 ID"
+                  value={filters.batch_id || batchIdParam}
+                  onChange={(event) => updateFilter("batch_id", event.target.value)}
+                  onFocus={() => setBatchDropdownOpen(true)}
+                />
+                {(filters.batch_id || batchIdParam) ? (
+                  <button
+                    type="button"
+                    className="absolute right-6 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-[var(--color-text-hint)] hover:text-[var(--color-danger)] transition"
+                    onClick={() => { updateFilter("batch_id", ""); setBatchDropdownOpen(false); }}
+                    title="清空"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-[var(--color-text-hint)] hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)] transition"
+                  onClick={() => setBatchDropdownOpen((v) => !v)}
+                >
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${batchDropdownOpen ? "rotate-180" : ""}`} />
+                </button>
+              </div>
               {batchDropdownOpen ? (
-                <div className="scholar-dropdown absolute left-0 top-full z-20 mt-1 min-w-[360px] max-h-60 overflow-y-auto">
+                <div className="scholar-dropdown absolute left-0 top-full z-20 mt-1 min-w-[360px] max-h-60">
                   {batchesQuery.isLoading ? (
                     <div className="px-4 py-5 text-center text-xs text-[var(--color-text-hint)]">加载中…</div>
                   ) : batchesQuery.data?.items?.length ? (
-                    batchesQuery.data.items.map((b) => (
+                    batchesQuery.data.items
+                      .filter((b) => b.batch_id && b.batch_id.trim())
+                      .map((b) => (
                       <button
                         key={b.batch_id}
                         type="button"
