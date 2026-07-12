@@ -1134,7 +1134,7 @@ export default function ImportReviewPage() {
             <div className="relative" ref={batchDropdownRef}>
               <div className="relative">
                 <input
-                  className="h-8 w-56 rounded-lg border border-[var(--color-border)] bg-white px-2.5 pr-14 text-xs outline-none transition-colors focus:border-[var(--color-primary)]"
+                  className="h-8 w-48 rounded-lg border border-[var(--color-border)] bg-white px-2.5 pr-14 text-xs outline-none transition-colors focus:border-[var(--color-primary)]"
                   placeholder="批次 ID"
                   value={filters.batch_id || batchIdParam}
                   onChange={(event) => updateFilter("batch_id", event.target.value)}
@@ -1159,7 +1159,7 @@ export default function ImportReviewPage() {
                 </button>
               </div>
               {batchDropdownOpen ? (
-                <div className="scholar-dropdown absolute left-0 top-full z-20 mt-1 min-w-[480px] max-h-60">
+                <div className="scholar-dropdown absolute left-0 top-full z-20 mt-1 min-w-[380px] max-w-[420px] max-h-60">
                   {batchesQuery.isLoading ? (
                     <div className="px-4 py-5 text-center text-xs text-[var(--color-text-hint)]">加载中…</div>
                   ) : batchesQuery.data?.items?.length ? (
@@ -1179,7 +1179,7 @@ export default function ImportReviewPage() {
                         ) : (
                           <span className="inline-block w-3.5 shrink-0" />
                         )}
-                        <span className="min-w-0 flex-1 font-mono text-[11px]" title={b.batch_id}>{b.batch_id}</span>
+                        <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px]" title={b.batch_id}>{b.batch_id}</span>
                         <span className="tag-chip shrink-0 bg-[var(--color-success-light)] text-[var(--color-success)]">{b.pending_count}待审</span>
                         <span className="shrink-0 text-[10px] text-[var(--color-text-hint)]">{b.total_count}题</span>
                       </button>
