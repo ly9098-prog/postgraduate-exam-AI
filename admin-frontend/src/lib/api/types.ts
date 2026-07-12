@@ -750,13 +750,71 @@ export type BatchAnswerPreviewSummary = {
 export type BatchAnswerPreviewResponse = {
   batch_id: string;
   preview_token: string;
+  operation_id: string;
   summary: BatchAnswerPreviewSummary;
   items: BatchAnswerPreviewItem[];
   warnings: string[];
 };
 
 export type BatchAnswerApplyResponse = {
+  operation_id: string;
   updated_count: number;
   skipped_existing_count: number;
   remaining_count: number;
+  batch_stats: Record<string, number>;
+};
+
+// ── 批量答案补录 — 图片导入 (Phase 2) ──
+
+export type BatchAnswerImagePreviewItem = {
+  import_id: number | null;
+  source_order_index: number | null;
+  source_question_no: string | null;
+  stem_excerpt: string;
+  question_type: string | null;
+  original_answer: string | null;
+  original_analysis: string | null;
+  extracted_answer: string | null;
+  extracted_analysis: string | null;
+  status: string; // matched | unmatched | ambiguous
+  status_message: string;
+  will_update_answer: boolean;
+  will_update_analysis: boolean;
+  validation_errors: string[];
+  source_filename: string | null;
+  image_index: number | null;
+  ocr_confidence: number | null;
+  extract_method: string | null;
+  raw_text_excerpt: string | null;
+};
+
+export type BatchAnswerImagePreviewSummary = {
+  total_images: number;
+  extracted_entries: number;
+  matched_count: number;
+  unmatched_count: number;
+  ambiguous_count: number;
+  writable_answer_count: number;
+  writable_analysis_count: number;
+  skipped_existing_answer_count: number;
+  skipped_existing_analysis_count: number;
+};
+
+export type BatchAnswerImagePreviewResponse = {
+  batch_id: string;
+  preview_token: string;
+  operation_id: string;
+  summary: BatchAnswerImagePreviewSummary;
+  items: BatchAnswerImagePreviewItem[];
+  warnings: string[];
+};
+
+export type BatchAnswerImageApplyResponse = {
+  operation_id: string;
+  updated_answer_count: number;
+  updated_analysis_count: number;
+  skipped_existing_answer_count: number;
+  skipped_existing_analysis_count: number;
+  remaining_count: number;
+  batch_stats: Record<string, number>;
 };
