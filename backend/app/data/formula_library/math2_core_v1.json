@@ -1,0 +1,903 @@
+"""
+math2_core_v1 — 考研数学二核心公式
+
+科目结构：
+  math2_high_math (高等数学)
+    → 函数、极限与连续
+    → 一元函数微分学
+    → 一元函数积分学
+    → 多元函数微分学
+    → 二重积分
+    → 常微分方程
+  math2_linear_algebra (线性代数)
+    → 行列式
+    → 矩阵
+    → 向量
+    → 线性方程组
+    → 矩阵的特征值和特征向量
+    → 二次型
+
+每个 group（公式分类）包含 2～8 张卡片。
+"""
+
+MATH2_CORE = {
+    "subjects": [
+        {
+            "code": "math2_high_math",
+            "name": "高等数学",
+            "node_type": "subject",
+            "chapters": [
+                {
+                    "code": "limits",
+                    "name": "函数、极限与连续",
+                    "groups": [
+                        {
+                            "code": "basic_limit",
+                            "name": "极限基础公式",
+                            "cards": [
+                                {
+                                    "title": "两个重要极限",
+                                    "aliases": ["重要极限", "sinx/x极限", "1∞极限"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "must_memorize"],
+                                    "summary": "考研数学中使用频率最高的两个极限，几乎每年必考。",
+                                    "formula_blocks": [
+                                        {"label": "第一个重要极限", "latex": "\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1", "note": "x为弧度制"},
+                                        {"label": "推广形式", "latex": "\\lim_{x \\to 0} \\frac{\\tan x}{x} = 1, \\quad \\lim_{x \\to 0} \\frac{\\arcsin x}{x} = 1, \\quad \\lim_{x \\to 0} \\frac{\\arctan x}{x} = 1"},
+                                        {"label": "第二个重要极限", "latex": "\\lim_{x \\to \\infty} \\left(1+\\frac{1}{x}\\right)^x = e", "note": "x→∞或x→0均可"},
+                                        {"label": "推广形式", "latex": "\\lim_{x \\to 0} (1+x)^{\\frac{1}{x}} = e, \\quad \\lim_{x \\to 0} \\frac{\\ln(1+x)}{x} = 1, \\quad \\lim_{x \\to 0} \\frac{e^x-1}{x} = 1"}
+                                    ],
+                                    "conditions": "两个重要极限适用的前提是极限过程分别符合x→0和x→∞（或x→0时(1+x)^{1/x}）。",
+                                    "symbol_notes": "e≈2.71828，为自然对数的底数。",
+                                    "error_tips": "易错：lim(x→0) (sin x)/x = 1，不是0；lim(x→0) (sin 2x)/x = 2，不是1。第二个重要极限底数是(1+1/x)，不是(1+x)。"
+                                },
+                                {
+                                    "title": "等价无穷小替换公式",
+                                    "aliases": ["等价无穷小", "无穷小替换"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "x→0时常用的等价无穷小替换，用于简化极限计算。",
+                                    "formula_blocks": [
+                                        {"label": "三角函数类", "latex": "\\sin x \\sim x,\\quad \\tan x \\sim x,\\quad \\arcsin x \\sim x,\\quad \\arctan x \\sim x,\\quad 1-\\cos x \\sim \\frac{1}{2}x^2"},
+                                        {"label": "指数对数类", "latex": "e^x-1 \\sim x,\\quad a^x-1 \\sim x\\ln a,\\quad \\ln(1+x) \\sim x"},
+                                        {"label": "幂函数类", "latex": "(1+x)^\\alpha-1 \\sim \\alpha x,\\quad \\sqrt[n]{1+x}-1 \\sim \\frac{x}{n}"},
+                                        {"label": "高阶等价", "latex": "x-\\sin x \\sim \\frac{1}{6}x^3,\\quad \\tan x-x \\sim \\frac{1}{3}x^3,\\quad \\arcsin x-x \\sim \\frac{1}{6}x^3,\\quad x-\\arctan x \\sim \\frac{1}{3}x^3"}
+                                    ],
+                                    "conditions": "等价无穷小替换必须在乘除法中使用，加减法中谨慎使用。",
+                                    "error_tips": "易错：加减法中直接替换可能导致错误，必须确保替换后不为0。例如lim(x→0) (tan x - sin x)/x³不能直接将tan x和sin x分别替换为x。"
+                                },
+                                {
+                                    "title": "无穷小的阶与比较",
+                                    "aliases": ["无穷小阶数", "高阶无穷小"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "无穷小量的阶数比较是极限计算的基础概念。",
+                                    "formula_blocks": [
+                                        {"label": "定义", "latex": "\\text{若}\\lim\\frac{\\beta}{\\alpha}=0,\\text{则}\\beta\\text{是比}\\alpha\\text{高阶的无穷小},\\text{记作}\\beta=o(\\alpha)"},
+                                        {"label": "同阶与等价", "latex": "\\text{若}\\lim\\frac{\\beta}{\\alpha}=c\\neq0,\\text{则同阶}；\\text{若}c=1,\\text{则等价},\\text{记作}\\alpha\\sim\\beta"},
+                                        {"label": "k阶无穷小", "latex": "\\text{若}\\lim\\frac{\\beta}{\\alpha^k}=c\\neq0,\\text{则}\\beta\\text{是}\\alpha\\text{的}k\\text{阶无穷小}"}
+                                    ]
+                                },
+                                {
+                                    "title": "极限的四则运算法则",
+                                    "aliases": ["极限运算法则"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "极限的加减乘除运算法则，前提是各极限存在。",
+                                    "formula_blocks": [
+                                        {"label": "加法", "latex": "\\lim(f(x)\\pm g(x)) = \\lim f(x) \\pm \\lim g(x)"},
+                                        {"label": "乘法", "latex": "\\lim(f(x)\\cdot g(x)) = \\lim f(x) \\cdot \\lim g(x)"},
+                                        {"label": "除法", "latex": "\\lim\\frac{f(x)}{g(x)} = \\frac{\\lim f(x)}{\\lim g(x)},\\quad \\lim g(x)\\neq0"},
+                                        {"label": "复合", "latex": "\\lim f(g(x)) = f(\\lim g(x)),\\quad f\\text{连续}"}
+                                    ],
+                                    "conditions": "使用四则运算法则的前提是每个参与运算的极限都存在（除法中分母极限不为0）。"
+                                },
+                                {
+                                    "title": "洛必达法则",
+                                    "aliases": ["L'Hôpital", "洛必达"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "0/0或∞/∞型不定式的极限可以直接对分子分母分别求导。",
+                                    "formula_blocks": [
+                                        {"label": "0/0型", "latex": "\\lim_{x\\to a}\\frac{f(x)}{g(x)} = \\lim_{x\\to a}\\frac{f'(x)}{g'(x)},\\quad\\text{当}\\lim f(x)=\\lim g(x)=0"},
+                                        {"label": "∞/∞型", "latex": "\\lim_{x\\to a}\\frac{f(x)}{g(x)} = \\lim_{x\\to a}\\frac{f'(x)}{g'(x)},\\quad\\text{当}\\lim f(x)=\\lim g(x)=\\infty"},
+                                        {"label": "其他不定式", "latex": "0\\cdot\\infty,\\ \\infty-\\infty,\\ 0^0,\\ 1^\\infty,\\ \\infty^0\\text{型需先变形为}\\frac{0}{0}\\text{或}\\frac{\\infty}{\\infty}\\text{后再使用}"}
+                                    ],
+                                    "conditions": "使用洛必达法则前必须验证是0/0或∞/∞型不定式，且f'(x)/g'(x)的极限存在（或为无穷大）。",
+                                    "error_tips": "易错：不是所有0/0型都可用洛必达（如极限不存在时）；需检查分母导数不为0；有时需要多次使用。洛必达失效时应考虑泰勒展开。"
+                                },
+                                {
+                                    "title": "极限存在准则",
+                                    "aliases": ["夹逼准则", "单调有界准则"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "判断极限存在的两个重要准则：夹逼定理和单调有界定理。",
+                                    "formula_blocks": [
+                                        {"label": "夹逼准则", "latex": "\\text{若}g(x)\\leq f(x)\\leq h(x)\\text{且}\\lim g(x)=\\lim h(x)=A,\\text{则}\\lim f(x)=A"},
+                                        {"label": "单调有界准则", "latex": "\\text{单调递增（减）且有上界（下界）的数列必有极限}"}
+                                    ]
+                                },
+                                {
+                                    "title": "函数的连续性",
+                                    "aliases": ["连续定义", "间断点"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "函数在一点连续的定义及间断点分类。",
+                                    "formula_blocks": [
+                                        {"label": "连续定义", "latex": "\\lim_{x\\to x_0}f(x)=f(x_0)"},
+                                        {"label": "间断点分类", "latex": "\\text{第一类（左右极限存在）：可去、跳跃；第二类（至少一侧不存在）：无穷、振荡}"},
+                                        {"label": "闭区间连续性质", "latex": "\\text{有界性、最值定理、介值定理、零点定理}"}
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "code": "function_props",
+                            "name": "函数性质与图像",
+                            "cards": [
+                                {
+                                    "title": "基本初等函数",
+                                    "aliases": ["初等函数", "基本函数"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "考研数学二涉及的基本初等函数种类。",
+                                    "formula_blocks": [
+                                        {"label": "幂函数", "latex": "y=x^\\mu\\quad(\\mu\\in\\mathbb{R})"},
+                                        {"label": "指数函数", "latex": "y=a^x\\quad(a>0,a\\neq1)"},
+                                        {"label": "对数函数", "latex": "y=\\log_a x\\quad(a>0,a\\neq1)"},
+                                        {"label": "三角函数", "latex": "y=\\sin x,\\ \\cos x,\\ \\tan x,\\ \\cot x,\\ \\sec x,\\ \\csc x"},
+                                        {"label": "反三角函数", "latex": "y=\\arcsin x,\\ \\arccos x,\\ \\arctan x,\\ \\operatorname{arccot} x"}
+                                    ]
+                                },
+                                {
+                                    "title": "函数的奇偶性",
+                                    "aliases": ["奇函数", "偶函数", "对称性"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "奇偶函数的判定和性质。积分中常利用奇偶性简化计算。",
+                                    "formula_blocks": [
+                                        {"label": "定义", "latex": "\\text{偶函数：}f(-x)=f(x);\\quad\\text{奇函数：}f(-x)=-f(x)"},
+                                        {"label": "导数关系", "latex": "\\text{偶函数的导数是奇函数，奇函数的导数是偶函数}"},
+                                        {"label": "积分关系", "latex": "\\int_{-a}^{a}f(x)dx=\\begin{cases}0&f\\text{奇}\\\\2\\int_0^a f(x)dx&f\\text{偶}\\end{cases}"}
+                                    ]
+                                },
+                                {
+                                    "title": "函数的周期性",
+                                    "aliases": ["周期函数"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "周期函数的定义和积分性质。",
+                                    "formula_blocks": [
+                                        {"label": "定义", "latex": "f(x+T)=f(x),\\quad T\\neq0\\text{为周期}"},
+                                        {"label": "积分性质", "latex": "\\int_a^{a+T}f(x)dx=\\int_0^Tf(x)dx\\quad(f\\text{以}T\\text{为周期})"},
+                                        {"label": "常见周期", "latex": "\\sin x,\\cos x:2\\pi;\\quad\\tan x,\\cot x:\\pi"}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "derivative",
+                    "name": "一元函数微分学",
+                    "groups": [
+                        {
+                            "code": "derivative_formulas",
+                            "name": "导数与微分公式",
+                            "cards": [
+                                {
+                                    "title": "基本求导公式",
+                                    "aliases": ["导数公式", "求导表"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "must_memorize"],
+                                    "summary": "考研必背基本初等函数的导数公式表。",
+                                    "formula_blocks": [
+                                        {"label": "幂函数", "latex": "(x^\\mu)' = \\mu x^{\\mu-1}"},
+                                        {"label": "指数函数", "latex": "(a^x)' = a^x\\ln a,\\quad (e^x)' = e^x"},
+                                        {"label": "对数函数", "latex": "(\\log_a x)' = \\frac{1}{x\\ln a},\\quad (\\ln x)' = \\frac{1}{x}"},
+                                        {"label": "三角函数", "latex": "(\\sin x)' = \\cos x,\\ (\\cos x)' = -\\sin x,\\ (\\tan x)' = \\sec^2 x,\\ (\\cot x)' = -\\csc^2 x"},
+                                        {"label": "反三角函数", "latex": "(\\arcsin x)' = \\frac{1}{\\sqrt{1-x^2}},\\ (\\arccos x)' = -\\frac{1}{\\sqrt{1-x^2}},\\ (\\arctan x)' = \\frac{1}{1+x^2}"}
+                                    ]
+                                },
+                                {
+                                    "title": "求导法则",
+                                    "aliases": ["四则运算", "链式法则", "复合求导"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "函数的四则运算求导法则与链式法则。",
+                                    "formula_blocks": [
+                                        {"label": "加减法", "latex": "(u\\pm v)' = u'\\pm v'"},
+                                        {"label": "乘法", "latex": "(uv)' = u'v+uv'"},
+                                        {"label": "除法", "latex": "\\left(\\frac{u}{v}\\right)' = \\frac{u'v-uv'}{v^2}"},
+                                        {"label": "链式法则", "latex": "\\frac{dy}{dx} = \\frac{dy}{du}\\cdot\\frac{du}{dx},\\quad y=f(g(x)),\\ y'=f'(g(x))\\cdot g'(x)"}
+                                    ]
+                                },
+                                {
+                                    "title": "高阶导数",
+                                    "aliases": ["n阶导数", "莱布尼兹公式"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "高阶导数的定义、莱布尼兹公式和常见函数的高阶导数。",
+                                    "formula_blocks": [
+                                        {"label": "莱布尼兹公式", "latex": "(uv)^{(n)} = \\sum_{k=0}^{n}C_n^k u^{(n-k)}v^{(k)}"},
+                                        {"label": "常见高阶导数", "latex": "(x^\\mu)^{(n)} = \\mu(\\mu-1)\\cdots(\\mu-n+1)x^{\\mu-n}"},
+                                        {"label": "指数函数", "latex": "(a^x)^{(n)} = a^x(\\ln a)^n,\\quad (e^x)^{(n)} = e^x"},
+                                        {"label": "三角函数", "latex": "(\\sin x)^{(n)} = \\sin\\left(x+\\frac{n\\pi}{2}\\right),\\quad (\\cos x)^{(n)} = \\cos\\left(x+\\frac{n\\pi}{2}\\right)"}
+                                    ]
+                                },
+                                {
+                                    "title": "隐函数与参数方程求导",
+                                    "aliases": ["隐函数求导", "参数方程求导"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "隐函数和参数方程形式下的一阶、二阶导数求法。",
+                                    "formula_blocks": [
+                                        {"label": "隐函数求导", "latex": "F(x,y)=0\\text{两边对}x\\text{求导，将}y\\text{视为}y(x)"},
+                                        {"label": "参数方程一阶导", "latex": "\\frac{dy}{dx} = \\frac{dy/dt}{dx/dt},\\quad\\text{其中}\\begin{cases}x=x(t)\\\\y=y(t)\\end{cases}"},
+                                        {"label": "参数方程二阶导", "latex": "\\frac{d^2y}{dx^2} = \\frac{d}{dt}\\left(\\frac{dy}{dx}\\right)\\Big/\\frac{dx}{dt}"}
+                                    ]
+                                },
+                                {
+                                    "title": "微分中值定理",
+                                    "aliases": ["罗尔定理", "拉格朗日", "柯西中值"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency", "must_memorize"],
+                                    "summary": "微分学的三大中值定理，是证明和推导的基础。",
+                                    "formula_blocks": [
+                                        {"label": "罗尔定理", "latex": "f(a)=f(b)\\Rightarrow\\exists\\xi\\in(a,b),\\ f'(\\xi)=0"},
+                                        {"label": "拉格朗日中值定理", "latex": "\\exists\\xi\\in(a,b),\\ f(b)-f(a)=f'(\\xi)(b-a)"},
+                                        {"label": "柯西中值定理", "latex": "\\frac{f(b)-f(a)}{g(b)-g(a)}=\\frac{f'(\\xi)}{g'(\\xi)},\\ g'(x)\\neq0"}
+                                    ],
+                                    "conditions": "三个定理都要求f(x)在[a,b]连续，(a,b)可导；罗尔定理额外要求端点值相等。",
+                                    "error_tips": "易错：中值定理只保证存在性，不给出ξ的具体位置。ξ属于开区间(a,b)，不是闭区间。"
+                                },
+                                {
+                                    "title": "泰勒公式",
+                                    "aliases": ["泰勒展开", "麦克劳林公式", "Taylor"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency", "must_memorize"],
+                                    "summary": "用多项式逼近函数的强大工具，考研常用麦克劳林公式。",
+                                    "formula_blocks": [
+                                        {"label": "泰勒公式", "latex": "f(x)=\\sum_{k=0}^{n}\\frac{f^{(k)}(x_0)}{k!}(x-x_0)^k+R_n(x)"},
+                                        {"label": "麦克劳林公式", "latex": "f(x)=\\sum_{k=0}^{n}\\frac{f^{(k)}(0)}{k!}x^k+R_n(x)"},
+                                        {"label": "e^x展开", "latex": "e^x=1+x+\\frac{x^2}{2!}+\\frac{x^3}{3!}+\\cdots+\\frac{x^n}{n!}+o(x^n)"},
+                                        {"label": "sin x展开", "latex": "\\sin x=x-\\frac{x^3}{3!}+\\frac{x^5}{5!}-\\cdots+(-1)^n\\frac{x^{2n+1}}{(2n+1)!}+o(x^{2n+2})"},
+                                        {"label": "ln(1+x)展开", "latex": "\\ln(1+x)=x-\\frac{x^2}{2}+\\frac{x^3}{3}-\\cdots+(-1)^{n-1}\\frac{x^n}{n}+o(x^n)"},
+                                        {"label": "(1+x)^α展开", "latex": "(1+x)^\\alpha=1+\\alpha x+\\frac{\\alpha(\\alpha-1)}{2!}x^2+\\cdots+\\frac{\\alpha(\\alpha-1)\\cdots(\\alpha-n+1)}{n!}x^n+o(x^n)"}
+                                    ],
+                                    "error_tips": "易错：泰勒展开的余项形式（佩亚诺余项o(x^n)用于极限，拉格朗日余项用于误差估计）。展开到多少阶要根据分母的最高次数确定。"
+                                },
+                                {
+                                    "title": "函数的单调性与极值",
+                                    "aliases": ["极值判定", "单调性判定"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "利用导数判断函数的单调性和极值点。",
+                                    "formula_blocks": [
+                                        {"label": "单调性", "latex": "f'(x)>0\\Rightarrow f(x)\\text{递增}；\\quad f'(x)<0\\Rightarrow f(x)\\text{递减}"},
+                                        {"label": "极值第一充分条件", "latex": "f'(x_0)=0\\text{且}f'(x)\\text{在}x_0\\text{左右变号}\\Rightarrow x_0\\text{为极值点}"},
+                                        {"label": "极值第二充分条件", "latex": "f'(x_0)=0,\\ f''(x_0)>0\\Rightarrow\\text{极小};\\ f''(x_0)<0\\Rightarrow\\text{极大}"},
+                                        {"label": "拐点判定", "latex": "f''(x_0)=0\\text{且}f''(x)\\text{在}x_0\\text{左右变号}\\Rightarrow(x_0,f(x_0))\\text{为拐点}"}
+                                    ]
+                                },
+                                {
+                                    "title": "凹凸性与渐近线",
+                                    "aliases": ["凹凸性", "渐近线"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "曲线的凹凸性判定和三种渐近线的求法。",
+                                    "formula_blocks": [
+                                        {"label": "凹凸性", "latex": "f''(x)>0\\Rightarrow\\text{凹}；\\quad f''(x)<0\\Rightarrow\\text{凸}"},
+                                        {"label": "水平渐近线", "latex": "\\lim_{x\\to\\infty}f(x)=C\\Rightarrow y=C"},
+                                        {"label": "铅直渐近线", "latex": "\\lim_{x\\to x_0}f(x)=\\infty\\Rightarrow x=x_0"},
+                                        {"label": "斜渐近线", "latex": "\\lim_{x\\to\\infty}\\frac{f(x)}{x}=a,\\ \\lim_{x\\to\\infty}[f(x)-ax]=b\\Rightarrow y=ax+b"}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "integral",
+                    "name": "一元函数积分学",
+                    "groups": [
+                        {
+                            "code": "integral_formulas",
+                            "name": "不定积分与定积分公式",
+                            "cards": [
+                                {
+                                    "title": "基本积分公式",
+                                    "aliases": ["积分表", "不定积分基本公式"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "must_memorize"],
+                                    "summary": "必须熟练掌握的基本积分公式表。",
+                                    "formula_blocks": [
+                                        {"label": "幂函数", "latex": "\\int x^\\mu dx = \\frac{x^{\\mu+1}}{\\mu+1}+C\\ (\\mu\\neq-1);\\quad\\int\\frac{dx}{x}=\\ln|x|+C"},
+                                        {"label": "指数函数", "latex": "\\int a^x dx = \\frac{a^x}{\\ln a}+C;\\quad\\int e^x dx = e^x+C"},
+                                        {"label": "三角函数", "latex": "\\int\\sin x\\,dx=-\\cos x+C;\\ \\int\\cos x\\,dx=\\sin x+C;\\ \\int\\sec^2x\\,dx=\\tan x+C;\\ \\int\\csc^2x\\,dx=-\\cot x+C"},
+                                        {"label": "常见有理积分", "latex": "\\int\\frac{dx}{1+x^2}=\\arctan x+C;\\ \\int\\frac{dx}{\\sqrt{1-x^2}}=\\arcsin x+C;\\ \\int\\frac{dx}{a^2+x^2}=\\frac{1}{a}\\arctan\\frac{x}{a}+C"},
+                                        {"label": "常见有理积分2", "latex": "\\int\\frac{dx}{x^2-a^2}=\\frac{1}{2a}\\ln\\left|\\frac{x-a}{x+a}\\right|+C;\\ \\int\\frac{dx}{\\sqrt{a^2-x^2}}=\\arcsin\\frac{x}{a}+C\\ (a>0)"},
+                                        {"label": "换元积分", "latex": "\\int f(g(x))g'(x)dx = \\int f(u)du\\quad(u=g(x))"}
+                                    ]
+                                },
+                                {
+                                    "title": "分部积分法",
+                                    "aliases": ["分部积分", "integration by parts"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency", "must_memorize"],
+                                    "summary": "乘积函数的积分方法，适用于不同类型函数相乘的情况。",
+                                    "formula_blocks": [
+                                        {"label": "不定积分形式", "latex": "\\int u\\,dv = uv - \\int v\\,du"},
+                                        {"label": "定积分形式", "latex": "\\int_a^b u\\,dv = [uv]_a^b - \\int_a^b v\\,du"},
+                                        {"label": "常见组合", "latex": "\\text{反对幂指三——分部积分选取}u\\text{的优先级："},
+                                        {"label": "实际用法", "latex": "\\int x e^x dx = xe^x - \\int e^x dx,\\quad \\int x\\sin x dx"}
+                                    ]
+                                },
+                                {
+                                    "title": "定积分的定义与性质",
+                                    "aliases": ["定积分", "Riemann积分"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "定积分的基本定义、性质及牛顿-莱布尼兹公式。",
+                                    "formula_blocks": [
+                                        {"label": "定义", "latex": "\\int_a^b f(x)dx = \\lim_{\\lambda\\to0}\\sum_{i=1}^n f(\\xi_i)\\Delta x_i"},
+                                        {"label": "牛顿-莱布尼兹公式", "latex": "\\int_a^b f(x)dx = F(b)-F(a),\\ \\text{其中}F'(x)=f(x)"},
+                                        {"label": "积分中值定理", "latex": "\\exists\\xi\\in[a,b],\\ \\int_a^b f(x)dx = f(\\xi)(b-a)"}
+                                    ]
+                                },
+                                {
+                                    "title": "定积分的换元与分部",
+                                    "aliases": ["定积分换元", "定积分分部"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "定积分中的换元积分法和分部积分法，换元时要同时换限。",
+                                    "formula_blocks": [
+                                        {"label": "换元公式", "latex": "\\int_a^b f(\\varphi(x))\\varphi'(x)dx = \\int_{\\varphi(a)}^{\\varphi(b)}f(u)du"},
+                                        {"label": "分部公式", "latex": "\\int_a^b u\\,dv = [uv]_a^b - \\int_a^b v\\,du"},
+                                        {"label": "区间再现", "latex": "\\int_a^b f(x)dx = \\int_a^b f(a+b-x)dx"}
+                                    ]
+                                },
+                                {
+                                    "title": "反常积分",
+                                    "aliases": ["广义积分", "瑕积分"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "积分区间无穷或被积函数无界的积分及其收敛性判定。",
+                                    "formula_blocks": [
+                                        {"label": "无穷区间", "latex": "\\int_a^{+\\infty}f(x)dx = \\lim_{b\\to+\\infty}\\int_a^b f(x)dx"},
+                                        {"label": "瑕积分", "latex": "\\int_a^b f(x)dx = \\lim_{\\varepsilon\\to0^+}\\int_{a+\\varepsilon}^b f(x)dx,\\quad x=a\\text{为瑕点}"},
+                                        {"label": "常用结论", "latex": "\\int_1^{+\\infty}\\frac{dx}{x^p}\\begin{cases}\\text{收敛}&p>1\\\\\\text{发散}&p\\leq1\\end{cases};\\quad\\int_0^1\\frac{dx}{x^p}\\begin{cases}\\text{收敛}&p<1\\\\\\text{发散}&p\\geq1\\end{cases}"}
+                                    ]
+                                },
+                                {
+                                    "title": "定积分的几何应用",
+                                    "aliases": ["面积", "体积", "弧长", "旋转体"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "利用定积分求面积、旋转体体积和曲线弧长。",
+                                    "formula_blocks": [
+                                        {"label": "平面面积", "latex": "S = \\int_a^b |f(x)-g(x)|dx"},
+                                        {"label": "旋转体体积", "latex": "V_x = \\pi\\int_a^b [f(x)]^2 dx\\quad(\\text{绕}x\\text{轴});\\quad V_y = 2\\pi\\int_a^b x f(x) dx\\quad(\\text{绕}y\\text{轴})"},
+                                        {"label": "曲线弧长", "latex": "s = \\int_a^b \\sqrt{1+[f'(x)]^2}dx"}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "multivariable",
+                    "name": "多元函数微分学",
+                    "groups": [
+                        {
+                            "code": "multi_derivative",
+                            "name": "偏导数与全微分",
+                            "cards": [
+                                {
+                                    "title": "偏导数的定义与计算",
+                                    "aliases": ["偏导数", "partial derivative"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "二元函数偏导数的定义和基本计算方法。",
+                                    "formula_blocks": [
+                                        {"label": "偏导数定义", "latex": "f_x(x_0,y_0)=\\lim_{\\Delta x\\to0}\\frac{f(x_0+\\Delta x,y_0)-f(x_0,y_0)}{\\Delta x}"},
+                                        {"label": "全微分", "latex": "df = \\frac{\\partial f}{\\partial x}dx + \\frac{\\partial f}{\\partial y}dy"},
+                                        {"label": "高阶偏导数", "latex": "f_{xy} = \\frac{\\partial^2 f}{\\partial x\\partial y},\\quad\\text{混合偏导连续时相等}"}
+                                    ]
+                                },
+                                {
+                                    "title": "复合函数与隐函数求导",
+                                    "aliases": ["链式法则多元", "全导数"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "多元复合函数和隐函数的求导方法。",
+                                    "formula_blocks": [
+                                        {"label": "链式法则", "latex": "z=f(u,v),\\ u=\\varphi(x,y),\\ v=\\psi(x,y)\\Rightarrow \\frac{\\partial z}{\\partial x} = \\frac{\\partial z}{\\partial u}\\frac{\\partial u}{\\partial x}+\\frac{\\partial z}{\\partial v}\\frac{\\partial v}{\\partial x}"},
+                                        {"label": "全导数", "latex": "z=f(x,y),\\ y=y(x)\\Rightarrow\\frac{dz}{dx} = \\frac{\\partial f}{\\partial x} + \\frac{\\partial f}{\\partial y}\\frac{dy}{dx}"},
+                                        {"label": "隐函数求导", "latex": "F(x,y,z)=0\\Rightarrow\\frac{\\partial z}{\\partial x} = -\\frac{F_x}{F_z},\\ \\frac{\\partial z}{\\partial y} = -\\frac{F_y}{F_z}\\ (F_z\\neq0)"}
+                                    ]
+                                },
+                                {
+                                    "title": "方向导数与梯度",
+                                    "aliases": ["方向导数", "梯度", "gradient"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "方向导数表示函数沿某方向的变化率，梯度是方向导数最大的方向。",
+                                    "formula_blocks": [
+                                        {"label": "方向导数", "latex": "\\frac{\\partial f}{\\partial l} = f_x\\cos\\alpha + f_y\\cos\\beta"},
+                                        {"label": "梯度", "latex": "\\nabla f = (f_x, f_y)、\\text{方向导数最大值}=|\\nabla f|"}
+                                    ]
+                                },
+                                {
+                                    "title": "多元函数的极值",
+                                    "aliases": ["无条件极值", "条件极值", "拉格朗日乘数法"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "求多元函数极值的方法，包括无条件极值和条件极值。",
+                                    "formula_blocks": [
+                                        {"label": "必要条件", "latex": "f_x(x_0,y_0)=0,\\ f_y(x_0,y_0)=0"},
+                                        {"label": "充分条件", "latex": "A=f_{xx},\\ B=f_{xy},\\ C=f_{yy},\\ \\Delta=AC-B^2,\\ \\text{若}\\Delta>0,\\ A>0\\text{为极小},A<0\\text{为极大}"},
+                                        {"label": "拉格朗日乘数法", "latex": "L(x,y,\\lambda)=f(x,y)+\\lambda\\varphi(x,y),\\text{解}\\begin{cases}L_x=0\\\\L_y=0\\\\L_\\lambda=0\\end{cases}"}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "double_integral",
+                    "name": "二重积分",
+                    "groups": [
+                        {
+                            "code": "double_int_methods",
+                            "name": "二重积分计算法",
+                            "cards": [
+                                {
+                                    "title": "二重积分的定义与性质",
+                                    "aliases": ["二重积分定义", "累次积分"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "二重积分的基本定义和重要性质。",
+                                    "formula_blocks": [
+                                        {"label": "定义", "latex": "\\iint_D f(x,y)d\\sigma = \\lim_{\\lambda\\to0}\\sum f(\\xi_i,\\eta_i)\\Delta\\sigma_i"},
+                                        {"label": "中值定理", "latex": "\\iint_D f(x,y)d\\sigma = f(\\xi,\\eta)\\cdot S_D"},
+                                        {"label": "对称性", "latex": "D\\text{关于}x\\text{轴对称},\\ f\\text{关于}y\\text{奇偶性}..."}
+                                    ]
+                                },
+                                {
+                                    "title": "直角坐标下的二重积分",
+                                    "aliases": ["先x后y", "先y后x", "累次积分"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "在直角坐标系中将二重积分化为累次积分。",
+                                    "formula_blocks": [
+                                        {"label": "X型区域", "latex": "\\iint_D f(x,y)dxdy = \\int_a^b dx\\int_{\\varphi_1(x)}^{\\varphi_2(x)}f(x,y)dy"},
+                                        {"label": "Y型区域", "latex": "\\iint_D f(x,y)dxdy = \\int_c^d dy\\int_{\\psi_1(y)}^{\\psi_2(y)}f(x,y)dx"}
+                                    ]
+                                },
+                                {
+                                    "title": "极坐标下的二重积分",
+                                    "aliases": ["极坐标变换", "极坐标二重积分"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "圆域或被积函数含x²+y²时适合用极坐标。",
+                                    "formula_blocks": [
+                                        {"label": "变换公式", "latex": "\\iint_D f(x,y)dxdy = \\iint_D f(r\\cos\\theta, r\\sin\\theta)r\\,drd\\theta"},
+                                        {"label": "面积元", "latex": "d\\sigma = r\\,drd\\theta"},
+                                        {"label": "常用积分", "latex": "\\iint_{x^2+y^2\\leq R^2} f(x^2+y^2)dxdy = 2\\pi\\int_0^R f(r^2)r\\,dr"}
+                                    ]
+                                },
+                                {
+                                    "title": "二重积分的对称性应用",
+                                    "aliases": ["奇偶对称", "轮换对称"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "利用对称性可以大幅简化二重积分的计算。",
+                                    "formula_blocks": [
+                                        {"label": "关于x轴对称", "latex": "\\iint_D f(x,y)d\\sigma = \\begin{cases}0 & f\\text{关于}y\\text{奇}\\\\2\\iint_{D_1}f(x,y)d\\sigma & f\\text{关于}y\\text{偶}\\end{cases}"},
+                                        {"label": "轮换对称性", "latex": "\\text{若}D\\text{关于}y=x\\text{对称},则\\iint_D f(x,y)d\\sigma = \\iint_D f(y,x)d\\sigma"}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "ode",
+                    "name": "常微分方程",
+                    "groups": [
+                        {
+                            "code": "ode_basic",
+                            "name": "一阶微分方程",
+                            "cards": [
+                                {
+                                    "title": "可分离变量方程",
+                                    "aliases": ["分离变量", "一阶可分离"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "形如dy/dx = f(x)g(y)的一阶微分方程的解法。",
+                                    "formula_blocks": [
+                                        {"label": "标准形式", "latex": "\\frac{dy}{dx} = f(x)g(y)"},
+                                        {"label": "解法", "latex": "\\frac{dy}{g(y)} = f(x)dx,\\quad\\int\\frac{dy}{g(y)} = \\int f(x)dx + C"}
+                                    ]
+                                },
+                                {
+                                    "title": "一阶线性微分方程",
+                                    "aliases": ["一阶线性ODE", "通解公式"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency", "must_memorize"],
+                                    "summary": "标准形式y' + P(x)y = Q(x)的通解公式，必须掌握。",
+                                    "formula_blocks": [
+                                        {"label": "标准形式", "latex": "y' + P(x)y = Q(x)"},
+                                        {"label": "通解公式", "latex": "y = e^{-\\int P(x)dx}\\left(\\int Q(x)e^{\\int P(x)dx}dx + C\\right)"},
+                                        {"label": "齐次解", "latex": "y_h = Ce^{-\\int P(x)dx}"}
+                                    ],
+                                    "error_tips": "易错：公式中的积分常数C必须写在括号外（乘性常数）；注意P(x)和Q(x)的标准位置。"
+                                },
+                                {
+                                    "title": "伯努利方程",
+                                    "aliases": ["Bernoulli方程"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "形如y' + P(x)y = Q(x)yⁿ的方程，通过变量代换化为一阶线性。",
+                                    "formula_blocks": [
+                                        {"label": "标准形式", "latex": "y' + P(x)y = Q(x)y^n\\quad(n\\neq0,1)"},
+                                        {"label": "代换", "latex": "\\text{令}z=y^{1-n},\\text{则}z'+(1-n)P(x)z=(1-n)Q(x)"}
+                                    ]
+                                },
+                                {
+                                    "title": "可降阶的高阶微分方程",
+                                    "aliases": ["降阶法"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "两类特殊高阶方程的降阶方法。",
+                                    "formula_blocks": [
+                                        {"label": "y''=f(x,y')型", "latex": "\\text{令}p=y',\\text{则}y''=p',\\text{化为一阶方程}"},
+                                        {"label": "y''=f(y,y')型", "latex": "\\text{令}p=y',\\text{则}y''=p\\frac{dp}{dy},\\text{化为一阶方程}"}
+                                    ]
+                                },
+                                {
+                                    "title": "二阶常系数齐次线性方程",
+                                    "aliases": ["二阶齐次ODE", "特征方程"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency", "must_memorize"],
+                                    "summary": "ay'' + by' + cy = 0的特征方程法求解。",
+                                    "formula_blocks": [
+                                        {"label": "标准形式", "latex": "ay''+by'+cy=0"},
+                                        {"label": "特征方程", "latex": "ar^2+br+c=0"},
+                                        {"label": "两不等实根", "latex": "y=C_1e^{r_1x}+C_2e^{r_2x}"},
+                                        {"label": "重根", "latex": "y=(C_1+C_2x)e^{rx}"},
+                                        {"label": "共轭复根", "latex": "y=e^{\\alpha x}(C_1\\cos\\beta x + C_2\\sin\\beta x),\\quad r=\\alpha\\pm i\\beta"}
+                                    ]
+                                },
+                                {
+                                    "title": "二阶常系数非齐次线性方程",
+                                    "aliases": ["非齐次ODE", "特解形式"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "ay'' + by' + cy = f(x)的特解设定法。",
+                                    "formula_blocks": [
+                                        {"label": "通解结构", "latex": "y = \\bar{y} + y^*,\\quad \\bar{y}\\text{为齐次通解},\\ y^*\\text{为特解}"},
+                                        {"label": "f(x)=P_m(x)e^{λx}型", "latex": "y^*=x^kQ_m(x)e^{\\lambda x},\\ k=\\begin{cases}0&\\lambda\\text{不是特征根}\\\\1&\\lambda\\text{是单根}\\\\2&\\lambda\\text{是重根}\\end{cases}"},
+                                        {"label": "f(x)=e^{λx}[Acosβx+Bsinβx]型", "latex": "y^*=x^ke^{\\alpha x}[A\\cos\\beta x+B\\sin\\beta x]"}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "code": "math2_linear_algebra",
+            "name": "线性代数",
+            "node_type": "subject",
+            "chapters": [
+                {
+                    "code": "determinant",
+                    "name": "行列式",
+                    "groups": [
+                        {
+                            "code": "det_props",
+                            "name": "行列式的性质与计算",
+                            "cards": [
+                                {
+                                    "title": "行列式的定义与基本性质",
+                                    "aliases": ["det定义", "行列式性质"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "n阶行列式的定义和基本运算性质。",
+                                    "formula_blocks": [
+                                        {"label": "定义", "latex": "\\det(A) = \\sum_{j_1j_2\\cdots j_n}(-1)^{\\tau(j_1j_2\\cdots j_n)}a_{1j_1}a_{2j_2}\\cdots a_{nj_n}"},
+                                        {"label": "转置不变", "latex": "\\det(A^T) = \\det(A)"},
+                                        {"label": "数乘", "latex": "\\det(kA) = k^n\\det(A)"},
+                                        {"label": "乘法", "latex": "\\det(AB) = \\det(A)\\det(B)"}
+                                    ]
+                                },
+                                {
+                                    "title": "特殊行列式的值",
+                                    "aliases": ["上三角", "下三角", "对角行列式"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "常用特殊结构行列式的计算方法。",
+                                    "formula_blocks": [
+                                        {"label": "上（下）三角", "latex": "\\det = \\prod_{i=1}^n a_{ii}"},
+                                        {"label": "范德蒙德行列式", "latex": "\\begin{vmatrix}1&1&\\cdots&1\\\\x_1&x_2&\\cdots&x_n\\\\\\vdots&\\vdots&&\\vdots\\\\x_1^{n-1}&x_2^{n-1}&\\cdots&x_n^{n-1}\\end{vmatrix} = \\prod_{1\\leq i<j\\leq n}(x_j-x_i)"},
+                                        {"label": "分块三角", "latex": "\\begin{vmatrix}A&B\\\\0&C\\end{vmatrix} = \\det(A)\\det(C)"}
+                                    ]
+                                },
+                                {
+                                    "title": "行列式常用公式",
+                                    "aliases": ["代数余子式", "展开定理"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "行列式的展开定理和代数余子式的相关公式。",
+                                    "formula_blocks": [
+                                        {"label": "按行展开", "latex": "\\det(A) = \\sum_{j=1}^n a_{ij}A_{ij},\\ A_{ij}=(-1)^{i+j}M_{ij}"},
+                                        {"label": "异行展开为零", "latex": "\\sum_{j=1}^n a_{ij}A_{kj} = 0\\quad(i\\neq k)"},
+                                        {"label": "伴随矩阵", "latex": "A^* = (A_{ji}),\\quad A A^* = A^*A = \\det(A)E"}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "matrix",
+                    "name": "矩阵",
+                    "groups": [
+                        {
+                            "code": "matrix_ops",
+                            "name": "矩阵运算与逆矩阵",
+                            "cards": [
+                                {
+                                    "title": "矩阵的基本运算",
+                                    "aliases": ["矩阵乘法", "矩阵转置", "矩阵迹"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "矩阵的加、乘、转置运算规则。",
+                                    "formula_blocks": [
+                                        {"label": "矩阵乘法", "latex": "(AB)_{ij} = \\sum_{k=1}^n a_{ik}b_{kj}"},
+                                        {"label": "转置", "latex": "(A^T)_{ij} = a_{ji},\\ (AB)^T = B^TA^T"},
+                                        {"label": "迹", "latex": "\\operatorname{tr}(A) = \\sum_{i=1}^n a_{ii},\\ \\operatorname{tr}(AB)=\\operatorname{tr}(BA)"}
+                                    ]
+                                },
+                                {
+                                    "title": "逆矩阵",
+                                    "aliases": ["矩阵求逆", "伴随矩阵求逆"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency", "must_memorize"],
+                                    "summary": "逆矩阵的存在条件和计算公式。",
+                                    "formula_blocks": [
+                                        {"label": "定义", "latex": "AB=BA=E\\Rightarrow B=A^{-1}"},
+                                        {"label": "伴随矩阵公式", "latex": "A^{-1} = \\frac{1}{\\det(A)}A^*"},
+                                        {"label": "性质", "latex": "(AB)^{-1}=B^{-1}A^{-1},\\ (A^T)^{-1}=(A^{-1})^T,\\ \\det(A^{-1})=\\frac{1}{\\det(A)}"},
+                                        {"label": "2阶矩阵求逆", "latex": "\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}^{-1} = \\frac{1}{ad-bc}\\begin{pmatrix}d&-b\\\\-c&a\\end{pmatrix}"}
+                                    ]
+                                },
+                                {
+                                    "title": "初等变换与矩阵的秩",
+                                    "aliases": ["矩阵秩", "初等变换", "rank"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "矩阵秩的定义、求法和常用不等式。",
+                                    "formula_blocks": [
+                                        {"label": "秩的定义", "latex": "r(A)=\\text{非零子式的最高阶数}=\\text{行（列）向量组的秩}"},
+                                        {"label": "不等式", "latex": "r(A)\\leq\\min(m,n);\\ r(A\\pm B)\\leq r(A)+r(B);\\ r(AB)\\leq\\min(r(A),r(B))"},
+                                        {"label": "Sylvester不等式", "latex": "r(A)+r(B)-n\\leq r(AB)\\leq\\min(r(A),r(B))"}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "vector",
+                    "name": "向量",
+                    "groups": [
+                        {
+                            "code": "vector_basic",
+                            "name": "向量的线性关系",
+                            "cards": [
+                                {
+                                    "title": "线性相关与线性无关",
+                                    "aliases": ["线性相关", "线性无关", "线性组合"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "向量组线性相关性的定义和判定方法。",
+                                    "formula_blocks": [
+                                        {"label": "线性相关定义", "latex": "\\exists\\text{不全为0的}k_i\\text{使}\\sum k_i\\alpha_i=0"},
+                                        {"label": "判定定理", "latex": "n+1\\text{个}n\\text{维向量必线性相关}"},
+                                        {"label": "线性无关", "latex": "\\sum k_i\\alpha_i=0\\Rightarrow k_1=k_2=\\cdots=k_n=0"},
+                                        {"label": "矩阵秩判据", "latex": "r(\\alpha_1,\\dots,\\alpha_m)<m\\Leftrightarrow\\text{相关}；=m\\Leftrightarrow\\text{无关}"}
+                                    ]
+                                },
+                                {
+                                    "title": "向量组的秩与极大无关组",
+                                    "aliases": ["极大无关组", "向量组秩"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "极大线性无关组和向量组秩的概念。",
+                                    "formula_blocks": [
+                                        {"label": "极大无关组", "latex": "\\text{线性无关 + 任一向量可被其线性表示}"},
+                                        {"label": "等价向量组", "latex": "\\text{可互相线性表示的向量组称为等价}"},
+                                        {"label": "秩相等", "latex": "\\text{等价向量组的秩相等；秩相等的向量组不一定等价}"}
+                                    ]
+                                },
+                                {
+                                    "title": "向量空间与基变换",
+                                    "aliases": ["基", "维数", "过渡矩阵"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "向量空间的基、维数和坐标变换。",
+                                    "formula_blocks": [
+                                        {"label": "基与维数", "latex": "\\dim V = \\text{基中向量个数}"},
+                                        {"label": "坐标变换", "latex": "x = Cx',\\quad C\\text{为过渡矩阵}"}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "linear_eq",
+                    "name": "线性方程组",
+                    "groups": [
+                        {
+                            "code": "eq_solving",
+                            "name": "线性方程组的解法",
+                            "cards": [
+                                {
+                                    "title": "齐次线性方程组",
+                                    "aliases": ["Ax=0", "齐次通解"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "齐次线性方程组Ax=0的解的结构。",
+                                    "formula_blocks": [
+                                        {"label": "解的存在条件", "latex": "Ax=0\\text{总有零解；有非零解}\\Leftrightarrow r(A)<n"},
+                                        {"label": "基础解系", "latex": "n-r(A)\\text{个线性无关的解向量构成基础解系}"},
+                                        {"label": "通解结构", "latex": "x = k_1\\xi_1+k_2\\xi_2+\\cdots+k_{n-r}\\xi_{n-r}"}
+                                    ]
+                                },
+                                {
+                                    "title": "非齐次线性方程组",
+                                    "aliases": ["Ax=b", "非齐次通解"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "非齐次线性方程组Ax=b的解的结构。",
+                                    "formula_blocks": [
+                                        {"label": "相容条件", "latex": "r(A)=r(A|b)\\Rightarrow\\text{有解}"},
+                                        {"label": "通解结构", "latex": "x = x_0 + \\sum_{i=1}^{n-r}k_i\\xi_i,\\ x_0\\text{为一个特解}"},
+                                        {"label": "解的唯一性", "latex": "r(A)=r(A|b)=n\\Rightarrow\\text{唯一解}；r(A)=r(A|b)<n\\Rightarrow\\text{无穷多解}"}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "eigen",
+                    "name": "矩阵的特征值和特征向量",
+                    "groups": [
+                        {
+                            "code": "eigen_basic",
+                            "name": "特征值与特征向量",
+                            "cards": [
+                                {
+                                    "title": "特征值与特征向量的定义与计算",
+                                    "aliases": ["eigenvalue", "特征多项式"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency", "must_memorize"],
+                                    "summary": "特征值的定义、特征多项式的求法。",
+                                    "formula_blocks": [
+                                        {"label": "定义", "latex": "A\\alpha = \\lambda\\alpha,\\quad\\alpha\\neq0"},
+                                        {"label": "特征多项式", "latex": "|\\lambda E - A| = 0"},
+                                        {"label": "迹与行列式", "latex": "\\sum\\lambda_i = \\operatorname{tr}(A),\\quad \\prod\\lambda_i = \\det(A)"}
+                                    ]
+                                },
+                                {
+                                    "title": "特征值的常用性质",
+                                    "aliases": ["特征值性质", "特征值变换"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "矩阵变换后特征值的变化规律。",
+                                    "formula_blocks": [
+                                        {"label": "数乘与幂", "latex": "kA\\text{的特征值为}k\\lambda_i；\\ A^k\\text{的特征值为}\\lambda_i^k"},
+                                        {"label": "多项式", "latex": "f(A)\\text{的特征值为}f(\\lambda_i)"},
+                                        {"label": "逆与转置", "latex": "A^{-1}\\text{的特征值为}1/\\lambda_i(\\lambda_i\\neq0)；\\ A^T\\text{与}A\\text{特征值相同}"},
+                                        {"label": "相似变换", "latex": "P^{-1}AP\\text{与}A\\text{有相同的特征值}"}
+                                    ]
+                                },
+                                {
+                                    "title": "相似对角化",
+                                    "aliases": ["对角化", "可对角化条件"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "矩阵可对角化的充要条件。",
+                                    "formula_blocks": [
+                                        {"label": "充要条件", "latex": "A\\text{有}n\\text{个线性无关的特征向量}\\Leftrightarrow\\text{可对角化}"},
+                                        {"label": "重根条件", "latex": "\\text{每个特征值的几何重数}=代数重数"},
+                                        {"label": "实对称矩阵", "latex": "\\text{实对称矩阵必可正交对角化}"}
+                                    ]
+                                },
+                                {
+                                    "title": "实对称矩阵",
+                                    "aliases": ["对称矩阵", "正交对角化"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "实对称矩阵的特殊性质和正交对角化。",
+                                    "formula_blocks": [
+                                        {"label": "特征值性质", "latex": "\\text{实对称矩阵的特征值全是实数}"},
+                                        {"label": "特征向量", "latex": "\\text{不同特征值对应的特征向量互相正交}"},
+                                        {"label": "正交对角化", "latex": "\\exists\\text{正交矩阵}Q,\\text{使}Q^TAQ=\\operatorname{diag}(\\lambda_1,\\dots,\\lambda_n)"}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "quadratic",
+                    "name": "二次型",
+                    "groups": [
+                        {
+                            "code": "quad_basic",
+                            "name": "二次型的标准化",
+                            "cards": [
+                                {
+                                    "title": "二次型的定义与矩阵表示",
+                                    "aliases": ["二次型矩阵", "对称矩阵"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "二次型的矩阵表示和标准形。",
+                                    "formula_blocks": [
+                                        {"label": "定义", "latex": "f(x_1,\\dots,x_n) = \\sum_{i=1}^n\\sum_{j=1}^n a_{ij}x_ix_j = x^TAx"},
+                                        {"label": "矩阵对称性", "latex": "A\\text{为实对称矩阵},\\ a_{ij}=a_{ji}"},
+                                        {"label": "标准形", "latex": "f = \\lambda_1y_1^2+\\lambda_2y_2^2+\\cdots+\\lambda_ny_n^2"}
+                                    ]
+                                },
+                                {
+                                    "title": "惯性定理（二次型的规范形）",
+                                    "aliases": ["惯性指数", "正负惯性指数"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "二次型的正负惯性指数和规范形。",
+                                    "formula_blocks": [
+                                        {"label": "规范形", "latex": "f = y_1^2+\\cdots+y_p^2 - y_{p+1}^2 - \\cdots - y_{p+q}^2"},
+                                        {"label": "p—正惯性指数", "latex": "\\text{标准形中正平方项个数}"},
+                                        {"label": "q—负惯性指数", "latex": "\\text{标准形中负平方项个数}"},
+                                        {"label": "惯性定理", "latex": "\\text{惯性指数由二次型唯一确定，与坐标变换无关}"}
+                                    ]
+                                },
+                                {
+                                    "title": "正定二次型与正定矩阵",
+                                    "aliases": ["正定矩阵", "正定二次型"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic", "high_frequency"],
+                                    "summary": "正定二次型的判定方法。",
+                                    "formula_blocks": [
+                                        {"label": "定义", "latex": "f(x)>0,\\ \\forall x\\neq0"},
+                                        {"label": "特征值判据", "latex": "\\text{所有特征值}>0"},
+                                        {"label": "顺序主子式", "latex": "\\text{各阶顺序主子式}>0"},
+                                        {"label": "充要条件", "latex": "\\text{正惯性指数}p=n"}
+                                    ]
+                                },
+                                {
+                                    "title": "配方法化二次型为标准形",
+                                    "aliases": ["配方法", "Lagrange配方法"],
+                                    "card_type": "pure_formula",
+                                    "tags": ["basic"],
+                                    "summary": "使用配方法（Lagrange方法）将二次型化为标准形。",
+                                    "formula_blocks": [
+                                        {"label": "方法", "latex": "\\text{逐个变量配平方，将交叉项通过平方和展开}"},
+                                        {"label": "坐标变换", "latex": "x = Cy,\\text{其中}C\\text{为可逆矩阵}"}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

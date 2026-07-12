@@ -1,0 +1,652 @@
+"use client";
+
+import { useMemo, useState, useCallback } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Check,
+  ChevronDown,
+  Search,
+  Sigma,
+  Clock,
+  Tag,
+  FileQuestion,
+  Plus,
+  ExternalLink,
+  Layers,
+  Hash,
+  Trash2,
+  Eye,
+  EyeOff,
+  Send,
+  XCircle,
+  CheckCircle,
+} from "lucide-react";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { useAuthStore } from "@/lib/auth/auth-store";
+import { hasPermission } from "@/lib/permissions/permissions";
+import { apiRequest, toQuery } from "@/lib/api/client";
+import type { PaginatedResponse } from "@/lib/api/types";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+/* ── Types ── */
+
+type FormulaBlock = { label?: string | null; latex: string; note?: string | null };
+
+type FormulaCard = {
+  id: number;
+  title: string;
+  category_id: number;
+  exam_scope: string;
+  card_type: string;
+  summary: string | null;
+  formula_blocks: FormulaBlock[];
+  conditions: string | null;
+  symbol_notes: string | null;
+  secondary_conclusions: string | null;
+  error_tips: string | null;
+  examples: Array<{ question: string; short_solution: string; answer: string; error_tip?: string | null }> | null;
+  status: string;
+  tags: Array<{ id: number; code: string; name: string }>;
+  version: number;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+  aliases: string[] | null;
+  source_title: string | null;
+  rejection_reason: string | null;
+};
+
+type FormulaCategory = {
+  id: number;
+  parent_id: number | null;
+  code: string;
+  name: string;
+  node_type: string;
+  children: FormulaCategory[];
+};
+
+type TagOption = { id: number; code: string; name: string };
+
+/* ── Status helpers ── */
+
+const STATUS_OPTIONS = [
+  { label: "全部状态", value: "" },
+  { label: "草稿", value: "draft" },
+  { label: "待审核", value: "pending_review" },
+  { label: "已通过", value: "approved" },
+  { label: "已驳回", value: "rejected" },
+  { label: "已发布", value: "published" },
+  { label: "已下架", value: "offline" },
+];
+
+const STATUS_BADGE: Record<string, string> = {
+  draft: "bg-gray-50 text-gray-600 border-gray-200",
+  pending_review: "bg-amber-50 text-amber-700 border-amber-200",
+  approved: "bg-green-50 text-green-700 border-green-200",
+  rejected: "bg-red-50 text-red-700 border-red-200",
+  published: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  offline: "bg-slate-50 text-slate-600 border-slate-200",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  draft: "草稿",
+  pending_review: "待审核",
+  approved: "已通过",
+  rejected: "已驳回",
+  published: "已发布",
+  offline: "已下架",
+};
+
+/* ── Custom Select ── */
+
+function CustomSelect({
+  options, value, onChange, className = "",
+}: {
+  options: { label: string; value: string }[];
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((o) => o.value === value);
+  return (
+    <div className={`relative ${className}`}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex h-11 w-full items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
+      >
+        <span className="truncate">{selected?.label ?? "—"}</span>
+        <ChevronDown className={`ml-2 h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute z-[100] mt-1 w-full rounded-xl border bg-white py-1 shadow-lg">
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              className={`flex w-full items-center px-3 py-2 text-left text-sm transition-colors ${
+                opt.value === value ? "bg-[var(--color-bg-input)] font-medium" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]/50"
+              }`}
+            >
+              {opt.value === value && <Check className="mr-2 h-3.5 w-3.5 shrink-0" />}
+              <span className={opt.value === value ? "" : "pl-5.5"}>{opt.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Category tree flat options ── */
+
+function flattenCategories(cats: FormulaCategory[], prefix = ""): Array<{ id: number; label: string }> {
+  const result: Array<{ id: number; label: string }> = [];
+  for (const cat of cats) {
+    const label = prefix ? `${prefix} / ${cat.name}` : cat.name;
+    if (cat.node_type === "group") {
+      result.push({ id: cat.id, label });
+    }
+    if (cat.children?.length) {
+      result.push(...flattenCategories(cat.children, label));
+    }
+  }
+  return result;
+}
+
+/* ── Main page ── */
+
+export default function FormulasPage() {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const permissions = useAuthStore((state) => state.permissions);
+
+  const [filters, setFilters] = useState({ status: "", category_id: "", q: "", tags: "" });
+  const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{
+    action: string; cardId: number; title: string;
+  } | null>(null);
+  const [reviewReason, setReviewReason] = useState("");
+
+  const canWrite = hasPermission(permissions, "formula:create");
+  const canUpdate = hasPermission(permissions, "formula:update");
+  const canReview = hasPermission(permissions, "formula:review");
+  const canDelete = hasPermission(permissions, "formula:delete");
+
+  // Load categories
+  const categories = useQuery({
+    queryKey: ["admin-formula-categories"],
+    queryFn: () => apiRequest<{ items: FormulaCategory[] }>("/formulas/categories"),
+    staleTime: 60000,
+  });
+  const catOptions = useMemo(
+    () => flattenCategories(categories.data?.items ?? []),
+    [categories.data?.items],
+  );
+
+  // Load tags
+  const tags = useQuery({
+    queryKey: ["admin-formula-tags"],
+    queryFn: () => apiRequest<{ items: TagOption[] }>("/formulas/tags"),
+    staleTime: 60000,
+  });
+
+  // Load list
+  const queryParams = useMemo(() => ({
+    page, page_size: 20,
+    status: filters.status,
+    category_id: filters.category_id,
+    q: filters.q,
+  }), [page, filters]);
+
+  const formulas = useQuery({
+    queryKey: ["admin-formulas", queryParams],
+    queryFn: () => apiRequest<PaginatedResponse<FormulaCard>>(
+      `/formulas${toQuery(queryParams)}`,
+    ),
+    retry: false,
+  });
+
+  // Detail
+  const detail = useQuery({
+    queryKey: ["admin-formulas", selectedId],
+    queryFn: () => apiRequest<FormulaCard>(`/formulas/${selectedId}`),
+    enabled: selectedId !== null,
+    retry: false,
+  });
+
+  // Delete
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => apiRequest<{ status: string }>(`/formulas/${id}`, { method: "DELETE" }),
+    onSuccess: (_, id) => {
+      setMessage(`公式 #${id} 已删除。`);
+      setSelectedId(null);
+      setShowDetail(false);
+      setConfirmAction(null);
+      queryClient.invalidateQueries({ queryKey: ["admin-formulas"] });
+    },
+    onError: (e) => setMessage(e instanceof Error ? e.message : "删除失败"),
+  });
+
+  // Review action
+  const reviewMutation = useMutation({
+    mutationFn: async ({ cardId, action, reason }: { cardId: number; action: string; reason?: string }) => {
+      const body: Record<string, unknown> = { action };
+      if (reason) body.rejection_reason = reason;
+      return apiRequest<{ status: string; new_status: string }>(
+        `/formulas/${cardId}/review`, { method: "POST", body: JSON.stringify(body) },
+      );
+    },
+    onSuccess: (result) => {
+      setMessage(`状态已更新为「${STATUS_LABEL[result.new_status] || result.new_status}」。`);
+      setConfirmAction(null);
+      setReviewReason("");
+      queryClient.invalidateQueries({ queryKey: ["admin-formulas"] });
+      if (selectedId) queryClient.invalidateQueries({ queryKey: ["admin-formulas", selectedId] });
+    },
+    onError: (e) => setMessage(e instanceof Error ? e.message : "操作失败"),
+  });
+
+  const items = formulas.data?.items ?? [];
+  const selectedCard = detail.data;
+
+  const updateFilter = (key: keyof typeof filters, value: string) => {
+    setFilters((f) => ({ ...f, [key]: value }));
+    setPage(1);
+  };
+
+  const submitReview = () => {
+    if (!confirmAction) return;
+    reviewMutation.mutate({
+      cardId: confirmAction.cardId,
+      action: confirmAction.action,
+      reason: confirmAction.action === "reject" ? reviewReason : undefined,
+    });
+  };
+
+  return (
+    <div className="space-y-6 pb-24">
+      <Card>
+        <CardHeader className="space-y-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="font-display text-2xl font-bold text-[var(--ink)]">
+                公式库管理
+              </h3>
+              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+                管理公式卡片、查看详情、提交审核、发布或下架
+              </p>
+            </div>
+            {canWrite && (
+              <Link href="/formulas/new">
+                <Button variant="primary">
+                  <Plus className="h-4 w-4" />
+                  新建公式
+                </Button>
+              </Link>
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-[var(--color-border)] bg-white/65 p-3 shadow-sm">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(200px,1fr)_180px_180px_auto]">
+              <label className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
+                <Input
+                  className="pl-9"
+                  placeholder="搜索标题 / 别名"
+                  value={filters.q}
+                  onChange={(e) => updateFilter("q", e.target.value)}
+                />
+              </label>
+              <CustomSelect
+                value={filters.status}
+                onChange={(v) => updateFilter("status", v)}
+                options={STATUS_OPTIONS}
+              />
+              <CustomSelect
+                value={filters.category_id}
+                onChange={(v) => updateFilter("category_id", v)}
+                options={[
+                  { label: "全部分类", value: "" },
+                  ...catOptions.map((c) => ({ label: c.label, value: String(c.id) })),
+                ]}
+              />
+              <Link href="/formulas/new">
+                <Button variant="secondary" className="w-full">
+                  <Sigma className="h-4 w-4" />
+                  快速新建
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-5">
+          {message ? (
+            <div className="fixed right-6 top-6 z-50 max-w-sm rounded-2xl border border-[var(--color-success)] bg-white px-5 py-4 text-sm font-medium shadow-lg">
+              {message}
+              <button className="ml-3" onClick={() => setMessage(null)}>✕</button>
+            </div>
+          ) : null}
+
+          {/* List */}
+          <div className="space-y-3">
+            {formulas.isLoading ? (
+              Array.from({ length: 4 }, (_, i) => (
+                <div key={i} className="h-28 animate-pulse rounded-[1.6rem] border bg-white/60" />
+              ))
+            ) : null}
+
+            {items.map((card) => {
+              const isSelected = selectedId === card.id;
+              const tagCodes = card.tags?.map((t) => t.name).join(", ") || "";
+              return (
+                <article
+                  key={card.id}
+                  className={`group relative overflow-hidden rounded-[1.6rem] border bg-white/78 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+                    isSelected ? "border-[var(--color-primary)] ring-4 ring-[var(--color-primary-light)]" : "border-[var(--color-border)]"
+                  }`}
+                >
+                  <span className="absolute left-0 top-0 h-full w-1 bg-[var(--color-primary)]" />
+                  <div className="flex items-start gap-4 p-4 pl-5">
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedId(card.id); setShowDetail(true); }}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${STATUS_BADGE[card.status] || "bg-gray-50"}`}>
+                          {STATUS_LABEL[card.status] || card.status}
+                        </span>
+                        {tagCodes && (
+                          <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-white/80 px-1.5 py-0.5 text-[11px] text-[var(--color-text-secondary)]">
+                            <Tag className="h-3 w-3" />
+                            {tagCodes}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="mt-2 font-semibold text-[var(--ink)]">{card.title}</h4>
+                      {card.summary && (
+                        <p className="mt-1 line-clamp-2 text-sm text-[var(--color-text-secondary)]">
+                          {card.summary}
+                        </p>
+                      )}
+                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--color-text-hint)]">
+                        <span className="inline-flex items-center gap-1">
+                          <Clock className="h-3 w-3" />#{card.id}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Layers className="h-3 w-3" />
+                          {card.formula_blocks?.length || 0} 个公式块
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          v{card.version}
+                        </span>
+                      </div>
+                    </button>
+
+                    <div className="flex shrink-0 flex-col gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => { setSelectedId(card.id); setShowDetail(true); }}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        详情
+                      </Button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+
+            {!formulas.isLoading && items.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 rounded-[1.6rem] border border-dashed border-[var(--color-border)] bg-white/60 py-16 text-center">
+                <Sigma className="h-12 w-12 text-[var(--color-text-hint)]" />
+                <p className="text-sm font-semibold text-[var(--color-text-secondary)]">暂无公式</p>
+                <p className="text-xs text-[var(--color-text-hint)]">尝试调整筛选条件或新建公式卡片</p>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Pagination */}
+          {formulas.data && formulas.data.total_pages > 1 ? (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-white/80 px-5 py-3 shadow-sm">
+              <span className="text-sm text-[var(--color-text-secondary)]">
+                <span className="font-semibold text-[var(--ink)]">{formulas.data.total}</span> 条公式
+                <span className="mx-2">/</span>第 <span className="font-semibold">{formulas.data.page}</span> / {formulas.data.total_pages} 页
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="inline-flex h-9 items-center gap-1 rounded-xl border px-3 text-xs font-semibold shadow-sm disabled:opacity-40"
+                >
+                  上一页
+                </button>
+                {Array.from({ length: Math.min(formulas.data.total_pages, 5) }, (_, i) => {
+                  const start = Math.max(1, Math.min(page - 2, formulas.data.total_pages - 4));
+                  const p = start + i;
+                  if (p > formulas.data.total_pages) return null;
+                  return (
+                    <button
+                      key={p}
+                      disabled={p === page}
+                      onClick={() => setPage(p)}
+                      className={`inline-flex h-9 w-9 items-center justify-center rounded-xl border text-sm font-bold shadow-sm ${
+                        p === page ? "bg-[var(--color-primary)] text-white" : "bg-white/80 text-[var(--color-text-secondary)]"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+                <button
+                  disabled={page >= (formulas.data?.total_pages ?? 1)}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="inline-flex h-9 items-center gap-1 rounded-xl border px-3 text-xs font-semibold shadow-sm disabled:opacity-40"
+                >
+                  下一页
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {/* Detail drawer */}
+      {showDetail && selectedId !== null ? (
+        <div
+          className="fixed inset-0 z-40 flex justify-end bg-[rgba(16,24,40,0.42)] backdrop-blur-[2px]"
+          onClick={() => setShowDetail(false)}
+        >
+          <aside
+            className="h-full w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-4">
+              <h3 className="font-display text-2xl font-bold text-[var(--ink)]">
+                公式详情
+                <span className="ml-2 font-mono text-base text-[var(--color-text-hint)]">#{selectedId}</span>
+              </h3>
+              <div className="flex items-center gap-2">
+                {canUpdate && (
+                  <Link href={`/formulas/${selectedId}`}>
+                    <Button variant="secondary">
+                      <ExternalLink className="h-4 w-4" />
+                      编辑
+                    </Button>
+                  </Link>
+                )}
+                <Button variant="ghost" onClick={() => setShowDetail(false)}>关闭</Button>
+              </div>
+            </div>
+
+            {selectedCard ? (
+              <div className="mt-6 space-y-5 text-sm">
+                {/* Status + Tags */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold ${STATUS_BADGE[selectedCard.status] || ""}`}>
+                    {STATUS_LABEL[selectedCard.status] || selectedCard.status}
+                  </span>
+                  {selectedCard.tags?.map((t) => (
+                    <span key={t.id} className="inline-flex items-center rounded-lg border border-[var(--color-border)] bg-white/60 px-2 py-1 text-[11px] text-[var(--color-text-secondary)]">
+                      <Tag className="mr-1 h-3 w-3" />
+                      {t.name}
+                    </span>
+                  ))}
+                  <span className="text-xs text-[var(--color-text-hint)]">v{selectedCard.version}</span>
+                </div>
+
+                {/* Title */}
+                <section className="rounded-[1.6rem] border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-5">
+                  <h4 className="font-display text-xl font-bold text-[var(--ink)]">{selectedCard.title}</h4>
+                  {selectedCard.summary && (
+                    <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">{selectedCard.summary}</p>
+                  )}
+                </section>
+
+                {/* Formula blocks */}
+                <section className="rounded-[1.6rem] border border-[var(--color-border)] bg-white/80 p-5">
+                  <p className="font-semibold text-[var(--ink)]">公式块</p>
+                  <div className="mt-3 space-y-4">
+                    {selectedCard.formula_blocks?.map((block, i) => (
+                      <div key={i} className="rounded-xl border border-[var(--color-border)] bg-white p-4">
+                        {block.label && <p className="mb-1 text-xs font-semibold text-[var(--color-text-hint)]">{block.label}</p>}
+                        <pre className="overflow-x-auto font-mono text-sm text-[var(--ink)]">{block.latex}</pre>
+                        {block.note && <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{block.note}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                {/* Conditions & Error Tips */}
+                {selectedCard.conditions && (
+                  <section className="rounded-[1.6rem] border border-amber-200 bg-amber-50/60 p-4">
+                    <p className="font-semibold text-amber-800">适用条件</p>
+                    <p className="mt-2 text-sm text-amber-900">{selectedCard.conditions}</p>
+                  </section>
+                )}
+                {selectedCard.error_tips && (
+                  <section className="rounded-[1.6rem] border border-red-200 bg-red-50/60 p-4">
+                    <p className="font-semibold text-red-700">易错提醒</p>
+                    <p className="mt-2 text-sm leading-6 text-red-800">{selectedCard.error_tips}</p>
+                  </section>
+                )}
+
+                {/* Rejection reason */}
+                {selectedCard.status === "rejected" && selectedCard.rejection_reason && (
+                  <section className="rounded-[1.6rem] border border-red-200 bg-red-50/50 p-4">
+                    <p className="font-semibold text-red-700">驳回原因</p>
+                    <p className="mt-2 text-sm text-red-800">{selectedCard.rejection_reason}</p>
+                  </section>
+                )}
+
+                {/* State machine actions */}
+                {canReview && (
+                  <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-4">
+                    {selectedCard.status === "draft" && (
+                      <Button onClick={() => setConfirmAction({ action: "approve", cardId: selectedCard.id, title: selectedCard.title })}>
+                        <Send className="h-4 w-4" />
+                        提交审核
+                      </Button>
+                    )}
+                    {selectedCard.status === "pending_review" && (
+                      <>
+                        <Button variant="primary" onClick={() => setConfirmAction({ action: "approve", cardId: selectedCard.id, title: selectedCard.title })}>
+                          <CheckCircle className="h-4 w-4" />
+                          通过
+                        </Button>
+                        <Button variant="danger" onClick={() => setConfirmAction({ action: "reject", cardId: selectedCard.id, title: selectedCard.title })}>
+                          <XCircle className="h-4 w-4" />
+                          驳回
+                        </Button>
+                      </>
+                    )}
+                    {selectedCard.status === "approved" && (
+                      <Button onClick={() => setConfirmAction({ action: "publish", cardId: selectedCard.id, title: selectedCard.title })}>
+                        <Eye className="h-4 w-4" />
+                        发布
+                      </Button>
+                    )}
+                    {selectedCard.status === "published" && (
+                      <Button variant="secondary" onClick={() => setConfirmAction({ action: "offline", cardId: selectedCard.id, title: selectedCard.title })}>
+                        <EyeOff className="h-4 w-4" />
+                        下架
+                      </Button>
+                    )}
+                    {selectedCard.status === "rejected" && (
+                      <Button variant="secondary" onClick={() => setConfirmAction({ action: "restore", cardId: selectedCard.id, title: selectedCard.title })}>
+                        <Send className="h-4 w-4" />
+                        重新提交
+                      </Button>
+                    )}
+                    {selectedCard.status === "offline" && (
+                      <Button onClick={() => setConfirmAction({ action: "publish", cardId: selectedCard.id, title: selectedCard.title })}>
+                        <Eye className="h-4 w-4" />
+                        重新发布
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* Delete */}
+                {canDelete && selectedCard.status !== "published" && (
+                  <div className="flex gap-2 border-t border-[var(--color-border)] pt-4">
+                    <Button variant="danger" onClick={() => {
+                      if (confirm(`确认删除公式「${selectedCard.title}」？`)) {
+                        deleteMutation.mutate(selectedCard.id);
+                      }
+                    }}>
+                      <Trash2 className="h-4 w-4" />
+                      删除
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="mt-6 text-sm text-[var(--color-text-secondary)]">加载中...</p>
+            )}
+          </aside>
+        </div>
+      ) : null}
+
+      {/* Confirm dialog for review actions */}
+      <ConfirmDialog
+        open={confirmAction !== null}
+        title={confirmAction?.action === "reject" ? "驳回公式" : `确认操作`}
+        description={
+          confirmAction?.action === "reject"
+            ? `确认驳回「${confirmAction?.title}」？需要填写驳回原因。`
+            : `确认对「${confirmAction?.title}」执行「${confirmAction?.action}」操作？`
+        }
+        confirmText={confirmAction?.action === "reject" ? "驳回" : "确认"}
+        danger={confirmAction?.action === "reject" || confirmAction?.action === "offline"}
+        loading={reviewMutation.isPending}
+        onCancel={() => { setConfirmAction(null); setReviewReason(""); }}
+        onConfirm={submitReview}
+      >
+        {confirmAction?.action === "reject" && (
+          <div className="mt-4">
+            <label className="text-xs font-semibold text-[var(--color-text-secondary)]">驳回原因</label>
+            <textarea
+              className="mt-1 min-h-20 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-sm"
+              placeholder="请填写驳回原因..."
+              value={reviewReason}
+              onChange={(e) => setReviewReason(e.target.value)}
+            />
+          </div>
+        )}
+      </ConfirmDialog>
+    </div>
+  );
+}

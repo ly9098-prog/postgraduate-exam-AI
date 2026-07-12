@@ -119,6 +119,14 @@
       </view>
       <text class="action-arrow line-icon icon-chevron-right"></text>
     </view>
+    <view class="action-card learning-card" hover-class="active-surface" bindtap="goFormulas">
+      <view class="icon-badge icon-formula"><text class="line-icon icon-formula">∑</text></view>
+      <view class="action-info">
+        <text class="action-title">公式背诵</text>
+        <text class="action-desc">数学二公式 · 定理 · 二级结论</text>
+      </view>
+      <text class="action-arrow line-icon icon-chevron-right"></text>
+    </view>
   </view>
 
 </view>

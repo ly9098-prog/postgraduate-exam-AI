@@ -1,0 +1,41 @@
+<view class="fr-page">
+  <!-- Swiper -->
+  <swiper class="fr-swiper" circular="false"
+    current="{{currentIndex}}"
+    bindchange="onSwiperChange"
+    duration="300">
+
+    <swiper-item wx:for="{{displayCards}}" wx:key="id" wx:for-index="idx">
+      <scroll-view class="fr-card-scroll" scroll-y>
+        <view class="fr-card-wrap">
+          <!-- Favorite button -->
+          <view class="fr-fav-btn {{item.isFavorited ? 'favorited' : ''}}"
+            bindtap="toggleFavorite" data-id="{{item.id}}">
+            <text>{{item.isFavorited ? '★' : '☆'}}</text>
+          </view>
+
+          <!-- Formula Card -->
+          <formula-card card="{{item}}" graphImageUrl="{{item.graphImageUrl}}" />
+
+          <!-- Navigation -->
+          <view class="fr-nav-row">
+            <view class="fr-nav-btn" wx:if="{{currentIndex > 0}}"
+              bindtap="goPrev">
+              <text>← 上一条</text>
+            </view>
+            <view class="fr-nav-spacer"></view>
+            <view class="fr-nav-btn" wx:if="{{currentIndex < displayCards.length - 1}}"
+              bindtap="goNext">
+              <text>下一条 →</text>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+    </swiper-item>
+  </swiper>
+
+  <!-- Loading state -->
+  <view class="fr-loading" wx:if="{{loading}}">
+    <text>加载中...</text>
+  </view>
+</view>
