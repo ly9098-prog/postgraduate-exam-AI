@@ -5,16 +5,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.cache import cache
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.question import Question
 from app.models.user import User
 from app.schemas.common import paginated_response
 from app.schemas.wrong_question import (
+    BatchAction,
+    WrongQuestionBatchRequest,
+    WrongQuestionBatchResponse,
     WrongQuestionQualityUpdate,
     WrongQuestionResponse,
     WrongQuestionStats,
     WrongQuestionUpdate,
+    TaskFlowResponse,
 )
 from app.services import wrong_question_service as svc
 from app.features.text_normalizer import _split_inline_roman_subitems
@@ -121,21 +126,17 @@ async def list_wrong(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    items, total = await svc.list_wrong(
+    items, total = await svc.list_wrong_enriched(
         db, current_user.id, subject, error_type, topic, page, page_size
     )
 
-    question_ids = [w.question_id for w in items]
-    if question_ids:
-        result = await db.execute(
-            select(Question).options(selectinload(Question.subject_ref)).where(Question.id.in_(question_ids))
-        )
-        questions = {q.id: q for q in result.scalars().all()}
-    else:
-        questions = {}
+    # Apply text sanitization
+    for item in items:
+        item["content"] = _sanitize_content(item.get("content"))
+        item["options"] = _sanitize_options(item.get("options"))
 
     return paginated_response(
-        items=[enrich_wq(w, questions.get(w.question_id)) for w in items],
+        items=items,
         total=total,
         page=page,
         page_size=page_size,
@@ -149,6 +150,22 @@ async def get_stats(
 ):
     stats = await svc.get_stats(db, current_user.id)
     return WrongQuestionStats(**stats)
+
+
+@router.get("/task-flow", response_model=TaskFlowResponse)
+async def get_task_flow(
+    subject: str | None = Query(None),
+    error_type: str | None = Query(None),
+    topic: str | None = Query(None),
+    preview_size: int = Query(3, ge=1, le=10),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """错题任务流分组：今日应复习 → 高频错题 → 最近新增 → 待巩固 → 已掌握."""
+    result = await svc.get_task_flow(
+        db, current_user.id, subject, error_type, topic, preview_size
+    )
+    return result
 
 
 @router.get("/{wq_id}", response_model=WrongQuestionResponse)
@@ -205,3 +222,29 @@ async def rate_quality(
     )
     question = result.scalar_one_or_none()
     return enrich_wq(wq, question)
+
+
+@router.post("/batch", response_model=WrongQuestionBatchResponse)
+async def batch_operate(
+    data: WrongQuestionBatchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """批量操作错题本记录。id 去重后限制 1~100；非本人的记录静默跳过。"""
+    result = await svc.batch_operate(db, current_user.id, data.action.value, data.ids)
+
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail="批量操作失败")
+
+    # Invalidate caches so list/stats/dashboard reflect changes immediately
+    uid = current_user.id
+    patterns = [
+        f"wrong_questions:*:{uid}*",
+        f"stats:*:{uid}*",
+        f"review:today:*:{uid}*",
+        f"stats:dashboard*:{uid}*",
+    ]
+    for p in patterns:
+        await cache.delete(p)
+
+    return result

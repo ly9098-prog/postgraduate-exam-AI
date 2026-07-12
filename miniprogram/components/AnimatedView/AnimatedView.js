@@ -73,6 +73,7 @@ Component({
 
   observers: {
     show: function (val) {
+      if (!this._ready) { this._pendingShow = val; return }
       if (val) {
         this._show()
       } else {
@@ -80,6 +81,7 @@ Component({
       }
     },
     type: function (val) {
+      if (!this._ready) { this._pendingType = val; return }
       this.setData({ fallbackGlyph: getFallbackGlyph(val) })
     },
   },
@@ -87,6 +89,7 @@ Component({
   lifetimes: {
     attached: function () {
       this._alive = true
+      this._ready = false
       this._lottieAnim = null
       this._canvas = null
       this._ctx = null
@@ -97,11 +100,24 @@ Component({
       this._reducedMotion = isReducedMotionEnabled()
       this._canUseCanvas = false
       this._canUseLottie = false
-      this.setData({ fallbackGlyph: getFallbackGlyph(this.data.type) })
+      this._pendingShow = undefined
+      this._pendingType = undefined
       this._detectSupport()
+    },
+    ready: function () {
+      this._ready = true
+      var type = this._pendingType !== undefined ? this._pendingType : this.data.type
+      this._pendingType = undefined
+      this.setData({ fallbackGlyph: getFallbackGlyph(type) })
+      if (this._pendingShow !== undefined) {
+        var pending = this._pendingShow
+        this._pendingShow = undefined
+        if (pending) { this._show() } else { this._hide(false) }
+      }
     },
     detached: function () {
       this._alive = false
+      this._ready = false
       this._clearTimers()
       this._destroyLottie()
     },

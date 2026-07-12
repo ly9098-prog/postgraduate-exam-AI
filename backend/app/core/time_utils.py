@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 def utcnow() -> datetime:
@@ -62,3 +62,22 @@ def serialize_utc_datetime(value: datetime) -> str:
     if not iso.endswith("Z"):
         iso += "Z"
     return iso
+
+
+# Asia/Shanghai = UTC+8, no DST
+_SHANGHAI_TZ = timezone(timedelta(hours=8))
+
+
+def shanghai_today_boundaries() -> tuple[datetime, datetime]:
+    """Return (today_start_utc, today_end_utc) as naive UTC datetimes.
+
+    "Today" is defined in Asia/Shanghai timezone.  The returned values are
+    converted to naive UTC for DB column comparison (all DateTime columns
+    store naive UTC).
+    """
+    now_shanghai = datetime.now(_SHANGHAI_TZ)
+    start_shanghai = now_shanghai.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_shanghai = now_shanghai.replace(hour=23, minute=59, second=59, microsecond=999999)
+    start_utc = (start_shanghai - timedelta(hours=8)).replace(tzinfo=None)
+    end_utc = (end_shanghai - timedelta(hours=8)).replace(tzinfo=None)
+    return start_utc, end_utc

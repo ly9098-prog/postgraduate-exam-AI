@@ -53,15 +53,20 @@ Component({
   lifetimes: {
     attached: function () {
       this._alive = true
+      this._ready = false
       this._canvas = null
       this._ctx = null
       this._lottieAnim = null
       this._pausedByPage = false
       this._detectSupport()
+    },
+    ready: function () {
+      this._ready = true
       this._start()
     },
     detached: function () {
       this._alive = false
+      this._ready = false
       this._destroyLottie()
     },
   },
@@ -96,7 +101,7 @@ Component({
           self._lottieModule = animationLoader.getLottieModule()
           self._lottieData = animationLoader.getLoadingData()
           self._canUseLottie = !!(self._lottieModule && self._lottieData)
-          if (self._canUseLottie && self.data.mode === 'fallback' && self.data.ready === false) {
+          if (self._canUseLottie && self._alive && self._ready && self.data.mode === 'fallback') {
             self._start()
           }
         })
@@ -104,6 +109,7 @@ Component({
     },
 
     _start: function () {
+      if (!this._ready) return
       if (!this._canUseLottie) {
         this._fallback()
         return

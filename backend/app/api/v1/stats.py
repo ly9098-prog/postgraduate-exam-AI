@@ -155,13 +155,15 @@ async def get_dashboard_v2(
 
 @router.get("/ai-diagnosis", response_model=AiDiagnosis)
 async def get_ai_diagnosis(
+    refresh: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     cache_key = f"stats:ai_diagnosis:{current_user.id}"
-    cached_data = await cache.get(cache_key)
-    if cached_data is not None:
-        return cached_data
+    if not refresh:
+        cached_data = await cache.get(cache_key)
+        if cached_data is not None:
+            return cached_data
     data = await svc.get_ai_diagnosis(db, current_user.id)
     await cache.set(cache_key, data, ttl=600)
     return AiDiagnosis(**data)

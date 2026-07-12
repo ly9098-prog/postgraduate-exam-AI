@@ -5,26 +5,6 @@ const storage = require('../../utils/storage')
 const aiCache = require('../../utils/ai-diagnosis-cache')
 const { getSubjectName, getSubjectShortName } = require('../../utils/subject-meta')
 
-const SUBJECTS = [
-  { value: '', label: '全部' },
-  // 新树形科目
-  { value: 'math', label: '数学' },
-  { value: 'advanced_math', label: '高数' },
-  { value: 'linear_algebra', label: '线性代数' },
-  { value: 'computer', label: '计算机' },
-  { value: 'ds', label: '数据结构' },
-  { value: 'os', label: '操作系统' },
-  { value: 'co', label: '计组' },
-  { value: 'cn', label: '网络' },
-  { value: 'english', label: '英语' },
-  { value: 'politics', label: '政治' },
-  // 旧兼容科目
-  { value: 'math2', label: '数学二' },
-  { value: 'math2-calculus', label: '高数(旧)' },
-  { value: 'math2-linalg', label: '线代(旧)' },
-  { value: 'exam408', label: '408' },
-]
-
 const ERROR_TYPES = [
   { value: '', label: '全部类型' },
   { value: 'concept_mistake', label: '概念错误' },
@@ -40,6 +20,36 @@ Page({
     stats: { total: 0 },
     primaryStatCount: 0,
     masteredCount: 0,
+
+    // 今日复习 Hero
+    reviewOverviewAvailable: false,
+    todayDueCount: 0,
+    todayCompletedCount: 0,
+    todayRemainingCount: 0,
+    todayOverdueCount: 0,
+    estimatedMinutes: 0,
+    todayProgressPercent: 0,
+    heroRemainingCount: 0,
+    heroRingStyle: 'background: conic-gradient(from -90deg, rgba(255,255,255,0.14) 0deg 360deg);',
+
+    // 新任务流与批量管理
+    activeView: 'task',
+    taskGroups: [],
+    ungroupedCount: 0,
+    highFrequencyCount: 0,
+    batchMode: false,
+    selectedIds: [],
+    selectedIdMap: {},
+    selectedCount: 0,
+    allVisibleSelected: false,
+    batchSubmitting: false,
+    batchMoreVisible: false,
+    selectionPulse: false,
+    aiInsightText: '正在根据错题记录生成复习建议…',
+    aiInsightExpanded: false,
+    aiInsightHasDetails: false,
+    aiInsightWeakPoints: [],
+    aiInsightSuggestions: [],
     analysis: {
       sourceLabel: '待积累',
       weaknessTags: [],
@@ -66,7 +76,10 @@ Page({
     showFilter: false,
     filterCount: 0,
 
-    subjects: SUBJECTS,
+    subjects: [{ value: '', label: '全部' }],
+    subjectsLoading: false,
+    subjectsError: false,
+    subjectsLoaded: false,
     errorTypes: ERROR_TYPES,
   },
 
@@ -82,6 +95,8 @@ Page({
   _aiDiagnosisCachedAt: 0,
   _aiStatsLoaded: false,
   _listRequestSeq: 0,
+  _suppressQuestionTapUntil: 0,
+  _selectionPulseTimer: null,
 
   onLoad(options) {
     this.setData({ enableMathImage: config.enableMathImage || false })
@@ -102,6 +117,7 @@ Page({
 
   onReady() {
     this._ready = true
+    this.loadSubjects()
     this._loadPage()
   },
 
@@ -111,6 +127,7 @@ Page({
     // 刷新统计和列表，但不无条件刷新 AI
     this.loadStats()
     this.loadList(true)
+    this.loadReviewOverview()
     // 已有诊断时检查是否需要后台更新
     // 无诊断时由 _loadPage / _checkAiDiagnosis 处理
     if (this.data.aiDiagnosis) {
@@ -124,6 +141,10 @@ Page({
 
   onUnload() {
     this._alive = false
+    if (this._selectionPulseTimer) {
+      clearTimeout(this._selectionPulseTimer)
+      this._selectionPulseTimer = null
+    }
   },
 
   // ════════════════════════════════════════════
@@ -135,6 +156,7 @@ Page({
     await Promise.all([
       this.loadStats(),
       this.loadList(true),
+      this.loadReviewOverview(),
     ])
     // 首次加载完成后检查 AI 诊断
     await this._checkAiDiagnosis()
@@ -144,15 +166,19 @@ Page({
     var user = this._getUser()
     var userId = user && (user.id || user.user_id || user.openid || '')
     var cache = aiCache.restore(userId)
-    if (cache.status !== 'miss' && cache.data) {
+    if (cache.status !== 'miss' && this._hasAiDiagnosisContent(cache.data)) {
       this._aiDiagnosisCachedAt = cache.cachedAt
+      const normalized = this._normalizeAiDiagnosis(cache.data)
+      const detailState = this._buildAiInsightDetails(normalized)
       this.setData({
-        aiDiagnosis: cache.data,
+        aiDiagnosis: normalized,
         aiDiagnosisCacheTimeLabel: aiCache.formatCacheTime(cache.cachedAt),
         aiDiagnosisCacheStale: cache.status === 'stale',
         aiDiagnosisError: false,
         aiDiagnosisLoading: false,
         aiDiagnosisRefreshing: false,
+        aiInsightText: this._oneLineInsight(cache.data.summary) || this.data.aiInsightText,
+        ...detailState,
       })
     }
   },
@@ -161,20 +187,79 @@ Page({
     try {
       const stats = await api.get('/wrong-questions/stats')
       this._aiStatsLoaded = true
-      const masteredCount = typeof stats.unmastered === 'number' ? Math.max(0, (stats.total || 0) - stats.unmastered) : 0
-      this.setData({
+      const masteredCount = typeof stats.unmastered === 'number'
+        ? Math.max(0, (stats.total || 0) - stats.unmastered)
+        : this.data.list.filter(item => item._isMastered).length
+      const primaryStatCount = typeof stats.unmastered === 'number' ? stats.unmastered : (stats.total || 0)
+      const patch = {
         stats,
-        primaryStatCount: typeof stats.unmastered === 'number' ? stats.unmastered : (stats.total || 0),
+        primaryStatCount,
         masteredCount,
-      })
+      }
+
+      // 旧后端没有今日复习概览时，Hero 至少仍能展示“待复习错题”数量，
+      // 但不会伪造完成率。
+      if (!this.data.reviewOverviewAvailable) {
+        patch.heroRemainingCount = primaryStatCount
+        patch.todayProgressPercent = 0
+        patch.heroRingStyle = this._buildHeroRingStyle(0)
+      }
+
+      this.setData(patch)
+
       // Rebuild analysis with fresh stats when no filter is active
       const hasFilter = this.data.selectedSubject || this.data.selectedErrorType || this.data.selectedTopic
       if (!hasFilter && this.data.list.length > 0) {
-        this.setData({ analysis: this._buildAnalysis(stats, this.data.list) })
+        const analysis = this._buildAnalysis(stats, this.data.list)
+        this.setData({
+          analysis,
+          aiInsightText: this.data.aiDiagnosis
+            ? this._oneLineInsight(this.data.aiDiagnosis.summary)
+            : this._oneLineInsight(analysis.focusInsight),
+        })
       }
     } catch (e) {
       console.error('加载错题统计失败', e)
     }
+  },
+
+  async loadReviewOverview() {
+    try {
+      const overview = await api.get('/review/today/overview')
+      const due = this._positiveNumber(overview.today_due_count, 0)
+      const completed = this._positiveNumber(overview.today_completed_count, 0)
+      const remaining = this._positiveNumber(overview.today_remaining_count, Math.max(0, due - completed))
+      const progress = due > 0 ? Math.round((completed / due) * 100) : 100
+
+      this.setData({
+        reviewOverviewAvailable: true,
+        todayDueCount: due,
+        todayCompletedCount: completed,
+        todayRemainingCount: remaining,
+        todayOverdueCount: this._positiveNumber(overview.today_overdue_count, 0),
+        estimatedMinutes: this._positiveNumber(overview.estimated_minutes, Math.ceil(remaining * 0.5)),
+        todayProgressPercent: Math.max(0, Math.min(100, progress)),
+        heroRemainingCount: remaining,
+        heroRingStyle: this._buildHeroRingStyle(progress),
+      })
+    } catch (e) {
+      // 兼容尚未提供 overview 接口的旧后端；页面其它能力继续可用。
+      console.warn('今日复习概览暂不可用，已使用错题统计兜底', e)
+      const fallback = this.data.primaryStatCount || 0
+      this.setData({
+        reviewOverviewAvailable: false,
+        heroRemainingCount: fallback,
+        todayProgressPercent: 0,
+        heroRingStyle: this._buildHeroRingStyle(0),
+      })
+    }
+  },
+
+  _buildHeroRingStyle(percent) {
+    const safe = Math.max(0, Math.min(100, Number(percent) || 0))
+    const endDeg = Math.round(safe * 3.6)
+    const splitDeg = Math.round(endDeg * 0.48)
+    return `background: conic-gradient(from -90deg, #A9F16C 0deg ${splitDeg}deg, #32D276 ${splitDeg}deg ${endDeg}deg, rgba(255,255,255,0.14) ${endDeg}deg 360deg);`
   },
 
   async loadList(reset = false) {
@@ -200,13 +285,27 @@ Page({
       const hasFilter = this.data.selectedSubject || this.data.selectedErrorType || this.data.selectedTopic
       const statsForAnalysis = hasFilter ? {} : (this.data.stats || {})
       if (seq !== this._listRequestSeq || !this._alive) return
+      const analysis = this._buildAnalysis(statsForAnalysis, nextList)
+      const taskVm = this._buildTaskGroups(nextList)
+      const statsHighFrequency = Number((this.data.stats || {}).high_frequency_count)
+      const highFrequencyCount = Number.isFinite(statsHighFrequency)
+        ? Math.max(0, Math.round(statsHighFrequency))
+        : nextList.filter(item => !item._isMastered && item._wrongCount >= 3).length
+
       this.setData({
         list: nextList,
-        analysis: this._buildAnalysis(statsForAnalysis, nextList),
+        analysis,
+        taskGroups: taskVm.groups,
+        ungroupedCount: taskVm.ungroupedCount,
+        highFrequencyCount,
+        aiInsightText: this.data.aiDiagnosis
+          ? this._oneLineInsight(this.data.aiDiagnosis.summary)
+          : this._oneLineInsight(analysis.focusInsight),
         hasMore: page < data.total_pages,
         page: reset ? 2 : page + 1,
         loading: false,
       })
+      this._syncSelectionState()
     } catch (e) {
       console.error('加载错题列表失败', e)
       if (seq === this._listRequestSeq && this._alive) {
@@ -215,7 +314,60 @@ Page({
     }
   },
 
+  async loadSubjects() {
+    if (this.data.subjectsLoading) return
+    this.setData({ subjectsLoading: true, subjectsError: false })
+    try {
+      const raw = await api.get('/practice/subjects')
+      const subjects = this._flattenSubjectOptions(raw)
+      this.setData({
+        subjects: [{ value: '', label: '全部' }, ...subjects],
+        subjectsLoading: false,
+        subjectsError: false,
+        subjectsLoaded: true,
+      })
+    } catch (e) {
+      console.error('加载学科筛选失败', e)
+      this.setData({
+        subjects: [{ value: '', label: '全部' }],
+        subjectsLoading: false,
+        subjectsError: true,
+        subjectsLoaded: false,
+      })
+    }
+  },
+
+  _flattenSubjectOptions(raw) {
+    const source = Array.isArray(raw)
+      ? raw
+      : (raw && Array.isArray(raw.items) ? raw.items : [])
+    const result = []
+    const seen = new Set()
+
+    const visit = (node) => {
+      if (!node || node.is_active === false) return
+      const value = node.subject_code != null
+        ? node.subject_code
+        : (node.code != null ? node.code : (node.subject_id != null ? node.subject_id : node.id))
+      const label = node.display_name != null
+        ? node.display_name
+        : (node.name != null ? node.name : node.label)
+      if (value != null && label) {
+        const key = String(value)
+        if (!seen.has(key)) {
+          seen.add(key)
+          result.push({ value: key, label: String(label) })
+        }
+      }
+      if (Array.isArray(node.children)) node.children.forEach(visit)
+    }
+
+    source.forEach(visit)
+    return result
+  },
+
   toggleFilter() {
+    if (!this.data.subjectsLoaded && !this.data.subjectsLoading) this.loadSubjects()
     this.setData({ showFilter: !this.data.showFilter })
   },
 
@@ -247,12 +399,269 @@ Page({
     this.loadList()
   },
 
-  goDetail(e) {
+  resetFilters() {
+    this._listRequestSeq++
+    this.setData({
+      selectedSubject: '',
+      selectedErrorType: '',
+      selectedTopic: '',
+      filterCount: 0,
+      list: [],
+      page: 1,
+      loading: true,
+    })
+    this.loadList(true)
+  },
+
+  switchView(e) {
+    const view = e.currentTarget.dataset.view === 'all' ? 'all' : 'task'
+    this.setData({ activeView: view })
+    this._syncSelectionState()
+  },
+
+  openAllQuestions() {
+    this.setData({ activeView: 'all' })
+    this._syncSelectionState()
+  },
+
+  startTodayReview() {
+    if (this.data.heroRemainingCount <= 0) {
+      wx.showToast({ title: '今日复习已经完成', icon: 'none' })
+      return
+    }
+    wx.navigateTo({ url: '/pages/review-today/review-today?autostart=1' })
+  },
+
+  toggleBatchMode() {
+    const next = !this.data.batchMode
+    this.setData({
+      batchMode: next,
+      batchMoreVisible: false,
+      showFilter: next ? false : this.data.showFilter,
+      selectedIds: [],
+      selectedIdMap: {},
+      selectedCount: 0,
+      allVisibleSelected: false,
+      selectionPulse: false,
+    })
+  },
+
+  onQuestionTap(e) {
+    if (Date.now() < this._suppressQuestionTapUntil) return
     const id = e.currentTarget.dataset.id
+    if (this.data.batchMode) {
+      this._toggleQuestionSelection(id)
+      return
+    }
+    this._navigateToDetail(id)
+  },
+
+  onSelectControlTap(e) {
+    if (Date.now() < this._suppressQuestionTapUntil) return
+    const id = e.currentTarget.dataset.id
+    if (!this.data.batchMode) {
+      this.setData({ batchMode: true, showFilter: false })
+    }
+    this._toggleQuestionSelection(id)
+  },
+
+  onQuestionLongPress(e) {
+    const id = e.currentTarget.dataset.id
+    // 微信长按结束后可能继续派发 tap，短暂屏蔽，避免刚选中又被取消。
+    this._suppressQuestionTapUntil = Date.now() + 700
+    if (!this.data.batchMode) {
+      this.setData({ batchMode: true, showFilter: false })
+    }
+    try {
+      wx.vibrateShort({ type: 'light' })
+    } catch (_e) {}
+    this._toggleQuestionSelection(id)
+  },
+
+  _navigateToDetail(id) {
     const ids = this.data.list.map(item => item.id)
-    const idx = ids.indexOf(id)
+    const idx = ids.findIndex(itemId => String(itemId) === String(id))
     wx.setStorageSync('wrong_detail_nav', { ids, ts: Date.now() })
-    wx.navigateTo({ url: `/pages/wrong-detail/wrong-detail?id=${id}&idx=${idx}&source=wrong-book` })
+    wx.navigateTo({ url: `/pages/wrong-detail/wrong-detail?id=${id}&idx=${Math.max(0, idx)}&source=wrong-book` })
+  },
+
+  _toggleQuestionSelection(id) {
+    const key = String(id)
+    const map = { ...(this.data.selectedIdMap || {}) }
+    const wasSelected = !!map[key]
+    if (wasSelected) delete map[key]
+    else map[key] = true
+    const ids = Object.keys(map)
+    this.setData({
+      selectedIdMap: map,
+      selectedIds: ids,
+      selectedCount: ids.length,
+    })
+    this._syncSelectionState()
+    if (!wasSelected) this._pulseSelectionBadge()
+  },
+
+  _pulseSelectionBadge() {
+    if (this._selectionPulseTimer) clearTimeout(this._selectionPulseTimer)
+    this.setData({ selectionPulse: false })
+    setTimeout(() => {
+      if (!this._alive) return
+      this.setData({ selectionPulse: true })
+      this._selectionPulseTimer = setTimeout(() => {
+        if (this._alive) this.setData({ selectionPulse: false })
+      }, 260)
+    }, 16)
+  },
+
+  _getVisibleIds() {
+    if (this.data.activeView === 'all') {
+      return (this.data.list || []).map(item => String(item.id))
+    }
+    const ids = []
+    ;(this.data.taskGroups || []).forEach(group => {
+      ;(group.items || []).forEach(item => ids.push(String(item.id)))
+    })
+    return Array.from(new Set(ids))
+  },
+
+  toggleSelectAll() {
+    const visibleIds = this._getVisibleIds()
+    if (!visibleIds.length) return
+    const current = this.data.selectedIdMap || {}
+    const allSelected = visibleIds.every(id => !!current[id])
+    const next = { ...current }
+    visibleIds.forEach(id => {
+      if (allSelected) delete next[id]
+      else next[id] = true
+    })
+    const ids = Object.keys(next)
+    this.setData({
+      selectedIdMap: next,
+      selectedIds: ids,
+      selectedCount: ids.length,
+      allVisibleSelected: !allSelected,
+    })
+    if (!allSelected) this._pulseSelectionBadge()
+  },
+
+  _syncSelectionState() {
+    const validIds = new Set((this.data.list || []).map(item => String(item.id)))
+    const nextMap = {}
+    Object.keys(this.data.selectedIdMap || {}).forEach(id => {
+      if (validIds.has(String(id))) nextMap[String(id)] = true
+    })
+    const selectedIds = Object.keys(nextMap)
+    const visibleIds = this._getVisibleIds()
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => !!nextMap[id])
+    this.setData({
+      selectedIdMap: nextMap,
+      selectedIds,
+      selectedCount: selectedIds.length,
+      allVisibleSelected,
+    })
+  },
+
+  openBatchMore() {
+    if (!this.data.selectedCount) {
+      wx.showToast({ title: '请先选择错题', icon: 'none' })
+      return
+    }
+    wx.showActionSheet({
+      alertText: `将作用于已选择的 ${this.data.selectedCount} 道错题`,
+      itemList: ['移出错题本', '永久删除'],
+      success: ({ tapIndex }) => {
+        const action = tapIndex === 0 ? 'remove_from_book' : 'delete'
+        this.onBatchAction({ currentTarget: { dataset: { action } } })
+      },
+    })
+  },
+
+  closeBatchMore() {},
+
+  noop() {},
+
+  async onBatchAction(e) {
+    if (this.data.batchSubmitting) return
+    const action = e.currentTarget.dataset.action
+    if (this.data.batchMoreVisible) this.setData({ batchMoreVisible: false })
+    const ids = (this.data.selectedIds || []).map(id => {
+      const n = Number(id)
+      return Number.isFinite(n) && String(n) === String(id) ? n : id
+    })
+    if (!ids.length) {
+      wx.showToast({ title: '请先选择错题', icon: 'none' })
+      return
+    }
+
+    const labels = {
+      add_to_review: '加入今日复习',
+      mark_mastered: '标记为已掌握',
+      remove_from_book: '移出错题本',
+      delete: '永久删除',
+    }
+    const dangerous = action === 'delete' || action === 'remove_from_book'
+    if (dangerous) {
+      const confirmed = await this._confirmBatchAction(
+        labels[action],
+        action === 'delete'
+          ? `将永久删除已选择的 ${ids.length} 道错题记录，是否继续？`
+          : `将把已选择的 ${ids.length} 道题移出错题本，是否继续？`
+      )
+      if (!confirmed) return
+    }
+
+    this.setData({ batchSubmitting: true })
+    wx.showLoading({ title: '正在处理', mask: true })
+    try {
+      const result = await api.post('/wrong-questions/batch', { action, ids })
+      wx.hideLoading()
+      wx.showToast({
+        title: `${labels[action]}成功 ${result.updated_count != null ? result.updated_count : ids.length} 项`,
+        icon: 'success',
+      })
+      this.setData({
+        batchSubmitting: false,
+        batchMode: false,
+        batchMoreVisible: false,
+        selectionPulse: false,
+        selectedIds: [],
+        selectedIdMap: {},
+        selectedCount: 0,
+        allVisibleSelected: false,
+      })
+      await Promise.all([this.loadStats(), this.loadList(true), this.loadReviewOverview()])
+    } catch (err) {
+      wx.hideLoading()
+      this.setData({ batchSubmitting: false })
+      const isMissingEndpoint = err && (err.statusCode === 404 || err.statusCode === 405)
+      if (isMissingEndpoint) {
+        wx.showModal({
+          title: '前端批量操作已完成',
+          content: '当前后端尚未接入批量接口。请让代码 Agent 按项目内 prompts/wrong-book-task-flow-backend.md 实现后即可直接使用。',
+          showCancel: false,
+          confirmText: '知道了',
+        })
+      } else {
+        wx.showToast({ title: (err && err.message) || '批量操作失败', icon: 'none' })
+      }
+    }
+  },
+
+  _confirmBatchAction(title, content) {
+    return new Promise(resolve => {
+      wx.showModal({
+        title,
+        content,
+        confirmText: '继续',
+        confirmColor: '#D4554D',
+        success: res => resolve(!!res.confirm),
+        fail: () => resolve(false),
+      })
+    })
+  },
+
+  goDetail(e) {
+    this._navigateToDetail(e.currentTarget.dataset.id)
   },
 
   // ════════════════════════════════════════════
@@ -330,12 +739,52 @@ Page({
           aiDiagnosisCacheTimeLabel: '',
           aiDiagnosisCacheStale: false,
           aiDiagnosisError: false,
+          aiInsightExpanded: false,
+          aiInsightHasDetails: false,
+          aiInsightWeakPoints: [],
+          aiInsightSuggestions: [],
         })
+      } else {
+        // 无诊断 + total=0 → 清除 _loadPage 预置的 loading 状态，避免骨架屏卡死
+        this.setData({ aiDiagnosisLoading: false })
       }
       return null
     }
 
     return this.ensureAiDiagnosis({ background: true })
+  },
+
+  _hasAiDiagnosisContent(value) {
+    if (!value || typeof value !== 'object') return false
+    const normalized = this._normalizeAiDiagnosis(value)
+    return !!(
+      (normalized.summary && String(normalized.summary).trim()) ||
+      (normalized.weak_points && normalized.weak_points.length) ||
+      (normalized.strong_points && normalized.strong_points.length) ||
+      (normalized.learning_suggestions && normalized.learning_suggestions.length)
+    )
+  },
+
+  _isAiDiagnosisPending(value) {
+    if (!value || typeof value !== 'object') return false
+    const status = String(value.status || value.state || value.generation_status || '').toLowerCase()
+    const message = String(value.message || value.detail || value.summary || '').toLowerCase()
+    const pendingText = /正在生成|生成中|处理中|排队中|generating|processing|queued/.test(message)
+    return ['pending', 'processing', 'generating', 'queued', 'running'].includes(status) || value.generating === true || pendingText
+  },
+
+  _delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms))
+  },
+
+  async _pollAiDiagnosis(initial, requestId) {
+    let current = initial
+    for (let attempt = 0; attempt < 4 && this._isAiDiagnosisPending(current); attempt++) {
+      await this._delay(1200 + attempt * 350)
+      if (requestId !== this._aiDiagnosisRequestId || !this._alive) return null
+      current = await api.get('/stats/ai-diagnosis', {}, { timeout: 60000 })
+    }
+    return current
   },
 
   /**
@@ -416,18 +865,20 @@ Page({
 
     this._aiDiagnosisPromise = (async function() {
       try {
-        var diagnosis = await api.get('/stats/ai-diagnosis')
+        var params = opts.force ? { refresh: 'true' } : {}
+        var diagnosis = await api.get('/stats/ai-diagnosis', params, { timeout: 60000 })
+        if (self._isAiDiagnosisPending(diagnosis)) {
+          diagnosis = await self._pollAiDiagnosis(diagnosis, requestId)
+        }
+        if (self._isAiDiagnosisPending(diagnosis)) {
+          throw new Error(String((diagnosis && (diagnosis.detail || diagnosis.message)) || 'AI 解析仍在生成，请稍后重试'))
+        }
         // 过期响应保护
         if (requestId !== self._aiDiagnosisRequestId || !self._alive) return self.data.aiDiagnosis
 
         var normalized = self._normalizeAiDiagnosis(diagnosis)
 
-        var hasContent = normalized && !!(
-          (normalized.summary && String(normalized.summary).trim()) ||
-          normalized.weak_points.length > 0 ||
-          normalized.strong_points.length > 0 ||
-          normalized.learning_suggestions.length > 0
-        )
+        var hasContent = self._hasAiDiagnosisContent(normalized)
 
         if (hasContent) {
           var sig = self._buildAiDiagnosisSourceSignature()
@@ -436,6 +887,7 @@ Page({
           self._aiDiagnosisCachedAt = now
           // 写入缓存
           aiCache.save(uid, normalized, sig)
+          var detailState = self._buildAiInsightDetails(normalized)
           self.setData({
             aiDiagnosis: normalized,
             aiDiagnosisLoading: false,
@@ -443,6 +895,8 @@ Page({
             aiDiagnosisCacheTimeLabel: aiCache.formatCacheTime(now),
             aiDiagnosisCacheStale: false,
             aiDiagnosisError: false,
+            aiInsightText: self._oneLineInsight(normalized.summary) || self.data.aiInsightText,
+            ...detailState,
           })
           return normalized
         }
@@ -475,7 +929,7 @@ Page({
           })
           // 手动刷新才弹 Toast
           if (opts.force) {
-            wx.showToast({ title: '更新失败，请稍后重试', icon: 'none' })
+            wx.showToast({ title: (e && (e.detail || e.message)) || '更新失败，请稍后重试', icon: 'none' })
           }
           return self.data.aiDiagnosis
         }
@@ -496,12 +950,66 @@ Page({
     return this._aiDiagnosisPromise
   },
 
+  _buildAiInsightDetails(diagnosis) {
+    const data = diagnosis || {}
+    const weakPoints = (Array.isArray(data.weak_points) ? data.weak_points : [])
+      .slice(0, 3)
+      .map(item => ({
+        name: String((item && item.knowledge_point) || '待识别薄弱点'),
+        accuracyPercent: Number(
+          item && typeof item._accuracyPercent === 'number'
+            ? item._accuracyPercent
+            : Math.round(Math.max(0, Math.min(1, Number((item && item.accuracy) || 0))) * 100)
+        ),
+        suggestion: String((item && item.suggestion) || ''),
+      }))
+    const suggestions = (Array.isArray(data.learning_suggestions) ? data.learning_suggestions : [])
+      .map(item => String(item || '').trim())
+      .filter(Boolean)
+      .slice(0, 3)
+
+    return {
+      aiInsightWeakPoints: weakPoints,
+      aiInsightSuggestions: suggestions,
+      aiInsightHasDetails: weakPoints.length > 0 || suggestions.length > 0,
+    }
+  },
+
+  async toggleAiInsight() {
+    if (this.data.aiInsightExpanded) {
+      this.setData({ aiInsightExpanded: false })
+      return
+    }
+
+    if (this.data.aiDiagnosisLoading || this.data.aiDiagnosisRefreshing) {
+      wx.showToast({ title: 'AI 正在分析，请稍候', icon: 'none' })
+      return
+    }
+
+    if (!this.data.aiDiagnosis) {
+      wx.showLoading({ title: '正在生成洞察', mask: false })
+      try {
+        const diagnosis = await this.ensureAiDiagnosis({ force: false })
+        if (!diagnosis) {
+          wx.showToast({ title: '暂未生成有效洞察', icon: 'none' })
+          return
+        }
+      } finally {
+        wx.hideLoading()
+      }
+    }
+
+    this.setData({ aiInsightExpanded: true })
+  },
+
+  noop() {},
+
   /**
    * 手动重新分析
    */
   refreshAiDiagnosis() {
-    if (this._aiDiagnosisPromise) {
-      wx.showToast({ title: '正在更新中...', icon: 'none' })
+    if (this._aiDiagnosisPromise || this.data.aiDiagnosisRefreshing || this.data.aiDiagnosisLoading) {
+      wx.showToast({ title: this.data.aiDiagnosisRefreshing ? '正在更新中...' : '正在分析中...', icon: 'none' })
       return
     }
     if (this._aiStatsLoaded) {
@@ -544,6 +1052,28 @@ Page({
     const reviewCount = this._positiveNumber(item.review_count, 0)
     const lastErrorAt = item.last_wrong_at || item.last_error_at || item.updated_at || item.created_at
     const mastery = this._masteryProgress(item, reviewCount)
+    const explicitMastered = item.is_mastered === true || item.status === 'mastered' || item.mastered === true
+    const isMastered = explicitMastered || mastery.percent >= 80
+    const dueInfo = this._reviewDueInfo(item, isMastered)
+    const isRecent = this._isRecentDate(item.created_at || item.last_wrong_at || item.updated_at, 14)
+
+    let taskStatusLabel = '待巩固'
+    let statusTone = 'waiting'
+    if (isMastered) {
+      taskStatusLabel = '已掌握'
+      statusTone = 'mastered'
+    } else if (dueInfo.overdue) {
+      taskStatusLabel = '已逾期'
+      statusTone = 'overdue'
+    } else if (dueInfo.today) {
+      taskStatusLabel = '今天到期'
+      statusTone = 'due'
+    } else if (isRecent) {
+      taskStatusLabel = '最近新增'
+      statusTone = 'recent'
+    } else if (dueInfo.date) {
+      taskStatusLabel = this._shortDateLabel(dueInfo.date) + '复习'
+    }
 
     return {
       ...item,
@@ -556,7 +1086,100 @@ Page({
       _masteryPercent: mastery.percent,
       _masteryLabel: mastery.label,
       _cleanText: item.content ? this._toCleanText(item.content.text || item.content) : '',
+      _isMastered: isMastered,
+      _isTodayDue: dueInfo.today,
+      _isOverdue: dueInfo.overdue,
+      _isRecent: isRecent,
+      _nextReviewAt: dueInfo.date ? dueInfo.date.toISOString() : '',
+      _taskStatusLabel: taskStatusLabel,
+      _statusTone: statusTone,
     }
+  },
+
+  _reviewDueInfo(item, isMastered) {
+    if (isMastered) return { today: false, overdue: false, date: null }
+    const raw = item.next_review_at || item.review_due_at || item.scheduled_at || item.due_at
+    let date = raw ? new Date(raw) : null
+    if (date && Number.isNaN(date.getTime())) date = null
+
+    const explicitToday = item.is_today_due === true || item.today_due === true || item.is_due === true
+    if (!date && explicitToday) return { today: true, overdue: false, date: null }
+    if (!date) return { today: false, overdue: false, date: null }
+
+    const now = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+    return {
+      today: date < end,
+      overdue: date < start,
+      date,
+    }
+  },
+
+  _isRecentDate(raw, days) {
+    if (!raw) return false
+    const date = new Date(raw)
+    if (Number.isNaN(date.getTime())) return false
+    const diff = Date.now() - date.getTime()
+    return diff >= 0 && diff <= days * 86400000
+  },
+
+  _shortDateLabel(date) {
+    if (!date || Number.isNaN(date.getTime())) return ''
+    return `${date.getMonth() + 1}月${date.getDate()}日`
+  },
+
+  _buildTaskGroups(list = []) {
+    const used = new Set()
+    const take = predicate => {
+      const rows = list.filter(item => !used.has(String(item.id)) && predicate(item))
+      rows.forEach(item => used.add(String(item.id)))
+      return rows
+    }
+
+    const today = take(item => !item._isMastered && item._isTodayDue)
+      .sort((a, b) => Number(b._isOverdue) - Number(a._isOverdue) || b._wrongCount - a._wrongCount)
+    const high = take(item => !item._isMastered && item._wrongCount >= 3)
+      .sort((a, b) => b._wrongCount - a._wrongCount)
+    const recent = take(item => !item._isMastered && item._isRecent)
+      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+    const waiting = take(item => !item._isMastered)
+      .sort((a, b) => a._masteryPercent - b._masteryPercent || b._wrongCount - a._wrongCount)
+    const mastered = take(item => item._isMastered)
+      .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))
+
+    const maxPreview = 3
+    const configs = [
+      { key: 'today', title: '今日应复习', desc: '基于复习计划，今天最值得先做的题', icon: '今', tone: 'lime', rows: today },
+      { key: 'high', title: '高频错题', desc: '重复出错次数较多，建议集中攻克', icon: '频', tone: 'orange', rows: high },
+      { key: 'recent', title: '最近新增', desc: '近 14 天新加入错题本的题目', icon: '新', tone: 'blue', rows: recent },
+      { key: 'waiting', title: '待巩固', desc: '尚未到复习日，但仍未完全掌握', icon: '固', tone: 'neutral', rows: waiting },
+      { key: 'mastered', title: '已经掌握', desc: '已达到掌握标准，后续按计划抽查', icon: '✓', tone: 'green', rows: mastered },
+    ]
+
+    const groups = configs
+      .filter(group => group.rows.length > 0)
+      .map(group => ({
+        key: group.key,
+        title: group.title,
+        desc: group.desc,
+        icon: group.icon,
+        tone: group.tone,
+        total: group.rows.length,
+        items: group.rows.slice(0, maxPreview),
+      }))
+
+    const visibleCount = groups.reduce((sum, group) => sum + group.items.length, 0)
+    return {
+      groups,
+      ungroupedCount: Math.max(0, list.length - visibleCount),
+    }
+  },
+
+  _oneLineInsight(text) {
+    const cleaned = String(text || '').replace(/\s+/g, ' ').trim()
+    if (!cleaned) return '错题数据积累后，AI 会自动发现最需要优先复盘的错误模式。'
+    return cleaned.length > 70 ? `${cleaned.slice(0, 70)}…` : cleaned
   },
 
   _buildAnalysis(stats = {}, list = []) {
