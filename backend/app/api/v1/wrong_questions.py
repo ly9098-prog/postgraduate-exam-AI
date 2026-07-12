@@ -1,7 +1,9 @@
 import re
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import Float, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -9,8 +11,11 @@ from app.core.cache import cache
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.question import Question
+from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.user import User
-from app.schemas.common import paginated_response
+from app.models.user_question_state import UserQuestionState
+from app.models.wrong_question import WrongQuestion
+from app.schemas.common import RawPaginatedResponse, paginated_response
 from app.schemas.wrong_question import (
     BatchAction,
     WrongQuestionBatchRequest,
@@ -94,7 +99,7 @@ def _sanitize_options(options: dict | None) -> dict | None:
     return sanitized
 
 
-def enrich_wq(wq, question):
+def enrich_wq(wq, question, **extra):
     ai_status = "ready" if isinstance(wq.ai_analysis, dict) and wq.ai_analysis else "empty"
     return WrongQuestionResponse(
         id=wq.id,
@@ -113,10 +118,70 @@ def enrich_wq(wq, question):
         knowledge_points=question.knowledge_points if question else None,
         ai_analysis=wq.ai_analysis,
         ai_analysis_status=ai_status,
+        # New enriched fields
+        wrong_count=extra.get("wrong_count", wq.review_count or 0),
+        review_record_count=extra.get("review_record_count", 0),
+        mastery_percent=extra.get("mastery_percent", 0.0),
+        is_mastered=extra.get("is_mastered", wq.mastered or False),
+        next_review_at=extra.get("next_review_at", None),
+        last_reviewed_at=extra.get("last_reviewed_at", None),
+        last_wrong_at=extra.get("last_wrong_at", wq.last_review_at),
     )
 
 
-@router.get("")
+async def _enrich_single_wq_extra(
+    db: AsyncSession, user_id: int, wq: WrongQuestion
+) -> dict:
+    """Compute enrichment fields for a single WrongQuestion (detail endpoints)."""
+    review_record_count = (
+        await db.execute(
+            select(func.count(ReviewRecord.id)).where(
+                ReviewRecord.question_id == wq.question_id,
+                ReviewRecord.user_id == user_id,
+            )
+        )
+    ).scalar() or 0
+
+    next_review = await db.execute(
+        select(ReviewSchedule.next_review_at).where(
+            ReviewSchedule.question_id == wq.question_id,
+            ReviewSchedule.user_id == user_id,
+            ReviewSchedule.mastered == False,
+        ).order_by(ReviewSchedule.next_review_at.asc().nulls_last()).limit(1)
+    )
+
+    last_reviewed = await db.execute(
+        select(ReviewSchedule.last_reviewed_at).where(
+            ReviewSchedule.question_id == wq.question_id,
+            ReviewSchedule.user_id == user_id,
+        ).order_by(ReviewSchedule.last_reviewed_at.desc().nulls_last()).limit(1)
+    )
+
+    mastery_pct = (
+        await db.execute(
+            select(
+                case(
+                    (UserQuestionState.answer_count > 0,
+                     func.cast(UserQuestionState.correct_count, Float) /
+                     func.cast(UserQuestionState.answer_count, Float)),
+                    else_=0.0,
+                )
+            ).where(
+                UserQuestionState.question_id == wq.question_id,
+                UserQuestionState.user_id == user_id,
+            )
+        )
+    ).scalar() or 0.0
+
+    return {
+        "review_record_count": review_record_count,
+        "next_review_at": next_review.scalar_one_or_none(),
+        "last_reviewed_at": last_reviewed.scalar_one_or_none(),
+        "mastery_percent": round(float(mastery_pct), 4),
+    }
+
+
+@router.get("", response_model=RawPaginatedResponse)
 async def list_wrong(
     subject: str | None = Query(None),
     error_type: str | None = Query(None),
@@ -183,7 +248,8 @@ async def get_wrong(
         select(Question).options(selectinload(Question.subject_ref)).where(Question.id == wq.question_id)
     )
     question = result.scalar_one_or_none()
-    return enrich_wq(wq, question)
+    extra = await _enrich_single_wq_extra(db, current_user.id, wq)
+    return enrich_wq(wq, question, **extra)
 
 
 @router.put("/{wq_id}", response_model=WrongQuestionResponse)
@@ -203,7 +269,8 @@ async def update_wrong(
         select(Question).options(selectinload(Question.subject_ref)).where(Question.id == wq.question_id)
     )
     question = result.scalar_one_or_none()
-    return enrich_wq(wq, question)
+    extra = await _enrich_single_wq_extra(db, current_user.id, wq)
+    return enrich_wq(wq, question, **extra)
 
 
 @router.put("/{wq_id}/quality", response_model=WrongQuestionResponse)
@@ -221,7 +288,8 @@ async def rate_quality(
         select(Question).options(selectinload(Question.subject_ref)).where(Question.id == wq.question_id)
     )
     question = result.scalar_one_or_none()
-    return enrich_wq(wq, question)
+    extra = await _enrich_single_wq_extra(db, current_user.id, wq)
+    return enrich_wq(wq, question, **extra)
 
 
 @router.post("/batch", response_model=WrongQuestionBatchResponse)
