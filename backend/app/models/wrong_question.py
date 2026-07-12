@@ -22,6 +22,9 @@ class WrongQuestion(Base):
     review_count: Mapped[int] = mapped_column(SmallInteger, default=0)
     last_review_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     mastered: Mapped[bool] = mapped_column(Boolean, default=False)
+    mastered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()
     )

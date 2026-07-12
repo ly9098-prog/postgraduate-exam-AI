@@ -8,26 +8,10 @@ from app.models.question import Question
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.wrong_question import WrongQuestion
 from app.services.sm2_service import calc_sm2
-from app.core.time_utils import utcnow
+from app.core.time_utils import shanghai_today_boundaries, utcnow
 
 # Asia/Shanghai = UTC+8, no DST
-SHANGHAI_TZ = timezone(timedelta(hours=8))
-
-
-def _shanghai_today_boundaries() -> tuple[datetime, datetime]:
-    """Return (today_start_utc, today_end_utc) as naive UTC datetimes.
-
-    "Today" is defined in Asia/Shanghai timezone.  The returned values are
-    converted to naive UTC for DB column comparison (all DateTime columns
-    store naive UTC).
-    """
-    now_shanghai = datetime.now(SHANGHAI_TZ)
-    start_shanghai = now_shanghai.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_shanghai = now_shanghai.replace(hour=23, minute=59, second=59, microsecond=999999)
-    # Shanghai = UTC+8 → subtract 8 hours for UTC
-    start_utc = (start_shanghai - timedelta(hours=8)).replace(tzinfo=None)
-    end_utc = (end_shanghai - timedelta(hours=8)).replace(tzinfo=None)
-    return start_utc, end_utc
+_SHANGHAI_TZ = timezone(timedelta(hours=8))
 
 
 async def _sync_schedule_to_wq(db: AsyncSession, schedule: ReviewSchedule) -> None:
@@ -463,7 +447,7 @@ async def get_today_review_overview(
     user_id: int,
 ) -> dict:
     """获取今日复习任务概览（入口页数据）。"""
-    today_start, today_end = _shanghai_today_boundaries()
+    today_start, today_end = shanghai_today_boundaries()
 
     # today_due_count: all non-mastered schedules with next_review_at <= today_end
     due_q = await db.execute(
@@ -541,7 +525,7 @@ async def get_today_review_overview(
             current_batch_no = total_batch_count
 
     return {
-        "date": datetime.now(SHANGHAI_TZ).strftime("%Y-%m-%d"),
+        "date": datetime.now(_SHANGHAI_TZ).strftime("%Y-%m-%d"),
         "today_due_count": today_due_count,
         "today_completed_count": today_completed_count,
         "today_remaining_count": today_remaining_count,
@@ -566,7 +550,7 @@ async def get_next_today_review_batch(
     batch_size: int = 10,
 ) -> dict:
     """获取今日下一组待复习题。"""
-    today_start, today_end = _shanghai_today_boundaries()
+    today_start, today_end = shanghai_today_boundaries()
 
     # Get questions already reviewed today (by question_id)
     done_q_result = await db.execute(
@@ -640,7 +624,7 @@ async def get_next_today_review_batch(
     if batch_no > total_batch_count:
         batch_no = total_batch_count
 
-    date_str = datetime.now(SHANGHAI_TZ).strftime("%Y%m%d")
+    date_str = datetime.now(_SHANGHAI_TZ).strftime("%Y%m%d")
     session_id = f"review_{date_str}_{user_id}"
     group_id = f"{session_id}_batch_{batch_no}"
 
@@ -662,7 +646,7 @@ async def get_today_review_result(
     user_id: int,
 ) -> dict:
     """获取今日复习最终结果。"""
-    today_start, today_end = _shanghai_today_boundaries()
+    today_start, today_end = shanghai_today_boundaries()
     tomorrow_start = today_end + timedelta(seconds=1)
 
     # All review records from today
@@ -748,7 +732,7 @@ async def get_today_review_result(
     is_completed = today_due_count > 0 and today_completed_count >= today_due_count
 
     return {
-        "date": datetime.now(SHANGHAI_TZ).strftime("%Y-%m-%d"),
+        "date": datetime.now(_SHANGHAI_TZ).strftime("%Y-%m-%d"),
         "today_due_count": today_due_count,
         "today_completed_count": today_completed_count,
         "correct_count": correct_count,
