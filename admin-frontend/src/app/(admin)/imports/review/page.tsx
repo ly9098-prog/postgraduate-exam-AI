@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, Code2, Eye, FileText, Save, Search, Sparkles, X, XCircle } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, Code2, Eye, FileText, Save, Search, Sparkles, Upload, X, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { MathFormula } from "@/components/ui/math-formula";
@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 import { apiRequest, toQuery } from "@/lib/api/client";
-import type { AdminImportCompleteResponse, BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportActionResponse, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
+import type { AdminImportCompleteResponse, BatchAnswerImageApplyResponse, BatchAnswerImagePreviewResponse, BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportActionResponse, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 
 type FilterDropdownOption = {
   value: string;
@@ -356,6 +356,15 @@ export default function ImportReviewPage() {
   const [batchAnswerApplyResult, setBatchAnswerApplyResult] = useState<BatchAnswerApplyResponse | null>(null);
   const [batchAnswerExecuting, setBatchAnswerExecuting] = useState(false);
   const [batchAnswerError, setBatchAnswerError] = useState<string | null>(null);
+
+  // Phase 2: 图片导入
+  const [batchAnswerFillTab, setBatchAnswerFillTab] = useState<"text" | "image">("text");
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imageImportMode, setImageImportMode] = useState<"answer_only" | "answer_analysis">("answer_only");
+  const [imagePreviewResult, setImagePreviewResult] = useState<BatchAnswerImagePreviewResponse | null>(null);
+  const [imageApplyResult, setImageApplyResult] = useState<BatchAnswerImageApplyResponse | null>(null);
+  const [imageExecuting, setImageExecuting] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
   const currentBatchId = filters.batch_id || batchIdParam;
 
   const syncedDetailRef = useRef<Set<number>>(new Set());
@@ -685,9 +694,9 @@ export default function ImportReviewPage() {
       });
       setBatchAnswerPreview(result);
     } catch (error) {
-      setBatchAnswerError(error instanceof Error ? error.message : "预览失败");
-    } finally {
-      setBatchAnswerExecuting(false);
+      // 处理结构化错误（error_code + detail）和普通错误
+      const msg = error instanceof Error ? error.message : "预览失败";
+      setBatchAnswerError(msg);
     }
   }, [currentBatchId, batchAnswerRawText]);
 
@@ -698,12 +707,16 @@ export default function ImportReviewPage() {
     try {
       const result = await apiRequest<BatchAnswerApplyResponse>(`/imports/${currentBatchId}/answers/apply`, {
         method: "POST",
-        body: JSON.stringify({ preview_token: batchAnswerPreview.preview_token }),
+        body: JSON.stringify({
+          preview_token: batchAnswerPreview.preview_token,
+          operation_id: batchAnswerPreview.operation_id || "",
+        }),
       });
       setBatchAnswerApplyResult(result);
       queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
     } catch (error) {
-      setBatchAnswerError(error instanceof Error ? error.message : "写入失败");
+      const msg = error instanceof Error ? error.message : "写入失败";
+      setBatchAnswerError(msg);
     } finally {
       setBatchAnswerExecuting(false);
     }
@@ -714,6 +727,78 @@ export default function ImportReviewPage() {
     setBatchAnswerPreview(null);
     setBatchAnswerApplyResult(null);
     setBatchAnswerError(null);
+  }, []);
+
+  // Phase 2: 图片导入 handlers
+  const handleImageReset = useCallback(() => {
+    setImageFiles([]);
+    setImagePreviewResult(null);
+    setImageApplyResult(null);
+    setImageError(null);
+  }, []);
+
+  const handleImagePreview = useCallback(async () => {
+    if (!currentBatchId || imageFiles.length === 0) return;
+    setImageExecuting(true);
+    setImageError(null);
+    setImagePreviewResult(null);
+    setImageApplyResult(null);
+    try {
+      const formData = new FormData();
+      imageFiles.forEach((f) => formData.append("files", f));
+      formData.append("mode", imageImportMode);
+      const result = await apiRequest<BatchAnswerImagePreviewResponse>(
+        `/imports/${currentBatchId}/answers/image/preview`,
+        { method: "POST", body: formData },
+      );
+      setImagePreviewResult(result);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "预览生成失败";
+      setImageError(msg);
+    } finally {
+      setImageExecuting(false);
+    }
+  }, [currentBatchId, imageFiles, imageImportMode]);
+
+  const handleImageApply = useCallback(async () => {
+    if (!currentBatchId || !imagePreviewResult?.preview_token) return;
+    setImageExecuting(true);
+    setImageError(null);
+    try {
+      const result = await apiRequest<BatchAnswerImageApplyResponse>(
+        `/imports/${currentBatchId}/answers/image/apply`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            preview_token: imagePreviewResult.preview_token,
+            operation_id: imagePreviewResult.operation_id || "",
+          }),
+        },
+      );
+      setImageApplyResult(result);
+      queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "写入失败";
+      setImageError(msg);
+    } finally {
+      setImageExecuting(false);
+    }
+  }, [currentBatchId, imagePreviewResult, queryClient]);
+
+  const handleImageFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setImageFiles((prev) => [...prev, ...files]);
+    setImagePreviewResult(null);
+    setImageApplyResult(null);
+    setImageError(null);
+    e.target.value = "";
+  }, []);
+
+  const removeImageFile = useCallback((index: number) => {
+    setImageFiles((prev) => prev.filter((_, i) => i !== index));
+    setImagePreviewResult(null);
+    setImageApplyResult(null);
+    setImageError(null);
   }, []);
 
   const verifyAnswerMutation = useMutation({
@@ -2339,6 +2424,10 @@ export default function ImportReviewPage() {
                       <span className="ml-2">· 已更新 <span className="font-semibold text-emerald-600">{batchAnswerApplyResult.updated_count}</span> 题</span>
                     ) : batchAnswerPreview ? (
                       <span className="ml-2">· 预览 <span className="font-semibold text-[var(--ink)]">{batchAnswerPreview.summary.writable_count}</span> 题可写入</span>
+                    ) : imageApplyResult ? (
+                      <span className="ml-2">· 已更新答案 <span className="font-semibold text-emerald-600">{imageApplyResult.updated_answer_count}</span> 解析 <span className="font-semibold text-emerald-600">{imageApplyResult.updated_analysis_count}</span></span>
+                    ) : imagePreviewResult ? (
+                      <span className="ml-2">· 匹配 <span className="font-semibold text-[var(--ink)]">{imagePreviewResult.summary.matched_count}</span> 题</span>
                     ) : null}
                   </p>
                 </div>
@@ -2353,7 +2442,32 @@ export default function ImportReviewPage() {
                   </button>
                 </div>
               </div>
-              {batchAnswerExecuting ? (
+              {/* Tab switcher */}
+              {!batchAnswerApplyResult && !imageApplyResult ? (
+                <div className="mt-3 flex gap-1 rounded-lg bg-[var(--color-bg-input)] p-0.5">
+                  <button
+                    className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                      batchAnswerFillTab === "text"
+                        ? "bg-white text-[var(--ink)] shadow-sm"
+                        : "text-[var(--color-text-secondary)] hover:text-[var(--ink)]"
+                    }`}
+                    onClick={() => setBatchAnswerFillTab("text")}
+                  >
+                    文字输入
+                  </button>
+                  <button
+                    className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                      batchAnswerFillTab === "image"
+                        ? "bg-white text-[var(--ink)] shadow-sm"
+                        : "text-[var(--color-text-secondary)] hover:text-[var(--ink)]"
+                    }`}
+                    onClick={() => setBatchAnswerFillTab("image")}
+                  >
+                    图片导入
+                  </button>
+                </div>
+              ) : null}
+              {batchAnswerExecuting || imageExecuting ? (
                 <div className="absolute bottom-0 left-0 right-0 z-20 h-0.5 overflow-hidden bg-[var(--color-primary)]/10">
                   <div className="h-full w-1/2 rounded-full bg-[var(--color-primary)]" style={{ animation: "loadingBar 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite" }} />
                 </div>
@@ -2536,6 +2650,266 @@ export default function ImportReviewPage() {
                     关闭
                   </Button>
                 </div>
+              ) : null}
+
+              {/* ── Image Tab Content ── */}
+              {batchAnswerFillTab === "image" ? (
+                <>
+                  {imageExecuting ? (
+                    <div className="absolute inset-0 z-10 rounded-xl bg-white/70 backdrop-blur-[1px] flex items-center justify-center">
+                      <div className="flex flex-col items-center gap-2 rounded-xl bg-white/90 px-5 py-4 shadow-sm">
+                        <span className="inline-block h-6 w-6 animate-spin rounded-full border-[3px] border-[var(--color-border)] border-t-[var(--color-primary)]" />
+                        <span className="text-sm text-[var(--color-text-secondary)]">{imagePreviewResult ? "正在写入答案…" : "正在识别图片…"}</span>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {imageError ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      <div className="flex items-start gap-2">
+                        <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+                        <span>{imageError}</span>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Step 1: Upload */}
+                  {!imagePreviewResult && !imageApplyResult ? (
+                    <div className="space-y-4">
+                      <div className="rounded-xl border-2 border-dashed border-[var(--color-border)] p-6 text-center transition hover:border-[var(--color-primary)]/40">
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png"
+                          multiple
+                          className="hidden"
+                          id="image-upload-input"
+                          onChange={handleImageFileChange}
+                        />
+                        <label htmlFor="image-upload-input" className="cursor-pointer">
+                          <Upload className="mx-auto h-8 w-8 text-[var(--color-text-hint)]" />
+                          <p className="mt-2 text-sm font-medium text-[var(--ink)]">点击选择图片</p>
+                          <p className="mt-1 text-xs text-[var(--color-text-hint)]">支持 JPG、PNG 格式，最多 50 张，每张不超过 10MB</p>
+                        </label>
+                      </div>
+
+                      {imageFiles.length > 0 ? (
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-semibold text-[var(--color-text-secondary)]">已选 {imageFiles.length} 张图片</p>
+                          <div className="max-h-[160px] overflow-y-auto space-y-1">
+                            {imageFiles.map((file, idx) => (
+                              <div key={idx} className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-xs">
+                                <FileText className="h-3.5 w-3.5 shrink-0 text-[var(--color-text-hint)]" />
+                                <span className="min-w-0 flex-1 truncate text-[var(--ink)]">{file.name}</span>
+                                <span className="shrink-0 text-[var(--color-text-hint)]">{(file.size / 1024 / 1024).toFixed(1)} MB</span>
+                                <button
+                                  onClick={() => removeImageFile(idx)}
+                                  className="shrink-0 rounded p-0.5 text-[var(--color-text-hint)] hover:bg-red-50 hover:text-red-600 transition"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-[var(--color-text-secondary)]">识别模式</p>
+                        <div className="flex gap-2">
+                          <button
+                            className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                              imageImportMode === "answer_only"
+                                ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)]"
+                                : "border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/30"
+                            }`}
+                            onClick={() => setImageImportMode("answer_only")}
+                          >
+                            仅答案
+                          </button>
+                          <button
+                            className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                              imageImportMode === "answer_analysis"
+                                ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]/20 text-[var(--color-primary-dark)]"
+                                : "border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/30"
+                            }`}
+                            onClick={() => setImageImportMode("answer_analysis")}
+                          >
+                            答案+解析
+                          </button>
+                        </div>
+                      </div>
+
+                      <Button
+                        className="h-9 w-full text-sm"
+                        disabled={imageFiles.length === 0 || imageExecuting}
+                        onClick={handleImagePreview}
+                      >
+                        <Eye className="mr-1.5 h-4 w-4" />
+                        预览识别结果
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  {/* Step 2: Preview results */}
+                  {imagePreviewResult && !imageApplyResult ? (
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)]/30 px-4 py-3 text-xs">
+                        <span>共 <strong>{imagePreviewResult.summary.total_images}</strong> 张图片</span>
+                        <span className="text-[var(--color-text-hint)]">·</span>
+                        <span>提取 <strong>{imagePreviewResult.summary.extracted_entries}</strong> 个条目</span>
+                        <span className="text-[var(--color-text-hint)]">·</span>
+                        <span className="text-emerald-700">匹配 <strong>{imagePreviewResult.summary.matched_count}</strong></span>
+                        {imagePreviewResult.summary.unmatched_count > 0 ? (
+                          <>
+                            <span className="text-[var(--color-text-hint)]">·</span>
+                            <span className="text-gray-500">未匹配 <strong>{imagePreviewResult.summary.unmatched_count}</strong></span>
+                          </>
+                        ) : null}
+                        {imagePreviewResult.summary.ambiguous_count > 0 ? (
+                          <>
+                            <span className="text-[var(--color-text-hint)]">·</span>
+                            <span className="text-amber-600">歧义 <strong>{imagePreviewResult.summary.ambiguous_count}</strong></span>
+                          </>
+                        ) : null}
+                        {imagePreviewResult.summary.writable_answer_count > 0 ? (
+                          <>
+                            <span className="text-[var(--color-text-hint)]">·</span>
+                            <span className="text-emerald-700">可写答案 <strong>{imagePreviewResult.summary.writable_answer_count}</strong></span>
+                          </>
+                        ) : null}
+                        {imagePreviewResult.summary.writable_analysis_count > 0 ? (
+                          <>
+                            <span className="text-[var(--color-text-hint)]">·</span>
+                            <span className="text-emerald-700">可写解析 <strong>{imagePreviewResult.summary.writable_analysis_count}</strong></span>
+                          </>
+                        ) : null}
+                      </div>
+
+                      <div className="max-h-[360px] overflow-y-auto rounded-xl border border-[var(--color-border)]">
+                        <table className="w-full text-left text-xs">
+                          <thead className="sticky top-0 bg-[var(--color-bg-input)]/80 backdrop-blur-sm">
+                            <tr className="border-b border-[var(--color-border)]">
+                              <th className="px-3 py-2 font-semibold text-[var(--color-text-secondary)]">题号</th>
+                              <th className="px-3 py-2 font-semibold text-[var(--color-text-secondary)]">题干</th>
+                              <th className="px-3 py-2 font-semibold text-[var(--color-text-secondary)]">原答案</th>
+                              <th className="px-3 py-2 font-semibold text-[var(--color-text-secondary)]">提取答案</th>
+                              <th className="px-3 py-2 font-semibold text-[var(--color-text-secondary)]">状态</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {imagePreviewResult.items.map((item, idx) => {
+                              const statusColor = item.status === "matched"
+                                ? "text-emerald-600"
+                                : item.status === "ambiguous"
+                                  ? "text-amber-600"
+                                  : "text-gray-400";
+                              const statusLabel = item.status === "matched"
+                                ? "已匹配"
+                                : item.status === "ambiguous"
+                                  ? "歧义"
+                                  : "未匹配";
+                              return (
+                                <tr key={idx} className="border-b border-[var(--color-border)]/50 last:border-0 hover:bg-[var(--color-bg-input)]/30">
+                                  <td className="px-3 py-2 align-top font-mono text-[var(--color-text-secondary)]">
+                                    {item.source_question_no ?? item.source_order_index ?? "?"}
+                                  </td>
+                                  <td className="px-3 py-2 align-top max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap text-[var(--ink)]" title={item.stem_excerpt}>
+                                    {item.stem_excerpt || <span className="text-[var(--color-text-hint)]">—</span>}
+                                  </td>
+                                  <td className="px-3 py-2 align-top font-mono text-[var(--color-text-secondary)]">
+                                    {item.original_answer || <span className="text-[var(--color-text-hint)]">—</span>}
+                                  </td>
+                                  <td className="px-3 py-2 align-top font-mono font-semibold text-[var(--ink)]">
+                                    {item.extracted_answer || <span className="text-[var(--color-text-hint)]">—</span>}
+                                  </td>
+                                  <td className={`px-3 py-2 align-top ${statusColor}`}>
+                                    {statusLabel}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {imagePreviewResult.items.some(i => i.source_filename) ? (
+                        <details className="group rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)]/30 px-4 py-2">
+                          <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-secondary)] transition hover:text-[var(--ink)] [&::-webkit-details-marker]:hidden">
+                            <span className="inline-flex items-center gap-1.5">
+                              图片来源信息
+                              <span className="inline-block text-[10px] transition-transform group-open:rotate-90">▶</span>
+                            </span>
+                          </summary>
+                          <div className="mt-2 space-y-1 max-h-[120px] overflow-y-auto">
+                            {imagePreviewResult.items.filter(i => i.source_filename).map((item, idx) => (
+                              <p key={idx} className="text-[10px] text-[var(--color-text-hint)]">
+                                {item.source_question_no && <>题号 {item.source_question_no} · </>}
+                                {item.source_filename}
+                                {item.ocr_confidence != null && <> · 置信度 {(item.ocr_confidence * 100).toFixed(0)}%</>}
+                                {item.extract_method && <> · {item.extract_method === "rule" ? "规则提取" : "AI提取"}</>}
+                              </p>
+                            ))}
+                          </div>
+                        </details>
+                      ) : null}
+
+                      {imagePreviewResult.warnings.length > 0 ? (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+                          {imagePreviewResult.warnings.map((w, i) => (
+                            <p key={i} className="flex items-start gap-1.5">
+                              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                              <span>{w}</span>
+                            </p>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      <Button
+                        className="h-9 w-full text-sm"
+                        disabled={imagePreviewResult.summary.writable_answer_count === 0 && imagePreviewResult.summary.writable_analysis_count === 0 || imageExecuting}
+                        onClick={handleImageApply}
+                      >
+                        <Check className="mr-1.5 h-4 w-4" />
+                        确认写入
+                        {imagePreviewResult.summary.writable_answer_count > 0 ? ` ${imagePreviewResult.summary.writable_answer_count} 题答案` : ""}
+                        {imagePreviewResult.summary.writable_analysis_count > 0 ? ` ${imagePreviewResult.summary.writable_analysis_count} 题解析` : ""}
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  {/* Step 3: Apply result */}
+                  {imageApplyResult ? (
+                    <div className="space-y-5">
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4">
+                        <div className="flex items-center gap-2 text-emerald-700">
+                          <CheckCircle2 className="h-5 w-5" />
+                          <span className="font-semibold">图片答案导入完成</span>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-3 text-center text-sm">
+                          <div className="rounded-lg bg-white/70 px-3 py-2">
+                            <p className="text-lg font-bold text-emerald-600">{imageApplyResult.updated_answer_count}</p>
+                            <p className="text-xs text-emerald-700/70">答案已更新</p>
+                          </div>
+                          <div className="rounded-lg bg-white/70 px-3 py-2">
+                            <p className="text-lg font-bold text-emerald-600">{imageApplyResult.updated_analysis_count}</p>
+                            <p className="text-xs text-emerald-700/70">解析已更新</p>
+                          </div>
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-3 text-center text-[11px] text-[var(--color-text-hint)]">
+                          <div>跳过已有答案 {imageApplyResult.skipped_existing_answer_count}</div>
+                          <div>跳过已有解析 {imageApplyResult.skipped_existing_analysis_count}</div>
+                        </div>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        className="h-9 w-full text-sm"
+                        onClick={() => { setShowBatchAnswerFill(false); }}
+                      >
+                        关闭
+                      </Button>
+                    </div>
+                  ) : null}
+                </>
               ) : null}
             </div>
           </aside>

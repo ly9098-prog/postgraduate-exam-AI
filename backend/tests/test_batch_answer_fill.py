@@ -292,9 +292,8 @@ async def run_tests():
         indices = [it["source_order_index"] for it in items[:5]]
         check("7.1 前5题顺序索引", indices == [0, 1, 2, 3, 4], str(indices))
 
-        # ─── 8. source_order_index 重复（检测警告） ───
+        # ─── 8. source_order_index 重复应失败 ───
         print("\n--- 8. order 重复检测 ---")
-        # 创建一个有重复 source_order_index 的临时数据
         db = async_session()
         try:
             qi_dup = QuestionImport(
@@ -302,7 +301,7 @@ async def run_tests():
                 source_type="image",
                 source_file="test.png",
                 question_type="single_choice",
-                source_order_index=1,  # 与前一个重复
+                source_order_index=1,
                 source_question_no="2b",
                 parsed_content={"stem": "重复顺序索引测试题"},
                 parsed_options={"A": "AA", "B": "BB", "C": "CC", "D": "DD"},
@@ -315,7 +314,7 @@ async def run_tests():
                 source_type="image",
                 source_file="test.png",
                 question_type="single_choice",
-                source_order_index=1,  # 重复
+                source_order_index=1,
                 source_question_no="2a",
                 parsed_content={"stem": "重复顺序索引测试题A"},
                 parsed_options={"A": "AA", "B": "BB", "C": "CC", "D": "DD"},
@@ -346,12 +345,15 @@ async def run_tests():
             headers=headers,
         )
         data = resp.json()
-        check("8.1 重复索引时仍有返回", resp.status_code == 200)
-        check("8.2 有警告信息", len(data.get("warnings", [])) > 0 or any(
-            it.get("status") == "order_anomaly" for it in data.get("items", [])
-        ))
+        check("8.1 重复索引时返回 422", resp.status_code == 422,
+              f"expected 422 got {resp.status_code}")
+        # error_code 应为 ORDER_INDEX_DUPLICATED
+        detail = data if isinstance(data, dict) else {}
+        check("8.2 错误码 ORDER_INDEX_DUPLICATED",
+              isinstance(detail, dict) and detail.get("detail", {}).get("error_code") == "ORDER_INDEX_DUPLICATED",
+              f"error_code={detail.get('detail', {}).get('error_code')}, body={str(detail)[:200]}")
 
-        # ─── 9. source_order_index 为空（已有 null 值检测） ───
+        # ─── 9. source_order_index 为空应失败 ───
         print("\n--- 9. order 为空检测 ---")
         db = async_session()
         try:
@@ -378,8 +380,12 @@ async def run_tests():
             headers=headers,
         )
         data = resp.json()
-        check("9.1 空顺序索引时 200", resp.status_code == 200)
-        check("9.2 标记异常", any(it.get("status") == "order_anomaly" for it in data.get("items", [])))
+        check("9.1 空顺序索引时 422", resp.status_code == 422,
+              f"expected 422 got {resp.status_code}")
+        detail = data if isinstance(data, dict) else {}
+        check("9.2 错误码 ORDER_INDEX_MISSING",
+              detail.get("detail", {}).get("error_code") == "ORDER_INDEX_MISSING",
+              str(detail.get("detail", {}).get("error_code")))
 
         # ─── 10. 非法答案 E 被拒绝（当题目无 E 选项） ───
         print("\n--- 10. 非法答案 E ---")
@@ -502,6 +508,11 @@ async def run_tests():
                 headers=headers,
             )
             check("16.1 版本变化 409", resp.status_code == 409)
+            if resp.status_code == 409:
+                detail = resp.json()
+                check("16.2 错误码 PREVIEW_STALE",
+                      detail.get("detail", {}).get("error_code") == "PREVIEW_STALE",
+                      str(detail.get("detail", {}).get("error_code")))
 
         # ─── 17. 无权限管理员返回 403 ───
         print("\n--- 17. 无权限 403 ---")
@@ -559,6 +570,39 @@ async def run_tests():
             if resp.status_code in (200, 201):
                 result = resp.json()
                 check("18.3 updated_count=1", result.get("updated_count") == 1)
+                check("18.4 有 operation_id", bool(result.get("operation_id")),
+                      f"operation_id={result.get('operation_id')}")
+                check("18.5 有 batch_stats", bool(result.get("batch_stats")),
+                      str(result.get("batch_stats", {})))
+                # 用同一 operation_id 重复提交应幂等
+                opid = result.get("operation_id", "")
+                if opid:
+                    resp2 = await client.post(
+                        _apply_url("test_rollback_batch"),
+                        json={"preview_token": token, "operation_id": opid},
+                        headers=headers,
+                    )
+                    check("18.6 operation_id 幂等返回 200", resp2.status_code in (200, 201),
+                          f"expected 200 got {resp2.status_code}")
+                    if resp2.status_code in (200, 201):
+                        result2 = resp2.json()
+                        check("18.7 幂等 updated_count 相同",
+                              result2.get("updated_count") == result.get("updated_count"),
+                              f"{result2.get('updated_count')} != {result.get('updated_count')}")
+
+                        # 校验无重复审计日志
+                        from app.models.admin import AuditLog
+                        db2 = async_session()
+                        try:
+                            logs = (await db2.execute(
+                                select(AuditLog).where(AuditLog.action == "import.batch_answer_fill")
+                                .order_by(AuditLog.id.desc()).limit(10)
+                            )).scalars().all()
+                            opid_logs = [l for l in logs if (l.detail or {}).get("operation_id") == opid]
+                            check("18.8 仅 1 条审计日志", len(opid_logs) == 1,
+                                  f"found {len(opid_logs)} logs for opid {opid}")
+                        finally:
+                            await db2.close()
 
         # ─── 19. 审计日志记录 ───
         print("\n--- 19. 审计日志 ---")
@@ -573,20 +617,103 @@ async def run_tests():
                 log = logs[0]
                 detail = log.detail or {}
                 check("19.2 含操作数量", "written_count" in detail)
-                check("19.3 不含题干", "stem" not in str(detail.get("detail", {})))
+                check("19.3 含 operation_id", bool(detail.get("operation_id")),
+                      f"operation_id not in detail: {detail}")
+                check("19.4 不含题干", "stem" not in str(detail.get("detail", {})))
         finally:
             await db.close()
 
         # ─── 20. 重复 preview_token 不得重复更新 ───
-        print("\n--- 20. 幂等性 ---")
-        # 再次提交同一个 token
+        print("\n--- 20. 幂等性（token 防重放）---")
         if token:
             resp = await client.post(
                 _apply_url("test_rollback_batch"),
                 json={"preview_token": token},
                 headers=headers,
             )
-            check("20.1 重复提交应返回 410", resp.status_code in (401, 410))
+            check("20.1 重复提交幂等返回 200", resp.status_code == 200,
+                  f"expected 200 got {resp.status_code} (operation_id cached)")
+
+        # ─── 21. 批次不可编辑检测 ───
+        print("\n--- 21. 批次不可编辑检测 ---")
+        db = async_session()
+        try:
+            qi_approved = QuestionImport(
+                batch_id="test_approved_batch",
+                source_type="image",
+                source_file="approved.png",
+                question_type="single_choice",
+                source_order_index=0,
+                source_question_no="1",
+                parsed_content={"stem": "已审批题"},
+                parsed_options={"A": "AA", "B": "BB", "C": "CC", "D": "DD"},
+                status="approved",  # 已审批，不可编辑
+                raw_data={"raw_text": "1. 已审批题"},
+            )
+            db.add(qi_approved)
+            await db.commit()
+        finally:
+            await db.close()
+
+        resp = await client.post(
+            _preview_url("test_approved_batch"),
+            json={"raw_text": "A", "allow_partial_prefix": True},
+            headers=headers,
+        )
+        check("21.1 已审批批次 preview 422", resp.status_code == 422)
+        if resp.status_code == 422:
+            detail = resp.json()
+            check("21.2 错误码 BATCH_NOT_EDITABLE",
+                  detail.get("detail", {}).get("error_code") == "BATCH_NOT_EDITABLE",
+                  str(detail.get("detail", {}).get("error_code")))
+
+        # ─── 22. writable_count=0 禁止 apply ───
+        print("\n--- 22. writable_count=0 禁止 apply ---")
+        db = async_session()
+        try:
+            qi_full = QuestionImport(
+                batch_id="test_full_batch",
+                source_type="image",
+                source_file="full.png",
+                question_type="single_choice",
+                source_order_index=0,
+                source_question_no="1",
+                parsed_content={"stem": "已有答案题"},
+                parsed_options={"A": "AA", "B": "BB", "C": "CC", "D": "DD"},
+                parsed_answer="A",  # 已有答案
+                answer_status="manual_filled",
+                status="pending",
+                raw_data={"raw_text": "1. 已有答案题"},
+            )
+            db.add(qi_full)
+            await db.commit()
+        finally:
+            await db.close()
+
+        # preview 应该显示 writable_count=0
+        resp = await client.post(
+            _preview_url("test_full_batch"),
+            json={"raw_text": "B", "allow_partial_prefix": True},
+            headers=headers,
+        )
+        check("22.1 preview 成功", resp.status_code == 200)
+        if resp.status_code == 200:
+            data = resp.json()
+            check("22.2 writable_count=0", data["summary"]["writable_count"] == 0)
+            token_zero = data.get("preview_token", "")
+            opid_zero = data.get("operation_id", "")
+            if token_zero:
+                resp = await client.post(
+                    _apply_url("test_full_batch"),
+                    json={"preview_token": token_zero, "operation_id": opid_zero},
+                    headers=headers,
+                )
+                check("22.3 writable_count=0 时 apply 422", resp.status_code == 422)
+                if resp.status_code == 422:
+                    detail = resp.json()
+                    check("22.4 错误码 NO_WRITABLE_ITEMS",
+                          detail.get("detail", {}).get("error_code") == "NO_WRITABLE_ITEMS",
+                          str(detail.get("detail", {}).get("error_code")))
 
         # ─── 完整写入流程测试 ───
         print("\n--- 完整流程：preview → apply ---")
@@ -621,20 +748,31 @@ async def run_tests():
         check("flow.1 preview 成功", resp.status_code == 200)
         token = data.get("preview_token", "")
         check("flow.2 有 token", bool(token))
+        check("flow.2b 有 operation_id", bool(data.get("operation_id")),
+              f"operation_id={data.get('operation_id')}")
         check("flow.3 5 will_update", data["summary"]["writable_count"] == 5)
         check("flow.4 skipped=0", data["summary"]["skipped_existing_count"] == 0)
 
         if token:
+            operation_id = data.get("operation_id", "")
             # apply
             resp = await client.post(
                 _apply_url("test_flow_batch"),
-                json={"preview_token": token},
+                json={"preview_token": token, "operation_id": operation_id},
                 headers=headers,
             )
             check("flow.5 apply 成功", resp.status_code in (200, 201))
             if resp.status_code in (200, 201):
                 result = resp.json()
                 check("flow.6 写入 5 题", result.get("updated_count") == 5)
+                check("flow.7 返回 operation_id", result.get("operation_id") == operation_id)
+                stats = result.get("batch_stats", {})
+                check("flow.8 batch_stats 含 total_count", "total_count" in stats,
+                      str(stats))
+                check("flow.9 batch_stats 含 pending_count", "pending_count" in stats)
+                check("flow.10 batch_stats 含 manual_filled_count",
+                      stats.get("manual_filled_count", 0) >= 5,
+                      f"manual_filled_count={stats.get('manual_filled_count')}")
 
     # ─── 清理临时数据库 ───
     await engine.dispose()
