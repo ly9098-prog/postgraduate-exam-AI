@@ -4,18 +4,18 @@
  */
 
 const COLORS = {
-  primary: '#4F7FFF',
-  primaryLight: 'rgba(79, 127, 255, 0.32)',
-  success: '#22C55E',
-  successLight: 'rgba(34, 197, 94, 0.72)',
-  warning: '#F59E0B',
+  primary: '#376CFF',
+  primaryLight: 'rgba(55, 108, 255, 0.22)',
+  success: '#29B979',
+  successLight: 'rgba(117, 230, 180, 0.94)',
+  warning: '#FFB15C',
   danger: '#EF4444',
-  track: '#E2EAF7',
-  textHint: '#8EA0BA',
+  track: '#E9EDF2',
+  textHint: '#8B939F',
   white: '#FFFFFF',
-  gradientStart: '#4F7FFF',
-  gradientMid: '#6EC1FF',
-  gradientEnd: '#4F7FFF',
+  gradientStart: '#376CFF',
+  gradientMid: '#77A0FF',
+  gradientEnd: '#376CFF',
 }
 
 const BAR_COLORS = ['#4F7FFF', '#22C55E', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4']
@@ -192,8 +192,12 @@ function drawSubjectDonut(canvasId, pageThis, items) {
 // ──────────────────────────────────────────────
 // Trend chart (bars + accuracy line)
 // ──────────────────────────────────────────────
-function drawTrendChart(canvasId, pageThis, points) {
+function drawTrendChart(canvasId, pageThis, points, options) {
   if (!points || !points.length) return
+  const opts = options || {}
+  const metric = opts.metric === 'questions' ? 'questions' : 'accuracy'
+  const previousPoints = Array.isArray(opts.previousPoints) ? opts.previousPoints : []
+
   getCanvasRect(canvasId, pageThis).then(rect => {
     if (!rect || !rect.width || !rect.height) return
     const ctx = getCtx(canvasId, pageThis)
@@ -201,82 +205,228 @@ function drawTrendChart(canvasId, pageThis, points) {
 
     const w = rect.width
     const h = rect.height
-    const pad = { l: 36, r: 20, t: 24, b: 32 }
-    const cw = w - pad.l - pad.r
-    const ch = h - pad.t - pad.b
-    const count = points.length
-    const maxQ = Math.max(1, ...points.map(p => p.questions || 0))
-    const step = count > 1 ? cw / (count - 1) : cw
-
     ctx.clearRect(0, 0, w, h)
 
-    // Grid lines
-    ctx.setStrokeStyle(COLORS.track)
-    ctx.setLineWidth(1)
-    for (let i = 0; i <= 3; i++) {
-      const y = pad.t + (ch * i) / 3
-      ctx.beginPath()
-      ctx.moveTo(pad.l, y)
-      ctx.lineTo(w - pad.r, y)
-      ctx.stroke()
+    const formatAxisValue = value => {
+      const n = Math.max(0, Number(value) || 0)
+      if (n >= 10000) return (n / 10000).toFixed(n % 10000 === 0 ? 0 : 1) + 'w'
+      if (n >= 1000) return (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + 'k'
+      return String(Math.round(n))
     }
 
-    // Y-axis label
-    ctx.setFillStyle(COLORS.textHint)
-    ctx.setFontSize(10)
-    ctx.fillText(maxQ + '题', 2, pad.t + 10)
-    ctx.fillText('0', 8, pad.t + ch + 4)
+    const niceScale = maxValue => {
+      const rawMax = Math.max(1, Number(maxValue) || 0)
+      const roughStep = rawMax / 3
+      const exponent = Math.floor(Math.log10(Math.max(roughStep, 0.0001)))
+      const power = Math.pow(10, exponent)
+      const fraction = roughStep / power
+      let niceFraction = 1
+      if (fraction <= 1) niceFraction = 1
+      else if (fraction <= 2) niceFraction = 2
+      else if (fraction <= 5) niceFraction = 5
+      else niceFraction = 10
+      const step = niceFraction * power
+      return {
+        step,
+        max: Math.max(step * 3, Math.ceil(rawMax / step) * step),
+      }
+    }
 
-    // Bar width
-    const barW = Math.min(step * 0.6, 28)
-
-    // Draw bars
-    points.forEach((p, i) => {
-      const x = pad.l + step * i - barW / 2
-      const barH = (p.questions || 0) / maxQ * ch
+    const drawTopRoundedBar = (x, y, width, height, radius, fillStyle) => {
+      if (height <= 0 || width <= 0) return
+      const r = Math.max(0, Math.min(radius, width / 2, height / 2))
       ctx.beginPath()
-      ctx.setFillStyle(COLORS.primaryLight)
-      ctx.rect(x, pad.t + ch - barH, barW, barH)
+      ctx.moveTo(x, y + height)
+      ctx.lineTo(x, y + r)
+      ctx.quadraticCurveTo(x, y, x + r, y)
+      ctx.lineTo(x + width - r, y)
+      ctx.quadraticCurveTo(x + width, y, x + width, y + r)
+      ctx.lineTo(x + width, y + height)
+      ctx.closePath()
+      ctx.setFillStyle(fillStyle)
       ctx.fill()
-    })
+    }
 
-    // Accuracy line
-    const accPts = points.map((p, i) => ({
-      x: pad.l + step * i,
-      y: pad.t + ch - (p.accuracy || 0) * ch,
-      acc: p.accuracy || 0,
-    }))
+    const sampledLabel = (list, i) => {
+      if (list.length <= 7) return true
+      const every = Math.ceil(list.length / 6)
+      return i === 0 || i === list.length - 1 || i % every === 0
+    }
 
-    ctx.beginPath()
-    accPts.forEach((p, i) => {
-      if (i === 0) ctx.moveTo(p.x, p.y)
-      else ctx.lineTo(p.x, p.y)
-    })
-    ctx.setStrokeStyle(COLORS.successLight)
-    ctx.setLineWidth(2)
-    ctx.stroke()
+    if (metric === 'questions') {
+      // Keep the reference chart's generous spacing on 30/90-day ranges by
+      // grouping daily data into at most seven visual columns.
+      const maxGroups = 7
+      const bucketSize = points.length > maxGroups ? Math.ceil(points.length / maxGroups) : 1
+      const grouped = []
+      for (let startIndex = 0; startIndex < points.length; startIndex += bucketSize) {
+        const currentSlice = points.slice(startIndex, startIndex + bucketSize)
+        const previousSlice = previousPoints.slice(startIndex, startIndex + bucketSize)
+        const lastPoint = currentSlice[currentSlice.length - 1] || {}
+        grouped.push({
+          shortDate: lastPoint.shortDate || '',
+          questions: currentSlice.reduce((sum, item) => sum + (item.questions || 0), 0),
+          correct: currentSlice.reduce((sum, item) => sum + (item.correct || 0), 0),
+          previousQuestions: previousSlice.reduce((sum, item) => sum + (item.questions || 0), 0),
+          hasPrevious: previousSlice.length > 0,
+        })
+      }
 
-    // Accuracy dots
-    accPts.forEach(p => {
-      if (p.acc > 0) {
+      const hasPrevious = grouped.some(item => item.hasPrevious)
+      const values = []
+      grouped.forEach(item => {
+        values.push(item.correct || 0, item.questions || 0)
+        if (item.hasPrevious) values.push(item.previousQuestions || 0)
+      })
+      const scale = niceScale(Math.max(1, ...values))
+
+      // More left padding is reserved for editorial y-axis labels.
+      const pad = { l: 38, r: 8, t: 12, b: 34 }
+      const plotW = Math.max(1, w - pad.l - pad.r)
+      const plotH = Math.max(1, h - pad.t - pad.b)
+      const baselineY = pad.t + plotH
+      const tickCount = 3
+
+      ctx.setFontSize(9)
+      ctx.setTextAlign('right')
+      ctx.setTextBaseline('middle')
+      for (let tick = 0; tick <= tickCount; tick++) {
+        const value = scale.step * tick
+        const ratio = value / scale.max
+        const y = baselineY - ratio * plotH
+        ctx.setStrokeStyle(tick === 0 ? 'rgba(17,18,20,.075)' : 'rgba(17,18,20,.045)')
+        ctx.setLineWidth(1)
         ctx.beginPath()
-        ctx.setFillStyle(COLORS.white)
-        ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2)
+        ctx.moveTo(pad.l, y)
+        ctx.lineTo(w - pad.r, y)
+        ctx.stroke()
+
+        ctx.setFillStyle('#8B8F96')
+        ctx.fillText(formatAxisValue(value), pad.l - 8, y)
+      }
+
+      const bandW = plotW / Math.max(grouped.length, 1)
+      const seriesCount = hasPrevious ? 3 : 2
+      const gap = Math.max(2.5, Math.min(4.5, bandW * 0.075))
+      const desiredGroupW = Math.min(bandW * 0.72, 48)
+      const barW = Math.max(5, Math.min(14, (desiredGroupW - gap * (seriesCount - 1)) / seriesCount))
+      const groupW = barW * seriesCount + gap * (seriesCount - 1)
+
+      grouped.forEach((item, i) => {
+        const centerX = pad.l + bandW * (i + 0.5)
+
+        // Very faint vertical guides reproduce the reference's chart rhythm.
+        ctx.setStrokeStyle('rgba(17,18,20,.032)')
+        ctx.setLineWidth(1)
+        ctx.beginPath()
+        ctx.moveTo(centerX, pad.t)
+        ctx.lineTo(centerX, baselineY)
+        ctx.stroke()
+
+        const series = [
+          { value: item.correct || 0, color: '#090A0C' },
+          { value: item.questions || 0, color: '#E3E8EB' },
+        ]
+        if (hasPrevious) {
+          series.push({ value: item.hasPrevious ? (item.previousQuestions || 0) : 0, color: '#C5CAFF' })
+        }
+
+        const startX = centerX - groupW / 2
+        series.forEach((entry, seriesIndex) => {
+          const barHeight = entry.value > 0 ? Math.max(2, entry.value / scale.max * plotH) : 0
+          const x = startX + seriesIndex * (barW + gap)
+          const y = baselineY - barHeight
+          drawTopRoundedBar(x, y, barW, barHeight, Math.min(3, barW * 0.26), entry.color)
+        })
+
+        ctx.setFillStyle('#7E8289')
+        ctx.setFontSize(9)
+        ctx.setTextAlign('center')
+        ctx.setTextBaseline('alphabetic')
+        ctx.fillText(item.shortDate || '', centerX, baselineY + 23)
+      })
+    } else {
+      const pad = { l: 16, r: 14, t: 18, b: 30 }
+      const cw = w - pad.l - pad.r
+      const ch = h - pad.t - pad.b
+      const count = points.length
+      const step = count > 1 ? cw / (count - 1) : cw
+
+      // Editorial-style grid: only two very light reference lines.
+      ctx.setStrokeStyle('rgba(20, 22, 26, 0.075)')
+      ctx.setLineWidth(1)
+      ;[0.34, 0.68].forEach(ratio => {
+        const y = pad.t + ch * ratio
+        ctx.beginPath()
+        ctx.moveTo(pad.l, y)
+        ctx.lineTo(w - pad.r, y)
+        ctx.stroke()
+      })
+
+      const toPoint = (p, i) => ({
+        x: count > 1 ? pad.l + step * i : pad.l + cw / 2,
+        y: pad.t + ch - Math.max(0, Math.min(1, p.accuracy || 0)) * ch,
+      })
+      const current = points.map(toPoint)
+      const previous = previousPoints.slice(0, count).map(toPoint)
+
+      const fillArea = (list, fillStyle, strokeStyle) => {
+        if (!list.length) return
+        ctx.beginPath()
+        ctx.moveTo(list[0].x, pad.t + ch)
+        list.forEach((pt, i) => {
+          if (i === 0) ctx.lineTo(pt.x, pt.y)
+          else ctx.lineTo(pt.x, pt.y)
+        })
+        ctx.lineTo(list[list.length - 1].x, pad.t + ch)
+        ctx.closePath()
+        ctx.setFillStyle(fillStyle)
         ctx.fill()
-        ctx.setStrokeStyle('rgba(34, 197, 94, 0.82)')
-        ctx.setLineWidth(1.5)
+
+        ctx.beginPath()
+        list.forEach((pt, i) => {
+          if (i === 0) ctx.moveTo(pt.x, pt.y)
+          else ctx.lineTo(pt.x, pt.y)
+        })
+        ctx.setStrokeStyle(strokeStyle)
+        ctx.setLineWidth(1.4)
         ctx.stroke()
       }
-    })
 
-    // X labels (auto-sample for dense data)
-    points.forEach((p, i) => {
-      if (count > 7 && i % Math.ceil(count / 7) !== 0 && i !== count - 1) return
-      ctx.setFillStyle(COLORS.textHint)
-      ctx.setFontSize(9)
-      ctx.setTextAlign('center')
-      ctx.fillText(p.shortDate, pad.l + step * i, pad.t + ch + 18)
-    })
+      fillArea(previous, 'rgba(205, 207, 210, 0.78)', 'rgba(176, 179, 184, 0.9)')
+      const currentGradient = ctx.createLinearGradient(0, pad.t, 0, pad.t + ch)
+      currentGradient.addColorStop(0, 'rgba(18, 19, 22, 0.98)')
+      currentGradient.addColorStop(1, 'rgba(18, 19, 22, 0.84)')
+      fillArea(current, currentGradient, '#111214')
+
+      let activeIndex = -1
+      for (let i = points.length - 1; i >= 0; i--) {
+        if ((points[i].questions || 0) > 0 || (points[i].accuracy || 0) > 0) {
+          activeIndex = i
+          break
+        }
+      }
+      if (activeIndex >= 0) {
+        const pt = current[activeIndex]
+        ctx.beginPath()
+        ctx.setFillStyle('#F4F4F1')
+        ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.setStrokeStyle('#4D7CFF')
+        ctx.setLineWidth(2.4)
+        ctx.stroke()
+      }
+
+      points.forEach((p, i) => {
+        if (!sampledLabel(points, i)) return
+        const x = count > 1 ? pad.l + step * i : pad.l + cw / 2
+        ctx.setFillStyle('#8A8D93')
+        ctx.setFontSize(9)
+        ctx.setTextAlign('center')
+        ctx.setTextBaseline('alphabetic')
+        ctx.fillText(p.shortDate || '', x, pad.t + ch + 20)
+      })
+    }
 
     ctx.draw()
   })

@@ -2,6 +2,156 @@ const api = require('../../utils/api')
 const model = require('./dashboard.model')
 const charts = require('./dashboard.charts')
 
+function clampPct(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value) || 0)))
+}
+
+function buildDeepAnalysisState(source) {
+  const hero = source.hero || {}
+  const trend = source.trend || {}
+  const subjects = source.subjects || null
+  const reviewRisk = source.reviewRisk || null
+  const growth = source.growth || null
+  const yearly = source.yearly || null
+  const insights = source.insights || null
+  const repeatWrong = insights && insights.repeatWrong
+  const speed = insights && insights.speedAccuracy
+  const consistency = insights && insights.weeklyConsistency
+  const weakest = subjects && subjects.itemsByWeak && subjects.itemsByWeak[0]
+
+  const highForget = reviewRisk ? (reviewRisk.highForgetCount || 0) : 0
+  const stuck = reviewRisk ? (reviewRisk.stuckQuestions || 0) : 0
+  const pseudo = reviewRisk ? (reviewRisk.pseudoMasteredCount || 0) : 0
+  const riskTotal = highForget + stuck + pseudo
+  const riskWidthPct = clampPct(riskTotal <= 0 ? 0 : Math.min(100, riskTotal * 8))
+  const riskEntries = [
+    { key: 'stuck', value: stuck, priority: 3 },
+    { key: 'highForget', value: highForget, priority: 2 },
+    { key: 'pseudo', value: pseudo, priority: 1 },
+  ].sort((a, b) => b.value - a.value || b.priority - a.priority)
+  const primaryRisk = riskEntries[0].value > 0 ? riskEntries[0].key : 'none'
+  const allTopics = reviewRisk && reviewRisk.topTopics ? reviewRisk.topTopics : []
+  const topTopics = allTopics.slice(0, 3)
+  const remainingTopicCount = Math.max(0, allTopics.length - topTopics.length)
+
+  const correctSec = speed ? Number(speed.avgTimeCorrectSec || 0) : 0
+  const wrongSec = speed ? Number(speed.avgTimeWrongSec || 0) : 0
+  const hasSpeedData = correctSec > 0 && wrongSec > 0
+  const speedMax = Math.max(correctSec, wrongSec, 1)
+  const ratio = correctSec > 0 ? wrongSec / correctSec : 0
+  const speedRatioText = ratio > 0 ? `错题耗时 ${ratio.toFixed(1)}×` : '数据积累中'
+  const speedDiff = Math.abs(wrongSec - correctSec)
+  const speedDiffText = hasSpeedData
+    ? `${wrongSec >= correctSec ? '错题平均多用' : '正确题平均多用'} ${speedDiff.toFixed(1)} 秒`
+    : '数据积累中'
+  const positionFor = (seconds) => Math.round((8 + (seconds / speedMax) * 84) * 10) / 10
+  const correctPositionPct = hasSpeedData ? positionFor(correctSec) : 8
+  const wrongPositionPct = hasSpeedData ? positionFor(wrongSec) : 92
+  const linkLeftPct = Math.min(correctPositionPct, wrongPositionPct)
+  const linkWidthPct = Math.max(0, Math.abs(wrongPositionPct - correctPositionPct))
+  const speedConclusion = speed ? speed.conclusion : '完成更多练习后，将显示正确题与错题的耗时差异。'
+
+  let riskLabel = '风险较低'
+  let riskTone = 'green'
+  if (stuck >= 8 || riskTotal >= 12) {
+    riskLabel = '需要优先处理'
+    riskTone = 'orange'
+  } else if (riskTotal > 0) {
+    riskLabel = '建议持续复盘'
+    riskTone = 'blue'
+  }
+
+  const memoryCompare = {
+    highForget,
+    stuck,
+    pseudo,
+    riskTotal,
+    riskWidthPct,
+    riskLabel,
+    riskTone,
+    primaryRisk,
+    topTopics,
+    remainingTopicCount,
+    correctSec: correctSec ? Math.round(correctSec * 10) / 10 : 0,
+    wrongSec: wrongSec ? Math.round(wrongSec * 10) / 10 : 0,
+    correctWidthPct: clampPct(correctSec / speedMax * 100),
+    wrongWidthPct: clampPct(wrongSec / speedMax * 100),
+    hasSpeedData,
+    correctPositionPct,
+    wrongPositionPct,
+    linkLeftPct,
+    linkWidthPct,
+    speedDiffText,
+    speedRatioText,
+    speedConclusion,
+  }
+
+  let diagnosis
+  if (repeatWrong && repeatWrong.repeatRatePct >= 40) {
+    diagnosis = {
+      tone: 'orange',
+      levelLabel: '优先级高',
+      title: '重复错题正在拖慢整体提升',
+      desc: '先处理反复答错的题目，再进入新题练习，能够更快降低无效重复。',
+      evidence: [
+        { label: '错题复发率', value: `${repeatWrong.repeatRatePct}%`, tone: 'orange' },
+        { label: '反复错题', value: `${repeatWrong.repeatWrongCount || 0}道`, tone: '' },
+        { label: '待复习', value: `${hero.dueReviewCount || 0}道`, tone: 'blue' },
+      ],
+    }
+  } else if (stuck >= 5) {
+    diagnosis = {
+      tone: 'orange',
+      levelLabel: '需要巩固',
+      title: '长期未掌握内容需要集中突破',
+      desc: '当前主要问题不是练习数量，而是部分知识点长期停留在低掌握状态。',
+      evidence: [
+        { label: '长期未掌握', value: `${stuck}`, tone: 'orange' },
+        { label: '高频遗忘', value: `${highForget}`, tone: '' },
+        { label: '错题掌握率', value: `${source.masteryRatePct || 0}%`, tone: 'blue' },
+      ],
+    }
+  } else if (weakest && weakest.accuracyPct < 50) {
+    diagnosis = {
+      tone: 'blue',
+      levelLabel: '重点关注',
+      title: `${weakest.label}是当前最明显的短板`,
+      desc: `该科目正确率为 ${weakest.accuracyPct}%，建议围绕高频错题进行小范围专项练习。`,
+      evidence: [
+        { label: '当前正确率', value: `${weakest.accuracyPct}%`, tone: 'orange' },
+        { label: '累计错题', value: `${weakest.wrongCount || 0}道`, tone: '' },
+        { label: '练习题量', value: `${weakest.totalQuestions || 0}题`, tone: 'blue' },
+      ],
+    }
+  } else if (consistency && consistency.activeDays <= 2) {
+    diagnosis = {
+      tone: 'blue',
+      levelLabel: '节奏提醒',
+      title: '学习节奏仍不够连续',
+      desc: '正确率之外，更稳定的活跃天数会让复习计划和薄弱点判断更加可靠。',
+      evidence: [
+        { label: '活跃天数', value: `${consistency.activeDays}/${consistency.days}`, tone: 'orange' },
+        { label: '本期做题', value: `${trend.totalQuestions || 0}题`, tone: '' },
+        { label: '平均正确率', value: `${trend.avgAccuracyPct || 0}%`, tone: 'blue' },
+      ],
+    }
+  } else {
+    diagnosis = {
+      tone: 'green',
+      levelLabel: '状态稳定',
+      title: '当前学习节奏基本稳定',
+      desc: '继续保持练习频率，并优先处理到期复习与当前排名最低的知识点。',
+      evidence: [
+        { label: '平均正确率', value: `${trend.avgAccuracyPct || 0}%`, tone: 'green' },
+        { label: '活跃天数', value: `${trend.activeDays || 0}天`, tone: '' },
+        { label: '今年学习', value: `${yearly ? yearly.activeDays : 0}天`, tone: 'blue' },
+      ],
+    }
+  }
+
+  return { deepDiagnosis: diagnosis, memoryCompare }
+}
+
 Page({
   data: {
     // 三种独立加载状态
@@ -32,7 +182,34 @@ Page({
     pendingTrendDays: null,
     _activeTabDays: 7,
     trendLoading: false,
+    trendMetric: 'accuracy',
     showYearlyHeatmap: false,
+    showDeepAnalysis: false,
+    analysisActiveTab: 'subjects',
+    deepDiagnosis: null,
+    memoryCompare: {
+      highForget: 0,
+      stuck: 0,
+      pseudo: 0,
+      riskWidthPct: 0,
+      riskLabel: '数据积累中',
+      riskTone: '',
+      primaryRisk: 'none',
+      topTopics: [],
+      remainingTopicCount: 0,
+      correctSec: 0,
+      wrongSec: 0,
+      correctWidthPct: 0,
+      wrongWidthPct: 0,
+      hasSpeedData: false,
+      correctPositionPct: 8,
+      wrongPositionPct: 92,
+      linkLeftPct: 8,
+      linkWidthPct: 84,
+      speedDiffText: '数据积累中',
+      speedRatioText: '数据积累中',
+      speedConclusion: '完成更多练习后显示效率比较。',
+    },
     yearlyLoading: false,
     yearlyError: null,
     yearlyHeatmapWeeks: [],
@@ -229,33 +406,27 @@ Page({
           }
         })
       }
-      // Re-build subjects with enriched data
+      // Re-build subjects with enriched data and refresh the diagnosis view-model.
+      let nextSubjects = this.data.subjects
       if (this.data.subjects && this.data.subjects.items) {
-        const enrichedSubjects = model.buildSubjects(
+        nextSubjects = model.buildSubjects(
           { items: this.data.subjects.items, strongest: this.data.subjects.strongest, weakest: this.data.subjects.weakest, totalQuestions: this.data.subjects.totalQuestions },
           enrichedMap
         )
-        this.setData({ subjects: enrichedSubjects })
       }
+      const deepState = buildDeepAnalysisState({
+        hero: this.data.hero,
+        trend: this.data.trend,
+        subjects: nextSubjects,
+        reviewRisk: this.data.reviewRisk,
+        growth: this.data.growth,
+        yearly: this.data.yearly,
+        masteryRatePct: this.data.masteryRatePct,
+        insights,
+      })
       this._insightsLoading = false
       this._insightsError = null
-      this.setData({ insights }, () => {
-        // Draw diagnosis gauges after setData render
-        if (!this._alive) return
-        setTimeout(() => {
-          if (insights && insights.todayQuality) {
-            charts.drawScoreGauge('diag-quality', this, insights.todayQuality.score, 120)
-          }
-          if (insights && insights.weeklyConsistency) {
-            charts.drawScoreGauge('diag-consistency', this, insights.weeklyConsistency.score, 120, String(Math.round(insights.weeklyConsistency.score)))
-          }
-          if (insights && insights.repeatWrong) {
-            // Invert repeat rate for gauge: lower recurrence = better score
-            const invScore = Math.max(0, 100 - (insights.repeatWrong.repeatRatePct || 0) * 2)
-            charts.drawScoreGauge('diag-repeat', this, invScore, 120)
-          }
-        }, 100)
-      })
+      this.setData({ subjects: nextSubjects, insights, ...deepState })
     } catch (e) {
       console.error('[dashboard] insights load failed', e)
       if (!this._alive) return
@@ -271,33 +442,9 @@ Page({
 
   _redrawAllCharts() {
     if (!this._alive || !this._visible) return
-    const h = this.data.hero
-    if (!h) return
-
-    charts.drawScoreRing('score-ring', this, h.totalAccuracy)
-    if (this.data._hasData) charts.drawMasteryGauge('mastery-gauge', this, this._masteryRate || 0)
-
     const tr = this.data.trend
-    if (tr && tr.points && tr.points.length) charts.drawTrendChart('trend-chart', this, tr.points)
-
-    const subs = this.data.subjects
-    if (subs && subs.items) charts.drawSubjectDonut('subject-donut', this, subs.items)
-
-    const gr = this.data.growth
-    if (gr) charts.drawGrowthRing('growth-ring', this, gr.levelProgressPct, (gr.levelProgressPct || 0) + '%')
-
-    const ad = this.data.adaptive
-    if (ad) charts.drawAdaptiveGauge('adaptive-gauge', this, ad.recallPct)
-
-    // Diagnosis gauges
-    const ins = this.data.insights
-    if (ins) {
-      if (ins.todayQuality) charts.drawScoreGauge('diag-quality', this, ins.todayQuality.score, 120)
-      if (ins.weeklyConsistency) charts.drawScoreGauge('diag-consistency', this, ins.weeklyConsistency.score, 120, String(Math.round(ins.weeklyConsistency.score)))
-      if (ins.repeatWrong) {
-        const invScore = Math.max(0, 100 - (ins.repeatWrong.repeatRatePct || 0) * 2)
-        charts.drawScoreGauge('diag-repeat', this, invScore, 120)
-      }
+    if (tr && tr.points && tr.points.length) {
+      charts.drawTrendChart('trend-chart', this, tr.points, { metric: this.data.trendMetric, previousPoints: tr.previousPoints })
     }
   },
 
@@ -324,10 +471,20 @@ Page({
     const masteryRate = ov.mastery_rate || 0
     const masteryRatePct = Math.round(masteryRate * 100)
     const masteryStatusText = model.buildMasteryStatus(masteryRatePct)
+    const deepState = buildDeepAnalysisState({
+      hero,
+      trend,
+      subjects,
+      reviewRisk,
+      growth,
+      yearly,
+      masteryRatePct,
+      insights: this.data.insights,
+    })
 
     // Build chart hashes
     const heroHash = '' + (hero.totalAccuracy || 0)
-    const trendHash = trend ? trend.points.map(p => p.date + p.questions + p.accuracy).join('|') : ''
+    const trendHash = trend ? [trend.points, trend.previousPoints || []].map(list => list.map(p => p.date + p.questions + p.accuracy).join('|')).join('::') : ''
     const subjectHash = subjects ? subjects.items.map(s => s.subject + s.accuracyPct).join('|') : ''
     const masteryHash = '' + masteryRatePct
     const growthHash = growth ? '' + (growth.levelProgressPct || 0) : ''
@@ -365,6 +522,7 @@ Page({
       masteredWrongCount: masteredW,
       masteryRatePct,
       masteryStatusText,
+      ...deepState,
       initialLoading: false,
       backgroundRefreshing: false,
       pageReady: true,
@@ -373,54 +531,38 @@ Page({
     }, () => {
       if (!this._alive) return
 
-      // Draw charts only when data changed and page is visible
-      this._ringTimer = setTimeout(() => {
-        if (!this._alive || !this._visible) return
-        if (canRedrawHero) {
-          charts.drawScoreRing('score-ring', this, hero.totalAccuracy)
-        }
-        if (canRedrawMastery && hasData) {
-          charts.drawMasteryGauge('mastery-gauge', this, masteryRate)
-        }
-      }, 80)
-
+      // The redesigned dashboard uses a single primary chart to keep the page calm and focused.
       if (trend && canRedrawTrend) {
         this._trendTimer = setTimeout(() => {
           if (!this._alive || !this._visible) return
-          charts.drawTrendChart('trend-chart', this, trend.points)
-        }, 200)
-      }
-
-      if (subjects && canRedrawSubject) {
-        this._gaugeTimer = setTimeout(() => {
-          if (!this._alive || !this._visible) return
-          charts.drawSubjectDonut('subject-donut', this, subjects.items)
-        }, 120)
-      }
-
-      // Growth ring chart
-      if (growth && canRedrawGrowth) {
-        this._growthTimer = setTimeout(() => {
-          if (!this._alive || !this._visible) return
-          charts.drawGrowthRing('growth-ring', this, growth.levelProgressPct, (growth.levelProgressPct || 0) + '%')
-        }, 140)
-      }
-
-      // Adaptive mini gauge
-      if (adaptive && canRedrawAdaptive) {
-        this._adaptiveTimer = setTimeout(() => {
-          if (!this._alive || !this._visible) return
-          charts.drawAdaptiveGauge('adaptive-gauge', this, adaptive.recallPct)
+          charts.drawTrendChart('trend-chart', this, trend.points, { metric: this.data.trendMetric, previousPoints: trend.previousPoints })
         }, 160)
       }
     })
   },
 
   // ── Trend ──
+  onTrendMetric(e) {
+    const metric = e.currentTarget.dataset.metric
+    if (!metric || metric === this.data.trendMetric) return
+    this.setData({ trendMetric: metric }, () => {
+      const trend = this.data.trend
+      if (!trend || !trend.points || !trend.points.length) return
+      clearTimeout(this._trendTimer)
+      this._trendTimer = setTimeout(() => {
+        if (!this._alive || !this._visible) return
+        charts.drawTrendChart('trend-chart', this, trend.points, {
+          metric,
+          previousPoints: trend.previousPoints,
+        })
+      }, 40)
+    })
+  },
+
   onTrendTab(e) {
     const days = parseInt(e.currentTarget.dataset.days, 10)
-    if (days === this.data.trendDays || this.data.trendLoading) return
-    // Use pendingTrendDays so tab highlight changes immediately
+    if (!days || days === this.data._activeTabDays) return
+    // Highlight immediately. Existing chart stays mounted while the latest request wins.
     // but trend data/meta/chart only update after API responds
     this.setData({ pendingTrendDays: days, _activeTabDays: days, trendLoading: true, trendError: null })
     this._loadTrendData(days)
@@ -437,7 +579,7 @@ Page({
       })
       if (!this._alive || seq !== this._trendSeq) return
       const trend = model.buildTrends(res.trends)
-      const trendHash = trend ? trend.points.map(p => p.date + p.questions + p.accuracy).join('|') : ''
+      const trendHash = trend ? [trend.points, trend.previousPoints || []].map(list => list.map(p => p.date + p.questions + p.accuracy).join('|')).join('::') : ''
       this._trendHash = trendHash
       this.setData({
         trend,
@@ -452,7 +594,7 @@ Page({
           clearTimeout(this._trendTimer)
           this._trendTimer = setTimeout(() => {
             if (!this._alive) return
-            charts.drawTrendChart('trend-chart', this, trend.points)
+            charts.drawTrendChart('trend-chart', this, trend.points, { metric: this.data.trendMetric, previousPoints: trend.previousPoints })
           }, 80)
         }
       })
@@ -467,6 +609,16 @@ Page({
   onRetryTrend() {
     this.setData({ trendError: null, trendLoading: true })
     this._loadTrendData(this.data.trendDays)
+  },
+
+  onToggleDeepAnalysis() {
+    this.setData({ showDeepAnalysis: !this.data.showDeepAnalysis })
+  },
+
+  onAnalysisTab(e) {
+    const tab = e.currentTarget.dataset.tab
+    if (!tab || tab === this.data.analysisActiveTab) return
+    this.setData({ analysisActiveTab: tab })
   },
 
   // ── Yearly heatmap ──
