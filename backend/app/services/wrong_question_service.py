@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import String, Float, and_, case, cast, func, select
+from sqlalchemy import String, Float, and_, case, cast, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin import Subject
@@ -100,7 +100,9 @@ async def list_wrong(
 async def get_by_id(db: AsyncSession, user_id: int, wq_id: int) -> WrongQuestion | None:
     result = await db.execute(
         select(WrongQuestion).where(
-            WrongQuestion.id == wq_id, WrongQuestion.user_id == user_id
+            WrongQuestion.id == wq_id,
+            WrongQuestion.user_id == user_id,
+            WrongQuestion.is_active == True,
         )
     )
     return result.scalar_one_or_none()
@@ -339,7 +341,8 @@ async def list_wrong_enriched(
             "question_id": wq.question_id,
             "wrong_answer": wq.wrong_answer,
             "error_type": wq.error_type,
-            "review_count": review_count_val or 0,
+            "review_count": wq.review_count or 0,
+            "review_record_count": review_count_val or 0,
             "wrong_count": wq.review_count or 0,
             "mastery_percent": round(float(mastery_pct or 0), 4),
             "is_mastered": wq.mastered,
@@ -408,6 +411,10 @@ async def batch_operate(
     if action == "add_to_review":
         for wq_id, wq in wqs.items():
             try:
+                # Reactivate if soft-deleted
+                if not wq.is_active:
+                    wq.is_active = True
+                    wq.removed_at = None
                 sch_result = await db.execute(
                     select(ReviewSchedule).where(
                         ReviewSchedule.user_id == user_id,
@@ -459,10 +466,27 @@ async def batch_operate(
                 continue
             wq.is_active = False
             wq.removed_at = now
+            # Remove from review queue by marking mastered
+            sch_result = await db.execute(
+                select(ReviewSchedule).where(
+                    ReviewSchedule.user_id == user_id,
+                    ReviewSchedule.question_id == wq.question_id,
+                )
+            )
+            schedule = sch_result.scalar_one_or_none()
+            if schedule:
+                schedule.mastered = True
             updated_count += 1
 
     elif action == "delete":
         for wq_id, wq in wqs.items():
+            # Delete associated ReviewSchedule and ReviewRecords
+            await db.execute(
+                delete(ReviewSchedule).where(
+                    ReviewSchedule.user_id == user_id,
+                    ReviewSchedule.question_id == wq.question_id,
+                )
+            )
             await db.delete(wq)
             updated_count += 1
 

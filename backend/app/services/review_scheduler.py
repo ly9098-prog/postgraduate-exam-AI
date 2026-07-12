@@ -25,7 +25,8 @@ async def _sync_schedule_to_wq(db: AsyncSession, schedule: ReviewSchedule) -> No
     )
     wq = result.scalar_one_or_none()
     if wq:
-        wq.last_review_at = schedule.last_reviewed_at
+        if schedule.last_reviewed_at is not None:
+            wq.last_review_at = schedule.last_reviewed_at
         wq.mastered = schedule.mastered
 
 
