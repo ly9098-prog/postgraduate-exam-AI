@@ -1,17 +1,3 @@
-<animated-view
-  wx:if="{{showPerfectCelebration}}"
-  show="{{showPerfectCelebration}}"
-  theme="blue"
-  type="{{perfectCelebrationType}}"
-  title="{{perfectCelebrationTitle}}"
-  detail="{{perfectCelebrationDetail}}"
-  motto="{{perfectCelebrationMotto}}"
-  duration="{{2600}}"
-  gif-src="/assets/animation/celebration.gif"
-  png-src="/assets/animation/celebration-static.png"
-  bind:done="goPracticeResultAfterCelebration"
-/>
-
 <view class="page">
   <submit-confirm id="submitConfirm" />
   <view class="submit-loading-mask" wx:if="{{submitting}}" catchtap="noop">
@@ -22,177 +8,271 @@
 
   <!-- ==================== 设置页 ==================== -->
   <view class="setup" wx:if="{{!started}}">
-    <view class="practice-hero hero-panel">
-      <view class="hero-orbit hero-orbit-one"></view>
-      <view class="hero-orbit hero-orbit-two"></view>
-      <view class="hero-copy">
-        <text class="eyebrow">今日挑战 · {{count}} 题</text>
-        <text class="hero-title">把薄弱点练成得分点</text>
-        <text class="hero-desc">选择一组专注练习，完成后收获成长值和复盘线索</text>
-      </view>
-      <view class="hero-badge">
-        <text class="hero-badge-main">+{{count * 6}}</text>
-        <text class="hero-badge-label">成长值</text>
-      </view>
-    </view>
-
-    <view class="mission-strip learning-card motion-card-enter motion-delay-1">
-      <view class="mission-strip-item">
-        <text class="mission-strip-num">{{selectedSubjectName || '待选择'}}</text>
-        <text class="mission-strip-label">当前科目</text>
-      </view>
-      <view class="mission-strip-divider"></view>
-      <view class="mission-strip-item">
-        <text class="mission-strip-num">{{selectedModeLabel}}</text>
-        <text class="mission-strip-label">出题节奏</text>
-      </view>
-      <view class="mission-strip-divider"></view>
-      <view class="mission-strip-item">
-        <text class="mission-strip-num">{{count}}题</text>
-        <text class="mission-strip-label">本组目标</text>
-      </view>
-    </view>
-
-    <view class="card learning-card subject-panel">
-      <view class="subject-header">
-        <view>
-          <text class="subject-title">选择科目</text>
-          <text class="subject-desc">点击父级展开子级，再选择练习范围</text>
+    <view class="custom-nav" style="padding-top: {{statusBarHeight}}px;">
+      <view class="custom-nav-inner" style="height: {{navBarHeight}}px;">
+        <view class="nav-back" hover-class="nav-control-pressed" bindtap="goBack">
+          <text class="nav-back-symbol">‹</text>
         </view>
-        <text class="subject-badge">科目</text>
+        <view class="nav-title-group">
+          <text class="nav-title">刷题</text>
+          <text class="nav-title-en">PRACTICE</text>
+        </view>
+        <view class="nav-spacer"></view>
       </view>
+    </view>
 
-      <view class="selected-subject-bar">
-        <text class="selected-label">当前选择</text>
-        <text class="selected-name">{{selectedSubjectName || '请选择科目'}}</text>
-      </view>
+    <view class="setup-content">
+      <view class="practice-hero">
+        <view class="hero-grid hero-grid-a"></view>
+        <view class="hero-grid hero-grid-b"></view>
+        <view class="hero-head">
+          <text class="hero-eyebrow">PRACTICE 01</text>
+          <view class="hero-subject-action" hover-class="soft-pressed" bindtap="openSubjectSheet">
+            <text class="hero-subject">{{selectedSubjectName || '选择科目'}}</text>
+            <text class="hero-subject-arrow">›</text>
+          </view>
+        </view>
 
-      <!-- 空状态 -->
-      <view class="subject-empty" wx:if="{{!subjectTree || subjectTree.length === 0}}">
-        <text class="subject-empty-text">暂无可练习科目</text>
-        <text class="subject-empty-hint">请先在后台添加并启用科目</text>
-      </view>
-
-      <!-- 纵向父级折叠列表 -->
-      <view class="subject-tree" wx:else>
-        <view
-          wx:for="{{subjectTree}}"
-          wx:key="subject_id"
-          class="subject-parent-block {{expandedSubjectId === item.subject_id ? 'expanded' : ''}} {{selectedSubjectId === item.subject_id && (!item.children || item.children.length === 0) ? 'selected' : ''}}"
-        >
-          <!-- 父级行：点击展开/收起 -->
-          <view
-            class="subject-parent-row {{expandedSubjectId === item.subject_id ? 'expanded' : ''}} {{selectedSubjectId === item.subject_id && (!item.children || item.children.length === 0) ? 'selected' : ''}}"
-            hover-class="tap-scale-pressed"
-            bindtap="toggleParentSubject"
-            data-subject-id="{{item.subject_id}}"
-            data-subject-name="{{item.display_name}}"
-            data-has-children="{{item.children && item.children.length > 0}}"
-          >
-            <view class="parent-main">
-              <text class="parent-name">{{item.display_name}}</text>
-              <text class="parent-meta" wx:if="{{item.children && item.children.length > 0}}">
-                {{item.children.length}} 个子科目
-              </text>
-              <text class="parent-meta parent-meta-leaf" wx:else>可直接选择</text>
+        <view class="hero-metrics">
+          <view class="hero-metric hero-metric-primary">
+            <view class="hero-number-line">
+              <text class="hero-number">{{countDisplay}}</text>
+              <text class="hero-number-unit">题</text>
             </view>
-            <view class="parent-right">
-              <text
-                class="parent-check line-icon icon-check"
-                wx:if="{{selectedSubjectId === item.subject_id && (!item.children || item.children.length === 0)}}"
-              ></text>
-              <text
-                class="parent-arrow line-icon icon-chevron-down {{expandedSubjectId === item.subject_id ? 'up' : ''}}"
-                wx:if="{{item.children && item.children.length > 0}}"
-              ></text>
+            <text class="hero-metric-label">QUESTIONS / 本组题量</text>
+          </view>
+          <view class="hero-metric-divider"></view>
+          <view class="hero-metric">
+            <view class="hero-number-line hero-number-line-small">
+              <text class="hero-number hero-number-small">{{estimatedMinutes}}</text>
+              <text class="hero-number-unit">MIN</text>
+            </view>
+            <text class="hero-metric-label">预计完成时间</text>
+          </view>
+          <view class="metric-wave">
+            <view class="wave-line wave-1"></view>
+            <view class="wave-line wave-2"></view>
+            <view class="wave-line wave-3"></view>
+          </view>
+        </view>
+
+        <button
+          class="hero-start"
+          disabled="{{!selectedSubjectId}}"
+          hover-class="{{!selectedSubjectId ? 'none' : 'hero-start-pressed'}}"
+          bindtap="startPractice"
+        >
+          <text>{{selectedSubjectId ? '开始本组练习' : '请先选择科目'}}</text>
+          <view class="hero-start-arrow"><text>›</text></view>
+        </button>
+
+        <view class="hero-config" hover-class="soft-pressed" bindtap="toggleSettings">
+          <text class="hero-config-text">{{selectedModeLabel}} · {{count}}题 · 约{{estimatedMinutes}}分钟</text>
+          <view class="hero-config-edit">
+            <text>{{settingsExpanded ? '收起' : '调整'}}</text>
+            <text class="config-chevron {{settingsExpanded ? 'up' : ''}}">⌄</text>
+          </view>
+        </view>
+      </view>
+
+      <view class="settings-panel" wx:if="{{settingsExpanded}}">
+        <view class="panel-heading">
+          <view>
+            <text class="panel-title">练习设置</text>
+            <text class="panel-kicker">CONTROL PANEL</text>
+          </view>
+          <view class="panel-collapse" hover-class="soft-pressed" bindtap="toggleSettings">
+            <text>收起</text><text class="panel-collapse-arrow">⌃</text>
+          </view>
+        </view>
+
+        <view class="setting-block">
+          <view class="setting-head">
+            <text class="setting-title">练习模式</text>
+            <text class="setting-desc">选择适合当前复习阶段的出题方式</text>
+          </view>
+          <view class="mode-row">
+            <view class="mode-card {{selectedMode==='random' ? 'active' : ''}}" hover-class="option-pressed" bindtap="chooseMode" data-mode="random">
+              <text class="mode-icon">↝</text>
+              <text class="mode-title">随机挑战</text>
+              <text class="mode-desc">综合查漏</text>
+              <view class="option-check" wx:if="{{selectedMode==='random'}}">✓</view>
+            </view>
+            <view class="mode-card {{selectedMode==='sequential' ? 'active' : ''}}" hover-class="option-pressed" bindtap="chooseMode" data-mode="sequential">
+              <text class="mode-icon">≡</text>
+              <text class="mode-title">顺序推进</text>
+              <text class="mode-desc">体系巩固</text>
+              <view class="option-check" wx:if="{{selectedMode==='sequential'}}">✓</view>
+            </view>
+            <view class="mode-card {{selectedMode==='smart' ? 'active' : ''}}" hover-class="option-pressed" bindtap="chooseMode" data-mode="smart">
+              <text class="mode-icon">◎</text>
+              <text class="mode-title">智能推荐</text>
+              <text class="mode-desc">薄弱优先</text>
+              <view class="option-check" wx:if="{{selectedMode==='smart'}}">✓</view>
             </view>
           </view>
+        </view>
 
-          <!-- 子级 chip 网格：嵌套在父级内部，仅该父级展开时渲染 -->
-          <view
-            class="child-subject-wrap"
-            wx:if="{{expandedSubjectId === item.subject_id && item.children && item.children.length > 0}}"
-          >
+        <view class="setting-block count-setting-block">
+          <view class="setting-head">
+            <text class="setting-title">题量选择</text>
+            <text class="setting-desc">根据可用时间设定本组题量</text>
+          </view>
+          <view class="count-row">
+            <view class="count-btn {{count===5 ? 'active' : ''}}" hover-class="option-pressed" bindtap="setCount" data-count="5">
+              <text class="count-main">5题</text><text class="count-time">约10分钟</text>
+              <view class="option-check count-check" wx:if="{{count===5}}">✓</view>
+            </view>
+            <view class="count-btn {{count===10 ? 'active' : ''}}" hover-class="option-pressed" bindtap="setCount" data-count="10">
+              <text class="count-main">10题</text><text class="count-time">约20分钟</text>
+              <view class="option-check count-check" wx:if="{{count===10}}">✓</view>
+            </view>
+            <view class="count-btn {{count===20 ? 'active' : ''}}" hover-class="option-pressed" bindtap="setCount" data-count="20">
+              <text class="count-main">20题</text><text class="count-time">约40分钟</text>
+              <view class="option-check count-check" wx:if="{{count===20}}">✓</view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view class="recent-section" wx:if="{{recentSubjects && recentSubjects.length > 0}}">
+        <view class="section-heading-row">
+          <view>
+            <text class="surface-title">最近使用科目</text>
+            <text class="surface-kicker">RECENT SUBJECTS</text>
+          </view>
+          <view class="surface-action" hover-class="soft-pressed" bindtap="openSubjectSheet">
+            <text>全部科目</text><text>›</text>
+          </view>
+        </view>
+        <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="recent-scroll">
+          <view class="recent-list">
             <view
-              wx:for="{{item.children}}"
+              wx:for="{{recentSubjects}}"
               wx:key="subject_id"
-              class="child-subject-chip {{selectedSubjectId === item.subject_id ? 'active' : ''}}"
-              hover-class="tap-scale-pressed"
-              catchtap="chooseChildSubject"
+              class="recent-card {{selectedSubjectId === item.subject_id ? 'active' : ''}}"
+              hover-class="recent-card-pressed"
+              bindtap="chooseRecentSubject"
               data-subject-id="{{item.subject_id}}"
               data-subject-name="{{item.display_name}}"
             >
-              <text class="child-subject-name">{{item.display_name}}</text>
-              <text
-                class="child-subject-check line-icon icon-check"
-                wx:if="{{selectedSubjectId === item.subject_id}}"
-              ></text>
+              <view class="recent-mark"><text>{{item.mark}}</text></view>
+              <text class="recent-name">{{item.display_name}}</text>
+              <view class="recent-indicator"></view>
             </view>
+          </view>
+        </scroll-view>
+      </view>
+
+      <view class="reward-panel" wx:if="{{selectedSubjectId}}">
+        <view class="reward-heading">
+          <view>
+            <text class="surface-title">本组奖励</text>
+            <text class="surface-kicker">SESSION REWARD</text>
+          </view>
+          <text class="reward-note">完成本组可获得</text>
+        </view>
+        <view class="reward-items">
+          <view class="reward-item">
+            <view class="reward-icon">△</view>
+            <view><text class="reward-label">成长值</text><text class="reward-value">+{{count * 6}}</text></view>
+          </view>
+          <view class="reward-divider"></view>
+          <view class="reward-item">
+            <view class="reward-icon">≣</view>
+            <view><text class="reward-label">学习产出</text><text class="reward-value reward-value-text">生成本组复盘</text></view>
           </view>
         </view>
       </view>
     </view>
 
-    <view class="card learning-card" wx:if="{{selectedSubjectId}}">
-      <view class="section-head">
-        <view>
-          <text class="section-title">挑战模式</text>
-          <text class="section-subtitle">随机查漏，顺序巩固，把节奏交给今天的状态</text>
+    <view class="subject-sheet-mask" wx:if="{{subjectSheetVisible}}" catchtap="closeSubjectSheet" catchtouchmove="noop">
+      <view class="subject-sheet" catchtap="noop">
+        <view class="sheet-handle"></view>
+        <view class="sheet-header">
+          <view>
+            <text class="sheet-title">选择练习科目</text>
+            <text class="sheet-kicker">SELECT SUBJECT</text>
+          </view>
+          <view class="sheet-close" hover-class="soft-pressed" catchtap="closeSubjectSheet">×</view>
         </view>
-        <text class="section-chip">{{selectedModeLabel}}</text>
-      </view>
-      <view class="mode-row">
-        <view class="mode-card {{selectedMode==='random' ? 'active' : ''}}" hover-class="mode-card-pressed" hover-start-time="20" hover-stay-time="80" bindtap="chooseMode" data-mode="random">
-          <text class="mode-title">随机挑战</text>
-          <text class="mode-desc">更适合查漏补缺</text>
-        </view>
-        <view class="mode-card {{selectedMode==='sequential' ? 'active' : ''}}" hover-class="mode-card-pressed" hover-start-time="20" hover-stay-time="80" bindtap="chooseMode" data-mode="sequential">
-          <text class="mode-title">顺序推进</text>
-          <text class="mode-desc">更适合体系复习</text>
-        </view>
-        <view class="mode-card {{selectedMode==='smart' ? 'active' : ''}}" hover-class="mode-card-pressed" hover-start-time="20" hover-stay-time="80" bindtap="chooseMode" data-mode="smart">
-          <text class="mode-title">智能推荐</text>
-          <text class="mode-desc">根据薄弱点推荐</text>
-        </view>
-      </view>
-    </view>
 
-    <view class="card learning-card" wx:if="{{selectedSubjectId}}">
-      <view class="section-head">
-        <view>
-          <text class="section-title">设定本组目标</text>
-          <text class="section-subtitle">完成越多，成长值越高</text>
+        <view class="sheet-current" wx:if="{{selectedSubjectName}}">
+          <text class="sheet-current-label">当前选择</text>
+          <text class="sheet-current-name">{{selectedSubjectName}}</text>
         </view>
-        <text class="section-chip">+{{count * 6}}</text>
-      </view>
-      <view class="count-row">
-        <view class="count-btn {{count===5 ? 'active' : ''}}" hover-class="count-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="setCount" data-count="5">5 题</view>
-        <view class="count-btn {{count===10 ? 'active' : ''}}" hover-class="count-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="setCount" data-count="10">10 题</view>
-        <view class="count-btn {{count===20 ? 'active' : ''}}" hover-class="count-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="setCount" data-count="20">20 题</view>
-      </view>
-      <view class="reward-preview">
-        <text class="reward-title">完成奖励</text>
-        <text class="reward-desc">成长值 +{{count * 6}} · 连续学习记录 +1 · 生成本组复盘</text>
-      </view>
-    </view>
 
-    <button
-      class="btn-start"
-      disabled="{{!selectedSubjectId}}"
-      hover-class="{{!selectedSubjectId ? 'none' : 'btn-start-pressed'}}"
-      hover-start-time="20"
-      hover-stay-time="80"
-      bindtap="startPractice"
-    >
-      {{selectedSubjectId ? '开始挑战' : '先选择科目'}}
-    </button>
-    <view class="pomodoro-link" wx:if="{{selectedSubjectId}}" hover-class="pomodoro-link-pressed" hover-start-time="20" hover-stay-time="80" bindtap="goPomodoro">
-      <text>先用番茄钟锁定一段专注时间</text>
+        <view class="sheet-recent" wx:if="{{recentSubjects && recentSubjects.length > 0}}">
+          <text class="sheet-section-label">最近使用</text>
+          <view class="sheet-recent-list">
+            <view
+              wx:for="{{recentSubjects}}"
+              wx:key="subject_id"
+              class="sheet-recent-chip {{selectedSubjectId === item.subject_id ? 'active' : ''}}"
+              hover-class="option-pressed"
+              catchtap="chooseRecentSubject"
+              data-subject-id="{{item.subject_id}}"
+              data-subject-name="{{item.display_name}}"
+            >{{item.display_name}}</view>
+          </view>
+        </view>
+
+        <text class="sheet-section-label all-subject-label">全部科目</text>
+        <scroll-view scroll-y class="subject-tree-scroll">
+          <view class="subject-empty" wx:if="{{!subjectTree || subjectTree.length === 0}}">
+            <text class="subject-empty-text">暂无可练习科目</text>
+            <text class="subject-empty-hint">请先在后台添加并启用科目</text>
+          </view>
+          <view class="subject-tree" wx:else>
+            <view
+              wx:for="{{subjectTree}}"
+              wx:key="subject_id"
+              class="subject-parent-block {{expandedSubjectId === item.subject_id ? 'expanded' : ''}}"
+            >
+              <view
+                class="subject-parent-row {{selectedSubjectId === item.subject_id && (!item.children || item.children.length === 0) ? 'selected' : ''}}"
+                hover-class="soft-pressed"
+                bindtap="toggleParentSubject"
+                data-subject-id="{{item.subject_id}}"
+                data-subject-name="{{item.display_name}}"
+                data-has-children="{{item.children && item.children.length > 0}}"
+              >
+                <view class="parent-main">
+                  <view class="parent-folder">□</view>
+                  <view class="parent-copy">
+                    <text class="parent-name">{{item.display_name}}</text>
+                    <text class="parent-meta" wx:if="{{item.children && item.children.length > 0}}">{{item.children.length}} 个子科目</text>
+                    <text class="parent-meta" wx:else>可直接选择</text>
+                  </view>
+                </view>
+                <view class="parent-right">
+                  <text class="parent-selected" wx:if="{{selectedSubjectId === item.subject_id && (!item.children || item.children.length === 0)}}">✓</text>
+                  <text class="parent-arrow {{expandedSubjectId === item.subject_id ? 'up' : ''}}" wx:if="{{item.children && item.children.length > 0}}">⌄</text>
+                </view>
+              </view>
+              <view class="child-subject-wrap" wx:if="{{expandedSubjectId === item.subject_id && item.children && item.children.length > 0}}">
+                <view
+                  wx:for="{{item.children}}"
+                  wx:key="subject_id"
+                  class="child-subject-row {{selectedSubjectId === item.subject_id ? 'active' : ''}}"
+                  hover-class="soft-pressed"
+                  catchtap="chooseChildSubject"
+                  data-subject-id="{{item.subject_id}}"
+                  data-subject-name="{{item.display_name}}"
+                >
+                  <text class="child-subject-name">{{item.display_name}}</text>
+                  <view class="child-select-mark" wx:if="{{selectedSubjectId === item.subject_id}}">✓</view>
+                </view>
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+      </view>
     </view>
   </view>
 
   <!-- ==================== 答题页 ==================== -->
-  <view class="practice" wx:if="{{started && !loading}}">
+  <view class="practice" wx:if="{{started && !loading}}" style="padding-top: {{statusBarHeight}}px;">
     <quiz-runner
       mode="practice"
       title="练习"
@@ -207,39 +287,20 @@
       readonly="{{false}}"
       submitted="{{submitted}}"
       submitting="{{submitting}}"
-      showFeedback="{{true}}"
+      showFeedback="{{false}}"
       submitText="交卷复盘"
       submitDisabled="{{submitted}}"
+      showBackButton="{{true}}"
+      customNavigation="{{true}}"
       bind:selectoption="selectOption"
       bind:selectblankoption="selectBlankOption"
       bind:prev="goPrev"
       bind:next="goNext"
       bind:jump="goQuestion"
       bind:submit="doSubmit"
+      bind:exit="requestExitPractice"
     />
 
-    <view class="answer-feedback {{feedbackType}} combo-{{feedbackComboLevel}}" wx:if="{{feedbackVisible}}" catchtap="noop">
-      <view class="feedback-card">
-        <view class="feedback-icon-wrap">
-          <text wx:if="{{feedbackType === 'correct'}}" class="feedback-icon line-icon icon-check"></text>
-          <text wx:elif="{{feedbackType === 'wrong'}}" class="feedback-icon line-icon icon-exclamation"></text>
-          <text wx:else class="feedback-icon line-icon icon-dot"></text>
-        </view>
-        <view class="feedback-copy">
-          <text class="feedback-title">{{feedbackTitle}}</text>
-          <text class="feedback-detail">{{feedbackDetail}}</text>
-          <text class="feedback-combo" wx:if="{{feedbackComboText}}">{{feedbackComboText}}</text>
-        </view>
-        <view class="feedback-stars" wx:if="{{feedbackType === 'correct' && feedbackStarCount >= 3}}">
-          <text class="star s1">★</text>
-          <text class="star s2">★</text>
-          <text class="star s3">★</text>
-          <text class="star s4" wx:if="{{feedbackStarCount >= 5}}">★</text>
-          <text class="star s5" wx:if="{{feedbackStarCount >= 5}}">★</text>
-          <text class="star s6" wx:if="{{feedbackStarCount >= 6}}">★</text>
-        </view>
-      </view>
-    </view>
   </view>
 
   <!-- 加载 -->

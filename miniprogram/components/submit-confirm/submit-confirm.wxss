@@ -1,18 +1,20 @@
-/* ==================== Overlay ==================== */
+/* 与答题页统一的深墨绿 + 荧光绿确认弹层 */
 
 .sc-overlay {
   position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
+  inset: 0;
   z-index: 160;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(23, 32, 51, 0.38);
-  backdrop-filter: blur(20rpx);
-  -webkit-backdrop-filter: blur(20rpx);
+  padding: 32rpx;
+  background: rgba(4, 13, 8, 0.68);
+  backdrop-filter: blur(14rpx);
+  -webkit-backdrop-filter: blur(14rpx);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.28s ease;
+  box-sizing: border-box;
+  transition: opacity 0.22s ease;
 }
 
 .sc-overlay.sc-visible {
@@ -20,24 +22,23 @@
   pointer-events: auto;
 }
 
-/* ==================== Card ==================== */
-
 .sc-card {
   position: relative;
-  width: 560rpx;
-  padding: 64rpx 40rpx 36rpx;
+  width: 100%;
+  max-width: 590rpx;
+  padding: 48rpx 34rpx 32rpx;
+  border-radius: 30rpx;
+  border: 1rpx solid rgba(255,255,255,0.76);
   background: #FFFFFF;
-  border-radius: 36rpx;
-  border: 1rpx solid rgba(79, 127, 255, 0.08);
-  box-shadow:
-    0 24rpx 80rpx rgba(23, 32, 51, 0.20),
-    0 2rpx 8rpx rgba(79, 127, 255, 0.06);
-  transform: translateY(72rpx) scale(0.94);
-  opacity: 0;
-  transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow: 0 30rpx 90rpx rgba(0,0,0,0.28);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
+  box-sizing: border-box;
+  transform: translateY(42rpx) scale(0.96);
+  opacity: 0;
+  transition: transform 0.26s cubic-bezier(0.22,1,0.36,1), opacity 0.22s ease;
 }
 
 .sc-visible .sc-card {
@@ -45,168 +46,142 @@
   opacity: 1;
 }
 
-/* ==================== Icon badge ==================== */
+.sc-top-accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 8rpx;
+  background: linear-gradient(90deg, #173524 0%, #AEEF00 72%, #D7FF68 100%);
+}
+
+.sc-card.scenario-unanswered .sc-top-accent {
+  background: linear-gradient(90deg, #173524 0%, #D28A1C 70%, #F0B84B 100%);
+}
 
 .sc-icon-circle {
-  width: 88rpx;
-  height: 88rpx;
+  width: 82rpx;
+  height: 82rpx;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 28rpx;
-  position: relative;
+  background: #173524;
+  box-shadow: 0 0 0 12rpx rgba(174,239,0,0.10), 0 12rpx 28rpx rgba(16,37,26,0.18);
 }
 
-.sc-icon-circle::after {
-  content: '';
-  position: absolute;
-  inset: -8rpx;
-  border-radius: 50%;
-  border: 1.5rpx solid;
-  opacity: 0;
-  animation: scRingIn 0.5s ease 0.3s forwards;
-}
-
-/* Unanswered — warm amber */
-.sc-icon-circle.scenario-unanswered {
-  background: linear-gradient(145deg, #FBBF24 0%, #F59E0B 100%);
-  box-shadow: 0 8rpx 24rpx rgba(245, 158, 11, 0.32);
-}
-.sc-icon-circle.scenario-unanswered::after {
-  border-color: rgba(245, 158, 11, 0.30);
-}
-
-/* All-done — calm blue */
-.sc-icon-circle.scenario-all-done {
-  background: linear-gradient(145deg, #6B9AFF 0%, #4F7FFF 100%);
-  box-shadow: 0 8rpx 24rpx rgba(79, 127, 255, 0.30);
-}
-.sc-icon-circle.scenario-all-done::after {
-  border-color: rgba(79, 127, 255, 0.28);
+.scenario-unanswered .sc-icon-circle {
+  background: #6B4714;
+  box-shadow: 0 0 0 12rpx rgba(210,138,28,0.12), 0 12rpx 28rpx rgba(107,71,20,0.18);
 }
 
 .sc-icon-line {
-  color: #FFFFFF;
-  font-size: 40rpx;
-  font-weight: 700;
+  width: 34rpx;
+  height: 34rpx;
+  color: #AEEF00;
 }
 
-/* ==================== Title / Message ==================== */
+.scenario-unanswered .sc-icon-line { color: #FFD27B; }
+
+.sc-eyebrow {
+  margin-top: 28rpx;
+  color: #6F990E;
+  font-size: 18rpx;
+  font-weight: 850;
+  letter-spacing: 3rpx;
+}
+
+.scenario-unanswered .sc-eyebrow { color: #A36A13; }
 
 .sc-title {
+  margin-top: 9rpx;
+  color: #17251B;
   font-size: 34rpx;
-  font-weight: 700;
-  color: #172033;
-  line-height: 1.4;
+  line-height: 1.35;
+  font-weight: 900;
   text-align: center;
-  margin-bottom: 16rpx;
 }
 
 .sc-msg {
-  font-size: 28rpx;
-  color: #5B6B8C;
-  line-height: 1.6;
+  margin-top: 12rpx;
+  color: #68746C;
+  font-size: 25rpx;
+  line-height: 1.65;
   text-align: center;
-  margin-bottom: 40rpx;
+  white-space: pre-line;
 }
 
-/* ==================== Buttons ==================== */
-
 .sc-actions {
-  display: flex;
-  gap: 20rpx;
   width: 100%;
+  margin-top: 34rpx;
+  display: flex;
+  gap: 14rpx;
 }
 
 .sc-btn {
-  flex: 1;
-  height: 88rpx;
-  border-radius: 20rpx;
-  font-size: 28rpx;
-  font-weight: 700;
+  height: 86rpx;
+  border-radius: 18rpx;
+  border: none;
+  padding: 0 20rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
+  font-size: 26rpx;
   line-height: 1;
-  transition: transform 0.15s ease, opacity 0.15s ease;
+  font-weight: 850;
+  box-sizing: border-box;
 }
 
 .sc-btn::after { border: none; }
 
-/* Cancel — subtle outline */
 .sc-btn-cancel {
-  background: transparent;
-  color: #5B6B8C;
-  border: 1.5rpx solid rgba(79, 127, 255, 0.15);
+  flex: 0.82;
+  color: #4E5D53;
+  background: #F5F7F3;
+  border: 1rpx solid #DDE4DD;
 }
 
-/* Confirm — gradient filled */
 .sc-btn-confirm {
-  background: linear-gradient(135deg, #4F7FFF 0%, #3B82F6 100%);
+  flex: 1.18;
+  justify-content: space-between;
+  color: #10251A;
+  background: linear-gradient(100deg, #AEEF00 0%, #C8F72B 100%);
+  box-shadow: 0 12rpx 26rpx rgba(123,174,0,0.18);
+}
+
+.scenario-unanswered .sc-btn-confirm {
   color: #FFFFFF;
-  box-shadow: 0 8rpx 24rpx rgba(79, 127, 255, 0.28);
+  background: linear-gradient(110deg, #173524 0%, #0E2218 100%);
+  box-shadow: 0 12rpx 26rpx rgba(16,37,26,0.18);
 }
 
-/* ==================== Decorative corners ==================== */
-
-.sc-corner {
-  position: absolute;
-  width: 24rpx;
-  height: 24rpx;
-  border-color: rgba(79, 127, 255, 0.12);
-  border-style: solid;
-}
-
-.sc-corner-tl {
-  top: 16rpx;
-  left: 16rpx;
-  border-width: 1.5rpx 0 0 1.5rpx;
-  border-radius: 4rpx 0 0 0;
-}
-
-.sc-corner-br {
-  bottom: 16rpx;
-  right: 16rpx;
-  border-width: 0 1.5rpx 1.5rpx 0;
-  border-radius: 0 0 4rpx 0;
-}
-
-/* Tiny dots at opposite corners for visual balance */
-.sc-corner-dot {
-  position: absolute;
-  width: 6rpx;
-  height: 6rpx;
+.sc-confirm-arrow {
+  width: 40rpx;
+  height: 40rpx;
   border-radius: 50%;
-  background: rgba(79, 127, 255, 0.10);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #10251A;
+  color: #FFFFFF;
+  font-family: Arial, sans-serif;
+  font-size: 29rpx;
+  flex-shrink: 0;
 }
 
-.sc-corner-dot-tl {
-  top: 22rpx;
-  left: 52rpx;
+.scenario-unanswered .sc-confirm-arrow {
+  background: #AEEF00;
+  color: #10251A;
 }
 
-.sc-corner-dot-br {
-  bottom: 22rpx;
-  right: 52rpx;
-}
-
-/* ==================== Animations ==================== */
-
-@keyframes scRingIn {
-  0%   { opacity: 0; transform: scale(0.85); }
-  100% { opacity: 1; transform: scale(1); }
-}
+.sc-confirm-arrow text { transform: translateY(-2rpx); }
+.sc-btn-cancel-pressed { background: #EBF0E9; transform: scale(0.985); }
+.sc-btn-confirm-pressed { opacity: 0.86; transform: scale(0.985); }
 
 @media (prefers-reduced-motion: reduce) {
   .sc-overlay,
-  .sc-card,
-  .sc-icon-circle::after {
+  .sc-card {
     transition: none !important;
-    animation: none !important;
   }
-  .sc-overlay { opacity: 0; }
-  .sc-visible { opacity: 1; }
-  .sc-card { transform: none; opacity: 1; }
+  .sc-card { transform: none; }
 }
