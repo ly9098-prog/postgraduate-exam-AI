@@ -529,7 +529,7 @@ async def soft_delete_formula_card(
 # ════════════════════════════════════════════════════════════
 
 _VALID_TRANSITIONS = {
-    "draft": ["restore"],
+    "draft": ["restore", "approve"],
     "pending_review": ["approve", "reject"],
     "rejected": ["restore"],
     "approved": ["publish"],
@@ -562,6 +562,9 @@ async def review_formula_card(
             detail=f"Cannot transition from {card.status} with action {data.action}. Allowed: {allowed}",
         )
 
+    # Save original status before any mutation
+    old_status = card.status
+
     # Map action to new status
     action_map = {
         "approve": "approved",
@@ -570,7 +573,11 @@ async def review_formula_card(
         "offline": "offline",
         "restore": "draft",
     }
-    new_status = action_map.get(data.action)
+    # From draft, "approve" means submit for review → pending_review
+    if card.status == "draft" and data.action == "approve":
+        new_status = "pending_review"
+    else:
+        new_status = action_map.get(data.action)
 
     if data.action == "reject" and not data.rejection_reason:
         raise HTTPException(status_code=422, detail="Rejection reason required")
@@ -600,7 +607,7 @@ async def review_formula_card(
         db, admin, request, f"formula.{data.action}",
         "formula_card", str(card.id),
         {
-            "from_status": card.status,
+            "from_status": old_status,
             "to_status": new_status,
             "rejection_reason": data.rejection_reason,
         },
@@ -635,8 +642,13 @@ async def batch_review_formulas(
                 "reject": "rejected",
                 "publish": "published",
                 "offline": "offline",
+                "restore": "draft",
             }
-            new_status = action_map.get(data.action)
+            # From draft, "approve" means submit for review → pending_review
+            if card.status == "draft" and data.action == "approve":
+                new_status = "pending_review"
+            else:
+                new_status = action_map.get(data.action)
 
             if data.action == "reject" and not data.rejection_reason:
                 results.append({"id": card_id, "status": "missing_reason"})
