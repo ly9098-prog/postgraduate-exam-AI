@@ -1159,7 +1159,7 @@ export default function ImportReviewPage() {
                 </button>
               </div>
               {batchDropdownOpen ? (
-                <div className="scholar-dropdown absolute left-0 top-full z-20 mt-1 min-w-[380px] max-w-[420px] max-h-60">
+                <div className="scholar-dropdown absolute left-0 top-full z-20 mt-1 min-w-[300px] max-w-[360px] max-h-60">
                   {batchesQuery.isLoading ? (
                     <div className="px-4 py-5 text-center text-xs text-[var(--color-text-hint)]">加载中…</div>
                   ) : batchesQuery.data?.items?.length ? (
@@ -1169,19 +1169,18 @@ export default function ImportReviewPage() {
                       <button
                         key={b.batch_id}
                         type="button"
-                        className={`scholar-dropdown-item w-full ${
-                          (filters.batch_id || batchIdParam) === b.batch_id ? "active" : ""
+                        className={`flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-xs transition cursor-pointer hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] ${
+                          (filters.batch_id || batchIdParam) === b.batch_id ? "bg-[var(--color-primary-light)]/20 font-semibold text-[var(--color-primary-dark)]" : "text-[var(--color-text-primary)]"
                         }`}
                         onMouseDown={(e) => { e.preventDefault(); updateFilter("batch_id", b.batch_id); setBatchDropdownOpen(false); }}
                       >
                         {(filters.batch_id || batchIdParam) === b.batch_id ? (
-                          <Check className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" />
+                          <Check className="h-3 w-3 shrink-0 text-[var(--color-primary)]" />
                         ) : (
-                          <span className="inline-block w-3.5 shrink-0" />
+                          <span className="inline-block w-3 shrink-0" />
                         )}
                         <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px]" title={b.batch_id}>{b.batch_id}</span>
-                        <span className="tag-chip shrink-0 bg-[var(--color-success-light)] text-[var(--color-success)]">{b.pending_count}待审</span>
-                        <span className="shrink-0 text-[10px] text-[var(--color-text-hint)]">{b.total_count}题</span>
+                        <span className="tag-chip shrink-0 bg-[var(--color-success-light)] text-[var(--color-success)]">{b.pending_count}</span>
                       </button>
                     ))
                   ) : (
