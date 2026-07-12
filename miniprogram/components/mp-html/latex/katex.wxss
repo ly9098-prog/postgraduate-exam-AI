@@ -37,9 +37,6 @@
   line-height: 1.2;
   text-indent: 0;
   text-rendering: auto;
-}
-.katex view,
-.katex text {
   -ms-high-contrast-adjust: none !important;
   border-color: currentColor;
 }

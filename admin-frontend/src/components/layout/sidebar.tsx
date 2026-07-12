@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
-import { adminRoutes } from "@/lib/routes";
+import { adminRoutes, getActiveAdminRoute } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 
 export function Sidebar() {
@@ -28,7 +28,7 @@ export function Sidebar() {
       <nav className="space-y-2">
         {visibleRoutes.map((route) => {
           const Icon = route.icon;
-          const active = pathname === route.href || pathname.startsWith(`${route.href}/`);
+          const active = getActiveAdminRoute(pathname, adminRoutes) === route;
           return (
             <Link
               key={route.href}
