@@ -1,8 +1,9 @@
 {
+  "navigationStyle": "custom",
   "navigationBarTitleText": "练习结果",
-  "backgroundColor": "#EEF5FF",
-  "backgroundColorTop": "#F8FAFF",
-  "backgroundColorBottom": "#EEF5FF",
+  "backgroundColor": "#F3F4F1",
+  "backgroundColorTop": "#10251A",
+  "backgroundColorBottom": "#F3F4F1",
   "usingComponents": {
     "animated-view": "/components/AnimatedView/AnimatedView",
     "mp-html": "/components/mp-html/index"
