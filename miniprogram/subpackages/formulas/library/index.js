@@ -30,12 +30,17 @@ Page({
     page: 1,
     pageSize: 20,
     total: 0,
-    loading: false,
     hasMore: true,
 
     // UI state
     showChapterPicker: false,
     showTagPicker: false,
+
+    // Loading states
+    initialLoading: true,
+    loadingMore: false,
+    loadError: false,
+    loadErrorMessage: '',
   },
 
   onLoad() {
@@ -46,15 +51,17 @@ Page({
 
   onPullDownRefresh() {
     this.setData({ page: 1, formulas: [], hasMore: true })
-    this.loadFormulas(true).then(() => wx.stopPullDownRefresh())
+    this.loadFormulas(true)
+      .then(() => wx.stopPullDownRefresh())
+      .catch(() => wx.stopPullDownRefresh())
   },
 
   // ── Catalog ──
 
   async loadCatalog() {
     try {
-      const res = await api.request('GET', '/formulas/catalog')
-      const catalog = res.data?.items || []
+      const data = await api.request('GET', '/formulas/catalog')
+      const catalog = data?.items || []
       this.setData({ catalog })
       this.updateChapters()
     } catch (e) {
@@ -64,8 +71,8 @@ Page({
 
   async loadTags() {
     try {
-      const res = await api.request('GET', '/formulas/tags')
-      this.setData({ tags: res.data?.items || [] })
+      const data = await api.request('GET', '/formulas/tags')
+      this.setData({ tags: data?.items || [] })
     } catch (e) {
       console.error('Failed to load formula tags', e)
     }
@@ -187,10 +194,11 @@ Page({
   // ── Load Formulas ──
 
   async loadFormulas(replace = false) {
-    const { loading, page, pageSize, activeSubject, activeChapterId,
+    const { loading, loadingMore, initialLoading, page, pageSize, activeSubject, activeChapterId,
             activeTags, searchValue, onlyFavorites, hasMore } = this.data
-    if (loading || !hasMore) return
-    this.setData({ loading: true })
+    if (loading || loadingMore || (initialLoading && !replace) || !hasMore) return
+    const loadingFlag = replace ? 'initialLoading' : 'loadingMore'
+    this.setData({ [loadingFlag]: true, loadError: false })
 
     try {
       const params = {
@@ -213,20 +221,25 @@ Page({
         ? '/formulas/favorites/list'
         : '/formulas'
 
-      const res = await api.request('GET', url, params)
-      const data = res.data || {}
-      const items = data.items || []
+      const data = await api.request('GET', url, params)
+      const items = data?.items || []
 
       this.setData({
         formulas: replace ? items : [...this.data.formulas, ...items],
-        total: data.total || 0,
+        total: data?.total || 0,
         page: page + 1,
         hasMore: items.length === pageSize,
-        loading: false,
+        initialLoading: false,
+        loadingMore: false,
       })
     } catch (e) {
       console.error('Failed to load formulas', e)
-      this.setData({ loading: false })
+      this.setData({
+        initialLoading: false,
+        loadingMore: false,
+        loadError: true,
+        loadErrorMessage: e.message || '加载失败',
+      })
     }
   },
 
@@ -234,7 +247,14 @@ Page({
     this.loadFormulas()
   },
 
+  reload() {
+    this.setData({ page: 1, formulas: [], hasMore: true })
+    this.loadFormulas(true)
+  },
+
   // ── Navigate ──
+
+  noop() {},
 
   goToReader(e) {
     const formulaId = e.currentTarget.dataset.id

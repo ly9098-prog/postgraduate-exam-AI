@@ -22,6 +22,26 @@ export type AdminRoute = {
   icon: ComponentType<{ className?: string }>;
 };
 
+/**
+ * Determine which admin route is active based on the current pathname.
+ *
+ * Rules:
+ * 1. Path must match exactly, or be a sub-path starting with `${href}/`
+ * 2. Among candidates, pick the one with the longest href (most specific)
+ * 3. This ensures /formulas/categories only matches "公式分类", not "公式库"
+ */
+export function getActiveAdminRoute(
+  pathname: string,
+  routes: AdminRoute[],
+): AdminRoute | null {
+  const candidates = routes.filter((route) => {
+    if (route.href === pathname) return true;
+    return pathname.startsWith(route.href + "/");
+  });
+  if (candidates.length === 0) return null;
+  return candidates.reduce((a, b) => (a.href.length >= b.href.length ? a : b));
+}
+
 export const adminRoutes: AdminRoute[] = [
   { href: "/dashboard", label: "总览", description: "指标与趋势", permission: "dashboard:read", icon: Gauge },
   { href: "/app-users", label: "小程序用户", description: "封禁与资料", permission: "app-user:read", icon: Users },
