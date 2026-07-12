@@ -4,6 +4,8 @@ const { createTraceId, debugLog, saveDebugSnapshot, shouldDebugQuestion } = requ
 const { buildRenderModel, setRenderGuardPage, resetRenderGuard } = require('../../utils/stem-render')
 const adapter = require('../../utils/question-runner-adapter')
 
+const PRACTICE_RECENT_SUBJECTS_KEY = 'practice_recent_subjects_v1'
+
 Page({
   _pageAlive: false,
   _practiceSession: {},
@@ -15,8 +17,15 @@ Page({
     selectedSubjectName: '',
     expandedSubjectId: null,
     selectedMode: 'random',
-    selectedModeLabel: '随机',
+    selectedModeLabel: '随机挑战',
     count: 5,
+    countDisplay: '05',
+    estimatedMinutes: 10,
+    settingsExpanded: false,
+    subjectSheetVisible: false,
+    recentSubjects: [],
+    statusBarHeight: 20,
+    navBarHeight: 44,
     started: false,
     loading: false,
     submitting: false,
@@ -49,13 +58,6 @@ Page({
     // 公式图片化
     enableMathImage: false,
 
-    // Perfect celebration
-    showPerfectCelebration: false,
-    perfectCelebrationType: 'practice',
-    perfectCelebrationTitle: '全对完成',
-    perfectCelebrationDetail: '',
-    perfectCelebrationMotto: '这组掌握很稳，继续保持',
-    perfectCelebrationRewardText: '',
   },
 
   onLoad() {
@@ -64,6 +66,8 @@ Page({
     this._pendingResultUrl = ''
     setRenderGuardPage('practice')
     resetRenderGuard()
+    this._initCustomNavigation()
+    this._updateComputedFields()
   },
 
   onUnload() {
@@ -195,25 +199,174 @@ Page({
         selectedSubjectId: null,
         selectedSubjectName: '',
         expandedSubjectId: null,
+        recentSubjects: [],
       })
       return
     }
-    const first = subjectTree[0]
-    const children = Array.isArray(first.children) ? first.children : []
-    if (children.length > 0) {
-      const firstChild = children[0]
-      this.setData({
-        expandedSubjectId: first.subject_id,
-        selectedSubjectId: firstChild.subject_id,
-        selectedSubjectName: firstChild.display_name,
-      })
-    } else {
-      this.setData({
-        expandedSubjectId: first.subject_id,
-        selectedSubjectId: first.subject_id,
-        selectedSubjectName: first.display_name,
-      })
+
+    const availableSubjects = this._flattenSelectableSubjects(subjectTree)
+    let stored = []
+    try {
+      const value = wx.getStorageSync(PRACTICE_RECENT_SUBJECTS_KEY)
+      stored = Array.isArray(value) ? value : []
+    } catch (e) {
+      stored = []
     }
+
+    const availableMap = {}
+    availableSubjects.forEach((item) => { availableMap[item.subject_id] = item })
+    const validStored = stored
+      .map((item) => availableMap[Number(item.subject_id)])
+      .filter(Boolean)
+
+    const fallback = availableSubjects[0]
+    const selected = validStored[0] || fallback
+    if (!selected) return
+
+    const recentBase = validStored.length > 0
+      ? validStored
+      : [selected]
+    const recentSubjects = this._decorateRecentSubjects(recentBase.slice(0, 4))
+
+    this.setData({
+      expandedSubjectId: selected.parent_subject_id || selected.subject_id,
+      selectedSubjectId: selected.subject_id,
+      selectedSubjectName: selected.display_name,
+      recentSubjects,
+    })
+  },
+
+  _initCustomNavigation() {
+    try {
+      const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+      const statusBarHeight = Number(windowInfo.statusBarHeight || 20)
+      let navBarHeight = 44
+      if (wx.getMenuButtonBoundingClientRect) {
+        const capsule = wx.getMenuButtonBoundingClientRect()
+        if (capsule && capsule.height && capsule.top) {
+          navBarHeight = (capsule.top - statusBarHeight) * 2 + capsule.height
+        }
+      }
+      this.setData({
+        statusBarHeight: Math.max(20, statusBarHeight),
+        navBarHeight: Math.max(40, navBarHeight),
+      })
+    } catch (e) {
+      this.setData({ statusBarHeight: 20, navBarHeight: 44 })
+    }
+  },
+
+  _flattenSelectableSubjects(subjectTree) {
+    const result = []
+    ;(subjectTree || []).forEach((parent) => {
+      const children = Array.isArray(parent.children) ? parent.children : []
+      if (children.length > 0) {
+        children.forEach((child) => {
+          result.push({
+            subject_id: Number(child.subject_id),
+            display_name: child.display_name,
+            parent_subject_id: Number(parent.subject_id),
+          })
+        })
+      } else {
+        result.push({
+          subject_id: Number(parent.subject_id),
+          display_name: parent.display_name,
+          parent_subject_id: Number(parent.subject_id),
+        })
+      }
+    })
+    return result.filter((item) => item.subject_id && item.display_name)
+  },
+
+  _subjectMark(name) {
+    const text = String(name || '')
+    if (/数据|计算机|程序|代码|网络|操作系统/.test(text)) return '</>'
+    if (/数学|代数|高数|概率|统计/.test(text)) return 'Σ'
+    if (/英语|外语/.test(text)) return 'A'
+    if (/政治|思政/.test(text)) return '政'
+    return text.slice(0, 1) || '·'
+  },
+
+  _decorateRecentSubjects(subjects) {
+    return (subjects || []).map((item) => ({
+      subject_id: Number(item.subject_id),
+      display_name: item.display_name,
+      parent_subject_id: Number(item.parent_subject_id || item.subject_id),
+      mark: this._subjectMark(item.display_name),
+    }))
+  },
+
+  _rememberSubject(subjectId, subjectName) {
+    const id = Number(subjectId)
+    if (!id || !subjectName) return
+    const parentId = this._findParentSubjectId(id)
+    const base = [{
+      subject_id: id,
+      display_name: subjectName,
+      parent_subject_id: parentId || id,
+    }].concat((this.data.recentSubjects || []).filter((item) => Number(item.subject_id) !== id))
+    const recentSubjects = this._decorateRecentSubjects(base.slice(0, 4))
+    this.setData({ recentSubjects })
+    try {
+      wx.setStorageSync(PRACTICE_RECENT_SUBJECTS_KEY, recentSubjects.map((item) => ({
+        subject_id: item.subject_id,
+        display_name: item.display_name,
+        parent_subject_id: item.parent_subject_id,
+      })))
+    } catch (e) {
+      console.warn('保存最近使用科目失败', e)
+    }
+  },
+
+  _findParentSubjectId(subjectId) {
+    const id = Number(subjectId)
+    const tree = this.data.subjectTree || []
+    for (let i = 0; i < tree.length; i += 1) {
+      const parent = tree[i]
+      if (Number(parent.subject_id) === id) return Number(parent.subject_id)
+      const children = Array.isArray(parent.children) ? parent.children : []
+      if (children.some((child) => Number(child.subject_id) === id)) {
+        return Number(parent.subject_id)
+      }
+    }
+    return null
+  },
+
+  toggleSettings() {
+    this.setData({ settingsExpanded: !this.data.settingsExpanded })
+  },
+
+  openSubjectSheet() {
+    this.setData({ subjectSheetVisible: true })
+  },
+
+  closeSubjectSheet() {
+    this.setData({ subjectSheetVisible: false })
+  },
+
+  chooseRecentSubject(e) {
+    const ds = e.currentTarget.dataset || {}
+    const subjectId = Number(ds.subjectId)
+    const subjectName = ds.subjectName
+    if (!subjectId || !subjectName) return
+    const parentId = this._findParentSubjectId(subjectId)
+    this.setData({
+      selectedSubjectId: subjectId,
+      selectedSubjectName: subjectName,
+      expandedSubjectId: parentId || subjectId,
+      subjectSheetVisible: false,
+    })
+    this._rememberSubject(subjectId, subjectName)
+  },
+
+  goBack() {
+    const pages = getCurrentPages()
+    if (pages && pages.length > 1) {
+      wx.navigateBack({ delta: 1 })
+      return
+    }
+    wx.reLaunch({ url: '/pages/home/home' })
   },
 
   /**
@@ -237,12 +390,17 @@ Page({
       if (
         this.data.selectedSubjectId === subjectId &&
         this.data.expandedSubjectId === subjectId
-      ) return
+      ) {
+        this.setData({ subjectSheetVisible: false })
+        return
+      }
       this.setData({
         expandedSubjectId: subjectId,
         selectedSubjectId: subjectId,
         selectedSubjectName: subjectName,
+        subjectSheetVisible: false,
       })
+      this._rememberSubject(subjectId, subjectName)
     }
   },
 
@@ -255,12 +413,17 @@ Page({
     const subjectId = Number(ds.subjectId)
     const subjectName = ds.subjectName
     if (!subjectId) return
-    // 已是当前选中项则跳过，避免无意义的 setData
-    if (this.data.selectedSubjectId === subjectId) return
+    // 已是当前选中项时直接关闭弹层
+    if (this.data.selectedSubjectId === subjectId) {
+      this.setData({ subjectSheetVisible: false })
+      return
+    }
     this.setData({
       selectedSubjectId: subjectId,
       selectedSubjectName: subjectName,
+      subjectSheetVisible: false,
     })
+    this._rememberSubject(subjectId, subjectName)
   },
 
   chooseMode(e) {
@@ -270,10 +433,17 @@ Page({
   },
 
   setCount(e) {
-    this.setData({ count: Number(e.currentTarget.dataset.count) })
+    this.setData({ count: Number(e.currentTarget.dataset.count) }, () => {
+      this._updateComputedFields()
+    })
   },
 
   async startPractice() {
+    if (!this.data.selectedSubjectId) {
+      this.openSubjectSheet()
+      return
+    }
+    this._rememberSubject(this.data.selectedSubjectId, this.data.selectedSubjectName)
     const traceId = createTraceId()
     this._resetSession()
     this._practiceSession.traceId = traceId
@@ -475,6 +645,41 @@ Page({
     this._showQuestion(e.detail.index)
   },
 
+  requestExitPractice() {
+    if (this.data.submitting) return
+    wx.showModal({
+      title: '退出本组练习？',
+      content: '退出后，本组练习不会计入结果。',
+      confirmText: '退出练习',
+      cancelText: '继续作答',
+      confirmColor: '#173323',
+      success: (res) => {
+        if (!res.confirm) return
+        this._clearTimer()
+        if (this._feedbackTimer) {
+          clearTimeout(this._feedbackTimer)
+          this._feedbackTimer = null
+        }
+        this._resetSession()
+        this._pendingResultUrl = ''
+        this.setData({
+          started: false,
+          loading: false,
+          submitting: false,
+          submitted: false,
+          questions: [],
+          currentQuestion: null,
+          currentIndex: 0,
+          totalQuestions: 0,
+          answeredCount: 0,
+          progressPercent: 0,
+          elapsedText: '00:00',
+          feedbackVisible: false,
+        })
+      },
+    })
+  },
+
   selectOption(e) {
     if (this.data.submitted) return
     const opt = e.detail.option
@@ -534,7 +739,6 @@ Page({
     this.setData({ questions, answeredCount, currentQuestion: cq }, () => {
       this._updateComputedFields()
     })
-    this._showAnswerFeedback(q, newAnswer)
   },
 
   selectBlankOption(e) {
@@ -590,13 +794,12 @@ Page({
     this.setData({ questions, answeredCount, currentQuestion }, () => {
       this._updateComputedFields()
     })
-    this._showAnswerFeedback(q, newAnswer)
   },
 
   /* ==================== computed fields ==================== */
 
   _modeLabel: function(m) {
-    var map = { random: '随机', sequential: '顺序', smart: '智能推荐' }
+    var map = { random: '随机挑战', sequential: '顺序推进', smart: '智能推荐' }
     return map[m] || m || ''
   },
 
@@ -604,6 +807,11 @@ Page({
     var data = {}
     // selectedModeLabel
     data.selectedModeLabel = this._modeLabel(this.data.selectedMode)
+    // setup display fields
+    var count = Number(this.data.count || 5)
+    var minutesMap = { 5: 10, 10: 20, 20: 40 }
+    data.countDisplay = count < 10 ? ('0' + count) : String(count)
+    data.estimatedMinutes = minutesMap[count] || Math.max(5, count * 2)
     // progressPercent
     var total = this.data.totalQuestions || 0
     var answered = this.data.answeredCount || 0
@@ -799,18 +1007,18 @@ Page({
     if (unanswered > 0) {
       confirmed = await this._showSubmitConfirm({
         scenario: 'unanswered',
-        title: '还有题目未作答',
-        message: `还有 ${unanswered} 道题未作答，确定提交吗？`,
-        confirmText: '确定提交',
-        cancelText: '继续作答',
+        title: `还有 ${unanswered} 题未作答`,
+        message: '现在交卷会将未答题记为跳过。',
+        confirmText: '仍然交卷',
+        cancelText: '继续答题',
       })
     } else if (skipConfirm !== true) {
       confirmed = await this._showSubmitConfirm({
         scenario: 'all-done',
-        title: '确认交卷',
-        message: `共 ${total} 题，已全部作答。确认提交并复盘？`,
-        confirmText: '确定提交',
-        cancelText: '取消',
+        title: '确认交卷？',
+        message: `已完成 ${answeredCount} / ${total} 题`,
+        confirmText: '确认交卷',
+        cancelText: '继续检查',
       })
     } else {
       confirmed = true
@@ -861,6 +1069,19 @@ Page({
     storedResults = (submitResult.results || []).map(function(rr) {
       return Object.assign({}, rr, {
         user_answer: answerMap[String(rr.question_id)] || '',
+      })
+    })
+    // 将未作答题也写入本地结果视图，结果页才能优先展示“错题 + 跳过题”。
+    var submittedResultMap = {}
+    storedResults.forEach(function(rr) { submittedResultMap[String(rr.question_id)] = true })
+    questions.forEach(function(q) {
+      if (!q || !q.id || submittedResultMap[String(q.id)] || answeredFlags[String(q.id)]) return
+      storedResults.push({
+        question_id: q.id,
+        user_answer: '',
+        correct_answer: q.correct_answer || q.answer || '',
+        is_correct: false,
+        _local_skipped: true,
       })
     })
     // 只保存结果页必需的最小数据，不缓存整套题目对象
@@ -918,31 +1139,9 @@ Page({
       `&_ck=${cacheKey}`,
     ].join('')
 
-    // 全对时展示庆祝动画再跳转
-    const isPerfect = submitResult.total_wrong === 0 && submitResult.total_correct > 0 && answeredCount === total
+    // 常规完成直接进入结果页；全屏庆祝仅由结果页在真实升级/解锁时触发。
     this.setData({ submitting: false })
-    if (isPerfect) {
-      this._pendingResultUrl = resultUrl
-      this.setData({
-        showPerfectCelebration: true,
-        perfectCelebrationDetail: `答对 ${submitResult.total_correct}/${total} 题`,
-        perfectCelebrationMotto: '这组掌握很稳，继续保持',
-        perfectCelebrationRewardText: `专注星光 +${Math.max(1, submitResult.total_correct)}`,
-      })
-    } else {
-      wx.redirectTo({ url: resultUrl })
-    }
+    wx.redirectTo({ url: resultUrl })
   },
 
-  goPracticeResultAfterCelebration() {
-    const url = this._pendingResultUrl
-    this._pendingResultUrl = ''
-    this.setData({ showPerfectCelebration: false, submitting: false })
-    if (url) wx.redirectTo({ url })
-  },
-
-  goPomodoro() {
-    const subjectId = this.data.selectedSubjectId || ''
-    wx.navigateTo({ url: `/pages/pomodoro/pomodoro?subject_id=${subjectId}` })
-  },
 })

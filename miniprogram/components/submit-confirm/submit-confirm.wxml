@@ -1,24 +1,21 @@
-<view class="sc-overlay {{visible ? 'sc-visible' : ''}}" catchtap="onCancel">
-  <view class="sc-card" catchtap="noop">
-    <!-- Luminous icon badge -->
-    <view class="sc-icon-circle scenario-{{scenario}}">
+<view class="sc-overlay {{visible ? 'sc-visible' : ''}}" catchtap="onCancel" catchtouchmove="noop">
+  <view class="sc-card scenario-{{scenario}}" catchtap="noop">
+    <view class="sc-top-accent"></view>
+
+    <view class="sc-icon-circle">
       <text class="sc-icon-line line-icon {{scenario === 'unanswered' ? 'icon-exclamation' : 'icon-check'}}"></text>
     </view>
 
-    <!-- Title + message -->
+    <text class="sc-eyebrow">{{scenario === 'unanswered' ? 'UNFINISHED' : 'SUBMIT PAPER'}}</text>
     <text class="sc-title">{{title}}</text>
     <text class="sc-msg">{{message}}</text>
 
-    <!-- Button row -->
     <view class="sc-actions">
-      <button class="sc-btn sc-btn-cancel" bindtap="onCancel">{{cancelText}}</button>
-      <button class="sc-btn sc-btn-confirm" bindtap="onConfirm">{{confirmText}}</button>
+      <button class="sc-btn sc-btn-cancel" hover-class="sc-btn-cancel-pressed" bindtap="onCancel">{{cancelText}}</button>
+      <button class="sc-btn sc-btn-confirm" hover-class="sc-btn-confirm-pressed" bindtap="onConfirm">
+        <text>{{confirmText}}</text>
+        <view class="sc-confirm-arrow"><text>›</text></view>
+      </button>
     </view>
-
-    <!-- Decorative corner flourishes -->
-    <view class="sc-corner sc-corner-tl"></view>
-    <view class="sc-corner sc-corner-br"></view>
-    <view class="sc-corner-dot sc-corner-dot-tl"></view>
-    <view class="sc-corner-dot sc-corner-dot-br"></view>
   </view>
 </view>

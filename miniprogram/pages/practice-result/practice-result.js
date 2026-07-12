@@ -88,11 +88,11 @@ function buildDetailRichText(value) {
 
 Page({
   data: {
-    detailHtmlContainerStyle: 'max-width:100%;overflow-x:hidden;word-break:break-word;overflow-wrap:anywhere;white-space:normal;line-height:1.65;color:#18233A;',
+    detailHtmlContainerStyle: 'max-width:100%;overflow-x:hidden;word-break:break-word;overflow-wrap:anywhere;white-space:normal;line-height:1.65;color:#18231C;',
     detailHtmlTagStyle: {
-      p: 'color:#18233A;max-width:100%;white-space:normal;word-break:break-word;overflow-wrap:anywhere;line-height:1.65;margin:0;',
-      div: 'color:#18233A;max-width:100%;white-space:normal;word-break:break-word;overflow-wrap:anywhere;line-height:1.65;',
-      span: 'color:#18233A;max-width:100%;white-space:normal;word-break:break-word;overflow-wrap:anywhere;',
+      p: 'color:#18231C;max-width:100%;white-space:normal;word-break:break-word;overflow-wrap:anywhere;line-height:1.65;margin:0;',
+      div: 'color:#18231C;max-width:100%;white-space:normal;word-break:break-word;overflow-wrap:anywhere;line-height:1.65;',
+      span: 'color:#18231C;max-width:100%;white-space:normal;word-break:break-word;overflow-wrap:anywhere;',
       table: 'max-width:100%;width:100%;table-layout:fixed;word-break:break-word;',
       td: 'word-break:break-word;overflow-wrap:anywhere;white-space:normal;',
       th: 'word-break:break-word;overflow-wrap:anywhere;white-space:normal;',
@@ -101,7 +101,9 @@ Page({
       img: 'max-width:100%;height:auto;',
     },
 
-    /* 核心数据 */
+    statusBarHeight: 20,
+    navBarHeight: 44,
+
     correct: 0,
     wrong: 0,
     skipped: 0,
@@ -112,38 +114,45 @@ Page({
     subjectDisplay: '练习',
     duration: 0,
     durationText: '',
+    accuracyRingStyle: '',
 
-    /* 答题详情 */
     results: [],
-    showDetail: true,
+    compactResults: [],
+    reviewResults: [],
+    correctResults: [],
+    displayResults: [],
+    showAllResults: false,
 
-    /* 视图模型 — 由 _buildResultViewModel 生成 */
     resultLevelClass: '',
     resultTitle: '',
     resultDesc: '',
+    statusText: '',
+    statusDesc: '',
     nextStepType: '',
     nextStepTitle: '',
     nextStepDesc: '',
     nextStepTag: '',
-    shouldShowCelebration: false,
 
-    /* 成长数据 */
     growthTitle: '',
     growthDesc: '',
     growthLevel: '',
     growthExpText: '',
     growthLevelPct: 0,
 
-    /* 庆祝动效 */
     showCelebration: false,
+    shouldShowCelebration: false,
     celebrationTitle: '',
     celebrationDetail: '',
     celebrationMotto: '',
     celebrationRewardText: '',
-    celebrationType: 'steady',
+    celebrationType: 'practice',
+
+    resolvingWrong: false,
   },
 
   async onLoad(options) {
+    this._initCustomNavigation()
+
     const correct = parseInt(options.correct, 10) || 0
     const wrong = parseInt(options.wrong, 10) || 0
     const total = parseInt(options.total, 10) || 0
@@ -152,12 +161,10 @@ Page({
     const passRate = total > 0 ? Math.round(correct / total * 100) : 0
     const answeredCount = correct + wrong
 
-    // 从 storage 读取详细结果，验证缓存匹配
     let results = []
     let stored = null
     try {
       stored = wx.getStorageSync('lastPracticeResult')
-      // 验证缓存键和用户 ID：防止跨练习/跨账号读取旧结果
       if (stored) {
         var storedUserId = stored._userId || ''
         var currentUserId = ''
@@ -167,15 +174,17 @@ Page({
         } catch (_) {}
         var cacheMatch = cacheKey && stored._cacheKey === cacheKey
         var userMatch = storedUserId && currentUserId && storedUserId === currentUserId
-        if (!cacheMatch || !userMatch) {
-          stored = null
-        }
+        if (!cacheMatch || !userMatch) stored = null
       }
+
       if (stored && stored.results) {
         const questions = stored.questions || []
         const questionById = {}
-        questions.forEach(function(q) { if (q && q.id) questionById[String(q.id)] = q })
-        results = stored.results.map(function(r) {
+        questions.forEach(function (q) {
+          if (q && q.id) questionById[String(q.id)] = q
+        })
+
+        results = stored.results.map(function (r, index) {
           const q = questionById[String(r.question_id)] || {}
           const stemSource = cleanStemText(
             (q.content && (q.content.stem || q.content.text || q.content.title || q.content.question)) ||
@@ -184,13 +193,14 @@ Page({
           const stemRaw = dedupeRepeatedResultStem(stemSource)
           const isCorrect = r.is_correct === true
           const isSkipped = !isCorrect && (!r.user_answer || r.user_answer === '')
-
           const stemRich = buildDetailRichText(stemRaw)
           const userAnswerRich = buildDetailRichText(r.user_answer || '')
           const correctAnswerRich = buildDetailRichText(r.correct_answer || '')
+          const wrongRecordId = r.wrong_question_id || r.wrong_id || r.wrong_question_record_id || r.error_record_id || ''
 
           return {
             ...r,
+            _displayIndex: index + 1,
             _cls: isSkipped ? 'skipped' : (isCorrect ? 'correct' : 'wrong'),
             _statusText: isSkipped ? '跳过' : (isCorrect ? '正确' : '错误'),
             _stemRaw: stemRaw,
@@ -203,34 +213,28 @@ Page({
             _correctAnswerRich: correctAnswerRich,
             _isWrong: !isCorrect,
             _isSkipped: isSkipped,
+            _isCorrect: isCorrect,
+            _wrongRecordId: wrongRecordId,
           }
         })
       }
     } catch (_) {}
 
     const skipped = (stored && stored.skipped) || 0
-
-    // Build compactResults: wrong > skipped > correct, keep original _displayIndex
-    const compactResults = []
     const wrongItems = []
     const skippedItems = []
     const correctItems = []
-    results.forEach(function(item, index) {
-      var compact = Object.assign({}, item, { _displayIndex: index + 1 })
-      if (compact._isSkipped) {
-        skippedItems.push(compact)
-      } else if (compact._isWrong) {
-        wrongItems.push(compact)
-      } else {
-        correctItems.push(compact)
-      }
+    results.forEach(function (item) {
+      if (item._isSkipped) skippedItems.push(item)
+      else if (item._isWrong) wrongItems.push(item)
+      else correctItems.push(item)
     })
-    compactResults.push.apply(compactResults, wrongItems)
-    compactResults.push.apply(compactResults, skippedItems)
-    compactResults.push.apply(compactResults, correctItems)
+    const reviewResults = wrongItems.concat(skippedItems)
+    const compactResults = reviewResults.concat(correctItems)
 
     const vm = this._buildResultViewModel(passRate, correct, wrong, total, skipped)
-    const celebrationCopy = vm.shouldShowCelebration ? this._celebrationCopy(passRate, correct, wrong, total, answeredCount) : {}
+    const endDeg = Math.max(0, Math.min(360, Math.round(passRate * 3.6)))
+    const accuracyRingStyle = `background: conic-gradient(from -90deg, #AEEF00 0deg ${endDeg}deg, rgba(255,255,255,0.13) ${endDeg}deg 360deg);`
 
     this.setData({
       correct,
@@ -241,21 +245,40 @@ Page({
       duration,
       durationText: this._fmt(duration),
       passRate,
+      accuracyRingStyle,
       subject: options.subject_id || '',
       subjectDisplay: decodeURIComponent(options.subject_name || '') || '练习',
       results,
       compactResults,
+      reviewResults,
+      correctResults: correctItems,
+      displayResults: reviewResults,
+      showAllResults: false,
       ...vm,
-      ...celebrationCopy,
     })
 
-    if (this.data.shouldShowCelebration) {
-      this._showCelebration()
-    }
     this._loadGrowth()
   },
 
-  /* ── 视图模型 ── */
+  _initCustomNavigation() {
+    try {
+      const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+      const statusBarHeight = Number(info.statusBarHeight || 20)
+      let navBarHeight = 44
+      try {
+        const capsule = wx.getMenuButtonBoundingClientRect()
+        if (capsule && capsule.height && capsule.top) {
+          navBarHeight = (capsule.top - statusBarHeight) * 2 + capsule.height
+        }
+      } catch (_) {}
+      this.setData({
+        statusBarHeight: Math.max(20, statusBarHeight),
+        navBarHeight: Math.max(40, navBarHeight),
+      })
+    } catch (_) {
+      this.setData({ statusBarHeight: 20, navBarHeight: 44 })
+    }
+  },
 
   _buildResultViewModel(passRate, correct, wrong, total, skipped) {
     const vm = {
@@ -268,7 +291,6 @@ Page({
       nextStepTitle: '',
       nextStepDesc: '',
       nextStepTag: '',
-      shouldShowCelebration: false,
     }
 
     if (total <= 0) {
@@ -279,139 +301,101 @@ Page({
       vm.statusDesc = '返回练习后再试一次'
       vm.nextStepType = 'start'
       vm.nextStepTitle = '重新开始练习'
-      vm.nextStepDesc = '完成一组练习后，这里会生成正确率和答题情况'
+      vm.nextStepDesc = '完成一组练习后，这里会生成成绩报告与复盘建议'
       vm.nextStepTag = '未开始'
-      vm.shouldShowCelebration = false
       return vm
-    }
-
-    // 庆祝动效触发条件：高正确率 或 全小测验满分
-    vm.shouldShowCelebration = passRate >= 90 || (total <= 5 && passRate === 100)
-    if (wrong > 0 && passRate < 90) {
-      vm.shouldShowCelebration = false
     }
 
     if (passRate >= 90) {
       vm.resultLevelClass = 'excellent'
-      vm.resultTitle = '练习完成'
-      vm.resultDesc = '这组正确率很高，整体掌握不错'
+      vm.resultTitle = '本组练习完成'
+      vm.resultDesc = '整体掌握稳定，可以继续保持当前节奏'
       vm.statusText = '表现很稳'
-      vm.statusDesc = '可以继续保持节奏'
+      vm.statusDesc = wrong > 0 ? '少量错题值得及时处理' : '本组没有明显薄弱点'
       vm.nextStepType = wrong > 0 ? 'review' : 'continue'
-      vm.nextStepTitle = wrong > 0 ? '先复盘少量错题' : '可以继续挑战'
+      vm.nextStepTitle = wrong > 0 ? '先处理少量错题' : '继续巩固当前优势'
       vm.nextStepDesc = wrong > 0
-        ? '本组仍有少量错题，建议先处理后再继续练习'
-        : '本组没有明显薄弱点，可以再来一组巩固手感'
-      vm.nextStepTag = wrong > 0 ? '推荐' : '继续'
+        ? '复盘本组错题后再进入下一组，知识连接会更牢固。'
+        : '可以直接再来一组，保持稳定的答题节奏。'
+      vm.nextStepTag = wrong > 0 ? '复盘优先' : '继续'
     } else if (passRate >= 70) {
       vm.resultLevelClass = 'good'
-      vm.resultTitle = '练习完成'
-      vm.resultDesc = '整体掌握较好，但还有可以优化的地方'
+      vm.resultTitle = '本组练习完成'
+      vm.resultDesc = '整体掌握较好，部分细节仍有提升空间'
       vm.statusText = '完成不错'
-      vm.statusDesc = '错题值得复盘'
+      vm.statusDesc = '错题是下一步重点'
       vm.nextStepType = wrong > 0 ? 'review' : 'continue'
       vm.nextStepTitle = wrong > 0 ? '建议先复盘错题' : '可以继续练习'
       vm.nextStepDesc = wrong > 0
-        ? '把本组错题处理掉，再继续下一组练习'
-        : '本组完成情况不错，可以继续保持'
-      vm.nextStepTag = wrong > 0 ? '复盘优先' : '继续'
+        ? '把本组错误原因处理清楚，再继续下一组练习。'
+        : '本组完成情况不错，可以继续保持。'
+      vm.nextStepTag = wrong > 0 ? '建议' : '继续'
     } else if (passRate >= 50) {
       vm.resultLevelClass = 'normal'
-      vm.resultTitle = '练习完成'
-      vm.resultDesc = '这组暴露了一些薄弱点'
+      vm.resultTitle = '本组练习完成'
+      vm.resultDesc = '本组暴露出一些需要补强的知识点'
       vm.statusText = '需要复盘'
       vm.statusDesc = '先看错题更有效'
       vm.nextStepType = 'review'
       vm.nextStepTitle = '优先处理薄弱点'
-      vm.nextStepDesc = '建议先查看错题，找出容易失误的知识点'
-      vm.nextStepTag = '复盘优先'
+      vm.nextStepDesc = '建议逐题确认错误原因，避免同类问题重复出现。'
+      vm.nextStepTag = '重点'
     } else {
       vm.resultLevelClass = 'weak'
-      vm.resultTitle = '练习完成'
-      vm.resultDesc = '本组错题较多，不建议直接继续刷题'
+      vm.resultTitle = '本组练习完成'
+      vm.resultDesc = '本组错题较多，不建议立刻继续刷题'
       vm.statusText = '错题较多'
-      vm.statusDesc = '先复盘比继续刷题更重要'
+      vm.statusDesc = '复盘比追加题量更重要'
       vm.nextStepType = 'review'
       vm.nextStepTitle = '建议立即复盘'
-      vm.nextStepDesc = '先把错误原因搞清楚，这次练习才真正有效'
-      vm.nextStepTag = '重点'
+      vm.nextStepDesc = '先把错误原因弄清楚，再通过同类题验证掌握情况。'
+      vm.nextStepTag = '优先'
     }
 
-    // 有 skipped 时补充提示
-    if (skipped > 0) {
-      vm.resultDesc += ` · ${skipped} 道未作答`
-    }
-
+    if (skipped > 0) vm.resultDesc += ` · ${skipped} 道未作答`
     return vm
   },
-
-  _celebrationCopy(passRate, correct, wrong, total, answeredCount) {
-    answeredCount = answeredCount || (correct + wrong)
-    const completedPct = total > 0 ? Math.round(answeredCount / total * 100) : 0
-    const answeredAccuracy = answeredCount > 0 ? Math.round(correct / answeredCount * 100) : 0
-    const detailLines = [`答对 ${correct}/${total} 题`]
-    if (answeredCount < total) {
-      detailLines.push(`完成率 ${completedPct}%`)
-    }
-    detailLines.push(answeredCount > 0 ? `已答正确率 ${answeredAccuracy}%` : `正确率 ${passRate}%`)
-    const celebrationDetail = detailLines.join(' · ')
-    if (passRate >= 80) {
-      return {
-        celebrationTitle: '高质量挑战完成',
-        celebrationDetail,
-        celebrationMotto: '这组表现很稳，继续把优势变成习惯',
-        celebrationRewardText: `专注星光 +${Math.max(1, correct)}`,
-        celebrationType: 'practice',
-      }
-    }
-    if (passRate >= 50) {
-      return {
-        celebrationTitle: '完成一次有效练习',
-        celebrationDetail,
-        celebrationMotto: '复盘后再来一组，薄弱点会越来越少',
-        celebrationRewardText: `复盘能量 +${Math.max(1, correct)}`,
-        celebrationType: 'practice',
-      }
-    }
-    return {
-      celebrationTitle: '薄弱点已暴露',
-      celebrationDetail,
-      celebrationMotto: '先把错题吃透，这次练习就很有价值',
-      celebrationRewardText: '错题诊断 +1',
-      celebrationType: 'practice',
-    }
-  },
-
-  /* ── 成长数据 ── */
 
   async _loadGrowth() {
     try {
       const growth = await api.get('/stats/growth')
       if (!growth) return
-      const unlockedBadges = (growth.badges || []).filter(b => b.unlocked).length
-      this._growthBadgeCount = unlockedBadges
+
+      const newBadges = growth.new_badges || growth.newly_unlocked_badges || growth.badges_unlocked_now || []
+      const hasNewBadge = Array.isArray(newBadges) ? newBadges.length > 0 : !!newBadges
+      const levelUp = growth.level_up === true || growth.just_level_up === true || growth.just_leveled_up === true || growth.level_changed === true
+
       this.setData({
         growthLevel: growth.level_title || 'Lv1 起步',
         growthExpText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
-        growthLevelPct: growth.level_progress_pct || 0,
-        growthTitle: `练习经验 +${Math.max(1, this.data.total)}`,
-        growthDesc: unlockedBadges > 0
-          ? `已点亮 ${unlockedBadges} 个徽章 · ${growth.level_title || ''}`
-          : `当前 ${growth.level_title || 'Lv1 起步'} · 继续保持`,
+        growthLevelPct: Math.max(0, Math.min(100, Number(growth.level_progress_pct) || 0)),
+        growthTitle: `成长值 +${Math.max(1, this.data.total)}`,
+        growthDesc: growth.level_title ? `当前 ${growth.level_title}` : '持续练习，稳步积累',
       })
+
+      // 仅在后端明确返回“升级/新徽章”事件时展示全屏庆祝。
+      if (levelUp || hasNewBadge) {
+        const badgeCount = Array.isArray(newBadges) ? newBadges.length : 1
+        this.setData({
+          shouldShowCelebration: true,
+          celebrationTitle: levelUp ? '等级提升' : '解锁新徽章',
+          celebrationDetail: levelUp
+            ? `已升级至 ${growth.level_title || '新等级'}`
+            : `本次解锁 ${badgeCount} 个新徽章`,
+          celebrationMotto: '真正的进步，来自每一次认真复盘',
+          celebrationRewardText: levelUp ? '成长等级 +1' : `新徽章 +${badgeCount}`,
+          celebrationType: 'practice',
+        }, () => this._showCelebration())
+      }
     } catch (_) {}
   },
-
-  /* ── 工具方法 ── */
 
   _fmt(sec) {
     const s = Math.max(0, sec || 0)
     const m = Math.floor(s / 60)
     const ss = s % 60
-    return `${m} 分 ${ss} 秒`
+    return `${m}分${ss < 10 ? '0' : ''}${ss}秒`
   },
-
-  /* ── 庆祝动效 ── */
 
   _showCelebration() {
     this._clearCelebrationTimer()
@@ -443,14 +427,110 @@ Page({
     }
   },
 
-  /* ── 交互 ── */
-
-  toggleDetail() {
-    this.setData({ showDetail: !this.data.showDetail })
+  toggleAllResults() {
+    const next = !this.data.showAllResults
+    this.setData({
+      showAllResults: next,
+      displayResults: next ? this.data.compactResults : this.data.reviewResults,
+    })
   },
 
-  goWrongBook() {
-    wx.redirectTo({ url: '/pages/wrong-book/wrong-book' })
+  goBack() {
+    const pages = getCurrentPages()
+    if (pages && pages.length > 1) {
+      wx.navigateBack()
+    } else {
+      wx.reLaunch({ url: '/pages/home/home' })
+    }
+  },
+
+  _resultWrongQuestionIds(targetQuestionId) {
+    const target = targetQuestionId == null ? '' : String(targetQuestionId)
+    return (this.data.reviewResults || [])
+      .filter(function (item) {
+        if (!item || item._isSkipped || !item._isWrong) return false
+        return !target || String(item.question_id) === target
+      })
+      .map(function (item) { return String(item.question_id) })
+      .filter(Boolean)
+  },
+
+  _cachedWrongRecordIds(targetQuestionId) {
+    const target = targetQuestionId == null ? '' : String(targetQuestionId)
+    return (this.data.reviewResults || [])
+      .filter(function (item) {
+        if (!item || item._isSkipped || !item._isWrong || !item._wrongRecordId) return false
+        return !target || String(item.question_id) === target
+      })
+      .map(function (item) { return Number(item._wrongRecordId) })
+      .filter(Number.isFinite)
+  },
+
+  async _resolveWrongRecordIds(targetQuestionId) {
+    const cached = this._cachedWrongRecordIds(targetQuestionId)
+    if (cached.length > 0) return Array.from(new Set(cached))
+
+    const desiredIds = this._resultWrongQuestionIds(targetQuestionId)
+    if (!desiredIds.length) return []
+
+    const desiredMap = {}
+    desiredIds.forEach(function (id) { desiredMap[String(id)] = true })
+
+    try {
+      const params = { page: 1, page_size: 100 }
+      if (this.data.subject) params.subject = this.data.subject
+      const data = await api.get('/wrong-questions', params)
+      const items = (data && data.items) || []
+      const ids = []
+      items.forEach(function (item) {
+        if (!item) return
+        const sourceQuestionId = item.question_id || item.original_question_id || item.source_question_id || (item.question && item.question.id)
+        if (!sourceQuestionId || !desiredMap[String(sourceQuestionId)]) return
+        const recordId = Number(item.id || item.wrong_question_id)
+        if (Number.isFinite(recordId)) ids.push(recordId)
+      })
+      return Array.from(new Set(ids))
+    } catch (_) {
+      return []
+    }
+  },
+
+  _openWrongDetail(ids) {
+    if (!ids || !ids.length) return false
+    try {
+      wx.setStorageSync('wrong_detail_nav', { ids, ts: Date.now() })
+    } catch (_) {}
+    wx.redirectTo({
+      url: `/pages/wrong-detail/wrong-detail?id=${ids[0]}&idx=0&source=wrong-book`,
+    })
+    return true
+  },
+
+  async goWrongBook() {
+    if (this.data.resolvingWrong) return
+    this.setData({ resolvingWrong: true })
+    wx.showLoading({ title: '准备错题复盘', mask: true })
+    const ids = await this._resolveWrongRecordIds()
+    wx.hideLoading()
+    this.setData({ resolvingWrong: false })
+    if (this._openWrongDetail(ids)) return
+    wx.showToast({ title: '错题记录正在同步，已打开错题本', icon: 'none' })
+    setTimeout(function () {
+      wx.redirectTo({ url: '/pages/wrong-book/wrong-book' })
+    }, 500)
+  },
+
+  async openWrongAnalysis(e) {
+    if (this.data.resolvingWrong) return
+    const questionId = e.currentTarget.dataset.questionId
+    if (!questionId) return
+    this.setData({ resolvingWrong: true })
+    wx.showLoading({ title: '加载解析', mask: true })
+    const ids = await this._resolveWrongRecordIds(questionId)
+    wx.hideLoading()
+    this.setData({ resolvingWrong: false })
+    if (this._openWrongDetail(ids)) return
+    wx.showToast({ title: '该错题解析正在同步', icon: 'none' })
   },
 
   practiceAgain() {
