@@ -1134,7 +1134,7 @@ export default function ImportReviewPage() {
             <div className="relative" ref={batchDropdownRef}>
               <div className="relative">
                 <input
-                  className="h-8 w-44 rounded-lg border border-[var(--color-border)] bg-white px-2.5 pr-14 text-xs outline-none transition-colors focus:border-[var(--color-primary)]"
+                  className="h-8 w-56 rounded-lg border border-[var(--color-border)] bg-white px-2.5 pr-14 text-xs outline-none transition-colors focus:border-[var(--color-primary)]"
                   placeholder="批次 ID"
                   value={filters.batch_id || batchIdParam}
                   onChange={(event) => updateFilter("batch_id", event.target.value)}
@@ -1159,7 +1159,7 @@ export default function ImportReviewPage() {
                 </button>
               </div>
               {batchDropdownOpen ? (
-                <div className="scholar-dropdown absolute left-0 top-full z-20 mt-1 min-w-[360px] max-h-60">
+                <div className="scholar-dropdown absolute left-0 top-full z-20 mt-1 min-w-[480px] max-h-60">
                   {batchesQuery.isLoading ? (
                     <div className="px-4 py-5 text-center text-xs text-[var(--color-text-hint)]">加载中…</div>
                   ) : batchesQuery.data?.items?.length ? (
@@ -1179,7 +1179,7 @@ export default function ImportReviewPage() {
                         ) : (
                           <span className="inline-block w-3.5 shrink-0" />
                         )}
-                        <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px]" title={b.batch_id}>{b.batch_id}</span>
+                        <span className="min-w-0 flex-1 font-mono text-[11px]" title={b.batch_id}>{b.batch_id}</span>
                         <span className="tag-chip shrink-0 bg-[var(--color-success-light)] text-[var(--color-success)]">{b.pending_count}待审</span>
                         <span className="shrink-0 text-[10px] text-[var(--color-text-hint)]">{b.total_count}题</span>
                       </button>
@@ -1232,41 +1232,10 @@ export default function ImportReviewPage() {
                 className="flex h-7 items-center gap-1 rounded-lg px-2 text-[10px] font-medium text-[var(--color-text-hint)] hover:text-[var(--color-danger)] transition-colors"
                 onClick={() => setFilters({ batch_id: "", status: "pending", subject_id: "", source_type: "", keyword: "", risk_level: "", answer_status: "" })}
               >
-                <X className="h-3 w-3" />
                 重置
               </button>
             ) : null}
           </div>
-          {/* ── Active batch chips ── */}
-          {batchesQuery.data?.items?.filter((b) => b.batch_id && b.batch_id.trim() && b.pending_count > 0).length ? (
-            <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2 pt-1">
-              <span className="mr-0.5 text-[10px] font-medium text-[var(--color-text-hint)]">待审批次:</span>
-              {batchesQuery.data.items
-                .filter((b) => b.batch_id && b.batch_id.trim() && b.pending_count > 0)
-                .slice(0, 8)
-                .map((b) => (
-                  <button
-                    key={b.batch_id}
-                    type="button"
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-mono transition-all ${
-                      (filters.batch_id || batchIdParam) === b.batch_id
-                        ? "bg-[var(--color-primary)] text-white shadow-sm"
-                        : "bg-[var(--color-primary-light)]/50 text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-light)]"
-                    }`}
-                    onClick={() => updateFilter("batch_id", (filters.batch_id || batchIdParam) === b.batch_id ? "" : b.batch_id)}
-                  >
-                    {b.batch_id.length > 20 ? b.batch_id.slice(0, 20) + "…" : b.batch_id}
-                    <span className={`inline-flex items-center justify-center rounded-full px-1.5 text-[9px] font-semibold ${
-                      (filters.batch_id || batchIdParam) === b.batch_id
-                        ? "bg-white/20 text-white"
-                        : "bg-[var(--color-success-light)] text-[var(--color-success)]"
-                    }`}>
-                      {b.pending_count}
-                    </span>
-                  </button>
-                ))}
-            </div>
-          ) : null}
         </CardHeader>
         <CardContent className="space-y-1.5 pt-0">
           <section className="space-y-1">
