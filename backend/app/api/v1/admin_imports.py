@@ -6,7 +6,7 @@ import tempfile
 
 import json
 
-from fastapi import BackgroundTasks, APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile, status
+from fastapi import BackgroundTasks, APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,6 +47,7 @@ from app.schemas.admin_imports import (
     AdminImportTaskStatusResponse,
     BatchAnswerApplyRequest,
     BatchAnswerApplyResponse,
+    BatchAnswerImageApplyRequest,
     BatchAnswerPreviewRequest,
     BatchAnswerPreviewResponse,
     BatchImageJobStatusResponse,
@@ -688,18 +689,20 @@ async def batch_answer_preview(
     db: AsyncSession = Depends(get_db),
 ):
     """解析答案串，生成预览（不写入数据库）。"""
-    from app.services.batch_answer_service import generate_preview
+    from app.services.batch_answer_service import generate_preview, BusinessError
 
     if len(data.raw_text) > _MAX_RAW_TEXT_LENGTH:
-        raise HTTPException(status_code=422, detail="答案文本过长")
+        raise HTTPException(status_code=422, detail={"error_code": "TEXT_TOO_LONG", "detail": "答案文本过长"})
 
     try:
         return await generate_preview(
             db, batch_id, data.raw_text,
             admin_id=current_admin.id,
         )
+    except BusinessError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"error_code": exc.code, "detail": exc.message})
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"error_code": "INVALID_INPUT", "detail": str(exc)})
 
 
 @router.post("/{batch_id}/answers/apply", response_model=BatchAnswerApplyResponse)
@@ -711,18 +714,154 @@ async def batch_answer_apply(
     db: AsyncSession = Depends(get_db),
 ):
     """确认预览结果，写入答案到数据库。"""
-    from app.services.batch_answer_service import apply_preview
+    from app.services.batch_answer_service import apply_preview, BusinessError
 
     try:
         result = await apply_preview(db, batch_id, data.preview_token, current_admin, request=request)
         return result
     except HTTPException:
         raise
+    except BusinessError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"error_code": exc.code, "detail": exc.message})
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"error_code": "INVALID_INPUT", "detail": str(exc)})
     except Exception as exc:
         logger.exception("Batch answer apply failed: %s", exc)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="写入失败，请稍后重试")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"error_code": "INTERNAL_ERROR", "detail": "写入失败，请稍后重试"})
+
+
+# ---------------------------------------------------------------------------
+# 快速补充答案 — 图片导入（Phase 2）
+# ---------------------------------------------------------------------------
+
+_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
+_IMAGE_MAX_FILES = 50
+
+
+def _validate_answer_image(filename: str, content: bytes, content_type: str | None) -> str | None:
+    """校验单张答案/解析图片，返回错误原因（None 表示通过）。"""
+    if not filename:
+        return "文件名为空"
+    if not filename.lower().endswith(_IMAGE_EXTENSIONS):
+        return "仅支持 .jpg / .jpeg / .png / .webp"
+    if content_type and content_type not in _IMAGE_CONTENT_TYPES:
+        return f"Content-Type 不支持: {content_type}"
+    if not content:
+        return "图片内容为空"
+    if len(content) > _IMAGE_MAX_BYTES:
+        return "图片过大（最大 10MB）"
+    return None
+
+
+@router.post("/{batch_id}/answers/image/preview")
+async def batch_answer_image_preview(
+    batch_id: str,
+    files: list[UploadFile] = File(..., description="答案/解析图片（多张）"),
+    mode: str = Form("answer_only", description="导入模式：answer_only | answer_analysis"),
+    current_admin=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    """上传答案/解析图片，OCR 提取并生成预览。
+
+    - 支持 jpg/png/webp，单次最多 50 张
+    - mode=answer_only 仅提取答案
+    - mode=answer_analysis 同时提取答案和解析
+    - 不写入数据库，返回预览结果
+    """
+    from app.services.batch_answer_image_service import generate_image_preview, BusinessError
+
+    if not files:
+        raise HTTPException(status_code=400, detail={"error_code": "NO_FILES", "detail": "未上传任何图片"})
+    if len(files) > _IMAGE_MAX_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail={"error_code": "TOO_MANY_FILES", "detail": f"单次最多上传 {_IMAGE_MAX_FILES} 张图片"},
+        )
+
+    if mode not in ("answer_only", "answer_analysis"):
+        raise HTTPException(
+            status_code=422,
+            detail={"error_code": "INVALID_MODE", "detail": "mode 必须是 answer_only 或 answer_analysis"},
+        )
+
+    # 读取并校验图片
+    images_data: list[dict] = []
+    rejected: list[str] = []
+    for f in files:
+        try:
+            content = await f.read()
+        except Exception:
+            rejected.append(f"{f.filename}: 读取失败")
+            continue
+
+        err = _validate_answer_image(f.filename or "", content, f.content_type)
+        if err:
+            rejected.append(f"{f.filename}: {err}")
+            continue
+
+        images_data.append({"filename": f.filename or f"image_{len(images_data)}", "bytes": content})
+
+    if not images_data:
+        raise HTTPException(
+            status_code=400,
+            detail={"error_code": "ALL_FILES_REJECTED", "detail": f"所有图片均未通过校验: {'; '.join(rejected)}"},
+        )
+
+    try:
+        result = await generate_image_preview(
+            db, batch_id, images_data, mode=mode, admin_id=current_admin.id,
+        )
+        if rejected:
+            result.setdefault("warnings", []).append(f"{len(rejected)} 张图片未通过校验: {'; '.join(rejected)}")
+        return result
+    except BusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error_code": exc.code, "detail": exc.message},
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error_code": "INVALID_INPUT", "detail": str(exc)},
+        )
+
+
+@router.post("/{batch_id}/answers/image/apply")
+async def batch_answer_image_apply(
+    batch_id: str,
+    data: BatchAnswerImageApplyRequest,
+    request: Request,
+    current_admin=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    """确认图片预览结果，写入答案/解析到数据库。"""
+    from app.services.batch_answer_image_service import apply_image_preview, BusinessError
+
+    try:
+        result = await apply_image_preview(
+            db, batch_id, data.preview_token, current_admin, request=request,
+        )
+        return result
+    except HTTPException:
+        raise
+    except BusinessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error_code": exc.code, "detail": exc.message},
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error_code": "INVALID_INPUT", "detail": str(exc)},
+        )
+    except Exception as exc:
+        logger.exception("Batch answer image apply failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error_code": "INTERNAL_ERROR", "detail": "写入失败，请稍后重试"},
+        )
 
 
 @router.get("/{batch_id}/status", response_model=AdminImportTaskStatusResponse)

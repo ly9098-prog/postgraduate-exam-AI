@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -435,6 +436,7 @@ class BatchAnswerPreviewSummary(BaseModel):
 class BatchAnswerPreviewResponse(BaseModel):
     batch_id: str
     preview_token: str
+    operation_id: str = ""
     summary: BatchAnswerPreviewSummary
     items: list[BatchAnswerPreviewItem]
     warnings: list[str] = []
@@ -442,9 +444,79 @@ class BatchAnswerPreviewResponse(BaseModel):
 
 class BatchAnswerApplyRequest(BaseModel):
     preview_token: str
+    operation_id: str = ""
 
 
 class BatchAnswerApplyResponse(BaseModel):
+    operation_id: str = ""
     updated_count: int = 0
     skipped_existing_count: int = 0
     remaining_count: int = 0
+    batch_stats: dict = {}
+
+
+# ── 快速补充答案 — 图片导入（Phase 2） ──
+
+
+class BatchAnswerImagePreviewMode(str, Enum):
+    ANSWER_ONLY = "answer_only"
+    ANSWER_ANALYSIS = "answer_analysis"
+
+
+class BatchAnswerImagePreviewItem(BaseModel):
+    import_id: int | None = None  # None = unmatched
+    source_order_index: int | None = None
+    source_question_no: str | None = None
+    stem_excerpt: str = ""
+    question_type: str | None = None
+    original_answer: str | None = None
+    original_analysis: str | None = None
+    extracted_answer: str | None = None
+    extracted_analysis: str | None = None
+    status: str  # matched | unmatched | ambiguous
+    status_message: str = ""
+    will_update_answer: bool = False
+    will_update_analysis: bool = False
+    validation_errors: list[str] = []
+    # Image provenance
+    source_filename: str | None = None
+    image_index: int | None = None
+    ocr_confidence: float | None = None
+    extract_method: str | None = None  # "rule" | "llm"
+    raw_text_excerpt: str | None = None  # first 200 chars
+
+
+class BatchAnswerImagePreviewSummary(BaseModel):
+    total_images: int = 0
+    extracted_entries: int = 0
+    matched_count: int = 0
+    unmatched_count: int = 0
+    ambiguous_count: int = 0
+    writable_answer_count: int = 0
+    writable_analysis_count: int = 0
+    skipped_existing_answer_count: int = 0
+    skipped_existing_analysis_count: int = 0
+
+
+class BatchAnswerImagePreviewResponse(BaseModel):
+    batch_id: str
+    preview_token: str
+    operation_id: str = ""
+    summary: BatchAnswerImagePreviewSummary
+    items: list[BatchAnswerImagePreviewItem]
+    warnings: list[str] = []
+
+
+class BatchAnswerImageApplyRequest(BaseModel):
+    preview_token: str
+    operation_id: str = ""
+
+
+class BatchAnswerImageApplyResponse(BaseModel):
+    operation_id: str = ""
+    updated_answer_count: int = 0
+    updated_analysis_count: int = 0
+    skipped_existing_answer_count: int = 0
+    skipped_existing_analysis_count: int = 0
+    remaining_count: int = 0
+    batch_stats: dict = {}
