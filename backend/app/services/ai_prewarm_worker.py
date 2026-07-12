@@ -20,6 +20,7 @@ PREWARM_QUEUE_KEY = "ai:prewarm:queue"
 PREWARM_RETRY_KEY = "ai:prewarm:retry"
 MAX_RETRIES = 3
 RETRY_DELAY_SEC = 30
+_idle_backoff = 1.0  # consecutive timeouts counter for exponential backoff
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,6 @@ async def get_redis_client():
             r = redis.from_url(
                 redis_url,
                 socket_connect_timeout=2,
-                socket_timeout=5,
                 decode_responses=True,
             )
             await r.ping()
@@ -148,9 +148,11 @@ async def _process_task(wq_id: int, user_id: int, retries: int) -> None:
 
 async def _worker_loop():
     """Background worker loop: move due retries, then BLPOP and process."""
-    global _running
+    global _running, _idle_backoff
     _running = True
     logger.info("[prewarm] worker started")
+
+    import redis.exceptions as redis_exc
 
     while _running:
         r = await get_redis_client()
@@ -160,6 +162,7 @@ async def _worker_loop():
         try:
             await _move_due_retry_tasks(r)
             result = await r.blpop(PREWARM_QUEUE_KEY, timeout=10)
+            _idle_backoff = 1.0  # reset backoff on any successful command
             if result is None:
                 continue
             _, data = result
@@ -169,10 +172,16 @@ async def _worker_loop():
             retries = task.get("retries", 0)
             if wq_id and user_id:
                 await _process_task(wq_id, user_id, retries)
+        except redis_exc.TimeoutError:
+            # blpop timed out or socket stalled – normal with idle connections
+            _idle_backoff = min(_idle_backoff * 2, 30)
+            await asyncio.sleep(_idle_backoff)
+            continue
         except json.JSONDecodeError:
             logger.warning("[prewarm] invalid task data, skipping")
         except Exception:
             logger.exception("[prewarm] worker loop error")
+            await asyncio.sleep(1)
 
     logger.info("[prewarm] worker stopped")
 

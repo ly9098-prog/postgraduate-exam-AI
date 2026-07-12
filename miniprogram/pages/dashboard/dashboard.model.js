@@ -55,22 +55,115 @@ function buildHero(ov) {
  */
 function buildTrends(tr) {
   if (!tr || !tr.points || !tr.points.length) return null
+
+  const normalizePoint = p => ({
+    date: p.date,
+    shortDate: (p.date || '').slice(5),
+    questions: p.questions || 0,
+    correct: p.correct || 0,
+    accuracy: p.accuracy || 0,
+    accuracyPct: accuracyPct(p.accuracy),
+    accuracyClass: accuracyClass(p.accuracy),
+  })
+
+  const points = tr.points.map(normalizePoint)
+  const previousPoints = (tr.previous_points || []).map(normalizePoint)
+  const totalQuestions = tr.total_questions != null
+    ? tr.total_questions
+    : points.reduce((sum, p) => sum + p.questions, 0)
+  const activeDays = tr.active_days != null
+    ? tr.active_days
+    : points.filter(p => p.questions > 0).length
+  const avgAccuracy = tr.avg_accuracy != null
+    ? tr.avg_accuracy
+    : (() => {
+        const q = points.reduce((sum, p) => sum + p.questions, 0)
+        const c = points.reduce((sum, p) => sum + p.correct, 0)
+        return q > 0 ? c / q : 0
+      })()
+  const avgPct = accuracyPct(avgAccuracy)
+
+  const previousTotalQuestions = tr.previous_total_questions != null
+    ? tr.previous_total_questions
+    : previousPoints.reduce((sum, p) => sum + p.questions, 0)
+  const previousActiveDays = tr.previous_active_days != null
+    ? tr.previous_active_days
+    : previousPoints.filter(p => p.questions > 0).length
+  const previousAvgAccuracy = tr.previous_avg_accuracy != null
+    ? tr.previous_avg_accuracy
+    : (() => {
+        const q = previousPoints.reduce((sum, p) => sum + p.questions, 0)
+        const c = previousPoints.reduce((sum, p) => sum + p.correct, 0)
+        return q > 0 ? c / q : 0
+      })()
+  const previousAvgPct = accuracyPct(previousAvgAccuracy)
+  const hasPrevious = previousPoints.length > 0
+
+  const accuracyDelta = avgPct - previousAvgPct
+  let accuracyCompareText = '等待上周期数据'
+  let accuracyCompareClass = 'neutral'
+  if (hasPrevious) {
+    if (accuracyDelta > 0) {
+      accuracyCompareText = `较上周期 +${accuracyDelta} 个百分点`
+      accuracyCompareClass = 'up'
+    } else if (accuracyDelta < 0) {
+      accuracyCompareText = `较上周期 ${accuracyDelta} 个百分点`
+      accuracyCompareClass = 'down'
+    } else {
+      accuracyCompareText = '与上周期持平'
+    }
+  }
+
+  let questionsCompareText = '等待上周期数据'
+  let questionsCompareClass = 'neutral'
+  if (hasPrevious) {
+    if (previousTotalQuestions > 0) {
+      const changePct = Math.round((totalQuestions - previousTotalQuestions) / previousTotalQuestions * 100)
+      if (changePct > 0) {
+        questionsCompareText = `较上周期 +${changePct}%`
+        questionsCompareClass = 'up'
+      } else if (changePct < 0) {
+        questionsCompareText = `较上周期 ${changePct}%`
+        questionsCompareClass = 'down'
+      } else {
+        questionsCompareText = '与上周期持平'
+      }
+    } else if (totalQuestions > 0) {
+      questionsCompareText = '本周期开始产生学习记录'
+      questionsCompareClass = 'up'
+    } else {
+      questionsCompareText = '两周期均暂无做题记录'
+    }
+  }
+
+  let statusTitle = '正在积累学习数据'
+  if (totalQuestions > 0) {
+    if (avgPct >= 85 && activeDays >= 4) statusTitle = '状态很稳，继续保持'
+    else if (avgPct >= 70) statusTitle = '节奏不错，稳步提升'
+    else if (avgPct >= 50) statusTitle = '正在进入状态'
+    else if (activeDays <= 2) statusTitle = '需要重新找回节奏'
+    else statusTitle = '基础还需要巩固'
+  }
+
   return {
     days: tr.days || 7,
-    points: tr.points.map(p => ({
-      date: p.date,
-      shortDate: (p.date || '').slice(5),
-      questions: p.questions || 0,
-      correct: p.correct || 0,
-      accuracy: p.accuracy || 0,
-      accuracyPct: accuracyPct(p.accuracy),
-      accuracyClass: accuracyClass(p.accuracy),
-    })),
-    totalQuestions: tr.total_questions || 0,
-    activeDays: tr.active_days || 0,
-    avgAccuracy: tr.avg_accuracy || 0,
-    avgAccuracyPct: accuracyPct(tr.avg_accuracy),
+    points,
+    previousPoints,
+    totalQuestions,
+    activeDays,
+    avgAccuracy,
+    avgAccuracyPct: avgPct,
+    previousTotalQuestions,
+    previousActiveDays,
+    previousAvgAccuracy,
+    previousAvgAccuracyPct: previousAvgPct,
+    hasPrevious,
+    accuracyCompareText,
+    accuracyCompareClass,
+    questionsCompareText,
+    questionsCompareClass,
     summary: tr.summary || '',
+    statusTitle,
   }
 }
 
@@ -83,34 +176,56 @@ function buildSubjects(sa, enrichedMap) {
   const items = sa.items.map((s, i) => {
     const acc = s.accuracy || 0
     const enriched = (enrichedMap && enrichedMap[s.subject]) || {}
-    const avgTime = s.total_duration_sec > 0 && s.total_questions > 0
-      ? Math.round(s.total_duration_sec / s.total_questions) : 0
+    const totalQuestions = s.total_questions != null ? s.total_questions : (s.totalQuestions || 0)
+    const correctCount = s.correct_count != null ? s.correct_count : (s.correctCount || 0)
+    const wrongCount = s.wrong_count != null ? s.wrong_count : (s.wrongCount || 0)
+    const totalDurationSec = s.total_duration_sec != null ? s.total_duration_sec : (s.totalDurationSec || 0)
+    const avgTime = totalDurationSec > 0 && totalQuestions > 0
+      ? Math.round(totalDurationSec / totalQuestions)
+      : (s.avgTimeSec || 0)
+    const baseWeakTopics = enriched.weak_topics || s.weakTopics || []
     return {
       subject: s.subject,
-      label: subjectLabel(s.subject),
-      totalQuestions: s.total_questions || 0,
-      correctCount: s.correct_count || 0,
-      wrongCount: s.wrong_count || 0,
+      label: s.label || subjectLabel(s.subject),
+      totalQuestions,
+      correctCount,
+      wrongCount,
       accuracy: acc,
       accuracyPct: accuracyPct(acc),
+      barWidthPct: Math.max(2, Math.min(80, accuracyPct(acc) * 0.8)),
+      valueLeftPct: Math.max(4, Math.min(84, accuracyPct(acc) * 0.8 + 2)),
       accuracyClass: accuracyClass(acc),
       accuracyColor: acc >= 0.7 ? '#22C55E' : acc >= 0.4 ? '#F59E0B' : '#EF4444',
-      color: SUBJECT_COLORS[i % SUBJECT_COLORS.length],
-      totalDurationSec: s.total_duration_sec || 0,
-      durationText: fmtDuration(s.total_duration_sec || 0),
+      color: s.color || SUBJECT_COLORS[i % SUBJECT_COLORS.length],
+      totalDurationSec,
+      durationText: fmtDuration(totalDurationSec),
       avgTimeSec: avgTime,
       avgTimeText: avgTime > 0 ? '均时' + avgTime + 's' : '',
-      weakTopics: (enriched.weak_topics || []).slice(0, 3).map(w => w.name || w),
-      suggestion: enriched.suggestion || '',
-      repeatWrongCount: enriched.repeat_wrong_count || 0,
-      statusLabel: enriched.status_label || '',
+      weakTopics: baseWeakTopics.slice(0, 3).map(w => w.name || w),
+      suggestion: enriched.suggestion || s.suggestion || '',
+      repeatWrongCount: enriched.repeat_wrong_count || s.repeatWrongCount || 0,
+      statusLabel: enriched.status_label || s.statusLabel || '',
     }
   })
+  const itemsByWeak = items.slice().sort((a, b) => {
+    if (a.accuracy !== b.accuracy) return a.accuracy - b.accuracy
+    return b.wrongCount - a.wrongCount
+  })
+  const strongestLabel = typeof sa.strongest === 'string'
+    ? sa.strongest
+    : (sa.strongest && sa.strongest.subject ? subjectLabel(sa.strongest.subject) : null)
+  const weakestLabel = typeof sa.weakest === 'string'
+    ? sa.weakest
+    : (sa.weakest && sa.weakest.subject ? subjectLabel(sa.weakest.subject) : null)
   return {
     items,
-    strongest: sa.strongest ? subjectLabel(sa.strongest.subject) : null,
-    weakest: sa.weakest ? subjectLabel(sa.weakest.subject) : null,
-    totalQuestions: sa.total_questions || 0,
+    itemsByWeak,
+    focusItem: itemsByWeak[0] || null,
+    strongest: strongestLabel,
+    weakest: weakestLabel,
+    totalQuestions: sa.total_questions != null
+      ? sa.total_questions
+      : (sa.totalQuestions != null ? sa.totalQuestions : items.reduce((sum, item) => sum + item.totalQuestions, 0)),
   }
 }
 
