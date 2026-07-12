@@ -19,6 +19,7 @@ from app.api.v1.admin_vector_config import router as admin_vector_config_router
 from app.api.v1.admin_system_health import router as admin_system_health_router
 from app.api.v1.admin_knowledge import router as admin_knowledge_router
 from app.api.v1.admin_recommendation import router as admin_recommendation_router
+from app.api.v1.admin_formulas import router as admin_formulas_router
 
 admin_api_router = APIRouter()
 
@@ -39,5 +40,6 @@ admin_api_router.include_router(admin_vector_config_router)
 admin_api_router.include_router(admin_system_health_router)
 admin_api_router.include_router(admin_knowledge_router)
 admin_api_router.include_router(admin_recommendation_router)
+admin_api_router.include_router(admin_formulas_router)
 
 __all__ = ["admin_api_router"]

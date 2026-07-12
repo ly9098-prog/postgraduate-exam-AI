@@ -1,0 +1,92 @@
+<view class="formula-card-wrap">
+  <!-- 标题和标签 -->
+  <view class="fc-header">
+    <text class="fc-title">{{card.title}}</text>
+    <view class="fc-tags" wx:if="{{card.tags && card.tags.length}}">
+      <text class="fc-tag {{'fc-tag-' + tag.code}}" wx:for="{{card.tags}}" wx:key="id">{{tag.name}}</text>
+    </view>
+  </view>
+
+  <!-- 核心公式 -->
+  <view class="fc-formula-section">
+    <view class="fc-formula-block" wx:for="{{card.formula_blocks}}" wx:for-item="block" wx:key="*this">
+      <text class="fc-block-label" wx:if="{{block.label}}">{{block.label}}</text>
+      <mp-html content="{{'$$' + block.latex + '$$'}}" tag-name="formula-render" selectable="true" />
+      <text class="fc-block-note" wx:if="{{block.note}}">{{block.note}}</text>
+    </view>
+  </view>
+
+  <!-- 函数图像 -->
+  <view class="fc-graph-section" wx:if="{{card.card_type === 'function_graph' && graphImageUrl}}">
+    <image class="fc-graph-image" src="{{graphImageUrl}}" mode="widthFix" bindtap="previewGraph" />
+  </view>
+
+  <!-- 摘要 -->
+  <view class="fc-section" wx:if="{{card.summary}}">
+    <text class="fc-section-title">摘要</text>
+    <mp-html content="{{card.summary}}" tag-name="summary-render" />
+  </view>
+
+  <!-- 适用条件 -->
+  <view class="fc-section" wx:if="{{card.conditions}}">
+    <text class="fc-section-title">适用条件</text>
+    <mp-html content="{{card.conditions}}" tag-name="conditions-render" />
+  </view>
+
+  <!-- 可折叠部分 -->
+  <view class="fc-collapse" wx:if="{{card.symbol_notes}}">
+    <view class="fc-collapse-header" bindtap="toggleSection" data-key="showSymbolNotes">
+      <text class="fc-collapse-title">符号说明</text>
+      <text class="fc-collapse-arrow {{showSymbolNotes ? 'expanded' : ''}}">▸</text>
+    </view>
+    <view class="fc-collapse-body {{showSymbolNotes ? 'open' : ''}}">
+      <mp-html content="{{card.symbol_notes}}" tag-name="symbol-render" />
+    </view>
+  </view>
+
+  <view class="fc-collapse" wx:if="{{card.secondary_conclusions}}">
+    <view class="fc-collapse-header" bindtap="toggleSection" data-key="showSecondary">
+      <text class="fc-collapse-title">常见结论 / 二级结论</text>
+      <text class="fc-collapse-arrow {{showSecondary ? 'expanded' : ''}}">▸</text>
+    </view>
+    <view class="fc-collapse-body {{showSecondary ? 'open' : ''}}">
+      <mp-html content="{{card.secondary_conclusions}}" tag-name="secondary-render" />
+    </view>
+  </view>
+
+  <view class="fc-collapse" wx:if="{{card.error_tips}}">
+    <view class="fc-collapse-header" bindtap="toggleSection" data-key="showErrorTips">
+      <text class="fc-collapse-title">易错提醒</text>
+      <text class="fc-collapse-arrow {{showErrorTips ? 'expanded' : ''}}">▸</text>
+    </view>
+    <view class="fc-collapse-body {{showErrorTips ? 'open' : ''}}">
+      <mp-html content="{{card.error_tips}}" tag-name="tips-render" />
+    </view>
+  </view>
+
+  <!-- 典型例题 -->
+  <view class="fc-collapse" wx:if="{{card.examples && card.examples.length}}">
+    <view class="fc-collapse-header" bindtap="toggleSection" data-key="showExamples">
+      <text class="fc-collapse-title">典型例题 ({{card.examples.length}})</text>
+      <text class="fc-collapse-arrow {{showExamples ? 'expanded' : ''}}">▸</text>
+    </view>
+    <view class="fc-collapse-body {{showExamples ? 'open' : ''}}">
+      <view class="fc-example" wx:for="{{card.examples}}" wx:for-item="ex" wx:key="*this">
+        <text class="fc-example-label">题目 {{index + 1}}</text>
+        <mp-html content="{{ex.question}}" tag-name="ex-question" />
+        <view class="fc-example-detail" wx:if="{{ex.short_solution}}">
+          <text class="fc-example-label">解法</text>
+          <mp-html content="{{ex.short_solution}}" tag-name="ex-solution" />
+        </view>
+        <view class="fc-example-detail" wx:if="{{ex.answer}}">
+          <text class="fc-example-label">答案</text>
+          <mp-html content="{{ex.answer}}" tag-name="ex-answer" />
+        </view>
+        <view class="fc-example-detail" wx:if="{{ex.error_tip}}">
+          <text class="fc-example-label error">易错</text>
+          <mp-html content="{{ex.error_tip}}" tag-name="ex-tip" />
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

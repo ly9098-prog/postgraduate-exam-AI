@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "公式详情",
+  "usingComponents": {
+    "formula-card": "/components/formula-card/index"
+  }
+}

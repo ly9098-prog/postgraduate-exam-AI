@@ -153,6 +153,11 @@
   background: #F3F7FF;
 }
 
+.icon-formula {
+  color: #7C3AED;
+  background: #F5F0FF;
+}
+
 .icon-plain {
   color: #4F7FFF;
 }

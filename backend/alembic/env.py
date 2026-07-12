@@ -25,6 +25,17 @@ from app.models.import_batch_job import ImportBatchJob, ImportBatchJobItem
 from app.models.import_pipeline import ImportPipeline, ImportPipelineChunk
 from app.models.pomodoro import PomodoroSession
 from app.models.refresh_token import RefreshToken
+from app.models.formula import (  # noqa: F401
+    FormulaCard,
+    FormulaCardTag,
+    FormulaCardVersion,
+    FormulaCategory,
+    FormulaGraphAsset,
+    FormulaImportItem,
+    FormulaImportJob,
+    FormulaTag,
+    UserFormulaFavorite,
+)
 
 config = context.config
 if config.config_file_name is not None:

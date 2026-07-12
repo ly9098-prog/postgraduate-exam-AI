@@ -324,6 +324,7 @@ Page({
   goReview() { wx.navigateTo({ url: '/pages/review-today/review-today' }) },
   goDashboard() { wx.navigateTo({ url: '/pages/dashboard/dashboard' }) },
   goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
+  goFormulas() { wx.navigateTo({ url: '/subpackages/formulas/library/index' }) },
   _clearAnimTimer() {
     if (this._animTimer) {
       clearTimeout(this._animTimer)

@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "公式背诵",
+  "usingComponents": {
+    "formula-card": "/components/formula-card/index"
+  },
+  "enablePullDownRefresh": true
+}
