@@ -18,8 +18,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("users") as batch_op:
-        batch_op.add_column(sa.Column("deleted_at", sa.DateTime(), nullable=True))
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    columns = {c["name"] for c in insp.get_columns("users")}
+    if "deleted_at" not in columns:
+        with op.batch_alter_table("users") as batch_op:
+            batch_op.add_column(sa.Column("deleted_at", sa.DateTime(), nullable=True))
 
 
 def downgrade() -> None:
