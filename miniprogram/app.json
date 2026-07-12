@@ -26,6 +26,15 @@
       "name": "animation",
       "independent": false,
       "pages": ["animation-index/animation-index"]
+    },
+    {
+      "root": "subpackages/formulas",
+      "name": "formulas",
+      "independent": false,
+      "pages": [
+        "library/index",
+        "reader/index"
+      ]
     }
   ],
   "style": "v2",

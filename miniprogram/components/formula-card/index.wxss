@@ -1,0 +1,144 @@
+.formula-card-wrap {
+  padding: 20rpx 0;
+}
+
+.fc-header {
+  margin-bottom: 24rpx;
+}
+
+.fc-title {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #1a1a2e;
+  line-height: 1.4;
+  display: block;
+}
+
+.fc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 12rpx;
+}
+
+.fc-tag {
+  padding: 4rpx 16rpx;
+  border-radius: 20rpx;
+  font-size: 22rpx;
+  font-weight: 500;
+}
+
+.fc-tag-basic { background: #e8f5e9; color: #2e7d32; }
+.fc-tag-high_frequency { background: #fff3e0; color: #e65100; }
+.fc-tag-error_prone { background: #ffebee; color: #c62828; }
+.fc-tag-must_memorize { background: #fce4ec; color: #880e4f; }
+
+.fc-formula-section {
+  background: #f8f9ff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+}
+
+.fc-formula-block {
+  margin-bottom: 16rpx;
+}
+.fc-formula-block:last-child {
+  margin-bottom: 0;
+}
+
+.fc-block-label {
+  font-size: 26rpx;
+  color: #666;
+  display: block;
+  margin-bottom: 8rpx;
+}
+
+.fc-block-note {
+  font-size: 24rpx;
+  color: #999;
+  display: block;
+  margin-top: 8rpx;
+}
+
+.fc-graph-section {
+  margin-bottom: 20rpx;
+}
+
+.fc-graph-image {
+  width: 100%;
+  border-radius: 16rpx;
+}
+
+.fc-section {
+  margin-bottom: 20rpx;
+}
+
+.fc-section-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #333;
+  display: block;
+  margin-bottom: 8rpx;
+}
+
+.fc-collapse {
+  border-top: 1rpx solid #f0f0f0;
+}
+
+.fc-collapse-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24rpx 0;
+}
+
+.fc-collapse-title {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: #333;
+}
+
+.fc-collapse-arrow {
+  font-size: 28rpx;
+  color: #999;
+  transition: transform 0.2s;
+}
+
+.fc-collapse-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.fc-collapse-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.fc-collapse-body.open {
+  max-height: none;
+  padding-bottom: 20rpx;
+}
+
+.fc-example {
+  margin-bottom: 24rpx;
+  padding: 16rpx;
+  background: #fafafa;
+  border-radius: 12rpx;
+}
+
+.fc-example-label {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #4F7FFF;
+  display: block;
+  margin-bottom: 6rpx;
+}
+
+.fc-example-label.error {
+  color: #e53935;
+}
+
+.fc-example-detail {
+  margin-top: 12rpx;
+}

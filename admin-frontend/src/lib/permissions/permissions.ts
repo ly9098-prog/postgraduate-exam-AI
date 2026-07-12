@@ -19,7 +19,16 @@ export type PermissionKey =
   | "ai_setting:write"
   | "import:read"
   | "import:write"
-  | "audit:read";
+  | "audit:read"
+  | "formula:read"
+  | "formula:create"
+  | "formula:update"
+  | "formula:review"
+  | "formula:publish"
+  | "formula:delete"
+  | "formula:import"
+  | "formula-category:read"
+  | "formula-category:write";
 
 export function hasPermission(permissions: string[], permission?: PermissionKey) {
   if (!permission) return true;

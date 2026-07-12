@@ -22,6 +22,7 @@ from app.api.v1.knowledge_mastery import router as knowledge_mastery_router
 from app.api.v1.knowledge_path import router as knowledge_path_router
 from app.api.v1.study_report import router as study_report_router
 from app.api.v1.adaptive_learning import router as adaptive_learning_router
+from app.api.v1.formulas import router as formulas_router
 
 public_api_router = APIRouter()
 
@@ -45,5 +46,6 @@ public_api_router.include_router(knowledge_mastery_router)
 public_api_router.include_router(knowledge_path_router)
 public_api_router.include_router(study_report_router)
 public_api_router.include_router(adaptive_learning_router)
+public_api_router.include_router(formulas_router)
 
 __all__ = ["public_api_router"]

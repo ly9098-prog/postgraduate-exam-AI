@@ -29,7 +29,24 @@ ADMIN_ROLE_PERMISSION_NAMES = {
     "import:write",
     "ai_setting:read",
     "audit:read",
+    "formula:read",
+    "formula:create",
+    "formula:update",
+    "formula:import",
+    "formula:ai-generate",
+    "formula-category:read",
+    "formula-category:write",
 }
+
+FORMULA_REVIEWER_PERMISSION_NAMES = {
+    "formula:read",
+    "formula:update",
+    "formula:review",
+    "formula:publish",
+    "formula-category:read",
+}
+
+FORMULA_REVIEWER_ROLE_NAME = "formula_reviewer"
 
 ADMIN_PERMISSION_DEFINITIONS: tuple[dict[str, str], ...] = (
     {"name": "dashboard:read", "resource": "dashboard", "action": "read", "category": "dashboard", "description": "查看统计概览"},
@@ -58,6 +75,16 @@ ADMIN_PERMISSION_DEFINITIONS: tuple[dict[str, str], ...] = (
     {"name": "ai_setting:write", "resource": "ai_setting", "action": "write", "category": "ai_setting", "description": "修改 AI 解析设置"},
     {"name": "audit:read", "resource": "audit", "action": "read", "category": "audit", "description": "查看审计日志"},
     {"name": "sync:write", "resource": "sync", "action": "write", "category": "sync", "description": "执行本地→云端数据同步"},
+    {"name": "formula:read", "resource": "formula", "action": "read", "category": "formula", "description": "查看公式"},
+    {"name": "formula:create", "resource": "formula", "action": "create", "category": "formula", "description": "创建公式"},
+    {"name": "formula:update", "resource": "formula", "action": "update", "category": "formula", "description": "编辑公式"},
+    {"name": "formula:review", "resource": "formula", "action": "review", "category": "formula", "description": "审核公式"},
+    {"name": "formula:publish", "resource": "formula", "action": "publish", "category": "formula", "description": "发布和下架公式"},
+    {"name": "formula:delete", "resource": "formula", "action": "delete", "category": "formula", "description": "删除公式"},
+    {"name": "formula:import", "resource": "formula", "action": "import", "category": "formula", "description": "导入公式"},
+    {"name": "formula:ai-generate", "resource": "formula", "action": "ai-generate", "category": "formula", "description": "AI 生成公式"},
+    {"name": "formula-category:read", "resource": "formula-category", "action": "read", "category": "formula", "description": "查看公式分类"},
+    {"name": "formula-category:write", "resource": "formula-category", "action": "write", "category": "formula", "description": "管理公式分类"},
 )
 
 
@@ -67,10 +94,12 @@ async def ensure_dev_super_admin(db: AsyncSession, app_env: str) -> bool:
 
     role = await _ensure_super_admin_role(db)
     admin_role = await _ensure_admin_role(db)
+    reviewer_role = await _ensure_formula_reviewer_role(db)
     permissions = await _ensure_permissions(db)
     permission_map = {permission.name: permission.id for permission in permissions}
     await _ensure_role_permissions(db, role.id, [permission.id for permission in permissions])
     await _ensure_role_permissions(db, admin_role.id, [permission_map[name] for name in ADMIN_ROLE_PERMISSION_NAMES])
+    await _ensure_role_permissions(db, reviewer_role.id, [permission_map[name] for name in FORMULA_REVIEWER_PERMISSION_NAMES])
     created_admin = await _ensure_admin_user(db, role.id)
 
     if created_admin:
@@ -116,6 +145,22 @@ async def _ensure_admin_role(db: AsyncSession) -> Role:
         name=ADMIN_ROLE_NAME,
         display_name="普通管理员",
         description="默认运营管理员",
+        is_system=True,
+    )
+    db.add(role)
+    await db.flush()
+    return role
+
+
+async def _ensure_formula_reviewer_role(db: AsyncSession) -> Role:
+    result = await db.execute(select(Role).where(Role.name == FORMULA_REVIEWER_ROLE_NAME))
+    role = result.scalar_one_or_none()
+    if role:
+        return role
+    role = Role(
+        name=FORMULA_REVIEWER_ROLE_NAME,
+        display_name="公式审核员",
+        description="公式审核与发布管理员",
         is_system=True,
     )
     db.add(role)
