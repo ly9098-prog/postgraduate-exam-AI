@@ -1,11 +1,11 @@
 {
-  "navigationBarTitleText": "错题详情",
-  "backgroundColor": "#EEF5FF",
-  "backgroundColorTop": "#F8FAFF",
-  "backgroundColorBottom": "#EEF5FF",
+  "navigationStyle": "custom",
+  "backgroundColor": "#F4F4EE",
+  "backgroundColorTop": "#F4F4EE",
+  "backgroundColorBottom": "#F4F4EE",
   "usingComponents": {
     "mp-html": "/components/mp-html/index",
-    "loading-lottie": "/components/loading-lottie/loading-lottie",
-    "quiz-runner": "/components/quiz-runner/quiz-runner"
+    "quiz-runner": "/components/quiz-runner/quiz-runner",
+    "premium-nav": "/components/premium-nav/premium-nav"
   }
 }

@@ -3,15 +3,15 @@
     <view class="sc-top-accent"></view>
 
     <view class="sc-icon-circle">
-      <text class="sc-icon-line line-icon {{scenario === 'unanswered' ? 'icon-exclamation' : 'icon-check'}}"></text>
+      <text class="sc-icon-line line-icon {{scenario === 'all-done' ? 'icon-check' : 'icon-exclamation'}}"></text>
     </view>
 
-    <text class="sc-eyebrow">{{scenario === 'unanswered' ? 'UNFINISHED' : 'SUBMIT PAPER'}}</text>
+    <text class="sc-eyebrow">{{eyebrow || (scenario === 'unanswered' ? 'UNFINISHED' : scenario === 'danger' ? 'IRREVERSIBLE' : scenario === 'info' ? 'NOTICE' : 'SUBMIT PAPER')}}</text>
     <text class="sc-title">{{title}}</text>
     <text class="sc-msg">{{message}}</text>
 
     <view class="sc-actions">
-      <button class="sc-btn sc-btn-cancel" hover-class="sc-btn-cancel-pressed" bindtap="onCancel">{{cancelText}}</button>
+      <button class="sc-btn sc-btn-cancel" wx:if="{{!hideCancel}}" hover-class="sc-btn-cancel-pressed" bindtap="onCancel">{{cancelText}}</button>
       <button class="sc-btn sc-btn-confirm" hover-class="sc-btn-confirm-pressed" bindtap="onConfirm">
         <text>{{confirmText}}</text>
         <view class="sc-confirm-arrow"><text>›</text></view>

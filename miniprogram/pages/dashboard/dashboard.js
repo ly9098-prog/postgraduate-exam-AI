@@ -249,6 +249,10 @@ Page({
   _insightsLoading: false,
   _insightsError: null,
 
+  goBack() {
+    wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/home' }) })
+  },
+
   onShow() {
     this._alive = true
     this._visible = true

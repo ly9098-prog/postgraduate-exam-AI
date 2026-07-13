@@ -1,0 +1,28 @@
+<view
+  class="premium-nav-placeholder"
+  wx:if="{{fixed}}"
+  style="height: {{navHeight}}px;"
+></view>
+
+<view
+  class="premium-nav premium-nav-{{variant}} {{fixed ? 'is-fixed' : ''}}"
+  style="height: {{navHeight}}px; padding-top: {{statusBarHeight}}px;"
+>
+  <view class="premium-nav-inner" style="height: {{contentHeight}}px; padding-right: {{menuRight + menuWidth + 10}}px;">
+    <view
+      class="premium-nav-back"
+      wx:if="{{showBack}}"
+      hover-class="premium-nav-back-pressed"
+      hover-start-time="20"
+      hover-stay-time="80"
+      bindtap="onBack"
+    >
+      <text class="premium-nav-back-icon">‹</text>
+    </view>
+
+    <view class="premium-nav-copy">
+      <text class="premium-nav-caption" wx:if="{{caption}}">{{caption}}</text>
+      <text class="premium-nav-title">{{title}}</text>
+    </view>
+  </view>
+</view>

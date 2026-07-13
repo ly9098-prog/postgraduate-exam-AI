@@ -8,6 +8,7 @@
     "loading-lottie": "/components/loading-lottie/loading-lottie",
     "quiz-runner": "/components/quiz-runner/quiz-runner",
     "animated-view": "/components/AnimatedView/AnimatedView",
-    "submit-confirm": "/components/submit-confirm/submit-confirm"
+    "submit-confirm": "/components/submit-confirm/submit-confirm",
+    "premium-nav": "/components/premium-nav/premium-nav"
   }
 }

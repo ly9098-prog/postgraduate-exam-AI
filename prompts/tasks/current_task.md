@@ -1,699 +1,213 @@
-你是一名资深微信小程序性能优化工程师。请基于当前 MemoGrad 微信小程序源码和根目录下的 `audits.json`，直接修改代码，修复微信开发者工具审计发现的问题。
+# MemoGrad 后端任务 Prompt：补齐“已掌握撤销”与统一复习语义
 
-# 一、总体目标
+你正在维护 MemoGrad / 22408AI 刷题系统的 FastAPI 后端。请直接在现有仓库中完成代码、迁移（如需要）和自动化测试。**不要修改微信小程序前端或管理端。**
 
-在不改变现有业务逻辑、接口协议、页面跳转路径和视觉风格的前提下，完成以下目标：
+## 一、任务背景
 
-1. 修复审计中可以通过代码解决的失败项。
-2. 将首页 `setData` 峰值从每秒 67 次降低至每秒不超过 10 次，推荐控制在每秒 5～8 次。
-3. 清理所有仅供 JavaScript 逻辑使用、却通过 `setData` 写入的数据。
-4. 修复点击态、滚动体验、点击热区和文字颜色对比度问题。
-5. 保证登录、首页、练习、练习结果、错题本、错题详情、学习统计、番茄钟、番茄统计和今日复习流程不发生功能回归。
-6. 修复后重新执行微信开发者工具审计，目标为：
-   - 总分不低于 90；
-   - 体验分类不低于 90；
-   - 性能分类保持 90 以上；
-   - 不出现新的 JavaScript 异常。
+微信小程序的 `pages/review-today` 与 `pages/wrong-detail` 已完成 UI/交互升级，前端现在依赖以下能力：
 
-不要只给修改建议，请直接修改源码。完成后输出修改文件列表、关键改动说明、测试结果和仍需人工配置的事项。
+1. 今日复习中标记某个复习计划为“已掌握”后，允许用户在 5 秒内撤销。
+2. 错题详情中通过批量错题接口标记“已掌握”后，允许用户在 5 秒内撤销。
+3. “已掌握”的统一业务含义：
+   - 停止该题后续自动复习调度；
+   - 保留错题历史、练习记录、复习记录和统计所需数据；
+   - 不等同于“移出错题本”，也不等同于永久删除。
+4. “移出错题本”继续使用现有 `remove_from_book` 行为，本任务不为它增加撤销能力。
 
-# 二、P0：修复首页高频 setData
+## 二、开始编码前必须先做的检查
 
-重点文件：
+先在仓库中定位并阅读：
 
-- `pages/home/home.js`
-- `pages/home/home.wxml`
+- `backend/app/api/v1/` 下复习、错题相关路由；
+- `backend/app/services/` 下复习调度、错题本服务；
+- `backend/app/models/` 下 `review_schedule`、`wrong_question`、`review_record` 等模型；
+- `backend/app/schemas/` 下错题批量操作与复习相关 schema；
+- 当前 `POST /api/v1/review/{schedule_id}/master` 的完整实现；
+- 当前 `POST /api/v1/wrong-questions/batch` 中 `mark_mastered`、`remove_from_book` 的实现；
+- 今日复习概览、下一批、今日结果和错题统计的计算逻辑。
 
-当前 `_animateNumbers()` 同时启动三个独立数字动画：
+遵循项目现有分层、命名、事务、异常、审计日志和测试风格。不要在路由层重复堆叠业务逻辑。
 
-- `_animStreakDays`
-- `_animGoalDone`
-- `_animLevelProgress`
+## 三、必须实现的 API 契约
 
-每个动画内部以约 16 ms 的间隔单独调用一次 `setData`，造成首页峰值达到每秒 67 次。
+### 1. 撤销今日复习“已掌握”
 
-请按以下原则重构：
+新增或补齐：
 
-1. 不允许三个动画各自创建一套 16 ms `setTimeout + setData` 循环。
-2. 改为一个统一的动画调度器，一次计算三个动画字段，并合并成一次 `setData`。
-3. 动画刷新间隔调整为 80～120 ms，或者使用 CSS transition 实现；不得继续以 16 ms 向渲染层传输数据。
-4. 只有字段值实际发生变化时才写入 `setData`。
-5. 动画结束时必须把三个字段精确设置为最终目标值，不能出现少 1、进度不到 100% 等误差。
-6. 在 `onHide` 和 `onUnload` 中清理动画定时器，防止页面退出后继续更新。
-7. 多次执行 `onShow` 或重新加载成长数据时，只保留最新一轮动画。
-8. `streakDays`、`todayGoalDone` 当前没有直接绑定 WXML，只作为动画目标值使用。应优先移到页面实例变量，例如：
+```http
+POST /api/v1/review/{schedule_id}/unmaster
+Authorization: Bearer <token>
+Body: 无
+```
+
+前端实际调用：
 
 ```js
-this._growthTargets = {
-  streakDays: 0,
-  todayGoalDone: 0,
-  levelProgress: 0
-}
-```
-
-不得为了消除审计提示而删除功能。
-
-验收标准：
-
-- 首页加载和切回首页时，数字动画仍然正常。
-- 首页每秒 `setData` 不超过 10 次。
-- 页面退出后没有动画定时器继续运行。
-- 审计不再出现 `set-data-freq`。
-
-# 三、P0：处理未绑定 WXML 的 setData 数据
-
-审计发现多个字段没有绑定到对应页面 WXML，却通过 `setData` 写入。
-
-处理原则：
-
-1. 对每个字段先检查全部 JS 使用场景，不得看到“未绑定”就直接删除。
-2. 只用于接口参数、计时、统计、缓存、流程控制、请求防重、哈希比对或会话状态的字段，应移到页面实例变量中，例如：
-   - `this._runtimeState`
-   - `this._session`
-   - `this._requestContext`
-   - `this._answers`
-3. 实例变量不得通过 `setData` 更新。
-4. 真正用于 WXML 显示或控制渲染的字段继续保留在 `data`。
-5. 若某字段属于视图派生数据，应绑定实际展示字段，而不是保留两个含义重复的状态。
-6. 不得直接修改 `this.data.xxx`。
-7. 页面重新进入、重新开始练习、切换题组和退出页面时，正确初始化或清理实例状态。
-8. 对异步请求增加页面存活检查或请求序列检查，避免旧请求覆盖新页面状态。
-
-逐文件检查以下字段：
-
-## `pages/home/home.js`
-
-- `streakDays`
-- `todayGoalDone`
-- `authed`
-
-其中 `streakDays`、`todayGoalDone` 可作为数字动画目标移出 `data`；`authed` 若只用于 JS 分支，也应改为实例状态。
-
-## `pages/practice/practice.js`
-
-- `traceId`
-- `safeModeActive`
-- `answerMap`
-- `answeredFlags`
-- `correctCount`
-- `comboCount`
-- `elapsedSec`
-- `startTime`
-- `questionTimeMap`
-- `currentQuestionStartedAt`
-- `requestId`
-- `optionKeys`
-
-这些字段大部分属于答题会话、统计和请求状态，建议统一收口为：
-
-```js
-this._practiceSession = {
-  traceId: '',
-  safeModeActive: false,
-  answerMap: {},
-  answeredFlags: {},
-  correctCount: 0,
-  comboCount: 0,
-  elapsedSec: 0,
-  startTime: 0,
-  questionTimeMap: {},
-  currentQuestionStartedAt: 0,
-  requestId: '',
-  optionKeys: []
-}
-```
-
-调整所有读取和写入位置，确保提交答案、切题、计时、结果统计和安全模式逻辑保持一致。
-
-## `pages/practice-result/practice-result.js`
-
-- `growthBadgeCount`
-
-若只用于生成结果文案或业务判断，改为局部变量或实例变量。
-
-## `pages/wrong-book/wrong-book.js`
-
-- `primaryStatLabel`
-
-若页面实际没有展示该字段，改为局部派生值；若设计上应展示，则补充正确的 WXML 绑定。
-
-## `pages/wrong-detail/wrong-detail.js`
-
-- `errorTypeLabelText`
-- `currentWqId`
-- `aiResult`
-- `switching`
-
-其中题目 ID、AI 原始结果和切换锁通常属于运行态，应移出 `data`。页面真正需要展示的 AI ViewModel、遮罩状态等字段仍保留在 `data`。
-
-## `pages/dashboard/dashboard.js`
-
-- `insight`
-- `masteryRate`
-- `refreshing`
-- `_heroHash`
-- `_trendHash`
-- `_subjectHash`
-- `_masteryHash`
-- `_growthHash`
-- `_adaptiveHash`
-- `insightsLoading`
-- `insightsError`
-
-所有哈希字段必须移到实例变量，不能通过 `setData` 保存。
-
-对于 `refreshing`、`insightsLoading` 和 `insightsError`，检查 WXML 是否确实不展示这些状态。若页面已经使用其他加载字段，应合并状态；若应展示加载或错误反馈，则绑定到对应 WXML。
-
-## `pages/pomodoro/pomodoro.js`
-
-- `todayDurationSec`
-- `sessionId`
-- `sessionStartTime`
-- `totalPausedMs`
-- `pauseStartTime`
-- `elapsedSec`
-- `freeFriendlyText`
-- `progress`
-- `endConfirmMode`
-- `breakStartTime`
-- `remainingSec`
-
-番茄钟中的原始时间戳、累计暂停时长、会话 ID、内部剩余秒数应优先放入：
-
-```js
-this._timerState = {
-  sessionId: '',
-  sessionStartTime: 0,
-  totalPausedMs: 0,
-  pauseStartTime: 0,
-  elapsedSec: 0,
-  remainingSec: 0,
-  breakStartTime: 0,
-  endConfirmMode: ''
-}
-```
-
-WXML 仅保留格式化后的展示时间、环形进度样式、暂停状态、阶段状态等必要数据。
-
-注意：`progress` 可能通过样式或子组件间接使用，移动前必须核查所有动态属性和组件传参，避免误判。
-
-## `pages/pomodoro-stats/pomodoro-stats.js`
-
-- `weekSessions`
-- `weekDurationText`
-- `trends`
-- `historyTotal`
-
-若页面使用的是 `_dispWeekSessions`、`_dispWeekDurationText` 等展示字段，应删除重复的数据层传输，将原始统计数据放入实例缓存。
-
-## `pages/review-today/review-today.js`
-
-- `todayNewDueCount`
-- `remainingBatchCount`
-- `allTodayQuestionIds`
-- `completedQuestionIds`
-- `remainingQuestionIds`
-- `reviewOverview`
-- `overviewLoading`
-- `allQuestions`
-- `answers`
-- `sessionId`
-- `currentGroupId`
-- `allGroupResults`
-- `totalCorrect`
-- `totalWrong`
-- `totalCompleted`
-- `safeModeActive`
-- `renderTraces`
-- `optionKeys`
-- `_groupProgressStyle`
-- `celebrationProgressText`
-
-建议建立统一复习会话对象：
-
-```js
-this._reviewSession = {
-  allTodayQuestionIds: [],
-  completedQuestionIds: [],
-  remainingQuestionIds: [],
-  allQuestions: [],
-  answers: {},
-  sessionId: '',
-  currentGroupId: '',
-  allGroupResults: [],
-  totalCorrect: 0,
-  totalWrong: 0,
-  totalCompleted: 0,
-  safeModeActive: false,
-  renderTraces: [],
-  optionKeys: []
-}
-```
-
-视图层只保留当前题组、题组展示结果、按钮状态、加载状态、错误提示和进度展示等字段。
-
-验收标准：
-
-- 审计不再出现上述字段的 `set-data-no-binding`。
-- 练习和复习结果统计与修改前一致。
-- 番茄钟暂停、恢复、结束、跳过休息和自由计时正常。
-- 不出现因实例变量未初始化导致的 `undefined` 异常。
-
-# 四、P1：用 hover-class 替换 CSS :active
-
-禁止继续使用 CSS `:active` 实现小程序点击态。使用 WXML 的 `hover-class`、`hover-start-time` 和 `hover-stay-time`。
-
-建议统一设置：
-
-```xml
-hover-start-time="20"
-hover-stay-time="80"
-```
-
-修复以下位置：
-
-## 1. `components/quiz-runner/quiz-runner.wxss`
-
-删除：
-
-```css
-.runner-option-item:active::after
-.runner-option-item:active
-.runner-nav-btn:active
-```
-
-现有选项已经使用：
-
-```xml
-hover-class="runner-option-pressed"
-```
-
-因此只保留 `.runner-option-pressed` 样式。
-
-为上一题、下一题按钮增加独立点击类，例如：
-
-```xml
-hover-class="{{currentIndex <= 0 ? 'none' : 'runner-nav-pressed'}}"
-```
-
-以及：
-
-```css
-.runner-nav-pressed {
-  opacity: 0.72;
-}
-```
-
-禁用状态不得触发点击态。
-
-## 2. `pages/practice-result`
-
-为 `.action-secondary` 按钮添加 `hover-class="action-secondary-pressed"`，将原来的 `.action-secondary:active` 改成 `.action-secondary-pressed`。
-
-同时检查同文件中同类主按钮的 `:active`，使用相同模式统一处理，避免下一次审计再次命中。
-
-## 3. `pages/dashboard`
-
-为 `.weak-item` 增加 `hover-class="weak-item-pressed"`，将：
-
-```css
-.weak-item:active
-```
-
-改为：
-
-```css
-.weak-item-pressed
-```
-
-## 4. `pages/wrong-book`
-
-为 `.wl-item` 增加 `hover-class="wl-item-pressed"`，替换 `.wl-item:active`。
-
-## 5. `pages/pomodoro-stats`
-
-检查 `.history-item` 是否真的具有点击行为：
-
-- 若没有绑定任何点击事件，直接删除其 `:active` 样式，不要凭空增加交互；
-- 若存在点击行为，则添加 `hover-class="history-item-pressed"`。
-
-## 6. `pages/pomodoro`
-
-为 `.ctrl-primary` 增加 `hover-class="ctrl-primary-pressed"`。
-
-同时处理：
-
-```css
-.ctrl-primary:active
-.page-free .ctrl-primary:active
-```
-
-改成对应 hover 类组合。
-
-## 7. `pages/review-today`
-
-为 `.gradient-btn` 增加 `hover-class="gradient-btn-pressed"`，替换 `.gradient-btn:active`。
-
-同一文件其他实际可交互元素若仍使用 `:active`，一并按相同方式处理，但不得修改纯展示元素。
-
-## 8. 全局 `active-surface`
-
-实际定义位于：
-
-- `styles/tokens.wxss`
-
-当前错误写法：
-
-```css
-.active-surface:active {
-  background: #EEF4FF;
-}
-```
-
-由于 `active-surface` 本身已经作为 `hover-class` 使用，应改为：
-
-```css
-.active-surface {
-  background: #EEF4FF;
-}
-```
-
-不要在 hover 类后再次追加 `:active`。
-
-验收标准：
-
-- 审计不再出现 `ele-active-state`。
-- 滑动列表时不会产生残留点击态。
-- 禁用按钮不会显示按压效果。
-
-# 五、P1：修复番茄统计页惯性滚动
-
-文件：
-
-- `pages/pomodoro-stats/pomodoro-stats.wxss`
-
-审计命中 `.page-inner`。
-
-在确认其为实际滚动容器后加入：
-
-```css
-.page-inner {
-  -webkit-overflow-scrolling: touch;
-}
-```
-
-若 `.page-inner` 本身负责内部滚动，则同时设置合适的：
-
-```css
-overflow-y: auto;
-```
-
-但必须避免形成“页面滚动 + 内层滚动”两个纵向滚动容器。
-
-若当前页面依赖系统页面滚动，不要盲目制造嵌套滚动；可以将内容改为明确的 `scroll-view`，但需要验证顶部、底部安全区、图表触摸和历史记录滚动行为。
-
-验收标准：
-
-- iOS 上历史列表滚动顺畅。
-- 页面不出现双滚动条、滚动锁死或底部内容无法访问。
-- 审计不再出现 `overflow-scroll`。
-
-# 六、P1：扩大可点击元素响应区域
-
-## 1. 题目导航圆点
-
-文件：
-
-- `components/quiz-runner/quiz-runner.wxml`
-- `components/quiz-runner/quiz-runner.wxss`
-
-当前 `.runner-dot` 视觉尺寸只有约 12～26 rpx，却直接绑定 `bindtap`。
-
-不要单纯把视觉圆点放大。应将“点击热区”和“视觉圆点”拆分，例如：
-
-```xml
-<view
-  class="runner-dot-hit"
-  wx:for="{{questions}}"
-  wx:key="index"
-  data-index="{{index}}"
-  bindtap="goQuestion"
-  hover-class="runner-dot-hit-pressed"
->
-  <view class="runner-dot {{item._answered ? 'runner-done' : ''}} {{index === currentIndex ? 'runner-active' : ''}}"></view>
-</view>
+await api.post(`/review/${scheduleId}/unmaster`)
 ```
 
 要求：
 
-1. `.runner-dot-hit` 的实际点击区域尽量达到 80rpx × 80rpx。
-2. 内部 `.runner-dot` 保持当前视觉大小。
-3. 题目较多时，导航区允许横向滚动，不得压缩点击热区。
-4. 横向滚动时不得误触切题。
-5. 当前题、已完成题的视觉状态保持不变。
+- 只能操作当前登录用户拥有的 schedule；
+- 与现有 `/review/{schedule_id}/master` 互为反向操作；
+- 恢复该题进入后续复习调度的资格；
+- 不删除或改写历史复习记录；
+- 操作后 `/review/today/overview`、`/review/today/result`、下一批复习和相关统计必须一致；
+- 幂等：重复 unmaster 不得产生重复记录、重复计划或 500；
+- 使用数据库事务，避免并发 master/unmaster 造成不一致；
+- 返回格式遵循现有 master 接口的项目惯例。前端不依赖特定文案，但必须是 2xx 成功响应。
 
-该组件会影响：
+### 2. 错题批量操作新增 `unmark_mastered`
 
-- `pages/practice/practice`
-- `pages/wrong-detail/wrong-detail`
-- `pages/review-today/review-today`
+扩展现有接口：
 
-必须分别回归测试。
+```http
+POST /api/v1/wrong-questions/batch
+Content-Type: application/json
+Authorization: Bearer <token>
 
-## 2. 年度记录入口
-
-文件：
-
-- `pages/dashboard/dashboard.wxml`
-- `pages/dashboard/dashboard.wxss`
-
-当前：
-
-```xml
-<text class="yearly-more" bindtap="onToggleYearly">
-```
-
-响应区域高度过小。
-
-建议改成语义明确的 `view` 或 `button`，并设置：
-
-- 最小高度 80rpx；
-- 左右内边距；
-- `display:flex`；
-- `align-items:center`；
-- `justify-content:center`；
-- 对应 hover-class。
-
-不得仅通过增大字体解决热区问题。
-
-验收标准：
-
-- 审计不再出现 `small-response-area`。
-- 题目圆点仍能准确切换到对应题目。
-- 年度记录入口容易点击，且布局不发生明显位移。
-
-# 七、P1：提高今日复习结果页颜色对比度
-
-文件：
-
-- `pages/review-today/review-today.wxss`
-
-目标：普通文字与背景对比度不低于 4.5:1，大号加粗文字不低于 3:1。
-
-建议调整：
-
-```css
-.grp-group-tag {
-  color: #3157D5;
-  background: #EEF4FF;
-}
-
-.grp-accuracy-value {
-  color: #3157D5;
-}
-
-.grp-accuracy-label,
-.grp-summary-lbl,
-.grp-summary-val.muted {
-  color: #5F6F86;
-}
-
-.grp-summary-val.success {
-  color: #137A3D;
-}
-
-.grp-summary-val.danger {
-  color: #B42318;
-}
-
-.grp-status-pill.correct {
-  color: #137A3D;
-  background: #CDF5DD;
-}
-
-.grp-status-pill.wrong {
-  color: #B42318;
-  background: #FCD8D8;
+{
+  "action": "unmark_mastered",
+  "ids": [123]
 }
 ```
 
-以上颜色可根据现有设计系统微调，但不能继续使用浅绿色文字叠加浅绿色背景、浅红文字叠加浅红背景的低对比方案。
+前端实际调用：
 
-同时检查：
+```js
+await api.post('/wrong-questions/batch', {
+  action: 'unmark_mastered',
+  ids: [wrongQuestionId],
+})
+```
 
-- `.grp-summary-card`
-- `.grp-summary-grid`
-- `.grp-group-tag`
-- `.grp-accuracy-label`
-- `.grp-summary-lbl`
-- `.grp-summary-val.success`
-- `.grp-summary-val.danger`
-- `.grp-summary-val.muted`
-- `.grp-status-pill.correct`
-- `.grp-status-pill.wrong`
+要求：
 
-验收标准：
+- 在 batch action schema/枚举中加入 `unmark_mastered`；
+- 保持现有请求结构与响应结构，至少继续返回现有的 `updated_count` 字段；
+- 只能操作当前用户拥有的错题记录；
+- 与现有 `mark_mastered` 互为反向操作；
+- `mark_mastered` 与 `unmark_mastered` 必须复用统一服务逻辑，并与 review master/unmaster 的最终业务状态一致；
+- 不创建重复复习计划；
+- 不删除错题历史；
+- 对空 ids、重复 ids、部分不存在、跨用户 ids 的处理严格遵循现有 batch 接口惯例，不要静默越权；
+- 幂等并具备事务一致性。
 
-- 审计不再出现 `color-contrast`。
-- 正确、错误、跳过状态仍有清晰的视觉区分。
-- 不使用纯黑替代所有状态色，不破坏现有蓝色设计体系。
+### 3. 保持现有操作不变
 
-# 八、P2：基础库版本兼容性
+以下前端调用已经存在，不得破坏：
 
-当前 `project.config.json` 和 `project.private.config.json` 中本地基础库版本为 `3.6.6`，但审计提示线上最低基础库版本可能低于部分组件要求。
+```json
+{
+  "action": "mark_mastered",
+  "ids": [123]
+}
+```
 
-涉及的最低版本包括：
+```json
+{
+  "action": "remove_from_book",
+  "ids": [123]
+}
+```
 
-- `view.aria-label`：2.5.0
-- `rich-text`：1.4.0
-- `text.decode`：1.4.0
-- `slider.block-color`：1.9.0
-- `slider.block-size`：1.9.0
-- `cover-view`：1.4.0
+`remove_from_book` 本轮不增加恢复接口。确认它是“从当前错题本隐藏/移出”，而不是误删题库题目、练习记录或复习历史。若现有行为与此冲突，先在实现说明中指出，再做最小、安全、向后兼容的修正。
 
-处理要求：
+## 四、统一业务语义
 
-1. 不要为了兼容极旧基础库删除 `rich-text`、数学题渲染、滑块样式或无障碍属性。
-2. 在最终报告中明确标注：需要在微信公众平台将最低基础库版本设置为不低于 2.5.0。
-3. 若项目明确要求支持低于 2.5.0 的基础库，再为 `aria-label` 提供兼容方案。
-4. 该项属于线上配置项，代码无法完全代替后台版本设置。
+请抽取或整理一个服务层入口，保证以下入口不会出现不同状态：
 
-# 九、P2：未使用 WXSS 清理
+- `POST /review/{schedule_id}/master`
+- `POST /review/{schedule_id}/unmaster`
+- wrong-question batch `mark_mastered`
+- wrong-question batch `unmark_mastered`
 
-审计提示以下文件可能存在大量未使用样式：
+### Master 后
 
-- `app.wxss`
-- `pages/practice/practice.wxss`
-- `components/AnimatedView/AnimatedView.wxss`
-- `components/mp-html/index.wxss`
-- `components/quiz-runner/quiz-runner.wxss`
-- `pages/wrong-detail/wrong-detail.wxss`
-- `pages/wrong-book/wrong-book.wxss`
-- `pages/dashboard/dashboard.wxss`
-- `pages/pomodoro-stats/pomodoro-stats.wxss`
+- schedule/题目不会进入未来的自动复习候选；
+- 错题记录和历史记录保留；
+- GET 错题详情能以现有字段或新增的向后兼容字段反映已掌握状态，优先确保返回 `is_mastered: true`；
+- 今日复习剩余数、已掌握数等统计按现有产品定义更新。
 
-注意：该审计结果与本次审计实际访问路径有关，可能把条件渲染、异常状态、弹窗状态、动画状态和第三方组件样式误判为未使用。
+### Unmaster 后
 
-处理原则：
+- 恢复进入复习调度；
+- 不能伪造一次“答题”或删除此前掌握操作之前的历史；
+- GET 错题详情返回 `is_mastered: false`；
+- 今日概览和后续批次可重新看到该题，具体是否“立即到期”应遵循现有调度算法。
 
-1. 不得按审计节省比例直接批量删除 CSS。
-2. 先静态检索 WXML 中的 class、动态 class、hover-class 和 JS 拼接 class。
-3. 检查 `wx:if`、错误态、空状态、管理员状态、动画状态和响应式样式。
-4. `components/mp-html` 属于复杂富文本组件，除非能完整验证公式、图片、表格、代码块和富文本节点，否则不要大范围裁剪。
-5. `AnimatedView` 中动画状态可能由 JS 动态添加，必须检查组件逻辑。
-6. 只删除能够确认：
-   - 没有任何 WXML 引用；
-   - 没有 JS 动态拼接；
-   - 没有 hover-class 引用；
-   - 没有组件外部样式类依赖；
-   - 不属于第三方组件必要样式；
-     的选择器。
-7. 优先拆分页面专属样式，避免所有页面全局引入。
-8. 删除前后记录 WXSS 文件体积变化。
+## 五、可逆状态的实现要求
 
-该项优先级低于功能、性能和体验修复，不得为了提高审计覆盖率造成界面回归。
+先检查现有 master 到底修改了哪些字段。不要猜字段名。
 
-# 十、生命周期与稳定性要求
+优先级：
 
-所有新增的定时器、延迟任务和动画调度器都必须：
+1. 如果现有字段足以无损反转，直接复用；
+2. 如果 master 会覆盖无法推导的调度状态，请增加**最小必要的可逆元数据**，并提供 Alembic 迁移；
+3. 可逆元数据只保存 master 实际覆盖且恢复所需的字段，不复制整行；
+4. 对部署前已经处于 mastered、没有快照的旧记录，提供确定性 fallback：优先从最后一条有效复习记录与现有算法恢复；仍无法恢复时，将其恢复为合法的待调度/到期状态，并在代码注释与实现说明中明确；
+5. unmaster 成功后清理一次性快照，或按项目审计策略保留，但不能影响下次 master/unmaster。
 
-1. 保存句柄；
-2. 在重新启动前清理旧句柄；
-3. 在 `onHide`、`onUnload` 或组件 `detached` 中清理；
-4. 异步回调执行前检查页面是否仍然存活；
-5. 不允许卸载后调用 `setData`；
-6. 不允许出现重复提交、重复请求或旧请求覆盖新状态。
+如模型变更：
 
-# 十一、回归测试
+- 创建规范 Alembic migration；
+- 兼容 PostgreSQL 生产环境与 SQLite 开发/测试环境；
+- 不依赖仅在启动时 `create_all` 才能工作的行为。
 
-至少完成以下测试：
+## 六、并发与事务
 
-1. 未登录进入登录页。
-2. 登录后进入首页，成长数据和数字动画正常。
-3. 调整每日目标。
-4. 开始随机练习。
-5. 单选、多选、填空题选择和切题。
-6. 点击题目导航圆点。
-7. 提交练习并查看练习结果。
-8. 进入错题本和错题详情。
-9. 在错题详情切换上一题、下一题。
-10. 生成或重新生成 AI 分析。
-11. 打开学习统计，切换趋势范围。
-12. 展开和收起年度记录。
-13. 点击薄弱知识点。
-14. 启动、暂停、继续、终止番茄钟。
-15. 跳过休息阶段。
-16. 查看番茄统计和历史记录。
-17. 开始今日复习、切题、完成题组和进入下一组。
-18. 查看今日复习最终结果。
-19. 验证空数据、请求失败和重新加载状态。
-20. 连续快速进入和退出页面，确认无报错和残留定时器。
+至少处理以下情况：
 
-# 十二、最终输出格式
+- 同一 schedule 连续 master → unmaster → master；
+- 两个请求几乎同时 master/unmaster；
+- batch 中包含多个 ids，其中一个处理失败；
+- wrong_question 与 review_schedule 关联缺失或已被移出错题本；
+- 重试同一请求。
 
-完成修改后，按以下结构输出：
+沿用项目现有事务边界和锁策略。PostgreSQL 下必要时对目标记录加行锁；SQLite 测试下保持可运行。不要引入分布式锁，除非现有服务已有统一机制且确有必要。
 
-## 1. 修改摘要
+## 七、测试要求
 
-说明修复了哪些审计项，以及修复前后的核心指标。
+请补充后端自动化测试，至少覆盖：
 
-## 2. 修改文件
+1. 当前用户 master schedule 成功；
+2. master 后 unmaster 成功；
+3. master → unmaster 的状态往返，历史 review records 数量不减少；
+4. 重复 master 幂等；
+5. 重复 unmaster 幂等；
+6. 不能操作其他用户的 schedule；
+7. batch `mark_mastered` 后 `unmark_mastered` 状态往返；
+8. batch 包含重复 id；
+9. batch 包含不存在或跨用户 id，行为与现有规范一致且不越权；
+10. 操作后错题详情的 `is_mastered` 正确；
+11. 操作后今日 overview/result/next-batch 的关键计数与候选集正确；
+12. `remove_from_book` 仍可用且不会永久删除历史；
+13. 事务中途异常时不留下半更新状态；
+14. 若增加迁移，至少验证 upgrade 可执行，必要时验证 downgrade。
 
-逐个列出修改过的文件及其用途。
+运行与本任务相关的测试，并尽量运行项目完整后端测试集。修复由本次改动引起的失败，不要通过删除断言、跳过测试或放宽权限检查来“通过”。
 
-## 3. setData 优化结果
+## 八、兼容性与非目标
 
-列出首页修复前后的每秒调用次数，并说明未绑定数据如何迁移。
+- 不修改现有前端调用路径和 payload；
+- 不修改微信小程序；
+- 不修改管理端；
+- 不改变 AI、OCR、导题逻辑；
+- 不把“已掌握”实现为永久删除；
+- 不给 `remove_from_book` 新增撤销接口；
+- 不做无关重构；
+- 保持现有 API 错误码和响应风格。
 
-## 4. 交互与无障碍修复
+## 九、交付说明
 
-说明 hover-class、点击热区、滚动和颜色对比度的处理。
+完成后输出：
 
-## 5. 未使用样式处理
+1. 改动文件列表；
+2. API 契约说明；
+3. master/unmaster 状态转换说明；
+4. 是否增加数据库字段与迁移；
+5. 旧 mastered 数据的 fallback 行为；
+6. 测试命令和结果；
+7. 仍存在的风险或需要产品确认的边界。
 
-列出删除的选择器、保留但被审计误判的样式及保留理由。
-
-## 6. 人工配置项
-
-明确提示微信公众平台最低基础库版本应设置为 2.5.0 或更高。
-
-## 7. 测试结果
-
-逐项列出通过、未通过和未执行的测试，不得笼统声称“全部正常”。
-
-## 8. 剩余风险
-
-如存在无法通过源码完全修复的审计项，说明原因和下一步操作。
-
-# 十三、禁止事项
-
-1. 不得修改后端 API 地址、参数或返回结构。
-2. 不得改变页面路由。
-3. 不得删除核心功能。
-4. 不得通过隐藏元素、移除点击事件等方式规避审计。
-5. 不得把逻辑状态全部继续留在 `data` 中。
-6. 不得使用 `this.data.xxx = value` 绕过 `setData`。
-7. 不得批量删除被审计判定为“未使用”的第三方组件样式。
-8. 不得只修改 `audits.json` 或关闭自动审计。
-9. 不得为了通过颜色审计，把所有文字统一改成黑色。
-10. 不得只输出建议而不修改代码。
+先阅读代码与测试，再实施；不要只给方案或伪代码。

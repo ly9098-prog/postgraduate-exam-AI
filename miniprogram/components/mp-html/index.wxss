@@ -1,5 +1,3 @@
-@import "./latex/katex.wxss";
-
 /* 根节点样式 */
 ._root {
   padding: 1px 0;

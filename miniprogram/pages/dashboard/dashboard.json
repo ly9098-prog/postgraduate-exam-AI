@@ -1,9 +1,10 @@
 {
-  "navigationBarTitleText": "学习报告",
-  "navigationBarBackgroundColor": "#F7F7F8",
-  "navigationBarTextStyle": "black",
   "enablePullDownRefresh": true,
-  "backgroundColor": "#F2F3F5",
-  "backgroundColorTop": "#F7F7F8",
-  "backgroundColorBottom": "#F2F3F5"
+  "backgroundColor": "#F2F3EF",
+  "backgroundColorTop": "#F4F4EE",
+  "backgroundColorBottom": "#EFF1EC",
+  "navigationStyle": "custom",
+  "usingComponents": {
+    "premium-nav": "/components/premium-nav/premium-nav"
+  }
 }

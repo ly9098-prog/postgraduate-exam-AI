@@ -97,6 +97,14 @@ function _detectAiCache(wq) {
   return false
 }
 
+function _isWqMastered(wq) {
+  if (!wq) return false
+  return wq.is_mastered === true ||
+    wq.mastered === true ||
+    wq.review_status === 'mastered' ||
+    wq.status === 'mastered'
+}
+
 
 Page({
   data: {
@@ -119,10 +127,20 @@ Page({
     showSwitchMask: false,
     renderTraces: [],
 
+    masterConfirmVisible: false,
+    masterSubmitting: false,
+    isCurrentMastered: false,
+    masterUndoVisible: false,
+    moreMenuVisible: false,
+    removeConfirmVisible: false,
+    removeSubmitting: false,
+
     // quiz-runner data
     currentQuestion: null,
     wrongQuestions: [],
     runnerProgressPercent: 0,
+    skeletonOptions: [1, 2, 3, 4],
+    aiSkeletonSections: [1, 2, 3],
   },
 
   _alive: false,
@@ -141,6 +159,9 @@ Page({
     // 页面实例级别的缓存（含 TTL），避免模块全局变量跨用户串用
     this._wqCache = {}
     this._switchMaskTimer = null
+    this._masterUndoTimer = null
+    this._masterAdvanceTimer = null
+    this._pendingMasterUndo = null
     const currentId = Number(options.id)
     if (!Number.isFinite(currentId) || currentId <= 0) {
       this.setData({ loading: false, errorText: '错题ID无效', wq: null })
@@ -156,6 +177,7 @@ Page({
         }
       }
     } catch (_) {}
+    if (!questionIds.length) questionIds = [currentId]
     const currentIdx = questionIds.indexOf(currentId)
     this.setData({
       questionIds,
@@ -172,6 +194,7 @@ Page({
       clearTimeout(this._switchMaskTimer)
       this._switchMaskTimer = null
     }
+    this._clearMasterUndo()
     // 清空页面实例缓存，防止跨页面串用
     this._wqCache = null
     resetRenderGuard()
@@ -188,6 +211,11 @@ Page({
       aiErrorText: '',
       aiRequested: false,
       aiFromCache: false,
+      masterConfirmVisible: false,
+      moreMenuVisible: false,
+      removeConfirmVisible: false,
+      masterSubmitting: false,
+      removeSubmitting: false,
     })
     try {
       const wq = await api.get(`/wrong-questions/${wqId}`)
@@ -228,6 +256,9 @@ Page({
         aiFromCache: false,
         aiFallback: false,
         aiErrorText: '',
+        isCurrentMastered: _isWqMastered(wq),
+        masterSubmitting: false,
+        removeSubmitting: false,
       }
 
       // 如果后端已返回持久化的 AI 分析，直接展示
@@ -451,6 +482,177 @@ Page({
     }
   },
 
+  openMasterConfirm() {
+    if (this.data.masterSubmitting || this.data.isCurrentMastered) return
+    this.setData({ masterConfirmVisible: true })
+  },
+
+  closeMasterConfirm() {
+    if (this.data.masterSubmitting) return
+    this.setData({ masterConfirmVisible: false })
+  },
+
+  async confirmMastered() {
+    const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
+    if (!wqId || this.data.masterSubmitting) return
+
+    this.setData({ masterSubmitting: true, masterConfirmVisible: false })
+    try {
+      await api.post('/wrong-questions/batch', {
+        action: 'mark_mastered',
+        ids: [wqId],
+      })
+
+      this._clearMasterUndo()
+      this._pendingMasterUndo = {
+        wqId,
+        originalIdx: this.data.currentIdx,
+      }
+
+      if (this._wqCache && this._wqCache[wqId]) {
+        this._wqCache[wqId].data = Object.assign({}, this._wqCache[wqId].data, { is_mastered: true })
+      }
+      if (this.data.wq && String(this.data.wq.id) === String(wqId)) {
+        this.setData({
+          wq: Object.assign({}, this.data.wq, { is_mastered: true }),
+          isCurrentMastered: true,
+          masterSubmitting: false,
+          masterUndoVisible: true,
+        })
+      } else {
+        this.setData({ masterSubmitting: false, masterUndoVisible: true })
+      }
+
+      this._masterUndoTimer = setTimeout(() => {
+        this._pendingMasterUndo = null
+        this._masterUndoTimer = null
+        this.setData({ masterUndoVisible: false })
+      }, 5000)
+
+      if (this.data.currentIdx < this.data.questionIds.length - 1) {
+        this._masterAdvanceTimer = setTimeout(() => {
+          this._masterAdvanceTimer = null
+          this._navigateTo(this.data.currentIdx + 1, 150)
+        }, 120)
+      }
+    } catch (e) {
+      console.error('标记已掌握失败', e)
+      this.setData({ masterSubmitting: false })
+      wx.showToast({ title: '操作失败，请重试', icon: 'none' })
+    }
+  },
+
+  async undoMastered() {
+    const pending = this._pendingMasterUndo
+    if (!pending) return
+
+    try {
+      await api.post('/wrong-questions/batch', {
+        action: 'unmark_mastered',
+        ids: [pending.wqId],
+      })
+
+      if (this._wqCache && this._wqCache[pending.wqId]) {
+        this._wqCache[pending.wqId].data = Object.assign({}, this._wqCache[pending.wqId].data, { is_mastered: false })
+      }
+
+      const targetIdx = this.data.questionIds.findIndex(id => String(id) === String(pending.wqId))
+      this._clearMasterUndo()
+
+      if (targetIdx >= 0 && targetIdx !== this.data.currentIdx) {
+        await this._navigateTo(targetIdx, 150)
+      } else if (this.data.wq && String(this.data.wq.id) === String(pending.wqId)) {
+        this.setData({
+          wq: Object.assign({}, this.data.wq, { is_mastered: false }),
+          isCurrentMastered: false,
+        })
+      } else if (targetIdx >= 0) {
+        await this.loadData(pending.wqId)
+      }
+      wx.showToast({ title: '已撤销掌握', icon: 'none' })
+    } catch (e) {
+      console.error('撤销已掌握失败', e)
+      wx.showToast({ title: '撤销失败，请重试', icon: 'none' })
+    }
+  },
+
+  _clearMasterUndo() {
+    if (this._masterUndoTimer) {
+      clearTimeout(this._masterUndoTimer)
+      this._masterUndoTimer = null
+    }
+    if (this._masterAdvanceTimer) {
+      clearTimeout(this._masterAdvanceTimer)
+      this._masterAdvanceTimer = null
+    }
+    this._pendingMasterUndo = null
+    if (this.data && this.data.masterUndoVisible) {
+      this.setData({ masterUndoVisible: false })
+    }
+  },
+
+  openMoreMenu() {
+    this.setData({ moreMenuVisible: true })
+  },
+
+  closeMoreMenu() {
+    this.setData({ moreMenuVisible: false })
+  },
+
+  openRemoveConfirm() {
+    this.setData({ moreMenuVisible: false, removeConfirmVisible: true })
+  },
+
+  closeRemoveConfirm() {
+    if (this.data.removeSubmitting) return
+    this.setData({ removeConfirmVisible: false })
+  },
+
+  async removeFromWrongBook() {
+    const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
+    if (!wqId || this.data.removeSubmitting) return
+
+    this._clearMasterUndo()
+    this.setData({ removeSubmitting: true })
+    try {
+      await api.post('/wrong-questions/batch', {
+        action: 'remove_from_book',
+        ids: [wqId],
+      })
+
+      const oldIds = this.data.questionIds || []
+      const currentIdx = this.data.currentIdx
+      const nextIds = oldIds.filter(id => String(id) !== String(wqId))
+      if (this._wqCache) delete this._wqCache[wqId]
+
+      try {
+        wx.setStorageSync('wrong_detail_nav', { ids: nextIds, ts: Date.now() })
+      } catch (_) {}
+
+      this.setData({
+        questionIds: nextIds,
+        totalQuestions: nextIds.length,
+        removeConfirmVisible: false,
+        removeSubmitting: false,
+      })
+
+      if (!nextIds.length) {
+        wx.showToast({ title: '已移出错题本', icon: 'none' })
+        setTimeout(() => this.goBack(), 220)
+        return
+      }
+
+      const nextIdx = Math.min(currentIdx, nextIds.length - 1)
+      this.setData({ currentIdx: nextIdx })
+      await this.loadData(nextIds[nextIdx])
+      wx.showToast({ title: '已移出错题本', icon: 'none' })
+    } catch (e) {
+      console.error('移出错题本失败', e)
+      this.setData({ removeSubmitting: false })
+      wx.showToast({ title: '移出失败，请重试', icon: 'none' })
+    }
+  },
+
   // ---- Render Invariant + Trace ----
 
   _checkRenderInvariant(renderModel) {
@@ -612,6 +814,9 @@ Page({
         aiFromCache: false,
         aiFallback: false,
         aiErrorText: '',
+        isCurrentMastered: _isWqMastered(wq),
+        masterSubmitting: false,
+        removeSubmitting: false,
       }
 
       // 检查切换后题目是否有已缓存 AI 分析
@@ -642,6 +847,8 @@ Page({
   scrollToAiCard() {
     wx.pageScrollTo({ selector: '#ai-card', duration: 220 })
   },
+
+  noop() {},
 
   _prefetchWrongQuestion(idx) {
     if (idx < 0 || idx >= this.data.questionIds.length) return

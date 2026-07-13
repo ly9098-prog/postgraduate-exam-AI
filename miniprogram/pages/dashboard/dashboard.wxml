@@ -1,3 +1,4 @@
+<premium-nav title="学习报告" variant="light" bind:back="goBack" />
 <view class="dashboard-page {{pageReady ? 'ready' : ''}}">
   <!-- Initial loading -->
   <view class="dashboard-loading" wx:if="{{initialLoading && !pageReady}}">
@@ -47,7 +48,7 @@
 
     <!-- Dark hero -->
     <view class="hero-card" wx:if="{{hero}}">
-      <view class="hero-glow hero-glow-blue"></view>
+      <view class="hero-glow hero-glow-primary"></view>
       <view class="hero-glow hero-glow-green"></view>
 
       <view class="hero-topline">
