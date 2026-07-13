@@ -22,6 +22,13 @@ from app.models.formula import (
     FormulaTag,
     UserFormulaFavorite,
 )
+from app.services.formula_graph_asset_service import (
+    MAX_IMAGE_SIZE,
+    choose_effective_graph_asset,
+    delete_asset_by_source_type,
+    get_graph_assets_for_card,
+    upload_graph_asset,
+)
 from app.schemas.common import paginated_response
 from app.schemas.formula import (
     FormulaBatchReview,
@@ -30,6 +37,7 @@ from app.schemas.formula import (
     FormulaCardUpdate,
     FormulaCategoryCreate,
     FormulaCategoryUpdate,
+    FormulaGraphAssetResponse,
     FormulaImportItemResponse,
     FormulaImportItemReview,
     FormulaImportJobResponse,
@@ -223,6 +231,23 @@ async def _card_to_dict(db: AsyncSession, card: FormulaCard) -> dict:
         {"id": t.id, "code": t.code, "name": t.name, "sort_order": t.sort_order}
         for t in tags_result.scalars().all()
     ]
+
+    # Batch-load graph assets
+    from app.services.formula_graph_asset_service import (
+        choose_effective_graph_asset,
+        load_graph_assets_map,
+    )
+    assets_map = await load_graph_assets_map(db, [card.id])
+    assets = assets_map.get(card.id, [])
+    effective = choose_effective_graph_asset(assets)
+
+    def _asset_to_min(a):
+        if not a:
+            return None
+        return FormulaGraphAssetResponse.model_validate(a).model_dump(
+            exclude={"template_type", "template_parameters", "viewport", "original_svg_url", "formula_card_id"},
+        )
+
     return {
         "id": card.id,
         "exam_scope": card.exam_scope,
@@ -256,6 +281,8 @@ async def _card_to_dict(db: AsyncSession, card: FormulaCard) -> dict:
         "deleted_at": card.deleted_at,
         "created_at": card.created_at,
         "updated_at": card.updated_at,
+        "graph_asset": _asset_to_min(effective),
+        "graph_assets": [_asset_to_min(a) for a in assets],
     }
 
 
@@ -603,6 +630,7 @@ async def review_formula_card(
         card.published_at = None
 
     await _create_version_snapshot(db, card, data.action, admin.id, data.rejection_reason)
+    await db.flush()
     await _log_audit(
         db, admin, request, f"formula.{data.action}",
         "formula_card", str(card.id),
@@ -951,6 +979,153 @@ async def review_formula_import_item(
         db, admin, request, f"formula.import-item.{data.review_status}",
         "formula_import_item", str(item_id),
     )
+    await db.commit()
+    return {"status": "ok"}
+
+
+# ════════════════════════════════════════════════════════════
+# Graph Assets
+# ════════════════════════════════════════════════════════════
+
+
+def _graph_asset_to_dict(asset: FormulaGraphAsset) -> dict:
+    return FormulaGraphAssetResponse.model_validate(asset).model_dump()
+
+
+@router.get("/{card_id}/graph-assets")
+async def list_graph_assets(
+    card_id: int,
+    _=Depends(require_permissions("formula:read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all graph assets for a card, plus the effective one."""
+    result = await db.execute(
+        select(FormulaCard).where(
+            FormulaCard.id == card_id, FormulaCard.deleted_at.is_(None)
+        )
+    )
+    card = result.scalar_one_or_none()
+    if not card:
+        raise HTTPException(status_code=404, detail="Formula not found")
+
+    assets = await get_graph_assets_for_card(db, card_id)
+    effective = choose_effective_graph_asset(assets)
+
+    return {
+        "items": [_graph_asset_to_dict(a) for a in assets],
+        "effective": _graph_asset_to_dict(effective) if effective else None,
+    }
+
+
+@router.post("/{card_id}/graph-assets/upload")
+async def upload_graph_asset_endpoint(
+    card_id: int,
+    request: Request,
+    admin=Depends(require_permissions("formula:update")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload or replace a graph image for a function_graph card."""
+    result = await db.execute(
+        select(FormulaCard).where(
+            FormulaCard.id == card_id, FormulaCard.deleted_at.is_(None)
+        )
+    )
+    card = result.scalar_one_or_none()
+    if not card:
+        raise HTTPException(status_code=404, detail="Formula not found")
+
+    if card.card_type != "function_graph":
+        raise HTTPException(
+            status_code=422,
+            detail="仅函数图像类型卡片支持上传图像。当前卡片类型为「纯公式」",
+        )
+
+    # Read file from multipart
+    form = await request.form()
+    file_field = form.get("file")
+    if not file_field:
+        raise HTTPException(status_code=422, detail="未提供文件（字段名: file）")
+
+    try:
+        file_data = await file_field.read()
+    except Exception:
+        raise HTTPException(status_code=422, detail="文件读取失败")
+
+    # Validate
+    if not file_data:
+        raise HTTPException(status_code=422, detail="文件为空")
+    if len(file_data) > MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=413, detail=f"文件大小超过 {MAX_IMAGE_SIZE // (1024 * 1024)}MB 限制")
+
+    filename = getattr(file_field, "filename", "image.png") or "image.png"
+
+    try:
+        asset, is_new = await upload_graph_asset(db, card, file_data, filename, admin.id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    # Audit log
+    old_cs = None
+    if not is_new:
+        # Check if this was a replace (asset existed before)
+        old_assets = await get_graph_assets_for_card(db, card_id)
+        for a in old_assets:
+            if a.id == asset.id and a.checksum != asset.checksum:
+                old_cs = a.checksum
+                break
+
+    action = "formula.graph_asset.replace" if not is_new and old_cs else "formula.graph_asset.upload"
+    await _log_audit(
+        db, admin, request, action, "formula_graph_asset", str(asset.id),
+        detail={
+            "formula_card_id": card_id,
+            "source_type": "uploaded",
+            "old_checksum": old_cs,
+            "new_checksum": asset.checksum,
+            "width": asset.width,
+            "height": asset.height,
+        },
+    )
+
+    await db.commit()
+    await db.refresh(asset)
+    return _graph_asset_to_dict(asset)
+
+
+@router.delete("/{card_id}/graph-assets/{source_type}")
+async def delete_graph_asset(
+    card_id: int,
+    source_type: str,
+    request: Request,
+    admin=Depends(require_permissions("formula:update")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a graph asset by source_type (uploaded|template)."""
+    if source_type not in ("uploaded", "template"):
+        raise HTTPException(status_code=422, detail=f"不支持的来源类型: {source_type}")
+
+    result = await db.execute(
+        select(FormulaCard).where(
+            FormulaCard.id == card_id, FormulaCard.deleted_at.is_(None)
+        )
+    )
+    card = result.scalar_one_or_none()
+    if not card:
+        raise HTTPException(status_code=404, detail="Formula not found")
+
+    deleted = await delete_asset_by_source_type(db, card, source_type)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"未找到 {source_type} 类型资产")
+
+    await _log_audit(
+        db, admin, request, "formula.graph_asset.delete",
+        "formula_graph_asset", None,
+        detail={
+            "formula_card_id": card_id,
+            "source_type": source_type,
+        },
+    )
+
     await db.commit()
     return {"status": "ok"}
 
