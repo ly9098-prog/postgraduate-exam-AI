@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Plus, Save, X, Trash2, ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { LatexRenderer } from "@/components/ui/latex-renderer";
+import { MixedLatexRenderer } from "@/components/ui/mixed-latex-renderer";
 import { FormulaCategoryPicker } from "@/components/formulas/formula-category-picker";
 import { apiRequest } from "@/lib/api/client";
+import { normalizeFormulaText } from "@/lib/formula-normalize";
 
 /* ── Types ── */
 
@@ -139,6 +141,10 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
   const [examples, setExamples] = useState<FormulaExample[]>(initialData?.examples ?? []);
   const [sortOrder, setSortOrder] = useState(initialData?.sortOrder ?? 0);
 
+  // Refs for post-save LaTeX verification
+  const sentConditionsRef = useRef<string | null>(null);
+  const sentErrorTipsRef = useRef<string | null>(null);
+
   // Load tags
   const tags = useQuery({
     queryKey: ["admin-formula-tags"],
@@ -194,6 +200,12 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
       const tagIds = selectedTags.map((code) => tagMap[code]).filter(Boolean);
       const aliasesList = aliases.split(/[,，、\s]+/).filter(Boolean);
 
+      // Normalise conditions and errorTips before sending
+      const normalizedConditions = normalizeFormulaText(conditions.trim()) || null;
+      const normalizedErrorTips = normalizeFormulaText(errorTips.trim()) || null;
+      sentConditionsRef.current = normalizedConditions;
+      sentErrorTipsRef.current = normalizedErrorTips;
+
       const body: Record<string, unknown> = {
         category_id: categoryId,
         title: title.trim(),
@@ -205,9 +217,9 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
           latex: b.latex.trim(),
           note: b.note || null,
         })),
-        conditions: conditions.trim() || null,
+        conditions: normalizedConditions,
         symbol_notes: symbolNotes.trim() || null,
-        error_tips: errorTips.trim() || null,
+        error_tips: normalizedErrorTips,
         examples: examples.length > 0 ? examples.map((ex) => ({
           question: ex.question,
           short_solution: ex.short_solution,
@@ -229,11 +241,32 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
         body: JSON.stringify(body),
       });
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       setMessageType("success");
       setMessage(mode === "create" ? "创建成功！" : "保存成功！");
+
       if (onSaveSuccess) onSaveSuccess();
-      else setTimeout(() => router.push("/formulas"), 1000);
+
+      // Post-save verification: re-read and check LaTeX integrity
+      if (mode === "edit" && cardId) {
+        try {
+          const detail = await apiRequest<{ conditions?: string; error_tips?: string }>(`/formulas/${cardId}`);
+          const rc = detail.conditions ?? null;
+          const re = detail.error_tips ?? null;
+          if (rc !== sentConditionsRef.current || re !== sentErrorTipsRef.current) {
+            console.warn("[formula-normalize] Save verification mismatch:", {
+              sent: { conditions: sentConditionsRef.current, errorTips: sentErrorTipsRef.current },
+              received: { conditions: rc, errorTips: re },
+            });
+            setMessageType("error");
+            setMessage("保存成功，但接口返回的 LaTeX 内容不一致。请检查反斜杠是否丢失或重复转义。");
+          }
+        } catch (err) {
+          console.warn("[formula-normalize] Post-save verification fetch failed", err);
+        }
+      }
+
+      if (!onSaveSuccess) setTimeout(() => router.push("/formulas"), 1000);
     },
     onError: (e) => {
       setMessageType("error");
@@ -353,16 +386,35 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
             {showSupplement && (
               <div className="space-y-4 px-4 pb-4 lg:px-5">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-[var(--color-text-secondary)]">适用条件</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-[var(--color-text-secondary)]">适用条件</label>
+                    <button
+                      type="button"
+                      onClick={() => setConditions(normalizeFormulaText(conditions) ?? '')}
+                      className="text-xs text-[var(--color-primary)] hover:underline"
+                    >Σ LaTeX</button>
+                  </div>
                   <textarea
                     className="min-h-16 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-sm outline-none focus:border-[var(--color-primary)]"
                     value={conditions}
                     onChange={(e) => setConditions(e.target.value)}
                     placeholder="公式的适用条件..."
                   />
+                  {conditions.trim() && (
+                    <div className="rounded-lg border border-[var(--color-border)]/60 bg-[var(--porcelain)] p-3 text-sm whitespace-pre-wrap break-words max-w-full overflow-x-auto">
+                      <MixedLatexRenderer text={conditions} />
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-[var(--color-text-secondary)]">符号说明</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-[var(--color-text-secondary)]">符号说明</label>
+                    <button
+                      type="button"
+                      onClick={() => setSymbolNotes(normalizeFormulaText(symbolNotes) ?? '')}
+                      className="text-xs text-[var(--color-primary)] hover:underline"
+                    >Σ LaTeX</button>
+                  </div>
                   <textarea
                     className="min-h-16 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-sm outline-none focus:border-[var(--color-primary)]"
                     value={symbolNotes}
@@ -371,13 +423,25 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-[var(--color-text-secondary)]">易错提醒</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-[var(--color-text-secondary)]">易错提醒</label>
+                    <button
+                      type="button"
+                      onClick={() => setErrorTips(normalizeFormulaText(errorTips) ?? '')}
+                      className="text-xs text-[var(--color-primary)] hover:underline"
+                    >Σ LaTeX</button>
+                  </div>
                   <textarea
                     className="min-h-16 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-sm outline-none focus:border-[var(--color-primary)]"
                     value={errorTips}
                     onChange={(e) => setErrorTips(e.target.value)}
                     placeholder="常见的易错点..."
                   />
+                  {errorTips.trim() && (
+                    <div className="rounded-lg border border-[var(--color-border)]/60 bg-[var(--porcelain)] p-3 text-sm whitespace-pre-wrap break-words max-w-full overflow-x-auto">
+                      <MixedLatexRenderer text={errorTips} />
+                    </div>
+                  )}
                 </div>
               </div>
             )}

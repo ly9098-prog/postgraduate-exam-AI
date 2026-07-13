@@ -208,7 +208,7 @@ export default function EditFormulaPage() {
             {card.conditions && (
               <section className="rounded-[1.6rem] border border-amber-200 bg-amber-50/60 p-4">
                 <p className="font-semibold text-amber-800">适用条件</p>
-                <div className="mt-2 text-sm text-amber-900">
+                <div className="mt-2 text-sm text-amber-900 whitespace-pre-wrap break-words max-w-full overflow-x-auto">
                   <MixedLatexRenderer text={card.conditions} />
                 </div>
               </section>
@@ -224,7 +224,7 @@ export default function EditFormulaPage() {
             {card.error_tips && (
               <section className="rounded-[1.6rem] border border-red-200 bg-red-50/60 p-4">
                 <p className="font-semibold text-red-700">易错提醒</p>
-                <div className="mt-2 text-sm leading-6 text-red-800">
+                <div className="mt-2 text-sm leading-6 text-red-800 whitespace-pre-wrap break-words max-w-full overflow-x-auto">
                   <MixedLatexRenderer text={card.error_tips} />
                 </div>
               </section>
