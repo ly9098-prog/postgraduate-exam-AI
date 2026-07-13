@@ -1,11 +1,11 @@
 {
-  "navigationBarTitleText": "错题本",
-  "navigationBarBackgroundColor": "#F7F9F6",
-  "navigationBarTextStyle": "black",
-  "backgroundColor": "#F5F7F4",
-  "backgroundColorTop": "#F7F9F6",
-  "backgroundColorBottom": "#F1F4F1",
+  "backgroundColor": "#F4F4EE",
+  "backgroundColorTop": "#F4F4EE",
+  "backgroundColorBottom": "#F1F2EC",
   "usingComponents": {
-    "loading-lottie": "/components/loading-lottie/loading-lottie"
-  }
+    "loading-lottie": "/components/loading-lottie/loading-lottie",
+    "premium-nav": "/components/premium-nav/premium-nav",
+    "submit-confirm": "/components/submit-confirm/submit-confirm"
+  },
+  "navigationStyle": "custom"
 }

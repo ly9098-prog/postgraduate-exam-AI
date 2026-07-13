@@ -14,7 +14,7 @@
 }
 
 .fr-card-wrap {
-  padding: 20rpx 30rpx 40rpx;
+  padding: 22rpx 28rpx calc(52rpx + env(safe-area-inset-bottom));
   position: relative;
 }
 

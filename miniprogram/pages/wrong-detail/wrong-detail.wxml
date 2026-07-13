@@ -1,26 +1,54 @@
-<view wx:if="{{loading}}" class="loading-wrap">
-  <loading-lottie text="正在加载错题详情..." size="large" />
+<premium-nav
+  title="错题详情"
+  caption="WRONG REVIEW"
+  variant="dark"
+  bind:back="goBack"
+/>
+
+<!-- 加载 -->
+<view wx:if="{{loading}}" class="loading-page">
+  <view class="loading-hero-skeleton">
+    <view class="loading-hero-line short"></view>
+    <view class="loading-hero-line long"></view>
+  </view>
+  <view class="loading-question-card">
+    <view class="loading-chip"></view>
+    <view class="loading-line long"></view>
+    <view class="loading-line medium"></view>
+    <view class="loading-option" wx:for="{{skeletonOptions}}" wx:key="*this"></view>
+  </view>
+  <view class="loading-ai-card">
+    <view class="loading-line short"></view>
+    <view class="loading-line long"></view>
+    <view class="loading-line medium"></view>
+  </view>
 </view>
 
 <!-- 错误态 -->
 <view wx:elif="{{errorText}}" class="error-state">
-  <view class="error-icon-wrap">
-    <text class="line-icon icon-exclamation" style="width:48rpx;height:48rpx;color:#EF4444;"></text>
-  </view>
-  <text class="error-title">{{errorText}}</text>
-  <text class="error-desc">该错题记录可能已被移除或不存在</text>
-  <view class="error-actions">
-    <button class="error-btn primary" hover-class="error-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="reloadData">重新加载</button>
-    <button class="error-btn secondary" hover-class="error-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="goBack">返回错题本</button>
-  </view>
+  <view class="error-mark">!</view>
+  <text class="error-kicker">RECORD UNAVAILABLE</text>
+  <text class="error-title">暂时无法打开这道错题。</text>
+  <text class="error-desc">{{errorText}}，记录可能已被移出错题本。</text>
+  <button class="error-primary" bindtap="reloadData">重新加载</button>
+  <button class="error-secondary" bindtap="goBack">返回错题本</button>
 </view>
 
 <view class="page" wx:elif="{{!loading && wq}}">
   <view wx:if="{{showSwitchMask}}" class="switch-mask">
-    <text class="switch-mask-text">切换中...</text>
+    <view class="switch-pill"><view class="switch-dot"></view><text>正在切换题目</text></view>
+  </view>
+
+  <view class="detail-intro">
+    <view>
+      <text class="detail-intro-kicker">{{subjectLabelText || '错题复盘'}}</text>
+      <text class="detail-intro-title">先看题目，再看为什么会错。</text>
+    </view>
+    <text class="detail-intro-count">{{currentIdx + 1}} / {{totalQuestions || 1}}</text>
   </view>
 
   <quiz-runner
+    theme="premium-review"
     mode="wrong-detail"
     title="错题复盘"
     subtitle="{{currentIdx + 1}} / {{totalQuestions}}"
@@ -38,6 +66,7 @@
     submitText="继续复盘"
     showSubmitButton="{{false}}"
     swipeEnabled="{{true}}"
+    swipeThroughOptions="{{true}}"
     allowSwipeInReadonly="{{true}}"
     compactReviewMode="{{true}}"
     bind:prev="goPrevWrong"
@@ -45,140 +74,144 @@
     bind:jump="goWrongQuestion"
   />
 
-  <!-- AI 分析卡片 -->
+  <!-- AI 分析 -->
   <view class="ai-card" id="ai-card">
-    <view class="section-head">
-      <view>
-        <text class="section-title">AI 错题复盘</text>
-        <text class="section-subtitle" wx:if="{{aiRequested}}">定位错因、补齐考点、安排复练</text>
+    <view class="ai-card-head">
+      <view class="ai-head-copy">
+        <text class="ai-kicker">AI REVIEW</text>
+        <text class="ai-title">AI 错题复盘</text>
+        <text class="ai-subtitle">定位错因、补齐考点、安排复练</text>
       </view>
-      <text class="section-chip">AI</text>
+      <view class="ai-mark"><view class="ai-mark-dot"></view><text>AI</text></view>
     </view>
 
-    <!-- 2. 骨架屏（优先于内容，re-generate 或首次加载时展示） -->
+    <!-- 骨架屏 -->
     <view wx:if="{{aiSkeletonVisible || (aiLoading && !aiCards)}}" class="ai-loading-state">
-      <view class="ai-skeleton-section">
-        <view class="skeleton-title-row">
-          <view class="skeleton-index"></view>
-          <view class="skeleton-title"></view>
-        </view>
+      <view class="ai-skeleton-section" wx:for="{{aiSkeletonSections}}" wx:key="*this">
+        <view class="skeleton-title-row"><view class="skeleton-index"></view><view class="skeleton-title"></view></view>
         <view class="skeleton-line long"></view>
-        <view class="skeleton-line medium"></view>
-        <view class="skeleton-line short"></view>
-      </view>
-
-      <view class="ai-skeleton-section">
-        <view class="skeleton-title-row">
-          <view class="skeleton-index"></view>
-          <view class="skeleton-title"></view>
-        </view>
-        <view class="skeleton-line long"></view>
-        <view class="skeleton-line medium"></view>
-      </view>
-
-      <view class="ai-skeleton-section">
-        <view class="skeleton-title-row">
-          <view class="skeleton-index"></view>
-          <view class="skeleton-title"></view>
-        </view>
         <view class="skeleton-line medium"></view>
         <view class="skeleton-line short"></view>
       </view>
     </view>
 
-    <!-- 1. 已有结果：优先展示（包括 re-generate 期间） -->
+    <!-- 已有结果 -->
     <view wx:elif="{{aiCards && !aiFallback}}" class="ai-result-state {{aiRegenerating ? 'is-regenerating' : ''}}">
-      <!-- 重新生成中的提示条 -->
       <view wx:if="{{aiRegenerating}}" class="ai-regenerating-banner">
         <view class="loading-spinner mini"></view>
-        <text class="ai-regenerating-text">正在重新生成，当前先保留旧解析</text>
+        <text>正在重新生成，先保留当前解析</text>
       </view>
 
-      <!-- 格式异常：AI 返回了无法解析的结构化数据 -->
       <view wx:if="{{aiCards.formatError && !aiCards.mistakeDiagnosis.raw && !aiCards.knowledgePatch.raw && !aiCards.reviewTask.raw}}" class="ai-fallback inside">
-        <view class="fallback-mark">
-          <view class="line-icon icon-exclamation"></view>
-        </view>
+        <view class="fallback-mark">!</view>
         <text class="fallback-title">AI 解析格式异常</text>
-        <text class="fallback-desc">返回数据格式无法识别，请重新生成</text>
+        <text class="fallback-desc">返回数据暂时无法识别，请重新生成。</text>
       </view>
 
-      <view wx:elif="{{aiCards.mistakeDiagnosis.raw}}" class="ai-section ai-section-diagnosis">
-        <view class="ai-label-row">
-          <view class="ai-index">1</view>
-          <view>
-            <text class="ai-label">错因诊断</text>
-            <text class="ai-label-desc">先定位这道题为什么错</text>
-          </view>
+      <view wx:elif="{{aiCards.mistakeDiagnosis.raw}}" class="ai-section diagnosis">
+        <view class="ai-section-index">01</view>
+        <view class="ai-section-copy">
+          <text class="ai-section-kicker">WHY IT HAPPENED</text>
+          <text class="ai-section-title">错因诊断</text>
+          <mp-html wx:if="{{aiCards.mistakeDiagnosis.needsRich}}" content="{{aiCards.mistakeDiagnosis.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" />
+          <text wx:else class="ai-text">{{aiCards.mistakeDiagnosis.text}}</text>
         </view>
-        <mp-html
-          wx:if="{{aiCards.mistakeDiagnosis.needsRich}}"
-          content="{{aiCards.mistakeDiagnosis.html}}"
-          class="ai-rich-text"
-          lazy-load
-          set-title="{{false}}" copy-link="{{false}}"
-        />
-        <text wx:else class="ai-text">{{aiCards.mistakeDiagnosis.text}}</text>
       </view>
 
-      <view class="ai-section ai-section-knowledge" wx:if="{{aiCards.knowledgePatch.raw}}">
-        <view class="ai-label-row">
-          <view class="ai-index">2</view>
-          <view>
-            <text class="ai-label">补漏重点</text>
-            <text class="ai-label-desc">明确这道题暴露的薄弱点</text>
-          </view>
+      <view class="ai-section knowledge" wx:if="{{aiCards.knowledgePatch.raw}}">
+        <view class="ai-section-index">02</view>
+        <view class="ai-section-copy">
+          <text class="ai-section-kicker">KNOWLEDGE PATCH</text>
+          <text class="ai-section-title">补漏重点</text>
+          <mp-html wx:if="{{aiCards.knowledgePatch.needsRich}}" content="{{aiCards.knowledgePatch.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" />
+          <text wx:else class="ai-text">{{aiCards.knowledgePatch.text}}</text>
         </view>
-        <mp-html
-          wx:if="{{aiCards.knowledgePatch.needsRich}}"
-          content="{{aiCards.knowledgePatch.html}}"
-          class="ai-rich-text"
-          lazy-load
-          set-title="{{false}}" copy-link="{{false}}"
-        />
-        <text wx:else class="ai-text">{{aiCards.knowledgePatch.text}}</text>
       </view>
 
-      <view class="ai-section ai-section-task" wx:if="{{aiCards.reviewTask.raw}}">
-        <view class="ai-label-row">
-          <view class="ai-index">3</view>
-          <view>
-            <text class="ai-label">复练任务</text>
-            <text class="ai-label-desc">给出下一步可执行动作</text>
-          </view>
+      <view class="ai-section task" wx:if="{{aiCards.reviewTask.raw}}">
+        <view class="ai-section-index">03</view>
+        <view class="ai-section-copy">
+          <text class="ai-section-kicker">NEXT ACTION</text>
+          <text class="ai-section-title">复练任务</text>
+          <mp-html wx:if="{{aiCards.reviewTask.needsRich}}" content="{{aiCards.reviewTask.html}}" class="ai-rich-text" lazy-load set-title="{{false}}" copy-link="{{false}}" />
+          <text wx:else class="ai-text">{{aiCards.reviewTask.text}}</text>
         </view>
-        <mp-html
-          wx:if="{{aiCards.reviewTask.needsRich}}"
-          content="{{aiCards.reviewTask.html}}"
-          class="ai-rich-text"
-          lazy-load
-          set-title="{{false}}" copy-link="{{false}}"
-        />
-        <text wx:else class="ai-text">{{aiCards.reviewTask.text}}</text>
       </view>
 
       <text wx:if="{{aiInlineNotice}}" class="ai-inline-notice">{{aiInlineNotice}}</text>
-      <text wx:elif="{{!aiInlineNotice}}" class="ai-hint">{{aiFromCache ? '来自历史缓存，仅供参考' : '内容由 AI 生成，仅供参考'}}</text>
-      <button class="ai-secondary-btn {{aiRegenerating ? 'loading' : ''}}" hover-class="{{aiRegenerating ? 'none' : 'ai-secondary-btn-pressed'}}" hover-start-time="20" hover-stay-time="80" disabled="{{aiRegenerating}}" bindtap="regenerateAiAnalysis">
-        {{aiRegenerating ? '重新生成中...' : '重新生成'}}
-      </button>
+      <text wx:else class="ai-hint">{{aiFromCache ? '来自历史缓存，仅供参考' : '内容由 AI 生成，仅供参考'}}</text>
+      <button class="ai-secondary-btn" disabled="{{aiRegenerating}}" bindtap="regenerateAiAnalysis">{{aiRegenerating ? '重新生成中…' : '重新生成解析'}}</button>
     </view>
 
-
-
-    <!-- 3. 失败空态（仅无旧内容时） -->
+    <!-- 失败 -->
     <view wx:elif="{{aiFallback && !aiCards}}" class="ai-fallback">
-      <view class="fallback-mark">
-        <view class="line-icon icon-exclamation"></view>
-      </view>
-      <text class="fallback-title">AI 错题复盘暂时不可用</text>
-      <text class="fallback-desc">{{aiErrorText || '建议先查看题目解析并手动标记错因，稍后再试。'}}</text>
-      <button class="ai-action-btn retry" hover-class="ai-action-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="regenerateAiAnalysis">重新生成</button>
+      <view class="fallback-mark">!</view>
+      <text class="fallback-title">AI 复盘暂时不可用</text>
+      <text class="fallback-desc">{{aiErrorText || '先查看题目与答案，稍后再试。'}}</text>
+      <button class="ai-action-btn" bindtap="regenerateAiAnalysis">重新生成</button>
     </view>
 
-    <!-- 4. 未请求态 — 仅保留生成按钮 -->
-    <view wx:elif="{{!aiRequested && !aiCards}}" class="ai-idle minimal">
-      <button class="ai-action-btn" hover-class="ai-action-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="onTapAiAnalysis">生成 AI 解析</button>
+    <!-- 未请求 -->
+    <view wx:elif="{{!aiRequested && !aiCards}}" class="ai-idle">
+      <view class="ai-idle-curve">
+        <view class="idle-line il-1"></view><view class="idle-line il-2"></view><view class="idle-line il-3"></view>
+        <view class="idle-dot id-1"></view><view class="idle-dot id-2"></view><view class="idle-dot id-3"></view><view class="idle-dot id-4"></view>
+      </view>
+      <text class="ai-idle-title">把“做错了”变成“下次会做”。</text>
+      <text class="ai-idle-desc">AI 会结合题目、你的答案和正确答案生成三段复盘。</text>
+      <button class="ai-action-btn" bindtap="onTapAiAnalysis">生成 AI 解析</button>
     </view>
   </view>
+
+  <view class="page-bottom-space"></view>
+
+  <view class="detail-bottom-actions">
+    <button class="master-action {{isCurrentMastered ? 'is-mastered' : ''}}" disabled="{{masterSubmitting || isCurrentMastered}}" bindtap="openMasterConfirm">
+      <view class="master-action-icon">{{isCurrentMastered ? '✓' : '○'}}</view>
+      <view class="master-action-copy"><text>{{isCurrentMastered ? '已经掌握' : '标记已掌握'}}</text><text>{{isCurrentMastered ? '不会再进入复习计划' : '保留历史记录，停止后续调度'}}</text></view>
+    </button>
+    <button class="more-action" bindtap="openMoreMenu"><text class="more-dots">•••</text><text class="more-label">更多</text></button>
+  </view>
+</view>
+
+<!-- 已掌握确认 -->
+<view class="modal-overlay" wx:if="{{masterConfirmVisible}}" catchtap="closeMasterConfirm" catchtouchmove="noop">
+  <view class="decision-sheet" catchtap="noop">
+    <view class="sheet-handle"></view>
+    <text class="decision-kicker">MASTERED</text>
+    <text class="decision-title">确认已经掌握？</text>
+    <text class="decision-desc">标记后，这道题将不再进入后续复习计划，但仍会保留在历史错题记录中。</text>
+    <view class="decision-actions"><button class="decision-secondary" bindtap="closeMasterConfirm">继续看看</button><button class="decision-primary" bindtap="confirmMastered">确认掌握</button></view>
+  </view>
+</view>
+
+<!-- 更多菜单 -->
+<view class="modal-overlay" wx:if="{{moreMenuVisible}}" catchtap="closeMoreMenu" catchtouchmove="noop">
+  <view class="more-sheet" catchtap="noop">
+    <view class="sheet-handle"></view>
+    <text class="more-sheet-title">更多操作</text>
+    <view class="more-sheet-item danger" bindtap="openRemoveConfirm">
+      <view><text class="more-item-title">移出错题本</text><text class="more-item-desc">不再出现在错题列表，复习历史仍按后端规则处理</text></view>
+      <text class="more-item-arrow">›</text>
+    </view>
+    <button class="more-cancel" bindtap="closeMoreMenu">取消</button>
+  </view>
+</view>
+
+<!-- 移出确认 -->
+<view class="modal-overlay" wx:if="{{removeConfirmVisible}}" catchtap="closeRemoveConfirm" catchtouchmove="noop">
+  <view class="decision-sheet" catchtap="noop">
+    <view class="sheet-handle"></view>
+    <text class="decision-kicker danger">REMOVE FROM BOOK</text>
+    <text class="decision-title">移出这道错题？</text>
+    <text class="decision-desc">移出后不会提供撤销入口。你仍可通过练习记录或题库重新遇到这道题。</text>
+    <view class="decision-actions"><button class="decision-secondary" bindtap="closeRemoveConfirm">取消</button><button class="decision-danger" loading="{{removeSubmitting}}" disabled="{{removeSubmitting}}" bindtap="removeFromWrongBook">确认移出</button></view>
+  </view>
+</view>
+
+<!-- 撤销掌握 -->
+<view class="undo-toast {{masterUndoVisible ? 'show' : ''}}">
+  <text class="undo-toast-text">已标记掌握，正在查看下一题</text>
+  <view class="undo-divider"></view>
+  <text class="undo-action" bindtap="undoMastered">撤销</text>
 </view>

@@ -9,6 +9,7 @@
 Component({
   properties: {
     mode: { type: String, value: 'practice' },
+    theme: { type: String, value: 'default' },
     title: { type: String, value: '' },
     subtitle: { type: String, value: '' },
     subjectName: { type: String, value: '' },
@@ -39,6 +40,8 @@ Component({
     customNavigation: { type: Boolean, value: false },
 
     swipeEnabled: { type: Boolean, value: true },
+    // 仅由需要的页面显式开启：允许从选项区域横滑切题，同时保留轻点选项。
+    swipeThroughOptions: { type: Boolean, value: false },
     allowSwipeInReadonly: { type: Boolean, value: false },
     compactReviewMode: { type: Boolean, value: false },
 
@@ -225,12 +228,12 @@ Component({
       var dx = t.clientX - this.data._touchX
       var dy = t.clientY - this.data._touchY
 
-      if (Math.abs(dy) > Math.abs(dx) * 1.5) {
-        this.data._touchX = undefined
-        this.data._touchY = undefined
-        return
-      }
-      if (Math.abs(dx) < 60) {
+      var absDx = Math.abs(dx)
+      var absDy = Math.abs(dy)
+
+      // 只有明确的横向手势才切题：横向至少 60px，且明显大于纵向位移。
+      // 轻点仍由选项 tap 处理；纵向或方向不明确时继续交给页面滚动。
+      if (absDx < 60 || absDx <= absDy * 1.25) {
         this.data._touchX = undefined
         this.data._touchY = undefined
         return

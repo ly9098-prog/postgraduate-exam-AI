@@ -4,21 +4,21 @@
  */
 
 const COLORS = {
-  primary: '#376CFF',
-  primaryLight: 'rgba(55, 108, 255, 0.22)',
-  success: '#29B979',
-  successLight: 'rgba(117, 230, 180, 0.94)',
-  warning: '#FFB15C',
-  danger: '#EF4444',
-  track: '#E9EDF2',
-  textHint: '#8B939F',
+  primary: '#66844F',
+  primaryLight: 'rgba(102, 132, 79, 0.20)',
+  success: '#2D9B68',
+  successLight: 'rgba(134, 207, 169, 0.94)',
+  warning: '#D99A45',
+  danger: '#D9685B',
+  track: '#E4E8E1',
+  textHint: '#818A82',
   white: '#FFFFFF',
-  gradientStart: '#376CFF',
-  gradientMid: '#77A0FF',
-  gradientEnd: '#376CFF',
+  gradientStart: '#587643',
+  gradientMid: '#789661',
+  gradientEnd: '#587643',
 }
 
-const BAR_COLORS = ['#4F7FFF', '#22C55E', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4']
+const BAR_COLORS = ['#587643', '#2D9B68', '#D99A45', '#D9685B', '#7A6E9B', '#6E8B8F']
 
 /**
  * Get canvas 2d context safely, checking node existence.
@@ -324,11 +324,11 @@ function drawTrendChart(canvasId, pageThis, points, options) {
         ctx.stroke()
 
         const series = [
-          { value: item.correct || 0, color: '#090A0C' },
-          { value: item.questions || 0, color: '#E3E8EB' },
+          { value: item.correct || 0, color: '#2D9B68' },
+          { value: item.questions || 0, color: '#DDE4DB' },
         ]
         if (hasPrevious) {
-          series.push({ value: item.hasPrevious ? (item.previousQuestions || 0) : 0, color: '#C5CAFF' })
+          series.push({ value: item.hasPrevious ? (item.previousQuestions || 0) : 0, color: '#B8BDB8' })
         }
 
         const startX = centerX - groupW / 2
@@ -393,11 +393,11 @@ function drawTrendChart(canvasId, pageThis, points, options) {
         ctx.stroke()
       }
 
-      fillArea(previous, 'rgba(205, 207, 210, 0.78)', 'rgba(176, 179, 184, 0.9)')
+      fillArea(previous, 'rgba(205, 209, 203, 0.66)', 'rgba(171, 177, 169, 0.88)')
       const currentGradient = ctx.createLinearGradient(0, pad.t, 0, pad.t + ch)
-      currentGradient.addColorStop(0, 'rgba(18, 19, 22, 0.98)')
-      currentGradient.addColorStop(1, 'rgba(18, 19, 22, 0.84)')
-      fillArea(current, currentGradient, '#111214')
+      currentGradient.addColorStop(0, 'rgba(88, 118, 67, 0.72)')
+      currentGradient.addColorStop(1, 'rgba(88, 118, 67, 0.10)')
+      fillArea(current, currentGradient, '#587643')
 
       let activeIndex = -1
       for (let i = points.length - 1; i >= 0; i--) {
@@ -412,7 +412,7 @@ function drawTrendChart(canvasId, pageThis, points, options) {
         ctx.setFillStyle('#F4F4F1')
         ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2)
         ctx.fill()
-        ctx.setStrokeStyle('#4D7CFF')
+        ctx.setStrokeStyle('#B7E82A')
         ctx.setLineWidth(2.4)
         ctx.stroke()
       }

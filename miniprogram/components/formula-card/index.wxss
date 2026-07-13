@@ -9,7 +9,7 @@
 .fc-title {
   font-size: 36rpx;
   font-weight: 600;
-  color: #1a1a2e;
+  color: #17251B;
   line-height: 1.4;
   display: block;
 }
@@ -28,14 +28,14 @@
   font-weight: 500;
 }
 
-.fc-tag-basic { background: #e8f5e9; color: #2e7d32; }
-.fc-tag-high_frequency { background: #fff3e0; color: #e65100; }
-.fc-tag-error_prone { background: #ffebee; color: #c62828; }
-.fc-tag-must_memorize { background: #fce4ec; color: #880e4f; }
+.fc-tag-basic { background: #EDF4E8; color: #3D754F; }
+.fc-tag-high_frequency { background: #FFF3DF; color: #A96518; }
+.fc-tag-error_prone { background: #FDEBE8; color: #B24F43; }
+.fc-tag-must_memorize { background: #F0EBF6; color: #735C8A; }
 
 .fc-formula-section {
-  background: #f8f9ff;
-  border-radius: 16rpx;
+  background: #F6F7F2;
+  border-radius: 26rpx;
   padding: 24rpx;
   margin-bottom: 20rpx;
 }
@@ -49,14 +49,14 @@
 
 .fc-block-label {
   font-size: 26rpx;
-  color: #666;
+  color: #68756C;
   display: block;
   margin-bottom: 8rpx;
 }
 
 .fc-block-note {
   font-size: 24rpx;
-  color: #999;
+  color: #8A938C;
   display: block;
   margin-top: 8rpx;
 }
@@ -67,7 +67,7 @@
 
 .fc-graph-image {
   width: 100%;
-  border-radius: 16rpx;
+  border-radius: 26rpx;
 }
 
 .fc-section {
@@ -77,13 +77,13 @@
 .fc-section-title {
   font-size: 28rpx;
   font-weight: 600;
-  color: #333;
+  color: #26352C;
   display: block;
   margin-bottom: 8rpx;
 }
 
 .fc-collapse {
-  border-top: 1rpx solid #f0f0f0;
+  border-top: 1rpx solid #E1E5DE;
 }
 
 .fc-collapse-header {
@@ -96,12 +96,12 @@
 .fc-collapse-title {
   font-size: 28rpx;
   font-weight: 500;
-  color: #333;
+  color: #26352C;
 }
 
 .fc-collapse-arrow {
   font-size: 28rpx;
-  color: #999;
+  color: #8A938C;
   transition: transform 0.2s;
 }
 
@@ -123,22 +123,31 @@
 .fc-example {
   margin-bottom: 24rpx;
   padding: 16rpx;
-  background: #fafafa;
-  border-radius: 12rpx;
+  background: #F6F7F2;
+  border-radius: 22rpx;
 }
 
 .fc-example-label {
   font-size: 24rpx;
   font-weight: 600;
-  color: #4F7FFF;
+  color: #66844F;
   display: block;
   margin-bottom: 6rpx;
 }
 
 .fc-example-label.error {
-  color: #e53935;
+  color: #C65A4E;
 }
 
 .fc-example-detail {
   margin-top: 12rpx;
 }
+
+.fc-header { padding-bottom:20rpx; border-bottom:1rpx solid #E1E5DE; }
+.fc-formula-section { border:1rpx solid #E1E5DE; }
+.fc-section { padding:20rpx 0; border-bottom:1rpx solid #E7EAE4; }
+.fc-collapse-header { min-height:82rpx; }
+.fc-collapse-arrow { width:26rpx; height:26rpx; font-size:0; position:relative; }
+.fc-collapse-arrow::before { content:''; position:absolute; left:7rpx; top:6rpx; width:10rpx; height:10rpx; border-right:3rpx solid #79847C; border-bottom:3rpx solid #79847C; transform:rotate(-45deg); transition:transform .2s ease; }
+.fc-collapse-arrow.expanded::before { transform:rotate(45deg); }
+.fc-collapse-arrow.expanded { transform:none; }

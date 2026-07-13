@@ -8,18 +8,7 @@
 
   <!-- ==================== 设置页 ==================== -->
   <view class="setup" wx:if="{{!started}}">
-    <view class="custom-nav" style="padding-top: {{statusBarHeight}}px;">
-      <view class="custom-nav-inner" style="height: {{navBarHeight}}px;">
-        <view class="nav-back" hover-class="nav-control-pressed" bindtap="goBack">
-          <text class="nav-back-symbol">‹</text>
-        </view>
-        <view class="nav-title-group">
-          <text class="nav-title">刷题</text>
-          <text class="nav-title-en">PRACTICE</text>
-        </view>
-        <view class="nav-spacer"></view>
-      </view>
-    </view>
+    <premium-nav title="刷题" variant="light" bind:back="goBack" />
 
     <view class="setup-content">
       <view class="practice-hero">
@@ -164,23 +153,20 @@
         </scroll-view>
       </view>
 
-      <view class="reward-panel" wx:if="{{selectedSubjectId}}">
-        <view class="reward-heading">
-          <view>
-            <text class="surface-title">本组奖励</text>
-            <text class="surface-kicker">SESSION REWARD</text>
-          </view>
-          <text class="reward-note">完成本组可获得</text>
+      <view class="reward-strip" wx:if="{{selectedSubjectId}}">
+        <view class="reward-strip-copy">
+          <text class="reward-strip-title">完成本组可获得</text>
+          <text class="reward-strip-desc">成长反馈会在练习结果中生成</text>
         </view>
-        <view class="reward-items">
-          <view class="reward-item">
-            <view class="reward-icon">△</view>
-            <view><text class="reward-label">成长值</text><text class="reward-value">+{{count * 6}}</text></view>
+        <view class="reward-strip-items">
+          <view class="reward-strip-item">
+            <text class="reward-strip-label">成长值</text>
+            <text class="reward-strip-value">+{{count * 6}}</text>
           </view>
-          <view class="reward-divider"></view>
-          <view class="reward-item">
-            <view class="reward-icon">≣</view>
-            <view><text class="reward-label">学习产出</text><text class="reward-value reward-value-text">生成本组复盘</text></view>
+          <view class="reward-strip-divider"></view>
+          <view class="reward-strip-item reward-strip-output">
+            <text class="reward-strip-label">学习产出</text>
+            <text class="reward-strip-value reward-strip-text">本组复盘</text>
           </view>
         </view>
       </view>
@@ -194,7 +180,7 @@
             <text class="sheet-title">选择练习科目</text>
             <text class="sheet-kicker">SELECT SUBJECT</text>
           </view>
-          <view class="sheet-close" hover-class="soft-pressed" catchtap="closeSubjectSheet">×</view>
+          <view class="sheet-close" hover-class="soft-pressed" catchtap="closeSubjectSheet"><text class="line-icon icon-close"></text></view>
         </view>
 
         <view class="sheet-current" wx:if="{{selectedSubjectName}}">

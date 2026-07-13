@@ -1,132 +1,193 @@
 <view class="home-page">
-  <view class="welcome-section hero-panel motion-card-enter">
-    <view class="welcome-glass"></view>
-    <view class="welcome-particle wp-1"></view>
-    <view class="welcome-particle wp-2"></view>
-    <view class="welcome-particle wp-3"></view>
-    <view class="welcome-particle wp-4"></view>
-    <view class="welcome-content">
-      <view class="welcome-greeting-row">
-        <text class="welcome-greeting">{{greeting}}，</text>
-        <text class="welcome-user" wx:if="{{user.nickName}}">{{user.nickName}}</text>
-        <text class="welcome-user" wx:else>研友</text>
-      </view>
-      <view class="welcome-date">{{dateStr}}</view>
-      <view class="welcome-quote">{{motto}}</view>
-
-      <view class="growth-row">
-        <view class="growth-pill">
-          <text class="growth-num">{{_animStreakDays}}</text>
-          <text class="growth-label">连续学习</text>
+  <!-- Custom brand navigation -->
+  <view class="home-nav" style="height: {{navHeight}}px; padding-top: {{statusBarHeight}}px;">
+    <view class="home-nav-inner" style="height: {{navContentHeight}}px; padding-right: {{navRightPadding}}px;">
+      <view class="brand-lockup">
+        <view class="brand-mark">
+          <view class="brand-mark-line line-one"></view>
+          <view class="brand-mark-line line-two"></view>
+          <view class="brand-mark-dot"></view>
         </view>
-        <view class="growth-pill level-pill">
-          <text class="growth-num small">{{studyLevel}}</text>
-          <text class="growth-label">当前等级</text>
+        <view class="brand-copy">
+          <text class="brand-name">MEMOGRAD</text>
+          <text class="brand-caption">STUDY DESK</text>
+        </view>
+      </view>
+      <view class="profile-chip">
+        <view class="profile-avatar">{{userInitial}}</view>
+        <text class="profile-level">{{studyLevel}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- Editorial greeting -->
+  <view class="editorial-head page-enter">
+    <text class="editorial-date">{{dateStr}}</text>
+    <view class="editorial-title-row">
+      <text class="editorial-title">{{greeting}}，{{displayName}}</text>
+      <view class="editorial-rule"></view>
+    </view>
+    <text class="editorial-subtitle">今天，先完成最该做的事。</text>
+  </view>
+
+  <!-- One clear answer to “what should I do today?” -->
+  <view class="focus-card page-enter delay-one">
+    <view class="focus-grid"></view>
+    <view class="focus-glow"></view>
+    <view class="focus-chart" aria-hidden="true">
+      <view class="chart-line chart-line-a"></view>
+      <view class="chart-line chart-line-b"></view>
+      <view class="chart-line chart-line-c"></view>
+      <view class="chart-node node-a"></view>
+      <view class="chart-node node-b"></view>
+      <view class="chart-node node-c"></view>
+      <view class="chart-node node-d active"></view>
+    </view>
+
+    <view class="focus-content">
+      <view class="focus-topline">
+        <view class="focus-status">
+          <view class="focus-status-dot"></view>
+          <text>{{primaryTaskKicker}}</text>
+        </view>
+        <view class="goal-link" bindtap="toggleGoalPicker" hover-class="soft-pressed">目标 {{todayGoalTotal}} 题</view>
+      </view>
+
+      <text class="focus-title">{{primaryTaskTitle}}</text>
+      <text class="focus-desc">{{primaryTaskDesc}}</text>
+
+      <view class="progress-head">
+        <text>今日进度</text>
+        <text class="progress-value">{{_animGoalDone}} / {{todayGoalTotal}}</text>
+      </view>
+      <view class="focus-progress-track">
+        <view class="focus-progress-fill" style="width: {{_animLevelProgress}}%;"></view>
+      </view>
+      <view class="progress-foot">
+        <text>{{missionText}}</text>
+        <text>{{_animLevelProgress}}%</text>
+      </view>
+
+      <view class="goal-picker" wx:if="{{showGoalPicker}}">
+        <view
+          wx:for="{{goalOptions}}"
+          wx:key="*this"
+          class="goal-option {{item === todayGoalTotal ? 'goal-option-active' : ''}}"
+          data-goal="{{item}}"
+          bindtap="selectTodayGoal"
+        >{{item}} 题</view>
+      </view>
+
+      <view class="focus-actions">
+        <view class="primary-action" bindtap="startPrimaryTask" hover-class="primary-action-pressed">
+          <text>{{primaryTaskAction}}</text>
+          <view class="primary-action-arrow">↗</view>
+        </view>
+        <view class="secondary-action" bindtap="startSecondaryTask" hover-class="secondary-action-pressed">{{secondaryTaskAction}}</view>
+      </view>
+
+      <view class="focus-metrics">
+        <view class="metric-item">
+          <text class="metric-value">{{dueReviewCount}}</text>
+          <text class="metric-label">到期复习</text>
+        </view>
+        <view class="metric-divider"></view>
+        <view class="metric-item">
+          <text class="metric-value">{{_animStreakDays}}</text>
+          <text class="metric-label">连续天数</text>
+        </view>
+        <view class="metric-divider"></view>
+        <view class="metric-item metric-level">
+          <text class="metric-value level-value">{{studyLevel}}</text>
+          <text class="metric-label">当前阶段</text>
         </view>
       </view>
     </view>
   </view>
 
-  <view class="mission-card learning-card motion-card-enter motion-delay-1">
-    <view class="mission-head">
+  <!-- Primary study routes -->
+  <view class="content-section page-enter delay-two">
+    <view class="section-heading">
       <view>
-        <text class="mission-kicker">今日目标</text>
-        <text class="mission-title">{{_animGoalDone}} / {{todayGoalTotal}} 题</text>
+        <text class="section-kicker">LEARNING PATH</text>
+        <text class="section-title">继续学习</text>
       </view>
-      <view class="mission-side">
-        <view class="mission-badge">{{badgeTitle}}</view>
-        <view class="goal-config" hover-class="goal-config-pressed" hover-start-time="20" hover-stay-time="80" bindtap="toggleGoalPicker">调整目标</view>
-      </view>
+      <text class="section-note">按你的节奏来</text>
     </view>
-    <view class="goal-picker" wx:if="{{showGoalPicker}}">
-      <view
-        wx:for="{{goalOptions}}"
-        wx:key="*this"
-        class="goal-option {{item === todayGoalTotal ? 'goal-option-active' : ''}}"
-        data-goal="{{item}}"
-        bindtap="selectTodayGoal"
-      >{{item}} 题</view>
-    </view>
-    <view class="mission-track">
-      <view class="mission-fill" style="width:{{levelProgress}}%"></view>
-    </view>
-    <view class="mission-foot">
-      <text>{{missionText}}</text>
-      <text class="mission-percent">{{_animLevelProgress}}%</text>
-    </view>
-    <view class="exp-panel">
-      <view class="exp-copy">
-        <text class="exp-label">成长经验</text>
-        <text class="exp-value">{{expText}}</text>
-      </view>
-      <text class="exp-next">{{nextLevelText}}</text>
-    </view>
-    <view class="daily-boost">{{dailyBoostText}}</view>
-    <view class="badge-row">
-      <view wx:for="{{badgeList}}" wx:key="key" class="badge-chip {{item.unlocked ? 'badge-unlocked' : ''}}">
-        <text class="badge-dot"></text>
-        <view class="badge-copy">
-          <text class="badge-name">{{item.title}}</text>
-          <text class="badge-desc">{{item.unlocked ? '已点亮' : item.desc}}</text>
+
+    <view class="route-stack">
+      <view class="route-card route-review" bindtap="goReview" hover-class="card-pressed">
+        <view class="route-index">01</view>
+        <view class="route-copy">
+          <text class="route-eyebrow">记忆复习</text>
+          <text class="route-title">今日复习计划</text>
+          <text class="route-desc">{{dueReviewCount > 0 ? dueReviewCount + ' 道题正处于最佳复习窗口' : '暂无到期任务，也可以提前巩固'}}</text>
         </view>
+        <view class="route-arrow">→</view>
+      </view>
+
+      <view class="route-card route-practice" bindtap="startRandom" hover-class="card-pressed">
+        <view class="route-index">02</view>
+        <view class="route-copy">
+          <text class="route-eyebrow">新题训练</text>
+          <text class="route-title">随机练习</text>
+          <text class="route-desc">用一组新题检查知识边界与即时状态</text>
+        </view>
+        <view class="route-arrow">→</view>
+      </view>
+
+      <view class="route-card route-wrong" bindtap="goWrongBook" hover-class="card-pressed">
+        <view class="route-index">03</view>
+        <view class="route-copy">
+          <text class="route-eyebrow">薄弱项管理</text>
+          <text class="route-title">错题本</text>
+          <text class="route-desc">筛选、复盘并集中处理反复出错的问题</text>
+        </view>
+        <view class="route-arrow">→</view>
       </view>
     </view>
   </view>
 
-  <view class="route-section">
-    <view class="section-headline">
-      <text class="section-title">开始今天的学习</text>
-      <text class="section-subtitle">优先完成挑战和复习，成长值会更快提升</text>
-    </view>
-    <view class="primary-routes">
-      <view class="route-card random" hover-class="route-pressed" bindtap="startRandom">
-        <view class="route-orb"><text class="line-icon icon-book"></text></view>
-        <text class="route-title">随机挑战</text>
-        <text class="route-desc">挑战新的题目</text>
-        <text class="route-cta">开始 →</text>
+  <!-- Compact tool dock -->
+  <view class="content-section tool-section page-enter delay-three">
+    <view class="section-heading compact-heading">
+      <view>
+        <text class="section-kicker">TOOLS</text>
+        <text class="section-title">学习工作台</text>
       </view>
-      <view class="route-card review" hover-class="route-pressed" bindtap="goReview">
-        <view class="route-orb"><text class="line-icon icon-review"></text></view>
-        <text class="route-title">今日复习</text>
-        <text class="route-desc">攻克到期错题</text>
-        <text class="route-cta">复习 →</text>
+      <text class="section-note">数据与效率</text>
+    </view>
+
+    <view class="tool-panel">
+      <view class="tool-item" bindtap="goDashboard" hover-class="tool-pressed">
+        <view class="tool-icon chart-icon">
+          <view class="bar bar-a"></view><view class="bar bar-b"></view><view class="bar bar-c"></view>
+        </view>
+        <text class="tool-title">学习报告</text>
+        <text class="tool-desc">趋势与薄弱项</text>
+      </view>
+      <view class="tool-divider"></view>
+      <view class="tool-item" bindtap="goPomodoro" hover-class="tool-pressed">
+        <view class="tool-icon clock-icon"><view class="clock-hand"></view></view>
+        <text class="tool-title">专注计时</text>
+        <text class="tool-desc">管理学习节奏</text>
+      </view>
+      <view class="tool-divider"></view>
+      <view class="tool-item" bindtap="goFormulas" hover-class="tool-pressed">
+        <view class="tool-icon formula-icon">∑</view>
+        <text class="tool-title">公式库</text>
+        <text class="tool-desc">快速查阅背诵</text>
       </view>
     </view>
   </view>
 
-  <view class="action-grid">
-    <view class="action-card learning-card" hover-class="active-surface" bindtap="goWrongBook">
-      <view class="icon-badge icon-warning"><text class="line-icon icon-alert"></text></view>
-      <view class="action-info">
-        <text class="action-title">错题本</text>
-        <text class="action-desc">全部错题 · 按条件筛选</text>
-      </view>
-      <text class="action-arrow line-icon icon-chevron-right"></text>
-    </view>
-    <view class="action-card learning-card" hover-class="active-surface" bindtap="goDashboard">
-      <view class="icon-badge icon-muted"><text class="line-icon icon-chart"></text></view>
-      <view class="action-info">
-        <text class="action-title">学习统计</text>
-        <text class="action-desc">正确率 · 学科分布 · 趋势</text>
-      </view>
-      <text class="action-arrow line-icon icon-chevron-right"></text>
-    </view>
-    <view class="action-card learning-card" hover-class="active-surface" bindtap="goPomodoro">
-      <view class="icon-badge icon-warning"><text class="line-icon icon-clock"></text></view>
-      <view class="action-info">
-        <text class="action-title">番茄钟</text>
-        <text class="action-desc">专注计时 · 学习节奏管理</text>
-      </view>
-      <text class="action-arrow line-icon icon-chevron-right"></text>
-    </view>
-    <view class="action-card learning-card" hover-class="active-surface" bindtap="goFormulas">
-      <view class="icon-badge icon-formula"><text class="line-icon icon-formula">∑</text></view>
-      <view class="action-info">
-        <text class="action-title">公式背诵</text>
-        <text class="action-desc">数学二公式 · 定理 · 二级结论</text>
-      </view>
-      <text class="action-arrow line-icon icon-chevron-right"></text>
+  <view class="growth-note page-enter delay-three">
+    <view class="growth-note-line"></view>
+    <view class="growth-note-copy">
+      <text class="growth-note-label">TODAY'S NOTE</text>
+      <text class="growth-note-text">{{dailyBoostText}}</text>
     </view>
   </view>
 
+  <view class="safe-bottom"></view>
 </view>
