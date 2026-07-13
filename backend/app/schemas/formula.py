@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any
 
@@ -106,6 +108,29 @@ class FormulaCardUpdate(BaseModel):
     tag_ids: list[int] | None = None
 
 
+# ── Graph Asset ──
+
+class FormulaGraphAssetResponse(BaseModel):
+    """Full graph asset response model for admin and user-facing APIs."""
+    id: int
+    formula_card_id: int
+    source_type: str
+    template_type: str | None = None
+    template_parameters: dict | None = None
+    viewport: dict | None = None
+    image_url: str | None = None
+    thumbnail_url: str | None = None
+    original_svg_url: str | None = None
+    mime_type: str | None = None
+    width: int | None = None
+    height: int | None = None
+    checksum: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
 class FormulaCardResponse(BaseModel):
     id: int
     exam_scope: str
@@ -122,6 +147,7 @@ class FormulaCardResponse(BaseModel):
     error_tips: str | None
     examples: list[dict[str, Any]] | None
     function_properties: dict[str, Any] | None
+    graph_asset: FormulaGraphAssetResponse | None = None
     sort_order: int
     status: str
     tags: list[FormulaTagResponse] = []
