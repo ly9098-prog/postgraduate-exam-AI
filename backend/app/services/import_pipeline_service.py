@@ -24,12 +24,13 @@ from app.features.import_mode import ImportMode
 from app.features.pipeline_orchestrator import (
     _set_pipeline_store,
     get_pipeline_status as _orchestrator_get_pipeline_status,
+    resolve_pdf_page_range,
     resume_pipeline_background,
     run_excel_pipeline_background,
     run_import_pipeline,
     run_pipeline_background,
 )
-from app.schemas.import_review import PipelineStatusResponse, PipelineUploadResponse
+from app.schemas.import_review import PipelineStatusResponse, PdfPageRangeInfo, PipelineUploadResponse
 from app.services.upload_validator import get_upload_validator
 from app.utils.sentry_utils import capture_exception, set_tag
 
@@ -480,12 +481,9 @@ async def start_import_pipeline(
     validator = get_upload_validator()
     validator.validate_file(filename, len(file_content), content_type)
 
-    if page_start is not None and page_start < 1:
-        raise ValueError("page_start 必须 >= 1")
-    if page_end is not None and page_end < 1:
-        raise ValueError("page_end 必须 >= 1")
-    if page_end is not None and page_start is not None and page_end < page_start:
-        raise ValueError("page_end 必须 >= page_start")
+    # Non-PDF files must not include page range params
+    if (page_start is not None or page_end is not None) and not is_pdf:
+        raise ValueError("page_start/page_end 仅适用于 PDF 文件")
 
     if is_image:
         if content_type and content_type not in _IMAGE_CONTENT_TYPES:
@@ -567,29 +565,45 @@ async def start_import_pipeline(
     source_type = "pdf" if is_pdf else "txt"
     pipeline_id = f"pl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
+    page_range: PdfPageRangeInfo | None = None
+    pdf_total_pages = 0
+
     if is_pdf:
         try:
             import fitz
             with fitz.open(stream=file_content, filetype="pdf") as doc:
-                validator.validate_pdf_pages(len(doc))
+                pdf_total_pages = len(doc)
+                validator.validate_pdf_pages(pdf_total_pages)
+                page_range = resolve_pdf_page_range(
+                    pdf_total_pages,
+                    page_start=page_start,
+                    page_end=page_end,
+                )
         except ValueError:
             raise
         except Exception:
-            pass
+            logger.warning("PDF page count/range validation failed", exc_info=True)
+
+        logger.info(
+            "PDF upload accepted: filename=%s total_pages=%s page_start=%s page_end=%s selected=%s",
+            filename, pdf_total_pages, page_start, page_end,
+            page_range.selected_page_count if page_range else "N/A",
+        )
 
     options = {
         "enable_ai_repair": enable_ai_repair,
         "confidence_threshold": confidence_threshold,
         "import_mode": import_mode,
-        "page_start": page_start,
-        "page_end": page_end,
     }
+    if page_range:
+        options["page_start"] = page_range.effective_start
+        options["page_end"] = page_range.effective_end
 
     ctx = get_log_context()
     options["_trace_id"] = ctx.get("trace_id")
     options["_request_id"] = ctx.get("request_id")
 
-    await _set_pipeline_store(pipeline_id, {
+    store_data: dict = {
         "pipeline_id": pipeline_id,
         "status": "processing",
         "source_type": source_type,
@@ -599,7 +613,11 @@ async def start_import_pipeline(
         "stats": {},
         "errors": [],
         "started_at": datetime.now().isoformat(),
-    })
+    }
+    if page_range:
+        store_data["page_range"] = page_range.model_dump()
+
+    await _set_pipeline_store(pipeline_id, store_data)
 
     asyncio.create_task(
         _run_pipeline_with_db(
@@ -620,7 +638,10 @@ async def start_import_pipeline(
         source_file=filename, file_size=len(file_content),
         content_type=content_type or "-",
     )
-    return PipelineUploadResponse(pipeline_id=pipeline_id, status="parsing", source_type=source_type)
+    return PipelineUploadResponse(
+        pipeline_id=pipeline_id, status="parsing",
+        source_type=source_type, page_range=page_range,
+    )
 
 
 async def get_pipeline_status(pipeline_id: str, db: AsyncSession) -> PipelineStatusResponse:

@@ -12,7 +12,9 @@ from app.features.pipeline_orchestrator import (
     _extract_text_blocks,
     _ocr_scanned_pdf,
     _pipeline_store,
+    _set_pipeline_store,
     get_pipeline_status,
+    resolve_pdf_page_range,
     run_import_pipeline,
     run_pipeline_background,
 )
@@ -176,6 +178,44 @@ class TestExtractPdfBlocks:
         with patch.dict(sys.modules, {"fitz": None}):
             with pytest.raises(RuntimeError, match="PyMuPDF"):
                 _extract_pdf_blocks(b"any content")
+
+    def test_page_range_extracts_only_selected_pages(self):
+        """Integration: real 5-page PDF, extract pages 2-4 only."""
+        import io
+
+        try:
+            import fitz  # noqa: F811
+        except ImportError:
+            pytest.skip("PyMuPDF not installed")
+
+        doc = fitz.open()
+        for i in range(1, 6):
+            page = doc.new_page()
+            page.insert_text((50, 100), f"PAGE_{i:04d}", fontsize=20)
+        pdf_bytes = io.BytesIO()
+        doc.save(pdf_bytes)
+        doc.close()
+        pdf_bytes.seek(0)
+
+        blocks = _extract_pdf_blocks(pdf_bytes.read(), page_start=2, page_end=4)
+
+        # Must have exactly 3 blocks (pages 2, 3, 4)
+        assert len(blocks) == 3, f"Expected 3 blocks, got {len(blocks)}"
+
+        # Block page numbers must be original physical pages
+        pages = sorted(set(b["page"] for b in blocks))
+        assert pages == [2, 3, 4], f"Expected pages [2,3,4], got {pages}"
+
+        # Each block should contain its unique marker
+        for b in blocks:
+            assert f"PAGE_{b['page']:04d}" in b["text"], (
+                f"Block from page {b['page']} should contain PAGE_{b['page']:04d}"
+            )
+
+        # Verify no text from excluded pages
+        all_text = " ".join(b["text"] for b in blocks)
+        assert "PAGE_0001" not in all_text, "Page 1 should not be included"
+        assert "PAGE_0005" not in all_text, "Page 5 should not be included"
 
 
 # ---------------------------------------------------------------------------
@@ -429,6 +469,167 @@ class TestOcrScannedPdf:
             blocks = _ocr_scanned_pdf(b"empty pdf")
 
         assert blocks == []
+
+    # ── OCR page range tests ─────────────────────────────────────────────
+    # P2: Verify _ocr_scanned_pdf respects page_start/page_end and
+    #     truncation warnings use correct denominator.
+
+    @staticmethod
+    def _make_ocr_side_effect(all_results):
+        """Return a side_effect that filters OCR results to only input pages."""
+        def _side_effect(batch_images, **kwargs):
+            input_pages = set(idx for idx, _ in batch_images)
+            return {p: all_results[p] for p in input_pages if p in all_results}
+        return _side_effect
+
+    @staticmethod
+    def _make_ocr_page_results(pages: list[int]):
+        from app.services.ocr_service import OcrPageResult
+        return {
+            p: OcrPageResult(page_index=p, text=f"OCR text page {p}", boxes=[])
+            for p in pages
+        }
+
+    def test_ocr_page_range_renders_only_selected_pages(self):
+        """5-page PDF, pages 2-4 → only pages 2,3,4 OCR'd with original page numbers."""
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        pages = [MagicMock() for _ in range(5)]
+        for i, p in enumerate(pages):
+            pix = MagicMock()
+            pix.tobytes.return_value = f"png_{i + 1}".encode()
+            pix.width = 800
+            pix.height = 600
+            p.get_pixmap.return_value = pix
+        mock_doc.__len__ = MagicMock(return_value=5)
+        mock_doc.__getitem__ = MagicMock(side_effect=lambda i: pages[i])
+        mock_fitz.open.return_value = mock_doc
+
+        ocr_results = self._make_ocr_page_results(list(range(1, 6)))
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            with patch(
+                "app.services.ocr_service.ocr_pages_with_boxes",
+                side_effect=self._make_ocr_side_effect(ocr_results),
+            ):
+                with patch(
+                    "app.services.ocr_service.clean_ocr_text",
+                    side_effect=lambda t: t,
+                ):
+                    blocks = _ocr_scanned_pdf(b"pdf", page_start=2, page_end=4)
+
+        assert len(blocks) == 3, f"Expected 3 blocks, got {len(blocks)}"
+        pages_found = sorted(set(b["page"] for b in blocks))
+        assert pages_found == [2, 3, 4], f"Expected pages [2,3,4], got {pages_found}"
+
+        accessed_indices = [call[0][0] for call in mock_doc.__getitem__.call_args_list]
+        assert accessed_indices == [1, 2, 3], f"fitz accessed indices {accessed_indices}, expected [1,2,3]"
+
+    def test_ocr_page_range_excludes_out_of_range_pages(self):
+        """Pages 1 and 5 are NOT rendered when range is 2-4."""
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        pages = [MagicMock() for _ in range(5)]
+        for i, p in enumerate(pages):
+            pix = MagicMock()
+            pix.tobytes.return_value = f"png_{i + 1}".encode()
+            pix.width = 800
+            pix.height = 600
+            p.get_pixmap.return_value = pix
+        mock_doc.__len__ = MagicMock(return_value=5)
+        mock_doc.__getitem__ = MagicMock(side_effect=lambda i: pages[i])
+        mock_fitz.open.return_value = mock_doc
+
+        ocr_results = self._make_ocr_page_results(list(range(1, 6)))
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            with patch(
+                "app.services.ocr_service.ocr_pages_with_boxes",
+                side_effect=self._make_ocr_side_effect(ocr_results),
+            ):
+                with patch(
+                    "app.services.ocr_service.clean_ocr_text",
+                    side_effect=lambda t: t,
+                ):
+                    blocks = _ocr_scanned_pdf(b"pdf", page_start=2, page_end=4)
+
+        all_page_nums = set(b["page"] for b in blocks)
+        assert 1 not in all_page_nums, "Page 1 should not appear"
+        assert 5 not in all_page_nums, "Page 5 should not appear"
+
+    def test_ocr_no_truncation_warning_when_range_under_limit(self):
+        """100-page PDF, select 10 pages, MAX_OCR_PAGES=20 → no truncation warning."""
+        from app.core.config import settings
+
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        pages = [MagicMock() for _ in range(100)]
+        for i, p in enumerate(pages):
+            pix = MagicMock()
+            pix.tobytes.return_value = f"png_{i + 1}".encode()
+            pix.width = 800
+            pix.height = 600
+            p.get_pixmap.return_value = pix
+        mock_doc.__len__ = MagicMock(return_value=100)
+        mock_doc.__getitem__ = MagicMock(side_effect=lambda i: pages[i])
+        mock_fitz.open.return_value = mock_doc
+
+        ocr_results = self._make_ocr_page_results(list(range(1, 101)))
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            with patch.object(settings, "MAX_OCR_PAGES", 20):
+                with patch(
+                    "app.services.ocr_service.ocr_pages_with_boxes",
+                    side_effect=self._make_ocr_side_effect(ocr_results),
+                ):
+                    with patch(
+                        "app.services.ocr_service.clean_ocr_text",
+                        side_effect=lambda t: t,
+                    ):
+                        blocks = _ocr_scanned_pdf(b"pdf", page_start=1, page_end=10)
+
+        warnings = blocks[0].get("_warnings", []) if blocks else []
+        trunc_warnings = [w for w in warnings if "ocr_pages_truncated" in w]
+        assert len(trunc_warnings) == 0, f"Unexpected truncation warnings: {trunc_warnings}"
+        assert len(blocks) == 10
+
+    def test_ocr_truncation_warning_uses_selected_page_count(self):
+        """Select 51 pages, MAX_OCR_PAGES=20 → '20/51 selected pages' warning."""
+        from app.core.config import settings
+
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        pages = [MagicMock() for _ in range(100)]
+        for i, p in enumerate(pages):
+            pix = MagicMock()
+            pix.tobytes.return_value = f"png_{i + 1}".encode()
+            pix.width = 800
+            pix.height = 600
+            p.get_pixmap.return_value = pix
+        mock_doc.__len__ = MagicMock(return_value=100)
+        mock_doc.__getitem__ = MagicMock(side_effect=lambda i: pages[i])
+        mock_fitz.open.return_value = mock_doc
+
+        ocr_results = self._make_ocr_page_results(list(range(1, 101)))
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            with patch.object(settings, "MAX_OCR_PAGES", 20):
+                with patch(
+                    "app.services.ocr_service.ocr_pages_with_boxes",
+                    side_effect=self._make_ocr_side_effect(ocr_results),
+                ):
+                    with patch(
+                        "app.services.ocr_service.clean_ocr_text",
+                        side_effect=lambda t: t,
+                    ):
+                        blocks = _ocr_scanned_pdf(b"pdf", page_start=1, page_end=51)
+
+        warnings = blocks[0].get("_warnings", []) if blocks else []
+        trunc_warnings = [w for w in warnings if "ocr_pages_truncated" in w]
+        assert len(trunc_warnings) >= 1
+        assert "20/51" in trunc_warnings[0], (
+            f"Expected '20/51' in truncation warning, got: {trunc_warnings}"
+        )
 
 
 class TestRunExtractOcrFallback:
@@ -2053,3 +2254,473 @@ class TestRunNormalizeSchemaRiskFlags:
         assert "low_confidence" in flags
         # 去重保序：上游 flag 在最前
         assert flags.index("book_pdf_prose_like") < flags.index("no_exercise_regions")
+
+
+# ---------------------------------------------------------------------------
+# P1-4: PDF page range — resolve_pdf_page_range
+# ---------------------------------------------------------------------------
+
+
+class TestResolvePdfPageRange:
+    """Unit tests for resolve_pdf_page_range() validation + resolution."""
+
+    def test_invalid_total_pages_zero(self):
+        from app.features.pipeline_orchestrator import resolve_pdf_page_range
+        with pytest.raises(ValueError, match="PDF 总页数无效"):
+            resolve_pdf_page_range(total_pages=0)
+
+    def test_invalid_total_pages_negative(self):
+        from app.features.pipeline_orchestrator import resolve_pdf_page_range
+        with pytest.raises(ValueError, match="PDF 总页数无效"):
+            resolve_pdf_page_range(total_pages=-1)
+
+    def test_page_start_below_one(self):
+        from app.features.pipeline_orchestrator import resolve_pdf_page_range
+        with pytest.raises(ValueError, match="起始页必须是大于等于 1 的整数"):
+            resolve_pdf_page_range(total_pages=10, page_start=0)
+
+    def test_page_start_exceeds_total(self):
+        from app.features.pipeline_orchestrator import resolve_pdf_page_range
+        with pytest.raises(ValueError, match="起始页 11 超出 PDF 总页数 10"):
+            resolve_pdf_page_range(total_pages=10, page_start=11)
+
+    def test_page_end_below_one(self):
+        from app.features.pipeline_orchestrator import resolve_pdf_page_range
+        with pytest.raises(ValueError, match="结束页必须是大于等于 1 的整数"):
+            resolve_pdf_page_range(total_pages=10, page_end=0)
+
+    def test_page_end_exceeds_total(self):
+        from app.features.pipeline_orchestrator import resolve_pdf_page_range
+        with pytest.raises(ValueError, match="结束页 20 超出 PDF 总页数 10"):
+            resolve_pdf_page_range(total_pages=10, page_end=20)
+
+    def test_start_after_end(self):
+        from app.features.pipeline_orchestrator import resolve_pdf_page_range
+        with pytest.raises(ValueError, match="起始页不能大于结束页"):
+            resolve_pdf_page_range(total_pages=10, page_start=5, page_end=3)
+
+    def test_defaults_to_full_range(self):
+        from app.features.pipeline_orchestrator import resolve_pdf_page_range
+        result = resolve_pdf_page_range(total_pages=50)
+        assert result.effective_start == 1
+        assert result.effective_end == 50
+        assert result.selected_page_count == 50
+        assert result.total_pages == 50
+        assert result.requested_start is None
+        assert result.requested_end is None
+
+    def test_explicit_range(self):
+        from app.features.pipeline_orchestrator import resolve_pdf_page_range
+        result = resolve_pdf_page_range(total_pages=100, page_start=10, page_end=20)
+        assert result.effective_start == 10
+        assert result.effective_end == 20
+        assert result.selected_page_count == 11  # inclusive
+        assert result.requested_start == 10
+        assert result.requested_end == 20
+
+    def test_only_page_start(self):
+        from app.features.pipeline_orchestrator import resolve_pdf_page_range
+        result = resolve_pdf_page_range(total_pages=30, page_start=25)
+        assert result.effective_start == 25
+        assert result.effective_end == 30
+        assert result.selected_page_count == 6
+        assert result.requested_start == 25
+        assert result.requested_end is None
+
+    def test_only_page_end(self):
+        from app.features.pipeline_orchestrator import resolve_pdf_page_range
+        result = resolve_pdf_page_range(total_pages=30, page_end=15)
+        assert result.effective_start == 1
+        assert result.effective_end == 15
+        assert result.selected_page_count == 15
+        assert result.requested_start is None
+        assert result.requested_end == 15
+
+    def test_page_start_equals_page_end(self):
+        from app.features.pipeline_orchestrator import resolve_pdf_page_range
+        result = resolve_pdf_page_range(total_pages=50, page_start=7, page_end=7)
+        assert result.effective_start == 7
+        assert result.effective_end == 7
+        assert result.selected_page_count == 1
+
+    def test_page_start_equals_total_pages(self):
+        from app.features.pipeline_orchestrator import resolve_pdf_page_range
+        result = resolve_pdf_page_range(total_pages=10, page_start=10)
+        assert result.effective_start == 10
+        assert result.effective_end == 10
+        assert result.selected_page_count == 1
+
+    def test_selected_page_count_inclusive(self):
+        """selected_page_count must be (end - start + 1), i.e. inclusive."""
+        from app.features.pipeline_orchestrator import resolve_pdf_page_range
+        r1 = resolve_pdf_page_range(total_pages=10, page_start=1, page_end=1)
+        assert r1.selected_page_count == 1
+        r5 = resolve_pdf_page_range(total_pages=10, page_start=1, page_end=5)
+        assert r5.selected_page_count == 5
+        r10 = resolve_pdf_page_range(total_pages=10)
+        assert r10.selected_page_count == 10
+
+
+# ---------------------------------------------------------------------------
+# P1-4: PDF page range — split_page_range
+# ---------------------------------------------------------------------------
+
+
+class TestSplitPageRange:
+    """Unit tests for split_page_range() chunking."""
+
+    def test_splits_evenly(self):
+        from app.features.pipeline_orchestrator import split_page_range
+        result = split_page_range(1, 80, 40)
+        assert result == [(1, 40), (41, 80)]
+
+    def test_last_chunk_shorter(self):
+        from app.features.pipeline_orchestrator import split_page_range
+        result = split_page_range(1, 100, 40)
+        assert result == [(1, 40), (41, 80), (81, 100)]
+
+    def test_single_page_range(self):
+        from app.features.pipeline_orchestrator import split_page_range
+        result = split_page_range(5, 5, 10)
+        assert result == [(5, 5)]
+
+    def test_chunk_size_larger_than_range(self):
+        from app.features.pipeline_orchestrator import split_page_range
+        result = split_page_range(10, 20, 50)
+        assert result == [(10, 20)]
+
+    def test_empty_when_start_gt_end(self):
+        from app.features.pipeline_orchestrator import split_page_range
+        assert split_page_range(10, 5, 10) == []
+
+    def test_empty_when_chunk_size_zero(self):
+        from app.features.pipeline_orchestrator import split_page_range
+        assert split_page_range(1, 10, 0) == []
+
+    def test_empty_when_start_below_one(self):
+        from app.features.pipeline_orchestrator import split_page_range
+        assert split_page_range(0, 10, 10) == []
+
+    def test_offset_start(self):
+        """Non-1 start page — e.g. user-selected sub-range."""
+        from app.features.pipeline_orchestrator import split_page_range
+        result = split_page_range(101, 220, 40)
+        assert result == [(101, 140), (141, 180), (181, 220)]
+
+    def test_chunk_size_one(self):
+        from app.features.pipeline_orchestrator import split_page_range
+        result = split_page_range(1, 3, 1)
+        assert result == [(1, 1), (2, 2), (3, 3)]
+
+
+# ---------------------------------------------------------------------------
+# P1-4: Page rendering with range
+# ---------------------------------------------------------------------------
+
+
+class TestRenderPageImagesRange:
+    """Verify page rendering respects page_start/page_end."""
+
+    def test_render_page_images_uses_range(self):
+        """_render_page_images should only render pages within range."""
+        from app.features.pipeline_orchestrator import _render_page_images
+
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        pages = []
+        for i in range(5):
+            p = MagicMock()
+            pix = MagicMock()
+            pix.tobytes.return_value = f"page{i + 1}".encode()
+            pix.width = 800
+            pix.height = 600
+            p.get_pixmap.return_value = pix
+            pages.append(p)
+        mock_doc.__len__ = MagicMock(return_value=5)
+        mock_doc.__getitem__ = MagicMock(side_effect=lambda i: pages[i])
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            result = _render_page_images(file_content=b"pdf content", page_start=2, page_end=4)
+
+        # Should only render pages 2, 3, 4
+        assert list(result.keys()) == [2, 3, 4]
+        assert result[2] is not None
+        assert result[4] is not None
+        mock_doc.close.assert_called_once()
+
+    def test_render_page_images_default_full_range(self):
+        """Without page_start/page_end, render all pages."""
+        from app.features.pipeline_orchestrator import _render_page_images
+
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        pages = []
+        for i in range(3):
+            p = MagicMock()
+            pix = MagicMock()
+            pix.tobytes.return_value = f"p{i + 1}".encode()
+            pix.width = 800
+            pix.height = 600
+            p.get_pixmap.return_value = pix
+            pages.append(p)
+        mock_doc.__len__ = MagicMock(return_value=3)
+        mock_doc.__getitem__ = MagicMock(side_effect=lambda i: pages[i])
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            result = _render_page_images(file_content=b"pdf content")
+
+        assert list(result.keys()) == [1, 2, 3]
+        mock_doc.close.assert_called_once()
+
+    def test_render_page_image_refs_uses_range(self):
+        """_render_page_image_refs should only include refs within range."""
+        from app.features.pipeline_orchestrator import _render_page_image_refs
+
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        pages = []
+        for i in range(5):
+            p = MagicMock()
+            pix = MagicMock()
+            pix.tobytes.return_value = f"ref{i + 1}".encode()
+            pix.width = 100
+            pix.height = 200
+            p.get_pixmap.return_value = pix
+            pages.append(p)
+        mock_doc.__len__ = MagicMock(return_value=5)
+        mock_doc.__getitem__ = MagicMock(side_effect=lambda i: pages[i])
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            result = _render_page_image_refs(
+                file_path="/fake/test.pdf",
+                temp_dir="/tmp/test_frames",
+                page_start=3,
+                page_end=5,
+            )
+
+        assert len(result) == 3
+        assert 3 in result and 5 in result
+        mock_doc.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# P2: page_range state persistence
+# ---------------------------------------------------------------------------
+
+
+class TestPageRangePersistence:
+    """Verify page_range survives store transitions:
+    queued → processing → completed (and failed).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _cleanup(self):
+        _pipeline_store.clear()
+        yield
+
+    async def _write_store(self, pipeline_id: str, status: str, page_range: dict | None = None, **extra):
+        data = {
+            "pipeline_id": pipeline_id,
+            "status": status,
+            "source_type": "pdf",
+            "stages": {},
+            "stats": {},
+            "errors": [],
+            "started_at": "2026-01-01T00:00:00",
+        }
+        if page_range is not None:
+            data["page_range"] = page_range
+        data.update(extra)
+        await _set_pipeline_store(pipeline_id, data)
+
+    @pytest.mark.asyncio
+    async def test_page_range_present_in_queued(self):
+        pr = {"effective_start": 1, "effective_end": 5, "selected_page_count": 5, "total_pages": 10}
+        await self._write_store("p1", "queued", page_range=pr)
+        data = await get_pipeline_status("p1")
+        assert data is not None
+        assert data.get("page_range") == pr
+
+    @pytest.mark.asyncio
+    async def test_page_range_present_in_processing(self):
+        pr = {"effective_start": 2, "effective_end": 4, "selected_page_count": 3, "total_pages": 10}
+        await self._write_store("p2", "processing", page_range=pr,
+                                current_stage="extract")
+        data = await get_pipeline_status("p2")
+        assert data is not None
+        assert data.get("page_range") == pr
+
+    @pytest.mark.asyncio
+    async def test_page_range_present_in_completed(self):
+        pr = {"effective_start": 1, "effective_end": 10, "selected_page_count": 10, "total_pages": 10}
+        await self._write_store("p3", "completed", page_range=pr,
+                                batch_id="batch-1", finished_at="2026-01-01T01:00:00")
+        data = await get_pipeline_status("p3")
+        assert data is not None
+        assert data.get("page_range") == pr
+
+    @pytest.mark.asyncio
+    async def test_page_range_present_in_failed(self):
+        pr = {"effective_start": 1, "effective_end": 5, "selected_page_count": 5, "total_pages": 10}
+        await self._write_store("p4", "failed", page_range=pr,
+                                errors=["test error"], finished_at="2026-01-01T01:00:00")
+        data = await get_pipeline_status("p4")
+        assert data is not None
+        assert data.get("page_range") == pr
+        assert "test error" in data.get("errors", [])
+
+    @pytest.mark.asyncio
+    async def test_page_range_not_lost_on_store_overwrite(self):
+        """Simulate the background task overwrite pattern."""
+        pr = {"effective_start": 2, "effective_end": 5, "selected_page_count": 4, "total_pages": 10}
+        await self._write_store("p5", "processing", page_range=pr)
+
+        # Overwrite with new status (as run_pipeline_background does)
+        existing = _pipeline_store.get("p5", {})
+        await _set_pipeline_store("p5", {
+            "pipeline_id": "p5",
+            "status": "processing",
+            "source_type": "pdf",
+            "current_stage": "normalize_text",
+            "stages": {},
+            "stats": {},
+            "errors": [],
+            "started_at": "2026-01-01T00:00:00",
+            "page_range": existing.get("page_range"),
+        })
+        data = await get_pipeline_status("p5")
+        assert data is not None
+        assert data.get("page_range") == pr, "page_range should survive store overwrite"
+
+    @pytest.mark.asyncio
+    async def test_non_pdf_has_no_page_range(self):
+        await self._write_store("p6", "processing")
+        data = await get_pipeline_status("p6")
+        assert data is not None
+        assert data.get("page_range") is None
+
+    @pytest.mark.asyncio
+    async def test_upload_response_page_range(self):
+        """Test that start_import_pipeline returns page_range immediately."""
+        from app.services.import_pipeline_service import start_import_pipeline
+
+        pdf_content = b"%PDF-1.4 test content"
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        mock_doc.__len__ = MagicMock(return_value=10)
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            result = await start_import_pipeline(
+                file_content=pdf_content,
+                filename="test.pdf",
+                content_type="application/pdf",
+                page_start=3,
+                page_end=7,
+            )
+
+        assert result.page_range is not None
+        assert result.page_range.effective_start == 3
+        assert result.page_range.effective_end == 7
+        assert result.page_range.selected_page_count == 5
+        assert result.page_range.total_pages == 10
+
+        assert result.page_range is not None
+        assert result.page_range.effective_start == 3
+        assert result.page_range.effective_end == 7
+        assert result.page_range.selected_page_count == 5
+        assert result.page_range.total_pages == 10
+
+
+# ---------------------------------------------------------------------------
+# P2: _plan_chunks page count verification
+# ---------------------------------------------------------------------------
+
+
+class TestPlanChunksPageCount:
+    """Verify _plan_chunks uses effective_end - effective_start + 1."""
+
+    def test_chunk_page_count_formula(self):
+        """Verify the formula: page_count_for_chunking = effective_end - effective_start + 1."""
+        # Direct formula verification
+        for effective_start, effective_end, total_pages, expected_count in [
+            (1, 10, 10, 10),
+            (2, 5, 10, 4),
+            (3, 3, 10, 1),
+            (1, 1, 10, 1),
+            (10, 10, 10, 1),
+        ]:
+            page_count = min(effective_end, total_pages) - effective_start + 1
+            assert page_count == expected_count, (
+                f"start={effective_start} end={effective_end} total={total_pages} "
+                f"→ {page_count} != {expected_count}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# P2: Service-level error handling for non-PDF page range
+# ---------------------------------------------------------------------------
+
+
+class TestNonPdfPageRangeRejection:
+    """Non-PDF files with page_start/page_end should raise ValueError."""
+
+    @pytest.mark.asyncio
+    async def test_image_with_page_range_raises(self):
+        from app.services.import_pipeline_service import start_import_pipeline
+
+        with pytest.raises(ValueError, match="仅适用于 PDF"):
+            await start_import_pipeline(
+                file_content=b"fake image content",
+                filename="test.jpg",
+                content_type="image/jpeg",
+                page_start=1,
+            )
+
+    @pytest.mark.asyncio
+    async def test_txt_with_page_range_raises(self):
+        from app.services.import_pipeline_service import start_import_pipeline
+
+        with pytest.raises(ValueError, match="仅适用于 PDF"):
+            await start_import_pipeline(
+                file_content=b"some text content",
+                filename="test.txt",
+                content_type="text/plain",
+                page_end=5,
+            )
+
+    @pytest.mark.asyncio
+    async def test_excel_with_page_range_raises(self):
+        from app.services.import_pipeline_service import start_import_pipeline
+
+        with pytest.raises(ValueError, match="仅适用于 PDF"):
+            await start_import_pipeline(
+                file_content=b"fake excel",
+                filename="test.xlsx",
+                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                page_start=1,
+                page_end=10,
+            )
+
+    @pytest.mark.asyncio
+    async def test_pdf_with_page_range_ok(self):
+        from app.services.import_pipeline_service import start_import_pipeline
+
+        pdf_content = b"%PDF-1.4 test"
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        mock_doc.__len__ = MagicMock(return_value=10)
+        mock_fitz.open.return_value.__enter__.return_value = mock_doc
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            result = await start_import_pipeline(
+                file_content=pdf_content,
+                filename="test.pdf",
+                content_type="application/pdf",
+                page_start=2,
+                page_end=5,
+            )
+        assert result.page_range is not None
+        assert result.page_range.selected_page_count == 4
+

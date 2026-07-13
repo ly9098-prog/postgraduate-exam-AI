@@ -42,6 +42,7 @@ from app.features.question_type_classifier import detect_options_from_text as _d
 from app.features.similarity_matcher import match_similar_questions
 from app.features.structure_analyzer import analyze_structure
 from app.features.text_normalizer import ImportTextNormalizer
+from app.schemas.import_review import PdfPageRangeInfo
 from app.utils.sentry_utils import capture_exception, set_tag, start_span
 from app.core.log_context import bind_log_context, log_event
 
@@ -293,6 +294,7 @@ _PIPELINE_STORE_FIELDS = (
     "question_count",
     "quality_report",
     "artifacts",
+    "page_range",
 )
 
 
@@ -592,6 +594,8 @@ def _render_page_images(
     file_path: str | None = None,
     source_type: str = "pdf",
     max_dimension: int = 2048,
+    page_start: int = 1,
+    page_end: int | None = None,
 ) -> dict[int, bytes] | None:
     """Render PDF pages to PNG images keyed by page number (1-based).
 
@@ -610,19 +614,25 @@ def _render_page_images(
         import fitz
 
         doc = fitz.open(pdf_source) if isinstance(pdf_source, str) else fitz.open(stream=pdf_source, filetype="pdf")
+        total_pages = len(doc)
+        start_idx = max(0, (page_start or 1) - 1)
+        end_idx = min(total_pages, page_end or total_pages)
+
         page_images: dict[int, bytes] = {}
-        for i in range(len(doc)):
-            page = doc[i]
-            dpi = 150
-            pix = page.get_pixmap(dpi=dpi)
-            png = pix.tobytes("png")
-            # Resize if exceeds max dimension
-            if max(pix.width, pix.height) > max_dimension:
-                scale = max_dimension / max(pix.width, pix.height)
-                pix = page.get_pixmap(dpi=int(dpi * scale))
+        try:
+            for i in range(start_idx, end_idx):
+                page = doc[i]
+                dpi = 150
+                pix = page.get_pixmap(dpi=dpi)
                 png = pix.tobytes("png")
-            page_images[i + 1] = png
-        doc.close()
+                # Resize if exceeds max dimension
+                if max(pix.width, pix.height) > max_dimension:
+                    scale = max_dimension / max(pix.width, pix.height)
+                    pix = page.get_pixmap(dpi=int(dpi * scale))
+                    png = pix.tobytes("png")
+                page_images[i + 1] = png
+        finally:
+            doc.close()
         return page_images
     except Exception:
         return None
@@ -633,6 +643,8 @@ def _render_page_image_refs(
     temp_dir: str,
     source_type: str = "pdf",
     max_dimension: int = 2048,
+    page_start: int = 1,
+    page_end: int | None = None,
 ) -> dict[int, str] | None:
     """P2-2: 渲染 PDF 页为 PNG 并写入临时文件，返回 {page_num: filepath}。
 
@@ -646,18 +658,24 @@ def _render_page_image_refs(
         import fitz
 
         doc = fitz.open(file_path, filetype="pdf")
+        total_pages = len(doc)
+        start_idx = max(0, (page_start or 1) - 1)
+        end_idx = min(total_pages, page_end or total_pages)
+
         refs: dict[int, str] = {}
-        for i in range(len(doc)):
-            page = doc[i]
-            dpi = 150
-            pix = page.get_pixmap(dpi=dpi)
-            if max(pix.width, pix.height) > max_dimension:
-                scale = max_dimension / max(pix.width, pix.height)
-                pix = page.get_pixmap(dpi=int(dpi * scale))
-            png_path = os.path.join(temp_dir, f"page_{i + 1}.png")
-            pix.save(png_path)
-            refs[i + 1] = png_path
-        doc.close()
+        try:
+            for i in range(start_idx, end_idx):
+                page = doc[i]
+                dpi = 150
+                pix = page.get_pixmap(dpi=dpi)
+                if max(pix.width, pix.height) > max_dimension:
+                    scale = max_dimension / max(pix.width, pix.height)
+                    pix = page.get_pixmap(dpi=int(dpi * scale))
+                png_path = os.path.join(temp_dir, f"page_{i + 1}.png")
+                pix.save(png_path)
+                refs[i + 1] = png_path
+        finally:
+            doc.close()
         return refs
     except Exception as e:
         logger.warning("page image refs render failed: %s", e)
@@ -807,10 +825,10 @@ def _ocr_scanned_pdf(
         blocks[0]["_warnings"].append(
             f"ocr_timeout: processed {len(blocks)} blocks in {timeout}s limit"
         )
-    elif max_pages > 0 and total_pages > max_pages and blocks:
+    elif max_pages > 0 and pages_in_range > max_pages and blocks:
         blocks[0].setdefault("_warnings", [])
         blocks[0]["_warnings"].append(
-            f"ocr_pages_truncated: processed {pages_to_process}/{total_pages} pages"
+            f"ocr_pages_truncated: processed {pages_to_process}/{pages_in_range} selected pages"
         )
 
     if ocr_text_fallback_unavailable_pages and blocks:
@@ -949,6 +967,77 @@ def _split_into_chunks(total_pages: int, chunk_size: int) -> list[tuple[int, int
         end = min(start + chunk_size - 1, total_pages)
         ranges.append((start, end))
         start = end + 1
+    return ranges
+
+
+def resolve_pdf_page_range(
+    total_pages: int,
+    page_start: int | None = None,
+    page_end: int | None = None,
+) -> PdfPageRangeInfo:
+    """Validate and resolve PDF page range to effective start/end.
+
+    Rules:
+        page_start defaults to 1
+        page_end defaults to total_pages
+        Both are inclusive (1-based physical page numbers).
+
+    Raises ValueError with user-readable messages on invalid ranges.
+    """
+    if total_pages < 1:
+        raise ValueError("PDF 总页数无效")
+
+    requested_start = page_start
+    requested_end = page_end
+
+    if page_start is not None:
+        if not isinstance(page_start, int) or page_start < 1:
+            raise ValueError("起始页必须是大于等于 1 的整数")
+        if page_start > total_pages:
+            raise ValueError(f"起始页 {page_start} 超出 PDF 总页数 {total_pages}")
+
+    if page_end is not None:
+        if not isinstance(page_end, int) or page_end < 1:
+            raise ValueError("结束页必须是大于等于 1 的整数")
+        if page_end > total_pages:
+            raise ValueError(f"结束页 {page_end} 超出 PDF 总页数 {total_pages}")
+
+    effective_start = page_start or 1
+    effective_end = page_end or total_pages
+
+    if effective_start > effective_end:
+        raise ValueError("起始页不能大于结束页")
+
+    selected_page_count = effective_end - effective_start + 1
+
+    return PdfPageRangeInfo(
+        requested_start=requested_start,
+        requested_end=requested_end,
+        effective_start=effective_start,
+        effective_end=effective_end,
+        selected_page_count=selected_page_count,
+        total_pages=total_pages,
+    )
+
+
+def split_page_range(
+    start_page: int,
+    end_page: int,
+    chunk_size: int,
+) -> list[tuple[int, int]]:
+    """Split a page range into 1-based closed-interval chunks.
+
+    Example: start=101, end=220, chunk_size=40
+             → [(101, 140), (141, 180), (181, 220)]
+    """
+    if start_page < 1 or end_page < start_page or chunk_size <= 0:
+        return []
+    ranges: list[tuple[int, int]] = []
+    current = start_page
+    while current <= end_page:
+        chunk_end = min(current + chunk_size - 1, end_page)
+        ranges.append((current, chunk_end))
+        current = chunk_end + 1
     return ranges
 
 
@@ -3684,6 +3773,10 @@ class ImportPipeline:
             db=db,
         )
 
+        # Resolve effective page range for rendering
+        render_page_start = opts.get("page_start") or 1
+        render_page_end = opts.get("page_end")
+
         # Pre-render page images once (expensive — reused across chunks)
         # Caller may pass pre-rendered pages (e.g. image imports keep the
         # original image bytes so multimodal OCR correction can use them).
@@ -3692,6 +3785,8 @@ class ImportPipeline:
                 file_content=file_content,
                 file_path=file_path,
                 source_type=source_type,
+                page_start=render_page_start,
+                page_end=render_page_end,
             )
 
         # P2-2: pre-render page image tempfiles for formula cropping.
@@ -3705,6 +3800,8 @@ class ImportPipeline:
             page_image_tempdir = _tempfile.mkdtemp(prefix="import_pages_")
             page_image_refs = _render_page_image_refs(
                 file_path, page_image_tempdir, source_type=source_type,
+                page_start=render_page_start,
+                page_end=render_page_end,
             )
 
         log_event(
@@ -3769,24 +3866,29 @@ class ImportPipeline:
     ) -> list[tuple[int, int]]:
         """Decide how to split this run into page-chunks.
 
+        Args:
+            opts: pipeline options — may include page_start/page_end for
+                  user-specified range. When set, chunking uses the selected
+                  range instead of the whole document.
+
         Returns:
-            [] when chunking is not applicable (txt, no DB, user-pinned page
-              range, or PDF page count unavailable). The caller falls back to
-              the legacy single-pass branch.
+            [] when chunking is not applicable (txt, no DB, or when the
+              selected page range fits in a single chunk). The caller falls
+              back to the legacy single-pass branch.
             [(s1, e1), ...] otherwise — 1-based closed page ranges.
         """
         # Chunking only kicks in for PDFs with a DB session (checkpoint needs DB)
         if source_type != "pdf" or db is None:
             return []
 
-        # User-pinned page range bypasses chunking — they explicitly asked
-        # for a slice; respecting that takes precedence over auto-chunking.
-        if opts.get("page_start") or opts.get("page_end"):
-            return []
-
         chunk_size = _resolve_chunk_size()
         if chunk_size <= 0:
             return []
+
+        # Resolve effective page range
+        effective_start = opts.get("page_start") or 1
+        effective_end = opts.get("page_end") or 0  # 0 means "unknown / entire doc"
+        has_user_range = effective_end > 0
 
         try:
             total_pages = _read_pdf_page_count(file_path or file_content)
@@ -3796,8 +3898,23 @@ class ImportPipeline:
 
         if total_pages <= 0:
             return []
-        if total_pages <= chunk_size:
+
+        # Determine the actual page count we need to chunk over
+        if has_user_range:
+            if effective_start > total_pages:
+                logger.warning("page_start %d exceeds total_pages %d, cannot chunk", effective_start, total_pages)
+                return []
+            page_count_for_chunking = min(effective_end, total_pages) - effective_start + 1
+        else:
+            effective_end = total_pages
+            page_count_for_chunking = total_pages
+
+        if page_count_for_chunking <= chunk_size:
             return []  # single chunk = single-pass path
+
+        # Use range-based chunking when page range is specified
+        if has_user_range:
+            return split_page_range(effective_start, effective_end, chunk_size)
 
         return _split_into_chunks(total_pages, chunk_size)
 
@@ -4660,6 +4777,9 @@ async def run_pipeline_background(
         raise ValueError("either file_path or file_content must be provided")
 
     started_at = datetime.now().isoformat()
+    # Preserve page_range from the initial store (set by start_import_pipeline)
+    # so it survives the background-task store overwrite.
+    initial_page_range = _pipeline_store.get(pipeline_id, {}).get("page_range")
     await _set_pipeline_store(pipeline_id, {
         "pipeline_id": pipeline_id,
         "status": "processing",
@@ -4669,9 +4789,11 @@ async def run_pipeline_background(
         "stats": {},
         "errors": [],
         "started_at": started_at,
+        "page_range": initial_page_range,
     })
 
     async def _progress(stages_dict, current_stage, errors):
+        existing = _pipeline_store.get(pipeline_id, {})
         await _set_pipeline_store(pipeline_id, {
             "pipeline_id": pipeline_id,
             "status": "processing",
@@ -4681,6 +4803,7 @@ async def run_pipeline_background(
             "stats": {},
             "errors": errors,
             "started_at": started_at,
+            "page_range": existing.get("page_range") or initial_page_range,
         })
 
     try:
@@ -4699,6 +4822,11 @@ async def run_pipeline_background(
             source_sha256=source_sha256,
         )
         result["pipeline_id"] = pipeline_id
+        # Preserve page_range through the final store write (the pipeline
+        # result itself doesn't carry PdfPageRangeInfo — only the upload
+        # response does).
+        if initial_page_range and "page_range" not in result:
+            result["page_range"] = initial_page_range
         await _set_pipeline_store(pipeline_id, result)
 
         # P7-2: evaluate alert rules against pipeline output
@@ -4737,13 +4865,15 @@ async def run_pipeline_background(
                 )
     except Exception as exc:
         logger.exception("Pipeline %s failed", pipeline_id)
+        existing = _pipeline_store.get(pipeline_id, {})
         await _set_pipeline_store(pipeline_id, {
             "pipeline_id": pipeline_id,
             "status": "failed",
             "source_type": source_type,
             "errors": [str(exc)],
-            "started_at": _pipeline_store.get(pipeline_id, {}).get("started_at", ""),
+            "started_at": existing.get("started_at", ""),
             "finished_at": datetime.now().isoformat(),
+            "page_range": existing.get("page_range"),
         })
 
 
