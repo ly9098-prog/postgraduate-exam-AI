@@ -549,3 +549,45 @@
   line-height: 1.22;
   vertical-align: middle;
 }
+
+/* The card title may contain mixed prose and LaTeX (for example, e^x展开). */
+.fc-title-rich {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.28;
+}
+
+.fc-title-rich .katex {
+  display: inline-block;
+  width: auto;
+  max-width: 100%;
+  font-size: 1em;
+  line-height: 1.18;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* Formula-block labels may mix prose and LaTeX, e.g. e^x展开. */
+.fc-block-label-rich {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.fc-block-label-rich .katex {
+  display: inline-block;
+  width: auto;
+  max-width: 100%;
+  font-size: 1em;
+  line-height: 1.18;
+  vertical-align: middle;
+  white-space: nowrap;
+}
