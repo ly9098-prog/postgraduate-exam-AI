@@ -1,6 +1,5 @@
 <premium-nav
   title="错题详情"
-  caption="WRONG REVIEW"
   variant="dark"
   bind:back="goBack"
 />

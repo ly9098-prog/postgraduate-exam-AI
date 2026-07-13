@@ -1,4 +1,8 @@
 const api = require('../../../utils/api')
+const auth = require('../../../utils/auth')
+
+const READER_SEQUENCE_KEY = 'formula_reader_sequence_v2'
+const SEARCH_DEBOUNCE_MS = 500
 
 Page({
   data: {
@@ -20,10 +24,10 @@ Page({
 
     // Search
     searchValue: '',
-    searchTimer: null,
 
     // Favorites
     onlyFavorites: false,
+    favoriteIds: [],
 
     // List
     formulas: [],
@@ -43,9 +47,12 @@ Page({
     loadErrorMessage: '',
   },
 
-  onLoad() {
+  onLoad(options = {}) {
+    const onlyFavorites = options.favorites === '1'
+    if (onlyFavorites) this.setData({ onlyFavorites: true })
     this.loadCatalog()
     this.loadTags()
+    this.loadFavoriteIds()
     this.loadFormulas(true)
   },
 
@@ -61,12 +68,33 @@ Page({
   async loadCatalog() {
     try {
       const data = await api.request('GET', '/formulas/catalog')
-      const catalog = data?.items || []
+      const catalog = this.normalizeCatalog(data?.items || [])
       this.setData({ catalog })
       this.updateChapters()
     } catch (e) {
       console.error('Failed to load formula catalog', e)
     }
+  },
+
+
+  normalizeCatalog(items = []) {
+    return (items || []).map((subject, subjectIndex) => {
+      const rawChildren = subject.children || subject.chapters || subject.items || []
+      const children = (rawChildren || [])
+        .map((chapter, chapterIndex) => ({
+          ...chapter,
+          id: chapter.id || chapter.chapter_id || chapter.catalog_id || chapter.code || `${subjectIndex + 1}-${chapterIndex + 1}`, 
+          name: chapter.name || chapter.title || chapter.label || chapter.chapter_name || `第${chapterIndex + 1}章`,
+        }))
+        .filter((chapter) => chapter.name)
+
+      return {
+        ...subject,
+        code: subject.code || subject.subject_code || subject.key || '',
+        name: subject.name || subject.title || subject.label || subject.subject_name || `科目${subjectIndex + 1}`,
+        children,
+      }
+    })
   },
 
   async loadTags() {
@@ -84,7 +112,7 @@ Page({
     const subject = catalog.find(s => s.code === activeSubject)
     if (subject) {
       this.setData({
-        chapters: subject.children || [],
+        chapters: (subject.children || []).map((chapter) => ({ ...chapter, active: false })),
         activeChapterId: null,
       })
     } else {
@@ -107,6 +135,7 @@ Page({
       activeTags: [],
       searchValue: '',
       onlyFavorites: false,
+      favoriteIds: [],
       page: 1,
       formulas: [],
       hasMore: true,
@@ -122,9 +151,18 @@ Page({
   },
 
   onChapterSelect(e) {
-    const chapterId = e.currentTarget.dataset.id
+    const rawId = e.currentTarget.dataset.id
+    const chapterId = rawId === 0 || rawId === '0' || rawId === '' ? null : rawId
+    const isCurrent = chapterId != null && String(chapterId) === String(this.data.activeChapterId)
+    const nextChapterId = isCurrent ? null : chapterId
+    const chapters = (this.data.chapters || []).map((chapter) => ({
+      ...chapter,
+      active: nextChapterId != null && String(chapter.id) === String(nextChapterId),
+    }))
+
     this.setData({
-      activeChapterId: chapterId === this.data.activeChapterId ? null : chapterId,
+      chapters,
+      activeChapterId: nextChapterId,
       showChapterPicker: false,
       page: 1,
       formulas: [],
@@ -136,7 +174,10 @@ Page({
   // ── Tag Filter ──
 
   toggleTagPicker() {
-    this.setData({ showTagPicker: !this.data.showTagPicker })
+    this.setData({
+      showTagPicker: !this.data.showTagPicker,
+      showChapterPicker: false,
+    })
   },
 
   onTagSelect(e) {
@@ -160,23 +201,40 @@ Page({
   // ── Search ──
 
   onSearchInput(e) {
-    const value = e.detail.value
-    if (this.data.searchTimer) clearTimeout(this.data.searchTimer)
-    const timer = setTimeout(() => {
-      this.setData({
-        searchValue: value,
-        page: 1,
-        formulas: [],
-        hasMore: true,
-      })
-      this.loadFormulas(true)
-    }, 300)
-    this.setData({ searchTimer: timer })
+    const value = e.detail.value || ''
+    this.setData({ searchValue: value })
+    if (this._searchTimer) clearTimeout(this._searchTimer)
+    this._searchTimer = setTimeout(() => {
+      this._searchTimer = null
+      this.applySearch(value)
+    }, SEARCH_DEBOUNCE_MS)
+  },
+
+  onSearchConfirm(e) {
+    const value = (e.detail && e.detail.value) || this.data.searchValue || ''
+    if (this._searchTimer) clearTimeout(this._searchTimer)
+    this._searchTimer = null
+    this.setData({ searchValue: value })
+    this.applySearch(value)
+  },
+
+  applySearch(value) {
+    // Ignore a timer that belongs to an older input value.
+    if (String(value || '') !== String(this.data.searchValue || '')) return
+    this.setData({ page: 1, formulas: [], hasMore: true })
+    this.loadFormulas(true)
   },
 
   onSearchClear() {
+    if (this._searchTimer) clearTimeout(this._searchTimer)
+    this._searchTimer = null
     this.setData({ searchValue: '', page: 1, formulas: [], hasMore: true })
     this.loadFormulas(true)
+  },
+
+  onUnload() {
+    if (this._searchTimer) clearTimeout(this._searchTimer)
+    this._searchTimer = null
   },
 
   // ── Favorites toggle ──
@@ -194,6 +252,8 @@ Page({
   // ── Load Formulas ──
 
   async loadFormulas(replace = false) {
+    if (replace) this._replaceRequestVersion = (this._replaceRequestVersion || 0) + 1
+    const requestVersion = this._replaceRequestVersion || 0
     const { loading, loadingMore, initialLoading, page, pageSize, activeSubject, activeChapterId,
             activeTags, searchValue, onlyFavorites, hasMore } = this.data
     if (loading || loadingMore || (initialLoading && !replace) || !hasMore) return
@@ -222,7 +282,8 @@ Page({
         : '/formulas'
 
       const data = await api.request('GET', url, params)
-      const items = data?.items || []
+      const items = this.decorateFormulaItems(data?.items || [])
+      if (requestVersion !== (this._replaceRequestVersion || 0)) return
 
       this.setData({
         formulas: replace ? items : [...this.data.formulas, ...items],
@@ -233,6 +294,7 @@ Page({
         loadingMore: false,
       })
     } catch (e) {
+      if (requestVersion !== (this._replaceRequestVersion || 0)) return
       console.error('Failed to load formulas', e)
       this.setData({
         initialLoading: false,
@@ -240,6 +302,64 @@ Page({
         loadError: true,
         loadErrorMessage: e.message || '加载失败',
       })
+    }
+  },
+
+  decorateFormulaItems(items) {
+    const favoriteIds = this.data.favoriteIds || []
+    return (items || []).map((item) => ({
+      ...item,
+      isFavorited: Boolean(item.isFavorited || item.is_favorited || favoriteIds.includes(Number(item.id))),
+    }))
+  },
+
+  async loadFavoriteIds() {
+    if (!auth.isLoggedIn()) return
+    try {
+      const data = await api.request('GET', '/formulas/favorites/list', { page: 1, page_size: 200 })
+      const favoriteIds = (data?.items || []).map((item) => Number(item.id)).filter(Boolean)
+      const formulas = (this.data.formulas || []).map((item) => ({
+        ...item,
+        isFavorited: Boolean(item.isFavorited || item.is_favorited || favoriteIds.includes(Number(item.id))),
+      }))
+      this.setData({ favoriteIds, formulas })
+    } catch (e) {
+      console.warn('Failed to load formula favorites', e)
+    }
+  },
+
+  async toggleFormulaFavorite(e) {
+    if (!auth.isLoggedIn()) {
+      wx.showToast({ title: '请先登录', icon: 'none' })
+      return
+    }
+
+    const formulaId = Number(e.currentTarget.dataset.id)
+    if (!formulaId) return
+    const formulas = (this.data.formulas || []).map((item) => ({ ...item }))
+    const index = formulas.findIndex((item) => Number(item.id) === formulaId)
+    if (index < 0) return
+
+    const current = Boolean(formulas[index].isFavorited || formulas[index].is_favorited)
+    try {
+      if (current) {
+        await api.request('DELETE', `/formulas/${formulaId}/favorite`)
+      } else {
+        await api.request('PUT', `/formulas/${formulaId}/favorite`)
+      }
+
+      formulas[index].isFavorited = !current
+      formulas[index].is_favorited = !current
+      const favoriteIds = current
+        ? (this.data.favoriteIds || []).filter((id) => Number(id) !== formulaId)
+        : Array.from(new Set([...(this.data.favoriteIds || []), formulaId]))
+
+      if (this.data.onlyFavorites && current) formulas.splice(index, 1)
+      this.setData({ formulas, favoriteIds })
+      wx.showToast({ title: current ? '已取消收藏' : '已收藏', icon: 'none' })
+    } catch (err) {
+      console.error('Toggle formula favorite failed', err)
+      wx.showToast({ title: '操作失败，请重试', icon: 'none' })
     }
   },
 
@@ -254,13 +374,36 @@ Page({
 
   // ── Navigate ──
 
+  goBack() {
+    const pages = getCurrentPages()
+    if (pages.length > 1) wx.navigateBack()
+    else wx.reLaunch({ url: '/pages/home/home' })
+  },
+
   noop() {},
 
   goToReader(e) {
     const formulaId = e.currentTarget.dataset.id
-    if (!formulaId) return
+    if (formulaId === undefined || formulaId === null || formulaId === '') return
+
+    const sequenceIds = (this.data.formulas || [])
+      .map((item) => item.id)
+      .filter((id) => id !== undefined && id !== null && id !== '')
+    const sequenceIndex = Math.max(0, sequenceIds.findIndex((id) => String(id) === String(formulaId)))
+
+    try {
+      wx.setStorageSync(READER_SEQUENCE_KEY, {
+        ids: sequenceIds,
+        index: sequenceIndex,
+        savedAt: Date.now(),
+        subjectCode: this.data.activeSubject,
+        chapterId: this.data.activeChapterId,
+        searchValue: this.data.searchValue,
+      })
+    } catch (_) {}
+
     wx.navigateTo({
-      url: `/subpackages/formulas/reader/index?id=${formulaId}`,
+      url: `/subpackages/formulas/reader/index?id=${encodeURIComponent(formulaId)}&index=${sequenceIndex}&source=library`,
     })
   },
 

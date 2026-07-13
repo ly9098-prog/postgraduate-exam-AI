@@ -1,90 +1,162 @@
 <view class="formula-card-wrap">
-  <!-- 标题和标签 -->
   <view class="fc-header">
+    <text class="fc-kicker">FORMULA NOTE</text>
     <text class="fc-title">{{card.title}}</text>
     <view class="fc-tags" wx:if="{{card.tags && card.tags.length}}">
       <text class="fc-tag {{'fc-tag-' + tag.code}}" wx:for="{{card.tags}}" wx:key="id">{{tag.name}}</text>
     </view>
   </view>
 
-  <!-- 核心公式 -->
-  <view class="fc-formula-section">
-    <view class="fc-formula-block" wx:for="{{card.formula_blocks}}" wx:for-item="block" wx:key="*this">
-      <text class="fc-block-label" wx:if="{{block.label}}">{{block.label}}</text>
-      <mp-html content="{{'$$' + block.latex + '$$'}}" tag-name="formula-render" selectable="true" />
+  <view class="fc-formula-section" wx:if="{{formulaBlocks && formulaBlocks.length}}">
+    <view class="fc-section-heading compact">
+      <view>
+        <text class="fc-section-kicker">CORE FORMULA</text>
+        <text class="fc-section-title">核心公式</text>
+      </view>
+      <view class="fc-core-mark">Σ</view>
+    </view>
+
+    <view class="fc-formula-block" wx:for="{{formulaBlocks}}" wx:for-item="block" wx:key="_key">
+      <view class="fc-block-head">
+        <text class="fc-block-label" wx:if="{{block.label}}">{{block.label}}</text>
+        <text class="fc-formula-scroll-hint" wx:if="{{block.isScrollable}}">左右滑动查看完整公式</text>
+      </view>
+      <view class="fc-formula-group" wx:if="{{block.isGrouped}}">
+        <view class="fc-formula-group-item" wx:for="{{block.formulaItems}}" wx:for-item="formulaItem" wx:key="_key">
+          <rich-text
+            class="fc-formula-rich"
+            nodes="{{formulaItem.mathNodes}}"
+            user-select="{{true}}"
+          />
+        </view>
+      </view>
+      <view class="fc-formula-scroll-shell {{block.isScrollable ? 'is-scrollable' : ''}}" wx:else>
+        <scroll-view
+          class="fc-formula-scroll"
+          scroll-x
+          enhanced
+          scroll-left="{{block.scrollLeft}}"
+          show-scrollbar="{{false}}"
+          bounces="{{false}}"
+          bindtouchstart="onFormulaTouchStart"
+          bindtouchend="onFormulaTouchEnd"
+          bindtouchcancel="onFormulaTouchEnd"
+        >
+          <view class="fc-formula-track {{block.isScrollable ? 'is-long' : ''}} {{block.sizeClass}}">
+            <rich-text
+              class="fc-formula-rich"
+              nodes="{{block.mathNodes}}"
+              user-select="{{true}}"
+            />
+          </view>
+        </scroll-view>
+        <view class="fc-scroll-edge fc-scroll-edge-left" wx:if="{{block.isScrollable}}"></view>
+        <view class="fc-scroll-edge fc-scroll-edge-right" wx:if="{{block.isScrollable}}"></view>
+      </view>
       <text class="fc-block-note" wx:if="{{block.note}}">{{block.note}}</text>
     </view>
   </view>
 
-  <!-- 函数图像 -->
   <view class="fc-graph-section" wx:if="{{card.card_type === 'function_graph' && graphImageUrl}}">
+    <view class="fc-section-heading">
+      <view>
+        <text class="fc-section-kicker">FUNCTION GRAPH</text>
+        <text class="fc-section-title">函数图像</text>
+      </view>
+      <text class="fc-preview-hint">点击查看大图</text>
+    </view>
     <image class="fc-graph-image" src="{{graphImageUrl}}" mode="widthFix" bindtap="previewGraph" />
   </view>
 
-  <!-- 摘要 -->
-  <view class="fc-section" wx:if="{{card.summary}}">
-    <text class="fc-section-title">摘要</text>
-    <mp-html content="{{card.summary}}" tag-name="summary-render" />
+  <view class="fc-reading-section" wx:if="{{content.summaryNodes && content.summaryNodes.length}}">
+    <view class="fc-section-index">01</view>
+    <view class="fc-section-copy">
+      <text class="fc-section-kicker">SUMMARY</text>
+      <text class="fc-section-title">摘要</text>
+      <rich-text class="fc-rich-text" nodes="{{content.summaryNodes}}" user-select="{{true}}" />
+    </view>
   </view>
 
-  <!-- 适用条件 -->
-  <view class="fc-section" wx:if="{{card.conditions}}">
-    <text class="fc-section-title">适用条件</text>
-    <mp-html content="{{card.conditions}}" tag-name="conditions-render" />
+  <view class="fc-reading-section conditions" wx:if="{{content.conditionsNodes && content.conditionsNodes.length}}">
+    <view class="fc-section-index">02</view>
+    <view class="fc-section-copy">
+      <text class="fc-section-kicker">CONDITIONS</text>
+      <text class="fc-section-title">适用条件</text>
+      <rich-text class="fc-rich-text" nodes="{{content.conditionsNodes}}" user-select="{{true}}" />
+    </view>
   </view>
 
-  <!-- 可折叠部分 -->
-  <view class="fc-collapse" wx:if="{{card.symbol_notes}}">
-    <view class="fc-collapse-header" bindtap="toggleSection" data-key="showSymbolNotes">
-      <text class="fc-collapse-title">符号说明</text>
-      <text class="fc-collapse-arrow {{showSymbolNotes ? 'expanded' : ''}}">▸</text>
+  <view class="fc-collapse" wx:if="{{content.symbolNotesNodes && content.symbolNotesNodes.length}}">
+    <view class="fc-collapse-header" hover-class="fc-pressed" bindtap="toggleSection" data-key="showSymbolNotes">
+      <view>
+        <text class="fc-collapse-kicker">SYMBOLS</text>
+        <text class="fc-collapse-title">符号说明</text>
+      </view>
+      <view class="fc-collapse-arrow {{showSymbolNotes ? 'expanded' : ''}}"></view>
     </view>
     <view class="fc-collapse-body {{showSymbolNotes ? 'open' : ''}}">
-      <mp-html content="{{card.symbol_notes}}" tag-name="symbol-render" />
+      <view class="fc-collapse-content">
+        <rich-text class="fc-rich-text" nodes="{{content.symbolNotesNodes}}" user-select="{{true}}" />
+      </view>
     </view>
   </view>
 
-  <view class="fc-collapse" wx:if="{{card.secondary_conclusions}}">
-    <view class="fc-collapse-header" bindtap="toggleSection" data-key="showSecondary">
-      <text class="fc-collapse-title">常见结论 / 二级结论</text>
-      <text class="fc-collapse-arrow {{showSecondary ? 'expanded' : ''}}">▸</text>
+  <view class="fc-collapse" wx:if="{{content.secondaryNodes && content.secondaryNodes.length}}">
+    <view class="fc-collapse-header" hover-class="fc-pressed" bindtap="toggleSection" data-key="showSecondary">
+      <view>
+        <text class="fc-collapse-kicker">CONCLUSIONS</text>
+        <text class="fc-collapse-title">常见结论</text>
+      </view>
+      <view class="fc-collapse-arrow {{showSecondary ? 'expanded' : ''}}"></view>
     </view>
     <view class="fc-collapse-body {{showSecondary ? 'open' : ''}}">
-      <mp-html content="{{card.secondary_conclusions}}" tag-name="secondary-render" />
+      <view class="fc-collapse-content">
+        <rich-text class="fc-rich-text" nodes="{{content.secondaryNodes}}" user-select="{{true}}" />
+      </view>
     </view>
   </view>
 
-  <view class="fc-collapse" wx:if="{{card.error_tips}}">
-    <view class="fc-collapse-header" bindtap="toggleSection" data-key="showErrorTips">
-      <text class="fc-collapse-title">易错提醒</text>
-      <text class="fc-collapse-arrow {{showErrorTips ? 'expanded' : ''}}">▸</text>
+  <view class="fc-collapse fc-error-collapse" wx:if="{{content.errorTipsNodes && content.errorTipsNodes.length}}">
+    <view class="fc-collapse-header" hover-class="fc-pressed" bindtap="toggleSection" data-key="showErrorTips">
+      <view>
+        <text class="fc-collapse-kicker danger">ERROR ALERT</text>
+        <text class="fc-collapse-title">易错提醒</text>
+      </view>
+      <view class="fc-collapse-arrow {{showErrorTips ? 'expanded' : ''}}"></view>
     </view>
     <view class="fc-collapse-body {{showErrorTips ? 'open' : ''}}">
-      <mp-html content="{{card.error_tips}}" tag-name="tips-render" />
+      <view class="fc-collapse-content error-content">
+        <rich-text class="fc-rich-text" nodes="{{content.errorTipsNodes}}" user-select="{{true}}" />
+      </view>
     </view>
   </view>
 
-  <!-- 典型例题 -->
-  <view class="fc-collapse" wx:if="{{card.examples && card.examples.length}}">
-    <view class="fc-collapse-header" bindtap="toggleSection" data-key="showExamples">
-      <text class="fc-collapse-title">典型例题 ({{card.examples.length}})</text>
-      <text class="fc-collapse-arrow {{showExamples ? 'expanded' : ''}}">▸</text>
+  <view class="fc-collapse" wx:if="{{content.examples && content.examples.length}}">
+    <view class="fc-collapse-header" hover-class="fc-pressed" bindtap="toggleSection" data-key="showExamples">
+      <view>
+        <text class="fc-collapse-kicker">EXAMPLES</text>
+        <text class="fc-collapse-title">典型例题 · {{content.examples.length}} 道</text>
+      </view>
+      <view class="fc-collapse-arrow {{showExamples ? 'expanded' : ''}}"></view>
     </view>
     <view class="fc-collapse-body {{showExamples ? 'open' : ''}}">
-      <view class="fc-example" wx:for="{{card.examples}}" wx:for-item="ex" wx:key="*this">
-        <text class="fc-example-label">题目 {{index + 1}}</text>
-        <mp-html content="{{ex.question}}" tag-name="ex-question" />
-        <view class="fc-example-detail" wx:if="{{ex.short_solution}}">
-          <text class="fc-example-label">解法</text>
-          <mp-html content="{{ex.short_solution}}" tag-name="ex-solution" />
+      <view class="fc-example" wx:for="{{content.examples}}" wx:for-item="ex" wx:key="_key">
+        <view class="fc-example-head">
+          <text class="fc-example-index">{{index + 1 < 10 ? '0' : ''}}{{index + 1}}</text>
+          <text class="fc-example-label">典型例题</text>
         </view>
-        <view class="fc-example-detail" wx:if="{{ex.answer}}">
-          <text class="fc-example-label">答案</text>
-          <mp-html content="{{ex.answer}}" tag-name="ex-answer" />
+        <rich-text class="fc-rich-text" nodes="{{ex.questionNodes}}" user-select="{{true}}" />
+        <view class="fc-example-detail" wx:if="{{ex.solutionNodes && ex.solutionNodes.length}}">
+          <text class="fc-example-detail-label">解法</text>
+          <rich-text class="fc-rich-text" nodes="{{ex.solutionNodes}}" user-select="{{true}}" />
         </view>
-        <view class="fc-example-detail" wx:if="{{ex.error_tip}}">
-          <text class="fc-example-label error">易错</text>
-          <mp-html content="{{ex.error_tip}}" tag-name="ex-tip" />
+        <view class="fc-example-detail answer" wx:if="{{ex.answerNodes && ex.answerNodes.length}}">
+          <text class="fc-example-detail-label">答案</text>
+          <rich-text class="fc-rich-text" nodes="{{ex.answerNodes}}" user-select="{{true}}" />
+        </view>
+        <view class="fc-example-detail error" wx:if="{{ex.errorTipNodes && ex.errorTipNodes.length}}">
+          <text class="fc-example-detail-label">易错</text>
+          <rich-text class="fc-rich-text" nodes="{{ex.errorTipNodes}}" user-select="{{true}}" />
         </view>
       </view>
     </view>

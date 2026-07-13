@@ -1,31 +1,75 @@
-<view class="agreement-page">
-  <view class="agreement-hero">
-    <text class="agreement-kicker">服务条款</text>
-    <text class="agreement-title">用户协议</text>
-    <text class="agreement-desc">请在使用 MemoGrad 学习、刷题、错题整理与导入服务前阅读以下说明。</text>
+<view class="agreement-root">
+  <view class="memo-nav" style="height: {{navHeight}}px; padding-top: {{statusBarHeight}}px;">
+    <view class="memo-nav-inner agreement-nav-inner" style="height: {{navContentHeight}}px; padding-right: {{navRightPadding}}px;">
+      <view class="memo-back-button" bindtap="goBack" hover-class="memo-back-pressed" aria-label="返回">
+        <view class="memo-back-icon"></view>
+      </view>
+      <text class="memo-nav-title">用户协议</text>
+    </view>
   </view>
 
-  <view class="agreement-card">
-    <view class="agreement-body">
-      <view class="agreement-item">
-        <text class="item-index">1</text>
-        <text class="agreement-paragraph">本小程序提供学习、刷题、错题整理与内容辅助服务。</text>
+  <view class="agreement-page" style="padding-top: {{navHeight}}px;">
+    <view class="agreement-content">
+      <view class="agreement-hero page-enter">
+        <text class="agreement-kicker">MEMOGRAD · SERVICE TERMS</text>
+        <text class="agreement-title">用户协议</text>
+        <text class="agreement-desc">请在使用 MemoGrad 学习、刷题、错题整理与导入服务前阅读以下说明。</text>
+        <view class="hero-meta">
+          <view class="hero-meta-dot"></view>
+          <text>使用服务即表示您理解并接受本协议</text>
+        </view>
       </view>
-      <view class="agreement-item">
-        <text class="item-index">2</text>
-        <text class="agreement-paragraph">用户应遵守法律法规及平台规范，不得提交违法、侵权或其他不当内容。</text>
+
+      <view class="article-card page-enter delay-one">
+        <view class="article-intro">
+          <text class="article-intro-label">READING GUIDE</text>
+          <text class="article-intro-text">本协议说明 MemoGrad 的服务范围、使用规范与责任边界。</text>
+        </view>
+
+        <view class="article-section">
+          <view class="section-head">
+            <text class="section-index">01</text>
+            <text class="section-title">服务内容</text>
+          </view>
+          <text class="article-copy">本小程序提供学习、刷题、错题整理与内容辅助服务。</text>
+        </view>
+
+        <view class="article-section">
+          <view class="section-head">
+            <text class="section-index">02</text>
+            <text class="section-title">使用规范</text>
+          </view>
+          <text class="article-copy">用户应遵守法律法规及平台规范，不得提交违法、侵权或其他不当内容。</text>
+        </view>
+
+        <view class="article-section">
+          <view class="section-head">
+            <text class="section-index">03</text>
+            <text class="section-title">内容审核与准确性</text>
+          </view>
+          <text class="article-copy">平台会对导入内容和学习内容进行必要的审核与处理，但不保证所有内容都完全准确。</text>
+        </view>
+
+        <view class="article-section">
+          <view class="section-head">
+            <text class="section-index">04</text>
+            <text class="section-title">结果仅供参考</text>
+          </view>
+          <text class="article-copy">因学习内容、题目解析或系统提示产生的结果，仅供参考。</text>
+        </view>
+
+        <view class="article-section">
+          <view class="section-head">
+            <text class="section-index">05</text>
+            <text class="section-title">账号责任</text>
+          </view>
+          <text class="article-copy">账号由微信身份标识关联，用户应对本人账号使用行为负责。</text>
+        </view>
       </view>
-      <view class="agreement-item">
-        <text class="item-index">3</text>
-        <text class="agreement-paragraph">平台会对导入内容和学习内容进行必要的审核与处理，但不保证所有内容都完全准确。</text>
-      </view>
-      <view class="agreement-item">
-        <text class="item-index">4</text>
-        <text class="agreement-paragraph">因学习内容、题目解析或系统提示产生的结果，仅供参考。</text>
-      </view>
-      <view class="agreement-item">
-        <text class="item-index">5</text>
-        <text class="agreement-paragraph">账号由微信身份标识关联，用户应对本人账号使用行为负责。</text>
+
+      <view class="agreement-end page-enter delay-two">
+        <view class="agreement-end-line"></view>
+        <text>MEMOGRAD · STUDY WITH CLARITY</text>
       </view>
     </view>
   </view>

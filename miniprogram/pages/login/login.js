@@ -2,6 +2,7 @@ const auth = require('../../utils/auth')
 const api = require('../../utils/api')
 const storage = require('../../utils/storage')
 const privacy = require('../../utils/privacy')
+const { getNavigationMetrics } = require('../../utils/navigation')
 
 Page({
   data: {
@@ -9,9 +10,15 @@ Page({
     error: '',
     showDevLogin: false,
     agreed: false,
+    navHeight: 88,
+    statusBarHeight: 20,
+    navContentHeight: 44,
+    navRightPadding: 116,
   },
 
   onLoad() {
+    this.setData(getNavigationMetrics())
+
     // 检查协议版本：如果已升级则标记未同意
     if (!privacy.hasAcceptedCurrentPrivacy()) {
       this.setData({ agreed: false })

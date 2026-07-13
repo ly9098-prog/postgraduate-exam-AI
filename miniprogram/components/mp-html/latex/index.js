@@ -48,10 +48,16 @@ Latex.prototype.onParse = function (node, vm) {
               })
             } else {
               // 块公式
+              const naturalWidth = vm && vm.properties && vm.properties.mathLayout === 'natural'
               children.push({
-                name: 'div',
+                name: naturalWidth ? 'span' : 'div',
                 attrs: {
-                  style: 'text-align:center'
+                  // In formula-reader mode the outer scroll-view owns overflow. Keep the
+                  // KaTeX tree at its natural width so short formulas can be centered and
+                  // long formulas begin at the left edge without a huge empty canvas.
+                  style: naturalWidth
+                    ? 'display:inline-block;width:auto;min-width:0;max-width:none;text-align:left;white-space:nowrap;overflow:visible;vertical-align:middle'
+                    : 'display:inline-table;width:auto;min-width:100%;text-align:center;white-space:nowrap;overflow:visible'
                 },
                 children: nodes
               })

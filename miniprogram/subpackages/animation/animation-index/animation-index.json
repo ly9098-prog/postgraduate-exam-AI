@@ -1,3 +1,9 @@
 {
-  "navigationBarTitleText": " "
+  "navigationStyle": "custom",
+  "backgroundColor": "#F4F4EE",
+  "backgroundColorTop": "#F4F4EE",
+  "backgroundColorBottom": "#F4F4EE",
+  "usingComponents": {
+    "premium-nav": "/components/premium-nav/premium-nav"
+  }
 }

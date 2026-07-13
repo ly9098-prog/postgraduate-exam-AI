@@ -1,111 +1,216 @@
 <view class="fl-page">
-  <!-- Subject Tabs -->
-  <view class="fl-subject-bar">
-    <view class="fl-subject-tab {{s.active ? 'active' : ''}}"
-      wx:for="{{subjects}}" wx:key="code"
-      data-code="{{s.code}}"
-      bindtap="onSubjectChange">
-      <text>{{s.name}}</text>
-    </view>
-  </view>
+  <premium-nav title="公式库" variant="light" bind:back="goBack" />
 
-  <!-- Search + Filter Row -->
-  <view class="fl-toolbar">
+  <view class="fl-content">
+    <view class="fl-intro">
+      <text class="fl-kicker">FORMULA LIBRARY</text>
+      <view class="fl-intro-row">
+        <view class="fl-intro-copy">
+          <text class="fl-title">公式速查与背诵</text>
+          <text class="fl-subtitle">按科目与章节快速定位，重点公式一眼识别</text>
+        </view>
+        <view class="fl-total-pill" wx:if="{{!initialLoading && !loadError}}">
+          <text class="fl-total-number">{{total || formulas.length || 0}}</text>
+          <text class="fl-total-unit">条</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="fl-subject-switch">
+      <view
+        class="fl-subject-tab {{s.active ? 'active' : ''}}"
+        wx:for="{{subjects}}"
+        wx:for-item="s"
+        wx:key="code"
+        data-code="{{s.code}}"
+        hover-class="fl-pressed"
+        bindtap="onSubjectChange"
+      >
+        <text>{{s.name}}</text>
+      </view>
+    </view>
+
     <view class="fl-search-box">
-      <text class="fl-search-icon">🔍</text>
-      <input class="fl-search-input" placeholder="搜索公式名称或关键词"
-        value="{{searchValue}}" bindinput="onSearchInput" />
-      <text class="fl-search-clear" wx:if="{{searchValue}}" bindtap="onSearchClear">✕</text>
-    </view>
-  </view>
-
-  <!-- Filter Chips -->
-  <view class="fl-filter-row">
-    <view class="fl-filter-chip {{activeChapterId ? 'active' : ''}}"
-      bindtap="toggleChapterPicker">
-      <text>{{activeChapterId ? '已选章节' : '章节筛选'}}</text>
-    </view>
-    <view class="fl-filter-chip {{activeTags.length ? 'active' : ''}}"
-      bindtap="toggleTagPicker">
-      <text>{{activeTags.length ? '已选标签' : '标签筛选'}}</text>
-    </view>
-    <view class="fl-filter-chip {{onlyFavorites ? 'active' : ''}}"
-      bindtap="toggleFavoritesOnly">
-      <text>只看收藏</text>
-    </view>
-    <view class="fl-filter-chip random" bindtap="goToRandom">
-      <text>随机背诵</text>
-    </view>
-  </view>
-
-  <!-- Chapter Picker -->
-  <view class="fl-picker-overlay" wx:if="{{showChapterPicker}}" bindtap="toggleChapterPicker">
-    <view class="fl-picker-content" catchtap="noop">
-      <view class="fl-picker-item {{!activeChapterId ? 'active' : ''}}"
-        bindtap="onChapterSelect" data-id="0">
-        <text>全部章节</text>
-      </view>
-      <view class="fl-picker-item {{activeChapterId === c.id ? 'active' : ''}}"
-        wx:for="{{chapters}}" wx:key="id"
-        data-id="{{c.id}}"
-        bindtap="onChapterSelect">
-        <text>{{c.name}}</text>
+      <view class="fl-search-icon"></view>
+      <input
+        class="fl-search-input"
+        placeholder="搜索公式名称或关键词"
+        placeholder-class="fl-search-placeholder"
+        value="{{searchValue}}"
+        bindinput="onSearchInput"
+        confirm-type="search"
+        bindconfirm="onSearchConfirm"
+      />
+      <view class="fl-search-clear" wx:if="{{searchValue}}" hover-class="fl-pressed" bindtap="onSearchClear">
+        <text class="line-icon icon-close"></text>
       </view>
     </view>
-  </view>
 
-  <!-- Tag Picker -->
-  <view class="fl-picker-overlay" wx:if="{{showTagPicker}}" bindtap="toggleTagPicker">
-    <view class="fl-picker-content fl-tag-picker" catchtap="noop">
-      <view class="fl-tag-item {{activeTags.includes(t.id) ? 'active' : ''}}"
-        wx:for="{{tags}}" wx:key="id"
-        data-id="{{t.id}}"
-        bindtap="onTagSelect">
-        <text>{{t.name}}</text>
+    <view class="fl-quick-row">
+      <view
+        class="fl-quick-action {{onlyFavorites ? 'active' : ''}}"
+        hover-class="fl-pressed"
+        bindtap="toggleFavoritesOnly"
+      >
+        <view class="fl-quick-icon"><text class="line-icon icon-book"></text></view>
+        <view class="fl-quick-copy">
+          <text class="fl-quick-title">{{onlyFavorites ? '正在查看收藏' : '只看收藏'}}</text>
+          <text class="fl-quick-desc">{{onlyFavorites ? '点击返回全部公式' : '集中复习已收藏内容'}}</text>
+        </view>
+        <text class="line-icon icon-chevron-right fl-quick-arrow"></text>
+      </view>
+
+      <view class="fl-quick-action fl-random-action" hover-class="fl-pressed" bindtap="goToRandom">
+        <view class="fl-quick-icon"><text class="line-icon icon-review"></text></view>
+        <view class="fl-quick-copy">
+          <text class="fl-quick-title">随机背诵</text>
+          <text class="fl-quick-desc">从当前筛选中抽取</text>
+        </view>
+        <view class="fl-random-go"><text class="line-icon icon-chevron-right"></text></view>
       </view>
     </view>
-  </view>
 
-  <!-- Initial Loading State -->
-  <view class="fl-loading" wx:if="{{initialLoading}}">
-    <text>加载中...</text>
-  </view>
-
-  <!-- Error State -->
-  <view class="fl-empty" wx:if="{{!initialLoading && loadError}}">
-    <text class="fl-empty-icon">⚠️</text>
-    <text class="fl-empty-text">{{loadErrorMessage || '加载失败'}}</text>
-    <view class="fl-reload-btn" bindtap="reload">
-      <text>重新加载</text>
-    </view>
-  </view>
-
-  <!-- Formula List -->
-  <view class="fl-list" wx:if="{{!loadError && formulas.length > 0}}">
-    <view class="fl-card" wx:for="{{formulas}}" wx:key="id"
-      data-id="{{item.id}}" bindtap="goToReader"
-      hover-class="fl-card-pressed">
-      <text class="fl-card-title">{{item.title}}</text>
-      <view class="fl-card-tags" wx:if="{{item.tags && item.tags.length}}">
-        <text class="fl-card-tag {{'tag-' + t.code}}"
-          wx:for="{{item.tags}}" wx:for-item="t" wx:key="id">{{t.name}}</text>
+    <view class="fl-section-head">
+      <view>
+        <text class="fl-section-title">章节筛选</text>
+        <text class="fl-section-kicker">CHAPTERS</text>
       </view>
-      <text class="fl-card-summary" wx:if="{{item.summary}}">{{item.summary}}</text>
-      <view class="fl-card-formula">
-        <text wx:for="{{item.formula_blocks.slice(0, 2)}}" wx:for-item="b" wx:key="*this"
-          class="fl-card-latex">{{b.latex}}</text>
+      <view class="fl-tag-filter {{activeTags.length ? 'active' : ''}}" hover-class="fl-pressed" bindtap="toggleTagPicker">
+        <text>{{activeTags.length ? '标签 ' + activeTags.length : '标签筛选'}}</text>
+        <text class="line-icon icon-chevron-down"></text>
       </view>
-      <text class="fl-card-arrow">→</text>
     </view>
-    <!-- Loading More -->
-    <view class="fl-loading-more" wx:if="{{loadingMore}}">
-      <text>加载更多...</text>
+
+    <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="fl-chapter-scroll">
+      <view class="fl-chapter-row">
+        <view
+          class="fl-chapter-chip {{!activeChapterId ? 'active' : ''}}"
+          hover-class="fl-pressed"
+          bindtap="onChapterSelect"
+          data-id="0"
+        >全部章节</view>
+        <view
+          class="fl-chapter-chip {{c.active ? 'active' : ''}}"
+          wx:for="{{chapters}}"
+          wx:for-item="c"
+          wx:key="id"
+          data-id="{{c.id}}"
+          hover-class="fl-pressed"
+          bindtap="onChapterSelect"
+        >{{c.name}}</view>
+      </view>
+    </scroll-view>
+
+    <view class="fl-active-tags" wx:if="{{activeTags.length}}">
+      <text class="fl-active-tags-label">当前标签</text>
+      <view
+        class="fl-active-tag"
+        wx:for="{{tags}}"
+        wx:key="id"
+        wx:if="{{activeTags.includes(item.id)}}"
+        data-id="{{item.id}}"
+        bindtap="onTagSelect"
+      >
+        <text>{{item.name}}</text>
+        <text class="fl-active-tag-close">×</text>
+      </view>
+    </view>
+
+    <view class="fl-list-head" wx:if="{{!initialLoading && !loadError}}">
+      <text class="fl-list-title">公式列表</text>
+      <text class="fl-list-meta">{{formulas.length}} / {{total || formulas.length || 0}}</text>
+    </view>
+
+    <view class="fl-loading" wx:if="{{initialLoading}}">
+      <view class="fl-loading-ring"></view>
+      <text class="fl-state-title">正在整理公式</text>
+      <text class="fl-state-desc">请稍候</text>
+    </view>
+
+    <view class="fl-empty" wx:if="{{!initialLoading && loadError}}">
+      <view class="fl-state-icon fl-state-error"><text class="line-icon icon-exclamation"></text></view>
+      <text class="fl-state-title">公式加载失败</text>
+      <text class="fl-state-desc">{{loadErrorMessage || '请检查网络后重试'}}</text>
+      <view class="fl-reload-btn" hover-class="fl-pressed" bindtap="reload">重新加载</view>
+    </view>
+
+    <view class="fl-list" wx:if="{{!loadError && formulas.length > 0}}">
+      <view
+        class="fl-card"
+        wx:for="{{formulas}}"
+        wx:key="id"
+        data-id="{{item.id}}"
+        bindtap="goToReader"
+        hover-class="fl-card-pressed"
+      >
+        <view class="fl-card-head">
+          <view class="fl-card-title-wrap">
+            <text class="fl-card-title">{{item.title}}</text>
+            <view class="fl-card-tags" wx:if="{{item.tags && item.tags.length}}">
+              <text
+                class="fl-card-tag {{'tag-' + t.code}}"
+                wx:for="{{item.tags}}"
+                wx:for-item="t"
+                wx:key="id"
+              >{{t.name}}</text>
+            </view>
+          </view>
+          <view
+            class="fl-favorite-btn {{item.isFavorited || item.is_favorited ? 'active' : ''}}"
+            data-id="{{item.id}}"
+            catchtap="toggleFormulaFavorite"
+            hover-class="fl-pressed"
+          >
+            <view class="fl-bookmark-icon"></view>
+          </view>
+        </view>
+
+        <view class="fl-card-foot">
+          <text class="fl-card-hint">查看适用条件、易错点与例题</text>
+          <text class="line-icon icon-chevron-right fl-card-arrow"></text>
+        </view>
+      </view>
+
+      <view class="fl-loading-more" wx:if="{{loadingMore}}">
+        <view class="fl-loading-dot"></view>
+        <text>正在加载更多</text>
+      </view>
+    </view>
+
+    <view class="fl-empty" wx:if="{{!initialLoading && !loadError && formulas.length === 0}}">
+      <view class="fl-state-icon"><text class="line-icon icon-book"></text></view>
+      <text class="fl-state-title">{{searchValue ? '没有匹配的公式' : '暂无公式数据'}}</text>
+      <text class="fl-state-desc">{{searchValue ? '换一个关键词或清除筛选试试' : '当前科目尚未录入公式'}}</text>
     </view>
   </view>
 
-  <!-- Empty State (not loading, no error) -->
-  <view class="fl-empty" wx:if="{{!initialLoading && !loadError && formulas.length === 0}}">
-    <text class="fl-empty-icon">📝</text>
-    <text class="fl-empty-text">{{searchValue ? '没有找到匹配的公式' : '暂无公式数据'}}</text>
+  <view class="fl-picker-overlay" wx:if="{{showTagPicker}}" bindtap="toggleTagPicker" catchtouchmove="noop">
+    <view class="fl-tag-sheet" catchtap="noop">
+      <view class="fl-sheet-handle"></view>
+      <view class="fl-sheet-head">
+        <view>
+          <text class="fl-sheet-title">筛选公式标签</text>
+          <text class="fl-sheet-subtitle">可同时选择多个标签</text>
+        </view>
+        <view class="fl-sheet-close" bindtap="toggleTagPicker" hover-class="fl-pressed">
+          <text class="line-icon icon-close"></text>
+        </view>
+      </view>
+      <view class="fl-tag-grid">
+        <view
+          class="fl-tag-item {{activeTags.includes(t.id) ? 'active' : ''}}"
+          wx:for="{{tags}}"
+          wx:for-item="t"
+          wx:key="id"
+          data-id="{{t.id}}"
+          hover-class="fl-pressed"
+          bindtap="onTagSelect"
+        >
+          <text>{{t.name}}</text>
+          <text class="line-icon icon-check" wx:if="{{activeTags.includes(t.id)}}"></text>
+        </view>
+      </view>
+      <view class="fl-sheet-done" hover-class="fl-pressed" bindtap="toggleTagPicker">完成筛选</view>
+    </view>
   </view>
 </view>

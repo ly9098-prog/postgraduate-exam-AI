@@ -1,153 +1,551 @@
-.formula-card-wrap {
-  padding: 20rpx 0;
-}
+@import "../mp-html/latex/katex.wxss";
+
+.formula-card-wrap { padding: 0; color: #1B291F; }
 
 .fc-header {
-  margin-bottom: 24rpx;
+  padding: 2rpx 0 24rpx;
+  border-bottom: 1rpx solid #E1E5DE;
+}
+
+.fc-kicker,
+.fc-section-kicker,
+.fc-collapse-kicker {
+  display: block;
+  color: #748078;
+  font-size: 17rpx;
+  line-height: 1.35;
+  font-weight: 900;
+  letter-spacing: 2.7rpx;
 }
 
 .fc-title {
-  font-size: 36rpx;
-  font-weight: 600;
-  color: #17251B;
-  line-height: 1.4;
   display: block;
+  margin-top: 8rpx;
+  color: #17251B;
+  font-size: 40rpx;
+  line-height: 1.28;
+  font-weight: 950;
+  letter-spacing: -.5rpx;
 }
 
-.fc-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8rpx;
-  margin-top: 12rpx;
-}
-
-.fc-tag {
-  padding: 4rpx 16rpx;
-  border-radius: 20rpx;
-  font-size: 22rpx;
-  font-weight: 500;
-}
-
-.fc-tag-basic { background: #EDF4E8; color: #3D754F; }
-.fc-tag-high_frequency { background: #FFF3DF; color: #A96518; }
-.fc-tag-error_prone { background: #FDEBE8; color: #B24F43; }
-.fc-tag-must_memorize { background: #F0EBF6; color: #735C8A; }
+.fc-tags { display: flex; flex-wrap: wrap; gap: 9rpx; margin-top: 15rpx; }
+.fc-tag { padding: 7rpx 14rpx; border-radius: 999rpx; font-size: 19rpx; line-height: 1.35; font-weight: 850; }
+.fc-tag-basic { background: #EAF1E5; color: #3D754F; }
+.fc-tag-high_frequency { background: #FFF0D8; color: #A96518; }
+.fc-tag-error_prone { background: #F8E4DF; color: #B24F43; }
+.fc-tag-must_memorize { background: #EAE7EF; color: #6E5C82; }
 
 .fc-formula-section {
-  background: #F6F7F2;
-  border-radius: 26rpx;
+  margin-top: 24rpx;
   padding: 24rpx;
-  margin-bottom: 20rpx;
+  border: 1rpx solid #D8E2D3;
+  border-radius: 30rpx;
+  background:
+    radial-gradient(circle at 92% 8%, rgba(183,232,42,.15), rgba(183,232,42,0) 30%),
+    #F0F4EB;
+}
+
+.fc-section-heading { margin-bottom: 18rpx; display: flex; align-items: flex-end; justify-content: space-between; gap: 16rpx; }
+.fc-section-heading.compact { align-items: center; }
+.fc-section-title { display: block; margin-top: 4rpx; color: #24342A; font-size: 28rpx; line-height: 1.35; font-weight: 950; }
+.fc-core-mark { width: 54rpx; height: 54rpx; border-radius: 18rpx; background: #173426; color: #B7E82A; display: flex; align-items: center; justify-content: center; font-size: 26rpx; font-weight: 950; }
+
+.fc-formula-block { padding: 20rpx 18rpx; border-radius: 22rpx; background: rgba(255,255,255,.72); border: 1rpx solid rgba(206,217,201,.9); }
+.fc-formula-block + .fc-formula-block { margin-top: 13rpx; }
+.fc-block-head { min-height: 34rpx; margin-bottom: 8rpx; display: flex; align-items: center; justify-content: space-between; gap: 14rpx; }
+.fc-block-label { display: block; color: #657269; font-size: 22rpx; line-height: 1.45; font-weight: 800; }
+.fc-formula-scroll-hint { flex-shrink: 0; color: #9AA49C; font-size: 17rpx; line-height: 1.35; }
+.fc-formula-scroll-shell { position: relative; width: 100%; overflow: hidden; border-radius: 16rpx; }
+.fc-formula-scroll-shell.is-scrollable { background: linear-gradient(90deg, rgba(238,243,234,.72), rgba(255,255,255,.1) 14%, rgba(255,255,255,.1) 86%, rgba(238,243,234,.72)); }
+.fc-formula-scroll { width: 100%; overflow: hidden; }
+.fc-formula-canvas { min-width: 100%; box-sizing: border-box; text-align: center; }
+.fc-formula-canvas.is-long { text-align: left; }
+.fc-formula-render { display: block; width: 100%; color: #142219; box-sizing: border-box; }
+.fc-scroll-edge { position: absolute; top: 0; bottom: 0; z-index: 3; width: 30rpx; pointer-events: none; }
+.fc-scroll-edge-left { left: 0; background: linear-gradient(90deg, rgba(255,255,255,.88), rgba(255,255,255,0)); }
+.fc-scroll-edge-right { right: 0; background: linear-gradient(270deg, rgba(255,255,255,.88), rgba(255,255,255,0)); }
+.fc-block-note { display: block; margin-top: 9rpx; color: #808A82; font-size: 21rpx; line-height: 1.55; }
+
+.fc-graph-section {
+  margin-top: 22rpx;
+  padding: 24rpx;
+  border: 1rpx solid #DEE3DC;
+  border-radius: 30rpx;
+  background: #F6F7F3;
+}
+.fc-preview-hint { color: #7F8A82; font-size: 18rpx; }
+.fc-graph-image { width: 100%; border: 1rpx solid #E0E5DE; border-radius: 24rpx; background: #FFFFFF; }
+
+.fc-reading-section {
+  margin-top: 20rpx;
+  padding: 24rpx;
+  border: 1rpx solid #E0E4DD;
+  border-radius: 28rpx;
+  background: #F5F6F2;
+  display: flex;
+  align-items: flex-start;
+  gap: 18rpx;
+}
+.fc-reading-section.conditions { background: #EEF2E8; border-color: #DCE3D5; }
+.fc-section-index { width: 54rpx; height: 54rpx; border-radius: 18rpx; background: #FFFFFF; color: #586A5F; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18rpx; font-weight: 950; font-variant-numeric: tabular-nums; }
+.fc-reading-section.conditions .fc-section-index { color: #5B7044; }
+.fc-section-copy { min-width: 0; flex: 1; }
+.fc-section-copy .fc-section-title { margin-bottom: 10rpx; }
+.fc-section-copy mp-html { color: #334139; font-size: 25rpx; line-height: 1.72; }
+
+.fc-collapse { margin-top: 20rpx; border: 1rpx solid #DEE3DC; border-radius: 28rpx; background: #F8F8F5; overflow: hidden; }
+.fc-error-collapse { border-color: #E8D4CB; background: #F8EFEB; }
+.fc-collapse-header { min-height: 92rpx; padding: 0 22rpx; display: flex; align-items: center; justify-content: space-between; gap: 18rpx; transition: opacity .14s ease; }
+.fc-collapse-kicker { font-size: 15rpx; letter-spacing: 2.2rpx; }
+.fc-collapse-kicker.danger { color: #B25A47; }
+.fc-collapse-title { display: block; margin-top: 4rpx; color: #26352C; font-size: 27rpx; line-height: 1.35; font-weight: 900; }
+.fc-collapse-arrow { position: relative; width: 34rpx; height: 34rpx; flex-shrink: 0; border-radius: 50%; background: #E9ECE7; }
+.fc-collapse-arrow::before { content: ''; position: absolute; left: 11rpx; top: 9rpx; width: 9rpx; height: 9rpx; border-right: 3rpx solid #718078; border-bottom: 3rpx solid #718078; transform: rotate(45deg); transition: transform .2s ease, top .2s ease; }
+.fc-collapse-arrow.expanded::before { top: 13rpx; transform: rotate(-135deg); }
+.fc-collapse-body { max-height: 0; overflow: hidden; opacity: 0; transition: max-height .22s ease, opacity .18s ease; }
+.fc-collapse-body.open { max-height: 6000rpx; opacity: 1; }
+.fc-collapse-content { margin: 0 20rpx 20rpx; padding: 20rpx; border-radius: 20rpx; background: #FFFFFF; color: #34423A; font-size: 25rpx; line-height: 1.72; }
+.fc-collapse-content.error-content { background: #FFF9F6; border: 1rpx solid #EEDBD3; }
+.fc-pressed { opacity: .65; }
+
+.fc-example { margin: 0 20rpx 18rpx; padding: 22rpx; border: 1rpx solid #E0E4DD; border-radius: 24rpx; background: #FFFFFF; }
+.fc-example-head { margin-bottom: 14rpx; display: flex; align-items: center; gap: 10rpx; }
+.fc-example-index { width: 46rpx; height: 40rpx; border-radius: 14rpx; background: #173426; color: #B7E82A; display: flex; align-items: center; justify-content: center; font-size: 17rpx; font-weight: 950; font-variant-numeric: tabular-nums; }
+.fc-example-label { color: #526259; font-size: 21rpx; font-weight: 900; }
+.fc-example-detail { margin-top: 16rpx; padding: 16rpx; border-radius: 18rpx; background: #F3F5F1; }
+.fc-example-detail.answer { background: #EDF7F0; }
+.fc-example-detail.error { background: #FAECE8; }
+.fc-example-detail-label { display: block; margin-bottom: 7rpx; color: #66736B; font-size: 20rpx; font-weight: 900; }
+.fc-example-detail.answer .fc-example-detail-label { color: #2E7F51; }
+.fc-example-detail.error .fc-example-detail-label { color: #B45B48; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fc-collapse-header,
+  .fc-collapse-arrow::before,
+  .fc-collapse-body { transition: none !important; }
+}
+
+/* ==================== Phase 2.3 flatter editorial formula card ==================== */
+.fc-header {
+  position: relative;
+  padding: 2rpx 78rpx 24rpx 0;
+}
+
+.fc-formula-section {
+  margin-top: 22rpx;
+  padding: 22rpx 20rpx;
+  border: 0;
+  border-radius: 25rpx;
+  background:
+    linear-gradient(145deg, rgba(238,245,226,.92), rgba(247,249,242,.96));
+}
+.fc-core-mark {
+  width: 50rpx;
+  height: 50rpx;
+  border-radius: 17rpx;
+  box-shadow: 0 6rpx 16rpx rgba(23,52,38,.08);
 }
 
 .fc-formula-block {
-  margin-bottom: 16rpx;
+  padding: 18rpx 0 20rpx;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
-.fc-formula-block:last-child {
-  margin-bottom: 0;
+.fc-formula-block:first-of-type { padding-top: 8rpx; }
+.fc-formula-block + .fc-formula-block {
+  margin-top: 0;
+  border-top: 1rpx solid rgba(79,104,87,.12);
+}
+.fc-block-head { margin-bottom: 4rpx; }
+.fc-formula-scroll-shell,
+.fc-formula-scroll-shell.is-scrollable {
+  overflow: hidden;
+  border-radius: 0;
+  background: transparent;
+}
+.fc-formula-scroll {
+  width: 100%;
+  min-height: 92rpx;
+}
+.fc-formula-canvas {
+  min-width: 100%;
+  min-height: 92rpx;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+}
+.fc-formula-canvas.is-long { justify-content: flex-start; }
+.fc-formula-render {
+  flex: 0 0 auto;
+  min-width: 100%;
+}
+.fc-scroll-edge { width: 24rpx; }
+.fc-scroll-edge-left { background: linear-gradient(90deg, rgba(242,246,235,.96), rgba(242,246,235,0)); }
+.fc-scroll-edge-right { background: linear-gradient(270deg, rgba(242,246,235,.96), rgba(242,246,235,0)); }
+.fc-block-note { margin-top: 4rpx; }
+
+.fc-graph-section,
+.fc-reading-section,
+.fc-reading-section.conditions,
+.fc-collapse {
+  margin-top: 0;
+  padding: 26rpx 2rpx 0;
+  border: 0;
+  border-top: 1rpx solid #E2E6DF;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.fc-graph-section { margin-top: 26rpx; }
+.fc-reading-section {
+  margin-top: 26rpx;
+  display: flex;
+  align-items: flex-start;
+}
+.fc-section-index {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 16rpx;
+  background: #EFF2EC;
+}
+.fc-collapse {
+  overflow: visible;
+  margin-top: 25rpx;
+}
+.fc-error-collapse {
+  border-color: #E7D9D2;
+  background: transparent;
+}
+.fc-collapse-header {
+  min-height: 82rpx;
+  padding: 0 2rpx;
+}
+.fc-collapse-content {
+  margin: 0 0 20rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 20rpx;
+  background: #F5F7F2;
+}
+.fc-collapse-content.error-content {
+  background: #FCF5F1;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fc-formula-scroll { scroll-behavior: auto; }
+}
+
+/* ==================== Phase 2.4 stable natural-width math ==================== */
+.fc-formula-scroll-shell,
+.fc-formula-scroll-shell.is-scrollable {
+  width: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+.fc-formula-scroll {
+  width: 100%;
+  min-height: 94rpx;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.fc-formula-canvas,
+.fc-formula-canvas.is-long {
+  width: auto !important;
+  min-width: 100%;
+  min-height: 94rpx;
+  padding: 12rpx 26rpx 16rpx;
+  display: inline-table;
+  vertical-align: middle;
+  text-align: center !important;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.fc-formula-render {
+  display: inline-block;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.fc-math-html {
+  display: inline-block !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  vertical-align: middle;
+}
+
+.fc-formula-scroll-hint {
+  max-width: 250rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fc-section-copy mp-html,
+.fc-collapse-content mp-html,
+.fc-example mp-html {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+.fc-formula-canvas.is-compact .fc-formula-render {
+  font-size: .92em;
+}
+
+
+/* ==================== Formula reader rendering hotfix ====================
+ * Render one complete KaTeX tree inside a native rich-text element. This avoids
+ * deep KaTeX descendants crossing recursive custom-component boundaries, which
+ * caused duplicated glyphs, missing fragments and vertical stacking on Android.
+ */
+.fc-formula-scroll {
+  width: 100%;
+  min-height: 94rpx;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.fc-formula-track,
+.fc-formula-track.is-long {
+  display: inline-block;
+  min-width: 100%;
+  min-height: 94rpx;
+  padding: 12rpx 26rpx 16rpx;
+  box-sizing: border-box;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.fc-formula-track.is-long { text-align: left; }
+
+.fc-formula-rich {
+  display: inline-block;
+  width: auto;
+  max-width: none;
+  color: #142219;
+  white-space: nowrap;
+  vertical-align: middle;
+  line-height: 1.2;
+}
+
+.fc-formula-rich .katex {
+  display: inline-block;
+  width: auto;
+  max-width: none;
+  white-space: nowrap;
+}
+
+.fc-formula-rich .katex-html,
+.fc-formula-rich .base {
+  white-space: nowrap;
+}
+
+.fc-formula-track.is-compact .fc-formula-rich { font-size: .92em; }
+
+.fc-rich-text {
+  display: block;
+  width: 100%;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.fc-rich-text .katex {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: -.08em;
+  white-space: nowrap;
+}
+
+.fc-section-copy .fc-rich-text,
+.fc-collapse-content .fc-rich-text,
+.fc-example .fc-rich-text {
+  color: #334139;
+  font-size: 25rpx;
+  line-height: 1.72;
+}
+
+/* ==================== Formula reader visual polish v2 ====================
+ * Formula blocks use a centered natural-width layout. Inline formulae in
+ * conditions/tips use the same display-style KaTeX scale as core formulae.
+ */
+.fc-formula-section {
+  padding: 22rpx 18rpx 20rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(145deg, #EEF4E7 0%, #F7F9F3 100%);
+}
+
+.fc-formula-block,
+.fc-formula-block:first-of-type {
+  padding: 17rpx 14rpx 16rpx;
+  border: 1rpx solid rgba(111, 133, 116, .13);
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, .76);
+}
+
+.fc-formula-block + .fc-formula-block {
+  margin-top: 14rpx;
+  border-top: 1rpx solid rgba(111, 133, 116, .13);
+}
+
+.fc-block-head {
+  min-height: 32rpx;
+  margin-bottom: 3rpx;
+  padding: 0 6rpx;
 }
 
 .fc-block-label {
-  font-size: 26rpx;
-  color: #68756C;
-  display: block;
-  margin-bottom: 8rpx;
+  color: #647168;
+  font-size: 21rpx;
+  letter-spacing: .2rpx;
+}
+
+.fc-formula-scroll-hint {
+  max-width: 230rpx;
+  padding: 4rpx 10rpx;
+  border-radius: 999rpx;
+  background: rgba(231, 237, 227, .86);
+  color: #879188;
+  font-size: 16rpx;
+}
+
+.fc-formula-scroll {
+  min-height: 108rpx;
+}
+
+.fc-formula-track,
+.fc-formula-track.is-long {
+  min-width: 100%;
+  min-height: 108rpx;
+  padding: 18rpx 22rpx 20rpx;
+  text-align: center !important;
+}
+
+.fc-formula-rich {
+  font-size: 28rpx;
+  line-height: 1.18;
+}
+
+.fc-formula-track.is-compact .fc-formula-rich {
+  font-size: 25rpx;
+}
+
+.fc-formula-track.is-dense .fc-formula-rich {
+  font-size: 23rpx;
+}
+
+.fc-scroll-edge { width: 18rpx; }
+.fc-scroll-edge-left { display: none; }
+.fc-scroll-edge-right {
+  background: linear-gradient(270deg, rgba(244, 247, 240, .96), rgba(244, 247, 240, 0));
 }
 
 .fc-block-note {
-  font-size: 24rpx;
-  color: #8A938C;
-  display: block;
-  margin-top: 8rpx;
+  margin: 2rpx 6rpx 0;
+  color: #7D8880;
 }
 
-.fc-graph-section {
-  margin-bottom: 20rpx;
+.fc-rich-text {
+  line-height: 1.92;
 }
 
-.fc-graph-image {
-  width: 100%;
-  border-radius: 26rpx;
+.fc-rich-text .katex {
+  display: inline-block;
+  width: auto;
+  max-width: none;
+  font-size: 1.34em;
+  line-height: 1.18;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
-.fc-section {
-  margin-bottom: 20rpx;
+.fc-rich-text .katex-html,
+.fc-rich-text .base {
+  white-space: nowrap;
 }
 
-.fc-section-title {
-  font-size: 28rpx;
-  font-weight: 600;
-  color: #26352C;
-  display: block;
-  margin-bottom: 8rpx;
+.fc-section-copy .fc-rich-text,
+.fc-collapse-content .fc-rich-text,
+.fc-example .fc-rich-text {
+  line-height: 1.92;
 }
 
-.fc-collapse {
-  border-top: 1rpx solid #E1E5DE;
+.fc-collapse-content,
+.fc-collapse-content.error-content {
+  padding-top: 17rpx;
+  padding-bottom: 17rpx;
 }
 
-.fc-collapse-header {
+/* Grouped identities wrap naturally instead of exposing a clipped formula row. */
+.fc-formula-group {
+  min-height: 108rpx;
+  padding: 13rpx 12rpx 17rpx;
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: center;
-  padding: 24rpx 0;
+  justify-content: center;
+  column-gap: 30rpx;
+  row-gap: 18rpx;
+  box-sizing: border-box;
 }
 
-.fc-collapse-title {
-  font-size: 28rpx;
-  font-weight: 500;
-  color: #26352C;
+.fc-formula-group-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-height: 58rpx;
+  padding: 3rpx 2rpx;
+  white-space: nowrap;
 }
 
-.fc-collapse-arrow {
-  font-size: 28rpx;
-  color: #8A938C;
-  transition: transform 0.2s;
+.fc-formula-group-item .fc-formula-rich {
+  font-size: 26rpx;
 }
 
-.fc-collapse-arrow.expanded {
-  transform: rotate(90deg);
-}
-
-.fc-collapse-body {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height 0.3s ease;
-}
-
-.fc-collapse-body.open {
-  max-height: none;
-  padding-bottom: 20rpx;
-}
-
-.fc-example {
-  margin-bottom: 24rpx;
-  padding: 16rpx;
-  background: #F6F7F2;
-  border-radius: 22rpx;
-}
-
-.fc-example-label {
-  font-size: 24rpx;
-  font-weight: 600;
-  color: #66844F;
-  display: block;
-  margin-bottom: 6rpx;
-}
-
-.fc-example-label.error {
-  color: #C65A4E;
-}
-
+/* ==================== Formula reader prose containment v3 ====================
+ * Keep prose wrappable and make only the exact KaTeX expression atomic. Long
+ * inline expressions scroll inside their own inline box instead of enlarging
+ * the page. The math scale matches the core formula area more closely.
+ */
+.fc-reading-section,
+.fc-section-copy,
+.fc-collapse-content,
+.fc-example,
 .fc-example-detail {
-  margin-top: 12rpx;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
-.fc-header { padding-bottom:20rpx; border-bottom:1rpx solid #E1E5DE; }
-.fc-formula-section { border:1rpx solid #E1E5DE; }
-.fc-section { padding:20rpx 0; border-bottom:1rpx solid #E7EAE4; }
-.fc-collapse-header { min-height:82rpx; }
-.fc-collapse-arrow { width:26rpx; height:26rpx; font-size:0; position:relative; }
-.fc-collapse-arrow::before { content:''; position:absolute; left:7rpx; top:6rpx; width:10rpx; height:10rpx; border-right:3rpx solid #79847C; border-bottom:3rpx solid #79847C; transform:rotate(-45deg); transition:transform .2s ease; }
-.fc-collapse-arrow.expanded::before { transform:rotate(45deg); }
-.fc-collapse-arrow.expanded { transform:none; }
+.fc-reading-section,
+.fc-section-copy,
+.fc-collapse-content,
+.fc-example-detail {
+  overflow: hidden;
+}
+
+.fc-rich-text {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.fc-rich-text .katex {
+  font-size: 1.12em;
+  line-height: 1.22;
+  vertical-align: middle;
+}

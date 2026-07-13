@@ -1,1 +1,4 @@
-<view />
+<view class="animation-page">
+  <premium-nav title="动画预览" variant="light" bind:back="goBack" />
+  <view class="animation-stage"></view>
+</view>

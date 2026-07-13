@@ -14,15 +14,14 @@
   />
 
   <!-- ==================== 深色成绩主视觉 ==================== -->
-  <view class="result-hero {{resultLevelClass}}" style="padding-top: {{statusBarHeight}}px;">
+  <view class="result-hero {{resultLevelClass}}">
     <view class="result-hero-grid"></view>
-    <view class="result-nav" style="height: {{navBarHeight}}px;">
-      <view class="result-nav-back" hover-class="result-control-pressed" bindtap="goBack">
-        <text class="result-nav-back-icon">‹</text>
-      </view>
-      <text class="result-nav-title">练习结果</text>
-      <view class="result-nav-capsule-space"></view>
-    </view>
+    <premium-nav
+      title="练习结果"
+      variant="dark"
+      fixed="{{false}}"
+      bind:back="goBack"
+    />
 
     <view class="result-hero-content">
       <view class="result-hero-copy">
