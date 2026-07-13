@@ -813,3 +813,34 @@ page {
   font-size: 28rpx;
   transform: translateY(-1rpx);
 }
+
+
+/* ==================== Phase 2 visual unification ==================== */
+.result-hero-content {
+  padding-top: 20rpx;
+  padding-left: 32rpx;
+  padding-right: 32rpx;
+}
+
+.result-content {
+  padding-left: 32rpx;
+  padding-right: 32rpx;
+}
+
+.summary-panel,
+.advice-panel,
+.detail-panel {
+  border-radius: 32rpx;
+}
+
+.summary-panel { padding: 28rpx 26rpx 24rpx; }
+.advice-panel { overflow: hidden; }
+.detail-panel { padding: 30rpx 28rpx 24rpx; }
+.detail-row { border-radius: 24rpx; }
+.detail-answer-box { border-radius: 18rpx; }
+.action-primary { border-radius: 26rpx; }
+
+@media (max-width: 360px) {
+  .result-content { padding-left: 24rpx; padding-right: 24rpx; }
+  .result-hero-content { padding-left: 26rpx; padding-right: 26rpx; }
+}

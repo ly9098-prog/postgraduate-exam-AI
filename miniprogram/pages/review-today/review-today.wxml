@@ -13,7 +13,6 @@
 
 <premium-nav
   title="今日复习"
-  caption="DAILY REVIEW"
   variant="{{phase === 'reviewing' ? 'dark' : 'light'}}"
   bind:back="onNavBack"
 />
@@ -302,40 +301,42 @@
     <view class="final-hero {{reviewResultVm.resultLevelClass}}">
       <view class="final-grid"></view>
       <text class="final-kicker">TODAY COMPLETE</text>
-      <text class="final-title">今天的记忆任务，完成了。</text>
+      <text class="final-title">{{reviewResultVm.remainingCount > 0 ? '今天先复习到这里。' : '今天的记忆任务，完成了。'}}</text>
       <text class="final-desc">{{reviewResultVm.statusDesc}}</text>
 
       <view class="final-score-row">
-        <view class="final-score"><text>{{reviewResultVm.accuracy}}</text><text class="final-score-unit">%</text></view>
-        <view class="final-score-label"><text>已答正确率</text><text>{{reviewResultVm.statusText}}</text></view>
+        <view class="final-score"><text>{{reviewResultVm.completionRate}}</text><text class="final-score-unit">%</text></view>
+        <view class="final-score-label">
+          <text>今日任务完成度</text>
+          <text wx:if="{{reviewResultVm.completionOver > 0}}">超额完成 {{reviewResultVm.completionOver}}%</text>
+          <text wx:else>{{reviewResultVm.completionHint}}</text>
+        </view>
       </view>
 
       <view class="final-progress-module">
         <view class="final-progress-head">
           <view>
-            <text class="final-progress-kicker">TASK COMPLETION</text>
-            <text class="final-progress-title">今日任务完成度</text>
+            <text class="final-progress-kicker">TASK PROGRESS</text>
+            <text class="final-progress-title">已完成 {{reviewResultVm.completedCount}} / {{reviewResultVm.dueCount}} 道</text>
           </view>
-          <view class="final-progress-percent">
-            <text>{{reviewResultVm.completionRate}}</text><text class="final-progress-percent-unit">%</text>
-          </view>
+          <text class="final-progress-state">{{reviewResultVm.completionOver > 0 ? '超额完成' : reviewResultVm.statusText}}</text>
         </view>
         <view class="final-progress-segments">
           <view
             wx:for="{{progressSteps}}"
             wx:key="*this"
-            class="final-progress-segment {{reviewResultVm.completionRate > item ? 'active' : ''}}"
+            class="final-progress-segment {{reviewResultVm.completionCapped > item ? 'active' : ''}}"
           ></view>
         </view>
         <view class="final-progress-foot">
-          <text>已完成 {{reviewResultVm.completedCount}} / {{reviewResultVm.dueCount}} 道</text>
-          <text>{{reviewResultVm.completionHint}}</text>
+          <text>{{reviewResultVm.completionOver > 0 ? '进度条按 100% 封顶显示' : reviewResultVm.completionHint}}</text>
+          <text>按今日应复习题量计算</text>
         </view>
       </view>
     </view>
 
     <view class="final-stats-grid">
-      <view class="final-stat"><text class="final-stat-num">{{reviewResultVm.submittedTotal || reviewResultVm.total}}</text><text>已提交</text></view>
+      <view class="final-stat"><text class="final-stat-num accuracy">{{reviewResultVm.accuracy}}%</text><text>正确率</text></view>
       <view class="final-stat"><text class="final-stat-num success">{{reviewResultVm.correct}}</text><text>答对</text></view>
       <view class="final-stat"><text class="final-stat-num danger">{{reviewResultVm.wrong}}</text><text>错题</text></view>
       <view class="final-stat"><text class="final-stat-num">{{reviewResultVm.masteredCount}}</text><text>已掌握</text></view>

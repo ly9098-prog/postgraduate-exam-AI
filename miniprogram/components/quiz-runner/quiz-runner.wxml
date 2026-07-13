@@ -70,7 +70,13 @@
     bindtouchend="onTouchEnd"
     bindtouchcancel="onTouchCancel"
   >
-    <view class="runner-q-wrap {{animClass}}" wx:if="{{currentQuestion}}">
+    <view
+      class="runner-q-wrap {{animClass}}"
+      wx:if="{{currentQuestion}}"
+      bindtouchstart="onTouchStart"
+      bindtouchend="onTouchEnd"
+      bindtouchcancel="onTouchCancel"
+    >
       <view class="runner-q-card-head">
         <view class="runner-q-labels">
           <text class="runner-q-badge">{{_qTypeLabel}}</text>

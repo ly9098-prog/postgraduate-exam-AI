@@ -1,3 +1,7 @@
 {
-  "navigationBarTitleText": "MemoGrad"
+  "navigationStyle": "custom",
+  "backgroundColor": "#F4F4EE",
+  "backgroundColorTop": "#F4F4EE",
+  "backgroundColorBottom": "#F4F4EE",
+  "backgroundTextStyle": "dark"
 }

@@ -6,6 +6,7 @@
   "backgroundColorBottom": "#F3F4F1",
   "usingComponents": {
     "animated-view": "/components/AnimatedView/AnimatedView",
-    "mp-html": "/components/mp-html/index"
+    "mp-html": "/components/mp-html/index",
+    "premium-nav": "/components/premium-nav/premium-nav"
   }
 }

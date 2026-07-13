@@ -1586,3 +1586,118 @@ page { background:#F2F3EF; background-color:#F2F3EF; }
 .focus-title,.focus-percent,.focus-action { color:#17251B; }
 .focus-progress-track { background:#E5E9E2; }
 .focus-progress-fill { background:#86CFA9; }
+
+/* ==================== Phase 2.1 focus progress refinement ==================== */
+.focus-progress-track {
+  height: 28rpx;
+  margin-top: 26rpx;
+  overflow: visible;
+  border: 1rpx solid rgba(23, 52, 38, .06);
+  background: linear-gradient(180deg, #D9DED8 0%, #E7EAE5 100%);
+  box-shadow:
+    inset 0 2rpx 5rpx rgba(17, 28, 21, .10),
+    0 1rpx 0 rgba(255, 255, 255, .76);
+}
+
+.focus-progress-fill {
+  min-width: 28rpx;
+  background: linear-gradient(90deg, #B7E82A 0%, #82E29C 50%, #58D6C6 100%);
+  box-shadow:
+    0 0 15rpx rgba(130, 226, 156, .34),
+    0 0 28rpx rgba(88, 214, 198, .18),
+    inset 0 2rpx 2rpx rgba(255, 255, 255, .34);
+  transition: width .32s ease;
+}
+
+.focus-progress-fill::after {
+  top: 3rpx;
+  right: 4rpx;
+  width: 18rpx;
+  height: 20rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, .42);
+  filter: blur(3rpx);
+}
+
+
+/* ==================== Phase 2.2 luminous weak-point progress ==================== */
+.focus-progress-track {
+  position: relative;
+  overflow: visible;
+}
+.focus-progress-fill {
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+  box-shadow:
+    0 0 10rpx 3rpx rgba(183,232,42,.38),
+    0 0 20rpx 7rpx rgba(98,230,178,.30),
+    0 0 38rpx 12rpx rgba(88,214,198,.18),
+    inset 0 2rpx 2rpx rgba(255,255,255,.42);
+}
+.focus-progress-fill::before {
+  content: '';
+  position: absolute;
+  right: -9rpx;
+  top: 50%;
+  width: 34rpx;
+  height: 34rpx;
+  border-radius: 50%;
+  background: rgba(92,222,194,.88);
+  box-shadow:
+    0 0 10rpx 5rpx rgba(183,232,42,.38),
+    0 0 24rpx 11rpx rgba(88,214,198,.36);
+  transform: translateY(-50%);
+  z-index: -1;
+}
+.focus-progress-fill::after {
+  top: 4rpx;
+  right: 3rpx;
+  width: 19rpx;
+  height: 19rpx;
+  border-radius: 50%;
+  background: rgba(255,255,255,.62);
+  box-shadow: 0 0 9rpx rgba(255,255,255,.82);
+  filter: none;
+}
+
+/* ==================== Phase 2.3 soft wide weak-point progress ==================== */
+.focus-progress-track {
+  width: calc(100% + 20rpx);
+  height: 28rpx;
+  margin-top: 26rpx;
+  margin-left: -10rpx;
+  border: 1rpx solid rgba(20,38,28,.055);
+  background: linear-gradient(180deg, #D7DCD6 0%, #E5E8E3 100%);
+  box-shadow:
+    inset 0 2rpx 5rpx rgba(17,28,21,.075),
+    0 1rpx 0 rgba(255,255,255,.82);
+}
+.focus-progress-fill {
+  min-width: 20rpx;
+  background: linear-gradient(90deg, #B8ED31 0%, #83E5A6 48%, #5DDFD0 100%);
+  box-shadow:
+    0 0 16rpx 5rpx rgba(183,237,49,.20),
+    0 0 30rpx 10rpx rgba(91,224,196,.16),
+    0 0 48rpx 16rpx rgba(91,224,196,.08),
+    inset 0 2rpx 2rpx rgba(255,255,255,.38);
+}
+.focus-progress-fill::before,
+.focus-progress-fill::after {
+  display: none !important;
+  content: none !important;
+}
+
+/* ==================== Phase 2.4 clearer soft weak-point glow ==================== */
+.focus-progress-fill {
+  box-shadow:
+    0 0 14rpx 5rpx rgba(184, 237, 49, .34),
+    0 0 32rpx 11rpx rgba(99, 229, 174, .26),
+    0 0 56rpx 19rpx rgba(83, 221, 207, .14),
+    inset 0 2rpx 2rpx rgba(255,255,255,.40);
+}
+.focus-progress-fill::before,
+.focus-progress-fill::after {
+  display: none !important;
+  content: none !important;
+}

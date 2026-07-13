@@ -95,6 +95,9 @@ Component({
     }
     // #endif
   },
+  detached () {
+    this.root = null
+  },
   // #endif
   methods: {
     noop () { },
@@ -123,23 +126,26 @@ Component({
      * @param {Event} e
      */
     play (e) {
+      const root = this.root
+      if (!root) return
       const i = e.target.dataset.i
       const node = this.getNode(i)
-      this.root.triggerEvent('play', {
+      root.triggerEvent('play', {
         source: node.name,
         attrs: {
           ...node.attrs,
           src: node.src[this.data.ctrl[i] || 0]
         }
       })
-      if (this.root.properties.pauseVideo) {
+      if (root.properties && root.properties.pauseVideo) {
         let flag = false
         const id = e.target.id
-        for (let i = this.root._videos.length; i--;) {
-          if (this.root._videos[i].id === id) {
+        root._videos = root._videos || []
+        for (let i = root._videos.length; i--;) {
+          if (root._videos[i].id === id) {
             flag = true
           } else {
-            this.root._videos[i].pause() // 自动暂停其他视频
+            root._videos[i].pause() // 自动暂停其他视频
           }
         }
         // 将自己加入列表
@@ -150,10 +156,10 @@ Component({
             // #endif
           )
           ctx.id = id
-          if (this.root.playbackRate) {
-            ctx.playbackRate(this.root.playbackRate)
+          if (root.playbackRate) {
+            ctx.playbackRate(root.playbackRate)
           }
-          this.root._videos.push(ctx)
+          root._videos.push(ctx)
         }
       }
     },
@@ -162,9 +168,11 @@ Component({
      * @param {Event} e
      */
     mediaEvent (e) {
+      const root = this.root
+      if (!root) return
       const i = e.target.dataset.i
       const node = this.getNode(i)
-      this.root.triggerEvent(e.type, {
+      root.triggerEvent(e.type, {
         ...e.detail,
         source: node.name,
         attrs: {
@@ -179,15 +187,17 @@ Component({
      * @param {Event} e
      */
     imgTap (e) {
+      const root = this.root
+      if (!root) return
       const node = this.getNode(e.target.dataset.i)
       // 父级中有链接
       if (node.a) return this.linkTap(node.a)
       if (node.attrs.ignore) return
-      this.root.triggerEvent('imgtap', node.attrs)
-      if (this.root.properties.previewImg) {
+      root.triggerEvent('imgtap', node.attrs)
+      if (root.properties && root.properties.previewImg) {
         const current =
           // #ifndef MP-ALIPAY
-          this.root.imgList[node.i]
+          root.imgList[node.i]
         // #endif
         // #ifdef MP-ALIPAY
         node.i // eslint-disable-line
@@ -195,14 +205,14 @@ Component({
         // 自动预览图片
         wx.previewImage({
           // #ifdef MP-WEIXIN
-          showmenu: this.root.properties.showImgMenu,
+          showmenu: root.properties.showImgMenu,
           // #endif
           // #ifdef MP-ALIPAY
-          enablesavephoto: this.root.properties.showImgMenu,
-          enableShowPhotoDownload: this.root.properties.showImgMenu,
+          enablesavephoto: root.properties.showImgMenu,
+          enableShowPhotoDownload: root.properties.showImgMenu,
           // #endif
           current,
-          urls: this.root.imgList
+          urls: root.imgList
         })
       }
     },
@@ -237,14 +247,17 @@ Component({
      * @description 检查是否所有图片加载完毕
      */
     checkReady () {
-      if (!this.root.properties.lazyLoad) {
-        this.root.imgList._unloadimgs -= 1
-        if (!this.root.imgList._unloadimgs) {
+      const root = this.root
+      if (!root || !root.properties || !root.imgList) return
+      if (!root.properties.lazyLoad) {
+        root.imgList._unloadimgs -= 1
+        if (!root.imgList._unloadimgs) {
           setTimeout(() => {
-            this.root.getRect().then(rect => {
-              this.root.triggerEvent('ready', rect)
+            if (!this.root) return
+            root.getRect().then(rect => {
+              if (this.root) root.triggerEvent('ready', rect)
             }).catch(() => {
-              this.root.triggerEvent('ready', {})
+              if (this.root) root.triggerEvent('ready', {})
             })
           }, 350)
         }
@@ -256,19 +269,21 @@ Component({
      * @param {Event} e
      */
     linkTap (e) {
+      const root = this.root
+      if (!root) return
       const node = e.currentTarget ? this.getNode(e.currentTarget.dataset.i) : {}
       const attrs = node.attrs || e
       const href = attrs.href
-      this.root.triggerEvent('linktap', Object.assign({
-        innerText: this.root.getText(node.children || []) // 链接内的文本内容
+      root.triggerEvent('linktap', Object.assign({
+        innerText: root.getText(node.children || []) // 链接内的文本内容
       }, attrs))
       if (href) {
         if (href[0] === '#') {
           // 跳转锚点
-          this.root.navigateTo(href.substring(1)).catch(() => { })
+          root.navigateTo(href.substring(1)).catch(() => { })
         } else if (href.split('?')[0].includes('://')) {
           // 复制外部链接
-          if (this.root.properties.copyLink) {
+          if (root.properties && root.properties.copyLink) {
             wx.setClipboardData({
               data: href,
               success: () =>

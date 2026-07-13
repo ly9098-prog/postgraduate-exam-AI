@@ -470,3 +470,25 @@ button::after { border: none; }
   .undo-toast,
   .primary-action { transition: none !important; }
 }
+
+
+/* ==================== Phase 2 completion hierarchy ==================== */
+.final-score-row { align-items: center; }
+.final-score-label { padding-bottom: 0; }
+.final-progress-state {
+  flex-shrink: 0;
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: rgba(183,232,42,.12);
+  color: #D7FF68;
+  font-size: 18rpx;
+  line-height: 1.3;
+  font-weight: 900;
+}
+.final-stat-num.accuracy { color: #173426; font-size: 30rpx; letter-spacing: -1rpx; }
+.final-actions {
+  border-radius: 30rpx 30rpx 0 0;
+  box-shadow: 0 -14rpx 36rpx rgba(16,37,26,.07);
+}
+.final-primary,
+.final-secondary { border-radius: 25rpx; }

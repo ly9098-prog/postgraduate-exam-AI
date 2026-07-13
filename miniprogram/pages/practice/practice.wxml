@@ -2,7 +2,11 @@
   <submit-confirm id="submitConfirm" />
   <view class="submit-loading-mask" wx:if="{{submitting}}" catchtap="noop">
     <view class="submit-loading-card">
-      <loading-lottie text="正在批改..." size="large" />
+      <text class="submit-loading-kicker">SMART REVIEW</text>
+      <loading-lottie size="large" theme="brand" enable-lottie="{{false}}" />
+      <text class="submit-loading-title">正在批改答案</text>
+      <text class="submit-loading-desc">正在生成成绩与复盘建议，请稍候</text>
+      <view class="submit-loading-dots"><view></view><view></view><view></view></view>
     </view>
   </view>
 
@@ -260,6 +264,7 @@
   <!-- ==================== 答题页 ==================== -->
   <view class="practice" wx:if="{{started && !loading}}" style="padding-top: {{statusBarHeight}}px;">
     <quiz-runner
+      class="practice-runner"
       mode="practice"
       title="练习"
       subjectName="{{selectedSubjectName}}"
@@ -278,6 +283,7 @@
       submitDisabled="{{submitted}}"
       showBackButton="{{true}}"
       customNavigation="{{true}}"
+      swipeThroughOptions="{{true}}"
       bind:selectoption="selectOption"
       bind:selectblankoption="selectBlankOption"
       bind:prev="goPrev"

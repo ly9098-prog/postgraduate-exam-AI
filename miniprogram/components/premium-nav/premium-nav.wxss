@@ -37,14 +37,14 @@
 }
 
 .premium-nav-back {
-  width: 62rpx;
-  height: 62rpx;
+  width: 66rpx;
+  height: 66rpx;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-right: 14rpx;
+  margin-right: 16rpx;
   transition: transform 0.15s ease, opacity 0.15s ease, background-color 0.15s ease;
 }
 

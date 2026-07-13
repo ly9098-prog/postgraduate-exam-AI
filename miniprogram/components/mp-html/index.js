@@ -20,6 +20,12 @@ Component({
     containerStyle: String,
 
     /**
+     * @description 块级公式布局方式，natural 用于外层横向滚动时保持公式自然宽度
+     * @type {String}
+     */
+    mathLayout: String,
+
+    /**
      * @description 用于渲染的 html 字符串
      * @type {String}
      */

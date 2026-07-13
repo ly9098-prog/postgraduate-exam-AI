@@ -142,8 +142,11 @@
 }
 
 .sc-btn-confirm {
+  position: relative;
   flex: 1.18;
-  justify-content: space-between;
+  justify-content: center;
+  padding-left: 58rpx;
+  padding-right: 58rpx;
   color: #10251A;
   background: linear-gradient(100deg, #AEEF00 0%, #C8F72B 100%);
   box-shadow: 0 12rpx 26rpx rgba(123,174,0,0.18);
@@ -156,6 +159,10 @@
 }
 
 .sc-confirm-arrow {
+  position: absolute;
+  right: 15rpx;
+  top: 50%;
+  transform: translateY(-50%);
   width: 40rpx;
   height: 40rpx;
   border-radius: 50%;
