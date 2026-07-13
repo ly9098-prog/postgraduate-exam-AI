@@ -49,15 +49,128 @@ function stripOuterMathDelimiters(value) {
   return source
 }
 
+var UNICODE_GREEK_LATEX = {
+  'α': 'alpha', 'β': 'beta', 'γ': 'gamma', 'δ': 'delta', 'ε': 'epsilon',
+  'ζ': 'zeta', 'η': 'eta', 'θ': 'theta', 'ι': 'iota', 'κ': 'kappa',
+  'λ': 'lambda', 'μ': 'mu', 'ν': 'nu', 'ξ': 'xi', 'ο': 'omicron',
+  'π': 'pi', 'ρ': 'rho', 'σ': 'sigma', 'ς': 'varsigma', 'τ': 'tau',
+  'υ': 'upsilon', 'φ': 'phi', 'χ': 'chi', 'ψ': 'psi', 'ω': 'omega',
+  'ϵ': 'varepsilon', 'ϑ': 'vartheta', 'ϖ': 'varpi', 'ϱ': 'varrho',
+  'ϕ': 'varphi',
+  'Γ': 'Gamma', 'Δ': 'Delta', 'Θ': 'Theta', 'Λ': 'Lambda', 'Ξ': 'Xi',
+  'Π': 'Pi', 'Σ': 'Sigma', 'Υ': 'Upsilon', 'Φ': 'Phi', 'Ψ': 'Psi',
+  'Ω': 'Omega',
+}
+
+function replaceUnicodeGreek(value) {
+  return String(value == null ? '' : value).replace(/[α-ωΑ-Ωϵϑϖϱϕ]/g, function (symbol) {
+    var command = UNICODE_GREEK_LATEX[symbol]
+    // Some uppercase Greek glyphs are visually identical to Latin letters and
+    // do not have a KaTeX command (for example Α and Β). Keep those as-is.
+    return command ? '\\' + command + '{}' : symbol
+  })
+}
+
 function replaceUnicodeMath(value) {
-  return String(value == null ? '' : value)
-    .replace(/→|->/g, '\\to ')
-    .replace(/∞/g, '\\infty ')
+  return replaceUnicodeGreek(value)
+    .replace(/(?:→|->)/g, '\\to ')
+    .replace(/(?:∞|\binfinity\b)/gi, '\\infty ')
     .replace(/≤/g, '\\le ')
     .replace(/≥/g, '\\ge ')
     .replace(/≠/g, '\\ne ')
     .replace(/≈/g, '\\approx ')
     .replace(/∑/g, '\\sum ')
+}
+
+function normalizeTrendPhrases(value) {
+  return String(value == null ? '' : value)
+    .replace(/([A-Za-z][A-Za-z0-9_]*)\s*趋于\s*(?:正)?无穷/g, '$1 -> infinity')
+    .replace(/([A-Za-z][A-Za-z0-9_]*)\s*趋于\s*([+\-]?\d+(?:\.\d+)?)/g, '$1 -> $2')
+}
+
+function trimOuterParentheses(value) {
+  var source = String(value == null ? '' : value).trim()
+  if (source.length >= 2 && source.charAt(0) === '(' && source.charAt(source.length - 1) === ')') {
+    var depth = 0
+    var wrapsWholeValue = true
+    for (var i = 0; i < source.length; i++) {
+      var ch = source.charAt(i)
+      if (ch === '(') depth += 1
+      else if (ch === ')') depth -= 1
+      if (depth === 0 && i < source.length - 1) {
+        wrapsWholeValue = false
+        break
+      }
+      if (depth < 0) {
+        wrapsWholeValue = false
+        break
+      }
+    }
+    if (wrapsWholeValue && depth === 0) return source.slice(1, -1).trim()
+  }
+  return source
+}
+
+function normalizeFractionOperand(value) {
+  return normalizeFunctionNames(trimOuterParentheses(value))
+    .replace(/[ \t]+/g, ' ')
+    .trim()
+}
+
+function normalizeExponent(value) {
+  var source = String(value == null ? '' : value).trim()
+  if (!source || /\\frac\s*\{/.test(source)) return source
+  var simple = source.match(/^([A-Za-z0-9]+)\s*\/\s*([A-Za-z0-9]+)$/)
+  if (simple) return '\\frac{' + simple[1] + '}{' + simple[2] + '}'
+  return source
+}
+
+function normalizePowers(value) {
+  var source = String(value == null ? '' : value)
+
+  // Admin history contains both ^(1/x) and ^{1/x}. Convert only simple
+  // slash exponents; already-correct nested LaTeX such as ^{\frac{1}{x}}
+  // is deliberately left untouched.
+  source = source.replace(/\^\s*\(\s*([^()]*)\s*\)/g, function (_, exponent) {
+    return '^{' + normalizeExponent(exponent) + '}'
+  })
+  source = source.replace(/\^\s*\{\s*([^{}]*)\s*\}/g, function (match, exponent) {
+    if (/\\frac\s*\{/.test(exponent)) return match
+    return '^{' + normalizeExponent(exponent) + '}'
+  })
+  source = source.replace(/\^\s*([+\-]?\d+)(?=$|[^0-9])/g, '^{$1}')
+  return source
+}
+
+function normalizeFractions(value) {
+  var source = String(value == null ? '' : value)
+  var functionName = '(?:arcsin|arccos|arctan|sin|cos|tan|cot|sec|csc|ln|log|det|exp)'
+
+  // Parenthesised numerator: (sin x)/x, (x+1)/(x-1), etc. Run this
+  // before simple fractions so the numerator remains one semantic unit.
+  source = source.replace(/\(\s*([^()]+?)\s*\)\s*\/\s*(\([^()]+\)|[A-Za-z0-9]+)(?=$|[\s,;=+\-*^)\]}])/g, function (_, numerator, denominator) {
+    return '\\frac{' + normalizeFractionOperand(numerator) + '}{' + normalizeFractionOperand(denominator) + '}'
+  })
+
+  // Function fractions without numerator parentheses: sin x/x, sin 2x/x.
+  var functionFraction = new RegExp('((?:\\\\)?' + functionName + '\\s+(?:\\d+\\s*)?[A-Za-z][A-Za-z0-9]*)\\s*\\/\\s*(\\([^()]+\\)|[A-Za-z0-9]+)', 'gi')
+  source = source.replace(functionFraction, function (_, numerator, denominator) {
+    return '\\frac{' + normalizeFractionOperand(numerator) + '}{' + normalizeFractionOperand(denominator) + '}'
+  })
+
+  // Function denominator: x/sin x.
+  var functionDenominator = new RegExp('(^|[\\s(=+\\-*,])([A-Za-z0-9]+)\\s*\\/\\s*((?:\\\\)?' + functionName + '\\s+(?:\\d+\\s*)?[A-Za-z][A-Za-z0-9]*)', 'gi')
+  source = source.replace(functionDenominator, function (_, prefix, numerator, denominator) {
+    return prefix + '\\frac{' + normalizeFractionOperand(numerator) + '}{' + normalizeFractionOperand(denominator) + '}'
+  })
+
+  // Conservative atom fractions. This covers 1/x and 1/(1+x) while the
+  // isMathRun guards keep dates, URLs and paths out of this conversion path.
+  source = source.replace(/(^|[\s(=+\-*,])([A-Za-z0-9]+)\s*\/\s*(\([^()]+\)|[A-Za-z0-9]+)(?=$|[\s,;=+\-*^)\]}])/g, function (_, prefix, numerator, denominator) {
+    return prefix + '\\frac{' + normalizeFractionOperand(numerator) + '}{' + normalizeFractionOperand(denominator) + '}'
+  })
+
+  return source
 }
 
 function normalizeLatexSource(value) {
@@ -136,12 +249,21 @@ function normalizeFunctionNames(value) {
 
 function normalizeMathRun(value) {
   var source = stripOuterMathDelimiters(String(value || '').trim())
+  if (!source) return ''
+
   source = replaceUnicodeMath(source)
     .replace(/√\s*\(([^)]+)\)/g, '\\sqrt{$1}')
     .replace(/(^|[^\\A-Za-z])lim\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*(?:\\to|→|->)\s*([^)]+)\)/gi, function (_, prefix, variable, target) {
-      return prefix + '\\lim_{' + variable + '\\to ' + target.trim() + '}'
+      return prefix + '\\lim_{' + variable + '\\to ' + replaceUnicodeMath(target).trim() + '}'
     })
+
+  // Structure-sensitive transformations must happen before generic function
+  // escaping. Otherwise the reader merely italicises legacy text such as
+  // (sin x)/x instead of producing a real KaTeX fraction.
+  source = normalizePowers(source)
+  source = normalizeFractions(source)
   source = normalizeFunctionNames(source)
+    .replace(/\s*=\s*/g, '=')
     .replace(/[ \t]+/g, ' ')
     .trim()
   return source
@@ -156,7 +278,17 @@ function ensureDisplayStyle(value) {
 function isMathRun(value) {
   var source = String(value || '').trim()
   if (!source || /^\d+(?:\.\d+)?$/.test(source)) return false
-  if (/\\(?:lim|frac|sqrt|sum|prod|int|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|ln|log|det|exp|to|infty|le|ge|ne|approx|begin)/.test(source)) return true
+
+  // Common prose tokens that contain slashes/dashes must never be promoted to
+  // KaTeX. These guards are intentionally evaluated before operator checks.
+  if (/^\d{4}[\/-]\d{1,2}[\/-]\d{1,2}$/.test(source)) return false
+  if (/^[vV]?\d+(?:\.\d+){1,}$/.test(source)) return false
+  if (/^(?:https?:)?\/\//i.test(source) || /^www\./i.test(source)) return false
+  if (/^[A-Za-z]:[\\/]/.test(source)) return false
+  if (/^(?:\.{0,2}\/|\/)[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+$/.test(source)) return false
+  if (/^\$\s*\d/.test(source) || /^(?:USD|RMB|CNY)\s*\$?\s*\d/i.test(source)) return false
+
+  if (/\\(?:lim|frac|sqrt|sum|prod|int|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|ln|log|det|exp|to|infty|le|ge|ne|approx|begin|alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|omicron|pi|varpi|rho|varrho|sigma|varsigma|tau|upsilon|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Upsilon|Phi|Psi|Omega)\b/.test(source)) return true
   if (/(?:lim|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|ln|log|det|exp)\s*\(?/i.test(source)) return true
   if (/[A-Za-z0-9)}\]]\s*(?:=|≠|≈|≤|≥|<|>|→|->|\+|\-|\*|\/|\^|_)/.test(source)) return true
   if (/(?:=|≠|≈|≤|≥|<|>|→|->|\+|\-|\*|\/|\^|_)\s*[A-Za-z0-9({\[]/.test(source)) return true
@@ -177,6 +309,15 @@ function collapseProseWhitespace(value) {
   return source
 }
 
+function protectPlainTokens(source, store) {
+  var pattern = /https?:\/\/[^\s<>"']+|www\.[^\s<>"']+|[A-Za-z]:[\\/][^\s<>"']+|(?:\.{0,2}\/|\/)[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+|\b\d{4}[\/-]\d{1,2}[\/-]\d{1,2}\b|\b[vV]\d+(?:\.\d+){1,}\b|(?:USD|RMB|CNY)\s*\$?\s*\d+(?:\.\d+)?|\$\s*\d+(?:\.\d+)?/g
+  return source.replace(pattern, function (match) {
+    var key = '\u0007TEXT' + store.length + '\u0007'
+    store.push(escapeHtml(match))
+    return key
+  })
+}
+
 function protectExplicitMath(source, store) {
   return source.replace(/\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$(?:\\.|[^$\\\n])+\$/g, function (match) {
     var inner = match
@@ -191,8 +332,13 @@ function protectExplicitMath(source, store) {
 }
 
 function processPlainTextNode(value) {
-  var source = collapseProseWhitespace(decodeBasicEntities(value))
+  // Convert Greek glyphs before tokenisation. Otherwise a label such as
+  // "(1+x)^α展开" is split into the invalid fragment "(1+x)^" and the
+  // remaining prose, which makes KaTeX report "Expected group after '^'".
+  var source = replaceUnicodeGreek(normalizeTrendPhrases(collapseProseWhitespace(decodeBasicEntities(value))))
+  var protectedText = []
   var protectedMath = []
+  source = protectPlainTokens(source, protectedText)
   source = protectExplicitMath(source, protectedMath)
 
   var result = ''
@@ -217,6 +363,9 @@ function processPlainTextNode(value) {
 
   result = result.replace(/\u0007MATH(\d+)\u0007/g, function (_, index) {
     return protectedMath[Number(index)] || ''
+  })
+  result = result.replace(/\u0007TEXT(\d+)\u0007/g, function (_, index) {
+    return protectedText[Number(index)] || ''
   })
 
   // collapseProseWhitespace intentionally generated these tags.

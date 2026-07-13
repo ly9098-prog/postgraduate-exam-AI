@@ -1,7 +1,11 @@
 <view class="formula-card-wrap">
   <view class="fc-header">
     <text class="fc-kicker">FORMULA NOTE</text>
-    <text class="fc-title">{{card.title}}</text>
+    <rich-text
+      class="fc-title fc-title-rich"
+      nodes="{{content.titleNodes}}"
+      user-select="{{true}}"
+    />
     <view class="fc-tags" wx:if="{{card.tags && card.tags.length}}">
       <text class="fc-tag {{'fc-tag-' + tag.code}}" wx:for="{{card.tags}}" wx:key="id">{{tag.name}}</text>
     </view>
@@ -18,7 +22,12 @@
 
     <view class="fc-formula-block" wx:for="{{formulaBlocks}}" wx:for-item="block" wx:key="_key">
       <view class="fc-block-head">
-        <text class="fc-block-label" wx:if="{{block.label}}">{{block.label}}</text>
+        <rich-text
+          class="fc-block-label fc-block-label-rich"
+          wx:if="{{block.labelNodes && block.labelNodes.length}}"
+          nodes="{{block.labelNodes}}"
+          user-select="{{true}}"
+        />
         <text class="fc-formula-scroll-hint" wx:if="{{block.isScrollable}}">左右滑动查看完整公式</text>
       </view>
       <view class="fc-formula-group" wx:if="{{block.isGrouped}}">
