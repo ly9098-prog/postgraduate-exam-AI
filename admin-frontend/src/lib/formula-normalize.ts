@@ -35,7 +35,7 @@ function preprocessChineseTerms(s: string): string {
 /* ── Delimiter protection ── */
 
 // Regex to match ALL four kinds of math delimiters
-const ALL_DELIM_RE = /\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]|\$\$([\s\S]*?)\$\$|\$([^$\n]+?)\$/g;
+const ALL_DELIM_RE = /\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]|\$\$([\s\S]*?)\$\$|\$([^$]+?)\$/g;
 
 type ProtectedBlock = { key: string; wrapped: string };
 
@@ -180,7 +180,7 @@ function normalizePureMath(source: string): string {
   const funcNames = [
     'lim', 'sin', 'cos', 'tan', 'cot', 'sec', 'csc',
     'arcsin', 'arccos', 'arctan',
-    'ln', 'lg', 'log', 'det', 'exp', 'max', 'min',
+    'ln', 'lg', 'log', 'det', 'exp', 'max', 'min', 'sup', 'inf', 'deg',
   ];
   for (const name of funcNames) {
     const regex = new RegExp('(?<!\\\\)\\b' + name + '\\b', 'g');
@@ -233,6 +233,15 @@ function isMathLike(segment: string): boolean {
   // Contains operators (+, -, *, /) between expressions, not just at ends
   if (/[A-Za-z0-9)][+\-*/][A-Za-z0-9(]/.test(s)) return true;
 
+  // Prime notation (derivative): f'(x)
+  if (/[A-Za-z]'\s*[A-Za-z(]/.test(s)) return true;
+  // Absolute value / norm: |x|, ||v||
+  if (/\|.+\|/.test(s)) return true;
+  // Factorial: n!, 5!
+  if (/[A-Za-z0-9)]\s*!/.test(s)) return true;
+  // Comparison operators: x > 0, a < b
+  if (/[A-Za-z0-9)]\s*[<>]\s*[A-Za-z0-9(]/.test(s)) return true;
+
   return false;
 }
 
@@ -240,7 +249,7 @@ function isMathLike(segment: string): boolean {
 
 // Characters that form a potential math run (ASCII + specific Unicode math chars)
 // Deliberately excludes CJK characters so Chinese prose acts as a natural delimiter.
-const MATH_RUN_RE = /[A-Za-z0-9\\(){}\[\]_^+\-*\/=<>∞→≈≠≤≥∑√·,\. \t$\x07]+/g;
+const MATH_RUN_RE = /[A-Za-z0-9\\(){}\[\]_^+\-*\/=<>∞→≈≠≤≥∑√·,\. \t$\x07!"#%&':;?@`|~±×÷Ͱ-Ͽ℀-⅏∀-⋿]+/g;
 
 // Check whether a formula is "complex" enough to warrant \displaystyle
 function needsDisplaystyle(s: string): boolean {
