@@ -31,6 +31,8 @@ type EditorFormData = {
   blocks: FormulaBlock[];
   examples: FormulaExample[];
   sortOrder: number;
+  cardType: string;
+  functionProperties: Record<string, unknown> | null;
 };
 
 type EditorMode = "create" | "edit";
@@ -140,6 +142,10 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
   );
   const [examples, setExamples] = useState<FormulaExample[]>(initialData?.examples ?? []);
   const [sortOrder, setSortOrder] = useState(initialData?.sortOrder ?? 0);
+  const [cardType, setCardType] = useState(initialData?.cardType ?? "pure_formula");
+  const [functionProperties, setFunctionProperties] = useState<Record<string, unknown> | null>(
+    initialData?.functionProperties ?? null,
+  );
 
   // Refs for post-save LaTeX verification
   const sentConditionsRef = useRef<string | null>(null);
@@ -211,6 +217,8 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
         title: title.trim(),
         aliases: aliasesList.length > 0 ? aliasesList : null,
         search_text: aliasesList.length > 0 ? aliasesList.join(" ") : null,
+        card_type: cardType,
+        function_properties: cardType === "function_graph" ? (functionProperties ?? {}) : null,
         summary: summary.trim() || null,
         formula_blocks: validBlocks.map((b) => ({
           label: b.label || null,
@@ -509,6 +517,34 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
             </div>
 
             <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">卡片类型</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCardType("pure_formula")}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                    cardType === "pure_formula"
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)]"
+                      : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]"
+                  }`}
+                >
+                  纯公式
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCardType("function_graph")}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                    cardType === "function_graph"
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)]"
+                      : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]"
+                  }`}
+                >
+                  函数图像
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
               <label className="text-xs font-semibold text-[var(--color-text-secondary)]">标题 *</label>
               <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例如：两个重要极限" />
             </div>
@@ -532,6 +568,51 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
                 placeholder="公式的简要说明..."
               />
             </div>
+
+            {cardType === "function_graph" && (
+              <div className="space-y-3 rounded-lg border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-3">
+                <label className="text-xs font-semibold text-[var(--color-text-secondary)]">函数图像配置</label>
+                {functionProperties ? (
+                  <div className="space-y-2 text-xs text-[var(--color-text-secondary)]">
+                    {!!functionProperties.function_expression && (
+                      <p><span className="font-semibold">表达式：</span>{String(functionProperties.function_expression)}</p>
+                    )}
+                    {!!functionProperties.graph_template_type && (
+                      <p><span className="font-semibold">模板类型：</span>{String(functionProperties.graph_template_type)}</p>
+                    )}
+                    {!!functionProperties.graph_render_mode && (
+                      <p><span className="font-semibold">渲染模式：</span>{String(functionProperties.graph_render_mode)}</p>
+                    )}
+                    {!!functionProperties.domain && (
+                      <p><span className="font-semibold">定义域：</span>{JSON.stringify(functionProperties.domain)}</p>
+                    )}
+                    {!!functionProperties.range && (
+                      <p><span className="font-semibold">值域：</span>{JSON.stringify(functionProperties.range)}</p>
+                    )}
+                    {!!functionProperties.parity && (
+                      <p><span className="font-semibold">奇偶性：</span>{String(functionProperties.parity)}</p>
+                    )}
+                    {!!functionProperties.period && (
+                      <p><span className="font-semibold">周期：</span>{String(functionProperties.period)}</p>
+                    )}
+                    {!!functionProperties.derivative_summary && (
+                      <p><span className="font-semibold">导数：</span>{String(functionProperties.derivative_summary)}</p>
+                    )}
+                    {!!functionProperties.one_line_feature && (
+                      <p><span className="font-semibold">特征：</span>{String(functionProperties.one_line_feature)}</p>
+                    )}
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-[11px] text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]">原始配置 JSON</summary>
+                      <pre className="mt-1 max-h-40 overflow-auto rounded bg-white/80 p-2 font-mono text-[10px]">
+                        {JSON.stringify(functionProperties, null, 2)}
+                      </pre>
+                    </details>
+                  </div>
+                ) : (
+                  <p className="text-xs text-[var(--color-text-hint)]">尚未设置函数属性</p>
+                )}
+              </div>
+            )}
 
             {mode === "edit" && (
               <div className="space-y-1.5">

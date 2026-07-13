@@ -28,8 +28,51 @@ import { FormulaCategoryPicker } from "@/components/formulas/formula-category-pi
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest, toQuery } from "@/lib/api/client";
-import type { PaginatedResponse } from "@/lib/api/types";
+import type { PaginatedResponse, FormulaGraphAsset } from "@/lib/api/types";
 import Link from "next/link";
+
+/* ── Structured content renderers for JSON-encoded conditions/error_tips ── */
+
+function renderStructuredConditions(raw: string | null | undefined) {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return (
+        <ul className="list-none space-y-1.5">
+          {parsed.map((item, i) => {
+            const expr = typeof item === 'string' ? item : item?.expression ?? ''
+            const note = typeof item === 'object' && item ? (item as Record<string, string>).note ?? '' : ''
+            return (
+              <li key={i}>
+                <LatexRenderer latex={expr} displayMode={false} />
+                {note && <span className="text-[var(--color-text-secondary)] ml-2">— {note}</span>}
+              </li>
+            )
+          })}
+        </ul>
+      )
+    }
+  } catch { /* not JSON, fall through */ }
+  return <MixedLatexRenderer text={raw} />
+}
+
+function renderStructuredErrorTips(raw: string | null | undefined) {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return (
+        <ul className="list-disc pl-4 space-y-1">
+          {parsed.map((tip, i) => (
+            <li key={i}><MixedLatexRenderer text={typeof tip === 'string' ? tip : JSON.stringify(tip)} /></li>
+          ))}
+        </ul>
+      )
+    }
+  } catch { /* not JSON, fall through */ }
+  return <MixedLatexRenderer text={raw} />
+}
 
 /* ── Types ── */
 
@@ -57,6 +100,8 @@ type FormulaCard = {
   aliases: string[] | null;
   source_title: string | null;
   rejection_reason: string | null;
+  function_properties: Record<string, unknown> | null;
+  graph_asset: FormulaGraphAsset | null;
 };
 
 /* ── Status helpers ── */
@@ -277,6 +322,11 @@ export default function FormulasPage() {
                         <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${STATUS_BADGE[card.status] || "bg-gray-50"}`}>
                           {STATUS_LABEL[card.status] || card.status}
                         </span>
+                        {card.card_type === "function_graph" && (
+                          <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-primary-light)] bg-[var(--color-primary-light)]/50 px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-primary-dark)]">
+                            函数图像
+                          </span>
+                        )}
                         {tagCodes && (
                           <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-white/80 px-1.5 py-0.5 text-[11px] text-[var(--color-text-secondary)]">
                             <Tag className="h-3 w-3" />
@@ -305,6 +355,15 @@ export default function FormulasPage() {
                     </button>
 
                     <div className="flex shrink-0 flex-col gap-2">
+                      {card.card_type === "function_graph" && card.graph_asset?.thumbnail_url && (
+                        <div className="flex items-center justify-center">
+                          <img
+                            src={card.graph_asset.thumbnail_url}
+                            alt=""
+                            className="h-12 w-20 rounded border object-cover"
+                          />
+                        </div>
+                      )}
                       <Button
                         variant="secondary"
                         size="sm"
@@ -439,12 +498,66 @@ export default function FormulasPage() {
                   </div>
                 </section>
 
+                {/* Function graph asset preview */}
+                {selectedCard.card_type === "function_graph" && selectedCard.graph_asset?.thumbnail_url && (
+                  <section className="rounded-[1.6rem] border border-[var(--color-border)] bg-white/80 overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
+                      <span className="text-sm font-semibold text-[var(--ink)]">函数图像</span>
+                      {selectedCard.graph_asset?.image_url && (
+                        <Button variant="ghost" size="sm" onClick={() => selectedCard.graph_asset?.image_url && window.open(selectedCard.graph_asset.image_url, "_blank")}>
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                    <div className="p-4">
+                      <img
+                        src={selectedCard.graph_asset.thumbnail_url}
+                        alt="函数图像"
+                        className="w-full h-auto max-h-60 object-contain rounded-lg border bg-white"
+                      />
+                    </div>
+                  </section>
+                )}
+
+                {/* Function properties */}
+                {selectedCard.card_type === "function_graph" && selectedCard.function_properties && (
+                  <section className="rounded-[1.6rem] border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-4">
+                    <p className="font-semibold text-[var(--ink)]">函数属性</p>
+                    <div className="mt-2 space-y-1 text-sm text-[var(--color-text-secondary)]">
+                      {!!selectedCard.function_properties.function_expression && (
+                        <p><span className="font-semibold">表达式：</span>{String(selectedCard.function_properties.function_expression)}</p>
+                      )}
+                      {!!selectedCard.function_properties.graph_template_type && (
+                        <p><span className="font-semibold">模板类型：</span>{String(selectedCard.function_properties.graph_template_type)}</p>
+                      )}
+                      {!!selectedCard.function_properties.domain && (
+                        <p><span className="font-semibold">定义域：</span>{JSON.stringify(selectedCard.function_properties.domain)}</p>
+                      )}
+                      {!!selectedCard.function_properties.range && (
+                        <p><span className="font-semibold">值域：</span>{JSON.stringify(selectedCard.function_properties.range)}</p>
+                      )}
+                      {!!selectedCard.function_properties.parity && (
+                        <p><span className="font-semibold">奇偶性：</span>{String(selectedCard.function_properties.parity)}</p>
+                      )}
+                      {!!selectedCard.function_properties.period && (
+                        <p><span className="font-semibold">周期：</span>{String(selectedCard.function_properties.period)}</p>
+                      )}
+                      {!!selectedCard.function_properties.derivative_summary && (
+                        <p><span className="font-semibold">导数：</span>{String(selectedCard.function_properties.derivative_summary)}</p>
+                      )}
+                      {!!selectedCard.function_properties.one_line_feature && (
+                        <p><span className="font-semibold">特征：</span>{String(selectedCard.function_properties.one_line_feature)}</p>
+                      )}
+                    </div>
+                  </section>
+                )}
+
                 {/* Conditions & Error Tips */}
                 {selectedCard.conditions && (
                   <section className="rounded-[1.6rem] border border-amber-200 bg-amber-50/60 p-4">
                     <p className="font-semibold text-amber-800">适用条件</p>
                     <div className="mt-2 text-sm text-amber-900 whitespace-pre-wrap break-words max-w-full overflow-x-auto">
-                      <MixedLatexRenderer text={selectedCard.conditions} />
+                      {renderStructuredConditions(selectedCard.conditions)}
                     </div>
                   </section>
                 )}
@@ -452,7 +565,7 @@ export default function FormulasPage() {
                   <section className="rounded-[1.6rem] border border-red-200 bg-red-50/60 p-4">
                     <p className="font-semibold text-red-700">易错提醒</p>
                     <div className="mt-2 text-sm leading-6 text-red-800 whitespace-pre-wrap break-words max-w-full overflow-x-auto">
-                      <MixedLatexRenderer text={selectedCard.error_tips} />
+                      {renderStructuredErrorTips(selectedCard.error_tips)}
                     </div>
                   </section>
                 )}
