@@ -137,6 +137,10 @@ function parseRichNodes(html) {
 function prepareFormulaBlocks(card) {
   return formulaContent.prepareFormulaBlocks(card).map(function (block) {
     return Object.assign({}, block, {
+      // The text in the formula block's upper-left corner is block.label, not
+      // card.title. Render it through the same mixed prose/LaTeX pipeline used
+      // by conditions and error tips so values such as "e^x展开" become KaTeX.
+      labelNodes: parseRichNodes(formulaContent.normalizeMixedContent(block.label)),
       mathNodes: renderFormulaNodes(block.latex),
       formulaItems: (block.formulaParts || []).map(function (item) {
         return Object.assign({}, item, { mathNodes: renderFormulaNodes(item.latex) })
@@ -148,6 +152,7 @@ function prepareFormulaBlocks(card) {
 function prepareContent(card) {
   var html = formulaContent.prepareContentHtml(card)
   return {
+    titleNodes: parseRichNodes(formulaContent.normalizeMixedContent(card && card.title)),
     summaryNodes: parseRichNodes(html.summaryHtml),
     conditionsNodes: parseRichNodes(html.conditionsHtml),
     symbolNotesNodes: parseRichNodes(html.symbolNotesHtml),
@@ -198,6 +203,7 @@ Component({
     cardRenderKey: '',
     formulaBlocks: [],
     content: {
+      titleNodes: [],
       summaryNodes: [],
       conditionsNodes: [],
       symbolNotesNodes: [],
