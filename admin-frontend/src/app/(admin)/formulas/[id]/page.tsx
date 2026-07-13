@@ -10,10 +10,55 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LatexRenderer } from "@/components/ui/latex-renderer";
 import { MixedLatexRenderer } from "@/components/ui/mixed-latex-renderer";
 import { FormulaEditorForm } from "@/components/formulas/formula-editor-form";
+import { FormulaGraphAssetPanel } from "@/components/formulas/formula-graph-asset-panel";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest } from "@/lib/api/client";
+import type { FormulaGraphAsset } from "@/lib/api/types";
 import Link from "next/link";
+
+/* ── Structured content renderers for JSON-encoded conditions/error_tips ── */
+
+function renderStructuredConditions(raw: string | null | undefined) {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return (
+        <ul className="list-none space-y-1.5">
+          {parsed.map((item, i) => {
+            const expr = typeof item === 'string' ? item : item?.expression ?? ''
+            const note = typeof item === 'object' && item ? (item as Record<string, string>).note ?? '' : ''
+            return (
+              <li key={i}>
+                <LatexRenderer latex={expr} displayMode={false} />
+                {note && <span className="text-[var(--color-text-secondary)] ml-2">— {note}</span>}
+              </li>
+            )
+          })}
+        </ul>
+      )
+    }
+  } catch { /* not JSON, fall through */ }
+  return <MixedLatexRenderer text={raw} />
+}
+
+function renderStructuredErrorTips(raw: string | null | undefined) {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return (
+        <ul className="list-disc pl-4 space-y-1">
+          {parsed.map((tip, i) => (
+            <li key={i}><MixedLatexRenderer text={typeof tip === 'string' ? tip : JSON.stringify(tip)} /></li>
+          ))}
+        </ul>
+      )
+    }
+  } catch { /* not JSON, fall through */ }
+  return <MixedLatexRenderer text={raw} />
+}
 
 type FormulaCard = {
   id: number; title: string; category_id: number; summary: string | null;
@@ -25,6 +70,9 @@ type FormulaCard = {
   version: number; published_at: string | null;
   rejection_reason: string | null; aliases: string[] | null;
   sort_order: number;
+  card_type: string;
+  function_properties: Record<string, unknown> | null;
+  graph_asset: FormulaGraphAsset | null;
 };
 
 const STATUS_BADGE: Record<string, string> = {
@@ -118,6 +166,8 @@ export default function EditFormulaPage() {
           blocks: card.formula_blocks?.length ? card.formula_blocks : [{ latex: "" }],
           examples: card.examples || [],
           sortOrder: card.sort_order || 0,
+          cardType: card.card_type || "pure_formula",
+          functionProperties: card.function_properties ?? null,
         }}
         onSaveSuccess={() => {
           setIsEditing(false);
@@ -209,9 +259,56 @@ export default function EditFormulaPage() {
               <section className="rounded-[1.6rem] border border-amber-200 bg-amber-50/60 p-4">
                 <p className="font-semibold text-amber-800">适用条件</p>
                 <div className="mt-2 text-sm text-amber-900 whitespace-pre-wrap break-words max-w-full overflow-x-auto">
-                  <MixedLatexRenderer text={card.conditions} />
+                  {renderStructuredConditions(card.conditions)}
                 </div>
               </section>
+            )}
+
+            {card.secondary_conclusions && (
+              <section className="rounded-[1.6rem] border bg-white/80 p-4">
+                <p className="font-semibold text-[var(--ink)]">二级结论</p>
+                <div className="mt-2 text-sm text-[var(--color-text-secondary)] whitespace-pre-wrap break-words max-w-full overflow-x-auto">
+                  <MixedLatexRenderer text={card.secondary_conclusions} />
+                </div>
+              </section>
+            )}
+
+            {/* Function graph asset & properties */}
+            {card.card_type === "function_graph" && (
+              <>
+                <FormulaGraphAssetPanel cardId={card.id} canUpdate={canUpdate} />
+                {card.function_properties && (
+                  <section className="rounded-[1.6rem] border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-4">
+                    <p className="font-semibold text-[var(--ink)]">函数属性</p>
+                    <div className="mt-2 space-y-1 text-sm text-[var(--color-text-secondary)]">
+                      {!!card.function_properties.function_expression && (
+                        <p><span className="font-semibold">表达式：</span>{String(card.function_properties.function_expression)}</p>
+                      )}
+                      {!!card.function_properties.graph_template_type && (
+                        <p><span className="font-semibold">模板类型：</span>{String(card.function_properties.graph_template_type)}</p>
+                      )}
+                      {!!card.function_properties.domain && (
+                        <p><span className="font-semibold">定义域：</span>{JSON.stringify(card.function_properties.domain)}</p>
+                      )}
+                      {!!card.function_properties.range && (
+                        <p><span className="font-semibold">值域：</span>{JSON.stringify(card.function_properties.range)}</p>
+                      )}
+                      {!!card.function_properties.parity && (
+                        <p><span className="font-semibold">奇偶性：</span>{String(card.function_properties.parity)}</p>
+                      )}
+                      {!!card.function_properties.period && (
+                        <p><span className="font-semibold">周期：</span>{String(card.function_properties.period)}</p>
+                      )}
+                      {!!card.function_properties.derivative_summary && (
+                        <p><span className="font-semibold">导数：</span>{String(card.function_properties.derivative_summary)}</p>
+                      )}
+                      {!!card.function_properties.one_line_feature && (
+                        <p><span className="font-semibold">特征：</span>{String(card.function_properties.one_line_feature)}</p>
+                      )}
+                    </div>
+                  </section>
+                )}
+              </>
             )}
 
             {card.symbol_notes && (
@@ -225,7 +322,7 @@ export default function EditFormulaPage() {
               <section className="rounded-[1.6rem] border border-red-200 bg-red-50/60 p-4">
                 <p className="font-semibold text-red-700">易错提醒</p>
                 <div className="mt-2 text-sm leading-6 text-red-800 whitespace-pre-wrap break-words max-w-full overflow-x-auto">
-                  <MixedLatexRenderer text={card.error_tips} />
+                  {renderStructuredErrorTips(card.error_tips)}
                 </div>
               </section>
             )}
