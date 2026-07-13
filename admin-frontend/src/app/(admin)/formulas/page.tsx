@@ -16,6 +16,7 @@ import {
   Send,
   XCircle,
   CheckCircle,
+  ImageIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -25,10 +26,12 @@ import { CustomSelect } from "@/components/ui/custom-select";
 import { LatexRenderer } from "@/components/ui/latex-renderer";
 import { MixedLatexRenderer } from "@/components/ui/mixed-latex-renderer";
 import { FormulaCategoryPicker } from "@/components/formulas/formula-category-picker";
+import { FunctionPropertiesPanel } from "@/components/formulas/function-properties-panel";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import type { PaginatedResponse, FormulaGraphAsset } from "@/lib/api/types";
+import { normalizeLatexExpression } from "@/lib/math-text";
 import Link from "next/link";
 
 /* ── Structured content renderers for JSON-encoded conditions/error_tips ── */
@@ -45,7 +48,7 @@ function renderStructuredConditions(raw: string | null | undefined) {
             const note = typeof item === 'object' && item ? (item as Record<string, string>).note ?? '' : ''
             return (
               <li key={i}>
-                <LatexRenderer latex={expr} displayMode={false} />
+                <LatexRenderer latex={normalizeLatexExpression(expr)} displayMode={false} />
                 {note && <span className="text-[var(--color-text-secondary)] ml-2">— {note}</span>}
               </li>
             )
@@ -334,10 +337,10 @@ export default function FormulasPage() {
                           </span>
                         )}
                       </div>
-                      <h4 className="mt-2 font-semibold text-[var(--ink)]">{card.title}</h4>
+                      <h4 className="mt-2 font-semibold text-[var(--ink)]"><MixedLatexRenderer text={card.title} /></h4>
                       {card.summary && (
                         <p className="mt-1 line-clamp-2 text-sm text-[var(--color-text-secondary)]">
-                          {card.summary}
+                          <MixedLatexRenderer text={card.summary} />
                         </p>
                       )}
                       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--color-text-hint)]">
@@ -372,6 +375,14 @@ export default function FormulasPage() {
                         <Eye className="h-3.5 w-3.5" />
                         详情
                       </Button>
+                      {card.card_type === "function_graph" && (
+                        <Link href={`/formulas/${card.id}#graph-assets`}>
+                          <Button variant="secondary" size="sm" className="w-full">
+                            <ImageIcon className="h-3.5 w-3.5" />
+                            图像管理
+                          </Button>
+                        </Link>
+                      )}
                     </div>
                   </div>
                 </article>
@@ -478,9 +489,9 @@ export default function FormulasPage() {
 
                 {/* Title */}
                 <section className="rounded-[1.6rem] border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-5">
-                  <h4 className="font-display text-xl font-bold text-[var(--ink)]">{selectedCard.title}</h4>
+                  <h4 className="font-display text-xl font-bold text-[var(--ink)]"><MixedLatexRenderer text={selectedCard.title} /></h4>
                   {selectedCard.summary && (
-                    <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">{selectedCard.summary}</p>
+                    <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]"><MixedLatexRenderer text={selectedCard.summary} /></p>
                   )}
                 </section>
 
@@ -491,8 +502,8 @@ export default function FormulasPage() {
                     {selectedCard.formula_blocks?.map((block, i) => (
                       <div key={i} className="rounded-xl border border-[var(--color-border)] bg-white p-4">
                         {block.label && <p className="mb-1 text-xs font-semibold text-[var(--color-text-hint)]">{block.label}</p>}
-                        <LatexRenderer latex={block.latex} displayMode={true} />
-                        {block.note && <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{block.note}</p>}
+                        <LatexRenderer latex={normalizeLatexExpression(block.latex)} displayMode={true} />
+                        {block.note && <p className="mt-1 text-xs leading-6 text-[var(--color-text-secondary)]"><MixedLatexRenderer text={block.note} /></p>}
                       </div>
                     ))}
                   </div>
@@ -521,35 +532,7 @@ export default function FormulasPage() {
 
                 {/* Function properties */}
                 {selectedCard.card_type === "function_graph" && selectedCard.function_properties && (
-                  <section className="rounded-[1.6rem] border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-4">
-                    <p className="font-semibold text-[var(--ink)]">函数属性</p>
-                    <div className="mt-2 space-y-1 text-sm text-[var(--color-text-secondary)]">
-                      {!!selectedCard.function_properties.function_expression && (
-                        <p><span className="font-semibold">表达式：</span>{String(selectedCard.function_properties.function_expression)}</p>
-                      )}
-                      {!!selectedCard.function_properties.graph_template_type && (
-                        <p><span className="font-semibold">模板类型：</span>{String(selectedCard.function_properties.graph_template_type)}</p>
-                      )}
-                      {!!selectedCard.function_properties.domain && (
-                        <p><span className="font-semibold">定义域：</span>{JSON.stringify(selectedCard.function_properties.domain)}</p>
-                      )}
-                      {!!selectedCard.function_properties.range && (
-                        <p><span className="font-semibold">值域：</span>{JSON.stringify(selectedCard.function_properties.range)}</p>
-                      )}
-                      {!!selectedCard.function_properties.parity && (
-                        <p><span className="font-semibold">奇偶性：</span>{String(selectedCard.function_properties.parity)}</p>
-                      )}
-                      {!!selectedCard.function_properties.period && (
-                        <p><span className="font-semibold">周期：</span>{String(selectedCard.function_properties.period)}</p>
-                      )}
-                      {!!selectedCard.function_properties.derivative_summary && (
-                        <p><span className="font-semibold">导数：</span>{String(selectedCard.function_properties.derivative_summary)}</p>
-                      )}
-                      {!!selectedCard.function_properties.one_line_feature && (
-                        <p><span className="font-semibold">特征：</span>{String(selectedCard.function_properties.one_line_feature)}</p>
-                      )}
-                    </div>
-                  </section>
+                  <FunctionPropertiesPanel properties={selectedCard.function_properties} />
                 )}
 
                 {/* Conditions & Error Tips */}
