@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 class BatchAction(str, Enum):
     ADD_TO_REVIEW = "add_to_review"
     MARK_MASTERED = "mark_mastered"
+    UNMARK_MASTERED = "unmark_mastered"
     REMOVE_FROM_BOOK = "remove_from_book"
     DELETE = "delete"
 

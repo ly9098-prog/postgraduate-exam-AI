@@ -368,7 +368,7 @@ async def list_wrong_enriched(
 # ── Batch operations ──
 
 
-BATCH_ACTIONS = frozenset({"add_to_review", "mark_mastered", "remove_from_book", "delete"})
+BATCH_ACTIONS = frozenset({"add_to_review", "mark_mastered", "unmark_mastered", "remove_from_book", "delete"})
 
 
 async def batch_operate(
@@ -439,24 +439,17 @@ async def batch_operate(
             except Exception:
                 skipped_ids.append(wq_id)
 
-    elif action == "mark_mastered":
-        now = utcnow()
+    elif action in ("mark_mastered", "unmark_mastered"):
+        from app.services import review_scheduler
+        mastered = (action == "mark_mastered")
         for wq_id, wq in wqs.items():
-            if wq.mastered:
-                skipped_ids.append(wq_id)
-                continue
-            wq.mastered = True
-            wq.mastered_at = now
-            sch_result = await db.execute(
-                select(ReviewSchedule).where(
-                    ReviewSchedule.user_id == user_id,
-                    ReviewSchedule.question_id == wq.question_id,
-                )
+            changed = await review_scheduler.set_mastered_state(
+                db, user_id=user_id, question_id=wq.question_id, mastered=mastered,
             )
-            schedule = sch_result.scalar_one_or_none()
-            if schedule:
-                schedule.mastered = True
-            updated_count += 1
+            if changed:
+                updated_count += 1
+            else:
+                skipped_ids.append(wq_id)
 
     elif action == "remove_from_book":
         now = utcnow()

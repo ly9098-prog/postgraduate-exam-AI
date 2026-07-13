@@ -30,6 +30,87 @@ async def _sync_schedule_to_wq(db: AsyncSession, schedule: ReviewSchedule) -> No
         wq.mastered = schedule.mastered
 
 
+async def set_mastered_state(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    question_id: int,
+    mastered: bool,
+) -> bool:
+    """统一设置题目掌握状态，同时收敛 WrongQuestion 和 ReviewSchedule。
+
+    这是 route 层和 batch 操作的唯一内部入口，调用方负责事务（commit）。
+    返回是否实际发生了变更（用于 batch 区分 updated / skipped）。
+    """
+    now = utcnow()
+    changed = False
+
+    # 加载 WrongQuestion（可能不存在）
+    wq_result = await db.execute(
+        select(WrongQuestion).where(
+            WrongQuestion.user_id == user_id,
+            WrongQuestion.question_id == question_id,
+        )
+    )
+    wq = wq_result.scalar_one_or_none()
+
+    # 加载所有关联的 ReviewSchedule（不存在 UNIQUE 约束，全量更新）
+    sch_result = await db.execute(
+        select(ReviewSchedule).where(
+            ReviewSchedule.user_id == user_id,
+            ReviewSchedule.question_id == question_id,
+        )
+    )
+    schedules = list(sch_result.scalars().all())
+
+    if mastered:
+        # ── 收敛到已掌握 ──
+        if wq:
+            if not wq.mastered or wq.mastered_at is None:
+                wq.mastered = True
+                wq.mastered_at = now
+                changed = True
+        for s in schedules:
+            if not s.mastered:
+                s.mastered = True
+                changed = True
+    else:
+        # ── 收敛到未掌握 ──
+        if wq:
+            if wq.mastered or wq.mastered_at is not None:
+                wq.mastered = False
+                wq.mastered_at = None
+                changed = True
+        for s in schedules:
+            if s.mastered:
+                s.mastered = False
+                changed = True
+
+        # 有 WQ（且 active）但无 schedule → 创建 schedule 恢复调度资格
+        if not schedules and wq and wq.is_active:
+            q_result = await db.execute(
+                select(Question)
+                .options(selectinload(Question.subject_ref))
+                .where(Question.id == question_id)
+            )
+            question = q_result.scalar_one_or_none()
+            subject = question.subject_ref.code if question and question.subject_ref else None
+            schedule = ReviewSchedule(
+                user_id=user_id,
+                question_id=question_id,
+                subject=subject,
+                interval=1,
+                ease_factor=2.5,
+                repetitions=0,
+                next_review_at=now,
+            )
+            db.add(schedule)
+            changed = True
+
+    await db.flush()
+    return changed
+
+
 async def get_today_review(
     db: AsyncSession,
     user_id: int,
@@ -413,8 +494,9 @@ async def mark_mastered(
     schedule = result.scalar_one_or_none()
     if not schedule:
         return None
-    schedule.mastered = True
-    await _sync_schedule_to_wq(db, schedule)
+    await set_mastered_state(
+        db, user_id=user_id, question_id=schedule.question_id, mastered=True,
+    )
     await db.commit()
     await db.refresh(schedule)
     return schedule
@@ -433,8 +515,9 @@ async def unmark_mastered(
     schedule = result.scalar_one_or_none()
     if not schedule:
         return None
-    schedule.mastered = False
-    await _sync_schedule_to_wq(db, schedule)
+    await set_mastered_state(
+        db, user_id=user_id, question_id=schedule.question_id, mastered=False,
+    )
     await db.commit()
     await db.refresh(schedule)
     return schedule
