@@ -1,41 +1,109 @@
 <view class="fr-page">
-  <!-- Swiper -->
-  <swiper class="fr-swiper" circular="false"
-    current="{{currentIndex}}"
-    bindchange="onSwiperChange"
-    duration="300">
+  <premium-nav title="公式详情" variant="light" bind:back="goBack" />
 
-    <swiper-item wx:for="{{displayCards}}" wx:key="id" wx:for-index="idx">
-      <scroll-view class="fr-card-scroll" scroll-y>
-        <view class="fr-card-wrap">
-          <!-- Favorite button -->
-          <view class="fr-fav-btn {{item.isFavorited ? 'favorited' : ''}}"
-            bindtap="toggleFavorite" data-id="{{item.id}}">
-            <text>{{item.isFavorited ? '★' : '☆'}}</text>
+  <view class="fr-loading" wx:if="{{loading}}">
+    <view class="fr-loading-mark">
+      <view class="fr-loading-line line-one"></view>
+      <view class="fr-loading-line line-two"></view>
+      <view class="fr-loading-line line-three"></view>
+    </view>
+    <text class="fr-state-title">正在整理公式内容</text>
+    <text class="fr-state-desc">公式、条件与易错点正在加载</text>
+    <view class="fr-skeleton-card">
+      <view class="fr-skeleton-title"></view>
+      <view class="fr-skeleton-formula"></view>
+      <view class="fr-skeleton-line long"></view>
+      <view class="fr-skeleton-line medium"></view>
+    </view>
+  </view>
+
+  <view class="fr-error" wx:elif="{{loadError}}">
+    <view class="fr-error-mark">!</view>
+    <text class="fr-state-title">暂时无法打开这条公式</text>
+    <text class="fr-state-desc">{{errorText || '请检查网络后重新加载'}}</text>
+    <button class="fr-retry" hover-class="fr-control-pressed" bindtap="retryLoad">重新加载</button>
+    <button class="fr-back-link" hover-class="fr-control-pressed" bindtap="goBack">返回公式库</button>
+  </view>
+
+  <scroll-view
+    wx:else
+    class="fr-card-scroll"
+    scroll-y
+    enhanced
+    show-scrollbar="{{false}}"
+    scroll-top="{{readerScrollTop}}"
+    bindtouchstart="onReaderTouchStart"
+    bindtouchmove="onReaderTouchMove"
+    bindtouchend="onReaderTouchEnd"
+    bindtouchcancel="onReaderTouchCancel"
+  >
+    <view class="fr-card-wrap">
+      <view class="fr-transition-stage {{transitionClass}}">
+        <view class="fr-reader-meta">
+          <view class="fr-reader-copy">
+            <text class="fr-kicker">{{isRandom ? 'RANDOM REVIEW' : 'FORMULA READING'}}</text>
+            <text class="fr-reader-mode">{{isRandom ? '随机背诵模式' : '公式阅读模式'}}</text>
           </view>
-
-          <!-- Formula Card -->
-          <formula-card card="{{item}}" graphImageUrl="{{item.graphImageUrl}}" />
-
-          <!-- Navigation -->
-          <view class="fr-nav-row">
-            <view class="fr-nav-btn" wx:if="{{currentIndex > 0}}"
-              bindtap="goPrev">
-              <text>← 上一条</text>
-            </view>
-            <view class="fr-nav-spacer"></view>
-            <view class="fr-nav-btn" wx:if="{{currentIndex < displayCards.length - 1}}"
-              bindtap="goNext">
-              <text>下一条 →</text>
-            </view>
+          <view class="fr-index-pill" wx:if="{{isRandom || sequenceIds.length > 1}}">
+            <text>{{isRandom ? currentIndex + 1 : sequenceIndex + 1}}</text>
+            <text class="fr-index-unit">{{isRandom ? '/ ' + displayCards.length : '/ ' + sequenceIds.length}}</text>
           </view>
         </view>
-      </scroll-view>
-    </swiper-item>
-  </swiper>
 
-  <!-- Loading state -->
-  <view class="fr-loading" wx:if="{{loading}}">
-    <text>加载中...</text>
+        <view class="fr-card-surface">
+          <view
+            class="fr-card-favorite {{currentCard.isFavorited ? 'active' : ''}} {{favoriteBusy ? 'disabled' : ''}}"
+            data-id="{{currentCard.id}}"
+            hover-class="fr-control-pressed"
+            bindtap="toggleFavorite"
+            role="button"
+            aria-label="{{currentCard.isFavorited ? '取消收藏' : '收藏公式'}}"
+          >
+            <view class="fr-bookmark-icon"></view>
+          </view>
+          <formula-card
+            card="{{currentCard}}"
+            graphImageUrl="{{currentCard.graphImageUrl}}"
+            bind:formulastart="onFormulaGestureStart"
+            bind:formulaend="onFormulaGestureEnd"
+          />
+        </view>
+
+        <view class="fr-swipe-note" wx:if="{{isRandom || sequenceIds.length > 1}}">
+          <view class="fr-swipe-line"></view>
+          <view class="fr-swipe-copy">
+            <text>页面左右滑动切换公式</text>
+            <text class="fr-swipe-sub">长公式区域可独立横向滑动</text>
+          </view>
+          <view class="fr-swipe-line"></view>
+        </view>
+      </view>
+      <view class="fr-bottom-space"></view>
+    </view>
+  </scroll-view>
+
+  <view class="fr-nav-capsule" wx:if="{{!loading && !loadError && currentCard}}">
+    <view
+      class="fr-nav-hit {{!canGoPrev || loadingNext ? 'disabled' : ''}}"
+      hover-class="fr-nav-pressed"
+      bindtap="goPrev"
+      role="button"
+      aria-label="上一条公式"
+    >
+      <text class="fr-arrow fr-arrow-left"></text>
+    </view>
+    <view class="fr-nav-status">
+      <view class="fr-nav-loader" wx:if="{{loadingNext}}"></view>
+      <text wx:else>{{isRandom ? currentIndex + 1 : sequenceIndex + 1}} / {{isRandom ? displayCards.length : sequenceIds.length || 1}}</text>
+    </view>
+    <view
+      class="fr-nav-hit next {{!canGoNext || loadingNext ? 'disabled' : ''}}"
+      hover-class="fr-nav-pressed"
+      bindtap="goNext"
+      role="button"
+      aria-label="下一条公式"
+    >
+      <text class="fr-arrow fr-arrow-right"></text>
+    </view>
   </view>
 </view>

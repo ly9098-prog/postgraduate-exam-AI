@@ -1,7 +1,12 @@
 {
-  "navigationBarTitleText": "公式背诵",
+  "navigationBarTitleText": "公式库",
   "usingComponents": {
-    "formula-card": "/components/formula-card/index"
+    "formula-card": "/components/formula-card/index",
+    "premium-nav": "/components/premium-nav/premium-nav"
   },
-  "enablePullDownRefresh": true
+  "enablePullDownRefresh": true,
+  "navigationStyle": "custom",
+  "backgroundColor": "#F4F4EE",
+  "backgroundColorTop": "#F4F4EE",
+  "backgroundColorBottom": "#F4F4EE"
 }

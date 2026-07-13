@@ -377,6 +377,8 @@ Page({
     const accuracyPct = Math.round(accuracy * 100)
     const completionRate = result.completion_rate || 0
     const completionPct = Math.round(completionRate * 100)
+    const completionCapped = Math.max(0, Math.min(100, completionPct))
+    const completionOver = Math.max(0, completionPct - 100)
     const remainingCount = Math.max(0, dueCount - completedCount)
     const completionHint = remainingCount > 0 ? `还剩 ${remainingCount} 道` : '今日任务已清零'
     const hasWrong = wrong > 0
@@ -458,6 +460,8 @@ Page({
       answered: completedCount,
       accuracy: accuracyPct,
       completionRate: completionPct,
+      completionCapped: completionCapped,
+      completionOver: completionOver,
       wrongRate: completedCount > 0 ? Math.round(wrong / completedCount * 100) : 0,
       groupCount: this.data.totalBatchCount || 1,
       completedGroupCount: this.data.currentBatchNo || 0,
@@ -1128,10 +1132,12 @@ Page({
     var wrong = allResults.filter(function(r) { return r.wasSubmitted && !r.isCorrect }).length
     var skipped = Math.max(0, sessionTotal - submittedTotal)
     var accuracy = submittedTotal > 0 ? Math.round(correct / submittedTotal * 100) : 0
-    var completionRate = sessionTotal > 0 ? Math.round(submittedTotal / sessionTotal * 100) : 0
     var wrongRate = submittedTotal > 0 ? Math.round(wrong / submittedTotal * 100) : 0
     var dueCount = this.data.todayDueCount || sessionTotal
     var completedCount = this.data.todayCompletedCount || submittedTotal
+    var completionRate = dueCount > 0 ? Math.round(completedCount / dueCount * 100) : (completedCount > 0 ? 100 : 0)
+    var completionCapped = Math.max(0, Math.min(100, completionRate))
+    var completionOver = Math.max(0, completionRate - 100)
     var remainingCount = Math.max(0, dueCount - completedCount)
     var completionHint = remainingCount > 0 ? `还剩 ${remainingCount} 道` : '今日任务已清零'
 
@@ -1218,7 +1224,7 @@ Page({
       dueCount, completedCount, remainingCount, completionHint,
       sessionTotal, submittedTotal, total: sessionTotal,
       correct, wrong, skipped, answered: submittedTotal,
-      accuracy, completionRate, wrongRate,
+      accuracy, completionRate, completionCapped, completionOver, wrongRate,
       groupCount, completedGroupCount, masteredCount,
       subjectStats: subjectStatsArr,
       resultLevelClass, resultTitle, resultDesc,

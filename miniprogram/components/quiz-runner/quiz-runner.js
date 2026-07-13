@@ -231,9 +231,9 @@ Component({
       var absDx = Math.abs(dx)
       var absDy = Math.abs(dy)
 
-      // 只有明确的横向手势才切题：横向至少 60px，且明显大于纵向位移。
-      // 轻点仍由选项 tap 处理；纵向或方向不明确时继续交给页面滚动。
-      if (absDx < 60 || absDx <= absDy * 1.25) {
+      // 只有明确的横向手势才切题：横向至少 44px，且大于纵向位移。
+      // 阈值适当降低，保证在选项卡片区域也能自然触发；轻点仍交给选项 tap。
+      if (absDx < 44 || absDx <= absDy * 1.10) {
         this.data._touchX = undefined
         this.data._touchY = undefined
         return

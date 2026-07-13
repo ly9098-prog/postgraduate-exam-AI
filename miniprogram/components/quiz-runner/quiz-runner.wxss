@@ -5,7 +5,8 @@
 .quiz-runner {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   background: #F4F5F2;
   color: #18231C;
@@ -1268,3 +1269,53 @@
 .runner-theme-premium-review .runner-bottom-inner > .runner-nav-btn { border-color:#DDE2DA; }
 .runner-theme-premium-review .runner-bottom-inner > .runner-next,
 .runner-theme-premium-review .runner-bottom-inner > .runner-final-submit { background:linear-gradient(100deg,#B7E82A 0%,#D1F55B 100%); border-color:#B7E82A; }
+
+
+/* ==================== Phase 1.1: safe-area + short-question refinements ==================== */
+/* Leave more breathing room below the status bar / notch without changing the system capsule area. */
+.runner-custom-navigation .runner-hero-nav {
+  padding-top: 12rpx;
+}
+
+.runner-hero.runner-hero-collapsed {
+  padding-top: 16rpx;
+}
+
+/*
+ * Short questions used to end in a floating card followed by a large grey void.
+ * Keep the two-button bar fixed, but extend the reading surface to the bar so the
+ * page feels continuous and the perceived gap is substantially reduced.
+ */
+.runner-question-area {
+  padding-bottom: 0;
+  background: #FFFFFF;
+}
+
+.runner-q-wrap {
+  min-height: 100%;
+  padding-bottom: 40rpx;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  box-shadow: none;
+}
+
+.runner-bottom-bar {
+  position: relative;
+  z-index: 8;
+  border-top-color: #DDE3DC;
+  box-shadow: 0 -8rpx 24rpx rgba(16,37,26,0.045);
+}
+
+/* Embedded review/detail modes keep their original natural cards. */
+.runner-flow .runner-question-area,
+.runner-compact .runner-question-area {
+  padding-bottom: 22rpx;
+  background: transparent;
+}
+
+.runner-flow .runner-q-wrap,
+.runner-compact .runner-q-wrap {
+  min-height: 0;
+  border-radius: 34rpx;
+  box-shadow: 0 10rpx 28rpx rgba(16,37,26,0.055);
+}

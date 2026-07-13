@@ -238,3 +238,30 @@ button::after { border: none; }
   .more-sheet { animation: none !important; }
   .undo-toast { transition: none !important; }
 }
+
+
+/* ==================== Phase 2 detail-page polish ==================== */
+.detail-intro {
+  padding: 20rpx 28rpx 6rpx;
+  align-items: center;
+}
+.detail-intro-title {
+  margin-top: 5rpx;
+  font-size: 31rpx;
+}
+.detail-intro-count {
+  padding: 10rpx 16rpx;
+  border-radius: 999rpx;
+}
+.loading-question-card,
+.loading-ai-card,
+.ai-card { border-radius: 32rpx; }
+.ai-section { border-radius: 26rpx; }
+.detail-bottom-actions {
+  border-radius: 30rpx 30rpx 0 0;
+  box-shadow: 0 -14rpx 36rpx rgba(16,37,26,.07);
+}
+.master-action,
+.more-action { border-radius: 25rpx; }
+.decision-sheet,
+.more-sheet { border-radius: 38rpx 38rpx 0 0; }

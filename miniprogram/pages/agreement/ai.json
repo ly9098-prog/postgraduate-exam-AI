@@ -1,5 +1,7 @@
 {
-  "navigationBarTitleText": "AI免责声明",
-  "backgroundColor": "#F5F3EE",
+  "navigationStyle": "custom",
+  "backgroundColor": "#F4F4EE",
+  "backgroundColorTop": "#F4F4EE",
+  "backgroundColorBottom": "#F4F4EE",
   "backgroundTextStyle": "dark"
 }

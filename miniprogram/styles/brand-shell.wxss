@@ -1,0 +1,142 @@
+/* MemoGrad editorial brand shell — shared by login and agreement pages */
+.memo-nav {
+  position: fixed;
+  z-index: 50;
+  left: 0;
+  right: 0;
+  top: 0;
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(246, 246, 240, .94);
+  border-bottom: 1rpx solid rgba(215, 221, 212, .72);
+  backdrop-filter: blur(18rpx);
+  -webkit-backdrop-filter: blur(18rpx);
+}
+
+.memo-nav-inner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding-left: 28rpx;
+}
+
+.memo-brand-lockup {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.memo-brand-mark {
+  position: relative;
+  width: 50rpx;
+  height: 50rpx;
+  flex-shrink: 0;
+  border-radius: 16rpx;
+  background: #153323;
+  box-shadow: 0 10rpx 24rpx rgba(21, 51, 35, .15);
+}
+
+.memo-brand-line {
+  position: absolute;
+  left: 11rpx;
+  height: 4rpx;
+  border-radius: 99rpx;
+  background: #FFFFFF;
+  transform-origin: left center;
+}
+
+.memo-brand-line.line-one {
+  width: 24rpx;
+  top: 30rpx;
+  transform: rotate(-29deg);
+}
+
+.memo-brand-line.line-two {
+  width: 18rpx;
+  left: 27rpx;
+  top: 17rpx;
+  transform: rotate(24deg);
+  background: #B7E82A;
+}
+
+.memo-brand-dot {
+  position: absolute;
+  width: 9rpx;
+  height: 9rpx;
+  right: 7rpx;
+  top: 9rpx;
+  border-radius: 50%;
+  background: #B7E82A;
+  box-shadow: 0 0 0 6rpx rgba(183, 232, 42, .12);
+}
+
+.memo-brand-copy {
+  min-width: 0;
+  margin-left: 14rpx;
+}
+
+.memo-brand-name,
+.memo-brand-caption {
+  display: block;
+  white-space: nowrap;
+}
+
+.memo-brand-name {
+  color: #142219;
+  font-size: 25rpx;
+  font-weight: 950;
+  line-height: 1.05;
+  letter-spacing: .6rpx;
+}
+
+.memo-brand-caption {
+  margin-top: 5rpx;
+  color: #849087;
+  font-size: 13rpx;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 2.8rpx;
+}
+
+.memo-back-button {
+  width: 52rpx;
+  height: 52rpx;
+  flex-shrink: 0;
+  border: 1rpx solid #D8DED5;
+  border-radius: 17rpx;
+  background: rgba(255, 255, 255, .72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform .16s ease, opacity .16s ease;
+}
+
+.memo-back-icon {
+  position: relative;
+  width: 18rpx;
+  height: 18rpx;
+  border-left: 4rpx solid #173426;
+  border-bottom: 4rpx solid #173426;
+  border-radius: 2rpx;
+  transform: rotate(45deg) translate(2rpx, -2rpx);
+}
+
+.memo-back-pressed {
+  transform: scale(.94);
+  opacity: .72;
+}
+
+.memo-nav-title {
+  position: absolute;
+  left: 50%;
+  max-width: 300rpx;
+  overflow: hidden;
+  color: #15231A;
+  font-size: 28rpx;
+  font-weight: 900;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}

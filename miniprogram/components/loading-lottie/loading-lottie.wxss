@@ -76,3 +76,21 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+
+/* Brand fallback used by the unified learning workflow. */
+.loading-lottie-brand { margin-top: 22rpx; margin-bottom: 4rpx; }
+.loading-lottie-brand .loading-lottie-fallback {
+  width: 76rpx;
+  height: 76rpx;
+  border-width: 7rpx;
+  border-color: rgba(23,52,38,.12);
+  border-top-color: #B7E82A;
+  border-right-color: #58D6C6;
+  background: rgba(255,255,255,.72);
+  box-shadow:
+    0 0 0 12rpx rgba(183,232,42,.08),
+    0 14rpx 30rpx rgba(16,37,26,.14);
+  animation-duration: .9s;
+}
+.loading-lottie-brand .loading-lottie-text { color:#526158; }
