@@ -7,10 +7,9 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
-import { apiRequest } from "@/lib/api/client";
+import { apiRequest, toQuery } from "@/lib/api/client";
 import type { ImportPipelineStatusResponse, ImportPipelineUploadResponse } from "@/lib/api/types";
-import { useImportConfig } from "../hooks/useImportConfig";
-import { OcrModeSelector } from "../components/ocr-mode-selector";
+import { parseProgressPercent, validatePageStart, validatePageEnd } from "@/lib/import-utils";
 
 function renderJson(value: unknown) {
   if (value === undefined || value === null || value === "") return "—";
@@ -163,7 +162,15 @@ export default function ImportTasksPage() {
   const [confidenceThreshold, setConfidenceThreshold] = useState("0.6");
   const [pageStart, setPageStart] = useState("");
   const [pageEnd, setPageEnd] = useState("");
-  const { ocrMode, setOcrMode } = useImportConfig();
+
+  const isPdfFile = file?.name.toLowerCase().endsWith(".pdf") ?? false;
+  const pageStartNum = pageStart ? Number(pageStart) : null;
+  const pageEndNum = pageEnd ? Number(pageEnd) : null;
+  const pageStartError = pageStartNum !== null && (!Number.isInteger(pageStartNum) || pageStartNum < 1) ? "起始页必须是 ≥ 1 的正整数" : null;
+  const pageEndError = pageEndNum !== null && (!Number.isInteger(pageEndNum) || pageEndNum < 1) ? "结束页必须是 ≥ 1 的正整数" : null;
+  const pageRangeError = pageStartNum !== null && pageEndNum !== null && pageStartNum > pageEndNum ? "起始页不能大于结束页" : null;
+  const confidenceNum = Number(confidenceThreshold);
+  const confidenceError = confidenceThreshold && (isNaN(confidenceNum) || confidenceNum < 0 || confidenceNum > 1) ? "阈值必须在 0-1 之间" : null;
   const [pipelineId, setPipelineId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const fileInputId = useId();
@@ -181,16 +188,17 @@ export default function ImportTasksPage() {
   const uploadMutation = useMutation({
     mutationFn: async () => {
       if (!file) throw new Error("请选择要导入的文件");
+      const query = toQuery({
+        subject_id: subjectId || undefined,
+        import_mode: importMode,
+        enable_ai_repair: enableAiRepair,
+        confidence_threshold: confidenceThreshold || undefined,
+        page_start: pageStart || undefined,
+        page_end: pageEnd || undefined,
+      });
       const formData = new FormData();
       formData.set("file", file);
-      if (subjectId) formData.set("subject_id", subjectId);
-      formData.set("import_mode", importMode);
-      formData.set("enable_ai_repair", String(enableAiRepair));
-      formData.set("confidence_threshold", confidenceThreshold || "0.6");
-      formData.set("ocr_mode", ocrMode);
-      if (pageStart) formData.set("page_start", pageStart);
-      if (pageEnd) formData.set("page_end", pageEnd);
-      return apiRequest<ImportPipelineUploadResponse>("/imports/upload", { method: "POST", body: formData });
+      return apiRequest<ImportPipelineUploadResponse>(`/imports/upload${query}`, { method: "POST", body: formData });
     },
     onSuccess: (result) => {
       setPipelineId(result.pipeline_id);
@@ -218,9 +226,11 @@ export default function ImportTasksPage() {
     if (status && wasNotTerminal.current && isTerminalStatus(status.status)) {
       wasNotTerminal.current = false;
       queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
-      if (status.quality_report) setActiveTab("quality");
+      if (status.quality_report) {
+        requestAnimationFrame(() => setActiveTab("quality"));
+      }
     }
-  }, [status, queryClient]);
+  }, [status, queryClient, setActiveTab]);
 
   const stages = getStageStatuses(status, isPipelineRunning);
 
@@ -345,19 +355,25 @@ export default function ImportTasksPage() {
                 </label>
                 <label className="space-y-1">
                   <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">置信度阈值</span>
-                  <Input type="number" step="0.1" min="0" max="1" value={confidenceThreshold} onChange={(event) => setConfidenceThreshold(event.target.value)} />
+                  <Input type="number" step="0.1" min="0" max="1" disabled={isPipelineRunning} value={confidenceThreshold} onChange={(event) => setConfidenceThreshold(event.target.value)} />
+                  {confidenceError ? <p className="mt-0.5 text-[10px] text-red-500">{confidenceError}</p> : null}
                 </label>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1">
-                  <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">起始页</span>
-                  <Input type="number" min="1" placeholder="留空从第1页" value={pageStart} onChange={(event) => setPageStart(event.target.value)} />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">结束页</span>
-                  <Input type="number" min="1" placeholder="留空到最后" value={pageEnd} onChange={(event) => setPageEnd(event.target.value)} />
-                </label>
-              </div>
+              {isPdfFile ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">起始页</span>
+                    <Input type="number" min="1" placeholder="留空从第1页" disabled={isPipelineRunning} value={pageStart} onChange={(event) => setPageStart(event.target.value)} />
+                    {pageStartError ? <p className="mt-0.5 text-[10px] text-red-500">{pageStartError}</p> : null}
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">结束页</span>
+                    <Input type="number" min="1" placeholder="留空到最后" disabled={isPipelineRunning} value={pageEnd} onChange={(event) => setPageEnd(event.target.value)} />
+                    {pageEndError ? <p className="mt-0.5 text-[10px] text-red-500">{pageEndError}</p> : null}
+                  </label>
+                  {pageRangeError ? <p className="col-span-2 -mt-2 text-[10px] text-red-500">{pageRangeError}</p> : null}
+                </div>
+              ) : null}
               <label className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] ${
                 enableAiRepair ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]" : "border-[var(--color-border)] bg-white/50"
               }`}>
@@ -368,7 +384,6 @@ export default function ImportTasksPage() {
                 </div>
               </label>
 
-              <OcrModeSelector value={ocrMode} onChange={setOcrMode} disabled={isPipelineRunning} />
 
               {/* Submit */}
               <div className="flex items-center justify-end gap-4 border-t border-[var(--color-border)] pt-4">
@@ -491,7 +506,7 @@ export default function ImportTasksPage() {
                       <span className="font-bold text-[var(--ink)]">{status.ocr_progress || "0%"}</span>
                     </div>
                     <div className="overflow-hidden rounded-full bg-[var(--color-bg-input)]">
-                      <div className="h-2.5 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[#7b9bbb] transition-all duration-1000 ease-out" style={{ width: status.ocr_progress || "0%" }} />
+                      <div className="h-2.5 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[#7b9bbb] transition-all duration-1000 ease-out" style={{ width: `${parseProgressPercent(status.ocr_progress)}%` }} />
                     </div>
                   </div>
                 ) : null}
@@ -507,6 +522,20 @@ export default function ImportTasksPage() {
                     </div>
                   ))}
                 </div>
+
+                {/* Page Range Info */}
+                {status.page_range ? (
+                  <div className="rounded-xl border border-[var(--color-border)] bg-white/70 p-4">
+                    <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-[var(--color-text-hint)]">页码范围</p>
+                    <div className="mt-2 flex flex-wrap gap-4 text-sm">
+                      <span>有效范围: <strong>{status.page_range.effective_start} - {status.page_range.effective_end}</strong></span>
+                      <span>总页数: <strong>{status.page_range.total_pages}</strong></span>
+                      <span>选中页数: <strong>{status.page_range.selected_page_count}</strong></span>
+                      {status.page_range.requested_start != null ? <span>请求起始: <strong>{status.page_range.requested_start}</strong></span> : null}
+                      {status.page_range.requested_end != null ? <span>请求结束: <strong>{status.page_range.requested_end}</strong></span> : null}
+                    </div>
+                  </div>
+                ) : null}
 
                 {/* Stats & Errors */}
                 <div className="grid gap-3 sm:grid-cols-2">

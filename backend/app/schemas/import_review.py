@@ -107,12 +107,24 @@ class FixQuestionResponse(BaseModel):
     updated_fields: list[str]
 
 
+class PdfPageRangeInfo(BaseModel):
+    """PDF 页码范围信息。"""
+
+    requested_start: int | None = None
+    requested_end: int | None = None
+    effective_start: int
+    effective_end: int
+    selected_page_count: int
+    total_pages: int
+
+
 # --- pipeline ---
 
 class PipelineUploadResponse(BaseModel):
     pipeline_id: str
     status: str
     source_type: str | None = None
+    page_range: PdfPageRangeInfo | None = None
 
 
 class PipelineStatusResponse(BaseModel):
@@ -139,6 +151,8 @@ class PipelineStatusResponse(BaseModel):
     artifacts: list[str] | None = None
     # P7-2: alert rules evaluation results
     alerts: list[dict] | None = None
+    # Page range info for PDF imports (optional, non-PDF returns None)
+    page_range: PdfPageRangeInfo | None = None
 
 
 class PipelineResumeResponse(BaseModel):

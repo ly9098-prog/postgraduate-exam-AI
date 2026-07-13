@@ -224,6 +224,7 @@ async def admin_resume_pipeline(
     source_file = ckpt.get("source_file") or file.filename or ""
 
     # 设置 pipeline store 为 processing
+    existing_store = _pipeline_store.get(pipeline_id, {})
     await _set_pipeline_store(pipeline_id, {
         "pipeline_id": pipeline_id,
         "status": "processing",
@@ -233,6 +234,7 @@ async def admin_resume_pipeline(
         "stats": {},
         "errors": [],
         "started_at": datetime.now().isoformat(),
+        "page_range": existing_store.get("page_range"),
     })
 
     # 后台任务
@@ -245,6 +247,7 @@ async def admin_resume_pipeline(
             )
 
             async def _progress(stages_dict, current_stage, errors):
+                existing_store = _ps.get(pipeline_id, {})
                 await _set_pipeline_store(pipeline_id, {
                     "pipeline_id": pipeline_id,
                     "status": "processing",
@@ -253,7 +256,8 @@ async def admin_resume_pipeline(
                     "stages": stages_dict,
                     "stats": {},
                     "errors": errors,
-                    "started_at": _ps.get(pipeline_id, {}).get("started_at", ""),
+                    "started_at": existing_store.get("started_at", ""),
+                    "page_range": existing_store.get("page_range"),
                 })
 
             async with async_session() as resume_db:
@@ -270,9 +274,15 @@ async def admin_resume_pipeline(
                     # P3-3: 传入 checkpoint 让 pipeline 跳过已完成 stage
                     resume_from_checkpoint=ckpt,
                 )
+                # Preserve page_range through resume (may have been set by
+                # the initial upload and stored in the existing store).
+                existing_page_range = _ps.get(pipeline_id, {}).get("page_range")
+                if existing_page_range and "page_range" not in result:
+                    result["page_range"] = existing_page_range
                 await _set_pipeline_store(pipeline_id, result)
         except Exception as exc:
             logger.exception("Admin resume pipeline %s failed", pipeline_id)
+            existing_page_range = _pipeline_store.get(pipeline_id, {}).get("page_range")
             await _set_pipeline_store(pipeline_id, {
                 "pipeline_id": pipeline_id,
                 "status": "failed",
@@ -280,6 +290,7 @@ async def admin_resume_pipeline(
                 "errors": [f"恢复导入失败: {exc}"],
                 "started_at": _pipeline_store.get(pipeline_id, {}).get("started_at", ""),
                 "finished_at": datetime.now().isoformat(),
+                "page_range": existing_page_range,
             })
         finally:
             if tmp_path and os.path.exists(tmp_path):
