@@ -9,9 +9,17 @@ const GOAL_OPTIONS = [10, 20, 30, 50]
 Page({
   data: {
     user: {},
+    displayName: '研友',
+    userInitial: '研',
     greeting: '',
     dateStr: '',
     motto: '',
+
+    navHeight: 88,
+    statusBarHeight: 20,
+    navContentHeight: 44,
+    navRightPadding: 116,
+
     _animStreakDays: 0,
     studyLevel: 'Lv1 起步',
     levelProgress: 0,
@@ -20,6 +28,16 @@ Page({
     todayGoalTotal: TODAY_GOAL_TOTAL,
     goalOptions: GOAL_OPTIONS,
     showGoalPicker: false,
+
+    dueReviewCount: 0,
+    remainingCount: TODAY_GOAL_TOTAL,
+    primaryTaskType: 'practice',
+    primaryTaskKicker: 'TODAY PLAN · 优先级 01',
+    primaryTaskTitle: `完成今日 ${TODAY_GOAL_TOTAL} 道练习`,
+    primaryTaskDesc: '先完成一组练习建立节奏，之后再根据结果安排复习。',
+    primaryTaskAction: '开始今日练习',
+    secondaryTaskAction: '查看复习计划',
+
     expText: '0 / 50 EXP',
     nextLevelText: '距离 Lv2 还差 50 题',
     dailyBoostText: '完成今日目标后，可点亮坚持徽章',
@@ -33,11 +51,18 @@ Page({
   _growthTargets: { streakDays: 0, todayGoalDone: 0, levelProgress: 0 },
   _animTimer: null,
 
+  onLoad() {
+    this.measureNavigation()
+  },
+
   async onShow() {
     this._authed = auth.isLoggedIn()
     this._isAdmin = this._authed ? auth.isAdmin() : false
+    const localUser = auth.getUser() || {}
     this.setData({
-      user: auth.getUser() || {},
+      user: localUser,
+      displayName: this.getDisplayName(localUser),
+      userInitial: this.getUserInitial(localUser),
       greeting: this.getGreeting(),
       dateStr: this.getDateStr(),
       motto: this.getMotto(),
@@ -51,12 +76,46 @@ Page({
       const syncedUser = await auth.syncCurrentUser()
       if (!syncedUser) return
       this._isAdmin = auth.isAdmin()
-      this.setData({ user: syncedUser || {} })
+      this.setData({
+        user: syncedUser || {},
+        displayName: this.getDisplayName(syncedUser),
+        userInitial: this.getUserInitial(syncedUser),
+      })
     } catch (e) {
       console.error('同步用户权限失败', e)
       return
     }
     await this.loadGrowthSnapshot()
+  },
+
+  measureNavigation() {
+    let statusBarHeight = 20
+    let windowWidth = 375
+    try {
+      const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+      statusBarHeight = Number(info.statusBarHeight || 20)
+      windowWidth = Number(info.windowWidth || info.screenWidth || 375)
+    } catch (_) {}
+
+    let menu = null
+    try {
+      menu = wx.getMenuButtonBoundingClientRect && wx.getMenuButtonBoundingClientRect()
+    } catch (_) {}
+
+    const menuTop = menu && menu.top ? Number(menu.top) : statusBarHeight + 6
+    const menuHeight = menu && menu.height ? Number(menu.height) : 32
+    const menuLeft = menu && menu.left ? Number(menu.left) : windowWidth - 100
+    const verticalGap = Math.max(4, menuTop - statusBarHeight)
+    const navContentHeight = menuHeight + verticalGap * 2
+    const navHeight = statusBarHeight + navContentHeight
+    const navRightPadding = Math.max(102, windowWidth - menuLeft + 8)
+
+    this.setData({
+      statusBarHeight,
+      navContentHeight,
+      navHeight,
+      navRightPadding,
+    })
   },
 
   async loadGrowthSnapshot() {
@@ -93,12 +152,10 @@ Page({
       goalDone: targets.todayGoalDone,
       levelProgress: targets.levelProgress,
     }
-    // 全部已到位则跳过
     if (from.streakDays === to.streakDays && from.goalDone === to.goalDone && from.levelProgress === to.levelProgress) return
 
     const durations = { streakDays: 600, goalDone: 600, levelProgress: 500 }
     const startTime = Date.now()
-    const maxDuration = Math.max(durations.streakDays, durations.goalDone, durations.levelProgress)
 
     const tick = () => {
       const elapsed = Date.now() - startTime
@@ -118,14 +175,11 @@ Page({
       updateField('_animGoalDone', from.goalDone, to.goalDone, durations.goalDone)
       updateField('_animLevelProgress', from.levelProgress, to.levelProgress, durations.levelProgress)
 
-      if (Object.keys(data).length > 0) {
-        this.setData(data)
-      }
+      if (Object.keys(data).length > 0) this.setData(data)
 
       if (!allDone) {
         this._animTimer = setTimeout(tick, 80)
       } else {
-        // 确保最终值精确到位
         this.setData({
           _animStreakDays: to.streakDays,
           _animGoalDone: to.goalDone,
@@ -145,6 +199,7 @@ Page({
       studyLevel: 'Lv1 起步',
       levelProgress: 0,
       todayGoalTotal,
+      ...this.getPrimaryTaskSnapshot(0, todayGoalTotal, 0),
       expText: levelMeta.expText,
       nextLevelText: levelMeta.nextLevelText,
       dailyBoostText: this.getDailyBoostText(0, todayGoalTotal, 0),
@@ -162,8 +217,8 @@ Page({
     const dueReviewCount = this.toNonNegativeInt(overview.due_review_count)
     const todayGoalTotal = this.getStoredTodayGoal()
     const levelProgress = Math.min(100, Math.round((todayGoalDone / todayGoalTotal) * 100))
+    const taskSnapshot = this.getPrimaryTaskSnapshot(todayGoalDone, todayGoalTotal, dueReviewCount)
 
-    // 存入实例目标值（不通过 setData 写入）
     this._growthTargets = { streakDays, todayGoalDone, levelProgress }
 
     if (growth) {
@@ -172,6 +227,7 @@ Page({
         studyLevel: growth.level_title || 'Lv1 起步',
         levelProgress,
         todayGoalTotal,
+        ...taskSnapshot,
         expText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
         nextLevelText: growth.level_progress_pct >= 100
           ? '已满级，继续保持题感'
@@ -190,12 +246,54 @@ Page({
       studyLevel: levelMeta.studyLevel,
       levelProgress,
       todayGoalTotal,
+      ...taskSnapshot,
       expText: levelMeta.expText,
       nextLevelText: levelMeta.nextLevelText,
       dailyBoostText: this.getDailyBoostText(todayGoalDone, todayGoalTotal, streakDays),
       badgeList: this.getBadgeList(streakDays, totalQuestions, levelProgress),
       badgeTitle: this.getBadgeTitle(streakDays, levelProgress),
       missionText: this.getMissionText(todayGoalDone, todayGoalTotal, dueReviewCount),
+    }
+  },
+
+  getPrimaryTaskSnapshot(todayGoalDone, todayGoalTotal, dueReviewCount) {
+    const remainingCount = Math.max(0, todayGoalTotal - todayGoalDone)
+
+    if (dueReviewCount > 0) {
+      return {
+        dueReviewCount,
+        remainingCount,
+        primaryTaskType: 'review',
+        primaryTaskKicker: 'MEMORY FIRST · 优先级 01',
+        primaryTaskTitle: `先复习 ${dueReviewCount} 道到期错题`,
+        primaryTaskDesc: '这些题已进入复习窗口。先巩固记忆，再开始新练习，效率会更高。',
+        primaryTaskAction: '开始今日复习',
+        secondaryTaskAction: '先做新题',
+      }
+    }
+
+    if (remainingCount > 0) {
+      return {
+        dueReviewCount,
+        remainingCount,
+        primaryTaskType: 'practice',
+        primaryTaskKicker: 'TODAY PLAN · 优先级 01',
+        primaryTaskTitle: `完成剩余 ${remainingCount} 道今日练习`,
+        primaryTaskDesc: `今天已完成 ${todayGoalDone} 道。保持稳定节奏即可，不必一次全部做完。`,
+        primaryTaskAction: '开始今日练习',
+        secondaryTaskAction: '查看复习计划',
+      }
+    }
+
+    return {
+      dueReviewCount,
+      remainingCount,
+      primaryTaskType: 'complete',
+      primaryTaskKicker: 'TODAY COMPLETE · 今日已完成',
+      primaryTaskTitle: '今天的核心任务已完成',
+      primaryTaskDesc: '节奏已经守住。可以用少量新题保持手感，也可以安心结束今天的学习。',
+      primaryTaskAction: '再练一组',
+      secondaryTaskAction: '查看复习记录',
     }
   },
 
@@ -249,9 +347,9 @@ Page({
 
   getDailyBoostText(todayGoalDone, todayGoalTotal, streakDays) {
     const remaining = Math.max(0, todayGoalTotal - todayGoalDone)
-    if (remaining === 0) return '今日目标已达成，明天打开可延续学习连续感'
-    if (streakDays >= 7) return `连续学习 ${streakDays} 天，再完成 ${remaining} 题守住节奏`
-    return `再坚持 ${remaining} 题，给今天的学习打上完成标记`
+    if (remaining === 0) return '今日目标已经完成。稳定结束，比临时加量更有利于长期坚持。'
+    if (streakDays >= 7) return `你已经连续学习 ${streakDays} 天。再完成 ${remaining} 题，就能守住今天的节奏。`
+    return `不需要追求一次做完；先完成一组，再决定是否继续。今天还剩 ${remaining} 题。`
   },
 
   getBadgeList(streakDays, totalQuestions, levelProgress) {
@@ -278,13 +376,21 @@ Page({
   getMissionText(todayGoalDone, todayGoalTotal, dueReviewCount) {
     const remaining = Math.max(0, todayGoalTotal - todayGoalDone)
     if (remaining === 0) {
-      if (dueReviewCount > 0) return `今日目标完成，再复习 ${dueReviewCount} 题巩固记忆`
+      if (dueReviewCount > 0) return `目标已完成，仍有 ${dueReviewCount} 道到期复习`
       return '今日目标已完成，保持节奏'
     }
-    if (dueReviewCount > 0) {
-      return `再完成 ${remaining} 题，另有 ${dueReviewCount} 道复习待处理`
-    }
+    if (dueReviewCount > 0) return `先处理到期复习，再完成 ${remaining} 道新题`
     return `再完成 ${remaining} 题，点亮今日目标`
+  },
+
+  getDisplayName(user) {
+    const name = user && (user.nickName || user.nickname || user.name)
+    return name ? String(name).trim().slice(0, 8) : '研友'
+  },
+
+  getUserInitial(user) {
+    const name = this.getDisplayName(user)
+    return name ? name.slice(0, 1) : '研'
   },
 
   toNonNegativeInt(value) {
@@ -316,7 +422,23 @@ Page({
   getDateStr() {
     const d = new Date()
     const week = ['日', '一', '二', '三', '四', '五', '六']
-    return `${d.getMonth()+1}月${d.getDate()}日 · 星期${week[d.getDay()]}`
+    return `${d.getMonth() + 1}月${d.getDate()}日 · 星期${week[d.getDay()]}`
+  },
+
+  startPrimaryTask() {
+    if (this.data.primaryTaskType === 'review') {
+      this.goReview()
+      return
+    }
+    this.startRandom()
+  },
+
+  startSecondaryTask() {
+    if (this.data.primaryTaskType === 'review') {
+      this.startRandom()
+      return
+    }
+    this.goReview()
   },
 
   startRandom() { wx.navigateTo({ url: '/pages/practice/practice' }) },
@@ -325,6 +447,7 @@ Page({
   goDashboard() { wx.navigateTo({ url: '/pages/dashboard/dashboard' }) },
   goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
   goFormulas() { wx.navigateTo({ url: '/subpackages/formulas/library/index' }) },
+
   _clearAnimTimer() {
     if (this._animTimer) {
       clearTimeout(this._animTimer)

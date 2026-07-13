@@ -27,7 +27,7 @@
   width: 100%;
   max-width: 590rpx;
   padding: 48rpx 34rpx 32rpx;
-  border-radius: 30rpx;
+  border-radius: 36rpx;
   border: 1rpx solid rgba(255,255,255,0.76);
   background: #FFFFFF;
   box-shadow: 0 30rpx 90rpx rgba(0,0,0,0.28);
@@ -185,3 +185,17 @@
   }
   .sc-card { transform: none; }
 }
+
+
+/* Generic destructive/information variants */
+.sc-card.scenario-danger .sc-top-accent { background: linear-gradient(90deg, #7E2F28 0%, #D9685B 72%, #F0A092 100%); }
+.scenario-danger .sc-icon-circle { background: #6D2B25; box-shadow: 0 0 0 12rpx rgba(217,104,91,.12), 0 12rpx 28rpx rgba(109,43,37,.18); }
+.scenario-danger .sc-icon-line { color: #FFD3CC; }
+.scenario-danger .sc-eyebrow { color: #B24F43; }
+.scenario-danger .sc-btn-confirm { color: #FFFFFF; background: #C95D52; box-shadow: 0 12rpx 26rpx rgba(201,93,82,.20); }
+.scenario-danger .sc-confirm-arrow { background: rgba(255,255,255,.2); color: #FFFFFF; }
+.sc-card.scenario-info .sc-top-accent { background: linear-gradient(90deg, #173524 0%, #6F8B55 72%, #B7E82A 100%); }
+.scenario-info .sc-icon-circle { background: #173524; }
+.scenario-info .sc-icon-line { color: #B7E82A; }
+.scenario-info .sc-btn-confirm { flex: 1; justify-content: center; gap: 14rpx; }
+.sc-actions .sc-btn-confirm:only-child { flex: 1; justify-content: center; }

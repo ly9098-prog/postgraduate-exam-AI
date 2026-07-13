@@ -7,7 +7,7 @@ Component({
   data: {
     showSymbolNotes: false,
     showSecondary: false,
-    showErrorTips: false,
+    showErrorTips: true,
     showExamples: false,
   },
 

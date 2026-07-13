@@ -1,3 +1,5 @@
+@import '../../styles/tokens.wxss';
+
 page {
   background: #F5F7F4;
   color: #101814;
@@ -1616,3 +1618,70 @@ page {
     height: 40rpx;
   }
 }
+
+/* 批量标记已掌握撤销 toast */
+.undo-toast {
+  position: fixed;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: calc(136rpx + env(safe-area-inset-bottom));
+  z-index: 160;
+  min-height: 84rpx;
+  padding: 0 22rpx;
+  border-radius: 22rpx;
+  background: #10251A;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  transform: translateY(160%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform .22s ease, opacity .22s ease;
+  box-shadow: 0 18rpx 42rpx rgba(16,37,26,.26);
+}
+.undo-toast.show {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+.undo-toast-text {
+  min-width: 0;
+  flex: 1;
+  font-size: 22rpx;
+  line-height: 1.4;
+  color: rgba(255,255,255,.78);
+}
+.undo-divider {
+  width: 1rpx;
+  height: 36rpx;
+  margin: 0 18rpx;
+  background: rgba(255,255,255,.14);
+}
+.undo-action {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  font-weight: 900;
+  color: #B7E82A;
+}
+
+
+/* ==================== Phase 1 unified overrides ==================== */
+page { background:#F4F4EE; background-color:#F4F4EE; }
+.page { padding: 20rpx 24rpx calc(56rpx + env(safe-area-inset-bottom)); background:radial-gradient(circle at 96% 0%,rgba(183,232,42,.075),transparent 320rpx),linear-gradient(180deg,#F6F6F0 0%,#F1F2EC 100%); }
+.topbar { margin:0 0 18rpx; padding:7rpx; border:1rpx solid #DDE2DA; border-radius:999rpx; background:rgba(255,255,255,.70); }
+.view-tabs { gap:4rpx; }
+.view-tab { border-radius:999rpx; padding:14rpx 22rpx; }
+.view-tab.active { color:#FFFFFF; background:#173426; }
+.view-tab.active::after { display:none; }
+.top-action { border-radius:999rpx; }
+.hero-card { border-radius:40rpx; background:linear-gradient(145deg,#183528 0%,#10251A 58%,#09170F 100%); box-shadow:0 28rpx 68rpx rgba(16,37,26,.23); }
+.hero-button { border-radius:24rpx; background:#B7E82A; color:#10251A; }
+.hero-play { display:flex; align-items:center; justify-content:center; }
+.hero-play .line-icon { width:25rpx; height:25rpx; color:#10251A; }
+.overview-card, .insight-card, .task-group, .all-list-card { border-radius:32rpx; border-color:#DDE2DA; box-shadow:0 10rpx 30rpx rgba(16,37,26,.045); }
+.overview-icon .line-icon { width:25rpx; height:25rpx; }
+.filter-panel { border-radius:30rpx; border-color:#DDE2DA; }
+.filter-chip { border-radius:999rpx; }
+.question-row { border-radius:0; }
+.batch-capsule { border-radius:30rpx; }
+.undo-toast { border-radius:26rpx; }

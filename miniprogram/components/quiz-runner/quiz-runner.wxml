@@ -1,4 +1,4 @@
-<view class="quiz-runner {{compactReviewMode ? 'runner-compact' : ''}} {{flowLayout ? 'runner-flow' : ''}} {{compactBottom ? 'runner-bottom-compact' : ''}} {{customNavigation ? 'runner-custom-navigation' : ''}} {{readonly ? 'runner-readonly' : ''}}">
+<view class="quiz-runner runner-theme-{{theme}} {{compactReviewMode ? 'runner-compact' : ''}} {{flowLayout ? 'runner-flow' : ''}} {{compactBottom ? 'runner-bottom-compact' : ''}} {{customNavigation ? 'runner-custom-navigation' : ''}} {{readonly ? 'runner-readonly' : ''}}">
   <!-- ==================== 深色数字化顶部 ==================== -->
   <view class="runner-hero {{heroCollapsed ? 'runner-hero-collapsed' : ''}}" wx:if="{{!compactReviewMode}}">
     <view class="runner-hero-glow"></view>
@@ -31,7 +31,7 @@
         bindtap="toggleSheet"
       >
         <text class="runner-sheet-trigger-icon line-icon icon-list"></text>
-        <text class="runner-sheet-trigger-text">答题卡</text>
+        <text class="runner-sheet-trigger-text">{{currentIndex + 1}} / {{totalCount || 0}}</text>
       </view>
     </view>
 
@@ -158,13 +158,13 @@
       </block>
 
       <!-- ===== 多空选择题 ===== -->
-      <view class="runner-blank-options" wx:if="{{currentQuestion._hasBlankOptionGroups}}" data-swipe-block="1">
-        <view class="runner-blank-group" wx:for="{{currentQuestion._blankOptionGroups}}" wx:for-item="group" wx:key="id" data-swipe-block="1">
-          <view class="runner-blank-group-head" data-swipe-block="1">
-            <text class="runner-blank-group-title" data-swipe-block="1">{{group.id}}</text>
-            <text class="runner-blank-group-hint" wx:if="{{!readonly}}" data-swipe-block="1">请选择该空答案</text>
+      <view class="runner-blank-options" wx:if="{{currentQuestion._hasBlankOptionGroups}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+        <view class="runner-blank-group" wx:for="{{currentQuestion._blankOptionGroups}}" wx:for-item="group" wx:key="id" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+          <view class="runner-blank-group-head" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+            <text class="runner-blank-group-title" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{group.id}}</text>
+            <text class="runner-blank-group-hint" wx:if="{{!readonly}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">请选择该空答案</text>
           </view>
-          <view class="runner-blank-group-options" data-swipe-block="1">
+          <view class="runner-blank-group-options" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
             <view
               wx:for="{{group.options}}"
               wx:for-item="opt"
@@ -174,17 +174,17 @@
               catchtap="{{readonly ? 'noop' : 'selectBlankOption'}}"
               data-blank-id="{{group.id}}"
               data-option="{{opt.key}}"
-              data-swipe-block="1"
+              data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"
             >
-              <view class="runner-option-indicator {{opt._selected ? 'runner-checked' : ''}} {{readonly && opt._isCorrect ? 'runner-indicator-correct' : ''}} {{readonly && opt._isUserAnswer && !opt._isCorrect ? 'runner-indicator-user' : ''}}" data-swipe-block="1">
-                <text wx:if="{{opt._selected && !readonly}}" class="runner-check-mark line-icon icon-dot" data-swipe-block="1"></text>
-                <text wx:elif="{{readonly && opt._isCorrect}}" class="runner-check-mark line-icon icon-check" data-swipe-block="1"></text>
-                <text wx:elif="{{readonly && opt._isUserAnswer && !opt._isCorrect}}" class="runner-check-mark line-icon icon-exclamation" data-swipe-block="1"></text>
+              <view class="runner-option-indicator {{opt._selected ? 'runner-checked' : ''}} {{readonly && opt._isCorrect ? 'runner-indicator-correct' : ''}} {{readonly && opt._isUserAnswer && !opt._isCorrect ? 'runner-indicator-user' : ''}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+                <text wx:if="{{opt._selected && !readonly}}" class="runner-check-mark line-icon icon-dot" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
+                <text wx:elif="{{readonly && opt._isCorrect}}" class="runner-check-mark line-icon icon-check" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
+                <text wx:elif="{{readonly && opt._isUserAnswer && !opt._isCorrect}}" class="runner-check-mark line-icon icon-exclamation" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
               </view>
-              <view class="runner-option-body" data-swipe-block="1">
-                <text class="runner-option-key" data-swipe-block="1">{{opt.key}}.</text>
-                <mp-html wx:if="{{opt._needsRich}}" content="{{opt._html}}" style="display:inline-block" set-title="{{false}}" copy-link="{{false}}"></mp-html>
-                <text wx:else class="runner-option-text" data-swipe-block="1">{{opt._text}}</text>
+              <view class="runner-option-body" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+                <text class="runner-option-key" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{opt.key}}.</text>
+                <mp-html wx:if="{{opt._needsRich}}" content="{{opt._html}}" style="display:inline-block" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}" set-title="{{false}}" copy-link="{{false}}"></mp-html>
+                <text wx:else class="runner-option-text" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{opt._text}}</text>
               </view>
             </view>
           </view>
@@ -192,7 +192,7 @@
       </view>
 
       <!-- ===== 普通选项 ===== -->
-      <view class="runner-options" wx:elif="{{currentQuestion._optionList && currentQuestion._optionList.length > 0}}" data-swipe-block="1">
+      <view class="runner-options" wx:elif="{{currentQuestion._optionList && currentQuestion._optionList.length > 0}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
         <view
           wx:for="{{currentQuestion._optionList}}"
           wx:key="key"
@@ -200,18 +200,18 @@
           hover-class="{{readonly ? '' : 'runner-option-pressed'}}"
           catchtap="{{readonly ? 'noop' : 'selectOption'}}"
           data-option="{{item.key}}"
-          data-swipe-block="1"
+          data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"
         >
-          <view class="runner-option-indicator {{item._selected ? 'runner-checked' : ''}} {{readonly && item._isCorrect ? 'runner-indicator-correct' : ''}} {{readonly && item._isUserAnswer && !item._isCorrect ? 'runner-indicator-user' : ''}}" data-swipe-block="1">
-            <text wx:if="{{item._selected && !readonly && currentQuestion.question_type === 'multiple_choice'}}" class="runner-check-mark line-icon icon-check" data-swipe-block="1"></text>
-            <text wx:elif="{{item._selected && !readonly}}" class="runner-check-mark line-icon icon-dot" data-swipe-block="1"></text>
-            <text wx:elif="{{readonly && item._isCorrect}}" class="runner-check-mark line-icon icon-check" data-swipe-block="1"></text>
-            <text wx:elif="{{readonly && item._isUserAnswer && !item._isCorrect}}" class="runner-check-mark line-icon icon-exclamation" data-swipe-block="1"></text>
+          <view class="runner-option-indicator {{item._selected ? 'runner-checked' : ''}} {{readonly && item._isCorrect ? 'runner-indicator-correct' : ''}} {{readonly && item._isUserAnswer && !item._isCorrect ? 'runner-indicator-user' : ''}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+            <text wx:if="{{item._selected && !readonly && currentQuestion.question_type === 'multiple_choice'}}" class="runner-check-mark line-icon icon-check" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
+            <text wx:elif="{{item._selected && !readonly}}" class="runner-check-mark line-icon icon-dot" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
+            <text wx:elif="{{readonly && item._isCorrect}}" class="runner-check-mark line-icon icon-check" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
+            <text wx:elif="{{readonly && item._isUserAnswer && !item._isCorrect}}" class="runner-check-mark line-icon icon-exclamation" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"></text>
           </view>
-          <view class="runner-option-body" data-swipe-block="1">
-            <text class="runner-option-key" data-swipe-block="1">{{item.key}}.</text>
-            <mp-html wx:if="{{item._needsRich}}" content="{{item._html}}" style="display:inline-block" set-title="{{false}}" copy-link="{{false}}"></mp-html>
-            <text wx:else class="runner-option-text" data-swipe-block="1">{{item._text}}</text>
+          <view class="runner-option-body" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+            <text class="runner-option-key" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{item.key}}.</text>
+            <mp-html wx:if="{{item._needsRich}}" content="{{item._html}}" style="display:inline-block" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}" set-title="{{false}}" copy-link="{{false}}"></mp-html>
+            <text wx:else class="runner-option-text" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{item._text}}</text>
           </view>
         </view>
       </view>
@@ -230,11 +230,6 @@
       >
         <text class="runner-nav-arrow line-icon icon-chevron-left"></text>
         <text class="runner-nav-label">上一题</text>
-      </view>
-
-      <view class="runner-nav-status" hover-class="runner-nav-status-pressed" bindtap="toggleSheet">
-        <text class="runner-nav-status-value">{{answeredCount || 0}} / {{totalCount || 0}}</text>
-        <text class="runner-nav-status-label">已作答</text>
       </view>
 
       <view

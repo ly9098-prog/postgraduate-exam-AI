@@ -1,3 +1,5 @@
+<premium-nav title="错题本" variant="light" bind:back="goBack" />
+<submit-confirm id="actionConfirm" />
 <view class="page {{batchMode ? 'page-batch-padding' : ''}}">
   <!-- 顶部视图切换与编辑模式 -->
   <view class="topbar {{batchMode ? 'topbar-editing' : ''}}">
@@ -27,7 +29,7 @@
           class="top-action manage"
           hover-class="top-action-pressed"
           bindtap="toggleBatchMode"
-        >管理</view>
+        >选择</view>
       </view>
     </block>
 
@@ -123,7 +125,7 @@
       hover-class="{{heroRemainingCount > 0 ? 'hero-button-pressed' : 'none'}}"
       bindtap="startTodayReview"
     >
-      <view class="hero-play">▶</view>
+      <view class="hero-play"><text class="line-icon icon-play"></text></view>
       <text>{{heroRemainingCount > 0 ? '立即开始复习（' + heroRemainingCount + '）' : '今日复习已完成'}}</text>
     </view>
   </view>
@@ -131,7 +133,7 @@
   <!-- 错题本专属概览：避免与 Dashboard 的综合报表重复 -->
   <view class="overview-card">
     <view class="overview-item">
-      <view class="overview-icon book">▣</view>
+      <view class="overview-icon book"><text class="line-icon icon-list"></text></view>
       <view class="overview-text">
         <text class="overview-label">累计错题</text>
         <view><text class="overview-value">{{stats.total || 0}}</text><text class="overview-suffix">题</text></view>
@@ -139,7 +141,7 @@
     </view>
     <view class="overview-divider"></view>
     <view class="overview-item">
-      <view class="overview-icon mastered">✓</view>
+      <view class="overview-icon mastered"><text class="line-icon icon-check"></text></view>
       <view class="overview-text">
         <text class="overview-label">已经掌握</text>
         <view><text class="overview-value">{{masteredCount}}</text><text class="overview-suffix">题</text></view>
@@ -147,7 +149,7 @@
     </view>
     <view class="overview-divider"></view>
     <view class="overview-item">
-      <view class="overview-icon repeat">↗</view>
+      <view class="overview-icon repeat"><text class="line-icon icon-trend"></text></view>
       <view class="overview-text">
         <text class="overview-label">高频错题</text>
         <view><text class="overview-value">{{highFrequencyCount}}</text><text class="overview-suffix">题</text></view>
@@ -428,5 +430,12 @@
       hover-class="{{selectedCount > 0 ? 'capsule-button-pressed' : 'none'}}"
       bindtap="openBatchMore"
     >更多</view>
+  </view>
+
+  <!-- 批量标记已掌握撤销 -->
+  <view class="undo-toast {{batchMasterUndoVisible ? 'show' : ''}}">
+    <text class="undo-toast-text">已标记 {{_batchMasterUndoCount || 0}} 项为已掌握</text>
+    <view class="undo-divider"></view>
+    <text class="undo-action" bindtap="undoBatchMaster">撤销</text>
   </view>
 </view>

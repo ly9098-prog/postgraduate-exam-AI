@@ -44,6 +44,8 @@ Page({
     allVisibleSelected: false,
     batchSubmitting: false,
     batchMoreVisible: false,
+    batchMasterUndoVisible: false,
+    _batchMasterUndoCount: 0,
     selectionPulse: false,
     aiInsightText: '正在根据错题记录生成复习建议…',
     aiInsightExpanded: false,
@@ -97,6 +99,8 @@ Page({
   _listRequestSeq: 0,
   _suppressQuestionTapUntil: 0,
   _selectionPulseTimer: null,
+  _batchMasterUndoIds: [],
+  _batchMasterUndoTimer: null,
 
   onLoad(options) {
     this.setData({ enableMathImage: config.enableMathImage || false })
@@ -145,6 +149,7 @@ Page({
       clearTimeout(this._selectionPulseTimer)
       this._selectionPulseTimer = null
     }
+    this._clearBatchMasterUndo()
   },
 
   // ════════════════════════════════════════════
@@ -364,6 +369,10 @@ Page({
 
     source.forEach(visit)
     return result
+  },
+
+  goBack() {
+    wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/home' }) })
   },
 
   toggleFilter() {
@@ -615,6 +624,29 @@ Page({
     try {
       const result = await api.post('/wrong-questions/batch', { action, ids })
       wx.hideLoading()
+
+      if (action === 'mark_mastered') {
+        // 标记已掌握 → 显示撤销条，不清除选中、不退出批量模式
+        const updatedCount = result.updated_count != null ? result.updated_count : ids.length
+        this._clearBatchMasterUndo()
+        this._batchMasterUndoIds = ids.slice()
+        this.setData({
+          batchSubmitting: false,
+          batchMasterUndoVisible: true,
+          _batchMasterUndoCount: updatedCount,
+          selectionPulse: false,
+          selectedIds: [],
+          selectedIdMap: {},
+          selectedCount: 0,
+          allVisibleSelected: false,
+        })
+        this._batchMasterUndoTimer = setTimeout(() => {
+          this._clearBatchMasterUndo()
+        }, 5000)
+        await this._reloadAfterBatch()
+        return
+      }
+
       wx.showToast({
         title: `${labels[action]}成功 ${result.updated_count != null ? result.updated_count : ids.length} 项`,
         icon: 'success',
@@ -629,34 +661,72 @@ Page({
         selectedCount: 0,
         allVisibleSelected: false,
       })
-      await Promise.all([this.loadStats(), this.loadList(true), this.loadReviewOverview()])
+      await this._reloadAfterBatch()
     } catch (err) {
       wx.hideLoading()
       this.setData({ batchSubmitting: false })
       const isMissingEndpoint = err && (err.statusCode === 404 || err.statusCode === 405)
       if (isMissingEndpoint) {
-        wx.showModal({
-          title: '前端批量操作已完成',
-          content: '当前后端尚未接入批量接口。请让代码 Agent 按项目内 prompts/wrong-book-task-flow-backend.md 实现后即可直接使用。',
-          showCancel: false,
-          confirmText: '知道了',
-        })
+        const modal = this.selectComponent('#actionConfirm')
+        if (modal) {
+          await modal.show({
+            scenario: 'info',
+            eyebrow: 'NOTICE',
+            title: '批量接口尚未接入',
+            message: '当前页面交互已经完成，但后端暂不支持该批量操作。',
+            confirmText: '知道了',
+            hideCancel: true,
+          })
+        } else {
+          wx.showToast({ title: '批量接口尚未接入', icon: 'none' })
+        }
       } else {
         wx.showToast({ title: (err && err.message) || '批量操作失败', icon: 'none' })
       }
     }
   },
 
-  _confirmBatchAction(title, content) {
-    return new Promise(resolve => {
-      wx.showModal({
-        title,
-        content,
-        confirmText: '继续',
-        confirmColor: '#D4554D',
-        success: res => resolve(!!res.confirm),
-        fail: () => resolve(false),
+  _reloadAfterBatch() {
+    return Promise.all([this.loadStats(), this.loadList(true), this.loadReviewOverview()])
+  },
+
+  undoBatchMaster() {
+    const ids = this._batchMasterUndoIds
+    if (!ids || !ids.length) return
+    this._clearBatchMasterUndo()
+    wx.showLoading({ title: '正在撤销', mask: true })
+    api.post('/wrong-questions/batch', { action: 'unmark_mastered', ids }).then(result => {
+      wx.hideLoading()
+      wx.showToast({
+        title: `已撤销掌握 ${result.updated_count != null ? result.updated_count : ids.length} 项`,
+        icon: 'success',
       })
+      this._reloadAfterBatch()
+    }).catch(err => {
+      wx.hideLoading()
+      wx.showToast({ title: (err && err.message) || '撤销失败', icon: 'none' })
+    })
+  },
+
+  _clearBatchMasterUndo() {
+    if (this._batchMasterUndoTimer) {
+      clearTimeout(this._batchMasterUndoTimer)
+      this._batchMasterUndoTimer = null
+    }
+    this._batchMasterUndoIds = []
+    this.setData({ batchMasterUndoVisible: false, _batchMasterUndoCount: 0 })
+  },
+
+  _confirmBatchAction(title, content) {
+    const modal = this.selectComponent('#actionConfirm')
+    if (!modal) return Promise.resolve(false)
+    return modal.show({
+      scenario: 'danger',
+      eyebrow: 'IRREVERSIBLE',
+      title,
+      message: content,
+      confirmText: '继续操作',
+      cancelText: '取消',
     })
   },
 

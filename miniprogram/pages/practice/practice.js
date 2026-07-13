@@ -537,12 +537,13 @@ Page({
         const name = this.data.selectedSubjectName || String(subjectId)
         this._clearTimer()
         this.setData({ started: false, loading: false, questions: [], totalQuestions: 0, currentQuestion: null })
-        wx.showModal({
+        await this._showSubmitConfirm({
+          scenario: 'info',
+          eyebrow: 'NO QUESTIONS',
           title: '该科目暂无题目',
-          content: `「${name}」目前没有已发布的题目。\n请确认：\n1. 导入批次已审核通过\n2. 题目科目分类是否正确（导入时混合 PDF 可能被错分）\n3. 试试其他科目分类`,
-          showCancel: false,
+          message: `「${name}」目前没有已发布的题目。\n可检查导入审核状态、题目分类，或选择其他科目。`,
           confirmText: '返回选择科目',
-          success: () => {},
+          hideCancel: true,
         })
       }
     } catch (e) {
@@ -645,38 +646,37 @@ Page({
     this._showQuestion(e.detail.index)
   },
 
-  requestExitPractice() {
+  async requestExitPractice() {
     if (this.data.submitting) return
-    wx.showModal({
+    const confirmed = await this._showSubmitConfirm({
+      scenario: 'danger',
+      eyebrow: 'EXIT PRACTICE',
       title: '退出本组练习？',
-      content: '退出后，本组练习不会计入结果。',
+      message: '退出后，本组练习不会计入结果。',
       confirmText: '退出练习',
       cancelText: '继续作答',
-      confirmColor: '#173323',
-      success: (res) => {
-        if (!res.confirm) return
-        this._clearTimer()
-        if (this._feedbackTimer) {
-          clearTimeout(this._feedbackTimer)
-          this._feedbackTimer = null
-        }
-        this._resetSession()
-        this._pendingResultUrl = ''
-        this.setData({
-          started: false,
-          loading: false,
-          submitting: false,
-          submitted: false,
-          questions: [],
-          currentQuestion: null,
-          currentIndex: 0,
-          totalQuestions: 0,
-          answeredCount: 0,
-          progressPercent: 0,
-          elapsedText: '00:00',
-          feedbackVisible: false,
-        })
-      },
+    })
+    if (!confirmed) return
+    this._clearTimer()
+    if (this._feedbackTimer) {
+      clearTimeout(this._feedbackTimer)
+      this._feedbackTimer = null
+    }
+    this._resetSession()
+    this._pendingResultUrl = ''
+    this.setData({
+      started: false,
+      loading: false,
+      submitting: false,
+      submitted: false,
+      questions: [],
+      currentQuestion: null,
+      currentIndex: 0,
+      totalQuestions: 0,
+      answeredCount: 0,
+      progressPercent: 0,
+      elapsedText: '00:00',
+      feedbackVisible: false,
     })
   },
 
@@ -971,17 +971,8 @@ Page({
   _showSubmitConfirm(opts) {
     var comp = this.selectComponent('#submitConfirm')
     if (!comp || typeof comp.show !== 'function') {
-      // Fallback: native modal if component unavailable
-      return new Promise(function (resolve) {
-        wx.showModal({
-          title: opts.title || '',
-          content: opts.message || '',
-          confirmText: opts.confirmText || '确定',
-          cancelText: opts.cancelText || '取消',
-          success: function (r) { resolve(r.confirm) },
-          fail: function () { resolve(false) },
-        })
-      })
+      wx.showToast({ title: opts.title || '请稍后重试', icon: 'none' })
+      return Promise.resolve(false)
     }
     return comp.show(opts)
   },

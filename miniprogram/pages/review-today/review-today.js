@@ -77,9 +77,16 @@ Page({
 
     /* ====== 组结果 ====== */
     groupResults: [],
+    groupWrongResults: [],
     groupCorrect: 0,
     groupWrong: 0,
     _groupSkipped: 0,
+    showGroupDetails: false,
+
+    /* ====== Dialog / undo ====== */
+    exitConfirmVisible: false,
+    masterUndoVisible: false,
+    masterUndoText: '',
 
     /* ====== 最终结果 ====== */
 
@@ -100,6 +107,8 @@ Page({
     growthLevel: '',
     growthLevelPct: 0,
     growthDesc: '',
+    skeletonOptions: [1, 2, 3, 4],
+    progressSteps: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90],
   },
 
   /* ==================== 生命周期 ==================== */
@@ -149,6 +158,7 @@ Page({
   onUnload() {
     resetRenderGuard()
     this._clearCelebrationTimer()
+    this._clearMasterUndo()
   },
 
   _setDateStr() {
@@ -220,11 +230,21 @@ Page({
     const remaining = Number(overview.today_remaining_count || 0)
     const progress = due > 0 ? Math.round((completed / due) * 100) : 0
 
+    const overdue = Number(overview.today_overdue_count || 0)
+    let todayAdviceText = '按当前节奏完成一组，今天的复习就会更轻松。'
+    if (overdue > 0) {
+      todayAdviceText = `先完成 ${overdue} 道逾期题，把最容易遗忘的内容拉回来。`
+    } else if (remaining <= 5) {
+      todayAdviceText = `只剩 ${remaining} 道，适合一次完成今天的记忆任务。`
+    } else if (completed > 0) {
+      todayAdviceText = `已经完成 ${completed} 道，继续一组就能保持复习节奏。`
+    }
+
     return {
       todayDueCount: due,
       todayCompletedCount: completed,
       todayRemainingCount: remaining,
-      todayOverdueCount: Number(overview.today_overdue_count || 0),
+      todayOverdueCount: overdue,
       todayNewDueCount: Number(overview.today_new_due_count || 0),
       estimatedMinutes: Number(overview.estimated_minutes || Math.ceil(remaining * 0.5)),
       reviewBatchSize: Number(overview.batch_size || 10),
@@ -232,6 +252,7 @@ Page({
       totalBatchCount: Number(overview.total_batch_count || 0),
       remainingBatchCount: Number(overview.remaining_batch_count || 0),
       todayProgressPercent: Math.min(100, Math.max(0, progress)),
+      todayAdviceText,
     }
   },
 
@@ -289,9 +310,11 @@ Page({
         todayRemainingCount: batch.today_remaining_count || 0,
 
         groupResults: [],
+        groupWrongResults: [],
         groupCorrect: 0,
         groupWrong: 0,
         _groupSkipped: 0,
+        showGroupDetails: false,
 
         masterConfirmId: null,
         submittingGroup: false,
@@ -326,12 +349,15 @@ Page({
 
   /* ==================== 今日最终结果 ==================== */
 
-  async _loadTodayResult() {
+  async _loadTodayResult(options) {
+    const shouldCelebrate = !!(options && options.celebrate)
     try {
       const result = await api.get('/review/today/result')
       const vm = this.buildTodayReviewResultVM(result)
       this.setData({ phase: 'final-result', reviewResultVm: vm })
-      this._showFinalCelebrationOnce()
+      // 只允许“本次停留内提交最后一组并进入最终结果”触发庆祝。
+      // 初次进入、重新进入、下拉刷新、后台恢复、标记最后一题为掌握均不播放。
+      if (shouldCelebrate) this._showFinalCelebrationOnce()
     } catch (e) {
       console.error('加载今日复习结果失败', e)
       // 兜底：使用本地累积结果
@@ -351,6 +377,8 @@ Page({
     const accuracyPct = Math.round(accuracy * 100)
     const completionRate = result.completion_rate || 0
     const completionPct = Math.round(completionRate * 100)
+    const remainingCount = Math.max(0, dueCount - completedCount)
+    const completionHint = remainingCount > 0 ? `还剩 ${remainingCount} 道` : '今日任务已清零'
     const hasWrong = wrong > 0
     const hasSkipped = skipped > 0
     const isPerfect = wrong === 0 && completedCount > 0
@@ -417,6 +445,10 @@ Page({
     }, this)
 
     return {
+      dueCount: dueCount,
+      completedCount: completedCount,
+      remainingCount: remainingCount,
+      completionHint: completionHint,
       sessionTotal: completedCount,
       submittedTotal: completedCount,
       total: completedCount,
@@ -690,43 +722,53 @@ Page({
 
   async confirmMaster() {
     const scheduleId = this.data.masterConfirmId
+    const question = (this.data.groupQuestions || []).find(q => String(q.schedule_id) === String(scheduleId))
+    const originalIndex = (this.data.groupQuestions || []).findIndex(q => String(q.schedule_id) === String(scheduleId))
+    const originalGroupIdx = this.data.currentGroupIdx
     this.setData({ masterConfirmId: null })
+    if (!scheduleId || !question) return
+
     try {
       await api.post(`/review/${scheduleId}/master`)
 
-      // 静默刷新概览（不修改 phase）
-      this.refreshOverviewStatsSilently()
+      this._clearMasterUndo()
+      this._pendingMasterUndo = {
+        scheduleId,
+        question,
+        originalIndex: Math.max(0, originalIndex),
+        originalGroupIdx,
+      }
 
-      // 从当前组移除
-      const allQuestions = this._reviewSession.allQuestions.filter(q => q.schedule_id !== scheduleId)
-      const groups = this._splitGroups(allQuestions, allQuestions.length)
+      const allQuestions = this._reviewSession.allQuestions.filter(q => String(q.schedule_id) !== String(scheduleId))
+      const groups = this._splitGroups(allQuestions, Math.max(1, allQuestions.length))
 
-      let { currentGroupIdx, currentIndex } = this.data
+      let currentGroupIdx = this.data.currentGroupIdx
+      let currentIndex = this.data.currentIndex
       const groupQuestions = groups[currentGroupIdx] || []
 
-      let answers = { ...this._reviewSession.answers }
+      const answers = { ...this._reviewSession.answers }
       delete answers[scheduleId]
       this._reviewSession.answers = answers
       this._masteredCount = (this._masteredCount || 0) + 1
+      this._reviewSession.allQuestions = allQuestions
+
+      this.setData({
+        groups,
+        currentGroupIdx,
+        groupQuestions,
+        masterUndoVisible: true,
+        masterUndoText: '已标记掌握，不再进入复习计划',
+      })
+
+      this._masterUndoTimer = setTimeout(() => {
+        this._pendingMasterUndo = null
+        this._masterUndoTimer = null
+        this.setData({ masterUndoVisible: false })
+      }, 5000)
+
+      this.refreshOverviewStatsSilently()
 
       if (groupQuestions.length === 0) {
-        // 当前组被清空 → 尝试取下一组
-        if (groups.length > 0) {
-          currentGroupIdx = Math.min(currentGroupIdx, groups.length - 1)
-          const nextQuestions = groups[currentGroupIdx] || []
-          this._reviewSession.allQuestions = allQuestions
-          this.setData({
-            groups,
-            currentGroupIdx, groupQuestions: nextQuestions,
-            currentIndex: 0,
-          })
-          this._syncAnsweredFlags()
-          if (nextQuestions.length > 0) {
-            this._showQuestion(0)
-            return
-          }
-        }
-        // 没有更多组了 → 进入 final-result
         this._loadTodayResult()
         return
       }
@@ -734,25 +776,68 @@ Page({
       if (currentIndex >= groupQuestions.length) {
         currentIndex = Math.max(0, groupQuestions.length - 1)
       }
+      this.setData({ currentIndex })
+      this._syncAnsweredFlags()
+      this._showQuestion(currentIndex)
+    } catch (e) {
+      console.error('标记掌握失败', e)
+      wx.showToast({ title: '操作失败，请重试', icon: 'none' })
+    }
+  },
+
+  async undoMaster() {
+    const pending = this._pendingMasterUndo
+    if (!pending) return
+
+    try {
+      await api.post(`/review/${pending.scheduleId}/unmaster`)
+
+      const allQuestions = (this._reviewSession.allQuestions || []).slice()
+      const insertAt = Math.min(Math.max(0, pending.originalIndex), allQuestions.length)
+      allQuestions.splice(insertAt, 0, pending.question)
+      const groups = this._splitGroups(allQuestions, Math.max(1, allQuestions.length))
+      const groupQuestions = groups[0] || []
+
       this._reviewSession.allQuestions = allQuestions
+      this._masteredCount = Math.max(0, (this._masteredCount || 1) - 1)
+      this._clearMasterUndo()
+
       this.setData({
+        phase: 'reviewing',
         groups,
-        currentGroupIdx, groupQuestions,
-        currentIndex,
+        currentGroupIdx: 0,
+        groupQuestions,
+        currentIndex: Math.min(insertAt, Math.max(0, groupQuestions.length - 1)),
+        masterUndoVisible: false,
       })
       this._syncAnsweredFlags()
       if (groupQuestions.length > 0) {
-        this._showQuestion(Math.min(currentIndex, groupQuestions.length - 1))
+        this._showQuestion(Math.min(insertAt, groupQuestions.length - 1))
       }
-      wx.showToast({ title: '已标记为已掌握', icon: 'none' })
+      this.refreshOverviewStatsSilently()
+      wx.showToast({ title: '已撤销掌握', icon: 'none' })
     } catch (e) {
-      wx.showToast({ title: '操作失败', icon: 'none' })
+      console.error('撤销掌握失败', e)
+      wx.showToast({ title: '撤销失败，请重试', icon: 'none' })
     }
   },
+
+  _clearMasterUndo() {
+    if (this._masterUndoTimer) {
+      clearTimeout(this._masterUndoTimer)
+      this._masterUndoTimer = null
+    }
+    this._pendingMasterUndo = null
+    if (this.data && this.data.masterUndoVisible) {
+      this.setData({ masterUndoVisible: false })
+    }
+  },
+
 
   /* ==================== 提交本组 ==================== */
 
   async submitGroup() {
+    this._clearMasterUndo()
     const { groupQuestions, submittingGroup } = this.data
     const answers = this._reviewSession.answers
     if (submittingGroup) return
@@ -873,17 +958,17 @@ Page({
         phase: 'group-result',
         groups: newGroups,
         groupResults,
+        groupWrongResults: groupResults.filter(r => r.wasSubmitted && !r.isCorrect),
         groupCorrect,
         groupWrong,
         _groupSkipped: groupSkipped,
+        showGroupDetails: false,
         submittingGroup: false,
         _groupProgressStyle: 'width: ' + Math.round((this.data.currentGroupIdx + 1) / Math.max(1, newGroups.length) * 100) + '%',
       })
 
       if (!hasMore && skippedQuestions.length === 0) {
-        this._showFinalCelebrationOnce()
-      } else {
-        this._showGroupCelebration(groupCorrect, groupQuestions.length)
+        // 最终完成动画只在最终结果页展示，组结果保持轻量动效。
       }
     } catch (e) {
       console.error('提交失败', e)
@@ -895,6 +980,7 @@ Page({
   /* ==================== 下一组 / 最终结果 ==================== */
 
   async nextGroup() {
+    this._clearMasterUndo()
     if (this.data.resultTransitioning) return
     this.setData({ resultTransitioning: true })
 
@@ -911,8 +997,10 @@ Page({
         groupQuestions: currentGroups[nextGroupIdx],
         currentIndex: 0,
         groupResults: [],
+        groupWrongResults: [],
         groupCorrect: 0,
         groupWrong: 0,
+        showGroupDetails: false,
         resultTransitioning: false,
       })
       this._syncAnsweredFlags()
@@ -943,8 +1031,10 @@ Page({
             todayCompletedCount: batch.today_completed_count || this.data.todayCompletedCount,
             todayRemainingCount: batch.today_remaining_count || 0,
             groupResults: [],
+            groupWrongResults: [],
             groupCorrect: 0,
             groupWrong: 0,
+            showGroupDetails: false,
             resultTransitioning: false,
           })
           this._syncAnsweredFlags()
@@ -959,8 +1049,9 @@ Page({
       }
     }
 
-    // 没有更多组了 → 最终结果
-    this._loadTodayResult()
+    // 没有更多组了 → 最终结果。
+    // 这是本次停留内提交最后一组后唯一允许播放最终庆祝动画的入口。
+    this._loadTodayResult({ celebrate: true })
   },
 
   /* ==================== 完成反馈 ==================== */
@@ -985,8 +1076,8 @@ Page({
     this._showCelebration({
       celebrationType: 'final',
       celebrationTitle: '今日复习完成',
-      celebrationDetail: '已完成今日记忆任务',
-      celebrationMotto: '明天继续保持',
+      celebrationDetail: '今天的记忆计划已经更新',
+      celebrationMotto: '清晰一点，再稳一点',
     }, 3400)
   },
 
@@ -1039,6 +1130,10 @@ Page({
     var accuracy = submittedTotal > 0 ? Math.round(correct / submittedTotal * 100) : 0
     var completionRate = sessionTotal > 0 ? Math.round(submittedTotal / sessionTotal * 100) : 0
     var wrongRate = submittedTotal > 0 ? Math.round(wrong / submittedTotal * 100) : 0
+    var dueCount = this.data.todayDueCount || sessionTotal
+    var completedCount = this.data.todayCompletedCount || submittedTotal
+    var remainingCount = Math.max(0, dueCount - completedCount)
+    var completionHint = remainingCount > 0 ? `还剩 ${remainingCount} 道` : '今日任务已清零'
 
     var groupCount = this.data.groups.length
     var completedGroupCount = Math.min(this.data.currentGroupIdx + 1, groupCount)
@@ -1120,6 +1215,7 @@ Page({
     }
 
     return {
+      dueCount, completedCount, remainingCount, completionHint,
       sessionTotal, submittedTotal, total: sessionTotal,
       correct, wrong, skipped, answered: submittedTotal,
       accuracy, completionRate, wrongRate,
@@ -1136,7 +1232,7 @@ Page({
   /* ==================== 导航按钮 ==================== */
 
   finishReview() {
-    wx.navigateBack()
+    wx.reLaunch({ url: '/pages/home/home' })
   },
 
   goWrongBook() {
@@ -1149,6 +1245,32 @@ Page({
 
   goHome() {
     wx.reLaunch({ url: '/pages/home/home' })
+  },
+
+  onNavBack() {
+    if (this.data.phase === 'reviewing') {
+      this.setData({ exitConfirmVisible: true })
+      return
+    }
+    const pages = getCurrentPages()
+    if (pages.length > 1) wx.navigateBack()
+    else wx.reLaunch({ url: '/pages/home/home' })
+  },
+
+  closeExitConfirm() {
+    this.setData({ exitConfirmVisible: false })
+  },
+
+  confirmExitReview() {
+    this._clearMasterUndo()
+    this.setData({ exitConfirmVisible: false })
+    const pages = getCurrentPages()
+    if (pages.length > 1) wx.navigateBack()
+    else wx.reLaunch({ url: '/pages/home/home' })
+  },
+
+  toggleGroupDetails() {
+    this.setData({ showGroupDetails: !this.data.showGroupDetails })
   },
 
   retryLoad() {
