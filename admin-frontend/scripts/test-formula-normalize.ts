@@ -174,11 +174,59 @@ const tests: TestCase[] = [
     input: '(1 + x)',
     expected: '(1 + x)',
   },
+
+  // ── Prime / absolute value / factorial (code review findings) ──
+  {
+    id: 28,
+    label: "prime notation f'(x)",
+    input: "f'(x) = g(x)",
+    expected: "\\(f'(x) = g(x)\\)",
+  },
+  {
+    id: 29,
+    label: 'absolute value |x|',
+    input: '|x| > 0',
+    expected: '\\(|x| > 0\\)',
+  },
+  {
+    id: 30,
+    label: 'factorial n!',
+    input: 'n! = 120',
+    expected: '\\(n! = 120\\)',
+  },
+
+  // ── Unicode math symbols (code review findings) ──
+  {
+    id: 31,
+    label: 'multiplication sign ×',
+    input: 'a × b = c',
+    expected: '\\(a × b = c\\)',
+  },
+  {
+    id: 32,
+    label: 'Greek pi',
+    input: 'π ≈ 3.14',
+    expected: '\\(π \\approx 3.14\\)',
+  },
+
+  // ── Operator names sup/inf (code review findings) ──
+  {
+    id: 33,
+    label: 'sup operator',
+    input: 'sup f(x) = 1',
+    expected: '\\(\\sup f(x) = 1\\)',
+  },
+  {
+    id: 34,
+    label: 'inf operator',
+    input: 'inf g(x) = 0',
+    expected: '\\(\\inf g(x) = 0\\)',
+  },
 ];
 
 /* ── Idempotency tests are derived from the positive cases above ── */
 
-const idempotentSourceIds = [1, 9, 12, 15, 22, 23, 25, 26];
+const idempotentSourceIds = [1, 9, 12, 15, 22, 23, 25, 26, 28, 29, 30, 31, 32, 33, 34];
 
 let passed = 0;
 let failed = 0;
