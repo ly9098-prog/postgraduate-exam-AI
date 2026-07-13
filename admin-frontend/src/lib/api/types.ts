@@ -50,10 +50,20 @@ export type ImportQuestionItem = {
   updated_at: string;
 };
 
+export type PdfPageRangeInfo = {
+  requested_start?: number | null;
+  requested_end?: number | null;
+  effective_start: number;
+  effective_end: number;
+  selected_page_count: number;
+  total_pages: number;
+};
+
 export type ImportPipelineUploadResponse = {
   pipeline_id: string;
   status: string;
   source_type?: string | null;
+  page_range?: PdfPageRangeInfo | null;
 };
 
 export type ImportPipelineStatusResponse = {
@@ -96,6 +106,7 @@ export type ImportPipelineStatusResponse = {
   ocr_progress: string;
   source_type: string;
   chunk_progress?: Record<string, unknown> | null;
+  page_range?: PdfPageRangeInfo | null;
   alerts?: AlertItem[] | null;
 };
 
