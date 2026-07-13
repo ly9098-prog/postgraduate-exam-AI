@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LatexRenderer } from "@/components/ui/latex-renderer";
+import { MixedLatexRenderer } from "@/components/ui/mixed-latex-renderer";
 import { FormulaEditorForm } from "@/components/formulas/formula-editor-form";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
@@ -207,7 +208,9 @@ export default function EditFormulaPage() {
             {card.conditions && (
               <section className="rounded-[1.6rem] border border-amber-200 bg-amber-50/60 p-4">
                 <p className="font-semibold text-amber-800">适用条件</p>
-                <p className="mt-2 text-sm text-amber-900">{card.conditions}</p>
+                <div className="mt-2 text-sm text-amber-900">
+                  <MixedLatexRenderer text={card.conditions} />
+                </div>
               </section>
             )}
 
@@ -221,7 +224,9 @@ export default function EditFormulaPage() {
             {card.error_tips && (
               <section className="rounded-[1.6rem] border border-red-200 bg-red-50/60 p-4">
                 <p className="font-semibold text-red-700">易错提醒</p>
-                <p className="mt-2 text-sm leading-6 text-red-800">{card.error_tips}</p>
+                <div className="mt-2 text-sm leading-6 text-red-800">
+                  <MixedLatexRenderer text={card.error_tips} />
+                </div>
               </section>
             )}
 
