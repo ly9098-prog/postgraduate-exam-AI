@@ -829,3 +829,25 @@ export type BatchAnswerImageApplyResponse = {
   remaining_count: number;
   batch_stats: Record<string, number>;
 };
+
+// ── Formula Graph Asset ──
+
+export type FormulaGraphAsset = {
+  id: number;
+  formula_card_id: number;
+  source_type: "uploaded" | "template" | string;
+  template_type?: string | null;
+  template_parameters?: Record<string, unknown> | null;
+  viewport?: Record<string, unknown> | null;
+  image_url?: string | null;
+  thumbnail_url?: string | null;
+  original_svg_url?: string | null;
+  mime_type?: string | null;
+  width?: number | null;
+  height?: number | null;
+  checksum?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type FormulaCardType = "pure_formula" | "function_graph";
