@@ -9,6 +9,9 @@ OnCalendar=*-*-* 03:00:00
 # 服务器关机错过任务后，开机时补跑
 Persistent=true
 
+# 随机延迟 0-30 分钟，避免整点集群冲击
+RandomizedDelaySec=30min
+
 # 如果任务执行超时（超过 1 小时未完成），下次准时再跑
 AccuracySec=1min
 

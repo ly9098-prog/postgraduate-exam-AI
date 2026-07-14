@@ -37,6 +37,10 @@ scripts/postgres_backup.py
 | `BACKUP_RETENTION_DAYS` | 备份保留天数 | `14` |
 | `BACKUP_PREFIX` | 备份文件名前缀 | `postgraduate` |
 | `BACKUP_LOG_FILE` | 日志文件路径 | `logs/postgres_backup.log` |
+| `BACKUP_LOCK_FILE` | 文件锁路径（防并发） | `/tmp/postgraduate_postgres_backup.lock` |
+| `BACKUP_COMMAND_TIMEOUT_SEC` | pg_dump 超时秒数 | `3600` |
+| `BACKUP_COMPRESSION_LEVEL` | pg_dump 压缩级别 0-9 | `6` |
+| `BACKUP_VERIFY_RESTORE_ENABLED` | 是否启用自动恢复验证 | `false` |
 | `APP_ENV` | 环境标识，仅用于日志 | — |
 
 ### 支持的 DATABASE_URL 格式
@@ -52,10 +56,41 @@ postgres://user:password@host:5432/dbname
 ### 手动执行（测试用）
 
 ```bash
+# 宿主机直接执行
 cd /opt/2240ai-v2
 source .venv/bin/activate
 python scripts/postgres_backup.py
+
+# Docker 模式执行
+cd /opt/2240ai-v2
+docker compose -f deploy/docker-compose.prod.yml --env-file backend/.env run --rm backup
 ```
+
+### 验证备份恢复（安全测试）
+
+使用临时数据库验证备份文件的完整性：
+
+```bash
+# 恢复到临时库并检查关键表
+python scripts/postgres_backup.py verify-restore /backups/postgraduate_postgres_20260704_030000.dump
+
+# Docker 模式
+docker compose -f deploy/docker-compose.prod.yml --env-file backend/.env run --rm backup \
+  verify-restore /backups/postgraduate_postgres_20260704_030000.dump
+```
+
+### 备份流程（原子写入）
+
+每次备份执行以下步骤：
+
+1. **写入临时文件** — pg_dump 输出到 `.partial` 后缀的临时文件
+2. **校验** — pg_restore --list 检查 TOC 条目数
+3. **原子重命名** — os.replace() 将临时文件改为最终 `.dump` 文件
+4. **SHA-256** — 计算备份文件哈希值
+5. **Manifest** — 将备份元数据追加到 `manifest.json`
+6. **清理** — 删除过期备份和残留的 `.partial` 文件
+
+如果任何步骤失败，`.partial` 文件会被自动清理，不会产生伪成功文件。
 
 ### 备份文件
 
@@ -77,7 +112,7 @@ postgraduate_postgres_20260704_030000.dump
 
 ## 生产定时任务配置
 
-### 推荐方案：systemd timer
+### 方案 A：systemd timer（推荐）
 
 #### 1. 复制服务文件
 
@@ -102,6 +137,9 @@ sudo sed -i 's|/opt/2240ai-v2|/your/actual/path|g' \
   /etc/systemd/system/postgres-backup.service
 ```
 
+> **宿主机关联**：systemd service 默认使用宿主机 Python 环境 + pg_dump。
+> 如果宿主机未安装 PostgreSQL 客户端，改用 Docker 模式（见下方注释）。
+
 #### 3. 启动定时器
 
 ```bash
@@ -123,9 +161,47 @@ sudo systemctl list-timers --all | grep -i backup
 sudo journalctl -u postgres-backup.service -n 100 --no-pager
 ```
 
+#### 6. 查看下次执行时间
+
+```bash
+systemctl list-timers --all | grep postgres-backup
+systemctl show postgres-backup.timer | grep NextElapse
+```
+
 ---
 
-### 备选方案：crontab
+### 备选方案 B：Docker Compose backup 服务
+
+生产 Compose 文件中已定义 `backup` 服务（带 `profiles: [manual]`，不随 `compose up` 自动启动）。
+
+#### 通过 systemd timer 执行 Docker 备份
+
+修改 `deploy/systemd/postgres-backup.service`，将 ExecStart 替换为：
+
+```ini
+ExecStart=/usr/bin/docker compose -f /opt/2240ai-v2/deploy/docker-compose.prod.yml --env-file /opt/2240ai-v2/backend/.env run --rm backup
+```
+
+#### 手动执行
+
+```bash
+# 通过 deploy.sh（推荐）
+bash deploy/scripts/deploy.sh backup
+
+# 直接调用 Docker Compose
+docker compose -f deploy/docker-compose.prod.yml --env-file backend/.env run --rm backup
+```
+
+#### Docker 备份模式的优点
+
+- 不需要宿主机安装 PostgreSQL 客户端
+- 备份容器与 postgres 在同一 Docker 网络
+- 资源隔离（不占用 app 容器资源）
+- 备份数据卷 `backup_data` 持久化存储
+
+---
+
+### 备选方案 C：crontab
 
 **注意：不要同时启用 systemd timer 和 crontab，避免重复备份。**
 
