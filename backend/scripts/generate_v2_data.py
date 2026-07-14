@@ -1,0 +1,920 @@
+#!/usr/bin/env python3
+"""Generate math2_core_v2_extensions.json from structured Python data.
+
+This script ensures all LaTeX backslashes are properly escaped in JSON output.
+"""
+import json
+import re
+import sys
+
+DATA = {
+    "subjects": [
+        {
+            "code": "math2_high_math",
+            "name": "高等数学",
+            "node_type": "subject",
+            "chapters": [
+                {
+                    "code": "derivative",
+                    "name": "一元函数微分学",
+                    "groups": [
+                        {
+                            "code": "derivative_geo_app",
+                            "name": "微分学的几何应用",
+                            "cards": [
+                                # Card 1: 曲率与曲率半径
+                                {
+                                    "title": "曲率与曲率半径",
+                                    "aliases": ["曲率公式", "曲率半径", "κ公式"],
+                                    "search_text": "曲率 curvature 曲率半径 radius of curvature 密切圆 参数方程曲率",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required", "high_frequency"],
+                                    "source_ref": "math2_core_v2:calculus:curvature",
+                                    "source_title": "考研数学二大纲 — 一元函数微分学的几何应用",
+                                    "summary": "曲率描述曲线的弯曲程度，曲率半径是曲率的倒数，在几何应用中用于分析曲线局部性质。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "曲率定义（直角坐标）",
+                                            "latex": "\\kappa = \\frac{|y''|}{[1+(y')^2]^{3/2}}",
+                                            "note": "y=f(x)二阶可导"
+                                        },
+                                        {
+                                            "label": "参数方程形式",
+                                            "latex": "\\kappa = \\frac{|x'y'' - y'x''|}{[(x')^2 + (y')^2]^{3/2}}",
+                                            "note": "导数均对参数t求导"
+                                        },
+                                        {
+                                            "label": "曲率半径",
+                                            "latex": "\\rho = \\frac{1}{\\kappa},\\quad \\kappa \\neq 0"
+                                        }
+                                    ],
+                                    "conditions": "曲线二阶可导；直角坐标形式要求y'(x)存在；参数形式要求x'(t), y'(t)不同时为0。",
+                                    "symbol_notes": "κ—曲率（希腊字母kappa），ρ—曲率半径。",
+                                    "secondary_conclusions": "曲率越大表示曲线弯曲越厉害；直线κ=0, ρ=+∞；圆κ=1/R。",
+                                    "error_tips": "注意曲率公式分子有绝对值；κ和ρ是几何量不是坐标量；不要混淆直角坐标和参数方程公式。"
+                                },
+                                # Card 2: 曲率圆圆心
+                                {
+                                    "title": "曲率圆圆心",
+                                    "aliases": ["曲率中心", "密切圆圆心", "curvature circle"],
+                                    "search_text": "曲率圆 密切圆 曲率中心 参数方程曲率圆圆心 osculating circle",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required", "error_prone"],
+                                    "source_ref": "math2_core_v2:calculus:curvature_circle",
+                                    "source_title": "考研数学二大纲 — 一元函数微分学的几何应用",
+                                    "summary": "曲率圆（密切圆）是与曲线在给定点具有相同切线和曲率的圆。其圆心称为曲率中心。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "直角坐标形式",
+                                            "latex": "x_c = x - \\frac{y'[1+(y')^2]}{y''},\\quad y_c = y + \\frac{1+(y')^2}{y''}",
+                                            "note": "y'' ≠ 0"
+                                        },
+                                        {
+                                            "label": "参数方程形式",
+                                            "latex": "x_c = x - \\frac{y'[(x')^2+(y')^2]}{x'y'' - y'x''},\\quad y_c = y + \\frac{x'[(x')^2+(y')^2]}{x'y'' - y'x''}",
+                                            "note": "x'y'' - y'x'' ≠ 0"
+                                        },
+                                        {
+                                            "label": "曲率圆半径",
+                                            "latex": "\\rho = \\frac{1}{\\kappa} = \\frac{[1+(y')^2]^{3/2}}{|y''|}"
+                                        }
+                                    ],
+                                    "conditions": "曲率存在且κ≠0；直角坐标要求y''≠0；参数形式要求x'y''-y'x''≠0。曲率圆半径为ρ=1/κ。",
+                                    "symbol_notes": "(x_c,y_c)为曲率中心坐标，(x,y)为曲线上的给定点。",
+                                    "secondary_conclusions": "曲率圆与曲线在切点处有相同的切线、一阶导数和二阶导数（即曲率相同）。",
+                                    "error_tips": "分母不为零是必要条件；参数方程形式中所有导数均对同一参数t求导；曲率中心不在曲线上。配合'曲率与曲率半径'卡片使用。"
+                                },
+                                # Card 3: 指数衰减型函数的极值
+                                {
+                                    "title": "指数衰减型函数的极值",
+                                    "aliases": ["x^α e^{-βx}极值", "指数衰减峰值", "exponential decay"],
+                                    "search_text": "指数衰减 极值点 衰减函数 指数函数极值 exponential decay maximum",
+                                    "card_type": "pure_formula",
+                                    "tags": ["high_frequency", "common_inference"],
+                                    "source_ref": "math2_core_v2:calculus:exponential_decay",
+                                    "source_title": "历年真题高频 — 指数衰减型函数极值（如2009、2014、2019年数二真题）",
+                                    "summary": "指数衰减型函数f(x)=x^α e^{-βx}在概率论、物理和工程中广泛出现，考研中常考其极值点和最大值。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "一般形式",
+                                            "latex": "f(x) = x^\\alpha e^{-\\beta x},\\quad x > 0,\\; \\alpha > 0,\\; \\beta > 0"
+                                        },
+                                        {
+                                            "label": "对数导数法",
+                                            "latex": "\\frac{f'(x)}{f(x)} = \\frac{\\alpha}{x} - \\beta"
+                                        },
+                                        {
+                                            "label": "极值点",
+                                            "latex": "f'(x) = 0 \\Rightarrow x = \\frac{\\alpha}{\\beta}"
+                                        },
+                                        {
+                                            "label": "最大值",
+                                            "latex": "f_{\\max} = \\left(\\frac{\\alpha}{\\beta e}\\right)^\\alpha"
+                                        }
+                                    ],
+                                    "conditions": "x>0, α>0, β>0；该函数在x=α/β处取得最大值（唯一极值点），x→0+时f(x)→0，x→+∞时f(x)→0。",
+                                    "symbol_notes": "α—幂次（无量纲），β—衰减系数。",
+                                    "secondary_conclusions": "当α=n（正整数）时，f(x)=x^n e^{-βx}在x=n/β取得最大值；特例f(x)=xe^{-x}在x=1取得最大值f(1)=1/e。",
+                                    "error_tips": "注意定义域仅x>0；对数导数法避免了对乘积直接求导的繁琐计算；f_max表达式不要遗漏α次幂。对应函数图像参见'函数图像'栏目。"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "integral",
+                    "name": "一元函数积分学",
+                    "groups": [
+                        {
+                            "code": "integral_geo_app",
+                            "name": "积分学的几何应用",
+                            "cards": [
+                                # Card 4: 弧微分与曲线弧长
+                                {
+                                    "title": "弧微分与曲线弧长",
+                                    "aliases": ["弧微分", "弧长公式", "参数方程弧长", "ds公式"],
+                                    "search_text": "弧微分 曲线弧长 弧长 参数方程弧长 arc length arc differential ds",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required", "high_frequency"],
+                                    "source_ref": "math2_core_v2:calculus:arc_length",
+                                    "source_title": "考研数学二大纲 — 定积分的几何应用",
+                                    "summary": "弧微分ds是曲线长度的微分元，对ds积分得到曲线弧长。参数方程形式是考研常考点。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "弧微分（直角坐标）",
+                                            "latex": "ds = \\sqrt{1 + [y'(x)]^2}\\,dx"
+                                        },
+                                        {
+                                            "label": "弧微分（参数方程）",
+                                            "latex": "ds = \\sqrt{[x'(t)]^2 + [y'(t)]^2}\\,dt"
+                                        },
+                                        {
+                                            "label": "弧长（参数方程）",
+                                            "latex": "s = \\int_\\alpha^\\beta \\sqrt{[x'(t)]^2 + [y'(t)]^2}\\,dt",
+                                            "note": "α≤t≤β，积分下限小于上限"
+                                        }
+                                    ],
+                                    "conditions": "曲线光滑（导数连续且不同时为0）；直角坐标曲线y=y(x)在[a,b]上有连续导数。",
+                                    "symbol_notes": "ds—弧微分元，是微小弧长的近似值。",
+                                    "secondary_conclusions": "ds²=dx²+dy²（几何上体现为微元直角三角形）。",
+                                    "error_tips": "弧长公式区别于面积和体积公式；参数方程形式需对各参数求导。与'定积分的几何应用'卡片中弧长公式可配合使用。"
+                                },
+                                # Card 5: 旋转曲面侧面积
+                                {
+                                    "title": "旋转曲面侧面积",
+                                    "aliases": ["旋转体侧面积", "旋转曲面面积", "侧面积公式"],
+                                    "search_text": "旋转曲面 侧面积 旋转体表面积 绕x轴 绕y轴 revolution surface area",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required"],
+                                    "source_ref": "math2_core_v2:calculus:surface_revolution",
+                                    "source_title": "考研数学二大纲 — 定积分的几何应用",
+                                    "summary": "曲线绕坐标轴旋转所成曲面的侧面积，微元思想是取弧段ds绕轴旋转形成圆台的侧面积。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "统一形式",
+                                            "latex": "S = 2\\pi \\int r\\,ds",
+                                            "note": "r为曲线上点到旋转轴的距离"
+                                        },
+                                        {
+                                            "label": "绕x轴（y=y(x)）",
+                                            "latex": "S_x = 2\\pi \\int_a^b |y|\\sqrt{1+(y')^2}\\,dx"
+                                        },
+                                        {
+                                            "label": "绕y轴（y=y(x)）",
+                                            "latex": "S_y = 2\\pi \\int_a^b |x|\\sqrt{1+(y')^2}\\,dx"
+                                        },
+                                        {
+                                            "label": "参数方程形式（绕x轴）",
+                                            "latex": "S_x = 2\\pi \\int_\\alpha^\\beta y(t)\\sqrt{[x'(t)]^2+[y'(t)]^2}\\,dt"
+                                        }
+                                    ],
+                                    "conditions": "曲线光滑；积分上下限对应旋转范围；注意与旋转体体积公式(V=π∫f²(x)dx)区分。",
+                                    "symbol_notes": "S—侧面积，r—旋转半径，ds—弧微分。",
+                                    "error_tips": "半径可能需要绝对值（当曲线穿越旋转轴时）；不要与旋转体体积公式混淆；参数方程中y(t)≥0时可不加绝对值。"
+                                }
+                            ]
+                        },
+                        {
+                            "code": "integral_phys_app",
+                            "name": "积分学的物理应用",
+                            "cards": [
+                                # Card 6: 定积分的功与液体压力
+                                {
+                                    "title": "定积分的功与液体压力",
+                                    "aliases": ["变力做功", "液体压力", "静压力", "物理应用"],
+                                    "search_text": "变力做功 液体压力 静压力 定积分物理应用 work pressure fluid",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required", "high_frequency"],
+                                    "source_ref": "math2_core_v2:calculus:work_pressure",
+                                    "source_title": "考研数学二大纲 — 定积分的物理应用",
+                                    "summary": "利用定积分解决变力做功和液体静压力问题，核心是微元法建模。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "变力沿直线做功",
+                                            "latex": "W = \\int_a^b F(x)\\,dx",
+                                            "note": "F(x)为位置x处的力"
+                                        },
+                                        {
+                                            "label": "液体静压力（建模形式）",
+                                            "latex": "F = \\rho g \\int h(y)\\,w(y)\\,dy",
+                                            "note": "ρ为液体密度，g为重力加速度"
+                                        }
+                                    ],
+                                    "conditions": "h(y)表示深度（通常为自由液面到薄条的垂直距离）；w(y)表示深度y处薄条的水平宽度；ρ和g需使用统一单位制。",
+                                    "symbol_notes": "ρ—液体密度(kg/m³)；g—重力加速度(9.8m/s²)；h(y)—深度函数；w(y)—宽度函数。",
+                                    "error_tips": "注意坐标系原点选择会影响h(y)和积分限表达式；不要混淆压力与压强；ρg在静水中是常数，可提到积分号外。"
+                                },
+                                # Card 7: 平面图形的质心与形心
+                                {
+                                    "title": "平面图形的质心与形心",
+                                    "aliases": ["形心公式", "质心", "重心", "centroid"],
+                                    "search_text": "质心 形心 重心 平面图形质心 形心公式 centroid center of mass",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required"],
+                                    "source_ref": "math2_core_v2:calculus:centroid",
+                                    "source_title": "考研数学二大纲 — 定积分的物理应用",
+                                    "summary": "形心（均匀薄片的几何中心）和质心（考虑密度分布的物理中心）是定积分在物理中的重要应用。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "形心（均匀薄片）",
+                                            "latex": "\\bar{x} = \\frac{\\iint_D x\\,dA}{A},\\quad \\bar{y} = \\frac{\\iint_D y\\,dA}{A}",
+                                            "note": "A = ∬_D dA为区域面积"
+                                        },
+                                        {
+                                            "label": "质心（变密度薄片）",
+                                            "latex": "\\bar{x} = \\frac{\\iint_D x\\rho(x,y)\\,dA}{\\iint_D \\rho(x,y)\\,dA},\\quad \\bar{y} = \\frac{\\iint_D y\\rho(x,y)\\,dA}{\\iint_D \\rho(x,y)\\,dA}",
+                                            "note": "ρ(x,y)为面密度"
+                                        },
+                                        {
+                                            "label": "曲线下区域形心（y=0为下界）",
+                                            "latex": "A = \\int_a^b f(x)\\,dx,\\quad \\bar{x} = \\frac{1}{A}\\int_a^b xf(x)\\,dx,\\quad \\bar{y} = \\frac{1}{2A}\\int_a^b [f(x)]^2\\,dx",
+                                            "note": "仅当下边界为y=0时成立"
+                                        },
+                                        {
+                                            "label": "两曲线间区域形心",
+                                            "latex": "A = \\int_a^b [f(x)-g(x)]\\,dx,\\quad \\bar{x} = \\frac{1}{A}\\int_a^b x[f(x)-g(x)]\\,dx,\\quad \\bar{y} = \\frac{1}{2A}\\int_a^b [f^2(x)-g^2(x)]\\,dx"
+                                        }
+                                    ],
+                                    "conditions": "形心公式适用于均匀密度薄片；质心公式适用于变密度情况；简化的ȳ公式仅当下边界为y=0时成立。",
+                                    "symbol_notes": "(x̄,ȳ)为形心坐标；A为区域面积；ρ(x,y)为面密度函数。",
+                                    "error_tips": "形心与质心的区别是密度是否均匀；简化公式切勿用于两曲线围成的区域。"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "ode",
+                    "name": "常微分方程",
+                    "groups": [
+                        {
+                            "code": "ode_theory",
+                            "name": "微分方程基础理论",
+                            "cards": [
+                                # Card 9: 微分方程基本概念与解的结构
+                                {
+                                    "title": "微分方程基本概念与解的结构",
+                                    "aliases": ["微分方程概念", "解的结构", "通解结构", "齐次解结构"],
+                                    "search_text": "微分方程 阶 解 通解 特解 初始条件 初值问题 齐次通解 非齐次通解 y_h y_p 解的结构",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required", "must_memorize"],
+                                    "source_ref": "math2_core_v2:ode:ode_basics",
+                                    "source_title": "考研数学二大纲 — 常微分方程基本理论",
+                                    "summary": "微分方程的基本概念（阶、解、通解、特解、初值问题）以及线性微分方程解的结构定理。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "基本概念",
+                                            "latex": "\\text{阶：方程中最高阶导数的阶数；解：满足方程的函数；通解：含独立任意常数的解；特解：满足初始条件的解。}"
+                                        },
+                                        {
+                                            "label": "初值问题",
+                                            "latex": "\\begin{cases} y^{(n)} = f(x,y,y',\\dots,y^{(n-1)}) \\\\ y(x_0)=y_0,\\; y'(x_0)=y'_0,\\; \\dots,\\; y^{(n-1)}(x_0)=y_0^{(n-1)} \\end{cases}"
+                                        },
+                                        {
+                                            "label": "齐次线性方程",
+                                            "latex": "a_n(x)y^{(n)} + a_{n-1}(x)y^{(n-1)} + \\cdots + a_1(x)y' + a_0(x)y = 0"
+                                        },
+                                        {
+                                            "label": "解得线性组合",
+                                            "latex": "y_1,y_2,\\dots,y_m\\text{是齐次方程的解}\\;\\Rightarrow\\; \\sum_{i=1}^m C_i y_i\\text{仍是齐次方程的解}"
+                                        },
+                                        {
+                                            "label": "非齐次通解结构",
+                                            "latex": "y = y_h + y_p",
+                                            "note": "y_h为对应齐次方程通解，y_p为非齐次方程的一个特解"
+                                        }
+                                    ],
+                                    "conditions": "齐次线性方程解的线性组合性质要求系数函数a_i(x)在区间上连续。",
+                                    "symbol_notes": "y_h—齐次通解（homogeneous），y_p—特解（particular）。",
+                                    "secondary_conclusions": "对于非齐次线性方程，通解可以表示为齐次通解与任一特解之和。",
+                                    "error_tips": "不要混淆'通解'和'全部解'（通解中常数个数=方程阶数时才覆盖全部解）；初值问题的解存在唯一性需要满足Picard定理条件。"
+                                }
+                            ]
+                        },
+                        {
+                            "code": "ode_basic",
+                            "name": "一阶微分方程",
+                            "cards": [
+                                # Card 8: 一阶齐次微分方程
+                                {
+                                    "title": "一阶齐次微分方程",
+                                    "aliases": ["齐次微分方程", "一阶齐次ODE", "y'=F(y/x)"],
+                                    "search_text": "一阶齐次微分方程 齐次ODE homogeneous ODE y'=F(y/x) 变量代换 可分离变量",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required", "error_prone"],
+                                    "source_ref": "math2_core_v2:ode:homogeneous_first_order",
+                                    "source_title": "考研数学二大纲 — 常微分方程",
+                                    "summary": "一阶齐次微分方程是形如y'=F(y/x)的方程，通过代换v=y/x化为可分离变量方程求解。这里的'齐次'含义与线性齐次不同。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "标准形式",
+                                            "latex": "y' = F\\left(\\frac{y}{x}\\right)",
+                                            "note": "F为已知连续函数"
+                                        },
+                                        {
+                                            "label": "代换",
+                                            "latex": "v = \\frac{y}{x},\\quad y = vx,\\quad y' = v + xv'"
+                                        },
+                                        {
+                                            "label": "化为可分离变量",
+                                            "latex": "v + xv' = F(v) \\quad\\Rightarrow\\quad \\frac{dv}{F(v)-v} = \\frac{dx}{x}"
+                                        }
+                                    ],
+                                    "conditions": "F(u)为连续函数；分母F(v)-v≠0；若F(v)-v=0存在实根，则该v=y/x也是原方程的解。",
+                                    "symbol_notes": "v为代换后的新未知函数。",
+                                    "error_tips": "与'一阶线性齐次微分方程'(y'+P(x)y=0)完全不同！两种'齐次'含义不同：本卡片指对函数F(y/x)的齐次性，线性齐次指y项系数为零。名称非常容易混淆！"
+                                }
+                            ]
+                        },
+                        {
+                            "code": "ode_high_order",
+                            "name": "高阶微分方程",
+                            "cards": [
+                                # Card 10: 高阶常系数齐次线性微分方程
+                                {
+                                    "title": "高阶常系数齐次线性微分方程",
+                                    "aliases": ["高阶ODE", "常系数齐次", "特征方程", "高阶特征根"],
+                                    "search_text": "高阶常系数齐次线性微分方程 特征方程 特征根 实重根 复根 通解形式 高阶ODE",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required"],
+                                    "source_ref": "math2_core_v2:ode:high_order_homogeneous",
+                                    "source_title": "考研数学二大纲 — 高阶线性微分方程",
+                                    "summary": "n阶常系数齐次线性微分方程通过特征方程求解，根据特征根的类型（单根、重根、复根）确定通解形式。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "一般形式",
+                                            "latex": "a_n y^{(n)} + a_{n-1} y^{(n-1)} + \\cdots + a_1 y' + a_0 y = 0"
+                                        },
+                                        {
+                                            "label": "特征方程",
+                                            "latex": "a_n r^n + a_{n-1} r^{n-1} + \\cdots + a_1 r + a_0 = 0"
+                                        },
+                                        {
+                                            "label": "实重根r（m重）",
+                                            "latex": "e^{rx},\\; xe^{rx},\\; x^2 e^{rx},\\; \\dots,\\; x^{m-1} e^{rx}"
+                                        },
+                                        {
+                                            "label": "复根α±iβ（单重）",
+                                            "latex": "e^{\\alpha x}\\bigl(C_1 \\cos\\beta x + C_2 \\sin\\beta x\\bigr)"
+                                        },
+                                        {
+                                            "label": "m重复根α±iβ",
+                                            "latex": "e^{\\alpha x}\\bigl[(C_1 + C_2 x + \\cdots + C_m x^{m-1})\\cos\\beta x + (D_1 + D_2 x + \\cdots + D_m x^{m-1})\\sin\\beta x\\bigr]",
+                                            "note": "即每种类型再依次乘以1, x, …, x^{m-1}"
+                                        }
+                                    ],
+                                    "conditions": "系数a_i为常数。特征方程可由y=e^{rx}代入原方程导出。",
+                                    "error_tips": "不要将n阶特征方程与二阶的特殊形式混淆；重根时需逐步乘x直到得到m个线性无关解。"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "double_integral",
+                    "name": "二重积分",
+                    "groups": [
+                        {
+                            "code": "double_int_advanced",
+                            "name": "二重积分进阶技巧",
+                            "cards": [
+                                # Card 11: 二重积分交换次序模板
+                                {
+                                    "title": "二重积分交换次序模板",
+                                    "aliases": ["交换积分次序", "累次积分换序", "积分换序"],
+                                    "search_text": "交换积分次序 二重积分换序 累次积分 X型 Y型 积分区域 换序模板",
+                                    "card_type": "pure_formula",
+                                    "tags": ["high_frequency", "common_inference"],
+                                    "source_ref": "math2_core_v2:calculus:exchange_order",
+                                    "source_title": "历年真题高频 — 二重积分计算（2010-2024年数二多道真题涉及）",
+                                    "summary": "交换二重积分累次积分的次序是考研高频考点，关键是正确识别积分区域并写出新的积分限。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "X型→Y型交换",
+                                            "latex": "\\int_a^b dx \\int_{\\varphi_1(x)}^{\\varphi_2(x)} f(x,y)\\,dy = \\int_c^d dy \\int_{\\psi_1(y)}^{\\psi_2(y)} f(x,y)\\,dx",
+                                            "note": "需重新确定积分区域"
+                                        },
+                                        {
+                                            "label": "交换次序五步骤",
+                                            "latex": "\\text{1. 由原积分画出积分域；2. 识别原积分类型(X型/Y型)；3. 找新投影区间；4. 根据新投影写限；5. 必要时分区。}"
+                                        },
+                                        {
+                                            "label": "需分区的特例",
+                                            "latex": "\\text{原X型区域的边界函数x=ψ(y)在投影区间内出现分段表达式时，} \\\\ \\text{交换后需要拆成多个Y型积分之和。}"
+                                        }
+                                    ],
+                                    "conditions": "被积函数f(x,y)在积分区域上连续（或可积）。",
+                                    "error_tips": "交换次序后上下限可能不是简单的互换；务必画出积分区域辅助判断；边界函数分段时注意分区点。"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "code": "math2_linear_algebra",
+            "name": "线性代数",
+            "node_type": "subject",
+            "chapters": [
+                {
+                    "code": "matrix",
+                    "name": "矩阵",
+                    "groups": [
+                        {
+                            "code": "matrix_advanced",
+                            "name": "特殊矩阵与进阶运算",
+                            "cards": [
+                                # Card 12: 正交矩阵
+                                {
+                                    "title": "正交矩阵",
+                                    "aliases": ["正交阵", "正交变换", "orthogonal matrix", "QQ^T=E"],
+                                    "search_text": "正交矩阵 orthogonal matrix 正交变换 QQ^T=E 标准正交组 行列式±1 内积保持",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required", "high_frequency"],
+                                    "source_ref": "math2_core_v2:linalg:orthogonal_matrix",
+                                    "source_title": "考研数学二大纲 — 矩阵",
+                                    "summary": "正交矩阵是满足Q^TQ=E的方阵，其逆等于转置，行列式为±1，且对应的正交变换保持向量内积和长度。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "定义",
+                                            "latex": "Q^T Q = Q Q^T = E"
+                                        },
+                                        {
+                                            "label": "逆等于转置",
+                                            "latex": "Q^{-1} = Q^T"
+                                        },
+                                        {
+                                            "label": "行列式",
+                                            "latex": "\\det Q = \\pm 1"
+                                        },
+                                        {
+                                            "label": "正交变换保持内积和长度",
+                                            "latex": "(Q\\alpha)\\cdot(Q\\beta) = \\alpha\\cdot\\beta,\\quad \\|Q\\alpha\\| = \\|\\alpha\\|"
+                                        }
+                                    ],
+                                    "conditions": "Q为n阶实方阵。",
+                                    "secondary_conclusions": "行向量和列向量均构成标准正交组（两两正交且为单位向量）。正交变换保持向量长度和内积。实对称矩阵可正交对角化。",
+                                    "error_tips": "det Q = ±1而不是±1以外的值；不是所有可逆矩阵都正交；正交矩阵不一定对称。"
+                                },
+                                # Card 13: 初等矩阵与矩阵等价
+                                {
+                                    "title": "初等矩阵与矩阵等价",
+                                    "aliases": ["初等矩阵", "矩阵等价", "等价关系", "PAQ", "elementary matrix"],
+                                    "search_text": "初等矩阵 初等变换 矩阵等价 PAQ 等价关系 左乘右乘 elementary matrix equivalence",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required"],
+                                    "source_ref": "math2_core_v2:linalg:elementary_matrix",
+                                    "source_title": "考研数学二大纲 — 矩阵",
+                                    "summary": "初等矩阵与初等变换一一对应，矩阵等价是指通过可逆变换得到的矩阵之间的关系。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "初等行变换↔左乘",
+                                            "latex": "\\text{对A做初等行变换等价于左乘对应的初等矩阵}"
+                                        },
+                                        {
+                                            "label": "初等列变换↔右乘",
+                                            "latex": "\\text{对A做初等列变换等价于右乘对应的初等矩阵}"
+                                        },
+                                        {
+                                            "label": "初等矩阵的性质",
+                                            "latex": "\\text{初等矩阵可逆，且其逆仍为同类型初等矩阵}"
+                                        },
+                                        {
+                                            "label": "矩阵等价",
+                                            "latex": "A \\sim B \\iff \\exists\\text{可逆矩阵}P,Q\\text{使}B = PAQ"
+                                        }
+                                    ],
+                                    "conditions": "P和Q均为可逆矩阵；乘积形式取决于具体做的是行变换还是列变换（也可能是两者的组合）。",
+                                    "error_tips": "不要混淆左乘和右乘的对应关系；等价不要求P=Q^{-1}（这是相似关系）。"
+                                },
+                                # Card 14: 分块矩阵常用公式
+                                {
+                                    "title": "分块矩阵常用公式",
+                                    "aliases": ["分块矩阵", "分块三角", "分块求逆", "block matrix"],
+                                    "search_text": "分块矩阵 分块乘法 分块转置 分块对角矩阵 分块三角行列式 分块三角求逆 block matrix invert",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required", "high_frequency"],
+                                    "source_ref": "math2_core_v2:linalg:block_matrix",
+                                    "source_title": "考研数学二大纲 — 矩阵",
+                                    "summary": "分块矩阵将大矩阵划分为子块处理，合理分块可大幅简化计算。分块三角矩阵的行列式和逆有简洁公式。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "分块乘法",
+                                            "latex": "\\text{将矩阵按块分割后，子块视为元素进行乘法，前提是分块维度兼容}"
+                                        },
+                                        {
+                                            "label": "分块对角矩阵",
+                                            "latex": "\\begin{pmatrix} A & 0 \\\\ 0 & D \\end{pmatrix}^n = \\begin{pmatrix} A^n & 0 \\\\ 0 & D^n \\end{pmatrix},\\quad \\begin{pmatrix} A & 0 \\\\ 0 & D \\end{pmatrix}^{-1} = \\begin{pmatrix} A^{-1} & 0 \\\\ 0 & D^{-1} \\end{pmatrix}"
+                                        },
+                                        {
+                                            "label": "分块三角行列式",
+                                            "latex": "\\begin{vmatrix} A & B \\\\ 0 & D \\end{vmatrix} = \\det(A)\\det(D)"
+                                        },
+                                        {
+                                            "label": "分块三角矩阵的逆",
+                                            "latex": "\\begin{pmatrix} A & B \\\\ 0 & D \\end{pmatrix}^{-1} = \\begin{pmatrix} A^{-1} & -A^{-1}BD^{-1} \\\\ 0 & D^{-1} \\end{pmatrix}"
+                                        }
+                                    ],
+                                    "conditions": "分块三角矩阵的逆公式要求A和D都是可逆方阵；分块乘法时需确保各块维度匹配。",
+                                    "error_tips": "分块求逆公式中左上角A的逆不可省略；分块转置时每个子块也要转置（且分块位置也转置）。"
+                                },
+                                # Card 15: 伴随矩阵的秩
+                                {
+                                    "title": "伴随矩阵的秩",
+                                    "aliases": ["伴随矩阵", "adjugate matrix", "A^*秩", "伴随秩"],
+                                    "search_text": "伴随矩阵 伴随矩阵的秩 adjugate rank 伴随矩阵行列式 AA^*=A^*A=|A|E 可逆时A^*=|A|A^{-1}",
+                                    "card_type": "pure_formula",
+                                    "tags": ["high_frequency", "common_inference"],
+                                    "source_ref": "math2_core_v2:linalg:adjugate_rank",
+                                    "source_title": "历年真题高频 — 伴随矩阵性质",
+                                    "summary": "伴随矩阵的秩取决于原矩阵的秩，呈现三段式结果，是考研高频考查点。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "基本恒等式",
+                                            "latex": "AA^* = A^*A = (\\det A)E"
+                                        },
+                                        {
+                                            "label": "伴随矩阵的秩",
+                                            "latex": "r(A^*) = \\begin{cases} n, & r(A)=n \\\\ 1, & r(A)=n-1 \\\\ 0, & r(A) \\le n-2 \\end{cases}"
+                                        },
+                                        {
+                                            "label": "伴随矩阵的行列式",
+                                            "latex": "\\det(A^*) = (\\det A)^{n-1}"
+                                        },
+                                        {
+                                            "label": "A可逆时的等价形式",
+                                            "latex": "A^* = (\\det A) A^{-1}"
+                                        }
+                                    ],
+                                    "conditions": "A为n阶方阵(n≥2)。",
+                                    "error_tips": "r(A)=n-1时r(A^*)=1不是0；当n=1时，A^*定义为1。"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "vector",
+                    "name": "向量",
+                    "groups": [
+                        {
+                            "code": "vector_orthogonal",
+                            "name": "向量的正交化",
+                            "cards": [
+                                # Card 16: 施密特正交化
+                                {
+                                    "title": "施密特正交化",
+                                    "aliases": ["Gram-Schmidt", "Schmidt正交化", "正交化方法", "正交规范化"],
+                                    "search_text": "施密特正交化 Gram-Schmidt 正交化 规范正交基 单位化 orthogonalization 施密特",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required", "must_memorize"],
+                                    "source_ref": "math2_core_v2:linalg:gram_schmidt",
+                                    "source_title": "考研数学二大纲 — 向量的正交化",
+                                    "summary": "施密特正交化方法将一组线性无关的向量组改造为标准正交组，是构造正交基的标准方法。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "取第一个向量",
+                                            "latex": "\\beta_1 = \\alpha_1"
+                                        },
+                                        {
+                                            "label": "递推公式（k≥2）",
+                                            "latex": "\\beta_k = \\alpha_k - \\sum_{j=1}^{k-1}\\frac{(\\alpha_k,\\beta_j)}{(\\beta_j,\\beta_j)}\\beta_j"
+                                        },
+                                        {
+                                            "label": "单位化",
+                                            "latex": "e_k = \\frac{\\beta_k}{\\|\\beta_k\\|},\\quad \\|\\beta_k\\| = \\sqrt{(\\beta_k,\\beta_k)}"
+                                        }
+                                    ],
+                                    "conditions": "输入向量组α₁,α₂,...,α_n线性无关；内积(·,·)为标准欧几里得内积。",
+                                    "secondary_conclusions": "正交化后的β₁,...,β_n是正交组，单位化后e₁,...,e_n是标准正交组。",
+                                    "error_tips": "求和符号中的分母(βⱼ,βⱼ)≠0（由线性无关保证）；计算时注意顺序：每次减去已得到的全部正交分量；单位化在正交化之后进行。"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "linear_eq",
+                    "name": "线性方程组",
+                    "groups": [
+                        {
+                            "code": "linear_eq_advanced",
+                            "name": "线性方程组进阶理论",
+                            "cards": [
+                                # Card 17: 克拉默法则
+                                {
+                                    "title": "克拉默法则",
+                                    "aliases": ["Cramer法则", "Cramer's rule", "克莱姆法则"],
+                                    "search_text": "克拉默法则 Cramer法则 克莱姆法则 Cramer's rule 行列式求解 克拉默",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required"],
+                                    "source_ref": "math2_core_v2:linalg:cramers_rule",
+                                    "source_title": "考研数学二大纲 — 线性方程组",
+                                    "summary": "克拉默法则是通过行列式求解n个方程n个未知数的线性方程组的方法，适用于系数矩阵可逆的情况。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "适用条件",
+                                            "latex": "Ax = b,\\quad D = \\det A \\neq 0"
+                                        },
+                                        {
+                                            "label": "求解公式",
+                                            "latex": "x_i = \\frac{D_i}{D},\\quad i=1,2,\\dots,n"
+                                        },
+                                        {
+                                            "label": "D_i的定义",
+                                            "latex": "D_i = \\det\\begin{pmatrix}a_{11}&\\cdots&b_1&\\cdots&a_{1n}\\\\ \\vdots&&\\vdots&&\\vdots\\\\ a_{n1}&\\cdots&b_n&\\cdots&a_{nn}\\end{pmatrix},\\quad \\text{第i列换为常数列}"
+                                        }
+                                    ],
+                                    "conditions": "系数矩阵A为n阶方阵且可逆（det A≠0）。齐次方程组Ax=0当det A≠0时仅有零解。",
+                                    "error_tips": "D_i是将常数列替换第i列而不是第i行；计算量随n增长极快，适合理论判断和低阶(n≤3)计算。"
+                                },
+                                # Card 18: 秩与线性方程组解的关系
+                                {
+                                    "title": "秩与线性方程组解的关系",
+                                    "aliases": ["秩判据", "解的存在性", "秩判定", "rank判据"],
+                                    "search_text": "秩与方程组解的关系 秩判据 rank解判定 解的存在性 解的唯一性 r(A) r(A|b) 非零解条件",
+                                    "card_type": "pure_formula",
+                                    "tags": ["high_frequency", "must_memorize"],
+                                    "source_ref": "math2_core_v2:linalg:rank_solution",
+                                    "source_title": "历年真题高频 — 线性方程组解的存在唯一性判定",
+                                    "summary": "通过比较系数矩阵的秩和增广矩阵的秩判断线性方程组的解的情况，是考研线性代数核心考点。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "非齐次线性方程组判据",
+                                            "latex": "Ax = b,\\quad \\text{设}r = r(A),\\; \\tilde{r} = r(A|b)"
+                                        },
+                                        {
+                                            "label": "解的情况决策表",
+                                            "latex": "\\begin{cases} \\tilde{r} > r & \\Rightarrow \\text{无解} \\\\ \\tilde{r} = r = n & \\Rightarrow \\text{唯一解} \\\\ \\tilde{r} = r < n & \\Rightarrow \\text{无穷多解} \\end{cases}"
+                                        },
+                                        {
+                                            "label": "齐次线性方程组",
+                                            "latex": "Ax = 0\\text{有非零解}\\; \\iff\\; r(A) < n"
+                                        },
+                                        {
+                                            "label": "通解中自由参数个数",
+                                            "latex": "\\text{自由参数个数} = n - r(A)"
+                                        }
+                                    ],
+                                    "conditions": "A为m×n矩阵，b为m维列向量。",
+                                    "error_tips": "比较r(A)和r(A|b)时必须使用相同的秩定义；n是未知数的个数（列数），不是方程个数（行数）。与'齐次线性方程组'和'非齐次线性方程组'卡片配合使用。"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "eigen",
+                    "name": "矩阵的特征值和特征向量",
+                    "groups": [
+                        {
+                            "code": "eigen_advanced",
+                            "name": "特征值的进阶应用",
+                            "cards": [
+                                # Card 19: 相似矩阵的常用不变量
+                                {
+                                    "title": "相似矩阵的常用不变量",
+                                    "aliases": ["相似不变量", "相似性质", "相似变换"],
+                                    "search_text": "相似矩阵 相似不变量 特征多项式 特征值 行列式 迹 秩 similarity invariants",
+                                    "card_type": "pure_formula",
+                                    "tags": ["high_frequency"],
+                                    "source_ref": "math2_core_v2:linalg:similar_invariants",
+                                    "source_title": "历年真题高频 — 矩阵相似判定",
+                                    "summary": "相似变换B=P^{-1}AP下，特征多项式、特征值、行列式、迹和秩等量保持不变，是判断矩阵相似的工具。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "相似定义",
+                                            "latex": "B = P^{-1}AP,\\quad P\\text{可逆}"
+                                        },
+                                        {
+                                            "label": "特征多项式相同",
+                                            "latex": "|\\lambda E - B| = |\\lambda E - A|"
+                                        },
+                                        {
+                                            "label": "特征值相同（含代数重数）",
+                                            "latex": "\\lambda_i(B) = \\lambda_i(A),\\quad i=1,2,\\dots,n"
+                                        },
+                                        {
+                                            "label": "行列式/迹/秩相同",
+                                            "latex": "\\det B = \\det A,\\quad \\operatorname{tr} B = \\operatorname{tr} A,\\quad r(B) = r(A)"
+                                        }
+                                    ],
+                                    "conditions": "A,B均为n阶方阵，P为n阶可逆矩阵。",
+                                    "error_tips": "特征向量不一定相同；具体矩阵元素不一定相同；相似一定等价，但等价不一定相似。不要因为某些不变量相等就断言相似。"
+                                },
+                                # Card 20: 可交换矩阵的常用结论
+                                {
+                                    "title": "可交换矩阵的常用结论",
+                                    "aliases": ["交换矩阵", "AB=BA", "commuting matrices"],
+                                    "search_text": "可交换矩阵 commuting matrices AB=BA 同时对角化 特征子空间 交换性",
+                                    "card_type": "pure_formula",
+                                    "tags": ["high_frequency", "common_inference"],
+                                    "source_ref": "math2_core_v2:linalg:commuting_matrices",
+                                    "source_title": "历年真题高频 — 可交换矩阵性质",
+                                    "summary": "可交换矩阵AB=BA是考研特殊考点，交换性使A和B在特征子空间结构上产生深刻联系。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "定义",
+                                            "latex": "AB = BA"
+                                        },
+                                        {
+                                            "label": "特征子空间不变性",
+                                            "latex": "AB = BA \\Rightarrow B\\text{保持}A\\text{的每个特征子空间},\\;\\text{即}\\; A\\alpha = \\lambda\\alpha \\Rightarrow A(B\\alpha) = \\lambda(B\\alpha)"
+                                        },
+                                        {
+                                            "label": "互异特征值情形",
+                                            "latex": "\\text{若}A\\text{有}n\\text{个互不相同的特征值，则可在}A\\text{的特征向量基下同时简化}B"
+                                        }
+                                    ],
+                                    "conditions": "A,B均为n阶方阵。同时对角化需要A和B各自可对角化且AB=BA，不可仅由交换性推断。",
+                                    "error_tips": "不要认为任意可交换矩阵必可同时对角化！同时对角化还需要A和B分别可对角化；若A有重特征值且不可对角化，交换性仍成立但不保证同时对角化。"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "code": "quadratic",
+                    "name": "二次型",
+                    "groups": [
+                        {
+                            "code": "quadratic_advanced",
+                            "name": "二次型进阶",
+                            "cards": [
+                                # Card 21: 合同变换与二次型
+                                {
+                                    "title": "合同变换与二次型",
+                                    "aliases": ["合同变换", "合同矩阵", "合同关系", "congruent"],
+                                    "search_text": "合同变换 合同矩阵 正惯性指数 负惯性指数 秩 B=C^TAC 合同关系 congruence matrix",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required"],
+                                    "source_ref": "math2_core_v2:linalg:congruence",
+                                    "source_title": "考研数学二大纲 — 二次型",
+                                    "summary": "合同变换B=C^TAC是二次型标准化的理论基础，合同变换保持矩阵的秩和惯性指数（对实对称矩阵）。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "合同定义",
+                                            "latex": "B = C^T A C,\\quad C\\text{可逆}"
+                                        },
+                                        {
+                                            "label": "秩不变",
+                                            "latex": "r(B) = r(A)"
+                                        },
+                                        {
+                                            "label": "惯性指数不变（实对称）",
+                                            "latex": "p(B) = p(A),\\quad q(B) = q(A)",
+                                            "note": "p为正惯性指数，q为负惯性指数"
+                                        }
+                                    ],
+                                    "conditions": "C为可逆矩阵（不要求正交）。惯性保持适用于A,B为实对称矩阵的情况。",
+                                    "symbol_notes": "p—正惯性指数（标准形中正平方项个数），q—负惯性指数（标准形中负平方项个数），r=p+q为矩阵的秩。",
+                                    "error_tips": "合同变换要求C可逆，不要求C正交；惯性定理的应用前提是实对称矩阵；合同与相似是不同的关系。"
+                                },
+                                # Card 22: 等价·相似·合同辨析
+                                {
+                                    "title": "等价·相似·合同辨析",
+                                    "aliases": ["三种矩阵关系", "等价关系", "相似关系", "合同关系"],
+                                    "search_text": "等价 相似 合同 矩阵等价 矩阵相似 矩阵合同 辨析 区别 对比 equivalence similarity congruence",
+                                    "card_type": "pure_formula",
+                                    "tags": ["syllabus_required", "error_prone"],
+                                    "source_ref": "math2_core_v2:linalg:equiv_similar_congruent",
+                                    "source_title": "考研数学二大纲 — 矩阵关系综合",
+                                    "summary": "矩阵的等价、相似、合同是三种不同的关系，各自保持不同的不变量。在概念辨析和综合题中极易混淆。",
+                                    "formula_blocks": [
+                                        {
+                                            "label": "等价",
+                                            "latex": "B = PAQ\\;(P,Q\\text{可逆})\\quad\\text{保持：秩}"
+                                        },
+                                        {
+                                            "label": "相似",
+                                            "latex": "B = P^{-1}AP\\quad\\text{保持：秩、特征值、行列式、迹、特征多项式}"
+                                        },
+                                        {
+                                            "label": "合同（实对称）",
+                                            "latex": "B = C^TAC\\;(C\\text{可逆})\\quad\\text{保持：秩、正负惯性指数}"
+                                        },
+                                        {
+                                            "label": "对比总结",
+                                            "latex": "\\begin{array}{l} \\text{等价：任意矩阵，保持秩} \\\\ \\text{相似：方阵，保持特征多项式、特征值、det、tr、秩} \\\\ \\text{合同：实对称，保持秩、惯性指数} \\end{array}"
+                                        }
+                                    ],
+                                    "conditions": "等价适用于任意m×n矩阵；相似要求A,B均为n阶方阵；合同通常应用于实对称矩阵（惯性定理的适用条件）。",
+                                    "error_tips": "最容易混淆的：相似一定等价，但等价不一定相似；正交矩阵同时是三种关系的特例（C=P=Q且C^T=C^{-1}时合同=相似）。"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
+
+
+def validate_latex_escaping(obj, path=""):
+    """Check that all LaTeX strings would survive JSON encoding.
+
+    Specifically: after json.dumps and json.loads, the LaTeX should remain valid.
+    """
+    issues = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            issues.extend(validate_latex_escaping(v, f"{path}.{k}"))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            issues.extend(validate_latex_escaping(v, f"{path}[{i}]"))
+    elif isinstance(obj, str):
+        for ch_name, chars in [("backspace", ["\\b"]), ("form feed", ["\\f"]),
+                                ("newline", ["\\n"]), ("carriage return", ["\\r"]),
+                                ("tab", ["\\t"])]:
+            for c in chars:
+                if c in obj:
+                    # Check if this is an intentional \n/t etc. in a formula block
+                    if path.endswith("latex") or path.endswith("note") or path.endswith("summary"):
+                        issues.append(f"  WARNING: {ch_name} char found in {path}: ...{obj[max(0,obj.index(c)-5):obj.index(c)+5]}...")
+    return issues
+
+
+def main():
+    # Count cards
+    card_count = 0
+    tag_set = set()
+    for subj in DATA["subjects"]:
+        for ch in subj["chapters"]:
+            for grp in ch["groups"]:
+                for card in grp["cards"]:
+                    card_count += 1
+                    for t in card.get("tags", []):
+                        tag_set.add(t)
+
+    print(f"Card count: {card_count}")
+    print(f"Tags used: {sorted(tag_set)}")
+
+    # Validate LaTeX
+    print("\nValidating LaTeX for control character issues...")
+    issues = validate_latex_escaping(DATA)
+    if issues:
+        print(f"Found {len(issues)} potential issues:")
+        for issue in issues:
+            print(issue)
+    else:
+        print("No issues found.")
+
+    # Write JSON
+    output_path = "app/data/formula_library/math2_core_v2_extensions.json"
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(DATA, f, ensure_ascii=False, indent=2)
+
+    print(f"\nWritten to {output_path}")
+
+    # Verify round-trip
+    with open(output_path, "r", encoding="utf-8") as f:
+        reloaded = json.load(f)
+
+    rc = 0
+    for subj in reloaded["subjects"]:
+        for ch in subj["chapters"]:
+            for grp in ch["groups"]:
+                for card in grp["cards"]:
+                    rc += 1
+    print(f"Round-trip verified: {rc} cards")
+
+    # Check for control character corruption
+    raw = open(output_path, "rb").read()
+    dangerous = [b'\\b', b'\\t', b'\\n', b'\\f', b'\\r']
+    found_any = False
+    for d in dangerous:
+        count = raw.count(d)
+        if count > 0:
+            print(f"  WARNING: {count} occurrences of {d!r} (control char risk)")
+            found_any = True
+
+    if not found_any:
+        print("  No control character risks in raw output.")
+
+    return 0 if not issues and not found_any else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
