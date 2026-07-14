@@ -36,7 +36,7 @@ _LOCAL_PROFILE = OCRProfile(
 
 _PRODUCTION_PROFILE = OCRProfile(
     name="production",
-    use_gpu=True,
+    use_gpu=False,  # overridden by OCR_USE_GPU env var in get_ocr_profile()
     max_workers=1,
     timeout_seconds=300,
     min_image_width=1200,
@@ -53,5 +53,12 @@ _PRODUCTION_PROFILE = OCRProfile(
 def get_ocr_profile() -> OCRProfile:
     env = settings.DEPLOY_PROFILE or settings.APP_ENV
     if env in ("local", "development"):
-        return _LOCAL_PROFILE
-    return _PRODUCTION_PROFILE
+        profile = _LOCAL_PROFILE
+    else:
+        profile = _PRODUCTION_PROFILE
+    # Respect OCR_USE_GPU env var — never hardcode use_gpu=True
+    if settings.OCR_USE_GPU is not None:
+        profile = OCRProfile(
+            **{**profile.__dict__, "use_gpu": settings.OCR_USE_GPU},
+        )
+    return profile

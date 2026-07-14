@@ -79,9 +79,11 @@ class Settings(BaseSettings):
     REDIS_URL: str = ""
 
     # Database connection pool
-    DB_POOL_SIZE: int = 10
-    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_TIMEOUT: int = 30  # seconds to wait for a connection from pool
     DB_POOL_RECYCLE: int = 3600
+    DB_POOL_PRE_PING: bool = True
 
     # SQLAlchemy logging
     SQL_ECHO: bool = False
@@ -89,8 +91,9 @@ class Settings(BaseSettings):
     SLOW_QUERY_MS: int = 500
 
     # Gunicorn
-    GUNICORN_WORKERS: int = 4
+    GUNICORN_WORKERS: int = 2  # 2-core server
     GUNICORN_WORKER_CLASS: str = "uvicorn.workers.UvicornWorker"
+    MAX_CONNECTIONS: int = 50
 
     # Sentry
     SENTRY_DSN: str = ""
@@ -102,8 +105,7 @@ class Settings(BaseSettings):
     STORAGE_BACKEND: str = "local"  # "local" 或 "cos"
 
     # 部署
-    WORKERS: int = 4
-    MAX_CONNECTIONS: int = 100
+    WORKERS: int = 2
 
     # ── Vector Search (pgvector) ──
     VECTOR_ENABLED: bool = False

@@ -9,6 +9,13 @@ from app.core.config import settings
 
 logger = logging.getLogger("postgraduate-ai.cache")
 
+_COMPARE_AND_DELETE_SCRIPT = """
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+    return redis.call("DEL", KEYS[1])
+end
+return 0
+"""
+
 
 class CacheClient:
     """Redis 缓存客户端封装。
@@ -171,41 +178,61 @@ class CacheClient:
                     if stored == value:
                         self._local.pop(key, None)
                 return
-            current = await client.get(key)
-            if isinstance(current, bytes):
-                current = current.decode()
-            if current == value:
-                await client.delete(key)
+            # Lua compare-and-delete: atomic, no TOCTOU race
+            await client.eval(_COMPARE_AND_DELETE_SCRIPT, 1, key, value)
         except Exception:
             pass
 
     async def delete(self, pattern: str) -> int:
-        """按模式删除缓存，返回删除的 key 数量。"""
+        """按模式删除缓存，返回删除的 key 数量。
+
+        Uses SCAN for safe iteration instead of KEYS (which blocks Redis).
+        """
         if not self._enabled:
             return self._local_delete(pattern)
         try:
             client = await self._ensure_client()
             if client is None:
                 return self._local_delete(pattern)
-            keys = await client.keys(pattern)
-            if keys:
-                return await client.delete(*keys)
-            return 0
+            return await self._scan_delete(client, pattern)
         except Exception:
             return self._local_delete(pattern)
 
+    async def _scan_delete(self, client, pattern: str, batch_size: int = 500) -> int:
+        """Delete keys matching *pattern* via SCAN iteration.
+
+        Avoids blocking the Redis event loop that KEYS would cause on
+        large keyspaces. Iterates in batches of *batch_size*.
+        """
+        total = 0
+        cursor = 0
+        while True:
+            cursor, keys = await client.scan(
+                cursor=cursor, match=pattern, count=batch_size,
+            )
+            if keys:
+                total += await client.delete(*keys)
+            if cursor == 0:
+                break
+        return total
+
+    async def delete_namespaced(self, pattern: str) -> int:
+        """Delete keys under a namespace-safe pattern.
+
+        Only operates on keys matching the given pattern. Use this for
+        API-facing cache clearing instead of bare ``delete()`` to ensure
+        namespace isolation is enforced at the call site.
+        """
+        return await self.delete(pattern)
+
     async def clear(self) -> int:
-        """清空所有缓存（FLUSHDB）。"""
-        if not self._enabled:
-            return self._local_clear()
-        try:
-            client = await self._ensure_client()
-            if client is None:
-                return self._local_clear()
-            await client.flushdb()
-            return 1
-        except Exception:
-            return self._local_clear()
+        """清空本地缓存。Redis FLUSHDB 已移除——使用 delete_namespaced 代替。
+
+        Never call FLUSHDB — it would clear task queues, JWT blacklists,
+        distributed locks, and other system namespaces.
+        """
+        logger.warning("cache.clear() called — only clears local cache, not Redis")
+        return self._local_clear()
 
     def get_stats(self) -> dict:
         total = self._stats["hits"] + self._stats["misses"]

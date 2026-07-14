@@ -12,6 +12,7 @@
 - 审计日志
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -347,7 +348,7 @@ async def generate_image_preview(
 
     for img in images_data:
         try:
-            text = ocr_image(img["bytes"])
+            text = await asyncio.to_thread(ocr_image, img["bytes"])
             # 简单估算置信度：有文本则 0.8，否则 0
             confidence = 0.8 if text.strip() else 0.0
         except Exception as e:
