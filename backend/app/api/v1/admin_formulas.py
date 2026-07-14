@@ -17,6 +17,7 @@ from app.models.formula import (
     FormulaCardVersion,
     FormulaCategory,
     FormulaGraphAsset,
+    FormulaGraphSpec,
     FormulaImportItem,
     FormulaImportJob,
     FormulaTag,
@@ -323,7 +324,31 @@ async def _card_to_dict(db: AsyncSession, card: FormulaCard) -> dict:
     base["graph_thumbnail_url"] = effective.thumbnail_url if effective else None
     base["is_function_graph"] = is_function_graph(card, effective_asset=effective)
 
+    # Load multi-graph specs (FormulaGraphSpec)
+    specs_result = await db.execute(
+        select(FormulaGraphSpec).where(
+            FormulaGraphSpec.formula_card_id == card.id
+        ).order_by(FormulaGraphSpec.sort_order, FormulaGraphSpec.id)
+    )
+    base["graph_specs"] = [_graph_spec_to_min(s) for s in specs_result.scalars().all()]
+
     return base
+
+
+def _graph_spec_to_min(spec: FormulaGraphSpec) -> dict:
+    d = {
+        "id": spec.id,
+        "slug": spec.slug,
+        "title": spec.title,
+        "source_ref": spec.source_ref,
+        "status": spec.status,
+        "sort_order": spec.sort_order,
+        "alt_text": spec.alt_text,
+        "description": spec.description,
+    }
+    if spec.confirmed_asset_id:
+        d["asset_id"] = spec.confirmed_asset_id
+    return d
 
 
 def _compute_content_hash(formula_blocks: list[dict]) -> str:

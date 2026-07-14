@@ -1069,14 +1069,19 @@ class TestImportPipelineSplit:
                 {
                     "number": 1,
                     "raw_question_text": "1. 已编号题目\nA. 选项A\nB. 选项B",
+                    "_original_raw_text": None,
                     "page_start": 1,
                     "page_end": 1,
                     "has_options": True,
                     "option_lines": {"A": "选项A", "B": "选项B"},
-                    "confidence": 0.9,
-                    "section_type": None,
                     "blank_option_groups": [],
                     "has_grouped_options": False,
+                    "is_frozen": False,
+                    "confidence": 0.9,
+                    "section_type": None,
+                    "risk_flags": [],
+                    "source_question_no": "1",
+                    "source_question_label": "1.",
                 }
             ],
             "failure_reason": None,
@@ -1214,6 +1219,23 @@ class TestPipelineStage:
 
 
 class TestImportPipelineRun:
+    """Test pipeline orchestration by mocking individual stages."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_pdf_renderer(self):
+        """Patch pdf_renderer.render_pages so tests don't need real PDFs."""
+        from app.services.pdf_renderer_service import PdfRenderResult
+        from app.services.pdf_renderer_service import pdf_renderer as real_renderer
+        from unittest.mock import AsyncMock
+
+        mock = AsyncMock(return_value=PdfRenderResult(
+            page_images={1: b"fake_png"},
+            rendered_count=1,
+            total_pages=1,
+        ))
+        with patch.object(real_renderer, "render_pages", mock):
+            yield
+
     def test_build_diagnostics_includes_risk_flag_counts(self):
         from app.features.pipeline_orchestrator import _build_diagnostics
 
@@ -1236,8 +1258,6 @@ class TestImportPipelineRun:
             {"risk_flags": ["low_confidence"]},
             {"risk_flags": []},
         ]) == {"book_pdf_prose_like": 1, "low_confidence": 2}
-
-    """Test pipeline orchestration by mocking individual stages."""
 
     def _make_pipeline(self, **overrides):
         """Create a pipeline with all stages mocked. Rebuilds stages after mocking."""

@@ -27,6 +27,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.database import Base
+# Import all models to ensure Base.metadata has FK targets
+import app.models.user  # noqa: F401 — users table for FKs
+import app.models.formula  # noqa: F401 — formula tables for FKs
 from app.features import pipeline_checkpoint as ckpt
 from app.features.global_hash_index import GlobalHashIndex
 from app.features.pipeline_orchestrator import (
@@ -52,6 +55,22 @@ async def _make_session(tmp_path: Path):
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def _make_render_result(page_count: int):
+    from app.services.pdf_renderer_service import PdfRenderResult
+    return PdfRenderResult(
+        page_images={i: b"fake_png_bytes" for i in range(1, page_count + 1)},
+        rendered_count=page_count,
+        total_pages=page_count,
+    )
+
+
+def _mock_render_pages(page_count: int):
+    return patch(
+        "app.services.pdf_renderer_service.pdf_renderer.render_pages",
+        return_value=_make_render_result(page_count),
+    )
 
 
 def _wire_stage_stubs(
@@ -168,8 +187,9 @@ class TestE2EHappyPath:
                         "app.features.pipeline_orchestrator._read_pdf_page_count",
                         return_value=400,
                     ):
-                        result = await pipeline.run(
-                            file_path="/tmp/e2e_400p.pdf",
+                        with _mock_render_pages(400):
+                            result = await pipeline.run(
+                                file_path="/tmp/e2e_400p.pdf",
                             source_type="pdf",
                             source_file="王道_400p.pdf",
                             db=db,
@@ -250,8 +270,9 @@ class TestE2EChunkFailureThenResume:
                         "app.features.pipeline_orchestrator._read_pdf_page_count",
                         return_value=400,
                     ):
-                        result = await pipeline.run(
-                            file_path="/tmp/e2e_400p.pdf",
+                        with _mock_render_pages(400):
+                            result = await pipeline.run(
+                                file_path="/tmp/e2e_400p.pdf",
                             source_type="pdf",
                             source_file="王道_400p.pdf",
                             db=db,
@@ -442,11 +463,12 @@ class TestE2ECrossChunkHashDedup:
                             "app.features.pipeline_orchestrator._read_pdf_page_count",
                             return_value=120,
                         ):
-                            result = await pipeline.run(
-                                file_path="/tmp/e2e_hash.pdf",
-                                source_type="pdf",
-                                source_file="hash.pdf",
-                                db=db,
+                            with _mock_render_pages(120):
+                                result = await pipeline.run(
+                                    file_path="/tmp/e2e_hash.pdf",
+                                    source_type="pdf",
+                                    source_file="hash.pdf",
+                                    db=db,
                             )
 
             assert result["status"] == "completed"
@@ -508,8 +530,9 @@ class TestE2ELargeFieldsReleasedInChunkedMode:
                         "app.features.pipeline_orchestrator._read_pdf_page_count",
                         return_value=160,
                     ):
-                        result = await pipeline.run(
-                            file_path="/tmp/e2e_release.pdf",
+                        with _mock_render_pages(100):
+                            result = await pipeline.run(
+                                file_path="/tmp/e2e_release.pdf",
                             source_type="pdf",
                             source_file="release.pdf",
                             db=db,

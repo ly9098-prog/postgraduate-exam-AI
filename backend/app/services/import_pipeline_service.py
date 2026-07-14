@@ -149,31 +149,24 @@ def _build_ocr_runtime_diagnostics() -> dict:
     }
 
 
-# Bounded executor + semaphore for offloading sync OCR calls
-_ocr_executor = ThreadPoolExecutor(
-    max_workers=settings.OCR_MAX_WORKERS,
-    thread_name_prefix="ocr_offload",
-)
-_ocr_semaphore = asyncio.Semaphore(settings.OCR_MAX_WORKERS)
+# ImportPipeline uses the shared OCR executor service
+from app.services.ocr_executor_service import ocr_executor
 
 
 async def _run_ocr_in_thread(image_bytes: bytes) -> str:
-    """Run ocr_image in a thread to avoid blocking the event loop.
+    """Run ocr_image in the shared bounded executor.
 
-    Uses a bounded executor and semaphore to limit concurrent OCR.
+    Uses a process-wide executor with semaphore, queue limit, and timeout.
     Raises TimeoutError if OCR exceeds OCR_TIMEOUT_SECONDS.
     """
-    async with _ocr_semaphore:
-        loop = asyncio.get_running_loop()
-        try:
-            text = await asyncio.wait_for(
-                loop.run_in_executor(_ocr_executor, ocr_image, image_bytes),
-                timeout=settings.OCR_TIMEOUT_SECONDS,
-            )
-            return text
-        except asyncio.TimeoutError:
-            logger.error("OCR timeout after %ds", settings.OCR_TIMEOUT_SECONDS)
-            raise TimeoutError(f"OCR timed out after {settings.OCR_TIMEOUT_SECONDS}s")
+    try:
+        text = await ocr_executor.run_ocr(image_bytes, timeout=settings.OCR_TIMEOUT_SECONDS)
+        return text
+    except TimeoutError:
+        raise
+    except Exception as e:
+        logger.error("OCR failed: %s", e)
+        raise
 
 
 def _classify_image_pipeline_result(result: dict, cleaned_text: str) -> str | None:
@@ -546,15 +539,20 @@ async def start_import_pipeline(
             stages={"upload": {"status": "completed"}, "ocr": {"status": "pending"}},
         )
 
-        asyncio.create_task(
-            _run_image_pipeline_with_db(
-                pipeline_id=pipeline_id,
-                image_content=file_content,
-                source_file=filename,
-                subject=subject,
-                subject_id=subject_id,
-                options=options,
-            )
+        # Store file content for durable task worker access
+        _image_pipeline_store[pipeline_id] = {
+            **(_image_pipeline_store.get(pipeline_id) or {}),
+            "_file_content": file_content,
+        }
+
+        from app.services.task_queue_worker import enqueue_image_pipeline
+        await enqueue_image_pipeline(
+            pipeline_id=pipeline_id,
+            image_content=file_content,
+            source_file=filename,
+            subject=subject,
+            subject_id=subject_id,
+            options=options,
         )
 
         log_event(
@@ -577,15 +575,14 @@ async def start_import_pipeline(
             "stats": {},
             "errors": [],
             "started_at": datetime.now().isoformat(),
+            "_file_content": file_content,
         })
 
-        asyncio.create_task(
-            run_excel_pipeline_background(
-                pipeline_id=pipeline_id,
-                file_content=file_content,
-                source_file=filename,
-                import_excel_fn=pipeline_svc.import_excel,
-            )
+        from app.services.task_queue_worker import enqueue_excel_pipeline
+        await enqueue_excel_pipeline(
+            pipeline_id=pipeline_id,
+            file_content=file_content,
+            source_file=filename,
         )
 
         return PipelineUploadResponse(pipeline_id=pipeline_id, status="parsing", source_type="excel")
@@ -641,23 +638,23 @@ async def start_import_pipeline(
         "stats": {},
         "errors": [],
         "started_at": datetime.now().isoformat(),
+        "_file_content": file_content,
     }
     if page_range:
         store_data["page_range"] = page_range.model_dump()
 
     await _set_pipeline_store(pipeline_id, store_data)
 
-    asyncio.create_task(
-        _run_pipeline_with_db(
-            pipeline_id=pipeline_id,
-            file_content=file_content,
-            source_type=source_type,
-            source_file=filename,
-            subject=subject,
-            subject_id=subject_id,
-            options=options,
-            created_by=created_by,
-        )
+    from app.services.task_queue_worker import enqueue_import_pipeline
+    await enqueue_import_pipeline(
+        pipeline_id=pipeline_id,
+        file_content=file_content,
+        source_type=source_type,
+        source_file=filename,
+        subject=subject,
+        subject_id=subject_id,
+        options=options,
+        created_by=created_by,
     )
 
     log_event(

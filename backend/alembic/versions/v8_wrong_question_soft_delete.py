@@ -26,7 +26,7 @@ def upgrade():
 
     additions = {
         "mastered_at": sa.Column("mastered_at", sa.DateTime(), nullable=True),
-        "is_active": sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        "is_active": sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         "removed_at": sa.Column("removed_at", sa.DateTime(), nullable=True),
     }
 
