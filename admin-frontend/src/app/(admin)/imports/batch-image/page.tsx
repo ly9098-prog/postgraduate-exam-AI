@@ -221,11 +221,15 @@ export default function BatchImagePage() {
               );
 
               // Open SSE stream for this job
+              const seenSeqs = new Set<number>();
               const close = connectSSE(
                 `/imports/batch-image/${result.job_id}/stream`,
                 getApiAccessToken(),
                 {
                   onTrace: (event) => {
+                    // Deduplicate events from SSE reconnection
+                    if (seenSeqs.has(event.seq)) return;
+                    seenSeqs.add(event.seq);
                     setImageTasks((prev) =>
                       prev.map((p) =>
                         p.id === task.id
@@ -255,7 +259,7 @@ export default function BatchImagePage() {
                   },
                 },
               );
-              abortSourcesRef.current.set(result.job_id, close);
+              abortSourcesRef.current.set(result.job_id, close.close);
             } catch (err: unknown) {
               if (abortCtrl.signal.aborted) return;
               const msg = err instanceof Error ? err.message : String(err);

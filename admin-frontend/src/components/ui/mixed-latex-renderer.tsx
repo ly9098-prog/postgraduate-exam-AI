@@ -2,61 +2,55 @@
 
 import { Fragment, useMemo } from "react";
 import { LatexRenderer } from "./latex-renderer";
-import { normalizeFormulaText } from "@/lib/formula-normalize";
+import { tokenizeMathText } from "@/lib/math-text";
 
 type MixedLatexRendererProps = {
-  text: string;
+  text: unknown;
   className?: string;
+  mathClassName?: string;
 };
 
 /**
- * Renders text that mixes plain text with LaTeX math.
+ * Render Chinese/plain text and mathematical expressions in one string.
  *
- * Design principle: one canonical normaliser.
- * `normalizeFormulaText` (from `@/lib/formula-normalize`) is the sole source of
- * math detection and LaTeX conversion. This component only splits the normalised
- * output by standard delimiters and delegates rendering to LatexRenderer.
- *
- * Supports: \(…\), \[…\], $$…$$, $…$.
+ * It accepts explicit delimiters as well as raw backend values such as:
+ * - 二次函数 y=ax^2+bx+c
+ * - a>0 时 [\\frac{4ac-b^2}{4a}, +\\infty)
+ * - 顶点 (-b/(2a), (4ac-b^2)/(4a))
  */
-export function MixedLatexRenderer({ text, className = "" }: MixedLatexRendererProps) {
-  const segments = useMemo(() => {
-    if (!text) return [];
-
-    // Normalise non-standard math to \(…\) delimiters (preserves existing ones).
-    const normalized = normalizeFormulaText(text) ?? text;
-
-    const parts: Array<{ type: "plain" | "math"; value: string; displayMode: boolean }> = [];
-    const delimRe = /(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$[^$]+?\$)/g;
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-
-    while ((match = delimRe.exec(normalized)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push({ type: "plain", value: normalized.slice(lastIndex, match.index), displayMode: false });
-      }
-      const raw = match[1];
-      parts.push({ type: "math", value: raw, displayMode: raw.startsWith("$$") || raw.startsWith("\\[") });
-      lastIndex = match.index + raw.length;
-    }
-    if (lastIndex < normalized.length) {
-      parts.push({ type: "plain", value: normalized.slice(lastIndex), displayMode: false });
-    }
-
-    return parts;
-  }, [text]);
-
+export function MixedLatexRenderer({
+  text,
+  className = "",
+  mathClassName = "",
+}: MixedLatexRendererProps) {
+  const segments = useMemo(() => tokenizeMathText(text), [text]);
   if (!segments.length) return null;
 
   return (
-    <span className={className}>
-      {segments.map((seg, i) =>
-        seg.type === "math" ? (
-          <LatexRenderer key={i} latex={seg.value} displayMode={seg.displayMode} />
-        ) : (
-          <Fragment key={i}>{seg.value}</Fragment>
-        )
-      )}
+    <span className={`math-text-renderer ${className}`}>
+      {segments.map((segment, index) => {
+        if (segment.type === "text") {
+          return <Fragment key={`text-${index}`}>{segment.value}</Fragment>;
+        }
+
+        // Fractions and large operators are easier to read with display-style
+        // glyphs even when they occur inside a prose line.
+        // Skip if the expression already has \displaystyle to avoid duplication.
+        const source = !segment.displayMode && /\\(?:frac|sum|prod|int|lim)(?![a-zA-Z])/.test(segment.value)
+          ? (segment.value.includes("\\displaystyle")
+            ? segment.value
+            : `\\displaystyle ${segment.value}`)
+          : segment.value;
+
+        return (
+          <LatexRenderer
+            key={`math-${index}`}
+            latex={source}
+            displayMode={segment.displayMode}
+            className={mathClassName}
+          />
+        );
+      })}
     </span>
   );
 }

@@ -168,6 +168,13 @@ do_update_all() {
   info "=== 全量更新完成（app + admin，未执行 git pull，未执行数据库迁移） ==="
 }
 
+do_backup() {
+  check_prereqs
+  info "执行 PostgreSQL 备份（Docker 模式）..."
+  compose run --rm backup
+  info "=== 备份完成 ==="
+}
+
 case "${1:-help}" in
   init)         do_init ;;
   update)       do_update ;;
@@ -175,10 +182,11 @@ case "${1:-help}" in
   update-all)   do_update_all ;;
   build)        check_prereqs; do_build ;;
   build-admin)  check_prereqs; do_build_admin ;;
+  backup)       do_backup ;;
   status)       do_status ;;
   migrate)      do_migrate ;;
   *)
-    echo "使用方法: $0 {init|update|update-admin|update-all|build|build-admin|status|migrate}"
+    echo "使用方法: $0 {init|update|update-admin|update-all|build|build-admin|backup|status|migrate}"
     echo ""
     echo "  init          首次部署（构建 + 启动 + 显式初始化迁移）"
     echo "  update        日常更新（缓存构建 + 仅替换 app，不 git pull，不默认迁移）"
@@ -186,6 +194,7 @@ case "${1:-help}" in
     echo "  update-all    全量更新（app + admin，不 git pull，不默认迁移）"
     echo "  build         仅重新构建 app 镜像"
     echo "  build-admin   仅重新构建 admin 前端镜像"
+    echo "  backup        执行 PostgreSQL 备份（Docker 模式）"
     echo "  status        查看服务状态和健康检查"
     echo "  migrate       显式运行数据库迁移"
     ;;
