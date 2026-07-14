@@ -28,6 +28,9 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.database import Base
+# Import all models to ensure Base.metadata has FK targets
+import app.models.user  # noqa: F401 — users table for FKs
+import app.models.formula  # noqa: F401 — formula tables for FKs
 from app.features import pipeline_checkpoint as ckpt
 from app.features.pipeline_orchestrator import (
     ImportPipeline,
@@ -52,6 +55,24 @@ async def _make_session(tmp_path: Path):
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def _make_render_result(page_count: int):
+    """Return a PdfRenderResult with *page_count* pages of fake PNG data."""
+    from app.services.pdf_renderer_service import PdfRenderResult
+    return PdfRenderResult(
+        page_images={i: b"fake_png_bytes" for i in range(1, page_count + 1)},
+        rendered_count=page_count,
+        total_pages=page_count,
+    )
+
+
+def _mock_render_pages(page_count: int):
+    """Patch ``pdf_renderer.render_pages`` to return a result with *page_count* pages."""
+    return patch(
+        "app.services.pdf_renderer_service.pdf_renderer.render_pages",
+        return_value=_make_render_result(page_count),
+    )
 
 
 def _stub_pdf_doc(total_pages: int):
@@ -157,12 +178,13 @@ class TestChunkedRunHappyPath:
                         "app.features.pipeline_orchestrator._read_pdf_page_count",
                         return_value=120,
                     ):
-                        result = await pipeline.run(
-                            file_path="/tmp/fake.pdf",
-                            source_type="pdf",
-                            source_file="王道.pdf",
-                            db=db,
-                        )
+                        with _mock_render_pages(120):
+                            result = await pipeline.run(
+                                file_path="/tmp/fake.pdf",
+                                source_type="pdf",
+                                source_file="王道.pdf",
+                                db=db,
+                            )
 
                 assert result["status"] == "completed"
                 assert result["stats"]["total_chunks"] == 3
@@ -222,12 +244,13 @@ class TestChunkFailureIsolation:
                         "app.features.pipeline_orchestrator._read_pdf_page_count",
                         return_value=120,
                     ):
-                        result = await pipeline.run(
-                            file_path="/tmp/fake.pdf",
-                            source_type="pdf",
-                            source_file="x.pdf",
-                            db=db,
-                        )
+                        with _mock_render_pages(120):
+                            result = await pipeline.run(
+                                file_path="/tmp/fake.pdf",
+                                source_type="pdf",
+                                source_file="x.pdf",
+                                db=db,
+                            )
 
                 assert result["status"] == "paused"
                 assert result["stats"]["completed_chunks"] == 2
@@ -275,12 +298,13 @@ class TestChunkSizeFromEnv:
                         "app.features.pipeline_orchestrator._read_pdf_page_count",
                         return_value=100,
                     ):
-                        result = await pipeline.run(
-                            file_path="/tmp/fake.pdf",
-                            source_type="pdf",
-                            source_file="x.pdf",
-                            db=db,
-                        )
+                        with _mock_render_pages(100):
+                            result = await pipeline.run(
+                                file_path="/tmp/fake.pdf",
+                                source_type="pdf",
+                                source_file="x.pdf",
+                                db=db,
+                            )
 
                 assert result["stats"]["total_chunks"] == 5  # 100 / 20
                 # check chunk_ranges via diagnostics
@@ -306,7 +330,8 @@ class TestEmptyChunkStillCompleted:
                         "app.features.pipeline_orchestrator._read_pdf_page_count",
                         return_value=80,
                     ):
-                        result = await pipeline.run(
+                        with _mock_render_pages(80):
+                            result = await pipeline.run(
                             file_path="/tmp/fake.pdf",
                             source_type="pdf",
                             source_file="x.pdf",
@@ -373,13 +398,14 @@ class TestSinglePassFallback:
                     "app.features.pipeline_orchestrator._read_pdf_page_count",
                     side_effect=AssertionError("should not be called when user pinned range"),
                 ):
-                    result = await pipeline.run(
-                        file_path="/tmp/fake.pdf",
-                        source_type="pdf",
-                        source_file="x.pdf",
-                        db=db,
-                        options={"page_start": 10, "page_end": 50},
-                    )
+                    with _mock_render_pages(50):
+                        result = await pipeline.run(
+                            file_path="/tmp/fake.pdf",
+                            source_type="pdf",
+                            source_file="x.pdf",
+                            db=db,
+                            options={"page_start": 10, "page_end": 50},
+                        )
 
                 assert "total_chunks" not in result["stats"]
                 progress = await ckpt.get_pipeline_progress(
@@ -403,12 +429,13 @@ class TestSinglePassFallback:
                         "app.features.pipeline_orchestrator._read_pdf_page_count",
                         return_value=20,  # < chunk_size
                     ):
-                        result = await pipeline.run(
-                            file_path="/tmp/fake.pdf",
-                            source_type="pdf",
-                            source_file="x.pdf",
-                            db=db,
-                        )
+                        with _mock_render_pages(20):
+                            result = await pipeline.run(
+                                file_path="/tmp/fake.pdf",
+                                source_type="pdf",
+                                source_file="x.pdf",
+                                db=db,
+                            )
 
                 assert "total_chunks" not in result["stats"]
                 progress = await ckpt.get_pipeline_progress(
@@ -429,12 +456,13 @@ class TestSinglePassFallback:
                 "app.features.pipeline_orchestrator._read_pdf_page_count",
                 side_effect=AssertionError("should not chunk without db"),
             ):
-                result = await pipeline.run(
-                    file_path="/tmp/fake.pdf",
-                    source_type="pdf",
-                    source_file="x.pdf",
-                    db=None,
-                )
+                with _mock_render_pages(1):
+                    result = await pipeline.run(
+                        file_path="/tmp/fake.pdf",
+                        source_type="pdf",
+                        source_file="x.pdf",
+                        db=None,
+                    )
 
             assert "total_chunks" not in result["stats"]
 
@@ -810,7 +838,8 @@ class TestChunkedRunWithOverlap:
                         "app.features.pipeline_orchestrator._read_pdf_page_count",
                         return_value=120,
                     ):
-                        result = await pipeline.run(
+                        with _mock_render_pages(120):
+                            result = await pipeline.run(
                             file_path="/tmp/fake.pdf",
                             source_type="pdf",
                             source_file="x.pdf",
@@ -858,7 +887,8 @@ class TestChunkedRunWithOverlap:
                         "app.features.pipeline_orchestrator._read_pdf_page_count",
                         return_value=80,
                     ):
-                        result = await pipeline.run(
+                        with _mock_render_pages(80):
+                            result = await pipeline.run(
                             file_path="/tmp/fake.pdf",
                             source_type="pdf",
                             source_file="x.pdf",
@@ -910,7 +940,8 @@ class TestChunkedUsesPerChunkSession:
                             "app.features.pipeline_orchestrator._read_pdf_page_count",
                             return_value=120,
                         ):
-                            result = await pipeline.run(
+                            with _mock_render_pages(120):
+                                result = await pipeline.run(
                                 file_path="/tmp/fake.pdf",
                                 source_type="pdf",
                                 source_file="x.pdf",
@@ -975,7 +1006,8 @@ class TestChunkedReleasesHashIndex:
                                 "app.features.pipeline_orchestrator._read_pdf_page_count",
                                 return_value=80,
                             ):
-                                result = await pipeline.run(
+                                with _mock_render_pages(80):
+                                    result = await pipeline.run(
                                     file_path="/tmp/fake.pdf",
                                     source_type="pdf",
                                     source_file="x.pdf",
@@ -1033,13 +1065,14 @@ class TestChunkedReleasesHashIndex:
                                     "app.features.pipeline_orchestrator._read_pdf_page_count",
                                     return_value=80,
                                 ):
-                                    with pytest.raises(RuntimeError, match="simulated chunk crash"):
-                                        await pipeline.run(
-                                            file_path="/tmp/fake.pdf",
-                                            source_type="pdf",
-                                            source_file="x.pdf",
-                                            db=db,
-                                        )
+                                    with _mock_render_pages(80):
+                                        with pytest.raises(RuntimeError, match="simulated chunk crash"):
+                                            await pipeline.run(
+                                                file_path="/tmp/fake.pdf",
+                                                source_type="pdf",
+                                                source_file="x.pdf",
+                                                db=db,
+                                            )
 
                 idx = captured["index"]
                 assert idx is not None, "GlobalHashIndex was never constructed"

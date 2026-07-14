@@ -9,6 +9,7 @@ from fastapi.responses import Response
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_current_user, require_app_permission
 from app.models.user import User

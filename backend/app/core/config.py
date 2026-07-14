@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     # OCR
     OCR_ENABLED: bool = False
     OCR_MAX_WORKERS: int = 2
+    # OCR executor service — bounded thread pool with concurrency control
+    OCR_EXECUTOR_WORKERS: int = 2       # ThreadPoolExecutor max_workers
+    OCR_MAX_CONCURRENCY: int = 2        # asyncio.Semaphore limit
+    OCR_MAX_QUEUE_SIZE: int = 10        # max waiting tasks before fast-fail
+    OCR_TASK_TIMEOUT_SEC: int = 600     # per-task timeout
     OCR_LANGUAGE: str = "ch"
     OCR_USE_GPU: bool = False
     OCR_DET_DB_THRESH: float = 0.2
@@ -69,6 +74,13 @@ class Settings(BaseSettings):
     # 批量导题（多图片）
     BATCH_IMAGE_MAX_FILES: int = 100        # 单次最多上传图片数
     BATCH_IMAGE_DEFAULT_CONCURRENCY: int = 2  # 默认并发（仍被 clamp 到 1~4）
+
+    # PDF 导入限制
+    PDF_MAX_FILE_SIZE_BYTES: int = 200 * 1024 * 1024   # 200MB
+    PDF_MAX_PAGES: int = 500
+    PDF_MAX_PAGE_PIXELS: int = 4096 * 4096              # max width*height per page
+    PDF_RENDER_DPI: int = 150
+    PDF_MAX_RENDER_PAGES_CONCURRENT: int = 5            # pages rendered per batch
 
     # Exercise Region Detection
     EXERCISE_DETECTION_ENABLED: bool = True

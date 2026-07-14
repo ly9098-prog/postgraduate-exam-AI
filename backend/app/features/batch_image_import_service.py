@@ -701,7 +701,8 @@ async def _run_single_image(
         skip_ocr_correction = True
     else:
         # ── 本地模式：本地 PaddleOCR ──
-        raw_ocr_text = await asyncio.to_thread(ocr_image, content)
+        from app.services.ocr_executor_service import ocr_executor
+        raw_ocr_text = await ocr_executor.run_ocr(content)
         skip_ocr_correction = False
 
     ocr_duration = int((_now() - ocr_start).total_seconds() * 1000)

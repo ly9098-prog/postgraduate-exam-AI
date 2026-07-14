@@ -235,6 +235,63 @@ class FormulaGraphPreview(Base):
     )
 
 
+class FormulaGraphSpec(Base):
+    """One-to-many graph specs per formula card.
+
+    Each spec has a stable slug for cross-environment identity.
+    Multiple specs per card are independent — each has its own
+    status, asset, review trail and sort order.
+    """
+
+    __tablename__ = "formula_graph_specs"
+    __table_args__ = (
+        UniqueConstraint(
+            "formula_card_id", "slug",
+            name="uq_formula_graph_specs_card_slug",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    formula_card_id: Mapped[int] = mapped_column(
+        ForeignKey("formula_cards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    slug: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_ref: Mapped[str] = mapped_column(String(256), nullable=False)
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    alt_text: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    spec_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    spec_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    schema_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1
+    )
+    renderer_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1
+    )
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="draft", index=True
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    confirmed_asset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("formula_graph_assets.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reviewed_by: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id"), nullable=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class FormulaCardVersion(Base):
     __tablename__ = "formula_card_versions"
     __table_args__ = (

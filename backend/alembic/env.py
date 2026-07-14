@@ -31,6 +31,8 @@ from app.models.formula import (  # noqa: F401
     FormulaCardVersion,
     FormulaCategory,
     FormulaGraphAsset,
+    FormulaGraphPreview,
+    FormulaGraphSpec,
     FormulaImportItem,
     FormulaImportJob,
     FormulaTag,

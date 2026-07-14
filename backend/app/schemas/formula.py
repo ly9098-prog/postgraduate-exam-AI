@@ -276,6 +276,7 @@ class FormulaCardResponse(BaseModel):
     function_properties: dict[str, Any] | None
     graph_asset: FormulaGraphAssetResponse | None = None
     graph_assets: list[FormulaGraphAssetResponse] = Field(default=[])
+    graph_specs: list[dict[str, Any]] = Field(default=[])
     graph_spec: dict | None = None
     draft_graph_spec: dict | None = None
     graph_status: str = "not_applicable"

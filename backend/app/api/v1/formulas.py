@@ -14,6 +14,7 @@ from app.models.formula import (
     FormulaCardTag,
     FormulaCategory,
     FormulaGraphAsset,
+    FormulaGraphSpec,
     FormulaTag,
     UserFormulaFavorite,
 )
@@ -99,6 +100,14 @@ async def _card_to_response(db: AsyncSession, card: FormulaCard, graph_asset: Fo
         if effective:
             graph_asset_resp = FormulaGraphAssetResponse.model_validate(effective)
 
+    # Load multi-graph specs (FormulaGraphSpec)
+    specs_result = await db.execute(
+        select(FormulaGraphSpec).where(
+            FormulaGraphSpec.formula_card_id == card.id
+        ).order_by(FormulaGraphSpec.sort_order, FormulaGraphSpec.id)
+    )
+    graph_specs = [_graph_spec_to_dict(s) for s in specs_result.scalars().all()]
+
     return {
         "id": card.id,
         "exam_scope": card.exam_scope,
@@ -127,7 +136,26 @@ async def _card_to_response(db: AsyncSession, card: FormulaCard, graph_asset: Fo
         "version": card.version,
         "created_at": card.created_at,
         "updated_at": card.updated_at,
+        # Multi-graph support: stable graph specs with independent assets
+        "graph_specs": graph_specs,
     }
+
+
+def _graph_spec_to_dict(spec: FormulaGraphSpec) -> dict:
+    """Convert a FormulaGraphSpec to a dict for API response."""
+    d = {
+        "slug": spec.slug,
+        "title": spec.title,
+        "source_ref": spec.source_ref,
+        "status": spec.status,
+        "sort_order": spec.sort_order,
+        "alt_text": spec.alt_text,
+        "description": spec.description,
+    }
+    # Include confirmed asset info if available
+    if spec.confirmed_asset_id:
+        d["asset_id"] = spec.confirmed_asset_id
+    return d
 
 
 # ── Shared library_type filter ──
