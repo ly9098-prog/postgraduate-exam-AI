@@ -660,7 +660,11 @@ ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh migrat
 | `deploy/docker-compose.prod.yml` | 生产 Docker Compose 入口 |
 | `deploy/scripts/deploy.sh` | 生产部署脚本 |
 | `deploy/nginx/nginx.conf` | Nginx 配置 |
-| `deploy/scripts/backup.sh` | 备份脚本 |
+| `scripts/postgres_backup.py` | PostgreSQL 备份脚本（pg_dump custom format） |
+| `deploy/scripts/backup.sh` | 旧版备份脚本（已弃用，引用自 Python 脚本） |
+| `deploy/Dockerfile.backup` | 备份容器镜像（Python + postgresql-client） |
+| `deploy/systemd/postgres-backup.service` | systemd backup 服务单元 |
+| `deploy/systemd/postgres-backup.timer` | systemd 定时器（每天 03:00） |
 | `deploy/Dockerfile.prod` | 生产多阶段 Dockerfile |
 
 ---
