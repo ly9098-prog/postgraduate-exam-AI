@@ -128,8 +128,6 @@ export function ReviewStatusChart({
               {enriched.map((entry) => {
                 const isHovered = hovered === entry.name;
                 const isClicked = clicked === entry.name;
-                const isActive = hovered === null || hovered === entry.name;
-                const dim = hovered !== null && !isActive;
 
                 return (
                   <Cell

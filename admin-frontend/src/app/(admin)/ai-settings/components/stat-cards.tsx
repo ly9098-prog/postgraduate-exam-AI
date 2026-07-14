@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Activity, CalendarCheck, CheckCircle, ChevronUp, ChevronDown, Clock, DollarSign, Zap } from "lucide-react";
+import { Activity, CalendarCheck, CheckCircle, Clock, DollarSign, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AIStatsResponse } from "@/lib/api/types";
 

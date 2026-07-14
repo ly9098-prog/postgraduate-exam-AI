@@ -11,6 +11,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+# 1.8 GB production server: limit heap to prevent OOM during build
+ENV NODE_OPTIONS="--max-old-space-size=1536"
 ARG NEXT_PUBLIC_ADMIN_API_BASE_URL=/api/admin/v1
 ENV NEXT_PUBLIC_ADMIN_API_BASE_URL=${NEXT_PUBLIC_ADMIN_API_BASE_URL}
 RUN npm run build

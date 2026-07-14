@@ -128,15 +128,15 @@ async function main() {
   const changes: Change[] = [];
 
   for (const f of formulas) {
-    const check = (field: string, value: string | null | undefined, normalizedKey: 'conditions' | 'errorTips') => {
+    const check = (field: string, value: string | null | undefined) => {
       if (value == null) return;
       const normalized = normalizeFormulaText(value);
       if (normalized === value) return;
       changes.push({ id: f.id, field, before: value, after: normalized ?? '' });
     };
 
-    if (!FIELD_FILTER || FIELD_FILTER === 'conditions') check('conditions', f.conditions, 'conditions');
-    if (!FIELD_FILTER || FIELD_FILTER === 'errorTips') check('error_tips', f.error_tips, 'errorTips');
+    if (!FIELD_FILTER || FIELD_FILTER === 'conditions') check('conditions', f.conditions);
+    if (!FIELD_FILTER || FIELD_FILTER === 'errorTips') check('error_tips', f.error_tips);
   }
 
   // Report

@@ -322,7 +322,7 @@ export function normalizeFormulaText(text: string | null | undefined): string | 
 
   try {
     // Step 0: Pre-process Chinese math terms (趋于, 无穷, ->, infinity)
-    let s = preprocessChineseTerms(trimmed);
+    const s = preprocessChineseTerms(trimmed);
 
     // Step 1: Protect/clean existing LaTeX delimiters
     const { text: protectedText, blocks } = protectOrNormalizeDelimiters(s);

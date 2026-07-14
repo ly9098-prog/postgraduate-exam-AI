@@ -57,6 +57,15 @@ function flattenTree(tree: FormulaCategoryNode[]): FormulaCategoryNode[] {
   return result;
 }
 
+function nodeMatchesSearch(node: FormulaCategoryNode, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return true;
+  const selfMatches =
+    node.name.toLowerCase().includes(normalizedQuery) ||
+    node.code.toLowerCase().includes(normalizedQuery);
+  return selfMatches || node.children.some((child) => nodeMatchesSearch(child, normalizedQuery));
+}
+
 /* ── Component ── */
 
 export function FormulaCategoryPicker({
@@ -83,7 +92,7 @@ export function FormulaCategoryPicker({
   const allNodes = useMemo(() => {
     if (!categories.data?.items) return [];
     return flattenTree(categories.data.items);
-  }, [categories.data?.items]);
+  }, [categories.data]);
 
   const selectedNode = value ? (allNodes.find((n) => n.id === value) ?? null) : null;
 
@@ -123,7 +132,7 @@ export function FormulaCategoryPicker({
     const escHandler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         close();
-        triggerRef.current?.querySelector("button")?.focus();
+        triggerRef.current?.querySelector<HTMLButtonElement>("[data-category-trigger]")?.focus();
       }
     };
     document.addEventListener("keydown", escHandler);
@@ -176,22 +185,20 @@ export function FormulaCategoryPicker({
     }
   }, [open, value, categories.data]);
 
+  // The form can only select group nodes. Expand the first level on open so users
+  // are not forced to discover that disabled-looking subject rows are expandable.
+  useEffect(() => {
+    if (!open || value || !categories.data?.items?.length) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      categories.data!.items.forEach((node) => next.add(node.id));
+      return next;
+    });
+  }, [open, value, categories.data]);
+
   const renderTree = (nodes: FormulaCategoryNode[], depth = 0) => {
     const filtered = search
-      ? nodes.filter((n) => {
-          const match =
-            n.name.toLowerCase().includes(search.toLowerCase()) ||
-            n.code.toLowerCase().includes(search.toLowerCase());
-          const childMatch = n.children?.length
-            ? n.children.some((c) => {
-                const cm =
-                  c.name.toLowerCase().includes(search.toLowerCase()) ||
-                  c.code.toLowerCase().includes(search.toLowerCase());
-                return cm;
-              })
-            : false;
-          return match || childMatch;
-        })
+      ? nodes.filter((node) => nodeMatchesSearch(node, search))
       : nodes;
 
     return filtered.map((node) => {
@@ -200,27 +207,17 @@ export function FormulaCategoryPicker({
       const selectable = canSelect(node);
       const hasChildren = node.children?.length > 0;
 
-      // In search mode, always show children that match
-      const showChildren = search ? hasChildren : hasChildren && isExpanded;
-      const searchActive = search.length > 0;
-
-      // During search, expand matching parents
-      const childMatch = searchActive && hasChildren && node.children.some(
-        (c) =>
-          c.name.toLowerCase().includes(search.toLowerCase()) ||
-          c.code.toLowerCase().includes(search.toLowerCase()),
-      );
-      const selfMatch = node.name.toLowerCase().includes(search.toLowerCase()) ||
-        node.code.toLowerCase().includes(search.toLowerCase());
-
-      if (searchActive && !selfMatch && !childMatch) return null;
+      // During search, reveal the complete matching path. Outside search,
+      // expansion is controlled by the user.
+      const searchActive = search.trim().length > 0;
+      const showChildren = hasChildren && (searchActive || isExpanded);
 
       return (
         <div key={node.id}>
           <button
             type="button"
             onClick={() => handleSelect(node)}
-            disabled={!selectable}
+            aria-disabled={!selectable}
             className={cn(
               "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
               isSelected
@@ -267,12 +264,11 @@ export function FormulaCategoryPicker({
             <span className="min-w-0 flex-1 truncate">{node.name}</span>
             {!selectable && (
               <span className="shrink-0 text-[10px] text-[var(--color-text-hint)]">
-                选择{node.node_type === "subject" ? "科目" : "章节"}
+                点击展开
               </span>
             )}
           </button>
           {showChildren && renderTree(node.children, depth + 1)}
-          {searchActive && childMatch && renderTree(node.children, depth + 1)}
         </div>
       );
     });
@@ -281,13 +277,16 @@ export function FormulaCategoryPicker({
   return (
     <div ref={triggerRef} className={cn("relative", className)}>
       <button
+        data-category-trigger
         type="button"
-        onClick={() => !disabled && setOpen((v) => !v)}
+        onClick={() => !disabled && setOpen((current) => !current)}
         disabled={disabled}
+        aria-expanded={open}
+        aria-haspopup="listbox"
         className={cn(
-          "flex h-11 w-full items-center justify-between rounded-xl border bg-[var(--color-bg-input)] px-3 text-sm transition-all",
+          "flex h-11 w-full items-center rounded-xl border bg-[var(--color-bg-input)] px-3 pr-16 text-sm transition-all",
           open
-            ? "border-[var(--color-primary)] ring-4 ring-[rgba(91,123,154,0.14)]"
+            ? "border-[var(--color-primary)] bg-white ring-4 ring-[rgba(91,123,154,0.14)]"
             : "border-[var(--color-border)] hover:border-[var(--color-primary)]",
           disabled && "cursor-default opacity-50",
           error && "border-red-400",
@@ -298,30 +297,31 @@ export function FormulaCategoryPicker({
             "min-w-0 flex-1 truncate text-left",
             selectedNode ? "text-[var(--ink)]" : "text-[var(--color-text-hint)]",
           )}
+          title={selectedNode ? triggerLabel : undefined}
         >
           {triggerLabel}
         </span>
-        {value && (
-          <span
-            role="button"
-            tabIndex={-1}
-            onClick={(e) => {
-              e.stopPropagation();
-              onChange(null);
-            }}
-            className="mr-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[var(--color-text-hint)] hover:bg-[var(--color-border)] hover:text-[var(--ink)]"
-            aria-label="清除选择"
-          >
-            <X className="h-3 w-3" />
-          </span>
-        )}
         <ChevronDown
           className={cn(
-            "h-4 w-4 shrink-0 text-[var(--color-text-hint)] transition-transform",
+            "absolute right-3 h-4 w-4 shrink-0 text-[var(--color-text-hint)] transition-transform",
             open && "rotate-180",
           )}
         />
       </button>
+      {value && !disabled && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onChange(null);
+          }}
+          className="absolute right-9 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-lg text-[var(--color-text-hint)] transition hover:bg-[var(--color-border)] hover:text-[var(--ink)]"
+          aria-label="清除分类"
+          title="清除分类"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
       {error && (
         <p className="mt-1 text-xs text-red-500">{error}</p>
       )}
@@ -382,7 +382,7 @@ function CategoryPickerDropdown({
   const [mounted, setMounted] = useState(false);
 
   useLayoutEffect(() => {
-    const btn = triggerRef.current?.querySelector("button");
+    const btn = triggerRef.current?.querySelector<HTMLButtonElement>("[data-category-trigger]");
     if (!btn) return;
     const rect = btn.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom - 12;
@@ -434,6 +434,7 @@ function CategoryPickerDropdown({
         <input
           className="h-8 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] pl-7 pr-2 text-xs outline-none focus:border-[var(--color-primary)]"
           placeholder="搜索分类名称或编码..."
+          autoFocus
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
         />
