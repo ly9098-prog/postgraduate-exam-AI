@@ -3,7 +3,7 @@ const auth = require('../../../utils/auth')
 const formulaContent = require('../../../utils/formula-content')
 const Parser = require('../../../components/mp-html/parser')
 const LatexPlugin = require('../../../components/mp-html/latex/index')
-const { resolveGraphImageUrl, resolveGraphThumbnailUrl } = require('../../../utils/formula-graph')
+const { resolveGraphImageUrl, resolveGraphThumbnailUrl } = require('../utils/formula-graph')
 
 function renderFormulaTitleNodes(title) {
   const source = formulaContent.normalizeMixedContent(title)
