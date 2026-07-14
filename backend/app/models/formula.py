@@ -79,7 +79,7 @@ class FormulaCard(Base):
     search_text: Mapped[str | None] = mapped_column(String(512), nullable=True)
     card_type: Mapped[str] = mapped_column(
         String(32), nullable=False, default="pure_formula"
-    )  # pure_formula | function_graph
+    )  # auto | pure_formula | function_graph
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     formula_blocks: Mapped[list] = mapped_column(JSON, nullable=False)
     conditions: Mapped[str | None] = mapped_column(Text, nullable=True)
