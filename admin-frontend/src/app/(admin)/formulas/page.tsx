@@ -503,9 +503,9 @@ export default function FormulasPage() {
                 placeholder="图像状态"
                 clearable={false}
               />
-              <Link href="/formulas/new">
-                <Button variant="secondary" className="w-full">
-                  <Sigma className="h-4 w-4" />
+              <Link href="/formulas/new" className="shrink-0">
+                <Button variant="secondary" className="w-full whitespace-nowrap">
+                  <Sigma className="h-4 w-4 shrink-0" />
                   快速新建
                 </Button>
               </Link>
