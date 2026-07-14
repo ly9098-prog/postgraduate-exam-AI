@@ -5,6 +5,7 @@ Renders graph_spec JSON to 1600x1000 PNG bytes in a subprocess.
 """
 
 import asyncio
+import atexit
 import concurrent.futures
 import io
 import logging
@@ -710,6 +711,7 @@ def check_quality(png_bytes: bytes, spec: dict, render_meta: dict) -> dict:
 # ── Subprocess pool ──
 
 _process_pool = concurrent.futures.ProcessPoolExecutor(max_workers=2)
+atexit.register(_process_pool.shutdown, wait=False)
 RENDER_TIMEOUT = 30
 
 
