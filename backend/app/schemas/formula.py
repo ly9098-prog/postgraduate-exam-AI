@@ -74,7 +74,7 @@ class FormulaCardCreate(BaseModel):
     title: str
     aliases: list[str] | None = None
     search_text: str | None = None
-    card_type: str = "pure_formula"
+    card_type: str = "auto"
     summary: str | None = None
     formula_blocks: list[FormulaBlock] = Field(min_length=1, max_length=8)
     conditions: str | None = None
@@ -139,6 +139,7 @@ class FormulaCardResponse(BaseModel):
     aliases: list[str] | None
     search_text: str | None
     card_type: str
+    is_function_graph: bool
     summary: str | None
     formula_blocks: list[dict[str, Any]]
     conditions: str | None
@@ -189,6 +190,9 @@ class FormulaListQuery(BaseModel):
 
 
 # ── State machine ──
+
+_ACTION_TYPES = frozenset({"approve", "reject", "publish", "offline", "restore"})
+
 
 class FormulaReviewAction(BaseModel):
     action: str  # approve | reject | publish | offline | restore

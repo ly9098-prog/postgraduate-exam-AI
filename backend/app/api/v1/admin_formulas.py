@@ -27,6 +27,7 @@ from app.services.formula_graph_asset_service import (
     choose_effective_graph_asset,
     delete_asset_by_source_type,
     get_graph_assets_for_card,
+    is_function_graph,
     upload_graph_asset,
 )
 from app.schemas.common import paginated_response
@@ -221,34 +222,18 @@ async def update_formula_category(
 # Card CRUD
 # ════════════════════════════════════════════════════════════
 
+def _json_safe(v):
+    """Convert non-JSON-safe types for JSON column storage."""
+    if isinstance(v, datetime):
+        return v.isoformat()
+    return v
+
+
 async def _card_to_dict(db: AsyncSession, card: FormulaCard) -> dict:
-    tags_result = await db.execute(
-        select(FormulaTag)
-        .join(FormulaCardTag, FormulaCardTag.tag_id == FormulaTag.id)
-        .where(FormulaCardTag.formula_card_id == card.id)
-    )
-    tags = [
-        {"id": t.id, "code": t.code, "name": t.name, "sort_order": t.sort_order}
-        for t in tags_result.scalars().all()
-    ]
-
-    # Batch-load graph assets
-    from app.services.formula_graph_asset_service import (
-        choose_effective_graph_asset,
-        load_graph_assets_map,
-    )
-    assets_map = await load_graph_assets_map(db, [card.id])
-    assets = assets_map.get(card.id, [])
-    effective = choose_effective_graph_asset(assets)
-
-    def _asset_to_min(a):
-        if not a:
-            return None
-        return FormulaGraphAssetResponse.model_validate(a).model_dump(
-            exclude={"template_type", "template_parameters", "viewport", "original_svg_url", "formula_card_id"},
-        )
-
-    return {
+    # Read ALL scalar ORM attributes BEFORE any await point.
+    # If the card is dirty, the first await triggers auto-flush → expires
+    # server-default columns (e.g. updated_at), causing MissingGreenlet.
+    base = {
         "id": card.id,
         "exam_scope": card.exam_scope,
         "category_id": card.category_id,
@@ -266,11 +251,10 @@ async def _card_to_dict(db: AsyncSession, card: FormulaCard) -> dict:
         "function_properties": card.function_properties,
         "sort_order": card.sort_order,
         "status": card.status,
-        "tags": tags,
         "reviewed_by": card.reviewed_by,
-        "reviewed_at": card.reviewed_at,
+        "reviewed_at": _json_safe(card.reviewed_at),
         "rejection_reason": card.rejection_reason,
-        "published_at": card.published_at,
+        "published_at": _json_safe(card.published_at),
         "created_by": card.created_by,
         "updated_by": card.updated_by,
         "source_type": card.source_type,
@@ -278,12 +262,44 @@ async def _card_to_dict(db: AsyncSession, card: FormulaCard) -> dict:
         "source_ref": card.source_ref,
         "content_hash": card.content_hash,
         "version": card.version,
-        "deleted_at": card.deleted_at,
-        "created_at": card.created_at,
-        "updated_at": card.updated_at,
-        "graph_asset": _asset_to_min(effective),
-        "graph_assets": [_asset_to_min(a) for a in assets],
+        "deleted_at": _json_safe(card.deleted_at),
+        "created_at": _json_safe(card.created_at),
+        "updated_at": _json_safe(card.updated_at),
     }
+
+    # Async-load relationships (safe to trigger auto-flush now — base is captured)
+    tags_result = await db.execute(
+        select(FormulaTag)
+        .join(FormulaCardTag, FormulaCardTag.tag_id == FormulaTag.id)
+        .where(FormulaCardTag.formula_card_id == card.id)
+    )
+    base["tags"] = [
+        {"id": t.id, "code": t.code, "name": t.name, "sort_order": t.sort_order}
+        for t in tags_result.scalars().all()
+    ]
+
+    # Batch-load graph assets
+    from app.services.formula_graph_asset_service import (
+        choose_effective_graph_asset,
+        load_graph_assets_map,
+    )
+    assets_map = await load_graph_assets_map(db, [card.id])
+    assets = assets_map.get(card.id, [])
+    effective = choose_effective_graph_asset(assets)
+
+    def _asset_to_min(a):
+        if not a:
+            return None
+        return FormulaGraphAssetResponse.model_validate(a).model_dump(
+            mode="json",
+            exclude={"template_type", "template_parameters", "viewport", "original_svg_url", "formula_card_id"},
+        )
+
+    base["graph_asset"] = _asset_to_min(effective)
+    base["graph_assets"] = [_asset_to_min(a) for a in assets]
+    base["is_function_graph"] = is_function_graph(card, effective_asset=effective)
+
+    return base
 
 
 def _compute_content_hash(formula_blocks: list[dict]) -> str:
@@ -315,6 +331,7 @@ async def list_formula_cards(
     status: str | None = Query(None),
     category_id: int | None = Query(None),
     q: str | None = Query(None),
+    library_type: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     _=Depends(require_permissions("formula:read")),
@@ -333,6 +350,43 @@ async def list_formula_cards(
                 FormulaCard.title.ilike(like),
                 FormulaCard.search_text.ilike(like),
             )
+        )
+
+    if library_type == "function_graph":
+        exists_subq = (
+            select(FormulaGraphAsset.id)
+            .where(
+                FormulaGraphAsset.formula_card_id == FormulaCard.id,
+                FormulaGraphAsset.image_url.isnot(None),
+            )
+        ).exists()
+        query = query.where(
+            or_(
+                FormulaCard.card_type == "function_graph",
+                and_(
+                    ~FormulaCard.card_type.in_(["function_graph", "pure_formula"]),
+                    exists_subq,
+                ),
+            )
+        )
+    elif library_type == "pure_formula":
+        exists_subq = (
+            select(FormulaGraphAsset.id)
+            .where(
+                FormulaGraphAsset.formula_card_id == FormulaCard.id,
+                FormulaGraphAsset.image_url.isnot(None),
+            )
+        ).exists()
+        query = query.where(
+            and_(
+                FormulaCard.card_type != "function_graph",
+                ~exists_subq,
+            )
+        )
+    elif library_type is not None and library_type not in ("formula",):
+        raise HTTPException(
+            status_code=400,
+            detail=f"无效的 library_type: '{library_type}'，允许的值: formula, function_graph, pure_formula",
         )
 
     count_q = select(func.count()).select_from(query.subquery())
@@ -559,10 +613,98 @@ _VALID_TRANSITIONS = {
     "draft": ["restore", "approve"],
     "pending_review": ["approve", "reject"],
     "rejected": ["restore"],
-    "approved": ["publish"],
+    "approved": ["publish"],            # compat for legacy data
     "published": ["offline"],
     "offline": ["publish"],
 }
+
+# Normal business transitions (not exhaustive — compat paths exist)
+_NEW_STATUS_MAP = {
+    ("draft", "approve"): "pending_review",         # submit for review
+    ("pending_review", "approve"): "published",      # approve → auto-publish
+    ("pending_review", "reject"): "rejected",
+    ("rejected", "restore"): "draft",
+    ("published", "offline"): "offline",
+    ("offline", "publish"): "published",
+    ("approved", "publish"): "published",            # legacy compat
+}
+
+
+def _apply_formula_action(
+    card: FormulaCard,
+    action: str,
+    admin_id: int,
+    now: datetime | None = None,
+    rejection_reason: str | None = None,
+) -> str:
+    """Apply a state-machine action to a formula card in-place.
+
+    Returns the new status.
+    Raises HTTPException on invalid transition or missing rejection reason.
+    """
+    allowed = _VALID_TRANSITIONS.get(card.status, [])
+    if action not in allowed:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Cannot transition from {card.status} with action {action}. Allowed: {allowed}",
+        )
+
+    if now is None:
+        now = utcnow()
+
+    # ── Resolve new status ──
+    key = (card.status, action)
+    new_status = _NEW_STATUS_MAP.get(key)
+    if new_status is None:
+        # fallback: direct action→status mapping (legacy)
+        fallback = {"approve": "approved", "reject": "rejected", "publish": "published",
+                    "offline": "offline", "restore": "draft"}
+        new_status = fallback[action]
+
+    # ── Rejection reason validation ──
+    if action == "reject":
+        trimmed = (rejection_reason or "").strip()
+        if not trimmed:
+            raise HTTPException(status_code=422, detail="Rejection reason required")
+        rejection_reason = trimmed
+
+    # ── Field updates per action ──
+    card.status = new_status
+    card.updated_by = admin_id
+    card.version += 1
+
+    if action == "approve" and card.status == "published":
+        # approve → auto-publish (pending_review → published)
+        card.reviewed_by = admin_id
+        card.reviewed_at = now
+        card.published_at = now
+        card.rejection_reason = None
+
+    elif action == "approve" and card.status == "pending_review":
+        # draft → pending_review (submit for review, not a real review)
+        card.reviewed_by = None
+        card.reviewed_at = None
+        card.published_at = None
+        card.rejection_reason = None
+
+    elif action == "reject":
+        card.reviewed_by = admin_id
+        card.reviewed_at = now
+        card.rejection_reason = rejection_reason
+        card.published_at = None
+
+    elif action == "publish":
+        # offline→published or legacy approved→published
+        card.published_at = now
+        card.reviewed_by = admin_id
+        card.reviewed_at = now
+
+    elif action in ("offline", "restore"):
+        card.reviewed_by = None
+        card.reviewed_at = None
+        card.published_at = None
+
+    return new_status
 
 
 @router.post("/{card_id}/review")
@@ -582,52 +724,13 @@ async def review_formula_card(
     if not card:
         raise HTTPException(status_code=404, detail="Formula not found")
 
-    allowed = _VALID_TRANSITIONS.get(card.status, [])
-    if data.action not in allowed:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Cannot transition from {card.status} with action {data.action}. Allowed: {allowed}",
-        )
-
-    # Save original status before any mutation
     old_status = card.status
+    now = utcnow()
 
-    # Map action to new status
-    action_map = {
-        "approve": "approved",
-        "reject": "rejected",
-        "publish": "published",
-        "offline": "offline",
-        "restore": "draft",
-    }
-    # From draft, "approve" means submit for review → pending_review
-    if card.status == "draft" and data.action == "approve":
-        new_status = "pending_review"
-    else:
-        new_status = action_map.get(data.action)
-
-    if data.action == "reject" and not data.rejection_reason:
-        raise HTTPException(status_code=422, detail="Rejection reason required")
-
-    card.status = new_status
-    card.updated_by = admin.id
-    card.version = card.version + 1
-
-    if data.action in ("approve", "reject"):
-        card.reviewed_by = admin.id
-        card.reviewed_at = utcnow()
-        if data.action == "reject":
-            card.rejection_reason = data.rejection_reason
-
-    if data.action == "publish":
-        card.published_at = utcnow()
-        card.reviewed_by = admin.id
-        card.reviewed_at = utcnow()
-
-    if data.action in ("offline", "restore"):
-        card.reviewed_by = None
-        card.reviewed_at = None
-        card.published_at = None
+    new_status = _apply_formula_action(
+        card, data.action, admin.id,
+        now=now, rejection_reason=data.rejection_reason,
+    )
 
     await _create_version_snapshot(db, card, data.action, admin.id, data.rejection_reason)
     await db.flush()
@@ -652,61 +755,52 @@ async def batch_review_formulas(
     admin=Depends(require_permissions("formula:review")),
     db: AsyncSession = Depends(get_db),
 ):
+    # Deduplicate IDs
+    unique_ids = list(dict.fromkeys(data.card_ids))
+
+    # Pre-validate rejection reason for reject action
+    if data.action == "reject":
+        trimmed = (data.rejection_reason or "").strip()
+        if not trimmed:
+            raise HTTPException(status_code=422, detail="Rejection reason required")
+        data.rejection_reason = trimmed
+
+    now = utcnow()
     results = []
-    for card_id in data.card_ids:
+
+    for card_id in unique_ids:
         try:
             card = await db.get(FormulaCard, card_id)
             if not card or card.deleted_at:
                 results.append({"id": card_id, "status": "not_found"})
                 continue
 
-            allowed = _VALID_TRANSITIONS.get(card.status, [])
-            if data.action not in allowed:
-                results.append({"id": card_id, "status": "invalid_transition"})
+            old_status = card.status
+            try:
+                new_status = _apply_formula_action(
+                    card, data.action, admin.id,
+                    now=now, rejection_reason=data.rejection_reason,
+                )
+            except HTTPException as e:
+                if "Cannot transition" in str(e.detail):
+                    results.append({"id": card_id, "status": "invalid_transition"})
+                elif "Rejection reason required" in str(e.detail):
+                    results.append({"id": card_id, "status": "missing_reason"})
+                else:
+                    results.append({"id": card_id, "status": "error"})
                 continue
 
-            action_map = {
-                "approve": "approved",
-                "reject": "rejected",
-                "publish": "published",
-                "offline": "offline",
-                "restore": "draft",
-            }
-            # From draft, "approve" means submit for review → pending_review
-            if card.status == "draft" and data.action == "approve":
-                new_status = "pending_review"
-            else:
-                new_status = action_map.get(data.action)
-
-            if data.action == "reject" and not data.rejection_reason:
-                results.append({"id": card_id, "status": "missing_reason"})
-                continue
-
-            card.status = new_status
-            card.updated_by = admin.id
-            card.version = card.version + 1
-
-            if data.action in ("approve", "reject"):
-                card.reviewed_by = admin.id
-                card.reviewed_at = utcnow()
-                if data.action == "reject":
-                    card.rejection_reason = data.rejection_reason
-
-            if data.action == "publish":
-                card.published_at = utcnow()
-                card.reviewed_by = admin.id
-                card.reviewed_at = utcnow()
-
+            await _create_version_snapshot(db, card, data.action, admin.id, data.rejection_reason)
             results.append({"id": card_id, "status": new_status})
-        except Exception as exc:
-            results.append({"id": card_id, "status": "error", "detail": str(exc)})
+        except Exception:
+            results.append({"id": card_id, "status": "error"})
 
-    await db.commit()
     await _log_audit(
         db, admin, request, f"formula.batch-{data.action}",
         "formula_card", None,
         {"card_ids": data.card_ids, "results": results},
     )
+    await db.commit()
     return {"items": results}
 
 
@@ -1034,10 +1128,10 @@ async def upload_graph_asset_endpoint(
     if not card:
         raise HTTPException(status_code=404, detail="Formula not found")
 
-    if card.card_type != "function_graph":
+    if card.card_type == "pure_formula":
         raise HTTPException(
             status_code=422,
-            detail="仅函数图像类型卡片支持上传图像。当前卡片类型为「纯公式」",
+            detail="纯公式类型卡片不支持上传图像。如需上传，请将卡片类型改为「自动」或「函数图像」",
         )
 
     # Read file from multipart

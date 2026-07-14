@@ -11,53 +11,116 @@ import { LatexRenderer } from "@/components/ui/latex-renderer";
 import { MixedLatexRenderer } from "@/components/ui/mixed-latex-renderer";
 import { FormulaEditorForm } from "@/components/formulas/formula-editor-form";
 import { FormulaGraphAssetPanel } from "@/components/formulas/formula-graph-asset-panel";
+import { FunctionPropertiesPanel } from "@/components/formulas/function-properties-panel";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest } from "@/lib/api/client";
 import type { FormulaGraphAsset } from "@/lib/api/types";
+import { decodeApiText, normalizeLatexExpression } from "@/lib/math-text";
 import Link from "next/link";
 
-/* ── Structured content renderers for JSON-encoded conditions/error_tips ── */
+/* ── Structured content renderers for JSON-encoded fields ── */
+
+function parseJsonValue(raw: string): unknown {
+  let value: unknown = raw;
+  for (let i = 0; i < 3 && typeof value === "string"; i += 1) {
+    const text = value.trim();
+    if (!text) return value;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+function MathAwareText({ text }: { text: unknown }) {
+  return <MixedLatexRenderer text={decodeApiText(text)} />;
+}
+
+function renderJsonStringArray(raw: string | null | undefined) {
+  if (!raw) return null;
+  const parsed = parseJsonValue(raw);
+  if (!Array.isArray(parsed)) return <MathAwareText text={raw} />;
+
+  return (
+    <ul className="list-disc space-y-1.5 pl-4">
+      {parsed.map((item, index) => (
+        <li key={index}><MathAwareText text={item} /></li>
+      ))}
+    </ul>
+  );
+}
+
+function renderSymbolNotes(raw: string | null | undefined) {
+  if (!raw) return null;
+  const parsed = parseJsonValue(raw);
+  if (!Array.isArray(parsed)) return <MathAwareText text={raw} />;
+
+  return (
+    <ul className="list-none space-y-1.5">
+      {parsed.map((item, index) => {
+        const record = typeof item === "object" && item !== null
+          ? item as Record<string, unknown>
+          : null;
+        const symbol = typeof item === "string" ? item : record?.symbol ?? "";
+        const note = record?.note ?? "";
+        return (
+          <li key={index}>
+            <MathAwareText text={symbol} />
+            {Boolean(note) && (
+              <span className="ml-2 text-[var(--color-text-secondary)]">
+                — <MathAwareText text={note} />
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 function renderStructuredConditions(raw: string | null | undefined) {
-  if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) {
-      return (
-        <ul className="list-none space-y-1.5">
-          {parsed.map((item, i) => {
-            const expr = typeof item === 'string' ? item : item?.expression ?? ''
-            const note = typeof item === 'object' && item ? (item as Record<string, string>).note ?? '' : ''
-            return (
-              <li key={i}>
-                <LatexRenderer latex={expr} displayMode={false} />
-                {note && <span className="text-[var(--color-text-secondary)] ml-2">— {note}</span>}
-              </li>
-            )
-          })}
-        </ul>
-      )
-    }
-  } catch { /* not JSON, fall through */ }
-  return <MixedLatexRenderer text={raw} />
+  if (!raw) return null;
+  const parsed = parseJsonValue(raw);
+  if (!Array.isArray(parsed)) return <MathAwareText text={raw} />;
+
+  return (
+    <ul className="list-none space-y-1.5">
+      {parsed.map((item, index) => {
+        const record = typeof item === "object" && item !== null
+          ? item as Record<string, unknown>
+          : null;
+        const expression = typeof item === "string" ? item : record?.expression ?? "";
+        const note = record?.note ?? "";
+        return (
+          <li key={index}>
+            <MathAwareText text={expression} />
+            {Boolean(note) && (
+              <span className="ml-2 text-[var(--color-text-secondary)]">
+                — <MathAwareText text={note} />
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 function renderStructuredErrorTips(raw: string | null | undefined) {
-  if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) {
-      return (
-        <ul className="list-disc pl-4 space-y-1">
-          {parsed.map((tip, i) => (
-            <li key={i}><MixedLatexRenderer text={typeof tip === 'string' ? tip : JSON.stringify(tip)} /></li>
-          ))}
-        </ul>
-      )
-    }
-  } catch { /* not JSON, fall through */ }
-  return <MixedLatexRenderer text={raw} />
+  if (!raw) return null;
+  const parsed = parseJsonValue(raw);
+  if (!Array.isArray(parsed)) return <MathAwareText text={raw} />;
+
+  return (
+    <ul className="list-disc space-y-1 pl-4">
+      {parsed.map((item, index) => (
+        <li key={index}><MathAwareText text={item} /></li>
+      ))}
+    </ul>
+  );
 }
 
 type FormulaCard = {
@@ -71,6 +134,7 @@ type FormulaCard = {
   rejection_reason: string | null; aliases: string[] | null;
   sort_order: number;
   card_type: string;
+  is_function_graph: boolean;
   function_properties: Record<string, unknown> | null;
   graph_asset: FormulaGraphAsset | null;
 };
@@ -78,13 +142,12 @@ type FormulaCard = {
 const STATUS_BADGE: Record<string, string> = {
   draft: "bg-gray-50 text-gray-600 border-gray-200",
   pending_review: "bg-amber-50 text-amber-700 border-amber-200",
-  approved: "bg-green-50 text-green-700 border-green-200",
   rejected: "bg-red-50 text-red-700 border-red-200",
   published: "bg-emerald-50 text-emerald-700 border-emerald-200",
   offline: "bg-slate-50 text-slate-600 border-slate-200",
 };
 const STATUS_LABEL: Record<string, string> = {
-  draft: "草稿", pending_review: "待审核", approved: "已通过",
+  draft: "草稿", pending_review: "待审核",
   rejected: "已驳回", published: "已发布", offline: "已下架",
 };
 
@@ -120,7 +183,11 @@ export default function EditFormulaPage() {
       });
     },
     onSuccess: (result) => {
-      setMessage(`状态已更新为「${STATUS_LABEL[result.new_status] || result.new_status}」`);
+      if (result.new_status === "published") {
+        setMessage("审核通过，公式已自动发布。");
+      } else {
+        setMessage(`状态已更新为「${STATUS_LABEL[result.new_status] || result.new_status}」`);
+      }
       setConfirmAction(null);
       setReviewReason("");
       queryClient.invalidateQueries({ queryKey: ["admin-formulas", cardId] });
@@ -166,7 +233,7 @@ export default function EditFormulaPage() {
           blocks: card.formula_blocks?.length ? card.formula_blocks : [{ latex: "" }],
           examples: card.examples || [],
           sortOrder: card.sort_order || 0,
-          cardType: card.card_type || "pure_formula",
+          cardType: card.card_type || "auto",
           functionProperties: card.function_properties ?? null,
         }}
         onSaveSuccess={() => {
@@ -192,10 +259,25 @@ export default function EditFormulaPage() {
               </Link>
               <div>
                 <div className="flex items-center gap-3">
-                  <h3 className="font-display text-2xl font-bold text-[var(--ink)]">{card.title}</h3>
+                  <h3 className="font-display text-2xl font-bold text-[var(--ink)]"><MathAwareText text={card.title} /></h3>
                   <span className={`inline-flex items-center gap-1 rounded-xl border px-3 py-1 text-xs font-semibold ${STATUS_BADGE[card.status] || ""}`}>
                     {STATUS_LABEL[card.status] || card.status}
                   </span>
+                  {card.card_type === "function_graph" && (
+                    <span className="inline-flex items-center gap-1 rounded-xl border border-[var(--color-primary-light)] bg-[var(--color-primary-light)]/50 px-3 py-1 text-xs font-semibold text-[var(--color-primary-dark)]">
+                      函数图像
+                    </span>
+                  )}
+                  {card.card_type === "auto" && card.is_function_graph && (
+                    <span className="inline-flex items-center gap-1 rounded-xl border border-[var(--color-primary-light)] bg-[var(--color-primary-light)]/25 px-3 py-1 text-xs font-semibold text-[var(--color-primary-dark)]">
+                      公式 + 函数图像
+                    </span>
+                  )}
+                  {card.card_type === "function_graph" && !card.graph_asset && (
+                    <span className="inline-flex items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                      缺少图像
+                    </span>
+                  )}
                 </div>
                 <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
                   #{card.id} · v{card.version}
@@ -237,7 +319,9 @@ export default function EditFormulaPage() {
             {/* Summary */}
             {card.summary && (
               <section className="rounded-[1.6rem] border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-5">
-                <p className="text-sm leading-6 text-[var(--color-text-secondary)]">{card.summary}</p>
+                <div className="text-sm leading-6 text-[var(--color-text-secondary)]">
+                  <MathAwareText text={card.summary} />
+                </div>
               </section>
             )}
 
@@ -248,8 +332,8 @@ export default function EditFormulaPage() {
                 {card.formula_blocks?.map((block, i) => (
                   <div key={i} className="rounded-xl border bg-white p-4">
                     {block.label && <p className="mb-1 text-xs font-semibold text-[var(--color-text-hint)]">{block.label}</p>}
-                    <LatexRenderer latex={block.latex} displayMode={true} />
-                    {block.note && <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{block.note}</p>}
+                    <LatexRenderer latex={normalizeLatexExpression(block.latex)} displayMode={true} />
+                    {block.note && <div className="mt-1 text-xs text-[var(--color-text-secondary)]"><MathAwareText text={block.note} /></div>}
                   </div>
                 ))}
               </div>
@@ -267,46 +351,20 @@ export default function EditFormulaPage() {
             {card.secondary_conclusions && (
               <section className="rounded-[1.6rem] border bg-white/80 p-4">
                 <p className="font-semibold text-[var(--ink)]">二级结论</p>
-                <div className="mt-2 text-sm text-[var(--color-text-secondary)] whitespace-pre-wrap break-words max-w-full overflow-x-auto">
-                  <MixedLatexRenderer text={card.secondary_conclusions} />
+                <div className="mt-2 space-y-2 text-sm text-[var(--color-text-secondary)] break-words max-w-full overflow-x-auto">
+                  {renderJsonStringArray(card.secondary_conclusions)}
                 </div>
               </section>
             )}
 
             {/* Function graph asset & properties */}
-            {card.card_type === "function_graph" && (
+            {card.card_type !== "pure_formula" && (
               <>
-                <FormulaGraphAssetPanel cardId={card.id} canUpdate={canUpdate} />
+                {(card.card_type === "function_graph" || card.graph_asset) && (
+                  <FormulaGraphAssetPanel cardId={card.id} canUpdate={canUpdate} />
+                )}
                 {card.function_properties && (
-                  <section className="rounded-[1.6rem] border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-4">
-                    <p className="font-semibold text-[var(--ink)]">函数属性</p>
-                    <div className="mt-2 space-y-1 text-sm text-[var(--color-text-secondary)]">
-                      {!!card.function_properties.function_expression && (
-                        <p><span className="font-semibold">表达式：</span>{String(card.function_properties.function_expression)}</p>
-                      )}
-                      {!!card.function_properties.graph_template_type && (
-                        <p><span className="font-semibold">模板类型：</span>{String(card.function_properties.graph_template_type)}</p>
-                      )}
-                      {!!card.function_properties.domain && (
-                        <p><span className="font-semibold">定义域：</span>{JSON.stringify(card.function_properties.domain)}</p>
-                      )}
-                      {!!card.function_properties.range && (
-                        <p><span className="font-semibold">值域：</span>{JSON.stringify(card.function_properties.range)}</p>
-                      )}
-                      {!!card.function_properties.parity && (
-                        <p><span className="font-semibold">奇偶性：</span>{String(card.function_properties.parity)}</p>
-                      )}
-                      {!!card.function_properties.period && (
-                        <p><span className="font-semibold">周期：</span>{String(card.function_properties.period)}</p>
-                      )}
-                      {!!card.function_properties.derivative_summary && (
-                        <p><span className="font-semibold">导数：</span>{String(card.function_properties.derivative_summary)}</p>
-                      )}
-                      {!!card.function_properties.one_line_feature && (
-                        <p><span className="font-semibold">特征：</span>{String(card.function_properties.one_line_feature)}</p>
-                      )}
-                    </div>
-                  </section>
+                  <FunctionPropertiesPanel properties={card.function_properties} />
                 )}
               </>
             )}
@@ -314,7 +372,9 @@ export default function EditFormulaPage() {
             {card.symbol_notes && (
               <section className="rounded-[1.6rem] border bg-white/80 p-4">
                 <p className="font-semibold text-[var(--ink)]">符号说明</p>
-                <p className="mt-2 text-sm text-[var(--color-text-secondary)]">{card.symbol_notes}</p>
+                <div className="mt-2 text-sm text-[var(--color-text-secondary)]">
+                  {renderSymbolNotes(card.symbol_notes)}
+                </div>
               </section>
             )}
 
@@ -333,10 +393,10 @@ export default function EditFormulaPage() {
                 <div className="mt-3 space-y-4">
                   {card.examples.map((ex, i) => (
                     <div key={i} className="rounded-xl border bg-white p-4">
-                      <p className="font-semibold text-[var(--ink)]">题目：{ex.question}</p>
-                      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">解法：{ex.short_solution}</p>
-                      <p className="mt-1 text-sm font-semibold text-[var(--color-success)]">答案：{ex.answer}</p>
-                      {ex.error_tip && <p className="mt-1 text-sm text-red-600">注意：{ex.error_tip}</p>}
+                      <p className="font-semibold text-[var(--ink)]">题目：<MathAwareText text={ex.question} /></p>
+                      <p className="mt-1 text-sm text-[var(--color-text-secondary)]">解法：<MathAwareText text={ex.short_solution} /></p>
+                      <p className="mt-1 text-sm font-semibold text-[var(--color-success)]">答案：<MathAwareText text={ex.answer} /></p>
+                      {ex.error_tip && <p className="mt-1 text-sm text-red-600">注意：<MathAwareText text={ex.error_tip} /></p>}
                     </div>
                   ))}
                 </div>
@@ -361,18 +421,13 @@ export default function EditFormulaPage() {
                 )}
                 {card.status === "pending_review" && (
                   <>
-                    <Button onClick={() => setConfirmAction("approved")}>
-                      <CheckCircle className="h-4 w-4" /> 通过
+                    <Button onClick={() => setConfirmAction("approve")}>
+                      <CheckCircle className="h-4 w-4" /> 通过并发布
                     </Button>
                     <Button variant="danger" onClick={() => setConfirmAction("rejected")}>
                       <XCircle className="h-4 w-4" /> 驳回
                     </Button>
                   </>
-                )}
-                {card.status === "approved" && (
-                  <Button onClick={() => setConfirmAction("published")}>
-                    <Eye className="h-4 w-4" /> 发布
-                  </Button>
                 )}
                 {card.status === "published" && (
                   <Button variant="secondary" onClick={() => setConfirmAction("offline")}>
@@ -406,21 +461,25 @@ export default function EditFormulaPage() {
 
       <ConfirmDialog
         open={confirmAction !== null}
-        title={confirmAction === "rejected" ? "驳回公式" : "确认操作"}
+        title={confirmAction === "rejected" ? "驳回公式" :
+               confirmAction === "approve" ? "通过并发布" : "确认操作"}
         description={
           confirmAction === "rejected"
             ? "请填写驳回原因"
-            : `确认执行「${STATUS_LABEL[confirmAction || ""] || confirmAction}」操作？`
+            : confirmAction === "approve"
+            ? "审核通过后该公式将立即发布。"
+            : `确认执行此操作？`
         }
-        confirmText={confirmAction === "rejected" ? "驳回" : "确认"}
+        confirmText={confirmAction === "rejected" ? "驳回" :
+                     confirmAction === "approve" ? "通过并发布" : "确认"}
         danger={confirmAction === "rejected" || confirmAction === "offline"}
         loading={reviewMutation.isPending}
         onCancel={() => { setConfirmAction(null); setReviewReason(""); }}
         onConfirm={() => {
           if (!confirmAction) return;
           const actionMap: Record<string, string> = {
-            pending_review: "approve", approved: "approve", rejected: "reject",
-            published: "publish", offline: "offline", draft: "restore",
+            approve: "approve", rejected: "reject",
+            published: "publish", offline: "offline", draft: "restore", pending_review: "approve",
           };
           reviewMutation.mutate({
             action: actionMap[confirmAction] || confirmAction,

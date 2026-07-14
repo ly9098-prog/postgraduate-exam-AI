@@ -367,7 +367,7 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
   );
   const [examples, setExamples] = useState<FormulaExample[]>(initialData?.examples ?? []);
   const [sortOrder, setSortOrder] = useState(initialData?.sortOrder ?? 0);
-  const [cardType, setCardType] = useState(initialData?.cardType ?? "pure_formula");
+  const [cardType, setCardType] = useState(initialData?.cardType ?? "auto");
 
   const [funcExpression, setFuncExpression] = useState(
     (initialData?.functionProperties?.function_expression as string) ?? "",
@@ -979,7 +979,22 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
 
                   <div>
                     <FieldLabel required>卡片类型</FieldLabel>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCardType("auto")}
+                        className={`flex min-h-12 items-center gap-2 rounded-xl border px-3 text-left transition ${
+                          cardType === "auto"
+                            ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)] shadow-sm"
+                            : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:bg-white"
+                        }`}
+                      >
+                        <Sparkles className="h-4 w-4 shrink-0" />
+                        <span>
+                          <span className="block text-sm font-semibold">自动识别</span>
+                          <span className="block text-[10px] opacity-70">推荐 · 有图即函数图像</span>
+                        </span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => setCardType("pure_formula")}
@@ -992,7 +1007,7 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
                         <FileText className="h-4 w-4 shrink-0" />
                         <span>
                           <span className="block text-sm font-semibold">纯公式</span>
-                          <span className="block text-[10px] opacity-70">定义、定理与公式</span>
+                          <span className="block text-[10px] opacity-70">即使有图也只展示公式</span>
                         </span>
                       </button>
                       <button
@@ -1007,10 +1022,14 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
                         <LayoutTemplate className="h-4 w-4 shrink-0" />
                         <span>
                           <span className="block text-sm font-semibold">函数图像</span>
-                          <span className="block text-[10px] opacity-70">含图像与函数属性</span>
+                          <span className="block text-[10px] opacity-70">即使无图也归类图像</span>
                         </span>
                       </button>
                     </div>
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--color-text-hint)]">
+                      自动识别：上传函数图像后自动归入"函数图像"；未上传时作为普通公式。
+                      纯公式：始终只在"公式"分类展示。函数图像：即使暂未上传图片也出现在"函数图像"分类。
+                    </p>
                   </div>
                 </div>
 

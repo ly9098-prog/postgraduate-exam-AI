@@ -850,4 +850,4 @@ export type FormulaGraphAsset = {
   updated_at?: string;
 };
 
-export type FormulaCardType = "pure_formula" | "function_graph";
+export type FormulaCardType = "auto" | "pure_formula" | "function_graph";
