@@ -191,6 +191,8 @@ Component({
           patch.showSecondary = false
           patch.showErrorTips = true
           patch.showExamples = false
+          patch.graphLoadError = false
+          patch.graphLoaded = false
         }
 
         if (Object.keys(patch).length) this.setData(patch)
@@ -215,6 +217,8 @@ Component({
     showSecondary: false,
     showErrorTips: true,
     showExamples: false,
+    graphLoadError: false,
+    graphLoaded: false,
   },
 
   lifetimes: {
@@ -239,6 +243,14 @@ Component({
     previewGraph() {
       const url = this.data.graphImageUrl
       if (url) wx.previewImage({ urls: [url] })
+    },
+
+    onGraphLoad() {
+      this.setData({ graphLoadError: false, graphLoaded: true })
+    },
+
+    onGraphError() {
+      this.setData({ graphLoadError: true, graphLoaded: false })
     },
 
     onFormulaTouchStart() {

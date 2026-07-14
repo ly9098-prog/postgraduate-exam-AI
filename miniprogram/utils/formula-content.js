@@ -384,6 +384,99 @@ function normalizeMixedContent(value) {
   }).join('').trim()
 }
 
+/**
+ * Decode fields that may have been JSON-stringified one or more times.
+ *
+ * The admin detail page already supports these legacy shapes, for example:
+ *   conditions: '[{"expression":"a ≠ 0","note":""}]'
+ *   symbol_notes: '[{"symbol":"Delta=b^2-4ac","note":"判别式"}]'
+ *   secondary_conclusions / error_tips: '["结论一","结论二"]'
+ *
+ * Keep ordinary prose untouched when it is not valid JSON.
+ */
+function decodeStructuredValue(value) {
+  var current = value
+  for (var i = 0; i < 3 && typeof current === 'string'; i++) {
+    var source = current.trim()
+    if (!source) return ''
+    try {
+      current = JSON.parse(source)
+    } catch (_) {
+      break
+    }
+  }
+  return current
+}
+
+function readStructuredText(record, keys) {
+  if (!record || typeof record !== 'object') return ''
+  for (var i = 0; i < keys.length; i++) {
+    var value = record[keys[i]]
+    if (value !== undefined && value !== null && typeof value !== 'object') {
+      return String(value)
+    }
+  }
+  return ''
+}
+
+function normalizeStructuredItem(item, kind) {
+  if (item === undefined || item === null) return null
+  if (typeof item !== 'object') {
+    var scalar = String(item).trim()
+    return scalar ? { primary: scalar, note: '' } : null
+  }
+
+  var primaryKeys = kind === 'conditions'
+    ? ['expression', 'text', 'content', 'value']
+    : kind === 'symbols'
+      ? ['symbol', 'text', 'content', 'value']
+      : ['text', 'content', 'conclusion', 'message', 'expression', 'value']
+  var primary = readStructuredText(item, primaryKeys).trim()
+  var note = readStructuredText(item, ['note', 'description', 'remark']).trim()
+
+  // Some historical error-tip records only contain a note/message field.
+  if (!primary && note && kind !== 'conditions' && kind !== 'symbols') {
+    primary = note
+    note = ''
+  }
+  if (!primary && !note) return null
+  return { primary: primary, note: note }
+}
+
+/**
+ * Convert JSON-encoded structured fields into safe rich-text HTML.
+ * Formula fragments are passed through the same mixed prose/KaTeX pipeline as
+ * normal text, so the mini-program matches the admin `/formulas/[id]` preview.
+ */
+function normalizeStructuredContent(value, kind) {
+  var parsed = decodeStructuredValue(value)
+  var items
+
+  if (Array.isArray(parsed)) items = parsed
+  else if (parsed && typeof parsed === 'object') items = [parsed]
+  else return normalizeMixedContent(parsed)
+
+  var normalizedItems = items.map(function (item) {
+    return normalizeStructuredItem(item, kind)
+  }).filter(Boolean)
+
+  if (!normalizedItems.length) return ''
+
+  var isBulleted = kind === 'secondary' || kind === 'errors'
+  var rows = normalizedItems.map(function (item, index) {
+    var primaryHtml = normalizeMixedContent(item.primary)
+    var noteHtml = normalizeMixedContent(item.note)
+    var rowClass = 'fc-structured-row' + (index === 0 ? ' is-first' : '')
+    var marker = isBulleted ? '<span class="fc-structured-marker">•</span>' : ''
+    var note = noteHtml
+      ? '<span class="fc-structured-note"> — ' + noteHtml + '</span>'
+      : ''
+    return '<div class="' + rowClass + '">' + marker + '<span class="fc-structured-primary">' + primaryHtml + '</span>' + note + '</div>'
+  })
+
+  return '<div class="fc-structured-list ' + (isBulleted ? 'is-bulleted' : 'is-plain') + '">' + rows.join('') + '</div>'
+}
+
 function prepareFormulaBlocks(card) {
   var blocks = card && Array.isArray(card.formula_blocks) ? card.formula_blocks : []
   var prepared = []
@@ -419,10 +512,10 @@ function prepareContentHtml(card) {
   card = card || {}
   return {
     summaryHtml: normalizeMixedContent(card.summary),
-    conditionsHtml: normalizeMixedContent(card.conditions),
-    symbolNotesHtml: normalizeMixedContent(card.symbol_notes),
-    secondaryHtml: normalizeMixedContent(card.secondary_conclusions),
-    errorTipsHtml: normalizeMixedContent(card.error_tips),
+    conditionsHtml: normalizeStructuredContent(card.conditions, 'conditions'),
+    symbolNotesHtml: normalizeStructuredContent(card.symbol_notes, 'symbols'),
+    secondaryHtml: normalizeStructuredContent(card.secondary_conclusions, 'secondary'),
+    errorTipsHtml: normalizeStructuredContent(card.error_tips, 'errors'),
     examples: (Array.isArray(card.examples) ? card.examples : []).map(function (example) {
       var item = example || {}
       return Object.assign({}, item, {
@@ -460,6 +553,8 @@ module.exports = {
   normalizeLatexSource: normalizeLatexSource,
   normalizeMathRun: normalizeMathRun,
   normalizeMixedContent: normalizeMixedContent,
+  decodeStructuredValue: decodeStructuredValue,
+  normalizeStructuredContent: normalizeStructuredContent,
   prepareContentHtml: prepareContentHtml,
   prepareFormulaBlocks: prepareFormulaBlocks,
   splitFormulaGroup: splitFormulaGroup,

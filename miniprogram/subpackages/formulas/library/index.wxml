@@ -2,31 +2,46 @@
   <premium-nav title="公式库" variant="light" bind:back="goBack" />
 
   <view class="fl-content">
-    <view class="fl-intro">
-      <text class="fl-kicker">FORMULA LIBRARY</text>
-      <view class="fl-intro-row">
-        <view class="fl-intro-copy">
-          <text class="fl-title">公式速查与背诵</text>
-          <text class="fl-subtitle">按科目与章节快速定位，重点公式一眼识别</text>
+    <view class="fl-compact-head">
+      <view class="fl-compact-copy">
+        <text class="fl-compact-title">公式库</text>
+        <text class="fl-compact-note">{{activeLibraryType === 'function_graph' ? '函数图像速查' : '重点公式速查'}}</text>
+      </view>
+      <view class="fl-head-actions">
+        <view class="fl-compact-total" wx:if="{{!initialLoading && !loadError}}">
+          <text class="fl-compact-total-number">{{total || formulas.length || 0}}</text>
+          <text class="fl-compact-total-unit">{{activeLibraryType === 'function_graph' ? '张' : '条'}}</text>
         </view>
-        <view class="fl-total-pill" wx:if="{{!initialLoading && !loadError}}">
-          <text class="fl-total-number">{{total || formulas.length || 0}}</text>
-          <text class="fl-total-unit">条</text>
+        <view class="fl-more-button" hover-class="fl-pressed" bindtap="toggleMoreSheet" aria-label="更多功能">
+          <view class="fl-more-dots"><view class="fl-dot"></view><view class="fl-dot"></view><view class="fl-dot"></view></view>
+          <view class="fl-more-active-dot" wx:if="{{activeTags.length}}"></view>
         </view>
       </view>
     </view>
 
-    <view class="fl-subject-switch">
-      <view
-        class="fl-subject-tab {{s.active ? 'active' : ''}}"
-        wx:for="{{subjects}}"
-        wx:for-item="s"
-        wx:key="code"
-        data-code="{{s.code}}"
-        hover-class="fl-pressed"
-        bindtap="onSubjectChange"
-      >
-        <text>{{s.name}}</text>
+    <view class="fl-sticky-tools" style="top: {{navHeight}}px;">
+      <view class="fl-filter-row">
+        <view class="fl-subject-select" hover-class="fl-pressed" bindtap="toggleSubjectPicker">
+          <view class="fl-subject-select-copy">
+            <text class="fl-control-label">学科</text>
+            <text class="fl-subject-select-name">{{activeSubjectName}}</text>
+          </view>
+          <text class="line-icon icon-chevron-down fl-control-chevron"></text>
+        </view>
+
+        <view class="fl-library-switch">
+          <view
+            class="fl-library-tab {{tab.active ? 'active' : ''}}"
+            wx:for="{{libraryTabs}}"
+            wx:for-item="tab"
+            wx:key="key"
+            data-type="{{tab.key}}"
+            hover-class="fl-pressed"
+            bindtap="onLibraryTypeChange"
+          >
+            <text class="fl-library-tab-name">{{tab.name}}</text>
+          </view>
+        </view>
       </view>
     </view>
 
@@ -34,7 +49,7 @@
       <view class="fl-search-icon"></view>
       <input
         class="fl-search-input"
-        placeholder="搜索公式名称或关键词"
+        placeholder="{{activeLibraryType === 'function_graph' ? '搜索函数图像名称或关键词' : '搜索公式名称或关键词'}}"
         placeholder-class="fl-search-placeholder"
         value="{{searchValue}}"
         bindinput="onSearchInput"
@@ -53,20 +68,14 @@
         bindtap="toggleFavoritesOnly"
       >
         <view class="fl-quick-icon"><text class="line-icon icon-book"></text></view>
-        <view class="fl-quick-copy">
-          <text class="fl-quick-title">{{onlyFavorites ? '正在查看收藏' : '只看收藏'}}</text>
-          <text class="fl-quick-desc">{{onlyFavorites ? '点击返回全部公式' : '集中复习已收藏内容'}}</text>
-        </view>
-        <text class="line-icon icon-chevron-right fl-quick-arrow"></text>
+        <text class="fl-quick-title">{{onlyFavorites ? '已筛选收藏' : '只看收藏'}}</text>
+        <view class="fl-quick-status" wx:if="{{onlyFavorites}}"></view>
       </view>
 
       <view class="fl-quick-action fl-random-action" hover-class="fl-pressed" bindtap="goToRandom">
         <view class="fl-quick-icon"><text class="line-icon icon-review"></text></view>
-        <view class="fl-quick-copy">
-          <text class="fl-quick-title">随机背诵</text>
-          <text class="fl-quick-desc">从当前筛选中抽取</text>
-        </view>
-        <view class="fl-random-go"><text class="line-icon icon-chevron-right"></text></view>
+        <text class="fl-quick-title">随机背诵</text>
+        <text class="line-icon icon-chevron-right fl-quick-arrow"></text>
       </view>
     </view>
 
@@ -75,10 +84,7 @@
         <text class="fl-section-title">章节筛选</text>
         <text class="fl-section-kicker">CHAPTERS</text>
       </view>
-      <view class="fl-tag-filter {{activeTags.length ? 'active' : ''}}" hover-class="fl-pressed" bindtap="toggleTagPicker">
-        <text>{{activeTags.length ? '标签 ' + activeTags.length : '标签筛选'}}</text>
-        <text class="line-icon icon-chevron-down"></text>
-      </view>
+      <text class="fl-section-filter-note" wx:if="{{activeTags.length}}">已选 {{activeTags.length}} 个标签</text>
     </view>
 
     <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="fl-chapter-scroll">
@@ -117,26 +123,26 @@
     </view>
 
     <view class="fl-list-head" wx:if="{{!initialLoading && !loadError}}">
-      <text class="fl-list-title">公式列表</text>
+      <text class="fl-list-title">{{activeLibraryType === 'function_graph' ? '函数图像' : '公式列表'}}</text>
       <text class="fl-list-meta">{{formulas.length}} / {{total || formulas.length || 0}}</text>
     </view>
 
     <view class="fl-loading" wx:if="{{initialLoading}}">
       <view class="fl-loading-ring"></view>
-      <text class="fl-state-title">正在整理公式</text>
+      <text class="fl-state-title">{{activeLibraryType === 'function_graph' ? '正在整理函数图像' : '正在整理公式'}}</text>
       <text class="fl-state-desc">请稍候</text>
     </view>
 
     <view class="fl-empty" wx:if="{{!initialLoading && loadError}}">
       <view class="fl-state-icon fl-state-error"><text class="line-icon icon-exclamation"></text></view>
-      <text class="fl-state-title">公式加载失败</text>
+      <text class="fl-state-title">{{activeLibraryType === 'function_graph' ? '函数图像加载失败' : '公式加载失败'}}</text>
       <text class="fl-state-desc">{{loadErrorMessage || '请检查网络后重试'}}</text>
       <view class="fl-reload-btn" hover-class="fl-pressed" bindtap="reload">重新加载</view>
     </view>
 
-    <view class="fl-list" wx:if="{{!loadError && formulas.length > 0}}">
+    <view class="fl-list {{activeLibraryType === 'function_graph' ? 'fl-graph-list' : ''}}" wx:if="{{!loadError && formulas.length > 0}}">
       <view
-        class="fl-card"
+        class="fl-card {{activeLibraryType === 'function_graph' ? 'fl-card-graph' : ''}}"
         wx:for="{{formulas}}"
         wx:key="id"
         data-id="{{item.id}}"
@@ -145,8 +151,18 @@
       >
         <view class="fl-card-head">
           <view class="fl-card-title-wrap">
-            <text class="fl-card-title">{{item.title}}</text>
-            <view class="fl-card-tags" wx:if="{{item.tags && item.tags.length}}">
+            <rich-text
+              class="fl-card-title fl-card-title-rich"
+              wx:if="{{item.titleNodes && item.titleNodes.length}}"
+              nodes="{{item.titleNodes}}"
+              user-select="{{true}}"
+            />
+            <text class="fl-card-title" wx:else>{{item.title}}</text>
+            <view class="fl-card-tags" wx:if="{{item.tags && item.tags.length || item.isFunctionGraph}}">
+              <text
+                class="fl-card-tag tag-function-graph"
+                wx:if="{{item.isFunctionGraph}}"
+              >函数图像</text>
               <text
                 class="fl-card-tag {{'tag-' + t.code}}"
                 wx:for="{{item.tags}}"
@@ -165,8 +181,40 @@
           </view>
         </view>
 
+        <view class="fl-graph-preview" wx:if="{{activeLibraryType === 'function_graph'}}">
+          <image
+            class="fl-graph-preview-img"
+            wx:if="{{item.graphPreviewUrl && !item.graphLoadError}}"
+            src="{{item.graphPreviewUrl}}"
+            mode="aspectFit"
+            lazy-load
+            data-id="{{item.id}}"
+            binderror="onGraphImageError"
+          />
+          <view class="fl-graph-placeholder" wx:else>
+            <view class="fl-graph-placeholder-icon">
+              <view class="fl-graph-axis-x"></view>
+              <view class="fl-graph-axis-y"></view>
+              <text class="fl-graph-curve">⌁</text>
+            </view>
+            <text class="fl-graph-placeholder-title">图像暂未上传</text>
+            <text class="fl-graph-placeholder-desc">该条目已标记为函数图像</text>
+          </view>
+        </view>
+
+        <view class="fl-card-thumb" wx:if="{{activeLibraryType !== 'function_graph' && item.isFunctionGraph && item.graphThumbnailUrl && !item.graphLoadError}}">
+          <image
+            class="fl-card-thumb-img"
+            src="{{item.graphThumbnailUrl}}"
+            mode="aspectFit"
+            lazy-load
+            data-id="{{item.id}}"
+            binderror="onGraphImageError"
+          />
+        </view>
+
         <view class="fl-card-foot">
-          <text class="fl-card-hint">查看适用条件、易错点与例题</text>
+          <text class="fl-card-hint">{{activeLibraryType === 'function_graph' ? '查看大图、适用条件与完整解析' : '查看适用条件、易错点与例题'}}</text>
           <text class="line-icon icon-chevron-right fl-card-arrow"></text>
         </view>
       </view>
@@ -178,9 +226,73 @@
     </view>
 
     <view class="fl-empty" wx:if="{{!initialLoading && !loadError && formulas.length === 0}}">
-      <view class="fl-state-icon"><text class="line-icon icon-book"></text></view>
-      <text class="fl-state-title">{{searchValue ? '没有匹配的公式' : '暂无公式数据'}}</text>
-      <text class="fl-state-desc">{{searchValue ? '换一个关键词或清除筛选试试' : '当前科目尚未录入公式'}}</text>
+      <view class="fl-state-icon"><text class="line-icon {{activeLibraryType === 'function_graph' ? 'icon-review' : 'icon-book'}}"></text></view>
+      <text class="fl-state-title">{{searchValue ? (activeLibraryType === 'function_graph' ? '没有匹配的函数图像' : '没有匹配的公式') : (activeLibraryType === 'function_graph' ? '暂无函数图像' : '暂无公式数据')}}</text>
+      <text class="fl-state-desc">{{searchValue ? '换一个关键词或清除筛选试试' : (activeLibraryType === 'function_graph' ? '当前筛选下尚未录入函数图像' : '当前科目尚未录入公式')}}</text>
+    </view>
+  </view>
+
+  <view class="fl-picker-overlay" wx:if="{{showSubjectPicker}}" bindtap="toggleSubjectPicker" catchtouchmove="noop">
+    <view class="fl-bottom-sheet fl-subject-sheet" catchtap="noop">
+      <view class="fl-sheet-handle"></view>
+      <view class="fl-sheet-head">
+        <view>
+          <text class="fl-sheet-title">选择学科</text>
+          <text class="fl-sheet-subtitle">切换后将重新加载章节与内容</text>
+        </view>
+        <view class="fl-sheet-close" bindtap="toggleSubjectPicker" hover-class="fl-pressed">
+          <text class="line-icon icon-close"></text>
+        </view>
+      </view>
+      <view class="fl-subject-options">
+        <view
+          class="fl-subject-option {{s.active ? 'active' : ''}}"
+          wx:for="{{subjects}}"
+          wx:for-item="s"
+          wx:key="code"
+          data-code="{{s.code}}"
+          hover-class="fl-pressed"
+          bindtap="onSubjectChange"
+        >
+          <view class="fl-subject-option-mark"><view class="fl-subject-option-dot"></view></view>
+          <text class="fl-subject-option-name">{{s.name}}</text>
+          <text class="line-icon icon-check" wx:if="{{s.active}}"></text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="fl-picker-overlay" wx:if="{{showMoreSheet}}" bindtap="toggleMoreSheet" catchtouchmove="noop">
+    <view class="fl-bottom-sheet fl-more-sheet" catchtap="noop">
+      <view class="fl-sheet-handle"></view>
+      <view class="fl-sheet-head">
+        <view>
+          <text class="fl-sheet-title">更多功能</text>
+          <text class="fl-sheet-subtitle">管理标签和当前筛选条件</text>
+        </view>
+        <view class="fl-sheet-close" bindtap="toggleMoreSheet" hover-class="fl-pressed">
+          <text class="line-icon icon-close"></text>
+        </view>
+      </view>
+      <view class="fl-more-list">
+        <view class="fl-more-item" hover-class="fl-pressed" bindtap="openTagPickerFromMore">
+          <view class="fl-more-item-icon fl-more-tag-icon"><view class="fl-filter-bar fl-filter-bar-one"></view><view class="fl-filter-bar fl-filter-bar-two"></view><view class="fl-filter-bar fl-filter-bar-three"></view></view>
+          <view class="fl-more-item-copy">
+            <text class="fl-more-item-title">标签筛选</text>
+            <text class="fl-more-item-desc">{{activeTags.length ? '已选择 ' + activeTags.length + ' 个标签' : '按高频、易错等标签筛选'}}</text>
+          </view>
+          <view class="fl-more-item-badge" wx:if="{{activeTags.length}}">{{activeTags.length}}</view>
+          <text class="line-icon icon-chevron-right fl-more-item-arrow"></text>
+        </view>
+        <view class="fl-more-item {{!searchValue && !activeChapterId && !activeTags.length && !onlyFavorites ? 'disabled' : ''}}" hover-class="fl-pressed" bindtap="resetFilters">
+          <view class="fl-more-item-icon fl-more-reset-icon"><view class="fl-reset-ring"></view><view class="fl-reset-arrow"></view></view>
+          <view class="fl-more-item-copy">
+            <text class="fl-more-item-title">清除当前筛选</text>
+            <text class="fl-more-item-desc">保留学科与内容分类，恢复全部章节</text>
+          </view>
+          <text class="line-icon icon-chevron-right fl-more-item-arrow"></text>
+        </view>
+      </view>
     </view>
   </view>
 
@@ -189,7 +301,7 @@
       <view class="fl-sheet-handle"></view>
       <view class="fl-sheet-head">
         <view>
-          <text class="fl-sheet-title">筛选公式标签</text>
+          <text class="fl-sheet-title">筛选{{activeLibraryType === 'function_graph' ? '图像' : '公式'}}标签</text>
           <text class="fl-sheet-subtitle">可同时选择多个标签</text>
         </view>
         <view class="fl-sheet-close" bindtap="toggleTagPicker" hover-class="fl-pressed">

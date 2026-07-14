@@ -580,7 +580,7 @@ page {
 
 /* Recent subjects */
 .recent-section {
-  margin-top: 30rpx;
+  margin-top: 32rpx;
 }
 
 .section-heading-row {
@@ -597,54 +597,103 @@ page {
   margin-top: 18rpx;
   width: 100%;
   white-space: nowrap;
+  overflow: hidden;
 }
 
 .recent-list {
   display: inline-flex;
-  gap: 14rpx;
-  padding: 0 2rpx 4rpx;
+  gap: 12rpx;
+  padding: 2rpx 2rpx 8rpx;
 }
 
 .recent-card {
   position: relative;
-  width: 156rpx;
-  height: 172rpx;
-  padding: 18rpx;
+  width: 164rpx;
+  height: 184rpx;
+  padding: 16rpx;
   box-sizing: border-box;
-  border-radius: 28rpx;
-  background: #FFFFFF;
-  border: 1rpx solid rgba(18, 32, 22, 0.07);
+  border-radius: 24rpx;
+  background: rgba(255,255,255,0.92);
+  border: 1rpx solid rgba(22, 34, 25, 0.10);
   display: inline-flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: space-between;
-  box-shadow: 0 10rpx 30rpx rgba(23, 34, 25, 0.045);
+  box-shadow: 0 10rpx 26rpx rgba(20, 31, 22, 0.055);
+  transition:
+    background-color .24s ease,
+    border-color .24s ease,
+    box-shadow .24s ease,
+    transform .18s ease,
+    opacity .18s ease;
 }
 
 .recent-card.active {
-  background: linear-gradient(145deg, #1B2A1E 0%, #101A12 100%);
-  border-color: #213526;
-  box-shadow: 0 16rpx 32rpx rgba(16, 28, 18, 0.15);
+  background: #17251A;
+  border-color: #17251A;
+  box-shadow: 0 16rpx 34rpx rgba(14, 25, 17, 0.16);
+}
+
+.recent-card-top,
+.recent-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8rpx;
 }
 
 .recent-mark {
-  width: 62rpx;
-  height: 62rpx;
-  border-radius: 20rpx;
-  background: #F0F2EF;
-  color: #1C261F;
+  width: 54rpx;
+  height: 54rpx;
+  border-radius: 16rpx;
+  background: #F1F3F0;
+  border: 1rpx solid rgba(22, 34, 25, 0.06);
+  color: #273128;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22rpx;
+  flex-shrink: 0;
+  font-size: 19rpx;
   line-height: 1;
-  font-weight: 900;
+  font-weight: 800;
   font-family: Arial, sans-serif;
+  letter-spacing: -1rpx;
+  transition: background-color .24s ease, border-color .24s ease, color .24s ease;
 }
 
 .recent-card.active .recent-mark {
-  background: rgba(174, 238, 0, 0.12);
-  color: #AEEE00;
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.08);
+  color: #B7F300;
+}
+
+.recent-selected-badge {
+  width: 28rpx;
+  height: 28rpx;
+  border-radius: 50%;
+  background: #AEEE00;
+  color: #152017;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 17rpx;
+  line-height: 1;
+  font-weight: 900;
+  opacity: 0;
+  transform: scale(.72);
+  transition: opacity .2s ease, transform .2s ease;
+}
+
+.recent-selected-badge.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.recent-card-copy {
+  min-width: 0;
+  margin-top: auto;
+  margin-bottom: 16rpx;
 }
 
 .recent-name {
@@ -653,25 +702,52 @@ page {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #1B231D;
+  color: #18211A;
   font-size: 22rpx;
-  line-height: 1.3;
+  line-height: 1.32;
   font-weight: 900;
+  letter-spacing: .1rpx;
+  transition: color .24s ease;
 }
 
-.recent-card.active .recent-name { color: #FFFFFF; }
-
-.recent-indicator {
-  position: absolute;
-  left: 18rpx;
-  right: 18rpx;
-  bottom: 7rpx;
-  height: 4rpx;
-  border-radius: 999rpx;
-  background: transparent;
+.recent-card.active .recent-name {
+  color: #FFFFFF;
 }
 
-.recent-card.active .recent-indicator { background: #AEEE00; }
+.recent-card-footer {
+  justify-content: flex-start;
+  min-width: 0;
+  color: #7B847D;
+  transition: color .24s ease;
+}
+
+.recent-status-dot {
+  width: 7rpx;
+  height: 7rpx;
+  border-radius: 50%;
+  background: #CDD2CD;
+  flex-shrink: 0;
+  transition: background-color .24s ease, box-shadow .24s ease;
+}
+
+.recent-status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17rpx;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.recent-card.active .recent-card-footer {
+  color: rgba(255,255,255,0.68);
+}
+
+.recent-card.active .recent-status-dot {
+  background: #AEEE00;
+  box-shadow: 0 0 0 4rpx rgba(174, 238, 0, 0.10);
+}
 
 /* Reward */
 .reward-panel {
@@ -752,24 +828,43 @@ page {
 }
 
 /* Subject sheet */
-.subject-sheet-mask {
+.subject-sheet-layer {
   position: fixed;
   left: 0;
   right: 0;
   top: 0;
   bottom: 0;
   z-index: 100;
+  pointer-events: auto;
+}
+
+.subject-sheet-backdrop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
   background: rgba(7, 14, 9, 0.66);
-  display: flex;
-  align-items: flex-end;
   animation: maskFadeIn .2s ease-out both;
 }
 
-@keyframes maskFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes maskFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes maskFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
 
 .subject-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   width: 100%;
-  max-height: 82vh;
+  height: 82vh;
   padding: 12rpx 24rpx calc(24rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
   border-radius: 38rpx 38rpx 0 0;
@@ -778,11 +873,29 @@ page {
   animation: sheetUp .24s ease-out both;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.subject-sheet-layer.closing {
+  pointer-events: none;
+}
+
+.subject-sheet-layer.closing .subject-sheet-backdrop {
+  animation: maskFadeOut .18s ease-in both;
+}
+
+.subject-sheet-layer.closing .subject-sheet {
+  animation: sheetDown .18s ease-in both;
 }
 
 @keyframes sheetUp {
   from { transform: translateY(45rpx); opacity: .6; }
   to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes sheetDown {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(36rpx); opacity: .76; }
 }
 
 .sheet-handle {
@@ -791,11 +904,13 @@ page {
   margin: 2rpx auto 18rpx;
   border-radius: 999rpx;
   background: #D1D5D1;
+  flex-shrink: 0;
 }
 
 .sheet-header {
   align-items: center;
   padding: 0 4rpx;
+  flex-shrink: 0;
 }
 
 .sheet-close {
@@ -821,6 +936,7 @@ page {
   align-items: center;
   justify-content: space-between;
   gap: 18rpx;
+  flex-shrink: 0;
 }
 
 .sheet-current-label {
@@ -843,6 +959,7 @@ page {
 
 .sheet-recent {
   margin-top: 22rpx;
+  flex-shrink: 0;
 }
 
 .sheet-section-label {
@@ -861,8 +978,10 @@ page {
 }
 
 .sheet-recent-chip {
+  max-width: 250rpx;
   min-height: 58rpx;
   padding: 0 22rpx;
+  box-sizing: border-box;
   border-radius: 999rpx;
   background: #FFFFFF;
   border: 1rpx solid #E0E5E0;
@@ -870,6 +989,9 @@ page {
   font-size: 21rpx;
   line-height: 58rpx;
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sheet-recent-chip.active {
@@ -881,12 +1003,15 @@ page {
 .all-subject-label {
   margin-top: 24rpx;
   padding: 0 4rpx 12rpx;
+  flex-shrink: 0;
 }
 
 .subject-tree-scroll {
   flex: 1;
-  min-height: 300rpx;
-  max-height: 52vh;
+  height: 0;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
 }
 
 .subject-empty {
@@ -1000,6 +1125,21 @@ page {
   flex-shrink: 0;
 }
 
+.parent-expand-hit {
+  width: 52rpx;
+  height: 52rpx;
+  margin-right: -8rpx;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.subject-parent-row.selected .parent-expand-hit {
+  background: rgba(255,255,255,0.07);
+}
+
 .parent-selected {
   color: #AEEE00;
   font-size: 24rpx;
@@ -1013,13 +1153,16 @@ page {
   transition: transform .2s ease;
 }
 
+.subject-parent-row.selected .parent-arrow {
+  color: rgba(255,255,255,0.66);
+}
+
 .parent-arrow.up { transform: rotate(180deg); }
 
 .child-subject-wrap {
   padding: 6rpx 12rpx 12rpx 72rpx;
   border-top: 1rpx solid #EEF1EE;
   background: #FBFCFA;
-  animation: panelReveal .18s ease-out both;
 }
 
 .child-subject-row {
@@ -1043,6 +1186,11 @@ page {
 }
 
 .child-subject-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 22rpx;
   line-height: 1.35;
   font-weight: 700;
@@ -1058,6 +1206,7 @@ page {
   line-height: 34rpx;
   text-align: center;
   font-weight: 900;
+  flex-shrink: 0;
 }
 
 /* ==================== 答题页 (布局容器) ==================== */
@@ -1400,7 +1549,7 @@ page {
 .practice-hero { border-radius: 40rpx; box-shadow: 0 28rpx 68rpx rgba(16,37,26,.23); }
 .settings-panel { border-radius: 34rpx; border-color: #DDE2DA; box-shadow: 0 12rpx 34rpx rgba(16,37,26,.055); }
 .mode-card, .count-btn { border-radius: 26rpx; }
-.recent-card { border-radius: 28rpx; border-color: #DFE3DC; }
+.recent-card { border-radius: 24rpx; border-color: #DFE3DC; }
 .subject-sheet { border-radius: 40rpx 40rpx 0 0; background: #FBFBF7; }
 .sheet-close { display:flex; align-items:center; justify-content:center; }
 .sheet-close .line-icon { width: 28rpx; height: 28rpx; color: #324239; }
