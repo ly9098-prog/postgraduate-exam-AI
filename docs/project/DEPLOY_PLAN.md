@@ -128,6 +128,40 @@ bash deploy/scripts/deploy.sh migrate
 2. 不执行 `down` 或删除 volume
 3. 回滚代码到上一版本 → 重新 `bash deploy/scripts/deploy.sh update`
 
+### 2.6 低内存服务器构建注意事项
+
+服务器规格为 2 核 / 1.8 GB 内存。Admin 前端 Next.js 构建是内存敏感操作：
+
+| 措施 | 说明 |
+|------|------|
+| `NODE_OPTIONS=--max-old-space-size=1536` | Dockerfile 中限制 Node.js 堆上限，防止 OOM |
+| `output: "standalone"` | 产物仅包含必要文件，减少磁盘占用 |
+| 构建超时 | 首次构建约 1-3 分钟，峰值 RSS 约 800–1200 MB |
+| 构建产物 | `.next/standalone` + `.next/static`，总计约 50–80 MB |
+| layer cache | Docker layer cache 保留 `/app/.next/cache`（Next.js 缓存约 200 MB） |
+
+**构建失败处理：**
+- `compose build admin` 失败不影响当前运行的 admin 容器
+- `compose up -d --no-deps admin` 仅在构建成功后执行
+- 若构建耗时过长或 OOM，可临时增加 swap 或先在本机构建后推送镜像
+
+**推荐流程（服务器外构建）：**
+1. 在 CI 或本机执行 `docker build -t admin-frontend admin-frontend/`
+2. `docker save admin-frontend | ssh ... docker load`
+3. 服务器只执行启动，不执行构建
+
+同步到服务器后：
+```bash
+# 仅构建 admin
+bash deploy/scripts/deploy.sh build-admin
+
+# 构建 + 替换
+bash deploy/scripts/deploy.sh update-admin
+
+# 全量（app + admin）
+bash deploy/scripts/deploy.sh update-all
+```
+
 ---
 
 ## 3. 环境变量管理
