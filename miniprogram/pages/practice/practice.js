@@ -15,6 +15,7 @@ Page({
     subjectTree: [],
     selectedSubjectId: null,
     selectedSubjectName: '',
+    selectedSubjectHasChildren: false,
     expandedSubjectId: null,
     selectedMode: 'random',
     selectedModeLabel: '随机挑战',
@@ -23,6 +24,7 @@ Page({
     estimatedMinutes: 10,
     settingsExpanded: false,
     subjectSheetVisible: false,
+    subjectSheetClosing: false,
     recentSubjects: [],
     statusBarHeight: 20,
     navBarHeight: 44,
@@ -77,6 +79,10 @@ Page({
     if (this._feedbackTimer) {
       clearTimeout(this._feedbackTimer)
       this._feedbackTimer = null
+    }
+    if (this._subjectSheetCloseTimer) {
+      clearTimeout(this._subjectSheetCloseTimer)
+      this._subjectSheetCloseTimer = null
     }
   },
 
@@ -198,6 +204,7 @@ Page({
       this.setData({
         selectedSubjectId: null,
         selectedSubjectName: '',
+        selectedSubjectHasChildren: false,
         expandedSubjectId: null,
         recentSubjects: [],
       })
@@ -232,6 +239,7 @@ Page({
       expandedSubjectId: selected.parent_subject_id || selected.subject_id,
       selectedSubjectId: selected.subject_id,
       selectedSubjectName: selected.display_name,
+      selectedSubjectHasChildren: Boolean(selected.has_children),
       recentSubjects,
     })
   },
@@ -259,22 +267,26 @@ Page({
   _flattenSelectableSubjects(subjectTree) {
     const result = []
     ;(subjectTree || []).forEach((parent) => {
+      const parentId = Number(parent.subject_id)
       const children = Array.isArray(parent.children) ? parent.children : []
-      if (children.length > 0) {
-        children.forEach((child) => {
-          result.push({
-            subject_id: Number(child.subject_id),
-            display_name: child.display_name,
-            parent_subject_id: Number(parent.subject_id),
-          })
-        })
-      } else {
+
+      // 保持原默认体验：优先使用第一个具体子科目作为首次进入的 fallback。
+      children.forEach((child) => {
         result.push({
-          subject_id: Number(parent.subject_id),
-          display_name: parent.display_name,
-          parent_subject_id: Number(parent.subject_id),
+          subject_id: Number(child.subject_id),
+          display_name: child.display_name,
+          parent_subject_id: parentId,
+          has_children: false,
         })
-      }
+      })
+
+      // 父级也可直接选择，表示“该科目（全部）”。
+      result.push({
+        subject_id: parentId,
+        display_name: children.length > 0 ? `${parent.display_name}（全部）` : parent.display_name,
+        parent_subject_id: parentId,
+        has_children: children.length > 0,
+      })
     })
     return result.filter((item) => item.subject_id && item.display_name)
   },
@@ -289,22 +301,32 @@ Page({
   },
 
   _decorateRecentSubjects(subjects) {
-    return (subjects || []).map((item) => ({
-      subject_id: Number(item.subject_id),
-      display_name: item.display_name,
-      parent_subject_id: Number(item.parent_subject_id || item.subject_id),
-      mark: this._subjectMark(item.display_name),
-    }))
+    return (subjects || []).map((item) => {
+      const subjectId = Number(item.subject_id)
+      const hasChildren = item.has_children != null
+        ? Boolean(item.has_children)
+        : this._subjectHasChildren(subjectId)
+      return {
+        subject_id: subjectId,
+        display_name: item.display_name,
+        parent_subject_id: Number(item.parent_subject_id || item.subject_id),
+        has_children: hasChildren,
+        mark: this._subjectMark(item.display_name),
+        scope_label: hasChildren ? '全部范围' : '继续练习',
+      }
+    })
   },
 
   _rememberSubject(subjectId, subjectName) {
     const id = Number(subjectId)
     if (!id || !subjectName) return
     const parentId = this._findParentSubjectId(id)
+    const hasChildren = this._subjectHasChildren(id)
     const base = [{
       subject_id: id,
       display_name: subjectName,
       parent_subject_id: parentId || id,
+      has_children: hasChildren,
     }].concat((this.data.recentSubjects || []).filter((item) => Number(item.subject_id) !== id))
     const recentSubjects = this._decorateRecentSubjects(base.slice(0, 4))
     this.setData({ recentSubjects })
@@ -317,6 +339,19 @@ Page({
     } catch (e) {
       console.warn('保存最近使用科目失败', e)
     }
+  },
+
+  _queueRememberSubject(subjectId, subjectName) {
+    const id = Number(subjectId)
+    if (!id || !subjectName) return
+    this._pendingRememberSubject = { subjectId: id, subjectName }
+  },
+
+  _flushPendingRecentSubject() {
+    const pending = this._pendingRememberSubject
+    this._pendingRememberSubject = null
+    if (!pending) return
+    this._rememberSubject(pending.subjectId, pending.subjectName)
   },
 
   _findParentSubjectId(subjectId) {
@@ -333,31 +368,93 @@ Page({
     return null
   },
 
+  _subjectHasChildren(subjectId) {
+    const id = Number(subjectId)
+    const tree = this.data.subjectTree || []
+    for (let i = 0; i < tree.length; i += 1) {
+      const parent = tree[i]
+      if (Number(parent.subject_id) === id) {
+        return Array.isArray(parent.children) && parent.children.length > 0
+      }
+    }
+    return false
+  },
+
   toggleSettings() {
     this.setData({ settingsExpanded: !this.data.settingsExpanded })
   },
 
   openSubjectSheet() {
-    this.setData({ subjectSheetVisible: true })
+    if (this._subjectSheetCloseTimer) {
+      clearTimeout(this._subjectSheetCloseTimer)
+      this._subjectSheetCloseTimer = null
+    }
+    this.setData({
+      subjectSheetVisible: true,
+      subjectSheetClosing: false,
+    })
+  },
+
+  _hideSubjectSheet(afterClose) {
+    if (!this.data.subjectSheetVisible) {
+      if (typeof afterClose === 'function') afterClose()
+      return
+    }
+    if (this.data.subjectSheetClosing) return
+
+    if (this._subjectSheetCloseTimer) clearTimeout(this._subjectSheetCloseTimer)
+    this.setData({ subjectSheetClosing: true }, () => {
+      this._subjectSheetCloseTimer = setTimeout(() => {
+        this._subjectSheetCloseTimer = null
+        if (!this._pageAlive) return
+        this.setData({
+          subjectSheetVisible: false,
+          subjectSheetClosing: false,
+        }, () => {
+          if (typeof afterClose === 'function') afterClose()
+        })
+      }, 180)
+    })
   },
 
   closeSubjectSheet() {
-    this.setData({ subjectSheetVisible: false })
+    this._hideSubjectSheet(() => this._flushPendingRecentSubject())
+  },
+
+  _selectSubject(subjectId, subjectName, expandedSubjectId, hasChildren) {
+    const id = Number(subjectId)
+    if (!id || !subjectName) return
+
+    const resolvedHasChildren = hasChildren != null
+      ? Boolean(hasChildren)
+      : this._subjectHasChildren(id)
+    const patch = {
+      selectedSubjectId: id,
+      selectedSubjectName: subjectName,
+      selectedSubjectHasChildren: resolvedHasChildren,
+    }
+    if (expandedSubjectId != null) {
+      patch.expandedSubjectId = Number(expandedSubjectId)
+    } else if (resolvedHasChildren) {
+      // 选择“父级（全部）”时默认展开该父级，立即展示其子科目。
+      patch.expandedSubjectId = id
+    }
+
+    // 只切换选中态，不立刻重排 recentSubjects，避免卡片节点重建导致频闪。
+    // 弹层关闭或开始练习时，再更新最近使用顺序。
+    this._queueRememberSubject(id, subjectName)
+    this.setData(patch)
   },
 
   chooseRecentSubject(e) {
     const ds = e.currentTarget.dataset || {}
     const subjectId = Number(ds.subjectId)
     const subjectName = ds.subjectName
+    const hasChildren = ds.hasChildren === true || ds.hasChildren === 'true'
     if (!subjectId || !subjectName) return
+
     const parentId = this._findParentSubjectId(subjectId)
-    this.setData({
-      selectedSubjectId: subjectId,
-      selectedSubjectName: subjectName,
-      expandedSubjectId: parentId || subjectId,
-      subjectSheetVisible: false,
-    })
-    this._rememberSubject(subjectId, subjectName)
+    this._selectSubject(subjectId, subjectName, parentId || subjectId, hasChildren)
   },
 
   goBack() {
@@ -370,60 +467,36 @@ Page({
   },
 
   /**
-   * 点击父级科目行（纵向折叠列表）：
-   * - 有 children：纯 toggle expandedSubjectId（点击已展开的父级会收起；不修改 selectedSubjectId）
-   * - 无 children：该父级本身作为可选科目，更新 selectedSubjectId / selectedSubjectName
+   * 点击父级名称区域：选择父级本身。有子级时表示“父级（全部）”。
+   * 展开/收起由右侧箭头独立处理，避免选择与折叠互相干扰。
    */
-  toggleParentSubject(e) {
+  chooseParentSubject(e) {
     const ds = e.currentTarget.dataset || {}
     const subjectId = Number(ds.subjectId)
     const subjectName = ds.subjectName
     const hasChildren = ds.hasChildren === true || ds.hasChildren === 'true'
-    if (!subjectId) return
+    if (!subjectId || !subjectName) return
 
-    if (hasChildren) {
-      // 纯 toggle：已展开则收起，未展开则展开；不动 selectedSubjectId
-      const next = this.data.expandedSubjectId === subjectId ? null : subjectId
-      this.setData({ expandedSubjectId: next })
-    } else {
-      // 叶子父级：直接选中；展开态也指向它，让行显示 selected 视觉
-      if (
-        this.data.selectedSubjectId === subjectId &&
-        this.data.expandedSubjectId === subjectId
-      ) {
-        this.setData({ subjectSheetVisible: false })
-        return
-      }
-      this.setData({
-        expandedSubjectId: subjectId,
-        selectedSubjectId: subjectId,
-        selectedSubjectName: subjectName,
-        subjectSheetVisible: false,
-      })
-      this._rememberSubject(subjectId, subjectName)
-    }
+    const selectedName = hasChildren ? `${subjectName}（全部）` : subjectName
+    this._selectSubject(subjectId, selectedName, undefined, hasChildren)
+  },
+
+  toggleParentExpansion(e) {
+    const subjectId = Number((e.currentTarget.dataset || {}).subjectId)
+    if (!subjectId) return
+    const next = this.data.expandedSubjectId === subjectId ? null : subjectId
+    this.setData({ expandedSubjectId: next })
   },
 
   /**
-   * 点击子级科目 chip：真正更新当前选中科目。
-   * 不自动开始练习，只更新选择；保持当前展开态不变。
+   * 点击子级科目：更新当前选中科目，弹层保持打开。
    */
   chooseChildSubject(e) {
     const ds = e.currentTarget.dataset || {}
     const subjectId = Number(ds.subjectId)
     const subjectName = ds.subjectName
-    if (!subjectId) return
-    // 已是当前选中项时直接关闭弹层
-    if (this.data.selectedSubjectId === subjectId) {
-      this.setData({ subjectSheetVisible: false })
-      return
-    }
-    this.setData({
-      selectedSubjectId: subjectId,
-      selectedSubjectName: subjectName,
-      subjectSheetVisible: false,
-    })
-    this._rememberSubject(subjectId, subjectName)
+    if (!subjectId || !subjectName) return
+    this._selectSubject(subjectId, subjectName, this._findParentSubjectId(subjectId), false)
   },
 
   chooseMode(e) {
@@ -443,7 +516,10 @@ Page({
       this.openSubjectSheet()
       return
     }
-    this._rememberSubject(this.data.selectedSubjectId, this.data.selectedSubjectName)
+    if (this.data.selectedMode === 'sequential' && this.data.selectedSubjectHasChildren) {
+      wx.showToast({ title: '顺序练习仅支持具体科目', icon: 'none' })
+      return
+    }
     const traceId = createTraceId()
     this._resetSession()
     this._practiceSession.traceId = traceId
@@ -461,6 +537,7 @@ Page({
       feedbackDetail: '',
       feedbackComboText: '',
     })
+    this._flushPendingRecentSubject()
     this._startTimer()
     await this._loadQuestions()
   },
@@ -504,11 +581,14 @@ Page({
         wx.showToast({ title: '请选择科目', icon: 'none' })
         return
       }
+      const mode = this.data.selectedMode || 'random'
       const params = {
         subject_id: subjectId,
-        include_children: true,
+        include_children: Boolean(
+          this.data.selectedSubjectHasChildren && (mode === 'random' || mode === 'smart')
+        ),
         count: this.data.count || 5,
-        mode: this.data.selectedMode || 'random',
+        mode,
         exclude_answered: true,
         no_repeat_days: 30,
         use_leitner: true,
@@ -710,7 +790,9 @@ Page({
     }
     const answeredFlags = adapter.buildAnsweredFlags(this.data.questions, answerMap, 'id')
     const answeredCount = adapter.countAnswered(answeredFlags)
-    const questions = adapter.applyAnsweredFlags(this.data.questions, answeredFlags, 'id')
+    // 使用精确数据路径更新，避免每次传输完整 questions 大对象
+    const currentIdx = this.data.currentIndex
+    const answered = !!newAnswer
     if (shouldDebugQuestion(q.id)) {
       debugLog(this._practiceSession.traceId || q.trace_id, 'STATE_CHANGE', {
         questionId: q.id,
@@ -736,7 +818,11 @@ Page({
     const cq = Object.assign({}, this.data.currentQuestion, { _optionList: optionList })
     this._practiceSession.answerMap = answerMap
     this._practiceSession.answeredFlags = answeredFlags
-    this.setData({ questions, answeredCount, currentQuestion: cq }, () => {
+    this.setData({
+      [`questions[${currentIdx}]._answered`]: answered,
+      answeredCount,
+      currentQuestion: cq,
+    }, () => {
       this._updateComputedFields()
     })
   },
@@ -767,7 +853,6 @@ Page({
     }
     const answeredFlags = adapter.buildAnsweredFlags(this.data.questions, answerMap, 'id')
     const answeredCount = adapter.countAnswered(answeredFlags)
-    const questions = adapter.applyAnsweredFlags(this.data.questions, answeredFlags, 'id')
     const groups = adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), newAnswer)
     const currentQuestion = Object.assign({}, q, {
       _blankOptionGroups: groups,
@@ -791,7 +876,14 @@ Page({
 
     this._practiceSession.answerMap = answerMap
     this._practiceSession.answeredFlags = answeredFlags
-    this.setData({ questions, answeredCount, currentQuestion }, () => {
+    // 使用精确数据路径更新，避免传输完整 questions 数组
+    const currentIdx = this.data.currentIndex
+    const answered = !!newAnswer
+    this.setData({
+      [`questions[${currentIdx}]._answered`]: answered,
+      answeredCount,
+      currentQuestion,
+    }, () => {
       this._updateComputedFields()
     })
   },
