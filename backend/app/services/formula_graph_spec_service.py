@@ -114,7 +114,7 @@ async def generate_preview(
             select(FormulaGraphPreview).where(
                 FormulaGraphPreview.formula_card_id == card.id,
                 FormulaGraphPreview.checksum == checksum,
-                FormulaGraphPreview.expires_at > datetime.now(timezone.utc),
+                FormulaGraphPreview.expires_at > datetime.utcnow(),
             )
         )
         existing = existing_result.scalar_one_or_none()
@@ -282,7 +282,7 @@ async def confirm_preview(
     if not preview:
         raise ValueError("Preview not found or token invalid", "404")
 
-    if preview.expires_at and preview.expires_at < datetime.now(timezone.utc):
+    if preview.expires_at and preview.expires_at < datetime.utcnow():
         raise ValueError("Preview has expired. Please regenerate.", "422")
 
     # Check quality
