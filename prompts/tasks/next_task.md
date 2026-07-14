@@ -1,778 +1,831 @@
-# MemoGrad 公式模块精准修复任务 Prompt
+你正在继续维护 MemoGrad / 22408AI刷题小程序中的“考研数学二公式图像 Phase 2”。
 
-你正在维护 MemoGrad 完整项目仓库，项目包含：
+当前 Phase 2 已经完成：
 
-```text
-backend/
-admin-frontend/
-miniprogram/
-```
+- GraphSpec 区域着色；
+- 等轴坐标；
+- 箭头标注；
+- 9 个可渲染预览；
+- 67 项自动化测试；
+- 11 个逻辑图表主题中的大部分实现。
 
-请直接修复当前公式模块问题，不要只输出分析或改造建议。先阅读根目录 `CLAUDE.md`、相关架构文档、现有测试配置和实际源码，再按下列任务修改、测试并给出验收结果。
+但目前仍不能将 Phase 2 标记为完整完成。请直接在当前仓库中完成以下收尾工作，不要只输出方案。
 
----
+------
 
-## 一、已通过源码确认的根因
+# 一、开始前审计
 
-### 1. 侧边栏重复高亮
+先阅读并遵循：
 
-文件：
+1. 根目录 `CLAUDE.md`
+2. `prompts/tasks/current_task.md`
+3. `prompts/tasks/math_chart/phase_2_diagrams.md`
+4. `backend/app/services/formula_graph_spec_renderer.py`
+5. `backend/app/services/formula_graph_spec_service.py`
+6. `backend/scripts/generate_math2_diagrams.py`
+7. `backend/app/data/formula_library/math2_diagram_specs.json`
+8. `backend/tests/test_formula_diagrams.py`
+9. 与以下模型相关的 ORM、schema、API 和迁移：
+   - 公式卡；
+   - GraphSpec；
+   - 预览记录；
+   - FormulaGraphAsset；
+   - 审核状态；
+   - 版本记录；
+   - 审计日志。
 
-```text
-admin-frontend/src/components/layout/sidebar.tsx
-admin-frontend/src/lib/routes.ts
-```
+先输出一个简短审计结果，然后继续实现，不要等待确认。
 
-当前逻辑：
+审计重点：
 
-```ts
-pathname === route.href || pathname.startsWith(`${route.href}/`)
-```
+- 一个公式卡当前是否只能保存一个 `graph_spec`；
+- 多张预览实际存储在何处；
+- 后生成的 GraphSpec 是否会覆盖先前 GraphSpec；
+- 已确认资产是否支持一卡多图；
+- 预览、GraphSpec 和最终资产的关系；
+- 是否存在可复用的一对多表；
+- 是否有稳定 slug/source_ref；
+- 是否在数据文件、路径或正文中硬编码数据库数字 ID；
+- 当前 9 个预览是否都仍能通过原始 GraphSpec 重现；
+- `conic_sections` 是否已有合适卡片；
+- 当前所有图是否仍为预览、待审核或已确认状态。
 
-因此 `/formulas/categories` 和 `/formulas/review` 同时命中 `/formulas`，造成截图中“公式库”和“公式分类”同时高亮。
+------
 
-### 2. 管理端公式详情没有真实 LaTeX 渲染
+# 二、核心目标
 
-文件：
+完成后必须达到：
 
-```text
-admin-frontend/src/app/(admin)/formulas/page.tsx
-admin-frontend/src/app/(admin)/formulas/[id]/page.tsx
-```
+1. 一个公式卡可安全关联多个独立数学图表；
+2. 每个图表都有独立稳定标识；
+3. 不再发生后生成 GraphSpec 覆盖前一个的问题；
+4. “常见二次曲线”拥有正式关联卡片和预览；
+5. 所有 11 个逻辑主题都有可审核预览，或有明确且可验证的阻塞项；
+6. 字体缺失警告消除；
+7. 定义域边界 RuntimeWarning 消除；
+8. X 型和 Y 型区域着色语义正确；
+9. 预览生成具有幂等性；
+10. 审核确认通过现有工作流完成；
+11. 公共端只能看到已确认、已发布资源；
+12. 所有修改有测试和文档支撑。
 
-当前公式块使用：
+------
 
-```tsx
-<pre>{block.latex}</pre>
-```
+# 三、解决“一张卡只能保存一个 GraphSpec”
 
-项目现有：
+这是最高优先级。
 
-```text
-admin-frontend/src/components/ui/math-formula.tsx
-```
+当前受影响的至少包括：
 
-只是字符替换和上下标近似显示，不是真实 KaTeX 渲染，不能用于公式库详情。
+- `两个重要极限`
+  - 三个基本极限；
+  - 第二重要极限。
+- `二重积分交换次序模板`
+  - X 型与 Y 型区域；
+  - 需要分区的换序区域；
+  - 双曲线围成区域。
 
-### 3. 公式列表页使用了页面内局部下拉框
+不要继续依赖公式卡表中的单一 `graph_spec` 字段保存多个逻辑图表。
 
-文件：
+## 推荐数据模型
 
-```text
-admin-frontend/src/app/(admin)/formulas/page.tsx
-```
+优先检查现有结构是否已有可复用的一对多关系。
 
-该页面在本文件内重复定义 `CustomSelect`，没有外部点击关闭能力。
-
-共享组件：
-
-```text
-admin-frontend/src/components/ui/custom-select.tsx
-```
-
-虽然使用 Portal，但当前外部点击监听只判断触发器 `ref`，没有判断 Portal 面板节点，所以共享组件也需要一起修复。
-
-### 4. 分类筛选被展平为超长普通下拉
-
-`formulas/page.tsx` 当前通过 `flattenCategories()` 把三级分类全部展开为字符串选项，产生截图中长文本、难查找、难浏览的问题。
-
-### 5. 新建和编辑页面仍使用原生 select
-
-文件：
-
-```text
-admin-frontend/src/app/(admin)/formulas/new/page.tsx
-admin-frontend/src/app/(admin)/formulas/[id]/page.tsx
-```
-
-均存在原生 `<select>`，且只通过 `depth === 2` 判断可选分类。
-
-### 6. 新建公式页面为单列长表单
-
-`/formulas/new` 当前依次纵向排列分类、标题、别名、摘要、标签、公式块、适用条件、符号说明、易错提醒、例题和保存按钮，导致频繁滚动。
-
-### 7. 小程序“无公式数据”的前端根因已确认
-
-文件：
+若没有，则新增一个独立模型，例如：
 
 ```text
-miniprogram/utils/api.js
-miniprogram/subpackages/formulas/library/index.js
-miniprogram/subpackages/formulas/reader/index.js
+FormulaGraphSpec
 ```
 
-`utils/api.js` 的 `request()` 最终已经直接返回：
-
-```js
-return res.data
-```
-
-但公式页面仍然二次读取：
-
-```js
-res.data?.items
-res.data || {}
-```
-
-因此目录、标签、公式列表、详情和收藏列表都被错误解析为空。
-
-当前错误位置包括但不限于：
-
-```js
-// library/index.js
-const catalog = res.data?.items || []
-this.setData({ tags: res.data?.items || [] })
-const data = res.data || {}
-
-// reader/index.js
-const card = this.enrichCard(res.data || {})
-const favIds = (res.data?.items || []).map(...)
-```
-
-此外 `enrichCard()` 是 `async`，但调用方没有 `await`，会把 Promise 写入 `displayCards`。
-
-### 8. 小程序 WXSS 警告根因已确认
-
-警告指向：
+字段按项目实际规范确定，但至少应支持：
 
 ```text
-components/mp-html/index.wxss:41:8
+id
+formula_card_id
+slug
+source_ref
+title
+description
+alt_text
+spec_json
+spec_hash
+schema_version
+renderer_version
+status
+sort_order
+created_at
+updated_at
+reviewed_by
+reviewed_at
+confirmed_asset_id
 ```
 
-实际来自其导入文件：
+必要时也可让 `FormulaGraphAsset` 直接承载 GraphSpec，但必须保证：
+
+- 一个公式卡可有多个图表；
+- 每个图表有独立审核状态；
+- 每个图表有独立 GraphSpec；
+- 每个图表有独立预览；
+- 每个图表可独立确认；
+- 不覆盖其他图表；
+- 已确认图表的 GraphSpec 可追溯；
+- GraphSpec 更新后不会静默覆盖已发布资产。
+
+必须通过 Alembic 完成数据库结构变化，并兼容：
+
+- SQLite；
+- PostgreSQL。
+
+不要删除现有公式卡的 `graph_spec` 字段。
+
+需要提供兼容迁移逻辑：
+
+- 旧单图 GraphSpec 可继续读取；
+- 新逻辑优先读取一对多图表；
+- 有必要时将旧数据迁移到新表；
+- 不破坏已有正式图表资产。
+
+------
+
+# 四、稳定标识与跨环境路径
+
+禁止将以下数字 ID 作为永久身份：
 
 ```text
-miniprogram/components/mp-html/latex/katex.wxss
+ID=1
+ID=178
+ID=179
+ID=180
+ID=181
+ID=187
 ```
 
-第 41～42 行使用了组件 WXSS 不允许的标签选择器：
+数字 ID 只能用于本地调试输出。
 
-```css
-.katex view,
-.katex text {
-  ...
-}
-```
-
-不要误删整个 KaTeX 样式，也不要关闭微信警告。应把该规则改为合法类选择器，并同步确保 KaTeX 生成节点带有对应 class；若现有节点本身已有可复用 class，则优先改为已有 class 组合，不要无意义修改渲染树。
-
-### 9. `noop` 缺失根因已确认
-
-文件：
+每个图表必须使用稳定身份，例如：
 
 ```text
-miniprogram/subpackages/formulas/library/index.wxml
+math2_diagram_v1:curvature_circle
+math2_diagram_v1:arc_differential
+math2_diagram_v1:surface_revolution
+math2_diagram_v1:double_int_xy_region
+math2_diagram_v1:exchange_order_split
+math2_diagram_v1:hyperbola_sector
+math2_diagram_v1:conic_sections
+math2_diagram_v1:three_basic_limits
+math2_diagram_v1:second_important_limit
+math2_diagram_v1:exponential_decay_family
 ```
 
-存在：
+关联公式卡时使用：
 
-```xml
-catchtap="noop"
-```
+- `source_ref`；
+- stable slug；
+- 规范化标题作为兜底。
 
-但：
+不要在 JSON、数据库正文、描述或路径中永久保存数据库数字 ID。
+
+预览和正式资源路径优先改为：
 
 ```text
-miniprogram/subpackages/formulas/library/index.js
+static/formulas/graphs/{diagram_slug}/preview/{spec_hash}.png
 ```
 
-没有 `noop()` 方法。
+或项目存储服务中的等价 storage key。
 
-### 10. 分类管理页间距和新建位置问题已确认
+若现有生产路径必须保留 card ID，则至少确保：
 
-文件：
+- 数据库中使用稳定 storage key；
+- 每个环境可重新生成；
+- 不依赖开发库 ID 对应的 Git 文件；
+- 迁移和部署时不会发生卡片错配。
+
+------
+
+# 五、新建“常见二次曲线与积分区域识别”卡片
+
+当前 `conic_sections` 没有可附加卡片。请新建正式卡片，不要继续留作阻塞项。
+
+建议：
 
 ```text
-admin-frontend/src/app/(admin)/formulas/categories/page.tsx
+标题：常见二次曲线与积分区域识别
+source_ref：math2_core_v2:calculus:conic_sections
+类型：优先使用 concept / comparison / diagram；若系统不支持，再使用最接近的类型
+章节：高等数学 / 二重积分或定积分几何应用下的规范分类
+标签：
+- syllabus_required
+- must_memorize
+- high_frequency
 ```
 
-当前树容器使用：
+内容至少包括：
 
-```tsx
-<div className="space-y-1">
-```
-
-新建表单位于分类树底部；并且当前创建请求把 `node_type` 固定写成 `group`，行内加号仅出现在 `group` 节点，却把 `parent_id` 设置为 `cat.parent_id`，实际语义是创建同级分组，和“添加子分类”图标不一致。
-
----
-
-## 二、总体开发要求
-
-1. 基于现有架构做最小、可维护的修复，不重写整个公式领域。
-2. 管理端继续使用 Next.js App Router、React、TanStack Query、现有 RBAC 和设计变量。
-3. 小程序继续使用原生微信小程序和现有 `mp-html + KaTeX`。
-4. 不改变现有后端字段、状态机和接口路径，除非扫描后端确认前后端确实不一致。
-5. 不在前端硬编码公式数据。
-6. 不通过屏蔽警告、关闭校验、延时 hack 或整页刷新掩盖问题。
-7. 所有管理端写操作继续接入现有审计日志和权限控制。
-8. 完成后必须实际运行管理端 lint/typecheck/build、小程序静态检查及后端公式相关测试。
-
----
-
-# 三、具体修复任务
-
-## 任务 1：修复侧边栏唯一高亮
-
-重构路由激活逻辑，确保任意路径最多只有一个菜单项激活。
-
-建议在 `src/lib/routes.ts` 中增加明确匹配策略，或实现纯函数：
-
-```ts
-getActiveAdminRoute(pathname: string, routes: AdminRoute[]): AdminRoute | null
-```
-
-推荐规则：
-
-1. 路径必须满足完整段边界匹配；
-2. 多个候选命中时，选择 `href` 最长、最具体的一项；
-3. `/formulas/new` 和 `/formulas/{id}` 归属“公式库”；
-4. `/formulas/categories` 只归属“公式分类”；
-5. `/formulas/review` 及其子路径只归属“公式审核”。
-
-验收矩阵：
-
-| 当前路径               | 唯一高亮 |
-| ---------------------- | -------- |
-| `/formulas`            | 公式库   |
-| `/formulas/new`        | 公式库   |
-| `/formulas/57`         | 公式库   |
-| `/formulas/categories` | 公式分类 |
-| `/formulas/review`     | 公式审核 |
-| `/formulas/review/57`  | 公式审核 |
-
-不得通过在 JSX 中不断追加特殊判断完成。
-
----
-
-## 任务 2：实现真实、安全的 LaTeX 渲染
-
-新增统一组件，例如：
-
-```text
-admin-frontend/src/components/ui/latex-renderer.tsx
-```
-
-先检查完整仓库 `package.json`：
-
-- 已安装 `katex` 时直接复用；
-- 未安装时添加 `katex` 及必要类型；
-- 在合适的全局入口引入 `katex/dist/katex.min.css`。
-
-组件要求：
-
-```ts
-type LatexRendererProps = {
-  latex: string;
-  displayMode?: boolean;
-  className?: string;
-  showSourceOnError?: boolean;
-};
-```
-
-KaTeX 配置至少为：
-
-```ts
-{
-  displayMode,
-  throwOnError: false,
-  strict: "warn",
-  trust: false,
-  output: "htmlAndMathml"
-}
-```
-
-必须处理：
-
-- `$...$`
-- `$$...$$`
-- `\(...\)`
-- `\[...\]`
-- 无分隔符纯 LaTeX
-- 空字符串
-- 无效 LaTeX
-- 长公式横向滚动
-
-不得开启 `trust: true`，不得直接信任用户 HTML。
-
-替换：
-
-```text
-/formulas 列表页详情抽屉中的公式块
-/formulas/[id] 只读详情中的公式块
-/formulas/new 公式块实时预览
-/formulas/[id] 编辑状态实时预览
-```
-
-验收公式：
+## 圆
 
 ```latex
-\lim_{x\to 0}\frac{\sin x}{x}=1
+x^2+y^2=R^2
 ```
 
-必须显示为真实极限和分式排版。
+## 椭圆
 
----
-
-## 任务 3：统一并修复 CustomSelect
-
-删除 `formulas/page.tsx` 内部局部 `CustomSelect`，统一使用：
-
-```text
-admin-frontend/src/components/ui/custom-select.tsx
+```latex
+\frac{x^2}{a^2}+\frac{y^2}{b^2}=1
 ```
 
-修复 Portal 外部点击：
+## 抛物线
 
-```ts
-const triggerRef = useRef<HTMLDivElement>(null)
-const dropdownRef = useRef<HTMLDivElement>(null)
+```latex
+y^2=2px
 ```
 
-外部点击必须同时排除触发器和 Portal 面板：
+## 双曲线
 
-```ts
-if (
-  !triggerRef.current?.contains(target) &&
-  !dropdownRef.current?.contains(target)
-) {
-  close()
+```latex
+\frac{x^2}{a^2}-\frac{y^2}{b^2}=1
+```
+
+内容重点：
+
+- 对称轴；
+- 顶点；
+- 截距；
+- 开口方向；
+- 常见积分区域识别；
+- 不要求加入超出数学二范围的复杂焦点性质。
+
+建立 `conic_sections` 图表关系，并生成预览。
+
+------
+
+# 六、检查并修复 X 型与 Y 型着色
+
+当前报告只说明增加了 `fill_between`。
+
+必须检查 Y 型区域是否真正使用：
+
+```python
+ax.fill_betweenx(...)
+```
+
+或等价的通用 polygon/path 填充。
+
+不能用 `fill_between(x, ...)` 伪装 Y 型区域。
+
+建议使用同一几何区域验证：
+
+```latex
+D=\{(x,y):0\le x\le1,\ x^2\le y\le x\}
+```
+
+等价 Y 型描述：
+
+```latex
+D=\{(x,y):0\le y\le1,\ y\le x\le\sqrt y\}
+```
+
+应实现或确认 GraphSpec 支持：
+
+```json
+{
+  "orientation": "vertical"
 }
 ```
 
-推荐使用 `pointerdown` capture 监听，避免选项点击和关闭顺序错误。
+与：
 
-同时实现：
+```json
+{
+  "orientation": "horizontal"
+}
+```
 
-- 点击页面其他区域关闭；
-- `Escape` 关闭并把焦点还给触发器；
-- 选择后关闭；
-- 点击搜索输入框不关闭；
-- 清除按钮不触发打开；
-- 禁用选项不可选；
-- 窗口 resize/滚动时重新定位或关闭；
-- 卸载时清理监听；
-- 正确的 combobox/listbox/option ARIA；
-- 同一页面打开新下拉时，旧下拉关闭。
+字段名称按现有 schema 规范确定。
 
-验收：截图中的“全部状态”打开后，点击表格、标题、搜索框外部、页面空白区均能关闭。
+新增自动测试：
 
----
+1. 两个 GraphSpec 数值计算面积相同；
+2. 随机内部点同时属于两种描述；
+3. 随机外部点均不属于区域；
+4. Y 型着色确实走 `fill_betweenx` 或通用多边形逻辑；
+5. 预览没有横纵轴颠倒。
 
-## 任务 4：把“全部分类”改为树形分类选择器
+------
 
-新增可复用组件：
+# 七、修复字体警告
+
+当前存在 Unicode `ˣ` 字体缺失警告。
+
+不要保留这个已知限制。
+
+执行：
+
+1. 搜索所有 GraphSpec、标签和测试中的 `ˣ`；
+2. 替换为普通 `x`；
+3. 或使用 Matplotlib mathtext：
 
 ```text
-admin-frontend/src/components/formulas/formula-category-picker.tsx
+$x$
 ```
 
-支持：
+1. 检查其他 Unicode 上标、下标和特殊字形；
+2. 渲染日志中不应再出现 glyph missing 警告。
 
-```ts
-mode: "filter" | "form"
+新增测试或日志捕获：
+
+- 渲染 11 个主题时不存在 `Glyph ... missing from font`；
+- 中文标签仍可显示；
+- 数学变量使用 mathtext；
+- Docker 或 CI 字体环境下可复现。
+
+不要提交或分发字体文件。
+
+------
+
+# 八、消除定义域 RuntimeWarning
+
+当前存在由函数边界求值产生的 RuntimeWarning。
+
+不要仅依赖 `_discontinuity_gap()` 在计算后修补。
+
+正确流程：
+
+1. 解析函数定义域；
+2. 生成合法采样 mask；
+3. 只对合法采样点求值；
+4. 使用 `np.errstate` 捕获预期浮点状态；
+5. 将非有限值设为 `NaN`；
+6. 再执行断点检测；
+7. 不跨越空点、渐近线或断开定义域连线。
+
+重点检查：
+
+```latex
+\frac{\sin x}{x}
+\frac{e^x-1}{x}
+\frac{\ln(1+x)}{x}
+(1+x)^{1/x}
+\left(1+\frac1x\right)^x
 ```
 
-### filter 模式
+定义域要求：
 
-用于 `/formulas`：
+- `sin(x)/x`：`x != 0`
+- `(e^x-1)/x`：`x != 0`
+- `ln(1+x)/x`：`x > -1, x != 0`
+- `(1+x)^(1/x)`：`x > -1, x != 0`
+- `(1+1/x)^x`：本图仅绘制 `x > 0`
 
-- 显示科目 → 章节 → 分组树；
-- 可展开/收起；
-- 可按名称和编码搜索；
-- 顶部提供“全部分类”；
-- 当前选中节点有明确状态；
-- 触发器显示完整路径；
-- 最大高度 360～420px，内部滚动；
-- 选择后关闭；
-- 点击外部关闭；
-- 支持清除。
+新增测试：
 
-根据后端真实筛选语义决定：
+- 非法定义域点从不送入函数求值；
+- 渲染时没有 divide-by-zero、invalid-value、invalid-log、invalid-power RuntimeWarning；
+- 图线不跨过 `x=0`；
+- 对数图不进入 `x<=-1`；
+- 空心点 `(0,1)` 正确显示。
 
-- 若 `category_id` 支持父节点递归筛选，可选择任意层级；
-- 若只支持叶子分类，则科目和章节仅作为导航，只允许选择 `group`。
+非预期 RuntimeWarning 应使测试失败。
 
-不得为了 UI 擅自修改 API 语义。
+------
 
-### form 模式
+# 九、箭头标注改为 annotate
 
-用于 `/formulas/new` 和 `/formulas/[id]`：
+当前实现使用：
 
-- 只允许选择可承载公式的叶子分类；
-- 不能再用 `depth === 2` 作为唯一判断，应使用 `node_type === "group"`；
-- 显示完整路径，例如：
-
-```text
-高等数学 / 函数、极限与连续 / 极限基础公式
+```python
+ax.arrow()
 ```
 
----
+请评估并优先改为：
 
-## 任务 5：替换新建和编辑页原生 select
-
-替换：
-
-```text
-admin-frontend/src/app/(admin)/formulas/new/page.tsx
-admin-frontend/src/app/(admin)/formulas/[id]/page.tsx
+```python
+ax.annotate(
+    label,
+    xy=end_point,
+    xytext=text_point,
+    arrowprops={"arrowstyle": "->"},
+)
 ```
 
-中的公式分类 `<select>`，统一使用 `FormulaCategoryPicker`。
+原因：
 
-必须满足：
+- 缩放时箭头头部更稳定；
+- 标签和箭头统一；
+- 支持数据坐标与偏移坐标；
+- 更适合曲率半径、法线、旋转方向等标注。
 
-- 保持请求字段 `category_id` 不变；
-- 编辑页正确回显；
-- 加载中禁用；
-- 加载失败显示错误及重试；
-- 未选分类显示字段级错误；
-- 非 `group` 节点不能提交。
+保持 GraphSpec 的向后兼容：
 
----
+- 旧 `annotation.type = arrow` 仍可工作；
+- renderer 内部可改用 `annotate`；
+- 不改变已有 JSON 的必要字段，除非确实需要 schema version 升级。
 
-## 任务 6：重构 `/formulas/new` 为紧凑编辑工作台
+新增测试验证：
 
-优先抽取复用组件：
+- 箭头起终点正确；
+- 标签存在；
+- 不超出画布；
+- 等轴坐标时箭头方向没有失真。
 
-```text
-FormulaEditorForm
-FormulaBlockEditor
-FormulaCategoryPicker
-LatexRenderer
-```
+------
 
-桌面端改为两栏：
+# 十、预览、确认与审核工作流
 
-```text
-┌──────────────────────────────────────────────┐
-│ 返回  新建公式             取消  保存草稿    │ sticky
-├────────────────────────────┬─────────────────┤
-│ 公式内容主区                │ 基础信息 sticky │
-│ - 公式块编辑                │ - 分类          │
-│ - LaTeX 实时预览            │ - 标题          │
-│ - 补充说明折叠区            │ - 别名          │
-│ - 典型例题折叠区            │ - 标签          │
-│                            │ - 摘要          │
-└────────────────────────────┴─────────────────┘
-```
+默认只能生成预览或待审核记录。
 
-要求：
+不要自动确认所有图表。
 
-- 1440×900 下，分类、标题、标签、第一个公式块和保存按钮均可在首屏操作；
-- 顶部操作栏 sticky；
-- 右侧基础信息区 sticky；
-- 移动端自动回落单列；
-- 每个公式块采用“编辑 + 实时预览”布局；
-- 添加公式块按钮在公式块区域顶部可见；
-- 适用条件、符号说明、易错提醒放入折叠区；
-- 例题默认折叠，标题显示数量，例如 `典型例题（1/3）`；
-- 保存失败保留输入；
-- 必填错误聚焦或滚动到对应字段；
-- 不改变当前创建 payload 和 1～8 个公式块、最多 3 个例题限制。
-
-`/formulas/[id]` 编辑状态尽量复用同一表单组件，避免继续维护两套表单。
-
----
-
-## 任务 7：修复小程序公式模块
-
-### 7.1 修复 API 响应解包
-
-统一公式模块使用 `api.request()` 的真实返回值。
-
-因为 `api.request()` 已直接返回响应 body，公式页面应写成：
-
-```js
-const data = await api.request(...)
-const items = data.items || []
-```
-
-而不是：
-
-```js
-res.data.items
-```
-
-至少修复：
-
-```text
-miniprogram/subpackages/formulas/library/index.js
-miniprogram/subpackages/formulas/reader/index.js
-```
-
-包括：
-
-- catalog；
-- tags；
-- formula list；
-- formula detail；
-- random formula；
-- favorites list。
-
-### 7.2 修复 async enrichCard
-
-当前：
-
-```js
-const card = this.enrichCard(...)
-```
-
-必须改为：
-
-```js
-const card = await this.enrichCard(...)
-```
-
-否则 `displayCards` 中会放入 Promise。
-
-### 7.3 校验接口路径
-
-扫描后端真实公共 API 路由，核对当前小程序使用的：
-
-```text
-/formulas/favorites/list
-/formulas/random/next
-/formulas/tags
-```
-
-如果后端真实路径不同，只在统一 API 调用层和页面中改为真实路径，并补测试；不要同时保留多套猜测路径。
-
-### 7.4 修复随机排重
-
-当前 `_excludeIds` 仅收集但没有随请求发送。若后端支持 `exclude_ids`，应按真实 Schema 传递，最多保留合理数量；若不支持，不要伪造参数，应按后端实际实现修正。
-
-### 7.5 修复 WXSS 标签选择器警告
-
-处理：
-
-```text
-miniprogram/components/mp-html/latex/katex.wxss
-```
-
-中的：
-
-```css
-.katex view,
-.katex text
-```
-
-改为合法类选择器，并确保渲染节点拥有相应 class。修改后扫描 `components/mp-html/**/*.wxss`，确认没有其他标签、ID、属性选择器警告。
-
-不得破坏现有题目、错题和公式渲染。
-
-### 7.6 修复 noop
-
-在 `library/index.js` 增加实际存在的：
-
-```js
-noop() {}
-```
-
-或在确认不需要阻止冒泡后移除无意义绑定。
-
-若保留弹层阻止穿透，继续使用：
-
-```xml
-catchtap="noop"
-```
-
-并确保方法存在。
-
-### 7.7 改善加载状态
-
-`library` 页面增加明确状态：
-
-```text
-initialLoading
-loadingMore
-loadError
-empty
-hasMore
-```
-
-要求：
-
-- 接口错误不能显示成“暂无公式数据”；
-- 错误状态提供“重新加载”；
-- 切换科目、章节、标签、收藏和搜索时避免竞态覆盖；
-- 搜索 timer 在页面卸载时清理；
-- `onPullDownRefresh` 无论成功失败都必须停止；
-- 有已发布数据时列表必须正常出现。
-
-### 7.8 列表公式预览
-
-当前列表页直接用 `<text>` 显示 `b.latex`，可继续作为轻量摘要，但至少要：
-
-- 限制最多展示 1～2 个公式块；
-- 长文本截断；
-- 不撑破卡片；
-- 详情阅读页继续使用 `formula-card + mp-html/KaTeX` 真实渲染。
-
----
-
-## 任务 8：优化公式分类树可读性
-
-修改：
-
-```text
-admin-frontend/src/app/(admin)/formulas/categories/page.tsx
-```
-
-要求：
-
-- 根列表从 `space-y-1` 调整为更合理的视觉间隔；
-- 展开子树增加 `mt-2` 和 `space-y-2`；
-- 使用左侧层级引导线或淡色子树容器；
-- 行最小高度和上下内边距一致；
-- 科目、章节、分组标签区分清楚；
-- 停用状态、hover、编辑状态清晰；
-- 操作图标增加 `aria-label` 和 `title`；
-- 小屏下名称、编码可换行；
-- 保持树紧凑，不要变成松散的大卡片列表。
-
-建议结构：
-
-```tsx
-<div className="space-y-2">
-  <CategoryRow />
-  {expanded && (
-    <div className="mt-2 space-y-2 border-l pl-4">
-      ...
-    </div>
-  )}
-</div>
-```
-
----
-
-## 任务 9：把新建分类改为顶部弹窗或抽屉
-
-新增：
-
-```text
-FormulaCategoryDialog
-```
-
-页面标题右上角固定显示“新建分类”，点击打开自定义 Dialog/Drawer，不再把表单放在页面底部。
-
-层级规则必须严格为：
-
-```text
-subject → chapter → group
-```
-
-修复当前创建逻辑：
-
-- 不再把 `node_type` 永久固定为 `group`；
-- 不选父级时创建 `subject`；
-- 父级为 `subject` 时创建 `chapter`；
-- 父级为 `chapter` 时创建 `group`；
-- `group` 不允许再创建子级。
-
-行内加号规则：
-
-- 科目行：添加子章节；
-- 章节行：添加子分组；
-- 分组行：不显示“添加子分类”；
-- 若要提供添加同级，必须使用明确文字或 tooltip，不得继续用含义不明的加号。
-
-创建成功后：
-
-- 关闭弹窗；
-- 清空表单；
-- 刷新分类树；
-- 自动展开父节点；
-- 显示成功提示。
-
-创建失败后：
-
-- 弹窗保持打开；
-- 保留输入；
-- 显示字段级/API 错误。
-
----
-
-# 四、测试与验收
-
-## 管理端
-
-先读取完整仓库 `package.json`，执行实际存在的命令，至少覆盖：
+脚本应支持安全模式，例如：
 
 ```bash
-npm run lint
-npm run typecheck
-npm run build
+python scripts/generate_math2_diagrams.py --dry-run
+python scripts/generate_math2_diagrams.py --generate-previews
+python scripts/generate_math2_diagrams.py --confirm --reviewer-id <id>
 ```
 
-测试重点：
+实际参数按项目已有 CLI 风格调整。
 
-1. 侧边栏唯一高亮；
-2. `/formulas/categories` 不再高亮“公式库”；
-3. 下拉点击外部关闭；
-4. Portal 内部点击不误关闭；
-5. Escape 关闭；
-6. 分类树搜索、选择、清除；
-7. 表单只能选择 group；
-8. 编辑页正确回显；
-9. KaTeX 正常渲染；
-10. 无效 LaTeX 不导致页面崩溃；
-11. 新建分类层级推断正确；
-12. 新建/编辑 payload 与后端兼容。
+## 确认要求
 
-## 小程序
+确认必须：
 
-至少确认：
+- 使用现有审核服务；
+- 验证 reviewer/admin 有效；
+- 写入 `reviewed_by`；
+- 写入 `reviewed_at`；
+- 写入确认时间；
+- 创建审计记录；
+- 关联最终 FormulaGraphAsset；
+- 保留原 GraphSpec；
+- 保存 spec hash 和资源 checksum；
+- 不确认无关历史预览；
+- 已确认相同 spec 时保持幂等。
 
-- 不再出现 `Some selectors are not allowed in component wxss`；
-- 不再出现 `does not have a method "noop"`；
-- catalog、tags、list、detail 能正确读取响应；
-- `displayCards` 中不是 Promise；
-- 有已发布公式时正常展示；
-- 网络错误显示错误状态；
-- 切换筛选、搜索、分页、收藏无明显回归；
-- 控制台无未处理 Promise。
+如果现有服务不支持安全批量确认：
 
-## 后端
+- 保留后台人工确认；
+- 脚本只生成预览；
+- 在最终报告中明确需要人工审核。
 
-扫描并运行公式相关测试，核对：
+------
 
-- 公共公式路由真实路径；
-- 只返回 `published`、未软删除、分类有效的数据；
-- 开发数据库是否存在已发布公式；
-- 若没有，使用现有幂等 seed 插入开发测试数据；
-- 禁止生产环境自动发布 AI 内容。
+# 十一、幂等性和版本行为
 
----
+相同稳定 slug + 相同规范化 spec hash：
 
-# 五、禁止事项
+- 不新建重复 GraphSpec；
+- 不新建重复预览；
+- 不新建重复资产；
+- 报告为 `unchanged` 或 `reused`。
 
-1. 不在小程序硬编码公式列表。
-2. 不关闭微信警告来掩盖非法选择器。
-3. 不把所有分类继续塞入普通下拉框。
-4. 不保留公式页面局部重复 `CustomSelect`。
-5. 不继续使用原生 `<select>`。
-6. 不用字符替换模拟 LaTeX。
-7. 不开启 KaTeX `trust: true`。
-8. 不用 `pathname.startsWith('/formulas')` 直接判断所有公式菜单。
-9. 不用整页刷新更新分类树。
-10. 不修改无关模块的大量样式。
+相同 slug 但 GraphSpec 发生变化：
 
----
+- 创建新 spec version 或更新待审核版本；
+- 已确认资产不得静默覆盖；
+- 旧正式资源保留；
+- 新版本进入待审核；
+- 记录版本和审计日志。
 
-# 六、最终输出
+人工修改过的 GraphSpec：
 
-完成后输出：
+- 不自动覆盖；
+- 报告 conflict；
+- 除非有明确 `--force-managed-update` 且环境非生产。
 
-1. 1～9 项根因与修复结果；
-2. 修改文件清单；
-3. 新增组件清单；
-4. 管理端测试命令与结果；
-5. 小程序编译与接口验证结果；
-6. 后端测试结果；
-7. 真实公共公式 API 路径清单；
-8. 数据库中 `published` 公式数量；
-9. 若执行 seed，给出命令和插入数量；
-10. 每项验收标准通过/不通过及证据；
-11. 尚需人工处理的事项。
+失败时：
 
-必须实际修改和验证代码，不要只输出计划。
+- 回滚数据库；
+- 删除临时文件；
+- 不留下孤立预览记录；
+- 不留下无关联资源文件。
+
+------
+
+# 十二、补齐 11 个逻辑主题
+
+最终主题清单：
+
+1. `curvature_circle`
+2. `arc_differential`
+3. `surface_revolution`
+4. `double_int_x_region`
+5. `double_int_y_region`
+6. `exchange_order_split`
+7. `hyperbola_sector`
+8. `conic_sections`
+9. `three_basic_limits`
+10. `second_important_limit`
+11. `exponential_decay_family`
+
+X 型和 Y 型可在一个双面板资源中展示，但数据库中必须能明确识别两个逻辑内容，至少通过：
+
+- panel slug；
+- 子图元数据；
+- 或两个独立图表记录。
+
+不要只用“4+5”作为一个无法分别检索的模糊记录。
+
+------
+
+# 十三、数学样例固定
+
+继续使用并验证以下样例。
+
+## 曲率圆
+
+```latex
+x=t^2,\qquad y=t,\qquad t_0=0
+```
+
+预期：
+
+```latex
+P=(0,0)
+C=\left(\frac12,0\right)
+\rho=\frac12
+\left(x-\frac12\right)^2+y^2=\frac14
+```
+
+切线：
+
+```latex
+x=0
+```
+
+法线：
+
+```latex
+y=0
+```
+
+## 分区换序
+
+```latex
+D=\{(x,y):0\le x\le1,\ x^2\le y\le2-x\}
+```
+
+交换后：
+
+```latex
+D_1=\{(x,y):0\le y\le1,\ 0\le x\le\sqrt y\}
+D_2=\{(x,y):1\le y\le2,\ 0\le x\le2-y\}
+```
+
+## 双曲线区域
+
+```latex
+1\le xy\le2,\qquad x\le y\le2x
+```
+
+边界：
+
+```latex
+xy=1,\quad xy=2,\quad y=x,\quad y=2x
+```
+
+必须形成第一象限有界区域，并标出四个交点。
+
+## 指数衰减族
+
+固定参数：
+
+```text
+(alpha, beta) = (1,1), (2,1), (2,2)
+```
+
+验证：
+
+```latex
+x_{\max}=\frac{\alpha}{\beta}
+f_{\max}=
+\left(\frac{\alpha}{\beta e}\right)^\alpha
+```
+
+------
+
+# 十四、公共 API 与前端验证
+
+检查公共公式卡 API 和小程序展示逻辑。
+
+要求：
+
+- 草稿 GraphSpec 不公开；
+- 待审核预览不公开；
+- 只有已确认且关联已发布卡片的图表公开；
+- 一张卡能返回多张图表；
+- 返回值有稳定排序；
+- 每张图包含：
+  - slug；
+  - title；
+  - alt_text；
+  - description；
+  - width；
+  - height；
+  - asset URL；
+  - status；
+  - sort_order。
+
+确保旧客户端仍可工作：
+
+- 保留原单图字段作为兼容字段；
+- 或提供首图作为 legacy graph；
+- 新客户端读取 `graphs[]`。
+
+小程序端验证：
+
+- 一卡多图可滑动或纵向展示；
+- 图片不互相覆盖；
+- 预设宽高避免布局抖动；
+- 手机宽度下文字可读；
+- 多面板图可点击查看大图；
+- 深色模式背景可辨认；
+- 不能只靠颜色表达不同区域。
+
+------
+
+# 十五、测试要求
+
+在现有 67 项测试基础上补充。
+
+至少覆盖：
+
+## 数据模型
+
+1. 一个公式卡可关联多个 GraphSpec。
+2. 每个 GraphSpec slug 唯一。
+3. 删除或更新一个图表不影响同卡其他图表。
+4. 旧单 graph_spec 兼容读取。
+5. Alembic upgrade/downgrade 可执行。
+6. SQLite 执行通过。
+7. PostgreSQL 迁移语法兼容。
+
+## 幂等性
+
+1. 相同 spec 第二次运行不创建重复记录。
+2. 相同 spec 第二次运行不创建重复文件。
+3. 修改 spec 后生成新待审核版本。
+4. 已确认资产不被静默覆盖。
+5. 人工修改冲突可检测。
+
+## 数学正确性
+
+1. 曲率圆圆心、半径和切点正确。
+2. X 型和 Y 型区域面积一致。
+3. 分区区域并集等于原区域。
+4. 双曲线区域有四条边界且有界。
+5. 极限函数不在非法定义域求值。
+6. 曲线不跨越空点连线。
+7. 指数衰减极值点正确。
+8. 二次曲线方程和面板匹配。
+
+## 渲染质量
+
+1. 无字体缺失警告。
+2. 无非预期 RuntimeWarning。
+3. 所有预览文件存在且非空。
+4. 图片尺寸和文件大小在限制内。
+5. 等轴图比例正确。
+6. Y 型区域使用横向填充逻辑。
+7. 箭头标签不会越界。
+8. 所有资源都有 alt_text。
+
+## API
+
+1. 草稿图表不出现在公共 API。
+2. 待审核预览不出现在公共 API。
+3. 已确认图表通过公共 API 返回。
+4. 一张卡可返回多张图。
+5. 图表排序稳定。
+6. 旧单图兼容字段仍可用。
+
+## 清理
+
+1. 渲染失败不留下孤立数据库记录。
+2. 渲染失败不留下临时文件。
+3. dry-run 不写数据库、不写正式资源。
+
+------
+
+# 十六、执行验证
+
+实际运行：
+
+1. 数据库迁移；
+2. dry-run；
+3. 生成全部预览；
+4. 再运行一次验证幂等；
+5. 运行全部图表测试；
+6. 运行公式 seed 测试；
+7. 运行相关 API 测试；
+8. 运行后端完整测试；
+9. 如修改小程序或后台，运行对应 lint/typecheck/build；
+10. 检查渲染日志中：
+
+- 无 glyph missing；
+- 无非预期 RuntimeWarning；
+- 无孤立资源；
+
+1. 审计 11 个主题的数据库记录和文件；
+2. 验证一卡多图公共 API 返回。
+
+不要对生产数据库自动执行迁移或确认。
+
+------
+
+# 十七、最终状态要求
+
+Phase 2 只有在以下条件全部满足时才能标记完成：
+
+- 11 个逻辑主题均有预览或正式记录；
+- `conic_sections` 已有卡片；
+- 不再发生一卡单 GraphSpec 覆盖；
+- 字体警告已修复；
+- RuntimeWarning 已修复；
+- X/Y 区域语义验证通过；
+- 所有自动化测试通过；
+- 公共 API 支持一卡多图；
+- 未确认资源不会公开；
+- 人工审核状态明确。
+
+若预览仍未人工确认，可写：
+
+```text
+Implementation complete, pending manual visual review and confirmation.
+```
+
+不要写成公共端发布全部完成。
+
+------
+
+# 十八、最终汇报格式
+
+## 1. 审计结果
+
+- 原数据模型；
+- 覆盖风险；
+- ID 硬编码情况；
+- 当前图表状态。
+
+## 2. 数据模型修改
+
+按文件列出：
+
+```text
+文件路径
+- 修改内容
+- 修改原因
+```
+
+## 3. 迁移结果
+
+- migration revision；
+- SQLite 结果；
+- PostgreSQL 兼容情况；
+- upgrade/downgrade 结果。
+
+## 4. 图表完成表
+
+| Slug | 关联卡片 source_ref | GraphSpec | Preview | Review | Asset | Public |
+| ---- | ------------------- | --------- | ------- | ------ | ----- | ------ |
+|      |                     |           |         |        |       |        |
+
+## 5. 一卡多图验证
+
+列出：
+
+- “两个重要极限”关联的图；
+- “二重积分交换次序模板”关联的图；
+- 是否仍存在覆盖。
+
+## 6. 警告清理
+
+- 字体警告；
+- RuntimeWarning；
+- 其他渲染警告。
+
+## 7. 幂等性
+
+```text
+Created specs:
+Updated specs:
+Unchanged specs:
+Created previews:
+Reused previews:
+Created assets:
+Conflicts:
+Errors:
+```
+
+## 8. 测试结果
+
+逐条列出执行命令和结果。
+
+## 9. 人工审核项
+
+列出需要人工查看的预览，不要自动声称视觉审核通过。
+
+## 10. 未完成事项
+
+只列出真实未完成项，并说明具体原因。
+
+请直接修改仓库、执行迁移和测试、生成缺失预览，并给出最终结果。不要只提供代码片段或实现建议。
