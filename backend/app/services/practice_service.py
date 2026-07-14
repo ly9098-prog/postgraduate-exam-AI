@@ -1,3 +1,4 @@
+import random
 from datetime import date, datetime, timedelta
 import re
 
@@ -128,6 +129,305 @@ def _build_excluded_question_subquery(
     return sub.distinct()
 
 
+# ── 父级科目聚合刷题相关函数 ─────────────────────────────────
+
+
+async def resolve_practice_subject_scope(
+    db: AsyncSession,
+    subject_id: int,
+    include_children: bool,
+) -> tuple[bool, list[int]]:
+    """解析刷题科目范围。
+
+    返回 (has_enabled_children, subject_ids)：
+        has_enabled_children: 当前科目是否有启用的子科目。
+        subject_ids: 需要查询的 subject_id 列表，按 sort_order, id 排序。
+
+    - include_children=True 且有子科目时：返回自身 + 所有启用后代。
+    - include_children=False 或叶子科目：只返回自身。
+    """
+    from app.models.admin import Subject
+
+    subj = await db.get(Subject, subject_id)
+    if subj is None:
+        return False, []
+
+    # 获取全部启用科目以构建树
+    all_result = await db.execute(
+        select(Subject)
+        .where(Subject.is_active == True)
+        .order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
+    )
+    all_subjects = list(all_result.scalars().all())
+
+    # 检查是否有启用子科目
+    children_by_parent: dict[int | None, list[Subject]] = {}
+    for s in all_subjects:
+        children_by_parent.setdefault(s.parent_id, []).append(s)
+    has_enabled_children = len(children_by_parent.get(subj.id, [])) > 0
+
+    if not include_children or not has_enabled_children:
+        return has_enabled_children, [subj.id]
+
+    # 包含后代：BFS 遍历子树
+    result = []
+    stack = [subj]
+    seen = set()
+    while stack:
+        node = stack.pop()
+        if node.id in seen:
+            continue
+        seen.add(node.id)
+        result.append(node)
+        for child in children_by_parent.get(node.id, []):
+            if child.is_active:
+                stack.append(child)
+
+    # 按 sort_order, id 排序
+    result.sort(key=lambda s: (s.sort_order, s.id))
+    return has_enabled_children, [s.id for s in result]
+
+
+def _round_robin_merge(
+    buckets: list[list[object]],
+    count: int,
+    randomize_order: bool = False,
+) -> list[object]:
+    """轮询合并多个桶中的元素，使各桶输出尽量均衡。
+
+    Args:
+        buckets: 每个元素是一个桶（元素列表），桶内已按期望顺序排列。
+        count: 期望返回的元素总数。
+        randomize_order: 是否随机化桶的起始顺序（random 模式使用）。
+
+    Returns:
+        轮询合并后的元素列表，不超出 count。每个元素只出现一次（按 object
+        identity 去重）。桶内顺序保持，桶间轮询。
+    """
+    if count <= 0 or not buckets:
+        return []
+
+    non_empty = [b for b in buckets if b]
+    if not non_empty:
+        return []
+
+    if randomize_order:
+        random.shuffle(non_empty)
+
+    result: list[object] = []
+    seen: set[int] = set()
+    max_len = max(len(b) for b in non_empty)
+
+    for i in range(max_len):
+        for bucket in non_empty:
+            if i < len(bucket):
+                item = bucket[i]
+                item_id = id(item)
+                if hasattr(item, "id"):
+                    item_id = item.id
+                if item_id not in seen:
+                    result.append(item)
+                    seen.add(item_id)
+                    if len(result) >= count:
+                        return result
+    return result
+
+
+def _round_robin_merge_with_metadata(
+    buckets: list[list[tuple[object, dict]]],
+    count: int,
+    randomize_order: bool = False,
+) -> tuple[list[object], dict[int, dict]]:
+    """轮询合并带 metadata 的桶（smart 模式用）。
+
+    每个桶的元素为 (question, metadata_dict)。返回 (merged_questions, merged_metadata)，
+    其中 merged_metadata 为 {question_id: metadata_dict}。
+    """
+    merged: list[object] = []
+    metadata: dict[int, dict] = {}
+
+    if count <= 0:
+        return merged, metadata
+
+    if not buckets:
+        return merged, metadata
+
+    non_empty = [b for b in buckets if b]
+    if not non_empty:
+        return merged, metadata
+
+    if randomize_order:
+        random.shuffle(non_empty)
+
+    seen_ids: set[int] = set()
+    max_len = max(len(b) for b in non_empty)
+
+    for i in range(max_len):
+        for bucket in non_empty:
+            if i < len(bucket):
+                item, meta = bucket[i]
+                item_id = item.id if hasattr(item, "id") else id(item)
+                if item_id not in seen_ids:
+                    merged.append(item)
+                    metadata[item_id] = meta
+                    seen_ids.add(item_id)
+                    if len(merged) >= count:
+                        return merged, metadata
+    return merged, metadata
+
+
+async def get_aggregated_random_questions(
+    db: AsyncSession,
+    user_id: int,
+    subject_code: str,
+    subject_ids: list[int],
+    count: int = 20,
+    knowledge_points: list[str] | None = None,
+    exclude_answered: bool = False,
+    no_repeat_days: int | None = None,
+    use_leitner: bool = True,
+) -> list[Question]:
+    """random 模式聚合刷题：每个精确 subject_id 独立生成候选后轮询均衡分配。
+
+    对每个启用子科目独立查询（limit=count），保证每科都有候选进入轮询池，
+    不存在因全局 LIMIT 导致子科目被完全排除的风险。每科最多返回 count 道题，
+    再通过 round-robin 确保最终分布均衡。
+    """
+    buckets: list[list[Question]] = []
+
+    for sid in subject_ids:
+        # 为每个精确 subject_id 构建独立查询条件
+        conds = [Question.is_active == True, Question.subject_id == sid]
+        if knowledge_points:
+            for kp in knowledge_points:
+                conds.append(Question.knowledge_points.like(f'%"{kp}"%'))
+
+        if use_leitner:
+            candidates = await _get_questions_with_leitner(
+                db, user_id, conds, "random", count,
+                exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+            )
+        else:
+            candidates = await _get_questions_v1_fallback(
+                db, conds, "random", count,
+                user_id=user_id,
+                exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+            )
+        if candidates:
+            random.shuffle(candidates)
+            buckets.append(candidates)
+
+    if not buckets:
+        logger.info(
+            "[AGG_RANDOM] subject_code=%s subject_ids=%s count=%d no_buckets",
+            subject_code, subject_ids, count,
+        )
+        return []
+
+    result = _round_robin_merge(buckets, count, randomize_order=True)
+    from collections import Counter
+    per_subject = Counter(q.subject_id for q in result)
+    logger.info(
+        "[AGG_RANDOM] subject_code=%s subject_ids=%s count=%d "
+        "non_empty_buckets=%d returned=%d per_subject=%s",
+        subject_code, subject_ids, count,
+        len(buckets), len(result), dict(per_subject),
+    )
+    return result
+
+
+async def get_aggregated_smart_questions(
+    db: AsyncSession,
+    user_id: int,
+    subject_code: str,
+    subject_ids: list[int],
+    count: int = 20,
+    exclude_answered: bool = False,
+    no_repeat_days: int | None = None,
+    use_leitner: bool = True,
+    request_id: str | None = None,
+    smart_strategy: str = "weakness_vector",
+) -> tuple[list[Question], dict[int, dict]]:
+    """smart 模式聚合刷题：为每个精确 subject 独立生成 smart 候选后轮询合并。
+
+    对每个子科目分别调用 get_smart_practice_questions(skip_finalize=True)，
+    避免全局 top-K 截断导致某个子科目的 smart 候选被完全排除。
+    所有子科目的候选在"带 metadata 的桶"中保持各自原有的推荐顺序和分数，
+    经 round-robin 合并后，统一调用一次 _finalize_smart 写入推荐日志。
+
+    性能注意：典型场景下对 N 个科目共 N 次 smart 调用，每次包括：
+      - 一次向量召回（外部 API）
+      - 一次薄弱知识点查询
+      - 少量补齐查询
+    N 通常为 3~5，属于可接受范围。
+    """
+    from app.models.admin import Subject
+
+    # 批量加载子科目 code 映射
+    subj_result = await db.execute(
+        select(Subject).where(Subject.id.in_(subject_ids))
+    )
+    subj_map: dict[int, str] = {s.id: s.code for s in subj_result.scalars().all()}
+
+    all_buckets: list[list[tuple[Question, dict]]] = []
+
+    for sid in subject_ids:
+        sid_code = subj_map.get(sid)
+        if not sid_code:
+            continue
+
+        qs, meta = await get_smart_practice_questions(
+            db=db, user_id=user_id, subject=sid_code,
+            count=count,
+            exclude_answered=exclude_answered,
+            no_repeat_days=no_repeat_days,
+            use_leitner=use_leitner,
+            request_id=request_id,
+            smart_strategy=smart_strategy,
+            skip_finalize=True,
+        )
+        if qs:
+            all_buckets.append([(q, meta.get(q.id, {})) for q in qs])
+
+    if not all_buckets:
+        logger.info(
+            "[AGG_SMART] subject_code=%s subject_ids=%s count=%d no_buckets",
+            subject_code, subject_ids, count,
+        )
+        return [], {}
+
+    if len(all_buckets) <= 1:
+        merged = all_buckets[0] if all_buckets else []
+        merged_qs = [item[0] for item in merged[:count]]
+        merged_meta = {item[0].id: item[1] for item in merged[:count]}
+        logger.info(
+            "[AGG_SMART] subject_code=%s subject_ids=%s count=%d buckets=%d returned=%d (single)",
+            subject_code, subject_ids, count, len(all_buckets), len(merged_qs),
+        )
+        return merged_qs, merged_meta
+
+    merged_qs, merged_meta = _round_robin_merge_with_metadata(
+        all_buckets, count, randomize_order=False,
+    )
+
+    from collections import Counter
+    per_subject = Counter(q.subject_id for q in merged_qs)
+    logger.info(
+        "[AGG_SMART] subject_code=%s subject_ids=%s count=%d "
+        "non_empty_buckets=%d returned=%d per_subject=%s",
+        subject_code, subject_ids, count,
+        len(all_buckets), len(merged_qs), dict(per_subject),
+    )
+
+    # 统一写入推荐日志（仅记录最终实际返回的题目）
+    return await _finalize_smart(
+        merged_qs, merged_meta, db, user_id, subject_code,
+        request_id=request_id,
+    )
+
+
 async def get_practice_questions(
     db: AsyncSession,
     user_id: int,
@@ -138,9 +438,18 @@ async def get_practice_questions(
     exclude_answered: bool = False,
     no_repeat_days: int | None = None,
     use_leitner: bool = True,
+    subject_ids: list[int] | None = None,
 ) -> list[Question]:
-    # 精确匹配子科目，或前缀匹配父科目（exam408 → exam408、exam408-ds、exam408-os …）
-    ids = await resolve_subject_ids(db, subject)
+    """获取刷题题目。
+
+    Args:
+        subject_ids: 可选。如果提供，跳过 resolve_subject_ids 的内部扩展，
+            直接使用给定的 subject_id 列表。用于 include_children=false 的精确查询。
+    """
+    if subject_ids is not None:
+        ids = subject_ids
+    else:
+        ids = await resolve_subject_ids(db, subject)
     subject_cond = Question.subject_id.in_(ids)
     base_conditions = [Question.is_active == True, subject_cond]
 
@@ -446,6 +755,28 @@ async def get_similar_practice_questions(
     return vector_questions + fill_questions, metadata
 
 
+async def _maybe_finalize_smart(
+    questions: list[Question],
+    metadata: dict[int, dict],
+    skip: bool,
+    db: AsyncSession,
+    user_id: int,
+    subject: str,
+    request_id: str | None = None,
+    experiment_id: int | None = None,
+    variant_key: str | None = None,
+) -> tuple[list[Question], dict[int, dict]]:
+    """条件化收尾：skip=True 时跳过推荐日志，由调用方统一写入。"""
+    if skip:
+        return questions, metadata
+    return await _finalize_smart(
+        questions, metadata, db, user_id, subject,
+        request_id=request_id,
+        experiment_id=experiment_id,
+        variant_key=variant_key,
+    )
+
+
 async def get_smart_practice_questions(
     db: AsyncSession,
     user_id: int,
@@ -456,6 +787,8 @@ async def get_smart_practice_questions(
     use_leitner: bool = True,
     request_id: str | None = None,
     smart_strategy: str = "weakness_vector",
+    skip_finalize: bool = False,
+    subject_ids: list[int] | None = None,
 ) -> tuple[list[Question], dict[int, dict]]:
     """smart 模式：基于薄弱知识点构造 query_text 进行向量召回，不足时补齐。
 
@@ -498,10 +831,11 @@ async def get_smart_practice_questions(
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
                 request_id=request_id,
+                subject_ids=subject_ids,
             )
             if len(scored_qs) >= count:
-                return await _finalize_smart(
-                    scored_qs[:count], scored_meta, db, user_id, subject,
+                return await _maybe_finalize_smart(
+                    scored_qs[:count], scored_meta, skip_finalize, db, user_id, subject,
                     request_id=request_id,
                     experiment_id=experiment_info.get("experiment_id"),
                     variant_key=experiment_info.get("variant_key"),
@@ -553,8 +887,8 @@ async def get_smart_practice_questions(
                     }
 
                 if len(path_questions) >= count:
-                    return await _finalize_smart(
-                        path_questions[:count], metadata, db, user_id, subject,
+                    return await _maybe_finalize_smart(
+                        path_questions[:count], metadata, skip_finalize, db, user_id, subject,
                         request_id=request_id,
                         experiment_id=experiment_info.get("experiment_id"),
                         variant_key=experiment_info.get("variant_key"),
@@ -569,11 +903,12 @@ async def get_smart_practice_questions(
                     exclude_answered=exclude_answered,
                     no_repeat_days=no_repeat_days,
                     exclude_ids={q.id for q in path_questions},
+                    subject_ids=subject_ids,
                 )
                 path_questions.extend(fallback_questions)
                 metadata.update(fallback_meta)
-                return await _finalize_smart(
-                    path_questions[:count], metadata, db, user_id, subject,
+                return await _maybe_finalize_smart(
+                    path_questions[:count], metadata, skip_finalize, db, user_id, subject,
                     request_id=request_id,
                     experiment_id=experiment_info.get("experiment_id"),
                     variant_key=experiment_info.get("variant_key"),
@@ -616,7 +951,7 @@ async def get_smart_practice_questions(
                 "strategy": "random_fallback",
                 "similarity": None,
             }
-        return await _finalize_smart(questions, metadata, db, user_id, subject,
+        return await _maybe_finalize_smart(questions, metadata, skip_finalize, db, user_id, subject,
                                      request_id=request_id,
                                      experiment_id=experiment_info.get("experiment_id"),
                                      variant_key=experiment_info.get("variant_key"))
@@ -661,15 +996,15 @@ async def get_smart_practice_questions(
         logger.warning("smart 模式向量召回失败，回退", exc_info=True)
 
     if len(vector_questions) >= count:
-        return await _finalize_smart(vector_questions[:count], metadata, db, user_id, subject,
+        return await _maybe_finalize_smart(vector_questions[:count], metadata, skip_finalize, db, user_id, subject,
                                      request_id=request_id,
                                      experiment_id=experiment_info.get("experiment_id"),
                                      variant_key=experiment_info.get("variant_key"))
 
     # 3. 补齐：按薄弱知识点过滤 + 随机
     existing_ids = {q.id for q in vector_questions}
-    ids = await resolve_subject_ids(db, subject)
-    subject_cond = Question.subject_id.in_(ids)
+    scope_ids = subject_ids if subject_ids is not None else await resolve_subject_ids(db, subject)
+    subject_cond = Question.subject_id.in_(scope_ids)
     conditions = [
         Question.is_active == True,
         subject_cond,
@@ -729,7 +1064,7 @@ async def get_smart_practice_questions(
             }
         vector_questions.extend(random_fill)
 
-    return await _finalize_smart(vector_questions[:count], metadata, db, user_id, subject,
+    return await _maybe_finalize_smart(vector_questions[:count], metadata, skip_finalize, db, user_id, subject,
                                  request_id=request_id,
                                  experiment_id=experiment_info.get("experiment_id"),
                                  variant_key=experiment_info.get("variant_key"))
@@ -792,11 +1127,13 @@ async def _smart_weakness_vector(
     no_repeat_days: int | None = None,
     use_leitner: bool = True,
     exclude_ids: set[int] | None = None,
+    subject_ids: list[int] | None = None,
 ) -> tuple[list[Question], dict[int, dict]]:
     """Phase 2 weakness_vector 策略：薄弱知识点 → 向量召回 → KP 补齐 → 随机补齐。
 
     供 smart_strategy="path" 的 fallback 复用。
     exclude_ids: 需要额外排除的题目 ID 集合（如 path 策略已选的题）。
+    subject_ids: 精确 subject_id 列表，提供时跳过 resolve_subject_ids 递归扩展。
     """
     exclude_ids = exclude_ids or set()
     metadata: dict[int, dict] = {}
@@ -871,8 +1208,8 @@ async def _smart_weakness_vector(
 
     # 随机补齐
     existing_ids = {q.id for q in result_questions} | exclude_ids
-    ids = await resolve_subject_ids(db, subject)
-    subject_cond = Question.subject_id.in_(ids)
+    scope_ids = subject_ids if subject_ids is not None else await resolve_subject_ids(db, subject)
+    subject_cond = Question.subject_id.in_(scope_ids)
     conditions = [
         Question.is_active == True,
         subject_cond,
@@ -1036,6 +1373,7 @@ async def get_smart_scored_questions(
     exclude_answered: bool = False,
     no_repeat_days: int | None = None,
     request_id: str | None = None,
+    subject_ids: list[int] | None = None,
 ) -> tuple[list[Question], dict[int, dict]]:
     """V4 综合打分推荐。
 
@@ -1061,8 +1399,8 @@ async def get_smart_scored_questions(
 
     # ── 1. 候选题池 ──
     candidate_limit = max(count * 5, 50)
-    ids = await resolve_subject_ids(db, subject)
-    subject_cond = Question.subject_id.in_(ids)
+    scope_ids = subject_ids if subject_ids is not None else await resolve_subject_ids(db, subject)
+    subject_cond = Question.subject_id.in_(scope_ids)
     conditions: list = [Question.is_active == True, subject_cond]
 
     excluded_sub = _build_excluded_question_subquery(

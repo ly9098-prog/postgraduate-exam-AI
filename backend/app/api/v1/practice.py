@@ -202,6 +202,18 @@ async def get_practice_questions(
     # 始终使用 subject_code（字符串）作查询参数，避免与 VARCHAR 列比较时类型不匹配
     subject_for_query: str = subject_code
 
+    # 解析科目作用域：是否有启用子科目、需要查询的 subject ID 列表
+    has_enabled_children, scope_subject_ids = await svc.resolve_practice_subject_scope(
+        db, subject_id, include_children,
+    )
+
+    # 父级科目 + sequential → 400
+    if has_enabled_children and mode == "sequential":
+        raise HTTPException(
+            status_code=400,
+            detail="顺序练习仅支持具体科目，不支持父级科目聚合刷题",
+        )
+
     trace_id = x_trace_id or create_trace_id()
     kps = (
         [kp.strip() for kp in knowledge_point.split(",") if kp.strip()]
@@ -260,23 +272,65 @@ async def get_practice_questions(
     elif mode == "smart":
         import uuid
         request_id = str(uuid.uuid4())
-        questions, question_metadata = await svc.get_smart_practice_questions(
-            db=db, user_id=current_user.id, subject=subject_for_query,
-            count=count, exclude_answered=exclude_answered,
-            no_repeat_days=no_repeat_days,
-            use_leitner=use_leitner,
-            request_id=request_id, smart_strategy=smart_strategy,
-        )
+        if len(scope_subject_ids) > 1:
+            # 父级科目聚合智能推荐
+            questions, question_metadata = await svc.get_aggregated_smart_questions(
+                db=db, user_id=current_user.id, subject_code=subject_for_query,
+                subject_ids=scope_subject_ids, count=count,
+                exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+                use_leitner=use_leitner,
+                request_id=request_id, smart_strategy=smart_strategy,
+            )
+        else:
+            questions, question_metadata = await svc.get_smart_practice_questions(
+                db=db, user_id=current_user.id, subject=subject_for_query,
+                subject_ids=scope_subject_ids,
+                count=count, exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+                use_leitner=use_leitner,
+                request_id=request_id, smart_strategy=smart_strategy,
+            )
 
     else:
-        # random / sequential — 原有逻辑
-        questions = await svc.get_practice_questions(
-            db=db, user_id=current_user.id, subject=subject_for_query,
-            count=count, mode=mode, knowledge_points=kps,
-            exclude_answered=exclude_answered,
-            no_repeat_days=no_repeat_days,
-            use_leitner=use_leitner,
-        )
+        # random / sequential
+        if len(scope_subject_ids) > 1:
+            # 父级科目聚合随机
+            questions = await svc.get_aggregated_random_questions(
+                db=db, user_id=current_user.id, subject_code=subject_for_query,
+                subject_ids=scope_subject_ids, count=count,
+                knowledge_points=kps,
+                exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+                use_leitner=use_leitner,
+            )
+        else:
+            # 具体科目（叶子或 include_children=false）—— 精确查询
+            # 传入 subject_ids 阻止 resolve_subject_ids 的内部递归扩展
+            questions = await svc.get_practice_questions(
+                db=db, user_id=current_user.id, subject=subject_for_query,
+                subject_ids=scope_subject_ids,
+                count=count, mode=mode, knowledge_points=kps,
+                exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+                use_leitner=use_leitner,
+            )
+    # ── 作用域强制过滤：确保任何模式都不会返回超出 scope 的后代题目 ──
+    scope_set = set(scope_subject_ids)
+    questions = [q for q in questions if q.subject_id in scope_set]
+    question_metadata = {k: v for k, v in question_metadata.items() if k in {q.id for q in questions}}
+    # ── 结构化日志：刷题请求范围与分布 ──
+    scope_desc = "聚合" if len(scope_subject_ids) > 1 else "精确"
+    from collections import Counter
+    subject_distribution = dict(Counter(q.subject_id for q in questions))
+    logger.info(
+        "[PRACTICE_SCOPE] subject_id=%s subject_code=%s include_children=%s "
+        "has_children=%s scope=%s scope_ids=%s mode=%s count=%d "
+        "result_count=%d subject_distribution=%s",
+        subject_id, subject_code, include_children,
+        has_enabled_children, scope_desc, scope_subject_ids,
+        mode, count, len(questions), subject_distribution,
+    )
     # ── Layer 1 诊断：API 响应 stem 数据 ──
     for q in questions:
         content = _sanitize_question_content(q.content)

@@ -307,18 +307,29 @@ async def resolve_subject_id(
 
 
 async def resolve_subject_ids(
-    db: AsyncSession, subject: str | int | None
+    db: AsyncSession, subject: str | int | None,
+    include_descendants: bool = True,
 ) -> list[int]:
     """Resolve to all subject_ids matching the given subject identifier.
 
     For simple matches behaves like resolve_subject_id (returns 0-1 items).
     This replaces the old ``Question.subject.like(f"{subject}-%")`` pattern
     by resolving the subject tree: if subject maps to a parent, all descendant
-    subject_ids are included.
+    subject_ids are included (unless include_descendants=False).
+
+    Args:
+        db: Database session.
+        subject: Subject code (str) or ID (int).
+        include_descendants: If True (default), include all descendant subject
+            IDs. If False, return only the exact matching subject ID.
+            Default True maintains backward compatibility.
     """
     sid = await resolve_subject_id(db, subject)
     if sid is None:
         return []
+
+    if not include_descendants:
+        return [sid]
 
     # Check if this subject has children → include them all
     all_subjs = (await db.execute(
