@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { WandSparkles, ArrowRight, FileQuestion, ListChecks, MessageSquareText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
@@ -43,10 +43,6 @@ F(1) = f(1) - 1 = 0
   },
 };
 
-const inputCls =
-  "h-9 w-full rounded-lg border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]";
-const labelCls = "text-[11px] font-medium text-[var(--color-text-hint)]";
-
 export function AiCompletionPreview({
   configs,
   loading,
@@ -63,10 +59,16 @@ export function AiCompletionPreview({
   const data = configs ?? {};
   const savedPrompt = String(data["completion_prompt"] ?? "");
   const [prompt, setPrompt] = useState(savedPrompt);
+  const prevSavedRef = useRef(savedPrompt);
 
+  // Sync savedPrompt to prompt only when savedPrompt changes and prompt hasn't
+  // been manually edited (still the initial empty/matching value).
   useEffect(() => {
-    if (savedPrompt && !prompt) setPrompt(savedPrompt);
-  }, [savedPrompt]);
+    if (savedPrompt && !prompt && prevSavedRef.current !== savedPrompt) {
+      setPrompt(savedPrompt);
+    }
+    prevSavedRef.current = savedPrompt;
+  }, [savedPrompt, prompt]);
 
   const saveMutation = useMutation({
     mutationFn: (patch: AdminAiConfigsPatchRequest) =>
@@ -121,7 +123,7 @@ export function AiCompletionPreview({
         <div className="flex-1 space-y-4 border-r border-[var(--color-border)]/60 p-5">
           {/* Prompt */}
           <div>
-            <span className={cn(labelCls, "font-semibold uppercase tracking-wider")}>补全 Prompt</span>
+            <span className={cn("text-[11px] font-medium text-[var(--color-text-hint)]", "font-semibold uppercase tracking-wider")}>补全 Prompt</span>
             <div className="relative mt-1.5">
               <textarea
                 value={loading ? "加载中..." : (prompt || savedPrompt)}
@@ -145,7 +147,7 @@ export function AiCompletionPreview({
 
           {/* Toggles */}
           <div>
-            <span className={cn(labelCls, "font-semibold uppercase tracking-wider")}>补全维度</span>
+            <span className={cn("text-[11px] font-medium text-[var(--color-text-hint)]", "font-semibold uppercase tracking-wider")}>补全维度</span>
             <div className="mt-2 space-y-1.5">
               {toggles.map((item) => (
                 <label
@@ -209,7 +211,7 @@ export function AiCompletionPreview({
         {/* ── Right: Preview ── */}
         <div className="flex w-[340px] shrink-0 flex-col bg-[var(--color-bg-input)]/20 p-5">
           <div className="mb-3 flex items-center justify-between">
-            <span className={cn(labelCls, "font-semibold uppercase tracking-wider")}>效果预览</span>
+            <span className={cn("text-[11px] font-medium text-[var(--color-text-hint)]", "font-semibold uppercase tracking-wider")}>效果预览</span>
             <span className="text-[10px] text-[var(--color-text-hint)]">实时</span>
           </div>
 
