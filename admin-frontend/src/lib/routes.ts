@@ -9,7 +9,6 @@ import {
   UserCog,
   Sigma,
   ListTree,
-  ClipboardCheck,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { PermissionKey } from "@/lib/permissions/permissions";
@@ -51,7 +50,6 @@ export const adminRoutes: AdminRoute[] = [
   { href: "/roles", label: "角色权限", description: "权限矩阵", permission: "role:read", icon: ShieldCheck },
   { href: "/ai-settings", label: "AI 解析设置", description: "开关与额度", permission: "ai_setting:read", icon: SlidersHorizontal },
   { href: "/audit-logs", label: "审计日志", description: "操作追踪", permission: "audit:read", icon: History },
-  { href: "/formulas", label: "公式库", description: "公式管理", permission: "formula:read", icon: Sigma },
+  { href: "/formulas", label: "公式库", description: "公式管理与审核", permission: "formula:read", icon: Sigma },
   { href: "/formulas/categories", label: "公式分类", description: "分类树管理", permission: "formula-category:read", icon: ListTree },
-  { href: "/formulas/review", label: "公式审核", description: "审核队列", permission: "formula:review", icon: ClipboardCheck },
 ];
