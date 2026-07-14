@@ -19,6 +19,8 @@
 #
 # WARNING: opencv-contrib-python 和 opencv-python 与 opencv-python-headless 冲突
 # 故 paddleocr 用 --no-deps 安装，其依赖在此显式声明（替换 opencv 为 headless）
+# paddleocr 本身需要单独用 --no-deps 安装（避免与 opencv-python-headless 冲突）
+# 见 run.sh 中 OCR 安装逻辑
 paddlepaddle>=2.6.2
 Pillow>=10.3.0
 numpy>=1.26,<2.0
