@@ -3778,31 +3778,24 @@ class ImportPipeline:
         render_page_end = opts.get("page_end")
 
         # Pre-render page images once (expensive — reused across chunks)
-        # Caller may pass pre-rendered pages (e.g. image imports keep the
-        # original image bytes so multimodal OCR correction can use them).
-        if page_images is None:
-            page_images = _render_page_images(
+        # Eliminates previous double-rendering: each page is rendered exactly
+        # once, producing both bytes (for OCR) and temp file refs (for cropping).
+        # All rendering is offloaded to a thread pool (never blocks event loop).
+        from app.services.pdf_renderer_service import pdf_renderer
+
+        page_images: dict[int, bytes] | None = None
+        page_image_refs: dict[int, str] | None = None
+        pdf_render_result = None
+        if page_images is None and source_type == "pdf":
+            pdf_render_result = await pdf_renderer.render_pages(
                 file_content=file_content,
                 file_path=file_path,
                 source_type=source_type,
                 page_start=render_page_start,
                 page_end=render_page_end,
             )
-
-        # P2-2: pre-render page image tempfiles for formula cropping.
-        # These survive past ocr_correction stage (unlike page_images bytes)
-        # so math_detect can use them for real formula screenshots.
-        import tempfile as _tempfile
-        import shutil as _shutil
-        page_image_tempdir: str | None = None
-        page_image_refs: dict[int, str] | None = None
-        if source_type == "pdf" and file_path:
-            page_image_tempdir = _tempfile.mkdtemp(prefix="import_pages_")
-            page_image_refs = _render_page_image_refs(
-                file_path, page_image_tempdir, source_type=source_type,
-                page_start=render_page_start,
-                page_end=render_page_end,
-            )
+            page_images = pdf_render_result.page_images if pdf_render_result.rendered_count else None
+            page_image_refs = pdf_render_result.page_file_refs or None
 
         log_event(
             _pipe_logger, "pipeline.plan.finish",
@@ -3847,8 +3840,8 @@ class ImportPipeline:
                     page_image_refs=page_image_refs,
                 )
         finally:
-            if page_image_tempdir is not None:
-                _shutil.rmtree(page_image_tempdir, ignore_errors=True)
+            if pdf_render_result is not None:
+                await pdf_renderer.cleanup(pdf_render_result)
         return result
 
     # ------------------------------------------------------------------

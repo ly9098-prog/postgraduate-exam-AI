@@ -398,6 +398,8 @@ async def init_db():
         FormulaCardVersion,
         FormulaCategory,
         FormulaGraphAsset,
+        FormulaGraphPreview,
+        FormulaGraphSpec,
         FormulaImportItem,
         FormulaImportJob,
         FormulaTag,

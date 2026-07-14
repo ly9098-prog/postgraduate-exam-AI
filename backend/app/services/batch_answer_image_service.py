@@ -344,11 +344,11 @@ async def generate_image_preview(
 
     # 2. OCR 所有图片
     ocr_results: list[dict] = []
-    from app.services.ocr_service import ocr_image
+    from app.services.ocr_executor_service import ocr_executor
 
     for img in images_data:
         try:
-            text = await asyncio.to_thread(ocr_image, img["bytes"])
+            text = await ocr_executor.run_ocr(img["bytes"])
             # 简单估算置信度：有文本则 0.8，否则 0
             confidence = 0.8 if text.strip() else 0.0
         except Exception as e:

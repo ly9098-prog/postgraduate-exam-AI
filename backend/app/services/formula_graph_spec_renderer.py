@@ -240,6 +240,63 @@ def _sanitize_label(text: str | None) -> str:
     return "".join(c for c in text if c.isprintable() or c in "\n\r\t").strip()
 
 
+def _render_shading(ax, shading: list[dict], x_range: list[float]) -> None:
+    """Render filled regions between two curves.
+
+    Supports both vertical (fill_between) and horizontal (fill_betweenx)
+    orientation via the ``orientation`` field ("vertical" / "horizontal").
+    """
+    for region in shading:
+        y1_str = region.get("y1_expression", "")
+        y2_str = region.get("y2_expression", "0")
+        color = region.get("color", "#2563eb")
+        alpha = region.get("alpha", 0.25)
+        label = _sanitize_label(region.get("label", ""))
+        rx = region.get("x_range", x_range)
+        orientation = region.get("orientation", "vertical")
+
+        if not y1_str:
+            continue
+
+        try:
+            expr1 = _parse_expression_cached(y1_str)
+            f1 = _lambdify_cached(expr1)
+        except ValueError:
+            continue
+
+        f2 = None
+        if y2_str:
+            try:
+                expr2 = _parse_expression_cached(y2_str)
+                f2 = _lambdify_cached(expr2)
+            except ValueError:
+                pass
+
+        xs = np.linspace(rx[0], rx[1], 800)
+        with np.errstate(all="ignore"):
+            y1 = f1(xs)
+            y2 = f2(xs) if f2 else np.zeros_like(xs)
+
+        # Ensure arrays (lambdify of constant returns scalar)
+        if np.ndim(y1) == 0:
+            y1 = np.full_like(xs, y1)
+        if np.ndim(y2) == 0:
+            y2 = np.full_like(xs, y2)
+
+        mask = np.isfinite(y1) & np.isfinite(y2)
+        if not np.any(mask):
+            continue
+
+        if orientation == "horizontal":
+            # For Y-type regions: shade horizontally between x=g₁(y) and x=g₂(y)
+            # y1 gves x=g₁(y), y2 gives x=g₂(y) — shade between them at each y
+            ax.fill_betweenx(xs[mask], y1[mask], y2[mask],
+                             color=color, alpha=alpha, label=label or None)
+        else:
+            ax.fill_between(xs[mask], y1[mask], y2[mask],
+                            color=color, alpha=alpha, label=label or None)
+
+
 # ═══════════════════════════════════════════════════════════════
 # Per-panel rendering
 # ═══════════════════════════════════════════════════════════════
@@ -259,6 +316,10 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
     hlines = panel.get("horizontal_lines", [])
     axis_mode = panel.get("axis_mode", "auto_robust")
     title = panel.get("title")
+
+    # Shading regions (fill_between) — drawn first, behind curves
+    shading = panel.get("shading", [])
+    _render_shading(ax, shading, x_range)
 
     # Axes styling
     ax.set_facecolor("white")
@@ -333,11 +394,19 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
         xs = _build_x_grid(intervals, exclude, x_range)
 
         # Evaluate
-        try:
-            f = _lambdify_cached(expr_sympy)
-            ys = f(xs)
-        except Exception:
-            continue
+        with np.errstate(all="ignore"):
+            try:
+                f = _lambdify_cached(expr_sympy)
+                ys = f(xs)
+            except Exception:
+                continue
+
+            # Handle scalar result (e.g., constant function simplified by sympy)
+            if np.ndim(ys) == 0:
+                ys = np.full_like(xs, ys, dtype=float)
+
+            # Replace non-finite values with NaN silently
+            ys = np.where(np.isfinite(ys), ys, np.nan)
 
         curve_count += 1
         total_points += len(xs)
@@ -362,8 +431,44 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
             legend_handles.append(plt.Line2D([0], [0], color=color, linewidth=2, linestyle=dash))
             legend_labels.append(label)
 
+    # Shading region legend entries (patch proxies)
+    for region in shading:
+        region_label = _sanitize_label(region.get("label", ""))
+        if region_label:
+            from matplotlib.patches import Patch
+            legend_handles.append(Patch(facecolor=region.get("color", "#2563eb"),
+                                        alpha=region.get("alpha", 0.25)))
+            legend_labels.append(region_label)
+
     # Annotations (drawn on top of curves)
     for ann in annotations:
+        ann_type = ann.get("type", "point")
+
+        if ann_type == "arrow":
+            x_start, y_start = ann.get("x_start"), ann.get("y_start")
+            x_end, y_end = ann.get("x_end"), ann.get("y_end")
+            if x_start is None or y_start is None or x_end is None or y_end is None:
+                continue
+            ann_label = _sanitize_label(ann.get("label", ""))
+            color = ann.get("color", theme["annotation_color"])
+
+            # Unified annotate with arrowprops (stable on zoom, supports
+            # data-relative labels, backward-compatible with existing specs)
+            ax.annotate(
+                ann_label,
+                xy=(x_end, y_end),
+                xytext=(x_start, y_start),
+                arrowprops={
+                    "arrowstyle": "->",
+                    "color": color,
+                    "linewidth": ann.get("line_width", 1.5),
+                },
+                fontsize=theme["font"]["size"]["annotation"],
+                color=color,
+                fontweight="bold",
+            )
+            continue
+
         x, y = ann.get("x"), ann.get("y")
         if x is None or y is None:
             continue
@@ -390,8 +495,12 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
             framealpha=0.9, edgecolor=theme["axis"]["color"],
         )
 
-    # Set axis limits
-    if axis_mode == "manual":
+    # Set axis limits and aspect
+    if axis_mode == "equal":
+        ax.set_xlim(x_range[0], x_range[1])
+        ax.set_ylim(y_range[0], y_range[1])
+        ax.set_aspect("equal")
+    elif axis_mode == "manual":
         ax.set_xlim(x_range[0], x_range[1])
         ax.set_ylim(y_range[0], y_range[1])
     else:
@@ -545,9 +654,9 @@ def _render_inequality_auxiliary(spec: dict) -> tuple[plt.Figure, list, list]:
     if not spec.get("panels"):
         spec["panels"] = [
             {
-                "title": "y=eˣ 与 y=x+1",
+                "title": "y=e^x 与 y=x+1",
                 "expressions": [
-                    {"expression": "exp(x)", "label": "y=eˣ"},
+                    {"expression": "exp(x)", "label": "y=e^x"},
                     {"expression": "x+1", "label": "y=x+1"},
                 ],
                 "x_range": [-3, 3], "y_range": [-1, 8],
