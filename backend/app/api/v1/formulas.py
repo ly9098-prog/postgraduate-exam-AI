@@ -13,12 +13,18 @@ from app.models.formula import (
     FormulaCard,
     FormulaCardTag,
     FormulaCategory,
+    FormulaGraphAsset,
     FormulaTag,
     UserFormulaFavorite,
 )
+from app.services.formula_graph_asset_service import (
+    choose_effective_graph_asset,
+    is_function_graph,
+    load_graph_assets_map,
+)
 from app.models.user import User
 from app.schemas.common import paginated_response
-from app.schemas.formula import FormulaCardResponse, FormulaCategoryResponse, FormulaTagResponse
+from app.schemas.formula import FormulaCardResponse, FormulaCategoryResponse, FormulaGraphAssetResponse, FormulaTagResponse
 
 router = APIRouter(prefix="/api/v1/formulas", tags=["formulas"])
 
@@ -64,8 +70,12 @@ async def _get_active_categories(db: AsyncSession) -> list[FormulaCategory]:
     return list(result.scalars().all())
 
 
-async def _card_to_response(db: AsyncSession, card: FormulaCard) -> dict:
-    """Convert a formula card to the user-facing response dict."""
+async def _card_to_response(db: AsyncSession, card: FormulaCard, graph_asset: FormulaGraphAsset | None = None) -> dict:
+    """Convert a formula card to the user-facing response dict.
+
+    Args:
+        graph_asset: Pre-resolved effective graph asset (pass None for single-card calls).
+    """
     tags_result = await db.execute(
         select(FormulaTag)
         .join(FormulaCardTag, FormulaCardTag.tag_id == FormulaTag.id)
@@ -76,6 +86,19 @@ async def _card_to_response(db: AsyncSession, card: FormulaCard) -> dict:
         for t in tags_result.scalars().all()
     ]
 
+    # Graph asset response (never expose file paths)
+    graph_asset_resp = None
+    if graph_asset:
+        graph_asset_resp = FormulaGraphAssetResponse.model_validate(graph_asset)
+    elif card.card_type != "pure_formula":
+        # Single-card fallback: load the effective asset (for function_graph or auto)
+        from app.services.formula_graph_asset_service import (
+            get_effective_graph_asset_for_card,
+        )
+        effective = await get_effective_graph_asset_for_card(db, card.id)
+        if effective:
+            graph_asset_resp = FormulaGraphAssetResponse.model_validate(effective)
+
     return {
         "id": card.id,
         "exam_scope": card.exam_scope,
@@ -84,6 +107,7 @@ async def _card_to_response(db: AsyncSession, card: FormulaCard) -> dict:
         "aliases": card.aliases,
         "search_text": card.search_text,
         "card_type": card.card_type,
+        "is_function_graph": is_function_graph(card, effective_asset=graph_asset),
         "summary": card.summary,
         "formula_blocks": card.formula_blocks,
         "conditions": card.conditions,
@@ -92,6 +116,7 @@ async def _card_to_response(db: AsyncSession, card: FormulaCard) -> dict:
         "error_tips": card.error_tips,
         "examples": card.examples,
         "function_properties": card.function_properties,
+        "graph_asset": graph_asset_resp,
         "sort_order": card.sort_order,
         "status": card.status,
         "tags": tags,
@@ -100,6 +125,42 @@ async def _card_to_response(db: AsyncSession, card: FormulaCard) -> dict:
         "created_at": card.created_at,
         "updated_at": card.updated_at,
     }
+
+
+# ── Shared library_type filter ──
+
+
+def _apply_library_type_filter(query, library_type: str | None):
+    """Apply library_type filter to a FormulaCard query.
+
+    Not provided / ``"formula"`` — no filtering (show all published cards).
+    ``"function_graph"`` — only cards where ``is_function_graph()`` is true.
+    """
+    if library_type is None or library_type == "formula":
+        return query
+
+    if library_type == "function_graph":
+        exists_subq = (
+            select(FormulaGraphAsset.id)
+            .where(
+                FormulaGraphAsset.formula_card_id == FormulaCard.id,
+                FormulaGraphAsset.image_url.isnot(None),
+            )
+        ).exists()
+        return query.where(
+            or_(
+                FormulaCard.card_type == "function_graph",
+                and_(
+                    ~FormulaCard.card_type.in_(["function_graph", "pure_formula"]),
+                    exists_subq,
+                ),
+            )
+        )
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"无效的 library_type: '{library_type}'，允许的值: formula, function_graph",
+    )
 
 
 # ── Catalog ──
@@ -142,6 +203,7 @@ async def list_formulas(
     tags: str | None = Query(None),
     q: str | None = Query(None),
     favorite_only: bool = Query(False, alias="favorite_only"),
+    library_type: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User | None = Depends(get_current_user),
@@ -152,6 +214,8 @@ async def list_formulas(
         FormulaCard.status == "published",
         FormulaCard.deleted_at.is_(None),
     )
+
+    base_query = _apply_library_type_filter(base_query, library_type)
 
     # Category filtering: find group-level IDs first
     if subject_code:
@@ -237,14 +301,17 @@ async def list_formulas(
     result = await db.execute(query)
     cards = list(result.scalars().all())
 
+    # Batch-load graph assets
+    card_ids = [c.id for c in cards]
+    assets_map = await load_graph_assets_map(db, card_ids)
+
     items = []
     for card in cards:
-        items.append(await _card_to_response(db, card))
+        effective = choose_effective_graph_asset(assets_map.get(card.id, []))
+        items.append(await _card_to_response(db, card, graph_asset=effective))
 
     return paginated_response(items, total, page, page_size)
 
-
-# ── Detail ──
 
 @router.get("/{formula_id}")
 async def get_formula_detail(
@@ -270,6 +337,7 @@ async def get_formula_detail(
 
 @router.get("/favorites/list")
 async def list_favorite_formulas(
+    library_type: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     current_user: User = Depends(get_current_user),
@@ -287,6 +355,8 @@ async def list_favorite_formulas(
         FormulaCard.deleted_at.is_(None),
     )
 
+    base_query = _apply_library_type_filter(base_query, library_type)
+
     count_q = select(func.count()).select_from(base_query.subquery())
     total_result = await db.execute(count_q)
     total = total_result.scalar() or 0
@@ -297,9 +367,14 @@ async def list_favorite_formulas(
     result = await db.execute(query)
     cards = list(result.scalars().all())
 
+    # Batch-load graph assets
+    card_ids = [c.id for c in cards]
+    assets_map = await load_graph_assets_map(db, card_ids)
+
     items = []
     for card in cards:
-        items.append(await _card_to_response(db, card))
+        effective = choose_effective_graph_asset(assets_map.get(card.id, []))
+        items.append(await _card_to_response(db, card, graph_asset=effective))
 
     return paginated_response(items, total, page, page_size)
 
@@ -313,6 +388,7 @@ async def get_random_formula(
     category_id: int | None = Query(None, alias="category_id"),
     tags: str | None = Query(None),
     exclude_ids: str | None = Query(None, alias="exclude_ids"),
+    library_type: str | None = Query(None),
     current_user: User | None = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -324,6 +400,8 @@ async def get_random_formula(
         FormulaCard.status == "published",
         FormulaCard.deleted_at.is_(None),
     )
+
+    base_query = _apply_library_type_filter(base_query, library_type)
 
     # Apply same filters as list
     if subject_code:
@@ -398,6 +476,7 @@ async def get_random_formula(
             chapter_id=chapter_id,
             category_id=category_id,
             tags=tags if tags else None,
+            library_type=library_type,
             exclude_ids=None,
             current_user=current_user,
             db=db,
