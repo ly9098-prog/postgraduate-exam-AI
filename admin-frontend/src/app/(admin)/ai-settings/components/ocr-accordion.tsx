@@ -1,7 +1,7 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { FileText, Braces, Filter, Rows3, Save, Brain, WandSparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
@@ -52,8 +52,14 @@ function PromptPanel({ configs }: { configs: Record<string, string | number | bo
   const queryClient = useQueryClient();
   const savedPrompt = String(configs["ocr_correction_prompt"] ?? "");
   const [prompt, setPrompt] = useState(savedPrompt);
+  const prevSavedRef = useRef(savedPrompt);
 
-  useEffect(() => { setPrompt(savedPrompt); }, [savedPrompt]);
+  useEffect(() => {
+    if (prevSavedRef.current !== savedPrompt) {
+      prevSavedRef.current = savedPrompt;
+      setPrompt(savedPrompt);
+    }
+  }, [savedPrompt]);
 
   const mutation = useMutation({
     mutationFn: (data: AdminAiConfigsPatchRequest) =>

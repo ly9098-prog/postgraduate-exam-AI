@@ -35,12 +35,12 @@ const SERIES: SeriesMeta[] = [
   { key: "audits", label: "审计事件", color: "#9a7aba", gradientId: "gradAudits" },
 ];
 
-function CustomTooltip({ active, payload, label }: any) {
+function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-xl border border-[rgba(232,229,224,0.8)] bg-[rgba(255,255,255,0.92)] px-4 py-3 shadow-lg text-sm">
       <p className="mb-2 font-semibold text-[var(--ink)]">{label}</p>
-      {payload.map((entry: any) => (
+      {payload.map((entry: { name: string; value: number; color: string }) => (
         <p key={entry.name} className="flex items-center gap-2 leading-6 text-[var(--color-text-secondary)]">
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: entry.color }} />
           {entry.name}: <span className="font-semibold text-[var(--ink)]">{entry.value?.toLocaleString("zh-CN") ?? entry.value}</span>
