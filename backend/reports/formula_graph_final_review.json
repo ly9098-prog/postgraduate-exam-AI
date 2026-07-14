@@ -1,0 +1,713 @@
+{
+  "report_type": "formula_graph_final_review",
+  "generated_at": "2026-07-14T11:21:24.002082+00:00",
+  "database": "sqlite+aiosqlite:///./postgraduate.db",
+  "environment": "development (local SQLite)",
+  "total_cards": 35,
+  "summary": {
+    "ready_confirmed": 13,
+    "draft": 22,
+    "failed": 0
+  },
+  "action_summary": {
+    "keep_existing": 13,
+    "confirm": 21,
+    "edit_spec_then_regenerate": 1
+  },
+  "decisions": {
+    "58": {
+      "id": 58,
+      "title": "常数函数 y=C",
+      "preview_valid": false,
+      "graph_status": "ready",
+      "card_status": "published",
+      "has_asset": true,
+      "asset_types": [
+        "generated"
+      ],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "keep_existing"
+    },
+    "59": {
+      "id": 59,
+      "title": "一次函数 y=kx+b",
+      "preview_valid": false,
+      "graph_status": "ready",
+      "card_status": "draft",
+      "has_asset": true,
+      "asset_types": [
+        "template"
+      ],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "keep_existing"
+    },
+    "60": {
+      "id": 60,
+      "title": "二次函数 y=ax^2+bx+c",
+      "preview_valid": false,
+      "graph_status": "ready",
+      "card_status": "published",
+      "has_asset": true,
+      "asset_types": [
+        "template"
+      ],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "keep_existing"
+    },
+    "61": {
+      "id": 61,
+      "title": "y=|x|",
+      "preview_valid": false,
+      "graph_status": "ready",
+      "card_status": "draft",
+      "has_asset": true,
+      "asset_types": [
+        "template"
+      ],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "keep_existing"
+    },
+    "62": {
+      "id": 62,
+      "title": "y=1/x 与 y=1/x^2",
+      "preview_valid": false,
+      "graph_status": "ready",
+      "card_status": "published",
+      "has_asset": true,
+      "asset_types": [
+        "template"
+      ],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "keep_existing"
+    },
+    "63": {
+      "id": 63,
+      "title": "幂函数（正整数与负整数）y=x^n 与 y=x^{-n}",
+      "preview_valid": "a7e2e531702b4bf586a6865b003e5238",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed_with_notes",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [
+        "需人工审核"
+      ],
+      "required_fixes": [
+        "正整数幂 (x, x², x³) 定义域正确",
+        "负整数幂 (1/x, 1/x²) 无定义域问题"
+      ],
+      "final_action": "confirm"
+    },
+    "64": {
+      "id": 64,
+      "title": "幂函数（有理指数）y=x^{1/n} 与 y=x^{m/n}",
+      "preview_valid": "2949e0aa9c3640569205ab5e301be4c2",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed_with_notes",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [
+        "需人工审核"
+      ],
+      "required_fixes": [
+        "x^0.5 定义域 x≥0 正确",
+        "x^(1/3) 限制在 [0,4] 可接受",
+        "x^(2/3) 允许负数区域"
+      ],
+      "final_action": "confirm"
+    },
+    "65": {
+      "id": 65,
+      "title": "幂函数 α 值对比",
+      "preview_valid": "a3d66909d1bc4320af8ee76919a8606a",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed_with_notes",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [
+        "需人工审核"
+      ],
+      "required_fixes": [
+        "α=2,1,0.5,-1 覆盖全部必要类型",
+        "图例标注明确",
+        "均过 (1,1) 点"
+      ],
+      "final_action": "confirm"
+    },
+    "66": {
+      "id": 66,
+      "title": "指数函数底数对比 y=a^x",
+      "preview_valid": false,
+      "graph_status": "ready",
+      "card_status": "published",
+      "has_asset": true,
+      "asset_types": [
+        "template"
+      ],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "keep_existing"
+    },
+    "67": {
+      "id": 67,
+      "title": "对数函数底数对比 y=log_a x",
+      "preview_valid": false,
+      "graph_status": "ready",
+      "card_status": "published",
+      "has_asset": true,
+      "asset_types": [
+        "template"
+      ],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "keep_existing"
+    },
+    "68": {
+      "id": 68,
+      "title": "指数函数与对数函数反函数关系",
+      "preview_valid": "f93d1e1755714764a220c311adf5a37b",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed_with_notes",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [
+        "需人工审核"
+      ],
+      "required_fixes": [
+        "指数、对数和 y=x 三条曲线",
+        "定义域正确"
+      ],
+      "final_action": "confirm"
+    },
+    "69": {
+      "id": 69,
+      "title": "y=sin x",
+      "preview_valid": false,
+      "graph_status": "ready",
+      "card_status": "published",
+      "has_asset": true,
+      "asset_types": [
+        "template"
+      ],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "keep_existing"
+    },
+    "70": {
+      "id": 70,
+      "title": "y=cos x",
+      "preview_valid": "a2ce1d1609834ccc9986fc1dc06f77c0",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "confirm"
+    },
+    "71": {
+      "id": 71,
+      "title": "正弦与余弦对比",
+      "preview_valid": "6a187e5267f04699acb5a2f6a8099b6f",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed_with_notes",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [
+        "需人工审核"
+      ],
+      "required_fixes": [
+        "sin 和 cos 相位差正确"
+      ],
+      "final_action": "confirm"
+    },
+    "72": {
+      "id": 72,
+      "title": "y=tan x",
+      "preview_valid": false,
+      "graph_status": "ready",
+      "card_status": "published",
+      "has_asset": true,
+      "asset_types": [
+        "template"
+      ],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "keep_existing"
+    },
+    "73": {
+      "id": 73,
+      "title": "y=cot x",
+      "preview_valid": "5e6b60c8bc10495da41afe74c00c4519",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed_with_notes",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": false,
+      "rejection_reasons": [
+        "未绘制竖直渐近线虚线（间断点检测仍可正确断线）"
+      ],
+      "required_fixes": [
+        "建议在 spec 中添加 vertical_lines 标注渐近线位置（非必须）"
+      ],
+      "final_action": "confirm"
+    },
+    "74": {
+      "id": 74,
+      "title": "正切与余切对比",
+      "preview_valid": "a80d2d00028440d4b07ab56b2587966d",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed_with_notes",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": false,
+      "rejection_reasons": [
+        "未绘制竖直渐近线虚线（间断点检测仍可正确断线）"
+      ],
+      "required_fixes": [
+        "建议在 spec 中添加 vertical_lines 标注渐近线位置（非必须）"
+      ],
+      "final_action": "confirm"
+    },
+    "75": {
+      "id": 75,
+      "title": "y=sec x, y=csc x",
+      "preview_valid": "30f715625e724d739b1941303d6d275e",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed_with_notes",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": false,
+      "rejection_reasons": [
+        "未绘制竖直渐近线虚线（间断点检测仍可正确断线）"
+      ],
+      "required_fixes": [
+        "建议在 spec 中添加 vertical_lines 标注渐近线位置（非必须）"
+      ],
+      "final_action": "confirm"
+    },
+    "76": {
+      "id": 76,
+      "title": "y=arcsin x",
+      "preview_valid": "cd3e1655ac1640f9a284d50404300cb1",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "confirm"
+    },
+    "77": {
+      "id": 77,
+      "title": "y=arccos x",
+      "preview_valid": "7106f06d1e58414aa1829493c3a7fd23",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "confirm"
+    },
+    "78": {
+      "id": 78,
+      "title": "y=arctan x",
+      "preview_valid": "16b12ae8c796495bb4d2a21c2faf37c7",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "confirm"
+    },
+    "79": {
+      "id": 79,
+      "title": "y=arccot x",
+      "preview_valid": "d39fbcc557d04ce9b1e8ddbcafa3f132",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "confirm"
+    },
+    "80": {
+      "id": 80,
+      "title": "y=x+1/x",
+      "preview_valid": "d1caf62d4dc6401b8767925d8ae04628",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "confirm"
+    },
+    "81": {
+      "id": 81,
+      "title": "y=xe^{-x} 与 y=x^n e^{-x}",
+      "preview_valid": "7734494aba0b41ec8673f5f7932db085",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed_with_notes",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [
+        "需人工审核"
+      ],
+      "required_fixes": [
+        "参数 n=1, n=2 明确写入图例",
+        "极值点 (1,1/e) 正确"
+      ],
+      "final_action": "confirm"
+    },
+    "82": {
+      "id": 82,
+      "title": "y=ln x / x",
+      "preview_valid": "7a4eda865c1e4cccba601a26cc309063",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "confirm"
+    },
+    "83": {
+      "id": 83,
+      "title": "平移变换 y=f(x-a)+b",
+      "preview_valid": "fe53415c188843359c0700503314b252",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed_with_notes",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [
+        "需人工审核"
+      ],
+      "required_fixes": [
+        "具体参数 a=2, b=1 明确",
+        "三面板对比清晰"
+      ],
+      "final_action": "confirm"
+    },
+    "84": {
+      "id": 84,
+      "title": "综合变换 y=af(bx+c)+d",
+      "preview_valid": "11a7c95f845a44fcbb6b646cc41f96e9",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed_with_notes",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [
+        "需人工审核"
+      ],
+      "required_fixes": [
+        "具体参数 a=2, a=-1, h=-1, k=2 明确",
+        "基准→伸缩→反射+平移 三面板"
+      ],
+      "final_action": "confirm"
+    },
+    "85": {
+      "id": 85,
+      "title": "绝对值变换对比 y=|f(x)| 与 y=f(|x|)",
+      "preview_valid": false,
+      "graph_status": "ready",
+      "card_status": "published",
+      "has_asset": true,
+      "asset_types": [
+        "template"
+      ],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "keep_existing"
+    },
+    "86": {
+      "id": 86,
+      "title": "原函数与导函数图像关系",
+      "preview_valid": "197ddc4fbdcd4eddbacc0a3d4dd296e1",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed_with_notes",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [
+        "需人工审核"
+      ],
+      "required_fixes": [
+        "f(x)=x³-3x 与 f'(x)=3x²-3 数学一致",
+        "极值点标注正确"
+      ],
+      "final_action": "confirm"
+    },
+    "87": {
+      "id": 87,
+      "title": "常见有理函数及其渐近线",
+      "preview_valid": "f83e7d05ef4d4ac19d78a9ff490f35ec",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "failed",
+      "math_review_result": "failed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": false,
+      "rejection_reasons": [
+        "可去间断点标注位置错误: 标注在(-1,0)，但正确位置应是(-1,-0.5)"
+      ],
+      "required_fixes": [
+        "修改 annotation 从 (-1,0) 到 (-1,-0.5)",
+        "重新生成 preview 后确认"
+      ],
+      "final_action": "edit_spec_then_regenerate"
+    },
+    "88": {
+      "id": 88,
+      "title": "对数·幂·指数增长速度对比",
+      "preview_valid": "f3b3af8ad32e4c229c07a44e2620a02d",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed_with_notes",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [
+        "需人工审核"
+      ],
+      "required_fixes": [
+        "ln x, √x, x, x², eˣ 五种增长对比",
+        "定义域 [0,5] 合理"
+      ],
+      "final_action": "confirm"
+    },
+    "89": {
+      "id": 89,
+      "title": "分段函数典型图像：sgn x 与 \\lfloor x\\rfloor",
+      "preview_valid": false,
+      "graph_status": "ready",
+      "card_status": "draft",
+      "has_asset": true,
+      "asset_types": [
+        "template"
+      ],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "keep_existing"
+    },
+    "90": {
+      "id": 90,
+      "title": "四类间断点图像对比",
+      "preview_valid": "54d8ec46af3c4e0088da13b839c9b068",
+      "graph_status": "draft",
+      "card_status": "draft",
+      "has_asset": false,
+      "asset_types": [],
+      "visual_review_result": "passed",
+      "math_review_result": "passed_with_notes",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [
+        "需人工审核"
+      ],
+      "required_fixes": [
+        "四类间断点（可去/跳跃/无穷/振荡）正确",
+        "空心点标注正确"
+      ],
+      "final_action": "confirm"
+    },
+    "91": {
+      "id": 91,
+      "title": "幂指辅助函数 y=x^x",
+      "preview_valid": false,
+      "graph_status": "ready",
+      "card_status": "published",
+      "has_asset": true,
+      "asset_types": [
+        "generated"
+      ],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "keep_existing"
+    },
+    "92": {
+      "id": 92,
+      "title": "指数对数不等式常用辅助函数",
+      "preview_valid": false,
+      "graph_status": "ready",
+      "card_status": "published",
+      "has_asset": true,
+      "asset_types": [
+        "generated"
+      ],
+      "visual_review_result": "passed",
+      "math_review_result": "passed",
+      "graph_spec_consistent": true,
+      "mobile_thumbnail_readable": true,
+      "approved": true,
+      "rejection_reasons": [],
+      "required_fixes": [],
+      "final_action": "keep_existing"
+    }
+  }
+}

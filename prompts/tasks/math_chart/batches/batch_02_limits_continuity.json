@@ -1,0 +1,2800 @@
+{
+  "schema_version": 1,
+  "batch": "B2_函数极限连续",
+  "batch_description": "数学二公式库第二批正文——函数、极限与连续纯公式卡片（H-036～H-064）",
+  "generated_at": "2026-07-13",
+  "revision": "1.0",
+  "status": "draft",
+  "cards": [
+    {
+      "id": "H-036",
+      "title": "函数基本概念与定义域",
+      "aliases": [
+        "函数定义",
+        "domain of a function"
+      ],
+      "keywords": [
+        "函数",
+        "定义域",
+        "对应法则",
+        "复合函数",
+        "分式",
+        "根式",
+        "对数"
+      ],
+      "subject": "高数",
+      "chapter": "函数",
+      "category": "概念",
+      "card_type": "pure_formula",
+      "summary": "函数由定义域、对应法则和值域共同描述。求定义域时，应同时满足表达式中所有组成部分的实数意义条件。",
+      "formula_blocks": [
+        {
+          "label": "函数定义",
+          "latex": "f:D\\to\\mathbb R,\\qquad x\\mapsto f(x)",
+          "note": "对每个 x∈D，必须有唯一确定的函数值 f(x)。",
+          "original_latex": "f:D\\to\\mathbb R,\\qquad x\\mapsto f(x)"
+        },
+        {
+          "label": "分式条件",
+          "latex": "\\frac{P(x)}{Q(x)}:\\quad Q(x)\\ne0",
+          "note": "",
+          "original_latex": "\\frac{P(x)}{Q(x)}:\\quad Q(x)\\ne0"
+        },
+        {
+          "label": "偶次根式条件",
+          "latex": "\\sqrt[2m]{g(x)}:\\quad g(x)\\ge0",
+          "note": "",
+          "original_latex": "\\sqrt[2m]{g(x)}:\\quad g(x)\\ge0"
+        },
+        {
+          "label": "对数条件",
+          "latex": "\\log_a g(x):\\quad g(x)>0,\\ a>0,\\ a\\ne1",
+          "note": "",
+          "original_latex": "\\log_a g(x):\\quad g(x)>0,\\ a>0,\\ a\\ne1"
+        },
+        {
+          "label": "反三角条件",
+          "latex": "\\arcsin g(x),\\ \\arccos g(x):\\quad -1\\le g(x)\\le1",
+          "note": "",
+          "original_latex": "\\arcsin g(x),\\ \\arccos g(x):\\quad -1\\le g(x)\\le1"
+        },
+        {
+          "label": "复合函数定义域",
+          "latex": "(f\\circ g)(x)=f(g(x)):\\quad x\\in D_g,\\ g(x)\\in D_f",
+          "note": "",
+          "original_latex": "(f\\circ g)(x)=f(g(x)):\\quad x\\in D_g,\\ g(x)\\in D_f"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "x\\in\\mathbb R",
+          "note": "本库默认讨论实函数，除非另有说明。"
+        }
+      ],
+      "symbol_notes": [
+        {
+          "symbol": "D",
+          "note": "函数的定义域"
+        },
+        {
+          "symbol": "f\\circ g",
+          "note": "函数 f 与 g 的复合"
+        }
+      ],
+      "common_conclusions": [
+        "同一个解析式在不同定义域上可以表示不同的函数。",
+        "值域必须由定义域和对应法则共同决定。",
+        "多个限制条件同时出现时，定义域取各条件解集的交集。"
+      ],
+      "secondary_conclusions": [
+        "奇偶函数的定义域必须关于原点对称。",
+        "周期函数的定义域应在周期平移下保持封闭。"
+      ],
+      "error_tips": [
+        "不要只检查最显眼的分母或根号；对数、反三角函数和复合函数内层也可能限制定义域。",
+        "\\(\\sqrt{g(x)}\\) 要求 \\(g(x)\\ge0\\)，而 \\(1/\\sqrt{g(x)}\\) 要求 \\(g(x)>0\\)。"
+      ],
+      "related_cards": [
+        "H-037",
+        "H-038",
+        "H-062"
+      ],
+      "tag_suggestions": [],
+      "examples": [],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "not_applicable",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-037",
+      "title": "函数的奇偶性",
+      "aliases": [
+        "奇函数与偶函数",
+        "parity of functions"
+      ],
+      "keywords": [
+        "奇函数",
+        "偶函数",
+        "对称性",
+        "对称区间积分"
+      ],
+      "subject": "高数",
+      "chapter": "函数",
+      "category": "性质",
+      "card_type": "pure_formula",
+      "summary": "奇偶性描述函数图像关于原点或 y 轴的对称性。判断前必须先确认定义域关于原点对称。",
+      "formula_blocks": [
+        {
+          "label": "偶函数",
+          "latex": "f(-x)=f(x)",
+          "note": "图像关于 y 轴对称。",
+          "original_latex": "f(-x)=f(x)"
+        },
+        {
+          "label": "奇函数",
+          "latex": "f(-x)=-f(x)",
+          "note": "图像关于原点对称。",
+          "original_latex": "f(-x)=-f(x)"
+        },
+        {
+          "label": "奇函数对称积分",
+          "latex": "\\int_{-a}^{a}f(x)\\,dx=0",
+          "note": "",
+          "original_latex": "\\int_{-a}^{a}f(x)\\,dx=0"
+        },
+        {
+          "label": "偶函数对称积分",
+          "latex": "\\int_{-a}^{a}f(x)\\,dx=2\\int_0^a f(x)\\,dx",
+          "note": "",
+          "original_latex": "\\int_{-a}^{a}f(x)\\,dx=2\\int_0^a f(x)\\,dx"
+        },
+        {
+          "label": "常见运算",
+          "latex": "\\text{偶}\\cdot\\text{偶}=\\text{偶},\\quad \\text{奇}\\cdot\\text{奇}=\\text{偶},\\quad \\text{奇}\\cdot\\text{偶}=\\text{奇}",
+          "note": "",
+          "original_latex": "\\text{偶}\\cdot\\text{偶}=\\text{偶},\\quad \\text{奇}\\cdot\\text{奇}=\\text{偶},\\quad \\text{奇}\\cdot\\text{偶}=\\text{奇}"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "x\\in D\\Rightarrow -x\\in D",
+          "note": "定义域必须关于原点对称。"
+        },
+        {
+          "expression": "f\\text{ 在 }[-a,a]\\text{ 上可积}",
+          "note": "使用对称积分公式时。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "偶函数的图像关于 y 轴对称；奇函数的图像关于原点对称。",
+        "既奇又偶的函数在其对称定义域上只能恒为 0。",
+        "在对称区间上，任意函数可分解为偶部与奇部。"
+      ],
+      "secondary_conclusions": [
+        "f_e(x)=\\frac{f(x)+f(-x)}2,\\quad f_o(x)=\\frac{f(x)-f(-x)}2",
+        "可导偶函数的导函数为奇函数；可导奇函数的导函数为偶函数。"
+      ],
+      "error_tips": [
+        "定义域不关于原点对称时，不能判为奇函数或偶函数。",
+        "两个非奇非偶函数的和、积仍可能偶然成为奇函数或偶函数，不能只看组成函数。"
+      ],
+      "related_cards": [
+        "H-036",
+        "H-119"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "判断函数 \\(f(x)=\\ln\\frac{1+x}{1-x}\\) 的奇偶性。",
+          "test_point": "利用定义判断奇偶性",
+          "short_solution": "定义域为 (-1,1)，关于原点对称。f(-x)=\\ln\\frac{1-x}{1+x}=-\\ln\\frac{1+x}{1-x}=-f(x)。",
+          "answer": "f(x) 为奇函数。",
+          "error_tip": "先检查定义域；只验证代数等式而忽略定义域是不完整的。",
+          "difficulty": "中等",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-038",
+      "title": "函数的周期性",
+      "aliases": [
+        "周期函数",
+        "periodic function"
+      ],
+      "keywords": [
+        "周期",
+        "最小正周期",
+        "三角函数周期",
+        "公共周期"
+      ],
+      "subject": "高数",
+      "chapter": "函数",
+      "category": "性质",
+      "card_type": "pure_formula",
+      "summary": "若函数在定义域内平移某个非零长度后函数值保持不变，则称该长度为周期。周期函数未必存在最小正周期。",
+      "formula_blocks": [
+        {
+          "label": "周期定义",
+          "latex": "f(x+T)=f(x),\\qquad T\\ne0",
+          "note": "",
+          "original_latex": "f(x+T)=f(x),\\qquad T\\ne0"
+        },
+        {
+          "label": "常见周期",
+          "latex": "T_{\\sin x}=T_{\\cos x}=2\\pi,\\qquad T_{\\tan x}=T_{\\cot x}=\\pi",
+          "note": "",
+          "original_latex": "T_{\\sin x}=T_{\\cos x}=2\\pi,\\qquad T_{\\tan x}=T_{\\cot x}=\\pi"
+        },
+        {
+          "label": "伸缩后的周期",
+          "latex": "f(bx)\\text{ 的周期}=\\frac{T}{|b|}\\quad(b\\ne0)",
+          "note": "",
+          "original_latex": "f(bx)\\text{ 的周期}=\\frac{T}{|b|}\\quad(b\\ne0)"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "x,x+T\\in D_f",
+          "note": "周期平移后仍须落在定义域内。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "若 T 是周期，则任意非零整数倍 nT 也是周期。",
+        "两个周期函数的和或积只有在存在公共周期时才能直接断言为周期函数。",
+        "若两个基本周期之比为有理数，通常可找到公共周期。"
+      ],
+      "secondary_conclusions": [
+        "常数函数的每个非零实数都是周期，因此没有最小正周期。"
+      ],
+      "error_tips": [
+        "不能把任意一个周期都称为最小正周期。",
+        "两个周期函数相加不一定仍为周期函数，例如周期之比为无理数时通常无公共周期。"
+      ],
+      "related_cards": [
+        "H-012",
+        "H-013",
+        "H-015",
+        "H-016"
+      ],
+      "tag_suggestions": [],
+      "examples": [],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "not_applicable",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-039",
+      "title": "函数的有界性",
+      "aliases": [
+        "有界函数",
+        "bounded function"
+      ],
+      "keywords": [
+        "上界",
+        "下界",
+        "有界",
+        "无界",
+        "闭区间连续"
+      ],
+      "subject": "高数",
+      "chapter": "函数",
+      "category": "性质",
+      "card_type": "pure_formula",
+      "summary": "有界性表示函数值被某个有限常数控制。函数有界等价于同时存在上界和下界。",
+      "formula_blocks": [
+        {
+          "label": "有界定义",
+          "latex": "\\exists M>0,\\ \\forall x\\in D:\\quad |f(x)|\\le M",
+          "note": "",
+          "original_latex": "\\exists M>0,\\ \\forall x\\in D:\\quad |f(x)|\\le M"
+        },
+        {
+          "label": "上有界",
+          "latex": "\\exists M,\\ \\forall x\\in D:\\quad f(x)\\le M",
+          "note": "",
+          "original_latex": "\\exists M,\\ \\forall x\\in D:\\quad f(x)\\le M"
+        },
+        {
+          "label": "下有界",
+          "latex": "\\exists m,\\ \\forall x\\in D:\\quad f(x)\\ge m",
+          "note": "",
+          "original_latex": "\\exists m,\\ \\forall x\\in D:\\quad f(x)\\ge m"
+        },
+        {
+          "label": "闭区间连续函数",
+          "latex": "f\\in C[a,b]\\Rightarrow f\\text{ 在 }[a,b]\\text{ 上有界}",
+          "note": "",
+          "original_latex": "f\\in C[a,b]\\Rightarrow f\\text{ 在 }[a,b]\\text{ 上有界}"
+        }
+      ],
+      "conditions": [],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "两个有界函数的和、差、积仍有界。",
+        "有界函数除以一个绝对值有正下界的函数，商仍有界。",
+        "函数在局部有界不代表在整个定义域有界。"
+      ],
+      "secondary_conclusions": [
+        "若函数在无界区间单调且存在有限极限，则它在相应尾区间有界。"
+      ],
+      "error_tips": [
+        "有界并不意味着存在最大值或最小值，例如 f(x)=x 在 (0,1) 上有界但不取到端点值。",
+        "导数有界不能无条件推出原函数在无界区间有界。"
+      ],
+      "related_cards": [
+        "H-063",
+        "H-040"
+      ],
+      "tag_suggestions": [],
+      "examples": [],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "not_applicable",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-040",
+      "title": "数列极限定义与性质",
+      "aliases": [
+        "数列收敛",
+        "epsilon-N definition"
+      ],
+      "keywords": [
+        "数列极限",
+        "ε-N",
+        "收敛",
+        "唯一性",
+        "有界性",
+        "保号性"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "概念",
+      "card_type": "pure_formula",
+      "summary": "数列趋于 A，表示从某一项起所有项都可以任意接近 A。ε-N 定义给出了严格的量化描述。",
+      "formula_blocks": [
+        {
+          "label": "ε-N 定义",
+          "latex": "\\lim_{n\\to\\infty}a_n=A\\iff \\forall\\varepsilon>0,\\ \\exists N\\in\\mathbb N^+,\\ n>N\\Rightarrow |a_n-A|<\\varepsilon",
+          "note": "",
+          "original_latex": "\\lim_{n\\to\\infty}a_n=A\\iff \\forall\\varepsilon>0,\\ \\exists N\\in\\mathbb N^+,\\ n>N\\Rightarrow |a_n-A|<\\varepsilon"
+        },
+        {
+          "label": "极限唯一性",
+          "latex": "a_n\\to A,\\ a_n\\to B\\Rightarrow A=B",
+          "note": "",
+          "original_latex": "a_n\\to A,\\ a_n\\to B\\Rightarrow A=B"
+        },
+        {
+          "label": "收敛必有界",
+          "latex": "a_n\\to A\\Rightarrow \\exists M>0:\\ |a_n|\\le M",
+          "note": "",
+          "original_latex": "a_n\\to A\\Rightarrow \\exists M>0:\\ |a_n|\\le M"
+        },
+        {
+          "label": "保号性",
+          "latex": "a_n\\to A>0\\Rightarrow \\exists N:\\ n>N\\Rightarrow a_n>0",
+          "note": "",
+          "original_latex": "a_n\\to A>0\\Rightarrow \\exists N:\\ n>N\\Rightarrow a_n>0"
+        }
+      ],
+      "conditions": [],
+      "symbol_notes": [
+        {
+          "symbol": "\\varepsilon",
+          "note": "任意给定的正误差"
+        },
+        {
+          "symbol": "N",
+          "note": "随 ε 选择的正整数阈值"
+        }
+      ],
+      "common_conclusions": [
+        "收敛数列的任意子列收敛于同一极限。",
+        "有界是收敛的必要条件，但不是充分条件。",
+        "有限项的改变不影响数列极限。"
+      ],
+      "secondary_conclusions": [
+        "若两个子列收敛到不同极限，则原数列发散。"
+      ],
+      "error_tips": [
+        "N 可以依赖于 ε，但不能依赖于 n。",
+        "数列有界不代表收敛，例如 (-1)^n 有界但发散。"
+      ],
+      "related_cards": [
+        "H-043",
+        "H-053"
+      ],
+      "tag_suggestions": [],
+      "examples": [],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "not_applicable",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-041",
+      "title": "函数极限定义与性质",
+      "aliases": [
+        "函数极限",
+        "epsilon-delta definition",
+        "单侧极限"
+      ],
+      "keywords": [
+        "函数极限",
+        "ε-δ",
+        "左极限",
+        "右极限",
+        "局部有界",
+        "保号性"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "概念",
+      "card_type": "pure_formula",
+      "summary": "函数在 x 趋于 x₀ 时的极限只描述 x₀ 附近的行为，与函数在 x₀ 处是否有定义以及函数值是多少无关。",
+      "formula_blocks": [
+        {
+          "label": "ε-δ 定义",
+          "latex": "\\lim_{x\\to x_0}f(x)=A\\iff \\forall\\varepsilon>0,\\ \\exists\\delta>0,\\ 0<|x-x_0|<\\delta\\Rightarrow |f(x)-A|<\\varepsilon",
+          "note": "",
+          "original_latex": "\\lim_{x\\to x_0}f(x)=A\\iff \\forall\\varepsilon>0,\\ \\exists\\delta>0,\\ 0<|x-x_0|<\\delta\\Rightarrow |f(x)-A|<\\varepsilon"
+        },
+        {
+          "label": "单侧极限判定",
+          "latex": "\\lim_{x\\to x_0}f(x)=A\\iff \\lim_{x\\to x_0^-}f(x)=\\lim_{x\\to x_0^+}f(x)=A",
+          "note": "",
+          "original_latex": "\\lim_{x\\to x_0}f(x)=A\\iff \\lim_{x\\to x_0^-}f(x)=\\lim_{x\\to x_0^+}f(x)=A"
+        },
+        {
+          "label": "无穷远处极限",
+          "latex": "\\lim_{x\\to\\infty}f(x)=A\\iff \\forall\\varepsilon>0,\\ \\exists X>0,\\ x>X\\Rightarrow |f(x)-A|<\\varepsilon",
+          "note": "",
+          "original_latex": "\\lim_{x\\to\\infty}f(x)=A\\iff \\forall\\varepsilon>0,\\ \\exists X>0,\\ x>X\\Rightarrow |f(x)-A|<\\varepsilon"
+        },
+        {
+          "label": "局部保号性",
+          "latex": "\\lim_{x\\to x_0}f(x)=A>0\\Rightarrow f(x)>0\\text{ 在 }x_0\\text{ 的某去心邻域内成立}",
+          "note": "",
+          "original_latex": "\\lim_{x\\to x_0}f(x)=A>0\\Rightarrow f(x)>0\\text{ 在 }x_0\\text{ 的某去心邻域内成立}"
+        }
+      ],
+      "conditions": [],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "极限若存在则唯一。",
+        "有限极限存在时，函数在相应去心邻域内局部有界。",
+        "函数值 f(x₀) 的改变不影响 \\(x\\to x_0\\) 的极限。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "极限定义中的条件是 0<|x-x₀|<δ，不包含 x=x₀。",
+        "左右极限都存在但不相等时，二侧极限不存在。"
+      ],
+      "related_cards": [
+        "H-060",
+        "H-061"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "设 \\(f(x)=x+1\\)（x<0），\\(f(x)=1-x\\)（x\\ge0）。求 \\(\\lim_{x\\to0}f(x)\\)。",
+          "test_point": "比较左右极限",
+          "short_solution": "左极限为 \\lim_{x\\to0^-}(x+1)=1，右极限为 \\lim_{x\\to0^+}(1-x)=1。左右极限相等。",
+          "answer": "极限为 1。",
+          "error_tip": "不要把 f(0)=1 当作极限存在的充分理由；必须比较两侧。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-042",
+      "title": "极限运算法则",
+      "aliases": [
+        "极限四则运算",
+        "limit laws"
+      ],
+      "keywords": [
+        "极限运算",
+        "和差积商",
+        "复合函数极限",
+        "连续代入"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "性质",
+      "card_type": "pure_formula",
+      "summary": "当各部分极限存在并满足相应条件时，可对有限个函数或数列进行和、差、积、商以及复合运算。",
+      "formula_blocks": [
+        {
+          "label": "和差",
+          "latex": "\\lim(f\\pm g)=\\lim f\\pm\\lim g",
+          "note": "",
+          "original_latex": "\\lim(f\\pm g)=\\lim f\\pm\\lim g"
+        },
+        {
+          "label": "乘积",
+          "latex": "\\lim(fg)=(\\lim f)(\\lim g)",
+          "note": "",
+          "original_latex": "\\lim(fg)=(\\lim f)(\\lim g)"
+        },
+        {
+          "label": "商",
+          "latex": "\\lim\\frac{f}{g}=\\frac{\\lim f}{\\lim g},\\qquad \\lim g\\ne0",
+          "note": "",
+          "original_latex": "\\lim\\frac{f}{g}=\\frac{\\lim f}{\\lim g},\\qquad \\lim g\\ne0"
+        },
+        {
+          "label": "幂与根式",
+          "latex": "\\lim [f(x)]^n=A^n,\\qquad \\lim\\sqrt[n]{f(x)}=\\sqrt[n]{A}\\ \\text{（满足实数定义条件）}",
+          "note": "",
+          "original_latex": "\\lim [f(x)]^n=A^n,\\qquad \\lim\\sqrt[n]{f(x)}=\\sqrt[n]{A}\\ \\text{（满足实数定义条件）}"
+        },
+        {
+          "label": "复合极限",
+          "latex": "u(x)\\to u_0,\\ f(u)\\to A\\Rightarrow f(u(x))\\to A",
+          "note": "",
+          "original_latex": "u(x)\\to u_0,\\ f(u)\\to A\\Rightarrow f(u(x))\\to A"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "\\lim f,\\lim g\\text{ 存在}",
+          "note": "使用四则运算法则的基本前提。"
+        },
+        {
+          "expression": "\\lim g\\ne0",
+          "note": "商的极限法则。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "有限个收敛对象可以逐项使用运算法则。",
+        "多项式极限可直接代入；有理函数在分母极限非零时可直接代入。",
+        "连续函数与内层极限可直接复合。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "\\(\\infty\\) 不是普通实数，出现 \\(\\infty-\\infty\\)、\\(0\\cdot\\infty\\) 等形式时不能直接套四则运算。",
+        "分母函数在邻域内可为零时，还要检查表达式是否有定义。"
+      ],
+      "related_cards": [
+        "H-054",
+        "H-062"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "求 \\(\\lim_{x\\to1}\\frac{x^2+2x}{x+1}\\)。",
+          "test_point": "极限四则运算与直接代入",
+          "short_solution": "分子、分母均为多项式，且分母在 x=1 时为 2≠0，可直接代入。",
+          "answer": "极限为 3/2。",
+          "error_tip": "直接代入前先确认分母极限不为 0。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-043",
+      "title": "极限存在准则",
+      "aliases": [
+        "夹逼准则",
+        "单调有界准则",
+        "squeeze theorem"
+      ],
+      "keywords": [
+        "夹逼定理",
+        "单调有界",
+        "极限存在",
+        "递推数列"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "性质",
+      "card_type": "pure_formula",
+      "summary": "夹逼准则通过上下界确定极限；单调有界准则保证单调数列一定收敛。两者是证明极限存在的重要工具。",
+      "formula_blocks": [
+        {
+          "label": "函数夹逼准则",
+          "latex": "g(x)\\le f(x)\\le h(x),\\quad \\lim g(x)=\\lim h(x)=A\\Rightarrow \\lim f(x)=A",
+          "note": "",
+          "original_latex": "g(x)\\le f(x)\\le h(x),\\quad \\lim g(x)=\\lim h(x)=A\\Rightarrow \\lim f(x)=A"
+        },
+        {
+          "label": "数列夹逼准则",
+          "latex": "b_n\\le a_n\\le c_n,\\quad b_n\\to A,\\ c_n\\to A\\Rightarrow a_n\\to A",
+          "note": "",
+          "original_latex": "b_n\\le a_n\\le c_n,\\quad b_n\\to A,\\ c_n\\to A\\Rightarrow a_n\\to A"
+        },
+        {
+          "label": "单调有界准则",
+          "latex": "\\{a_n\\}\\text{ 单调递增且有上界}\\Rightarrow \\{a_n\\}\\text{ 收敛}",
+          "note": "",
+          "original_latex": "\\{a_n\\}\\text{ 单调递增且有上界}\\Rightarrow \\{a_n\\}\\text{ 收敛}"
+        },
+        {
+          "label": "递减情形",
+          "latex": "\\{a_n\\}\\text{ 单调递减且有下界}\\Rightarrow \\{a_n\\}\\text{ 收敛}",
+          "note": "",
+          "original_latex": "\\{a_n\\}\\text{ 单调递减且有下界}\\Rightarrow \\{a_n\\}\\text{ 收敛}"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "不等式在趋近点的某去心邻域或从某项起成立",
+          "note": "夹逼准则。"
+        },
+        {
+          "expression": "数列同时具有单调性和相应方向的有界性",
+          "note": "单调有界准则。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "夹逼准则不要求中间函数本身单调。",
+        "单调有界准则先证明存在性，再由递推关系求极限值。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "递推数列中直接设极限为 A 前，应先证明极限存在。",
+        "上下界的极限必须相同，否则不能由夹逼准则确定中间极限。"
+      ],
+      "related_cards": [
+        "H-040",
+        "H-053"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "求 \\(\\lim_{x\\to0}x^2\\sin(1/x)\\)。",
+          "test_point": "函数夹逼准则",
+          "short_solution": "由 |\\sin(1/x)|\\le1，有 -x^2\\le x^2\\sin(1/x)\\le x^2，两端均趋于 0。",
+          "answer": "极限为 0。",
+          "error_tip": "夹逼时应写出同时趋于同一极限的上下界。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        },
+        {
+          "question": "设 \\(a_1=1,\\ a_{n+1}=\\sqrt{2+a_n}\\)。求其极限。",
+          "test_point": "单调有界递推数列",
+          "short_solution": "可归纳证明 1\\le a_n<2 且 a_{n+1}>a_n，因此数列递增有上界，极限存在。令极限为 A，则 A=\\sqrt{2+A}，结合 A>0 得 A=2。",
+          "answer": "极限为 2。",
+          "error_tip": "不能只解极限方程而不先证明数列收敛。",
+          "difficulty": "中等",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-044",
+      "title": "极限与无穷小的关系",
+      "aliases": [
+        "无穷小表示",
+        "limit and infinitesimal"
+      ],
+      "keywords": [
+        "极限",
+        "无穷小",
+        "误差项",
+        "A+α"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "性质",
+      "card_type": "pure_formula",
+      "summary": "函数以 A 为极限，等价于函数可以写成常数 A 与一个趋于 0 的无穷小之和。",
+      "formula_blocks": [
+        {
+          "label": "等价关系",
+          "latex": "\\lim_{x\\to x_0}f(x)=A\\iff f(x)=A+\\alpha(x),\\quad \\alpha(x)\\to0",
+          "note": "",
+          "original_latex": "\\lim_{x\\to x_0}f(x)=A\\iff f(x)=A+\\alpha(x),\\quad \\alpha(x)\\to0"
+        },
+        {
+          "label": "数列形式",
+          "latex": "a_n\\to A\\iff a_n=A+\\alpha_n,\\quad \\alpha_n\\to0",
+          "note": "",
+          "original_latex": "a_n\\to A\\iff a_n=A+\\alpha_n,\\quad \\alpha_n\\to0"
+        },
+        {
+          "label": "误差表示",
+          "latex": "f(x)-A=o(1)\\quad(x\\to x_0)",
+          "note": "",
+          "original_latex": "f(x)-A=o(1)\\quad(x\\to x_0)"
+        }
+      ],
+      "conditions": [],
+      "symbol_notes": [
+        {
+          "symbol": "\\alpha(x)",
+          "note": "随 x→x₀ 而趋于 0 的无穷小"
+        },
+        {
+          "symbol": "o(1)",
+          "note": "趋于 0 的量"
+        }
+      ],
+      "common_conclusions": [
+        "极限问题可以转化为研究误差项是否趋于 0。",
+        "两个有相同有限极限的函数之差趋于 0。"
+      ],
+      "secondary_conclusions": [
+        "若 f=A+o(1)、g=B+o(1)，则 f+g=A+B+o(1)，fg=AB+o(1)。"
+      ],
+      "error_tips": [
+        "无穷小是变量变化过程中的函数或数列，不是固定的数 0。",
+        "写成 A+α(x) 时必须同时说明 α(x)→0 的趋近过程。"
+      ],
+      "related_cards": [
+        "H-057",
+        "H-047"
+      ],
+      "tag_suggestions": [],
+      "examples": [],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "not_applicable",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-045",
+      "title": "第一个重要极限",
+      "aliases": [
+        "sin x over x",
+        "第一重要极限"
+      ],
+      "keywords": [
+        "第一个重要极限",
+        "sin x/x",
+        "三角极限"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "重要极限",
+      "card_type": "pure_formula",
+      "summary": "第一个重要极限是处理三角函数在零点附近极限的基础。使用时要保证整体自变量趋于 0。",
+      "formula_blocks": [
+        {
+          "label": "标准形式",
+          "latex": "\\lim_{x\\to0}\\frac{\\sin x}{x}=1",
+          "note": "",
+          "original_latex": "\\lim_{x\\to0}\\frac{\\sin x}{x}=1"
+        },
+        {
+          "label": "复合形式",
+          "latex": "u(x)\\to0\\Rightarrow \\frac{\\sin u(x)}{u(x)}\\to1",
+          "note": "",
+          "original_latex": "u(x)\\to0\\Rightarrow \\frac{\\sin u(x)}{u(x)}\\to1"
+        },
+        {
+          "label": "常见推广",
+          "latex": "\\lim_{x\\to0}\\frac{\\sin ax}{bx}=\\frac{a}{b}\\quad(b\\ne0)",
+          "note": "",
+          "original_latex": "\\lim_{x\\to0}\\frac{\\sin ax}{bx}=\\frac{a}{b}\\quad(b\\ne0)"
+        },
+        {
+          "label": "相关结论",
+          "latex": "\\lim_{x\\to0}\\frac{\\tan x}{x}=1,\\qquad \\lim_{x\\to0}\\frac{1-\\cos x}{x^2}=\\frac12",
+          "note": "",
+          "original_latex": "\\lim_{x\\to0}\\frac{\\tan x}{x}=1,\\qquad \\lim_{x\\to0}\\frac{1-\\cos x}{x^2}=\\frac12"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "u(x)\\to0",
+          "note": "使用复合形式。"
+        },
+        {
+          "expression": "x\\text{ 以弧度计量}",
+          "note": "三角函数重要极限默认采用弧度制。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "\\(\\sin x\\sim x\\)、\\(\\tan x\\sim x\\) 均由第一重要极限得到。",
+        "常见做法是补出与角度相同的分母。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "角度必须趋于 0；不能在角度不趋于 0 时直接使用。",
+        "使用角度制会改变极限常数，因此高等数学中统一采用弧度制。"
+      ],
+      "related_cards": [
+        "H-047",
+        "H-012"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "求 \\(\\lim_{x\\to0}\\frac{\\sin 3x}{x}\\)。",
+          "test_point": "第一重要极限的复合形式",
+          "short_solution": "\\frac{\\sin3x}{x}=3\\cdot\\frac{\\sin3x}{3x}，而 3x→0。",
+          "answer": "极限为 3。",
+          "error_tip": "必须同时乘除 3，不能直接把 sin 3x 替换成 sin x。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-046",
+      "title": "第二个重要极限",
+      "aliases": [
+        "第二重要极限",
+        "exponential limit"
+      ],
+      "keywords": [
+        "第二个重要极限",
+        "1的无穷次方",
+        "自然常数e"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "重要极限",
+      "card_type": "pure_formula",
+      "summary": "第二个重要极限刻画了自然常数 e，常用于处理底数趋于 1、指数趋于无穷的幂指型极限。",
+      "formula_blocks": [
+        {
+          "label": "数列形式",
+          "latex": "\\lim_{n\\to\\infty}\\left(1+\\frac1n\\right)^n=e",
+          "note": "",
+          "original_latex": "\\lim_{n\\to\\infty}\\left(1+\\frac1n\\right)^n=e"
+        },
+        {
+          "label": "函数形式",
+          "latex": "\\lim_{x\\to0}(1+x)^{1/x}=e",
+          "note": "",
+          "original_latex": "\\lim_{x\\to0}(1+x)^{1/x}=e"
+        },
+        {
+          "label": "一般形式",
+          "latex": "u(x)\\to0,\\ v(x)u(x)\\to A\\Rightarrow [1+u(x)]^{v(x)}\\to e^A",
+          "note": "",
+          "original_latex": "u(x)\\to0,\\ v(x)u(x)\\to A\\Rightarrow [1+u(x)]^{v(x)}\\to e^A"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "1+u(x)>0\\text{ 在相应邻域内成立}",
+          "note": "保证实数幂和对数有意义。"
+        },
+        {
+          "expression": "u(x)\\to0,\\ v(x)u(x)\\to A",
+          "note": "一般形式。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "取对数可把幂指极限转化为乘积极限。",
+        "\\((1+u)^{1/u}\\to e\\) 是最常用的识别形式。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "底数必须趋于 1；若底数趋于其他正数，应直接使用连续性或取对数分析。",
+        "指数趋于无穷并不自动得到 e，关键是指数与底数增量的乘积极限。"
+      ],
+      "related_cards": [
+        "H-052",
+        "H-017"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "求 \\(\\lim_{x\\to\\infty}(1+2/x)^{3x}\\)。",
+          "test_point": "第二重要极限的一般形式",
+          "short_solution": "令 u=2/x，则 u→0，指数 3x 与 u 的乘积为 6，故极限为 e^6。",
+          "answer": "极限为 \\(e^6\\)。",
+          "error_tip": "不要误写为 e^{3}；指数中的 x 与底数增量要相乘。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-047",
+      "title": "等价无穷小替换公式",
+      "aliases": [
+        "等价无穷小",
+        "equivalent infinitesimals"
+      ],
+      "keywords": [
+        "等价无穷小",
+        "极限替换",
+        "sin x",
+        "ln(1+x)",
+        "e^x-1"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "等价无穷小",
+      "card_type": "pure_formula",
+      "summary": "在同一趋近过程中，两个无穷小之比趋于 1 时称为等价无穷小。它们可在乘积或商的因子中相互替换。",
+      "formula_blocks": [
+        {
+          "label": "等价定义",
+          "latex": "\\alpha(x)\\sim\\beta(x)\\iff \\frac{\\alpha(x)}{\\beta(x)}\\to1",
+          "note": "",
+          "original_latex": "\\alpha(x)\\sim\\beta(x)\\iff \\frac{\\alpha(x)}{\\beta(x)}\\to1"
+        },
+        {
+          "label": "三角与反三角",
+          "latex": "\\sin x\\sim\\tan x\\sim\\arcsin x\\sim\\arctan x\\sim x",
+          "note": "",
+          "original_latex": "\\sin x\\sim\\tan x\\sim\\arcsin x\\sim\\arctan x\\sim x"
+        },
+        {
+          "label": "指数与对数",
+          "latex": "e^x-1\\sim x,\\qquad \\ln(1+x)\\sim x",
+          "note": "",
+          "original_latex": "e^x-1\\sim x,\\qquad \\ln(1+x)\\sim x"
+        },
+        {
+          "label": "幂函数",
+          "latex": "(1+x)^\\alpha-1\\sim\\alpha x\\quad(\\alpha\\ne0)",
+          "note": "",
+          "original_latex": "(1+x)^\\alpha-1\\sim\\alpha x\\quad(\\alpha\\ne0)"
+        },
+        {
+          "label": "余弦",
+          "latex": "1-\\cos x\\sim\\frac{x^2}{2}",
+          "note": "",
+          "original_latex": "1-\\cos x\\sim\\frac{x^2}{2}"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "x\\to0",
+          "note": "本卡所列基础公式的趋近条件。"
+        },
+        {
+          "expression": "等价量出现在乘积或商的因子中",
+          "note": "安全替换场景。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "复合使用时，只要内层 u(x)→0，就可将 x 替换为 u(x)。",
+        "有限个等价因子相乘或相除后仍可用于极限计算。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "不能在加减式中直接把某一项替换成等价无穷小，否则可能破坏主要项的抵消。",
+        "等价关系依赖具体趋近过程，不能脱离 x→0 使用。"
+      ],
+      "related_cards": [
+        "H-048",
+        "H-049",
+        "H-056"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "求 \\(\\lim_{x\\to0}\\frac{(e^x-1)\\tan x}{1-\\cos x}\\)。",
+          "test_point": "等价无穷小在乘积和商中的替换",
+          "short_solution": "e^x-1\\sim x，\\tan x\\sim x，1-\\cos x\\sim x^2/2，因此原式等价于 x^2/(x^2/2)。",
+          "answer": "极限为 2。",
+          "error_tip": "替换的是完整乘除因子，不是在加减式中局部替换。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-048",
+      "title": "等价无穷小进阶替换",
+      "aliases": [
+        "高阶等价无穷小",
+        "higher-order equivalents"
+      ],
+      "keywords": [
+        "高阶无穷小",
+        "泰勒展开",
+        "差函数",
+        "三阶等价"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "等价无穷小",
+      "card_type": "pure_formula",
+      "summary": "当低阶项相互抵消时，需要使用更高阶的等价无穷小。其本质来自泰勒展开中第一个不为零的项。",
+      "formula_blocks": [
+        {
+          "label": "正弦差",
+          "latex": "x-\\sin x\\sim\\frac{x^3}{6}",
+          "note": "",
+          "original_latex": "x-\\sin x\\sim\\frac{x^3}{6}"
+        },
+        {
+          "label": "正切差",
+          "latex": "\\tan x-x\\sim\\frac{x^3}{3}",
+          "note": "",
+          "original_latex": "\\tan x-x\\sim\\frac{x^3}{3}"
+        },
+        {
+          "label": "反正弦差",
+          "latex": "\\arcsin x-x\\sim\\frac{x^3}{6}",
+          "note": "",
+          "original_latex": "\\arcsin x-x\\sim\\frac{x^3}{6}"
+        },
+        {
+          "label": "反正切差",
+          "latex": "\\arctan x-x\\sim-\\frac{x^3}{3}",
+          "note": "",
+          "original_latex": "\\arctan x-x\\sim-\\frac{x^3}{3}"
+        },
+        {
+          "label": "指数余项",
+          "latex": "e^x-1-x\\sim\\frac{x^2}{2}",
+          "note": "",
+          "original_latex": "e^x-1-x\\sim\\frac{x^2}{2}"
+        },
+        {
+          "label": "对数余项",
+          "latex": "\\ln(1+x)-x\\sim-\\frac{x^2}{2}",
+          "note": "",
+          "original_latex": "\\ln(1+x)-x\\sim-\\frac{x^2}{2}"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "x\\to0",
+          "note": "全部公式的趋近条件。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "先判断低阶项是否抵消，再决定展开到几阶。",
+        "差函数的高阶等价式可以直接由麦克劳林展开得到。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "\\(\\arctan x-x\\) 的首项为负，符号不可遗漏。",
+        "若分子分母的首个非零阶数不同，极限可能为 0 或无穷，不能只比较形式。"
+      ],
+      "related_cards": [
+        "H-047",
+        "H-051"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "求 \\(\\lim_{x\\to0}\\frac{\\tan x-x}{x-\\sin x}\\)。",
+          "test_point": "高阶等价无穷小",
+          "short_solution": "\\tan x-x\\sim x^3/3，x-\\sin x\\sim x^3/6。",
+          "answer": "极限为 2。",
+          "error_tip": "必须使用三阶等价式；基础等价 \\(\\tan x\\sim x\\) 会把分子错误地变成 0。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-049",
+      "title": "无穷小比阶",
+      "aliases": [
+        "无穷小阶数",
+        "little-o notation"
+      ],
+      "keywords": [
+        "高阶无穷小",
+        "低阶无穷小",
+        "同阶",
+        "等价",
+        "k阶"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "等价无穷小",
+      "card_type": "pure_formula",
+      "summary": "无穷小比阶通过两个无穷小之比的极限比较它们趋于 0 的速度。",
+      "formula_blocks": [
+        {
+          "label": "高阶",
+          "latex": "\\frac{\\alpha}{\\beta}\\to0\\Rightarrow \\alpha=o(\\beta)",
+          "note": "",
+          "original_latex": "\\frac{\\alpha}{\\beta}\\to0\\Rightarrow \\alpha=o(\\beta)"
+        },
+        {
+          "label": "低阶",
+          "latex": "\\left|\\frac{\\alpha}{\\beta}\\right|\\to\\infty\\Rightarrow \\alpha\\text{ 是 }\\beta\\text{ 的低阶无穷小}",
+          "note": "",
+          "original_latex": "\\left|\\frac{\\alpha}{\\beta}\\right|\\to\\infty\\Rightarrow \\alpha\\text{ 是 }\\beta\\text{ 的低阶无穷小}"
+        },
+        {
+          "label": "同阶",
+          "latex": "\\frac{\\alpha}{\\beta}\\to c,\\quad 0<|c|<\\infty",
+          "note": "",
+          "original_latex": "\\frac{\\alpha}{\\beta}\\to c,\\quad 0<|c|<\\infty"
+        },
+        {
+          "label": "等价",
+          "latex": "\\frac{\\alpha}{\\beta}\\to1\\Rightarrow \\alpha\\sim\\beta",
+          "note": "",
+          "original_latex": "\\frac{\\alpha}{\\beta}\\to1\\Rightarrow \\alpha\\sim\\beta"
+        },
+        {
+          "label": "k 阶",
+          "latex": "\\frac{\\alpha(x)}{(x-x_0)^k}\\to c\\ne0\\Rightarrow \\alpha\\text{ 是 }(x-x_0)\\text{ 的 }k\\text{ 阶无穷小}",
+          "note": "",
+          "original_latex": "\\frac{\\alpha(x)}{(x-x_0)^k}\\to c\\ne0\\Rightarrow \\alpha\\text{ 是 }(x-x_0)\\text{ 的 }k\\text{ 阶无穷小}"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "\\alpha\\to0,\\ \\beta\\to0",
+          "note": "比阶讨论的基本对象。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "等价无穷小一定是同阶无穷小，但同阶不一定等价。",
+        "阶数越高，趋于 0 的速度越快。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "高阶和低阶是相对概念，必须说明相对于哪个无穷小。",
+        "比值趋于负的非零常数仍属于同阶，但不属于通常定义下的等价。"
+      ],
+      "related_cards": [
+        "H-047",
+        "H-048"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "判断 \\(1-\\cos x\\) 相对于 \\(x\\) 是几阶无穷小（x→0）。",
+          "test_point": "无穷小阶数",
+          "short_solution": "1-\\cos x\\sim x^2/2，因此 \\frac{1-\\cos x}{x^2}\\to1/2\\ne0。",
+          "answer": "它是关于 x 的二阶无穷小，也是 x 的高阶无穷小。",
+          "error_tip": "不要因为都趋于 0 就认为是同阶。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-050",
+      "title": "洛必达法则",
+      "aliases": [
+        "L'Hôpital rule",
+        "洛必塔法则"
+      ],
+      "keywords": [
+        "洛必达",
+        "0/0",
+        "∞/∞",
+        "极限求导",
+        "未定式"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "计算",
+      "card_type": "pure_formula",
+      "summary": "洛必达法则把特定的分式未定式转化为导数之比的极限。它只适用于满足条件的 0/0 或 ∞/∞ 型。",
+      "formula_blocks": [
+        {
+          "label": "0/0 型",
+          "latex": "f(x)\\to0,\\ g(x)\\to0,\\ \\lim\\frac{f'(x)}{g'(x)}=L\\Rightarrow \\lim\\frac{f(x)}{g(x)}=L",
+          "note": "",
+          "original_latex": "f(x)\\to0,\\ g(x)\\to0,\\ \\lim\\frac{f'(x)}{g'(x)}=L\\Rightarrow \\lim\\frac{f(x)}{g(x)}=L"
+        },
+        {
+          "label": "∞/∞ 型",
+          "latex": "|f(x)|\\to\\infty,\\ |g(x)|\\to\\infty,\\ \\lim\\frac{f'(x)}{g'(x)}=L\\Rightarrow \\lim\\frac{f(x)}{g(x)}=L",
+          "note": "",
+          "original_latex": "|f(x)|\\to\\infty,\\ |g(x)|\\to\\infty,\\ \\lim\\frac{f'(x)}{g'(x)}=L\\Rightarrow \\lim\\frac{f(x)}{g(x)}=L"
+        },
+        {
+          "label": "重复使用",
+          "latex": "\\frac{f}{g}\\xrightarrow{\\text{洛必达}}\\frac{f'}{g'}\\xrightarrow{\\text{仍为未定式}}\\frac{f''}{g''}",
+          "note": "",
+          "original_latex": "\\frac{f}{g}\\xrightarrow{\\text{洛必达}}\\frac{f'}{g'}\\xrightarrow{\\text{仍为未定式}}\\frac{f''}{g''}"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "f、g 在相应去心邻域内可导",
+          "note": "端点处本身不必可导。"
+        },
+        {
+          "expression": "g'(x)\\ne0",
+          "note": "在相应去心邻域内成立。"
+        },
+        {
+          "expression": "\\lim f'/g'\\text{ 存在或为 }\\pm\\infty",
+          "note": "法则的关键条件。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "其他未定式要先代数变形为 0/0 或 ∞/∞ 型。",
+        "使用一次后若仍为允许的未定式，可以继续使用。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "非未定式不能使用洛必达法则。",
+        "导数之比极限不存在时，不能据此断言原极限不存在；原极限仍可能存在。",
+        "对分子分母分别求导，不是对整个商使用商法则。"
+      ],
+      "related_cards": [
+        "H-054",
+        "H-051",
+        "H-056"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "求 \\(\\lim_{x\\to0}\\frac{e^x-1-x}{x^2}\\)。",
+          "test_point": "洛必达法则的重复使用",
+          "short_solution": "原式为 0/0。第一次洛必达得 (e^x-1)/(2x)，仍为 0/0；第二次得 e^x/2。",
+          "answer": "极限为 1/2。",
+          "error_tip": "每次使用前都要重新确认仍是允许的未定式。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        },
+        {
+          "question": "求 \\(\\lim_{x\\to\\infty}\\frac{\\ln x}{x}\\)。",
+          "test_point": "∞/∞ 型洛必达",
+          "short_solution": "分子、分母均趋于 +∞，使用洛必达得 (1/x)/1=1/x。",
+          "answer": "极限为 0。",
+          "error_tip": "不要把 \\(\\ln x\\) 增长慢直接当作无证明结论。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-051",
+      "title": "泰勒公式求极限",
+      "aliases": [
+        "Taylor expansion for limits",
+        "麦克劳林求极限"
+      ],
+      "keywords": [
+        "泰勒展开",
+        "麦克劳林",
+        "极限",
+        "余项",
+        "阶数"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "计算",
+      "card_type": "pure_formula",
+      "summary": "泰勒方法通过保留足够阶数的展开项，识别分子分母中最先不抵消的主导项。",
+      "formula_blocks": [
+        {
+          "label": "指数",
+          "latex": "e^x=1+x+\\frac{x^2}{2!}+\\frac{x^3}{3!}+o(x^3)",
+          "note": "",
+          "original_latex": "e^x=1+x+\\frac{x^2}{2!}+\\frac{x^3}{3!}+o(x^3)"
+        },
+        {
+          "label": "正弦",
+          "latex": "\\sin x=x-\\frac{x^3}{3!}+\\frac{x^5}{5!}+o(x^5)",
+          "note": "",
+          "original_latex": "\\sin x=x-\\frac{x^3}{3!}+\\frac{x^5}{5!}+o(x^5)"
+        },
+        {
+          "label": "余弦",
+          "latex": "\\cos x=1-\\frac{x^2}{2!}+\\frac{x^4}{4!}+o(x^4)",
+          "note": "",
+          "original_latex": "\\cos x=1-\\frac{x^2}{2!}+\\frac{x^4}{4!}+o(x^4)"
+        },
+        {
+          "label": "对数",
+          "latex": "\\ln(1+x)=x-\\frac{x^2}{2}+\\frac{x^3}{3}+o(x^3)",
+          "note": "",
+          "original_latex": "\\ln(1+x)=x-\\frac{x^2}{2}+\\frac{x^3}{3}+o(x^3)"
+        },
+        {
+          "label": "广义二项式",
+          "latex": "(1+x)^\\alpha=1+\\alpha x+\\frac{\\alpha(\\alpha-1)}{2}x^2+o(x^2)",
+          "note": "",
+          "original_latex": "(1+x)^\\alpha=1+\\alpha x+\\frac{\\alpha(\\alpha-1)}{2}x^2+o(x^2)"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "x\\to0",
+          "note": "本卡所列麦克劳林形式。"
+        },
+        {
+          "expression": "展开阶数至少覆盖抵消后的首个非零项",
+          "note": "确保能确定极限。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "先估计会发生几阶抵消，再决定展开阶数。",
+        "分子分母都可写成首个非零项加高阶无穷小。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "展开阶数不足会得到 0/0 而无法判断。",
+        "余项阶数要与保留项一致，不能把 O(x^n) 和 o(x^n) 随意混用。"
+      ],
+      "related_cards": [
+        "H-048",
+        "H-092"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "求 \\(\\lim_{x\\to0}\\frac{e^x-1-x-x^2/2}{x^3}\\)。",
+          "test_point": "选取合适阶数的泰勒展开",
+          "short_solution": "e^x=1+x+x^2/2+x^3/6+o(x^3)，分子为 x^3/6+o(x^3)。",
+          "answer": "极限为 1/6。",
+          "error_tip": "若只展开到二阶，无法得到首个非零项。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-052",
+      "title": "幂指函数极限",
+      "aliases": [
+        "power-exponential limit",
+        "1^infinity",
+        "0^0",
+        "infinity^0"
+      ],
+      "keywords": [
+        "幂指极限",
+        "1^∞",
+        "0^0",
+        "∞^0",
+        "取对数"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "计算",
+      "card_type": "pure_formula",
+      "summary": "幂指型极限通常先写成指数形式，把原问题转化为指数部分的乘积极限。",
+      "formula_blocks": [
+        {
+          "label": "统一变换",
+          "latex": "[f(x)]^{g(x)}=\\exp\\bigl(g(x)\\ln f(x)\\bigr)",
+          "note": "",
+          "original_latex": "[f(x)]^{g(x)}=\\exp\\bigl(g(x)\\ln f(x)\\bigr)"
+        },
+        {
+          "label": "1^∞ 型",
+          "latex": "f(x)=1+u(x),\\ u(x)\\to0:\\quad [1+u(x)]^{g(x)}\\to e^L,\\ L=\\lim g(x)u(x)",
+          "note": "",
+          "original_latex": "f(x)=1+u(x),\\ u(x)\\to0:\\quad [1+u(x)]^{g(x)}\\to e^L,\\ L=\\lim g(x)u(x)"
+        },
+        {
+          "label": "一般判定",
+          "latex": "L=\\lim g(x)\\ln f(x)\\Rightarrow \\lim [f(x)]^{g(x)}=e^L",
+          "note": "",
+          "original_latex": "L=\\lim g(x)\\ln f(x)\\Rightarrow \\lim [f(x)]^{g(x)}=e^L"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "f(x)>0\\text{ 在相应邻域内成立}",
+          "note": "使用实对数变换。"
+        },
+        {
+          "expression": "\\lim g(x)\\ln f(x)\\text{ 存在或可判定}",
+          "note": "统一处理 0^0、1^∞、∞^0。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "0^0、1^∞、∞^0 都是未定式，不是固定结果。",
+        "先求对数极限，再使用指数函数连续性。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "底数可能为负时不能直接取实对数。",
+        "不要把 0^0 直接定义为 1 来计算极限；极限结果取决于具体函数。"
+      ],
+      "related_cards": [
+        "H-046",
+        "H-034",
+        "H-054"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "求 \\(\\lim_{x\\to0^+}x^x\\)。",
+          "test_point": "0^0 型幂指极限",
+          "short_solution": "令 y=x^x，则 \\ln y=x\\ln x。由 x\\ln x→0，故 \\ln y→0。",
+          "answer": "极限为 1。",
+          "error_tip": "必须从 x>0 一侧讨论，保证 \\(\\ln x\\) 有意义。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-053",
+      "title": "数列极限计算",
+      "aliases": [
+        "sequence limit methods",
+        "递推数列极限"
+      ],
+      "keywords": [
+        "数列极限",
+        "夹逼",
+        "单调有界",
+        "递推",
+        "Riemann和"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "计算",
+      "card_type": "pure_formula",
+      "summary": "数列极限常用夹逼、单调有界和定积分定义等方法。递推数列应先证明收敛，再求极限方程。",
+      "formula_blocks": [
+        {
+          "label": "夹逼型",
+          "latex": "b_n\\le a_n\\le c_n,\\quad b_n,c_n\\to A\\Rightarrow a_n\\to A",
+          "note": "",
+          "original_latex": "b_n\\le a_n\\le c_n,\\quad b_n,c_n\\to A\\Rightarrow a_n\\to A"
+        },
+        {
+          "label": "递推型",
+          "latex": "a_{n+1}=\\varphi(a_n),\\ a_n\\to A\\Rightarrow A=\\varphi(A)",
+          "note": "",
+          "original_latex": "a_{n+1}=\\varphi(a_n),\\ a_n\\to A\\Rightarrow A=\\varphi(A)"
+        },
+        {
+          "label": "Riemann 和型",
+          "latex": "\\frac1n\\sum_{k=1}^n f\\left(\\frac{k}{n}\\right)\\to\\int_0^1 f(x)\\,dx",
+          "note": "",
+          "original_latex": "\\frac1n\\sum_{k=1}^n f\\left(\\frac{k}{n}\\right)\\to\\int_0^1 f(x)\\,dx"
+        }
+      ],
+      "conditions": [],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "递推极限方程可能有多个根，要结合数列取值范围筛选。",
+        "含 n 项求和时先观察能否整理为 Riemann 和。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "只解递推极限方程不能证明数列收敛。",
+        "夹逼上下界应在从某项起成立，并趋于同一极限。"
+      ],
+      "related_cards": [
+        "H-043",
+        "H-055"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "求 \\(\\lim_{n\\to\\infty}\\sqrt[n]{n}\\)。",
+          "test_point": "数列夹逼与对数变换",
+          "short_solution": "取对数：\\ln\\sqrt[n]{n}=\\ln n/n→0，因此原数列趋于 e^0。",
+          "answer": "极限为 1。",
+          "error_tip": "不能因为底数和指数分别趋于 ∞、0 就直接相乘判断。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        },
+        {
+          "question": "设 \\(a_1>0,\\ a_{n+1}=\\frac12(a_n+2/a_n)\\)，且已知数列收敛。求其正极限。",
+          "test_point": "递推极限方程",
+          "short_solution": "设极限 A>0，则 A=(A+2/A)/2，得到 A^2=2。",
+          "answer": "正极限为 \\(\\sqrt2\\)。",
+          "error_tip": "本题已给出收敛；若未给出，必须另证单调有界。",
+          "difficulty": "中等",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-054",
+      "title": "七种未定式与极限计算综合",
+      "aliases": [
+        "indeterminate forms",
+        "未定式汇总"
+      ],
+      "keywords": [
+        "0/0",
+        "∞/∞",
+        "0·∞",
+        "∞-∞",
+        "0^0",
+        "1^∞",
+        "∞^0"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "计算",
+      "card_type": "pure_formula",
+      "summary": "七种未定式需要先识别结构，再选择代数化简、等价无穷小、泰勒、洛必达或取对数等方法。",
+      "formula_blocks": [
+        {
+          "label": "分式型",
+          "latex": "\\frac{0}{0},\\qquad \\frac{\\infty}{\\infty}",
+          "note": "",
+          "original_latex": "\\frac{0}{0},\\qquad \\frac{\\infty}{\\infty}"
+        },
+        {
+          "label": "乘积型转分式",
+          "latex": "0\\cdot\\infty:\\quad f(x)g(x)=\\frac{f(x)}{1/g(x)}=\\frac{g(x)}{1/f(x)}",
+          "note": "",
+          "original_latex": "0\\cdot\\infty:\\quad f(x)g(x)=\\frac{f(x)}{1/g(x)}=\\frac{g(x)}{1/f(x)}"
+        },
+        {
+          "label": "差式型",
+          "latex": "\\infty-\\infty:\\quad \\text{通分、提取主项或有理化}",
+          "note": "",
+          "original_latex": "\\infty-\\infty:\\quad \\text{通分、提取主项或有理化}"
+        },
+        {
+          "label": "幂指型",
+          "latex": "0^0,\\ 1^\\infty,\\ \\infty^0:\\quad f^g=\\exp(g\\ln f)",
+          "note": "",
+          "original_latex": "0^0,\\ 1^\\infty,\\ \\infty^0:\\quad f^g=\\exp(g\\ln f)"
+        }
+      ],
+      "conditions": [],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "先代入判断形式，再选择方法。",
+        "同一种未定式可能有多种解法，应优先选择结构最简的方法。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "未定式只表示不能由形式直接判断，不表示极限一定不存在。",
+        "\\(0/0\\) 和 \\(\\infty/\\infty\\) 之外的形式不能未经变形直接使用洛必达。"
+      ],
+      "related_cards": [
+        "H-050",
+        "H-052",
+        "H-056"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "求 \\(\\lim_{x\\to0^+}x\\ln x\\)。",
+          "test_point": "把 0·∞ 型转为分式",
+          "short_solution": "写成 \\ln x/(1/x)，为 (-\\infty)/(+\\infty) 型。洛必达得 (1/x)/(-1/x^2)=-x。",
+          "answer": "极限为 0。",
+          "error_tip": "不要把 0 与 -∞ 直接相乘。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-055",
+      "title": "定积分定义求极限",
+      "aliases": [
+        "Riemann sum limit",
+        "定积分定义"
+      ],
+      "keywords": [
+        "Riemann和",
+        "定积分定义",
+        "数列求和极限"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "计算",
+      "card_type": "pure_formula",
+      "summary": "当和式包含大量等距采样点并带有区间宽度因子时，可识别为定积分的 Riemann 和。",
+      "formula_blocks": [
+        {
+          "label": "[0,1] 标准形式",
+          "latex": "\\lim_{n\\to\\infty}\\frac1n\\sum_{k=1}^n f\\left(\\frac{k}{n}\\right)=\\int_0^1 f(x)\\,dx",
+          "note": "",
+          "original_latex": "\\lim_{n\\to\\infty}\\frac1n\\sum_{k=1}^n f\\left(\\frac{k}{n}\\right)=\\int_0^1 f(x)\\,dx"
+        },
+        {
+          "label": "[a,b] 一般形式",
+          "latex": "\\lim_{n\\to\\infty}\\frac{b-a}{n}\\sum_{k=1}^n f\\left(a+\\frac{k(b-a)}n\\right)=\\int_a^b f(x)\\,dx",
+          "note": "",
+          "original_latex": "\\lim_{n\\to\\infty}\\frac{b-a}{n}\\sum_{k=1}^n f\\left(a+\\frac{k(b-a)}n\\right)=\\int_a^b f(x)\\,dx"
+        },
+        {
+          "label": "任意取点",
+          "latex": "\\max\\Delta x_k\\to0:\\quad \\sum f(\\xi_k)\\Delta x_k\\to\\int_a^b f(x)\\,dx",
+          "note": "",
+          "original_latex": "\\max\\Delta x_k\\to0:\\quad \\sum f(\\xi_k)\\Delta x_k\\to\\int_a^b f(x)\\,dx"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "f\\text{ 在 }[a,b]\\text{ 上可积}",
+          "note": "连续函数必满足。"
+        },
+        {
+          "expression": "分点网格最大长度趋于 0",
+          "note": "一般 Riemann 和。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "先把每一项写成 f(采样点)×区间宽度。",
+        "下标从 0 或 1 开始通常不影响极限，但要对应正确的采样点。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "不要遗漏区间长度因子 \\((b-a)/n\\)。",
+        "若采样点不是线性分布，不能机械套标准公式，应重新识别变量代换。"
+      ],
+      "related_cards": [
+        "H-053",
+        "H-117"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "求 \\(\\lim_{n\\to\\infty}\\frac1n\\sum_{k=1}^n\\frac1{1+k/n}\\)。",
+          "test_point": "识别 Riemann 和",
+          "short_solution": "该式是函数 f(x)=1/(1+x) 在 [0,1] 上的右端点 Riemann 和。",
+          "answer": "极限为 \\(\\int_0^1\\frac{dx}{1+x}=\\ln2\\)。",
+          "error_tip": "不要把求和号内的 k/n 当成固定量。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-056",
+      "title": "极限计算易错点",
+      "aliases": [
+        "limit pitfalls",
+        "极限易错"
+      ],
+      "keywords": [
+        "等价替换错误",
+        "洛必达条件",
+        "左右极限",
+        "无穷小",
+        "未定式"
+      ],
+      "subject": "高数",
+      "chapter": "极限",
+      "category": "计算",
+      "card_type": "pure_formula",
+      "summary": "极限计算常见错误集中在未经验证地直接代入、在加减式中滥用等价无穷小、忽略左右极限和错误使用洛必达法则。",
+      "formula_blocks": [
+        {
+          "label": "等价替换边界",
+          "latex": "\\alpha\\sim\\beta\\ \\text{通常只允许替换乘积或商中的完整因子}",
+          "note": "",
+          "original_latex": "\\alpha\\sim\\beta\\ \\text{通常只允许替换乘积或商中的完整因子}"
+        },
+        {
+          "label": "左右极限",
+          "latex": "\\lim_{x\\to x_0}f(x)\\text{ 存在}\\iff f(x_0^-)=f(x_0^+)\\text{ 的极限相等}",
+          "note": "",
+          "original_latex": "\\lim_{x\\to x_0}f(x)\\text{ 存在}\\iff f(x_0^-)=f(x_0^+)\\text{ 的极限相等}"
+        },
+        {
+          "label": "洛必达适用型",
+          "latex": "\\frac{0}{0}\\text{ 或 }\\frac{\\infty}{\\infty}",
+          "note": "",
+          "original_latex": "\\frac{0}{0}\\text{ 或 }\\frac{\\infty}{\\infty}"
+        },
+        {
+          "label": "无穷小不等于零",
+          "latex": "\\alpha(x)\\to0\\not\\Rightarrow \\alpha(x)=0",
+          "note": "",
+          "original_latex": "\\alpha(x)\\to0\\not\\Rightarrow \\alpha(x)=0"
+        }
+      ],
+      "conditions": [],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "先判断定义域和趋近方向，再计算极限。",
+        "遇到抵消结构时优先考虑有理化或泰勒展开。",
+        "无穷大是变化趋势，不是可以随意做普通代数运算的数。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "\\(\\lim(f-g)=\\lim f-\\lim g\\) 只在两个有限极限均存在时可直接使用。",
+        "对含绝对值、分段函数或奇偶根式的极限必须检查单侧行为。"
+      ],
+      "related_cards": [
+        "H-047",
+        "H-050",
+        "H-054"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "说明为什么不能在 \\(\\lim_{x\\to0}\\frac{e^x-1-x}{x^2}\\) 中直接用 \\(e^x-1\\sim x\\)。",
+          "test_point": "识别加减式中的等价替换错误",
+          "short_solution": "若局部替换，会把分子错误写成 x-x=0，丢失真正的二阶主项。应使用 e^x-1-x\\sim x^2/2 或泰勒展开。",
+          "answer": "原极限为 1/2，基础等价式不能在该差式中局部替换。",
+          "error_tip": "等价无穷小替换必须考虑低阶项抵消。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-057",
+      "title": "无穷小的概念与性质",
+      "aliases": [
+        "infinitesimal",
+        "无穷小量"
+      ],
+      "keywords": [
+        "无穷小",
+        "极限为0",
+        "有界乘无穷小",
+        "有限和"
+      ],
+      "subject": "高数",
+      "chapter": "无穷小",
+      "category": "概念",
+      "card_type": "pure_formula",
+      "summary": "在指定趋近过程中极限为 0 的函数或数列称为无穷小。无穷小是变化中的量，不是固定数 0。",
+      "formula_blocks": [
+        {
+          "label": "定义",
+          "latex": "\\alpha(x)\\text{ 是无穷小}\\iff \\lim\\alpha(x)=0",
+          "note": "",
+          "original_latex": "\\alpha(x)\\text{ 是无穷小}\\iff \\lim\\alpha(x)=0"
+        },
+        {
+          "label": "有限和",
+          "latex": "\\alpha_i\\to0\\ (i=1,\\ldots,m)\\Rightarrow \\sum_{i=1}^m\\alpha_i\\to0",
+          "note": "",
+          "original_latex": "\\alpha_i\\to0\\ (i=1,\\ldots,m)\\Rightarrow \\sum_{i=1}^m\\alpha_i\\to0"
+        },
+        {
+          "label": "有限积",
+          "latex": "\\alpha\\to0,\\ \\beta\\to0\\Rightarrow \\alpha\\beta\\to0",
+          "note": "",
+          "original_latex": "\\alpha\\to0,\\ \\beta\\to0\\Rightarrow \\alpha\\beta\\to0"
+        },
+        {
+          "label": "有界量乘无穷小",
+          "latex": "u\\text{ 有界},\\ \\alpha\\to0\\Rightarrow u\\alpha\\to0",
+          "note": "",
+          "original_latex": "u\\text{ 有界},\\ \\alpha\\to0\\Rightarrow u\\alpha\\to0"
+        }
+      ],
+      "conditions": [],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "常数 0 是特殊的无穷小。",
+        "无穷小与有界量的乘积仍是无穷小。",
+        "两个无穷小的商可能趋于 0、常数、无穷或不存在。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "无限多个无穷小的和不一定是无穷小。",
+        "无穷小不能在计算过程中无条件当成 0。"
+      ],
+      "related_cards": [
+        "H-044",
+        "H-049",
+        "H-059"
+      ],
+      "tag_suggestions": [],
+      "examples": [],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "not_applicable",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-058",
+      "title": "无穷大的概念与性质",
+      "aliases": [
+        "infinite quantity",
+        "无穷大量"
+      ],
+      "keywords": [
+        "无穷大",
+        "正无穷",
+        "负无穷",
+        "倒数关系"
+      ],
+      "subject": "高数",
+      "chapter": "无穷小",
+      "category": "概念",
+      "card_type": "pure_formula",
+      "summary": "函数绝对值可以超过任意给定正数时，称其趋于无穷大。正无穷与负无穷还包含符号方向。",
+      "formula_blocks": [
+        {
+          "label": "无穷大",
+          "latex": "|f(x)|\\to\\infty\\iff \\forall M>0,\\ \\exists\\delta>0:\\ 0<|x-x_0|<\\delta\\Rightarrow |f(x)|>M",
+          "note": "",
+          "original_latex": "|f(x)|\\to\\infty\\iff \\forall M>0,\\ \\exists\\delta>0:\\ 0<|x-x_0|<\\delta\\Rightarrow |f(x)|>M"
+        },
+        {
+          "label": "正无穷",
+          "latex": "f(x)\\to+\\infty\\iff \\forall M>0,\\ f(x)>M\\text{ 最终成立}",
+          "note": "",
+          "original_latex": "f(x)\\to+\\infty\\iff \\forall M>0,\\ f(x)>M\\text{ 最终成立}"
+        },
+        {
+          "label": "倒数关系",
+          "latex": "f(x)\\to\\infty,\\ f(x)\\ne0\\Rightarrow \\frac1{f(x)}\\to0",
+          "note": "",
+          "original_latex": "f(x)\\to\\infty,\\ f(x)\\ne0\\Rightarrow \\frac1{f(x)}\\to0"
+        },
+        {
+          "label": "反向关系",
+          "latex": "\\alpha(x)\\to0,\\ \\alpha(x)\\ne0\\Rightarrow \\left|\\frac1{\\alpha(x)}\\right|\\to\\infty",
+          "note": "",
+          "original_latex": "\\alpha(x)\\to0,\\ \\alpha(x)\\ne0\\Rightarrow \\left|\\frac1{\\alpha(x)}\\right|\\to\\infty"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "f(x)\\ne0\\text{ 最终成立}",
+          "note": "使用倒数关系。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "趋于无穷大表示发散，不是存在一个实数极限。",
+        "符号不固定时可以只有绝对值趋于无穷，而不趋于 +∞ 或 -∞。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "\\(\\infty\\) 不是普通数，不能进行未定义的 \\(\\infty-\\infty\\) 运算。",
+        "无界函数不一定趋于无穷，例如 \\(x\\sin x\\) 无界但不趋于单一无穷方向。"
+      ],
+      "related_cards": [
+        "H-057",
+        "H-059",
+        "H-054"
+      ],
+      "tag_suggestions": [],
+      "examples": [],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "not_applicable",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-059",
+      "title": "无穷小与无穷大对比",
+      "aliases": [
+        "infinitesimal versus infinity",
+        "无穷量对比"
+      ],
+      "keywords": [
+        "无穷小",
+        "无穷大",
+        "倒数",
+        "比阶",
+        "未定式"
+      ],
+      "subject": "高数",
+      "chapter": "无穷小",
+      "category": "对比",
+      "card_type": "pure_formula",
+      "summary": "无穷小描述量趋于 0，无穷大描述绝对值无限增大。二者在非零条件下可通过倒数相互联系。",
+      "formula_blocks": [
+        {
+          "label": "无穷小",
+          "latex": "\\alpha(x)\\to0",
+          "note": "",
+          "original_latex": "\\alpha(x)\\to0"
+        },
+        {
+          "label": "无穷大",
+          "latex": "|F(x)|\\to\\infty",
+          "note": "",
+          "original_latex": "|F(x)|\\to\\infty"
+        },
+        {
+          "label": "倒数对应",
+          "latex": "\\alpha(x)\\to0,\\ \\alpha(x)\\ne0\\Longleftrightarrow \\left|\\frac1{\\alpha(x)}\\right|\\to\\infty",
+          "note": "",
+          "original_latex": "\\alpha(x)\\to0,\\ \\alpha(x)\\ne0\\Longleftrightarrow \\left|\\frac1{\\alpha(x)}\\right|\\to\\infty"
+        },
+        {
+          "label": "典型未定式",
+          "latex": "\\frac{0}{0},\\ \\frac{\\infty}{\\infty},\\ 0\\cdot\\infty",
+          "note": "",
+          "original_latex": "\\frac{0}{0},\\ \\frac{\\infty}{\\infty},\\ 0\\cdot\\infty"
+        }
+      ],
+      "conditions": [],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "无穷小可比较阶数，无穷大可比较增长速度。",
+        "无穷大与无穷小相乘形成 0·∞ 未定式，需要进一步分析。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "无穷大不等于某个特别大的常数。",
+        "无穷小也不是可以直接删除的 0 项。"
+      ],
+      "related_cards": [
+        "H-057",
+        "H-058",
+        "H-054"
+      ],
+      "tag_suggestions": [],
+      "examples": [],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "not_applicable",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-060",
+      "title": "函数连续的定义",
+      "aliases": [
+        "continuity",
+        "左连续",
+        "右连续"
+      ],
+      "keywords": [
+        "连续",
+        "极限等于函数值",
+        "左连续",
+        "右连续",
+        "增量形式"
+      ],
+      "subject": "高数",
+      "chapter": "连续",
+      "category": "概念",
+      "card_type": "pure_formula",
+      "summary": "函数在一点连续，要求函数在该点有定义、极限存在，并且极限等于函数值。",
+      "formula_blocks": [
+        {
+          "label": "连续定义",
+          "latex": "f\\text{ 在 }x_0\\text{ 连续}\\iff \\lim_{x\\to x_0}f(x)=f(x_0)",
+          "note": "",
+          "original_latex": "f\\text{ 在 }x_0\\text{ 连续}\\iff \\lim_{x\\to x_0}f(x)=f(x_0)"
+        },
+        {
+          "label": "三条件",
+          "latex": "f(x_0)\\text{ 有定义},\\quad \\lim_{x\\to x_0}f(x)\\text{ 存在},\\quad \\lim_{x\\to x_0}f(x)=f(x_0)",
+          "note": "",
+          "original_latex": "f(x_0)\\text{ 有定义},\\quad \\lim_{x\\to x_0}f(x)\\text{ 存在},\\quad \\lim_{x\\to x_0}f(x)=f(x_0)"
+        },
+        {
+          "label": "增量形式",
+          "latex": "\\Delta x\\to0\\Rightarrow \\Delta y=f(x_0+\\Delta x)-f(x_0)\\to0",
+          "note": "",
+          "original_latex": "\\Delta x\\to0\\Rightarrow \\Delta y=f(x_0+\\Delta x)-f(x_0)\\to0"
+        },
+        {
+          "label": "单侧连续",
+          "latex": "\\lim_{x\\to x_0^-}f(x)=f(x_0)\\text{（左连续）},\\quad \\lim_{x\\to x_0^+}f(x)=f(x_0)\\text{（右连续）}",
+          "note": "",
+          "original_latex": "\\lim_{x\\to x_0^-}f(x)=f(x_0)\\text{（左连续）},\\quad \\lim_{x\\to x_0^+}f(x)=f(x_0)\\text{（右连续）}"
+        }
+      ],
+      "conditions": [],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "在闭区间端点处只要求相应单侧连续。",
+        "可导一定连续，但连续不一定可导。",
+        "连续函数的有限和、积以及分母不为零的商仍连续。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "只验证极限存在还不够，必须等于函数值。",
+        "分段函数在分界点处应分别检查左右极限和函数值。"
+      ],
+      "related_cards": [
+        "H-041",
+        "H-061",
+        "H-066"
+      ],
+      "tag_suggestions": [],
+      "examples": [],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "not_applicable",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-061",
+      "title": "间断点分类",
+      "aliases": [
+        "discontinuity classification",
+        "第一类间断点",
+        "第二类间断点"
+      ],
+      "keywords": [
+        "可去间断",
+        "跳跃间断",
+        "无穷间断",
+        "振荡间断"
+      ],
+      "subject": "高数",
+      "chapter": "连续",
+      "category": "间断",
+      "card_type": "pure_formula",
+      "summary": "函数在某点不连续时，该点称为间断点。根据单侧极限的存在性和取值情况，可分为第一类和第二类间断点。",
+      "formula_blocks": [
+        {
+          "label": "可去间断",
+          "latex": "\\lim_{x\\to x_0^-}f(x)=\\lim_{x\\to x_0^+}f(x)=A\\in\\mathbb R,\\quad f(x_0)\\ne A\\text{ 或未定义}",
+          "note": "",
+          "original_latex": "\\lim_{x\\to x_0^-}f(x)=\\lim_{x\\to x_0^+}f(x)=A\\in\\mathbb R,\\quad f(x_0)\\ne A\\text{ 或未定义}"
+        },
+        {
+          "label": "跳跃间断",
+          "latex": "\\lim_{x\\to x_0^-}f(x),\\ \\lim_{x\\to x_0^+}f(x)\\text{ 均有限但不相等}",
+          "note": "",
+          "original_latex": "\\lim_{x\\to x_0^-}f(x),\\ \\lim_{x\\to x_0^+}f(x)\\text{ 均有限但不相等}"
+        },
+        {
+          "label": "无穷间断",
+          "latex": "\\text{至少一个单侧极限为 }+\\infty\\text{ 或 }-\\infty",
+          "note": "",
+          "original_latex": "\\text{至少一个单侧极限为 }+\\infty\\text{ 或 }-\\infty"
+        },
+        {
+          "label": "振荡间断",
+          "latex": "\\text{至少一个单侧极限因无限振荡而不存在}",
+          "note": "",
+          "original_latex": "\\text{至少一个单侧极限因无限振荡而不存在}"
+        }
+      ],
+      "conditions": [],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "可去间断和跳跃间断属于第一类间断点。",
+        "无穷间断和振荡间断属于第二类间断点。",
+        "可去间断可通过重新定义一个点的函数值修复；其他类型不能只改一个点修复。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "极限存在但不等于函数值属于可去间断，不是跳跃间断。",
+        "无穷间断只要求至少一个单侧极限为无穷，不要求两侧同号。"
+      ],
+      "related_cards": [
+        "H-033",
+        "H-060"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "设 \\(f(x)=\\frac{x^2-1}{x-1}\\)（x≠1），且 \\(f(1)=0\\)。判断 x=1 的间断类型。",
+          "test_point": "可去间断点判定",
+          "short_solution": "x≠1 时 f(x)=x+1，所以 \\lim_{x\\to1}f(x)=2，而 f(1)=0。左右极限相等且有限，但不等于函数值。",
+          "answer": "x=1 是可去间断点。",
+          "error_tip": "约分只能用于 x≠1，不能据此直接把原函数值改成 2。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-062",
+      "title": "初等函数的连续性",
+      "aliases": [
+        "continuity of elementary functions",
+        "连续区间"
+      ],
+      "keywords": [
+        "初等函数",
+        "连续性",
+        "复合函数",
+        "连续区间"
+      ],
+      "subject": "高数",
+      "chapter": "连续",
+      "category": "性质",
+      "card_type": "pure_formula",
+      "summary": "基本初等函数在各自定义域内连续；由有限次四则运算和复合得到的初等函数，在其定义域内连续。",
+      "formula_blocks": [
+        {
+          "label": "多项式",
+          "latex": "P(x)\\text{ 在 }\\mathbb R\\text{ 上连续}",
+          "note": "",
+          "original_latex": "P(x)\\text{ 在 }\\mathbb R\\text{ 上连续}"
+        },
+        {
+          "label": "有理函数",
+          "latex": "\\frac{P(x)}{Q(x)}\\text{ 在 }Q(x)\\ne0\\text{ 处连续}",
+          "note": "",
+          "original_latex": "\\frac{P(x)}{Q(x)}\\text{ 在 }Q(x)\\ne0\\text{ 处连续}"
+        },
+        {
+          "label": "指数与对数",
+          "latex": "a^x\\text{ 在 }\\mathbb R\\text{ 上连续};\\quad \\log_a x\\text{ 在 }(0,\\infty)\\text{ 上连续}",
+          "note": "",
+          "original_latex": "a^x\\text{ 在 }\\mathbb R\\text{ 上连续};\\quad \\log_a x\\text{ 在 }(0,\\infty)\\text{ 上连续}"
+        },
+        {
+          "label": "三角函数",
+          "latex": "\\sin x,\\cos x\\text{ 在 }\\mathbb R\\text{ 上连续};\\quad \\tan x\\text{ 在 }x\\ne\\frac\\pi2+k\\pi\\text{ 处连续}",
+          "note": "",
+          "original_latex": "\\sin x,\\cos x\\text{ 在 }\\mathbb R\\text{ 上连续};\\quad \\tan x\\text{ 在 }x\\ne\\frac\\pi2+k\\pi\\text{ 处连续}"
+        },
+        {
+          "label": "复合连续",
+          "latex": "g\\text{ 在 }x_0\\text{ 连续},\\ f\\text{ 在 }g(x_0)\\text{ 连续}\\Rightarrow f\\circ g\\text{ 在 }x_0\\text{ 连续}",
+          "note": "",
+          "original_latex": "g\\text{ 在 }x_0\\text{ 连续},\\ f\\text{ 在 }g(x_0)\\text{ 连续}\\Rightarrow f\\circ g\\text{ 在 }x_0\\text{ 连续}"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "表达式在该点有定义",
+          "note": "初等函数连续性的前提。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "求初等函数极限时，若趋近点位于连续区间内，可直接代入。",
+        "初等函数的间断点通常来自分母为零、对数真数非正、根式越界或三角函数无定义。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "“初等函数连续”是指在其定义域内连续，并非在全体实数上连续。",
+        "复合函数连续还要保证内层函数值落在外层函数的连续点。"
+      ],
+      "related_cards": [
+        "H-036",
+        "H-042",
+        "H-060"
+      ],
+      "tag_suggestions": [],
+      "examples": [],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "not_applicable",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-063",
+      "title": "闭区间上连续函数的性质",
+      "aliases": [
+        "闭区间连续函数定理",
+        "extreme value theorem",
+        "intermediate value theorem"
+      ],
+      "keywords": [
+        "最值定理",
+        "有界性定理",
+        "介值定理",
+        "零点定理",
+        "闭区间连续"
+      ],
+      "subject": "高数",
+      "chapter": "连续",
+      "category": "性质",
+      "card_type": "pure_formula",
+      "summary": "连续函数在闭区间上具有有界、取得最大最小值以及覆盖端点函数值之间全部中间值等重要性质。",
+      "formula_blocks": [
+        {
+          "label": "有界性",
+          "latex": "f\\in C[a,b]\\Rightarrow \\exists M>0:\\ |f(x)|\\le M",
+          "note": "",
+          "original_latex": "f\\in C[a,b]\\Rightarrow \\exists M>0:\\ |f(x)|\\le M"
+        },
+        {
+          "label": "最值定理",
+          "latex": "f\\in C[a,b]\\Rightarrow \\exists x_m,x_M\\in[a,b]:\\ f(x_m)=\\min f,\\ f(x_M)=\\max f",
+          "note": "",
+          "original_latex": "f\\in C[a,b]\\Rightarrow \\exists x_m,x_M\\in[a,b]:\\ f(x_m)=\\min f,\\ f(x_M)=\\max f"
+        },
+        {
+          "label": "介值定理",
+          "latex": "\\mu\\text{ 介于 }f(a),f(b)\\text{ 之间}\\Rightarrow \\exists\\xi\\in[a,b]:\\ f(\\xi)=\\mu",
+          "note": "",
+          "original_latex": "\\mu\\text{ 介于 }f(a),f(b)\\text{ 之间}\\Rightarrow \\exists\\xi\\in[a,b]:\\ f(\\xi)=\\mu"
+        },
+        {
+          "label": "零点定理",
+          "latex": "f(a)f(b)<0\\Rightarrow \\exists\\xi\\in(a,b):\\ f(\\xi)=0",
+          "note": "",
+          "original_latex": "f(a)f(b)<0\\Rightarrow \\exists\\xi\\in(a,b):\\ f(\\xi)=0"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "f\\in C[a,b]",
+          "note": "四个结论的共同核心条件。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "闭区间和连续性缺一不可。",
+        "介值定理保证存在，不保证唯一。",
+        "最值定理保证函数取得最值，而不仅仅有上确界和下确界。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "开区间上的连续函数不一定有界或取得最值。",
+        "零点定理的符号条件是充分条件，不是必要条件；偶重根两侧可同号。"
+      ],
+      "related_cards": [
+        "H-039",
+        "H-064"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "设 f 在 [0,1] 上连续，且 f(0)=1、f(1)=3。证明存在 c∈(0,1) 使 f(c)=2。",
+          "test_point": "介值定理",
+          "short_solution": "数 2 严格介于 f(0)=1 与 f(1)=3 之间。由介值定理，存在 c∈(0,1) 使 f(c)=2。",
+          "answer": "存在这样的 c。",
+          "error_tip": "介值定理只保证存在，不能据此断言 c 唯一。",
+          "difficulty": "简单",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    },
+    {
+      "id": "H-064",
+      "title": "零点定理的应用",
+      "aliases": [
+        "root existence",
+        "方程根存在性",
+        "辅助函数"
+      ],
+      "keywords": [
+        "零点定理",
+        "方程根",
+        "辅助函数",
+        "存在性证明"
+      ],
+      "subject": "高数",
+      "chapter": "连续",
+      "category": "应用",
+      "card_type": "pure_formula",
+      "summary": "证明方程在某区间存在实根时，通常把方程移到一边构造连续辅助函数，再寻找函数值异号的两个端点。",
+      "formula_blocks": [
+        {
+          "label": "辅助函数",
+          "latex": "F(x)=\\text{方程左边}-\\text{方程右边}",
+          "note": "",
+          "original_latex": "F(x)=\\text{方程左边}-\\text{方程右边}"
+        },
+        {
+          "label": "存在性判定",
+          "latex": "F\\in C[a,b],\\quad F(a)F(b)<0\\Rightarrow \\exists\\xi\\in(a,b):F(\\xi)=0",
+          "note": "",
+          "original_latex": "F\\in C[a,b],\\quad F(a)F(b)<0\\Rightarrow \\exists\\xi\\in(a,b):F(\\xi)=0"
+        },
+        {
+          "label": "唯一性补充",
+          "latex": "F'(x)>0\\text{ 或 }F'(x)<0\\text{ 在区间内恒成立}\\Rightarrow \\text{零点至多一个}",
+          "note": "",
+          "original_latex": "F'(x)>0\\text{ 或 }F'(x)<0\\text{ 在区间内恒成立}\\Rightarrow \\text{零点至多一个}"
+        }
+      ],
+      "conditions": [
+        {
+          "expression": "F\\in C[a,b]",
+          "note": "使用零点定理。"
+        },
+        {
+          "expression": "F(a)F(b)<0",
+          "note": "端点函数值严格异号。"
+        }
+      ],
+      "symbol_notes": [],
+      "common_conclusions": [
+        "区间端点应选择便于判断符号的位置。",
+        "若还要证明根唯一，需额外利用单调性、导数或其他结构。"
+      ],
+      "secondary_conclusions": [],
+      "error_tips": [
+        "端点同号不能推出没有根。",
+        "只找到 F(a)F(b)<0 只能保证至少一个根，不能自动保证唯一。"
+      ],
+      "related_cards": [
+        "H-063",
+        "H-100"
+      ],
+      "tag_suggestions": [],
+      "examples": [
+        {
+          "question": "证明方程 \\(x=e^{-x}\\) 在 (0,1) 内有且仅有一个实根。",
+          "test_point": "零点定理与单调性结合",
+          "short_solution": "令 F(x)=x-e^{-x}。F 在 [0,1] 连续，F(0)=-1<0，F(1)=1-e^{-1}>0，故存在零点。又 F'(x)=1+e^{-x}>0，F 严格递增，因此零点唯一。",
+          "answer": "方程在 (0,1) 内有且仅有一个实根。",
+          "error_tip": "零点定理只给出存在性；唯一性来自严格单调。",
+          "difficulty": "中等",
+          "is_exam_adapted": false,
+          "related_exam_year": null,
+          "related_question_no": null,
+          "source_note": ""
+        }
+      ],
+      "source_records": [],
+      "exam_occurrence_suggestions": [],
+      "confidence": 0.96,
+      "risk_flags": [],
+      "status": "draft",
+      "tag_review_status": "pending",
+      "frequency_review_status": "pending",
+      "math_review_status": "pending",
+      "example_review_status": "pending",
+      "graph_review_status": "not_applicable"
+    }
+  ],
+  "latex_validation_report": {
+    "status": "pending",
+    "checked_cards": 29,
+    "formula_block_count": 118,
+    "issues": [],
+    "note": "已完成 JSON 字符串与 LaTeX 基础结构检查；尚未在项目 KaTeX/mp-html 运行环境中逐式渲染。"
+  },
+  "duplicate_detection_report": {
+    "status": "pass",
+    "checked_cards": 29,
+    "duplicate_ids": [],
+    "duplicate_titles": [],
+    "high_similarity_pairs": [],
+    "note": "综合卡通过 related_cards 引用相关内容，未大段复制其他卡片正文。"
+  },
+  "scope_check_report": {
+    "status": "pass",
+    "scope": "数学二高等数学：函数、极限与连续",
+    "out_of_scope_cards": [],
+    "note": "未包含概率论、无穷级数、空间解析几何或数学一专属积分内容。"
+  },
+  "math_content_review_report": {
+    "status": "pending",
+    "checked_cards": 29,
+    "priority_review_cards": [
+      "H-043",
+      "H-047",
+      "H-048",
+      "H-050",
+      "H-051",
+      "H-052",
+      "H-054",
+      "H-055",
+      "H-061",
+      "H-064"
+    ],
+    "note": "已按管理员规则校正高风险内容；仍需人工确认数学表述、符号约定和教材口径。"
+  },
+  "example_answer_checklist": {
+    "status": "pending",
+    "total_examples": 22,
+    "items": [
+      {
+        "card_id": "H-037",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-041",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-042",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-043",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-043",
+        "example_index": 2,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-045",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-046",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-047",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-048",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-049",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-050",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-050",
+        "example_index": 2,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-051",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-052",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-053",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-053",
+        "example_index": 2,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-054",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-055",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-056",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-061",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-063",
+        "example_index": 1,
+        "status": "pending"
+      },
+      {
+        "card_id": "H-064",
+        "example_index": 1,
+        "status": "pending"
+      }
+    ]
+  },
+  "exam_candidate_list": {
+    "status": "not_started",
+    "items": [],
+    "note": "本批未生成真题年份、题号、次数或正式高频标签。"
+  },
+  "validation_summary": {
+    "card_count": 29,
+    "id_range": "H-036～H-064",
+    "pure_formula_cards": 29,
+    "function_graph_cards": 0,
+    "formula_block_count": 118,
+    "example_count": 22,
+    "cards_with_examples": 19,
+    "max_examples_per_card": 2,
+    "all_statuses_draft_pending": true,
+    "graph_review_not_applicable": 29,
+    "json_structure_validation": "pass",
+    "runtime_latex_render_validation": "pending",
+    "control_character_validation": "pass",
+    "formula_brace_balance": "pass"
+  },
+  "revision_note": "直接生成版：完成 H-036～H-064 全部正文、结构化公式块、条件、例题与审核报告；清理隐藏控制字符并统一未定式 LaTeX。"
+}
