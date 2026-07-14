@@ -41,11 +41,21 @@ def _find_cjk_font() -> str:
     for candidate in _CJK_FONT_CANDIDATES:
         if candidate in available:
             return candidate
-    # Fallback: fuzzy match
+    # Fallback: fuzzy match on ttflist names
     for fname in available:
         lower = fname.lower()
         if any(k in lower for k in ["cjk", "wenquanyi", "wqy", "noto", "simsun", "simhei", "songti", "heiti"]):
             return fname
+    # Fallback: try fontconfig via findfont (covers system fonts not in ttflist)
+    for candidate in _CJK_FONT_CANDIDATES:
+        try:
+            fpath = fm.findfont(candidate, fallback_to_default=False)
+            if fpath and not fpath.endswith("DejaVu Sans"):
+                fm.fontManager.addfont(fpath)
+                logger.info("CJK font discovered via findfont: %s -> %s", candidate, fpath)
+                return candidate
+        except Exception:
+            continue
     raise RuntimeError(
         "No CJK-capable font found. Install one:\n"
         "  sudo apt install fonts-wqy-zenhei\n"
@@ -84,9 +94,9 @@ GRAPH_THEME = {
     "colors": ["#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed", "#0891b2"],
     "dash_styles": {
         "solid": "solid",
-        "dashed": (6, 3),
-        "dotted": (2, 2),
-        "dashdot": (6, 2, 2, 2),
+        "dashed": (0, (6, 3)),
+        "dotted": (0, (2, 2)),
+        "dashdot": (0, (6, 2, 2, 2)),
     },
     "dpi": 100,
     "width": 1600,
@@ -107,14 +117,14 @@ GRAPH_THEME = {
     "axis": {"color": "#333333", "width": 1.0},
     "annotation_color": "#b91c1c",
     "asymptote_color": "#94a3b8",
-    "asymptote_style": (4, 4),
+    "asymptote_style": (0, (4, 4)),
 }
 
 plt.rcParams.update({
     "font.family": _CJK_FONT or "sans-serif",
     "font.sans-serif": [_CJK_FONT] if _CJK_FONT else [],
     "text.usetex": False,
-    "axes.unicode_minus": True,
+    "axes.unicode_minus": False,
 })
 
 
@@ -275,7 +285,7 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
     for vl in vlines:
         val = vl.get("value")
         if val is not None:
-            ls = theme["dash_styles"].get(vl.get("style", "dashed"), (4, 4))
+            ls = theme["dash_styles"].get(vl.get("style", "dashed"), (0, (4, 4)))
             ax.axvline(x=val, color=theme["asymptote_color"], linewidth=1.0, linestyle=ls, alpha=0.7)
             label = _sanitize_label(vl.get("label"))
             if label:
@@ -285,7 +295,7 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
     for hl in hlines:
         val = hl.get("value")
         if val is not None:
-            ls = theme["dash_styles"].get(hl.get("style", "dashed"), (4, 4))
+            ls = theme["dash_styles"].get(hl.get("style", "dashed"), (0, (4, 4)))
             ax.axhline(y=val, color=theme["asymptote_color"], linewidth=1.0, linestyle=ls, alpha=0.7)
             label = _sanitize_label(hl.get("label"))
             if label:

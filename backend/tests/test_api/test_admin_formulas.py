@@ -3,8 +3,8 @@
 Covers:
 1. Category CRUD (list, create, update, hierarchy validation)
 2. Card CRUD (list, create, get, update, soft delete)
-3. State machine transitions (draft → pending_review → approved → published → offline)
-4. Batch review
+3. State machine transitions (draft → pending_review → published, offline, etc.)
+4. Batch review with dedup and field validation
 5. Duplicate check
 6. LaTeX validation
 7. Permission enforcement
@@ -633,11 +633,10 @@ class TestCardDelete:
 
 
 class TestStateMachine:
-    """Test all valid and invalid transitions defined in _VALID_TRANSITIONS."""
+    """Test all valid / new transitions defined in _VALID_TRANSITIONS + field behavior."""
 
     def _setup_card(self, status, card_id=1):
         card = _card(id=card_id, status=status)
-        # Queue: permissions, card (for SELECT), tags (for _card_to_dict in snapshot)
         db = _Db(_permissions(), [card], [])
         return db, card
 
@@ -647,31 +646,62 @@ class TestStateMachine:
             data.update(body)
         return client.post(f"/api/admin/v1/formulas/{card_id}/review", json=data)
 
-    def _check_transition(self, from_status, action):
-        db, _ = self._setup_card(from_status)
+    def test_draft_approve_submits_for_review(self):
+        """draft + approve → pending_review (submit for review, not a real review)."""
+        db, card = self._setup_card("draft")
+        card.reviewed_by = 99       # simulate previous review data
+        card.reviewed_at = datetime(2026, 1, 1)
+        card.published_at = datetime(2026, 1, 1)
+        card.rejection_reason = "old"
         app.dependency_overrides[get_current_admin] = _override_current_admin
         app.dependency_overrides[get_db] = _db_lambda(db)
         try:
-            return self._review(1, action)
+            resp = self._review(1, "approve")
         finally:
             app.dependency_overrides.clear()
-
-    def test_draft_to_pending_review(self):
-        resp = self._check_transition("draft", "restore")
         assert resp.status_code == 200
-        assert resp.json()["status"] == "ok"
+        data = resp.json()
+        assert data["new_status"] == "pending_review"
+        # Must NOT write review/publish fields
+        assert card.reviewed_by is None
+        assert card.reviewed_at is None
+        assert card.published_at is None
+        assert card.rejection_reason is None
 
-    def test_pending_review_approve(self):
-        resp = self._check_transition("pending_review", "approve")
+    def test_pending_review_approve_publishes(self):
+        """pending_review + approve → published with all fields set."""
+        db, card = self._setup_card("pending_review")
+        card.rejection_reason = "之前驳回的原因"
+        app.dependency_overrides[get_current_admin] = _override_current_admin
+        app.dependency_overrides[get_db] = _db_lambda(db)
+        try:
+            resp = self._review(1, "approve")
+        finally:
+            app.dependency_overrides.clear()
         assert resp.status_code == 200
+        data = resp.json()
+        assert data["new_status"] == "published"
+        assert card.reviewed_by == 1
+        assert card.reviewed_at is not None
+        assert card.published_at is not None
+        assert card.rejection_reason is None  # cleared
 
-    def test_pending_review_reject(self):
-        resp = self._check_transition("pending_review", "reject")
-        # Should fail because no rejection_reason
+    def test_pending_review_reject_requires_reason(self):
+        resp = self._review(99, "reject")  # card not found → 404
+        # Actually test valid card but no reason
+        db, _ = self._setup_card("pending_review")
+        app.dependency_overrides[get_current_admin] = _override_current_admin
+        app.dependency_overrides[get_db] = _db_lambda(db)
+        try:
+            resp = self._review(1, "reject")
+        finally:
+            app.dependency_overrides.clear()
         assert resp.status_code == 422
 
     def test_pending_review_reject_with_reason(self):
-        db, _ = self._setup_card("pending_review")
+        """pending_review + reject → rejected, clears published_at."""
+        db, card = self._setup_card("pending_review")
+        card.published_at = datetime(2026, 7, 1)
         app.dependency_overrides[get_current_admin] = _override_current_admin
         app.dependency_overrides[get_db] = lambda: db
         try:
@@ -679,29 +709,102 @@ class TestStateMachine:
         finally:
             app.dependency_overrides.clear()
         assert resp.status_code == 200
+        assert resp.json()["new_status"] == "rejected"
+        assert card.reviewed_by == 1
+        assert card.reviewed_at is not None
+        assert card.rejection_reason == "内容不完整"
+        assert card.published_at is None  # cleared
 
-    def test_approved_to_published(self):
-        resp = self._check_transition("approved", "publish")
-        assert resp.status_code == 200
-
-    def test_published_to_offline(self):
-        resp = self._check_transition("published", "offline")
-        assert resp.status_code == 200
-
-    def test_offline_to_published(self):
-        resp = self._check_transition("offline", "publish")
-        assert resp.status_code == 200
-
-    def test_invalid_transition(self):
-        resp = self._check_transition("draft", "publish")
+    def test_reject_empty_reason_after_strip_fails(self):
+        db, _ = self._setup_card("pending_review")
+        app.dependency_overrides[get_current_admin] = _override_current_admin
+        app.dependency_overrides[get_db] = lambda: db
+        try:
+            resp = self._review(1, "reject", {"rejection_reason": "   "})
+        finally:
+            app.dependency_overrides.clear()
         assert resp.status_code == 422
 
-    def test_invalid_transition_from_pending_review(self):
-        resp = self._check_transition("pending_review", "publish")
+    def test_approved_to_published_legacy_compat(self):
+        """approved + publish → published (legacy compat path for pre-migration data)."""
+        resp = self._review(99, "approve")
+        db, _ = self._setup_card("approved")
+        app.dependency_overrides[get_current_admin] = _override_current_admin
+        app.dependency_overrides[get_db] = lambda: db
+        try:
+            resp = self._review(1, "publish")
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 200
+        assert resp.json()["new_status"] == "published"
+
+    def test_published_to_offline(self):
+        db, card = self._setup_card("published")
+        card.reviewed_by = 1
+        card.reviewed_at = datetime(2026, 7, 1)
+        card.published_at = datetime(2026, 7, 1)
+        app.dependency_overrides[get_current_admin] = _override_current_admin
+        app.dependency_overrides[get_db] = lambda: db
+        try:
+            resp = self._review(1, "offline")
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 200
+        assert resp.json()["new_status"] == "offline"
+        # Review/publish fields cleared on offline
+        assert card.reviewed_by is None
+        assert card.reviewed_at is None
+        assert card.published_at is None
+
+    def test_offline_to_published(self):
+        resp = self._review(99, "approve")
+        db, card = self._setup_card("offline")
+        app.dependency_overrides[get_current_admin] = _override_current_admin
+        app.dependency_overrides[get_db] = lambda: db
+        try:
+            resp = self._review(1, "publish")
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 200
+        assert resp.json()["new_status"] == "published"
+
+    def test_rejected_restore_returns_to_draft(self):
+        db, card = self._setup_card("rejected")
+        card.reviewed_by = 1
+        card.reviewed_at = datetime(2026, 7, 1)
+        app.dependency_overrides[get_current_admin] = _override_current_admin
+        app.dependency_overrides[get_db] = lambda: db
+        try:
+            resp = self._review(1, "restore")
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 200
+        assert resp.json()["new_status"] == "draft"
+        assert card.reviewed_by is None
+        assert card.reviewed_at is None
+
+    def test_invalid_transition(self):
+        db, _ = self._setup_card("draft")
+        app.dependency_overrides[get_current_admin] = _override_current_admin
+        app.dependency_overrides[get_db] = lambda: db
+        try:
+            resp = self._review(1, "publish")
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 422
+
+    def test_pending_review_cannot_directly_publish(self):
+        db, _ = self._setup_card("pending_review")
+        app.dependency_overrides[get_current_admin] = _override_current_admin
+        app.dependency_overrides[get_db] = lambda: db
+        try:
+            resp = self._review(1, "publish")
+        finally:
+            app.dependency_overrides.clear()
         assert resp.status_code == 422
 
     def test_not_found(self):
-        db = _Db(_permissions())  # permissions + no card → 404
+        db = _Db(_permissions())
         app.dependency_overrides[get_current_admin] = _override_current_admin
         app.dependency_overrides[get_db] = _db_lambda(db)
         try:
@@ -725,7 +828,7 @@ class TestStateMachine:
 
 
 class TestBatchReview:
-    def test_batch_approve(self):
+    def test_batch_approve_all_published(self):
         card1 = _card(id=1, status="pending_review")
         card2 = _card(id=2, status="pending_review")
         db = _Db(_permissions())
@@ -741,11 +844,11 @@ class TestBatchReview:
             app.dependency_overrides.clear()
         assert resp.status_code == 200
         items = resp.json()["items"]
-        assert all(i["status"] == "approved" for i in items)
+        assert all(i["status"] == "published" for i in items)
 
     def test_batch_mixed_results(self):
         card1 = _card(id=1, status="pending_review")
-        card2 = _card(id=2, status="published")  # can't approve published
+        card2 = _card(id=2, status="published")
         db = _Db(_permissions())
         db.get = AsyncMock(side_effect=[card1, card2])
         app.dependency_overrides[get_current_admin] = _override_current_admin
@@ -760,15 +863,13 @@ class TestBatchReview:
         assert resp.status_code == 200
         items = resp.json()["items"]
         statuses = {i["id"]: i["status"] for i in items}
-        assert statuses[1] == "approved"
+        assert statuses[1] == "published"
         assert statuses[2] == "invalid_transition"
 
     def test_batch_reject_without_reason_fails(self):
-        card = _card(id=1, status="pending_review")
-        db = _Db(_permissions())
-        db.get = AsyncMock(return_value=card)
+        """Batch reject without rejection_reason now returns 422 (pre-check)."""
         app.dependency_overrides[get_current_admin] = _override_current_admin
-        app.dependency_overrides[get_db] = _db_lambda(db)
+        app.dependency_overrides[get_db] = _db_lambda(_permissions())
         try:
             resp = client.post(
                 "/api/admin/v1/formulas/batch-review",
@@ -776,8 +877,7 @@ class TestBatchReview:
             )
         finally:
             app.dependency_overrides.clear()
-        assert resp.status_code == 200
-        assert resp.json()["items"][0]["status"] == "missing_reason"
+        assert resp.status_code == 422
 
     def test_batch_reject_with_reason(self):
         card = _card(id=1, status="pending_review")
@@ -794,6 +894,40 @@ class TestBatchReview:
             app.dependency_overrides.clear()
         assert resp.status_code == 200
         assert resp.json()["items"][0]["status"] == "rejected"
+
+    def test_batch_duplicate_ids_no_double_version(self):
+        card1 = _card(id=1, status="pending_review", version=5)
+        db = _Db(_permissions())
+        db.get = AsyncMock(return_value=card1)
+        app.dependency_overrides[get_current_admin] = _override_current_admin
+        app.dependency_overrides[get_db] = _db_lambda(db)
+        try:
+            resp = client.post(
+                "/api/admin/v1/formulas/batch-review",
+                json={"card_ids": [1, 1, 1], "action": "approve"},
+            )
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        assert len(items) == 1
+        assert items[0]["status"] == "published"
+        assert card1.version == 6
+
+    def test_batch_not_found(self):
+        db = _Db(_permissions())
+        db.get = AsyncMock(return_value=None)
+        app.dependency_overrides[get_current_admin] = _override_current_admin
+        app.dependency_overrides[get_db] = _db_lambda(db)
+        try:
+            resp = client.post(
+                "/api/admin/v1/formulas/batch-review",
+                json={"card_ids": [999], "action": "approve"},
+            )
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 200
+        assert resp.json()["items"][0]["status"] == "not_found"
 
     def test_batch_empty_ids(self):
         app.dependency_overrides[get_current_admin] = _override_current_admin

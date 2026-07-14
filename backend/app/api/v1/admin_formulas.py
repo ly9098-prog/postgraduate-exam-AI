@@ -30,6 +30,14 @@ from app.services.formula_graph_asset_service import (
     is_function_graph,
     upload_graph_asset,
 )
+from app.services.formula_graph_spec_service import (
+    confirm_preview,
+    delete_generated_asset as delete_spec_generated_asset,
+    generate_preview,
+    get_batch_status,
+    regenerate_asset,
+    start_batch_generate,
+)
 from app.schemas.common import paginated_response
 from app.schemas.formula import (
     FormulaBatchReview,
@@ -43,6 +51,14 @@ from app.schemas.formula import (
     FormulaImportItemReview,
     FormulaImportJobResponse,
     FormulaReviewAction,
+    GraphConfirmRequest,
+    GraphConfirmResponse,
+    GraphPreviewResponse,
+    GraphSpec,
+    QualityCheckResult,
+    GraphAssetUpdate,
+    GraphBatchGenerateResponse,
+    GraphBatchJobStatus,
 )
 
 router = APIRouter(prefix="/api/admin/v1/formulas", tags=["admin-formulas"])
@@ -261,6 +277,12 @@ async def _card_to_dict(db: AsyncSession, card: FormulaCard) -> dict:
         "source_title": card.source_title,
         "source_ref": card.source_ref,
         "content_hash": card.content_hash,
+        "graph_spec": card.graph_spec,
+        "draft_graph_spec": card.draft_graph_spec,
+        "graph_status": card.graph_status or "not_applicable",
+        "graph_last_error": card.graph_last_error,
+        "graph_generated_at": _json_safe(card.graph_generated_at),
+        "graph_confirmed_at": _json_safe(card.graph_confirmed_at),
         "version": card.version,
         "deleted_at": _json_safe(card.deleted_at),
         "created_at": _json_safe(card.created_at),
@@ -297,6 +319,8 @@ async def _card_to_dict(db: AsyncSession, card: FormulaCard) -> dict:
 
     base["graph_asset"] = _asset_to_min(effective)
     base["graph_assets"] = [_asset_to_min(a) for a in assets]
+    base["graph_image_url"] = effective.image_url if effective else None
+    base["graph_thumbnail_url"] = effective.thumbnail_url if effective else None
     base["is_function_graph"] = is_function_graph(card, effective_asset=effective)
 
     return base
@@ -537,6 +561,22 @@ async def update_formula_card(
         category = await db.get(FormulaCategory, update_data["category_id"])
         if category:
             update_data["exam_scope"] = category.exam_scope
+
+    # Card type switch → update graph_status (never delete assets)
+    if "card_type" in update_data and update_data["card_type"] != card.card_type:
+        old_type = card.card_type
+        new_type = update_data["card_type"]
+
+        if old_type == "pure_formula" and new_type in ("function_graph", "auto"):
+            # Transitioning into function_graph-capable type
+            # Check if there's an existing graph asset
+            from app.services.formula_graph_asset_service import get_graph_assets_for_card
+            existing_assets = await get_graph_assets_for_card(db, card.id)
+            has_asset = any(a.image_url for a in existing_assets)
+            update_data["graph_status"] = "ready" if has_asset else "unconfigured"
+
+        elif new_type == "pure_formula":
+            update_data["graph_status"] = "not_applicable"
 
     update_data["updated_by"] = admin.id
     update_data["version"] = card.version + 1
@@ -1111,6 +1151,42 @@ async def list_graph_assets(
     }
 
 
+@router.put("/{card_id}/graph-assets/{asset_id}/metadata")
+async def update_graph_asset_metadata(
+    card_id: int,
+    asset_id: int,
+    data: GraphAssetUpdate,
+    request: Request,
+    admin=Depends(require_permissions("formula:update")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update alt_text and description for a graph asset (no image regeneration)."""
+    result = await db.execute(
+        select(FormulaGraphAsset).where(
+            FormulaGraphAsset.id == asset_id,
+            FormulaGraphAsset.formula_card_id == card_id,
+        )
+    )
+    asset = result.scalar_one_or_none()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Graph asset not found")
+
+    if data.alt_text is not None:
+        asset.alt_text = data.alt_text
+    if data.description is not None:
+        asset.description = data.description
+
+    await _log_audit(
+        db, admin, request, "formula.graph_asset.metadata",
+        "formula_graph_asset", str(asset.id),
+        detail={"formula_card_id": card_id, "updated_fields": []},
+    )
+
+    await db.commit()
+    await db.refresh(asset)
+    return _graph_asset_to_dict(asset)
+
+
 @router.post("/{card_id}/graph-assets/upload")
 async def upload_graph_asset_endpoint(
     card_id: int,
@@ -1222,4 +1298,200 @@ async def delete_graph_asset(
 
     await db.commit()
     return {"status": "ok"}
+
+
+# ════════════════════════════════════════════════════════════
+# Graph Spec Generation
+# ════════════════════════════════════════════════════════════
+
+
+async def _get_card_or_404(db: AsyncSession, card_id: int) -> FormulaCard:
+    """Get a non-deleted card or raise 404."""
+    result = await db.execute(
+        select(FormulaCard).where(
+            FormulaCard.id == card_id, FormulaCard.deleted_at.is_(None)
+        )
+    )
+    card = result.scalar_one_or_none()
+    if not card:
+        raise HTTPException(status_code=404, detail="Formula not found")
+    return card
+
+
+@router.post("/{card_id}/graph/preview")
+async def preview_formula_graph(
+    card_id: int,
+    spec: GraphSpec,
+    request: Request,
+    admin=Depends(require_permissions("formula:update")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a preview image from a graph_spec.
+
+    Does NOT create an official asset. Sets ``graph_status = \"draft\"``.
+    """
+    card = await _get_card_or_404(db, card_id)
+
+    if card.card_type == "pure_formula":
+        raise HTTPException(
+            status_code=422,
+            detail="纯公式类型不支持自动生成函数图像",
+        )
+
+    try:
+        result = await generate_preview(db, card, spec.model_dump(), admin.id)
+    except ValueError as e:
+        status_code = 422
+        if len(e.args) > 1 and e.args[1] == "429":
+            status_code = 429
+        raise HTTPException(status_code=status_code, detail=str(e.args[0] if e.args else e))
+
+    await _log_audit(
+        db, admin, request, "formula.graph.generate",
+        "formula_card", str(card_id),
+        detail={"template": spec.template},
+    )
+    await db.commit()
+    return result
+
+
+@router.post("/{card_id}/graph/confirm")
+async def confirm_formula_graph(
+    card_id: int,
+    data: GraphConfirmRequest,
+    request: Request,
+    admin=Depends(require_permissions("formula:update")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Promote a preview to an official generated asset.
+
+    Requires ``preview_token``, ``card_version`` for optimistic locking.
+    Set ``accept_warnings=True`` to bypass quality warnings.
+    """
+    card = await _get_card_or_404(db, card_id)
+
+    try:
+        asset = await confirm_preview(
+            db, card,
+            preview_token=data.preview_token,
+            card_version=data.card_version,
+            accept_warnings=data.accept_warnings,
+            admin_id=admin.id,
+            alt_text=data.alt_text,
+            description=data.description,
+        )
+    except ValueError as e:
+        status_code = int(e.args[1]) if len(e.args) > 1 else 422
+        raise HTTPException(status_code=status_code, detail=str(e.args[0] if e.args else e))
+
+    audit_action = "formula.graph.confirm.warn_accepted" if data.accept_warnings else "formula.graph.confirm"
+    await _log_audit(
+        db, admin, request, audit_action,
+        "formula_graph_asset", str(asset.id),
+        detail={
+            "formula_card_id": card_id,
+            "checksum": data.checksum,
+            "version": data.card_version,
+            "accept_warnings": data.accept_warnings,
+        },
+    )
+    await db.commit()
+    await db.refresh(asset)
+    return {
+        "asset": _graph_asset_to_dict(asset),
+        "graph_status": "ready",
+    }
+
+
+@router.post("/{card_id}/graph/regenerate")
+async def regenerate_formula_graph(
+    card_id: int,
+    request: Request,
+    admin=Depends(require_permissions("formula:update")),
+    db: AsyncSession = Depends(get_db),
+    spec: GraphSpec | None = None,
+):
+    """Regenerate and replace the official generated asset.
+
+    Optional ``spec`` body updates the graph_spec before regenerating.
+    """
+    card = await _get_card_or_404(db, card_id)
+    spec_dict = spec.model_dump() if spec else None
+
+    try:
+        asset = await regenerate_asset(db, card, spec_dict, admin.id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e.args[0] if e.args else e))
+
+    await _log_audit(
+            db, admin, request, "formula.graph.replace",
+            "formula_graph_asset", str(asset.id),
+            detail={"formula_card_id": card_id},
+        )
+
+    await db.commit()
+    await db.refresh(asset)
+    return {
+        "asset": _graph_asset_to_dict(asset),
+        "graph_status": "ready",
+    }
+
+
+@router.delete("/{card_id}/graph/generated")
+async def delete_generated_graph(
+    card_id: int,
+    request: Request,
+    admin=Depends(require_permissions("formula:update")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete only the generated graph asset (preserves manual uploads)."""
+    card = await _get_card_or_404(db, card_id)
+
+    deleted = await delete_spec_generated_asset(db, card)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="No generated asset found")
+
+    await _log_audit(
+        db, admin, request, "formula.graph.delete",
+        "formula_graph_asset", None,
+        detail={"formula_card_id": card_id},
+    )
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.post("/graphs/generate-missing")
+async def batch_generate_missing_graphs(
+    request: Request,
+    admin=Depends(require_permissions("formula:update")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Batch-generate graphs for cards with ``graph_status`` in (missing, failed).
+
+    Returns a ``job_id`` for polling. Actual generation runs in background.
+    """
+    try:
+        job_id = await start_batch_generate(db, admin.id)
+    except ValueError as e:
+        status_code = int(e.args[1]) if len(e.args) > 1 else 422
+        raise HTTPException(status_code=status_code, detail=str(e.args[0] if e.args else e))
+
+    await _log_audit(
+        db, admin, request, "formula.graph.batch_generate",
+        "formula_card", None,
+        detail={"job_id": job_id},
+    )
+    return {"job_id": job_id}
+
+
+@router.get("/graphs/generate-missing/{job_id}")
+async def get_batch_generate_status(
+    job_id: str,
+    _=Depends(require_permissions("formula:read")),
+):
+    """Get batch generation job status."""
+    job = await get_batch_status(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Batch job not found")
+    return job
 
