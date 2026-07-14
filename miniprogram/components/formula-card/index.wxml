@@ -66,7 +66,7 @@
     </view>
   </view>
 
-  <view class="fc-graph-section" wx:if="{{card.card_type === 'function_graph' && graphImageUrl}}">
+  <view class="fc-graph-section" wx:if="{{card.card_type === 'function_graph' && graphImageUrl && !graphLoadError}}">
     <view class="fc-section-heading">
       <view>
         <text class="fc-section-kicker">FUNCTION GRAPH</text>
@@ -74,7 +74,22 @@
       </view>
       <text class="fc-preview-hint">点击查看大图</text>
     </view>
-    <image class="fc-graph-image" src="{{graphImageUrl}}" mode="widthFix" bindtap="previewGraph" />
+    <view class="fc-graph-viewport" bindtap="previewGraph">
+      <image class="fc-graph-image" src="{{graphImageUrl}}" mode="widthFix" lazy-load bindload="onGraphLoad" binderror="onGraphError" />
+    </view>
+  </view>
+
+  <view class="fc-graph-section fc-graph-error" wx:elif="{{card.card_type === 'function_graph' && (graphLoadError || !graphImageUrl)}}">
+    <view class="fc-section-heading">
+      <view>
+        <text class="fc-section-kicker">FUNCTION GRAPH</text>
+        <text class="fc-section-title">函数图像</text>
+      </view>
+    </view>
+    <view class="fc-graph-fallback">
+      <text class="fc-graph-fallback-title">函数图像暂时无法加载</text>
+      <text class="fc-graph-fallback-desc">仍可继续查看公式与函数性质</text>
+    </view>
   </view>
 
   <view class="fc-reading-section" wx:if="{{content.summaryNodes && content.summaryNodes.length}}">

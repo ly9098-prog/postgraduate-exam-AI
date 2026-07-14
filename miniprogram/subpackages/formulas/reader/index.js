@@ -1,5 +1,6 @@
 const api = require('../../../utils/api')
 const auth = require('../../../utils/auth')
+const { resolveGraphImageUrl, resolveGraphThumbnailUrl } = require('../../../utils/formula-graph')
 
 const MAX_RANDOM_HISTORY = 24
 const READER_SEQUENCE_KEY = 'formula_reader_sequence_v2'
@@ -75,6 +76,7 @@ Page({
       if (options.subject_code) params.subject_code = options.subject_code
       if (options.chapter_id) params.chapter_id = options.chapter_id
       if (options.tags) params.tags = options.tags
+      if (options.library_type) params.library_type = options.library_type
       this.setData({ randomParams: params })
       this.loadRandomCard({ append: false })
       return
@@ -315,6 +317,8 @@ Page({
     const favoriteIds = await this._getFavoriteIds()
     return {
       ...card,
+      graphImageUrl: resolveGraphImageUrl(card),
+      graphThumbnailUrl: resolveGraphThumbnailUrl(card),
       isFavorited: Boolean(card.isFavorited || card.is_favorited || favoriteIds.some((id) => sameId(id, normalizeId(card.id)))),
     }
   },

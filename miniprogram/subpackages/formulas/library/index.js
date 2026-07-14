@@ -1,8 +1,65 @@
 const api = require('../../../utils/api')
 const auth = require('../../../utils/auth')
+const formulaContent = require('../../../utils/formula-content')
+const Parser = require('../../../components/mp-html/parser')
+const LatexPlugin = require('../../../components/mp-html/latex/index')
+const { resolveGraphImageUrl, resolveGraphThumbnailUrl } = require('../../../utils/formula-graph')
+
+function renderFormulaTitleNodes(title) {
+  const source = formulaContent.normalizeMixedContent(title)
+  if (!source) return []
+
+  try {
+    const host = {
+      properties: {
+        editable: false,
+        containerStyle: '',
+        mathLayout: 'natural',
+      },
+      imgList: [],
+      plugins: [new LatexPlugin()],
+    }
+    return new Parser(host).parse(source)
+  } catch (error) {
+    console.warn('Formula library title render failed, falling back to plain text', error)
+    return [{ type: 'text', text: String(title || '') }]
+  }
+}
 
 const READER_SEQUENCE_KEY = 'formula_reader_sequence_v2'
 const SEARCH_DEBOUNCE_MS = 500
+const LIBRARY_TYPE_FORMULA = 'formula'
+const LIBRARY_TYPE_FUNCTION_GRAPH = 'function_graph'
+const MAX_GRAPH_FALLBACK_PAGES = 10
+
+function normalizeCardType(item) {
+  return String(
+    item?.card_type ||
+    item?.cardType ||
+    item?.content_type ||
+    item?.contentType ||
+    ''
+  ).trim().toLowerCase()
+}
+
+function hasGraphAsset(item) {
+  const graphAsset = item?.graph_asset || item?.graphAsset
+  if (typeof graphAsset === 'string') return Boolean(graphAsset.trim())
+  if (graphAsset && typeof graphAsset === 'object' && Object.keys(graphAsset).length > 0) return true
+  return Boolean(resolveGraphImageUrl(item) || resolveGraphThumbnailUrl(item))
+}
+
+function isFunctionGraphItem(item) {
+  const cardType = normalizeCardType(item)
+  if (cardType === LIBRARY_TYPE_FUNCTION_GRAPH) return true
+  if (cardType === 'pure_formula') return false
+  return hasGraphAsset(item)
+}
+
+function filterFormulaItemsByLibraryType(items, libraryType) {
+  if (libraryType !== LIBRARY_TYPE_FUNCTION_GRAPH) return items || []
+  return (items || []).filter((item) => item.isFunctionGraph || isFunctionGraphItem(item))
+}
 
 Page({
   data: {
@@ -12,6 +69,14 @@ Page({
       { code: 'math2_linear_algebra', name: '线性代数', active: false },
     ],
     activeSubject: 'math2_high_math',
+    activeSubjectName: '高等数学',
+
+    // Content type tabs
+    libraryTabs: [
+      { key: LIBRARY_TYPE_FORMULA, name: '公式', active: true },
+      { key: LIBRARY_TYPE_FUNCTION_GRAPH, name: '函数图像', active: false },
+    ],
+    activeLibraryType: LIBRARY_TYPE_FORMULA,
 
     // Catalog tree
     catalog: [],
@@ -37,8 +102,11 @@ Page({
     hasMore: true,
 
     // UI state
+    navHeight: 88,
     showChapterPicker: false,
     showTagPicker: false,
+    showSubjectPicker: false,
+    showMoreSheet: false,
 
     // Loading states
     initialLoading: true,
@@ -48,12 +116,32 @@ Page({
   },
 
   onLoad(options = {}) {
+    this.measureNavigation()
     const onlyFavorites = options.favorites === '1'
     if (onlyFavorites) this.setData({ onlyFavorites: true })
     this.loadCatalog()
     this.loadTags()
     this.loadFavoriteIds()
     this.loadFormulas(true)
+  },
+
+
+  measureNavigation() {
+    let statusBarHeight = 20
+    try {
+      const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
+      statusBarHeight = Number(info.statusBarHeight || 20)
+    } catch (_) {}
+
+    let menu = null
+    try {
+      menu = wx.getMenuButtonBoundingClientRect && wx.getMenuButtonBoundingClientRect()
+    } catch (_) {}
+
+    const menuTop = menu && menu.top ? Number(menu.top) : statusBarHeight + 6
+    const menuHeight = menu && menu.height ? Number(menu.height) : 32
+    const verticalGap = Math.max(4, menuTop - statusBarHeight)
+    this.setData({ navHeight: statusBarHeight + menuHeight + verticalGap * 2 })
   },
 
   onPullDownRefresh() {
@@ -124,13 +212,18 @@ Page({
 
   onSubjectChange(e) {
     const code = e.currentTarget.dataset.code
-    if (code === this.data.activeSubject) return
+    const selectedSubject = (this.data.subjects || []).find((subject) => subject.code === code)
+    if (code === this.data.activeSubject) {
+      this.setData({ showSubjectPicker: false })
+      return
+    }
     const subjects = this.data.subjects.map(s => ({
       ...s, active: s.code === code,
     }))
     this.setData({
       subjects,
       activeSubject: code,
+      activeSubjectName: selectedSubject?.name || '选择学科',
       activeChapterId: null,
       activeTags: [],
       searchValue: '',
@@ -139,8 +232,89 @@ Page({
       page: 1,
       formulas: [],
       hasMore: true,
+      showSubjectPicker: false,
+      showMoreSheet: false,
     })
     this.updateChapters()
+    this.loadFormulas(true)
+  },
+
+  toggleSubjectPicker() {
+    this.setData({
+      showSubjectPicker: !this.data.showSubjectPicker,
+      showMoreSheet: false,
+      showTagPicker: false,
+    })
+  },
+
+  toggleMoreSheet() {
+    this.setData({
+      showMoreSheet: !this.data.showMoreSheet,
+      showSubjectPicker: false,
+      showTagPicker: false,
+    })
+  },
+
+  openTagPickerFromMore() {
+    this.setData({
+      showMoreSheet: false,
+      showTagPicker: true,
+      showSubjectPicker: false,
+    })
+  },
+
+  resetFilters() {
+    const hasActiveFilters = Boolean(
+      this.data.searchValue ||
+      this.data.activeChapterId ||
+      (this.data.activeTags || []).length ||
+      this.data.onlyFavorites
+    )
+    if (!hasActiveFilters) {
+      this.setData({ showMoreSheet: false })
+      return
+    }
+    if (this._searchTimer) clearTimeout(this._searchTimer)
+    this._searchTimer = null
+    const chapters = (this.data.chapters || []).map((chapter) => ({ ...chapter, active: false }))
+    this.setData({
+      chapters,
+      activeChapterId: null,
+      activeTags: [],
+      searchValue: '',
+      onlyFavorites: false,
+      page: 1,
+      formulas: [],
+      total: 0,
+      hasMore: true,
+      showMoreSheet: false,
+      showTagPicker: false,
+    })
+    this.loadFormulas(true)
+  },
+
+  // ── Content Type Switch ──
+
+  onLibraryTypeChange(e) {
+    const type = e.currentTarget.dataset.type
+    if (!type || type === this.data.activeLibraryType) return
+    const libraryTabs = (this.data.libraryTabs || []).map((tab) => ({
+      ...tab,
+      active: tab.key === type,
+    }))
+    this.setData({
+      libraryTabs,
+      activeLibraryType: type,
+      page: 1,
+      formulas: [],
+      total: 0,
+      hasMore: true,
+      loadError: false,
+      showChapterPicker: false,
+      showTagPicker: false,
+      showSubjectPicker: false,
+      showMoreSheet: false,
+    })
     this.loadFormulas(true)
   },
 
@@ -177,6 +351,8 @@ Page({
     this.setData({
       showTagPicker: !this.data.showTagPicker,
       showChapterPicker: false,
+      showSubjectPicker: false,
+      showMoreSheet: false,
     })
   },
 
@@ -255,41 +431,64 @@ Page({
     if (replace) this._replaceRequestVersion = (this._replaceRequestVersion || 0) + 1
     const requestVersion = this._replaceRequestVersion || 0
     const { loading, loadingMore, initialLoading, page, pageSize, activeSubject, activeChapterId,
-            activeTags, searchValue, onlyFavorites, hasMore } = this.data
+            activeTags, searchValue, onlyFavorites, hasMore, activeLibraryType } = this.data
     if (loading || loadingMore || (initialLoading && !replace) || !hasMore) return
     const loadingFlag = replace ? 'initialLoading' : 'loadingMore'
     this.setData({ [loadingFlag]: true, loadError: false })
 
     try {
-      const params = {
+      const baseParams = {
         subject_code: activeSubject,
-        page,
         page_size: pageSize,
+        library_type: activeLibraryType || LIBRARY_TYPE_FORMULA,
       }
-      if (activeChapterId) params.chapter_id = activeChapterId
+      if (activeChapterId) baseParams.chapter_id = activeChapterId
       if (activeTags.length) {
         const tagCodes = this.data.tags
           .filter(t => activeTags.includes(t.id))
           .map(t => t.code)
           .join(',')
-        if (tagCodes) params.tags = tagCodes
+        if (tagCodes) baseParams.tags = tagCodes
       }
-      if (searchValue) params.q = searchValue
-      if (onlyFavorites) params.favorite_only = true
+      if (searchValue) baseParams.q = searchValue
+      if (onlyFavorites) baseParams.favorite_only = true
 
       const url = onlyFavorites
         ? '/formulas/favorites/list'
         : '/formulas'
 
-      const data = await api.request('GET', url, params)
-      const items = this.decorateFormulaItems(data?.items || [])
+      let requestPage = page
+      let responseData = null
+      let rawItems = []
+      let items = []
+      let attempts = 0
+
+      // The backend is expected to filter before pagination. The small client
+      // still performs the same classification as a compatibility fallback so
+      // older deployments do not mix pure formulas into the graph tab. When a
+      // legacy page contains no graph, scan a few following pages automatically
+      // to avoid showing a false empty state.
+      do {
+        responseData = await api.request('GET', url, { ...baseParams, page: requestPage })
+        rawItems = responseData?.items || []
+        const decorated = this.decorateFormulaItems(rawItems)
+        items = filterFormulaItemsByLibraryType(decorated, activeLibraryType)
+        requestPage += 1
+        attempts += 1
+      } while (
+        activeLibraryType === LIBRARY_TYPE_FUNCTION_GRAPH &&
+        items.length === 0 &&
+        rawItems.length === pageSize &&
+        attempts < MAX_GRAPH_FALLBACK_PAGES
+      )
+
       if (requestVersion !== (this._replaceRequestVersion || 0)) return
 
       this.setData({
         formulas: replace ? items : [...this.data.formulas, ...items],
-        total: data?.total || 0,
-        page: page + 1,
-        hasMore: items.length === pageSize,
+        total: Number(responseData?.filtered_total ?? responseData?.total ?? 0),
+        page: requestPage,
+        hasMore: rawItems.length === pageSize,
         initialLoading: false,
         loadingMore: false,
       })
@@ -305,12 +504,41 @@ Page({
     }
   },
 
+  isFunctionGraphItem(item) {
+    return isFunctionGraphItem(item)
+  },
+
+  filterFormulaItemsByLibraryType(items, libraryType) {
+    return filterFormulaItemsByLibraryType(items, libraryType)
+  },
+
   decorateFormulaItems(items) {
     const favoriteIds = this.data.favoriteIds || []
-    return (items || []).map((item) => ({
-      ...item,
-      isFavorited: Boolean(item.isFavorited || item.is_favorited || favoriteIds.includes(Number(item.id))),
-    }))
+    return (items || []).map((item) => {
+      const graphImageUrl = resolveGraphImageUrl(item)
+      const graphThumbnailUrl = resolveGraphThumbnailUrl(item)
+      const isFunctionGraph = isFunctionGraphItem(item)
+      return {
+        ...item,
+        titleNodes: renderFormulaTitleNodes(item.title),
+        graphImageUrl,
+        graphThumbnailUrl,
+        graphPreviewUrl: graphImageUrl || graphThumbnailUrl,
+        isFunctionGraph,
+        graphLoadError: false,
+        isFavorited: Boolean(item.isFavorited || item.is_favorited || favoriteIds.includes(Number(item.id))),
+      }
+    })
+  },
+
+  onGraphImageError(e) {
+    const formulaId = e.currentTarget.dataset.id
+    const formulas = (this.data.formulas || []).map((item) => (
+      String(item.id) === String(formulaId)
+        ? { ...item, graphLoadError: true }
+        : item
+    ))
+    this.setData({ formulas })
   },
 
   async loadFavoriteIds() {
@@ -399,6 +627,7 @@ Page({
         subjectCode: this.data.activeSubject,
         chapterId: this.data.activeChapterId,
         searchValue: this.data.searchValue,
+        libraryType: this.data.activeLibraryType,
       })
     } catch (_) {}
 
@@ -414,8 +643,11 @@ Page({
   },
 
   goToRandom() {
-    const { activeSubject, activeChapterId, activeTags } = this.data
-    const params = { subject_code: activeSubject }
+    const { activeSubject, activeChapterId, activeTags, activeLibraryType } = this.data
+    const params = {
+      subject_code: activeSubject,
+      library_type: activeLibraryType || LIBRARY_TYPE_FORMULA,
+    }
     if (activeChapterId) params.chapter_id = activeChapterId
     if (activeTags.length) {
       params.tags = this.data.tags
