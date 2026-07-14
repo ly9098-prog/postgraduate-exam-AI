@@ -65,6 +65,7 @@ miniprogram/miniprogram_npm/
 # OS
 .DS_Store
 Thumbs.db
+*:Zone.Identifier
 
 # Deployment secrets
 *.pem
