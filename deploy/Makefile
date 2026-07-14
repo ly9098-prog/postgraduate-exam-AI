@@ -20,8 +20,10 @@ status:
 build:
 	$(COMPOSE) build app
 
+# 生产 PostgreSQL 备份（Python 脚本）
+# 也支持 Docker 模式：$(COMPOSE) run --rm backup
 backup:
-	bash deploy/scripts/backup.sh
+	cd $(dir $(lastword $(MAKEFILE_LIST))).. && python scripts/postgres_backup.py
 
 deploy update:
 	bash deploy/scripts/deploy.sh update
