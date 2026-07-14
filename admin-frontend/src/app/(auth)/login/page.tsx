@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AdminFooter } from "@/components/layout/admin-footer";
 import { useAuthStore } from "@/lib/auth/auth-store";
+import { safeInternalRedirect } from "@/lib/safe-redirect";
 
 function LoginForm() {
   const router = useRouter();
@@ -23,7 +24,7 @@ function LoginForm() {
     setLoading(true);
     try {
       await login(username, password);
-      router.replace(searchParams.get("next") ?? "/dashboard");
+      router.replace(safeInternalRedirect(searchParams.get("next")));
     } catch {
       setError("用户名或密码错误");
     } finally {

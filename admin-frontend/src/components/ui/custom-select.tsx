@@ -13,12 +13,32 @@ export interface SelectOption {
 }
 
 /**
+ * Find the next enabled index in the given direction, skipping disabled options.
+ */
+export function getNextEnabledIndex(
+  current: number,
+  direction: 1 | -1,
+  items: SelectOption[],
+): number {
+  if (items.length === 0) return -1;
+  const enabledIndices = items
+    .map((o, i) => (o.disabled ? -1 : i))
+    .filter((i) => i >= 0);
+  if (enabledIndices.length === 0) return -1;
+
+  const currentEnabledPos = enabledIndices.indexOf(current);
+  let nextPos = (currentEnabledPos + direction) % enabledIndices.length;
+  if (nextPos < 0) nextPos = enabledIndices.length - 1;
+  return enabledIndices[nextPos];
+}
+
+/**
  * CustomSelect — dropdown with optional search, portal rendering, keyboard nav.
  *
  * - `searchable`: renders a search input inside the dropdown for filtering options.
- * - Supports ArrowUp/Down/Enter/Escape keyboard navigation.
+ * - Supports ArrowUp/Down/Home/End/Enter/Escape keyboard navigation.
+ * - Disabled options are skipped during keyboard navigation.
  * - Portaled to document.body so it's never clipped by overflow parents.
- * - Animates with a small drop-in + fade-in on open.
  */
 export function CustomSelect({
   value,
@@ -46,7 +66,7 @@ export function CustomSelect({
   const ref = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const activeIndexRef = useRef(-1);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const [dropdownEl, setDropdownEl] = useState<HTMLDivElement | null>(null);
 
   const selected = options.find((o) => o.value === value);
@@ -58,43 +78,44 @@ export function CustomSelect({
       )
     : options;
 
+  // Correct active index after filtering changes
+  useEffect(() => {
+    if (activeIndex >= filtered.length) {
+      setActiveIndex(filtered.length > 0 ? 0 : -1);
+    }
+  }, [filtered.length, activeIndex]);
+
   const close = useCallback(() => {
     setOpen(false);
+    setActiveIndex(-1);
   }, []);
 
   useEffect(() => {
     const handler = (e: PointerEvent) => {
       const target = e.target as Node;
-      if (
-        ref.current?.contains(target) ||
-        dropdownEl?.contains(target)
-      ) {
-        return;
-      }
+      if (ref.current?.contains(target) || dropdownEl?.contains(target)) return;
       close();
     };
-    // Use pointerdown capture so the handler fires before any click/selection logic
     document.addEventListener("pointerdown", handler, { capture: true });
     return () => document.removeEventListener("pointerdown", handler, { capture: true });
   }, [close, dropdownEl]);
 
   useEffect(() => {
-    if (open) {
-      const escHandler = (e: KeyboardEvent) => {
-        if (e.key === "Escape") {
-          close();
-          ref.current?.querySelector("button")?.focus();
-        }
-      };
-      document.addEventListener("keydown", escHandler);
-      return () => document.removeEventListener("keydown", escHandler);
-    }
+    if (!open) return;
+    const escHandler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        close();
+        ref.current?.querySelector("button")?.focus();
+      }
+    };
+    document.addEventListener("keydown", escHandler);
+    return () => document.removeEventListener("keydown", escHandler);
   }, [open, close]);
 
   useEffect(() => {
     if (!open) {
       setSearch("");
-      activeIndexRef.current = -1;
+      setActiveIndex(-1);
     } else if (searchable) {
       setTimeout(() => searchRef.current?.focus(), 50);
     }
@@ -102,33 +123,62 @@ export function CustomSelect({
 
   // Scroll active item into view
   useEffect(() => {
-    if (!open || activeIndexRef.current < 0) return;
-    const el = listRef.current?.children[activeIndexRef.current] as HTMLElement | undefined;
+    if (!open || activeIndex < 0) return;
+    const el = listRef.current?.children[activeIndex] as HTMLElement | undefined;
     el?.scrollIntoView({ block: "nearest" });
-  }, [open, activeIndexRef.current]);
+  }, [open, activeIndex]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       if (!disabled) setOpen((v) => !v);
+      return;
     }
     if (e.key === "Escape") {
       setOpen(false);
+      setActiveIndex(-1);
       ref.current?.querySelector("button")?.focus();
+      return;
     }
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      if (!open) {
+    if (!open) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
         setOpen(true);
         return;
       }
+      return;
+    }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
       const dir = e.key === "ArrowDown" ? 1 : -1;
-      let next = activeIndexRef.current + dir;
-      if (next < 0) next = filtered.length - 1;
-      if (next >= filtered.length) next = 0;
-      activeIndexRef.current = next;
-      const el = listRef.current?.children[next] as HTMLElement | undefined;
-      el?.focus();
+      const start = activeIndex < 0 ? -1 : activeIndex;
+      setActiveIndex(getNextEnabledIndex(start, dir, filtered));
+      return;
+    }
+    if (e.key === "Home") {
+      e.preventDefault();
+      const first = filtered.findIndex((o) => !o.disabled);
+      setActiveIndex(first >= 0 ? first : -1);
+      return;
+    }
+    if (e.key === "End") {
+      e.preventDefault();
+      const last = filtered
+        .map((o, i) => (o.disabled ? -1 : i))
+        .filter((i) => i >= 0)
+        .pop();
+      setActiveIndex(last ?? -1);
+      return;
+    }
+    if (e.key === "Enter" && activeIndex >= 0 && activeIndex < filtered.length) {
+      e.preventDefault();
+      const option = filtered[activeIndex];
+      if (option && !option.disabled) {
+        onChange(option.value);
+        setOpen(false);
+        setActiveIndex(-1);
+      }
+      return;
     }
   };
 
@@ -141,6 +191,7 @@ export function CustomSelect({
         role="combobox"
         aria-expanded={open}
         aria-haspopup="listbox"
+        aria-controls={open ? "custom-select-listbox" : undefined}
         className={cn(
           "inline-flex h-11 w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-xl border bg-[var(--color-bg-input)] pl-3 pr-2 text-sm outline-none transition-all duration-150",
           "cursor-pointer disabled:cursor-default disabled:opacity-50",
@@ -198,6 +249,7 @@ export function CustomSelect({
 
       {open && (
         <PortalDropdown
+          id="custom-select-listbox"
           triggerRef={ref}
           setDropdownEl={setDropdownEl}
           searchable={searchable}
@@ -206,9 +258,10 @@ export function CustomSelect({
           searchRef={searchRef}
           filtered={filtered}
           value={value}
-          onChange={(v) => { onChange(v); setOpen(false); }}
+          onChange={(v) => { onChange(v); setOpen(false); setActiveIndex(-1); }}
           listRef={listRef}
-          activeIndexRef={activeIndexRef}
+          activeIndex={activeIndex}
+          onActiveIndexChange={setActiveIndex}
           searchPlaceholder={searchPlaceholder}
         />
       )}
@@ -217,6 +270,7 @@ export function CustomSelect({
 }
 
 function PortalDropdown({
+  id,
   triggerRef,
   setDropdownEl,
   searchable,
@@ -227,9 +281,11 @@ function PortalDropdown({
   value,
   onChange,
   listRef,
-  activeIndexRef,
+  activeIndex,
+  onActiveIndexChange,
   searchPlaceholder,
 }: {
+  id: string;
   triggerRef: React.RefObject<HTMLDivElement | null>;
   setDropdownEl: (el: HTMLDivElement | null) => void;
   searchable: boolean;
@@ -240,7 +296,8 @@ function PortalDropdown({
   value: string;
   onChange: (v: string) => void;
   listRef: React.RefObject<HTMLDivElement | null>;
-  activeIndexRef: React.MutableRefObject<number>;
+  activeIndex: number;
+  onActiveIndexChange: (idx: number) => void;
   searchPlaceholder: string;
 }) {
   const [style, setStyle] = useState<React.CSSProperties>({
@@ -260,12 +317,8 @@ function PortalDropdown({
     const dir = spaceBelow >= spaceAbove ? "down" : "up";
     const maxH = dir === "down" ? Math.min(spaceBelow, 320) : Math.min(spaceAbove, 320);
 
-    // searchable dropdowns (with suffix) need more room
     const minDropdownWidth = searchable ? 280 : Math.max(rect.width, 180);
-    const dropdownWidth = Math.min(
-      Math.max(rect.width, minDropdownWidth),
-      window.innerWidth - 16,
-    );
+    const dropdownWidth = Math.min(Math.max(rect.width, minDropdownWidth), window.innerWidth - 16);
 
     let top: number | undefined;
     let bottom: number | undefined;
@@ -290,7 +343,6 @@ function PortalDropdown({
       left: Math.max(8, Math.min(rect.left, window.innerWidth - dropdownWidth - 8)),
     });
 
-    // Trigger mount animation
     requestAnimationFrame(() => setMounted(true));
   }, [triggerRef, searchable]);
 
@@ -298,6 +350,7 @@ function PortalDropdown({
     <div
       ref={(el) => setDropdownEl(el)}
       role="listbox"
+      id={id}
       className={cn(
         "rounded-xl border border-[var(--color-border)]/80 bg-white shadow-lg transition-all duration-150",
         mounted ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0",
@@ -312,12 +365,12 @@ function PortalDropdown({
             className="h-8 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] pl-7 pr-2 text-xs outline-none focus:border-[var(--color-primary)]"
             placeholder={searchPlaceholder}
             value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
+            onChange={(e) => {
+              onSearchChange(e.target.value);
+              onActiveIndexChange(-1);
+            }}
             onKeyDown={(e) => {
-              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                e.stopPropagation();
-              }
-              if (e.key === "Escape") {
+              if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Escape") {
                 e.stopPropagation();
               }
             }}
@@ -334,7 +387,7 @@ function PortalDropdown({
         ) : (
           filtered.map((opt, idx) => {
             const isSelected = opt.value === value;
-            const isActive = activeIndexRef.current === idx;
+            const isActive = activeIndex === idx;
             return (
               <button
                 key={opt.value}
@@ -352,9 +405,8 @@ function PortalDropdown({
                   !isSelected && !isActive && "hover:bg-[var(--color-primary-light)]/40",
                   opt.disabled && "cursor-not-allowed opacity-40",
                 )}
-                onMouseEnter={() => { activeIndexRef.current = idx; }}
+                onMouseEnter={() => { onActiveIndexChange(idx); }}
               >
-                {/* Checkmark */}
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                   {isSelected && (
                     <svg className="h-4 w-4 text-[var(--color-primary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">

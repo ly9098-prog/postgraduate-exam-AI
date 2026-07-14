@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { apiRequest, setApiAccessToken, setApiAccessTokenProvider } from "@/lib/api/client";
+import { apiRequest, setApiAccessToken, setApiAccessTokenProvider, setOnAuthExpired } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/errors";
 import type { AuthUser, LoginResponse, MeResponse, Role } from "@/lib/api/types";
 
@@ -43,7 +43,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   async logout() {
     try {
-      if (get().accessToken) await apiRequest<{ status: string }>("/auth/logout", { method: "POST" });
+      if (get().accessToken) await apiRequest<{ status: string }>("/auth/logout", { method: "POST", skipRefresh: true });
     } catch (error) {
       if (!(error instanceof ApiError && error.status === 401)) throw error;
     } finally {
@@ -76,7 +76,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     try {
-      const refresh = await apiRequest<LoginResponse>("/auth/refresh", { method: "POST" });
+      const refresh = await apiRequest<LoginResponse>("/auth/refresh", { method: "POST", skipRefresh: true });
       set({
         accessToken: refresh.access_token,
         user: refresh.user,
@@ -107,3 +107,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 }));
 
 setApiAccessTokenProvider(() => useAuthStore.getState().accessToken);
+
+// When the API client detects an expired session during automated refresh,
+// clear auth state so the AuthGuard / middleware redirects to login.
+setOnAuthExpired(() => {
+  useAuthStore.getState().clear();
+});

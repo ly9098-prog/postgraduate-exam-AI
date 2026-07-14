@@ -291,6 +291,8 @@ export function FormulaGraphSpecPanel({
   const [currentStatus, setCurrentStatus] = useState<GraphStatus | string>(initialStatus);
   const [acceptWarnings, setAcceptWarnings] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  /** Incremented only on successful preview/confirm/delete to reload images */
+  const [imageVersion, setImageVersion] = useState(0);
 
   const specForApi = useMemo(() => specFromPanels(template, panels), [template, panels]);
 
@@ -536,6 +538,7 @@ export function FormulaGraphSpecPanel({
       setPreviewChecksum(data.checksum);
       setQuality(data.quality);
       setCurrentStatus("draft");
+      setImageVersion((v) => v + 1);
       setMessageType("success");
       setMessage(data.quality.warnings.length > 0
         ? `预览生成成功（${data.quality.warnings.length} 个警告）`
@@ -563,6 +566,7 @@ export function FormulaGraphSpecPanel({
       setCurrentStatus("ready");
       setMessageType("success");
       setMessage("函数图像已确认使用");
+      setImageVersion((v) => v + 1);
       setPreviewUrl(null);
       setPreviewToken(null);
       queryClient.invalidateQueries({ queryKey: ["admin-formula-graph-assets", cardId] });
@@ -585,6 +589,7 @@ export function FormulaGraphSpecPanel({
       setCurrentStatus("ready");
       setMessageType("success");
       setMessage("函数图像已重新生成");
+      setImageVersion((v) => v + 1);
       queryClient.invalidateQueries({ queryKey: ["admin-formula-graph-assets", cardId] });
       queryClient.invalidateQueries({ queryKey: ["admin-formulas", cardId] });
       queryClient.invalidateQueries({ queryKey: ["admin-formulas"] });
@@ -604,6 +609,7 @@ export function FormulaGraphSpecPanel({
       setCurrentStatus("missing");
       setMessageType("success");
       setMessage("自动生成图像已删除");
+      setImageVersion((v) => v + 1);
       setShowDeleteConfirm(false);
       queryClient.invalidateQueries({ queryKey: ["admin-formula-graph-assets", cardId] });
       queryClient.invalidateQueries({ queryKey: ["admin-formulas", cardId] });
@@ -1020,7 +1026,7 @@ export function FormulaGraphSpecPanel({
         {/* ── Preview image ── */}
         {previewUrl && (
           <div className="rounded-lg border bg-white p-2">
-            <img src={`${previewUrl}?v=${Date.now()}`} alt="函数图像预览" className="max-h-[400px] w-full object-contain" />
+            <img src={`${previewUrl}?v=${imageVersion}`} alt="函数图像预览" className="max-h-[400px] w-full object-contain" />
           </div>
         )}
       </div>

@@ -506,7 +506,7 @@ C
               <CardContent className="flex flex-col items-center py-16 text-center">
                 <FileText className="h-12 w-12 text-[var(--color-text-hint)]" />
                 <p className="mt-4 text-sm text-[var(--color-text-secondary)]">
-                  在左侧粘贴题目文本并点击"解析文本"
+                  在左侧粘贴题目文本并点击&ldquo;解析文本&rdquo;
                 </p>
                 <p className="mt-1 text-xs text-[var(--color-text-hint)]">
                   支持标签格式（【题目】/【选项】/【答案】/【解析】）和无标签格式

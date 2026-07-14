@@ -266,8 +266,6 @@ function DetailPanel({
     setKeyEditing(false);
   };
 
-  const color = getProviderColor(model.provider);
-
   return (
     <tr>
       <td colSpan={5} className="border-b border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/30 px-5 py-4">

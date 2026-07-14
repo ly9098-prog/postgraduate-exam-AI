@@ -96,6 +96,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     return `?next=${encodeURIComponent(pathname)}`;
   }, [pathname]);
 
+  // The create page already has its own sticky navigation/action header.
+  // Hiding the global topbar prevents the two sticky regions from stacking
+  // and removes the translucent strip that previously exposed form content.
+  const isFocusedFormulaEditor = pathname === "/formulas/new" || pathname.startsWith("/formulas/new/");
+
   useEffect(() => {
     if (!isBootstrapping && !isAuthenticated) {
       router.replace(`/login${redirectPath}`);
@@ -108,7 +113,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       <div className="flex h-dvh min-h-dvh overflow-hidden">
         <SidebarSkeleton />
         <div className="flex min-w-0 flex-1 flex-col">
-          <TopbarSkeleton />
+          {!isFocusedFormulaEditor && <TopbarSkeleton />}
           <main className="min-h-0 flex-1 overflow-y-auto">
             <MainContentSkeleton />
           </main>
@@ -123,8 +128,15 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     <div className="flex h-dvh min-h-dvh overflow-hidden">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar />
-        <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 lg:px-8">
+        {!isFocusedFormulaEditor && <Topbar />}
+        <main
+          className={
+            isFocusedFormulaEditor
+              ? "min-h-0 flex-1 overflow-y-auto p-0"
+              : "min-h-0 flex-1 overflow-y-auto px-4 py-6 lg:px-8"
+          }
+          data-focused-editor={isFocusedFormulaEditor ? "true" : undefined}
+        >
           {children}
         </main>
       </div>

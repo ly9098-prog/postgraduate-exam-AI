@@ -420,3 +420,58 @@ a {
     transition-duration: 0ms !important;
   }
 }
+
+/* ── Mathematical text rendering ── */
+.math-text-renderer .katex-container {
+  vertical-align: -0.08em;
+  max-width: 100%;
+}
+
+.math-text-renderer .katex {
+  font-size: 1.03em;
+}
+
+.math-text-renderer .katex-display {
+  margin: 0.4em 0;
+  text-align: left;
+}
+
+.math-text-renderer .katex-display > .katex {
+  text-align: left;
+}
+
+/* ── Formula editor auxiliary rail ── */
+.formula-editor-rail-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(74, 111, 138, 0.42) transparent;
+  scrollbar-gutter: stable;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
+
+.formula-editor-rail-scroll:focus-visible {
+  outline: 2px solid rgba(74, 111, 138, 0.45);
+  outline-offset: 4px;
+  border-radius: 16px;
+}
+
+.formula-editor-rail-scroll::-webkit-scrollbar {
+  width: 7px;
+}
+
+.formula-editor-rail-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.formula-editor-rail-scroll::-webkit-scrollbar-thumb {
+  min-height: 44px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(74, 111, 138, 0.35);
+  background-clip: padding-box;
+}
+
+.formula-editor-rail-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(74, 111, 138, 0.55);
+  background-clip: padding-box;
+}

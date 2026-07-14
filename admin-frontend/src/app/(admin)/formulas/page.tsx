@@ -223,7 +223,7 @@ export default function FormulasPage() {
     q: filters.q,
     library_type: filters.library_type || undefined,
     graph_status: filters.graph_status || undefined,
-  }), [page, currentFilterStatus, filters.category_id, filters.q, filters.library_type]);
+  }), [page, currentFilterStatus, filters.category_id, filters.q, filters.library_type, filters.graph_status]);
 
   const formulas = useQuery({
     queryKey: ["admin-formulas", queryParams],
@@ -305,7 +305,7 @@ export default function FormulasPage() {
     onError: (e) => { setMessage(e instanceof Error ? e.message : "批量操作失败"); setBatchBusy(false); },
   });
 
-  const items = formulas.data?.items ?? [];
+  const items = useMemo(() => formulas.data?.items ?? [], [formulas.data?.items]);
   const selectedCard = detail.data;
   const isBatchable = currentFilterStatus === "pending_review" || currentFilterStatus === "draft";
 
@@ -383,19 +383,15 @@ export default function FormulasPage() {
   // ── Auto-hide floating pill after 5min idle; re-show on scroll ──
   const pillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const resetPillTimer = useCallback(() => {
-    if (pillTimerRef.current) clearTimeout(pillTimerRef.current);
-    setPillVisible(true);
-    pillTimerRef.current = setTimeout(() => {
-      setPillVisible(false);
-    }, 5000);
-  }, []);
-
   useEffect(() => {
-    if (isBatchable && items.length > 0) {
-      resetPillTimer();
+    if (!(isBatchable && items.length > 0)) {
+      setPillVisible(false);
+      return;
     }
-  }, [isBatchable, items.length, resetPillTimer]);
+    setPillVisible(true);
+    pillTimerRef.current = setTimeout(() => setPillVisible(false), 5000);
+    return () => { if (pillTimerRef.current) clearTimeout(pillTimerRef.current); };
+  }, [isBatchable, items.length]);
 
   useEffect(() => {
     if (!(isBatchable && items.length > 0)) return;
