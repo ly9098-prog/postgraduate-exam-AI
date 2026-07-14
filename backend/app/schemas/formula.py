@@ -83,6 +83,7 @@ class FormulaCardCreate(BaseModel):
     error_tips: str | None = None
     examples: list[FormulaExample] | None = Field(None, max_length=3)
     function_properties: dict[str, Any] | None = None
+    graph_spec: dict | None = None
     sort_order: int = 0
     tag_ids: list[int] = []
     source_type: str | None = None
@@ -104,6 +105,7 @@ class FormulaCardUpdate(BaseModel):
     error_tips: str | None = None
     examples: list[FormulaExample] | None = None
     function_properties: dict[str, Any] | None = None
+    graph_spec: dict | None = None
     sort_order: int | None = None
     tag_ids: list[int] | None = None
 
@@ -124,12 +126,136 @@ class FormulaGraphAssetResponse(BaseModel):
     mime_type: str | None = None
     width: int | None = None
     height: int | None = None
+    file_size: int | None = None
     checksum: str | None = None
+    renderer_version: int | None = None
+    alt_text: str | None = None
+    description: str | None = None
+    reviewed_by: int | None = None
+    reviewed_at: datetime | None = None
+    review_note: str | None = None
+    published_version: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
+
+# ── Graph Spec (auto-generation) ──
+
+
+class GraphSpecLayout(BaseModel):
+    rows: int = Field(default=1, ge=1, le=3)
+    columns: int = Field(default=1, ge=1, le=3)
+
+
+class GraphSpecExpression(BaseModel):
+    expression: str = Field(..., min_length=1, max_length=500)
+    display_latex: str | None = Field(None, max_length=500)
+    label: str | None = Field(None, max_length=100)
+    line_style: str = "solid"  # solid | dashed | dotted | dashdot
+
+
+class GraphSpecDomain(BaseModel):
+    intervals: list[list[float | None]] = Field(default=[])
+    exclude_points: list[float] = Field(default=[])
+
+
+class GraphSpecAnnotation(BaseModel):
+    x: float
+    y: float
+    label: str | None = None
+    color: str | None = None
+    point_style: str = "filled"  # filled | hollow
+
+
+class GraphSpecRefLine(BaseModel):
+    value: float
+    label: str | None = None
+    style: str = "dashed"  # solid | dashed | dotted | dashdot
+    is_vertical: bool = True
+
+
+class GraphSpecPanel(BaseModel):
+    expressions: list[GraphSpecExpression] = Field(..., min_length=1, max_length=8)
+    domain: GraphSpecDomain = Field(default_factory=GraphSpecDomain)
+    axis_mode: str = "auto_robust"  # manual | auto | auto_robust
+    x_range: list[float] = Field(default_factory=lambda: [-6, 6])
+    y_range: list[float] = Field(default_factory=lambda: [-6, 6])
+    annotations: list[GraphSpecAnnotation] = Field(default=[], max_length=20)
+    vertical_lines: list[GraphSpecRefLine] = Field(default=[])
+    horizontal_lines: list[GraphSpecRefLine] = Field(default=[])
+    title: str | None = Field(None, max_length=100)
+    x_label: str = "x"
+    y_label: str = "y"
+
+
+class GraphSpec(BaseModel):
+    schema_version: int = Field(default=1, ge=1, le=99)
+    render_mode: str = "explicit_2d"  # explicit_2d | preset_diagram | manual_only
+    template: str = "single_function"
+    layout: GraphSpecLayout = Field(default_factory=GraphSpecLayout)
+    panels: list[GraphSpecPanel] = Field(..., min_length=1, max_length=9)
+
+
+class QualityCheckResult(BaseModel):
+    errors: list[str] = Field(default=[])
+    warnings: list[str] = Field(default=[])
+    passed: bool = False
+
+
+class GraphPreviewResponse(BaseModel):
+    preview_url: str
+    thumbnail_url: str | None = None
+    preview_token: str
+    checksum: str
+    width: int = 1600
+    height: int = 1000
+    mime_type: str = "image/png"
+    quality: QualityCheckResult = Field(default_factory=lambda: QualityCheckResult(passed=True))
+    expires_at: datetime
+
+
+class GraphConfirmRequest(BaseModel):
+    preview_token: str
+    checksum: str
+    card_version: int
+    accept_warnings: bool = False
+    alt_text: str | None = None
+    description: str | None = None
+
+
+class GraphConfirmResponse(BaseModel):
+    asset: FormulaGraphAssetResponse
+    graph_status: str = "ready"
+
+
+class GraphAssetUpdate(BaseModel):
+    alt_text: str | None = None
+    description: str | None = None
+
+
+class GraphBatchGenerateResponse(BaseModel):
+    job_id: str
+    total: int = 0
+
+
+class GraphBatchJobStatus(BaseModel):
+    job_id: str
+    status: str  # running | completed | partial_failed | failed | cancelled
+    progress: float
+    total: int
+    processed: int = 0
+    succeeded: int
+    failed: int
+    skipped: int = 0
+    errors: list[dict] = Field(default=[])
+    created_at: str = ""
+    started_at: str | None = None
+    finished_at: str | None = None
+
+
+# ── Formula Card (updated response) ──
 
 class FormulaCardResponse(BaseModel):
     id: int
@@ -149,6 +275,13 @@ class FormulaCardResponse(BaseModel):
     examples: list[dict[str, Any]] | None
     function_properties: dict[str, Any] | None
     graph_asset: FormulaGraphAssetResponse | None = None
+    graph_assets: list[FormulaGraphAssetResponse] = Field(default=[])
+    graph_spec: dict | None = None
+    draft_graph_spec: dict | None = None
+    graph_status: str = "not_applicable"
+    graph_last_error: str | None = None
+    graph_generated_at: datetime | None = None
+    graph_confirmed_at: datetime | None = None
     sort_order: int
     status: str
     tags: list[FormulaTagResponse] = []

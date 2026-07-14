@@ -17,6 +17,7 @@ import {
   XCircle,
   CheckCircle,
   ImageIcon,
+  LayoutTemplate,
   Check,
   X,
   AlertCircle,
@@ -112,6 +113,8 @@ type FormulaCard = {
   rejection_reason: string | null;
   function_properties: Record<string, unknown> | null;
   graph_asset: FormulaGraphAsset | null;
+  graph_status?: string;
+  graph_last_error?: string | null;
 };
 
 type BatchReviewResponse = {
@@ -151,13 +154,46 @@ const LIBRARY_TYPE_OPTIONS = [
   { label: "函数图像", value: "function_graph" },
 ];
 
+const GRAPH_STATUS_OPTIONS = [
+  { label: "图像状态: 全部", value: "" },
+  { label: "不适用", value: "not_applicable" },
+  { label: "未配置", value: "unconfigured" },
+  { label: "缺少图像", value: "missing" },
+  { label: "待确认", value: "draft" },
+  { label: "已完成", value: "ready" },
+  { label: "生成失败", value: "failed" },
+  { label: "已忽略", value: "ignored" },
+];
+
+const GRAPH_STATUS_BADGE: Record<string, string> = {
+  not_applicable: "bg-gray-50 text-gray-400 border-gray-200",
+  unconfigured: "bg-gray-50 text-gray-500 border-gray-200",
+  missing: "bg-amber-50 text-amber-700 border-amber-200",
+  generating: "bg-blue-50 text-blue-700 border-blue-200",
+  draft: "bg-amber-50 text-amber-700 border-amber-200",
+  ready: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  failed: "bg-red-50 text-red-700 border-red-200",
+  ignored: "bg-gray-50 text-gray-400 border-gray-200",
+};
+
+const GRAPH_STATUS_LABEL: Record<string, string> = {
+  not_applicable: "不适用",
+  unconfigured: "未配置",
+  missing: "缺少图像",
+  generating: "生成中",
+  draft: "待确认",
+  ready: "已完成",
+  failed: "生成失败",
+  ignored: "已忽略",
+};
+
 /* ── Main page ── */
 
 export default function FormulasPage() {
   const queryClient = useQueryClient();
   const permissions = useAuthStore((state) => state.permissions);
 
-  const [filters, setFilters] = useState({ status: "", category_id: "", q: "", tags: "", library_type: "" });
+  const [filters, setFilters] = useState({ status: "", category_id: "", q: "", tags: "", library_type: "", graph_status: "" });
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [showDetail, setShowDetail] = useState(false);
@@ -186,6 +222,7 @@ export default function FormulasPage() {
     category_id: filters.category_id,
     q: filters.q,
     library_type: filters.library_type || undefined,
+    graph_status: filters.graph_status || undefined,
   }), [page, currentFilterStatus, filters.category_id, filters.q, filters.library_type]);
 
   const formulas = useQuery({
@@ -429,7 +466,7 @@ export default function FormulasPage() {
       <Card>
         <CardHeader className="!border-0">
           <div className="rounded-2xl border border-[var(--color-border)] bg-white/65 p-3 shadow-sm">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(200px,1fr)_180px_180px_220px_auto]">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(200px,1fr)_180px_160px_220px_160px_auto]">
               <label className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
                 <Input
@@ -458,6 +495,13 @@ export default function FormulasPage() {
                 value={filters.category_id ? parseInt(filters.category_id) : null}
                 onChange={(v) => updateFilter("category_id", v ? String(v) : "")}
                 placeholder="全部分类"
+              />
+              <CustomSelect
+                value={filters.graph_status}
+                onChange={(v) => { setPage(1); setFilters((f) => ({ ...f, graph_status: v })); }}
+                options={GRAPH_STATUS_OPTIONS}
+                placeholder="图像状态"
+                clearable={false}
               />
               <Link href="/formulas/new">
                 <Button variant="secondary" className="w-full">
@@ -534,9 +578,9 @@ export default function FormulasPage() {
                             函数图像
                           </span>
                         )}
-                        {card.card_type === "function_graph" && !card.graph_asset && (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">
-                            缺少图像
+                        {card.graph_status && card.graph_status !== "not_applicable" && (
+                          <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${GRAPH_STATUS_BADGE[card.graph_status] || "bg-gray-50"}`}>
+                            {GRAPH_STATUS_LABEL[card.graph_status] || card.graph_status}
                           </span>
                         )}
                         {tagCodes && (
@@ -585,12 +629,26 @@ export default function FormulasPage() {
                         详情
                       </Button>
                       {card.card_type === "function_graph" && (
-                        <Link href={`/formulas/${card.id}#graph-assets`}>
-                          <Button variant="secondary" size="sm" className="w-full">
-                            <ImageIcon className="h-3.5 w-3.5" />
-                            图像管理
-                          </Button>
-                        </Link>
+                        <>
+                          <Link href={`/formulas/${card.id}`}>
+                            <Button variant="secondary" size="sm" className="w-full">
+                              <LayoutTemplate className="h-3.5 w-3.5" />
+                              {card.graph_status === "unconfigured" || card.graph_status === "missing"
+                                ? "配置并生成"
+                                : card.graph_status === "draft"
+                                ? "查看预览"
+                                : card.graph_status === "failed"
+                                ? "重新生成"
+                                : "配置图像"}
+                            </Button>
+                          </Link>
+                          <Link href={`/formulas/${card.id}#graph-assets`}>
+                            <Button variant="secondary" size="sm" className="w-full">
+                              <ImageIcon className="h-3.5 w-3.5" />
+                              图像管理
+                            </Button>
+                          </Link>
+                        </>
                       )}
                     </div>
                   </div>

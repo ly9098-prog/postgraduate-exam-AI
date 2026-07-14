@@ -29,21 +29,19 @@ def choose_effective_graph_asset(
     assets: list[FormulaGraphAsset],
 ) -> FormulaGraphAsset | None:
     """Select the effective graph asset per priority:
-    1. uploaded with valid image_url
-    2. template with valid image_url
-    3. any asset with image_url
-    4. None
+    1. uploaded (manual) with valid image_url
+    2. generated (auto-generated from spec) with valid image_url
+    3. template (legacy template-based) with valid image_url
+    4. any asset with image_url
+    5. None
     """
     if not assets:
         return None
 
-    uploaded = [a for a in assets if a.source_type == "uploaded" and a.image_url]
-    if uploaded:
-        return uploaded[0]
-
-    template = [a for a in assets if a.source_type == "template" and a.image_url]
-    if template:
-        return template[0]
+    for source in ("uploaded", "generated", "template"):
+        matched = [a for a in assets if a.source_type == source and a.image_url]
+        if matched:
+            return matched[0]
 
     # Fallback: any asset with image_url
     for a in assets:
@@ -296,6 +294,7 @@ async def upload_graph_asset(
         existing.mime_type = mime_type
         existing.width = width
         existing.height = height
+        existing.file_size = len(image_bytes)
         existing.checksum = checksum
         existing.updated_at = datetime.utcnow()
         db.add(existing)
@@ -316,6 +315,7 @@ async def upload_graph_asset(
             mime_type=mime_type,
             width=width,
             height=height,
+            file_size=len(image_bytes),
             checksum=checksum,
         )
         db.add(asset)
@@ -332,7 +332,7 @@ async def delete_asset_by_source_type(
 
     Only deletes from local storage. Files deleted best-effort after DB txn.
     """
-    if source_type not in ("uploaded", "template"):
+    if source_type not in ("uploaded", "template", "generated"):
         raise ValueError(f"Unsupported source_type: {source_type}")
 
     result = await db.execute(

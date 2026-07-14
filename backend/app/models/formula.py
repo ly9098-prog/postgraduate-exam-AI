@@ -112,6 +112,18 @@ class FormulaCard(Base):
     content_hash: Mapped[str | None] = mapped_column(
         String(64), nullable=True, index=True
     )
+
+    # Graph generation fields
+    graph_spec: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    draft_graph_spec: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    graph_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="not_applicable",
+        server_default="not_applicable", index=True,
+    )
+    graph_last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    graph_generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    graph_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -161,7 +173,7 @@ class FormulaGraphAsset(Base):
     )
     source_type: Mapped[str] = mapped_column(
         String(32), nullable=False
-    )  # uploaded | template
+    )  # uploaded | template | generated
     template_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     template_parameters: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     viewport: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -171,12 +183,55 @@ class FormulaGraphAsset(Base):
     mime_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    renderer_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    alt_text: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id"), nullable=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    review_note: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    published_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class FormulaGraphPreview(Base):
+    """Tracks unconfirmed preview images with expiry.
+
+    Each card has at most one active preview at a time.
+    """
+
+    __tablename__ = "formula_graph_previews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    formula_card_id: Mapped[int] = mapped_column(
+        ForeignKey("formula_cards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    preview_token: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False
+    )
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    preview_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    thumbnail_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mime_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    renderer_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quality_errors: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    quality_warnings: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now()
     )
 
 
