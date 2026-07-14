@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 const assert = require('assert')
-const { resolveGraphImageUrl, resolveGraphThumbnailUrl } = require('../utils/formula-graph')
+const { resolveGraphImageUrl, resolveGraphThumbnailUrl } = require('../subpackages/formulas/utils/formula-graph')
 
 // Test 1: Standard backend response (graph_asset.image_url)
 const card1 = {

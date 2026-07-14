@@ -1,6 +1,6 @@
 const api = require('../../../utils/api')
 const auth = require('../../../utils/auth')
-const { resolveGraphImageUrl, resolveGraphThumbnailUrl } = require('../../../utils/formula-graph')
+const { resolveGraphImageUrl, resolveGraphThumbnailUrl } = require('../utils/formula-graph')
 
 const MAX_RANDOM_HISTORY = 24
 const READER_SEQUENCE_KEY = 'formula_reader_sequence_v2'
