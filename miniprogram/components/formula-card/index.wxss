@@ -74,7 +74,25 @@
   background: #F6F7F3;
 }
 .fc-preview-hint { color: #7F8A82; font-size: 18rpx; }
-.fc-graph-image { width: 100%; border: 1rpx solid #E0E5DE; border-radius: 24rpx; background: #FFFFFF; }
+.fc-graph-viewport {
+  width: 100%;
+  overflow: hidden;
+  border: 1rpx solid #E0E5DE;
+  border-radius: 24rpx;
+  background: #FFFFFF;
+  box-sizing: border-box;
+}
+.fc-graph-image {
+  display: block;
+  width: 100%;
+  background: #FFFFFF;
+  transform: scale(1.12);
+  transform-origin: center center;
+}
+.fc-graph-error { border-color: #E5E6E0; background: #F6F6F2; }
+.fc-graph-fallback { padding: 30rpx 0; text-align: center; }
+.fc-graph-fallback-title { display: block; color: #8A938B; font-size: 22rpx; font-weight: 800; }
+.fc-graph-fallback-desc { display: block; margin-top: 6rpx; color: #A5AEA6; font-size: 18rpx; }
 
 .fc-reading-section {
   margin-top: 20rpx;
@@ -473,6 +491,42 @@
 .fc-rich-text .base {
   white-space: nowrap;
 }
+
+/* JSON-encoded conditions / symbols / conclusions / tips are converted into
+ * semantic rows before entering rich-text. These styles reproduce the admin
+ * detail page's list treatment without exposing the original JSON source. */
+.fc-rich-text .fc-structured-list {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.fc-rich-text .fc-structured-row {
+  display: block;
+  position: relative;
+  margin-top: 12rpx;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.fc-rich-text .fc-structured-row.is-first { margin-top: 0; }
+
+.fc-rich-text .fc-structured-list.is-bulleted .fc-structured-row {
+  padding-left: 26rpx;
+}
+
+.fc-rich-text .fc-structured-marker {
+  position: absolute;
+  left: 2rpx;
+  top: 0;
+  color: #738078;
+  font-weight: 900;
+}
+
+.fc-rich-text .fc-structured-primary { color: inherit; }
+.fc-rich-text .fc-structured-note { color: #758078; }
 
 .fc-section-copy .fc-rich-text,
 .fc-collapse-content .fc-rich-text,

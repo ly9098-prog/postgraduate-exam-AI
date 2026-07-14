@@ -138,7 +138,7 @@
             <text>全部科目</text><text>›</text>
           </view>
         </view>
-        <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="recent-scroll">
+        <scroll-view scroll-x enhanced enable-flex bounces="{{false}}" show-scrollbar="{{false}}" class="recent-scroll">
           <view class="recent-list">
             <view
               wx:for="{{recentSubjects}}"
@@ -148,10 +148,19 @@
               bindtap="chooseRecentSubject"
               data-subject-id="{{item.subject_id}}"
               data-subject-name="{{item.display_name}}"
+              data-has-children="{{item.has_children}}"
             >
-              <view class="recent-mark"><text>{{item.mark}}</text></view>
-              <text class="recent-name">{{item.display_name}}</text>
-              <view class="recent-indicator"></view>
+              <view class="recent-card-top">
+                <view class="recent-mark"><text>{{item.mark}}</text></view>
+                <view class="recent-selected-badge {{selectedSubjectId === item.subject_id ? 'visible' : ''}}">✓</view>
+              </view>
+              <view class="recent-card-copy">
+                <text class="recent-name">{{item.display_name}}</text>
+              </view>
+              <view class="recent-card-footer">
+                <view class="recent-status-dot"></view>
+                <text class="recent-status-text">{{selectedSubjectId === item.subject_id ? '当前科目' : item.scope_label}}</text>
+              </view>
             </view>
           </view>
         </scroll-view>
@@ -176,7 +185,8 @@
       </view>
     </view>
 
-    <view class="subject-sheet-mask" wx:if="{{subjectSheetVisible}}" catchtap="closeSubjectSheet" catchtouchmove="noop">
+    <view class="subject-sheet-layer {{subjectSheetClosing ? 'closing' : ''}}" wx:if="{{subjectSheetVisible}}">
+      <view class="subject-sheet-backdrop" catchtap="closeSubjectSheet" catchtouchmove="noop"></view>
       <view class="subject-sheet" catchtap="noop">
         <view class="sheet-handle"></view>
         <view class="sheet-header">
@@ -203,12 +213,21 @@
               catchtap="chooseRecentSubject"
               data-subject-id="{{item.subject_id}}"
               data-subject-name="{{item.display_name}}"
+              data-has-children="{{item.has_children}}"
             >{{item.display_name}}</view>
           </view>
         </view>
 
         <text class="sheet-section-label all-subject-label">全部科目</text>
-        <scroll-view scroll-y class="subject-tree-scroll">
+        <scroll-view
+          scroll-y
+          enhanced
+          enable-flex
+          bounces="{{false}}"
+          scroll-anchoring="{{true}}"
+          show-scrollbar="{{false}}"
+          class="subject-tree-scroll"
+        >
           <view class="subject-empty" wx:if="{{!subjectTree || subjectTree.length === 0}}">
             <text class="subject-empty-text">暂无可练习科目</text>
             <text class="subject-empty-hint">请先在后台添加并启用科目</text>
@@ -220,24 +239,34 @@
               class="subject-parent-block {{expandedSubjectId === item.subject_id ? 'expanded' : ''}}"
             >
               <view
-                class="subject-parent-row {{selectedSubjectId === item.subject_id && (!item.children || item.children.length === 0) ? 'selected' : ''}}"
-                hover-class="soft-pressed"
-                bindtap="toggleParentSubject"
-                data-subject-id="{{item.subject_id}}"
-                data-subject-name="{{item.display_name}}"
-                data-has-children="{{item.children && item.children.length > 0}}"
+                class="subject-parent-row {{selectedSubjectId === item.subject_id ? 'selected' : ''}}"
               >
-                <view class="parent-main">
+                <view
+                  class="parent-main"
+                  hover-class="soft-pressed"
+                  catchtap="chooseParentSubject"
+                  data-subject-id="{{item.subject_id}}"
+                  data-subject-name="{{item.display_name}}"
+                  data-has-children="{{item.children && item.children.length > 0}}"
+                >
                   <view class="parent-folder">□</view>
                   <view class="parent-copy">
                     <text class="parent-name">{{item.display_name}}</text>
-                    <text class="parent-meta" wx:if="{{item.children && item.children.length > 0}}">{{item.children.length}} 个子科目</text>
+                    <text class="parent-meta" wx:if="{{item.children && item.children.length > 0}}">{{item.children.length}} 个子科目 · 可选择全部</text>
                     <text class="parent-meta" wx:else>可直接选择</text>
                   </view>
                 </view>
                 <view class="parent-right">
-                  <text class="parent-selected" wx:if="{{selectedSubjectId === item.subject_id && (!item.children || item.children.length === 0)}}">✓</text>
-                  <text class="parent-arrow {{expandedSubjectId === item.subject_id ? 'up' : ''}}" wx:if="{{item.children && item.children.length > 0}}">⌄</text>
+                  <text class="parent-selected" wx:if="{{selectedSubjectId === item.subject_id}}">✓</text>
+                  <view
+                    class="parent-expand-hit"
+                    hover-class="soft-pressed"
+                    catchtap="toggleParentExpansion"
+                    data-subject-id="{{item.subject_id}}"
+                    wx:if="{{item.children && item.children.length > 0}}"
+                  >
+                    <text class="parent-arrow {{expandedSubjectId === item.subject_id ? 'up' : ''}}">⌄</text>
+                  </view>
                 </view>
               </view>
               <view class="child-subject-wrap" wx:if="{{expandedSubjectId === item.subject_id && item.children && item.children.length > 0}}">
