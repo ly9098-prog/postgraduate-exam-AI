@@ -11,6 +11,7 @@ import logging
 import os
 import tempfile
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -148,6 +149,33 @@ def _build_ocr_runtime_diagnostics() -> dict:
     }
 
 
+# Bounded executor + semaphore for offloading sync OCR calls
+_ocr_executor = ThreadPoolExecutor(
+    max_workers=settings.OCR_MAX_WORKERS,
+    thread_name_prefix="ocr_offload",
+)
+_ocr_semaphore = asyncio.Semaphore(settings.OCR_MAX_WORKERS)
+
+
+async def _run_ocr_in_thread(image_bytes: bytes) -> str:
+    """Run ocr_image in a thread to avoid blocking the event loop.
+
+    Uses a bounded executor and semaphore to limit concurrent OCR.
+    Raises TimeoutError if OCR exceeds OCR_TIMEOUT_SECONDS.
+    """
+    async with _ocr_semaphore:
+        loop = asyncio.get_running_loop()
+        try:
+            text = await asyncio.wait_for(
+                loop.run_in_executor(_ocr_executor, ocr_image, image_bytes),
+                timeout=settings.OCR_TIMEOUT_SECONDS,
+            )
+            return text
+        except asyncio.TimeoutError:
+            logger.error("OCR timeout after %ds", settings.OCR_TIMEOUT_SECONDS)
+            raise TimeoutError(f"OCR timed out after {settings.OCR_TIMEOUT_SECONDS}s")
+
+
 def _classify_image_pipeline_result(result: dict, cleaned_text: str) -> str | None:
     if not cleaned_text.strip():
         return "ocr_empty_text"
@@ -227,7 +255,7 @@ async def _run_image_pipeline_with_db(
             diagnostics={"ocr_runtime": runtime_diagnostics},
             stages={"upload": {"status": "completed"}, "ocr": {"status": "running"}},
         )
-        raw_ocr_text = ocr_image(image_content)
+        raw_ocr_text = await _run_ocr_in_thread(image_content)
         raw_text = clean_ocr_text(raw_ocr_text)
         ocr_diagnostics = _build_ocr_text_diagnostics(raw_ocr_text, raw_text)
         if not raw_text:
