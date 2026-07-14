@@ -19,19 +19,14 @@ function loadRewardAnimationPackage() {
     return _animLoadPromise
   }
   _animLoadPromise = new Promise(function (resolve) {
-    if (typeof wx.loadSubPackage === 'function') {
-      wx.loadSubPackage({
-        root: 'subpackages/animation',
-        success: function () { _onAnimLoaded(); resolve() },
-        fail: function () { _animLoadPromise = null; resolve() }, // 不影响主流程，同时允许后续重试
-      })
-    } else if (typeof wx.preloadSubPackage === 'function') {
-      wx.preloadSubPackage({
+    if (typeof wx.loadSubpackage === 'function') {
+      wx.loadSubpackage({
         root: 'subpackages/animation',
         success: function () { _onAnimLoaded(); resolve() },
         fail: function () { _animLoadPromise = null; resolve() }, // 不影响主流程，同时允许后续重试
       })
     } else {
+      // 基础库版本过低，不支持 wx.loadSubpackage，静默跳过
       resolve()
     }
   })

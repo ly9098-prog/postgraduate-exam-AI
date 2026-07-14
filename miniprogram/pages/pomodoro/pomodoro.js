@@ -159,6 +159,9 @@ Page({
   _countdownTotalSec: 0,
   _countdownRemainingSnapshot: null,
   _confirmTimerSnapshot: null,
+  _lastDrawnProgress: undefined,
+  _lastDrawnIsBreak: undefined,
+  _ringCache: null,
 
   /* ==================== Lifecycle ==================== */
 
@@ -1978,6 +1981,7 @@ Page({
     if (!force && this._canvasReady && this._ctx) return
     this._canvasReady = false
     this._ctx = null
+    this._ringCache = null // 清除缓存的渐变/几何
     this._scheduleCanvasInit(0)
   },
 
@@ -2005,6 +2009,7 @@ Page({
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
           this._ctx = ctx
           this._canvasReady = true
+          this._ringCache = null // 重建后缓存失效
           if (this._pendingDraw) {
             this.drawRing(this._pendingDraw.totalSec, this._pendingDraw.isBreak)
             this._pendingDraw = null
@@ -2013,32 +2018,71 @@ Page({
     })
   },
 
+  _buildRingCache(isBreak) {
+    var ctx = this._ctx
+    if (!ctx) return null
+    var size = this._canvasSize
+    var center = size / 2
+    var radius = center - 18
+    var lineWidth = 12
+    var colors = isBreak
+      ? { start: '#F43F5E', end: '#F97316', dot: '#F97316' }
+      : this.data.isFreeTimer
+        ? { start: '#34D399', end: '#059669', dot: '#10B981' }
+        : { start: '#06B6D4', end: '#3B82F6', dot: '#3B82F6' }
+    // 构建渐变（颜色在 session 内不变，只需构建一次）
+    var glowGrad = ctx.createLinearGradient(0, 0, size, size)
+    glowGrad.addColorStop(0, colors.start)
+    glowGrad.addColorStop(1, colors.end)
+    var grad = ctx.createLinearGradient(0, 0, size, size)
+    grad.addColorStop(0, colors.start)
+    grad.addColorStop(1, colors.end)
+    return {
+      size: size,
+      center: center,
+      radius: radius,
+      lineWidth: lineWidth,
+      colors: colors,
+      glowGrad: glowGrad,
+      grad: grad,
+    }
+  },
+
   drawRing(totalSec, isBreak) {
     if (!this._ctx) {
       this._pendingDraw = { totalSec, isBreak }
       return
     }
-    const ctx = this._ctx
-    const size = this._canvasSize
-    const center = size / 2
-    const radius = center - 18
-    const lineWidth = 12
-    const progress = this._timerState.progress
+    var ctx = this._ctx
+    var progress = this._timerState.progress
+    // progress 未变化时不重绘（避免每帧重建 canvas）
+    // 允许极小变化（< 1/360）跳过重绘
+    if (this._lastDrawnProgress !== undefined && this._lastDrawnIsBreak === isBreak) {
+      var diff = Math.abs(progress - this._lastDrawnProgress)
+      if (diff < 1 / 360) return
+    }
+    this._lastDrawnProgress = progress
+    this._lastDrawnIsBreak = isBreak
 
-    ctx.clearRect(0, 0, size, size)
+    // 缓存渐变和几何，仅在 isBreak/freeTimer 切换时重建
+    var cacheKey = isBreak ? 'break' : (this.data.isFreeTimer ? 'free' : 'focus')
+    if (!this._ringCache || this._ringCache._key !== cacheKey) {
+      this._ringCache = this._buildRingCache(isBreak)
+      if (this._ringCache) this._ringCache._key = cacheKey
+    }
+    var cache = this._ringCache
+    if (!cache) return
 
-    const colors = isBreak
-      ? { start: '#F43F5E', end: '#F97316', dot: '#F97316' }
-      : this.data.isFreeTimer
-        ? { start: '#34D399', end: '#059669', dot: '#10B981' }
-        : { start: '#06B6D4', end: '#3B82F6', dot: '#3B82F6' }
+    var center = cache.center
+    var radius = cache.radius
+    var lineWidth = cache.lineWidth
+    var colors = cache.colors
+
+    ctx.clearRect(0, 0, cache.size, cache.size)
 
     if (progress > 0) {
-      const glowGrad = ctx.createLinearGradient(0, 0, size, size)
-      glowGrad.addColorStop(0, colors.start)
-      glowGrad.addColorStop(1, colors.end)
       ctx.beginPath()
-      ctx.strokeStyle = glowGrad
+      ctx.strokeStyle = cache.glowGrad
       ctx.lineWidth = lineWidth + 14
       ctx.lineCap = 'round'
       ctx.globalAlpha = 0.18
@@ -2054,19 +2098,16 @@ Page({
     ctx.stroke()
 
     ctx.beginPath()
-    const grad = ctx.createLinearGradient(0, 0, size, size)
-    grad.addColorStop(0, colors.start)
-    grad.addColorStop(1, colors.end)
-    ctx.strokeStyle = grad
+    ctx.strokeStyle = cache.grad
     ctx.lineWidth = lineWidth
     ctx.lineCap = 'round'
     ctx.arc(center, center, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress)
     ctx.stroke()
 
     if (progress > 0 && progress < 1) {
-      const endAngle = -Math.PI / 2 + Math.PI * 2 * progress
-      const endX = center + radius * Math.cos(endAngle)
-      const endY = center + radius * Math.sin(endAngle)
+      var endAngle = -Math.PI / 2 + Math.PI * 2 * progress
+      var endX = center + radius * Math.cos(endAngle)
+      var endY = center + radius * Math.sin(endAngle)
       ctx.beginPath()
       ctx.fillStyle = colors.dot
       ctx.arc(endX, endY, lineWidth / 2 + 1, 0, Math.PI * 2)
@@ -2080,6 +2121,9 @@ Page({
     this._canvasReady = false
     this._ctx = null
     this._pendingDraw = null
+    this._lastDrawnProgress = undefined
+    this._lastDrawnIsBreak = undefined
+    this._ringCache = null
     this._timerState = this._createTimerState()
     wx.removeStorageSync('pomodoro_break')
     wx.removeStorageSync('pomodoro_completion')

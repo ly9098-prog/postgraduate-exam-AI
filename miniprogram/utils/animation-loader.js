@@ -35,6 +35,10 @@ function loadAnimationPackage() {
     } catch (_) {
       _lottieModule = null
     }
+  }).catch(function () {
+    // 加载失败：清空 promise 状态，允许后续合理重试
+    _loadingPromise = null
+    _lottieModule = null
   })
 
   return _loadingPromise
