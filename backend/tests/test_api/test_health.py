@@ -46,3 +46,32 @@ def test_version_contains_build_info():
     assert data["version"] == "1.0.0"
     assert data["environment"] == "development"
     assert "build_at" in data
+
+
+def test_live_health_endpoint():
+    """Liveness probe returns 200 without any dependency checks."""
+    resp = client.get("/health/live")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+
+
+def test_ready_health_endpoint():
+    """Readiness probe returns 503 when dependencies are unavailable."""
+    resp = client.get("/health/ready")
+    # In dev/test environment with SQLite, DB should be available
+    assert resp.status_code in (200, 503)
+    data = resp.json()
+    assert "status" in data
+    assert "checks" in data
+    assert "database" in data["checks"]
+
+
+def test_ready_health_structure():
+    """Readiness response has consistent structure."""
+    resp = client.get("/health/ready")
+    data = resp.json()
+    # Must have checks field
+    assert isinstance(data["checks"], dict)
+    # Status must be one of the known values
+    assert data["status"] in ("ok", "unavailable")

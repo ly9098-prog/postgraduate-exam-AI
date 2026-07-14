@@ -8,10 +8,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from app.api.router import api_router
 from app.core.config import settings
-from app.core.database import init_db
+from app.core.database import async_session, init_db
 from app.core.logging_config import setup_logging
 from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
@@ -44,6 +45,16 @@ async def _periodic_token_cleanup():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Production configuration fail-fast check
+    try:
+        from app.services.production_config_validator import validate_production_config
+
+        validate_production_config()
+    except SystemError as e:
+        logger.critical("Production configuration validation FAILED: %s", e)
+        raise
+    except Exception as e:
+        logger.warning("Production config validation error (non-fatal): %s", e)
     from app.core.ocr_profile import get_ocr_profile
     profile = get_ocr_profile()
     logger.info(
@@ -248,9 +259,13 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     except Exception:
         pass  # Never let logging crash the exception handler
 
+    safe_detail = "服务器内部错误"
+    if settings.APP_ENV != "production":
+        safe_detail = f"{type(exc).__name__}: {exc}"
+
     response = JSONResponse(
         status_code=500,
-        content={"detail": f"{type(exc).__name__}: {exc}"},
+        content={"detail": safe_detail, "code": "INTERNAL_ERROR"},
     )
     if trace_id:
         response.headers["X-Trace-ID"] = trace_id
@@ -264,7 +279,63 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 @app.get("/health")
 async def health():
+    """Legacy health endpoint — returns ok regardless of dependency state."""
     return {"status": "ok", "env": settings.APP_ENV}
+
+
+@app.get("/health/live")
+async def live_health():
+    """Liveness probe — only checks the process is responsive.
+
+    Suitable for container orchestration liveness checks.
+    """
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def ready_health():
+    """Readiness probe — checks all critical dependencies are healthy.
+
+    Returns 503 (via status_code override in JSONResponse) when any
+    critical dependency is unavailable. Suitable for container readiness
+    checks and load balancer health checks.
+    """
+    db_ok = False
+    redis_ok = False
+
+    # Database check
+    try:
+        async with async_session() as session:
+            await session.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        db_ok = False
+
+    # Redis check (only if configured)
+    if settings.REDIS_URL:
+        try:
+            from app.core.cache import cache
+            await cache.set("health:ping", "pong", ttl=10)
+            pong = await cache.get("health:ping")
+            redis_ok = pong == "pong"
+        except Exception:
+            redis_ok = False
+
+    checks = {
+        "database": "ok" if db_ok else "unavailable",
+    }
+    if settings.REDIS_URL:
+        checks["redis"] = "ok" if redis_ok else "unavailable"
+
+    all_ok = db_ok and (not settings.REDIS_URL or redis_ok)
+
+    return JSONResponse(
+        status_code=200 if all_ok else 503,
+        content={
+            "status": "ok" if all_ok else "unavailable",
+            "checks": checks,
+        },
+    )
 
 
 # --- 路由（聚合 Router） ---

@@ -96,10 +96,14 @@ class TestCacheClient:
 
     @pytest.mark.asyncio
     async def test_cache_delete_pattern(self):
-        """按模式删除缓存。"""
+        """按模式删除缓存（使用 SCAN）。"""
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock()
-        mock_redis.keys.return_value = [b"test:1", b"test:2"]
+        # SCAN returns (cursor, keys) tuples
+        mock_redis.scan = AsyncMock()
+        mock_redis.scan.side_effect = [
+            (0, [b"test:1", b"test:2"]),
+        ]
         mock_redis.delete.return_value = 2
 
         with patch("redis.asyncio.from_url", return_value=mock_redis):
@@ -108,11 +112,11 @@ class TestCacheClient:
                 client = CacheClient()
                 deleted = await client.delete("test:*")
                 assert deleted == 2
-                mock_redis.keys.assert_called_once_with("test:*")
+                mock_redis.scan.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_cache_clear(self):
-        """清空所有缓存。"""
+        """clear() 不再调用 FLUSHDB，只清本地缓存。"""
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock()
 
@@ -121,7 +125,8 @@ class TestCacheClient:
                 mock_settings.REDIS_URL = "redis://localhost:6379"
                 client = CacheClient()
                 await client.clear()
-                mock_redis.flushdb.assert_called_once()
+                # 不再调用 flushdb
+                mock_redis.flushdb.assert_not_called()
 
 
 def test_make_cache_key_deterministic():
@@ -189,8 +194,10 @@ def test_jitter_ttl_in_expected_range():
 
 @pytest.mark.asyncio
 async def test_cache_lock_helpers_degrade_without_redis():
+    """Without Redis, acquire_lock falls back to local cache (succeeds)."""
     client = CacheClient()
-    assert await client.acquire_lock("lock", "value") is False
+    # Local cache mode: acquire_lock succeeds and stores in local dict
+    assert await client.acquire_lock("lock", "value") is True
     await client.release_lock("lock", "value")
 
 
@@ -200,6 +207,7 @@ async def test_cache_lock_helpers_use_set_nx_and_delete_matching_value():
     mock_redis.ping = AsyncMock()
     mock_redis.set.return_value = True
     mock_redis.get.return_value = b"value"
+    mock_redis.eval.return_value = 1  # Lua script returns number of keys deleted
 
     with patch("redis.asyncio.from_url", return_value=mock_redis):
         with patch("app.core.cache.settings") as mock_settings:
@@ -208,4 +216,5 @@ async def test_cache_lock_helpers_use_set_nx_and_delete_matching_value():
             assert await client.acquire_lock("lock", "value", ttl=10) is True
             mock_redis.set.assert_called_with("lock", "value", nx=True, ex=10)
             await client.release_lock("lock", "value")
-            mock_redis.delete.assert_called_once_with("lock")
+            # Lock release uses Lua compare-and-delete, not bare DELETE
+            mock_redis.eval.assert_called_once()
