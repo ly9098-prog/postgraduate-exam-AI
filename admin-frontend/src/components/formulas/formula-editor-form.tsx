@@ -17,12 +17,14 @@ import {
   Copy,
   Eye,
   FileText,
+  ImageIcon,
   LayoutTemplate,
   Lightbulb,
   ListChecks,
   RotateCcw,
   Sparkles,
   Tags,
+  Upload,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -121,17 +123,18 @@ function SectionCard({
   action?: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-[rgba(254,252,249,0.88)] shadow-[var(--shadow-card)] backdrop-blur-sm">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--color-border-light)] px-5 py-4 lg:px-6">
+    <section className="group overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-[rgba(254,252,249,0.92)] shadow-[var(--shadow-card)] backdrop-blur-sm transition-shadow duration-300 hover:shadow-[0_6px_32px_rgba(27,39,51,0.08)]">
+      <div className="relative flex flex-wrap items-start justify-between gap-4 border-b border-[var(--color-border-light)] px-5 py-4 lg:px-6">
         <div className="flex min-w-0 items-start gap-3.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)] text-xs font-bold text-white shadow-sm">
-            {step}
+          <span className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--color-primary)] text-xs font-bold text-white shadow-sm transition-transform duration-200 group-hover:scale-105">
+            <span className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent" />
+            <span className="relative">{step}</span>
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="font-display text-lg font-bold text-[var(--ink)]">{title}</h2>
+              <h2 className="font-display text-lg font-bold tracking-tight text-[var(--ink)]">{title}</h2>
               {optional && (
-                <span className="rounded-full bg-[var(--color-bg-input)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-text-hint)]">
+                <span className="rounded-full border border-[var(--color-border)] bg-white/70 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[var(--color-text-hint)]">
                   可选
                 </span>
               )}
@@ -139,7 +142,7 @@ function SectionCard({
             <p className="mt-0.5 text-xs leading-5 text-[var(--color-text-secondary)]">{description}</p>
           </div>
         </div>
-        {action}
+        {action && <div className="shrink-0">{action}</div>}
       </div>
       <div className="p-5 lg:p-6">{children}</div>
     </section>
@@ -241,18 +244,17 @@ function FormulaBlockEditor({
   canDuplicate: boolean;
 }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-sm transition focus-within:border-[var(--color-primary)] focus-within:shadow-[0_8px_28px_rgba(27,39,51,0.08)]">
-      <div className="flex items-center justify-between border-b border-[var(--color-border-light)] bg-[rgba(239,235,229,0.45)] px-4 py-3">
+    <div className="group/block overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-sm transition-all duration-200 focus-within:border-[var(--color-primary)] focus-within:shadow-[0_8px_28px_rgba(27,39,51,0.10)] hover:shadow-[0_4px_16px_rgba(27,39,51,0.06)]">
+      <div className="flex items-center justify-between border-b border-[var(--color-border-light)] bg-gradient-to-r from-[rgba(239,235,229,0.5)] to-white px-4 py-2.5">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--color-primary-light)] bg-white text-xs font-bold text-[var(--color-primary-dark)]">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--color-primary-light)] bg-white text-xs font-bold text-[var(--color-primary-dark)] shadow-sm">
             {index + 1}
           </span>
           <div>
             <p className="text-sm font-semibold text-[var(--ink)]">公式块</p>
-            <p className="text-[10px] text-[var(--color-text-hint)]">支持标准 LaTeX，如 \\frac、\\sqrt、上下标</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover/block:opacity-100">
           {canDuplicate && (
             <button
               type="button"
@@ -288,7 +290,7 @@ function FormulaBlockEditor({
           />
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.08fr)_minmax(260px,0.92fr)]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(240px,0.9fr)]">
           <div>
             <FieldLabel required>LaTeX 公式</FieldLabel>
             <textarea
@@ -301,14 +303,16 @@ function FormulaBlockEditor({
           </div>
 
           <div>
-            <FieldLabel>公式预览</FieldLabel>
-            <div className="flex min-h-36 items-center justify-center overflow-x-auto rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--porcelain)] px-4 py-5 text-center">
+            <FieldLabel>预览</FieldLabel>
+            <div className="flex min-h-36 items-center justify-center overflow-x-auto rounded-xl border border-dashed border-[var(--color-border)] bg-gradient-to-br from-[var(--porcelain)] to-white px-4 py-5 text-center transition-colors duration-200 group-focus-within/block:border-[var(--color-primary)]/30">
               {block.latex.trim() ? (
-                <LatexRenderer latex={normalizeLatexExpression(block.latex)} displayMode={true} />
+                <div className="w-full max-w-full overflow-x-auto py-2">
+                  <LatexRenderer latex={normalizeLatexExpression(block.latex)} displayMode={true} />
+                </div>
               ) : (
                 <div className="text-[var(--color-text-hint)]">
-                  <Eye className="mx-auto mb-2 h-5 w-5 opacity-60" />
-                  <p className="text-xs">输入公式后将在这里实时渲染</p>
+                  <Eye className="mx-auto mb-2 h-5 w-5 opacity-40" />
+                  <p className="text-xs">实时渲染</p>
                 </div>
               )}
             </div>
@@ -316,7 +320,7 @@ function FormulaBlockEditor({
         </div>
 
         <div>
-          <FieldLabel hint="可输入文字与行内公式">说明</FieldLabel>
+          <FieldLabel hint="可混排文字与行内公式">说明</FieldLabel>
           <textarea
             className="min-h-20 w-full resize-y rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-sm leading-6 outline-none transition placeholder:text-[var(--color-text-hint)] focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]"
             value={block.note || ""}
@@ -324,7 +328,7 @@ function FormulaBlockEditor({
             placeholder="解释该公式的用途、变量关系或使用方法（可选）"
           />
           {!!block.note?.trim() && (
-            <div className="mt-2 rounded-lg bg-[var(--color-primary-light)]/55 px-3 py-2 text-sm leading-6 text-[var(--color-text-secondary)]">
+            <div className="mt-2 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-primary-light)]/40 px-3 py-2 text-sm leading-6 text-[var(--color-text-secondary)]">
               <MixedLatexRenderer text={block.note} />
             </div>
           )}
@@ -393,6 +397,15 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
   const [funcFeature, setFuncFeature] = useState(
     (initialData?.functionProperties?.one_line_feature as string) ?? "",
   );
+
+  // ── Image upload in create mode ──
+  const [pendingImage, setPendingImage] = useState<File | null>(null);
+  const [pendingImagePreview, setPendingImagePreview] = useState("");
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    return () => { if (pendingImagePreview) URL.revokeObjectURL(pendingImagePreview); };
+  }, [pendingImagePreview]);
 
   const [recoverableDraft, setRecoverableDraft] = useState<LocalDraft | null>(null);
   const [draftStorageReady, setDraftStorageReady] = useState(false);
@@ -774,6 +787,24 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
 
       if (!onSaveSuccess) {
         if (mode === "create" && newId) {
+          // Auto-upload pending image after save
+          if (pendingImage) {
+            try {
+              const formData = new FormData();
+              formData.set("file", pendingImage);
+              await apiRequest<Record<string, unknown>>(`/formulas/${newId}/graph-assets/upload`, {
+                method: "POST",
+                body: formData,
+              });
+              setMessageType("success");
+              setMessage("公式卡片已创建，函数图像上传成功");
+            } catch {
+              setMessageType("error");
+              setMessage("公式卡片已创建，但函数图像上传失败，可稍后在详情页重试。");
+            }
+            setPendingImage(null);
+            if (pendingImagePreview) { URL.revokeObjectURL(pendingImagePreview); setPendingImagePreview(""); }
+          }
           window.setTimeout(() => router.push(`/formulas/${newId}`), 700);
         } else {
           window.setTimeout(() => router.push("/formulas"), 700);
@@ -790,6 +821,33 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
     if (!validateRequired()) return;
     createMutation.mutate();
   }, [validateRequired, createMutation]);
+
+  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const validTypes = ["image/png", "image/jpeg", "image/webp"];
+    if (!validTypes.includes(file.type)) {
+      setMessageType("error");
+      setMessage("仅支持 PNG、JPEG、WebP 格式");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setMessageType("error");
+      setMessage("文件大小不能超过 10MB");
+      return;
+    }
+    if (pendingImagePreview) URL.revokeObjectURL(pendingImagePreview);
+    setPendingImage(file);
+    setPendingImagePreview(URL.createObjectURL(file));
+    setMessage(null);
+  }, [pendingImagePreview]);
+
+  const clearPendingImage = useCallback(() => {
+    if (pendingImagePreview) URL.revokeObjectURL(pendingImagePreview);
+    setPendingImage(null);
+    setPendingImagePreview("");
+    if (imageFileInputRef.current) imageFileInputRef.current.value = "";
+  }, [pendingImagePreview]);
 
   const handleCancel = useCallback(() => {
     if (mode === "create" && hasAnyInput) {
@@ -818,29 +876,6 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
   const completedRequired = requiredItems.filter((item) => item.done).length;
   const completionPercent = Math.round((completedRequired / requiredItems.length) * 100);
   const isPending = createMutation.isPending;
-
-  const tagButtons = (
-    <div className="flex flex-wrap gap-2">
-      {TAG_CODES.map((code) => {
-        const active = selectedTags.includes(code);
-        return (
-          <button
-            key={code}
-            type="button"
-            onClick={() => toggleTag(code)}
-            className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-sm font-medium transition ${
-              active
-                ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)] shadow-sm"
-                : "border-[var(--color-border)] bg-white/75 text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:bg-white"
-            }`}
-          >
-            {active && <Check className="h-3.5 w-3.5" />}
-            {TAG_NAMES[code]}
-          </button>
-        );
-      })}
-    </div>
-  );
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5 px-4 pb-28 lg:px-8">
@@ -873,14 +908,14 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <div className="hidden min-w-36 rounded-xl border border-[var(--color-border-light)] bg-white px-3 py-2 shadow-sm lg:block">
-              <div className="flex items-center justify-between text-[10px] font-semibold text-[var(--color-text-hint)]">
+            <div className="hidden min-w-36 rounded-xl border border-[var(--color-border-light)] bg-white/80 px-3 py-2 shadow-sm lg:block">
+              <div className="flex items-center justify-between text-[10px] font-semibold tracking-wide text-[var(--color-text-hint)]">
                 <span>必填进度</span>
                 <span>{completedRequired}/{requiredItems.length}</span>
               </div>
               <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--color-bg-input)]">
                 <div
-                  className="h-full rounded-full bg-[var(--color-primary)] transition-all duration-300"
+                  className="h-full rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-primary-dark)] transition-all duration-500 ease-out"
                   style={{ width: `${completionPercent}%` }}
                 />
               </div>
@@ -941,11 +976,11 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
               title="基础信息"
               description="先确定公式卡片的归属、名称和用途，让后续内容更容易检索与维护。"
             >
-              <div className="space-y-5">
+              <div className="space-y-4">
                 <div>
                   <FieldLabel required hint={`${title.length}/80`}>标题</FieldLabel>
                   <Input
-                    className={`h-12 text-base ${titleError ? "border-red-400 bg-red-50/50 focus:border-red-500 focus:ring-red-100" : ""}`}
+                    className={`h-10 text-sm ${titleError ? "border-red-400 bg-red-50/50 focus:border-red-500 focus:ring-red-100" : ""}`}
                     value={title}
                     maxLength={80}
                     onChange={(event) => {
@@ -956,13 +991,13 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
                   />
                   {titleError && <p className="mt-1.5 text-xs font-medium text-red-600">{titleError}</p>}
                   {title.trim() && (
-                    <div className="mt-2 rounded-xl border border-[var(--color-border-light)] bg-white/65 px-3 py-2.5 text-base font-semibold text-[var(--ink)]">
+                    <div className="mt-1.5 rounded-lg border border-[var(--color-border-light)] bg-white/65 px-3 py-1.5 text-sm font-semibold text-[var(--ink)]">
                       <MixedLatexRenderer text={title} />
                     </div>
                   )}
                 </div>
 
-                <div className="grid gap-5 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <FieldLabel required>分类</FieldLabel>
                     <FormulaCategoryPicker
@@ -979,88 +1014,148 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
 
                   <div>
                     <FieldLabel required>卡片类型</FieldLabel>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setCardType("auto")}
-                        className={`flex min-h-12 items-center gap-2 rounded-xl border px-3 text-left transition ${
-                          cardType === "auto"
-                            ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)] shadow-sm"
-                            : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:bg-white"
-                        }`}
-                      >
-                        <Sparkles className="h-4 w-4 shrink-0" />
-                        <span>
-                          <span className="block text-sm font-semibold">自动识别</span>
-                          <span className="block text-[10px] opacity-70">推荐 · 有图即函数图像</span>
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setCardType("pure_formula")}
-                        className={`flex min-h-12 items-center gap-2 rounded-xl border px-3 text-left transition ${
-                          cardType === "pure_formula"
-                            ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)] shadow-sm"
-                            : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:bg-white"
-                        }`}
-                      >
-                        <FileText className="h-4 w-4 shrink-0" />
-                        <span>
-                          <span className="block text-sm font-semibold">纯公式</span>
-                          <span className="block text-[10px] opacity-70">即使有图也只展示公式</span>
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setCardType("function_graph")}
-                        className={`flex min-h-12 items-center gap-2 rounded-xl border px-3 text-left transition ${
-                          cardType === "function_graph"
-                            ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)] shadow-sm"
-                            : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:bg-white"
-                        }`}
-                      >
-                        <LayoutTemplate className="h-4 w-4 shrink-0" />
-                        <span>
-                          <span className="block text-sm font-semibold">函数图像</span>
-                          <span className="block text-[10px] opacity-70">即使无图也归类图像</span>
-                        </span>
-                      </button>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {[
+                        { key: "auto", icon: Sparkles, label: "自动识别", sub: "有图即图像" },
+                        { key: "pure_formula", icon: FileText, label: "纯公式", sub: "有图也只展示" },
+                        { key: "function_graph", icon: LayoutTemplate, label: "函数图像", sub: "无图也归类" },
+                      ].map(({ key, icon: Icon, label, sub }) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setCardType(key)}
+                          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-left transition-all duration-150 ${
+                            cardType === key
+                              ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)] shadow-xs"
+                              : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/30 hover:bg-white"
+                          }`}
+                        >
+                          <Icon className={`h-3.5 w-3.5 shrink-0 ${
+                            cardType === key ? "text-[var(--color-primary)]" : "text-[var(--color-text-hint)]"
+                          }`} />
+                          <span className="min-w-0 leading-tight">
+                            <span className="block text-xs font-semibold">{label}</span>
+                            <span className="block text-[9px] opacity-60">{sub}</span>
+                          </span>
+                        </button>
+                      ))}
                     </div>
-                    <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--color-text-hint)]">
-                      自动识别：上传函数图像后自动归入"函数图像"；未上传时作为普通公式。
-                      纯公式：始终只在"公式"分类展示。函数图像：即使暂未上传图片也出现在"函数图像"分类。
-                    </p>
                   </div>
                 </div>
 
-                <div className="grid gap-5 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr]">
                   <div>
-                    <FieldLabel hint="逗号、空格均可分隔">别名 / 检索词</FieldLabel>
+                    <FieldLabel hint="逗号分隔">别名</FieldLabel>
                     <Input
                       value={aliases}
                       onChange={(event) => setAliases(event.target.value)}
-                      placeholder="抛物线, quadratic function, parabola"
+                      placeholder="抛物线, quadratic"
+                      className="h-9 text-sm"
                     />
+                  </div>
+                  <div className="hidden md:flex md:items-end md:pb-1.5">
+                    <span className="text-[var(--color-text-hint)] text-[11px]">|</span>
                   </div>
                   <div>
                     <FieldLabel>标签</FieldLabel>
                     {tags.isLoading ? (
                       <div className="flex h-9 items-center text-xs text-[var(--color-text-hint)]">正在加载标签...</div>
-                    ) : tagButtons}
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {TAG_CODES.map((code) => {
+                          const active = selectedTags.includes(code);
+                          return (
+                            <button
+                              key={code}
+                              type="button"
+                              onClick={() => toggleTag(code)}
+                              className={`inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition ${
+                                active
+                                  ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)]"
+                                  : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/40 hover:bg-white"
+                              }`}
+                            >
+                              {active && <Check className="h-3 w-3" />}
+                              {TAG_NAMES[code]}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
+
+                {/* ── Image upload (inline, create mode only) ── */}
+                {mode === "create" && cardType !== "pure_formula" && (
+                  <div>
+                    <div className="flex items-center gap-3 rounded-lg border border-dashed border-[var(--color-border)] bg-white/40 px-3 py-2.5 transition-all duration-150 hover:border-[var(--color-primary)]/30 hover:bg-[var(--color-primary-light)]/20">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <ImageIcon className="h-4 w-4 shrink-0 text-[var(--color-text-hint)]" />
+                        <span className="text-xs text-[var(--color-text-secondary)] truncate">
+                          {pendingImage ? pendingImage.name : "函数图像 · 保存后自动上传"}
+                        </span>
+                        {pendingImage && (
+                          <span className="text-[10px] text-[var(--color-text-hint)] shrink-0">
+                            ({(pendingImage.size / 1024 / 1024).toFixed(2)} MB)
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        ref={imageFileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={handleImageSelect}
+                      />
+                      <div className="flex items-center gap-1 shrink-0">
+                        {pendingImage ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => imageFileInputRef.current?.click()}
+                              className="rounded-md px-2 py-1 text-[11px] font-medium text-[var(--color-primary)] transition hover:bg-[var(--color-primary-light)]"
+                            >
+                              换一个
+                            </button>
+                            <button
+                              type="button"
+                              onClick={clearPendingImage}
+                              className="rounded-md px-2 py-1 text-[11px] font-medium text-[var(--color-text-hint)] transition hover:bg-red-50 hover:text-red-500"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </>
+                        ) : (
+                          <Button type="button" variant="secondary" size="sm" className="h-7 text-[11px] px-2" onClick={() => imageFileInputRef.current?.click()}>
+                            <Upload className="h-3 w-3" /> 选择
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    {pendingImage && pendingImagePreview && (
+                      <div className="mt-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                        <div className="overflow-hidden rounded-lg border bg-white">
+                          <img src={pendingImagePreview} alt="预览" className="max-h-36 w-full object-contain" />
+                        </div>
+                      </div>
+                    )}
+                    <p className="mt-1 text-[10px] text-[var(--color-text-hint)]">
+                      支持 PNG/JPEG/WebP，单张不超过 10MB。可拖拽图片到此处。
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <FieldLabel hint={`${summary.length}/300`}>摘要</FieldLabel>
                   <textarea
-                    className="min-h-24 w-full resize-y rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-sm leading-6 outline-none transition placeholder:text-[var(--color-text-hint)] focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]"
+                    className="min-h-20 w-full resize-y rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-sm leading-6 outline-none transition placeholder:text-[var(--color-text-hint)] focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]"
                     value={summary}
                     maxLength={300}
                     onChange={(event) => setSummary(event.target.value)}
                     placeholder="用一两句话说明该公式解决什么问题、关键变量或使用场景。"
                   />
                   {summary.trim() && (
-                    <div className="mt-2 rounded-xl border border-[var(--color-border-light)] bg-white/65 px-3 py-2.5 text-sm leading-6 text-[var(--color-text-secondary)]">
+                    <div className="mt-1.5 rounded-lg border border-[var(--color-border-light)] bg-white/65 px-3 py-1.5 text-sm leading-6 text-[var(--color-text-secondary)]">
                       <MixedLatexRenderer text={summary} />
                     </div>
                   )}
@@ -1103,9 +1198,9 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
                   <button
                     type="button"
                     onClick={addBlock}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--color-border)] bg-white/45 px-4 py-3 text-sm font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]"
+                    className="group flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[var(--color-border)] bg-white/40 px-4 py-3.5 text-sm font-semibold text-[var(--color-text-secondary)] transition-all duration-200 hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-primary-light)]/40 hover:text-[var(--color-primary-dark)]"
                   >
-                    <Plus className="h-4 w-4" />
+                    <Plus className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
                     再添加一个公式块
                   </button>
                 )}
@@ -1122,12 +1217,6 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
               optional
             >
               <div className="space-y-5">
-                {mode === "create" && (
-                  <div className="flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50/70 px-3.5 py-3 text-xs leading-5 text-blue-800">
-                    <Lightbulb className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>先保存公式卡片，随后可在详情页上传或生成函数图像。</span>
-                  </div>
-                )}
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
@@ -1376,14 +1465,18 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
             tabIndex={0}
             aria-label="公式编辑辅助侧栏，可独立上下滚动"
           >
-          <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--porcelain)] shadow-[var(--shadow-floating)]">
-            <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-4 py-3">
+          <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-gradient-to-b from-[var(--porcelain)] to-white shadow-[var(--shadow-floating)]">
+            <div className="flex items-center justify-between border-b border-[var(--color-border-light)] bg-white/60 px-4 py-3">
               <div className="flex items-center gap-2">
                 <Eye className="h-4 w-4 text-[var(--color-primary)]" />
                 <span className="text-sm font-semibold text-[var(--ink)]">实时预览</span>
               </div>
-              <span className="rounded-full bg-[var(--color-bg-input)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-text-hint)]">
-                {cardType === "function_graph" ? "函数图像" : "纯公式"}
+              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                cardType === "function_graph"
+                  ? "border-[var(--color-primary-light)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)]"
+                  : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-hint)]"
+              }`}>
+                {cardType === "function_graph" ? "函数图像" : cardType === "pure_formula" ? "纯公式" : "自动识别"}
               </span>
             </div>
 
