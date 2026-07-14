@@ -117,6 +117,9 @@ async def _card_to_response(db: AsyncSession, card: FormulaCard, graph_asset: Fo
         "examples": card.examples,
         "function_properties": card.function_properties,
         "graph_asset": graph_asset_resp,
+        # Flat legacy fields for miniprogram compatibility
+        "graph_image_url": graph_asset_resp.image_url if graph_asset_resp else None,
+        "graph_thumbnail_url": graph_asset_resp.thumbnail_url if graph_asset_resp else None,
         "sort_order": card.sort_order,
         "status": card.status,
         "tags": tags,

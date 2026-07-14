@@ -11,6 +11,7 @@ import { LatexRenderer } from "@/components/ui/latex-renderer";
 import { MixedLatexRenderer } from "@/components/ui/mixed-latex-renderer";
 import { FormulaEditorForm } from "@/components/formulas/formula-editor-form";
 import { FormulaGraphAssetPanel } from "@/components/formulas/formula-graph-asset-panel";
+import { FormulaGraphSpecPanel } from "@/components/formulas/formula-graph-spec-panel";
 import { FunctionPropertiesPanel } from "@/components/formulas/function-properties-panel";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
@@ -136,7 +137,14 @@ type FormulaCard = {
   card_type: string;
   is_function_graph: boolean;
   function_properties: Record<string, unknown> | null;
-  graph_asset: FormulaGraphAsset | null;
+  graph_asset: import("@/lib/api/types").FormulaGraphAsset | null;
+  graph_assets: import("@/lib/api/types").FormulaGraphAsset[];
+  graph_spec: import("@/lib/api/types").GraphSpec | null;
+  draft_graph_spec: import("@/lib/api/types").GraphSpec | null;
+  graph_status: string;
+  graph_last_error: string | null;
+  graph_generated_at: string | null;
+  graph_confirmed_at: string | null;
 };
 
 const STATUS_BADGE: Record<string, string> = {
@@ -362,6 +370,30 @@ export default function EditFormulaPage() {
               <>
                 {(card.card_type === "function_graph" || card.graph_asset) && (
                   <FormulaGraphAssetPanel cardId={card.id} canUpdate={canUpdate} />
+                )}
+                {canUpdate && card.card_type !== "pure_formula" && (
+                  <FormulaGraphSpecPanel
+                    cardId={card.id}
+                    cardVersion={card.version}
+                    initialSpec={card.graph_spec || card.draft_graph_spec}
+                    initialStatus={card.graph_status}
+                    canUpdate={canUpdate}
+                    graphLastError={card.graph_last_error}
+                    graphGeneratedAt={card.graph_generated_at}
+                    graphConfirmedAt={card.graph_confirmed_at}
+                  />
+                )}
+                {!canUpdate && card.card_type !== "pure_formula" && (
+                  <FormulaGraphSpecPanel
+                    cardId={card.id}
+                    cardVersion={card.version}
+                    initialSpec={card.graph_spec || card.draft_graph_spec}
+                    initialStatus={card.graph_status}
+                    canUpdate={false}
+                    graphLastError={card.graph_last_error}
+                    graphGeneratedAt={card.graph_generated_at}
+                    graphConfirmedAt={card.graph_confirmed_at}
+                  />
                 )}
                 {card.function_properties && (
                   <FunctionPropertiesPanel properties={card.function_properties} />

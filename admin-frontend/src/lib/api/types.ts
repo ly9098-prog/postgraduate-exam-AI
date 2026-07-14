@@ -835,7 +835,7 @@ export type BatchAnswerImageApplyResponse = {
 export type FormulaGraphAsset = {
   id: number;
   formula_card_id: number;
-  source_type: "uploaded" | "template" | string;
+  source_type: "uploaded" | "template" | "generated" | string;
   template_type?: string | null;
   template_parameters?: Record<string, unknown> | null;
   viewport?: Record<string, unknown> | null;
@@ -845,9 +845,113 @@ export type FormulaGraphAsset = {
   mime_type?: string | null;
   width?: number | null;
   height?: number | null;
+  file_size?: number | null;
   checksum?: string | null;
+  renderer_version?: number | null;
+  alt_text?: string | null;
+  description?: string | null;
+  reviewed_by?: number | null;
+  reviewed_at?: string | null;
+  review_note?: string | null;
+  published_version?: number | null;
   created_at?: string;
   updated_at?: string;
+};
+
+// ── Graph Spec (auto-generation) ──
+
+export type GraphSpecExpression = {
+  expression: string;
+  display_latex?: string | null;
+  label?: string | null;
+  line_style?: "solid" | "dashed" | "dotted" | "dashdot";
+};
+
+export type GraphSpecDomain = {
+  intervals: Array<[number | null, number | null]>;
+  exclude_points?: number[];
+};
+
+export type GraphSpecAnnotation = {
+  x: number;
+  y: number;
+  label?: string | null;
+  color?: string | null;
+  point_style?: "filled" | "hollow";
+};
+
+export type GraphSpecRefLine = {
+  value: number;
+  label?: string | null;
+  style?: "solid" | "dashed" | "dotted" | "dashdot";
+  is_vertical?: boolean;
+};
+
+export type GraphSpecLayout = {
+  rows: number;
+  columns: number;
+};
+
+export type GraphSpecPanel = {
+  expressions: GraphSpecExpression[];
+  domain?: GraphSpecDomain;
+  axis_mode?: "manual" | "auto" | "auto_robust";
+  x_range?: [number, number];
+  y_range?: [number, number];
+  annotations?: GraphSpecAnnotation[];
+  vertical_lines?: GraphSpecRefLine[];
+  horizontal_lines?: GraphSpecRefLine[];
+  title?: string | null;
+  x_label?: string;
+  y_label?: string;
+};
+
+export type GraphSpec = {
+  schema_version: number;
+  render_mode: "explicit_2d" | "preset_diagram" | "manual_only";
+  template: "single_function" | "function_comparison" | "multi_panel" | "discontinuity_comparison" | "inequality_auxiliary";
+  layout?: GraphSpecLayout;
+  panels: GraphSpecPanel[];
+};
+
+export type GraphStatus =
+  | "not_applicable"
+  | "unconfigured"
+  | "missing"
+  | "generating"
+  | "draft"
+  | "ready"
+  | "failed"
+  | "ignored";
+
+export type QualityCheckResult = {
+  errors: string[];
+  warnings: string[];
+  passed: boolean;
+};
+
+export type GraphPreviewResponse = {
+  preview_url: string;
+  thumbnail_url?: string | null;
+  preview_token: string;
+  checksum: string;
+  width: number;
+  height: number;
+  mime_type: string;
+  quality: QualityCheckResult;
+  expires_at: string;
+};
+
+export type GraphConfirmRequest = {
+  preview_token: string;
+  checksum: string;
+  card_version: number;
+  accept_warnings?: boolean;
+};
+
+export type GraphConfirmResponse = {
+  asset: FormulaGraphAsset;
+  graph_status: string;
 };
 
 export type FormulaCardType = "auto" | "pure_formula" | "function_graph";

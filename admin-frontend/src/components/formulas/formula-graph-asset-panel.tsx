@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Upload, Trash2, ExternalLink, ImageIcon, AlertCircle, Check, Loader2, RefreshCw, X } from "lucide-react";
+import { Upload, Trash2, ExternalLink, ImageIcon, AlertCircle, Check, Loader2, RefreshCw, X, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { apiRequest } from "@/lib/api/client";
@@ -18,6 +18,94 @@ function getDisplayUrl(asset: FormulaGraphAsset): string {
   if (!base) return base;
   const ts = asset.updated_at || asset.checksum || "";
   return ts ? `${base}?v=${encodeURIComponent(ts)}` : base;
+}
+
+function formatDt(d: string | null | undefined) {
+  if (!d) return "—";
+  try { return new Date(d).toLocaleString("zh-CN"); } catch { return d; }
+}
+
+function AltDescEditor({
+  asset, cardId,
+}: {
+  asset: FormulaGraphAsset;
+  cardId: number;
+}) {
+  const queryClient = useQueryClient();
+  const [altText, setAltText] = useState(asset.alt_text || "");
+  const [description, setDescription] = useState(asset.description || "");
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [saveMsgType, setSaveMsgType] = useState<"success" | "error">("success");
+  const [dirty, setDirty] = useState(false);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      apiRequest<FormulaGraphAsset>(
+        `/formulas/${cardId}/graph-assets/${asset.id}/metadata`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ alt_text: altText || null, description: description || null }),
+        },
+      ),
+    onSuccess: () => {
+      setSaveMsgType("success");
+      setSaveMsg("图像说明已保存");
+      setDirty(false);
+      queryClient.invalidateQueries({ queryKey: ["admin-formula-graph-assets", cardId] });
+    },
+    onError: (e) => {
+      setSaveMsgType("error");
+      setSaveMsg(e instanceof Error ? e.message : "保存失败");
+    },
+  });
+
+  const charCount = (s: string) => s.replace(/\s/g, "").length;
+
+  return (
+    <div className="space-y-2 rounded-lg border border-[var(--color-border-light)] bg-white/70 px-3 py-2.5 text-xs">
+      {/* alt_text */}
+      <div>
+        <label className="flex items-center justify-between text-[var(--color-text-hint)]">
+          <span>替代文本 (alt text)</span>
+          <span className={charCount(altText) > 100 ? "text-amber-500" : ""}>{charCount(altText)}字</span>
+        </label>
+        <input
+          className="mt-0.5 w-full rounded-lg border bg-white px-2 py-1.5 text-xs"
+          placeholder="图片加载失败时显示的替代文本"
+          value={altText}
+          onChange={(e) => { setAltText(e.target.value); setDirty(true); }}
+          disabled={saveMutation.isPending}
+        />
+      </div>
+      {/* description */}
+      <div>
+        <label className="flex items-center justify-between text-[var(--color-text-hint)]">
+          <span>详细说明 (description)</span>
+          <span className={charCount(description) > 300 ? "text-amber-500" : ""}>{charCount(description)}字</span>
+        </label>
+        <textarea
+          className="mt-0.5 w-full rounded-lg border bg-white px-2 py-1.5 text-xs"
+          rows={3}
+          placeholder="用于 SEO 和管理端参考的详细说明"
+          value={description}
+          onChange={(e) => { setDescription(e.target.value); setDirty(true); }}
+          disabled={saveMutation.isPending}
+        />
+      </div>
+      {saveMsg && (
+        <p className={`text-[11px] ${saveMsgType === "success" ? "text-[var(--color-success)]" : "text-red-500"}`}>
+          {saveMsg}
+          <button type="button" className="ml-1" onClick={() => setSaveMsg(null)}>✕</button>
+        </p>
+      )}
+      <div className="flex items-center gap-2">
+        <Button type="button" size="sm" onClick={() => saveMutation.mutate()} disabled={!dirty || saveMutation.isPending}>
+          {saveMutation.isPending ? <><Loader2 className="h-3 w-3 animate-spin" /> 保存中</> : <><Save className="h-3 w-3" /> 保存</>}
+        </Button>
+        {dirty && <span className="text-[10px] text-amber-500">有未保存的修改</span>}
+      </div>
+    </div>
+  );
 }
 
 export function FormulaGraphAssetPanel({ cardId, canUpdate }: Props) {
@@ -54,6 +142,7 @@ export function FormulaGraphAssetPanel({ cardId, canUpdate }: Props) {
   const effective = data?.effective ?? null;
   const assets = data?.items ?? [];
   const hasUploaded = assets.some((a) => a.source_type === "uploaded");
+  const hasGenerated = assets.some((a) => a.source_type === "generated");
   const hasTemplate = assets.some((a) => a.source_type === "template");
 
   // Upload mutation
@@ -170,19 +259,6 @@ export function FormulaGraphAssetPanel({ cardId, canUpdate }: Props) {
   const handleImageError = useCallback(() => {
     setImageLoadError(true);
   }, []);
-
-  const formatUpdatedAt = (dateStr?: string | null) => {
-    if (!dateStr) return "—";
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleString("zh-CN", {
-        year: "numeric", month: "2-digit", day: "2-digit",
-        hour: "2-digit", minute: "2-digit",
-      });
-    } catch {
-      return dateStr;
-    }
-  };
 
   const pendingUpload = uploadMutation.isPending;
   const pendingDelete = deleteMutation.isPending;
@@ -330,7 +406,7 @@ export function FormulaGraphAssetPanel({ cardId, canUpdate }: Props) {
             <div className="grid grid-cols-2 gap-3 text-xs text-[var(--color-text-secondary)]">
               <div>
                 <span className="font-semibold">当前来源：</span>
-                {effective.source_type === "uploaded" ? "手工上传" : "模板生成"}
+                {effective.source_type === "uploaded" ? "手工上传" : effective.source_type === "generated" ? "自动生成" : "模板生成"}
               </div>
               <div>
                 <span className="font-semibold">尺寸：</span>
@@ -342,33 +418,40 @@ export function FormulaGraphAssetPanel({ cardId, canUpdate }: Props) {
               </div>
               <div>
                 <span className="font-semibold">更新时间：</span>
-                {formatUpdatedAt(effective.updated_at)}
+                {formatDt(effective.updated_at)}
               </div>
             </div>
 
+            {/* alt_text / description editing (only for generated assets) */}
+            {effective.source_type === "generated" && (
+              <AltDescEditor asset={effective} cardId={cardId} key={`asset-${effective.id}-${effective.updated_at}`} />
+            )}
+
             {/* Status info */}
             <div className="rounded-lg border border-[var(--color-border-light)] bg-white/70 px-3 py-2.5 text-xs text-[var(--color-text-secondary)]">
-              {hasUploaded && hasTemplate && (
-                <p>当前优先展示手工上传图。删除手工图片后，将自动恢复模板图。</p>
+              {hasUploaded && (
+                <p>当前优先展示手工上传图。</p>
               )}
-              {hasUploaded && !hasTemplate && (
-                <p>当前展示手工上传图。没有可用的模板回退图。</p>
+              {!hasUploaded && hasGenerated && (
+                <p>当前展示自动生成图。上传手工图片后将优先展示手工图片。</p>
               )}
-              {!hasUploaded && hasTemplate && (
-                <p>当前展示模板生成图。上传手工图片后，将优先展示手工图片。</p>
+              {!hasUploaded && !hasGenerated && hasTemplate && (
+                <p>当前展示模板生成图。</p>
               )}
               {hasUploaded && (
                 <p className="mt-0.5">
                   <span className="font-semibold">手工上传：</span>有
-                  {hasTemplate && (
-                    <span className="ml-3"><span className="font-semibold">模板回退：</span>
-                      <span className="text-[var(--color-success)] flex items-center gap-1"><Check className="h-3 w-3" /> 可用</span>
-                    </span>
-                  )}
                 </p>
               )}
-              {!hasUploaded && hasTemplate && (
-                <p><span className="font-semibold">模板回退：</span>
+              {!hasUploaded && hasGenerated && (
+                <p className="mt-0.5">
+                  <span className="font-semibold">自动生成：</span>
+                  <span className="text-[var(--color-success)] flex items-center gap-1"><Check className="h-3 w-3" /> 可用</span>
+                </p>
+              )}
+              {hasTemplate && (
+                <p className="mt-0.5">
+                  <span className="font-semibold">模板回退：</span>
                   <span className="text-[var(--color-success)] flex items-center gap-1"><Check className="h-3 w-3" /> 可用</span>
                 </p>
               )}
