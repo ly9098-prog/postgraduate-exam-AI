@@ -246,7 +246,7 @@ async function request(method, url, data = {}, options = {}) {
       newToken = await forceRefreshToken()
     } catch (_e) {
       // _refreshToken already clears auth and redirects to login
-      throw new ApiError('登录已过期，请重新登录', { code: 401, statusCode: 401 })
+      throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401 })
     }
 
     // Retry original request with new token

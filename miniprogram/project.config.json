@@ -10,7 +10,9 @@
       { "type": "suffix", "value": ".yaml" },
       { "type": "glob", "value": "**/*.test.js" },
       { "type": "glob", "value": "**/*.spec.js" },
-      { "type": "glob", "value": "**/__snapshots__/**" }
+      { "type": "glob", "value": "**/__snapshots__/**" },
+      { "type": "folder", "value": "scripts" },
+      { "type": "glob", "value": "scripts/test-*.js" }
     ],
     "include": []
   },
