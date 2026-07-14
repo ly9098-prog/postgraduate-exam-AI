@@ -17,6 +17,10 @@ from app.core.logging_config import setup_logging
 from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
 from app.services.pomodoro_scheduler_service import pomodoro_scheduler
+from app.services.production_config_validator import (
+    validate_production_config,
+    validate_production_config_async,
+)
 
 setup_logging()
 init_sentry()
@@ -45,16 +49,20 @@ async def _periodic_token_cleanup():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Production configuration fail-fast check
+    # Production configuration fail-fast check (sync part)
     try:
-        from app.services.production_config_validator import validate_production_config
-
         validate_production_config()
     except SystemError as e:
         logger.critical("Production configuration validation FAILED: %s", e)
         raise
     except Exception as e:
         logger.warning("Production config validation error (non-fatal): %s", e)
+    # Async production config checks (Redis ping, DB type, Alembic head)
+    try:
+        await validate_production_config_async()
+    except SystemError as e:
+        logger.critical("Production async configuration validation FAILED: %s", e)
+        raise
     from app.core.ocr_profile import get_ocr_profile
     profile = get_ocr_profile()
     logger.info(
@@ -119,6 +127,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("AI prewarm worker start failed (non-fatal): %s", e)
 
+    # Start the durable task queue pipeline worker (background task processing)
+    _pipeline_worker_task: asyncio.Task | None = None
+    try:
+        from app.services.task_queue_worker import run_pipeline_worker, run_reaper_loop
+        _pipeline_worker_task = asyncio.create_task(
+            run_pipeline_worker(), name="pipeline-worker"
+        )
+        asyncio.create_task(
+            run_reaper_loop(), name="task-reaper"
+        )
+    except Exception as e:
+        logger.warning("Pipeline worker start failed (non-fatal): %s", e)
+
     yield
 
     cleanup_task.cancel()
@@ -140,6 +161,16 @@ async def lifespan(app: FastAPI):
         await stop_worker()
     except Exception:
         logger.exception("AI prewarm worker stop failed")
+    try:
+        from app.services.ocr_executor_service import ocr_executor
+        await ocr_executor.shutdown(wait=False)
+    except Exception:
+        logger.exception("OCR executor shutdown failed")
+    try:
+        from app.services.pdf_renderer_service import pdf_renderer
+        await pdf_renderer.shutdown()
+    except Exception:
+        logger.exception("PDF renderer shutdown failed")
     logger.info("Shutting down 2240AI")
 
 
