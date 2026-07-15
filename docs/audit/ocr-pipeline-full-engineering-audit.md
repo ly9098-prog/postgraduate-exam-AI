@@ -1,7 +1,7 @@
 # OCR Pipeline 全量工程审计报告
 
 > 审计范围：`/home/lmh/projects/postgraduate-ai/backend/`
-> 审计时间：2026-06-20（初版）→ 2026-07-08（末次更新：乱码代码持久检测 + code_structure 防假成功 + 答案透传修复）
+> 审计时间：2026-06-20（初版）→ 2026-07-16（末次更新：Storage Backend 完整实现 + 题图补图工具链 + 视觉 QA 自动化）
 > 审计方法：全量代码扫描 + 文档审查 + 测试用例分析 + 配置审查
 
 ---
@@ -212,6 +212,8 @@
 | `evaluation/split_quality.py` | 111 | 分割质量加权评估 | ✅ 单一 | 🟢 低 |
 | `services/import_pipeline_service.py` | ~370 | Import pipeline 公共逻辑（统一导入/Pipeline 状态/后台任务） | ✅ 单一 | 🟢 低 |
 | `api/router.py` / `api/v1/router.py` / `api/admin/router.py` | 3 files | 三层聚合 Router，main.py 仅 include_router(api_router) | ✅ 单一 | 🟢 低 |
+| `services/storage_backend.py` | 235 | Storage 后端抽象（LocalFileStorage / COSStorage）+ 图片压缩 + delete 方法（路径穿越防护 + 命名空间隔离）+ 题图存储工厂 | ✅ 较好 | 🟢 低 |
+| `utils/question_content.py` | 26 | `extract_image_urls_from_content()` 从 parsed_content segments 提取图片 URL（display=true 过滤 + 去重 + 保序）| ✅ 单一 | 🟢 低 |
 
 ### 2.2 关键结构问题（已修复摘要）
 
@@ -225,6 +227,8 @@
 - **乱码代码持久检测（`ad0d237`）**：`ocr_fix/router.py` 和 `deepseek_adapter.py` 新增基于 `detect_code_block_integrity` 的乱码持久检查 —— 纯文本 LLM 无法可靠修复乱码代码，当修复前后 `code_garbled_text` flag 均存在且分数未显著改善（≥80%）时拒绝输出，退回原文
 - **code_structure_reconstruct 防假成功（`ad0d237`）**：`code_structure_stage.py` 修复 LLM 修复后盲目清除所有结构 flag 的问题 —— 新增 pre/post 完整性对比，仅移除已解决的 flag，持久 flag 重新追加；`code_fixed` 基于实际解决的 flag 数而非模型自我报告；confidence 仅在乱码被解决时提升；`code_garbled_text` 和 `code_line_break_suspicious` 加入 `_CODE_STRUCTURE_FLAGS`
 - **答案透传修复（`ad0d237`）**：`normalize_schema_stage.py` 和 `review_stage.py` 日志字段从 `parsed_answer` 修正为 `answer`；`question_normalizer.py` `normalize_questions()` 新增 `question_number` 和 `number` 的双向 int 防御转换，解决 string/int 类型不一致导致匹配失败的问题
+- **Storage Backend 完整实现（2026-07-16）**：`services/storage_backend.py` 新增 `compress_image()` 图片压缩函数（JPEG 85/PNG optimize/WebP 85/GIF BMP TIFF→JPEG + 1200px 尺寸限制）；`StorageBackend` 基类新增 `delete()` 抽象方法；`LocalFileStorage.delete()` 实现路径穿越防护（`posixpath.normpath` + `..` 拒绝 + 命名空间前缀校验）+ 幂等删除；`COSStorage` 从 `raise NotImplementedError` 重写为完整实现（`_get_client` 延迟加载 + `_build_key` 前缀管理 + `put_object` 上传 + 自动降级到本地存储 + `delete_object` 命名空间隔离）；新增 `get_question_assets_storage()` 题图独立存储工厂。20 测试覆盖 compress/upload/delete/fallback/安全限制。
+- **题图补图工具链（2026-07-16）**：`scripts/backfill_question_images.py` 扫描 PDF 题图补图脚本（幂等设计 + dry-run/live-run + database backup + MD5 checksum 验证 + `--replace-existing-images` 旧图替换 + `--backfill-all-pages` 全量页码回填 + JSON report）；`scripts/auto_detect_figure_regions.py` OpenCV CV 检测 + Pillow auto-trim 两遍精修截图区域；`scripts/visual_qa_check.py` / `scripts/deep_visual_qa.py` / `scripts/precision_visual_qa.py` / `scripts/refined_visual_qa.py` / `scripts/final_visual_qa_report.py` 5 级像素分析工具链（边距/墨迹/裁断/元数据检查 + HTML 报告生成）。56 测试覆盖 extract_image_urls/delete/compress/detect_figure 场景。
 
 ---
 
@@ -364,6 +368,8 @@
 | **P0** | `code_structure_reconstruct` 标记 `code_fixed=True` 即使乱码未解决 | ✅ `ad0d237`：pre/post integrity flag 对比，仅移除已解决 flag，confidence 仅乱码解决后提升 |
 | **P1** | 审核日志字段名 `parsed_answer` 与实际字段 `answer` 不匹配 | ✅ `ad0d237`：`normalize_schema_stage.py` + `review_stage.py` 日志字段修正 |
 | **P1** | `normalize_questions` 中 `question_number` 类型不一致（str/int）导致匹配失败 | ✅ `ad0d237`：双向 int 防御转换 |
+| **P2** | `storage_backend.py` COS Storage 未实现（`raise NotImplementedError`），无图片压缩，无 delete 方法 | ✅ 2026-07-16：完整 COSStorage 实现（`_get_client` + `put_object` + 自动降级本地）+ `compress_image()`（JPEG85/PNG/WebP/GIF→JPEG + 1200px 限制）+ `delete()` 方法（LocalFileStorage 路径穿越防护 + COSStorage 命名空间隔离）+ `get_question_assets_storage()` 题图工厂 |
+| **P2** | OCR 导入后题图补图依赖人工手动裁剪，无自动化工具 | ✅ 2026-07-16：`scripts/backfill_question_images.py` 幂等补图脚本 + `scripts/auto_detect_figure_regions.py` CV 图形区域检测 + 5 级视觉 QA 工具链（边距/墨迹/裁断检查 + HTML 报告）|
 
 ### 6.3 推荐新 Pipeline 结构
 
@@ -418,6 +424,8 @@
 | `features/pipeline_stages/structure_freeze_stage.py` | 230 | 选项结构冻结（纯正则，split 前锁定选项） |
 | `features/pipeline_stages/code_structure_stage.py` | 366 | 代码结构重建（LLM 修复 brace/indent/OCR 符号错误）+ pre/post integrity 防假成功 |
 | `features/ocr_mode.py` | 89 | OCR 模式解析（local/api）+ 依赖校验 |
+| `services/storage_backend.py` | 235 | Storage 后端抽象（LocalFileStorage / COSStorage）+ 图片压缩 + delete 路径穿越防护 + 题图存储工厂 |
+| `utils/question_content.py` | 26 | `extract_image_urls_from_content()` 从 parsed_content 提取图片 URL |
 | `models/pipeline_enums.py` | 139 | Pipeline 状态枚举 + 状态转换守卫 + trace mapping（SSOT） |
 | `core/time_utils.py` | 24 | 统一 UTC 时间工具 |
 
@@ -452,6 +460,20 @@
 | `tests/ocr_acceptance/cases/` | ✅ 10 类样本模板 |
 | `tests/test_evaluation/test_routing_metrics.py` | Phase 2 路由指标测试 |
 | `tests/test_ocr_code_question_repair.py` | 460 行，22 个测试：答案透传（4）、乱码拒绝（7）、防假成功（3）、VL+frozen 合并（4）、回归断言（4） |
+| `tests/test_services/test_storage_backend.py` | 228 行，20 个测试：compress（12）、COS upload/fallback/prefix（5）、get_storage 路由（2）、delete security（1） |
+| `tests/test_services/test_question_image_backfill.py` | 888 行，56 个测试：extract_image_urls（10）、storage delete（6）、detect figure region（2）、backfill pipeline（24）、schema（4）、idempotency（6）、full-page fallback（4） |
+
+### 运维脚本
+
+| 文件 | 用途 |
+|---|---|
+| `scripts/backfill_question_images.py` | 题图补图：PDF→bbox 裁剪→DB 写入，幂等 dry-run/live-run + MD5 校验 + JSON report |
+| `scripts/auto_detect_figure_regions.py` | OpenCV 自适应阈值 + contour 检测 + Pillow auto-trim 两遍精修截图区域 |
+| `scripts/visual_qa_check.py` | 视觉 QA 分析：边距/墨迹/裁断检测 + 对比图生成 |
+| `scripts/deep_visual_qa.py` | 深度像素分析：页面布局 + bbox 验证 + 像素级安全边距 |
+| `scripts/precision_visual_qa.py` | 精准裁断检测：bbox 外内容分析（区分题干文字与图形裁断）|
+| `scripts/refined_visual_qa.py` | 精修 QA：边界墨迹模式分类 + 图形类型特定检查 |
+| `scripts/final_visual_qa_report.py` | 最终视觉核验 HTML 报告生成器（含像素分析数据和人工确认指引）|
 
 ### 文档
 
@@ -464,4 +486,4 @@
 
 ---
 
-*报告结束。初版：2026-06-20，末次更新：2026-07-04。*
+*报告结束。初版：2026-06-20，末次更新：2026-07-16。*
