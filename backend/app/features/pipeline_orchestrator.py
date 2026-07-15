@@ -295,6 +295,7 @@ _PIPELINE_STORE_FIELDS = (
     "quality_report",
     "artifacts",
     "page_range",
+    "_file_path",
 )
 
 
@@ -765,11 +766,19 @@ def _ocr_scanned_pdf(
                 if result.failed and idx in batch_image_map
             ]
             try:
+                # Reset OCR before text fallback to avoid using corrupted model state
+                from app.services.ocr_service import _reset_ocr
+                _reset_ocr()
                 fallback_results = ocr_pages(failed_images) if failed_images else {}
-            except RuntimeError as exc:
-                logger.warning("OCR text fallback unavailable: %s", exc)
-                fallback_results = {}
-                ocr_text_fallback_unavailable_pages.update(idx for idx, _ in failed_images)
+            except (RuntimeError, Exception) as exc:
+                logger.warning("OCR text fallback failed: %s — retrying with another reset", exc)
+                try:
+                    _reset_ocr()
+                    fallback_results = ocr_pages(failed_images) if failed_images else {}
+                except Exception as exc2:
+                    logger.warning("OCR text fallback retry also failed: %s", exc2)
+                    fallback_results = {}
+                    ocr_text_fallback_unavailable_pages.update(idx for idx, _ in failed_images)
 
             del batch_images
             gc.collect()

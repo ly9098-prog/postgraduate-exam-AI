@@ -77,7 +77,7 @@ class Settings(BaseSettings):
 
     # PDF 导入限制
     PDF_MAX_FILE_SIZE_BYTES: int = 200 * 1024 * 1024   # 200MB
-    PDF_MAX_PAGES: int = 500
+    PDF_MAX_PAGES: int = 600
     PDF_MAX_PAGE_PIXELS: int = 4096 * 4096              # max width*height per page
     PDF_RENDER_DPI: int = 150
     PDF_MAX_RENDER_PAGES_CONCURRENT: int = 5            # pages rendered per batch
