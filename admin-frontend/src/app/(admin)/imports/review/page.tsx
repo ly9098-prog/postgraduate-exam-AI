@@ -10,10 +10,27 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { MathFormula } from "@/components/ui/math-formula";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CustomSelect } from "@/components/ui/custom-select";
 import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 import { apiRequest, toQuery } from "@/lib/api/client";
+import { hasVisualSegments, isImageSegmentType, getSegmentTypeLabel, reorderSegmentUp, reorderSegmentDown, moveSegment, deleteSegmentAtIndex, updateSegOptionKey, updateSegUrl } from "@/lib/segment-utils";
+import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, canonicalizeQuestionType, getQuestionTypeLabel, formatUnknownType } from "@/lib/question-types";
+import type { SelectOption } from "@/components/ui/custom-select";
 import type { AdminImportCompleteResponse, BatchAnswerImageApplyResponse, BatchAnswerImagePreviewResponse, BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportActionResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
+import {
+  normalizeBlankOptionGroups,
+  deduplicateGroupOptions,
+  parseBlankAnswer,
+  serializeBlankAnswer,
+  haveIdenticalOptionSets,
+  getSharedOptions,
+  type BlankOptionGroup,
+  type BlankAnswerMap,
+} from "./components/multi-blank-choice-utils";
+import { MultiBlankChoicePreview } from "./components/multi-blank-choice-preview";
+import { MultiBlankChoiceEditor } from "./components/multi-blank-choice-editor";
+import { MultiBlankAnswerSummary } from "./components/multi-blank-answer-summary";
 
 type FilterDropdownOption = {
   value: string;
@@ -107,42 +124,29 @@ type EditState = {
   subject_id: number | null;
   question_type: string;
   stem: string;
-  options: Array<{ key: string; text: string }>;
+  options: Array<{ key: string; text: string; segments?: Array<Record<string, unknown>> }>;
   answer: string;
   analysis: string;
+  multiBlank?: {
+    groups: BlankOptionGroup[];
+    answerMap: BlankAnswerMap;
+    usesSharedOptions: boolean;
+    sharedOptions: import("./components/multi-blank-choice-utils").BlankOption[];
+    dedupWarnings?: string[];
+    dedupErrors?: string[];
+  };
 };
 
-function parseOptionsToEditable(item: ImportQuestionItem | null | undefined): Array<{ key: string; text: string }> {
+function parseOptionsToEditable(item: ImportQuestionItem | null | undefined): Array<{ key: string; text: string; segments?: Array<Record<string, unknown>> }> {
   if (!item) return [];
   const raw = item.raw_data;
   const source = item.parsed_options ?? raw?.options ?? raw?.parsed_options ?? raw?.option_text ?? raw?.optionText ?? null;
   if (!source || (Array.isArray(source) && source.length === 0)) {
-    if (item.question_type === "multi_blank_choice") {
-      const groups = item.parsed_content?.blank_option_groups ?? raw?.blank_option_groups;
-      if (Array.isArray(groups)) {
-        const result: Array<{ key: string; text: string; _groupId?: string }> = [];
-        for (const group of groups) {
-          if (!group || typeof group !== "object") continue;
-          const g = group as Record<string, unknown>;
-          const groupId = String(g.id ?? "");
-          const opts = g.options;
-          if (Array.isArray(opts)) {
-            for (const opt of opts) {
-              if (opt && typeof opt === "object") {
-                const o = opt as Record<string, unknown>;
-                const key = String(o.key ?? "");
-                const text = String(o.text ?? "");
-                if (key && text) result.push({ key, text });
-              }
-            }
-          } else if (opts && typeof opts === "object") {
-            for (const [key, text] of Object.entries(opts as Record<string, unknown>)) {
-              if (key && text) result.push({ key, text: String(text) });
-            }
-          }
-        }
-        return result;
-      }
+    if (isMultiBlankChoice(item.question_type ?? "")) {
+      const groups = normalizeBlankOptionGroups(
+        item.parsed_content?.blank_option_groups ?? (item.raw_data as Record<string, unknown> | undefined)?.blank_option_groups,
+      );
+      return groups.flatMap((g) => g.options);
     }
     return [];
   }
@@ -157,7 +161,8 @@ function parseOptionsToEditable(item: ImportQuestionItem | null | undefined): Ar
           const obj = entry as Record<string, unknown>;
           const key = String(obj.key ?? obj.label ?? obj.name ?? String.fromCharCode(65 + index));
           const text = String(obj.text ?? obj.content ?? obj.value ?? obj.stem ?? "");
-          return { key, text };
+          const segments = obj.segments && Array.isArray(obj.segments) && obj.segments.length > 0 ? obj.segments : undefined;
+          return { key, text, segments };
         }
         return { key: String.fromCharCode(65 + index), text: "" };
       })
@@ -165,14 +170,29 @@ function parseOptionsToEditable(item: ImportQuestionItem | null | undefined): Ar
   }
   if (typeof source === "object") {
     return Object.entries(source as Record<string, unknown>)
-      .map(([key, value]) => ({ key, text: typeof value === "string" ? value : String(value ?? "") }))
+      .map(([key, value]) => {
+        if (value && typeof value === "object" && "text" in (value as Record<string, unknown>)) {
+          // Rich format: {"A": {"text": "...", "segments": [...]}}
+          const v = value as Record<string, unknown>;
+          return {
+            key,
+            text: String(v.text ?? value ?? ""),
+            segments: v.segments && Array.isArray(v.segments) && v.segments.length > 0 ? v.segments : undefined,
+          };
+        }
+        return { key, text: typeof value === "string" ? value : String(value ?? "") };
+      })
       .filter((opt) => opt.key && opt.text);
   }
   return [];
 }
 
-function isMultiChoice(questionType: string): boolean {
-  return /多选|多空|多项/i.test(questionType);
+function isStandardMultiChoice(questionType: string): boolean {
+  return canonicalizeQuestionType(questionType) === "multiple_choice";
+}
+
+function isMultiBlankChoice(questionType: string): boolean {
+  return canonicalizeQuestionType(questionType) === "multi_blank_choice";
 }
 
 function textFromImport(item: ImportQuestionItem | null | undefined) {
@@ -286,7 +306,7 @@ function statusTone(status: string) {
 }
 
 function editStateFromItem(item: ImportQuestionItem): EditState {
-  return {
+  const state: EditState = {
     subject_id: item.subject_id ?? null,
     question_type: item.question_type || "",
     stem: textFromImport(item),
@@ -294,6 +314,25 @@ function editStateFromItem(item: ImportQuestionItem): EditState {
     answer: item.parsed_answer || "",
     analysis: item.parsed_analysis || "",
   };
+  if (isMultiBlankChoice(state.question_type)) {
+    const raw = item.raw_data as Record<string, unknown> | undefined;
+    const rawGroups = normalizeBlankOptionGroups(
+      item.parsed_content?.blank_option_groups ?? raw?.blank_option_groups,
+    );
+    const { groups, warnings, errors } = deduplicateGroupOptions(rawGroups);
+    const groupIds = groups.map((g) => g.id);
+    const answerMap = parseBlankAnswer(state.answer, groupIds);
+    const shared = groups.length >= 2 && haveIdenticalOptionSets(groups);
+    state.multiBlank = {
+      groups,
+      answerMap,
+      usesSharedOptions: shared,
+      sharedOptions: shared ? getSharedOptions(groups) : [],
+      dedupWarnings: warnings.length > 0 ? warnings : undefined,
+      dedupErrors: errors.length > 0 ? errors : undefined,
+    };
+  }
+  return state;
 }
 
 async function _batchExecute<T>(ids: number[], concurrency: number, fn: (id: number) => Promise<T>): Promise<PromiseSettledResult<T>[]> {
@@ -339,8 +378,17 @@ export default function ImportReviewPage() {
     const timer = setTimeout(() => setDebouncedKeyword(filters.keyword), 300);
     return () => clearTimeout(timer);
   }, [filters.keyword]);
+  const [page, setPage] = useState(1);
+  // Reset page to 1 whenever filters change
+  useEffect(() => {
+    setPage(1);
+  }, [filters.batch_id, filters.status, filters.subject_id, filters.source_type, filters.risk_level, filters.answer_status, debouncedKeyword]);
   const [detailView, setDetailView] = useState<"formatted" | "json">("formatted");
   const [editing, setEditing] = useState(false);
+  // Track visual segment edits (stem & option segments) during editing
+  const [editedSegments, setEditedSegments] = useState<Array<Record<string, unknown>> | null>(null);
+  // Track which segment index is uploading a replacement image (-1 = none)
+  const [segmentUploading, setSegmentUploading] = useState(-1);
   const editSnapshotRef = useRef("");
 
   const [viewMode, setViewMode] = useState<"list" | "table">("list");
@@ -370,6 +418,11 @@ export default function ImportReviewPage() {
   const currentBatchId = filters.batch_id || batchIdParam;
 
   const syncedDetailRef = useRef<Set<number>>(new Set());
+  const segmentReplaceInputRef = useRef<HTMLInputElement>(null);
+  const segmentReplaceIdxRef = useRef(-1);
+  const dragSegIdxRef = useRef(-1);
+  const [dragSegIdx, setDragSegIdx] = useState(-1);
+  const [dragOverIdx, setDragOverIdx] = useState(-1);
 
   // Close batch dropdown on outside click
   useEffect(() => {
@@ -454,8 +507,8 @@ export default function ImportReviewPage() {
   }, [autoSaveHint]);
 
   const queryParams = useMemo(
-    () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject_id: filters.subject_id, source_type: filters.source_type, keyword: debouncedKeyword, risk_level: filters.risk_level || undefined, answer_status: filters.answer_status || undefined }),
-    [batchIdParam, filters.batch_id, filters.status, filters.subject_id, filters.source_type, filters.risk_level, filters.answer_status, debouncedKeyword],
+    () => ({ page, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject_id: filters.subject_id, source_type: filters.source_type, keyword: debouncedKeyword, risk_level: filters.risk_level || undefined, answer_status: filters.answer_status || undefined }),
+    [page, batchIdParam, filters.batch_id, filters.status, filters.subject_id, filters.source_type, filters.risk_level, filters.answer_status, debouncedKeyword],
   );
 
   const queue = useQuery({
@@ -634,16 +687,53 @@ export default function ImportReviewPage() {
   const updateMutation = useMutation({
     mutationFn: async () => {
       if (!previewId || !editState) throw new Error("请选择要编辑的题目");
-      const { options, ...rest } = editState;
-      const body = {
-        ...rest,
-        options: options.map((o) => ({ key: o.key, text: o.text })),
-      };
-      return apiRequest<ImportQuestionItem>(`/imports/questions/${previewId}`, { method: "PUT", body: JSON.stringify(body) });
+      const { options: _, multiBlank: __, ...rest } = editState;
+      const hasSegmentEdits = !!(editedSegments && editedSegments.length > 0 && previewItem?.parsed_content);
+
+      if (isMultiBlankChoice(editState.question_type) && editState.multiBlank) {
+        const mb = editState.multiBlank;
+        const pc: Record<string, unknown> = {
+          ...(previewItem?.parsed_content || {}),
+          blank_option_groups: mb.groups,
+        };
+        if (typeof rest.stem === "string") pc.text = rest.stem;
+        if (hasSegmentEdits) pc.segments = editedSegments;
+        const payload: Record<string, unknown> = {
+          subject_id: rest.subject_id,
+          question_type: rest.question_type,
+          answer: rest.answer,
+          analysis: rest.analysis,
+          parsed_options: null,
+          parsed_content: pc,
+        };
+        return apiRequest<ImportQuestionItem>(`/imports/questions/${previewId}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+      }
+
+      const basePayload: Record<string, unknown> = hasSegmentEdits
+        ? {
+            subject_id: rest.subject_id,
+            question_type: rest.question_type,
+            answer: rest.answer,
+            analysis: rest.analysis,
+            parsed_content: { ...previewItem!.parsed_content, segments: editedSegments },
+          }
+        : { ...rest, subject_id: rest.subject_id };
+      basePayload.options = editState.options.map((o) => {
+        const entry: Record<string, unknown> = { key: o.key, text: o.text };
+        if (o.segments && o.segments.length > 0) {
+          entry.segments = o.segments;
+        }
+        return entry;
+      });
+      return apiRequest<ImportQuestionItem>(`/imports/questions/${previewId}`, { method: "PUT", body: JSON.stringify(basePayload) });
     },
     onSuccess: (result) => {
       setMessage(`导入题目 #${result.id} 已保存。`);
       setEditState(editStateFromItem(result));
+      setEditedSegments(null);
       setCompletedItem(result);
       syncedDetailRef.current.delete(result.id);
       queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
@@ -916,19 +1006,59 @@ export default function ImportReviewPage() {
     setPreviewId(null);
     setCompletedItem(null);
     setEditState(null);
+    setEditedSegments(null);
     setEditing(false);
     syncedDetailRef.current.clear();
   };
 
   const startEditing = () => {
     if (!previewId) return;
+    // Copy current segments from previewItem for editing
+    const segs = previewItem?.parsed_content?.segments as Array<Record<string, unknown>> | undefined;
+    setEditedSegments(segs && segs.length > 0 ? segs.map((s) => ({ ...s })) : null);
     setEditing(true);
   };
 
   const cancelEditing = () => {
     setEditState(previewItem ? editStateFromItem(previewItem) : null);
+    setEditedSegments(null);
     setEditing(false);
   };
+
+  /** 安全切换题型：保护多空选择题结构化数据 */
+  const handleQuestionTypeChange = useCallback((newCode: string) => {
+    if (!editState) return;
+    if (editState.question_type === newCode) return;
+    if (
+      isMultiBlankChoice(editState.question_type) &&
+      editState.multiBlank?.groups &&
+      editState.multiBlank.groups.length > 0
+    ) {
+      const confirmed = window.confirm("切换题型将清空多空选择分组数据，是否继续？");
+      if (!confirmed) return;
+      setEditState({
+        ...editState,
+        question_type: newCode,
+        multiBlank: undefined,
+        options: [],
+      });
+      return;
+    }
+    if (newCode === "multi_blank_choice") {
+      setEditState({
+        ...editState,
+        question_type: newCode,
+        multiBlank: {
+          groups: [],
+          answerMap: {},
+          usesSharedOptions: false,
+          sharedOptions: [],
+        },
+      });
+      return;
+    }
+    setEditState({ ...editState, question_type: newCode });
+  }, [editState]);
 
   useEffect(() => {
     if (previewId === null) return;
@@ -938,6 +1068,36 @@ export default function ImportReviewPage() {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [previewId, editing, editState]);
+
+  const handleSegmentReplace = useCallback(async (si: number, file: File) => {
+    if (!file) return;
+    setSegmentUploading(si);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const result = await apiRequest<{ url: string; filename: string }>("/imports/segment-image/upload", {
+        method: "POST",
+        body: formData,
+      });
+      setEditedSegments((prev) => {
+        if (!prev || si >= prev.length) return prev;
+        return updateSegUrl(prev, si, result.url);
+      });
+      setMessage(`图片已替换：${result.filename}`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "图片上传失败");
+    } finally {
+      setSegmentUploading(-1);
+    }
+  }, []);
+
+  const handleSegmentFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    const idx = segmentReplaceIdxRef.current;
+    segmentReplaceIdxRef.current = -1;
+    if (file && idx >= 0) handleSegmentReplace(idx, file);
+  }, [handleSegmentReplace]);
 
   const canBatchOperate = items.length > 0 && (selectedIds.size > 0 || Boolean(filters.batch_id || batchIdParam));
 
@@ -990,21 +1150,38 @@ export default function ImportReviewPage() {
 .stem-text pre { font-family: var(--font-mono); font-size: 0.8125rem; background: rgba(45,62,80,0.04); border: 1px solid rgba(232,229,224,0.6); border-radius: 10px; padding: 12px 14px; overflow-x: auto; white-space: pre-wrap; margin: 8px 0; line-height: 1.6; }
 .option-chip { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 8px; font-size: 11px; font-weight: 700; background: rgba(196,154,107,0.12); color: #8a6a3a; flex-shrink: 0; }
 .answer-box { display: inline-flex; align-items: center; gap: 8px; border: 1.5px solid rgba(107,155,107,0.2); background: rgba(107,155,107,0.06); border-radius: 10px; padding: 6px 14px; font-family: var(--font-mono); font-size: 0.875rem; font-weight: 700; color: #3a7a5a; }
+/* ── Segment Editor ── */
+@keyframes segLiftIn { from { opacity: 0; transform: translateY(6px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes segPopOut { from { opacity: 1; transform: scale(1); max-height: 120px; } to { opacity: 0; transform: scale(0.92); max-height: 0; margin-top: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; } }
+@keyframes imageGlow { 0% { box-shadow: 0 0 0 0 rgba(196,154,107,0.0); } 50% { box-shadow: 0 0 0 3px rgba(196,154,107,0.25), 0 4px 20px rgba(196,154,107,0.08); } 100% { box-shadow: 0 0 0 0 rgba(196,154,107,0.0); } }
+@keyframes gripPulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.7; } }
+.seg-card { transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s ease, background-color 0.18s ease; }
+.seg-card:hover { transform: translateY(-1px); }
+.seg-card.dragging { transform: scale(0.97); opacity: 0.6; filter: grayscale(0.1); }
+.seg-card.drop-target { transform: translateY(0); border-color: var(--color-warning); background: rgba(196,154,107,0.04); box-shadow: 0 0 0 2px rgba(196,154,107,0.15), 0 4px 16px rgba(196,154,107,0.08); }
+.seg-card.drop-target::before { content: ""; position: absolute; top: -2px; left: 8px; right: 8px; height: 2px; background: linear-gradient(90deg, transparent, var(--color-warning), transparent); border-radius: 1px; }
+.seg-image-preview { transition: all 0.25s ease; }
+.seg-image-preview:hover { transform: scale(1.02); box-shadow: 0 4px 20px rgba(27,39,51,0.1), 0 1px 4px rgba(27,39,51,0.06); }
+.seg-section-header { position: relative; }
+.seg-section-header::after { content: ""; position: absolute; bottom: -8px; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, rgba(196,154,107,0.3), transparent 70%); }
 `}</style>
       {message ? (
-        <div role="status" aria-live="polite" className="animate-paper-slide fixed right-6 top-6 z-[60] max-w-sm rounded-xl border border-[var(--color-border)]/80 bg-white/95 px-5 py-4 shadow-[0_12px_40px_rgba(45,62,80,0.14),0_4px_12px_rgba(45,62,80,0.06)] backdrop-blur-sm">
+        <div role="status" aria-live="polite" className="animate-paper-slide fixed right-6 top-6 z-[60] max-w-sm overflow-hidden rounded-2xl border border-[var(--color-border)]/60 bg-white/98 shadow-[0_20px_60px_rgba(45,62,80,0.12),0_4px_16px_rgba(45,62,80,0.06)] backdrop-blur-xl">
+          <div className="h-1 bg-gradient-to-r from-[var(--color-primary)] via-[var(--color-warning)] to-[var(--color-success)]" />
+          <div className="px-5 py-4">
           <div className="flex items-start gap-3.5">
-            <div className="relative mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-success-light)]">
-              <div className="absolute inset-0 rounded-full animate-seal-stamp border border-[var(--color-success)]/20" />
+            <div className="relative mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--color-success-light)] shadow-sm">
+              <div className="absolute inset-0 rounded-xl animate-seal-stamp border-2 border-[var(--color-success)]/15" />
               <CheckCircle2 className="relative h-4 w-4 text-[var(--color-success)]" />
             </div>
             <p className="min-w-0 flex-1 pt-0.5 text-sm leading-relaxed text-[var(--ink)]">{message}</p>
           </div>
-          <div className="mt-2.5 ml-11 flex items-center gap-2 border-t border-[var(--color-border)]/40 pt-2">
+          <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border)]/30 pt-2.5">
             <span className="text-[10px] text-[var(--color-text-hint)]">{new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>
-            <div className="ml-auto flex gap-1.5">
-              <button aria-label="关闭提示" className="rounded-md px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-hint)] transition hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)]" onClick={() => setMessage(null)}>关闭</button>
+            <div className="ml-auto">
+              <button aria-label="关闭提示" className="rounded-lg px-3 py-1 text-[10px] font-medium text-[var(--color-text-hint)] transition hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)]" onClick={() => setMessage(null)}>关闭</button>
             </div>
+          </div>
           </div>
         </div>
       ) : null}
@@ -1284,18 +1461,15 @@ export default function ImportReviewPage() {
                           item.risk_level === "medium" ? { color: "#b87a30", fontWeight: 600 } :
                           { color: "#3a7a5a" };
                         const srcNo = getSourceQuestionNo(item);
-                        const isSingleChoice = item.question_type === "single_choice";
-                        const isMultiChoice = item.question_type === "multi_choice" || item.question_type === "multiple_choice";
-                        const isTrueFalse = item.question_type === "true_false" || item.question_type === "judge";
+                        const questionTypeCode = canonicalizeQuestionType(item.question_type);
+                        const isSingleChoice = questionTypeCode === "single_choice";
+                        const isMultiChoice = questionTypeCode === "multiple_choice";
+                        const isTrueFalse = questionTypeCode === "true_false";
                         const draftAnswer = quickAnswerDrafts[item.id] ?? item.parsed_answer ?? "";
                         const hasDraftChanged = draftAnswer !== (item.parsed_answer ?? "");
                         const sourceLocator = getSourceLocator(item);
                         const stemText = item.content_preview || textFromImport(item) || "—";
-                        const typeLabel =
-                          item.question_type === "single_choice" ? "单选" :
-                          item.question_type === "multi_choice" || item.question_type === "multiple_choice" ? "多选" :
-                          item.question_type === "fill_blank" || item.question_type === "multi_blank_choice" ? "填空" :
-                          item.question_type === "judge" || item.question_type === "true_false" ? "判断" : "—";
+                        const typeLabel = getQuestionTypeLabel(item.question_type);
                         return (
                           <tr key={item.id} className={`border-b border-[var(--color-border)]/40 transition-colors hover:bg-[var(--color-bg-input)]/30 ${index % 2 === 0 ? "bg-white" : "bg-[var(--color-bg-input)]/20"}`}>
                             <td className="px-2.5 py-2">
@@ -1488,7 +1662,7 @@ export default function ImportReviewPage() {
 
                         {/* Type */}
                         <span className="w-6 shrink-0 text-center text-[10px] text-[var(--color-text-hint)]">
-                          {item.question_type === "single_choice" ? "单选" : item.question_type === "multi_choice" ? "多选" : item.question_type === "fill_blank" || item.question_type === "multi_blank_choice" ? "填空" : item.question_type === "judge" ? "判断" : "—"}
+                          {getQuestionTypeLabel(item.question_type)}
                         </span>
 
                         {/* Source question badge */}
@@ -1569,6 +1743,61 @@ export default function ImportReviewPage() {
               ) : null}
               {queue.isError ? <p className="text-sm text-[var(--color-danger)]">待审核接口当前不可用。</p> : null}
             </section>
+
+            {/* ── Pagination ── */}
+            {queue.data && queue.data.total_pages > 1 ? (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[var(--blueprint-line)] bg-white/80 px-5 py-3 shadow-[var(--shadow-crisp)]">
+                <span className="font-display text-sm tracking-wide text-[var(--color-text-secondary)]">
+                  <span className="font-semibold text-[var(--ink)]">{queue.data.total}</span>{" "}
+                  条记录
+                  <span className="mx-2 text-[var(--color-text-hint)]">/</span>
+                  <span className="text-[var(--color-text-hint)]">第 </span>
+                  <span className="font-semibold text-[var(--ink)]">{queue.data.page}</span>
+                  <span className="text-[var(--color-text-hint)]"> / {queue.data.total_pages} 页</span>
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="inline-flex h-9 items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-xs font-semibold text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                    上一页
+                  </button>
+                  {Array.from(
+                    { length: Math.min(queue.data.total_pages, 5) },
+                    (_, i) => {
+                      const start = Math.max(1, Math.min(page - 2, queue.data.total_pages - 4));
+                      const p = start + i;
+                      if (p > queue.data.total_pages) return null;
+                      const isActive = p === page;
+                      return (
+                        <button
+                          key={p}
+                          disabled={isActive}
+                          onClick={() => setPage(p)}
+                          className={
+                            isActive
+                              ? "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-primary-dark)] bg-[var(--color-primary)] text-sm font-bold text-white shadow-[var(--shadow-crisp)]"
+                              : "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white/80 text-sm font-medium text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]"
+                          }
+                        >
+                          {p}
+                        </button>
+                      );
+                    },
+                  )}
+                  <button
+                    disabled={page >= (queue.data?.total_pages ?? 1)}
+                    onClick={() => setPage((p) => p + 1)}
+                    className="inline-flex h-9 items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-xs font-semibold text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    下一页
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                  </button>
+                </div>
+              </div>
+            ) : null}
         </CardContent>
       </Card>
 
@@ -1672,52 +1901,105 @@ export default function ImportReviewPage() {
                     const segments = (pc?.segments as Array<Record<string, unknown>> | undefined) ?? [];
                     if (segments.length === 0) return null;
                     return (
-                      <section className="animate-fade-up section-scroll section-scroll-purple rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
-                        <div className="flex items-center gap-2.5 mb-3">
-                          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-50">
-                            <span className="text-xs font-bold text-purple-600" style={{ fontFamily: "'Georgia', serif" }}>片</span>
+                      <section className="animate-fade-up section-scroll section-scroll-purple rounded-2xl border border-[var(--color-border)]/70 bg-gradient-to-br from-white via-white to-purple-50/30 p-5 shadow-sm transition-all hover:shadow-md">
+                        <div className="flex items-center gap-2.5 mb-4">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-50 shadow-sm">
+                            <svg className="h-4 w-4 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                           </span>
-                          <span className="text-sm font-semibold text-[var(--ink)]">内容片段</span>
+                          <div>
+                            <span className="text-sm font-bold text-[var(--ink)]">内容片段</span>
+                            <span className="ml-2 text-[10px] text-[var(--color-text-hint)]">{segments.length} 个片段</span>
+                          </div>
                         </div>
                         <div className="ml-9 space-y-3">
                           {segments.map((seg, si) => {
-                            const segType = String(seg.type ?? "");
-                            if (segType === "math_image") {
+                            const segType = String(seg.type ?? "").toLowerCase();
+                            // Text segments
+                            if (segType === "text") {
                               return (
-                                <div key={si} className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/50 p-3">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <span className="text-xs font-semibold text-[var(--color-text-secondary)]">公式截图</span>
-                                    {seg.requires_review ? (
-                                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">公式需核对</span>
-                                    ) : null}
-                                    {((): React.ReactNode => {
-                                      const conf = seg.confidence;
-                                      const confText = typeof conf === "number" ? `${(conf * 100).toFixed(0)}%` : conf != null ? String(conf) : null;
-                                      return confText ? (
-                                        <span className="text-[10px] text-[var(--color-text-hint)]">置信度: {confText}</span>
-                                      ) : null;
-                                    })()}
-                                  </div>
-                                  {seg.url ? (
-                                    <img
-                                      src={String(seg.url)}
-                                      alt={String(seg.alt ?? "公式截图")}
-                                      className="max-w-full rounded-lg border border-[var(--color-border)]"
-                                      style={{ maxHeight: "240px" }}
-                                    />
-                                  ) : (
-                                    <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50/50 px-3 py-4 text-center text-xs text-amber-700">
-                                      {seg.upload_failed
-                                        ? "公式截图生成失败，请核对 OCR 文本"
-                                        : "公式截图（暂未生成）"}
-                                    </div>
-                                  )}
-                                  {seg.source_page ? (
-                                    <p className="mt-1 text-[10px] text-[var(--color-text-hint)]">第 {String(seg.source_page)} 页</p>
-                                  ) : null}
+                                <div key={si} className="rounded-xl border border-[var(--color-border)]/60 bg-white/70 p-3">
+                                  <p className="text-sm text-[var(--ink)] whitespace-pre-wrap">{String(seg.text ?? "")}</p>
                                 </div>
                               );
                             }
+                            // Newline
+                            if (segType === "newline") {
+                              return <div key={si} className="h-px bg-[var(--color-border)]/40" />;
+                            }
+                            // Image segments (image, math_image, table_image, code_image)
+                            const isImageSegment = ["image", "math_image", "table_image", "code_image"].includes(segType);
+                            if (isImageSegment) {
+                              const segLabel =
+                                segType === "math_image" ? "公式截图" :
+                                segType === "table_image" ? "表格截图" :
+                                segType === "code_image" ? "代码截图" : "图片";
+                              const srcUrl = String(seg.url ?? "");
+                              const regionType = String(seg.region_type ?? "");
+                              const sourcePage = seg.source_page;
+                              const bbox = seg.bbox;
+                              const confidence = seg.confidence;
+                              const requiresReview = seg.requires_review;
+                              const assignmentMethod = String(seg.assignment_method ?? "");
+                              const riskFlags = Array.isArray(seg.risk_flags) ? seg.risk_flags : [];
+                              const optionKey = seg.option_key ? String(seg.option_key) : null;
+                              const coordSpace = String(seg.coordinate_space ?? "");
+                              return (
+                                <div key={si} className="rounded-xl border border-[var(--color-border)]/50 bg-white/80 p-3.5 shadow-sm transition-all hover:border-[var(--color-border)] hover:shadow-md">
+                                  <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
+                                    <span className="rounded-full bg-purple-50 px-2.5 py-0.5 text-[10px] font-bold text-purple-600">{segLabel}</span>
+                                    {requiresReview ? (
+                                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">需核对</span>
+                                    ) : null}
+                                    {typeof confidence === "number" ? (
+                                      <span className="rounded-full bg-[var(--color-bg-input)] px-2 py-0.5 text-[10px] text-[var(--color-text-hint)]">{(confidence * 100).toFixed(0)}%</span>
+                                    ) : null}
+                                    {optionKey ? (
+                                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-600">选项 {optionKey}</span>
+                                    ) : null}
+                                    {riskFlags.length > 0 ? (
+                                      <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-500" title={riskFlags.join("; ")}>
+                                        {riskFlags.length} 风险
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  {srcUrl ? (
+                                    <div className="relative group/img overflow-hidden rounded-xl border border-[var(--color-border)]/50">
+                                      <img
+                                        src={srcUrl}
+                                        alt={String(seg.alt ?? segLabel)}
+                                        className="max-w-full cursor-zoom-in transition-transform duration-300 group-hover/img:scale-[1.02]"
+                                        style={{ maxHeight: "240px" }}
+                                        onClick={() => window.open(srcUrl, "_blank")}
+                                      />
+                                      <div className="absolute inset-0 rounded-xl ring-1 ring-inset ring-black/5 pointer-events-none" />
+                                    </div>
+                                  ) : (
+                                    <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50/50 px-3 py-4 text-center text-xs text-amber-700">
+                                      {seg.upload_failed ? "图片生成失败" : "图片（暂未生成）"}
+                                    </div>
+                                  )}
+                                  {/* Metadata */}
+                                  <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-[var(--color-text-hint)]">
+                                    {regionType && regionType !== "unknown" ? (
+                                      <span className="rounded-md bg-[var(--color-bg-input)] px-1.5 py-0.5 font-medium">类型: {regionType}</span>
+                                    ) : null}
+                                    {sourcePage != null ? (
+                                      <span className="rounded-md bg-[var(--color-bg-input)] px-1.5 py-0.5 font-medium">第 {String(sourcePage)} 页</span>
+                                    ) : null}
+                                    {bbox && Array.isArray(bbox) ? (
+                                      <span className="rounded-md bg-[var(--color-bg-input)] px-1.5 py-0.5 font-mono text-[9px]">定位: {JSON.stringify(bbox)}</span>
+                                    ) : null}
+                                    {coordSpace && coordSpace !== "unknown" ? (
+                                      <span className="rounded-md bg-[var(--color-bg-input)] px-1.5 py-0.5 font-medium">坐标: {coordSpace}</span>
+                                    ) : null}
+                                    {assignmentMethod && !["unknown", "unassigned", ""].includes(assignmentMethod) ? (
+                                      <span className="rounded-md bg-[var(--color-bg-input)] px-1.5 py-0.5 font-medium">归属: {assignmentMethod}</span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            }
+                            // table_markdown (legacy text-based table)
                             if (segType === "table_markdown") {
                               return (
                                 <div key={si} className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/50 p-3">
@@ -1742,7 +2024,12 @@ export default function ImportReviewPage() {
                                 </div>
                               );
                             }
-                            return null;
+                            // Unknown segment type — safe fallback, don't crash
+                            return (
+                              <div key={si} className="rounded-xl border border-dashed border-[var(--color-border)]/40 bg-white/50 p-3">
+                                <p className="text-xs text-[var(--color-text-hint)]">未知片段类型: {segType}</p>
+                              </div>
+                            );
                           })}
                         </div>
                       </section>
@@ -1750,48 +2037,31 @@ export default function ImportReviewPage() {
                   })()}
 
                   {/* ── Options Card ── */}
-                  {editState.question_type === "multi_blank_choice" ? (
-                    <section className="animate-fade-up drawer-section-delay-2 section-scroll section-scroll-warm rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
-                      <div className="flex items-center gap-2.5 mb-3">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ backgroundColor: "rgba(196,154,107,0.12)" }}>
-                          <span className="text-xs font-bold" style={{ color: "#c49a6b", fontFamily: "'Georgia', serif" }}>选</span>
-                        </span>
-                        <span className="text-sm font-semibold text-[var(--ink)]">选项</span>
-                      </div>
-                      <div className="ml-9">
-                        {(() => {
-                          const groups = previewItem?.parsed_content?.blank_option_groups ?? previewItem?.raw_data?.blank_option_groups;
-                          const groupList: Array<{ id?: string; options?: Array<{ key: string; text: string }> }> = Array.isArray(groups) ? groups : [];
-                          return groupList.length > 0 ? (
-                            <div className="space-y-3">
-                              {groupList.map((group, gi) => (
-                                <div key={gi} className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/50 p-3">
-                                  <p className="mb-2 text-[11px] font-semibold text-[var(--color-text-hint)]">空 {group.id ?? gi + 1}</p>
-                                  <div className="space-y-1.5">
-                                    {group.options?.map((opt, oi) => (
-                                      <div key={oi} className="flex items-center gap-2">
-                                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-light)] text-[10px] font-bold text-[var(--color-primary-dark)]">{opt.key}</span>
-                                        <span className="text-sm text-[var(--color-text-secondary)]"><MathFormula text={opt.text} /></span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : <p className="text-sm text-[var(--color-text-hint)]">（无分组选项数据）</p>;
-                        })()}
-                      </div>
-                    </section>
-                  ) : (
-                    <section className="animate-fade-up drawer-section-delay-2 section-scroll section-scroll-warm rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
-                      <div className="flex items-center gap-2.5 mb-3">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ backgroundColor: "rgba(196,154,107,0.12)" }}>
-                          <span className="text-xs font-bold" style={{ color: "#c49a6b", fontFamily: "'Georgia', serif" }}>选</span>
-                        </span>
-                        <span className="text-sm font-semibold text-[var(--ink)]">选项</span>
-                      </div>
-                      <div className="ml-9">
-                        {editState.options.length === 0 ? (
+                  {(() => {
+                    const mb = isMultiBlankChoice(editState.question_type)
+                      ? editState.multiBlank
+                      : null;
+                    const hasMultiBlank = mb != null && mb.groups.length >= 2;
+                    return hasMultiBlank ? (
+                      <section className="animate-fade-up drawer-section-delay-2 section-scroll section-scroll-warm rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
+                        <MultiBlankChoicePreview
+                          groups={mb!.groups}
+                          answerMap={mb!.answerMap}
+                          usesSharedOptions={mb!.usesSharedOptions}
+                          sharedOptions={mb!.sharedOptions}
+                          stem={editState.stem}
+                        />
+                      </section>
+                    ) : (
+                      <section className="animate-fade-up drawer-section-delay-2 section-scroll section-scroll-warm rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
+                        <div className="flex items-center gap-2.5 mb-3">
+                          <span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ backgroundColor: "rgba(196,154,107,0.12)" }}>
+                            <span className="text-xs font-bold" style={{ color: "#c49a6b", fontFamily: "'Georgia', serif" }}>选</span>
+                          </span>
+                          <span className="text-sm font-semibold text-[var(--ink)]">选项</span>
+                        </div>
+                        <div className="ml-9">
+                          {editState.options.length === 0 ? (
                           <p className="text-sm text-[var(--color-text-hint)]">（无选项）</p>
                         ) : (
                           <div className="space-y-2">
@@ -1805,7 +2075,8 @@ export default function ImportReviewPage() {
                         )}
                       </div>
                     </section>
-                  )}
+                  );
+                  })()}
 
                   {/* ── Answer Card ── */}
                   <section className="animate-fade-up drawer-section-delay-3 section-scroll section-scroll-jade rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
@@ -1836,9 +2107,19 @@ export default function ImportReviewPage() {
                       {previewItem.answer_source && isMeaningfulText(previewItem.answer_source) && !["unknown"].includes(String(previewItem.answer_source).toLowerCase()) ? (
                         <p className="mb-2 text-[10px] text-[var(--color-text-hint)]">来源：{previewItem.answer_source === "ai" ? "AI 补全" : previewItem.answer_source === "ocr" ? "OCR 识别" : previewItem.answer_source === "parser" ? "解析器提取" : previewItem.answer_source === "manual" ? "人工填写" : previewItem.answer_source}</p>
                       ) : null}
-                      <span className="answer-box">
-                        {editState.answer || "—"}
-                      </span>
+                      {(() => {
+                        const mb = isMultiBlankChoice(editState.question_type) ? (editState.multiBlank ?? null) : null;
+                        const hasMultiBlank = mb != null && mb.groups.length >= 2;
+                        return (
+                          <span className={hasMultiBlank ? "" : "answer-box"}>
+                            {hasMultiBlank ? (
+                              <MultiBlankAnswerSummary groups={mb!.groups} answerMap={mb!.answerMap} />
+                            ) : (
+                              editState.answer || "—"
+                            )}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </section>
 
@@ -1904,7 +2185,45 @@ export default function ImportReviewPage() {
                     </section>
                   )}
 
-                  {/* ── Source Region Image ── */}
+                  {/* ── Source Snapshot ── */}
+                  {(() => {
+                    const pc = previewItem?.parsed_content as Record<string, unknown> | undefined;
+                    const snapUrl = pc?.source_snapshot_url as string | undefined;
+                    const isFullPage = pc?.source_snapshot_full_page === true;
+                    if (!snapUrl) return null;
+                    return (
+                      <section className="animate-fade-up section-scroll section-scroll-purple rounded-2xl border border-[var(--color-border)]/80 bg-white/90 p-5 shadow-sm transition-all hover:shadow-md">
+                        <details className="group">
+                          <summary className="flex cursor-pointer items-center gap-2.5 text-sm font-semibold text-[var(--color-text-secondary)] transition hover:text-[var(--ink)] [&::-webkit-details-marker]:hidden">
+                            <span className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ backgroundColor: "rgba(154,122,186,0.1)" }}>
+                              <span className="text-xs font-bold" style={{ color: "#9a7aba", fontFamily: "'Georgia', serif" }}>快</span>
+                            </span>
+                            <span>原题快照</span>
+                            {isFullPage ? (
+                              <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700">整页</span>
+                            ) : null}
+                            <span className="ml-auto inline-block text-[10px] transition-transform group-open:rotate-90 opacity-50">▶</span>
+                          </summary>
+                          <div className="mt-3 ml-9 space-y-3">
+                            {isFullPage ? (
+                              <div className="rounded-lg border border-orange-200 bg-orange-50/70 px-3 py-2 text-xs text-orange-700">
+                                仅供审核使用，不会作为普通题图发布。
+                              </div>
+                            ) : null}
+                            <img
+                              src={snapUrl}
+                              alt="原题快照"
+                              className="max-w-full rounded-lg border border-[var(--color-border)] cursor-zoom-in"
+                              style={{ maxHeight: "400px" }}
+                              onClick={() => window.open(snapUrl, "_blank")}
+                            />
+                          </div>
+                        </details>
+                      </section>
+                    );
+                  })()}
+
+                  {/* ── Source Region Image (legacy) ── */}
                   {(() => {
                     const pc = previewItem?.parsed_content as Record<string, unknown> | undefined;
                     const srcRegion = pc?.source_region as Record<string, unknown> | undefined;
@@ -2005,7 +2324,7 @@ export default function ImportReviewPage() {
                 </div>
               ) : (
                 /* ── Edit Mode ── */
-                <div className="space-y-5">
+                <div className="space-y-5 pb-16">
                   {/* Subject / Type */}
                   <div className="grid gap-3 md:grid-cols-2 animate-fade-up drawer-section-delay-1">
                     <div className="space-y-1">
@@ -2081,7 +2400,17 @@ export default function ImportReviewPage() {
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-primary)]/60" />
                         题型
                       </label>
-                      <Input placeholder="题型" value={editState.question_type} onChange={(event) => setEditState({ ...editState, question_type: event.target.value })} />
+                      <CustomSelect
+                        value={editState.question_type}
+                        onChange={handleQuestionTypeChange}
+                        options={
+                          canonicalizeQuestionType(editState.question_type) || !editState.question_type
+                            ? QUESTION_TYPE_OPTIONS
+                            : [...QUESTION_TYPE_OPTIONS, { value: editState.question_type, label: formatUnknownType(editState.question_type), disabled: true }]
+                        }
+                        placeholder="选择题型"
+                        clearable={false}
+                      />
                     </div>
                   </div>
                   {/* Stem edit */}
@@ -2093,6 +2422,168 @@ export default function ImportReviewPage() {
                     <textarea className="min-h-36 w-full rounded-xl border border-[var(--color-border)] bg-white/90 px-3 py-2.5 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15" value={editState.stem} onChange={(event) => setEditState({ ...editState, stem: event.target.value })} />
                   </label>
 
+                  {/* ── Visual Segment Editor (stem) ── */}
+                  {(() => {
+                    const segs = editedSegments;
+                    const hasVisualSegments_ = hasVisualSegments(segs);
+                    if (!hasVisualSegments_) return null;
+                    return (
+                      <section className="animate-fade-up drawer-section-delay-3 rounded-2xl border border-[var(--color-border)]/80 bg-gradient-to-br from-[var(--porcelain)] via-white to-[var(--color-warning-light)]/30 p-5 shadow-[var(--shadow-card)]">
+                        <div className="seg-section-header mb-5 flex items-center gap-2.5 pb-2">
+                          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--color-warning-light)] shadow-sm">
+                            <svg className="h-3.5 w-3.5 text-[var(--color-warning)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                          </span>
+                          <div>
+                            <p className="text-xs font-bold text-[var(--ink)]">视觉片段编辑器</p>
+                            <p className="text-[10px] text-[var(--color-text-hint)]">拖拽排序 · 归属选项 · 替换图片</p>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {/* Single hidden file input for segment image replacement */}
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            className="hidden"
+                            ref={segmentReplaceInputRef}
+                            onChange={handleSegmentFileChange}
+                          />
+                          {segs!.map((seg, si) => {
+                            const segType = String(seg.type ?? "").toLowerCase();
+                            const isImageSeg = isImageSegmentType(segType);
+                            if (!isImageSeg && segType !== "newline") return null;
+                            const segLabel = getSegmentTypeLabel(segType);
+                            const _isDragging = dragSegIdx === si;
+                            return (
+                              <div
+                                key={si}
+                                draggable
+                                className={`seg-card relative flex items-start gap-2.5 rounded-xl border bg-white p-3 ${
+                                  _isDragging
+                                    ? "dragging border-[var(--color-warning)] shadow-lg"
+                                    : "border-[var(--color-border)]/50"
+                                } ${dragOverIdx === si && !_isDragging ? "drop-target" : ""}`}
+                                onDragStart={(e) => {
+                                  dragSegIdxRef.current = si;
+                                  setDragSegIdx(si);
+                                  e.dataTransfer.effectAllowed = "move";
+                                  e.dataTransfer.setData("text/plain", String(si));
+                                }}
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  e.dataTransfer.dropEffect = "move";
+                                  if (dragSegIdxRef.current !== si) setDragOverIdx(si);
+                                }}
+                                onDragLeave={() => setDragOverIdx(-1)}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  const from = dragSegIdxRef.current;
+                                  const to = si;
+                                  setDragSegIdx(-1);
+                                  setDragOverIdx(-1);
+                                  if (from >= 0 && to >= 0 && from !== to) {
+                                    setEditedSegments(moveSegment(segs!, from, to));
+                                  }
+                                }}
+                                onDragEnd={() => {
+                                  setDragSegIdx(-1);
+                                  setDragOverIdx(-1);
+                                }}
+                              >
+                                <div className="flex shrink-0 flex-col gap-0.5 pt-0.5">
+                                  {/* Drag grip hint */}
+                                  <div className="flex h-5 items-center justify-center text-[var(--color-border)]" style={{ cursor: "grab" }} title="拖拽排序">
+                                    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><circle cx="2" cy="2" r="1.2"/><circle cx="8" cy="2" r="1.2"/><circle cx="2" cy="5" r="1.2"/><circle cx="8" cy="5" r="1.2"/><circle cx="2" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/></svg>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--color-text-hint)] transition-all hover:bg-[var(--color-warning-light)] hover:text-[var(--color-warning)] disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-[var(--color-text-hint)]"
+                                    disabled={si === 0}
+                                    onClick={() => {
+                                      setEditedSegments(reorderSegmentUp(segs!, si));
+                                    }}
+                                    title="上移"
+                                  ><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="m18 15-6-6-6 6"/></svg></button>
+                                  <button
+                                    type="button"
+                                    className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--color-text-hint)] transition-all hover:bg-[var(--color-warning-light)] hover:text-[var(--color-warning)] disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-[var(--color-text-hint)]"
+                                    disabled={si >= segs!.length - 1}
+                                    onClick={() => {
+                                      setEditedSegments(reorderSegmentDown(segs!, si));
+                                    }}
+                                    title="下移"
+                                  ><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+                                </div>
+                                {isImageSeg ? (
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <span className="rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-warning)]">{segLabel}</span>
+                                      <select
+                                        className="rounded-lg border border-[var(--color-border)] bg-white/90 px-2 py-1 text-[10px] font-medium text-[var(--ink)] outline-none transition focus:border-[var(--color-warning)] focus:ring-2 focus:ring-[var(--color-warning)]/15"
+                                        value={String(seg.option_key ?? "")}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setEditedSegments(updateSegOptionKey(segs!, si, val));
+                                        }}
+                                      >
+                                        <option value="">归属：题干</option>
+                                        {editState.options.map((o) => (
+                                          <option key={o.key} value={o.key}>归属：选项 {o.key}</option>
+                                        ))}
+                                      </select>
+                                      <span className="ml-auto text-[9px] text-[var(--color-text-hint)]">{si + 1}/{segs!.length}</span>
+                                    </div>
+                                    {seg.url ? (
+                                      <div className="seg-image-preview overflow-hidden rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/30">
+                                        <img src={String(seg.url)} alt={String(seg.alt ?? segLabel)} className="max-h-32 max-w-full object-contain" />
+                                      </div>
+                                    ) : (
+                                      <div className="rounded-xl border border-dashed border-amber-300/60 bg-amber-50/40 px-3 py-3 text-center text-[10px] font-medium text-amber-600">暂无图片</div>
+                                    )}
+                                    <div className="mt-2 flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)]/60 bg-white px-2.5 py-1 text-[10px] font-medium text-[var(--color-text-secondary)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary-dark)] disabled:opacity-40"
+                                        disabled={segmentUploading === si}
+                                        onClick={() => {
+                                          segmentReplaceIdxRef.current = si;
+                                          segmentReplaceInputRef.current?.click();
+                                        }}
+                                      >
+                                        {segmentUploading === si ? (
+                                          <><span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border-2 border-[var(--color-primary)]/30 border-t-[var(--color-primary)]" /> 上传中…</>
+                                        ) : (
+                                          <><Upload className="h-3 w-3" /> 替换图片</>
+                                        )}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                                    <div className="h-px flex-1 bg-[var(--color-border)]/40" />
+                                    <span className="text-[10px] font-medium text-[var(--color-text-hint)]">换行</span>
+                                    <div className="h-px flex-1 bg-[var(--color-border)]/40" />
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--color-text-hint)] transition-all hover:bg-red-50 hover:text-red-500"
+                                  onClick={() => {
+                                    const next = deleteSegmentAtIndex(segs!, si);
+                                    setEditedSegments(next.length > 0 ? next : null);
+                                  }}
+                                  title="删除此片段"
+                                ><X className="h-3.5 w-3.5" /></button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {segs!.length === 0 || !segs!.some((s) => isImageSegmentType(String(s.type ?? ""))) ? (
+                          <p className="mt-3 text-center text-[10px] italic text-[var(--color-text-hint)]">— 无可编辑的视觉片段 —</p>
+                        ) : null}
+                      </section>
+                    );
+                  })()}
+
                   {/* Options edit */}
                   <section className="animate-fade-up drawer-section-delay-3 rounded-xl border border-[var(--color-border)]/60 bg-white/80 p-4 shadow-sm">
                     <div className="mb-3 flex items-center gap-2">
@@ -2101,46 +2592,84 @@ export default function ImportReviewPage() {
                       </span>
                       <p className="text-xs font-semibold text-[var(--color-text-secondary)]">选项</p>
                     </div>
-                    {editState.question_type === "multi_blank_choice" ? (
-                      <div className="space-y-3">
-                        {(() => {
-                          const groups = previewItem?.parsed_content?.blank_option_groups ?? previewItem?.raw_data?.blank_option_groups;
-                          const groupList: Array<{ id?: string; options?: Array<{ key: string; text: string }> }> = Array.isArray(groups) ? groups : [];
-                          return groupList.length > 0 ? groupList.map((group, gi) => (
-                            <div key={gi} className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/50 p-3">
-                              <p className="mb-2 text-xs font-semibold text-[var(--color-text-hint)]">空 {group.id ?? gi + 1}</p>
-                              <div className="space-y-1.5">
-                                {group.options?.map((opt, oi) => (
-                                  <div key={oi} className="flex items-center gap-2">
-                                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-light)] text-[10px] font-bold text-[var(--color-primary-dark)]">{opt.key}</span>
-                                    <span className="text-sm text-[var(--color-text-secondary)]">{opt.text}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )) : null;
-                        })()}
-                        <p className="rounded-lg border border-amber-200/60 bg-amber-50/40 px-3 py-2 text-[11px] text-amber-700">多空选择题选项由导入管线管理，如需修改请<button type="button" className="mx-1 underline font-semibold hover:text-amber-900" onClick={() => setDetailView("json")}>切换到 JSON 视图</button>编辑 parsed_content.blank_option_groups。</p>
-                      </div>
-                    ) : (
+                    {(() => {
+                      const mb = isMultiBlankChoice(editState.question_type) ? (editState.multiBlank ?? null) : null;
+                      const hasMultiBlank = mb != null && mb.groups.length >= 2;
+                      return hasMultiBlank ? (
+                        <MultiBlankChoiceEditor
+                          groups={mb!.groups}
+                          answerMap={mb!.answerMap}
+                          usesSharedOptions={mb!.usesSharedOptions}
+                          sharedOptions={mb!.sharedOptions}
+                          dedupWarnings={mb!.dedupWarnings}
+                          dedupErrors={mb!.dedupErrors}
+                          onChange={(newGroups, newAnswerMap) => {
+                            const canonical = serializeBlankAnswer(newAnswerMap, newGroups.map((g) => g.id));
+                            const shared = newGroups.length >= 2 && haveIdenticalOptionSets(newGroups);
+                            setEditState({
+                              ...editState,
+                              answer: canonical,
+                              multiBlank: {
+                                groups: newGroups,
+                                answerMap: newAnswerMap,
+                                usesSharedOptions: shared,
+                                sharedOptions: shared ? getSharedOptions(newGroups) : [],
+                              },
+                            });
+                          }}
+                        />
+                      ) : (
                       <div className="space-y-2">
                         {editState.options.length === 0 ? <p className="text-sm text-[var(--color-text-hint)]">暂无可编辑选项</p> : null}
                         {editState.options.map((opt, index) => (
-                          <div key={index} className="flex items-center gap-2">
-                            <span className="flex h-7 w-7 shrink-0 items-center justify-center option-chip">{opt.key}</span>
-                            <input
-                              className="h-9 flex-1 rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15"
-                              value={opt.text}
-                              onChange={(event) => {
-                                const next = [...editState.options];
-                                next[index] = { ...next[index], text: event.target.value };
-                                setEditState({ ...editState, options: next });
-                              }}
-                            />
+                          <div key={index} className="flex items-start gap-2">
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center option-chip mt-1">{opt.key}</span>
+                            <div className="flex-1 space-y-1.5">
+                              <input
+                                className="h-9 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15"
+                                value={opt.text}
+                                onChange={(event) => {
+                                  const next = [...editState.options];
+                                  next[index] = { ...next[index], text: event.target.value };
+                                  setEditState({ ...editState, options: next });
+                                }}
+                              />
+                              {opt.segments && opt.segments.length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {opt.segments.map((seg, si) => {
+                                    const segType = String(seg.type ?? "").toLowerCase();
+                                    if (segType === "text") return null;
+                                    const isImg = ["image", "math_image", "table_image", "code_image"].includes(segType);
+                                    if (!isImg && segType !== "newline") return null;
+                                    const label = segType === "math_image" ? "公式" : segType === "table_image" ? "表格" : segType === "code_image" ? "代码" : segType === "newline" ? "换行" : "图片";
+                                    return (
+                                      <div key={si} className="flex items-center gap-1 rounded-md border border-[var(--color-border)]/50 bg-white/70 px-2 py-1">
+                                        {isImg && seg.url ? (
+                                          <img src={String(seg.url)} alt="" className="h-8 w-8 rounded object-cover" />
+                                        ) : null}
+                                        <span className="text-[10px] text-[var(--color-text-hint)]">{label}</span>
+                                        <button
+                                          type="button"
+                                          className="ml-0.5 flex h-4 w-4 items-center justify-center rounded text-[9px] text-red-400 hover:bg-red-50 hover:text-red-600"
+                                          onClick={() => {
+                                            const next = [...editState.options];
+                                            const segs = next[index].segments?.filter((_, i) => i !== si) ?? [];
+                                            next[index] = { ...next[index], segments: segs.length > 0 ? segs : undefined };
+                                            setEditState({ ...editState, options: next });
+                                          }}
+                                          title="移除该片段"
+                                        >✕</button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
                         ))}
                       </div>
-                    )}
+                    );
+                  })()}
                   </section>
 
                   {/* Answer & Analysis edit */}
@@ -2151,39 +2680,42 @@ export default function ImportReviewPage() {
                       </span>
                       <p className="text-xs font-semibold text-[var(--color-text-secondary)]">答案与解析</p>
                     </div>
-                    <p className="mb-2 text-xs font-semibold text-[var(--color-text-secondary)]">快速选择答案</p>
-                    {editState.question_type === "multi_blank_choice" ? <p className="mb-2 text-[10px] text-[var(--color-text-hint)]">多空选择题：单击切换各空答案，以逗号分隔</p> : null}
-                    {editState.options.length === 0 ? <p className="mb-2 text-sm text-[var(--color-text-hint)]">请先编辑选项</p> : null}
-                    {editState.options.length > 0 ? (
-                      <div className="mb-4 flex flex-wrap gap-2">
-                        {editState.options.map((opt) => {
-                          const selected = isMultiChoice(editState.question_type)
-                            ? editState.answer.split(/[,，\s]+/).includes(opt.key)
-                            : editState.answer === opt.key;
-                          return (
-                            <button
-                              key={opt.key}
-                              type="button"
-                              className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3.5 text-sm font-medium transition ${
-                                selected
-                                  ? "border-[var(--color-success)] bg-[var(--color-success)] text-white shadow-sm"
-                                  : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-success)] hover:text-[var(--color-success)]"
-                              }`}
-                              onClick={() => {
-                                if (isMultiChoice(editState.question_type)) {
-                                  const keys = editState.answer.split(/[,，\s]+/).filter(Boolean);
-                                  const next = keys.includes(opt.key) ? keys.filter((k) => k !== opt.key) : [...keys, opt.key];
-                                  setEditState({ ...editState, answer: next.join(",") });
-                                } else {
-                                  setEditState({ ...editState, answer: editState.answer === opt.key ? "" : opt.key });
-                                }
-                              }}
-                            >
-                              {opt.key}
-                            </button>
-                          );
-                        })}
-                      </div>
+                    {/* ── Quick answer selection ── */}
+                    {!isMultiBlankChoice(editState.question_type) ? (
+                      <>
+                        {editState.options.length === 0 ? <p className="mb-2 text-sm text-[var(--color-text-hint)]">请先编辑选项</p> : null}
+                        {editState.options.length > 0 ? (
+                          <div className="mb-4 flex flex-wrap gap-2">
+                            {editState.options.map((opt) => {
+                              const selected = isStandardMultiChoice(editState.question_type)
+                                ? editState.answer.split(/[,，\s]+/).includes(opt.key)
+                                : editState.answer === opt.key;
+                              return (
+                                <button
+                                  key={opt.key}
+                                  type="button"
+                                  className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3.5 text-sm font-medium transition ${
+                                    selected
+                                      ? "border-[var(--color-success)] bg-[var(--color-success)] text-white shadow-sm"
+                                      : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-success)] hover:text-[var(--color-success)]"
+                                  }`}
+                                  onClick={() => {
+                                    if (isStandardMultiChoice(editState.question_type)) {
+                                      const keys = editState.answer.split(/[,，\s]+/).filter(Boolean);
+                                      const next = keys.includes(opt.key) ? keys.filter((k) => k !== opt.key) : [...keys, opt.key];
+                                      setEditState({ ...editState, answer: next.join(",") });
+                                    } else {
+                                      setEditState({ ...editState, answer: editState.answer === opt.key ? "" : opt.key });
+                                    }
+                                  }}
+                                >
+                                  {opt.key}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </>
                     ) : null}
                     <label className="mb-3 block space-y-1">
                       <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text-secondary)]">
@@ -2191,7 +2723,7 @@ export default function ImportReviewPage() {
                         答案
                       </span>
                       <Input value={editState.answer} onChange={(event) => setEditState({ ...editState, answer: event.target.value })} />
-                      {editState.question_type === "multi_blank_choice" ? <p className="mt-1 text-[10px] text-amber-600">多空选择题答案格式：各空答案用逗号分隔（如 A,B 表示第1空选A、第2空选B）</p> : null}
+                      {isMultiBlankChoice(editState.question_type) ? <p className="mt-1 text-[10px] text-amber-600">多空选择题的答案由上方各空位的答案选择器生成；展开高级答案输入后，也可以使用槽位格式手动修改。</p> : null}
                     </label>
                     <label className="block space-y-1">
                       <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text-secondary)]">
