@@ -179,8 +179,8 @@
       </view>
 
       <!-- ===== 多空选择题 ===== -->
-      <view class="runner-blank-options" wx:if="{{currentQuestion._hasBlankOptionGroups}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
-        <view class="runner-blank-group" wx:for="{{currentQuestion._blankOptionGroups}}" wx:for-item="group" wx:key="id" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+      <view class="runner-blank-options" wx:if="{{_hasBlankOptionGroups}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+        <view class="runner-blank-group" wx:for="{{_blankOptionGroups}}" wx:for-item="group" wx:key="id" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
           <view class="runner-blank-group-head" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
             <text class="runner-blank-group-title" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{group.id}}</text>
             <text class="runner-blank-group-hint" wx:if="{{!readonly}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">请选择该空答案</text>
@@ -191,7 +191,6 @@
               wx:for-item="opt"
               wx:key="key"
               class="runner-option-item runner-blank-option-item {{opt._selected ? 'runner-selected' : ''}} {{readonly && opt._isBoth ? 'runner-both' : ''}} {{readonly && opt._isCorrect && !opt._isBoth ? 'runner-correct' : ''}} {{readonly && opt._isUserAnswer && !opt._isBoth ? 'runner-user-answer' : ''}}"
-              hover-class="{{readonly ? '' : 'runner-option-pressed'}}"
               catchtap="{{readonly ? 'noop' : 'selectBlankOption'}}"
               data-blank-id="{{group.id}}"
               data-option="{{opt.key}}"
