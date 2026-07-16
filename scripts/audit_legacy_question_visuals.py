@@ -12,11 +12,13 @@ Usage:
         --pdf artifacts/data-structure-import/source/ds_sc.pdf \
         --output-dir /tmp/legacy-audit
 
-    # With HTTP verification and preview rendering
+    # With HTTP verification
     python scripts/audit_legacy_question_visuals.py \
         --db sqlite+aiosqlite:///./backend/postgraduate.db \
         --pdf artifacts/data-structure-import/source/ds_sc.pdf \
-        --output-dir /tmp/legacy-audit --verify-http --generate-previews
+        --output-dir /tmp/legacy-audit --verify-http
+
+    # Previews: use scripts/generate_audit_previews.py separately
 
     # Single import
     python scripts/audit_legacy_question_visuals.py \
@@ -1921,7 +1923,6 @@ def write_manifest(
         "script_version": "1.0",
         "total_records": total_records,
         "http_check_enabled": getattr(args, "verify_http", False),
-        "previews_enabled": getattr(args, "generate_previews", False),
         "csv_formula_escaping": True,
         "sensitive_urls_redacted": True,
     }
@@ -1995,7 +1996,6 @@ def parse_args():
     p.add_argument("--batch-id", help="Filter by batch_id")
     p.add_argument("--only-import-id", type=int, help="Single import ID")
     p.add_argument("--verify-http", action="store_true", help="Check URL HTTP accessibility")
-    p.add_argument("--generate-previews", action="store_true", help="Render proposed clips (requires PDF)")
     p.add_argument("--no-snapshot", action="store_true", help="Skip snapshot (audit live DB directly)")
     return p.parse_args()
 
@@ -2052,8 +2052,7 @@ def main():
     if os.path.isfile(args.pdf):
         pre_db_state["pdf_sha256"] = _file_sha256(args.pdf)
     else:
-        logger.warning("PDF not found: %s — previews disabled", args.pdf)
-        args.generate_previews = False
+        logger.warning("PDF not found: %s", args.pdf)
 
     # ── Scan database ──
     try:

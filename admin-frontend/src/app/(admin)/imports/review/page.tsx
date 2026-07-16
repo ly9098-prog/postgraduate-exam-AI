@@ -39,6 +39,10 @@ import {
 import { MultiBlankChoicePreview } from "./components/multi-blank-choice-preview";
 import { MultiBlankChoiceEditor } from "./components/multi-blank-choice-editor";
 import { MultiBlankAnswerSummary } from "./components/multi-blank-answer-summary";
+import { OptionVisualPreview } from "./components/option-visual-preview";
+import { OptionVisualEditor } from "./components/option-visual-editor";
+import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
+import { extractOptionVisualModel, normalizeOptionTextForDisplay, type OptionVisualModel } from "@/lib/option-visual-utils";
 
 type FilterDropdownOption = {
   value: string;
@@ -175,7 +179,7 @@ function parseOptionsToEditable(item: ImportQuestionItem | null | undefined): Ar
         }
         return { key: String.fromCharCode(65 + index), text: "" };
       })
-      .filter((opt) => opt.key && opt.text);
+      .filter((opt) => Boolean(opt.key));
   }
   if (typeof source === "object") {
     return Object.entries(source as Record<string, unknown>)
@@ -191,7 +195,7 @@ function parseOptionsToEditable(item: ImportQuestionItem | null | undefined): Ar
         }
         return { key, text: typeof value === "string" ? value : String(value ?? "") };
       })
-      .filter((opt) => opt.key && opt.text);
+      .filter((opt) => Boolean(opt.key));
   }
   return [];
 }
@@ -415,6 +419,11 @@ export default function ImportReviewPage() {
   const [executing, setExecuting] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
   const [autoSaveHint, setAutoSaveHint] = useState<string | null>(null);
+  const [runtimeIssues, setRuntimeIssues] = useState<string[]>([]);
+  // Reset runtime issues when switching questions
+  useEffect(() => {
+    setRuntimeIssues([]);
+  }, [previewId]);
   const [quickAnswerDrafts, setQuickAnswerDrafts] = useState<Record<number, string>>({});
   const [showBatchAnswerFill, setShowBatchAnswerFill] = useState(false);
   const [batchAnswerRawText, setBatchAnswerRawText] = useState("");
@@ -547,6 +556,18 @@ export default function ImportReviewPage() {
   const queuedPreviewItem = items.find((item) => item.id === previewId) ?? null;
   const previewItem = detail.data ?? (completedItem?.id === previewId ? completedItem : queuedPreviewItem);
 
+  // Derive option visual model from preview item data
+  const optionVisualModel: OptionVisualModel = useMemo(() => {
+    if (!previewItem) return { mode: "none", optionImages: {}, placeholderKeys: [], missingImageKeys: [], hasValidVisual: false, expectedOptionKeys: [], detectedOptionKeys: [], consumedSegmentIds: [], legacy: false, issues: [] };
+    return extractOptionVisualModel(previewItem.parsed_content, previewItem.parsed_options);
+  }, [previewItem]);
+
+  const isBlockedByVisualIssues =
+    optionVisualModel.mode === "placeholder_missing" ||
+    optionVisualModel.mode === "unknown_visual" ||
+    (optionVisualModel.legacy && optionVisualModel.issues.length > 0) ||
+    runtimeIssues.length > 0;
+
   // When full detail loads for the first time after drawer open, sync editState
   useEffect(() => {
     if (detail.data && previewId === detail.data.id) {
@@ -648,6 +669,7 @@ export default function ImportReviewPage() {
       if (state.action === "low-risk-batch-approve") {
         const bid = filters.batch_id || batchIdParam;
         if (!bid) throw new Error("请先选择导入批次");
+        // Backend handles visual issue filtering for low-risk batch approval
         const res = await apiRequest<{ affected_count: number; skipped_count: number; skipped_reasons: string[] }>(
           `/imports/${bid}/approve-low-risk`, { method: "POST" }
         );
@@ -703,6 +725,14 @@ export default function ImportReviewPage() {
   const updateMutation = useMutation({
     mutationFn: async () => {
       if (!previewId || !editState) throw new Error("请选择要编辑的题目");
+      // Block save when visual issues are unresolved
+      if (isBlockedByVisualIssues) {
+        const reasons: string[] = [];
+        if (optionVisualModel.mode === "placeholder_missing") reasons.push("选项图片缺失");
+        if (optionVisualModel.mode === "unknown_visual") reasons.push("选项状态未知，需人工确认");
+        if (runtimeIssues.length > 0) reasons.push(...runtimeIssues);
+        throw new Error(`无法保存：${reasons.join("；")}。请先生成选项图片或确认选项内容。`);
+      }
       const { options: _, multiBlank: __, ...rest } = editState;
       const hasSegmentEdits = !!(editedSegments && editedSegments.length > 0 && previewItem?.parsed_content);
 
@@ -1938,6 +1968,24 @@ export default function ImportReviewPage() {
                     const pc = previewItem?.parsed_content as Record<string, unknown> | undefined;
                     const segments = (pc?.segments as Array<Record<string, unknown>> | undefined) ?? [];
                     if (segments.length === 0) return null;
+                    // Filter out segments already consumed by option visual preview
+                    const consumed = new Set(optionVisualModel.consumedSegmentIds);
+                    // Stable segment identity: region_id > asset_hash > fingerprint > index
+                    function segId(seg: Record<string, unknown>, idx: number): string {
+                      const rid = seg.region_id as string | undefined;
+                      if (rid && typeof rid === "string" && rid.trim()) return rid;
+                      const hash = seg.asset_hash as string | undefined;
+                      if (hash && typeof hash === "string" && hash.trim()) return `ah:${hash}`;
+                      // Fingerprint from (type+url+bbox)
+                      const t = String(seg.type ?? "");
+                      const u = String(seg.url ?? "");
+                      const b = Array.isArray(seg.bbox) ? JSON.stringify(seg.bbox) : "";
+                      const fp = `${t}|${u}|${b}`;
+                      if (fp.length > 3) { let h = 0; for (let i = 0; i < fp.length; i++) h = ((h << 5) - h + fp.charCodeAt(i)) | 0; return `fp:${(h >>> 0).toString(36)}`; }
+                      return `idx:${idx}`;
+                    }
+                    const filteredSegments = segments.filter((_seg, idx) => !consumed.has(segId(_seg, idx)));
+                    if (filteredSegments.length === 0) return null;
                     return (
                       <section className="animate-fade-up section-scroll section-scroll-purple rounded-2xl border border-[var(--color-border)]/70 bg-gradient-to-br from-white via-white to-purple-50/30 p-5 shadow-sm transition-all hover:shadow-md">
                         <div className="flex items-center gap-2.5 mb-4">
@@ -1946,11 +1994,11 @@ export default function ImportReviewPage() {
                           </span>
                           <div>
                             <span className="text-sm font-bold text-[var(--ink)]">内容片段</span>
-                            <span className="ml-2 text-[10px] text-[var(--color-text-hint)]">{segments.length} 个片段</span>
+                            <span className="ml-2 text-[10px] text-[var(--color-text-hint)]">{filteredSegments.length} 个片段</span>
                           </div>
                         </div>
                         <div className="ml-9 space-y-3">
-                          {segments.map((seg, si) => {
+                          {filteredSegments.map((seg, si) => {
                             const segType = String(seg.type ?? "").toLowerCase();
                             // Text segments
                             if (segType === "text") {
@@ -2099,14 +2147,20 @@ export default function ImportReviewPage() {
                           <span className="text-sm font-semibold text-[var(--ink)]">选项</span>
                         </div>
                         <div className="ml-9">
-                          {editState.options.length === 0 ? (
+                          {optionVisualModel.mode !== "none" ? (
+                            <OptionVisualPreview
+                              model={optionVisualModel}
+                              options={editState.options}
+                              onRuntimeIssue={(issue) => setRuntimeIssues((prev) => prev.includes(issue) ? prev : [...prev, issue])}
+                            />
+                          ) : editState.options.length === 0 ? (
                           <p className="text-sm text-[var(--color-text-hint)]">（无选项）</p>
                         ) : (
                           <div className="space-y-2">
                             {editState.options.map((opt) => (
                               <div key={opt.key} className="flex items-center gap-3">
                                 <span className="flex h-7 w-7 shrink-0 items-center justify-center option-chip">{opt.key}</span>
-                                <span className="text-sm text-[var(--color-text-secondary)]"><MathFormula text={opt.text} /></span>
+                                <span className="text-sm text-[var(--color-text-secondary)]"><MathFormula text={normalizeOptionTextForDisplay(opt.text)} /></span>
                               </div>
                             ))}
                           </div>
@@ -2644,6 +2698,15 @@ export default function ImportReviewPage() {
                           hasUnappliedDraft={mb!.hasUnappliedDraft}
                           onAction={onMultiBlankAction}
                         />
+                      ) : optionVisualModel.mode !== "none" ? (
+                        <OptionVisualEditor
+                          model={optionVisualModel}
+                          options={editState.options}
+                          onChange={(newOpts) => setEditState({ ...editState, options: newOpts })}
+                          onRequestTextModeOverride={() => {
+                            setRuntimeIssues((prev) => [...prev, "placeholder_missing → text mode override requires explicit confirmation"]);
+                          }}
+                        />
                       ) : (
                       <div className="space-y-2">
                         {editState.options.length === 0 ? <p className="text-sm text-[var(--color-text-hint)]">暂无可编辑选项</p> : null}
@@ -2790,7 +2853,7 @@ export default function ImportReviewPage() {
                 <div className="sticky bottom-0 z-10 border-t border-[var(--color-border)] bg-[var(--color-bg)]/90 px-4 py-3 backdrop-blur-xl">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5">
-                      <Button variant="primary" className="h-8 px-3.5 text-xs" disabled={previewItem.status === "published"} onClick={() => setConfirmState({ action: "approve", id: previewItem.id })}>
+                      <Button variant="primary" className="h-8 px-3.5 text-xs" disabled={previewItem.status === "published" || isBlockedByVisualIssues} onClick={() => setConfirmState({ action: "approve", id: previewItem.id })}>
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         通过
                       </Button>
