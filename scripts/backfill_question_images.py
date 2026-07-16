@@ -2524,7 +2524,7 @@ async def main():
     run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
     out_dir = os.path.join(
         os.path.dirname(__file__), "..",
-        f"artifacts/backfill/ds_sc/visual-v2/{run_id}",
+        f"artifacts/backfill/ds_sc/{CROP_VERSION}/{run_id}",
     )
     os.makedirs(out_dir, exist_ok=True)
     logger.info("Output directory: %s", out_dir)
