@@ -1,0 +1,16 @@
+SUCCESS
+PDF pages: 513
+Successful pages: 434 (OCR successful) + 79 (OCR empty, likely non-question pages)
+Failed pages: 0
+Imported questions: 584
+Exact matches: 584
+Normalized equivalent: 0
+Minor mismatches (fixed): 152
+Major mismatches (fixed): 0
+Uncertain: 0
+Needs manual review: 0
+Auto-fixes applied: 152
+Questions table changed: False (AUTO_PUBLISH=false)
+Database backup: /home/lmh/projects/postgraduate-ai/artifacts/data-structure-import/backups/pre_import_backup.db
+Final report: /home/lmh/projects/postgraduate-ai/artifacts/data-structure-import/reports/final-import-audit.md
+Continue command: cd backend && source .venv/bin/activate && PYTHONPATH=. python3 -c "from app.services.import_pipeline_service import ..."

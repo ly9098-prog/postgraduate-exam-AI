@@ -116,6 +116,14 @@ class Settings(BaseSettings):
     PUBLIC_BASE_URL: str = "http://localhost:8000"
     STORAGE_BACKEND: str = "local"  # "local" 或 "cos"
 
+    # COS (Tencent Cloud Object Storage)
+    COS_BUCKET: str = ""
+    COS_REGION: str = ""
+    COS_SECRET_ID: str = ""
+    COS_SECRET_KEY: str = ""
+    COS_ENDPOINT: str = ""  # 可选，通常自动从 region 推导
+    COS_PREFIX: str = "static/formulas/"  # 对象存储前缀（模拟目录）
+
     # 部署
     WORKERS: int = 2
 

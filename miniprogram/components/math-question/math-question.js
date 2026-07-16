@@ -23,6 +23,25 @@ Component({
       var update = {}
       update[key] = true
       this.setData(update)
+    },
+    onImageTap: function(e) {
+      var index = e.currentTarget.dataset.index
+      var segs = this.data.localSegments || []
+      // Collect all visual image URLs for preview
+      var urls = []
+      var currentUrl = ''
+      for (var i = 0; i < segs.length; i++) {
+        var s = segs[i]
+        if (s.type === 'image' || s.type === 'math_image' || s.type === 'table_image' || s.type === 'code_image') {
+          if (s.url && !s._error) {
+            urls.push(s.url)
+            if (i === index) currentUrl = s.url
+          }
+        }
+      }
+      if (currentUrl && urls.length > 0) {
+        wx.previewImage({ current: currentUrl, urls: urls })
+      }
     }
   }
 })

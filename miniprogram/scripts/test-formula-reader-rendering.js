@@ -15,6 +15,12 @@ const conditions = '两个重要极限适用的前提是极限过程分别符合
 const errorTips = '易错：lim(x → 0)(sin x)/x = 1，不是0；lim(x → 0)(sin 2x)/x = 2，不是1。第二个重要极限底数是(1 + 1/x)，不是(1 + x)。'
 const blockLabel = 'e^x展开'
 const greekExponentBlockLabel = '(1+x)^α展开'
+const piecewiseTitle = '分段函数典型图像：sgn x 与 \\lfloor x\\rfloor'
+const floorErrorTips = JSON.stringify([
+  '\\operatorname{sgn}x 在 x = 0 处函数值为 0，但左右极限分别为 -1 和 1。',
+  '\\lfloor x\\rfloor 在每个整数处发生跳跃，左极限为 k-1，函数值与右极限为 k。',
+  '正式公式使用 \\lfloor x\\rfloor，不使用容易与区间混淆的 [x]。',
+])
 const structuredConditions = '[{"expression":"a ≠ 0","note":""}]'
 const structuredSymbols = '[{"symbol":"Delta = b^2 - 4ac","note":"判别式，决定与 x 轴交点个数"}]'
 const structuredConclusions = '["二次函数的二阶导数为非零常数 2a","顶点公式：(-b/(2a), (4ac-b^2)/(4a))"]'
@@ -24,6 +30,7 @@ const expectedConditions = '两个重要极限适用的前提是极限过程分�
 const expectedErrorTips = '易错：$\\displaystyle \\lim_{x\\to 0}\\frac{\\sin x}{x}=1$，不是0；$\\displaystyle \\lim_{x\\to 0}\\frac{\\sin 2x}{x}=2$，不是1。第二个重要极限底数是$\\displaystyle (1 + \\frac{1}{x})$，不是$\\displaystyle (1 + x)$。'
 const expectedBlockLabel = '$\\displaystyle e^x$展开'
 const expectedGreekExponentBlockLabel = '$\\displaystyle (1+x)^\\alpha{}$展开'
+const expectedPiecewiseTitle = '分段函数典型图像：$\\displaystyle \\operatorname{sgn} x$ 与 $\\displaystyle \\lfloor x\\rfloor$'
 
 function parse(html) {
   const host = {
@@ -47,19 +54,27 @@ const conditionsHtml = formulaContent.normalizeMixedContent(conditions)
 const errorTipsHtml = formulaContent.normalizeMixedContent(errorTips)
 const blockLabelHtml = formulaContent.normalizeMixedContent(blockLabel)
 const greekExponentBlockLabelHtml = formulaContent.normalizeMixedContent(greekExponentBlockLabel)
+const piecewiseTitleHtml = formulaContent.normalizeMixedContent(piecewiseTitle)
+const floorErrorTipsHtml = formulaContent.normalizeStructuredContent(floorErrorTips, 'errors')
 
 assert.strictEqual(conditionsHtml, expectedConditions)
 assert.strictEqual(errorTipsHtml, expectedErrorTips)
 assert.strictEqual(blockLabelHtml, expectedBlockLabel)
 assert.strictEqual(greekExponentBlockLabelHtml, expectedGreekExponentBlockLabel)
+assert.strictEqual(piecewiseTitleHtml, expectedPiecewiseTitle)
 assert.strictEqual(formulaContent.normalizeMixedContent(conditionsHtml), conditionsHtml)
 assert.strictEqual(formulaContent.normalizeMixedContent(errorTipsHtml), errorTipsHtml)
+assert.strictEqual(
+  formulaContent.normalizeMixedContent(piecewiseTitleHtml).replace(/\s{2,}/g, ' '),
+  piecewiseTitleHtml,
+)
 
 assert.strictEqual(formulaContent.normalizeMathRun('sin x/x'), '\\frac{\\sin x}{x}')
 assert.strictEqual(formulaContent.normalizeMathRun('sin 2x/x'), '\\frac{\\sin 2x}{x}')
 assert.strictEqual(formulaContent.normalizeMathRun('x/sin x'), '\\frac{x}{\\sin x}')
 assert.strictEqual(formulaContent.normalizeMathRun('(1+x)^(1/x)'), '(1+x)^{\\frac{1}{x}}')
 assert.strictEqual(formulaContent.normalizeMathRun('(1+x)^{1/x}'), '(1+x)^{\\frac{1}{x}}')
+assert.strictEqual(formulaContent.normalizeMathRun('sgn x'), '\\operatorname{sgn} x')
 assert.strictEqual(formulaContent.normalizeMixedContent('2026/07/13'), '2026/07/13')
 assert.strictEqual(formulaContent.normalizeMixedContent('v1.2.3'), 'v1.2.3')
 assert.strictEqual(formulaContent.normalizeMixedContent('https://example.com/a/b'), 'https://example.com/a/b')
@@ -103,12 +118,22 @@ const errorClasses = collectClasses(parse(errorTipsHtml))
 const blockLabelClasses = collectClasses(parse(blockLabelHtml))
 const greekExponentBlockLabelNodes = parse(greekExponentBlockLabelHtml)
 const greekExponentBlockLabelClasses = collectClasses(greekExponentBlockLabelNodes)
+const piecewiseTitleNodes = parse(piecewiseTitleHtml)
+const floorErrorTipNodes = parse(floorErrorTipsHtml)
+const piecewiseTitleClasses = collectClasses(piecewiseTitleNodes)
+const floorErrorTipClasses = collectClasses(floorErrorTipNodes)
 assert(conditionClasses.some((name) => /mfrac/.test(name)), 'condition exponent must contain a real KaTeX fraction')
 assert(errorClasses.filter((name) => /mfrac/.test(name)).length >= 3, 'error tips must contain real KaTeX fractions')
 assert(errorClasses.filter((name) => /op-limits/.test(name)).length >= 2, 'error tips must contain limit operators with lower limits')
 assert(blockLabelClasses.some((name) => /katex/.test(name)), 'formula block label must be parsed into a KaTeX tree')
 assert(greekExponentBlockLabelClasses.some((name) => /katex/.test(name)), 'Greek exponent label must be parsed into a KaTeX tree')
 assert(!JSON.stringify(greekExponentBlockLabelNodes).includes('color:red'), 'Greek exponent label must not contain a KaTeX parse error')
+assert(piecewiseTitleClasses.filter((name) => /(?:^|\s)katex(?:\s|$)/.test(name)).length >= 2, 'piecewise title must render both sgn and floor notation through KaTeX')
+assert(floorErrorTipClasses.filter((name) => /(?:^|\s)katex(?:\s|$)/.test(name)).length >= 3, 'error tips must render operatorname and floor notation through KaTeX')
+assert(!JSON.stringify(piecewiseTitleNodes).includes('color:red'), 'piecewise title must not contain a KaTeX parse error')
+assert(!JSON.stringify(floorErrorTipNodes).includes('color:red'), 'floor error tips must not contain a KaTeX parse error')
+assert(!piecewiseTitleHtml.includes(' 与 \\lfloor'), 'floor source must not remain outside math delimiters in the title')
+assert(!JSON.stringify(floorErrorTipNodes).includes('\\\\lfloor'), 'floor source must not remain as visible rich-text content')
 
 const fs = require('fs')
 const path = require('path')

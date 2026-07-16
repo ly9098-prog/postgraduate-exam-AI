@@ -1,0 +1,48 @@
+{
+  "total_batches": 5,
+  "start_questions": 110,
+  "final_questions": 157,
+  "added_questions": 47,
+  "batches": [
+    {
+      "batch_num": 1,
+      "page_start": 311,
+      "page_end": 360,
+      "pipeline_id": "pl_20260715_183643_a2c7ba",
+      "status": "completed",
+      "new_questions": 19
+    },
+    {
+      "batch_num": 2,
+      "page_start": 361,
+      "page_end": 410,
+      "pipeline_id": "pl_20260715_184217_93b9be",
+      "status": "completed",
+      "new_questions": 29
+    },
+    {
+      "batch_num": 3,
+      "page_start": 411,
+      "page_end": 460,
+      "pipeline_id": "pl_20260715_184323_949733",
+      "status": "completed",
+      "new_questions": 39
+    },
+    {
+      "batch_num": 4,
+      "page_start": 461,
+      "page_end": 510,
+      "pipeline_id": "pl_20260715_184413_115cc6",
+      "status": "completed",
+      "new_questions": 46
+    },
+    {
+      "batch_num": 5,
+      "page_start": 511,
+      "page_end": 513,
+      "pipeline_id": "pl_20260715_184514_71973a",
+      "status": "completed",
+      "new_questions": 47
+    }
+  ]
+}

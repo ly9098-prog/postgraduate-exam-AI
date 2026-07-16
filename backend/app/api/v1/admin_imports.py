@@ -1,8 +1,6 @@
 import asyncio
-import importlib.util
 import logging
 import os
-import tempfile
 
 import json
 
@@ -64,10 +62,10 @@ from app.schemas.question_publish import PublishResponse
 from app.features.import_mode import ImportMode
 from app.services.import_pipeline_service import get_pipeline_status as svc_get_pipeline_status
 from app.services.import_pipeline_service import start_import_pipeline as svc_start_import_pipeline
+from app.services.streaming_upload_handler import stream_to_temp
 from app.features.pipeline_orchestrator import (
     _get_stage_checkpoint,
     _set_pipeline_store,
-    run_pipeline_background,
 )
 from app.features import question_publish_service as publish_svc
 
@@ -94,10 +92,11 @@ async def upload_import_file(
     page_end: int | None = None,
     current_admin=Depends(require_permissions("import:write")),
 ):
-    content = await file.read()
+    suffix = os.path.splitext(file.filename or "")[1] or ".bin"
+    tmp = await stream_to_temp(file, suffix=suffix)
     try:
-        return await svc_start_import_pipeline(
-            file_content=content,
+        result = await svc_start_import_pipeline(
+            file_path=tmp.path,
             filename=file.filename or "",
             content_type=file.content_type,
             subject=subject,
@@ -110,7 +109,33 @@ async def upload_import_file(
             created_by=f"admin:{current_admin.id}",
         )
     except ValueError as exc:
+        tmp.close()
         raise HTTPException(status_code=400, detail=str(exc))
+    tmp.detach()
+    return result
+
+
+@router.post("/segment-image/upload")
+async def upload_segment_image(
+    file: UploadFile,
+    _=Depends(require_permissions("import:write")),
+):
+    """"上传segment编辑器中的替换图片，压缩后保存到存储后端并返回URL。"""
+    from app.services.storage_backend import compress_image, get_storage
+
+    ctype = (file.content_type or "").lower()
+    if ctype and not ctype.startswith("image/"):
+        raise HTTPException(status_code=400, detail="仅支持图片文件")
+    MAX_SIZE = 10 * 1024 * 1024
+    data = await file.read()
+    if len(data) > MAX_SIZE:
+        raise HTTPException(status_code=413, detail="图片大小超过 10MB 限制")
+
+    filename = file.filename or "segment.png"
+    storage = get_storage()
+    compressed = compress_image(data)
+    url = await storage.upload(filename, compressed)
+    return {"url": url, "filename": filename}
 
 
 @router.get("/pipelines/{pipeline_id}", response_model=PipelineStatusResponse)
@@ -147,7 +172,6 @@ async def admin_resume_pipeline(
     P4-3: 自动检测 artifact 实现真断点恢复（从可恢复 stage 继续而非全部重跑）。
     """
     from datetime import datetime
-    import tempfile
 
     from app.features.pipeline_orchestrator import _pipeline_store
 
@@ -192,23 +216,13 @@ async def admin_resume_pipeline(
     except Exception:
         pass
 
-    # 保存上传文件
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="文件内容为空")
-
+    # 保存上传文件 — 流式写入临时文件
     suffix = os.path.splitext(file.filename or "")[1] or ".bin"
-    fd, tmp_path = tempfile.mkstemp(prefix=f"resume_admin_{pipeline_id}_", suffix=suffix)
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(content)
-    except Exception:
-        try:
-            os.close(fd)
-        except Exception:
-            pass
-        raise
-    del content
+    tmp = await stream_to_temp(file, suffix=suffix)
+    if tmp.size == 0:
+        tmp.close()
+        raise HTTPException(status_code=400, detail="文件内容为空")
+    tmp_path = tmp.path
 
     # 从 checkpoint 恢复选项，允许调用方覆盖
     opts = dict(ckpt.get("options") or {}) if ckpt else {}
@@ -299,7 +313,14 @@ async def admin_resume_pipeline(
                 except OSError:
                     pass
 
+    # Note: admin resume uses inline create_task (not DurableTaskQueue) because
+    # _run_resume captures _pipeline_store for SSE progress updates and uses
+    # run_import_pipeline (not resume_pipeline_background) with progress_callback.
+    # The admin pipeline store is in-memory, so queue durability adds no value here.
     asyncio.create_task(_run_resume())
+
+    # Detach temp file — _run_resume takes ownership and cleans up in its finally block
+    tmp.detach()
 
     failed_stage = (ckpt or {}).get("failed_stage")
     completed_stages = (ckpt or {}).get("completed_stages", [])
@@ -900,25 +921,6 @@ _BATCH_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 _BATCH_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
-def _validate_batch_image(filename: str, content: bytes, content_type: str | None) -> str | None:
-    """轻量校验单张图片，返回错误原因（None 表示通过）。
-
-    重型 PIL 解码留给 worker（ocr_image 内部会做），避免上传阶段就因单张
-    损坏图片拖慢/卡住整批；这里只做扩展名 / content-type / 大小 / 非空检查。
-    """
-    if not filename:
-        return "文件名为空"
-    if not filename.lower().endswith(_BATCH_IMAGE_EXTENSIONS):
-        return "仅支持 .jpg / .jpeg / .png / .webp"
-    if content_type and content_type not in _BATCH_IMAGE_CONTENT_TYPES:
-        return f"Content-Type 不支持: {content_type}"
-    if not content:
-        return "图片内容为空"
-    if settings.IMAGE_IMPORT_MAX_BYTES and len(content) > settings.IMAGE_IMPORT_MAX_BYTES:
-        return "图片过大"
-    return None
-
-
 @router.post("/batch-image/upload", response_model=BatchImageUploadResponse)
 async def batch_image_upload(
     files: list[UploadFile],
@@ -990,28 +992,35 @@ async def batch_image_upload(
     try:
         for idx, upload in enumerate(files):
             filename = upload.filename or f"image_{seq + 1}"
-            content = await upload.read()
-            reason = _validate_batch_image(upload.filename or "", content, upload.content_type)
-            if reason is not None:
-                rejected_files.append(f"{filename}: {reason}")
+
+            # Lightweight extension/content-type check before streaming
+            if not filename.lower().endswith(_BATCH_IMAGE_EXTENSIONS):
+                rejected_files.append(f"{filename}: 仅支持 .jpg / .jpeg / .png / .webp")
+                continue
+            if upload.content_type and upload.content_type not in _BATCH_IMAGE_CONTENT_TYPES:
+                rejected_files.append(f"{filename}: Content-Type 不支持: {upload.content_type}")
                 continue
 
-            seq += 1
-            # Compute source_sha256 for content-level dedup
-            source_sha256 = _hashlib.sha256(content).hexdigest()
-
+            # Stream to temp file
             suffix = os.path.splitext(filename)[1] or ".png"
-            fd, tmp_path = tempfile.mkstemp(prefix="batch_img_", suffix=suffix)
             try:
-                with os.fdopen(fd, "wb") as fh:
-                    fh.write(content)
-            except Exception:
-                try:
-                    os.close(fd)
-                except Exception:
-                    pass
-                raise
-            del content
+                tmp = await stream_to_temp(upload, max_size=settings.IMAGE_IMPORT_MAX_BYTES or 0, suffix=suffix)
+            except ValueError as exc:
+                rejected_files.append(f"{filename}: {exc}")
+                continue
+            if tmp.size == 0:
+                tmp.close()
+                rejected_files.append(f"{filename}: 图片内容为空")
+                continue
+
+            # Compute source_sha256 for content-level dedup
+            source_sha256 = _hashlib.sha256()
+            with open(tmp.path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(65536), b""):
+                    source_sha256.update(chunk)
+            source_sha256_hex = source_sha256.hexdigest()
+
+            seq += 1
 
             # Resolve per-image image_import_id
             if use_image_ids:
@@ -1019,16 +1028,18 @@ async def batch_image_upload(
             elif image_id and len(files) == 1:
                 per_image_id = image_id
             elif image_id:
-                # Multi-file with single image_id: derive stable ID
                 per_image_id = f"{image_id}:{seq}"
             else:
                 per_image_id = f"auto_{seq}"
 
             source_obj = batch_svc.BatchImageSource(
-                seq=seq, source_file=filename, temp_path=tmp_path,
+                seq=seq, source_file=filename, temp_path=tmp.path,
             )
             sources.append(source_obj)
-            sources_with_sha.append((source_obj, source_sha256, per_image_id))
+            sources_with_sha.append((source_obj, source_sha256_hex, per_image_id))
+
+            # Detach — the batch job service takes ownership
+            tmp.detach()
     except Exception:
         # Clean up temp files on error
         for src in sources:
@@ -1304,7 +1315,6 @@ async def list_pipelines(
     # Merge in-memory quality_report + alerts for recent pipelines
     from app.features.pipeline_orchestrator import (
         _pipeline_store,
-        _get_pipeline_diagnostics,
     )
 
     items = []

@@ -51,9 +51,13 @@ async def get_by_id(db: AsyncSession, question_id: int) -> Question | None:
 
 
 def _type_conditions(question_type: str) -> list:
-    canonical = normalizer.normalize_type(question_type)
-    legacy = {"single_choice": "choice", "fill_blank": "fill"}
-    return [Question.question_type.in_([canonical, legacy.get(canonical, canonical)])]
+    """构建题型过滤条件。"""
+    from app.features.question_type import normalize_question_type
+
+    canonical, _warnings = normalize_question_type(question_type)
+    if canonical is None:
+        return [Question.question_type == question_type]
+    return [Question.question_type == canonical]
 
 
 async def list_questions(

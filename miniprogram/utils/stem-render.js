@@ -342,6 +342,9 @@ function _segmentsToText(segments) {
   return segments.map(function (seg) {
     if (!seg) return ''
     if (seg.type === 'text' || seg.type === 'newline') return seg.text || ''
+    if (seg.type === 'image' || seg.type === 'math_image' || seg.type === 'table_image' || seg.type === 'code_image') {
+      return seg.alt ? '$' + seg.alt + '$' : ''
+    }
     return seg.alt ? '$' + seg.alt + '$' : ''
   }).join('')
 }
@@ -919,7 +922,10 @@ function buildRenderModel(q, options, cfg) {
   // Priority 1: SEGMENTS (math-question with pre-rendered formula images)
   if (effectiveConfig.enableMathImage && content && content.render_mode === 'segments') {
     mode = RENDER_MODE.SEGMENTS
-    segments = _textToSegments(cleanedStem)
+    // Use API segments if available (includes text, image, math_image, table_image, code_image)
+    segments = (content.segments && content.segments.length > 0)
+      ? content.segments.map(function (s) { return Object.assign({}, s) })
+      : _textToSegments(cleanedStem)
     richTextNodes = []
     html = ''
     blocks = []
@@ -1067,7 +1073,19 @@ function _optionTextToHtml(key, value) {
 
 function buildOptionList(opts, optionKeys, selectedFlags) {
   return (optionKeys || []).map(function (key) {
-    var optionText = _stripLeadingOptionLabel(key, (opts && opts[key]) || '')
+    var optValue = (opts && opts[key]) || ''
+    // Handle rich dict format: {"A": {"text": "...", "segments": [...]}}
+    var optSegments = typeof optValue === 'object' && optValue !== null ? (optValue.segments || null) : null
+    var optText = ''
+    if (optSegments && Array.isArray(optSegments) && optSegments.length > 0) {
+      // Extract plain text from segments for summary — don't duplicate text + segments
+      optText = _segmentsToText(optSegments)
+    } else if (typeof optValue === 'object' && optValue !== null) {
+      optText = optValue.text || optValue.value || ''
+    } else {
+      optText = String(optValue)
+    }
+    var optionText = _stripLeadingOptionLabel(key, optText)
     // Clean embedded newlines (OCR artifact) to prevent visual doubling
     var cleanedOptionText = optionText.replace(/[\r\n]+/g, ' ')
     var plainOptionText = _toPlainInlineMathText(cleanedOptionText)
@@ -1076,8 +1094,9 @@ function buildOptionList(opts, optionKeys, selectedFlags) {
       key: key,
       _selected: !!(selectedFlags || {})[key],
       _text: plainOptionText || cleanedOptionText,
-      _needsRich: needsRich,
-      _html: needsRich ? _textToHtml(cleanedOptionText) : ''
+      _segments: (optSegments && Array.isArray(optSegments) && optSegments.length > 0) ? optSegments : undefined,
+      _needsRich: !optSegments && needsRich,
+      _html: !optSegments && needsRich ? _textToHtml(cleanedOptionText) : ''
     }
   })
 }

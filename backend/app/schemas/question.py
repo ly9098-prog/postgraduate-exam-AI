@@ -1,9 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from app.features.question_type import QT_SINGLE_CHOICE, validate_question_type
 
 
 class QuestionCreate(BaseModel):
     subject: str
-    question_type: str = "choice"
+    question_type: str = QT_SINGLE_CHOICE
     content: dict
     options: dict | None = None
     answer: str
@@ -12,6 +14,11 @@ class QuestionCreate(BaseModel):
     difficulty: int = 3
     source: str | None = None
     year: int | None = None
+
+    @field_validator("question_type")
+    @classmethod
+    def _validate_type(cls, v: str) -> str:
+        return validate_question_type(v)
 
 
 class QuestionRandomParams(BaseModel):
@@ -34,6 +41,7 @@ class QuestionResponse(BaseModel):
     difficulty: int
     source: str | None = None
     year: int | None = None
+    image_url: list | None = None
 
     class Config:
         from_attributes = True

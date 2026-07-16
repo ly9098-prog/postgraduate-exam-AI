@@ -4,6 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.v1 import imports
+from app.services import import_pipeline_service as pipeline_svc
 
 
 class FakeCache:
@@ -27,33 +28,33 @@ class FakeCache:
 
 @pytest.fixture(autouse=True)
 def clear_image_status_store():
-    imports._image_pipeline_store.clear()
+    pipeline_svc._image_pipeline_store.clear()
     yield
-    imports._image_pipeline_store.clear()
+    pipeline_svc._image_pipeline_store.clear()
 
 
 @pytest.fixture
 def fake_cache(monkeypatch):
     cache = FakeCache()
-    monkeypatch.setattr(imports, "cache", cache)
+    monkeypatch.setattr(pipeline_svc, "cache", cache)
     return cache
 
 
 @pytest.mark.asyncio
 async def test_set_image_pipeline_status_writes_cache_and_memory(fake_cache):
-    status = await imports._set_image_pipeline_status("img_1", status="queued")
+    status = await pipeline_svc._set_image_pipeline_status("img_1", status="queued")
 
-    assert imports._image_pipeline_store["img_1"] == status
-    assert fake_cache.values[imports._image_pipeline_key("img_1")] == status
-    assert fake_cache.ttls[imports._image_pipeline_key("img_1")] == 86400
+    assert pipeline_svc._image_pipeline_store["img_1"] == status
+    assert fake_cache.values[pipeline_svc._image_pipeline_key("img_1")] == status
+    assert fake_cache.ttls[pipeline_svc._image_pipeline_key("img_1")] == 86400
 
 
 @pytest.mark.asyncio
 async def test_get_image_pipeline_status_reads_cache_after_memory_clear(fake_cache):
-    await imports._set_image_pipeline_status("img_1", status="queued")
-    imports._image_pipeline_store.clear()
+    await pipeline_svc._set_image_pipeline_status("img_1", status="queued")
+    pipeline_svc._image_pipeline_store.clear()
 
-    status = await imports._get_image_pipeline_status("img_1")
+    status = await pipeline_svc._get_image_pipeline_status("img_1")
 
     assert status["pipeline_id"] == "img_1"
     assert status["status"] == "queued"
@@ -61,9 +62,9 @@ async def test_get_image_pipeline_status_reads_cache_after_memory_clear(fake_cac
 
 @pytest.mark.asyncio
 async def test_get_image_pipeline_status_falls_back_to_memory_on_cache_miss(fake_cache):
-    imports._image_pipeline_store["img_1"] = {"pipeline_id": "img_1", "status": "parsing"}
+    pipeline_svc._image_pipeline_store["img_1"] = {"pipeline_id": "img_1", "status": "parsing"}
 
-    status = await imports._get_image_pipeline_status("img_1")
+    status = await pipeline_svc._get_image_pipeline_status("img_1")
 
     assert status == {"pipeline_id": "img_1", "status": "parsing"}
 
@@ -72,15 +73,15 @@ async def test_get_image_pipeline_status_falls_back_to_memory_on_cache_miss(fake
 async def test_cache_set_exception_keeps_memory_status(fake_cache):
     fake_cache.fail_set = True
 
-    status = await imports._set_image_pipeline_status("img_1", status="ocr_running")
+    status = await pipeline_svc._set_image_pipeline_status("img_1", status="ocr_running")
 
     assert status["status"] == "ocr_running"
-    assert imports._image_pipeline_store["img_1"]["status"] == "ocr_running"
+    assert pipeline_svc._image_pipeline_store["img_1"]["status"] == "ocr_running"
 
 
 @pytest.mark.asyncio
 async def test_set_image_pipeline_status_ignores_pipeline_id_update(fake_cache):
-    status = await imports._set_image_pipeline_status(
+    status = await pipeline_svc._set_image_pipeline_status(
         "img_1",
         pipeline_id="other",
         status="completed",
@@ -93,15 +94,15 @@ async def test_set_image_pipeline_status_ignores_pipeline_id_update(fake_cache):
 @pytest.mark.asyncio
 async def test_get_image_pipeline_status_falls_back_to_memory_on_cache_error(fake_cache):
     fake_cache.fail_get = True
-    imports._image_pipeline_store["img_1"] = {"pipeline_id": "img_1", "status": "parsing"}
+    pipeline_svc._image_pipeline_store["img_1"] = {"pipeline_id": "img_1", "status": "parsing"}
 
-    status = await imports._get_image_pipeline_status("img_1")
+    status = await pipeline_svc._get_image_pipeline_status("img_1")
 
     assert status == {"pipeline_id": "img_1", "status": "parsing"}
 
 
 def test_build_ocr_text_diagnostics_tracks_raw_and_cleaned_text():
-    diagnostics = imports._build_ocr_text_diagnostics(
+    diagnostics = pipeline_svc._build_ocr_text_diagnostics(
         "31. 原始题干\n\nA. 选项A\nB. 选项B\n",
         "31. 原始题干\nA. 选项A B. 选项B",
     )
@@ -117,17 +118,18 @@ def test_build_ocr_text_diagnostics_tracks_raw_and_cleaned_text():
         "line_count_delta": 1,
     }
 
+
 @pytest.mark.asyncio
 async def test_fail_image_pipeline_appends_error_and_finishes(fake_cache):
-    await imports._set_image_pipeline_status(
+    await pipeline_svc._set_image_pipeline_status(
         "img_1",
         errors=["first"],
         stages={"upload": {"status": "completed"}, "ocr": {"status": "running"}},
     )
 
-    await imports._fail_image_pipeline("img_1", "second")
+    await pipeline_svc._fail_image_pipeline("img_1", "second")
 
-    status = imports._image_pipeline_store["img_1"]
+    status = pipeline_svc._image_pipeline_store["img_1"]
     assert status["status"] == "failed"
     assert status["errors"] == ["first", "second"]
     assert status["stages"]["upload"] == {"status": "completed"}
@@ -138,19 +140,21 @@ async def test_fail_image_pipeline_appends_error_and_finishes(fake_cache):
 @pytest.mark.asyncio
 async def test_pipeline_status_returns_old_pipeline_first(monkeypatch, fake_cache):
     old_status = {"pipeline_id": "same", "status": "completed", "batch_id": "old_batch"}
-    monkeypatch.setattr(imports, "get_pipeline_status", AsyncMock(return_value=old_status))
-    await imports._set_image_pipeline_status("same", status="failed", batch_id="image_batch")
+    monkeypatch.setattr(imports, "svc_get_pipeline_status", AsyncMock(return_value=old_status))
+    await pipeline_svc._set_image_pipeline_status("same", status="failed", batch_id="image_batch")
 
     response = await imports.pipeline_status("same", None)
 
-    assert response.batch_id == "old_batch"
-    assert response.status == "completed"
+    assert response["batch_id"] == "old_batch"
+    assert response["status"] == "completed"
 
 
 @pytest.mark.asyncio
 async def test_pipeline_status_returns_image_status_when_old_missing(monkeypatch, fake_cache):
-    monkeypatch.setattr(imports, "get_pipeline_status", AsyncMock(return_value=None))
-    await imports._set_image_pipeline_status("img_1", status="completed", batch_id="image_batch")
+    # Mock orchestrator to return None so svc_get_pipeline_status falls through
+    # to image pipeline store.
+    monkeypatch.setattr(pipeline_svc, "_orchestrator_get_pipeline_status", AsyncMock(return_value=None))
+    await pipeline_svc._set_image_pipeline_status("img_1", status="completed", batch_id="image_batch")
 
     response = await imports.pipeline_status("img_1", None)
 
@@ -160,7 +164,7 @@ async def test_pipeline_status_returns_image_status_when_old_missing(monkeypatch
 
 @pytest.mark.asyncio
 async def test_pipeline_status_raises_404_when_missing(monkeypatch, fake_cache):
-    monkeypatch.setattr(imports, "get_pipeline_status", AsyncMock(return_value=None))
+    monkeypatch.setattr(pipeline_svc, "_orchestrator_get_pipeline_status", AsyncMock(return_value=None))
 
     with pytest.raises(HTTPException) as exc:
         await imports.pipeline_status("missing", None)

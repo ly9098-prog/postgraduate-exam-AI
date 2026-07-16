@@ -135,7 +135,9 @@ async def _insert(db, *, user_id: int, openid: str, due_offset_sec: int,
 
 async def _make_subject(db) -> int:
     from app.models.admin import Subject
-    subj = Subject(code="test_subject", name="测试科目", level=1, path="test", is_active=True, sort_order=0)
+    import uuid
+    code = f"test_subject_{uuid.uuid4().hex[:8]}"
+    subj = Subject(code=code, name="测试科目", level=1, path="test", is_active=True, sort_order=0)
     db.add(subj)
     await db.flush()
     return subj.id
@@ -146,11 +148,9 @@ async def _make_subject(db) -> int:
 # ============================================================
 
 class TestSchedulerClaiming:
-    @pytest.mark.xfail(reason="Module-scoped DB isolation — due session not claimed in full suite", strict=True)
     @pytest.mark.asyncio
     async def test_due_session_is_claimed_and_sent(self, isolated_db, monkeypatch):
         from app.services import pomodoro_scheduler_service as ssvc
-        from app.core.config import settings as s
 
         sent: list[dict] = []
 
@@ -159,7 +159,8 @@ class TestSchedulerClaiming:
             return {"errcode": 0}
 
         monkeypatch.setattr(ssvc.wechat, "send_subscribe_message", _fake_send)
-        monkeypatch.setattr(s, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
+        monkeypatch.setattr(ssvc.settings, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
+        monkeypatch.setattr(ssvc, "async_session", isolated_db.async_session)
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_due")
@@ -183,12 +184,12 @@ class TestSchedulerClaiming:
     @pytest.mark.asyncio
     async def test_future_session_not_claimed(self, isolated_db, monkeypatch):
         from app.services import pomodoro_scheduler_service as ssvc
-        from app.core.config import settings as s
 
         sent: list[dict] = []
         monkeypatch.setattr(ssvc.wechat, "send_subscribe_message",
                             lambda **kw: sent.append(kw) or {"errcode": 0})
-        monkeypatch.setattr(s, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
+        monkeypatch.setattr(ssvc.settings, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
+        monkeypatch.setattr(ssvc, "async_session", isolated_db.async_session)
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_future")
@@ -208,7 +209,6 @@ class TestSchedulerClaiming:
     @pytest.mark.asyncio
     async def test_disabled_session_not_claimed(self, isolated_db, monkeypatch):
         from app.services import pomodoro_scheduler_service as ssvc
-        from app.core.config import settings as s
 
         sent: list[dict] = []
 
@@ -217,7 +217,8 @@ class TestSchedulerClaiming:
             return {"errcode": 0}
 
         monkeypatch.setattr(ssvc.wechat, "send_subscribe_message", _fake_send)
-        monkeypatch.setattr(s, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
+        monkeypatch.setattr(ssvc.settings, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
+        monkeypatch.setattr(ssvc, "async_session", isolated_db.async_session)
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_disabled")
@@ -237,7 +238,6 @@ class TestSchedulerClaiming:
     @pytest.mark.asyncio
     async def test_already_sent_not_resent(self, isolated_db, monkeypatch):
         from app.services import pomodoro_scheduler_service as ssvc
-        from app.core.config import settings as s
 
         sent: list[dict] = []
 
@@ -246,7 +246,8 @@ class TestSchedulerClaiming:
             return {"errcode": 0}
 
         monkeypatch.setattr(ssvc.wechat, "send_subscribe_message", _fake_send)
-        monkeypatch.setattr(s, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
+        monkeypatch.setattr(ssvc.settings, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
+        monkeypatch.setattr(ssvc, "async_session", isolated_db.async_session)
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_sent")
@@ -256,11 +257,9 @@ class TestSchedulerClaiming:
         await ssvc.PomodoroScheduler().tick()
         assert sent == []
 
-    @pytest.mark.xfail(reason="Module-scoped DB isolation — template_missing not reached in full suite", strict=True)
     @pytest.mark.asyncio
     async def test_template_missing_marks_error_and_skips_send(self, isolated_db, monkeypatch):
         from app.services import pomodoro_scheduler_service as ssvc
-        from app.core.config import settings as s
 
         sent: list[dict] = []
 
@@ -269,7 +268,8 @@ class TestSchedulerClaiming:
             return {"errcode": 0}
 
         monkeypatch.setattr(ssvc.wechat, "send_subscribe_message", _fake_send)
-        monkeypatch.setattr(s, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "")
+        monkeypatch.setattr(ssvc.settings, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "")
+        monkeypatch.setattr(ssvc, "async_session", isolated_db.async_session)
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_no_tpl")
@@ -290,7 +290,6 @@ class TestSchedulerClaiming:
     @pytest.mark.asyncio
     async def test_paused_session_not_claimed(self, isolated_db, monkeypatch):
         from app.services import pomodoro_scheduler_service as ssvc
-        from app.core.config import settings as s
 
         sent: list[dict] = []
 
@@ -299,7 +298,8 @@ class TestSchedulerClaiming:
             return {"errcode": 0}
 
         monkeypatch.setattr(ssvc.wechat, "send_subscribe_message", _fake_send)
-        monkeypatch.setattr(s, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
+        monkeypatch.setattr(ssvc.settings, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
+        monkeypatch.setattr(ssvc, "async_session", isolated_db.async_session)
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_paused")
@@ -484,8 +484,9 @@ class TestServiceLayer:
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_resume_noop")
+            subj_id = await _make_subject(db)
             session = await svc.start_session(
-                db, uid, "math", None, "standard", 25, 5, notification_enabled=True
+                db, uid, subj_id, None, "standard", 25, 5, notification_enabled=True
             )
             sid = session.id
             original_eet = session.expected_end_time

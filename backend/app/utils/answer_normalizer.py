@@ -1,25 +1,36 @@
 """Answer normalization and comparison utilities.
 
 Single source of truth for all answer judgment across practice, review, and grading.
+Multi-blank choice logic is delegated to app.features.multi_blank_choice.
 """
 
 import re
 from typing import List
+
+from app.features.question_type import (
+    is_multi_blank_type as _is_multi_blank_type,
+    is_multiple_choice_type as _is_multiple_choice_type,
+    is_true_false_type as _is_true_false_type,
+)
+from app.features.multi_blank_choice import (
+    parse_multi_blank_answer,
+    serialize_multi_blank_answer,
+)
 
 _TRUE_FALSE_TRUE = {"a", "true", "对", "是", "正确", "t", "yes", "1"}
 _TRUE_FALSE_FALSE = {"b", "false", "错", "否", "错误", "f", "no", "0"}
 
 
 def is_multiple_choice_type(question_type: str) -> bool:
-    return question_type == "multiple_choice"
+    return _is_multiple_choice_type(question_type)
 
 
 def is_true_false_type(question_type: str) -> bool:
-    return question_type in ("true_false", "judgement")
+    return _is_true_false_type(question_type)
 
 
 def is_multi_blank_type(question_type: str) -> bool:
-    return question_type == "multi_blank_choice"
+    return _is_multi_blank_type(question_type)
 
 
 def normalize_choice_answer(answer: str) -> List[str]:
@@ -52,13 +63,9 @@ def serialize_choice_answer(answer: str) -> str:
 
 
 def normalize_blank_answer(answer: str) -> dict:
-    """Parse blank-slot answer format "slot:value;slot2:value2" into dict."""
-    result = {}
-    for part in re.split(r"[;；,，\n]+", str(answer or "")):
-        m = re.match(r"^(.+?)\s*[:：=]\s*([A-Za-z])\s*$", part.strip())
-        if m:
-            result[m.group(1).strip()] = m.group(2).upper()
-    return result
+    """Parse blank-slot answer format into dict using multi_blank_choice module."""
+    parsed, _ = parse_multi_blank_answer(answer)
+    return parsed
 
 
 def is_answer_correct(
@@ -70,17 +77,26 @@ def is_answer_correct(
 
     - multiple_choice: normalized set comparison (order-independent)
     - true_false / judgement: value normalized to A/B
-    - multi_blank_choice: slot-by-slot comparison
+    - multi_blank_choice: slot-by-slot comparison (all required, no extras, order-independent)
     - single_choice / others: case-insensitive trim comparison
     """
     if not user_answer or not correct_answer:
         return False
 
     if is_multi_blank_type(question_type):
-        correct_map = normalize_blank_answer(correct_answer)
+        # Parse both answers using the unified module
+        correct_map, _c_err = parse_multi_blank_answer(correct_answer)
+        user_map, _u_err = parse_multi_blank_answer(user_answer)
         if not correct_map:
             return False
-        return normalize_blank_answer(user_answer) == correct_map
+        if not user_map:
+            return False
+        # All correct slots must be present in user answer
+        # and user answer must not have extra slots
+        if set(user_map.keys()) != set(correct_map.keys()):
+            return False
+        # Each slot value must match exactly
+        return user_map == correct_map
 
     if is_true_false_type(question_type):
         ua = user_answer.strip().lower()

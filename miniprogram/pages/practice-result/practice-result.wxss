@@ -648,6 +648,133 @@ page {
   margin-top: 14rpx;
 }
 
+/* ==================== Multi-blank per-blank display ==================== */
+
+.detail-multi-blank-wrap {
+  margin-top: 14rpx;
+}
+
+.detail-multi-blank-head {
+  margin-bottom: 10rpx;
+  display: flex;
+  align-items: center;
+}
+
+.detail-multi-blank-count {
+  font-size: 22rpx;
+  color: #707A72;
+}
+
+.detail-multi-blank-row {
+  display: flex;
+  align-items: stretch;
+  margin-bottom: 10rpx;
+  border-radius: 11rpx;
+  overflow: hidden;
+  min-height: 72rpx;
+}
+
+.detail-multi-blank-row.blank-correct {
+  background: #F0F7EC;
+  border: 1rpx solid #DCE8D4;
+}
+
+.detail-multi-blank-row.blank-wrong {
+  background: #FDF4F4;
+  border: 1rpx solid #F5DFDF;
+}
+
+.blank-id-wrap {
+  width: 52rpx;
+  min-width: 52rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.detail-multi-blank-row.blank-correct .blank-id-wrap {
+  background: #DCE8D4;
+}
+
+.detail-multi-blank-row.blank-wrong .blank-id-wrap {
+  background: #F5DFDF;
+}
+
+.blank-id {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #18231C;
+}
+
+.blank-detail {
+  flex: 1;
+  padding: 10rpx 14rpx;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4rpx;
+}
+
+.blank-user-answer,
+.blank-correct-answer {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  flex-wrap: wrap;
+}
+
+.blank-label {
+  font-size: 20rpx;
+  color: #707A72;
+}
+
+.blank-label.correct {
+  color: #4A7A3B;
+}
+
+.blank-value {
+  font-size: 22rpx;
+  font-weight: 600;
+  color: #18231C;
+}
+
+.blank-value.correct {
+  color: #4A7A3B;
+}
+
+.blank-value.wrong {
+  color: #D05353;
+}
+
+.blank-text {
+  font-size: 20rpx;
+  color: #707A72;
+  max-width: 280rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blank-status {
+  width: 44rpx;
+  min-width: 44rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.blank-check {
+  font-size: 28rpx;
+  color: #4A7A3B;
+}
+
+.blank-cross {
+  font-size: 28rpx;
+  color: #D05353;
+}
+
+/* ==================== Detail toggle ==================== */
+
 .detail-toggle-all {
   margin-top: 20rpx;
   min-height: 62rpx;

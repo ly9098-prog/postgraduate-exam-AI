@@ -792,7 +792,10 @@ Page({
     const answeredCount = adapter.countAnswered(answeredFlags)
     // 使用精确数据路径更新，避免每次传输完整 questions 大对象
     const currentIdx = this.data.currentIndex
-    const answered = !!newAnswer
+    const isBlankChoice = adapter.isMultiBlankChoice(q)
+    const answered = isBlankChoice
+      ? adapter.isQuestionAnswered(q, this._practiceSession.answerMap, 'id')
+      : !!newAnswer
     if (shouldDebugQuestion(q.id)) {
       debugLog(this._practiceSession.traceId || q.trace_id, 'STATE_CHANGE', {
         questionId: q.id,

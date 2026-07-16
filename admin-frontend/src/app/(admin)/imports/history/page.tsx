@@ -166,7 +166,7 @@ export default function ImportHistoryPage() {
                   <Link className="text-sm font-semibold text-[var(--color-primary-dark)] underline" href={`/imports/review?batch_id=${encodeURIComponent(item.batch_id)}`}>进入审核</Link>
                 </div>
                 <p className="mt-3 whitespace-pre-wrap text-sm font-semibold text-[var(--ink)]">{String(item.parsed_content?.text ?? item.parsed_content?.stem ?? item.raw_data?.text ?? `导入题目 #${item.id}`)}</p>
-                <p className="mt-2 text-xs text-[var(--color-text-secondary)]">{item.subject_name || item.subject_code || "未分类"} · {item.question_type || "未标注题型"}</p>
+                <p className="mt-2 text-xs text-[var(--color-text-secondary)]">{item.subject_name || item.subject_code || "未分类"} · {item.question_type || "未识别"}</p>
               </article>
             ))}
           </CardContent>

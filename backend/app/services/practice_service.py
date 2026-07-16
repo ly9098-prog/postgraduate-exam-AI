@@ -83,22 +83,6 @@ def _normalize_true_false_answer(value: str) -> str:
     return v.upper()
 
 
-def _normalize_blank_choice_answer(value: str) -> dict[str, str]:
-    result = {}
-    for part in re.split(r"[;；,，\n]+", str(value or "")):
-        match = re.match(r"^(.+?)\s*[:：=]\s*([A-Za-z])\s*$", part.strip())
-        if match:
-            result[match.group(1).strip()] = match.group(2).upper()
-    return result
-
-
-def _is_multi_blank_answer_correct(user_answer: str, correct_answer: str) -> bool:
-    correct_map = _normalize_blank_choice_answer(correct_answer)
-    if not correct_map:
-        return False
-    return _normalize_blank_choice_answer(user_answer) == correct_map
-
-
 def _build_excluded_question_subquery(
     user_id: int,
     exclude_answered: bool = False,

@@ -1,7 +1,10 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
+
+
+from app.features.question_type import validate_question_type
 
 
 class AdminQuestionImportSummary(BaseModel):
@@ -97,6 +100,13 @@ class AdminQuestionPatchRequest(BaseModel):
     image_url: list[Any] | None = None
     year: int | None = None
     edit_reason: str | None = Field(default=None, max_length=256)
+
+    @field_validator("question_type")
+    @classmethod
+    def _validate_type(cls, v: str | None) -> str | None:
+        if v is not None:
+            validate_question_type(v)
+        return v
 
     @model_validator(mode="after")
     def require_edit_field(self):

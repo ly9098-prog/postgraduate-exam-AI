@@ -2,6 +2,8 @@
 
 import json
 
+from app.features.question_type import QT_SINGLE_CHOICE
+
 
 # 当前 AI 错题分析 prompt 版本。
 # 修改 prompt 后递增此版本号，已缓存旧版本分析会在下次读取时触发重新生成。
@@ -398,7 +400,7 @@ def build_generate_questions(
     knowledge_points: list[str],
     difficulty: int,
     count: int,
-    question_type: str = "choice",
+    question_type: str = QT_SINGLE_CHOICE,
     extra_hint: str | None = None,
 ) -> list:
     return [

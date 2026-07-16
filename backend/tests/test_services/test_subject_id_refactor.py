@@ -86,7 +86,7 @@ class TestListSubjectOptions:
                 text = str(stmt)
                 if "subjects" in text:
                     # Return a row-like object with id, code, name, path, level
-                    row = SimpleNamespace(id=1, code="math2", name="数学二", path="math2", level=1)
+                    row = SimpleNamespace(id=1, code="math2", name="数学二", path="math2", level=1, parent_id=None)
                     return _Result(values=[row])
                 return _Result(values=[])
 

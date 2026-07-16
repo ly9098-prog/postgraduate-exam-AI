@@ -355,6 +355,11 @@ def _detect_question_number(line: str) -> tuple[int, int] | None:
             # 过滤明显是选项 OCR 错误的假题号
             if _is_false_question_number(num, line):
                 return None
+            # 过滤章节号 "1.1"、"10.1" 等，避免将 "1.1 操作系统的基本概念" 误判为题号
+            if pat is _QUESTION_PATTERNS[0][0]:
+                after = line[m.end():].lstrip()
+                if after and (after[0].isdigit() or after[0] in '.．'):
+                    return None
             if pat is _PAREN_QUESTION_PATTERN and not _looks_like_paren_question(line, m.end()):
                 return None
             if pat is _PARENED_QUESTION_PATTERN and _looks_like_grouped_option_marker(line, m.end()):
@@ -392,9 +397,15 @@ def _is_false_question_number(num: int, line: str) -> bool:
     # 0 永远不是有效题号
     if num == 0:
         return True
-    # 6/8 可能是 B 的 OCR 错误，且该行也匹配选项模式
+    # 6/8 可能是 B 的 OCR 错误，但仅当行首匹配严格选项模式（A-D 字母）
+    # 时才认定为假题号，避免将真实题干 "6.下列..." 或 "8.系统调用..." 误判
     if num in (6, 8):
-        if _detect_option_line(line):
+        for pat in _OPTION_PATTERNS:
+            m = pat.match(line)
+            if m:
+                return True
+        # OCR 容错选项：6/8/0/Ｏ → B/B/D/D，但需排除真实题号
+        if _OCR_OPTION_PATTERN.match(line) and not _has_question_characteristics(line):
             return True
     return False
 

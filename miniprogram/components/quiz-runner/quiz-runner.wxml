@@ -216,7 +216,8 @@
           </view>
           <view class="runner-option-body" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
             <text class="runner-option-key" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{item.key}}.</text>
-            <mp-html wx:if="{{item._needsRich}}" content="{{item._html}}" style="display:inline-block" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}" set-title="{{false}}" copy-link="{{false}}"></mp-html>
+            <math-question wx:if="{{item._segments && item._segments.length > 0}}" segments="{{item._segments}}" />
+            <mp-html wx:elif="{{item._needsRich}}" content="{{item._html}}" style="display:inline-block" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}" set-title="{{false}}" copy-link="{{false}}"></mp-html>
             <text wx:else class="runner-option-text" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{item._text}}</text>
           </view>
         </view>

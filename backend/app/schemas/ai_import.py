@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.features.question_type import QT_SINGLE_CHOICE
+
 
 class EnrichResponse(BaseModel):
     from_fallback: bool
@@ -21,7 +23,7 @@ class GenerateRequest(BaseModel):
     knowledge_points: list[str] = Field(default_factory=list)
     difficulty: int = 3
     count: int = 3
-    question_type: str = "choice"
+    question_type: str = QT_SINGLE_CHOICE
     extra_hint: str | None = None
 
 

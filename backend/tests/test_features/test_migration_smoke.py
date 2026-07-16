@@ -40,13 +40,13 @@ def test_alembic_upgrade_downgrade_cycle(tmp_path):
     )
     assert result.returncode == 0, f"upgrade head failed:\n{result.stderr}"
 
-    # Downgrade one step
+    # Downgrade one step using a specific merge parent to avoid "Ambiguous walk"
     result = subprocess.run(
-        [sys.executable, "-m", "alembic", "downgrade", "-1"],
+        [sys.executable, "-m", "alembic", "downgrade", "v10_v9_merge"],
         capture_output=True, text=True, cwd=BACKEND,
         env={**__import__("os").environ, "DATABASE_URL": db_url},
     )
-    assert result.returncode == 0, f"downgrade -1 failed:\n{result.stderr}"
+    assert result.returncode == 0, f"downgrade to v10_v9_merge failed:\n{result.stderr}"
 
     # Re-upgrade
     result = subprocess.run(

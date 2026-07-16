@@ -200,15 +200,30 @@ def _make_pipeline_with_routing(
     return pipeline
 
 
+def _make_render_result(page_count: int):
+    from app.services.pdf_renderer_service import PdfRenderResult
+    return PdfRenderResult(
+        page_images={i: b"fake_png_bytes" for i in range(1, page_count + 1)},
+        rendered_count=page_count, total_pages=page_count,
+    )
+
+
+def _mock_render_pages(page_count: int = 1):
+    from unittest.mock import patch
+    return patch("app.services.pdf_renderer_service.pdf_renderer.render_pages",
+                 return_value=_make_render_result(page_count))
+
+
 def _run_pipeline_and_collect(pipeline: ImportPipeline) -> dict:
     """Run a pipeline and return routing_metrics + split_quality from results."""
-    result = asyncio.run(pipeline.run(
-        file_content=b"fake",
-        source_type="pdf",
-        source_file="ab_test.pdf",
-        subject="math2",
-        db=_make_mock_db(),
-    ))
+    with _mock_render_pages(1):
+        result = asyncio.run(pipeline.run(
+            file_content=b"fake",
+            source_type="pdf",
+            source_file="ab_test.pdf",
+            subject="math2",
+            db=_make_mock_db(),
+        ))
     qr = result.get("quality_report") or {}
     return {
         "status": result.get("status"),
@@ -387,13 +402,14 @@ def test_ab_batch_aggregation():
 def test_routing_metrics_in_quality_report():
     """验证 routing_metrics 和 split_quality 出现在 quality_report 中。"""
     pipeline = _make_pipeline_with_routing(split_mode="standard")
-    result = asyncio.run(pipeline.run(
-        file_content=b"fake",
-        source_type="pdf",
-        source_file="test.pdf",
-        subject="math2",
-        db=_make_mock_db(),
-    ))
+    with _mock_render_pages(1):
+        result = asyncio.run(pipeline.run(
+            file_content=b"fake",
+            source_type="pdf",
+            source_file="test.pdf",
+            subject="math2",
+            db=_make_mock_db(),
+        ))
     qr = result.get("quality_report") or {}
     assert "routing_metrics" in qr, "quality_report should contain routing_metrics"
     assert "split_quality_evaluation" in qr, (

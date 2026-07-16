@@ -209,7 +209,17 @@ function buildOptionListReadonly(q, opts, optionKeys, correctAnswer, userAnswer)
     ? answerLib.normalizeAnswerSet(userAnswer) : null
 
   return (optionKeys || []).map(function (key) {
-    var rawText = (opts && opts[key]) || ''
+    var rawValue = (opts && opts[key]) || ''
+    // Handle rich dict format: {"A": {"text": "...", "segments": [...]}}
+    var optSegments = typeof rawValue === 'object' && rawValue !== null ? (rawValue.segments || null) : null
+    var rawText = ''
+    if (optSegments && Array.isArray(optSegments) && optSegments.length > 0) {
+      rawText = stemRender.segmentsToText(optSegments)
+    } else if (typeof rawValue === 'object' && rawValue !== null) {
+      rawText = rawValue.text || rawValue.value || ''
+    } else {
+      rawText = String(rawValue)
+    }
     var stripped = stemRender.stripLeadingOptionLabel(key, rawText)
     var plain = stemRender.toPlainInlineMathText(stripped)
     var text = plain || stripped
@@ -222,7 +232,8 @@ function buildOptionListReadonly(q, opts, optionKeys, correctAnswer, userAnswer)
       key: key,
       _text: text,
       _html: needsRich ? stemRender.textToHtml(stripped) : '',
-      _needsRich: needsRich,
+      _needsRich: !optSegments && needsRich,
+      _segments: (optSegments && Array.isArray(optSegments) && optSegments.length > 0) ? optSegments : undefined,
       _isCorrect: isCorrect,
       _isUserAnswer: isUserAnswer,
       _isBoth: isCorrect && isUserAnswer,

@@ -11,6 +11,18 @@ from app.services import question_service as svc
 router = APIRouter(prefix="/api/v1/questions")
 
 
+def _sanitize_content(content: dict | None) -> dict | None:
+    """Strip admin-only fields from question content before returning to students."""
+    if not isinstance(content, dict):
+        return content
+    sanitized = dict(content)
+    sanitized.pop("source_snapshot_url", None)
+    sanitized.pop("source_snapshot_full_page", None)
+    sanitized.pop("visual_regions", None)
+    sanitized.pop("visual_region_ids", None)
+    return sanitized
+
+
 @router.post("", response_model=QuestionResponse)
 async def create_question(
     data: QuestionCreate,
@@ -43,8 +55,12 @@ async def list_questions(
     _: User = Depends(get_current_user),
 ):
     items, total = await svc.list_questions(db, subject, question_type, page, page_size)
+    sanitized_items = []
+    for q in items:
+        q.content = _sanitize_content(q.content)
+        sanitized_items.append(q)
     return paginated_response(
-        items=[QuestionResponse.model_validate(q) for q in items],
+        items=[QuestionResponse.model_validate(q) for q in sanitized_items],
         total=total,
         page=page,
         page_size=page_size,
@@ -65,6 +81,7 @@ async def random_question(
     q = await svc.get_random(db, subject, question_type, exclude)
     if not q:
         raise HTTPException(status_code=404, detail="没有符合条件的题目")
+    q.content = _sanitize_content(q.content)
     return q
 
 
@@ -119,7 +136,7 @@ async def get_question_detail(
         "subject": q.subject_ref.code if q.subject_ref else None,
         "subject_id": q.subject_id,
         "question_type": q.question_type,
-        "content": q.content,
+        "content": _sanitize_content(q.content),
         "options": q.options,
         "answer": q.answer,
         "analysis": q.analysis,
@@ -136,4 +153,5 @@ async def get_question(
     q = await svc.get_by_id(db, question_id)
     if not q:
         raise HTTPException(status_code=404, detail="题目不存在")
+    q.content = _sanitize_content(q.content)
     return q

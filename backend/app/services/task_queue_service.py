@@ -139,6 +139,23 @@ class DurableTaskQueue:
     def __init__(self) -> None:
         self._redis_enabled = bool(settings.REDIS_URL)
         self._local_tasks: dict[str, Task] = {}  # fallback when no Redis
+        self._redis = None  # lazy Redis connection
+
+    def _get_client(self) -> redis_async.Redis | None:
+        """获取或创建 Redis 连接（复用连接，避免每次创建新连接）。"""
+        if not self._redis_enabled:
+            return None
+        if self._redis is None:
+            import redis.asyncio as redis_async
+
+            self._redis = redis_async.from_url(
+                settings.REDIS_URL,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                decode_responses=True,
+                single_connection_client=True,
+            )
+        return self._redis
 
     # ── key helpers ──
 
@@ -159,6 +176,15 @@ class DurableTaskQueue:
 
     def _heartbeat_key(self, task_id: str) -> str:
         return f"{_HEARTBEAT_PREFIX}:{task_id}"
+
+    async def close(self) -> None:
+        """关闭持久 Redis 连接。"""
+        if self._redis is not None:
+            try:
+                await self._redis.aclose()
+            except Exception:
+                pass
+            self._redis = None
 
     # ── enqueue ──
 
@@ -267,14 +293,10 @@ class DurableTaskQueue:
         Returns None if queue is empty.
         """
         if self._redis_enabled:
-            import redis.asyncio as redis_async
-
             try:
-                client = redis_async.from_url(
-                    settings.REDIS_URL,
-                    socket_connect_timeout=2,
-                    socket_timeout=2,
-                )
+                client = self._get_client()
+                if client is None:
+                    return None
                 # Atomic: pop from queue, push to processing
                 task_data = await client.brpoplpush(
                     self._q_key(task_type),
@@ -291,13 +313,11 @@ class DurableTaskQueue:
                     await client.expire(
                         self._heartbeat_key(task.task_id), lease_sec
                     )
-                    await client.aclose()
                     logger.info(
                         "Task dequeued: task_id=%s type=%s lease=%ds",
                         task.task_id, task_type, lease_sec,
                     )
                     return task
-                await client.aclose()
             except Exception as e:
                 logger.warning("Redis dequeue failed: %s", e)
                 return None

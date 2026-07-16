@@ -3,6 +3,8 @@
 支持两种截图方式：
 1. crop_region / crop_and_upload — 基于 PyMuPDF (fitz) 的 PDF 页截图。
 2. crop_from_page_ref / crop_and_upload_refs — 基于已渲染页面 PNG 的截图。
+
+crop_from_page_ref 委托给 visual_region_cropper 实现，保持向后兼容。
 """
 import hashlib
 import io
@@ -13,6 +15,7 @@ import fitz
 
 from app.services.math_region_detector import MathRegion, MathRegionType
 from app.services.storage_backend import StorageBackend
+from app.services.visual_region_cropper import crop_from_page_ref_compat
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +26,8 @@ _DPI = {
 }
 _PADDING_PT = 6.0
 _PAGE_RENDER_DPI = 150  # _render_page_image_refs 的渲染 DPI
+_MIN_CROP_WIDTH = 16
+_MIN_CROP_HEIGHT = 16
 
 
 def crop_region(page: fitz.Page, region: MathRegion) -> bytes:
@@ -80,30 +85,22 @@ def crop_from_page_ref(
     """P2-3: 从已渲染的页面 PNG 截取公式区域，返回 PNG bytes。
 
     将 PDF 坐标空间 (72 DPI) 的 bbox 按 _PAGE_RENDER_DPI 缩放后裁剪。
+    委托给 visual_region_cropper 实现，保持向后兼容。
 
     Raises:
         ValueError: cropped 区域为空时抛出（bbox 超出图片范围或负区间）。
         FileNotFoundError / PIL.UnidentifiedImageError: page_image_path 不可读或非图片时由上层处理。
     """
-    from PIL import Image
-
-    scale = _PAGE_RENDER_DPI / 72.0
-    x0 = max(0, int((bbox[0] - _PADDING_PT) * scale))
-    y0 = max(0, int((bbox[1] - _PADDING_PT) * scale))
-    x1 = int((bbox[2] + _PADDING_PT) * scale)
-    y1 = int((bbox[3] + _PADDING_PT) * scale)
-
-    img = Image.open(page_image_path).convert("RGB")
-    x1 = min(x1, img.width)
-    y1 = min(y1, img.height)
-
-    if x1 <= x0 or y1 <= y0:
-        raise ValueError(f"empty crop region: bbox={bbox} → ({x0},{y0},{x1},{y1})")
-
-    cropped = img.crop((x0, y0, x1, y1))
-    buf = io.BytesIO()
-    cropped.save(buf, format="PNG")
-    return buf.getvalue()
+    try:
+        return crop_from_page_ref_compat(
+            page_image_path,
+            bbox,
+            padding_pt=_PADDING_PT,
+        )
+    except Exception as e:
+        raise ValueError(
+            f"crop_from_page_ref failed: bbox={bbox} path={page_image_path}: {e}"
+        ) from e
 
 
 async def crop_and_upload_refs(
