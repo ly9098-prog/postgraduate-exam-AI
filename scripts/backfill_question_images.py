@@ -108,7 +108,7 @@ CONF_REVIEW = 0.65
 # ── Dual-bbox / visual-text constants ──
 CROP_VERSION = "visual-v2.1"       # increment when crop algorithm changes
 PDF_SHA256 = "0ede22748f2a00c3f36ef67c792d0de9ce004c3d046260e83835638af45893fb"
-CONFIG_SHA256 = "cc45c336171f62b001392ce678639bb25d1d11fddba9fe16cfaf70c5553a9610"  # manual-bboxes-v2.json
+CONFIG_SHA256 = "c2ceb1a1772d29636d2756a66cb2d3425f2efd90f7c75eec67ac9209d02dcc8b"  # manual-bboxes-v2.json
 OVERLAP_THRESHOLD = 0.6             # OCR lines with ≥ this ratio inside visual_bbox → visual_text
 VISUAL_PADDING_PT = 12.0            # padding around diagram for content image (pdf_points)
 CONTENT_FOREGROUND_SCAN_DPI = 150   # DPI for foreground scan (lower = faster)
@@ -506,6 +506,11 @@ class QuestionReport:
     question_bbox: list[float] | None = None
     content_quality_issues: list[str] = field(default_factory=list)
     crop_version: str = ""
+
+    # ── Content image requirement flags ──
+    requires_content_image: bool = True
+    content_image_reason: str = ""
+    skip_content_image: bool = False
 
 
 # ── Quality validation ──
@@ -1486,26 +1491,29 @@ def load_regions() -> dict:
         return json.load(f)
 
 
-def load_manual_bbox_config() -> dict[int, list[dict]]:
+def load_manual_bbox_config() -> tuple[dict[int, list[dict]], dict[int, dict]]:
     """Load manual bbox overrides from versioned JSON config.
 
-    Returns dict mapping qno → list of region dicts with keys:
-        region_id, bbox, region_type, bbox_source, approved, note.
-    Returns empty dict if config not found or invalid.
+    Returns (region_map, meta_map):
+        region_map: dict qno → list of region dicts with keys:
+            region_id, bbox, region_type, bbox_source, approved, note.
+        meta_map: dict qno → {requires_content_image, content_image_reason}
+    Returns ({}, {}) if config not found or invalid.
     """
     cfg_path = _MANUAL_BBOX_CONFIG_PATH
     if not os.path.isfile(cfg_path):
         logger.warning("Manual bbox config not found: %s", cfg_path)
-        return {}
+        return {}, {}
     try:
         with open(cfg_path) as f:
             cfg = json.load(f)
     except Exception as e:
         logger.warning("Cannot load manual bbox config: %s", e)
-        return {}
+        return {}, {}
 
     entries = cfg.get("entries", [])
     manual_map: dict[int, list[dict]] = {}
+    meta_map: dict[int, dict] = {}
     for e in entries:
         qno = e.get("source_question_no")
         if qno is None:
@@ -1522,8 +1530,14 @@ def load_manual_bbox_config() -> dict[int, list[dict]]:
                 "approved": approved,
                 "note": e.get("note", "manual_override"),
             })
-    logger.info("Manual bbox config: %d entries loaded", len(manual_map))
-    return manual_map
+        # Collect metadata
+        meta_map[qno] = {
+            "requires_content_image": e.get("requires_content_image", True),
+            "content_image_reason": e.get("content_image_reason", None),
+        }
+    logger.info("Manual bbox config: %d entries, %d meta flags loaded",
+                len(manual_map), len(meta_map))
+    return manual_map, meta_map
 
 
 def regions_from_manifest(qno, page, entry, manual_map=None) -> list[RegionDef]:
@@ -1676,13 +1690,18 @@ def merge_segments(
 # ── DB helpers ──
 
 
-async def locate_targets(db, batch_id=None, only_qno=None) -> tuple[list[TargetRecord], list[str]]:
+async def locate_targets(db, batch_id=None, only_qno=None, canary=False) -> tuple[list[TargetRecord], list[str]]:
     from app.models.question_import import QuestionImport
     from sqlalchemy import select
 
     errs = []
     targets = []
-    qnos = [only_qno] if only_qno else ALL_IMAGE_QNOS
+    if canary:
+        qnos = [369, 371, 380]
+    elif only_qno:
+        qnos = [only_qno]
+    else:
+        qnos = ALL_IMAGE_QNOS
     for qno in qnos:
         filters = [
             QuestionImport.subject_id == SUBJECT_ID,
@@ -1828,7 +1847,7 @@ async def process_one(
         pdf_page = doc[render_page - 1]
         pr = pdf_page.rect
 
-        manual_map = load_manual_bbox_config()
+        manual_map, config_meta = load_manual_bbox_config()
 
         if entry and entry.get("bbox"):
             regions = regions_from_manifest(target.qno, effective_page, entry, manual_map=manual_map)
@@ -1839,12 +1858,44 @@ async def process_one(
             strategy = "auto_localized"
             confidence = regions[0].confidence if regions else 0.0
 
+        # ── Step 0: Check if this question actually needs a content image ──
+        skip_content_image = False
+        qn_meta = config_meta.get(target.qno, {})
+        # Initialize region_results early so skip_content_image path can populate
+        # synthetic entries (needed by Plan B detection in apply_updates).
+        region_results: list[dict] = []
+        if not qn_meta.get("requires_content_image", True):
+            skip_content_image = True
+            # Save original regions for snapshot bbox before clearing (Finding 4:
+            # prevents fallback to full-page body bbox).
+            snapshot_regions = list(regions)
+            # Add synthetic region_results for option_group regions even when
+            # content image is skipped (Finding 5: Plan B detection reads
+            # rep.regions in apply_updates, which needs these entries).
+            for reg in regions:
+                if reg.region_type == "option_group":
+                    region_results.append({
+                        "region_id": reg.region_id,
+                        "region_type": reg.region_type,
+                        "success": False, "url": "", "error": "skip_content_image",
+                        "original_bbox": list(reg.bbox),
+                        "visual_bbox": list(reg.bbox),
+                        "foreground_bbox": list(reg.bbox),
+                        "width": 0, "height": 0, "file_size": 0,
+                        "blank_ratio": 1.0, "crop_version": CROP_VERSION,
+                        "requires_review": False,
+                        "visual_gate_failures": [], "asset_hash": "",
+                    })
+            regions = []
+            logger.info("  qno=%d: requires_content_image=false → skipping content image", target.qno)
+        else:
+            snapshot_regions = regions
+
         # ── Step 1: Pre-compute the question_bbox (snapshot) ──
         sbbox, sstrat, sconf = compute_snapshot_bbox(
-            target.qno, render_page, pr, regions)
+            target.qno, render_page, pr, snapshot_regions)
 
         # ── Step 2: Compute visual_bbox (tight diagram) via foreground analysis ──
-        region_results: list[dict] = []
         visual_text_lines: list[dict] = []
         content_quality_issues: list[str] = []
         original_stem = target.parsed_content.get("text", "")
@@ -1942,8 +1993,11 @@ async def process_one(
                 )
                 visual_text_lines.extend(viz_text)
                 if viz_text:
+                    # Accumulate across regions: feed current cleaned_stem (not original_stem)
+                    # so all regions' exclusions are reflected. Fixes a bug where only the
+                    # last region's cleaned_stem survived (the loop re-started from original_stem).
                     cleaned_stem = clean_stem_from_visual_text(
-                        original_stem, kept_text, viz_text,
+                        cleaned_stem if cleaned_stem else original_stem, kept_text, viz_text,
                     )
 
             # ── Step 3: Render content image (tight visual bbox) ──
@@ -2047,6 +2101,7 @@ async def process_one(
                 "url": ir.url, "error": ir.error,
                 "requires_review": rreq,
                 "crop_version": CROP_VERSION,
+                "region_type": reg.region_type,
                 "visual_gate_failures": list(visual_gate_failures),
                 "asset_hash": asset_hash,
             })
@@ -2132,6 +2187,9 @@ async def process_one(
             question_bbox=list(sbbox),
             content_quality_issues=content_quality_issues,
             crop_version=CROP_VERSION,
+            requires_content_image=qn_meta.get("requires_content_image", True),
+            content_image_reason=qn_meta.get("content_image_reason", ""),
+            skip_content_image=skip_content_image,
         )
     finally:
         doc.close()
@@ -2217,7 +2275,7 @@ async def apply_updates(
                     "type": "image", "url": rr["url"],
                     "display": True,
                     "alt": f"图{target.qno}-{region_id}",
-                    "region_type": rr.get("region_id", "diagram"),
+                    "region_type": rr.get("region_type", "diagram"),
                     "region_id": region_id,
                     "semantic_role": "content_image",
                     "source_page": target.page,
@@ -2281,6 +2339,28 @@ async def apply_updates(
             if new_image_count > 0 and not target.question_id:
                 first_img_url = new_segments[-new_image_count]["url"]
                 qi_row.source_image_name = first_img_url
+            # Clear source_image_name when content image is intentionally removed
+            if new_image_count == 0 and rep.skip_content_image:
+                qi_row.source_image_name = ""
+                logger.info("  qno=%d: content image removed (requires_content_image=false)", target.qno)
+
+            # ── Plan B: Clear option placeholder text for option_group regions ──
+            has_option_group = any(
+                rr.get("region_type") == "option_group"
+                for rr in rep.regions
+            )
+            if has_option_group and qi_row.parsed_options:
+                cleared_options = {k: "" for k in qi_row.parsed_options}
+                qi_row.parsed_options = cleared_options
+                # Also sync published Question.options for Plan B (Finding 3)
+                if target.question_id:
+                    q_row2 = (await db.execute(
+                        select(Question).where(Question.id == target.question_id)
+                    )).scalar_one_or_none()
+                    if q_row2:
+                        q_row2.options = cleared_options
+                logger.info("  qno=%d: cleared option text (%d keys) — Plan B option_group",
+                            target.qno, len(cleared_options))
 
     return errs, imp_updated, q_updated
 
@@ -2408,6 +2488,8 @@ def parse_args():
     p.add_argument("--pdf", required=True, help="Path to source PDF")
     p.add_argument("--batch-id", help="Filter by batch_id")
     p.add_argument("--only-question", type=int, help="Process single question")
+    p.add_argument("--canary", action="store_true",
+                   help="Process only the 3 canary questions (q369/371/380, import_ids 450/452/461)")
     p.add_argument("--dry-run", action="store_true", default=True, help="Preview only (default)")
     p.add_argument("--apply", action="store_true", help="Apply changes (implies --no-dry-run)")
     p.add_argument("--report", default="/tmp/backfill-review.html", help="Output report path")
@@ -2470,11 +2552,11 @@ async def main():
 
     async with async_session() as db:
         targets, loc_errs = await locate_targets(
-            db, batch_id=args.batch_id, only_qno=args.only_question)
+            db, batch_id=args.batch_id, only_qno=args.only_question, canary=args.canary)
         if loc_errs:
             for e in loc_errs:
                 logger.error("Locate error: %s", e)
-        if not args.only_question and len(targets) != len(ALL_IMAGE_QNOS):
+        if not args.only_question and not args.canary and len(targets) != len(ALL_IMAGE_QNOS):
             logger.warning("Found %d/%d targets", len(targets), len(ALL_IMAGE_QNOS))
         if not targets:
             logger.error("No targets, abort")
