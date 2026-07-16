@@ -689,23 +689,30 @@ Page({
       blankAnswers[blankId] = opt
     }
 
-    const groups = q._blankOptionGroups || adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), answer)
-    const newAnswer = serializeBlankAnswer(groups, blankAnswers)
+    // Use raw groups for serialization (only needs group.id)
+    const groupsForAnswer = adapter.getBlankOptionGroups(q)
+    const newAnswer = serializeBlankAnswer(groupsForAnswer, blankAnswers)
     const answers = { ...this._reviewSession.answers }
     if (newAnswer) answers[q.schedule_id] = newAnswer
     else delete answers[q.schedule_id]
 
     const enrichedGroups = adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), newAnswer)
-    const currentQuestion = Object.assign({}, q, {
-      _blankOptionGroups: enrichedGroups,
-      _hasBlankOptionGroups: enrichedGroups.length > 0,
-    })
 
     this._reviewSession.answers = answers
     const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, answers, KF)
-    this.setData({ currentQuestion, _answeredCount: answeredCount })
-    this._syncAnsweredFlags()
-    this._updateRunnerFields()
+    // Consolidate answered flags and progress into single setData
+    const enrichedQuestions = adapter.applyAnsweredFlags(this.data.groupQuestions,
+      adapter.buildAnsweredFlags(this.data.groupQuestions, answers, KF), KF)
+    var grp = this.data.groupQuestions || []
+    var total = grp.length || 1
+
+    this.setData({
+      _answeredCount: answeredCount,
+      runnerProgressPercent: Math.round(answeredCount / total * 100),
+      'currentQuestion._blankOptionGroups': enrichedGroups,
+      'currentQuestion._hasBlankOptionGroups': enrichedGroups.length > 0,
+      groupQuestions: enrichedQuestions,
+    })
   },
 
   /* ==================== 题目导航 ==================== */

@@ -6,6 +6,22 @@
 
 ## 2026-07-16
 
+- **多空选择题前端性能审计与修复（Phase 6 完成）**
+  - **quiz-runner 局部 setData 优化**：observer 通过 `_lastRenderModel` 引用比较区分题目切换与空选项更新；选项点击仅更新 `_blankOptionGroups` 路径，避免重新解析题干、代码块和图片。
+  - **多空选项点击优化**：practice.js 和 review-today.js 的 `selectBlankOption` 改用路径精确 setData，合并多次调用为一次，移除 `_updateComputedFields` 等多余回调。
+  - **修复多空选择题部分选项无法点击**：修正 touch/swipe 事件竞争条件，`swipeTapLockUntil` 锁定时长从 300ms 降至 100ms，避免误吞合法点击。
+  - **修复多空选择状态更新抖动**：消除 observer 中 `_renderModel` 因引用变化触发的重复解析，确保仅选项选中状态变更时不影响题干和图片渲染。
+  - **图片显示优化**：`computeExtraImages` 使用 SEGMENTS 模式图片去重，`wx.previewImage` 数据在题目变化时预准备，选项点击不触发图片重载。
+  - **真机验证**：practice（连续点击/切题/提交）、review-today（加载下一批/逐空作答）、wrong-detail（只读详情/图片预览）全部通过。
+  - 受影响文件：
+    - `miniprogram/components/quiz-runner/quiz-runner.js`
+    - `miniprogram/pages/practice/practice.js`
+    - `miniprogram/pages/review-today/review-today.js`
+    - `miniprogram/utils/question-runner-adapter.js`
+    - `miniprogram/utils/answer.js`
+  - 受影响文档：`docs/project/CHANGELOG.md`
+  - 测试：446 项全部 PASS（含多空专项 45 项），JS 语法验证通过
+
 - **多空选择题完整支持（Phase 1-4 完成）**
   - ...
 

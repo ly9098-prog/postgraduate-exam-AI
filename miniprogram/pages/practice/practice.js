@@ -843,7 +843,7 @@ Page({
       blankAnswers[blankId] = opt
     }
 
-    const groupsForAnswer = q._blankOptionGroups || adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), prev)
+    const groupsForAnswer = adapter.getBlankOptionGroups(q)
     const newAnswer = adapter.serializeBlankAnswer(groupsForAnswer, blankAnswers)
     const answerMap = { ...this._practiceSession.answerMap }
     if (newAnswer) {
@@ -854,10 +854,6 @@ Page({
     const answeredFlags = adapter.buildAnsweredFlags(this.data.questions, answerMap, 'id')
     const answeredCount = adapter.countAnswered(answeredFlags)
     const groups = adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), newAnswer)
-    const currentQuestion = Object.assign({}, q, {
-      _blankOptionGroups: groups,
-      _hasBlankOptionGroups: groups.length > 0,
-    })
 
     if (shouldDebugQuestion(q.id)) {
       debugLog(this._practiceSession.traceId || q.trace_id, 'STATE_CHANGE', {
@@ -876,15 +872,17 @@ Page({
 
     this._practiceSession.answerMap = answerMap
     this._practiceSession.answeredFlags = answeredFlags
-    // 使用精确数据路径更新，避免传输完整 questions 数组
+    // 使用精确数据路径更新，避免传输完整 currentQuestion 对象
     const currentIdx = this.data.currentIndex
     const answered = !!newAnswer
+    const totalQuestions = this.data.totalQuestions || 0
+    // 精确路径：只更新 blankOptionGroups，避免触发 WXML 无关节点 diff
     this.setData({
       [`questions[${currentIdx}]._answered`]: answered,
       answeredCount,
-      currentQuestion,
-    }, () => {
-      this._updateComputedFields()
+      progressPercent: totalQuestions > 0 ? Math.round(answeredCount / totalQuestions * 100) : 0,
+      'currentQuestion._blankOptionGroups': groups,
+      'currentQuestion._hasBlankOptionGroups': groups.length > 0,
     })
   },
 
