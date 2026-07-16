@@ -1319,3 +1319,21 @@
   border-radius: 34rpx;
   box-shadow: 0 10rpx 28rpx rgba(16,37,26,0.055);
 }
+
+/* ==================== Question Images ==================== */
+
+.runner-question-images {
+  margin: 24rpx 0 8rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16rpx;
+}
+
+.runner-question-image {
+  max-width: 100%;
+  width: 100%;
+  border-radius: 16rpx;
+  border: 2rpx solid rgba(0,0,0,0.06);
+  background: #FFFFFF;
+}

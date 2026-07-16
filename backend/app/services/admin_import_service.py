@@ -602,7 +602,9 @@ async def update_import_question(
     if "stem" in payload:
         from app.services.pdf_text_normalizer import deduplicate_repeated_text
         content = dict(qi.parsed_content or {})
-        content["text"] = deduplicate_repeated_text(payload.pop("stem").strip())
+        stem_text = deduplicate_repeated_text(payload.pop("stem").strip())
+        content["stem"] = stem_text
+        content["text"] = stem_text
         qi.parsed_content = content
     if "options" in payload:
         options = payload.pop("options")

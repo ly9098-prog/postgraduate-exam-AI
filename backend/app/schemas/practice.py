@@ -16,6 +16,7 @@ class PracticeQuestion(BaseModel):
     options: dict | None = None
     knowledge_points: list | None = None
     difficulty: int = 3
+    image_url: list | None = None
     trace_id: str | None = None
     recommend_reason: str | None = None
     recommend_score: float | None = None
@@ -96,6 +97,7 @@ class QuestionDetailResponse(BaseModel):
     answer: str
     analysis: str | None = None
     knowledge_points: list | None = None
+    image_url: list | None = None
 
     class Config:
         from_attributes = True
