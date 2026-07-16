@@ -107,6 +107,8 @@ CONF_REVIEW = 0.65
 
 # ── Dual-bbox / visual-text constants ──
 CROP_VERSION = "visual-v2.1"       # increment when crop algorithm changes
+PDF_SHA256 = "0ede22748f2a00c3f36ef67c792d0de9ce004c3d046260e83835638af45893fb"
+CONFIG_SHA256 = "cc45c336171f62b001392ce678639bb25d1d11fddba9fe16cfaf70c5553a9610"  # manual-bboxes-v2.json
 OVERLAP_THRESHOLD = 0.6             # OCR lines with ≥ this ratio inside visual_bbox → visual_text
 VISUAL_PADDING_PT = 12.0            # padding around diagram for content image (pdf_points)
 CONTENT_FOREGROUND_SCAN_DPI = 150   # DPI for foreground scan (lower = faster)
@@ -2606,7 +2608,8 @@ async def main():
             "run_id": run_id,
             "crop_version": CROP_VERSION,
             "created": datetime.now().isoformat(),
-            "pdf_sha256": "0ede22748f2a00c3f36ef67c792d0de9ce004c3d046260e83835638af45893fb",
+            "pdf_sha256": PDF_SHA256,
+            "config_sha256": CONFIG_SHA256,
             "instructions": "Set each question's three approval items to true after manual review. "
                            "Then pass --approval <path> to --apply. "
                            "Unapproved records are skipped.",
@@ -2616,16 +2619,39 @@ async def main():
 
     # ── Apply ──
     if args.apply and not args.dry_run:
-        # Check for approval file
+        # ── Approval gate: --approval-file is required ──
+        approval_path_arg = getattr(args, "approval_file", None)
+        if not approval_path_arg:
+            logger.error("--approval-file is REQUIRED when using --apply. "
+                         "Generate via dry-run, manually approve entries, then pass the file.")
+            logger.error("  python scripts/backfill_question_images.py --db <db> --pdf <pdf> "
+                         "--approval-file <path> --apply")
+            sys.exit(1)
+
         approval_data = None
-        approval_path_arg = getattr(args, "approval_file", None) or os.path.join(out_dir, "approval.json")
         if os.path.isfile(approval_path_arg):
             with open(approval_path_arg) as f:
                 approval_data = json.load(f)
             logger.info("Loaded approval from: %s", approval_path_arg)
-        elif getattr(args, "approval_file", None):
-            logger.error("Approval file not found: %s", args.approval_file)
-            logger.error("Generate one via dry-run first, then edit and pass back.")
+        else:
+            logger.error("Approval file not found: %s", approval_path_arg)
+            sys.exit(1)
+
+        # ── Validate approval metadata ──
+        ap_cv = approval_data.get("crop_version")
+        ap_pdf = approval_data.get("pdf_sha256")
+        ap_cfg = approval_data.get("config_sha256")
+        if ap_cv != CROP_VERSION:
+            logger.error("APPROVAL MISMATCH: approval crop_version=%s != current %s. "
+                         "Regenerate approval file.", ap_cv, CROP_VERSION)
+            sys.exit(1)
+        if ap_pdf != PDF_SHA256:
+            logger.error("APPROVAL MISMATCH: approval pdf_sha256=%s != current %s. "
+                         "Regenerate approval file.", ap_pdf, PDF_SHA256)
+            sys.exit(1)
+        if ap_cfg and ap_cfg != CONFIG_SHA256:
+            logger.error("APPROVAL MISMATCH: approval config_sha256=%s != current %s. "
+                         "Regenerate approval file.", ap_cfg, CONFIG_SHA256)
             sys.exit(1)
 
         from app.core.database import async_session
