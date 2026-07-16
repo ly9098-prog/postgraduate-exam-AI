@@ -239,6 +239,19 @@ class QuestionNormalizer:
             "errors": [],
             "warnings": [],
         }
+        # Detect option_group segments — when present, parsed_options may be
+        # intentionally empty (image-type options), so skip options validation.
+        if question_type in ("single_choice", "multiple_choice"):
+            raw_seg_check = (
+                raw.get("segments")
+                or (raw.get("parsed_content") or {}).get("segments")
+                or (raw.get("content") or {}).get("segments")
+            )
+            if raw_seg_check:
+                normalized["_has_option_group"] = any(
+                    isinstance(s, dict) and "option_group" in str(s.get("region_type", ""))
+                    for s in raw_seg_check
+                )
         normalized.update(self.validate(normalized))
 
         # Preserve segments and visual region metadata from the raw input
@@ -494,15 +507,20 @@ class QuestionNormalizer:
         if not question.get("answer") and question.get("question_type") != "multi_blank_choice":
             errors.append("answer_empty")
         if question.get("question_type") in {"single_choice", "multiple_choice"}:
-            options = question.get("options") or []
-            if not options:
-                errors.append("options_empty")
-            elif len(options) < 2:
-                warnings.append("options_too_few")
-            # 单选题必须包含全部 A/B/C/D 选项（共享校验逻辑）
-            from app.features.question_normalizer import check_option_completeness as _check_opts
-            _, opt_errors = _check_opts(question.get("question_type"), options)
-            errors.extend(opt_errors)
+            # Image-type options (option_group) have intentionally empty
+            # parsed_options — skip the text-options validation.
+            if question.get("_has_option_group"):
+                pass
+            else:
+                options = question.get("options") or []
+                if not options:
+                    errors.append("options_empty")
+                elif len(options) < 2:
+                    warnings.append("options_too_few")
+                # 单选题必须包含全部 A/B/C/D 选项（共享校验逻辑）
+                from app.features.question_normalizer import check_option_completeness as _check_opts
+                _, opt_errors = _check_opts(question.get("question_type"), options)
+                errors.extend(opt_errors)
         if question.get("question_type") == "multi_blank_choice":
             groups = question.get("blank_option_groups") or []
             if not groups:
