@@ -163,6 +163,21 @@
         </block>
       </block>
 
+      <!-- ===== 题目图片 ===== -->
+      <view class="runner-question-images" wx:if="{{_questionImages && _questionImages.length > 0}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+        <image
+          wx:for="{{_questionImages}}"
+          wx:key="*this"
+          class="runner-question-image"
+          src="{{item}}"
+          mode="widthFix"
+          data-src="{{item}}"
+          bindtap="previewQuestionImage"
+          show-menu-by-longpress="{{false}}"
+          data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}"
+        />
+      </view>
+
       <!-- ===== 多空选择题 ===== -->
       <view class="runner-blank-options" wx:if="{{currentQuestion._hasBlankOptionGroups}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
         <view class="runner-blank-group" wx:for="{{currentQuestion._blankOptionGroups}}" wx:for-item="group" wx:key="id" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
@@ -216,8 +231,7 @@
           </view>
           <view class="runner-option-body" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
             <text class="runner-option-key" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{item.key}}.</text>
-            <math-question wx:if="{{item._segments && item._segments.length > 0}}" segments="{{item._segments}}" />
-            <mp-html wx:elif="{{item._needsRich}}" content="{{item._html}}" style="display:inline-block" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}" set-title="{{false}}" copy-link="{{false}}"></mp-html>
+            <mp-html wx:if="{{item._needsRich}}" content="{{item._html}}" style="display:inline-block" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}" set-title="{{false}}" copy-link="{{false}}"></mp-html>
             <text wx:else class="runner-option-text" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{item._text}}</text>
           </view>
         </view>

@@ -62,22 +62,39 @@ Component({
     _qTypeLabel: '',
     _codeLines: [],
     _mixedBlocks: [],
+    _questionImages: [],
   },
 
   observers: {
     currentQuestion: function (q) {
       if (!q) {
-        this.setData({ _qTypeLabel: '', _codeLines: [], _mixedBlocks: [] })
+        this.setData({ _qTypeLabel: '', _codeLines: [], _mixedBlocks: [], _questionImages: [] })
         return
       }
       var label = q._typeLabel || this._typeLabel(q)
       var model = q._renderModel || {}
       var codeLines = model.mode === 'CODE' ? this._splitCodeLines(model.rawText) : []
       var mixedBlocks = model.mode === 'MIXED' ? this._decorateMixedBlocks(model.blocks) : []
+
+      // Extract image URLs — use adapter for dedup against inline-rendered segments
+      var images = []
+      var adapter
+      try { adapter = require('../../utils/question-runner-adapter') } catch (e) {}
+      if (adapter && typeof adapter.computeExtraImages === 'function') {
+        images = adapter.computeExtraImages(q)
+      } else if (adapter && typeof adapter.getQuestionImages === 'function') {
+        images = adapter.getQuestionImages(q)
+      } else if (Array.isArray(q.image_url)) {
+        images = q.image_url.filter(function (u) { return u && typeof u === 'string' })
+      } else if (q.content && Array.isArray(q.content.image_url)) {
+        images = q.content.image_url.filter(function (u) { return u && typeof u === 'string' })
+      }
+
       this.setData({
         _qTypeLabel: label,
         _codeLines: codeLines,
         _mixedBlocks: mixedBlocks,
+        _questionImages: images,
       })
     },
     currentIndex: function () {
@@ -289,6 +306,15 @@ Component({
         questions: this.data.questions,
         currentIndex: this.data.currentIndex,
       })
+    },
+
+    /* ==================== Image preview ==================== */
+
+    previewQuestionImage: function (e) {
+      var urls = this.data._questionImages
+      var src = e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.src
+      if (!urls || !urls.length) return
+      wx.previewImage({ current: src || urls[0], urls: urls })
     },
 
     noop: function () {},

@@ -122,6 +122,7 @@ def enrich_wq(wq, question, **extra):
         answer=question.answer if question else None,
         analysis=question.analysis if question else None,
         knowledge_points=question.knowledge_points if question else None,
+        image_url=question.image_url if question else None,
         ai_analysis=wq.ai_analysis,
         ai_analysis_status=ai_status,
         # New enriched fields

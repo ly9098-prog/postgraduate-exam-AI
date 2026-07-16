@@ -601,7 +601,20 @@ Page({
     if (!q) return
     const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, this._reviewSession.answers, KF)
     const optionList = adapter.buildOptionList(q, this._reviewSession.answers, KF)
-    const currentQuestion = Object.assign({}, q, { _optionList: optionList })
+
+    // Restore blank option selections from answer map
+    var blankOptionGroups = q._blankOptionGroups || []
+    var hasBlankOptionGroups = q._hasBlankOptionGroups || false
+    if (hasBlankOptionGroups) {
+      const answer = this._reviewSession.answers[q.schedule_id] || ''
+      blankOptionGroups = adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), answer)
+    }
+
+    const currentQuestion = Object.assign({}, q, {
+      _optionList: optionList,
+      _blankOptionGroups: blankOptionGroups,
+      _hasBlankOptionGroups: blankOptionGroups.length > 0,
+    })
     this._reviewSession.optionKeys = q._optionKeys
     this.setData({
       currentIndex: index,
