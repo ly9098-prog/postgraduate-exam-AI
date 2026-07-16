@@ -72,7 +72,7 @@
       "question_import_id": 452,
       "resolved_pdf_page": 371,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q371_manual", "bbox": [94.0, 32.0, 283.3, 110.0], "region_type": "diagram"}],
+      "regions": [{"region_id": "q371_manual", "bbox": [94.0, 34.0, 283.3, 110.0], "region_type": "diagram"}],
       "approved": true,
       "note": "Exclude residual header antialiasing (blue banner extends to y≈30.6pt) without clipping adjacency-list content (first node at y≈45pt)"
     },
