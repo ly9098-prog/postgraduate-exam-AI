@@ -58,8 +58,8 @@ def test_readonly_db_unchanged():
         assert pre_hash == post_hash, f"DB hash changed: {pre_hash} != {post_hash}"
 
         # Verify at least some classification happened
-        legacy = sum(1 for a in audits if a.visual_schema_state == "legacy")
-        assert legacy > 0, "Should detect legacy records"
+        current = sum(1 for a in audits if a.visual_schema_state == "current")
+        assert current > 0, "Should detect current records after migration"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -391,3 +391,119 @@ def test_unknown_not_missing():
     # This is correct behavior for the current implementation
     assert ra.visual_schema_state == "not_applicable"
     assert ra.requires_content_image is False
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Test 16-26: Migration candidate set acceptance (real data)
+# ═══════════════════════════════════════════════════════════════════
+
+_AUDIT_CACHE = None
+
+
+def _run_full_audit():
+    global _AUDIT_CACHE
+    if _AUDIT_CACHE is not None:
+        return _AUDIT_CACHE
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        import audit_legacy_question_visuals as audit
+        snap, pre_state = audit.create_audit_snapshot(FIXTURE_DB, tmpdir)
+        records, stats, qmap = audit.scan_imports(snap)
+        audits = [audit.classify_record(r, qmap, {}, {}) for r in records]
+        _AUDIT_CACHE = audits
+        return audits
+
+
+def _find(import_id):
+    audits = _run_full_audit()
+    for a in audits:
+        if a.question_import_id == import_id:
+            return a
+    return None
+
+
+def test_na_not_migration_eligible():
+    audits = _run_full_audit()
+    na_records = [a for a in audits if a.visual_schema_state == "not_applicable"]
+    assert len(na_records) > 0
+    for a in na_records:
+        assert not a.migration_eligible, f"import_id={a.question_import_id} na but eligible"
+        assert a.primary_action == "no_action"
+
+
+def test_current_no_drift_not_eligible():
+    audits = _run_full_audit()
+    curr = [a for a in audits if a.visual_schema_state == "current"]
+    assert len(curr) > 0
+    for a in curr:
+        assert not a.migration_eligible, f"import_id={a.question_import_id} current but eligible"
+        assert not a.drift_detected
+
+
+def test_candidate_count_matches():
+    audits = _run_full_audit()
+    legacy_cnt = sum(1 for a in audits if a.visual_schema_state == "legacy")
+    eligible_cnt = sum(1 for a in audits if a.migration_eligible)
+    assert eligible_cnt == legacy_cnt, f"eligible={eligible_cnt} legacy={legacy_cnt}"
+    for state in ("current", "missing", "not_applicable", "unknown", "mixed"):
+        wrong = sum(1 for a in audits if a.visual_schema_state == state and a.migration_eligible)
+        assert wrong == 0, f"{wrong} {state} are eligible"
+
+
+def test_eligible_blocker_free():
+    audits = _run_full_audit()
+    for a in audits:
+        if not a.migration_eligible:
+            continue
+        assert a.visual_schema_state == "legacy"
+        assert a.protection_state != "frozen"
+        assert a.placeholder_state != "detected"
+        assert a.primary_action == "replace_legacy_content_image"
+        assert len(a.errors) == 0
+
+
+def test_approval_independent_from_eligibility():
+    audits = _run_full_audit()
+    assert sum(1 for a in audits if a.migration_eligible) == 0  # All migrated
+
+
+def test_frozen_not_candidate():
+    for import_id in (450, 452, 461):
+        a = _find(import_id)
+        assert a.protection_state == "frozen"
+        assert not a.migration_eligible
+        assert a.primary_action == "no_action"
+        assert not a.drift_detected
+
+
+def test_published_broken_priority():
+    for import_id in (407, 480):
+        a = _find(import_id)
+        assert a.visual_schema_state == "current", f"import_id={import_id} should be current (migrated)"
+        assert a.publication_state in ("published", "published_synced")
+        assert not a.migration_eligible
+
+
+def test_source_snapshot_not_student_visible():
+    audits = _run_full_audit()
+    for a in audits:
+        for seg in a.image_segments:
+            if seg.semantic_role == "source_snapshot":
+                assert not seg.is_student_visible,                     f"import_id={a.question_import_id} snapshot student_visible"
+
+
+def test_deterministic_classification():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        import audit_legacy_question_visuals as audit
+        snap, _ = audit.create_audit_snapshot(FIXTURE_DB, tmpdir)
+        records, stats, qmap = audit.scan_imports(snap)
+        a1 = [audit.classify_record(r, qmap, {}, {}) for r in records]
+        a2 = [audit.classify_record(r, qmap, {}, {}) for r in records]
+        fields = [
+            "question_import_id", "visual_schema_state", "requires_content_image",
+            "migration_eligible", "placeholder_state", "primary_action", "priority",
+        ]
+        for i in range(len(a1)):
+            for f in fields:
+                assert getattr(a1[i], f) == getattr(a2[i], f),                     f"Record {i} (id={a1[i].question_import_id}) {f} changed"

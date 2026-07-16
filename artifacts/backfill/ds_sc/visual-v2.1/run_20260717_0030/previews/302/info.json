@@ -1,0 +1,11 @@
+{
+  "import_id": 302,
+  "source_question_no": "201",
+  "page": 201,
+  "state": "missing",
+  "images": {
+    "full_page": "full-page.png",
+    "proposed_content": "proposed-content.png",
+    "overlay": "overlay.png"
+  }
+}

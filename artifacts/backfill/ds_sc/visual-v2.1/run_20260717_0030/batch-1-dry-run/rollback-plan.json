@@ -1,0 +1,142 @@
+{
+  "strategy": "restore_from_before + archive_cleanup",
+  "steps": [
+    "1. Restore question_imports.parsed_content to pre-migration state",
+    "2. Restore question_imports.parsed_options to pre-migration state",
+    "3. Restore questions.content to pre-migration state (if published)",
+    "4. Restore questions.image_url to pre-migration state (if published)",
+    "5. Delete newly created storage files (zero refcount check)",
+    "6. Do NOT delete archived old files (may be referenced elsewhere)"
+  ],
+  "per_import": {
+    "407": {
+      "question_imports": {
+        "parsed_content": {
+          "text": "【2020统考真题】已知无向图G如下所示，使用克鲁斯卡尔(Kruskal)算法求图G的最小生成树，加到最小生成树中的边依次是（ ）。",
+          "render_mode": "segments",
+          "segments": [
+            {
+              "type": "text",
+              "text": "【2020统考真题】已知无向图G如下所示，使用克鲁斯卡尔(Kruskal)算法求图G的最小生成树，加到最小生成树中的边依次是（ ）。"
+            },
+            {
+              "type": "image",
+              "url": "http://localhost:8000/static/question-assets/202607/ds_sc/q_407_p326_73e8570b2a44.png",
+              "alt": "题目原图"
+            }
+          ]
+        },
+        "parsed_options": {
+          "A": "(b,f), (b,d), (a,e), (c,e), (b,e)",
+          "B": "(b,f), (b,d), (b,e), (a,e), (c,e)",
+          "C": "(a,e), (b,e), (c,e), (b,d), (b,f)",
+          "D": "(a,e), (c,e), (b,e), (b,f), (b,d)"
+        }
+      },
+      "questions": {
+        "content": {
+          "text": "【2020统考真题】已知无向图G如下所示，使用克鲁斯卡尔(Kruskal)算法求图G的最小生成树，加到最小生成树中的边依次是（ ）。",
+          "render_mode": "segments",
+          "segments": [
+            {
+              "type": "text",
+              "text": "【2020统考真题】已知无向图G如下所示，使用克鲁斯卡尔(Kruskal)算法求图G的最小生成树，加到最小生成树中的边依次是（ ）。"
+            },
+            {
+              "type": "image",
+              "url": "http://localhost:8000/static/question-assets/202607/ds_sc/q_407_p326_73e8570b2a44.png",
+              "alt": "题目原图"
+            }
+          ]
+        },
+        "image_url": "[\"http://localhost:8000/static/question-assets/202607/ds_sc/q_407_p326_73e8570b2a44.png\"]",
+        "options": {
+          "A": "(b,f), (b,d), (a,e), (c,e), (b,e)",
+          "B": "(b,f), (b,d), (b,e), (a,e), (c,e)",
+          "C": "(a,e), (b,e), (c,e), (b,d), (b,f)",
+          "D": "(a,e), (c,e), (b,e), (b,f), (b,d)"
+        }
+      }
+    },
+    "480": {
+      "question_imports": {
+        "parsed_content": {
+          "text": "【2022统考真题】在下图所示的5阶B树T中，删除关键字260之后需要进行必要的调整，得 到新的B树T。下列选项中，不可能是T根结点中关键字序列的是（ ）． 6090.260350 280300 400500 3050 708085 100110",
+          "render_mode": "segments",
+          "segments": [
+            {
+              "type": "text",
+              "text": "【2022统考真题】在下图所示的5阶B树T中，删除关键字260之后需要进行必要的调整，得 到新的B树T。下列选项中，不可能是T根结点中关键字序列的是（ ）． 6090.260350 280300 400500 3050 708085 100110"
+            },
+            {
+              "type": "image",
+              "url": "http://localhost:8000/static/question-assets/202607/ds_sc/q_480_p399_90bf6b232546.png",
+              "alt": "题目原图",
+              "region_type": "illustration",
+              "source_page": 399,
+              "bbox": [
+                70.6,
+                49.7,
+                490.3,
+                157.3
+              ],
+              "coordinate_space": "pdf_points",
+              "confidence": 1.0,
+              "requires_review": false,
+              "display": true,
+              "asset_kind": "question_figure",
+              "checksum": "90bf6b232546",
+              "crop_mode": "manual_bbox"
+            }
+          ]
+        },
+        "parsed_options": {
+          "A": "60,90,280",
+          "B": "60,90,350",
+          "C": "60,85,110,350",
+          "D": "60,90,110,350"
+        }
+      },
+      "questions": {
+        "content": {
+          "text": "【2022统考真题】在下图所示的5阶B树T中，删除关键字260之后需要进行必要的调整，得 到新的B树T。下列选项中，不可能是T根结点中关键字序列的是（ ）． 6090.260350 280300 400500 3050 708085 100110",
+          "render_mode": "segments",
+          "segments": [
+            {
+              "type": "text",
+              "text": "【2022统考真题】在下图所示的5阶B树T中，删除关键字260之后需要进行必要的调整，得 到新的B树T。下列选项中，不可能是T根结点中关键字序列的是（ ）． 6090.260350 280300 400500 3050 708085 100110"
+            },
+            {
+              "type": "image",
+              "url": "http://localhost:8000/static/question-assets/202607/ds_sc/q_480_p399_90bf6b232546.png",
+              "alt": "题目原图",
+              "region_type": "illustration",
+              "source_page": 399,
+              "bbox": [
+                70.6,
+                49.7,
+                490.3,
+                157.3
+              ],
+              "coordinate_space": "pdf_points",
+              "confidence": 1,
+              "requires_review": false,
+              "display": true,
+              "asset_kind": "question_figure",
+              "checksum": "90bf6b232546",
+              "crop_mode": "manual_bbox"
+            }
+          ],
+          "stem": "【2022统考真题】在下图所示的5阶B树T中，删除关键字260之后需要进行必要的调整，得 到新的B树T。下列选项中，不可能是T根结点中关键字序列的是（ ）．"
+        },
+        "image_url": "[\"http://localhost:8000/static/question-assets/202607/ds_sc/q_480_p399_90bf6b232546.png\"]",
+        "options": {
+          "A": "60,90,280",
+          "B": "60,90,350",
+          "C": "60,85,110,350",
+          "D": "60,90,110,350"
+        }
+      }
+    }
+  }
+}
