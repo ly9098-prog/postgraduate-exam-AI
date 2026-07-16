@@ -71,35 +71,46 @@ Component({
     currentQuestion: function (q) {
       if (!q) {
         this.setData({ _qTypeLabel: '', _codeLines: [], _mixedBlocks: [], _questionImages: [], _blankOptionGroups: [], _hasBlankOptionGroups: false })
+        this._lastRenderModel = null
         return
       }
-      var label = q._typeLabel || this._typeLabel(q)
       var model = q._renderModel || {}
-      var codeLines = model.mode === 'CODE' ? this._splitCodeLines(model.rawText) : []
-      var mixedBlocks = model.mode === 'MIXED' ? this._decorateMixedBlocks(model.blocks) : []
+      // _renderModel reference is stable when only blank selection changes
+      var renderModelChanged = this._lastRenderModel !== model
+      this._lastRenderModel = model
 
-      // Extract image URLs — use adapter for dedup against inline-rendered segments
-      var images = []
-      var adapter
-      try { adapter = require('../../utils/question-runner-adapter') } catch (e) {}
-      if (adapter && typeof adapter.computeExtraImages === 'function') {
-        images = adapter.computeExtraImages(q)
-      } else if (adapter && typeof adapter.getQuestionImages === 'function') {
-        images = adapter.getQuestionImages(q)
-      } else if (Array.isArray(q.image_url)) {
-        images = q.image_url.filter(function (u) { return u && typeof u === 'string' })
-      } else if (q.content && Array.isArray(q.content.image_url)) {
-        images = q.content.image_url.filter(function (u) { return u && typeof u === 'string' })
+      var data = {}
+
+      if (renderModelChanged) {
+        var label = q._typeLabel || this._typeLabel(q)
+        var codeLines = model.mode === 'CODE' ? this._splitCodeLines(model.rawText) : []
+        var mixedBlocks = model.mode === 'MIXED' ? this._decorateMixedBlocks(model.blocks) : []
+
+        // Extract image URLs — use adapter for dedup against inline-rendered segments
+        var images = []
+        var adapter
+        try { adapter = require('../../utils/question-runner-adapter') } catch (e) {}
+        if (adapter && typeof adapter.computeExtraImages === 'function') {
+          images = adapter.computeExtraImages(q)
+        } else if (adapter && typeof adapter.getQuestionImages === 'function') {
+          images = adapter.getQuestionImages(q)
+        } else if (Array.isArray(q.image_url)) {
+          images = q.image_url.filter(function (u) { return u && typeof u === 'string' })
+        } else if (q.content && Array.isArray(q.content.image_url)) {
+          images = q.content.image_url.filter(function (u) { return u && typeof u === 'string' })
+        }
+
+        data._qTypeLabel = label
+        data._codeLines = codeLines
+        data._mixedBlocks = mixedBlocks
+        data._questionImages = images
       }
 
-      this.setData({
-        _qTypeLabel: label,
-        _codeLines: codeLines,
-        _mixedBlocks: mixedBlocks,
-        _questionImages: images,
-        _blankOptionGroups: q._blankOptionGroups || [],
-        _hasBlankOptionGroups: !!(q._hasBlankOptionGroups && q._blankOptionGroups && q._blankOptionGroups.length > 0),
-      })
+      // Always update blank option groups (change on every selection)
+      data._blankOptionGroups = q._blankOptionGroups || []
+      data._hasBlankOptionGroups = !!(q._hasBlankOptionGroups && q._blankOptionGroups && q._blankOptionGroups.length > 0)
+
+      this.setData(data)
     },
     currentIndex: function () {
       // 新题回到阅读起点，并恢复紧凑完整顶部；向下阅读后再自动收起。
