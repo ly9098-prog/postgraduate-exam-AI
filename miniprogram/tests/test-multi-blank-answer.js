@@ -60,6 +60,15 @@ assertDeepEq(normalizeBlankAnswer('①:b;②:d'), { '①': 'B', '②': 'D' }, 'l
 // Space tolerance
 assertDeepEq(normalizeBlankAnswer('① : B ; ② : D'), { '①': 'B', '②': 'D' }, 'spaces around colon')
 
+// Multi-character option keys (e.g. Roman numerals VII, III)
+assertDeepEq(normalizeBlankAnswer('①:VII;②:III'), { '①': 'VII', '②': 'III' }, 'multi-char canonical')
+assertDeepEq(normalizeBlankAnswer('①:VII;②:I'), { '①': 'VII', '②': 'I' }, 'mixed single+multi char')
+assertDeepEq(normalizeBlankAnswer('①:V;②:VII'), { '①': 'V', '②': 'VII' }, 'V+VII multi-char')
+
+// Unicode Roman numeral option keys
+assertDeepEq(normalizeBlankAnswer('①:Ⅴ;②:Ⅶ'), { '①': 'Ⅴ', '②': 'Ⅶ' }, 'Unicode Roman numerals')
+assertDeepEq(normalizeBlankAnswer('①:Ⅳ'), { '①': 'Ⅳ' }, 'single Unicode Roman IV')
+
 // Non-canonical formats (fix for BUG-003)
 assertDeepEq(normalizeBlankAnswer('①B、②D'), { '①': 'B', '②': 'D' }, 'Chinese comma circled format')
 assertDeepEq(normalizeBlankAnswer('①B，②D'), { '①': 'B', '②': 'D' }, 'Chinese comma fullwidth')
@@ -81,6 +90,26 @@ assertEq(serializeBlankAnswer(groups, { '①': 'B' }), '①:B', 'serialize one b
 assertEq(serializeBlankAnswer(groups, {}), '', 'serialize empty map')
 assertEq(serializeBlankAnswer(groups, null), '', 'serialize null map')
 assertEq(serializeBlankAnswer([], { '①': 'B' }), '', 'serialize with empty groups')
+
+// Multi-character option keys
+assertEq(serializeBlankAnswer(groups, { '①': 'VII' }), '①:VII', 'serialize multi-char key')
+assertEq(serializeBlankAnswer(groups, { '①': 'VII', '②': 'III' }), '①:VII;②:III', 'serialize two multi-char keys')
+
+// Round-trip: serialize then normalize returns original map
+var rtGroups = [
+  { id: '①', options: [{ key: 'I' }, { key: 'II' }, { key: 'III' }, { key: 'IV' }, { key: 'V' }, { key: 'VI' }, { key: 'VII' }] },
+  { id: '②', options: [{ key: 'I' }, { key: 'II' }, { key: 'III' }, { key: 'IV' }, { key: 'V' }, { key: 'VI' }, { key: 'VII' }] },
+]
+var rtSerialized = serializeBlankAnswer(rtGroups, { '①': 'VII', '②': 'III' })
+assertEq(rtSerialized, '①:VII;②:III', 'round-trip serialize multi-char')
+var rtParsed = normalizeBlankAnswer(rtSerialized)
+assertDeepEq(rtParsed, { '①': 'VII', '②': 'III' }, 'round-trip normalize multi-char')
+
+// Round-trip: mixed single + multi char
+var rtMixed = serializeBlankAnswer(rtGroups, { '①': 'V', '②': 'VII' })
+assertEq(rtMixed, '①:V;②:VII', 'round-trip serialize mixed char')
+var rtMixedParsed = normalizeBlankAnswer(rtMixed)
+assertDeepEq(rtMixedParsed, { '①': 'V', '②': 'VII' }, 'round-trip normalize mixed char')
 
 // Same option on multiple blanks
 assertEq(serializeBlankAnswer(groups, { '①': 'B', '②': 'B' }), '①:B;②:B', 'same option for both blanks')
@@ -132,6 +161,12 @@ assertEq(isAnswerCorrect('①:B;②:D', '①:B;②:D;③:A', 'multi_blank_choice
 assertEq(isAnswerCorrect('B', 'B', 'single_choice'), true, 'single_choice unaffected')
 assertEq(isAnswerCorrect('A,C', 'A,C', 'multiple_choice'), true, 'multiple_choice unaffected')
 assertEq(isAnswerCorrect('A', 'B', 'single_choice'), false, 'single_choice wrong')
+
+// Multi-character option keys
+assertEq(isAnswerCorrect('①:VII;②:III', '①:VII;②:III', 'multi_blank_choice'), true, 'multi-char correct')
+assertEq(isAnswerCorrect('①:V;②:VII', '①:V;②:VII', 'multi_blank_choice'), true, 'mixed V+VII correct')
+assertEq(isAnswerCorrect('①:VII;②:II', '①:VII;②:III', 'multi_blank_choice'), false, 'multi-char wrong value (II≠III)')
+assertEq(isAnswerCorrect('①:V;②:VII', '①:VII;②:V', 'multi_blank_choice'), false, 'multi-char swapped slots')
 
 /* ==================== isMultiBlankType ==================== */
 

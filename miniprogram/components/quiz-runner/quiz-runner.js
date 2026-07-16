@@ -63,12 +63,14 @@ Component({
     _codeLines: [],
     _mixedBlocks: [],
     _questionImages: [],
+    _blankOptionGroups: [],
+    _hasBlankOptionGroups: false,
   },
 
   observers: {
     currentQuestion: function (q) {
       if (!q) {
-        this.setData({ _qTypeLabel: '', _codeLines: [], _mixedBlocks: [], _questionImages: [] })
+        this.setData({ _qTypeLabel: '', _codeLines: [], _mixedBlocks: [], _questionImages: [], _blankOptionGroups: [], _hasBlankOptionGroups: false })
         return
       }
       var label = q._typeLabel || this._typeLabel(q)
@@ -95,6 +97,8 @@ Component({
         _codeLines: codeLines,
         _mixedBlocks: mixedBlocks,
         _questionImages: images,
+        _blankOptionGroups: q._blankOptionGroups || [],
+        _hasBlankOptionGroups: !!(q._hasBlankOptionGroups && q._blankOptionGroups && q._blankOptionGroups.length > 0),
       })
     },
     currentIndex: function () {

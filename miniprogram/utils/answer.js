@@ -81,7 +81,7 @@ function normalizeBlankAnswer(answer) {
 
   // 1. Try canonical slot:value format first with comma splitting
   String(text).split(/[;；,，、\n]+/).forEach(function(part) {
-    var m = part.trim().match(/^(.+?)\s*[:：=]\s*([A-Za-z])$/)
+    var m = part.trim().match(/^(.+?)\s*[:：=]\s*(.+)$/)
     if (m) {
       result[m[1].trim()] = m[2].trim().toUpperCase()
       canonicalMatch = true

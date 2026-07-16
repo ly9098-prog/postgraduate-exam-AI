@@ -609,6 +609,13 @@
 }
 
 .runner-blank-option-item { background: #FFFFFF; }
+.runner-blank-option-item:active { background: #F3F7EE; }
+
+.runner-blank-option-item.runner-selected {
+  border-color: #6EA800;
+  background: #F5FBE8;
+  box-shadow: inset 5rpx 0 0 #AEEF00;
+}
 
 /* ==================== Bottom actions ==================== */
 
@@ -1204,6 +1211,12 @@
   border-color: #DDE3DA;
   background: #F2F4EF;
 }
+.runner-theme-premium-review .runner-blank-option-item:active { background: #EDF2E0; }
+.runner-theme-premium-review .runner-blank-option-item.runner-selected {
+  border-color: #86AA18;
+  background: #EDF4D9;
+  box-shadow: inset 5rpx 0 0 #B7E82A;
+}
 
 .runner-theme-premium-review .runner-bottom-bar {
   border-top-color: #DDE2DA;
@@ -1326,7 +1339,7 @@
   margin: 24rpx 0 8rpx;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  width: 100%;
   gap: 16rpx;
 }
 
