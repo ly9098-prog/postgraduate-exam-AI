@@ -370,6 +370,7 @@ async def get_practice_questions(
                 ),
                 knowledge_points=q.knowledge_points,
                 difficulty=q.difficulty,
+                image_url=q.image_url,
                 trace_id=trace_id,
                 recommend_reason=(question_metadata.get(q.id) or {}).get("recommend_reason"),
                 recommend_score=(question_metadata.get(q.id) or {}).get("recommend_score"),

@@ -1277,6 +1277,80 @@ export default function QuestionsPage() {
                     </div>
                   </section>
 
+                  {/* ── Question Images ── */}
+                  {(() => {
+                    const allUrls = new Map<string, string>();
+                    const imageUrlField = selectedQuestion.image_url;
+                    if (Array.isArray(imageUrlField)) {
+                      imageUrlField.forEach((url: unknown) => {
+                        const src = String(url ?? "").trim();
+                        if (src) {
+                          const key = src.length > 8 && src.endsWith("/") ? src.slice(0, -1) : src;
+                          allUrls.set(key, src);
+                        }
+                      });
+                    }
+                    const contentObj = selectedQuestion.content;
+                    if (
+                      contentObj &&
+                      typeof contentObj === "object" &&
+                      !Array.isArray(contentObj) &&
+                      Array.isArray((contentObj as Record<string, unknown>).segments)
+                    ) {
+                      const segs = (contentObj as Record<string, unknown>).segments as unknown[];
+                      segs.forEach((seg: unknown) => {
+                        if (!seg || typeof seg !== "object") return;
+                        const s = seg as Record<string, unknown>;
+                        const segType = String(s.type ?? "");
+                        if (
+                          segType === "image" ||
+                          segType === "math_image" ||
+                          segType === "table_image" ||
+                          segType === "code_image"
+                        ) {
+                          const url = s.url;
+                          if (url && typeof url === "string") {
+                            const trimmed = url.trim();
+                            const key =
+                              trimmed.length > 8 && trimmed.endsWith("/")
+                                ? trimmed.slice(0, -1)
+                                : trimmed;
+                            if (!allUrls.has(key)) allUrls.set(key, trimmed);
+                          }
+                        }
+                      });
+                    }
+                    if (allUrls.size === 0) return null;
+                    const entries = Array.from(allUrls.values());
+                    return (
+                      <section className="rounded-[1.7rem] border border-[var(--color-border)] bg-white/80 p-5 shadow-sm">
+                        <p className="font-display text-lg font-bold text-[var(--ink)] mb-3">题目图片</p>
+                        <div className="grid gap-3">
+                          {entries.map((src: string, idx: number) => {
+                            if (!src) return null;
+                            return (
+                              <div key={idx} className="relative group/img overflow-hidden rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/30">
+                                <img
+                                  src={src}
+                                  alt={`题目图片 ${idx + 1}`}
+                                  className="max-w-full cursor-zoom-in rounded-lg transition-transform duration-300 group-hover/img:scale-[1.02]"
+                                  style={{ maxHeight: "400px", width: "auto", objectFit: "contain" }}
+                                  onClick={() => window.open(src, "_blank")}
+                                  onError={(e) => {
+                                    const target = e.currentTarget;
+                                    target.style.display = "none";
+                                    if (target.parentElement) target.parentElement.classList.add("hidden");
+                                  }}
+                                />
+                                <div className="absolute inset-0 rounded-xl ring-1 ring-inset ring-black/5 pointer-events-none" />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    );
+                  })()}
+
                   <section className="rounded-[1.7rem] border border-[var(--color-border)] bg-white/80 p-5">
                     <p className="font-display text-lg font-bold text-[var(--ink)]">
                       选项

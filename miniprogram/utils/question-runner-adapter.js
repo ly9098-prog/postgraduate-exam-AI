@@ -209,17 +209,7 @@ function buildOptionListReadonly(q, opts, optionKeys, correctAnswer, userAnswer)
     ? answerLib.normalizeAnswerSet(userAnswer) : null
 
   return (optionKeys || []).map(function (key) {
-    var rawValue = (opts && opts[key]) || ''
-    // Handle rich dict format: {"A": {"text": "...", "segments": [...]}}
-    var optSegments = typeof rawValue === 'object' && rawValue !== null ? (rawValue.segments || null) : null
-    var rawText = ''
-    if (optSegments && Array.isArray(optSegments) && optSegments.length > 0) {
-      rawText = stemRender.segmentsToText(optSegments)
-    } else if (typeof rawValue === 'object' && rawValue !== null) {
-      rawText = rawValue.text || rawValue.value || ''
-    } else {
-      rawText = String(rawValue)
-    }
+    var rawText = (opts && opts[key]) || ''
     var stripped = stemRender.stripLeadingOptionLabel(key, rawText)
     var plain = stemRender.toPlainInlineMathText(stripped)
     var text = plain || stripped
@@ -232,8 +222,7 @@ function buildOptionListReadonly(q, opts, optionKeys, correctAnswer, userAnswer)
       key: key,
       _text: text,
       _html: needsRich ? stemRender.textToHtml(stripped) : '',
-      _needsRich: !optSegments && needsRich,
-      _segments: (optSegments && Array.isArray(optSegments) && optSegments.length > 0) ? optSegments : undefined,
+      _needsRich: needsRich,
       _isCorrect: isCorrect,
       _isUserAnswer: isUserAnswer,
       _isBoth: isCorrect && isUserAnswer,
@@ -252,6 +241,107 @@ function isAnswerCorrect(q, userAnswer) {
   var correct = getCorrectAnswer(q)
   if (!correct || !userAnswer) return null
   return answerLib.isAnswerCorrect(userAnswer, correct, q.question_type)
+}
+
+/* ==================== Image helpers ==================== */
+
+/**
+ * Normalize a URL for comparison purposes.
+ */
+function _normalizeUrl(url) {
+  if (!url || typeof url !== 'string') return ''
+  var s = url.trim()
+  if (s.length > 8 && s.charAt(s.length - 1) === '/') s = s.slice(0, -1)
+  return s
+}
+
+/**
+ * Get question image URLs from a question object.
+ * Checks top-level image_url and content.image_url, deduplicated.
+ */
+function getQuestionImages(q) {
+  if (!q) return []
+  var seen = {}
+  var urls = []
+
+  if (Array.isArray(q.image_url)) {
+    q.image_url.forEach(function (url) {
+      if (url && typeof url === 'string' && !seen[url]) {
+        seen[url] = true
+        urls.push(url)
+      }
+    })
+  }
+
+  if (q.content && Array.isArray(q.content.image_url)) {
+    q.content.image_url.forEach(function (url) {
+      if (url && typeof url === 'string' && !seen[url]) {
+        seen[url] = true
+        urls.push(url)
+      }
+    })
+  }
+
+  return urls
+}
+
+/**
+ * Extract all image URLs from content.segments that are rendered inline
+ * by <math-question> in SEGMENTS mode.
+ * Includes: image, math_image, table_image, code_image segment types.
+ */
+function getEmbeddedImageUrls(content) {
+  if (!content || !Array.isArray(content.segments) || content.segments.length === 0) return []
+  var seen = {}
+  var urls = []
+  for (var i = 0; i < content.segments.length; i++) {
+    var seg = content.segments[i]
+    if (!seg || typeof seg !== 'object') continue
+    var url = seg.url
+    if (url && typeof url === 'string') {
+      var normalized = _normalizeUrl(url)
+      if (normalized && !seen[normalized]) {
+        seen[normalized] = true
+        urls.push(normalized)
+      }
+    }
+  }
+  return urls
+}
+
+/**
+ * Compute the list of extra images to display below the stem.
+ *
+ * In SEGMENTS mode, image-type segments are already rendered inline by
+ * <math-question>. This function subtracts those from the total image set
+ * to prevent duplication.
+ *
+ * In non-SEGMENTS modes, no inline images exist, so all images are returned.
+ */
+function computeExtraImages(q) {
+  if (!q) return []
+  var allUrls = getQuestionImages(q)
+  if (!allUrls.length) return []
+
+  var renderMode = (q._renderModel && q._renderModel.mode) || ''
+  if (renderMode !== 'SEGMENTS') return allUrls
+
+  var embedded = getEmbeddedImageUrls(q.content || {})
+  if (!embedded.length) return allUrls
+
+  var embeddedSet = {}
+  for (var i = 0; i < embedded.length; i++) {
+    embeddedSet[embedded[i]] = true
+  }
+
+  var extra = []
+  for (var j = 0; j < allUrls.length; j++) {
+    var normalized = _normalizeUrl(allUrls[j])
+    if (!embeddedSet[normalized]) {
+      extra.push(allUrls[j])
+    }
+  }
+  return extra
 }
 
 /* ==================== Exports ==================== */
@@ -281,4 +371,9 @@ module.exports = {
   // Answer correctness
   getCorrectAnswer: getCorrectAnswer,
   isAnswerCorrect: isAnswerCorrect,
+
+  // Image helpers
+  getQuestionImages: getQuestionImages,
+  getEmbeddedImageUrls: getEmbeddedImageUrls,
+  computeExtraImages: computeExtraImages,
 }
