@@ -106,7 +106,7 @@ CONF_AUTO = 0.85
 CONF_REVIEW = 0.65
 
 # ── Dual-bbox / visual-text constants ──
-CROP_VERSION = "visual-v2"          # increment when crop algorithm changes
+CROP_VERSION = "visual-v2.1"       # increment when crop algorithm changes
 OVERLAP_THRESHOLD = 0.6             # OCR lines with ≥ this ratio inside visual_bbox → visual_text
 VISUAL_PADDING_PT = 12.0            # padding around diagram for content image (pdf_points)
 CONTENT_FOREGROUND_SCAN_DPI = 150   # DPI for foreground scan (lower = faster)
