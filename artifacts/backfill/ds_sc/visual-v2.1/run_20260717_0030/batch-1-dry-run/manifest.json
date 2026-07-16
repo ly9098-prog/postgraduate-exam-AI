@@ -1,0 +1,10 @@
+{
+  "schema": "batch-dry-run-v1",
+  "batch": "1",
+  "description": "Batch 1: Published broken assets — 407 (q326, Q1) and 480 (q399, Q3)",
+  "generated_at": "2026-07-17T00:42:22.616843",
+  "db_sha256": "5580456a65ff228a3ef748001b3dc4b86af091818e9d85d44ed94aeee8353882",
+  "dry_run": true,
+  "no_db_modifications": true,
+  "no_storage_uploads": true
+}

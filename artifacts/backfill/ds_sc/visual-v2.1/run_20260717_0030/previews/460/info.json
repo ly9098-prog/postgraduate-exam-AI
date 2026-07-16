@@ -1,0 +1,13 @@
+{
+  "import_id": 460,
+  "source_question_no": "379",
+  "page": 379,
+  "state": "legacy",
+  "images": {
+    "full_page": "full-page.png",
+    "proposed_content": "proposed-content.png",
+    "overlay": "overlay.png",
+    "current_url": "http://localhost:8000/static/question-assets/202607/ds_sc/q_460_p379_8bdb55b12cef.png",
+    "note": "current image from URL (not re-rendered)"
+  }
+}
