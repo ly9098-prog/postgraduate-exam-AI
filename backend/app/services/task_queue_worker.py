@@ -16,13 +16,8 @@ Usage::
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import time
-import uuid
-from typing import Any, Callable
 
-from app.core.config import settings
 from app.services.task_queue_service import Task, task_queue
 
 logger = logging.getLogger("postgraduate-ai.task-worker")
@@ -43,7 +38,7 @@ _LEASE_SEC = 600  # 10 minutes default lease
 
 async def enqueue_import_pipeline(
     pipeline_id: str,
-    file_content: bytes,
+    file_path: str,
     source_type: str,
     source_file: str,
     subject: str | None,
@@ -52,8 +47,6 @@ async def enqueue_import_pipeline(
     created_by: str | None = None,
 ) -> str:
     """Enqueue an import pipeline task via the durable queue."""
-    # Store file content info in payload (actual bytes go to file store)
-    # For now, the pipeline store (in-memory or Redis) holds the execution state
     payload = {
         "pipeline_id": pipeline_id,
         "source_type": source_type,
@@ -62,9 +55,6 @@ async def enqueue_import_pipeline(
         "subject_id": subject_id,
         "options": options,
         "created_by": created_by,
-        # The pipeline store keeps file_content in memory for now.
-        # TODO: migrate to shared file storage for multi-worker support.
-        "_has_file_content": True,
     }
     return await task_queue.enqueue(
         TASK_TYPE_IMPORT_PIPELINE,
@@ -99,7 +89,7 @@ async def enqueue_resume_pipeline(
 
 async def enqueue_image_pipeline(
     pipeline_id: str,
-    image_content: bytes,
+    image_path: str,
     source_file: str,
     subject: str | None,
     subject_id: int | None,
@@ -112,7 +102,6 @@ async def enqueue_image_pipeline(
         "subject": subject,
         "subject_id": subject_id,
         "options": options,
-        "_has_file_content": True,
     }
     return await task_queue.enqueue(
         TASK_TYPE_IMAGE_PIPELINE,
@@ -124,19 +113,37 @@ async def enqueue_image_pipeline(
 
 async def enqueue_excel_pipeline(
     pipeline_id: str,
-    file_content: bytes,
+    file_path: str,
     source_file: str,
 ) -> str:
     """Enqueue an Excel import pipeline task."""
     payload = {
         "pipeline_id": pipeline_id,
         "source_file": source_file,
-        "_has_file_content": True,
     }
     return await task_queue.enqueue(
         TASK_TYPE_EXCEL_PIPELINE,
         payload,
         task_id=f"excel:{pipeline_id}",
+        max_retries=2,
+    )
+
+
+async def enqueue_formula_batch(
+    job_id: str,
+    card_ids: list[int],
+    admin_id: int,
+) -> str:
+    """Enqueue a formula batch generation task."""
+    payload = {
+        "job_id": job_id,
+        "card_ids": card_ids,
+        "admin_id": admin_id,
+    }
+    return await task_queue.enqueue(
+        TASK_TYPE_FORMULA_BATCH,
+        payload,
+        task_id=f"formula_batch:{job_id}",
         max_retries=2,
     )
 
@@ -161,15 +168,16 @@ async def _process_task(task: Task) -> None:
 
     if task_type == TASK_TYPE_IMPORT_PIPELINE:
         from app.services.import_pipeline_service import _run_pipeline_with_db
-
-        # Reconstruct file_content from pipeline store
-        from app.services.import_pipeline_service import _get_pipeline_store
+        from app.features.pipeline_orchestrator import _get_pipeline_store
 
         store = await _get_pipeline_store(pipeline_id)
-        file_content = (store or {}).get("_file_content")
+        file_path = (store or {}).get("_file_path")
+
+        store = await _get_pipeline_store(pipeline_id)
+        file_path = (store or {}).get("_file_path") or ""
         await _run_pipeline_with_db(
             pipeline_id=pipeline_id,
-            file_content=file_content,
+            file_path=file_path,
             source_type=payload.get("source_type", "pdf"),
             source_file=payload.get("source_file", ""),
             subject=payload.get("subject"),
@@ -180,12 +188,13 @@ async def _process_task(task: Task) -> None:
 
     elif task_type == TASK_TYPE_IMAGE_PIPELINE:
         from app.services.import_pipeline_service import _run_image_pipeline_with_db
+        from app.features.pipeline_orchestrator import _get_pipeline_store
 
         store = await _get_pipeline_store(pipeline_id)
-        image_content = (store or {}).get("_file_content")
+        image_path = (store or {}).get("_file_path") or ""
         await _run_image_pipeline_with_db(
             pipeline_id=pipeline_id,
-            image_content=image_content,
+            image_path=image_path,
             source_file=payload.get("source_file", ""),
             subject=payload.get("subject"),
             subject_id=payload.get("subject_id"),
@@ -193,13 +202,16 @@ async def _process_task(task: Task) -> None:
         )
 
     elif task_type == TASK_TYPE_EXCEL_PIPELINE:
-        from app.services.import_pipeline_service import _run_excel_pipeline_with_db
+        from app.features.pipeline_orchestrator import run_excel_pipeline_background, _get_pipeline_store
 
         store = await _get_pipeline_store(pipeline_id)
-        file_content = (store or {}).get("_file_content")
+        file_path = (store or {}).get("_file_path") or ""
+        # Read file content from disk for the pipeline function
+        with open(file_path, "rb") as _fh:
+            file_content = _fh.read()
         from app.features import question_pipeline as pipeline_svc
 
-        await _run_excel_pipeline_with_db(
+        await run_excel_pipeline_background(
             pipeline_id=pipeline_id,
             file_content=file_content,
             source_file=payload.get("source_file", ""),
@@ -207,18 +219,41 @@ async def _process_task(task: Task) -> None:
         )
 
     elif task_type == TASK_TYPE_RESUME_PIPELINE:
-        # Resume — the calling code handles execution inline for now
-        logger.warning(
-            "Resume pipeline via worker not yet fully implemented: %s",
-            pipeline_id,
+        from app.services.import_pipeline_service import run_resume_background
+
+        file_path = payload.get("file_path", "")
+        await run_resume_background(
+            pipeline_id=pipeline_id,
+            file_path=file_path,
+            subject=payload.get("subject"),
+            subject_id=payload.get("subject_id"),
+            options=payload.get("options", {}),
         )
+
+    elif task_type == TASK_TYPE_FORMULA_BATCH:
+        from app.services.formula_graph_spec_service import _process_batch
+        from app.models.formula import FormulaCard
+        from app.core.database import async_session
+        from sqlalchemy import select
+
+        card_ids = payload.get("card_ids", [])
+        admin_id = payload.get("admin_id", 0)
+        job_id = payload.get("job_id", "")
+
+        async with async_session() as db:
+            result = await db.execute(
+                select(FormulaCard).where(FormulaCard.id.in_(card_ids))
+            )
+            cards = list(result.scalars().all())
+
+        await _process_batch(job_id, cards, admin_id)
 
     else:
         logger.warning("Unknown task type: %s", task_type)
 
 
 async def run_pipeline_worker(
-    poll_interval: float = 1.0,
+    poll_interval: float = 5.0,
     lease_sec: int = _LEASE_SEC,
 ) -> None:
     """Run the import pipeline worker loop.
@@ -233,6 +268,8 @@ async def run_pipeline_worker(
         TASK_TYPE_IMPORT_PIPELINE,
         TASK_TYPE_IMAGE_PIPELINE,
         TASK_TYPE_EXCEL_PIPELINE,
+        TASK_TYPE_RESUME_PIPELINE,
+        TASK_TYPE_FORMULA_BATCH,
     ]
 
     logger.info("Pipeline worker started: polling every %ss", poll_interval)
@@ -310,6 +347,7 @@ async def run_reaper_loop(
         TASK_TYPE_IMAGE_PIPELINE,
         TASK_TYPE_EXCEL_PIPELINE,
         TASK_TYPE_RESUME_PIPELINE,
+        TASK_TYPE_FORMULA_BATCH,
     ]
 
     while _reaper_running:

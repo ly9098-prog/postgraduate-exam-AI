@@ -1,0 +1,21 @@
+{
+  "pipeline_id": "full_20260715_002628_p001",
+  "result": {
+    "pipeline_id": "full_20260715_002628_p001",
+    "status": "completed",
+    "batch_id": "REVIEW_20260714_162927_aced30",
+    "stats": {
+      "total_chunks": 3,
+      "completed_chunks": 3,
+      "failed_chunks": 0,
+      "to_review": 99,
+      "extracted": 100,
+      "total": 100
+    },
+    "stages": {},
+    "errors": [],
+    "started_at": "2026-07-15T00:26:28.276397",
+    "finished_at": "2026-07-15T00:35:09.549824"
+  },
+  "runtime_failed_pages": []
+}

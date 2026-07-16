@@ -61,12 +61,14 @@ _STRICT_BROAD_OPTION = re.compile(
     r"([A-Da-d])\s+(?=[^\sa-dA-D\n])"
 )
 
-# Question type constants (mirrored from question_normalizer to avoid circular import)
-QT_SINGLE_CHOICE = "single_choice"
-QT_MULTIPLE_CHOICE = "multiple_choice"
-QT_TRUE_FALSE = "true_false"
-QT_FILL_BLANK = "fill_blank"
-QT_SUBJECTIVE = "subjective"
+# Question type constants (from unified definition)
+from app.features.question_type import (
+    QT_SINGLE_CHOICE,
+    QT_MULTIPLE_CHOICE,
+    QT_TRUE_FALSE,
+    QT_FILL_BLANK,
+    QT_SUBJECTIVE,
+)
 
 
 @lru_cache(maxsize=128)

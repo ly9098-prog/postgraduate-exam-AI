@@ -1,6 +1,8 @@
 """统一上传入口 /pipeline/upload — 路由分流测试。"""
 import asyncio
 import io
+import os
+import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,6 +12,29 @@ from app.features.pipeline_orchestrator import (
     get_pipeline_status,
     run_excel_pipeline_background,
 )
+
+
+def _mock_stream_to_temp(path: str | None = None, content: bytes = b"dummy content"):
+    """Return a context manager that patches ``stream_to_temp``.
+
+    The mock returns a TempFile-like object with the given *path*
+    (defaults to a real temp file path) and a no-op ``detach``.
+    """
+    tmp_path = path or os.path.join(tempfile.mkdtemp(), "upload.bin")
+    if not os.path.exists(tmp_path):
+        with open(tmp_path, "wb") as f:
+            f.write(content)
+    mock = MagicMock()
+    mock.path = tmp_path
+    mock.size = len(content)
+    mock.detach.return_value = tmp_path
+    mock.close = MagicMock()
+    return patch("app.api.v1.imports.stream_to_temp", AsyncMock(return_value=mock))
+
+
+def _mock_stream_to_temp_empty():
+    """Return a context manager patching ``stream_to_temp`` to return an empty file."""
+    return _mock_stream_to_temp(content=b"")
 
 
 class TestRunExcelPipelineBackground:
@@ -51,7 +76,7 @@ class TestPipelineUploadDispatch:
     @pytest.fixture
     def mock_deps(self):
         with patch("app.api.v1.imports.require_app_permission") as mock_perm, \
-             patch("app.api.v1.imports.settings") as mock_settings:
+             patch("app.core.config.settings") as mock_settings:
             mock_perm.return_value = lambda: MagicMock()
             mock_settings.OCR_ENABLED = True
             mock_settings.IMAGE_IMPORT_MAX_BYTES = 10 * 1024 * 1024
@@ -75,8 +100,9 @@ class TestPipelineUploadDispatch:
         file = self._make_upload_file("doc.docx", b"content")
         user = MagicMock()
 
-        with pytest.raises(Exception) as exc_info:
-            asyncio.run(pipeline_upload(file=file, current_user=user))
+        with _mock_stream_to_temp():
+            with pytest.raises(Exception) as exc_info:
+                asyncio.run(pipeline_upload(file=file, current_user=user))
 
         assert "400" in str(exc_info.value.status_code) or exc_info.value.status_code == 400
 
@@ -86,8 +112,9 @@ class TestPipelineUploadDispatch:
         file = self._make_upload_file("test.pdf", b"")
         user = MagicMock()
 
-        with pytest.raises(Exception) as exc_info:
-            asyncio.run(pipeline_upload(file=file, current_user=user))
+        with _mock_stream_to_temp_empty():
+            with pytest.raises(Exception) as exc_info:
+                asyncio.run(pipeline_upload(file=file, current_user=user))
 
         assert exc_info.value.status_code == 400
 
@@ -98,8 +125,9 @@ class TestPipelineUploadDispatch:
         file.filename = ""
         user = MagicMock()
 
-        with pytest.raises(Exception) as exc_info:
-            asyncio.run(pipeline_upload(file=file, current_user=user))
+        with _mock_stream_to_temp():
+            with pytest.raises(Exception) as exc_info:
+                asyncio.run(pipeline_upload(file=file, current_user=user))
 
         assert exc_info.value.status_code == 400
 
@@ -109,7 +137,8 @@ class TestPipelineUploadDispatch:
         file = self._make_upload_file("exam.pdf", b"%PDF-1.4 content")
         user = MagicMock()
 
-        result = asyncio.run(pipeline_upload(file=file, current_user=user))
+        with _mock_stream_to_temp():
+            result = asyncio.run(pipeline_upload(file=file, current_user=user))
 
         assert result.pipeline_id.startswith("pl_")
         assert result.source_type == "pdf"
@@ -121,7 +150,8 @@ class TestPipelineUploadDispatch:
         file = self._make_upload_file("notes.txt", b"some text content")
         user = MagicMock()
 
-        result = asyncio.run(pipeline_upload(file=file, current_user=user))
+        with _mock_stream_to_temp():
+            result = asyncio.run(pipeline_upload(file=file, current_user=user))
 
         assert result.pipeline_id.startswith("pl_")
         assert result.source_type == "txt"
@@ -133,7 +163,8 @@ class TestPipelineUploadDispatch:
         file = self._make_upload_file("questions.xlsx", b"PK\x03\x04 fake xlsx")
         user = MagicMock()
 
-        result = asyncio.run(pipeline_upload(file=file, current_user=user))
+        with _mock_stream_to_temp():
+            result = asyncio.run(pipeline_upload(file=file, current_user=user))
 
         assert result.pipeline_id.startswith("xl_")
         assert result.source_type == "excel"
@@ -153,7 +184,8 @@ class TestPipelineUploadDispatch:
             filename="photo.png",
         )
 
-        with patch("app.api.v1.imports.svc_start_import_pipeline", new_callable=AsyncMock, return_value=mock_response):
+        with patch("app.api.v1.imports.svc_start_import_pipeline", new_callable=AsyncMock, return_value=mock_response), \
+             _mock_stream_to_temp():
             result = asyncio.run(pipeline_upload(file=file, current_user=user))
 
         assert result.pipeline_id.startswith("img_")
@@ -168,7 +200,8 @@ class TestPipelineUploadDispatch:
         file = self._make_upload_file("photo.png", png_header, content_type="image/png")
         user = MagicMock()
 
-        with patch("app.api.v1.imports.svc_start_import_pipeline", side_effect=ValueError("OCR not enabled")):
+        with patch("app.api.v1.imports.svc_start_import_pipeline", side_effect=ValueError("OCR not enabled")), \
+             _mock_stream_to_temp():
 
             with pytest.raises(Exception) as exc_info:
                 asyncio.run(pipeline_upload(file=file, current_user=user))

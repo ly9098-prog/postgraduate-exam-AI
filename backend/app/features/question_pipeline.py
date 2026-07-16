@@ -40,6 +40,14 @@ from app.core.config import settings
 from app.models.ai_generation_log import AiGenerationLog
 from app.models.question import Question
 from app.models.question_import import QuestionImport
+from app.features.question_type import (
+    CANONICAL_TYPES,
+    normalize_question_type as _unified_normalize_type,
+    is_canonical,
+    QT_SINGLE_CHOICE,
+    QT_TRUE_FALSE,
+    QT_FILL_BLANK,
+)
 from app.features.question_normalizer import run_ocr_quality_gate
 from app.features.question_splitter import split_questions
 from app.features.roman_schema import _RE_ROMAN_SUBITEM_MARKER
@@ -61,15 +69,11 @@ class QuestionNormalizer:
         "exam408", "exam408-ds", "exam408-os", "exam408-co", "exam408-cn",
         "english",
     }
-    CANONICAL_TYPES = {
-        "single_choice",
-        "multiple_choice",
-        "true_false",
-        "fill_blank",
-        "multi_blank_choice",
-        "subjective",
-    }
+    CANONICAL_TYPES = CANONICAL_TYPES
     TYPE_ALIASES = {
+        # 导入别名映射 — 统一由 app.features.question_type 管理，
+        # 此处保留引用以兼容依赖 TYPE_ALIASES 的调用方。
+        # 新增别名请修改 question_type._RAW_ALIAS_MAP。
         "choice": "single_choice",
         "single": "single_choice",
         "singlechoice": "single_choice",
@@ -179,15 +183,34 @@ class QuestionNormalizer:
             or ""
         )
         stem = normalize_text_import_math(stem) if plain_math else wrap_inline_math(stem)
+        # Capture raw answer before normalization for detection
+        answer_raw = (
+            raw.get("answer") or raw.get("答案") or raw.get("parsed_answer") or ""
+        )
+        # P2-2: Detect shared-option multi-blank when not already identified
+        # Runs after stem/options normalization, before stem post-processing
+        # that might destroy blank markers (_break_before_number_markers).
+        if not blank_option_groups and question_type in ("single_choice",):
+            from app.features.multi_blank_choice import (
+                detect_shared_option_multi_blank,
+            )
+            detect = detect_shared_option_multi_blank(
+                stem,
+                options,
+                str(answer_raw) if answer_raw else None,
+            )
+            if detect["is_multi_blank_choice"]:
+                question_type = "multi_blank_choice"
+                blank_option_groups = detect["blank_option_groups"]
+                options = []
+                if detect["serialized_answer"]:
+                    answer_raw = detect["serialized_answer"]
         if question_type != "multi_blank_choice":
             stem = self._break_before_number_markers(stem)
         stem = self._remove_embedded_options(stem, options)
         # OCR quality gate on cleaned stem
         _ocr_gate_result = run_ocr_quality_gate(stem)
-        answer = self.normalize_answer(
-            raw.get("answer") or raw.get("答案") or raw.get("parsed_answer") or "",
-            question_type,
-        )
+        answer = self.normalize_answer(answer_raw, question_type)
         analysis = self.clean_analysis(
             raw.get("analysis")
             or raw.get("explanation")
@@ -211,12 +234,30 @@ class QuestionNormalizer:
             "difficulty": difficulty,
             "source": self.normalize_source(source or raw.get("source")),
             "stem_hash": self.stem_hash(stem),
-            "question_hash": self.build_question_hash(stem, options, answer),
+            "question_hash": self.build_question_hash(stem, options, answer, blank_option_groups=blank_option_groups),
             "is_valid": True,
             "errors": [],
             "warnings": [],
         }
         normalized.update(self.validate(normalized))
+
+        # Preserve segments and visual region metadata from the raw input
+        raw_segments = (
+            raw.get("segments")
+            or (raw.get("parsed_content") or {}).get("segments")
+            or (raw.get("content") or {}).get("segments")
+        )
+        if raw_segments:
+            normalized["segments"] = raw_segments
+
+        raw_parsed_content = raw.get("parsed_content") or raw.get("content") or {}
+        if isinstance(raw_parsed_content, dict):
+            if raw_parsed_content.get("render_mode"):
+                normalized["render_mode"] = raw_parsed_content["render_mode"]
+            if raw_parsed_content.get("source_snapshot_url"):
+                normalized["source_snapshot_url"] = raw_parsed_content["source_snapshot_url"]
+            if raw_parsed_content.get("source_snapshot_full_page"):
+                normalized["source_snapshot_full_page"] = raw_parsed_content["source_snapshot_full_page"]
 
         # 统一验证字段 (Goal: 所有导题入口输出一致)
         is_valid = normalized["is_valid"]
@@ -242,11 +283,12 @@ class QuestionNormalizer:
         )
 
     def normalize_type(self, value: Any, options: Any = None) -> str:
+        """规范化题型（导入流水线入口：别名容忍 + 无法识别时回退）。"""
         raw_type = str(value or "").strip().lower().replace("-", "_").replace(" ", "")
-        if raw_type in self.TYPE_ALIASES:
-            return self.TYPE_ALIASES[raw_type]
-        if raw_type in self.CANONICAL_TYPES:
-            return raw_type
+        normalized, _warnings = _unified_normalize_type(raw_type)
+        if normalized is not None:
+            return normalized
+        # Pipeline 回退：无法识别时根据是否有选项猜测
         return "single_choice" if options else "fill_blank"
 
     def normalize_answer(self, answer: Any, question_type: str) -> str | list[str]:
@@ -262,6 +304,18 @@ class QuestionNormalizer:
             text = text.strip("。.;； ")
             if question_type == "multiple_choice":
                 values = [v for v in re.split(r"[,，、/\s]+", text.upper()) if v]
+            elif question_type == "multi_blank_choice":
+                from app.features.multi_blank_choice import (
+                    parse_multi_blank_answer,
+                    serialize_multi_blank_answer,
+                    extract_blank_slots,
+                )
+                slot_ids = extract_blank_slots(text)
+                if slot_ids:
+                    parsed, _ = parse_multi_blank_answer(text, slot_ids=slot_ids, allow_positional=True)
+                    if parsed:
+                        return serialize_multi_blank_answer(parsed, slot_ids)
+                return text
             else:
                 return (
                     text.upper()
@@ -288,17 +342,29 @@ class QuestionNormalizer:
     def normalize_options(self, options: Any) -> list[dict]:
         if not options:
             return []
-        items: list[tuple[str | None, str]] = []
+        items: list[tuple[str | None, Any]] = []
         if isinstance(options, dict):
-            items = [(str(k).strip().upper(), str(v).strip()) for k, v in options.items()]
+            for k, v in options.items():
+                key = str(k).strip().upper()
+                if isinstance(v, dict):
+                    # Rich format: {"A": {"text": "...", "segments": [...]}}
+                    text_val = str(v.get("text") or v.get("value") or "")
+                    items.append((key, {"text": text_val, "segments": v.get("segments")}))
+                else:
+                    items.append((key, str(v).strip()))
         elif isinstance(options, list):
             for item in options:
                 if isinstance(item, dict):
                     key = item.get("key") or item.get("label") or item.get("option")
                     text = item.get("text") or item.get("value") or item.get("content") or ""
-                    items.append(
-                        (str(key).strip().upper() if key else None, str(text).strip())
-                    )
+                    if isinstance(text, dict):
+                        items.append(
+                            (str(key).strip().upper() if key else None, text)
+                        )
+                    else:
+                        items.append(
+                            (str(key).strip().upper() if key else None, str(text).strip())
+                        )
                 else:
                     items.append((None, str(item).strip()))
         else:
@@ -310,19 +376,38 @@ class QuestionNormalizer:
         from app.services.formula_normalizer import normalize_text_import_math, wrap_inline_math
 
         plain_math = bool(getattr(self, "_plain_math_options", False))
-        for key, text in items:
-            text = self.clean_text(text)
-            text = normalize_text_import_math(text, compact=plain_math) if plain_math else wrap_inline_math(text)
-            if not text:
-                continue
-            if not key or not re.fullmatch(r"[A-Z]", key):
-                while chr(65 + next_index) in used:
-                    next_index += 1
-                key = chr(65 + next_index)
-            if key in used:
-                continue
-            used.add(key)
-            normalized.append({"key": key, "text": text})
+        for key, value in items:
+            if isinstance(value, dict):
+                # Rich option — preserve structure, clean text inside
+                text_val = value.get("text", "")
+                cleaned_text = self.clean_text(text_val)
+                cleaned_text = normalize_text_import_math(cleaned_text, compact=plain_math) if plain_math else wrap_inline_math(cleaned_text)
+                if not cleaned_text:
+                    continue
+                if not key or not re.fullmatch(r"[A-Z]", key):
+                    while chr(65 + next_index) in used:
+                        next_index += 1
+                    key = chr(65 + next_index)
+                if key in used:
+                    continue
+                used.add(key)
+                entry: dict = {"key": key, "text": cleaned_text}
+                if value.get("segments"):
+                    entry["segments"] = value["segments"]
+                normalized.append(entry)
+            else:
+                text = self.clean_text(value)
+                text = normalize_text_import_math(text, compact=plain_math) if plain_math else wrap_inline_math(text)
+                if not text:
+                    continue
+                if not key or not re.fullmatch(r"[A-Z]", key):
+                    while chr(65 + next_index) in used:
+                        next_index += 1
+                    key = chr(65 + next_index)
+                if key in used:
+                    continue
+                used.add(key)
+                normalized.append({"key": key, "text": text})
         return sorted(normalized, key=lambda item: item["key"])
 
     def normalize_blank_option_groups(self, groups: Any) -> list[dict]:
@@ -418,6 +503,35 @@ class QuestionNormalizer:
             from app.features.question_normalizer import check_option_completeness as _check_opts
             _, opt_errors = _check_opts(question.get("question_type"), options)
             errors.extend(opt_errors)
+        if question.get("question_type") == "multi_blank_choice":
+            groups = question.get("blank_option_groups") or []
+            if not groups:
+                errors.append("missing_blank_option_groups")
+            elif len(groups) < 2:
+                errors.append("multi_blank_choice_requires_at_least_2_blanks")
+            if groups:
+                seen_ids = set()
+                for i, group in enumerate(groups):
+                    gid = str(group.get("id") or "").strip()
+                    if not gid:
+                        errors.append(f"blank_group_{i}_empty_id")
+                    elif gid in seen_ids:
+                        errors.append(f"blank_group_duplicate_id_{gid}")
+                    seen_ids.add(gid)
+                    opts = group.get("options") or []
+                    if len(opts) < 2:
+                        errors.append(f"blank_group_{gid}_less_than_2_options")
+                    seen_keys = set()
+                    for opt in opts:
+                        key = str(opt.get("key") or "").upper()
+                        if key in seen_keys:
+                            errors.append(f"blank_group_{gid}_duplicate_key_{key}")
+                        seen_keys.add(key)
+            # P2-7: Validate answer against blank_option_groups
+            from app.features.multi_blank_choice import validate_multi_blank_question
+            answer = question.get("answer")
+            _, answer_errors = validate_multi_blank_question(groups, answer)
+            errors.extend(answer_errors)
         if not question.get("subject"):
             errors.append("subject_empty")
         return {"is_valid": not errors, "errors": errors, "warnings": warnings}
@@ -478,12 +592,36 @@ class QuestionNormalizer:
         text = self.normalize_hash_text(answer)
         return text.upper() if text else ""
 
-    def build_question_hash(self, stem: Any, options: Any, answer: Any) -> str:
+    def normalize_hash_blank_groups(self, groups: list[dict]) -> str:
+        """Normalize blank_option_groups for hash computation."""
+        if not groups:
+            return ""
+        parts: list[str] = []
+        for group in groups:
+            gid = str(group.get("id") or "")
+            opts = group.get("options") or []
+            opt_parts = []
+            if isinstance(opts, list):
+                for opt in opts:
+                    if isinstance(opt, dict):
+                        key = str(opt.get("key") or "").upper()
+                        text = self.normalize_hash_text(opt.get("text") or "")
+                        if key and text:
+                            opt_parts.append(f"{key}={text}")
+            opt_str = "|".join(sorted(opt_parts))
+            parts.append(f"{gid}[{opt_str}]")
+        return "||".join(parts)
+
+    def build_question_hash(
+        self, stem: Any, options: Any, answer: Any,
+        blank_option_groups: list[dict] | None = None,
+    ) -> str:
         payload = "||".join(
             [
                 self.normalize_hash_text(stem),
                 self.normalize_hash_options(options),
                 self.normalize_hash_answer(answer),
+                self.normalize_hash_blank_groups(blank_option_groups or []),
             ]
         )
         return hashlib.md5(payload.encode("utf-8")).hexdigest() if payload else ""
@@ -496,9 +634,23 @@ class QuestionNormalizer:
         return difflib.SequenceMatcher(None, a, b).ratio() >= threshold
 
     def to_import_fields(self, question: dict) -> dict:
-        parsed_content = {"text": question["stem"]}
+        parsed_content: dict[str, Any] = {"text": question["stem"]}
         if question.get("blank_option_groups"):
             parsed_content["blank_option_groups"] = question["blank_option_groups"]
+        # Preserve segments and render_mode from upstream pipeline stages
+        segments = question.get("segments") or (question.get("parsed_content") or {}).get("segments")
+        render_mode = question.get("parsed_content", {}).get("render_mode") if isinstance(question.get("parsed_content"), dict) else None
+        if segments:
+            parsed_content["render_mode"] = render_mode or "segments"
+            parsed_content["segments"] = segments
+        # Preserve source_snapshot_url and full_page flag
+        if question.get("source_snapshot_url"):
+            parsed_content["source_snapshot_url"] = question["source_snapshot_url"]
+        if question.get("source_snapshot_full_page"):
+            parsed_content["source_snapshot_full_page"] = question["source_snapshot_full_page"]
+        # Preserve visual_regions if present
+        if question.get("visual_regions"):
+            parsed_content["visual_regions"] = question["visual_regions"]
         return {
             "subject": question["subject"] or None,
             "subject_id": question.get("subject_id"),
@@ -513,7 +665,7 @@ class QuestionNormalizer:
 
     def to_question_fields(self, question: dict) -> dict:
         fields = self.to_import_fields(question)
-        return {
+        result = {
             "subject_id": fields.get("subject_id"),
             "question_type": fields["question_type"],
             "content": fields["parsed_content"],
@@ -524,9 +676,27 @@ class QuestionNormalizer:
             "knowledge_points": fields["knowledge_points"],
             "difficulty": fields["difficulty"],
         }
+        # to_import_fields now preserves segments, so content already has them.
+        # If the original question dict has additional segment fields, ensure they survive.
+        q_segments = question.get("segments") or (question.get("parsed_content") or {}).get("segments")
+        if q_segments and not result["content"].get("segments"):
+            result["content"]["render_mode"] = "segments"
+            result["content"]["segments"] = q_segments
+        return result
 
     def options_to_dict(self, options: list[dict]) -> dict | None:
-        result = {item["key"]: item["text"] for item in options if item.get("text")}
+        result: dict[str, Any] = {}
+        for item in options:
+            key = item.get("key")
+            text = item.get("text")
+            if not key or not text:
+                continue
+            segments = item.get("segments")
+            if segments:
+                # Rich option: {"A": {"text": "...", "segments": [...]}}
+                result[key] = {"text": text, "segments": segments}
+            else:
+                result[key] = text
         return result or None
 
     def answer_to_db(self, answer: str | list[str]) -> str | None:
@@ -715,7 +885,7 @@ class QuestionNormalizer:
 normalizer = QuestionNormalizer()
 
 SUBJECT_VALUES = QuestionNormalizer.VALID_SUBJECTS
-TYPE_VALUES = QuestionNormalizer.CANONICAL_TYPES | {"choice", "fill", "subjective"}
+TYPE_VALUES = CANONICAL_TYPES
 
 
 # ============================================================
@@ -1160,8 +1330,8 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
             "blank_option_groups": blank_option_groups,
             "answer": answer,
             "explanation": analysis,
-            "question_type": "multi_blank_choice" if blank_option_groups else ("choice" if options else (
-                "true_false" if re.search(r"[（(]\s*判断题?\s*[）)]|^\s*判断题?[：:]", stem) else "fill"
+            "question_type": "multi_blank_choice" if blank_option_groups else (QT_SINGLE_CHOICE if options else (
+                QT_TRUE_FALSE if re.search(r"[（(]\s*判断题?\s*[）)]|^\s*判断题?[：:]", stem) else QT_FILL_BLANK
             )),
         })
 

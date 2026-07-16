@@ -1,0 +1,1202 @@
+{
+  "pipeline_id": "trial_20260715_001639",
+  "status": "completed",
+  "batch_id": "REVIEW_20260714_161724_514dab",
+  "stats": {
+    "total": 10,
+    "extracted": 10,
+    "normalized": 10,
+    "analyzed": 10,
+    "split": 10,
+    "matched": 10,
+    "schema_normalized": 10,
+    "missing_options": 0,
+    "repaired": 0,
+    "to_review": 10,
+    "failed": 0
+  },
+  "diagnostics": {
+    "import_mode": "book",
+    "exercise_regions": [],
+    "exercise_regions_missing": false,
+    "structure": {
+      "question_pages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "answer_pages": [],
+      "explanation_pages": [],
+      "content_pages": [],
+      "section_markers": [],
+      "mode": "UNKNOWN",
+      "confidence": 0.4,
+      "details": {
+        "total_blocks": 10,
+        "matched_patterns": {
+          "question_header": 21,
+          "answer_keyword": 0,
+          "analysis_keyword": 0
+        },
+        "diagnostic_reason": "questions_without_answer_keywords",
+        "question_density": 2.1,
+        "answer_density": 0.0,
+        "analysis_density": 0.0,
+        "ocr_noise_signals": 0,
+        "has_question_blocks": true,
+        "has_answer_blocks": false,
+        "has_explanation_blocks": false
+      }
+    },
+    "page_classifications": [
+      {
+        "page": 1,
+        "label": "QUESTION_PAGE",
+        "confidence": 1.0,
+        "signals": {
+          "question_numbers": 3,
+          "option_markers": 4,
+          "fill_blanks": 1,
+          "answer_keywords": 0,
+          "numbered_answers": 0,
+          "analysis_keywords": 0,
+          "is_catalog": false,
+          "knowledge_signals": 2,
+          "text_length": 108
+        }
+      },
+      {
+        "page": 2,
+        "label": "QUESTION_PAGE",
+        "confidence": 1.0,
+        "signals": {
+          "question_numbers": 2,
+          "option_markers": 4,
+          "fill_blanks": 0,
+          "answer_keywords": 0,
+          "numbered_answers": 0,
+          "analysis_keywords": 0,
+          "is_catalog": false,
+          "knowledge_signals": 1,
+          "text_length": 85
+        }
+      },
+      {
+        "page": 3,
+        "label": "QUESTION_PAGE",
+        "confidence": 1.0,
+        "signals": {
+          "question_numbers": 2,
+          "option_markers": 4,
+          "fill_blanks": 1,
+          "answer_keywords": 0,
+          "numbered_answers": 0,
+          "analysis_keywords": 0,
+          "is_catalog": false,
+          "knowledge_signals": 1,
+          "text_length": 119
+        }
+      },
+      {
+        "page": 4,
+        "label": "QUESTION_PAGE",
+        "confidence": 1.0,
+        "signals": {
+          "question_numbers": 2,
+          "option_markers": 4,
+          "fill_blanks": 1,
+          "answer_keywords": 0,
+          "numbered_answers": 0,
+          "analysis_keywords": 0,
+          "is_catalog": false,
+          "knowledge_signals": 1,
+          "text_length": 118
+        }
+      },
+      {
+        "page": 5,
+        "label": "QUESTION_PAGE",
+        "confidence": 1.0,
+        "signals": {
+          "question_numbers": 2,
+          "option_markers": 4,
+          "fill_blanks": 1,
+          "answer_keywords": 0,
+          "numbered_answers": 0,
+          "analysis_keywords": 0,
+          "is_catalog": false,
+          "knowledge_signals": 1,
+          "text_length": 95
+        }
+      },
+      {
+        "page": 6,
+        "label": "QUESTION_PAGE",
+        "confidence": 1.0,
+        "signals": {
+          "question_numbers": 2,
+          "option_markers": 4,
+          "fill_blanks": 1,
+          "answer_keywords": 0,
+          "numbered_answers": 0,
+          "analysis_keywords": 0,
+          "is_catalog": false,
+          "knowledge_signals": 1,
+          "text_length": 143
+        }
+      },
+      {
+        "page": 7,
+        "label": "QUESTION_PAGE",
+        "confidence": 1.0,
+        "signals": {
+          "question_numbers": 2,
+          "option_markers": 4,
+          "fill_blanks": 1,
+          "answer_keywords": 0,
+          "numbered_answers": 0,
+          "analysis_keywords": 0,
+          "is_catalog": false,
+          "knowledge_signals": 1,
+          "text_length": 109
+        }
+      },
+      {
+        "page": 8,
+        "label": "QUESTION_PAGE",
+        "confidence": 1.0,
+        "signals": {
+          "question_numbers": 2,
+          "option_markers": 4,
+          "fill_blanks": 1,
+          "answer_keywords": 0,
+          "numbered_answers": 0,
+          "analysis_keywords": 0,
+          "is_catalog": false,
+          "knowledge_signals": 1,
+          "text_length": 116
+        }
+      },
+      {
+        "page": 9,
+        "label": "QUESTION_PAGE",
+        "confidence": 1.0,
+        "signals": {
+          "question_numbers": 2,
+          "option_markers": 4,
+          "fill_blanks": 1,
+          "answer_keywords": 0,
+          "numbered_answers": 0,
+          "analysis_keywords": 0,
+          "is_catalog": false,
+          "knowledge_signals": 1,
+          "text_length": 86
+        }
+      },
+      {
+        "page": 10,
+        "label": "QUESTION_PAGE",
+        "confidence": 1.0,
+        "signals": {
+          "question_numbers": 2,
+          "option_markers": 4,
+          "fill_blanks": 1,
+          "answer_keywords": 0,
+          "numbered_answers": 0,
+          "analysis_keywords": 0,
+          "is_catalog": false,
+          "knowledge_signals": 1,
+          "text_length": 92
+        }
+      }
+    ],
+    "ocr_boxes_failed_pages": [],
+    "ocr_text_fallback_pages": [],
+    "ocr_text_fallback_unavailable_pages": [],
+    "ocr_runtime_failed_pages": [],
+    "ocr_correction": {
+      "stats": {
+        "total_blocks": 10,
+        "noisy_blocks": 0,
+        "corrected_blocks": 0,
+        "skipped_blocks": 10,
+        "model_used": "none"
+      },
+      "corrections": [
+        {
+          "block_index": 0,
+          "page": 1,
+          "noise_score": 0.0,
+          "structure_score": 0.0,
+          "corrected": false
+        },
+        {
+          "block_index": 1,
+          "page": 2,
+          "noise_score": 0.15,
+          "structure_score": 0.0,
+          "corrected": false
+        },
+        {
+          "block_index": 2,
+          "page": 3,
+          "noise_score": 0.0,
+          "structure_score": 0.0,
+          "corrected": false
+        },
+        {
+          "block_index": 3,
+          "page": 4,
+          "noise_score": 0.0,
+          "structure_score": 0.0,
+          "corrected": false
+        },
+        {
+          "block_index": 4,
+          "page": 5,
+          "noise_score": 0.0,
+          "structure_score": 0.0,
+          "corrected": false
+        },
+        {
+          "block_index": 5,
+          "page": 6,
+          "noise_score": 0.0,
+          "structure_score": 0.0,
+          "corrected": false
+        },
+        {
+          "block_index": 6,
+          "page": 7,
+          "noise_score": 0.0,
+          "structure_score": 0.0,
+          "corrected": false
+        },
+        {
+          "block_index": 7,
+          "page": 8,
+          "noise_score": 0.0,
+          "structure_score": 0.0,
+          "corrected": false
+        },
+        {
+          "block_index": 8,
+          "page": 9,
+          "noise_score": 0.0,
+          "structure_score": 0.0,
+          "corrected": false
+        },
+        {
+          "block_index": 9,
+          "page": 10,
+          "noise_score": 0.0,
+          "structure_score": 0.0,
+          "corrected": false
+        }
+      ]
+    },
+    "split": {
+      "normalized_block_count": 10,
+      "text_block_count": 10,
+      "raw_question_count": 10,
+      "split_mode": "standard",
+      "book_prose_downgraded": 0,
+      "layout_filter": {
+        "enabled": true,
+        "pages_considered": 10,
+        "filtered_line_count": 4,
+        "kept_line_count": 70,
+        "region_signals": [
+          {
+            "page": 3,
+            "block_index": 2,
+            "line_index": 1,
+            "signal": "exercise_marker+question",
+            "preview": "3.下列选项中,()不是操作系统关心的问题。A.管理计算机裸机"
+          },
+          {
+            "page": 6,
+            "block_index": 5,
+            "line_index": 1,
+            "signal": "exercise_marker+question",
+            "preview": "6.下列关于并发性的叙述中，正确的是()。A.并发性是指若干事件在同一时刻发生"
+          },
+          {
+            "page": 7,
+            "block_index": 6,
+            "line_index": 1,
+            "signal": "exercise_marker+question",
+            "preview": "7.用户可以通过()两种方式来使用计算机。A.命令接口和函数"
+          },
+          {
+            "page": 10,
+            "block_index": 9,
+            "line_index": 1,
+            "signal": "exercise_marker+question",
+            "preview": "10.系统调用的目的是( )。A.请求系统服务"
+          }
+        ]
+      },
+      "raw_questions_preview": [
+        {
+          "number": 1,
+          "raw_question_text": "1.操作系统是对(\n)进行管理的软件。\nA.软件\nD.应用程序\nB.硬件\nC.计算机资源\n1.1操作系统的基本概念\n风中易小生24考研计算机WD操作系统做题本【选择题】\n)资源不是操作系统应该管理的。",
+          "_original_raw_text": "1.操作系统是对(\n)进行管理的软件。\nA.软件\nD.应用程序\nB.硬件\nC.计算机资源\n1.1操作系统的基本概念\n风中易小生24考研计算机WD操作系统做题本【选择题】\n)资源不是操作系统应该管理的。",
+          "page_start": 1,
+          "page_end": 2,
+          "has_options": true,
+          "option_lines": {
+            "A": "CPU",
+            "D": "源程序",
+            "B": "内存",
+            "C": "外存"
+          },
+          "blank_option_groups": [],
+          "has_grouped_options": false,
+          "is_frozen": true,
+          "confidence": 0.95,
+          "section_type": null,
+          "risk_flags": [],
+          "source_question_no": "1",
+          "source_question_label": "1."
+        },
+        {
+          "number": 2,
+          "raw_question_text": "2.下面的(\n1.1 操作系统的基本概念",
+          "_original_raw_text": "2.下面的(\nB.内存\nD.源程序\nC.外存\nA.CPU\n1.1 操作系统的基本概念",
+          "page_start": 2,
+          "page_end": 2,
+          "has_options": true,
+          "option_lines": {
+            "B": "内存",
+            "D": "源程序",
+            "C": "外存",
+            "A": "CPU"
+          },
+          "blank_option_groups": [],
+          "has_grouped_options": false,
+          "is_frozen": true,
+          "confidence": 0.85,
+          "section_type": null,
+          "risk_flags": [],
+          "source_question_no": "2",
+          "source_question_label": "2."
+        },
+        {
+          "number": 3,
+          "raw_question_text": "3.下列选项中,()不是操作系统关心的问题。\n1.1操作系统的基本概念\n风中易小生24考研计算机WD操作系统做题本【选择题】",
+          "_original_raw_text": "3.下列选项中,()不是操作系统关心的问题。\nA.管理计算机裸机\nB.设计、提供用户程序与硬件系统的界面\nC.管理计算机系统资源\nD.高级程序设计语言的编译器\n1.1操作系统的基本概念\n风中易小生24考研计算机WD操作系统做题本【选择题】",
+          "page_start": 2,
+          "page_end": 3,
+          "has_options": true,
+          "option_lines": {
+            "B": "设计、提供用户程序与硬件系统的界面",
+            "D": "高级程序设计语言的编译器",
+            "C": "管理计算机系统资源",
+            "A": "管理计算机裸机"
+          },
+          "blank_option_groups": [],
+          "has_grouped_options": false,
+          "is_frozen": true,
+          "confidence": 0.95,
+          "section_type": null,
+          "risk_flags": [],
+          "source_question_no": "3",
+          "source_question_label": "3."
+        },
+        {
+          "number": 4,
+          "raw_question_text": "4.操作系统的基本功能是()。\n1.1 操作系统的基本概念\n风中易小生24考研计算机WD操作系统做题本【选择题】",
+          "_original_raw_text": "4.操作系统的基本功能是()。\nA.提供功能强大的网络管理工具\nC.提供方便的可视化编辑程序\nB.提供用户界面方便用户使用\nD.控制和管理系统内的各种资源\n1.1 操作系统的基本概念\n风中易小生24考研计算机WD操作系统做题本【选择题】",
+          "page_start": 3,
+          "page_end": 4,
+          "has_options": true,
+          "option_lines": {
+            "A": "提供功能强大的网络管理工具",
+            "B": "提供用户界面方便用户使用",
+            "C": "提供方便的可视化编辑程序",
+            "D": "控制和管理系统内的各种资源"
+          },
+          "blank_option_groups": [],
+          "has_grouped_options": false,
+          "is_frozen": true,
+          "confidence": 0.95,
+          "section_type": null,
+          "risk_flags": [],
+          "source_question_no": "4",
+          "source_question_label": "4."
+        },
+        {
+          "number": 5,
+          "raw_question_text": "5.现代操作系统中最基本的两个特征是()。\n1.1操作系统的基本概念",
+          "_original_raw_text": "5.现代操作系统中最基本的两个特征是()。\nA.并发和不确定\nB.并发和共享\nC.共享和虚拟\nD.虚拟和不确定\n1.1操作系统的基本概念",
+          "page_start": 4,
+          "page_end": 5,
+          "has_options": true,
+          "option_lines": {
+            "A": "并发和不确定",
+            "C": "共享和虚拟",
+            "B": "并发和共享",
+            "D": "虚拟和不确定"
+          },
+          "blank_option_groups": [],
+          "has_grouped_options": false,
+          "is_frozen": true,
+          "confidence": 0.85,
+          "section_type": null,
+          "risk_flags": [],
+          "source_question_no": "5",
+          "source_question_label": "5."
+        },
+        {
+          "number": 6,
+          "raw_question_text": "6.下列关于并发性的叙述中，正确的是()。\n1.1操作系统的基本概念",
+          "_original_raw_text": "6.下列关于并发性的叙述中，正确的是()。\nA.并发性是指若干事件在同一时刻发生\nB.并发性是指若干事件在不同时刻发生\nC.并发性是指若干事件在同一时间间隔内发生\nD.并发性是指若干事件在不同时间间隔内发生\n1.1操作系统的基本概念",
+          "page_start": 5,
+          "page_end": 6,
+          "has_options": true,
+          "option_lines": {
+            "A": "并发性是指若干事件在同一时刻发生",
+            "B": "并发性是指若干事件在不同时刻发生",
+            "C": "并发性是指若干事件在同一时间间隔内发生",
+            "D": "并发性是指若干事件在不同时间间隔内发生"
+          },
+          "blank_option_groups": [],
+          "has_grouped_options": false,
+          "is_frozen": true,
+          "confidence": 0.85,
+          "section_type": null,
+          "risk_flags": [],
+          "source_question_no": "6",
+          "source_question_label": "6."
+        },
+        {
+          "number": 7,
+          "raw_question_text": "7.用户可以通过()两种方式来使用计算机。\n1.1操作系统的基本概念\n风中易小生24考研计算机WD操作系统做题本【选择题】",
+          "_original_raw_text": "7.用户可以通过()两种方式来使用计算机。\nA.命令接口和函数\nB.命令接口和系统调用\nD.设备管理方式和系统调用\nC.命令接口和文件管理\n1.1操作系统的基本概念\n风中易小生24考研计算机WD操作系统做题本【选择题】",
+          "page_start": 6,
+          "page_end": 7,
+          "has_options": true,
+          "option_lines": {
+            "A": "命令接口和函数",
+            "B": "命令接口和系统调用",
+            "C": "命令接口和文件管理",
+            "D": "设备管理方式和系统调用"
+          },
+          "blank_option_groups": [],
+          "has_grouped_options": false,
+          "is_frozen": true,
+          "confidence": 0.95,
+          "section_type": null,
+          "risk_flags": [],
+          "source_question_no": "7",
+          "source_question_label": "7."
+        },
+        {
+          "number": 8,
+          "raw_question_text": "8.系统调用是由操作系统提供给用户的，它()。\n1.1操作系统的基本概念\n风中易小生24考研计算机WD操作系统做题本【选择题】",
+          "_original_raw_text": "8.系统调用是由操作系统提供给用户的，它()。\nA.直接通过键盘交互方式使用\nB.只能通过用户程序间接使用\nC.是命令接口中的命令\nD.与系统的命令一样\n1.1操作系统的基本概念\n风中易小生24考研计算机WD操作系统做题本【选择题】",
+          "page_start": 7,
+          "page_end": 8,
+          "has_options": true,
+          "option_lines": {
+            "A": "直接通过键盘交互方式使用",
+            "B": "只能通过用户程序间接使用",
+            "D": "与系统的命令一样",
+            "C": "是命令接口中的命令"
+          },
+          "blank_option_groups": [],
+          "has_grouped_options": false,
+          "is_frozen": true,
+          "confidence": 0.95,
+          "section_type": null,
+          "risk_flags": [],
+          "source_question_no": "8",
+          "source_question_label": "8."
+        },
+        {
+          "number": 9,
+          "raw_question_text": "9.操作系统提供给编程人员的接口是()。\n1.1操作系统的基本概念",
+          "_original_raw_text": "9.操作系统提供给编程人员的接口是()。\nA.库函数\nB.高级语言\nC.系统调用\nD.子程序\n1.1操作系统的基本概念",
+          "page_start": 8,
+          "page_end": 9,
+          "has_options": true,
+          "option_lines": {
+            "A": "库函数",
+            "B": "高级语言",
+            "C": "系统调用",
+            "D": "子程序"
+          },
+          "blank_option_groups": [],
+          "has_grouped_options": false,
+          "is_frozen": true,
+          "confidence": 0.85,
+          "section_type": null,
+          "risk_flags": [],
+          "source_question_no": "9",
+          "source_question_label": "9."
+        },
+        {
+          "number": 10,
+          "raw_question_text": "10.系统调用的目的是( )。\n1.1 操作系统的基本概念",
+          "_original_raw_text": "10.系统调用的目的是( )。\nA.请求系统服务\nB.中止系统服务\nC.申请系统资源\nD.释放系统资源\n1.1 操作系统的基本概念",
+          "page_start": 9,
+          "page_end": 10,
+          "has_options": true,
+          "option_lines": {
+            "A": "请求系统服务",
+            "B": "中止系统服务",
+            "C": "申请系统资源",
+            "D": "释放系统资源"
+          },
+          "blank_option_groups": [],
+          "has_grouped_options": false,
+          "is_frozen": true,
+          "confidence": 0.85,
+          "section_type": null,
+          "risk_flags": [],
+          "source_question_no": "10",
+          "source_question_label": "10."
+        }
+      ],
+      "failure_reason": null,
+      "fallback_created": false
+    },
+    "risk_flag_counts": {},
+    "batch_validation": {
+      "number_gaps": [],
+      "incomplete_options": [],
+      "missing_answers": [
+        {
+          "index": 0,
+          "question_type": "single_choice"
+        },
+        {
+          "index": 1,
+          "question_type": "single_choice"
+        },
+        {
+          "index": 2,
+          "question_type": "single_choice"
+        },
+        {
+          "index": 3,
+          "question_type": "single_choice"
+        },
+        {
+          "index": 4,
+          "question_type": "single_choice"
+        },
+        {
+          "index": 5,
+          "question_type": "single_choice"
+        },
+        {
+          "index": 6,
+          "question_type": "single_choice"
+        },
+        {
+          "index": 7,
+          "question_type": "single_choice"
+        },
+        {
+          "index": 8,
+          "question_type": "single_choice"
+        },
+        {
+          "index": 9,
+          "question_type": "single_choice"
+        }
+      ],
+      "roman_numeral_issues": [],
+      "roman_digit_confusions": [],
+      "roman_anomalies": [],
+      "stats": {
+        "total_checked": 10,
+        "number_gap_count": 0,
+        "incomplete_option_count": 0,
+        "missing_answer_count": 10,
+        "roman_numeral_issue_count": 0,
+        "roman_digit_confusion_count": 0
+      }
+    },
+    "schema_errors": [
+      {
+        "question_number": 1,
+        "errors": [
+          "missing_answer"
+        ]
+      },
+      {
+        "question_number": 2,
+        "errors": [
+          "missing_answer"
+        ]
+      },
+      {
+        "question_number": 3,
+        "errors": [
+          "missing_answer"
+        ]
+      },
+      {
+        "question_number": 4,
+        "errors": [
+          "missing_answer"
+        ]
+      },
+      {
+        "question_number": 5,
+        "errors": [
+          "missing_answer"
+        ]
+      },
+      {
+        "question_number": 6,
+        "errors": [
+          "missing_answer"
+        ]
+      },
+      {
+        "question_number": 7,
+        "errors": [
+          "missing_answer"
+        ]
+      },
+      {
+        "question_number": 8,
+        "errors": [
+          "missing_answer"
+        ]
+      },
+      {
+        "question_number": 9,
+        "errors": [
+          "missing_answer"
+        ]
+      },
+      {
+        "question_number": 10,
+        "errors": [
+          "missing_answer"
+        ]
+      }
+    ],
+    "ai_validation": {
+      "total": 10,
+      "valid": 9,
+      "warnings": 1,
+      "errors": 0
+    },
+    "similarity_match": {
+      "stats": {
+        "total_questions": 10,
+        "matched_count": 0,
+        "avg_similarity": 0.0,
+        "hash_hit_count": 0
+      },
+      "matches": [],
+      "skipped_reason": null
+    },
+    "stage_diffs": {
+      "ocr_correction": {
+        "total_corrected": 0,
+        "safety_rejected": 0,
+        "models_used": [],
+        "risk_flags": [],
+        "details": []
+      },
+      "code_language_noise": [],
+      "code_structure": [],
+      "ai_repair": [
+        {
+          "question_index": 0,
+          "actions": [],
+          "reason": "options_modified_by_ai"
+        },
+        {
+          "question_index": 1,
+          "actions": [],
+          "reason": "ai_failed"
+        },
+        {
+          "question_index": 2,
+          "actions": [],
+          "reason": "ai_failed"
+        },
+        {
+          "question_index": 3,
+          "actions": [],
+          "reason": "ai_failed"
+        },
+        {
+          "question_index": 4,
+          "actions": [],
+          "reason": "ai_failed"
+        },
+        {
+          "question_index": 5,
+          "actions": [],
+          "reason": "ai_failed"
+        },
+        {
+          "question_index": 6,
+          "actions": [],
+          "reason": "ai_failed"
+        },
+        {
+          "question_index": 7,
+          "actions": [],
+          "reason": "ai_failed"
+        },
+        {
+          "question_index": 8,
+          "actions": [],
+          "reason": "ai_failed"
+        },
+        {
+          "question_index": 9,
+          "actions": [],
+          "reason": "ai_failed"
+        }
+      ],
+      "ai_repair_stats": {
+        "repair_total": 10,
+        "repair_skipped": 0,
+        "repair_called": 0,
+        "skip_rate": 0.0,
+        "estimated_tokens_saved": 0,
+        "avg_tokens_per_repair": 0
+      }
+    },
+    "review_commit": {
+      "batch_size": 50,
+      "total_questions": 10,
+      "written": 10,
+      "duplicates_filtered": 0,
+      "pipeline_id": "trial_20260715_001639"
+    },
+    "token_usage": {
+      "daily": 5505,
+      "monthly": 5505
+    },
+    "split_quality": {
+      "split_quality_score": 0.97,
+      "option_recovery_rate": 1.0,
+      "order_accuracy": 1.0,
+      "question_count": 10,
+      "avg_confidence": 0.9,
+      "with_options_count": 10,
+      "confidence_distribution": {
+        "high": {
+          "count": 10,
+          "percentage": 100.0
+        },
+        "medium": {
+          "count": 0,
+          "percentage": 0.0
+        },
+        "low": {
+          "count": 0,
+          "percentage": 0.0
+        }
+      },
+      "split_mode": "standard"
+    },
+    "routing_metrics": {
+      "split_mode": "standard",
+      "layout_confidence": 0.91,
+      "option_detection_score": 1.0,
+      "option_detection_failed": false,
+      "question_count": 10,
+      "option_missing_count": 0,
+      "option_missing_rate": 0.0,
+      "avg_split_confidence": 0.9,
+      "split_quality_score": 0.97,
+      "vl_trigger_reason": null
+    },
+    "performance_profile": {
+      "extract": {
+        "duration_ms": 3230,
+        "output_count": 10
+      },
+      "normalize_text": {
+        "duration_ms": 20,
+        "input_count": 10,
+        "output_count": 10
+      },
+      "ocr_correction": {
+        "duration_ms": 7,
+        "input_count": 10,
+        "output_count": 10,
+        "cache_hit": 10,
+        "ai_calls": 10
+      },
+      "layout_reconstruction": {
+        "duration_ms": 4,
+        "input_count": 10,
+        "output_count": 1
+      },
+      "layout_router": {
+        "duration_ms": 1,
+        "input_count": 1,
+        "output_count": 1
+      },
+      "analyze_structure": {
+        "duration_ms": 1,
+        "input_count": 10,
+        "output_count": 1
+      },
+      "classify_pages": {
+        "duration_ms": 0,
+        "input_count": 10,
+        "output_count": 10
+      },
+      "structure_freeze": {
+        "duration_ms": 1
+      },
+      "split": {
+        "duration_ms": 14,
+        "input_count": 10,
+        "output_count": 10
+      },
+      "match": {
+        "duration_ms": 1,
+        "input_count": 10,
+        "output_count": 20
+      },
+      "normalize_schema": {
+        "duration_ms": 28,
+        "input_count": 10,
+        "output_count": 10
+      },
+      "code_language_noise_clean": {
+        "duration_ms": 1,
+        "input_count": 10,
+        "output_count": 10
+      },
+      "code_structure_reconstruct": {
+        "duration_ms": 1,
+        "input_count": 10,
+        "output_count": 10
+      },
+      "classify_questions": {
+        "duration_ms": 0
+      },
+      "batch_validation": {
+        "duration_ms": 1,
+        "input_count": 10,
+        "output_count": 1
+      },
+      "batch_dedup": {
+        "duration_ms": 0,
+        "input_count": 10,
+        "output_count": 10
+      },
+      "repair": {
+        "duration_ms": 40723,
+        "input_count": 10,
+        "output_count": 10
+      },
+      "ai_validation": {
+        "duration_ms": 2,
+        "input_count": 10,
+        "output_count": 1
+      },
+      "similarity_match": {
+        "duration_ms": 0
+      },
+      "math_detect": {
+        "duration_ms": 0,
+        "input_count": 10,
+        "output_count": 10
+      },
+      "table_detect": {
+        "duration_ms": 0,
+        "input_count": 10,
+        "output_count": 10
+      },
+      "review": {
+        "duration_ms": 30,
+        "input_count": 10,
+        "output_count": 10
+      },
+      "_summary": {
+        "total_duration_ms": 44065,
+        "total_ai_calls": 10,
+        "total_tokens_used": 0,
+        "total_cache_hits": 10,
+        "total_cache_misses": 0,
+        "cache_hit_rate": 1.0,
+        "slowest_stage": "repair",
+        "slowest_duration_ms": 40723
+      }
+    }
+  },
+  "quality_report": {
+    "total_questions": 10,
+    "low_risk": 10,
+    "ocr_cache_hit": 10,
+    "estimated_manual_check_rate": 0.0,
+    "performance_summary": {
+      "total_duration_ms": 44065,
+      "total_ai_calls": 10,
+      "total_tokens_used": 0,
+      "total_cache_hits": 10,
+      "total_cache_misses": 0,
+      "cache_hit_rate": 1.0,
+      "slowest_stage": "repair",
+      "slowest_duration_ms": 40723
+    },
+    "routing_metrics": {
+      "split_mode": "standard",
+      "layout_confidence": 0.91,
+      "option_detection_score": 1.0,
+      "option_detection_failed": false,
+      "question_count": 10,
+      "option_missing_count": 0,
+      "option_missing_rate": 0.0,
+      "avg_split_confidence": 0.9,
+      "split_quality_score": 0.97,
+      "vl_trigger_reason": null
+    },
+    "split_quality_evaluation": {
+      "split_quality_score": 0.97,
+      "option_recovery_rate": 1.0,
+      "order_accuracy": 1.0,
+      "question_count": 10,
+      "avg_confidence": 0.9,
+      "with_options_count": 10,
+      "confidence_distribution": {
+        "high": {
+          "count": 10,
+          "percentage": 100.0
+        },
+        "medium": {
+          "count": 0,
+          "percentage": 0.0
+        },
+        "low": {
+          "count": 0,
+          "percentage": 0.0
+        }
+      },
+      "split_mode": "standard"
+    }
+  },
+  "artifacts": [
+    "split",
+    "normalize_schema",
+    "math_detect",
+    "table_detect",
+    "repair",
+    "review"
+  ],
+  "stages": {
+    "extract": {
+      "name": "extract",
+      "status": "completed",
+      "duration_ms": 3230,
+      "warnings": [],
+      "output_count": 10
+    },
+    "normalize_text": {
+      "name": "normalize_text",
+      "status": "completed",
+      "duration_ms": 20,
+      "warnings": [],
+      "input_count": 10,
+      "output_count": 10
+    },
+    "ocr_correction": {
+      "name": "ocr_correction",
+      "status": "completed",
+      "duration_ms": 7,
+      "warnings": [],
+      "input_count": 10,
+      "output_count": 10,
+      "cache_hit": 10,
+      "ai_calls": 10
+    },
+    "layout_reconstruction": {
+      "name": "layout_reconstruction",
+      "status": "completed",
+      "duration_ms": 4,
+      "warnings": [
+        "page 1: 2 columns detected",
+        "page 2: 2 columns detected",
+        "page 3: 2 columns detected",
+        "page 4: 2 columns detected",
+        "page 5: 2 columns detected",
+        "page 6: 2 columns detected",
+        "page 7: 2 columns detected",
+        "page 8: 2 columns detected",
+        "page 9: 2 columns detected",
+        "page 10: 2 columns detected"
+      ],
+      "input_count": 10,
+      "output_count": 1
+    },
+    "layout_router": {
+      "name": "layout_router",
+      "status": "completed",
+      "duration_ms": 1,
+      "warnings": [],
+      "input_count": 1,
+      "output_count": 1
+    },
+    "analyze_structure": {
+      "name": "analyze_structure",
+      "status": "completed",
+      "duration_ms": 1,
+      "warnings": [
+        "auto-detected import_mode: book"
+      ],
+      "input_count": 10,
+      "output_count": 1
+    },
+    "classify_pages": {
+      "name": "classify_pages",
+      "status": "completed",
+      "duration_ms": 0,
+      "warnings": [],
+      "input_count": 10,
+      "output_count": 10
+    },
+    "structure_freeze": {
+      "name": "structure_freeze",
+      "status": "completed",
+      "duration_ms": 1,
+      "warnings": []
+    },
+    "split": {
+      "name": "split",
+      "status": "completed",
+      "duration_ms": 14,
+      "warnings": [],
+      "input_count": 10,
+      "output_count": 10
+    },
+    "match": {
+      "name": "match",
+      "status": "completed",
+      "duration_ms": 1,
+      "warnings": [
+        "10 questions have no matched answer"
+      ],
+      "input_count": 10,
+      "output_count": 20
+    },
+    "normalize_schema": {
+      "name": "normalize_schema",
+      "status": "completed",
+      "duration_ms": 28,
+      "warnings": [],
+      "input_count": 10,
+      "output_count": 10
+    },
+    "code_language_noise_clean": {
+      "name": "code_language_noise_clean",
+      "status": "completed",
+      "duration_ms": 1,
+      "warnings": [],
+      "input_count": 10,
+      "output_count": 10
+    },
+    "code_structure_reconstruct": {
+      "name": "code_structure_reconstruct",
+      "status": "completed",
+      "duration_ms": 1,
+      "warnings": [],
+      "input_count": 10,
+      "output_count": 10
+    },
+    "classify_questions": {
+      "name": "classify_questions",
+      "status": "completed",
+      "duration_ms": 0,
+      "warnings": []
+    },
+    "batch_validation": {
+      "name": "batch_validation",
+      "status": "completed",
+      "duration_ms": 1,
+      "warnings": [
+        "10 questions missing answers"
+      ],
+      "input_count": 10,
+      "output_count": 1
+    },
+    "batch_dedup": {
+      "name": "batch_dedup",
+      "status": "completed",
+      "duration_ms": 0,
+      "warnings": [],
+      "input_count": 10,
+      "output_count": 10
+    },
+    "repair": {
+      "name": "repair",
+      "status": "completed",
+      "duration_ms": 40723,
+      "warnings": [
+        "10 questions unrepaired by AI"
+      ],
+      "input_count": 10,
+      "output_count": 10
+    },
+    "ai_validation": {
+      "name": "ai_validation",
+      "status": "completed",
+      "duration_ms": 2,
+      "warnings": [
+        "1 questions have AI validation warnings"
+      ],
+      "input_count": 10,
+      "output_count": 1
+    },
+    "similarity_match": {
+      "name": "similarity_match",
+      "status": "completed",
+      "duration_ms": 0,
+      "warnings": []
+    },
+    "math_detect": {
+      "name": "math_detect",
+      "status": "completed",
+      "duration_ms": 0,
+      "warnings": [
+        "math_detect: 10 code/408 questions excluded"
+      ],
+      "input_count": 10,
+      "output_count": 10
+    },
+    "table_detect": {
+      "name": "table_detect",
+      "status": "completed",
+      "duration_ms": 0,
+      "warnings": [],
+      "input_count": 10,
+      "output_count": 10
+    },
+    "review": {
+      "name": "review",
+      "status": "completed",
+      "duration_ms": 30,
+      "warnings": [],
+      "input_count": 10,
+      "output_count": 10
+    }
+  },
+  "errors": [],
+  "started_at": "2026-07-15T00:16:39.365297",
+  "finished_at": "2026-07-15T00:17:24.383153",
+  "review_new_hashes": []
+}

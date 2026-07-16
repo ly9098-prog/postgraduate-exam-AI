@@ -12,6 +12,7 @@ Create Date: 2026-07-14
 """
 
 from alembic import op
+from sqlalchemy import inspect
 
 revision = "v9_formula_approved_to_published_migration"
 down_revision = "v8_wrong_question_soft_delete"
@@ -20,6 +21,12 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # formula_cards table may not exist yet on a fresh DB
+    # (it's created in 6c11177c2437 on a sibling branch + merge).
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if "formula_cards" not in inspector.get_table_names():
+        return
     op.execute("""
         UPDATE formula_cards
         SET

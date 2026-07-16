@@ -546,10 +546,13 @@ async def start_batch_generate(
         "started_at": datetime.now(timezone.utc).isoformat(),
         "finished_at": None,
     }
+    card_ids = [c.id for c in cards]
     _batch_jobs[job_id] = job
 
-    # Launch background processing
-    asyncio.create_task(_process_batch(job_id, cards, admin_id))
+    # Launch background processing via durable queue
+    from app.services.task_queue_worker import enqueue_formula_batch
+
+    await enqueue_formula_batch(job_id, card_ids, admin_id)
 
     return job_id
 

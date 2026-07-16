@@ -24,8 +24,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from sqlalchemy import select  # noqa: E402
+from sqlalchemy.orm import joinedload  # noqa: E402
 
 from app.core.database import async_session  # noqa: E402
+from app.models.admin import Subject  # noqa: E402
 from app.models.question import Question  # noqa: E402
 from app.models.tag import Tag  # noqa: E402
 
@@ -33,10 +35,16 @@ LAST_SYNC_FILE = ROOT / ".last_sync"
 
 
 def _serialize_question(q: Question) -> dict:
+    subject_code = None
+    if q.subject_ref:
+        subject_code = q.subject_ref.code
+    elif q.subject_id:
+        subject_code = str(q.subject_id)
     return {
         "sync_uuid": q.sync_uuid,
         "sync_version": q.sync_version,
-        "subject": q.subject,
+        "subject": subject_code,
+        "subject_id": q.subject_id,
         "question_type": q.question_type,
         "content": q.content,
         "options": q.options,
@@ -72,7 +80,7 @@ def _serialize_tag(t: Tag) -> dict:
 
 async def export_package(since: datetime | None = None) -> dict:
     async with async_session() as db:
-        q_query = select(Question).where(Question.sync_uuid.isnot(None))
+        q_query = select(Question).options(joinedload(Question.subject_ref)).where(Question.sync_uuid.isnot(None))
         if since:
             q_query = q_query.where(Question.updated_at > since)
         questions = (await db.execute(q_query)).scalars().all()

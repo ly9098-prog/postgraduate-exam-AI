@@ -17,6 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.admin_security import AdminPrincipal
 from app.core.cache import cache
 from app.core.time_utils import utcnow
+from app.features.question_type import (
+    CANONICAL_TYPES,
+    QT_SINGLE_CHOICE,
+    QT_MULTIPLE_CHOICE,
+    QT_TRUE_FALSE,
+    normalize_question_type,
+)
 from app.models.question_import import QuestionImport
 from app.services.admin_audit_service import write_admin_audit
 
@@ -51,7 +58,7 @@ _TRUE_VALUES = frozenset({"T", "TRUE", "正确", "对", "√", "1"})
 _FALSE_VALUES = frozenset({"F", "FALSE", "错误", "错", "×", "0"})
 
 # ── 支持批量答案补录的题型 ──
-_SUPPORTED_TYPES = frozenset({"single_choice", "multi_choice", "multiple_choice", "true_false", "judge", "judgement"})
+_SUPPORTED_TYPES = frozenset({"single_choice", "multiple_choice", "true_false"})
 
 # ── Token 缓存前缀与过期时间 ──
 _PREVIEW_TOKEN_PREFIX = "batch_answer:preview:"
@@ -187,10 +194,13 @@ def normalize_single_answer(answer: str, question_type: str | None, parsed_optio
     if not normalized:
         return None, ["答案为空"]
 
-    qt = (question_type or "").lower()
+    # 先规范化题型（兼容别名）
+    qt, _warnings = normalize_question_type(question_type)
+    if qt is None:
+        return None, [f"不支持的题型: {question_type}"]
 
     # ── 判断题 ──
-    if qt in {"true_false", "judge", "judgement"}:
+    if qt == QT_TRUE_FALSE:
         if normalized in _TRUE_VALUES:
             return "T", []
         if normalized in _FALSE_VALUES:
@@ -199,11 +209,11 @@ def normalize_single_answer(answer: str, question_type: str | None, parsed_optio
         return None, errors
 
     # ── 单选题 ──
-    if qt == "single_choice":
+    if qt == QT_SINGLE_CHOICE:
         return _normalize_single_choice(normalized, parsed_options, errors)
 
     # ── 多选题 ──
-    if qt in {"multi_choice", "multiple_choice"}:
+    if qt == QT_MULTIPLE_CHOICE:
         return _normalize_multi_choice(normalized, parsed_options, errors)
 
     # ── 不支持题型 ──

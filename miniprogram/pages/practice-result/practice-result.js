@@ -86,6 +86,87 @@ function buildDetailRichText(value) {
   return { raw, renderType: 'text', text: formatInlineMathText(raw), html: '' }
 }
 
+/**
+ * Build per-blank result view model for multi_blank_choice questions.
+ *
+ * @param {string} userAnswer - User's answer string (canonical "①:B;②:D" or other format)
+ * @param {string} correctAnswer - Correct answer string
+ * @param {Array} blankOptionGroups - blank_option_groups from question content
+ * @returns {Object|null} view model with blankResults, correctBlankCount, totalBlankCount, or null
+ */
+function buildBlankResultsViewModel(userAnswer, correctAnswer, blankOptionGroups) {
+  if (!blankOptionGroups || !Array.isArray(blankOptionGroups) || blankOptionGroups.length < 2) {
+    return null
+  }
+
+  // Parse user and correct answers into slot→value maps
+  var userMap = normalizeBlankAnswer(userAnswer)
+  var correctMap = normalizeBlankAnswer(correctAnswer)
+
+  if (Object.keys(correctMap).length === 0) return null
+
+  var blankResults = []
+  var correctBlankCount = 0
+
+  blankOptionGroups.forEach(function (group) {
+    var groupId = String((group && group.id) || '').trim()
+    var options = (group && group.options) || []
+
+    var userKey = userMap[groupId] || ''
+    var correctKey = correctMap[groupId] || ''
+    var isAnswered = !!userKey
+    var isCorrect = isAnswered && userKey.toUpperCase() === correctKey.toUpperCase()
+
+    // Find option text for user and correct keys
+    var userText = ''
+    var correctText = ''
+    options.forEach(function (opt) {
+      var key = String((opt && opt.key) || '').trim().toUpperCase()
+      var text = String((opt && opt.text) || '').trim()
+      if (key === userKey.toUpperCase()) userText = text
+      if (key === correctKey.toUpperCase()) correctText = text
+    })
+
+    if (isCorrect) correctBlankCount++
+
+    blankResults.push({
+      id: groupId,
+      userKey: userKey,
+      userText: userText,
+      correctKey: correctKey,
+      correctText: correctText,
+      isCorrect: isCorrect,
+      isAnswered: isAnswered,
+    })
+  })
+
+  return {
+    blankResults: blankResults,
+    correctBlankCount: correctBlankCount,
+    totalBlankCount: blankOptionGroups.length,
+  }
+}
+
+function normalizeBlankAnswer(answer) {
+  if (!answer) return {}
+  if (typeof answer === 'object') return answer
+  var result = {}
+  String(answer).split(/[;；,，、\n]+/).forEach(function(part) {
+    var m = part.trim().match(/^(.+?)\s*[:：=]\s*([A-Za-z])$/)
+    if (m) result[m[1].trim()] = m[2].trim().toUpperCase()
+  })
+  if (Object.keys(result).length > 0) return result
+  // Fallback: circled digits with letters
+  var circledPairs = String(answer).match(/[①-⑳]\s*[A-Za-z]/g)
+  if (circledPairs) {
+    circledPairs.forEach(function(pair) {
+      var m = pair.match(/^([①-⑳])\s*([A-Za-z])$/)
+      if (m) result[m[1]] = m[2].toUpperCase()
+    })
+  }
+  return result
+}
+
 Page({
   data: {
     detailHtmlContainerStyle: 'max-width:100%;overflow-x:hidden;word-break:break-word;overflow-wrap:anywhere;white-space:normal;line-height:1.65;color:#18231C;',
@@ -198,6 +279,17 @@ Page({
           const correctAnswerRich = buildDetailRichText(r.correct_answer || '')
           const wrongRecordId = r.wrong_question_id || r.wrong_id || r.wrong_question_record_id || r.error_record_id || ''
 
+          // Detect multi_blank_choice and build per-blank view model
+          var blankOptionGroups = null
+          if (q.content && Array.isArray(q.content.blank_option_groups)) {
+            blankOptionGroups = q.content.blank_option_groups
+          } else if (q.question_type === 'multi_blank_choice' && Array.isArray(q.blank_option_groups)) {
+            blankOptionGroups = q.blank_option_groups
+          }
+          var blankViewModel = blankOptionGroups
+            ? buildBlankResultsViewModel(r.user_answer || '', r.correct_answer || '', blankOptionGroups)
+            : null
+
           return {
             ...r,
             _displayIndex: index + 1,
@@ -215,6 +307,8 @@ Page({
             _isSkipped: isSkipped,
             _isCorrect: isCorrect,
             _wrongRecordId: wrongRecordId,
+            _isMultiBlank: !!blankViewModel,
+            _blankViewModel: blankViewModel,
           }
         })
       }

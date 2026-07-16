@@ -28,6 +28,12 @@ _EXPLICIT_ANSWER_PATTERNS: list[tuple[re.Pattern, str | None]] = [
     (re.compile(r"(?:^|\s)(?:Answer|KEY)\s*[:：]\s*([A-Da-d])\s*(?:\n|$)", re.IGNORECASE), None),
     # 【答案】A
     (re.compile(r"(?:^|\s)【(?:参考|正确)?答案】\s*([A-Da-d])\s*(?:\n|$)"), None),
+    # ①B、②D — 多空选择题答案
+    (re.compile(
+        r"(?:^|\s)(?:参考|正确)?答案\s*[:：]\s*"
+        r"([①-⑳]\s*[A-Da-d](?:[、，,，\s]+[①-⑳]\s*[A-Da-d])+)"
+        r"\s*(?:\n|$)"
+    ), None),
 ]
 
 
@@ -58,6 +64,18 @@ def extract_explicit_answer(raw_text: str) -> ExplicitAnswerResult:
         m = pat.search(raw_text)
         if m:
             raw_answer = m.group(1).strip()
+            # Multi-blank answer: contains circled digits (①B、②D) — preserve slot info
+            # Emit in "①B、②D" format which parse_multi_blank_answer() handles
+            if re.search(r"[①-⑳]", raw_answer):
+                cleaned = re.sub(r"\s+", "", raw_answer).upper()
+                if re.match(r"^[①-⑳][A-D](?:[、，][①-⑳][A-D])*[、，]?$", cleaned):
+                    pattern_desc = pat.pattern[:60]
+                    return ExplicitAnswerResult(
+                        answer=cleaned,
+                        source_span=(m.start(), m.end()),
+                        pattern=pattern_desc,
+                        confidence=0.95,
+                    )
             # Normalize: remove punctuation separators, uppercase
             cleaned = raw_answer.replace("、", ",").replace("，", ",").replace(" ", "")
             cleaned = cleaned.upper()

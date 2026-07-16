@@ -45,7 +45,7 @@ class TestJsonSchema:
     ]
 
     def test_total_cards(self, all_cards):
-        assert len(all_cards) == 22, f"Expected 22 cards, got {len(all_cards)}"
+        assert len(all_cards) == 23, f"Expected 23 cards, got {len(all_cards)}"
 
     def test_required_fields(self, all_cards):
         missing = []
@@ -168,9 +168,9 @@ class TestLatexSafety:
                     has_commands += 1
                     break
 
-        # All 22 cards * at least 1 block each should have LaTeX commands
+        # All 23 cards * at least 1 block each should have LaTeX commands
         total_blocks = len(latex_strings)
-        assert has_commands >= 22, \
+        assert has_commands >= 23, \
             f"Only {has_commands}/{total_blocks} blocks contain expected LaTeX commands"
 
 

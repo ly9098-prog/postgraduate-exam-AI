@@ -211,19 +211,19 @@ SLOW_QUERY_MS=500            # 慢查询阈值（毫秒）
 
 ### pip 国内镜像源
 
-Dockerfile 中 `pip install` 使用清华源加速：
+Dockerfile 中 `pip install` 当前使用阿里云镜像加速：
 
 ```dockerfile
 RUN pip install --no-cache-dir --user \
-    -i https://pypi.tuna.tsinghua.edu.cn/simple \
-    --trusted-host pypi.tuna.tsinghua.edu.cn \
+    -i https://mirrors.aliyun.com/pypi/simple/ \
+    --trusted-host mirrors.aliyun.com \
     -r requirements.txt
 ```
 
-服务器带宽有限（~20KB/s），不使用国内源时 PaddlePaddle（194MB）等大包下载需要数小时。清华源可将 build 时间从数小时缩短至 2-3 分钟。
+服务器带宽有限（~20KB/s），不使用国内源时 PaddlePaddle（194MB）等大包下载需要数小时。阿里云源可将 build 时间从数小时缩短至 2-3 分钟。
 
-如清华源不可用，备选：
-- 阿里云：`https://mirrors.aliyun.com/pypi/simple/`
+如阿里云不可用，备选：
+- 清华：`https://pypi.tuna.tsinghua.edu.cn/simple/`
 - 中科大：`https://pypi.mirrors.ustc.edu.cn/simple/`
 
 ### Docker layer cache 保留

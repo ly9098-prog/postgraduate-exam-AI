@@ -29,6 +29,10 @@ class TestServiceOcrImageDependencyHandling:
             ocr_service,
             "_ocr_instance",
             None,
+        ), patch.object(ocr_service, "_ocr_init_error", None), patch.object(
+            ocr_service,
+            "_ocr_initialized",
+            False,
         ), patch.dict(sys.modules, {"paddleocr": None}):
             with pytest.raises(RuntimeError, match="OCR 依赖未安装：paddleocr"):
                 ocr_service.ocr_image(b"fake image")
@@ -41,7 +45,7 @@ class TestServiceOcrImageDependencyHandling:
             ocr_service,
             "_ocr_instance",
             None,
-        ), patch.dict(sys.modules, {"paddleocr": None}):
+        ), patch.object(ocr_service, "_ocr_init_error", None), patch.dict(sys.modules, {"paddleocr": None}):
             result = ocr_service.ocr_pages_with_boxes([(1, b"fake image")])
             assert result[1].text == ""
             assert result[1].boxes == []
@@ -178,7 +182,8 @@ class TestOcrRotationAndOrdering:
     def test_ocr_pages_converts_page_exception_to_empty_text(self):
         from app.services import ocr_service
 
-        with patch.object(ocr_service, "_ocr_one_page", side_effect=RuntimeError("could not execute a primitive")):
+        with patch.object(ocr_service, "_ocr_init_error", None), \
+             patch.object(ocr_service, "_ocr_one_page", side_effect=RuntimeError("could not execute a primitive")):
             result = ocr_service.ocr_pages([(247, b"png")])
 
         assert result == {247: ""}

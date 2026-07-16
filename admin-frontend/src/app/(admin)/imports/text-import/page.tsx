@@ -14,7 +14,9 @@ import {
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
+import { CustomSelect } from "@/components/ui/custom-select";
 import { apiRequest } from "@/lib/api/client";
+import { getQuestionTypeLabel, QUESTION_TYPE_OPTIONS, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
 
 type ParsedOption = { key: string; text: string };
 
@@ -68,15 +70,7 @@ function renderAnswer(answer: string | string[] | boolean | null) {
 }
 
 function typeLabel(t: string | null) {
-  const map: Record<string, string> = {
-    single_choice: "单选题",
-    multiple_choice: "多选题",
-    true_false: "判断题",
-    fill_blank: "填空题",
-    multi_blank_choice: "多空选择",
-    subjective: "问答题",
-  };
-  return map[t ?? ""] ?? t ?? "未知";
+  return getQuestionTypeLabel(t);
 }
 
 export default function TextImportPage() {
@@ -456,10 +450,19 @@ C
                               ))}
                             </select>
                           </label>
-                          <label className="block space-y-1">
+                          <div className="block space-y-1">
                             <span className="text-xs font-semibold text-[var(--color-text-secondary)]">题型</span>
-                            <input className="h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)]" value={editForm.question_type ?? ""} onChange={(e) => setEditForm({ ...editForm, question_type: e.target.value || null })} />
-                          </label>
+                            <CustomSelect
+                              value={editForm.question_type ?? ""}
+                              onChange={(v) => setEditForm({ ...editForm, question_type: v || null })}
+                              options={canonicalizeQuestionType(editForm.question_type) || !editForm.question_type
+                                ? QUESTION_TYPE_OPTIONS
+                                : [...QUESTION_TYPE_OPTIONS, { value: editForm.question_type!, label: formatUnknownType(editForm.question_type!), disabled: true }]
+                              }
+                              placeholder="选择题型"
+                              clearable={false}
+                            />
+                          </div>
                         </div>
 
                         {/* Stem */}

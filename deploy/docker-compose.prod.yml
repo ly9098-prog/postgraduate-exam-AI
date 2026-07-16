@@ -7,6 +7,8 @@ services:
   postgres:
     image: pgvector/pgvector:pg15
     restart: always
+    mem_limit: 512m
+    mem_reservation: 384m
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-pguser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pgpass}
@@ -24,6 +26,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: always
+    mem_limit: 128m
+    mem_reservation: 64m
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
@@ -39,6 +43,8 @@ services:
       context: ../backend
       dockerfile: docker/Dockerfile
     restart: always
+    mem_limit: 512m
+    mem_reservation: 384m
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,6 +94,8 @@ services:
       context: ../admin-frontend
       dockerfile: Dockerfile
     restart: always
+    mem_limit: 256m
+    mem_reservation: 128m
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_ADMIN_API_BASE_URL: ${NEXT_PUBLIC_ADMIN_API_BASE_URL:-/api/admin/v1}
@@ -101,6 +109,8 @@ services:
   nginx:
     image: nginx:1.25-alpine
     restart: always
+    mem_limit: 64m
+    mem_reservation: 32m
     ports:
       - "80:80"
       - "443:443"
@@ -121,6 +131,8 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.backup
+    mem_limit: 256m
+    mem_reservation: 128m
     environment:
       APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: ${DATABASE_URL:?必须设置 DATABASE_URL}

@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Search, X } from "lucide-react";
 
@@ -68,6 +68,7 @@ export function CustomSelect({
   const searchRef = useRef<HTMLInputElement>(null);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [dropdownEl, setDropdownEl] = useState<HTMLDivElement | null>(null);
+  const listboxId = useId();
 
   const selected = options.find((o) => o.value === value);
   const filtered = searchable && search
@@ -129,7 +130,24 @@ export function CustomSelect({
   }, [open, activeIndex]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === " ") {
+    if (e.key === "Enter") {
+      if (open) {
+        if (activeIndex >= 0 && activeIndex < filtered.length) {
+          e.preventDefault();
+          const option = filtered[activeIndex];
+          if (option && !option.disabled) {
+            onChange(option.value);
+            setOpen(false);
+            setActiveIndex(-1);
+          }
+        }
+      } else {
+        e.preventDefault();
+        if (!disabled) setOpen(true);
+      }
+      return;
+    }
+    if (e.key === " ") {
       e.preventDefault();
       if (!disabled) setOpen((v) => !v);
       return;
@@ -191,7 +209,7 @@ export function CustomSelect({
         role="combobox"
         aria-expanded={open}
         aria-haspopup="listbox"
-        aria-controls={open ? "custom-select-listbox" : undefined}
+        aria-controls={open ? listboxId : undefined}
         className={cn(
           "inline-flex h-11 w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-xl border bg-[var(--color-bg-input)] pl-3 pr-2 text-sm outline-none transition-all duration-150",
           "cursor-pointer disabled:cursor-default disabled:opacity-50",
@@ -249,7 +267,7 @@ export function CustomSelect({
 
       {open && (
         <PortalDropdown
-          id="custom-select-listbox"
+          id={listboxId}
           triggerRef={ref}
           setDropdownEl={setDropdownEl}
           searchable={searchable}

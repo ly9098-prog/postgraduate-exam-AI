@@ -1,15 +1,12 @@
-import asyncio
 import hashlib
 import logging
 import os
-import tempfile
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_current_user, require_app_permission
 from app.models.user import User
@@ -23,9 +20,10 @@ from app.features.import_mode import ImportMode
 from app.services.upload_validator import get_upload_validator
 from app.services.import_pipeline_service import (
     get_pipeline_status as svc_get_pipeline_status,
-    run_resume_background as svc_run_resume_background,
     start_import_pipeline as svc_start_import_pipeline,
 )
+from app.services.streaming_upload_handler import stream_to_temp
+from app.services.task_queue_worker import enqueue_resume_pipeline
 from app.schemas.import_review import (
     PipelineResumeResponse,
     PipelineStatusResponse,
@@ -96,10 +94,11 @@ async def pipeline_upload(
     import_mode: "auto" | "book" | "exam"
     通过 GET /api/v1/import/pipelines/{pipeline_id} 查询进度。
     """
-    content = await file.read()
+    suffix = os.path.splitext(file.filename or "")[1] or ".bin"
+    tmp = await stream_to_temp(file, suffix=suffix)
     try:
-        return await svc_start_import_pipeline(
-            file_content=content,
+        result = await svc_start_import_pipeline(
+            file_path=tmp.path,
             filename=file.filename or "",
             content_type=file.content_type,
             subject=subject,
@@ -112,7 +111,11 @@ async def pipeline_upload(
             created_by=str(current_user.id) if current_user is not None else None,
         )
     except ValueError as exc:
+        tmp.close()
         raise HTTPException(status_code=400, detail=str(exc))
+    # On success, detach — the background worker takes ownership of the temp file
+    tmp.detach()
+    return result
 
 
 @router.get("/pipelines/{pipeline_id}", response_model=PipelineStatusResponse)
@@ -180,98 +183,79 @@ async def resume_pipeline(
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="resume 仅支持 PDF 文件")
 
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="文件内容为空")
-
-    validator = get_upload_validator()
-    try:
-        validator.validate_file(file.filename, len(content), file.content_type)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    suffix = os.path.splitext(file.filename)[1] or ".pdf"
+    tmp = await stream_to_temp(file, suffix=suffix)
 
     try:
+        if tmp.size == 0:
+            raise ValueError("文件内容为空")
+
+        validator = get_upload_validator()
+        validator.validate_file(file.filename, tmp.size, file.content_type)
+
         import fitz
-        with fitz.open(stream=content, filetype="pdf") as doc:
+        with fitz.open(tmp.path) as doc:
             uploaded_pages = len(doc)
             validator.validate_pdf_pages(uploaded_pages)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"PDF 解析失败：{exc}")
 
-    if pipeline_row.total_pages is not None and uploaded_pages != pipeline_row.total_pages:
-        raise HTTPException(
-            status_code=400,
-            detail=f"PDF 页数不匹配（原始 {pipeline_row.total_pages} 页，上传 {uploaded_pages} 页）",
-        )
+        if pipeline_row.total_pages is not None and uploaded_pages != pipeline_row.total_pages:
+            raise ValueError(
+                f"PDF 页数不匹配（原始 {pipeline_row.total_pages} 页，上传 {uploaded_pages} 页）",
+            )
 
-    uploaded_sha256 = hashlib.sha256(content).hexdigest()
-    if pipeline_row.source_sha256 is None:
-        logger.warning(
-            "legacy pipeline without source_sha256, skipping content identity check "
-            "(pipeline_id=%s, uploaded_sha256=%s)", pipeline_id, uploaded_sha256,
-        )
-    elif uploaded_sha256 != pipeline_row.source_sha256:
-        raise HTTPException(
-            status_code=400,
-            detail="uploaded file content does not match original pipeline source",
-        )
+        uploaded_sha256 = hashlib.sha256()
+        with open(tmp.path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                uploaded_sha256.update(chunk)
+        uploaded_sha256_hex = uploaded_sha256.hexdigest()
+        if pipeline_row.source_sha256 is None:
+            logger.warning(
+                "legacy pipeline without source_sha256, skipping content identity check "
+                "(pipeline_id=%s, uploaded_sha256=%s)", pipeline_id, uploaded_sha256_hex,
+            )
+        elif uploaded_sha256_hex != pipeline_row.source_sha256:
+            raise ValueError("uploaded file content does not match original pipeline source")
 
-    from app.features.pipeline_checkpoint import get_pending_chunks
+        from app.features.pipeline_checkpoint import get_pending_chunks
 
-    pending = await get_pending_chunks(db, pipeline_id)
-    resumed_chunks = [c.chunk_index for c in pending]
+        pending = await get_pending_chunks(db, pipeline_id)
+        resumed_chunks = [c.chunk_index for c in pending]
 
-    if not resumed_chunks:
-        return PipelineResumeResponse(
-            pipeline_id=pipeline_id, status=pipeline_row.status, resumed_chunks=[],
-        )
+        if not resumed_chunks:
+            tmp.close()
+            return PipelineResumeResponse(
+                pipeline_id=pipeline_id, status=pipeline_row.status, resumed_chunks=[],
+            )
 
-    suffix = os.path.splitext(file.filename)[1] or ".pdf"
-    fd, tmp_path = tempfile.mkstemp(prefix=f"resume_{pipeline_id}_", suffix=suffix)
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(content)
-    except Exception:
-        try:
-            os.close(fd)
-        except Exception:
-            pass
-        if os.path.exists(tmp_path):
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-        raise
-    del content
+        options = {
+            "enable_ai_repair": enable_ai_repair,
+            "confidence_threshold": confidence_threshold,
+        }
 
-    options = {
-        "enable_ai_repair": enable_ai_repair,
-        "confidence_threshold": confidence_threshold,
-    }
+        from app.core.log_context import get_log_context, log_event
 
-    from app.core.log_context import get_log_context, log_event
+        _resume_ctx = get_log_context()
+        options["_trace_id"] = _resume_ctx.get("trace_id")
+        options["_request_id"] = _resume_ctx.get("request_id")
 
-    _resume_ctx = get_log_context()
-    options["_trace_id"] = _resume_ctx.get("trace_id")
-    options["_request_id"] = _resume_ctx.get("request_id")
+        log_event(logger, "import.resume.accepted", pipeline_id=pipeline_id, resumed_chunks=resumed_chunks)
 
-    log_event(logger, "import.resume.accepted", pipeline_id=pipeline_id, resumed_chunks=resumed_chunks)
-
-    asyncio.create_task(
-        svc_run_resume_background(
+        await enqueue_resume_pipeline(
             pipeline_id=pipeline_id,
-            file_path=tmp_path,
+            file_path=tmp.path,
             subject=subject,
             subject_id=None,
             options=options,
         )
-    )
 
-    return PipelineResumeResponse(
-        pipeline_id=pipeline_id, status="running", resumed_chunks=resumed_chunks,
-    )
+        # Detach — the background worker (run_resume_background) takes ownership
+        tmp.detach()
+        return PipelineResumeResponse(
+            pipeline_id=pipeline_id, status="running", resumed_chunks=resumed_chunks,
+        )
+    except ValueError as exc:
+        tmp.close()
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # ---------------------------------------------------------------------------

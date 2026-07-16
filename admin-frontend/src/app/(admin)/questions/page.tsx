@@ -27,6 +27,8 @@ import { MathFormula } from "@/components/ui/math-formula";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest, toQuery } from "@/lib/api/client";
+import { CustomSelect } from "@/components/ui/custom-select";
+import { QUESTION_TYPE_OPTIONS, getQuestionTypeLabel, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
 import type {
   AdminQuestion,
   AdminQuestionDetail,
@@ -109,7 +111,7 @@ function renderDiff(label: string, current: unknown, previous: unknown) {
 }
 
 function isMultiChoice(questionType: string): boolean {
-  return /多选|多空|多项/i.test(questionType);
+  return canonicalizeQuestionType(questionType) === "multiple_choice";
 }
 
 function optionsToKeyValueList(
@@ -227,79 +229,12 @@ function DifficultyBadge({
 }
 
 /** Type badge */
-const TYPE_LABELS: Record<string, string> = {
-  single_choice: "单选题",
-  multiple_choice: "多选题",
-  true_false: "判断题",
-  fill_blank: "填空题",
-  multi_blank_choice: "多空选择",
-  subjective: "问答题",
-};
-
 function TypeBadge({ type: t }: { type: string | null | undefined }) {
-  const label = TYPE_LABELS[t ?? ""] ?? t ?? "未知";
   return (
     <span className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] bg-white/80 px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-text-secondary)]">
       <Layers className="h-3 w-3" />
-      {label}
+      {getQuestionTypeLabel(t)}
     </span>
-  );
-}
-
-function CustomSelect({
-  options,
-  value,
-  onChange,
-  className = "",
-}: {
-  options: { label: string; value: string }[];
-  value: string;
-  onChange: (value: string) => void;
-  className?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    if (open) document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const selected = options.find((o) => o.value === value);
-
-  return (
-    <div ref={ref} className={`relative ${className}`}>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex h-11 w-full items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
-      >
-        <span className="truncate">{selected?.label ?? "—"}</span>
-        <ChevronDown className={`ml-2 h-4 w-4 shrink-0 text-[var(--color-text-hint)] transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && (
-        <div className="absolute z-[100] mt-1 w-full rounded-xl border border-[var(--color-border)] bg-white py-1 shadow-lg">
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => { onChange(opt.value); setOpen(false); }}
-              className={`flex w-full items-center px-3 py-2 text-left text-sm transition-colors ${
-                opt.value === value
-                  ? "bg-[var(--color-bg-input)] font-medium text-[var(--ink)]"
-                  : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]/50"
-              }`}
-            >
-              {opt.value === value && <Check className="mr-2 h-3.5 w-3.5 shrink-0" />}
-              <span className={opt.value === value ? "" : "pl-5.5"}>{opt.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -594,12 +529,11 @@ export default function QuestionsPage() {
                 onChange={(v) => updateFilter("subject_id", v)}
                 options={[{ label: "全部科目", value: "" }, ...subjectOptions.map((s) => ({ label: s.name, value: String(s.id) }))]}
               />
-              <Input
-                placeholder="题型"
+              <CustomSelect
+                placeholder="全部题型"
                 value={filters.question_type}
-                onChange={(event) =>
-                  updateFilter("question_type", event.target.value)
-                }
+                onChange={(v) => updateFilter("question_type", v)}
+                options={QUESTION_TYPE_OPTIONS}
               />
               <Input
                 placeholder="年份"
@@ -1096,14 +1030,19 @@ export default function QuestionsPage() {
                       <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
                         题型
                       </p>
-                      <Input
+                      <CustomSelect
                         value={editForm.question_type ?? ""}
-                        onChange={(e) =>
+                        onChange={(v) =>
                           setEditForm({
                             ...editForm,
-                            question_type: e.target.value,
+                            question_type: v,
                           })
                         }
+                        options={canonicalizeQuestionType(editForm.question_type) || !editForm.question_type
+                          ? QUESTION_TYPE_OPTIONS
+                          : [...QUESTION_TYPE_OPTIONS, { value: editForm.question_type!, label: formatUnknownType(editForm.question_type!), disabled: true }]
+                        }
+                        clearable={false}
                       />
                     </div>
                     <div className="space-y-1">

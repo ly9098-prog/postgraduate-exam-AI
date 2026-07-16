@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -19,12 +19,14 @@ import {
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CustomSelect } from "@/components/ui/custom-select";
 import { StatusBadge } from "@/components/status-badge";
 import { apiRequest, toQuery } from "@/lib/api/client";
+import { getQuestionTypeLabel, canonicalizeQuestionType } from "@/lib/question-types";
 import type { ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 
 function isMultiBlankChoice(item: ImportQuestionItem | null | undefined): boolean {
-  return item?.question_type === "multi_blank_choice";
+  return canonicalizeQuestionType(item?.question_type) === "multi_blank_choice";
 }
 
 interface BlankOptionGroup {
@@ -124,101 +126,8 @@ function duplicateStatusTone(status: string | null | undefined) {
   return "neutral" as const;
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  single_choice: "单选题",
-  multiple_choice: "多选题",
-  true_false: "判断题",
-  fill_blank: "填空题",
-  multi_blank_choice: "多空选择",
-  subjective: "问答题",
-};
-
 function typeLabel(t: string | null | undefined) {
-  return TYPE_LABELS[t ?? ""] ?? t ?? "未知";
-}
-
-type CustomSelectOption = {
-  value: string;
-  label: string;
-};
-
-type CustomSelectProps = {
-  value: string;
-  onChange: (value: string) => void;
-  options: CustomSelectOption[];
-  placeholder?: string;
-  disabled?: boolean;
-  className?: string;
-};
-
-function CustomSelect({ value, onChange, options, placeholder = "请选择", disabled = false, className = "" }: CustomSelectProps) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const selectedOption = options.find((option) => option.value === value);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open]);
-
-  return (
-    <div ref={rootRef} className="relative w-full">
-      <button
-        type="button"
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className={`${className} inline-flex items-center outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)] disabled:cursor-not-allowed disabled:opacity-60`}
-        onClick={() => {
-          if (!disabled) setOpen((current) => !current);
-        }}
-      >
-        <span className={`min-w-0 flex-1 truncate text-left ${selectedOption ? "text-[var(--ink)]" : "text-[var(--color-text-hint)]"}`}>
-          {selectedOption?.label || placeholder}
-        </span>
-        <span className={`ml-2 text-[10px] text-[var(--color-text-hint)] transition ${open ? "rotate-180" : ""}`}>▼</span>
-      </button>
-
-      {open ? (
-        <div
-          role="listbox"
-          className="absolute left-0 right-0 top-full z-50 mt-1 max-h-40 overflow-auto rounded-xl border border-[var(--color-border)] bg-white py-1 text-sm shadow-[var(--shadow-floating)]"
-        >
-          {options.map((option) => {
-            const active = option.value === value;
-            return (
-              <button
-                key={option.value || "__empty__"}
-                type="button"
-                role="option"
-                aria-selected={active}
-                className={`flex w-full items-center px-3 py-2 text-left text-sm transition ${
-                  active
-                    ? "bg-[var(--color-primary-light)] font-semibold text-[var(--color-primary-dark)]"
-                    : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)]"
-                }`}
-                onClick={() => {
-                  onChange(option.value);
-                  setOpen(false);
-                }}
-              >
-                <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                {active ? <span className="ml-2 text-xs text-[var(--color-primary)]">✓</span> : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
-  );
+  return getQuestionTypeLabel(t);
 }
 
 /** Compact detail modal */

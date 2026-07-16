@@ -2,14 +2,22 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeBlankOptionGroups,
   deduplicateGroupOptions,
+  extractMultiBlankSource,
   parseBlankAnswer,
   serializeBlankAnswer,
   haveIdenticalOptionSets,
   getSharedOptions,
   updateSharedOption,
   validateBlankAnswerMap,
+  buildMultiBlankSavePayload,
+  getMultiBlankSaveState,
+  reduceMultiBlankEditState,
+  syncDerivedMultiBlankFields,
   type BlankOptionGroup,
   type BlankOption,
+  type BlankAnswerMap,
+  type MultiBlankEditState,
+  type MultiBlankAction,
 } from "../multi-blank-choice-utils";
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -625,5 +633,616 @@ describe("save payload validation", () => {
     const reinit = deduplicateGroupOptions(serialized);
     expect(reinit.groups[0].options).toHaveLength(4);
     expect(reinit.groups[1].options).toHaveLength(4);
+  });
+});
+
+// ── extractMultiBlankSource ───────────────────────────────────────────
+
+describe("extractMultiBlankSource", () => {
+  it("extracts from parsed_content.blank_option_groups", () => {
+    const item = {
+      parsed_content: {
+        blank_option_groups: [
+          { id: "①", options: [{ key: "A", text: "2" }, { key: "B", text: "m" }] },
+          { id: "②", options: [{ key: "A", text: "2" }, { key: "B", text: "m" }] },
+        ],
+      },
+      parsed_answer: "①:A;②:B",
+    };
+    const result = extractMultiBlankSource(item);
+    expect(result.source).toBe("parsed_content");
+    expect(result.groups).toHaveLength(2);
+    expect(result.answer).toBe("①:A;②:B");
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("falls back to raw_data when parsed_content is absent", () => {
+    const item = {
+      raw_data: {
+        blank_option_groups: [
+          { id: "①", options: [{ key: "A", text: "x" }, { key: "B", text: "y" }] },
+          { id: "②", options: [{ key: "A", text: "x" }, { key: "B", text: "y" }] },
+        ],
+      },
+      parsed_answer: "①:A;②:B",
+    };
+    const result = extractMultiBlankSource(item);
+    expect(result.source).toBe("raw_data");
+    expect(result.groups).toHaveLength(2);
+    expect(result.warnings.some((w) => w.includes("历史原始数据"))).toBe(true);
+  });
+
+  it("returns error when parsed_content exists but blank_option_groups is invalid", () => {
+    const item = {
+      parsed_content: { text: "some stem" },
+      raw_data: {
+        blank_option_groups: [
+          { id: "①", options: [{ key: "A", text: "x" }, { key: "B", text: "y" }] },
+        ],
+      },
+    };
+    const result = extractMultiBlankSource(item);
+    // Should NOT silently fall through to raw_data
+    expect(result.source).toBe("parsed_content");
+    expect(result.groups).toHaveLength(0);
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it("returns none when no source has data", () => {
+    const item = { parsed_answer: "" };
+    const result = extractMultiBlankSource(item);
+    expect(result.source).toBe("none");
+    expect(result.groups).toHaveLength(0);
+  });
+
+  it("folds identical duplicates and reports warning", () => {
+    const item = {
+      parsed_content: {
+        blank_option_groups: [
+          { id: "①", options: [{ key: "A", text: "2" }, { key: "A", text: "2" }, { key: "B", text: "m" }] },
+        ],
+      },
+    };
+    const result = extractMultiBlankSource(item);
+    // Single group < 2 → should not be valid
+    expect(result.groups).toHaveLength(0);
+  });
+
+  it("does not mutate input", () => {
+    const item = {
+      parsed_content: {
+        blank_option_groups: [
+          { id: "①", options: [{ key: "A", text: "2" }, { key: "B", text: "m" }] },
+          { id: "②", options: [{ key: "A", text: "2" }, { key: "B", text: "m" }] },
+        ],
+      },
+    };
+    const original = JSON.stringify(item);
+    extractMultiBlankSource(item as unknown as Record<string, unknown>);
+    expect(JSON.stringify(item)).toBe(original);
+  });
+});
+
+// ── buildMultiBlankSavePayload ────────────────────────────────────────
+
+describe("buildMultiBlankSavePayload", () => {
+  function makeGroup(id: string, opts: Array<{ key: string; text: string }>) {
+    return { id, options: opts.map((o) => ({ ...o })) };
+  }
+
+  const validGroups = [
+    makeGroup("①", [{ key: "A", text: "2" }, { key: "B", text: "m" }, { key: "C", text: "2m−1" }, { key: "D", text: "2m" }]),
+    makeGroup("②", [{ key: "A", text: "2" }, { key: "B", text: "m" }, { key: "C", text: "2m−1" }, { key: "D", text: "2m" }]),
+  ];
+  const validAnswerMap = { "①": "D", "②": "A" };
+  const item = { parsed_analysis: "analysis text", subject_id: 1 };
+
+  it("produces valid payload for correct input", () => {
+    const result = buildMultiBlankSavePayload(item, validGroups, validAnswerMap, "stem");
+    expect(result.errors).toHaveLength(0);
+    expect(result.payload).not.toBeNull();
+    expect(result.payload!.answer).toBe("①:D;②:A");
+    expect(result.payload!.question_type).toBe("multi_blank_choice");
+    expect(result.payload!.parsed_options).toBeNull();
+  });
+
+  it("includes blank_option_groups in parsed_content", () => {
+    const result = buildMultiBlankSavePayload(item, validGroups, validAnswerMap, "stem");
+    const pc = result.payload!.parsed_content as Record<string, unknown>;
+    expect(pc.blank_option_groups).toEqual(validGroups);
+  });
+
+  it("includes stem text in parsed_content", () => {
+    const result = buildMultiBlankSavePayload(item, validGroups, validAnswerMap, "test stem");
+    const pc = result.payload!.parsed_content as Record<string, unknown>;
+    expect(pc.text).toBe("test stem");
+  });
+
+  it("does not include UI-only temp fields", () => {
+    const result = buildMultiBlankSavePayload(item, validGroups, validAnswerMap, "stem");
+    const keys = Object.keys(result.payload!);
+    expect(keys).not.toContain("rawAnswerDraft");
+    expect(keys).not.toContain("rawAnswerError");
+    expect(keys).not.toContain("dedupWarnings");
+    expect(keys).not.toContain("dedupErrors");
+  });
+
+  it("errors when groups < 2", () => {
+    const result = buildMultiBlankSavePayload(
+      item,
+      [makeGroup("①", [{ key: "A", text: "x" }, { key: "B", text: "y" }])],
+      { "①": "A" },
+      "stem",
+    );
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.payload).toBeNull();
+  });
+
+  it("errors on duplicate group IDs", () => {
+    const groups = [
+      makeGroup("①", [{ key: "A", text: "x" }, { key: "B", text: "y" }]),
+      makeGroup("①", [{ key: "A", text: "x" }, { key: "B", text: "y" }]),
+    ];
+    const result = buildMultiBlankSavePayload(item, groups, { "①": "A" }, "stem");
+    expect(result.errors.some((e) => e.includes("重复"))).toBe(true);
+    expect(result.payload).toBeNull();
+  });
+
+  it("errors when group has < 2 options", () => {
+    const groups = [
+      makeGroup("①", [{ key: "A", text: "x" }]),
+      makeGroup("②", [{ key: "A", text: "x" }, { key: "B", text: "y" }]),
+    ];
+    const result = buildMultiBlankSavePayload(item, groups, { "①": "A", "②": "A" }, "stem");
+    expect(result.errors.some((e) => e.includes("至少需要 2 个选项"))).toBe(true);
+    expect(result.payload).toBeNull();
+  });
+
+  it("errors on missing slot in answer", () => {
+    const result = buildMultiBlankSavePayload(item, validGroups, { "①": "D" }, "stem");
+    expect(result.errors.some((e) => e.includes("缺少空"))).toBe(true);
+    expect(result.payload).toBeNull();
+  });
+
+  it("errors on invalid answer key", () => {
+    const result = buildMultiBlankSavePayload(item, validGroups, { "①": "Z", "②": "A" }, "stem");
+    expect(result.errors.some((e) => e.includes("不在选项内"))).toBe(true);
+    expect(result.payload).toBeNull();
+  });
+
+  it("errors on extra slot in answer", () => {
+    const result = buildMultiBlankSavePayload(item, validGroups, { "①": "D", "②": "A", "③": "B" }, "stem");
+    expect(result.errors.some((e) => e.includes("未知空位"))).toBe(true);
+    expect(result.payload).toBeNull();
+  });
+
+  it("errors on conflicting duplicate options", () => {
+    const groups = [
+      makeGroup("①", [{ key: "A", text: "2" }, { key: "A", text: "different" }, { key: "B", text: "m" }, { key: "C", text: "x" }]),
+      makeGroup("②", [{ key: "A", text: "2" }, { key: "B", text: "m" }, { key: "C", text: "x" }, { key: "D", text: "y" }]),
+    ];
+    const result = buildMultiBlankSavePayload(item, groups, { "①": "A", "②": "B" }, "stem");
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.payload).toBeNull();
+  });
+
+  it("deduplicates identical repeats without error", () => {
+    const groups = [
+      makeGroup("①", [{ key: "A", text: "2" }, { key: "A", text: "2" }, { key: "B", text: "m" }, { key: "C", text: "2m−1" }, { key: "D", text: "2m" }]),
+      makeGroup("②", [{ key: "A", text: "2" }, { key: "B", text: "m" }, { key: "C", text: "2m−1" }, { key: "D", text: "2m" }]),
+    ];
+    const result = buildMultiBlankSavePayload(item, groups, { "①": "D", "②": "A" }, "stem");
+    expect(result.payload).not.toBeNull();
+    if (result.payload) {
+      const pc = result.payload.parsed_content as Record<string, unknown>;
+      const bg = pc.blank_option_groups as BlankOptionGroup[];
+      expect(bg[0].options).toHaveLength(4);
+    }
+  });
+
+  it("canonical answer follows group order", () => {
+    const unorderedGroups = [
+      makeGroup("②", [{ key: "A", text: "x" }, { key: "B", text: "y" }]),
+      makeGroup("①", [{ key: "A", text: "x" }, { key: "B", text: "y" }]),
+    ];
+    const result = buildMultiBlankSavePayload(item, unorderedGroups, { "①": "B", "②": "A" }, "stem");
+    expect(result.payload!.answer).toBe("②:A;①:B");
+  });
+
+  it("preserves existing parsed_content fields", () => {
+    const itemWithExtra = {
+      ...item,
+      parsed_content: {
+        segments: [{ type: "text", value: "hello" }],
+      },
+    };
+    const result = buildMultiBlankSavePayload(
+      itemWithExtra,
+      validGroups,
+      validAnswerMap,
+      "stem",
+    );
+    const pc = result.payload!.parsed_content as Record<string, unknown>;
+    expect(pc.segments).toEqual([{ type: "text", value: "hello" }]);
+    expect(pc.blank_option_groups).toEqual(validGroups);
+  });
+
+  it("does not mutate input", () => {
+    const groupsCopy = JSON.parse(JSON.stringify(validGroups));
+    const mapCopy = { ...validAnswerMap };
+    buildMultiBlankSavePayload(item, validGroups, validAnswerMap, "stem");
+    expect(validGroups).toEqual(groupsCopy);
+    expect(validAnswerMap).toEqual(mapCopy);
+  });
+
+  it("returns payload even when item is null/undefined", () => {
+    const result = buildMultiBlankSavePayload(null, validGroups, validAnswerMap, "stem");
+    expect(result.payload).not.toBeNull();
+    expect(result.payload!.subject_id).toBeUndefined();
+  });
+});
+
+// ── Data flow: answerMap ↔ canonical answer sync ─────────────────────
+
+describe("answerMap canonical answer sync", () => {
+  const makeGroup = (id: string, opts: Array<{ key: string; text: string }>) => ({
+    id,
+    options: opts.map((o) => ({ ...o })),
+  });
+
+  const groups = [
+    makeGroup("①", [{ key: "A", text: "2" }, { key: "B", text: "m" }, { key: "C", text: "2m−1" }, { key: "D", text: "2m" }]),
+    makeGroup("②", [{ key: "A", text: "2" }, { key: "B", text: "m" }, { key: "C", text: "2m−1" }, { key: "D", text: "2m" }]),
+  ];
+  const groupIds = groups.map((g) => g.id);
+
+  it("click ①D → answerMap and canonical sync", () => {
+    const answerMap = { "①": "D" };
+    const canonical = serializeBlankAnswer(answerMap, groupIds);
+    expect(canonical).toBe("①:D");
+    expect(answerMap).toEqual({ "①": "D" });
+  });
+
+  it("click ①D then ②A → both preserved", () => {
+    let answerMap: Record<string, string> = {};
+    answerMap = { ...answerMap, "①": "D" };
+    answerMap = { ...answerMap, "②": "A" };
+    const canonical = serializeBlankAnswer(answerMap, groupIds);
+    expect(canonical).toBe("①:D;②:A");
+    expect(answerMap).toEqual({ "①": "D", "②": "A" });
+  });
+
+  it("clear ① → answer incomplete", () => {
+    const answerMap: Record<string, string> = { "①": "D", "②": "A" };
+    const { "①": _removed, ...rest } = answerMap;
+    const canonical = serializeBlankAnswer(rest, groupIds);
+    expect(canonical).toBe("②:A");
+    expect(Object.keys(rest)).toHaveLength(1);
+  });
+
+  it("group ID rename migrates answerMap key", () => {
+    const oldAnswerMap = { "①": "D", "②": "A" };
+    const newAnswerMap: Record<string, string> = {};
+    for (const [k, v] of Object.entries(oldAnswerMap)) {
+      newAnswerMap[k === "①" ? "(1)" : k] = v;
+    }
+    const newGroupIds = ["(1)", "②"];
+    const canonical = serializeBlankAnswer(newAnswerMap, newGroupIds);
+    expect(canonical).toBe("(1):D;②:A");
+    expect(newAnswerMap["(1)"]).toBe("D");
+    expect(newAnswerMap["①"]).toBeUndefined();
+  });
+
+  it("delete group removes its answer from canonical", () => {
+    const answerMap = { "①": "D", "②": "A", "③": "B" };
+    const newGroupIds = ["①", "②"]; // ③ removed
+    const canonical = serializeBlankAnswer(answerMap, newGroupIds);
+    expect(canonical).toBe("①:D;②:A");
+  });
+
+  it("add group → answer incomplete until filled", () => {
+    const answerMap = { "①": "D", "②": "A" };
+    const validation1 = validateBlankAnswerMap(groups, answerMap);
+    expect(validation1.valid).toBe(true);
+    const validation2 = validateBlankAnswerMap(
+      [...groups, makeGroup("③", [{ key: "A", text: "x" }, { key: "B", text: "y" }])],
+      { ...answerMap },
+    );
+    expect(validation2.valid).toBe(false);
+  });
+
+  it("group order change → canonical order follows", () => {
+    const answerMap = { "①": "D", "②": "A" };
+    const reversed = serializeBlankAnswer(answerMap, ["②", "①"]);
+    expect(reversed).toBe("②:A;①:D");
+  });
+
+  it("save payload uses answerMap-derived answer, not item.parsed_answer", () => {
+    const result = buildMultiBlankSavePayload(
+      { parsed_answer: "old answer" },
+      groups,
+      { "①": "D", "②": "A" },
+      "stem",
+    );
+    expect(result.payload?.answer).toBe("①:D;②:A");
+  });
+});
+
+// ── reduceMultiBlankEditState ──────────────────────────────────────────
+
+describe("reduceMultiBlankEditState", () => {
+  const baseState: MultiBlankEditState = {
+    groups: [
+      { id: "①", options: [{ key: "A", text: "2" }, { key: "B", text: "m" }, { key: "C", text: "2m−1" }, { key: "D", text: "2m" }] },
+      { id: "②", options: [{ key: "A", text: "2" }, { key: "B", text: "m" }, { key: "C", text: "2m−1" }, { key: "D", text: "2m" }] },
+    ],
+    answerMap: { "①": "D", "②": "A" },
+    usesSharedOptions: true,
+    sharedOptions: [],
+  };
+
+  it("toggle_answer: select new option", () => {
+    const next = reduceMultiBlankEditState(baseState, {
+      type: "toggle_answer",
+      groupId: "①",
+      optionKey: "B",
+    });
+    expect(next.answerMap["①"]).toBe("B");
+    expect(next.answerMap["②"]).toBe("A");
+  });
+
+  it("toggle_answer: deselect same option", () => {
+    const next = reduceMultiBlankEditState(baseState, {
+      type: "toggle_answer",
+      groupId: "①",
+      optionKey: "D",
+    });
+    expect(next.answerMap["①"]).toBeUndefined();
+    expect(next.answerMap["②"]).toBe("A");
+  });
+
+  it("toggle_answer: sets hasUnappliedDraft=false", () => {
+    const state = { ...baseState, hasUnappliedDraft: true };
+    const next = reduceMultiBlankEditState(state, {
+      type: "toggle_answer", groupId: "①", optionKey: "B",
+    });
+    expect(next.hasUnappliedDraft).toBe(false);
+  });
+
+  it("toggle_answer: closure-safe (sequential toggles)", () => {
+    const next1 = reduceMultiBlankEditState(baseState, {
+      type: "toggle_answer", groupId: "①", optionKey: "B",
+    });
+    const next2 = reduceMultiBlankEditState(next1, {
+      type: "toggle_answer", groupId: "②", optionKey: "C",
+    });
+    expect(next2.answerMap["①"]).toBe("B");
+    expect(next2.answerMap["②"]).toBe("C");
+  });
+
+  it("apply_answer_map: replaces answerMap entirely", () => {
+    const next = reduceMultiBlankEditState(baseState, {
+      type: "apply_answer_map",
+      answerMap: { "①": "A", "②": "D" },
+    });
+    expect(next.answerMap).toEqual({ "①": "A", "②": "D" });
+  });
+
+  it("apply_answer_map: clears hasUnappliedDraft", () => {
+    const state = { ...baseState, hasUnappliedDraft: true };
+    const next = reduceMultiBlankEditState(state, {
+      type: "apply_answer_map",
+      answerMap: { "①": "A", "②": "D" },
+    });
+    expect(next.hasUnappliedDraft).toBe(false);
+  });
+
+  it("update_shared_options: applies to all groups, keeps usesSharedOptions=true", () => {
+    const next = reduceMultiBlankEditState(baseState, {
+      type: "update_shared_options",
+      options: [{ key: "X", text: "new" }, { key: "Y", text: "opts" }],
+    });
+    expect(next.groups[0].options).toEqual([{ key: "X", text: "new" }, { key: "Y", text: "opts" }]);
+    expect(next.groups[1].options).toEqual([{ key: "X", text: "new" }, { key: "Y", text: "opts" }]);
+    expect(next.usesSharedOptions).toBe(true);
+  });
+
+  it("update_shared_options: cleans up invalid answerMap entries", () => {
+    const state = {
+      ...baseState,
+      answerMap: { "①": "D", "②": "A" },
+    };
+    const next = reduceMultiBlankEditState(state, {
+      type: "update_shared_options",
+      options: [{ key: "A", text: "only-a" }, { key: "B", text: "only-b" }],
+    });
+    expect(next.answerMap["①"]).toBeUndefined();
+    expect(next.answerMap["②"]).toBe("A");
+  });
+
+  it("update_group_options: updates single group only", () => {
+    const next = reduceMultiBlankEditState(baseState, {
+      type: "update_group_options",
+      groupId: "②",
+      options: [{ key: "P", text: "p" }, { key: "Q", text: "q" }],
+    });
+    expect(next.groups[0].options).toHaveLength(4);
+    expect(next.groups[1].options).toEqual([{ key: "P", text: "p" }, { key: "Q", text: "q" }]);
+  });
+
+  it("rename_group: migrates answerMap key", () => {
+    const next = reduceMultiBlankEditState(baseState, {
+      type: "rename_group",
+      oldId: "①",
+      newId: "(1)",
+    });
+    expect(next.groups[0].id).toBe("(1)");
+    expect(next.answerMap["(1)"]).toBe("D");
+    expect(next.answerMap["①"]).toBeUndefined();
+  });
+
+  it("remove_group: removes group and its answerMap entry", () => {
+    const next = reduceMultiBlankEditState(baseState, {
+      type: "remove_group",
+      groupId: "②",
+    });
+    expect(next.groups).toHaveLength(1);
+    expect(next.answerMap["②"]).toBeUndefined();
+    expect(next.answerMap["①"]).toBe("D");
+  });
+
+  it("split_shared_groups: sets usesSharedOptions=false", () => {
+    const next = reduceMultiBlankEditState(baseState, {
+      type: "split_shared_groups",
+    });
+    expect(next.usesSharedOptions).toBe(false);
+  });
+
+  it("set_draft_state: updates hasUnappliedDraft", () => {
+    const next = reduceMultiBlankEditState(baseState, {
+      type: "set_draft_state",
+      hasUnappliedDraft: true,
+    });
+    expect(next.hasUnappliedDraft).toBe(true);
+  });
+
+  it("set_draft_state: clears hasUnappliedDraft", () => {
+    const state = { ...baseState, hasUnappliedDraft: true };
+    const next = reduceMultiBlankEditState(state, {
+      type: "set_draft_state",
+      hasUnappliedDraft: false,
+    });
+    expect(next.hasUnappliedDraft).toBe(false);
+  });
+
+  it("does not mutate input state", () => {
+    const original = { ...baseState, answerMap: { ...baseState.answerMap } };
+    const originalCopy = { ...original.answerMap };
+    reduceMultiBlankEditState(baseState, { type: "toggle_answer", groupId: "①", optionKey: "B" });
+    expect(baseState.answerMap).toEqual(originalCopy);
+  });
+});
+
+// ── syncDerivedMultiBlankFields ────────────────────────────────────────
+
+describe("syncDerivedMultiBlankFields", () => {
+  it("computes canonical answer from answerMap", () => {
+    const result = syncDerivedMultiBlankFields(
+      { answer: "old" },
+      {
+        groups: [
+          { id: "①", options: [] },
+          { id: "②", options: [] },
+        ],
+        answerMap: { "①": "B", "②": "C" },
+        usesSharedOptions: false,
+        sharedOptions: [],
+      },
+    );
+    expect(result.answer).toBe("①:B;②:C");
+  });
+
+  it("computes sharedOptions when usesSharedOptions and groups match", () => {
+    const result = syncDerivedMultiBlankFields(
+      { answer: "" },
+      {
+        groups: [
+          { id: "①", options: [{ key: "A", text: "x" }, { key: "B", text: "y" }] },
+          { id: "②", options: [{ key: "A", text: "x" }, { key: "B", text: "y" }] },
+        ],
+        answerMap: {},
+        usesSharedOptions: true,
+        sharedOptions: [],
+      },
+    );
+    expect(result.multiBlank.sharedOptions).toHaveLength(2);
+  });
+
+  it("returns empty sharedOptions when usesSharedOptions is false", () => {
+    const result = syncDerivedMultiBlankFields(
+      { answer: "" },
+      {
+        groups: [
+          { id: "①", options: [{ key: "A", text: "x" }] },
+          { id: "②", options: [{ key: "B", text: "y" }] },
+        ],
+        answerMap: {},
+        usesSharedOptions: false,
+        sharedOptions: [],
+      },
+    );
+    expect(result.multiBlank.sharedOptions).toEqual([]);
+  });
+});
+
+// ── getMultiBlankSaveState ─────────────────────────────────────────────
+
+describe("getMultiBlankSaveState", () => {
+  const validGroups = [
+    { id: "①", options: [{ key: "A", text: "2" }, { key: "B", text: "m" }, { key: "C", text: "2m−1" }, { key: "D", text: "2m" }] },
+    { id: "②", options: [{ key: "A", text: "2" }, { key: "B", text: "m" }, { key: "C", text: "2m−1" }, { key: "D", text: "2m" }] },
+  ];
+  const completeAnswerMap = { "①": "D", "②": "A" };
+
+  it("canSave=true with valid groups and complete answerMap", () => {
+    const result = getMultiBlankSaveState(validGroups, completeAnswerMap, [], [], false);
+    expect(result.canSave).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("canSave=false when groups < 2", () => {
+    const result = getMultiBlankSaveState([validGroups[0]], {}, [], [], false);
+    expect(result.canSave).toBe(false);
+    expect(result.errors.some((e) => e.includes("至少需要"))).toBe(true);
+  });
+
+  it("canSave=false when answerMap missing a group", () => {
+    const result = getMultiBlankSaveState(validGroups, { "①": "D" }, [], [], false);
+    expect(result.canSave).toBe(false);
+    expect(result.errors.some((e) => e.includes("尚未选择"))).toBe(true);
+  });
+
+  it("canSave=false when answer value not in option keys", () => {
+    const result = getMultiBlankSaveState(validGroups, { "①": "D", "②": "Z" }, [], [], false);
+    expect(result.canSave).toBe(false);
+    expect(result.errors.some((e) => e.includes("不在选项内"))).toBe(true);
+  });
+
+  it("canSave=false when answerMap has phantom slot", () => {
+    const result = getMultiBlankSaveState(validGroups, { "①": "D", "②": "A", "③": "B" }, [], [], false);
+    expect(result.canSave).toBe(false);
+    expect(result.errors.some((e) => e.includes("未知空位"))).toBe(true);
+  });
+
+  it("canSave=false when dedupErrors present", () => {
+    const result = getMultiBlankSaveState(validGroups, completeAnswerMap, [], ["冲突: 选项 A"], false);
+    expect(result.canSave).toBe(false);
+  });
+
+  it("canSave=false when hasUnappliedDraft is true", () => {
+    const result = getMultiBlankSaveState(validGroups, completeAnswerMap, [], [], true);
+    expect(result.canSave).toBe(false);
+    expect(result.errors.some((e) => e.includes("未应用"))).toBe(true);
+  });
+
+  it("canSave=false when group has < 2 options", () => {
+    const groups = [
+      { id: "①", options: [{ key: "A", text: "x" }] },
+      { id: "②", options: [{ key: "B", text: "y" }, { key: "C", text: "z" }] },
+    ];
+    const result = getMultiBlankSaveState(groups, { "①": "A", "②": "B" }, [], [], false);
+    expect(result.canSave).toBe(false);
+    expect(result.errors.some((e) => e.includes("至少需要"))).toBe(true);
+  });
+
+  it("non-blocking dedupWarnings do not prevent save", () => {
+    const result = getMultiBlankSaveState(validGroups, completeAnswerMap, ["重复项已折叠"], [], false);
+    expect(result.canSave).toBe(true);
+    expect(result.warnings).toHaveLength(1);
+  });
+
+  it("empty groups returns canSave=false immediately", () => {
+    const result = getMultiBlankSaveState([], {}, [], [], false);
+    expect(result.canSave).toBe(false);
   });
 });

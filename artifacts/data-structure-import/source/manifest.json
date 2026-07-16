@@ -1,0 +1,13 @@
+{
+  "absolute_path": "/home/lmh/projects/postgraduate-ai/ocr_test/import/ds_sc.pdf",
+  "filename": "ds_sc.pdf",
+  "sha256": "0ede22748f2a00c3f36ef67c792d0de9ce004c3d046260e83835638af45893fb",
+  "file_size": 50191692,
+  "total_pages": 513,
+  "page_width": 567.0,
+  "page_height": 425.3399963378906,
+  "embedded_text_available": true,
+  "scanned_pdf": false,
+  "created_at": "2023-11-18T18:06:54",
+  "analyzed_at": "2026-07-15T16:59:59.139489"
+}

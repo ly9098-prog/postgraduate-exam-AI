@@ -5,6 +5,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, SmallIntege
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.features.question_type import QT_SINGLE_CHOICE
 
 
 class Question(Base):
@@ -17,7 +18,7 @@ class Question(Base):
 
     subject_ref = relationship("Subject", back_populates="questions", lazy="noload")
     question_type: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="choice"
+        String(32), nullable=False, default=QT_SINGLE_CHOICE
     )
     content: Mapped[dict] = mapped_column(JSON, nullable=False)
     options: Mapped[dict | None] = mapped_column(JSON, nullable=True)

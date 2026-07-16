@@ -30,6 +30,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.admin_security import AdminPrincipal
 from app.core.cache import cache
 from app.core.time_utils import utcnow
+from app.features.question_type import (
+    CANONICAL_TYPES,
+    QT_SINGLE_CHOICE,
+    QT_MULTIPLE_CHOICE,
+    QT_TRUE_FALSE,
+    normalize_question_type,
+)
 from app.models.question_import import QuestionImport
 from app.services.admin_audit_service import write_admin_audit
 
@@ -52,7 +59,7 @@ _OPID_PREFIX = "batch_answer_image:opid:"
 _OPID_TTL = 3600  # 1 小时
 
 # ── 支持题型 ──
-_SUPPORTED_TYPES = frozenset({"single_choice", "multi_choice", "multiple_choice", "true_false", "judge", "judgement"})
+_SUPPORTED_TYPES = frozenset({"single_choice", "multiple_choice", "true_false"})
 
 # ── 编号答案模式：匹配 "01. A"、"1、B"、"2) C" 等 ──
 _NUMBERED_ANSWER_PATTERN = re.compile(
@@ -162,10 +169,13 @@ def _normalize_single_answer(answer: str, question_type: str | None) -> tuple[st
     if not normalized:
         return None, ["答案为空"]
 
-    qt = (question_type or "").lower()
+    # 先规范化题型（兼容别名）
+    qt, _ = normalize_question_type(question_type)
+    if qt is None:
+        return None, [f"不支持的题型: {question_type}"]
 
     # true_false
-    if qt in {"true_false", "judge", "judgement"}:
+    if qt == QT_TRUE_FALSE:
         true_vals = {"T", "TRUE", "正确", "对", "√", "1"}
         false_vals = {"F", "FALSE", "错误", "错", "×", "0"}
         if normalized in true_vals:
@@ -175,13 +185,13 @@ def _normalize_single_answer(answer: str, question_type: str | None) -> tuple[st
         return None, [f"无法识别的判断题答案: {answer}"]
 
     # single_choice
-    if qt == "single_choice":
+    if qt == QT_SINGLE_CHOICE:
         if normalized in {"A", "B", "C", "D"}:
             return normalized, []
         return None, [f"单选题答案格式错误: {answer}"]
 
     # multi_choice
-    if qt in {"multi_choice", "multiple_choice"}:
+    if qt == QT_MULTIPLE_CHOICE:
         letters = re.findall(r"[A-D]", normalized)
         if not letters:
             return None, [f"多选题答案格式错误: {answer}"]

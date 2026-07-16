@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow
 from app.core.config import settings
+from app.features.question_type import normalize_question_type, is_canonical, QT_SINGLE_CHOICE, QT_FILL_BLANK
 from app.models.question import Question
 from app.models.question_import import QuestionImport
 
@@ -68,17 +69,21 @@ def _raw_to_parsed(raw: dict) -> dict:
         "英语": "english", "英语二": "english", "english": "english",
     }
     TYPE_MAP = {
-        "选择": "choice", "选择题": "choice", "单选": "choice", "choice": "choice",
-        "填空": "fill", "填空题": "fill", "fill": "fill",
+        "选择": "single_choice", "选择题": "single_choice", "单选": "single_choice", "choice": "single_choice",
+        "填空": "fill_blank", "填空题": "fill_blank", "fill": "fill_blank",
         "主观": "subjective", "主观题": "subjective", "简答": "subjective",
-        "subjective": "subjective",
+        "简答题": "subjective", "subjective": "subjective",
     }
 
     subject = raw.get("subject", "")
     subject = SUBJECT_MAP.get(subject, subject)
 
-    qtype = raw.get("question_type", raw.get("题型", "choice"))
+    qtype = raw.get("question_type", raw.get("题型", "single_choice"))
     qtype = TYPE_MAP.get(str(qtype).strip(), str(qtype).strip())
+    # 统一规范化（兼容别名和大小写差异）
+    normalized, _ = normalize_question_type(qtype)
+    if normalized is not None:
+        qtype = normalized
 
     stem = raw.get("stem", raw.get("题目", raw.get("题干", "")))
     content = {"text": str(stem).strip()}
@@ -324,7 +329,7 @@ def _parse_pdf(pdf_path: str, filename: str) -> list[dict]:
             "options": options_str,
             "answer": answer,
             "explanation": analysis,
-            "question_type": "choice" if options else "fill",
+            "question_type": QT_SINGLE_CHOICE if options else QT_FILL_BLANK,
         }
         results.append(raw)
 
@@ -510,6 +515,9 @@ async def approve_question(db: AsyncSession, import_id: int, data: dict) -> Ques
     if difficulty is None and isinstance(ai_diff, int) and 1 <= ai_diff <= 5:
         difficulty = ai_diff
 
+    from app.utils.question_content import extract_image_urls_from_content
+    image_urls = extract_image_urls_from_content(content)
+
     q = Question(
         subject_id=subject_id,
         question_type=question_type,
@@ -525,6 +533,8 @@ async def approve_question(db: AsyncSession, import_id: int, data: dict) -> Ques
         review_status="approved",
         is_active=True,
     )
+    if image_urls:
+        q.image_url = image_urls
     if knowledge_points:
         q.knowledge_points = knowledge_points
     if difficulty:
@@ -584,6 +594,8 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, int]:
         if missing:
             skipped[qi.id] = missing
             continue
+        from app.utils.question_content import extract_image_urls_from_content
+        image_urls = extract_image_urls_from_content(qi.parsed_content)
         q = Question(
             subject_id=qi.subject_id,
             question_type=qi.question_type,
@@ -599,6 +611,8 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, int]:
             review_status="approved",
             is_active=True,
         )
+        if image_urls:
+            q.image_url = image_urls
         ai_meta = qi.ai_metadata or {}
         if isinstance(ai_meta, dict):
             kps = ai_meta.get("knowledge_points")
@@ -707,7 +721,7 @@ def generate_template() -> bytes:
 
     # 示例数据
     ws.append([
-        "math2", "choice", "设函数 $f(x)=x^2+1$，求 $f'(x)$。",
+        "math2", QT_SINGLE_CHOICE, "设函数 $f(x)=x^2+1$，求 $f'(x)$。",
         "A:$2x$\\nB:$x^2$\\nC:$2x+1$\\nD:$x$",
         "A", "根据求导公式，$(x^2+1)'=2x$。", "2", "导数,求导公式",
     ])

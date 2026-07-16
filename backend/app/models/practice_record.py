@@ -4,6 +4,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, fun
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.features.question_type import QT_SINGLE_CHOICE
 
 
 class PracticeRecord(Base):
@@ -20,7 +21,7 @@ class PracticeRecord(Base):
     )
     subject: Mapped[str] = mapped_column(String(32), nullable=False)
     question_type: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="choice"
+        String(32), nullable=False, default=QT_SINGLE_CHOICE
     )
     user_answer: Mapped[str] = mapped_column(Text, nullable=False)
     is_correct: Mapped[bool] = mapped_column(Boolean, nullable=False)

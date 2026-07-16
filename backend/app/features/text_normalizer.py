@@ -657,7 +657,7 @@ def _fix_option_line(line: str, line_index: int = -1) -> str:
     when the first line reads as a question stem.
     """
     # 8/6 → B: skip when the line is clearly a question number (stem text)
-    if not (line_index == 0 and _is_question_number_line(line)):
+    if not _is_question_number_line(line):
         m = re.match(r"^([8６6])\s*([.、:：）])", line)
         if m:
             return "B" + m.group(2) + line[m.end():]

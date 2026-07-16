@@ -73,7 +73,7 @@ _TRUE_FALSE_OPTIONS = {"A": "正确", "B": "错误"}
 
 
 def _ensure_true_false_options(question_type: str, options: dict | None) -> dict | None:
-    if question_type in ("true_false", "judgement") and not options:
+    if question_type == "true_false" and not options:
         return _TRUE_FALSE_OPTIONS
     return options
 
@@ -132,6 +132,12 @@ def _sanitize_question_content(content: dict | None) -> dict | None:
     if "text" in sanitized and "stem" in sanitized and sanitized.get("stem"):
         sanitized["text"] = sanitized["stem"]
 
+    # Strip admin-only fields that should never reach student clients
+    sanitized.pop("source_snapshot_url", None)
+    sanitized.pop("source_snapshot_full_page", None)
+    sanitized.pop("visual_regions", None)
+    sanitized.pop("visual_region_ids", None)
+
     return sanitized
 
 
@@ -161,7 +167,15 @@ def _sanitize_question_options(options: dict | None) -> dict | None:
 
     sanitized = dict(options)
     for key, value in sanitized.items():
-        sanitized[key] = _sanitize_option_value(value)
+        if isinstance(value, dict):
+            # Rich format: {"A": {"text": "...", "segments": [...]}}
+            text_val = value.get("text") or value.get("value") or ""
+            sanitized[key] = {
+                **value,
+                "text": _sanitize_option_value(text_val),
+            }
+        else:
+            sanitized[key] = _sanitize_option_value(value)
     return sanitized
 
 

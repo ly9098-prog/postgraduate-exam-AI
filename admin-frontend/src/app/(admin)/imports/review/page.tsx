@@ -21,12 +21,20 @@ import type { AdminImportCompleteResponse, BatchAnswerImageApplyResponse, BatchA
 import {
   normalizeBlankOptionGroups,
   deduplicateGroupOptions,
+  extractMultiBlankSource,
   parseBlankAnswer,
   serializeBlankAnswer,
   haveIdenticalOptionSets,
   getSharedOptions,
+  validateBlankAnswerMap,
+  buildMultiBlankSavePayload,
+  getMultiBlankSaveState,
+  reduceMultiBlankEditState,
+  syncDerivedMultiBlankFields,
   type BlankOptionGroup,
   type BlankAnswerMap,
+  type MultiBlankAction,
+  type MultiBlankEditState,
 } from "./components/multi-blank-choice-utils";
 import { MultiBlankChoicePreview } from "./components/multi-blank-choice-preview";
 import { MultiBlankChoiceEditor } from "./components/multi-blank-choice-editor";
@@ -134,6 +142,7 @@ type EditState = {
     sharedOptions: import("./components/multi-blank-choice-utils").BlankOption[];
     dedupWarnings?: string[];
     dedupErrors?: string[];
+    hasUnappliedDraft?: boolean;
   };
 };
 
@@ -315,22 +324,29 @@ function editStateFromItem(item: ImportQuestionItem): EditState {
     analysis: item.parsed_analysis || "",
   };
   if (isMultiBlankChoice(state.question_type)) {
-    const raw = item.raw_data as Record<string, unknown> | undefined;
-    const rawGroups = normalizeBlankOptionGroups(
-      item.parsed_content?.blank_option_groups ?? raw?.blank_option_groups,
-    );
-    const { groups, warnings, errors } = deduplicateGroupOptions(rawGroups);
-    const groupIds = groups.map((g) => g.id);
-    const answerMap = parseBlankAnswer(state.answer, groupIds);
-    const shared = groups.length >= 2 && haveIdenticalOptionSets(groups);
-    state.multiBlank = {
-      groups,
-      answerMap,
-      usesSharedOptions: shared,
-      sharedOptions: shared ? getSharedOptions(groups) : [],
-      dedupWarnings: warnings.length > 0 ? warnings : undefined,
-      dedupErrors: errors.length > 0 ? errors : undefined,
-    };
+    const extracted = extractMultiBlankSource(item as unknown as Record<string, unknown>);
+    if (extracted.groups.length >= 2) {
+      const groupIds = extracted.groups.map((g) => g.id);
+      const answerMap = parseBlankAnswer(extracted.answer, groupIds);
+      const shared = groupIds.length >= 2 && haveIdenticalOptionSets(extracted.groups);
+      state.multiBlank = {
+        groups: extracted.groups,
+        answerMap,
+        usesSharedOptions: shared,
+        sharedOptions: shared ? getSharedOptions(extracted.groups) : [],
+        dedupWarnings: extracted.warnings.length > 0 ? extracted.warnings : undefined,
+        dedupErrors: extracted.errors.length > 0 ? extracted.errors : undefined,
+      };
+    } else {
+      // Fallback: use raw parsed_answer and empty groups
+      state.multiBlank = {
+        groups: [],
+        answerMap: {},
+        usesSharedOptions: false,
+        sharedOptions: [],
+        dedupErrors: extracted.errors.length > 0 ? extracted.errors : undefined,
+      };
+    }
   }
   return state;
 }
@@ -692,20 +708,25 @@ export default function ImportReviewPage() {
 
       if (isMultiBlankChoice(editState.question_type) && editState.multiBlank) {
         const mb = editState.multiBlank;
-        const pc: Record<string, unknown> = {
-          ...(previewItem?.parsed_content || {}),
-          blank_option_groups: mb.groups,
-        };
-        if (typeof rest.stem === "string") pc.text = rest.stem;
-        if (hasSegmentEdits) pc.segments = editedSegments;
-        const payload: Record<string, unknown> = {
-          subject_id: rest.subject_id,
-          question_type: rest.question_type,
-          answer: rest.answer,
-          analysis: rest.analysis,
-          parsed_options: null,
-          parsed_content: pc,
-        };
+
+        // Validate before saving — blocked entirely if invalid
+        const payloadResult = buildMultiBlankSavePayload(
+          previewItem as unknown as Record<string, unknown>,
+          mb.groups,
+          mb.answerMap,
+          editState.stem,
+        );
+        if (payloadResult.errors.length > 0) {
+          throw new Error(`保存校验失败：${payloadResult.errors.join("；")}`);
+        }
+        const payload = payloadResult.payload!;
+        // Override with user-edited values from editState
+        payload.subject_id = rest.subject_id;
+        payload.analysis = rest.analysis || "";
+        if (hasSegmentEdits) {
+          const pc = payload.parsed_content as Record<string, unknown>;
+          pc.segments = editedSegments;
+        }
         return apiRequest<ImportQuestionItem>(`/imports/questions/${previewId}`, {
           method: "PUT",
           body: JSON.stringify(payload),
@@ -1059,6 +1080,23 @@ export default function ImportReviewPage() {
     }
     setEditState({ ...editState, question_type: newCode });
   }, [editState]);
+
+  /** Multi-blank choice reducer action dispatcher — runs inside functional setState */
+  const onMultiBlankAction = useCallback((action: MultiBlankAction) => {
+    setEditState((prev) => {
+      if (!prev?.multiBlank) return prev;
+      const nextMultiBlank = reduceMultiBlankEditState(
+        prev.multiBlank as MultiBlankEditState,
+        action,
+      );
+      const synced = syncDerivedMultiBlankFields(prev, nextMultiBlank);
+      return {
+        ...prev,
+        answer: synced.answer,
+        multiBlank: synced.multiBlank,
+      };
+    });
+  }, []);
 
   useEffect(() => {
     if (previewId === null) return;
@@ -2603,20 +2641,8 @@ export default function ImportReviewPage() {
                           sharedOptions={mb!.sharedOptions}
                           dedupWarnings={mb!.dedupWarnings}
                           dedupErrors={mb!.dedupErrors}
-                          onChange={(newGroups, newAnswerMap) => {
-                            const canonical = serializeBlankAnswer(newAnswerMap, newGroups.map((g) => g.id));
-                            const shared = newGroups.length >= 2 && haveIdenticalOptionSets(newGroups);
-                            setEditState({
-                              ...editState,
-                              answer: canonical,
-                              multiBlank: {
-                                groups: newGroups,
-                                answerMap: newAnswerMap,
-                                usesSharedOptions: shared,
-                                sharedOptions: shared ? getSharedOptions(newGroups) : [],
-                              },
-                            });
-                          }}
+                          hasUnappliedDraft={mb!.hasUnappliedDraft}
+                          onAction={onMultiBlankAction}
                         />
                       ) : (
                       <div className="space-y-2">
@@ -2797,20 +2823,49 @@ export default function ImportReviewPage() {
                     </div>
                   </div>
                 </div>
-              ) : (
+              ) : (() => {
+                const mb = isMultiBlankChoice(editState.question_type) ? (editState.multiBlank ?? null) : null;
+                const saveState = mb && mb.groups.length >= 2
+                  ? getMultiBlankSaveState(mb.groups, mb.answerMap, mb.dedupWarnings, mb.dedupErrors, mb.hasUnappliedDraft)
+                  : null;
+                const canSave = saveState ? saveState.canSave : true;
+                return (
                 <div className="sticky bottom-0 z-10 border-t border-[var(--color-border)] bg-[var(--color-bg)]/90 px-4 py-3 backdrop-blur-xl">
+                  {saveState && saveState.errors.length > 0 ? (
+                    <div className="mb-3 rounded-xl border border-red-200/50 bg-red-50/70 p-3">
+                      <div className="flex items-start gap-2">
+                        <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-400"><AlertTriangle className="h-3 w-3" /></span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11px] font-medium text-red-700">无法保存，请先处理以下问题</p>
+                          <ol className="mt-1.5 list-inside list-decimal space-y-0.5">
+                            {saveState.errors.map((err, i) => (
+                              <li key={i} className="text-[10px] text-red-600">{err}</li>
+                            ))}
+                          </ol>
+                        </div>
+                      </div>
+                      {saveState.warnings.length > 0 ? (
+                        <div className="mt-2 border-t border-red-200/30 pt-2">
+                          {saveState.warnings.map((w, i) => (
+                            <p key={i} className="text-[10px] text-amber-600">{w}</p>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="flex items-center justify-end gap-2">
                     <Button className="h-8 px-3 text-xs" variant="ghost" onClick={cancelEditing}>
                       <X className="h-3.5 w-3.5" />
                       取消
                     </Button>
-                    <Button className="h-8 px-3 text-xs" variant="primary" disabled={updateMutation.isPending || previewItem.status === "published"} onClick={() => updateMutation.mutate()}>
+                    <Button className="h-8 px-3 text-xs" variant="primary" disabled={!canSave || updateMutation.isPending || previewItem.status === "published"} onClick={() => updateMutation.mutate()}>
                       <Save className="h-3.5 w-3.5" />
                       {updateMutation.isPending ? "保存中..." : "保存"}
                     </Button>
                   </div>
                 </div>
-              )}
+                );
+              })()}
             </div>
           </aside>
         </div>

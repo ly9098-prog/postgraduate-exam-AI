@@ -73,6 +73,12 @@ def _sanitize_content(content: dict | None) -> dict | None:
     if "text" in sanitized and "stem" in sanitized and sanitized.get("stem"):
         sanitized["text"] = sanitized["stem"]
 
+    # Strip admin-only fields
+    sanitized.pop("source_snapshot_url", None)
+    sanitized.pop("source_snapshot_full_page", None)
+    sanitized.pop("visual_regions", None)
+    sanitized.pop("visual_region_ids", None)
+
     return sanitized
 
 

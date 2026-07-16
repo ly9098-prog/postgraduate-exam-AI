@@ -1362,7 +1362,7 @@ class TestImportPipelineRun:
 
         # Verify stage ordering
         stage_names = list(result["stages"].keys())
-        assert stage_names == ["extract", "normalize_text", "ocr_correction", "layout_reconstruction", "layout_router", "analyze_structure", "classify_pages", "structure_freeze", "split", "match", "normalize_schema", "code_language_noise_clean", "code_structure_reconstruct", "classify_questions", "batch_validation", "batch_dedup", "repair", "ai_validation", "similarity_match", "math_detect", "table_detect", "review"]
+        assert stage_names == ["extract", "normalize_text", "ocr_correction", "layout_reconstruction", "layout_router", "visual_region_detect", "analyze_structure", "classify_pages", "structure_freeze", "split", "match", "normalize_schema", "code_language_noise_clean", "code_structure_reconstruct", "classify_questions", "batch_validation", "batch_dedup", "repair", "ai_validation", "similarity_match", "visual_region_assign", "math_detect", "table_detect", "visual_region_crop", "review"]
         for s in result["stages"].values():
             assert s["status"] == "completed"
 
@@ -2623,18 +2623,19 @@ class TestPageRangePersistence:
         assert data.get("page_range") is None
 
     @pytest.mark.asyncio
-    async def test_upload_response_page_range(self):
+    async def test_upload_response_page_range(self, tmp_path):
         """Test that start_import_pipeline returns page_range immediately."""
         from app.services.import_pipeline_service import start_import_pipeline
 
-        pdf_content = b"%PDF-1.4 test content"
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 test content")
         mock_fitz = MagicMock()
         mock_doc = MagicMock()
         mock_doc.__len__ = MagicMock(return_value=10)
         mock_fitz.open.return_value.__enter__.return_value = mock_doc
         with patch.dict(sys.modules, {"fitz": mock_fitz}):
             result = await start_import_pipeline(
-                file_content=pdf_content,
+                file_path=str(pdf_file),
                 filename="test.pdf",
                 content_type="application/pdf",
                 page_start=3,
@@ -2688,36 +2689,42 @@ class TestNonPdfPageRangeRejection:
     """Non-PDF files with page_start/page_end should raise ValueError."""
 
     @pytest.mark.asyncio
-    async def test_image_with_page_range_raises(self):
+    async def test_image_with_page_range_raises(self, tmp_path):
         from app.services.import_pipeline_service import start_import_pipeline
 
+        img_file = tmp_path / "test.jpg"
+        img_file.write_bytes(b"fake image content")
         with pytest.raises(ValueError, match="仅适用于 PDF"):
             await start_import_pipeline(
-                file_content=b"fake image content",
+                file_path=str(img_file),
                 filename="test.jpg",
                 content_type="image/jpeg",
                 page_start=1,
             )
 
     @pytest.mark.asyncio
-    async def test_txt_with_page_range_raises(self):
+    async def test_txt_with_page_range_raises(self, tmp_path):
         from app.services.import_pipeline_service import start_import_pipeline
 
+        txt_file = tmp_path / "test.txt"
+        txt_file.write_bytes(b"some text content")
         with pytest.raises(ValueError, match="仅适用于 PDF"):
             await start_import_pipeline(
-                file_content=b"some text content",
+                file_path=str(txt_file),
                 filename="test.txt",
                 content_type="text/plain",
                 page_end=5,
             )
 
     @pytest.mark.asyncio
-    async def test_excel_with_page_range_raises(self):
+    async def test_excel_with_page_range_raises(self, tmp_path):
         from app.services.import_pipeline_service import start_import_pipeline
 
+        xl_file = tmp_path / "test.xlsx"
+        xl_file.write_bytes(b"fake excel")
         with pytest.raises(ValueError, match="仅适用于 PDF"):
             await start_import_pipeline(
-                file_content=b"fake excel",
+                file_path=str(xl_file),
                 filename="test.xlsx",
                 content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 page_start=1,
@@ -2725,17 +2732,18 @@ class TestNonPdfPageRangeRejection:
             )
 
     @pytest.mark.asyncio
-    async def test_pdf_with_page_range_ok(self):
+    async def test_pdf_with_page_range_ok(self, tmp_path):
         from app.services.import_pipeline_service import start_import_pipeline
 
-        pdf_content = b"%PDF-1.4 test"
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 test")
         mock_fitz = MagicMock()
         mock_doc = MagicMock()
         mock_doc.__len__ = MagicMock(return_value=10)
         mock_fitz.open.return_value.__enter__.return_value = mock_doc
         with patch.dict(sys.modules, {"fitz": mock_fitz}):
             result = await start_import_pipeline(
-                file_content=pdf_content,
+                file_path=str(pdf_file),
                 filename="test.pdf",
                 content_type="application/pdf",
                 page_start=2,

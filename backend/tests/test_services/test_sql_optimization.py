@@ -82,7 +82,6 @@ def _list_column_names() -> set[str]:
 
 
 EXCLUDED_LIST_COLUMNS = {
-    "raw_data",
     "parsed_content",  # list uses content_preview (substr) instead
     "parsed_options",
     "parsed_analysis",

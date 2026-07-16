@@ -28,6 +28,7 @@ from app.features.question_pipeline import (
 )
 from app.features.question_splitter import split_questions
 from app.models.question import Question
+from app.features.question_type import QT_SINGLE_CHOICE, QT_TRUE_FALSE, QT_FILL_BLANK
 from app.models.question_import import QuestionImport
 
 logger = logging.getLogger(__name__)
@@ -286,8 +287,8 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
             "blank_option_groups": blank_option_groups,
             "answer": answer,
             "explanation": analysis,
-            "question_type": "multi_blank_choice" if blank_option_groups else ("choice" if options else (
-                "true_false" if re.search(r"[（(]\s*判断题?\s*[）)]|^\s*判断题?[：:]", stem) else "fill"
+            "question_type": "multi_blank_choice" if blank_option_groups else (QT_SINGLE_CHOICE if options else (
+                QT_TRUE_FALSE if re.search(r"[（(]\s*判断题?\s*[）)]|^\s*判断题?[：:]", stem) else QT_FILL_BLANK
             )),
         })
 
@@ -562,6 +563,21 @@ async def approve_question(
         q_fields = dict(result["question_fields"])
         # Ensure subject_id comes from the import record (authoritative source)
         q_fields["subject_id"] = qi.subject_id
+        # P1-5: 保留 segments/render_mode 等结构化内容（同 publish_single_question）
+        qi_content = qi.parsed_content or {}
+        if isinstance(qi_content, dict) and qi_content.get("render_mode") == "segments":
+            q_fields["content"] = {
+                **(q_fields.get("content") or {}),
+                "render_mode": "segments",
+                "segments": qi_content.get("segments"),
+            }
+        # Preserve source_snapshot_url
+        if isinstance(qi_content, dict) and qi_content.get("source_snapshot_url"):
+            q_fields["content"]["source_snapshot_url"] = qi_content["source_snapshot_url"]
+        from app.utils.question_content import extract_image_urls_from_content
+        image_urls = extract_image_urls_from_content(qi_content)
+        if image_urls:
+            q_fields["image_url"] = image_urls
         q = Question(
             **q_fields,
             source=qi.source_file,
@@ -652,6 +668,20 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int,
         else:
             q_fields = dict(result["question_fields"])
             q_fields["subject_id"] = qi.subject_id
+            # P1-5: 保留 segments/render_mode（同 publish_single_question）
+            qi_content = qi.parsed_content or {}
+            if isinstance(qi_content, dict) and qi_content.get("render_mode") == "segments":
+                q_fields["content"] = {
+                    **(q_fields.get("content") or {}),
+                    "render_mode": "segments",
+                    "segments": qi_content.get("segments"),
+                }
+            if isinstance(qi_content, dict) and qi_content.get("source_snapshot_url"):
+                q_fields["content"]["source_snapshot_url"] = qi_content["source_snapshot_url"]
+            from app.utils.question_content import extract_image_urls_from_content
+            image_urls = extract_image_urls_from_content(qi_content)
+            if image_urls:
+                q_fields["image_url"] = image_urls
             q = Question(
                 **q_fields,
                 source=qi.source_file,
