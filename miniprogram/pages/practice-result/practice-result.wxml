@@ -164,6 +164,41 @@
 
           <view wx:if="{{item._isSkipped}}" class="detail-skipped-line">本题未作答</view>
 
+          <!-- Multi-blank choice per-blank display -->
+          <view wx:elif="{{item._isMultiBlank && item._blankViewModel}}" class="detail-multi-blank-wrap">
+            <view class="detail-multi-blank-head">
+              <text class="detail-multi-blank-count">
+                答对 {{item._blankViewModel.correctBlankCount}} / {{item._blankViewModel.totalBlankCount}} 空
+              </text>
+            </view>
+            <view
+              class="detail-multi-blank-row {{b.isCorrect ? 'blank-correct' : 'blank-wrong'}}"
+              wx:for="{{item._blankViewModel.blankResults}}"
+              wx:key="id"
+            >
+              <view class="blank-id-wrap"><text class="blank-id">{{item.id}}</text></view>
+              <view class="blank-detail">
+                <view class="blank-user-answer" wx:if="{{item.isAnswered}}">
+                  <text class="blank-label">我的答案</text>
+                  <text class="blank-value {{item.isCorrect ? 'correct' : 'wrong'}}">{{item.userKey}}</text>
+                  <text class="blank-text" wx:if="{{item.userText}}">({{item.userText}})</text>
+                </view>
+                <view class="blank-user-answer" wx:else>
+                  <text class="blank-label">未作答</text>
+                </view>
+                <view class="blank-correct-answer" wx:if="{{!item.isCorrect}}">
+                  <text class="blank-label correct">正确答案</text>
+                  <text class="blank-value correct">{{item.correctKey}}</text>
+                  <text class="blank-text" wx:if="{{item.correctText}}">({{item.correctText}})</text>
+                </view>
+              </view>
+              <view class="blank-status">
+                <text wx:if="{{item.isCorrect}}" class="blank-check">✓</text>
+                <text wx:else class="blank-cross">✗</text>
+              </view>
+            </view>
+          </view>
+
           <view wx:elif="{{item._isWrong}}" class="detail-answer-grid">
             <view class="detail-answer-section user-answer-section">
               <text class="detail-answer-label">我的答案</text>
@@ -198,6 +233,31 @@
                   copy-link="{{false}}"
                 />
                 <text wx:else class="detail-answer-value right">{{item._correctAnswerText}}</text>
+              </view>
+            </view>
+          </view>
+
+          <view wx:elif="{{item._isMultiBlank}}" class="detail-multi-blank-wrap">
+            <view class="detail-multi-blank-head">
+              <text class="detail-multi-blank-count">
+                答对 {{item._blankViewModel.correctBlankCount}} / {{item._blankViewModel.totalBlankCount}} 空
+              </text>
+            </view>
+            <view
+              class="detail-multi-blank-row blank-correct"
+              wx:for="{{item._blankViewModel.blankResults}}"
+              wx:key="id"
+            >
+              <view class="blank-id-wrap"><text class="blank-id">{{item.id}}</text></view>
+              <view class="blank-detail">
+                <view class="blank-user-answer">
+                  <text class="blank-label">答案</text>
+                  <text class="blank-value correct">{{item.correctKey}}</text>
+                  <text class="blank-text" wx:if="{{item.correctText}}">({{item.correctText}})</text>
+                </view>
+              </view>
+              <view class="blank-status">
+                <text class="blank-check">✓</text>
               </view>
             </view>
           </view>

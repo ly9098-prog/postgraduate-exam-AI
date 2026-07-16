@@ -247,6 +247,17 @@ function normalizeFunctionNames(value) {
   )
 }
 
+function normalizeNamedOperators(value) {
+  // KaTeX does not expose every textbook operator as a dedicated command.
+  // Historical formula data commonly stores `sgn x` as plain text, while
+  // newer records may already contain `\operatorname{sgn}`. Convert only the
+  // former and leave the latter untouched.
+  return String(value || '').replace(
+    /(^|[^\\A-Za-z{])(sgn)(?=\s*[A-Za-z0-9([{\\]|\s*$)/gi,
+    function (_, prefix, name) { return prefix + '\\operatorname{' + name.toLowerCase() + '}' },
+  )
+}
+
 function normalizeMathRun(value) {
   var source = stripOuterMathDelimiters(String(value || '').trim())
   if (!source) return ''
@@ -262,6 +273,7 @@ function normalizeMathRun(value) {
   // (sin x)/x instead of producing a real KaTeX fraction.
   source = normalizePowers(source)
   source = normalizeFractions(source)
+  source = normalizeNamedOperators(source)
   source = normalizeFunctionNames(source)
     .replace(/\s*=\s*/g, '=')
     .replace(/[ \t]+/g, ' ')
@@ -288,8 +300,11 @@ function isMathRun(value) {
   if (/^(?:\.{0,2}\/|\/)[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+$/.test(source)) return false
   if (/^\$\s*\d/.test(source) || /^(?:USD|RMB|CNY)\s*\$?\s*\d/i.test(source)) return false
 
-  if (/\\(?:lim|frac|sqrt|sum|prod|int|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|ln|log|det|exp|to|infty|le|ge|ne|approx|begin|alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|omicron|pi|varpi|rho|varrho|sigma|varsigma|tau|upsilon|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Upsilon|Phi|Psi|Omega)\b/.test(source)) return true
-  if (/(?:lim|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|ln|log|det|exp)\s*\(?/i.test(source)) return true
+  // Any LaTeX control word is a strong math signal after URLs and filesystem
+  // paths have already been protected above. A whitelist caused valid commands
+  // such as \operatorname, \lfloor and \rfloor to leak into the UI as source.
+  if (/\\[A-Za-z]+/.test(source)) return true
+  if (/(?:lim|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|ln|log|det|exp|sgn)\s*\(?/i.test(source)) return true
   if (/[A-Za-z0-9)}\]]\s*(?:=|≠|≈|≤|≥|<|>|→|->|\+|\-|\*|\/|\^|_)/.test(source)) return true
   if (/(?:=|≠|≈|≤|≥|<|>|→|->|\+|\-|\*|\/|\^|_)\s*[A-Za-z0-9({\[]/.test(source)) return true
   return /[A-Za-z].*[∞∑√]/.test(source)

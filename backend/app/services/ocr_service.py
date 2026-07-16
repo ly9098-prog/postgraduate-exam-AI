@@ -38,6 +38,19 @@ _ocr_init_lock = threading.Lock()       # 保护 PaddleOCR 初始化（只初始
 _ocr_inference_lock = threading.Lock()  # 串行化推理调用（单线程 paddle inference）
 _ocr_init_error: str | None = None      # 初始化失败时记录错误消息，后续不再重试
 _ocr_initialized: bool = False
+_ocr_reinit_count: int = 0  # 自动重置计数，用于监控
+
+
+def _reset_ocr():
+    """Reset the OCR singleton after an inference failure.
+
+    This allows the next _get_ocr() call to create a fresh PaddleOCR instance.
+    """
+    global _ocr_instance, _ocr_initialized, _ocr_init_error, _ocr_reinit_count
+    _ocr_instance = None
+    _ocr_initialized = False
+    _ocr_init_error = None
+    _ocr_reinit_count += 1
 
 _OCR_MAX_SIDE = 3000
 _OCR_DEPENDENCY_ERROR = "OCR 依赖未安装：paddleocr，请先安装 requirements-ocr.txt"
@@ -678,7 +691,14 @@ def ocr_pages_with_boxes(
 
     # 提前检查 OCR 可用性，避免线程池提交后全部失败
     if not ocr_is_available():
-        _get_ocr()  # 触发初始化，失败会抛 RuntimeError（含 _ocr_init_error）
+        try:
+            _get_ocr()  # 触发初始化，失败会抛 RuntimeError（含 _ocr_init_error）
+        except RuntimeError:
+            # 初始化失败时（例如 paddleocr 未安装），为所有页返回空结果
+            return {
+                idx: OcrPageResult(page_index=idx, text="", boxes=[])
+                for idx, _ in page_images
+            }
 
     results: dict[int, OcrPageResult] = {}
     max_workers = get_ocr_profile().max_workers

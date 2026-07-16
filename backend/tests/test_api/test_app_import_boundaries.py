@@ -24,6 +24,7 @@ async def _app_user():
 
 
 def test_app_import_management_endpoints_are_forbidden():
+    """Management import endpoints have been moved to admin router (return 404 at old paths)."""
     app.dependency_overrides[get_current_user] = _app_user
     app.dependency_overrides[get_db] = _override_db
     try:
@@ -38,10 +39,14 @@ def test_app_import_management_endpoints_are_forbidden():
     finally:
         app.dependency_overrides.clear()
 
-    assert [response.status_code for response in responses] == [403, 403, 403, 403, 403, 403]
+    # Routes removed from app router — 404 means they don't exist for any user
+    assert all(r.status_code == 404 for r in responses), (
+        f"Expected all 404, got: {[r.status_code for r in responses]}"
+    )
 
 
 def test_app_ai_import_management_endpoints_are_forbidden():
+    """AI import management endpoints moved to admin router (return 404 at old paths)."""
     app.dependency_overrides[get_current_user] = _app_user
     app.dependency_overrides[get_db] = _override_db
     try:
@@ -53,7 +58,9 @@ def test_app_ai_import_management_endpoints_are_forbidden():
     finally:
         app.dependency_overrides.clear()
 
-    assert [response.status_code for response in responses] == [403, 403, 403]
+    assert all(r.status_code == 404 for r in responses), (
+        f"Expected all 404, got: {[r.status_code for r in responses]}"
+    )
 
 
 def test_app_ai_import_generate_remains_available(monkeypatch):

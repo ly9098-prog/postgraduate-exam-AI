@@ -1967,6 +1967,8 @@ class ImportPipeline:
             stage_specs.append(("ocr_correction", self._run_ocr_correction))
         stage_specs.append(("layout_reconstruction", self._run_layout_reconstruction))
         stage_specs.append(("layout_router", self._run_layout_router))
+        if self.options.get("enable_visual_region_detect", True):
+            stage_specs.append(("visual_region_detect", self._run_visual_region_detect))
         stage_specs.extend([
             ("analyze_structure", self._run_analyze_structure),
             ("classify_pages", self._run_classify_pages),
@@ -1991,10 +1993,14 @@ class ImportPipeline:
             stage_specs.append(("ai_validation", self._run_ai_validation))
         if self.options.get("enable_similarity_match", True):
             stage_specs.append(("similarity_match", self._run_similarity_match))
+        if self.options.get("enable_visual_region_assign", True):
+            stage_specs.append(("visual_region_assign", self._run_visual_region_assign))
         if self.options.get("enable_math_detect", True):
             stage_specs.append(("math_detect", self._run_math_detect))
         if self.options.get("enable_table_detect", True):
             stage_specs.append(("table_detect", self._run_table_detect))
+        if self.options.get("enable_visual_region_crop", True):
+            stage_specs.append(("visual_region_crop", self._run_visual_region_crop))
         stage_specs.append(("review", self._run_review))
 
         self.stages.clear()
@@ -3663,6 +3669,218 @@ class ImportPipeline:
     ) -> dict:
         """Stage 6.9: detect table candidates (P5-2: delegated)."""
         return run_table_detect_stage(questions)
+
+    def _run_visual_region_detect(
+        self,
+        questions: list[dict],
+        normalized_blocks: list | None = None,
+        page_image_refs: dict | None = None,
+        **_kw,
+    ) -> dict:
+        """Stage 6.10: page-level visual region detection from layout blocks.
+
+        Runs after layout_router when layout blocks are available.
+        Delegates to visual_region_detect_stage.
+        """
+        from app.features.pipeline_stages.visual_region_detect_stage import (
+            run_visual_region_detect_stage,
+        )
+        # Build layout_blocks_by_page from normalized_blocks when available
+        layout_blocks_by_page: dict[int, list[dict]] | None = None
+        page_dimensions: dict[int, tuple[int, int]] | None = None
+        if normalized_blocks:
+            layout_blocks_by_page = {}
+            page_dimensions = {}
+            for block in normalized_blocks:
+                page = block.get("page") or block.get("page_index") or 0
+                boxes = block.get("boxes") or []
+                # Collect page dimensions from the first block on each page
+                if page not in page_dimensions:
+                    pw = block.get("page_width") or 1000
+                    ph = block.get("page_height") or 1000
+                    page_dimensions[page] = (int(pw), int(ph))
+                # Build layout-like entries from OCR boxes for gap analysis
+                if boxes and isinstance(boxes, list):
+                    layout_blocks_by_page.setdefault(page, []).extend(boxes)
+
+        return run_visual_region_detect_stage(
+            questions,
+            layout_blocks_by_page=layout_blocks_by_page,
+            page_dimensions=page_dimensions,
+        )
+
+    async def _run_visual_region_assign(
+        self,
+        questions: list[dict],
+        **_kw,
+    ) -> dict:
+        """Stage 6.11: assign page-level visual regions to individual questions.
+
+        Must run after split+match so question spatial bounds are available.
+        Delegates to visual_region_assign_stage.
+        """
+        from app.features.pipeline_stages.visual_region_assign_stage import (
+            run_visual_region_assign_stage,
+        )
+
+        # Collect visual_regions from questions (set by visual_region_detect)
+        page_regions: dict[int, list[dict]] = {}
+        for q in questions:
+            for vr in (q.get("visual_regions") or []):
+                if isinstance(vr, dict):
+                    page = vr.get("source_page") or q.get("page_start") or 1
+                    page_regions.setdefault(page, []).append(vr)
+
+        return run_visual_region_assign_stage(
+            questions,
+            page_regions=page_regions,
+        )
+
+    async def _run_visual_region_crop(
+        self,
+        questions: list[dict],
+        page_image_refs: dict | None = None,
+        **_kw,
+    ) -> dict:
+        """Stage 6.12: crop assigned visual regions, build segments and source snapshots.
+
+        Must run after visual_region_assign so each region knows which question it
+        belongs to. Crops from page images and uploads to storage backend.
+
+        Also generates source_snapshot_url for each question when possible.
+        """
+        import hashlib
+        import logging
+        from datetime import datetime
+
+        logger = logging.getLogger(__name__)
+
+        if not page_image_refs:
+            for q in questions:
+                flags = list(q.get("risk_flags") or [])
+                if "source_snapshot_failed" not in flags:
+                    flags.append("source_snapshot_failed")
+                q["risk_flags"] = flags
+            return {"questions": questions, "warnings": ["visual_region_crop: no page images"]}
+
+        from app.services.storage_backend import get_storage
+        from app.services.visual_region_cropper import crop_and_upload_region
+        from app.services.visual_region_types import VisualRegion
+
+        storage = get_storage()
+        virtual_import_id = hashlib.md5(self.pipeline_id.encode()).hexdigest()[:8]
+        month = datetime.now().strftime("%Y%m")
+        crop_warnings: list[str] = []
+
+        for q in questions:
+            seen_region_ids: set[str] = set()
+            segments: list[dict] = list(q.get("segments") or [])
+            stem = q.get("stem") or (q.get("parsed_content") or {}).get("text") or ""
+
+            # Process visual_regions
+            vrs = list(q.get("visual_regions") or [])
+            for vr_dict in vrs:
+                region_id = vr_dict.get("region_id", "")
+                if region_id and region_id in seen_region_ids:
+                    continue
+                if region_id:
+                    seen_region_ids.add(region_id)
+
+                # Reconstruct VisualRegion and crop
+                from app.services.visual_region_types import (
+                    CoordinateSpace, VisualRegionType, AssignmentMethod,
+                )
+
+                bbox = vr_dict.get("bbox")
+                region_type_str = vr_dict.get("region_type", "unknown")
+                try:
+                    rt = VisualRegionType(region_type_str)
+                except ValueError:
+                    rt = VisualRegionType.UNKNOWN
+
+                crs = vr_dict.get("coordinate_space", "image_pixels")
+                try:
+                    cs = CoordinateSpace(crs) if crs else CoordinateSpace.IMAGE_PIXELS
+                except ValueError:
+                    cs = CoordinateSpace.IMAGE_PIXELS
+
+                region = VisualRegion(
+                    region_id=region_id,
+                    region_type=rt,
+                    source_page=vr_dict.get("source_page", 1),
+                    bbox=tuple(bbox) if isinstance(bbox, (list, tuple)) and len(bbox) == 4 else None,
+                    coordinate_space=cs,
+                    confidence=vr_dict.get("confidence", 0.5),
+                    alt=vr_dict.get("alt", ""),
+                    option_key=vr_dict.get("option_key"),
+                )
+
+                if region.bbox:
+                    region = await crop_and_upload_region(
+                        page_image_refs, region, storage, virtual_import_id,
+                    )
+
+                if region.image_url:
+                    seg = region.to_segment()
+                    segments.append(seg)
+                    crop_warnings.append(
+                        f"visual region {region_id} cropped for page {region.source_page}"
+                    )
+                else:
+                    flags = list(q.get("risk_flags") or [])
+                    if region.crop_failed:
+                        if "visual_crop_failed" not in flags:
+                            flags.append("visual_crop_failed")
+                    elif region.bbox is None:
+                        if "visual_region_bbox_missing" not in flags:
+                            flags.append("visual_region_bbox_missing")
+                    q["risk_flags"] = flags
+
+            if segments:
+                q["segments"] = segments
+                q["parsed_content"] = {
+                    **(q.get("parsed_content") or {}),
+                    "render_mode": "segments",
+                    "segments": segments,
+                }
+
+            # Generate source_snapshot_url
+            try:
+                page = q.get("page_start") or 1
+                page_path = page_image_refs.get(page) if page_image_refs else None
+                if page_path:
+                    q_bbox = q.get("question_bbox")
+                    if q_bbox and len(q_bbox) == 4:
+                        png_bytes = crop_region(
+                            page_path, tuple(q_bbox),
+                            coordinate_space=CoordinateSpace.IMAGE_PIXELS,
+                        )
+                        is_full_page = False
+                    else:
+                        # No question bbox — use full page as snapshot
+                        from pathlib import Path
+                        png_bytes = Path(page_path).read_bytes()
+                        is_full_page = True
+
+                    if png_bytes and len(png_bytes) > 0:
+                        content_hash = hashlib.md5(png_bytes).hexdigest()[:12]
+                        filename = f"{virtual_import_id}_snapshot_p{page}_{content_hash}.png"
+                        snapshot_url = await storage.upload(
+                            f"{month}/snapshots/{filename}", png_bytes,
+                        )
+                        if "parsed_content" not in q:
+                            q["parsed_content"] = {"text": stem}
+                        if isinstance(q["parsed_content"], dict):
+                            q["parsed_content"]["source_snapshot_url"] = snapshot_url
+                            q["parsed_content"]["source_snapshot_full_page"] = is_full_page
+            except Exception as e:
+                logger.warning("source_snapshot failed import=%s page=%s: %s", self.pipeline_id, page, e)
+                flags = list(q.get("risk_flags") or [])
+                if "source_snapshot_failed" not in flags:
+                    flags.append("source_snapshot_failed")
+                q["risk_flags"] = flags
+
+        return {"questions": questions, "warnings": crop_warnings}
 
     async def _run_review(
         self,

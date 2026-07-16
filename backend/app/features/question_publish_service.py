@@ -226,6 +226,19 @@ async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
             "segments": qi_content.get("segments"),
         }
 
+    from app.utils.question_content import extract_image_urls_from_content
+    image_urls = extract_image_urls_from_content(qi_content)
+    if image_urls:
+        q_fields["image_url"] = image_urls
+
+    # Preserve source snapshot metadata for admin audit/review
+    if isinstance(qi_content, dict):
+        for key in ("source_snapshot_url", "source_snapshot_full_page"):
+            if key in qi_content:
+                content = dict(q_fields.get("content") or {})
+                content[key] = qi_content[key]
+                q_fields["content"] = content
+
     q = Question(
         **q_fields,
         source=qi.source_file,

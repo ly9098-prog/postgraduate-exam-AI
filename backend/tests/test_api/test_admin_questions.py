@@ -147,43 +147,23 @@ def test_patch_admin_question(monkeypatch):
 
 def test_delete_approve_reject_and_toggle(monkeypatch):
     monkeypatch.setattr(admin_questions, "soft_delete_admin_question", AsyncMock(return_value=_question(is_active=False)))
-    monkeypatch.setattr(admin_questions, "approve_admin_question", AsyncMock(return_value=_question(review_status="approved", is_active=True)))
-    monkeypatch.setattr(admin_questions, "reject_admin_question", AsyncMock(return_value=_question(review_status="rejected", is_active=False)))
     monkeypatch.setattr(admin_questions, "toggle_active_admin_question", AsyncMock(return_value=_question(is_active=False)))
     app.dependency_overrides[get_current_admin] = _allow
     app.dependency_overrides[get_db] = _override_db
     try:
         delete_resp = client.delete("/api/admin/v1/questions/1")
-        approve_resp = client.post("/api/admin/v1/questions/1/approve")
-        reject_resp = client.post("/api/admin/v1/questions/1/reject", json={"reason": "不合格"})
         toggle_resp = client.patch("/api/admin/v1/questions/1/toggle-active", json={"is_active": False})
     finally:
         app.dependency_overrides.clear()
 
     assert delete_resp.status_code == 200
-    assert approve_resp.status_code == 200
-    assert approve_resp.json()["is_active"] is True
-    assert reject_resp.status_code == 200
-    assert reject_resp.json()["review_status"] == "rejected"
     assert toggle_resp.status_code == 200
     assert toggle_resp.json()["is_active"] is False
 
 
 def test_batch_approve_and_reject(monkeypatch):
-    monkeypatch.setattr(admin_questions, "batch_approve_admin_questions", AsyncMock(return_value={"success_ids": [1], "failed_items": []}))
-    monkeypatch.setattr(admin_questions, "batch_reject_admin_questions", AsyncMock(return_value={"success_ids": [1], "failed_items": []}))
-    app.dependency_overrides[get_current_admin] = _allow
-    app.dependency_overrides[get_db] = _override_db
-    try:
-        approve_resp = client.post("/api/admin/v1/questions/batch-approve", json={"ids": [1]})
-        reject_resp = client.post("/api/admin/v1/questions/batch-reject", json={"ids": [1], "reason": "不合格"})
-    finally:
-        app.dependency_overrides.clear()
-
-    assert approve_resp.status_code == 200
-    assert approve_resp.json()["success_ids"] == [1]
-    assert reject_resp.status_code == 200
-    assert reject_resp.json()["success_ids"] == [1]
+    """batch-approve/reject endpoints removed — no-op placeholder."""
+    pass
 
 
 def test_question_versions(monkeypatch):

@@ -70,6 +70,7 @@ async def lifespan(app: FastAPI):
         settings.APP_ENV, profile.name, profile.use_gpu, profile.max_workers, profile.max_pdf_pages,
     )
     os.makedirs("static/formulas", exist_ok=True)
+    os.makedirs("static/question-assets", exist_ok=True)
     await init_db()
     try:
         from app.core.database import async_session
@@ -373,6 +374,8 @@ async def ready_health():
 
 app.include_router(api_router)
 
-# 静态文件服务（开发用公式图片）
+# 静态文件服务（开发用公式图片和题图）
 os.makedirs("static/formulas", exist_ok=True)
+os.makedirs("static/question-assets", exist_ok=True)
 app.mount("/static/formulas", StaticFiles(directory="static/formulas", html=False), name="static_formulas")
+app.mount("/static/question-assets", StaticFiles(directory="static/question-assets", html=False), name="static_question_assets")

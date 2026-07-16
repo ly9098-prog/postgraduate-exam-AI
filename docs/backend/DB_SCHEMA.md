@@ -386,7 +386,7 @@ class Question(Base):
 
     id: int                    # PK
     subject: str               # math2 / exam408 / english（索引）
-    question_type: str         # choice / fill / subjective
+    question_type: str         # choice / fill / subjective / multi_blank_choice
     content: dict              # JSON: {"text":"...", "images":["url"], "latex":"..."}
     options: dict?             # JSON: {"A":"...", "B":"..."}
     answer: str                # 标准答案（Text 类型，支持长答案）
@@ -673,7 +673,7 @@ class PracticeRecord(Base):
     user_id: int            # FK → users.id（索引）
     question_id: int        # FK → questions.id（索引）
     subject: str            # math2 / exam408 / english
-    question_type: str      # choice / fill / subjective
+    question_type: str      # choice / fill / subjective / multi_blank_choice
     user_answer: str        # 用户提交的答案（Text）
     is_correct: bool        # 是否正确
     used_time: int?         # 耗时（秒），可为空
@@ -1180,6 +1180,29 @@ class AppUserAdminBinding(Base):
 
 **唯一约束**: `user_id` (`uq_app_user_admin_bindings_user_id`)、`admin_user_id` (`uq_app_user_admin_bindings_admin_user_id`)
 
+### 多空选择题（`multi_blank_choice`）
+
+当 `question_type = "multi_blank_choice"` 时：
+
+- `options` / `parsed_options` = `null`
+- `answer` 存储 canonical 格式：`"①:B;②:D"`（`slot:value` 对，英文分号分隔）
+- `content` / `parsed_content` 包含 `blank_option_groups`：
+
+```json
+{
+  "text": "入度是（ ）；出度是（ ）。",
+  "blank_option_groups": [
+    {"id": "①", "options": [{"key": "A", "text": "a"}, {"key": "B", "text": "b"}]},
+    {"id": "②", "options": [{"key": "A", "text": "a"}, {"key": "B", "text": "b"}]}
+  ]
+}
+```
+
+- 即使原题只展示一次公共选项，每个 `blank_option_groups` 条目都包含完整选项副本
+- 后端判题：所有槽位必须覆盖且值匹配，多余槽位拒绝，槽位顺序无关
+- 提交格式：`user_answer: "①:B;②:D"`
+- 导入管线自动从 2+ 空 + 共享选项 + 多槽答案检测
+
 ---
 
 ## 设计原则
@@ -1206,4 +1229,4 @@ class AppUserAdminBinding(Base):
 - **番茄钟**：`pomodoro_sessions` 单表记录完整生命周期，支持微信订阅通知
 - **增量同步**：`questions.sync_uuid/sync_version`、`tags.sync_uuid` 支持本地-云端增量同步
 
-> 上次更新：2026-06-26 — review_schedules 明确为主调度数据源；补充同步机制、rating 规范、自动批改映射默认值、时区策略、技术债说明
+> 上次更新：2026-07-16 — 补充 multi_blank_choice 数据契约（blank_option_groups、canonical answer 格式）

@@ -269,7 +269,18 @@ class TestAdminGraphAssetList:
     def test_card_not_found(self, admin_override):
         mock_session = AsyncMock()
         mock_session.get = AsyncMock(return_value=None)
-        mock_session.execute = AsyncMock(return_value=_Result([]))
+        # First execute = permissions check; second = empty card query
+        perm_result = MagicMock()
+        perm_scalars = MagicMock()
+        perm_scalars.all.return_value = ["formula:read", "formula:update", "formula:delete"]
+        perm_result.scalars.return_value = perm_scalars
+        data_result = _Result([])
+        call_count = [0]
+        async def _execute_side(*args, **kwargs):
+            i = call_count[0]
+            call_count[0] += 1
+            return perm_result if i == 0 else data_result
+        mock_session.execute = _execute_side
         app.dependency_overrides[get_db] = lambda: mock_session
 
         resp = client.get("/api/admin/v1/formulas/999/graph-assets")
@@ -300,7 +311,18 @@ class TestAdminGraphAssetDelete:
     def test_not_found_uploaded(self, admin_override):
         mock_session = AsyncMock()
         mock_session.get = AsyncMock(return_value=_make_card(1))
-        mock_session.execute = AsyncMock(return_value=_Result([]))
+        # First execute = permissions check; second = empty asset query
+        perm_result = MagicMock()
+        perm_scalars = MagicMock()
+        perm_scalars.all.return_value = ["formula:read", "formula:update", "formula:delete"]
+        perm_result.scalars.return_value = perm_scalars
+        data_result = _Result([])
+        call_count = [0]
+        async def _execute_side(*args, **kwargs):
+            i = call_count[0]
+            call_count[0] += 1
+            return perm_result if i == 0 else data_result
+        mock_session.execute = _execute_side
         app.dependency_overrides[get_db] = lambda: mock_session
 
         resp = client.delete("/api/admin/v1/formulas/1/graph-assets/uploaded")

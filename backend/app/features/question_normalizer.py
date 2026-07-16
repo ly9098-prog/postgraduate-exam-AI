@@ -23,12 +23,15 @@ from app.utils.trace.stage_tracer import StageTracer
 
 logger = logging.getLogger(__name__)
 
-QT_SINGLE_CHOICE = "single_choice"
-QT_MULTIPLE_CHOICE = "multiple_choice"
-QT_TRUE_FALSE = "true_false"
-QT_FILL_BLANK = "fill_blank"
-QT_MULTI_BLANK_CHOICE = "multi_blank_choice"
-QT_SUBJECTIVE = "subjective"
+from app.features.question_type import (
+    QT_SINGLE_CHOICE,
+    QT_MULTIPLE_CHOICE,
+    QT_TRUE_FALSE,
+    QT_FILL_BLANK,
+    QT_MULTI_BLANK_CHOICE,
+    QT_SUBJECTIVE,
+    is_canonical,
+)
 _OPTION_LINE_RE = re.compile(r"^(?:[?？]|[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])?\s*[A-Ha-h][.、:：)）\s]")
 # 增强选项检测模式：A. A) ①. (A) 等，用于从 raw_text 中二次检测选项
 _OPTION_PATTERN = re.compile(r"^\s*([A-D]|[①②③④]|\(\s*[A-D]\s*\))\s*[.、\)]")
@@ -59,17 +62,6 @@ REQUIRED_OPTION_KEYS = frozenset({"A", "B", "C", "D"})
 _OCR_CONTAMINATION_THRESHOLD = 0.30
 
 _OPTION_LETTERS = frozenset({"A", "B", "C", "D"})
-
-_TYPE_ALIAS_MAP = {
-    "单选": QT_SINGLE_CHOICE, "单选题": QT_SINGLE_CHOICE,
-    "多选": QT_MULTIPLE_CHOICE, "多选题": QT_MULTIPLE_CHOICE,
-    "判断": QT_TRUE_FALSE, "判断题": QT_TRUE_FALSE,
-    "填空": QT_FILL_BLANK, "填空题": QT_FILL_BLANK,
-    "主观": QT_SUBJECTIVE, "主观题": QT_SUBJECTIVE,
-    "简答": QT_SUBJECTIVE, "简答题": QT_SUBJECTIVE,
-}
-
-_TRUE_FALSE_VALUES = {"T", "F", "TRUE", "FALSE", "正确", "错误", "√", "×", "对", "错"}
 
 _TRUE_FALSE_MAP = {
     "T": "T", "F": "F", "TRUE": "T", "FALSE": "F",

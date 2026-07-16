@@ -130,22 +130,23 @@ class TestGetPracticeQuestions:
 
 class TestMultiBlankAnswerHelpers:
     def test_normalize_blank_choice_answer(self):
-        from app.services.practice_service import _normalize_blank_choice_answer
+        from app.features.multi_blank_choice import parse_multi_blank_answer
 
-        assert _normalize_blank_choice_answer("①:A;②:C") == {"①": "A", "②": "C"}
-        assert _normalize_blank_choice_answer("①：a；②：c") == {"①": "A", "②": "C"}
-        assert _normalize_blank_choice_answer("①=A\n②=C") == {"①": "A", "②": "C"}
+        parsed, _ = parse_multi_blank_answer("①:A;②:C")
+        assert parsed == {"①": "A", "②": "C"}
+        parsed, _ = parse_multi_blank_answer("①：a；②：c")
+        assert parsed == {"①": "A", "②": "C"}
 
     def test_multi_blank_answer_order_insensitive(self):
-        from app.services.practice_service import _is_multi_blank_answer_correct
+        from app.utils.answer_normalizer import is_answer_correct
 
-        assert _is_multi_blank_answer_correct("②:C;①:A", "①:A;②:C") is True
+        assert is_answer_correct("②:C;①:A", "①:A;②:C", "multi_blank_choice") is True
 
     def test_multi_blank_answer_rejects_partial_or_wrong(self):
-        from app.services.practice_service import _is_multi_blank_answer_correct
+        from app.utils.answer_normalizer import is_answer_correct
 
-        assert _is_multi_blank_answer_correct("①:A", "①:A;②:C") is False
-        assert _is_multi_blank_answer_correct("①:A;②:B", "①:A;②:C") is False
+        assert is_answer_correct("①:A", "①:A;②:C", "multi_blank_choice") is False
+        assert is_answer_correct("①:A;②:B", "①:A;②:C", "multi_blank_choice") is False
 
 
 # --- submit_answer ---

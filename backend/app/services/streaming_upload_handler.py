@@ -21,16 +21,12 @@ Usage::
 
 from __future__ import annotations
 
-import asyncio
-import imghdr
 import logging
 import os
 import struct
 import tempfile
 from dataclasses import dataclass, field
-from typing import BinaryIO
 
-from app.core.config import settings
 
 logger = logging.getLogger("postgraduate-ai.upload")
 
@@ -72,6 +68,16 @@ class TempFile:
         except OSError:
             pass
 
+    def detach(self) -> str:
+        """Detach the temp file so it won't be cleaned up on close/__del__.
+
+        Caller (e.g. the pipeline worker) takes ownership of the file at
+        ``self.path`` and is responsible for deleting it.
+        Returns the file path.
+        """
+        self._closed = True
+        return self.path
+
     def __enter__(self) -> TempFile:
         return self
 
@@ -109,9 +115,17 @@ async def stream_to_temp(
                 )
             os.write(fd, chunk)
         os.close(fd)
+    except ValueError:
+        raise
     except Exception:
-        os.close(fd)
-        os.unlink(path)
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
         raise
 
     return TempFile(

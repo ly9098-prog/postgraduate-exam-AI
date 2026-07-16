@@ -5,7 +5,7 @@ from math import ceil
 from uuid import uuid4
 
 from fastapi import Request
-from sqlalchemy import String, case, delete, desc, func, or_, select
+from sqlalchemy import String, case, cast, delete, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow
@@ -22,6 +22,7 @@ from app.schemas.admin_imports import (
 )
 from app.services.admin_ai_settings_service import ensure_ai_parse_allowed
 from app.services.admin_audit_service import write_admin_audit
+from app.services.visual_region_types import contains_visual_reference
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,72 @@ _SOURCE_NO_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"^\s*第\s*(\d+)\s*题"), r"\1"),
     (re.compile(r"^\s*[（(]\s*(\d+)\s*[）)]"), r"\1"),
 ]
+
+
+def resolve_source_page(raw_data: dict | None) -> int | None:
+    """从 raw_data 中按优先级提取页码。
+
+    优先级：
+    1. raw_data["source"]["source_page_start"]
+    2. raw_data["source"]["page_start"]
+    3. raw_data["source"]["page"]
+    4. raw_data["page_start"]
+    5. raw_data["source_page"]
+    6. raw_data["page"]
+
+    返回 int 或 None。
+    """
+    if not raw_data or not isinstance(raw_data, dict):
+        return None
+
+    source = raw_data.get("source")
+    if isinstance(source, dict):
+        for key in ("source_page_start", "page_start", "page"):
+            val = source.get(key)
+            if val is not None:
+                try:
+                    return int(val)
+                except (TypeError, ValueError):
+                    continue
+
+    for key in ("page_start", "source_page", "page"):
+        val = raw_data.get(key)
+        if val is not None:
+            try:
+                return int(val)
+            except (TypeError, ValueError):
+                continue
+
+    return None
+
+
+def resolve_source_page_end(raw_data: dict | None) -> int | None:
+    """从 raw_data 中提取结束页码。优先级：
+    1. raw_data["source"]["source_page_end"]
+    2. raw_data["source"]["page_end"]
+    3. raw_data["page_end"]
+    """
+    if not raw_data or not isinstance(raw_data, dict):
+        return None
+
+    source = raw_data.get("source")
+    if isinstance(source, dict):
+        for key in ("source_page_end", "page_end"):
+            val = source.get(key)
+            if val is not None:
+                try:
+                    return int(val)
+                except (TypeError, ValueError):
+                    continue
+
+    val = raw_data.get("page_end")
+    if val is not None:
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            pass
+
+    return None
 
 
 def build_source_locator(
@@ -91,8 +158,16 @@ def derive_import_risk(
     ai_answer_flag: bool | None = None,
     parsed_answer: str | None = None,
     answer_status: str | None = None,
+    parsed_content: dict | None = None,
 ) -> dict:
     """从导入题目元数据推导风险等级。
+
+    Args:
+        ai_metadata: 来自管线的 ai_metadata 字典
+        ai_answer_flag: 答案是否 AI 生成
+        parsed_answer: 解析后的答案字符串
+        answer_status: 答案状态标签
+        parsed_content: 解析后的内容（用于视觉引用检测）
 
     Returns:
         {"risk_flags": [...], "risk_level": "high"|"medium"|"low", "risk_reasons": [...]}
@@ -135,6 +210,24 @@ def derive_import_risk(
         if confidence < 0.5:
             risk_flags.append("low_confidence")
 
+    # 6. 视觉引用检测：题干提及图片但没有对应视觉 segment
+    if parsed_content and isinstance(parsed_content, dict):
+        stem_text = parsed_content.get("text", "")
+        segments = parsed_content.get("segments")
+        if stem_text and contains_visual_reference(stem_text):
+            if "visual_reference_detected" not in risk_flags:
+                risk_flags.append("visual_reference_detected")
+            # Check if there's actually a visual segment
+            has_visual_segment = False
+            if segments and isinstance(segments, list):
+                has_visual_segment = any(
+                    s.get("type") in ("image", "math_image", "table_image", "code_image", "diagram", "chart")
+                    for s in segments
+                    if isinstance(s, dict) and s.get("url")
+                )
+            if not has_visual_segment and "visual_reference_but_image_missing" not in risk_flags:
+                risk_flags.append("visual_reference_but_image_missing")
+
     risk_reasons = _build_risk_reasons(risk_flags)
     risk_level = _compute_risk_level(risk_flags)
 
@@ -153,6 +246,14 @@ def _compute_risk_level(risk_flags: list[str]) -> str:
         "math_image_crop_failed", "math_image_upload_failed",
         "source_image_upload_failed",
         "table_low_confidence", "complex_formula_requires_review",
+        # Visual content blocking flags
+        "visual_reference_but_image_missing",
+        "visual_region_bbox_missing",
+        "visual_crop_failed",
+        "visual_region_ambiguous",
+        "visual_region_unassigned",
+        "math_image_bbox_missing",
+        "option_image_requires_review",
     }
     medium_flags = {
         "ai_repair", "ai_complete", "ai_enrich",
@@ -161,6 +262,11 @@ def _compute_risk_level(risk_flags: list[str]) -> str:
         "math_region_detected", "math_image_attached",
         "table_detected", "table_requires_review",
         "source_region_available",
+        # Visual content medium flags
+        "visual_reference_detected",
+        "visual_region_detected",
+        "visual_insert_position_uncertain",
+        "source_snapshot_failed",
     }
     if flag_set & high_flags:
         return "high"
@@ -194,11 +300,23 @@ def _build_risk_reasons(risk_flags: list[str]) -> list[str]:
         "math_image_attached": "已生成公式截图",
         "math_image_crop_failed": "公式截图裁剪失败",
         "math_image_upload_failed": "公式截图上传失败",
+        "math_image_bbox_missing": "公式区域缺少位置信息，无法自动裁剪",
         "table_detected": "检测到表格内容",
         "table_requires_review": "表格内容需核对",
         "table_low_confidence": "表格置信度偏低，请核对",
         "source_region_available": "原题区域截图可用",
         "source_image_upload_failed": "原题截图上传失败",
+        # Visual content risk flags
+        "visual_reference_detected": "题干引用了图片/图表，请检查是否完整",
+        "visual_reference_but_image_missing": "题干预设有图片但缺少对应图像",
+        "visual_region_detected": "检测到图形/图表区域",
+        "visual_region_bbox_missing": "图形区域缺少位置信息",
+        "visual_crop_failed": "图形裁剪失败",
+        "visual_region_ambiguous": "图形归属题目不确定",
+        "visual_insert_position_uncertain": "图形在题干中的插入位置不确定",
+        "visual_region_unassigned": "存在未归属到任何题目的图形",
+        "option_image_requires_review": "选项包含图片，需人工确认",
+        "source_snapshot_failed": "原题快照生成失败",
     }
     reasons: list[str] = []
     seen: set[str] = set()
@@ -369,9 +487,15 @@ def _brief_from_row(row) -> AdminImportQuestionItemBrief:
             if not item.source_image_name:
                 item.source_image_name = _raw_data.get("source_image_name") or _raw_data.get("source_file") or _raw_data.get("file_name")
             if item.source_page_start is None:
-                item.source_page_start = _raw_data.get("page_start") or _raw_data.get("source_page") or _raw_data.get("page")
+                item.source_page_start = (
+                    resolve_source_page(_raw_data)
+                    or _raw_data.get("page_start") or _raw_data.get("source_page") or _raw_data.get("page")
+                )
             if item.source_page_end is None:
-                item.source_page_end = _raw_data.get("page_end")
+                item.source_page_end = (
+                    resolve_source_page_end(_raw_data)
+                    or _raw_data.get("page_end")
+                )
 
     # ── source_locator 动态生成（无数据库字段时也保证返回） ──
     if not item.source_locator:
@@ -473,6 +597,8 @@ async def update_import_question(
         raise ValueError("已发布题目不可编辑")
 
     payload = data.model_dump(exclude_none=True)
+    # Capture options before potential pop for multi_blank_choice handling
+    _options_val = payload.get("options")
     if "stem" in payload:
         from app.services.pdf_text_normalizer import deduplicate_repeated_text
         content = dict(qi.parsed_content or {})
@@ -480,7 +606,22 @@ async def update_import_question(
         qi.parsed_content = content
     if "options" in payload:
         options = payload.pop("options")
-        qi.parsed_options = {str(item.get("key") or item.get("label")): item.get("text") or item.get("value") for item in options if isinstance(item, dict)} if isinstance(options, list) else options
+        if isinstance(options, list):
+            parsed = {}
+            for item in options:
+                if not isinstance(item, dict):
+                    continue
+                key = str(item.get("key") or item.get("label"))
+                # Preserve full rich format when segments exist
+                segments = item.get("segments")
+                text = item.get("text") or item.get("value") or ""
+                if segments and isinstance(segments, list) and len(segments) > 0:
+                    parsed[key] = {"text": text, "segments": segments}
+                else:
+                    parsed[key] = text
+            qi.parsed_options = parsed
+        else:
+            qi.parsed_options = options
     if "answer" in payload:
         qi.parsed_answer = payload.pop("answer")
         qi.ai_answer_flag = False
@@ -494,6 +635,31 @@ async def update_import_question(
             qi.answer_status = "missing"
     if "analysis" in payload:
         qi.parsed_analysis = payload.pop("analysis")
+
+    # ── Multi-blank choice handling ──
+    # When the question is or becomes multi_blank_choice:
+    # - parsed_options must be None (blank groups live in parsed_content)
+    # - If flat options were provided, rebuild blank_option_groups from them
+    is_or_becomes_multi = (
+        payload.get("question_type") == "multi_blank_choice"
+        or qi.question_type == "multi_blank_choice"
+    )
+    if is_or_becomes_multi:
+        qi.parsed_options = None
+        # Rebuild blank_option_groups when options were provided in the payload
+        if _options_val is not None:
+            from app.features.multi_blank_choice import (
+                build_blank_option_groups,
+                extract_blank_slots,
+            )
+            stem = (qi.parsed_content or {}).get("text", "")
+            slot_ids = extract_blank_slots(stem)
+            if slot_ids and len(slot_ids) >= 2:
+                content = dict(qi.parsed_content or {})
+                groups = build_blank_option_groups(slot_ids, _options_val)
+                if groups:
+                    content["blank_option_groups"] = groups
+                    qi.parsed_content = content
 
     # Legacy subject → subject_id conversion
     if "subject" in payload and "subject_id" not in payload:
@@ -911,12 +1077,14 @@ async def get_import_question_detail(
             item.raw_text_preview = str(_raw_text)[:200]
     # source_locator 动态生成
     if not item.source_locator:
+        source_page = getattr(qi, "source_page_start", None) or resolve_source_page(qi.raw_data)
+        source_page_end = getattr(qi, "source_page_end", None) or resolve_source_page_end(qi.raw_data)
         item.source_locator = build_source_locator(
             source_image_seq=getattr(qi, "source_image_seq", None) or (qi.raw_data or {}).get("source_image_seq"),
             source_image_name=getattr(qi, "source_image_name", None) or qi.source_file,
             source_file=qi.source_file,
-            source_page_start=getattr(qi, "source_page_start", None) or (qi.raw_data or {}).get("page_start"),
-            source_page_end=getattr(qi, "source_page_end", None) or (qi.raw_data or {}).get("page_end"),
+            source_page_start=source_page,
+            source_page_end=source_page_end,
         )
     return item
 
@@ -943,8 +1111,11 @@ def _question_conditions(
             or_(
                 QuestionImport.batch_id.ilike(pattern),
                 QuestionImport.source_file.ilike(pattern),
+                QuestionImport.source_question_no.ilike(pattern),
                 QuestionImport.parsed_answer.ilike(pattern),
                 QuestionImport.parsed_analysis.ilike(pattern),
+                QuestionImport.parsed_content["text"].as_string().ilike(pattern),
+                cast(QuestionImport.parsed_options, String).ilike(pattern),
             )
         )
     return conditions

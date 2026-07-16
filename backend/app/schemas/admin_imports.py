@@ -1,7 +1,9 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.features.question_type import validate_question_type
 
 
 class AdminImportBatchListItem(BaseModel):
@@ -188,6 +190,13 @@ class AdminImportQuestionUpdateRequest(BaseModel):
     parsed_analysis: str | None = None
     raw_data: dict | None = None
     review_note: str | None = None
+
+    @field_validator("question_type")
+    @classmethod
+    def _validate_type(cls, v: str | None) -> str | None:
+        if v is not None:
+            validate_question_type(v)
+        return v
     # ── 导入审核定位与答案状态字段 ──
     source_question_no: str | None = None
     source_question_label: str | None = None
@@ -294,6 +303,13 @@ class TextImportQuestion(BaseModel):
     question_type: str | None = None
     knowledge_points: list[str] = []
     difficulty: int = 3
+
+    @field_validator("question_type")
+    @classmethod
+    def _validate_type(cls, v: str | None) -> str | None:
+        if v is not None:
+            validate_question_type(v)
+        return v
 
 
 class TextImportRequest(BaseModel):

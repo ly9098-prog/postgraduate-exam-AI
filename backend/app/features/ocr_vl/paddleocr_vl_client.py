@@ -128,6 +128,80 @@ _MAX_RETRIES = 3
 _RETRY_DELAY = 2.0  # seconds between retries
 
 
+def _normalize_layout_block(lr: dict) -> dict | None:
+    """Normalize a PaddleOCR-VL layoutParsingResult entry into a standard format.
+
+    Handles multiple possible response structures and preserves all available
+    metadata. Returns None if the block has no useful information.
+    """
+    if not isinstance(lr, dict):
+        return None
+
+    block: dict = {}
+
+    # Extract text from various possible locations
+    md = lr.get("markdown") if isinstance(lr.get("markdown"), dict) else None
+    if md:
+        block["text"] = md.get("text", "")
+        block["markdown"] = md.get("text", "")
+        conf = md.get("confidence")
+        if conf is not None:
+            try:
+                block["confidence"] = float(conf)
+            except (ValueError, TypeError):
+                pass
+    else:
+        block["text"] = lr.get("text") or lr.get("content") or ""
+
+    # Type/label/category from various possible keys
+    block["type"] = lr.get("type") or lr.get("label") or lr.get("category") or "unknown"
+    block["label"] = lr.get("label") or lr.get("type") or ""
+    block["category"] = lr.get("category") or lr.get("type") or ""
+
+    # Bbox from various possible keys
+    bbox = lr.get("bbox") or lr.get("box") or lr.get("polygon") or lr.get("rect")
+    if bbox and isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+        try:
+            block["bbox"] = [float(v) for v in bbox]
+        except (ValueError, TypeError):
+            pass
+    elif bbox and isinstance(bbox, (list, tuple)) and len(bbox) == 8:
+        # Polygon format: [x0,y0,x1,y1,x2,y2,x3,y3] → bbox
+        try:
+            xs = [float(bbox[i]) for i in range(0, 8, 2)]
+            ys = [float(bbox[i]) for i in range(1, 8, 2)]
+            block["bbox"] = [min(xs), min(ys), max(xs), max(ys)]
+            block["polygon"] = [float(v) for v in bbox]
+        except (ValueError, TypeError):
+            pass
+
+    # Page number
+    page = lr.get("page") or lr.get("page_num") or lr.get("pageNum")
+    if page is not None:
+        try:
+            block["page"] = int(page)
+        except (ValueError, TypeError):
+            pass
+
+    # Width/height from markdown or direct keys
+    for dim in ("width", "height"):
+        val = lr.get(dim) or (md and md.get(dim))
+        if val is not None:
+            try:
+                block[dim] = float(val)
+            except (ValueError, TypeError):
+                pass
+
+    # Preserve original raw block for debugging
+    block["raw_block"] = lr
+
+    # Skip blocks with no text and no bbox
+    if not block.get("text") and not block.get("bbox"):
+        return None
+
+    return block
+
+
 class PaddleOCRVLClientError(Exception):
     """Base exception for PaddleOCR-VL client errors."""
 
@@ -149,17 +223,34 @@ class ContractError(PaddleOCRVLClientError):
 
 
 class PaddleOCRVLResult:
-    """Parsed OCR result from PaddleOCR-VL."""
+    """Parsed OCR result from PaddleOCR-VL.
+
+    In addition to concatenated text and confidence, preserves the structured
+    layout blocks from PaddleOCR-VL's layoutParsingResults. Each block may
+    contain bbox, type, text/markdown, and other metadata.
+    """
 
     def __init__(
         self,
         text: str,
         confidence: float = 0.0,
         raw: dict | None = None,
+        layout_blocks: list[dict] | None = None,
+        raw_entries: list[dict] | None = None,
     ):
         self.text = text
         self.confidence = confidence
         self.raw = raw or {}
+        self.layout_blocks = layout_blocks or []
+        self.raw_entries = raw_entries or []
+
+    def get_blocks_by_type(self, block_type: str) -> list[dict]:
+        """Return layout blocks matching a given type."""
+        return [b for b in self.layout_blocks if b.get("type") == block_type or b.get("label") == block_type]
+
+    def get_blocks_by_category(self, category: str) -> list[dict]:
+        """Return layout blocks matching a given category."""
+        return [b for b in self.layout_blocks if b.get("category") == category]
 
 
 class PaddleOCRVLClient:
@@ -382,22 +473,14 @@ class PaddleOCRVLClient:
     # Result parsing
     # ------------------------------------------------------------------
 
-    async def _parse_result(self, job_data: dict) -> PaddleOCRVLResult:
-        """Download and parse the OCR result from resultUrl.jsonUrl."""
-        json_url = _extract_result_url(job_data)
-
-        raw_text, confidence = await self._download_and_parse_jsonl(json_url)
-        return PaddleOCRVLResult(
-            text=raw_text,
-            confidence=confidence,
-            raw={"job_data": job_data, "result_url": json_url},
-        )
-
-    async def _download_and_parse_jsonl(self, url: str) -> tuple[str, float]:
-        """Download JSONL from url and extract concatenated text + avg confidence.
+    async def _download_and_parse_jsonl(self, url: str) -> tuple[str, float, list[dict], list[dict]]:
+        """Download JSONL from url and extract text, confidence, layout blocks, and raw entries.
 
         JSONL 格式（PaddleOCR-VL）:
             {"result": {"layoutParsingResults": [{"markdown": {"text": "..."}, ...}]}}
+
+        Returns:
+            (full_text, avg_confidence, layout_blocks, raw_entries)
         """
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.get(url)
@@ -406,10 +489,12 @@ class PaddleOCRVLClient:
 
         lines = [l.strip() for l in raw.split("\n") if l.strip()]
         if not lines:
-            return "", 0.0
+            return "", 0.0, [], []
 
         text_parts: list[str] = []
         confidences: list[float] = []
+        layout_blocks: list[dict] = []
+        raw_entries: list[dict] = []
 
         for line in lines:
             try:
@@ -417,11 +502,16 @@ class PaddleOCRVLClient:
             except json.JSONDecodeError:
                 continue
 
-            # 提取 result.layoutParsingResults[].markdown.text（PaddleOCR-VL 格式）
+            raw_entries.append(entry)
+
+            # 提取 result.layoutParsingResults[]（PaddleOCR-VL 格式）
             result_data = entry.get("result") or entry
             layout_results = result_data.get("layoutParsingResults") if isinstance(result_data, dict) else None
             if isinstance(layout_results, list):
                 for lr in layout_results:
+                    if not isinstance(lr, dict):
+                        continue
+
                     md = lr.get("markdown") if isinstance(lr, dict) else None
                     md_text = md.get("text") if isinstance(md, dict) else None
                     if md_text:
@@ -433,6 +523,11 @@ class PaddleOCRVLClient:
                             confidences.append(float(entry_conf))
                         except (ValueError, TypeError):
                             pass
+
+                    # Extract layout block with all available metadata
+                    block = _normalize_layout_block(lr)
+                    if block:
+                        layout_blocks.append(block)
                 continue
 
             # 兜底：顶层 text/ocr_text/content 字段
@@ -456,4 +551,17 @@ class PaddleOCRVLClient:
         avg_confidence = (
             round(sum(confidences) / len(confidences), 4) if confidences else 0.0
         )
-        return full_text, avg_confidence
+        return full_text, avg_confidence, layout_blocks, raw_entries
+
+    async def _parse_result(self, job_data: dict) -> PaddleOCRVLResult:
+        """Download and parse the OCR result from resultUrl.jsonUrl."""
+        json_url = _extract_result_url(job_data)
+
+        raw_text, confidence, layout_blocks, raw_entries = await self._download_and_parse_jsonl(json_url)
+        return PaddleOCRVLResult(
+            text=raw_text,
+            confidence=confidence,
+            raw={"job_data": job_data, "result_url": json_url},
+            layout_blocks=layout_blocks,
+            raw_entries=raw_entries,
+        )

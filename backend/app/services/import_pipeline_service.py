@@ -4,14 +4,11 @@ API Router 层只负责：鉴权、参数解析、调用 service、返回 respon
 业务流程编排在 service 层完成，不依赖 FastAPI HTTP 对象 (UploadFile, Request, Depends)。
 """
 
-import asyncio
 import hashlib
 import importlib.util
 import logging
 import os
-import tempfile
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,14 +17,11 @@ from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import async_session
 from app.core.log_context import bind_log_context, get_log_context, log_event
-from app.features import question_pipeline as pipeline_svc
-from app.features.import_mode import ImportMode
 from app.features.pipeline_orchestrator import (
     _set_pipeline_store,
     get_pipeline_status as _orchestrator_get_pipeline_status,
     resolve_pdf_page_range,
     resume_pipeline_background,
-    run_excel_pipeline_background,
     run_import_pipeline,
     run_pipeline_background,
 )
@@ -38,6 +32,15 @@ from app.utils.sentry_utils import capture_exception, set_tag
 logger = logging.getLogger(__name__)
 
 _IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def _sha256_of_file(path: str) -> str:
+    """Compute SHA-256 of a file without loading it entirely into memory."""
+    hasher = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 _IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _MAX_IMAGE_PIPELINE_STORE_SIZE = 200
 _IMAGE_PIPELINE_STATUS_TTL_SECONDS = 86400
@@ -104,20 +107,19 @@ async def _get_image_pipeline_status(pipeline_id: str) -> dict | None:
     return _image_pipeline_store.get(pipeline_id)
 
 
-def _validate_image_content(content: bytes) -> tuple[int, int, str]:
+def _validate_image_path(path: str) -> tuple[int, int, str]:
     try:
         from PIL import Image, UnidentifiedImageError
-        import io
     except ImportError as exc:
         raise ValueError("图片解析依赖不可用") from exc
 
     try:
-        with Image.open(io.BytesIO(content)) as img:
+        with Image.open(path) as img:
             img.verify()
-        with Image.open(io.BytesIO(content)) as img:
+        with Image.open(path) as img:
             width, height = img.size
             image_format = (img.format or "").lower()
-    except UnidentifiedImageError as exc:
+    except (UnidentifiedImageError, FileNotFoundError) as exc:
         raise ValueError("图片内容无法解析") from exc
     except Exception as exc:
         raise ValueError("图片内容校验失败") from exc
@@ -210,7 +212,7 @@ async def _fail_image_pipeline(pipeline_id: str, error: str) -> None:
 
 async def _run_image_pipeline_with_db(
     pipeline_id: str,
-    image_content: bytes,
+    image_path: str,
     source_file: str,
     subject: str | None,
     subject_id: int | None,
@@ -235,7 +237,11 @@ async def _run_image_pipeline_with_db(
     set_tag("upload.filename", source_file)
     set_tag("upload.type", "image")
     try:
-        from app.services.ocr_service import clean_ocr_text, ocr_image
+        from app.services.ocr_service import clean_ocr_text
+
+        # Read image from disk for OCR processing
+        with open(image_path, "rb") as _fh:
+            image_content = _fh.read()
 
         set_tag("stage", "ocr")
         set_tag("ocr.engine", "PaddleOCR")
@@ -352,11 +358,17 @@ async def _run_image_pipeline_with_db(
         )
         capture_exception(exc, tags={"pipeline_id": pipeline_id, "source_file": source_file, "stage": "ocr"})
         await _fail_image_pipeline(pipeline_id, str(exc))
+    finally:
+        if image_path and os.path.exists(image_path):
+            try:
+                os.unlink(image_path)
+            except OSError as e:
+                logger.warning("Failed to delete image tmp file %s: %s", image_path, e)
 
 
 async def _run_pipeline_with_db(
     pipeline_id: str,
-    file_content: bytes,
+    file_path: str,
     source_type: str,
     source_file: str,
     subject: str | None,
@@ -364,7 +376,10 @@ async def _run_pipeline_with_db(
     options: dict,
     created_by: str | None = None,
 ) -> None:
-    """后台任务包装器：创建独立 DB 会话并执行流水线。"""
+    """后台任务包装器：创建独立 DB 会话并执行流水线。
+
+    接收已写在磁盘上的临时文件路径，直接使用。完成后清理。
+    """
     import traceback
 
     bind_log_context(
@@ -382,25 +397,11 @@ async def _run_pipeline_with_db(
         source_file=source_file,
     )
 
-    tmp_path: str | None = None
     try:
-        suffix = os.path.splitext(source_file or "")[1] or ".bin"
-        fd, tmp_path = tempfile.mkstemp(prefix=f"pipeline_{pipeline_id}_", suffix=suffix)
-        try:
-            with os.fdopen(fd, "wb") as f:
-                f.write(file_content)
-        except Exception:
-            try:
-                os.close(fd)
-            except Exception:
-                pass
-            raise
-        del file_content
-
         source_sha256: str | None = None
         try:
             hasher = hashlib.sha256()
-            with open(tmp_path, "rb") as fh:
+            with open(file_path, "rb") as fh:
                 for chunk in iter(lambda: fh.read(1024 * 1024), b""):
                     hasher.update(chunk)
             source_sha256 = hasher.hexdigest()
@@ -413,7 +414,7 @@ async def _run_pipeline_with_db(
         async with async_session() as db:
             await run_pipeline_background(
                 pipeline_id=pipeline_id,
-                file_path=tmp_path,
+                file_path=file_path,
                 source_type=source_type,
                 source_file=source_file,
                 subject=subject,
@@ -451,16 +452,16 @@ async def _run_pipeline_with_db(
             "finished_at": "",
         })
     finally:
-        if tmp_path and os.path.exists(tmp_path):
+        if file_path and os.path.exists(file_path):
             try:
-                os.unlink(tmp_path)
+                os.unlink(file_path)
             except OSError as e:
-                logger.warning("Failed to delete pipeline tmp file %s: %s", tmp_path, e)
+                logger.warning("Failed to delete pipeline tmp file %s: %s", file_path, e)
 
 
 async def start_import_pipeline(
     *,
-    file_content: bytes,
+    file_path: str,
     filename: str,
     content_type: str | None,
     subject: str | None = None,
@@ -475,10 +476,16 @@ async def start_import_pipeline(
     """统一导入入口核心逻辑：支持 Excel / PDF / TXT / 图片，异步返回 pipeline_id。
 
     这是纯业务逻辑函数，不依赖 FastAPI HTTP 对象。
-    Router 层需先读取 UploadFile 的 content/name/content_type，再传入此函数。
+    Router 层需先通过 ``streaming_upload_handler.stream_to_temp()``
+    将上传文件写入临时文件，再传入 file_path。
     """
     if not filename:
         raise ValueError("文件名不能为空")
+
+    # Validate file exists and is non-empty
+    file_size = os.path.getsize(file_path)
+    if file_size == 0:
+        raise ValueError("文件内容为空")
 
     set_tag("stage", "upload")
     set_tag("upload.filename", filename or "unknown")
@@ -496,11 +503,8 @@ async def start_import_pipeline(
             "仅支持 .xlsx / .xls / .pdf / .txt / .jpg / .jpeg / .png / .webp 文件"
         )
 
-    if not file_content:
-        raise ValueError("文件内容为空")
-
     validator = get_upload_validator()
-    validator.validate_file(filename, len(file_content), content_type)
+    validator.validate_file(filename, file_size, content_type)
 
     # Non-PDF files must not include page range params
     if (page_start is not None or page_end is not None) and not is_pdf:
@@ -514,8 +518,8 @@ async def start_import_pipeline(
         if importlib.util.find_spec("paddleocr") is None:
             raise ValueError("OCR 依赖未安装：paddleocr")
 
-        image_width, image_height, image_format = _validate_image_content(file_content)
-        image_hash = hashlib.sha256(file_content).hexdigest()
+        image_width, image_height, image_format = _validate_image_path(file_path)
+        image_hash = _sha256_of_file(file_path)
         pipeline_id = f"img_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{image_hash[:8]}"
         options = {
             "enable_ai_repair": enable_ai_repair,
@@ -531,7 +535,7 @@ async def start_import_pipeline(
             pipeline_id,
             status="queued",
             stats={
-                "image_bytes": len(file_content),
+                "image_bytes": file_size,
                 "image_width": image_width,
                 "image_height": image_height,
                 "image_format": image_format,
@@ -539,16 +543,10 @@ async def start_import_pipeline(
             stages={"upload": {"status": "completed"}, "ocr": {"status": "pending"}},
         )
 
-        # Store file content for durable task worker access
-        _image_pipeline_store[pipeline_id] = {
-            **(_image_pipeline_store.get(pipeline_id) or {}),
-            "_file_content": file_content,
-        }
-
         from app.services.task_queue_worker import enqueue_image_pipeline
         await enqueue_image_pipeline(
             pipeline_id=pipeline_id,
-            image_content=file_content,
+            image_path=file_path,
             source_file=filename,
             subject=subject,
             subject_id=subject_id,
@@ -558,7 +556,7 @@ async def start_import_pipeline(
         log_event(
             logger, "import.upload.accepted",
             pipeline_id=pipeline_id, source_type="image",
-            source_file=filename, file_size=len(file_content),
+            source_file=filename, file_size=file_size,
             content_type=content_type or "-",
         )
         return PipelineUploadResponse(pipeline_id=pipeline_id, status="queued", source_type="image")
@@ -575,13 +573,13 @@ async def start_import_pipeline(
             "stats": {},
             "errors": [],
             "started_at": datetime.now().isoformat(),
-            "_file_content": file_content,
+            "_file_path": file_path,
         })
 
         from app.services.task_queue_worker import enqueue_excel_pipeline
         await enqueue_excel_pipeline(
             pipeline_id=pipeline_id,
-            file_content=file_content,
+            file_path=file_path,
             source_file=filename,
         )
 
@@ -596,7 +594,7 @@ async def start_import_pipeline(
     if is_pdf:
         try:
             import fitz
-            with fitz.open(stream=file_content, filetype="pdf") as doc:
+            with fitz.open(file_path) as doc:
                 pdf_total_pages = len(doc)
                 validator.validate_pdf_pages(pdf_total_pages)
                 page_range = resolve_pdf_page_range(
@@ -638,7 +636,7 @@ async def start_import_pipeline(
         "stats": {},
         "errors": [],
         "started_at": datetime.now().isoformat(),
-        "_file_content": file_content,
+        "_file_path": file_path,
     }
     if page_range:
         store_data["page_range"] = page_range.model_dump()
@@ -648,7 +646,7 @@ async def start_import_pipeline(
     from app.services.task_queue_worker import enqueue_import_pipeline
     await enqueue_import_pipeline(
         pipeline_id=pipeline_id,
-        file_content=file_content,
+        file_path=file_path,
         source_type=source_type,
         source_file=filename,
         subject=subject,
@@ -660,7 +658,7 @@ async def start_import_pipeline(
     log_event(
         logger, "import.upload.accepted",
         pipeline_id=pipeline_id, source_type=source_type,
-        source_file=filename, file_size=len(file_content),
+        source_file=filename, file_size=file_size,
         content_type=content_type or "-",
     )
     return PipelineUploadResponse(

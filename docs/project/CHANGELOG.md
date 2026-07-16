@@ -4,7 +4,90 @@
 
 ---
 
-## 2026-06-22
+## 2026-07-16
+
+- **多空选择题完整支持（Phase 1-4 完成）**
+  - ...
+
+## 2026-07-16
+
+- **多空选择题上线前审计与修复（Phase 5 完成）**
+  - **代码审计修复 3 项 Bug**
+    - `answer_matcher.py`: 修复 `extract_explicit_answer` 对多空选择题圈号答案（①B、②D）的验证，此前 validation regex 拒绝以非 A-D 开头的内容，导致 OCR 多空答案从未被提取。新增圈号格式检测分支。测试：3 项。
+    - `question_pipeline.py`: 修复 `normalize_answer` 对显式标记为 `multi_blank_choice` 的题目答案未规范化到 canonical 格式（①:B;②:D），此前非 auto-detect 路径保持原始格式，导致前端 `normalizeBlankAnswer` 解析失败。新增专有分支调用 `parse_multi_blank_answer` + `serialize_multi_blank_answer`。测试：3 项。
+    - `answer.js`: 修复 `normalizeBlankAnswer` 仅支持 `slot:value` 格式，新增圈号对（①B、②D）、括号数字（(1)B、(2)D）、中文自然语言（第1空B）三种 fallback 解析器。测试：5 项新增。
+  - **回填脚本安全强化**
+    - `_assess_candidate` 新增 `ambiguous` 状态：空位数与答案槽位数不一致时标记为歧义并跳过，不再信任 answer 槽位定义。
+    - 新增 OCR 圈号差异安全归一化（1 ↔ ①，匿名 ↔ 显式），仅当数量一致时允许。
+    - 新增 `答案值不在组选项中` 检查。
+    - 新增 CLI 参数：`--question-id`、`--import-id`（定点检查）、`--report-json`（机器可读报告）、`--yes`（非交互确认）。
+    - apply 模式新增交互确认（除非 `--yes`）。
+    - 新增 `_build_report` / `_print_report` 输出完整统计：扫描数、候选数、转换数、歧义数、跳过数。
+    - 新增第二次 dry-run 幂等性验证提示。
+  - **数据验证脚本**
+    - 新增 `scripts/verify_multi_blank_choice_data.py`：只读扫描 10 种风险类别（missing_groups, duplicate_group_id, missing_answer_slot, extra_answer_slot, invalid_answer_option, legacy_answer_format, options_groups_conflict, hash_mismatch, suspected_misclassified, blank_count_mismatch）。
+    - 高风险问题存在时返回非零退出码。
+    - 支持 JSON 报告输出。
+  - **小程序 practice-result 逐空展示**
+    - 新增 `buildBlankResultsViewModel` 函数：按 blank_option_groups 顺序生成逐空视图模型（id, userKey, userText, correctKey, correctText, isCorrect, isAnswered）。
+    - 逐空显示：错误状态高亮用户选错、未作答显示"未作答"、全部正确时显示"全部正确"。
+    - 展示"答对 X/Y 空"统计。
+    - WXML 新增 conditional 分支：`item._isMultiBlank` 触发多空布局。
+    - WXSS 新增 80+ 行多空样式（圆角卡、颜色编码、状态标记）。
+    - practice-result.js 内联 `normalizeBlankAnswer` 兼容 canonical 和圈号对格式。
+  - **本地数据库回填演练说明**
+    - 脚本已通过 Python 语法和导入验证
+    - `_assess_candidate` 全部安全校验逻辑已在 Python 层测试通过
+    - 执行完整回填需连接真实数据库（开发/测试环境），当前无可用 SQLite 测试数据库
+  - **回归测试**
+    - 后端 multi_blank_choice 专项：98 项全 PASS
+    - 后端 service tests：1908 passed, 3 skipped
+    - 后端 API tests：261 passed
+    - 小程序 multi-blank 测试：45 项全 PASS
+    - 后端 feature tests：12+ passed
+  - **Runbook**
+    - 新增 `docs/project/MULTI_BLANK_CHOICE_RELEASE_RUNBOOK.md`：发布前条件、数据库备份、部署顺序、回填 dry-run/apply/验证/幂等检查、API smoke test、小程序验收、监控、回滚步骤、禁止命令。
+  - 审计发现的问题：3 项（均为 Bug）
+  - 实际修复的问题：3 项（answer_matcher, question_pipeline, answer.js）
+  - 受影响文件：
+    - `backend/app/features/answer_matcher.py`
+    - `backend/app/features/question_pipeline.py`
+    - `backend/scripts/backfill_multi_blank_choice.py`
+    - `backend/scripts/verify_multi_blank_choice_data.py`（新增）
+    - `miniprogram/utils/answer.js`
+    - `miniprogram/pages/practice-result/practice-result.js`
+    - `miniprogram/pages/practice-result/practice-result.wxml`
+    - `miniprogram/pages/practice-result/practice-result.wxss`
+    - `miniprogram/tests/test-multi-blank-answer.js`
+    - `backend/tests/test_services/test_multi_blank_choice.py`
+    - `docs/project/CHANGELOG.md`
+    - `docs/project/MULTI_BLANK_CHOICE_RELEASE_RUNBOOK.md`（新增）
+  - 尚存风险：
+    - 本地数据库回填演练因无可用的 SQLite 开发数据库无法执行；需在测试/开发 PostgreSQL 实例上运行 dry-run + apply + 二次 dry-run 完整流程
+    - practice-result 页面使用内联 normalizeBlankAnswer 而非 answer.js 的版本（微重复）
+    - wrong-detail 页尚未验证 per-blank 展示
+  - **Phase 1 — 后端数据契约、答案解析、判题**
+    - 新增 `backend/app/features/multi_blank_choice.py`：统一工具模块，提供 `extract_blank_slots`、`parse_multi_blank_answer`、`serialize_multi_blank_answer`、`build_blank_option_groups`、`validate_multi_blank_question`、`detect_shared_option_multi_blank`。
+    - 答案兼容 12+ 种格式（canonical `①:B;②:D`、`①B、②D`、`第1空B`、位置型 `A,B` 等）。
+    - 精确判题：槽位覆盖检查 + 多余槽位拒绝 + 顺序无关。
+    - 发布校验：缺/多余槽位、非法选项、空组全部拒绝。
+    - Hash 包含 `blank_option_groups`（`normalize_hash_blank_groups` 方法）。
+    - 92 项单元测试通过。
+  - **Phase 2 — 导入识别、审核与发布**
+    - 导入管线自动检测共享选项多空题（2+ 空 + 选项 + 多槽位答案）。
+    - `answer_matcher.py` 新增 `①B、②D` OCR 答案格式。
+    - `admin_import_service.py` 保存时自动重建 `blank_option_groups`。
+    - 管理端审核 UI：逐空选项按钮、可编辑选项文本、canonical answer 保存。
+  - **Phase 3 — 小程序答题体验**
+    - `answer.js`：`isAnswerCorrect` 拒绝多余槽位。
+    - `practice.js`：`selectBlankOption` 使用 `isQuestionAnswered` 修正部分作答误标。
+    - 小程序纯函数测试 37 项（parse/serialize/判题/多余槽位/旧格式兼容）。
+  - **Phase 4 — 历史数据修复、端到端测试、文档**
+    - `scripts/backfill_multi_blank_choice.py`：幂等回填脚本，扫描 `question_imports` + `questions` 中误分类的多空题（dry-run / apply）。
+    - 端到端管道测试 22 项（11 用例矩阵 + 数据契约验证）。
+  - 数据契约：`question_type=multi_blank_choice`、`options=null`、`parsed_options=null`、`answer="①:B;②:D"`、`content.blank_option_groups=[{"id":"①","options":[...]}]`。
+  - 受影响文件：`backend/app/features/multi_blank_choice.py`（新增）、`backend/scripts/backfill_multi_blank_choice.py`（新增）、`backend/app/features/answer_matcher.py`、`backend/app/features/question_pipeline.py`、`backend/app/services/admin_import_service.py`、`backend/app/features/question_publish_service.py`、`admin-frontend/src/app/(admin)/imports/review/page.tsx`、`miniprogram/utils/answer.js`、`miniprogram/pages/practice/practice.js`、`miniprogram/tests/test-multi-blank-answer.js`（新增）。
+  - 受影响文档：`docs/project/CHANGELOG.md`。## 2026-06-22
 
 - **修复：OCR 代码块围栏断裂导致代码结构泄漏（BUG-001）**
   - `code_detector._fence_code_blocks()` 新增单行桥接规则：孤立低分行（score=0）相邻两行均为代码行（score≥1）时提升为 score=1，防止 OCR 单行乱码导致 ``` 围栏提前关闭。

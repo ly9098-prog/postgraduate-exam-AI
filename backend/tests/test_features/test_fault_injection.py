@@ -102,7 +102,7 @@ class TestCacheUnavailable:
 
     def test_image_pipeline_cache_fails_gracefully(self):
         """Image pipeline status write with cache failure."""
-        from app.api.v1.imports import (
+        from app.services.import_pipeline_service import (
             _image_pipeline_store,
             _set_image_pipeline_status,
         )
@@ -110,7 +110,7 @@ class TestCacheUnavailable:
         pid = "fault_img_cache_001"
         _image_pipeline_store.pop(pid, None)
 
-        with patch("app.api.v1.imports.cache.set") as mock_set:
+        with patch("app.services.import_pipeline_service.cache.set") as mock_set:
             mock_set.side_effect = RuntimeError("Redis connection refused")
             status = _run(_set_image_pipeline_status(
                 pid,
