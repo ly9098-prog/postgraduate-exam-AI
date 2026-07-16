@@ -9,7 +9,18 @@
       "question_import_id": 418,
       "resolved_pdf_page": 337,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q337_manual", "bbox": [150.0, 70.0, 380.0, 175.0], "region_type": "diagram"}],
+      "regions": [
+        {
+          "region_id": "q337_manual",
+          "bbox": [
+            150.0,
+            70.0,
+            380.0,
+            175.0
+          ],
+          "region_type": "diagram"
+        }
+      ],
       "approved": false,
       "note": "Auto-localized question — manual bbox estimate"
     },
@@ -18,7 +29,18 @@
       "question_import_id": 424,
       "resolved_pdf_page": 343,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q343_manual", "bbox": [160.0, 65.0, 390.0, 180.0], "region_type": "diagram"}],
+      "regions": [
+        {
+          "region_id": "q343_manual",
+          "bbox": [
+            160.0,
+            65.0,
+            390.0,
+            180.0
+          ],
+          "region_type": "diagram"
+        }
+      ],
       "approved": false,
       "note": "Auto-localized question — manual bbox estimate"
     },
@@ -27,7 +49,18 @@
       "question_import_id": 426,
       "resolved_pdf_page": 345,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q345_manual", "bbox": [140.0, 70.0, 400.0, 185.0], "region_type": "diagram"}],
+      "regions": [
+        {
+          "region_id": "q345_manual",
+          "bbox": [
+            140.0,
+            70.0,
+            400.0,
+            185.0
+          ],
+          "region_type": "diagram"
+        }
+      ],
       "approved": false,
       "note": "Auto-localized question — manual bbox estimate"
     },
@@ -36,7 +69,18 @@
       "question_import_id": 427,
       "resolved_pdf_page": 346,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q346_manual", "bbox": [155.0, 68.0, 385.0, 178.0], "region_type": "diagram"}],
+      "regions": [
+        {
+          "region_id": "q346_manual",
+          "bbox": [
+            155.0,
+            68.0,
+            385.0,
+            178.0
+          ],
+          "region_type": "diagram"
+        }
+      ],
       "approved": false,
       "note": "Auto-localized question — manual bbox estimate"
     },
@@ -45,7 +89,18 @@
       "question_import_id": 428,
       "resolved_pdf_page": 347,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q347_manual", "bbox": [145.0, 72.0, 395.0, 182.0], "region_type": "diagram"}],
+      "regions": [
+        {
+          "region_id": "q347_manual",
+          "bbox": [
+            145.0,
+            72.0,
+            395.0,
+            182.0
+          ],
+          "region_type": "diagram"
+        }
+      ],
       "approved": false,
       "note": "Auto-localized question — manual bbox estimate"
     },
@@ -54,7 +109,18 @@
       "question_import_id": 446,
       "resolved_pdf_page": 365,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q365_manual", "bbox": [150.0, 65.0, 400.0, 190.0], "region_type": "diagram"}],
+      "regions": [
+        {
+          "region_id": "q365_manual",
+          "bbox": [
+            150.0,
+            65.0,
+            400.0,
+            190.0
+          ],
+          "region_type": "diagram"
+        }
+      ],
       "approved": false,
       "note": "Auto-localized question — manual bbox estimate"
     },
@@ -63,7 +129,18 @@
       "question_import_id": 450,
       "resolved_pdf_page": 369,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q369_option_group", "bbox": [80.0, 55.0, 430.0, 175.0], "region_type": "option_group"}],
+      "regions": [
+        {
+          "region_id": "q369_option_group",
+          "bbox": [
+            80.0,
+            55.0,
+            430.0,
+            175.0
+          ],
+          "region_type": "option_group"
+        }
+      ],
       "approved": false,
       "requires_content_image": true,
       "content_image_reason": "option_images",
@@ -85,7 +162,18 @@
       "question_import_id": 459,
       "resolved_pdf_page": 378,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q378_manual", "bbox": [160.0, 70.0, 380.0, 175.0], "region_type": "diagram"}],
+      "regions": [
+        {
+          "region_id": "q378_manual",
+          "bbox": [
+            160.0,
+            70.0,
+            380.0,
+            175.0
+          ],
+          "region_type": "diagram"
+        }
+      ],
       "approved": false,
       "note": "Auto-localized question — manual bbox estimate"
     },
@@ -94,7 +182,18 @@
       "question_import_id": 460,
       "resolved_pdf_page": 379,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q379_manual", "bbox": [200.0, 75.0, 330.0, 165.0], "region_type": "diagram"}],
+      "regions": [
+        {
+          "region_id": "q379_manual",
+          "bbox": [
+            200.0,
+            75.0,
+            330.0,
+            165.0
+          ],
+          "region_type": "diagram"
+        }
+      ],
       "approved": false,
       "note": "BST — manual override"
     },
@@ -103,7 +202,18 @@
       "question_import_id": 461,
       "resolved_pdf_page": 380,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q380_manual", "bbox": [170.0, 107.0, 370.0, 193.0], "region_type": "diagram"}],
+      "regions": [
+        {
+          "region_id": "q380_manual",
+          "bbox": [
+            170.0,
+            107.0,
+            370.0,
+            193.0
+          ],
+          "region_type": "diagram"
+        }
+      ],
       "approved": false,
       "requires_content_image": true,
       "content_image_reason": "stem_diagram",
@@ -114,7 +224,18 @@
       "question_import_id": 487,
       "resolved_pdf_page": 408,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q408_manual", "bbox": [155.0, 68.0, 390.0, 180.0], "region_type": "diagram"}],
+      "regions": [
+        {
+          "region_id": "q408_manual",
+          "bbox": [
+            155.0,
+            68.0,
+            390.0,
+            180.0
+          ],
+          "region_type": "diagram"
+        }
+      ],
       "approved": false,
       "note": "Auto-localized question — manual bbox estimate"
     },
@@ -123,7 +244,18 @@
       "question_import_id": 533,
       "resolved_pdf_page": 457,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q457_manual", "bbox": [200.0, 75.0, 345.0, 170.0], "region_type": "diagram"}],
+      "regions": [
+        {
+          "region_id": "q457_manual",
+          "bbox": [
+            200.0,
+            75.0,
+            345.0,
+            170.0
+          ],
+          "region_type": "diagram"
+        }
+      ],
       "approved": false,
       "note": "BST x1-x5 — manual override (JSON y0=1.4 too high)"
     },
@@ -132,7 +264,18 @@
       "question_import_id": 536,
       "resolved_pdf_page": 460,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q460_manual", "bbox": [200.0, 75.0, 340.0, 165.0], "region_type": "diagram"}],
+      "regions": [
+        {
+          "region_id": "q460_manual",
+          "bbox": [
+            200.0,
+            75.0,
+            340.0,
+            165.0
+          ],
+          "region_type": "diagram"
+        }
+      ],
       "approved": false,
       "note": "Manual override (JSON y0=1.4 too high)"
     },
@@ -141,9 +284,142 @@
       "question_import_id": 554,
       "resolved_pdf_page": 480,
       "bbox_source": "manual_override",
-      "regions": [{"region_id": "q480_manual", "bbox": [120.0, 75.0, 400.0, 155.0], "region_type": "diagram"}],
+      "regions": [
+        {
+          "region_id": "q480_manual",
+          "bbox": [
+            120.0,
+            75.0,
+            400.0,
+            155.0
+          ],
+          "region_type": "diagram"
+        }
+      ],
       "approved": false,
       "note": "Manual override (wide diagram)"
+    },
+    {
+      "source_question_no": 326,
+      "question_import_id": 407,
+      "resolved_pdf_page": 326,
+      "bbox_source": "manual_estimate",
+      "regions": [
+        {
+          "region_id": "q326_kruskal_diagram",
+          "bbox": [
+            50.0,
+            85.0,
+            517.0,
+            200.0
+          ],
+          "region_type": "diagram",
+          "semantic_role": "content_image",
+          "crop_version": "visual-v2.1"
+        }
+      ],
+      "approved": false,
+      "note": "Batch 1: Kruskal MST diagram area (between stem and options)"
+    },
+    {
+      "source_question_no": 399,
+      "question_import_id": 480,
+      "resolved_pdf_page": 399,
+      "bbox_source": "manual_estimate",
+      "regions": [
+        {
+          "region_id": "q399_btree_diagram",
+          "bbox": [
+            40.0,
+            85.0,
+            527.0,
+            155.0
+          ],
+          "region_type": "diagram",
+          "semantic_role": "content_image",
+          "crop_version": "visual-v2.1"
+        }
+      ],
+      "approved": false,
+      "note": "Batch 1: 5th-order B-tree diagram area (beneath stem text)"
+    },
+    {
+      "source_question_no": 201,
+      "question_import_id": 302,
+      "resolved_pdf_page": 201,
+      "bbox_source": "manual_estimate",
+      "regions": [
+        {
+          "region_id": "q201_option_group",
+          "bbox": [
+            50.0,
+            95.0,
+            517.0,
+            200.0
+          ],
+          "region_type": "option_group",
+          "semantic_role": "content_image",
+          "crop_version": "visual-v2.1",
+          "expected_option_count": 4,
+          "detected_option_count": 4
+        }
+      ],
+      "requires_content_image": true,
+      "content_image_reason": "option_images",
+      "approved": false,
+      "note": "Batch 2: Threaded binary tree — 4 diagram options in 2x2 layout"
+    },
+    {
+      "source_question_no": 352,
+      "question_import_id": 433,
+      "resolved_pdf_page": 352,
+      "bbox_source": "manual_estimate",
+      "regions": [
+        {
+          "region_id": "q352_option_group",
+          "bbox": [
+            50.0,
+            95.0,
+            517.0,
+            210.0
+          ],
+          "region_type": "option_group",
+          "semantic_role": "content_image",
+          "crop_version": "visual-v2.1",
+          "expected_option_count": 4,
+          "detected_option_count": 4
+        }
+      ],
+      "requires_content_image": true,
+      "content_image_reason": "option_images",
+      "approved": false,
+      "note": "Batch 2: Binary search decision tree — 4 diagram options"
+    },
+    {
+      "source_question_no": 368,
+      "question_import_id": 449,
+      "resolved_pdf_page": 368,
+      "bbox_source": "manual_estimate",
+      "regions": [
+        {
+          "region_id": "q368_option_group",
+          "bbox": [
+            50.0,
+            100.0,
+            517.0,
+            260.0
+          ],
+          "region_type": "option_group",
+          "semantic_role": "content_image",
+          "crop_version": "visual-v2.1",
+          "expected_option_count": 4,
+          "detected_option_count": 4
+        }
+      ],
+      "requires_content_image": true,
+      "content_image_reason": "option_images",
+      "approved": false,
+      "note": "Batch 2: Red-black tree — 4 diagram options, larger layout"
     }
   ]
 }

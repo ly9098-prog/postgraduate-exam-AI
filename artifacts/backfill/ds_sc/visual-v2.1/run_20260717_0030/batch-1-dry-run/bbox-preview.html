@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang=zh-CN><head><meta charset=utf-8><title>Batch 1 Bbox Preview</title>
+<style>
+body{font-family:-apple-system,sans-serif;margin:20px;background:#111;color:#e0e0e0}
+h1{color:#ddd}table{border-collapse:collapse}
+th,td{border:1px solid #333;padding:8px;text-align:center;vertical-align:middle}
+th{background:#222}
+img{max-width:280px;max-height:200px;border-radius:4px}
+.label{font-size:11px;color:#999;margin-bottom:4px}
+.note{color:#aaa;font-size:12px;margin-top:8px}
+code{background:#2a2a2a;padding:1px 4px;border-radius:3px;font-size:11px}
+</style></head><body>
+<h1>Batch 1 — Bbox Cropped Preview</h1>
+<p class=note>Bbox added to manual-bboxes-v2.json. <code>--generate-previews</code> re-run with bbox-based cropping.</p>
+<table><thead><tr><th>Import</th><th>Full Page</th><th>Overlay (bbox outline)</th><th>Proposed Content Crop</th></tr></thead>
+<tbody><tr><td><b>407</b><br>q326 Kruskal</td><td><div class="label">326 Full Page (60KB)</div><a href="previews/407/full-page.png" target="_blank"><img src="previews/407/full-page.png" loading="lazy"></a></td><td><div class="label">326 Overlay (bbox) (63KB)</div><a href="previews/407/overlay.png" target="_blank"><img src="previews/407/overlay.png" loading="lazy"></a></td><td><div class="label">326 Proposed Crop (47KB)</div><a href="previews/407/proposed-content.png" target="_blank"><img src="previews/407/proposed-content.png" loading="lazy"></a></td></tr><tr><td><b>480</b><br>q399 B-tree</td><td><div class="label">399 Full Page (51KB)</div><a href="previews/480/full-page.png" target="_blank"><img src="previews/480/full-page.png" loading="lazy"></a></td><td><div class="label">399 Overlay (bbox) (54KB)</div><a href="previews/480/overlay.png" target="_blank"><img src="previews/480/overlay.png" loading="lazy"></a></td><td><div class="label">399 Proposed Crop (48KB)</div><a href="previews/480/proposed-content.png" target="_blank"><img src="previews/480/proposed-content.png" loading="lazy"></a></td></tr></tbody></table>
+<h2>Bbox Values</h2>
+<pre>
+q326 (407, Kruskal): [50.0, 95.0, 517.0, 200.0]  — 467x105pt, diagram only
+q399 (480, B-tree):  [40.0, 85.0, 527.0, 155.0]  — 487x70pt,  B-tree only
+</pre>
+<p class=note>⚠️ Bbox are manual estimates. Please verify the proposed-content.png crops are correct before approving.</p>
+</body></html>

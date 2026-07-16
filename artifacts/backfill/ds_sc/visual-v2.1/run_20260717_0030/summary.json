@@ -1,0 +1,137 @@
+{
+  "schema_name": "audit_summary",
+  "schema_version": "1.0",
+  "run_metadata": {
+    "run_id": "legacy-audit-test-v2",
+    "executed_at": "2026-07-17T00:30:42.391517",
+    "db_sha256": "5580456a65ff228a3ef748001b3dc4b86af091818e9d85d44ed94aeee8353882",
+    "snapshot_hash": "5580456a65ff228a3ef748001b3dc4b86af091818e9d85d44ed94aeee8353882",
+    "source_changed_during_run": false
+  },
+  "observed": {
+    "total": 513,
+    "published": 3,
+    "frozen": 3,
+    "visual_schema": {
+      "current": 3,
+      "legacy": 19,
+      "mixed": 0,
+      "missing": 3,
+      "not_applicable": 488,
+      "unknown": 0
+    },
+    "placeholder_detected": 3,
+    "placeholder_ids": [
+      302,
+      433,
+      449
+    ],
+    "legacy_ids": [
+      229,
+      369,
+      371,
+      378,
+      380,
+      388,
+      395,
+      397,
+      400,
+      402,
+      405,
+      407,
+      411,
+      412,
+      451,
+      457,
+      460,
+      472,
+      480
+    ],
+    "published_legacy_ids": [
+      407,
+      480
+    ],
+    "drift_detected": 0,
+    "page_conflicts": 0,
+    "migration_eligible": 19,
+    "frozen_blocked": 3,
+    "manual_review": 3,
+    "record_errors": 0,
+    "multi_action_records": 0,
+    "assets": {
+      "total": 27,
+      "healthy": 24,
+      "degraded": 0,
+      "missing": 2,
+      "invalid": 0,
+      "unchecked": 1
+    },
+    "contamination": {
+      "checked": 2,
+      "detected": 0,
+      "not_detected": 2,
+      "not_checked": 511,
+      "coverage_pct": 0.4
+    }
+  },
+  "historical_baseline": {
+    "total": 513,
+    "with_image_segments": 21,
+    "placeholder_only": 4,
+    "published_legacy": 2,
+    "frozen_canary": 3,
+    "known_import_ids_with_segments": [
+      229,
+      369,
+      371,
+      378,
+      380,
+      388,
+      395,
+      397,
+      400,
+      402,
+      405,
+      407,
+      411,
+      412,
+      450,
+      451,
+      457,
+      460,
+      461,
+      472,
+      480
+    ],
+    "known_placeholder_ids": [
+      302,
+      320,
+      433,
+      449
+    ],
+    "known_published_ids": [
+      407,
+      480,
+      700
+    ]
+  },
+  "baseline_differences": [
+    {
+      "type": "legacy_count_mismatch",
+      "observed": 19,
+      "historical": 18,
+      "detail": "Historical count subtracted 3 frozen canaries. Actual DB state may differ."
+    },
+    {
+      "type": "placeholder_count_mismatch",
+      "observed": 3,
+      "historical": 4,
+      "detail": "Expected 4 placeholder-only records"
+    }
+  ],
+  "completion_state": "complete",
+  "record_error_count": 0,
+  "record_error_ids": [],
+  "violations": [],
+  "readonly_verified": true
+}

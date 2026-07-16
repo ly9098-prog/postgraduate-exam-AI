@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang=zh-CN><head><meta charset=utf-8><title>Batch 1 Dry-Run</title>
+<style>
+body{font-family:-apple-system,sans-serif;margin:20px;background:#111;color:#e0e0e0}
+h1,h2{color:#ddd}table{border-collapse:collapse;width:100%;margin-bottom:20px;font-size:13px}
+th,td{border:1px solid #333;padding:8px;text-align:left;vertical-align:top}
+th{background:#222;position:sticky;top:0}
+pre.d{font-size:11px;max-height:150px;overflow:auto;background:#1a1a1a;padding:6px;border-radius:4px;white-space:pre-wrap;word-break:break-all}
+code{background:#2a2a2a;padding:1px 4px;border-radius:3px;font-size:12px}
+.cell{display:inline-block;margin:4px}
+.cell img{max-width:150px;max-height:100px;border-radius:4px}
+.label{font-size:10px;color:#999}
+.missing{color:#666;font-style:italic;padding:10px}
+.ap-pending{color:#f0ad4e}ul{margin:0;padding-left:16px}li{font-size:12px}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;background:#f0ad4e;color:#000}
+</style></head><body>
+<span class=tag>DRY RUN — No modifications</span>
+<h1>Batch 1 Dry-Run: Published Broken Assets</h1>
+<p>Targets: <b>407</b> (q326, Q1) and <b>480</b> (q399, Q3) | Crop: visual-v2.1 | No DB/Storage changes</p>
+
+<h2>Target Preview</h2>
+<table><thead><tr><th>ID</th><th>Q</th><th>Pub</th><th>Previews</th><th>Before (parsed_content)</th><th>After (proposed)</th><th>File Plan</th></tr></thead><tbody><tr><td>407</td><td>q326</td><td>✓</td><td><div class=cell><div class=label>Full Page</div><a href="previews/407/full-page.png" target=_blank><img src="previews/407/full-page.png" loading=lazy></a></div><div class=cell><div class=label>Overlay</div><a href="previews/407/overlay.png" target=_blank><img src="previews/407/overlay.png" loading=lazy></a></div><div class=cell><div class=label>Proposed</div><a href="previews/407/proposed-content.png" target=_blank><img src="previews/407/proposed-content.png" loading=lazy></a></div></td><td><pre class=d>{
+  &quot;text&quot;: &quot;【2020统考真题】已知无向图G如下所示，使用克鲁斯卡尔(Kruskal)算法求图G的最小生成树，加到最小生成树中的边依次是（ ）。&quot;,
+  &quot;render_mode&quot;: &quot;segments&quot;,
+  &quot;segments&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;【2020统考真题】已知无向图G如下所示，使用克鲁斯卡尔(Kruskal)算法求图G的最小生成树，加到最小生成树中的边依次是（ ）。&quot;
+    },
+    {
+      &quot;type&quot;: &quot;image&quot;,
+      &quot;url&quot;: &quot;http://localhost:8000/static/question-assets/202607/ds_sc/q_407_p326_73e8570b2a44.png&quot;,
+      &quot;alt&quot;: &quot;题目原图&quot;
+    }
+  ]
+}</pre></td><td><pre class=d>{
+  &quot;text&quot;: &quot;【2020统考真题】已知无向图G如下所示，使用克鲁斯卡尔(Kruskal)算法求图G的最小生成树，加到最小生成树中的边依次是（ ）。&quot;,
+  &quot;render_mode&quot;: &quot;segments&quot;,
+  &quot;segments&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;【2020统考真题】已知无向图G如下所示，使用克鲁斯卡尔(Kruskal)算法求图G的最小生成树，加到最小生成树中的边依次是（ ）。&quot;
+    },
+    {
+      &quot;type&quot;: &quot;image&quot;,
+      &quot;semantic_role&quot;: &quot;content_image&quot;,
+      &quot;crop_version&quot;: &quot;visual-v2.1&quot;,
+      &quot;url&quot;: &quot;/static/question-assets/202607/ds_sc/q_407_p326_visual-v2.1.png&quot;,
+      &quot;region_type&quot;: &quot;diagram&quot;,
+      &quot;region_id&quot;: &quot;auto_q407&quot;,
+     </pre></td><td><ul><li><b>content_image</b>: <code>/static/question-assets/202607/ds_sc/q_407_p326_visual-v2.1....</code></li><li><b>source_snapshot</b>: <code>/static/question-assets/202607/ds_sc/snapshot_q407_p326_visu...</code></li></ul></td></tr><tr><td>480</td><td>q399</td><td>✓</td><td><div class=cell><div class=label>Full Page</div><a href="previews/480/full-page.png" target=_blank><img src="previews/480/full-page.png" loading=lazy></a></div><div class=cell><div class=label>Overlay</div><a href="previews/480/overlay.png" target=_blank><img src="previews/480/overlay.png" loading=lazy></a></div><div class=cell><div class=label>Proposed</div><a href="previews/480/proposed-content.png" target=_blank><img src="previews/480/proposed-content.png" loading=lazy></a></div></td><td><pre class=d>{
+  &quot;text&quot;: &quot;【2022统考真题】在下图所示的5阶B树T中，删除关键字260之后需要进行必要的调整，得 到新的B树T。下列选项中，不可能是T根结点中关键字序列的是（ ）． 6090.260350 280300 400500 3050 708085 100110&quot;,
+  &quot;render_mode&quot;: &quot;segments&quot;,
+  &quot;segments&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;【2022统考真题】在下图所示的5阶B树T中，删除关键字260之后需要进行必要的调整，得 到新的B树T。下列选项中，不可能是T根结点中关键字序列的是（ ）． 6090.260350 280300 400500 3050 708085 100110&quot;
+    },
+    {
+      &quot;type&quot;: &quot;image&quot;,
+      &quot;url&quot;: &quot;http://localhost:8000/static/question-assets/202607/ds_sc/q_480_p399_90bf6b232546.png&quot;,
+      &quot;alt</pre></td><td><pre class=d>{
+  &quot;text&quot;: &quot;【2022统考真题】在下图所示的5阶B树T中，删除关键字260之后需要进行必要的调整，得 到新的B树T。下列选项中，不可能是T根结点中关键字序列的是（ ）． 6090.260350 280300 400500 3050 708085 100110&quot;,
+  &quot;render_mode&quot;: &quot;segments&quot;,
+  &quot;segments&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;【2022统考真题】在下图所示的5阶B树T中，删除关键字260之后需要进行必要的调整，得 到新的B树T。下列选项中，不可能是T根结点中关键字序列的是（ ）． 6090.260350 280300 400500 3050 708085 100110&quot;
+    },
+    {
+      &quot;type&quot;: &quot;image&quot;,
+      &quot;semantic_role&quot;: &quot;content_image&quot;,
+      &quot;crop_version&quot;: &quot;visual-v2.1&quot;,
+      &quot;url&quot;: &quot;/static/question-asse</pre></td><td><ul><li><b>content_image</b>: <code>/static/question-assets/202607/ds_sc/q_480_p399_visual-v2.1....</code></li><li><b>source_snapshot</b>: <code>/static/question-assets/202607/ds_sc/snapshot_q480_p399_visu...</code></li></ul></td></tr></tbody></table>
+
+<h2>DB Diff</h2>
+<table><thead><tr><th>ID</th><th>Field</th><th>Before</th><th>After</th></tr></thead><tbody><tr><td>407</td><td><code>parsed_content.segments[1].url</code></td><td><pre class=d>&quot;http://localhost:8000/static/question-assets/202607/ds_sc/q_407_p326_73e8570b2a44.png&quot;</pre></td><td><pre class=d>&quot;/static/question-assets/202607/ds_sc/q_407_p326_visual-v2.1.png&quot;</pre></td></tr><tr><td>407</td><td><code>parsed_content.source_snapshot_url</code></td><td><pre class=d>null</pre></td><td><pre class=d>&quot;/static/question-assets/202607/ds_sc/snapshot_q407_p326_visual-v2.1.png&quot;</pre></td></tr><tr><td>407</td><td><code>image_url</code></td><td><pre class=d>&quot;[\&quot;http://localhost:8000/static/question-assets/202607/ds_sc/q_407_p326_73e8570b2a44.png\&quot;]&quot;</pre></td><td><pre class=d>[
+ &quot;/static/question-assets/202607/ds_sc/q_407_p326_visual-v2.1.png&quot;
+]</pre></td></tr><tr><td>480</td><td><code>parsed_content.segments[1].url</code></td><td><pre class=d>&quot;http://localhost:8000/static/question-assets/202607/ds_sc/q_480_p399_90bf6b232546.png&quot;</pre></td><td><pre class=d>&quot;/static/question-assets/202607/ds_sc/q_480_p399_visual-v2.1.png&quot;</pre></td></tr><tr><td>480</td><td><code>parsed_content.source_snapshot_url</code></td><td><pre class=d>null</pre></td><td><pre class=d>&quot;/static/question-assets/202607/ds_sc/snapshot_q480_p399_visual-v2.1.png&quot;</pre></td></tr><tr><td>480</td><td><code>image_url</code></td><td><pre class=d>&quot;[\&quot;http://localhost:8000/static/question-assets/202607/ds_sc/q_480_p399_90bf6b232546.png\&quot;]&quot;</pre></td><td><pre class=d>[
+ &quot;/static/question-assets/202607/ds_sc/q_480_p399_visual-v2.1.png&quot;
+]</pre></td></tr></tbody></table>
+
+<h2>Approval Status</h2>
+<table><thead><tr><th>Import ID</th><th>import_id</th><th>requires_content_image_approval</th><th>content_bbox_approval</th><th>content_image_approval</th><th>source_snapshot_approval</th><th>segment_placement_approval</th><th>published_sync_approval</th><th>final_approval</th></tr></thead><tbody><tr><td>407</td><td><span class="ap-407">407</span></td><td><span class="ap-pending">pending</span></td><td><span class="ap-pending">pending</span></td><td><span class="ap-pending">pending</span></td><td><span class="ap-pending">pending</span></td><td><span class="ap-pending">pending</span></td><td><span class="ap-pending">pending</span></td><td><span class="ap-pending">pending</span></td></tr><tr><td>480</td><td><span class="ap-480">480</span></td><td><span class="ap-pending">pending</span></td><td><span class="ap-pending">pending</span></td><td><span class="ap-pending">pending</span></td><td><span class="ap-pending">pending</span></td><td><span class="ap-pending">pending</span></td><td><span class="ap-pending">pending</span></td><td><span class="ap-pending">pending</span></td></tr></tbody></table>
+
+<h2>Rollback Plan</h2>
+<pre>{
+  &quot;strategy&quot;: &quot;restore_from_before + archive_cleanup&quot;,
+  &quot;steps&quot;: [
+    &quot;Restore question_imports.parsed_content&quot;,
+    &quot;Restore question_imports.parsed_options&quot;,
+    &quot;Restore questions.content (if published)&quot;,
+    &quot;Restore questions.image_url (if published)&quot;,
+    &quot;Delete new storage files (zero refcount)&quot;,
+    &quot;Do NOT delete archived old files&quot;
+  ]
+}</pre>
+</body></html>

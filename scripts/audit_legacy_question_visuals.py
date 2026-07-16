@@ -1012,7 +1012,10 @@ def classify_record(
 
     # ── visual_schema_state ──
     if not student_visible_images:
-        audit.visual_schema_state = "not_applicable"
+        if audit.placeholder_state == "detected":
+            audit.visual_schema_state = "missing"
+        else:
+            audit.visual_schema_state = "not_applicable"
     else:
         schema_states = {s.schema_state for s in student_visible_images}
         if schema_states == {"current"}:
@@ -1159,6 +1162,12 @@ def classify_record(
     if placeholder_hits:
         audit.reason_codes.append("placeholder_detected")
 
+    # Re-classify visual_schema_state for placeholder-only records: placeholder
+    # detection runs AFTER the initial schema assignment, so not_applicable records
+    # that contain placeholders should be reclassified as "missing".
+    if audit.placeholder_state == "detected" and audit.visual_schema_state == "not_applicable":
+        audit.visual_schema_state = "missing"
+
     # ── Publication state ──
     if audit.question_id is not None and q_data:
         # Simplified: check if Question record exists
@@ -1183,7 +1192,10 @@ def classify_record(
 
     # ── requires_content_image ──
     if not student_visible_images:
-        audit.requires_content_image = False
+        if audit.placeholder_state == "detected":
+            audit.requires_content_image = True
+        else:
+            audit.requires_content_image = False
     elif any(s.schema_state == "current" for s in student_visible_images):
         audit.requires_content_image = True
     else:
@@ -1235,7 +1247,7 @@ def classify_record(
         actions.append(ActionRecommendation(
             action="manual_review",
             reason_codes=["placeholder_detected"],
-            migration_eligible=audit.protection_state != "frozen",
+            migration_eligible=False,
             priority=2,
         ))
     if audit.visual_schema_state == "legacy":
@@ -1264,14 +1276,14 @@ def classify_record(
         actions.append(ActionRecommendation(
             action="no_action",
             reason_codes=["current_visual"],
-            migration_eligible=True,
+            migration_eligible=False,
             priority=4,
         ))
     if not actions:
         actions.append(ActionRecommendation(
             action="no_action",
             reason_codes=["no_visual_content"],
-            migration_eligible=True,
+            migration_eligible=False,
             priority=4,
         ))
 
