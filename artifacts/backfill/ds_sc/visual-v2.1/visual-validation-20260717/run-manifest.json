@@ -1,0 +1,16 @@
+{
+  "run_id": "visual-validation-20260717",
+  "generated_at": "2026-07-17T02:20:44.578649",
+  "phase": "visual-validation",
+  "read_only": true,
+  "pdf_sha256": "0ede22748f2a00c3f36ef67c792d0de9ce004c3d046260e83835638af45893fb",
+  "dpi": 220,
+  "questions_validated": [
+    147,
+    152,
+    154
+  ],
+  "status": "dry_run_complete",
+  "database_modified": false,
+  "static_files_modified": false
+}
