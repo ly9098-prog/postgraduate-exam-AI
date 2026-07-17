@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "phase": "gpu_compatibility_probe",
+  "wsl_config_written": true,
+  "wsl_restart_verified": true,
+  "wsl_config": {
+    "wsl2.memory": "16GB",
+    "wsl2.processors": 6,
+    "wsl2.swap": "8GB",
+    "wsl2.localhostForwarding": true,
+    "experimental.autoMemoryReclaim": "gradual",
+    "effective_memory_gib": 15,
+    "effective_processors": 6,
+    "effective_swap_gib": 8
+  },
+  "wslconfig_path": "/mnt/c/Users/Devil/.wslconfig",
+  "gpu_probe_passed": false,
+  "wheel_downloaded": false,
+  "wheel_installed": false,
+  "paddle_run_check_passed": false,
+  "model_load_passed": false,
+  "live_ocr_passed": false,
+  "last_command": "wsl_audit_complete",
+  "last_error": null,
+  "artifacts": ["/mnt/c/Users/Devil/.wslconfig"]
+}
