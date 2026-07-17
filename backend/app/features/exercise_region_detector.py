@@ -363,7 +363,7 @@ def _lightweight_page_ocr(
 
     import fitz
 
-    from app.services.ocr_service import _get_ocr, _image_to_array, _ocr_lock, _resize_for_ocr
+    from app.services.ocr_service import _get_ocr, _image_to_array, _ocr_inference_lock, _resize_for_ocr
 
     step = max(1, int(sample_step or 1))
     if isinstance(source, (str, _os.PathLike)):
@@ -397,7 +397,7 @@ def _lightweight_page_ocr(
                 arr = np.array(img)
                 del img
 
-                with _ocr_lock:
+                with _ocr_inference_lock:
                     result = ocr.ocr(arr, cls=False)
                 del arr
 

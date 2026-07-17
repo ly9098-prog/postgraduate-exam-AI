@@ -12,7 +12,7 @@
 - 架构 source-agnostic：未来 PDF 拆页成图片数组后，直接复用
   `create_batch_job` + `run_batch_job`，不写第二套逻辑。
 
-并发说明：PaddleOCR 推理被 `ocr_service._ocr_lock` 串行化（GPU 一次只跑一
+并发说明：PaddleOCR 推理被 `ocr_service._ocr_inference_lock` 串行化（GPU 一次只跑一
 张），因此真正并行的是各 worker 的 AI 解析（httpx 异步）。OCR 用
 `asyncio.to_thread` 包裹，避免阻塞事件循环。
 
@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import async_session
+from app.core.log_context import safe_text_preview
 from app.models.import_batch_job import (
     BatchJobTraceEvent,
     ImportBatchJob,
@@ -672,9 +673,8 @@ async def _run_vl_ocr(content: bytes, source_file: str) -> str:
     vl_duration = int((_now() - vl_start).total_seconds() * 1000)
 
     logger.info(
-        "【OCR-VL】识别完成 | file=%s chars=%d conf=%.2f (%dms)\n%s",
-        source_file, len(result.text), result.confidence, vl_duration,
-        result.text[:2000],
+        "【OCR-VL】识别完成 | file=%s %s (%dms)",
+        source_file, safe_text_preview(result.text), vl_duration,
     )
     return result.text
 
@@ -690,7 +690,7 @@ async def _run_single_image(
     - local: 本地 PaddleOCR（默认）
     - api:   PaddleOCR-VL 远程 API（跳过本地 OCR + pipeline 纠错）
     """
-    from app.services.ocr_service import clean_ocr_text, ocr_image
+    from app.services.ocr_service import clean_ocr_text
 
     ocr_mode = options.get("ocr_mode", "local")
     ocr_start = _now()
@@ -708,17 +708,16 @@ async def _run_single_image(
     ocr_duration = int((_now() - ocr_start).total_seconds() * 1000)
 
     logger.info(
-        "【OCR-1】OCR 原始结果 | file=%s mode=%s chars=%d lines=%d\n%s",
-        source_file, ocr_mode, len(raw_ocr_text), raw_ocr_text.count("\n") + 1,
-        raw_ocr_text[:2000],
+        "【OCR-1】OCR 原始结果 | file=%s mode=%s %s",
+        source_file, ocr_mode, safe_text_preview(raw_ocr_text),
     )
 
     cleaned_text = clean_ocr_text(raw_ocr_text)
     logger.info(
-        "【OCR-2】clean_ocr_text 清洗结果 | file=%s chars=%d lines=%d%s\n%s",
+        "【OCR-2】clean_ocr_text 清洗结果 | file=%s chars=%d lines=%d%s %s",
         source_file, len(cleaned_text), cleaned_text.count("\n") + 1,
         " (未变化)" if cleaned_text == raw_ocr_text else "",
-        cleaned_text[:2000],
+        safe_text_preview(cleaned_text),
     )
 
     # 空文本检查 —— 在写入 trace 之前，避免误报 success
