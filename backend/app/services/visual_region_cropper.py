@@ -127,8 +127,10 @@ def convert_bbox(
         scale_y = page_image_height
 
     else:
-        logger.warning("convert_bbox: unknown coordinate_space=%r — treating as image_pixels", source)
-        scale_x = scale_y = 1.0
+        raise ValueError(
+            f"convert_bbox: unsupported coordinate_space={source!r} "
+            f"(expected image_pixels|pdf_points|normalized_1000|normalized_1)"
+        )
 
     return _clamp_bbox(
         int(x0 * scale_x),
@@ -197,14 +199,40 @@ def crop_region(
     pw = page_image_width or actual_w
     ph = page_image_height or actual_h
 
-    # Apply padding before coordinate conversion
-    pad_scale = _PAGE_RENDER_DPI / 72.0  # scale factor for padding in PDF points
-    pad_px = int(padding_pt * pad_scale)
+    # ── Compute coordinate-space-aware padding ──
+    source = coordinate_space.value if isinstance(coordinate_space, CoordinateSpace) else coordinate_space
+
+    if source == "pdf_points":
+        pad_x = pad_y = padding_pt
+    elif source == "image_pixels":
+        if pw and ph and page_pdf_width and page_pdf_height:
+            dpi_x = pw / page_pdf_width * 72 if page_pdf_width else _PAGE_RENDER_DPI
+            dpi_y = ph / page_pdf_height * 72 if page_pdf_height else _PAGE_RENDER_DPI
+        else:
+            dpi_x = dpi_y = _PAGE_RENDER_DPI
+        pad_x = padding_pt * dpi_x / 72.0
+        pad_y = padding_pt * dpi_y / 72.0
+    elif source == "normalized_1000":
+        pdf_w = page_pdf_width or (pw * 72.0 / _PAGE_RENDER_DPI) if pw else 612
+        pdf_h = page_pdf_height or (ph * 72.0 / _PAGE_RENDER_DPI) if ph else 792
+        pad_x = padding_pt / pdf_w * 1000.0
+        pad_y = padding_pt / pdf_h * 1000.0
+    elif source == "normalized_1":
+        pdf_w = page_pdf_width or (pw * 72.0 / _PAGE_RENDER_DPI) if pw else 612
+        pdf_h = page_pdf_height or (ph * 72.0 / _PAGE_RENDER_DPI) if ph else 792
+        pad_x = padding_pt / pdf_w
+        pad_y = padding_pt / pdf_h
+    else:
+        raise ValueError(
+            f"Unsupported coordinate_space: {source!r} "
+            f"(expected pdf_points|image_pixels|normalized_1000|normalized_1)"
+        )
+
     padded_bbox = (
-        bbox[0] - padding_pt,
-        bbox[1] - padding_pt,
-        bbox[2] + padding_pt,
-        bbox[3] + padding_pt,
+        bbox[0] - pad_x,
+        bbox[1] - pad_y,
+        bbox[2] + pad_x,
+        bbox[3] + pad_y,
     )
 
     # Convert to image pixel coordinates
@@ -253,7 +281,6 @@ def crop_region(
 async def crop_and_upload_region(
     page_image_refs: dict[int, str],
     region: VisualRegion,
-    storage: Any,
     import_id: int,
     *,
     page_pdf_width: float | None = None,
@@ -264,6 +291,8 @@ async def crop_and_upload_region(
     Populates region.image_url on success, sets crop_failed on error.
     Idempotent: same page + bbox + coordinate_space produces same filename.
     """
+    from app.services.storage_backend import get_storage
+
     page_path = page_image_refs.get(region.source_page)
     if not page_path:
         logger.warning(
@@ -295,7 +324,7 @@ async def crop_and_upload_region(
             page_pdf_height=page_pdf_height,
         )
 
-        content_hash = hashlib.md5(png_bytes).hexdigest()[:12]
+        content_hash = hashlib.sha256(png_bytes).hexdigest()[:12]
         month = datetime.now().strftime("%Y%m")
         filename = f"{import_id}_p{region.source_page}_{content_hash}.png"
 
@@ -329,7 +358,7 @@ async def crop_and_upload_regions(
     result: list[VisualRegion] = []
     for region in regions:
         cropped = await crop_and_upload_region(
-            page_image_refs, region, None, import_id,
+            page_image_refs, region, import_id,
             page_pdf_width=page_pdf_width,
             page_pdf_height=page_pdf_height,
         )

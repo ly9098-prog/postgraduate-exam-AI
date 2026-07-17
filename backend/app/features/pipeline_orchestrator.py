@@ -71,9 +71,10 @@ logger = logging.getLogger(__name__)
 
 # ── Structure Freeze mode ──────────────────────────────────────────────
 # Controlled via env var STRUCTURE_FREEZE_MODE.
-#   "legacy": block-based freeze only (current behavior)
-#   "dual":   legacy + DocumentIR freeze, compare differences
-#   "ir":     DocumentIR freeze as single source of truth
+#   "legacy":    block-based freeze only (current behavior)
+#   "dual":      legacy + DocumentIR freeze, compare differences
+#   "ir":        DocumentIR freeze as single source of truth
+#   "ir_canary": IR-driven freeze with failover to legacy (canary mode)
 # ── Structure Freeze mode ──────────────────────────────────────────────
 # Check settings first (which loads from .env), fallback to os.environ.
 # The accessor functions also serve as cache since _STRUCTURE_FREEZE_MODE
@@ -3706,22 +3707,23 @@ class ImportPipeline:
     ) -> dict:
         """Stage 3: detect and freeze option structures before splitting.
 
-        Supports three modes via STRUCTURE_FREEZE_MODE env var:
+        Supports four modes via STRUCTURE_FREEZE_MODE env var:
           - ``legacy`` (default): pure block-based detection via
             ``run_structure_freeze_stage``. Current behavior, unchanged.
           - ``dual``: runs both legacy and DocumentIR-based freeze, compares
             results, logs differences. Legacy output drives production.
           - ``ir``: DocumentIR-based freeze as single source of truth.
             Falls back to legacy when DocumentIR is unavailable.
+          - ``ir_canary``: IR-driven freeze with failover to legacy when
+            canary conditions are triggered. Legacy runs simultaneously
+            as control. Diagnostics include canary failover trace.
 
         Downstream stages read ``frozen_option_registry`` (always in
-        legacy-compatible format). In ``dual``/``ir`` mode, additional
+        legacy-compatible format). In ``dual``/``ir``/``ir_canary`` mode, additional
         diagnostics are attached under ``freeze_dual_diagnostics`` /
         ``freeze_ir_warnings``.
         """
-        import os as _os
-
-        freeze_mode = _os.environ.get("STRUCTURE_FREEZE_MODE", "legacy")
+        freeze_mode = _get_structure_freeze_mode()
 
         # ── Always run legacy freeze ──
         legacy_result = run_structure_freeze_stage(normalized_blocks)
@@ -3772,10 +3774,11 @@ class ImportPipeline:
 
             # Convert IR registry to legacy-compatible format
             from app.features.pipeline_stages.structure_freeze_stage import (
+                _freeze_deep_freeze,
                 freeze_registry_to_block_format as _ir_to_legacy,
             )
 
-            legacy_compat = _ir_to_legacy(ir_registry_raw)
+            legacy_compat = _freeze_deep_freeze(_ir_to_legacy(ir_registry_raw))
 
             return {
                 "frozen_option_registry": legacy_compat,
@@ -3792,36 +3795,123 @@ class ImportPipeline:
                 ),
             }
 
-        # ── Dual mode: compare and log ──
-        dual_diagnostics = _compare_freeze_results(
-            legacy_result, ir_result,
-            legacy_registry, ir_registry_raw,
-        )
+        # ── IR Canary mode: IR-driven, with failover to legacy ──
+        if freeze_mode == "ir_canary":
+            from app.features.ocr_canary import (
+                check_ir_canary_failover,
+                is_canary_globally_disabled,
+                is_ir_canary_disabled,
+            )
 
-        logger.info(
-            "[FREEZE-DUAL] legacy=%d opt, ir=%d opt, "
-            "key_match=%s, text_match=%s, binding_lost=%d, diffs=%d",
-            dual_diagnostics["legacy_option_count"],
-            dual_diagnostics["ir_option_count"],
-            dual_diagnostics["option_key_match"],
-            dual_diagnostics["option_text_match"],
-            dual_diagnostics["binding_lost_count"],
-            dual_diagnostics["differences_count"],
-        )
-
-        if dual_diagnostics["differences_count"] > 0:
-            for diff in dual_diagnostics["differences"][:10]:
+            # Check kill-switches before running canary logic
+            if is_canary_globally_disabled() or is_ir_canary_disabled():
                 logger.info(
-                    "[FREEZE-DUAL] diff: %s key=%s legacy=%.40s ir=%.40s",
-                    diff["type"], diff.get("option_key", "?"),
-                    diff.get("legacy_text", ""), diff.get("ir_text", ""),
+                    "[FREEZE] IR canary: disabled via kill-switch, falling back to legacy"
                 )
+                return legacy_result
 
-        result = dict(legacy_result)
-        result["freeze_mode"] = "dual"
-        result["freeze_dual_diagnostics"] = dual_diagnostics
-        result["freeze_ir_warnings"] = ir_result.get("warnings", [])
-        return result
+            # Compute comparison once, reuse results
+            _cmp = _compare_freeze_results(
+                legacy_result, ir_result,
+                legacy_registry, ir_registry_raw,
+            )
+
+            should_fallback, failover_reasons = check_ir_canary_failover(
+                doc_ir_available=doc_ir is not None,
+                ir_registry_nonempty=bool(ir_registry_raw),
+                legacy_registry_nonempty=bool(legacy_registry),
+                option_key_match=_cmp.get("option_key_match", False),
+                binding_lost_count=_cmp.get("binding_lost_count", 0),
+                exception_occurred=bool(
+                    any(
+                        w.startswith("ir_freeze_error")
+                        for w in ir_result.get("warnings", [])
+                    )
+                ),
+            )
+
+            if should_fallback or not ir_registry_raw:
+                logger.warning(
+                    "[FREEZE] IR canary: fallback to legacy, reasons=%s",
+                    failover_reasons,
+                )
+                result = {**legacy_result}
+                result["freeze_mode"] = "ir_canary"
+                result["freeze_canary_fallback"] = True
+                result["freeze_canary_fallback_reasons"] = failover_reasons
+                result["freeze_ir_warnings"] = ir_result.get("warnings", [])
+                result["warnings"] = list(
+                    dict.fromkeys(
+                        result.get("warnings", [])
+                        + ir_result.get("warnings", [])
+                        + ["freeze_ir_canary_fallback_legacy"]
+                    )
+                )
+                return result
+
+            # IR-driven result with dual comparison
+            import types
+            from app.features.pipeline_stages.structure_freeze_stage import (
+                _freeze_deep_freeze,
+            )
+
+            legacy_compat = _ir_to_legacy(ir_registry_raw)
+
+            return {
+                "frozen_option_registry": _freeze_deep_freeze(legacy_compat),
+                "frozen_option_registry_ir": ir_registry_raw,
+                "frozen_structures": ir_result.get("frozen_structures", []),
+                "freeze_checksum": ir_result.get("freeze_checksum", ""),
+                "freeze_mode": "ir_canary",
+                "freeze_canary_fallback": False,
+                "freeze_dual_diagnostics": _cmp,
+                "freeze_ir_warnings": ir_result.get("warnings", []),
+                "warnings": list(
+                    dict.fromkeys(
+                        legacy_result.get("warnings", [])
+                        + ir_result.get("warnings", [])
+                    )
+                ),
+            }
+
+        # ── Dual mode: compare and log ──
+        if freeze_mode == "dual":
+            dual_diagnostics = _compare_freeze_results(
+                legacy_result, ir_result,
+                legacy_registry, ir_registry_raw,
+            )
+
+            logger.info(
+                "[FREEZE-DUAL] legacy=%d opt, ir=%d opt, "
+                "key_match=%s, text_match=%s, binding_lost=%d, diffs=%d",
+                dual_diagnostics["legacy_option_count"],
+                dual_diagnostics["ir_option_count"],
+                dual_diagnostics["option_key_match"],
+                dual_diagnostics["option_text_match"],
+                dual_diagnostics["binding_lost_count"],
+                dual_diagnostics["differences_count"],
+            )
+
+            if dual_diagnostics["differences_count"] > 0:
+                for diff in dual_diagnostics["differences"][:10]:
+                    logger.info(
+                        "[FREEZE-DUAL] diff: %s key=%s legacy=%.40s ir=%.40s",
+                        diff["type"], diff.get("option_key", "?"),
+                        diff.get("legacy_text", ""), diff.get("ir_text", ""),
+                    )
+
+            result = dict(legacy_result)
+            result["freeze_mode"] = "dual"
+            result["freeze_dual_diagnostics"] = dual_diagnostics
+            result["freeze_ir_warnings"] = ir_result.get("warnings", [])
+            return result
+
+        # ── Unknown freeze_mode: warn and fall back to legacy ──
+        logger.warning(
+            "[FREEZE] Unknown freeze_mode=%r, falling back to legacy",
+            freeze_mode,
+        )
+        return legacy_result
 
     def _run_split(self, normalized_blocks: list[dict], structure: dict | None = None, **_kw) -> dict:
         """Stage 4: split text blocks into individual questions.
@@ -3859,6 +3949,8 @@ class ImportPipeline:
             import_mode_str = str(raw_im or "").lower() or None
 
         split_blocks = normalized_blocks
+        warnings: list[str] = []
+        _run_split_data: dict[str, Any] = {}
 
         # ── Cross-page linking: merge content from linked pages ──
         xp_blocks, xp_links, xp_warnings, xp_merge_results = _merge_cross_page_blocks(split_blocks)
@@ -3866,7 +3958,7 @@ class ImportPipeline:
             split_blocks = xp_blocks
             warnings.extend(xp_warnings)
             warnings.append(f"cross_page: {len(xp_links)} link(s) applied")
-            data["cross_page_merge_results"] = xp_merge_results
+            _run_split_data["cross_page_merge_results"] = xp_merge_results
 
         layout_filter_diagnostics = {
             "enabled": False,
@@ -3890,7 +3982,6 @@ class ImportPipeline:
         layout_result = _kw.get("layout_result") or {}
         split_mode = _kw.get("split_mode", "standard")
         frozen_option_registry: dict = _kw.get("frozen_option_registry") or {}
-        warnings: list[str] = []
 
         # ── VL_REBUILD: 结构失败，尝试用 PaddleOCR-VL 重建 blocks ──
         if split_mode == "vl_rebuild":
@@ -4224,6 +4315,7 @@ class ImportPipeline:
             "split_count": len(raw_questions),
             "split_diagnostics": split_diagnostics,
             "warnings": warnings,
+            **_run_split_data,
         }
 
     def _run_question_bbox(
@@ -4664,7 +4756,7 @@ class ImportPipeline:
 
                 if region.bbox:
                     region = await crop_and_upload_region(
-                        page_image_refs, region, storage, virtual_import_id,
+                        page_image_refs, region, virtual_import_id,
                     )
 
                 if region.image_url:

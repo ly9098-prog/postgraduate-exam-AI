@@ -65,11 +65,15 @@ class Settings(BaseSettings):
     OCR_DROP_SCORE: float = 0.3
     OCR_MIN_IMAGE_WIDTH: int = 1500
     MAX_OCR_PAGES: int = 0  # 0 = no limit
+    OCR_USE_PROCESS_POOL: bool = False  # true = process-isolated OCR (crash-safe)
     OCR_TIMEOUT_SECONDS: int = 600
     IMAGE_IMPORT_MAX_BYTES: int = 10 * 1024 * 1024
     PAGE_CLASSIFIER_ENABLED: bool = True
     # 代码块检测 Feature Flag — 关闭后行为与线上完全一致
     CODE_DETECTOR_ENABLED: bool = True
+
+    # Artifact migration
+    REJECT_LEGACY_ARTIFACTS: bool = False  # reject artifacts without metadata wrapper
 
     # 批量导题（多图片）
     BATCH_IMAGE_MAX_FILES: int = 100        # 单次最多上传图片数
@@ -86,6 +90,25 @@ class Settings(BaseSettings):
     EXERCISE_DETECTION_ENABLED: bool = True
     EXERCISE_DETECTION_MAX_EMPTY_PAGES: int = 3
     EXERCISE_DETECTION_MIN_CONFIDENCE: float = 0.5
+
+    # OCR Canary (pre-release verification)
+    OCR_CANARY_ENABLED: bool = False
+    IR_FREEZE_CANARY_PERCENT: float = 0.0
+    CANARY_SUBJECTS: str = ""
+    CANARY_SOURCE_TYPES: str = ""
+    CANARY_TENANT_ALLOWLIST: str = ""
+    CANARY_TENANT_DENYLIST: str = ""
+    CANARY_MAX_PAGES: int = 0
+    CANARY_FAIL_OPEN: bool = False
+    CANARY_REQUIRE_REVIEW: bool = True
+    CANARY_CONFIG_VERSION: str = "s3f-v1"
+
+    # Domain Quality Gate
+    DOMAIN_QUALITY_GATE_MODE: str = "off"  # "off" | "shadow" | "enforce"
+    QUALITY_GATE_ENFORCE_ENABLED: bool = False  # sentinel: must be True to allow enforce mode
+
+    # Structure Freeze mode
+    STRUCTURE_FREEZE_MODE: str = "legacy"  # "legacy" | "dual" | "ir"
 
     # Redis
     REDIS_URL: str = ""

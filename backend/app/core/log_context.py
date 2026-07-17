@@ -18,6 +18,7 @@ Usage::
 from __future__ import annotations
 
 import contextvars
+import hashlib
 import json
 import logging
 import uuid
@@ -166,6 +167,30 @@ def _sanitize_value(value: Any, depth: int = 0) -> Any:
 def sanitize_fields(fields: dict[str, Any]) -> dict[str, Any]:
     """Sanitize a flat-ish dict of fields for safe inclusion in log extra."""
     return {k: "[redacted]" if _is_sensitive(k) else _sanitize_value(v) for k, v in fields.items()}
+
+
+# ---------------------------------------------------------------------------
+# OCR / document text safe-preview for logging
+# ---------------------------------------------------------------------------
+
+_TEXT_PREVIEW_MAX = 80  # maximum characters shown in log output
+
+
+def safe_text_preview(text: str | None, max_len: int = _TEXT_PREVIEW_MAX) -> str:
+    """Return a compact, non-sensitive summary of text for logging.
+
+    Format: ``sha256:{hex12} len=N cjk=N preview:"..."``
+    The preview portion is capped at *max_len* characters and should only
+    be used to distinguish obviously different texts, never as a source of
+    actual content.
+    """
+    if not text:
+        return "<empty>"
+    text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    cjk = sum(1 for c in text if "一" <= c <= "鿿")
+    total = len(text)
+    preview = text[:max_len].replace("\n", "\\n").replace("\r", "\\r")
+    return f'sha256:{text_hash} len={total} cjk={cjk} preview:"{preview}"'
 
 
 # ---------------------------------------------------------------------------
