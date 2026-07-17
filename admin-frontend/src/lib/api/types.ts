@@ -1,3 +1,9 @@
+export type QuestionOptionsValue =
+  | string
+  | unknown[]
+  | Record<string, unknown>
+  | null;
+
 export type ImportQuestionItem = {
   id: number;
   batch_id: string;
@@ -314,7 +320,7 @@ export type QuestionEditRequest = {
   subject_id?: number | null;
   question_type?: string;
   content?: Record<string, unknown>;
-  options?: Record<string, unknown>;
+  options?: QuestionOptionsValue;
   answer?: string;
   analysis?: string;
   knowledge_points?: unknown[];
@@ -331,7 +337,7 @@ export type AdminQuestion = {
   subject_path?: string | null;
   question_type: string;
   content: Record<string, unknown>;
-  options?: Record<string, unknown> | null;
+  options?: QuestionOptionsValue;
   answer: string;
   analysis?: string | null;
   knowledge_points?: unknown[] | null;
@@ -373,7 +379,7 @@ export type QuestionVersion = {
 
 export type QuestionVersionDetail = QuestionVersion & {
   content: Record<string, unknown>;
-  options?: Record<string, unknown> | null;
+  options?: QuestionOptionsValue;
   answer: string;
   analysis?: string | null;
   difficulty: number;
