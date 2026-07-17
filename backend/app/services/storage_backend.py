@@ -10,6 +10,10 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Resolve backend root directory for consistent relative path handling.
+# __file__ is at backend/app/services/storage_backend.py
+_BACKEND_ROOT = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
 
 # ── Image compression ────────────────────────────────────────────────────
 
@@ -76,7 +80,7 @@ class LocalFileStorage(StorageBackend):
 
     async def upload(self, filename: str, data: bytes) -> str:
         # filename 形如 "YYYYMM/import_id_page_hash.png" or "question-assets/..."
-        filepath = os.path.join(self._prefix, filename)
+        filepath = os.path.join(_BACKEND_ROOT, self._prefix, filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "wb") as f:
             f.write(data)
@@ -126,7 +130,7 @@ class LocalFileStorage(StorageBackend):
                 logger.warning("Delete rejected: path %s outside prefix %s", normalized, self._prefix)
                 return False
 
-        filepath = os.path.join(os.getcwd(), normalized)
+        filepath = os.path.join(_BACKEND_ROOT, normalized)
         if not os.path.exists(filepath):
             return True  # 幂等：不存在视为成功
         try:
