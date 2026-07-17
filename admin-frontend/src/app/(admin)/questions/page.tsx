@@ -24,7 +24,12 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MathFormula } from "@/components/ui/math-formula";
+import { QuestionOptions } from "@/components/question-options";
 import { useAuthStore } from "@/lib/auth/auth-store";
+import {
+  resolveQuestionOptions,
+  normalizeQuestionOptions,
+} from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import { CustomSelect } from "@/components/ui/custom-select";
@@ -35,6 +40,7 @@ import type {
   AdminQuestionImportSummary,
   PaginatedResponse,
   QuestionEditRequest,
+  QuestionOptionsValue,
   QuestionVersion,
   QuestionVersionDetail,
 } from "@/lib/api/types";
@@ -115,9 +121,21 @@ function isMultiChoice(questionType: string): boolean {
 }
 
 function optionsToKeyValueList(
-  options: Record<string, unknown> | null | undefined,
+  options: QuestionOptionsValue | undefined,
 ): Array<{ key: string; text: string }> {
   if (!options) return [];
+  if (typeof options === "string") {
+    return normalizeQuestionOptions(options).map((o) => ({
+      key: o.key,
+      text: o.text ?? "",
+    }));
+  }
+  if (Array.isArray(options)) {
+    return normalizeQuestionOptions(options).map((o) => ({
+      key: o.key,
+      text: o.text ?? "",
+    }));
+  }
   return Object.entries(options).map(([key, value]) => ({
     key,
     text: typeof value === "string" ? value : JSON.stringify(value),
@@ -463,13 +481,24 @@ export default function QuestionsPage() {
     // Pre-fill form from current question data
     const content = selectedQuestion.content;
     const stem = textFromContent(content);
+    const rawOpts = resolveQuestionOptions(selectedQuestion);
+    let editOpts: Record<string, unknown> | undefined;
+    if (rawOpts && typeof rawOpts === "object" && !Array.isArray(rawOpts)) {
+      editOpts = rawOpts as Record<string, unknown>;
+    } else if (rawOpts) {
+      // Convert array/string to Record for editing compatibility
+      const norm = normalizeQuestionOptions(rawOpts);
+      editOpts = Object.fromEntries(
+        norm.map((o) => [o.key, o.text ?? ""]),
+      );
+    }
     setEditForm({
       subject_id: selectedQuestion.subject_id ?? null,
       question_type: selectedQuestion.question_type || "",
       difficulty: selectedQuestion.difficulty,
       answer: selectedQuestion.answer || "",
       analysis: selectedQuestion.analysis || "",
-      options: selectedQuestion.options ?? undefined,
+      options: editOpts,
       content: { ...content, stem },
       knowledge_points: selectedQuestion.knowledge_points ?? undefined,
     });
@@ -742,8 +771,12 @@ export default function QuestionsPage() {
 
                     <section className="rounded-[1.6rem] border border-[var(--color-border)] bg-white/80 p-4">
                       <p className="font-semibold text-[var(--ink)]">选项</p>
-                      <div className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-sm leading-7 text-[var(--color-text-secondary)]">
-                        <MathFormula text={renderJson(selectedQuestion.options)} />
+                      <div className="mt-3">
+                        <QuestionOptions
+                          options={normalizeQuestionOptions(
+                            resolveQuestionOptions(selectedQuestion),
+                          )}
+                        />
                       </div>
                     </section>
 
@@ -1103,7 +1136,7 @@ export default function QuestionsPage() {
                                   value={opt.text}
                                   onChange={(e) => {
                                     const next = {
-                                      ...editForm.options,
+                                      ...(editForm.options as Record<string, unknown>),
                                     } as Record<string, string>;
                                     next[opt.key] = e.target.value;
                                     setEditForm({ ...editForm, options: next });
@@ -1355,9 +1388,11 @@ export default function QuestionsPage() {
                     <p className="font-display text-lg font-bold text-[var(--ink)]">
                       选项
                     </p>
-                    <div className="mt-3 whitespace-pre-wrap font-sans leading-7 text-[var(--color-text-secondary)]">
-                      <MathFormula
-                        text={renderJson(selectedQuestion.options)}
+                    <div className="mt-3">
+                      <QuestionOptions
+                        options={normalizeQuestionOptions(
+                          resolveQuestionOptions(selectedQuestion),
+                        )}
                       />
                     </div>
                   </section>
