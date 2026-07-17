@@ -1,0 +1,46 @@
+{
+  "external_worker_architecture": {
+    "approved": true,
+    "evidence": [
+      "stage1a_cpu_worker_e2e: 12 tests passed (lifecycle: claim/heartbeat/start/complete/idempotent/priority)",
+      "stage1a_cpu_worker_faults: 24 tests passed (offline/kill/heartbeat/download/upload/server_restart/worker_restart/cancel/invalid_ir)",
+      "stage1a_cpu_ocr: 2 real PaddleOCR CPU tests passed",
+      "existing_suite: Sprint 4B tests + stage/release tests all pass",
+      "CPU Worker soak test file created (4 tests, gated)"
+    ]
+  },
+  "cpu_worker_stage_1a": {
+    "approved": true,
+    "performance_approved": true,
+    "evidence": [
+      "PaddleOCR CPU adapter: real inference on minimal PDF and test PNG",
+      "DocumentIR validation: 100% pass on CPU OCR output",
+      "Full lifecycle verified: claim-hb-start-run-upload-complete",
+      "Non-GPU fault injection: 9 scenarios all verified",
+      "Expired lease correctly rejected",
+      "Upload idempotency verified"
+    ]
+  },
+  "gpu_environment": {
+    "status": "blocked",
+    "evidence": [
+      "paddlepaddle-gpu 3.3.0 cu126: platform tag mismatch",
+      "Previous pip resolution caused WSL2 CPU 100% crash (2 attempts)",
+      "GPU Compatibility Probe in reports/sprint4d/",
+      "GPU install failure recorded in reports/sprint4d/gpu_install_failure.json"
+    ]
+  },
+  "gpu_worker_stage_1b": {
+    "approved": false,
+    "evidence": []
+  },
+  "production_default_switch": {
+    "approved": false,
+    "blockers": [
+      "GPU environment not installed",
+      "Stage 1B GPU Allowlist not completed",
+      "CPU/GPU equivalence comparison not completed",
+      "GPU fault injection and Soak not completed"
+    ]
+  }
+}

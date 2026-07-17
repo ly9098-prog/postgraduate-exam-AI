@@ -1,0 +1,14 @@
+{
+  "filename": "paddlepaddle_gpu-3.3.0-cp312-cp312-linux_x86_64.whl",
+  "path": "/home/lmh/wheelhouse/paddle-cu126-330/paddlepaddle_gpu-3.3.0-cp312-cp312-linux_x86_64.whl",
+  "size": 1923861705,
+  "sha256": "ad894d36ebe72b78f7b61f8796d40f97278ba3003ae3c138aa4516d9af0604e5",
+  "package": "paddlepaddle-gpu",
+  "version": "3.3.0",
+  "python_tag": "cp312",
+  "abi_tag": "cp312",
+  "platform_tag": "linux_x86_64",
+  "download_source": "https://www.paddlepaddle.org.cn/packages/stable/cu126/",
+  "download_start": "2026-07-17T17:50:30Z",
+  "download_end": "2026-07-17T17:51:05Z"
+}
