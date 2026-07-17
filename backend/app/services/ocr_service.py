@@ -11,7 +11,7 @@ import logging
 import os
 import re
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -40,17 +40,35 @@ _ocr_init_error: str | None = None      # 初始化失败时记录错误消息�
 _ocr_initialized: bool = False
 _ocr_reinit_count: int = 0  # 自动重置计数，用于监控
 
+# OCR 引擎生命周期状态机
+_OCR_STATE_UNINITIALIZED = "uninitialized"
+_OCR_STATE_READY = "ready"
+_OCR_STATE_RESETTING = "resetting"
+_OCR_STATE_FAILED = "failed"
+_ocr_state: str = _OCR_STATE_UNINITIALIZED
+_ocr_state_lock = threading.Lock()  # 保护状态机转换
+
 
 def _reset_ocr():
     """Reset the OCR singleton after an inference failure.
 
     This allows the next _get_ocr() call to create a fresh PaddleOCR instance.
+    Holds both init and inference locks to prevent concurrent usage during reset.
     """
-    global _ocr_instance, _ocr_initialized, _ocr_init_error, _ocr_reinit_count
-    _ocr_instance = None
-    _ocr_initialized = False
-    _ocr_init_error = None
-    _ocr_reinit_count += 1
+    global _ocr_instance, _ocr_initialized, _ocr_init_error, _ocr_reinit_count, _ocr_state
+
+    with _ocr_state_lock:
+        _ocr_state = _OCR_STATE_RESETTING
+
+    with _ocr_inference_lock:
+        with _ocr_init_lock:
+            _ocr_instance = None
+            _ocr_initialized = False
+            _ocr_init_error = None
+            _ocr_reinit_count += 1
+
+    with _ocr_state_lock:
+        _ocr_state = _OCR_STATE_UNINITIALIZED
 
 _OCR_MAX_SIDE = 3000
 _OCR_DEPENDENCY_ERROR = "OCR 依赖未安装：paddleocr，请先安装 requirements-ocr.txt"
@@ -81,10 +99,13 @@ def _get_ocr():
     初始化失败时会记录到 _ocr_init_error，后续所有调用直接抛出，
     不再重试，避免重复 SIGSEGV。
     """
-    global _ocr_instance, _ocr_init_error, _ocr_initialized
+    global _ocr_instance, _ocr_init_error, _ocr_initialized, _ocr_state
 
     if _ocr_init_error:
         raise RuntimeError(f"OCR 引擎初始化失败: {_ocr_init_error}")
+
+    if _ocr_state == _OCR_STATE_RESETTING:
+        raise RuntimeError("OCR 引擎正在重置中，请稍后重试")
 
     if _ocr_initialized:
         return _ocr_instance
@@ -116,6 +137,7 @@ def _get_ocr():
             )
         except Exception as exc:
             _ocr_init_error = str(exc)
+            _ocr_state = _OCR_STATE_FAILED
             logger.critical("PaddleOCR 初始化失败: %s", _ocr_init_error)
             raise RuntimeError(f"OCR 引擎初始化失败: {_ocr_init_error}") from exc
 
@@ -123,6 +145,7 @@ def _get_ocr():
         _run_ocr_health_check(_ocr_instance)
 
         _ocr_initialized = True
+        _ocr_state = _OCR_STATE_READY
         logger.info("PaddleOCR 初始化完成（use_gpu=%s, lang=%s, mkldnn=off, cpu_threads=1）",
                      profile.use_gpu, settings.OCR_LANGUAGE)
         log_event(
@@ -158,13 +181,14 @@ def _run_ocr_health_check(ocr_instance) -> None:
     如果推理抛出任何异常（含 SIGSEGV），则标记 _ocr_init_error 并
     阻止后续所有 OCR 调用。
     """
-    global _ocr_init_error
+    global _ocr_init_error, _ocr_state
     try:
         import numpy as np
         _ = ocr_instance.ocr(np.zeros((100, 100, 3), dtype=np.uint8), cls=True)
         logger.info("PaddleOCR 健康检查通过")
     except Exception as exc:
         _ocr_init_error = f"健康检查失败: {exc}"
+        _ocr_state = _OCR_STATE_FAILED
         logger.critical("PaddleOCR 健康检查失败: %s", _ocr_init_error)
         raise RuntimeError(f"OCR 引擎初始化失败: {_ocr_init_error}") from exc
 
@@ -602,8 +626,8 @@ def _ocr_one_page_with_boxes(
         )
         if not ordered:
             return OcrPageResult(page_index=page_index, text="", boxes=[])
-        # 低置信度行过滤：置信度 < 0.55 且不含 CJK 字符的行视为疑似水印/噪声
-        # CJK 文本即便是较低置信度也保留（中文字符结构复杂，OCR 评分偏低是正常的）
+        # 低置信度行：不再直接删除，而是标记可疑原因由下游 quality 层决定
+        # 对代码、英文、公式、变量、选项尤为危险 —— OCR 层只标记不做不可逆删除
         lines: list[str] = []
         boxes: list[dict] = []
         conf_sum = 0.0
@@ -612,11 +636,20 @@ def _ocr_one_page_with_boxes(
             if not text:
                 continue
             conf = line.get("conf", 1.0)
-            if conf < _OCR_LOW_CONF_THRESHOLD and not any("一" <= c <= "鿿" for c in text):
-                logger.debug("OCR low-conf line filtered: conf=%.2f text=%.60s", conf, text)
-                continue
+            is_low_conf = conf < _OCR_LOW_CONF_THRESHOLD and not any("一" <= c <= "鿿" for c in text)
+            box_entry: dict[str, Any] = {"bbox": line["bbox"], "conf": conf}
+            if is_low_conf:
+                box_entry["low_conf"] = True
+                logger.debug("OCR line low-conf (flagged, not deleted): conf=%.2f text=%.60s", conf, text)
+            boxes.append(box_entry)
+            # 低置信非中文行不加入文本输出，防止下游 question_splitter 等模块
+            # 误将垃圾文本识别为题号或选项；boxes 中仍保留 low_conf 标记供质量门禁评估。
+            if is_low_conf:
+                # 仅当文本看起来像噪声（极短、无字母数字、无CJK）时才跳过
+                if len(text) <= 2 or not re.search(r"[A-Za-z0-9一-鿿]", text):
+                    logger.debug("OCR low-conf line excluded from text: %.60s", text)
+                    continue
             lines.append(text)
-            boxes.append({"bbox": line["bbox"], "conf": conf})
             conf_sum += conf
 
         # P2-6: 写入 OCR 缓存
@@ -657,21 +690,22 @@ def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
         _get_ocr()  # 触发初始化，失败会抛 RuntimeError（含 _ocr_init_error）
 
     results: dict[int, str] = {}
-    max_workers = get_ocr_profile().max_workers
+    # 使用共享线程池而非自建，确保总 worker 数受 OCR_EXECUTOR_WORKERS 约束
+    from app.services.ocr_executor_service import ocr_executor
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(_ocr_one_page, png, idx): idx
-            for idx, png in page_images
-        }
-        for future in as_completed(futures):
-            page_idx = futures[future]
-            try:
-                idx, text = future.result()
-                results[idx] = text
-            except Exception as e:
-                logger.warning("OCR 第 %d 页异常，跳过：%s", page_idx, e)
-                results[page_idx] = ""
+    executor = ocr_executor.get_thread_pool()
+    futures = {
+        executor.submit(_ocr_one_page, png, idx): idx
+        for idx, png in page_images
+    }
+    for future in as_completed(futures):
+        page_idx = futures[future]
+        try:
+            idx, text = future.result()
+            results[idx] = text
+        except Exception as e:
+            logger.warning("OCR 第 %d 页异常，跳过：%s", page_idx, e)
+            results[page_idx] = ""
 
     return results
 
@@ -701,27 +735,28 @@ def ocr_pages_with_boxes(
             }
 
     results: dict[int, OcrPageResult] = {}
-    max_workers = get_ocr_profile().max_workers
+    # 使用共享线程池而非自建
+    from app.services.ocr_executor_service import ocr_executor
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(_ocr_one_page_with_boxes, png, idx, skip_rotation): idx
-            for idx, png in page_images
-        }
-        for future in as_completed(futures):
-            page_idx = futures[future]
-            try:
-                result = future.result()
-                results[result.page_index] = result
-            except Exception as e:
-                logger.warning("OCR 第 %d 页异常，跳过：%s", page_idx, e)
-                results[page_idx] = OcrPageResult(
-                    page_index=page_idx,
-                    text="",
-                    boxes=[],
-                    failed=True,
-                    error=str(e),
-                )
+    executor = ocr_executor.get_thread_pool()
+    futures = {
+        executor.submit(_ocr_one_page_with_boxes, png, idx, skip_rotation): idx
+        for idx, png in page_images
+    }
+    for future in as_completed(futures):
+        page_idx = futures[future]
+        try:
+            result = future.result()
+            results[result.page_index] = result
+        except Exception as e:
+            logger.warning("OCR 第 %d 页异常，跳过：%s", page_idx, e)
+            results[page_idx] = OcrPageResult(
+                page_index=page_idx,
+                text="",
+                boxes=[],
+                failed=True,
+                error=str(e),
+            )
 
     return results
 
@@ -735,13 +770,50 @@ def clean_ocr_text(text: str, *, trace_id: str = "") -> str:
     return normalize_ocr_text(text, trace_id=trace_id)
 
 
+def ocr_raw_text(image_bytes: bytes) -> str:
+    """Run PaddleOCR on raw image bytes WITHOUT preprocessing (crop/deskew/resize).
+
+    Unlike ``ocr_image`` / ``_ocr_one_page``, this function skips the
+    preprocessing pipeline and runs OCR directly on the raw image.
+    Useful for fast re-check scenarios (e.g. option detection) where
+    preprocessing may alter the image in ways that affect results.
+
+    Args:
+        image_bytes: Raw PNG/JPEG image bytes.
+
+    Returns:
+        Concatenated OCR text, or empty string on failure.
+    """
+    try:
+        import numpy as np
+        from PIL import Image
+        import io
+
+        ocr = _get_ocr()
+        pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        img_array = np.array(pil_img)
+        raw_results = ocr.ocr(img_array, cls=True)
+
+        text_parts: list[str] = []
+        for line_group in raw_results or []:
+            if line_group is None:
+                continue
+            for line_info in line_group:
+                if line_info and len(line_info) >= 2 and line_info[1]:
+                    text_parts.append(str(line_info[1][0]))
+        return "\n".join(text_parts)
+    except Exception as e:
+        logger.warning("ocr_raw_text failed: %s", e)
+        return ""
+
+
 def ocr_is_available() -> bool:
     """返回 OCR 引擎是否已成功初始化且可用。
 
     调用方（pipeline_orchestrator、batch_image_import_service）
     在启动 OCR 前应检查此标记，不可用时直接降级而非调用 _get_ocr()。
     """
-    return _ocr_initialized and _ocr_init_error is None
+    return _ocr_state == _OCR_STATE_READY
 
 
 def get_ocr_init_error() -> str | None:
@@ -754,11 +826,20 @@ def reset_ocr_engine() -> None:
 
     调用后下一次 _get_ocr() 会重新初始化 PaddleOCR。
     """
-    global _ocr_instance, _ocr_initialized, _ocr_init_error
-    with _ocr_init_lock:
-        _ocr_instance = None
-        _ocr_initialized = False
-        _ocr_init_error = None
+    global _ocr_instance, _ocr_initialized, _ocr_init_error, _ocr_state
+
+    with _ocr_state_lock:
+        _ocr_state = _OCR_STATE_RESETTING
+
+    with _ocr_inference_lock:
+        with _ocr_init_lock:
+            _ocr_instance = None
+            _ocr_initialized = False
+            _ocr_init_error = None
+
+    with _ocr_state_lock:
+        _ocr_state = _OCR_STATE_UNINITIALIZED
+
     logger.info("OCR 引擎已重置，下次调用将重新初始化")
 
 

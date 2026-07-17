@@ -9,13 +9,18 @@ API flow:
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
+import re
+import socket
 import time
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urlparse
 
 import httpx
+
+from urllib.parse import urljoin
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +75,11 @@ def _extract_job_id(data: dict) -> str:
 
 
 def _raise_on_bad_status(response: httpx.Response) -> None:
-    """Raise JobSubmissionError if HTTP status is not 200."""
+    """Raise JobSubmissionError if HTTP status is not 200.
+
+    Attaches the status code so retry logic can distinguish retriable
+    (408, 429, 5xx) vs non-retriable (4xx) errors.
+    """
     if response.status_code != 200:
         raise JobSubmissionError(
             f"PaddleOCR-VL HTTP {response.status_code}: {response.text[:200]}"
@@ -119,6 +128,26 @@ def _extract_result_url(job_data: dict) -> str:
         f"{json.dumps(job_data, ensure_ascii=False)[:300]}"
     )
 
+
+# HTTP status helpers for retry logic
+_HTTP_STATUS_RE = re.compile(r"HTTP (\d+)")
+
+
+def _extract_http_status(message: str) -> int | None:
+    """Extract HTTP status code from a JobSubmissionError message."""
+    m = _HTTP_STATUS_RE.search(message)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def _extract_retry_after(message: str) -> float | None:
+    """Extract Retry-After value from error message (for 429 handling)."""
+    m = re.search(r"Retry-After:\s*(\d+)", message, re.IGNORECASE)
+    if m:
+        return float(m.group(1))
+    return None
+
 # Defaults
 _DEFAULT_BASE_URL = "https://paddleocr.aistudio-app.com"
 _OCR_VL_API_PATH = "/api/v2/ocr/jobs"   # endpoint path used by urljoin
@@ -126,6 +155,46 @@ _DEFAULT_POLL_INTERVAL = 5.0  # seconds between polls (官方建议 ≥5s)
 _DEFAULT_POLL_TIMEOUT = 120  # max total poll time
 _MAX_RETRIES = 3
 _RETRY_DELAY = 2.0  # seconds between retries
+
+# SSRF and size limits for result URL download
+_MAX_RESULT_DOWNLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+_MAX_JSONL_LINES = 50_000
+_MAX_JSONL_LINE_LENGTH = 200_000  # 200 KB per line
+_RESULT_DOWNLOAD_TIMEOUT = 60  # seconds
+
+
+def _validate_result_url(url: str) -> str:
+    """Validate a result download URL for safety.
+
+    Checks: https scheme, non-private resolved IP, no loopback/link-local.
+    Raises ``ResultDownloadError`` for unsafe URLs.
+    """
+    parsed = urlparse(url)
+
+    if parsed.scheme not in ("https",):
+        raise ResultDownloadError(
+            f"Result URL must use https, got {parsed.scheme!r}"
+        )
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise ResultDownloadError("Result URL has no hostname")
+
+    try:
+        addr_info = socket.getaddrinfo(hostname, parsed.port or 443)
+        for _family, _type, _proto, _canonname, sockaddr in addr_info:
+            ip = ipaddress.ip_address(sockaddr[0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local:
+                raise ResultDownloadError(
+                    f"Result URL resolves to private/loopback/link-local "
+                    f"address: {sockaddr[0]}"
+                )
+    except socket.gaierror as exc:
+        raise ResultDownloadError(
+            f"Result URL hostname resolution failed: {exc}"
+        ) from exc
+
+    return url
 
 
 def _normalize_layout_block(lr: dict) -> dict | None:
@@ -254,7 +323,11 @@ class PaddleOCRVLResult:
 
 
 class PaddleOCRVLClient:
-    """Async HTTP client for PaddleOCR-VL API."""
+    """Async HTTP client for PaddleOCR-VL API.
+
+    Uses a single shared ``httpx.AsyncClient`` for connection pooling
+    across all submit/poll/download requests.
+    """
 
     def __init__(
         self,
@@ -271,6 +344,27 @@ class PaddleOCRVLClient:
         self._poll_interval = poll_interval
         self._poll_timeout = poll_timeout
         self._max_retries = max_retries
+
+        # Shared HTTP client with connection pooling
+        self._client: httpx.AsyncClient | None = None
+
+    async def close(self) -> None:
+        """Close the shared HTTP client and release connections."""
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Lazy-initialize and return the shared HTTP client."""
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                limits=httpx.Limits(
+                    max_connections=10,
+                    max_keepalive_connections=5,
+                ),
+                timeout=httpx.Timeout(60.0, connect=10.0),
+            )
+        return self._client
 
     @property
     def is_available(self) -> bool:
@@ -309,21 +403,21 @@ class PaddleOCRVLClient:
         logger.info("PaddleOCR-VL submit_job url=%s", url)
         headers = {"Authorization": f"Bearer {self._api_token}"}
 
-        async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(
-                url,
-                headers=headers,
-                files={"file": (filename, image_bytes, "image/png")},
-                data={"model": self._model},
-            )
-            _raise_on_bad_status(response)
-            body = _parse_json_body(response)
-            logger.info("[PaddleOCR-VL] submit raw response: %s",
-                        json.dumps(body, ensure_ascii=False)[:500])
-            data = _unwrap_data(body)
-            job_id = _extract_job_id(data)
-            logger.info("[PaddleOCR-VL] extracted job_id=%s", job_id)
-            return job_id
+        client = self._get_client()
+        response = await client.post(
+            url,
+            headers=headers,
+            files={"file": (filename, image_bytes, "image/png")},
+            data={"model": self._model},
+        )
+        _raise_on_bad_status(response)
+        body = _parse_json_body(response)
+        logger.info("[PaddleOCR-VL] submit raw response: %s",
+                    json.dumps(body, ensure_ascii=False)[:500])
+        data = _unwrap_data(body)
+        job_id = _extract_job_id(data)
+        logger.info("[PaddleOCR-VL] extracted job_id=%s", job_id)
+        return job_id
 
     async def _submit_url_job(self, file_url: str) -> str:
         """Submit an OCR job via URL. Returns job_id."""
@@ -338,16 +432,16 @@ class PaddleOCRVLClient:
             "model": self._model,
         }
 
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(url, headers=headers, json=payload)
-            _raise_on_bad_status(response)
-            body = _parse_json_body(response)
-            logger.info("[PaddleOCR-VL] submit_url raw response: %s",
-                        json.dumps(body, ensure_ascii=False)[:500])
-            data = _unwrap_data(body)
-            job_id = _extract_job_id(data)
-            logger.info("[PaddleOCR-VL] extracted job_id=%s", job_id)
-            return job_id
+        client = self._get_client()
+        response = await client.post(url, headers=headers, json=payload)
+        _raise_on_bad_status(response)
+        body = _parse_json_body(response)
+        logger.info("[PaddleOCR-VL] submit_url raw response: %s",
+                    json.dumps(body, ensure_ascii=False)[:500])
+        data = _unwrap_data(body)
+        job_id = _extract_job_id(data)
+        logger.info("[PaddleOCR-VL] extracted job_id=%s", job_id)
+        return job_id
 
     async def _submit_with_retry(self, image_bytes: bytes, filename: str) -> str:
         """Submit job with retry. Returns job_id or raises."""
@@ -366,29 +460,41 @@ class PaddleOCRVLClient:
     async def _retry_submit(self, submit_fn, desc: str) -> str:
         """Generic retry wrapper for job submission.
 
-        Only retries transient failures:
-          - HTTP status != 200
-          - API code != 0
-          - network / timeout exceptions
-
-        Does NOT retry ``ContractError`` (API contract mismatch) —
-        those are non-transient and should fail fast.
+        Retry policy:
+        - Network/timeout errors → retry with exponential backoff
+        - 408 Request Timeout / 5xx → retry
+        - 429 Too Many Requests → retry with Retry-After if available
+        - 4xx (except 408/429) → fail immediately (non-retriable)
+        - ContractError → fail immediately (non-retriable)
         """
         last_error: Exception | None = None
         for attempt in range(self._max_retries):
             try:
                 return await submit_fn()
             except ContractError:
-                # Non-transient — fail immediately, do not retry
                 raise
             except (JobSubmissionError, httpx.TimeoutException) as exc:
                 last_error = exc
+
+                # Check if this is a non-retriable client error
+                if isinstance(exc, JobSubmissionError):
+                    status_code = _extract_http_status(str(exc))
+                    if status_code is not None and 400 <= status_code < 500 and status_code not in (408, 429):
+                        raise
+
                 logger.warning(
                     "PaddleOCR-VL %s attempt %d/%d failed: %s",
                     desc, attempt + 1, self._max_retries, exc,
                 )
+
                 if attempt < self._max_retries - 1:
-                    await asyncio.sleep(_RETRY_DELAY * (attempt + 1))
+                    # 429 with Retry-After support
+                    retry_delay = _RETRY_DELAY * (attempt + 1)
+                    if isinstance(exc, JobSubmissionError):
+                        retry_after = _extract_retry_after(str(exc))
+                        if retry_after is not None:
+                            retry_delay = min(retry_after, 30.0)
+                    await asyncio.sleep(retry_delay)
         logger.error(
             "PaddleOCR-VL %s exhausted retries=%d last_error=%s",
             desc, self._max_retries, last_error,
@@ -407,31 +513,31 @@ class PaddleOCRVLClient:
         logger.debug("PaddleOCR-VL poll_job url=%s job_id=%s", url, job_id)
         headers = {"Authorization": f"Bearer {self._api_token}"}
 
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(url, headers=headers)
-            if response.status_code != 200:
-                raise JobPollingError(
-                    f"Poll HTTP {response.status_code}: {response.text[:200]}"
-                )
-            body = _parse_json_body(response)
-            # Poll responses also use the same envelope: {code, msg, data}
-            code = body.get("code", -1)
-            if code != 0:
-                msg = body.get("msg") or body.get("message") or "unknown"
-                raise JobPollingError(
-                    f"Job {job_id} poll API error: code={code} msg={msg}"
-                )
-            data = body.get("data")
-            if not isinstance(data, dict):
-                raise JobPollingError(
-                    f"Job {job_id} poll response missing 'data': "
-                    f"{json.dumps(body, ensure_ascii=False)[:200]}"
-                )
-            logger.info(
-                "[PaddleOCR-VL] poll job=%s response data=%s",
-                job_id, json.dumps(data, ensure_ascii=False)[:500],
+        client = self._get_client()
+        response = await client.get(url, headers=headers)
+        if response.status_code != 200:
+            raise JobPollingError(
+                f"Poll HTTP {response.status_code}: {response.text[:200]}"
             )
-            return data
+        body = _parse_json_body(response)
+        # Poll responses also use the same envelope: {code, msg, data}
+        code = body.get("code", -1)
+        if code != 0:
+            msg = body.get("msg") or body.get("message") or "unknown"
+            raise JobPollingError(
+                f"Job {job_id} poll API error: code={code} msg={msg}"
+            )
+        data = body.get("data")
+        if not isinstance(data, dict):
+            raise JobPollingError(
+                f"Job {job_id} poll response missing 'data': "
+                f"{json.dumps(body, ensure_ascii=False)[:200]}"
+            )
+        logger.info(
+            "[PaddleOCR-VL] poll job=%s response data=%s",
+            job_id, json.dumps(data, ensure_ascii=False)[:500],
+        )
+        return data
 
     async def _poll_with_timeout(self, job_id: str) -> dict:
         """Poll until done/failed or timeout. Returns the result data dict."""
@@ -476,20 +582,37 @@ class PaddleOCRVLClient:
     async def _download_and_parse_jsonl(self, url: str) -> tuple[str, float, list[dict], list[dict]]:
         """Download JSONL from url and extract text, confidence, layout blocks, and raw entries.
 
-        JSONL 格式（PaddleOCR-VL）:
-            {"result": {"layoutParsingResults": [{"markdown": {"text": "..."}, ...}]}}
-
-        Returns:
-            (full_text, avg_confidence, layout_blocks, raw_entries)
+        Enforces SSRF protection (https-only, no private IPs, redirect validation),
+        response body size limit, and JSONL line limits.
         """
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            raw = response.text
+        url = _validate_result_url(url)
+
+        client = self._get_client()
+        response = await client.get(url)
+        response.raise_for_status()
+
+        # Validate final URL after any redirects
+        final_url = str(response.url)
+        if final_url != url:
+            _validate_result_url(final_url)
+
+        content = response.content
+        if len(content) > _MAX_RESULT_DOWNLOAD_BYTES:
+            raise ResultDownloadError(
+                f"Result download too large: {len(content)} bytes exceeds "
+                f"limit of {_MAX_RESULT_DOWNLOAD_BYTES}"
+            )
+        raw = response.text
 
         lines = [l.strip() for l in raw.split("\n") if l.strip()]
         if not lines:
             return "", 0.0, [], []
+
+        if len(lines) > _MAX_JSONL_LINES:
+            raise ResultDownloadError(
+                f"Result JSONL has {len(lines)} lines, exceeds limit "
+                f"of {_MAX_JSONL_LINES}"
+            )
 
         text_parts: list[str] = []
         confidences: list[float] = []
@@ -497,6 +620,9 @@ class PaddleOCRVLClient:
         raw_entries: list[dict] = []
 
         for line in lines:
+            if len(line) > _MAX_JSONL_LINE_LENGTH:
+                logger.warning("Skipping overlong JSONL line (%d chars)", len(line))
+                continue
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:

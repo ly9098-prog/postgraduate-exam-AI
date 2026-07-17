@@ -67,6 +67,7 @@ _TRUE_FALSE_MAP = {
     "T": "T", "F": "F", "TRUE": "T", "FALSE": "F",
     "正确": "T", "错误": "F", "√": "T", "×": "F", "对": "T", "错": "F",
 }
+_TRUE_FALSE_VALUES = frozenset(_TRUE_FALSE_MAP.keys())
 
 # 题干中需要剥离的答案/解析标签行
 _STRIP_PATTERNS = [
@@ -655,6 +656,29 @@ def normalize_question(
     if _pre_cache_key:
         _cached = parse_cache_get(_cache_key_raw, _pre_cache_key)
         if _cached is not None:
+            # 缓存命中时也必须从 raw_question 重新附加定位/bbox 字段
+            _bbox_fields = {
+                "page_start": raw_question.get("page_start"),
+                "page_end": raw_question.get("page_end"),
+                "source_question_no": raw_question.get("source_question_no"),
+                "source_question_label": raw_question.get("source_question_label"),
+                "question_bbox": raw_question.get("question_bbox"),
+                "question_bbox_coordinate_space": raw_question.get("question_bbox_coordinate_space"),
+                "question_bbox_page_width": raw_question.get("question_bbox_page_width"),
+                "question_bbox_page_height": raw_question.get("question_bbox_page_height"),
+                "question_bbox_confidence": raw_question.get("question_bbox_confidence"),
+                "question_bbox_strategy": raw_question.get("question_bbox_strategy"),
+                "question_bbox_diagnostics": raw_question.get("question_bbox_diagnostics"),
+            }
+            for _k, _v in _bbox_fields.items():
+                if _v is not None:
+                    _cached_v = _cached.get(_k)
+                    if _cached_v is not None and _cached_v != _v:
+                        logger.debug(
+                            "normalize cache: bbox field %s differs (cached=%s raw=%s), overwriting",
+                            _k, _cached_v, _v,
+                        )
+                    _cached[_k] = _v
             return _cached
 
     blank_option_groups = _normalize_blank_option_groups(raw_question.get("blank_option_groups"))
@@ -1122,6 +1146,20 @@ def normalize_question(
     # === Execution Trace: attach per-question trace ===
     result["trace"] = tracer.to_list()
 
+    # ── 透传定位/bbox 字段（从 raw_question 复制到 result）──
+    _POSITIONING_FIELDS = [
+        "page_start", "page_end",
+        "source_question_no", "source_question_label",
+        "question_bbox", "question_bbox_coordinate_space",
+        "question_bbox_page_width", "question_bbox_page_height",
+        "question_bbox_confidence", "question_bbox_strategy",
+        "question_bbox_diagnostics",
+    ]
+    for _field in _POSITIONING_FIELDS:
+        _val = raw_question.get(_field)
+        if _val is not None:
+            result[_field] = _val
+
     # === 最终 Schema 强制统一 ===
     result = tracer.run("output_normalization", "pipeline", "final", "vision_fallback",
                         normalize_output, result)
@@ -1377,6 +1415,13 @@ def normalize_output(question: dict) -> dict:
         "pre_fallback_code_flags", "post_fallback_code_flags",
         "schema_version",
         "quality_status", "quality_blockers",
+        # ── Positioning & bbox fields ──
+        "page_start", "page_end",
+        "source_question_no", "source_question_label",
+        "question_bbox", "question_bbox_coordinate_space",
+        "question_bbox_page_width", "question_bbox_page_height",
+        "question_bbox_confidence", "question_bbox_strategy",
+        "question_bbox_diagnostics",
     ]
     for key in preserve_keys:
         if key in question:
