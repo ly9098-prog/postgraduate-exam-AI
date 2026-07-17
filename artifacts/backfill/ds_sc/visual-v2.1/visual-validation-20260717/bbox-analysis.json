@@ -1,0 +1,122 @@
+{
+  "200": {
+    "page_rect": [
+      0.0,
+      0.0,
+      567.0,
+      425.3399963378906
+    ],
+    "independently_computed_content_bbox": [
+      270.4,
+      40,
+      546.5,
+      64.3
+    ],
+    "skyline_detail": {
+      "pno": 200,
+      "clusters_found": 14,
+      "best_cluster_rows": 33,
+      "best_density": 0.1562,
+      "tight_bbox": [
+        270.4,
+        40,
+        546.5,
+        64.3
+      ],
+      "expanded_bbox": [
+        265,
+        37,
+        554.5,
+        72.3
+      ],
+      "height_pt": 24.3
+    },
+    "snapshot_bbox": [
+      2,
+      40.2,
+      565.0,
+      138.8
+    ],
+    "overlay": "overlay_p200_content_bbox.png"
+  },
+  "205": {
+    "page_rect": [
+      0.0,
+      0.0,
+      567.0,
+      425.3399963378906
+    ],
+    "independently_computed_content_bbox": [
+      270,
+      40,
+      545.9,
+      63.9
+    ],
+    "skyline_detail": {
+      "pno": 205,
+      "clusters_found": 6,
+      "best_cluster_rows": 32,
+      "best_density": 0.1744,
+      "tight_bbox": [
+        270,
+        40,
+        545.9,
+        63.9
+      ],
+      "expanded_bbox": [
+        265,
+        37,
+        553.9,
+        71.9
+      ],
+      "height_pt": 23.9
+    },
+    "snapshot_bbox": [
+      2,
+      40.2,
+      565.0,
+      138.8
+    ],
+    "overlay": "overlay_p205_content_bbox.png"
+  },
+  "207": {
+    "page_rect": [
+      0.0,
+      0.0,
+      567.0,
+      425.3399963378906
+    ],
+    "independently_computed_content_bbox": [
+      270,
+      40,
+      545.9,
+      64.3
+    ],
+    "skyline_detail": {
+      "pno": 207,
+      "clusters_found": 8,
+      "best_cluster_rows": 33,
+      "best_density": 0.1605,
+      "tight_bbox": [
+        270,
+        40,
+        545.9,
+        64.3
+      ],
+      "expanded_bbox": [
+        265,
+        37,
+        553.9,
+        72.3
+      ],
+      "height_pt": 24.3
+    },
+    "snapshot_bbox": [
+      2,
+      40.2,
+      565.0,
+      138.8
+    ],
+    "overlay": "overlay_p207_content_bbox.png"
+  }
+}
