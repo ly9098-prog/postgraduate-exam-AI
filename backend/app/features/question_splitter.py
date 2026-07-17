@@ -2,6 +2,8 @@
 
 从文档块中精准切分出单道题目，识别题号和选项标记。
 不做答案匹配、不做题型判断、不做内容清洗、不调用 AI。
+
+题号解析统一委托 ``question_numbering`` 模块。
 """
 
 import logging
@@ -10,28 +12,25 @@ import re
 logger = logging.getLogger(__name__)
 
 
-# 中文数字 → 阿拉伯数字
+# 题号解析 — 统一委托 question_numbering 模块
+# 不允许本模块单独维护题号正则 (OCR-103)
+from app.features.question_numbering import (
+    NumberingType,
+    extract_first_question_label,
+    parse_numbering,
+    _is_false_question_number,
+)
+
+# Legacy exports for backward compatibility
 _CN_NUM = {
     "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
     "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
 }
 
-# 题号模式：(正则, 数字提取组, 说明)
-_QUESTION_PATTERNS: list[tuple[re.Pattern, int]] = [
-    (re.compile(r"^(\d+)\s*[.．、]"), 1),          # "1." "1．" "1、"
-    (re.compile(r"^(\d+)\s*[)）]"), 1),          # "1)" "1）"
-    (re.compile(r"^\((\d+)\)"), 1),                # "(1)"
-    (re.compile(r"^【(\d+)】"), 1),                # "【1】"
-    (re.compile(r"^第\s*(\d+)\s*题"), 1),         # "第1题"
-    (re.compile(
-        r"^第\s*([" + "".join(_CN_NUM.keys()) + r"]+)\s*题"
-    ), 1),                                          # "第一题"
-]
-
-_PAREN_QUESTION_PATTERN = _QUESTION_PATTERNS[1][0]
-_PARENED_QUESTION_PATTERN = _QUESTION_PATTERNS[2][0]
-
-# OCR 容错题号：l/I → 1
+# Compatibility patterns used by heuristic helpers below
+# (not for primary question number detection — that goes through parse_numbering)
+_PAREN_QUESTION_PATTERN = re.compile(r"^(\d+)\s*[)）]")
+_PARENED_QUESTION_PATTERN = re.compile(r"^\((\d+)\)")
 _OCR_Q_PATTERN = re.compile(r"^([lI])\s*[.、)）]")
 
 # ASCII 罗马数字子项标记 I./II./III. ——多选题子项枚举，区别于阿拉伯题号。
@@ -340,74 +339,66 @@ def _has_question_characteristics(line: str) -> bool:
 
 
 def _detect_question_number(line: str) -> tuple[int, int] | None:
-    """检测行首的题号，返回 (题号, 匹配结束位置) 或 None。"""
-    # 精确匹配
-    for pat, group_idx in _QUESTION_PATTERNS:
-        m = pat.match(line)
-        if m:
-            digits = m.group(group_idx)
-            if group_idx == 1 and pat is _QUESTION_PATTERNS[-1][0]:
-                num = 0
-                for ch in digits:
-                    num = num * 10 + _CN_NUM.get(ch, 0)
-                return (num, m.end())
-            num = int(digits)
-            # 过滤明显是选项 OCR 错误的假题号
-            if _is_false_question_number(num, line):
-                return None
-            # 过滤章节号 "1.1"、"10.1" 等，避免将 "1.1 操作系统的基本概念" 误判为题号
-            if pat is _QUESTION_PATTERNS[0][0]:
-                after = line[m.end():].lstrip()
-                if after and (after[0].isdigit() or after[0] in '.．'):
-                    return None
-            if pat is _PAREN_QUESTION_PATTERN and not _looks_like_paren_question(line, m.end()):
-                return None
-            if pat is _PARENED_QUESTION_PATTERN and _looks_like_grouped_option_marker(line, m.end()):
-                return None
-            return (num, m.end())
+    """检测行首的题号，返回 (题号, 匹配结束位置) 或 None。
 
-    # OCR 容错：l/I → 1
-    m = _OCR_Q_PATTERN.match(line)
-    if m:
-        return (1, m.end())
+    统一委托 ``question_numbering.parse_numbering()`` 实现。
+    """
+    result = parse_numbering(line)
+    if result is None:
+        return None
 
-    return None
+    # Skip non-question types
+    if result.numbering_type in (
+        NumberingType.SECTION,
+        NumberingType.FALSE_POSITIVE,
+        NumberingType.ORDINAL,
+        NumberingType.ANSWER,
+        NumberingType.OPTION,
+        NumberingType.OPTION_ROMAN,
+        NumberingType.OPTION_CIRCLED,
+    ):
+        return None
+
+    # Legacy: keep paren heuristics for specific edge cases
+    after_text = line[result.end:].lstrip()
+    if result.numbering_type is NumberingType.SUB_QUESTION:
+        # Check if (N) looks like a grouped option marker (not a sub-question)
+        if _looks_like_grouped_option_marker(line, result.end):
+            return None
+        # Check if (N) looks like a real parenthetical question
+        if not _looks_like_paren_question(line, result.end):
+            return None
+
+    # OCR false-positive filter (6→B, 8→B)
+    if _is_false_question_number(result.normalized_value, line):
+        return None
+
+    # Section number filter: "1.1" should not be a question number
+    if result.numbering_type is NumberingType.MAIN_QUESTION:
+        if after_text and (after_text[0].isdigit() or after_text[0] in ".．"):
+            return None
+
+    return (result.normalized_value, result.end)
 
 
 def _extract_first_line_label(text: str) -> str | None:
     """从原始题目文本的首行提取完整题号标签（如 "12."、"第12题"）。
 
+    统一委托 ``question_numbering.extract_first_question_label``。
+
     返回匹配到的完整前缀（包括标点），用于审核页展示。
     若匹配不到则返回 None。
     """
-    first_line = text.split("\n")[0] if text else ""
-    stripped = first_line.lstrip()
-    for pat, _group_idx in _QUESTION_PATTERNS:
-        m = pat.match(stripped)
-        if m:
-            return m.group(0).strip()
-    m = _OCR_Q_PATTERN.match(stripped)
-    if m:
-        return m.group(0).strip()
-    return None
+    return extract_first_question_label(text)
 
 
 def _is_false_question_number(num: int, line: str) -> bool:
-    """判断检测到的题号是否为选项 OCR 错误导致的假题号。"""
-    # 0 永远不是有效题号
-    if num == 0:
-        return True
-    # 6/8 可能是 B 的 OCR 错误，但仅当行首匹配严格选项模式（A-D 字母）
-    # 时才认定为假题号，避免将真实题干 "6.下列..." 或 "8.系统调用..." 误判
-    if num in (6, 8):
-        for pat in _OPTION_PATTERNS:
-            m = pat.match(line)
-            if m:
-                return True
-        # OCR 容错选项：6/8/0/Ｏ → B/B/D/D，但需排除真实题号
-        if _OCR_OPTION_PATTERN.match(line) and not _has_question_characteristics(line):
-            return True
-    return False
+    """判断检测到的题号是否为选项 OCR 错误导致的假题号。
+
+    统一委托 ``question_numbering._is_false_question_number``。
+    """
+    from app.features.question_numbering import _is_false_question_number as _qn_is_false
+    return _qn_is_false(num, line)
 
 
 def _looks_like_paren_question(line: str, match_end: int) -> bool:

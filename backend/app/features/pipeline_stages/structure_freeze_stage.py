@@ -9,6 +9,7 @@ Design:
     - Pure regex-based detection (no AI, no heuristics)
     - Output is immutable — downstream stages (split, normalize, repair) only read
     - Each block is scanned; detected options are recorded in a registry
+    - Options are bound to stable region/line IDs for merge/split resilience
 """
 
 from __future__ import annotations
@@ -18,9 +19,275 @@ import json
 import logging
 import re
 import types
+from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# ── Binding status constants ─────────────────────────────────────────────
+
+BINDING_BOUND = "bound"
+BINDING_REPLACED = "replaced"
+BINDING_MERGED = "merged"
+BINDING_SPLIT = "split"
+BINDING_LOST = "binding_lost"
+BINDING_NEEDS_REVIEW = "needs_review"
+
+# ── FrozenOptionEntry — stable-ID-based option binding ────────────────────
+
+
+@dataclass
+class FrozenOptionEntry:
+    """单个冻结选项，绑定到稳定的 region_id/line_id。
+
+    ``option_key``: A/B/C/D
+    ``source_region_ids``: 此选项来源的 region ID 列表
+    ``source_line_ids``: 此选项来源的 line ID 列表
+    ``normalized_text``: 标准化后的选项文本
+    ``binding_status``: 绑定状态 (bound/replaced/merged/split/binding_lost/needs_review)
+    """
+    option_key: str
+    source_region_ids: list[str] = field(default_factory=list)
+    source_line_ids: list[str] = field(default_factory=list)
+    original_text: str = ""
+    normalized_text: str = ""
+    confidence: float = 1.0
+    frozen_revision: int = 0
+    binding_status: str = BINDING_BOUND
+    needs_review: bool = False
+    binding_reason_codes: list[str] = field(default_factory=list)
+
+    def update_binding(
+        self,
+        new_region_ids: list[str] | None = None,
+        new_line_ids: list[str] | None = None,
+        status: str | None = None,
+        reason_codes: list[str] | None = None,
+    ) -> None:
+        """Update binding after merge/split/replacement.
+
+        Preserves original source IDs in ``source_region_ids`` / ``source_line_ids``.
+        Sets new IDs for ongoing binding.
+        """
+        if status:
+            self.binding_status = status
+            self.frozen_revision += 1
+        if reason_codes:
+            self.binding_reason_codes = list(set(self.binding_reason_codes + reason_codes))
+            if status in (BINDING_LOST, BINDING_NEEDS_REVIEW):
+                self.needs_review = True
+        if new_region_ids is not None:
+            self.source_region_ids = list(set(self.source_region_ids + new_region_ids))
+        if new_line_ids is not None:
+            self.source_line_ids = list(set(self.source_line_ids + new_line_ids))
+
+
+def update_frozen_entries_for_replacement(
+    entries: list[FrozenOptionEntry],
+    replacement_map: Any,
+    case_dir: str = "",
+) -> list[FrozenOptionEntry]:
+    """Update frozen entries through a ReplacementMap chain.
+
+    For each entry, traces its ``source_region_ids`` through the
+    replacement map to find current bindings. Marks entries as
+    ``binding_lost`` when no mapping exists.
+
+    Args:
+        entries: Current frozen option entries.
+        replacement_map: ReplacementMap instance (or compatible object).
+        case_dir: For diagnostics.
+
+    Returns:
+        Updated entries with current region IDs and binding status.
+    """
+    if not replacement_map:
+        return entries
+
+    updated: list[FrozenOptionEntry] = []
+    for entry in entries:
+        new_region_ids: list[str] = []
+        any_lost = False
+        reason_codes: list[str] = []
+
+        for rid in entry.source_region_ids:
+            current = _trace_replacement(rid, replacement_map, seen=None)
+            if current:
+                new_region_ids.extend(current)
+            else:
+                any_lost = True
+
+        if any_lost:
+            status = BINDING_LOST
+            reason_codes.append("VL_REBUILD_REGION_MAPPING_FAILED")
+        elif new_region_ids and new_region_ids != entry.source_region_ids:
+            # Determine if it was a merge (fewer regions) or split (more regions)
+            if len(new_region_ids) < len(entry.source_region_ids):
+                status = BINDING_MERGED
+            elif len(new_region_ids) > len(entry.source_region_ids):
+                status = BINDING_SPLIT
+            else:
+                status = BINDING_REPLACED
+        else:
+            status = BINDING_BOUND
+
+        entry.update_binding(
+            new_region_ids=new_region_ids,
+            status=status,
+            reason_codes=reason_codes or None,
+        )
+        updated.append(entry)
+
+    return updated
+
+
+def _trace_replacement(
+    region_id: str,
+    replacement_map: Any,
+    seen: set[str] | None = None,
+) -> list[str] | None:
+    """Trace a region ID through replacement chain with cycle protection.
+
+    Follows ``ReplacementMap.lookup()`` until a terminal entry is found.
+    Returns ``None`` if the ID is not found in any replacement chain.
+    """
+    if seen is None:
+        seen = set()
+
+    if region_id in seen:
+        logger.warning("[FREEZE] Cycle detected in replacement chain: %s", region_id)
+        return None
+
+    seen.add(region_id)
+    next_ids = replacement_map.lookup(region_id)
+
+    if next_ids is None:
+        # Terminal: region_id has no further replacements
+        return [region_id]
+
+    # Follow each next_id recursively
+    results: list[str] = []
+    for nid in next_ids:
+        traced = _trace_replacement(nid, replacement_map, seen)
+        if traced:
+            results.extend(traced)
+    return results or None
+
+
+# ── DocumentIR-based freeze ──────────────────────────────────────────────
+
+
+def freeze_from_document_ir(
+    doc_ir: Any,
+    **kwargs: Any,
+) -> dict:
+    """Extract and freeze options from DocumentIR regions.
+
+    Scans each RegionIR's text for option patterns and produces
+    ``FrozenOptionEntry`` instances bound to stable region/line IDs.
+
+    Args:
+        doc_ir: DocumentIR with ``.pages[].regions[].lines[]``.
+
+    Returns:
+        dict with:
+            - ``frozen_option_registry`` (dict[str, list[FrozenOptionEntry]]):
+              keyed by region_id
+            - ``frozen_structures`` (list[dict]): serialized per-region structures
+            - ``warnings`` (list[str])
+    """
+    registry: dict[str, list[FrozenOptionEntry]] = {}
+    structures: list[dict] = []
+    warnings: list[str] = []
+    total_option_regions = 0
+
+    if not hasattr(doc_ir, "pages") or not doc_ir.pages:
+        return {
+            "frozen_option_registry": registry,
+            "frozen_structures": structures,
+            "warnings": ["empty_document_ir"],
+        }
+
+    for page in doc_ir.pages:
+        for region in page.regions:
+            text = region.text
+            if not text:
+                continue
+
+            options: dict[str, str] = {}
+            option_line_ids: dict[str, list[str]] = {}
+
+            lines = text.split("\n")
+            for line in lines:
+                inline_opts = _detect_inline_options(line)
+                if inline_opts:
+                    for k, v in inline_opts.items():
+                        if k not in options:
+                            options[k] = v
+                else:
+                    result = _detect_option_line(line)
+                    if result:
+                        key, opt_text = result
+                        if key not in options:
+                            options[key] = opt_text
+                            for l in region.lines:
+                                if key in l.text[:10]:
+                                    option_line_ids.setdefault(key, []).append(l.line_id)
+
+            if options:
+                total_option_regions += 1
+                entries: list[FrozenOptionEntry] = []
+                for key, val in options.items():
+                    entries.append(FrozenOptionEntry(
+                        option_key=key,
+                        source_region_ids=[region.region_id],
+                        source_line_ids=option_line_ids.get(key, []),
+                        original_text=val,
+                        normalized_text=val,
+                        confidence=region.confidence,
+                        binding_status=BINDING_BOUND,
+                    ))
+                registry[region.region_id] = entries
+                structures.append({
+                    "region_id": region.region_id,
+                    "page": page.page_index,
+                    "options": dict(options),
+                    "entries": [
+                        {"option_key": e.option_key, "original_text": e.original_text,
+                         "binding_status": e.binding_status, "source_region_ids": e.source_region_ids}
+                        for e in entries
+                    ],
+                    "is_frozen": True,
+                    "is_complete": options.keys() >= {"A", "B", "C", "D"},
+                })
+
+    if total_option_regions == 0:
+        warnings.append("no_options_detected")
+
+    return {
+        "frozen_option_registry": registry,
+        "frozen_structures": structures,
+        "warnings": warnings,
+    }
+
+
+def freeze_registry_to_block_format(
+    id_registry: dict[str, list[FrozenOptionEntry]],
+) -> dict[str, dict[str, str]]:
+    """Convert ID-based registry to legacy ``{region_id: {A: text, ...}}`` format.
+
+    Used for backward compatibility with downstream stages that expect
+    the old flat dict format.
+    """
+    legacy: dict[str, dict[str, str]] = {}
+    for region_id, entries in id_registry.items():
+        options: dict[str, str] = {}
+        for entry in entries:
+            options[entry.option_key] = entry.normalized_text
+        if options:
+            legacy[region_id] = options
+    return legacy
+
 
 # ── Option detection patterns ──────────────────────────────────────────────
 

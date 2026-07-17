@@ -36,6 +36,13 @@ _AUTO_CHAIN = ["paddleocr-vl", "deepseek", "rule_fallback"]
 STRATEGY_MANUAL = "manual"
 STRATEGY_AUTO = "auto"
 
+# Enumerated degradation reason codes (never use raw exception text)
+_REASON_CODES = {
+    "all_adapters_failed": "all_adapters_failed",
+    "reject_stop": "reject_stop",
+    "adapter_unavailable": "adapter_unavailable",
+}
+
 
 @dataclass
 class _AdapterAttempt:
@@ -176,10 +183,37 @@ class OCRFixRouter:
         if adapters:
             self._adapters = dict(adapters)
         self._config: dict[str, Any] = {}
+        self._config_fingerprint: str = ""
+
+    def _build_config_fingerprint(self) -> str:
+        """Build a fingerprint of the current config for adapter cache validation."""
+        import hashlib
+        relevant_keys = [
+            "deepseek_base_url",
+            "paddleocr_vl_base_url",
+            "paddleocr_vl_model",
+            "ocr_fix_strategy",
+            "ocr_fix_model",
+        ]
+        parts = [f"{k}={self._config.get(k, '')}" for k in relevant_keys]
+        return hashlib.sha256("|".join(parts).encode()).hexdigest()[:12]
 
     def configure(self, config: dict[str, Any]) -> None:
-        """更新路由配置。"""
+        """更新路由配置。配置变化时清除已缓存的 adapter 以强制重建。"""
+        old_fingerprint = self._config_fingerprint
         self._config = dict(config)
+        self._config_fingerprint = self._build_config_fingerprint()
+
+        if old_fingerprint and self._config_fingerprint != old_fingerprint:
+            # 配置 fingerprint 变化 → 清除惰性创建的 adapter
+            lazy_adapters = {"rule_fallback", "deepseek", "paddleocr-vl"}
+            for name in lazy_adapters:
+                self._adapters.pop(name, None)
+            logger.info(
+                "OCR fix config fingerprint changed (%s->%s), "
+                "rebuilt lazy adapters",
+                old_fingerprint, self._config_fingerprint,
+            )
 
     def register(self, name: str, fixer: Any) -> None:
         """注册适配器。"""
@@ -226,7 +260,7 @@ class OCRFixRouter:
             selected = self._config.get("ocr_fix_model", "")
             if selected:
                 return [selected]
-            return _AUTO_CHAIN[:1]  # 选了一个但为空时走 rule
+            return ["rule_fallback"]  # 手动模式未选模型时走 rule，而非自动链首项
 
         # STRATEGY_AUTO
         return list(_AUTO_CHAIN)
@@ -330,7 +364,7 @@ class OCRFixRouter:
                         return OCRFixResult(
                             fixed_text=ocr_text,
                             confidence=0.0,
-                            model_used=f"degraded_{model_name}_rejected",
+                            model_used=f"rejected_{model_name}",
                             raw_response=f"rejected:{evaluation.reason}",
                             risk_flags=list(evaluation.risk_flags),
                             safety={
@@ -381,7 +415,7 @@ class OCRFixRouter:
         return OCRFixResult(
             fixed_text=ocr_text,
             confidence=0.0,
-            model_used=f"degraded_{last_error}" if last_error else "degraded_all",
+            model_used="degraded_all_adapters",
             safety={
                 "accepted": False,
                 "all_failed": True,
