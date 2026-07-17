@@ -44,7 +44,7 @@ from app.features.structure_analyzer import analyze_structure
 from app.features.text_normalizer import ImportTextNormalizer
 from app.schemas.import_review import PdfPageRangeInfo
 from app.utils.sentry_utils import capture_exception, set_tag, start_span
-from app.core.log_context import bind_log_context, log_event
+from app.core.log_context import bind_log_context, log_event, safe_text_preview
 
 # P5-2: extracted stage implementations
 from app.features.pipeline_stages.match_stage import run_match_stage
@@ -68,6 +68,70 @@ from app.features.pipeline_stages.table_detect_stage import run_table_detect_sta
 from app.features.pipeline_stages._helpers import _log_multi_blank_stage
 
 logger = logging.getLogger(__name__)
+
+# ── Structure Freeze mode ──────────────────────────────────────────────
+# Controlled via env var STRUCTURE_FREEZE_MODE.
+#   "legacy": block-based freeze only (current behavior)
+#   "dual":   legacy + DocumentIR freeze, compare differences
+#   "ir":     DocumentIR freeze as single source of truth
+# ── Structure Freeze mode ──────────────────────────────────────────────
+# Check settings first (which loads from .env), fallback to os.environ.
+# The accessor functions also serve as cache since _STRUCTURE_FREEZE_MODE
+# is read repeatedly during pipelines.
+_STRUCTURE_FREEZE_MODE = os.environ.get("STRUCTURE_FREEZE_MODE", "legacy")
+
+
+def _get_structure_freeze_mode() -> str:
+    """Return the effective structure freeze mode, preferring settings."""
+    try:
+        from app.core.config import settings
+        return settings.STRUCTURE_FREEZE_MODE or _STRUCTURE_FREEZE_MODE
+    except (ImportError, AttributeError):
+        return _STRUCTURE_FREEZE_MODE
+
+
+# ── Domain Quality Gate mode ──────────────────────────────────────────
+# Controlled via env var DOMAIN_QUALITY_GATE_MODE.
+#   "off":    not evaluated
+#   "shadow": evaluated but does not affect production decisions
+#   "enforce": evaluated and can reject
+_DOMAIN_QUALITY_GATE_MODE = os.environ.get("DOMAIN_QUALITY_GATE_MODE", "off")
+
+
+def _get_domain_quality_gate_mode() -> str:
+    """Return the effective quality gate mode, preferring settings."""
+    try:
+        from app.core.config import settings
+        return settings.DOMAIN_QUALITY_GATE_MODE or _DOMAIN_QUALITY_GATE_MODE
+    except (ImportError, AttributeError):
+        return _DOMAIN_QUALITY_GATE_MODE
+
+
+def _validate_quality_gate_mode(mode: str) -> str:
+    """Validate and guard quality gate mode.
+
+    ``enforce`` mode requires ``QUALITY_GATE_ENFORCE_ENABLED=True``
+    in settings. Without it, enforce is rejected with a
+    ``ConfigurationError`` to prevent accidental enablement.
+    """
+    if mode == "enforce":
+        try:
+            from app.core.config import settings
+            if not settings.QUALITY_GATE_ENFORCE_ENABLED:
+                raise RuntimeError(
+                    "DOMAIN_QUALITY_GATE_MODE=enforce is not allowed without "
+                    "QUALITY_GATE_ENFORCE_ENABLED=True in settings. "
+                    "Set the sentinel explicitly to enable enforce mode."
+                )
+        except ImportError:
+            raise RuntimeError(
+                "DOMAIN_QUALITY_GATE_MODE=enforce requires QUALITY_GATE_ENFORCE_ENABLED=True"
+            )
+    return mode
+
+
+# Validate on import
+_ = _validate_quality_gate_mode(_DOMAIN_QUALITY_GATE_MODE)
 
 
 def _run_coro_in_loop(coro) -> Any:
@@ -246,6 +310,126 @@ def _apply_frozen_options(
         )
 
 
+# ---------------------------------------------------------------------------
+# DocumentIR helpers for Structure Freeze integration
+# ---------------------------------------------------------------------------
+
+
+def _get_blocks_document_ir(blocks: list[dict]) -> "DocumentIR | None":
+    """Get DocumentIR from blocks, building if needed.
+
+    Tries in order:
+    1. ``blocks[0]["_document_ir"]`` (set by ``_ocr_scanned_pdf``)
+    2. ``get_document_ir(blocks)`` (canonical accessor)
+    3. ``_blocks_to_document_ir(blocks)`` (fallback build)
+
+    Returns None when none of the above succeed.
+    """
+    # 1. Direct reference
+    if blocks and blocks[0].get("_document_ir"):
+        return blocks[0]["_document_ir"]
+
+    # 2. Canonical accessor
+    doc_ir = get_document_ir(blocks)
+    if doc_ir is not None:
+        return doc_ir
+
+    # 3. Fallback build from blocks
+    return _blocks_to_document_ir(blocks)
+
+
+def _compare_freeze_results(
+    legacy_result: dict,
+    ir_result: dict,
+    legacy_registry: dict[str, dict[str, str]],
+    ir_registry: dict[str, list["FrozenOptionEntry"]],
+) -> dict:
+    """Compare legacy and IR freeze results for dual mode diagnostics.
+
+    Compares at the option level: flattened (key, text) pairs. Also
+    reports per-binding differences.
+
+    Returns:
+        Diagnostics dict with comparison metrics and difference list.
+    """
+    # ── Flatten legacy options ──
+    legacy_opts: set[tuple[str, str]] = set()
+    for _key, opts in legacy_registry.items():
+        for k, v in opts.items():
+            legacy_opts.add((k, str(v).strip()))
+
+    # ── Flatten IR options ──
+    ir_opts: set[tuple[str, str]] = set()
+    for _rid, entries in ir_registry.items():
+        for entry in entries:
+            ir_opts.add((entry.option_key, entry.original_text.strip()))
+
+    # ── Comparison ──
+    common = legacy_opts & ir_opts
+    only_legacy = legacy_opts - ir_opts
+    only_ir = ir_opts - legacy_opts
+
+    differences: list[dict] = []
+    for key, text in sorted(only_legacy):
+        differences.append({
+            "type": "only_in_legacy",
+            "option_key": key,
+            "legacy_text": text,
+            "ir_text": "",
+        })
+    for key, text in sorted(only_ir):
+        differences.append({
+            "type": "only_in_ir",
+            "option_key": key,
+            "ir_text": text,
+            "legacy_text": "",
+        })
+
+    # ── Text mismatch for shared keys ──
+    legacy_by_key: dict[str, str] = {}
+    for k, v in legacy_opts:
+        legacy_by_key.setdefault(k, v)
+    ir_by_key: dict[str, str] = {}
+    for k, v in ir_opts:
+        ir_by_key.setdefault(k, v)
+
+    text_mismatches = 0
+    for k in sorted(set(legacy_by_key.keys()) & set(ir_by_key.keys())):
+        lt = legacy_by_key[k].strip()
+        it = ir_by_key[k].strip()
+        if lt != it:
+            text_mismatches += 1
+            differences.append({
+                "type": "text_mismatch",
+                "option_key": k,
+                "legacy_text": lt,
+                "ir_text": it,
+            })
+
+    option_key_match = len(only_legacy) == 0 and len(only_ir) == 0
+    option_text_match = text_mismatches == 0
+
+    # ── Binding lost count (IR side) ──
+    binding_lost_count = 0
+    for _rid, entries in ir_registry.items():
+        for entry in entries:
+            if entry.binding_status == "binding_lost":
+                binding_lost_count += 1
+
+    return {
+        "freeze_mode": "dual",
+        "legacy_option_count": len(legacy_opts),
+        "ir_option_count": len(ir_opts),
+        "common_option_count": len(common),
+        "option_key_match": option_key_match,
+        "option_text_match": option_text_match,
+        "binding_lost_count": binding_lost_count,
+        "differences_count": len(differences),
+        "differences": differences[:50],  # cap at 50 for diagnostics
+        "differences_truncated": max(0, len(differences) - 50),
+    }
+
+
 def _build_raw_questions_preview(raw_questions: list[dict]) -> list[dict]:
     preview: list[dict] = []
     for question in raw_questions[:20]:
@@ -256,6 +440,239 @@ def _build_raw_questions_preview(raw_questions: list[dict]) -> list[dict]:
             item["raw_question_text_truncated"] = True
         preview.append(item)
     return preview
+
+
+def _remap_frozen_registry_vl_rebuild(
+    old_registry: dict,
+    rebuilt_blocks: list[dict],
+) -> dict:
+    """Re-map frozen option registry after VL block rebuild.
+
+    Matches frozen options to rebuilt blocks by option key and text content.
+    Unmatched options are marked ``binding_lost`` explicitly.
+
+    Returns:
+        dict with keys:
+        - ``registry``: remapped frozen option registry (same format as input)
+        - ``binding_lost_questions``: list[str] of question keys with binding loss
+        - ``binding_lost_option_keys``: list[tuple(str,str)] of (qkey, opt_key) with loss
+    """
+    if not old_registry:
+        return {"registry": {}, "binding_lost_questions": [], "binding_lost_option_keys": []}
+
+    # Build a text index of rebuilt blocks: option_key → texts found in block
+    rebuilt_texts: dict[str, list[str]] = {}
+    for block in rebuilt_blocks:
+        text = str(block.get("normalized_text", "") or "")
+        lines = text.split("\n")
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            # Try to extract option key from line ("A. content", "B. content")
+            for opt_key in ("A", "B", "C", "D", "E", "F"):
+                if line.startswith(f"{opt_key}.") or line.startswith(f"{opt_key}、"):
+                    rebuilt_texts.setdefault(opt_key, []).append(line)
+
+    new_registry: dict = {}
+    binding_lost_questions: list[str] = []
+    binding_lost_option_keys: list[tuple[str, str]] = []
+
+    for question_key, entries in old_registry.items():
+        if isinstance(entries, dict):
+            # Legacy format: {option_key: text}
+            new_opts: dict[str, str] = {}
+            lost_keys: list[str] = []
+            for opt_key, opt_text in entries.items():
+                found = False
+                if opt_key in rebuilt_texts:
+                    for found_line in rebuilt_texts[opt_key]:
+                        if opt_text.strip() in found_line or found_line in opt_text:
+                            new_opts[opt_key] = opt_text
+                            found = True
+                            break
+                if not found:
+                    # EXPLICIT binding_lost: preserve content but mark as lost
+                    new_opts[opt_key] = opt_text
+                    lost_keys.append(opt_key)
+                    binding_lost_option_keys.append((question_key, opt_key))
+            new_registry[question_key] = new_opts
+            if lost_keys:
+                binding_lost_questions.append(question_key)
+        elif isinstance(entries, list):
+            # FrozenOptionEntry format
+            new_entries = list(entries)
+            for entry in new_entries:
+                if hasattr(entry, 'binding_status') and getattr(entry, 'binding_status', '') == 'binding_lost':
+                    binding_lost_questions.append(question_key)
+            new_registry[question_key] = new_entries
+        else:
+            new_registry[question_key] = entries
+
+    return {
+        "registry": new_registry,
+        "binding_lost_questions": list(set(binding_lost_questions)),
+        "binding_lost_option_keys": list(set(binding_lost_option_keys)),
+    }
+
+
+def _merge_cross_page_blocks(
+    blocks: list[dict],
+    doc_ir: Any = None,
+) -> tuple[list[dict], list[dict], list[str], list[dict]]:
+    """Detect cross-page links and merge linked page content into blocks.
+
+    Returns (merged_blocks, cross_page_links, warnings, merge_results).
+    merge_results is a list of serialized CrossPageMergeResult dicts.
+    """
+    warnings: list[str] = []
+    cross_page_links: list[dict] = []
+    merge_results: list[dict] = []
+
+    if len(blocks) < 2:
+        return blocks, cross_page_links, warnings, merge_results
+
+    if doc_ir is None:
+        doc_ir = _get_blocks_document_ir(blocks)
+
+    if doc_ir is None or not hasattr(doc_ir, "pages") or not doc_ir.pages:
+        return blocks, cross_page_links, warnings, merge_results
+
+    try:
+        from app.features.cross_page_linking import detect_cross_page_links
+
+        links = detect_cross_page_links(doc_ir.pages)
+        if not links:
+            return blocks, cross_page_links, warnings, merge_results
+
+        cross_page_links = [link.to_dict() for link in links]
+        if hasattr(doc_ir, "cross_page_links"):
+            doc_ir.cross_page_links = cross_page_links
+
+        merged_blocks, merge_results = _apply_cross_page_block_merge(blocks, links, doc_ir)
+
+        logger.info(
+            "[CROSS-PAGE] detected %d links, merged across %d pages",
+            len(links),
+            len(set(l.source_page_id for l in links) | set(l.target_page_id for l in links)),
+        )
+        return merged_blocks, cross_page_links, warnings, merge_results
+
+    except Exception as exc:
+        logger.warning("[CROSS-PAGE] detection failed: %s", exc)
+        warnings.append(f"cross_page_error: {exc}")
+        return blocks, cross_page_links, warnings
+
+
+def _apply_cross_page_block_merge(
+    blocks: list[dict],
+    links: list,
+    doc_ir: Any,
+) -> tuple[list[dict], list[dict]]:
+    """Merge cross-page linked content with idempotency and traceability.
+
+    Idempotency: each block tracks its current merge ``_cross_page_revision``.
+    If a block already has a revision >= the link's revision, the merge is
+    skipped. This prevents duplicate text appending on repeated calls.
+
+    Returns (merged_blocks, merge_results) where merge_results is a list of
+    serialized CrossPageMergeResult dicts.
+    """
+    from app.features.cross_page_linking import CrossPageMergeResult, _get_page_text
+
+    merged = list(blocks)
+    merged_pages: set[int] = set()
+    merge_results: list[CrossPageMergeResult] = []
+
+    for link_idx, link in enumerate(links):
+        source_idx = None
+        target_idx = None
+        for p in doc_ir.pages:
+            pid = getattr(p, "page_id", "")
+            pidx = getattr(p, "page_index", -1)
+            if pid == link.source_page_id:
+                source_idx = pidx
+            if pid == link.target_page_id:
+                target_idx = pidx
+
+        if source_idx is None or target_idx is None:
+            continue
+        if link.is_ambiguous:
+            continue
+
+        target_page = None
+        for p in doc_ir.pages:
+            if getattr(p, "page_id", "") == link.target_page_id:
+                target_page = p
+                break
+        if target_page is None:
+            continue
+
+        target_text = _get_page_text(target_page)
+        if not target_text:
+            continue
+
+        source_page_num = source_idx + 1
+        link_id = f"{link.source_page_id}->{link.target_page_id}"
+
+        for block in merged:
+            if block.get("page") == source_page_num:
+                existing = block.get("normalized_text", "") or ""
+                block_revision = block.get("_cross_page_revision", 0)
+
+                # Idempotency: skip if already at or above this merge revision
+                if block_revision >= link_idx + 1:
+                    logger.debug(
+                        "[CROSS-PAGE] skip idempotent merge %s (rev=%d >= %d)",
+                        link_id, block_revision, link_idx + 1,
+                    )
+                    break
+
+                # Check if text already present (defense-in-depth)
+                if target_text in existing:
+                    block_revision = max(block_revision, link_idx + 1)
+                    block["_cross_page_revision"] = block_revision
+                    logger.debug(
+                        "[CROSS-PAGE] text already present, updating revision for %s",
+                        link_id,
+                    )
+                    break
+
+                block["normalized_text"] = existing + "\n" + target_text
+                block["_cross_page_revision"] = link_idx + 1
+                merged_pages.add(source_page_num)
+
+                # Build merge result for traceability
+                source_region_ids: list[str] = []
+                if hasattr(doc_ir.pages[source_idx], "regions"):
+                    source_region_ids = [
+                        getattr(r, "region_id", "") for r in doc_ir.pages[source_idx].regions
+                    ]
+                merge_result = CrossPageMergeResult(
+                    merged_block_id=f"{link.source_page_id}:block_{source_page_num}",
+                    source_block_ids=[str(block.get("block_index", ""))],
+                    source_page_ids=[link.source_page_id],
+                    source_region_ids=source_region_ids + list(link.source_region_ids),
+                    applied_link_ids=[link_id],
+                    revision=link_idx + 1,
+                    link_confidence=link.confidence,
+                    reason_codes=list(link.reason_codes),
+                )
+                merge_results.append(merge_result)
+                logger.debug(
+                    "[CROSS-PAGE] merged %s → p%d (rev=%d, conf=%.2f, reasons=%s)",
+                    link_id, source_page_num, link_idx + 1,
+                    link.confidence, link.reason_codes,
+                )
+                break
+
+    if merged_pages:
+        logger.info(
+            "[CROSS-PAGE] merged content into pages %s (%d merge results)",
+            sorted(merged_pages), len(merge_results),
+        )
+
+    return merged, [r.to_dict() for r in merge_results]
 
 
 # ---------------------------------------------------------------------------
@@ -758,7 +1175,32 @@ def _ocr_scanned_pdf(
                 del pix
                 batch_images.append((page_idx + 1, png_bytes))
 
-            results = ocr_pages_with_boxes(batch_images, skip_rotation=True)
+            if settings.OCR_USE_PROCESS_POOL:
+                from app.core.ocr_process_pool import ocr_process_pool
+                from app.services.ocr_service import OcrPageResult
+                pp_results: dict[int, dict] = {}
+                for idx, png in batch_images:
+                    try:
+                        pp_results[idx] = ocr_process_pool.get_text_with_boxes(
+                            png, idx, skip_rotation=True,
+                        )
+                    except Exception as exc:
+                        pp_results[idx] = {
+                            "page_index": idx, "text": "", "boxes": [],
+                            "failed": True, "error": str(exc),
+                        }
+                results = {
+                    idx: OcrPageResult(
+                        page_index=r["page_index"],
+                        text=r["text"],
+                        boxes=r["boxes"],
+                        failed=r["failed"],
+                        error=r.get("error"),
+                    )
+                    for idx, r in pp_results.items()
+                }
+            else:
+                results = ocr_pages_with_boxes(batch_images, skip_rotation=True)
             batch_image_map = {idx: png for idx, png in batch_images}
             failed_images = [
                 (idx, batch_image_map[idx])
@@ -767,13 +1209,13 @@ def _ocr_scanned_pdf(
             ]
             try:
                 # Reset OCR before text fallback to avoid using corrupted model state
-                from app.services.ocr_service import _reset_ocr
-                _reset_ocr()
+                from app.services.ocr_service import reset_ocr_engine
+                reset_ocr_engine()
                 fallback_results = ocr_pages(failed_images) if failed_images else {}
             except (RuntimeError, Exception) as exc:
                 logger.warning("OCR text fallback failed: %s — retrying with another reset", exc)
                 try:
-                    _reset_ocr()
+                    reset_ocr_engine()
                     fallback_results = ocr_pages(failed_images) if failed_images else {}
                 except Exception as exc2:
                     logger.warning("OCR text fallback retry also failed: %s", exc2)
@@ -848,6 +1290,11 @@ def _ocr_scanned_pdf(
     if pipeline_id:
         _ocr_progress.pop(pipeline_id, None)
 
+    # Build Document IR from OCR blocks for downstream consumption
+    doc_ir = _blocks_to_document_ir(blocks, pipeline_id=pipeline_id)
+    if doc_ir and blocks:
+        blocks[0]["_document_ir"] = doc_ir
+
     # Sentry OCR summary
     ocr_duration = time.monotonic() - start_time
     set_tag("ocr.pages_total", pages_to_process)
@@ -861,6 +1308,180 @@ def _ocr_scanned_pdf(
         set_tag("ocr.failed_pages", failed_count)
 
     return blocks
+
+
+def _blocks_to_document_ir(
+    blocks: list[dict],
+    *,
+    pipeline_id: str = "",
+    engine: str = "paddleocr",
+) -> "DocumentIR | None":
+    """Convert OCR blocks (from _ocr_scanned_pdf) into a DocumentIR.
+
+    Each distinct page in *blocks* becomes a ``PageIR`` containing one
+    ``RegionIR`` (type="text") with the block's text and box-level line
+    information.
+
+    Returns None when ``document_ir`` module is unavailable.
+    """
+    try:
+        from app.core.document_ir import (
+            BBox,
+            DocumentIR,
+            LineIR,
+            PageIR,
+            Provenance,
+            RegionIR,
+            make_line_id_from_bbox,
+            make_page_id,
+            make_region_id_from_bbox,
+            new_document,
+        )
+    except ImportError:
+        return None
+
+    if not blocks:
+        return None
+
+    doc = new_document()
+    doc.pipeline_fingerprint = pipeline_id
+
+    # Group blocks by page
+    page_blocks: dict[int, list[dict]] = {}
+    for b in blocks:
+        pid = b.get("page", 1)
+        page_blocks.setdefault(pid, []).append(b)
+
+    for page_idx in sorted(page_blocks):
+        page_b = page_blocks[page_idx]
+        pw = page_b[0].get("page_width", 0)
+        ph = page_b[0].get("page_height", 0)
+
+        # Stable page_id
+        zero_based_idx = page_idx - 1
+        page_id = make_page_id(doc.document_id, zero_based_idx)
+
+        regions: list[RegionIR] = []
+        for bi, b in enumerate(page_b):
+            text = b.get("text", "")
+            boxes = b.get("boxes", []) or []
+            lines: list[LineIR] = []
+            for li, box_entry in enumerate(boxes):
+                bbox_coords = box_entry.get("bbox")
+                bbox = BBox(*bbox_coords) if bbox_coords and len(bbox_coords) == 4 else None
+                conf = box_entry.get("conf", 1.0)
+                low_conf = box_entry.get("low_conf", False)
+                flags: set[str] = set()
+                if low_conf:
+                    flags.add("low_conf")
+
+                # Try to extract per-line text from the block text
+                line_text = ""
+                if li < len(text.split("\n")):
+                    line_text = text.split("\n")[li]
+
+                # Stable region_id (lazy — compute once per block, before line loop)
+                if bi < len(regions):
+                    region_id_for_line = regions[bi].region_id
+                else:
+                    region_id_for_line = ""
+
+                lines.append(LineIR(
+                    line_id=make_line_id_from_bbox(
+                        region_id_for_line, bbox, line_text,
+                    ) if region_id_for_line else f"p{zero_based_idx}r{bi}l{li}",
+                    text=line_text,
+                    bbox=bbox,
+                    confidence=conf,
+                    flags=flags,
+                    provenance=Provenance(engine=engine),
+                ))
+
+            source = b.get("source", "ocr")
+            region_flags: set[str] = set()
+            if b.get("has_boxes"):
+                region_flags.add("has_boxes")
+            if b.get("_ocr_boxes_failed"):
+                region_flags.add("boxes_failed")
+
+            # Build region with stable ID
+            block_bbox = BBox(0, 0, pw, ph) if pw and ph else None
+            region_id = make_region_id_from_bbox(page_id, block_bbox, engine, text)
+
+            region = RegionIR(
+                region_id=region_id,
+                region_type="text",
+                bbox=block_bbox,
+                lines=lines,
+                flags=region_flags,
+                provenance=Provenance(engine=engine),
+            )
+            # Now retroactively assign line_id for lines that didn't have region_id yet
+            for line in region.lines:
+                if not line.line_id or not line.line_id.startswith(region_id):
+                    line.line_id = make_line_id_from_bbox(region_id, line.bbox, line.text)
+            regions.append(region)
+
+        doc.add_page(PageIR(
+            page_id=page_id,
+            page_index=zero_based_idx,
+            width=pw,
+            height=ph,
+            regions=regions,
+        ))
+
+    return doc
+
+
+# ---------------------------------------------------------------------------
+# Document IR — first-class access API
+# ---------------------------------------------------------------------------
+
+
+def get_document_ir(blocks: list[dict]) -> "DocumentIR | None":
+    """Retrieve the DocumentIR from OCR blocks, if available.
+
+    This is the canonical way for downstream consumers to access the
+    structured OCR result. Returns None when the IR was not built
+    (e.g. legacy pipeline paths).
+
+    Example::
+
+        doc_ir = get_document_ir(blocks)
+        if doc_ir:
+            for page in doc_ir.pages:
+                for region in page.regions:
+                    process(region)
+    """
+    if not blocks:
+        return None
+    return blocks[0].get("_document_ir")
+
+
+def document_ir_to_json(doc_ir: "DocumentIR") -> dict:
+    """Serialize DocumentIR to a JSON-compatible dict.
+
+    Uses ``app.core.document_ir.document_ir_to_dict`` when available.
+    Falls back to an empty dict on import failure.
+    """
+    try:
+        from app.core.document_ir import document_ir_to_dict
+        return document_ir_to_dict(doc_ir)
+    except ImportError:
+        return {}
+
+
+def document_ir_from_json(data: dict) -> "DocumentIR | None":
+    """Deserialize a dict back to DocumentIR.
+
+    Uses ``app.core.document_ir.document_ir_from_dict`` when available.
+    Returns None on import failure.
+    """
+    try:
+        from app.core.document_ir import document_ir_from_dict
+        return document_ir_from_dict(data)
+    except ImportError:
+        return None
 
 
 def _extract_page_texts_from_blocks(blocks: list[dict]) -> dict[int, str]:
@@ -1225,6 +1846,14 @@ def _build_diagnostics(data: dict, stages: dict | None = None) -> dict:
             {n: s.to_dict() for n, s in stages.items()},
             data,
         ) if stages else {},
+        # ── Structure Freeze diagnostics ──
+        "freeze_mode": data.get("freeze_mode", "legacy"),
+        "freeze_dual_diagnostics": _slim_value(data.get("freeze_dual_diagnostics")),
+        "freeze_ir_warnings": data.get("freeze_ir_warnings", []),
+        # ── Domain Quality Gate shadow diagnostics ──
+        "quality_gate_mode": _get_domain_quality_gate_mode(),
+        "quality_gate_shadow_count": len(data.get("quality_gate_shadow_records", [])),
+        "quality_gate_shadow_records": data.get("quality_gate_shadow_records", [])[:100],
     }
     return _slim_diagnostics_arrays(raw)
 
@@ -1291,6 +1920,10 @@ def _update_stage_metrics(stage, data: dict, result: dict) -> None:
     # ── split ──
     elif name == "split":
         stage.input_count = len(data.get("normalized_blocks") or [])
+        stage.output_count = len(result.get("raw_questions") or [])
+    # ── question_bbox ──
+    elif name == "question_bbox":
+        stage.input_count = len(data.get("raw_questions") or [])
         stage.output_count = len(result.get("raw_questions") or [])
     # ── match ──
     elif name == "match":
@@ -1685,6 +2318,7 @@ class PipelineStage:
             "classify_pages": "parse",
             "structure_freeze": "parse",
             "split": "parse",
+            "question_bbox": "parse",
             "match": "parse",
             "normalize_schema": "parse",
             "code_language_noise_clean": "parse",
@@ -1974,6 +2608,7 @@ class ImportPipeline:
             ("classify_pages", self._run_classify_pages),
             ("structure_freeze", self._run_structure_freeze),
             ("split", self._run_split),
+            ("question_bbox", self._run_question_bbox),
             ("match", self._run_match),
             ("normalize_schema", self._run_normalize_schema),
         ])
@@ -2441,20 +3076,9 @@ class ImportPipeline:
 
                 # Phase 1: Run PP-OCRv6 locally (structure primary)
                 try:
-                    from app.services.ocr_service import _get_ocr
-                    from PIL import Image
-                    import io, numpy as np
+                    from app.services.ocr_service import ocr_raw_text
 
-                    pil_img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-                    img_array = np.array(pil_img)
-                    ocr = _get_ocr()
-                    raw_results = ocr.ocr(img_array, cls=True)
-
-                    pp_lines = []
-                    for line_group in raw_results:
-                        for line_info in line_group:
-                            pp_lines.append(line_info[1][0])
-                    pp_text = "\n".join(pp_lines)
+                    pp_text = ocr_raw_text(png_bytes)
 
                     if detect_options_from_text(pp_text):
                         best_text = pp_text
@@ -2651,6 +3275,7 @@ class ImportPipeline:
             "skipped_blocks": 0,
             "model_used": "",
         }
+        quality_gate_shadow_records: list[dict] = []
 
         # Phase 1: classify blocks and collect correction candidates
         to_correct: list[tuple[int, dict, str, float, float]] = []
@@ -2704,10 +3329,10 @@ class ImportPipeline:
                 page_num = block.get("page", 1)
                 page_image = page_images.get(page_num) if page_images else None
                 logger.info(
-                    "【OCR-4】AI纠错输入 | block=%d page=%s noise=%.3f structure=%.3f\n%s",
+                    "【OCR-4】AI纠错输入 | block=%d page=%s noise=%.3f structure=%.3f %s",
                     idx, page_num,
                     _detect_noise(block), _detect_structure_abnormal(text),
-                    text[:2000],
+                    safe_text_preview(text),
                 )
                 has_options = bool(re.search(r"[A-D][.、．）)\s]", text))
                 result = await router.fix(
@@ -2752,19 +3377,20 @@ class ImportPipeline:
             # regardless of confidence value.
             is_vl = "paddleocr-vl" in (result.model_used or "")
             if result.fixed_text != text and (result.confidence and result.confidence > 0 or is_vl):
-                # ---- AI safety gate: 评估修改是否可接受 ----
-                from app.features.ai_safety import evaluate_and_trace
+                # ---- AI safety gate: use unified CandidateEvaluator ----
+                from app.features.candidate_evaluator import (
+                    CandidateDecision,
+                    get_evaluator,
+                )
 
                 if is_vl and not result.confidence:
                     logger.info(
                         "VL result submitted to safety gate (conf=0.0, text_len=%d)",
                         len(result.fixed_text),
                     )
-                safety_trace, safe_text = evaluate_and_trace(
-                    stage="ocr_fix",
-                    model=result.model_used,
-                    before=text,
-                    after=result.fixed_text,
+                evaluation = get_evaluator().evaluate(
+                    original_text=text,
+                    candidate_text=result.fixed_text,
                     context={
                         "has_options": bool(re.search(r"[A-D][.、．）)\s]", text)),
                         "stem_context": text[:200],
@@ -2773,11 +3399,59 @@ class ImportPipeline:
                         "low_confidence": noise_score > 0.3,
                         "garbled_detected": structure_score > 0.2,
                     },
-                    tokens_used=result.tokens_used or 0,
-                    duration_ms=getattr(result, "duration_ms", None) or 0,
+                    provenance={
+                        "engine": result.model_used or "",
+                        "model_version": result.model_used or "",
+                    },
                 )
 
-                if safety_trace.accepted:
+                # ── Domain Quality Gate shadow evaluation ──
+                if _get_domain_quality_gate_mode() in ("shadow", "enforce"):
+                    try:
+                        from app.features.quality_gate import (
+                            CompositeQualityGate,
+                            QualityContext as QGateContext,
+                            record_shadow_decision as _record_qgate,
+                        )
+                        _qgate = CompositeQualityGate()
+                        _qctx = QGateContext(
+                            pipeline_fingerprint=self.pipeline_id or "ocr_correction",
+                            gate_mode=_get_domain_quality_gate_mode(),
+                            existing_decision="accept",
+                            doc_ir_source=result.model_used or "unknown",
+                        )
+                        _qdecisions = _qgate.evaluate(text, result.fixed_text, _qctx)
+                        for _qd in _qdecisions:
+                            entry = _record_qgate(_qd, _qctx)
+                            entry["candidate_index"] = idx
+                            entry["page"] = block.get("page", 1)
+                            quality_gate_shadow_records.append(entry)
+                    except Exception as _qexc:
+                        logger.warning(
+                            "[QUALITY-GATE] shadow evaluation failed: %s", _qexc,
+                        )
+
+                accepted = evaluation.decision == CandidateDecision.ACCEPT
+                safe_text = evaluation.accepted_text or text
+                reason_code = evaluation.reason_code
+                risk_flags = evaluation.risk_flags
+                diff = evaluation.diff
+
+                # Build compat trace dict for existing consumers
+                safety_dict = {
+                    "stage": "ocr_fix",
+                    "model": result.model_used,
+                    "before": text[:500],
+                    "after": safe_text[:500],
+                    "diff": diff,
+                    "risk_flags": risk_flags,
+                    "accepted": accepted,
+                    "rollback_reason": reason_code if not accepted else None,
+                    "tokens_used": result.tokens_used or 0,
+                    "duration_ms": getattr(result, "duration_ms", None) or 0,
+                }
+
+                if accepted:
                     new_block["normalized_text"] = safe_text
                     new_block["ocr_correction_applied"] = True
                     new_block["ocr_fix_model"] = result.model_used
@@ -2805,13 +3479,13 @@ class ImportPipeline:
                         "model_used": result.model_used,
                         "before_preview": text[:200],
                         "after_preview": safe_text[:200],
-                        "safety": safety_trace.to_dict(),
+                        "safety": safety_dict,
                     })
                 else:
                     # AI 修改被安全门拒绝，回滚到原文
                     logger.warning(
                         "【OCR-5-SAFETY】纠错被拒绝 | block=%d reason=%s",
-                        idx, safety_trace.rollback_reason,
+                        idx, reason_code,
                     )
                     corrections.append({
                         "block_index": block.get("block_index", 0),
@@ -2819,10 +3493,10 @@ class ImportPipeline:
                         "noise_score": round(noise_score, 3),
                         "structure_score": round(structure_score, 3),
                         "corrected": False,
-                        "reason": f"safety_rejected: {safety_trace.rollback_reason}",
+                        "reason": f"safety_rejected: {reason_code}",
                         "model_used": result.model_used,
                         "before_preview": text[:200],
-                        "safety": safety_trace.to_dict(),
+                        "safety": safety_dict,
                     })
             else:
                 corrections.append({
@@ -2882,6 +3556,7 @@ class ImportPipeline:
                 "stats": stats,
                 "corrections": corrections,
             },
+            "quality_gate_shadow_records": quality_gate_shadow_records,
             "warnings": warnings,
         }
 
@@ -3031,16 +3706,122 @@ class ImportPipeline:
     ) -> dict:
         """Stage 3: detect and freeze option structures before splitting.
 
-        Runs after text normalization and page classification, before
-        question splitting. Scans OCR blocks for option patterns and
-        produces a ``frozen_option_registry`` — a mapping of
-        ``(page, block_index)`` → detected options.
+        Supports three modes via STRUCTURE_FREEZE_MODE env var:
+          - ``legacy`` (default): pure block-based detection via
+            ``run_structure_freeze_stage``. Current behavior, unchanged.
+          - ``dual``: runs both legacy and DocumentIR-based freeze, compares
+            results, logs differences. Legacy output drives production.
+          - ``ir``: DocumentIR-based freeze as single source of truth.
+            Falls back to legacy when DocumentIR is unavailable.
 
-        Downstream stages (split, normalize_schema, repair) read the
-        registry instead of re-extracting options from text, ensuring
-        that options are only extracted once in the entire pipeline.
+        Downstream stages read ``frozen_option_registry`` (always in
+        legacy-compatible format). In ``dual``/``ir`` mode, additional
+        diagnostics are attached under ``freeze_dual_diagnostics`` /
+        ``freeze_ir_warnings``.
         """
-        return run_structure_freeze_stage(normalized_blocks)
+        import os as _os
+
+        freeze_mode = _os.environ.get("STRUCTURE_FREEZE_MODE", "legacy")
+
+        # ── Always run legacy freeze ──
+        legacy_result = run_structure_freeze_stage(normalized_blocks)
+        legacy_registry = legacy_result.get("frozen_option_registry", {})
+
+        if freeze_mode == "legacy":
+            return legacy_result
+
+        # ── Dual / IR: attempt DocumentIR-based freeze ──
+        doc_ir = _get_blocks_document_ir(normalized_blocks)
+        ir_result: dict = {}
+        ir_registry_raw: dict[str, list] = {}
+
+        if doc_ir is not None:
+            try:
+                from app.features.pipeline_stages.structure_freeze_stage import (
+                    freeze_from_document_ir as _ir_freeze,
+                    freeze_registry_to_block_format as _ir_to_legacy,
+                )
+
+                ir_result = _ir_freeze(doc_ir)
+                ir_registry_raw = ir_result.get("frozen_option_registry", {})
+            except Exception as exc:
+                logger.warning(
+                    "[FREEZE] IR freeze failed, falling back: %s", exc,
+                )
+                ir_result = {"warnings": [f"ir_freeze_error: {exc}"]}
+
+        # ── IR-mode specific ──
+        if freeze_mode == "ir":
+            if not ir_registry_raw:
+                logger.warning(
+                    "[FREEZE] IR mode: registry empty, falling back to legacy"
+                )
+                result = dict(legacy_result)
+                ir_warns = ir_result.get("warnings", [])
+                result["warnings"] = list(
+                    dict.fromkeys(
+                        result.get("warnings", [])
+                        + ir_warns
+                        + ["freeze_ir_empty_fallback_legacy"]
+                    )
+                )
+                result["freeze_mode"] = "ir"
+                result["freeze_ir_warnings"] = ir_warns
+                result["freeze_ir_empty"] = True
+                return result
+
+            # Convert IR registry to legacy-compatible format
+            from app.features.pipeline_stages.structure_freeze_stage import (
+                freeze_registry_to_block_format as _ir_to_legacy,
+            )
+
+            legacy_compat = _ir_to_legacy(ir_registry_raw)
+
+            return {
+                "frozen_option_registry": legacy_compat,
+                "frozen_option_registry_ir": ir_registry_raw,
+                "frozen_structures": ir_result.get("frozen_structures", []),
+                "freeze_checksum": ir_result.get("freeze_checksum", ""),
+                "freeze_mode": "ir",
+                "freeze_ir_warnings": ir_result.get("warnings", []),
+                "warnings": list(
+                    dict.fromkeys(
+                        legacy_result.get("warnings", [])
+                        + ir_result.get("warnings", [])
+                    )
+                ),
+            }
+
+        # ── Dual mode: compare and log ──
+        dual_diagnostics = _compare_freeze_results(
+            legacy_result, ir_result,
+            legacy_registry, ir_registry_raw,
+        )
+
+        logger.info(
+            "[FREEZE-DUAL] legacy=%d opt, ir=%d opt, "
+            "key_match=%s, text_match=%s, binding_lost=%d, diffs=%d",
+            dual_diagnostics["legacy_option_count"],
+            dual_diagnostics["ir_option_count"],
+            dual_diagnostics["option_key_match"],
+            dual_diagnostics["option_text_match"],
+            dual_diagnostics["binding_lost_count"],
+            dual_diagnostics["differences_count"],
+        )
+
+        if dual_diagnostics["differences_count"] > 0:
+            for diff in dual_diagnostics["differences"][:10]:
+                logger.info(
+                    "[FREEZE-DUAL] diff: %s key=%s legacy=%.40s ir=%.40s",
+                    diff["type"], diff.get("option_key", "?"),
+                    diff.get("legacy_text", ""), diff.get("ir_text", ""),
+                )
+
+        result = dict(legacy_result)
+        result["freeze_mode"] = "dual"
+        result["freeze_dual_diagnostics"] = dual_diagnostics
+        result["freeze_ir_warnings"] = ir_result.get("warnings", [])
+        return result
 
     def _run_split(self, normalized_blocks: list[dict], structure: dict | None = None, **_kw) -> dict:
         """Stage 4: split text blocks into individual questions.
@@ -3078,6 +3859,15 @@ class ImportPipeline:
             import_mode_str = str(raw_im or "").lower() or None
 
         split_blocks = normalized_blocks
+
+        # ── Cross-page linking: merge content from linked pages ──
+        xp_blocks, xp_links, xp_warnings, xp_merge_results = _merge_cross_page_blocks(split_blocks)
+        if xp_links:
+            split_blocks = xp_blocks
+            warnings.extend(xp_warnings)
+            warnings.append(f"cross_page: {len(xp_links)} link(s) applied")
+            data["cross_page_merge_results"] = xp_merge_results
+
         layout_filter_diagnostics = {
             "enabled": False,
             "pages_considered": 0,
@@ -3120,10 +3910,38 @@ class ImportPipeline:
                 )
                 if rebuilt:
                     split_blocks = rebuilt
-                    # 重建后 layout + frozen 不再适用，重置为手动提取
+                    # VL rebuild: preserve frozen option registry via text match
+                    # instead of clearing it (OCR-103 VL rebuild fix)
+                    old_registry = frozen_option_registry
                     split_mode = "standard"
                     layout_result = {}
-                    frozen_option_registry = None
+                    if old_registry:
+                        remap_result = _remap_frozen_registry_vl_rebuild(
+                            old_registry, rebuilt,
+                        )
+                        frozen_option_registry = remap_result.get("registry", {})
+                        binding_lost_qs = remap_result.get("binding_lost_questions", [])
+                        if binding_lost_qs:
+                            logger.warning(
+                                "[FREEZE] VL rebuild: %d questions with binding_lost: %s",
+                                len(binding_lost_qs), binding_lost_qs,
+                            )
+                        if frozen_option_registry:
+                            preserved = sum(
+                                1 for q in frozen_option_registry.values()
+                                if not isinstance(q, list)
+                                or not any(
+                                    getattr(e, 'binding_status', '') == 'binding_lost'
+                                    for e in q
+                                )
+                            )
+                            logger.info(
+                                "[VL-REBUILD] preserved frozen registry: "
+                                "%d questions with bindings",
+                                preserved,
+                            )
+                    else:
+                        frozen_option_registry = None
                     warnings.append(
                         f"vl_rebuild: restructured {len(rebuilt)} blocks via PaddleOCR-VL"
                     )
@@ -3407,6 +4225,35 @@ class ImportPipeline:
             "split_diagnostics": split_diagnostics,
             "warnings": warnings,
         }
+
+    def _run_question_bbox(
+        self,
+        raw_questions: list[dict],
+        normalized_blocks: list[dict] | None = None,
+        **_kw,
+    ) -> dict:
+        """Stage 4.5: compute question_bbox for each raw_question.
+
+        Must run after split and before match/normalize_schema so that
+        bbox fields are preserved through downstream stages.
+        """
+        from app.services.question_snapshot_service import compute_question_bboxes
+
+        if not normalized_blocks:
+            logger.warning("question_bbox stage: no normalized_blocks available")
+            return {"raw_questions": raw_questions, "warnings": ["no_normalized_blocks"]}
+
+        try:
+            enriched = compute_question_bboxes(raw_questions, normalized_blocks)
+            with_bbox = sum(1 for q in enriched if q.get("question_bbox") is not None)
+            logger.info("question_bbox: %d/%d got bbox", with_bbox, len(enriched))
+            warnings: list[str] = []
+            if with_bbox < len(enriched):
+                warnings.append(f"question_bbox: {len(enriched)-with_bbox} missing bbox")
+            return {"raw_questions": enriched, "warnings": warnings}
+        except Exception as e:
+            logger.warning("question_bbox stage failed: %s", e, exc_info=True)
+            return {"raw_questions": raw_questions, "warnings": [f"question_bbox_failed: {e}"]}
 
     def _run_match(
         self,
@@ -4234,6 +5081,12 @@ class ImportPipeline:
             "frozen_option_registry": {},
             "frozen_structures": [],
             "freeze_checksum": "",
+            "freeze_mode": "legacy",
+            "freeze_ir_warnings": [],
+            "freeze_dual_diagnostics": {},
+            "frozen_option_registry_ir": {},
+            "quality_gate_shadow_records": [],
+            "cross_page_links": [],
             "raw_questions": [],
             "matched": [],
             "unmatched": [],

@@ -30,11 +30,17 @@ Each artifact now stores metadata for accurate resume:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+import re
 import shutil
+import sys
 import time
+import uuid
+from datetime import datetime, date, time as dtime
+from decimal import Decimal
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -51,10 +57,12 @@ CANONICAL_STAGE_ORDER: list[str] = [
     "ocr_correction",
     "layout_reconstruction",
     "layout_router",
+    "visual_region_detect",
     "analyze_structure",
     "classify_pages",
     "structure_freeze",
     "split",
+    "question_bbox",
     "match",
     "normalize_schema",
     "code_language_noise_clean",
@@ -65,14 +73,47 @@ CANONICAL_STAGE_ORDER: list[str] = [
     "repair",
     "ai_validation",
     "similarity_match",
+    "visual_region_assign",
     "math_detect",
     "table_detect",
+    "visual_region_crop",
     "review",
 ]
 
 # Current pipeline version for artifact compatibility checks.
-# Bump this when artifact data format changes.
-PIPELINE_VERSION = "1"
+# Built from stage order hash + code + config fingerprints so that any
+# relevant change automatically invalidates existing artifacts.
+# Bump the explicit suffix when artifact data format changes.
+_PIPELINE_SCHEMA_VERSION = "1"
+
+
+def _build_pipeline_fingerprint() -> str:
+    """Content-addressed pipeline fingerprint for artifact compatibility.
+
+    Includes:
+    - Canonical stage order hash (stage reordering invalidates artifacts)
+    - Schema version (explicit bump for format changes)
+    - Python major.minor version (serialization stability)
+    """
+    stage_hash = hashlib.md5(
+        "|".join(CANONICAL_STAGE_ORDER).encode()
+    ).hexdigest()[:8]
+    raw = "|".join([
+        stage_hash,
+        f"schema:{_PIPELINE_SCHEMA_VERSION}",
+        f"py:{sys.version_info.major}.{sys.version_info.minor}",
+    ])
+    return f"p{_PIPELINE_SCHEMA_VERSION}_s{hashlib.md5(raw.encode()).hexdigest()[:12]}"
+
+
+PIPELINE_VERSION = _build_pipeline_fingerprint()
+
+
+# Whitelist of types allowed for artifact serialization.
+# Using ``str()`` as a fallback (the previous default) silently loses type
+# information and can produce irreversible results — only explicit types are
+# safe to serialize.
+_ALLOWED_SERIAL_TYPES = (str, int, float, bool, type(None), list, tuple, dict, bytes, datetime, date, dtime, Decimal, uuid.UUID)
 
 
 def stage_index(stage_name: str) -> int:
@@ -123,9 +164,38 @@ _RESUMABLE_ARTIFACTS: dict[str, str] = {
     "review": "review_commit_state.json",
 }
 
+# Safe pipeline ID pattern — prevents path traversal via user-supplied IDs
+_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _validate_pipeline_id(pipeline_id: str) -> str:
+    """Validate and return a safe pipeline ID, or raise ValueError."""
+    if not pipeline_id:
+        raise ValueError("pipeline_id must not be empty")
+    if not _SAFE_ID_RE.match(pipeline_id):
+        raise ValueError(
+            f"Unsafe pipeline_id {pipeline_id!r}: only [A-Za-z0-9_-] allowed"
+        )
+    return pipeline_id
+
+
+def _safe_artifact_dir(pipeline_id: str) -> str:
+    """Return the artifact directory for a pipeline after safety validation.
+
+    Resolves the full path and verifies it is within the artifact root.
+    """
+    root = os.path.realpath(_get_artifact_root())
+    candidate = os.path.realpath(os.path.join(root, _validate_pipeline_id(pipeline_id)))
+    if not candidate.startswith(root + os.sep) and candidate != root:
+        raise ValueError(
+            f"Resolved pipeline path {candidate} is outside artifact root {root}"
+        )
+    return candidate
+
+
 def _ensure_dir(pipeline_id: str) -> str:
     """Create the artifact directory for a pipeline if it doesn't exist."""
-    d = os.path.join(_get_artifact_root(), pipeline_id)
+    d = _safe_artifact_dir(pipeline_id)
     try:
         os.makedirs(d, mode=0o755, exist_ok=True)
     except OSError as exc:
@@ -134,8 +204,8 @@ def _ensure_dir(pipeline_id: str) -> str:
 
 
 def _artifact_path(pipeline_id: str, filename: str) -> str:
-    """Full path for a given artifact filename."""
-    return os.path.join(_get_artifact_root(), pipeline_id, filename)
+    """Full path for a given artifact filename, with safety validation."""
+    return os.path.join(_safe_artifact_dir(pipeline_id), filename)
 
 
 # ---------------------------------------------------------------------------
@@ -186,8 +256,10 @@ def _unwrap_artifact(
     """Unwrap a saved artifact, extracting metadata and inner data.
 
     Returns (completed_stage, completed_stage_index, pipeline_version, data).
-    For legacy artifacts (pre-P0-1), returns (None, None, None, saved) for
-    backward compatibility.
+    For legacy artifacts (pre-P0-1), returns None for metadata fields.
+
+    When REJECT_LEGACY_ARTIFACTS is True, legacy artifacts raise ValueError
+    so callers treat them as incompatible.
     """
     if isinstance(saved, dict) and "completed_stage" in saved and "data" in saved:
         return (
@@ -196,6 +268,17 @@ def _unwrap_artifact(
             str(saved.get("pipeline_version", "")),
             saved["data"],
         )
+    # Legacy artifact — reject if configured, otherwise warn and accept
+    try:
+        from app.core.config import settings
+        if settings.REJECT_LEGACY_ARTIFACTS:
+            raise ValueError("Legacy artifact rejected (REJECT_LEGACY_ARTIFACTS=True)")
+    except ImportError:
+        pass
+    logger.warning(
+        "Loading legacy artifact (no metadata wrapper) — "
+        "consider re-running the pipeline to generate a compatible artifact"
+    )
     return None, None, None, saved
 
 
@@ -208,9 +291,9 @@ def load_artifact(
     Returns None if the artifact does not exist, is corrupted, or the
     stage is not resumable.  Never raises.
 
-    For P0-1 artifacts (with metadata), the inner ``data`` field is returned.
-    For legacy artifacts (raw data, no wrapper), the full content is returned
-    for backward compatibility.
+    For artifacts with metadata, the inner ``data`` field is returned.
+    Legacy artifacts (raw data, no wrapper) are accepted with a warning
+    for migration purposes but may be rejected in a future version.
     """
     filename = _RESUMABLE_ARTIFACTS.get(stage_name)
     if filename is None:
@@ -249,9 +332,25 @@ def check_artifact_compatibility(pipeline_id: str, stage_name: str) -> tuple[boo
         return False, f"Corrupted artifact for stage {stage_name}"
     completed_stage, _, version, _ = _unwrap_artifact(raw)
     if completed_stage is None:
-        # Legacy artifact (pre-P0-1): accept with a warning (best-effort)
+        # Legacy artifact (pre-metadata)
+        try:
+            from app.core.config import settings
+            if settings.REJECT_LEGACY_ARTIFACTS:
+                return False, (
+                    f"Legacy artifact for stage {stage_name} rejected "
+                    f"(REJECT_LEGACY_ARTIFACTS=True)"
+                )
+        except ImportError:
+            pass
+        logger.warning(
+            "Legacy artifact for stage=%s pipeline=%s (no metadata) — "
+            "compatibility check passed but consider re-running pipeline",
+            stage_name, pipeline_id,
+        )
         return True, ""
-    if version and version != PIPELINE_VERSION:
+    if not version:
+        return False, f"Artifact for stage {stage_name} has no pipeline version"
+    if version != PIPELINE_VERSION:
         return False, (
             f"Pipeline version mismatch for artifact stage={stage_name}: "
             f"expected={PIPELINE_VERSION}, got={version}. "
@@ -327,7 +426,7 @@ def cleanup_artifacts(
     Returns:
         Number of files removed.
     """
-    artifact_dir = os.path.join(_get_artifact_root(), pipeline_id)
+    artifact_dir = _safe_artifact_dir(pipeline_id)
     if not os.path.isdir(artifact_dir):
         return 0
 
@@ -336,14 +435,21 @@ def cleanup_artifacts(
         logger.info("Skipping cleanup for running pipeline %s", pipeline_id)
         return 0
 
+    resolved_root = os.path.realpath(artifact_dir)
+
     if ttl is not None:
         now = time.time()
         cutoff = now - ttl
         removed = 0
         for entry in os.listdir(artifact_dir):
-            path = os.path.join(artifact_dir, entry)
-            if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
-                _safe_remove(path)
+            raw_path = os.path.join(artifact_dir, entry)
+            # Resolve each entry and verify it stays within the safe directory
+            resolved = os.path.realpath(raw_path)
+            if not resolved.startswith(resolved_root + os.sep) and resolved != resolved_root:
+                logger.warning("Skipping path traversal attempt: %s", raw_path)
+                continue
+            if os.path.isfile(resolved) and os.path.getmtime(resolved) < cutoff:
+                _safe_remove(resolved)
                 removed += 1
         # Remove the directory itself if empty
         if _dir_is_empty(artifact_dir):
@@ -396,9 +502,17 @@ def cleanup_expired(
     freed_bytes = 0
     total_dirs = 0
 
+    resolved_root = os.path.realpath(_get_artifact_root())
+
     for entry in os.listdir(_get_artifact_root()):
         pipeline_dir = os.path.join(_get_artifact_root(), entry)
         if not os.path.isdir(pipeline_dir):
+            continue
+
+        # Resolve and validate to prevent symlink traversal
+        resolved = os.path.realpath(pipeline_dir)
+        if not resolved.startswith(resolved_root + os.sep) and resolved != resolved_root:
+            logger.warning("Skipping path traversal attempt during cleanup: %s", pipeline_dir)
             continue
 
         total_dirs += 1
@@ -447,7 +561,7 @@ def cleanup_expired(
 
 def save_failed_marker(pipeline_id: str) -> None:
     """Write a marker file indicating the pipeline failed."""
-    d = _ensure_dir(pipeline_id)
+    d = _safe_artifact_dir(pipeline_id)
     try:
         with open(os.path.join(d, ".failed"), "w") as f:
             f.write("")
@@ -457,7 +571,7 @@ def save_failed_marker(pipeline_id: str) -> None:
 
 def save_completed_marker(pipeline_id: str) -> None:
     """Write a marker file indicating the pipeline completed."""
-    d = _ensure_dir(pipeline_id)
+    d = _safe_artifact_dir(pipeline_id)
     try:
         with open(os.path.join(d, ".completed"), "w") as f:
             f.write("")
@@ -514,8 +628,17 @@ def _read_json(path: str) -> Any:
 
 
 def _json_fallback(obj: Any) -> str:
-    """Fallback serializer for non-JSON-serializable objects."""
-    return str(obj)
+    """Fallback serializer for non-JSON-serializable objects.
+
+    Only handles whitelisted types; unknown types raise TypeError to prevent
+    silent data loss from ``str()``-based serialization.
+    """
+    if isinstance(obj, _ALLOWED_SERIAL_TYPES):
+        return str(obj)
+    raise TypeError(
+        f"Type {type(obj).__name__} is not allowed for artifact serialization. "
+        f"Add it to _ALLOWED_SERIAL_TYPES or convert explicitly."
+    )
 
 
 def _safe_remove(path: str) -> None:
@@ -541,7 +664,10 @@ def _dir_is_empty(path: str) -> bool:
 
 def _is_running(pipeline_id: str) -> bool:
     """Check if a pipeline is still running (no completed/failed markers)."""
-    d = os.path.join(_get_artifact_root(), pipeline_id)
+    try:
+        d = _safe_artifact_dir(pipeline_id)
+    except ValueError:
+        return False
     return os.path.isdir(d) and _has_no_terminal_marker(d)
 
 

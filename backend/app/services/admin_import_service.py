@@ -328,6 +328,124 @@ def _build_risk_reasons(risk_flags: list[str]) -> list[str]:
     return reasons
 
 
+# ── Visual option blocking check (re-computed from current DB state) ──
+
+_OPTION_PLACEHOLDER_PATTERNS: list[re.Pattern] = [
+    re.compile(r"图片\s*选项\s*[A-D]"),
+    re.compile(r"原题图已内嵌"),
+    re.compile(r"见原图"),
+    re.compile(r"图略"),
+    re.compile(r"\[.*?图片.*?\]"),
+    re.compile(r"【.*?图片.*?】"),
+    re.compile(r"option\s*image\s*placeholder", re.I),
+    re.compile(r"图形\s*选项\s*[A-D]"),
+    re.compile(r"[图片图形]\s*缺失"),
+]
+
+_VALID_OPTION_KEYS = frozenset({"A", "B", "C", "D", "E", "F"})
+
+_OPTION_VISUAL_BLOCKING_FLAGS = frozenset({
+    "placeholder_missing",
+    "missing_option_image_asset",
+    "invalid_option_count",
+    "unreachable_image_url",
+    "unresolved_option_mapping",
+    "option_image_requires_review",
+})
+
+
+def _is_image_option_placeholder(text: object) -> bool:
+    """Check if a value is a known Chinese image-option placeholder string."""
+    if not isinstance(text, str):
+        return False
+    t = text.strip()
+    if not t:
+        return False
+    return any(p.search(t) for p in _OPTION_PLACEHOLDER_PATTERNS)
+
+
+def _check_option_visual_blocking(
+    parsed_content: dict | None,
+    parsed_options: dict | None,
+) -> list[str]:
+    """Re-compute visual option blocking issues from current data.
+
+    Returns a list of blocking flags (empty = no block).  This is computed
+    from the actual DB state, NOT from cached risk_flags.
+    """
+    blocking: list[str] = []
+    if not parsed_options:
+        return blocking
+
+    segments = (parsed_content or {}).get("segments") or []
+
+    # 1. Check for placeholder text in parsed_options
+    has_placeholder = False
+    for key in _VALID_OPTION_KEYS:
+        val = parsed_options.get(key)
+        if val is not None and _is_image_option_placeholder(val):
+            has_placeholder = True
+            break
+    if has_placeholder:
+        blocking.append("placeholder_missing")
+        if "missing_option_image_asset" not in blocking:
+            blocking.append("missing_option_image_asset")
+
+    # 2. Check option_group region validity
+    for seg in segments:
+        if not isinstance(seg, dict):
+            continue
+        rt = str(seg.get("region_type", ""))
+        if rt == "option_group":
+            expected = seg.get("expected_option_count")
+            detected = seg.get("detected_option_count")
+            if expected is None or detected is None or expected < 2 or expected > 6 or detected != expected:
+                if "invalid_option_count" not in blocking:
+                    blocking.append("invalid_option_count")
+            url = str(seg.get("url", "") or "")
+            if not url:
+                if "unreachable_image_url" not in blocking:
+                    blocking.append("unreachable_image_url")
+        # Legacy region_id fallback
+        rid = str(seg.get("region_id", ""))
+        if rt != "option_group" and "option_group" in rid:
+            if "unresolved_option_mapping" not in blocking:
+                blocking.append("unresolved_option_mapping")
+            if "option_image_requires_review" not in blocking:
+                blocking.append("option_image_requires_review")
+
+    # 3. All parsed_options empty but no option_group segment — only flag
+    #    as placeholder_missing when we haven't already detected a legacy fallback
+    has_legacy_fallback = "unresolved_option_mapping" in blocking or "option_image_requires_review" in blocking
+    if not has_legacy_fallback:
+        all_empty = all(
+            isinstance(parsed_options.get(k), str) and not parsed_options[k].strip()
+            for k in _VALID_OPTION_KEYS
+            if k in parsed_options
+        )
+        if all_empty and parsed_options:
+            has_option_group_seg = any(
+                isinstance(s, dict) and str(s.get("region_type", "")) == "option_group"
+                for s in segments
+            )
+            if not has_option_group_seg:
+                if "placeholder_missing" not in blocking:
+                    blocking.append("placeholder_missing")
+
+    return blocking
+
+
+async def _ensure_no_option_visual_blocking(qi: QuestionImport) -> None:
+    """Raise ValueError if the QuestionImport has unresolved visual option issues."""
+    blocking = _check_option_visual_blocking(qi.parsed_content, qi.parsed_options)
+    if blocking:
+        blocking_str = "、".join(blocking)
+        raise ValueError(
+            f"题目 #{qi.id} 存在未解决的图片选项问题，禁止审核通过：{blocking_str}。"
+            f"请先修复选项图片或确认选项内容。"
+        )
+
+
 async def list_import_batches(
     db: AsyncSession,
     page: int,
@@ -713,6 +831,9 @@ async def approve_import_question(db: AsyncSession, import_id: int, operator_id:
     if qi.status == "published" or qi.question_id is not None:
         raise ValueError("已发布题目不可重复审核")
 
+    # Re-compute visual option blocking from current DB state
+    await _ensure_no_option_visual_blocking(qi)
+
     qi.status = "approved"
     qi.reject_reason = None
     qi.reviewed_by = operator_id
@@ -806,6 +927,15 @@ async def approve_import_batch(db: AsyncSession, batch_id: str, operator_id: int
     count = 0
     for qi in records:
         if qi.question_id is None:
+            # Skip items with visual option blocking (log, don't fail batch)
+            visual_blocking = _check_option_visual_blocking(qi.parsed_content, qi.parsed_options)
+            if visual_blocking:
+                logger.info(
+                    "Batch approve skipped import %d: visual option blocking %s",
+                    qi.id, visual_blocking,
+                )
+                continue
+
             qi.status = "approved"
             qi.reject_reason = None
             qi.reviewed_by = operator_id
@@ -875,9 +1005,16 @@ async def approve_low_risk_questions(db: AsyncSession, batch_id: str, operator_i
             and "option_structure_corruption" not in flags
         )
 
+        # Visual option blocking — re-computed from current DB state
+        visual_blocking = _check_option_visual_blocking(qi.parsed_content, qi.parsed_options)
+        if visual_blocking:
+            is_low_risk = False
+
         if not is_low_risk:
             skipped += 1
-            if rl == "high":
+            if visual_blocking:
+                skipped_reasons.append(f"#{qi.id}: 图片选项问题 ({'、'.join(visual_blocking)})")
+            elif rl == "high":
                 skipped_reasons.append(f"#{qi.id}: 高风险")
             elif qi.ai_answer_flag:
                 skipped_reasons.append(f"#{qi.id}: AI 答案")
