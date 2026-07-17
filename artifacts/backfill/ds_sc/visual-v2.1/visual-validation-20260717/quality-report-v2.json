@@ -1,0 +1,523 @@
+{
+  "generated_at": "2026-07-17T02:20:44.580311",
+  "dpi": 220,
+  "gates": [
+    "bbox_sanity",
+    "minimum_visual_extent",
+    "foreground_coverage",
+    "diagram_structure",
+    "semantic_consistency",
+    "snapshot_coverage",
+    "neighbor_exclusion"
+  ],
+  "per_question": {
+    "Q147_s200": {
+      "old": {
+        "bbox": [
+          278,
+          43,
+          540,
+          58
+        ],
+        "gates": {
+          "bbox_sanity": {
+            "passed": true
+          },
+          "minimum_visual_extent": {
+            "passed": false,
+            "h_pt": 15,
+            "h_px": 107
+          },
+          "foreground_coverage": {
+            "passed": true,
+            "issues": []
+          },
+          "diagram_structure": {
+            "passed": true,
+            "issues": []
+          },
+          "semantic_consistency": {
+            "passed": true,
+            "issues": []
+          },
+          "snapshot_coverage": {
+            "passed": true,
+            "issues": []
+          },
+          "neighbor_exclusion": {
+            "passed": true,
+            "issues": []
+          }
+        },
+        "pass": false
+      },
+      "new": {
+        "bbox": [
+          270.4,
+          40,
+          546.5,
+          64.3
+        ],
+        "gates": {
+          "bbox_sanity": {
+            "passed": "True"
+          },
+          "minimum_visual_extent": {
+            "passed": true,
+            "h_pt": 24.3,
+            "h_px": 74
+          },
+          "foreground_coverage": {
+            "passed": true,
+            "issues": []
+          },
+          "diagram_structure": {
+            "passed": true,
+            "issues": []
+          },
+          "semantic_consistency": {
+            "passed": true,
+            "issues": []
+          },
+          "snapshot_coverage": {
+            "passed": true,
+            "issues": []
+          },
+          "neighbor_exclusion": {
+            "passed": true,
+            "issues": []
+          }
+        },
+        "pass": true
+      },
+      "content": {
+        "label": "new_content",
+        "width": 844,
+        "height": 74,
+        "aspect": 11.405,
+        "dark_pct": 0.087,
+        "edge_pct": 0.1671,
+        "fg_bbox_px": [
+          5,
+          16,
+          821,
+          73
+        ],
+        "fg_h_px": 58,
+        "row_span": [
+          17,
+          73
+        ],
+        "row_span_h_px": 57,
+        "row_clusters": 2,
+        "has_h_line": false,
+        "left_dark": 0.0955,
+        "right_dark": 0.0786,
+        "avg_transitions": 45.57
+      },
+      "snapshot": {
+        "label": "old_snapshot",
+        "width": 1532,
+        "height": 262,
+        "blocks": [
+          {
+            "rows": [
+              0,
+              21
+            ],
+            "h_px": 22,
+            "dark": 0.0018
+          },
+          {
+            "rows": [
+              59,
+              90
+            ],
+            "h_px": 32,
+            "dark": 0.1654
+          },
+          {
+            "rows": [
+              103,
+              133
+            ],
+            "h_px": 31,
+            "dark": 0.1347
+          },
+          {
+            "rows": [
+              171,
+              194
+            ],
+            "h_px": 24,
+            "dark": 0.0703
+          }
+        ],
+        "n_blocks": 4,
+        "left_nonwhite": 0.1588,
+        "right_nonwhite": 0.1246,
+        "top_nonwhite": 0.2568,
+        "bot_nonwhite": 0.0266
+      }
+    },
+    "Q152_s205": {
+      "old": {
+        "bbox": [
+          278,
+          43,
+          540,
+          58
+        ],
+        "gates": {
+          "bbox_sanity": {
+            "passed": true
+          },
+          "minimum_visual_extent": {
+            "passed": false,
+            "h_pt": 15,
+            "h_px": 107
+          },
+          "foreground_coverage": {
+            "passed": true,
+            "issues": []
+          },
+          "diagram_structure": {
+            "passed": true,
+            "issues": []
+          },
+          "semantic_consistency": {
+            "passed": true,
+            "issues": []
+          },
+          "snapshot_coverage": {
+            "passed": true,
+            "issues": []
+          },
+          "neighbor_exclusion": {
+            "passed": false,
+            "issues": [
+              "content_too_close_to_bottom"
+            ]
+          }
+        },
+        "pass": false
+      },
+      "new": {
+        "bbox": [
+          270,
+          40,
+          545.9,
+          63.9
+        ],
+        "gates": {
+          "bbox_sanity": {
+            "passed": "True"
+          },
+          "minimum_visual_extent": {
+            "passed": true,
+            "h_pt": 23.9,
+            "h_px": 73
+          },
+          "foreground_coverage": {
+            "passed": true,
+            "issues": []
+          },
+          "diagram_structure": {
+            "passed": true,
+            "issues": []
+          },
+          "semantic_consistency": {
+            "passed": true,
+            "issues": []
+          },
+          "snapshot_coverage": {
+            "passed": true,
+            "issues": []
+          },
+          "neighbor_exclusion": {
+            "passed": false,
+            "issues": [
+              "content_too_close_to_bottom"
+            ]
+          }
+        },
+        "pass": false
+      },
+      "content": {
+        "label": "new_content",
+        "width": 843,
+        "height": 73,
+        "aspect": 11.548,
+        "dark_pct": 0.0829,
+        "edge_pct": 0.1637,
+        "fg_bbox_px": [
+          0,
+          16,
+          818,
+          50
+        ],
+        "fg_h_px": 35,
+        "row_span": [
+          17,
+          48
+        ],
+        "row_span_h_px": 32,
+        "row_clusters": 1,
+        "has_h_line": false,
+        "left_dark": 0.0828,
+        "right_dark": 0.0829,
+        "avg_transitions": 44.27
+      },
+      "snapshot": {
+        "label": "old_snapshot",
+        "width": 1532,
+        "height": 276,
+        "blocks": [
+          {
+            "rows": [
+              0,
+              21
+            ],
+            "h_px": 22,
+            "dark": 0.0017
+          },
+          {
+            "rows": [
+              59,
+              90
+            ],
+            "h_px": 32,
+            "dark": 0.1712
+          },
+          {
+            "rows": [
+              105,
+              133
+            ],
+            "h_px": 29,
+            "dark": 0.018
+          },
+          {
+            "rows": [
+              171,
+              194
+            ],
+            "h_px": 24,
+            "dark": 0.0484
+          },
+          {
+            "rows": [
+              205,
+              212
+            ],
+            "h_px": 8,
+            "dark": 0.0159
+          },
+          {
+            "rows": [
+              220,
+              248
+            ],
+            "h_px": 29,
+            "dark": 0.0123
+          },
+          {
+            "rows": [
+              270,
+              275
+            ],
+            "h_px": 6,
+            "dark": 0.0175
+          }
+        ],
+        "n_blocks": 7,
+        "left_nonwhite": 0.1197,
+        "right_nonwhite": 0.1122,
+        "top_nonwhite": 0.205,
+        "bot_nonwhite": 0.0268
+      }
+    },
+    "Q154_s207": {
+      "old": {
+        "bbox": [
+          278,
+          43,
+          540,
+          58
+        ],
+        "gates": {
+          "bbox_sanity": {
+            "passed": true
+          },
+          "minimum_visual_extent": {
+            "passed": false,
+            "h_pt": 15,
+            "h_px": 107
+          },
+          "foreground_coverage": {
+            "passed": true,
+            "issues": []
+          },
+          "diagram_structure": {
+            "passed": true,
+            "issues": []
+          },
+          "semantic_consistency": {
+            "passed": true,
+            "issues": []
+          },
+          "snapshot_coverage": {
+            "passed": true,
+            "issues": []
+          },
+          "neighbor_exclusion": {
+            "passed": false,
+            "issues": [
+              "content_too_close_to_bottom"
+            ]
+          }
+        },
+        "pass": false
+      },
+      "new": {
+        "bbox": [
+          270,
+          40,
+          545.9,
+          64.3
+        ],
+        "gates": {
+          "bbox_sanity": {
+            "passed": "True"
+          },
+          "minimum_visual_extent": {
+            "passed": true,
+            "h_pt": 24.3,
+            "h_px": 74
+          },
+          "foreground_coverage": {
+            "passed": true,
+            "issues": []
+          },
+          "diagram_structure": {
+            "passed": true,
+            "issues": []
+          },
+          "semantic_consistency": {
+            "passed": true,
+            "issues": []
+          },
+          "snapshot_coverage": {
+            "passed": true,
+            "issues": []
+          },
+          "neighbor_exclusion": {
+            "passed": false,
+            "issues": [
+              "content_too_close_to_bottom"
+            ]
+          }
+        },
+        "pass": false
+      },
+      "content": {
+        "label": "new_content",
+        "width": 843,
+        "height": 74,
+        "aspect": 11.392,
+        "dark_pct": 0.0781,
+        "edge_pct": 0.1477,
+        "fg_bbox_px": [
+          0,
+          16,
+          819,
+          54
+        ],
+        "fg_h_px": 39,
+        "row_span": [
+          17,
+          49
+        ],
+        "row_span_h_px": 33,
+        "row_clusters": 1,
+        "has_h_line": false,
+        "left_dark": 0.0728,
+        "right_dark": 0.0834,
+        "avg_transitions": 39.57
+      },
+      "snapshot": {
+        "label": "old_snapshot",
+        "width": 1532,
+        "height": 276,
+        "blocks": [
+          {
+            "rows": [
+              0,
+              21
+            ],
+            "h_px": 22,
+            "dark": 0.0018
+          },
+          {
+            "rows": [
+              59,
+              91
+            ],
+            "h_px": 33,
+            "dark": 0.1631
+          },
+          {
+            "rows": [
+              108,
+              132
+            ],
+            "h_px": 25,
+            "dark": 0.0183
+          },
+          {
+            "rows": [
+              166,
+              201
+            ],
+            "h_px": 36,
+            "dark": 0.03
+          },
+          {
+            "rows": [
+              213,
+              218
+            ],
+            "h_px": 6,
+            "dark": 0.0161
+          },
+          {
+            "rows": [
+              239,
+              244
+            ],
+            "h_px": 6,
+            "dark": 0.0149
+          },
+          {
+            "rows": [
+              263,
+              269
+            ],
+            "h_px": 7,
+            "dark": 0.0153
+          }
+        ],
+        "n_blocks": 7,
+        "left_nonwhite": 0.1176,
+        "right_nonwhite": 0.1086,
+        "top_nonwhite": 0.2032,
+        "bot_nonwhite": 0.0231
+      }
+    }
+  },
+  "summary": {
+    "old_all_pass": false,
+    "new_all_pass": false,
+    "notes": []
+  }
+}
