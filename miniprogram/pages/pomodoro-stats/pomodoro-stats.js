@@ -19,7 +19,25 @@ function getSubjectColor(subject) {
   return COLORS[Math.abs(hash) % COLORS.length]
 }
 
-Page({
+/**
+ * Format duration seconds into a human-readable hours/minutes string.
+ *
+ * Rules:
+ *  - Floor to complete minutes (no rounding up).
+ *  - < 1 hour: "X分钟" (e.g. "41分钟")
+ *  - >= 1 hour: "X时Y分" (e.g. "4时19分", "1时0分")
+ *  - Never show seconds.
+ */
+function formatDuration(sec) {
+  var s = Math.max(0, sec || 0)
+  var totalMin = Math.floor(s / 60)
+  var hours = Math.floor(totalMin / 60)
+  var mins = totalMin % 60
+  if (hours > 0) return hours + '时' + mins + '分'
+  return mins + '分钟'
+}
+
+var pageConfig = {
   data: {
     loading: true,
     errorText: '',
@@ -188,18 +206,10 @@ Page({
     const start = new Date(Number.isFinite(startTime) ? startTime : Date.now())
     const timeStr = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`
     const durSec = s.actual_duration ?? s.actual_duration_sec ?? s.duration_sec ?? 0
-    const durMin = Math.floor(durSec / 60)
     const subjectName = s.subject_name || '未分类'
     const subjectKey = s.subject_code || ''
     const isFree = s.preset === 'free'
-    // Free timer duration in seconds; countdown in minutes
-    const durationText = isFree
-      ? durSec >= 60
-        ? `${Math.floor(durSec / 60)}分${durSec % 60}秒`
-        : `${durSec}秒`
-      : durMin >= 60
-        ? `${Math.floor(durMin / 60)}时${durMin % 60}分`
-        : `${durMin}分钟`
+    const durationText = formatDuration(durSec)
     return {
       ...s,
       _time: timeStr,
@@ -843,4 +853,9 @@ Page({
     if (m < 60) return `${m}分钟`
     return `${Math.floor(m / 60)}时${m % 60}分`
   },
-})
+}
+
+if (typeof Page === 'function') Page(pageConfig)
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { formatDuration }
+}

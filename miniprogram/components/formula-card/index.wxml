@@ -62,7 +62,12 @@
         <view class="fc-scroll-edge fc-scroll-edge-left" wx:if="{{block.isScrollable}}"></view>
         <view class="fc-scroll-edge fc-scroll-edge-right" wx:if="{{block.isScrollable}}"></view>
       </view>
-      <text class="fc-block-note" wx:if="{{block.note}}">{{block.note}}</text>
+      <rich-text
+        class="fc-block-note"
+        wx:if="{{block.noteNodes && block.noteNodes.length}}"
+        nodes="{{block.noteNodes}}"
+        user-select="{{true}}"
+      />
     </view>
   </view>
 
