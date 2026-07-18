@@ -511,11 +511,17 @@ async def _call_ai_for_repair(
     from app.ai.prompts import build_repair_question
 
     if db is not None and api_key is None:
-        from app.services.model_config_resolver import ensure_db_model_configured
-        creds = await ensure_db_model_configured(db)
-        api_key = creds[0] if creds else None
-        base_url = creds[1] if creds else None
-        model_name = creds[2] if creds else None
+        from app.services.model_config_resolver import (
+            AIModelConfigResolver, AICapability,
+        )
+        try:
+            resolver = AIModelConfigResolver(db)
+            ai_repair_config = await resolver.resolve_for_capability(AICapability.AI_REPAIR)
+            api_key = await resolver.resolve_secret(ai_repair_config)
+            base_url = ai_repair_config.endpoint
+            model_name = ai_repair_config.model_name
+        except ValueError:
+            api_key = base_url = model_name = None
 
     # ── Structure Freeze: prevent AI from seeing frozen options ──
     # When is_frozen is True, the freeze stage is the single source of truth.
@@ -564,14 +570,19 @@ async def _call_ai_for_batch_repair(
     if not candidates:
         return []
 
-    creds = None
+    api_key = base_url = model_name = None
     if db is not None:
-        from app.services.model_config_resolver import ensure_db_model_configured
-        creds = await ensure_db_model_configured(db)
-
-    api_key = creds[0] if creds else None
-    base_url = creds[1] if creds else None
-    model_name = creds[2] if creds else None
+        from app.services.model_config_resolver import (
+            AIModelConfigResolver, AICapability,
+        )
+        try:
+            resolver = AIModelConfigResolver(db)
+            ai_repair_config = await resolver.resolve_for_capability(AICapability.AI_REPAIR)
+            api_key = await resolver.resolve_secret(ai_repair_config)
+            base_url = ai_repair_config.endpoint
+            model_name = ai_repair_config.model_name
+        except ValueError:
+            api_key = base_url = model_name = None
 
     all_results: list[tuple[int, dict | None]] = []
 
@@ -678,11 +689,17 @@ async def _call_ai_for_roman_decision(
     from app.ai.prompts import build_roman_decision_prompt
 
     if db is not None:
-        from app.services.model_config_resolver import ensure_db_model_configured
-        creds = await ensure_db_model_configured(db)
-        api_key = creds[0] if creds else None
-        base_url = creds[1] if creds else None
-        model_name = creds[2] if creds else None
+        from app.services.model_config_resolver import (
+            AIModelConfigResolver, AICapability,
+        )
+        try:
+            resolver = AIModelConfigResolver(db)
+            ai_repair_config = await resolver.resolve_for_capability(AICapability.AI_REPAIR)
+            api_key = await resolver.resolve_secret(ai_repair_config)
+            base_url = ai_repair_config.endpoint
+            model_name = ai_repair_config.model_name
+        except ValueError:
+            api_key = base_url = model_name = None
     else:
         api_key = base_url = model_name = None
 

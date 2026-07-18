@@ -1178,7 +1178,6 @@ def _ocr_scanned_pdf(
 
             if settings.OCR_USE_PROCESS_POOL:
                 from app.core.ocr_process_pool import ocr_process_pool
-                from app.services.ocr_service import OcrPageResult
                 pp_results: dict[int, dict] = {}
                 for idx, png in batch_images:
                     try:
@@ -1191,13 +1190,13 @@ def _ocr_scanned_pdf(
                             "failed": True, "error": str(exc),
                         }
                 results = {
-                    idx: OcrPageResult(
-                        page_index=r["page_index"],
-                        text=r["text"],
-                        boxes=r["boxes"],
-                        failed=r["failed"],
-                        error=r.get("error"),
-                    )
+                    idx: {
+                        "page_index": r["page_index"],
+                        "text": r["text"],
+                        "boxes": r["boxes"],
+                        "failed": r["failed"],
+                        "error": r.get("error"),
+                    }
                     for idx, r in pp_results.items()
                 }
             else:
@@ -1370,7 +1369,7 @@ def _blocks_to_document_ir(
 
         regions: list[RegionIR] = []
         for bi, b in enumerate(page_b):
-            text = b.get("text", "")
+            text = b.get("normalized_text") or b.get("text", "")
             boxes = b.get("boxes", []) or []
             lines: list[LineIR] = []
             for li, box_entry in enumerate(boxes):
@@ -2898,10 +2897,14 @@ class ImportPipeline:
         Pure rule-based — no LLM dependency.
         """
         from app.features.pipeline_stages.layout_stage import (
-            run_layout_reconstruction_stage,
+            run_layout_reconstruction_stage_from_ir,
         )
 
-        result = run_layout_reconstruction_stage(normalized_blocks=normalized_blocks)
+        doc_ir = _get_blocks_document_ir(normalized_blocks)
+        if doc_ir is not None:
+            result = run_layout_reconstruction_stage_from_ir(doc_ir)
+        else:
+            result = run_layout_reconstruction_stage(normalized_blocks=normalized_blocks)
 
         warnings: list[str] = list(result.get("warnings", []))
         layout_result = result.get("layout_result", {})
@@ -3259,7 +3262,6 @@ class ImportPipeline:
     ) -> dict:
         """通过 OCRFixRouter 执行多模型 OCR 纠错。"""
         from app.features.ocr_fix import OCRFixRouter
-        from app.features.ocr_fix.interfaces import OCRFixResult
         from app.features.ocr_fix.metrics import OcrCorrectionMetrics
 
         # 构建 router 配置
@@ -3323,14 +3325,21 @@ class ImportPipeline:
 
         sem = asyncio.Semaphore(3)
 
+        from types import SimpleNamespace as _FixResult
+
         async def _fix_one(idx: int, block: dict, text: str):
             async with sem:
                 estimated = _est(text) * 3
                 if not await check_token_limit(estimated, router_config):
-                    return idx, OCRFixResult(
+                    return idx, _FixResult(
                         fixed_text=text,
                         model_used="skipped_budget",
                         raw_response="token_limit",
+                        confidence=None,
+                        tokens_used=None,
+                        duration_ms=None,
+                        risk_flags=None,
+                        safety=None,
                     )
 
                 page_num = block.get("page", 1)
@@ -3592,34 +3601,49 @@ class ImportPipeline:
 
         if db:
             try:
-                from app.services.model_config_resolver import resolve_active_model
+                from app.services.model_config_resolver import (
+                    AIModelConfigResolver,
+                    AICapability,
+                )
 
-                # Resolve OCR feature model (could be paddleocr-vl, deepseek, etc.)
-                ocr_model = await resolve_active_model(db, feature="ocr")
-                if ocr_model:
-                    provider = ocr_model.get("provider", "")
+                resolver = AIModelConfigResolver(db)
+
+                # Resolve OCR_FIX capability — primary model (VL or DeepSeek)
+                try:
+                    ocr_fix_config = await resolver.resolve_for_capability(AICapability.OCR_FIX)
+                    secret = await resolver.resolve_secret(ocr_fix_config)
+                    provider = ocr_fix_config.provider
+
                     if provider == "deepseek":
-                        config["deepseek_api_key"] = ocr_model["api_key"]
-                        config["deepseek_base_url"] = ocr_model["api_base_url"]
+                        config["deepseek_api_key"] = secret
+                        if ocr_fix_config.endpoint:
+                            config["deepseek_base_url"] = ocr_fix_config.endpoint
                     elif provider in ("paddleocr-vl", "paddleocr_vl"):
-                        config["paddleocr_vl_api_token"] = ocr_model["api_key"]
-                        config["paddleocr_vl_base_url"] = ocr_model["api_base_url"]
-                        config["paddleocr_vl_model"] = ocr_model["model_name"]
+                        config["paddleocr_vl_api_token"] = secret
+                        if ocr_fix_config.endpoint:
+                            config["paddleocr_vl_base_url"] = ocr_fix_config.endpoint
+                        config["paddleocr_vl_model"] = ocr_fix_config.model_name
                     else:
                         # Unknown provider → assume PaddleOCR-VL compatible
-                        config["paddleocr_vl_api_token"] = ocr_model["api_key"]
-                        config["paddleocr_vl_base_url"] = ocr_model["api_base_url"]
-                        config["paddleocr_vl_model"] = ocr_model["model_name"]
+                        config["paddleocr_vl_api_token"] = secret
+                        if ocr_fix_config.endpoint:
+                            config["paddleocr_vl_base_url"] = ocr_fix_config.endpoint
+                        config["paddleocr_vl_model"] = ocr_fix_config.model_name
+                except ValueError:
+                    logger.info("OCR router: no OCR_FIX config resolved via AIModelConfigResolver")
 
-                # Resolve a DeepSeek model as fallback for auto chain
-                ds_model = await resolve_active_model(db, feature=None)
-                if ds_model and ds_model.get("provider") == "deepseek":
-                    if "deepseek_api_key" not in config:
-                        config["deepseek_api_key"] = ds_model["api_key"]
-                    if "deepseek_base_url" not in config:
-                        config["deepseek_base_url"] = ds_model["api_base_url"]
+                # DeepSeek fallback for auto chain (if primary is not DeepSeek)
+                if "deepseek_api_key" not in config:
+                    try:
+                        ds_config = await resolver.resolve_for_capability(AICapability.AI_REPAIR)
+                        if ds_config.provider == "deepseek":
+                            config["deepseek_api_key"] = await resolver.resolve_secret(ds_config)
+                            if ds_config.endpoint:
+                                config["deepseek_base_url"] = ds_config.endpoint
+                    except ValueError:
+                        logger.info("OCR router: no AI_REPAIR fallback config resolved")
             except Exception:
-                logger.warning("OCR router: model_config_resolver failed", exc_info=True)
+                logger.warning("OCR router: AIModelConfigResolver failed", exc_info=True)
 
             # 从 DB admin_ai_configs 读取过滤配置
             try:
@@ -3646,7 +3670,19 @@ class ImportPipeline:
         """Stage 2: detect question/answer document layout."""
         db = _kw.get("db")
         features = await self._load_structure_features_async(db)
-        structure = analyze_structure(normalized_blocks, features=features)
+        has_boxes = any(
+            b.get("boxes") and len(b["boxes"]) > 0
+            for b in (normalized_blocks or [])
+        )
+        if has_boxes:
+            doc_ir = _get_blocks_document_ir(normalized_blocks)
+            if doc_ir is not None:
+                from app.features.structure_analyzer import analyze_structure_from_ir
+                structure = analyze_structure_from_ir(doc_ir, features=features)
+            else:
+                structure = analyze_structure(normalized_blocks, features=features)
+        else:
+            structure = analyze_structure(normalized_blocks, features=features)
 
         # In AUTO mode, refine import mode based on structure analysis
         import_mode = _kw.get("import_mode")
@@ -3672,8 +3708,14 @@ class ImportPipeline:
         if not settings.PAGE_CLASSIFIER_ENABLED and not strategy.get("page_classifier_enabled"):
             return {"page_classifications": [], "warnings": ["page classifier disabled"]}
 
+        doc_ir = _get_blocks_document_ir(normalized_blocks)
         section_markers = structure.get("section_markers") if structure else None
-        page_classifications = classify_pages(normalized_blocks, section_markers=section_markers)
+
+        if doc_ir is not None:
+            from app.features.page_classifier import classify_pages_from_ir
+            page_classifications = classify_pages_from_ir(doc_ir, section_markers=section_markers)
+        else:
+            page_classifications = classify_pages(normalized_blocks, section_markers=section_markers)
 
         # Apply mode-specific filtering rules
         filter_knowledge = strategy.get("filter_knowledge_pages", True)
@@ -3979,9 +4021,13 @@ class ImportPipeline:
             and any(b.get("boxes") for b in normalized_blocks)
         ):
             try:
-                from app.features.visual_boundary_detector import filter_book_layout_blocks
+                from app.features.visual_boundary_detector import filter_book_layout_blocks_from_ir
 
-                split_blocks, layout_filter_diagnostics = filter_book_layout_blocks(normalized_blocks)
+                doc_ir = _get_blocks_document_ir(normalized_blocks)
+                if doc_ir is not None:
+                    split_blocks, layout_filter_diagnostics = filter_book_layout_blocks_from_ir(doc_ir)
+                else:
+                    split_blocks, layout_filter_diagnostics = normalized_blocks, {"error": "no_document_ir"}
             except Exception as exc:
                 logger.warning("book layout filter failed: %s", exc)
 
@@ -4162,9 +4208,14 @@ class ImportPipeline:
                 has_boxes = any(b.get("boxes") for b in normalized_blocks)
                 if has_boxes:
                     try:
-                        from app.features.visual_boundary_detector import detect_visual_boundaries
+                        from app.features.visual_boundary_detector import detect_visual_boundaries_from_ir
+
+                        doc_ir = _get_blocks_document_ir(split_blocks)
+                        if doc_ir is not None:
+                            visual_bounds = detect_visual_boundaries_from_ir(doc_ir)
+                        else:
+                            visual_bounds = []
                         from app.features.question_splitter import split_by_visual_boundaries
-                        visual_bounds = detect_visual_boundaries(split_blocks)
                         split_diagnostics["visual_boundary"] = {
                             "boundary_count": len(visual_bounds),
                             "boundaries": [
@@ -4335,14 +4386,17 @@ class ImportPipeline:
         Must run after split and before match/normalize_schema so that
         bbox fields are preserved through downstream stages.
         """
-        from app.services.question_snapshot_service import compute_question_bboxes
+        from app.services.question_snapshot_service import (
+            compute_question_bboxes_from_ir,
+        )
 
         if not normalized_blocks:
             logger.warning("question_bbox stage: no normalized_blocks available")
             return {"raw_questions": raw_questions, "warnings": ["no_normalized_blocks"]}
 
         try:
-            enriched = compute_question_bboxes(raw_questions, normalized_blocks)
+            doc_ir = _get_blocks_document_ir(normalized_blocks)
+            enriched = compute_question_bboxes_from_ir(raw_questions, doc_ir)
             with_bbox = sum(1 for q in enriched if q.get("question_bbox") is not None)
             logger.info("question_bbox: %d/%d got bbox", with_bbox, len(enriched))
             warnings: list[str] = []
@@ -4361,6 +4415,15 @@ class ImportPipeline:
         **_kw,
     ) -> dict:
         """Stage 4: match answers and explanations to questions (P5-2: delegated)."""
+        has_boxes = any(
+            b.get("boxes") and len(b["boxes"]) > 0
+            for b in (normalized_blocks or [])
+        )
+        if has_boxes:
+            doc_ir = _get_blocks_document_ir(normalized_blocks)
+            if doc_ir is not None:
+                from app.features.pipeline_stages.match_stage import run_match_stage_from_ir
+                return run_match_stage_from_ir(raw_questions, doc_ir, structure=structure)
         return run_match_stage(raw_questions, normalized_blocks, structure=structure)
 
     def _run_normalize_schema(
