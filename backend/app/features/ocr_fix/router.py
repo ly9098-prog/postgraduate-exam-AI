@@ -189,7 +189,9 @@ class OCRFixRouter:
         """Build a fingerprint of the current config for adapter cache validation."""
         import hashlib
         relevant_keys = [
+            "deepseek_api_key",
             "deepseek_base_url",
+            "paddleocr_vl_api_token",
             "paddleocr_vl_base_url",
             "paddleocr_vl_model",
             "ocr_fix_strategy",

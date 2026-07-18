@@ -36,6 +36,18 @@ except ImportError:  # pragma: no cover
 _ocr_instance = None
 _ocr_init_lock = threading.Lock()       # 保护 PaddleOCR 初始化（只初始化一次）
 _ocr_inference_lock = threading.Lock()  # 串行化推理调用（单线程 paddle inference）
+
+# Thread-local transform tracker for coordinate back-mapping
+_tracker_local = threading.local()
+
+
+def get_last_transform_tracker():
+    """Return the TransformTracker from the most recent OCR call in this thread."""
+    return getattr(_tracker_local, "tracker", None)
+
+
+def _set_transform_tracker(tracker):
+    _tracker_local.tracker = tracker
 _ocr_init_error: str | None = None      # 初始化失败时记录错误消息，后续不再重试
 _ocr_initialized: bool = False
 _ocr_reinit_count: int = 0  # 自动重置计数，用于监控
@@ -85,6 +97,7 @@ class OcrPageResult:
     boxes: list[dict] | None = field(default=None)
     failed: bool = False
     error: str | None = None
+    transforms: list[dict] | None = field(default=None)  # TransformTracker IR records
 
 
 @dataclass
@@ -376,14 +389,61 @@ def _apply_quality_strategy(img, strategy: set[str]):
     return img
 
 
-def _prepare_ocr_image(image_bytes: bytes):
+def _prepare_ocr_image(image_bytes: bytes, tracker: Any = None):
+    """Preprocess image for OCR and optionally record transforms.
+
+    If *tracker* (``TransformTracker``) is provided, each preprocessing step
+    records its geometric transform for coordinate back-mapping.
+    """
+    from PIL import Image, ImageFilter, ImageOps
+
     img = _load_ocr_image(image_bytes)
+    orig_w, orig_h = img.size if tracker is None else (0, 0)
+    if tracker is not None:
+        tracker.orig_width = orig_w
+        tracker.orig_height = orig_h
+
+    # Crop blank margins
+    before = img.size
     img = _crop_blank_margins(img)
-    img = _deskew_image(img)
+    if tracker is not None and img.size != before:
+        # After cropping, origin shifts by (left, top)
+        pad_x = max(12, int(before[0] * 0.02))
+        pad_y = max(12, int(before[1] * 0.02))
+        crop_left = (before[0] - img.size[0]) // 2
+        crop_top = (before[1] - img.size[1]) // 2
+        tracker.record_crop(left=max(0, crop_left - pad_x), top=max(0, crop_top - pad_y))
+
+    # Deskew (rotate + crop)
+    angle = _estimate_skew_angle(img)
+    if angle and tracker is not None:
+        cx, cy = img.size[0] / 2, img.size[1] / 2
+        tracker.record_rotate(angle, cx=cx, cy=cy)
+    if angle:
+        img = img.rotate(angle, resample=Image.Resampling.BICUBIC, expand=True, fillcolor="white")
+        img = _crop_blank_margins(img)
+
+    # Resize
+    before = img.size
     img = _resize_for_ocr(img)
+    if tracker is not None and img.size != before:
+        sx = img.size[0] / before[0]
+        sy = img.size[1] / before[1]
+        tracker.record_resize(scale_x=sx, scale_y=sy)
+
+    # Quality enhancement (no geometry change)
     quality = _estimate_image_quality(img)
     strategy = _choose_preprocessing_strategy(quality)
-    return _apply_quality_strategy(img, strategy)
+    if tracker is not None:
+        tracker.record_metadata("quality_metrics", quality)
+        tracker.record_metadata("enhancement_strategy", sorted(strategy))
+    img = _apply_quality_strategy(img, strategy)
+
+    # Store tracker for downstream DocumentIR construction
+    if tracker is not None:
+        _set_transform_tracker(tracker)
+
+    return img, tracker
 
 
 def _image_to_array(img):
@@ -443,8 +503,11 @@ def _ocr_prepared_image(ocr, img) -> Any:
 
 
 def _ocr_with_rotation_candidates(ocr, image_bytes: bytes) -> OcrCandidateResult:
+    from app.core.transform_tracker import TransformTracker
+
+    tracker = TransformTracker()
     try:
-        img = _prepare_ocr_image(image_bytes)
+        img, _tracker = _prepare_ocr_image(image_bytes, tracker=tracker)
         result = _ocr_prepared_image(ocr, img)
         if not get_ocr_profile().enable_rotation:
             return OcrCandidateResult(result=result, image_size=img.size)
@@ -559,7 +622,7 @@ def _order_ocr_lines_reading_order(
 
 
 def _image_to_ocr_array(image_bytes: bytes):
-    return _image_to_array(_prepare_ocr_image(image_bytes))
+    return _image_to_array(_prepare_ocr_image(image_bytes)[0])
 
 
 def _ocr_one_page(page_png: bytes, page_index: int) -> tuple[int, str]:
@@ -611,10 +674,13 @@ def _ocr_one_page_with_boxes(
     global _ocr_cache_misses
     _ocr_cache_misses += 1
 
+    from app.core.transform_tracker import TransformTracker
+
     try:
         ocr = _get_ocr()
         if skip_rotation:
-            img = _prepare_ocr_image(page_png)
+            tracker = TransformTracker()
+            img, _tracker = _prepare_ocr_image(page_png, tracker=tracker)
             result = _ocr_prepared_image(ocr, img)
             candidate = OcrCandidateResult(result=result, image_size=img.size)
         else:
@@ -645,8 +711,12 @@ def _ocr_one_page_with_boxes(
             # 低置信非中文行不加入文本输出，防止下游 question_splitter 等模块
             # 误将垃圾文本识别为题号或选项；boxes 中仍保留 low_conf 标记供质量门禁评估。
             if is_low_conf:
-                # 仅当文本看起来像噪声（极短、无字母数字、无CJK）时才跳过
-                if len(text) <= 2 or not re.search(r"[A-Za-z0-9一-鿿]", text):
+                # 仅当文本看起来像噪声时才跳过。代码符号（{}->==等）和数学符号
+                # 保留不删，避免误删代码、公式、英文选项。
+                has_content = bool(re.search(
+                    r"[A-Za-z0-9一-鿿{}()\[\]<>+\-*/%=&|^~!@#$,.;:\\\"'`_]", text
+                ))
+                if len(text) <= 2 and not has_content:
                     logger.debug("OCR low-conf line excluded from text: %.60s", text)
                     continue
             lines.append(text)
@@ -657,7 +727,14 @@ def _ocr_one_page_with_boxes(
         avg_conf = conf_sum / max(len(lines), 1) if lines else 0.0
         set_cached(page_png, result_text, boxes, avg_conf)
 
-        return OcrPageResult(page_index=page_index, text=result_text, boxes=boxes)
+        # Capture preprocessing transforms for coordinate back-mapping
+        tracker = get_last_transform_tracker()
+        transforms = tracker.to_ir_transforms() if tracker else None
+
+        return OcrPageResult(
+            page_index=page_index, text=result_text, boxes=boxes,
+            transforms=transforms,
+        )
     except Exception as e:
         logger.warning("OCR（含框）第 %d 页失败：%s", page_index, e)
         return OcrPageResult(page_index=page_index, text="", boxes=[], failed=True, error=str(e))
@@ -735,7 +812,7 @@ def ocr_pages_with_boxes(
             }
 
     results: dict[int, OcrPageResult] = {}
-    # 使用共享线程池而非自建
+    # 使用 ocr_executor 的共享线程池，避免自建
     from app.services.ocr_executor_service import ocr_executor
 
     executor = ocr_executor.get_thread_pool()

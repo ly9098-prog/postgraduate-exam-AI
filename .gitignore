@@ -48,6 +48,7 @@ backend/cache/
 backend/uploads/
 backend/static/uploads/
 backend/static/
+ocr_test/
 
 # Frontend dependencies/build output
 node_modules/
@@ -80,7 +81,8 @@ deploy/logs/
 .backend_cache/
 backend/.backend_cache/
 
-# Docker volumes
+# Build artifacts
+backend/requirements-lock.txt
 pgdata/
 redisdata/
 
