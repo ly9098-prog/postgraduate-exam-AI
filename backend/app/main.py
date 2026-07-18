@@ -111,6 +111,9 @@ async def lifespan(app: FastAPI):
 
     cleanup_task = asyncio.create_task(_periodic_token_cleanup(), name="token-cleanup")
 
+    # Initialize OCR Gateway (must be before yield for shutdown access)
+    _ocr_gateway = None
+
     try:
         await pomodoro_scheduler.start()
     except Exception as e:
@@ -127,6 +130,31 @@ async def lifespan(app: FastAPI):
         await start_worker()
     except Exception as e:
         logger.warning("AI prewarm worker start failed (non-fatal): %s", e)
+
+    # Initialize OCR Gateway with worker client (local process or remote)
+    try:
+        from app.core.ocr_runtime_config import get_runtime_config
+        from app.features.ocr_gateway import OCRGateway
+        from app.services.ocr_worker_client import create_ocr_worker_client
+
+        cfg = get_runtime_config()
+        if cfg.enabled:
+            worker_client = create_ocr_worker_client(cfg)
+            _ocr_gateway = OCRGateway(
+                mode="gateway",
+                worker_client=worker_client,
+            )
+            # Set global gateway singleton for backward compat callers
+            from app.services.ocr_service import set_gateway
+            set_gateway(_ocr_gateway)
+            logger.info(
+                "OCR Gateway initialized (mode=gateway exec_backend=%s profile=%s env=%s)",
+                cfg.execution_backend, cfg.profile, cfg.environment,
+            )
+        else:
+            logger.info("OCR not enabled, skipping Gateway initialization")
+    except Exception as e:
+        logger.warning("OCR Gateway init failed (non-fatal): %s", e)
 
     # Start the durable task queue pipeline worker (background task processing)
     _pipeline_worker_task: asyncio.Task | None = None
@@ -167,6 +195,12 @@ async def lifespan(app: FastAPI):
         await ocr_executor.shutdown(wait=False)
     except Exception:
         logger.exception("OCR executor shutdown failed")
+    try:
+        if _ocr_gateway is not None:
+            await _ocr_gateway.shutdown()
+            logger.info("OCR Gateway shut down")
+    except Exception:
+        logger.exception("OCR Gateway shutdown failed")
     try:
         from app.services.pdf_renderer_service import pdf_renderer
         await pdf_renderer.shutdown()
