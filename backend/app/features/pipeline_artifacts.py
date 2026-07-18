@@ -109,6 +109,43 @@ def _build_pipeline_fingerprint() -> str:
 PIPELINE_VERSION = _build_pipeline_fingerprint()
 
 
+def _build_config_fingerprint() -> str:
+    """Content-addressed config fingerprint for artifact compatibility.
+
+    Includes key OcrRuntimeConfig fields that affect OCR output quality.
+    Falls back to 'default' when runtime config is not yet initialized.
+    """
+    try:
+        from app.core.ocr_runtime_config import get_runtime_config
+        cfg = get_runtime_config()
+        key_fields = "|".join([
+            str(cfg.use_gpu),
+            cfg.language,
+            str(cfg.det_db_thresh),
+            str(cfg.det_db_box_thresh),
+            str(cfg.det_db_unclip_ratio),
+            str(cfg.drop_score),
+            str(cfg.min_image_width),
+            str(cfg.enable_rotation),
+            str(cfg.enable_ai_correction),
+            str(cfg.worker_count),
+            str(cfg.gpu_shards),
+        ])
+        return hashlib.md5(key_fields.encode()).hexdigest()[:12]
+    except Exception:
+        return "default"
+
+
+# Re-export for callers that need to check config-aware pipeline version
+def current_pipeline_version() -> str:
+    """Return pipeline version with config fingerprint appended.
+
+    Call this at artifact save/compatibility-check time (not at module load)
+    so that config changes invalidate cached artifacts.
+    """
+    return f"{PIPELINE_VERSION}_cfg{_build_config_fingerprint()}"
+
+
 # Whitelist of types allowed for artifact serialization.
 # Using ``str()`` as a fallback (the previous default) silently loses type
 # information and can produce irreversible results — only explicit types are
@@ -205,7 +242,11 @@ def _ensure_dir(pipeline_id: str) -> str:
 
 def _artifact_path(pipeline_id: str, filename: str) -> str:
     """Full path for a given artifact filename, with safety validation."""
-    return os.path.join(_safe_artifact_dir(pipeline_id), filename)
+    # Prevent path traversal in filename (e.g. "../../etc/passwd")
+    safe_filename = os.path.basename(filename)
+    if safe_filename != filename:
+        raise ValueError(f"Unsafe filename {filename!r}: must be a bare name")
+    return os.path.join(_safe_artifact_dir(pipeline_id), safe_filename)
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +278,8 @@ def save_artifact(
         wrapped: dict[str, Any] = {
             "completed_stage": stage_name,
             "completed_stage_index": stage_index(stage_name),
-            "pipeline_version": PIPELINE_VERSION,
+            "pipeline_version": current_pipeline_version(),
+            "config_fingerprint": _build_config_fingerprint(),
             "data": data,
         }
         _write_json(path, wrapped)
@@ -252,10 +294,11 @@ def save_artifact(
 
 def _unwrap_artifact(
     saved: Any,
-) -> tuple[str | None, int | None, str | None, Any]:
+) -> tuple[str | None, int | None, str | None, str | None, Any]:
     """Unwrap a saved artifact, extracting metadata and inner data.
 
-    Returns (completed_stage, completed_stage_index, pipeline_version, data).
+    Returns (completed_stage, completed_stage_index, pipeline_version,
+             config_fingerprint, data).
     For legacy artifacts (pre-P0-1), returns None for metadata fields.
 
     When REJECT_LEGACY_ARTIFACTS is True, legacy artifacts raise ValueError
@@ -266,6 +309,7 @@ def _unwrap_artifact(
             str(saved.get("completed_stage", "")),
             int(saved.get("completed_stage_index", -1)),
             str(saved.get("pipeline_version", "")),
+            str(saved.get("config_fingerprint", "")),
             saved["data"],
         )
     # Legacy artifact — reject if configured, otherwise warn and accept
@@ -279,7 +323,7 @@ def _unwrap_artifact(
         "Loading legacy artifact (no metadata wrapper) — "
         "consider re-running the pipeline to generate a compatible artifact"
     )
-    return None, None, None, saved
+    return None, None, None, None, saved
 
 
 def load_artifact(
@@ -303,7 +347,7 @@ def load_artifact(
         return None
     try:
         raw = _read_json(path)
-        _, _, _, data = _unwrap_artifact(raw)
+        _, _, _, _, data = _unwrap_artifact(raw)
         return data if data is not None else raw
     except Exception as exc:
         logger.warning(
@@ -330,7 +374,7 @@ def check_artifact_compatibility(pipeline_id: str, stage_name: str) -> tuple[boo
         raw = _read_json(path)
     except Exception:
         return False, f"Corrupted artifact for stage {stage_name}"
-    completed_stage, _, version, _ = _unwrap_artifact(raw)
+    completed_stage, _, version, cfg_fp, _ = _unwrap_artifact(raw)
     if completed_stage is None:
         # Legacy artifact (pre-metadata)
         try:
@@ -350,10 +394,12 @@ def check_artifact_compatibility(pipeline_id: str, stage_name: str) -> tuple[boo
         return True, ""
     if not version:
         return False, f"Artifact for stage {stage_name} has no pipeline version"
-    if version != PIPELINE_VERSION:
+
+    expected_version = current_pipeline_version()
+    if version != expected_version:
         return False, (
             f"Pipeline version mismatch for artifact stage={stage_name}: "
-            f"expected={PIPELINE_VERSION}, got={version}. "
+            f"expected={expected_version}, got={version}. "
             "Re-run the full pipeline to generate a compatible artifact."
         )
     return True, ""

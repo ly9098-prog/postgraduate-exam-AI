@@ -16,51 +16,105 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Install minimum dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff mypy pyproject.toml pip-audit
-          pip install -r requirements.txt || true
+          # Install lint/audit tools
+          pip install ruff mypy pip-audit bandit
+          # Install project for import smoke test
+          pip install -e .
+          # Generate requirements-lock
+          pip freeze > requirements-lock.txt
+
+      - name: compileall — syntax check all Python files
+        run: |
+          python -c "
+          import compileall, sys
+          success = compileall.compile_dir('app/', quiet=2)
+          if not success:
+              print('compileall: FAILED')
+              sys.exit(1)
+          print('compileall: OK')
+          "
 
       - name: Ruff lint
-        run: ruff check app/ --output-format=github || true
+        run: ruff check app/ --output-format=github
+
+      - name: Ruff format check
+        run: ruff format --check app/ || true
+        continue-on-error: true  # format is advisory
 
       - name: MyPy type check
         run: mypy app/ || true
+        continue-on-error: true  # type checking is advisory for now
 
-      - name: Import boundary audit
-        run: python ../scripts/check_ocr_imports.py
-
-      - name: Generate lock file
-        run: pip freeze > requirements-lock.txt
+      - name: Bandit security scan
+        run: |
+          bandit -r app/ -f json --severity-level high 2>&1 | head -50 || true
+        continue-on-error: true
 
       - name: Dependency vulnerability scan
-        run: pip-audit --desc on -r requirements.txt --ignore-vuln PYSEC-2024-123 || true
+        run: pip-audit --desc on -r requirements-lock.txt || true
+        continue-on-error: true
 
-      - name: Full module import smoke test
+      - name: Static architecture & non-GPU regression tests
+        run: |
+          python -m pytest \
+            tests/test_architecture_boundaries.py \
+            tests/test_gateway_bypass_zero.py \
+            tests/test_document_ir_production_write_zero.py \
+            tests/test_artifact_path_traversal.py \
+            tests/test_p5_ssrf_http_lifecycle.py \
+            tests/test_coordinator_mode_e2e.py \
+            tests/test_coordinator_boundaries.py \
+            tests/test_coordinator_rollback.py \
+            tests/test_pipeline_coordinator_shadow.py \
+            tests/test_ai_capability_model_separation.py \
+            tests/test_ai_model_config_resolver.py \
+            tests/test_ai_config_snapshot.py \
+            tests/test_code_integrity.py \
+            tests/test_ocr_resume_equivalence.py \
+            -v --tb=short 2>&1
+
+      - name: Import smoke test
         run: |
           python -c "
           modules = [
               'app.core.config',
-              'app.core.log_context',
               'app.core.document_ir',
-              'app.core.transform_tracker',
-              'app.core.ocr_runtime_config',
+              'app.core.ai_trace',
               'app.services.ocr_executor_service',
               'app.features.candidate_evaluator',
+              'app.features.ocr_vl.paddleocr_vl_client',
+              'app.features.pipeline_artifacts',
           ]
+          errors = []
           for m in modules:
               try:
                   __import__(m)
                   print(f'OK: {m}')
               except ImportError as e:
+                  errors.append(f'{m}: {e}')
                   print(f'SKIP: {m} ({e})')
+          if errors:
+              print(f'\n{len(errors)} modules not importable')
           "
+
+      - name: OCR Benchmark — text-only cases
+        run: |
+          python -m pytest tests/ocr_bench/test_bench.py -v --tb=short 2>&1
+        continue-on-error: true  # benchmark is advisory — tracks regression trends
+
+      - name: Save lock file artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: requirements-lock
+          path: backend/requirements-lock.txt
 
   docker-build:
     runs-on: ubuntu-latest
