@@ -53,6 +53,31 @@ class TraceStep(str, enum.Enum):
     CONFIG = "config"
 
 
+class OCRJobStatus(str, enum.Enum):
+    """OCRJob.status values — database-backed OCR job control plane.
+
+    State machine (guarded by guard_ocr_job_transition):
+
+        pending ──→ leased ──→ downloading ──→ running ──→ uploading ──→ completed
+           │          │            │               │              │
+           └──> cancelled           └──> retryable ──→ pending    │
+                                              │       └──> dead_letter
+                                              │                   │
+                                              └───────────────────┤
+                                                          failed ─┘
+    """
+    PENDING = "pending"
+    LEASED = "leased"
+    DOWNLOADING = "downloading"
+    RUNNING = "running"
+    UPLOADING = "uploading"
+    COMPLETED = "completed"
+    RETRYABLE = "retryable"
+    FAILED = "failed"
+    DEAD_LETTER = "dead_letter"
+    CANCELLED = "cancelled"
+
+
 # ================================================================
 # State transitions (machine-readable)
 # ================================================================
@@ -107,6 +132,54 @@ def guard_item_transition(current: str, next_status: str) -> None:
         raise ValueError(
             f"Invalid item status transition: {current} → {next_status}"
             f" (allowed from {current}: {allowed})"
+        )
+
+
+# ================================================================
+# OCR Job state transitions
+# ================================================================
+
+OCR_JOB_TRANSITIONS: dict[str, set[str]] = {
+    OCRJobStatus.PENDING.value: {
+        OCRJobStatus.LEASED.value,
+        OCRJobStatus.CANCELLED.value,
+    },
+    OCRJobStatus.LEASED.value: {
+        OCRJobStatus.DOWNLOADING.value,
+        OCRJobStatus.CANCELLED.value,
+    },
+    OCRJobStatus.DOWNLOADING.value: {
+        OCRJobStatus.RUNNING.value,
+        OCRJobStatus.RETRYABLE.value,
+    },
+    OCRJobStatus.RUNNING.value: {
+        OCRJobStatus.UPLOADING.value,
+        OCRJobStatus.RETRYABLE.value,
+        OCRJobStatus.FAILED.value,
+    },
+    OCRJobStatus.UPLOADING.value: {
+        OCRJobStatus.COMPLETED.value,
+        OCRJobStatus.RETRYABLE.value,
+        OCRJobStatus.FAILED.value,
+    },
+    OCRJobStatus.RETRYABLE.value: {
+        OCRJobStatus.PENDING.value,
+        OCRJobStatus.DEAD_LETTER.value,
+    },
+    OCRJobStatus.COMPLETED.value: set(),
+    OCRJobStatus.FAILED.value: set(),
+    OCRJobStatus.DEAD_LETTER.value: set(),
+    OCRJobStatus.CANCELLED.value: set(),
+}
+
+
+def guard_ocr_job_transition(current: str, next_status: str) -> None:
+    """Raise ValueError if OCR job transition is not allowed."""
+    allowed = OCR_JOB_TRANSITIONS.get(current, set())
+    if next_status not in allowed:
+        raise ValueError(
+            f"Invalid OCR job status transition: {current} → {next_status}"
+            f" (allowed from {current}: {sorted(allowed)})"
         )
 
 

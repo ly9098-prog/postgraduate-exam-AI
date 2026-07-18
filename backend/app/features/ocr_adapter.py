@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
@@ -227,6 +228,8 @@ class PaddleOCRLocalAdapter:
 
     def __init__(self, engine: str = "paddleocr") -> None:
         self._engine = engine
+        self._device_resolved = True  # Will be set to False if resolution was done.
+        self._resolved_device = ""
         self._capabilities = AdapterCapabilities(
             backend=engine,
             adapter_type="ocr",
@@ -276,6 +279,15 @@ class PaddleOCRLocalAdapter:
         start = time.monotonic()
 
         try:
+            # Resolve OCR device (GPU/CPU) — cache result to avoid
+            # redundant paddle import + CUDA enumeration per page.
+            # run in thread pool to avoid blocking event loop.
+            if not self._resolved_device:
+                from app.ocr_worker.device import resolve_ocr_device
+                device_res = await asyncio.to_thread(resolve_ocr_device)
+                self._resolved_device = device_res.resolved_device
+                self._device_resolved = True
+
             # Delegate to the existing OCR pipeline
             from app.features.pipeline_orchestrator import _ocr_scanned_pdf
 
@@ -307,7 +319,7 @@ class PaddleOCRLocalAdapter:
             # Convert blocks to DocumentIR
             from app.features.pipeline_orchestrator import _blocks_to_document_ir
 
-            doc_ir = _blocks_to_document_ir(blocks, pipeline_id=trace_id, engine="paddleocr")
+            doc_ir = _blocks_to_document_ir(blocks, pipeline_id=trace_id, engine="paddleocr", source_bytes=request.source)
 
             if doc_ir is None:
                 return ModuleResult.failure(
@@ -503,6 +515,7 @@ class PaddleOCRVLDocumentAdapter:
                 result=result,
                 page_index=request.page_start - 1,
                 trace_id=trace_id,
+                source_bytes=request.source,
             )
 
             # Validate DocumentIR
@@ -586,6 +599,7 @@ class PaddleOCRVLDocumentAdapter:
         result: Any,
         page_index: int = 0,
         trace_id: str = "",
+        source_bytes: bytes | None = None,
     ) -> Any:
         """Convert a PaddleOCRVLResult to a DocumentIR.
 
@@ -607,7 +621,7 @@ class PaddleOCRVLDocumentAdapter:
             new_document,
         )
 
-        doc = new_document()
+        doc = new_document(source_bytes=source_bytes)
         page_id = make_page_id(doc.document_id, page_index)
 
         regions: list[RegionIR] = []
