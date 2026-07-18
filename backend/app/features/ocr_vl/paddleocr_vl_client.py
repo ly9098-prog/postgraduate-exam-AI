@@ -82,7 +82,7 @@ def _raise_on_bad_status(response: httpx.Response) -> None:
     """
     if response.status_code != 200:
         raise JobSubmissionError(
-            f"PaddleOCR-VL HTTP {response.status_code}: {response.text[:200]}"
+            f"PaddleOCR-VL HTTP {response.status_code}"
         )
 
 
@@ -412,11 +412,8 @@ class PaddleOCRVLClient:
         )
         _raise_on_bad_status(response)
         body = _parse_json_body(response)
-        logger.info("[PaddleOCR-VL] submit raw response: %s",
-                    json.dumps(body, ensure_ascii=False)[:500])
-        data = _unwrap_data(body)
-        job_id = _extract_job_id(data)
-        logger.info("[PaddleOCR-VL] extracted job_id=%s", job_id)
+        job_id = _extract_job_id(_unwrap_data(body))
+        logger.info("[PaddleOCR-VL] submit response job_id=%s", job_id)
         return job_id
 
     async def _submit_url_job(self, file_url: str) -> str:
@@ -436,11 +433,9 @@ class PaddleOCRVLClient:
         response = await client.post(url, headers=headers, json=payload)
         _raise_on_bad_status(response)
         body = _parse_json_body(response)
-        logger.info("[PaddleOCR-VL] submit_url raw response: %s",
-                    json.dumps(body, ensure_ascii=False)[:500])
         data = _unwrap_data(body)
         job_id = _extract_job_id(data)
-        logger.info("[PaddleOCR-VL] extracted job_id=%s", job_id)
+        logger.info("[PaddleOCR-VL] submit_url response job_id=%s", job_id)
         return job_id
 
     async def _submit_with_retry(self, image_bytes: bytes, filename: str) -> str:
@@ -530,12 +525,11 @@ class PaddleOCRVLClient:
         data = body.get("data")
         if not isinstance(data, dict):
             raise JobPollingError(
-                f"Job {job_id} poll response missing 'data': "
-                f"{json.dumps(body, ensure_ascii=False)[:200]}"
+                f"Job {job_id} poll response missing 'data'"
             )
         logger.info(
-            "[PaddleOCR-VL] poll job=%s response data=%s",
-            job_id, json.dumps(data, ensure_ascii=False)[:500],
+            "[PaddleOCR-VL] poll job=%s state=%s",
+            job_id, data.get("state", "unknown"),
         )
         return data
 

@@ -150,8 +150,8 @@ class DurableTaskQueue:
 
             self._redis = redis_async.from_url(
                 settings.REDIS_URL,
-                socket_connect_timeout=2,
-                socket_timeout=2,
+                socket_connect_timeout=5,
+                socket_timeout=5,
                 decode_responses=True,
                 single_connection_client=True,
             )
@@ -214,8 +214,8 @@ class DurableTaskQueue:
                 try:
                     client = redis_async.from_url(
                         settings.REDIS_URL,
-                        socket_connect_timeout=2,
-                        socket_timeout=2,
+                        socket_connect_timeout=5,
+                        socket_timeout=5,
                         decode_responses=True,
                     )
                     exists = await client.exists(self._idempotent_key(tid))
@@ -260,8 +260,8 @@ class DurableTaskQueue:
             try:
                 client = redis_async.from_url(
                     settings.REDIS_URL,
-                    socket_connect_timeout=2,
-                    socket_timeout=2,
+                    socket_connect_timeout=5,
+                    socket_timeout=5,
                 )
                 await client.rpush(self._q_key(task_type), task_data)
                 await client.aclose()
@@ -297,11 +297,10 @@ class DurableTaskQueue:
                 client = self._get_client()
                 if client is None:
                     return None
-                # Atomic: pop from queue, push to processing
-                task_data = await client.brpoplpush(
+                # Atomic: pop from queue, push to processing (non-blocking)
+                task_data = await client.rpoplpush(
                     self._q_key(task_type),
                     self._p_key(task_type),
-                    timeout=0,  # don't block
                 )
                 if task_data:
                     task = Task.from_dict(json.loads(task_data))
@@ -341,8 +340,8 @@ class DurableTaskQueue:
             try:
                 client = redis_async.from_url(
                     settings.REDIS_URL,
-                    socket_connect_timeout=2,
-                    socket_timeout=2,
+                    socket_connect_timeout=5,
+                    socket_timeout=5,
                 )
                 await client.expire(
                     self._heartbeat_key(task.task_id), lease_sec
@@ -362,8 +361,8 @@ class DurableTaskQueue:
             try:
                 client = redis_async.from_url(
                     settings.REDIS_URL,
-                    socket_connect_timeout=2,
-                    socket_timeout=2,
+                    socket_connect_timeout=5,
+                    socket_timeout=5,
                 )
                 # Remove from processing list
                 p_key = self._p_key(task.task_type)
@@ -410,8 +409,8 @@ class DurableTaskQueue:
                 try:
                     client = redis_async.from_url(
                         settings.REDIS_URL,
-                        socket_connect_timeout=2,
-                        socket_timeout=2,
+                        socket_connect_timeout=5,
+                        socket_timeout=5,
                     )
                     # Remove from processing
                     p_key = self._p_key(task.task_type)
@@ -448,8 +447,8 @@ class DurableTaskQueue:
                 try:
                     client = redis_async.from_url(
                         settings.REDIS_URL,
-                        socket_connect_timeout=2,
-                        socket_timeout=2,
+                        socket_connect_timeout=5,
+                        socket_timeout=5,
                     )
                     p_key = self._p_key(task.task_type)
                     task_data = json.dumps(task.to_dict(), default=str)
@@ -486,8 +485,8 @@ class DurableTaskQueue:
         try:
             client = redis_async.from_url(
                 settings.REDIS_URL,
-                socket_connect_timeout=2,
-                socket_timeout=2,
+                socket_connect_timeout=5,
+                socket_timeout=5,
                 decode_responses=True,
             )
             p_key = self._p_key(task_type)
@@ -545,8 +544,8 @@ class DurableTaskQueue:
             try:
                 client = redis_async.from_url(
                     settings.REDIS_URL,
-                    socket_connect_timeout=2,
-                    socket_timeout=2,
+                    socket_connect_timeout=5,
+                    socket_timeout=5,
                 )
                 length = await client.llen(self._q_key(task_type))
                 await client.aclose()
@@ -562,8 +561,8 @@ class DurableTaskQueue:
             try:
                 client = redis_async.from_url(
                     settings.REDIS_URL,
-                    socket_connect_timeout=2,
-                    socket_timeout=2,
+                    socket_connect_timeout=5,
+                    socket_timeout=5,
                 )
                 length = await client.llen(self._dead_key(task_type))
                 await client.aclose()

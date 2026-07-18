@@ -167,6 +167,16 @@ class TransformTracker:
         """Return transforms in DocumentIR-compatible format."""
         return self.to_dict_list()
 
+    def record_metadata(self, key: str, value: Any) -> None:
+        """Record non-geometric metadata (e.g. quality metrics, enhancement strategy)."""
+        if not hasattr(self, "_metadata"):
+            self._metadata: dict[str, Any] = {}
+        self._metadata[key] = value
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        return getattr(self, "_metadata", {})
+
     @classmethod
     def from_dict_list(
         cls,

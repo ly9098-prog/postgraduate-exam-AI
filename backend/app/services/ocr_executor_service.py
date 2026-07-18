@@ -42,18 +42,11 @@ class OcrTaskTimeoutError(RuntimeError):
 class _OcrExecutorService:
     """Process-wide, bounded OCR executor.
 
-    Design:
-    - Uses a dedicated ``ThreadPoolExecutor`` (never the default one).
-    - ``asyncio.Semaphore`` caps in-flight async tasks queuing to the pool.
-    - An internal counter tracks how many tasks are *submitted but not yet
-      completed* (including those queued inside the thread pool). When this
-      exceeds ``_max_queue_size``, new submissions raise ``OcrQueueFullError``.
-    - On timeout: the ``Future`` is not cancelled (Python threads cannot be
-      forcibly terminated), but the caller receives ``OcrTaskTimeoutError``
-      immediately and the thread is left to finish in the background. The
-      thread pool's worker count caps cumulative thread growth.
-    - On shutdown: ``_executor.shutdown(wait=True)`` waits for running tasks
-      to finish (respects ``cancel_futures=True`` for queued ones).
+    ``run_ocr`` and ``run_ocr_pages`` use ``OcrProcessPool`` (process isolation)
+    by default when available, falling back to the thread pool.
+
+    ``_run_in_executor`` provides the thread pool path with semaphore + timeout
+    + done_callback for sync OCR wrappers (``ocr_service.ocr_pages_with_boxes``).
     """
 
     def __init__(self) -> None:
@@ -62,14 +55,12 @@ class _OcrExecutorService:
         self._lock = threading.Lock()
         self._shutdown = False
 
-        # Configuration — read from settings once, but allow override
         self._max_workers: int = settings.OCR_EXECUTOR_WORKERS
         self._max_concurrency: int = settings.OCR_MAX_CONCURRENCY
         self._max_queue_size: int = settings.OCR_MAX_QUEUE_SIZE
         self._task_timeout: int = settings.OCR_TASK_TIMEOUT_SEC
 
-        # Running task tracking for diagnostics
-        self._running_tasks: dict[int, float] = {}  # id(task) -> submit_time
+        self._running_tasks: dict[int, float] = {}
         self._total_submitted: int = 0
         self._total_completed: int = 0
         self._total_timed_out: int = 0
@@ -88,12 +79,7 @@ class _OcrExecutorService:
         return self._executor, self._semaphore
 
     def get_thread_pool(self) -> ThreadPoolExecutor:
-        """Return the shared thread pool for sync OCR callers.
-
-        Sync callers (ocr_pages, ocr_pages_with_boxes) use this instead of
-        creating their own ThreadPoolExecutor, ensuring total worker count
-        stays bounded by ``OCR_EXECUTOR_WORKERS``.
-        """
+        """Return the shared thread pool for sync OCR callers."""
         if self._executor is None:
             self._executor = ThreadPoolExecutor(
                 max_workers=self._max_workers,
@@ -101,97 +87,46 @@ class _OcrExecutorService:
             )
         return self._executor
 
-    # --- public API --------------------------------------------------------
+    # --- public API (process-pool by default) -----------------------------
 
     async def run_ocr(
         self,
         image_bytes: bytes,
         timeout: int | None = None,
     ) -> str:
-        """Run ``ocr_image`` in a thread and return the recognised text.
-
-        Raises:
-            OcrQueueFullError: queue capacity exceeded.
-            OcrTaskTimeoutError: task exceeded its timeout.
-            RuntimeError: OCR is disabled or the image is empty.
-        """
+        """OCR a single image via process-isolated worker (fallback to thread pool)."""
         from app.services.ocr_service import ocr_image
 
-        return await self._run_in_executor(ocr_image, image_bytes, timeout=timeout)
+        effective_timeout = timeout if timeout is not None else self._task_timeout
+        try:
+            from app.core.ocr_process_pool import ocr_process_pool
 
-    async def run_ocr_one_page(
-        self,
-        image_bytes: bytes,
-        page_index: int = 0,
-        timeout: int | None = None,
-    ) -> str:
-        """Run ``_ocr_one_page`` in a thread and return (page_index, text)."""
-        from app.services.ocr_service import _ocr_one_page
-
-        _, text = await self._run_in_executor(
-            _ocr_one_page, image_bytes, page_index,
-            timeout=timeout,
-        )
-        return text
+            loop = asyncio.get_event_loop()
+            text = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None, ocr_process_pool.get_text, image_bytes, 0, effective_timeout,
+                ),
+                timeout=effective_timeout + 10,
+            )
+            return text
+        except ImportError:
+            logger.debug("OCR process pool unavailable, falling back to thread pool")
+            return await self._run_in_executor(ocr_image, image_bytes, timeout=timeout)
 
     async def run_ocr_pages(
         self,
         page_images: list[tuple[int, bytes]],
         timeout: int | None = None,
     ) -> dict[int, str]:
-        """Concurrently OCR multiple pages through the bounded executor.
-
-        Each page is submitted as an individual task through the semaphore,
-        so overall concurrency stays within ``_max_concurrency``.
-        """
+        """OCR multiple pages via process-isolated workers (fallback to thread pool)."""
         if not page_images:
             return {}
-
-        from app.services.ocr_service import _ocr_one_page
-
-        results: dict[int, str] = {}
-
-        async def _ocr_one(png: bytes, idx: int) -> tuple[int, str | None]:
-            try:
-                _, text = await self._run_in_executor(
-                    _ocr_one_page, png, idx,
-                    timeout=timeout,
-                )
-                return idx, text
-            except Exception as exc:
-                logger.warning("OCR page %d failed: %s", idx, exc)
-                return idx, None
-
-        tasks = [asyncio.create_task(_ocr_one(png, idx)) for idx, png in page_images]
-        for coro in asyncio.as_completed(tasks):
-            idx, text = await coro
-            results[idx] = text if text is not None else ""
-        return results
-
-    async def run_ocr_pages_in_process(
-        self,
-        page_images: list[tuple[int, bytes]],
-        timeout: int | None = None,
-    ) -> dict[int, str]:
-        """OCR multiple pages with true process isolation and timeout.
-
-        Uses ``OcrProcessPool`` instead of thread pool so that:
-        - A C++ crash (SIGSEGV) kills only the worker, not the API process.
-        - Timeout enforcement via process termination (not just "give up").
-        - GPU memory is isolated.
-
-        Falls back to thread pool when the process pool is unavailable
-        (e.g. PaddleOCR not installed).
-        """
-        if not page_images:
-            return {}
-
-        effective_timeout = timeout if timeout is not None else self._task_timeout
-        results: dict[int, str] = {}
 
         try:
             from app.core.ocr_process_pool import ocr_process_pool
 
+            effective_timeout = timeout if timeout is not None else self._task_timeout
+            results: dict[int, str] = {}
             for idx, png in page_images:
                 try:
                     text = await asyncio.wait_for(
@@ -204,42 +139,31 @@ class _OcrExecutorService:
                 except Exception as exc:
                     logger.warning("OCR process-pool page %d failed: %s", idx, exc)
                     results[idx] = ""
+            return results
         except ImportError:
-            logger.warning(
-                "OCR process pool unavailable, falling back to thread pool"
-            )
-            return await self.run_ocr_pages(page_images, timeout=timeout)
+            logger.debug("OCR process pool unavailable, falling back to thread pool")
+            return await self._run_ocr_pages_threaded(page_images, timeout=timeout)
 
-        return results
-
-    async def run_ocr_pages_with_boxes_in_process(
+    async def run_ocr_pages_with_boxes(
         self,
         page_images: list[tuple[int, bytes]],
         skip_rotation: bool = False,
         timeout: int | None = None,
-    ) -> dict[int, dict]:
-        """OCR multiple pages with process isolation, returning text + boxes.
-
-        Each page runs sequentially in the process pool (max_workers=1).
-        Returns {page_index: {page_index, text, boxes, failed, error}}.
-
-        Falls back to thread pool when process pool unavailable.
-        """
+    ) -> dict[int, Any]:
+        """OCR pages with detection boxes via process-isolated workers."""
         if not page_images:
             return {}
 
         effective_timeout = timeout if timeout is not None else self._task_timeout
-
         try:
             from app.core.ocr_process_pool import ocr_process_pool
 
-            results: dict[int, dict] = {}
+            results: dict[int, Any] = {}
             for idx, png in page_images:
                 try:
                     result = await asyncio.wait_for(
                         asyncio.get_event_loop().run_in_executor(
-                            None,
-                            ocr_process_pool.get_text_with_boxes,
+                            None, ocr_process_pool.get_text_with_boxes,
                             png, idx, skip_rotation, effective_timeout,
                         ),
                         timeout=effective_timeout + 10,
@@ -253,20 +177,70 @@ class _OcrExecutorService:
                     }
             return results
         except ImportError:
-            logger.warning(
-                "OCR process pool unavailable, falling back to thread pool"
-            )
-            return await self.run_ocr_pages_with_boxes(
+            logger.debug("OCR process pool unavailable, falling back to thread pool")
+            return await self._run_ocr_boxes_threaded(
                 page_images, skip_rotation=skip_rotation, timeout=timeout,
             )
 
-    async def run_ocr_pages_with_boxes(
+    # --- backward-compat delegates ---------------------------------------
+
+    async def run_ocr_pages_in_process(
+        self,
+        page_images: list[tuple[int, bytes]],
+        timeout: int | None = None,
+    ) -> dict[int, str]:
+        """Delegate to ``run_ocr_pages`` (now process-pool by default)."""
+        return await self.run_ocr_pages(page_images, timeout=timeout)
+
+    async def run_ocr_pages_with_boxes_in_process(
         self,
         page_images: list[tuple[int, bytes]],
         skip_rotation: bool = False,
         timeout: int | None = None,
     ) -> dict[int, Any]:
-        """OCR pages and return results with detection boxes."""
+        """Delegate to ``run_ocr_pages_with_boxes`` (now process-pool by default)."""
+        return await self.run_ocr_pages_with_boxes(
+            page_images, skip_rotation=skip_rotation, timeout=timeout,
+        )
+
+    # --- thread pool fallbacks -------------------------------------------
+
+    async def _run_ocr_pages_threaded(
+        self,
+        page_images: list[tuple[int, bytes]],
+        timeout: int | None = None,
+    ) -> dict[int, str]:
+        """OCR multiple pages through the bounded thread pool."""
+        if not page_images:
+            return {}
+
+        from app.services.ocr_service import _ocr_one_page
+
+        results: dict[int, str] = {}
+
+        async def _ocr_one(png: bytes, idx: int) -> tuple[int, str | None]:
+            try:
+                _, text = await self._run_in_executor(
+                    _ocr_one_page, png, idx, timeout=timeout,
+                )
+                return idx, text
+            except Exception as exc:
+                logger.warning("OCR page %d failed: %s", idx, exc)
+                return idx, None
+
+        tasks = [asyncio.create_task(_ocr_one(png, idx)) for idx, png in page_images]
+        for coro in asyncio.as_completed(tasks):
+            idx, text = await coro
+            results[idx] = text if text is not None else ""
+        return results
+
+    async def _run_ocr_boxes_threaded(
+        self,
+        page_images: list[tuple[int, bytes]],
+        skip_rotation: bool = False,
+        timeout: int | None = None,
+    ) -> dict[int, Any]:
+        """OCR pages with boxes through the bounded thread pool."""
         if not page_images:
             return {}
 
@@ -292,7 +266,7 @@ class _OcrExecutorService:
                 results[idx] = result
         return results
 
-    # --- internal ----------------------------------------------------------
+    # --- internal thread pool executor -----------------------------------
 
     async def _run_in_executor(
         self,
@@ -300,22 +274,12 @@ class _OcrExecutorService:
         *args: Any,
         timeout: int | None = None,
     ) -> Any:
-        """Submit *fn(*args)* to the thread pool with semaphore and timeout.
-
-        Semaphore capacity is held until the underlying thread actually finishes
-        (not until the caller times out). This prevents excessive concurrent
-        inference even when callers have given up waiting.
-
-        Uses ``asyncio.wrap_future`` instead of
-        ``loop.run_in_executor(None, future.result)`` so no default thread pool
-        thread is consumed just to wait.
-        """
+        """Submit *fn(*args)* to the thread pool with semaphore and timeout."""
         if self._shutdown:
             raise RuntimeError("OCR executor is shut down")
 
         effective_timeout = timeout if timeout is not None else self._task_timeout
 
-        # Fast-fail if queue is too deep
         pending = self._total_submitted - self._total_completed
         if pending >= self._max_queue_size:
             self._total_queue_full += 1
@@ -324,9 +288,6 @@ class _OcrExecutorService:
             )
 
         executor, semaphore = self._ensure_executor()
-
-        # Acquire before submitting; released in done_callback so capacity
-        # stays aligned with the real thread lifetime.
         await semaphore.acquire()
 
         future: Future = executor.submit(fn, *args)
@@ -334,10 +295,6 @@ class _OcrExecutorService:
         self._running_tasks[task_id] = time.monotonic()
         self._total_submitted += 1
 
-        # done_callback releases capacity and counts completion when the
-        # underlying thread *actually* finishes — not when the caller stops
-        # waiting. This prevents the pending counter from growing forever
-        # after repeated timeouts.
         loop = asyncio.get_running_loop()
 
         def _release() -> None:
@@ -351,7 +308,7 @@ class _OcrExecutorService:
             self._total_completed += 1
             loop.call_soon_threadsafe(_release)
             try:
-                f.result()  # consume exception so it's not logged unhandled
+                f.result()
             except Exception:
                 pass
 
@@ -379,11 +336,6 @@ class _OcrExecutorService:
     # --- lifecycle ---------------------------------------------------------
 
     async def shutdown(self, wait: bool = True) -> None:
-        """Shut down the executor.
-
-        If *wait* is True, blocks until all running tasks finish.
-        Queued (not yet started) futures are cancelled.
-        """
         self._shutdown = True
         if self._executor is not None:
             self._executor.shutdown(wait=wait, cancel_futures=True)
