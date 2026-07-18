@@ -207,6 +207,7 @@ function normalizeLatexSource(value) {
   }
 
   source = replaceUnicodeMath(source)
+  source = normalizeFunctionNames(source)
     .replace(/[ \t]+/g, ' ')
     .trim()
 
@@ -258,6 +259,47 @@ function normalizeNamedOperators(value) {
   )
 }
 
+/**
+ * Regularise leftover dirty-data patterns before sending the formula to KaTeX.
+ *
+ * This handles common historical data issues without stripping braces that are
+ * part of valid LaTeX:
+ *  - Unclosed \text{...  →  close with }
+ *  - Severely unbalanced braces  →  remove orphaned braces
+ *
+ * The approach is conservative: balance known commands rather than strip all
+ * braces, so valid LaTeX like \frac{1}{2} is never broken.
+ */
+function sanitizeLatexContent(value) {
+  var source = String(value || '')
+  if (!source) return source
+
+  // Count opening and closing braces
+  var openCount = 0
+  var closeCount = 0
+  for (var j = 0; j < source.length; j++) {
+    if (source.charAt(j) === '{') openCount++
+    if (source.charAt(j) === '}') closeCount++
+  }
+
+  // If braces are unbalanced, fix them. This prevents KaTeX from choking on
+  // e.g. "\text{且换元过程满足公式条件" (missing closing }).
+  if (openCount > closeCount) {
+    // Close the most likely unclosed \text{ by appending the missing }
+    source = source + new Array(openCount - closeCount + 1).join('}')
+  } else if (closeCount > openCount) {
+    // Remove trailing orphan closes — but be conservative: only strip excess
+    // closing braces that appear at the very end of the string, since valid
+    // LaTeX uses } before other content (e.g. \frac{1}{2}).
+    while (closeCount > openCount && /\}$/.test(source)) {
+      source = source.replace(/\}\s*$/, '')
+      closeCount--
+    }
+  }
+
+  return source
+}
+
 function normalizeMathRun(value) {
   var source = stripOuterMathDelimiters(String(value || '').trim())
   if (!source) return ''
@@ -267,6 +309,10 @@ function normalizeMathRun(value) {
     .replace(/(^|[^\\A-Za-z])lim\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*(?:\\to|→|->)\s*([^)]+)\)/gi, function (_, prefix, variable, target) {
       return prefix + '\\lim_{' + variable + '\\to ' + replaceUnicodeMath(target).trim() + '}'
     })
+
+  // Sanitize common dirty-data patterns before structure transforms, so
+  // incomplete \text{... etc. are tolerant rather than producing red errors.
+  source = sanitizeLatexContent(source)
 
   // Structure-sensitive transformations must happen before generic function
   // escaping. Otherwise the reader merely italicises legacy text such as
@@ -573,4 +619,5 @@ module.exports = {
   prepareContentHtml: prepareContentHtml,
   prepareFormulaBlocks: prepareFormulaBlocks,
   splitFormulaGroup: splitFormulaGroup,
+  sanitizeLatexContent: sanitizeLatexContent,
 }

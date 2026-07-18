@@ -3,14 +3,37 @@ const katex = require('../mp-html/latex/katex.min')
 const Parser = require('../mp-html/parser')
 const LatexPlugin = require('../mp-html/latex/index')
 
+/**
+ * Check whether a rich-text node tree contains any KaTeX error indicator.
+ *
+ * Detects:
+ *  - style containing "color: red" (katex-mini error styling)
+ *  - class containing "katex-error" or "katex-parse-error"
+ *  - text content matching "KaTeX parse error"
+ *  - data-error or data-error-type attribute (katex-mini extended output)
+ */
 function containsRenderError(nodes) {
   var found = false
   function walk(items) {
     if (found || !Array.isArray(items)) return
     for (var i = 0; i < items.length; i++) {
       var node = items[i] || {}
-      var style = node.attrs && node.attrs.style
+      var attrs = node.attrs || {}
+      var style = attrs.style
       if (typeof style === 'string' && /(?:^|;)\s*color\s*:\s*red\b/i.test(style)) {
+        found = true
+        return
+      }
+      var className = String(attrs.class || '')
+      if (/katex-error|katex-parse-error/i.test(className)) {
+        found = true
+        return
+      }
+      if (attrs['data-error'] !== undefined || attrs['data-error-type'] !== undefined) {
+        found = true
+        return
+      }
+      if (node.type === 'text' && /KaTeX\s+parse\s+error/i.test(node.text)) {
         found = true
         return
       }
@@ -19,6 +42,105 @@ function containsRenderError(nodes) {
   }
   walk(nodes)
   return found
+}
+
+/**
+ * Walk a rich-text node tree and surgically replace only the individual
+ * KaTeX error fragments (spans tagged with l="T" that contain error nodes)
+ * with sanitized plain text.  Other formula fragments and Chinese prose
+ * in the same tree are left untouched, so one broken formula never causes
+ * an entire paragraph to degrade to plain text.
+ */
+function cleanFormulaErrorNodes(nodes) {
+  if (!Array.isArray(nodes)) return nodes
+  var result = []
+  for (var i = 0; i < nodes.length; i++) {
+    var node = nodes[i] || {}
+    // Text node that IS the error message → drop it
+    if (node.type === 'text' && /KaTeX\s+parse\s+error/i.test(node.text)) {
+      continue
+    }
+    // A formula-span (l === 'T' from LatexPlugin) that contains
+    // an error → replace the whole span with readable text.
+    if (node.l === 'T' && node.children && containsRenderError(node.children)) {
+      var cleaned = extractReadableText(node)
+      if (cleaned) result.push({ type: 'text', text: cleaned })
+      continue
+    }
+    // Non-error node with children → recurse
+    if (node.children && Array.isArray(node.children)) {
+      var cleanedChildren = cleanFormulaErrorNodes(node.children)
+      if (cleanedChildren !== node.children || containsRenderError(node.children)) {
+        result.push(Object.assign({}, node, { children: cleanedChildren }))
+      } else {
+        result.push(node)
+      }
+    } else {
+      result.push(node)
+    }
+  }
+  return result
+}
+
+/**
+ * Extract readable plain text from a rich-text node subtree, intended as
+ * fallback for a single broken formula fragment.
+ *
+ * Returns a plain-text approximation that a reader can still understand even
+ * when the original LaTeX was malformed:
+ *  - \text{Hello}          → Hello
+ *  - \operatorname{sgn}    → sgn
+ *  - \frac{a}{b}           → a/b
+ *  - \displaystyle         → (removed)
+ *  - \sqrt{x}              → sqrt(x)
+ *  - Other \command        → (removed, but its brace-delimited args kept)
+ */
+function extractReadableText(node) {
+  var parts = []
+  function walk(item) {
+    if (!item) return
+    if (item.type === 'text') {
+      var text = String(item.text || '')
+      // Phase 1: preserve content inside known container commands
+      text = text
+        .replace(/\\text\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g, function (_, inner) {
+          // Recursively handle nested braces inside \text
+          return walkNestedText(inner)
+        })
+        .replace(/\\operatorname\s*\{([^{}]*)\}/g, '$1')
+        .replace(/\\textbf\s*\{([^{}]*)\}/g, '$1')
+        .replace(/\\textit\s*\{([^{}]*)\}/g, '$1')
+        .replace(/\\displaystyle\s*/g, '')
+        .replace(/\\;\s*/g, ' ')
+        .replace(/\\,\s*/g, ' ')
+        .replace(/\\quad\s*/g, ' ')
+        .replace(/\\qquad\s*/g, '  ')
+      // Phase 2: convert common structures to readable approximations
+      text = text
+        .replace(/\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, '$1/$2')
+        .replace(/\\sqrt\s*(?:\[([^\]]*)\])?\s*\{([^{}]*)\}/g, function (_, root, radicand) {
+          return 'sqrt' + (root ? '[' + root + ']' : '') + '(' + radicand + ')'
+        })
+        .replace(/\\sum\s*(?:\{([^}]*)\})?\s*(?:\{([^}]*)\})?/g, 'sum')
+        .replace(/\\int\s*(?:\{([^}]*)\})?\s*(?:\{([^}]*)\})?/g, 'int')
+      // Phase 3: strip remaining LaTeX commands and braces
+      text = text
+        .replace(/\\[A-Za-z]+\s*/g, '')
+        .replace(/[\{\}]+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+      if (text) parts.push(text)
+    }
+    if (item.children && Array.isArray(item.children)) {
+      item.children.forEach(walk)
+    }
+  }
+  function walkNestedText(s) {
+    // Handle one level of nesting inside \text{}
+    return s.replace(/\\text\s*\{([^{}]*)\}/g, '$1')
+  }
+  walk(node)
+  return parts.join(' ').replace(/\s+/g, ' ').trim()
 }
 
 
@@ -127,7 +249,13 @@ function parseRichNodes(html) {
       imgList: [],
       plugins: [new LatexPlugin()],
     }
-    return stabilizeRichMathTree(new Parser(host).parse(source))
+    var nodes = stabilizeRichMathTree(new Parser(host).parse(source))
+    // Post-process: detect and replace KaTeX error nodes that escaped the
+    // per-formula try/catch (e.g. incomplete \text{... macros that katex-mini
+    // renders as red-error spans instead of throwing). Replace each error
+    // node's content with sanitized plain text so "KaTeX parse error" never
+    // appears in the UI.
+    return cleanFormulaErrorNodes(nodes)
   } catch (err) {
     console.warn('Formula prose render failed, falling back to plain text', err)
     return [{ type: 'text', text: source.replace(/<[^>]+>/g, '') }]
@@ -141,6 +269,13 @@ function prepareFormulaBlocks(card) {
       // card.title. Render it through the same mixed prose/LaTeX pipeline used
       // by conditions and error tips so values such as "e^x展开" become KaTeX.
       labelNodes: parseRichNodes(formulaContent.normalizeMixedContent(block.label)),
+      // block.note (the explainer text below each formula, e.g.
+      // "y=x^n（n为正整数）与 y=x^{-n}（n为正整数）对比") contains mixed
+      // Chinese prose and inline LaTeX. Render it through the same pipeline so
+      // ^, _{}, \frac etc. are not shown as raw source.
+      noteNodes: block.note
+        ? parseRichNodes(formulaContent.normalizeMixedContent(block.note))
+        : [],
       mathNodes: renderFormulaNodes(block.latex),
       formulaItems: (block.formulaParts || []).map(function (item) {
         return Object.assign({}, item, { mathNodes: renderFormulaNodes(item.latex) })
