@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # 部署档案（留空跟随 APP_ENV）
     DEPLOY_PROFILE: str = ""  # "local" | "production"
 
+    # Deployment Profile (explicit override for dual-environment)
+    DEPLOYMENT_PROFILE: str = ""  # "local_import" | "cloud_api" — overrides DEPLOY_PROFILE & APP_ENV
+
     # OCR
     OCR_ENABLED: bool = False
     OCR_MAX_WORKERS: int = 2
@@ -71,6 +74,19 @@ class Settings(BaseSettings):
     PAGE_CLASSIFIER_ENABLED: bool = True
     # 代码块检测 Feature Flag — 关闭后行为与线上完全一致
     CODE_DETECTOR_ENABLED: bool = True
+
+    # --- PaddleX Remote OCR ---
+    OCR_EXECUTION_BACKEND: str = "local_process"  # "local_process" | "paddlex_http" | "disabled"
+    OCR_REMOTE_URL: str = "http://127.0.0.1:8080/ocr"
+    OCR_REMOTE_CONNECT_TIMEOUT_SEC: float = 5.0
+    OCR_REMOTE_READ_TIMEOUT_SEC: float = 600.0
+    OCR_REMOTE_HEALTH_TIMEOUT_SEC: float = 3.0
+    OCR_REMOTE_MAX_CONCURRENCY: int = 1
+    OCR_REMOTE_VISUALIZE: bool = False
+    OCR_REMOTE_FAIL_FAST: bool = False
+    OCR_REMOTE_USE_DOC_ORIENTATION_CLASSIFY: bool = False
+    OCR_REMOTE_USE_DOC_UNWARPING: bool = False
+    OCR_REMOTE_USE_TEXTLINE_ORIENTATION: bool = False
 
     # Artifact migration
     REJECT_LEGACY_ARTIFACTS: bool = False  # reject artifacts without metadata wrapper
@@ -129,6 +145,10 @@ class Settings(BaseSettings):
     GUNICORN_WORKERS: int = 2  # 2-core server
     GUNICORN_WORKER_CLASS: str = "uvicorn.workers.UvicornWorker"
     MAX_CONNECTIONS: int = 50
+
+    # Internal API (worker auth)
+    INTERNAL_API_KEY: str = ""
+    PRODUCTION_THIN_MODE: bool = False
 
     # Sentry
     SENTRY_DSN: str = ""
