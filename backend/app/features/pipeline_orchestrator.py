@@ -1316,6 +1316,7 @@ def _blocks_to_document_ir(
     *,
     pipeline_id: str = "",
     engine: str = "paddleocr",
+    source_bytes: bytes | None = None,
 ) -> "DocumentIR | None":
     """Convert OCR blocks (from _ocr_scanned_pdf) into a DocumentIR.
 
@@ -1344,7 +1345,12 @@ def _blocks_to_document_ir(
     if not blocks:
         return None
 
-    doc = new_document()
+    # Use pipeline_id as disambiguator when source_bytes is unavailable
+    effective_source = source_bytes
+    if effective_source is None and pipeline_id:
+        effective_source = pipeline_id.encode('utf-8')
+
+    doc = new_document(source_bytes=effective_source)
     doc.pipeline_fingerprint = pipeline_id
 
     # Group blocks by page
