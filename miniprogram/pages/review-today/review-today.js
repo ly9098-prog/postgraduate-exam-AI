@@ -136,8 +136,11 @@ Page({
     growthLevel: '',
     growthLevelPct: 0,
     growthDesc: '',
-    skeletonOptions: [1, 2, 3, 4],
-    progressSteps: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90],
+    batchSizeOptions: [5, 10, 20, 30],
+
+    /* ====== Batch size sheet ====== */
+    showBatchSizeSheet: false,
+    pendingBatchSize: 10,
   },
 
   /* ==================== 生命周期 ==================== */
@@ -1451,33 +1454,82 @@ Page({
     this._reviewSession.timerRunning = false
   },
 
-  /* ==================== 每组题数选择 ==================== */
+  /* ==================== 每组题数选择（自定义底部弹层） ==================== */
 
   /**
-   * 弹 action sheet 让用户选择每组题数。
+   * 打开每组题数底部弹层。
    * 仅在 overview 阶段且无进行中请求时可用。
+   * 将 pendingBatchSize 初始化为当前生效的 reviewBatchSize。
    */
   showBatchSizeSelector() {
     if (this.data.phase !== 'overview') return
     if (this.data.isStarting || this.data.isContinuing) return
-    var self = this
-    var itemList = REVIEW_BATCH_SIZE_OPTIONS.map(function (n) { return '每组 ' + n + ' 道' })
-    wx.showActionSheet({
-      itemList: itemList,
-      success: function (res) {
-        var selected = REVIEW_BATCH_SIZE_OPTIONS[res.tapIndex]
-        if (selected !== undefined) {
-          self._userSelectedReviewBatchSize = true
-          self.setData({ reviewBatchSize: selected })
-        }
-      },
-      fail: function () { /* cancel — do nothing */ },
+    this.setData({
+      pendingBatchSize: this.data.reviewBatchSize,
+      showBatchSizeSheet: true,
+    })
+  },
+
+  /**
+   * 遮罩点击：关闭弹层，不修改正式选择。
+   */
+  handleBatchSheetMaskTap() {
+    this.closeBatchSizeSheet()
+  },
+
+  /**
+   * 阻止弹层内容区域的点击冒泡到遮罩。
+   */
+  stopBatchSheetPropagation() {
+    /* no-op: catchtap prevents propagation */
+  },
+
+  /**
+   * 关闭弹层，不修改正式选择。
+   * 清理临时状态。
+   */
+  closeBatchSizeSheet() {
+    this.setData({ showBatchSizeSheet: false })
+  },
+
+  /**
+   * 点击选项，只修改临时选择 pendingBatchSize。
+   * 不修改真正的 reviewBatchSize。
+   */
+  selectPendingBatchSize(e) {
+    var value = Number(e.currentTarget.dataset.value)
+    if (REVIEW_BATCH_SIZE_OPTIONS.indexOf(value) === -1) return
+    this.setData({ pendingBatchSize: value })
+  },
+
+  /**
+   * 确认使用，将 pendingBatchSize 应用到 reviewBatchSize。
+   * 标记用户已主动选择。
+   */
+  confirmBatchSize() {
+    var pending = this.data.pendingBatchSize
+    pending = normalizeReviewBatchSize(pending)
+    this._userSelectedReviewBatchSize = true
+    this.setData({
+      reviewBatchSize: pending,
+      showBatchSizeSheet: false,
     })
   },
 
 })
 
-// Export pure functions for regression testing
+// Export pure functions and constants for regression testing
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { normalizeReviewBatchSize, formatReviewElapsed, REVIEW_BATCH_SIZE_OPTIONS }
+  module.exports = {
+    normalizeReviewBatchSize,
+    formatReviewElapsed,
+    REVIEW_BATCH_SIZE_OPTIONS,
+    // Export data fields for test verification
+    BATCH_SIZE_OPTIONS_META: [
+      { value: 5, label: '快速复习' },
+      { value: 10, label: '推荐' },
+      { value: 20, label: '集中巩固' },
+      { value: 30, label: '深度复习' },
+    ],
+  }
 }

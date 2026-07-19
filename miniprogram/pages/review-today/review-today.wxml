@@ -438,3 +438,57 @@
   <view class="undo-divider"></view>
   <text class="undo-action" bindtap="undoMaster">撤销</text>
 </view>
+
+<!-- ==================== 每组题数底部弹层 ==================== -->
+<view
+  wx:if="{{showBatchSizeSheet}}"
+  class="batch-sheet-mask"
+  catchtap="handleBatchSheetMaskTap"
+>
+  <view
+    class="batch-sheet"
+    catchtap="stopBatchSheetPropagation"
+  >
+    <view class="batch-sheet-handle"></view>
+
+    <view class="batch-sheet-head">
+      <text class="batch-sheet-kicker">REVIEW BATCH</text>
+      <text class="batch-sheet-title">每组题数</text>
+      <text class="batch-sheet-desc">选择每轮复习包含的题目数量</text>
+    </view>
+
+    <view class="batch-size-grid">
+      <view
+        wx:for="{{batchSizeOptions}}"
+        wx:key="*this"
+        class="batch-size-option
+          {{item === pendingBatchSize ? 'is-pending' : ''}}
+          {{item === reviewBatchSize && item !== pendingBatchSize ? 'is-current' : ''}}"
+        data-value="{{item}}"
+        catchtap="selectPendingBatchSize"
+        aria-role="button"
+        aria-label="每组 {{item}} 道"
+      >
+        <view class="batch-size-option-top">
+          <text class="batch-size-num">{{item}}</text>
+          <text class="batch-size-unit">道</text>
+          <view wx:if="{{item === pendingBatchSize}}" class="batch-size-check">✓</view>
+        </view>
+        <text class="batch-size-label">
+          <block wx:if="{{item === 5}}">快速复习</block>
+          <block wx:elif="{{item === 10}}">推荐</block>
+          <block wx:elif="{{item === 20}}">集中巩固</block>
+          <block wx:elif="{{item === 30}}">深度复习</block>
+        </text>
+        <view wx:if="{{item === 10}}" class="batch-size-badge">推荐</view>
+      </view>
+    </view>
+
+    <view class="batch-sheet-current-hint">当前选择：每组 {{reviewBatchSize}} 道</view>
+
+    <view class="batch-sheet-actions">
+      <button class="batch-sheet-action batch-sheet-cancel" bindtap="closeBatchSizeSheet">取消</button>
+      <button class="batch-sheet-action batch-sheet-confirm" bindtap="confirmBatchSize">确认使用</button>
+    </view>
+  </view>
+</view>

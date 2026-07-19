@@ -67,6 +67,10 @@ Component({
     _hasBlankOptionGroups: false,
   },
 
+  created: function () {
+    this._lastRenderModel = null
+  },
+
   observers: {
     currentQuestion: function (q) {
       if (!q) {
@@ -330,6 +334,30 @@ Component({
       var src = e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.src
       if (!urls || !urls.length) return
       wx.previewImage({ current: src || urls[0], urls: urls })
+    },
+
+    /**
+     * Preview an option image. Collects all option image URLs from the current
+     * question so the user can swipe through them in full-screen mode.
+     */
+    previewOptionImage: function (e) {
+      var src = e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.src
+      if (!src) return
+      var cq = this.data.currentQuestion
+      var list = cq && cq._optionList
+      if (!Array.isArray(list)) { wx.previewImage({ current: src, urls: [src] }); return }
+      var seen = {}
+      var urls = []
+      for (var i = 0; i < list.length; i++) {
+        var segs = list[i]._segments
+        if (!Array.isArray(segs)) continue
+        for (var j = 0; j < segs.length; j++) {
+          var url = segs[j] && segs[j].url
+          if (url && !seen[url]) { seen[url] = true; urls.push(url) }
+        }
+      }
+      if (!urls.length) urls = [src]
+      wx.previewImage({ current: src, urls: urls })
     },
 
     noop: function () {},

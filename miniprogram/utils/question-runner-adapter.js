@@ -209,11 +209,31 @@ function buildOptionListReadonly(q, opts, optionKeys, correctAnswer, userAnswer)
     ? answerLib.normalizeAnswerSet(userAnswer) : null
 
   return (optionKeys || []).map(function (key) {
-    var rawText = (opts && opts[key]) || ''
+    // Handle rich option format: {"A": {"text": "...", "segments": [...]}}
+    var optValue = (opts && opts[key]) || ''
+    var optSegments = typeof optValue === 'object' && optValue !== null ? (optValue.segments || null) : null
+    var rawText = ''
+    if (optSegments && Array.isArray(optSegments) && optSegments.length > 0) {
+      rawText = stemRender.segmentsToText(optSegments)
+    } else if (typeof optValue === 'object' && optValue !== null) {
+      rawText = optValue.text || optValue.value || ''
+    } else {
+      rawText = String(optValue)
+    }
     var stripped = stemRender.stripLeadingOptionLabel(key, rawText)
     var plain = stemRender.toPlainInlineMathText(stripped)
     var text = plain || stripped
     var needsRich = !plain && stemRender.needsRichRender(stripped)
+
+    // Resolve image URLs in segments
+    var resolvedSegments = null
+    if (optSegments && Array.isArray(optSegments) && optSegments.length > 0) {
+      resolvedSegments = optSegments.map(function (seg) {
+        if (!seg || typeof seg !== 'object') return seg
+        if (seg.url) return Object.assign({}, seg, { url: stemRender.resolveAssetUrl(seg.url) })
+        return seg
+      })
+    }
 
     var isCorrect = correctSet ? !!correctSet[key] : key === (correctAnswer || '').trim().toUpperCase()
     var isUserAnswer = userSet ? !!userSet[key] : key === (userAnswer || '').trim().toUpperCase()
@@ -221,8 +241,9 @@ function buildOptionListReadonly(q, opts, optionKeys, correctAnswer, userAnswer)
     return {
       key: key,
       _text: text,
+      _segments: resolvedSegments,
       _html: needsRich ? stemRender.textToHtml(stripped) : '',
-      _needsRich: needsRich,
+      _needsRich: !optSegments && needsRich,
       _isCorrect: isCorrect,
       _isUserAnswer: isUserAnswer,
       _isBoth: isCorrect && isUserAnswer,

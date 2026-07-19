@@ -35,6 +35,20 @@ var appConfig = require('../config')
 var { formatInlineMathText, replaceSimpleLatexCommands } = require('./math-format')
 var { containsCode, shouldReconstructCode, reconstructCode, sanitizeImportedCodeArtifacts } = require('./code-reconstructor')
 
+// Derive static asset origin from API base URL
+var _assetOrigin = (function () {
+  var base = (appConfig && appConfig.BASE_URL) || ''
+  // Strip /api/v1 (or any /api/... path) to get origin
+  var m = base.match(/^(https?:\/\/[^/]+)/)
+  return m ? m[1] : ''
+})()
+function _resolveAssetUrl(url) {
+  if (!url || typeof url !== 'string') return ''
+  if (/^https?:\/\//i.test(url)) return url
+  if (url.charAt(0) === '/' && _assetOrigin) return _assetOrigin + url
+  return url
+}
+
 var RENDER_MODE = {
   RICH_TEXT: 'RICH_TEXT',
   LATEX: 'LATEX',
@@ -1074,11 +1088,9 @@ function _optionTextToHtml(key, value) {
 function buildOptionList(opts, optionKeys, selectedFlags) {
   return (optionKeys || []).map(function (key) {
     var optValue = (opts && opts[key]) || ''
-    // Handle rich dict format: {"A": {"text": "...", "segments": [...]}}
     var optSegments = typeof optValue === 'object' && optValue !== null ? (optValue.segments || null) : null
     var optText = ''
     if (optSegments && Array.isArray(optSegments) && optSegments.length > 0) {
-      // Extract plain text from segments for summary — don't duplicate text + segments
       optText = _segmentsToText(optSegments)
     } else if (typeof optValue === 'object' && optValue !== null) {
       optText = optValue.text || optValue.value || ''
@@ -1086,15 +1098,24 @@ function buildOptionList(opts, optionKeys, selectedFlags) {
       optText = String(optValue)
     }
     var optionText = _stripLeadingOptionLabel(key, optText)
-    // Clean embedded newlines (OCR artifact) to prevent visual doubling
     var cleanedOptionText = optionText.replace(/[\r\n]+/g, ' ')
     var plainOptionText = _toPlainInlineMathText(cleanedOptionText)
     var needsRich = !plainOptionText && _needsRichRender(cleanedOptionText)
+
+    var resolvedSegments = null
+    if (optSegments && Array.isArray(optSegments) && optSegments.length > 0) {
+      resolvedSegments = optSegments.map(function (seg) {
+        if (!seg || typeof seg !== 'object') return seg
+        if (seg.url) return Object.assign({}, seg, { url: _resolveAssetUrl(seg.url) })
+        return seg
+      })
+    }
+
     return {
       key: key,
       _selected: !!(selectedFlags || {})[key],
       _text: plainOptionText || cleanedOptionText,
-      _segments: (optSegments && Array.isArray(optSegments) && optSegments.length > 0) ? optSegments : undefined,
+      _segments: resolvedSegments,
       _needsRich: !optSegments && needsRich,
       _html: !optSegments && needsRich ? _textToHtml(cleanedOptionText) : ''
     }
@@ -1134,4 +1155,7 @@ module.exports = {
   // MIXED mode support
   splitStemBlocks: splitStemBlocks,
   splitInlineTextAndCode: splitInlineTextAndCode,
+
+  // Asset URL resolution (for option image segments)
+  resolveAssetUrl: _resolveAssetUrl,
 }

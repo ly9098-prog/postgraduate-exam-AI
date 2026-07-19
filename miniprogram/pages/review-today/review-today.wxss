@@ -493,3 +493,251 @@ button::after { border: none; }
 }
 .final-primary,
 .final-secondary { border-radius: 25rpx; }
+
+/* ==================== 每组题数底部弹层 ==================== */
+
+.batch-sheet-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(4, 20, 13, 0.58);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: batchMaskIn 200ms ease-out both;
+}
+
+.batch-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 700rpx;
+  margin: 0 24rpx calc(24rpx + env(safe-area-inset-bottom));
+  padding: 14rpx 28rpx 28rpx;
+  border-radius: 40rpx;
+  background: #f7f8f1;
+  box-shadow: 0 24rpx 64rpx rgba(4, 22, 14, 0.24);
+  animation: batchSheetIn 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.batch-sheet-handle {
+  width: 72rpx;
+  height: 7rpx;
+  margin: 0 auto 24rpx;
+  border-radius: 999rpx;
+  background: #D1D6CE;
+}
+
+/* 标题区域 */
+.batch-sheet-head { margin-bottom: 24rpx; padding: 0 4rpx; }
+.batch-sheet-kicker {
+  display: block;
+  font-size: 18rpx;
+  font-weight: 900;
+  letter-spacing: 2.6rpx;
+  color: #748077;
+}
+.batch-sheet-title {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 36rpx;
+  font-weight: 950;
+  line-height: 1.2;
+  color: #132118;
+}
+.batch-sheet-desc {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: #6C786F;
+}
+
+/* 选项网格：两列 */
+.batch-size-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+}
+
+.batch-size-option {
+  position: relative;
+  min-height: 128rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 24rpx;
+  background: #FBFBF7;
+  border: 2rpx solid #E0E3DC;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6rpx;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.batch-size-option:active {
+  transform: scale(0.97);
+}
+
+/* 临时选中态 */
+.batch-size-option.is-pending {
+  background: linear-gradient(135deg, #a9ef12, #c9f83c);
+  background-color: #b8f21c;
+  border-color: #8bcb00;
+  border-width: 3rpx;
+  box-shadow: 0 6rpx 20rpx rgba(169, 216, 0, 0.20);
+}
+
+/* 当前生效但未临时选择 */
+.batch-size-option.is-current {
+  border-color: #b8f21c;
+  border-width: 3rpx;
+  background: #F3F8E8;
+}
+
+.batch-size-option-top {
+  display: flex;
+  align-items: baseline;
+  gap: 5rpx;
+}
+
+.batch-size-num {
+  font-size: 44rpx;
+  font-weight: 950;
+  line-height: 1;
+  color: #132118;
+  font-variant-numeric: tabular-nums;
+}
+
+.batch-size-unit {
+  font-size: 22rpx;
+  font-weight: 800;
+  color: #415047;
+}
+
+.batch-size-check {
+  margin-left: auto;
+  width: 34rpx;
+  height: 34rpx;
+  border-radius: 50%;
+  background: #10251A;
+  color: #b8f21c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18rpx;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.batch-size-label {
+  font-size: 20rpx;
+  color: #6C786F;
+  line-height: 1.3;
+}
+
+.batch-size-option.is-pending .batch-size-label { color: #3B5F10; }
+.batch-size-option.is-pending .batch-size-unit { color: #3B5F10; }
+
+/* 推荐角标（仅 10 道） */
+.batch-size-badge {
+  position: absolute;
+  top: -8rpx;
+  right: -8rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 999rpx;
+  background: #10251A;
+  color: #b8f21c;
+  font-size: 16rpx;
+  font-weight: 900;
+  letter-spacing: 0.5rpx;
+  line-height: 1.3;
+}
+
+/* 当前选择提示 */
+.batch-sheet-current-hint {
+  margin-top: 20rpx;
+  font-size: 22rpx;
+  color: #6C786F;
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* 操作按钮 */
+.batch-sheet-actions {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  gap: 16rpx;
+  margin-top: 20rpx;
+  box-sizing: border-box;
+}
+
+/* 通用按钮重置——修复微信 <button> 默认 margin/padding 导致的溢出 */
+.batch-sheet-action {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  height: 84rpx;
+  margin: 0;
+  padding: 0 16rpx;
+  border-radius: 22rpx;
+  box-sizing: border-box;
+  font-size: 27rpx;
+  font-weight: 900;
+  line-height: 84rpx;
+  text-align: center;
+  overflow: visible;
+  display: block;
+}
+
+.batch-sheet-action::after {
+  border: 0;
+}
+
+/* 取消按钮 */
+.batch-sheet-cancel {
+  background: #ECEFE8;
+  color: #415047;
+  border: 1rpx solid #CDD2C9;
+}
+
+.batch-sheet-cancel:active {
+  background: #E0E3DC;
+}
+
+/* 确认按钮 */
+.batch-sheet-confirm {
+  background-color: #b8f21c;
+  background-image: linear-gradient(135deg, #a9ef12, #c9f83c);
+  color: #0b2b1c;
+  border: none;
+  box-shadow: 0 8rpx 24rpx rgba(169, 216, 0, 0.18);
+}
+
+.batch-sheet-confirm:active {
+  opacity: 0.88;
+}
+
+/* 动画 */
+@keyframes batchMaskIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes batchSheetIn {
+  from { opacity: 0; transform: translateY(42rpx); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .batch-sheet-mask { animation: none !important; }
+  .batch-sheet { animation: none !important; }
+  .batch-size-option { transition: none !important; }
+}
+
+@media (max-width: 360px) {
+  .batch-sheet-title { font-size: 33rpx; }
+  .batch-size-num { font-size: 38rpx; }
+  .batch-sheet { margin-left: 16rpx; margin-right: 16rpx; }
+}

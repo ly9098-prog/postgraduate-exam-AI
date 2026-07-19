@@ -31,7 +31,7 @@ const PRESETS = [
   { key: 'free', label: '自由计时', work: 0, break: 0 },
 ]
 
-const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'ceremony' }
+const FREE_TIMER_MAX_MS = 5 * 60 * 60 * 1000 // 5 hours max for free timer
 
 function parseServerTime(value) {
   if (!value) return NaN
@@ -151,6 +151,7 @@ Page({
 
   _timer: null,
   _freeTimerId: null,
+  _freeTimerFinalizing: false,
   _touchStartX: 0,
   _pageVisible: false,
   _debugTapCount: 0,
@@ -589,7 +590,9 @@ Page({
     }
 
     const elapsedMs = this._getEffectiveFreeElapsedMs()
-    const elapsedSec = Math.floor(elapsedMs / 1000)
+    // Cap display at 5-hour max so UI never shows >05:00:00
+    const cappedMs = Math.min(elapsedMs, FREE_TIMER_MAX_MS)
+    const elapsedSec = Math.floor(cappedMs / 1000)
 
     if (elapsedSec === this._timerState.elapsedSec) return
     const fmt = formatElapsedSec(elapsedSec)
@@ -617,10 +620,14 @@ Page({
       this._freeTimerId = setTimeout(tick, Math.max(100, Math.min(delay, 1000)))
     }
 
-    const tick = () => {
+    const tick = async () => {
       this._freeTimerId = null
       if (this.data.isPaused || this.data.showEndConfirm) return
       this._updateFreeElapsed()
+
+      // Check 5-hour limit after display update; if auto-ended, stop scheduling
+      if (this._checkFreeTimerLimitAndAutoEnd()) return
+
       scheduleNext()
     }
 
@@ -1203,29 +1210,12 @@ Page({
 
   async _confirmEndFreeTimer() {
     if (this.data.actionLoading) return
-    this.setData({ showEndConfirm: false })
+    this.setData({ showEndConfirm: false, actionLoading: true })
     if (!this._timerState.sessionId) return
     this._clearFreeTimerInterval()
     const elapsedSec = Math.max(1, this._timerState.elapsedSec || 0)
-    const totalPausedMs = this._timerState.totalPausedMs || 0
-    const totalPausedSec = Math.floor(totalPausedMs / 1000)
-    try {
-      await api.post(`/pomodoro/${this._timerState.sessionId}/complete`, {
-        actual_duration_sec: elapsedSec,
-        total_paused_sec: totalPausedSec,
-      })
-      wx.showToast({ title: '已记录本次专注', icon: 'none', duration: 2000 })
-    } catch (e) {
-      wx.showToast({ title: '结束计时失败，请重试', icon: 'none' })
-      this.setData({ ringCanvasVisible: true, actionLoading: false })
-      // Don't clear state on failure
-      if (!this.data.isPaused) {
-        this._startFreeTimerInterval()
-      }
-      return
-    }
-    this._resetToIdle()
-    this.loadTodayStats()
+    await this._completeFreeTimerSession(elapsedSec)
+    this.setData({ actionLoading: false })
   },
 
   async _confirmInterruptCountdown() {
@@ -1441,6 +1431,57 @@ Page({
     return Math.max(0, now - startTime - totalPausedMs - displayOffsetMs)
   },
 
+  _checkFreeTimerLimitAndAutoEnd() {
+    if (!this.data.isFreeTimer || this.data.isPaused || this._freeTimerFinalizing) return false
+    const elapsedMs = this._getEffectiveFreeElapsedMs()
+    if (elapsedMs >= FREE_TIMER_MAX_MS) {
+      this._autoFinishFreeTimer()
+      return true
+    }
+    return false
+  },
+
+  async _autoFinishFreeTimer() {
+    if (this._freeTimerFinalizing) return
+    this._freeTimerFinalizing = true
+
+    this._clearFreeTimerInterval()
+
+    // Fix elapsed to exactly 5 hours for the record
+    const elapsedSec = Math.floor(FREE_TIMER_MAX_MS / 1000)
+
+    this._timerState.elapsedSec = elapsedSec
+    const fmt = formatElapsedSec(elapsedSec)
+    this.setData({ freeDisplayTime: fmt.display })
+
+    wx.showToast({ title: '自由计时已达5小时上限，已自动结束', icon: 'none', duration: 2000 })
+
+    await this._completeFreeTimerSession(elapsedSec)
+
+    this._freeTimerFinalizing = false
+  },
+
+  async _completeFreeTimerSession(elapsedSec) {
+    if (!this._timerState.sessionId) return
+    this._clearFreeTimerInterval()
+    const totalPausedMs = this._timerState.totalPausedMs || 0
+    const totalPausedSec = Math.floor(totalPausedMs / 1000)
+    try {
+      await api.post(`/pomodoro/${this._timerState.sessionId}/complete`, {
+        actual_duration_sec: Math.max(1, elapsedSec),
+        total_paused_sec: totalPausedSec,
+      })
+      wx.showToast({ title: '已记录本次专注', icon: 'none', duration: 2000 })
+    } catch (e) {
+      wx.showToast({ title: '结束计时失败，请重试', icon: 'none' })
+      this.setData({ ringCanvasVisible: true, actionLoading: false })
+      // On failure, don't continue counting (stay at 5h max)
+      return
+    }
+    this._resetToIdle()
+    this.loadTodayStats()
+  },
+
   _getEffectivePausedMsFromSession(session) {
     const serverBaseMs = (session.total_paused_sec || 0) * 1000
     let serverEffectiveMs = serverBaseMs
@@ -1650,11 +1691,17 @@ Page({
     if (this.data.isFreeTimer) {
       if (!this.data.isPaused) {
         const elapsedMs = this._getEffectiveFreeElapsedMs(now)
-        const elapsed = Math.floor(elapsedMs / 1000)
+        const cappedMs = Math.min(elapsedMs, FREE_TIMER_MAX_MS)
+        const elapsed = Math.floor(cappedMs / 1000)
         if (elapsed !== this._timerState.elapsedSec) {
           const fmt = formatElapsedSec(elapsed)
           this._timerState.elapsedSec = elapsed
           this.setData({ freeDisplayTime: fmt.display })
+        }
+        // Check limit after display update
+        if (elapsedMs >= FREE_TIMER_MAX_MS) {
+          this._autoFinishFreeTimer()
+          return
         }
       }
       // Idempotent interval start — won't create duplicate
@@ -1916,6 +1963,9 @@ Page({
         : Math.max(0, Math.floor((Date.now() - startTime - totalPausedMs) / 1000))
     }
 
+    // Cap elapsed at 5-hour max to prevent display showing >05:00:00 during restore
+    elapsed = Math.min(elapsed, Math.floor(FREE_TIMER_MAX_MS / 1000))
+
     const fmt = formatElapsedSec(elapsed)
 
     // Resolve subject
@@ -1950,6 +2000,8 @@ Page({
 
     if (!isPaused) {
       this._startFreeTimerInterval()
+      // Check limit immediately after starting interval so elapsed never stays >5h
+      this._checkFreeTimerLimitAndAutoEnd()
     }
   },
 
