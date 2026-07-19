@@ -55,7 +55,7 @@ from app.features.ocr_vl.paddleocr_vl_client import (
     _CircuitBreaker,
     CircuitBreakerOpenError,
     _MAX_JSONL_LINES,
-    _MAX_RESULT_DOWNLOAD_BYTES,
+    _MAX_CONTENT_LENGTH_HEADER_BYTES,
     _get_retry_after,
     _validate_result_url,
 )
@@ -106,7 +106,7 @@ class TestDownloadValidation:
     @pytest.mark.asyncio
     async def test_download_too_large_rejected(self):
         client = PaddleOCRVLClient(api_token="test-token")
-        oversized = b"x" * (_MAX_RESULT_DOWNLOAD_BYTES + 1)
+        oversized = b"x" * (_MAX_CONTENT_LENGTH_HEADER_BYTES + 1)
 
         mock_resp = _MockStreamResponse(
             status_code=200, content=oversized,
@@ -196,6 +196,97 @@ class TestDownloadValidation:
                     "https://storage.example.com/result.jsonl"
                 )
                 assert "hello" in text
+
+    @pytest.mark.asyncio
+    async def test_crlf_handling(self):
+        """CRLF line endings are handled correctly."""
+        client = PaddleOCRVLClient(api_token="test-token")
+        content = '{"idx":1}\r\n{"idx":2}\r\n'
+
+        mock_resp = _MockStreamResponse(
+            status_code=200, content=content.encode(),
+            url="https://storage.example.com/data.jsonl",
+        )
+
+        with patch.object(client, "_get_client") as mock_get_client:
+            mock_get_client.return_value = _MockStreamClient(mock_resp)
+            with patch(
+                "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
+                return_value="https://storage.example.com/data.jsonl",
+            ):
+                text, conf, blocks, raw = await client._download_and_parse_jsonl(
+                    "https://storage.example.com/data.jsonl"
+                )
+                assert len(raw) == 2
+                assert raw[0].get("idx") == 1
+                assert raw[1].get("idx") == 2
+
+    @pytest.mark.asyncio
+    async def test_bom_handling(self):
+        """UTF-8 BOM is stripped from the first line."""
+        client = PaddleOCRVLClient(api_token="test-token")
+        # BOM followed by valid JSONL
+        content = "﻿" + '{"idx":1}\n{"idx":2}\n'
+
+        mock_resp = _MockStreamResponse(
+            status_code=200, content=content.encode("utf-8"),
+            url="https://storage.example.com/data.jsonl",
+        )
+
+        with patch.object(client, "_get_client") as mock_get_client:
+            mock_get_client.return_value = _MockStreamClient(mock_resp)
+            with patch(
+                "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
+                return_value="https://storage.example.com/data.jsonl",
+            ):
+                text, conf, blocks, raw = await client._download_and_parse_jsonl(
+                    "https://storage.example.com/data.jsonl"
+                )
+                assert len(raw) == 2
+
+    @pytest.mark.asyncio
+    async def test_last_line_no_newline(self):
+        """Last line without trailing newline is still processed."""
+        client = PaddleOCRVLClient(api_token="test-token")
+        content = '{"idx":1}\n{"idx":2}'
+
+        mock_resp = _MockStreamResponse(
+            status_code=200, content=content.encode(),
+            url="https://storage.example.com/data.jsonl",
+        )
+
+        with patch.object(client, "_get_client") as mock_get_client:
+            mock_get_client.return_value = _MockStreamClient(mock_resp)
+            with patch(
+                "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
+                return_value="https://storage.example.com/data.jsonl",
+            ):
+                text, conf, blocks, raw = await client._download_and_parse_jsonl(
+                    "https://storage.example.com/data.jsonl"
+                )
+                assert len(raw) == 2
+
+    @pytest.mark.asyncio
+    async def test_empty_lines_skipped(self):
+        """Empty lines in JSONL are silently skipped."""
+        client = PaddleOCRVLClient(api_token="test-token")
+        content = '{"idx":1}\n\n\n{"idx":2}\n'
+
+        mock_resp = _MockStreamResponse(
+            status_code=200, content=content.encode(),
+            url="https://storage.example.com/data.jsonl",
+        )
+
+        with patch.object(client, "_get_client") as mock_get_client:
+            mock_get_client.return_value = _MockStreamClient(mock_resp)
+            with patch(
+                "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
+                return_value="https://storage.example.com/data.jsonl",
+            ):
+                text, conf, blocks, raw = await client._download_and_parse_jsonl(
+                    "https://storage.example.com/data.jsonl"
+                )
+                assert len(raw) == 2
 
 
 class TestRetryAfter:

@@ -45,40 +45,13 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# P0-1: canonical stage order — the single source of truth for determining
-# which stages are "before" or "after" a given artifact's completion point.
-# This list includes ALL known stages in their correct relative order.
-# Optional stages (e.g. repair, ai_validation) are included at their
-# canonical positions; the actual pipeline may skip them if disabled.
-CANONICAL_STAGE_ORDER: list[str] = [
-    "extract",
-    "wangdao_preprocess",
-    "normalize_text",
-    "ocr_correction",
-    "layout_reconstruction",
-    "layout_router",
-    "visual_region_detect",
-    "analyze_structure",
-    "classify_pages",
-    "structure_freeze",
-    "split",
-    "question_bbox",
-    "match",
-    "normalize_schema",
-    "code_language_noise_clean",
-    "code_structure_reconstruct",
-    "classify_questions",
-    "batch_validation",
-    "batch_dedup",
-    "repair",
-    "ai_validation",
-    "similarity_match",
-    "visual_region_assign",
-    "math_detect",
-    "table_detect",
-    "visual_region_crop",
-    "review",
-]
+# P0-1: canonical stage order — derived from PipelineDefinition, the single
+# source of truth.  This list includes ALL known stages in their correct
+# relative order.  Optional stages (e.g. repair, ai_validation) are included
+# at their canonical positions; the actual pipeline may skip them if disabled.
+from app.features.pipeline_definition import PipelineDefinition as _PipelineDefinition
+
+CANONICAL_STAGE_ORDER: list[str] = list(_PipelineDefinition.stage_names())
 
 # Current pipeline version for artifact compatibility checks.
 # Built from stage order hash + code + config fingerprints so that any
@@ -191,15 +164,8 @@ _RUNNING_TTL = 604800        # 7d for running (keep while active)
 
 # Stage artifacts considered "resumable" — reading one allows skipping
 # all prior stages.  The dict maps stage_name → artifact_filename.
-_RESUMABLE_ARTIFACTS: dict[str, str] = {
-    "split": "split.json",
-    "match": "match.json",
-    "normalize_schema": "normalize_schema.json",
-    "math_detect": "math_detect.json",
-    "table_detect": "table_detect.json",
-    "repair": "repair.json",
-    "review": "review_commit_state.json",
-}
+# Derived from PipelineDefinition.
+_RESUMABLE_ARTIFACTS: dict[str, str] = dict(_PipelineDefinition.resumable_artifacts())
 
 # Safe pipeline ID pattern — prevents path traversal via user-supplied IDs
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
