@@ -35,6 +35,7 @@ class OcrPageResult:
     page_index: int
     text: str                     # 拼接全文
     lines: list[OcrLine] = field(default_factory=list)
+    boxes: list = field(default_factory=list)  # 原始 PaddleOCR bbox（用于 legacy bridge）
     confidence: float = 0.0
     transforms: list[dict] | None = None  # TransformRecord list
     coordinate_space: str = "image"       # "image" | "original"

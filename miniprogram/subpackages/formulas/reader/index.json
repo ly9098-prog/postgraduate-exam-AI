@@ -4,7 +4,7 @@
   "backgroundColorTop": "#F4F4EE",
   "backgroundColorBottom": "#F4F4EE",
   "usingComponents": {
-    "formula-card": "/components/formula-card/index",
+    "formula-card": "/subpackages/formulas/components/formula-card/index",
     "premium-nav": "/components/premium-nav/premium-nav"
   }
 }

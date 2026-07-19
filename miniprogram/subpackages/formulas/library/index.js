@@ -1,8 +1,8 @@
 const api = require('../../../utils/api')
 const auth = require('../../../utils/auth')
-const formulaContent = require('../../../utils/formula-content')
+const formulaContent = require('../utils/formula-content')
 const Parser = require('../../../components/mp-html/parser')
-const LatexPlugin = require('../../../components/mp-html/latex/index')
+const LatexPlugin = require('../utils/katex/index')
 const { resolveGraphImageUrl, resolveGraphThumbnailUrl } = require('../utils/formula-graph')
 
 function renderFormulaTitleNodes(title) {

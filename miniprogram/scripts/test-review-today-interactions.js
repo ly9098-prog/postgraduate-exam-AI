@@ -229,9 +229,8 @@ t('REVIEW_BATCH_SIZE_OPTIONS strictly equals [5, 10, 20, 30]', function () {
   assert.deepStrictEqual(REVIEW_BATCH_SIZE_OPTIONS, [5, 10, 20, 30])
 })
 
-t('Action sheet itemList order', function () {
-  var itemList = REVIEW_BATCH_SIZE_OPTIONS.map(function (n) { return '每组 ' + n + ' 道' })
-  assert.deepStrictEqual(itemList, ['每组 5 道', '每组 10 道', '每组 20 道', '每组 30 道'])
+t('Batch size options values are [5, 10, 20, 30]', function () {
+  assert.deepStrictEqual(REVIEW_BATCH_SIZE_OPTIONS, [5, 10, 20, 30])
 })
 
 // ══════════════════════════════════════════════════════════════════
@@ -248,6 +247,9 @@ if (!capturedPageConfig) {
       isStarting: false,
       isContinuing: false,
       reviewBatchSize: 10,
+      pendingBatchSize: 10,
+      showBatchSizeSheet: false,
+      batchSizeOptions: [5, 10, 20, 30],
       elapsedText: '00:00',
       groupQuestions: [],
       submittingGroup: false,
@@ -276,7 +278,8 @@ if (!capturedPageConfig) {
     '_safeTickDelta',
     '_startReviewTimer', '_pauseReviewTimer', '_resumeReviewTimer',
     '_resetReviewTimer', '_clearReviewTimer',
-    'showBatchSizeSelector',
+    'showBatchSizeSelector', 'closeBatchSizeSheet',
+    'selectPendingBatchSize', 'confirmBatchSize',
   ]
   for (var mi = 0; mi < methodsToBind.length; mi++) {
     var mn = methodsToBind[mi]
@@ -320,114 +323,106 @@ if (!capturedPageConfig) {
     assert.strictEqual(mockPage._reviewSession.timerRunning, false)
   })
 
-  // ═══ Batch size tests ═══
+  // ═══ Batch size — custom bottom sheet tests ═══
 
-  t('showBatchSizeSelector • index 0 → reviewBatchSize = 5', function () {
+  t('showBatchSizeSelector opens sheet, sets pendingBatchSize to current', function () {
     mockPage._userSelectedReviewBatchSize = false
     mockPage.data.phase = 'overview'
-    mockPage.data.reviewBatchSize = 10
+    mockPage.data.reviewBatchSize = 20
+    mockPage.data.pendingBatchSize = 10
+    mockPage.data.showBatchSizeSheet = false
 
-    var orig = global.wx.showActionSheet
-    global.wx.showActionSheet = function (opts) { opts.success({ tapIndex: 0 }) }
     mockPage.showBatchSizeSelector()
-    global.wx.showActionSheet = orig
 
-    assert.strictEqual(mockPage.data.reviewBatchSize, 5)
-    assert.strictEqual(mockPage._userSelectedReviewBatchSize, true)
+    assert.strictEqual(mockPage.data.showBatchSizeSheet, true)
+    assert.strictEqual(mockPage.data.pendingBatchSize, 20)
   })
 
-  t('showBatchSizeSelector • index 1 → reviewBatchSize = 10', function () {
-    mockPage._userSelectedReviewBatchSize = false
-    mockPage.data.phase = 'overview'
-    mockPage.data.reviewBatchSize = 5
+  t('selectPendingBatchSize(5) updates only pendingBatchSize, not reviewBatchSize', function () {
+    mockPage.data.reviewBatchSize = 10
+    mockPage.data.pendingBatchSize = 10
+    mockPage.data.showBatchSizeSheet = true
 
-    var orig = global.wx.showActionSheet
-    global.wx.showActionSheet = function (opts) { opts.success({ tapIndex: 1 }) }
-    mockPage.showBatchSizeSelector()
-    global.wx.showActionSheet = orig
+    mockPage.selectPendingBatchSize({ currentTarget: { dataset: { value: 5 } } })
 
+    assert.strictEqual(mockPage.data.pendingBatchSize, 5)
+    assert.strictEqual(mockPage.data.reviewBatchSize, 10, 'reviewBatchSize must not change')
+  })
+
+  t('selectPendingBatchSize(30) updates only pendingBatchSize', function () {
+    mockPage.data.reviewBatchSize = 10
+    mockPage.data.pendingBatchSize = 10
+
+    mockPage.selectPendingBatchSize({ currentTarget: { dataset: { value: 30 } } })
+
+    assert.strictEqual(mockPage.data.pendingBatchSize, 30)
     assert.strictEqual(mockPage.data.reviewBatchSize, 10)
   })
 
-  t('showBatchSizeSelector • index 2 → reviewBatchSize = 20', function () {
-    mockPage._userSelectedReviewBatchSize = false
-    mockPage.data.phase = 'overview'
-    mockPage.data.reviewBatchSize = 10
+  t('selectPendingBatchSize ignores invalid values', function () {
+    mockPage.data.pendingBatchSize = 10
 
-    var orig = global.wx.showActionSheet
-    global.wx.showActionSheet = function (opts) { opts.success({ tapIndex: 2 }) }
-    mockPage.showBatchSizeSelector()
-    global.wx.showActionSheet = orig
+    mockPage.selectPendingBatchSize({ currentTarget: { dataset: { value: 99 } } })
 
-    assert.strictEqual(mockPage.data.reviewBatchSize, 20)
+    assert.strictEqual(mockPage.data.pendingBatchSize, 10)
   })
 
-  t('showBatchSizeSelector • index 3 → reviewBatchSize = 30', function () {
+  t('confirmBatchSize applies pendingBatchSize and closes sheet', function () {
     mockPage._userSelectedReviewBatchSize = false
-    mockPage.data.phase = 'overview'
     mockPage.data.reviewBatchSize = 10
+    mockPage.data.pendingBatchSize = 30
+    mockPage.data.showBatchSizeSheet = true
 
-    var orig = global.wx.showActionSheet
-    global.wx.showActionSheet = function (opts) { opts.success({ tapIndex: 3 }) }
-    mockPage.showBatchSizeSelector()
-    global.wx.showActionSheet = orig
+    mockPage.confirmBatchSize()
 
     assert.strictEqual(mockPage.data.reviewBatchSize, 30)
+    assert.strictEqual(mockPage.data.showBatchSizeSheet, false)
+    assert.strictEqual(mockPage._userSelectedReviewBatchSize, true)
   })
 
-  t('showBatchSizeSelector • cancel keeps current value', function () {
+  t('closeBatchSizeSheet closes without modifying reviewBatchSize', function () {
     mockPage._userSelectedReviewBatchSize = false
-    mockPage.data.phase = 'overview'
     mockPage.data.reviewBatchSize = 10
+    mockPage.data.pendingBatchSize = 20
+    mockPage.data.showBatchSizeSheet = true
 
-    var orig = global.wx.showActionSheet
-    global.wx.showActionSheet = function (opts) { opts.fail({ errMsg: 'cancel' }) }
-    mockPage.showBatchSizeSelector()
-    global.wx.showActionSheet = orig
+    mockPage.closeBatchSizeSheet()
 
+    assert.strictEqual(mockPage.data.showBatchSizeSheet, false)
     assert.strictEqual(mockPage.data.reviewBatchSize, 10)
     assert.strictEqual(mockPage._userSelectedReviewBatchSize, false)
   })
 
   t('showBatchSizeSelector • non-overview phase does nothing', function () {
+    mockPage.data.showBatchSizeSheet = false
     mockPage.data.phase = 'reviewing'
     mockPage.data.reviewBatchSize = 10
 
-    var called = false
-    var orig = global.wx.showActionSheet
-    global.wx.showActionSheet = function () { called = true }
     mockPage.showBatchSizeSelector()
-    global.wx.showActionSheet = orig
 
-    assert.strictEqual(called, false)
+    assert.strictEqual(mockPage.data.showBatchSizeSheet, false)
   })
 
   t('showBatchSizeSelector • isStarting guard', function () {
+    mockPage.data.showBatchSizeSheet = false
     mockPage.data.phase = 'overview'
     mockPage.data.isStarting = true
     mockPage.data.reviewBatchSize = 10
 
-    var called = false
-    var orig = global.wx.showActionSheet
-    global.wx.showActionSheet = function () { called = true }
     mockPage.showBatchSizeSelector()
-    global.wx.showActionSheet = orig
 
-    assert.strictEqual(called, false)
+    assert.strictEqual(mockPage.data.showBatchSizeSheet, false)
   })
 
   t('showBatchSizeSelector • isContinuing guard', function () {
+    mockPage.data.showBatchSizeSheet = false
     mockPage.data.phase = 'overview'
     mockPage.data.isContinuing = true
     mockPage.data.reviewBatchSize = 10
 
-    var called = false
-    var orig = global.wx.showActionSheet
-    global.wx.showActionSheet = function () { called = true }
     mockPage.showBatchSizeSelector()
-    global.wx.showActionSheet = orig
 
-    assert.strictEqual(called, false)
+    assert.strictEqual(mockPage.data.showBatchSizeSheet, false)
   })
 
   // ═══ User selection vs API override tests ═══
