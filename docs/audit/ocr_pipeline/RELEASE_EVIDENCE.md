@@ -1,8 +1,11 @@
 # Release Evidence — OCR Pipeline
 
 **Date:** 2026-07-19  
-**Commit:** `565277e` (dirty)  
-**Previous Phase:** P5 lifecycle complete, P6/P7 in progress
+**Code-under-test SHA:** `61bd102` (clean — no staged/unstaged changes to source)  
+**Evidence-document SHA:** (updated by this edit)  
+**Python interpreter:** `./backend/.venv/bin/python`  
+**Python version:** 3.12.3  
+**Test environment:** `OCR_EXECUTION_BACKEND=paddlex_http OCR_USE_GPU=false CUDA_VISIBLE_DEVICES=""`
 
 ---
 
@@ -64,7 +67,7 @@
 | SSRF protection: DNS rebinding, redirect re-validation, private IP blocking | PASS | `_validate_result_url()` checks https scheme, resolves DNS, rejects private/loopback/link-local IPs. Redirect URL re-validated after redirect. 12 tests in `test_p5_ssrf_http_lifecycle.py`. |
 | Retry-After handling + `AIModelConfigResolver` integration | PASS | Retry-After extracted from error messages. `from_resolver()` classmethod creates client from `admin_ai_settings` DB config. 8 tests covering retry, fallback, resolver integration. |
 | External OCR API DB config E2E validation | PASS | `scripts/run_remote_ocr_db_config_validation.py` uses `AIModelConfigResolver`. Tests timeout/429/5xx/CircuitBreaker. |
-| VL result download size limits | PARTIAL | Post-download size check (`_MAX_RESULT_DOWNLOAD_BYTES=50MB`) and JSONL line limits (`_MAX_JSONL_LINES=50000`). No stream limiting — downloads full body before checking. |
+| VL result download size limits | VERIFIED | Bounded streaming with `codecs.getincrementaldecoder`, compressed + decoded size limits enforced mid-stream, line count check during streaming, CRLF/BOM/last-line handling. 20 tests in `test_p5_ssrf_http_lifecycle.py`. |
 
 ## P6 — Stage SSOT, Artifact/Cache Fingerprint & Resume Equivalence
 
@@ -73,11 +76,13 @@
 | Artifact path traversal safety | PASS | `_artifact_path()` validates filename with `os.path.basename()`. 9 tests in `test_artifact_path_traversal.py`. |
 | Resume equivalence | PASS | `test_ocr_resume_equivalence.py`: 25 tests. Artifact save/load round-trip (7 resumable stages), config fingerprint invalidation, pipeline version mismatch detection, `find_resumable_stage()` logic (6), artifact cleanup. |
 | Cache consistency (config fingerprint) | PASS | `_build_config_fingerprint()`: 11 key `OcrRuntimeConfig` fields hashed into artifact metadata. `check_artifact_compatibility()` compares `current_pipeline_version()` inclusive of config fingerprint. Config change → automatic artifact invalidation. |
+| PipelineDefinition (P6-01) | VERIFIED | Single `PipelineDefinition` module (`app/features/pipeline_definition.py`) with 27 `StageDefinition` entries. `_build_pipeline()` iterates `enabled_stages()`. `CANONICAL_STAGE_ORDER` and `_RESUMABLE_ARTIFACTS` are aliases. 18 tests in `test_pipeline_definition.py`. |
 | DocumentIR production write path | PARTIAL | `document_ir_to_blocks()` bridge ready. 179 legacy call sites, 8 HIGH violations (all in comments/docstrings). Natural migration as coordinator replaces legacy orchestrator. |
 
 ## Tests Summary
 
-**Sprint 4D + P5 + P6/P7 Regression: 335 passed, 59 xfailed, 0 failed** (2026-07-19)
+**P4-P6 Regression: 166 passed, 0 failed, 2 warnings** (2026-07-19 14:40 UTC)  
+**Command:** `python3 -m pytest tests/test_candidate_evaluator_privacy.py tests/test_p5_ssrf_http_lifecycle.py tests/test_p6_fingerprint_manifest.py tests/test_pipeline_fingerprint.py tests/test_artifact_fingerprint_compatibility.py tests/test_unified_safety_evaluator.py tests/test_coordinator_boundaries.py tests/test_ocr_resume_equivalence.py tests/test_gateway_bypass_zero.py tests/test_pipeline_definition.py -v --tb=short`
 
 | Suite | Tests | Status |
 |-------|-------|--------|
@@ -93,9 +98,11 @@
 | Coordinator mode E2E + shadow | 6 | PASS |
 | Quality gate all candidate paths | 2+ | PASS |
 | Artifact path traversal (P6-02) | 9 | PASS |
-| SSRF/HTTP lifecycle (P5) | 15 | PASS |
-| Fault injection (P7-03, NEW) | 22 | PASS |
-| Resume equivalence (P6-03, NEW) | 25 | PASS |
+| SSRF/HTTP lifecycle (P5) | 20 | PASS |
+| Fault injection (P7-03) | 22 | PASS |
+| Resume equivalence (P6-03) | 25 | PASS |
+| Pipeline fingerprint + manifest (P6) | 22 | PASS |
+| PipelineDefinition (P6-01) | 18 | PASS |
 | Text-only benchmark | 41 | 59 xfailed |
 
 ### Commands
@@ -134,7 +141,7 @@ GPU: NVIDIA GeForce RTX 3050 (WSL2 passthrough, unstable)
 | Item | Status | Evidence |
 |------|--------|----------|
 | CI workflow | PARTIAL | Python 3.12, ruff + mypy + bandit + pip-audit. Static arch + non-GPU regression (13 suites). Text-only benchmark (advisory). GPU-dependent tests skipped. Import smoke test covers 7 core modules. |
-| Release evidence document | PARTIAL | This document — updated with P5/P6-02 evidence, P5/P6/P7 status table, test count 217 passed. |
+| Release evidence document | VERIFIED | This document — updated with P5-02 (bounded streaming), P6-01 (PipelineDefinition) statuses, current test counts (166 passed), SHA and environment recorded. |
 | Benchmark runner (text-only CI) | PARTIAL | 100 cases in `tests/ocr_bench/`. 41 PASS / 59 xfail (known score < 80). Pytest integration with parametrized cases. CI step added (continue-on-error, advisory). ScenarioBucket enum extended. |
 | Live-OCR benchmark | UNVERIFIED | Requires PaddleOCR runtime. Runner code exists (`run_live_ocr()`) but not runnable in CI. |
 | Fault injection tests | VERIFIED | `test_ocr_fault_injection.py`: 22 tests with real PaddleOCR runtime. Timeout injection (4), worker SIGKILL crash + auto-recovery (2), corrupt/empty input (3), stats accuracy (2), shutdown conditions (4), Future API (3), **100-iteration fault storm** mixing timeouts + crashes. All passed. |
@@ -143,6 +150,6 @@ GPU: NVIDIA GeForce RTX 3050 (WSL2 passthrough, unstable)
 
 | Phase | VERIFIED | PARTIAL | UNVERIFIED |
 |-------|----------|---------|------------|
-| P5 (Remote VL lifecycle) | 3 | 1 | 0 |
-| P6 (Stage SSOT/fingerprint) | 3 | 1 | 0 |
-| P7 (Benchmark/CI/release) | 1 | 3 | 0 |
+| P5 (Remote VL lifecycle) | 4 | 0 | 0 |
+| P6 (Stage SSOT/fingerprint) | 4 | 1 | 0 |
+| P7 (Benchmark/CI/release) | 2 | 2 | 0 |
