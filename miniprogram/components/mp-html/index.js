@@ -6,7 +6,7 @@
  * Author: Jin Yufeng
  */
 const Parser = require('./parser')
-const plugins = []
+const plugins = [require('./latex/index')]
 
 Component({
   data: {
