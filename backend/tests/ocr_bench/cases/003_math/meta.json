@@ -1,0 +1,15 @@
+{
+  "scenario": "math",
+  "description": "数学公式题 — 包含分数、矩阵、求和、极限等 LaTeX 符号",
+  "subject": "math2",
+  "expected_questions": 3,
+  "expected_qnumbers": [1, 2, 3],
+  "expected_answers": {
+    "1": "A",
+    "2": "C",
+    "3": "A"
+  },
+  "tags": ["formula", "latex", "fraction", "matrix"],
+  "known_failure_types": ["formula_damage", "subscript_confusion"],
+  "date_added": "2026-07-17"
+}

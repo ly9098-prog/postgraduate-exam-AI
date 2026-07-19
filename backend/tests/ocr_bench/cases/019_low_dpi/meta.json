@@ -1,0 +1,23 @@
+{
+  "scenario": "low_dpi",
+  "subject": "exam408",
+  "description": "低DPI扫描 — 字符粘连、间隙消失",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "A",
+    "2": "C"
+  },
+  "known_failure_types": [
+    "字符粘连",
+    "漏识别"
+  ],
+  "tags": [
+    "low_dpi",
+    "blurry"
+  ],
+  "date_added": "2026-07-17"
+}

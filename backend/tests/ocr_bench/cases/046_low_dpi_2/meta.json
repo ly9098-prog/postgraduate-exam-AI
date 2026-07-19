@@ -1,0 +1,21 @@
+{
+  "case_id": "046_low_dpi_2",
+  "scenario": "low_dpi",
+  "subject": "exam408",
+  "description": "低DPI变体",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "tags": [
+    "low_dpi",
+    "degraded"
+  ],
+  "expected_questions": 3,
+  "expected_qnumbers": [
+    1,
+    2,
+    3
+  ],
+  "expected_answers": {},
+  "verified": true
+}

@@ -1,0 +1,19 @@
+{
+  "scenario": "clean_single_column",
+  "subject": "exam408",
+  "description": "多选题 — 多个正确答案需全部选出",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "ABC",
+    "2": "BCD"
+  },
+  "tags": [
+    "multiple_choice",
+    "composite"
+  ],
+  "date_added": "2026-07-17"
+}

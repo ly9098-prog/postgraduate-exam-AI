@@ -1,0 +1,23 @@
+{
+  "scenario": "header_footer",
+  "subject": "exam408",
+  "description": "页眉页脚干扰 — 页码和章节标题混入正文",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "B",
+    "2": "A"
+  },
+  "known_failure_types": [
+    "页眉干扰"
+  ],
+  "tags": [
+    "header",
+    "footer",
+    "page_number"
+  ],
+  "date_added": "2026-07-17"
+}

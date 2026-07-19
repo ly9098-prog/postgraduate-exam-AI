@@ -1,0 +1,14 @@
+{
+  "scenario": "code_c",
+  "description": "C 代码题 — 包含指针、比较运算符、箭头运算符",
+  "subject": "exam408",
+  "expected_questions": 2,
+  "expected_qnumbers": [1, 2],
+  "expected_answers": {
+    "1": "B",
+    "2": "D"
+  },
+  "tags": ["code", "pointers", "operators"],
+  "known_failure_types": ["operator_substitution", "arrow_loss"],
+  "date_added": "2026-07-17"
+}

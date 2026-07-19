@@ -1,0 +1,11 @@
+1. 微分方程 y'' + y = 0 的通解是
+A. y = C1 cos x + C2 sin x
+B. y = e^x (C1 + C2 x)
+C. y = C1 e^x + C2 e^(-x)
+D. y = C1 + C2 e^x
+
+2. 下列级数中收敛的是
+A. ∑(n=1 to ∞) 1/n
+B. ∑(n=1 to ∞) 1/n^2
+C. ∑(n=1 to ∞) (-1)^n
+D. ∑(n=1 to ∞) n

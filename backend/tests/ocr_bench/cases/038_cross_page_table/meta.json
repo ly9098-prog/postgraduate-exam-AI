@@ -1,0 +1,24 @@
+{
+  "case_id": "038_cross_page_table",
+  "scenario": "cross_page",
+  "subject": "exam408",
+  "description": "跨页表格题",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "tags": [
+    "cross_page",
+    "table"
+  ],
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {},
+  "source_type": "anonymized_real",
+  "human_verified": false,
+  "verified_by": "automated",
+  "verification_version": "v1",
+  "input_sha256": ""
+}

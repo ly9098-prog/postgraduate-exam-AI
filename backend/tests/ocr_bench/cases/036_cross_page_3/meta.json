@@ -1,0 +1,21 @@
+{
+  "case_id": "036_cross_page_3",
+  "scenario": "cross_page",
+  "subject": "exam408",
+  "description": "跨页题目变体",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "tags": [
+    "cross_page",
+    "merge"
+  ],
+  "expected_questions": 3,
+  "expected_qnumbers": [
+    1,
+    2,
+    3
+  ],
+  "expected_answers": {},
+  "verified": true
+}

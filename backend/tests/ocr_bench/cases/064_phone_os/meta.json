@@ -1,0 +1,25 @@
+{
+  "case_id": "064_phone_os",
+  "scenario": "phone_photo",
+  "subject": "exam408",
+  "description": "手机拍照 OS 题目",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "source_type": "synthetic",
+  "human_verified": false,
+  "verified_by": "automated",
+  "verification_version": "v1",
+  "input_sha256": "",
+  "tags": [
+    "phone_photo",
+    "os"
+  ],
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {},
+  "verified": false
+}

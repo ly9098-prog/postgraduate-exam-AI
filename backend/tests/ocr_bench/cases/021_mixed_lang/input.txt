@@ -1,0 +1,13 @@
+1. 在数据库系统中，ACID属性中的I表示：
+A. Atomicity
+B. Isolation
+C. Integrity
+D. Identity
+答案：B
+
+2. 下列哪个是Deadlock的四个必要条件之一：
+A. Preemption
+B. Hold and Wait
+C. Circular Wait
+D. 以上都是
+KEY: D

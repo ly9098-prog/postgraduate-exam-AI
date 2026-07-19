@@ -1,0 +1,22 @@
+{
+  "case_id": "031_double_column_real",
+  "scenario": "multi_column",
+  "subject": "exam408",
+  "description": "真实双栏题目页",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "tags": [
+    "double_column",
+    "real_world"
+  ],
+  "expected_questions": 4,
+  "expected_qnumbers": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "expected_answers": {},
+  "verified": true
+}

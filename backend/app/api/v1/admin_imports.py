@@ -255,9 +255,11 @@ async def admin_resume_pipeline(
     async def _run_resume():
         try:
             from app.core.database import async_session
+            from app.features.pipeline_coordinator_entry import (
+                run_pipeline,
+            )
             from app.features.pipeline_orchestrator import (
                 _pipeline_store as _ps,
-                run_import_pipeline,
             )
 
             async def _progress(stages_dict, current_stage, errors):
@@ -275,7 +277,7 @@ async def admin_resume_pipeline(
                 })
 
             async with async_session() as resume_db:
-                result = await run_import_pipeline(
+                result = await run_pipeline(
                     file_path=tmp_path,
                     source_type=source_type,
                     source_file=source_file,

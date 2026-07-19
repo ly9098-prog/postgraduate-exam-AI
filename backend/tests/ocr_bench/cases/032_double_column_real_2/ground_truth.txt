@@ -1,0 +1,23 @@
+1. placeholder question 1
+A. option_a
+B. option_b
+答案：B
+
+2. placeholder question 2
+A. option_a
+B. option_b
+C. option_c
+D. option_d
+答案：A
+
+3. placeholder question 3
+A. option_a
+B. option_b
+答案：B
+
+4. placeholder question 4
+A. option_a
+B. option_b
+C. option_c
+D. option_d
+答案：A

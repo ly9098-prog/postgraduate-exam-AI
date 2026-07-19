@@ -1,0 +1,22 @@
+{
+  "scenario": "watermark",
+  "subject": "exam408",
+  "description": "水印污染 — 扫描全能王水印覆盖选项区",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "B",
+    "2": "D"
+  },
+  "known_failure_types": [
+    "水印污染"
+  ],
+  "tags": [
+    "watermark",
+    "scanning"
+  ],
+  "date_added": "2026-07-17"
+}

@@ -1,0 +1,23 @@
+{
+  "scenario": "clean_single_column",
+  "subject": "exam408",
+  "description": "数据结构 — 栈与队列基础选择题",
+  "expected_questions": 4,
+  "expected_qnumbers": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "expected_answers": {
+    "1": "B",
+    "2": "A",
+    "3": "D",
+    "4": "C"
+  },
+  "tags": [
+    "baseline",
+    "data_structure"
+  ],
+  "date_added": "2026-07-17"
+}

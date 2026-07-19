@@ -37,3 +37,14 @@ def run_match_stage(
         "matched_count": len(matched),
         "warnings": warnings,
     }
+
+
+def run_match_stage_from_ir(
+    raw_questions: list[dict],
+    doc: "DocumentIR",
+    structure: dict | None = None,
+) -> dict:
+    """DocumentIR entry point for run_match_stage."""
+    from app.core.document_ir import document_ir_to_blocks
+    blocks = document_ir_to_blocks(doc)
+    return run_match_stage(raw_questions, blocks, structure=structure)

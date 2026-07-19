@@ -1,0 +1,26 @@
+{
+  "case_id": "048_os_deadlock",
+  "scenario": "single_column",
+  "subject": "exam408",
+  "description": "OS 死锁与并发",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "source_type": "synthetic",
+  "human_verified": false,
+  "verified_by": "automated",
+  "verification_version": "v1",
+  "input_sha256": "",
+  "tags": [
+    "single_column",
+    "os"
+  ],
+  "expected_questions": 3,
+  "expected_qnumbers": [
+    1,
+    2,
+    3
+  ],
+  "expected_answers": {},
+  "verified": false
+}

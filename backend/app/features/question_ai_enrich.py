@@ -138,7 +138,7 @@ async def enrich_import(
     qi.ai_raw_response = raw
 
     # 记录 AI enrich trace
-    from app.features.ai_safety import AIEditTrace
+    from app.core.ai_trace import AIEditTrace
     enrich_trace = AIEditTrace(
         stage="ai_enrich",
         model=resp.get("model", "unknown"),
@@ -306,7 +306,7 @@ async def enrich_batch(
         qi.ai_metadata = normalized
         qi.ai_raw_response = raw
 
-        from app.features.ai_safety import AIEditTrace
+        from app.core.ai_trace import AIEditTrace
         enrich_trace = AIEditTrace(
             stage="ai_enrich",
             model=resp.get("model", "unknown"),

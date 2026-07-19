@@ -563,12 +563,12 @@ async def _merge_image_texts(
 
     try:
         async with async_session() as pdb:
-            from app.features.pipeline_orchestrator import run_import_pipeline
+            from app.features.pipeline_coordinator_entry import run_pipeline
 
             merge_opts = dict(options)
             merge_opts["_merged_from_job"] = job_id
             merge_opts["skip_ocr_correction"] = True
-            result = await run_import_pipeline(
+            result = await run_pipeline(
                 file_content=merged_text.encode("utf-8"),
                 source_type="txt",
                 source_file=f"batch_merged_{job_id}",
@@ -767,7 +767,7 @@ async def _run_single_image(
 
         pipeline_start = _now()
         try:
-            result = await run_import_pipeline(
+            result = await run_pipeline(
                 file_content=cleaned_text.encode("utf-8"),
                 file_path=_tmp_img_path,
                 source_type="image",

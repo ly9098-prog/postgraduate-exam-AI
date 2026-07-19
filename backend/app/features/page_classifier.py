@@ -313,3 +313,13 @@ def filter_blocks_by_classification(
             allowed_pages.add(pc["page"])
 
     return [b for b in normalized_blocks if b.get("page", 1) in allowed_pages]
+
+
+def classify_pages_from_ir(
+    doc: "DocumentIR",
+    section_markers: list[dict] | None = None,
+) -> list[dict]:
+    """DocumentIR entry point for classify_pages."""
+    from app.core.document_ir import document_ir_to_blocks
+    blocks = document_ir_to_blocks(doc)
+    return classify_pages(blocks, section_markers=section_markers)

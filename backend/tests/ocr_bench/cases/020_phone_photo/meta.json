@@ -1,0 +1,19 @@
+{
+  "scenario": "phone_photo",
+  "subject": "exam408",
+  "description": "手机拍照 — 透视变形、阴影、光照不均",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "C",
+    "2": "C"
+  },
+  "tags": [
+    "phone_photo",
+    "perspective"
+  ],
+  "date_added": "2026-07-17"
+}

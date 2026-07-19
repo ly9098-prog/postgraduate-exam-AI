@@ -431,16 +431,31 @@ def _compare_freeze_results(
     }
 
 
-def _build_raw_questions_preview(raw_questions: list[dict]) -> list[dict]:
-    preview: list[dict] = []
-    for question in raw_questions[:20]:
-        item = dict(question)
-        raw_text = item.get("raw_question_text")
-        if isinstance(raw_text, str) and len(raw_text) > 300:
-            item["raw_question_text"] = raw_text[:300]
-            item["raw_question_text_truncated"] = True
-        preview.append(item)
-    return preview
+def _safe_hash_preview(data: list[dict]) -> dict:
+    """Return a safe (hash + count) summary instead of raw question text."""
+    import hashlib
+    import json
+    raw = json.dumps(data, sort_keys=True, ensure_ascii=False, default=str)
+    return {
+        "count": len(data),
+        "md5": hashlib.md5(raw.encode()).hexdigest()[:16],
+    }
+
+
+def _safe_text_digest(text: str, max_len: int = 16) -> str:
+    """Return a short hash digest instead of raw OCR text."""
+    import hashlib
+    return hashlib.md5(text.encode()).hexdigest()[:max_len]
+
+
+def _safe_text_summary(text: str) -> dict:
+    """Return a safe summary of text (hash + metrics), never the text itself."""
+    import hashlib
+    return {
+        "len": len(text),
+        "nonempty_lines": len([l for l in text.splitlines() if l.strip()]),
+        "digest": hashlib.md5(text.encode()).hexdigest()[:12],
+    }
 
 
 def _remap_frozen_registry_vl_rebuild(
@@ -694,8 +709,8 @@ _PIPELINE_STATUS_TTL = 86400  # 24h
 _CHECKPOINT_REDIS_PREFIX = "import:pipeline:stage_ckpt"
 _CHECKPOINT_TTL = 86400  # 24h — same as pipeline status
 
-# P0-3: 主 store 只保留这些瘦身字段；diagnostics、raw_questions_preview、
-# corrections 等大对象走独立 KV 以避免单条记录被占到 1–3 MB。
+# P4: 主 store 只保留这些瘦身字段；diagnostics 等大对象走独立 KV。
+# raw_questions_preview 已替换为 _safe_hash_preview。no raw text in store.
 _PIPELINE_STORE_FIELDS = (
     "pipeline_id",
     "status",
@@ -708,7 +723,6 @@ _PIPELINE_STORE_FIELDS = (
     "started_at",
     "finished_at",
     "batch_id",
-    "raw_text_preview",
     "question_count",
     "quality_report",
     "artifacts",
@@ -1176,31 +1190,7 @@ def _ocr_scanned_pdf(
                 del pix
                 batch_images.append((page_idx + 1, png_bytes))
 
-            if settings.OCR_USE_PROCESS_POOL:
-                from app.core.ocr_process_pool import ocr_process_pool
-                pp_results: dict[int, dict] = {}
-                for idx, png in batch_images:
-                    try:
-                        pp_results[idx] = ocr_process_pool.get_text_with_boxes(
-                            png, idx, skip_rotation=True,
-                        )
-                    except Exception as exc:
-                        pp_results[idx] = {
-                            "page_index": idx, "text": "", "boxes": [],
-                            "failed": True, "error": str(exc),
-                        }
-                results = {
-                    idx: {
-                        "page_index": r["page_index"],
-                        "text": r["text"],
-                        "boxes": r["boxes"],
-                        "failed": r["failed"],
-                        "error": r.get("error"),
-                    }
-                    for idx, r in pp_results.items()
-                }
-            else:
-                results = ocr_pages_with_boxes(batch_images, skip_rotation=True)
+            results = ocr_pages_with_boxes(batch_images, skip_rotation=True)
             batch_image_map = {idx: png for idx, png in batch_images}
             failed_images = [
                 (idx, batch_image_map[idx])
@@ -1317,126 +1307,13 @@ def _blocks_to_document_ir(
     engine: str = "paddleocr",
     source_bytes: bytes | None = None,
 ) -> "DocumentIR | None":
-    """Convert OCR blocks (from _ocr_scanned_pdf) into a DocumentIR.
+    """Convert OCR blocks into a DocumentIR.
 
-    Each distinct page in *blocks* becomes a ``PageIR`` containing one
-    ``RegionIR`` (type="text") with the block's text and box-level line
-    information.
-
-    Returns None when ``document_ir`` module is unavailable.
+    Delegates to ``document_ir_builder.blocks_to_document_ir()``.
+    Kept as thin wrapper for backward compat.
     """
-    try:
-        from app.core.document_ir import (
-            BBox,
-            DocumentIR,
-            LineIR,
-            PageIR,
-            Provenance,
-            RegionIR,
-            make_line_id_from_bbox,
-            make_page_id,
-            make_region_id_from_bbox,
-            new_document,
-        )
-    except ImportError:
-        return None
-
-    if not blocks:
-        return None
-
-    # Use pipeline_id as disambiguator when source_bytes is unavailable
-    effective_source = source_bytes
-    if effective_source is None and pipeline_id:
-        effective_source = pipeline_id.encode('utf-8')
-
-    doc = new_document(source_bytes=effective_source)
-    doc.pipeline_fingerprint = pipeline_id
-
-    # Group blocks by page
-    page_blocks: dict[int, list[dict]] = {}
-    for b in blocks:
-        pid = b.get("page", 1)
-        page_blocks.setdefault(pid, []).append(b)
-
-    for page_idx in sorted(page_blocks):
-        page_b = page_blocks[page_idx]
-        pw = page_b[0].get("page_width", 0)
-        ph = page_b[0].get("page_height", 0)
-
-        # Stable page_id
-        zero_based_idx = page_idx - 1
-        page_id = make_page_id(doc.document_id, zero_based_idx)
-
-        regions: list[RegionIR] = []
-        for bi, b in enumerate(page_b):
-            text = b.get("normalized_text") or b.get("text", "")
-            boxes = b.get("boxes", []) or []
-            lines: list[LineIR] = []
-            for li, box_entry in enumerate(boxes):
-                bbox_coords = box_entry.get("bbox")
-                bbox = BBox(*bbox_coords) if bbox_coords and len(bbox_coords) == 4 else None
-                conf = box_entry.get("conf", 1.0)
-                low_conf = box_entry.get("low_conf", False)
-                flags: set[str] = set()
-                if low_conf:
-                    flags.add("low_conf")
-
-                # Try to extract per-line text from the block text
-                line_text = ""
-                if li < len(text.split("\n")):
-                    line_text = text.split("\n")[li]
-
-                # Stable region_id (lazy — compute once per block, before line loop)
-                if bi < len(regions):
-                    region_id_for_line = regions[bi].region_id
-                else:
-                    region_id_for_line = ""
-
-                lines.append(LineIR(
-                    line_id=make_line_id_from_bbox(
-                        region_id_for_line, bbox, line_text,
-                    ) if region_id_for_line else f"p{zero_based_idx}r{bi}l{li}",
-                    text=line_text,
-                    bbox=bbox,
-                    confidence=conf,
-                    flags=flags,
-                    provenance=Provenance(engine=engine),
-                ))
-
-            source = b.get("source", "ocr")
-            region_flags: set[str] = set()
-            if b.get("has_boxes"):
-                region_flags.add("has_boxes")
-            if b.get("_ocr_boxes_failed"):
-                region_flags.add("boxes_failed")
-
-            # Build region with stable ID
-            block_bbox = BBox(0, 0, pw, ph) if pw and ph else None
-            region_id = make_region_id_from_bbox(page_id, block_bbox, engine, text)
-
-            region = RegionIR(
-                region_id=region_id,
-                region_type="text",
-                bbox=block_bbox,
-                lines=lines,
-                flags=region_flags,
-                provenance=Provenance(engine=engine),
-            )
-            # Now retroactively assign line_id for lines that didn't have region_id yet
-            for line in region.lines:
-                if not line.line_id or not line.line_id.startswith(region_id):
-                    line.line_id = make_line_id_from_bbox(region_id, line.bbox, line.text)
-            regions.append(region)
-
-        doc.add_page(PageIR(
-            page_id=page_id,
-            page_index=zero_based_idx,
-            width=pw,
-            height=ph,
-            regions=regions,
-        ))
-
-    return doc
+    from app.features.document_ir_builder import blocks_to_document_ir as _builder
+    return _builder(blocks, pipeline_id=pipeline_id, engine=engine, source_bytes=source_bytes)
 
 
 # ---------------------------------------------------------------------------
@@ -2253,6 +2130,8 @@ def _merge_risk_flag_counts(chunks: list[dict]) -> dict[str, int]:
 
 
 def _visual_boundary_preview(blocks: list[dict], boundary: dict) -> str:
+    """Return a safe summary for boundary preview (never raw text)."""
+    import hashlib
     block_index = boundary.get("block_index")
     line_index = boundary.get("line_index")
     if not isinstance(block_index, int) or not isinstance(line_index, int):
@@ -2263,7 +2142,8 @@ def _visual_boundary_preview(blocks: list[dict], boundary: dict) -> str:
         text = block.get("normalized_text") or block.get("text") or ""
         lines = str(text).split("\n")
         if 0 <= line_index < len(lines):
-            return "".join(line.strip() for line in lines[line_index:line_index + 2])[:80]
+            joined = "".join(line.strip() for line in lines[line_index:line_index + 2])
+            return hashlib.md5(joined.encode()).hexdigest()[:12]
     return ""
 
 
@@ -3380,7 +3260,7 @@ class ImportPipeline:
                     "structure_score": round(structure_score, 3),
                     "corrected": False,
                     "reason": f"exception: {fix_result}",
-                    "before_preview": text[:200],
+                    "before_preview": _safe_text_summary(text),
                 })
                 metrics.record_failure(model="exception", before=text)
                 continue
@@ -3493,8 +3373,8 @@ class ImportPipeline:
                         "structure_score": round(structure_score, 3),
                         "corrected": True,
                         "model_used": result.model_used,
-                        "before_preview": text[:200],
-                        "after_preview": safe_text[:200],
+                        "before_preview": _safe_text_summary(text),
+                        "after_preview": _safe_text_summary(safe_text),
                         "safety": safety_dict,
                     })
                 else:
@@ -3511,7 +3391,7 @@ class ImportPipeline:
                         "corrected": False,
                         "reason": f"safety_rejected: {reason_code}",
                         "model_used": result.model_used,
-                        "before_preview": text[:200],
+                        "before_preview": _safe_text_summary(text),
                         "safety": safety_dict,
                     })
             else:
@@ -3522,7 +3402,7 @@ class ImportPipeline:
                     "structure_score": round(structure_score, 3),
                     "corrected": False,
                     "reason": result.raw_response or "no_change",
-                    "before_preview": text[:200],
+                    "before_preview": _safe_text_summary(text),
                 })
                 metrics.record_unchanged(
                     model=result.model_used,
@@ -4125,7 +4005,7 @@ class ImportPipeline:
                 if "book_pdf_prose_like" in (q.get("risk_flags") or [])
             ),
             "layout_filter": layout_filter_diagnostics,
-            "raw_questions_preview": _build_raw_questions_preview(raw_questions),
+            "raw_questions_hash": _safe_hash_preview(raw_questions),
             "failure_reason": None,
         }
 
@@ -4144,15 +4024,13 @@ class ImportPipeline:
                 if _looks_like_book_pdf_prose_candidate(question):
                     prose_skipped += 1
                     if len(prose_preview) < 20:
-                        preview_text = re.sub(
-                            r"\s+",
-                            " ",
-                            str(question.get("raw_question_text") or "").strip(),
-                        )[:80]
+                        import hashlib
+                        raw_text = str(question.get("raw_question_text") or "")
                         prose_preview.append({
                             "page": question.get("page_start"),
                             "number": question.get("number"),
-                            "text": preview_text,
+                            "text_hash": hashlib.md5(raw_text.encode()).hexdigest()[:12],
+                            "text_len": len(raw_text),
                         })
                     continue
                 kept_questions.append(question)

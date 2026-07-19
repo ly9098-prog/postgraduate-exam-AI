@@ -1,0 +1,26 @@
+{
+  "case_id": "095_mixed_image_io",
+  "scenario": "mixed_content",
+  "subject": "exam408",
+  "description": "图文混排 IO 管理",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "source_type": "synthetic",
+  "human_verified": false,
+  "verified_by": "automated",
+  "verification_version": "v1",
+  "input_sha256": "",
+  "tags": [
+    "mixed_content",
+    "os"
+  ],
+  "expected_questions": 3,
+  "expected_qnumbers": [
+    1,
+    2,
+    3
+  ],
+  "expected_answers": {},
+  "verified": false
+}

@@ -1,0 +1,27 @@
+{
+  "case_id": "033_triple_column",
+  "scenario": "multi_column",
+  "subject": "exam408",
+  "description": "三栏布局",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "tags": [
+    "triple_column"
+  ],
+  "expected_questions": 6,
+  "expected_qnumbers": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "expected_answers": {},
+  "source_type": "anonymized_real",
+  "human_verified": false,
+  "verified_by": "automated",
+  "verification_version": "v1",
+  "input_sha256": ""
+}

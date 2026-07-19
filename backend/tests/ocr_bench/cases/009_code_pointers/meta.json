@@ -1,0 +1,20 @@
+{
+  "scenario": "code_c",
+  "subject": "exam408",
+  "description": "C 指针与链表操作（->, ==, NULL 等符号）",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "A",
+    "2": "D"
+  },
+  "tags": [
+    "code",
+    "pointers",
+    "linked_list"
+  ],
+  "date_added": "2026-07-17"
+}

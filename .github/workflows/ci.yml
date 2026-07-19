@@ -79,6 +79,11 @@ jobs:
             tests/test_ai_config_snapshot.py \
             tests/test_code_integrity.py \
             tests/test_ocr_resume_equivalence.py \
+            tests/test_candidate_evaluator_privacy.py \
+            tests/test_pipeline_fingerprint.py \
+            tests/test_artifact_fingerprint_compatibility.py \
+            tests/test_p6_fingerprint_manifest.py \
+            tests/test_unified_safety_evaluator.py \
             -v --tb=short 2>&1
 
       - name: Import smoke test

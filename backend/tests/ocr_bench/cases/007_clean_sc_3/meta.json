@@ -1,0 +1,21 @@
+{
+  "scenario": "clean_single_column",
+  "subject": "exam408",
+  "description": "操作系统 — 进程管理基础选择题",
+  "expected_questions": 3,
+  "expected_qnumbers": [
+    1,
+    2,
+    3
+  ],
+  "expected_answers": {
+    "1": "C",
+    "2": "B",
+    "3": "A"
+  },
+  "tags": [
+    "baseline",
+    "os"
+  ],
+  "date_added": "2026-07-17"
+}

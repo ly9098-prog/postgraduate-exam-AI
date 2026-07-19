@@ -1,0 +1,20 @@
+{
+  "case_id": "037_cross_page_code",
+  "scenario": "cross_page",
+  "subject": "exam408",
+  "description": "跨页代码题",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "tags": [
+    "cross_page",
+    "code"
+  ],
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {},
+  "verified": true
+}

@@ -1,0 +1,20 @@
+{
+  "scenario": "code_cpp",
+  "subject": "exam408",
+  "description": "C++ 模板与STL容器代码题",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "B",
+    "2": "C"
+  },
+  "tags": [
+    "code",
+    "stl",
+    "template"
+  ],
+  "date_added": "2026-07-17"
+}

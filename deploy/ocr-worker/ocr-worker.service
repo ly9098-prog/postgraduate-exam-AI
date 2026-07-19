@@ -1,0 +1,46 @@
+[Unit]
+Description=2240AI Local OCR Worker — GPU-powered OCR processing
+Documentation=https://github.com/ly9098-prog/postgraduate-ai
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ocr-worker
+Group=ocr-worker
+WorkingDirectory=/opt/2240ai-v2/backend
+
+# GPU environment — isolated from main CPU env
+ExecStart=/opt/2240ai-v2/backend/.venv-ocr-gpu/bin/python \
+    -m app.ocr_worker.daemon \
+    --server https://xzshub.top \
+    --worker-id local-ocr-01
+
+# Environment file (0600 permissions required)
+EnvironmentFile=/opt/2240ai-v2/deploy/ocr-worker/ocr-worker.env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=64
+
+# CPU/Restart
+CPUSchedulingPolicy=other
+Restart=on-failure
+RestartSec=10
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# OOM prevention
+OOMScoreAdjust=500
+
+# GPU isolation
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

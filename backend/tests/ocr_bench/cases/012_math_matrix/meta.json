@@ -1,0 +1,20 @@
+{
+  "scenario": "math",
+  "subject": "math2",
+  "description": "矩阵运算与特征值",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "D",
+    "2": "B"
+  },
+  "tags": [
+    "formula",
+    "matrix",
+    "eigenvalue"
+  ],
+  "date_added": "2026-07-17"
+}

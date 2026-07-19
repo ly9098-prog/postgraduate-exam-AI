@@ -1,0 +1,25 @@
+{
+  "case_id": "083_code_malloc",
+  "scenario": "code",
+  "subject": "exam408",
+  "description": "C 语言动态内存分配",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "source_type": "synthetic",
+  "human_verified": false,
+  "verified_by": "automated",
+  "verification_version": "v1",
+  "input_sha256": "",
+  "tags": [
+    "code",
+    "c_language"
+  ],
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {},
+  "verified": false
+}

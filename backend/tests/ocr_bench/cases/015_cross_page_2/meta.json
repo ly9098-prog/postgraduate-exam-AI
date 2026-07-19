@@ -1,0 +1,19 @@
+{
+  "scenario": "cross_page",
+  "subject": "exam408",
+  "description": "跨页题目 — 长代码题分页",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "A",
+    "2": "B"
+  },
+  "tags": [
+    "cross_page",
+    "code"
+  ],
+  "date_added": "2026-07-17"
+}

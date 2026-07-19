@@ -44,8 +44,8 @@ def _init_worker() -> None:
     """
     os.environ["GLOG_minloglevel"] = "2"
     try:
-        from app.services.ocr_service import _get_ocr
-        _get_ocr()
+        from app.core.ocr_engine import create_engine_for_child
+        _ = create_engine_for_child()
         logger.info("Process worker PaddleOCR initialized (pid=%d)", os.getpid())
     except Exception as exc:
         logger.error("Process worker PaddleOCR init failed (pid=%d): %s",
@@ -58,9 +58,10 @@ def _run_one_page(image_bytes: bytes, page_index: int) -> str:
 
     This MUST be a module-level function (pickled across process boundary).
     """
-    from app.services.ocr_service import _ocr_one_page
-    _, text = _ocr_one_page(image_bytes, page_index)
-    return text
+    from app.core.ocr_engine import create_engine_for_child
+    engine = create_engine_for_child()
+    result = engine.recognize(image_bytes, page_index, mode="text")
+    return result.get("text", "")
 
 
 def _run_one_page_with_boxes(
@@ -73,15 +74,48 @@ def _run_one_page_with_boxes(
 
     Module-level for pickling across process boundary.
     """
-    from app.services.ocr_service import _ocr_one_page_with_boxes
-    result = _ocr_one_page_with_boxes(image_bytes, page_index, skip_rotation)
+    from app.core.ocr_engine import create_engine_for_child
+    engine = create_engine_for_child()
+    result = engine.recognize(image_bytes, page_index, skip_rotation=skip_rotation, mode="boxes")
     return {
-        "page_index": result.page_index,
-        "text": result.text,
-        "boxes": result.boxes or [],
-        "failed": result.failed,
-        "error": result.error,
+        "page_index": result.get("page_index", page_index),
+        "text": result.get("text", ""),
+        "boxes": result.get("boxes", []),
+        "failed": result.get("failed", False),
+        "error": result.get("error"),
     }
+
+
+def _run_lightweight_ocr(image_bytes: bytes, page_index: int) -> dict:
+    """Lightweight OCR for exercise region detection.
+
+    Minimal preprocessing (autocontrast + resize, no deskew/crop).
+    cls=False for speed.
+    Runs in child ProcessPoolExecutor worker.
+    """
+    from PIL import Image, ImageOps
+    import io
+    import numpy as np
+    from app.core.ocr_engine import create_engine_for_child
+
+    engine = create_engine_for_child()
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = ImageOps.autocontrast(img.convert("L"), cutoff=1).convert("RGB")
+    img = engine._resize(img)
+
+    arr = np.array(img)
+    with engine._lock:
+        raw_result = engine._ocr.ocr(arr, cls=False)
+
+    text_parts: list[str] = []
+    for line_group in raw_result or []:
+        if line_group is None:
+            continue
+        for line_info in line_group:
+            if line_info and len(line_info) >= 2 and line_info[1]:
+                text_parts.append(str(line_info[1][0]))
+
+    return {"page_index": page_index, "text": "\n".join(text_parts)}
 
 
 class OcrProcessPool:
@@ -200,6 +234,41 @@ class OcrProcessPool:
         self._total_submitted += 1
         try:
             return future.result(timeout=effective_timeout)
+        except TimeoutError:
+            self._total_timeouts += 1
+            self._shutdown_now()
+            raise
+        except Exception:
+            self._shutdown_now()
+            raise
+
+    def get_lightweight_text(
+        self,
+        image_bytes: bytes,
+        page_index: int = 0,
+        timeout: int | None = None,
+    ) -> str:
+        """Lightweight OCR for exercise region detection.
+
+        Minimal preprocessing (autocontrast + resize, no deskew).
+        cls=False for speed. Runs in child process.
+        """
+        effective_timeout = timeout or _PROCESS_TIMEOUT
+        try:
+            future = self._ensure().submit(
+                _run_lightweight_ocr, image_bytes, page_index,
+            )
+        except (BrokenProcessPool, RuntimeError):
+            self._total_crashes += 1
+            self._shutdown_now()
+            future = self._ensure().submit(
+                _run_lightweight_ocr, image_bytes, page_index,
+            )
+
+        self._total_submitted += 1
+        try:
+            result = future.result(timeout=effective_timeout)
+            return result.get("text", "")
         except TimeoutError:
             self._total_timeouts += 1
             self._shutdown_now()

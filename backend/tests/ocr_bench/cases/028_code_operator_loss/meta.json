@@ -1,0 +1,22 @@
+{
+  "scenario": "code_c",
+  "subject": "exam408",
+  "description": "代码符号丢失 — ->, ==, !=, ++ 被省略或替换",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "C",
+    "2": "D"
+  },
+  "known_failure_types": [
+    "operator_substitution"
+  ],
+  "tags": [
+    "code",
+    "operator"
+  ],
+  "date_added": "2026-07-17"
+}

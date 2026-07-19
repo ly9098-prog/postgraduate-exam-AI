@@ -1,0 +1,23 @@
+1. 下列模板声明中，正确的是：
+A. template<class T>
+B. template<typename T>
+C. 以上两者都正确
+D. template<type T>
+正确答案：C
+
+2. 执行以下代码后输出为：
+
+template <typename T>
+T max(T a, T b) {
+    return a > b ? a : b;
+}
+int main() {
+    cout << max<int>(3, 7) << endl;
+    return 0;
+}
+
+A. 3
+B. 7
+C. 编译错误
+D. 不确定
+【答案】B

@@ -404,15 +404,17 @@ def line_from_ocr_entry(
 
 
 def new_document(source_bytes: bytes | None = None) -> DocumentIR:
-    """Create a fresh DocumentIR with a unique content-addressed ID."""
+    """Create a fresh DocumentIR with a content-addressed ID from the source.
+
+    Stable: same source bytes → same document_id (and thus same page/region/line IDs).
+    The monotonic_ns timer has been removed to guarantee deterministic IDs
+    across PaddleOCR instances, process restarts, and Worker resumptions.
+    """
     source_hash = ""
     if source_bytes:
         source_hash = hashlib.sha256(source_bytes).hexdigest()
-    # document_id is content-addressed from source_hash + monotonic time
-    # (to disambiguate identical bytes processed at different times)
     doc_id = _stable_id(
         source_hash or "empty",
-        str(time.monotonic_ns()),
         length=16,
     )
     return DocumentIR(
@@ -844,6 +846,7 @@ def document_ir_to_blocks(doc: DocumentIR) -> list[dict]:
         blocks.append({
             "page": page.page_index + 1,
             "text": all_text,
+            "normalized_text": all_text,
             "boxes": boxes,
             "page_width": page.width,
             "page_height": page.height,

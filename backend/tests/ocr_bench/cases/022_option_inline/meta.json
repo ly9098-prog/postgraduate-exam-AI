@@ -1,0 +1,22 @@
+{
+  "scenario": "clean_single_column",
+  "subject": "exam408",
+  "description": "选项并排 — A/B选项在一行 C/D在下一行",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "A",
+    "2": "D"
+  },
+  "known_failure_types": [
+    "选项顺序错误"
+  ],
+  "tags": [
+    "option_inline",
+    "layout"
+  ],
+  "date_added": "2026-07-17"
+}
