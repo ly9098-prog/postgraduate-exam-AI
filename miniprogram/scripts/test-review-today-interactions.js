@@ -1,0 +1,582 @@
+/**
+ * test-review-today-interactions.js
+ *
+ * Regression test for review-today timer and batch-size switching.
+ *
+ * Tests pure functions exported by the page module and simulates
+ * page state via Page() config capture mocking.
+ */
+
+/* eslint-disable no-console */
+const assert = require('assert')
+const path = require('path')
+
+// ── Mock WeChat globals before requiring the page module ─────
+global.wx = global.wx || {
+  getWindowInfo() { return { windowWidth: 375, pixelRatio: 2 } },
+  getDeviceInfo() { return { system: 'Node.js regression test' } },
+  getStorageSync() { return null },
+  setStorageSync() {},
+  setNavigationBarColor() {},
+  showToast() {},
+  showActionSheet(opts) {
+    // Default mock: tap on index 0 (每组 5 道)
+    if (typeof opts.success === 'function') {
+      opts.success({ tapIndex: 0, cancel: false })
+    }
+  },
+  createSelectorQuery() {
+    return {
+      in() { return this },
+      select() { return this },
+      fields() { return this },
+      exec(cb) { cb && cb([]) },
+    }
+  },
+}
+
+// ── Pre-populate require.cache for utility modules ───────────
+var apiMockPath = path.resolve(__dirname, '../utils/api.js')
+var stemRenderPath = path.resolve(__dirname, '../utils/stem-render.js')
+var adapterPath = path.resolve(__dirname, '../utils/question-runner-adapter.js')
+var answerPath = path.resolve(__dirname, '../utils/answer.js')
+var subjectMetaPath = path.resolve(__dirname, '../utils/subject-meta.js')
+var configPath = path.resolve(__dirname, '../config.js')
+var debugPath = path.resolve(__dirname, '../utils/debug.js')
+
+var apiMock = { get: function () { return Promise.resolve({}) }, post: function () { return Promise.resolve({}) } }
+var stemRenderMock = {
+  buildRenderModel: function () { return { mode: 'SEGMENTS', segments: [] } },
+  setRenderGuardPage: function () {},
+  resetRenderGuard: function () {},
+  stripLeadingOptionLabel: function (k, v) { return v },
+  toPlainInlineMathText: function () { return '' },
+  needsRichRender: function () { return false },
+  textToHtml: function () { return '' },
+}
+var adapterMock = {
+  isMultiBlankChoice: function () { return false },
+  getBlankOptionGroups: function () { return [] },
+  enrichBlankOptionGroups: function () { return [] },
+  enrichBlankOptionGroupsReadonly: function () { return [] },
+  buildOptionList: function () { return [] },
+  buildOptionListReadonly: function () { return [] },
+  buildOptionListFromFlags: function () { return [] },
+  computeAnsweredCount: function () { return 0 },
+  buildAnsweredFlags: function () { return {} },
+  applyAnsweredFlags: function (qs) { return qs },
+  isQuestionAnswered: function () { return false },
+  countAnswered: function () { return 0 },
+  normalizeBlankAnswer: function () { return {} },
+  serializeBlankAnswer: function () { return '' },
+  getQuestionImages: function () { return [] },
+  computeExtraImages: function () { return [] },
+}
+var answerMock = {
+  isMultipleChoiceType: function () { return false },
+  isTrueFalseType: function () { return false },
+  normalizeChoiceAnswer: function () { return [] },
+  serializeChoiceAnswer: function (a) { return a },
+  serializeBlankAnswer: function () { return '' },
+}
+var subjectMetaMock = { getSubjectName: function (s) { return s || '' } }
+var configMock = { DEV: false, enableMathImage: false }
+var debugMock = {
+  debugLog: function () {},
+  isDebugMode: function () { return false },
+  saveDebugSnapshot: function () {},
+  createTraceId: function () { return '' },
+  shouldDebugQuestion: function () { return false },
+}
+
+if (!require.cache) require.cache = {}
+require.cache[apiMockPath] = { exports: apiMock }
+require.cache[stemRenderPath] = { exports: stemRenderMock }
+require.cache[adapterPath] = { exports: adapterMock }
+require.cache[answerPath] = { exports: answerMock }
+require.cache[subjectMetaPath] = { exports: subjectMetaMock }
+require.cache[configPath] = { exports: configMock }
+require.cache[debugPath] = { exports: debugMock }
+
+// ── Mock Page() to capture config ──────────────────────────────
+var capturedPageConfig = null
+global.Page = function (config) {
+  capturedPageConfig = config
+}
+
+// ── Load the page module ───────────────────────────────────────
+var pagePath = path.join(__dirname, '../pages/review-today/review-today.js')
+var pageModule
+try {
+  pageModule = require(pagePath)
+} catch (e) {
+  console.error('FAILED to load page module:', e.message)
+  console.error(e.stack)
+  process.exit(1)
+}
+
+var fn = pageModule || {}
+var normalizeReviewBatchSize = fn.normalizeReviewBatchSize
+var formatReviewElapsed = fn.formatReviewElapsed
+var REVIEW_BATCH_SIZE_OPTIONS = fn.REVIEW_BATCH_SIZE_OPTIONS
+
+var testsPassed = 0
+var testsFailed = 0
+
+function t(desc, fn) {
+  try {
+    fn()
+    testsPassed++
+    console.log('  ✓', desc)
+  } catch (e) {
+    testsFailed++
+    console.error('  ✗', desc, '-', e.message)
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 1. formatReviewElapsed tests
+// ══════════════════════════════════════════════════════════════════
+console.log('\n--- 1. Timer format: formatReviewElapsed ---')
+
+t('0 seconds → "00:00"', function () {
+  assert.strictEqual(formatReviewElapsed(0), '00:00')
+})
+
+t('1 second → "00:01"', function () {
+  assert.strictEqual(formatReviewElapsed(1), '00:01')
+})
+
+t('9 seconds → "00:09"', function () {
+  assert.strictEqual(formatReviewElapsed(9), '00:09')
+})
+
+t('65 seconds → "01:05"', function () {
+  assert.strictEqual(formatReviewElapsed(65), '01:05')
+})
+
+t('3600 seconds → "60:00"', function () {
+  assert.strictEqual(formatReviewElapsed(3600), '60:00')
+})
+
+t('negative → "00:00"', function () {
+  assert.strictEqual(formatReviewElapsed(-5), '00:00')
+})
+
+t('null → "00:00"', function () {
+  assert.strictEqual(formatReviewElapsed(null), '00:00')
+})
+
+t('undefined → "00:00"', function () {
+  assert.strictEqual(formatReviewElapsed(undefined), '00:00')
+})
+
+// ══════════════════════════════════════════════════════════════════
+// 2. normalizeReviewBatchSize tests
+// ══════════════════════════════════════════════════════════════════
+console.log('\n--- 2. Batch size: normalizeReviewBatchSize ---')
+
+t('"20" → 20', function () {
+  assert.strictEqual(normalizeReviewBatchSize('20'), 20)
+})
+
+t('15 → 10 (fallback)', function () {
+  assert.strictEqual(normalizeReviewBatchSize(15), 10)
+})
+
+t('NaN → 10', function () {
+  assert.strictEqual(normalizeReviewBatchSize(NaN), 10)
+})
+
+t('0 → 10', function () {
+  assert.strictEqual(normalizeReviewBatchSize(0), 10)
+})
+
+t('-5 → 10', function () {
+  assert.strictEqual(normalizeReviewBatchSize(-5), 10)
+})
+
+t('null → 10', function () {
+  assert.strictEqual(normalizeReviewBatchSize(null), 10)
+})
+
+t('undefined → 10', function () {
+  assert.strictEqual(normalizeReviewBatchSize(undefined), 10)
+})
+
+t('5 → 5', function () {
+  assert.strictEqual(normalizeReviewBatchSize(5), 5)
+})
+
+t('10 → 10', function () {
+  assert.strictEqual(normalizeReviewBatchSize(10), 10)
+})
+
+t('20 → 20', function () {
+  assert.strictEqual(normalizeReviewBatchSize(20), 20)
+})
+
+t('30 → 30', function () {
+  assert.strictEqual(normalizeReviewBatchSize(30), 30)
+})
+
+// ══════════════════════════════════════════════════════════════════
+// 3. REVIEW_BATCH_SIZE_OPTIONS constant
+// ══════════════════════════════════════════════════════════════════
+console.log('\n--- 3. Batch size options constant ---')
+
+t('REVIEW_BATCH_SIZE_OPTIONS strictly equals [5, 10, 20, 30]', function () {
+  assert.deepStrictEqual(REVIEW_BATCH_SIZE_OPTIONS, [5, 10, 20, 30])
+})
+
+t('Action sheet itemList order', function () {
+  var itemList = REVIEW_BATCH_SIZE_OPTIONS.map(function (n) { return '每组 ' + n + ' 道' })
+  assert.deepStrictEqual(itemList, ['每组 5 道', '每组 10 道', '每组 20 道', '每组 30 道'])
+})
+
+// ══════════════════════════════════════════════════════════════════
+// 4. Page config method tests
+// ══════════════════════════════════════════════════════════════════
+console.log('\n--- 4. Page config interaction tests ---')
+
+if (!capturedPageConfig) {
+  console.error('  SKIP: Page config not captured')
+} else {
+  var mockPage = {
+    data: {
+      phase: 'overview',
+      isStarting: false,
+      isContinuing: false,
+      reviewBatchSize: 10,
+      elapsedText: '00:00',
+      groupQuestions: [],
+      submittingGroup: false,
+    },
+    _reviewSession: {
+      timerStartedAt: 0,
+      timerElapsedMs: 0,
+      timerRunning: false,
+    },
+    _timerInterval: null,
+    _userSelectedReviewBatchSize: false,
+    _clearCelebrationTimer: function () {},
+    _clearMasterUndo: function () {},
+    setData: function (patch) {
+      if (typeof patch === 'object' && patch !== null) {
+        for (var key in patch) {
+          if (patch.hasOwnProperty(key)) {
+            mockPage.data[key] = patch[key]
+          }
+        }
+      }
+    },
+  }
+
+  var methodsToBind = [
+    '_safeTickDelta',
+    '_startReviewTimer', '_pauseReviewTimer', '_resumeReviewTimer',
+    '_resetReviewTimer', '_clearReviewTimer',
+    'showBatchSizeSelector',
+  ]
+  for (var mi = 0; mi < methodsToBind.length; mi++) {
+    var mn = methodsToBind[mi]
+    if (typeof capturedPageConfig[mn] === 'function') {
+      mockPage[mn] = capturedPageConfig[mn].bind(mockPage)
+    }
+  }
+
+  // ═══ Timer lifecycle tests ═══
+
+  t('Initial elapsedText is "00:00"', function () {
+    assert.strictEqual(mockPage.data.elapsedText, '00:00')
+  })
+
+  t('_startReviewTimer does not create duplicate intervals', function () {
+    mockPage._clearReviewTimer()
+    mockPage._resetReviewTimer()
+    mockPage._startReviewTimer()
+    var first = mockPage._timerInterval
+    mockPage._startReviewTimer()
+    assert.strictEqual(mockPage._timerInterval, first, 'interval should not be replaced')
+    mockPage._clearReviewTimer()
+  })
+
+  t('_pauseReviewTimer clears interval and timerRunning = false', function () {
+    mockPage._clearReviewTimer()
+    mockPage._resetReviewTimer()
+    // Start then immediately pause — state check is synchronous
+    mockPage._startReviewTimer()
+    mockPage._pauseReviewTimer()
+    assert.strictEqual(mockPage._timerInterval, null)
+    assert.strictEqual(mockPage._reviewSession.timerRunning, false)
+  })
+
+  t('_clearReviewTimer clears interval and sets timerRunning = false', function () {
+    mockPage._resetReviewTimer()
+    mockPage._startReviewTimer()
+    assert.ok(mockPage._timerInterval !== null)
+    mockPage._clearReviewTimer()
+    assert.strictEqual(mockPage._timerInterval, null)
+    assert.strictEqual(mockPage._reviewSession.timerRunning, false)
+  })
+
+  // ═══ Batch size tests ═══
+
+  t('showBatchSizeSelector • index 0 → reviewBatchSize = 5', function () {
+    mockPage._userSelectedReviewBatchSize = false
+    mockPage.data.phase = 'overview'
+    mockPage.data.reviewBatchSize = 10
+
+    var orig = global.wx.showActionSheet
+    global.wx.showActionSheet = function (opts) { opts.success({ tapIndex: 0 }) }
+    mockPage.showBatchSizeSelector()
+    global.wx.showActionSheet = orig
+
+    assert.strictEqual(mockPage.data.reviewBatchSize, 5)
+    assert.strictEqual(mockPage._userSelectedReviewBatchSize, true)
+  })
+
+  t('showBatchSizeSelector • index 1 → reviewBatchSize = 10', function () {
+    mockPage._userSelectedReviewBatchSize = false
+    mockPage.data.phase = 'overview'
+    mockPage.data.reviewBatchSize = 5
+
+    var orig = global.wx.showActionSheet
+    global.wx.showActionSheet = function (opts) { opts.success({ tapIndex: 1 }) }
+    mockPage.showBatchSizeSelector()
+    global.wx.showActionSheet = orig
+
+    assert.strictEqual(mockPage.data.reviewBatchSize, 10)
+  })
+
+  t('showBatchSizeSelector • index 2 → reviewBatchSize = 20', function () {
+    mockPage._userSelectedReviewBatchSize = false
+    mockPage.data.phase = 'overview'
+    mockPage.data.reviewBatchSize = 10
+
+    var orig = global.wx.showActionSheet
+    global.wx.showActionSheet = function (opts) { opts.success({ tapIndex: 2 }) }
+    mockPage.showBatchSizeSelector()
+    global.wx.showActionSheet = orig
+
+    assert.strictEqual(mockPage.data.reviewBatchSize, 20)
+  })
+
+  t('showBatchSizeSelector • index 3 → reviewBatchSize = 30', function () {
+    mockPage._userSelectedReviewBatchSize = false
+    mockPage.data.phase = 'overview'
+    mockPage.data.reviewBatchSize = 10
+
+    var orig = global.wx.showActionSheet
+    global.wx.showActionSheet = function (opts) { opts.success({ tapIndex: 3 }) }
+    mockPage.showBatchSizeSelector()
+    global.wx.showActionSheet = orig
+
+    assert.strictEqual(mockPage.data.reviewBatchSize, 30)
+  })
+
+  t('showBatchSizeSelector • cancel keeps current value', function () {
+    mockPage._userSelectedReviewBatchSize = false
+    mockPage.data.phase = 'overview'
+    mockPage.data.reviewBatchSize = 10
+
+    var orig = global.wx.showActionSheet
+    global.wx.showActionSheet = function (opts) { opts.fail({ errMsg: 'cancel' }) }
+    mockPage.showBatchSizeSelector()
+    global.wx.showActionSheet = orig
+
+    assert.strictEqual(mockPage.data.reviewBatchSize, 10)
+    assert.strictEqual(mockPage._userSelectedReviewBatchSize, false)
+  })
+
+  t('showBatchSizeSelector • non-overview phase does nothing', function () {
+    mockPage.data.phase = 'reviewing'
+    mockPage.data.reviewBatchSize = 10
+
+    var called = false
+    var orig = global.wx.showActionSheet
+    global.wx.showActionSheet = function () { called = true }
+    mockPage.showBatchSizeSelector()
+    global.wx.showActionSheet = orig
+
+    assert.strictEqual(called, false)
+  })
+
+  t('showBatchSizeSelector • isStarting guard', function () {
+    mockPage.data.phase = 'overview'
+    mockPage.data.isStarting = true
+    mockPage.data.reviewBatchSize = 10
+
+    var called = false
+    var orig = global.wx.showActionSheet
+    global.wx.showActionSheet = function () { called = true }
+    mockPage.showBatchSizeSelector()
+    global.wx.showActionSheet = orig
+
+    assert.strictEqual(called, false)
+  })
+
+  t('showBatchSizeSelector • isContinuing guard', function () {
+    mockPage.data.phase = 'overview'
+    mockPage.data.isContinuing = true
+    mockPage.data.reviewBatchSize = 10
+
+    var called = false
+    var orig = global.wx.showActionSheet
+    global.wx.showActionSheet = function () { called = true }
+    mockPage.showBatchSizeSelector()
+    global.wx.showActionSheet = orig
+
+    assert.strictEqual(called, false)
+  })
+
+  // ═══ User selection vs API override tests ═══
+
+  t('User selects 20, buildReviewOverviewVM with API batch_size=10 keeps 20', function () {
+    mockPage._userSelectedReviewBatchSize = true
+    mockPage.data.reviewBatchSize = 20
+    if (typeof capturedPageConfig.buildReviewOverviewVM !== 'function') { throw new Error('buildReviewOverviewVM not found') }
+    var vm = capturedPageConfig.buildReviewOverviewVM.call(mockPage, {
+      batch_size: 10, today_due_count: 50, today_completed_count: 20,
+      today_remaining_count: 30, estimated_minutes: 15,
+    })
+    assert.strictEqual(vm.reviewBatchSize, 20)
+  })
+
+  t('User NOT selected, API returns 30, buildReviewOverviewVM uses 30', function () {
+    mockPage._userSelectedReviewBatchSize = false
+    mockPage.data.reviewBatchSize = 10
+    var vm = capturedPageConfig.buildReviewOverviewVM.call(mockPage, {
+      batch_size: 30, today_due_count: 50, today_completed_count: 20,
+      today_remaining_count: 30, estimated_minutes: 15,
+    })
+    assert.strictEqual(vm.reviewBatchSize, 30)
+  })
+
+  t('startTodayReview references this.data.reviewBatchSize', function () {
+    var src = capturedPageConfig.startTodayReview.toString()
+    assert.ok(src.indexOf('batch_size: this.data.reviewBatchSize') >= 0)
+  })
+
+  t('nextGroup references this.data.reviewBatchSize', function () {
+    var src = capturedPageConfig.nextGroup.toString()
+    assert.ok(src.indexOf('batch_size: this.data.reviewBatchSize') >= 0)
+  })
+
+  t('onUnload clears timer interval', function () {
+    if (typeof capturedPageConfig.onUnload !== 'function') { throw new Error('onUnload not found') }
+    mockPage._timerInterval = 'mock-interval'
+    mockPage._reviewSession.timerRunning = true
+    capturedPageConfig.onUnload.call(mockPage)
+    assert.strictEqual(mockPage._timerInterval, null)
+  })
+
+  // ═══ Time-delta guard tests ═══
+
+  t('_safeTickDelta clamps negative delta to 0', function () {
+    if (typeof capturedPageConfig._safeTickDelta !== 'function') { throw new Error('_safeTickDelta not found') }
+    var bound = capturedPageConfig._safeTickDelta.bind(mockPage)
+    assert.strictEqual(bound(-5000), 0, 'negative raw delta should be 0')
+    assert.strictEqual(bound(-1), 0, '-1 ms should be 0')
+  })
+
+  t('_safeTickDelta caps large delta at 10000', function () {
+    if (typeof capturedPageConfig._safeTickDelta !== 'function') { throw new Error('_safeTickDelta not found') }
+    var bound = capturedPageConfig._safeTickDelta.bind(mockPage)
+    assert.strictEqual(bound(60000), 10000, '60s jump should be capped to 10000')
+    assert.strictEqual(bound(3600000), 10000, '1h jump should be capped to 10000')
+  })
+
+  t('_safeTickDelta passes normal delta through', function () {
+    if (typeof capturedPageConfig._safeTickDelta !== 'function') { throw new Error('_safeTickDelta not found') }
+    var bound = capturedPageConfig._safeTickDelta.bind(mockPage)
+    assert.strictEqual(bound(500), 500, '500ms should pass through')
+    assert.strictEqual(bound(0), 0, '0ms should pass through')
+    assert.strictEqual(bound(9999), 9999, '9999ms should pass through')
+  })
+
+  t('System time jump backward does not corrupt accumulated time via pause', function () {
+    mockPage._clearReviewTimer()
+    mockPage._resetReviewTimer()
+    mockPage._reviewSession.timerElapsedMs = 5000
+    mockPage._reviewSession.timerStartedAt = Date.now() + 60000 // simulate clock went back
+    mockPage._timerInterval = 'mock-simulated' // trick _pauseReviewTimer into proceeding
+
+    mockPage._pauseReviewTimer()
+    // After fix: negative delta clamped to 0, so timerElapsedMs unchanged
+    assert.strictEqual(mockPage._reviewSession.timerElapsedMs, 5000,
+      'timerElapsedMs should remain 5000 (negative delta clamped to 0)')
+    assert.strictEqual(mockPage._timerInterval, null)
+    assert.strictEqual(mockPage._reviewSession.timerRunning, false)
+    mockPage._timerInterval = null // clean up
+  })
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 5. WXML structural checks
+// ══════════════════════════════════════════════════════════════════
+console.log('\n--- 5. WXML / component contract checks ---')
+
+var fs = require('fs')
+var wxml = fs.readFileSync(path.join(__dirname, '../pages/review-today/review-today.wxml'), 'utf8')
+
+t('review-today.wxml passes elapsedText to quiz-runner', function () {
+  assert.ok(wxml.indexOf('elapsedText="{{elapsedText}}"') >= 0)
+})
+
+t('review-today.wxml mission-batch has bindtap', function () {
+  assert.ok(wxml.indexOf('bindtap="showBatchSizeSelector"') >= 0)
+})
+
+var runnerWxml = fs.readFileSync(path.join(__dirname, '../components/quiz-runner/quiz-runner.wxml'), 'utf8')
+
+t('quiz-runner.wxml references elapsedText in timer display', function () {
+  assert.ok(runnerWxml.indexOf('{{elapsedText}}') >= 0)
+})
+
+// ══════════════════════════════════════════════════════════════════
+// 6. quiz-runner has no unconditional self-starting timer
+// ══════════════════════════════════════════════════════════════════
+console.log('\n--- 6. quiz-runner timer safety ---')
+
+var runnerJs = fs.readFileSync(path.join(__dirname, '../components/quiz-runner/quiz-runner.js'), 'utf8')
+
+t('quiz-runner.js has 0 setInterval calls', function () {
+  var count = (runnerJs.match(/setInterval/g) || []).length
+  assert.strictEqual(count, 0)
+})
+
+t('quiz-runner.js no timer-related setTimeout logic', function () {
+  var hasTimerLogic = /setTimeout[\s\S]{0,200}(elapsed|timer|00:00)/.test(runnerJs)
+  assert.strictEqual(hasTimerLogic, false)
+})
+
+// ══════════════════════════════════════════════════════════════════
+// 7. Cross-page regression
+// ══════════════════════════════════════════════════════════════════
+console.log('\n--- 7. Cross-page regression checks ---')
+
+var practiceWxml = fs.readFileSync(path.join(__dirname, '../pages/practice/practice.wxml'), 'utf8')
+
+t('practice.wxml still passes elapsedText', function () {
+  assert.ok(practiceWxml.indexOf('elapsedText="{{elapsedText}}"') >= 0)
+})
+
+var wrongWxml = fs.readFileSync(path.join(__dirname, '../pages/wrong-detail/wrong-detail.wxml'), 'utf8')
+
+t('wrong-detail.wxml has no elapsedText', function () {
+  assert.strictEqual(wrongWxml.indexOf('elapsedText'), -1)
+})
+
+t('wrong-detail.wxml uses compactReviewMode', function () {
+  assert.ok(wrongWxml.indexOf('compactReviewMode') >= 0)
+})
+
+// ══════════════════════════════════════════════════════════════════
+// Summary
+// ══════════════════════════════════════════════════════════════════
+console.log('\n==============================')
+console.log('Passed:', testsPassed, ' Failed:', testsFailed)
+console.log('==============================\n')
+
+if (testsFailed > 0) process.exit(1)

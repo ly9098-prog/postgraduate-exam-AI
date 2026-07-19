@@ -14,6 +14,32 @@ const { getSubjectName } = require('../../utils/subject-meta')
 
 var KF = 'schedule_id'
 
+var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
+
+/**
+ * Normalize review batch size to one of the allowed values.
+ * Falls back to 10 for invalid or out-of-range inputs.
+ */
+function normalizeReviewBatchSize(value) {
+  var num = Number(value)
+  if (isNaN(num) || num <= 0) return 10
+  for (var i = 0; i < REVIEW_BATCH_SIZE_OPTIONS.length; i++) {
+    if (num === REVIEW_BATCH_SIZE_OPTIONS[i]) return num
+  }
+  return 10
+}
+
+/**
+ * Format elapsed seconds as MM:SS.
+ * MM can exceed 59 (60 minutes -> "60:00").
+ */
+function formatReviewElapsed(sec) {
+  var s = Math.max(0, sec || 0)
+  var m = Math.floor(s / 60)
+  var ss = s % 60
+  return (m < 10 ? '0' : '') + m + ':' + (ss < 10 ? '0' : '') + ss
+}
+
 function _mergeResultsByScheduleId(oldResults, newResults) {
   var order = []
   var map = {}
@@ -42,6 +68,9 @@ Page({
     /* ====== Phase ====== */
     // loading | overview | reviewing | group-result | final-result | empty | error
     phase: 'loading',
+
+    /* ====== Timer ====== */
+    elapsedText: '00:00',
 
     /* ====== 入口概览 ====== */
     todayDueCount: 0,
@@ -131,12 +160,18 @@ Page({
       optionKeys: [],
       reviewOverview: null,
       overviewLoading: false,
+      // Timer state (non-observable, kept in session object)
+      timerStartedAt: 0,
+      timerElapsedMs: 0,
+      timerRunning: false,
     }
   },
 
   onLoad() {
     this._reviewSession = this._createReviewSession()
+    this._timerInterval = null
     this._finalCelebrationShown = false
+    this._userSelectedReviewBatchSize = false
     setRenderGuardPage('review-today')
     this._setDateStr()
     this.loadTodayReviewOverview()
@@ -148,17 +183,24 @@ Page({
     if (phase === 'overview' || phase === 'empty' || phase === 'final-result') {
       this.loadTodayReviewOverview()
     }
+    // 从后台回到 reviewing 页面时恢复计时
+    if (phase === 'reviewing' && this._reviewSession && this._reviewSession.timerStartedAt > 0 && !this._reviewSession.timerRunning) {
+      this._resumeReviewTimer()
+    }
   },
 
   onHide() {
     this._clearCelebrationTimer()
     if (this.data.showCelebration) this.setData({ showCelebration: false })
+    // 离开页面时暂停复习计时（保留累计时长）
+    this._pauseReviewTimer()
   },
 
   onUnload() {
     resetRenderGuard()
     this._clearCelebrationTimer()
     this._clearMasterUndo()
+    this._clearReviewTimer()
   },
 
   _setDateStr() {
@@ -240,6 +282,13 @@ Page({
       todayAdviceText = `已经完成 ${completed} 道，继续一组就能保持复习节奏。`
     }
 
+    // 用户已手动选择时保留其选择，未选择则使用接口返回的合法值
+    var batchSize = Number(overview.batch_size || 10)
+    batchSize = normalizeReviewBatchSize(batchSize)
+    if (this._userSelectedReviewBatchSize) {
+      batchSize = this.data.reviewBatchSize
+    }
+
     return {
       todayDueCount: due,
       todayCompletedCount: completed,
@@ -247,7 +296,7 @@ Page({
       todayOverdueCount: overdue,
       todayNewDueCount: Number(overview.today_new_due_count || 0),
       estimatedMinutes: Number(overview.estimated_minutes || Math.ceil(remaining * 0.5)),
-      reviewBatchSize: Number(overview.batch_size || 10),
+      reviewBatchSize: batchSize,
       currentBatchNo: Number(overview.current_batch_no || 0),
       totalBatchCount: Number(overview.total_batch_count || 0),
       remainingBatchCount: Number(overview.remaining_batch_count || 0),
@@ -326,6 +375,8 @@ Page({
       })
       this._showQuestion(0)
       this._syncAnsweredFlags()
+      // 获取题目成功后开始复习计时
+      this._startReviewTimer()
     } catch (e) {
       console.error('加载复习题目失败', e)
       this.setData({
@@ -679,7 +730,7 @@ Page({
     const blankId = String(e.detail.blankId || '').trim()
     const opt = String(e.detail.option || '').trim().toUpperCase()
     const q = this.data.currentQuestion
-    if (!q || !blankId || !opt) return
+    if (!q || !adapter.isMultiBlankChoice(q) || !blankId || !opt) return
 
     const answer = this._reviewSession.answers[q.schedule_id] || ''
     const blankAnswers = adapter.normalizeBlankAnswer(answer)
@@ -690,25 +741,25 @@ Page({
     }
 
     // Use raw groups for serialization (only needs group.id)
-    const groupsForAnswer = adapter.getBlankOptionGroups(q)
-    const newAnswer = serializeBlankAnswer(groupsForAnswer, blankAnswers)
+    const rawGroups = adapter.getBlankOptionGroups(q)
+    const newAnswer = serializeBlankAnswer(rawGroups, blankAnswers)
     const answers = { ...this._reviewSession.answers }
     if (newAnswer) answers[q.schedule_id] = newAnswer
     else delete answers[q.schedule_id]
 
-    const enrichedGroups = adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), newAnswer)
+    const enrichedGroups = adapter.enrichBlankOptionGroups(rawGroups, newAnswer)
 
     this._reviewSession.answers = answers
     const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, answers, KF)
     // Consolidate answered flags and progress into single setData
     const enrichedQuestions = adapter.applyAnsweredFlags(this.data.groupQuestions,
       adapter.buildAnsweredFlags(this.data.groupQuestions, answers, KF), KF)
-    var grp = this.data.groupQuestions || []
-    var total = grp.length || 1
 
     this.setData({
       _answeredCount: answeredCount,
-      runnerProgressPercent: Math.round(answeredCount / total * 100),
+      runnerProgressPercent: Math.round(answeredCount / (enrichedQuestions.length || 1) * 100),
+      runnerSubtitle: '第 ' + (this.data.currentBatchNo || this.data.currentGroupIdx + 1) + ' / ' + (this.data.totalBatchCount || 1) + ' 组',
+      runnerSubjectName: q ? (q.subject_name || q._subjectLabel || '') : '',
       'currentQuestion._blankOptionGroups': enrichedGroups,
       'currentQuestion._hasBlankOptionGroups': enrichedGroups.length > 0,
       groupQuestions: enrichedQuestions,
@@ -978,6 +1029,8 @@ Page({
       this._reviewSession.totalWrong = totalWrong
       this._reviewSession.totalCompleted = totalCompleted
 
+      // 提交成功进入组结果页时暂停计时
+      this._pauseReviewTimer()
       this.setData({
         phase: 'group-result',
         groups: newGroups,
@@ -1029,6 +1082,8 @@ Page({
       })
       this._syncAnsweredFlags()
       this._showQuestion(0)
+      // 新组从 00:00 开始计时
+      this._startReviewTimer()
       return
     }
 
@@ -1063,6 +1118,8 @@ Page({
           })
           this._syncAnsweredFlags()
           this._showQuestion(0)
+          // 新组从 00:00 开始计时
+          this._startReviewTimer()
           return
         }
       } catch (e) {
@@ -1289,6 +1346,7 @@ Page({
 
   confirmExitReview() {
     this._clearMasterUndo()
+    this._clearReviewTimer()
     this.setData({ exitConfirmVisible: false })
     const pages = getCurrentPages()
     if (pages.length > 1) wx.navigateBack()
@@ -1311,4 +1369,115 @@ Page({
     return getSubjectName(s)
   },
 
+  /* ==================== 计时 ==================== */
+
+  /**
+   * 钳制时间差，防止系统时间后退或大幅度跳跃破坏累计时长。
+   * 单 tick 上限 10 秒（setInterval 1 秒 + 合理延迟余量）。
+   */
+  _safeTickDelta(rawMs) {
+    if (rawMs < 0) return 0
+    if (rawMs > 10000) return 10000
+    return rawMs
+  },
+
+  /**
+   * 开始新组计时（重置为 00:00）。
+   * 基于 Date.now() 时间差计算，不依赖每秒累加。
+   */
+  _startReviewTimer() {
+    if (this._timerInterval) return
+    this._reviewSession.timerElapsedMs = 0
+    this._reviewSession.timerStartedAt = Date.now()
+    this._reviewSession.timerRunning = true
+    var self = this
+    this._timerInterval = setInterval(function () {
+      var session = self._reviewSession
+      var rawDelta = Date.now() - session.timerStartedAt
+      var totalMs = session.timerElapsedMs + self._safeTickDelta(rawDelta)
+      self.setData({ elapsedText: formatReviewElapsed(Math.floor(totalMs / 1000)) })
+    }, 1000)
+  },
+
+  /**
+   * 暂停计时，保留已累计时长。
+   * 受系统时间跳变保护：负值截断为零，单次增量上限 10 秒。
+   */
+  _pauseReviewTimer() {
+    if (!this._timerInterval) return
+    var rawDelta = Date.now() - this._reviewSession.timerStartedAt
+    this._reviewSession.timerElapsedMs += this._safeTickDelta(rawDelta)
+    this._reviewSession.timerRunning = false
+    clearInterval(this._timerInterval)
+    this._timerInterval = null
+  },
+
+  /**
+   * 从暂停处恢复计时（保留 timerElapsedMs）。
+   * 暂停期间经过的 wall-clock 时间不计入，与 resume 点对齐。
+   */
+  _resumeReviewTimer() {
+    if (this._timerInterval || this._reviewSession.timerRunning) return
+    this._reviewSession.timerStartedAt = Date.now()
+    this._reviewSession.timerRunning = true
+    var self = this
+    this._timerInterval = setInterval(function () {
+      var session = self._reviewSession
+      var rawDelta = Date.now() - session.timerStartedAt
+      var totalMs = session.timerElapsedMs + self._safeTickDelta(rawDelta)
+      self.setData({ elapsedText: formatReviewElapsed(Math.floor(totalMs / 1000)) })
+    }, 1000)
+  },
+
+  /**
+   * 重置为 00:00（不清除 interval，调用后应紧接着 _startReviewTimer/_resumeReviewTimer）。
+   */
+  _resetReviewTimer() {
+    this._pauseReviewTimer()
+    this._reviewSession.timerElapsedMs = 0
+    this._reviewSession.timerStartedAt = 0
+    this._reviewSession.timerRunning = false
+    this.setData({ elapsedText: '00:00' })
+  },
+
+  /**
+   * 销毁定时器（不保留累计时长）。用于页面卸载或退出。
+   */
+  _clearReviewTimer() {
+    if (this._timerInterval) {
+      clearInterval(this._timerInterval)
+      this._timerInterval = null
+    }
+    this._reviewSession.timerRunning = false
+  },
+
+  /* ==================== 每组题数选择 ==================== */
+
+  /**
+   * 弹 action sheet 让用户选择每组题数。
+   * 仅在 overview 阶段且无进行中请求时可用。
+   */
+  showBatchSizeSelector() {
+    if (this.data.phase !== 'overview') return
+    if (this.data.isStarting || this.data.isContinuing) return
+    var self = this
+    var itemList = REVIEW_BATCH_SIZE_OPTIONS.map(function (n) { return '每组 ' + n + ' 道' })
+    wx.showActionSheet({
+      itemList: itemList,
+      success: function (res) {
+        var selected = REVIEW_BATCH_SIZE_OPTIONS[res.tapIndex]
+        if (selected !== undefined) {
+          self._userSelectedReviewBatchSize = true
+          self.setData({ reviewBatchSize: selected })
+        }
+      },
+      fail: function () { /* cancel — do nothing */ },
+    })
+  },
+
 })
+
+// Export pure functions for regression testing
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { normalizeReviewBatchSize, formatReviewElapsed, REVIEW_BATCH_SIZE_OPTIONS }
+}

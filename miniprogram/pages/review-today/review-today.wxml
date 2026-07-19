@@ -62,7 +62,7 @@
           <text class="mission-eyebrow">MEMORY CURVE</text>
           <text class="mission-label">今日还需复习</text>
         </view>
-        <view class="mission-batch">每组 {{reviewBatchSize}} 道</view>
+        <view class="mission-batch" bindtap="showBatchSizeSelector" hover-class="mission-batch-pressed">每组 {{reviewBatchSize}} 道⌄</view>
       </view>
 
       <view class="mission-main">
@@ -168,6 +168,7 @@
       title="今日复习"
       subtitle="{{runnerSubtitle}}"
       subjectName="{{runnerSubjectName}}"
+      elapsedText="{{elapsedText}}"
       questions="{{groupQuestions}}"
       currentQuestion="{{currentQuestion}}"
       currentIndex="{{currentIndex}}"
