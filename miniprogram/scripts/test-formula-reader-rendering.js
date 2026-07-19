@@ -294,7 +294,7 @@ console.log('✓ Surgical per-fragment fallback tests passed')
 var detSource = formulaContent.normalizeLatexSource('det(A)')
 assert(detSource.indexOf('\\left|') >= 0, 'normalizeLatexSource must convert det(A) to \\left|A\\right|')
 assert(detSource.indexOf('\\right|') >= 0, 'normalizeLatexSource must close with \\right|')
-assert(detSource.indexOf('det') < 0 || detSource.indexOf('\\det') < 0, 'det(A) must not contain bare det or \\det')
+assert(detSource.indexOf('det') < 0 && detSource.indexOf('\\det') < 0, 'det(A) must not contain bare det or \\det')
 assert(detSource.indexOf('\\\\det') < 0, '\\det must not be double-escaped')
 
 // \det(A) must also be converted to \left|A\right|
