@@ -1,6 +1,6 @@
 const formulaContent = require('../../utils/formula-content')
 const katex = require('../../utils/katex/katex.min')
-const Parser = require('../../../components/mp-html/parser')
+const Parser = require('../../../../components/mp-html/parser')
 const LatexPlugin = require('../../utils/katex/index')
 
 /**

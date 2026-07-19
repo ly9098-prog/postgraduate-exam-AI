@@ -1210,7 +1210,7 @@ Page({
     // 阶段三：进入结果页
     // ═══════════════════════════════════════════════════
     const resultUrl = [
-      `/pages/practice-result/practice-result`,
+      `/subpackages/productivity/practice-result/index`,
       `?correct=${submitResult.total_correct || 0}`,
       `&wrong=${submitResult.total_wrong || 0}`,
       `&total=${total}`,

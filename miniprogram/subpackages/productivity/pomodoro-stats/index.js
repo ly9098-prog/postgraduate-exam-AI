@@ -1,4 +1,4 @@
-const api = require('../../utils/api')
+const api = require('../../../utils/api')
 
 function parseServerTime(value) {
   if (!value) return NaN

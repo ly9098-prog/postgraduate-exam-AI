@@ -1,11 +1,11 @@
-const api = require('../../utils/api')
-const { formatInlineMathText } = require('../../utils/math-format')
+const api = require('../../../utils/api')
+const { formatInlineMathText } = require('../../../utils/math-format')
 const {
   toPlainInlineMathText,
   needsRichRender,
   textToHtml,
   cleanStemText,
-} = require('../../utils/stem-render')
+} = require('../../../utils/stem-render')
 
 function canonicalForResultStem(text) {
   return String(text || '')
