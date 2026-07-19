@@ -843,8 +843,8 @@ Page({
       blankAnswers[blankId] = opt
     }
 
-    const groupsForAnswer = adapter.getBlankOptionGroups(q)
-    const newAnswer = adapter.serializeBlankAnswer(groupsForAnswer, blankAnswers)
+    const rawGroups = adapter.getBlankOptionGroups(q)
+    const newAnswer = adapter.serializeBlankAnswer(rawGroups, blankAnswers)
     const answerMap = { ...this._practiceSession.answerMap }
     if (newAnswer) {
       answerMap[key] = newAnswer
@@ -853,7 +853,7 @@ Page({
     }
     const answeredFlags = adapter.buildAnsweredFlags(this.data.questions, answerMap, 'id')
     const answeredCount = adapter.countAnswered(answeredFlags)
-    const groups = adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), newAnswer)
+    const groups = adapter.enrichBlankOptionGroups(rawGroups, newAnswer)
 
     if (shouldDebugQuestion(q.id)) {
       debugLog(this._practiceSession.traceId || q.trace_id, 'STATE_CHANGE', {

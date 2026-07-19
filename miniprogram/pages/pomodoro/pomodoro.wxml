@@ -85,7 +85,7 @@
                 <text class="dot-label">10s测试</text>
               </view>
             </view>
-            <text class="mode-info">{{selectedPreset === 'debug' ? '10秒学习 · 5秒休息' : selectedPreset === 'free' ? '正向计时 · 无时长限制' : workDuration + ' 分钟学习 · ' + breakDuration + ' 分钟休息'}}</text>
+            <text class="mode-info">{{selectedPreset === 'debug' ? '10秒学习 · 5秒休息' : selectedPreset === 'free' ? '正向计时 · 最长5小时' : workDuration + ' 分钟学习 · ' + breakDuration + ' 分钟休息'}}</text>
             <!-- Custom sliders -->
             <view class="custom-area {{showCustom ? 'visible' : ''}}" catchtouchstart="onCustomAreaTouch" catchtouchend="onCustomAreaTouch">
               <view class="custom-row">
