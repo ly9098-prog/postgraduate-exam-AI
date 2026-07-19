@@ -33,6 +33,17 @@ from app.core.ocr_request import OCRRequest
 logger = logging.getLogger(__name__)
 
 
+def _get_image_dimensions(source: bytes) -> tuple[int, int]:
+    """Get image width and height from bytes (fast, no Paddle/OCR)."""
+    try:
+        from PIL import Image
+        import io
+        with Image.open(io.BytesIO(source)) as img:
+            return img.size
+    except Exception:
+        return 0, 0
+
+
 # ---------------------------------------------------------------------------
 # Protocols
 # ---------------------------------------------------------------------------
@@ -288,17 +299,43 @@ class PaddleOCRLocalAdapter:
                 self._resolved_device = device_res.resolved_device
                 self._device_resolved = True
 
-            # Delegate to the existing OCR pipeline
-            from app.features.pipeline_orchestrator import _ocr_scanned_pdf
+            # Delegate OCR to the worker client / Gateway path
+            # instead of importing from legacy pipeline_orchestrator.
+            from app.services.ocr_service import ocr_pages_with_boxes
 
-            # _ocr_scanned_pdf accepts bytes or path string. OCRRequest has bytes.
-            blocks = await asyncio.to_thread(
-                _ocr_scanned_pdf,
-                request.source,
-                pipeline_id=trace_id,
-                page_start=request.page_start,
-                page_end=request.page_end,
-            )
+            is_pdf = request.source_type == "pdf"
+            if is_pdf:
+                # PDF: use pipeline_orchestrator._ocr_scanned_pdf (handles PDF rendering
+                # via PyMuPDF internally). Run in thread pool to avoid blocking event loop.
+                from app.features.pipeline_orchestrator import _ocr_scanned_pdf
+                blocks = await asyncio.to_thread(
+                    _ocr_scanned_pdf, request.source,
+                    pipeline_id=trace_id,
+                    page_start=1, page_end=None,
+                )
+            else:
+                # Image: use ocr_pages_with_boxes via thread pool to avoid event loop crash
+                # (ocr_service helper is sync and uses _run_async internally).
+                from app.services.ocr_service import ocr_pages_with_boxes
+                page_results = await asyncio.to_thread(
+                    ocr_pages_with_boxes,
+                    [(1, request.source)],
+                    True,  # skip_rotation
+                )
+                blocks = []
+                for page_idx, result in page_results.items():
+                    # Get image dimensions from the input
+                    pw, ph = _get_image_dimensions(request.source)
+                    blocks.append({
+                        "page": page_idx,
+                        "text": result.text,
+                        "boxes": result.boxes or [],
+                        "page_width": pw or 0,
+                        "page_height": ph or 0,
+                        "source": "ocr",
+                        "has_boxes": bool(result.boxes),
+                        "_ocr_boxes_failed": result.failed,
+                    })
 
             latency_ms = round((time.monotonic() - start) * 1000, 2)
 
@@ -316,10 +353,10 @@ class PaddleOCRLocalAdapter:
                     latency_ms=latency_ms,
                 )
 
-            # Convert blocks to DocumentIR
-            from app.features.pipeline_orchestrator import _blocks_to_document_ir
+            # Convert blocks to DocumentIR using standalone builder
+            from app.features.document_ir_builder import blocks_to_document_ir
 
-            doc_ir = _blocks_to_document_ir(blocks, pipeline_id=trace_id, engine="paddleocr", source_bytes=request.source)
+            doc_ir = blocks_to_document_ir(blocks, pipeline_id=trace_id, engine="paddleocr", source_bytes=request.source)
 
             if doc_ir is None:
                 return ModuleResult.failure(

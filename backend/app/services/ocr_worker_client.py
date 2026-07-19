@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Protocol, runtime_checkable
 
-from app.core.ocr_runtime_config import OcrRuntimeConfig
+from app.core.ocr_runtime_config import OcrRuntimeConfig, sanitize_url
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ def create_ocr_worker_client(config: OcrRuntimeConfig) -> OcrWorkerClient | None
 
         logger.info(
             "Creating PaddleXHttpOcrWorkerClient (url=%s, concurrency=%d)",
-            config.remote_url, config.remote_max_concurrency,
+            sanitize_url(config.remote_url), config.remote_max_concurrency,
         )
         return PaddleXHttpOcrWorkerClient(config)
 

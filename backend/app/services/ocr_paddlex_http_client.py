@@ -23,7 +23,7 @@ from typing import Any
 
 import httpx
 
-from app.core.ocr_runtime_config import OcrRuntimeConfig, sanitize_url
+from app.core.ocr_runtime_config import OcrRuntimeConfig, sanitize_url, sanitize_url_strip_credentials
 from app.core.ocr_types import STABLE_ERROR_CODES, WorkerResult
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ def _compute_engine_fingerprint(config: OcrRuntimeConfig) -> str:
     """Build a stable engine fingerprint for provenance tracking."""
     raw = (
         f"backend=paddlex_http|"
-        f"endpoint={sanitize_url(config.remote_url)}|"
+        f"endpoint={sanitize_url_strip_credentials(config.remote_url)}|"
         f"version=1|"
         f"connect_timeout={config.remote_connect_timeout_sec}|"
         f"read_timeout={config.remote_read_timeout_sec}|"
@@ -112,16 +112,16 @@ class PaddleXHttpOcrWorkerClient:
         start = time.monotonic()
 
         try:
+            self._metrics["queued"] += 1
             async with self._semaphore:
+                self._metrics["queued"] -= 1
                 self._metrics["running"] += 1
-                self._metrics["queued"] += 1
                 try:
                     result = await self._do_recognize(
                         image_bytes, page_index, request_id, options,
                     )
                 finally:
                     self._metrics["running"] -= 1
-                    self._metrics["queued"] -= 1
         except asyncio.CancelledError:
             self._metrics["failed"] += 1
             raise
@@ -242,6 +242,27 @@ class PaddleXHttpOcrWorkerClient:
                 page_index, STABLE_ERROR_CODES["REMOTE_TIMEOUT"],
                 f"Request timed out: {exc}",
             )
+        except httpx.ReadError as exc:
+            self._metrics["connection_errors"] += 1
+            self._metrics["last_error_code"] = STABLE_ERROR_CODES["REMOTE_CONNECT_ERROR"]
+            return self._make_error(
+                page_index, STABLE_ERROR_CODES["REMOTE_CONNECT_ERROR"],
+                f"Connection reset: {exc}",
+            )
+        except (httpx.WriteError, httpx.RemoteProtocolError) as exc:
+            self._metrics["protocol_errors"] += 1
+            self._metrics["last_error_code"] = STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"]
+            return self._make_error(
+                page_index, STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
+                f"Connection error: {exc}",
+            )
+        except httpx.RequestError as exc:
+            self._metrics["connection_errors"] += 1
+            self._metrics["last_error_code"] = STABLE_ERROR_CODES["REMOTE_CONNECT_ERROR"]
+            return self._make_error(
+                page_index, STABLE_ERROR_CODES["REMOTE_CONNECT_ERROR"],
+                f"HTTP request failed: {exc}",
+            )
 
         # HTTP status check
         if response.status_code != 200:
@@ -307,7 +328,6 @@ class PaddleXHttpOcrWorkerClient:
             ocr_results, page_index, request_id, self._fingerprint,
         )
 
-        self._metrics["finished"] += 1
         self._metrics["last_success_time"] = time.time()
 
         return WorkerResult(
@@ -344,7 +364,7 @@ class PaddleXHttpOcrWorkerClient:
                 "error": error_message[:1000],
             },
             stable_error_code=stable_error_code,
-            error_type=stable_error_code.split(".")[-1] if "." in stable_error_code else stable_error_code,
+            error_type=stable_error_code.rsplit(".", 1)[-1] if "." in stable_error_code else stable_error_code.lower(),
         )
 
 

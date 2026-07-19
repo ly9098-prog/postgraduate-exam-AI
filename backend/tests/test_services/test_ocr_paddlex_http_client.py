@@ -636,14 +636,20 @@ class TestBatch:
             return httpx.Response(200, json=_make_response(rec_texts=["ok"], rec_scores=[0.9]))
 
         cfg = _config(remote_max_concurrency=1)
-        # Custom transport doesn't support async handlers directly
-        # Use a simpler synchronous handler with delayed response
-        import time
+        # Custom transport doesn't support async handlers directly.
+        # Use a threading.Event for test coordination instead of time.sleep
+        # (which blocks the event loop from a sync httpx handler).
+        import threading
+
+        enter_event = threading.Event()
+        proceed_event = threading.Event()
 
         def sync_handler(r):
             active[0] += 1
             max_active[0] = max(max_active[0], active[0])
-            time.sleep(0.03)
+            enter_event.set()
+            # Block until the test releases all handlers simultaneously
+            proceed_event.wait(timeout=2)
             active[0] -= 1
             return httpx.Response(200, json=_make_response(rec_texts=["ok"], rec_scores=[0.9]))
 
@@ -651,7 +657,23 @@ class TestBatch:
         async with httpx.AsyncClient(transport=transport) as hc:
             client = PaddleXHttpOcrWorkerClient(cfg)
             client._client = hc
-            results = await client.recognize_batch([(i, _FAKE_PNG) for i in range(5)])
+
+            # Launch tasks concurrently; each one blocks inside sync_handler
+            # waiting for proceed_event.
+            task = asyncio.create_task(
+                client.recognize_batch([(i, _FAKE_PNG) for i in range(5)])
+            )
+            # Wait for at least one handler to enter (semaphore acquired)
+            enter_event.wait(timeout=2)
+            # Brief yield to let other tasks queue up on the semaphore
+            await asyncio.sleep(0.05)
+            # All 5 tasks should have arrived — at most 1 inside the semaphore
+            assert max_active[0] <= 1
+            assert active[0] <= 1
+            # Release all handlers
+            proceed_event.set()
+            results = await task
+            assert len(results) == 5
         await client.shutdown()
 
         assert len(results) == 5
@@ -700,7 +722,7 @@ class TestCancellation:
 
         # Use a handler that blocks long enough for cancellation to fire
         def slow_handler(r):
-            time.sleep(0.5)
+            time.sleep(0.05)
             return httpx.Response(200, json=_make_response())
 
         transport = httpx.MockTransport(slow_handler)
@@ -709,16 +731,13 @@ class TestCancellation:
             client._client = hc
 
             task = asyncio.create_task(client.recognize(_FAKE_PNG, page_index=0))
-            await asyncio.sleep(0.05)  # let it start the request
+            await asyncio.sleep(0.01)  # let it start the request
             task.cancel()
             try:
                 await task
-                # If we get here, cancellation was swallowed by semaphore release
-                # or error handling — the result should be a failed WorkerResult
-                # which is acceptable as long as CancelledError doesn't crash.
                 pass
             except asyncio.CancelledError:
-                pass  # also acceptable — exception propagated
+                pass  # exception propagated correctly
         await client.shutdown()
 
 
