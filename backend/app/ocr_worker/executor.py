@@ -124,16 +124,11 @@ class OcrExecutorProcess:
         task = {
             "task_id": task_id,
             "pages": [
-                {"index": idx, "data_b64": _bytes_to_b64(data)}
+                {"index": idx, "data": _bytes_to_b64(data)}
                 for idx, data in page_images
             ],
             "gpu_memory_limit_mb": self._gpu_memory_limit_mb,
         }
-
-        # NOTE(legacy): The parent sends "data_b64" but the subprocess
-        # script below reads "data".  This is a pre-existing bug in this
-        # legacy subprocess executor.  The main OCR pipeline uses the
-        # OcrWorkerPool / OcrWorkerProcess path, not this executor.
 
         start = time.perf_counter()
 

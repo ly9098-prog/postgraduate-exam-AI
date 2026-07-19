@@ -491,7 +491,7 @@ class OCRGateway:
             except asyncio.TimeoutError:
                 logger.warning("OCRGateway: %s timed out after %ds", backend_name, _OCR_TIMEOUT_SECONDS)
             except Exception as e:
-                logger.warning("OCRGateway: %s error: %s", backend_name, e)
+                logger.warning("OCRGateway: %s error: %s", backend_name, e, exc_info=True)
 
         latency = round((time.monotonic() - start) * 1000, 2)
         return ModuleResult.failure(

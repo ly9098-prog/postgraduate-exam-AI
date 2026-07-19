@@ -53,6 +53,33 @@ def sanitize_url(url: str) -> str:
         return "<redacted>"
 
 
+def sanitize_url_strip_credentials(url: str) -> str:
+    """Strip credentials from a URL but preserve query parameters.
+
+    Unlike ``sanitize_url``, this keeps the query string — suitable for
+    non‑log uses such as engine fingerprint computation where the query
+    parameters are semantically meaningful.
+    """
+    if not url:
+        return ""
+    try:
+        parsed = __import__("urllib.parse", fromlist=["urlparse"]).urlparse(url)
+        if parsed.username or parsed.password:
+            clean = parsed._replace(
+                netloc=(
+                    (parsed.hostname or "")
+                    + (f":{parsed.port}" if parsed.port else "")
+                ),
+                query="",
+            )
+            return clean.geturl()
+        return url
+    except Exception:
+        if "://" in url:
+            return url.split("://")[0] + "://<redacted>"
+        return "<redacted>"
+
+
 @dataclass(frozen=True)
 class OcrRuntimeConfig:
     """Immutable, validated runtime config for the OCR pipeline.
