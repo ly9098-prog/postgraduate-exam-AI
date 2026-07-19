@@ -109,7 +109,7 @@ Status values: **VERIFIED** | PARTIAL | UNVERIFIED | REGRESSED | BLOCKED
 | P5 ID | Change | Status | Code Location | Notes |
 |-------|--------|--------|---------------|-------|
 | P5-01 | External OCR API DB config E2E validation | **VERIFIED** | `scripts/run_remote_ocr_db_config_validation.py` | Uses `AIModelConfigResolver` to resolve admin_ai_model_configs. Tests timeout/429/5xx/CircuitBreaker. Report written to `reports/sprint4e/remote_ocr_db_config_e2e.json`. |
-| P5-02 | VL result download size limits | **PARTIAL** | `paddleocr_vl_client.py:576-598` | Post-download size check (`_MAX_RESULT_DOWNLOAD_BYTES=50MB`) and JSONL line limits (`_MAX_JSONL_LINES=50000`). No stream limiting — downloads full body before checking. |
+| P5-02 | VL result download size limits | **VERIFIED** | `paddleocr_vl_client.py:780-877` | Bounded streaming: `codecs.getincrementaldecoder`, compressed + decoded limits enforced mid-stream, line count check during streaming, CRLF/BOM/last-line handling. 20 tests in `test_p5_ssrf_http_lifecycle.py`. |
 | P5-03 | SSRF protection (DNS rebinding, redirect re-validation) | **VERIFIED** | `paddleocr_vl_client.py:166-197` | `_validate_result_url()` checks https scheme, resolves DNS, rejects private/loopback/link-local IPs. Redirect URL re-validated after redirect. 12 new tests in `test_p5_ssrf_http_lifecycle.py`. |
 | P5-04 | Retry-After handling + `AIModelConfigResolver` integration | **VERIFIED** | `paddleocr_vl_client.py:455-498`, `paddleocr_vl_client.py:373-410` | Retry-After extracted from error messages. Non-retriable 4xx raises immediately. Added `from_resolver()` classmethod to create client from `admin_ai_settings` DB config. Fallback with graceful degradation. |
 
@@ -125,16 +125,17 @@ Status values: **VERIFIED** | PARTIAL | UNVERIFIED | REGRESSED | BLOCKED
 
 | P6 ID | Change | Status | Code Location | Notes |
 |-------|--------|--------|---------------|-------|
-| P6-01 | DocumentIR production write path | **PARTIAL** | 12 files, 179 legacy call sites | `document_ir_to_blocks()` bridge is ready. Natural migration as coordinator replaces legacy orchestrator. 8 HIGH violations (all in comments/docstrings). |
+| P6-01 | PipelineDefinition declarative stage definition | **VERIFIED** | `app/features/pipeline_definition.py` | Single `PipelineDefinition` with 27 stages. `_build_pipeline()` iterates `enabled_stages()`. `CANONICAL_STAGE_ORDER`/`_RESUMABLE_ARTIFACTS` are aliases. 18 tests in `test_pipeline_definition.py`. Pure metadata — no circular deps. |
 | P6-02 | Artifact path traversal safety | **VERIFIED** | `pipeline_artifacts.py:206-208` | `_artifact_path()` now validates filename with `os.path.basename()`. 9 tests in `test_artifact_path_traversal.py`. |
 | P6-03 | Resume equivalence tested | **VERIFIED** | `tests/test_ocr_resume_equivalence.py` | 25 tests covering: artifact save/load round-trip (7 resumable stages), config fingerprint invalidation, pipeline version mismatch, find_resumable_stage logic, artifact cleanup. |
 | P6-04 | Cache hit/miss consistency | **VERIFIED** | `pipeline_artifacts.py` | Config fingerprint (`_build_config_fingerprint()`) includes 11 key OcrRuntimeConfig fields. Stored in artifact metadata. `check_artifact_compatibility()` compares against `current_pipeline_version()` which includes config fingerprint. Config change → artifact invalidation. |
+| P6-05 | DocumentIR production write path | **PARTIAL** | 12 files, 179 legacy call sites | `document_ir_to_blocks()` bridge ready. Natural migration as coordinator replaces legacy orchestrator. 8 HIGH violations (all in comments/docstrings). |
 
 ## P6 Summary
 
 | Status | Count |
 |--------|-------|
-| VERIFIED | 3 |
+| VERIFIED | 4 |
 | PARTIAL | 1 |
 | UNVERIFIED | 0 |
 
@@ -145,12 +146,12 @@ Status values: **VERIFIED** | PARTIAL | UNVERIFIED | REGRESSED | BLOCKED
 | P7-01 | CI workflow | **PARTIAL** | `.github/workflows/ci.yml` | Workflow exists. Python 3.12, ruff + mypy + bandit + pip-audit. Static arch + non-GPU regression tests expanded: architecture boundaries, gateway bypass, P5 SSRF, coordinator, artifact path traversal, AI model config, code integrity, resume equivalence, text-only benchmark (advisory). GPU-dependent tests (fault injection, live OCR) skipped in CI. Still missing: fault injection CI integration (requires PaddleOCR runtime). |
 | P7-02 | Benchmark runner | **PARTIAL** | `tests/ocr_bench/` | Benchmark scripts + pytest integration exist. 100 cases (41 PASS / 59 xfail — known score < 80). Text-only mode runs in CI (advisory, continue-on-error). Live-OCR mode requires PaddleOCR runtime (not in CI). ScenarioBucket enum extended with 4 missing values. |
 | P7-03 | Fault injection tests | **VERIFIED** | `tests/test_ocr_fault_injection.py` | **22 tests, real PaddleOCR runtime.** Covers: timeout injection (4), worker SIGKILL crash + auto-recovery (2), corrupt/empty input graceful handling (3), stats accuracy after faults (2), shutdown under all conditions (4), Future API coverage (3), **100-iteration fault storm** mixing timeouts + crashes. All passed. 63 warnings (fork+thread, expected). |
-| P7-04 | Release evidence document | **PARTIAL** | `docs/audit/ocr_pipeline/RELEASE_EVIDENCE.md` | Updated with P5 (SSRF, from_resolver, Retry-After, download limits) and P6-02 (artifact path) evidence. P5/P6/P7 status table updated. Test count: 217 passed. |
+| P7-04 | Release evidence document | **VERIFIED** | `docs/audit/ocr_pipeline/RELEASE_EVIDENCE.md` | Updated with P5-02 (bounded streaming), P6-01 (PipelineDefinition), current test counts (166 passed), code SHA and evidence SHA. Python path, version, git status recorded. |
 
 ## P7 Summary
 
 | Status | Count |
 |--------|-------|
-| VERIFIED | 1 |
-| PARTIAL | 3 |
+| VERIFIED | 2 |
+| PARTIAL | 2 |
 | UNVERIFIED | 0 |

@@ -3,7 +3,7 @@
 **Last updated:** 2026-07-19  
 **Commit:** `565277e` (dirty)  
 **Python:** 3.12.3 (WSL2)  
-**Phase status:** P5-P6-P7 all VERIFIED (except P6-01 DocumentIR PARTIAL, P7-01/P7-02/P7-04 PARTIAL)
+**Phase status:** P5-P6-P7 all VERIFIED (except P6-01 DocumentIR PARTIAL, P7-01/P7-02 PARTIAL)
 
 ---
 
