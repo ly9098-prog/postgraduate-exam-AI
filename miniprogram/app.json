@@ -6,13 +6,11 @@
     "pages/agreement/ai",
     "pages/home/home",
     "pages/practice/practice",
-    "pages/practice-result/practice-result",
     "pages/wrong-book/wrong-book",
     "pages/wrong-detail/wrong-detail",
     "pages/review-today/review-today",
     "pages/dashboard/dashboard",
-    "pages/pomodoro/pomodoro",
-    "pages/pomodoro-stats/pomodoro-stats"
+    "pages/pomodoro/pomodoro"
   ],
   "window": {
     "navigationBarBackgroundColor": "#4F7FFF",
@@ -34,6 +32,15 @@
       "pages": [
         "library/index",
         "reader/index"
+      ]
+    },
+    {
+      "root": "subpackages/productivity",
+      "name": "productivity",
+      "independent": false,
+      "pages": [
+        "pomodoro-stats/index",
+        "practice-result/index"
       ]
     }
   ],

@@ -21,7 +21,7 @@ global.wx = global.wx || {
 // Mock the utility modules the page depends on
 require.cache = require.cache || {}
 var path = require('path')
-var pagePath = path.join(__dirname, '../pages/pomodoro-stats/pomodoro-stats.js')
+var pagePath = path.join(__dirname, '../subpackages/productivity/pomodoro-stats/index.js')
 
 // The formatDuration function is exported as module.exports
 // We need to load the page module with dependency mocks

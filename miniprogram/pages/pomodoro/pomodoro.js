@@ -2217,7 +2217,7 @@ Page({
 
   goStats() {
     this._navigatingToStats = true
-    wx.navigateTo({ url: '/pages/pomodoro-stats/pomodoro-stats' })
+    wx.navigateTo({ url: '/subpackages/productivity/pomodoro-stats/index' })
   },
 
   /* ==================== Font Size Toggle ==================== */
