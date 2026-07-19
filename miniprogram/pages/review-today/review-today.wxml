@@ -461,9 +461,7 @@
       <view
         wx:for="{{batchSizeOptions}}"
         wx:key="*this"
-        class="batch-size-option
-          {{item === pendingBatchSize ? 'is-pending' : ''}}
-          {{item === reviewBatchSize && item !== pendingBatchSize ? 'is-current' : ''}}"
+        class="batch-size-option {{item === pendingBatchSize ? 'is-pending' : ''}} {{item === reviewBatchSize && item !== pendingBatchSize ? 'is-current' : ''}}"
         data-value="{{item}}"
         catchtap="selectPendingBatchSize"
         aria-role="button"

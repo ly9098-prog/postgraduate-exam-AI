@@ -1,6 +1,8 @@
 const api = require('../../utils/api')
 const config = require('../../config')
 
+const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'ceremony' }
+
 const SUBJECT_EMOJI = {
   // New codes
   'exam408-ds': '📃',

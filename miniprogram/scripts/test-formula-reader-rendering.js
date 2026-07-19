@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 const assert = require('assert')
 
-const formulaContent = require('../utils/formula-content')
+const formulaContent = require('../subpackages/formulas/utils/formula-content')
 
 global.wx = global.wx || {
   getWindowInfo() { return { windowWidth: 375 } },
@@ -9,7 +9,7 @@ global.wx = global.wx || {
 }
 
 const Parser = require('../components/mp-html/parser')
-const LatexPlugin = require('../components/mp-html/latex/index')
+const LatexPlugin = require('../subpackages/formulas/utils/katex/index')
 
 const conditions = '两个重要极限适用的前提是极限过程分别符合x → 0和x → ∞（或x → 0时(1 + x)^(1/x)）。'
 const errorTips = '易错：lim(x → 0)(sin x)/x = 1，不是0；lim(x → 0)(sin 2x)/x = 2，不是1。第二个重要极限底数是(1 + 1/x)，不是(1 + x)。'
@@ -153,9 +153,9 @@ assert(!JSON.stringify(floorErrorTipNodes).includes('\\\\lfloor'), 'floor source
 
 const fs = require('fs')
 const path = require('path')
-const cardJs = fs.readFileSync(path.join(__dirname, '../components/formula-card/index.js'), 'utf8')
-const cardWxml = fs.readFileSync(path.join(__dirname, '../components/formula-card/index.wxml'), 'utf8')
-const cardWxss = fs.readFileSync(path.join(__dirname, '../components/formula-card/index.wxss'), 'utf8')
+const cardJs = fs.readFileSync(path.join(__dirname, '../subpackages/formulas/components/formula-card/index.js'), 'utf8')
+const cardWxml = fs.readFileSync(path.join(__dirname, '../subpackages/formulas/components/formula-card/index.wxml'), 'utf8')
+const cardWxss = fs.readFileSync(path.join(__dirname, '../subpackages/formulas/components/formula-card/index.wxss'), 'utf8')
 assert(/labelNodes:\s*parseRichNodes\(formulaContent\.normalizeMixedContent\(block\.label\)\)/.test(cardJs), 'block.label must be converted into rich LaTeX nodes')
 assert(/nodes="\{\{block\.labelNodes\}\}"/.test(cardWxml), 'upper-left formula block label must render labelNodes')
 assert(!/<text class="fc-block-label"[^>]*>\{\{block\.label\}\}<\/text>/.test(cardWxml), 'raw block.label text rendering must be removed')
@@ -287,40 +287,41 @@ assert(mixedProseStr.indexOf('color:red') < 0, 'no KaTeX error styling must appe
 console.log('✓ Surgical per-fragment fallback tests passed')
 
 // =============================
-// New Issue 3: det operator rendering
+// New Issue 3: determinant notation normalization
 // =============================
 
-// det(A) must become \det(A) via normalizeLatexSource
+// det(A) must become \left|A\right| via normalizeLatexSource
 var detSource = formulaContent.normalizeLatexSource('det(A)')
-assert(detSource.indexOf('\\det') >= 0, 'normalizeLatexSource must convert det(A) to include \\det')
+assert(detSource.indexOf('\\left|') >= 0, 'normalizeLatexSource must convert det(A) to \\left|A\\right|')
+assert(detSource.indexOf('\\right|') >= 0, 'normalizeLatexSource must close with \\right|')
+assert(detSource.indexOf('det') < 0 || detSource.indexOf('\\det') < 0, 'det(A) must not contain bare det or \\det')
 assert(detSource.indexOf('\\\\det') < 0, '\\det must not be double-escaped')
 
-// \det(A) must stay as \det(A) — no double escaping
+// \det(A) must also be converted to \left|A\right|
 var detPreEscaped = formulaContent.normalizeLatexSource('\\det(A)')
-assert(detPreEscaped.indexOf('\\det') >= 0, '\\det must be preserved in normalizeLatexSource')
+assert(detPreEscaped.indexOf('\\left|') >= 0, '\\det must be converted to \\left|...\\right|')
 assert(detPreEscaped.indexOf('\\\\det') < 0, 'pre-escaped \\det must not be double-escaped')
 
-// Within normalizeMathRun, det must also be handled
+// Within normalizeLatexSource, compound expressions
 var detMathRun = formulaContent.normalizeLatexSource('det(A^T)=det(A)')
-assert(detMathRun.indexOf('\\det') >= 0, 'det must be converted in compound expressions')
+assert(detMathRun.indexOf('\\left|') >= 0, 'det must be converted in compound expressions')
 
 // det(AB)=det(A)det(B) with multiple det
 var detProduct = formulaContent.normalizeLatexSource('det(AB)=det(A)det(B)')
-assert(detProduct.indexOf('\\det') >= 0, 'det in product expression must be converted')
+assert(detProduct.indexOf('\\left|') >= 0, 'det in product expression must be converted')
 // Count occurrences of bare det (not preceded by backslash)
 var bareDetRe = /(^|[^\\])det(?=[^A-Za-z]|$)/g
 var bareDetMatches = detProduct.match(bareDetRe)
 assert(bareDetMatches === null, 'all bare det must be converted — none should remain (found ' + (bareDetMatches || []).length + ')')
 
-// Full rendering: det(A) should produce KaTeX math operator (class mop or similar)
+// Full rendering: det(A) should produce KaTeX vertical bars via \left|...\right|
 var detHtml = formulaContent.normalizeMixedContent('det(A)')
-assert(detHtml.indexOf('\\det') >= 0, 'det(A) in mixed content must produce \\det')
+assert(detHtml.indexOf('\\left|') >= 0, 'det(A) in mixed content must produce \\left|...\\right|')
 
 var detNodes = parse(detHtml)
 var detClasses = collectClasses(detNodes)
-// In katex-mini, \det produces a math operator, typically with class "mop"
-var hasOperatorClass = detClasses.some(function (name) { return /mop/.test(name) })
-assert(hasOperatorClass, 'det(A) rendered nodes must contain math operator class (mop)')
+// \left|...\right| produces delimiter spans — no "mop" class since it's not an operator
+// Instead, verify no KaTeX parse error appears
 assert(!JSON.stringify(detNodes).includes('color:red'), 'det(A) rendering must not produce KaTeX error')
 
 // sin, cos, tan, ln etc. must still work
@@ -330,7 +331,147 @@ assert(formulaContent.normalizeLatexSource('cos x').indexOf('\\cos') >= 0, 'cos 
 // English words containing "det" substring should NOT be affected
 assert.strictEqual(formulaContent.normalizeLatexSource('determine'), 'determine', 'words containing det must not be modified')
 
-console.log('✓ Issue 3 (det operator) tests passed')
+// =============================
+// normalizeDeterminantNotation unit tests
+// =============================
+
+var normDet = formulaContent.normalizeDeterminantNotation
+
+// 1. \det(A^T) = \det(A)
+assert.strictEqual(
+  normDet('\\det(A^T) = \\det(A)'),
+  '\\left|A^T\\right| = \\left|A\\right|',
+  '\\det(A^T) = \\det(A) must convert'
+)
+
+// 2. det(A)=det(A^T) through pipeline (bare det is handled by normalizeFunctionNames first)
+assert(
+  formulaContent.normalizeLatexSource('det(A)=det(A^T)').indexOf('\\left|') >= 0,
+  'det(A)=det(A^T) through pipeline must produce \\left|'
+)
+
+// 3. \det A (single letter)
+assert.strictEqual(
+  normDet('\\det A'),
+  '\\left|A\\right|',
+  '\\det A must convert'
+)
+
+// 4. \det(A^{-1})
+assert.strictEqual(
+  normDet('\\det(A^{-1})'),
+  '\\left|A^{-1}\\right|',
+  '\\det(A^{-1}) must convert'
+)
+
+// 5. \det(A)\det(B)
+assert.strictEqual(
+  normDet('\\det(A)\\det(B)'),
+  '\\left|A\\right|\\left|B\\right|',
+  '\\det(A)\\det(B) multiply must convert'
+)
+
+// 6. \frac{1}{\det(A)}
+assert.strictEqual(
+  normDet('\\frac{1}{\\det(A)}'),
+  '\\frac{1}{\\left|A\\right|}',
+  '\\frac{1}{\\det(A)} must convert'
+)
+
+// 7. (\det A)^{n-1} with outer parens (single letter arg inside)
+assert.strictEqual(
+  normDet('(\\det A)^{n-1}'),
+  '(\\left|A\\right|)^{n-1}',
+  '(\\det A)^{n-1} must convert correctly'
+)
+
+// 8. Nested parens: \det(P^{-1}AP)
+assert.strictEqual(
+  normDet('\\det(P^{-1}AP)'),
+  '\\left|P^{-1}AP\\right|',
+  '\\det(P^{-1}AP) with nested parens must convert'
+)
+
+// 9. \det\begin{pmatrix}...\end{pmatrix} → \begin{vmatrix}...\end{vmatrix}
+assert.strictEqual(
+  normDet('\\det\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}'),
+  '\\begin{vmatrix}a&b\\\\c&d\\end{vmatrix}',
+  '\\det\\begin{pmatrix}...\\end{pmatrix} must become vmatrix'
+)
+
+// 10. Already vmatrix must not be double-converted
+assert.strictEqual(
+  normDet('\\begin{vmatrix}A&B\\\\0&C\\end{vmatrix}'),
+  '\\begin{vmatrix}A&B\\\\0&C\\end{vmatrix}',
+  'existing vmatrix must not be modified'
+)
+
+// 11. \text{...} with det inside must not be corrupted
+assert.strictEqual(
+  normDet('\\text{similar: det, tr, rank}'),
+  '\\text{similar: det, tr, rank}',
+  '\\text{...} with det must not be converted'
+)
+
+// 12. English word "determine" not affected
+assert.strictEqual(normDet('determine'), 'determine', 'word determine must not be modified')
+
+// 13. \operatorname{det}(A)
+assert.strictEqual(
+  normDet('\\operatorname{det}(A)'),
+  '\\left|A\\right|',
+  '\\operatorname{det}(A) must convert'
+)
+
+// 14. \det Q (single letter, no parens)
+assert.strictEqual(
+  normDet('\\det Q'),
+  '\\left|Q\\right|',
+  '\\det Q must convert'
+)
+
+// 15. \det = \prod (dirty data, no arg)
+assert.strictEqual(
+  normDet('\\det = \\prod'),
+  '\\det = \\prod',
+  '\\det without argument must not change'
+)
+
+// 16. Multiple calls give same result (idempotent)
+var idempotentInput = '\\det(A) = \\det(A^T)'
+var once = normDet(idempotentInput)
+var twice = normDet(once)
+assert.strictEqual(once, twice, 'normalizeDeterminantNotation must be idempotent')
+
+// 17. id=39 real data block 2
+assert.strictEqual(
+  normDet('\\det(kA) = k^n\\det(A)'),
+  '\\left|kA\\right| = k^n\\left|A\\right|',
+  'id=39 real block: \\det(kA) = k^n\\det(A)'
+)
+
+// 18. id=193 real data: \det\begin{pmatrix}... format
+assert.strictEqual(
+  normDet('\\det\\begin{pmatrix}a_{11}&b_1\\\\a_{21}&b_2\\end{pmatrix}'),
+  '\\begin{vmatrix}a_{11}&b_1\\\\a_{21}&b_2\\end{vmatrix}',
+  'id=193: \\det\\begin{pmatrix} with matrix content'
+)
+
+// 19. \operatorname{tr} and other operators unaffected
+assert.strictEqual(
+  normDet('\\operatorname{tr}(A)'),
+  '\\operatorname{tr}(A)',
+  '\\operatorname{tr} must not be affected'
+)
+
+// 20. \sin, \cos, \ln etc. unaffected
+assert.strictEqual(
+  normDet('\\sin x + \\cos x'),
+  '\\sin x + \\cos x',
+  'sin and cos must not be affected'
+)
+
+console.log('✓ normalizeDeterminantNotation unit tests passed (all ' + 20 + ' cases correct)')
 
 // =============================
 // New Issue 4: verify existing content areas still work
