@@ -9,6 +9,7 @@ API flow:
 from __future__ import annotations
 
 import asyncio
+import codecs
 import ipaddress
 import json
 import logging
@@ -150,10 +151,64 @@ _MAX_RETRIES = 3
 _RETRY_DELAY = 2.0  # seconds between retries
 
 # SSRF and size limits for result URL download
-_MAX_RESULT_DOWNLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+_MAX_CONTENT_LENGTH_HEADER_BYTES = 50 * 1024 * 1024  # 50 MB (wire / Content-Length)
+_MAX_DECODED_DOWNLOAD_BYTES = 100 * 1024 * 1024     # 100 MB after decoding
 _MAX_JSONL_LINES = 50_000
-_MAX_JSONL_LINE_LENGTH = 200_000  # 200 KB per line
 _RESULT_DOWNLOAD_TIMEOUT = 60  # seconds
+
+
+def _extract_from_entry(
+    entry: dict,
+    *,
+    text_parts: list[str],
+    confidences: list[float],
+    layout_blocks: list[dict],
+) -> None:
+    """Extract text, confidence and layout blocks from a parsed JSONL entry.
+
+    Shared by the streaming loop and final-line handler so extraction logic
+    is identical regardless of where the entry was parsed.
+    """
+    result_data = entry.get("result") or entry
+    layout_results = result_data.get("layoutParsingResults") if isinstance(result_data, dict) else None
+    if isinstance(layout_results, list):
+        for lr in layout_results:
+            if not isinstance(lr, dict):
+                continue
+
+            md = lr.get("markdown") if isinstance(lr, dict) else None
+            md_text = md.get("text") if isinstance(md, dict) else None
+            if md_text:
+                text_parts.append(str(md_text))
+
+            entry_conf = md.get("confidence") if isinstance(md, dict) else None
+            if entry_conf is not None:
+                try:
+                    confidences.append(float(entry_conf))
+                except (ValueError, TypeError):
+                    pass
+
+            block = _normalize_layout_block(lr)
+            if block:
+                layout_blocks.append(block)
+        return
+
+    # Fallback: top-level text/ocr_text/content fields
+    entry_text = (
+        entry.get("text")
+        or entry.get("ocr_text")
+        or entry.get("content")
+        or ""
+    )
+    if entry_text:
+        text_parts.append(str(entry_text))
+
+    entry_conf = entry.get("confidence") or entry.get("score")
+    if entry_conf is not None:
+        try:
+            confidences.append(float(entry_conf))
+        except (ValueError, TypeError):
+            pass
 
 
 def _validate_result_url(url: str) -> str:
@@ -752,21 +807,32 @@ class PaddleOCRVLClient:
     async def _download_and_parse_jsonl(self, url: str) -> tuple[str, float, list[dict], list[dict]]:
         """Download JSONL from url and extract text, confidence, layout blocks, and raw entries.
 
-        Uses streaming download to enforce size limits mid-read (never loads the
-        entire response into memory).  SSRF validation is applied to the initial
-        URL and each redirect hop.
+        Uses bounded streaming to enforce size/line limits mid-read — never buffers
+        the full response. SSRF validation is applied to the initial URL and each
+        redirect hop before connecting.
         """
         url = _validate_result_url(url)
 
         client = self._get_client()
 
-        # Disable auto-redirect: validate each hop manually
+        # Disable auto-redirect: validate each hop manually before connecting
         async with client.stream("GET", url, follow_redirects=False) as response:
+            # Content-Length pre-check
+            cl = response.headers.get("Content-Length")
+            if cl:
+                try:
+                    if int(cl) > _MAX_CONTENT_LENGTH_HEADER_BYTES:
+                        raise ResultDownloadError(
+                            f"Content-Length {cl} exceeds {_MAX_CONTENT_LENGTH_HEADER_BYTES}"
+                        )
+                except (ValueError, TypeError):
+                    pass
+
             if response.status_code in (301, 302, 303, 307, 308):
                 redirect_url = str(response.headers.get("location", ""))
                 if not redirect_url:
                     raise ResultDownloadError("Redirect with no Location header")
-                # Validate redirect target
+                # Validate redirect target before connecting
                 _validate_result_url(redirect_url)
                 async with client.stream("GET", redirect_url, follow_redirects=False) as final_resp:
                     final_resp.raise_for_status()
@@ -780,95 +846,126 @@ class PaddleOCRVLClient:
     async def _stream_and_parse(
         self, response: httpx.Response,
     ) -> tuple[str, float, list[dict], list[dict]]:
-        """Read a streaming response, enforce limits mid-stream, parse JSONL."""
+        """Bounded streaming parse of JSONL response.
+
+        Processes chunks as they arrive: split on newlines, parse complete JSONL
+        lines immediately, enforce size and line-count limits mid-stream.
+
+        This implementation is *bounded streaming* — it never buffers the full
+        response, but raw_entries and the final result are retained in memory.
+        """
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
         total_compressed = 0
-        total_decompressed = 0
+        byte_buffer = b""
         line_count = 0
-        chunks: list[bytes] = []
-
-        async for chunk in response.aiter_bytes():
-            chunk_len = len(chunk)
-            total_compressed += chunk_len
-
-            if total_compressed > _MAX_RESULT_DOWNLOAD_BYTES:
-                raise ResultDownloadError(
-                    f"Result download exceeded {_MAX_RESULT_DOWNLOAD_BYTES} bytes"
-                    f" (compressed) at {total_compressed} bytes"
-                )
-
-            chunks.append(chunk)
-
-        # Decompress and split into lines
-        raw = b"".join(chunks).decode("utf-8", errors="replace")
-        total_decompressed = len(raw)
-
-        lines = [l.strip() for l in raw.split("\n") if l.strip()]
-        if not lines:
-            return "", 0.0, [], []
-
-        if len(lines) > _MAX_JSONL_LINES:
-            raise ResultDownloadError(
-                f"Result JSONL has {len(lines)} lines, exceeds limit "
-                f"of {_MAX_JSONL_LINES}"
-            )
+        first_line = True
 
         text_parts: list[str] = []
         confidences: list[float] = []
         layout_blocks: list[dict] = []
         raw_entries: list[dict] = []
 
-        for line in lines:
-            if len(line) > _MAX_JSONL_LINE_LENGTH:
-                logger.warning("Skipping overlong JSONL line (%d chars)", len(line))
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        async for chunk in response.aiter_bytes():
+            chunk_len = len(chunk)
+            total_compressed += chunk_len
 
-            raw_entries.append(entry)
+            if total_compressed > _MAX_CONTENT_LENGTH_HEADER_BYTES:
+                raise ResultDownloadError(
+                    f"Result download exceeded {_MAX_CONTENT_LENGTH_HEADER_BYTES} bytes"
+                    f" (compressed) at {total_compressed} bytes"
+                )
 
-            # Extract result.layoutParsingResults[] (PaddleOCR-VL format)
-            result_data = entry.get("result") or entry
-            layout_results = result_data.get("layoutParsingResults") if isinstance(result_data, dict) else None
-            if isinstance(layout_results, list):
-                for lr in layout_results:
-                    if not isinstance(lr, dict):
-                        continue
+            byte_buffer += chunk
 
-                    md = lr.get("markdown") if isinstance(lr, dict) else None
-                    md_text = md.get("text") if isinstance(md, dict) else None
-                    if md_text:
-                        text_parts.append(str(md_text))
-
-                    entry_conf = md.get("confidence") if isinstance(md, dict) else None
-                    if entry_conf is not None:
-                        try:
-                            confidences.append(float(entry_conf))
-                        except (ValueError, TypeError):
-                            pass
-
-                    block = _normalize_layout_block(lr)
-                    if block:
-                        layout_blocks.append(block)
+            # Guard: a single line without newline must not consume unlimited memory
+            if b"\n" not in byte_buffer:
+                raw_so_far = len(byte_buffer)
+                decoded_estimate = raw_so_far  # upper bound (ASCII) or less (multi-byte)
+                if decoded_estimate > _MAX_DECODED_DOWNLOAD_BYTES:
+                    raise ResultDownloadError(
+                        f"Result line exceeds {_MAX_DECODED_DOWNLOAD_BYTES} decoded bytes"
+                        f" without newline"
+                    )
                 continue
 
-            # Fallback: top-level text/ocr_text/content fields
-            entry_text = (
-                entry.get("text")
-                or entry.get("ocr_text")
-                or entry.get("content")
-                or ""
-            )
-            if entry_text:
-                text_parts.append(str(entry_text))
+            # Split on newlines and process complete lines
+            parts = byte_buffer.split(b"\n")
+            # Everything except the last element — the last may be incomplete
+            complete_parts = parts[:-1]
+            byte_buffer = parts[-1]
 
-            entry_conf = entry.get("confidence") or entry.get("score")
-            if entry_conf is not None:
+            for part in complete_parts:
+                if not part and not first_line:
+                    # Empty line (not the first, which could be BOM)
+                    continue
+
+                # Decode one complete line
+                line_text = decoder.decode(part)
+                if first_line:
+                    first_line = False
+                    # Strip UTF-8 BOM if present
+                    if line_text.startswith("﻿"):
+                        line_text = line_text[1:]
+                # Normalize CRLF: strip trailing \r
+                if line_text.endswith("\r"):
+                    line_text = line_text[:-1]
+
+                stripped = line_text.strip()
+                if not stripped:
+                    continue
+
+                line_count += 1
+                if line_count > _MAX_JSONL_LINES:
+                    raise ResultDownloadError(
+                        f"Result JSONL has {line_count} lines, exceeds limit "
+                        f"of {_MAX_JSONL_LINES}"
+                    )
+
+                # Parse JSONL line immediately
                 try:
-                    confidences.append(float(entry_conf))
-                except (ValueError, TypeError):
+                    entry = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+
+                raw_entries.append(entry)
+                _extract_from_entry(
+                    entry,
+                    text_parts=text_parts,
+                    confidences=confidences,
+                    layout_blocks=layout_blocks,
+                )
+
+        # Handle final partial line (no trailing newline)
+        if byte_buffer:
+            line_text = decoder.decode(byte_buffer, final=True)
+            if first_line and line_text.startswith("﻿"):
+                line_text = line_text[1:]
+            if line_text.endswith("\r"):
+                line_text = line_text[:-1]
+
+            stripped = line_text.strip()
+            if stripped:
+                line_count += 1
+                if line_count > _MAX_JSONL_LINES:
+                    raise ResultDownloadError(
+                        f"Result JSONL has {line_count} lines, exceeds limit "
+                        f"of {_MAX_JSONL_LINES}"
+                    )
+                try:
+                    entry = json.loads(stripped)
+                except json.JSONDecodeError:
                     pass
+                else:
+                    raw_entries.append(entry)
+                    _extract_from_entry(
+                        entry,
+                        text_parts=text_parts,
+                        confidences=confidences,
+                        layout_blocks=layout_blocks,
+                    )
+
+        if not raw_entries:
+            return "", 0.0, [], []
 
         full_text = "\n".join(text_parts)
         avg_confidence = (

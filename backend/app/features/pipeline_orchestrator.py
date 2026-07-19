@@ -2193,29 +2193,9 @@ class PipelineStage:
 
         _pipe_logger = logging.getLogger("app.pipeline")
 
-        # Stage → 业务阶段映射（用于 Sentry 导题链路埋点）
-        _STAGE_BUSINESS_MAP = {
-            "extract": "ocr",
-            "normalize_text": "parse",
-            "ocr_correction": "ai_correct",
-            "layout_reconstruction": "parse",
-            "layout_router": "parse",
-            "analyze_structure": "parse",
-            "classify_pages": "parse",
-            "structure_freeze": "parse",
-            "split": "parse",
-            "question_bbox": "parse",
-            "match": "parse",
-            "normalize_schema": "parse",
-            "code_language_noise_clean": "parse",
-            "code_structure_reconstruct": "parse",
-            "batch_validation": "parse",
-            "batch_dedup": "parse",
-            "repair": "ai_correct",
-            "ai_validation": "parse",
-            "similarity_match": "parse",
-            "review": "save",
-        }
+        # Stage -> business domain mapping (for Sentry trace linking)
+        from app.features.pipeline_definition import PipelineDefinition as _PipeDef
+        _STAGE_BUSINESS_MAP = _PipeDef.business_map()
         set_tag("stage", _STAGE_BUSINESS_MAP.get(self.name, "unknown"))
         set_tag("pipeline.stage", self.name)
         bind_log_context(stage=self.name)
@@ -2476,61 +2456,23 @@ class ImportPipeline:
         """(Re)build the stage list from current options.
 
         Called during __init__ and whenever options change at runtime.
+        Iterates ``PipelineDefinition.enabled_stages()`` so the stage order,
+        conditional enable, and runner binding live in one place.
         """
-        stage_specs: list[tuple[str, callable]] = [
-            ("extract", self._run_extract),
-        ]
-        if self.options.get("enable_wangdao_preprocess", False):
-            stage_specs.append(("wangdao_preprocess", self._run_wangdao_preprocess))
-        stage_specs.append(("normalize_text", self._run_normalize_text))
-        if self.options.get("enable_ocr_correction", True):
-            stage_specs.append(("ocr_correction", self._run_ocr_correction))
-        stage_specs.append(("layout_reconstruction", self._run_layout_reconstruction))
-        stage_specs.append(("layout_router", self._run_layout_router))
-        if self.options.get("enable_visual_region_detect", True):
-            stage_specs.append(("visual_region_detect", self._run_visual_region_detect))
-        stage_specs.extend([
-            ("analyze_structure", self._run_analyze_structure),
-            ("classify_pages", self._run_classify_pages),
-            ("structure_freeze", self._run_structure_freeze),
-            ("split", self._run_split),
-            ("question_bbox", self._run_question_bbox),
-            ("match", self._run_match),
-            ("normalize_schema", self._run_normalize_schema),
-        ])
-        # Code language noise clean: remove OCR language identifier noise before structure repair
-        if self.options.get("enable_code_language_noise_clean", True):
-            stage_specs.append(("code_language_noise_clean", self._run_code_language_noise_clean))
-        # Code structure reconstruction stage: fix code integrity issues before AI repair
-        if self.options.get("enable_code_structure_reconstruct", True):
-            stage_specs.append(("code_structure_reconstruct", self._run_code_structure_reconstruct))
-        # Layer 1 Gate: enforce question type classification (strict has_options)
-        stage_specs.append(("classify_questions", self._run_classify_questions))
-        stage_specs.append(("batch_validation", self._run_batch_validation))
-        if self.options.get("enable_batch_dedup", True):
-            stage_specs.append(("batch_dedup", self._run_batch_dedup))
-        if self.options.get("enable_ai_repair", True):
-            stage_specs.append(("repair", self._run_repair))
-            stage_specs.append(("ai_validation", self._run_ai_validation))
-        if self.options.get("enable_similarity_match", True):
-            stage_specs.append(("similarity_match", self._run_similarity_match))
-        if self.options.get("enable_visual_region_assign", True):
-            stage_specs.append(("visual_region_assign", self._run_visual_region_assign))
-        if self.options.get("enable_math_detect", True):
-            stage_specs.append(("math_detect", self._run_math_detect))
-        if self.options.get("enable_table_detect", True):
-            stage_specs.append(("table_detect", self._run_table_detect))
-        if self.options.get("enable_visual_region_crop", True):
-            stage_specs.append(("visual_region_crop", self._run_visual_region_crop))
-        stage_specs.append(("review", self._run_review))
+        from app.features.pipeline_definition import PipelineDefinition as _PipeDef
+
+        stage_specs: list[tuple[str, callable]] = []
+        for sd in _PipeDef.enabled_stages(self.options):
+            fn = getattr(self, sd.runner_method, None)
+            if fn is None:
+                raise ValueError(
+                    f"No runner method {sd.runner_method!r} for stage {sd.name!r}"
+                )
+            stage_specs.append((sd.name, fn))
 
         self.stages.clear()
         for name, fn in stage_specs:
             self.stages[name] = PipelineStage(name, fn)
-
-    # ------------------------------------------------------------------
-    # stage implementations
-    # ------------------------------------------------------------------
 
     def _run_extract(
         self,
