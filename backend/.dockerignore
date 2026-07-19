@@ -27,8 +27,8 @@ __pycache__/
 htmlcov/
 
 .venv/
+.venv*/
 venv/
-backend/.venv/
 node_modules/
 dist/
 build/
