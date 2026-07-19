@@ -226,7 +226,22 @@ docker compose -f deploy/docker-compose.dev.yml up -d
 
 ---
 
-### 4.3 启动后台管理端
+#### 7）WSL → Windows 同步（可选）
+
+WSL 开发环境如需将代码同步到 Windows 文件系统（如使用 Windows 端的 IDE、Git GUI 等工具）：
+
+```bash
+rsync -av --delete \
+  --exclude=.git --exclude=.claude --exclude=node_modules \
+  --exclude=.next --exclude=dist --exclude=build \
+  --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache \
+  --exclude=coverage --exclude=*.pdf --exclude=*.txt \
+  --exclude=.backend_cache --exclude=tests \
+  --exclude=backend/tests --exclude=prompts --exclude=ocr_test \
+  --exclude=.venv-ocr-gpu --exclude=.venv-ocr-gpu-330 \
+  --exclude=artifacts --exclude=static \
+  /home/lmh/projects/postgraduate-ai/ /mnt/d/workspace/postgraduate-ai/
+```
 
 ```bash
 cd admin-frontend
