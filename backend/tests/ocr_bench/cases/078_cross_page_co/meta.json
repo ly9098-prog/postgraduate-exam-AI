@@ -1,0 +1,24 @@
+{
+  "case_id": "078_cross_page_co",
+  "scenario": "cross_page",
+  "subject": "exam408",
+  "description": "跨页计组题目续",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "source_type": "synthetic",
+  "human_verified": false,
+  "verified_by": "automated",
+  "verification_version": "v1",
+  "input_sha256": "",
+  "tags": [
+    "cross_page",
+    "co"
+  ],
+  "expected_questions": 1,
+  "expected_qnumbers": [
+    1
+  ],
+  "expected_answers": {},
+  "verified": false
+}

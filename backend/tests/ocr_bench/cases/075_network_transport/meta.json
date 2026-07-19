@@ -1,0 +1,26 @@
+{
+  "case_id": "075_network_transport",
+  "scenario": "single_column",
+  "subject": "exam408",
+  "description": "计算机网络传输层",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "source_type": "synthetic",
+  "human_verified": false,
+  "verified_by": "automated",
+  "verification_version": "v1",
+  "input_sha256": "",
+  "tags": [
+    "single_column",
+    "network"
+  ],
+  "expected_questions": 3,
+  "expected_qnumbers": [
+    1,
+    2,
+    3
+  ],
+  "expected_answers": {},
+  "verified": false
+}

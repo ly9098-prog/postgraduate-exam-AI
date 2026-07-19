@@ -1,34 +1,54 @@
-"""Tests for Gateway bypass — verify bypass count is zero outside allowed adapters."""
+"""Tests for Gateway bypass — verify bypass count is zero outside allowed adapters.
+
+Uses AST-level analysis to detect imports of raw OCR types outside adapter
+boundary. String literal matches are avoided since they produce false positives
+from dictionary keys and docstrings.
+"""
 
 from __future__ import annotations
 
 import ast
-import os
 from pathlib import Path
 
 import pytest
 
 BACKEND = Path(__file__).resolve().parent.parent / "app"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
-# Raw OCR types that should only be accessed inside adapter boundary
+# Raw OCR types that should only be imported inside adapter boundary
 RAW_OCR_TYPES = {
     "OcrPageResult",
     "OcrFixResult",
     "OCRFixResult",
+}
+
+# Adapter/internal modules — only these may import raw OCR types
+_ADAPTER_BOUNDARY = frozenset({
+    "backend/app/features/ocr_adapter.py",
+    "backend/app/features/ocr_vl/paddleocr_vl_adapter.py",
+    "backend/app/features/ocr_fix/deepseek_adapter.py",
+    "backend/app/features/ocr_fix/rule_adapter.py",
+    "backend/app/features/ocr_fix/interfaces.py",
+    "backend/app/features/ocr_correction.py",
+    "backend/app/core/document_ir.py",
+    "backend/app/services/ocr_service.py",  # defines the types
+    "backend/app/features/ocr_fix/__init__.py",  # re-exports
+    "backend/app/features/ocr_fix/router.py",  # fix routing
+    "backend/app/core/ocr_types.py",      # public types
+    "backend/app/core/ocr_engine.py",      # engine (child process only)
+    "backend/app/core/ocr_worker_process.py",
+    "backend/app/core/ocr_worker_pool.py",
+    "backend/app/services/ocr_local_worker_client.py",
+    "backend/app/features/ocr_gateway.py",
+})
+
+# These variable names are DOMAIN concepts, not raw OCR types.
+# They appear as dict keys in many modules and should NOT trigger violations.
+_DOMAIN_VARS = {
     "raw_blocks",
     "rec_texts",
     "dt_polys",
     "OcrBackendResult",
-}
-
-# Files that are legitimate adapter internal
-_ADAPTER_BOUNDARY = {
-    "app/features/ocr_adapter.py",
-    "app/features/ocr_vl/paddleocr_vl_adapter.py",
-    "app/features/ocr_fix/deepseek_adapter.py",
-    "app/features/ocr_fix/rule_adapter.py",
-    "app/features/ocr_fix/interfaces.py",
-    "app/core/document_ir.py",
 }
 
 
@@ -36,50 +56,59 @@ class TestGatewayBypassZero:
     """Verify no Gateway bypass violations outside adapter boundary."""
 
     def _find_bypass_violations(self) -> list[dict]:
-        """Find raw OCR type usage outside adapter boundary."""
         violations = []
 
         for py_file in sorted(BACKEND.rglob("*.py")):
             if "/test_" in str(py_file) or "__pycache__" in str(py_file):
                 continue
-            rel = str(py_file.relative_to(BACKEND.parent.parent))
+            rel = str(py_file.relative_to(PROJECT_ROOT))
             if rel in _ADAPTER_BOUNDARY:
                 continue
 
             try:
-                source = py_file.read_text()
-            except Exception:
+                tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+            except (SyntaxError, Exception):
                 continue
 
-            for raw_type in RAW_OCR_TYPES:
-                if raw_type in source:
-                    lines = source.split("\n")
-                    for i, line in enumerate(lines, 1):
-                        if raw_type in line and not line.strip().startswith("#"):
+            for node in ast.walk(tree):
+                # Check: from X import OCRFixResult
+                if isinstance(node, ast.ImportFrom):
+                    for alias in node.names:
+                        if alias.name in RAW_OCR_TYPES:
                             violations.append({
                                 "file": rel,
-                                "line": i,
-                                "type": raw_type,
-                                "snippet": line.strip()[:100],
+                                "line": node.lineno,
+                                "type": alias.name,
+                                "snippet": f"from {node.module} import {alias.name}",
                             })
+
+                # Check: import X → then X.OCRFixResult usage
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.asname or alias.name:
+                            pass  # hard to detect statically, skip
 
         return violations
 
     def test_gateway_bypass_zero_outside_adapter(self):
-        """No raw OCR type access outside adapter boundary."""
+        """No raw OCR type imports outside adapter boundary."""
         violations = self._find_bypass_violations()
 
+        msg_parts = [f"Found {len(violations)} Gateway bypass violations:"]
+        for v in violations[:20]:
+            msg_parts.append(f"  {v['file']}:{v['line']}  {v['type']}  {v['snippet']}")
         if violations:
-            print(f"\nFound {len(violations)} Gateway bypass violations:")
-            for v in violations[:20]:
-                print(f"  {v['file']}:{v['line']}  {v['type']}  {v['snippet']}")
+            msg_parts.append(
+                "\nFix: raw OCR types must only be imported inside adapter boundary."
+            )
 
-        # Report but allow for valid cross-references
-        print(f"\nTotal bypass sites outside adapter boundary: {len(violations)}")
+        assert len(violations) == 0, "\n".join(msg_parts)
 
     def test_adapter_boundary_files_exist(self):
         """Verify all adapter boundary files exist."""
+        missing = []
         for path in _ADAPTER_BOUNDARY:
-            full = BACKEND.parent / path
+            full = PROJECT_ROOT / path
             if not full.exists():
-                print(f"Warning: boundary file not found: {path}")
+                missing.append(path)
+        assert len(missing) == 0, f"Boundary files missing: {missing}"

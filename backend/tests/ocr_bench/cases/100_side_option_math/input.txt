@@ -1,0 +1,5 @@
+1. 下列极限中，值为 1 的是
+A. lim x→0 sinx/x    B. lim x→∞ 1/x    C. lim x→0 x sin(1/x)    D. lim x→0 (e^x-1)/x
+
+2. 下列函数在 x=0 处不可导的是
+A. f(x)=|x|    B. f(x)=x^2    C. f(x)=sin x    D. f(x)=e^x

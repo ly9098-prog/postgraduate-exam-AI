@@ -1,0 +1,13 @@
+1. Cache 的地址映射方式中，TLB 的全称是
+A. Translation Lookaside Buffer
+B. Translation Lookup Buffer
+C. Table Lookaside Buffer
+D. Translation Local Buffer
+答案：A
+
+2. 下列不属于指令流水线冒险的是
+A. 结构冒险
+B. 数据冒险
+C. 控制冒险
+D. 缓存冒险
+答案：D

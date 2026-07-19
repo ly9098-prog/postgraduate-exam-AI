@@ -1,0 +1,29 @@
+{
+  "scenario": "multi_column",
+  "subject": "exam408",
+  "description": "两栏排版 — 左右分栏导致题号与选项串行，答案故意错乱",
+  "expected_questions": 2,
+  "expected_qnumbers": [1, 2],
+  "expected_answers": {
+    "1": "A",
+    "2": "C"
+  },
+  "known_failure_types": ["两栏串行", "选项错序"],
+  "tags": ["two_column", "reading_order"],
+  "date_added": "2026-07-17",
+  "ocr_regions": [
+    {"id": "r_q1_stem", "text": "1. 完全二叉树的第5层最多有（ ）个结点。", "bbox": [30, 100, 350, 140], "page_width": 800, "page_height": 600},
+    {"id": "r_q1_a", "text": "A. 16", "bbox": [30, 150, 350, 180], "page_width": 800, "page_height": 600},
+    {"id": "r_q2_stem", "text": "2. 对n个关键字的二叉排序树进行查找，平均查找长度最坏情况下为：", "bbox": [420, 100, 770, 140], "page_width": 800, "page_height": 600},
+    {"id": "r_q2_a", "text": "A. O(log n)", "bbox": [420, 150, 770, 180], "page_width": 800, "page_height": 600},
+    {"id": "r_q1_b", "text": "B. 8", "bbox": [30, 190, 350, 220], "page_width": 800, "page_height": 600},
+    {"id": "r_q2_b", "text": "B. O(n log n)", "bbox": [420, 190, 770, 220], "page_width": 800, "page_height": 600},
+    {"id": "r_q1_c", "text": "C. 32", "bbox": [30, 230, 350, 260], "page_width": 800, "page_height": 600},
+    {"id": "r_q2_c", "text": "C. O(n)", "bbox": [420, 230, 770, 260], "page_width": 800, "page_height": 600},
+    {"id": "r_q1_d", "text": "D. 24", "bbox": [30, 270, 350, 300], "page_width": 800, "page_height": 600},
+    {"id": "r_q2_d", "text": "D. O(n^2)", "bbox": [420, 270, 770, 300], "page_width": 800, "page_height": 600},
+    {"id": "r_q1_ans", "text": "答案：A", "bbox": [30, 310, 350, 340], "page_width": 800, "page_height": 600},
+    {"id": "r_q2_key", "text": "KEY: C", "bbox": [420, 310, 770, 340], "page_width": 800, "page_height": 600}
+  ],
+  "expected_region_order": ["r_q1_stem", "r_q1_a", "r_q1_b", "r_q1_c", "r_q1_d", "r_q1_ans", "r_q2_stem", "r_q2_a", "r_q2_b", "r_q2_c", "r_q2_d", "r_q2_key"]
+}

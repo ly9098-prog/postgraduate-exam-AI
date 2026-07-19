@@ -19,7 +19,7 @@ import json
 import logging
 from typing import Any
 
-from app.features.ai_safety import evaluate_and_trace
+from app.features.candidate_evaluator import CandidateEvaluator, CandidateDecision
 from app.features.code_integrity import contains_code, detect_code_block_integrity
 from app.features.pipeline_stages._helpers import _count_risk_flags
 from app.features.token_budget import estimate_tokens, check_token_limit, record_token_usage
@@ -236,37 +236,36 @@ async def run_code_structure_stage(
             })
             continue
 
-        # Apply safety gate (evaluate_and_trace internally calls safe_accept_ai_result)
-        trace, final_stem = evaluate_and_trace(
-            "code_structure_reconstruct",
-            "deepseek",
-            stem_before,
-            result["repaired_stem"],
+        # Apply safety gate via CandidateEvaluator (unified single acceptance authority)
+        evaluator = CandidateEvaluator()
+        evaluation = evaluator.evaluate(
+            original_text=stem_before,
+            candidate_text=result["repaired_stem"],
             context={"is_code_context": True},
-            tokens_used=result.get("token_used", 0),
+            provenance={"stage": "code_structure_reconstruct", "model": "deepseek"},
         )
 
-        if not trace.accepted:
+        if evaluation.decision != CandidateDecision.ACCEPT:
             failed_count += 1
             logger.info(
                 "Code structure safety gate rejected question %s: %s",
                 q.get("number", idx),
-                trace.rollback_reason or "unknown",
+                evaluation.reason_code or "unknown",
             )
             fix_actions.append({
                 "question_index": idx,
                 "success": False,
-                "reason": f"safety_rejected: {trace.rollback_reason or 'unknown'}",
+                "reason": f"safety_rejected: {evaluation.reason_code or 'unknown'}",
             })
             continue
 
-        # Apply the fix: update stem (final_stem is after if accepted, before if rolled back)
-        q["stem"] = final_stem
+        # Apply the fix: update stem with accepted text from evaluator
+        q["stem"] = evaluation.accepted_text
 
         # ── P0: Post-reconstruction integrity validation ──
         # Run integrity check on the new stem to see which flags were actually resolved.
         # Don't trust the LLM's self-reported confidence — rule-based detection is authoritative.
-        _post_integrity = detect_code_block_integrity(final_stem)
+        _post_integrity = detect_code_block_integrity(evaluation.accepted_text)
         _post_flags = set(_post_integrity.get("flags", []))
         _post_score = _post_integrity.get("score", 0)
 

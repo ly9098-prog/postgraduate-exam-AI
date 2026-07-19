@@ -153,7 +153,10 @@ def expand_bbox(
 
 
 def build_ocr_lines(normalized_blocks: list[dict]) -> list[dict]:
-    """从 normalized_blocks 构造页面 OCR 行列表。
+    """[Legacy] 从 normalized_blocks 构造页面 OCR 行列表。
+
+    内部直接读取 dict 格式以保持向后兼容。
+    新代码请使用 ``build_ocr_lines_from_ir(doc)``。
 
     每一行包含：
     - page
@@ -164,9 +167,6 @@ def build_ocr_lines(normalized_blocks: list[dict]) -> list[dict]:
     - line_index (按 block 内行号)
     - page_width
     - page_height
-
-    过滤空行。
-    过滤 header/footer/watermark 区（同步过滤对应的 bbox 行）。
 
     Returns:
         list of dicts, each describing one OCR line with spatial info
@@ -187,7 +187,6 @@ def build_ocr_lines(normalized_blocks: list[dict]) -> list[dict]:
         for line_idx, line in enumerate(lines):
             stripped = line.strip()
             if not stripped:
-                # Empty lines don't consume a box index
                 continue
 
             bbox_entry = boxes[box_idx] if box_idx < len(boxes) else None
@@ -215,6 +214,57 @@ def build_ocr_lines(normalized_blocks: list[dict]) -> list[dict]:
                 "page_width": pw,
                 "page_height": ph,
             })
+
+    return ocr_lines
+
+
+def build_ocr_lines_from_ir(doc: "DocumentIR") -> list[dict]:
+    """从 DocumentIR 构造页面 OCR 行列表。
+
+    与 build_ocr_lines 输出格式一致，但以 DocumentIR 为输入。
+
+    Returns:
+        list of dicts, each describing one OCR line with spatial info
+    """
+    return _build_ocr_lines_ir(doc)
+
+
+def _build_ocr_lines_ir(doc: "DocumentIR") -> list[dict]:
+    """DocumentIR-native OCR line builder (internal)."""
+    from app.features.wangdao_preprocessor import classify_zone
+
+    ocr_lines: list[dict] = []
+    line_index = 0
+
+    for page in doc.pages:
+        pw = page.width or 0
+        ph = page.height or 0
+
+        for region in page.regions:
+            for line in region.lines:
+                text = line.text.strip()
+                if not text:
+                    continue
+
+                bbox = line.bbox.as_tuple() if line.bbox else (0, 0, 0, 0)
+                x0, y0, x1, y1 = bbox
+
+                # Classify zone to skip headers/footers/watermarks
+                zone = classify_zone(text, x0, y0, x1, y1, pw, ph)
+                if zone in ("header", "footer", "watermark"):
+                    continue
+
+                ocr_lines.append({
+                    "page": page.page_index + 1,
+                    "text": text,
+                    "bbox": (float(x0), float(y0), float(x1), float(y1)),
+                    "confidence": float(line.confidence or 0.0),
+                    "zone": zone,
+                    "line_index": line_index,
+                    "page_width": pw,
+                    "page_height": ph,
+                })
+                line_index += 1
 
     return ocr_lines
 
@@ -754,20 +804,67 @@ def compute_question_bboxes(
     *,
     visual_regions: list[dict] | None = None,
 ) -> list[dict]:
-    """Compute question_bbox for all raw_questions.
+    """[Legacy] Compute question_bbox from normalized blocks.
+
+    内部直接使用 build_ocr_lines（blocks 格式）以保持向后兼容。
+    新代码请使用 ``compute_question_bboxes_from_ir()``。
+    """
+    # Build OCR lines once
+    ocr_lines = build_ocr_lines(normalized_blocks)
+
+    # Group OCR lines by page for efficient lookup
+    ocr_lines_by_page: dict[int, list[dict]] = {}
+    for ol in ocr_lines:
+        p = ol.get("page", 0)
+        ocr_lines_by_page.setdefault(p, []).append(ol)
+
+    for q in raw_questions:
+        page = q.get("page_start") or q.get("page", 1)
+        page_ocr = ocr_lines_by_page.get(page, [])
+
+        result = compute_question_bbox(
+            q, page_ocr, page,
+            visual_regions=visual_regions,
+        )
+
+        for key, value in result.items():
+            q[key] = value
+
+    return raw_questions
+
+
+def compute_question_bboxes_from_ir(
+    raw_questions: list[dict],
+    doc: "DocumentIR | None",
+    *,
+    visual_regions: list[dict] | None = None,
+) -> list[dict]:
+    """Compute question_bbox for all raw_questions from DocumentIR.
 
     Modifies raw_questions in place, attaching bbox fields.
 
     Args:
         raw_questions: list of question dicts with page_start, etc.
-        normalized_blocks: normalized blocks from pipeline (with boxes)
+        doc: DocumentIR — 将从中提取 OCR 行用于 bbox 计算。
         visual_regions: optional list of visual region dicts
 
     Returns:
         The modified raw_questions list (same objects, mutated in place).
     """
-    # Build OCR lines once
-    ocr_lines = build_ocr_lines(normalized_blocks)
+    return _compute_question_bboxes_ir(raw_questions, doc, visual_regions=visual_regions)
+
+
+def _compute_question_bboxes_ir(
+    raw_questions: list[dict],
+    doc: "DocumentIR | None",
+    *,
+    visual_regions: list[dict] | None = None,
+) -> list[dict]:
+    """DocumentIR-native question bbox batch computation (internal)."""
+    if doc is None:
+        return raw_questions
+
+    ocr_lines = _build_ocr_lines_ir(doc)
 
     # Group OCR lines by page for efficient lookup
     ocr_lines_by_page: dict[int, list[dict]] = {}

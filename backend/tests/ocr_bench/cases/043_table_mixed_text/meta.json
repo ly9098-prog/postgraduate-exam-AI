@@ -1,0 +1,21 @@
+{
+  "case_id": "043_table_mixed_text",
+  "scenario": "table",
+  "subject": "exam408",
+  "description": "表格穿插正文",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "tags": [
+    "table",
+    "mixed"
+  ],
+  "expected_questions": 3,
+  "expected_qnumbers": [
+    1,
+    2,
+    3
+  ],
+  "expected_answers": {},
+  "verified": true
+}

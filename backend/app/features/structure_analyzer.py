@@ -405,6 +405,16 @@ def analyze_structure(
     }
 
 
+def analyze_structure_from_ir(
+    doc: "DocumentIR",
+    features: dict | None = None,
+) -> dict:
+    """DocumentIR entry point for analyze_structure."""
+    from app.core.document_ir import document_ir_to_blocks
+    blocks = document_ir_to_blocks(doc)
+    return analyze_structure(blocks, features=features)
+
+
 def _detect_mode(
     block_types: list[tuple[int, str]],
     pure_question_blocks: list[int],

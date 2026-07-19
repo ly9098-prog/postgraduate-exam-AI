@@ -1,0 +1,22 @@
+{
+  "scenario": "math",
+  "subject": "math2",
+  "description": "分式与极限计算",
+  "expected_questions": 3,
+  "expected_qnumbers": [
+    1,
+    2,
+    3
+  ],
+  "expected_answers": {
+    "1": "B",
+    "2": "C",
+    "3": "A"
+  },
+  "tags": [
+    "formula",
+    "fraction",
+    "limit"
+  ],
+  "date_added": "2026-07-17"
+}

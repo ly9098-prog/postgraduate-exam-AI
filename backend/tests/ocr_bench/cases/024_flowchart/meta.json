@@ -1,0 +1,19 @@
+{
+  "scenario": "flowchart",
+  "subject": "exam408",
+  "description": "流程图 — 程序执行流程分析",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "B",
+    "2": "D"
+  },
+  "tags": [
+    "flowchart",
+    "algorithm"
+  ],
+  "date_added": "2026-07-17"
+}

@@ -1,0 +1,11 @@
+1. 信号量初值为 3，当前值为 -2，表示有（ ）个进程在等待
+A. 1
+B. 2
+C. 3
+D. 5
+
+2. P 操作的定义是
+A. S = S - 1; if S < 0 then wait
+B. S = S + 1; if S <= 0 then wakeup
+C. S = S - 1; if S <= 0 then wait
+D. S = S + 1; if S < 0 then wakeup

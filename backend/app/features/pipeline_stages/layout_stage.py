@@ -87,3 +87,13 @@ def run_layout_reconstruction_stage(
         "layout_confidence": layout_confidence,
         "warnings": warnings,
     }
+
+
+def run_layout_reconstruction_stage_from_ir(
+    doc: "DocumentIR",
+    **kwargs: Any,
+) -> dict:
+    """DocumentIR entry point for run_layout_reconstruction_stage."""
+    from app.core.document_ir import document_ir_to_blocks
+    blocks = document_ir_to_blocks(doc)
+    return run_layout_reconstruction_stage(blocks, **kwargs)

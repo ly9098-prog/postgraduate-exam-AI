@@ -1,0 +1,13 @@
+1. 下列程序输出结果是
+struct S { char a; int b; char c; };
+printf("%lu", sizeof(struct S));
+A. 6
+B. 8
+C. 12
+D. 16
+
+2. 关于 #define 和 typedef 的区别，错误的是
+A. #define 是预处理器指令
+B. typedef 是编译时处理
+C. #define 可以定义类型别名
+D. typedef 可以定义常量

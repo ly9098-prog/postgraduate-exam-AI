@@ -1,0 +1,28 @@
+1. 执行如下代码段后，输出的结果是：
+
+int a[] = {1, 2, 3, 4, 5};
+int *p = a;
+p++;
+printf("%d", *p);
+
+A. 1
+B. 2
+C. 3
+D. 4
+答案：B
+
+2. 以下函数的功能是：
+
+void func(Node *head) {
+    Node *p = head;
+    while (p != NULL) {
+        printf("%d ", p->data);
+        p = p->next;
+    }
+}
+
+A. 删除链表结点
+B. 插入链表结点
+C. 修改链表结点
+D. 遍历链表
+KEY: D

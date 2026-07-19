@@ -1,0 +1,20 @@
+1. 对于双向链表，在结点p之后插入结点s的操作是：
+A. s->next = p->next; p->next->prev = s; p->next = s; s->prev = p;
+B. p->next = s; s->prev = p; p->next->prev = s; s->next = p->next;
+C. s->prev = p; s->next = p->next; p->next->prev = s; p->next = s;
+D. p->next->prev = s; s->next = p->next; s->prev = p; p->next = s;
+答案：A
+
+2. 执行以下函数后，p和q的关系是：
+
+void func(int *p, int *q) {
+    int *tmp = p;
+    p = q;
+    q = tmp;
+}
+
+A. p和q的值交换了
+B. p和q指向的变量值交换了
+C. 程序崩溃
+D. p和q的值没有变化（值传递）
+KEY: D

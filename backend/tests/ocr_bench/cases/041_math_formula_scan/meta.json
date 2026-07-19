@@ -1,0 +1,23 @@
+{
+  "case_id": "041_math_formula_scan",
+  "scenario": "math",
+  "subject": "exam408",
+  "description": "数学公式扫描件",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "tags": [
+    "math",
+    "formula",
+    "scan"
+  ],
+  "expected_questions": 4,
+  "expected_qnumbers": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "expected_answers": {},
+  "verified": true
+}

@@ -1,0 +1,21 @@
+{
+  "case_id": "039_code_scan",
+  "scenario": "code_c",
+  "subject": "exam408",
+  "description": "代码扫描件",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "tags": [
+    "code",
+    "scan"
+  ],
+  "expected_questions": 3,
+  "expected_qnumbers": [
+    1,
+    2,
+    3
+  ],
+  "expected_answers": {},
+  "verified": true
+}

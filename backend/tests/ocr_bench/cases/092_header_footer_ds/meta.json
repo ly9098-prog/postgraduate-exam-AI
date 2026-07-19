@@ -1,0 +1,26 @@
+{
+  "case_id": "092_header_footer_ds",
+  "scenario": "watermark",
+  "subject": "exam408",
+  "description": "含页眉页脚的数据结构题",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "source_type": "synthetic",
+  "human_verified": false,
+  "verified_by": "automated",
+  "verification_version": "v1",
+  "input_sha256": "",
+  "tags": [
+    "watermark",
+    "header_footer"
+  ],
+  "expected_questions": 3,
+  "expected_qnumbers": [
+    1,
+    2,
+    3
+  ],
+  "expected_answers": {},
+  "verified": false
+}

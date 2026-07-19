@@ -363,7 +363,7 @@ def _lightweight_page_ocr(
 
     import fitz
 
-    from app.services.ocr_service import _get_ocr, _image_to_array, _ocr_inference_lock, _resize_for_ocr
+    from app.core.ocr_process_pool import ocr_process_pool
 
     step = max(1, int(sample_step or 1))
     if isinstance(source, (str, _os.PathLike)):
@@ -371,14 +371,12 @@ def _lightweight_page_ocr(
     else:
         doc = fitz.open(stream=source, filetype="pdf")
     total_pages = len(doc)
-    ocr = _get_ocr()
     page_texts: dict[int, str] = {}
 
     try:
         for i in range(total_pages):
             page_no = i + 1
             if step > 1 and (i % step) != 0:
-                # 未采样的页：留空，由 detect_exercise_regions 的 max_empty 容忍
                 page_texts[page_no] = ""
                 continue
 
@@ -387,30 +385,11 @@ def _lightweight_page_ocr(
             del pix
 
             try:
-                from PIL import Image, ImageOps
-                import io
-                img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-                img = ImageOps.autocontrast(img.convert("L"), cutoff=1).convert("RGB")
-                img = _resize_for_ocr(img)
-
-                import numpy as np
-                arr = np.array(img)
-                del img
-
-                with _ocr_inference_lock:
-                    result = ocr.ocr(arr, cls=False)
-                del arr
-
-                if result and result[0]:
-                    lines = []
-                    for line in result[0]:
-                        if line and len(line) >= 2 and line[1]:
-                            text = str(line[1][0] or "")
-                            if text.strip():
-                                lines.append(text)
-                    page_texts[page_no] = "\n".join(lines)
-                else:
-                    page_texts[page_no] = ""
+                # Run lightweight OCR in child process via process pool
+                text = ocr_process_pool.get_lightweight_text(
+                    png_bytes, page_no, timeout=120,
+                )
+                page_texts[page_no] = text
             except Exception as e:
                 logger.debug("Lightweight OCR page %d failed: %s", page_no, e)
                 page_texts[page_no] = ""

@@ -182,7 +182,7 @@ def test_ocr_sample(sample_name: str):
     if result["status"] == STATUS_FAIL:
         if is_known_failure:
             pytest.xfail(
-                f"Known failure ({meta.get('failure_type')}): CER={result['cer']}"
+                reason=f"OCR-100: Known failure ({meta.get('failure_type')}): CER={result['cer']}",
             )
         else:
             pytest.fail(

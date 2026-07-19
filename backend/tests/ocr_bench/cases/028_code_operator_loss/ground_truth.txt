@@ -1,0 +1,18 @@
+1. 以下代码的时间复杂度是：
+
+for (int i = 1; i <= n; i++)
+    for (int j = 1; j <= i; j++)
+        a[i][j] = i * j;
+
+A. O(n)
+B. O(n log n)
+C. O(n^2)
+D. O(n^3)
+答案：C
+
+2. 带头结点的单链表为空的条件是：
+A. head == NULL
+B. head->next == head
+C. head->next->next == NULL
+D. head->next == NULL
+KEY: D

@@ -1,0 +1,25 @@
+{
+  "case_id": "063_table_ip",
+  "scenario": "table",
+  "subject": "exam408",
+  "description": "IP 地址分类表格",
+  "placeholder": false,
+  "date_added": "2026-07-17",
+  "has_real_image": false,
+  "source_type": "synthetic",
+  "human_verified": false,
+  "verified_by": "automated",
+  "verification_version": "v1",
+  "input_sha256": "",
+  "tags": [
+    "table",
+    "network"
+  ],
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {},
+  "verified": false
+}

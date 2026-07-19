@@ -1,0 +1,21 @@
+1. 以下程序的输出结果是
+int f(int n) {
+    if (n <= 1) return 1;
+    return f(n-1) + f(n-2);
+}
+printf("%d", f(5));
+A. 5
+B. 8
+C. 13
+D. 21
+答案：B
+
+2. 以下程序的输出结果是
+int x = 5;
+int y = ++x + x++;
+printf("%d", y);
+A. 10
+B. 11
+C. 12
+D. 未定义行为
+答案：D

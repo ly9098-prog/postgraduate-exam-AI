@@ -537,3 +537,13 @@ def _freeze_deep_freeze(registry: dict) -> dict[str, dict[str, str]]:
     for key, opts in registry.items():
         frozen[key] = types.MappingProxyType(dict(opts))
     return types.MappingProxyType(frozen)  # type: ignore[return-value]
+
+
+def run_structure_freeze_stage_from_ir(
+    doc: "DocumentIR",
+    **kwargs: Any,
+) -> dict:
+    """DocumentIR entry point for run_structure_freeze_stage."""
+    from app.core.document_ir import document_ir_to_blocks
+    blocks = document_ir_to_blocks(doc)
+    return run_structure_freeze_stage(blocks, **kwargs)

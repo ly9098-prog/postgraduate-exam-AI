@@ -1,0 +1,23 @@
+{
+  "scenario": "cross_page",
+  "subject": "exam408",
+  "description": "跨页题目 — 题干在上一页，选项在下一页",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "B",
+    "2": "D"
+  },
+  "known_failure_types": [
+    "跨页断裂",
+    "分页合并"
+  ],
+  "tags": [
+    "cross_page",
+    "merge"
+  ],
+  "date_added": "2026-07-17"
+}

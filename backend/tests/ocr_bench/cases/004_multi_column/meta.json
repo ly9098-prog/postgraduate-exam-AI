@@ -1,0 +1,29 @@
+{
+  "scenario": "multi_column",
+  "description": "两栏排版 — 左右分栏导致阅读顺序错乱（两栏串行）",
+  "subject": "exam408",
+  "expected_questions": 2,
+  "expected_qnumbers": [1, 2],
+  "expected_answers": {
+    "1": "A",
+    "2": "B"
+  },
+  "tags": ["two_column", "reading_order"],
+  "known_failure_types": ["两栏串行", "选项错序"],
+  "date_added": "2026-07-17",
+  "ocr_regions": [
+    {"id": "r_q1", "text": "1. 在单链表中删除首元结点，正确的操作是：", "bbox": [50, 100, 750, 140], "page_width": 800, "page_height": 600},
+    {"id": "r_q1a", "text": "A. head = head->next", "bbox": [50, 150, 350, 180], "page_width": 800, "page_height": 600},
+    {"id": "r_q1b", "text": "B. head->next = head->next->next", "bbox": [50, 190, 350, 220], "page_width": 800, "page_height": 600},
+    {"id": "r_q1c", "text": "C. free(head)", "bbox": [50, 230, 350, 260], "page_width": 800, "page_height": 600},
+    {"id": "r_q1d", "text": "D. head->next = NULL", "bbox": [50, 270, 350, 300], "page_width": 800, "page_height": 600},
+    {"id": "r_q1_ans", "text": "答案：A", "bbox": [50, 310, 350, 340], "page_width": 800, "page_height": 600},
+    {"id": "r_q2_stem", "text": "2. 在循环链表中插入结点，下列哪项说法正确：", "bbox": [420, 100, 770, 140], "page_width": 800, "page_height": 600},
+    {"id": "r_q2a", "text": "A. 只能在表头插入", "bbox": [420, 150, 770, 180], "page_width": 800, "page_height": 600},
+    {"id": "r_q2b", "text": "B. 需要在指针遍历到目标位置后插入", "bbox": [420, 190, 770, 220], "page_width": 800, "page_height": 600},
+    {"id": "r_q2c", "text": "C. 不能在表尾插入", "bbox": [420, 230, 770, 260], "page_width": 800, "page_height": 600},
+    {"id": "r_q2d", "text": "D. 不需要修改指针", "bbox": [420, 270, 770, 300], "page_width": 800, "page_height": 600},
+    {"id": "r_q2_ans", "text": "KEY: B", "bbox": [420, 310, 770, 340], "page_width": 800, "page_height": 600}
+  ],
+  "expected_region_order": ["r_q1", "r_q1a", "r_q1b", "r_q1c", "r_q1d", "r_q1_ans", "r_q2_stem", "r_q2a", "r_q2b", "r_q2c", "r_q2d", "r_q2_ans"]
+}

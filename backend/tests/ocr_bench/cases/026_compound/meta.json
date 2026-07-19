@@ -1,0 +1,19 @@
+{
+  "scenario": "compound",
+  "subject": "exam408",
+  "description": "组合题 — 包含小题干 + 子选项",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "A",
+    "2": "D"
+  },
+  "tags": [
+    "compound",
+    "multi_part"
+  ],
+  "date_added": "2026-07-17"
+}

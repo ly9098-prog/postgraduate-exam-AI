@@ -1,0 +1,21 @@
+{
+  "scenario": "fill_blank",
+  "subject": "exam408",
+  "description": "填空题 — 需要填入关键空内容",
+  "expected_questions": 3,
+  "expected_qnumbers": [
+    1,
+    2,
+    3
+  ],
+  "expected_answers": {
+    "1": "12",
+    "2": "缺页",
+    "3": "n-1"
+  },
+  "tags": [
+    "fill_blank",
+    "structure"
+  ],
+  "date_added": "2026-07-17"
+}

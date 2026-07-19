@@ -1,0 +1,14 @@
+{
+  "scenario": "watermark",
+  "description": "水印污染题 — 题目区域包含扫描水印/公众号推广文字",
+  "subject": "exam408",
+  "expected_questions": 2,
+  "expected_qnumbers": [1, 2],
+  "expected_answers": {
+    "1": "C",
+    "2": "A"
+  },
+  "tags": ["watermark", "contamination", "header_footer"],
+  "known_failure_types": ["水印污染", "页眉干扰"],
+  "date_added": "2026-07-17"
+}

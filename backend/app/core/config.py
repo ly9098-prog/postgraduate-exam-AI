@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     MAX_OCR_PAGES: int = 0  # 0 = no limit
     OCR_USE_PROCESS_POOL: bool = False  # true = process-isolated OCR (crash-safe)
     OCR_TIMEOUT_SECONDS: int = 600
+    UNIFIED_SAFETY_MODE: str = "shadow"  # "off" | "shadow" | "enforce"
     IMAGE_IMPORT_MAX_BYTES: int = 10 * 1024 * 1024
     PAGE_CLASSIFIER_ENABLED: bool = True
     # 代码块检测 Feature Flag — 关闭后行为与线上完全一致

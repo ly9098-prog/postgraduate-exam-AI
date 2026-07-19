@@ -1,0 +1,20 @@
+{
+  "scenario": "code_cpp",
+  "subject": "exam408",
+  "description": "C++ 模板与泛型代码题",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "C",
+    "2": "B"
+  },
+  "tags": [
+    "code",
+    "template",
+    "cpp"
+  ],
+  "date_added": "2026-07-17"
+}

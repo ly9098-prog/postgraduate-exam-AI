@@ -17,12 +17,12 @@ from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import async_session
 from app.core.log_context import bind_log_context, get_log_context, log_event
+from app.features.pipeline_coordinator_entry import run_pipeline
 from app.features.pipeline_orchestrator import (
     _set_pipeline_store,
     get_pipeline_status as _orchestrator_get_pipeline_status,
     resolve_pdf_page_range,
     resume_pipeline_background,
-    run_import_pipeline,
     run_pipeline_background,
 )
 from app.schemas.import_review import PipelineStatusResponse, PdfPageRangeInfo, PipelineUploadResponse
@@ -297,7 +297,7 @@ async def _run_image_pipeline_with_db(
 
         logger.info("image pipeline started: pipeline_id=%s", pipeline_id)
         async with async_session() as db:
-            result = await run_import_pipeline(
+            result = await run_pipeline(
                 file_content=raw_text.encode("utf-8"),
                 source_type="txt",
                 source_file=source_file,

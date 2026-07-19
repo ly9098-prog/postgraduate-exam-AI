@@ -1,0 +1,12 @@
+1. 在单链表中删除首元结点，正确的操作是：
+A. head = head->next
+2. 在循环链表中插入结点，下列哪项说法正确：
+A. 只能在表头插入
+B. head->next = head->next->next
+B. 需要在指针遍历到目标位置后插入
+C. free(head)
+C. 不能在表尾插入
+D. head->next = NULL
+D. 不需要修改指针
+答案：A
+KEY: B

@@ -1,0 +1,13 @@
+1. DMA (Direct Memory Access) 的主要优点是
+A. 不需要 CPU 参与数据传输
+B. 不需要中断
+C. 不占用总线
+D. 不需要内存
+答案：A
+
+2. 下列英文缩写对应错误的是
+A. ALU - Arithmetic Logic Unit
+B. PC - Program Counter
+C. RAM - Random Access Memory
+D. DMA - Direct Memory Allocation
+答案：D

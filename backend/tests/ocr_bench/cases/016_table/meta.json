@@ -1,0 +1,19 @@
+{
+  "scenario": "table",
+  "subject": "exam408",
+  "description": "哈希表查找—装填因子与平均查找长度",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "B",
+    "2": "C"
+  },
+  "tags": [
+    "table",
+    "hash"
+  ],
+  "date_added": "2026-07-17"
+}

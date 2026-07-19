@@ -220,3 +220,25 @@ def detect_visual_boundaries(normalized_blocks: list[dict]) -> list[dict]:
 
     boundaries.sort(key=lambda b: (b["block_index"], b["line_index"]))
     return boundaries
+
+
+def filter_book_layout_blocks_from_ir(doc: "DocumentIR") -> tuple[list[dict], dict]:
+    """DocumentIR-native entry point for filter_book_layout_blocks.
+
+    Converts DocumentIR to blocks at the boundary and delegates to the
+    legacy implementation. Returns blocks-format result for upstream stages.
+    """
+    from app.core.document_ir import document_ir_to_blocks
+    blocks = document_ir_to_blocks(doc)
+    return filter_book_layout_blocks(blocks)
+
+
+def detect_visual_boundaries_from_ir(doc: "DocumentIR") -> list[dict]:
+    """DocumentIR-native entry point for detect_visual_boundaries.
+
+    Converts DocumentIR to blocks at the boundary and delegates to the
+    legacy implementation.
+    """
+    from app.core.document_ir import document_ir_to_blocks
+    blocks = document_ir_to_blocks(doc)
+    return detect_visual_boundaries(blocks)

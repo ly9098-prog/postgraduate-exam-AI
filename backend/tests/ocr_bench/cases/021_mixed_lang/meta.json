@@ -1,0 +1,19 @@
+{
+  "scenario": "mixed_lang",
+  "subject": "exam408",
+  "description": "中英文混排 — 计算机专业英语术语",
+  "expected_questions": 2,
+  "expected_qnumbers": [
+    1,
+    2
+  ],
+  "expected_answers": {
+    "1": "B",
+    "2": "D"
+  },
+  "tags": [
+    "mixed_lang",
+    "english"
+  ],
+  "date_added": "2026-07-17"
+}

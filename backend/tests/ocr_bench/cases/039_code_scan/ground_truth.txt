@@ -1,0 +1,26 @@
+1. 以下程序的输出是：
+#include <stdio.h>
+int main() {
+  int x = 5;
+  printf('%d', x++ + ++x);
+  return 0;
+}
+A. 10
+B. 11
+C. 12
+D. 13
+答案：C
+
+2. 下列哪个排序算法在最坏情况下的时间复杂度为O(n²)？
+A. 归并排序
+B. 快速排序
+C. 堆排序
+D. 基数排序
+答案：B
+
+3. 若一棵二叉树的前序遍历序列为ABDECF，中序遍历为DBEAFC，则后序遍历为：
+A. DEBFCA
+B. DBEFCA
+C. DEBFAC
+D. DBEACF
+答案：A

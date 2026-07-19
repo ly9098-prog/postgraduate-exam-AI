@@ -1,0 +1,16 @@
+{
+  "scenario": "clean_single_column",
+  "description": "清晰单栏选择题 — 五道标准数学选择题，排版规范",
+  "subject": "math2",
+  "expected_questions": 5,
+  "expected_answers": {
+    "1": "A",
+    "2": "B",
+    "3": "B",
+    "4": "B",
+    "5": "C"
+  },
+  "expected_qnumbers": [1, 2, 3, 4, 5],
+  "tags": ["baseline", "single_choice", "clear_scan"],
+  "date_added": "2026-07-17"
+}

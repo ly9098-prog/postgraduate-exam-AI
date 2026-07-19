@@ -1,0 +1,20 @@
+1. TCP 三次握手中，第二次握手时服务器发送的报文是
+A. SYN
+B. SYN+ACK
+C. ACK
+D. FIN
+答案：B
+
+2. 端口号 80 对应的服务是
+A. FTP
+B. HTTP
+C. SMTP
+D. DNS
+答案：B
+
+3. UDP 的特点是
+A. 面向连接
+B. 可靠传输
+C. 无连接
+D. 流量控制
+答案：C

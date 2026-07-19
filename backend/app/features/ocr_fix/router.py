@@ -63,10 +63,13 @@ def _evaluate_adapter_output(
 ) -> CandidateEvaluation:
     """Evaluate adapter output through the safety/quality gate.
 
-    Uses ``ai_safety.safe_accept_ai_result`` as the primary gate.
+    Uses ``CandidateEvaluator`` as the primary gate.
     Additional checks are applied for options, code structure, etc.
     """
-    from app.features.ai_safety import safe_accept_ai_result
+    from app.features.candidate_evaluator import (
+        CandidateDecision as CE_Decision,
+        evaluate_candidate,
+    )
 
     ctx = context or {}
 
@@ -109,17 +112,18 @@ def _evaluate_adapter_output(
     if result.risk_flags:
         quality_report["risk_flags"] = list(result.risk_flags)
 
-    # Run the safety gate
-    safety = safe_accept_ai_result(
+    # Run the unified safety gate
+    eval_result = evaluate_candidate(
         original_text,
         result.fixed_text,
         context=ctx,
         quality_report=quality_report if quality_report else None,
+        provenance={"engine": "ocr_fix_router", "adapter": result.source},
     )
 
-    risk_flags = tuple(safety.get("risk_flags", []))
-    is_accepted = safety.get("accepted", False)
-    reason = safety.get("rollback_reason", "")
+    risk_flags = tuple(eval_result.risk_flags)
+    is_accepted = eval_result.decision == CE_Decision.ACCEPT
+    reason = eval_result.reason_code
 
     if is_accepted:
         if risk_flags:

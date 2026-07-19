@@ -1,0 +1,32 @@
+1. 以下代码的功能是：
+
+bool check(char *str) {
+    Stack s;
+    init(s);
+    for (int i = 0; str[i] != '\\0'; i++) {
+        if (str[i] == '(' || str[i] == '[' || str[i] == '{')
+            push(s, str[i]);
+        else if (str[i] == ')' || str[i] == ']' || str[i] == '}') {
+            if (isEmpty(s)) return false;
+            char top = pop(s);
+            if ((str[i] == ')' && top != '(') ||
+                (str[i] == ']' && top != '[') ||
+                (str[i] == '}' && top != '{'))
+                return false;
+        }
+    }
+    return isEmpty(s);
+}
+
+A. 计算表达式的值
+B. 检查括号是否匹配
+C. 将中缀转后缀
+D. 检查回文串
+【答案】B
+
+2. 对于输入"({[()]})"，上述函数的返回值是：
+A. false
+B. 编译错误
+C. true
+D. 运行崩溃
+KEY: C

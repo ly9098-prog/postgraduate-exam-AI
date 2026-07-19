@@ -314,7 +314,7 @@ async def complete_import(
     }
     qi.ai_raw_response = raw
 
-    from app.features.ai_safety import AIEditTrace
+    from app.core.ai_trace import AIEditTrace
     complete_trace = AIEditTrace(
         stage="ai_complete",
         model=resp.get("model", "unknown"),

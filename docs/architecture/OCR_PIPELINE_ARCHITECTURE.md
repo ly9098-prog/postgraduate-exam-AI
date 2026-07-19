@@ -1,6 +1,6 @@
 # OCR Pipeline 架构文档
 
-> 维护时间：2026-07-18
+> 维护时间：2026-07-19
 > 审计参考：`docs/audit/OCR_PIPELINE_AUDIT_RECORDS.md`、`prompts/tasks/fix_task.md`
 >
 > **修复进展：Sprint 0 ✅ | Sprint 1 ✅ | Sprint 2 ✅ | Sprint 3 (4/5 ✅ 1 ⏳)**
@@ -47,7 +47,7 @@
                                │
                                v
 ┌─────────────────────────────────────────────────────────────────────┐
-│                   OCR 识别层 (PaddleOCR / PaddleOCR-VL)              │
+│                   OCR 识别层 (PaddleOCR / PaddleX HTTP)                 │
 │                                                                     │
 │  ⚠️ 本层存在多重执行入口（S0-04 未完全修复）：                         │
 │     ├─ features/pipeline_orchestrator.py 直接调用                    │
@@ -55,7 +55,19 @@
 │     ├─ features/batch_image_import_service.py 调用                   │
 │     └─ services/ocr_service.py 自身创建线程池                        │
 │                                                                     │
-│  local 模式:                                                        │
+│  执行后端由 OCR_EXECUTION_BACKEND 选择（2026-07-19 新增）：           │
+│     ├─ local_process → OcrWorkerPool + OcrWorkerProcess + OcrEngine  │
+│     │  （进程隔离，子进程内 import PaddleOCR，父进程不加载）            │
+│     ├─ paddlex_http → PaddleXHttpOcrWorkerClient                     │
+│     │  （httpx.AsyncClient → Windows PaddleX POST /ocr）             │
+│     │  ✅ 不 import paddle/paddleocr/OcrWorkerPool                  │
+│     │  ✅ 通过 OcrWorkerClient Protocol 统一接口                     │
+│     │  ✅ 独立 httpx.AsyncClient + asyncio.Semaphore 并发控制        │
+│     │  ✅ fail-fast + health check + URL 脱敏 + 稳定错误码           │
+│     │  ⚠️ 非 2xx / 连接失败 → fail closed，不自动回退 local         │
+│     └─ disabled → 不创建 worker client                               │
+│                                                                     │
+│  local 模式 (legacy thread pool, 仅 dev + 显式 opt-in):              │
 │    services/ocr_service.py (当前 ~773 行, 报告记录 637):             │
 │      ├─ _get_ocr()          → PaddleOCR 单例 (GPU/CPU, 延迟加载)    │
 │      │  ✅ 状态机: UNINITIALIZED/READY/RESETTING/FAILED             │
@@ -84,11 +96,17 @@
                                │
                                v
 ┌─────────────────────────────────────────────────────────────────────┐
-│               OCR 执行器层 (Executor/Worker)                          │
+│               OCR 执行器层 (Executor/Worker/Client)                      │
 │                                                                     │
 │  ✅ S0-01: idx 正确传递（闭包参数化，无 UnboundLocalError）          │
 │  ✅ S0-02: future.add_done_callback 正确释放容量                    │
 │  ✅ S0-03: asyncio.wrap_future 替代双线程池                         │
+│  ✅ 2026-07-19: OcrWorkerClient Protocol + 工厂 + PaddleX HTTP      │
+│     ├─ OcrWorkerClient (typing.Protocol) — 统一 worker 接口         │
+│     │   recognize() / recognize_batch() / shutdown() / metrics      │
+│     ├─ LocalOcrWorkerClient — 封装 OcrWorkerPool（进程隔离）         │
+│     ├─ PaddleXHttpOcrWorkerClient — httpx → Windows PaddleX POST    │
+│     └─ create_ocr_worker_client() — 延迟 import 工厂                 │
 │                                                                     │
 │  services/ocr_executor_service.py:                                  │
 │    ├─ run_ocr_pages_in_thread() → 线程池 + semaphore + done_callback │
@@ -362,6 +380,9 @@ Input → Type/Safety → Native Text Probe → Page Renderer/Stream
 | `services/model_config_resolver.py` | ~600 | AIModelConfigResolver | ✅ 2026-07-18 |
 | `services/ocr_executor_service.py` | ~400 | OCR 执行器（进程隔离默认）| ✅ 2026-07-18 进程默认 |
 | `services/ocr_service.py` | ~773 | PaddleOCR 封装 | ✅ 2026-07-18 S1-4.8/4.9 修复 |
+| `services/ocr_local_worker_client.py` | 99 | 本地进程 OCR worker（进程隔离）| ✅ 2026-07-18 |
+| `services/ocr_paddlex_http_client.py` | 639 | PaddleX HTTP 远程 OCR 客户端 | ✅ 2026-07-19 新增 |
+| `services/ocr_worker_client.py` | 95 | OcrWorkerClient Protocol + 工厂 | ✅ 2026-07-19 新增 |
 | `services/ocr_cache_service.py` | ~130 | OCR 缓存 | ✅ 原子写入 + 全维度 fingerprint |
 | `features/pipeline_artifacts.py` | 559 | Pipeline artifact 持久化 | ✅ content-addressed fingerprint |
 | `features/pipeline_stages/` | 9 文件 | 独立 stage 实现 | ✅ |
@@ -405,6 +426,11 @@ Input → Type/Safety → Native Text Probe → Page Renderer/Stream
 | `tests/ocr_regression/` | 回归用例 | 17 case |
 | `tests/ocr_acceptance/` | 验收测试 | 10 类样本 |
 | Sprint 4D 测试集 | 全量回归 | 91 tests |
+| `tests/test_services/test_ocr_paddlex_http_client.py` | PaddleX HTTP 客户端 mock 测试 | 55 cases |
+| `tests/test_services/test_ocr_worker_client_factory.py` | 工厂 + Protocol 测试 | 6 cases |
+| `tests/test_services/test_ocr_remote_config.py` | 远程配置 + URL 脱敏 + 验证 | 20 cases |
+| `tests/test_services/test_ocr_gateway_remote.py` | Gateway 远程后端集成测试 | 5 cases |
+| `tests/test_services/test_ocr_import_safety.py` | import safety 子进程测试 | 4 cases |
 | `tests/test_ocr_fix_uses_admin_ai_config.py` | 配置统一验证 | 5 tests |
 | `tests/test_ai_repair_uses_admin_ai_config.py` | 配置统一验证 | 7 tests |
 | `tests/test_ai_capability_model_separation.py` | 能力分离验证 | 3 tests |
