@@ -168,6 +168,7 @@ page {
 .fl-chapter-row { padding:0 32rpx 4rpx; display:inline-flex; gap:12rpx; }
 .fl-chapter-chip { flex-shrink:0; min-height:62rpx; padding:0 23rpx; border:1rpx solid #DDE2DA; border-radius:999rpx; background:#FFFFFF; color:#68736B; font-size:22rpx; line-height:62rpx; font-weight:750; }
 .fl-chapter-chip.active { border-color:#10251A; background:#10251A; color:#B7E82A; }
+.fl-chapter-count { color:#A0A8A2; font-size:20rpx; font-weight:600; }
 
 .fl-active-tags { margin-top:14rpx; display:flex; align-items:center; flex-wrap:wrap; gap:9rpx; }
 .fl-active-tags-label { color:#89938B; font-size:19rpx; font-weight:750; }

@@ -155,7 +155,19 @@ Page({
 
   async loadCatalog() {
     try {
-      const data = await api.request('GET', '/formulas/catalog')
+      var params = {}
+      // Pass library_type so the catalog can show accurate available_count
+      if (this.data.activeLibraryType && this.data.activeLibraryType !== LIBRARY_TYPE_FORMULA) {
+        params.library_type = this.data.activeLibraryType
+      }
+      if (typeof this.data.onlyFavorites !== 'undefined' && this.data.onlyFavorites) {
+        params.favorite_only = true
+      }
+      var url = '/formulas/catalog'
+      if (Object.keys(params).length) {
+        url += '?' + Object.keys(params).map(function(k) { return k + '=' + encodeURIComponent(params[k]) }).join('&')
+      }
+      const data = await api.request('GET', url)
       const catalog = this.normalizeCatalog(data?.items || [])
       this.setData({ catalog })
       this.updateChapters()
@@ -200,7 +212,11 @@ Page({
     const subject = catalog.find(s => s.code === activeSubject)
     if (subject) {
       this.setData({
-        chapters: (subject.children || []).map((chapter) => ({ ...chapter, active: false })),
+        chapters: (subject.children || []).map((chapter) => ({
+          ...chapter,
+          active: false,
+          available_count: chapter.available_count || 0,
+        })),
         activeChapterId: null,
       })
     } else {
@@ -235,7 +251,7 @@ Page({
       showSubjectPicker: false,
       showMoreSheet: false,
     })
-    this.updateChapters()
+    this.loadCatalog()
     this.loadFormulas(true)
   },
 
@@ -315,6 +331,7 @@ Page({
       showSubjectPicker: false,
       showMoreSheet: false,
     })
+    this.loadCatalog()
     this.loadFormulas(true)
   },
 
@@ -325,13 +342,18 @@ Page({
   },
 
   onChapterSelect(e) {
-    const rawId = e.currentTarget.dataset.id
-    const chapterId = rawId === 0 || rawId === '0' || rawId === '' ? null : rawId
-    const isCurrent = chapterId != null && String(chapterId) === String(this.data.activeChapterId)
+    var rawId = e.currentTarget.dataset.id
+    // Normalize to number; "全部章节" (0, '0', '') becomes null
+    var chapterId = null
+    if (rawId !== 0 && rawId !== '0' && rawId !== '' && rawId !== null && rawId !== undefined) {
+      chapterId = Number(rawId)
+      if (isNaN(chapterId)) chapterId = null
+    }
+    const isCurrent = chapterId != null && chapterId === this.data.activeChapterId
     const nextChapterId = isCurrent ? null : chapterId
     const chapters = (this.data.chapters || []).map((chapter) => ({
       ...chapter,
-      active: nextChapterId != null && String(chapter.id) === String(nextChapterId),
+      active: nextChapterId != null && chapter.id === nextChapterId,
     }))
 
     this.setData({
@@ -341,8 +363,11 @@ Page({
       page: 1,
       formulas: [],
       hasMore: true,
+      total: 0,
+      loadError: false,
+    }, function () {
+      this.loadFormulas(true)
     })
-    this.loadFormulas(true)
   },
 
   // ── Tag Filter ──
@@ -422,6 +447,7 @@ Page({
       formulas: [],
       hasMore: true,
     })
+    this.loadCatalog()
     this.loadFormulas(true)
   },
 
@@ -453,9 +479,8 @@ Page({
       if (searchValue) baseParams.q = searchValue
       if (onlyFavorites) baseParams.favorite_only = true
 
-      const url = onlyFavorites
-        ? '/formulas/favorites/list'
-        : '/formulas'
+      // Always use /formulas — it supports all filter params including favorite_only
+      const url = '/formulas'
 
       let requestPage = page
       let responseData = null
@@ -484,11 +509,12 @@ Page({
 
       if (requestVersion !== (this._replaceRequestVersion || 0)) return
 
+      var totalItems = Number(responseData?.filtered_total ?? responseData?.total ?? 0)
       this.setData({
         formulas: replace ? items : [...this.data.formulas, ...items],
-        total: Number(responseData?.filtered_total ?? responseData?.total ?? 0),
+        total: totalItems,
         page: requestPage,
-        hasMore: rawItems.length === pageSize,
+        hasMore: requestPage * pageSize < totalItems,
         initialLoading: false,
         loadingMore: false,
       })

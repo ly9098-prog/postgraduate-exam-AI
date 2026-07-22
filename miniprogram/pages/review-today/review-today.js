@@ -63,6 +63,40 @@ function _mergeResultsByScheduleId(oldResults, newResults) {
   })
 }
 
+/**
+ * Lightweight normalization of a review question from API response.
+ * Does NOT build render model — that happens lazily in _showQuestion().
+ * Does NOT compute _optText, _optHtml, _blankOptionGroups, etc.
+ */
+function normalizeReviewQuestion(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  var content = raw.content
+  if (typeof content === 'string') {
+    content = { text: content }
+  } else if (!content || typeof content !== 'object') {
+    content = { text: raw.stem || '' }
+  }
+  var opts = raw.options
+  if (!opts || typeof opts !== 'object' || Array.isArray(opts)) {
+    opts = {}
+  }
+  return {
+    schedule_id: raw.schedule_id,
+    question_id: raw.question_id,
+    id: raw.id || raw.question_id,
+    subject: raw.subject || '',
+    subject_name: raw.subject_name || '',
+    question_type: raw.question_type || '',
+    stem: raw.stem || '',
+    options: opts,
+    content: content,
+    image_url: raw.image_url || null,
+    interval: raw.interval || 0,
+    repetitions: raw.repetitions || 0,
+    ease_factor: raw.ease_factor || 2.5,
+  }
+}
+
 Page({
   data: {
     /* ====== Phase ====== */
@@ -141,6 +175,9 @@ Page({
     /* ====== Batch size sheet ====== */
     showBatchSizeSheet: false,
     pendingBatchSize: 10,
+
+    /* ====== Skeleton (loading placeholder) ====== */
+    skeletonOptions: [1, 2, 3, 4],
   },
 
   /* ==================== 生命周期 ==================== */
@@ -316,10 +353,11 @@ Page({
 
     this._clearCelebrationTimer()
     this._finalCelebrationShown = false
+    // Stay in loading phase while fetching (shows skeleton)
     this.setData({
       isStarting: true,
       batchLoading: true,
-      phase: 'reviewing',
+      phase: 'loading',
       showCelebration: false,
     })
     try {
@@ -333,8 +371,11 @@ Page({
         return
       }
 
-      const allQuestions = rawQuestions.map(q => this._enrichQuestion(q))
-      const groups = this._splitGroups(allQuestions, allQuestions.length)
+      // Lightweight normalization only — no render model building
+      const allQuestions = rawQuestions.map(normalizeReviewQuestion).filter(Boolean)
+      if (!allQuestions.length) {
+        throw new Error('所有题目标准化后为空')
+      }
 
       this._reviewSession.allQuestions = allQuestions
       this._reviewSession.answers = {}
@@ -347,13 +388,26 @@ Page({
       this._reviewSession.safeModeActive = false
       this._reviewSession.renderTraces = []
 
+      // Build render model for first question only
+      var firstEnriched = this._enrichQuestion(allQuestions[0])
+      var firstOptionList = adapter.buildOptionList(firstEnriched, {}, KF)
+      var firstQuestion = Object.assign({}, firstEnriched, {
+        _optionList: firstOptionList,
+      })
+      this._reviewSession.optionKeys = firstEnriched._optionKeys
+
+      // Calculate DEV payload estimate
+      this._checkSetDataSize({ phase: 'reviewing', currentQuestion: firstQuestion })
+
+      // Atomic state transition: all critical fields set in one setData
       this.setData({
         phase: 'reviewing',
-        groups,
+        groups: [allQuestions],
         currentGroupIdx: 0,
         groupQuestions: allQuestions,
         currentIndex: 0,
-        currentQuestion: null,
+        currentQuestion: firstQuestion,
+        _answeredCount: 0,
 
         currentBatchNo: batch.batch_no || 1,
         totalBatchCount: batch.total_batch_count || this.data.totalBatchCount,
@@ -376,19 +430,22 @@ Page({
         isStarting: false,
         isContinuing: false,
       })
-      this._showQuestion(0)
-      this._syncAnsweredFlags()
-      // 获取题目成功后开始复习计时
+      this._updateRunnerFields()
+      this._checkRenderInvariant(firstEnriched._renderModel)
+      this._recordRenderTrace(firstEnriched._renderModel && firstEnriched._renderModel.renderTrace)
       this._startReviewTimer()
     } catch (e) {
-      console.error('加载复习题目失败', e)
+      console.error('[REVIEW_ERROR] startTodayReview failed',
+        'batchSize=' + this.data.reviewBatchSize,
+        'statusCode=' + (e.statusCode || 'N/A'),
+        'detail=' + (e.detail || e.message || 'unknown'))
       this.setData({
         isStarting: false,
         isContinuing: false,
         batchLoading: false,
-        phase: 'overview',
+        phase: 'error',
+        errorText: '获取复习题失败，请检查网络后重试',
       })
-      this.loadTodayReviewOverview()
       wx.showToast({ title: '获取复习题失败，请重试', icon: 'none' })
     }
   },
@@ -645,6 +702,23 @@ Page({
     }
   },
 
+  /**
+   * Estimate and warn about large setData payloads in DEV environment.
+   * Only stringifies in DEV to avoid production overhead.
+   */
+  _checkSetDataSize(data) {
+    if (!config.DEV) return
+    var THRESHOLD = 200 * 1024 // 200 KB warning threshold
+    try {
+      var size = new Blob([JSON.stringify(data)]).size
+      if (size > THRESHOLD) {
+        console.warn('[SETDATA_SIZE] payload ~' + (size / 1024).toFixed(0) + 'KB for keys: ' + Object.keys(data).join(', ') + ' (threshold: ' + (THRESHOLD / 1024) + 'KB)')
+      }
+    } catch (e) {
+      // Blob may not be available in all mini-program environments
+    }
+  },
+
   _syncAnsweredFlags() {
     const enriched = adapter.applyAnsweredFlags(this.data.groupQuestions, adapter.buildAnsweredFlags(this.data.groupQuestions, this._reviewSession.answers, KF), KF)
     this.setData({ groupQuestions: enriched })
@@ -653,31 +727,44 @@ Page({
   _showQuestion(index) {
     const q = this.data.groupQuestions[index]
     if (!q) return
+
+    // Lazily build render model — only for the current question, not the whole batch
+    var enriched = q._renderModel ? q : this._enrichQuestion(q)
+
     const answeredCount = adapter.computeAnsweredCount(this.data.groupQuestions, this._reviewSession.answers, KF)
-    const optionList = adapter.buildOptionList(q, this._reviewSession.answers, KF)
+    const optionList = adapter.buildOptionList(enriched, this._reviewSession.answers, KF)
 
     // Restore blank option selections from answer map
-    var blankOptionGroups = q._blankOptionGroups || []
-    var hasBlankOptionGroups = q._hasBlankOptionGroups || false
+    var blankOptionGroups = enriched._blankOptionGroups || []
+    var hasBlankOptionGroups = enriched._hasBlankOptionGroups || false
     if (hasBlankOptionGroups) {
-      const answer = this._reviewSession.answers[q.schedule_id] || ''
-      blankOptionGroups = adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), answer)
+      const answer = this._reviewSession.answers[enriched.schedule_id] || ''
+      blankOptionGroups = adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(enriched), answer)
     }
 
-    const currentQuestion = Object.assign({}, q, {
+    const currentQuestion = Object.assign({}, enriched, {
       _optionList: optionList,
       _blankOptionGroups: blankOptionGroups,
       _hasBlankOptionGroups: blankOptionGroups.length > 0,
     })
-    this._reviewSession.optionKeys = q._optionKeys
+    this._reviewSession.optionKeys = enriched._optionKeys
+
+    // Cache the enriched question so subsequent navigations don't re-build
+    if (!q._renderModel) {
+      var gq = this.data.groupQuestions.slice()
+      gq[index] = enriched
+      this.setData({ groupQuestions: gq })
+    }
+
+    this._checkSetDataSize({ currentIndex: index, currentQuestion: currentQuestion })
     this.setData({
       currentIndex: index,
       currentQuestion: currentQuestion,
       _answeredCount: answeredCount,
     })
     this._updateRunnerFields()
-    this._checkRenderInvariant(q._renderModel)
-    this._recordRenderTrace(q._renderModel && q._renderModel.renderTrace)
+    this._checkRenderInvariant(enriched._renderModel)
+    this._recordRenderTrace(enriched._renderModel && enriched._renderModel.renderTrace)
   },
 
   _updateRunnerFields() {
@@ -818,11 +905,10 @@ Page({
       }
 
       const allQuestions = this._reviewSession.allQuestions.filter(q => String(q.schedule_id) !== String(scheduleId))
-      const groups = this._splitGroups(allQuestions, Math.max(1, allQuestions.length))
+      const groupQuestions = allQuestions.slice()
 
       let currentGroupIdx = this.data.currentGroupIdx
       let currentIndex = this.data.currentIndex
-      const groupQuestions = groups[currentGroupIdx] || []
 
       const answers = { ...this._reviewSession.answers }
       delete answers[scheduleId]
@@ -831,7 +917,7 @@ Page({
       this._reviewSession.allQuestions = allQuestions
 
       this.setData({
-        groups,
+        groups: [allQuestions],
         currentGroupIdx,
         groupQuestions,
         masterUndoVisible: true,
@@ -873,8 +959,7 @@ Page({
       const allQuestions = (this._reviewSession.allQuestions || []).slice()
       const insertAt = Math.min(Math.max(0, pending.originalIndex), allQuestions.length)
       allQuestions.splice(insertAt, 0, pending.question)
-      const groups = this._splitGroups(allQuestions, Math.max(1, allQuestions.length))
-      const groupQuestions = groups[0] || []
+      const groupQuestions = allQuestions.slice()
 
       this._reviewSession.allQuestions = allQuestions
       this._masteredCount = Math.max(0, (this._masteredCount || 1) - 1)
@@ -882,7 +967,7 @@ Page({
 
       this.setData({
         phase: 'reviewing',
-        groups,
+        groups: [groupQuestions],
         currentGroupIdx: 0,
         groupQuestions,
         currentIndex: Math.min(insertAt, Math.max(0, groupQuestions.length - 1)),
@@ -1098,7 +1183,7 @@ Page({
         })
         const rawQuestions = batch.questions || []
         if (rawQuestions.length > 0) {
-          const questions = rawQuestions.map(q => this._enrichQuestion(q))
+          const questions = rawQuestions.map(normalizeReviewQuestion).filter(Boolean)
           this._reviewSession.allQuestions = questions
           this._reviewSession.answers = {}
           this.setData({
@@ -1523,6 +1608,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     normalizeReviewBatchSize,
     formatReviewElapsed,
+    normalizeReviewQuestion,
     REVIEW_BATCH_SIZE_OPTIONS,
     // Export data fields for test verification
     BATCH_SIZE_OPTIONS_META: [

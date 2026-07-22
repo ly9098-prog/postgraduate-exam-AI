@@ -198,11 +198,67 @@ def _apply_library_type_filter(query, library_type: str | None):
 
 @router.get("/catalog")
 async def get_formula_catalog(
+    library_type: str | None = Query(None),
+    favorite_only: bool = Query(False, alias="favorite_only"),
+    current_user: User | None = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the active category tree."""
+    """Get the active category tree with available card counts.
+
+    Only includes chapters that have at least one published, non-deleted card
+    matching the optional library_type and favorite_only filters.
+    """
     categories = await _get_active_categories(db)
-    return {"items": _build_category_tree(categories)}
+    tree = _build_category_tree(categories)
+
+    # Count published + non-deleted cards per category_id
+    count_query = (
+        select(
+            FormulaCard.category_id,
+            func.count(FormulaCard.id).label("cnt"),
+        )
+        .where(
+            FormulaCard.status == "published",
+            FormulaCard.deleted_at.is_(None),
+        )
+    )
+
+    if library_type:
+        count_query = _apply_library_type_filter(count_query, library_type)
+
+    if favorite_only and current_user:
+        fav_subq = (
+            select(UserFormulaFavorite.formula_card_id)
+            .where(UserFormulaFavorite.user_id == current_user.id)
+        )
+        count_query = count_query.where(FormulaCard.id.in_(fav_subq))
+
+    count_query = count_query.group_by(FormulaCard.category_id)
+    count_result = await db.execute(count_query)
+    counts_by_cat = {row[0]: row[1] for row in count_result.all()}
+
+    # Walk the tree: compute total available_count per chapter (lineage → group descendants)
+    def _inject_counts(nodes, parent_accumulator=0):
+        for node in nodes:
+            node_cards = counts_by_cat.get(node["id"], 0)
+            if node.get("children"):
+                child_accumulator = _inject_counts(node["children"], 0)
+                node_cards += child_accumulator
+            node["available_count"] = node_cards
+            parent_accumulator += node_cards
+        return parent_accumulator
+
+    _inject_counts(tree, 0)
+
+    # Prune empty chapters from subject-level children
+    for subject in tree:
+        if subject.get("children"):
+            subject["children"] = [
+                ch for ch in subject["children"]
+                if ch.get("available_count", 0) > 0
+            ]
+
+    return {"items": tree}
 
 
 # ── Tags ──
@@ -226,6 +282,108 @@ async def get_formula_tags(
 
 # ── List ──
 
+
+async def _validate_chapter(db: AsyncSession, chapter_id: int, subject_code: str | None) -> None:
+    """Validate that chapter_id is a valid chapter node and belongs to the specified subject."""
+    result = await db.execute(
+        select(FormulaCategory).where(
+            FormulaCategory.id == chapter_id,
+            FormulaCategory.is_active == True,
+            FormulaCategory.node_type == "chapter",
+        )
+    )
+    chapter = result.scalar_one_or_none()
+    if not chapter:
+        raise HTTPException(
+            status_code=400,
+            detail=f"章节 ID {chapter_id} 不存在或不是章节目录",
+        )
+
+    # Verify chapter belongs to the specified subject
+    if subject_code:
+        subject_result = await db.execute(
+            select(FormulaCategory).where(
+                FormulaCategory.is_active == True,
+                FormulaCategory.code == subject_code,
+                FormulaCategory.node_type == "subject",
+            )
+        )
+        subject = subject_result.scalar_one_or_none()
+        if subject and chapter.parent_id != subject.id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"章节 ID {chapter_id} 不属于学科 {subject_code}",
+            )
+
+
+def _apply_list_filters(query, subject_code, chapter_id, category_id, tags, q):
+    """Apply shared formula list filters (subject, chapter, category, tags, search) to a query.
+
+    Used by both /formulas and /formulas/favorites/list.
+    """
+    if subject_code:
+        groups_subq = (
+            select(FormulaCategory.id)
+            .where(
+                FormulaCategory.is_active == True,
+                FormulaCategory.code == subject_code,
+                FormulaCategory.node_type == "subject",
+            )
+            .cte("list_subject_cte")
+        )
+        chapters_subq = (
+            select(FormulaCategory.id)
+            .where(
+                FormulaCategory.parent_id == groups_subq.c.id,
+                FormulaCategory.is_active == True,
+            )
+            .cte("list_chapters_cte")
+        )
+        group_ids_subq = (
+            select(FormulaCategory.id)
+            .where(
+                FormulaCategory.parent_id == chapters_subq.c.id,
+                FormulaCategory.is_active == True,
+            )
+        )
+        query = query.where(FormulaCard.category_id.in_(group_ids_subq))
+
+    if chapter_id:
+        group_ids_subq = (
+            select(FormulaCategory.id)
+            .where(
+                FormulaCategory.parent_id == chapter_id,
+                FormulaCategory.is_active == True,
+            )
+        )
+        query = query.where(FormulaCard.category_id.in_(group_ids_subq))
+
+    if category_id:
+        query = query.where(FormulaCard.category_id == category_id)
+
+    if tags:
+        tag_codes = [t.strip() for t in tags.split(",") if t.strip()]
+        if tag_codes:
+            matching_card_ids = (
+                select(FormulaCardTag.formula_card_id)
+                .join(FormulaTag, FormulaCardTag.tag_id == FormulaTag.id)
+                .where(FormulaTag.code.in_(tag_codes))
+                .group_by(FormulaCardTag.formula_card_id)
+                .having(func.count(FormulaCardTag.formula_card_id) == len(tag_codes))
+            )
+            query = query.where(FormulaCard.id.in_(matching_card_ids))
+
+    if q:
+        like_pattern = f"%{q}%"
+        query = query.where(
+            or_(
+                FormulaCard.title.ilike(like_pattern),
+                FormulaCard.search_text.ilike(like_pattern),
+            )
+        )
+    return query
+
+
 @router.get("")
 async def list_formulas(
     subject_code: str | None = Query(None, alias="subject_code"),
@@ -241,76 +399,17 @@ async def list_formulas(
     db: AsyncSession = Depends(get_db),
 ):
     """List published formula cards with filtering."""
+    # Validate chapter_id belongs to subject before querying
+    if chapter_id is not None:
+        await _validate_chapter(db, chapter_id, subject_code)
+
     base_query = select(FormulaCard).where(
         FormulaCard.status == "published",
         FormulaCard.deleted_at.is_(None),
     )
 
     base_query = _apply_library_type_filter(base_query, library_type)
-
-    # Category filtering: find group-level IDs first
-    if subject_code:
-        groups_subq = (
-            select(FormulaCategory.id)
-            .where(
-                FormulaCategory.is_active == True,
-                FormulaCategory.code == subject_code,
-                FormulaCategory.node_type == "subject",
-            )
-            .cte("subject_cte")
-        )
-        chapters_subq = (
-            select(FormulaCategory.id)
-            .where(
-                FormulaCategory.parent_id == groups_subq.c.id,
-                FormulaCategory.is_active == True,
-            )
-            .cte("chapters_cte")
-        )
-        group_ids_subq = (
-            select(FormulaCategory.id)
-            .where(
-                FormulaCategory.parent_id == chapters_subq.c.id,
-                FormulaCategory.is_active == True,
-            )
-        )
-        base_query = base_query.where(FormulaCard.category_id.in_(group_ids_subq))
-
-    if chapter_id:
-        group_ids_subq = (
-            select(FormulaCategory.id)
-            .where(
-                FormulaCategory.parent_id == chapter_id,
-                FormulaCategory.is_active == True,
-            )
-        )
-        base_query = base_query.where(FormulaCard.category_id.in_(group_ids_subq))
-
-    if category_id:
-        base_query = base_query.where(FormulaCard.category_id == category_id)
-
-    # Tag filtering
-    if tags:
-        tag_codes = [t.strip() for t in tags.split(",") if t.strip()]
-        if tag_codes:
-            matching_card_ids = (
-                select(FormulaCardTag.formula_card_id)
-                .join(FormulaTag, FormulaCardTag.tag_id == FormulaTag.id)
-                .where(FormulaTag.code.in_(tag_codes))
-                .group_by(FormulaCardTag.formula_card_id)
-                .having(func.count(FormulaCardTag.formula_card_id) == len(tag_codes))
-            )
-            base_query = base_query.where(FormulaCard.id.in_(matching_card_ids))
-
-    # Search: only match title and aliases (search_text)
-    if q:
-        like_pattern = f"%{q}%"
-        base_query = base_query.where(
-            or_(
-                FormulaCard.title.ilike(like_pattern),
-                FormulaCard.search_text.ilike(like_pattern),
-            )
-        )
+    base_query = _apply_list_filters(base_query, subject_code, chapter_id, category_id, tags, q)
 
     # Favorite only
     if favorite_only and current_user:
@@ -368,13 +467,21 @@ async def get_formula_detail(
 
 @router.get("/favorites/list")
 async def list_favorite_formulas(
+    subject_code: str | None = Query(None, alias="subject_code"),
+    chapter_id: int | None = Query(None, alias="chapter_id"),
+    category_id: int | None = Query(None, alias="category_id"),
+    tags: str | None = Query(None),
+    q: str | None = Query(None),
     library_type: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List formulas favorited by the current user."""
+    """List formulas favorited by the current user.
+
+    Supports the same filters as /formulas but implicitly scoped to favorites.
+    """
     fav_q = (
         select(UserFormulaFavorite.formula_card_id)
         .where(UserFormulaFavorite.user_id == current_user.id)
@@ -387,6 +494,9 @@ async def list_favorite_formulas(
     )
 
     base_query = _apply_library_type_filter(base_query, library_type)
+
+    # Reuse shared filter logic via _apply_list_filters
+    base_query = _apply_list_filters(base_query, subject_code, chapter_id, category_id, tags, q)
 
     count_q = select(func.count()).select_from(base_query.subquery())
     total_result = await db.execute(count_q)

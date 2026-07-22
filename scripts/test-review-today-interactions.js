@@ -48,6 +48,7 @@ global.getCurrentPages = function() { return [] }
 const {
   normalizeReviewBatchSize,
   formatReviewElapsed,
+  normalizeReviewQuestion,
   REVIEW_BATCH_SIZE_OPTIONS,
   BATCH_SIZE_OPTIONS_META,
 } = require(JS_FILE)
@@ -459,6 +460,76 @@ assert(
 assert(
   /flex:\s*1\s+1\s+0/.test(actionBlock),
   '按钮使用 flex: 1 1 0 平均分配宽度'
+)
+
+console.log('')
+console.log('=== normalizeReviewQuestion 测试 ===')
+
+// normalizeReviewQuestion with dict content
+assert(
+  normalizeReviewQuestion({ schedule_id: 1, question_id: 2, content: { text: 'Hello' } }).content.text === 'Hello',
+  'content 为对象时保留原值'
+)
+assert(
+  normalizeReviewQuestion({ schedule_id: 1, question_id: 2, content: 'String stem' }).content.text === 'String stem',
+  'content 为字符串时转换为 { text: raw }'
+)
+assert(
+  normalizeReviewQuestion({ schedule_id: 1, question_id: 2, content: null }).content.text === '',
+  'content 为 null 时使用空 text'
+)
+assert(
+  normalizeReviewQuestion({ schedule_id: 1, question_id: 2, content: undefined }).content.text === '',
+  'content 为 undefined 时使用空 text'
+)
+assert(
+  normalizeReviewQuestion({ schedule_id: 1, question_id: 2, stem: 'StemText' }).content.text === 'StemText',
+  'content 为空时使用 stem 作为 fallback'
+)
+assert(
+  normalizeReviewQuestion({ schedule_id: 1, question_id: 2, options: ['a', 'b'] }).options !== null &&
+  Object.keys(normalizeReviewQuestion({ schedule_id: 1, question_id: 2, options: ['a', 'b'] }).options).length === 0,
+  'options 为数组时转换为空对象'
+)
+assert(
+  normalizeReviewQuestion({ schedule_id: 1, question_id: 2, options: null }).options !== null,
+  'options 为 null 时转换为空对象'
+)
+assert(
+  normalizeReviewQuestion({ schedule_id: 1, question_id: 2, subject: null }).subject === '',
+  'subject 为 null 时使用空字符串'
+)
+assert(
+  normalizeReviewQuestion({ schedule_id: 1, question_id: 2, image_url: 'http://img.url' }).image_url === 'http://img.url',
+  'image_url 字符串被正确保留'
+)
+assert(
+  normalizeReviewQuestion({ schedule_id: 1, question_id: 2, image_url: ['a.png', 'b.png'] }).image_url[1] === 'b.png',
+  'image_url 数组被正确保留'
+)
+assert(
+  normalizeReviewQuestion(null) === null,
+  'null 输入返回 null'
+)
+assert(
+  normalizeReviewQuestion(undefined) === null,
+  'undefined 输入返回 null'
+)
+assert(
+  normalizeReviewQuestion({ schedule_id: 1, question_id: 2 }).id === 2,
+  'id 从 question_id 继承'
+)
+assert(
+  normalizeReviewQuestion({ schedule_id: 1, question_id: 2, id: 99 }).id === 99,
+  'id 优先使用传入值'
+)
+assert(
+  normalizeReviewQuestion({ schedule_id: 1, question_id: 2 }).question_id === 2,
+  'question_id 被保留'
+)
+assert(
+  typeof normalizeReviewQuestion({ schedule_id: 1, question_id: 2 })._renderModel === 'undefined',
+  'normalizeReviewQuestion 不构建 _renderModel'
 )
 
 console.log('')
